@@ -212,8 +212,11 @@ func _initialize() -> void:
 	elif String(cohort_rows[0].get("income", "")) != "+1" \
 			or String(cohort_rows[0].get("expense", "")) != "−0.5":
 		failures.append("population dossier did not expose last-settlement per-capita cashflow")
-	elif (cohort_rows[0].get("detail_rows", []) as Array).size() != 2:
+	elif (cohort_rows[0].get("income_rows", []) as Array).size() != 1 \
+			or (cohort_rows[0].get("expense_rows", []) as Array).size() != 1:
 		failures.append("population dossier did not expose non-zero cashflow sources")
+	elif not String((cohort_rows[0].get("demand_summary", {}) as Dictionary).get("value", "")).begins_with("2 类"):
+		failures.append("population dossier did not collapse demands into a readable summary")
 
 	var unavailable_population: Dictionary = view_model._population_category({
 		"ok": true,
@@ -290,19 +293,19 @@ func _initialize() -> void:
 		failures.append("building dossier did not resolve owner class")
 	elif String(building_rows[0].get("profit", "")) != "+40":
 		failures.append("building dossier profit did not subtract input and wage costs")
-	elif String(_find_by_id(building_rows[0].get("detail_rows", []), "job_0").get("value", "")) != "30 / 40":
+	elif String(_find_by_id(building_rows[0].get("job_rows", []), "job_0").get("value", "")) != "30 / 40":
 		failures.append("building dossier did not expose employee attendance")
 	else:
-		var building_details: Array = building_rows[0].get("detail_rows", [])
-		if not _find_by_id(building_details, "sales").is_empty():
+		var production_rows: Array = building_rows[0].get("production_rows", [])
+		if not _find_by_id(production_rows, "sales").is_empty():
 			failures.append("building dossier still exposes a sales row")
-		var output_row := _find_by_id(building_details, "output_0")
+		var output_row := _find_by_id(production_rows, "output_0")
 		if String(output_row.get("value", "")) != "6.000 单位/栋/日":
 			failures.append("building output is not normalized to actual units per building per day")
-		for section_id in ["section_jobs", "section_production", "section_finance"]:
-			if _find_by_id(building_details, section_id).is_empty():
-				failures.append("building dossier is missing section %s" % section_id)
-		for detail in building_details:
+		var finance: Dictionary = building_rows[0].get("finance", {})
+		if String(finance.get("revenue", "")) != "90" or String(finance.get("cost", "")) != "50" or String(finance.get("profit", "")) != "+40":
+			failures.append("building dossier finance card did not expose revenue, total cost and profit")
+		for detail in production_rows:
 			var text := "%s %s" % [detail.get("name", ""), detail.get("value", "")]
 			if text.contains("实付") or text.contains("应付") or text.contains("有效储量"):
 				failures.append("building dossier still exposes diagnostic bookkeeping labels")

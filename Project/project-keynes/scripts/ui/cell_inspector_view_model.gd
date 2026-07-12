@@ -529,11 +529,17 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 				if good_idx >= 0 and good_idx < demand_good_ids.size() and cursor < demand_quantities.size():
 					demand_by_good[good_idx] = int(demand_quantities[cursor])
 		var demand_rows := []
+		var demand_total := 0
+		var demand_names := PackedStringArray()
 		for good_idx in range(demand_good_ids.size()):
 			var stable_id := String(demand_good_ids[good_idx])
 			var profile = GoodProfileRegistry.profile_by_id(stable_id)
 			var display_name := String(profile.display_name) if profile != null and String(profile.display_name) != "" else stable_id
 			var quantity := int(demand_by_good.get(good_idx, 0))
+			if quantity > 0:
+				demand_total += quantity
+				if demand_names.size() < 3:
+					demand_names.append(display_name)
 			demand_rows.append({
 				"id": "demand_%s" % stable_id,
 				"name": display_name,
@@ -541,7 +547,8 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 				"icon": "resource",
 				"visible": quantity > 0,
 			})
-		var detail_rows := []
+		var income_rows := []
+		var expense_rows := []
 		if settlement_available and settlement_offsets.size() == populations.size() + 1:
 			var flow_begin := clampi(int(settlement_offsets[i]), 0, settlement_source_indices.size())
 			var flow_end := clampi(int(settlement_offsets[i + 1]), flow_begin, settlement_source_indices.size())
@@ -551,13 +558,14 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 				var income_value := int(settlement_income[flow]) if flow < settlement_income.size() else 0
 				var expense_value := int(settlement_expense[flow]) if flow < settlement_expense.size() else 0
 				if income_value > 0:
-					detail_rows.append({"id": "income_%s" % source_id, "name": "收入 · %s" % _cashflow_source_name(source_id, true), "value": "+%s/人" % _money_text(income_value / maxi(population, 1)), "icon": "trend_up", "accent": UITokens.GOOD, "visible": true})
+					income_rows.append({"id": "income_%s" % source_id, "name": _cashflow_source_name(source_id, true), "value": "+%s/人" % _money_text(income_value / maxi(population, 1)), "visible": true})
 				if expense_value > 0:
-					detail_rows.append({"id": "expense_%s" % source_id, "name": "支出 · %s" % _cashflow_source_name(source_id, false), "value": "−%s/人" % _money_text(expense_value / maxi(population, 1)), "icon": "trend_down", "accent": UITokens.RISK, "visible": true})
-		else:
-			detail_rows.append({"id": "settlement_pending", "name": "收支来源", "value": "下次结算后可查看" if settlement_pending else "当前未启用追踪", "icon": "history", "accent": UITokens.TEXT_MUTED, "visible": true})
+					expense_rows.append({"id": "expense_%s" % source_id, "name": _cashflow_source_name(source_id, false), "value": "−%s/人" % _money_text(expense_value / maxi(population, 1)), "visible": true})
 		var income_pc := int(settlement_income_by_cohort[i]) / maxi(population, 1) if settlement_available and i < settlement_income_by_cohort.size() else 0
 		var expense_pc := int(settlement_expense_by_cohort[i]) / maxi(population, 1) if settlement_available and i < settlement_expense_by_cohort.size() else 0
+		var net_pc := income_pc - expense_pc
+		var demand_count := demand_by_good.size()
+		var demand_subtitle := "主要：%s%s" % ["、".join(demand_names), " 等" if demand_count > demand_names.size() else ""] if demand_count > 0 else "当前无消费需求"
 		rows.append({
 			"id": "cohort_%s" % str(handles[i] if i < handles.size() else i),
 			"name": "%s · %s" % [profession_name, ethnicity_name],
@@ -565,13 +573,17 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 			"wealth": "人均 %s" % _money_text(wealth_pc),
 			"income": "+%s" % _money_text(income_pc) if settlement_available else "+—",
 			"expense": "−%s" % _money_text(expense_pc) if settlement_available else "−—",
+			"net": "%s%s" % ["+" if net_pc > 0 else ("−" if net_pc < 0 else ""), _money_text(absi(net_pc))] if settlement_available else "—",
+			"net_positive": net_pc >= 0,
 			"status": "%s就业 %s · 满足 %.1f%% · 结算 %d日" % [
 				"商人 · " if i < merchant_flags.size() and merchant_flags[i] != 0 else "",
 				UITokens.format_compact_number_cn(float(owners + employees), 1), sat * 100.0, settlement_days],
 			"accent": UITokens.ACCENT,
 			"icon": "growth",
 			"demand_rows": demand_rows,
-			"detail_rows": detail_rows,
+			"income_rows": income_rows,
+			"expense_rows": expense_rows,
+			"demand_summary": {"value": "%d 类 · %.3f 单位/人/日" % [demand_count, float(demand_total) / 1000.0], "subtitle": demand_subtitle},
 			"visible": true,
 		})
 	var insights := []
@@ -682,49 +694,49 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 		var profit := revenue - operating_cost
 		var owner_required := count * int(owner_slots[type_idx]) if type_idx >= 0 and type_idx < owner_slots.size() else count
 		var owner_actual := int(filled_owner[i]) if i < filled_owner.size() else 0
-		var details := [
-			{"id": "section_jobs", "name": "岗位", "value": "实际 / 编制", "icon": "growth", "accent": UITokens.ACCENT, "section": true},
-			{"id": "owner_job", "name": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1), "value": "%d / %d" % [owner_actual, owner_required], "icon": "growth", "accent": UITokens.ACCENT},
+		var job_rows := [
+			{"id": "owner_job", "name": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1), "value": "%d / %d" % [owner_actual, owner_required], "ratio": float(owner_actual) / float(owner_required) if owner_required > 0 else 1.0},
 		]
 		if role_offsets.size() == group_types.size() + 1:
 			for role in range(role_offsets[i], role_offsets[i + 1]):
 				var required := int(role_required[role]) if role < role_required.size() else 0
 				var filled := int(role_filled[role]) if role < role_filled.size() else 0
-				details.append({
+				job_rows.append({
 					"id": "job_%d" % role,
 					"name": "雇员 · %s" % _profession_name(snapshot, int(role_professions[role]) if role < role_professions.size() else -1),
 					"value": "%d / %d" % [filled, required],
-					"icon": "growth", "accent": UITokens.ACCENT,
+					"ratio": float(filled) / float(required) if required > 0 else 1.0,
 				})
-		details.append({"id": "section_production", "name": "生产", "value": "", "icon": "resource", "accent": UITokens.RESOURCE, "section": true})
-		var input_row_begin := details.size()
-		_append_recipe_rows(details, snapshot, type_idx, "input",
+		var production_rows := []
+		var input_row_begin := production_rows.size()
+		_append_recipe_rows(production_rows, snapshot, type_idx, "input",
 			int(last_input[i]) if i < last_input.size() else 0, count, period_days)
-		_append_resource_generation_rows(details, snapshot, type_idx,
+		_append_resource_generation_rows(production_rows, snapshot, type_idx,
 			int(last_resource_generated[i]) if i < last_resource_generated.size() else 0,
 			count, period_days)
-		_append_resource_recipe_rows(details, snapshot, type_idx,
+		_append_resource_recipe_rows(production_rows, snapshot, type_idx,
 			int(last_resource[i]) if i < last_resource.size() else 0, count, period_days)
 		var resource_net := (int(last_resource_generated[i]) if i < last_resource_generated.size() else 0) \
 			- (int(last_resource[i]) if i < last_resource.size() else 0)
 		if resource_net != 0:
-			details.append({"id": "resource_net", "name": "自然资源",
+			production_rows.append({"id": "resource_net", "name": "自然资源净额",
 				"value": _actual_daily_rate(resource_net, count, period_days),
 				"icon": "eco", "accent": UITokens.GOOD if resource_net > 0 else UITokens.WARN})
-		if details.size() == input_row_begin:
-			details.append({"id": "input_none", "name": "原材料", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
-		var output_row_begin := details.size()
-		_append_recipe_rows(details, snapshot, type_idx, "output",
+		if production_rows.size() == input_row_begin:
+			production_rows.append({"id": "input_none", "name": "原材料", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
+		var output_row_begin := production_rows.size()
+		_append_recipe_rows(production_rows, snapshot, type_idx, "output",
 			int(last_output[i]) if i < last_output.size() else 0, count, period_days)
-		if details.size() == output_row_begin:
-			details.append({"id": "output_none", "name": "产出", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
-		details.append({"id": "section_finance", "name": "财务", "value": "", "icon": "resource", "accent": UITokens.RESOURCE, "section": true})
-		details.append({"id": "finance_revenue", "name": "收入", "value": _money_text(revenue), "icon": "trend_up", "accent": UITokens.GOOD})
-		details.append({"id": "finance_input", "name": "原料成本", "value": _money_text(input_cost), "icon": "resource", "accent": UITokens.RESOURCE})
-		details.append({"id": "finance_wages", "name": "工资", "value": _money_text(wages), "icon": "growth", "accent": UITokens.ACCENT})
-		details.append({"id": "finance_profit", "name": "盈亏", "value": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)], "icon": "trend_up" if profit >= 0 else "trend_down", "accent": UITokens.GOOD if profit >= 0 else UITokens.RISK})
-		if wages < wages_due:
-			details.append({"id": "wage_warning", "name": "工资未足额支付", "value": "生产受限", "icon": "warning", "accent": UITokens.RISK})
+		if production_rows.size() == output_row_begin:
+			production_rows.append({"id": "output_none", "name": "产出", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
+		var finance := {
+			"revenue": _money_text(revenue),
+			"cost": _money_text(operating_cost),
+			"profit": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)],
+			"profit_positive": profit >= 0,
+			"breakdown": "原料 %s · 工资 %s" % [_money_text(input_cost), _money_text(wages)],
+			"warning": "工资未足额支付，生产受限" if wages < wages_due else "",
+		}
 		var staffing_required := owner_required
 		var staffing_actual := owner_actual
 		if role_offsets.size() == group_types.size() + 1:
@@ -746,7 +758,8 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 			"profit": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)],
 			"profit_label": "利润" if profit >= 0 else "亏损",
 			"accent": UITokens.GOOD if profit > 0 else (UITokens.RISK if profit < 0 else UITokens.TEXT_MUTED),
-			"icon": "building", "detail_rows": details, "visible": true,
+			"icon": "building", "job_rows": job_rows,
+			"production_rows": production_rows, "finance": finance, "visible": true,
 		})
 	_append_construction_rows(rows, snapshot, type_ids, type_names)
 	var total_count := _sum_i64(snapshot.get("building_counts_by_type", PackedInt64Array()))
@@ -874,7 +887,7 @@ func _append_construction_rows(rows: Array, snapshot: Dictionary, type_ids: Pack
 	var ready_days: PackedInt64Array = snapshot.get("construction_ready_days", PackedInt64Array())
 	for i in range(types.size()):
 		var type_idx := int(types[i])
-		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"), "count": "%d 栋" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": "building", "detail_rows": [], "visible": true})
+		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"), "count": "%d 栋" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": "building", "job_rows": [], "production_rows": [], "finance": {}, "visible": true})
 
 
 func _owner_profession_name(snapshot: Dictionary, signature_idx: int) -> String:
