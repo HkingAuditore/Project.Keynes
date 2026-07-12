@@ -14,7 +14,7 @@
 
 Stages are stable diagnostic ABI:
 
-1. `epoch_begin`: preflight and freeze the sample-day view.
+1. `epoch_begin`: preflight, freeze the sample-day view, and compute building revenue/cost diagnostics.
 2. `ledger_apply`: consume commands due at the sample day.
 3. `household_market`: process one cohort-budgeted market range per simulation day.
 4. `structural_commit`: stable-sort and apply ECB work.
@@ -67,6 +67,7 @@ Preserve general stage/progress/cursor/work fields and at least:
 
 - processed cells/cohorts/needs/variants/components/commands
 - formula/clear/fallback/merchant-settle/price/ledger/structure/publish ms
+- building plan/production and sparse market-signal ms, edge/update counts
 - worker tasks, memory, cohort/market/good count
 - population/money/goods error, saturation, fatal reason
 - sample/current/commit/deadline day, age, days until commit, due/over-budget
@@ -82,8 +83,8 @@ Windows, Godot 4.6.2, template_release, explicit auto cadence:
 
 | Profile | N | Samples | avg | p95 | max | Runtime memory |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 10k cells / 200k cohorts / 100 goods / 16 needs | 50 | 2500 | 1.002ms | 1.487ms | 2.042ms | 79.5MB |
-| 100k cells / 10M cohorts / 200 goods / 16 needs | 334 | 668 | 3.290ms | 3.987ms | 5.800ms | 1413.3MB |
+| 10k cells / 200k cohorts / 100 goods / 16 needs | 50 | 2500 | 1.883ms | 2.766ms | 3.126ms | 101.0MB |
+| 100k cells / 10M cohorts / 200 goods / 16 needs | 334 | 668 | 5.542ms | 6.333ms | 9.394ms | 1680.6MB |
 
 These figures do not describe default fixed N=5. Label benchmark cadence explicitly.
 
@@ -93,11 +94,11 @@ Standard fixed scenario versus N=1 daily reference:
 
 | N | Consumption error | Spending error |
 | ---: | ---: | ---: |
-| 10 | 5.82% | 1.23% |
-| 20 | 12.12% | 2.57% |
-| 50 | 16.95% | 2.59% |
-| 100 | 49.89% | 2.33% |
-| 334 | 38.60% | 9.14% |
+| 10 | 14.43% | 19.72% |
+| 20 | 29.05% | 41.26% |
+| 50 | 56.86% | 94.53% |
+| 100 | 15.17% | 25.16% |
+| 334 | 63.42% | 3.99% |
 
 This table is scenario evidence, not a global or monotonic bound. Conservation does not measure
 behavioral approximation error.
@@ -111,6 +112,10 @@ behavioral approximation error.
 - High formula time: inspect cohort/need volume and repeated market-invariant work.
 - High clear time: confirm abundant fused path and avoid fallback for budget-only unmet demand.
 - High approximation error with zero audits: shorten N or improve the versioned approximation model.
+- High market-signal time: compare sparse edge count with actual building input/output roles; a
+  `market_count × good_count` scan or per-building duplicate keys is a regression.
+- Persistent zero utilization: inspect expected revenue, operating cost, target margin, supply
+  elasticity, and frozen producer settlement price before changing employment rules.
 - `save_requires_committed_boundary`: expected during any active or wait-commit stage.
 ## Building stages
 
@@ -118,3 +123,7 @@ PKEC v3 adds `building_employment` before wait-commit and `building_production`/
 `building_commit` after the deadline. Empty building worlds skip them. Nonempty worlds use sorted
 cell CSR and visit only active building cells; never scan all groups once per cell. The usual
 deadline barrier applies if these stages miss commit.
+
+Price V3 signal updates occur after both utility and normal production phases. Price calculation in
+the current epoch reads only the previous committed signal EMA, preserving the frozen-cycle contract
+and preventing scheduler-order feedback.

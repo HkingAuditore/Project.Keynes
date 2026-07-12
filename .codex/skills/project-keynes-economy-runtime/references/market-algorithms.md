@@ -27,7 +27,7 @@ curves. Float is allowed only for timing/UI.
 
 ## 2. Frozen-period model
 
-The authority model is `frozen_sample_linear_v1`.
+The authority model is `frozen_sample_adaptive_price_v2`.
 
 At sample day, freeze population, funds, price, stock, profession/ethnicity/plan, and four environment
 signals. Calculate the whole N-day period from that state. The production default is N=5. Setting
@@ -89,7 +89,7 @@ in one linear pass over need states; do not scan all need states once per cohort
 
 Merchants also submit household demand. Total cohort money does not change from purchases.
 
-## 6. EMA and price
+## 6. EMA and Price V3
 
 Normalize period demand and net income to daily values before EMA:
 
@@ -100,10 +100,16 @@ daily_net    = period_net_income / N
 income_alpha = min(1, N / 8)
 ```
 
-Derive daily price pressure from demand EMA, target inventory, current stock, and period shortage.
-Clamp to per-day max rise/fall, multiply the frozen daily change by N, apply one linear price update,
-then clamp absolute min/max. This avoids N price feedback loops per market-good and deliberately
-trades accuracy for bounded cost.
+Household demand remains market-major. Building input demand, offered supply, and production-cost
+anchors live in a sorted sparse `(cell, good)` signal store built from actual building input/output
+edges. Update those signals only after production so they feed the next frozen cycle.
+
+Price pressure combines excess demand, target-inventory gap, shortage, a confidence-weighted soft
+cost anchor, and inactive-default-price reversion. Divide the combined pressure by the configured
+demand price elasticity before applying the good-specific adjustment rate. Monetary-issue goods do
+not use retail cost anchors. Clamp to per-day max rise/fall, multiply the frozen daily change by N,
+apply one linear price update, then clamp absolute min/max. This avoids N feedback loops and dense
+building-by-good storage while making production costs and business demand economically visible.
 
 ## 7. Conservation and failure
 
@@ -124,6 +130,11 @@ Run building production outside `household_market`, after the household stage an
 deadline. Owner input purchases transfer money directly to local merchant cohorts. Producer output
 offers sort by local retail price descending and use each good's configured merchant buy factor;
 merchant positive funds cap the purchased quantity and the remainder is discarded. Track
-construction/input sinks and accepted output separately in the goods audit. Temporary fixed wages
-transfer owner funds to locally employed cohorts at the deadline; cap payment by owner cash and
-report paid/unpaid amounts without minting money.
+construction/input sinks and accepted output separately in the goods audit. Role-level adaptive
+base wages use local living-cost and contract-wage anchors. Aggregate obligations by owner, suspend
+production after a shortfall, and settle post-sale excess-profit bonuses without minting money.
+
+At epoch begin, compute each owner-lot's frozen expected producer revenue, input replacement cost,
+full wage obligation, and target-margin gap for diagnostics and post-sale profit sharing. Keep
+planned utilization at Q16 one: losses do not scale employee demand or output capacity. Actual
+capacity is constrained only by staffing, owner funds, inputs, and resources.

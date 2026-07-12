@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -8,6 +10,7 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/string_name.hpp>
 
 namespace pk {
 
@@ -16,7 +19,7 @@ namespace pk {
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 3;
+    static constexpr int32_t SCHEMA_VERSION = 8;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
@@ -62,6 +65,7 @@ public:
     }
     bool should_run(int64_t day_index) const;
     godot::Dictionary report() const;
+    godot::Dictionary population_cell_summary(int32_t cell_idx) const;
     godot::Dictionary population_cell_snapshot(int32_t cell_idx) const;
     godot::Dictionary population_cell_snapshot(int32_t cell_idx,
                                                 float temperature,
@@ -82,13 +86,27 @@ public:
     godot::Dictionary feed_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_restore();
 
+    // Committed, read-only economy event stream. Events produced by an active
+    // frozen epoch remain private until aggregate_publish succeeds.
+    godot::Dictionary event_schema() const;
+    godot::Dictionary set_trace_filter(const godot::Dictionary &filter);
+    godot::Dictionary set_inspector_trace_cell(int32_t cell_idx);
+    godot::Dictionary poll_events(const godot::Dictionary &opts) const;
+    godot::Dictionary ack_events(const godot::StringName &consumer_id,
+                                 int64_t up_to_event_id);
+    godot::Dictionary trace_report() const;
+    godot::Dictionary begin_event_archive(int32_t chunk_bytes);
+    godot::PackedByteArray read_event_archive_chunk(int32_t max_bytes);
+    godot::Dictionary end_event_archive();
+
     // Building context is captured once at the frozen sample boundary. Natural
     // resources are resource-major and use GOODS_SCALE units in native state.
     bool capture_building_context(int64_t day_index, const float *elevation,
                                   const uint8_t *terrain, const uint8_t *landform,
                                   const uint8_t *vegetation, const uint8_t *is_water,
-                                  const uint8_t *has_river,
+                                  const uint8_t *has_river, const int32_t *neighbor_indices,
                                   const std::vector<const float *> &resources,
+                                  const std::vector<const float *> &resource_changes,
                                   int32_t count, std::string &error);
     bool needs_building_context_capture(int64_t day_index) const {
         return !_epoch_active && _building_context_day != day_index;
@@ -100,6 +118,8 @@ public:
         return _resource_extra_slots;
     }
     bool drain_building_resource_deltas(std::vector<int64_t> &out);
+    int32_t building_resource_access_cells(int32_t cell, int32_t resource_id,
+                                           int32_t *out_cells, int32_t capacity) const;
 
 private:
     enum class Stage : int32_t {
@@ -160,6 +180,7 @@ private:
         int32_t wealth_min_q16 = 0;
         int32_t wealth_max_q16 = Q16_ONE;
         int32_t quantity_env_curve = -1;
+        int32_t living_cost_weight_q16 = 0;
     };
 
     struct VariantChoice {
@@ -199,6 +220,7 @@ private:
     };
 
     struct BuildingType {
+		int32_t kind = 1; // 0=collector, 1=industrial.
         int32_t owner_profession_id = -1;
         int64_t owner_slots_per_building = 0;
         int64_t wage_per_employee_per_day = 0;
@@ -212,16 +234,25 @@ private:
         int32_t output_count = 0;
         int32_t resource_begin = 0;
         int32_t resource_count = 0;
+        int32_t generation_begin = 0;
+        int32_t generation_count = 0;
+        int32_t generation_floor_q16 = 0;
         int32_t condition_begin = 0;
         int32_t condition_count = 0;
         int32_t construction_days = 0;
-        int32_t behavior_id = 0; // 0=none, 1=consume_local_resources.
+        int32_t behavior_id = 0; // 0=none, 1=consume, 2=cultivate+consume.
         int32_t behavior_version = 1;
+        int32_t target_operating_margin_q16 = 0;
+        int32_t supply_price_elasticity_q16 = Q16_ONE;
+        int32_t output_cost_share_begin = 0;
+        int32_t output_cost_share_count = 0;
     };
 
     struct JobRole {
         int32_t profession_id = -1;
         int64_t slots_per_building = 0;
+        int32_t wage_policy = 0; // 0=none, 1=fixed, 2=adaptive.
+        int64_t reference_wage_per_day = 0;
     };
 
     struct GoodAmount {
@@ -232,6 +263,8 @@ private:
     struct ResourceAmount {
         int32_t resource_id = -1;
         int64_t quantity = 0;
+        int32_t mode = 0; // 0=extract per day, 1=capacity per building.
+        int32_t access_mode = 0; // 0=local, 1=local plus six hex neighbors.
     };
 
     struct ConditionToken {
@@ -255,7 +288,21 @@ private:
         int64_t last_sold = 0;
         int64_t last_discarded = 0;
         int64_t last_resource = 0;
+        int64_t last_resource_generated = 0;
         int64_t last_revenue = 0;
+        int64_t last_input_cost = 0;
+        int64_t last_wages_paid = 0;
+        int64_t last_wages_due = 0;
+        int64_t last_expected_revenue = 0;
+        int64_t last_operating_cost = 0;
+        int32_t last_margin_gap_q16 = 0;
+        int32_t planned_utilization_q16 = Q16_ONE;
+        int64_t sample_unit_input_cost = 0;
+        int64_t last_base_wages_paid = 0;
+        int64_t last_base_wages_due = 0;
+        int64_t last_bonus_paid = 0;
+        int64_t last_bonus_due = 0;
+        uint8_t wage_suspended = 0;
     };
 
     struct PendingConstruction {
@@ -326,6 +373,57 @@ private:
         }
     };
 
+    struct MarketSignalStore {
+        std::vector<int32_t> cell_offsets;
+        std::vector<int32_t> good_ids;
+        std::vector<int64_t> business_demand_ema;
+        std::vector<int64_t> offered_supply_ema;
+        std::vector<int32_t> cost_anchor_price;
+
+        void clear(int32_t cells) {
+            cell_offsets.assign(static_cast<size_t>(std::max(0, cells)) + 1, 0);
+            good_ids.clear();
+            business_demand_ema.clear();
+            offered_supply_ema.clear();
+            cost_anchor_price.clear();
+        }
+    };
+
+    struct LaborMarketStore {
+        std::vector<int32_t> cell_offsets;
+        std::vector<int32_t> profession_ids;
+        std::vector<int64_t> base_living_cost;
+        std::vector<int64_t> role_living_cost;
+        std::vector<int64_t> contract_wage_ema;
+        std::vector<int64_t> paid_wage_ema;
+        std::vector<int64_t> job_days;
+        std::vector<int32_t> pay_ratio_q16;
+
+        void clear(int32_t cells) {
+            cell_offsets.assign(static_cast<size_t>(std::max(0, cells)) + 1, 0);
+            profession_ids.clear();
+            base_living_cost.clear();
+            role_living_cost.clear();
+            contract_wage_ema.clear();
+            paid_wage_ema.clear();
+            job_days.clear();
+            pay_ratio_q16.clear();
+        }
+    };
+
+    struct PricePressure {
+        int64_t household_demand = 0;
+        int64_t business_demand = 0;
+        int64_t supply = 0;
+        int64_t excess_q16 = 0;
+        int64_t inventory_q16 = 0;
+        int64_t shortage_q16 = 0;
+        int64_t cost_q16 = 0;
+        int64_t idle_q16 = 0;
+        int64_t total_q16 = 0;
+        int64_t change_q16 = 0;
+    };
+
     struct Command {
         int32_t opcode = 0;
         int64_t effective_day = 0;
@@ -386,6 +484,9 @@ private:
         int64_t unit_price = 0;
     };
 
+    struct EventLeg;
+    struct CashflowEntry;
+
     struct MarketResult {
         bool ok = true;
         std::string error;
@@ -409,7 +510,168 @@ private:
         int64_t merchant_count = 0;
         int64_t merchant_repairs = 0;
         int64_t price_cap_hits = 0;
+        int64_t price_cost_anchor_hits = 0;
+        int64_t price_inactive_reversions = 0;
+        int64_t revenue = 0;
+        int64_t changed_prices = 0;
+        uint64_t mutation_hash = 1469598103934665603ULL;
+        std::vector<EventLeg> trace_legs;
+        std::vector<CashflowEntry> cashflows;
         std::vector<StructuralCommand> structural_commands;
+    };
+
+    enum TraceMode : int32_t {
+        TRACE_OFF = 0,
+        TRACE_SUMMARY = 1,
+        TRACE_SELECTIVE = 2,
+        TRACE_FULL_DEBUG = 3,
+    };
+
+    enum CashflowSource : int32_t {
+        CASHFLOW_WAGES = 1,
+        CASHFLOW_OWNER_OPERATIONS = 2,
+        CASHFLOW_MERCHANT_HOUSEHOLD = 3,
+        CASHFLOW_MERCHANT_BUSINESS = 4,
+        CASHFLOW_TRANSFER = 5,
+        CASHFLOW_HOUSEHOLD_CONSUMPTION = 6,
+        CASHFLOW_PRODUCTION_INPUT = 7,
+        CASHFLOW_OWNER_WAGES = 8,
+        CASHFLOW_CONSTRUCTION = 9,
+        CASHFLOW_MERCHANT_PROCUREMENT = 10,
+        CASHFLOW_OTHER = 11,
+    };
+
+    enum EventKind : int32_t {
+        EVENT_COMMAND_SETTLED = 1,
+        EVENT_MARKET_SETTLED = 2,
+        EVENT_STRUCTURAL_CHANGE = 3,
+        EVENT_CONSTRUCTION_STARTED = 4,
+        EVENT_CONSTRUCTION_COMPLETED = 5,
+        EVENT_BUILDING_DEMOLISHED = 6,
+        EVENT_EMPLOYMENT_SETTLED = 7,
+        EVENT_WAGE_SETTLED = 8,
+        EVENT_BUILDING_PRODUCTION_SETTLED = 9,
+        EVENT_EPOCH_COMMITTED = 10,
+        EVENT_RESTORE_BOUNDARY = 11,
+    };
+
+    enum EventField : int32_t {
+        FIELD_COHORT_POPULATION = 1,
+        FIELD_COHORT_FUNDS = 2,
+        FIELD_COHORT_EPOCH_INCOME = 3,
+        FIELD_COHORT_EPOCH_EXPENSE = 4,
+        FIELD_COHORT_INCOME_EMA = 5,
+        FIELD_COHORT_SATISFACTION = 6,
+        FIELD_COHORT_WORST_NEED = 7,
+        FIELD_COHORT_OWNER_EMPLOYED = 8,
+        FIELD_COHORT_EMPLOYEE_EMPLOYED = 9,
+        FIELD_COHORT_SIGNATURE = 10,
+        FIELD_TREASURY_CASH = 11,
+        FIELD_MARKET_STOCK = 12,
+        FIELD_MARKET_PRICE = 13,
+        FIELD_MARKET_DEMAND_EMA = 14,
+        FIELD_MARKET_SHORTAGE = 15,
+        FIELD_BUILDING_COUNT = 16,
+        FIELD_BUILDING_OWNER_FILLED = 17,
+        FIELD_BUILDING_EMPLOYEE_FILLED = 18,
+        FIELD_BUILDING_CAPACITY = 19,
+        FIELD_BUILDING_INPUT = 20,
+        FIELD_BUILDING_OUTPUT = 21,
+        FIELD_BUILDING_SOLD = 22,
+        FIELD_BUILDING_DISCARDED = 23,
+        FIELD_BUILDING_RESOURCE = 24,
+        FIELD_BUILDING_RESOURCE_GENERATED = 25,
+        FIELD_BUILDING_REVENUE = 26,
+        FIELD_BUILDING_INPUT_COST = 27,
+        FIELD_BUILDING_WAGES_PAID = 28,
+        FIELD_RESOURCE_DELTA = 29,
+        FIELD_COHORT_DEMOGRAPHY_RESIDUAL = 30,
+        FIELD_BUILDING_WAGES_DUE = 31,
+        FIELD_BUILDING_EXPECTED_REVENUE = 32,
+        FIELD_BUILDING_OPERATING_COST = 33,
+        FIELD_BUILDING_MARGIN_GAP = 34,
+        FIELD_BUILDING_PLANNED_UTILIZATION = 35,
+        FIELD_BUILDING_BASE_WAGES_PAID = 36,
+        FIELD_BUILDING_BASE_WAGES_DUE = 37,
+        FIELD_BUILDING_BONUS_PAID = 38,
+        FIELD_BUILDING_BONUS_DUE = 39,
+        FIELD_BUILDING_WAGE_SUSPENDED = 40,
+    };
+
+    enum EventSubjectKind : int32_t {
+        SUBJECT_NONE = 0,
+        SUBJECT_COHORT = 1,
+        SUBJECT_MARKET = 2,
+        SUBJECT_BUILDING_GROUP = 3,
+        SUBJECT_COMMAND = 4,
+        SUBJECT_TREASURY = 5,
+        SUBJECT_RESOURCE = 6,
+    };
+
+    struct EventLeg {
+        int32_t field = 0;
+        int32_t subject_kind = SUBJECT_NONE;
+        int64_t subject_id = 0;
+        int32_t key_id = -1;
+        int64_t before = 0;
+        int64_t after = 0;
+    };
+
+    struct EventRecord {
+        int64_t event_id = 0;
+        int32_t stage = 0;
+        int32_t kind = 0;
+        int32_t flags = 0;
+        int32_t cell = -1;
+        int32_t subject_kind = SUBJECT_NONE;
+        int64_t subject_id = 0;
+        int32_t subject_i0 = -1;
+        int32_t subject_i1 = -1;
+        uint32_t leg_begin = 0;
+        uint32_t leg_count = 0;
+        int64_t value0 = 0;
+        int64_t value1 = 0;
+        int64_t value2 = 0;
+        int64_t value3 = 0;
+    };
+
+    struct CashflowEntry {
+        uint64_t cohort_handle = 0;
+        int32_t source = CASHFLOW_OTHER;
+        int64_t income = 0;
+        int64_t expense = 0;
+    };
+
+    struct EventBatch {
+        int64_t epoch_id = 0;
+        int64_t sample_day = -1;
+        int64_t commit_day = -1;
+        int32_t period_days = 1;
+        int64_t first_event_id = 0;
+        int64_t last_event_id = 0;
+        uint64_t stream_hash = 1469598103934665603ULL;
+        std::vector<EventRecord> events;
+        std::vector<EventLeg> legs;
+        int32_t cashflow_cell = -1;
+        bool cashflow_complete = false;
+        std::vector<CashflowEntry> cashflows;
+        int64_t bytes() const {
+            return static_cast<int64_t>(events.capacity() * sizeof(EventRecord) +
+                                        legs.capacity() * sizeof(EventLeg) +
+                                        cashflows.capacity() * sizeof(CashflowEntry));
+        }
+    };
+
+    struct AuditFrame {
+        int64_t epoch_id = 0;
+        int64_t sample_day = -1;
+        int64_t commit_day = -1;
+        int64_t event_count = 0;
+        int64_t leg_count = 0;
+        int64_t population_error = 0;
+        int64_t money_error = 0;
+        int64_t goods_error = 0;
+        uint64_t stream_hash = 1469598103934665603ULL;
     };
 
     struct SaveState {
@@ -422,6 +684,9 @@ private:
         int32_t command_cursor = 0;
         int32_t building_cursor = 0;
         int32_t construction_cursor = 0;
+        int32_t audit_cursor = 0;
+        int32_t signal_cursor = 0;
+        int32_t labor_signal_cursor = 0;
         bool end_emitted = false;
     };
 
@@ -442,6 +707,26 @@ private:
         int32_t schema_version = 0;
         int32_t restored_buildings = 0;
         int32_t restored_construction = 0;
+        int32_t expected_audits = 0;
+        int32_t restored_audits = 0;
+        int32_t expected_signals = 0;
+        int32_t restored_signals = 0;
+        int32_t expected_labor_signals = 0;
+        int32_t restored_labor_signals = 0;
+        int32_t last_signal_cell = -1;
+        int32_t last_signal_good = -1;
+        int32_t last_labor_cell = -1;
+        int32_t last_labor_profession = -1;
+    };
+
+    struct EventArchiveState {
+        bool active = false;
+        bool header_emitted = false;
+        bool end_emitted = false;
+        int32_t chunk_bytes = 4 * 1024 * 1024;
+        size_t batch_limit = 0;
+        size_t batch_cursor = 0;
+        size_t event_cursor = 0;
     };
 
     bool _configured = false;
@@ -463,6 +748,12 @@ private:
     int32_t _commit_lag_budget_days = 0;
     int32_t _max_rules_per_plan = MAX_RULES_PER_PLAN;
     int64_t _wealth_reference_per_capita = MONEY_SCALE * 10;
+    int32_t _living_cost_base_plan_id = -1;
+    std::string _living_cost_base_plan_stable_id = "subsistence_household";
+    int32_t _wage_ema_alpha_q16 = 8192;
+    int32_t _wage_max_rise_q16_per_day = 6554;
+    int32_t _wage_max_fall_q16_per_day = 1311;
+    int32_t _employee_profit_share_q16 = 16384;
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     int32_t _market_runtime_mode = 1; // 0=OFF, 1=PROBE, 2=ACTIVE.
@@ -471,6 +762,7 @@ private:
     int32_t _worker_tasks_hint = 0;
     int64_t _seed = 0;
     int64_t _catalog_hash = 0;
+    int64_t _catalog_compat_hash_v6 = 0;
     int64_t _epoch_id = 0;
     int64_t _sample_day = -1;
     int64_t _current_day = -1;
@@ -501,6 +793,8 @@ private:
     int64_t _rejected_commands = 0;
     int64_t _merchant_repairs = 0;
     int64_t _price_cap_hits = 0;
+    int64_t _price_cost_anchor_hits = 0;
+    int64_t _price_inactive_reversions = 0;
     int64_t _continuation_slices = 0;
     int64_t _processed_building_groups = 0;
     int64_t _filled_owner_jobs = 0;
@@ -511,10 +805,59 @@ private:
     int64_t _production_output_stock = 0;
     int64_t _production_output_discarded = 0;
     int64_t _producer_revenue = 0;
+	int64_t _anchored_money_issued = 0;
+	int64_t _gold_accepted = 0;
+	int64_t _silver_accepted = 0;
+	int64_t _gold_money_issued = 0;
+	int64_t _silver_money_issued = 0;
+	int64_t _cycle_flow_produced = 0;
+	int64_t _cycle_flow_consumed = 0;
+	int64_t _cycle_flow_discarded = 0;
     int64_t _building_wages_paid = 0;
     int64_t _building_wages_unpaid = 0;
+    int64_t _building_base_wages_paid = 0;
+    int64_t _building_base_wages_due = 0;
+    int64_t _building_bonus_paid = 0;
+    int64_t _building_bonus_due = 0;
+    int64_t _wage_suspended_building_groups = 0;
+    int64_t _labor_signal_updates = 0;
+    int64_t _building_resource_generated = 0;
+    int64_t _building_resource_consumed = 0;
+    int64_t _building_resource_limited_groups = 0;
+    int64_t _unprofitable_building_groups = 0;
+    int64_t _zero_utilization_building_groups = 0;
+    int64_t _utilization_sum_q16 = 0;
+    int64_t _market_signal_updates = 0;
+    int64_t _building_resource_capacity_checks = 0;
+    int64_t _building_resource_capacity_limited_groups = 0;
     std::string _last_building_rejection_reason;
     int32_t _worker_tasks = 1;
+
+    int32_t _trace_mode = TRACE_SELECTIVE;
+    int64_t _trace_memory_budget = 32LL * 1024 * 1024;
+    int32_t _trace_retention_epochs = 8;
+    int64_t _trace_detail_epoch_budget = 8LL * 1024 * 1024;
+    int32_t _trace_poll_max_events = 4096;
+    std::vector<uint8_t> _trace_cell_mask;
+    std::vector<uint8_t> _pending_trace_cell_mask;
+    bool _trace_filter_pending = false;
+    int32_t _inspector_trace_cell = -1;
+    int32_t _pending_inspector_trace_cell = -1;
+    bool _inspector_trace_pending = false;
+    EventBatch _staging_events;
+    std::deque<EventBatch> _committed_event_batches;
+    std::deque<AuditFrame> _audit_history;
+    std::unordered_map<std::string, int64_t> _event_consumer_ack;
+    int64_t _next_event_id = 1;
+    int64_t _event_evicted_count = 0;
+    int64_t _first_evicted_event_id = 0;
+    int64_t _trace_detail_truncated = 0;
+    int64_t _trace_uncommitted_discarded = 0;
+    uint64_t _event_stream_hash = 1469598103934665603ULL;
+    double _event_summary_ms = 0.0;
+    double _event_detail_ms = 0.0;
+    double _event_publish_ms = 0.0;
+    EventArchiveState _event_archive;
 
     double _formula_ms = 0.0;
     double _clear_ms = 0.0;
@@ -526,12 +869,18 @@ private:
     double _publish_ms = 0.0;
     double _employment_ms = 0.0;
     double _production_ms = 0.0;
+    double _building_plan_ms = 0.0;
+    double _market_signal_ms = 0.0;
+    double _wage_plan_ms = 0.0;
+    double _labor_signal_ms = 0.0;
 
     AuditTotals _opening_totals;
     AuditTotals _closing_totals;
     AuditTotals _publish_accum;
     PopulationStore _population;
     MarketStore _market;
+    MarketSignalStore _market_signals;
+    LaborMarketStore _labor_signals;
     std::vector<FormulaDefinition> _formulas;
     std::unordered_map<std::string, int32_t> _formula_by_id;
     std::vector<Signature> _signatures;
@@ -558,9 +907,21 @@ private:
     std::vector<int32_t> _good_target_inventory_days_q16;
     std::vector<int32_t> _good_inventory_weight_q16;
     std::vector<int32_t> _good_shortage_weight_q16;
+    std::vector<int32_t> _good_excess_demand_weight_q16;
+    std::vector<int32_t> _good_cost_anchor_weight_q16;
+    std::vector<int32_t> _good_inactive_reversion_weight_q16;
+    std::vector<int32_t> _good_business_demand_ema_alpha_q16;
+    std::vector<int32_t> _good_supply_ema_alpha_q16;
+    std::vector<int32_t> _good_cost_ema_alpha_q16;
     std::vector<int32_t> _good_max_price_rise_q16;
     std::vector<int32_t> _good_max_price_fall_q16;
     std::vector<int32_t> _good_merchant_buy_factor_q16;
+	std::vector<std::string> _good_category_ids;
+	std::vector<int32_t> _good_storage_modes;
+	std::vector<int64_t> _good_monetary_issue_values;
+	std::vector<int32_t> _cycle_flow_good_ids;
+	std::vector<int32_t> _good_technology_tag_offsets;
+	std::vector<std::string> _good_technology_tags;
     std::vector<int32_t> _merchant_primary_slot;
     std::vector<int32_t> _merchant_offsets;
     std::vector<int32_t> _merchant_slots;
@@ -574,6 +935,8 @@ private:
     std::vector<uint8_t> _building_vegetation;
     std::vector<uint8_t> _building_is_water;
     std::vector<uint8_t> _building_has_river;
+    std::vector<int32_t> _building_neighbors;
+    std::vector<uint8_t> _resource_adjacent_access;
     std::vector<int64_t> _resource_snapshot;
     std::vector<int64_t> _resource_remaining;
     std::vector<int64_t> _resource_deltas;
@@ -595,19 +958,35 @@ private:
     int64_t _structural_funds_to_treasury = 0;
 
     std::vector<std::string> _building_type_ids;
+	std::vector<int32_t> _building_kinds;
+	std::vector<int32_t> _building_technology_tag_offsets;
+	std::vector<std::string> _building_technology_tags;
     std::vector<BuildingType> _building_types;
     std::vector<JobRole> _building_employee_roles;
     std::vector<GoodAmount> _building_construction_goods;
     std::vector<GoodAmount> _building_inputs;
     std::vector<GoodAmount> _building_outputs;
+    std::vector<int32_t> _building_output_cost_shares_q16;
     std::vector<ResourceAmount> _building_resources;
+    std::vector<ResourceAmount> _building_resource_generation;
     std::vector<ConditionToken> _building_conditions;
     std::vector<BuildingGroup> _buildings;
     std::vector<int32_t> _building_cell_offsets;
     std::vector<int32_t> _building_active_cells;
     std::vector<int64_t> _building_employee_filled;
+    std::vector<int64_t> _building_role_contract_wage;
+    std::vector<int64_t> _building_role_base_living_cost;
+    std::vector<int64_t> _building_role_living_cost;
+    std::vector<int64_t> _building_role_local_average_wage;
+    std::vector<int64_t> _building_role_base_wage_due;
+    std::vector<int64_t> _building_role_base_wage_paid;
+    std::vector<int64_t> _building_role_bonus_due;
+    std::vector<int64_t> _building_role_bonus_paid;
     std::vector<PendingConstruction> _pending_construction;
     int64_t _building_catalog_hash = 0;
+    int64_t _building_catalog_compat_hash_v6 = 0;
+    int64_t _building_catalog_compat_hash_v7 = 0;
+    int64_t _catalog_compat_hash_v7 = 0;
 
     SaveState _save;
     RestoreState _restore;
@@ -626,17 +1005,40 @@ private:
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell, std::string &error);
     bool run_building_production_cell(int32_t cell, std::string &error);
+    int32_t gather_resource_cells(int32_t cell, int32_t access_mode,
+                                  int32_t *out_cells, int32_t capacity) const;
+    int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
+    void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
     void commit_ready_construction();
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
+    void rebuild_market_signals();
+    void rebuild_labor_signals();
+    int32_t labor_signal_index(int32_t cell, int32_t profession) const;
+    int64_t living_cost_for_signature(int32_t cell, int32_t signature_id,
+                                      int32_t plan_override, int64_t &sat) const;
+    void compute_cell_living_costs_from_basis(
+        int32_t cell, const std::vector<int64_t> &variant_scores,
+        const std::vector<int64_t> &variant_prices,
+        const std::vector<int64_t> &need_score_sums,
+        const std::vector<int64_t> &need_environment, int64_t &sat);
+    bool prepare_cell_wages(int32_t cell, std::string &error);
+    void update_cell_labor_signals(int32_t cell);
+    bool prepare_building_economic_plan(std::string &error);
+    int32_t market_signal_index(int32_t cell, int32_t good) const;
+    PricePressure price_pressure(int32_t market, int32_t good, int64_t household_demand,
+                                 int64_t stock, int64_t shortage_q16,
+                                 int32_t signal_index, int64_t &saturation_count) const;
     int32_t find_building_group(int32_t cell, int32_t type_id,
                                 int32_t owner_signature_id) const;
     int32_t find_cohort_slot(int32_t cell, int32_t signature_id) const;
-    int64_t credit_local_merchants(int32_t cell, int64_t amount);
-    int64_t debit_local_merchants(int32_t cell, int64_t amount);
-    int64_t pay_building_wages(int32_t cell, int32_t owner_slot,
-                               int32_t profession_id, int64_t filled_jobs,
-                               int64_t wage_per_employee_per_day);
+    int64_t credit_local_merchants(int32_t cell, int64_t amount,
+                                   int32_t cashflow_source = CASHFLOW_MERCHANT_BUSINESS);
+    int64_t debit_local_merchants(int32_t cell, int64_t amount,
+                                  int32_t cashflow_source = CASHFLOW_MERCHANT_PROCUREMENT);
+    int64_t pay_building_wage_amount(int32_t cell, int32_t owner_slot,
+                                     int32_t profession_id, int64_t filled_jobs,
+                                     int64_t due, int64_t payment_cap);
     void fail(const std::string &reason);
     void clear_epoch_metrics();
     void rebuild_committed_summaries();
@@ -691,6 +1093,24 @@ private:
                                             int64_t &saturation_count);
 
     bool decode_restore_chunk(const std::vector<uint8_t> &bytes, std::string &error);
+
+    bool trace_detail_for_cell(int32_t cell) const;
+    void trace_record_cashflow(int32_t cell, uint64_t cohort_handle, int32_t source,
+                               int64_t income, int64_t expense);
+    void trace_reconcile_inspector_cashflows();
+    void trace_begin_epoch();
+    void trace_append(int32_t kind, int32_t stage, int32_t cell,
+                      int32_t subject_kind, int64_t subject_id,
+                      int32_t subject_i0, int32_t subject_i1,
+                      int64_t value0, int64_t value1, int64_t value2,
+                      int64_t value3, const std::vector<EventLeg> *legs = nullptr,
+                      int32_t flags = 0);
+    void trace_commit_epoch(int64_t population_error, int64_t money_error,
+                            int64_t goods_error);
+    void trace_abort_epoch();
+    void trace_evict_to_budget();
+    int64_t trace_memory_bytes() const;
+    static uint64_t trace_hash_mix(uint64_t hash, uint64_t value);
 };
 
 } // namespace pk

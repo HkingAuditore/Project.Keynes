@@ -82,6 +82,12 @@ demand_ema[market, good]        i64
 last_shortage_q16[market, good] u16
 ```
 
+Building-derived price inputs use a separate sparse, sorted `MarketSignalStore` keyed by
+`(cell, good)` and containing `business_demand_ema`, `offered_supply_ema`, and `cost_anchor_price`.
+Its key set is the union of current building input/output edges. Rebuild it only when building role
+storage changes, preserving values for stable keys; do not add these columns to the dense market
+matrix or DataCore.
+
 All merchant cohorts in the cell jointly own stock. The market has no cash account. Allocate sales
 revenue among merchants by merchant population with stable prefix quotients. Merchants consume like
 other cohorts.
@@ -111,6 +117,7 @@ latency as the cycle length.
 Coarse public API:
 
 - configure/bootstrap/submit commands/should run/run slice/report/reset
+- lightweight population cell summary for the Inspector header
 - population and market cell snapshots
 - begin/read/end save
 - begin/feed/end restore
@@ -118,7 +125,10 @@ Coarse public API:
 
 Do not add per-cohort setters.
 
-`get_population_cell_snapshot(cell)` also emits a cold-path cohort-major CSR demand preview:
+The Inspector opens with `get_population_cell_summary(cell)`, which returns only aggregate population,
+funds, income/expense, cohort count, and satisfaction. Full population, market, building, and natural
+resource detail is queried lazily for the visible tab. `get_population_cell_snapshot(cell)` also emits
+a cold-path cohort-major CSR demand preview:
 
 ```text
 demand_good_offsets       cohort_count + 1
@@ -133,9 +143,11 @@ saturation is reported but does not mutate runtime metrics or the deterministic 
 
 ## 6. Save and visibility
 
-PKEC schema v2 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
-commands, end. Save only at a committed boundary. The header stores numeric scales, catalog identity,
-cycle length, committed day, environment identity, treasury, and submit sequence.
+PKEC schema v8 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
+commands, buildings, construction, audit history, sparse market/labor signals, end. Save only at a
+committed boundary. The header stores numeric scales, catalog identity, cycle length, committed day,
+environment identity, treasury, submit sequence, and section counts. v2-v7 remain readable through
+explicit defaults and version-compatible catalog hashes.
 
 During `household_market`, `structural_commit`, or `wait_commit`, save and gameplay systems must not
 observe internal mutation. The selected-cell Inspector is the bounded exception: synchronous native
@@ -144,10 +156,12 @@ queries between slices return complete current population, market, and building 
 `snapshot_source=committed`. Queries are read-only, never expose a global live matrix, and never show
 a normal "details pending" UI state.
 
-The optional world-setup test bootstrap is OFF by default. When explicitly enabled it creates four
-compressed farm/workshop/estate/stall owner-lots on passable land first, derives profession cohorts
-from their compiled owner/employee job capacity, then fills thirty days of stock for the resulting
-population. It is a development fixture, not a production historical population provider.
+The optional world-setup test bootstrap is OFF by default. When explicitly enabled it gives every
+passable settlement a distribution center, places collectors only where local resource reserves can
+support their recipes, and distributes each industrial type across a bounded deterministic subset
+of cells while preferring local upstream outputs. It derives profession cohorts only from the
+resulting local owner/employee job capacity, then fills thirty days of stock. This is a development
+fixture, not a production historical population provider or a trade model.
 
 ## 7. Source map
 
@@ -159,6 +173,15 @@ population. It is a development fixture, not a production historical population 
 - Content: `data/economy/`, `data/goods/`
 - UI: `scripts/ui/cell_inspector_view_model.gd`
 - Focused tests: `tests/goods_storage_schema_test.gd`, `economy_runtime_bench.gd`
+
+### Inspector settlement cashflow
+
+In `SELECTIVE` mode the player Inspector owns a separate single-cell trace target through
+`set_economy_inspector_trace_cell(cell)`. It is unioned with, and never overwrites, the debug trace
+filter. The next committed batch stores sparse per-cohort cashflow sources for that cell. Population
+snapshots expose the committed period metadata plus CSR source indices and income/expense amounts.
+This cache is bounded by event retention, excluded from PKEC save and the economy state hash, and
+reports `settlement_detail_pending` until the first traced commit.
 ## Building authority (PKEC v3)
 
 `NativeEconomyRuntime` also owns sparse building owner-lots, pending construction, committed role
@@ -166,3 +189,7 @@ fills, and per-cohort owner/employee employment counts. Keep `(cell, signature)`
 ownership stores the sponsor's stable signature identity rather than adding employer to signatures.
 Buildings stay outside MapData/HexCell/component slots. The bridge only samples geographic/resource
 slots and publishes resource extraction through `extra_change`.
+
+PKEC v8 extends owner-lot/role state with adaptive contract wages, living-cost and local-wage
+anchors, base/bonus settlement and wage suspension. These fields, v7 building economics, and sparse
+market/labor signals are authoritative deterministic state in save round-trip and hashing.

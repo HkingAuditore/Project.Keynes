@@ -34,3 +34,6 @@ init_landform_weights = {
 14: 250000.0,
 15: 225000.0
 }
+geology_family_id = &"mafic"
+init_province = 160000.0
+init_belt = 170000.0

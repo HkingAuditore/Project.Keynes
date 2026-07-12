@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"silica_sand_collector"
+display_name = "硅砂采集设施"
+building_kind = "collector"
+technology_tags = PackedStringArray("industry.primary")
+construction_days = 0
+owner_profession_id = &"industrialist"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("miner")
+employee_slots_per_building = PackedInt64Array(20)
+input_good_ids = PackedStringArray("tools", "explosives", "electricity")
+input_quantities_per_day = PackedInt64Array(1000, 1000, 1000)
+output_good_ids = PackedStringArray("silica_sand")
+output_quantities_per_day = PackedInt64Array(10000)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = PackedStringArray("silica_sand")
+resource_quantities_per_day = PackedInt64Array(10000)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "consume_local_resources"
+wage_policy_id = "adaptive"
+wage_per_employee_per_day = 5000

@@ -1,23 +1,29 @@
 [gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
-
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
-
 [resource]
 script = ExtResource("1")
 id = &"textile_workshop"
-display_name = "纺织工坊"
+display_name = "布料工厂"
+building_kind = "industrial"
+technology_tags = PackedStringArray("industry.textile")
+construction_days = 0
 owner_profession_id = &"landlord"
 owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray("worker")
 employee_slots_per_building = PackedInt64Array(20)
-input_good_ids = PackedStringArray("grain")
-input_quantities_per_day = PackedInt64Array(2000)
+input_good_ids = PackedStringArray("textile")
+input_quantities_per_day = PackedInt64Array(1000)
 output_good_ids = PackedStringArray("cloth")
-output_quantities_per_day = PackedInt64Array(8000)
-wage_policy_id = "fixed"
+output_quantities_per_day = PackedInt64Array(10000)
+target_operating_margin_q16 = 9830
+supply_price_elasticity_q16 = 65536
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "none"
+wage_policy_id = "adaptive"
 wage_per_employee_per_day = 5000
-condition_opcodes = PackedInt32Array(1)
-condition_signals = PackedInt32Array(8)
-condition_compares = PackedInt32Array(0)
-condition_reference_ids = PackedStringArray("")
-condition_values = PackedInt64Array(0)

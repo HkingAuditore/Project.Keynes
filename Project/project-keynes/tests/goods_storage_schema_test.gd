@@ -19,9 +19,23 @@ func _run() -> void:
 		print(catalog)
 		_finish()
 		return
-	_expect("goods sorted with cloth", catalog.good_ids == PackedStringArray(["cloth", "coal", "fur", "grain", "mutton"]))
+	_expect("modern goods catalog is sorted and retains legacy stable ids",
+		(catalog.good_ids as PackedStringArray).size() >= 120 and
+		(catalog.good_ids as PackedStringArray).has("cloth") and
+		(catalog.good_ids as PackedStringArray).has("coal") and
+		(catalog.good_ids as PackedStringArray).has("fur") and
+		(catalog.good_ids as PackedStringArray).has("grain") and
+		(catalog.good_ids as PackedStringArray).has("mutton"))
 	_expect("merchant profession compiles", (catalog.profession_ids as PackedStringArray).has("merchant"))
-	_expect("market v2 needs compile", (catalog.need_ids as PackedStringArray) == PackedStringArray(["clothing", "food", "protein"]))
+	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 15 and
+		(catalog.need_ids as PackedStringArray).has("staple_food") and
+		(catalog.need_ids as PackedStringArray).has("healthcare"))
+	var living_weights: PackedInt32Array = catalog.need_living_cost_weights_q16
+	var need_ids: PackedStringArray = catalog.need_ids
+	_expect("living cost weights classify essential consumer and luxury needs",
+		int(living_weights[need_ids.find("staple_food")]) == 65536 and
+		int(living_weights[need_ids.find("communication")]) == 32768 and
+		int(living_weights[need_ids.find("luxury")]) == 0)
 	_expect("old fur slot removed", DCComponentSchema.find_by_name(&"cell.goods_fur_qty").is_empty())
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("  [SKIP] DCWorldExt unavailable")
@@ -29,6 +43,7 @@ func _run() -> void:
 		return
 	_test_default_active_gate(catalog)
 	_test_merchant_trade_and_save(catalog)
+	_test_economy_event_trace(catalog)
 	_test_environment_substitution(catalog)
 	_test_demand_preview_query(catalog)
 	_test_cycle_approximation(catalog)
@@ -97,22 +112,82 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("market has no anonymous cash", not after_market.has("market_cash"))
 
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("v3 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 3)
+	_expect("v8 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 8)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v3 save emits chunks", chunks.size() >= 6)
-	_expect("v3 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v8 save emits chunks", chunks.size() >= 9)
+	_expect("v8 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var restored: Object = _new_ext(1, 0.1)
 	_expect("restore target configures", bool(restored.configure_economy(catalog, profile, 1, 42).get("ok", false)))
 	_expect("restore begins", bool(restored.begin_economy_restore().get("ok", false)))
 	for chunk in chunks:
 		_expect("restore chunk accepted", bool(restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
-	_expect("v3 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
+	_expect("v8 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
+
+func _test_economy_event_trace(compiled: Dictionary) -> void:
+	var ext: Object = _new_ext(1, 0.2)
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	var profile := _native_profile(false, 64)
+	_expect("event trace configures", bool(ext.configure_economy(catalog, profile, 1, 4242).get("ok", false)))
+	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
+	_expect("event trace bootstraps", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([worker_sig]),
+		"population": PackedInt64Array([20]),
+		"funds": PackedInt64Array([2000000]),
+	}, {}).get("ok", false)))
+	_expect("trace filter accepted", bool(ext.set_economy_trace_filter({
+		"cells": PackedInt32Array([0])}).get("ok", false)))
+	var schema: Dictionary = ext.get_economy_event_schema()
+	var kinds: Dictionary = schema.get("kinds", {})
+	_expect("economy event schema exposes market and epoch kinds",
+		int(kinds.get("MARKET_SETTLED", 0)) > 0 and int(kinds.get("EPOCH_COMMITTED", 0)) > 0)
+	var goods: PackedStringArray = compiled.good_ids
+	ext.submit_economy_commands(_stock_commands(0, goods, {
+		"grain": 100000, "mutton": 50000, "cloth": 50000, "fur": 50000}, 0))
+	_expect("in-flight event journal remains private", int(ext.poll_economy_events({
+		"consumer_id": &"trace_test", "max_events": 128}).get("count", -1)) == 0)
+	var report := _run_day(ext, 0)
+	_expect("event epoch commits without changing audits", bool(report.get("done", false)) and
+		int(report.get("population_error", 1)) == 0 and int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+	var batch: Dictionary = ext.poll_economy_events({
+		"consumer_id": &"trace_test", "max_events": 128})
+	var state_after_commit: int = ext.get_economy_state_hash()
+	var event_kinds: PackedInt32Array = batch.get("kind", PackedInt32Array())
+	_expect("committed batch contains command market and epoch events",
+		event_kinds.has(int(kinds.get("COMMAND_SETTLED", -1))) and
+		event_kinds.has(int(kinds.get("MARKET_SETTLED", -1))) and
+		event_kinds.has(int(kinds.get("EPOCH_COMMITTED", -1))))
+	_expect("selected cell emits exact delta legs",
+		(batch.get("leg_field", PackedInt32Array()) as PackedInt32Array).size() > 0)
+	var last_event: int = int(batch.get("last_event_id", 0))
+	ext.ack_economy_events(&"trace_test", last_event)
+	_expect("consumer ack advances independently", int(ext.poll_economy_events({
+		"consumer_id": &"trace_test", "max_events": 128}).get("count", -1)) == 0)
+	var trace_report: Dictionary = ext.get_economy_trace_report()
+	_expect("trace report is bounded and untruncated", int(trace_report.get("memory_bytes", 0)) <=
+		int(trace_report.get("memory_budget_bytes", 0)) and
+		int(trace_report.get("detail_truncated_count", 1)) == 0 and
+		int(trace_report.get("stream_hash", 0)) != 0)
+	var archive_begin: Dictionary = ext.begin_economy_event_archive(65536)
+	var archive_chunks := 0
+	if bool(archive_begin.get("ok", false)):
+		while true:
+			var archive_chunk: PackedByteArray = ext.read_economy_event_archive_chunk(65536)
+			if archive_chunk.is_empty():
+				break
+			archive_chunks += 1
+	_expect("PKEJ archive streams header events and end", bool(archive_begin.get("ok", false)) and
+		archive_chunks >= 3 and bool(ext.end_economy_event_archive().get("ok", false)))
+	_expect("event queries do not mutate economy state", state_after_commit != 0 and
+		ext.get_economy_state_hash() == state_after_commit)
 
 func _test_environment_substitution(compiled: Dictionary) -> void:
 	var cold: Object = _configured_single_worker(compiled, 0.0, 77)
@@ -287,6 +362,9 @@ func _test_worker_scalar_equivalence(compiled: Dictionary) -> void:
 	var worker_report := _run_day(worker, 0)
 	_expect("worker path dispatches multiple tasks", int(worker_report.get("worker_tasks", 1)) > 1)
 	_expect("worker and scalar market v2 hashes match", scalar.get_economy_state_hash() == worker.get_economy_state_hash())
+	_expect("worker and scalar economy event hashes match",
+		int(scalar.get_economy_trace_report().get("stream_hash", 0)) ==
+		int(worker.get_economy_trace_report().get("stream_hash", 1)))
 
 func _configured_single_worker(compiled: Dictionary, temperature: float, seed: int) -> Object:
 	var ext: Object = _new_ext(1, temperature)

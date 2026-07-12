@@ -109,6 +109,6 @@ claims remain only in explicit migration/history text.
 
 Add a sorted-ID `BuildingProfile` under `data/economy/buildings/`. Validate owner profession, role
 columns, construction/input/output goods, referenced natural resources, postfix construction
-condition stack, native behavior version, and a positive fixed wage for employee-bearing types. Building/save changes require
+condition stack, native behavior version, and a positive fixed/adaptive reference wage for employee-bearing roles. Building/save changes require
 PKEC v3 round-trip, employment conservation, merchant cash-cap/discard, resource delta, scalar hash,
 deadline, and large sparse-world performance tests.

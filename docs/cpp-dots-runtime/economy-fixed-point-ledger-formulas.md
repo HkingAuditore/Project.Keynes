@@ -1,4 +1,4 @@
-# Market V2 定点数、需求曲线与守恒账本
+# Market V2 / Price V3 定点数、需求曲线与守恒账本
 
 ## 数值 ABI
 
@@ -27,16 +27,20 @@ market stock -= actual component quantity
 同一交易内扣款和收入严格相等。显式命令支持 treasury transfer、mint、burn、库存
 增减、人口增减、迁移和换签名；V2 游戏行为只依赖显式库存增加，不生成商品或工资。
 
-BUILDING_GRAPH 在 Market V2 后追加固定工资转账：
+BUILDING_GRAPH 在 Market V2 后追加 role-level 自适应工资转账：
 
 ```text
-wage_due = filled_employee_jobs * wage_per_employee_per_day * epoch_days
-wage_paid = min(owner_funds, wage_due)
-owner funds/expense -=/+ wage_paid
-employee funds/income += stable_prefix_share(wage_paid)
+living_floor = max(local_base_living_cost, local_profession_living_cost)
+contract_wage = bounded_move(previous, max(living_floor, local_contract_wage_ema))
+base_due = filled_employee_jobs * contract_wage * epoch_days
+base_paid = proportional_owner_cash_share(base_due)
+owner funds/expense -=/+ base_paid
+employee funds/income += stable_prefix_share(base_paid)
 ```
 
-这是 cohort 间转账，既不改变总资金，也不进入 explicit mint/burn。
+同一 owner 资金不足时全部 role 比例支付且 owner-lot 本期停产。生产销售完成后，
+`25% * max(0, revenue - input - base_due - target_owner_profit)` 成为员工奖金池。
+基础工资与奖金都是 cohort 间转账，既不改变总资金，也不进入 explicit mint/burn。
 
 每次提交严格校验：
 
@@ -85,10 +89,28 @@ allocation_i = floor(prefix_i * available / total)
 
 ## 价格
 
-每个商品以 `period_demand/N` 更新需求 EMA；effective alpha 为
-`min(1, daily_alpha*N)`。价格压力考虑日均 EMA、库存覆盖与周期短缺率。先应用单日
-max rise/fall，再以 `daily_change*N` 做确定性一阶冻结积分，最后应用绝对 min/max。
-该算法避免对每个 market-good 做 N 次反馈或幂运算；误差由周期配置显式控制。
+每个商品以 `period_demand/N` 更新居民需求 EMA；effective alpha 为
+`min(1, daily_alpha*N)`。Price V3 的总需求是居民需求 EMA 与稀疏企业投入需求 EMA 之和；
+供给使用建筑实际 offer（含未成交丢弃）EMA。每个活跃 `(cell, good)` 只维护一条稀疏信号，
+不存在 `market×good×building` 稠密矩阵。
+
+```text
+excess = (total_demand - offered_supply) / max(GOODS_SCALE, total_demand + offered_supply)
+inventory = (target_inventory - stock) / max(GOODS_SCALE, target_inventory)
+cost = confidence * (cost_anchor - price) / max(cost_anchor, price)
+pressure = w_excess*excess + w_inventory*inventory + w_shortage*shortage
+         + w_cost*cost + w_idle*inactive_reversion
+elastic_pressure = pressure / demand_price_elasticity
+```
+
+成本锚来自冻结采样价下的实际投入替换成本与应付工资，按显式 output cost share 或参考产值份额
+分摊；金银法定发行品不使用零售成本锚。供给不足时成本锚置信度随供给降低，避免没有成交的
+理论成本强推价格。无需求、无供给、无库存的商品缓慢回归目录默认价。
+
+价格变化先应用 good-specific `price_adjust_q16` 与单日 max rise/fall，再以
+`daily_change*N` 做确定性一阶冻结积分，最后应用绝对 min/max。该算法避免对每个
+market-good 做 N 次反馈或幂运算；误差由版本化 `frozen_sample_adaptive_price_v2`
+近似契约显式控制。
 
 cohort income EMA 同样读取周期净收入日均值，effective alpha 为
 `min(1, N/8)`。`epoch_income/expense` 保存周期总额。
@@ -101,3 +123,28 @@ cohort income EMA 同样读取周期净收入日均值，effective alpha 为
 - 新 need/bundle：编辑 `NeedProfile`/`ConsumptionPlanProfile`，保证稳定 ID 与上限。
 - 新环境影响：新增 17 点 `EnvironmentDemandCurveProfile`，选择四种已捕获 signal。
 - 新 native 数学：增加 schema/version、golden、scalar/batch 等价和 microbench，并重编 DLL。
+
+`GoodProfile` 还必须校准需求价格弹性、超额需求/成本锚/闲置回归权重以及企业需求、供给、
+成本 EMA alpha。`BuildingProfile` 必须配置目标营业利润率与供给价格弹性；多产出配方只有在
+默认参考产值分摊不合适时才填写 `output_cost_shares_q16`，其总和必须严格等于 Q16_ONE。
+
+## 贵金属发行与周期流账本
+
+金银 producer offer 使用目录固定面值，而不是本地价格或 merchant funds：
+
+```text
+issued = floor(accepted_goods * monetary_issue_value / GOODS_SCALE)
+owner_funds += issued
+explicit_money_mint += issued
+market_stock += accepted_goods
+```
+
+只有 stable ID `gold`、`silver` 可配置正发行值。金银后续交易是普通 cohort 间转账，不再次
+mint。周期流物资在 utility prepass 进入 MarketStore，同周期工业输入照常计入
+`production_inputs_consumed`；周期末剩余量计入 `cycle_flow_discarded`，因此 goods 守恒为：
+
+```text
+closing_stock = opening_stock + explicit_stock_delta + accepted_output
+                - household_consumption - construction_inputs
+                - production_inputs - cycle_flow_discarded
+```

@@ -317,6 +317,11 @@ DCSystemScheduler
 - chunked detail apply 由 `HexRenderer._drain_detail_refresh_queue()` 在渲染帧中按 `detail_scatter_refresh_layers_per_frame` 推进；这是 Godot object/MultiMesh 提交，不应放进 C++ SUS job。
 - 诊断时把 `event_bus_ms` / native pass ms / `gd_chunk_apply_ms` 分开看：事件产生慢看 native stage，consumer lag 看 event bus report，chunk apply 慢看 `[detail_scatter/SLOW_LAYER] chunks=...`。
 
+经济事件遵守同一消费隔离，但详细记录留在 economy-owned journal：市场 worker 只生成本 market
+fragment，主线程按 market index 合并；`aggregate_publish` 守恒成功后才令 batch 可见。
+`EconomyDailySystem` 看到 `economy_event_batch_published=true` 后通知 facade handler，不增加
+depends、must_run 或 economy backpressure。consumer 落后只形成 lag/gap 诊断，不阻塞 WorldClock。
+
 ## Job descriptor 字段
 
 | 字段 | 含义 |
@@ -718,3 +723,14 @@ throughout (no budget bypass / logical drift).
 与自然资源 reserve reads，使 sample snapshot 排在 natural-resource 更新之后。建筑状态本身不是
 DC component。无建筑时 BUILDING_GRAPH 零成本跳过；有建筑时只调度 active-cell CSR，阶段名固定
 为 `building_employment`、`building_production`、`building_commit`。
+
+`building_production` 的外部 stage ABI 不变。PKEC v8 先按 owner 汇总并比例结算基础工资，
+欠薪 owner-lot 停产；其余建筑内部仍先运行产出
+`cycle_flow` 的 utility groups 并完成商人收购，再运行其余 collector/industrial groups，最后
+清空剩余 cycle-flow 库存。utility producer 禁止同时消费 cycle-flow，因而不引入递归依赖或
+新的 scheduler node；五日冻结、deadline barrier 和 continuation cursor 均保持原契约。
+
+`epoch_begin` 在进入就业阶段前按冻结样本生成 owner-lot 收入/成本诊断；生活成本与合同工资
+在 `building_employment` 的 active-cell slice 内计算。生产结束后才更新稀疏企业
+需求/供给/成本信号。Price V3 在本周期只读取上一 committed 信号，因此不新增图节点、跨阶段
+反向依赖或 DataCore 写边。

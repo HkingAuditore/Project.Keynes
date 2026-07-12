@@ -37,3 +37,6 @@ climate_moisture_opt = 0.75
 climate_moisture_tol = 0.45
 runtime_climate_fit_weight = 0.4
 decay_stress = 40.0
+geology_family_id = &"sedimentary"
+init_province = 45000.0
+init_belt = 25000.0

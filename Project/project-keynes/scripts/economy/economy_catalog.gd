@@ -26,14 +26,22 @@ static func compile_native_catalog() -> Dictionary:
 		return {"ok": false, "reason": "market v2 catalog is incomplete"}
 
 	var good_columns: Dictionary = GoodProfileRegistry.compile_native_columns()
+	if not bool(good_columns.get("ok", false)):
+		return good_columns
+	good_columns.erase("ok")
 	var good_ids: PackedStringArray = good_columns.good_ids
 	var good_index := _index_ids(good_ids)
 	if good_ids.is_empty():
 		return {"ok": false, "reason": "good catalog is empty"}
 
 	var need_ids := PackedStringArray()
+	var need_living_cost_weights := PackedInt32Array()
 	for need in needs:
+		var living_weight := int(need.living_cost_weight_q16)
+		if living_weight < 0 or living_weight > Q16_ONE:
+			return {"ok": false, "reason": "invalid living cost weight: %s" % String(need.id)}
 		need_ids.append(String(need.id))
+		need_living_cost_weights.append(living_weight)
 	if need_ids.size() > 32:
 		return {"ok": false, "reason": "global need count exceeds 32"}
 	var need_index := _index_ids(need_ids)
@@ -186,6 +194,7 @@ static func compile_native_catalog() -> Dictionary:
 		"profession_ids": profession_ids,
 		"ethnicity_ids": ethnicity_ids,
 		"need_ids": need_ids,
+		"need_living_cost_weights_q16": need_living_cost_weights,
 		"plan_ids": plan_ids,
 		"environment_curve_ids": curve_ids,
 		"environment_curve_signal_ids": curve_signal_ids,
@@ -216,12 +225,36 @@ static func compile_native_catalog() -> Dictionary:
 	}
 	for key in good_columns:
 		catalog[key] = good_columns[key]
+	var market_v7_columns := catalog.duplicate(true)
+	market_v7_columns.erase("need_living_cost_weights_q16")
+	var market_v6_columns := market_v7_columns.duplicate(true)
+	for key in [
+		"good_excess_demand_weight_q16", "good_cost_anchor_weight_q16",
+		"good_inactive_reversion_weight_q16", "good_business_demand_ema_alpha_q16",
+		"good_supply_ema_alpha_q16", "good_cost_ema_alpha_q16",
+	]:
+		market_v6_columns.erase(key)
+	var market_compat_hash_v6 := _catalog_hash(market_v6_columns)
 	catalog["market_catalog_hash"] = _catalog_hash(catalog)
-	var building_columns := _compile_building_columns(profession_index, good_index)
+	var building_columns := _compile_building_columns(
+		profession_index, good_index, good_columns.good_storage_modes)
 	if not bool(building_columns.get("ok", false)):
 		return building_columns
 	building_columns.erase("ok")
+	var building_v7_columns := building_columns.duplicate(true)
+	building_v7_columns.erase("building_employee_wage_policies")
+	building_v7_columns.erase("building_employee_reference_wages_per_day")
+	var building_v6_columns := building_v7_columns.duplicate(true)
+	for key in [
+		"building_target_operating_margin_q16", "building_supply_price_elasticity_q16",
+		"building_output_cost_share_offsets", "building_output_cost_shares_q16",
+	]:
+		building_v6_columns.erase(key)
 	catalog["building_catalog_hash"] = _catalog_hash(building_columns)
+	catalog["market_catalog_compat_hash_v6"] = market_compat_hash_v6
+	catalog["market_catalog_compat_hash_v7"] = _catalog_hash(market_v7_columns)
+	catalog["building_catalog_compat_hash_v6"] = _catalog_hash(building_v6_columns)
+	catalog["building_catalog_compat_hash_v7"] = _catalog_hash(building_v7_columns)
 	for key in building_columns:
 		catalog[key] = building_columns[key]
 	catalog["catalog_hash"] = _catalog_hash(catalog)
@@ -229,11 +262,13 @@ static func compile_native_catalog() -> Dictionary:
 	return catalog
 
 static func _compile_building_columns(profession_index: Dictionary,
-		good_index: Dictionary) -> Dictionary:
+		good_index: Dictionary, good_storage_modes: PackedInt32Array) -> Dictionary:
 	var profiles := _load_resources(BUILDING_DIR)
 	var used_resource_ids := {}
 	for profile in profiles:
 		for resource_id in profile.resource_ids:
+			used_resource_ids[String(resource_id)] = true
+		for resource_id in profile.resource_generation_ids:
 			used_resource_ids[String(resource_id)] = true
 		for i in range(profile.condition_signals.size()):
 			if int(profile.condition_signals[i]) == 10 and i < profile.condition_reference_ids.size():
@@ -264,9 +299,16 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var construction_days := PackedInt32Array()
 	var behavior_ids := PackedInt32Array()
 	var behavior_versions := PackedInt32Array()
+	var target_operating_margins := PackedInt32Array()
+	var supply_price_elasticities := PackedInt32Array()
+	var building_kinds := PackedInt32Array()
+	var technology_tag_offsets := PackedInt32Array([0])
+	var technology_tags := PackedStringArray()
 	var employee_offsets := PackedInt32Array([0])
 	var employee_professions := PackedInt32Array()
 	var employee_slot_counts := PackedInt64Array()
+	var employee_wage_policies := PackedInt32Array()
+	var employee_reference_wages := PackedInt64Array()
 	var construction_offsets := PackedInt32Array([0])
 	var construction_goods := PackedInt32Array()
 	var construction_quantities := PackedInt64Array()
@@ -276,9 +318,17 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var output_offsets := PackedInt32Array([0])
 	var output_goods := PackedInt32Array()
 	var output_quantities := PackedInt64Array()
+	var output_cost_share_offsets := PackedInt32Array([0])
+	var output_cost_shares := PackedInt32Array()
 	var production_resource_offsets := PackedInt32Array([0])
 	var production_resources := PackedInt32Array()
 	var production_resource_quantities := PackedInt64Array()
+	var production_resource_modes := PackedInt32Array()
+	var production_resource_access_modes := PackedInt32Array()
+	var generation_resource_offsets := PackedInt32Array([0])
+	var generation_resources := PackedInt32Array()
+	var generation_resource_quantities := PackedInt64Array()
+	var generation_floor_q16 := PackedInt32Array()
 	var condition_offsets := PackedInt32Array([0])
 	var condition_opcodes := PackedInt32Array()
 	var condition_signals := PackedInt32Array()
@@ -290,34 +340,71 @@ static func _compile_building_columns(profession_index: Dictionary,
 		var stable_id := String(profile.id)
 		var owner_id := String(profile.owner_profession_id)
 		if stable_id == "" or type_ids.has(stable_id) or not profession_index.has(owner_id) \
-				or int(profile.owner_slots_per_building) <= 0 or int(profile.construction_days) < 0:
+				or int(profile.owner_slots_per_building) != 1 or int(profile.construction_days) < 0:
 			return {"ok": false, "reason": "invalid building type: %s" % stable_id}
+		var building_kind := String(profile.building_kind)
+		if building_kind not in ["collector", "industrial"]:
+			return {"ok": false, "reason": "invalid building kind: %s" % stable_id}
+		building_kinds.append(0 if building_kind == "collector" else 1)
+		for tag in profile.technology_tags:
+			if String(tag).strip_edges() == "":
+				return {"ok": false, "reason": "empty building technology tag: %s" % stable_id}
+			technology_tags.append(String(tag))
+		technology_tag_offsets.append(technology_tags.size())
 		var wage_policy := String(profile.wage_policy_id)
 		var wage_per_employee := int(profile.wage_per_employee_per_day)
-		if wage_policy != "none" and wage_policy != "fixed":
+		if wage_policy not in ["none", "fixed", "adaptive"]:
 			return {"ok": false, "reason": "unsupported building wage policy: %s" % stable_id}
 		if wage_per_employee < 0 or (wage_policy == "none" and wage_per_employee != 0):
 			return {"ok": false, "reason": "invalid building wage: %s" % stable_id}
 		type_ids.append(stable_id)
 		owner_professions.append(int(profession_index[owner_id]))
 		owner_slots.append(int(profile.owner_slots_per_building))
-		wages_per_employee_per_day.append(wage_per_employee if wage_policy == "fixed" else 0)
+		wages_per_employee_per_day.append(wage_per_employee if wage_policy != "none" else 0)
 		construction_days.append(int(profile.construction_days))
-		behavior_ids.append(1 if String(profile.behavior_id) == "consume_local_resources" else 0)
+		var behavior_id := String(profile.behavior_id)
+		if behavior_id not in ["none", "consume_local_resources", "cultivate_local_resources"]:
+			return {"ok": false, "reason": "unsupported building behavior: %s" % stable_id}
+		behavior_ids.append(2 if behavior_id == "cultivate_local_resources" else (
+			1 if behavior_id == "consume_local_resources" else 0))
 		behavior_versions.append(int(profile.behavior_version))
+		var target_margin := int(profile.target_operating_margin_q16)
+		var supply_elasticity := int(profile.supply_price_elasticity_q16)
+		if target_margin < 0 or target_margin > 262144 \
+				or supply_elasticity < 0 or supply_elasticity > 262144:
+			return {"ok": false, "reason": "invalid building price response: %s" % stable_id}
+		target_operating_margins.append(target_margin)
+		supply_price_elasticities.append(supply_elasticity)
+		var generation_floor := int(profile.resource_generation_floor_q16)
+		if generation_floor < 0 or generation_floor > Q16_ONE:
+			return {"ok": false, "reason": "invalid building resource generation floor: %s" % stable_id}
+		generation_floor_q16.append(generation_floor)
 
 		var role_ids: PackedStringArray = profile.employee_profession_ids
 		var role_slots: PackedInt64Array = profile.employee_slots_per_building
+		var role_wage_policies: PackedStringArray = profile.employee_wage_policy_ids
+		var role_reference_wages: PackedInt64Array = profile.employee_reference_wages_per_day
 		if role_ids.size() != role_slots.size():
 			return {"ok": false, "reason": "building employee columns mismatch: %s" % stable_id}
-		if not role_ids.is_empty() and (wage_policy != "fixed" or wage_per_employee <= 0):
-			return {"ok": false, "reason": "employee building requires fixed wage: %s" % stable_id}
+		if not role_wage_policies.is_empty() and role_wage_policies.size() != role_ids.size():
+			return {"ok": false, "reason": "building role wage policies mismatch: %s" % stable_id}
+		if not role_reference_wages.is_empty() and role_reference_wages.size() != role_ids.size():
+			return {"ok": false, "reason": "building role reference wages mismatch: %s" % stable_id}
+		if not role_ids.is_empty() and role_wage_policies.is_empty() \
+				and (wage_policy == "none" or wage_per_employee <= 0):
+			return {"ok": false, "reason": "employee building requires wage policy: %s" % stable_id}
 		for i in range(role_ids.size()):
 			var profession_id := String(role_ids[i])
-			if not profession_index.has(profession_id) or int(role_slots[i]) <= 0:
+			var role_policy := String(role_wage_policies[i]) if not role_wage_policies.is_empty() else wage_policy
+			var role_reference := int(role_reference_wages[i]) if not role_reference_wages.is_empty() else wage_per_employee
+			if not profession_index.has(profession_id) or int(role_slots[i]) <= 0 \
+					or role_policy not in ["none", "fixed", "adaptive"] \
+					or role_reference < 0 or (role_policy != "none" and role_reference <= 0):
 				return {"ok": false, "reason": "invalid building employee role: %s" % stable_id}
 			employee_professions.append(int(profession_index[profession_id]))
 			employee_slot_counts.append(int(role_slots[i]))
+			employee_wage_policies.append(0 if role_policy == "none" else (1 if role_policy == "fixed" else 2))
+			employee_reference_wages.append(role_reference)
 		employee_offsets.append(employee_professions.size())
 
 		var error := _append_building_goods(profile.construction_good_ids,
@@ -333,18 +420,75 @@ static func _compile_building_columns(profession_index: Dictionary,
 			profile.output_quantities_per_day, good_index, output_goods, output_quantities)
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
 		output_offsets.append(output_goods.size())
+		var configured_cost_shares: PackedInt32Array = profile.output_cost_shares_q16
+		if not configured_cost_shares.is_empty():
+			if configured_cost_shares.size() != profile.output_good_ids.size():
+				return {"ok": false, "reason": "building output cost shares mismatch: %s" % stable_id}
+			var share_total := 0
+			for share in configured_cost_shares:
+				if int(share) < 0:
+					return {"ok": false, "reason": "negative building output cost share: %s" % stable_id}
+				share_total += int(share)
+				output_cost_shares.append(int(share))
+			if share_total != Q16_ONE:
+				return {"ok": false, "reason": "building output cost shares must sum to Q16: %s" % stable_id}
+		output_cost_share_offsets.append(output_cost_shares.size())
+		if profile.output_good_ids.is_empty():
+			return {"ok": false, "reason": "building has no output: %s" % stable_id}
+		var produces_cycle_flow := false
+		var consumes_cycle_flow := false
+		for good_id in profile.output_good_ids:
+			produces_cycle_flow = produces_cycle_flow or int(
+				good_storage_modes[int(good_index[String(good_id)])]) == 1
+		for good_id in profile.input_good_ids:
+			consumes_cycle_flow = consumes_cycle_flow or int(
+				good_storage_modes[int(good_index[String(good_id)])]) == 1
+		if produces_cycle_flow and consumes_cycle_flow:
+			return {"ok": false, "reason": "cycle-flow producer consumes cycle flow: %s" % stable_id}
 
 		var prod_ids: PackedStringArray = profile.resource_ids
 		var prod_qty: PackedInt64Array = profile.resource_quantities_per_day
-		if prod_ids.size() != prod_qty.size():
+		var prod_modes: PackedStringArray = profile.resource_interaction_modes
+		var prod_access: PackedStringArray = profile.resource_access_modes
+		if prod_ids.size() != prod_qty.size() or prod_ids.size() != prod_modes.size() \
+				or prod_ids.size() != prod_access.size():
 			return {"ok": false, "reason": "building resource columns mismatch: %s" % stable_id}
 		for i in range(prod_ids.size()):
 			var resource_id := String(prod_ids[i])
-			if not resource_index.has(resource_id) or int(prod_qty[i]) <= 0:
+			var interaction_mode := String(prod_modes[i])
+			var access_mode := String(prod_access[i])
+			if not resource_index.has(resource_id) or int(prod_qty[i]) <= 0 \
+					or interaction_mode not in ["extract", "capacity"] \
+					or access_mode not in ["local", "local_and_adjacent"]:
 				return {"ok": false, "reason": "invalid building production resource: %s" % stable_id}
 			production_resources.append(int(resource_index[resource_id]))
 			production_resource_quantities.append(int(prod_qty[i]))
+			production_resource_modes.append(0 if interaction_mode == "extract" else 1)
+			production_resource_access_modes.append(0 if access_mode == "local" else 1)
 		production_resource_offsets.append(production_resources.size())
+		if building_kind == "collector" and prod_ids.is_empty():
+			return {"ok": false, "reason": "collector requires natural resource: %s" % stable_id}
+		if building_kind == "industrial" and not prod_ids.is_empty():
+			return {"ok": false, "reason": "industrial building cannot consume natural resource: %s" % stable_id}
+		if building_kind == "collector" and behavior_id == "none":
+			return {"ok": false, "reason": "collector requires resource behavior: %s" % stable_id}
+		if building_kind == "industrial" and behavior_id != "none":
+			return {"ok": false, "reason": "industrial building cannot use resource behavior: %s" % stable_id}
+		var generation_ids: PackedStringArray = profile.resource_generation_ids
+		var generation_qty: PackedInt64Array = profile.resource_generation_quantities_per_day
+		if generation_ids.size() != generation_qty.size():
+			return {"ok": false, "reason": "building resource generation columns mismatch: %s" % stable_id}
+		if behavior_id != "cultivate_local_resources" and not generation_ids.is_empty():
+			return {"ok": false, "reason": "building resource generation requires cultivation behavior: %s" % stable_id}
+		if behavior_id == "cultivate_local_resources" and generation_ids.is_empty():
+			return {"ok": false, "reason": "cultivation behavior requires resource generation: %s" % stable_id}
+		for i in range(generation_ids.size()):
+			var resource_id := String(generation_ids[i])
+			if not resource_index.has(resource_id) or int(generation_qty[i]) <= 0:
+				return {"ok": false, "reason": "invalid building generated resource: %s" % stable_id}
+			generation_resources.append(int(resource_index[resource_id]))
+			generation_resource_quantities.append(int(generation_qty[i]))
+		generation_resource_offsets.append(generation_resources.size())
 
 		var ops: PackedInt32Array = profile.condition_opcodes
 		var signals: PackedInt32Array = profile.condition_signals
@@ -384,15 +528,22 @@ static func _compile_building_columns(profession_index: Dictionary,
 	return {
 		"ok": true,
 		"building_type_ids": type_ids,
+		"building_kinds": building_kinds,
+		"building_technology_tag_offsets": technology_tag_offsets,
+		"building_technology_tags": technology_tags,
 		"building_owner_profession_ids": owner_professions,
 		"building_owner_slots": owner_slots,
 		"building_wage_per_employee_per_day": wages_per_employee_per_day,
 		"building_construction_days": construction_days,
 		"building_behavior_ids": behavior_ids,
 		"building_behavior_versions": behavior_versions,
+		"building_target_operating_margin_q16": target_operating_margins,
+		"building_supply_price_elasticity_q16": supply_price_elasticities,
 		"building_employee_offsets": employee_offsets,
 		"building_employee_profession_ids": employee_professions,
 		"building_employee_slots": employee_slot_counts,
+		"building_employee_wage_policies": employee_wage_policies,
+		"building_employee_reference_wages_per_day": employee_reference_wages,
 		"building_construction_offsets": construction_offsets,
 		"building_construction_good_ids": construction_goods,
 		"building_construction_quantities": construction_quantities,
@@ -402,12 +553,20 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_output_offsets": output_offsets,
 		"building_output_good_ids": output_goods,
 		"building_output_quantities": output_quantities,
+		"building_output_cost_share_offsets": output_cost_share_offsets,
+		"building_output_cost_shares_q16": output_cost_shares,
 		"building_resource_ids": resource_ids,
 		"building_resource_reserve_slots": resource_reserve_slots,
 		"building_resource_extra_slots": resource_extra_slots,
 		"building_resource_offsets": production_resource_offsets,
 		"building_production_resource_ids": production_resources,
 		"building_production_resource_quantities": production_resource_quantities,
+		"building_production_resource_modes": production_resource_modes,
+		"building_production_resource_access_modes": production_resource_access_modes,
+		"building_resource_generation_offsets": generation_resource_offsets,
+		"building_resource_generation_ids": generation_resources,
+		"building_resource_generation_quantities": generation_resource_quantities,
+		"building_resource_generation_floor_q16": generation_floor_q16,
 		"building_condition_offsets": condition_offsets,
 		"building_condition_opcodes": condition_opcodes,
 		"building_condition_signals": condition_signals,

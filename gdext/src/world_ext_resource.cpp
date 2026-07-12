@@ -61,6 +61,7 @@ struct NatResRuntime {
     float lo = 0.0f;
     float inv_span = 0.0f;
     bool land_gate = false;
+    uint8_t habitat_bit = 0;
     bool use_extra = false;
     float c0 = 0.0f;
     float c1 = 0.0f;
@@ -101,22 +102,23 @@ inline float natres_step_scalar_dt(float t_val, float m_val, float reserve,
                                    float c0, float c1, float c2,
                                    float inv_denom, float extra_change,
                                    int dt_days) {
+    const float reserve_after_external = std::max(0.0f, reserve + extra_change);
     if (dt_days <= 1) {
         const float tn = dc_clampf((t_val - lo) * inv_span, 0.0f, 1.0f);
-        const float p = c0 + c1 * tn + c2 * m_val + extra_change;
-        float v = (reserve + p) * inv_denom;
+        const float p = c0 + c1 * tn + c2 * m_val;
+        float v = (reserve_after_external + p) * inv_denom;
         if (v < 0.0f) v = 0.0f;
         return v;
     }
     const float tn = dc_clampf((t_val - lo) * inv_span, 0.0f, 1.0f);
-    const float p = c0 + c1 * tn + c2 * m_val + extra_change;
-    float v = reserve;
+    const float p = c0 + c1 * tn + c2 * m_val;
+    float v = reserve_after_external;
     if (std::fabs(1.0f - inv_denom) < 1e-6f) {
-        v = reserve + p * float(dt_days);
+        v = reserve_after_external + p * float(dt_days);
     } else {
         const float a_pow = std::pow(inv_denom, float(dt_days));
         const float b = p * inv_denom;
-        v = a_pow * reserve + b * (1.0f - a_pow) / (1.0f - inv_denom);
+        v = a_pow * reserve_after_external + b * (1.0f - a_pow) / (1.0f - inv_denom);
     }
     if (v < 0.0f) v = 0.0f;
     return v;
@@ -144,19 +146,20 @@ inline float natres_step_scalar_fit_dt(float t_val, float m_val, float reserve,
     const float gen_self_eff = rr.gs * runtime_fit;
     const float gen_climate = rr.gb + rr.gt * tn + rr.gm * m_val;
     const float decay_climate = rr.db + rr.dt * tn + rr.dm * m_val;
-    const float p = gen_climate + gen_self_eff + extra_change - decay_climate - rr.decay_stress * (1.0f - runtime_fit);
+    const float p = gen_climate + gen_self_eff - decay_climate - rr.decay_stress * (1.0f - runtime_fit);
     float L = rr.ds;
     if (L < 0.0f) L = 0.0f;
     const float inv_denom = 1.0f / (1.0f + L);
-    float v = reserve;
+    const float reserve_after_external = std::max(0.0f, reserve + extra_change);
+    float v = reserve_after_external;
     if (dt_days <= 1) {
-        v = (reserve + p) * inv_denom;
+        v = (reserve_after_external + p) * inv_denom;
     } else if (std::fabs(1.0f - inv_denom) < 1e-6f) {
-        v = reserve + p * float(dt_days);
+        v = reserve_after_external + p * float(dt_days);
     } else {
         const float a_pow = std::pow(inv_denom, float(dt_days));
         const float b = p * inv_denom;
-        v = a_pow * reserve + b * (1.0f - a_pow) / (1.0f - inv_denom);
+        v = a_pow * reserve_after_external + b * (1.0f - a_pow) / (1.0f - inv_denom);
     }
     if (v < 0.0f) v = 0.0f;
     return v;
@@ -245,6 +248,9 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     const int sid_temp = component_id(StringName("cell_temp"));
     const int sid_moist = component_id(StringName("cell_moisture"));
     const int sid_water = component_id(StringName("cell_is_water"));  // 可缺失（-1）
+    const int sid_habitat = component_id(StringName(
+        knobs.has("habitat_mask_slot") ? String(knobs["habitat_mask_slot"]) :
+        String("cell_resource_habitat_mask")));
     if (sid_temp < 0 || sid_moist < 0) return fail("missing_climate_slot");
 
     const int n_cells = knobs.has("n_cells") ? int(knobs["n_cells"]) : int(_entity_archetype.size());
@@ -254,7 +260,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     if (resource_count <= 0) return fail("no_resources");
     const int dt_days = std::max(1, std::min(30, knobs.has("dt_days") ? int(knobs["dt_days"]) : 1));
 
-    if (!knobs.has("reserve_slots") || !knobs.has("extra_change_slots") || !knobs.has("land_only") ||
+    if (!knobs.has("reserve_slots") || !knobs.has("extra_change_slots") || !knobs.has("habitat_modes") ||
         !knobs.has("temp_lo") || !knobs.has("temp_hi") ||
         !knobs.has("gen_base") || !knobs.has("gen_temp") || !knobs.has("gen_moisture") || !knobs.has("gen_self") ||
         !knobs.has("decay_base") || !knobs.has("decay_temp") || !knobs.has("decay_moisture") || !knobs.has("decay_self") ||
@@ -266,7 +272,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
     PackedStringArray reserve_slots = knobs["reserve_slots"];
     PackedStringArray extra_change_slots = knobs["extra_change_slots"];
-    PackedFloat32Array land_only = knobs["land_only"];
+    PackedInt32Array habitat_modes = knobs["habitat_modes"];
     PackedFloat32Array temp_lo = knobs["temp_lo"];
     PackedFloat32Array temp_hi = knobs["temp_hi"];
     PackedFloat32Array gen_base = knobs["gen_base"];
@@ -285,7 +291,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     PackedFloat32Array decay_stress = knobs["decay_stress"];
 
     if (reserve_slots.size() < resource_count || extra_change_slots.size() < resource_count ||
-        land_only.size() < resource_count || temp_lo.size() < resource_count || temp_hi.size() < resource_count ||
+        habitat_modes.size() < resource_count || temp_lo.size() < resource_count || temp_hi.size() < resource_count ||
         gen_base.size() < resource_count || gen_temp.size() < resource_count ||
         gen_moisture.size() < resource_count || gen_self.size() < resource_count ||
         decay_base.size() < resource_count || decay_temp.size() < resource_count ||
@@ -303,6 +309,10 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     const float * const __restrict M = _slots.write[sid_moist].arr_f32.ptr();
     const bool have_water = (sid_water >= 0 && int(_slots.write[sid_water].arr_u8.size()) >= n_cells);
     const uint8_t * const __restrict WATER = have_water ? _slots.write[sid_water].arr_u8.ptr() : nullptr;
+    const bool have_habitat = (sid_habitat >= 0 &&
+        int(_slots.write[sid_habitat].arr_u8.size()) >= n_cells);
+    const uint8_t * const __restrict HABITAT =
+        have_habitat ? _slots.write[sid_habitat].arr_u8.ptr() : nullptr;
 
     // Benchmark-only 旁路开关（默认 false，生产路径完全不变）：
     //   bench_force_scalar=true → 跳过 AVX2 SIMD 块，仅走标量（隔离 SIMD 收益）；
@@ -335,7 +345,11 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         const float lo = temp_lo[r];
         const float hi = temp_hi[r];
         const float inv_span = (hi > lo) ? (1.0f / (hi - lo)) : 0.0f;
-        const bool land_gate = land_only[r] >= 0.5f && have_water;
+        const int habitat_mode = habitat_modes[r];
+        if (habitat_mode < 0 || habitat_mode > 3) continue;
+        const bool land_gate = habitat_mode == 1 && have_water;
+        const uint8_t habitat_bit = habitat_mode == 2 ? uint8_t{2} :
+                                    (habitat_mode == 3 ? uint8_t{4} : uint8_t{0});
         const float gb = gen_base[r], gt = gen_temp[r], gm = gen_moisture[r], gs = gen_self[r];
         const float db = decay_base[r], dt = decay_temp[r], dm = decay_moisture[r], ds = decay_self[r];
         const float stress = decay_stress[r];
@@ -366,6 +380,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         rr.lo = lo;
         rr.inv_span = inv_span;
         rr.land_gate = land_gate;
+        rr.habitat_bit = habitat_bit;
         rr.use_extra = has_extra_change;
         rr.c0 = gb + gs - db;
         rr.c1 = gt - dt;
@@ -402,7 +417,8 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                 float * const __restrict R = rr.R;
                 int i = begin;
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
-                if (!force_scalar && dt_days <= 1 && !rr.use_climate_fit && !rr.use_extra) {
+                if (!force_scalar && dt_days <= 1 && !rr.use_climate_fit &&
+                    !rr.use_extra && rr.habitat_bit == 0) {
                     const __m256 vlo = _mm256_set1_ps(rr.lo);
                     const __m256 vinv_span = _mm256_set1_ps(rr.inv_span);
                     const __m256 vc0 = _mm256_set1_ps(rr.c0);
@@ -422,9 +438,22 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                 }
 #endif
                 for (; i < end; ++i) {  // 标量尾段（AVX2）/ 全量（非 AVX2 构建）
-                    if (rr.land_gate && WATER[i] != 0) {
+                    if (rr.habitat_bit != 0 &&
+                        (!have_habitat || (HABITAT[i] & rr.habitat_bit) == 0)) {
+                        if (R[i] != 0.0f) {
+                            seg -= double(R[i]);
+                            R[i] = 0.0f;
+                        }
                         if (rr.use_extra) rr.X[i] = 0.0f;
-                        continue;  // 水面格保持原值，delta 0
+                        continue;
+                    }
+                    if (rr.land_gate && WATER[i] != 0) {
+                        if (R[i] != 0.0f) {
+                            seg -= double(R[i]);
+                            R[i] = 0.0f;
+                        }
+                        if (rr.use_extra) rr.X[i] = 0.0f;
+                        continue;
                     }
                     const float reserve = R[i];
                     const float extra_change = rr.use_extra ? rr.X[i] : 0.0f;

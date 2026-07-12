@@ -3,6 +3,7 @@ extends SceneTree
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 
 func _init() -> void:
+	var args := OS.get_cmdline_user_args()
 	var cells := 10000
 	var catalog: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	if not bool(catalog.get("ok", false)):
@@ -17,13 +18,17 @@ func _init() -> void:
 	profile.market_runtime_mode = "ACTIVE"
 	profile.worker_enabled = true
 	profile.worker_market_threshold = 64
+	profile.economy_trace_mode = "OFF" if "--trace-off" in args else "SELECTIVE"
 	if not bool(ext.configure_economy(native_catalog, profile, cells, 20260711).get("ok", false)):
 		printerr("configure failed")
 		quit(3)
 		return
 	var landlord_sig := (catalog.signature_keys as PackedStringArray).find("landlord|default")
 	var worker_sig := (catalog.signature_keys as PackedStringArray).find("worker|default")
+	var industrialist_sig := (catalog.signature_keys as PackedStringArray).find("industrialist|default")
+	var miner_sig := (catalog.signature_keys as PackedStringArray).find("miner|default")
 	var mine_id := (catalog.building_type_ids as PackedStringArray).find("coal_mine")
+	var estate_id := (catalog.building_type_ids as PackedStringArray).find("landed_estate")
 	var pop_cells := PackedInt32Array()
 	var signatures := PackedInt32Array()
 	var populations := PackedInt64Array()
@@ -33,10 +38,12 @@ func _init() -> void:
 	var building_owners := PackedInt32Array()
 	var building_counts := PackedInt64Array()
 	for cell in range(cells):
-		pop_cells.append(cell); signatures.append(landlord_sig); populations.append(2); funds.append(1000000)
-		pop_cells.append(cell); signatures.append(worker_sig); populations.append(30); funds.append(1000000)
-		building_cells.append(cell); building_types.append(mine_id)
-		building_owners.append(landlord_sig); building_counts.append(1)
+		var owner_sig := landlord_sig if cell % 2 == 0 else industrialist_sig
+		var employee_sig := worker_sig if cell % 2 == 0 else miner_sig
+		pop_cells.append(cell); signatures.append(owner_sig); populations.append(2); funds.append(1000000)
+		pop_cells.append(cell); signatures.append(employee_sig); populations.append(30); funds.append(1000000)
+		building_cells.append(cell); building_types.append(estate_id if cell % 2 == 0 else mine_id)
+		building_owners.append(owner_sig); building_counts.append(1)
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": pop_cells, "signature_ids": signatures,
 		"population": populations, "funds": funds,
@@ -48,10 +55,15 @@ func _init() -> void:
 		printerr(boot)
 		quit(4)
 		return
+	if "--trace-cell" in args:
+		ext.set_economy_trace_filter({"cells": PackedInt32Array([0])})
+	if "--inspector-cell" in args:
+		ext.set_economy_inspector_trace_cell(0)
 	var building_ms := PackedFloat64Array()
 	var all_ms := PackedFloat64Array()
 	var report := {}
-	for day in range(5):
+	var days := 25 if "--event-soak" in args else 5
+	for day in range(days):
 		report = ext.run_economy_slice({"day_index": day, "tick_index": day})
 		all_ms.append(float(report.get("elapsed_ms", 0.0)))
 		if bool(report.get("building_range_used", false)):
@@ -65,14 +77,30 @@ func _init() -> void:
 				building_ms.append(float(report.get("elapsed_ms", 0.0)))
 	building_ms.sort()
 	all_ms.sort()
-	print("[building_bench] cells=%d groups=%d cohorts=%d building_slices=%d avg=%.3fms p95=%.3fms max=%.3fms all_max=%.3fms memory=%.1fMB hash=%d errors=%d/%d/%d discarded=%d" % [
+	print("[building_bench] cells=%d groups=%d cohorts=%d building_slices=%d avg=%.3fms p95=%.3fms max=%.3fms all_max=%.3fms wage_plan=%.3fms labor_signal=%.3fms labor_edges=%d memory=%.1fMB hash=%d errors=%d/%d/%d discarded=%d resource=%d/%d/%d extract_limited=%d capacity_checks=%d capacity_limited=%d" % [
 		cells, int(report.get("building_group_count", 0)), int(report.get("cohort_count", 0)),
 		building_ms.size(), _mean(building_ms), _p95(building_ms),
 		building_ms[-1] if not building_ms.is_empty() else 0.0,
 		all_ms[-1] if not all_ms.is_empty() else 0.0,
+		float(report.get("wage_plan_ms", 0.0)),
+		float(report.get("labor_signal_ms", 0.0)),
+		int(report.get("labor_signal_edges", 0)),
 		float(report.get("memory_bytes", 0)) / 1048576.0, ext.get_economy_state_hash(),
 		int(report.get("population_error", 1)), int(report.get("money_error", 1)),
 		int(report.get("goods_error", 1)), int(report.get("production_output_discarded", 0)),
+		int(report.get("building_resource_generated", 0)),
+		int(report.get("building_resource_consumed", 0)),
+		int(report.get("building_resource_net_delta", 0)),
+		int(report.get("building_resource_limited_groups", 0)),
+		int(report.get("building_resource_capacity_checks", 0)),
+		int(report.get("building_resource_capacity_limited_groups", 0)),
+	])
+	print("[building_event_bench] mode=%s summary=%.3fms detail=%.3fms publish=%.3fms trace_memory=%.1fMB events=%d" % [
+		"OFF" if "--trace-off" in args else "SELECTIVE",
+		float(report.get("event_summary_ms", 0.0)), float(report.get("event_detail_ms", 0.0)),
+		float(report.get("event_publish_ms", 0.0)),
+		float(report.get("economy_trace_memory_bytes", 0)) / 1048576.0,
+		int(report.get("economy_event_last_batch_count", 0)),
 	])
 	quit(0 if int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and int(report.get("goods_error", 1)) == 0 else 5)
@@ -106,4 +134,3 @@ func _mean(values: PackedFloat64Array) -> float:
 func _p95(values: PackedFloat64Array) -> float:
 	if values.is_empty(): return 0.0
 	return values[clampi(int(ceil(values.size() * 0.95)) - 1, 0, values.size() - 1)]
-

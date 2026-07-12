@@ -35,3 +35,6 @@ init_landform_weights = {
 14: 21000.0,
 15: 18000.0
 }
+geology_family_id = &"hydrothermal"
+init_province = 12000.0
+init_belt = 18000.0

@@ -11,8 +11,10 @@ extends SceneTree
 #      - copper_ore：火山格（init_volcano）> 非火山。
 #      - clay：有河流（init_river）> 无河流（其余条件相同）。
 #      - timber：森林植被（init_vegetation_weights）> 裸地。
-#      - wild_game / cattle / cotton / spice_plants 等新增资源有各自偏向。
-#   3. 不变量：所有资源所有格有限非负；land_only 资源水面格为 0；不存在陆地格集齐全部资源。
+#      - wild_game / cattle / 三类农业容量有各自偏向。
+#      - marine_fish 位于海洋水格，freshwater_fish 位于湖泊水格或河流格。
+#   3. 矿产由资源局部斑块 + 同族地质省 + 矿带共同决定，固定 seed 可重放。
+#   4. 不变量：所有资源有限非负；不符合 habitat 的地块储量为 0。
 #
 # Headless execution:
 #   godot --headless --script tests/natural_resource_init_deposit_test.gd --quit
@@ -30,7 +32,7 @@ const C_NORIVER: int = 5     # 平原 + 无河流（与 C_RIVER 配对，仅差�
 const C_WATER: int = 6       # 水面格（land_only 资源应为 0）
 const C_FOREST: int = 7      # 丘陵 + 温带阔叶林（timber 高）
 const C_GRASS: int = 8       # 平原 + 温带草原（牛/野生动物高）
-const C_DRY_PLAIN: int = 9   # 暖干平原 / 稀树草原（棉花高）
+const C_LAKE: int = 9        # 湖泊水格（淡水资源）
 const C_WET_FOREST: int = 10 # 湿热低地森林（香料/猪高）
 const C_COOL_HILL: int = 11  # 凉爽丘陵草甸（羊/草药高）
 
@@ -58,16 +60,18 @@ func _run() -> void:
 	_test_differentiation(map, profiles, n)
 	_test_invariants(map, profiles, n)
 	_test_quantity_scale(map, profiles, n)
+	_test_geology_fields(profiles)
 
 	print("=== init deposit summary: %d checks, %d failures ===" % [_checks, _failures])
 
 
-# ─── 构造 8 格、字段差异化的 MapData ────────────────────────────────
+# ─── 构造 12 格、字段差异化的 MapData ───────────────────────────────
 func _build_map(n: int) -> MapData:
 	var map := MapData.new(n, 1)
 	# 填 _cells 使 cell_count()==n（bootstrap 仅用它取 n，逐 index 读 SoA）。
 	for i in range(n):
 		map.set_cell(HexCell.new(i, 0))
+	map._build_indices()
 
 	var LF = LandformType.LF
 	var VEG = VegetationType.VEG
@@ -105,9 +109,12 @@ func _build_map(n: int) -> MapData:
 	water[C_WATER] = 1;            lf[C_WATER] = LF.OCEAN
 	lf[C_FOREST] = LF.HILL;        veg[C_FOREST] = VEG.TEMPERATE_DECIDUOUS;  elev[C_FOREST] = 0.40
 	veg[C_GRASS] = VEG.TEMPERATE_GRASSLAND
-	temp[C_DRY_PLAIN] = 24.0;      moist[C_DRY_PLAIN] = 0.36; veg[C_DRY_PLAIN] = VEG.SAVANNA
+	water[C_LAKE] = 1;             lf[C_LAKE] = LF.LAKE
 	temp[C_WET_FOREST] = 27.0;     moist[C_WET_FOREST] = 0.84; lf[C_WET_FOREST] = LF.LOWLAND; veg[C_WET_FOREST] = VEG.TROPICAL_RAINFOREST
 	temp[C_COOL_HILL] = 8.0;       moist[C_COOL_HILL] = 0.55;  lf[C_COOL_HILL] = LF.HILL; elev[C_COOL_HILL] = 0.48; veg[C_COOL_HILL] = VEG.ALPINE_MEADOW
+	# 河流配对格共享采样坐标，隔离 init_river 因子，不让局部噪声/地质场混入比较。
+	posx[C_NORIVER] = posx[C_RIVER]
+	posy[C_NORIVER] = posy[C_RIVER]
 
 	map.temp_arr = temp
 	map.moisture_arr = moist
@@ -159,21 +166,31 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 	if pigs.size() >= 12:
 		_expect("pigs: 湿热森林 > 裸地", pigs[C_WET_FOREST] > pigs[C_PLAIN])
 
-	var spice := _res_arr(map, profiles, "spice_plants")
-	if spice.size() >= 12:
-		_expect("spice_plants: 湿热森林 > 裸地", spice[C_WET_FOREST] > spice[C_PLAIN])
+	var arable := _res_arr(map, profiles, "arable_land")
+	if arable.size() >= 12:
+		_expect("arable_land: 河岸平原 > 山峰", arable[C_RIVER] > arable[C_PEAK])
 
-	var cotton := _res_arr(map, profiles, "cotton")
-	if cotton.size() >= 12:
-		_expect("cotton: 暖干平原 > 凉爽丘陵", cotton[C_DRY_PLAIN] > cotton[C_COOL_HILL])
+	var paddy := _res_arr(map, profiles, "paddy_land")
+	if paddy.size() >= 12:
+		_expect("paddy_land: 河岸 > 无河流平原", paddy[C_RIVER] > paddy[C_NORIVER])
 
-	var flax := _res_arr(map, profiles, "flax")
-	if flax.size() >= 12:
-		_expect("flax: 河岸平原 > 暖干平原", flax[C_RIVER] > flax[C_DRY_PLAIN])
+	var plantation := _res_arr(map, profiles, "plantation_land")
+	if plantation.size() >= 12:
+		_expect("plantation_land: 湿热森林 > 凉爽丘陵", plantation[C_WET_FOREST] > plantation[C_COOL_HILL])
 
-	var herbs := _res_arr(map, profiles, "medicinal_herbs")
-	if herbs.size() >= 12:
-		_expect("medicinal_herbs: 凉爽丘陵/森林 > 裸地", maxf(herbs[C_COOL_HILL], herbs[C_FOREST]) > herbs[C_PLAIN])
+	var marine := _res_arr(map, profiles, "marine_fish")
+	var fresh := _res_arr(map, profiles, "freshwater_fish")
+	var fresh_water := _res_arr(map, profiles, "fresh_water")
+	var habitat: PackedByteArray = map.resource_habitat_mask_arr
+	if marine.size() >= 12 and fresh.size() >= 12:
+		_expect("ocean water cell contains marine fish", (habitat[C_WATER] & 2) != 0 and marine[C_WATER] > 0.0)
+		_expect("adjacent shore does not store marine fish", (habitat[C_NORIVER] & 2) == 0 and is_equal_approx(marine[C_NORIVER], 0.0))
+		_expect("river cell contains freshwater fish", (habitat[C_RIVER] & 4) != 0 and fresh[C_RIVER] > 0.0)
+		_expect("lake water cell contains freshwater fish", (habitat[C_LAKE] & 4) != 0 and fresh[C_LAKE] > 0.0)
+		_expect("dry inland land has no freshwater fish", (habitat[C_PLAIN] & 4) == 0 and is_equal_approx(fresh[C_PLAIN], 0.0))
+	if fresh_water.size() >= 12:
+		_expect("fresh water reserve follows river/lake access",
+			fresh_water[C_RIVER] > 0.0 and is_equal_approx(fresh_water[C_PLAIN], 0.0))
 
 
 # ─── 整体差异化（非全图统一）──────────────────────────────────────
@@ -199,10 +216,11 @@ func _test_differentiation(map: MapData, profiles: Array, n: int) -> void:
 			varied_count * 2 >= profiles.size())
 
 
-# ─── 不变量：有限非负，land_only 水面格为 0 ────────────────────────
+# ─── 不变量：有限非负，不符合 habitat 的地块为 0 ───────────────────
 func _test_invariants(map: MapData, profiles: Array, n: int) -> void:
 	var all_ok: bool = true
 	var detail: String = ""
+	var habitat: PackedByteArray = map.resource_habitat_mask_arr
 	for p in profiles:
 		var arr: PackedFloat32Array = map.get(ResourceProfileRegistry.reserve_map_field(p))
 		if arr.size() != n:
@@ -214,16 +232,16 @@ func _test_invariants(map: MapData, profiles: Array, n: int) -> void:
 				all_ok = false
 				detail = "%s[%d]=%s" % [String(p.id), i, str(arr[i])]
 				break
-			if bool(p.land_only) and i == C_WATER and not is_equal_approx(arr[i], 0.0):
+			if not ResourceProfileRegistry.habitat_available(p, int(habitat[i])) and not is_equal_approx(arr[i], 0.0):
 				all_ok = false
-				detail = "%s water=%s expected 0" % [String(p.id), str(arr[i])]
+				detail = "%s[%d]=%s outside habitat" % [String(p.id), i, str(arr[i])]
 				break
 		if not all_ok:
 			break
 	if not all_ok:
 		printerr("  [detail] %s" % detail)
-	_expect("所有资源所有格有限非负，land_only 水面格为 0", all_ok)
-	_expect("至少一个陆地格缺少多数资源（稀疏分布）", _has_sparse_land_cell(map, profiles, n))
+	_expect("所有资源有限非负，且 habitat 外为 0", all_ok)
+	_expect("至少一个陆地格缺少多数矿产（矿脉稀疏）", _has_sparse_mineral_cell(map, profiles, n))
 
 
 func _test_quantity_scale(map: MapData, profiles: Array, n: int) -> void:
@@ -235,19 +253,91 @@ func _test_quantity_scale(map: MapData, profiles: Array, n: int) -> void:
 	_expect("自然资源初值使用直接资源量级（max > 1）", max_value > 1.0)
 
 
-func _has_sparse_land_cell(map: MapData, profiles: Array, n: int) -> bool:
+func _has_sparse_mineral_cell(map: MapData, profiles: Array, n: int) -> bool:
 	var water: PackedByteArray = map.is_water_arr
+	var minerals: Array = profiles.filter(func(p): return String(p.geology_family_id) != "")
 	for i in range(n):
 		if water.size() > i and water[i] != 0:
 			continue
 		var present: int = 0
-		for p in profiles:
+		for p in minerals:
 			var arr: PackedFloat32Array = map.get(ResourceProfileRegistry.reserve_map_field(p))
 			if arr.size() > i and arr[i] > 0.0001:
 				present += 1
-		if present < profiles.size() / 2:
+		if present < minerals.size() / 2:
 			return true
 	return false
+
+
+func _test_geology_fields(profiles: Array) -> void:
+	var a := _build_flat_geology_map(256)
+	var b := _build_flat_geology_map(256)
+	var c := _build_flat_geology_map(256)
+	var gen := MapGenerator.new()
+	gen._bootstrap_natural_resource_deposits(a, {"seed": 73021})
+	gen._bootstrap_natural_resource_deposits(b, {"seed": 73021})
+	gen._bootstrap_natural_resource_deposits(c, {"seed": 73022})
+	var copper := _res_arr(a, profiles, "copper_ore")
+	var gold := _res_arr(a, profiles, "gold_ore")
+	var copper_same_seed := _res_arr(b, profiles, "copper_ore")
+	var copper_other_seed := _res_arr(c, profiles, "copper_ore")
+	_expect("geology generation is deterministic for the same seed", copper == copper_same_seed)
+	_expect("geology generation changes with map seed", copper != copper_other_seed)
+	_expect("same hydrothermal family shares provinces/belts",
+		_correlation(copper, gold) > 0.15)
+
+
+func _build_flat_geology_map(n: int) -> MapData:
+	var map := MapData.new(n, 1)
+	for i in range(n):
+		map.set_cell(HexCell.new(i, 0))
+	map._build_indices()
+	var temp := PackedFloat32Array(); temp.resize(n); temp.fill(15.0)
+	var moist := PackedFloat32Array(); moist.resize(n); moist.fill(0.5)
+	var water := PackedByteArray(); water.resize(n); water.fill(0)
+	var elevation := PackedFloat32Array(); elevation.resize(n); elevation.fill(0.55)
+	var landform := PackedByteArray(); landform.resize(n); landform.fill(LandformType.LF.HILL)
+	var vegetation := PackedByteArray(); vegetation.resize(n); vegetation.fill(VegetationType.VEG.NONE)
+	var zero := PackedByteArray(); zero.resize(n); zero.fill(0)
+	var px := PackedFloat32Array(); px.resize(n)
+	var py := PackedFloat32Array(); py.resize(n)
+	for i in range(n):
+		px[i] = float(i % 32) * 19.0
+		py[i] = float(i / 32) * 23.0
+	map.temp_arr = temp
+	map.moisture_arr = moist
+	map.is_water_arr = water
+	map.elevation_arr = elevation
+	map.landform_arr = landform
+	map.vegetation_arr = vegetation
+	map.has_river_arr = zero.duplicate()
+	map.is_lake_seed_arr = zero.duplicate()
+	map.has_volcano_arr = zero.duplicate()
+	map.cell_pos_x_arr = px
+	map.cell_pos_y_arr = py
+	return map
+
+
+func _correlation(a: PackedFloat32Array, b: PackedFloat32Array) -> float:
+	if a.size() != b.size() or a.size() < 2:
+		return 0.0
+	var mean_a := 0.0
+	var mean_b := 0.0
+	for i in range(a.size()):
+		mean_a += a[i]
+		mean_b += b[i]
+	mean_a /= a.size()
+	mean_b /= b.size()
+	var covariance := 0.0
+	var variance_a := 0.0
+	var variance_b := 0.0
+	for i in range(a.size()):
+		var da := a[i] - mean_a
+		var db := b[i] - mean_b
+		covariance += da * db
+		variance_a += da * da
+		variance_b += db * db
+	return covariance / sqrt(variance_a * variance_b) if variance_a > 0.0 and variance_b > 0.0 else 0.0
 
 
 # ─── 工具 ───────────────────────────────────────────────────────

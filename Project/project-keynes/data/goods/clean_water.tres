@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"clean_water"
+display_name = "净水"
+category_id = &"consumer"
+technology_tags = PackedStringArray("industry.consumer")
+storage_mode = "stock"
+monetary_issue_value = 0
+default_price = 60000
+initial_stock = 0
+min_price = 6000
+max_price = 600000
+price_adjust_q16 = 2662
+demand_price_elasticity_q16 = 85197
+demand_ema_alpha_q16 = 16384
+target_inventory_days_q16 = 983040
+inventory_weight_q16 = 32768
+shortage_weight_q16 = 65536
+excess_demand_weight_q16 = 8192
+cost_anchor_weight_q16 = 16384
+inactive_reversion_weight_q16 = 512
+business_demand_ema_alpha_q16 = 8192
+supply_ema_alpha_q16 = 8192
+cost_ema_alpha_q16 = 4096
+max_price_rise_q16 = 8192
+max_price_fall_q16 = 4096
+merchant_buy_price_factor_q16 = 62259

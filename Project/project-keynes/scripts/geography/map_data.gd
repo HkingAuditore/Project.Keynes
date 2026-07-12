@@ -100,10 +100,6 @@ var surface_runoff_arr:        PackedFloat32Array = PackedFloat32Array()
 var res_timber_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_stone_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
 var res_fertile_soil_reserve_arr: PackedFloat32Array = PackedFloat32Array()
-var res_wheat_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
-var res_rice_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_corn_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_potato_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_coal_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_oil_reserve_arr:          PackedFloat32Array = PackedFloat32Array()
 var res_natural_gas_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
@@ -112,26 +108,35 @@ var res_iron_ore_reserve_arr:     PackedFloat32Array = PackedFloat32Array()
 var res_gold_ore_reserve_arr:     PackedFloat32Array = PackedFloat32Array()
 var res_silver_ore_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
 var res_salt_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_rubber_tree_reserve_arr:  PackedFloat32Array = PackedFloat32Array()
 var res_saltpeter_reserve_arr:    PackedFloat32Array = PackedFloat32Array()
 var res_rare_earth_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
 var res_clay_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_horses_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_wild_game_reserve_arr:    PackedFloat32Array = PackedFloat32Array()
-var res_spice_plants_reserve_arr: PackedFloat32Array = PackedFloat32Array()
-var res_flax_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_cotton_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_cattle_reserve_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_sheep_reserve_arr:        PackedFloat32Array = PackedFloat32Array()
 var res_pigs_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_medicinal_herbs_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_fresh_water_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_marine_fish_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_freshwater_fish_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_arable_land_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_paddy_land_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_plantation_land_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_bauxite_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_limestone_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_silica_sand_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_phosphate_rock_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_uranium_ore_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_tin_ore_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_lead_ore_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_zinc_ore_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_nickel_ore_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_manganese_ore_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_sulfur_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_platinum_ore_reserve_arr: PackedFloat32Array = PackedFloat32Array()
 var res_timber_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_stone_extra_change_arr:        PackedFloat32Array = PackedFloat32Array()
 var res_fertile_soil_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
-var res_wheat_extra_change_arr:        PackedFloat32Array = PackedFloat32Array()
-var res_rice_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_corn_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_potato_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_coal_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_oil_extra_change_arr:          PackedFloat32Array = PackedFloat32Array()
 var res_natural_gas_extra_change_arr:  PackedFloat32Array = PackedFloat32Array()
@@ -140,19 +145,32 @@ var res_iron_ore_extra_change_arr:     PackedFloat32Array = PackedFloat32Array()
 var res_gold_ore_extra_change_arr:     PackedFloat32Array = PackedFloat32Array()
 var res_silver_ore_extra_change_arr:   PackedFloat32Array = PackedFloat32Array()
 var res_salt_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_rubber_tree_extra_change_arr:  PackedFloat32Array = PackedFloat32Array()
 var res_saltpeter_extra_change_arr:    PackedFloat32Array = PackedFloat32Array()
 var res_rare_earth_extra_change_arr:   PackedFloat32Array = PackedFloat32Array()
 var res_clay_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_horses_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_wild_game_extra_change_arr:    PackedFloat32Array = PackedFloat32Array()
-var res_spice_plants_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
-var res_flax_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_cotton_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_cattle_extra_change_arr:       PackedFloat32Array = PackedFloat32Array()
 var res_sheep_extra_change_arr:        PackedFloat32Array = PackedFloat32Array()
 var res_pigs_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
-var res_medicinal_herbs_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_fresh_water_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_marine_fish_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_freshwater_fish_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_arable_land_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_paddy_land_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_plantation_land_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_bauxite_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_limestone_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_silica_sand_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_phosphate_rock_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_uranium_ore_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_tin_ore_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_lead_ore_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_zinc_ore_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_nickel_ore_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_manganese_ore_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_sulfur_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_platinum_ore_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
 
 # ─── A 修复（climate-temp-pingpong-fix-2026-06）— anomaly 合成 ───
 # ocean_thermal_anomaly_arr: 由 ocean_water + ocean_land pass 写（写后由 wind_surface 读以合成 temp）。
@@ -244,6 +262,7 @@ var weather_type_arr:       PackedByteArray = PackedByteArray()
 var weather_prev_type_arr:  PackedByteArray = PackedByteArray()
 var weather_target_type_arr: PackedByteArray = PackedByteArray()
 var is_water_arr:           PackedByteArray = PackedByteArray()
+var resource_habitat_mask_arr: PackedByteArray = PackedByteArray()
 
 # ─── Dirty Mask（需求 2.1 / 2.4 阶段 A.2 投入使用） ───────────────────────
 # 每个 cell 1 字节：0 = clean、1 = dirty。Pass A 写入时按 epsilon 判定标 dirty；
@@ -559,6 +578,7 @@ func _alloc_soa(n: int) -> void:
 	weather_prev_type_arr.resize(n)
 	weather_target_type_arr.resize(n)
 	is_water_arr.resize(n)
+	resource_habitat_mask_arr.resize(n)
 	climate_dirty_mask.resize(n)
 	weather_dirty_mask.resize(n)
 	# B-full Step-2：6 个新 SoA 字段一次性 resize
@@ -582,10 +602,6 @@ func _alloc_soa(n: int) -> void:
 	res_timber_reserve_arr.resize(n)
 	res_stone_reserve_arr.resize(n)
 	res_fertile_soil_reserve_arr.resize(n)
-	res_wheat_reserve_arr.resize(n)
-	res_rice_reserve_arr.resize(n)
-	res_corn_reserve_arr.resize(n)
-	res_potato_reserve_arr.resize(n)
 	res_coal_reserve_arr.resize(n)
 	res_oil_reserve_arr.resize(n)
 	res_natural_gas_reserve_arr.resize(n)
@@ -594,26 +610,35 @@ func _alloc_soa(n: int) -> void:
 	res_gold_ore_reserve_arr.resize(n)
 	res_silver_ore_reserve_arr.resize(n)
 	res_salt_reserve_arr.resize(n)
-	res_rubber_tree_reserve_arr.resize(n)
 	res_saltpeter_reserve_arr.resize(n)
 	res_rare_earth_reserve_arr.resize(n)
 	res_clay_reserve_arr.resize(n)
 	res_horses_reserve_arr.resize(n)
 	res_wild_game_reserve_arr.resize(n)
-	res_spice_plants_reserve_arr.resize(n)
-	res_flax_reserve_arr.resize(n)
-	res_cotton_reserve_arr.resize(n)
 	res_cattle_reserve_arr.resize(n)
 	res_sheep_reserve_arr.resize(n)
 	res_pigs_reserve_arr.resize(n)
-	res_medicinal_herbs_reserve_arr.resize(n)
+	res_fresh_water_reserve_arr.resize(n)
+	res_marine_fish_reserve_arr.resize(n)
+	res_freshwater_fish_reserve_arr.resize(n)
+	res_arable_land_reserve_arr.resize(n)
+	res_paddy_land_reserve_arr.resize(n)
+	res_plantation_land_reserve_arr.resize(n)
+	res_bauxite_reserve_arr.resize(n)
+	res_limestone_reserve_arr.resize(n)
+	res_silica_sand_reserve_arr.resize(n)
+	res_phosphate_rock_reserve_arr.resize(n)
+	res_uranium_ore_reserve_arr.resize(n)
+	res_tin_ore_reserve_arr.resize(n)
+	res_lead_ore_reserve_arr.resize(n)
+	res_zinc_ore_reserve_arr.resize(n)
+	res_nickel_ore_reserve_arr.resize(n)
+	res_manganese_ore_reserve_arr.resize(n)
+	res_sulfur_reserve_arr.resize(n)
+	res_platinum_ore_reserve_arr.resize(n)
 	res_timber_extra_change_arr.resize(n)
 	res_stone_extra_change_arr.resize(n)
 	res_fertile_soil_extra_change_arr.resize(n)
-	res_wheat_extra_change_arr.resize(n)
-	res_rice_extra_change_arr.resize(n)
-	res_corn_extra_change_arr.resize(n)
-	res_potato_extra_change_arr.resize(n)
 	res_coal_extra_change_arr.resize(n)
 	res_oil_extra_change_arr.resize(n)
 	res_natural_gas_extra_change_arr.resize(n)
@@ -622,19 +647,32 @@ func _alloc_soa(n: int) -> void:
 	res_gold_ore_extra_change_arr.resize(n)
 	res_silver_ore_extra_change_arr.resize(n)
 	res_salt_extra_change_arr.resize(n)
-	res_rubber_tree_extra_change_arr.resize(n)
 	res_saltpeter_extra_change_arr.resize(n)
 	res_rare_earth_extra_change_arr.resize(n)
 	res_clay_extra_change_arr.resize(n)
 	res_horses_extra_change_arr.resize(n)
 	res_wild_game_extra_change_arr.resize(n)
-	res_spice_plants_extra_change_arr.resize(n)
-	res_flax_extra_change_arr.resize(n)
-	res_cotton_extra_change_arr.resize(n)
 	res_cattle_extra_change_arr.resize(n)
 	res_sheep_extra_change_arr.resize(n)
 	res_pigs_extra_change_arr.resize(n)
-	res_medicinal_herbs_extra_change_arr.resize(n)
+	res_fresh_water_extra_change_arr.resize(n)
+	res_marine_fish_extra_change_arr.resize(n)
+	res_freshwater_fish_extra_change_arr.resize(n)
+	res_arable_land_extra_change_arr.resize(n)
+	res_paddy_land_extra_change_arr.resize(n)
+	res_plantation_land_extra_change_arr.resize(n)
+	res_bauxite_extra_change_arr.resize(n)
+	res_limestone_extra_change_arr.resize(n)
+	res_silica_sand_extra_change_arr.resize(n)
+	res_phosphate_rock_extra_change_arr.resize(n)
+	res_uranium_ore_extra_change_arr.resize(n)
+	res_tin_ore_extra_change_arr.resize(n)
+	res_lead_ore_extra_change_arr.resize(n)
+	res_zinc_ore_extra_change_arr.resize(n)
+	res_nickel_ore_extra_change_arr.resize(n)
+	res_manganese_ore_extra_change_arr.resize(n)
+	res_sulfur_extra_change_arr.resize(n)
+	res_platinum_ore_extra_change_arr.resize(n)
 	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
 	ocean_thermal_anomaly_arr.resize(n)
 	local_thermal_anomaly_arr.resize(n)
@@ -780,10 +818,6 @@ func rebuild_soa_from_cells() -> void:
 		res_timber_reserve_arr[i] = 0.0
 		res_stone_reserve_arr[i] = 0.0
 		res_fertile_soil_reserve_arr[i] = 0.0
-		res_wheat_reserve_arr[i] = 0.0
-		res_rice_reserve_arr[i] = 0.0
-		res_corn_reserve_arr[i] = 0.0
-		res_potato_reserve_arr[i] = 0.0
 		res_coal_reserve_arr[i] = 0.0
 		res_oil_reserve_arr[i] = 0.0
 		res_natural_gas_reserve_arr[i] = 0.0
@@ -792,26 +826,35 @@ func rebuild_soa_from_cells() -> void:
 		res_gold_ore_reserve_arr[i] = 0.0
 		res_silver_ore_reserve_arr[i] = 0.0
 		res_salt_reserve_arr[i] = 0.0
-		res_rubber_tree_reserve_arr[i] = 0.0
 		res_saltpeter_reserve_arr[i] = 0.0
 		res_rare_earth_reserve_arr[i] = 0.0
 		res_clay_reserve_arr[i] = 0.0
 		res_horses_reserve_arr[i] = 0.0
 		res_wild_game_reserve_arr[i] = 0.0
-		res_spice_plants_reserve_arr[i] = 0.0
-		res_flax_reserve_arr[i] = 0.0
-		res_cotton_reserve_arr[i] = 0.0
 		res_cattle_reserve_arr[i] = 0.0
 		res_sheep_reserve_arr[i] = 0.0
 		res_pigs_reserve_arr[i] = 0.0
-		res_medicinal_herbs_reserve_arr[i] = 0.0
+		res_fresh_water_reserve_arr[i] = 0.0
+		res_marine_fish_reserve_arr[i] = 0.0
+		res_freshwater_fish_reserve_arr[i] = 0.0
+		res_arable_land_reserve_arr[i] = 0.0
+		res_paddy_land_reserve_arr[i] = 0.0
+		res_plantation_land_reserve_arr[i] = 0.0
+		res_bauxite_reserve_arr[i] = 0.0
+		res_limestone_reserve_arr[i] = 0.0
+		res_silica_sand_reserve_arr[i] = 0.0
+		res_phosphate_rock_reserve_arr[i] = 0.0
+		res_uranium_ore_reserve_arr[i] = 0.0
+		res_tin_ore_reserve_arr[i] = 0.0
+		res_lead_ore_reserve_arr[i] = 0.0
+		res_zinc_ore_reserve_arr[i] = 0.0
+		res_nickel_ore_reserve_arr[i] = 0.0
+		res_manganese_ore_reserve_arr[i] = 0.0
+		res_sulfur_reserve_arr[i] = 0.0
+		res_platinum_ore_reserve_arr[i] = 0.0
 		res_timber_extra_change_arr[i] = 0.0
 		res_stone_extra_change_arr[i] = 0.0
 		res_fertile_soil_extra_change_arr[i] = 0.0
-		res_wheat_extra_change_arr[i] = 0.0
-		res_rice_extra_change_arr[i] = 0.0
-		res_corn_extra_change_arr[i] = 0.0
-		res_potato_extra_change_arr[i] = 0.0
 		res_coal_extra_change_arr[i] = 0.0
 		res_oil_extra_change_arr[i] = 0.0
 		res_natural_gas_extra_change_arr[i] = 0.0
@@ -820,19 +863,33 @@ func rebuild_soa_from_cells() -> void:
 		res_gold_ore_extra_change_arr[i] = 0.0
 		res_silver_ore_extra_change_arr[i] = 0.0
 		res_salt_extra_change_arr[i] = 0.0
-		res_rubber_tree_extra_change_arr[i] = 0.0
 		res_saltpeter_extra_change_arr[i] = 0.0
 		res_rare_earth_extra_change_arr[i] = 0.0
 		res_clay_extra_change_arr[i] = 0.0
 		res_horses_extra_change_arr[i] = 0.0
 		res_wild_game_extra_change_arr[i] = 0.0
-		res_spice_plants_extra_change_arr[i] = 0.0
-		res_flax_extra_change_arr[i] = 0.0
-		res_cotton_extra_change_arr[i] = 0.0
 		res_cattle_extra_change_arr[i] = 0.0
 		res_sheep_extra_change_arr[i] = 0.0
 		res_pigs_extra_change_arr[i] = 0.0
-		res_medicinal_herbs_extra_change_arr[i] = 0.0
+		res_fresh_water_extra_change_arr[i] = 0.0
+		res_marine_fish_extra_change_arr[i] = 0.0
+		res_freshwater_fish_extra_change_arr[i] = 0.0
+		res_arable_land_extra_change_arr[i] = 0.0
+		res_paddy_land_extra_change_arr[i] = 0.0
+		res_plantation_land_extra_change_arr[i] = 0.0
+		resource_habitat_mask_arr[i] = 0
+		res_bauxite_extra_change_arr[i] = 0.0
+		res_limestone_extra_change_arr[i] = 0.0
+		res_silica_sand_extra_change_arr[i] = 0.0
+		res_phosphate_rock_extra_change_arr[i] = 0.0
+		res_uranium_ore_extra_change_arr[i] = 0.0
+		res_tin_ore_extra_change_arr[i] = 0.0
+		res_lead_ore_extra_change_arr[i] = 0.0
+		res_zinc_ore_extra_change_arr[i] = 0.0
+		res_nickel_ore_extra_change_arr[i] = 0.0
+		res_manganese_ore_extra_change_arr[i] = 0.0
+		res_sulfur_extra_change_arr[i] = 0.0
+		res_platinum_ore_extra_change_arr[i] = 0.0
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()

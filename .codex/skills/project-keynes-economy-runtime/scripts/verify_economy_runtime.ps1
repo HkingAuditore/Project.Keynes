@@ -63,6 +63,18 @@ if ($Godot) {
     if ($LASTEXITCODE -ne 0) { throw 'EconomyDailySystem parse failed' }
     & $GodotExe --headless --path $project --script res://tests/goods_storage_schema_test.gd
     if ($LASTEXITCODE -ne 0) { throw 'Focused economy test failed' }
+    & $GodotExe --headless --path $project --script res://tests/building_runtime_test.gd
+    if ($LASTEXITCODE -ne 0) { throw 'Building runtime test failed' }
+    & $GodotExe --headless --path $project --script res://tests/building_resource_chain_test.gd
+    if ($LASTEXITCODE -ne 0) { throw 'Building resource chain test failed' }
+	& $GodotExe --headless --path $project --script res://tests/modern_economy_catalog_test.gd
+	if ($LASTEXITCODE -ne 0) { throw 'Modern economy catalog test failed' }
+	& $GodotExe --headless --path $project --script res://tests/modern_economy_runtime_test.gd
+	if ($LASTEXITCODE -ne 0) { throw 'Modern economy runtime test failed' }
+	& $GodotExe --headless --path $project --script res://tests/economy_test_bootstrap_test.gd
+	if ($LASTEXITCODE -ne 0) { throw 'Economy test bootstrap failed' }
+	& $GodotExe --headless --path $project --script res://tests/economy_map_generation_test.gd
+	if ($LASTEXITCODE -ne 0) { throw 'Economy map generation test failed' }
 }
 
 Write-Output 'Project.Keynes economy runtime verification passed.'

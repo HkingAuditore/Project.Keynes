@@ -30,6 +30,13 @@ func _run() -> void:
 	var model := _make_model()
 	panel.set_model_for_selection(model)
 	await process_frame
+	for button in panel._tabs._buttons.values():
+		if not String((button as Button).text).is_empty():
+			failures.append("dossier tab header still displays text")
+		var icons := (button as Button).find_children("", "IconBadge", true, false)
+		if icons.size() != 1 or (icons[0] as Control).get_global_rect().get_center().distance_to(
+			(button as Control).get_global_rect().get_center()) > 1.0:
+			failures.append("dossier tab icon is not geometrically centered")
 	for raw_card in panel._summary_cards.values():
 		var summary_card := raw_card as MetricCard
 		if summary_card != null and summary_card.size.x < 220.0:
@@ -64,6 +71,22 @@ func _run() -> void:
 	if panel._scroll.scroll_vertical != resource_scroll:
 		failures.append("resource live patch changed scroll position")
 
+	panel.select_tab("market")
+	await process_frame
+	var market_list = panel._market_list
+	market_list.set_expanded("market_0", true)
+	var market_count := panel.visible_node_count()
+	for i in range(120):
+		panel.apply_live_patch(_make_patch("market", float(i)))
+		if i % 20 == 0:
+			await process_frame
+	if panel.visible_node_count() != market_count:
+		failures.append("120 market patches changed inspector node count")
+	if not market_list.is_expanded("market_0"):
+		failures.append("market live patch lost row expansion state")
+	if market_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
+		failures.append("expanded market list exceeds the inspector scroll width")
+
 	panel.select_tab("population")
 	await process_frame
 	var cohort_list = panel._cohort_list
@@ -77,6 +100,29 @@ func _run() -> void:
 		failures.append("120 population patches changed inspector node count")
 	if not cohort_list.is_expanded("cohort_1"):
 		failures.append("population live patch lost cohort expansion state")
+	if cohort_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
+		failures.append("expanded population list exceeds the inspector scroll width")
+
+	panel.select_tab("buildings")
+	await process_frame
+	var building_list = panel._building_list
+	building_list.set_expanded("building_1", true)
+	var building_count := panel.visible_node_count()
+	for i in range(40):
+		panel.apply_live_patch(_make_patch("buildings", float(i)))
+	await process_frame
+	if panel.visible_node_count() != building_count:
+		failures.append("building live patches changed inspector node count")
+	if not building_list.is_expanded("building_1"):
+		failures.append("building live patch lost expansion state")
+	if building_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
+		failures.append("expanded building list exceeds the inspector scroll width")
+	var building_refs: Dictionary = building_list._row_refs.get("building_1", {})
+	for raw_detail in (building_refs.get("detail_refs", {}) as Dictionary).values():
+		var detail_root := (raw_detail as Dictionary).get("root") as Control
+		if detail_root != null and detail_root.size.x > building_list.size.x + 0.5:
+			failures.append("expanded building detail row exceeds the building list width")
+			break
 
 	var deferred_cohorts := CohortList.new()
 	root.add_child(deferred_cohorts)
@@ -130,18 +176,26 @@ func _make_model() -> Dictionary:
 			{"id": "geography", "label": "地理信息", "icon": "geo"},
 			{"id": "population", "label": "人口信息", "icon": "growth"},
 			{"id": "market", "label": "市场信息", "icon": "resource"},
+			{"id": "buildings", "label": "建筑", "icon": "building"},
 			{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
 		],
 		"categories": {
 			"geography": _overview_category(0.72),
 			"population": _population_category(0.0),
-			"market": _resource_category(0.0),
+			"market": _market_category(0.0),
+			"buildings": _building_category(0.0),
 			"natural_resources": _resource_category(0.0),
 		},
 	}
 
 
 func _make_patch(tab_id: String, step: float = 1.0) -> Dictionary:
+	var category := _overview_category(0.76)
+	match tab_id:
+		"market": category = _market_category(step)
+		"natural_resources": category = _resource_category(step)
+		"population": category = _population_category(step)
+		"buildings": category = _building_category(step)
 	return {
 		"header": {
 			"title": "低地 · 平原",
@@ -151,7 +205,7 @@ func _make_patch(tab_id: String, step: float = 1.0) -> Dictionary:
 		"score": {"id": "habitability", "title": "地块适宜度", "value": 0.76, "caption": "可发展", "accent": UITokens.GOOD},
 		"summary_cards": _summary_cards(step),
 		"tab_id": tab_id,
-		"category": _resource_category(step) if tab_id in ["market", "natural_resources"] else (_population_category(step) if tab_id == "population" else _overview_category(0.76)),
+		"category": category,
 	}
 
 
@@ -168,8 +222,7 @@ func _badges() -> Array:
 func _summary_cards(step: float) -> Array:
 	return [
 		{"id": "summary_climate", "title": "气候", "value": "温暖 · 适中", "subtitle": "", "accent": UITokens.CLIMATE, "icon": "sun"},
-		{"id": "summary_ecology", "title": "生态", "value": "健康 · 温带草原", "subtitle": "", "accent": UITokens.ECO, "icon": "eco"},
-		{"id": "summary_resource", "title": "资源", "value": "木材 · 富集", "subtitle": "", "accent": UITokens.RESOURCE, "trend": "trend_up" if step > 0.0 else "trend_flat", "icon": "resource"},
+		{"id": "summary_population", "title": "人口", "value": "%d 人" % (1200 + int(step)), "subtitle": "4 个阶层", "accent": UITokens.ACCENT, "icon": "growth"},
 	]
 
 
@@ -209,17 +262,39 @@ func _resource_category(step: float) -> Dictionary:
 			"name": "资源样本 %02d" % (i + 1),
 			"value": "储量 %s" % UITokens.format_compact_number_cn(12000.0 + i * 100.0 + step, 2),
 			"density": "富集",
-			"delta": "日变 +1",
+			"delta": "+1",
 			"accent": UITokens.RESOURCE,
 			"icon": "resource",
 			"visible": i != 17 or step <= 0.0,
 		})
 	return {
 		"insights": [
-			{"id": "resource_notable", "text": "木材 · 富集 · 日变 +1", "accent": UITokens.RESOURCE, "icon": "resource"},
+			{"id": "resource_notable", "text": "木材 · 富集 · +1", "accent": UITokens.RESOURCE, "icon": "resource"},
 		],
 		"resource_rows": rows,
 	}
+
+
+func _market_category(step: float) -> Dictionary:
+	var rows := []
+	for i in range(18):
+		rows.append({
+			"id": "market_%d" % i,
+			"name": "商品 %02d" % (i + 1),
+			"stock": "%s 单位" % UITokens.format_compact_number_cn(12000.0 + i * 100.0, 2),
+			"price": "%.2f" % (1.0 + i * 0.1),
+			"delta": "%+.0f" % step,
+			"risk": "短缺" if i == 0 else "",
+			"accent": UITokens.RESOURCE,
+			"icon": "resource",
+			"visible": true,
+			"detail_rows": [
+				{"id": "household", "name": "居民需求", "value": "10"},
+				{"id": "business", "name": "产业需求", "value": "5"},
+				{"id": "supply", "name": "供给", "value": "12"},
+			],
+		})
+	return {"market_rows": rows}
 
 
 func _population_category(step: float) -> Dictionary:
@@ -229,7 +304,24 @@ func _population_category(step: float) -> Dictionary:
 	]
 	return {
 		"cohort_rows": [
-			{"id": "cohort_1", "name": "工人 · 本地人口", "population": "1000 人", "wealth": "人均 40", "status": "需求满足 80%", "accent": UITokens.ACCENT, "icon": "growth", "visible": true, "demand_rows": demand_rows},
-			{"id": "cohort_2", "name": "商人 · 本地人口", "population": "10 人", "wealth": "人均 200", "status": "商人 · 需求满足 90%", "accent": UITokens.RESOURCE, "icon": "growth", "visible": true, "demand_rows": demand_rows},
+			{"id": "cohort_1", "name": "工人 · 本地人口", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "status": "需求满足 80% · 结算 5日", "accent": UITokens.ACCENT, "icon": "growth", "visible": true, "detail_rows": [{"id": "income_wages", "name": "收入 · 工资", "value": "+12/人", "icon": "trend_up"}], "demand_rows": demand_rows},
+			{"id": "cohort_2", "name": "商人 · 本地人口", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "status": "商人 · 需求满足 90% · 结算 5日", "accent": UITokens.RESOURCE, "icon": "growth", "visible": true, "detail_rows": [{"id": "income_sales", "name": "收入 · 居民销售", "value": "+30/人", "icon": "trend_up"}], "demand_rows": demand_rows},
 		],
+	}
+
+
+func _building_category(step: float) -> Dictionary:
+	return {
+		"building_rows": [{
+			"id": "building_1", "name": "纺织工坊", "count": "2 栋",
+			"owner": "业主 · 地主", "status": "产能 75.0%",
+			"profit_label": "利润", "profit": "+%.1f" % (40.0 + step),
+			"accent": UITokens.GOOD, "icon": "building", "visible": true,
+			"detail_rows": [
+				{"id": "owner_job", "name": "业主岗位 · 地主", "value": "2 / 2 · 100.0%", "icon": "growth"},
+				{"id": "worker_job", "name": "雇员岗位 · 工人", "value": "30 / 40 · 75.0%", "icon": "growth"},
+				{"id": "input", "name": "原材料 · 谷物", "value": "1.500 单位/栋/日", "icon": "resource"},
+				{"id": "output", "name": "产品 · 玉米", "value": "0.802 单位/栋/日 · 资源充足", "icon": "resource"},
+			],
+		}],
 	}

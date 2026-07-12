@@ -24,6 +24,7 @@ func _init() -> void:
 		"worker_tasks_hint": 8 if "--tasks8" in args else 0,
 		"merchant_profession_id": "merchant", "wealth_reference_per_capita": 100000,
 		"market_runtime_mode": "ACTIVE",
+		"economy_trace_mode": "OFF" if "--trace-off" in args else "SELECTIVE",
 	}
 	var configured: Dictionary = ext.configure_economy(catalog, profile, cells, 20260711)
 	if not bool(configured.get("ok", false)):
@@ -38,6 +39,8 @@ func _init() -> void:
 		printerr(boot)
 		quit(4)
 		return
+	if "--trace-cell" in args:
+		ext.set_economy_trace_filter({"cells": PackedInt32Array([0])})
 	if snapshot_only:
 		var hash_before: int = ext.get_economy_state_hash()
 		var samples := PackedFloat64Array()
@@ -101,6 +104,13 @@ func _init() -> void:
 		float(report.get("fallback_ms", 0.0)), float(report.get("merchant_settle_ms", 0.0)),
 		float(report.get("price_ms", 0.0)),
 	])
+	print("[market_v2_events] mode=%s summary=%.3fms detail=%.3fms publish=%.3fms memory=%.1fMB events=%d" % [
+		"OFF" if "--trace-off" in args else "SELECTIVE",
+		float(report.get("event_summary_ms", 0.0)), float(report.get("event_detail_ms", 0.0)),
+		float(report.get("event_publish_ms", 0.0)),
+		float(report.get("economy_trace_memory_bytes", 0)) / 1048576.0,
+		int(report.get("economy_event_last_batch_count", 0)),
+	])
 	quit(0)
 
 func _new_ext(cells: int) -> Object:
@@ -136,6 +146,10 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 	var shortage_weight := PackedInt32Array()
 	var rise := PackedInt32Array()
 	var fall := PackedInt32Array()
+	var categories := PackedStringArray()
+	var storage_modes := PackedInt32Array()
+	var issue_values := PackedInt64Array()
+	var technology_tag_offsets := PackedInt32Array([0])
 	for good in range(good_count):
 		good_ids.append("good_%03d" % good)
 		default_price.append(10000 + good)
@@ -150,6 +164,10 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		shortage_weight.append(65536)
 		rise.append(8192)
 		fall.append(4096)
+		categories.append("bench")
+		storage_modes.append(0)
+		issue_values.append(0)
+		technology_tag_offsets.append(0)
 	var need_ids := PackedStringArray()
 	var need_stable := PackedInt32Array()
 	var priorities := PackedInt32Array()
@@ -201,6 +219,10 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		"good_demand_ema_alpha_q16": ema, "good_target_inventory_days_q16": target_days,
 		"good_inventory_weight_q16": inventory_weight, "good_shortage_weight_q16": shortage_weight,
 		"good_max_price_rise_q16": rise, "good_max_price_fall_q16": fall,
+		"good_category_ids": categories, "good_storage_modes": storage_modes,
+		"good_monetary_issue_values": issue_values,
+		"good_technology_tag_offsets": technology_tag_offsets,
+		"good_technology_tags": PackedStringArray(),
 		"environment_curve_ids": PackedStringArray(), "environment_curve_signal_ids": PackedInt32Array(),
 		"environment_curve_values_q16": PackedInt32Array(), "plan_need_offsets": PackedInt32Array([0, 16]),
 		"need_stable_ids": need_stable, "need_priorities": priorities,

@@ -498,6 +498,16 @@ tick's ψ (`cell_ocean_psi` slot) instead of zero:
 
 ## Gameplay event bus / chunked detail 验证
 
+经济 journal 额外检查 `get_economy_trace_report()`：
+
+- `event_summary_ms/event_detail_ms/event_publish_ms` 分别归因语义 append、选中范围 legs 和 O(1)
+  committed batch 切换；publish 不应随总 cohort 数出现新的全量扫描尖峰。
+- `detail_truncated_count=0`、`evicted_event_count`、`oldest/newest_event_id` 与 consumer `gap/lag`
+  是追踪完整性证据；consumer 落后不得触发 economy backpressure。
+- trace OFF/SELECTIVE 与 worker/scalar 的核心 economy state hash 必须一致；worker/scalar
+  `event_stream_hash` 也必须一致。
+- 10M auto cadence 与固定五日建筑 benchmark 必须分别标注，不能用自动 N 性能替代默认档证据。
+
 新增 API 探针：
 
 - `DCWorldExt.has_method("get_gameplay_event_schema")`
@@ -1170,6 +1180,10 @@ stage 判断：
 - `structural_commit` 长：迁移/转职/归零事件过多，查 ECB 来源，不能在此全局 compact。
 - `wait_commit`：计算已提前完成，正在等周期截止日；这是冻结结算隔离，不是卡死。
 - `aggregate_publish` 长：cell summary 或审计扫描异常；不得改成全世界 Dictionary。
+- `building_plan_ms` 长：检查是否按 owner-lot 重复解析 catalog/字符串；计划只能访问预编译 CSR
+  与冻结价格。`zero_utilization_building_groups` 高时对照 expected revenue、operating cost、margin gap。
+- `market_signal_ms` 长：比较 `market_signal_edges/updates` 与实际建筑 input/output 边；不得退化为
+  `cell_count × good_count` 扫描。
 
 上述 stage ms 在 worker 路径是 task CPU 时间之和，slice `elapsed_ms` 才是墙钟。
 正常冻结周期中 `epoch_active=true/commit_due=false` 时不得出现屏障；世界日应继续推进。
@@ -1189,9 +1203,25 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
 
 - `building_employment` 长：比较 active building cells、group count、owner/employee filled；不应出现
   `cell_count × group_count` 扫描。
-- `building_production` 长：检查 processed groups、input/resource/output edge 数，以及高价 offer 排序。
+- `building_production` 长：检查 processed groups、input/resource/output edge 数、高价 offer
+  排序，以及 `labor_signal_ms` 与 owner payroll/bonus 分摊。
+- Price V3 异常：从市场快照逐项检查 household/business demand、offered supply、cost anchor、
+  excess/inventory/shortage/cost/idle pressure 和 projected change，不能只看最终价格猜原因。
 - `production_output_discarded>0`：商人正资金不足，不是库存 publish 失败。
 - `building_resource_delta_cells=0` 且产量非零：检查 behavior/resource columns 和 extra slot；reserve
   存在而 extra slot 缺失应直接 fatal，不能静默生成资源产出。
-- committed 后 population/money/goods error 仍必须精确为 0；`building_wages_unpaid>0` 表示业主
-  现金不足，先检查固定工资、产出收入和商人购买力，不能用铸币掩盖。
+- 农场零储量时应出现 `building_resource_generated>0`、`building_resource_consumed=0`；在下一次
+  natural-resource pass 前 effective reserve 仍为 0。若提前产出，检查正 pending 是否被错误合入。
+- 矿场跨多个经济周期但资源 pass 尚未运行时，负 pending 必须降低 effective reserve；关注
+  `building_resource_limited_groups` 与 generated/consumed/net_delta，枯竭后产出应为 0。
+- committed 后 population/money/goods error 仍必须精确为 0；`building_wages_unpaid>0` 与
+  `wage_suspended_building_groups>0` 表示业主无法足额支付生活工资。先比较
+  `building_base_wages_due/paid`、奖金、产出收入与商人购买力，不能用铸币掩盖。
+- `wage_plan_ms` 长：比较 active labor keys、当地 cohort/signature 数与消费篮子边数；不得退化
+  为 cell×profession 或 cohort×building 稠密矩阵。
+- 金银场景检查 `gold/silver_accepted`、对应 issued money 和 `anchored_money_issued`；只有后者可
+  增加 `_explicit_money_mint`。普通 producer revenue 增长但 anchored=0 时总货币必须不变。
+- 电力场景检查 `cycle_flow_produced/consumed/discarded`，committed market electricity stock 必须为
+  0。active-cell 性能不得每 cell 扫全部 goods；清零只遍历预编译 `cycle_flow_good_ids`。
+- 现代 124-good 目录会放大 MarketStore、price loop、snapshot 和 event 成本；与旧 5-good building
+  基线比较时必须标注 catalog size、trace mode 和 cadence，不能把目录规模差异归咎于单个公式。

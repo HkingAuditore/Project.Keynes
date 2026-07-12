@@ -47,6 +47,7 @@ func show_cell_panel(cell: HexCell) -> void:
 	if cell == null:
 		hide_cell_panel()
 		return
+	_set_inspector_trace_cell(int(cell.index))
 	_right_panel.set_model_for_selection(_inspector_view_model.build(cell))
 	if not _right_panel.visible:
 		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
@@ -54,6 +55,7 @@ func show_cell_panel(cell: HexCell) -> void:
 
 func hide_cell_panel() -> void:
 	_selected_cell = null
+	_set_inspector_trace_cell(-1)
 	if _right_panel != null:
 		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
 
@@ -74,6 +76,19 @@ func refresh_selected_panel() -> void:
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return
 	_right_panel.set_model_for_selection(_inspector_view_model.build(_selected_cell))
+
+
+func _on_inspector_tab_data_requested(tab_id: String) -> void:
+	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
+		return
+	_right_panel.set_tab_category(
+		tab_id, _inspector_view_model.build_tab_category(_selected_cell, tab_id))
+
+
+func _set_inspector_trace_cell(cell_idx: int) -> void:
+	if _inspector_view_model == null:
+		return
+	_inspector_view_model.set_inspector_trace_cell(cell_idx)
 
 
 func update_time_state(
@@ -147,6 +162,7 @@ func _build_ui() -> void:
 	_right_panel.offset_top = PlayerTopBar.BAR_HEIGHT + 4.0
 	_right_panel.offset_bottom = -UITokens.SPACE_MD
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
+	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
 	add_child(_right_panel)
 
 	_loading_overlay = WorldLoadingOverlay.new()

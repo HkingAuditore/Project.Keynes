@@ -46,102 +46,26 @@ func _init(p_generator, p_map: MapData, p_stride: int = 1) -> void:
 
 
 func declare_reads() -> Array[StringName]:
-	return [
+	var reads: Array[StringName] = [
 		DCComponentIds.CELL_TEMP,
 		DCComponentIds.CELL_MOISTURE,
 		DCComponentIds.CELL_IS_WATER,
-		DCComponentIds.CELL_RES_TIMBER_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_STONE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_FERTILE_SOIL_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_WHEAT_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_RICE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_CORN_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_POTATO_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_COAL_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_OIL_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_NATURAL_GAS_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_COPPER_ORE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_IRON_ORE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_GOLD_ORE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SILVER_ORE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SALT_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_RUBBER_TREE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SALTPETER_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_RARE_EARTH_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_CLAY_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_HORSES_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_WILD_GAME_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SPICE_PLANTS_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_FLAX_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_COTTON_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_CATTLE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SHEEP_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_PIGS_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_MEDICINAL_HERBS_EXTRA_CHANGE,
+		DCComponentIds.CELL_RESOURCE_HABITAT_MASK,
 	]
+	for profile in ResourceProfileRegistry.ordered():
+		var extra_name := StringName(String(profile.reserve_component).replace(
+			"_reserve", "_extra_change"))
+		reads.append(extra_name)
+	return reads
 
 
 func declare_writes() -> Array[StringName]:
-	# economy.resources：每种资源的 reserve + extra_change 字段（顺序与 ResourceProfileRegistry 对齐）。
-	# 新增资源时同步更新此表，让调度器拓扑与写权限校验正确。
-	return [
-		DCComponentIds.CELL_RES_TIMBER_RESERVE,
-		DCComponentIds.CELL_RES_STONE_RESERVE,
-		DCComponentIds.CELL_RES_FERTILE_SOIL_RESERVE,
-		DCComponentIds.CELL_RES_WHEAT_RESERVE,
-		DCComponentIds.CELL_RES_RICE_RESERVE,
-		DCComponentIds.CELL_RES_CORN_RESERVE,
-		DCComponentIds.CELL_RES_POTATO_RESERVE,
-		DCComponentIds.CELL_RES_COAL_RESERVE,
-		DCComponentIds.CELL_RES_OIL_RESERVE,
-		DCComponentIds.CELL_RES_NATURAL_GAS_RESERVE,
-		DCComponentIds.CELL_RES_COPPER_ORE_RESERVE,
-		DCComponentIds.CELL_RES_IRON_ORE_RESERVE,
-		DCComponentIds.CELL_RES_GOLD_ORE_RESERVE,
-		DCComponentIds.CELL_RES_SILVER_ORE_RESERVE,
-		DCComponentIds.CELL_RES_SALT_RESERVE,
-		DCComponentIds.CELL_RES_RUBBER_TREE_RESERVE,
-		DCComponentIds.CELL_RES_SALTPETER_RESERVE,
-		DCComponentIds.CELL_RES_RARE_EARTH_RESERVE,
-		DCComponentIds.CELL_RES_CLAY_RESERVE,
-		DCComponentIds.CELL_RES_HORSES_RESERVE,
-		DCComponentIds.CELL_RES_WILD_GAME_RESERVE,
-		DCComponentIds.CELL_RES_SPICE_PLANTS_RESERVE,
-		DCComponentIds.CELL_RES_FLAX_RESERVE,
-		DCComponentIds.CELL_RES_COTTON_RESERVE,
-		DCComponentIds.CELL_RES_CATTLE_RESERVE,
-		DCComponentIds.CELL_RES_SHEEP_RESERVE,
-		DCComponentIds.CELL_RES_PIGS_RESERVE,
-		DCComponentIds.CELL_RES_MEDICINAL_HERBS_RESERVE,
-		DCComponentIds.CELL_RES_TIMBER_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_STONE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_FERTILE_SOIL_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_WHEAT_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_RICE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_CORN_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_POTATO_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_COAL_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_OIL_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_NATURAL_GAS_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_COPPER_ORE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_IRON_ORE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_GOLD_ORE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SILVER_ORE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SALT_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_RUBBER_TREE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SALTPETER_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_RARE_EARTH_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_CLAY_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_HORSES_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_WILD_GAME_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SPICE_PLANTS_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_FLAX_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_COTTON_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_CATTLE_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_SHEEP_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_PIGS_EXTRA_CHANGE,
-		DCComponentIds.CELL_RES_MEDICINAL_HERBS_EXTRA_CHANGE,
-	]
+	var writes: Array[StringName] = []
+	for profile in ResourceProfileRegistry.ordered():
+		writes.append(profile.reserve_component)
+		writes.append(StringName(String(profile.reserve_component).replace(
+			"_reserve", "_extra_change")))
+	return writes
 
 
 func declare_pools() -> Array[StringName]:

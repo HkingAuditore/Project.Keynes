@@ -1,17 +1,29 @@
 [gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
-
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
-
 [resource]
 script = ExtResource("1")
 id = &"subsistence_farm"
-display_name = "自耕农场"
+display_name = "小麦农场"
+building_kind = "collector"
+technology_tags = PackedStringArray("industry.primary")
+construction_days = 0
 owner_profession_id = &"subsistence_farmer"
 owner_slots_per_building = 1
-output_good_ids = PackedStringArray("grain")
-output_quantities_per_day = PackedInt64Array(1000)
-condition_opcodes = PackedInt32Array(1)
-condition_signals = PackedInt32Array(8)
-condition_compares = PackedInt32Array(0)
-condition_reference_ids = PackedStringArray("")
-condition_values = PackedInt64Array(0)
+employee_profession_ids = PackedStringArray()
+employee_slots_per_building = PackedInt64Array()
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+output_good_ids = PackedStringArray("wheat_grain")
+output_quantities_per_day = PackedInt64Array(10000)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = PackedStringArray("arable_land", "fertile_soil")
+resource_quantities_per_day = PackedInt64Array(10000, 10000)
+resource_interaction_modes = PackedStringArray("capacity", "capacity")
+resource_access_modes = PackedStringArray("local", "local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "consume_local_resources"
+wage_policy_id = "none"
+wage_per_employee_per_day = 0

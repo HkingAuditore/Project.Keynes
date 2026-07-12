@@ -32,3 +32,6 @@ init_landform_weights = {
 13: 250000.0,
 14: 450000.0
 }
+geology_family_id = &"sedimentary"
+init_province = 260000.0
+init_belt = 140000.0

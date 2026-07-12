@@ -16,6 +16,7 @@ constexpr int PK_EVENT_VEGETATION_SUCCESSION = 1;
 constexpr int PK_EVENT_TERRAIN_FLIP = 2;
 constexpr int PK_EVENT_WEATHER_FRONT_CHANGED = 3;
 constexpr int PK_EVENT_VISUAL_DIRTY_INTENT = 4;
+constexpr int PK_EVENT_ECONOMY_EPOCH_COMMITTED = 5;
 
 constexpr int PK_EVENT_SOURCE_NATIVE = 1;
 constexpr int PK_EVENT_SOURCE_GDSCRIPT = 2;
@@ -23,6 +24,7 @@ constexpr int PK_EVENT_SOURCE_DEBUG = 3;
 
 constexpr int PK_PAYLOAD_NONE = 0;
 constexpr int PK_PAYLOAD_SUCCESSION_V1 = 1; // i0=old_veg, i1=new_veg
+constexpr int PK_PAYLOAD_ECONOMY_EPOCH_V1 = 2; // i0=epoch, i1=newest id, i2=count
 
 static int64_t event_i64_at(const PackedInt64Array &arr, int idx, int64_t fallback) {
     return (idx >= 0 && idx < arr.size()) ? arr[idx] : fallback;
@@ -139,6 +141,7 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     types["TERRAIN_FLIP"] = PK_EVENT_TERRAIN_FLIP;
     types["WEATHER_FRONT_CHANGED"] = PK_EVENT_WEATHER_FRONT_CHANGED;
     types["VISUAL_DIRTY_INTENT"] = PK_EVENT_VISUAL_DIRTY_INTENT;
+    types["ECONOMY_EPOCH_COMMITTED"] = PK_EVENT_ECONOMY_EPOCH_COMMITTED;
     schema["types"] = types;
 
     Dictionary sources;
@@ -150,6 +153,7 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     Dictionary payloads;
     payloads["NONE"] = PK_PAYLOAD_NONE;
     payloads["SUCCESSION_V1"] = PK_PAYLOAD_SUCCESSION_V1;
+    payloads["ECONOMY_EPOCH_V1"] = PK_PAYLOAD_ECONOMY_EPOCH_V1;
     schema["payload_schemas"] = payloads;
     schema["fields"] = Array::make(
         "event_id", "tick", "phase", "type", "source", "flags", "entity_id",
