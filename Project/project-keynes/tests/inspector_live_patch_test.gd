@@ -102,6 +102,10 @@ func _run() -> void:
 		failures.append("population live patch lost cohort expansion state")
 	if cohort_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
 		failures.append("expanded population list exceeds the inspector scroll width")
+	var cohort_refs: Dictionary = cohort_list._row_refs.get("cohort_1", {})
+	if not String((cohort_refs.get("income") as Label).text).begins_with("收入 ") \
+			or not String((cohort_refs.get("expense") as Label).text).begins_with("支出 "):
+		failures.append("population header does not identify income and expense as ledger entries")
 
 	panel.select_tab("buildings")
 	await process_frame
@@ -118,10 +122,10 @@ func _run() -> void:
 	if building_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
 		failures.append("expanded building list exceeds the inspector scroll width")
 	var building_refs: Dictionary = building_list._row_refs.get("building_1", {})
-	for raw_detail in (building_refs.get("detail_refs", {}) as Dictionary).values():
-		var detail_root := (raw_detail as Dictionary).get("root") as Control
-		if detail_root != null and detail_root.size.x > building_list.size.x + 0.5:
-			failures.append("expanded building detail row exceeds the building list width")
+	for group_id in ["jobs", "production", "finance"]:
+		var group_panel := ((building_refs.get(group_id, {}) as Dictionary).get("panel") as Control)
+		if group_panel != null and group_panel.size.x > building_list.size.x + 0.5:
+			failures.append("expanded building %s card exceeds the building list width" % group_id)
 			break
 
 	var deferred_cohorts := CohortList.new()
@@ -298,14 +302,10 @@ func _market_category(step: float) -> Dictionary:
 
 
 func _population_category(step: float) -> Dictionary:
-	var demand_rows := [
-		{"id": "demand_grain", "name": "谷物", "value": "%.3f 单位/人/日" % (0.8 + step * 0.0001), "icon": "resource", "visible": true},
-		{"id": "demand_cloth", "name": "布料", "value": "0.040 单位/人/日", "icon": "resource", "visible": true},
-	]
 	return {
 		"cohort_rows": [
-			{"id": "cohort_1", "name": "工人 · 本地人口", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "status": "需求满足 80% · 结算 5日", "accent": UITokens.ACCENT, "icon": "growth", "visible": true, "detail_rows": [{"id": "income_wages", "name": "收入 · 工资", "value": "+12/人", "icon": "trend_up"}], "demand_rows": demand_rows},
-			{"id": "cohort_2", "name": "商人 · 本地人口", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "status": "商人 · 需求满足 90% · 结算 5日", "accent": UITokens.RESOURCE, "icon": "growth", "visible": true, "detail_rows": [{"id": "income_sales", "name": "收入 · 居民销售", "value": "+30/人", "icon": "trend_up"}], "demand_rows": demand_rows},
+			{"id": "cohort_1", "name": "工人 · 本地人口", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "需求满足 80% · 结算 5日", "accent": UITokens.ACCENT, "icon": "growth", "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_summary": {"value": "2 类 · %.3f 单位/人/日" % (0.84 + step * 0.0001), "subtitle": "主要：谷物、布料"}},
+			{"id": "cohort_2", "name": "商人 · 本地人口", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "商人 · 需求满足 90% · 结算 5日", "accent": UITokens.RESOURCE, "icon": "growth", "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_summary": {"value": "2 类 · 0.840 单位/人/日", "subtitle": "主要：谷物、布料"}},
 		],
 	}
 
@@ -317,11 +317,14 @@ func _building_category(step: float) -> Dictionary:
 			"owner": "业主 · 地主", "status": "产能 75.0%",
 			"profit_label": "利润", "profit": "+%.1f" % (40.0 + step),
 			"accent": UITokens.GOOD, "icon": "building", "visible": true,
-			"detail_rows": [
-				{"id": "owner_job", "name": "业主岗位 · 地主", "value": "2 / 2 · 100.0%", "icon": "growth"},
-				{"id": "worker_job", "name": "雇员岗位 · 工人", "value": "30 / 40 · 75.0%", "icon": "growth"},
+			"job_rows": [
+				{"id": "owner_job", "name": "业主 · 地主", "value": "2 / 2", "ratio": 1.0},
+				{"id": "worker_job", "name": "雇员 · 工人", "value": "30 / 40", "ratio": 0.75},
+			],
+			"production_rows": [
 				{"id": "input", "name": "原材料 · 谷物", "value": "1.500 单位/栋/日", "icon": "resource"},
 				{"id": "output", "name": "产品 · 玉米", "value": "0.802 单位/栋/日 · 资源充足", "icon": "resource"},
 			],
+			"finance": {"revenue": "90", "cost": "50", "profit": "+%.1f" % (40.0 + step), "profit_positive": true, "breakdown": "原料 20 · 工资 30", "warning": ""},
 		}],
 	}

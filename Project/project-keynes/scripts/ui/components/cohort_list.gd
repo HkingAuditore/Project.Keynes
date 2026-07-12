@@ -19,9 +19,8 @@ func set_rows(rows: Array) -> void:
 
 
 func update_rows(rows: Array) -> void:
-	for row_id in _row_refs.keys():
-		var refs: Dictionary = _row_refs[row_id]
-		var panel := refs.get("panel") as PanelContainer
+	for refs in _row_refs.values():
+		var panel := (refs as Dictionary).get("panel") as PanelContainer
 		if panel != null:
 			panel.visible = false
 	for raw in rows:
@@ -39,12 +38,8 @@ func set_expanded(row_id: String, expanded: bool) -> void:
 		return
 	_expanded[row_id] = expanded
 	var refs: Dictionary = _row_refs[row_id]
-	var button := refs.get("button") as Button
-	var details := refs.get("details") as Control
-	if button != null:
-		button.set_pressed_no_signal(expanded)
-	if details != null:
-		details.visible = expanded
+	(refs.get("button") as Button).set_pressed_no_signal(expanded)
+	(refs.get("details") as Control).visible = expanded
 
 
 func is_expanded(row_id: String) -> bool:
@@ -55,34 +50,29 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(panel)
-
 	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", UITokens.SPACE_XS)
+	body.add_theme_constant_override("separation", UITokens.SPACE_SM)
 	panel.add_child(body)
 
 	var button := Button.new()
 	button.toggle_mode = true
 	button.focus_mode = Control.FOCUS_NONE
-	button.custom_minimum_size = Vector2(0.0, 52.0)
+	button.custom_minimum_size = Vector2(0.0, 58.0)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.text = ""
-	button.toggled.connect(func(expanded: bool) -> void:
-		set_expanded(row_id, expanded)
-	)
+	button.toggled.connect(func(expanded: bool) -> void: set_expanded(row_id, expanded))
 	body.add_child(button)
 
 	var header := HBoxContainer.new()
 	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	button.add_child(header)
-	header.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 6)
+	header.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 7)
 	header.add_theme_constant_override("separation", UITokens.SPACE_SM)
-
+	button.add_child(header)
 	var icon := IconBadge.new()
-	icon.custom_minimum_size = Vector2(24.0, 24.0)
+	icon.custom_minimum_size = Vector2(26.0, 26.0)
 	header.add_child(icon)
-
 	var identity := VBoxContainer.new()
-	identity.custom_minimum_size = Vector2(78.0, 0.0)
+	identity.custom_minimum_size.x = 0.0
 	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	identity.add_theme_constant_override("separation", 0)
 	header.add_child(identity)
@@ -95,23 +85,20 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	status_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	status_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	identity.add_child(status_label)
-
 	var population_label := Label.new()
-	population_label.custom_minimum_size = Vector2(58.0, 0.0)
+	population_label.custom_minimum_size = Vector2(54.0, 0.0)
 	population_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	population_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	population_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
 	header.add_child(population_label)
-
 	var wealth_label := Label.new()
-	wealth_label.custom_minimum_size = Vector2(66.0, 0.0)
+	wealth_label.custom_minimum_size = Vector2(62.0, 0.0)
 	wealth_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	wealth_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	wealth_label.add_theme_color_override("font_color", UITokens.RESOURCE)
 	header.add_child(wealth_label)
-
 	var ledger := VBoxContainer.new()
-	ledger.custom_minimum_size = Vector2(86.0, 0.0)
+	ledger.custom_minimum_size = Vector2(102.0, 0.0)
 	ledger.add_theme_constant_override("separation", 0)
 	header.add_child(ledger)
 	var income_label := Label.new()
@@ -127,94 +114,180 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 
 	var details := VBoxContainer.new()
 	details.visible = false
-	details.add_theme_constant_override("separation", 2)
+	details.add_theme_constant_override("separation", UITokens.SPACE_SM)
 	body.add_child(details)
-	var detail_refs := {}
-	_sync_detail_rows(details, detail_refs, data.get("detail_rows", []))
-	_sync_detail_rows(details, detail_refs, data.get("demand_rows", []))
+	var finance := _create_finance_summary(details)
+	var income_group := _create_ledger_group(details, "收入构成", "trend_up", UITokens.GOOD)
+	var expense_group := _create_ledger_group(details, "支出构成", "trend_down", UITokens.RISK)
+	var demand := _create_demand_summary(details)
 
-	var refs := {
-		"panel": panel,
-		"button": button,
-		"icon": icon,
-		"name": name_label,
-		"status": status_label,
-		"population": population_label,
-		"wealth": wealth_label,
-		"income": income_label,
-		"expense": expense_label,
-		"details": details,
-		"details_by_id": detail_refs,
-	}
+	var refs := {"panel": panel, "button": button, "icon": icon, "name": name_label,
+		"status": status_label, "population": population_label, "wealth": wealth_label,
+		"income": income_label, "expense": expense_label, "details": details,
+		"finance": finance, "income_group": income_group,
+		"expense_group": expense_group, "demand": demand}
 	_apply_row(row_id, refs, data)
 	return refs
 
 
-func _sync_detail_rows(parent: VBoxContainer, refs: Dictionary, rows: Array) -> void:
-	for raw in rows:
-		var data: Dictionary = raw
-		var row_id := String(data.get("id", "detail_%d" % refs.size()))
-		if not refs.has(row_id):
-			refs[row_id] = _create_detail_row(parent, data)
-		_apply_detail(refs[row_id], data)
-
-
-func _create_detail_row(parent: VBoxContainer, data: Dictionary) -> Dictionary:
+func _create_finance_summary(parent: VBoxContainer) -> Dictionary:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
+		Color(0.045, 0.039, 0.032, 0.98), UITokens.PANEL_BORDER_SOFT))
+	parent.add_child(panel)
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 34)
+	margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
+	margin.add_theme_constant_override("margin_top", 6)
 	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
-	parent.add_child(margin)
-	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	margin.add_child(line)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	panel.add_child(margin)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", UITokens.SPACE_SM)
+	margin.add_child(grid)
+	var refs := {}
+	for key in ["income", "expense", "net"]:
+		var box := VBoxContainer.new()
+		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		box.add_theme_constant_override("separation", 0)
+		grid.add_child(box)
+		var label := Label.new()
+		label.text = {"income": "收入", "expense": "支出", "net": "净额"}[key]
+		label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+		label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+		box.add_child(label)
+		var value := Label.new()
+		value.add_theme_font_override("font", UITokens.font_with_weight(650))
+		value.add_theme_color_override("font_color", UITokens.GOOD if key == "income" else UITokens.RISK)
+		box.add_child(value)
+		refs[key] = value
+	return refs
+
+
+func _create_ledger_group(parent: VBoxContainer, title: String, icon_key: String, accent: Color) -> Dictionary:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
+		Color(0.040, 0.035, 0.029, 0.98), Color(accent.r, accent.g, accent.b, 0.34)))
+	parent.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	panel.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 3)
+	margin.add_child(box)
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", UITokens.SPACE_XS)
+	box.add_child(title_row)
 	var icon := IconBadge.new()
 	icon.custom_minimum_size = Vector2(18.0, 18.0)
-	line.add_child(icon)
-	var name_label := Label.new()
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	name_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	line.add_child(name_label)
-	var value_label := Label.new()
-	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	value_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	value_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	line.add_child(value_label)
-	var refs := {"root": margin, "icon": icon, "name": name_label, "value": value_label}
-	_apply_detail(refs, data)
-	return refs
+	icon.set_icon(icon_key, accent)
+	title_row.add_child(icon)
+	var title_label := Label.new()
+	title_label.text = title
+	title_label.add_theme_font_override("font", UITokens.font_with_weight(650))
+	title_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	title_label.add_theme_color_override("font_color", accent)
+	title_row.add_child(title_label)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 2)
+	box.add_child(rows)
+	return {"panel": panel, "rows": rows, "refs": {}, "accent": accent}
+
+
+func _create_demand_summary(parent: VBoxContainer) -> Dictionary:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
+		Color(0.040, 0.035, 0.029, 0.98), Color(UITokens.RESOURCE.r, UITokens.RESOURCE.g, UITokens.RESOURCE.b, 0.30)))
+	parent.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	panel.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	margin.add_child(box)
+	var top := HBoxContainer.new()
+	box.add_child(top)
+	var title := Label.new()
+	title.text = "消费需求"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_override("font", UITokens.font_with_weight(650))
+	title.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	title.add_theme_color_override("font_color", UITokens.RESOURCE)
+	top.add_child(title)
+	var value := Label.new()
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
+	top.add_child(value)
+	var subtitle := Label.new()
+	subtitle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	subtitle.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	subtitle.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+	box.add_child(subtitle)
+	return {"panel": panel, "value": value, "subtitle": subtitle}
+
+
+func _sync_ledger_rows(group: Dictionary, rows: Array) -> void:
+	var container := group.get("rows") as VBoxContainer
+	var refs: Dictionary = group.get("refs", {})
+	for ref in refs.values():
+		((ref as Dictionary).get("root") as Control).visible = false
+	for raw in rows:
+		var data: Dictionary = raw
+		var row_id := String(data.get("id", "row_%d" % refs.size()))
+		if not refs.has(row_id):
+			var line := HBoxContainer.new()
+			line.add_theme_constant_override("separation", UITokens.SPACE_SM)
+			container.add_child(line)
+			var name_label := Label.new()
+			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			name_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+			name_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+			line.add_child(name_label)
+			var value_label := Label.new()
+			value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			value_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+			value_label.add_theme_color_override("font_color", group.get("accent", UITokens.TEXT_MAIN))
+			line.add_child(value_label)
+			refs[row_id] = {"root": line, "name": name_label, "value": value_label}
+		var ref: Dictionary = refs[row_id]
+		(ref.get("root") as Control).visible = bool(data.get("visible", true))
+		(ref.get("name") as Label).text = String(data.get("name", ""))
+		(ref.get("value") as Label).text = String(data.get("value", ""))
+	group["refs"] = refs
+	(group.get("panel") as Control).visible = not rows.is_empty()
 
 
 func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	var accent: Color = data.get("accent", UITokens.ACCENT)
 	var panel := refs.get("panel") as PanelContainer
 	panel.visible = bool(data.get("visible", true))
-	panel.add_theme_stylebox_override(
-		"panel",
-		UITokens.inset_panel_style(Color(0.055, 0.048, 0.039, 0.96), Color(accent.r, accent.g, accent.b, 0.42))
-	)
+	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
+		Color(0.055, 0.048, 0.039, 0.96), Color(accent.r, accent.g, accent.b, 0.42)))
 	(refs.get("icon") as IconBadge).set_icon(String(data.get("icon", "growth")), accent)
 	(refs.get("name") as Label).text = String(data.get("name", "阶层"))
 	(refs.get("status") as Label).text = String(data.get("status", ""))
 	(refs.get("population") as Label).text = String(data.get("population", ""))
 	(refs.get("wealth") as Label).text = String(data.get("wealth", ""))
-	(refs.get("income") as Label).text = String(data.get("income", "+—"))
-	(refs.get("expense") as Label).text = String(data.get("expense", "−—"))
-	var detail_refs: Dictionary = refs.get("details_by_id", {})
-	for detail_ref in detail_refs.values():
-		var root := (detail_ref as Dictionary).get("root") as Control
-		if root != null:
-			root.visible = false
-	_sync_detail_rows(refs.get("details") as VBoxContainer, detail_refs, data.get("detail_rows", []))
-	_sync_detail_rows(refs.get("details") as VBoxContainer, detail_refs, data.get("demand_rows", []))
-	refs["details_by_id"] = detail_refs
+	(refs.get("income") as Label).text = "收入 %s" % String(data.get("income", "+—"))
+	(refs.get("expense") as Label).text = "支出 %s" % String(data.get("expense", "−—"))
+	var finance: Dictionary = refs.get("finance", {})
+	(finance.get("income") as Label).text = String(data.get("income", "+—"))
+	(finance.get("expense") as Label).text = String(data.get("expense", "−—"))
+	var net_text := String(data.get("net", "—"))
+	var net_label := finance.get("net") as Label
+	net_label.text = net_text
+	net_label.add_theme_color_override("font_color", UITokens.GOOD if bool(data.get("net_positive", true)) else UITokens.RISK)
+	_sync_ledger_rows(refs.get("income_group", {}), data.get("income_rows", []))
+	_sync_ledger_rows(refs.get("expense_group", {}), data.get("expense_rows", []))
+	var demand: Dictionary = refs.get("demand", {})
+	var demand_data: Dictionary = data.get("demand_summary", {})
+	(demand.get("value") as Label).text = String(demand_data.get("value", ""))
+	(demand.get("subtitle") as Label).text = String(demand_data.get("subtitle", ""))
+	(demand.get("panel") as Control).visible = not demand_data.is_empty()
 	set_expanded(row_id, bool(_expanded.get(row_id, false)))
-
-
-func _apply_detail(refs: Dictionary, data: Dictionary) -> void:
-	var root := refs.get("root") as Control
-	root.visible = bool(data.get("visible", true))
-	var accent: Color = data.get("accent", UITokens.RESOURCE)
-	(refs.get("icon") as IconBadge).set_icon(String(data.get("icon", "resource")), accent)
-	(refs.get("name") as Label).text = String(data.get("name", "物资"))
-	(refs.get("value") as Label).text = String(data.get("value", ""))
