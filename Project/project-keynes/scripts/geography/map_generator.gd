@@ -1474,11 +1474,16 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		int(bootstrapped.get("epoch_days", 1)),
 	])
 	if _test_economy_bootstrap_enabled:
-		print("[economy/test-bootstrap] populated_cells=%d population=%d cohorts=%d buildings=%d goods=%d" % [
+		print(("[economy/test-bootstrap] populated_cells=%d population=%d cohorts=%d "
+			+ "professions=%d/%d building_groups=%d building_types=%d/%d goods=%d") % [
 			int(test_bootstrap_report.get("populated_cells", 0)),
 			int(test_bootstrap_report.get("total_population", 0)),
 			int(test_bootstrap_report.get("cohort_count", 0)),
+			int(test_bootstrap_report.get("generated_profession_count", 0)),
+			int(test_bootstrap_report.get("catalog_profession_count", 0)),
 			int(test_bootstrap_report.get("building_group_count", 0)),
+			int(test_bootstrap_report.get("placed_building_type_count", 0)),
+			int(test_bootstrap_report.get("building_type_count", 0)),
 			int(test_bootstrap_report.get("good_count", 0)),
 		])
 
@@ -5818,6 +5823,7 @@ func _ensure_natural_resource_knobs() -> void:
 			"cell_temp",
 			"cell_moisture",
 			"cell_is_water",
+			"cell_resource_habitat_mask",
 		])
 		var extra_slots: PackedStringArray = _natural_resource_pass_knobs.get("extra_change_slots", PackedStringArray())
 		for slot in extra_slots:
@@ -5868,9 +5874,29 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	var have_lake: bool = lake_arr.size() >= n_cells
 	var have_volcano: bool = volcano_arr.size() >= n_cells
 	var have_pos: bool = posx_arr.size() >= n_cells and posy_arr.size() >= n_cells
+	var habitat_arr: PackedByteArray = map_ref.resource_habitat_mask_arr
+	if habitat_arr.size() < n_cells:
+		habitat_arr.resize(n_cells)
+	for i in range(n_cells):
+		var mask := 0
+		var is_water_cell := have_water and water_arr[i] != 0
+		var landform := int(lf_arr[i]) if have_lf else -1
+		if not is_water_cell:
+			mask |= 1
+			if have_river and river_arr[i] != 0:
+				mask |= 4
+		elif landform in [LandformType.LF.DEEP_OCEAN, LandformType.LF.OCEAN,
+				LandformType.LF.COAST]:
+			mask |= 2
+		elif landform == LandformType.LF.LAKE:
+			mask |= 4
+		habitat_arr[i] = mask
+	map_ref.resource_habitat_mask_arr = habitat_arr
 	var base_seed: int = 0
 	if cfg != null and cfg.get("seed") != null:
 		base_seed = int(cfg.get("seed"))
+	var province_noises: Dictionary = {}
+	var belt_noises: Dictionary = {}
 	for p in ResourceProfileRegistry.ordered():
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		if field == "":
@@ -5881,7 +5907,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var lo: float = p.temp_lo
 		var hi: float = p.temp_hi
 		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
-		var land_gate: bool = bool(p.land_only) and have_water
+		var habitat_code: int = ResourceProfileRegistry.habitat_code(p)
 		# 数据驱动「地块自身情况」因子（缺省 0/{} → 该因子不参与）。
 		var w_elev: float = float(p.init_elevation)
 		var w_river: float = float(p.init_river)
@@ -5896,6 +5922,9 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var use_river: bool = w_river != 0.0 and (have_river or have_lake)
 		var use_volc: bool = have_volcano and w_volc != 0.0
 		var use_noise: bool = have_pos and absf(w_noise) > 0.0
+		var family_id := String(p.geology_family_id)
+		var use_province := have_pos and not family_id.is_empty() and absf(p.init_province) > 0.0
+		var use_belt := have_pos and not family_id.is_empty() and absf(p.init_belt) > 0.0
 		# 噪声按「资源」独立创建（map seed ⊕ 资源 id hash），保证可复现且各资源斑块互不重合。
 		var noise: FastNoiseLite = null
 		if use_noise:
@@ -5903,8 +5932,29 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 			noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 			noise.seed = base_seed ^ int(hash(p.id))
 			noise.frequency = maxf(0.0001, float(p.init_noise_scale))
+		var province_noise: FastNoiseLite = null
+		if use_province:
+			var province_key := "%s:%.6f" % [family_id, float(p.init_province_scale)]
+			province_noise = province_noises.get(province_key)
+			if province_noise == null:
+				province_noise = FastNoiseLite.new()
+				province_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+				province_noise.seed = base_seed ^ int(hash("province:" + family_id))
+				province_noise.frequency = maxf(0.0001, float(p.init_province_scale))
+				province_noises[province_key] = province_noise
+		var belt_noise: FastNoiseLite = null
+		if use_belt:
+			var belt_key := "%s:%.6f" % [family_id, float(p.init_belt_scale)]
+			belt_noise = belt_noises.get(belt_key)
+			if belt_noise == null:
+				belt_noise = FastNoiseLite.new()
+				belt_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+				belt_noise.seed = base_seed ^ int(hash("belt:" + family_id))
+				belt_noise.frequency = maxf(0.0001, float(p.init_belt_scale))
+				belt_noises[belt_key] = belt_noise
 		for i in range(n_cells):
-			if land_gate and water_arr[i] != 0:
+			if habitat_code > 0 and not ResourceProfileRegistry.habitat_available(
+					p, int(habitat_arr[i])):
 				arr[i] = 0.0
 				continue
 			var temp_v: float = temp_arr[i] if i < temp_arr.size() else 0.0
@@ -5929,6 +5979,15 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 				suit += w_volc
 			if use_noise:
 				suit += w_noise * ((noise.get_noise_2d(posx_arr[i], posy_arr[i]) + 1.0) * 0.5)
+			if use_province:
+				# 地质省是“有利/不利背景”而非全图正奖励；中心化后省外会压低储量，
+				# 避免同一地块集齐大多数矿种，同时仍让同族矿物共享大尺度相关性。
+				var province01 := (province_noise.get_noise_2d(posx_arr[i], posy_arr[i]) + 1.0) * 0.5
+				suit += float(p.init_province) * (province01 - 0.55) * 2.0
+			if use_belt:
+				var belt_ridge := 1.0 - absf(belt_noise.get_noise_2d(posx_arr[i], posy_arr[i]))
+				# ridge 高于阈值才形成矿带；其余区域施加负贡献，形成狭长稀疏矿脉。
+				suit += float(p.init_belt) * (belt_ridge - 0.72) * 2.0
 			arr[i] = maxf(0.0, suit)
 		map_ref.set(field, arr)
 
@@ -5971,7 +6030,7 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 	var temp_arr: PackedFloat32Array = map_ref.temp_arr
 	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
 	var water_arr: PackedByteArray = map_ref.is_water_arr
-	var have_water: bool = water_arr.size() >= n_cells
+	var habitat_arr: PackedByteArray = map_ref.resource_habitat_mask_arr
 	var total_delta: float = 0.0
 	var published: PackedStringArray = PackedStringArray()
 	var published_resources: int = 0
@@ -5988,11 +6047,13 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 		var lo: float = p.temp_lo
 		var hi: float = p.temp_hi
 		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
-		var land_gate: bool = bool(p.land_only) and have_water
+		var habitat_code: int = ResourceProfileRegistry.habitat_code(p)
 		for i in range(n_cells):
-			if land_gate and water_arr[i] != 0:
+			if habitat_code > 0 and (i >= habitat_arr.size() or not
+					ResourceProfileRegistry.habitat_available(p, int(habitat_arr[i]))):
 				if have_extra:
 					extra_arr[i] = 0.0
+				arr[i] = 0.0
 				continue
 			var tn: float = clampf((temp_arr[i] - lo) * inv_span, 0.0, 1.0)
 			var m: float = moist_arr[i]
@@ -6008,20 +6069,21 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 			var gen_climate: float = p.gen_base + p.gen_temp * tn + p.gen_moisture * m
 			var decay_climate: float = p.decay_base + p.decay_temp * tn + p.decay_moisture * m
 			var gen_self_eff: float = p.gen_self * runtime_fit
-			var P: float = gen_climate + gen_self_eff + extra_change - decay_climate - p.decay_stress * (1.0 - runtime_fit)
+			var P: float = gen_climate + gen_self_eff - decay_climate - p.decay_stress * (1.0 - runtime_fit)
 			var L: float = p.decay_self
 			if L < 0.0:
 				L = 0.0
 			var inv_denom: float = 1.0 / (1.0 + L)
 			var v: float
+			var reserve_after_external := maxf(0.0, reserve + extra_change)
 			if dt_days <= 1:
-				v = (reserve + P) * inv_denom
+				v = (reserve_after_external + P) * inv_denom
 			elif absf(1.0 - inv_denom) < 0.000001:
-				v = reserve + P * float(dt_days)
+				v = reserve_after_external + P * float(dt_days)
 			else:
 				var a_pow: float = pow(inv_denom, float(dt_days))
 				var b: float = P * inv_denom
-				v = a_pow * reserve + b * (1.0 - a_pow) / (1.0 - inv_denom)
+				v = a_pow * reserve_after_external + b * (1.0 - a_pow) / (1.0 - inv_denom)
 			if v < 0.0:
 				v = 0.0
 			arr[i] = v

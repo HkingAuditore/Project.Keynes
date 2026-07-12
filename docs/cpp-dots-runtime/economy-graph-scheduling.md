@@ -6,7 +6,7 @@
 每天在 20 个 slice 内完成整图，单 slice 约处理 50 万 cohort，因此 p95 约 89ms。
 瓶颈是固定点除法、need/bundle 展开和内存带宽，不是跨语言 Dictionary。
 
-Market V2 现采用 `frozen_sample_linear_v1`：周期起点冻结人口、资金、价格、库存和四类
+Market V2 / Price V3 现采用 `frozen_sample_adaptive_price_v2`：周期起点冻结人口、资金、价格、库存和四类
 环境输入；在 N 个模拟日内按地块连续 range 错峰计算，需求量一次性乘 N；所有地块与
 结构命令完成后，最早在周期截止日统一发布 N 日交易总量。
 
@@ -30,7 +30,7 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 
 ## 图阶段
 
-1. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境，冻结输入。
+1. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境，冻结输入，并生成建筑利润/利用率计划。
 2. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
 3. `household_market`：每天最多一个 cohort-budgeted market range，计算 N 日总需求/交易。
 4. `structural_commit`：稳定提交本轮结构 ECB。
@@ -82,11 +82,11 @@ worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 | N | 总消费误差 | 总支出误差 |
 | ---: | ---: | ---: |
-| 10 | 5.82% | 1.23% |
-| 20 | 12.12% | 2.57% |
-| 50 | 16.95% | 2.59% |
-| 100 | 49.89% | 2.33% |
-| 334 | 38.60% | 9.14% |
+| 10 | 14.43% | 19.72% |
+| 20 | 29.05% | 41.26% |
+| 50 | 56.86% | 94.53% |
+| 100 | 15.17% | 25.16% |
+| 334 | 63.42% | 3.99% |
 
 误差不保证随 N 单调，因为资金/库存约束和价格边界会改变交易分支。表格只代表标准固定
 场景，不是全局数学上界。需要更高精度的玩法可强制较短周期；性能不足时 report 会明确
@@ -102,3 +102,17 @@ building_employment → wait_commit → building_production → building_commit 
 `wait_commit`；截止日只处理有建筑地块的 CSR range。未完成时沿用
 `commit_due && !done` same-day barrier catch-up，不提前阻塞日历。新产出在 production 后加入
 库存，保证不会被同一周期居民市场消费。
+
+`building_production` 对每个 active cell 内部执行 utility prepass：所有产出 `cycle_flow`
+good 的建筑先购买普通库存燃料、生产并结算电力，随后其他建筑可以同周期购买该电力。最后仅遍历
+catalog 预编译的 `cycle_flow_good_ids` 清零余量，不扫描全部 goods。该内部两相不新增 scheduler
+stage，外部 cursor、deadline 和 committed visibility 保持不变。
+
+企业投入需求、实际 offer 供给与成本锚只在两相生产都结束后更新稀疏 EMA。当前周期价格阶段
+始终读取上一 committed 周期信号，避免 utility/普通生产顺序渗入价格结果，也维持冻结周期的
+确定性边界。
+
+PKEC v8 在 `building_employment` 的同一 active-cell slice 内先计算生活成本与合同工资，
+不增加 epoch-boundary 全量扫描。`building_production` 内部固定为基础工资按 owner 比例
+结算、欠薪停产、生产销售、超额利润奖金与劳动信号更新四相；外部 stage ABI 和默认五日
+冻结/截止日屏障不变。

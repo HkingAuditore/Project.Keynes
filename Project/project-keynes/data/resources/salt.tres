@@ -44,3 +44,6 @@ climate_moisture_tol = 0.28
 init_climate_fit = 1100.0
 runtime_climate_fit_weight = 0.45
 decay_stress = 3.0
+geology_family_id = &"evaporite"
+init_province = 500.0
+init_belt = 300.0

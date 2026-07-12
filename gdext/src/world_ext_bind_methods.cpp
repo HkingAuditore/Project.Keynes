@@ -100,6 +100,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::economy_should_run);
     ClassDB::bind_method(D_METHOD("get_economy_report"),
                          &DCWorldExt::get_economy_report);
+    ClassDB::bind_method(D_METHOD("get_population_cell_summary", "cell_idx"),
+                         &DCWorldExt::get_population_cell_summary);
     ClassDB::bind_method(D_METHOD("get_population_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_population_cell_snapshot);
     ClassDB::bind_method(D_METHOD("get_market_cell_snapshot", "cell_idx"),
@@ -124,6 +126,26 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::feed_economy_restore_chunk);
     ClassDB::bind_method(D_METHOD("end_economy_restore"),
                          &DCWorldExt::end_economy_restore);
+    ClassDB::bind_method(D_METHOD("get_economy_event_schema"),
+                         &DCWorldExt::get_economy_event_schema);
+    ClassDB::bind_method(D_METHOD("set_economy_trace_filter", "filter"),
+                         &DCWorldExt::set_economy_trace_filter);
+    ClassDB::bind_method(D_METHOD("set_economy_inspector_trace_cell", "cell_idx"),
+                         &DCWorldExt::set_economy_inspector_trace_cell);
+    ClassDB::bind_method(D_METHOD("poll_economy_events", "opts"),
+                         &DCWorldExt::poll_economy_events);
+    ClassDB::bind_method(D_METHOD("ack_economy_events", "consumer_id", "up_to_event_id"),
+                         &DCWorldExt::ack_economy_events);
+    ClassDB::bind_method(D_METHOD("get_economy_trace_report"),
+                         &DCWorldExt::get_economy_trace_report);
+    ClassDB::bind_method(D_METHOD("begin_economy_event_archive", "chunk_bytes"),
+                         &DCWorldExt::begin_economy_event_archive,
+                         DEFVAL(4 * 1024 * 1024));
+    ClassDB::bind_method(D_METHOD("read_economy_event_archive_chunk", "max_bytes"),
+                         &DCWorldExt::read_economy_event_archive_chunk,
+                         DEFVAL(4 * 1024 * 1024));
+    ClassDB::bind_method(D_METHOD("end_economy_event_archive"),
+                         &DCWorldExt::end_economy_event_archive);
     ClassDB::bind_method(D_METHOD("get_gameplay_event_schema"),
                          &DCWorldExt::get_gameplay_event_schema);
     ClassDB::bind_method(D_METHOD("publish_gameplay_events", "batch"),

@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"glass"
+display_name = "玻璃"
+category_id = &"construction"
+technology_tags = PackedStringArray("industry.construction")
+storage_mode = "stock"
+monetary_issue_value = 0
+default_price = 22000
+initial_stock = 0
+min_price = 2200
+max_price = 220000
+price_adjust_q16 = 1536
+demand_price_elasticity_q16 = 49152
+demand_ema_alpha_q16 = 16384
+target_inventory_days_q16 = 655360
+inventory_weight_q16 = 32768
+shortage_weight_q16 = 65536
+excess_demand_weight_q16 = 8192
+cost_anchor_weight_q16 = 16384
+inactive_reversion_weight_q16 = 512
+business_demand_ema_alpha_q16 = 8192
+supply_ema_alpha_q16 = 8192
+cost_ema_alpha_q16 = 4096
+max_price_rise_q16 = 8192
+max_price_fall_q16 = 4096
+merchant_buy_price_factor_q16 = 62259

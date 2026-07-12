@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"freshwater_fish"
+display_name = "淡水鱼类"
+reserve_component = &"cell.res_freshwater_fish_reserve"
+habitat_mode = "freshwater"
+temp_lo = -30.0
+temp_hi = 45.0
+gen_base = 0.8
+gen_self = 0.01
+decay_self = 0.004
+init_base = 100
+init_temp = 0
+init_moisture = 0
+init_elevation = 0
+init_river = 160
+init_volcano = 0
+init_climate_fit = 0
+init_noise = 300
+init_noise_scale = 0.06
+geology_family_id = &""
+init_province = 0
+init_province_scale = 0.012
+init_belt = 0
+init_belt_scale = 0.035
+climate_temp_opt = 0.5
+climate_temp_tol = 1
+climate_moisture_opt = 0.5
+climate_moisture_tol = 1

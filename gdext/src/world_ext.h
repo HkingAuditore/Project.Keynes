@@ -189,6 +189,7 @@ public:
     godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
     bool economy_should_run(int64_t day_index) const;
     godot::Dictionary get_economy_report() const;
+    godot::Dictionary get_population_cell_summary(int cell_idx) const;
     godot::Dictionary get_population_cell_snapshot(int cell_idx) const;
     godot::Dictionary get_market_cell_snapshot(int cell_idx) const;
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
@@ -201,6 +202,17 @@ public:
     godot::Dictionary begin_economy_restore();
     godot::Dictionary feed_economy_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_economy_restore();
+    godot::Dictionary get_economy_event_schema() const;
+    godot::Dictionary set_economy_trace_filter(const godot::Dictionary &filter);
+    godot::Dictionary set_economy_inspector_trace_cell(int cell_idx);
+    godot::Dictionary poll_economy_events(const godot::Dictionary &opts) const;
+    godot::Dictionary ack_economy_events(godot::StringName consumer_id,
+                                         int64_t up_to_event_id);
+    godot::Dictionary get_economy_trace_report() const;
+    godot::Dictionary begin_economy_event_archive(int chunk_bytes = 4 * 1024 * 1024);
+    godot::PackedByteArray read_economy_event_archive_chunk(
+        int max_bytes = 4 * 1024 * 1024);
+    godot::Dictionary end_economy_event_archive();
 
     // ─── Gameplay event bus（2026-06-26）────────────────────────────────
     // 通用、可持久化/可回放的 gameplay event log。C++ pass 和 GDScript 都通过
@@ -2101,6 +2113,7 @@ private:
     // economy_runtime.{h,cpp}; opaque here so the existing world header does
     // not expose the large chunk/market implementation to every pass TU.
     void                                     *_economy_runtime        = nullptr;
+    int64_t                                   _economy_last_notified_event_id = 0;
 
     // ─── Phase B+（2026-05-21）：season refresh round 切片调度 opaque state ─
     // 实际类型 pk::SeasonRoundState 在 world_ext.cpp 顶部定义（含 generation

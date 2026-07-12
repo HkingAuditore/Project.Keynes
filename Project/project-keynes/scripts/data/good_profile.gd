@@ -10,6 +10,13 @@ extends Resource
 @export var id: StringName = &""
 @export var display_name: String = ""
 @export var icon: Texture2D = null
+@export var category_id: StringName = &"misc"
+@export var technology_tags: PackedStringArray = PackedStringArray()
+@export_enum("stock", "cycle_flow") var storage_mode: String = "stock"
+
+## Money subunits issued per complete GOODS_SCALE unit when a merchant accepts
+## producer output. Only gold and silver may configure a positive value.
+@export_range(0, 1000000000000, 1) var monetary_issue_value: int = 0
 
 # Native MarketStore fixed-point parameters. No per-cell component/schema
 # reference is allowed: adding a good is a data-resource-only operation.
@@ -26,6 +33,12 @@ extends Resource
 @export var target_inventory_days_q16: int = 196608
 @export var inventory_weight_q16: int = 32768
 @export var shortage_weight_q16: int = 65536
+@export var excess_demand_weight_q16: int = 8192
+@export var cost_anchor_weight_q16: int = 16384
+@export var inactive_reversion_weight_q16: int = 512
+@export var business_demand_ema_alpha_q16: int = 8192
+@export var supply_ema_alpha_q16: int = 8192
+@export var cost_ema_alpha_q16: int = 4096
 @export var max_price_rise_q16: int = 8192
 @export var max_price_fall_q16: int = 4096
 

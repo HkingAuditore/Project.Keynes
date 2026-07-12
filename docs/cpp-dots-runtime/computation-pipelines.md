@@ -562,18 +562,26 @@ climate_fit   = temp_fit * moisture_fit
 runtime_fit   = lerp(1.0, climate_fit, runtime_climate_fit_weight[r])
 gen_climate   = gen_base[r]   + gen_temp[r]*tn   + gen_moisture[r]*m
 decay_climate = decay_base[r] + decay_temp[r]*tn + decay_moisture[r]*m
-P             = gen_climate + gen_self[r]*runtime_fit + extra_change[r,i]
+P             = gen_climate + gen_self[r]*runtime_fit
               - decay_climate - decay_stress[r]*(1-runtime_fit)
 L             = max(0, decay_self[r])
-reserve'      = max(0, (reserve + P) / (1 + L))
+reserve_ext   = max(0, reserve + extra_change[r,i])
+reserve'      = max(0, (reserve_ext + P) / (1 + L))       # dt_days=1
 ```
 
 当 `P > 0` 且 `decay_self > 0` 时，动态平衡点 `reserve* = P/decay_self`。`extra_change`
-是每 cell 每资源的一次性外部增减量；pass 消费后清零。**历史问题**：旧式
+是每 cell 每资源的一次性外部增减量：先应用一次，再按 `dt_days` 对自然 P/L 做闭式 catchup，
+因此五日 stride 不会把一次采收重复五遍；pass 消费后清零。**历史问题**：旧式
 `reserve' = clamp(reserve + gen − decay)` 对旧 `capacity` 模型下刚性配置会被硬上限
 clamp 成横跳；当前模型改为无硬上限的半隐式线性自衰减。
 
-`land_only[r]==1` 时水面格（`cell_is_water`）跳过、保持初值。当前资源集为：木材、石料、肥沃土壤、小麦、水稻、玉米、土豆、煤炭、石油、天然气、铜矿、铁矿、金矿、银矿、盐、橡胶树、硝石、稀土、黏土、马匹、野生动物、香料植物、亚麻、棉花、牛、羊、猪、草药。矿产类通常 `gen_* / decay_* = 0`，在游戏日尺度上保持静态；作物、林木、土壤、野生/半野生动物等通过 `gen_self`、适宜度和压力衰减表达自然增长/自然消失。
+`habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater`。海洋鱼类直接写在
+深海、海洋与浅海水格；淡水和淡水鱼类写在湖泊水格及河流格，岸上不复制资源储量。
+habitat 外储量为 0。岸上渔业/水厂通过建筑资源边的 `local_and_adjacent` 模式访问本格与六邻格。
+当前目录含 37 种自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
+自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量和肥沃土壤
+是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；林木、渔业、土壤、
+野生/半野生动物通过 `gen_self`、适宜度和压力衰减表达自然增长/消失。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
 在 `init_soa_from_bake` 之后、`_setup_sus` bind 之前跑一次（仅 GDScript，无 C++ 副本；运行期不重算）。
@@ -590,20 +598,28 @@ suit = init_base[r] + init_temp[r]*tn + init_moisture[r]*m
      + init_volcano[r] * (has_volcano ? 1 : 0)
      + init_noise[r]   * noise01(cell_pos, init_noise_scale[r])   # noise01 ∈ [0,1]
      + init_climate_fit[r] * climate_fit                # 可选最适温湿区间
-reserve0 = max(0, suit)                                 # land_only 时水面格为 0
+     + init_province[r] * 2*(province01(family)-0.55)   # 同族共享大尺度地质省
+     + init_belt[r]     * 2*(ridge(family)-0.72)        # 同族共享狭长矿带
+reserve0 = max(0, suit)                                 # habitat 不可用时为 0
 ```
 
 - 数据源全部来自 bake 后已就位的 SoA：`temp/moisture/is_water/elevation/landform/vegetation/has_river/is_lake_seed/has_volcano/cell_pos_x,y`。
-- **斑块化 / 稀疏化**：用**负的 `init_base` + 明确地貌/植被/气候正权重 + 正的 `init_noise`** → 只在适宜生态位或噪声峰值出现资源。噪声按「资源」独立 `FastNoiseLite`（`seed = cfg.seed ⊕ hash(id)`，可复现、各资源斑块互不重合），`init_noise_scale` 调斑块粒度。
+- **斑块化 / 矿脉化**：资源局部噪声按 stable id 独立；矿产另以 `geology_family_id` 共享
+  `province` 与 ridge-shaped `belt` 场。两种共享场均中心化，省外/矿带外产生负贡献，避免每块陆地
+  同时拥有大多数矿物；同族矿物仍在大尺度上相关。所有场由 map seed 派生，可确定性重放。
 - 可选最适区间：
   `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日 `gen_self` 受适宜度削弱；`decay_stress` 控制不适宜气候下的自然衰退。默认全 0，旧资源行为不变。
-- 现有 .tres 调参示例：`iron_ore/coal/oil/natural_gas/copper_ore/gold_ore/silver_ore/rare_earth` 走负 base+地貌+噪声的斑块矿脉；`clay` 偏三角洲/河流；`timber/rubber_tree/spice_plants/medicinal_herbs` 跟森林植被和温湿适宜度；`wheat/rice/corn/potato/flax/cotton/fertile_soil` 主要由平原/低地/草地或湿地权重 + 最适温湿区间控制；`wild_game/cattle/sheep/pigs/horses` 表达野生/半野生种群，偏草地、森林、水边或丘陵；`salt/saltpeter` 偏干热、盐滩、荒地并在湿润环境中衰退。
+- 现有 .tres 调参示例：金属矿按 mafic/felsic/hydrothermal/sedimentary 等 family 共享地质省和矿带；
+  `clay` 偏三角洲/河流；`timber` 跟森林植被和温湿适宜度；三类农业容量由地形、水系和气候决定；
+  `marine_fish/freshwater_fish` 先由水域 habitat 门控，再以独立资源动态推进。
 
 **输入 / 输出**：
 
-- 读 slot：`cell_temp` / `cell_moisture` / `cell_is_water`（is_water 可缺失则视为全陆地）以及每个 `extra_change_slots[r]`。
+- 读 slot：`cell_temp` / `cell_moisture` / `cell_is_water` / `cell_resource_habitat_mask` 以及每个 `extra_change_slots[r]`。
 - 写 slot：每个 `reserve_slots[r]`（如 `cell_res_timber_reserve` / `cell_res_iron_ore_reserve`）与被消费的 `extra_change_slots[r]`，逐资源 `_flush_slot_to_map`。
-- knobs：`n_cells`、`resource_count`、`reserve_slots`/`extra_change_slots`(PackedStringArray)、`land_only/temp_lo/temp_hi`、`gen_*`/`decay_*`、`climate_*_opt/tol`、`runtime_climate_fit_weight`、`decay_stress`（PackedFloat32Array，按资源索引对齐）。
+- knobs：`n_cells`、`dt_days`、`resource_count`、`reserve_slots`/`extra_change_slots`、
+  `habitat_modes/habitat_mask_slot`、`temp_lo/temp_hi`、`gen_*`/`decay_*`、`climate_*_opt/tol`、
+  `runtime_climate_fit_weight`、`decay_stress`（平行数组按资源索引对齐）。
 - 返回 Dictionary：`{ done, path, published_to_slot, published_slots, resource_count, published_resource_count, input_resource_count, n_cells, total_delta, native_ms, compute_ms, loop_ms, flush_ms, skipped_static_resources, fallback_reason? }`，其中 `resource_count` 保持为输入资源总数以兼容测试，`published_resource_count` 是实际 loop/flush 的动态资源数；其余契约同 `run_runtime_hydrology_pass`。
 - refresh 边界：`run_natural_resource_pass_native` 把 `cell_temp` / `cell_moisture` / `cell_is_water` 与 `extra_change_slots` 从 `MapData` 回拉到 C++ slots；旧 DLL 无 `refresh_slots_from_map_keys()` 时才退回全量 refresh。
 
@@ -1980,6 +1996,14 @@ C++ fan-out 协议（debug-overlay-perf v2，2026-06-12，已实现）：
 - 持久化/回放：`snapshot_gameplay_event_journal()` / `restore_gameplay_event_journal()` 只保存 POD/packed arrays，不保存 Godot Object；`replay_gameplay_events()` 可按 tick/type/source 过滤。
 - 溢出诊断：`get_gameplay_event_bus_report()` 暴露 `event_count`、`dropped_event_count`、`oldest_event_id`、`newest_event_id`、`consumer_lag`、`native_ms`、`fallback_reason`。
 
+### Economy event journal pipeline
+
+`ECONOMY_GRAPH` 在 ledger、market、structure 和 BUILDING_GRAPH 语义提交点生成事件。market worker
+只写 `MarketResult` 的 summary/detail fragment；主线程稳定 reduce 后写 native staging journal。
+`aggregate_publish` 通过三项守恒审计才发布 committed batch。默认 SELECTIVE 不为未选中的
+cohort/good 生成 delta legs，避免 10M cohort 的全量事件放大；PKEJ archive 直接按 committed
+batch 流式编码，不先构造全量 Dictionary。
+
 Chunked MultiMesh 路径：
 
 - `HexRenderer.detail_scatter_chunked_multimesh_enabled=true` 时，每个 `ShrubLayer` 以固定 offset-grid chunk（默认 `detail_scatter_chunk_size_cells=8`）维护 `chunk_id -> MultiMeshInstance2D`。
@@ -2185,12 +2209,43 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
 `BuildingProfile → EconomyCatalog CSR → NativeEconomyRuntime BUILDING_GRAPH → committed building/
 population/market snapshots`。岗位按本地 profession 匹配，owner lot 先占 owner job，employee
 需求按 profession 使用稳定 prefix quotient 分配。生产容量取 owner/各 employee role 的最小
-到岗比例，再受输入库存、业主资金和 sample-day resource reserve 限制。
+到岗比例，再受输入库存、业主资金和 sample-day 有效 resource reserve 限制。亏损只作为
+owner-lot 诊断与奖金输入，不再缩放岗位需求或计划利用率；业主能足额支付基础工资时建筑继续
+运行。有效可采储量合入尚未消费的负 pending
+extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode：`extract` 以有效储量限制产能并
+发布负 delta；`capacity` 以 `reserve / (building_count × requirement)` 限产，但不写资源 delta。
+小麦/玉米等农场走农业 capacity → crop goods，只有真正的采集/采矿/渔业边执行 extract。
+资源边还编译 `local/local_and_adjacent` access mode。邻域采集在 native 热循环中按“本格、方向
+0..5”稳定去重，先汇总最多 7 格确定产能，再从同一顺序的真实来源格扣减并发布 delta；相邻
+多个渔场共享水域时读取同一个 `_resource_remaining`，不会重复开采。
 
-employee role 使用建筑类的 `wage_per_employee_per_day` 在同一截止日结算。业主资金按应付
-工资封顶，已付金额按本地同职业 `employee_employed` 权重稳定分配；工资只在 cohort funds
-之间转账，`building_wages_paid/unpaid` 用于诊断临时工资循环。
+employee role 使用 `adaptive/fixed/none` role ABI。adaptive 工资取当地基础与岗位生活成本
+上限，并向本地岗位合同工资 EMA 按周期涨跌幅收敛。同一 owner 的基础工资义务先汇总再按现金
+稳定比例支付；未足额 owner-lot 本期停产。生产销售后，超过目标业主利润的 25% 形成奖金池。
+基础工资和奖金均按本地同职业 `employee_employed` 权重分配，只在 cohort funds 间转账。
+
+每个建筑 owner-lot 同时记录本周期 `last_input_cost`、`last_wages_paid`、`last_wages_due`、
+`last_base_wages_*`、`last_bonus_*`、`wage_suspended`、
+`last_expected_revenue`、`last_operating_cost`、`last_margin_gap_q16`、计划利用率与
+`last_resource_generated`，并与
+`last_revenue` 一起通过选中地块的有界快照发布。UI 利润严格使用三者相减；这些字段不进入
+MapData/DataCore，也不产生全局建筑财务矩阵。
+建筑快照同时发布最近结算的 `period_days`，Inspector 将实际投入/产出总量按建筑数和周期天数
+归一化为“单位/栋/日”；该值反映到岗、库存、资金和资源约束后的实际效率，不展示理论配方。
 
 生产 output 先形成 cell-local offers，按当前 retail price 降序稳定排序；商人只用正 cohort funds
 按 good-specific producer factor 付款，成交量进入 MarketStore，未成交量计入 discarded。所有热
 循环只访问 POD/vector/raw scalar，不访问 Godot Object 或 Dictionary。
+
+现代目录把建筑显式编译为 `collector=0` 或 `industrial=1`。collector 必须有 resource CSR，
+industrial 的 resource CSR 必须为空；两者都可有多个 goods input/output。37 个资源 reserve 与
+extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass，经济 runtime 仍只
+在 sample boundary 读取 raw slot pointers 并向 extra-change 发布 delta。
+
+电力生产者由 output 的 `good_storage_modes=cycle_flow` 判定并在同一 cell 的普通生产前执行。
+金银 output 由 `good_monetary_issue_values` 进入锚定发行分支；其余 offer 保持价格降序与商人
+现金封顶规则。
+
+两相生产完成后，将配方计划投入、实际 offer（含 discarded）和输出单位成本聚合进稀疏
+`MarketSignalStore`。多输出建筑可配置 Q16 cost shares；未配置时按冻结参考产值稳定分摊。
+这些信号只反馈下一周期 Price V3，不在本周期形成代数环。

@@ -20,11 +20,13 @@
 #   m             = moisture                          # 已是 [0,1]
 #   gen_climate   = gen_base   + gen_temp*tn   + gen_moisture*m
 #   decay_climate = decay_base + decay_temp*tn + decay_moisture*m
-#   P             = gen_climate + gen_self + extra_change - decay_climate
+#   P             = gen_climate + gen_self - decay_climate
 #   L             = max(0, decay_self)
-#   reserve'      = max(0, (reserve + P) / (1 + L))
+#   reserve_ext   = max(0, reserve + extra_change)
+#   reserve'      = max(0, (reserve_ext + P) / (1 + L))
 # 当 P > 0 且 decay_self > 0 时，均衡点 reserve* = P / decay_self。extra_change 为
-# 每地块每资源的外部一次性增减量；自然资源 pass 消费后清零，避免重复生效。
+# 每地块每资源的外部一次性增减量；自然资源 pass 先应用一次再清零。dt_days>1 时
+# 只对自然 P/L 做闭式 catchup，不会把外部变化乘以 stride。
 #
 # 初始储量（map generation，仅 bake 时一次）—— 多因子「地块自身情况」直接资源量。
 # `init_*` 系数不是 0..1 百分比；它们直接相加成每 cell 的资源储量单位。
@@ -36,8 +38,11 @@
 #        + init_river   * (has_river 或 is_lake_seed ? 1 : 0)
 #        + init_volcano * (has_volcano ? 1 : 0)
 #        + init_noise   * noise01(cell_pos, init_noise_scale)   # noise01 ∈ [0,1]
-#   reserve0 = max(0, suit)                           # land_only 时水面格为 0
-# 斑块化技巧（矿脉/油田）：负的 init_base + 正的 init_noise → 只在噪声峰值处出露稀疏矿脉。
+#        + init_province * 2*(province01(family)-0.55)
+#        + init_belt     * 2*(ridge(family)-0.72)
+#   reserve0 = max(0, suit)                           # habitat 不匹配时为 0
+# 斑块化技巧（矿脉/油田）：负 base + 资源局部 noise + 同族地质省/矿带；共享场中心化，
+# 省外和矿带外会压低储量，避免每个陆地地块集齐大多数矿种。
 # 可选生态适宜度（作物/多年生/动物资源）：默认 init_climate_fit=0 且
 # runtime_climate_fit_weight=0，不改变旧资源行为。
 #   temp_fit     = 1 - clamp(abs(tn - climate_temp_opt) / climate_temp_tol, 0, 1)
@@ -66,7 +71,13 @@ extends Resource
 # 如 &"cell.res_timber_reserve"。Registry 据此查表得到 C++ slot 名与 MapData 字段名。
 @export var reserve_component: StringName = &""
 
-@export var land_only: bool = true            # true = 仅陆地格生成 / 演化（水面格保持 0）
+## legacy preserves old profiles while generated modern content uses the
+## explicit habitat contract. Marine resources live on ocean water cells;
+## freshwater resources live on lake water or river cells. Shore buildings
+## reach them through BuildingProfile.resource_access_modes.
+@export_enum("legacy", "land", "marine_water", "freshwater", "any") \
+var habitat_mode: String = "legacy"
+@export var land_only: bool = true            # legacy compatibility only
 
 # ─── Formula input normalization ────────────────────────────────────────
 @export var temp_lo: float = -30.0            # 温度归一化下界（摄氏）
@@ -101,6 +112,13 @@ extends Resource
 # 空间噪声斑块化（矿脉/油田）：init_noise = 峰值权重，init_noise_scale = 频率（越大斑块越碎）。
 @export var init_noise: float = 0.0
 @export var init_noise_scale: float = 0.05
+## Shared low-frequency province and ridge fields correlate deposits in the
+## same geological family; init_noise remains the resource-local patch field.
+@export var geology_family_id: StringName = &""
+@export var init_province: float = 0.0
+@export var init_province_scale: float = 0.012
+@export var init_belt: float = 0.0
+@export var init_belt_scale: float = 0.035
 
 # ─── Optional climate suitability (bootstrap + daily pass) ───────────────
 # climate_*_opt/tol 作用在归一化后的 tn/moisture 上，而不是直接摄氏温度。

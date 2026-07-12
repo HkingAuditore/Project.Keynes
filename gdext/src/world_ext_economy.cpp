@@ -2,6 +2,10 @@
 
 #include "economy_runtime.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 namespace pk {
 
 using namespace godot;
@@ -26,6 +30,7 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
                                          int cell_count,
                                          int64_t seed) {
     if (_economy_runtime == nullptr) _economy_runtime = new NativeEconomyRuntime();
+    _economy_last_notified_event_id = 0;
     return runtime_from(_economy_runtime)->configure(catalog, profile, cell_count, seed);
 }
 
@@ -116,6 +121,7 @@ Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
                        ? _slots[sid].arr_u8.ptr() : nullptr;
         };
         std::vector<const float *> resources;
+        std::vector<const float *> resource_changes;
         for (size_t r = 0; r < runtime->building_resource_reserve_slots().size(); ++r) {
             const float *reserve = f32_ptr(runtime->building_resource_reserve_slots()[r].c_str());
             const float *extra = f32_ptr(runtime->building_resource_extra_slots()[r].c_str());
@@ -130,15 +136,26 @@ Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
                 return out;
             }
             resources.push_back(reserve);
+            resource_changes.push_back(extra);
         }
         const int temp_sid = component_id(StringName("cell_temp"));
         const int32_t count = temp_sid >= 0 && temp_sid < _slots.size()
             ? _slots[temp_sid].arr_f32.size() : 0;
+        PackedInt32Array neighbor_indices;
+        if (_map_data != nullptr && _map_data->has_method(StringName("neighbor_indices_packed"))) {
+            const Variant neighbors = _map_data->call(StringName("neighbor_indices_packed"));
+            if (neighbors.get_type() == Variant::PACKED_INT32_ARRAY) {
+                neighbor_indices = neighbors;
+            }
+        }
+        const int32_t *neighbor_ptr = neighbor_indices.size() == count * 6
+            ? neighbor_indices.ptr() : nullptr;
         std::string error;
         if (!runtime->capture_building_context(
                 day_index, f32_ptr("cell_elevation"), u8_ptr("cell_terrain"),
                 u8_ptr("cell_landform"), u8_ptr("cell_vegetation"),
-                u8_ptr("cell_is_water"), u8_ptr("cell_has_river"), resources,
+                u8_ptr("cell_is_water"), u8_ptr("cell_has_river"), neighbor_ptr, resources,
+                resource_changes,
                 count, error)) {
             Dictionary out;
             out["ok"] = false;
@@ -176,6 +193,23 @@ Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
         }
         result["building_resource_delta_cells"] = changed;
         result["published_to_slot"] = changed > 0;
+    }
+    const int64_t newest_event_id = static_cast<int64_t>(
+        result.get("economy_event_newest_id", int64_t{0}));
+    if (static_cast<bool>(result.get("done", false)) &&
+        newest_event_id > _economy_last_notified_event_id) {
+        const int32_t epoch = static_cast<int32_t>(std::clamp<int64_t>(
+            static_cast<int64_t>(result.get("epoch_id", int64_t{0})),
+            0, std::numeric_limits<int32_t>::max()));
+        const int32_t newest = static_cast<int32_t>(std::clamp<int64_t>(
+            newest_event_id, 0, std::numeric_limits<int32_t>::max()));
+        const int32_t count = static_cast<int32_t>(std::clamp<int64_t>(
+            static_cast<int64_t>(result.get("economy_event_last_batch_count", int64_t{0})),
+            0, std::numeric_limits<int32_t>::max()));
+        _emit_gameplay_event(day_index, 9, 5, 1, 0, -1, -1, 2,
+                             epoch, newest, count, 0);
+        _economy_last_notified_event_id = newest_event_id;
+        result["economy_event_batch_published"] = true;
     }
     return result;
 }
@@ -219,6 +253,13 @@ Dictionary DCWorldExt::get_population_cell_snapshot(int cell_idx) const {
         cell_idx, values[0], values[1], values[2], values[3], environment_ready);
 }
 
+Dictionary DCWorldExt::get_population_cell_summary(int cell_idx) const {
+    if (_economy_runtime == nullptr) {
+        return unavailable();
+    }
+    return runtime_from(_economy_runtime)->population_cell_summary(cell_idx);
+}
+
 Dictionary DCWorldExt::get_market_cell_snapshot(int cell_idx) const {
     if (_economy_runtime == nullptr) {
         return unavailable();
@@ -228,7 +269,78 @@ Dictionary DCWorldExt::get_market_cell_snapshot(int cell_idx) const {
 
 Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->building_cell_snapshot(cell_idx);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    Dictionary out = runtime->building_cell_snapshot(cell_idx);
+    if (!static_cast<bool>(out.get("ok", false))) return out;
+    PackedInt64Array reserves;
+    PackedInt64Array pending_changes;
+    PackedInt64Array effective;
+    PackedInt64Array accessible_reserves;
+    PackedInt64Array accessible_pending_changes;
+    PackedInt64Array accessible_effective;
+    const size_t count = runtime->building_resource_reserve_slots().size();
+    reserves.resize(static_cast<int64_t>(count));
+    pending_changes.resize(static_cast<int64_t>(count));
+    effective.resize(static_cast<int64_t>(count));
+    accessible_reserves.resize(static_cast<int64_t>(count));
+    accessible_pending_changes.resize(static_cast<int64_t>(count));
+    accessible_effective.resize(static_cast<int64_t>(count));
+    auto fixed_value = [](double value) -> int64_t {
+        if (!std::isfinite(value)) return 0;
+        const double scaled = static_cast<double>(value) *
+                              static_cast<double>(NativeEconomyRuntime::GOODS_SCALE);
+        return static_cast<int64_t>(std::clamp<double>(
+            scaled, static_cast<double>(std::numeric_limits<int64_t>::min()),
+            static_cast<double>(std::numeric_limits<int64_t>::max())));
+    };
+    for (size_t r = 0; r < count; ++r) {
+        const int reserve_sid = component_id(StringName(
+            runtime->building_resource_reserve_slots()[r].c_str()));
+        const int extra_sid = component_id(StringName(
+            runtime->building_resource_extra_slots()[r].c_str()));
+        const float reserve = reserve_sid >= 0 && reserve_sid < _slots.size() &&
+                _slots[reserve_sid].dtype == SlotDType::F32 && cell_idx >= 0 &&
+                cell_idx < _slots[reserve_sid].arr_f32.size()
+            ? _slots[reserve_sid].arr_f32[cell_idx] : 0.0f;
+        const float pending = extra_sid >= 0 && extra_sid < _slots.size() &&
+                _slots[extra_sid].dtype == SlotDType::F32 && cell_idx >= 0 &&
+                cell_idx < _slots[extra_sid].arr_f32.size()
+            ? _slots[extra_sid].arr_f32[cell_idx] : 0.0f;
+        reserves.set(static_cast<int64_t>(r), fixed_value(reserve));
+        pending_changes.set(static_cast<int64_t>(r), fixed_value(pending));
+        effective.set(static_cast<int64_t>(r), fixed_value(
+            std::max(0.0f, reserve + std::min(0.0f, pending))));
+        int32_t source_cells[7];
+        const int32_t source_count = runtime->building_resource_access_cells(
+            cell_idx, static_cast<int32_t>(r), source_cells, 7);
+        double accessible_reserve = 0.0;
+        double accessible_pending = 0.0;
+        double accessible_value = 0.0;
+        for (int32_t i = 0; i < source_count; ++i) {
+            const int32_t source = source_cells[i];
+            const float source_reserve = reserve_sid >= 0 && reserve_sid < _slots.size() &&
+                    _slots[reserve_sid].dtype == SlotDType::F32 && source >= 0 &&
+                    source < _slots[reserve_sid].arr_f32.size()
+                ? _slots[reserve_sid].arr_f32[source] : 0.0f;
+            const float source_pending = extra_sid >= 0 && extra_sid < _slots.size() &&
+                    _slots[extra_sid].dtype == SlotDType::F32 && source >= 0 &&
+                    source < _slots[extra_sid].arr_f32.size()
+                ? _slots[extra_sid].arr_f32[source] : 0.0f;
+            accessible_reserve += std::isfinite(source_reserve) ? source_reserve : 0.0;
+            accessible_pending += std::isfinite(source_pending) ? source_pending : 0.0;
+            accessible_value += std::max(0.0f, source_reserve + std::min(0.0f, source_pending));
+        }
+        accessible_reserves.set(static_cast<int64_t>(r), fixed_value(accessible_reserve));
+        accessible_pending_changes.set(static_cast<int64_t>(r), fixed_value(accessible_pending));
+        accessible_effective.set(static_cast<int64_t>(r), fixed_value(accessible_value));
+    }
+    out["building_resource_current_reserve"] = reserves;
+    out["building_resource_pending_change"] = pending_changes;
+    out["building_resource_effective_reserve"] = effective;
+    out["building_resource_accessible_current_reserve"] = accessible_reserves;
+    out["building_resource_accessible_pending_change"] = accessible_pending_changes;
+    out["building_resource_accessible_effective_reserve"] = accessible_effective;
+    return out;
 }
 
 Dictionary DCWorldExt::run_economy_fixed_math_probe(const Dictionary &vectors) const {
@@ -247,6 +359,7 @@ Dictionary DCWorldExt::reset_economy(const String &reason) {
         out["reason"] = reason;
         return out;
     }
+    _economy_last_notified_event_id = 0;
     return runtime_from(_economy_runtime)->reset(reason);
 }
 
@@ -288,6 +401,52 @@ Dictionary DCWorldExt::end_economy_restore() {
         return unavailable();
     }
     return runtime_from(_economy_runtime)->end_restore();
+}
+
+Dictionary DCWorldExt::get_economy_event_schema() const {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->event_schema();
+}
+
+Dictionary DCWorldExt::set_economy_trace_filter(const Dictionary &filter) {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->set_trace_filter(filter);
+}
+
+Dictionary DCWorldExt::set_economy_inspector_trace_cell(int cell_idx) {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->set_inspector_trace_cell(cell_idx);
+}
+
+Dictionary DCWorldExt::poll_economy_events(const Dictionary &opts) const {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->poll_events(opts);
+}
+
+Dictionary DCWorldExt::ack_economy_events(StringName consumer_id,
+                                          int64_t up_to_event_id) {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->ack_events(consumer_id, up_to_event_id);
+}
+
+Dictionary DCWorldExt::get_economy_trace_report() const {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->trace_report();
+}
+
+Dictionary DCWorldExt::begin_economy_event_archive(int chunk_bytes) {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->begin_event_archive(chunk_bytes);
+}
+
+PackedByteArray DCWorldExt::read_economy_event_archive_chunk(int max_bytes) {
+    return _economy_runtime == nullptr ? PackedByteArray()
+        : runtime_from(_economy_runtime)->read_event_archive_chunk(max_bytes);
+}
+
+Dictionary DCWorldExt::end_economy_event_archive() {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->end_event_archive();
 }
 
 } // namespace pk

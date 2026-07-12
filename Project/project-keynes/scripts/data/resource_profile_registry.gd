@@ -22,10 +22,9 @@ const _PROFILE_PATHS: Array = [
 	"res://data/resources/timber.tres",
 	"res://data/resources/stone.tres",
 	"res://data/resources/fertile_soil.tres",
-	"res://data/resources/wheat.tres",
-	"res://data/resources/rice.tres",
-	"res://data/resources/corn.tres",
-	"res://data/resources/potato.tres",
+	"res://data/resources/arable_land.tres",
+	"res://data/resources/paddy_land.tres",
+	"res://data/resources/plantation_land.tres",
 	"res://data/resources/coal.tres",
 	"res://data/resources/oil.tres",
 	"res://data/resources/natural_gas.tres",
@@ -34,19 +33,29 @@ const _PROFILE_PATHS: Array = [
 	"res://data/resources/gold_ore.tres",
 	"res://data/resources/silver_ore.tres",
 	"res://data/resources/salt.tres",
-	"res://data/resources/rubber_tree.tres",
 	"res://data/resources/saltpeter.tres",
 	"res://data/resources/rare_earth.tres",
 	"res://data/resources/clay.tres",
 	"res://data/resources/horses.tres",
 	"res://data/resources/wild_game.tres",
-	"res://data/resources/spice_plants.tres",
-	"res://data/resources/flax.tres",
-	"res://data/resources/cotton.tres",
 	"res://data/resources/cattle.tres",
 	"res://data/resources/sheep.tres",
 	"res://data/resources/pigs.tres",
-	"res://data/resources/medicinal_herbs.tres",
+	"res://data/resources/fresh_water.tres",
+	"res://data/resources/marine_fish.tres",
+	"res://data/resources/freshwater_fish.tres",
+	"res://data/resources/bauxite.tres",
+	"res://data/resources/limestone.tres",
+	"res://data/resources/silica_sand.tres",
+	"res://data/resources/phosphate_rock.tres",
+	"res://data/resources/uranium_ore.tres",
+	"res://data/resources/tin_ore.tres",
+	"res://data/resources/lead_ore.tres",
+	"res://data/resources/zinc_ore.tres",
+	"res://data/resources/nickel_ore.tres",
+	"res://data/resources/manganese_ore.tres",
+	"res://data/resources/sulfur.tres",
+	"res://data/resources/platinum_ore.tres",
 ]
 
 static var _ordered: Array = []        # Array[ResourceProfile]，按 _PROFILE_PATHS 顺序
@@ -76,6 +85,27 @@ static func ordered() -> Array:
 static func count() -> int:
 	ensure_loaded()
 	return _ordered.size()
+
+static func habitat_code(p: ResourceProfile) -> int:
+	if p == null:
+		return -1
+	var habitat := String(p.habitat_mode)
+	if habitat == "legacy":
+		habitat = "land" if p.land_only else "any"
+	# Transitional aliases for hand-authored profiles from the first habitat revision.
+	if habitat == "marine_access": habitat = "marine_water"
+	if habitat == "freshwater_access": habitat = "freshwater"
+	return int({"any": 0, "land": 1, "marine_water": 2,
+		"freshwater": 3}.get(habitat, -1))
+
+
+static func habitat_available(p: ResourceProfile, mask: int) -> bool:
+	match habitat_code(p):
+		0: return true
+		1: return (mask & 1) != 0
+		2: return (mask & 2) != 0
+		3: return (mask & 4) != 0
+	return false
 
 
 # 某 profile 储量字段对应的 MapData 属性名（map_field，如 "res_timber_reserve_arr"）。
@@ -120,7 +150,7 @@ static func build_pass_knobs() -> Dictionary:
 	ensure_loaded()
 	var reserve_slots := PackedStringArray()
 	var extra_change_slots := PackedStringArray()
-	var land_only := PackedFloat32Array()
+	var habitat_modes := PackedInt32Array()
 	var temp_lo := PackedFloat32Array()
 	var temp_hi := PackedFloat32Array()
 	var gen_base := PackedFloat32Array()
@@ -146,7 +176,7 @@ static func build_pass_knobs() -> Dictionary:
 			continue
 		reserve_slots.append(cpp_name)
 		extra_change_slots.append(extra_cpp_name)
-		land_only.append(1.0 if p.land_only else 0.0)
+		habitat_modes.append(habitat_code(p))
 		temp_lo.append(p.temp_lo)
 		temp_hi.append(p.temp_hi)
 		gen_base.append(p.gen_base)
@@ -167,7 +197,8 @@ static func build_pass_knobs() -> Dictionary:
 		"resource_count": reserve_slots.size(),
 		"reserve_slots": reserve_slots,
 		"extra_change_slots": extra_change_slots,
-		"land_only": land_only,
+		"habitat_modes": habitat_modes,
+		"habitat_mask_slot": "cell_resource_habitat_mask",
 		"temp_lo": temp_lo,
 		"temp_hi": temp_hi,
 		"gen_base": gen_base,

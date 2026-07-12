@@ -7,6 +7,7 @@ const EVENT_VEGETATION_SUCCESSION: int = 1
 const EVENT_TERRAIN_FLIP: int = 2
 const EVENT_WEATHER_FRONT_CHANGED: int = 3
 const EVENT_VISUAL_DIRTY_INTENT: int = 4
+const EVENT_ECONOMY_EPOCH_COMMITTED: int = 5
 
 const SOURCE_NATIVE: int = 1
 const SOURCE_GDSCRIPT: int = 2
@@ -14,6 +15,7 @@ const SOURCE_DEBUG: int = 3
 
 const PAYLOAD_NONE: int = 0
 const PAYLOAD_SUCCESSION_V1: int = 1
+const PAYLOAD_ECONOMY_EPOCH_V1: int = 2
 
 var _world_ext = null
 var _schema: Dictionary = {}

@@ -11,6 +11,7 @@ var _world_clock: WorldClock
 var _sea_level: float = 0.42
 var _hex_size: float = 22.0
 var _resource_prev_reserves: Dictionary = {}
+var _market_prev_stock: Dictionary = {}
 var _temperature_histories: Dictionary = {}
 var _temperature_history_order: Array[int] = []
 
@@ -23,6 +24,7 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_sea_level = sea_level
 	_hex_size = hex_size
 	_resource_prev_reserves.clear()
+	_market_prev_stock.clear()
 	_temperature_histories.clear()
 	_temperature_history_order.clear()
 
@@ -36,6 +38,14 @@ func observe_temperature(cell: HexCell, day_idx: int = -1) -> void:
 		day_idx if day_idx >= 0 else _current_sample_day(),
 		_temp(cell, idx)
 	)
+
+
+func set_inspector_trace_cell(cell_idx: int) -> void:
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return
+	var facade = _generator.get_economy_facade()
+	if facade != null and facade.has_method("set_inspector_trace_cell"):
+		facade.set_inspector_trace_cell(cell_idx)
 
 
 func build(cell: HexCell) -> Dictionary:
@@ -57,16 +67,13 @@ func build(cell: HexCell) -> Dictionary:
 	var snow := _snow_cover(cell, idx)
 	var is_water := LandformType.is_water(landform_v)
 	var passable_land := TerrainType.is_passable_land(terrain_v)
-	var resource_state := _resource_state(idx, is_water)
-	var resource_summary := _resource_summary(resource_state)
-	var population_snapshot := _population_snapshot(idx)
-	var market_snapshot := _market_snapshot(idx)
+	var population_summary := _population_summary(idx)
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
-	var resource_label := String(resource_summary.get("label", "—"))
 	var tabs := [
 		{"id": "geography", "label": "地理信息", "icon": "geo"},
 		{"id": "population", "label": "人口信息", "icon": "growth"},
 		{"id": "market", "label": "市场信息", "icon": "resource"},
+		{"id": "buildings", "label": "建筑", "icon": "building"},
 		{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
 	]
 	return {
@@ -78,16 +85,12 @@ func build(cell: HexCell) -> Dictionary:
 			"caption": _score_caption(habitability),
 			"accent": _score_color(habitability),
 		},
-		"summary_cards": _summary_cards(temp, moist, population_snapshot,
-			market_snapshot, resource_label, resource_summary),
+		"summary_cards": _summary_cards(temp, moist, population_summary),
 		"tabs": tabs,
 		"categories": {
 			"geography": _geography_information_category(cell, idx, terrain_v,
 				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
 				wf, snow, vitality, passable_land, is_water),
-			"population": _population_category(population_snapshot),
-			"market": _market_category(market_snapshot),
-			"natural_resources": _resources_category(resource_state),
 		},
 	}
 
@@ -111,30 +114,24 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 	var snow := _snow_cover(cell, idx)
 	var is_water := LandformType.is_water(landform_v)
 	var passable_land := TerrainType.is_passable_land(terrain_v)
-	var resource_state := _resource_state(idx, is_water)
-	var resource_summary := _resource_summary(resource_state)
-	var population_snapshot := _population_snapshot(idx)
-	var market_snapshot := _market_snapshot(idx)
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
-	var resource_label := String(resource_summary.get("label", "—"))
 	var tab_id := current_tab if current_tab != "" else "geography"
+	var population_summary: Dictionary
 	var category: Dictionary
-	match tab_id:
-		"geography":
-			category = _geography_information_category(cell, idx, terrain_v,
-				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
-				wf, snow, vitality, passable_land, is_water)
-		"natural_resources":
-			category = _resources_category(resource_state)
-		"population":
-			category = _population_category(population_snapshot)
-		"market":
-			category = _market_category(market_snapshot)
-		_:
-			tab_id = "geography"
-			category = _geography_information_category(cell, idx, terrain_v,
-				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
-				wf, snow, vitality, passable_land, is_water)
+	if tab_id == "population":
+		population_summary = _population_snapshot(idx)
+		category = _population_category(population_summary)
+	else:
+		population_summary = _population_summary(idx)
+		category = _geography_information_category(cell, idx, terrain_v,
+			landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
+			wf, snow, vitality, passable_land, is_water) if tab_id == "geography" \
+			else build_tab_category(cell, tab_id)
+	if category.is_empty():
+		tab_id = "geography"
+		category = _geography_information_category(cell, idx, terrain_v,
+			landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
+			wf, snow, vitality, passable_land, is_water)
 	return {
 		"header": _build_header(off, terrain_v, landform_v),
 		"score": {
@@ -144,11 +141,42 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 			"caption": _score_caption(habitability),
 			"accent": _score_color(habitability),
 		},
-		"summary_cards": _summary_cards(temp, moist, population_snapshot,
-			market_snapshot, resource_label, resource_summary),
+		"summary_cards": _summary_cards(temp, moist, population_summary),
 		"tab_id": tab_id,
 		"category": category,
 	}
+
+
+func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
+	if cell == null or _map == null:
+		return {}
+	var idx := int(cell.index)
+	match tab_id:
+		"population":
+			return _population_category(_population_snapshot(idx))
+		"market":
+			return _market_category(_market_snapshot(idx))
+		"buildings":
+			return _building_category(_building_snapshot(idx))
+		"natural_resources":
+			return _resources_category(_resource_state(
+				idx, LandformType.is_water(_landform(cell, idx))))
+		"geography":
+			var terrain_v := _terrain(cell, idx)
+			var landform_v := _landform(cell, idx)
+			var vegetation_v := _vegetation(cell, idx)
+			var cover_v := _cover(cell, idx)
+			var temp := _temp(cell, idx)
+			var moist := _moisture(cell, idx)
+			var base_moist := _base_moisture(cell, idx)
+			var elev := _elevation(cell, idx)
+			var is_water := LandformType.is_water(landform_v)
+			return _geography_information_category(
+				cell, idx, terrain_v, landform_v, vegetation_v, cover_v, elev,
+				temp, moist, base_moist, _weather_field(cell, idx),
+				_snow_cover(cell, idx), _vitality(cell, landform_v),
+				TerrainType.is_passable_land(terrain_v), is_water)
+	return {}
 
 
 func _build_header(
@@ -163,20 +191,13 @@ func _build_header(
 
 
 func _summary_cards(
-		temp: float,
-		moist: float,
-		population_snapshot: Dictionary,
-		market_snapshot: Dictionary,
-		resource_label: String,
-		resource_summary: Dictionary
+	temp: float,
+	moist: float,
+	population_snapshot: Dictionary
 ) -> Array:
 	var population_ready := bool(population_snapshot.get("ok", false))
 	var population_value := "%s 人" % UITokens.format_compact_number_cn(
 		float(population_snapshot.get("population", 0)), 1) if population_ready else "未就绪"
-	var stock_total := _sum_i64(market_snapshot.get("stock", PackedInt64Array()))
-	var market_ready := bool(market_snapshot.get("ok", false))
-	var market_value := "%s 单位" % UITokens.format_compact_number_cn(
-		float(stock_total) / 1000.0, 1) if market_ready else "未就绪"
 	return [
 		{
 			"id": "summary_climate",
@@ -193,23 +214,6 @@ func _summary_cards(
 			"subtitle": "%d 个阶层" % int(population_snapshot.get("cohort_count", 0)) if population_ready else "未生成测试或正式人口",
 			"accent": UITokens.ACCENT,
 			"icon": "growth",
-		},
-		{
-			"id": "summary_market",
-			"title": "市场",
-			"value": market_value,
-			"subtitle": "%d 种物资" % int((market_snapshot.get("good_ids", PackedStringArray()) as PackedStringArray).size()) if market_ready else "原生市场未就绪",
-			"accent": UITokens.RESOURCE,
-			"icon": "resource",
-		},
-		{
-			"id": "summary_resource",
-			"title": "资源",
-			"value": String(resource_summary.get("summary_value", resource_label)),
-			"subtitle": "",
-			"accent": UITokens.RESOURCE,
-			"trend": String(resource_summary.get("trend", "")),
-			"icon": "resource",
 		},
 	]
 
@@ -445,6 +449,15 @@ func _population_snapshot(cell_idx: int) -> Dictionary:
 	return facade.population_cell_snapshot(cell_idx)
 
 
+func _population_summary(cell_idx: int) -> Dictionary:
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return {}
+	var facade = _generator.get_economy_facade()
+	if facade == null or not facade.has_method("population_cell_summary"):
+		return {}
+	return facade.population_cell_summary(cell_idx)
+
+
 func _market_snapshot(cell_idx: int) -> Dictionary:
 	if _generator == null or not _generator.has_method("get_economy_facade"):
 		return {}
@@ -452,6 +465,15 @@ func _market_snapshot(cell_idx: int) -> Dictionary:
 	if facade == null or not facade.has_method("market_cell_snapshot"):
 		return {}
 	return facade.market_cell_snapshot(cell_idx)
+
+
+func _building_snapshot(cell_idx: int) -> Dictionary:
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return {}
+	var facade = _generator.get_economy_facade()
+	if facade == null or not facade.has_method("building_cell_snapshot"):
+		return {}
+	return facade.building_cell_snapshot(cell_idx)
 
 
 func _population_category(snapshot: Dictionary) -> Dictionary:
@@ -473,6 +495,16 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 	var merchant_flags: PackedByteArray = snapshot.get("merchant_flags", PackedByteArray())
 	var owner_employed: PackedInt64Array = snapshot.get("owner_employed_by_cohort", PackedInt64Array())
 	var employee_employed: PackedInt64Array = snapshot.get("employee_employed_by_cohort", PackedInt64Array())
+	var settlement_available := bool(snapshot.get("settlement_detail_available", false))
+	var settlement_pending := bool(snapshot.get("settlement_detail_pending", false))
+	var settlement_offsets: PackedInt32Array = snapshot.get("settlement_cashflow_offsets", PackedInt32Array())
+	var settlement_source_indices: PackedInt32Array = snapshot.get("settlement_cashflow_source_indices", PackedInt32Array())
+	var settlement_source_ids: PackedStringArray = snapshot.get("settlement_cashflow_source_stable_ids", PackedStringArray())
+	var settlement_income: PackedInt64Array = snapshot.get("settlement_cashflow_income", PackedInt64Array())
+	var settlement_expense: PackedInt64Array = snapshot.get("settlement_cashflow_expense", PackedInt64Array())
+	var settlement_income_by_cohort: PackedInt64Array = snapshot.get("settlement_income_by_cohort", PackedInt64Array())
+	var settlement_expense_by_cohort: PackedInt64Array = snapshot.get("settlement_expense_by_cohort", PackedInt64Array())
+	var settlement_days := maxi(1, int(snapshot.get("settlement_period_days", 1)))
 	var demand_offsets: PackedInt32Array = snapshot.get("demand_good_offsets", PackedInt32Array())
 	var demand_good_indices: PackedInt32Array = snapshot.get("demand_good_indices", PackedInt32Array())
 	var demand_quantities: PackedInt64Array = snapshot.get("demand_per_capita_daily", PackedInt64Array())
@@ -509,17 +541,37 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 				"icon": "resource",
 				"visible": quantity > 0,
 			})
+		var detail_rows := []
+		if settlement_available and settlement_offsets.size() == populations.size() + 1:
+			var flow_begin := clampi(int(settlement_offsets[i]), 0, settlement_source_indices.size())
+			var flow_end := clampi(int(settlement_offsets[i + 1]), flow_begin, settlement_source_indices.size())
+			for flow in range(flow_begin, flow_end):
+				var source_idx := int(settlement_source_indices[flow])
+				var source_id := String(settlement_source_ids[source_idx]) if source_idx >= 0 and source_idx < settlement_source_ids.size() else "other"
+				var income_value := int(settlement_income[flow]) if flow < settlement_income.size() else 0
+				var expense_value := int(settlement_expense[flow]) if flow < settlement_expense.size() else 0
+				if income_value > 0:
+					detail_rows.append({"id": "income_%s" % source_id, "name": "收入 · %s" % _cashflow_source_name(source_id, true), "value": "+%s/人" % _money_text(income_value / maxi(population, 1)), "icon": "trend_up", "accent": UITokens.GOOD, "visible": true})
+				if expense_value > 0:
+					detail_rows.append({"id": "expense_%s" % source_id, "name": "支出 · %s" % _cashflow_source_name(source_id, false), "value": "−%s/人" % _money_text(expense_value / maxi(population, 1)), "icon": "trend_down", "accent": UITokens.RISK, "visible": true})
+		else:
+			detail_rows.append({"id": "settlement_pending", "name": "收支来源", "value": "下次结算后可查看" if settlement_pending else "当前未启用追踪", "icon": "history", "accent": UITokens.TEXT_MUTED, "visible": true})
+		var income_pc := int(settlement_income_by_cohort[i]) / maxi(population, 1) if settlement_available and i < settlement_income_by_cohort.size() else 0
+		var expense_pc := int(settlement_expense_by_cohort[i]) / maxi(population, 1) if settlement_available and i < settlement_expense_by_cohort.size() else 0
 		rows.append({
 			"id": "cohort_%s" % str(handles[i] if i < handles.size() else i),
 			"name": "%s · %s" % [profession_name, ethnicity_name],
 			"population": "%s 人" % UITokens.format_compact_number_cn(float(population), 1),
 			"wealth": "人均 %s" % _money_text(wealth_pc),
-			"status": "%s就业 %s · 满足 %.1f%%" % [
+			"income": "+%s" % _money_text(income_pc) if settlement_available else "+—",
+			"expense": "−%s" % _money_text(expense_pc) if settlement_available else "−—",
+			"status": "%s就业 %s · 满足 %.1f%% · 结算 %d日" % [
 				"商人 · " if i < merchant_flags.size() and merchant_flags[i] != 0 else "",
-				UITokens.format_compact_number_cn(float(owners + employees), 1), sat * 100.0],
+				UITokens.format_compact_number_cn(float(owners + employees), 1), sat * 100.0, settlement_days],
 			"accent": UITokens.ACCENT,
 			"icon": "growth",
 			"demand_rows": demand_rows,
+			"detail_rows": detail_rows,
 			"visible": true,
 		})
 	var insights := []
@@ -527,6 +579,8 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 		insights.append({"id": "population_empty", "text": "此地块尚无人口。可在世界生成页启用测试人口，或由正式数据源导入。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
 	elif not bool(snapshot.get("demand_preview_environment_ready", false)):
 		insights.append({"id": "population_demand_neutral_environment", "text": "环境快照暂不可用，预计需求使用最近冻结或中性环境。", "accent": UITokens.WARN, "icon": "weather"})
+	if not rows.is_empty() and settlement_pending:
+		insights.append({"id": "population_settlement_pending", "text": "已开始追踪此地；下次结算后可查看精确收支来源。", "accent": UITokens.TEXT_MUTED, "icon": "history"})
 	return {
 		"insights": insights,
 		"metrics": [
@@ -547,19 +601,32 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
 	var prices: PackedInt32Array = snapshot.get("price", PackedInt32Array())
 	var demand_ema: PackedInt64Array = snapshot.get("demand_ema", PackedInt64Array())
+	var business_demand_ema: PackedInt64Array = snapshot.get("business_demand_ema", PackedInt64Array())
+	var offered_supply_ema: PackedInt64Array = snapshot.get("offered_supply_ema", PackedInt64Array())
+	var cost_anchor: PackedInt32Array = snapshot.get("cost_anchor_price", PackedInt32Array())
 	var shortage_q16: PackedInt32Array = snapshot.get("shortage_q16", PackedInt32Array())
+	var market_id := int(snapshot.get("market_id", snapshot.get("cell_idx", -1)))
+	var sample_day := _current_sample_day()
 	for i in range(good_ids.size()):
 		var stable_id := String(good_ids[i])
 		var profile = GoodProfileRegistry.profile_by_id(stable_id)
 		var display_name := String(profile.display_name) if profile != null else stable_id
+		var stock_daily := _sample_daily_delta(_market_prev_stock,
+			"%d:%s" % [market_id, stable_id], float(stock[i]) / 1000.0, sample_day)
+		var shortage := float(shortage_q16[i]) * 100.0 / 65536.0 if i < shortage_q16.size() else 0.0
 		rows.append({
 			"id": "market_%s" % stable_id,
 			"name": display_name,
-			"value": "%s 单位" % UITokens.format_compact_number_cn(float(stock[i]) / 1000.0, 2),
-			"density": "价格 %s" % _money_text(prices[i] if i < prices.size() else 0),
-			"delta": "需求EMA %s · 短缺 %.1f%%" % [
-				UITokens.format_compact_number_cn(float(demand_ema[i]) / 1000.0, 2) if i < demand_ema.size() else "0",
-				float(shortage_q16[i]) * 100.0 / 65536.0 if i < shortage_q16.size() else 0.0,
+			"stock": "%s 单位" % UITokens.format_compact_number_cn(float(stock[i]) / 1000.0, 2),
+			"price": _money_text(prices[i] if i < prices.size() else 0),
+			"delta": _daily_delta_text(stock_daily),
+			"risk": "短缺" if shortage >= 25.0 else "",
+			"detail_rows": [
+				{"id": "household_demand", "name": "居民需求", "value": UITokens.format_compact_number_cn(float(demand_ema[i]) / 1000.0, 2) if i < demand_ema.size() else "0"},
+				{"id": "business_demand", "name": "产业需求", "value": UITokens.format_compact_number_cn(float(business_demand_ema[i]) / 1000.0, 2) if i < business_demand_ema.size() else "0"},
+				{"id": "supply", "name": "供给", "value": UITokens.format_compact_number_cn(float(offered_supply_ema[i]) / 1000.0, 2) if i < offered_supply_ema.size() else "0"},
+				{"id": "cost_anchor", "name": "成本锚", "value": _money_text(int(cost_anchor[i])) if i < cost_anchor.size() and cost_anchor[i] > 0 else "—"},
+				{"id": "shortage", "name": "短缺", "value": "%.1f%%" % shortage},
 			],
 			"accent": UITokens.RESOURCE,
 			"icon": "resource",
@@ -571,8 +638,276 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 			{"id": "market_id", "title": "本地市场", "value": "#%d" % int(snapshot.get("market_id", -1)), "subtitle": "原生 MarketStore", "accent": UITokens.RESOURCE, "icon": "resource"},
 			{"id": "merchant_funds", "title": "商人资金", "value": _money_text(_sum_i64(snapshot.get("merchant_funds", PackedInt64Array()))), "subtitle": "%s 人共同持有库存" % UITokens.format_compact_number_cn(float(_sum_i64(snapshot.get("merchant_population", PackedInt64Array()))), 1), "accent": UITokens.ACCENT, "icon": "resource"},
 		],
-		"resource_rows": rows,
+		"market_rows": rows,
 	}
+
+
+func _building_category(snapshot: Dictionary) -> Dictionary:
+	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
+		return {"insights": [{"id": "buildings_unavailable", "text": "建筑运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "building"}]}
+	if not snapshot.has("group_type_ids"):
+		return {"insights": [{"id": "building_details_unavailable", "text": "无法读取最新建筑明细。", "accent": UITokens.RISK, "icon": "building"}]}
+	var rows := []
+	var type_ids: PackedStringArray = snapshot.get("building_type_ids", PackedStringArray())
+	var type_names: PackedStringArray = snapshot.get("building_type_display_names", PackedStringArray())
+	var group_types: PackedInt32Array = snapshot.get("group_type_ids", PackedInt32Array())
+	var owner_signatures: PackedInt32Array = snapshot.get("owner_signature_ids", PackedInt32Array())
+	var group_counts: PackedInt64Array = snapshot.get("group_counts", PackedInt64Array())
+	var filled_owner: PackedInt64Array = snapshot.get("filled_owner", PackedInt64Array())
+	var capacity_q16: PackedInt64Array = snapshot.get("capacity_q16", PackedInt64Array())
+	var last_input: PackedInt64Array = snapshot.get("last_input", PackedInt64Array())
+	var last_output: PackedInt64Array = snapshot.get("last_output", PackedInt64Array())
+	var last_resource: PackedInt64Array = snapshot.get("last_resource", PackedInt64Array())
+	var last_resource_generated: PackedInt64Array = snapshot.get("last_resource_generated", PackedInt64Array())
+	var last_revenue: PackedInt64Array = snapshot.get("last_revenue", PackedInt64Array())
+	var last_input_cost: PackedInt64Array = snapshot.get("last_input_cost", PackedInt64Array())
+	var last_wages: PackedInt64Array = snapshot.get("last_wages_paid", PackedInt64Array())
+	var last_wages_due: PackedInt64Array = snapshot.get("last_wages_due", PackedInt64Array())
+	var last_operating_cost: PackedInt64Array = snapshot.get("last_operating_cost", PackedInt64Array())
+	var role_offsets: PackedInt32Array = snapshot.get("employee_fill_offsets", PackedInt32Array())
+	var role_professions: PackedInt32Array = snapshot.get("employee_profession_ids", PackedInt32Array())
+	var role_required: PackedInt64Array = snapshot.get("employee_required", PackedInt64Array())
+	var role_filled: PackedInt64Array = snapshot.get("employee_filled", PackedInt64Array())
+	var wage_suspended: PackedByteArray = snapshot.get("wage_suspended", PackedByteArray())
+	var owner_slots: PackedInt64Array = snapshot.get("building_owner_slots", PackedInt64Array())
+	var period_days := maxi(1, int(snapshot.get("period_days", 1)))
+	for i in range(group_types.size()):
+		var type_idx := int(group_types[i])
+		var count := int(group_counts[i]) if i < group_counts.size() else 0
+		var revenue := int(last_revenue[i]) if i < last_revenue.size() else 0
+		var input_cost := int(last_input_cost[i]) if i < last_input_cost.size() else 0
+		var wages := int(last_wages[i]) if i < last_wages.size() else 0
+		var wages_due := int(last_wages_due[i]) if i < last_wages_due.size() else wages
+		var operating_cost := int(last_operating_cost[i]) if i < last_operating_cost.size() else input_cost + wages_due
+		var profit := revenue - operating_cost
+		var owner_required := count * int(owner_slots[type_idx]) if type_idx >= 0 and type_idx < owner_slots.size() else count
+		var owner_actual := int(filled_owner[i]) if i < filled_owner.size() else 0
+		var details := [
+			{"id": "section_jobs", "name": "岗位", "value": "实际 / 编制", "icon": "growth", "accent": UITokens.ACCENT, "section": true},
+			{"id": "owner_job", "name": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1), "value": "%d / %d" % [owner_actual, owner_required], "icon": "growth", "accent": UITokens.ACCENT},
+		]
+		if role_offsets.size() == group_types.size() + 1:
+			for role in range(role_offsets[i], role_offsets[i + 1]):
+				var required := int(role_required[role]) if role < role_required.size() else 0
+				var filled := int(role_filled[role]) if role < role_filled.size() else 0
+				details.append({
+					"id": "job_%d" % role,
+					"name": "雇员 · %s" % _profession_name(snapshot, int(role_professions[role]) if role < role_professions.size() else -1),
+					"value": "%d / %d" % [filled, required],
+					"icon": "growth", "accent": UITokens.ACCENT,
+				})
+		details.append({"id": "section_production", "name": "生产", "value": "", "icon": "resource", "accent": UITokens.RESOURCE, "section": true})
+		var input_row_begin := details.size()
+		_append_recipe_rows(details, snapshot, type_idx, "input",
+			int(last_input[i]) if i < last_input.size() else 0, count, period_days)
+		_append_resource_generation_rows(details, snapshot, type_idx,
+			int(last_resource_generated[i]) if i < last_resource_generated.size() else 0,
+			count, period_days)
+		_append_resource_recipe_rows(details, snapshot, type_idx,
+			int(last_resource[i]) if i < last_resource.size() else 0, count, period_days)
+		var resource_net := (int(last_resource_generated[i]) if i < last_resource_generated.size() else 0) \
+			- (int(last_resource[i]) if i < last_resource.size() else 0)
+		if resource_net != 0:
+			details.append({"id": "resource_net", "name": "自然资源",
+				"value": _actual_daily_rate(resource_net, count, period_days),
+				"icon": "eco", "accent": UITokens.GOOD if resource_net > 0 else UITokens.WARN})
+		if details.size() == input_row_begin:
+			details.append({"id": "input_none", "name": "原材料", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
+		var output_row_begin := details.size()
+		_append_recipe_rows(details, snapshot, type_idx, "output",
+			int(last_output[i]) if i < last_output.size() else 0, count, period_days)
+		if details.size() == output_row_begin:
+			details.append({"id": "output_none", "name": "产出", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
+		details.append({"id": "section_finance", "name": "财务", "value": "", "icon": "resource", "accent": UITokens.RESOURCE, "section": true})
+		details.append({"id": "finance_revenue", "name": "收入", "value": _money_text(revenue), "icon": "trend_up", "accent": UITokens.GOOD})
+		details.append({"id": "finance_input", "name": "原料成本", "value": _money_text(input_cost), "icon": "resource", "accent": UITokens.RESOURCE})
+		details.append({"id": "finance_wages", "name": "工资", "value": _money_text(wages), "icon": "growth", "accent": UITokens.ACCENT})
+		details.append({"id": "finance_profit", "name": "盈亏", "value": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)], "icon": "trend_up" if profit >= 0 else "trend_down", "accent": UITokens.GOOD if profit >= 0 else UITokens.RISK})
+		if wages < wages_due:
+			details.append({"id": "wage_warning", "name": "工资未足额支付", "value": "生产受限", "icon": "warning", "accent": UITokens.RISK})
+		var staffing_required := owner_required
+		var staffing_actual := owner_actual
+		if role_offsets.size() == group_types.size() + 1:
+			for role in range(role_offsets[i], role_offsets[i + 1]):
+				staffing_required += int(role_required[role]) if role < role_required.size() else 0
+				staffing_actual += int(role_filled[role]) if role < role_filled.size() else 0
+		var status := "到岗 %d/%d · 产能 %.1f%%" % [staffing_actual, staffing_required,
+			float(capacity_q16[i]) * 100.0 / 65536.0 if i < capacity_q16.size() else 0.0]
+		if i < wage_suspended.size() and int(wage_suspended[i]) != 0:
+			status = "工资未足额支付 · 本期停产"
+		if i < capacity_q16.size() and int(capacity_q16[i]) == 0 and _building_resource_depleted(snapshot, type_idx):
+			status = "资源短缺"
+		rows.append({
+			"id": "building_%d_%d" % [type_idx, i],
+			"name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"),
+			"count": "%d 栋" % count,
+			"owner": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1),
+			"status": status,
+			"profit": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)],
+			"profit_label": "利润" if profit >= 0 else "亏损",
+			"accent": UITokens.GOOD if profit > 0 else (UITokens.RISK if profit < 0 else UITokens.TEXT_MUTED),
+			"icon": "building", "detail_rows": details, "visible": true,
+		})
+	_append_construction_rows(rows, snapshot, type_ids, type_names)
+	var total_count := _sum_i64(snapshot.get("building_counts_by_type", PackedInt64Array()))
+	return {
+		"insights": [{"id": "buildings_empty", "text": "此地块当前没有建筑。", "accent": UITokens.TEXT_MUTED, "icon": "building"}] if rows.is_empty() else [],
+		"metrics": [{"id": "building_total", "title": "建筑总数", "value": "%s 栋" % UITokens.format_compact_number_cn(float(total_count), 1), "subtitle": "%d 个业主建筑组" % group_types.size(), "accent": UITokens.ACCENT, "icon": "building"}],
+		"building_rows": rows,
+	}
+
+
+func _append_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int, kind: String,
+		actual_total: int, building_count: int, period_days: int) -> void:
+	var offsets: PackedInt32Array = snapshot.get("building_%s_offsets" % kind, PackedInt32Array())
+	var good_indices: PackedInt32Array = snapshot.get("building_%s_good_ids" % kind, PackedInt32Array())
+	var quantities: PackedInt64Array = snapshot.get("building_%s_quantities" % kind, PackedInt64Array())
+	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	if type_idx < 0 or type_idx + 1 >= offsets.size():
+		return
+	var begin := int(offsets[type_idx])
+	var end := int(offsets[type_idx + 1])
+	var recipe_total := 0
+	for cursor in range(begin, end):
+		recipe_total += int(quantities[cursor]) if cursor < quantities.size() else 0
+	for cursor in range(begin, end):
+		var good_idx := int(good_indices[cursor]) if cursor < good_indices.size() else -1
+		var stable_id := String(good_ids[good_idx]) if good_idx >= 0 and good_idx < good_ids.size() else "unknown"
+		var quantity := int(quantities[cursor]) if cursor < quantities.size() else 0
+		var actual := int(float(actual_total) * float(quantity) / float(recipe_total)) if recipe_total > 0 else 0
+		rows.append({"id": "%s_%d" % [kind, cursor], "name": "%s · %s" % ["原材料" if kind == "input" else "产出", _good_display_name(stable_id)], "value": _actual_daily_rate(actual, building_count, period_days), "icon": "resource", "accent": UITokens.RESOURCE})
+
+
+func _append_resource_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int,
+		actual_total: int, building_count: int, period_days: int) -> void:
+	var offsets: PackedInt32Array = snapshot.get("building_resource_offsets", PackedInt32Array())
+	var resource_indices: PackedInt32Array = snapshot.get("building_production_resource_ids", PackedInt32Array())
+	var quantities: PackedInt64Array = snapshot.get("building_production_resource_quantities", PackedInt64Array())
+	var modes: PackedInt32Array = snapshot.get("building_production_resource_modes", PackedInt32Array())
+	var access_modes: PackedInt32Array = snapshot.get(
+		"building_production_resource_access_modes", PackedInt32Array())
+	var resource_ids: PackedStringArray = snapshot.get("building_resource_ids", PackedStringArray())
+	if type_idx < 0 or type_idx + 1 >= offsets.size(): return
+	var begin := int(offsets[type_idx])
+	var end := int(offsets[type_idx + 1])
+	var recipe_total := 0
+	for cursor in range(begin, end): recipe_total += int(quantities[cursor]) if cursor < quantities.size() else 0
+	for cursor in range(begin, end):
+		var resource_idx := int(resource_indices[cursor]) if cursor < resource_indices.size() else -1
+		var stable_id := String(resource_ids[resource_idx]) if resource_idx >= 0 and resource_idx < resource_ids.size() else "unknown"
+		var quantity := int(quantities[cursor]) if cursor < quantities.size() else 0
+		var mode := int(modes[cursor]) if cursor < modes.size() else 0
+		var access_mode := int(access_modes[cursor]) if cursor < access_modes.size() else 0
+		var actual := int(float(actual_total) * float(quantity) / float(recipe_total)) if recipe_total > 0 else 0
+		var access_label := "邻域 · " if access_mode == 1 else ""
+		var row_name := "自然资源 · %s%s" % [access_label, _resource_display_name(stable_id)]
+		var availability := "不足" if _building_resource_depleted(snapshot, type_idx) else "充足"
+		var row_value := "每栋 %.3f · %s" % [float(quantity) / 1000.0, availability] if mode == 1 \
+			else "%s · %s" % [_actual_daily_rate(actual, building_count, period_days), availability]
+		rows.append({"id": "natural_input_%d" % cursor,
+			"name": row_name,
+			"value": row_value,
+			"icon": "eco", "accent": UITokens.ECO})
+
+
+func _append_resource_generation_rows(rows: Array, snapshot: Dictionary, type_idx: int,
+		actual_total: int, building_count: int, period_days: int) -> void:
+	var offsets: PackedInt32Array = snapshot.get("building_resource_generation_offsets", PackedInt32Array())
+	var resource_indices: PackedInt32Array = snapshot.get("building_resource_generation_ids", PackedInt32Array())
+	var quantities: PackedInt64Array = snapshot.get("building_resource_generation_quantities", PackedInt64Array())
+	var resource_ids: PackedStringArray = snapshot.get("building_resource_ids", PackedStringArray())
+	if type_idx < 0 or type_idx + 1 >= offsets.size(): return
+	var begin := int(offsets[type_idx])
+	var end := int(offsets[type_idx + 1])
+	var recipe_total := 0
+	for cursor in range(begin, end): recipe_total += int(quantities[cursor]) if cursor < quantities.size() else 0
+	for cursor in range(begin, end):
+		var resource_idx := int(resource_indices[cursor]) if cursor < resource_indices.size() else -1
+		var stable_id := String(resource_ids[resource_idx]) if resource_idx >= 0 and resource_idx < resource_ids.size() else "unknown"
+		var quantity := int(quantities[cursor]) if cursor < quantities.size() else 0
+		var actual := int(float(actual_total) * float(quantity) / float(recipe_total)) if recipe_total > 0 else 0
+		rows.append({"id": "natural_generation_%d" % cursor,
+			"name": "培育 · %s" % _resource_display_name(stable_id),
+			"value": "%s · 待资源周期生效" % _actual_daily_rate(actual, building_count, period_days),
+			"icon": "growth", "accent": UITokens.GOOD})
+
+
+func _building_resource_depleted(snapshot: Dictionary, type_idx: int) -> bool:
+	var offsets: PackedInt32Array = snapshot.get("building_resource_offsets", PackedInt32Array())
+	var resource_indices: PackedInt32Array = snapshot.get("building_production_resource_ids", PackedInt32Array())
+	var access_modes: PackedInt32Array = snapshot.get(
+		"building_production_resource_access_modes", PackedInt32Array())
+	var effective: PackedInt64Array = snapshot.get("building_resource_effective_reserve", PackedInt64Array())
+	var accessible: PackedInt64Array = snapshot.get(
+		"building_resource_accessible_effective_reserve", PackedInt64Array())
+	if type_idx < 0 or type_idx + 1 >= offsets.size() or offsets[type_idx] == offsets[type_idx + 1]:
+		return false
+	for cursor in range(offsets[type_idx], offsets[type_idx + 1]):
+		var resource_idx := int(resource_indices[cursor]) if cursor < resource_indices.size() else -1
+		var values := accessible if cursor < access_modes.size() and int(access_modes[cursor]) == 1 else effective
+		if resource_idx >= 0 and resource_idx < values.size() and int(values[resource_idx]) > 0:
+			return false
+	return true
+
+
+func _resource_effective_text(snapshot: Dictionary, resource_idx: int, access_mode: int = 0) -> String:
+	var reserves: PackedInt64Array = snapshot.get(
+		"building_resource_accessible_current_reserve" if access_mode == 1 else \
+		"building_resource_current_reserve", PackedInt64Array())
+	var effective: PackedInt64Array = snapshot.get(
+		"building_resource_accessible_effective_reserve" if access_mode == 1 else \
+		"building_resource_effective_reserve", PackedInt64Array())
+	var pending: PackedInt64Array = snapshot.get(
+		"building_resource_accessible_pending_change" if access_mode == 1 else \
+		"building_resource_pending_change", PackedInt64Array())
+	var reserve := int(reserves[resource_idx]) if resource_idx >= 0 and resource_idx < reserves.size() else 0
+	var available := int(effective[resource_idx]) if resource_idx >= 0 and resource_idx < effective.size() else 0
+	var queued := int(pending[resource_idx]) if resource_idx >= 0 and resource_idx < pending.size() else 0
+	return "%.3f（储量 %.3f，待处理 %+.3f）" % [
+		float(available) / 1000.0, float(reserve) / 1000.0, float(queued) / 1000.0]
+
+
+func _append_construction_rows(rows: Array, snapshot: Dictionary, type_ids: PackedStringArray, type_names: PackedStringArray) -> void:
+	var types: PackedInt32Array = snapshot.get("construction_type_ids", PackedInt32Array())
+	var owners: PackedInt32Array = snapshot.get("construction_owner_signature_ids", PackedInt32Array())
+	var counts: PackedInt64Array = snapshot.get("construction_counts", PackedInt64Array())
+	var ready_days: PackedInt64Array = snapshot.get("construction_ready_days", PackedInt64Array())
+	for i in range(types.size()):
+		var type_idx := int(types[i])
+		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"), "count": "%d 栋" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": "building", "detail_rows": [], "visible": true})
+
+
+func _owner_profession_name(snapshot: Dictionary, signature_idx: int) -> String:
+	var signature_professions: PackedInt32Array = snapshot.get("signature_profession_ids", PackedInt32Array())
+	return _profession_name(snapshot, int(signature_professions[signature_idx]) if signature_idx >= 0 and signature_idx < signature_professions.size() else -1)
+
+
+func _profession_name(snapshot: Dictionary, profession_idx: int) -> String:
+	var names: PackedStringArray = snapshot.get("profession_display_names", PackedStringArray())
+	var ids: PackedStringArray = snapshot.get("profession_stable_ids", PackedStringArray())
+	if profession_idx >= 0 and profession_idx < names.size(): return String(names[profession_idx])
+	return String(ids[profession_idx]) if profession_idx >= 0 and profession_idx < ids.size() else "未知阶层"
+
+
+func _good_display_name(stable_id: String) -> String:
+	var profile = GoodProfileRegistry.profile_by_id(stable_id)
+	return String(profile.display_name) if profile != null and String(profile.display_name) != "" else stable_id
+
+
+func _resource_display_name(stable_id: String) -> String:
+	for profile in ResourceProfileRegistry.ordered():
+		if String(profile.id) == stable_id:
+			return String(profile.display_name) if String(profile.display_name) != "" else stable_id
+	return stable_id
+
+
+func _fill_percent(filled: int, required: int) -> float:
+	return float(filled) * 100.0 / float(required) if required > 0 else 100.0
+
+
+func _actual_daily_rate(actual_total: int, building_count: int, period_days: int) -> String:
+	var divisor := maxi(1, building_count) * maxi(1, period_days)
+	return "%.3f 单位/栋/日" % (float(actual_total) / 1000.0 / float(divisor))
 
 
 func _sum_i64(values: PackedInt64Array) -> int:
@@ -584,6 +919,21 @@ func _sum_i64(values: PackedInt64Array) -> int:
 
 func _money_text(subunits: int) -> String:
 	return UITokens.format_compact_number_cn(float(subunits) / 10000.0, 2)
+
+
+func _cashflow_source_name(source_id: String, income: bool) -> String:
+	match source_id:
+		"wages": return "工资"
+		"owner_operations": return "业主经营"
+		"merchant_household_sales": return "居民销售"
+		"merchant_business_sales": return "产业供货"
+		"transfer": return "转移支付"
+		"household_consumption": return "生活消费"
+		"production_inputs": return "生产原料"
+		"owner_wages": return "雇员工资"
+		"construction": return "建设"
+		"merchant_procurement": return "商品收购"
+		_: return "其他收入" if income else "其他支出"
 
 
 func _weather_field(cell: HexCell, idx: int) -> Dictionary:
@@ -601,14 +951,18 @@ func _weather_field(cell: HexCell, idx: int) -> Dictionary:
 func _resource_state(idx: int, is_water: bool) -> Array:
 	ResourceProfileRegistry.ensure_loaded()
 	var items: Array = []
+	var habitat_mask := 1 if not is_water else 0
+	if _map != null and idx >= 0 and idx < _map.resource_habitat_mask_arr.size():
+		habitat_mask = int(_map.resource_habitat_mask_arr[idx])
+	var sample_day := _current_sample_day()
 	for p in ResourceProfileRegistry.ordered():
 		var resource_id := String(p.id)
 		var name_cn: String = String(p.display_name) if String(p.display_name) != "" else String(p.id)
-		var available := not (bool(p.land_only) and is_water)
+		var available := ResourceProfileRegistry.habitat_available(p, habitat_mask)
 		var reference_reserve := _resource_reference_reserve(p)
 		var reserve := 0.0
 		var delta := 0.0
-		if bool(p.land_only) and is_water:
+		if not available:
 			items.append({
 				"id": resource_id,
 				"name": name_cn,
@@ -623,9 +977,7 @@ func _resource_state(idx: int, is_water: bool) -> Array:
 		reserve = _resource_reserve(p, idx)
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		var key := "%d:%s" % [idx, field]
-		if _resource_prev_reserves.has(key):
-			delta = reserve - float(_resource_prev_reserves[key])
-		_resource_prev_reserves[key] = reserve
+		delta = _sample_daily_delta(_resource_prev_reserves, key, reserve, sample_day)
 		var density_ratio := reserve / reference_reserve
 		var relative_delta := absf(delta) / reference_reserve
 		items.append({
@@ -639,30 +991,6 @@ func _resource_state(idx: int, is_water: bool) -> Array:
 			"rank": density_ratio + relative_delta * 8.0,
 		})
 	return items
-
-
-func _resource_summary(resource_state: Array) -> Dictionary:
-	var best: Dictionary = {}
-	for raw in resource_state:
-		var item: Dictionary = raw
-		if not bool(item.get("available", true)):
-			continue
-		if float(item.get("reserve", 0.0)) <= 0.000001:
-			continue
-		if best.is_empty() or float(item.get("rank", 0.0)) > float(best.get("rank", 0.0)):
-			best = item
-	if best.is_empty():
-		return {"label": "—", "summary_value": "无可用资源", "subtitle": "无可用资源", "trend": ""}
-	var reserve := float(best.get("reserve", 0.0))
-	var delta := float(best.get("delta", 0.0))
-	var density_ratio := float(best.get("density_ratio", 0.0))
-	var density := _resource_density_band(density_ratio)
-	return {
-		"label": String(best.get("name", "资源")),
-		"summary_value": "%s · %s" % [String(best.get("name", "资源")), density],
-		"subtitle": "%s · %s" % [density, _resource_index_text(reserve)],
-		"trend": _trend_arrow(delta),
-	}
 
 
 func _resource_reserve(profile, idx: int) -> float:
@@ -687,6 +1015,9 @@ func _resource_reference_reserve(profile: ResourceProfile) -> float:
 	initial_peak += maxf(float(profile.init_volcano), 0.0)
 	initial_peak += maxf(float(profile.init_noise), 0.0)
 	initial_peak += maxf(float(profile.init_climate_fit), 0.0)
+	# bootstrap 中地质省/矿带使用中心化场；这里取其理论最大正贡献，避免矿产密度被高估。
+	initial_peak += maxf(float(profile.init_province) * 0.90, 0.0)
+	initial_peak += maxf(float(profile.init_belt) * 0.56, 0.0)
 	initial_peak += _max_positive_weight(profile.init_landform_weights)
 	initial_peak += _max_positive_weight(profile.init_vegetation_weights)
 
@@ -899,16 +1230,25 @@ func _current_sample_day() -> int:
 	return _world_clock.day_index() if _world_clock != null else 0
 
 
-func _trend_arrow(v: float) -> String:
-	if v > 0.0001: return "trend_up"
-	if v < -0.0001: return "trend_down"
-	return "trend_flat"
-
-
 func _daily_delta_text(v: float) -> String:
+	if is_nan(v):
+		return "—"
 	if absf(v) < 0.0001:
-		return "日变 约0"
-	return "日变 %s%s" % ["+" if v > 0.0 else "", UITokens.format_compact_number_cn(v, 2)]
+		return "约0"
+	return "%s%s" % ["+" if v > 0.0 else "", UITokens.format_compact_number_cn(v, 2)]
+
+
+func _sample_daily_delta(cache: Dictionary, key: String, value: float, day: int) -> float:
+	if not cache.has(key):
+		cache[key] = {"value": value, "day": day, "daily": NAN}
+		return NAN
+	var previous: Dictionary = cache[key]
+	var previous_day := int(previous.get("day", day))
+	if day <= previous_day:
+		return float(previous.get("daily", NAN))
+	var daily := (value - float(previous.get("value", value))) / float(day - previous_day)
+	cache[key] = {"value": value, "day": day, "daily": daily}
+	return daily
 
 
 func _relative_sea_level_text(elev: float, sea: float) -> String:
@@ -917,7 +1257,7 @@ func _relative_sea_level_text(elev: float, sea: float) -> String:
 
 
 func _resource_index_text(v: float) -> String:
-	return "储量 %s" % UITokens.format_compact_number_cn(v, 2)
+	return UITokens.format_compact_number_cn(v, 2)
 
 
 func _intensity_text(v: float) -> String:

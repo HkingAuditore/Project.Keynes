@@ -35,3 +35,6 @@ init_landform_weights = {
 14: 300000.0,
 15: 600000.0
 }
+geology_family_id = &"surface"
+init_province = 80000.0
+init_belt = 50000.0

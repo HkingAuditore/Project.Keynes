@@ -67,11 +67,41 @@ static func compile_native_columns() -> Dictionary:
 	var target_inventory_days := PackedInt32Array()
 	var inventory_weight := PackedInt32Array()
 	var shortage_weight := PackedInt32Array()
+	var excess_demand_weight := PackedInt32Array()
+	var cost_anchor_weight := PackedInt32Array()
+	var inactive_reversion_weight := PackedInt32Array()
+	var business_demand_ema_alpha := PackedInt32Array()
+	var supply_ema_alpha := PackedInt32Array()
+	var cost_ema_alpha := PackedInt32Array()
 	var max_price_rise := PackedInt32Array()
 	var max_price_fall := PackedInt32Array()
 	var merchant_buy_factor := PackedInt32Array()
+	var category_ids := PackedStringArray()
+	var storage_modes := PackedInt32Array()
+	var monetary_issue_values := PackedInt64Array()
+	var technology_tag_offsets := PackedInt32Array([0])
+	var technology_tags := PackedStringArray()
 	for p in _ordered:
-		ids.append(String(p.get("id")))
+		var stable_id := String(p.get("id"))
+		var category_id := String(p.get("category_id"))
+		var storage_mode := String(p.get("storage_mode"))
+		var issue_value := int(p.get("monetary_issue_value"))
+		if category_id == "" or storage_mode not in ["stock", "cycle_flow"]:
+			return {"ok": false, "reason": "invalid good metadata: %s" % stable_id}
+		if storage_mode == "cycle_flow" and stable_id != "electricity":
+			return {"ok": false, "reason": "only electricity may use cycle_flow: %s" % stable_id}
+		if issue_value < 0 or (issue_value > 0 and stable_id not in ["gold", "silver"]):
+			return {"ok": false, "reason": "invalid monetary issue good: %s" % stable_id}
+		ids.append(stable_id)
+		category_ids.append(category_id)
+		storage_modes.append(1 if storage_mode == "cycle_flow" else 0)
+		monetary_issue_values.append(issue_value)
+		var tags: PackedStringArray = p.get("technology_tags")
+		for tag in tags:
+			if String(tag).strip_edges() == "":
+				return {"ok": false, "reason": "empty good technology tag: %s" % stable_id}
+			technology_tags.append(String(tag))
+		technology_tag_offsets.append(technology_tags.size())
 		default_prices.append(int(p.get("default_price")))
 		initial_stock.append(int(p.get("initial_stock")))
 		min_prices.append(int(p.get("min_price")))
@@ -82,11 +112,23 @@ static func compile_native_columns() -> Dictionary:
 		target_inventory_days.append(int(p.get("target_inventory_days_q16")))
 		inventory_weight.append(int(p.get("inventory_weight_q16")))
 		shortage_weight.append(int(p.get("shortage_weight_q16")))
+		excess_demand_weight.append(int(p.get("excess_demand_weight_q16")))
+		cost_anchor_weight.append(int(p.get("cost_anchor_weight_q16")))
+		inactive_reversion_weight.append(int(p.get("inactive_reversion_weight_q16")))
+		business_demand_ema_alpha.append(int(p.get("business_demand_ema_alpha_q16")))
+		supply_ema_alpha.append(int(p.get("supply_ema_alpha_q16")))
+		cost_ema_alpha.append(int(p.get("cost_ema_alpha_q16")))
 		max_price_rise.append(int(p.get("max_price_rise_q16")))
 		max_price_fall.append(int(p.get("max_price_fall_q16")))
 		merchant_buy_factor.append(int(p.get("merchant_buy_price_factor_q16")))
 	return {
+		"ok": true,
 		"good_ids": ids,
+		"good_category_ids": category_ids,
+		"good_storage_modes": storage_modes,
+		"good_monetary_issue_values": monetary_issue_values,
+		"good_technology_tag_offsets": technology_tag_offsets,
+		"good_technology_tags": technology_tags,
 		"good_default_price": default_prices,
 		"good_initial_stock": initial_stock,
 		"good_min_price": min_prices,
@@ -97,6 +139,12 @@ static func compile_native_columns() -> Dictionary:
 		"good_target_inventory_days_q16": target_inventory_days,
 		"good_inventory_weight_q16": inventory_weight,
 		"good_shortage_weight_q16": shortage_weight,
+		"good_excess_demand_weight_q16": excess_demand_weight,
+		"good_cost_anchor_weight_q16": cost_anchor_weight,
+		"good_inactive_reversion_weight_q16": inactive_reversion_weight,
+		"good_business_demand_ema_alpha_q16": business_demand_ema_alpha,
+		"good_supply_ema_alpha_q16": supply_ema_alpha,
+		"good_cost_ema_alpha_q16": cost_ema_alpha,
 		"good_max_price_rise_q16": max_price_rise,
 		"good_max_price_fall_q16": max_price_fall,
 		"good_merchant_buy_factor_q16": merchant_buy_factor,

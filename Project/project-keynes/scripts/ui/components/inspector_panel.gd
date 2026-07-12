@@ -2,8 +2,11 @@ extends PanelContainer
 class_name InspectorPanel
 
 const CohortListScript = preload("res://scripts/ui/components/cohort_list.gd")
+const BuildingListScript = preload("res://scripts/ui/components/building_list.gd")
+const MarketListScript = preload("res://scripts/ui/components/market_list.gd")
 
 signal close_requested()
+signal tab_data_requested(tab_id: String)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
@@ -21,6 +24,8 @@ var _content_box: VBoxContainer
 var _insight_list: InsightList
 var _resource_list: ResourceList
 var _cohort_list
+var _building_list
+var _market_list
 var _metric_controls: Dictionary = {}
 var _gauge_controls: Dictionary = {}
 var _chart_controls: Dictionary = {}
@@ -120,6 +125,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 		_tabs_ready = true
 	else:
 		_tabs.select_tab(_current_tab)
+	_request_tab_data_if_missing(_current_tab)
 	_render_content()
 
 
@@ -139,9 +145,20 @@ func apply_live_patch(patch: Dictionary) -> void:
 			if previous_trend != "" and trend != "" and trend != previous_trend:
 				UIAnimation.pulse(card, UITokens.ANIM_MED)
 			_summary_trends[card_id] = trend
-	if String(patch.get("tab_id", "")) != _current_tab:
+	var patch_tab := String(patch.get("tab_id", ""))
+	if patch.has("category") and patch_tab != "":
+		set_tab_category(patch_tab, patch.get("category", {}))
+	if patch_tab != _current_tab:
 		return
 	_apply_category_patch(patch.get("category", {}))
+
+
+func set_tab_category(tab_id: String, category: Dictionary) -> void:
+	if tab_id == "" or category.is_empty():
+		return
+	var categories: Dictionary = _model.get("categories", {})
+	categories[tab_id] = category
+	_model["categories"] = categories
 
 
 func current_tab() -> String:
@@ -300,6 +317,8 @@ func _render_content() -> void:
 	_insight_list = null
 	_resource_list = null
 	_cohort_list = null
+	_building_list = null
+	_market_list = null
 	_metric_controls.clear()
 	_gauge_controls.clear()
 	_chart_controls.clear()
@@ -354,6 +373,22 @@ func _build_category_block(data: Dictionary) -> void:
 		_resource_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_resource_list.set_rows(resource_rows)
 		_content_box.add_child(_resource_list)
+
+	var market_rows: Array = data.get("market_rows", [])
+	if data.has("market_rows"):
+		_add_group_separator()
+		_market_list = MarketListScript.new()
+		_market_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_market_list.set_rows(market_rows)
+		_content_box.add_child(_market_list)
+
+	var building_rows: Array = data.get("building_rows", [])
+	if data.has("building_rows"):
+		_add_group_separator()
+		_building_list = BuildingListScript.new()
+		_building_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_building_list.set_rows(building_rows)
+		_content_box.add_child(_building_list)
 
 	var metrics: Array = data.get("metrics", [])
 	if not metrics.is_empty():
@@ -423,6 +458,10 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 		_cohort_list.update_rows(data.get("cohort_rows", []))
 	if _resource_list != null:
 		_resource_list.update_rows(data.get("resource_rows", []))
+	if _building_list != null and data.has("building_rows"):
+		_building_list.update_rows(data.get("building_rows", []))
+	if _market_list != null and data.has("market_rows"):
+		_market_list.update_rows(data.get("market_rows", []))
 	for raw in data.get("metrics", []):
 		var metric: Dictionary = raw
 		var card := _metric_controls.get(String(metric.get("id", ""))) as MetricCard
@@ -502,8 +541,15 @@ func _add_group_separator() -> void:
 
 func _on_tab_selected(tab_id: String) -> void:
 	_current_tab = tab_id
+	tab_data_requested.emit(tab_id)
 	_render_content()
 	UIAnimation.crossfade(_content_box, UITokens.ANIM_FAST)
+
+
+func _request_tab_data_if_missing(tab_id: String) -> void:
+	var categories: Dictionary = _model.get("categories", {})
+	if not categories.has(tab_id):
+		tab_data_requested.emit(tab_id)
 
 
 func _has_tab(tabs: Array, tab_id: String) -> bool:

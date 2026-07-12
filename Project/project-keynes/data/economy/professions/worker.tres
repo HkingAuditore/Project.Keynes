@@ -1,13 +1,7 @@
 [gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
-
 [ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
-
 [resource]
 script = ExtResource("1")
 id = &"worker"
-display_name = "工人"
+display_name = "普通工人"
 default_consumption_plan_id = &"worker_household"
-birth_rate_q32 = 235000
-death_rate_q32 = 135000
-satisfaction_birth_weight_q16 = 65536
-

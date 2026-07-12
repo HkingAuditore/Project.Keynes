@@ -38,10 +38,16 @@ Runtime hydrology 新增的契约：
 - `cell.river_flow` / `cell_river_flow`：`F32`，`map_field=river_flow_arr`，owner 为 `map_generation`。这是生成期归一化河宽/径流权重，season river ecology 可直接读 slot 区分普通河道与强径流主河。
 - `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
 - Legacy `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。Native daily graph 中的 `runtime_hydrology` 节点复用 round 起点 refresh，依赖前序 weather node 已在 C++ slots 中发布当日 precip。
-- `cell.res_timber_reserve`、`cell.res_stone_reserve`、`cell.res_fertile_soil_reserve` 等 28 个自然资源储量字段：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。另有一一对应的 `cell.res_*_extra_change` 字段，`map_field=res_*_extra_change_arr`，供未来开采/繁育/畜牧系统写入本 tick 一次性增减量。新增资源需加 reserve/extra 常量 + MapData 数组 + schema 行 + codegen + 重 build，并登记 `ResourceProfileRegistry._PROFILE_PATHS`。由 `run_natural_resource_pass` 写入 reserve，并在消费后清零 extra，再逐 slot `_flush_slot_to_map()` 回 `MapData`；reserve 初值由 `MapGenerator._bootstrap_natural_resource_deposits` 在生成期写一次。`run_natural_resource_pass_native` 调 C++ 前优先 `refresh_slots_from_map_keys(["cell_temp","cell_moisture","cell_is_water", ...extra slots])`（旧 DLL fallback 到全量 refresh），确保 climate round 与外部 extra 写入对 C++ 可见。knobs 由 `ResourceProfileRegistry.build_pass_knobs()` 组装（`reserve_slots`/`extra_change_slots`/`land_only`/`temp_lo`/`temp_hi`/`gen_*`/`decay_*`/`climate_*_opt/tol`/`runtime_climate_fit_weight`/`decay_stress` 平行数组）；返回 Dictionary 含 `published_to_slot`/`published_slots`/`total_delta`，契约同 `run_runtime_hydrology_pass`。
+- `cell.res_timber_reserve`、`cell.res_stone_reserve`、`cell.res_arable_land_reserve` 等 37 个自然资源/农业容量储量字段：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。另有一一对应的 `cell.res_*_extra_change` 字段；生产发布一次性采收/开采 delta，资源 pass 只应用一次后清零。`cell.resource_habitat_mask`（U8）编码 land/marine-water/freshwater：海鱼保存在海洋水格，淡水/淡水鱼保存在湖泊水格或河流格。小麦、玉米等栽培作物不再拥有 DataCore slot，而是 MarketStore goods。新增资源需加 reserve/extra 常量 + MapData 数组 + schema 行 + codegen + 重 build，并登记 `ResourceProfileRegistry._PROFILE_PATHS`。knobs 使用 `habitat_modes`/`habitat_mask_slot` 和 `dt_days`；五日 catchup 仅放大自然演化，不重复放大 external delta。
+
+建筑 sample boundary 还从 `MapData.neighbor_indices_packed()` 捕获静态六邻拓扑。目录中的
+`building_production_resource_access_modes` 决定 local 或 local-and-adjacent；NativeEconomyRuntime
+负责跨最多 7 格汇总 `_resource_remaining` 并把 extraction delta 写回真实来源格。邻接数组只在
+冻结周期边界跨桥一次，不进入逐建筑 Object/GDScript 调用。Inspector 冷查询同时发布本地与
+邻域可达 reserve/pending/effective 三列。
 - Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v2 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
 
-Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外，`get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot` 在 native slice 之间同步返回完整最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md)。
+Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口、市场、建筑标签按当前可见标签惰性调用 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md)。
 
 ## PackedArray CoW 公理
 
@@ -71,6 +77,23 @@ Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-
 - ring buffer 溢出不静默：report 必须显示 `dropped_event_count` / `first_dropped_event_id`，consumer 落后看 `consumer_lag`。
 
 GDScript 侧统一通过 `scripts/data_core/gameplay_event_bus.gd` 包装 native API。渲染或 UI 不直接解析 C++ raw arrays，除非是在 debug 工具里显式 inspect schema。
+
+### Economy event journal
+
+千万 cohort 经济域不把逐笔变化直接写入通用 gameplay ring。`NativeEconomyRuntime` 使用专用
+header + delta-leg journal，并由 `DCWorldExt` 暴露 `get_economy_event_schema`、
+`set_economy_trace_filter`、`poll_economy_events`、`ack_economy_events`、
+`get_economy_trace_report` 与 PKEJ archive chunk API。跨界输出始终是 PackedArrays；
+`EconomyFacade.economy_event_batch` 仅在 committed boundary 批量 emit；冷路径
+`write_event_archive()` 使用 `FileAccess.COMPRESSION_ZSTD` 写独立压缩 PKEJ 文件。
+
+handler 是只读观察者。需要改变经济时必须提交 economy command，由下一冻结周期处理；禁止
+在 market/building hot loop 中调用 Callable、发逐事件 signal 或构造 Dictionary。
+
+玩家人口 Inspector 另用 `set_economy_inspector_trace_cell(cell)` 注册一个单地块目标，不覆盖
+调试 `set_economy_trace_filter`。`get_population_cell_snapshot` 会返回上次提交周期的稀疏
+cashflow CSR、周期日期和 `settlement_detail_available/pending`；首次选中等待下一次提交。
+该缓存不进入 DataCore slot、PKEC 存档或核心 state hash。
 
 ## GDScript 写入 C++ 可见数据
 
@@ -478,6 +501,12 @@ Dictionary DCWorldExt::run_my_pass(Dictionary knobs) {
 | 每个 stage 都 `refresh_slots_from_map()` | sync 成本累积 | round 开始一次 refresh，stage 间沿用 C++ slot。 |
 | fallback 没有 `fallback_reason` | 日志只看到 `path=gdscript`，无法定位 | 返回具体原因：missing_method、missing_slot、bad_size、stale_dll。 |
 
+现代经济资源扩展后，DataCore 明确持有 37 组 `cell.res_<id>_reserve` 与
+`cell.res_<id>_extra_change` F32 slots；`component_schema.gd` 是唯一 bind-table 输入，生成结果为
+151 个 component entries（另含 `cell.resource_habitat_mask`）。goods、building、profession 和 technology tags 仍只存在于 economy
+catalog/native runtime，不进入 MapData。`DCWorldExt` 在 sample boundary 批量解析资源 slot，生产
+结束后按资源列批量写回 extra-change，边界内没有逐 cell Object 调用。
+
 ## 排查 checklist
 
 1. `world bound=true` 吗？
@@ -533,9 +562,21 @@ bridge surfaces and component slots.
 
 建筑目录、owner-lot、岗位和生产账本不进入 component schema。`world_ext_economy.cpp` 在周期
 sample day 从已有 static/climate slots 捕获地理条件，并只为建筑目录实际引用的自然资源复制
-reserve 快照。周期发布后，native resource-major 定点 delta 被一次性写入对应
+reserve 与 pending extra 快照。建筑限产使用 `reserve + min(pending, 0)`：负 pending 防止资源
+pass 步长较大时重复超采，正 pending 必须等资源 pass 才可采。周期发布后，native
+resource-major 定点培育/采收净 delta 被一次性写入对应
 `cell_res_*_extra_change` C++ slot 并 `_flush_slot_to_map()`。
+
+PKEC v8 的稀疏 `LaborMarketStore`、role 合同工资、生活成本、基础工资与奖金同样完全留在
+`NativeEconomyRuntime`，不新增 component slot，也不逐 cohort 跨语言调用。GDScript 仅通过
+选中地块 `get_building_cell_snapshot` 读取有界 role/labor-market 并行数组。
 
 该 delta 是“下一次自然资源 pass 的外部变化”，因此 `economy_daily` 声明读取 reserve，但不把
 extra_change 声明为同 tick write：natural-resource job 同时读取 extra/write reserve，若建立当日
-双向 DAG 会形成环。报告中的 `building_resource_delta_cells` 与 `published_to_slot` 用于确认发布。
+双向 DAG 会形成环。报告中的 `building_resource_generated/consumed/net_delta`、
+`building_resource_limited_groups`、`building_resource_delta_cells` 与 `published_to_slot` 用于确认发布。
+选中地块建筑快照可附带当前 reserve、pending 与 effective 定点列；该冷查询不复制全图。
+
+Price V3 的企业需求 EMA、实际供给 EMA 与成本锚同样只存在 native 稀疏
+`MarketSignalStore`，不注册 DataCore component。市场/建筑 selected-cell snapshot 可冷路径返回
+这些列及压力分解、计划利润与利用率；GDScript 仅格式化显示，不重算价格或利润。

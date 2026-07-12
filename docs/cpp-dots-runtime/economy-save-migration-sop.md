@@ -16,12 +16,16 @@ payload
 section 顺序：
 
 0. header：尺度、cell/market/good/page/cohort 数、市场周期 N、treasury、seed、catalog
-   hash、next submit order、稳定职业/民族/goods/plan ID 表。
+   hash、next submit order、稳定职业/民族/goods/plan ID 表，以及建筑/施工/审计/信号计数。
 1. page records：page chain metadata 和每页 64 lane 完整 SoA/generation。
 2. market records：所有 goods 的 stock/price/demand EMA/last shortage。
 3. cell records：恒等 `cell_to_market` 与当日四类 Q16 环境快照。
 4. pending commands。
-5. end。
+5. building owner-lot records。
+6. pending construction records。
+7. audit history。
+8. sparse market signal records。
+9. end。
 
 `read_economy_save_chunk(max_bytes)` 直接从当前 native vectors 编码本 section 的
 record range，不构造巨型 Dictionary 或整份 byte buffer。page/market record 不会被
@@ -40,9 +44,9 @@ restore 要先用当前资源 catalog 调 `configure_economy()`，再
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-存档仍为 schema v2：冻结周期没有增加 lane/matrix 字段，`epoch_days` 原字段现在解释为
-`market_cycle_days`。会计惰性清零复用 `flags` 保留 parity bit，已包含在既有 lane record。
-从旧每日 V2 档恢复后可继续运行，但重放语义因近似版本变化而不兼容；普通存档状态守恒。
+当前写出 schema 为 v8。`epoch_days` 原字段解释为 `market_cycle_days`；会计惰性清零复用
+`flags` 保留 parity bit。restore 继续接受 v2-v7，并为后续版本增加的展示/计划/信号字段填入
+确定性默认值；旧冻结模型的重放语义不与 Price V3 等价，但迁移后的普通存档仍必须守恒。
 
 ## catalog 身份
 
@@ -50,7 +54,7 @@ restore 要先用当前资源 catalog 调 `configure_economy()`，再
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 schema v2 要求 save 的稳定 ID 表与当前 catalog 完全一致。新增/删除/改 ID
+当前 schema v8 要求 save 的稳定 ID 表与当前 catalog 完全一致。新增/删除/改 ID
 时必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
 迁移器应：
 
@@ -114,3 +118,60 @@ CSR 重建后才发布。
 v2 chunk 仍可读取：沿用旧 page 宽度与 section end=5，新增就业字段置零，建筑与在建表为空。
 v2 迁移以 profession/ethnicity/good/plan stable-ID 表和 numeric scale 为准，不要求旧 combined
 catalog hash 等于加入建筑字段后的新 hash。
+
+# PKEC v4 建筑财务快照迁移
+
+v4 在每个 BUILDINGS 记录中追加 `last_input_cost` 与 `last_wages_paid`。两者均为
+`MONEY_SCALE=10000` 的本结算周期实际值，用于选中地块 Inspector 按建筑 owner-lot 计算
+`profit = last_revenue - last_input_cost - last_wages_paid`。v2/v3 仍可读取；迁移时这两个展示账本
+字段置零，下一次 BUILDING_GRAPH 生产结算后刷新为实际值。字段参与确定性状态哈希，保存往返
+必须保持完全一致。
+
+# PKEC v5 建筑资源培育快照迁移
+
+v5 在每个 BUILDINGS 记录中于 `last_resource` 后追加 `last_resource_generated`，单位为
+`GOODS_SCALE=1000`，表示该 owner-lot 最近结算周期发布到自然资源 extra-change 通道的正培育量。
+字段参与确定性状态哈希并供选中地块 Inspector 计算培育、采收与净变化。v2/v3/v4 继续可读；
+迁移时该字段置零，下一次 BUILDING_GRAPH 生产结算后刷新。资源 reserve 与 pending extra 仍由
+世界/DataCore 存档负责，不重复写入 PKEC stream。
+
+# PKEC v6 事件审计摘要迁移
+
+v6 header 在 pending-command count 后追加 `audit_frame_count`、`next_event_id` 与
+`event_stream_hash`，新增 section 7 `AUDIT_HISTORY`，原 end section 移到 8。每个 audit record
+保存 epoch/sample/commit day、event/leg count、population/money/goods error 和 stream hash。
+
+主存档只带最近 `economy_trace_retention_epochs` 个审计帧与连续 ID 游标，不包含可能很大的
+event/delta ring。详细历史通过独立 PKEJ v1 chunk stream 归档；读入 v2-v5 时初始化空审计历史、
+`next_event_id=1`，并在成功 restore 后发布新的 `RESTORE_BOUNDARY`。核心 economy state hash
+不包含 trace 配置、consumer cursor 或 event journal，因此 v5→v6 恢复仍保持权威状态 hash。
+
+## 现代目录兼容边界
+
+124-good/128-building 现代目录的 good/building/profession/need、存储模式、货币锚与 Price V3
+参数均进入 catalog hash；旧小目录存档会以明确的 catalog mismatch 拒绝恢复。本期不做跨目录
+库存或建筑 type remap。周期流电力在 committed boundary 恒为零，发行累计只通过已提交 cohort
+funds/market stock 与 audit history 体现，不新增独立持久账户。
+
+# PKEC v7 自适应价格与建筑经济计划迁移
+
+v7 在 BUILDINGS 记录追加 `last_wages_due`、`last_expected_revenue`、`last_operating_cost`、
+`last_margin_gap_q16`、`planned_utilization_q16` 与冻结 `sample_unit_input_cost`。新增 section 8
+保存按 `(cell, good)` 稳定排序的 `business_demand_ema`、`offered_supply_ema` 和
+`cost_anchor_price`，end 移到 section 9；header 追加 signal count。
+
+v2-v6 restore 时建筑计划字段使用安全默认值，随后以当前建筑边重建稀疏 key 集；不存在的
+历史信号从零开始。为允许仅新增 v7 目录字段的同内容存档迁移，编译器同时提供排除新字段的
+v6-compatible market/building hash。v7 round-trip 必须保持完整 state hash；signal key 必须唯一、
+按 cell/good 排序且引用范围合法。
+
+# PKEC v8 自适应生活工资迁移
+
+v8 在 BUILDINGS 记录追加 owner-lot 的基础工资、奖金和欠薪停产字段，并为每个编译 role
+保存合同工资、两类生活成本、当地均薪及基础/奖金 due/paid。section 9
+`LABOR_SIGNALS` 保存按 `(cell, profession)` 排序的生活成本、合同/实付工资 EMA、
+job-days 与支付率；END 移至 section 10，header 追加 labor signal count。
+
+v7 restore 使用 role reference wage 初始化合同工资，劳动市场信号在下一冻结周期重建。
+编译器同时发布排除 v8 新目录列的 v7-compatible market/building hash。v8 round-trip
+必须保持 group、role、LaborMarketStore 和其 CSR offsets 的完整 state hash。

@@ -1,4 +1,4 @@
-# 原生阶层与本地市场运行时（Market V2）
+# 原生阶层与本地市场运行时（Market V2 / Price V3）
 
 实现入口为 `gdext/src/economy_runtime.{h,cpp}` 与
 `gdext/src/world_ext_economy.cpp`。`DCWorldExt` 组合持有独立
@@ -13,8 +13,9 @@
 | 数据/行为 | 权威 | 契约 |
 | --- | --- | --- |
 | cohort、handle、人口、资金、收入/支出、满足度 | C++ `PopulationStore` | GDScript 无逐 cohort setter。 |
-| 本地库存、价格、需求 EMA、短缺率 | C++ `MarketStore` | 无 per-cell goods component，无匿名市场现金。 |
-| 需求、预算、bundle 清算、替代 fallback、商人结算、价格 | C++ Market V2 hot loop | 不访问 Godot Object/Callable/Dictionary。 |
+| 本地库存、价格、居民需求 EMA、短缺率 | C++ `MarketStore` | 无 per-cell goods component，无匿名市场现金。 |
+| 企业需求/供给 EMA、成本锚 | C++ 稀疏 `MarketSignalStore` | 仅保存建筑实际引用的 `(cell, good)` 边。 |
+| 需求、预算、bundle 清算、替代 fallback、商人结算、Price V3 | C++ Market V2 hot loop | 不访问 Godot Object/Callable/Dictionary。 |
 | 周期环境快照 | DataCore 环境 slots → C++ Q16 snapshot | 周期 sample day 捕获 temp/moisture/snow/weather，周期内冻结。 |
 | catalog 编译 | `EconomyCatalog`/`EconomyFacade` 冷路径 | stable ID 排序后一次性提交 PackedArrays。 |
 | 调度和结算屏障 | `EconomyDailySystem`/`WorldClock` | 周期内正常跨日；仅截止日未完成时 same-day catchup。 |
@@ -52,6 +53,10 @@ demand_ema[market, good]        i64
 last_shortage_q16[market, good] i32
 ```
 
+建筑侧价格信号不扩张该稠密矩阵。`MarketSignalStore` 按 `(cell, good)` 排序保存企业投入需求
+EMA、实际 offer 供给 EMA 与单位成本锚；key 只来自现有建筑输入/输出边，并在建筑结构变化时
+重建且保留稳定 key 的旧值。
+
 库存初始为零；本轮没有生产。开发/测试通过 `ADD_STOCK` 显式命令增加库存，且目标地块
 必须有商人。人口归零的地块不得保留库存。
 
@@ -79,7 +84,8 @@ catalog 编译成 CSR：plan→needs、need→variants、variant→components。
 4. 对 bundle 的每个 component 做稳定前缀库存分配，以最短 component 决定 bundle fill。
 5. 首选 variant 未满足部分只进行一次同 tick 替代 fallback。
 6. 扣买方资金和库存，按商人人口分配收入，发布 need 满足度/最差 need。
-7. 以日均需求更新 EMA，用冻结压力的一阶 N 日积分更新下周期价格。
+7. 以日均居民需求更新 EMA，合并上一周期企业需求/供给与成本锚，用 Price V3 冻结压力的
+   一阶 N 日积分更新下周期价格。
 
 本轮不执行出生、死亡、迁移、就业、工资、税收、生产或贸易。人口命令仍是底层结构
 ABI，但 household market 不改变人口。
@@ -106,7 +112,7 @@ PackedArrays；UI 只查询选中地块。
 持久内存布局。
 
 世界生成页的“生成测试经济数据”默认关闭。显式启用后，先在可通行陆地创建确定性的
-农场、纺织工坊、庄园和商铺 owner-lot，再从这些建筑编译后的 owner/employee 岗位容量
+农场、纺织工坊、庄园和煤矿 owner-lot，再从这些建筑编译后的 owner/employee 岗位容量
 聚合出自耕农/工人/地主/商人 cohort，最后按实际人口填充 30 日测试库存。它是开发 fixture，
 不是正式历史人口来源。
 
@@ -117,32 +123,143 @@ Windows / Godot 4.6.2 / template_release / 2026-07-11。下表是显式
 
 | 档位 | 样本 | avg | p95 | max | runtime memory | ACTIVE 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| 10k cells / 200k cohort / 100 goods / 16 needs / N=50 | 2500 | 1.002ms | 1.487ms | 2.042ms | 79.5MB | 通过 |
-| 100k cells / 10m cohort / 200 goods / 16 needs / N=334 | 668 | 3.290ms | 3.987ms | 5.800ms | 1413.3MB | 通过 |
+| 10k cells / 200k cohort / 100 goods / 16 needs / N=50 | 2500 | 1.883ms | 2.766ms | 3.126ms | 101.0MB | 通过 |
+| 100k cells / 10m cohort / 200 goods / 16 needs / N=334 | 668 | 5.542ms | 6.333ms | 9.394ms | 1680.6MB | 通过 |
 
 错峰把 10M p95 从约 89ms 降至约 4ms；惰性会计清零和按需 merchant rebuild 消除了
 周期边界 90/30ms 尖峰。代价是可配置的结算延迟与 reference 误差，详见调度文档。
-# Native Building / Employment Runtime（PKEC v3）
+# Native Building / Employment Runtime（PKEC v8）
 
 建筑、岗位与生产由 `NativeEconomyRuntime` 内独立的 `BUILDING_GRAPH` 管理，仍与
 Market V2 共用冻结周期和原子发布边界，但不进入 `household_market` 热循环。建筑不进入
 `MapData`/`HexCell`/DataCore schema；运行时以按 `(cell, building_type,
 owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR 只遍历有建筑地块。
 
-`BuildingProfile` 编译 owner/employee role、建造成本、输入/输出、自然资源消耗和 postfix
+`BuildingProfile` 编译 owner/employee role、建造成本、输入/输出、自然资源交互模式和 postfix
 建造条件。人口仍保持唯一 `(cell, signature)` cohort；lane 新增 owner/employee employed
-计数，失业为 population 减两者。临时工资策略为 `fixed`：按建筑类配置每名实际到岗
-雇员每日工资，周期结算时由业主 cohort 支付；业主现金不足时按现金封顶并报告欠付金额。
-工资使用稳定 prefix quotient 分给本地同职业的实际就业 cohort，不铸币且保持资金守恒。
+计数，失业为 population 减两者。工资 ABI 位于 employee role：`adaptive` 以本地基础生活
+成本、岗位 cohort 消费篮子和本地岗位合同工资 EMA 形成生活工资硬下限；`fixed` 仅保留给
+显式固定工资内容。业主现金不足时按 owner 全部 role 义务稳定比例支付，相关 owner-lot
+本周期停产。工资仍按本地同职业实际就业权重分配，不铸币且保持资金守恒。
+
+周期开始先按冻结价格计算每栋建筑的投入替换成本、完整工资义务、预期 producer settlement
+收入与目标营业利润率，作为诊断和销售后利润分享依据。计划利用率固定为 `Q16_ONE`；亏损不再
+缩放岗位需求或产能，实际产能只由到岗、投入、业主资金和资源约束决定。
 
 生产在居民市场之后、周期截止日执行，因此产出下一周期才参与居民消费。业主按本地价购买
 输入；商人按 good-specific `merchant_buy_price_factor_q16`（默认 95%）并按本地市场价从高
-到低收购，现金耗尽后剩余产出丢弃。自然资源按 sample-day 定点快照限产，提交时把负 delta
-写入对应 `extra_change` slot，由下一次 natural-resource pass 消费。
+到低收购，现金耗尽后剩余产出丢弃。建筑采样使用
+`max(0, reserve + min(pending_extra_change, 0))` 作为有效可采储量：尚未被资源 pass 消费的负
+delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacity` 模式：extract 按产量扣减并
+发布负 delta；capacity 只以 `reserve / (building_count × requirement)` 限制产能，不扣减储量。
+农场使用旱作耕地/水田/种植园容量和肥沃土壤生产 crop goods，不再培育 crop resource。
+资源边另有 `local/local_and_adjacent` 访问模式。海鱼与淡水鱼储量位于水域格，岸上渔港在冻结
+sample boundary 捕获的六邻拓扑上汇总本格+邻格，并按稳定来源顺序扣减真实水格；无需在岸格
+复制鱼群，也不会创建跨格 GDScript 经济状态。
 
 世界设置启用测试经济数据时，fixture 先生成农场、纺织工坊、庄园和商铺 owner-lot，随后
 通过 `EconomyFacade.building_job_spec()` 读取 catalog 岗位列并派生 cohort。人口结构不再作为
 建筑生成输入；建筑岗位配置变化会直接改变新地图的职业人口结构。
 
-公共冷路径新增 `get_building_cell_snapshot`，命令流新增 BUILD/DEMOLISH。PKEC v3 保存就业
-lane、建筑 owner-lot、岗位实到和在建记录；v2 可迁移为空建筑/零就业状态。
+Inspector 首屏通过 `get_population_cell_summary` 只读取人口聚合值；人口需求、市场、建筑与自然
+资源明细由可见标签惰性读取，避免点击成本随全局 goods/building catalog 扩张。完整 snapshot 在
+Facade/UI 只读传递，不再为缓存和返回值各做一次递归深拷贝。
+
+公共冷路径 `get_building_cell_snapshot` 返回建筑 owner-lot、岗位实到、周期投入/产出/销售、
+资源容量/采收及选中地块的 reserve/pending/effective 三列。PKEC v5 的历史字段
+`last_resource_generated` 仍为 byte-layout 兼容保留；当前 crop-capacity 目录不依赖正培育。
+Inspector 对 capacity 边显示有效容量，对 extract 边显示实际采收。v4 的实际投入成本与实付工资继续用于
+利润；v8 另保存 role 合同工资、生活成本、当地均薪、基础工资/奖金、欠薪停产标记和稀疏
+LaborMarketStore。亏损不再缩减计划利用率；生产完成后仅将超过目标业主利润的 25% 结为奖金。
+命令流包含 BUILD/DEMOLISH；v2-v7 均可迁移，缺失字段使用确定性默认值。
+
+10k cells / 10k owner-lot / 30k cohorts、固定 N=5、template_release 的同工作树 A/B 中，
+禁用生活成本调用 p95 为 9.098ms，启用完整机制为 9.388ms，净回退约 3.2%；完整机制
+`wage_plan_ms=0.34ms`、`labor_signal_ms=0.30ms`、5000 个稀疏 labor edges，
+runtime memory 114.6MB（SELECTIVE；TRACE_OFF 为 111.3MB）。该 A/B 用于本次小于 10%
+回退门槛，不与较早目录/实现的绝对 p95 混作同基线。
+
+2026-07-12 最终复跑同一固定 N=5 release 场景：SELECTIVE 为 avg/p95/max
+`2.414/10.105/10.105ms`、114.6MB；TRACE_OFF 为 `2.222/9.272/9.272ms`、111.3MB。
+TRACE_OFF 的 `wage_plan_ms=0.341ms`、`labor_signal_ms=0.326ms`，population/money/goods
+error 为 `0/0/0`，无 fallback。
+
+## 建筑资源链性能门槛
+
+Windows / Godot 4.6.2 / template_release / 2026-07-12，默认固定 `market_cycle_days=5`：
+10k cells、10k 稀疏 owner-lot（煤矿/玉米农场各半）、30k cohorts 共 9 个建筑切片，
+avg `2.152ms`、p95/max `8.834ms`、runtime memory `113.3MB`。资源生成/消耗/净变化为
+`0 / 224.995M / -224.995M` GOODS_SCALE，population/money/goods error 为 `0/0/0`，
+无 fallback。该结果是建筑混合资源边门槛，不代表自动周期的 Market V2 大规模档。
+
+## 分层经济事件追踪（PKEJ v1）
+
+`NativeEconomyRuntime` 同时拥有 committed economy event journal。生产默认
+`economy_trace_mode=SELECTIVE`：所有 market、command、结构变化和稀疏建筑组结算生成紧凑
+cause summary；只有 `set_economy_trace_filter()` 选中的 cell 才附带 cohort/market 字段的
+`before -> after` delta legs。建筑事件沿用 `(cell, building_type, owner_signature)` owner-lot
+身份，不创建逐栋建筑 Object。
+
+worker 只把选中 market 的 detail fragment 写进 `MarketResult`，主线程按 market index 稳定
+append，并在 append 时增量生成 provisional event ID 与 stream hash；`aggregate_publish` 守恒
+通过后只做 O(1) batch commit。失败 epoch 丢弃 staging events，handler 永远看不到未提交变化。
+
+GDScript 通过 `poll_economy_events`/`ack_economy_events` 的独立 consumer cursor 批量读取
+PackedArrays。通用 gameplay event bus 每次只接收一个 `ECONOMY_EPOCH_COMMITTED` 通知，
+不承载高频 delta。事件不参与核心 economy state hash；另以 `event_stream_hash` 验证
+scalar/worker 事件确定性。
+
+玩家人口 Inspector 使用独立的 `set_economy_inspector_trace_cell()` 单地块目标。冻结周期中
+worker 仅把居民消费与商人居民销售写入局部结果，主线程再与工资、业主经营、产业供货、商人
+收购、建设和转移支付资金腿合并；提交时以 cohort 总账补齐 `other`，保证来源合计严格等于
+`epoch_income/epoch_expense`。人口快照返回上次提交的 cohort-major 稀疏 cashflow CSR、周期
+日期与 available/pending。它随 PKEJ retention 有界保留，不进入 PKEC、核心 state hash 或
+全世界 cohort 常驻布局。
+
+2026-07-13 固定 N=5、10k owner-lot release 复核：SELECTIVE + 单 inspector cell 的 building
+slice avg/p95/max 为 `2.236/8.884/8.884ms`、runtime 114.6MB、trace 3.4MB；同版本
+TRACE_OFF 为 `2.112/8.914/8.914ms`、111.3MB。两者核心 state hash 均为
+`3524023550113083945`，population/money/goods error 均为零。
+
+2026-07-12 / Windows / Godot 4.6.2 / template_release 的同版本 A/B：
+
+| 档位 | 模式 | avg | p95 | max | trace memory |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 10k cells / 200k cohorts / auto N=50 | SELECTIVE | 1.983ms | 2.685ms | 2.914ms | 6.8MB |
+| 同档，选中 1 cell detail | SELECTIVE | 2.056ms | 2.769ms | 3.040ms | 6.8MB |
+| 100k cells / 10M cohorts / auto N=334 | TRACE_OFF | 4.986ms | 5.598ms | 7.930ms | 0.1MB |
+| 同档 | SELECTIVE | 5.111ms | 5.748ms | 9.238ms | 16.9MB |
+| 10k owner-lot / fixed N=5，5-epoch soak | TRACE_OFF | 0.841ms | 1.804ms | 2.096ms | 0MB |
+| 同档 | SELECTIVE | 0.865ms | 1.826ms | 1.903ms | 16.8MB |
+
+10M SELECTIVE 相对同版本 TRACE_OFF 的 avg/p95 增量约 2.5%/2.7%；固定五日建筑 soak
+增量约 2.9%/1.2%。两档核心 state hash 在 trace 模式间不变，journal 均低于 32MB 默认上限。
+
+## 现代产业目录与货币发行（2026-07-12）
+
+现代基线由可复现的 `tools/codegen/gen_modern_economy_content.ps1` 生成 124 goods、128
+building types、22 professions 和 15 household needs。37 种自然资源均至少被一个
+`collector` 引用；`industrial` 只能消费 goods。所有建筑恰好一个 owner job，科技解锁仅以
+`technology_tags` 进入 catalog/snapshot，本期不执行过滤。
+
+`gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/10000 money subunits。商人接收
+建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通
+库存参与珠宝、电子等生产且不重复发行。report 分别发布 accepted quantity、issued money 和
+`anchored_money_issued`，普通产出仍受 merchant cash cap。
+
+`electricity` 是唯一 `cycle_flow` good。`building_production` 内先运行只产出 cycle-flow 的
+utility groups并结算 offers，再运行其他 groups；其余电力在 cell 生产结束时清零并计入 goods
+sink。report 发布 `cycle_flow_produced/consumed/discarded`，跨周期市场库存必须为零。
+
+2026-07-12 template_release Price V3 验证：100-good/200k-cohort auto N=50 为
+avg/p95/max `1.883/2.766/3.126ms`、`101.0MB`；200-good/10M-cohort auto N=334 为
+`5.542/6.333/9.394ms`、`1680.6MB`。10k cells/10k owner-lots/124 goods、固定 N=5、
+SELECTIVE 的 building slices 为 `2.152/8.834/8.834ms`、`113.3MB`，三项审计均为零。
+相对改造前同目录基线，三档 p95 分别变化 `-4.1%/-40.1%/-27.3%`，runtime memory
+分别变化约 `+0.1/+0.4/-0.4MB`，满足 p95 不回退超过 10%、内存增量不超过 64MB 的门槛。
+
+同日 habitat/geology/crop-capacity 收口后的 `TRACE_OFF` 复核：100 goods / 200k cohorts 为
+avg/p95/max `2.290/2.961/3.589ms`、`94.2MB`；200 goods / 10M cohorts 为
+`5.372/6.072/8.891ms`、`1663.8MB`。加入 frozen 六邻资源访问后的 10k owner-lot 混合建筑档为
+`2.129/8.643/8.643ms`、`110.2MB`，记录 `capacity_checks=10000`、
+`capacity_limited=0`、`extract_limited=0`，population/money/goods error 仍为 `0/0/0`。

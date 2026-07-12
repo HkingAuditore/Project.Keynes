@@ -160,7 +160,7 @@ WorldClock.day_changed(day_idx)
 
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
-- `natural_resource_daily`：自然资源每日生成/衰减，per-cell 储量按「固定公式模板 + 每资源系数」结合 temp/moisture 演化；reads cell.temp/moisture → 拓扑排在气候之后。数据驱动配置 `ResourceProfile`（`scripts/data/resource_profile.gd` + `data/resources/*.tres`）+ `ResourceProfileRegistry`；计算权威在 C++ `run_natural_resource_pass`（`gdext/src/world_ext_resource.cpp`），GDScript fallback 同模板。详见 `docs/cpp-dots-runtime/computation-pipelines.md` "Natural resources" 节。
+- `natural_resource_daily`：37 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；海鱼储量属于海洋格，淡水/淡水鱼属于湖泊或河流格。external delta 一次性应用，`dt_days` 仅推进自然项。岸上渔业由 NativeEconomyRuntime 通过 frozen 六邻拓扑读取并扣减真实水格。初始矿产由资源局部斑块、同族地质省和矿带共同生成。
 - 物资与阶层已进入独立原生经济域：`GoodProfileRegistry` 编译 stable goods，
   `PopulationStore`/`MarketStore` 保存状态，`economy_daily` 推进 `ECONOMY_GRAPH`。
   它们不属于 cell schema；自然资源仍由 `natural_resource_daily` 推进，生产供货走命令账本。
@@ -247,7 +247,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 - `world_setup.gd`：生成前参数界面。
 - `player_game.gd`：玩家主场景装配层，只做 runtime/UI/controller wiring 和基础玩家热键。
 - `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、safe area 和控制信号；不直接承担逐字段渲染。
-- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。地块档案固定为地理、人口、市场、自然资源四页；`CohortList` 可展开查看预计人均日需求。地块选择或切换 Tab 时可重建当前内容；每日 tick 只走 750ms 节流的 stable-id live patch，保持节点树、展开态、当前 Tab 与滚动位置稳定。
+- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
 - `map_interaction_controller.gd` / `selection_controller.gd` / `time_controls_controller.gd`：玩家输入、选中态和时间控制器。
 - `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
@@ -325,3 +325,12 @@ GDScript 经济状态。
 `BuildingProfile + GoodProfile producer factor → EconomyCatalog → DCWorldExt economy bridge →
 NativeEconomyRuntime BUILDING_GRAPH → EconomyFacade/Inspector`。自然资源输入来自 DataCore reserve
 sample，提交为 extra_change delta；建筑和就业本体不进入 MapData/schema。
+
+现代经济内容基线为 37 resources / 124 goods / 128 buildings / 22 professions / 15 needs。
+`BuildingProfile.building_kind` 强制 collector/industrial 边界，`technology_tags` 当前只发布不执行。
+BUILDING_GRAPH 内部 utility prepass 先生产 `electricity` cycle-flow，普通生产同周期消费并在边界
+清零。`gold`/`silver` producer offer 按固定目录面值进入显式 mint 审计，是唯一生产性货币输入。
+PKEC v8 的 employee-role 自适应工资在 active-cell employment slice 内计算：基础与岗位生活
+成本形成硬下限，本地合同工资 EMA 提供岗位均薪锚；owner 基础工资不足时比例支付并停产，
+生产后的 owner-lot 超额利润按 25% 形成奖金。LaborMarketStore 为 native 稀疏 CSR，不进入
+DataCore 或 MapData。

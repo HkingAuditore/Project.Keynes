@@ -1,6 +1,9 @@
 class_name EconomyFacade
 extends RefCounted
 
+signal economy_event_batch_available(meta: Dictionary)
+signal economy_event_batch(batch: Dictionary)
+
 const DEFAULT_PROFILE_PATH := "res://data/economy/default_economy.tres"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EconomyProfileScript = preload("res://scripts/data/economy_profile.gd")
@@ -23,11 +26,9 @@ var _world_ext: Object = null
 var _profile = null
 var _catalog: Dictionary = {}
 var _configured: bool = false
-var _population_cache: Dictionary = {}
-var _market_cache: Dictionary = {}
 var _profession_display_names: Dictionary = {}
 var _ethnicity_display_names: Dictionary = {}
-var _building_cache: Dictionary = {}
+var _building_display_names: Dictionary = {}
 
 func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
 	_world_ext = world_ext
@@ -45,12 +46,10 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 	native_catalog.erase("ok")
 	_profession_display_names = _load_display_names(EconomyCatalogScript.PROFESSION_DIR)
 	_ethnicity_display_names = _load_display_names(EconomyCatalogScript.ETHNICITY_DIR)
+	_building_display_names = _load_display_names(EconomyCatalogScript.BUILDING_DIR)
 	var result: Dictionary = _world_ext.configure_economy(
 		native_catalog, _profile.to_native_profile(), cell_count, seed)
 	_configured = bool(result.get("ok", false))
-	_population_cache.clear()
-	_market_cache.clear()
-	_building_cache.clear()
 	return result
 
 func bootstrap(population_packet: Dictionary = {}, market_packet: Dictionary = {},
@@ -111,25 +110,26 @@ func add_stock(cell_idx: int, good_id: StringName, quantity: int,
 		"i64_1": 0,
 	}])
 
+func population_cell_summary(cell_idx: int) -> Dictionary:
+	if not _configured:
+		return {}
+	if _world_ext.has_method("get_population_cell_summary"):
+		return _world_ext.get_population_cell_summary(cell_idx)
+	return _world_ext.get_population_cell_snapshot(cell_idx)
+
+
 func population_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:
 		return {}
 	var snapshot: Dictionary = _world_ext.get_population_cell_snapshot(cell_idx)
-	var has_details := snapshot.has("populations")
-	if has_details:
+	if snapshot.has("populations"):
 		_attach_population_display_metadata(snapshot)
 		snapshot["details_available"] = true
 		snapshot["details_pending"] = false
-		_population_cache[cell_idx] = snapshot.duplicate(true)
-		return snapshot.duplicate(true)
-	if _population_cache.has(cell_idx):
-		var cached := (_population_cache[cell_idx] as Dictionary).duplicate(true)
-		cached["stale_while_busy"] = bool(snapshot.get("busy", false))
-		return cached
-	snapshot["details_available"] = false
-	snapshot["details_pending"] = bool(snapshot.get("busy", false)) \
-		and not bool(snapshot.get("details_available", false))
-	return snapshot.duplicate(true)
+	else:
+		snapshot["details_available"] = false
+		snapshot["details_pending"] = bool(snapshot.get("busy", false))
+	return snapshot
 
 func market_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:
@@ -139,25 +139,47 @@ func market_cell_snapshot(cell_idx: int) -> Dictionary:
 	if has_details:
 		snapshot["details_available"] = true
 		snapshot["details_pending"] = false
-		_market_cache[cell_idx] = snapshot.duplicate(true)
-		return snapshot.duplicate(true)
-	if _market_cache.has(cell_idx):
-		var cached := (_market_cache[cell_idx] as Dictionary).duplicate(true)
-		cached["stale_while_busy"] = bool(snapshot.get("busy", false))
-		return cached
-	snapshot["details_available"] = false
-	snapshot["details_pending"] = bool(snapshot.get("busy", false)) \
-		and not bool(snapshot.get("details_available", false))
-	return snapshot.duplicate(true)
+	else:
+		snapshot["details_available"] = false
+		snapshot["details_pending"] = bool(snapshot.get("busy", false))
+	return snapshot
 
 func building_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:
 		return {}
 	var snapshot: Dictionary = _world_ext.get_building_cell_snapshot(cell_idx)
 	if snapshot.has("building_type_ids"):
-		_building_cache[cell_idx] = snapshot.duplicate(true)
-		return snapshot.duplicate(true)
-	return (_building_cache.get(cell_idx, snapshot) as Dictionary).duplicate(true)
+		_attach_building_display_metadata(snapshot)
+	return snapshot
+
+func _attach_building_display_metadata(snapshot: Dictionary) -> void:
+	var type_ids: PackedStringArray = snapshot.get("building_type_ids", PackedStringArray())
+	var type_names := PackedStringArray()
+	for stable_id in type_ids:
+		type_names.append(String(_building_display_names.get(String(stable_id), String(stable_id))))
+	var profession_ids: PackedStringArray = _catalog.get("profession_ids", PackedStringArray())
+	var profession_names := PackedStringArray()
+	for stable_id in profession_ids:
+		profession_names.append(String(_profession_display_names.get(String(stable_id), String(stable_id))))
+	snapshot["building_type_display_names"] = type_names
+	snapshot["profession_stable_ids"] = profession_ids
+	snapshot["profession_display_names"] = profession_names
+	for key in [
+		"signature_profession_ids", "building_owner_profession_ids", "building_owner_slots",
+		"building_employee_offsets", "building_employee_profession_ids", "building_employee_slots",
+		"building_input_offsets", "building_input_good_ids", "building_input_quantities",
+		"building_output_offsets", "building_output_good_ids", "building_output_quantities",
+		"building_resource_ids", "building_resource_offsets", "building_production_resource_ids",
+		"building_production_resource_quantities", "building_production_resource_modes",
+		"building_production_resource_access_modes",
+		"building_resource_generation_offsets",
+		"building_resource_generation_ids", "building_resource_generation_quantities",
+		"building_resource_generation_floor_q16", "building_kinds",
+		"building_technology_tag_offsets", "building_technology_tags", "good_ids",
+		"good_category_ids", "good_storage_modes", "good_monetary_issue_values",
+		"good_technology_tag_offsets", "good_technology_tags",
+	]:
+		snapshot[key] = _catalog.get(key)
 
 func building_type_id(building_id: StringName) -> int:
 	var ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
@@ -202,6 +224,66 @@ func building_job_spec(building_id: StringName) -> Dictionary:
 		"employee_slots": role_slots,
 	}
 
+func building_placement_spec(building_id: StringName) -> Dictionary:
+	var type_ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
+	var type_id := type_ids.find(String(building_id))
+	if type_id < 0:
+		return {"ok": false, "reason": "unknown building type: %s" % String(building_id)}
+	var good_ids: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
+	var resource_ids: PackedStringArray = _catalog.get(
+		"building_resource_ids", PackedStringArray())
+	var input_goods := _stable_ids_from_catalog_range(type_id, good_ids,
+		"building_input_offsets", "building_input_good_ids")
+	var output_goods := _stable_ids_from_catalog_range(type_id, good_ids,
+		"building_output_offsets", "building_output_good_ids")
+	var production_resources := _stable_ids_from_catalog_range(type_id, resource_ids,
+		"building_resource_offsets", "building_production_resource_ids")
+	if not bool(input_goods.get("ok", false)) or not bool(output_goods.get("ok", false)) \
+			or not bool(production_resources.get("ok", false)):
+		return {"ok": false, "reason": "building placement catalog shape invalid"}
+	var kinds: PackedInt32Array = _catalog.get("building_kinds", PackedInt32Array())
+	var quantities: PackedInt64Array = _catalog.get(
+		"building_production_resource_quantities", PackedInt64Array())
+	var modes: PackedInt32Array = _catalog.get(
+		"building_production_resource_modes", PackedInt32Array())
+	var access_modes: PackedInt32Array = _catalog.get(
+		"building_production_resource_access_modes", PackedInt32Array())
+	var resource_begin := int(production_resources.begin)
+	var resource_end := int(production_resources.end)
+	if type_id >= kinds.size() or resource_end > quantities.size() or resource_end > modes.size() \
+			or resource_end > access_modes.size():
+		return {"ok": false, "reason": "building placement resource columns invalid"}
+	return {
+		"ok": true,
+		"type_id": type_id,
+		"stable_id": String(building_id),
+		"kind": int(kinds[type_id]),
+		"input_good_ids": input_goods.ids,
+		"output_good_ids": output_goods.ids,
+		"resource_ids": production_resources.ids,
+		"resource_quantities": quantities.slice(resource_begin, resource_end),
+		"resource_modes": modes.slice(resource_begin, resource_end),
+		"resource_access_modes": access_modes.slice(resource_begin, resource_end),
+	}
+
+func _stable_ids_from_catalog_range(type_id: int, stable_ids: PackedStringArray,
+		offset_key: String, index_key: String) -> Dictionary:
+	var offsets: PackedInt32Array = _catalog.get(offset_key, PackedInt32Array())
+	var indices: PackedInt32Array = _catalog.get(index_key, PackedInt32Array())
+	if type_id + 1 >= offsets.size():
+		return {"ok": false}
+	var begin := int(offsets[type_id])
+	var end := int(offsets[type_id + 1])
+	if begin < 0 or end < begin or end > indices.size():
+		return {"ok": false}
+	var ids := PackedStringArray()
+	for edge in range(begin, end):
+		var stable_idx := int(indices[edge])
+		if stable_idx < 0 or stable_idx >= stable_ids.size():
+			return {"ok": false}
+		ids.append(stable_ids[stable_idx])
+	return {"ok": true, "ids": ids, "begin": begin, "end": end}
+
 func build(cell_idx: int, building_id: StringName, count: int, owner_handle: int,
 		effective_day: int, sequence: int) -> Dictionary:
 	var type_id := building_type_id(building_id)
@@ -245,6 +327,12 @@ func signature_id(profession_id: StringName, ethnicity_id: StringName) -> int:
 func good_ids() -> PackedStringArray:
 	return (_catalog.get("good_ids", PackedStringArray()) as PackedStringArray).duplicate()
 
+func profession_ids() -> PackedStringArray:
+	return (_catalog.get("profession_ids", PackedStringArray()) as PackedStringArray).duplicate()
+
+func building_type_ids() -> PackedStringArray:
+	return (_catalog.get("building_type_ids", PackedStringArray()) as PackedStringArray).duplicate()
+
 func _attach_population_display_metadata(snapshot: Dictionary) -> void:
 	var profession_ids: PackedStringArray = snapshot.get(
 		"profession_stable_ids", PackedStringArray())
@@ -287,6 +375,100 @@ func read_save_chunk() -> PackedByteArray:
 
 func end_save() -> Dictionary:
 	return _world_ext.end_economy_save() if _configured else {"ok": false, "reason": "not configured"}
+
+func event_schema() -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_economy_event_schema"):
+		return {"ok": false, "reason": "economy event API unavailable"}
+	return _world_ext.get_economy_event_schema()
+
+func set_trace_cells(cells: PackedInt32Array) -> Dictionary:
+	if not _configured or not _world_ext.has_method("set_economy_trace_filter"):
+		return {"ok": false, "reason": "economy event API unavailable"}
+	return _world_ext.set_economy_trace_filter({"cells": cells})
+
+func set_inspector_trace_cell(cell_idx: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("set_economy_inspector_trace_cell"):
+		return {"ok": false, "reason": "economy inspector trace API unavailable"}
+	return _world_ext.set_economy_inspector_trace_cell(cell_idx)
+
+func poll_events(consumer_id: StringName, max_events: int = -1,
+		kind: int = 0, cell: int = -1, after_event_id: int = -1) -> Dictionary:
+	if not _configured or not _world_ext.has_method("poll_economy_events"):
+		return {"ok": false, "reason": "economy event API unavailable", "count": 0}
+	var opts := {
+		"consumer_id": consumer_id,
+		"max_events": _profile.economy_trace_poll_max_events if max_events < 0 else max_events,
+		"kind": kind,
+		"cell": cell,
+	}
+	if after_event_id >= 0:
+		opts["after_event_id"] = after_event_id
+	return _world_ext.poll_economy_events(opts)
+
+func ack_events(consumer_id: StringName, up_to_event_id: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("ack_economy_events"):
+		return {"ok": false, "reason": "economy event API unavailable"}
+	return _world_ext.ack_economy_events(consumer_id, up_to_event_id)
+
+func trace_report() -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_economy_trace_report"):
+		return {"ok": false, "reason": "economy event API unavailable"}
+	return _world_ext.get_economy_trace_report()
+
+func dispatch_committed_events(meta: Dictionary) -> void:
+	if not bool(meta.get("economy_event_batch_published", false)):
+		return
+	economy_event_batch_available.emit(meta)
+	var batch := poll_events(&"economy_facade_handlers")
+	if int(batch.get("count", 0)) <= 0:
+		return
+	economy_event_batch.emit(batch)
+	ack_events(&"economy_facade_handlers", int(batch.get("last_event_id", 0)))
+
+func begin_event_archive(chunk_bytes: int = -1) -> Dictionary:
+	if not _configured or not _world_ext.has_method("begin_economy_event_archive"):
+		return {"ok": false, "reason": "economy event archive API unavailable"}
+	return _world_ext.begin_economy_event_archive(
+		_profile.save_chunk_bytes if chunk_bytes < 0 else chunk_bytes)
+
+func read_event_archive_chunk(max_bytes: int = -1) -> PackedByteArray:
+	if not _configured or not _world_ext.has_method("read_economy_event_archive_chunk"):
+		return PackedByteArray()
+	return _world_ext.read_economy_event_archive_chunk(
+		_profile.save_chunk_bytes if max_bytes < 0 else max_bytes)
+
+func end_event_archive() -> Dictionary:
+	if not _configured or not _world_ext.has_method("end_economy_event_archive"):
+		return {"ok": false, "reason": "economy event archive API unavailable"}
+	return _world_ext.end_economy_event_archive()
+
+func write_event_archive(path: String, chunk_bytes: int = -1) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "not configured"}
+	var file := FileAccess.open_compressed(
+		path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+	if file == null:
+		return {"ok": false, "reason": "event archive file open failed",
+			"error": FileAccess.get_open_error()}
+	var begin := begin_event_archive(chunk_bytes)
+	if not bool(begin.get("ok", false)):
+		file.close()
+		return begin
+	var chunks := 0
+	var bytes_written := 0
+	while true:
+		var chunk := read_event_archive_chunk(chunk_bytes)
+		if chunk.is_empty():
+			break
+		file.store_buffer(chunk)
+		chunks += 1
+		bytes_written += chunk.size()
+	file.close()
+	var ended := end_event_archive()
+	ended["path"] = path
+	ended["chunks"] = chunks
+	ended["uncompressed_bytes"] = bytes_written
+	return ended
 
 func world_ext() -> Object:
 	return _world_ext

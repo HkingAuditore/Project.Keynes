@@ -60,6 +60,8 @@ func tick(ctx) -> Dictionary:
 	var ext: Object = facade.world_ext()
 	var result: Dictionary = ext.run_economy_slice(native_ctx)
 	_last_report = result.duplicate(true)
+	if facade.has_method("dispatch_committed_events"):
+		facade.dispatch_committed_events(result)
 	var over_budget := bool(result.get("commit_over_budget", false))
 	# A multi-day frozen cycle is expected to remain in-flight while the world
 	# advances. Only stop the calendar at its settlement deadline (or on fatal),

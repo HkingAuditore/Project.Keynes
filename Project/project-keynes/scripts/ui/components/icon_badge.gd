@@ -80,6 +80,8 @@ static func normalize_icon(icon: String) -> String:
 			return "history"
 		"geo", "terrain", "landform", "mountain":
 			return "geo"
+		"building", "buildings", "industry", "factory":
+			return "building"
 		"surface", "cover":
 			return "surface"
 		"weather", "cloud":
@@ -180,6 +182,8 @@ static func glyph_for_key(key: String) -> String:
 			return "\uf071"
 		"geo":
 			return "\uf6fc" # mountain
+		"building":
+			return "\uf1ad" # building
 		_:
 			return "\uf128" # question
 
