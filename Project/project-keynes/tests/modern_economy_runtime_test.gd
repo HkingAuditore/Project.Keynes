@@ -33,7 +33,10 @@ func _run() -> void:
 	var industrialist := signatures.find("industrialist|default")
 	var merchant := signatures.find("merchant|default")
 	var miner := signatures.find("miner|default")
-	var electrician := signatures.find("electrician|default")
+	var industrial_worker := signatures.find("industrial_worker|default")
+	var technician := signatures.find("technician|default")
+	var engineer := signatures.find("engineer|default")
+	var manager := signatures.find("manager|default")
 	var goods: PackedStringArray = compiled.good_ids
 	var stock := PackedInt64Array()
 	stock.resize(goods.size())
@@ -43,10 +46,12 @@ func _run() -> void:
 	stock[goods.find("explosives")] = 100000
 	var types: PackedStringArray = compiled.building_type_ids
 	var boot: Dictionary = ext.bootstrap_economy({
-		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
-		"signature_ids": PackedInt32Array([industrialist, merchant, miner, electrician]),
-		"population": PackedInt64Array([5, 10, 40, 60]),
-		"funds": PackedInt64Array([100000000, 100000000, 1000000, 1000000]),
+		"cell_indices": PackedInt32Array([0, 0, 0, 0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			industrialist, merchant, miner, industrial_worker, technician, engineer, manager]),
+		"population": PackedInt64Array([5, 10, 40, 30, 20, 15, 20]),
+		"funds": PackedInt64Array([
+			100000000, 100000000, 1000000, 1000000, 1000000, 1000000, 1000000]),
 	}, {
 		"stock": stock,
 		"building_cells": PackedInt32Array([0, 0, 0]),
@@ -104,7 +109,7 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 	_expect("stone-start runtime bootstraps", bool(ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0]),
 		"signature_ids": PackedInt32Array([
-			signatures.find("industrialist|default"), signatures.find("merchant|default")]),
+			signatures.find("forager|default"), signatures.find("merchant|default")]),
 		"population": PackedInt64Array([10, 10]),
 		"funds": PackedInt64Array([1000000, 1000000]),
 	}, {}).get("ok", false)))

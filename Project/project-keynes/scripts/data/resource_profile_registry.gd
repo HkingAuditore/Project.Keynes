@@ -48,18 +48,12 @@ const _PROFILE_PATHS: Array = [
 	"res://data/resources/limestone.tres",
 	"res://data/resources/silica_sand.tres",
 	"res://data/resources/phosphate_rock.tres",
-	"res://data/resources/uranium_ore.tres",
 	"res://data/resources/tin_ore.tres",
 	"res://data/resources/lead_ore.tres",
 	"res://data/resources/zinc_ore.tres",
-	"res://data/resources/nickel_ore.tres",
 	"res://data/resources/manganese_ore.tres",
 	"res://data/resources/sulfur.tres",
-	"res://data/resources/platinum_ore.tres",
 	"res://data/resources/flint.tres",
-	"res://data/resources/lithium.tres",
-	"res://data/resources/cobalt_ore.tres",
-	"res://data/resources/natural_graphite.tres",
 ]
 
 static var _ordered: Array = []        # Array[ResourceProfile]，按 _PROFILE_PATHS 顺序

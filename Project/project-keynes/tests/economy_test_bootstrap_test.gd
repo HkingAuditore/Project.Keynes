@@ -111,9 +111,9 @@ func _initialize() -> void:
 		_sum_i64(land.get("employee_employed_by_cohort", PackedInt64Array())) +
 		_sum_i64(land.get("unemployed_by_cohort", PackedInt64Array())) ==
 		_sum_i64(land.get("populations", PackedInt64Array())))
-	var worker_signature := facade.signature_id(&"worker", &"default")
+	var worker_signature := facade.signature_id(&"industrial_worker", &"default")
 	var worker_row := (land.signature_ids as PackedInt32Array).find(worker_signature)
-	_expect("generated workplaces pay worker wages", worker_row >= 0 and
+	_expect("generated modern workplaces pay industrial wages", worker_row >= 0 and
 		int((land.epoch_income_by_cohort as PackedInt64Array)[worker_row]) > 0 and
 		int(cycle.get("building_wages_paid", 0)) > 0)
 	_expect("bootstrap cycle conserves population money and goods",

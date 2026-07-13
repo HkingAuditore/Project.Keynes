@@ -2,7 +2,7 @@
 [ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
 [resource]
 script = ExtResource("1")
-id = &"software_developer"
-display_name = "软件开发者"
-default_consumption_plan_id = &"skilled_household"
-technology_tags = PackedStringArray("tech.digital_computing")
+id = &"journeyman"
+display_name = "帮工"
+default_consumption_plan_id = &"worker_household"
+technology_tags = PackedStringArray("tech.writing")

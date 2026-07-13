@@ -27,6 +27,9 @@ signal overlay_alpha_changed(alpha: float)
 
 # 主场景引用（提供 getter 读取运行时状态；所有回调都通过它调用 main 的方法）
 var _main: Node = null
+# 玩家场景只复用性能监视、快照与两类录制器，不暴露旧 debug lab 的
+# overlay/模拟开关，避免要求 WorldRuntimeHost 伪装成完整 main.gd。
+var runtime_diagnostics_only: bool = false
 
 # --- 内部 UI 节点缓存 -----------------------------------------------------
 var _overlay_option_btn: OptionButton
@@ -181,7 +184,7 @@ func _build_ui() -> void:
 	var header := HBoxContainer.new()
 	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var title := Label.new()
-	title.text = "调试控制台"
+	title.text = "GM 性能面板" if runtime_diagnostics_only else "调试控制台"
 	title.add_theme_font_size_override("font_size", 18)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
@@ -191,6 +194,10 @@ func _build_ui() -> void:
 	header.add_child(close_btn)
 	vbox.add_child(header)
 	vbox.add_child(HSeparator.new())
+
+	if runtime_diagnostics_only:
+		_build_telemetry_group(vbox)
+		return
 
 	_build_overlay_group(vbox)
 	vbox.add_child(HSeparator.new())
@@ -632,6 +639,9 @@ func _on_btn_clear_selection() -> void:
 func _refresh_from_state() -> void:
 	_suppress_sync_signals = true
 
+	if runtime_diagnostics_only:
+		_suppress_sync_signals = false
+		return
 
 	# Overlay mode
 	if _main != null and _main.has_method("get_overlay_mode"):
@@ -1270,7 +1280,10 @@ func _format_sim_breakdowns(breakdowns: Dictionary) -> String:
 	if breakdowns.is_empty():
 		return "breakdown: —"
 	var rows: PackedStringArray = PackedStringArray()
-	for name in ["climate", "weather", "enum_atlas", "sea_ice_atlas"]:
+	for name in [
+		"ui", "climate", "weather", "economy", "enum_atlas", "sea_ice_atlas",
+		"dynamic_visual_atlas",
+	]:
 		var b = breakdowns.get(name, {})
 		if b is Dictionary and not b.is_empty():
 			rows.append("%s: %s" % [name, _format_ms_fields(b)])
@@ -1288,7 +1301,7 @@ func _format_ms_fields(d: Dictionary) -> String:
 			parts.append("%s=%.1f" % [key_text.replace("_ms", ""), float(d[k])])
 		if parts.size() >= 7:
 			break
-	for meta_key in ["current_pass", "pass", "stage", "substage", "path"]:
+	for meta_key in ["current_pass", "pass", "stage", "substage", "path", "tab", "ran"]:
 		if d.has(meta_key) and str(d[meta_key]) != "":
 			parts.append("%s=%s" % [meta_key, str(d[meta_key])])
 	if parts.is_empty():

@@ -39,16 +39,17 @@ func _run() -> void:
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
 	var landlord_sig: int = (compiled.signature_keys as PackedStringArray).find("industrialist|default")
 	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("miner|default")
+	var manager_sig: int = (compiled.signature_keys as PackedStringArray).find("manager|default")
 	var merchant_sig: int = (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	var goods: PackedStringArray = compiled.good_ids
 	var stock := PackedInt64Array()
 	stock.resize(goods.size())
 	stock.fill(100000)
 	var boot: Dictionary = ext.bootstrap_economy({
-		"cell_indices": PackedInt32Array([0, 0, 0]),
-		"signature_ids": PackedInt32Array([landlord_sig, worker_sig, merchant_sig]),
-		"population": PackedInt64Array([5, 100, 10]),
-		"funds": PackedInt64Array([10000000, 1000000, 10000000]),
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([landlord_sig, worker_sig, manager_sig, merchant_sig]),
+		"population": PackedInt64Array([5, 100, 10, 10]),
+		"funds": PackedInt64Array([10000000, 1000000, 1000000, 10000000]),
 	}, {"stock": stock})
 	_expect("building population bootstraps", bool(boot.get("ok", false)))
 	var untracked_pop: Dictionary = ext.get_population_cell_snapshot(0)
@@ -85,22 +86,28 @@ func _run() -> void:
 	_expect("building snapshot reports one-day production period", int(buildings.get("period_days", 0)) == 1)
 	_expect("owner job filled", int((buildings.filled_owner as PackedInt64Array)[0]) == 1)
 	var planned_utilization := int((buildings.planned_utilization_q16 as PackedInt32Array)[0])
-	var filled_jobs := int((buildings.employee_filled as PackedInt64Array)[0])
+	var filled_by_role: PackedInt64Array = buildings.employee_filled
+	var filled_jobs := int(filled_by_role[0]) + int(filled_by_role[1])
 	_expect("losses no longer reduce planned utilization",
 		planned_utilization == 65536 and filled_jobs > 0 and filled_jobs <= 20)
 	_expect("mine produces output", int((buildings.last_output as PackedInt64Array)[0]) > 0)
 	_expect("merchant buys at least part of output", int((buildings.last_sold as PackedInt64Array)[0]) > 0)
-	var contract_wage := int((buildings.employee_contract_wages_per_day as PackedInt64Array)[0])
-	var living_floor := maxi(
-		int((buildings.employee_base_living_cost_per_day as PackedInt64Array)[0]),
-		int((buildings.employee_role_living_cost_per_day as PackedInt64Array)[0]))
-	var base_wages := int((buildings.employee_base_wage_paid as PackedInt64Array)[0])
-	var bonus_paid := int((buildings.employee_bonus_paid as PackedInt64Array)[0])
-	var bonus_due := int((buildings.employee_bonus_due as PackedInt64Array)[0])
-	_expect("adaptive contract wage respects local living floor",
-		contract_wage >= living_floor and contract_wage > 0)
+	var contract_wages: PackedInt64Array = buildings.employee_contract_wages_per_day
+	var base_living: PackedInt64Array = buildings.employee_base_living_cost_per_day
+	var role_living: PackedInt64Array = buildings.employee_role_living_cost_per_day
+	var base_paid_by_role: PackedInt64Array = buildings.employee_base_wage_paid
+	var bonus_paid_by_role: PackedInt64Array = buildings.employee_bonus_paid
+	var bonus_due_by_role: PackedInt64Array = buildings.employee_bonus_due
+	var base_wages := int(base_paid_by_role[0]) + int(base_paid_by_role[1])
+	var bonus_paid := int(bonus_paid_by_role[0]) + int(bonus_paid_by_role[1])
+	var bonus_due := int(bonus_due_by_role[0]) + int(bonus_due_by_role[1])
+	_expect("adaptive contract wages respect each role living floor",
+		int(contract_wages[0]) >= maxi(int(base_living[0]), int(role_living[0])) and
+		int(contract_wages[1]) >= maxi(int(base_living[1]), int(role_living[1])) and
+		int(contract_wages[0]) > 0 and int(contract_wages[1]) > 0)
 	_expect("building snapshot separates base wage and bonus",
-		base_wages == filled_jobs * contract_wage and
+		base_wages == int(filled_by_role[0]) * int(contract_wages[0]) +
+			int(filled_by_role[1]) * int(contract_wages[1]) and
 		int((buildings.last_wages_paid as PackedInt64Array)[0]) == base_wages + bonus_paid)
 	var base_operating_cost := int((buildings.last_input_cost as PackedInt64Array)[0]) + base_wages
 	var target_profit := int((base_operating_cost * 6554) / 65536)
@@ -113,13 +120,17 @@ func _run() -> void:
 		int((buildings.last_input_cost as PackedInt64Array)[0]) == 0)
 	pop = ext.get_population_cell_snapshot(0)
 	var worker_row := _row_for_signature(pop, worker_sig)
+	var manager_row := _row_for_signature(pop, manager_sig)
 	var landlord_row := _row_for_signature(pop, landlord_sig)
 	var merchant_row := _row_for_signature(pop, merchant_sig)
 	_expect("worker cohort has real employee count", worker_row >= 0 and
 		int((pop.employee_employed_by_cohort as PackedInt64Array)[worker_row]) > 0)
 	var expected_wages := base_wages + bonus_paid
-	_expect("adaptive wages reach the worker cohort", worker_row >= 0 and
-		int((pop.epoch_income_by_cohort as PackedInt64Array)[worker_row]) == expected_wages)
+	_expect("adaptive wages reach worker and manager cohorts", worker_row >= 0 and manager_row >= 0 and
+		int((pop.epoch_income_by_cohort as PackedInt64Array)[worker_row]) ==
+			int(base_paid_by_role[0]) + int(bonus_paid_by_role[0]) and
+		int((pop.epoch_income_by_cohort as PackedInt64Array)[manager_row]) ==
+			int(base_paid_by_role[1]) + int(bonus_paid_by_role[1]))
 	_expect("owner expense includes base payroll and bonus", landlord_row >= 0 and
 		int((pop.epoch_expense_by_cohort as PackedInt64Array)[landlord_row]) >= expected_wages)
 	_expect("committed settlement cashflow detail is available",
@@ -130,6 +141,11 @@ func _run() -> void:
 		int((pop.epoch_income_by_cohort as PackedInt64Array)[worker_row]) and
 		_cashflow_total_for_row(pop, worker_row, false) ==
 		int((pop.epoch_expense_by_cohort as PackedInt64Array)[worker_row]))
+	_expect("manager cashflow sources reconcile to epoch ledger",
+		_cashflow_total_for_row(pop, manager_row, true) ==
+		int((pop.epoch_income_by_cohort as PackedInt64Array)[manager_row]) and
+		_cashflow_total_for_row(pop, manager_row, false) ==
+		int((pop.epoch_expense_by_cohort as PackedInt64Array)[manager_row]))
 	_expect("owner cashflow sources reconcile to epoch ledger",
 		_cashflow_total_for_row(pop, landlord_row, true) ==
 		int((pop.epoch_income_by_cohort as PackedInt64Array)[landlord_row]) and
@@ -137,6 +153,7 @@ func _run() -> void:
 		int((pop.epoch_expense_by_cohort as PackedInt64Array)[landlord_row]))
 	_expect("settlement classifies wages and owner operations",
 		_cashflow_has_source(pop, worker_row, "wages", true) and
+		_cashflow_has_source(pop, manager_row, "wages", true) and
 		_cashflow_has_source(pop, landlord_row, "owner_operations", true) and
 		_cashflow_has_source(pop, landlord_row, "owner_wages", false))
 	var merchant_household := _cashflow_has_source(pop, merchant_row, "merchant_household_sales", true)
@@ -239,7 +256,8 @@ func _run() -> void:
 	var restored_buildings: Dictionary = restored.get_building_cell_snapshot(0)
 	_expect("restored mine and jobs remain committed",
 		int((restored_buildings.building_counts_by_type as PackedInt64Array)[mine_id]) == 1 and
-		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == filled_jobs)
+		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == int(filled_by_role[0]) and
+		int((restored_buildings.employee_filled as PackedInt64Array)[1]) == int(filled_by_role[1]))
 	print("=== native building runtime %s ===" % ("PASS" if failures == 0 else "FAIL"))
 
 func _new_ext(catalog: Dictionary) -> Object:

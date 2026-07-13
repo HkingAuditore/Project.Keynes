@@ -32,6 +32,7 @@ func _ready() -> void:
 
 func _configure_runtime() -> void:
 	_runtime_host.configure(_renderer, _camera, _world_clock)
+	_ui_manager.set_diagnostics_source(_runtime_host)
 	_map_interaction.configure(_camera, _runtime_host)
 	_selection.configure(_highlight, _camera, _runtime_host, _ui_manager)
 	_time_controls.configure(_world_clock, _runtime_host, _ui_manager)
@@ -96,6 +97,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	match event.keycode:
+		KEY_QUOTELEFT, KEY_F1:
+			_ui_manager.toggle_gm_panel()
+		KEY_F4:
+			_ui_manager.toggle_perf_hud()
 		KEY_R:
 			_regenerate_world()
 		KEY_F:

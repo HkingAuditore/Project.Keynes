@@ -11,26 +11,27 @@ func set_rows(rows: Array) -> void:
 	_row_refs.clear()
 	_expanded.clear()
 	add_theme_constant_override("separation", UITokens.SPACE_XS)
-	for raw in rows:
-		var data: Dictionary = raw
-		var row_id := String(data.get("id", "market_%d" % _row_refs.size()))
-		_row_refs[row_id] = _create_row(row_id, data)
 	update_rows(rows)
 
 
 func update_rows(rows: Array) -> void:
-	for refs in _row_refs.values():
-		var panel := (refs as Dictionary).get("panel") as PanelContainer
-		if panel != null:
-			panel.visible = false
+	var active_rows: Dictionary = {}
 	for raw in rows:
 		var data: Dictionary = raw
 		var row_id := String(data.get("id", ""))
 		if row_id.is_empty():
 			continue
+		active_rows[row_id] = true
 		if not _row_refs.has(row_id):
-			_row_refs[row_id] = _create_row(row_id, data)
+			_row_refs[row_id] = _create_row(row_id)
 		_apply_row(row_id, _row_refs[row_id], data)
+	for row_id in _row_refs.keys():
+		if active_rows.has(row_id):
+			continue
+		var refs: Dictionary = _row_refs[row_id]
+		var panel := refs.get("panel") as PanelContainer
+		if panel != null and panel.visible:
+			panel.visible = false
 
 
 func set_expanded(row_id: String, expanded: bool) -> void:
@@ -38,15 +39,21 @@ func set_expanded(row_id: String, expanded: bool) -> void:
 		return
 	_expanded[row_id] = expanded
 	var refs: Dictionary = _row_refs[row_id]
-	(refs.get("button") as Button).set_pressed_no_signal(expanded)
-	(refs.get("details") as Control).visible = expanded
+	if expanded:
+		_sync_details(refs, refs.get("detail_rows", []))
+	var button := refs.get("button") as Button
+	if button.button_pressed != expanded:
+		button.set_pressed_no_signal(expanded)
+	var details := refs.get("details") as Control
+	if details.visible != expanded:
+		details.visible = expanded
 
 
 func is_expanded(row_id: String) -> bool:
 	return bool(_expanded.get(row_id, false))
 
 
-func _create_row(row_id: String, data: Dictionary) -> Dictionary:
+func _create_row(row_id: String) -> Dictionary:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(panel)
@@ -99,6 +106,7 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	risk_label.custom_minimum_size = Vector2(46.0, 0.0)
 	risk_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	risk_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	risk_label.add_theme_color_override("font_color", UITokens.RISK)
 	header.add_child(risk_label)
 	var details := VBoxContainer.new()
 	details.visible = false
@@ -106,23 +114,29 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	body.add_child(details)
 	var refs := {"panel": panel, "button": button, "icon": icon, "name": name_label,
 		"stock": stock_label, "price": price_label, "delta": delta_label,
-		"risk": risk_label, "details": details, "detail_refs": {}}
-	_sync_details(refs, data.get("detail_rows", []))
-	_apply_row(row_id, refs, data)
+		"risk": risk_label, "details": details, "detail_refs": {},
+		"detail_rows": [], "applied": {}}
 	return refs
 
 
 func _sync_details(refs: Dictionary, rows: Array) -> void:
 	var details := refs.get("details") as VBoxContainer
 	var detail_refs: Dictionary = refs.get("detail_refs", {})
-	for ref in detail_refs.values():
-		((ref as Dictionary).get("root") as Control).visible = false
+	var active_details: Dictionary = {}
 	for raw in rows:
 		var data: Dictionary = raw
 		var detail_id := String(data.get("id", "detail_%d" % detail_refs.size()))
+		active_details[detail_id] = true
 		if not detail_refs.has(detail_id):
 			detail_refs[detail_id] = _create_detail(details)
 		_apply_detail(detail_refs[detail_id], data)
+	for detail_id in detail_refs.keys():
+		if active_details.has(detail_id):
+			continue
+		var detail: Dictionary = detail_refs[detail_id]
+		var root := detail.get("root") as Control
+		if root.visible:
+			root.visible = false
 	refs["detail_refs"] = detail_refs
 
 
@@ -149,27 +163,71 @@ func _create_detail(parent: VBoxContainer) -> Dictionary:
 
 
 func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
+	var applied: Dictionary = refs.get("applied", {})
 	var accent: Color = data.get("accent", UITokens.RESOURCE)
 	var panel := refs.get("panel") as PanelContainer
-	panel.visible = bool(data.get("visible", true))
-	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
-		Color(0.052, 0.046, 0.038, 0.96), Color(accent.r, accent.g, accent.b, 0.38)))
-	(refs.get("icon") as IconBadge).set_icon(String(data.get("icon", "resource")), accent)
-	(refs.get("name") as Label).text = String(data.get("name", "商品"))
-	(refs.get("stock") as Label).text = String(data.get("stock", ""))
-	(refs.get("price") as Label).text = String(data.get("price", ""))
+	var row_visible := bool(data.get("visible", true))
+	if panel.visible != row_visible:
+		panel.visible = row_visible
+	if not applied.has("accent") or applied["accent"] != accent:
+		panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
+			Color(0.052, 0.046, 0.038, 0.96), Color(accent.r, accent.g, accent.b, 0.38)))
+	var icon_key := String(data.get("icon", "resource"))
+	if not applied.has("icon") or applied["icon"] != icon_key \
+			or not applied.has("accent") or applied["accent"] != accent:
+		(refs.get("icon") as IconBadge).set_icon(icon_key, accent)
+	var name_text := String(data.get("name", "商品"))
+	var name_label := refs.get("name") as Label
+	if name_label.text != name_text:
+		name_label.text = name_text
+	var stock_text := String(data.get("stock", ""))
+	var stock_label := refs.get("stock") as Label
+	if stock_label.text != stock_text:
+		stock_label.text = stock_text
+	var price_text := String(data.get("price", ""))
+	var price_label := refs.get("price") as Label
+	if price_label.text != price_text:
+		price_label.text = price_text
 	var delta := String(data.get("delta", "—"))
-	(refs.get("delta") as Label).text = delta
-	(refs.get("delta") as Label).add_theme_color_override("font_color",
-		UITokens.GOOD if delta.begins_with("+") else (UITokens.RISK if delta.begins_with("-") else UITokens.TEXT_MUTED))
+	var delta_label := refs.get("delta") as Label
+	if delta_label.text != delta:
+		delta_label.text = delta
+	var delta_color := UITokens.GOOD if delta.begins_with("+") \
+		else (UITokens.RISK if delta.begins_with("-") else UITokens.TEXT_MUTED)
+	if not applied.has("delta_color") or applied["delta_color"] != delta_color:
+		delta_label.add_theme_color_override("font_color", delta_color)
 	var risk := String(data.get("risk", ""))
-	(refs.get("risk") as Label).text = risk
-	(refs.get("risk") as Label).add_theme_color_override("font_color", UITokens.RISK)
-	_sync_details(refs, data.get("detail_rows", []))
-	set_expanded(row_id, bool(_expanded.get(row_id, false)))
+	var risk_label := refs.get("risk") as Label
+	if risk_label.text != risk:
+		risk_label.text = risk
+	# 折叠行只缓存最新详情；展开时才创建/更新详情节点，避免日更遍历整张商品明细表。
+	var detail_rows: Array = data.get("detail_rows", [])
+	refs["detail_rows"] = detail_rows
+	var expanded := bool(_expanded.get(row_id, false))
+	if expanded:
+		_sync_details(refs, detail_rows)
+	var button := refs.get("button") as Button
+	if button.button_pressed != expanded:
+		button.set_pressed_no_signal(expanded)
+	var details := refs.get("details") as Control
+	if details.visible != expanded:
+		details.visible = expanded
+	applied["accent"] = accent
+	applied["icon"] = icon_key
+	applied["delta_color"] = delta_color
+	refs["applied"] = applied
 
 
 func _apply_detail(refs: Dictionary, data: Dictionary) -> void:
-	(refs.get("root") as Control).visible = bool(data.get("visible", true))
-	(refs.get("name") as Label).text = String(data.get("name", ""))
-	(refs.get("value") as Label).text = String(data.get("value", ""))
+	var root := refs.get("root") as Control
+	var detail_visible := bool(data.get("visible", true))
+	if root.visible != detail_visible:
+		root.visible = detail_visible
+	var name_text := String(data.get("name", ""))
+	var name_label := refs.get("name") as Label
+	if name_label.text != name_text:
+		name_label.text = name_text
+	var value_text := String(data.get("value", ""))
+	var value_label := refs.get("value") as Label
+	if value_label.text != value_text:
+		value_label.text = value_text

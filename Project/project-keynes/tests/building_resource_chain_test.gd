@@ -31,7 +31,7 @@ func _run() -> void:
 	var mine_type := types.find("coal_mine")
 	var textile_type := types.find("textile_workshop")
 	_expect("all modern resources enter sorted building catalog",
-		resources.size() == 41 and resources.has("coal") and resources.has("arable_land") and
+		resources.size() == 35 and resources.has("coal") and resources.has("arable_land") and
 		resources.has("paddy_land") and resources.has("freshwater_fish"))
 	_expect("farm uses capacity behavior without generated crop resource",
 		behavior_ids[farm_type] == 1 and
@@ -60,17 +60,21 @@ func _run() -> void:
 	_expect("runtime configures", bool(ext.configure_economy(native_catalog, profile, 2, 91).get("ok", false)))
 	var farmer_sig := (compiled.signature_keys as PackedStringArray).find("subsistence_farmer|default")
 	var landlord_sig := (compiled.signature_keys as PackedStringArray).find("landlord|default")
+	var serf_sig := (compiled.signature_keys as PackedStringArray).find("serf|default")
 	var industrialist_sig := (compiled.signature_keys as PackedStringArray).find("industrialist|default")
 	var worker_sig := (compiled.signature_keys as PackedStringArray).find("miner|default")
+	var manager_sig := (compiled.signature_keys as PackedStringArray).find("manager|default")
 	var merchant_sig := (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	var stock := PackedInt64Array()
 	stock.resize(2 * (compiled.good_ids as PackedStringArray).size())
 	stock.fill(0)
 	var boot: Dictionary = ext.bootstrap_economy({
-		"cell_indices": PackedInt32Array([0, 0, 0, 1, 1, 1]),
-		"signature_ids": PackedInt32Array([farmer_sig, landlord_sig, merchant_sig, industrialist_sig, worker_sig, merchant_sig]),
-		"population": PackedInt64Array([1, 1, 10, 5, 20, 10]),
-		"funds": PackedInt64Array([10000000, 10000000, 10000000, 10000000, 1000000, 10000000]),
+		"cell_indices": PackedInt32Array([0, 0, 0, 0, 1, 1, 1, 1]),
+		"signature_ids": PackedInt32Array([farmer_sig, landlord_sig, serf_sig, merchant_sig,
+			industrialist_sig, worker_sig, manager_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1, 20, 10, 5, 20, 5, 10]),
+		"funds": PackedInt64Array([10000000, 10000000, 1000000, 10000000,
+			10000000, 1000000, 1000000, 10000000]),
 	}, {
 		"stock": stock,
 		"building_cells": PackedInt32Array([0, 0, 1]),
@@ -157,15 +161,16 @@ func _run_adjacent_fishery(catalog: Dictionary) -> bool:
 	var signatures: PackedStringArray = catalog.signature_keys
 	var industrialist := signatures.find("industrialist|default")
 	var fisher := signatures.find("fisher|default")
+	var manager := signatures.find("manager|default")
 	var merchant := signatures.find("merchant|default")
 	var fishery := (catalog.building_type_ids as PackedStringArray).find("marine_fish_collector")
 	if not bool(ext.bootstrap_economy({
-		"cell_indices": PackedInt32Array([0, 0, 0, 2, 2, 2]),
-		"signature_ids": PackedInt32Array([industrialist, fisher, merchant,
-			industrialist, fisher, merchant]),
-		"population": PackedInt64Array([2, 20, 10, 2, 20, 10]),
-		"funds": PackedInt64Array([10000000, 1000000, 10000000,
-			10000000, 1000000, 10000000]),
+		"cell_indices": PackedInt32Array([0, 0, 0, 0, 2, 2, 2, 2]),
+		"signature_ids": PackedInt32Array([industrialist, fisher, manager, merchant,
+			industrialist, fisher, manager, merchant]),
+		"population": PackedInt64Array([2, 20, 5, 10, 2, 20, 5, 10]),
+		"funds": PackedInt64Array([10000000, 1000000, 1000000, 10000000,
+			10000000, 1000000, 1000000, 10000000]),
 	}, {
 		"building_cells": PackedInt32Array([0, 2]),
 		"building_type_ids": PackedInt32Array([fishery, fishery]),

@@ -4,6 +4,7 @@ class_name PlayerTopBar
 signal pause_toggled(paused: bool)
 signal speed_selected(speed: float)
 signal setup_requested()
+signal gm_requested()
 
 const BAR_HEIGHT := 48.0
 const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
@@ -100,6 +101,10 @@ func _build_control_block() -> Control:
 	var setup_button := _icon_button("settings", "设置")
 	setup_button.pressed.connect(func() -> void: setup_requested.emit())
 	controls.add_child(setup_button)
+
+	var gm_button := _icon_button("overview", "GM 性能面板（F1）")
+	gm_button.pressed.connect(func() -> void: gm_requested.emit())
+	controls.add_child(gm_button)
 
 	var divider := VSeparator.new()
 	divider.custom_minimum_size = Vector2(8.0, 0.0)

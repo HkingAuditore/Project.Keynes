@@ -41,6 +41,16 @@ var _tod_profile: TODProfile = null
 var _last_seed: int = 0
 var _last_tick_report: Dictionary = {}
 var _fast_tick_count: int = 0
+var _last_fast_tick_ms: int = 0
+var _last_tick_timing: Dictionary = {}
+var _last_recorder_perf_summary: Dictionary = {}
+var _last_ui_perf_summary: Dictionary = {}
+var _perf_recorder: RefCounted = null
+var _tile_data_recorder: RefCounted = null
+var _pending_tick_start_usec: int = 0
+var _pending_tick_sus_ms: float = 0.0
+var _pending_tick_render_ms: float = 0.0
+var _pending_tick_skipped_day: bool = false
 
 
 func configure(renderer: HexRenderer, camera: MapCamera, world_clock: WorldClock) -> void:
@@ -109,6 +119,11 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	_world_data = result["world_data"] as WorldData
 	_last_seed = int(result.get("seed", cfg.seed))
 	_fast_tick_count = 0
+	_last_fast_tick_ms = 0
+	_last_tick_timing.clear()
+	_last_recorder_perf_summary.clear()
+	_last_ui_perf_summary.clear()
+	_pending_tick_start_usec = 0
 	if _world_clock != null:
 		_generator.set_world_clock_ref(_world_clock)
 	_rebuild_view_adapter()
@@ -119,18 +134,22 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	if _generator == null or _world_clock == null:
 		return {}
+	_pending_tick_start_usec = Time.get_ticks_usec()
 	if _renderer != null:
 		_renderer.set_season_phase(season_phase)
 		_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
 	if _generator.has_method("set_current_fast_tick_idx"):
 		_generator.set_current_fast_tick_idx(_fast_tick_count + 1)
 
+	var t_sus_usec := Time.get_ticks_usec()
 	var report: Dictionary = _generator.sus_tick_daily(_world_clock, day_idx, season_phase)
+	_pending_tick_sus_ms = (Time.get_ticks_usec() - t_sus_usec) / 1000.0
 	_fast_tick_count += 1
 	if _renderer != null and _generator.has_method("has_pending_detail_scatter_refresh") \
 			and bool(_generator.has_pending_detail_scatter_refresh()) \
 			and _renderer.has_method("queue_detail_scatter_refresh"):
 		_renderer.queue_detail_scatter_refresh(_generator.consume_pending_detail_scatter_refresh_indices())
+	var t_render_usec := Time.get_ticks_usec()
 	if _renderer != null:
 		if _renderer.has_method("set_weather_field_texture") and _world_data != null:
 			_renderer.set_weather_field_texture(null)
@@ -138,9 +157,229 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 			_renderer.refresh_terrain_weather_field_tex()
 		if bool(report.get("fronts_changed", false)) and _renderer.has_method("set_weather_fronts"):
 			_renderer.set_weather_fronts(report.get("fronts", []))
+	_pending_tick_render_ms = (Time.get_ticks_usec() - t_render_usec) / 1000.0
+	# 玩家场景每次 day_changed 都真实执行一次 SUS；weather 自身的 stride/policy
+	# 不能把同日 climate/economy job 误标成“整日未刷新”。
+	_pending_tick_skipped_day = false
 	_last_tick_report = report.duplicate()
 	daily_tick_completed.emit(_last_tick_report)
 	return _last_tick_report
+
+
+func finish_daily_tick(ui_ms: float, ui_breakdown: Dictionary = {}) -> void:
+	if _pending_tick_start_usec <= 0:
+		return
+	_last_ui_perf_summary = ui_breakdown.duplicate(false)
+	_last_ui_perf_summary["_tick_idx"] = _fast_tick_count
+	var fast_ms_before_recorders := (
+		Time.get_ticks_usec() - _pending_tick_start_usec) / 1000.0
+	var recorder_diag := _publish_fast_tick_perf_sample(
+		_pending_tick_sus_ms,
+		_pending_tick_render_ms,
+		maxf(ui_ms, 0.0),
+		fast_ms_before_recorders,
+		_pending_tick_skipped_day
+	)
+	var fast_ms_after_recorders := (
+		Time.get_ticks_usec() - _pending_tick_start_usec) / 1000.0
+	_last_fast_tick_ms = int(round(fast_ms_after_recorders))
+	_last_tick_timing = {
+		"tick_idx": _fast_tick_count,
+		"fast_ms": fast_ms_after_recorders,
+		"fast_ms_before_recorders": fast_ms_before_recorders,
+		"t_sus_ms": _pending_tick_sus_ms,
+		"t_render_ms": _pending_tick_render_ms,
+		"t_ui_ms": maxf(ui_ms, 0.0),
+		"was_skipped_day": _pending_tick_skipped_day,
+	}
+	if recorder_diag.is_empty():
+		_last_recorder_perf_summary.clear()
+	else:
+		recorder_diag["fast_ms_before_recorders"] = fast_ms_before_recorders
+		recorder_diag["fast_ms_after_recorders"] = fast_ms_after_recorders
+		_last_recorder_perf_summary = recorder_diag
+	_pending_tick_start_usec = 0
+
+
+func get_current_map() -> MapData:
+	return _current_map
+
+
+func get_world_clock_ref() -> WorldClock:
+	return _world_clock
+
+
+func get_generator() -> MapGenerator:
+	return _generator
+
+
+func get_renderer() -> HexRenderer:
+	return _renderer
+
+
+func get_fast_tick_count() -> int:
+	return _fast_tick_count
+
+
+func get_last_fast_tick_ms() -> int:
+	return _last_fast_tick_ms
+
+
+func get_last_tick_timing() -> Dictionary:
+	return _last_tick_timing.duplicate(false)
+
+
+func get_sus_last_tick_report() -> Dictionary:
+	if _generator == null or not _generator.has_method("sus_report_last_tick"):
+		return {}
+	var report: Dictionary = _generator.sus_report_last_tick()
+	return report.duplicate(false)
+
+
+func get_sus_last_tick_summary() -> Dictionary:
+	if _generator == null or not _generator.has_method("sus_report_last_tick_summary"):
+		return {}
+	var summary: Dictionary = _generator.sus_report_last_tick_summary()
+	return summary.duplicate(false)
+
+
+func get_sim_breakdowns() -> Dictionary:
+	var out: Dictionary = {}
+	if _generator == null:
+		return out
+	if not _last_ui_perf_summary.is_empty():
+		out["ui"] = _last_ui_perf_summary.duplicate(false)
+	if _generator.has_method("sus_climate_breakdown"):
+		out["climate"] = _generator.sus_climate_breakdown()
+	if _generator.has_method("sus_weather_breakdown"):
+		out["weather"] = _generator.sus_weather_breakdown()
+	if _generator.has_method("sus_enum_atlas_breakdown"):
+		out["enum_atlas"] = _generator.sus_enum_atlas_breakdown()
+	if _generator.has_method("sus_sea_ice_atlas_breakdown"):
+		out["sea_ice_atlas"] = _generator.sus_sea_ice_atlas_breakdown()
+	if _generator.has_method("sus_dynamic_visual_atlas_breakdown"):
+		out["dynamic_visual_atlas"] = _generator.sus_dynamic_visual_atlas_breakdown()
+	var tick_report := get_sus_last_tick_report()
+	var economy_job = tick_report.get("economy_daily", {})
+	if economy_job is Dictionary \
+			and str((economy_job as Dictionary).get("skipped_reason", "")) == "" \
+			and _generator.has_method("get_economy_report"):
+		var economy: Dictionary = _generator.get_economy_report()
+		if not economy.is_empty():
+			economy["_tick_idx"] = _fast_tick_count
+			out["economy"] = economy
+	return out.duplicate(false)
+
+
+func get_environment_perf_summary() -> Dictionary:
+	var summary := get_sus_last_tick_summary()
+	var out: Dictionary = {
+		"tick_idx": _fast_tick_count,
+		"fast_ms": _last_fast_tick_ms,
+		"map_cells": _current_map.cell_count() if _current_map != null else 0,
+		"last_tick": summary,
+		"timing": _last_tick_timing.duplicate(false),
+		"window": {},
+		"recorders": _last_recorder_perf_summary.duplicate(false),
+	}
+	if _generator != null and _generator.has_method("sus_report_sim_budget_window"):
+		out["window"] = _generator.sus_report_sim_budget_window()
+	return out
+
+
+func get_recorder_perf_summary() -> Dictionary:
+	return _last_recorder_perf_summary.duplicate(false)
+
+
+func set_perf_recorder(recorder: RefCounted) -> void:
+	_perf_recorder = recorder
+
+
+func get_perf_recorder() -> RefCounted:
+	return _perf_recorder
+
+
+func set_tile_data_recorder(recorder: RefCounted) -> void:
+	_tile_data_recorder = recorder
+
+
+func get_tile_data_recorder() -> RefCounted:
+	return _tile_data_recorder
+
+
+func _publish_fast_tick_perf_sample(
+		t_sus_ms: float,
+		t_render_ms: float,
+		t_ui_ms: float,
+		fast_ms: float,
+		was_skipped_day: bool
+) -> Dictionary:
+	var perf_ready := _recorder_ready(_perf_recorder)
+	var tile_ready := _recorder_ready(_tile_data_recorder)
+	if not perf_ready and not tile_ready:
+		return {}
+	var started_usec := Time.get_ticks_usec()
+	var out: Dictionary = {
+		"total_ms": 0.0,
+		"perf_ms": 0.0,
+		"tile_ms": 0.0,
+		"perf_recording": perf_ready,
+		"tile_recording": tile_ready,
+		"tile_recorded": false,
+		"tile_rows": 0,
+		"tile_reason": "",
+	}
+	var sample: Dictionary = {
+		"tick_idx": _fast_tick_count,
+		"timestamp_ms": Time.get_ticks_msec(),
+		"was_skipped_day": was_skipped_day,
+		"fps": Engine.get_frames_per_second(),
+		"fast_ms": fast_ms,
+		"t_sus_ms": t_sus_ms,
+		"t_render_ms": t_render_ms,
+		"t_ui_ms": t_ui_ms,
+	}
+	if _generator != null and _generator.has_method("sus_climate_breakdown"):
+		var climate_diag: Dictionary = _generator.sus_climate_breakdown()
+		if not climate_diag.is_empty():
+			sample["climate"] = climate_diag
+	if _generator != null and _generator.has_method("sus_weather_breakdown"):
+		var weather_diag: Dictionary = _generator.sus_weather_breakdown()
+		if not weather_diag.is_empty():
+			sample["weather"] = weather_diag
+	if _generator != null and _generator.has_method("sus_ocean_currents_breakdown"):
+		var ocean_diag: Dictionary = _generator.sus_ocean_currents_breakdown()
+		if not ocean_diag.is_empty():
+			sample["ocean_currents"] = ocean_diag
+	if perf_ready:
+		var perf_started_usec := Time.get_ticks_usec()
+		_perf_recorder.call("on_fast_tick", sample)
+		out["perf_ms"] = (Time.get_ticks_usec() - perf_started_usec) / 1000.0
+	if tile_ready:
+		var tile_started_usec := Time.get_ticks_usec()
+		var tile_result = _tile_data_recorder.call("on_fast_tick", sample)
+		out["tile_ms"] = (Time.get_ticks_usec() - tile_started_usec) / 1000.0
+		if tile_result is Dictionary:
+			var tile_dict := tile_result as Dictionary
+			out["tile_recorded"] = bool(tile_dict.get("recorded", false))
+			out["tile_rows"] = int(tile_dict.get("rows", 0))
+			out["tile_reason"] = str(tile_dict.get("reason", ""))
+			for key in [
+				"collect_ms", "stats_ms", "format_ms", "flush_ms", "encoder_path",
+				"tick_stride", "cell_stride",
+			]:
+				if tile_dict.has(key):
+					out["tile_%s" % str(key)] = tile_dict[key]
+	out["total_ms"] = (Time.get_ticks_usec() - started_usec) / 1000.0
+	return out
+
+
+func _recorder_ready(recorder: RefCounted) -> bool:
+	if recorder == null or not recorder.has_method("on_fast_tick"):
+		return false
+	if recorder.has_method("is_recording") and not bool(recorder.call("is_recording")):
+		return false
+	return true
 
 
 func on_speed_changed(new_speed: float) -> void:
