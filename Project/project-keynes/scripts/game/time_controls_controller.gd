@@ -52,9 +52,15 @@ func _on_day_changed(day_idx: int) -> void:
 		return
 	var season_phase := _world_clock.season_phase_for_day(day_idx)
 	_runtime_host.run_daily_tick(day_idx, season_phase)
+	var ui_started_usec := Time.get_ticks_usec()
+	var ui_breakdown: Dictionary = {}
 	if _ui_manager != null:
-		_ui_manager.refresh_selected_daily_lines(false, day_idx)
+		ui_breakdown = _ui_manager.refresh_selected_daily_lines(false, day_idx)
 	_sync_ui()
+	_runtime_host.finish_daily_tick(
+		(Time.get_ticks_usec() - ui_started_usec) / 1000.0,
+		ui_breakdown
+	)
 
 
 func _on_season_changed(season_idx: int) -> void:

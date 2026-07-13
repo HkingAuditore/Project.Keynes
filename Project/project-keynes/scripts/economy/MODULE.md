@@ -82,10 +82,11 @@ GDScript 只附加 catalog 展示名
 ## 现代内容目录
 
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；跨时代手写扩展在其上形成
-  164 goods、203 buildings、39 professions、15 needs，并保留原有 stable IDs。
+  153 goods、190 buildings、32 professions、15 needs。劳动关系职业和稀有矿物收敛有意改变
+  stable-ID 表，旧 catalog 存档不兼容。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
-- `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；37 个资源全部有 collector。
-- 41 种资源受 `land/marine_water/freshwater` habitat 门控；海鱼存在海洋水格，淡水资源存在
+- `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；35 个注册资源全部有 collector。
+- 35 种资源受 `land/marine_water/freshwater` habitat 门控；海鱼存在海洋水格，淡水资源存在
   湖泊水格或河流格。岸上渔业/水厂通过 native `local_and_adjacent` 资源边访问并扣减真实水格。
   矿产初值叠加资源局部斑块、
   同族地质省与矿带。栽培作物只存在于 goods，不进入 DataCore resource slots。

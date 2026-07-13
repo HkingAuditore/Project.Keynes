@@ -31,7 +31,7 @@
 
 Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `res://scenes/world_setup.tscn`，它只挂 `scripts/ui/world_setup.gd`，负责地图尺寸、seed、海平面、大陆数量和若干友好化 climate 控件。点击生成后默认进入 `res://scenes/player_game.tscn`，并通过 meta/settings 把 setup 配置交给 `scripts/game/player_game.gd` / `scripts/game/world_runtime_host.gd`。启动页的「调试场景」按钮仍进入 `res://scenes/main.tscn`，保留旧 debug/runtime lab。
 
-`player_game.gd` 是面向玩家的轻量场景装配层。它只连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景不挂 `DebugConsole`、`PerfMiniHUD`、`DataOverlayLayer`、soak/A-B 热键或 CSV 录制器。
+`player_game.gd` 是面向玩家的轻量场景装配层。它连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的精简 GM 性能模式：顶栏按钮、反引号或 F1 打开性能面板，F4 切换 FPS HUD；性能 CSV 与地块 CSV 仍由既有 `PerfRecorder` / `TileDataRecorder` 生成。玩家场景不挂 `DataOverlayLayer`、soak/A-B 或旧 debug lab 的模拟/视觉开关。
 
 `main.gd` 是当前 debug 主场景协调者，仍然很大。它负责：
 
@@ -245,8 +245,8 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 主要 UI：
 
 - `world_setup.gd`：生成前参数界面。
-- `player_game.gd`：玩家主场景装配层，只做 runtime/UI/controller wiring 和基础玩家热键。
-- `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、safe area 和控制信号；不直接承担逐字段渲染。
+- `player_game.gd`：玩家主场景装配层，负责 runtime/UI/controller wiring、基础玩家热键，以及 F1/F4 GM 性能入口。
+- `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、精简 GM 性能面板、FPS HUD、safe area 和控制信号；不直接承担逐字段渲染。
 - `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
 - `map_interaction_controller.gd` / `selection_controller.gd` / `time_controls_controller.gd`：玩家输入、选中态和时间控制器。
@@ -259,6 +259,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 - `perf_recorder.gd`：fast tick / SUS 运行期性能记录。
 - `tile_data_recorder.gd`：tile CSV 诊断，C++ 可用 `encode_tile_csv_rows()` 加速行编码。
+- `world_runtime_host.gd`：玩家场景的诊断数据源；记录 SUS、renderer sync、选中面板 UI patch 和 recorder 墙钟，并向上述 HUD/录制器提供与 debug `main.gd` 同形的只读 getter。
 - `tools/dots_soak_dump.gd`、`tools/dots_soak_ab_runner.gd`：DOTS soak/A-B 相关工具。
 
 性能日志优先读：
@@ -326,8 +327,9 @@ BUILDING_GRAPH 与国内 Trade V1 阶段承担。税制、跨国贸易/关税、
 NativeEconomyRuntime BUILDING_GRAPH → EconomyFacade/Inspector`。自然资源输入来自 DataCore reserve
 sample，提交为 extra_change delta；建筑和就业本体不进入 MapData/schema。
 
-现代经济内容基线为 37 resources / 124 goods / 128 buildings / 22 professions / 15 needs。
-`BuildingProfile.building_kind` 强制 collector/industrial 边界，`technology_tags` 当前只发布不执行。
+跨时代经济目录为 35 registered resources / 153 goods / 190 buildings / 32 professions / 15 needs。
+`BuildingProfile.building_kind` 强制 collector/industrial 边界，`tech.*` `technology_tags` 由
+国家科技 bitset 在冻结周期内执行。
 BUILDING_GRAPH 内部 utility prepass 先生产 `electricity` cycle-flow，普通生产同周期消费并在边界
 清零。`gold`/`silver` producer offer 按固定目录面值进入显式 mint 审计，是唯一生产性货币输入。
 PKEC v8 的 employee-role 自适应工资在 active-cell employment slice 内计算：基础与岗位生活

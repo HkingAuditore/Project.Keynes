@@ -157,9 +157,10 @@ event/delta ring。详细历史通过独立 PKEJ v1 chunk stream 归档；读入
 
 ## 现代目录兼容边界
 
-124-good/128-building 现代目录的 good/building/profession/need、存储模式、货币锚与 Price V3
-参数均进入 catalog hash；旧小目录存档会以明确的 catalog mismatch 拒绝恢复。本期不做跨目录
-库存或建筑 type remap。周期流电力在 committed boundary 恒为零，发行累计只通过已提交 cohort
+153-good/190-building/32-profession 跨时代目录的 good/building/profession/need、存储模式、
+货币锚、劳动岗位与 Price V3 参数均进入 catalog hash。2026-07-13 的劳动关系重排和稀有矿物
+收敛删除了旧 stable IDs；旧目录存档会以明确的 catalog mismatch 拒绝恢复，本期不做跨目录
+库存、signature 或建筑 type remap。周期流电力在 committed boundary 恒为零，发行累计只通过已提交 cohort
 funds/market stock 与 audit history 体现，不新增独立持久账户。
 
 # PKEC v7 自适应价格与建筑经济计划迁移

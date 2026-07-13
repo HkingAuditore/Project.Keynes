@@ -6,6 +6,7 @@
 script = ExtResource("1")
 id = &"rare_earth"
 display_name = "稀土"
+discovery_technology_tags = PackedStringArray("tech.geological_prospecting")
 reserve_component = &"cell.res_rare_earth_reserve"
 land_only = true
 temp_lo = -30.0

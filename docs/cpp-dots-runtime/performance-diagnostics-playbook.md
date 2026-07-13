@@ -2,6 +2,28 @@
 
 本文用于解释运行日志，并给出排查 C++/DOTS 路径是否符合预期的流程。目标不是只看“耗时高不高”，而是定位高耗时来自 C++ compute、GDScript fallback、slot sync、flush、dirty mask、GPU upload，还是统计窗口里的旧 spike。
 
+## 玩家场景 GM 性能入口
+
+`player_game.tscn` 运行时默认显示右上角 `PerfMiniHUD`；F4 切换显隐。顶栏 GM 按钮、
+反引号或 F1 打开精简性能面板，可查看 last-tick、30-tick Top-N、climate/weather/economy
+breakdown，并执行性能快照、性能 CSV 和地块 CSV 录制。玩家场景的诊断数据源是
+`WorldRuntimeHost`，它在同一 daily tick 上分段记录：
+
+- `t_sus_ms`：`MapGenerator.sus_tick_daily()`，包含 climate、economy 和其他 SUS jobs。
+- `t_render_ms`：fronts、weather field texture 等 renderer 同步，不等于 GPU fragment 时间。
+- `t_ui_ms`：选中地块 live patch 与顶栏时间状态更新。
+- `bd_ui_live_patch_build_ms`：右侧面板 ViewModel 读取选中地块/原生快照并构造
+  live patch 的墙钟。
+- `bd_ui_live_patch_apply_ms`：`InspectorPanel` 把 live patch 应用到当前可见控件的墙钟。
+  `bd_ui_ran=false` 表示该 tick 未达到 750ms 面板刷新节流；`bd_ui_tab` 记录当前标签页。
+- `fast_ms`：以上路径与少量调度胶水的总墙钟；录制器开销另见
+  `fast_ms_after_recorders` / recorder summary。
+
+性能 CSV 在桌面写入仓库 `tmp/perf_record_*.csv`，地块 CSV 写入
+`tmp/tile_data_record_*.csv`；移动端分别写入 `user://perf` 和 `user://tile_data`。
+全量地块录制会同步编码、写盘，可能主动制造卡顿，因此先录性能基线，再短时开启地块录制，
+并检查 `tile_ms/format_ms/flush_ms/encoder_path`。
+
 ## 先看三层日志
 
 ### 1. Fast tick warn

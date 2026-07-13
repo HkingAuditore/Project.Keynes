@@ -17,6 +17,9 @@ var _inspector_view_model: CellInspectorViewModel
 var _selected_cell: HexCell
 var _last_cached_panel_ms: int = 0
 var _country_facade = null
+var _gm_console: DebugConsole
+var _perf_hud: PerfMiniHUD
+var _diagnostics_source: Node = null
 
 
 func _ready() -> void:
@@ -50,6 +53,24 @@ func set_world_context(
 		_right_panel.reset_for_world()
 
 
+func set_diagnostics_source(source: Node) -> void:
+	_diagnostics_source = source
+	if _gm_console != null:
+		_gm_console.set_main(source)
+	if _perf_hud != null:
+		_perf_hud.set_main(source)
+
+
+func toggle_gm_panel() -> void:
+	if _gm_console != null:
+		_gm_console.visible = not _gm_console.visible
+
+
+func toggle_perf_hud() -> void:
+	if _perf_hud != null:
+		_perf_hud.toggle_visible()
+
+
 func show_cell_panel(cell: HexCell) -> void:
 	_selected_cell = cell
 	_last_cached_panel_ms = Time.get_ticks_msec()
@@ -71,16 +92,31 @@ func hide_cell_panel() -> void:
 		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
 
 
-func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> void:
+func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dictionary:
+	var timing: Dictionary = {
+		"ran": false,
+		"tab": "",
+		"live_patch_build_ms": 0.0,
+		"live_patch_apply_ms": 0.0,
+	}
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
-		return
+		return timing
+	timing["tab"] = _right_panel.current_tab()
 	_inspector_view_model.observe_temperature(_selected_cell, day_idx)
 	var now_ms := Time.get_ticks_msec()
 	if not force and now_ms - _last_cached_panel_ms < 750:
-		return
+		return timing
 	_last_cached_panel_ms = now_ms
+	var build_started_usec := Time.get_ticks_usec()
 	var patch := _inspector_view_model.build_live_patch(_selected_cell, _right_panel.current_tab())
+	timing["live_patch_build_ms"] = (
+		Time.get_ticks_usec() - build_started_usec) / 1000.0
+	var apply_started_usec := Time.get_ticks_usec()
 	_right_panel.apply_live_patch(patch)
+	timing["live_patch_apply_ms"] = (
+		Time.get_ticks_usec() - apply_started_usec) / 1000.0
+	timing["ran"] = true
+	return timing
 
 
 func refresh_selected_panel() -> void:
@@ -168,6 +204,7 @@ func _build_ui() -> void:
 	_top_bar.pause_toggled.connect(func(paused: bool) -> void: pause_toggled.emit(paused))
 	_top_bar.speed_selected.connect(func(speed: float) -> void: speed_selected.emit(speed))
 	_top_bar.setup_requested.connect(func() -> void: setup_requested.emit())
+	_top_bar.gm_requested.connect(toggle_gm_panel)
 	add_child(_top_bar)
 
 	_right_panel = InspectorPanel.new()
@@ -181,6 +218,24 @@ func _build_ui() -> void:
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
 	add_child(_right_panel)
+
+	_gm_console = DebugConsole.new()
+	_gm_console.name = "GMConsole"
+	_gm_console.runtime_diagnostics_only = true
+	add_child(_gm_console)
+	_gm_console.position = Vector2(
+		UITokens.SPACE_SM, PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM)
+
+	_perf_hud = PerfMiniHUD.new()
+	_perf_hud.name = "PerfMiniHUD"
+	_perf_hud.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_perf_hud.offset_left = -180.0
+	_perf_hud.offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM
+	_perf_hud.offset_right = 180.0
+	add_child(_perf_hud)
+
+	if _diagnostics_source != null:
+		set_diagnostics_source(_diagnostics_source)
 
 	_loading_overlay = WorldLoadingOverlay.new()
 	add_child(_loading_overlay)

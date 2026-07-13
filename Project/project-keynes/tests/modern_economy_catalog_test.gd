@@ -27,10 +27,20 @@ func _audit(catalog: Dictionary) -> void:
 	var resources: PackedStringArray = catalog.building_resource_ids
 	_expect("at least 120 goods", goods.size() >= 120)
 	_expect("at least 90 buildings", buildings.size() >= 90)
-	_expect("39 cross-era professions", professions.size() == 39)
+	_expect("32 labor-relation professions", professions.size() == 32)
 	_expect("exactly 15 household needs", needs.size() == 15)
-	_expect("41 registered terrestrial resources", ResourceRegistryScript.count() == 41)
-	_expect("all registered resources enter building catalog", resources.size() == 41)
+	_expect("35 registered terrestrial resources", ResourceRegistryScript.count() == 35)
+	_expect("all registered resources enter building catalog", resources.size() == 35)
+	for relation_profession in ["enslaved_laborer", "serf", "tenant_farmer",
+			"indentured_laborer", "apprentice", "journeyman", "manager", "researcher"]:
+		_expect("labor relation profession exists: %s" % relation_profession,
+			professions.find(relation_profession) >= 0)
+	for retired_profession in ["knapper", "potter", "bronze_founder", "mason", "scribe",
+			"printer", "shipwright", "navigator", "steam_engineer", "electrical_engineer",
+			"nuclear_engineer", "software_developer", "ai_researcher",
+			"space_systems_engineer", "astronaut"]:
+		_expect("over-specialized profession retired: %s" % retired_profession,
+			professions.find(retired_profession) < 0)
 	for retired_crop in ["wheat", "rice", "corn", "potato", "rubber_tree",
 			"spice_plants", "flax", "cotton", "medicinal_herbs"]:
 		_expect("cultivated crop is not a natural resource: %s" % retired_crop,
@@ -42,6 +52,27 @@ func _audit(catalog: Dictionary) -> void:
 	var wheat_farm = load("res://data/economy/buildings/subsistence_farm.tres")
 	_expect("corn collector is named 玉米农场", corn_farm != null and String(corn_farm.display_name) == "玉米农场")
 	_expect("wheat collector is named 小麦农场", wheat_farm != null and String(wheat_farm.display_name) == "小麦农场")
+	var gathering = load("res://data/economy/buildings/gathering_ground.tres")
+	var bronze_foundry = load("res://data/economy/buildings/bronze_foundry.tres")
+	var guild_hall = load("res://data/economy/buildings/guild_hall.tres")
+	var steam_works = load("res://data/economy/buildings/steam_engine_works.tres")
+	var data_center = load("res://data/economy/buildings/network_data_center.tres")
+	_expect("stone production is owner-operated",
+		String(gathering.owner_profession_id) == "forager" and
+		gathering.employee_profession_ids.is_empty())
+	_expect("bronze workshop uses a small apprentice household",
+		String(bronze_foundry.owner_profession_id) == "artisan" and
+		bronze_foundry.employee_profession_ids == PackedStringArray(["apprentice"]) and
+		bronze_foundry.employee_slots_per_building == PackedInt64Array([4]))
+	_expect("guild production distinguishes apprentices and journeymen",
+		String(guild_hall.owner_profession_id) == "guild_master" and
+		guild_hall.employee_profession_ids == PackedStringArray(["apprentice", "journeyman"]))
+	_expect("steam factory introduces workers, engineers, and management",
+		steam_works.employee_profession_ids ==
+			PackedStringArray(["industrial_worker", "engineer", "manager"]))
+	_expect("information industry uses four salaried role layers",
+		data_center.employee_profession_ids ==
+			PackedStringArray(["technician", "engineer", "researcher", "manager"]))
 	_expect("water resources use explicit geographic habitats",
 		ResourceRegistryScript.habitat_code(ResourceRegistryScript.ordered().filter(
 			func(p): return String(p.id) == "marine_fish")[0]) == 2 and
@@ -51,14 +82,19 @@ func _audit(catalog: Dictionary) -> void:
 			func(p): return String(p.id) == "freshwater_fish")[0]) == 3)
 	var flint_resource = ResourceRegistryScript.ordered().filter(
 		func(p): return String(p.id) == "flint")[0]
-	var lithium_resource = ResourceRegistryScript.ordered().filter(
-		func(p): return String(p.id) == "lithium")[0]
+	var rare_earth_resource = ResourceRegistryScript.ordered().filter(
+		func(p): return String(p.id) == "rare_earth")[0]
 	_expect("early flint deposit is visible without prospecting",
 		ResourceRegistryScript.discovery_visible(flint_resource, PackedStringArray()))
-	_expect("lithium deposit visibility is separate from physical existence",
-		not ResourceRegistryScript.discovery_visible(lithium_resource, PackedStringArray()) and
-		ResourceRegistryScript.discovery_visible(lithium_resource,
+	_expect("abstract rare-earth deposit requires geological prospecting",
+		not ResourceRegistryScript.discovery_visible(rare_earth_resource, PackedStringArray()) and
+		ResourceRegistryScript.discovery_visible(rare_earth_resource,
 			PackedStringArray(["tech.geological_prospecting"])))
+	for retired_good in ["lithium_ore", "lithium", "cobalt_ore", "cobalt", "graphite",
+			"nickel_ore", "nickel", "platinum_group_ore", "platinum", "uranium_ore",
+			"uranium_fuel"]:
+		_expect("specific rare mineral is merged: %s" % retired_good,
+			goods.find(retired_good) < 0)
 
 	var kinds: PackedInt32Array = catalog.building_kinds
 	var owners: PackedInt64Array = catalog.building_owner_slots
@@ -81,7 +117,7 @@ func _audit(catalog: Dictionary) -> void:
 			_expect("industrial has no natural resource: %s" % buildings[type_id], resource_offsets[type_id + 1] == resource_offsets[type_id])
 		for edge in range(resource_offsets[type_id], resource_offsets[type_id + 1]):
 			used_resources[production_resources[edge]] = true
-	_expect("at least one collector per resource", collectors >= 41 and used_resources.size() == 41)
+	_expect("at least one collector per resource", collectors >= 35 and used_resources.size() == 35)
 	var resource_modes: PackedInt32Array = catalog.building_production_resource_modes
 	var resource_access_modes: PackedInt32Array = catalog.building_production_resource_access_modes
 	var output_quantities: PackedInt64Array = catalog.building_output_quantities

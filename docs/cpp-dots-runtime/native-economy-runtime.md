@@ -145,7 +145,9 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 建造条件。人口仍保持唯一 `(cell, signature)` cohort；lane 新增 owner/employee employed
 计数，失业为 population 减两者。工资 ABI 位于 employee role：`adaptive` 以本地基础生活
 成本、岗位 cohort 消费篮子和本地岗位合同工资 EMA 形成生活工资硬下限；`fixed` 仅保留给
-显式固定工资内容。业主现金不足时按 owner 全部 role 义务稳定比例支付，相关 owner-lot
+显式固定报酬内容。当前跨时代目录用低额 `fixed` 报酬近似奴隶维持、农奴供养、租佃和契约
+劳工的食宿/份额，使用 profession stable ID 区分关系；它不提供法律身份、地租倒流、迁徙限制
+或 owner-lot 人身绑定。业主现金不足时按 owner 全部 role 义务稳定比例支付，相关 owner-lot
 本周期停产。工资仍按本地同职业实际就业权重分配，不铸币且保持资金守恒。
 
 周期开始先按冻结价格计算每栋建筑的投入替换成本、完整工资义务、预期 producer settlement
@@ -241,13 +243,24 @@ TRACE_OFF 为 `2.112/8.914/8.914ms`、111.3MB。两者核心 state hash 均为
 10M SELECTIVE 相对同版本 TRACE_OFF 的 avg/p95 增量约 2.5%/2.7%；固定五日建筑 soak
 增量约 2.9%/1.2%。两档核心 state hash 在 trace 模式间不变，journal 均低于 32MB 默认上限。
 
-## 现代产业目录与货币发行（2026-07-12）
+## 跨时代产业目录与货币发行（2026-07-13）
 
-现代基线由可复现的 `tools/codegen/gen_modern_economy_content.ps1` 生成，跨时代扩展后目录为 164 goods、203
-building types、39 professions 和 15 household needs。41 种自然资源均至少被一个
+现代基线由可复现的 `tools/codegen/gen_modern_economy_content.ps1` 生成，跨时代扩展后目录为 153 goods、190
+building types、32 professions 和 15 household needs。35 种注册自然资源均至少被一个
 `collector` 引用；`industrial` 只能消费 goods。所有建筑恰好一个 owner job，科技解锁仅以
 `technology_tags` 进入 catalog/snapshot；只有 `tech.*` 是可执行条件。runtime 把条件解析为 dense technology IDs，
 由 `NativeCountryRuntime` 以每国家 bitset 持久化；经济在周期边界冻结 `cell → country`、国家 generation/hash 与科技 bits，统一过滤物资替代、职业就业、建造与生产。其他标签命名空间只作冷元数据。
+
+职业目录优先表达劳动关系和长期技能层，而不是为每个时代/单品建立一次性职业：石器生产由
+forager/hunter/artisan 自营；青铜和古典使用小规模 apprentice 与 enslaved_laborer；封建和
+探索时期加入 serf、tenant_farmer、indentured_laborer、journeyman；蒸汽以后才由
+industrial_worker、technician、engineer、manager、researcher 组成多角色企业。该变化只修改
+catalog/content，PopulationStore、signature ABI、BUILDING_GRAPH 和 PKEC byte schema 均未改变。
+
+锂、钴、石墨、镍、铂族和铀的独立目录项合并为抽象
+`rare_earth → rare_earth_ore → rare_earth_metals`。旧 DataCore 资源 slots 暂时保留但不再由
+ResourceProfileRegistry 注册；因此 MapData/slot ABI 不变，当前 catalog 和旧 PKEC stable-ID 表
+不兼容。
 
 `gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/10000 money subunits。商人接收
 建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通

@@ -9,7 +9,7 @@
 #     timestamp_ms / fast_ms / t_sus_ms / t_render_ms / t_ui_ms / was_skipped_day / fps
 #   - main.get_sus_last_tick_report()    → 各 Job 的 elapsed_ms / slices_run / skipped_reason
 #   - main.get_sus_last_tick_summary()   → largest_slice_* + sus_sim_p95_300 等
-#   - main.get_sim_breakdowns()          → { climate / weather / enum_atlas / sea_ice_atlas } 子 dict
+#   - main.get_sim_breakdowns()          → { ui / climate / weather / economy / atlas... } 子 dict
 #
 # CSV 列顺序：
 #   1. 固定列（FIXED_COLUMNS，下方常量）
@@ -311,7 +311,7 @@ func _merge_jobs(row: Dictionary, report: Dictionary, was_skipped_day: bool) -> 
 		row[key_job_wrapper_gap] = float(r.get("job_wrapper_gap_ms", 0.0))
 
 
-# breakdowns = { "climate": {...}, "weather": {...}, "enum_atlas": {...}, "sea_ice_atlas": {...} }
+# breakdowns = { "ui": {...}, "climate": {...}, "weather": {...}, "economy": {...}, ... }
 # 每个子 dict 的 key 集合不固定，全部展开为 bd_<group>_<key>。
 #
 # 方案 ④ Step 1（freshness 过滤）：

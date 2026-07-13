@@ -44,10 +44,9 @@ $resourceRows = @(
     @('fresh_water','淡水','raw_water'), @('marine_fish','海洋鱼类','fish'),
     @('bauxite','铝土矿','bauxite'), @('limestone','石灰石','limestone'),
     @('silica_sand','硅砂','silica_sand'), @('phosphate_rock','磷矿','phosphate_rock'),
-    @('uranium_ore','铀矿','uranium_ore'), @('tin_ore','锡矿','tin_ore'),
-    @('lead_ore','铅矿','lead_ore'), @('zinc_ore','锌矿','zinc_ore'),
-    @('nickel_ore','镍矿','nickel_ore'), @('manganese_ore','锰矿','manganese_ore'),
-	@('sulfur','硫磺','sulfur'), @('platinum_ore','铂族矿','platinum_group_ore')
+    @('tin_ore','锡矿','tin_ore'), @('lead_ore','铅矿','lead_ore'),
+    @('zinc_ore','锌矿','zinc_ore'), @('manganese_ore','锰矿','manganese_ore'),
+	@('sulfur','硫磺','sulfur')
 )
 $cultivatedResourceIds = @('wheat','rice','corn','potato','rubber_tree',
     'spice_plants','flax','cotton','medicinal_herbs')
@@ -63,7 +62,7 @@ $processedGroups = [ordered]@{
     food = @('grain','flour','bread','rice_food','corn_food','potato_food','animal_feed','edible_oil','processed_food','dairy_products','beef','mutton','pork','canned_fish','beverages')
     textile = @('fur','raw_hide','leather','wool','flax_yarn','cotton_yarn','textile','cloth','synthetic_fiber','clothing','footwear')
     chemicals = @('refined_fuel','lubricants','petrochemicals','plastics','synthetic_rubber','industrial_chemicals','fertilizer','explosives','soap','detergent','pharmaceuticals')
-    metals = @('pig_iron','steel','stainless_steel','copper','aluminum','tin','lead','zinc','nickel','manganese_alloy','rare_earth_metals','uranium_fuel','platinum','wire')
+    metals = @('pig_iron','steel','stainless_steel','copper','aluminum','tin','lead','zinc','manganese_alloy','rare_earth_metals','wire')
     machinery = @('tools','machine_parts','industrial_machinery','agricultural_machinery','electric_motor','engines','batteries','electrical_equipment','electronic_components','semiconductors','computers','telecom_equipment','household_appliances','automobiles','railway_equipment')
     consumer = @('jewelry','clean_water')
     energy = @('electricity')
@@ -75,8 +74,8 @@ function Add-Good([string]$Id, [string]$Name, [string]$Category) {
     $goods[$Id] = @{ name=$Name; category=$Category }
 }
 $goodNames = @{
-    logs='原木'; raw_stone='原石'; vegetables='蔬菜'; wheat_grain='小麦'; rice_grain='稻米'; corn_grain='玉米'; potatoes='马铃薯'; coal='煤炭'; crude_oil='原油'; natural_gas='天然气'; copper_ore='铜矿石'; iron_ore='铁矿石'; gold='黄金'; silver='白银'; salt='食盐'; latex='天然乳胶'; saltpeter='硝石'; rare_earth_ore='稀土精矿'; clay='黏土'; horses='马匹'; game_meat='野味'; spices='香料'; flax_fiber='亚麻纤维'; cotton_fiber='棉纤维'; cattle='牛'; sheep='羊'; pigs='猪'; medicinal_herbs='药材'; raw_water='原水'; fish='鱼类'; bauxite='铝土矿'; limestone='石灰石'; silica_sand='硅砂'; phosphate_rock='磷矿石'; uranium_ore='铀矿石'; tin_ore='锡矿石'; lead_ore='铅矿石'; zinc_ore='锌矿石'; nickel_ore='镍矿石'; manganese_ore='锰矿石'; sulfur='硫磺'; platinum_group_ore='铂族精矿';
-    lumber='锯材'; wood_pulp='纸浆'; paper='纸张'; packaging='包装材料'; printed_materials='印刷品'; furniture='家具'; cut_stone='石材'; bricks='砖'; lime='石灰'; cement='水泥'; concrete='混凝土'; glass='玻璃'; construction_components='建筑构件'; grain='混合谷物'; flour='面粉'; bread='面包'; rice_food='米制食品'; corn_food='玉米食品'; potato_food='薯类食品'; animal_feed='饲料'; edible_oil='食用油'; processed_food='加工食品'; dairy_products='乳制品'; beef='牛肉'; mutton='羊肉'; pork='猪肉'; canned_fish='水产罐头'; beverages='饮料'; fur='皮毛'; raw_hide='生皮'; leather='皮革'; wool='羊毛'; flax_yarn='亚麻纱'; cotton_yarn='棉纱'; textile='纺织品'; cloth='布料'; synthetic_fiber='合成纤维'; clothing='服装'; footwear='鞋靴'; refined_fuel='成品燃料'; lubricants='润滑油'; petrochemicals='石化原料'; plastics='塑料'; synthetic_rubber='合成橡胶'; industrial_chemicals='工业化学品'; fertilizer='化肥'; explosives='炸药'; soap='肥皂'; detergent='清洁剂'; pharmaceuticals='药品'; pig_iron='生铁'; steel='钢材'; stainless_steel='不锈钢'; copper='铜'; aluminum='铝'; tin='锡'; lead='铅'; zinc='锌'; nickel='镍'; manganese_alloy='锰合金'; rare_earth_metals='稀土金属'; uranium_fuel='核燃料'; platinum='铂族金属'; wire='电线'; tools='工具'; machine_parts='机械零件'; industrial_machinery='工业机械'; agricultural_machinery='农业机械'; electric_motor='电动机'; engines='发动机'; batteries='电池'; electrical_equipment='电气设备'; electronic_components='电子元件'; semiconductors='半导体'; computers='计算机'; telecom_equipment='通信设备'; household_appliances='家用电器'; automobiles='汽车'; railway_equipment='铁路设备'; jewelry='珠宝'; clean_water='净水'; electricity='电力'
+    logs='原木'; raw_stone='原石'; vegetables='蔬菜'; wheat_grain='小麦'; rice_grain='稻米'; corn_grain='玉米'; potatoes='马铃薯'; coal='煤炭'; crude_oil='原油'; natural_gas='天然气'; copper_ore='铜矿石'; iron_ore='铁矿石'; gold='黄金'; silver='白银'; salt='食盐'; latex='天然乳胶'; saltpeter='硝石'; rare_earth_ore='稀土精矿'; clay='黏土'; horses='马匹'; game_meat='野味'; spices='香料'; flax_fiber='亚麻纤维'; cotton_fiber='棉纤维'; cattle='牛'; sheep='羊'; pigs='猪'; medicinal_herbs='药材'; raw_water='原水'; fish='鱼类'; bauxite='铝土矿'; limestone='石灰石'; silica_sand='硅砂'; phosphate_rock='磷矿石'; tin_ore='锡矿石'; lead_ore='铅矿石'; zinc_ore='锌矿石'; manganese_ore='锰矿石'; sulfur='硫磺';
+    lumber='锯材'; wood_pulp='纸浆'; paper='纸张'; packaging='包装材料'; printed_materials='印刷品'; furniture='家具'; cut_stone='石材'; bricks='砖'; lime='石灰'; cement='水泥'; concrete='混凝土'; glass='玻璃'; construction_components='建筑构件'; grain='混合谷物'; flour='面粉'; bread='面包'; rice_food='米制食品'; corn_food='玉米食品'; potato_food='薯类食品'; animal_feed='饲料'; edible_oil='食用油'; processed_food='加工食品'; dairy_products='乳制品'; beef='牛肉'; mutton='羊肉'; pork='猪肉'; canned_fish='水产罐头'; beverages='饮料'; fur='皮毛'; raw_hide='生皮'; leather='皮革'; wool='羊毛'; flax_yarn='亚麻纱'; cotton_yarn='棉纱'; textile='纺织品'; cloth='布料'; synthetic_fiber='合成纤维'; clothing='服装'; footwear='鞋靴'; refined_fuel='成品燃料'; lubricants='润滑油'; petrochemicals='石化原料'; plastics='塑料'; synthetic_rubber='合成橡胶'; industrial_chemicals='工业化学品'; fertilizer='化肥'; explosives='炸药'; soap='肥皂'; detergent='清洁剂'; pharmaceuticals='药品'; pig_iron='生铁'; steel='钢材'; stainless_steel='不锈钢'; copper='铜'; aluminum='铝'; tin='锡'; lead='铅'; zinc='锌'; manganese_alloy='锰合金'; rare_earth_metals='稀土金属'; wire='电线'; tools='工具'; machine_parts='机械零件'; industrial_machinery='工业机械'; agricultural_machinery='农业机械'; electric_motor='电动机'; engines='发动机'; batteries='电池'; electrical_equipment='电气设备'; electronic_components='电子元件'; semiconductors='半导体'; computers='计算机'; telecom_equipment='通信设备'; household_appliances='家用电器'; automobiles='汽车'; railway_equipment='铁路设备'; jewelry='珠宝'; clean_water='净水'; electricity='电力'
 }
 foreach ($row in $resourceRows) { Add-Good $row[2] $goodNames[$row[2]] 'primary' }
 foreach ($category in $processedGroups.Keys) {
@@ -84,12 +83,35 @@ foreach ($category in $processedGroups.Keys) {
         if (-not $goods.Contains($id)) { Add-Good $id $goodNames[$id] $category }
     }
 }
-if ($goods.Count -lt 120) { throw "good count below target: $($goods.Count)" }
+if ($goods.Count -lt 110) { throw "generated good baseline unexpectedly small: $($goods.Count)" }
 
 $categoryPrice = @{ primary=10000; forestry=18000; construction=22000; food=16000; textile=24000; chemicals=30000; metals=36000; machinery=52000; consumer=60000; energy=12000 }
+function Technology-For-Good([string]$Id) {
+    $technologyByGood = @{
+        logs='tech.gathering'; lumber='tech.gathering'; game_meat='tech.hunting'
+        fur='tech.hunting'; raw_hide='tech.hunting'; processed_food='tech.fire_control'
+        tools='tech.stone_knapping'; clay='tech.pottery'; furniture='tech.pottery'
+        copper_ore='tech.bronze_casting'; copper='tech.bronze_casting'
+        tin_ore='tech.bronze_casting'; tin='tech.bronze_casting'
+        raw_stone='tech.masonry'; silica_sand='tech.masonry'; cut_stone='tech.masonry'
+        glass='tech.masonry'; construction_components='tech.masonry'
+        cloth='tech.guild_organization'; printed_materials='tech.printing_press'
+        industrial_machinery='tech.precision_engineering'; coal='tech.coke_smelting'
+        iron_ore='tech.steam_power'; steel='tech.steam_power'
+        railway_equipment='tech.steam_power'; electricity='tech.electrification'
+        electrical_equipment='tech.electrification'; electronic_components='tech.radio'
+        pharmaceuticals='tech.nuclear_fission'; semiconductors='tech.digital_computing'
+        computers='tech.digital_computing'; telecom_equipment='tech.networked_computing'
+        batteries='tech.autonomous_systems'; electric_motor='tech.autonomous_systems'
+        rare_earth_ore='tech.geological_prospecting'; rare_earth_metals='tech.advanced_metallurgy'
+    }
+    if ($technologyByGood.ContainsKey($Id)) { return $technologyByGood[$Id] }
+    return 'tech.legacy_modern_economy'
+}
 foreach ($id in $goods.Keys) {
     $g = $goods[$id]
     $price = [int]$categoryPrice[$g.category]
+    $technology = Technology-For-Good $id
 	$demandElasticity = switch ($g.category) {
 		'primary' { 29491 } 'food' { 22938 } 'forestry' { 49152 }
 		'construction' { 49152 } 'textile' { 58982 } 'chemicals' { 52429 }
@@ -116,7 +138,7 @@ script = ExtResource("1")
 id = &"$id"
 display_name = "$($g.name)"
 category_id = &"$($g.category)"
-technology_tags = PackedStringArray("industry.$($g.category)")
+technology_tags = PackedStringArray("industry.$($g.category)", "$technology")
 storage_mode = "$mode"
 monetary_issue_value = $issue
 default_price = $price
@@ -142,20 +164,43 @@ merchant_buy_price_factor_q16 = 62259
     Write-Utf8 (Join-Path $goodsDir "$id.tres") $content
 }
 
+# Full profession catalog baseline. Keep this list aligned with hand-authored
+# cross-era content; generation is intentionally authoritative for all 32 rows.
 $professionRows = @(
-    @('landlord','地主','landlord_household'), @('merchant','商人','merchant_household'),
-    @('subsistence_farmer','自耕农','subsistence_household'), @('worker','普通工人','worker_household'),
-    @('industrialist','工业业主','landlord_household'), @('agricultural_worker','农业工人','worker_household'),
-    @('pastoralist','牧民','worker_household'), @('hunter','猎人','worker_household'),
-    @('fisher','渔民','worker_household'), @('forestry_worker','林业工人','worker_household'),
-    @('miner','矿业工人','worker_household'), @('petroleum_worker','油气工人','skilled_household'),
-    @('construction_worker','建筑工人','worker_household'), @('artisan','工匠','skilled_household'),
-    @('industrial_worker','产业工人','worker_household'), @('machinist','机械师','skilled_household'),
-    @('technician','技术工人','skilled_household'), @('engineer','工程师','skilled_household'),
-    @('chemist','化学工','skilled_household'), @('metallurgist','冶金工','skilled_household'),
-    @('electrician','电工','skilled_household'), @('transport_worker','运输工人','worker_household')
+    @('landlord','地主','landlord_household','tech.bronze_casting'),
+    @('merchant','商人','merchant_household','tech.gathering'),
+    @('subsistence_farmer','自耕农','subsistence_household','tech.pottery'),
+    @('worker','普通工人','worker_household','tech.steam_power'),
+    @('industrialist','工业业主','landlord_household','tech.steam_power'),
+    @('agricultural_worker','农业工人','worker_household','tech.legacy_modern_economy'),
+    @('pastoralist','牧民','worker_household','tech.pottery'),
+    @('hunter','猎人','worker_household','tech.hunting'),
+    @('fisher','渔民','worker_household','tech.legacy_modern_economy'),
+    @('forestry_worker','林业工人','worker_household','tech.gathering'),
+    @('miner','矿业工人','worker_household','tech.bronze_casting'),
+    @('petroleum_worker','油气工人','skilled_household','tech.legacy_modern_economy'),
+    @('construction_worker','建筑工人','worker_household','tech.masonry'),
+    @('artisan','工匠','skilled_household','tech.gathering'),
+    @('industrial_worker','产业工人','worker_household','tech.steam_power'),
+    @('machinist','机械师','skilled_household','tech.precision_engineering'),
+    @('technician','技术工人','skilled_household','tech.electrification'),
+    @('engineer','工程师','skilled_household','tech.precision_engineering'),
+    @('chemist','化学工','skilled_household','tech.experimental_science'),
+    @('metallurgist','冶金工','skilled_household','tech.bronze_casting'),
+    @('electrician','电工','skilled_household','tech.electrification'),
+    @('transport_worker','运输工人','worker_household','tech.oceanic_navigation'),
+    @('guild_master','行会师傅','skilled_household','tech.guild_organization'),
+    @('forager','采集者','subsistence_household','tech.gathering'),
+    @('enslaved_laborer','奴隶劳工','subsistence_household','tech.bronze_casting'),
+    @('serf','农奴','subsistence_household','tech.manuscript_culture'),
+    @('tenant_farmer','佃农','worker_household','tech.guild_organization'),
+    @('indentured_laborer','契约劳工','worker_household','tech.oceanic_navigation'),
+    @('apprentice','学徒','subsistence_household','tech.pottery'),
+    @('journeyman','帮工','worker_household','tech.writing'),
+    @('manager','经营管理者','skilled_household','tech.steam_power'),
+    @('researcher','研究人员','skilled_household','tech.experimental_science')
 )
-if ($professionRows.Count -ne 22) { throw 'profession count must be 22' }
+if ($professionRows.Count -ne 32) { throw 'profession catalog baseline must be 32' }
 foreach ($row in $professionRows) {
     $content = @"
 [gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
@@ -165,6 +210,7 @@ script = ExtResource("1")
 id = &"$($row[0])"
 display_name = "$($row[1])"
 default_consumption_plan_id = &"$($row[2])"
+technology_tags = PackedStringArray("$($row[3])")
 "@
     Write-Utf8 (Join-Path $professionsDir "$($row[0]).tres") $content
 }
@@ -255,8 +301,8 @@ $deps = @{
     grain=@('wheat_grain','rice_grain','corn_grain'); flour=@('grain'); bread=@('flour','clean_water'); rice_food=@('rice_grain','clean_water'); corn_food=@('corn_grain','clean_water'); potato_food=@('potatoes','edible_oil'); animal_feed=@('grain'); edible_oil=@('corn_grain'); processed_food=@('vegetables','game_meat','dairy_products','corn_food','spices','salt','packaging'); dairy_products=@('cattle','clean_water'); beef=@('cattle'); mutton=@('sheep'); pork=@('pigs'); canned_fish=@('fish','salt','packaging'); beverages=@('clean_water','sugar_placeholder');
     raw_hide=@('cattle'); leather=@('raw_hide','industrial_chemicals'); wool=@('sheep'); flax_yarn=@('flax_fiber'); cotton_yarn=@('cotton_fiber'); textile=@('flax_yarn','cotton_yarn','wool'); cloth=@('textile'); synthetic_fiber=@('petrochemicals'); clothing=@('cloth','synthetic_fiber','fur'); footwear=@('leather','synthetic_rubber','latex');
     refined_fuel=@('crude_oil'); lubricants=@('crude_oil'); petrochemicals=@('crude_oil','natural_gas'); plastics=@('petrochemicals'); synthetic_rubber=@('petrochemicals','sulfur'); industrial_chemicals=@('sulfur','salt'); fertilizer=@('phosphate_rock','natural_gas'); explosives=@('saltpeter','sulfur'); soap=@('edible_oil','salt'); detergent=@('petrochemicals','industrial_chemicals'); pharmaceuticals=@('medicinal_herbs','industrial_chemicals');
-    pig_iron=@('iron_ore','coal'); steel=@('pig_iron','coal'); stainless_steel=@('steel','nickel','manganese_alloy'); copper=@('copper_ore','coal'); aluminum=@('bauxite','electricity'); tin=@('tin_ore','coal'); lead=@('lead_ore','coal'); zinc=@('zinc_ore','coal'); nickel=@('nickel_ore','coal'); manganese_alloy=@('manganese_ore','steel'); rare_earth_metals=@('rare_earth_ore','industrial_chemicals'); uranium_fuel=@('uranium_ore','industrial_chemicals'); platinum=@('platinum_group_ore','industrial_chemicals'); wire=@('copper','plastics');
-    tools=@('steel','lumber'); machine_parts=@('steel','lubricants'); industrial_machinery=@('machine_parts','electric_motor'); agricultural_machinery=@('industrial_machinery','engines'); electric_motor=@('copper','steel'); engines=@('steel','aluminum','machine_parts'); batteries=@('lead','nickel','industrial_chemicals'); electrical_equipment=@('wire','steel','plastics'); electronic_components=@('copper','tin','zinc','plastics','rare_earth_metals'); semiconductors=@('silica_sand','industrial_chemicals','electricity'); computers=@('semiconductors','electronic_components','plastics'); telecom_equipment=@('semiconductors','wire','batteries','plastics'); household_appliances=@('electrical_equipment','stainless_steel','plastics'); automobiles=@('engines','steel','batteries','synthetic_rubber'); railway_equipment=@('stainless_steel','engines','electrical_equipment'); jewelry=@('gold','silver','platinum'); clean_water=@('raw_water','industrial_chemicals'); electricity=@('coal')
+    pig_iron=@('iron_ore','coal'); steel=@('pig_iron','coal'); stainless_steel=@('steel','rare_earth_metals','manganese_alloy'); copper=@('copper_ore','coal'); aluminum=@('bauxite','electricity'); tin=@('tin_ore','coal'); lead=@('lead_ore','coal'); zinc=@('zinc_ore','coal'); manganese_alloy=@('manganese_ore','steel'); rare_earth_metals=@('rare_earth_ore','industrial_chemicals'); wire=@('copper','plastics');
+    tools=@('steel','lumber'); machine_parts=@('steel','lubricants'); industrial_machinery=@('machine_parts','electric_motor'); agricultural_machinery=@('industrial_machinery','engines'); electric_motor=@('copper','steel'); engines=@('steel','aluminum','machine_parts'); batteries=@('lead','rare_earth_metals','industrial_chemicals'); electrical_equipment=@('wire','steel','plastics'); electronic_components=@('copper','tin','zinc','plastics','rare_earth_metals'); semiconductors=@('silica_sand','industrial_chemicals','electricity'); computers=@('semiconductors','electronic_components','plastics'); telecom_equipment=@('semiconductors','wire','batteries','plastics'); household_appliances=@('electrical_equipment','stainless_steel','plastics'); automobiles=@('engines','steel','batteries','synthetic_rubber'); railway_equipment=@('stainless_steel','engines','electrical_equipment'); jewelry=@('gold','silver','rare_earth_metals'); clean_water=@('raw_water','industrial_chemicals'); electricity=@('coal')
 }
 $deps.beverages = @('clean_water','processed_food','packaging')
 
@@ -280,6 +326,20 @@ function Worker-For-Resource([string]$Resource) {
     if ($Resource -in @('oil','natural_gas')) { return 'petroleum_worker' }
     return 'miner'
 }
+function Technology-For-Building([string]$Id) {
+    if ($Id -in @('subsistence_farm','rice_collector','potato_collector','fertile_soil_collector')) { return 'tech.pottery' }
+    if ($Id -in @('landed_estate','pigs_collector','horses_collector')) { return 'tech.manuscript_culture' }
+    if ($Id -in @('cattle_collector','sheep_collector')) { return 'tech.guild_organization' }
+    if ($Id -in @('flax_collector','cotton_collector','spice_plants_collector','rubber_tree_collector','medicinal_herbs_collector')) { return 'tech.oceanic_navigation' }
+    if ($Id -eq 'textile_workshop') { return 'tech.guild_organization' }
+    if ($Id -eq 'wild_game_collector') { return 'tech.hunting' }
+    if ($Id -in @('timber_collector','lumber_plant')) { return 'tech.gathering' }
+    if ($Id -eq 'electricity_plant') { return 'tech.electrification' }
+    if ($Id -eq 'rare_earth_collector') { return 'tech.geological_prospecting' }
+    if ($Id -eq 'rare_earth_metals_plant') { return 'tech.advanced_metallurgy' }
+    if ($Id -eq 'nuclear_power_plant') { return 'tech.nuclear_fission' }
+    return 'tech.legacy_modern_economy'
+}
 function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[string]$Worker,[string[]]$Inputs,[string[]]$Outputs,[string[]]$Resources,[string[]]$ResourceModes,[string]$Behavior,[string]$Category) {
     # Ten output units per building/day keeps placeholder recipes viable once
     # wages and replacement-cost pricing are authoritative.
@@ -288,9 +348,47 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     $resourceAccessModes = @($Resources | ForEach-Object {
         if ($_ -in @('fresh_water','marine_fish','freshwater_fish')) { 'local_and_adjacent' } else { 'local' }
     })
-    $roles = if ($Worker) { PSArray @($Worker) } else { 'PackedStringArray()' }
-    $slots = if ($Worker) { 'PackedInt64Array(20)' } else { 'PackedInt64Array()' }
-    $wagePolicy = if ($Worker) { 'fixed' } else { 'none' }; $wage = if ($Worker) { 5000 } else { 0 }
+    [string[]]$roleIds = @()
+    [long[]]$roleSlots = @()
+    [string[]]$roleWagePolicies = @()
+    [long[]]$roleWages = @()
+    if ($Id -in @('subsistence_farm','rice_collector','potato_collector','fertile_soil_collector')) {
+        $Owner = 'subsistence_farmer'
+    } elseif ($Id -in @('landed_estate','pigs_collector','horses_collector')) {
+        $Owner = 'landlord'; $roleIds = @('serf'); $roleSlots = @(10)
+        $roleWagePolicies = @('fixed'); $roleWages = @(1000)
+    } elseif ($Id -in @('cattle_collector','sheep_collector')) {
+        $Owner = 'landlord'; $roleIds = @('tenant_farmer'); $roleSlots = @(10)
+        $roleWagePolicies = @('fixed'); $roleWages = @(2000)
+    } elseif ($Id -in @('flax_collector','cotton_collector','spice_plants_collector','rubber_tree_collector','medicinal_herbs_collector')) {
+        $Owner = 'landlord'; $roleIds = @('indentured_laborer'); $roleSlots = @(10)
+        $roleWagePolicies = @('fixed'); $roleWages = @(1500)
+    } elseif ($Id -eq 'wild_game_collector') {
+        $Owner = 'hunter'
+    } elseif ($Id -eq 'timber_collector') {
+        $Owner = 'forager'
+    } elseif ($Id -eq 'lumber_plant') {
+        $Owner = 'artisan'
+    } elseif ($Id -eq 'textile_workshop') {
+        $Owner = 'guild_master'; $roleIds = @('apprentice', 'journeyman'); $roleSlots = @(4, 6)
+        $roleWagePolicies = @('fixed', 'fixed'); $roleWages = @(1000, 3000)
+    } elseif ($Id -eq 'distribution_center') {
+        $Owner = 'merchant'; $roleIds = @('industrial_worker', 'transport_worker', 'manager'); $roleSlots = @(10, 5, 2)
+        $roleWagePolicies = @('adaptive', 'adaptive', 'adaptive'); $roleWages = @(5000, 7000, 9000)
+    } elseif ($Kind -eq 'collector') {
+        $Owner = 'industrialist'; $roleIds = @($Worker, 'manager'); $roleSlots = @(14, 2)
+        $roleWagePolicies = @('adaptive', 'adaptive'); $roleWages = @(5000, 9000)
+    } else {
+        $Owner = 'industrialist'
+        if ($Worker -eq 'industrial_worker') {
+            $roleIds = @('industrial_worker', 'manager'); $roleSlots = @(16, 2)
+            $roleWagePolicies = @('adaptive', 'adaptive'); $roleWages = @(5000, 9000)
+        } else {
+            $roleIds = @('industrial_worker', $Worker, 'manager'); $roleSlots = @(10, 6, 2)
+            $roleWagePolicies = @('adaptive', 'adaptive', 'adaptive'); $roleWages = @(5000, 7000, 9000)
+        }
+    }
+    $technology = Technology-For-Building $Id
     $generationIds = @(); $generationQty = @(); $floor = 0
 	$targetMargin = if ($Kind -eq 'collector') { 6554 } else { 9830 }
 	$supplyElasticity = if ($Kind -eq 'collector') { 32768 } else { 65536 }
@@ -304,12 +402,14 @@ script = ExtResource("1")
 id = &"$Id"
 display_name = "$Name"
 building_kind = "$Kind"
-technology_tags = PackedStringArray("industry.$Category")
+technology_tags = PackedStringArray("industry.$Category", "$technology")
 construction_days = 0
 owner_profession_id = &"$Owner"
 owner_slots_per_building = 1
-employee_profession_ids = $roles
-employee_slots_per_building = $slots
+employee_profession_ids = $(PSArray $roleIds)
+employee_slots_per_building = $(PI64 $roleSlots)
+employee_wage_policy_ids = $(PSArray $roleWagePolicies)
+employee_reference_wages_per_day = $(PI64 $roleWages)
 input_good_ids = $(PSArray $Inputs)
 input_quantities_per_day = $(PI64 $inputQty)
 output_good_ids = $(PSArray $Outputs)
@@ -324,8 +424,6 @@ resource_generation_ids = $(PSArray $generationIds)
 resource_generation_quantities_per_day = $(PI64 $generationQty)
 resource_generation_floor_q16 = $floor
 behavior_id = "$Behavior"
-wage_policy_id = "$wagePolicy"
-wage_per_employee_per_day = $wage
 "@
     Write-Utf8 (Join-Path $buildingsDir "$Id.tres") $content
 }
@@ -347,7 +445,7 @@ foreach ($row in $resourceRows) {
     $collectorInputs = @()
     if ($rid -in @('wheat','rice','corn','potato','fertile_soil','spice_plants','flax','cotton','medicinal_herbs')) { $collectorInputs = @('fertilizer','agricultural_machinery') }
     elseif ($rid -in @('cattle','sheep','pigs','horses')) { $collectorInputs = @('animal_feed') }
-    elseif ($rid -in @('coal','copper_ore','iron_ore','gold_ore','silver_ore','saltpeter','rare_earth','clay','bauxite','limestone','silica_sand','phosphate_rock','uranium_ore','tin_ore','lead_ore','zinc_ore','nickel_ore','manganese_ore','sulfur','platinum_ore')) { $collectorInputs = @('tools','explosives','electricity') }
+    elseif ($rid -in @('coal','copper_ore','iron_ore','gold_ore','silver_ore','saltpeter','rare_earth','clay','bauxite','limestone','silica_sand','phosphate_rock','tin_ore','lead_ore','zinc_ore','manganese_ore','sulfur')) { $collectorInputs = @('tools','explosives','electricity') }
     elseif ($rid -in @('oil','natural_gas')) { $collectorInputs = @('industrial_machinery','electricity') }
     elseif ($rid -eq 'timber') { $collectorInputs = @('tools') }
 	if ($rid -in @('wheat','corn','coal')) { $collectorInputs = @() }
@@ -371,7 +469,7 @@ foreach ($category in $processedGroups.Keys) {
 foreach ($power in @(
     @('gas_power_plant','燃气发电厂','natural_gas'),
     @('oil_power_plant','燃油发电厂','refined_fuel'),
-    @('nuclear_power_plant','核电站','uranium_fuel')
+    @('nuclear_power_plant','核电站','rare_earth_metals')
 )) {
     if (-not $buildingIds.Add($power[0])) { throw "duplicate building id: $($power[0])" }
     Write-Building $power[0] $power[1] 'industrial' 'industrialist' 'electrician' @($power[2]) @('electricity') @() @() 'none' 'energy'
@@ -382,8 +480,8 @@ if ($buildingIds.Count -lt 90) { throw "building count below target: $($building
 
 $generatedResourceIds = @('fresh_water','marine_fish','freshwater_fish',
     'arable_land','paddy_land','plantation_land','bauxite','limestone',
-    'silica_sand','phosphate_rock','uranium_ore','tin_ore','lead_ore',
-    'zinc_ore','nickel_ore','manganese_ore','sulfur','platinum_ore')
+    'silica_sand','phosphate_rock','tin_ore','lead_ore',
+    'zinc_ore','manganese_ore','sulfur')
 $newResources = $naturalResourceRows | Where-Object { $_[0] -in $generatedResourceIds }
 foreach ($row in $newResources) {
     $id=$row[0]
@@ -405,14 +503,11 @@ foreach ($row in $newResources) {
         'limestone' { $family='sedimentary'; $initBase=-260000.0; $province=300000.0; $belt=140000.0; $initNoise=180000.0 }
         'silica_sand' { $family='surface'; $initBase=-190000.0; $initRiver=100000.0; $province=120000.0; $belt=80000.0; $initNoise=220000.0 }
         'phosphate_rock' { $family='sedimentary'; $initBase=-330000.0; $province=260000.0; $belt=160000.0; $initNoise=180000.0 }
-        'uranium_ore' { $family='felsic'; $initBase=-390000.0; $initElevation=70000.0; $province=200000.0; $belt=230000.0; $initNoise=170000.0 }
         'tin_ore' { $family='felsic'; $initBase=-360000.0; $initElevation=90000.0; $initRiver=50000.0; $province=190000.0; $belt=230000.0; $initNoise=160000.0 }
         'lead_ore' { $family='hydrothermal'; $initBase=-350000.0; $initElevation=70000.0; $province=180000.0; $belt=250000.0; $initNoise=160000.0 }
         'zinc_ore' { $family='hydrothermal'; $initBase=-330000.0; $province=190000.0; $belt=240000.0; $initNoise=170000.0 }
-        'nickel_ore' { $family='mafic'; $initBase=-370000.0; $initElevation=80000.0; $province=220000.0; $belt=220000.0; $initNoise=150000.0 }
         'manganese_ore' { $family='mafic'; $initBase=-340000.0; $province=210000.0; $belt=210000.0; $initNoise=170000.0 }
         'sulfur' { $family='hydrothermal'; $initBase=-300000.0; $initVolcano=180000.0; $province=160000.0; $belt=230000.0; $initNoise=160000.0 }
-        'platinum_ore' { $family='mafic'; $initBase=-430000.0; $initElevation=90000.0; $province=190000.0; $belt=250000.0; $initNoise=140000.0 }
     }
     $content = @"
 [gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
