@@ -10,4 +10,6 @@ display_name_cn = "海冰"
 passable_land = true
 passable_sea = false
 move_cost = 3
+trade_passable = true
+trade_move_cost = 3
 base_color = Color(0.847059, 0.898039, 0.933333, 1)

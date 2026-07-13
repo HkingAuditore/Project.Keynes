@@ -10,4 +10,6 @@ display_name_cn = "丘陵"
 passable_land = true
 passable_sea = false
 move_cost = 2
+trade_passable = true
+trade_move_cost = 2
 base_color = Color(0.478431, 0.427451, 0.258824, 1)

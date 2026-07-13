@@ -95,7 +95,8 @@ DCSystemScheduler
 | `season_refresh` | `simulation/systems/season_refresh_system.gd` | 日历/轨道相位、B+ path、慢变量缓存、atlas queue。 | Production 入口是 `SeasonRefreshSystem`；旧 `SeasonRefreshJob` 已删除。GDScript stage orchestration，部分 gdext 加速。 |
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
 | `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_native` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。`StridePolicy(stride,0)`，无 bucket phase。**保留边界 job**（native/legacy 两路径都注册）+ `must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
-| `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取 temp/moisture/snow/weather，按地块/cohort 预算错峰 N 日累计交易。 | native/legacy 环境分叉前统一注册；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。周期内允许跨日；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
+| `country_daily` | `simulation/systems/country_daily_system.gd` | ACTIVE 国家命令图；原子预检/应用/发布领土、名称与科技变化。 | priority 255；`must_run=false`、`max_slices=1`、`use_job_should_run=true`；无到期命令零 slice，跨帧批次使用 `country_day_barrier`。 |
+| `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；按地块/cohort 预算错峰 N 日居民市场。国内贸易规划复用同一 job 的软 slice。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |
@@ -734,3 +735,16 @@ DC component。无建筑时 BUILDING_GRAPH 零成本跳过；有建筑时只调�
 在 `building_employment` 的 active-cell slice 内计算。生产结束后才更新稀疏企业
 需求/供给/成本信号。Price V3 在本周期只读取上一 committed 信号，因此不新增图节点、跨阶段
 反向依赖或 DataCore 写边。
+
+## Economy domestic trade slices
+
+贸易规划在 `aggregate_publish` 后初始化只读工作集，阶段名为 `trade_planning`。每片只执行配置的
+market×good pair 扫描、路线搜索和 Dijkstra 扩展工作单元；AUTO 预算也解析为确定整数，不根据
+实际耗时改变结果。未完成时 `economy_should_run()` 继续返回软任务，但
+`economy_day_barrier=false`，因此 WorldClock 正常前进。
+
+到经济提交边界时顺序固定为 `trade_settle → external_ledger → trade_dispatch →
+household_market`。ACTIVE 若规划片恰与新周期到期重合，先执行一片规划，再在后续 slice 进入
+本地市场；只有整个到期经济图未完成才沿用既有 same-day catchup。PROBE 只生成/报告建议，
+不延迟旧本地市场 cadence，也不修改经济状态 hash。详见
+[Domestic Trade Runtime](./domestic-trade-runtime.md)。

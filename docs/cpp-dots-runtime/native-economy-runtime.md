@@ -15,6 +15,7 @@
 | cohort、handle、人口、资金、收入/支出、满足度 | C++ `PopulationStore` | GDScript 无逐 cohort setter。 |
 | 本地库存、价格、居民需求 EMA、短缺率 | C++ `MarketStore` | 无 per-cell goods component，无匿名市场现金。 |
 | 企业需求/供给 EMA、成本锚 | C++ 稀疏 `MarketSignalStore` | 仅保存建筑实际引用的 `(cell, good)` 边。 |
+| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v11 只保存订单/托管/EMA。 |
 | 需求、预算、bundle 清算、替代 fallback、商人结算、Price V3 | C++ Market V2 hot loop | 不访问 Godot Object/Callable/Dictionary。 |
 | 周期环境快照 | DataCore 环境 slots → C++ Q16 snapshot | 周期 sample day 捕获 temp/moisture/snow/weather，周期内冻结。 |
 | catalog 编译 | `EconomyCatalog`/`EconomyFacade` 冷路径 | stable ID 排序后一次性提交 PackedArrays。 |
@@ -87,8 +88,10 @@ catalog 编译成 CSR：plan→needs、need→variants、variant→components。
 7. 以日均居民需求更新 EMA，合并上一周期企业需求/供给与成本锚，用 Price V3 冻结压力的
    一阶 N 日积分更新下周期价格。
 
-本轮不执行出生、死亡、迁移、就业、工资、税收、生产或贸易。人口命令仍是底层结构
-ABI，但 household market 不改变人口。
+household market 本身不执行出生、死亡、迁移、就业、工资、税收或生产。国内贸易在同一经济
+边界的 `trade_settle` / `trade_dispatch` 阶段运行：到货先进入目的库存，发运先移除源库存并
+托管目的商人现金；随后 household market 只使用剩余/已到货状态。人口命令仍是底层结构 ABI，
+居民清算不改变人口。完整契约见 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
 
 ## 并行与确定性
 
@@ -103,6 +106,9 @@ focused test 必须验证 worker/scalar state hash 完全相同。
 `economy_should_run`、`run_economy_slice`、`get_economy_report`、人口/市场 cell
 snapshot、reset、分块 save/restore、固定数学 probe 与 state hash。跨边界写入均为平行
 PackedArrays；UI 只查询选中地块。
+
+贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入和分页
+`get_trade_orders_for_cell(cell, offset, limit)` 冷查询；禁止跨桥返回全局路线/订单矩阵。
 
 人口 cell snapshot 在 committed boundary 额外返回 cohort-major CSR 预计需求：
 `demand_good_offsets`、`demand_good_indices`、`demand_per_capita_daily` 和
@@ -128,7 +134,7 @@ Windows / Godot 4.6.2 / template_release / 2026-07-11。下表是显式
 
 错峰把 10M p95 从约 89ms 降至约 4ms；惰性会计清零和按需 merchant rebuild 消除了
 周期边界 90/30ms 尖峰。代价是可配置的结算延迟与 reference 误差，详见调度文档。
-# Native Building / Employment Runtime（PKEC v8）
+# Native Building / Employment Runtime（PKEC v11 + PKCN v1）
 
 建筑、岗位与生产由 `NativeEconomyRuntime` 内独立的 `BUILDING_GRAPH` 管理，仍与
 Market V2 共用冻结周期和原子发布边界，但不进入 `household_market` 热循环。建筑不进入
@@ -237,10 +243,11 @@ TRACE_OFF 为 `2.112/8.914/8.914ms`、111.3MB。两者核心 state hash 均为
 
 ## 现代产业目录与货币发行（2026-07-12）
 
-现代基线由可复现的 `tools/codegen/gen_modern_economy_content.ps1` 生成 124 goods、128
-building types、22 professions 和 15 household needs。37 种自然资源均至少被一个
+现代基线由可复现的 `tools/codegen/gen_modern_economy_content.ps1` 生成，跨时代扩展后目录为 164 goods、203
+building types、39 professions 和 15 household needs。41 种自然资源均至少被一个
 `collector` 引用；`industrial` 只能消费 goods。所有建筑恰好一个 owner job，科技解锁仅以
-`technology_tags` 进入 catalog/snapshot，本期不执行过滤。
+`technology_tags` 进入 catalog/snapshot；只有 `tech.*` 是可执行条件。runtime 把条件解析为 dense technology IDs，
+由 `NativeCountryRuntime` 以每国家 bitset 持久化；经济在周期边界冻结 `cell → country`、国家 generation/hash 与科技 bits，统一过滤物资替代、职业就业、建造与生产。其他标签命名空间只作冷元数据。
 
 `gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/10000 money subunits。商人接收
 建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通

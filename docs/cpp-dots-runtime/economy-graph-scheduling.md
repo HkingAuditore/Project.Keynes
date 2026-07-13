@@ -30,12 +30,15 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 
 ## 图阶段
 
-1. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境，冻结输入，并生成建筑利润/利用率计划。
-2. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
-3. `household_market`：每天最多一个 cohort-budgeted market range，计算 N 日总需求/交易。
-4. `structural_commit`：稳定提交本轮结构 ECB。
-5. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
-6. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出和守恒审计。
+1. `trade_planning`：上次发布后以确定工作单元扫描稀疏信号并有界寻路；是无屏障软任务。
+2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境，冻结输入，并生成建筑利润/利用率计划。
+3. `trade_settle`：结算到期货物/卖方托管，货物可参与当期本地市场。
+4. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
+5. `trade_dispatch`：ACTIVE 稳定裁剪并托管发运；PROBE 只报告候选。
+6. `household_market`：每天最多一个 cohort-budgeted market range，计算 N 日总需求/交易。
+7. `structural_commit`：稳定提交本轮结构 ECB。
+8. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
+9. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
 
 周期内 save、gameplay 和其他经济写者只观察上一 committed state；Inspector 的有界选中
 地块查询可观察最近完成 native slice 的完整状态，并明确标记为 `live_slice`。`epoch_income/expense` 在发布后
@@ -66,8 +69,8 @@ in-flight 本身不是错误，周期内世界日正常推进。report 提供
 
 ## ACTIVE 与报告
 
-默认 profile 为 ACTIVE。PROBE/OFF 仍可用于 A/B 和禁用；C++ fallback 在 profile 缺失
-mode 时仍保守取 PROBE。
+本地市场默认 ACTIVE。贸易使用独立 `trade_runtime_mode`，默认 PROBE，按
+OFF → PROBE → ACTIVE 门禁上线；PROBE 不改变库存、资金、订单或 authoritative state hash。
 
 除通用 stage/cursor/timing/audit 字段外，报告必须包含：`market_cycle_days`、
 `market_target_cohorts_per_slice`、`approximation_version/model`、`period_transactions`、
@@ -95,7 +98,7 @@ worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 当前冻结周期的稳定阶段顺序为：
 
-`epoch_begin → ledger_apply → household_market → structural_commit →
+`epoch_begin → trade_settle → ledger_apply → trade_dispatch → household_market → structural_commit →
 building_employment → wait_commit → building_production → building_commit → aggregate_publish`。
 
 无已建建筑时 employment/production 两阶段直接跳过。在截止日前完成的居民市场仍进入

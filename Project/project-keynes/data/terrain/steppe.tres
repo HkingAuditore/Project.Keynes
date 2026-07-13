@@ -10,4 +10,6 @@ display_name_cn = "温带草原"
 passable_land = true
 passable_sea = false
 move_cost = 1
+trade_passable = true
+trade_move_cost = 1
 base_color = Color(0.658824, 0.709804, 0.4, 1)

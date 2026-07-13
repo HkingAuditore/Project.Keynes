@@ -13,6 +13,11 @@ extends Resource
 @export var category_id: StringName = &"misc"
 @export var technology_tags: PackedStringArray = PackedStringArray()
 @export_enum("stock", "cycle_flow") var storage_mode: String = "stock"
+## Stock goods participate in domestic arbitrage by default. cycle_flow goods
+## are always forced off by the native catalog compiler.
+@export var trade_enabled: bool = true
+## Q16 transport work required by one complete GOODS_SCALE unit per route-cost point.
+@export_range(1, 2147483647, 1) var transport_load_per_unit_q16: int = 65536
 
 ## Money subunits issued per complete GOODS_SCALE unit when a merchant accepts
 ## producer output. Only gold and silver may configure a positive value.

@@ -87,6 +87,42 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::reset_native_ocean_physical_state);
     ClassDB::bind_method(D_METHOD("get_native_ocean_physical_state_report"),
                          &DCWorldExt::get_native_ocean_physical_state_report);
+    ClassDB::bind_method(D_METHOD("configure_country", "catalog", "profile", "cell_count", "seed"),
+                         &DCWorldExt::configure_country);
+    ClassDB::bind_method(D_METHOD("bootstrap_country", "packet", "is_water"),
+                         &DCWorldExt::bootstrap_country);
+    ClassDB::bind_method(D_METHOD("submit_country_commands", "packed_batch"),
+                         &DCWorldExt::submit_country_commands);
+    ClassDB::bind_method(D_METHOD("run_country_slice", "ctx"),
+                         &DCWorldExt::run_country_slice);
+    ClassDB::bind_method(D_METHOD("country_should_run", "day_index"),
+                         &DCWorldExt::country_should_run);
+    ClassDB::bind_method(D_METHOD("get_country_report"),
+                         &DCWorldExt::get_country_report);
+    ClassDB::bind_method(D_METHOD("get_country_state_hash"),
+                         &DCWorldExt::get_country_state_hash);
+    ClassDB::bind_method(D_METHOD("get_country_cell_summary", "cell_idx"),
+                         &DCWorldExt::get_country_cell_summary);
+    ClassDB::bind_method(D_METHOD("get_country_snapshot", "handle"),
+                         &DCWorldExt::get_country_snapshot);
+    ClassDB::bind_method(D_METHOD("get_country_treasury_snapshot", "handle"),
+                         &DCWorldExt::get_country_treasury_snapshot);
+    ClassDB::bind_method(D_METHOD("poll_country_events", "after_event_id", "limit"),
+                         &DCWorldExt::poll_country_events, DEFVAL(128));
+    ClassDB::bind_method(D_METHOD("reset_country", "reason"),
+                         &DCWorldExt::reset_country);
+    ClassDB::bind_method(D_METHOD("begin_country_save", "chunk_bytes"),
+                         &DCWorldExt::begin_country_save, DEFVAL(4 * 1024 * 1024));
+    ClassDB::bind_method(D_METHOD("read_country_save_chunk", "max_bytes"),
+                         &DCWorldExt::read_country_save_chunk, DEFVAL(4 * 1024 * 1024));
+    ClassDB::bind_method(D_METHOD("end_country_save"),
+                         &DCWorldExt::end_country_save);
+    ClassDB::bind_method(D_METHOD("begin_country_restore"),
+                         &DCWorldExt::begin_country_restore);
+    ClassDB::bind_method(D_METHOD("feed_country_restore_chunk", "chunk"),
+                         &DCWorldExt::feed_country_restore_chunk);
+    ClassDB::bind_method(D_METHOD("end_country_restore"),
+                         &DCWorldExt::end_country_restore);
     // Independent native PopulationCohort + local-market authority.
     ClassDB::bind_method(D_METHOD("configure_economy", "catalog", "profile", "cell_count", "seed"),
                          &DCWorldExt::configure_economy);
@@ -106,6 +142,12 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_population_cell_snapshot);
     ClassDB::bind_method(D_METHOD("get_market_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_market_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("get_trade_orders_for_cell", "cell_idx", "offset", "limit"),
+                         &DCWorldExt::get_trade_orders_for_cell, DEFVAL(0), DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("capture_economy_trade_topology", "neighbor_indices",
+                                  "terrain", "trade_passable_lut",
+                                  "trade_move_cost_lut", "generation"),
+                         &DCWorldExt::capture_economy_trade_topology, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("get_building_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_building_cell_snapshot);
     ClassDB::bind_method(D_METHOD("run_economy_fixed_math_probe", "vectors"),

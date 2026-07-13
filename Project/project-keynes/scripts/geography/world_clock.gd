@@ -179,7 +179,8 @@ func _process(delta: float) -> void:
 	# receiving day ticks. The economy hard barrier is different: it is raised
 	# only at a frozen cycle's settlement deadline, stops new days, and emits a
 	# real-frame pulse so same-day catchup can finish without deadlock.
-	var hard_day_barrier := _simulation_backpressure_sources.has(&"economy_day_barrier")
+	var hard_day_barrier := _simulation_backpressure_sources.has(&"economy_day_barrier") or \
+		_simulation_backpressure_sources.has(&"country_day_barrier")
 	if hard_day_barrier:
 		simulation_backpressure_pulse.emit(_last_day)
 	var effective_speed := 0.0 if hard_day_barrier else (

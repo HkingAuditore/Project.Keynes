@@ -106,7 +106,7 @@ static func compile_native_catalog() -> Dictionary:
 			return {"ok": false, "reason": "invalid variant columns in plan %s" % String(plan.id)}
 		if plan.variant_component_offsets[variant_count] != plan.component_good_ids.size() \
 				or plan.component_good_ids.size() != plan.component_qty_per_need.size() \
-				or plan.component_good_ids.size() > 32:
+				or plan.component_good_ids.size() > 128:
 			return {"ok": false, "reason": "invalid component columns in plan %s" % String(plan.id)}
 		var previous_priority := -2147483648
 		for n in range(need_count):
@@ -114,7 +114,7 @@ static func compile_native_catalog() -> Dictionary:
 			var priority := int(plan.priorities[n])
 			var vb := int(plan.need_variant_offsets[n])
 			var ve := int(plan.need_variant_offsets[n + 1])
-			if not need_index.has(need_id) or priority < previous_priority or ve <= vb or ve - vb > 4:
+			if not need_index.has(need_id) or priority < previous_priority or ve <= vb or ve - vb > 8:
 				return {"ok": false, "reason": "invalid need entry in plan %s" % String(plan.id)}
 			previous_priority = priority
 			need_stable_ids.append(int(need_index[need_id]))
@@ -144,6 +144,8 @@ static func compile_native_catalog() -> Dictionary:
 		plan_need_offsets.append(need_stable_ids.size())
 
 	var profession_ids := PackedStringArray()
+	var profession_technology_tag_offsets := PackedInt32Array([0])
+	var profession_technology_tags := PackedStringArray()
 	var profession_index := {}
 	for i in range(professions.size()):
 		var stable_id := String(professions[i].id)
@@ -152,6 +154,12 @@ static func compile_native_catalog() -> Dictionary:
 			return {"ok": false, "reason": "invalid profession: %s" % stable_id}
 		profession_ids.append(stable_id)
 		profession_index[stable_id] = i
+		for tag in professions[i].technology_tags:
+			var normalized := String(tag).strip_edges()
+			if normalized == "":
+				return {"ok": false, "reason": "empty profession technology tag: %s" % stable_id}
+			profession_technology_tags.append(normalized)
+		profession_technology_tag_offsets.append(profession_technology_tags.size())
 
 	var ethnicity_ids := PackedStringArray()
 	var ethnicity_need_factor := PackedInt32Array()
@@ -192,6 +200,8 @@ static func compile_native_catalog() -> Dictionary:
 
 	var catalog := {
 		"profession_ids": profession_ids,
+		"profession_technology_tag_offsets": profession_technology_tag_offsets,
+		"profession_technology_tags": profession_technology_tags,
 		"ethnicity_ids": ethnicity_ids,
 		"need_ids": need_ids,
 		"need_living_cost_weights_q16": need_living_cost_weights,
@@ -225,7 +235,25 @@ static func compile_native_catalog() -> Dictionary:
 	}
 	for key in good_columns:
 		catalog[key] = good_columns[key]
-	var market_v7_columns := catalog.duplicate(true)
+	var market_v10_columns := catalog.duplicate(true)
+	market_v10_columns.erase("good_trade_enabled")
+	market_v10_columns.erase("good_transport_load_per_unit_q16")
+	var market_v10_v8_columns := market_v10_columns.duplicate(true)
+	market_v10_v8_columns.erase("profession_technology_tag_offsets")
+	market_v10_v8_columns.erase("profession_technology_tags")
+	var market_v10_v7_columns := market_v10_v8_columns.duplicate(true)
+	market_v10_v7_columns.erase("need_living_cost_weights_q16")
+	var market_v10_v6_columns := market_v10_v7_columns.duplicate(true)
+	for key in [
+		"good_excess_demand_weight_q16", "good_cost_anchor_weight_q16",
+		"good_inactive_reversion_weight_q16", "good_business_demand_ema_alpha_q16",
+		"good_supply_ema_alpha_q16", "good_cost_ema_alpha_q16",
+	]:
+		market_v10_v6_columns.erase(key)
+	var market_v8_columns := catalog.duplicate(true)
+	market_v8_columns.erase("profession_technology_tag_offsets")
+	market_v8_columns.erase("profession_technology_tags")
+	var market_v7_columns := market_v8_columns.duplicate(true)
 	market_v7_columns.erase("need_living_cost_weights_q16")
 	var market_v6_columns := market_v7_columns.duplicate(true)
 	for key in [
@@ -236,11 +264,32 @@ static func compile_native_catalog() -> Dictionary:
 		market_v6_columns.erase(key)
 	var market_compat_hash_v6 := _catalog_hash(market_v6_columns)
 	catalog["market_catalog_hash"] = _catalog_hash(catalog)
+	catalog["market_catalog_compat_hash_v8"] = _catalog_hash(market_v8_columns)
 	var building_columns := _compile_building_columns(
 		profession_index, good_index, good_columns.good_storage_modes)
 	if not bool(building_columns.get("ok", false)):
 		return building_columns
 	building_columns.erase("ok")
+	var technology_set := {}
+	for tag in good_columns.good_technology_tags:
+		if String(tag).begins_with("tech."):
+			technology_set[String(tag)] = true
+	for tag in profession_technology_tags:
+		if String(tag).begins_with("tech."):
+			technology_set[String(tag)] = true
+	for tag in building_columns.building_technology_tags:
+		if String(tag).begins_with("tech."):
+			technology_set[String(tag)] = true
+	for resource in ResourceRegistryScript.ordered():
+		for tag in resource.discovery_technology_tags:
+			var normalized := String(tag).strip_edges()
+			if normalized == "":
+				return {"ok": false, "reason": "empty resource discovery technology tag: %s" % String(resource.id)}
+			if normalized.begins_with("tech."):
+				technology_set[normalized] = true
+	var technology_ids := PackedStringArray(technology_set.keys())
+	technology_ids.sort()
+	catalog["technology_ids"] = technology_ids
 	var building_v7_columns := building_columns.duplicate(true)
 	building_v7_columns.erase("building_employee_wage_policies")
 	building_v7_columns.erase("building_employee_reference_wages_per_day")
@@ -257,6 +306,14 @@ static func compile_native_catalog() -> Dictionary:
 	catalog["building_catalog_compat_hash_v7"] = _catalog_hash(building_v7_columns)
 	for key in building_columns:
 		catalog[key] = building_columns[key]
+	var catalog_v10 := catalog.duplicate(true)
+	catalog_v10.erase("good_trade_enabled")
+	catalog_v10.erase("good_transport_load_per_unit_q16")
+	catalog_v10["market_catalog_hash"] = _catalog_hash(market_v10_columns)
+	catalog_v10["market_catalog_compat_hash_v8"] = _catalog_hash(market_v10_v8_columns)
+	catalog_v10["market_catalog_compat_hash_v7"] = _catalog_hash(market_v10_v7_columns)
+	catalog_v10["market_catalog_compat_hash_v6"] = _catalog_hash(market_v10_v6_columns)
+	catalog["catalog_compat_hash_v10"] = _catalog_hash(catalog_v10)
 	catalog["catalog_hash"] = _catalog_hash(catalog)
 	catalog["ok"] = true
 	return catalog

@@ -1,6 +1,7 @@
 extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const CountryTestHelper = preload("res://tests/country_test_helper.gd")
 
 var failures := 0
 
@@ -30,7 +31,7 @@ func _run() -> void:
 	var mine_type := types.find("coal_mine")
 	var textile_type := types.find("textile_workshop")
 	_expect("all modern resources enter sorted building catalog",
-		resources.size() == 37 and resources.has("coal") and resources.has("arable_land") and
+		resources.size() == 41 and resources.has("coal") and resources.has("arable_land") and
 		resources.has("paddy_land") and resources.has("freshwater_fish"))
 	_expect("farm uses capacity behavior without generated crop resource",
 		behavior_ids[farm_type] == 1 and
@@ -54,6 +55,8 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1
 	profile.market_runtime_mode = "ACTIVE"
+	_expect("all-technology test country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, native_catalog, 2, 91))
 	_expect("runtime configures", bool(ext.configure_economy(native_catalog, profile, 2, 91).get("ok", false)))
 	var farmer_sig := (compiled.signature_keys as PackedStringArray).find("subsistence_farmer|default")
 	var landlord_sig := (compiled.signature_keys as PackedStringArray).find("landlord|default")
@@ -147,6 +150,8 @@ func _run_adjacent_fishery(catalog: Dictionary) -> bool:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1
 	profile.market_runtime_mode = "ACTIVE"
+	if not CountryTestHelper.configure_all_technologies(ext, native_catalog, 3, 94):
+		return false
 	if not bool(ext.configure_economy(native_catalog, profile, 3, 94).get("ok", false)):
 		return false
 	var signatures: PackedStringArray = catalog.signature_keys
@@ -190,6 +195,7 @@ func _run_half_filled_estate(catalog: Dictionary) -> bool:
 	var native_catalog := catalog.duplicate(true); native_catalog.erase("ok")
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1; profile.market_runtime_mode = "ACTIVE"
+	if not CountryTestHelper.configure_all_technologies(ext, native_catalog, 2, 92): return false
 	if not bool(ext.configure_economy(native_catalog, profile, 2, 92).get("ok", false)): return false
 	var landlord := (catalog.signature_keys as PackedStringArray).find("landlord|default")
 	var merchant := (catalog.signature_keys as PackedStringArray).find("merchant|default")
@@ -208,9 +214,17 @@ func _run_half_filled_estate(catalog: Dictionary) -> bool:
 		int((snapshot.last_resource as PackedInt64Array)[0]) == 1000
 
 func _round_trip_generated(source: Object, catalog: Dictionary, profile: Dictionary) -> bool:
+	var country_chunks: Array[PackedByteArray] = []
+	var country_begin: Dictionary = source.begin_country_save(4096)
+	if not bool(country_begin.get("ok", false)): return false
+	while true:
+		var country_chunk: PackedByteArray = source.read_country_save_chunk(4096)
+		if country_chunk.is_empty(): break
+		country_chunks.append(country_chunk)
+	if not bool(source.end_country_save().get("ok", false)): return false
 	var chunks: Array[PackedByteArray] = []
 	var begin: Dictionary = source.begin_economy_save(65536)
-	if not bool(begin.get("ok", false)) or int(begin.get("schema_version", 0)) != 8: return false
+	if not bool(begin.get("ok", false)) or int(begin.get("schema_version", 0)) != 11: return false
 	while true:
 		var chunk: PackedByteArray = source.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -218,6 +232,11 @@ func _round_trip_generated(source: Object, catalog: Dictionary, profile: Diction
 	if not bool(source.end_economy_save().get("ok", false)): return false
 	var restored := _new_ext(catalog)
 	var native_catalog := catalog.duplicate(true); native_catalog.erase("ok")
+	if not CountryTestHelper.configure_all_technologies(restored, native_catalog, 2, 91): return false
+	if not bool(restored.begin_country_restore().get("ok", false)): return false
+	for chunk in country_chunks:
+		if not bool(restored.feed_country_restore_chunk(chunk).get("ok", false)): return false
+	if not bool(restored.end_country_restore().get("ok", false)): return false
 	if not bool(restored.configure_economy(native_catalog, profile, 2, 91).get("ok", false)): return false
 	if not bool(restored.begin_economy_restore().get("ok", false)): return false
 	for chunk in chunks:
@@ -232,6 +251,7 @@ func _run_hash_scenario(catalog: Dictionary, worker_enabled: bool) -> int:
 	var native_catalog := catalog.duplicate(true); native_catalog.erase("ok")
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1; profile.market_runtime_mode = "ACTIVE"
+	if not CountryTestHelper.configure_all_technologies(ext, native_catalog, 2, 93): return 0
 	profile.worker_enabled = worker_enabled; profile.worker_market_threshold = 1
 	if not bool(ext.configure_economy(native_catalog, profile, 2, 93).get("ok", false)): return 0
 	var farmer := (catalog.signature_keys as PackedStringArray).find("subsistence_farmer|default")

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"software"
+display_name = "软件资本"
+category_id = &"information"
+technology_tags = PackedStringArray("tech.digital_computing")
+default_price = 70000
+min_price = 7000
+max_price = 700000

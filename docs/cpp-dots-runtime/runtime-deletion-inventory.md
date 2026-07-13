@@ -23,6 +23,7 @@
 | `_use_dc_system_scheduler` flag / branch tree in `map_generator.gd` | Immediate delete | Deleted from production entry | Code already set it to true unconditionally; else branches were unreachable. | `DCSystemScheduler.register_system()` single path | `rg "_use_dc_system_scheduler"` should not find production code. |
 | `NativeDailySimJob` full-run ACTIVE shortcut | Immediate delete | Deleted from hot path | Plan requires `run_native_daily_slice()` as only ACTIVE hot path. | `run_native_daily_slice_from_job()` | `native_daily_sim` report path should be `gdext_native_daily_slice` in ACTIVE. |
 | `cell.goods_*_(qty|price)` schema / `MapData.goods_*` / `CELL_GOODS_*` | Immediate delete after MarketStore migration | Deleted | `MarketStore` is configured/bootstraped before `economy_daily` registration；focused native test replaces old slot schema test. | `NativeEconomyRuntime::MarketStore` + committed market snapshot | `rg "cell\.goods_|goods_fur_qty_arr|CELL_GOODS"` only finds retirement tests/docs；generated bind table has no goods rows. |
+| Economy-owned `_treasury_cash`, per-cell technology bitset, and economy technology grant command | Immediate delete after country authority migration | Deleted | Country identity, treasury and technology must have exactly one native owner. | `NativeCountryRuntime`, frozen native country bridge, PKCN v1 + PKEC v11 | `rg "_treasury_cash|_cell_technology_bits|COMMAND_GRANT_TECHNOLOGY" gdext/src/economy_runtime.*` returns no result; PKEC v2-v9 returns the precise legacy-countryless error. |
 
 ## Isolated Or Pending
 

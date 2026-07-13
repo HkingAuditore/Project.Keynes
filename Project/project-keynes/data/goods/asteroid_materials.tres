@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"asteroid_materials"
+display_name = "小行星回收材料"
+category_id = &"space"
+technology_tags = PackedStringArray("tech.asteroid_resource_recovery")
+default_price = 450000
+min_price = 45000
+max_price = 4500000

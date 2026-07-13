@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"graphite"
+display_name = "石墨"
+category_id = &"industrial_minerals"
+technology_tags = PackedStringArray("tech.geological_prospecting")
+default_price = 18000
+min_price = 1800
+max_price = 180000

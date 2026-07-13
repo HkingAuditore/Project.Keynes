@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"flint"
+display_name = "燧石"
+reserve_component = &"cell.res_flint_reserve"
+habitat_mode = "land"
+init_base = -50000.0
+init_elevation = 80000.0
+init_noise = 170000.0
+init_noise_scale = 0.08
+geology_family_id = &"sedimentary"
+init_province = 100000.0
+init_belt = 80000.0

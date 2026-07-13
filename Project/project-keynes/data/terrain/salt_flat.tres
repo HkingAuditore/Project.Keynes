@@ -10,4 +10,6 @@ display_name_cn = "盐滩"
 passable_land = true
 passable_sea = false
 move_cost = 2
+trade_passable = true
+trade_move_cost = 2
 base_color = Color(0.878431, 0.862745, 0.666667, 1)

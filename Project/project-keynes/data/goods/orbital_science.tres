@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"orbital_science"
+display_name = "轨道科研成果"
+category_id = &"space"
+technology_tags = PackedStringArray("tech.orbital_industry")
+default_price = 300000
+min_price = 30000
+max_price = 3000000

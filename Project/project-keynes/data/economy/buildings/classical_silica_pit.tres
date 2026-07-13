@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"classical_silica_pit"
+display_name = "古典硅砂坑"
+building_kind = "collector"
+technology_tags = PackedStringArray("tech.masonry")
+construction_days = 0
+owner_profession_id = &"industrialist"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("mason")
+employee_slots_per_building = PackedInt64Array(10)
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+output_good_ids = PackedStringArray("silica_sand")
+output_quantities_per_day = PackedInt64Array(2200)
+resource_ids = PackedStringArray("silica_sand")
+resource_quantities_per_day = PackedInt64Array(2200)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+behavior_id = "consume_local_resources"
+wage_policy_id = "adaptive"
+wage_per_employee_per_day = 5000

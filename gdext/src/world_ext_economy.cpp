@@ -1,6 +1,7 @@
 #include "world_ext.h"
 
 #include "economy_runtime.h"
+#include "country_runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -29,7 +30,32 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
                                          const Dictionary &profile,
                                          int cell_count,
                                          int64_t seed) {
+    // Headless/focused callers that have no explicit country package still
+    // receive the same default-country bootstrap as production. MapGenerator
+    // configures country first with the real water mask, so this path is only
+    // the documented missing-country-data fallback.
+    if (_country_runtime == nullptr) {
+        _country_runtime = new NativeCountryRuntime();
+        Dictionary country_profile;
+        country_profile["country_runtime_mode"] = "ACTIVE";
+        PackedStringArray starting;
+        const PackedStringArray technologies = catalog.get("technology_ids", PackedStringArray());
+        for (const char *id : {"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control"})
+            if (technologies.has(id)) starting.push_back(id);
+        country_profile["starting_technology_ids"] = starting;
+        Dictionary configured = static_cast<NativeCountryRuntime *>(_country_runtime)->configure(
+            catalog, country_profile, cell_count, seed);
+        if (!static_cast<bool>(configured.get("ok", false))) return configured;
+        PackedByteArray all_land;
+        all_land.resize(cell_count);
+        all_land.fill(0);
+        Dictionary bootstrapped = static_cast<NativeCountryRuntime *>(_country_runtime)->bootstrap(
+            Dictionary(), all_land);
+        if (!static_cast<bool>(bootstrapped.get("ok", false))) return bootstrapped;
+    }
     if (_economy_runtime == nullptr) _economy_runtime = new NativeEconomyRuntime();
+    runtime_from(_economy_runtime)->attach_country_runtime(
+        static_cast<NativeCountryRuntime *>(_country_runtime));
     _economy_last_notified_event_id = 0;
     return runtime_from(_economy_runtime)->configure(catalog, profile, cell_count, seed);
 }
@@ -59,6 +85,45 @@ Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
     }
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
     const int64_t day_index = ctx.has("day_index") ? static_cast<int64_t>(ctx["day_index"]) : 0;
+    const bool capture_cycle_context = runtime->needs_environment_capture(day_index);
+    if (capture_cycle_context && _map_data != nullptr &&
+        _map_data->has_method(StringName("neighbor_indices_packed")) &&
+        _map_data->has_method(StringName("economy_trade_passable_lut")) &&
+        _map_data->has_method(StringName("economy_trade_move_cost_lut"))) {
+        const int terrain_sid = component_id(StringName("cell_terrain"));
+        const Variant neighbor_variant = _map_data->call(
+            StringName("neighbor_indices_packed"));
+        const Variant passable_variant = _map_data->call(
+            StringName("economy_trade_passable_lut"));
+        const Variant cost_variant = _map_data->call(
+            StringName("economy_trade_move_cost_lut"));
+        if (terrain_sid >= 0 && terrain_sid < _slots.size() &&
+            _slots[terrain_sid].dtype == SlotDType::U8 &&
+            neighbor_variant.get_type() == Variant::PACKED_INT32_ARRAY &&
+            passable_variant.get_type() == Variant::PACKED_BYTE_ARRAY &&
+            cost_variant.get_type() == Variant::PACKED_INT32_ARRAY) {
+            const PackedInt32Array neighbors = neighbor_variant;
+            const PackedByteArray passable = passable_variant;
+            const PackedInt32Array costs = cost_variant;
+            const int32_t count = _slots[terrain_sid].arr_u8.size();
+            if (neighbors.size() == count * 6 && passable.size() == 256 &&
+                costs.size() == 256) {
+                std::string topology_error;
+                if (!runtime->capture_trade_topology(neighbors.ptr(),
+                        _slots[terrain_sid].arr_u8.ptr(), passable.ptr(), costs.ptr(),
+                        count, 0, topology_error)) {
+                    Dictionary out;
+                    out["ok"] = false;
+                    out["done"] = true;
+                    out["fatal"] = true;
+                    out["path"] = "ECONOMY_GRAPH";
+                    out["stage"] = "trade_topology_snapshot";
+                    out["fatal_reason"] = String(topology_error.c_str());
+                    return out;
+                }
+            }
+        }
+    }
     if (runtime->needs_environment_capture(day_index)) {
         const int sid_temp = component_id(StringName("cell_temp"));
         const int sid_moisture = component_id(StringName("cell_moisture"));
@@ -265,6 +330,34 @@ Dictionary DCWorldExt::get_market_cell_snapshot(int cell_idx) const {
         return unavailable();
     }
     return runtime_from(_economy_runtime)->market_cell_snapshot(cell_idx);
+}
+
+Dictionary DCWorldExt::get_trade_orders_for_cell(
+        int cell_idx, int offset, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->trade_orders_for_cell(
+        cell_idx, offset, limit);
+}
+
+Dictionary DCWorldExt::capture_economy_trade_topology(
+        const PackedInt32Array &neighbor_indices, const PackedByteArray &terrain,
+        const PackedByteArray &trade_passable_lut,
+        const PackedInt32Array &trade_move_cost_lut, int64_t generation) {
+    if (_economy_runtime == nullptr) return unavailable();
+    Dictionary out;
+    if (neighbor_indices.size() != terrain.size() * 6 ||
+        trade_passable_lut.size() != 256 || trade_move_cost_lut.size() != 256) {
+        out["ok"] = false;
+        out["reason"] = "trade_topology_column_size_mismatch";
+        return out;
+    }
+    std::string error;
+    const bool ok = runtime_from(_economy_runtime)->capture_trade_topology(
+        neighbor_indices.ptr(), terrain.ptr(), trade_passable_lut.ptr(),
+        trade_move_cost_lut.ptr(), terrain.size(), static_cast<uint64_t>(generation), error);
+    out["ok"] = ok;
+    if (!ok) out["reason"] = String(error.c_str());
+    return out;
 }
 
 Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {

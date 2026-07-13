@@ -75,6 +75,8 @@ static func get_data(terrain: TERRAIN) -> Dictionary:
 		"passable_land": p.passable_land,
 		"passable_sea":  p.passable_sea,
 		"move_cost":     p.move_cost,
+		"trade_passable": p.trade_passable,
+		"trade_move_cost": p.trade_move_cost,
 		"color":         p.base_color,
 	}
 
@@ -86,6 +88,12 @@ static func is_passable_sea(terrain: TERRAIN) -> bool:
 
 static func get_move_cost(terrain: TERRAIN) -> int:
 	return TerrainProfileRegistry.get_profile(int(terrain)).move_cost
+
+static func is_trade_passable(terrain: TERRAIN) -> bool:
+	return TerrainProfileRegistry.get_profile(int(terrain)).trade_passable
+
+static func get_trade_move_cost(terrain: TERRAIN) -> int:
+	return TerrainProfileRegistry.get_profile(int(terrain)).trade_move_cost
 
 static func get_color(terrain: TERRAIN) -> Color:
 	return TerrainProfileRegistry.get_profile(int(terrain)).base_color

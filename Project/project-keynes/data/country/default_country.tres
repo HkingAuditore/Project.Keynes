@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="CountryProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/country_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+country_runtime_mode = "ACTIVE"
+country_max_commands_per_slice = 65536

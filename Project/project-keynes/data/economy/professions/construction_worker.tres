@@ -5,3 +5,4 @@ script = ExtResource("1")
 id = &"construction_worker"
 display_name = "建筑工人"
 default_consumption_plan_id = &"worker_household"
+technology_tags = PackedStringArray("tech.masonry")

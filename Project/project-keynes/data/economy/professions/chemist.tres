@@ -5,3 +5,4 @@ script = ExtResource("1")
 id = &"chemist"
 display_name = "化学工"
 default_consumption_plan_id = &"skilled_household"
+technology_tags = PackedStringArray("tech.experimental_science")

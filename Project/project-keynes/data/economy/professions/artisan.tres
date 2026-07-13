@@ -5,3 +5,4 @@ script = ExtResource("1")
 id = &"artisan"
 display_name = "工匠"
 default_consumption_plan_id = &"skilled_household"
+technology_tags = PackedStringArray("tech.gathering")

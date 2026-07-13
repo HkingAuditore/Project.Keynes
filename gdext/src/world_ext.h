@@ -175,6 +175,31 @@ public:
     godot::Dictionary reset_native_ocean_physical_state(godot::String reason);
     godot::Dictionary get_native_ocean_physical_state_report() const;
 
+    // Native country authority. Only cell.country_slot is mirrored into the
+    // DataCore/MapData bridge; identity, technology, treasury, and territory
+    // CSR remain native-only.
+    godot::Dictionary configure_country(const godot::Dictionary &catalog,
+                                        const godot::Dictionary &profile,
+                                        int cell_count, int64_t seed);
+    godot::Dictionary bootstrap_country(const godot::Dictionary &packet,
+                                        const godot::PackedByteArray &is_water);
+    godot::Dictionary submit_country_commands(const godot::Dictionary &packed_batch);
+    godot::Dictionary run_country_slice(const godot::Dictionary &ctx);
+    bool country_should_run(int64_t day_index) const;
+    godot::Dictionary get_country_report() const;
+    int64_t get_country_state_hash() const;
+    godot::Dictionary get_country_cell_summary(int cell_idx) const;
+    godot::Dictionary get_country_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_treasury_snapshot(int64_t handle) const;
+    godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
+    godot::Dictionary reset_country(const godot::String &reason);
+    godot::Dictionary begin_country_save(int chunk_bytes = 4 * 1024 * 1024);
+    godot::PackedByteArray read_country_save_chunk(int max_bytes = 4 * 1024 * 1024);
+    godot::Dictionary end_country_save();
+    godot::Dictionary begin_country_restore();
+    godot::Dictionary feed_country_restore_chunk(const godot::PackedByteArray &chunk);
+    godot::Dictionary end_country_restore();
+
     // ─── Native economy runtime / ECONOMY_GRAPH ────────────────────────
     // Economy owns dynamic PopulationCohort pages, local-market matrices,
     // deterministic formula execution and committed publication. It is
@@ -192,6 +217,14 @@ public:
     godot::Dictionary get_population_cell_summary(int cell_idx) const;
     godot::Dictionary get_population_cell_snapshot(int cell_idx) const;
     godot::Dictionary get_market_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_trade_orders_for_cell(int cell_idx, int offset = 0,
+                                                int limit = 64) const;
+    godot::Dictionary capture_economy_trade_topology(
+        const godot::PackedInt32Array &neighbor_indices,
+        const godot::PackedByteArray &terrain,
+        const godot::PackedByteArray &trade_passable_lut,
+        const godot::PackedInt32Array &trade_move_cost_lut,
+        int64_t generation = 0);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
     godot::Dictionary run_economy_fixed_math_probe(const godot::Dictionary &vectors) const;
     int64_t get_economy_state_hash() const;
@@ -2114,6 +2147,7 @@ private:
     // not expose the large chunk/market implementation to every pass TU.
     void                                     *_economy_runtime        = nullptr;
     int64_t                                   _economy_last_notified_event_id = 0;
+    void                                     *_country_runtime        = nullptr;
 
     // ─── Phase B+（2026-05-21）：season refresh round 切片调度 opaque state ─
     // 实际类型 pk::SeasonRoundState 在 world_ext.cpp 顶部定义（含 generation

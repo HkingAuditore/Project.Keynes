@@ -4,6 +4,7 @@
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
 #include "economy_runtime.h"           // Independent ECONOMY_GRAPH authority
+#include "country_runtime.h"           // Independent COUNTRY_GRAPH authority
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
 // 双保险：仍未定义时手动兜底，避免某些编译器/PCH 顺序问题。
@@ -61,6 +62,10 @@ DCWorldExt::~DCWorldExt() {
     if (_economy_runtime != nullptr) {
         delete static_cast<NativeEconomyRuntime *>(_economy_runtime);
         _economy_runtime = nullptr;
+    }
+    if (_country_runtime != nullptr) {
+        delete static_cast<NativeCountryRuntime *>(_country_runtime);
+        _country_runtime = nullptr;
     }
     // EXPERIMENTAL: D-async — defensively join all worker threads before
     // _slots / _entity_count etc. tear down. Safe to call even if no

@@ -14,12 +14,14 @@
 
 namespace pk {
 
+class NativeCountryRuntime;
+
 // NativeEconomyRuntime is the sole mutable authority for population cohorts
 // and markets. Godot containers are accepted/emitted only at coarse API
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 8;
+    static constexpr int32_t SCHEMA_VERSION = 11;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
@@ -27,7 +29,7 @@ public:
     static constexpr int64_t Q32_ONE = 4294967296LL;
     static constexpr int32_t MAX_RULES_PER_PLAN = 32;
     static constexpr int32_t MAX_NEEDS_PER_PLAN = 16;
-    static constexpr int32_t MAX_VARIANTS_PER_NEED = 4;
+    static constexpr int32_t MAX_VARIANTS_PER_NEED = 8;
     static constexpr int32_t MAX_COMPONENTS_PER_VARIANT = 4;
     static constexpr int32_t ENV_CURVE_SAMPLES = 17;
 
@@ -43,10 +45,19 @@ public:
         COMMAND_TRANSFER_FROM_COHORT = 9,
         COMMAND_BUILD = 10,
         COMMAND_DEMOLISH = 11,
+        COMMAND_COUNTRY_GOOD_TO_MARKET = 12,
+        COMMAND_MARKET_GOOD_TO_COUNTRY = 13,
     };
 
     NativeEconomyRuntime();
     ~NativeEconomyRuntime();
+    void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
+    bool country_restore_allowed() const {
+        return !_bootstrapped && !_save.active && !_restore.active;
+    }
+    bool country_save_allowed() const {
+        return !_epoch_active && !_save.active && !_restore.active && !_fatal;
+    }
 
     godot::Dictionary configure(const godot::Dictionary &catalog,
                                 const godot::Dictionary &profile,
@@ -61,7 +72,8 @@ public:
                              const float *weather_intensity, int32_t count,
                              std::string &error);
     bool needs_environment_capture(int64_t day_index) const {
-        return !_epoch_active && _environment_day != day_index;
+        return !_epoch_active && day_index - _last_committed_day >= _epoch_days &&
+               _environment_day != day_index;
     }
     bool should_run(int64_t day_index) const;
     godot::Dictionary report() const;
@@ -74,6 +86,8 @@ public:
                                                 float weather_intensity,
                                                 bool environment_ready) const;
     godot::Dictionary market_cell_snapshot(int32_t cell_idx) const;
+    godot::Dictionary trade_orders_for_cell(int32_t cell_idx, int32_t offset,
+                                             int32_t limit) const;
     godot::Dictionary building_cell_snapshot(int32_t cell_idx) const;
     godot::Dictionary fixed_math_probe(const godot::Dictionary &vectors) const;
     int64_t state_hash() const;
@@ -109,7 +123,8 @@ public:
                                   const std::vector<const float *> &resource_changes,
                                   int32_t count, std::string &error);
     bool needs_building_context_capture(int64_t day_index) const {
-        return !_epoch_active && _building_context_day != day_index;
+        return !_epoch_active && day_index - _last_committed_day >= _epoch_days &&
+               _building_context_day != day_index;
     }
     const std::vector<std::string> &building_resource_reserve_slots() const {
         return _resource_reserve_slots;
@@ -120,6 +135,12 @@ public:
     bool drain_building_resource_deltas(std::vector<int64_t> &out);
     int32_t building_resource_access_cells(int32_t cell, int32_t resource_id,
                                            int32_t *out_cells, int32_t capacity) const;
+    bool capture_trade_topology(const int32_t *neighbor_indices,
+                                const uint8_t *terrain,
+                                const uint8_t *trade_passable_lut,
+                                const int32_t *trade_move_cost_lut,
+                                int32_t count, uint64_t generation,
+                                std::string &error);
 
 private:
     enum class Stage : int32_t {
@@ -134,6 +155,9 @@ private:
         BUILDING_COMMIT = 8,
         AGGREGATE_PUBLISH = 9,
         FATAL = 10,
+        TRADE_SETTLE = 11,
+        TRADE_DISPATCH = 12,
+        TRADE_PLANNING = 13,
     };
 
     struct FormulaBatchInput {
@@ -389,6 +413,152 @@ private:
         }
     };
 
+    struct TradeTopologyStore {
+        std::vector<int32_t> neighbors;
+        std::vector<uint8_t> passable;
+        std::vector<int32_t> enter_cost;
+        std::vector<int32_t> component;
+        uint64_t topology_generation = 0;
+        uint64_t topology_hash = 0;
+        uint64_t component_country_generation = 0;
+        bool ready = false;
+
+        void clear() {
+            neighbors.clear();
+            passable.clear();
+            enter_cost.clear();
+            component.clear();
+            topology_generation = 0;
+            topology_hash = 0;
+            component_country_generation = 0;
+            ready = false;
+        }
+    };
+
+    struct TradeSignal {
+        int32_t cell = -1;
+        int32_t good = -1;
+        int32_t country = -1;
+        int32_t price = 0;
+        int64_t quantity = 0;
+    };
+
+    struct TradeCandidate {
+        int32_t source = -1;
+        int32_t destination = -1;
+        int32_t good = -1;
+        int32_t country = -1;
+        int32_t route_cost = 0;
+        int32_t source_price = 0;
+        int32_t destination_price = 0;
+        int64_t quantity = 0;
+        int64_t expected_profit = 0;
+        int64_t capacity_work = 0;
+        int64_t density_q16 = 0;
+        uint64_t topology_generation = 0;
+        uint64_t country_generation = 0;
+    };
+
+    struct TradePlanStore {
+        enum Phase : int32_t { IDLE = 0, SCAN = 1, ROUTE = 2 };
+        int32_t phase = IDLE;
+        int64_t scan_cursor = 0;
+        int32_t route_cursor = 0;
+        int64_t scan_total = 0;
+        uint64_t country_generation = 0;
+        uint64_t topology_generation = 0;
+        std::vector<TradeSignal> sources;
+        std::vector<TradeSignal> destinations;
+        std::vector<TradeCandidate> working_candidates;
+        std::vector<TradeCandidate> ready_candidates;
+        std::vector<int64_t> distance;
+        std::vector<uint32_t> distance_stamp;
+        std::vector<int32_t> target_signal;
+        std::vector<uint32_t> target_stamp;
+        std::vector<std::pair<int64_t, int32_t>> heap;
+        uint32_t search_stamp = 0;
+        std::vector<uint64_t> route_cache_keys;
+        std::vector<int32_t> route_cache_costs;
+        int64_t completed_scans = 0;
+
+        void clear_transient() {
+            phase = IDLE;
+            scan_cursor = 0;
+            route_cursor = 0;
+            scan_total = 0;
+            sources.clear();
+            destinations.clear();
+            working_candidates.clear();
+            ready_candidates.clear();
+            distance.clear();
+            distance_stamp.clear();
+            target_signal.clear();
+            target_stamp.clear();
+            heap.clear();
+            route_cache_keys.clear();
+            route_cache_costs.clear();
+            search_stamp = 0;
+            completed_scans = 0;
+            country_generation = 0;
+            topology_generation = 0;
+        }
+    };
+
+    struct TradeOrderStore {
+        enum State : uint8_t { IN_TRANSIT = 0, WAITING_RECEIVER = 1 };
+        std::vector<int64_t> ids;
+        std::vector<int32_t> sources;
+        std::vector<int32_t> destinations;
+        std::vector<int32_t> countries;
+        std::vector<int64_t> departure_days;
+        std::vector<int64_t> arrival_days;
+        std::vector<int64_t> cash_escrow;
+        std::vector<int64_t> capacity_work;
+        std::vector<uint8_t> states;
+        std::vector<uint8_t> cargo_delivered;
+        std::vector<int32_t> line_offsets;
+        std::vector<int32_t> line_goods;
+        std::vector<int64_t> line_quantities;
+        std::vector<int32_t> line_unit_prices;
+        std::vector<int32_t> seller_offsets;
+        std::vector<uint64_t> seller_handles;
+        std::vector<int64_t> seller_weights;
+        // Derived CSR time buckets. Arrival days remain the persisted authority;
+        // these vectors are rebuilt after dispatch, compaction, and restore.
+        std::vector<int64_t> arrival_bucket_days;
+        std::vector<int32_t> arrival_bucket_offsets;
+        std::vector<int32_t> arrival_bucket_orders;
+        bool arrival_buckets_dirty = true;
+        int64_t next_id = 1;
+
+        void clear() {
+            ids.clear(); sources.clear(); destinations.clear(); countries.clear();
+            departure_days.clear(); arrival_days.clear(); cash_escrow.clear();
+            capacity_work.clear(); states.clear(); cargo_delivered.clear();
+            line_offsets.assign(1, 0); line_goods.clear(); line_quantities.clear();
+            line_unit_prices.clear(); seller_offsets.assign(1, 0);
+            seller_handles.clear(); seller_weights.clear();
+            arrival_bucket_days.clear(); arrival_bucket_offsets.assign(1, 0);
+            arrival_bucket_orders.clear(); arrival_buckets_dirty = true;
+            next_id = 1;
+        }
+        int32_t size() const { return static_cast<int32_t>(ids.size()); }
+    };
+
+    struct TradeFlowSignalStore {
+        std::vector<int32_t> cells;
+        std::vector<int32_t> goods;
+        std::vector<int64_t> import_ema;
+        std::vector<int64_t> export_ema;
+        std::vector<int64_t> period_import;
+        std::vector<int64_t> period_export;
+
+        void clear() {
+            cells.clear(); goods.clear(); import_ema.clear(); export_ema.clear();
+            period_import.clear(); period_export.clear();
+        }
+    };
+
     struct LaborMarketStore {
         std::vector<int32_t> cell_offsets;
         std::vector<int32_t> profession_ids;
@@ -458,8 +628,10 @@ private:
     struct AuditTotals {
         int64_t population = 0;
         int64_t cohort_funds = 0;
-        int64_t treasury_cash = 0;
+        int64_t country_cash = 0;
         int64_t goods_stock = 0;
+        int64_t transit_goods = 0;
+        int64_t escrow_cash = 0;
     };
 
     struct Order {
@@ -553,6 +725,8 @@ private:
         EVENT_BUILDING_PRODUCTION_SETTLED = 9,
         EVENT_EPOCH_COMMITTED = 10,
         EVENT_RESTORE_BOUNDARY = 11,
+        EVENT_TRADE_DISPATCHED = 12,
+        EVENT_TRADE_ARRIVED = 13,
     };
 
     enum EventField : int32_t {
@@ -606,6 +780,7 @@ private:
         SUBJECT_COMMAND = 4,
         SUBJECT_TREASURY = 5,
         SUBJECT_RESOURCE = 6,
+        SUBJECT_TRADE_ORDER = 7,
     };
 
     struct EventLeg {
@@ -687,6 +862,8 @@ private:
         int32_t audit_cursor = 0;
         int32_t signal_cursor = 0;
         int32_t labor_signal_cursor = 0;
+        int32_t trade_order_cursor = 0;
+        int32_t trade_flow_cursor = 0;
         bool end_emitted = false;
     };
 
@@ -713,6 +890,10 @@ private:
         int32_t restored_signals = 0;
         int32_t expected_labor_signals = 0;
         int32_t restored_labor_signals = 0;
+        int32_t expected_trade_orders = 0;
+        int32_t restored_trade_orders = 0;
+        int32_t expected_trade_flows = 0;
+        int32_t restored_trade_flows = 0;
         int32_t last_signal_cell = -1;
         int32_t last_signal_good = -1;
         int32_t last_labor_cell = -1;
@@ -757,6 +938,20 @@ private:
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     int32_t _market_runtime_mode = 1; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    int32_t _trade_runtime_mode = 1; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    int64_t _trade_capacity_per_merchant_q16 = 64 * Q16_ONE;
+    int32_t _trade_speed_cost_per_day = 4;
+    int32_t _trade_min_margin_q16 = 3277;
+    int32_t _trade_target_count = 4;
+    int32_t _trade_signal_pairs_per_slice = 16384;
+    int32_t _trade_route_searches_per_slice = 2;
+    int32_t _trade_max_route_expansions = 8192;
+    int32_t _trade_route_cache_entries = 16384;
+    int32_t _trade_max_signals = 32768;
+    int32_t _trade_max_candidates = 8192;
+    int32_t _trade_max_orders = 4096;
+    int32_t _trade_flow_ema_alpha_q16 = 8192;
+    int32_t _trade_max_stock_share_q16 = 16384;
     bool _worker_enabled = true;
     int32_t _worker_market_threshold = 256;
     int32_t _worker_tasks_hint = 0;
@@ -768,7 +963,6 @@ private:
     int64_t _current_day = -1;
     int64_t _commit_day = -1;
     int64_t _last_committed_day = -1;
-    int64_t _treasury_cash = 0;
     int64_t _explicit_money_mint = 0;
     int64_t _explicit_money_burn = 0;
     int64_t _external_population_delta = 0;
@@ -828,6 +1022,23 @@ private:
     int64_t _zero_utilization_building_groups = 0;
     int64_t _utilization_sum_q16 = 0;
     int64_t _market_signal_updates = 0;
+    int64_t _trade_route_expansions = 0;
+    int64_t _trade_route_cache_hits = 0;
+    int64_t _trade_route_cache_misses = 0;
+    int64_t _trade_candidates_generated = 0;
+    int64_t _trade_candidates_accepted = 0;
+    int64_t _trade_rejected_profit = 0;
+    int64_t _trade_rejected_capacity = 0;
+    int64_t _trade_rejected_stock = 0;
+    int64_t _trade_rejected_cash = 0;
+    int64_t _trade_rejected_route = 0;
+    int64_t _trade_rejected_order_cap = 0;
+    int64_t _trade_orders_dispatched = 0;
+    int64_t _trade_orders_arrived = 0;
+    int64_t _trade_unclaimed_orders = 0;
+    int64_t _trade_capacity_available = 0;
+    int64_t _trade_capacity_used = 0;
+    int64_t _trade_settlement_lag_days = 0;
     int64_t _building_resource_capacity_checks = 0;
     int64_t _building_resource_capacity_limited_groups = 0;
     std::string _last_building_rejection_reason;
@@ -873,6 +1084,9 @@ private:
     double _market_signal_ms = 0.0;
     double _wage_plan_ms = 0.0;
     double _labor_signal_ms = 0.0;
+    double _trade_plan_ms = 0.0;
+    double _trade_settle_ms = 0.0;
+    double _trade_dispatch_ms = 0.0;
 
     AuditTotals _opening_totals;
     AuditTotals _closing_totals;
@@ -880,6 +1094,10 @@ private:
     PopulationStore _population;
     MarketStore _market;
     MarketSignalStore _market_signals;
+    TradeTopologyStore _trade_topology;
+    TradePlanStore _trade_plan;
+    TradeOrderStore _trade_orders;
+    TradeFlowSignalStore _trade_flows;
     LaborMarketStore _labor_signals;
     std::vector<FormulaDefinition> _formulas;
     std::unordered_map<std::string, int32_t> _formula_by_id;
@@ -894,6 +1112,8 @@ private:
     std::vector<Rule> _rules;
     std::vector<int64_t> _rule_params;
     std::vector<std::string> _profession_ids;
+    std::vector<int32_t> _profession_technology_offsets;
+    std::vector<int32_t> _profession_required_technologies;
     std::vector<std::string> _ethnicity_ids;
     std::vector<std::string> _good_ids;
     std::vector<std::string> _plan_ids;
@@ -916,12 +1136,16 @@ private:
     std::vector<int32_t> _good_max_price_rise_q16;
     std::vector<int32_t> _good_max_price_fall_q16;
     std::vector<int32_t> _good_merchant_buy_factor_q16;
+	std::vector<uint8_t> _good_trade_enabled;
+	std::vector<int32_t> _good_transport_load_per_unit_q16;
 	std::vector<std::string> _good_category_ids;
 	std::vector<int32_t> _good_storage_modes;
 	std::vector<int64_t> _good_monetary_issue_values;
 	std::vector<int32_t> _cycle_flow_good_ids;
 	std::vector<int32_t> _good_technology_tag_offsets;
 	std::vector<std::string> _good_technology_tags;
+    std::vector<int32_t> _good_technology_offsets;
+    std::vector<int32_t> _good_required_technologies;
     std::vector<int32_t> _merchant_primary_slot;
     std::vector<int32_t> _merchant_offsets;
     std::vector<int32_t> _merchant_slots;
@@ -961,6 +1185,17 @@ private:
 	std::vector<int32_t> _building_kinds;
 	std::vector<int32_t> _building_technology_tag_offsets;
 	std::vector<std::string> _building_technology_tags;
+    std::vector<int32_t> _building_technology_offsets;
+    std::vector<int32_t> _building_required_technologies;
+    std::vector<std::string> _technology_ids;
+    int32_t _technology_words = 0;
+    NativeCountryRuntime *_country_runtime = nullptr;
+    std::vector<int32_t> _epoch_cell_country;
+    std::vector<uint64_t> _epoch_country_technologies;
+    int32_t _epoch_country_count = 0;
+    int32_t _epoch_country_technology_words = 0;
+    uint64_t _epoch_country_generation = 0;
+    uint64_t _epoch_country_hash = 0;
     std::vector<BuildingType> _building_types;
     std::vector<JobRole> _building_employee_roles;
     std::vector<GoodAmount> _building_construction_goods;
@@ -987,6 +1222,8 @@ private:
     int64_t _building_catalog_compat_hash_v6 = 0;
     int64_t _building_catalog_compat_hash_v7 = 0;
     int64_t _catalog_compat_hash_v7 = 0;
+    int64_t _catalog_compat_hash_v8 = 0;
+    int64_t _catalog_compat_hash_v10 = 0;
 
     SaveState _save;
     RestoreState _restore;
@@ -995,12 +1232,40 @@ private:
     bool compile_catalog(const godot::Dictionary &catalog, std::string &error);
     bool configure_profile(const godot::Dictionary &profile, std::string &error);
     bool start_epoch(int64_t day_index, std::string &error);
+    bool trade_planner_should_run() const;
+    bool run_trade_planner_slice(int64_t &work_done, std::string &error);
+    bool begin_trade_plan(std::string &error);
+    bool rebuild_trade_components(std::string &error);
+    bool route_trade_source(int32_t source_index, std::string &error);
+    int32_t cached_trade_route_cost(int32_t source, int32_t destination,
+                                    int32_t country, int32_t &expansions);
+    int32_t estimate_trade_price(int32_t market, int32_t good,
+                                 int64_t stock_after, int64_t &sat) const;
+    bool settle_due_trade_orders(std::string &error);
+    bool dispatch_trade_candidates(std::string &error);
+    void update_trade_flow_ema();
+    int32_t trade_flow_index(int32_t cell, int32_t good, bool create);
+    int64_t credit_trade_sellers(int32_t order_index, int64_t amount);
+    void rebuild_trade_arrival_buckets();
+    void compact_trade_orders(const std::vector<uint8_t> &remove);
+    int64_t trade_transit_goods() const;
+    int64_t trade_escrow_cash() const;
     bool apply_command(const Command &cmd, std::string &error);
     bool process_market_cell(int32_t market, MarketResult &result, std::string &error);
     bool commit_structural(const StructuralCommand &cmd, std::string &error);
     bool publish_epoch(std::string &error);
     bool compile_building_catalog(const godot::Dictionary &catalog, std::string &error);
     bool evaluate_building_conditions(int32_t type_id, int32_t cell) const;
+    bool cell_has_technology(int32_t cell, int32_t technology_id, bool frozen) const;
+    bool cell_has_requirements(int32_t cell, int32_t begin, int32_t end,
+                               const std::vector<int32_t> &requirements,
+                               bool frozen) const;
+    bool good_available(int32_t cell, int32_t good_id, bool frozen = true) const;
+    bool profession_available(int32_t cell, int32_t profession_id,
+                              bool frozen = true) const;
+    bool building_available(int32_t cell, int32_t type_id,
+                            bool frozen = true) const;
+    bool capture_country_epoch(std::string &error);
     bool apply_build_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell, std::string &error);

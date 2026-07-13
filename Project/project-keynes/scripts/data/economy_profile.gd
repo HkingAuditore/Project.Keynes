@@ -29,7 +29,6 @@ extends Resource
 @export_range(1, 3650, 1) var economy_trace_retention_epochs: int = 8
 @export_range(65536, 268435456, 65536) var economy_trace_detail_epoch_bytes: int = 8388608
 @export_range(1, 65536, 1) var economy_trace_poll_max_events: int = 4096
-@export var treasury_cash: int = 0
 @export var merchant_profession_id: StringName = &"merchant"
 @export var wealth_reference_per_capita: int = 100000
 @export var living_cost_base_plan_id: StringName = &"subsistence_household"
@@ -39,6 +38,22 @@ extends Resource
 @export_range(0, 65536, 1) var employee_profit_share_q16: int = 16384
 ## Frozen-cycle Market V2 has passed the mobile and 10M-cohort ACTIVE gates.
 @export_enum("OFF", "PROBE", "ACTIVE") var market_runtime_mode: String = "ACTIVE"
+
+## Domestic cross-cell trade rolls out independently from the local market.
+@export_enum("OFF", "PROBE", "ACTIVE") var trade_runtime_mode: String = "PROBE"
+@export_range(1, 2147483647, 1) var trade_capacity_per_merchant_q16: int = 4194304
+@export_range(1, 1000000, 1) var trade_speed_cost_per_day: int = 4
+@export_range(0, 65536, 1) var trade_min_margin_q16: int = 3277
+@export_range(1, 8, 1) var trade_target_count: int = 4
+@export_range(256, 1048576, 256) var trade_signal_pairs_per_slice: int = 16384
+@export_range(1, 64, 1) var trade_route_searches_per_slice: int = 2
+@export_range(64, 1000000, 64) var trade_max_route_expansions: int = 8192
+@export_range(64, 4194304, 64) var trade_route_cache_entries: int = 16384
+@export_range(64, 1048576, 64) var trade_max_signals: int = 32768
+@export_range(16, 1048576, 16) var trade_max_candidates: int = 8192
+@export_range(16, 1048576, 16) var trade_max_orders: int = 4096
+@export_range(0, 65536, 1) var trade_flow_ema_alpha_q16: int = 8192
+@export_range(1, 65536, 1) var trade_max_stock_share_q16: int = 16384
 
 func to_native_profile() -> Dictionary:
 	return {
@@ -61,7 +76,6 @@ func to_native_profile() -> Dictionary:
 		"economy_trace_retention_epochs": economy_trace_retention_epochs,
 		"economy_trace_detail_epoch_bytes": economy_trace_detail_epoch_bytes,
 		"economy_trace_poll_max_events": economy_trace_poll_max_events,
-		"treasury_cash": treasury_cash,
 		"merchant_profession_id": String(merchant_profession_id),
 		"wealth_reference_per_capita": wealth_reference_per_capita,
 		"living_cost_base_plan_id": String(living_cost_base_plan_id),
@@ -70,4 +84,18 @@ func to_native_profile() -> Dictionary:
 		"wage_max_fall_q16_per_day": wage_max_fall_q16_per_day,
 		"employee_profit_share_q16": employee_profit_share_q16,
 		"market_runtime_mode": market_runtime_mode,
+		"trade_runtime_mode": trade_runtime_mode,
+		"trade_capacity_per_merchant_q16": trade_capacity_per_merchant_q16,
+		"trade_speed_cost_per_day": trade_speed_cost_per_day,
+		"trade_min_margin_q16": trade_min_margin_q16,
+		"trade_target_count": trade_target_count,
+		"trade_signal_pairs_per_slice": trade_signal_pairs_per_slice,
+		"trade_route_searches_per_slice": trade_route_searches_per_slice,
+		"trade_max_route_expansions": trade_max_route_expansions,
+		"trade_route_cache_entries": trade_route_cache_entries,
+		"trade_max_signals": trade_max_signals,
+		"trade_max_candidates": trade_max_candidates,
+		"trade_max_orders": trade_max_orders,
+		"trade_flow_ema_alpha_q16": trade_flow_ema_alpha_q16,
+		"trade_max_stock_share_q16": trade_max_stock_share_q16,
 	}

@@ -15,8 +15,9 @@ payload
 
 section 顺序：
 
-0. header：尺度、cell/market/good/page/cohort 数、市场周期 N、treasury、seed、catalog
-   hash、next submit order、稳定职业/民族/goods/plan ID 表，以及建筑/施工/审计/信号计数。
+0. header：尺度、cell/market/good/page/cohort 数、市场周期 N、seed、catalog hash、next submit
+   order、稳定职业/民族/goods/plan ID 表、PKCN schema/generation/hash，以及建筑/施工/审计/信号/
+   贸易计数、next trade order ID 和已解析贸易配置。
 1. page records：page chain metadata 和每页 64 lane 完整 SoA/generation。
 2. market records：所有 goods 的 stock/price/demand EMA/last shortage。
 3. cell records：恒等 `cell_to_market` 与当日四类 Q16 环境快照。
@@ -25,13 +26,16 @@ section 顺序：
 6. pending construction records。
 7. audit history。
 8. sparse market signal records。
-9. end。
+9. sparse labor signal records。
+10. trade order records：订单头、物资行 CSR 与卖方快照 CSR。
+11. trade flow records：稀疏 `(cell, good)` 进出口 EMA/本周期流量。
+12. end。
 
 `read_economy_save_chunk(max_bytes)` 直接从当前 native vectors 编码本 section 的
 record range，不构造巨型 Dictionary 或整份 byte buffer。page/market record 不会被
 拆跨 chunk；请求 4–16MB 是生产建议，测试可使用 64KB。
 
-restore 要先用当前资源 catalog 调 `configure_economy()`，再
+restore 要先配置并完整恢复 PKCN v1，再用当前资源 catalog 调 `configure_economy()` 和
 `begin_economy_restore()`。每个 feed 立即解析并写恢复存储；end 时验证：
 
 - schema、尺度、catalog hash 和稳定 ID 表
@@ -41,12 +45,16 @@ restore 要先用当前资源 catalog 调 `configure_economy()`，再
 - 同 cell signature 唯一
 - 一地块一市场恒等映射、stock/price/EMA/shortage range 与环境 snapshot
 - pending command opcode、handle generation 和 target range
+- 已恢复 PKCN 的 schema、generation 和 state hash
+- 贸易订单端点/状态/到达日、物资行/卖方 CSR、托管数量和稳定 next ID
+- 贸易流 key 唯一有序且 `(cell, good)` 在 catalog 范围内
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 v8。`epoch_days` 原字段解释为 `market_cycle_days`；会计惰性清零复用
-`flags` 保留 parity bit。restore 继续接受 v2-v7，并为后续版本增加的展示/计划/信号字段填入
-确定性默认值；旧冻结模型的重放语义不与 Price V3 等价，但迁移后的普通存档仍必须守恒。
+当前写出 schema 为 PKEC v11，并与 PKCN v1 交叉绑定。v10 使用兼容 catalog hash 读取并迁移为
+空在途订单、空托管、空贸易 EMA；拓扑和未完成规划从不存档，加载后重建。PKEC v2-v9 缺少国家权威状态，读取时
+精确返回 `legacy_countryless_economy_save_unsupported`；不再通过默认国家、全解锁科技或全局
+国库静默迁移。联合存档只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
 
 ## catalog 身份
 
@@ -54,7 +62,7 @@ restore 要先用当前资源 catalog 调 `configure_economy()`，再
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 schema v8 要求 save 的稳定 ID 表与当前 catalog 完全一致。新增/删除/改 ID
+当前 PKEC v11 与 PKCN v1 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。新增/删除/改 ID
 时必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
 迁移器应：
 
@@ -70,8 +78,9 @@ need/variant/component、环境曲线与价格参数包含在 catalog canonical 
 ## 新增 good
 
 1. 在 `data/goods/` 新建 `GoodProfile.tres`。
-2. 设置稳定 `id`、显示信息、定点 default/min/max price、initial stock 和
-   EMA、目标库存、压力权重和单日涨跌幅。
+2. 设置稳定 `id`、显示信息、定点 default/min/max price、initial stock、
+   EMA、目标库存、压力权重、单日涨跌幅、`trade_enabled` 与正数
+   `transport_load_per_unit_q16`；`cycle_flow` 必须禁运。
 3. 在 need variant component 中引用 stable good ID。
 4. 运行 catalog/native economy test。
 

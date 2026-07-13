@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"parchment"
+display_name = "羊皮纸"
+category_id = &"paper"
+technology_tags = PackedStringArray("tech.manuscript_culture")
+default_price = 14000
+min_price = 1400
+max_price = 140000
