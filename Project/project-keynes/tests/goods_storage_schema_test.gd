@@ -3,6 +3,7 @@ extends SceneTree
 # Historical CI file name retained. This is the focused Market V2 test suite.
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const CountryTestHelper = preload("res://tests/country_test_helper.gd")
 
 var _checks := 0
 var _failures := 0
@@ -69,6 +70,8 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
 	var profile := _native_profile(true, 1)
+	_expect("all-technology market test country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 42))
 	var configured: Dictionary = ext.configure_economy(catalog, profile, 1, 42)
 	_expect("configure market v2", bool(configured.get("ok", false)))
 	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
@@ -111,23 +114,83 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("next-day price differs", _good_value(after_market, "price", "grain") != _good_value(before_market, "price", "grain"))
 	_expect("market has no anonymous cash", not after_market.has("market_cash"))
 
+	var country: Dictionary = ext.get_country_cell_summary(0)
+	var cohort_handle := int((after_pop.handles as PackedInt64Array)[0])
+	var grain_idx := goods.find("grain")
+	ext.submit_economy_commands(_single_command(9, 1, cohort_handle, 0, 0, 10000,
+		int(country.country_handle)))
+	var cash_in_report := _run_day(ext, 1)
+	_expect("cohort cash transfers into its country treasury",
+		int(ext.get_country_cell_summary(0).cash) == 10000 and
+		int(cash_in_report.get("money_error", 1)) == 0)
+	ext.submit_economy_commands(_single_command(1, 2, cohort_handle, 0, 0, 4000,
+		int(country.country_handle)))
+	var cash_out_report := _run_day(ext, 2)
+	_expect("country cash transfer is capped and conservative",
+		int(ext.get_country_cell_summary(0).cash) == 6000 and
+		int(cash_out_report.get("money_error", 1)) == 0)
+	ext.submit_economy_commands(_single_command(13, 3, int(country.country_handle), 0,
+		grain_idx, 1000, 0))
+	var goods_in_report := _run_day(ext, 3)
+	if bool(goods_in_report.get("fatal", false)):
+		print("  goods-in fatal report=", goods_in_report)
+	_expect("market goods transfer into country treasury conserves goods",
+		_good_value(ext.get_country_treasury_snapshot(country.country_handle), "quantities", "grain") == 1000 and
+		int(goods_in_report.get("goods_error", 1)) == 0)
+	ext.submit_economy_commands(_single_command(12, 4, int(country.country_handle), 0,
+		grain_idx, 400, 0))
+	var goods_out_report := _run_day(ext, 4)
+	if bool(goods_out_report.get("fatal", false)):
+		print("  goods-out fatal report=", goods_out_report)
+	_expect("country goods transfer back to market conserves goods",
+		_good_value(ext.get_country_treasury_snapshot(country.country_handle), "quantities", "grain") == 600 and
+		int(goods_out_report.get("goods_error", 1)) == 0)
+
+	var country_save_begin: Dictionary = ext.begin_country_save(4096)
+	if not bool(country_save_begin.get("ok", false)):
+		print("  PKCN begin failed=", country_save_begin)
+	_expect("matching PKCN save begins", bool(country_save_begin.get("ok", false)))
+	var country_chunks: Array[PackedByteArray] = []
+	while true:
+		var country_chunk: PackedByteArray = ext.read_country_save_chunk(4096)
+		if country_chunk.is_empty():
+			break
+		country_chunks.append(country_chunk)
+	_expect("matching PKCN save completes", bool(ext.end_country_save().get("ok", false)))
+
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("v8 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 8)
+	if not bool(save_begin.get("ok", false)):
+		print("  PKEC begin failed=", save_begin)
+	_expect("v11 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 11)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v8 save emits chunks", chunks.size() >= 9)
-	_expect("v8 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v11 save emits chunks", chunks.size() >= 11)
+	_expect("v11 save completes", bool(ext.end_economy_save().get("ok", false)))
+	var legacy_target: Object = _new_ext(1, 0.1)
+	legacy_target.configure_economy(catalog, profile, 1, 42)
+	legacy_target.begin_economy_restore()
+	var legacy_header: PackedByteArray = chunks[0].duplicate()
+	legacy_header[4] = 9
+	legacy_header[5] = 0
+	var legacy_result: Dictionary = legacy_target.feed_economy_restore_chunk(legacy_header)
+	_expect("countryless PKEC v9 is rejected precisely",
+		not bool(legacy_result.get("ok", true)) and
+		String(legacy_result.get("reason", "")) == "legacy_countryless_economy_save_unsupported")
 	var restored: Object = _new_ext(1, 0.1)
 	_expect("restore target configures", bool(restored.configure_economy(catalog, profile, 1, 42).get("ok", false)))
+	_expect("PKCN restore begins before PKEC", bool(restored.begin_country_restore().get("ok", false)))
+	for chunk in country_chunks:
+		_expect("PKCN restore chunk accepted", bool(restored.feed_country_restore_chunk(chunk).get("ok", false)))
+	_expect("matching PKCN restores first", bool(restored.end_country_restore().get("ok", false)))
 	_expect("restore begins", bool(restored.begin_economy_restore().get("ok", false)))
 	for chunk in chunks:
 		_expect("restore chunk accepted", bool(restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
-	_expect("v8 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
+	_expect("v11 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)
@@ -442,6 +505,19 @@ func _stock_commands(cell: int, goods: PackedStringArray, amounts: Dictionary,
 		batch.i64_0.append(int(amounts[good_id]))
 		batch.i64_1.append(0)
 	return batch
+
+func _single_command(opcode: int, day: int, target_handle: int, i32_0: int,
+		i32_1: int, i64_0: int, i64_1: int) -> Dictionary:
+	return {
+		"opcodes": PackedInt32Array([opcode]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([1]),
+		"target_handles": PackedInt64Array([target_handle]),
+		"i32_0": PackedInt32Array([i32_0]),
+		"i32_1": PackedInt32Array([i32_1]),
+		"i64_0": PackedInt64Array([i64_0]),
+		"i64_1": PackedInt64Array([i64_1]),
+	}
 
 func _run_day(ext: Object, day: int) -> Dictionary:
 	var report: Dictionary = {}

@@ -30,6 +30,8 @@ extends Resource
 @export var passable_land: bool = false        # Land units may enter
 @export var passable_sea: bool = true          # Sea units may enter
 @export var move_cost: int = 0                 # Movement cost for land units (0 = impassable)
+@export var trade_passable: bool = false       # Domestic goods may enter
+@export_range(0, 2147483647, 1) var trade_move_cost: int = 0 # 0 only when impassable
 
 # ─── Visual ─────────────────────────────────────────────────────────────
 # Base color for baker / debug tinting. Shader-side biome palettes are

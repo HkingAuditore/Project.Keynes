@@ -1,6 +1,7 @@
 extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const CountryTestHelper = preload("res://tests/country_test_helper.gd")
 
 var failures := 0
 
@@ -23,6 +24,8 @@ func _run() -> void:
 	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1
 	profile.market_runtime_mode = "ACTIVE"
+	_expect("all-technology production country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, native_catalog, 1, 2200))
 	_expect("native runtime configures", bool(ext.configure_economy(
 		native_catalog, profile, 1, 2200).get("ok", false)))
 
@@ -88,6 +91,60 @@ func _run() -> void:
 		(buildings.building_kinds as PackedInt32Array).size() == types.size() and
 		(buildings.building_technology_tag_offsets as PackedInt32Array).size() == types.size() + 1 and
 		(buildings.building_technology_tags as PackedStringArray).size() > 0)
+	_test_technology_gating(compiled, native_catalog)
+
+func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -> void:
+	var ext := _new_ext(compiled)
+	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 1
+	profile.market_runtime_mode = "ACTIVE"
+	_expect("stone-start runtime configures", bool(ext.configure_economy(
+		native_catalog, profile, 1, 2201).get("ok", false)))
+	var signatures: PackedStringArray = compiled.signature_keys
+	_expect("stone-start runtime bootstraps", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([
+			signatures.find("industrialist|default"), signatures.find("merchant|default")]),
+		"population": PackedInt64Array([10, 10]),
+		"funds": PackedInt64Array([1000000, 1000000]),
+	}, {}).get("ok", false)))
+	var goods: PackedStringArray = compiled.good_ids
+	var types: PackedStringArray = compiled.building_type_ids
+	var country_summary: Dictionary = ext.get_country_cell_summary(0)
+	var initial_technologies: Dictionary = ext.get_country_snapshot(country_summary.country_handle)
+	var market: Dictionary = ext.get_market_cell_snapshot(0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var deep_type := types.find("deep_space_probe_works")
+	_expect("stone start unlocks hunting and gathering",
+		(initial_technologies.technology_ids as PackedStringArray).has("tech.hunting") and
+		(initial_technologies.technology_ids as PackedStringArray).has("tech.gathering"))
+	_expect("deep-space technology starts locked",
+		not (initial_technologies.technology_ids as PackedStringArray).has("tech.deep_space_systems"))
+	_expect("stone start hides legacy modern goods but exposes gathered food",
+		(market.good_technology_available as PackedByteArray)[goods.find("computers")] == 0 and
+		(market.good_technology_available as PackedByteArray)[goods.find("gathered_plants")] == 1)
+	_expect("technology-locked building is unavailable",
+		deep_type >= 0 and (buildings.building_technology_available as PackedByteArray)[deep_type] == 0)
+	var technologies: PackedStringArray = compiled.technology_ids
+	var grant: Dictionary = ext.submit_country_commands({
+		"opcodes": PackedInt32Array([4]),
+		"effective_days": PackedInt64Array([0]),
+		"sequences": PackedInt64Array([1]),
+		"target_handles": PackedInt64Array([country_summary.country_handle]),
+		"cell_indices": PackedInt32Array([-1]),
+		"aux_i32": PackedInt32Array([technologies.find("tech.deep_space_systems")]),
+		"stable_ids": PackedStringArray([""]),
+		"display_names": PackedStringArray([""]),
+	})
+	_expect("technology grant command queues", bool(grant.get("ok", false)))
+	_expect("country technology grant commits", bool(ext.run_country_slice({"day_index": 0}).get("done", false)))
+	_expect("technology grant cycle commits", bool(_run_day(ext, 0).get("done", false)))
+	var unlocked: Dictionary = ext.get_country_snapshot(country_summary.country_handle)
+	var unlocked_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("technology grant becomes committed cell state",
+		(unlocked.technology_ids as PackedStringArray).has("tech.deep_space_systems"))
+	_expect("granted technology unlocks tagged building",
+		(unlocked_buildings.building_technology_available as PackedByteArray)[deep_type] == 1)
 
 func _new_ext(catalog: Dictionary) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

@@ -1,6 +1,7 @@
 extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const CountryTestHelper = preload("res://tests/country_test_helper.gd")
 
 var failures := 0
 
@@ -33,6 +34,8 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1
 	profile.market_runtime_mode = "ACTIVE"
+	_expect("all-technology test country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
 	var landlord_sig: int = (compiled.signature_keys as PackedStringArray).find("industrialist|default")
 	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("miner|default")
@@ -197,15 +200,29 @@ func _run() -> void:
 	_expect("treasury transfer is exposed as a settlement source",
 		_cashflow_has_source(drained_pop,
 			_row_for_signature(drained_pop, landlord_sig), "transfer", false))
+	var country_chunks: Array[PackedByteArray] = []
+	var country_save_begin: Dictionary = ext.begin_country_save(4096)
+	_expect("building PKCN save begins", bool(country_save_begin.get("ok", false)))
+	while true:
+		var country_chunk: PackedByteArray = ext.read_country_save_chunk(4096)
+		if country_chunk.is_empty(): break
+		country_chunks.append(country_chunk)
+	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v8 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 8)
+	_expect("building v11 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 11)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
 		chunks.append(chunk)
 	_expect("building save completes", bool(ext.end_economy_save().get("ok", false)))
 	var restored := _new_ext(compiled)
+	_expect("building restore country configures first",
+		CountryTestHelper.configure_all_technologies(restored, catalog, 1, 77))
+	_expect("building PKCN restore begins", bool(restored.begin_country_restore().get("ok", false)))
+	for chunk in country_chunks:
+		_expect("building PKCN chunk accepted", bool(restored.feed_country_restore_chunk(chunk).get("ok", false)))
+	_expect("building PKCN restore completes", bool(restored.end_country_restore().get("ok", false)))
 	_expect("building restore target configures", bool(restored.configure_economy(
 		catalog, profile, 1, 77).get("ok", false)))
 	_expect("building restore begins", bool(restored.begin_economy_restore().get("ok", false)))

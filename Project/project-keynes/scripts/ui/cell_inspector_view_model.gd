@@ -68,6 +68,7 @@ func build(cell: HexCell) -> Dictionary:
 	var is_water := LandformType.is_water(landform_v)
 	var passable_land := TerrainType.is_passable_land(terrain_v)
 	var population_summary := _population_summary(idx)
+	var country_summary := _country_summary(idx)
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
 	var tabs := [
 		{"id": "geography", "label": "地理信息", "icon": "geo"},
@@ -77,7 +78,7 @@ func build(cell: HexCell) -> Dictionary:
 		{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
 	]
 	return {
-		"header": _build_header(off, terrain_v, landform_v),
+		"header": _build_header(off, terrain_v, landform_v, country_summary),
 		"score": {
 			"id": "habitability",
 			"title": "适宜度",
@@ -85,7 +86,7 @@ func build(cell: HexCell) -> Dictionary:
 			"caption": _score_caption(habitability),
 			"accent": _score_color(habitability),
 		},
-		"summary_cards": _summary_cards(temp, moist, population_summary),
+		"summary_cards": _summary_cards(temp, moist, population_summary, country_summary),
 		"tabs": tabs,
 		"categories": {
 			"geography": _geography_information_category(cell, idx, terrain_v,
@@ -117,6 +118,7 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
 	var tab_id := current_tab if current_tab != "" else "geography"
 	var population_summary: Dictionary
+	var country_summary := _country_summary(idx)
 	var category: Dictionary
 	if tab_id == "population":
 		population_summary = _population_snapshot(idx)
@@ -133,7 +135,7 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 			landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
 			wf, snow, vitality, passable_land, is_water)
 	return {
-		"header": _build_header(off, terrain_v, landform_v),
+		"header": _build_header(off, terrain_v, landform_v, country_summary),
 		"score": {
 			"id": "habitability",
 			"title": "适宜度",
@@ -141,7 +143,7 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 			"caption": _score_caption(habitability),
 			"accent": _score_color(habitability),
 		},
-		"summary_cards": _summary_cards(temp, moist, population_summary),
+		"summary_cards": _summary_cards(temp, moist, population_summary, country_summary),
 		"tab_id": tab_id,
 		"category": category,
 	}
@@ -182,18 +184,21 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 func _build_header(
 		off: Vector2i,
 		terrain_v: int,
-		landform_v: int
+		landform_v: int,
+		country_summary: Dictionary
 ) -> Dictionary:
+	var country_name := String(country_summary.get("country_name", "无主地"))
 	return {
 		"title": "%s · %s" % [LandformType.name_cn(landform_v), TerrainType.terrain_name_cn(terrain_v)],
-		"subtitle": "区域 %d, %d" % [off.x + 1, off.y + 1],
+		"subtitle": "区域 %d, %d · %s" % [off.x + 1, off.y + 1, country_name],
 	}
 
 
 func _summary_cards(
 	temp: float,
 	moist: float,
-	population_snapshot: Dictionary
+	population_snapshot: Dictionary,
+	country_summary: Dictionary
 ) -> Array:
 	var population_ready := bool(population_snapshot.get("ok", false))
 	var population_value := "%s 人" % UITokens.format_compact_number_cn(
@@ -214,6 +219,18 @@ func _summary_cards(
 			"subtitle": "%d 个阶层" % int(population_snapshot.get("cohort_count", 0)) if population_ready else "未生成测试或正式人口",
 			"accent": UITokens.ACCENT,
 			"icon": "growth",
+		},
+		{
+			"id": "summary_country",
+			"title": "国家",
+			"value": String(country_summary.get("country_name", "无主地")),
+			"subtitle": "%s · 物资 %d 类 · 科技 %d 项" % [
+				_money_text(int(country_summary.get("cash", 0))),
+				int(country_summary.get("nonzero_good_count", 0)),
+				int(country_summary.get("technology_count", 0)),
+			],
+			"accent": UITokens.RESOURCE,
+			"icon": "resource",
 		},
 	]
 
@@ -456,6 +473,16 @@ func _population_summary(cell_idx: int) -> Dictionary:
 	if facade == null or not facade.has_method("population_cell_summary"):
 		return {}
 	return facade.population_cell_summary(cell_idx)
+
+
+func _country_summary(cell_idx: int) -> Dictionary:
+	if _generator == null or not _generator.has_method("get_country_facade"):
+		return {"country_name": "无主地"}
+	var facade = _generator.get_country_facade()
+	if facade == null or not facade.has_method("cell_summary"):
+		return {"country_name": "无主地"}
+	var summary: Dictionary = facade.cell_summary(cell_idx)
+	return summary if bool(summary.get("ok", false)) else {"country_name": "无主地"}
 
 
 func _market_snapshot(cell_idx: int) -> Dictionary:

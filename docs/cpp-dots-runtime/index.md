@@ -35,13 +35,25 @@
 8. [Native Economy Runtime](./native-economy-runtime.md)
    - PopulationCohort chunk、MarketStore、handle、并行边界和公共 API。
 
-9. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
+9. [Domestic Trade Runtime](./domestic-trade-runtime.md)
+   - 国内六邻接运输、稀疏贸易信号、有界寻路、贸易单托管结算、PKEC v11 与软切片契约。
+
+10. [Native Country Runtime](./native-country-runtime.md)
+   - CountryStore SoA、handle、领土 CSR、国家科技、现金/商品国库、命令与查询契约。
+
+11. [Country / Economy Bridge](./country-economy-bridge.md)
+    - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
+
+12. [Country Scheduling / Save](./country-scheduling-save.md)
+    - `country_daily`、命令屏障、PKCN v1 + PKEC v11 顺序与兼容性拒绝。
+
+13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。
 
-10. [Economy Graph / Scheduling](./economy-graph-scheduling.md)
+14. [Economy Graph / Scheduling](./economy-graph-scheduling.md)
     - 冻结周期、按 cohort 预算的地块错峰、wait-commit、截止日 catchup 与 reference 误差。
 
-11. [Economy Save / Migration / SOP](./economy-save-migration-sop.md)
+15. [Economy Save / Migration / SOP](./economy-save-migration-sop.md)
     - PKEC 流式存档、catalog migration 和新增内容流程。
 
 ## 可复用 Economy Skill
@@ -76,6 +88,7 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 | Legacy jobs | `Project/project-keynes/scripts/simulation/sus/jobs/*.gd` | 兼容 jobs，部分仍被 wrapper 委托。 |
 | Runtime orchestration | `Project/project-keynes/scripts/geography/map_generator.gd` | `_setup_sus()` 注册系统，调度 climate/ocean/weather pass。 |
 | Native economy | `gdext/src/economy_runtime.cpp`, `Project/project-keynes/scripts/economy/*.gd` | 独立 `ECONOMY_GRAPH`、catalog/facade、committed gameplay/save 与 selected-cell live Inspector bridge。 |
+| Native country | `gdext/src/country_runtime.cpp`, `gdext/src/world_ext_country.cpp`, `Project/project-keynes/scripts/country/*.gd` | 国家身份、领土、科技、国库、PKCN 与 `country_daily` 权威；只镜像 `cell.country_slot`。 |
 | Rendering / physical ocean | `Project/project-keynes/scripts/rendering/map_baker.gd` | SLP/wind/PSI/upwelling/raster 等 ocean currents 物理链路。 |
 
 ## 维护规则

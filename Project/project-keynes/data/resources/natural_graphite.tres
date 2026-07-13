@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"natural_graphite"
+display_name = "天然石墨"
+discovery_technology_tags = PackedStringArray("tech.geological_prospecting")
+reserve_component = &"cell.res_natural_graphite_reserve"
+habitat_mode = "land"
+init_base = -350000.0
+init_elevation = 90000.0
+init_noise = 140000.0
+init_noise_scale = 0.06
+geology_family_id = &"metamorphic"
+init_province = 180000.0
+init_belt = 210000.0

@@ -83,6 +83,8 @@ static func _ensure_fallback() -> TerrainProfile:
 		_fallback.passable_land = false
 		_fallback.passable_sea = true
 		_fallback.move_cost = 0
+		_fallback.trade_passable = false
+		_fallback.trade_move_cost = 0
 		_fallback.base_color = Color(0.039216, 0.149020, 0.250980, 1.0)
 	return _fallback
 

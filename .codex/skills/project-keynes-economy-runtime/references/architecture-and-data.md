@@ -101,7 +101,7 @@ changes; normal cycles must reuse it.
 Parallel PackedArray command columns contain opcode, effective day, sequence, target handle, two
 i32 parameters, and two i64 quantities. Supported opcodes:
 
-1. treasury to cohort transfer
+1. country treasury to cohort transfer (country handle supplied or resolved from cohort cell)
 2. explicit mint to cohort
 3. explicit burn from cohort
 4. add local stock
@@ -109,7 +109,9 @@ i32 parameters, and two i64 quantities. Supported opcodes:
 6. adjust population
 7. migrate population
 8. change signature
-9. cohort to treasury transfer
+9. cohort to country treasury transfer
+10. country goods treasury to a specified cell market
+11. specified cell market goods to country treasury
 
 Commands submitted during a frozen cycle wait for the next sample day. Report maximum command
 latency as the cycle length.
@@ -143,11 +145,14 @@ saturation is reported but does not mutate runtime metrics or the deterministic 
 
 ## 6. Save and visibility
 
-PKEC schema v8 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
-commands, buildings, construction, audit history, sparse market/labor signals, end. Save only at a
+PKEC schema v11 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
+commands, buildings, construction, audit history, sparse market/labor signals, trade orders,
+trade-flow EMA, end. Save only at a
 committed boundary. The header stores numeric scales, catalog identity, cycle length, committed day,
-environment identity, treasury, submit sequence, and section counts. v2-v7 remain readable through
-explicit defaults and version-compatible catalog hashes.
+environment identity, matching PKCN schema/generation/hash, submit sequence, trade next ID/resolved
+configuration, and section counts. Restore PKCN v1 first. PKEC v10 migrates to empty trade state and
+rebuilds topology; PKEC v2-v9 return `legacy_countryless_economy_save_unsupported`; do not
+synthesize a global treasury or per-cell technology during restore.
 
 During `household_market`, `structural_commit`, or `wait_commit`, save and gameplay systems must not
 observe internal mutation. The selected-cell Inspector is the bounded exception: synchronous native
@@ -161,7 +166,7 @@ passable settlement a distribution center, places collectors only where local re
 support their recipes, and distributes each industrial type across a bounded deterministic subset
 of cells while preferring local upstream outputs. It derives profession cohorts only from the
 resulting local owner/employee job capacity, then fills thirty days of stock. This is a development
-fixture, not a production historical population provider or a trade model.
+fixture, not a production historical population provider.
 
 ## 7. Source map
 
@@ -173,6 +178,7 @@ fixture, not a production historical population provider or a trade model.
 - Content: `data/economy/`, `data/goods/`
 - UI: `scripts/ui/cell_inspector_view_model.gd`
 - Focused tests: `tests/goods_storage_schema_test.gd`, `economy_runtime_bench.gd`
+- Trade tests: `tests/economy_trade_runtime_test.gd`
 
 ### Inspector settlement cashflow
 

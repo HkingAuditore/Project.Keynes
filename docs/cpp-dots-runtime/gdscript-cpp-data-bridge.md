@@ -45,9 +45,14 @@ Runtime hydrology 新增的契约：
 负责跨最多 7 格汇总 `_resource_remaining` 并把 extraction delta 写回真实来源格。邻接数组只在
 冻结周期边界跨桥一次，不进入逐建筑 Object/GDScript 调用。Inspector 冷查询同时发布本地与
 邻域可达 reserve/pending/effective 三列。
-- Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v2 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
+- Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v11 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
 
-Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口、市场、建筑标签按当前可见标签惰性调用 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md)。
+国内贸易拓扑也不进入 DataCore schema。`MapData.neighbor_indices_packed()` 与
+`economy_trade_passable_lut()` / `economy_trade_move_cost_lut()` 在经济边界通过
+`capture_economy_trade_topology()` 一次性传入平行 PackedArrays；C++ 再结合冻结
+`cell_country` 构建连通分量。地图只提供输入，不持有路线、信号、订单或托管。
+
+Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口、市场、建筑标签按当前可见标签惰性调用 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。贸易单使用 `get_trade_orders_for_cell(cell, offset, limit)` 分页查询并返回物资行 CSR，禁止全局订单矩阵。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md) 与 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
 
 ## PackedArray CoW 公理
 
@@ -503,7 +508,7 @@ Dictionary DCWorldExt::run_my_pass(Dictionary knobs) {
 
 现代经济资源扩展后，DataCore 明确持有 37 组 `cell.res_<id>_reserve` 与
 `cell.res_<id>_extra_change` F32 slots；`component_schema.gd` 是唯一 bind-table 输入，生成结果为
-151 个 component entries（另含 `cell.resource_habitat_mask`）。goods、building、profession 和 technology tags 仍只存在于 economy
+159 个 component entries（另含 `cell.resource_habitat_mask`）。goods、building、profession 和 technology tags 仍只存在于 economy
 catalog/native runtime，不进入 MapData。`DCWorldExt` 在 sample boundary 批量解析资源 slot，生产
 结束后按资源列批量写回 extra-change，边界内没有逐 cell Object 调用。
 
@@ -580,3 +585,13 @@ extra_change 声明为同 tick write：natural-resource job 同时读取 extra/w
 Price V3 的企业需求 EMA、实际供给 EMA 与成本锚同样只存在 native 稀疏
 `MarketSignalStore`，不注册 DataCore component。市场/建筑 selected-cell snapshot 可冷路径返回
 这些列及压力分解、计划利润与利用率；GDScript 仅格式化显示，不重算价格或利润。
+# Country bridge contract
+
+国家系统只新增一个 DataCore 可见镜像：`cell.country_slot`（I32，`-1` 为无主）。
+`CountryDailySystem` 在 ACTIVE commit 后把 native `cell_country_slot` 发布到该 slot/MapData；
+国家 stable ID、显示名、领土 CSR、科技 bitset、现金和商品矩阵都不进入 component schema。
+
+`CountryFacade` 使用粗粒度 `configure_country` / `bootstrap_country` /
+`submit_country_commands` / `run_country_slice` 与 snapshot/save API。经济热路径不通过该 Facade，
+而由 `NativeEconomyRuntime` 直接持有窄类型 `NativeCountryRuntime*`，在 sample day 复制纯数值冻结
+快照。这样避免 Dictionary/Object/string lookup 和 GDScript 往返，也避免为全国一致科技制造逐格副本。

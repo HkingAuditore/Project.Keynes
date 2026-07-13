@@ -4,6 +4,7 @@ const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const WorldSetupScript = preload("res://scripts/ui/world_setup.gd")
+const CountryTestHelper = preload("res://tests/country_test_helper.gd")
 
 var _failures := PackedStringArray()
 
@@ -43,6 +44,10 @@ func _initialize() -> void:
 	var facade = EconomyFacadeScript.new()
 	var profile = load("res://data/economy/default_economy.tres").duplicate(true)
 	profile.market_cycle_days = 1
+	var native_catalog := compiled.duplicate(true)
+	native_catalog.erase("ok")
+	_expect("all-technology test country bootstraps", CountryTestHelper.configure_all_technologies(
+		ext, native_catalog, map.cell_count(), 42, map.is_water_arr))
 	_expect("facade configures", bool(facade.configure(ext, map.cell_count(), 42, profile).get("ok", false)))
 	var first: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
 	var same: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)

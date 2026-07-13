@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"spacecraft_components"
+display_name = "航天器部件"
+category_id = &"space"
+technology_tags = PackedStringArray("tech.orbital_flight")
+default_price = 280000
+min_price = 28000
+max_price = 2800000

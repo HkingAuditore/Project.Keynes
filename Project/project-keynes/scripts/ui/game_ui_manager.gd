@@ -16,6 +16,7 @@ var _loading_overlay: WorldLoadingOverlay
 var _inspector_view_model: CellInspectorViewModel
 var _selected_cell: HexCell
 var _last_cached_panel_ms: int = 0
+var _country_facade = null
 
 
 func _ready() -> void:
@@ -32,9 +33,19 @@ func set_world_context(
 		sea_level: float,
 		hex_size: float
 ) -> void:
+	if _country_facade != null and _country_facade.has_signal("country_committed"):
+		var old_callback := Callable(self, "_on_country_committed")
+		if _country_facade.country_committed.is_connected(old_callback):
+			_country_facade.country_committed.disconnect(old_callback)
 	if _inspector_view_model == null:
 		_inspector_view_model = CellInspectorViewModel.new()
 	_inspector_view_model.set_context(map, generator, view_adapter, world_clock, sea_level, hex_size)
+	_country_facade = generator.get_country_facade() if generator != null and \
+		generator.has_method("get_country_facade") else null
+	if _country_facade != null and _country_facade.has_signal("country_committed"):
+		var callback := Callable(self, "_on_country_committed")
+		if not _country_facade.country_committed.is_connected(callback):
+			_country_facade.country_committed.connect(callback)
 	if _right_panel != null:
 		_right_panel.reset_for_world()
 
@@ -76,6 +87,12 @@ func refresh_selected_panel() -> void:
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return
 	_right_panel.set_model_for_selection(_inspector_view_model.build(_selected_cell))
+
+
+func _on_country_committed(_report: Dictionary) -> void:
+	# Country identity/territory changes are rare and may rebuild one selected
+	# dossier. Daily economy/climate ticks continue to use the live-value patch.
+	refresh_selected_panel()
 
 
 func _on_inspector_tab_data_requested(tab_id: String) -> void:

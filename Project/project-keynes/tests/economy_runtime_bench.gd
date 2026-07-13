@@ -8,10 +8,11 @@ func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var snapshot_only := "--snapshot" in args
 	var desktop := "--desktop" in args
+	var trade_active := "--trade-active" in args
 	var cells := 1 if snapshot_only else (100000 if desktop else 10000)
 	var cohorts_per_cell := 100 if snapshot_only or desktop else 20
 	var goods := 200 if snapshot_only or desktop else 100
-	var epochs := 0 if snapshot_only else (2 if desktop else 50)
+	var epochs := 0 if snapshot_only else (2 if desktop else (70 if trade_active else 50))
 	var ext: Object = _new_ext(cells)
 	var catalog := _synthetic_catalog(goods, cohorts_per_cell)
 	var profile := {
@@ -23,18 +24,60 @@ func _init() -> void:
 		"worker_enabled": true, "worker_market_threshold": 64,
 		"worker_tasks_hint": 8 if "--tasks8" in args else 0,
 		"merchant_profession_id": "merchant", "wealth_reference_per_capita": 100000,
+		"living_cost_base_plan_id": "plan",
 		"market_runtime_mode": "ACTIVE",
+		# Baseline benchmark exercises the legacy-equivalent OFF gate; opt-in trade
+		# runs use the production deterministic work-unit defaults.
+		"trade_runtime_mode": "ACTIVE" if trade_active else "OFF",
+		"trade_capacity_per_merchant_q16": 4194304,
+		"trade_speed_cost_per_day": 4,
+		"trade_min_margin_q16": 0,
+		"trade_target_count": 4,
+		"trade_signal_pairs_per_slice": 16384,
+		"trade_route_searches_per_slice": 2,
+		"trade_max_route_expansions": 8192,
+		"trade_route_cache_entries": 16384,
+		"trade_max_signals": 32768,
+		"trade_max_candidates": 8192,
+		"trade_max_orders": 4096,
 		"economy_trace_mode": "OFF" if "--trace-off" in args else "SELECTIVE",
 	}
+	if trade_active:
+		var country_setup := _setup_trade_country(ext, catalog, cells, 20260711)
+		if not bool(country_setup.get("ok", false)):
+			printerr(country_setup)
+			quit(8)
+			return
 	var configured: Dictionary = ext.configure_economy(catalog, profile, cells, 20260711)
 	if not bool(configured.get("ok", false)):
 		printerr(configured)
 		quit(3)
 		return
+	if trade_active:
+		var topology := _capture_trade_line_topology(ext, cells)
+		if not bool(topology.get("ok", false)):
+			printerr(topology)
+			quit(9)
+			return
 	var stock := PackedInt64Array()
 	stock.resize(cells * goods)
-	stock.fill(1000000000)
-	var boot: Dictionary = ext.bootstrap_economy(_population_packet(cells, cohorts_per_cell), {"stock": stock})
+	stock.fill(0 if trade_active else 1000000000)
+	var market_packet := {"stock": stock}
+	if trade_active:
+		var prices := PackedInt32Array()
+		prices.resize(cells * goods)
+		var defaults := catalog.good_default_price as PackedInt32Array
+		var minimums := catalog.good_min_price as PackedInt32Array
+		var maximums := catalog.good_max_price as PackedInt32Array
+		for cell in range(cells):
+			var source := (cell & 1) == 0
+			var base := cell * goods
+			for good in range(goods):
+				stock[base + good] = 1000000000 if source else 0
+				prices[base + good] = minimums[good] if source else maximums[good]
+		market_packet.price = prices
+	var boot: Dictionary = ext.bootstrap_economy(
+		_population_packet(cells, cohorts_per_cell), market_packet)
 	if not bool(boot.get("ok", false)):
 		printerr(boot)
 		quit(4)
@@ -63,11 +106,18 @@ func _init() -> void:
 		return
 	var cycle_days := int(boot.get("market_cycle_days", boot.get("epoch_days", 1)))
 	var slice_ms := PackedFloat64Array()
+	var trade_slice_ms := PackedFloat64Array()
+	var trade_core_ms := PackedFloat64Array()
 	var day := 0
 	for epoch in range(epochs):
 		_set_environment(ext, cells, 0.25 + float(epoch & 1) * 0.5)
 		for cycle_day in range(cycle_days):
+			var trade_before := float(ext.get_economy_report().get("trade_plan_ms", 0.0))
 			var result: Dictionary = ext.run_economy_slice({"day_index": day, "tick_index": day})
+			var trade_delta := float(result.get("trade_plan_ms", 0.0)) - trade_before
+			if trade_delta > 0.0:
+				trade_slice_ms.append(float(result.get("elapsed_ms", 0.0)))
+				trade_core_ms.append(trade_delta)
 			if bool(result.get("cell_range_used", false)):
 				slice_ms.append(float(result.get("elapsed_ms", 0.0)))
 				if float(result.get("elapsed_ms", 0.0)) > 10.0:
@@ -77,7 +127,12 @@ func _init() -> void:
 			var catchup := 0
 			while not bool(result.get("done", false)) and bool(result.get("commit_due", false)):
 				catchup += 1
+				trade_before = float(ext.get_economy_report().get("trade_plan_ms", 0.0))
 				result = ext.run_economy_slice({"day_index": day, "tick_index": day * 1024 + catchup})
+				trade_delta = float(result.get("trade_plan_ms", 0.0)) - trade_before
+				if trade_delta > 0.0:
+					trade_slice_ms.append(float(result.get("elapsed_ms", 0.0)))
+					trade_core_ms.append(trade_delta)
 				if bool(result.get("cell_range_used", false)):
 					slice_ms.append(float(result.get("elapsed_ms", 0.0)))
 					if float(result.get("elapsed_ms", 0.0)) > 10.0:
@@ -111,7 +166,76 @@ func _init() -> void:
 		float(report.get("economy_trace_memory_bytes", 0)) / 1048576.0,
 		int(report.get("economy_event_last_batch_count", 0)),
 	])
+	if trade_active:
+		trade_slice_ms.sort()
+		trade_core_ms.sort()
+		var trade_p95 := 0.0 if trade_slice_ms.is_empty() else trade_slice_ms[
+			clampi(int(ceil(float(trade_slice_ms.size()) * 0.95)) - 1, 0,
+				trade_slice_ms.size() - 1)]
+		var trade_max := 0.0 if trade_slice_ms.is_empty() else trade_slice_ms[-1]
+		var core_p95 := 0.0 if trade_core_ms.is_empty() else trade_core_ms[
+			clampi(int(ceil(float(trade_core_ms.size()) * 0.95)) - 1, 0,
+				trade_core_ms.size() - 1)]
+		var core_max := 0.0 if trade_core_ms.is_empty() else trade_core_ms[-1]
+		print("[trade_v1_bench] cells=%d goods=%d samples=%d slice_avg=%.3fms slice_p95=%.3fms slice_max=%.3fms core_avg=%.3fms core_p95=%.3fms core_max=%.3fms expansions=%d cache=%d/%d signals=%d/%d candidates=%d accepted=%d orders=%d memory=%.1fMB" % [
+			cells, goods, trade_slice_ms.size(), _mean(trade_slice_ms), trade_p95,
+			trade_max, _mean(trade_core_ms), core_p95, core_max,
+			int(report.get("trade_route_expansions", 0)),
+			int(report.get("trade_route_cache_hits", 0)),
+			int(report.get("trade_route_cache_misses", 0)),
+			int(report.get("trade_source_signals", 0)),
+			int(report.get("trade_destination_signals", 0)),
+			int(report.get("trade_candidates_generated", 0)),
+			int(report.get("trade_candidates_accepted", 0)),
+			int(report.get("trade_orders_in_flight", 0)),
+			float(report.get("memory_bytes", 0)) / 1048576.0,
+		])
 	quit(0)
+
+func _setup_trade_country(ext: Object, catalog: Dictionary, cells: int, seed: int) -> Dictionary:
+	var configured: Dictionary = ext.configure_country(catalog, {
+		"country_runtime_mode": "ACTIVE",
+		"starting_technology_ids": PackedStringArray(),
+	}, cells, seed)
+	if not bool(configured.get("ok", false)):
+		return configured
+	var territory := PackedInt32Array()
+	territory.resize(cells)
+	for cell in range(cells):
+		territory[cell] = cell
+	var water := PackedByteArray()
+	water.resize(cells)
+	water.fill(0)
+	return ext.bootstrap_country({
+		"country_ids": PackedStringArray(["country.benchmark"]),
+		"country_names": PackedStringArray(["Benchmark"]),
+		"country_cash": PackedInt64Array([0]),
+		"territory_offsets": PackedInt32Array([0, cells]),
+		"territory_cells": territory,
+		"technology_offsets": PackedInt32Array([0, 0]),
+		"technology_indices": PackedInt32Array(),
+		"treasury_offsets": PackedInt32Array([0, 0]),
+		"treasury_good_indices": PackedInt32Array(),
+		"treasury_quantities": PackedInt64Array(),
+	}, water)
+
+func _capture_trade_line_topology(ext: Object, cells: int) -> Dictionary:
+	var neighbors := PackedInt32Array()
+	neighbors.resize(cells * 6)
+	neighbors.fill(-1)
+	for cell in range(cells - 1):
+		neighbors[cell * 6] = cell + 1
+		neighbors[(cell + 1) * 6 + 3] = cell
+	var terrain := PackedByteArray()
+	terrain.resize(cells)
+	terrain.fill(2)
+	var passable := PackedByteArray()
+	var costs := PackedInt32Array()
+	passable.resize(256)
+	costs.resize(256)
+	passable[2] = 1
+	costs[2] = 1
+	return ext.capture_economy_trade_topology(neighbors, terrain, passable, costs, 1)
 
 func _new_ext(cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
@@ -204,6 +328,12 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 	var sig_plan := PackedInt32Array()
 	var birth := PackedInt64Array()
 	var death := PackedInt64Array()
+	var need_living_cost_weights := PackedInt32Array()
+	need_living_cost_weights.resize(need_ids.size())
+	need_living_cost_weights.fill(65536)
+	var profession_technology_offsets := PackedInt32Array()
+	profession_technology_offsets.resize(signatures + 1)
+	profession_technology_offsets.fill(0)
 	for i in range(signatures):
 		sig_prof.append(i)
 		sig_eth.append(0)
@@ -212,6 +342,11 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		death.append(0)
 	return {
 		"profession_ids": profession_ids, "ethnicity_ids": PackedStringArray(["default"]),
+		"technology_ids": PackedStringArray(),
+		"profession_technology_tag_offsets": profession_technology_offsets,
+		"profession_technology_tags": PackedStringArray(),
+		"building_technology_tag_offsets": PackedInt32Array([0]),
+		"building_technology_tags": PackedStringArray(),
 		"good_ids": good_ids, "need_ids": need_ids, "plan_ids": PackedStringArray(["plan"]),
 		"good_default_price": default_price, "good_initial_stock": initial_stock,
 		"good_min_price": min_price, "good_max_price": max_price,
@@ -226,6 +361,7 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		"environment_curve_ids": PackedStringArray(), "environment_curve_signal_ids": PackedInt32Array(),
 		"environment_curve_values_q16": PackedInt32Array(), "plan_need_offsets": PackedInt32Array([0, 16]),
 		"need_stable_ids": need_stable, "need_priorities": priorities,
+		"need_living_cost_weights_q16": need_living_cost_weights,
 		"need_base_qty_per_person": base_qty, "need_wealth_elasticity_q16": wealth_elasticity,
 		"need_wealth_min_q16": wealth_min, "need_wealth_max_q16": wealth_max,
 		"need_quantity_env_curve_ids": need_env, "need_variant_offsets": need_variant_offsets,

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"lithium_ore"
+display_name = "锂矿石"
+category_id = &"ores"
+technology_tags = PackedStringArray("tech.geological_prospecting")
+default_price = 15000
+min_price = 1500
+max_price = 150000

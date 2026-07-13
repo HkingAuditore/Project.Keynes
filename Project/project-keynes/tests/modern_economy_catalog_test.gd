@@ -27,10 +27,10 @@ func _audit(catalog: Dictionary) -> void:
 	var resources: PackedStringArray = catalog.building_resource_ids
 	_expect("at least 120 goods", goods.size() >= 120)
 	_expect("at least 90 buildings", buildings.size() >= 90)
-	_expect("exactly 22 reusable professions", professions.size() == 22)
+	_expect("39 cross-era professions", professions.size() == 39)
 	_expect("exactly 15 household needs", needs.size() == 15)
-	_expect("exactly 37 registered resources", ResourceRegistryScript.count() == 37)
-	_expect("all registered resources enter building catalog", resources.size() == 37)
+	_expect("41 registered terrestrial resources", ResourceRegistryScript.count() == 41)
+	_expect("all registered resources enter building catalog", resources.size() == 41)
 	for retired_crop in ["wheat", "rice", "corn", "potato", "rubber_tree",
 			"spice_plants", "flax", "cotton", "medicinal_herbs"]:
 		_expect("cultivated crop is not a natural resource: %s" % retired_crop,
@@ -49,6 +49,16 @@ func _audit(catalog: Dictionary) -> void:
 			func(p): return String(p.id) == "fresh_water")[0]) == 3 and
 		ResourceRegistryScript.habitat_code(ResourceRegistryScript.ordered().filter(
 			func(p): return String(p.id) == "freshwater_fish")[0]) == 3)
+	var flint_resource = ResourceRegistryScript.ordered().filter(
+		func(p): return String(p.id) == "flint")[0]
+	var lithium_resource = ResourceRegistryScript.ordered().filter(
+		func(p): return String(p.id) == "lithium")[0]
+	_expect("early flint deposit is visible without prospecting",
+		ResourceRegistryScript.discovery_visible(flint_resource, PackedStringArray()))
+	_expect("lithium deposit visibility is separate from physical existence",
+		not ResourceRegistryScript.discovery_visible(lithium_resource, PackedStringArray()) and
+		ResourceRegistryScript.discovery_visible(lithium_resource,
+			PackedStringArray(["tech.geological_prospecting"])))
 
 	var kinds: PackedInt32Array = catalog.building_kinds
 	var owners: PackedInt64Array = catalog.building_owner_slots
@@ -71,7 +81,7 @@ func _audit(catalog: Dictionary) -> void:
 			_expect("industrial has no natural resource: %s" % buildings[type_id], resource_offsets[type_id + 1] == resource_offsets[type_id])
 		for edge in range(resource_offsets[type_id], resource_offsets[type_id + 1]):
 			used_resources[production_resources[edge]] = true
-	_expect("at least one collector per resource", collectors >= 37 and used_resources.size() == 37)
+	_expect("at least one collector per resource", collectors >= 41 and used_resources.size() == 41)
 	var resource_modes: PackedInt32Array = catalog.building_production_resource_modes
 	var resource_access_modes: PackedInt32Array = catalog.building_production_resource_access_modes
 	var output_quantities: PackedInt64Array = catalog.building_output_quantities
@@ -129,6 +139,26 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("v7 compatibility hashes are emitted for pke v8 migration",
 		int(catalog.get("market_catalog_compat_hash_v7", 0)) > 0 and
 		int(catalog.get("building_catalog_compat_hash_v7", 0)) > 0)
+	_expect("v8 compatibility hash is emitted for pke v9 technology migration",
+		int(catalog.get("market_catalog_compat_hash_v8", 0)) > 0)
+	var technologies: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
+	for technology in ["tech.hunting", "tech.bronze_casting", "tech.writing",
+			"tech.guild_organization", "tech.oceanic_navigation", "tech.steam_power",
+			"tech.electrification", "tech.nuclear_fission", "tech.digital_computing",
+			"tech.machine_learning", "tech.deep_space_systems"]:
+		_expect("cross-era technology tag exists: %s" % technology,
+			technologies.find(technology) >= 0)
+	_expect("legacy metadata namespaces are not executable technologies",
+		_not_contains_prefix(technologies, "industry."))
+	_expect("every good has an executable technology requirement",
+		_all_ranges_have_tech(catalog.good_technology_tag_offsets,
+			catalog.good_technology_tags, goods.size()))
+	_expect("every building has an executable technology requirement",
+		_all_ranges_have_tech(catalog.building_technology_tag_offsets,
+			catalog.building_technology_tags, buildings.size()))
+	_expect("every profession has an executable technology requirement",
+		_all_ranges_have_tech(catalog.profession_technology_tag_offsets,
+			catalog.profession_technology_tags, professions.size()))
 
 	var consumed := {}
 	var input_goods: PackedInt32Array = catalog.building_input_good_ids
@@ -143,6 +173,24 @@ func _audit(catalog: Dictionary) -> void:
 func _range_all(values: PackedInt32Array, begin: int, end: int, expected: int) -> bool:
 	for i in range(begin, end):
 		if i < 0 or i >= values.size() or int(values[i]) != expected:
+			return false
+	return true
+
+func _all_ranges_have_tech(offsets: PackedInt32Array, tags: PackedStringArray,
+		item_count: int) -> bool:
+	if offsets.size() != item_count + 1:
+		return false
+	for item in range(item_count):
+		var found := false
+		for edge in range(offsets[item], offsets[item + 1]):
+			found = found or String(tags[edge]).begins_with("tech.")
+		if not found:
+			return false
+	return true
+
+func _not_contains_prefix(values: PackedStringArray, prefix: String) -> bool:
+	for value in values:
+		if String(value).begins_with(prefix):
 			return false
 	return true
 

@@ -56,6 +56,10 @@ const _PROFILE_PATHS: Array = [
 	"res://data/resources/manganese_ore.tres",
 	"res://data/resources/sulfur.tres",
 	"res://data/resources/platinum_ore.tres",
+	"res://data/resources/flint.tres",
+	"res://data/resources/lithium.tres",
+	"res://data/resources/cobalt_ore.tres",
+	"res://data/resources/natural_graphite.tres",
 ]
 
 static var _ordered: Array = []        # Array[ResourceProfile]，按 _PROFILE_PATHS 顺序
@@ -85,6 +89,19 @@ static func ordered() -> Array:
 static func count() -> int:
 	ensure_loaded()
 	return _ordered.size()
+
+## Deposits remain present in MapData regardless of this result. This helper is
+## for inspectors/map overlays only; extraction is independently gated by the
+## extractor building's `technology_tags` in NativeEconomyRuntime.
+static func discovery_visible(p: ResourceProfile,
+		unlocked_technology_ids: PackedStringArray) -> bool:
+	if p == null:
+		return false
+	for tag in p.discovery_technology_tags:
+		var stable_id := String(tag)
+		if stable_id.begins_with("tech.") and not unlocked_technology_ids.has(stable_id):
+			return false
+	return true
 
 static func habitat_code(p: ResourceProfile) -> int:
 	if p == null:

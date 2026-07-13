@@ -305,7 +305,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 启用仅供开发的确定性测试经济 fixture；默认关闭。fixture 先生成建筑 owner-lot，再从
 catalog owner/employee 岗位容量派生 cohort，最后生成市场库存。状态实现位于
 `DCWorldExt` 组合持有的 `NativeEconomyRuntime`：PopulationCohort pages、商人共同
-所有的 MarketStore、need/bundle 清算、账本、冻结周期 continuation、审计和 PKEC v2
+所有的 MarketStore、need/bundle 清算、国内贸易拓扑/订单/托管、账本、冻结周期 continuation、审计和 PKEC v11
 存档全部在 C++。默认模式是 ACTIVE、固定 5 日周期；设 `market_cycle_days=0` 时才按
 4k/12k/30k cohort slice 自动选择 N。在 N 日内错峰计算并于截止日统一发布；未按时
 完成才冻结日历 catchup。Inspector 的人口/市场页只查询选中 cell 的 committed snapshot；
@@ -317,9 +317,9 @@ cohort×good 矩阵。
 
 ## 当前非目标
 
-Market V2 清算本身不包含生产建筑、就业或工资；这些行为已由同一 C++ 权威中的后置
-BUILDING_GRAPH 承担。税制、贸易网络、政治系统和人口自然变化仍是非目标，不能另建平行
-GDScript 经济状态。
+Market V2 清算本身不包含生产建筑、就业、工资或运输；这些行为由同一 C++ 权威中的后置
+BUILDING_GRAPH 与国内 Trade V1 阶段承担。税制、跨国贸易/关税、外交、政治系统和人口自然
+变化仍是非目标，不能另建平行 GDScript 经济状态。
 ## Building / employment / production
 
 `BuildingProfile + GoodProfile producer factor → EconomyCatalog → DCWorldExt economy bridge →
@@ -334,3 +334,18 @@ PKEC v8 的 employee-role 自适应工资在 active-cell employment slice 内计
 成本形成硬下限，本地合同工资 EMA 提供岗位均薪锚；owner 基础工资不足时比例支付并停产，
 生产后的 owner-lot 超额利润按 25% 形成奖金。LaborMarketStore 为 native 稀疏 CSR，不进入
 DataCore 或 MapData。
+# Country runtime module map
+
+- Native authority: `gdext/src/country_runtime.{h,cpp}`.
+- DCWorldExt API/publication: `gdext/src/world_ext_country.cpp`, `world_ext.h`,
+  `world_ext_bind_methods.cpp`.
+- Resource/configuration and stable-ID boundary: `scripts/data/country_profile.gd`,
+  `scripts/country/country_facade.gd`, `data/country/default_country.tres`.
+- Scheduler: `scripts/simulation/systems/country_daily_system.gd`, registered by `map_generator.gd`
+  as `country_daily` priority 255 before `economy_daily` 260.
+- DataCore mirror: `cell.country_slot` / `MapData.country_slot_arr` only.
+- Economy consumer: narrow native bridge in `economy_runtime.{h,cpp}`; frozen country epoch,
+  country/cohort cash transfer, country/market goods transfer, and combined conservation.
+- Persistence: PKCN v1 first, then PKEC v11 with matching schema/generation/hash; v10 migrates with empty trade state.
+- Player-facing read path: selected cell → `CountryFacade.cell_summary()` →
+  `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.

@@ -5,3 +5,4 @@ script = ExtResource("1")
 id = &"landlord"
 display_name = "地主"
 default_consumption_plan_id = &"landlord_household"
+technology_tags = PackedStringArray("tech.legacy_modern_economy")

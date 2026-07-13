@@ -5,3 +5,4 @@ script = ExtResource("1")
 id = &"petroleum_worker"
 display_name = "油气工人"
 default_consumption_plan_id = &"skilled_household"
+technology_tags = PackedStringArray("tech.legacy_modern_economy")

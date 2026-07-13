@@ -2,8 +2,8 @@
 
 > 状态：Market V2 / Price V3 ACTIVE（`frozen_sample_adaptive_price_v2`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、PKEC v8 流式存档与 PKEJ 分层事件；不含税、
-> 贸易、政治和人口自然变化。
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v11 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
+> 跨国贸易/关税、政治和人口自然变化。
 
 ## 权威与禁止事项
 
@@ -17,17 +17,21 @@
 - 禁止把 goods/cohort 放回 MapData/component schema，禁止 GDScript 全世界遍历或逐 cohort setter。
 - 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；未来税收
   仍必须走原生守恒边界。
+- 六邻贸易拓扑、稀疏规划、路线缓存、在途订单和托管由 NativeEconomyRuntime 持有；MapData
+  只在经济边界提供邻接与 terrain LUT，UI 只允许分页查询单地块订单。
 
 ## V2 资源
 
-- `GoodProfile`：价格、居民/企业/供给/成本 EMA、需求弹性、目标库存、各压力权重、日涨跌幅。
+- `GoodProfile`：价格、居民/企业/供给/成本 EMA、需求弹性、目标库存、各压力权重、日涨跌幅、
+  `trade_enabled` 与单位运输负载。
 - `ProfessionProfile`：职业 stable ID 与默认 consumption plan；人口地块必须能解析 merchant。
 - `EthnicityProfile`：稀疏 need 数量修正。
 - `NeedProfile`：优先级、基础数量、生活成本 Q16 权重、连续财富函数、环境数量曲线、替代
   variants 与互补 components。
 - `ConsumptionPlanProfile`：按稳定 need ID 组合消费计划。
 - `EnvironmentDemandCurveProfile`：temp/moisture/snow/weather 的 17 点 Q16 曲线。
-- `EconomyProfile`：尺度、slice/worker、自动/强制市场周期、每片 cohort 预算、商人职业、财富参考值和 OFF/PROBE/ACTIVE。
+- `EconomyProfile`：尺度、slice/worker、自动/强制市场周期、每片 cohort 预算、商人职业、财富参考值，
+  以及独立的市场/贸易 OFF/PROBE/ACTIVE 与确定性贸易工作预算。
 
 ## 行为契约
 
@@ -37,6 +41,7 @@
 - 商人正常消费；每日需求/预算重置；同 tick 最多一次替代 fallback。
 - 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
 - 商品可由显式库存命令或 BUILDING_GRAPH 生产进入市场。
+- 国内贸易只沿同一冻结国家的可贸易地形运输；发运即托管源货物和目的商人现金，到达边界结算。
 - 生产默认 5 日结算周期；`market_cycle_days=0` 才启用按规模自动周期。
 - 世界设置中的测试经济 fixture 默认关闭；启用时在可通行陆地同步生成 cohort、市场库存和
   资源适配的专业化建筑。每个聚落保留配送中心以保证商人和基础就业；collector 仅在本地 reserve
@@ -51,7 +56,7 @@
 在 N 日内按 cohort 数错峰，提前完成后等待结算日统一发布；只有结算日仍未完成才开启
 WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入环境 native round。
 
-完整规范见：`native-economy-runtime.md`、`economy-fixed-point-ledger-formulas.md`、
+完整规范见：`native-economy-runtime.md`、`domestic-trade-runtime.md`、`economy-fixed-point-ledger-formulas.md`、
 `economy-graph-scheduling.md` 与 `economy-save-migration-sop.md`。
 # Building runtime
 
@@ -76,11 +81,11 @@ GDScript 只附加 catalog 展示名
 
 ## 现代内容目录
 
-- codegen 权威入口：`tools/codegen/gen_modern_economy_content.ps1`；输出 124 goods、128 buildings、
-  22 professions、15 needs，并保留原有 stable IDs。
-- `GoodProfile` 额外编译 category、非执行 `technology_tags`、`stock/cycle_flow` 与金银发行面值。
+- 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；跨时代手写扩展在其上形成
+  164 goods、203 buildings、39 professions、15 needs，并保留原有 stable IDs。
+- `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
 - `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；37 个资源全部有 collector。
-- 37 种资源受 `land/marine_water/freshwater` habitat 门控；海鱼存在海洋水格，淡水资源存在
+- 41 种资源受 `land/marine_water/freshwater` habitat 门控；海鱼存在海洋水格，淡水资源存在
   湖泊水格或河流格。岸上渔业/水厂通过 native `local_and_adjacent` 资源边访问并扣减真实水格。
   矿产初值叠加资源局部斑块、
   同族地质省与矿带。栽培作物只存在于 goods，不进入 DataCore resource slots。

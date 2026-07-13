@@ -5,3 +5,4 @@ script = ExtResource("1")
 id = &"subsistence_farmer"
 display_name = "自耕农"
 default_consumption_plan_id = &"subsistence_household"
+technology_tags = PackedStringArray("tech.pottery")

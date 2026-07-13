@@ -166,3 +166,19 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 - GDScript caller 只做 path selection、knobs 构造、返回值解释和 fallback。
 - 每个新增 pass 都必须有当前 GDScript ground-truth 或 A/B 验证路径。
 - 修改同步方式时同时检查 atlas dirty mask 和 debug log，否则容易出现“计算已快但渲染/上传仍慢”的误判。
+# Native country authority
+
+`NativeCountryRuntime` 与 `NativeEconomyRuntime` 同级，不是 DataCore cell component 的扩展。
+它单一持有国家身份与 generation handle、领土 CSR、全国科技和现金/商品国库。GDScript 的
+`CountryFacade` 只负责资源/命令打包、stable-ID 解析和冷路径查询；`CountryDailySystem` 是 priority
+255 的薄调度壳。只有 `cell.country_slot` 发布到 DataCore/MapData，名称、科技、国库和 CSR 不进入
+`HexCell` 或逐格 Object。
+
+经济运行时通过窄 C++ 指针桥在 sample day 冻结归属、国家科技、generation/hash，并在整个结算
+周期使用该快照。国内贸易拓扑也以该冻结归属生成国家连通分量；新订单只走同一非中立国家，
+已发运订单不因后续边界变化取消。PKCN v1 是国家状态存档，PKEC v11 引用匹配的 PKCN identity
+并持久化在途订单、托管与贸易 EMA；恢复顺序固定为
+PKCN 后 PKEC。详见 [Native Country Runtime](./native-country-runtime.md)、
+[Country / Economy Bridge](./country-economy-bridge.md) 和
+[Country Scheduling / Save](./country-scheduling-save.md)，贸易机制见
+[Domestic Trade Runtime](./domestic-trade-runtime.md)。

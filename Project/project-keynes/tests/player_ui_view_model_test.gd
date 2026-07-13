@@ -98,9 +98,9 @@ func _initialize() -> void:
 		failures.append("summary still repeats terrain already shown in the title")
 	if not _find_by_id(model.get("summary_cards", []), "summary_risk").is_empty():
 		failures.append("summary still exposes the presentation-only risk heuristic")
-	if (model.get("summary_cards", []) as Array).size() != 2:
-		failures.append("summary should contain only climate and population")
-	for summary_id in ["summary_climate", "summary_population"]:
+	if (model.get("summary_cards", []) as Array).size() != 3:
+		failures.append("summary should contain climate, population, and country")
+	for summary_id in ["summary_climate", "summary_population", "summary_country"]:
 		if _find_by_id(model.get("summary_cards", []), summary_id).is_empty():
 			failures.append("summary missing %s" % summary_id)
 	for hidden_summary_id in ["summary_market", "summary_resource"]:

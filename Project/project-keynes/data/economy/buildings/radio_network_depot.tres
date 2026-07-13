@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"radio_network_depot"
+display_name = "无线电网络站"
+building_kind = "industrial"
+technology_tags = PackedStringArray("tech.radio")
+construction_days = 0
+owner_profession_id = &"industrialist"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("technician")
+employee_slots_per_building = PackedInt64Array(10)
+input_good_ids = PackedStringArray("radio_equipment")
+input_quantities_per_day = PackedInt64Array(1000)
+output_good_ids = PackedStringArray("telecom_equipment")
+output_quantities_per_day = PackedInt64Array(700)
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+behavior_id = "none"
+wage_policy_id = "adaptive"
+wage_per_employee_per_day = 5000

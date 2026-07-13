@@ -76,6 +76,8 @@ static func compile_native_columns() -> Dictionary:
 	var max_price_rise := PackedInt32Array()
 	var max_price_fall := PackedInt32Array()
 	var merchant_buy_factor := PackedInt32Array()
+	var trade_enabled := PackedInt32Array()
+	var transport_load_per_unit_q16 := PackedInt32Array()
 	var category_ids := PackedStringArray()
 	var storage_modes := PackedInt32Array()
 	var monetary_issue_values := PackedInt64Array()
@@ -121,6 +123,11 @@ static func compile_native_columns() -> Dictionary:
 		max_price_rise.append(int(p.get("max_price_rise_q16")))
 		max_price_fall.append(int(p.get("max_price_fall_q16")))
 		merchant_buy_factor.append(int(p.get("merchant_buy_price_factor_q16")))
+		var load := int(p.get("transport_load_per_unit_q16"))
+		if load <= 0:
+			return {"ok": false, "reason": "invalid transport load: %s" % stable_id}
+		trade_enabled.append(1 if storage_mode == "stock" and bool(p.get("trade_enabled")) else 0)
+		transport_load_per_unit_q16.append(load)
 	return {
 		"ok": true,
 		"good_ids": ids,
@@ -148,4 +155,6 @@ static func compile_native_columns() -> Dictionary:
 		"good_max_price_rise_q16": max_price_rise,
 		"good_max_price_fall_q16": max_price_fall,
 		"good_merchant_buy_factor_q16": merchant_buy_factor,
+		"good_trade_enabled": trade_enabled,
+		"good_transport_load_per_unit_q16": transport_load_per_unit_q16,
 	}

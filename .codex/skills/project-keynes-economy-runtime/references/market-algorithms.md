@@ -111,6 +111,26 @@ not use retail cost anchors. Clamp to per-day max rise/fall, multiply the frozen
 apply one linear price update, then clamp absolute min/max. This avoids N feedback loops and dense
 building-by-good storage while making production costs and business demand economically visible.
 
+## Domestic trade planning and settlement
+
+Keep one cell equal to one local market. Build a separate trade topology from frozen six-neighbor
+indices, positive terrain enter costs, and frozen country ownership. Every vertex on a v1 route must
+belong to the same non-neutral country. Do not materialize all-pairs distances or a dense
+market-by-good trade matrix.
+
+Scan market-major pairs with a round-robin deterministic work budget and retain only sparse surplus
+and deficit signals. For a selected surplus source, run bounded integer multi-target Dijkstra and
+stop after K profitable deficits or the expansion cap. Route distance is good-independent and may be
+cached under fixed memory limits. Rank candidates stably by profit per capacity work, total profit,
+route cost, source, destination, and good.
+
+Capacity work is `quantity * transport_load_per_unit_q16 * route_cost`. Clip on source stock,
+destination merchant funds, per-country merchant-population capacity, and order limits. Dispatch
+removes source stock and destination merchant cash immediately into cargo/cash escrow. Settle due
+orders before household clearing; deliver cargo once and pay the snapshotted source merchants, with
+local merchant rebinding and auditable cash retry when handles are invalid. Trade code never writes
+prices directly.
+
 ## 7. Conservation and failure
 
 Audit every committed period:
@@ -120,6 +140,9 @@ closing_population = opening_population + explicit_population_delta
 closing_money      = opening_money + explicit_mint - explicit_burn
 closing_stock      = opening_stock + explicit_stock_delta - consumed_goods
 ```
+
+For PKEC v11, closing holdings include in-transit cargo in goods and cash escrow in money. An order
+moving value between stores must not appear as a mint/burn or goods source/sink.
 
 Require all three errors to equal zero. Saturation is reportable but not silently ignored. Preflight
 catalog, market shape, merchant index, environment day, command handles, and capacities before

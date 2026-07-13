@@ -149,6 +149,7 @@ const DCClimateMath = preload("res://scripts/simulation/climate/climate_math.gd"
 # "Parser Error: Could not parse global class MapGenerator" 的启动报错。
 const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
 const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
+const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 
 # Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
@@ -170,6 +171,7 @@ const EnumAtlasUploadSystemScript = preload("res://scripts/simulation/systems/en
 const DynamicVisualAtlasUploadSystemScript = preload("res://scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd")
 const NativeEnvironmentRuntimeSystemScript = preload("res://scripts/simulation/systems/native_environment_runtime_system.gd")
 const EconomyDailySystemScript = preload("res://scripts/simulation/systems/economy_daily_system.gd")
+const CountryDailySystemScript = preload("res://scripts/simulation/systems/country_daily_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -1010,6 +1012,8 @@ var _sea_ice_daily_job = null
 var _natural_resource_daily_job = null
 var _economy_facade = null
 var _economy_daily_job = null
+var _country_facade = null
+var _country_daily_job = null
 var _test_economy_bootstrap_enabled: bool = false
 var _natural_resource_pass_knobs: Dictionary = {}
 var _last_natural_resource_report: Dictionary = {}
@@ -1423,13 +1427,31 @@ func _runtime_build_topology(context: String) -> bool:
 func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> void:
 	_economy_facade = null
 	_economy_daily_job = null
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_economy"):
+	_country_facade = null
+	_country_daily_job = null
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_country") \
+			or not _data_core_world_ext.has_method("configure_economy"):
 		# No large GDScript fallback: an unavailable native authority leaves the
 		# economy explicitly disabled while environmental simulation continues.
 		print("[economy] native DCWorldExt economy API unavailable; economy disabled")
 		return
-	_economy_facade = EconomyFacadeScript.new()
 	var seed_value := int(cfg.seed) if cfg != null else 0
+	_country_facade = CountryFacadeScript.new()
+	var country_configured: Dictionary = _country_facade.configure(
+		_data_core_world_ext, map.cell_count(), seed_value)
+	if not bool(country_configured.get("ok", false)):
+		push_error("[country] configure failed: %s" % String(country_configured.get("reason", "unknown")))
+		_country_facade = null
+		return
+	var country_bootstrapped: Dictionary = _country_facade.bootstrap(map.is_water_arr)
+	if not bool(country_bootstrapped.get("ok", false)):
+		push_error("[country] bootstrap failed: %s" % String(country_bootstrapped.get("reason", "unknown")))
+		_country_facade = null
+		return
+	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
+	_sus.configure_job_from_profile(_country_daily_job, scheduler_profile, false, &"country_daily", 1)
+	_runtime_register_system(_country_daily_job)
+	_economy_facade = EconomyFacadeScript.new()
 	var configured: Dictionary = _economy_facade.configure(
 		_data_core_world_ext, map.cell_count(), seed_value)
 	if not bool(configured.get("ok", false)):
@@ -1473,6 +1495,11 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		int(bootstrapped.get("cohort_count", 0)),
 		int(bootstrapped.get("epoch_days", 1)),
 	])
+	print("[country] %s native authority countries=%d cells=%d generation=%d" % [
+		String(country_bootstrapped.get("runtime_mode", "OFF")),
+		int(country_bootstrapped.get("country_count", 0)), map.cell_count(),
+		int(country_bootstrapped.get("generation", 0)),
+	])
 	if _test_economy_bootstrap_enabled:
 		print(("[economy/test-bootstrap] populated_cells=%d population=%d cohorts=%d "
 			+ "professions=%d/%d building_groups=%d building_types=%d/%d goods=%d") % [
@@ -1492,6 +1519,14 @@ func get_economy_facade():
 	return _economy_facade
 
 
+func get_country_facade():
+	return _country_facade
+
+
+func get_country_report() -> Dictionary:
+	return _country_facade.report() if _country_facade != null else {"configured": false}
+
+
 func get_economy_report() -> Dictionary:
 	return _economy_facade.report() if _economy_facade != null else {"configured": false}
 
@@ -1501,16 +1536,26 @@ func set_test_economy_bootstrap_enabled(enabled: bool) -> void:
 
 
 func _continue_economy_inflight(day_index: int) -> void:
-	if _economy_daily_job == null or _sus == null:
-		return
-	var report: Dictionary = _economy_facade.report() if _economy_facade != null else {}
-	if not bool(report.get("epoch_active", false)) and not bool(report.get("fatal", false)):
-		if _world_clock_ref != null:
-			_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
+	if _sus == null:
 		return
 	var speed: float = float(_world_clock_ref.speed_multiplier) if _world_clock_ref != null else 1.0
 	var season: float = float(_world_clock_ref.season_phase()) if _world_clock_ref != null else 0.0
-	var ctx: SusTickContext = SusTickContext.make(day_index, day_index, speed, season, &"economy_continuation")
+	var ctx: SusTickContext = SusTickContext.make(day_index, day_index, speed, season, &"country_economy_continuation")
+	if _country_daily_job != null and _country_facade != null and \
+			bool(_country_facade.world_ext().country_should_run(day_index)):
+		_sus.continue_system(&"country_daily", ctx)
+		if bool(_country_facade.world_ext().country_should_run(day_index)):
+			return
+	if _world_clock_ref != null:
+		_world_clock_ref.request_simulation_backpressure(&"country_day_barrier", false)
+	if _economy_daily_job == null or _economy_facade == null:
+		return
+	var report: Dictionary = _economy_facade.report() if _economy_facade != null else {}
+	if not bool(report.get("epoch_active", false)) and not bool(report.get("fatal", false)):
+		if not bool(_economy_facade.world_ext().economy_should_run(day_index)):
+			if _world_clock_ref != null:
+				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
+			return
 	_sus.continue_system(&"economy_daily", ctx)
 
 

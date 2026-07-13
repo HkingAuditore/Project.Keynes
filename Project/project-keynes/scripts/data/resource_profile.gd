@@ -65,6 +65,9 @@ extends Resource
 @export var id: StringName = &""              # 稳定标识，如 &"timber"
 @export var display_name: String = ""         # UI 显示名（中文）
 @export var icon: Texture2D = null            # UI 图标（可空）
+## Deposits always exist physically. These tags only control whether a cell's
+## deposit is visible; extractor buildings carry separate availability tags.
+@export var discovery_technology_tags: PackedStringArray = PackedStringArray()
 
 # ─── Storage binding ────────────────────────────────────────────────────
 # 必须等于 component_schema.gd 中本资源储量字段的 `name`（dot 命名），

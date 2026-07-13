@@ -1,0 +1,207 @@
+#include "world_ext.h"
+#include "country_runtime.h"
+#include "economy_runtime.h"
+
+#include <chrono>
+
+namespace pk {
+
+using namespace godot;
+
+namespace {
+NativeCountryRuntime *country_runtime_from(void *opaque) {
+    return static_cast<NativeCountryRuntime *>(opaque);
+}
+
+const NativeCountryRuntime *country_runtime_from(const void *opaque) {
+    return static_cast<const NativeCountryRuntime *>(opaque);
+}
+
+Dictionary country_unavailable() {
+    Dictionary out;
+    out["ok"] = false;
+    out["reason"] = "country_runtime_unavailable";
+    return out;
+}
+} // namespace
+
+Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
+                                         const Dictionary &profile,
+                                         int cell_count, int64_t seed) {
+    if (_country_runtime == nullptr) _country_runtime = new NativeCountryRuntime();
+    Dictionary out = country_runtime_from(_country_runtime)->configure(catalog, profile, cell_count, seed);
+    if (_economy_runtime != nullptr)
+        static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_country_runtime(
+            country_runtime_from(_country_runtime));
+    return out;
+}
+
+Dictionary DCWorldExt::bootstrap_country(const Dictionary &packet,
+                                         const PackedByteArray &is_water) {
+    if (_country_runtime == nullptr) return country_unavailable();
+    Dictionary out = country_runtime_from(_country_runtime)->bootstrap(packet, is_water);
+    if (static_cast<bool>(out.get("ok", false)) &&
+        String(out.get("runtime_mode", "ACTIVE")) == "ACTIVE") {
+        NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+        const auto publish_start = std::chrono::steady_clock::now();
+        const int slot = component_id(StringName("cell_country_slot"));
+        if (slot >= 0) {
+            write_i32_range(slot, 0, runtime->cell_country_snapshot());
+            _flush_slot_to_map(slot);
+            const double publish_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - publish_start).count();
+            runtime->mark_slot_publication(true, publish_ms);
+            out["published_to_slot"] = true;
+            out["slot_publish_ms"] = publish_ms;
+        } else {
+            runtime->mark_slot_publication(false, 0.0, "country_slot_unavailable");
+            out["published_to_slot"] = false;
+            out["publish_reason"] = "country_slot_unavailable";
+        }
+    }
+    return out;
+}
+
+Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->submit_commands(packed_batch);
+}
+
+Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
+    if (_country_runtime == nullptr) return country_unavailable();
+    NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+    Dictionary out = runtime->run_slice(ctx);
+    if (static_cast<bool>(out.get("ok", false)) &&
+        static_cast<bool>(out.get("published_to_slot", false)) &&
+        static_cast<int64_t>(out.get("changed_cells", 0)) > 0) {
+        const int slot = component_id(StringName("cell_country_slot"));
+        const auto publish_start = std::chrono::steady_clock::now();
+        if (slot >= 0) {
+            const PackedInt32Array indices = out.get("_changed_cell_indices", PackedInt32Array());
+            const PackedInt32Array owners = out.get("_changed_cell_owners", PackedInt32Array());
+            if (!indices.is_empty() && indices.size() == owners.size())
+                write_i32_indexed(slot, indices, owners);
+            else
+                write_i32_range(slot, 0, runtime->cell_country_snapshot());
+            _flush_slot_to_map(slot);
+            const double publish_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - publish_start).count();
+            runtime->mark_slot_publication(true, publish_ms);
+            out["published_to_slot"] = true;
+            out["slot_publish_ms"] = publish_ms;
+            out["elapsed_ms"] = static_cast<double>(out.get("elapsed_ms", 0.0)) + publish_ms;
+        } else {
+            const double publish_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - publish_start).count();
+            runtime->mark_slot_publication(false, publish_ms, "country_slot_unavailable");
+            out["published_to_slot"] = false;
+            out["publish_reason"] = "country_slot_unavailable";
+        }
+    }
+    out.erase("_changed_cell_indices");
+    out.erase("_changed_cell_owners");
+    return out;
+}
+
+bool DCWorldExt::country_should_run(int64_t day_index) const {
+    return _country_runtime != nullptr && country_runtime_from(_country_runtime)->should_run(day_index);
+}
+
+Dictionary DCWorldExt::get_country_report() const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->report();
+}
+
+int64_t DCWorldExt::get_country_state_hash() const {
+    return _country_runtime == nullptr ? 0 : country_runtime_from(_country_runtime)->state_hash();
+}
+
+Dictionary DCWorldExt::get_country_cell_summary(int cell_idx) const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->cell_summary(cell_idx);
+}
+
+Dictionary DCWorldExt::get_country_snapshot(int64_t handle) const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->country_snapshot(handle);
+}
+
+Dictionary DCWorldExt::get_country_treasury_snapshot(int64_t handle) const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->treasury_snapshot(handle);
+}
+
+Dictionary DCWorldExt::poll_country_events(int64_t after_event_id, int limit) const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->poll_events(after_event_id, limit);
+}
+
+Dictionary DCWorldExt::reset_country(const String &reason) {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->reset(reason);
+}
+
+Dictionary DCWorldExt::begin_country_save(int chunk_bytes) {
+    if (_country_runtime == nullptr) return country_unavailable();
+    if (_economy_runtime != nullptr &&
+        !static_cast<NativeEconomyRuntime *>(_economy_runtime)->country_save_allowed()) {
+        Dictionary out;
+        out["ok"] = false;
+        out["reason"] = "country_save_requires_committed_economy_boundary";
+        return out;
+    }
+    return country_runtime_from(_country_runtime)->begin_save(chunk_bytes);
+}
+
+PackedByteArray DCWorldExt::read_country_save_chunk(int max_bytes) {
+    return _country_runtime == nullptr ? PackedByteArray()
+        : country_runtime_from(_country_runtime)->read_save_chunk(max_bytes);
+}
+
+Dictionary DCWorldExt::end_country_save() {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->end_save();
+}
+
+Dictionary DCWorldExt::begin_country_restore() {
+    if (_country_runtime == nullptr) return country_unavailable();
+    if (_economy_runtime != nullptr &&
+        !static_cast<NativeEconomyRuntime *>(_economy_runtime)->country_restore_allowed()) {
+        Dictionary out;
+        out["ok"] = false;
+        out["reason"] = "country_restore_must_precede_economy_bootstrap";
+        return out;
+    }
+    return country_runtime_from(_country_runtime)->begin_restore();
+}
+
+Dictionary DCWorldExt::feed_country_restore_chunk(const PackedByteArray &chunk) {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->feed_restore_chunk(chunk);
+}
+
+Dictionary DCWorldExt::end_country_restore() {
+    if (_country_runtime == nullptr) return country_unavailable();
+    Dictionary out = country_runtime_from(_country_runtime)->end_restore();
+    if (static_cast<bool>(out.get("ok", false))) {
+        NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+        const auto publish_start = std::chrono::steady_clock::now();
+        const int slot = component_id(StringName("cell_country_slot"));
+        if (slot >= 0) {
+            write_i32_range(slot, 0, runtime->cell_country_snapshot());
+            _flush_slot_to_map(slot);
+            const double publish_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - publish_start).count();
+            runtime->mark_slot_publication(true, publish_ms);
+            out["published_to_slot"] = true;
+            out["slot_publish_ms"] = publish_ms;
+        } else {
+            runtime->mark_slot_publication(false, 0.0, "country_slot_unavailable");
+            out["published_to_slot"] = false;
+            out["publish_reason"] = "country_slot_unavailable";
+        }
+    }
+    return out;
+}
+
+} // namespace pk

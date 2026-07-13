@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"fiber_optic_cable"
+display_name = "光纤电缆"
+category_id = &"communication"
+technology_tags = PackedStringArray("tech.fiber_optics")
+default_price = 48000
+min_price = 4800
+max_price = 480000

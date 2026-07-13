@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"oceanic_vessels"
+display_name = "远洋船舶"
+category_id = &"transport_equipment"
+technology_tags = PackedStringArray("tech.oceanic_navigation")
+default_price = 120000
+min_price = 12000
+max_price = 1200000

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"reactor_components"
+display_name = "反应堆部件"
+category_id = &"nuclear"
+technology_tags = PackedStringArray("tech.nuclear_fission")
+default_price = 130000
+min_price = 13000
+max_price = 1300000

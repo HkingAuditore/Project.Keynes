@@ -49,6 +49,12 @@ For DataCore or bridge work, inspect:
 
 For computation pass work, inspect the GDScript wrapper, the corresponding C++ `run_*_pass`, the scheduler job that invokes it, and the log formatting site in `main.gd` if performance output is involved.
 
+For country/economy authority work, inspect `gdext/src/country_runtime.{h,cpp}`,
+`world_ext_country.cpp`, `country_facade.gd`, `country_daily_system.gd`, and the frozen country bridge
+in `economy_runtime.cpp`. Country identity, territory, technology, cash, and goods treasury are native
+country authority; only `cell.country_slot` is mirrored to DataCore. Never restore economy-owned
+per-cell technology or a global treasury.
+
 Use `rg` first. Useful searches:
 
 ```powershell
@@ -64,6 +70,8 @@ Keep the runtime layering explicit:
 - GDScript is the orchestration layer: feature gates, method probes, knobs construction, stage state machines, fallback, UI/debug, and Godot object operations.
 - `DCWorld` is the GDScript DataCore world: component slots, `bind_map_data()`, `write_*`, dirty mask, and GDScript-side views.
 - `DCWorldExt` is the C++ compute world: slot/SoA buffers, C++ pass kernels, native snapshots, slot refresh/flush, and GDExtension bindings.
+- `NativeCountryRuntime` is a native peer authority: country SoA, territory CSR, nationwide
+  technology, treasury, PKCN, and the narrow frozen bridge consumed by `NativeEconomyRuntime`.
 - `SusSchedulerExt` is the C++ scheduler mirror: frame budget, depends, skip accounting, job stats, and budget-window logs.
 - Rendering/GPU uploads remain Godot-side unless there is an explicit native object API; do not confuse fast CPU patch generation with texture upload cost.
 

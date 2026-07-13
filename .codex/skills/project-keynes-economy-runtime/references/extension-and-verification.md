@@ -13,7 +13,8 @@
 ### Add a good
 
 Add a `GoodProfile` resource under `data/goods/`. Configure stable ID, display data, default/min/max
-price, demand EMA alpha, target inventory days, inventory/shortage weights, and daily price rise/fall.
+price, demand EMA alpha, target inventory days, inventory/shortage weights, daily price rise/fall,
+`trade_enabled`, and positive `transport_load_per_unit_q16`. Force cycle-flow goods non-tradable.
 Reference it from need variant components. Do not edit MapData, component schema, or bind table.
 
 ### Add a profession
@@ -66,6 +67,8 @@ Run `tests/goods_storage_schema_test.gd`. Preserve coverage for:
 - N-day committed isolation and deadline catchup
 - N-day versus N=1 error evidence
 - worker/scalar exact state hash
+- domestic topology/country boundaries, ETA alignment, profit/stock/cash/capacity clipping,
+  multi-good order CSR, seller rebinding, exact escrow conservation, and mid-transit save/restore
 
 Also run schema migration, world serialization, and DCSystem regression tests after bridge/scheduler
 changes.
@@ -96,6 +99,7 @@ worker tasks, memory, state hash, and stage breakdown. Do not compare release fi
 Update as applicable:
 
 - `native-economy-runtime.md`: authority, data, benchmark, status.
+- `domestic-trade-runtime.md`: topology, planner, orders, escrow, query, report, and non-goals.
 - `economy-fixed-point-ledger-formulas.md`: numeric/clearing/price behavior.
 - `economy-graph-scheduling.md`: stages, cadence, barriers, approximation.
 - `economy-save-migration-sop.md`: byte schema and migration.

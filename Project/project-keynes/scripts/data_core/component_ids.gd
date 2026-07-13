@@ -72,6 +72,7 @@ const CELL_BASE_LANDFORM: StringName = &"cell.base_landform"
 const CELL_BASE_VEGETATION: StringName = &"cell.base_vegetation"
 const CELL_COVER: StringName = &"cell.cover"
 const CELL_IS_WATER: StringName = &"cell.is_water"
+const CELL_COUNTRY_SLOT: StringName = &"cell.country_slot"
 const CELL_RESOURCE_HABITAT_MASK: StringName = &"cell.resource_habitat_mask"
 const CELL_CLIMATE_DIRTY: StringName = &"cell.climate_dirty_mask"
 const CELL_WEATHER_DIRTY: StringName = &"cell.weather_dirty_mask"
@@ -194,6 +195,10 @@ const CELL_RES_NICKEL_ORE_RESERVE: StringName = &"cell.res_nickel_ore_reserve"
 const CELL_RES_MANGANESE_ORE_RESERVE: StringName = &"cell.res_manganese_ore_reserve"
 const CELL_RES_SULFUR_RESERVE: StringName = &"cell.res_sulfur_reserve"
 const CELL_RES_PLATINUM_ORE_RESERVE: StringName = &"cell.res_platinum_ore_reserve"
+const CELL_RES_FLINT_RESERVE: StringName = &"cell.res_flint_reserve"
+const CELL_RES_LITHIUM_RESERVE: StringName = &"cell.res_lithium_reserve"
+const CELL_RES_COBALT_ORE_RESERVE: StringName = &"cell.res_cobalt_ore_reserve"
+const CELL_RES_NATURAL_GRAPHITE_RESERVE: StringName = &"cell.res_natural_graphite_reserve"
 const CELL_RES_TIMBER_EXTRA_CHANGE: StringName = &"cell.res_timber_extra_change"             # f32 外部一次性增减
 const CELL_RES_STONE_EXTRA_CHANGE: StringName = &"cell.res_stone_extra_change"               # f32 外部一次性增减
 const CELL_RES_FERTILE_SOIL_EXTRA_CHANGE: StringName = &"cell.res_fertile_soil_extra_change" # f32 外部一次性增减
@@ -231,6 +236,10 @@ const CELL_RES_NICKEL_ORE_EXTRA_CHANGE: StringName = &"cell.res_nickel_ore_extra
 const CELL_RES_MANGANESE_ORE_EXTRA_CHANGE: StringName = &"cell.res_manganese_ore_extra_change"
 const CELL_RES_SULFUR_EXTRA_CHANGE: StringName = &"cell.res_sulfur_extra_change"
 const CELL_RES_PLATINUM_ORE_EXTRA_CHANGE: StringName = &"cell.res_platinum_ore_extra_change"
+const CELL_RES_FLINT_EXTRA_CHANGE: StringName = &"cell.res_flint_extra_change"
+const CELL_RES_LITHIUM_EXTRA_CHANGE: StringName = &"cell.res_lithium_extra_change"
+const CELL_RES_COBALT_ORE_EXTRA_CHANGE: StringName = &"cell.res_cobalt_ore_extra_change"
+const CELL_RES_NATURAL_GRAPHITE_EXTRA_CHANGE: StringName = &"cell.res_natural_graphite_extra_change"
 
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────
 # 命名纪律：`cell.demo.*` 是参考实现（performance-charter §12.5/§12.6）专用

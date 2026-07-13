@@ -14,12 +14,15 @@
 
 Stages are stable diagnostic ABI:
 
-1. `epoch_begin`: preflight, freeze the sample-day view, and compute building revenue/cost diagnostics.
-2. `ledger_apply`: consume commands due at the sample day.
-3. `household_market`: process one cohort-budgeted market range per simulation day.
-4. `structural_commit`: stable-sort and apply ECB work.
-5. `wait_commit`: keep completed internal state hidden until `sample_day + N - 1`.
-6. `aggregate_publish`: publish summaries, market rows, audits, and report.
+1. `trade_planning`: after the previous publish, consume deterministic scan/route work units; soft task only.
+2. `epoch_begin`: preflight, freeze the sample-day view, and compute building revenue/cost diagnostics.
+3. `trade_settle`: deliver due cargo and retry unclaimed seller escrow.
+4. `ledger_apply`: consume commands due at the sample day.
+5. `trade_dispatch`: in ACTIVE, validate and escrow the completed candidate batch; PROBE only reports.
+6. `household_market`: process one cohort-budgeted market range per simulation day.
+7. `structural_commit`: stable-sort and apply ECB work.
+8. `wait_commit`: keep completed internal state hidden until `sample_day + N - 1`.
+9. `aggregate_publish`: publish summaries, market rows, audits, trade EMA, and report.
 
 Do not publish half-computed market rows. Do not run market work inside the environmental
 `SCHEDULE_GRAPH`.
@@ -49,7 +52,13 @@ market_cycle_days = 5
 market_max_cycle_days = 365
 market_target_cohorts_per_slice = 0
 worker_market_threshold = 64
+trade_runtime_mode = PROBE
+trade_signal_pairs_per_slice = 16384
+trade_route_searches_per_slice = 8
 ```
+
+Trade planning limits are deterministic work units. Never use measured wall time to decide how far
+the simulation advances. An unfinished trade planning slice never raises a WorldClock barrier.
 
 `market_cycle_days=0` enables automatic cycle selection. With target 0, effective cohort budgets are:
 
@@ -74,6 +83,8 @@ Preserve general stage/progress/cursor/work fields and at least:
 - cycle length, target cohorts, max cycle, approximation version/model
 - period transaction flag, maximum command latency
 - environment day/hash, merchant count/repairs, price-cap hits, continuation slices
+- trade topology generation, scan progress, route expansions/cache hits, candidates/rejections,
+  capacity utilization, in-flight cargo, cash escrow, settlement lag, and trade-stage milliseconds
 
 Worker stage milliseconds are task CPU totals. Slice `elapsed_ms` is wall time.
 
@@ -117,6 +128,10 @@ behavioral approximation error.
 - Persistent zero utilization: inspect expected revenue, operating cost, target margin, supply
   elasticity, and frozen producer settlement price before changing employment rules.
 - `save_requires_committed_boundary`: expected during any active or wait-commit stage.
+- Incomplete `trade_planning` with no barrier: normal soft work; inspect deterministic work caps before
+  increasing cadence.
+- Excess route expansions or low cache hits: inspect sparse signal quality, K, topology generation
+  churn, and route-cache cap; do not add an all-pairs distance table.
 ## Building stages
 
 PKEC v3 adds `building_employment` before wait-commit and `building_production`/

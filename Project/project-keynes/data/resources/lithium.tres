@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"lithium"
+display_name = "锂矿"
+discovery_technology_tags = PackedStringArray("tech.geological_prospecting")
+reserve_component = &"cell.res_lithium_reserve"
+habitat_mode = "land"
+init_base = -360000.0
+init_elevation = 40000.0
+init_noise = 130000.0
+init_noise_scale = 0.055
+geology_family_id = &"evaporite"
+init_province = 230000.0
+init_belt = 150000.0

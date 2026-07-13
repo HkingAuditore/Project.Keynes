@@ -97,6 +97,7 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.weather_prev_type",  cpp_name = "cell_weather_prev_type",     dtype = U8,  track_prev = false, map_field = "weather_prev_type_arr",     prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.weather_target_type", cpp_name = "cell_weather_target_type",  dtype = U8,  track_prev = false, map_field = "weather_target_type_arr",   prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.is_water",           cpp_name = "cell_is_water",              dtype = U8,  track_prev = false, map_field = "is_water_arr",              prev_field = "",                         owner = "map_generation" },
+	{ name = &"cell.country_slot",       cpp_name = "cell_country_slot",          dtype = I32, track_prev = false, map_field = "country_slot_arr",          prev_field = "",                         owner = "country_runtime" },
 	{ name = &"cell.resource_habitat_mask", cpp_name = "cell_resource_habitat_mask", dtype = U8, track_prev = false, map_field = "resource_habitat_mask_arr", prev_field = "", owner = "map_generation" },
 	{ name = &"cell.climate_dirty_mask", cpp_name = "cell_climate_dirty",         dtype = U8,  track_prev = false, map_field = "climate_dirty_mask",        prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.weather_dirty_mask", cpp_name = "cell_weather_dirty",         dtype = U8,  track_prev = false, map_field = "weather_dirty_mask",        prev_field = "",                         owner = "weather.commit" },
@@ -184,6 +185,10 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.res_manganese_ore_reserve", cpp_name = "cell_res_manganese_ore_reserve", dtype = F32, track_prev = false, map_field = "res_manganese_ore_reserve_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_sulfur_reserve", cpp_name = "cell_res_sulfur_reserve", dtype = F32, track_prev = false, map_field = "res_sulfur_reserve_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_platinum_ore_reserve", cpp_name = "cell_res_platinum_ore_reserve", dtype = F32, track_prev = false, map_field = "res_platinum_ore_reserve_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_flint_reserve", cpp_name = "cell_res_flint_reserve", dtype = F32, track_prev = false, map_field = "res_flint_reserve_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_lithium_reserve", cpp_name = "cell_res_lithium_reserve", dtype = F32, track_prev = false, map_field = "res_lithium_reserve_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_cobalt_ore_reserve", cpp_name = "cell_res_cobalt_ore_reserve", dtype = F32, track_prev = false, map_field = "res_cobalt_ore_reserve_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_natural_graphite_reserve", cpp_name = "cell_res_natural_graphite_reserve", dtype = F32, track_prev = false, map_field = "res_natural_graphite_reserve_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_timber_extra_change", cpp_name = "cell_res_timber_extra_change", dtype = F32, track_prev = false, map_field = "res_timber_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_stone_extra_change", cpp_name = "cell_res_stone_extra_change", dtype = F32, track_prev = false, map_field = "res_stone_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_fertile_soil_extra_change", cpp_name = "cell_res_fertile_soil_extra_change", dtype = F32, track_prev = false, map_field = "res_fertile_soil_extra_change_arr", prev_field = "", owner = "economy.resources" },
@@ -221,6 +226,10 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.res_manganese_ore_extra_change", cpp_name = "cell_res_manganese_ore_extra_change", dtype = F32, track_prev = false, map_field = "res_manganese_ore_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_sulfur_extra_change", cpp_name = "cell_res_sulfur_extra_change", dtype = F32, track_prev = false, map_field = "res_sulfur_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_platinum_ore_extra_change", cpp_name = "cell_res_platinum_ore_extra_change", dtype = F32, track_prev = false, map_field = "res_platinum_ore_extra_change_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_flint_extra_change", cpp_name = "cell_res_flint_extra_change", dtype = F32, track_prev = false, map_field = "res_flint_extra_change_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_lithium_extra_change", cpp_name = "cell_res_lithium_extra_change", dtype = F32, track_prev = false, map_field = "res_lithium_extra_change_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_cobalt_ore_extra_change", cpp_name = "cell_res_cobalt_ore_extra_change", dtype = F32, track_prev = false, map_field = "res_cobalt_ore_extra_change_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.res_natural_graphite_extra_change", cpp_name = "cell_res_natural_graphite_extra_change", dtype = F32, track_prev = false, map_field = "res_natural_graphite_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	# ─── Demo-only（1 条，performance-charter §12.6 reference impl）────────
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled=true 时被 bind_map_data
 	# attach；为 false 时跳过，不占内存。

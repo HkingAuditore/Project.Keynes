@@ -20,6 +20,8 @@ enum Opcode {
 	TRANSFER_FROM_COHORT = 9,
 	BUILD = 10,
 	DEMOLISH = 11,
+	COUNTRY_GOOD_TO_MARKET = 12,
+	MARKET_GOOD_TO_COUNTRY = 13,
 }
 
 var _world_ext: Object = null
@@ -110,6 +112,38 @@ func add_stock(cell_idx: int, good_id: StringName, quantity: int,
 		"i64_1": 0,
 	}])
 
+func transfer_country_cash_to_cohort(country_handle: int, cohort_handle: int,
+		amount: int, effective_day: int, sequence: int) -> Dictionary:
+	return submit([{"opcode": Opcode.TRANSFER_TO_COHORT,
+		"target_handle": cohort_handle, "i64_0": amount, "i64_1": country_handle,
+		"effective_day": effective_day, "sequence": sequence}])
+
+func transfer_cohort_cash_to_country(cohort_handle: int, country_handle: int,
+		amount: int, effective_day: int, sequence: int) -> Dictionary:
+	return submit([{"opcode": Opcode.TRANSFER_FROM_COHORT,
+		"target_handle": cohort_handle, "i64_0": amount, "i64_1": country_handle,
+		"effective_day": effective_day, "sequence": sequence}])
+
+func transfer_country_good_to_market(country_handle: int, cell_idx: int,
+		good_id: StringName, quantity: int, effective_day: int, sequence: int) -> Dictionary:
+	return _submit_country_good_transfer(Opcode.COUNTRY_GOOD_TO_MARKET, country_handle,
+		cell_idx, good_id, quantity, effective_day, sequence)
+
+func transfer_market_good_to_country(country_handle: int, cell_idx: int,
+		good_id: StringName, quantity: int, effective_day: int, sequence: int) -> Dictionary:
+	return _submit_country_good_transfer(Opcode.MARKET_GOOD_TO_COUNTRY, country_handle,
+		cell_idx, good_id, quantity, effective_day, sequence)
+
+func _submit_country_good_transfer(opcode: int, country_handle: int, cell_idx: int,
+		good_id: StringName, quantity: int, effective_day: int, sequence: int) -> Dictionary:
+	var goods: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
+	var good_idx := goods.find(String(good_id))
+	if good_idx < 0:
+		return {"ok": false, "reason": "unknown good id: %s" % String(good_id)}
+	return submit([{"opcode": opcode, "target_handle": country_handle,
+		"i32_0": cell_idx, "i32_1": good_idx, "i64_0": quantity,
+		"effective_day": effective_day, "sequence": sequence}])
+
 func population_cell_summary(cell_idx: int) -> Dictionary:
 	if not _configured:
 		return {}
@@ -143,6 +177,13 @@ func market_cell_snapshot(cell_idx: int) -> Dictionary:
 		snapshot["details_available"] = false
 		snapshot["details_pending"] = bool(snapshot.get("busy", false))
 	return snapshot
+
+func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_trade_orders_for_cell"):
+		return {"ok": false, "reason": "trade order API unavailable", "total": 0}
+	var page: Dictionary = _world_ext.get_trade_orders_for_cell(cell_idx, offset, limit)
+	page["good_ids"] = _catalog.get("good_ids", PackedStringArray())
+	return page
 
 func building_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:

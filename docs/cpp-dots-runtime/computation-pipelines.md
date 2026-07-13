@@ -20,7 +20,8 @@
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
-| PopulationCohort / MarketStore | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结周期 N 日 need/bundle 清算、商人结算、价格和审计；按 cohort 预算错峰，截止日统一 publish，不进入 cell slots。 |
+| CountryStore / territory / technology / treasury | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、`cell_country_slot`、领土 CSR、国家科技 bitset 和商品国库；仅 `cell.country_slot` 发布到 DataCore，PKCN v1 持久化。 |
+| PopulationCohort / MarketStore | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家 epoch 与 N 日 need/bundle 清算、商人结算、价格和含国家资产的审计；按 cohort 预算错峰，截止日统一 publish，不复制国家状态进 cell slots。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
@@ -578,7 +579,7 @@ clamp 成横跳；当前模型改为无硬上限的半隐式线性自衰减。
 `habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater`。海洋鱼类直接写在
 深海、海洋与浅海水格；淡水和淡水鱼类写在湖泊水格及河流格，岸上不复制资源储量。
 habitat 外储量为 0。岸上渔业/水厂通过建筑资源边的 `local_and_adjacent` 模式访问本格与六邻格。
-当前目录含 37 种自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
+当前目录含 41 种自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
 自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量和肥沃土壤
 是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；林木、渔业、土壤、
 野生/半野生动物通过 `gen_self`、适宜度和压力衰减表达自然增长/消失。
@@ -648,6 +649,7 @@ EconomyDailySystem (SUS shell)
   -> ECONOMY_GRAPH
   -> PopulationStore pages + MarketStore matrix
   -> need/wealth/environment demand + budget
+  -> domestic trade settle / dispatch (ACTIVE only)
   -> bundle clear + one substitution fallback + merchant settlement
   -> demand EMA / next-day price
   -> structural ECB
@@ -663,13 +665,15 @@ WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐�
 输入/输出、定点尺度、账本和存档详见：
 
 - [Native Economy Runtime](./native-economy-runtime.md)
+- [Domestic Trade Runtime](./domestic-trade-runtime.md)
 - [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
 - [Economy Graph / Scheduling](./economy-graph-scheduling.md)
 - [Economy Save / Migration / SOP](./economy-save-migration-sop.md)
 
-V2 不包含生产、就业、工资、税、贸易或人口自然变化。未来系统只能通过批量 ledger/stock command
-供货或转账，不得直接写 MarketStore vector。自然资源 `cell.res_*` 仍由
-`NaturalResourceDailySystem` 独立推进。
+household Market V2 热循环本身不包含生产、就业、工资、税或人口自然变化。生产/就业由集成的
+BUILDING_GRAPH 处理；国内贸易由同一 NativeEconomyRuntime 的独立 Trade V1 阶段处理。外部系统
+仍只能通过批量 ledger/stock command 供货或转账，不得直接写 MarketStore vector。自然资源
+`cell.res_*` 仍由 `NaturalResourceDailySystem` 独立推进。
 
 ## Transpiration
 

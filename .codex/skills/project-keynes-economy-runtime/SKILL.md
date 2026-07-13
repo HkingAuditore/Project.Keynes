@@ -1,6 +1,6 @@
 ---
 name: project-keynes-economy-runtime
-description: Guides Project.Keynes native economy runtime development and review, covering PopulationCohort, merchant-owned MarketStore, need/variant/component consumption, sparse building construction/employment/production, frozen settlement cycles, EconomyDailySystem scheduling, fixed-point conservation, save schema, performance/approximation diagnosis, and content expansion. Use when modifying gdext/src/economy_runtime.*, world_ext_economy.cpp, economy profiles/catalog/facade, goods/needs/professions/ethnicities/buildings, economy scheduling/UI/save/tests, or investigating economy correctness, latency, memory, and replay behavior.
+description: Guides Project.Keynes native economy runtime development and review, covering PopulationCohort, merchant-owned MarketStore, domestic trade topology/planning/orders, need/variant/component consumption, sparse building construction/employment/production, frozen settlement cycles, EconomyDailySystem scheduling, fixed-point conservation, save schema, performance/approximation diagnosis, and content expansion. Use when modifying gdext/src/economy_runtime.*, world_ext_economy.cpp, economy profiles/catalog/facade, goods/needs/professions/ethnicities/buildings, terrain trade movement, economy scheduling/UI/save/tests, or investigating economy correctness, latency, memory, and replay behavior.
 ---
 
 # Project.Keynes Economy Runtime
@@ -15,6 +15,7 @@ drift.
 Read the files relevant to the requested change before editing:
 
 - Native population, market, and building state/algorithms: `gdext/src/economy_runtime.{h,cpp}`.
+- Country technology/treasury bridge: `gdext/src/country_runtime.{h,cpp}` and `world_ext_country.cpp`.
 - DataCore environment/resource bridge: `gdext/src/world_ext_economy.cpp`.
 - GDExtension API binding: `gdext/src/world_ext.h`, `world_ext_bind_methods.cpp`.
 - Catalog/facade: `Project/project-keynes/scripts/economy/`.
@@ -31,8 +32,8 @@ Read bundled references by task:
 - Read [architecture-and-data.md](references/architecture-and-data.md) for authority, SoA,
   handles, catalog, commands, public API, save/restore, building owner-lots, or UI queries.
 - Read [market-algorithms.md](references/market-algorithms.md) for demand, wealth, environment,
-  substitutes, complements, merchants, clearing, price, building transactions/wages, rounding, or
-  conservation.
+  substitutes, complements, merchants, clearing, price, domestic trade candidates/orders,
+  building transactions/wages, rounding, or conservation.
 - Read [scheduling-performance.md](references/scheduling-performance.md) for frozen cycles,
   building stages, default five-day cadence, deadline catchup, ACTIVE/PROBE, reports, latency,
   memory, or error.
@@ -61,8 +62,14 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
 - Keep a merchant on every populated cell; conserve population and proportional funds when repairing.
 - Treat local merchant cohorts as joint inventory owners; transfer buyer money directly to merchants.
 - Keep one cell equal to one local market until an explicit market-topology migration is designed.
+- Keep domestic transport as movement between those local markets. Trade topology, sparse planning,
+  route caches, in-flight orders, cargo escrow, cash escrow, and trade EMA remain native economy
+  state; MapData only supplies frozen neighbors/terrain LUT input.
 - Keep goods/cohorts/buildings out of `MapData`, `HexCell`, DataCore component slots, and Godot
   Objects. DataCore may expose only sampled geographic/resource inputs and resource deltas.
+- Keep country identity, technology, cash, and goods treasury in `NativeCountryRuntime`; economy
+  freezes the native country snapshot at sample day. Never restore per-cell technology or a global
+  economy treasury.
 - Keep sparse building groups in stable `(cell, type, owner signature)` order. Store the sponsor's
   stable cohort signature as owner identity; do not add employer or building identity to cohort
   signatures.
@@ -71,12 +78,13 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
 - Keep population, money, and goods audit error exactly zero.
 - Account for construction/input sinks, accepted output, discarded output, resource extraction,
   wages paid, and wages unpaid explicitly. Never mint owner, employee, or merchant funds.
-- Keep in-flight state invisible to gameplay writers and save. Selected-cell inspector queries may
-  read the latest slice-complete native state, must report `snapshot_source`, and must stay bounded;
-  never copy or publish a global cohort-by-good live snapshot.
-- Keep generic production, employment, and wages outside household Market V2. PKEC v3's versioned
-  native building graph is the explicit integrated exception; keep tax, trade, politics, and natural
-  demography outside this runtime until separately designed.
+- Keep partially computed market/building/planning state invisible to gameplay writers and save.
+  Authoritative dispatched trade orders and escrow are the explicit PKEC v11 exception. Selected-cell
+  inspector queries may read the latest slice-complete native state, must report `snapshot_source`,
+  and must stay bounded; never copy or publish a global cohort-by-good or order matrix.
+- Keep generic production, employment, wages, and transport outside household Market V2. The native
+  building graph and PKEC v11 domestic trade graph are explicit staged exceptions. Keep tax,
+  cross-country trade/tariffs, politics, and natural demography outside this runtime until designed.
 
 ## Preserve the building graph contract
 

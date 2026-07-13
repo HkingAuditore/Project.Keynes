@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"nuclear_medicine_center"
+display_name = "核医学中心"
+building_kind = "industrial"
+technology_tags = PackedStringArray("tech.nuclear_fission")
+construction_days = 0
+owner_profession_id = &"industrialist"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("chemist")
+employee_slots_per_building = PackedInt64Array(10)
+input_good_ids = PackedStringArray("medical_isotopes")
+input_quantities_per_day = PackedInt64Array(500)
+output_good_ids = PackedStringArray("pharmaceuticals")
+output_quantities_per_day = PackedInt64Array(700)
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+behavior_id = "none"
+wage_policy_id = "adaptive"
+wage_per_employee_per_day = 5000
