@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"grain"
 display_name = "混合谷物"
-category_id = &"food"
+category_id = &"starchy_staple"
+substitution_category_ids = PackedStringArray("starchy_staple", "cereal_grain", "baking_grain", "brewing_feedstock")
 technology_tags = PackedStringArray("industry.food", "tech.pottery")
 production_quality_level = 0
 production_efficiency_q16 = 65536

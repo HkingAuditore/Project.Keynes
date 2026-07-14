@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project.Keynes 产业链可视化扫描</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <span class="logo">⛓</span>
+      <div>
+        <h1>产业链可视化扫描</h1>
+        <p class="sub">Project.Keynes · 纯前端 · 每次打开自动扫描</p>
+      </div>
+    </div>
+    <div class="scan-controls">
+      <div id="status" class="status idle">未扫描</div>
+      <button id="pickBtn" class="btn primary">选择项目根目录</button>
+      <button id="rescanBtn" class="btn" hidden>重新扫描</button>
+      <button id="collapseBtn" class="btn ghost" hidden>收起详情</button>
+    </div>
+    <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
+  </header>
+
+  <!-- 首次引导 -->
+  <section id="intro" class="intro">
+    <div class="intro-card">
+      <h2>欢迎使用产业链扫描器</h2>
+      <p>本工具会<strong>读取游戏项目里的产业链数据</strong>（建筑 / 物资 / 自然资源 / 职业 / 时代），
+         并生成三类可视化：产业链全流程图、节点建筑与职业岗位、各实体的解锁时代。</p>
+      <ul>
+        <li><b>Chrome / Edge</b>：点「选择项目根目录」选一次，之后每次打开自动重新扫描。</li>
+        <li><b>Firefox / Safari</b>：用「选择文件夹」回退，每次打开手动选一次。</li>
+      </ul>
+      <p class="hint">请选择<strong>仓库根目录</strong>（即含 <code>Project/</code> 的那一层，例如 <code>D:\Godot\ProjectKeynes\Project.Keynes</code>）。工具只读不写。</p>
+      <button id="introPick" class="btn primary big">选择项目根目录</button>
+    </div>
+  </section>
+
+  <!-- 主体 -->
+  <div id="app" class="app" hidden>
+    <nav id="tabs" class="tabs">
+      <button class="tab active" data-view="graph">产业链图</button>
+      <button class="tab" data-view="eras">解锁时代总览</button>
+      <button class="tab" data-view="table">实体表格</button>
+      <button class="tab" data-view="diag">诊断</button>
+    </nav>
+
+    <div class="workspace">
+      <main id="main">
+        <!-- 视图：产业链图 -->
+        <section id="view-graph" class="view">
+          <div class="graph-bar">
+            <div class="seg">
+              <span class="seg-label">模式</span>
+              <button class="seg-btn active" data-mode="building">建筑链</button>
+              <button class="seg-btn" data-mode="good">物资链</button>
+            </div>
+            <input id="search" class="search" type="text" placeholder="搜索 id / 名称…">
+            <label class="chk"><input type="checkbox" id="showLabels"> 显示物资名</label>
+            <button id="fitBtn" class="btn small">适应窗口</button>
+            <div id="eraChips" class="era-chips"></div>
+          </div>
+          <div id="graph-wrap" class="graph-wrap">
+            <svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div id="graph-legend" class="graph-legend"></div>
+          </div>
+        </section>
+
+        <!-- 视图：时代总览 -->
+        <section id="view-eras" class="view" hidden>
+          <div id="eras-container" class="eras-container"></div>
+        </section>
+
+        <!-- 视图：实体表格 -->
+        <section id="view-table" class="view" hidden>
+          <div class="table-bar">
+            <div class="seg">
+              <button class="seg-btn active" data-type="building">建筑</button>
+              <button class="seg-btn" data-type="good">物资</button>
+              <button class="seg-btn" data-type="resource">自然资源</button>
+              <button class="seg-btn" data-type="profession">职业</button>
+            </div>
+            <input id="tableSearch" class="search" type="text" placeholder="过滤…">
+          </div>
+          <div id="table-container" class="table-container"></div>
+        </section>
+
+        <!-- 视图：诊断 -->
+        <section id="view-diag" class="view" hidden>
+          <div id="diag-container" class="diag-container"></div>
+        </section>
+      </main>
+
+      <!-- 右侧详情面板 -->
+      <aside id="detail" class="detail" hidden>
+        <div id="detail-body"></div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="parser.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -5,9 +5,10 @@
 [resource]
 script = ExtResource("1")
 id = &"petrochemicals"
-display_name = "石化原料"
-category_id = &"chemicals"
-technology_tags = PackedStringArray("industry.chemicals", "tech.legacy_modern_economy")
+display_name = "石化产品"
+category_id = &"petrochemicals"
+substitution_category_ids = PackedStringArray("petrochemicals")
+technology_tags = PackedStringArray("industry.chemicals", "tech.electrochemistry")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

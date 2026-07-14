@@ -5,9 +5,10 @@
 [resource]
 script = ExtResource("1")
 id = &"wire"
-display_name = "电线"
-category_id = &"metals"
-technology_tags = PackedStringArray("industry.metals", "tech.legacy_modern_economy")
+display_name = "金属线材"
+category_id = &"wire"
+substitution_category_ids = PackedStringArray("wire")
+technology_tags = PackedStringArray("industry.metals", "tech.electrification")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

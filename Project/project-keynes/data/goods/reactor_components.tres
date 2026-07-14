@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"reactor_components"
 display_name = "反应堆部件"
-category_id = &"nuclear"
+category_id = &"reactor_components"
+substitution_category_ids = PackedStringArray("reactor_components")
 technology_tags = PackedStringArray("tech.nuclear_fission")
 default_price = 130000
 min_price = 13000

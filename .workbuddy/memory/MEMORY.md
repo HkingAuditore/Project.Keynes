@@ -48,3 +48,16 @@
 - **Godot 锁 dll**：Godot 编辑器运行时会锁定 `addons/dots_ext/bin/windows/*.dll`，导致 `git pull/checkout/reset` 触碰这些文件时报 `unable to unlink old ... Invalid argument`。更新仓库前必须完全退出 Godot 进程（tasklist 中的 `Godot_v4*`）。
 - **误提交 ~ 临时文件**：远程误提交了 `bin/windows/~dots_ext.windows.template_debug.x86_64.dll`（Godot 生成的 `~` 备份 dll，被 git 跟踪）。这是垃圾文件，应在远程清理、本地避免提交；Godot 退出后才可删/写。
 - **本地改动==远程时的安全同步**：当本地未提交改动内容哈希已 == 远程最新（同源工作），`git pull` 仍会被 `local changes would be overwritten` 保护拒绝。已验证 work==remote 后可直接 `git reset --hard origin/master`（不丢真实改动）；或 stash→pull→stash pop。本次即此路径完成 master 快进到 60c3cb0。
+
+## 产业链设计现状（2026-07-14）
+- 规模：**30 资源 / 136 物资 / 182 建筑 / 361 边**，最大链深 Tier 17（construction_components）
+- need 体系：15 个 need，staple_food/protein 各 5 variants，**luxury 仅 2 variants（jewelry, beverages）**（用户锁定不扩）
+- 食物链分双轨：① 通用 `grain`（subsistence_food 4 层链：gathering→smallholding→3-field→improved→mechanized） ② 4 种原粮（corn/rice/wheat/potatoes）各自 T1+T2 加工链
+- **wheat_grain 是孤儿**：`wheat_farm`(陶器)→wheat_grain 仅 `grain_plant`(信息) 消费，6 个时代无消费者
+- 替代机制（`input_category_ids`）已实现（C++ `select_input_candidate` in economy_runtime.cpp:4038-4074，按「库存充足度 > 价格/效率 > stable_id」选最优），**但食物链 0 栋建筑启用**；21+ 栋建筑启用（主要是 tools 类）
+- 4 原粮已共享 `category_id="primary"`（与矿石/盐/黏土等 16 种共享），改 category 会失去 primary 成员资格；当前 `primary` 用作输入的 0 栋 → 0 风险
+- 时代断层：5 个直接断层（paper→packaging 影响 9 栋、salt 影响 1 栋、fertilizer+machinery 影响 1 栋）。详见 `docs/产业链时代断层分析报告.md`
+- 73% 建筑集中在信息时代（`tech.legacy_modern_economy`），蒸汽 8.2%、其他时代 <5%
+- 62% 物资仅 1 个生产者（单点故障）
+- review 报告：`C:\Users\hkinghuang\.workbuddy\plans\toasty-cascade-darwin.md`（720 行，未实施任何 .tres 改动）
+- 4 类物资 category 拼写重复待清理：`textile`(11) / `textiles`(1) / `raw_materials`(1)

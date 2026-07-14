@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"silica_sand"
 display_name = "硅砂"
-category_id = &"primary"
+category_id = &"silica_sand"
+substitution_category_ids = PackedStringArray("silica_sand")
 technology_tags = PackedStringArray("industry.primary", "tech.masonry")
 production_quality_level = 0
 production_efficiency_q16 = 65536

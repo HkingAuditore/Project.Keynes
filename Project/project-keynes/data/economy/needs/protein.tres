@@ -3,5 +3,5 @@
 [resource]
 script = ExtResource("1")
 id = &"protein"
-display_name = "蛋白质"
+display_name = "Protein"
 living_cost_weight_q16 = 65536

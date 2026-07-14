@@ -166,7 +166,7 @@ industrialist 持有并保留工业投入、矿工和管理岗位。不存在虚
 stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。native 在冻结国家科技可用的候选
 中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
 `ceil(effective_required / efficiency)`，库存、业主现金与 goods audit 仍记录实际物理数量。
-这使木材等配方可以直接使用打制石器、青铜、标准或精密工具，不再需要商品转换站。
+这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。
 
 `upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
 档位，旧档返回 `building_tier_obsolete_for_construction`；生产仍只检查该建筑原始科技，因此旧
@@ -273,8 +273,8 @@ TRACE_OFF 为 `2.112/8.914/8.914ms`、111.3MB。两者核心 state hash 均为
 ## 跨时代产业目录与货币发行（2026-07-14）
 
 现代基线由可复现且支持只读 `-Check` 的 `tools/codegen/gen_modern_economy_content.ps1` 生成，
-跨时代扩展后全目录为 142 goods、174
-building types、32 professions 和 15 household needs。35 种注册自然资源均至少被一个
+跨时代扩展后全目录为 120 goods、259
+building types、32 professions、17 household needs 和 8 consumption plans。30 种注册自然资源均至少被一个
 `collector` 引用；`industrial` 只能消费 goods。所有建筑恰好一个 owner job，科技解锁仅以
 `technology_tags` 进入 catalog/snapshot；只有 `tech.*` 是可执行条件。runtime 把条件解析为 dense technology IDs，
 由 `NativeCountryRuntime` 以每国家 bitset 持久化；经济在周期边界冻结 `cell → country`、国家 generation/hash 与科技 bits，统一过滤物资替代、职业就业、建造与生产。其他标签命名空间只作冷元数据。
@@ -285,16 +285,32 @@ forager/hunter/artisan 自营；青铜和古典使用小规模 apprentice 与 en
 industrial_worker、technician、engineer、manager、researcher 组成多角色企业。该变化只修改
 catalog/content，PopulationStore、signature ABI、BUILDING_GRAPH 和 PKEC byte schema 均未改变。
 
+内容生成器以显式生命周期表区分持续产业和有界产业。只有持续产业会自动获得后续时代生产法；
+有界产业在其最后一个有宏观意义的时代停止扩展。审计不再要求每个时代达到人为建筑数量下限，
+而是要求每时代非空、累计闭包成立、目录不超过复杂度预算，并拒绝未分类的早期单点生产源。
+该约束只改变 catalog 内容，不增加 native 热循环分支、状态列或存档字节。
+
 锂、钴、石墨、镍、铂族和铀的独立目录项合并为显示为“战略矿产”的
 `rare_earth → rare_earth_ore → rare_earth_metals` 稳定内部链，并新增独立 `nuclear_fuel` 加工。
-核电站与同位素反应堆不再直接消费战略矿物材料。旧 DataCore 资源 slots 暂时保留但不再由
-ResourceProfileRegistry 注册；因此 MapData/slot ABI 不变，当前 catalog 和旧 PKEC stable-ID 表
-不兼容。
+核电站与同位素反应堆不再直接消费战略矿物材料。对应的旧 DataCore 资源 slots 已删除；
+当前 schema 与 30 个注册资源对齐，当前 catalog 和旧 PKEC stable-ID 表不兼容。
+
+`BuildingProfile` 的单个输入槽可在精确 good、category 候选和显式候选 CSR 三种模式中选择。
+显式 CSR 携带配方级 Q16 效率并由 `EconomyCatalog` 按 stable good ID 规范化，native 继续使用
+既有 InputCandidate 库存满足度、有效价格和 stable ID 决策。建筑查询通过
+`group_input_selected_offsets/group_input_selected_good_ids` 返回每槽上次实际采购项；这是有界的
+Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC v11。restore 后保持 `-1`
+直到下一次成功生产。该扩展没有修改权威公式或存档字段。
 
 `gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/10000 money subunits。市场接收
 建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通
 库存参与珠宝、电子等生产且不重复发行。report 分别发布 accepted quantity、issued money 和
-`bullion_money_issued`，普通产出仍受 merchant cash cap。
+`bullion_money_issued`，普通产出仍受 merchant cash cap。merchant 建筑预检只允许单一金/银产出、
+严格对应的唯一金/银矿藏、extract 行为且无资源生成；后期矿井可以有雇员和工具输入。
+
+职业消费使用八套结构不同的原型；`survival_household` 是自适应工资的生活成本基准。`luxury`
+使用 beverages、fine_clothing、fine_furniture，`status_goods` 使用 jewelry、fur、spices。
+需求/计划变更只改变 catalog hash；PKEC v11 byte schema 与五日默认 cadence 不变。
 
 `electricity` 是唯一 `cycle_flow` good。`building_production` 内先运行只产出 cycle-flow 的
 utility groups并结算 offers，再运行其他 groups；其余电力在 cell 生产结束时清零并计入 goods
@@ -310,6 +326,17 @@ avg/p95/max `1.883/2.766/3.126ms`、`101.0MB`；200-good/10M-cohort auto N=334 �
 SELECTIVE 的 building slices 为 `2.152/8.834/8.834ms`、`113.3MB`，三项审计均为零。
 相对改造前同目录基线，三档 p95 分别变化 `-4.1%/-40.1%/-27.3%`，runtime memory
 分别变化约 `+0.1/+0.4/-0.4MB`，满足 p95 不回退超过 10%、内存增量不超过 64MB 的门槛。
+
+2026-07-14 产业链简并后的最终 template_release、固定 `N=5`、`TRACE_OFF` 复核：
+
+- Market V2 synthetic 10k cells / 200k cohorts / 100 goods / 16 needs：2500 samples，
+  avg/p95/max `1.838/2.982/3.665ms`，4 worker tasks，runtime memory `94.6MB`。
+- 实际 181-building catalog 的 10k owner-lot / 30k cohorts：每次 9 building slices，最终二进制三次
+  中位 avg/p95/max `1.359/5.945/5.945ms`，三次 p95 范围 `5.733-7.642ms`，观察到的
+  all-slice max `11.801ms`，runtime memory `111.9MB`。
+  `production_output_discarded=0`、`building_wages_unpaid=0`，population/money/goods error 为 `0/0/0`。
+
+以上是默认五日 cadence 证据，不与 auto N=50/N=334 数据混用。
 
 同日 habitat/geology/crop-capacity 收口后的 `TRACE_OFF` 复核：100 goods / 200k cohorts 为
 avg/p95/max `2.290/2.961/3.589ms`、`94.2MB`；200 goods / 10M cohorts 为

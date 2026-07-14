@@ -31,7 +31,7 @@ extends Resource
 @export_range(1, 65536, 1) var economy_trace_poll_max_events: int = 4096
 @export var merchant_profession_id: StringName = &"merchant"
 @export var wealth_reference_per_capita: int = 100000
-@export var living_cost_base_plan_id: StringName = &"subsistence_household"
+@export var living_cost_base_plan_id: StringName = &"survival_household"
 @export_range(0, 65536, 1) var wage_ema_alpha_q16: int = 8192
 @export_range(0, 65536, 1) var wage_max_rise_q16_per_day: int = 6554
 @export_range(0, 65536, 1) var wage_max_fall_q16_per_day: int = 1311

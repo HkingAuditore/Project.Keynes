@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"guild_hall"
-display_name = "行会家具工坊"
+display_name = "家具行会工坊"
 building_kind = "industrial"
 technology_tags = PackedStringArray("tech.guild_organization")
 construction_days = 0

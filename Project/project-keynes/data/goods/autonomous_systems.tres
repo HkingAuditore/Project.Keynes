@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"autonomous_systems"
 display_name = "自主系统"
-category_id = &"machinery"
+category_id = &"autonomous_systems"
+substitution_category_ids = PackedStringArray("autonomous_systems")
 technology_tags = PackedStringArray("tech.autonomous_systems")
 default_price = 220000
 min_price = 22000

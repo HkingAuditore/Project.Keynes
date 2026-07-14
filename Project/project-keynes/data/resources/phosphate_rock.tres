@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"phosphate_rock"
-display_name = "磷矿"
+display_name = "磷矿石"
 reserve_component = &"cell.res_phosphate_rock_reserve"
 habitat_mode = "land"
 init_reserve_scale = 8

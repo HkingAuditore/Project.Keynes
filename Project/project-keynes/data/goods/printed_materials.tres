@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"printed_materials"
 display_name = "印刷品"
-category_id = &"forestry"
+category_id = &"printed_materials"
+substitution_category_ids = PackedStringArray("printed_materials")
 technology_tags = PackedStringArray("industry.forestry", "tech.printing_press")
 production_quality_level = 0
 production_efficiency_q16 = 65536

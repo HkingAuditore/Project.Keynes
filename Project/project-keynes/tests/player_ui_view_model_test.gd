@@ -36,7 +36,7 @@ func _initialize() -> void:
 	var map := MapData.new(1, 1)
 	map.res_timber_reserve_arr = PackedFloat32Array([12500.0])
 	map.res_iron_ore_reserve_arr = PackedFloat32Array([10000.0])
-	map.res_sheep_reserve_arr = PackedFloat32Array([8.0])
+	map.res_pasture_reserve_arr = PackedFloat32Array([80.0])
 
 	var cell := HexCell.new(0, 0)
 	cell.index = 0
@@ -163,13 +163,13 @@ func _initialize() -> void:
 			failures.append("resource row uses a legacy Unicode icon")
 	var timber_row := _find_by_id(resource_rows, "timber")
 	var iron_row := _find_by_id(resource_rows, "iron_ore")
-	var sheep_row := _find_by_id(resource_rows, "sheep")
+	var pasture_row := _find_by_id(resource_rows, "pasture")
 	if String(timber_row.get("density", "")) != "丰饶":
 		failures.append("timber density did not use its resource-specific reference scale")
 	if String(iron_row.get("density", "")) != "贫乏":
 		failures.append("iron density still behaves like a raw absolute threshold")
-	if String(sheep_row.get("density", "")) != "稀少":
-		failures.append("sheep density did not use its resource-specific reference scale")
+	if pasture_row.is_empty() or String(pasture_row.get("icon", "")) != "livestock":
+		failures.append("pasture capacity did not replace species livestock resource rows")
 	var gated_resources: Array = view_model._resource_state(0, false, {
 		"enforce_discovery": true,
 		"technology_ids": PackedStringArray(),
@@ -252,7 +252,7 @@ func _initialize() -> void:
 				or String(demand_summary.get("total_daily_cost", "")) != "1.1":
 			failures.append("population demand detail did not calculate per-capita daily spending")
 		elif demand_groups.size() != 1 \
-				or String(demand_groups[0].get("name", "")) != "主食" \
+				or String(demand_groups[0].get("id", "")) != "staple_food" \
 				or int(demand_groups[0].get("variant_count", 0)) != 2:
 			failures.append("population demand detail did not preserve substitute grouping")
 

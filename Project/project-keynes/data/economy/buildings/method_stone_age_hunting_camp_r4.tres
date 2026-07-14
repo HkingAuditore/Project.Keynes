@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"method_stone_age_hunting_camp_r4"
+display_name = "商业狩猎与毛皮站"
+building_kind = "collector"
+technology_tags = PackedStringArray("industry.primary", "tech.printing_press")
+upgrade_family_id = &""
+upgrade_tier = 0
+construction_days = 0
+owner_profession_id = &"artisan"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("miner")
+employee_slots_per_building = PackedInt64Array(8)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(1500)
+input_good_ids = PackedStringArray("tools")
+input_quantities_per_day = PackedInt64Array(100)
+input_category_ids = PackedStringArray("tools")
+input_min_quality_levels = PackedInt32Array(3)
+input_candidate_offsets = PackedInt32Array(0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("game_meat", "raw_hide", "fur")
+output_quantities_per_day = PackedInt64Array(347, 347, 347)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = PackedStringArray("wild_game")
+resource_quantities_per_day = PackedInt64Array(52)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "consume_local_resources"

@@ -3,5 +3,5 @@
 [resource]
 script = ExtResource("1")
 id = &"communication"
-display_name = "通信"
+display_name = "Communication"
 living_cost_weight_q16 = 32768

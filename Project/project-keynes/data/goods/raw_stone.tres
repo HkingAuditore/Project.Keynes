@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"raw_stone"
 display_name = "原石"
-category_id = &"primary"
-technology_tags = PackedStringArray("industry.primary", "tech.masonry")
+category_id = &"raw_stone"
+substitution_category_ids = PackedStringArray("raw_stone")
+technology_tags = PackedStringArray("industry.primary", "tech.stone_knapping")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

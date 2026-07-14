@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"insulated_cable"
 display_name = "绝缘电缆"
-category_id = &"electrical"
+category_id = &"insulated_cable"
+substitution_category_ids = PackedStringArray("insulated_cable")
 technology_tags = PackedStringArray("tech.electrification")
 default_price = 26000
 min_price = 2600

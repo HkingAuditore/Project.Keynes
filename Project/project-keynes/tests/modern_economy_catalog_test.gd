@@ -2,6 +2,7 @@ extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
+const BuildingProfileScript = preload("res://scripts/data/building_profile.gd")
 
 var failures := 0
 
@@ -12,6 +13,7 @@ func _init() -> void:
 		_audit(catalog)
 	else:
 		print(catalog)
+	_audit_explicit_candidate_validation()
 	print("=== modern economy catalog %s ===" % ("PASS" if failures == 0 else "FAIL"))
 	quit(0 if failures == 0 else 1)
 
@@ -25,12 +27,12 @@ func _audit(catalog: Dictionary) -> void:
 	var professions: PackedStringArray = catalog.profession_ids
 	var needs: PackedStringArray = catalog.need_ids
 	var resources: PackedStringArray = catalog.building_resource_ids
-	_expect("audited catalog has 142 goods", goods.size() == 142)
-	_expect("audited catalog has 174 buildings", buildings.size() == 174)
+	_expect("simplified catalog has 120 goods", goods.size() == 120)
+	_expect("bounded catalog has 259 production methods", buildings.size() == 259)
 	_expect("32 labor-relation professions", professions.size() == 32)
-	_expect("exactly 15 household needs", needs.size() == 15)
-	_expect("35 registered terrestrial resources", ResourceRegistryScript.count() == 35)
-	_expect("all registered resources enter building catalog", resources.size() == 35)
+	_expect("17 differentiated household needs", needs.size() == 17)
+	_expect("30 registered natural resources", ResourceRegistryScript.count() == 30)
+	_expect("building catalog references 30 distinct natural resources", resources.size() == 30)
 	for relation_profession in ["enslaved_laborer", "serf", "tenant_farmer",
 			"indentured_laborer", "apprentice", "journeyman", "manager", "researcher"]:
 		_expect("labor relation profession exists: %s" % relation_profession,
@@ -45,17 +47,48 @@ func _audit(catalog: Dictionary) -> void:
 			"spice_plants", "flax", "cotton", "medicinal_herbs"]:
 		_expect("cultivated crop is not a natural resource: %s" % retired_crop,
 			resources.find(retired_crop) < 0)
-	for capacity_id in ["arable_land", "paddy_land", "plantation_land"]:
+	for capacity_id in ["arable_land", "paddy_land", "plantation_land", "pasture"]:
 		_expect("agricultural capacity resource exists: %s" % capacity_id,
 			resources.find(capacity_id) >= 0)
+	for retired_resource in ["cattle", "sheep", "pigs", "horses", "fresh_water", "freshwater_fish"]:
+		_expect("retired natural resource absent: %s" % retired_resource,
+			resources.find(retired_resource) < 0)
+	for retired_good in ["cattle", "sheep", "pigs", "raw_water", "clean_water", "beef", "mutton", "pork"]:
+		_expect("retired good absent: %s" % retired_good,
+			goods.find(retired_good) < 0)
+	for consolidated_good in ["livestock_products", "meat", "raw_hide", "wool", "horses"]:
+		_expect("consolidated livestock good exists: %s" % consolidated_good,
+			goods.find(consolidated_good) >= 0)
+	_expect("horse breeding has two preindustrial methods without late-era pseudo-upgrades",
+		buildings.has("horse_breeding_camp") and buildings.has("horse_breeder") and
+		not buildings.has("method_horse_breeder_r5") and
+		not buildings.has("method_horse_breeder_r8") and
+		not buildings.has("method_horse_breeder_r9"))
+	for retired_chain_good in ["flour", "rice_food", "corn_food", "potato_food", "wood_pulp",
+			"pig_iron", "flax_yarn", "cotton_yarn", "textile", "cut_stone", "dressed_masonry",
+			"codices", "papyrus", "parchment"]:
+		_expect("redundant chain good retired: %s" % retired_chain_good,
+			goods.find(retired_chain_good) < 0)
+	for terminal_good in ["prepared_staples", "fine_clothing", "fine_furniture"]:
+		_expect("new terminal good exists: %s" % terminal_good, goods.find(terminal_good) >= 0)
+	_expect("eight consumption prototypes compile",
+		catalog.plan_ids == PackedStringArray(["agrarian_household", "artisan_household",
+			"extractive_household", "industrial_worker_household", "merchant_household",
+			"owner_household", "survival_household", "technical_household"]))
+	_expect("occupational and status needs compile",
+		needs.has("work_equipment") and needs.has("status_goods"))
 	var corn_farm = load("res://data/economy/buildings/landed_estate.tres")
 	var wheat_farm = load("res://data/economy/buildings/wheat_farm.tres")
-	_expect("corn collector is named 玉米农场", corn_farm != null and String(corn_farm.display_name) == "玉米农场")
-	_expect("wheat collector is named 小麦农场", wheat_farm != null and String(wheat_farm.display_name) == "小麦农场")
+	_expect("corn collector remains an estate crop building",
+		corn_farm != null and String(corn_farm.id) == "landed_estate" and
+		corn_farm.resource_ids.has("arable_land"))
+	_expect("wheat collector remains an arable crop building",
+		wheat_farm != null and String(wheat_farm.id) == "wheat_farm" and
+		wheat_farm.resource_ids.has("arable_land"))
 	var gathering = load("res://data/economy/buildings/gathering_ground.tres")
 	var early_gold = load("res://data/economy/buildings/placer_gold_working.tres")
 	var early_silver = load("res://data/economy/buildings/surface_silver_working.tres")
-	var bronze_foundry = load("res://data/economy/buildings/bronze_foundry.tres")
+	var bronze_workshop = load("res://data/economy/buildings/bronze_tool_workshop.tres")
 	var guild_hall = load("res://data/economy/buildings/guild_hall.tres")
 	var steam_works = load("res://data/economy/buildings/steam_engine_works.tres")
 	_expect("stone production is owner-operated",
@@ -70,27 +103,146 @@ func _audit(catalog: Dictionary) -> void:
 		early_gold.technology_tags.has("tech.gathering") and
 		early_silver.technology_tags.has("tech.gathering"))
 	_expect("bronze workshop uses a small apprentice household",
-		String(bronze_foundry.owner_profession_id) == "artisan" and
-		bronze_foundry.employee_profession_ids == PackedStringArray(["apprentice"]) and
-		bronze_foundry.employee_slots_per_building == PackedInt64Array([4]))
+		String(bronze_workshop.owner_profession_id) == "artisan" and
+		bronze_workshop.employee_profession_ids == PackedStringArray(["apprentice"]) and
+		bronze_workshop.employee_slots_per_building == PackedInt64Array([3]) and
+		bronze_workshop.input_good_ids == PackedStringArray(["copper", "tin"]))
+	var monastic_scriptorium = load("res://data/economy/buildings/monastic_scriptorium.tres")
+	var classical_scriptorium = load("res://data/economy/buildings/classical_scriptorium.tres")
+	var manuscripts = load("res://data/goods/manuscripts.tres")
+	_expect("monastic copying deepens the shared manuscripts good",
+		monastic_scriptorium != null and
+		monastic_scriptorium.output_good_ids == PackedStringArray(["manuscripts"]))
+	_expect("hand-copied content is one unified good",
+		manuscripts != null and manuscripts.display_name == "手抄本" and
+		goods.find("codices") < 0)
+	_expect("writing materials are folded into scriptorium recipes",
+		classical_scriptorium != null and monastic_scriptorium != null and
+		classical_scriptorium.input_good_ids == PackedStringArray(["gathered_plants"]) and
+		monastic_scriptorium.input_good_ids == PackedStringArray(["raw_hide"]) and
+		not buildings.has("papyrus_workshop") and not buildings.has("parchmenter"))
+	var iron_tool_workshop = load("res://data/economy/buildings/iron_tool_workshop.tres")
+	var steel_tool_plant = load("res://data/economy/buildings/tools_plant.tres")
+	var precision_tool_workshop = load(
+		"res://data/economy/buildings/precision_tool_workshop.tres")
+	_expect("generic metal tools begin with classical iron working",
+		iron_tool_workshop != null and
+		iron_tool_workshop.technology_tags.has("tech.masonry") and
+		iron_tool_workshop.output_good_ids == PackedStringArray(["tools"]))
+	_expect("steam steel tools are a later method for the same good",
+		steel_tool_plant != null and steel_tool_plant.technology_tags.has("tech.steam_power") and
+		steel_tool_plant.output_good_ids == PackedStringArray(["tools"]))
+	_expect("precision tools start before steam and require metal-quality tools",
+		precision_tool_workshop != null and
+		precision_tool_workshop.technology_tags.has("tech.precision_engineering") and
+		precision_tool_workshop.input_category_ids == PackedStringArray(["tools", ""]) and
+		precision_tool_workshop.input_min_quality_levels == PackedInt32Array([3, 0]))
+	var canning_workshop = load("res://data/economy/buildings/canning_workshop.tres")
+	var canned_fish_plant = load("res://data/economy/buildings/canned_fish_plant.tres")
+	_expect("canning begins in Enlightenment and industrializes with steam",
+		canning_workshop != null and canned_fish_plant != null and
+		canning_workshop.technology_tags.has("tech.experimental_science") and
+		canned_fish_plant.technology_tags.has("tech.steam_power"))
+	var oceanic_shipyard = load("res://data/economy/buildings/oceanic_shipyard.tres")
+	_expect("exploration production rejects stone and bronze tools",
+		oceanic_shipyard != null and
+		oceanic_shipyard.input_category_ids[-1] == "tools" and
+		oceanic_shipyard.input_min_quality_levels[-1] == 3)
+	var commercial_hunting = load(
+		"res://data/economy/buildings/method_stone_age_hunting_camp_r4.tres")
+	_expect("exploration commercial hunting replaces stone tools with metal tools",
+		commercial_hunting != null and
+		commercial_hunting.input_good_ids == PackedStringArray(["tools"]) and
+		commercial_hunting.input_category_ids == PackedStringArray(["tools"]) and
+		commercial_hunting.input_min_quality_levels == PackedInt32Array([3]))
 	_expect("guild production distinguishes apprentices and journeymen",
 		String(guild_hall.owner_profession_id) == "guild_master" and
 		guild_hall.employee_profession_ids == PackedStringArray(["apprentice", "journeyman"]))
 	_expect("steam factory introduces workers, engineers, and management",
 		steam_works.employee_profession_ids ==
 			PackedStringArray(["industrial_worker", "engineer", "manager"]))
+	var guild_wheat_farm = load(
+		"res://data/economy/buildings/method_wheat_farm_r3.tres")
+	_expect("guild-era commercial farming uses landlord and tenant relations",
+		guild_wheat_farm != null and
+		String(guild_wheat_farm.owner_profession_id) == "landlord" and
+		guild_wheat_farm.employee_profession_ids == PackedStringArray(["tenant_farmer"]) and
+		guild_wheat_farm.employee_slots_per_building == PackedInt64Array([12]))
+	var mechanized_farm = load("res://data/economy/buildings/mechanized_farm.tres")
+	var intensive_farm = load("res://data/economy/buildings/intensive_farm.tres")
+	var mechanized_cotton = load(
+		"res://data/economy/buildings/method_cotton_collector_r6.tres")
+	_expect("mechanization changes farm labor without turning the landowner industrial",
+		mechanized_farm != null and intensive_farm != null and mechanized_cotton != null and
+		String(mechanized_farm.owner_profession_id) == "landlord" and
+		String(intensive_farm.owner_profession_id) == "landlord" and
+		String(mechanized_cotton.owner_profession_id) == "landlord" and
+		mechanized_farm.employee_profession_ids ==
+			PackedStringArray(["agricultural_worker", "manager"]) and
+		intensive_farm.employee_profession_ids ==
+			PackedStringArray(["agricultural_worker", "manager"]))
+	var sawmill = load("res://data/economy/buildings/lumber_plant.tres")
+	var logging_camp = load("res://data/economy/buildings/timber_collector.tres")
+	var coal_mine = load("res://data/economy/buildings/coal_mine.tres")
+	var oil_field = load("res://data/economy/buildings/oil_collector.tres")
+	_expect("building names describe their actual organization instead of generic collection",
+		sawmill != null and sawmill.display_name == "锯木场" and
+		logging_camp != null and logging_camp.display_name == "伐木场" and
+		coal_mine != null and coal_mine.display_name == "煤矿" and
+		oil_field != null and oil_field.display_name == "油田")
+	var cabinetmaker = load("res://data/economy/buildings/cabinetmaker_workshop.tres")
+	_expect("fine cabinetmaking is a staffed guild workshop with maintenance tools",
+		cabinetmaker != null and String(cabinetmaker.owner_profession_id) == "guild_master" and
+		cabinetmaker.employee_slots_per_building == PackedInt64Array([6, 6]) and
+		cabinetmaker.input_good_ids.has("tools"))
+	var computer_factory = load("res://data/economy/buildings/computers_plant.tres")
+	var plastics_factory = load("res://data/economy/buildings/plastics_plant.tres")
+	_expect("digital computer production has a larger technical workforce than plastics",
+		computer_factory != null and plastics_factory != null and
+		computer_factory.employee_profession_ids.has("engineer") and
+		computer_factory.employee_profession_ids.has("researcher") and
+		_sum_i64(computer_factory.employee_slots_per_building) >
+			_sum_i64(plastics_factory.employee_slots_per_building))
+	_expect("mature factories consume tools, electricity, and installed machinery",
+		plastics_factory.input_good_ids.has("tools") and
+		plastics_factory.input_good_ids.has("electricity") and
+		plastics_factory.input_good_ids.has("industrial_machinery"))
 	for retired_building in ["shell_money_station", "software_studio", "network_data_center",
 			"digital_service_exchange", "ai_research_lab", "orbital_research_program",
-			"orbital_technology_transfer", "deep_space_telemetry_program"]:
+			"orbital_technology_transfer", "deep_space_telemetry_program", "sail_loft",
+			"naval_salvage_yard", "navigation_instrument_shop", "isotope_reactor",
+			"bronze_foundry", "manganese_alloy_plant", "hafted_stone_tool_shelter"]:
 		_expect("retired pseudo-service building removed: %s" % retired_building,
 			buildings.find(retired_building) < 0)
+	for bounded_method in ["method_gathering_ground_r1", "method_flint_quarry_r1",
+			"method_stone_age_hunting_camp_r4", "method_pottery_kiln_r3",
+			"method_spice_plants_collector_r6", "method_medicinal_herbs_collector_r7",
+			"method_edible_oil_plant_r6", "method_soap_plant_r6",
+			"method_packaging_plant_r7", "method_printed_materials_plant_r7",
+			"method_oceanic_shipyard_r7"]:
+		_expect("bounded industry keeps one meaningful terminal method: %s" % bounded_method,
+			buildings.has(bounded_method))
+	for pseudo_upgrade in ["method_gathering_ground_r8", "method_flint_quarry_r8",
+			"method_stone_age_hunting_camp_r8", "method_pottery_kiln_r8",
+			"method_spice_plants_collector_r8", "method_medicinal_herbs_collector_r8",
+			"method_edible_oil_plant_r8", "method_soap_plant_r8",
+			"method_packaging_plant_r8", "method_printed_materials_plant_r8",
+			"method_landed_estate_r8", "method_potato_collector_r8",
+			"method_cotton_collector_r8", "method_rubber_tree_collector_r8",
+			"method_oceanic_shipyard_r8", "method_bricks_plant_r8",
+			"method_lime_plant_r8", "method_limestone_collector_r8"]:
+		_expect("negligible industry has no late pseudo-upgrade: %s" % pseudo_upgrade,
+			not buildings.has(pseudo_upgrade))
+	var processed_food_plant = load("res://data/economy/buildings/processed_food_plant.tres")
+	_expect("edible oil feeds mass processed food",
+		processed_food_plant != null and processed_food_plant.input_good_ids.has("edible_oil"))
+	for retired_good in ["sailcloth", "navigation_instruments", "medical_isotopes",
+			"bronze", "manganese_alloy"]:
+		_expect("single-use intermediate removed: %s" % retired_good,
+			goods.find(retired_good) < 0)
 	_expect("water resources use explicit geographic habitats",
 		ResourceRegistryScript.habitat_code(ResourceRegistryScript.ordered().filter(
-			func(p): return String(p.id) == "marine_fish")[0]) == 2 and
-		ResourceRegistryScript.habitat_code(ResourceRegistryScript.ordered().filter(
-			func(p): return String(p.id) == "fresh_water")[0]) == 3 and
-		ResourceRegistryScript.habitat_code(ResourceRegistryScript.ordered().filter(
-			func(p): return String(p.id) == "freshwater_fish")[0]) == 3)
+			func(p): return String(p.id) == "marine_fish")[0]) == 2)
 	var flint_resource = ResourceRegistryScript.ordered().filter(
 		func(p): return String(p.id) == "flint")[0]
 	var rare_earth_resource = ResourceRegistryScript.ordered().filter(
@@ -128,9 +280,9 @@ func _audit(catalog: Dictionary) -> void:
 			kinds[type_id] in [0, 1])
 		_expect("building behavior remains physical: %s" % buildings[type_id],
 			behavior_ids[type_id] in [0, 1, 2])
-		_expect("merchant owns only early bullion collectors: %s" % buildings[type_id],
+		_expect("merchant owns only matching bullion collectors: %s" % buildings[type_id],
 			owner_professions[type_id] != merchant_profession or
-			buildings[type_id] in ["placer_gold_working", "surface_silver_working"])
+			buildings[type_id] in ["gold_mine", "placer_gold_working", "silver_mine", "surface_silver_working"])
 		if employee_offsets[type_id + 1] > employee_offsets[type_id]:
 			_expect("employee roles have positive reference wages: %s" % buildings[type_id],
 				_range_positive(role_reference_wages, employee_offsets[type_id],
@@ -142,7 +294,7 @@ func _audit(catalog: Dictionary) -> void:
 			_expect("industrial has no natural resource: %s" % buildings[type_id], resource_offsets[type_id + 1] == resource_offsets[type_id])
 		for edge in range(resource_offsets[type_id], resource_offsets[type_id + 1]):
 			used_resources[production_resources[edge]] = true
-	_expect("at least one collector per resource", collectors >= 35 and used_resources.size() == 35)
+	_expect("collectors cover every referenced resource", collectors >= 50 and used_resources.size() == 30)
 	var resource_modes: PackedInt32Array = catalog.building_production_resource_modes
 	var resource_access_modes: PackedInt32Array = catalog.building_production_resource_access_modes
 	var output_quantities: PackedInt64Array = catalog.building_output_quantities
@@ -152,16 +304,17 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("wheat farm uses capacity resources only", farm_type >= 0 and farm_end > farm_begin and
 			_range_all(resource_modes, farm_begin, farm_end, 1))
 	var marine_type := buildings.find("marine_fish_collector")
-	var freshwater_type := buildings.find("freshwater_fish_collector")
-	_expect("marine and freshwater fisheries retain distinct daily yields",
-		output_quantities[output_offsets[marine_type]] == 1000 and
-		output_quantities[output_offsets[freshwater_type]] == 400)
+	_expect("single fishery chain produces early fish",
+		marine_type >= 0 and output_quantities[output_offsets[marine_type]] > 0)
 	_expect("shore fisheries use local plus adjacent water resources",
-		resource_access_modes[resource_offsets[marine_type]] == 1 and
-		resource_access_modes[resource_offsets[freshwater_type]] == 1)
+		resource_access_modes[resource_offsets[marine_type]] == 1)
 
 	var issue_values: PackedInt64Array = catalog.good_monetary_issue_values
 	var storage_modes: PackedInt32Array = catalog.good_storage_modes
+	var good_categories: PackedStringArray = catalog.good_category_ids
+	var substitution_category_offsets: PackedInt32Array = \
+		catalog.good_substitution_category_offsets
+	var substitution_category_ids: PackedStringArray = catalog.good_substitution_category_ids
 	var issued := PackedStringArray()
 	var flows := PackedStringArray()
 	for good in range(goods.size()):
@@ -171,6 +324,39 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("gold to silver issue ratio is 80 to 1",
 		issue_values[goods.find("gold")] == 800000 and issue_values[goods.find("silver")] == 10000)
 	_expect("electricity is the only cycle-flow good", flows == PackedStringArray(["electricity"]))
+	for retired_bucket in ["primary", "forestry", "construction", "food", "textile",
+			"chemicals", "metals", "machinery", "consumer", "energy"]:
+		_expect("industry bucket is not a substitution category: %s" % retired_bucket,
+			not good_categories.has(retired_bucket))
+	_expect("footwear is distinct from fabric, garments, and raw hide",
+		good_categories[goods.find("footwear")] != good_categories[goods.find("cloth")] and
+		good_categories[goods.find("footwear")] != good_categories[goods.find("clothing")] and
+		good_categories[goods.find("footwear")] != good_categories[goods.find("raw_hide")])
+	_expect("prime movers share a potential pool without forcing every recipe to use it",
+		good_categories[goods.find("steam_engines")] == &"prime_mover" and
+		good_categories[goods.find("electric_motor")] == &"prime_mover" and
+		good_categories[goods.find("engines")] == &"prime_mover")
+	_expect("multi-role substitution CSR aligns with stable goods",
+		substitution_category_offsets.size() == goods.size() + 1 and
+		substitution_category_offsets[0] == 0 and
+		substitution_category_offsets[-1] == substitution_category_ids.size())
+	_expect("one prime mover can serve several recipe-specific roles",
+		_good_has_substitution_category(goods, substitution_category_offsets,
+			substitution_category_ids, "steam_engines", "prime_mover") and
+		_good_has_substitution_category(goods, substitution_category_offsets,
+			substitution_category_ids, "steam_engines", "industrial_prime_mover") and
+		_good_has_substitution_category(goods, substitution_category_offsets,
+			substitution_category_ids, "steam_engines", "agricultural_prime_mover") and
+		not _good_has_substitution_category(goods, substitution_category_offsets,
+			substitution_category_ids, "electric_motor", "agricultural_prime_mover"))
+	_expect("potatoes share the starch staple role without being labelled a cereal",
+		_good_has_substitution_category(goods, substitution_category_offsets,
+			substitution_category_ids, "potatoes", "starchy_staple") and
+		not _good_has_substitution_category(goods, substitution_category_offsets,
+			substitution_category_ids, "potatoes", "cereal_grain"))
+	_expect("food oil and industrial lubricant remain separate roles",
+		good_categories[goods.find("edible_oil")] !=
+			good_categories[goods.find("lubricants")])
 	_audit_subsistence_upgrade_families(catalog)
 	var elasticity: PackedInt32Array = catalog.good_demand_price_elasticity_q16
 	var excess_weights: PackedInt32Array = catalog.good_excess_demand_weight_q16
@@ -220,6 +406,120 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("tool substitute efficiencies preserve historical productivity tiers",
 		candidate_efficiency[timber_candidate_begin] > 0 and
 		candidate_efficiency[timber_candidate_begin] < 65536)
+	var bakery_type := buildings.find("bakery")
+	var bakery_input := int(input_offsets[bakery_type])
+	var bakery_begin := int(candidate_offsets[bakery_input])
+	var bakery_end := int(candidate_offsets[bakery_input + 1])
+	var bakery_candidates := candidate_goods.slice(bakery_begin, bakery_end)
+	_expect("bakery uses recipe-specific grain candidates",
+		bakery_candidates == PackedInt32Array([goods.find("corn_grain"), goods.find("grain"),
+			goods.find("wheat_grain")]))
+	_expect("recipe-specific candidate efficiencies are preserved",
+		candidate_efficiency.slice(bakery_begin, bakery_end) ==
+			PackedInt32Array([49152, 58982, 65536]))
+	var footwear_type := buildings.find("footwear_plant")
+	var footwear_upper_input := int(input_offsets[footwear_type])
+	var footwear_sole_input := footwear_upper_input + 1
+	_expect("industrial footwear accepts leather or cloth uppers",
+		candidate_goods.slice(candidate_offsets[footwear_upper_input],
+			candidate_offsets[footwear_upper_input + 1]) ==
+			PackedInt32Array([goods.find("cloth"), goods.find("leather")]))
+	_expect("industrial footwear accepts natural or synthetic rubber soles",
+		candidate_goods.slice(candidate_offsets[footwear_sole_input],
+			candidate_offsets[footwear_sole_input + 1]) ==
+			PackedInt32Array([goods.find("latex"), goods.find("synthetic_rubber")]))
+	var packaging_input := int(input_offsets[buildings.find("packaging_plant")])
+	_expect("packaging accepts paper, glass, metal, or plastic feedstocks",
+		candidate_goods.slice(candidate_offsets[packaging_input],
+			candidate_offsets[packaging_input + 1]) == PackedInt32Array([
+				goods.find("aluminum"), goods.find("glass"), goods.find("paper"),
+				goods.find("plastics"), goods.find("steel")]))
+	var wire_input := int(input_offsets[buildings.find("wire_plant")])
+	_expect("wire accepts copper or aluminum conductors without consuming insulation",
+		candidate_goods.slice(candidate_offsets[wire_input],
+			candidate_offsets[wire_input + 1]) ==
+			PackedInt32Array([goods.find("aluminum"), goods.find("copper")]))
+	var cable_type := buildings.find("insulated_cable_plant")
+	var cable_insulation_input := int(input_offsets[cable_type]) + 1
+	_expect("insulated cable adds plastic or synthetic-rubber insulation to wire",
+		candidate_goods.slice(candidate_offsets[cable_insulation_input],
+			candidate_offsets[cable_insulation_input + 1]) ==
+			PackedInt32Array([goods.find("plastics"), goods.find("synthetic_rubber")]))
+	var machine_parts_lubricant_input := \
+		int(input_offsets[buildings.find("machine_parts_plant")]) + 1
+	_expect("early machine parts may use inefficient edible oil before mineral lubricant",
+		candidate_goods.slice(candidate_offsets[machine_parts_lubricant_input],
+			candidate_offsets[machine_parts_lubricant_input + 1]) ==
+			PackedInt32Array([goods.find("edible_oil"), goods.find("lubricants")]))
+	var soap_fat_input := int(input_offsets[buildings.find("soap_plant")])
+	_expect("soap accepts vegetable oil or livestock fats contextually",
+		candidate_goods.slice(candidate_offsets[soap_fat_input],
+			candidate_offsets[soap_fat_input + 1]) ==
+			PackedInt32Array([goods.find("edible_oil"), goods.find("livestock_products")]))
+	var battery_material_input := int(input_offsets[buildings.find("batteries_plant")])
+	_expect("generic batteries can transition from lead to advanced mineral chemistry",
+		candidate_goods.slice(candidate_offsets[battery_material_input],
+			candidate_offsets[battery_material_input + 1]) ==
+			PackedInt32Array([goods.find("lead"), goods.find("rare_earth_metals")]))
+	for inherited_recipe in [
+		["method_packaging_plant_r7", 0,
+			["aluminum", "glass", "paper", "plastics", "steel"]],
+		["method_wire_plant_r10", 0, ["aluminum", "copper"]],
+		["method_batteries_plant_r10", 0, ["lead", "rare_earth_metals"]],
+		["method_machine_parts_plant_r9", 1, ["edible_oil", "lubricants"]],
+		["method_insulated_cable_plant_r10", 1,
+			["plastics", "synthetic_rubber"]],
+	]:
+		var inherited_type := buildings.find(String(inherited_recipe[0]))
+		var inherited_input := int(input_offsets[inherited_type]) + int(inherited_recipe[1])
+		var expected_candidates := PackedInt32Array()
+		for good_id in inherited_recipe[2]:
+			expected_candidates.append(goods.find(String(good_id)))
+		_expect("upgraded recipe preserves contextual candidates: %s" % inherited_recipe[0],
+			inherited_type >= 0 and
+			candidate_goods.slice(candidate_offsets[inherited_input],
+				candidate_offsets[inherited_input + 1]) == expected_candidates)
+	var staple_type := buildings.find("staple_kitchen")
+	var staple_input := int(input_offsets[staple_type])
+	_expect("starch staple recipe includes potatoes alongside regional grains",
+		candidate_goods.slice(candidate_offsets[staple_input],
+			candidate_offsets[staple_input + 1]) == PackedInt32Array([
+				goods.find("corn_grain"), goods.find("grain"), goods.find("potatoes"),
+				goods.find("rice_grain"), goods.find("wheat_grain")]))
+	var industrial_machinery_type := buildings.find("industrial_machinery_plant")
+	var industrial_prime_mover_input := int(input_offsets[industrial_machinery_type]) + 1
+	var industrial_prime_mover_begin := int(candidate_offsets[industrial_prime_mover_input])
+	var industrial_prime_mover_end := int(candidate_offsets[industrial_prime_mover_input + 1])
+	_expect("industrial machinery accepts only steam or electric prime movers",
+		candidate_goods.slice(industrial_prime_mover_begin, industrial_prime_mover_end) ==
+			PackedInt32Array([goods.find("electric_motor"), goods.find("steam_engines")]))
+	var agricultural_machinery_type := buildings.find("agricultural_machinery_plant")
+	var agricultural_prime_mover_input := int(input_offsets[agricultural_machinery_type]) + 1
+	var agricultural_prime_mover_begin := int(candidate_offsets[agricultural_prime_mover_input])
+	var agricultural_prime_mover_end := int(candidate_offsets[agricultural_prime_mover_input + 1])
+	_expect("agricultural machinery accepts combustion or steam but not electric motors",
+		candidate_goods.slice(agricultural_prime_mover_begin, agricultural_prime_mover_end) ==
+			PackedInt32Array([goods.find("engines"), goods.find("steam_engines")]))
+	var goldsmith_type := buildings.find("goldsmith_workshop")
+	var goldsmith_input := int(input_offsets[goldsmith_type])
+	_expect("precious-metal role expands to gold and silver",
+		candidate_goods.slice(candidate_offsets[goldsmith_input],
+			candidate_offsets[goldsmith_input + 1]) ==
+			PackedInt32Array([goods.find("gold"), goods.find("silver")]))
+	var guild_weaving_type := buildings.find("guild_weaving_house")
+	var guild_fiber_input := int(input_offsets[guild_weaving_type])
+	_expect("guild fiber role stays narrower than the global spinnable-fiber role",
+		candidate_goods.slice(candidate_offsets[guild_fiber_input],
+			candidate_offsets[guild_fiber_input + 1]) ==
+			PackedInt32Array([goods.find("flax_fiber"), goods.find("wool")]))
+	var bricks_type := buildings.find("bricks_plant")
+	var bricks_input := int(input_offsets[bricks_type])
+	var bricks_begin := int(candidate_offsets[bricks_input])
+	var bricks_end := int(candidate_offsets[bricks_input + 1])
+	_expect("exact-good input compiles as one Q16 candidate",
+		candidate_goods.slice(bricks_begin, bricks_end) ==
+			PackedInt32Array([goods.find("clay")]) and
+		candidate_efficiency.slice(bricks_begin, bricks_end) == PackedInt32Array([65536]))
 	var technologies: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
 	for technology in ["tech.hunting", "tech.bronze_casting", "tech.writing",
 			"tech.guild_organization", "tech.oceanic_navigation", "tech.steam_power",
@@ -228,7 +528,8 @@ func _audit(catalog: Dictionary) -> void:
 		_expect("cross-era technology tag exists: %s" % technology,
 			technologies.find(technology) >= 0)
 	_expect("legacy metadata namespaces are not executable technologies",
-		_not_contains_prefix(technologies, "industry."))
+		_not_contains_prefix(technologies, "industry.") and
+		technologies.find("tech.legacy_modern_economy") < 0)
 	_expect("every good has an executable technology requirement",
 		_all_ranges_have_tech(catalog.good_technology_tag_offsets,
 			catalog.good_technology_tags, goods.size()))
@@ -249,6 +550,72 @@ func _audit(catalog: Dictionary) -> void:
 	for good in range(goods.size()):
 		_expect("good has downstream use or monetary issue: %s" % goods[good],
 			consumed.has(good) or issue_values[good] > 0)
+
+
+func _audit_explicit_candidate_validation() -> void:
+	var good_index := {"corn_grain": 0, "grain": 1, "wheat_grain": 2, "rice_grain": 3}
+	var valid = _candidate_profile()
+	_expect("valid explicit candidate CSR passes validation",
+		EconomyCatalogScript._validate_explicit_input_candidates(valid, good_index) == "")
+
+	var nonzero_start = _candidate_profile()
+	nonzero_start.input_candidate_offsets = PackedInt32Array([1, 3])
+	_expect("explicit candidate CSR must start at zero",
+		"columns mismatch" in EconomyCatalogScript._validate_explicit_input_candidates(
+			nonzero_start, good_index))
+
+	var nonmonotonic = _candidate_profile()
+	nonmonotonic.input_good_ids = PackedStringArray(["wheat_grain", "corn_grain"])
+	nonmonotonic.input_category_ids = PackedStringArray(["", ""])
+	nonmonotonic.input_candidate_offsets = PackedInt32Array([0, 3, 2])
+	nonmonotonic.input_candidate_good_ids = PackedStringArray(["wheat_grain", "grain"])
+	nonmonotonic.input_candidate_efficiency_q16 = PackedInt32Array([65536, 58982])
+	_expect("explicit candidate CSR must be monotonic",
+		"offsets invalid" in EconomyCatalogScript._validate_explicit_input_candidates(
+			nonmonotonic, good_index))
+
+	var efficiency_mismatch = _candidate_profile()
+	efficiency_mismatch.input_candidate_efficiency_q16 = PackedInt32Array([65536, 58982])
+	_expect("candidate goods and efficiencies must align",
+		"columns mismatch" in EconomyCatalogScript._validate_explicit_input_candidates(
+			efficiency_mismatch, good_index))
+
+	var duplicate = _candidate_profile()
+	duplicate.input_candidate_good_ids = PackedStringArray(
+		["wheat_grain", "grain", "wheat_grain"])
+	_expect("an explicit slot rejects duplicate goods",
+		"invalid building explicit" in EconomyCatalogScript._validate_explicit_input_candidates(
+			duplicate, good_index))
+
+	var invalid_efficiency = _candidate_profile()
+	invalid_efficiency.input_candidate_efficiency_q16 = PackedInt32Array([0, 58982, 49152])
+	_expect("explicit candidate efficiency stays inside 1..262144",
+		"invalid building explicit" in EconomyCatalogScript._validate_explicit_input_candidates(
+			invalid_efficiency, good_index))
+
+	var missing_preferred = _candidate_profile()
+	missing_preferred.input_candidate_good_ids = PackedStringArray(
+		["corn_grain", "grain", "rice_grain"])
+	_expect("representative good must belong to its explicit slot",
+		"preferred building input missing" in EconomyCatalogScript._validate_explicit_input_candidates(
+			missing_preferred, good_index))
+
+	var category_conflict = _candidate_profile()
+	category_conflict.input_category_ids = PackedStringArray(["grain"])
+	_expect("category and explicit candidates are mutually exclusive per slot",
+		"cannot combine category" in EconomyCatalogScript._validate_explicit_input_candidates(
+			category_conflict, good_index))
+
+
+func _candidate_profile():
+	var profile = BuildingProfileScript.new()
+	profile.input_good_ids = PackedStringArray(["wheat_grain"])
+	profile.input_category_ids = PackedStringArray([""])
+	profile.input_candidate_offsets = PackedInt32Array([0, 3])
+	profile.input_candidate_good_ids = PackedStringArray(
+		["wheat_grain", "grain", "corn_grain"])
+	profile.input_candidate_efficiency_q16 = PackedInt32Array([65536, 58982, 49152])
+	return profile
 
 
 func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
@@ -302,11 +669,28 @@ func _range_all(values: PackedInt32Array, begin: int, end: int, expected: int) -
 	return true
 
 
+func _good_has_substitution_category(goods: PackedStringArray, offsets: PackedInt32Array,
+		categories: PackedStringArray, good_id: String, category_id: String) -> bool:
+	var good_idx := goods.find(good_id)
+	if good_idx < 0 or good_idx + 1 >= offsets.size():
+		return false
+	for edge in range(offsets[good_idx], offsets[good_idx + 1]):
+		if String(categories[edge]) == category_id:
+			return true
+	return false
+
+
 func _range_positive(values: PackedInt64Array, begin: int, end: int) -> bool:
 	for i in range(begin, end):
 		if i < 0 or i >= values.size() or int(values[i]) <= 0:
 			return false
 	return true
+
+func _sum_i64(values: PackedInt64Array) -> int:
+	var total := 0
+	for value in values:
+		total += int(value)
+	return total
 
 func _all_ranges_have_tech(offsets: PackedInt32Array, tags: PackedStringArray,
 		item_count: int) -> bool:

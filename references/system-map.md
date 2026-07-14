@@ -160,7 +160,7 @@ WorldClock.day_changed(day_idx)
 
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
-- `natural_resource_daily`：37 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；海鱼储量属于海洋格，淡水/淡水鱼属于湖泊或河流格。external delta 一次性应用，`dt_days` 仅推进自然项。岸上渔业由 NativeEconomyRuntime 通过 frozen 六邻拓扑读取并扣减真实水格。初始矿产由资源局部斑块、同族地质省和矿带共同生成。
+- `natural_resource_daily`：30 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；海鱼储量属于海洋格，淡水/淡水鱼不再是经济资源 slot。external delta 一次性应用，`dt_days` 仅推进自然项。岸上渔业由 NativeEconomyRuntime 通过 frozen 六邻拓扑读取并扣减真实水格。初始矿产由资源局部斑块、同族地质省和矿带共同生成。
 - 物资与阶层已进入独立原生经济域：`GoodProfileRegistry` 编译 stable goods，
   `PopulationStore`/`MarketStore` 保存状态，`economy_daily` 推进 `ECONOMY_GRAPH`。
   它们不属于 cell schema；自然资源仍由 `natural_resource_daily` 推进，生产供货走命令账本。
@@ -327,14 +327,15 @@ BUILDING_GRAPH 与国内 Trade V1 阶段承担。税制、跨国贸易/关税、
 NativeEconomyRuntime BUILDING_GRAPH → EconomyFacade/Inspector`。自然资源输入来自 DataCore reserve
 sample，提交为 extra_change delta；建筑和就业本体不进入 MapData/schema。
 
-跨时代经济目录为 35 registered resources / 142 goods / 174 buildings / 32 professions / 15 needs。
+跨时代经济目录为 30 registered resources / 120 goods / 259 production-method buildings / 32 professions / 17 needs / 8 plans。
 `BuildingProfile.building_kind` 强制 collector/industrial 边界，`tech.*` `technology_tags` 由
 国家科技 bitset 在冻结周期内执行。
 两个自给升级族各有 gathering/pottery/guild/steam 四档；BUILD 拒绝已被高档替代的旧档，已有
 建筑继续生产。快照公开 family、tier、最高已解锁档与当前可建状态。
 BUILDING_GRAPH 内部 utility prepass 先生产 `electricity` cycle-flow，普通生产同周期消费并在边界
 清零，家庭能源替代暂不包含电力。`gold`/`silver` producer offer 按固定目录面值进入显式 mint
-审计，是唯一生产性货币输入；早期 merchant 只可拥有消耗真实矿藏的无投入、无雇员金银 collector。
+审计，是唯一生产性货币输入；merchant 只可拥有单一产出并严格匹配真实金/银矿藏的 collector，
+后期档允许雇员和工具输入。
 PKEC v8 的 employee-role 自适应工资在 active-cell employment slice 内计算：基础与岗位生活
 成本形成硬下限，本地合同工资 EMA 提供岗位均薪锚；owner 基础工资不足时比例支付并停产，
 生产后的 owner-lot 超额利润按 25% 形成奖金。LaborMarketStore 为 native 稀疏 CSR，不进入

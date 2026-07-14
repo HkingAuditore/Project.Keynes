@@ -3,9 +3,11 @@
 [resource]
 script = ExtResource("1")
 id = &"classical_silica_pit"
-display_name = "古典硅砂坑"
+display_name = "硅砂矿坑"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.masonry")
+upgrade_family_id = &"silica_extraction"
+upgrade_tier = 1
 construction_days = 0
 owner_profession_id = &"landlord"
 owner_slots_per_building = 1

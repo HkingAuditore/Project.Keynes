@@ -897,7 +897,7 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 		var production_rows := []
 		var input_row_begin := production_rows.size()
 		_append_recipe_rows(production_rows, snapshot, type_idx, "input",
-			int(last_input[i]) if i < last_input.size() else 0, count, period_days)
+			int(last_input[i]) if i < last_input.size() else 0, count, period_days, i)
 		_append_resource_generation_rows(production_rows, snapshot, type_idx,
 			int(last_resource_generated[i]) if i < last_resource_generated.size() else 0,
 			count, period_days)
@@ -958,7 +958,7 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 
 
 func _append_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int, kind: String,
-		actual_total: int, building_count: int, period_days: int) -> void:
+		actual_total: int, building_count: int, period_days: int, group_idx: int = -1) -> void:
 	var offsets: PackedInt32Array = snapshot.get("building_%s_offsets" % kind, PackedInt32Array())
 	var good_indices: PackedInt32Array = snapshot.get("building_%s_good_ids" % kind, PackedInt32Array())
 	var quantities: PackedInt64Array = snapshot.get("building_%s_quantities" % kind, PackedInt64Array())
@@ -975,7 +975,48 @@ func _append_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int, kind:
 		var stable_id := String(good_ids[good_idx]) if good_idx >= 0 and good_idx < good_ids.size() else "unknown"
 		var quantity := int(quantities[cursor]) if cursor < quantities.size() else 0
 		var actual := int(float(actual_total) * float(quantity) / float(recipe_total)) if recipe_total > 0 else 0
-		rows.append({"id": "%s_%d" % [kind, cursor], "name": "%s · %s" % ["原材料" if kind == "input" else "产出", _good_display_name(stable_id)], "value": _actual_daily_rate(actual, building_count, period_days), "icon": "resource", "accent": UITokens.RESOURCE})
+		var good_label := _input_candidate_label(
+			snapshot, cursor, cursor - begin, group_idx, stable_id) \
+			if kind == "input" else _good_display_name(stable_id)
+		rows.append({"id": "%s_%d" % [kind, cursor], "name": "%s · %s" % ["原材料" if kind == "input" else "产出", good_label], "value": _actual_daily_rate(actual, building_count, period_days), "icon": "resource", "accent": UITokens.RESOURCE})
+
+
+func _input_candidate_label(snapshot: Dictionary, input_idx: int, local_input_idx: int,
+		group_idx: int, fallback_id: String) -> String:
+	var offsets: PackedInt32Array = snapshot.get(
+		"building_input_candidate_offsets", PackedInt32Array())
+	var candidates: PackedInt32Array = snapshot.get(
+		"building_input_candidate_good_ids", PackedInt32Array())
+	var efficiencies: PackedInt32Array = snapshot.get(
+		"building_input_candidate_efficiency_q16", PackedInt32Array())
+	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	if input_idx < 0 or input_idx + 1 >= offsets.size():
+		return _good_display_name(fallback_id)
+	var labels := PackedStringArray()
+	for candidate_idx in range(offsets[input_idx], offsets[input_idx + 1]):
+		var good_idx := int(candidates[candidate_idx]) if candidate_idx < candidates.size() else -1
+		if good_idx < 0 or good_idx >= good_ids.size():
+			continue
+		var label := _good_display_name(String(good_ids[good_idx]))
+		var efficiency := int(efficiencies[candidate_idx]) if candidate_idx < efficiencies.size() else 65536
+		if efficiency != 65536:
+			label += " %.0f%%" % (float(efficiency) * 100.0 / 65536.0)
+		labels.append(label)
+	var candidate_label := " / ".join(labels) \
+		if not labels.is_empty() else _good_display_name(fallback_id)
+	var selected_offsets: PackedInt32Array = snapshot.get(
+		"group_input_selected_offsets", PackedInt32Array())
+	var selected_goods: PackedInt32Array = snapshot.get(
+		"group_input_selected_good_ids", PackedInt32Array())
+	if group_idx >= 0 and group_idx + 1 < selected_offsets.size():
+		var selected_idx := int(selected_offsets[group_idx]) + local_input_idx
+		if selected_idx >= int(selected_offsets[group_idx]) \
+				and selected_idx < int(selected_offsets[group_idx + 1]) \
+				and selected_idx < selected_goods.size():
+			var selected_good := int(selected_goods[selected_idx])
+			if selected_good >= 0 and selected_good < good_ids.size():
+				candidate_label += "（当前：%s）" % _good_display_name(String(good_ids[selected_good]))
+	return candidate_label
 
 
 func _append_resource_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int,
@@ -1580,7 +1621,7 @@ func _resource_icon(resource_id: String, name: String) -> String:
 		return "eco"
 	if resource_id in ["fertile_soil", "wheat", "rice", "corn", "potato", "flax", "cotton"]:
 		return "crop"
-	if resource_id in ["horses", "wild_game", "cattle", "sheep", "pigs"]:
+	if resource_id in ["pasture", "wild_game"]:
 		return "livestock"
 	if resource_id in ["oil", "natural_gas"]:
 		return "fuel"

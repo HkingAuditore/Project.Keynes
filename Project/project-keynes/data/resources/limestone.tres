@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"limestone"
-display_name = "石灰石"
+display_name = "石灰岩"
 reserve_component = &"cell.res_limestone_reserve"
 habitat_mode = "land"
 init_reserve_scale = 8

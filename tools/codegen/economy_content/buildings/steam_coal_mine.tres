@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"steam_coal_mine"
-display_name = "蒸汽时代煤矿"
+display_name = "蒸汽动力煤矿"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.coke_smelting")
 construction_days = 0

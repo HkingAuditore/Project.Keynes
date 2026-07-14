@@ -60,7 +60,7 @@ static func normalize_icon(icon: String) -> String:
 			return "fuel"
 		"crop", "grain", "wheat", "rice", "corn", "potato", "soil", "cotton", "flax":
 			return "crop"
-		"horse", "livestock", "cattle", "sheep", "pigs", "game":
+		"horse", "livestock", "pasture", "game":
 			return "livestock"
 		"⌖", "coord", "target":
 			return "target"

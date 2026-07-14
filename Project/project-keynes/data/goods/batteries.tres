@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"batteries"
 display_name = "电池"
-category_id = &"machinery"
-technology_tags = PackedStringArray("industry.machinery", "tech.legacy_modern_economy")
+category_id = &"batteries"
+substitution_category_ids = PackedStringArray("batteries")
+technology_tags = PackedStringArray("industry.machinery", "tech.electrochemistry")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

@@ -4,5 +4,5 @@
 script = ExtResource("1")
 id = &"guild_master"
 display_name = "行会师傅"
-default_consumption_plan_id = &"skilled_household"
+default_consumption_plan_id = &"artisan_household"
 technology_tags = PackedStringArray("tech.guild_organization")

@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"electronic_components"
 display_name = "电子元件"
-category_id = &"machinery"
+category_id = &"electronic_components"
+substitution_category_ids = PackedStringArray("electronic_components")
 technology_tags = PackedStringArray("industry.machinery", "tech.radio")
 production_quality_level = 0
 production_efficiency_q16 = 65536

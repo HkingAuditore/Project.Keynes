@@ -25,6 +25,9 @@ func _init() -> void:
 			_water_resource_habitats_valid(map))
 	var facade = generator.get_economy_facade()
 	_expect("economy facade configured", facade != null and facade.is_configured())
+	if facade != null:
+		_expect("facade exposes recipe candidates and multi-role output metadata",
+			_substitution_metadata_valid(facade))
 	if map != null and facade != null:
 		var populated_cell := _first_populated_cell(map, facade)
 		_expect("generated map has populated land", populated_cell >= 0)
@@ -56,23 +59,18 @@ func _first_populated_cell(map: MapData, facade) -> int:
 
 func _water_resource_habitats_valid(map: MapData) -> bool:
 	var marine: PackedFloat32Array = map.res_marine_fish_reserve_arr
-	var freshwater: PackedFloat32Array = map.res_freshwater_fish_reserve_arr
-	if marine.size() != map.cell_count() or freshwater.size() != map.cell_count():
+	if marine.size() != map.cell_count():
 		return false
 	var found_marine_water := false
 	for cell in range(map.cell_count()):
 		var is_water := cell < map.is_water_arr.size() and map.is_water_arr[cell] != 0
 		var landform := int(map.landform_arr[cell]) if cell < map.landform_arr.size() else -1
-		var river := cell < map.has_river_arr.size() and map.has_river_arr[cell] != 0
 		var marine_habitat := is_water and landform in [LandformType.LF.DEEP_OCEAN,
 			LandformType.LF.OCEAN, LandformType.LF.COAST]
-		var freshwater_habitat := (is_water and landform == LandformType.LF.LAKE) or river
 		if marine[cell] > 0.0:
 			if not marine_habitat:
 				return false
 			found_marine_water = true
-		if freshwater[cell] > 0.0 and not freshwater_habitat:
-			return false
 	return found_marine_water
 
 
@@ -173,6 +171,24 @@ func _find_resource(resources: Array, stable_id: StringName) -> Dictionary:
 		if StringName((resource as Dictionary).get("id", "")) == stable_id:
 			return resource
 	return {}
+
+
+func _substitution_metadata_valid(facade) -> bool:
+	var goldsmith: Dictionary = facade.building_placement_spec(&"goldsmith_workshop")
+	if not bool(goldsmith.get("ok", false)) \
+			or goldsmith.get("input_category_ids", PackedStringArray()) != \
+				PackedStringArray(["precious_metal", "tools"]) \
+			or not goldsmith.get("input_candidate_good_ids", PackedStringArray()).has("gold") \
+			or not goldsmith.get("input_candidate_good_ids", PackedStringArray()).has("silver"):
+		return false
+	var steam_works: Dictionary = facade.building_placement_spec(&"steam_engine_works")
+	var offsets: PackedInt32Array = steam_works.get(
+		"output_substitution_category_offsets", PackedInt32Array())
+	var categories: PackedStringArray = steam_works.get(
+		"output_substitution_category_ids", PackedStringArray())
+	return bool(steam_works.get("ok", false)) and offsets == PackedInt32Array([0, 3]) \
+		and categories.has("prime_mover") and categories.has("industrial_prime_mover") \
+		and categories.has("agricultural_prime_mover")
 
 
 func _building_is_mid_stone(facade, building_id: StringName) -> bool:

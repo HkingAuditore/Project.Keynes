@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"coal"
 display_name = "煤炭"
-category_id = &"primary"
+category_id = &"coal"
+substitution_category_ids = PackedStringArray("coal")
 technology_tags = PackedStringArray("industry.primary", "tech.coke_smelting")
 production_quality_level = 0
 production_efficiency_q16 = 65536

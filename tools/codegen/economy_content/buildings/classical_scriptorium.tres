@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"classical_scriptorium"
-display_name = "古典抄写室"
+display_name = "城邦抄写室"
 building_kind = "industrial"
 technology_tags = PackedStringArray("tech.writing")
 construction_days = 0
@@ -13,7 +13,7 @@ employee_profession_ids = PackedStringArray("apprentice")
 employee_slots_per_building = PackedInt64Array(3)
 employee_wage_policy_ids = PackedStringArray("fixed")
 employee_reference_wages_per_day = PackedInt64Array(1000)
-input_good_ids = PackedStringArray("papyrus")
+input_good_ids = PackedStringArray("gathered_plants")
 input_quantities_per_day = PackedInt64Array(1000)
 output_good_ids = PackedStringArray("manuscripts")
 output_quantities_per_day = PackedInt64Array(900)

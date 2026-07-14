@@ -4,5 +4,5 @@
 script = ExtResource("1")
 id = &"enslaved_laborer"
 display_name = "奴隶劳工"
-default_consumption_plan_id = &"subsistence_household"
+default_consumption_plan_id = &"survival_household"
 technology_tags = PackedStringArray("tech.bronze_casting")

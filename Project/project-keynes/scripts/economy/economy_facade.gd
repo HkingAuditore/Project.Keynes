@@ -222,7 +222,8 @@ func _attach_building_display_metadata(snapshot: Dictionary) -> void:
 		"building_resource_generation_ids", "building_resource_generation_quantities",
 		"building_resource_generation_floor_q16", "building_kinds",
 		"building_technology_tag_offsets", "building_technology_tags", "good_ids",
-		"good_category_ids", "good_storage_modes", "good_monetary_issue_values",
+		"good_category_ids", "good_substitution_category_offsets",
+		"good_substitution_category_ids", "good_storage_modes", "good_monetary_issue_values",
 		"good_production_quality_levels", "good_production_efficiency_q16",
 		"good_technology_tag_offsets", "good_technology_tags",
 	]:
@@ -293,8 +294,18 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 		"building_input_category_ids", PackedStringArray())
 	var input_min_levels_all: PackedInt32Array = _catalog.get(
 		"building_input_min_quality_levels", PackedInt32Array())
+	var candidate_offsets_all: PackedInt32Array = _catalog.get(
+		"building_input_candidate_offsets", PackedInt32Array())
+	var candidate_goods_all: PackedInt32Array = _catalog.get(
+		"building_input_candidate_good_ids", PackedInt32Array())
+	var candidate_efficiencies_all: PackedInt32Array = _catalog.get(
+		"building_input_candidate_efficiency_q16", PackedInt32Array())
 	var good_categories: PackedStringArray = _catalog.get(
 		"good_category_ids", PackedStringArray())
+	var good_substitution_offsets: PackedInt32Array = _catalog.get(
+		"good_substitution_category_offsets", PackedInt32Array())
+	var good_substitution_ids: PackedStringArray = _catalog.get(
+		"good_substitution_category_ids", PackedStringArray())
 	if not bool(input_goods.get("ok", false)) or not bool(output_goods.get("ok", false)) \
 			or not bool(production_resources.get("ok", false)):
 		return {"ok": false, "reason": "building placement catalog shape invalid"}
@@ -324,13 +335,42 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 	var input_end := int(input_goods.end)
 	if technology_begin < 0 or technology_end < technology_begin \
 			or technology_end > technology_tags.size() or input_end > input_categories_all.size() \
-			or input_end > input_min_levels_all.size():
+			or input_end > input_min_levels_all.size() or input_end >= candidate_offsets_all.size():
 		return {"ok": false, "reason": "building placement technology columns invalid"}
+	var local_candidate_offsets := PackedInt32Array([0])
+	var local_candidate_good_ids := PackedStringArray()
+	var local_candidate_efficiencies := PackedInt32Array()
+	for input_idx in range(input_begin, input_end):
+		var candidate_begin := int(candidate_offsets_all[input_idx])
+		var candidate_end := int(candidate_offsets_all[input_idx + 1])
+		if candidate_begin < 0 or candidate_end < candidate_begin \
+				or candidate_end > candidate_goods_all.size() \
+				or candidate_end > candidate_efficiencies_all.size():
+			return {"ok": false, "reason": "building placement candidate columns invalid"}
+		for candidate_idx in range(candidate_begin, candidate_end):
+			var good_idx := int(candidate_goods_all[candidate_idx])
+			if good_idx < 0 or good_idx >= good_ids.size():
+				return {"ok": false, "reason": "building placement candidate good invalid"}
+			local_candidate_good_ids.append(good_ids[good_idx])
+			local_candidate_efficiencies.append(candidate_efficiencies_all[candidate_idx])
+		local_candidate_offsets.append(local_candidate_good_ids.size())
 	var output_categories := PackedStringArray()
+	var output_substitution_offsets := PackedInt32Array([0])
+	var output_substitution_ids := PackedStringArray()
 	for good_id in output_goods.ids:
 		var good_idx := good_ids.find(String(good_id))
 		output_categories.append(String(good_categories[good_idx]) \
 			if good_idx >= 0 and good_idx < good_categories.size() else "")
+		if good_idx < 0 or good_idx + 1 >= good_substitution_offsets.size():
+			return {"ok": false, "reason": "building output substitution categories invalid"}
+		var category_begin := int(good_substitution_offsets[good_idx])
+		var category_end := int(good_substitution_offsets[good_idx + 1])
+		if category_begin < 0 or category_end <= category_begin \
+				or category_end > good_substitution_ids.size():
+			return {"ok": false, "reason": "building output substitution category range invalid"}
+		output_substitution_ids.append_array(
+			good_substitution_ids.slice(category_begin, category_end))
+		output_substitution_offsets.append(output_substitution_ids.size())
 	var family_idx := int(family_indices[type_id])
 	var higher_tier_ids := PackedStringArray()
 	if family_idx >= 0:
@@ -351,8 +391,13 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 		"input_good_ids": input_goods.ids,
 		"input_category_ids": input_categories_all.slice(input_begin, input_end),
 		"input_min_quality_levels": input_min_levels_all.slice(input_begin, input_end),
+		"input_candidate_offsets": local_candidate_offsets,
+		"input_candidate_good_ids": local_candidate_good_ids,
+		"input_candidate_efficiency_q16": local_candidate_efficiencies,
 		"output_good_ids": output_goods.ids,
 		"output_category_ids": output_categories,
+		"output_substitution_category_offsets": output_substitution_offsets,
+		"output_substitution_category_ids": output_substitution_ids,
 		"resource_ids": production_resources.ids,
 		"resource_quantities": quantities.slice(resource_begin, resource_end),
 		"resource_modes": modes.slice(resource_begin, resource_end),

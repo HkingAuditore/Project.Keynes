@@ -1131,7 +1131,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _wealth_reference_per_capita = std::max<int64_t>(1, dict_num<int64_t>(
         profile, "wealth_reference_per_capita", MONEY_SCALE * 10));
     _living_cost_base_plan_stable_id =
-        dict_string(profile, "living_cost_base_plan_id", "subsistence_household");
+        dict_string(profile, "living_cost_base_plan_id", "survival_household");
     _wage_ema_alpha_q16 = std::clamp(
         dict_num<int32_t>(profile, "wage_ema_alpha_q16", 8192), 0,
         static_cast<int32_t>(Q16_ONE));
@@ -2585,10 +2585,10 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             const bool silver = output_good >= 0 && _good_ids[output_good] == "silver" &&
                 resource >= 0 && _resource_ids[resource] == "silver_ore";
             if (_building_kinds[i] != 0 || behavior_ids[i] != 1 ||
-                employee_offsets[i] != employee_offsets[i + 1] ||
-                input_offsets[i] != input_offsets[i + 1] || !one_output || !one_resource ||
+                !one_output || !one_resource ||
+                generation_offsets[i] != generation_offsets[i + 1] ||
                 resource_modes[resource_offsets[i]] != 0 || (!gold && !silver)) {
-                error = "merchant_building_must_be_early_bullion_collector";
+                error = "merchant_building_must_be_matching_bullion_collector";
                 return false;
             }
         }
@@ -2655,7 +2655,15 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
         int64_t role_living = 0;
         int64_t local_average = 0;
     };
+    struct SavedInputSelection {
+        int32_t cell = -1;
+        int32_t type = -1;
+        int32_t owner = -1;
+        int32_t input = -1;
+        int32_t good = -1;
+    };
     std::vector<SavedRole> saved;
+    std::vector<SavedInputSelection> saved_input_selections;
     for (const BuildingGroup &group : _buildings) {
         if (group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size())) continue;
@@ -2670,10 +2678,23 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
                 _building_role_living_cost[index],
                 _building_role_local_average_wage[index]});
         }
+        for (int32_t input = 0; input < type.input_count; ++input) {
+            const int32_t index = group.last_input_selection_begin + input;
+            if (index < 0 || index >= static_cast<int32_t>(
+                    _building_last_input_selected_goods.size())) continue;
+            const int32_t good = _building_last_input_selected_goods[index];
+            if (good >= 0) saved_input_selections.push_back({
+                group.cell, group.type_id, group.owner_signature_id, input, good});
+        }
     }
     std::sort(saved.begin(), saved.end(), [](const SavedRole &a, const SavedRole &b) {
         return std::tie(a.cell, a.type, a.owner, a.role) <
                std::tie(b.cell, b.type, b.owner, b.role);
+    });
+    std::sort(saved_input_selections.begin(), saved_input_selections.end(),
+              [](const SavedInputSelection &a, const SavedInputSelection &b) {
+        return std::tie(a.cell, a.type, a.owner, a.input) <
+               std::tie(b.cell, b.type, b.owner, b.input);
     });
     std::stable_sort(_buildings.begin(), _buildings.end(), [](const BuildingGroup &a,
                                                                const BuildingGroup &b) {
@@ -2682,13 +2703,18 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
         return a.owner_signature_id < b.owner_signature_id;
     });
     size_t role_count = 0;
+    size_t input_selection_count = 0;
     for (BuildingGroup &group : _buildings) {
         group.employee_fill_begin = static_cast<int32_t>(role_count);
+        group.last_input_selection_begin = static_cast<int32_t>(input_selection_count);
         if (group.type_id >= 0 && group.type_id < static_cast<int32_t>(_building_types.size())) {
             role_count += static_cast<size_t>(_building_types[group.type_id].employee_count);
+            input_selection_count += static_cast<size_t>(
+                _building_types[group.type_id].input_count);
         }
     }
     _building_employee_filled.assign(role_count, 0);
+    _building_last_input_selected_goods.assign(input_selection_count, -1);
     _building_role_contract_wage.assign(role_count, 0);
     _building_role_base_living_cost.assign(role_count, 0);
     _building_role_living_cost.assign(role_count, 0);
@@ -2719,6 +2745,30 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
             } else {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
                 _building_role_contract_wage[index] = role.reference_wage_per_day;
+            }
+        }
+    }
+    size_t input_selection_cursor = 0;
+    for (const BuildingGroup &group : _buildings) {
+        const BuildingType &type = _building_types[group.type_id];
+        for (int32_t input = 0; input < type.input_count; ++input) {
+            const auto key = std::tuple(group.cell, group.type_id,
+                                        group.owner_signature_id, input);
+            while (input_selection_cursor < saved_input_selections.size() &&
+                   std::tie(saved_input_selections[input_selection_cursor].cell,
+                            saved_input_selections[input_selection_cursor].type,
+                            saved_input_selections[input_selection_cursor].owner,
+                            saved_input_selections[input_selection_cursor].input) < key) {
+                ++input_selection_cursor;
+            }
+            if (input_selection_cursor < saved_input_selections.size() &&
+                std::tie(saved_input_selections[input_selection_cursor].cell,
+                         saved_input_selections[input_selection_cursor].type,
+                         saved_input_selections[input_selection_cursor].owner,
+                         saved_input_selections[input_selection_cursor].input) == key) {
+                _building_last_input_selected_goods[
+                    group.last_input_selection_begin + input] =
+                        saved_input_selections[input_selection_cursor].good;
             }
         }
     }
@@ -3944,6 +3994,10 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
         group.last_bonus_paid = group.last_bonus_due = 0;
         group.wage_suspended = 0;
         const BuildingType &type = _building_types[group.type_id];
+        for (int32_t input = 0; input < type.input_count; ++input) {
+            _building_last_input_selected_goods[
+                group.last_input_selection_begin + input] = -1;
+        }
         if (!building_available(cell, group.type_id, true)) continue;
         for (int32_t r = 0; r < type.employee_count; ++r) {
             const int32_t role_index = group.employee_fill_begin + r;
@@ -4182,6 +4236,8 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                     return false;
                 }
                 const InputCandidate &candidate = _building_input_candidates[selected];
+                _building_last_input_selected_goods[
+                    group.last_input_selection_begin + i] = candidate.good_id;
                 const int64_t full_physical = physical_input_quantity(effective, candidate);
                 const int64_t qty = mul_div_sat(
                     full_physical, scale_q16, Q16_ONE, _saturation_count);
@@ -4693,6 +4749,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _building_cell_offsets.clear();
     _building_active_cells.clear();
     _building_employee_filled.clear();
+    _building_last_input_selected_goods.clear();
     _pending_construction.clear();
     _building_context_day = -1;
     _committed_cells.assign(cell_count, {});
@@ -4743,6 +4800,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _building_cell_offsets.clear();
     _building_active_cells.clear();
     _building_employee_filled.clear();
+    _building_last_input_selected_goods.clear();
     _building_role_contract_wage.clear();
     _building_role_base_living_cost.clear();
     _building_role_living_cost.clear();
@@ -7783,6 +7841,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_building_conditions); cap(_buildings); cap(_building_cell_offsets);
     cap(_building_active_cells);
     cap(_building_employee_filled);
+    cap(_building_last_input_selected_goods);
     cap(_building_role_contract_wage); cap(_building_role_base_living_cost);
     cap(_building_role_living_cost); cap(_building_role_local_average_wage);
     cap(_building_role_base_wage_due); cap(_building_role_base_wage_paid);
@@ -8557,7 +8616,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array last_bonus_due;
     PackedInt64Array last_bonus_paid;
     PackedByteArray wage_suspended;
+    PackedInt32Array group_input_selected_offsets;
+    PackedInt32Array group_input_selected_good_ids;
     employee_fill_offsets.push_back(0);
+    group_input_selected_offsets.push_back(0);
     const int32_t group_begin = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
         ? _building_cell_offsets[cell_idx] : 0;
     const int32_t group_end = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
@@ -8591,6 +8653,14 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         last_bonus_paid.push_back(group.last_bonus_paid);
         wage_suspended.push_back(group.wage_suspended);
         const BuildingType &type = _building_types[group.type_id];
+        for (int32_t input = 0; input < type.input_count; ++input) {
+            const int32_t index = group.last_input_selection_begin + input;
+            group_input_selected_good_ids.push_back(
+                index >= 0 && index < static_cast<int32_t>(
+                    _building_last_input_selected_goods.size())
+                    ? _building_last_input_selected_goods[index] : -1);
+        }
+        group_input_selected_offsets.push_back(group_input_selected_good_ids.size());
         for (int32_t r = 0; r < type.employee_count; ++r) {
             const JobRole &role = _building_employee_roles[type.employee_begin + r];
             employee_profession_ids.push_back(role.profession_id);
@@ -8688,6 +8758,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["last_bonus_due"] = last_bonus_due;
     out["last_bonus_paid"] = last_bonus_paid;
     out["wage_suspended"] = wage_suspended;
+    out["group_input_selected_offsets"] = group_input_selected_offsets;
+    out["group_input_selected_good_ids"] = group_input_selected_good_ids;
     PackedInt32Array labor_professions;
     PackedInt64Array labor_contract_ema;
     PackedInt64Array labor_paid_ema;
@@ -9051,6 +9123,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _building_cell_offsets.clear();
     _building_active_cells.clear();
     _building_employee_filled.clear();
+    _building_last_input_selected_goods.clear();
     _pending_construction.clear();
     _building_context_day = -1;
     _resource_deltas_ready = false;
@@ -9499,6 +9572,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _building_cell_offsets.clear();
     _building_active_cells.clear();
     _building_employee_filled.clear();
+    _building_last_input_selected_goods.clear();
     _building_role_contract_wage.clear();
     _building_role_base_living_cost.clear();
     _building_role_living_cost.clear();

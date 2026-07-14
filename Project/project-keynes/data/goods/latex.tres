@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"latex"
 display_name = "天然乳胶"
-category_id = &"primary"
+category_id = &"elastomer"
+substitution_category_ids = PackedStringArray("elastomer")
 technology_tags = PackedStringArray("industry.primary", "tech.oceanic_navigation")
 production_quality_level = 0
 production_efficiency_q16 = 65536

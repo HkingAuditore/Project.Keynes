@@ -4,5 +4,5 @@
 script = ExtResource("1")
 id = &"forager"
 display_name = "采集者"
-default_consumption_plan_id = &"subsistence_household"
+default_consumption_plan_id = &"survival_household"
 technology_tags = PackedStringArray("tech.gathering")

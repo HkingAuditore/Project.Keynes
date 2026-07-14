@@ -3,6 +3,6 @@
 [resource]
 script = ExtResource("1")
 id = &"journeyman"
-display_name = "帮工"
-default_consumption_plan_id = &"worker_household"
+display_name = "熟练工"
+default_consumption_plan_id = &"artisan_household"
 technology_tags = PackedStringArray("tech.writing")

@@ -3,5 +3,5 @@
 [resource]
 script = ExtResource("1")
 id = &"staple_food"
-display_name = "主食"
+display_name = "Staple Food"
 living_cost_weight_q16 = 65536

@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"clay"
 display_name = "黏土"
-category_id = &"primary"
+category_id = &"clay"
+substitution_category_ids = PackedStringArray("clay")
 technology_tags = PackedStringArray("industry.primary", "tech.pottery")
 production_quality_level = 0
 production_efficiency_q16 = 65536

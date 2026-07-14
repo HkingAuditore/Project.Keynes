@@ -3,9 +3,11 @@
 [resource]
 script = ExtResource("1")
 id = &"placer_gold_working"
-display_name = "早期淘金点"
+display_name = "河滩淘金场"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.gathering")
+upgrade_family_id = &"gold_extraction"
+upgrade_tier = 1
 construction_days = 0
 owner_profession_id = &"merchant"
 owner_slots_per_building = 1

@@ -5,8 +5,9 @@
 [resource]
 script = ExtResource("1")
 id = &"fur"
-display_name = "皮毛"
-category_id = &"textile"
+display_name = "毛皮"
+category_id = &"fur"
+substitution_category_ids = PackedStringArray("fur")
 technology_tags = PackedStringArray("industry.textile", "tech.hunting")
 production_quality_level = 0
 production_efficiency_q16 = 65536

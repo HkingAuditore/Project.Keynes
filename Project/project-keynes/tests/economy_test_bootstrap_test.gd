@@ -48,10 +48,24 @@ func _initialize() -> void:
 	native_catalog.erase("ok")
 	_expect("all-technology test country bootstraps", CountryTestHelper.configure_all_technologies(
 		ext, native_catalog, map.cell_count(), 42, map.is_water_arr))
-	_expect("facade configures", bool(facade.configure(ext, map.cell_count(), 42, profile).get("ok", false)))
+	var configure_result: Dictionary = facade.configure(ext, map.cell_count(), 42, profile)
+	var configure_ok := bool(configure_result.get("ok", false))
+	_expect("facade configures" if configure_ok else "facade configures: %s" %
+		String(configure_result.get("reason", "unknown")), configure_ok)
+	if not configure_ok:
+		_finish()
+		return
 	var first: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
 	var same: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
-	_expect("fixture builds", bool(first.get("ok", false)))
+	var first_ok := bool(first.get("ok", false))
+	var same_ok := bool(same.get("ok", false))
+	_expect("fixture builds" if first_ok else "fixture builds: %s" %
+		String(first.get("reason", "unknown")), first_ok)
+	_expect("repeated fixture builds" if same_ok else "repeated fixture builds: %s" %
+		String(same.get("reason", "unknown")), same_ok)
+	if not first_ok or not same_ok:
+		_finish()
+		return
 	_expect("both passable land cells are populated", int(first.get("populated_cells", 0)) == 2)
 	var catalog_buildings: PackedStringArray = facade.building_type_ids()
 	_expect("fixture is restricted to a sparse mid-stone subset",
@@ -88,7 +102,7 @@ func _initialize() -> void:
 		_has_building(buildings, "stone_age_hunting_camp") and
 		_has_building(second_buildings, "stone_age_hunting_camp") and
 		not _has_building(buildings, "wild_game_collector") and
-		_has_building(second_buildings, "wild_game_collector"))
+		not _has_building(second_buildings, "wild_game_collector"))
 	_expect("early bullion workings follow visible gold and silver deposits",
 		_has_building(buildings, "placer_gold_working") and
 		_has_building(second_buildings, "surface_silver_working"))

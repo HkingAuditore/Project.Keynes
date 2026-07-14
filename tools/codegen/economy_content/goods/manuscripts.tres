@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"manuscripts"
-display_name = "手抄文书"
+display_name = "手抄本"
 category_id = &"culture"
 technology_tags = PackedStringArray("tech.writing")
 default_price = 24000

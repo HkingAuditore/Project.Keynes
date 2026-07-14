@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"flint_quarry"
-display_name = "燧石采集场"
+display_name = "燧石采掘场"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.stone_knapping")
 construction_days = 0

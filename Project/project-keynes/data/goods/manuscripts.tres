@@ -3,8 +3,9 @@
 [resource]
 script = ExtResource("1")
 id = &"manuscripts"
-display_name = "手抄文书"
-category_id = &"culture"
+display_name = "手抄本"
+category_id = &"manuscripts"
+substitution_category_ids = PackedStringArray("manuscripts")
 technology_tags = PackedStringArray("tech.writing")
 default_price = 24000
 min_price = 2400

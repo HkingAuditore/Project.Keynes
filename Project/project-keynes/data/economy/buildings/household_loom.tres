@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"household_loom"
-display_name = "家庭织机坊"
+display_name = "家用织机"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.pottery")
 upgrade_family_id = &"household_cloth"

@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"flint"
 display_name = "燧石原料"
-category_id = &"raw_materials"
+category_id = &"flint"
+substitution_category_ids = PackedStringArray("flint")
 technology_tags = PackedStringArray("tech.stone_knapping")
 default_price = 4000
 min_price = 400

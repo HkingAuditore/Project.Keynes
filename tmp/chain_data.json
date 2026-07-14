@@ -1,0 +1,9465 @@
+{
+ "summary": {
+  "n_resources_total": 30,
+  "n_resources_used": 30,
+  "n_goods_total": 136,
+  "n_goods_used": 136,
+  "n_goods_only_output": 28,
+  "n_goods_only_input": 0,
+  "n_goods_io": 108,
+  "n_buildings": 182,
+  "n_edges": 361,
+  "tier_counts": {
+   "0": 30,
+   "1": 25,
+   "2": 14,
+   "3": 12,
+   "4": 8,
+   "5": 10,
+   "6": 4,
+   "7": 9,
+   "8": 9,
+   "9": 7,
+   "10": 10,
+   "11": 8,
+   "12": 6,
+   "13": 5,
+   "14": 5,
+   "15": 2,
+   "16": 1,
+   "17": 1
+  },
+  "category_counts": {
+   "chemicals": 12,
+   "communication": 1,
+   "construction": 8,
+   "consumer": 1,
+   "culture": 2,
+   "electrical": 1,
+   "electronics": 1,
+   "energy": 2,
+   "food": 14,
+   "forestry": 6,
+   "household_goods": 1,
+   "instruments": 2,
+   "machinery": 16,
+   "medical": 1,
+   "metals": 12,
+   "nuclear": 1,
+   "paper": 2,
+   "primary": 35,
+   "raw_materials": 1,
+   "textile": 11,
+   "textiles": 1,
+   "tools": 4,
+   "transport_equipment": 1
+  },
+  "buildings_without_io": [],
+  "n_scc": 152,
+  "n_cyclic_scc": 3,
+  "cyclic_examples": [
+   [
+    "G:explosives",
+    "G:sulfur"
+   ],
+   [
+    "G:lubricants",
+    "G:natural_gas",
+    "G:electricity",
+    "G:refined_fuel",
+    "G:crude_oil",
+    "G:industrial_machinery",
+    "G:machine_parts"
+   ],
+   [
+    "G:lumber",
+    "G:logs",
+    "G:pig_iron",
+    "G:coke",
+    "G:coal",
+    "G:tools",
+    "G:steel",
+    "G:iron_ore"
+   ]
+  ]
+ },
+ "materials": {
+  "R:arable_land": {
+   "id": "arable_land",
+   "type": "resource",
+   "display": "耕地",
+   "tier": 0
+  },
+  "R:bauxite": {
+   "id": "bauxite",
+   "type": "resource",
+   "display": "铝土矿",
+   "tier": 0
+  },
+  "R:clay": {
+   "id": "clay",
+   "type": "resource",
+   "display": "黏土",
+   "tier": 0
+  },
+  "R:coal": {
+   "id": "coal",
+   "type": "resource",
+   "display": "煤炭",
+   "tier": 0
+  },
+  "R:copper_ore": {
+   "id": "copper_ore",
+   "type": "resource",
+   "display": "铜矿",
+   "tier": 0
+  },
+  "R:fertile_soil": {
+   "id": "fertile_soil",
+   "type": "resource",
+   "display": "肥沃土壤",
+   "tier": 0
+  },
+  "R:flint": {
+   "id": "flint",
+   "type": "resource",
+   "display": "燧石",
+   "tier": 0
+  },
+  "R:gold_ore": {
+   "id": "gold_ore",
+   "type": "resource",
+   "display": "金矿",
+   "tier": 0
+  },
+  "R:iron_ore": {
+   "id": "iron_ore",
+   "type": "resource",
+   "display": "铁矿",
+   "tier": 0
+  },
+  "R:lead_ore": {
+   "id": "lead_ore",
+   "type": "resource",
+   "display": "铅矿",
+   "tier": 0
+  },
+  "R:limestone": {
+   "id": "limestone",
+   "type": "resource",
+   "display": "石灰岩",
+   "tier": 0
+  },
+  "R:manganese_ore": {
+   "id": "manganese_ore",
+   "type": "resource",
+   "display": "锰矿",
+   "tier": 0
+  },
+  "R:marine_fish": {
+   "id": "marine_fish",
+   "type": "resource",
+   "display": "海鱼",
+   "tier": 0
+  },
+  "R:natural_gas": {
+   "id": "natural_gas",
+   "type": "resource",
+   "display": "天然气",
+   "tier": 0
+  },
+  "R:oil": {
+   "id": "oil",
+   "type": "resource",
+   "display": "石油",
+   "tier": 0
+  },
+  "R:paddy_land": {
+   "id": "paddy_land",
+   "type": "resource",
+   "display": "水田",
+   "tier": 0
+  },
+  "R:pasture": {
+   "id": "pasture",
+   "type": "resource",
+   "display": "牧场",
+   "tier": 0
+  },
+  "R:phosphate_rock": {
+   "id": "phosphate_rock",
+   "type": "resource",
+   "display": "磷矿",
+   "tier": 0
+  },
+  "R:plantation_land": {
+   "id": "plantation_land",
+   "type": "resource",
+   "display": "种植园",
+   "tier": 0
+  },
+  "R:rare_earth": {
+   "id": "rare_earth",
+   "type": "resource",
+   "display": "稀土",
+   "tier": 0
+  },
+  "R:salt": {
+   "id": "salt",
+   "type": "resource",
+   "display": "盐",
+   "tier": 0
+  },
+  "R:saltpeter": {
+   "id": "saltpeter",
+   "type": "resource",
+   "display": "硝石",
+   "tier": 0
+  },
+  "R:silica_sand": {
+   "id": "silica_sand",
+   "type": "resource",
+   "display": "硅砂",
+   "tier": 0
+  },
+  "R:silver_ore": {
+   "id": "silver_ore",
+   "type": "resource",
+   "display": "银矿",
+   "tier": 0
+  },
+  "R:stone": {
+   "id": "stone",
+   "type": "resource",
+   "display": "石料",
+   "tier": 0
+  },
+  "R:sulfur": {
+   "id": "sulfur",
+   "type": "resource",
+   "display": "硫磺",
+   "tier": 0
+  },
+  "R:timber": {
+   "id": "timber",
+   "type": "resource",
+   "display": "木材",
+   "tier": 0
+  },
+  "R:tin_ore": {
+   "id": "tin_ore",
+   "type": "resource",
+   "display": "锡矿",
+   "tier": 0
+  },
+  "R:wild_game": {
+   "id": "wild_game",
+   "type": "resource",
+   "display": "野生动物",
+   "tier": 0
+  },
+  "R:zinc_ore": {
+   "id": "zinc_ore",
+   "type": "resource",
+   "display": "锌矿",
+   "tier": 0
+  },
+  "G:advanced_chips": {
+   "id": "advanced_chips",
+   "type": "good",
+   "display": "先进芯片",
+   "category": "electronics",
+   "price": 110000,
+   "tech_tags": [
+    "tech.machine_learning"
+   ],
+   "tier": 9
+  },
+  "G:agricultural_machinery": {
+   "id": "agricultural_machinery",
+   "type": "good",
+   "display": "农业机械",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.steam_power"
+   ],
+   "tier": 10
+  },
+  "G:aluminum": {
+   "id": "aluminum",
+   "type": "good",
+   "display": "铝",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 8
+  },
+  "G:automobiles": {
+   "id": "automobiles",
+   "type": "good",
+   "display": "汽车",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 10
+  },
+  "G:autonomous_systems": {
+   "id": "autonomous_systems",
+   "type": "good",
+   "display": "自主系统",
+   "category": "machinery",
+   "price": 220000,
+   "tech_tags": [
+    "tech.autonomous_systems"
+   ],
+   "tier": 10
+  },
+  "G:batteries": {
+   "id": "batteries",
+   "type": "good",
+   "display": "电池",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 9
+  },
+  "G:bauxite": {
+   "id": "bauxite",
+   "type": "good",
+   "display": "铝土矿",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 7
+  },
+  "G:beverages": {
+   "id": "beverages",
+   "type": "good",
+   "display": "饮料",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.printing_press"
+   ],
+   "tier": 14
+  },
+  "G:bread": {
+   "id": "bread",
+   "type": "good",
+   "display": "面包",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "tier": 13
+  },
+  "G:bricks": {
+   "id": "bricks",
+   "type": "good",
+   "display": "砖",
+   "category": "construction",
+   "price": 22000,
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "tier": 3
+  },
+  "G:bronze": {
+   "id": "bronze",
+   "type": "good",
+   "display": "青铜",
+   "category": "metals",
+   "price": 18000,
+   "tech_tags": [
+    "tech.bronze_casting"
+   ],
+   "tier": 4
+  },
+  "G:bronze_tools": {
+   "id": "bronze_tools",
+   "type": "good",
+   "display": "青铜工具",
+   "category": "tools",
+   "price": 26000,
+   "tech_tags": [
+    "tech.bronze_casting"
+   ],
+   "tier": 5
+  },
+  "G:canned_fish": {
+   "id": "canned_fish",
+   "type": "good",
+   "display": "鱼罐头",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.printing_press"
+   ],
+   "tier": 11
+  },
+  "G:cement": {
+   "id": "cement",
+   "type": "good",
+   "display": "水泥",
+   "category": "construction",
+   "price": 22000,
+   "tech_tags": [
+    "industry.construction",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 3
+  },
+  "G:chipped_stone_tools": {
+   "id": "chipped_stone_tools",
+   "type": "good",
+   "display": "打制石器",
+   "category": "tools",
+   "price": 9000,
+   "tech_tags": [
+    "tech.stone_knapping"
+   ],
+   "tier": 2
+  },
+  "G:clay": {
+   "id": "clay",
+   "type": "good",
+   "display": "黏土",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "tier": 2
+  },
+  "G:cloth": {
+   "id": "cloth",
+   "type": "good",
+   "display": "布匹",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.gathering"
+   ],
+   "tier": 14
+  },
+  "G:clothing": {
+   "id": "clothing",
+   "type": "good",
+   "display": "衣物",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.guild_organization"
+   ],
+   "tier": 15
+  },
+  "G:coal": {
+   "id": "coal",
+   "type": "good",
+   "display": "煤炭",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.coke_smelting"
+   ],
+   "tier": 1
+  },
+  "G:codices": {
+   "id": "codices",
+   "type": "good",
+   "display": "手抄典籍",
+   "category": "culture",
+   "price": 32000,
+   "tech_tags": [
+    "tech.manuscript_culture"
+   ],
+   "tier": 14
+  },
+  "G:coke": {
+   "id": "coke",
+   "type": "good",
+   "display": "焦炭",
+   "category": "energy",
+   "price": 13000,
+   "tech_tags": [
+    "tech.coke_smelting"
+   ],
+   "tier": 1
+  },
+  "G:computers": {
+   "id": "computers",
+   "type": "good",
+   "display": "计算机",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.digital_computing"
+   ],
+   "tier": 10
+  },
+  "G:concrete": {
+   "id": "concrete",
+   "type": "good",
+   "display": "混凝土",
+   "category": "construction",
+   "price": 22000,
+   "tech_tags": [
+    "industry.construction",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 4
+  },
+  "G:construction_components": {
+   "id": "construction_components",
+   "type": "good",
+   "display": "建筑构件",
+   "category": "construction",
+   "price": 22000,
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "tier": 17
+  },
+  "G:copper": {
+   "id": "copper",
+   "type": "good",
+   "display": "铜",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.bronze_casting"
+   ],
+   "tier": 3
+  },
+  "G:copper_ore": {
+   "id": "copper_ore",
+   "type": "good",
+   "display": "铜矿",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.bronze_casting"
+   ],
+   "tier": 2
+  },
+  "G:corn_food": {
+   "id": "corn_food",
+   "type": "good",
+   "display": "玉米食品",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.manuscript_culture"
+   ],
+   "tier": 11
+  },
+  "G:corn_grain": {
+   "id": "corn_grain",
+   "type": "good",
+   "display": "玉米",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.manuscript_culture"
+   ],
+   "tier": 1
+  },
+  "G:cotton_fiber": {
+   "id": "cotton_fiber",
+   "type": "good",
+   "display": "棉纤维",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.oceanic_navigation"
+   ],
+   "tier": 1
+  },
+  "G:cotton_yarn": {
+   "id": "cotton_yarn",
+   "type": "good",
+   "display": "棉纱",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.oceanic_navigation"
+   ],
+   "tier": 2
+  },
+  "G:crude_oil": {
+   "id": "crude_oil",
+   "type": "good",
+   "display": "原油",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 5
+  },
+  "G:cut_stone": {
+   "id": "cut_stone",
+   "type": "good",
+   "display": "切割石料",
+   "category": "construction",
+   "price": 22000,
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "tier": 3
+  },
+  "G:dairy_products": {
+   "id": "dairy_products",
+   "type": "good",
+   "display": "乳制品",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "tier": 12
+  },
+  "G:detergent": {
+   "id": "detergent",
+   "type": "good",
+   "display": "洗涤剂",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 8
+  },
+  "G:dressed_masonry": {
+   "id": "dressed_masonry",
+   "type": "good",
+   "display": "古典砌石",
+   "category": "construction",
+   "price": 17000,
+   "tech_tags": [
+    "tech.masonry"
+   ],
+   "tier": 3
+  },
+  "G:edible_oil": {
+   "id": "edible_oil",
+   "type": "good",
+   "display": "食用油",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.guild_organization"
+   ],
+   "tier": 2
+  },
+  "G:electrical_equipment": {
+   "id": "electrical_equipment",
+   "type": "good",
+   "display": "电气设备",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.electrification"
+   ],
+   "tier": 9
+  },
+  "G:electricity": {
+   "id": "electricity",
+   "type": "good",
+   "display": "电力",
+   "category": "energy",
+   "price": 12000,
+   "tech_tags": [
+    "industry.energy",
+    "tech.electrification"
+   ],
+   "tier": 5
+  },
+  "G:electric_motor": {
+   "id": "electric_motor",
+   "type": "good",
+   "display": "电动机",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 4
+  },
+  "G:electronic_components": {
+   "id": "electronic_components",
+   "type": "good",
+   "display": "电子元件",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.radio"
+   ],
+   "tier": 9
+  },
+  "G:engines": {
+   "id": "engines",
+   "type": "good",
+   "display": "发动机",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 9
+  },
+  "G:explosives": {
+   "id": "explosives",
+   "type": "good",
+   "display": "炸药",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 6
+  },
+  "G:fertilizer": {
+   "id": "fertilizer",
+   "type": "good",
+   "display": "化肥",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.steam_power"
+   ],
+   "tier": 8
+  },
+  "G:fish": {
+   "id": "fish",
+   "type": "good",
+   "display": "鱼",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.hunting"
+   ],
+   "tier": 1
+  },
+  "G:flax_fiber": {
+   "id": "flax_fiber",
+   "type": "good",
+   "display": "亚麻纤维",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "tier": 1
+  },
+  "G:flax_yarn": {
+   "id": "flax_yarn",
+   "type": "good",
+   "display": "亚麻纱",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.pottery"
+   ],
+   "tier": 2
+  },
+  "G:flint": {
+   "id": "flint",
+   "type": "good",
+   "display": "燧石原料",
+   "category": "raw_materials",
+   "price": 4000,
+   "tech_tags": [
+    "tech.stone_knapping"
+   ],
+   "tier": 1
+  },
+  "G:flour": {
+   "id": "flour",
+   "type": "good",
+   "display": "面粉",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "tier": 12
+  },
+  "G:footwear": {
+   "id": "footwear",
+   "type": "good",
+   "display": "鞋类",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.guild_organization"
+   ],
+   "tier": 14
+  },
+  "G:fur": {
+   "id": "fur",
+   "type": "good",
+   "display": "毛皮",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.hunting"
+   ],
+   "tier": 3
+  },
+  "G:furniture": {
+   "id": "furniture",
+   "type": "good",
+   "display": "家具",
+   "category": "forestry",
+   "price": 18000,
+   "tech_tags": [
+    "industry.forestry",
+    "tech.pottery"
+   ],
+   "tier": 14
+  },
+  "G:game_meat": {
+   "id": "game_meat",
+   "type": "good",
+   "display": "野味肉",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.hunting"
+   ],
+   "tier": 3
+  },
+  "G:gathered_plants": {
+   "id": "gathered_plants",
+   "type": "good",
+   "display": "采集植物食物",
+   "category": "food",
+   "price": 5000,
+   "tech_tags": [
+    "tech.gathering"
+   ],
+   "tier": 1
+  },
+  "G:glass": {
+   "id": "glass",
+   "type": "good",
+   "display": "玻璃",
+   "category": "construction",
+   "price": 22000,
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "tier": 2
+  },
+  "G:gold": {
+   "id": "gold",
+   "type": "good",
+   "display": "金",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.gathering"
+   ],
+   "tier": 1
+  },
+  "G:grain": {
+   "id": "grain",
+   "type": "good",
+   "display": "杂粮",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "tier": 11
+  },
+  "G:horses": {
+   "id": "horses",
+   "type": "good",
+   "display": "马",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.manuscript_culture"
+   ],
+   "tier": 1
+  },
+  "G:household_appliances": {
+   "id": "household_appliances",
+   "type": "good",
+   "display": "家用电器",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 10
+  },
+  "G:industrial_chemicals": {
+   "id": "industrial_chemicals",
+   "type": "good",
+   "display": "工业化学品",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.experimental_science"
+   ],
+   "tier": 7
+  },
+  "G:industrial_machinery": {
+   "id": "industrial_machinery",
+   "type": "good",
+   "display": "工业机械",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.precision_engineering"
+   ],
+   "tier": 5
+  },
+  "G:insulated_cable": {
+   "id": "insulated_cable",
+   "type": "good",
+   "display": "绝缘电缆",
+   "category": "electrical",
+   "price": 26000,
+   "tech_tags": [
+    "tech.electrification"
+   ],
+   "tier": 4
+  },
+  "G:iron_ore": {
+   "id": "iron_ore",
+   "type": "good",
+   "display": "铁矿",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.steam_power"
+   ],
+   "tier": 1
+  },
+  "G:jewelry": {
+   "id": "jewelry",
+   "type": "good",
+   "display": "珠宝",
+   "category": "consumer",
+   "price": 60000,
+   "tech_tags": [
+    "industry.consumer",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 4
+  },
+  "G:latex": {
+   "id": "latex",
+   "type": "good",
+   "display": "乳胶",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.oceanic_navigation"
+   ],
+   "tier": 1
+  },
+  "G:lead": {
+   "id": "lead",
+   "type": "good",
+   "display": "铅",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 8
+  },
+  "G:lead_ore": {
+   "id": "lead_ore",
+   "type": "good",
+   "display": "铅矿",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 7
+  },
+  "G:leather": {
+   "id": "leather",
+   "type": "good",
+   "display": "皮革",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.pottery"
+   ],
+   "tier": 13
+  },
+  "G:lime": {
+   "id": "lime",
+   "type": "good",
+   "display": "石灰",
+   "category": "construction",
+   "price": 22000,
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "tier": 2
+  },
+  "G:limestone": {
+   "id": "limestone",
+   "type": "good",
+   "display": "石灰岩",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.masonry"
+   ],
+   "tier": 1
+  },
+  "G:livestock_products": {
+   "id": "livestock_products",
+   "type": "good",
+   "display": "畜产品",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "tier": 11
+  },
+  "G:logs": {
+   "id": "logs",
+   "type": "good",
+   "display": "原木",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.gathering"
+   ],
+   "tier": 1
+  },
+  "G:lubricants": {
+   "id": "lubricants",
+   "type": "good",
+   "display": "润滑剂",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 5
+  },
+  "G:lumber": {
+   "id": "lumber",
+   "type": "good",
+   "display": "板材",
+   "category": "forestry",
+   "price": 18000,
+   "tech_tags": [
+    "industry.forestry",
+    "tech.gathering"
+   ],
+   "tier": 1
+  },
+  "G:machine_parts": {
+   "id": "machine_parts",
+   "type": "good",
+   "display": "机械零件",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 5
+  },
+  "G:manganese_alloy": {
+   "id": "manganese_alloy",
+   "type": "good",
+   "display": "锰合金",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 8
+  },
+  "G:manganese_ore": {
+   "id": "manganese_ore",
+   "type": "good",
+   "display": "锰矿",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 7
+  },
+  "G:manuscripts": {
+   "id": "manuscripts",
+   "type": "good",
+   "display": "手抄文书",
+   "category": "culture",
+   "price": 24000,
+   "tech_tags": [
+    "tech.writing"
+   ],
+   "tier": 3
+  },
+  "G:meat": {
+   "id": "meat",
+   "type": "good",
+   "display": "肉",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "tier": 12
+  },
+  "G:medical_isotopes": {
+   "id": "medical_isotopes",
+   "type": "good",
+   "display": "医用同位素",
+   "category": "medical",
+   "price": 90000,
+   "tech_tags": [
+    "tech.nuclear_fission"
+   ],
+   "tier": 11
+  },
+  "G:medicinal_herbs": {
+   "id": "medicinal_herbs",
+   "type": "good",
+   "display": "药材",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.oceanic_navigation"
+   ],
+   "tier": 1
+  },
+  "G:natural_gas": {
+   "id": "natural_gas",
+   "type": "good",
+   "display": "天然气",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 5
+  },
+  "G:navigation_instruments": {
+   "id": "navigation_instruments",
+   "type": "good",
+   "display": "航海仪器",
+   "category": "instruments",
+   "price": 42000,
+   "tech_tags": [
+    "tech.oceanic_navigation"
+   ],
+   "tier": 4
+  },
+  "G:nuclear_fuel": {
+   "id": "nuclear_fuel",
+   "type": "good",
+   "display": "核燃料",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.nuclear_fission"
+   ],
+   "tier": 4
+  },
+  "G:oceanic_vessels": {
+   "id": "oceanic_vessels",
+   "type": "good",
+   "display": "远洋船舶",
+   "category": "transport_equipment",
+   "price": 120000,
+   "tech_tags": [
+    "tech.oceanic_navigation"
+   ],
+   "tier": 16
+  },
+  "G:packaging": {
+   "id": "packaging",
+   "type": "good",
+   "display": "包装材料",
+   "category": "forestry",
+   "price": 18000,
+   "tech_tags": [
+    "industry.forestry",
+    "tech.printing_press"
+   ],
+   "tier": 10
+  },
+  "G:paper": {
+   "id": "paper",
+   "type": "good",
+   "display": "纸张",
+   "category": "forestry",
+   "price": 18000,
+   "tech_tags": [
+    "industry.forestry",
+    "tech.writing"
+   ],
+   "tier": 9
+  },
+  "G:papyrus": {
+   "id": "papyrus",
+   "type": "good",
+   "display": "莎草纸",
+   "category": "paper",
+   "price": 9000,
+   "tech_tags": [
+    "tech.writing"
+   ],
+   "tier": 2
+  },
+  "G:parchment": {
+   "id": "parchment",
+   "type": "good",
+   "display": "羊皮纸",
+   "category": "paper",
+   "price": 14000,
+   "tech_tags": [
+    "tech.manuscript_culture"
+   ],
+   "tier": 13
+  },
+  "G:petrochemicals": {
+   "id": "petrochemicals",
+   "type": "good",
+   "display": "石化产品",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 6
+  },
+  "G:pharmaceuticals": {
+   "id": "pharmaceuticals",
+   "type": "good",
+   "display": "药品",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.nuclear_fission"
+   ],
+   "tier": 12
+  },
+  "G:phosphate_rock": {
+   "id": "phosphate_rock",
+   "type": "good",
+   "display": "磷矿",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 7
+  },
+  "G:pig_iron": {
+   "id": "pig_iron",
+   "type": "good",
+   "display": "生铁",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.steam_power"
+   ],
+   "tier": 1
+  },
+  "G:plastics": {
+   "id": "plastics",
+   "type": "good",
+   "display": "塑料",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 7
+  },
+  "G:potatoes": {
+   "id": "potatoes",
+   "type": "good",
+   "display": "马铃薯",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.guild_organization"
+   ],
+   "tier": 1
+  },
+  "G:potato_food": {
+   "id": "potato_food",
+   "type": "good",
+   "display": "马铃薯食品",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.guild_organization"
+   ],
+   "tier": 11
+  },
+  "G:pottery": {
+   "id": "pottery",
+   "type": "good",
+   "display": "陶器",
+   "category": "household_goods",
+   "price": 11000,
+   "tech_tags": [
+    "tech.pottery"
+   ],
+   "tier": 3
+  },
+  "G:precision_tools": {
+   "id": "precision_tools",
+   "type": "good",
+   "display": "精密工具",
+   "category": "tools",
+   "price": 52000,
+   "tech_tags": [
+    "tech.precision_engineering"
+   ],
+   "tier": 5
+  },
+  "G:printed_materials": {
+   "id": "printed_materials",
+   "type": "good",
+   "display": "印刷品",
+   "category": "forestry",
+   "price": 18000,
+   "tech_tags": [
+    "industry.forestry",
+    "tech.printing_press"
+   ],
+   "tier": 10
+  },
+  "G:processed_food": {
+   "id": "processed_food",
+   "type": "good",
+   "display": "加工食品",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.fire_control"
+   ],
+   "tier": 13
+  },
+  "G:radio_equipment": {
+   "id": "radio_equipment",
+   "type": "good",
+   "display": "无线电设备",
+   "category": "communication",
+   "price": 65000,
+   "tech_tags": [
+    "tech.radio"
+   ],
+   "tier": 5
+  },
+  "G:railway_equipment": {
+   "id": "railway_equipment",
+   "type": "good",
+   "display": "铁路设备",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.steam_power"
+   ],
+   "tier": 10
+  },
+  "G:rare_earth_metals": {
+   "id": "rare_earth_metals",
+   "type": "good",
+   "display": "稀土金属",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.advanced_metallurgy"
+   ],
+   "tier": 3
+  },
+  "G:rare_earth_ore": {
+   "id": "rare_earth_ore",
+   "type": "good",
+   "display": "稀土矿石",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.geological_prospecting"
+   ],
+   "tier": 2
+  },
+  "G:raw_hide": {
+   "id": "raw_hide",
+   "type": "good",
+   "display": "生皮",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.hunting"
+   ],
+   "tier": 12
+  },
+  "G:raw_stone": {
+   "id": "raw_stone",
+   "type": "good",
+   "display": "原石",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.stone_knapping"
+   ],
+   "tier": 2
+  },
+  "G:reactor_components": {
+   "id": "reactor_components",
+   "type": "good",
+   "display": "反应堆部件",
+   "category": "nuclear",
+   "price": 130000,
+   "tech_tags": [
+    "tech.nuclear_fission"
+   ],
+   "tier": 10
+  },
+  "G:refined_fuel": {
+   "id": "refined_fuel",
+   "type": "good",
+   "display": "精炼燃料",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 5
+  },
+  "G:rice_food": {
+   "id": "rice_food",
+   "type": "good",
+   "display": "米饭食品",
+   "category": "food",
+   "price": 16000,
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "tier": 11
+  },
+  "G:rice_grain": {
+   "id": "rice_grain",
+   "type": "good",
+   "display": "稻米",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "tier": 1
+  },
+  "G:sailcloth": {
+   "id": "sailcloth",
+   "type": "good",
+   "display": "帆布",
+   "category": "textiles",
+   "price": 16000,
+   "tech_tags": [
+    "tech.oceanic_navigation"
+   ],
+   "tier": 15
+  },
+  "G:salt": {
+   "id": "salt",
+   "type": "good",
+   "display": "盐",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.gathering"
+   ],
+   "tier": 2
+  },
+  "G:saltpeter": {
+   "id": "saltpeter",
+   "type": "good",
+   "display": "硝石",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 2
+  },
+  "G:scientific_instruments": {
+   "id": "scientific_instruments",
+   "type": "good",
+   "display": "科学仪器",
+   "category": "instruments",
+   "price": 58000,
+   "tech_tags": [
+    "tech.experimental_science"
+   ],
+   "tier": 4
+  },
+  "G:semiconductors": {
+   "id": "semiconductors",
+   "type": "good",
+   "display": "半导体",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.digital_computing"
+   ],
+   "tier": 8
+  },
+  "G:silica_sand": {
+   "id": "silica_sand",
+   "type": "good",
+   "display": "硅砂",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.masonry"
+   ],
+   "tier": 1
+  },
+  "G:silver": {
+   "id": "silver",
+   "type": "good",
+   "display": "银",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.gathering"
+   ],
+   "tier": 1
+  },
+  "G:soap": {
+   "id": "soap",
+   "type": "good",
+   "display": "肥皂",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 3
+  },
+  "G:spices": {
+   "id": "spices",
+   "type": "good",
+   "display": "香料",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.oceanic_navigation"
+   ],
+   "tier": 1
+  },
+  "G:stainless_steel": {
+   "id": "stainless_steel",
+   "type": "good",
+   "display": "不锈钢",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 9
+  },
+  "G:steam_engines": {
+   "id": "steam_engines",
+   "type": "good",
+   "display": "蒸汽机",
+   "category": "machinery",
+   "price": 80000,
+   "tech_tags": [
+    "tech.steam_power"
+   ],
+   "tier": 6
+  },
+  "G:steel": {
+   "id": "steel",
+   "type": "good",
+   "display": "钢",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.steam_power"
+   ],
+   "tier": 1
+  },
+  "G:sulfur": {
+   "id": "sulfur",
+   "type": "good",
+   "display": "硫磺",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 6
+  },
+  "G:synthetic_fiber": {
+   "id": "synthetic_fiber",
+   "type": "good",
+   "display": "合成纤维",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 7
+  },
+  "G:synthetic_rubber": {
+   "id": "synthetic_rubber",
+   "type": "good",
+   "display": "合成橡胶",
+   "category": "chemicals",
+   "price": 30000,
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 7
+  },
+  "G:telecom_equipment": {
+   "id": "telecom_equipment",
+   "type": "good",
+   "display": "电信设备",
+   "category": "machinery",
+   "price": 52000,
+   "tech_tags": [
+    "industry.machinery",
+    "tech.networked_computing"
+   ],
+   "tier": 10
+  },
+  "G:textile": {
+   "id": "textile",
+   "type": "good",
+   "display": "纺织品",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.guild_organization"
+   ],
+   "tier": 13
+  },
+  "G:tin": {
+   "id": "tin",
+   "type": "good",
+   "display": "锡",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.bronze_casting"
+   ],
+   "tier": 3
+  },
+  "G:tin_ore": {
+   "id": "tin_ore",
+   "type": "good",
+   "display": "锡矿",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.bronze_casting"
+   ],
+   "tier": 2
+  },
+  "G:tools": {
+   "id": "tools",
+   "type": "good",
+   "display": "工具",
+   "category": "tools",
+   "price": 52000,
+   "tech_tags": [
+    "industry.tools",
+    "tech.stone_knapping"
+   ],
+   "tier": 1
+  },
+  "G:vegetables": {
+   "id": "vegetables",
+   "type": "good",
+   "display": "蔬菜",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "tier": 11
+  },
+  "G:wheat_grain": {
+   "id": "wheat_grain",
+   "type": "good",
+   "display": "小麦",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "tier": 1
+  },
+  "G:wire": {
+   "id": "wire",
+   "type": "good",
+   "display": "金属线材",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 8
+  },
+  "G:wood_pulp": {
+   "id": "wood_pulp",
+   "type": "good",
+   "display": "木浆",
+   "category": "forestry",
+   "price": 18000,
+   "tech_tags": [
+    "industry.forestry",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 8
+  },
+  "G:wool": {
+   "id": "wool",
+   "type": "good",
+   "display": "羊毛",
+   "category": "textile",
+   "price": 24000,
+   "tech_tags": [
+    "industry.textile",
+    "tech.pottery"
+   ],
+   "tier": 12
+  },
+  "G:zinc": {
+   "id": "zinc",
+   "type": "good",
+   "display": "锌",
+   "category": "metals",
+   "price": 36000,
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 8
+  },
+  "G:zinc_ore": {
+   "id": "zinc_ore",
+   "type": "good",
+   "display": "锌矿",
+   "category": "primary",
+   "price": 10000,
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "tier": 7
+  }
+ },
+ "edges": [
+  {
+   "from": "G:semiconductors",
+   "to": "G:advanced_chips",
+   "b": "advanced_chip_fab",
+   "bd": "先进芯片厂",
+   "qty_in": 1000,
+   "qty_out": 700
+  },
+  {
+   "from": "G:rare_earth_metals",
+   "to": "G:advanced_chips",
+   "b": "advanced_chip_fab",
+   "bd": "先进芯片厂",
+   "qty_in": 200,
+   "qty_out": 700
+  },
+  {
+   "from": "G:industrial_machinery",
+   "to": "G:agricultural_machinery",
+   "b": "agricultural_machinery_plant",
+   "bd": "农业机械厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:engines",
+   "to": "G:agricultural_machinery",
+   "b": "agricultural_machinery_plant",
+   "bd": "农业机械厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:bauxite",
+   "to": "G:aluminum",
+   "b": "aluminum_plant",
+   "bd": "铝厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:aluminum",
+   "b": "aluminum_plant",
+   "bd": "铝厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:engines",
+   "to": "G:automobiles",
+   "b": "automobiles_plant",
+   "bd": "汽车厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:automobiles",
+   "b": "automobiles_plant",
+   "bd": "汽车厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:batteries",
+   "to": "G:automobiles",
+   "b": "automobiles_plant",
+   "bd": "汽车厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:synthetic_rubber",
+   "to": "G:automobiles",
+   "b": "automobiles_plant",
+   "bd": "汽车厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:advanced_chips",
+   "to": "G:autonomous_systems",
+   "b": "autonomous_systems_plant",
+   "bd": "自主系统工厂",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "G:electric_motor",
+   "to": "G:autonomous_systems",
+   "b": "autonomous_systems_plant",
+   "bd": "自主系统工厂",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "G:batteries",
+   "to": "G:autonomous_systems",
+   "b": "autonomous_systems_plant",
+   "bd": "自主系统工厂",
+   "qty_in": 300,
+   "qty_out": 700
+  },
+  {
+   "from": "G:flour",
+   "to": "G:bread",
+   "b": "bakery",
+   "bd": "面包坊",
+   "qty_in": 1000,
+   "qty_out": 2500
+  },
+  {
+   "from": "G:insulated_cable",
+   "to": "G:electrical_equipment",
+   "b": "basic_electrical_equipment_works",
+   "bd": "基础电气设备厂",
+   "qty_in": 700,
+   "qty_out": 800
+  },
+  {
+   "from": "G:steel",
+   "to": "G:electrical_equipment",
+   "b": "basic_electrical_equipment_works",
+   "bd": "基础电气设备厂",
+   "qty_in": 300,
+   "qty_out": 800
+  },
+  {
+   "from": "G:silica_sand",
+   "to": "G:semiconductors",
+   "b": "basic_semiconductor_fab",
+   "bd": "基础半导体厂",
+   "qty_in": 700,
+   "qty_out": 700
+  },
+  {
+   "from": "G:copper",
+   "to": "G:semiconductors",
+   "b": "basic_semiconductor_fab",
+   "bd": "基础半导体厂",
+   "qty_in": 300,
+   "qty_out": 700
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:semiconductors",
+   "b": "basic_semiconductor_fab",
+   "bd": "基础半导体厂",
+   "qty_in": 700,
+   "qty_out": 700
+  },
+  {
+   "from": "G:lead",
+   "to": "G:batteries",
+   "b": "batteries_plant",
+   "bd": "电池厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:rare_earth_metals",
+   "to": "G:batteries",
+   "b": "batteries_plant",
+   "bd": "电池厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:industrial_chemicals",
+   "to": "G:batteries",
+   "b": "batteries_plant",
+   "bd": "电池厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:bauxite",
+   "to": "G:bauxite",
+   "b": "bauxite_collector",
+   "bd": "铝土矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:bauxite",
+   "b": "bauxite_collector",
+   "bd": "铝土矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:explosives",
+   "to": "G:bauxite",
+   "b": "bauxite_collector",
+   "bd": "铝土矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:bauxite",
+   "b": "bauxite_collector",
+   "bd": "铝土矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:processed_food",
+   "to": "G:beverages",
+   "b": "beverages_plant",
+   "bd": "饮料厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:packaging",
+   "to": "G:beverages",
+   "b": "beverages_plant",
+   "bd": "饮料厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:flour",
+   "to": "G:bread",
+   "b": "bread_plant",
+   "bd": "面包厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "G:packaging",
+   "to": "G:bread",
+   "b": "bread_plant",
+   "bd": "面包厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "G:clay",
+   "to": "G:bricks",
+   "b": "bricks_plant",
+   "bd": "砖厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:copper",
+   "to": "G:bronze",
+   "b": "bronze_foundry",
+   "bd": "青铜铸造场",
+   "qty_in": 3000,
+   "qty_out": 3500
+  },
+  {
+   "from": "G:tin",
+   "to": "G:bronze",
+   "b": "bronze_foundry",
+   "bd": "青铜铸造场",
+   "qty_in": 1000,
+   "qty_out": 3500
+  },
+  {
+   "from": "G:bronze",
+   "to": "G:bronze_tools",
+   "b": "bronze_tool_workshop",
+   "bd": "青铜工具工坊",
+   "qty_in": 1000,
+   "qty_out": 1800
+  },
+  {
+   "from": "G:fish",
+   "to": "G:canned_fish",
+   "b": "canned_fish_plant",
+   "bd": "鱼罐头厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:salt",
+   "to": "G:canned_fish",
+   "b": "canned_fish_plant",
+   "bd": "鱼罐头厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:packaging",
+   "to": "G:canned_fish",
+   "b": "canned_fish_plant",
+   "bd": "鱼罐头厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:lime",
+   "to": "G:cement",
+   "b": "cement_plant",
+   "bd": "水泥厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:clay",
+   "to": "G:cement",
+   "b": "cement_plant",
+   "bd": "水泥厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:silica_sand",
+   "to": "G:glass",
+   "b": "classical_glass_kiln",
+   "bd": "古典玻璃窑",
+   "qty_in": 1000,
+   "qty_out": 800
+  },
+  {
+   "from": "G:logs",
+   "to": "G:glass",
+   "b": "classical_glass_kiln",
+   "bd": "古典玻璃窑",
+   "qty_in": 500,
+   "qty_out": 800
+  },
+  {
+   "from": "G:raw_stone",
+   "to": "G:dressed_masonry",
+   "b": "classical_masonry_yard",
+   "bd": "古典石作场",
+   "qty_in": 2000,
+   "qty_out": 2000
+  },
+  {
+   "from": "G:tools",
+   "to": "G:dressed_masonry",
+   "b": "classical_masonry_yard",
+   "bd": "古典石作场",
+   "qty_in": 200,
+   "qty_out": 2000
+  },
+  {
+   "from": "G:dressed_masonry",
+   "to": "G:construction_components",
+   "b": "classical_public_works",
+   "bd": "古典公共工程场",
+   "qty_in": 1000,
+   "qty_out": 800
+  },
+  {
+   "from": "G:papyrus",
+   "to": "G:manuscripts",
+   "b": "classical_scriptorium",
+   "bd": "古典抄写室",
+   "qty_in": 1000,
+   "qty_out": 900
+  },
+  {
+   "from": "R:silica_sand",
+   "to": "G:silica_sand",
+   "b": "classical_silica_pit",
+   "bd": "古典硅砂坑"
+  },
+  {
+   "from": "R:clay",
+   "to": "G:clay",
+   "b": "clay_collector",
+   "bd": "黏土采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:clay",
+   "b": "clay_collector",
+   "bd": "黏土采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:cloth",
+   "to": "G:clothing",
+   "b": "clothing_plant",
+   "bd": "制衣厂",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "G:textile",
+   "to": "G:cloth",
+   "b": "cloth_plant",
+   "bd": "织布厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "R:coal",
+   "to": "G:coal",
+   "b": "coal_mine",
+   "bd": "煤矿"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:coal",
+   "b": "coal_mine",
+   "bd": "煤矿",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:leather",
+   "to": "G:footwear",
+   "b": "cobbler_shop",
+   "bd": "鞋匠铺",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:coal",
+   "to": "G:coke",
+   "b": "coke_ovens",
+   "bd": "焦炉",
+   "qty_in": 1200,
+   "qty_out": 1000
+  },
+  {
+   "from": "G:gathered_plants",
+   "to": "G:processed_food",
+   "b": "communal_hearth",
+   "bd": "公共火塘",
+   "qty_in": 1000,
+   "qty_out": 1200
+  },
+  {
+   "from": "G:game_meat",
+   "to": "G:processed_food",
+   "b": "communal_hearth",
+   "bd": "公共火塘",
+   "qty_in": 500,
+   "qty_out": 1200
+  },
+  {
+   "from": "G:semiconductors",
+   "to": "G:computers",
+   "b": "computers_plant",
+   "bd": "计算机制造厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electronic_components",
+   "to": "G:computers",
+   "b": "computers_plant",
+   "bd": "计算机制造厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:plastics",
+   "to": "G:computers",
+   "b": "computers_plant",
+   "bd": "计算机制造厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:cement",
+   "to": "G:concrete",
+   "b": "concrete_plant",
+   "bd": "混凝土厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:raw_stone",
+   "to": "G:concrete",
+   "b": "concrete_plant",
+   "bd": "混凝土厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:concrete",
+   "to": "G:construction_components",
+   "b": "construction_components_plant",
+   "bd": "建筑构件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:construction_components",
+   "b": "construction_components_plant",
+   "bd": "建筑构件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:glass",
+   "to": "G:construction_components",
+   "b": "construction_components_plant",
+   "bd": "建筑构件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:bricks",
+   "to": "G:construction_components",
+   "b": "construction_components_plant",
+   "bd": "建筑构件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:cut_stone",
+   "to": "G:construction_components",
+   "b": "construction_components_plant",
+   "bd": "建筑构件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:copper_ore",
+   "to": "G:copper_ore",
+   "b": "copper_ore_collector",
+   "bd": "铜矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:copper_ore",
+   "b": "copper_ore_collector",
+   "bd": "铜矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:copper_ore",
+   "to": "G:copper",
+   "b": "copper_plant",
+   "bd": "铜冶炼厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:coal",
+   "to": "G:copper",
+   "b": "copper_plant",
+   "bd": "铜冶炼厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:corn_grain",
+   "to": "G:corn_food",
+   "b": "corn_food_plant",
+   "bd": "玉米食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:packaging",
+   "to": "G:corn_food",
+   "b": "corn_food_plant",
+   "bd": "玉米食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:corn_grain",
+   "to": "G:corn_food",
+   "b": "corn_grinding_house",
+   "bd": "玉米研磨坊",
+   "qty_in": 1000,
+   "qty_out": 2500
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:cloth",
+   "b": "cottage_weaving",
+   "bd": "家庭纺织"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:cloth",
+   "b": "cottage_weaving",
+   "bd": "家庭纺织"
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:cotton_fiber",
+   "b": "cotton_collector",
+   "bd": "棉花种植园"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:cotton_fiber",
+   "b": "cotton_collector",
+   "bd": "棉花种植园"
+  },
+  {
+   "from": "G:cotton_fiber",
+   "to": "G:cotton_yarn",
+   "b": "cotton_yarn_plant",
+   "bd": "棉纱厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:livestock_products",
+   "to": "G:dairy_products",
+   "b": "creamery",
+   "bd": "乳品厂",
+   "qty_in": 1000,
+   "qty_out": 4000
+  },
+  {
+   "from": "G:raw_stone",
+   "to": "G:cut_stone",
+   "b": "cut_stone_plant",
+   "bd": "石料切割厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:tools",
+   "to": "G:cut_stone",
+   "b": "cut_stone_plant",
+   "bd": "石料切割厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:livestock_products",
+   "to": "G:dairy_products",
+   "b": "dairy_products_plant",
+   "bd": "乳制品厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "G:packaging",
+   "to": "G:dairy_products",
+   "b": "dairy_products_plant",
+   "bd": "乳制品厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "G:petrochemicals",
+   "to": "G:detergent",
+   "b": "detergent_plant",
+   "bd": "洗涤剂厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:industrial_chemicals",
+   "to": "G:detergent",
+   "b": "detergent_plant",
+   "bd": "洗涤剂厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:precision_tools",
+   "to": "G:computers",
+   "b": "digital_computer_workshop",
+   "bd": "数字计算机工场",
+   "qty_in": 300,
+   "qty_out": 700
+  },
+  {
+   "from": "G:copper",
+   "to": "G:computers",
+   "b": "digital_computer_workshop",
+   "bd": "数字计算机工场",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:computers",
+   "b": "digital_computer_workshop",
+   "bd": "数字计算机工场",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "R:clay",
+   "to": "G:clay",
+   "b": "early_clay_pit",
+   "bd": "早期黏土坑"
+  },
+  {
+   "from": "R:copper_ore",
+   "to": "G:copper_ore",
+   "b": "early_copper_mine",
+   "bd": "早期铜矿"
+  },
+  {
+   "from": "G:copper_ore",
+   "to": "G:copper",
+   "b": "early_copper_smelter",
+   "bd": "早期炼铜炉",
+   "qty_in": 1000,
+   "qty_out": 700
+  },
+  {
+   "from": "G:logs",
+   "to": "G:copper",
+   "b": "early_copper_smelter",
+   "bd": "早期炼铜炉",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "R:tin_ore",
+   "to": "G:tin_ore",
+   "b": "early_tin_mine",
+   "bd": "早期锡矿"
+  },
+  {
+   "from": "G:tin_ore",
+   "to": "G:tin",
+   "b": "early_tin_smelter",
+   "bd": "早期炼锡炉",
+   "qty_in": 1000,
+   "qty_out": 700
+  },
+  {
+   "from": "G:logs",
+   "to": "G:tin",
+   "b": "early_tin_smelter",
+   "bd": "早期炼锡炉",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "G:corn_grain",
+   "to": "G:edible_oil",
+   "b": "edible_oil_plant",
+   "bd": "食用油厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:wire",
+   "to": "G:electrical_equipment",
+   "b": "electrical_equipment_plant",
+   "bd": "电气设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:electrical_equipment",
+   "b": "electrical_equipment_plant",
+   "bd": "电气设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:plastics",
+   "to": "G:electrical_equipment",
+   "b": "electrical_equipment_plant",
+   "bd": "电气设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:coal",
+   "to": "G:electricity",
+   "b": "electricity_plant",
+   "bd": "发电厂",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "G:copper",
+   "to": "G:electric_motor",
+   "b": "electric_motor_plant",
+   "bd": "电动机制造厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:electric_motor",
+   "b": "electric_motor_plant",
+   "bd": "电动机制造厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:copper",
+   "to": "G:electronic_components",
+   "b": "electronic_components_plant",
+   "bd": "电子元件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:tin",
+   "to": "G:electronic_components",
+   "b": "electronic_components_plant",
+   "bd": "电子元件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:zinc",
+   "to": "G:electronic_components",
+   "b": "electronic_components_plant",
+   "bd": "电子元件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:plastics",
+   "to": "G:electronic_components",
+   "b": "electronic_components_plant",
+   "bd": "电子元件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:rare_earth_metals",
+   "to": "G:electronic_components",
+   "b": "electronic_components_plant",
+   "bd": "电子元件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:engines",
+   "b": "engines_plant",
+   "bd": "发动机制造厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:aluminum",
+   "to": "G:engines",
+   "b": "engines_plant",
+   "bd": "发动机制造厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:machine_parts",
+   "to": "G:engines",
+   "b": "engines_plant",
+   "bd": "发动机制造厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:saltpeter",
+   "to": "G:explosives",
+   "b": "explosives_plant",
+   "bd": "炸药厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:sulfur",
+   "to": "G:explosives",
+   "b": "explosives_plant",
+   "bd": "炸药厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:vegetables",
+   "b": "fertile_soil_collector",
+   "bd": "菜园农场"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:vegetables",
+   "b": "fertile_soil_collector",
+   "bd": "菜园农场"
+  },
+  {
+   "from": "G:phosphate_rock",
+   "to": "G:fertilizer",
+   "b": "fertilizer_plant",
+   "bd": "化肥厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:natural_gas",
+   "to": "G:fertilizer",
+   "b": "fertilizer_plant",
+   "bd": "化肥厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:flax_fiber",
+   "b": "flax_collector",
+   "bd": "亚麻种植园"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:flax_fiber",
+   "b": "flax_collector",
+   "bd": "亚麻种植园"
+  },
+  {
+   "from": "G:flax_fiber",
+   "to": "G:flax_yarn",
+   "b": "flax_spinning_shed",
+   "bd": "亚麻纺纱棚",
+   "qty_in": 1000,
+   "qty_out": 2500
+  },
+  {
+   "from": "G:flax_fiber",
+   "to": "G:flax_yarn",
+   "b": "flax_yarn_plant",
+   "bd": "亚麻纱厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:flint",
+   "to": "G:flint",
+   "b": "flint_quarry",
+   "bd": "燧石采集场"
+  },
+  {
+   "from": "G:grain",
+   "to": "G:flour",
+   "b": "flour_plant",
+   "bd": "面粉厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "G:leather",
+   "to": "G:footwear",
+   "b": "footwear_plant",
+   "bd": "鞋厂",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "G:latex",
+   "to": "G:footwear",
+   "b": "footwear_plant",
+   "bd": "鞋厂",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "G:lumber",
+   "to": "G:furniture",
+   "b": "furniture_plant",
+   "bd": "家具厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:textile",
+   "to": "G:furniture",
+   "b": "furniture_plant",
+   "bd": "家具厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:natural_gas",
+   "to": "G:electricity",
+   "b": "gas_power_plant",
+   "bd": "燃气发电厂",
+   "qty_in": 1000,
+   "qty_out": 12000
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:gathered_plants",
+   "b": "gathering_ground",
+   "bd": "采集场"
+  },
+  {
+   "from": "G:silica_sand",
+   "to": "G:glass",
+   "b": "glass_plant",
+   "bd": "玻璃厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:gold_ore",
+   "to": "G:gold",
+   "b": "gold_mine",
+   "bd": "金矿"
+  },
+  {
+   "from": "G:wheat_grain",
+   "to": "G:grain",
+   "b": "grain_plant",
+   "bd": "杂粮加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:rice_grain",
+   "to": "G:grain",
+   "b": "grain_plant",
+   "bd": "杂粮加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:corn_grain",
+   "to": "G:grain",
+   "b": "grain_plant",
+   "bd": "杂粮加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:lumber",
+   "to": "G:furniture",
+   "b": "guild_hall",
+   "bd": "行会家具工坊",
+   "qty_in": 1200,
+   "qty_out": 1600
+  },
+  {
+   "from": "G:tools",
+   "to": "G:furniture",
+   "b": "guild_hall",
+   "bd": "行会家具工坊",
+   "qty_in": 300,
+   "qty_out": 1600
+  },
+  {
+   "from": "G:flax_yarn",
+   "to": "G:textile",
+   "b": "guild_weaving_house",
+   "bd": "行会织造坊",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:wool",
+   "to": "G:textile",
+   "b": "guild_weaving_house",
+   "bd": "行会织造坊",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:pasture",
+   "to": "G:horses",
+   "b": "horse_breeder",
+   "bd": "养马场"
+  },
+  {
+   "from": "G:electrical_equipment",
+   "to": "G:household_appliances",
+   "b": "household_appliances_plant",
+   "bd": "家电厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:stainless_steel",
+   "to": "G:household_appliances",
+   "b": "household_appliances_plant",
+   "bd": "家电厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:plastics",
+   "to": "G:household_appliances",
+   "b": "household_appliances_plant",
+   "bd": "家电厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:cloth",
+   "b": "household_loom",
+   "bd": "家庭织机"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:cloth",
+   "b": "household_loom",
+   "bd": "家庭织机"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:cloth",
+   "b": "household_weaving_shelter",
+   "bd": "家庭纺织棚"
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:cloth",
+   "b": "improved_domestic_loom",
+   "bd": "改良家用织机"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:cloth",
+   "b": "improved_domestic_loom",
+   "bd": "改良家用织机"
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:grain",
+   "b": "improved_smallholding",
+   "bd": "改良小农庄"
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:vegetables",
+   "b": "improved_smallholding",
+   "bd": "改良小农庄"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:grain",
+   "b": "improved_smallholding",
+   "bd": "改良小农庄"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:vegetables",
+   "b": "improved_smallholding",
+   "bd": "改良小农庄"
+  },
+  {
+   "from": "G:sulfur",
+   "to": "G:industrial_chemicals",
+   "b": "industrial_chemicals_plant",
+   "bd": "工业化学品厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:salt",
+   "to": "G:industrial_chemicals",
+   "b": "industrial_chemicals_plant",
+   "bd": "工业化学品厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:machine_parts",
+   "to": "G:industrial_machinery",
+   "b": "industrial_machinery_plant",
+   "bd": "工业机械厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electric_motor",
+   "to": "G:industrial_machinery",
+   "b": "industrial_machinery_plant",
+   "bd": "工业机械厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:copper",
+   "to": "G:insulated_cable",
+   "b": "insulated_cable_plant",
+   "bd": "绝缘电缆厂",
+   "qty_in": 1000,
+   "qty_out": 1200
+  },
+  {
+   "from": "R:iron_ore",
+   "to": "G:iron_ore",
+   "b": "iron_ore_collector",
+   "bd": "铁矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:iron_ore",
+   "b": "iron_ore_collector",
+   "bd": "铁矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:nuclear_fuel",
+   "to": "G:medical_isotopes",
+   "b": "isotope_reactor",
+   "bd": "同位素反应堆",
+   "qty_in": 300,
+   "qty_out": 500
+  },
+  {
+   "from": "G:reactor_components",
+   "to": "G:medical_isotopes",
+   "b": "isotope_reactor",
+   "bd": "同位素反应堆",
+   "qty_in": 100,
+   "qty_out": 500
+  },
+  {
+   "from": "G:gold",
+   "to": "G:jewelry",
+   "b": "jewelry_plant",
+   "bd": "珠宝厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:silver",
+   "to": "G:jewelry",
+   "b": "jewelry_plant",
+   "bd": "珠宝厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:rare_earth_metals",
+   "to": "G:jewelry",
+   "b": "jewelry_plant",
+   "bd": "珠宝厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:flint",
+   "to": "G:chipped_stone_tools",
+   "b": "knapping_workshop",
+   "bd": "石器打制工坊",
+   "qty_in": 1000,
+   "qty_out": 2000
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:corn_grain",
+   "b": "landed_estate",
+   "bd": "庄园"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:corn_grain",
+   "b": "landed_estate",
+   "bd": "庄园"
+  },
+  {
+   "from": "R:lead_ore",
+   "to": "G:lead_ore",
+   "b": "lead_ore_collector",
+   "bd": "铅矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:lead_ore",
+   "b": "lead_ore_collector",
+   "bd": "铅矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:explosives",
+   "to": "G:lead_ore",
+   "b": "lead_ore_collector",
+   "bd": "铅矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:lead_ore",
+   "b": "lead_ore_collector",
+   "bd": "铅矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:lead_ore",
+   "to": "G:lead",
+   "b": "lead_plant",
+   "bd": "铅冶炼厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:coal",
+   "to": "G:lead",
+   "b": "lead_plant",
+   "bd": "铅冶炼厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:raw_hide",
+   "to": "G:leather",
+   "b": "leather_plant",
+   "bd": "皮革厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:industrial_chemicals",
+   "to": "G:leather",
+   "b": "leather_plant",
+   "bd": "皮革厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:limestone",
+   "to": "G:limestone",
+   "b": "limestone_collector",
+   "bd": "石灰岩采集场"
+  },
+  {
+   "from": "G:limestone",
+   "to": "G:lime",
+   "b": "lime_plant",
+   "bd": "石灰厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:crude_oil",
+   "to": "G:lubricants",
+   "b": "lubricants_plant",
+   "bd": "润滑剂厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:logs",
+   "to": "G:lumber",
+   "b": "lumber_plant",
+   "bd": "锯木厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:machine_parts",
+   "b": "machine_parts_plant",
+   "bd": "机械零件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:lubricants",
+   "to": "G:machine_parts",
+   "b": "machine_parts_plant",
+   "bd": "机械零件厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:manganese_ore",
+   "to": "G:manganese_alloy",
+   "b": "manganese_alloy_plant",
+   "bd": "锰合金厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:manganese_alloy",
+   "b": "manganese_alloy_plant",
+   "bd": "锰合金厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:manganese_ore",
+   "to": "G:manganese_ore",
+   "b": "manganese_ore_collector",
+   "bd": "锰矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:manganese_ore",
+   "b": "manganese_ore_collector",
+   "bd": "锰矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:explosives",
+   "to": "G:manganese_ore",
+   "b": "manganese_ore_collector",
+   "bd": "锰矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:manganese_ore",
+   "b": "manganese_ore_collector",
+   "bd": "锰矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:pasture",
+   "to": "G:livestock_products",
+   "b": "manorial_pasture",
+   "bd": "庄园牧场"
+  },
+  {
+   "from": "R:marine_fish",
+   "to": "G:fish",
+   "b": "marine_fish_collector",
+   "bd": "海洋渔场"
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:grain",
+   "b": "mechanized_farm",
+   "bd": "机械化农场"
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:vegetables",
+   "b": "mechanized_farm",
+   "bd": "机械化农场"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:grain",
+   "b": "mechanized_farm",
+   "bd": "机械化农场"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:vegetables",
+   "b": "mechanized_farm",
+   "bd": "机械化农场"
+  },
+  {
+   "from": "G:fertilizer",
+   "to": "G:grain",
+   "b": "mechanized_farm",
+   "bd": "机械化农场",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "G:fertilizer",
+   "to": "G:vegetables",
+   "b": "mechanized_farm",
+   "bd": "机械化农场",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "G:agricultural_machinery",
+   "to": "G:grain",
+   "b": "mechanized_farm",
+   "bd": "机械化农场",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "G:agricultural_machinery",
+   "to": "G:vegetables",
+   "b": "mechanized_farm",
+   "bd": "机械化农场",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "G:livestock_products",
+   "to": "G:meat",
+   "b": "mechanized_slaughterhouse",
+   "bd": "机械化屠宰场",
+   "qty_in": 1000,
+   "qty_out": 12000
+  },
+  {
+   "from": "G:livestock_products",
+   "to": "G:raw_hide",
+   "b": "mechanized_slaughterhouse",
+   "bd": "机械化屠宰场",
+   "qty_in": 1000,
+   "qty_out": 12000
+  },
+  {
+   "from": "G:industrial_machinery",
+   "to": "G:meat",
+   "b": "mechanized_slaughterhouse",
+   "bd": "机械化屠宰场",
+   "qty_in": 1000,
+   "qty_out": 12000
+  },
+  {
+   "from": "G:industrial_machinery",
+   "to": "G:raw_hide",
+   "b": "mechanized_slaughterhouse",
+   "bd": "机械化屠宰场",
+   "qty_in": 1000,
+   "qty_out": 12000
+  },
+  {
+   "from": "R:plantation_land",
+   "to": "G:medicinal_herbs",
+   "b": "medicinal_herbs_collector",
+   "bd": "药材种植园"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:medicinal_herbs",
+   "b": "medicinal_herbs_collector",
+   "bd": "药材种植园"
+  },
+  {
+   "from": "G:parchment",
+   "to": "G:codices",
+   "b": "monastic_scriptorium",
+   "bd": "修院抄写室",
+   "qty_in": 1000,
+   "qty_out": 700
+  },
+  {
+   "from": "R:natural_gas",
+   "to": "G:natural_gas",
+   "b": "natural_gas_collector",
+   "bd": "天然气采集场"
+  },
+  {
+   "from": "G:industrial_machinery",
+   "to": "G:natural_gas",
+   "b": "natural_gas_collector",
+   "bd": "天然气采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:natural_gas",
+   "b": "natural_gas_collector",
+   "bd": "天然气采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:oceanic_vessels",
+   "to": "G:construction_components",
+   "b": "naval_salvage_yard",
+   "bd": "船舶拆解场",
+   "qty_in": 1000,
+   "qty_out": 1800
+  },
+  {
+   "from": "G:copper",
+   "to": "G:navigation_instruments",
+   "b": "navigation_instrument_shop",
+   "bd": "航海仪器工坊",
+   "qty_in": 500,
+   "qty_out": 900
+  },
+  {
+   "from": "G:glass",
+   "to": "G:navigation_instruments",
+   "b": "navigation_instrument_shop",
+   "bd": "航海仪器工坊",
+   "qty_in": 500,
+   "qty_out": 900
+  },
+  {
+   "from": "G:tools",
+   "to": "G:navigation_instruments",
+   "b": "navigation_instrument_shop",
+   "bd": "航海仪器工坊",
+   "qty_in": 200,
+   "qty_out": 900
+  },
+  {
+   "from": "G:rare_earth_metals",
+   "to": "G:nuclear_fuel",
+   "b": "nuclear_fuel_plant",
+   "bd": "核燃料厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:medical_isotopes",
+   "to": "G:pharmaceuticals",
+   "b": "nuclear_medicine_center",
+   "bd": "放射性药物工坊",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "G:nuclear_fuel",
+   "to": "G:electricity",
+   "b": "nuclear_power_plant",
+   "bd": "核电站",
+   "qty_in": 1000,
+   "qty_out": 18000
+  },
+  {
+   "from": "G:lumber",
+   "to": "G:oceanic_vessels",
+   "b": "oceanic_shipyard",
+   "bd": "远洋造船厂",
+   "qty_in": 4000,
+   "qty_out": 500
+  },
+  {
+   "from": "G:sailcloth",
+   "to": "G:oceanic_vessels",
+   "b": "oceanic_shipyard",
+   "bd": "远洋造船厂",
+   "qty_in": 1000,
+   "qty_out": 500
+  },
+  {
+   "from": "G:navigation_instruments",
+   "to": "G:oceanic_vessels",
+   "b": "oceanic_shipyard",
+   "bd": "远洋造船厂",
+   "qty_in": 200,
+   "qty_out": 500
+  },
+  {
+   "from": "R:oil",
+   "to": "G:crude_oil",
+   "b": "oil_collector",
+   "bd": "石油采集场"
+  },
+  {
+   "from": "G:industrial_machinery",
+   "to": "G:crude_oil",
+   "b": "oil_collector",
+   "bd": "石油采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:crude_oil",
+   "b": "oil_collector",
+   "bd": "石油采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:refined_fuel",
+   "to": "G:electricity",
+   "b": "oil_power_plant",
+   "bd": "燃油发电厂",
+   "qty_in": 1000,
+   "qty_out": 10500
+  },
+  {
+   "from": "G:paper",
+   "to": "G:packaging",
+   "b": "packaging_plant",
+   "bd": "包装厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:wood_pulp",
+   "to": "G:paper",
+   "b": "paper_plant",
+   "bd": "造纸厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:gathered_plants",
+   "to": "G:papyrus",
+   "b": "papyrus_workshop",
+   "bd": "莎草纸作坊",
+   "qty_in": 1000,
+   "qty_out": 1800
+  },
+  {
+   "from": "G:raw_hide",
+   "to": "G:parchment",
+   "b": "parchmenter",
+   "bd": "羊皮纸作坊",
+   "qty_in": 1000,
+   "qty_out": 1000
+  },
+  {
+   "from": "R:pasture",
+   "to": "G:livestock_products",
+   "b": "pastoral_camp",
+   "bd": "游牧营地"
+  },
+  {
+   "from": "G:crude_oil",
+   "to": "G:petrochemicals",
+   "b": "petrochemicals_plant",
+   "bd": "石化厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:natural_gas",
+   "to": "G:petrochemicals",
+   "b": "petrochemicals_plant",
+   "bd": "石化厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:medicinal_herbs",
+   "to": "G:pharmaceuticals",
+   "b": "pharmaceuticals_plant",
+   "bd": "制药厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:industrial_chemicals",
+   "to": "G:pharmaceuticals",
+   "b": "pharmaceuticals_plant",
+   "bd": "制药厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:phosphate_rock",
+   "to": "G:phosphate_rock",
+   "b": "phosphate_rock_collector",
+   "bd": "磷矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:phosphate_rock",
+   "b": "phosphate_rock_collector",
+   "bd": "磷矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:explosives",
+   "to": "G:phosphate_rock",
+   "b": "phosphate_rock_collector",
+   "bd": "磷矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:phosphate_rock",
+   "b": "phosphate_rock_collector",
+   "bd": "磷矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:iron_ore",
+   "to": "G:pig_iron",
+   "b": "pig_iron_plant",
+   "bd": "生铁厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:coal",
+   "to": "G:pig_iron",
+   "b": "pig_iron_plant",
+   "bd": "生铁厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:gold_ore",
+   "to": "G:gold",
+   "b": "placer_gold_working",
+   "bd": "早期淘金点"
+  },
+  {
+   "from": "G:petrochemicals",
+   "to": "G:plastics",
+   "b": "plastics_plant",
+   "bd": "塑料厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:potatoes",
+   "b": "potato_collector",
+   "bd": "马铃薯田"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:potatoes",
+   "b": "potato_collector",
+   "bd": "马铃薯田"
+  },
+  {
+   "from": "G:potatoes",
+   "to": "G:potato_food",
+   "b": "potato_food_plant",
+   "bd": "马铃薯食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:edible_oil",
+   "to": "G:potato_food",
+   "b": "potato_food_plant",
+   "bd": "马铃薯食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:packaging",
+   "to": "G:potato_food",
+   "b": "potato_food_plant",
+   "bd": "马铃薯食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:potatoes",
+   "to": "G:potato_food",
+   "b": "potato_kitchen",
+   "bd": "马铃薯厨房",
+   "qty_in": 1000,
+   "qty_out": 2500
+  },
+  {
+   "from": "G:clay",
+   "to": "G:pottery",
+   "b": "pottery_kiln",
+   "bd": "陶窑",
+   "qty_in": 1000,
+   "qty_out": 2500
+  },
+  {
+   "from": "G:logs",
+   "to": "G:pottery",
+   "b": "pottery_kiln",
+   "bd": "陶窑",
+   "qty_in": 500,
+   "qty_out": 2500
+  },
+  {
+   "from": "G:steel",
+   "to": "G:precision_tools",
+   "b": "precision_tool_workshop",
+   "bd": "精密工具工坊",
+   "qty_in": 800,
+   "qty_out": 900
+  },
+  {
+   "from": "G:scientific_instruments",
+   "to": "G:precision_tools",
+   "b": "precision_tool_workshop",
+   "bd": "精密工具工坊",
+   "qty_in": 200,
+   "qty_out": 900
+  },
+  {
+   "from": "G:paper",
+   "to": "G:printed_materials",
+   "b": "printed_materials_plant",
+   "bd": "印刷厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:vegetables",
+   "to": "G:processed_food",
+   "b": "processed_food_plant",
+   "bd": "食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:game_meat",
+   "to": "G:processed_food",
+   "b": "processed_food_plant",
+   "bd": "食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:dairy_products",
+   "to": "G:processed_food",
+   "b": "processed_food_plant",
+   "bd": "食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:corn_food",
+   "to": "G:processed_food",
+   "b": "processed_food_plant",
+   "bd": "食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:spices",
+   "to": "G:processed_food",
+   "b": "processed_food_plant",
+   "bd": "食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:salt",
+   "to": "G:processed_food",
+   "b": "processed_food_plant",
+   "bd": "食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:packaging",
+   "to": "G:processed_food",
+   "b": "processed_food_plant",
+   "bd": "食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:insulated_cable",
+   "to": "G:radio_equipment",
+   "b": "radio_equipment_works",
+   "bd": "无线电设备厂",
+   "qty_in": 500,
+   "qty_out": 800
+  },
+  {
+   "from": "G:stainless_steel",
+   "to": "G:railway_equipment",
+   "b": "railway_equipment_plant",
+   "bd": "铁路设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:engines",
+   "to": "G:railway_equipment",
+   "b": "railway_equipment_plant",
+   "bd": "铁路设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electrical_equipment",
+   "to": "G:railway_equipment",
+   "b": "railway_equipment_plant",
+   "bd": "铁路设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:pasture",
+   "to": "G:livestock_products",
+   "b": "ranching_station",
+   "bd": "机械化牧场"
+  },
+  {
+   "from": "G:agricultural_machinery",
+   "to": "G:livestock_products",
+   "b": "ranching_station",
+   "bd": "机械化牧场",
+   "qty_in": 1000,
+   "qty_out": 9000
+  },
+  {
+   "from": "R:rare_earth",
+   "to": "G:rare_earth_ore",
+   "b": "rare_earth_collector",
+   "bd": "战略矿产采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:rare_earth_ore",
+   "b": "rare_earth_collector",
+   "bd": "战略矿产采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:rare_earth_ore",
+   "to": "G:rare_earth_metals",
+   "b": "rare_earth_metals_plant",
+   "bd": "战略金属材料厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:reactor_components",
+   "b": "reactor_component_works",
+   "bd": "反应堆部件厂",
+   "qty_in": 1000,
+   "qty_out": 700
+  },
+  {
+   "from": "G:rare_earth_metals",
+   "to": "G:reactor_components",
+   "b": "reactor_component_works",
+   "bd": "反应堆部件厂",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "G:electrical_equipment",
+   "to": "G:reactor_components",
+   "b": "reactor_component_works",
+   "bd": "反应堆部件厂",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "G:crude_oil",
+   "to": "G:refined_fuel",
+   "b": "refined_fuel_plant",
+   "bd": "精炼燃料厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:paddy_land",
+   "to": "G:rice_grain",
+   "b": "rice_collector",
+   "bd": "稻田农场"
+  },
+  {
+   "from": "G:rice_grain",
+   "to": "G:rice_food",
+   "b": "rice_food_plant",
+   "bd": "米饭食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:packaging",
+   "to": "G:rice_food",
+   "b": "rice_food_plant",
+   "bd": "米饭食品加工厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:rice_grain",
+   "to": "G:rice_food",
+   "b": "rice_kitchen",
+   "bd": "米饭厨房",
+   "qty_in": 1000,
+   "qty_out": 2500
+  },
+  {
+   "from": "R:plantation_land",
+   "to": "G:latex",
+   "b": "rubber_tree_collector",
+   "bd": "橡胶种植园"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:latex",
+   "b": "rubber_tree_collector",
+   "bd": "橡胶种植园"
+  },
+  {
+   "from": "G:cloth",
+   "to": "G:sailcloth",
+   "b": "sail_loft",
+   "bd": "制帆工坊",
+   "qty_in": 1000,
+   "qty_out": 1600
+  },
+  {
+   "from": "R:saltpeter",
+   "to": "G:saltpeter",
+   "b": "saltpeter_collector",
+   "bd": "硝石采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:saltpeter",
+   "b": "saltpeter_collector",
+   "bd": "硝石采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:salt",
+   "to": "G:salt",
+   "b": "salt_collector",
+   "bd": "盐矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:salt",
+   "b": "salt_collector",
+   "bd": "盐矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:glass",
+   "to": "G:scientific_instruments",
+   "b": "scientific_instrument_works",
+   "bd": "科学仪器工场",
+   "qty_in": 500,
+   "qty_out": 900
+  },
+  {
+   "from": "G:copper",
+   "to": "G:scientific_instruments",
+   "b": "scientific_instrument_works",
+   "bd": "科学仪器工场",
+   "qty_in": 500,
+   "qty_out": 900
+  },
+  {
+   "from": "G:silica_sand",
+   "to": "G:semiconductors",
+   "b": "semiconductors_plant",
+   "bd": "半导体厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:industrial_chemicals",
+   "to": "G:semiconductors",
+   "b": "semiconductors_plant",
+   "bd": "半导体厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:semiconductors",
+   "b": "semiconductors_plant",
+   "bd": "半导体厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:silica_sand",
+   "to": "G:silica_sand",
+   "b": "silica_sand_collector",
+   "bd": "硅砂采集场"
+  },
+  {
+   "from": "R:silver_ore",
+   "to": "G:silver",
+   "b": "silver_mine",
+   "bd": "银矿"
+  },
+  {
+   "from": "G:livestock_products",
+   "to": "G:meat",
+   "b": "slaughterhouse",
+   "bd": "屠宰场",
+   "qty_in": 1000,
+   "qty_out": 5000
+  },
+  {
+   "from": "G:livestock_products",
+   "to": "G:raw_hide",
+   "b": "slaughterhouse",
+   "bd": "屠宰场",
+   "qty_in": 1000,
+   "qty_out": 5000
+  },
+  {
+   "from": "G:edible_oil",
+   "to": "G:soap",
+   "b": "soap_plant",
+   "bd": "肥皂厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:salt",
+   "to": "G:soap",
+   "b": "soap_plant",
+   "bd": "肥皂厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:plantation_land",
+   "to": "G:spices",
+   "b": "spice_plants_collector",
+   "bd": "香料种植园"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:spices",
+   "b": "spice_plants_collector",
+   "bd": "香料种植园"
+  },
+  {
+   "from": "G:steel",
+   "to": "G:stainless_steel",
+   "b": "stainless_steel_plant",
+   "bd": "不锈钢厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:rare_earth_metals",
+   "to": "G:stainless_steel",
+   "b": "stainless_steel_plant",
+   "bd": "不锈钢厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:manganese_alloy",
+   "to": "G:stainless_steel",
+   "b": "stainless_steel_plant",
+   "bd": "不锈钢厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:coal",
+   "to": "G:coal",
+   "b": "steam_coal_mine",
+   "bd": "蒸汽时代煤矿"
+  },
+  {
+   "from": "G:coke",
+   "to": "G:steam_engines",
+   "b": "steam_engine_works",
+   "bd": "蒸汽机制造厂",
+   "qty_in": 500,
+   "qty_out": 700
+  },
+  {
+   "from": "G:steel",
+   "to": "G:steam_engines",
+   "b": "steam_engine_works",
+   "bd": "蒸汽机制造厂",
+   "qty_in": 1000,
+   "qty_out": 700
+  },
+  {
+   "from": "G:precision_tools",
+   "to": "G:steam_engines",
+   "b": "steam_engine_works",
+   "bd": "蒸汽机制造厂",
+   "qty_in": 200,
+   "qty_out": 700
+  },
+  {
+   "from": "R:iron_ore",
+   "to": "G:iron_ore",
+   "b": "steam_iron_mine",
+   "bd": "蒸汽时代铁矿"
+  },
+  {
+   "from": "G:steam_engines",
+   "to": "G:railway_equipment",
+   "b": "steam_rail_works",
+   "bd": "蒸汽铁路工场",
+   "qty_in": 1000,
+   "qty_out": 900
+  },
+  {
+   "from": "G:iron_ore",
+   "to": "G:steel",
+   "b": "steam_steel_works",
+   "bd": "蒸汽炼钢厂",
+   "qty_in": 1000,
+   "qty_out": 900
+  },
+  {
+   "from": "G:coke",
+   "to": "G:steel",
+   "b": "steam_steel_works",
+   "bd": "蒸汽炼钢厂",
+   "qty_in": 500,
+   "qty_out": 900
+  },
+  {
+   "from": "G:pig_iron",
+   "to": "G:steel",
+   "b": "steel_plant",
+   "bd": "钢厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:coal",
+   "to": "G:steel",
+   "b": "steel_plant",
+   "bd": "钢厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:wild_game",
+   "to": "G:game_meat",
+   "b": "stone_age_hunting_camp",
+   "bd": "石器时代狩猎营地"
+  },
+  {
+   "from": "R:wild_game",
+   "to": "G:raw_hide",
+   "b": "stone_age_hunting_camp",
+   "bd": "石器时代狩猎营地"
+  },
+  {
+   "from": "R:wild_game",
+   "to": "G:fur",
+   "b": "stone_age_hunting_camp",
+   "bd": "石器时代狩猎营地"
+  },
+  {
+   "from": "G:chipped_stone_tools",
+   "to": "G:game_meat",
+   "b": "stone_age_hunting_camp",
+   "bd": "石器时代狩猎营地",
+   "qty_in": 100,
+   "qty_out": 2000
+  },
+  {
+   "from": "G:chipped_stone_tools",
+   "to": "G:raw_hide",
+   "b": "stone_age_hunting_camp",
+   "bd": "石器时代狩猎营地",
+   "qty_in": 100,
+   "qty_out": 500
+  },
+  {
+   "from": "G:chipped_stone_tools",
+   "to": "G:fur",
+   "b": "stone_age_hunting_camp",
+   "bd": "石器时代狩猎营地",
+   "qty_in": 100,
+   "qty_out": 200
+  },
+  {
+   "from": "R:stone",
+   "to": "G:raw_stone",
+   "b": "stone_collector",
+   "bd": "石料采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:raw_stone",
+   "b": "stone_collector",
+   "bd": "石料采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:grain",
+   "b": "subsistence_farm",
+   "bd": "早期自给农场"
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:vegetables",
+   "b": "subsistence_farm",
+   "bd": "早期自给农场"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:grain",
+   "b": "subsistence_farm",
+   "bd": "早期自给农场"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:vegetables",
+   "b": "subsistence_farm",
+   "bd": "早期自给农场"
+  },
+  {
+   "from": "R:sulfur",
+   "to": "G:sulfur",
+   "b": "sulfur_collector",
+   "bd": "硫磺采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:sulfur",
+   "b": "sulfur_collector",
+   "bd": "硫磺采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:explosives",
+   "to": "G:sulfur",
+   "b": "sulfur_collector",
+   "bd": "硫磺采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:sulfur",
+   "b": "sulfur_collector",
+   "bd": "硫磺采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:silver_ore",
+   "to": "G:silver",
+   "b": "surface_silver_working",
+   "bd": "早期采银点"
+  },
+  {
+   "from": "G:petrochemicals",
+   "to": "G:synthetic_fiber",
+   "b": "synthetic_fiber_plant",
+   "bd": "合成纤维厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:petrochemicals",
+   "to": "G:synthetic_rubber",
+   "b": "synthetic_rubber_plant",
+   "bd": "合成橡胶厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:sulfur",
+   "to": "G:synthetic_rubber",
+   "b": "synthetic_rubber_plant",
+   "bd": "合成橡胶厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:synthetic_fiber",
+   "to": "G:textile",
+   "b": "synthetic_textile_mill",
+   "bd": "合成纺织厂",
+   "qty_in": 1000,
+   "qty_out": 13000
+  },
+  {
+   "from": "G:cloth",
+   "to": "G:clothing",
+   "b": "tailor_shop",
+   "bd": "裁缝铺",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:raw_hide",
+   "to": "G:leather",
+   "b": "tannery",
+   "bd": "制革厂",
+   "qty_in": 1000,
+   "qty_out": 3000
+  },
+  {
+   "from": "G:semiconductors",
+   "to": "G:telecom_equipment",
+   "b": "telecom_equipment_plant",
+   "bd": "电信设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:wire",
+   "to": "G:telecom_equipment",
+   "b": "telecom_equipment_plant",
+   "bd": "电信设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:batteries",
+   "to": "G:telecom_equipment",
+   "b": "telecom_equipment_plant",
+   "bd": "电信设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:plastics",
+   "to": "G:telecom_equipment",
+   "b": "telecom_equipment_plant",
+   "bd": "电信设备厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:flax_yarn",
+   "to": "G:textile",
+   "b": "textile_mill",
+   "bd": "纺织厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "G:cotton_yarn",
+   "to": "G:textile",
+   "b": "textile_mill",
+   "bd": "纺织厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "G:wool",
+   "to": "G:textile",
+   "b": "textile_mill",
+   "bd": "纺织厂",
+   "qty_in": 1000,
+   "qty_out": 11000
+  },
+  {
+   "from": "G:textile",
+   "to": "G:cloth",
+   "b": "textile_workshop",
+   "bd": "织布工坊",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:grain",
+   "b": "three_field_smallholding",
+   "bd": "三圃制小农庄"
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:vegetables",
+   "b": "three_field_smallholding",
+   "bd": "三圃制小农庄"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:grain",
+   "b": "three_field_smallholding",
+   "bd": "三圃制小农庄"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:vegetables",
+   "b": "three_field_smallholding",
+   "bd": "三圃制小农庄"
+  },
+  {
+   "from": "R:timber",
+   "to": "G:logs",
+   "b": "timber_collector",
+   "bd": "木材采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:logs",
+   "b": "timber_collector",
+   "bd": "木材采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "R:tin_ore",
+   "to": "G:tin_ore",
+   "b": "tin_ore_collector",
+   "bd": "锡矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:tin_ore",
+   "b": "tin_ore_collector",
+   "bd": "锡矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:tin_ore",
+   "to": "G:tin",
+   "b": "tin_plant",
+   "bd": "锡冶炼厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:coal",
+   "to": "G:tin",
+   "b": "tin_plant",
+   "bd": "锡冶炼厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:steel",
+   "to": "G:tools",
+   "b": "tools_plant",
+   "bd": "工具厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:lumber",
+   "to": "G:tools",
+   "b": "tools_plant",
+   "bd": "工具厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:grain",
+   "to": "G:flour",
+   "b": "village_mill",
+   "bd": "乡村磨坊",
+   "qty_in": 1000,
+   "qty_out": 3000
+  },
+  {
+   "from": "R:arable_land",
+   "to": "G:wheat_grain",
+   "b": "wheat_farm",
+   "bd": "小麦农场"
+  },
+  {
+   "from": "R:fertile_soil",
+   "to": "G:wheat_grain",
+   "b": "wheat_farm",
+   "bd": "小麦农场"
+  },
+  {
+   "from": "G:copper",
+   "to": "G:wire",
+   "b": "wire_plant",
+   "bd": "金属线材厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:plastics",
+   "to": "G:wire",
+   "b": "wire_plant",
+   "bd": "金属线材厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:logs",
+   "to": "G:wood_pulp",
+   "b": "wood_pulp_plant",
+   "bd": "木浆厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:industrial_chemicals",
+   "to": "G:wood_pulp",
+   "b": "wood_pulp_plant",
+   "bd": "木浆厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:livestock_products",
+   "to": "G:wool",
+   "b": "wool_shed",
+   "bd": "羊毛棚",
+   "qty_in": 1000,
+   "qty_out": 2500
+  },
+  {
+   "from": "R:zinc_ore",
+   "to": "G:zinc_ore",
+   "b": "zinc_ore_collector",
+   "bd": "锌矿采集场"
+  },
+  {
+   "from": "G:tools",
+   "to": "G:zinc_ore",
+   "b": "zinc_ore_collector",
+   "bd": "锌矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:explosives",
+   "to": "G:zinc_ore",
+   "b": "zinc_ore_collector",
+   "bd": "锌矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:electricity",
+   "to": "G:zinc_ore",
+   "b": "zinc_ore_collector",
+   "bd": "锌矿采集场",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:zinc_ore",
+   "to": "G:zinc",
+   "b": "zinc_plant",
+   "bd": "锌冶炼厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  },
+  {
+   "from": "G:coal",
+   "to": "G:zinc",
+   "b": "zinc_plant",
+   "bd": "锌冶炼厂",
+   "qty_in": 1000,
+   "qty_out": 10000
+  }
+ ],
+ "buildings": [
+  {
+   "id": "advanced_chip_fab",
+   "display": "先进芯片厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.machine_learning"
+   ],
+   "inputs": [
+    {
+     "good": "semiconductors",
+     "qty": 1000
+    },
+    {
+     "good": "rare_earth_metals",
+     "qty": 200
+    }
+   ],
+   "outputs": [
+    {
+     "good": "advanced_chips",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "agricultural_machinery_plant",
+   "display": "农业机械厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "industrial_machinery",
+     "qty": 1000
+    },
+    {
+     "good": "engines",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "agricultural_machinery",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "aluminum_plant",
+   "display": "铝厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "bauxite",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "aluminum",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "automobiles_plant",
+   "display": "汽车厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "engines",
+     "qty": 1000
+    },
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "batteries",
+     "qty": 1000
+    },
+    {
+     "good": "synthetic_rubber",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "automobiles",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "autonomous_systems_plant",
+   "display": "自主系统工厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.autonomous_systems"
+   ],
+   "inputs": [
+    {
+     "good": "advanced_chips",
+     "qty": 500
+    },
+    {
+     "good": "electric_motor",
+     "qty": 500
+    },
+    {
+     "good": "batteries",
+     "qty": 300
+    }
+   ],
+   "outputs": [
+    {
+     "good": "autonomous_systems",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "bakery",
+   "display": "面包坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "flour",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "bread",
+     "qty": 2500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "basic_electrical_equipment_works",
+   "display": "基础电气设备厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.electrification"
+   ],
+   "inputs": [
+    {
+     "good": "insulated_cable",
+     "qty": 700
+    },
+    {
+     "good": "steel",
+     "qty": 300
+    }
+   ],
+   "outputs": [
+    {
+     "good": "electrical_equipment",
+     "qty": 800
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "basic_semiconductor_fab",
+   "display": "基础半导体厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.digital_computing"
+   ],
+   "inputs": [
+    {
+     "good": "silica_sand",
+     "qty": 700
+    },
+    {
+     "good": "copper",
+     "qty": 300
+    },
+    {
+     "good": "electricity",
+     "qty": 700
+    }
+   ],
+   "outputs": [
+    {
+     "good": "semiconductors",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "batteries_plant",
+   "display": "电池厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "lead",
+     "qty": 1000
+    },
+    {
+     "good": "rare_earth_metals",
+     "qty": 1000
+    },
+    {
+     "good": "industrial_chemicals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "batteries",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "bauxite_collector",
+   "display": "铝土矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    },
+    {
+     "good": "explosives",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "bauxite",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "bauxite",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "beverages_plant",
+   "display": "饮料厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.printing_press"
+   ],
+   "inputs": [
+    {
+     "good": "processed_food",
+     "qty": 1000
+    },
+    {
+     "good": "packaging",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "beverages",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "bread_plant",
+   "display": "面包厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "flour",
+     "qty": 1000
+    },
+    {
+     "good": "packaging",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "bread",
+     "qty": 11000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "bricks_plant",
+   "display": "砖厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "inputs": [
+    {
+     "good": "clay",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "bricks",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "bronze_foundry",
+   "display": "青铜铸造场",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.bronze_casting"
+   ],
+   "inputs": [
+    {
+     "good": "copper",
+     "qty": 3000
+    },
+    {
+     "good": "tin",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "bronze",
+     "qty": 3500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "bronze_tool_workshop",
+   "display": "青铜工具工坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.bronze_casting"
+   ],
+   "inputs": [
+    {
+     "good": "bronze",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "bronze_tools",
+     "qty": 1800
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "canned_fish_plant",
+   "display": "鱼罐头厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.printing_press"
+   ],
+   "inputs": [
+    {
+     "good": "fish",
+     "qty": 1000
+    },
+    {
+     "good": "salt",
+     "qty": 1000
+    },
+    {
+     "good": "packaging",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "canned_fish",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "cement_plant",
+   "display": "水泥厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.construction",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "lime",
+     "qty": 1000
+    },
+    {
+     "good": "clay",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "cement",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "classical_glass_kiln",
+   "display": "古典玻璃窑",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.masonry"
+   ],
+   "inputs": [
+    {
+     "good": "silica_sand",
+     "qty": 1000
+    },
+    {
+     "good": "logs",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "glass",
+     "qty": 800
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "classical_masonry_yard",
+   "display": "古典石作场",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.masonry"
+   ],
+   "inputs": [
+    {
+     "good": "raw_stone",
+     "qty": 2000
+    },
+    {
+     "good": "tools",
+     "qty": 200
+    }
+   ],
+   "outputs": [
+    {
+     "good": "dressed_masonry",
+     "qty": 2000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "classical_public_works",
+   "display": "古典公共工程场",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.masonry"
+   ],
+   "inputs": [
+    {
+     "good": "dressed_masonry",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "construction_components",
+     "qty": 800
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "classical_scriptorium",
+   "display": "古典抄写室",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.writing"
+   ],
+   "inputs": [
+    {
+     "good": "papyrus",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "manuscripts",
+     "qty": 900
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "classical_silica_pit",
+   "display": "古典硅砂坑",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.masonry"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "silica_sand",
+     "qty": 2200
+    }
+   ],
+   "resources": [
+    {
+     "res": "silica_sand",
+     "qty": 275
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "clay_collector",
+   "display": "黏土采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "clay",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "clay",
+     "qty": 1000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "clothing_plant",
+   "display": "制衣厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "cloth",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "clothing",
+     "qty": 9000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "cloth_plant",
+   "display": "织布厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "textile",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "cloth",
+     "qty": 11000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "coal_mine",
+   "display": "煤矿",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.coke_smelting"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "coal",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "coal",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "cobbler_shop",
+   "display": "鞋匠铺",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.guild_organization"
+   ],
+   "inputs": [
+    {
+     "good": "leather",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "footwear",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "coke_ovens",
+   "display": "焦炉",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.coke_smelting"
+   ],
+   "inputs": [
+    {
+     "good": "coal",
+     "qty": 1200
+    }
+   ],
+   "outputs": [
+    {
+     "good": "coke",
+     "qty": 1000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "communal_hearth",
+   "display": "公共火塘",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.fire_control"
+   ],
+   "inputs": [
+    {
+     "good": "gathered_plants",
+     "qty": 1000
+    },
+    {
+     "good": "game_meat",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "processed_food",
+     "qty": 1200
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "computers_plant",
+   "display": "计算机制造厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "semiconductors",
+     "qty": 1000
+    },
+    {
+     "good": "electronic_components",
+     "qty": 1000
+    },
+    {
+     "good": "plastics",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "computers",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "concrete_plant",
+   "display": "混凝土厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.construction",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "cement",
+     "qty": 1000
+    },
+    {
+     "good": "raw_stone",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "concrete",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "construction_components_plant",
+   "display": "建筑构件厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.construction",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "concrete",
+     "qty": 1000
+    },
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "glass",
+     "qty": 1000
+    },
+    {
+     "good": "bricks",
+     "qty": 1000
+    },
+    {
+     "good": "cut_stone",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "construction_components",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "copper_ore_collector",
+   "display": "铜矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.bronze_casting"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "copper_ore",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "copper_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "copper_plant",
+   "display": "铜冶炼厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "copper_ore",
+     "qty": 1000
+    },
+    {
+     "good": "coal",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "copper",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "corn_food_plant",
+   "display": "玉米食品加工厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "corn_grain",
+     "qty": 1000
+    },
+    {
+     "good": "packaging",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "corn_food",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "corn_grinding_house",
+   "display": "玉米研磨坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.manuscript_culture"
+   ],
+   "inputs": [
+    {
+     "good": "corn_grain",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "corn_food",
+     "qty": 2500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "cottage_weaving",
+   "display": "家庭纺织",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.guild_organization"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "cloth",
+     "qty": 400
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 8000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 8000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "cotton_collector",
+   "display": "棉花种植园",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.oceanic_navigation"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "cotton_fiber",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "cotton_yarn_plant",
+   "display": "棉纱厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "cotton_fiber",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "cotton_yarn",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "creamery",
+   "display": "乳品厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "livestock_products",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "dairy_products",
+     "qty": 4000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "cut_stone_plant",
+   "display": "石料切割厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "inputs": [
+    {
+     "good": "raw_stone",
+     "qty": 1000
+    },
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "cut_stone",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "dairy_products_plant",
+   "display": "乳制品厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "livestock_products",
+     "qty": 1000
+    },
+    {
+     "good": "packaging",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "dairy_products",
+     "qty": 11000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "detergent_plant",
+   "display": "洗涤剂厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "petrochemicals",
+     "qty": 1000
+    },
+    {
+     "good": "industrial_chemicals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "detergent",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "digital_computer_workshop",
+   "display": "数字计算机工场",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.digital_computing"
+   ],
+   "inputs": [
+    {
+     "good": "precision_tools",
+     "qty": 300
+    },
+    {
+     "good": "copper",
+     "qty": 500
+    },
+    {
+     "good": "electricity",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "computers",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "early_clay_pit",
+   "display": "早期黏土坑",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.pottery"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "clay",
+     "qty": 2500
+    }
+   ],
+   "resources": [
+    {
+     "res": "clay",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "early_copper_mine",
+   "display": "早期铜矿",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.bronze_casting"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "copper_ore",
+     "qty": 2500
+    }
+   ],
+   "resources": [
+    {
+     "res": "copper_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "early_copper_smelter",
+   "display": "早期炼铜炉",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.bronze_casting"
+   ],
+   "inputs": [
+    {
+     "good": "copper_ore",
+     "qty": 1000
+    },
+    {
+     "good": "logs",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "copper",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "early_tin_mine",
+   "display": "早期锡矿",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.bronze_casting"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "tin_ore",
+     "qty": 1800
+    }
+   ],
+   "resources": [
+    {
+     "res": "tin_ore",
+     "qty": 300
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "early_tin_smelter",
+   "display": "早期炼锡炉",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.bronze_casting"
+   ],
+   "inputs": [
+    {
+     "good": "tin_ore",
+     "qty": 1000
+    },
+    {
+     "good": "logs",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "tin",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "edible_oil_plant",
+   "display": "食用油厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "corn_grain",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "edible_oil",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "electrical_equipment_plant",
+   "display": "电气设备厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "wire",
+     "qty": 1000
+    },
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "plastics",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "electrical_equipment",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "electricity_plant",
+   "display": "发电厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.energy",
+    "tech.electrification"
+   ],
+   "inputs": [
+    {
+     "good": "coal",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "electricity",
+     "qty": 9000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "electric_motor_plant",
+   "display": "电动机制造厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "copper",
+     "qty": 1000
+    },
+    {
+     "good": "steel",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "electric_motor",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "electronic_components_plant",
+   "display": "电子元件厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "copper",
+     "qty": 1000
+    },
+    {
+     "good": "tin",
+     "qty": 1000
+    },
+    {
+     "good": "zinc",
+     "qty": 1000
+    },
+    {
+     "good": "plastics",
+     "qty": 1000
+    },
+    {
+     "good": "rare_earth_metals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "electronic_components",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "engines_plant",
+   "display": "发动机制造厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "aluminum",
+     "qty": 1000
+    },
+    {
+     "good": "machine_parts",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "engines",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "explosives_plant",
+   "display": "炸药厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "saltpeter",
+     "qty": 1000
+    },
+    {
+     "good": "sulfur",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "explosives",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "fertile_soil_collector",
+   "display": "菜园农场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "vegetables",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "fertilizer_plant",
+   "display": "化肥厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "phosphate_rock",
+     "qty": 1000
+    },
+    {
+     "good": "natural_gas",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "fertilizer",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "flax_collector",
+   "display": "亚麻种植园",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "flax_fiber",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "flax_spinning_shed",
+   "display": "亚麻纺纱棚",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "flax_fiber",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "flax_yarn",
+     "qty": 2500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "flax_yarn_plant",
+   "display": "亚麻纱厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "flax_fiber",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "flax_yarn",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "flint_quarry",
+   "display": "燧石采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.stone_knapping"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "flint",
+     "qty": 3000
+    }
+   ],
+   "resources": [
+    {
+     "res": "flint",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "flour_plant",
+   "display": "面粉厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "grain",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "flour",
+     "qty": 11000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "footwear_plant",
+   "display": "鞋厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "leather",
+     "qty": 1000
+    },
+    {
+     "good": "latex",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "footwear",
+     "qty": 9000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "furniture_plant",
+   "display": "家具厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.forestry",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "lumber",
+     "qty": 1000
+    },
+    {
+     "good": "textile",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "furniture",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "gas_power_plant",
+   "display": "燃气发电厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.energy",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "natural_gas",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "electricity",
+     "qty": 12000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "gathering_ground",
+   "display": "采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.gathering"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "gathered_plants",
+     "qty": 3000
+    }
+   ],
+   "resources": [
+    {
+     "res": "fertile_soil",
+     "qty": 1000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "glass_plant",
+   "display": "玻璃厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "inputs": [
+    {
+     "good": "silica_sand",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "glass",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "gold_mine",
+   "display": "金矿",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "gold",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "gold_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "grain_plant",
+   "display": "杂粮加工厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "wheat_grain",
+     "qty": 1000
+    },
+    {
+     "good": "rice_grain",
+     "qty": 1000
+    },
+    {
+     "good": "corn_grain",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "grain",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "guild_hall",
+   "display": "行会家具工坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.guild_organization"
+   ],
+   "inputs": [
+    {
+     "good": "lumber",
+     "qty": 1200
+    },
+    {
+     "good": "tools",
+     "qty": 300
+    }
+   ],
+   "outputs": [
+    {
+     "good": "furniture",
+     "qty": 1600
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "guild_weaving_house",
+   "display": "行会织造坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.guild_organization"
+   ],
+   "inputs": [
+    {
+     "good": "flax_yarn",
+     "qty": 1000
+    },
+    {
+     "good": "wool",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "textile",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "horse_breeder",
+   "display": "养马场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.manuscript_culture"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "horses",
+     "qty": 1200
+    }
+   ],
+   "resources": [
+    {
+     "res": "pasture",
+     "qty": 1200
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "household_appliances_plant",
+   "display": "家电厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "electrical_equipment",
+     "qty": 1000
+    },
+    {
+     "good": "stainless_steel",
+     "qty": 1000
+    },
+    {
+     "good": "plastics",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "household_appliances",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "household_loom",
+   "display": "家庭织机",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.pottery"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "cloth",
+     "qty": 220
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "household_weaving_shelter",
+   "display": "家庭纺织棚",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.gathering"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "cloth",
+     "qty": 120
+    }
+   ],
+   "resources": [
+    {
+     "res": "fertile_soil",
+     "qty": 1000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "improved_domestic_loom",
+   "display": "改良家用织机",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.steam_power"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "cloth",
+     "qty": 600
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 6000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 6000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "improved_smallholding",
+   "display": "改良小农庄",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.steam_power"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "grain",
+     "qty": 8000
+    },
+    {
+     "good": "vegetables",
+     "qty": 8000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 6000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 6000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "industrial_chemicals_plant",
+   "display": "工业化学品厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "sulfur",
+     "qty": 1000
+    },
+    {
+     "good": "salt",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "industrial_chemicals",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "industrial_machinery_plant",
+   "display": "工业机械厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "machine_parts",
+     "qty": 1000
+    },
+    {
+     "good": "electric_motor",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "industrial_machinery",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "insulated_cable_plant",
+   "display": "绝缘电缆厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.electrification"
+   ],
+   "inputs": [
+    {
+     "good": "copper",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "insulated_cable",
+     "qty": 1200
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "iron_ore_collector",
+   "display": "铁矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "iron_ore",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "iron_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "isotope_reactor",
+   "display": "同位素反应堆",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.nuclear_fission"
+   ],
+   "inputs": [
+    {
+     "good": "nuclear_fuel",
+     "qty": 300
+    },
+    {
+     "good": "reactor_components",
+     "qty": 100
+    }
+   ],
+   "outputs": [
+    {
+     "good": "medical_isotopes",
+     "qty": 500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "jewelry_plant",
+   "display": "珠宝厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.consumer",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "gold",
+     "qty": 1000
+    },
+    {
+     "good": "silver",
+     "qty": 1000
+    },
+    {
+     "good": "rare_earth_metals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "jewelry",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "knapping_workshop",
+   "display": "石器打制工坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.stone_knapping"
+   ],
+   "inputs": [
+    {
+     "good": "flint",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "chipped_stone_tools",
+     "qty": 2000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "landed_estate",
+   "display": "庄园",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.manuscript_culture"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "corn_grain",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "lead_ore_collector",
+   "display": "铅矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    },
+    {
+     "good": "explosives",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "lead_ore",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "lead_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "lead_plant",
+   "display": "铅冶炼厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "lead_ore",
+     "qty": 1000
+    },
+    {
+     "good": "coal",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "lead",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "leather_plant",
+   "display": "皮革厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "raw_hide",
+     "qty": 1000
+    },
+    {
+     "good": "industrial_chemicals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "leather",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "limestone_collector",
+   "display": "石灰岩采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.masonry"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "limestone",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "limestone",
+     "qty": 1000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "lime_plant",
+   "display": "石灰厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.construction",
+    "tech.masonry"
+   ],
+   "inputs": [
+    {
+     "good": "limestone",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "lime",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "lubricants_plant",
+   "display": "润滑剂厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "crude_oil",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "lubricants",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "lumber_plant",
+   "display": "锯木厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.forestry",
+    "tech.gathering"
+   ],
+   "inputs": [
+    {
+     "good": "logs",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "lumber",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "machine_parts_plant",
+   "display": "机械零件厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "lubricants",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "machine_parts",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "manganese_alloy_plant",
+   "display": "锰合金厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "manganese_ore",
+     "qty": 1000
+    },
+    {
+     "good": "steel",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "manganese_alloy",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "manganese_ore_collector",
+   "display": "锰矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    },
+    {
+     "good": "explosives",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "manganese_ore",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "manganese_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "manorial_pasture",
+   "display": "庄园牧场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.food",
+    "tech.guild_organization"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "livestock_products",
+     "qty": 5000
+    }
+   ],
+   "resources": [
+    {
+     "res": "pasture",
+     "qty": 5000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "marine_fish_collector",
+   "display": "海洋渔场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.hunting"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "fish",
+     "qty": 1000
+    }
+   ],
+   "resources": [
+    {
+     "res": "marine_fish",
+     "qty": 125
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "mechanized_farm",
+   "display": "机械化农场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "fertilizer",
+     "qty": 1000
+    },
+    {
+     "good": "agricultural_machinery",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "grain",
+     "qty": 9000
+    },
+    {
+     "good": "vegetables",
+     "qty": 9000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 9000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 9000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "mechanized_slaughterhouse",
+   "display": "机械化屠宰场",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "livestock_products",
+     "qty": 1000
+    },
+    {
+     "good": "industrial_machinery",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "meat",
+     "qty": 12000
+    },
+    {
+     "good": "raw_hide",
+     "qty": 12000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "medicinal_herbs_collector",
+   "display": "药材种植园",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.oceanic_navigation"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "medicinal_herbs",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "plantation_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "monastic_scriptorium",
+   "display": "修院抄写室",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.manuscript_culture"
+   ],
+   "inputs": [
+    {
+     "good": "parchment",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "codices",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "natural_gas_collector",
+   "display": "天然气采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "industrial_machinery",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "natural_gas",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "natural_gas",
+     "qty": 400
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "naval_salvage_yard",
+   "display": "船舶拆解场",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.oceanic_navigation"
+   ],
+   "inputs": [
+    {
+     "good": "oceanic_vessels",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "construction_components",
+     "qty": 1800
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "navigation_instrument_shop",
+   "display": "航海仪器工坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.oceanic_navigation"
+   ],
+   "inputs": [
+    {
+     "good": "copper",
+     "qty": 500
+    },
+    {
+     "good": "glass",
+     "qty": 500
+    },
+    {
+     "good": "tools",
+     "qty": 200
+    }
+   ],
+   "outputs": [
+    {
+     "good": "navigation_instruments",
+     "qty": 900
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "nuclear_fuel_plant",
+   "display": "核燃料厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.nuclear_fission"
+   ],
+   "inputs": [
+    {
+     "good": "rare_earth_metals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "nuclear_fuel",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "nuclear_medicine_center",
+   "display": "放射性药物工坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.nuclear_fission"
+   ],
+   "inputs": [
+    {
+     "good": "medical_isotopes",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "pharmaceuticals",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "nuclear_power_plant",
+   "display": "核电站",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.energy",
+    "tech.nuclear_fission"
+   ],
+   "inputs": [
+    {
+     "good": "nuclear_fuel",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "electricity",
+     "qty": 18000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "oceanic_shipyard",
+   "display": "远洋造船厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.oceanic_navigation"
+   ],
+   "inputs": [
+    {
+     "good": "lumber",
+     "qty": 4000
+    },
+    {
+     "good": "sailcloth",
+     "qty": 1000
+    },
+    {
+     "good": "navigation_instruments",
+     "qty": 200
+    }
+   ],
+   "outputs": [
+    {
+     "good": "oceanic_vessels",
+     "qty": 500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "oil_collector",
+   "display": "石油采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "industrial_machinery",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "crude_oil",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "oil",
+     "qty": 400
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "oil_power_plant",
+   "display": "燃油发电厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.energy",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "refined_fuel",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "electricity",
+     "qty": 10500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "packaging_plant",
+   "display": "包装厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.forestry",
+    "tech.printing_press"
+   ],
+   "inputs": [
+    {
+     "good": "paper",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "packaging",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "paper_plant",
+   "display": "造纸厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.forestry",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "wood_pulp",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "paper",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "papyrus_workshop",
+   "display": "莎草纸作坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.writing"
+   ],
+   "inputs": [
+    {
+     "good": "gathered_plants",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "papyrus",
+     "qty": 1800
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "parchmenter",
+   "display": "羊皮纸作坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.manuscript_culture"
+   ],
+   "inputs": [
+    {
+     "good": "raw_hide",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "parchment",
+     "qty": 1000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "pastoral_camp",
+   "display": "游牧营地",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "livestock_products",
+     "qty": 3000
+    }
+   ],
+   "resources": [
+    {
+     "res": "pasture",
+     "qty": 3000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "petrochemicals_plant",
+   "display": "石化厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "crude_oil",
+     "qty": 1000
+    },
+    {
+     "good": "natural_gas",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "petrochemicals",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "pharmaceuticals_plant",
+   "display": "制药厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "medicinal_herbs",
+     "qty": 1000
+    },
+    {
+     "good": "industrial_chemicals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "pharmaceuticals",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "phosphate_rock_collector",
+   "display": "磷矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    },
+    {
+     "good": "explosives",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "phosphate_rock",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "phosphate_rock",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "pig_iron_plant",
+   "display": "生铁厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "iron_ore",
+     "qty": 1000
+    },
+    {
+     "good": "coal",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "pig_iron",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "placer_gold_working",
+   "display": "早期淘金点",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.gathering"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "gold",
+     "qty": 100
+    }
+   ],
+   "resources": [
+    {
+     "res": "gold_ore",
+     "qty": 50
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "plastics_plant",
+   "display": "塑料厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "petrochemicals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "plastics",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "potato_collector",
+   "display": "马铃薯田",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.guild_organization"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "potatoes",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "potato_food_plant",
+   "display": "马铃薯食品加工厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "potatoes",
+     "qty": 1000
+    },
+    {
+     "good": "edible_oil",
+     "qty": 1000
+    },
+    {
+     "good": "packaging",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "potato_food",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "potato_kitchen",
+   "display": "马铃薯厨房",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.guild_organization"
+   ],
+   "inputs": [
+    {
+     "good": "potatoes",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "potato_food",
+     "qty": 2500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "pottery_kiln",
+   "display": "陶窑",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "clay",
+     "qty": 1000
+    },
+    {
+     "good": "logs",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "pottery",
+     "qty": 2500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "precision_tool_workshop",
+   "display": "精密工具工坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "steel",
+     "qty": 800
+    },
+    {
+     "good": "scientific_instruments",
+     "qty": 200
+    }
+   ],
+   "outputs": [
+    {
+     "good": "precision_tools",
+     "qty": 900
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "printed_materials_plant",
+   "display": "印刷厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.forestry",
+    "tech.printing_press"
+   ],
+   "inputs": [
+    {
+     "good": "paper",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "printed_materials",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "processed_food_plant",
+   "display": "食品加工厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "vegetables",
+     "qty": 1000
+    },
+    {
+     "good": "game_meat",
+     "qty": 1000
+    },
+    {
+     "good": "dairy_products",
+     "qty": 1000
+    },
+    {
+     "good": "corn_food",
+     "qty": 1000
+    },
+    {
+     "good": "spices",
+     "qty": 1000
+    },
+    {
+     "good": "salt",
+     "qty": 1000
+    },
+    {
+     "good": "packaging",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "processed_food",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "radio_equipment_works",
+   "display": "无线电设备厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.radio"
+   ],
+   "inputs": [
+    {
+     "good": "insulated_cable",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "radio_equipment",
+     "qty": 800
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "railway_equipment_plant",
+   "display": "铁路设备厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "stainless_steel",
+     "qty": 1000
+    },
+    {
+     "good": "engines",
+     "qty": 1000
+    },
+    {
+     "good": "electrical_equipment",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "railway_equipment",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "ranching_station",
+   "display": "机械化牧场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "agricultural_machinery",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "livestock_products",
+     "qty": 9000
+    }
+   ],
+   "resources": [
+    {
+     "res": "pasture",
+     "qty": 9000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "rare_earth_collector",
+   "display": "战略矿产采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.geological_prospecting"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "rare_earth_ore",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "rare_earth",
+     "qty": 400
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "rare_earth_metals_plant",
+   "display": "战略金属材料厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.advanced_metallurgy"
+   ],
+   "inputs": [
+    {
+     "good": "rare_earth_ore",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "rare_earth_metals",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "reactor_component_works",
+   "display": "反应堆部件厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.nuclear_fission"
+   ],
+   "inputs": [
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "rare_earth_metals",
+     "qty": 500
+    },
+    {
+     "good": "electrical_equipment",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "reactor_components",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "refined_fuel_plant",
+   "display": "精炼燃料厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "crude_oil",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "refined_fuel",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "rice_collector",
+   "display": "稻田农场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "rice_grain",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "paddy_land",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "rice_food_plant",
+   "display": "米饭食品加工厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "rice_grain",
+     "qty": 1000
+    },
+    {
+     "good": "packaging",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "rice_food",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "rice_kitchen",
+   "display": "米饭厨房",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "rice_grain",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "rice_food",
+     "qty": 2500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "rubber_tree_collector",
+   "display": "橡胶种植园",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.oceanic_navigation"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "latex",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "plantation_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "sail_loft",
+   "display": "制帆工坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.oceanic_navigation"
+   ],
+   "inputs": [
+    {
+     "good": "cloth",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "sailcloth",
+     "qty": 1600
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "saltpeter_collector",
+   "display": "硝石采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "saltpeter",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "saltpeter",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "salt_collector",
+   "display": "盐矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "salt",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "salt",
+     "qty": 1000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "scientific_instrument_works",
+   "display": "科学仪器工场",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.experimental_science"
+   ],
+   "inputs": [
+    {
+     "good": "glass",
+     "qty": 500
+    },
+    {
+     "good": "copper",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "scientific_instruments",
+     "qty": 900
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "semiconductors_plant",
+   "display": "半导体厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "silica_sand",
+     "qty": 1000
+    },
+    {
+     "good": "industrial_chemicals",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "semiconductors",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "silica_sand_collector",
+   "display": "硅砂采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.masonry"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "silica_sand",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "silica_sand",
+     "qty": 1000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "silver_mine",
+   "display": "银矿",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "silver",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "silver_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "slaughterhouse",
+   "display": "屠宰场",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "livestock_products",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "meat",
+     "qty": 5000
+    },
+    {
+     "good": "raw_hide",
+     "qty": 5000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "soap_plant",
+   "display": "肥皂厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "edible_oil",
+     "qty": 1000
+    },
+    {
+     "good": "salt",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "soap",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "spice_plants_collector",
+   "display": "香料种植园",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.oceanic_navigation"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "spices",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "plantation_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "stainless_steel_plant",
+   "display": "不锈钢厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "rare_earth_metals",
+     "qty": 1000
+    },
+    {
+     "good": "manganese_alloy",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "stainless_steel",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "steam_coal_mine",
+   "display": "蒸汽时代煤矿",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.coke_smelting"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "coal",
+     "qty": 3000
+    }
+   ],
+   "resources": [
+    {
+     "res": "coal",
+     "qty": 250
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "steam_engine_works",
+   "display": "蒸汽机制造厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "coke",
+     "qty": 500
+    },
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "precision_tools",
+     "qty": 200
+    }
+   ],
+   "outputs": [
+    {
+     "good": "steam_engines",
+     "qty": 700
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "steam_iron_mine",
+   "display": "蒸汽时代铁矿",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.steam_power"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "iron_ore",
+     "qty": 3000
+    }
+   ],
+   "resources": [
+    {
+     "res": "iron_ore",
+     "qty": 250
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "steam_rail_works",
+   "display": "蒸汽铁路工场",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "steam_engines",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "railway_equipment",
+     "qty": 900
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "steam_steel_works",
+   "display": "蒸汽炼钢厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "iron_ore",
+     "qty": 1000
+    },
+    {
+     "good": "coke",
+     "qty": 500
+    }
+   ],
+   "outputs": [
+    {
+     "good": "steel",
+     "qty": 900
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "steel_plant",
+   "display": "钢厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "pig_iron",
+     "qty": 1000
+    },
+    {
+     "good": "coal",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "steel",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "stone_age_hunting_camp",
+   "display": "石器时代狩猎营地",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.hunting"
+   ],
+   "inputs": [
+    {
+     "good": "chipped_stone_tools",
+     "qty": 100
+    }
+   ],
+   "outputs": [
+    {
+     "good": "game_meat",
+     "qty": 2000
+    },
+    {
+     "good": "raw_hide",
+     "qty": 500
+    },
+    {
+     "good": "fur",
+     "qty": 200
+    }
+   ],
+   "resources": [
+    {
+     "res": "wild_game",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "stone_collector",
+   "display": "石料采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.stone_knapping"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "raw_stone",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "stone",
+     "qty": 1000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "subsistence_farm",
+   "display": "早期自给农场",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.pottery"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "grain",
+     "qty": 4000
+    },
+    {
+     "good": "vegetables",
+     "qty": 4000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "sulfur_collector",
+   "display": "硫磺采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    },
+    {
+     "good": "explosives",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "sulfur",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "sulfur",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "surface_silver_working",
+   "display": "早期采银点",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.gathering"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "silver",
+     "qty": 2000
+    }
+   ],
+   "resources": [
+    {
+     "res": "silver_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "synthetic_fiber_plant",
+   "display": "合成纤维厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "petrochemicals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "synthetic_fiber",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "synthetic_rubber_plant",
+   "display": "合成橡胶厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.chemicals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "petrochemicals",
+     "qty": 1000
+    },
+    {
+     "good": "sulfur",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "synthetic_rubber",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "synthetic_textile_mill",
+   "display": "合成纺织厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "synthetic_fiber",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "textile",
+     "qty": 13000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "tailor_shop",
+   "display": "裁缝铺",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.guild_organization"
+   ],
+   "inputs": [
+    {
+     "good": "cloth",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "clothing",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "tannery",
+   "display": "制革厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "raw_hide",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "leather",
+     "qty": 3000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "telecom_equipment_plant",
+   "display": "电信设备厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "semiconductors",
+     "qty": 1000
+    },
+    {
+     "good": "wire",
+     "qty": 1000
+    },
+    {
+     "good": "batteries",
+     "qty": 1000
+    },
+    {
+     "good": "plastics",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "telecom_equipment",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "textile_mill",
+   "display": "纺织厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.steam_power"
+   ],
+   "inputs": [
+    {
+     "good": "flax_yarn",
+     "qty": 1000
+    },
+    {
+     "good": "cotton_yarn",
+     "qty": 1000
+    },
+    {
+     "good": "wool",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "textile",
+     "qty": 11000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "textile_workshop",
+   "display": "织布工坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.guild_organization"
+   ],
+   "inputs": [
+    {
+     "good": "textile",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "cloth",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "three_field_smallholding",
+   "display": "三圃制小农庄",
+   "kind": "collector",
+   "tech_tags": [
+    "tech.guild_organization"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "grain",
+     "qty": 6000
+    },
+    {
+     "good": "vegetables",
+     "qty": 6000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 8000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 8000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "timber_collector",
+   "display": "木材采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.gathering"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "logs",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "timber",
+     "qty": 625
+    }
+   ],
+   "resource_gen": [
+    "timber"
+   ]
+  },
+  {
+   "id": "tin_ore_collector",
+   "display": "锡矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.bronze_casting"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "tin_ore",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "tin_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "tin_plant",
+   "display": "锡冶炼厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tin_ore",
+     "qty": 1000
+    },
+    {
+     "good": "coal",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "tin",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "tools_plant",
+   "display": "工具厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.machinery",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "steel",
+     "qty": 1000
+    },
+    {
+     "good": "lumber",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "tools",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "village_mill",
+   "display": "乡村磨坊",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.food",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "grain",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "flour",
+     "qty": 3000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "wheat_farm",
+   "display": "小麦农场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.pottery"
+   ],
+   "inputs": [],
+   "outputs": [
+    {
+     "good": "wheat_grain",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "arable_land",
+     "qty": 10000
+    },
+    {
+     "res": "fertile_soil",
+     "qty": 10000
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "wire_plant",
+   "display": "金属线材厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "copper",
+     "qty": 1000
+    },
+    {
+     "good": "plastics",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "wire",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "wood_pulp_plant",
+   "display": "木浆厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.forestry",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "logs",
+     "qty": 1000
+    },
+    {
+     "good": "industrial_chemicals",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "wood_pulp",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "wool_shed",
+   "display": "羊毛棚",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.textile",
+    "tech.pottery"
+   ],
+   "inputs": [
+    {
+     "good": "livestock_products",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "wool",
+     "qty": 2500
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  },
+  {
+   "id": "zinc_ore_collector",
+   "display": "锌矿采集场",
+   "kind": "collector",
+   "tech_tags": [
+    "industry.primary",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "tools",
+     "qty": 1000
+    },
+    {
+     "good": "explosives",
+     "qty": 1000
+    },
+    {
+     "good": "electricity",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "zinc_ore",
+     "qty": 10000
+    }
+   ],
+   "resources": [
+    {
+     "res": "zinc_ore",
+     "qty": 500
+    }
+   ],
+   "resource_gen": []
+  },
+  {
+   "id": "zinc_plant",
+   "display": "锌冶炼厂",
+   "kind": "industrial",
+   "tech_tags": [
+    "industry.metals",
+    "tech.legacy_modern_economy"
+   ],
+   "inputs": [
+    {
+     "good": "zinc_ore",
+     "qty": 1000
+    },
+    {
+     "good": "coal",
+     "qty": 1000
+    }
+   ],
+   "outputs": [
+    {
+     "good": "zinc",
+     "qty": 10000
+    }
+   ],
+   "resources": [],
+   "resource_gen": []
+  }
+ ],
+ "categories": [
+  "chemicals",
+  "communication",
+  "construction",
+  "consumer",
+  "culture",
+  "electrical",
+  "electronics",
+  "energy",
+  "food",
+  "forestry",
+  "household_goods",
+  "instruments",
+  "machinery",
+  "medical",
+  "metals",
+  "nuclear",
+  "paper",
+  "primary",
+  "raw_materials",
+  "textile",
+  "textiles",
+  "tools",
+  "transport_equipment"
+ ]
+}

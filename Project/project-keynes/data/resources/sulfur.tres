@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"sulfur"
-display_name = "硫磺"
+display_name = "硫磺矿"
 reserve_component = &"cell.res_sulfur_reserve"
 habitat_mode = "land"
 init_reserve_scale = 8

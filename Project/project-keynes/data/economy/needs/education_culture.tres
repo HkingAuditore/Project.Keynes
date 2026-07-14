@@ -3,5 +3,5 @@
 [resource]
 script = ExtResource("1")
 id = &"education_culture"
-display_name = "教育文化"
+display_name = "Education Culture"
 living_cost_weight_q16 = 0

@@ -5,6 +5,7 @@ script = ExtResource("1")
 id = &"precision_tools"
 display_name = "精密工具"
 category_id = &"tools"
+substitution_category_ids = PackedStringArray("tools")
 technology_tags = PackedStringArray("tech.precision_engineering")
 production_quality_level = 4
 production_efficiency_q16 = 98304

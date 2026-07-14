@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"spices"
 display_name = "香料"
-category_id = &"primary"
+category_id = &"spices"
+substitution_category_ids = PackedStringArray("spices")
 technology_tags = PackedStringArray("industry.primary", "tech.oceanic_navigation")
 production_quality_level = 0
 production_efficiency_q16 = 65536

@@ -116,8 +116,9 @@ func _run() -> void:
 	var expected_bonus := int((excess_profit * 16384) / 65536)
 	_expect("owner-lot excess profit creates exact employee bonus pool",
 		bonus_due == expected_bonus and bonus_paid == bonus_due and bonus_due > 0)
-	_expect("building snapshot reports exact input cost",
-		int((buildings.last_input_cost as PackedInt64Array)[0]) == 0)
+	_expect("building snapshot reports priced tool input cost",
+		int((buildings.last_input as PackedInt64Array)[0]) > 0 and
+		int((buildings.last_input_cost as PackedInt64Array)[0]) > 0)
 	pop = ext.get_population_cell_snapshot(0)
 	var worker_row := _row_for_signature(pop, worker_sig)
 	var manager_row := _row_for_signature(pop, manager_sig)

@@ -38,6 +38,12 @@ extends Resource
 ## efficiency determines physical consumption.
 @export var input_category_ids: PackedStringArray = PackedStringArray()
 @export var input_min_quality_levels: PackedInt32Array = PackedInt32Array()
+## Optional profile-local CSR for recipe-specific substitutes. A non-empty
+## candidate slice is mutually exclusive with the category on that input slot.
+## Efficiencies are Q16 effective recipe quantity per physical good quantity.
+@export var input_candidate_offsets: PackedInt32Array = PackedInt32Array([0])
+@export var input_candidate_good_ids: PackedStringArray = PackedStringArray()
+@export var input_candidate_efficiency_q16: PackedInt32Array = PackedInt32Array()
 @export var output_good_ids: PackedStringArray = PackedStringArray()
 @export var output_quantities_per_day: PackedInt64Array = PackedInt64Array()
 ## Price V3 supply response. The optional output cost shares must align with

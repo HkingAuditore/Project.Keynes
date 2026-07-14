@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"method_radio_equipment_works_r10"
+display_name = "智能化无线电设备厂"
+building_kind = "industrial"
+technology_tags = PackedStringArray("industry.machinery", "tech.autonomous_systems")
+upgrade_family_id = &""
+upgrade_tier = 0
+construction_days = 0
+owner_profession_id = &"industrialist"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("industrial_worker", "technician", "engineer", "researcher", "manager")
+employee_slots_per_building = PackedInt64Array(26, 16, 10, 6, 4)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(5000, 7000, 7000, 8500, 9000)
+input_good_ids = PackedStringArray("insulated_cable", "electronic_components", "plastics", "tools", "electricity", "industrial_machinery", "autonomous_systems")
+input_quantities_per_day = PackedInt64Array(500, 300, 200, 300, 600, 200, 500)
+input_category_ids = PackedStringArray("", "", "", "tools", "", "", "")
+input_min_quality_levels = PackedInt32Array(0, 0, 0, 4, 0, 0, 0)
+input_candidate_offsets = PackedInt32Array(0, 0, 0, 0, 0, 0, 0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("radio_equipment")
+output_quantities_per_day = PackedInt64Array(10891)
+target_operating_margin_q16 = 9830
+supply_price_elasticity_q16 = 65536
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "none"

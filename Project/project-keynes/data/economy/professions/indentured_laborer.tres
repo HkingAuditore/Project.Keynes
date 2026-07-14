@@ -4,5 +4,5 @@
 script = ExtResource("1")
 id = &"indentured_laborer"
 display_name = "契约劳工"
-default_consumption_plan_id = &"worker_household"
+default_consumption_plan_id = &"agrarian_household"
 technology_tags = PackedStringArray("tech.oceanic_navigation")

@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"jewelry"
 display_name = "珠宝"
-category_id = &"consumer"
-technology_tags = PackedStringArray("industry.consumer", "tech.legacy_modern_economy")
+category_id = &"jewelry"
+substitution_category_ids = PackedStringArray("jewelry")
+technology_tags = PackedStringArray("industry.consumer", "tech.bronze_casting")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

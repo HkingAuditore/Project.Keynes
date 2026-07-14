@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"steel"
 display_name = "钢材"
-category_id = &"metals"
+category_id = &"ferrous_stock"
+substitution_category_ids = PackedStringArray("ferrous_stock", "structural_metal")
 technology_tags = PackedStringArray("industry.metals", "tech.steam_power")
 production_quality_level = 0
 production_efficiency_q16 = 65536

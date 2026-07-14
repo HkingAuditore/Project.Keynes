@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"wool"
 display_name = "羊毛"
-category_id = &"textile"
-technology_tags = PackedStringArray("industry.textile", "tech.legacy_modern_economy")
+category_id = &"spinnable_fiber"
+substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "guild_textile_fiber")
+technology_tags = PackedStringArray("industry.textile", "tech.pottery")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

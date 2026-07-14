@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"three_field_smallholding"
-display_name = "轮作自耕农田"
+display_name = "三圃制小农场"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.guild_organization")
 upgrade_family_id = &"subsistence_food"
