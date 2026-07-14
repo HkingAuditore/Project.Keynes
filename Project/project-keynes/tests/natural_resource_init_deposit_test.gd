@@ -60,6 +60,8 @@ func _run() -> void:
 	_test_differentiation(map, profiles, n)
 	_test_invariants(map, profiles, n)
 	_test_quantity_scale(map, profiles, n)
+	_test_reserve_scale_configuration(profiles)
+	_test_reserve_scale_application(profiles)
 	_test_geology_fields(profiles)
 
 	print("=== init deposit summary: %d checks, %d failures ===" % [_checks, _failures])
@@ -251,6 +253,51 @@ func _test_quantity_scale(map: MapData, profiles: Array, n: int) -> void:
 		for i in range(mini(n, arr.size())):
 			max_value = maxf(max_value, arr[i])
 	_expect("自然资源初值使用直接资源量级（max > 1）", max_value > 1.0)
+
+
+func _test_reserve_scale_configuration(profiles: Array) -> void:
+	var capacity_ids := ["arable_land", "fertile_soil", "paddy_land", "plantation_land"]
+	var renewable_ids := ["cattle", "fresh_water", "freshwater_fish", "horses",
+		"marine_fish", "pigs", "sheep", "timber", "wild_game"]
+	var scales_ok := profiles.size() == 35
+	for profile in profiles:
+		var resource_id := String(profile.id)
+		var expected := 1.0 if resource_id in capacity_ids else \
+			(2.0 if resource_id in renewable_ids else 8.0)
+		scales_ok = scales_ok and is_equal_approx(float(profile.init_reserve_scale), expected)
+	_expect("资源初始储量按 capacity 1x、可再生 2x、地质资源 8x 分级", scales_ok)
+
+
+func _test_reserve_scale_application(profiles: Array) -> void:
+	var coal = null
+	for profile in profiles:
+		if String(profile.id) == "coal":
+			coal = profile
+			break
+	if coal == null:
+		_expect("初始储量倍率实际作用于 bootstrap", false)
+		return
+	var configured_scale := float(coal.init_reserve_scale)
+	var unscaled_map := _build_flat_geology_map(256)
+	var scaled_map := _build_flat_geology_map(256)
+	var gen := MapGenerator.new()
+	coal.init_reserve_scale = 1.0
+	gen._bootstrap_natural_resource_deposits(unscaled_map, {"seed": 81031})
+	coal.init_reserve_scale = configured_scale
+	gen._bootstrap_natural_resource_deposits(scaled_map, {"seed": 81031})
+	var unscaled := _res_arr(unscaled_map, profiles, "coal")
+	var scaled := _res_arr(scaled_map, profiles, "coal")
+	var found_positive := false
+	var scale_matches := unscaled.size() == scaled.size()
+	for i in range(unscaled.size()):
+		if unscaled[i] <= 0.001:
+			continue
+		found_positive = true
+		var expected := unscaled[i] * configured_scale
+		if absf(scaled[i] - expected) > maxf(1.0, absf(expected) * 0.00001):
+			scale_matches = false
+			break
+	_expect("初始储量倍率实际作用于 bootstrap", found_positive and scale_matches)
 
 
 func _has_sparse_mineral_cell(map: MapData, profiles: Array, n: int) -> bool:

@@ -303,8 +303,8 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 `MapGenerator._setup_sus()` 在环境 native/legacy 分叉前配置 `EconomyFacade`，默认以空的
 数据驱动人口 packet bootstrap 本地市场，并注册 `EconomyDailySystem`。世界设置可显式
-启用仅供开发的确定性测试经济 fixture；默认关闭。fixture 先生成建筑 owner-lot，再从
-catalog owner/employee 岗位容量派生 cohort，最后生成市场库存。状态实现位于
+启用仅供开发的确定性测试经济 fixture；默认关闭。fixture 先生成当前科技最高可用档的资源适配
+建筑 owner-lot，再从 catalog owner/employee 岗位容量派生 cohort，初始库存与就业保持为零。状态实现位于
 `DCWorldExt` 组合持有的 `NativeEconomyRuntime`：PopulationCohort pages、商人共同
 所有的 MarketStore、need/bundle 清算、国内贸易拓扑/订单/托管、账本、冻结周期 continuation、审计和 PKEC v11
 存档全部在 C++。默认模式是 ACTIVE、固定 5 日周期；设 `market_cycle_days=0` 时才按
@@ -327,11 +327,14 @@ BUILDING_GRAPH 与国内 Trade V1 阶段承担。税制、跨国贸易/关税、
 NativeEconomyRuntime BUILDING_GRAPH → EconomyFacade/Inspector`。自然资源输入来自 DataCore reserve
 sample，提交为 extra_change delta；建筑和就业本体不进入 MapData/schema。
 
-跨时代经济目录为 35 registered resources / 153 goods / 190 buildings / 32 professions / 15 needs。
+跨时代经济目录为 35 registered resources / 142 goods / 174 buildings / 32 professions / 15 needs。
 `BuildingProfile.building_kind` 强制 collector/industrial 边界，`tech.*` `technology_tags` 由
 国家科技 bitset 在冻结周期内执行。
+两个自给升级族各有 gathering/pottery/guild/steam 四档；BUILD 拒绝已被高档替代的旧档，已有
+建筑继续生产。快照公开 family、tier、最高已解锁档与当前可建状态。
 BUILDING_GRAPH 内部 utility prepass 先生产 `electricity` cycle-flow，普通生产同周期消费并在边界
-清零。`gold`/`silver` producer offer 按固定目录面值进入显式 mint 审计，是唯一生产性货币输入。
+清零，家庭能源替代暂不包含电力。`gold`/`silver` producer offer 按固定目录面值进入显式 mint
+审计，是唯一生产性货币输入；早期 merchant 只可拥有消耗真实矿藏的无投入、无雇员金银 collector。
 PKEC v8 的 employee-role 自适应工资在 active-cell employment slice 内计算：基础与岗位生活
 成本形成硬下限，本地合同工资 EMA 提供岗位均薪锚；owner 基础工资不足时比例支付并停产，
 生产后的 owner-lot 超额利润按 25% 形成奖金。LaborMarketStore 为 native 稀疏 CSR，不进入

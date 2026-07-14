@@ -106,6 +106,35 @@ func _run() -> void:
 	if not String((cohort_refs.get("income") as Label).text).begins_with("收入 ") \
 			or not String((cohort_refs.get("expense") as Label).text).begins_with("支出 "):
 		failures.append("population header does not identify income and expense as ledger entries")
+	var demand_requests := []
+	panel.demand_details_requested.connect(
+		func(details: Dictionary) -> void: demand_requests.append(details))
+	var demand_refs: Dictionary = cohort_refs.get("demand", {})
+	(demand_refs.get("button") as Button).pressed.emit()
+	if demand_requests.size() != 1 \
+			or String((demand_requests[0] as Dictionary).get("cohort_name", "")) != "工人 · 本地人口" \
+			or ((demand_requests[0] as Dictionary).get("rows", []) as Array).size() != 2:
+		failures.append("population demand detail action did not forward the selected cohort payload")
+	else:
+		var dialog = load("res://scripts/ui/components/demand_detail_dialog.gd").new()
+		root.add_child(dialog)
+		dialog.show_details(demand_requests[0])
+		await process_frame
+		var visible_detail_labels := 0
+		for child in dialog._rows_grid.get_children():
+			if child is Label and (child as Label).visible:
+				visible_detail_labels += 1
+		var dialog_panels: Array[Node] = dialog.find_children(
+			"", "PanelContainer", true, false)
+		if not dialog.is_open() or visible_detail_labels != 8:
+			failures.append("demand detail dialog did not render two four-column rows")
+		elif dialog_panels.is_empty() \
+				or (dialog_panels[0] as Control).size.x > 1280.0 \
+				or (dialog_panels[0] as Control).size.y > 720.0:
+			failures.append("demand detail dialog exceeds the 1280x720 viewport")
+		dialog.close_dialog()
+		if dialog.visible:
+			failures.append("demand detail dialog did not close")
 
 	panel.select_tab("buildings")
 	await process_frame
@@ -304,10 +333,17 @@ func _market_category(step: float) -> Dictionary:
 func _population_category(step: float) -> Dictionary:
 	return {
 		"cohort_rows": [
-			{"id": "cohort_1", "name": "工人 · 本地人口", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "需求满足 80% · 结算 5日", "accent": UITokens.ACCENT, "icon": "growth", "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_summary": {"value": "2 类 · %.3f 单位/人/日" % (0.84 + step * 0.0001), "subtitle": "主要：谷物、布料"}},
-			{"id": "cohort_2", "name": "商人 · 本地人口", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "商人 · 需求满足 90% · 结算 5日", "accent": UITokens.RESOURCE, "icon": "growth", "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_summary": {"value": "2 类 · 0.840 单位/人/日", "subtitle": "主要：谷物、布料"}},
+			{"id": "cohort_1", "name": "工人 · 本地人口", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "需求满足 80% · 结算 5日", "accent": UITokens.ACCENT, "icon": "growth", "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_rows": _demand_rows(step), "demand_summary": {"value": "2 类 · %.3f 单位/人/日" % (0.84 + step * 0.0001), "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
+			{"id": "cohort_2", "name": "商人 · 本地人口", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "商人 · 需求满足 90% · 结算 5日", "accent": UITokens.RESOURCE, "icon": "growth", "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_rows": _demand_rows(step), "demand_summary": {"value": "2 类 · 0.840 单位/人/日", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
 		],
 	}
+
+
+func _demand_rows(step: float) -> Array:
+	return [
+		{"id": "demand_grain", "name": "谷物", "quantity": "%.3f" % (0.8 + step * 0.0001), "price": "1.25", "daily_cost": "1", "visible": true},
+		{"id": "demand_cloth", "name": "布料", "quantity": "0.040", "price": "2.5", "daily_cost": "0.1", "visible": true},
+	]
 
 
 func _building_category(step: float) -> Dictionary:

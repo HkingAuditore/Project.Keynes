@@ -278,8 +278,20 @@ func _test_demand_preview_query(compiled: Dictionary) -> void:
 	var offsets: PackedInt32Array = cold_snapshot.get("demand_good_offsets", PackedInt32Array())
 	var indices: PackedInt32Array = cold_snapshot.get("demand_good_indices", PackedInt32Array())
 	var quantities: PackedInt64Array = cold_snapshot.get("demand_per_capita_daily", PackedInt64Array())
+	var need_offsets: PackedInt32Array = cold_snapshot.get("demand_need_offsets", PackedInt32Array())
+	var need_indices: PackedInt32Array = cold_snapshot.get("demand_need_indices", PackedInt32Array())
+	var need_variant_offsets: PackedInt32Array = cold_snapshot.get(
+		"demand_need_variant_offsets", PackedInt32Array())
+	var variant_component_offsets: PackedInt32Array = cold_snapshot.get(
+		"demand_variant_component_offsets", PackedInt32Array())
+	var component_indices: PackedInt32Array = cold_snapshot.get(
+		"demand_component_good_indices", PackedInt32Array())
+	var component_quantities: PackedInt64Array = cold_snapshot.get(
+		"demand_component_per_capita_daily", PackedInt64Array())
 	_expect("demand preview CSR aligns with cohort handles", offsets.size() == int(cold_snapshot.cohort_count) + 1 and offsets[0] == 0 and offsets[-1] == indices.size())
 	_expect("demand preview columns align", indices.size() == quantities.size() and not quantities.is_empty())
+	_expect("grouped demand preview need CSR aligns", need_offsets.size() == int(cold_snapshot.cohort_count) + 1 and need_offsets[0] == 0 and need_offsets[-1] == need_indices.size() and need_variant_offsets.size() == need_indices.size() + 1)
+	_expect("grouped demand preview variant CSR aligns", not variant_component_offsets.is_empty() and variant_component_offsets[-1] == component_indices.size() and component_indices.size() == component_quantities.size())
 	_expect("demand preview uses current environment slots", bool(cold_snapshot.get("demand_preview_environment_ready", false)))
 	_expect("demand preview is read-only", hash_before == hash_after)
 	_expect("cold preview increases fur demand", _preview_good_total(cold_snapshot, "fur") > _preview_good_total(warm_snapshot, "fur"))

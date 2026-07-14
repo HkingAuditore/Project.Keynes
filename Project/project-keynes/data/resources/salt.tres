@@ -7,6 +7,7 @@ script = ExtResource("1")
 id = &"salt"
 display_name = "盐"
 reserve_component = &"cell.res_salt_reserve"
+init_reserve_scale = 8.0
 land_only = true
 temp_lo = -10.0
 temp_hi = 45.0

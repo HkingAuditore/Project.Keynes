@@ -1256,6 +1256,24 @@ bool NativeEconomyRuntime::building_available(int32_t cell, int32_t type_id,
             _building_required_technologies, frozen);
 }
 
+bool NativeEconomyRuntime::building_constructible(int32_t cell, int32_t type_id,
+                                                  bool frozen) const {
+    if (!building_available(cell, type_id, frozen) || type_id < 0 ||
+        type_id >= static_cast<int32_t>(_building_upgrade_family_indices.size()) ||
+        type_id >= static_cast<int32_t>(_building_upgrade_tiers.size())) return false;
+    const int32_t family = _building_upgrade_family_indices[type_id];
+    if (family < 0) return true;
+    const int32_t tier = _building_upgrade_tiers[type_id];
+    for (int32_t candidate = 0;
+         candidate < static_cast<int32_t>(_building_upgrade_family_indices.size());
+         ++candidate) {
+        if (_building_upgrade_family_indices[candidate] == family &&
+            _building_upgrade_tiers[candidate] > tier &&
+            building_available(cell, candidate, frozen)) return false;
+    }
+    return true;
+}
+
 bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _technology_words = static_cast<int32_t>((_technology_ids.size() + 63) / 64);
     if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
@@ -2281,6 +2299,9 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
 bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
                                                      std::string &error) {
     _building_type_ids = packed_strings(catalog, "building_type_ids");
+	_building_upgrade_family_ids = packed_strings(catalog, "building_upgrade_family_ids");
+	_building_upgrade_family_indices = packed_i32(catalog, "building_upgrade_family_indices");
+	_building_upgrade_tiers = packed_i32(catalog, "building_upgrade_tiers");
     _resource_ids = packed_strings(catalog, "building_resource_ids");
     _resource_reserve_slots = packed_strings(catalog, "building_resource_reserve_slots");
     _resource_extra_slots = packed_strings(catalog, "building_resource_extra_slots");
@@ -2296,7 +2317,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _building_technology_tags = packed_strings(catalog, "building_technology_tags");
         if (_building_technology_tag_offsets.size() != 1 ||
             _building_technology_tag_offsets.front() != 0 ||
-            !_building_technology_tags.empty()) {
+            !_building_technology_tags.empty() || !_building_upgrade_family_ids.empty() ||
+            !_building_upgrade_family_indices.empty() || !_building_upgrade_tiers.empty()) {
             error = "building_technology_catalog_invalid";
             return false;
         }
@@ -2304,6 +2326,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _building_employee_roles.clear();
         _building_construction_goods.clear();
         _building_inputs.clear();
+        _building_input_candidates.clear();
         _building_outputs.clear();
         _building_output_cost_shares_q16.clear();
         _building_resources.clear();
@@ -2316,6 +2339,14 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         std::adjacent_find(_building_type_ids.begin(), _building_type_ids.end()) !=
             _building_type_ids.end() || _building_type_ids.size() > 4096) {
         error = "building_type_ids_not_sorted_unique";
+        return false;
+    }
+    if (!std::is_sorted(_building_upgrade_family_ids.begin(),
+                        _building_upgrade_family_ids.end()) ||
+        std::adjacent_find(_building_upgrade_family_ids.begin(),
+                           _building_upgrade_family_ids.end()) !=
+            _building_upgrade_family_ids.end()) {
+        error = "building_upgrade_family_ids_not_sorted_unique";
         return false;
     }
     const size_t types = _building_type_ids.size();
@@ -2350,6 +2381,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         construction_days.size() != types || behavior_ids.size() != types ||
 		behavior_versions.size() != types || target_margins.size() != types ||
         supply_elasticities.size() != types || _building_kinds.size() != types ||
+		_building_upgrade_family_indices.size() != types ||
+		_building_upgrade_tiers.size() != types ||
 		!offsets_valid(_building_technology_tag_offsets) ||
 		_building_technology_tag_offsets.back() != static_cast<int32_t>(
 			_building_technology_tags.size()) || !offsets_valid(employee_offsets) ||
@@ -2371,6 +2404,12 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     const std::vector<int64_t> construction_qty = packed_i64(catalog, "building_construction_quantities");
     const std::vector<int32_t> input_goods = packed_i32(catalog, "building_input_good_ids");
     const std::vector<int64_t> input_qty = packed_i64(catalog, "building_input_quantities");
+    const std::vector<int32_t> input_candidate_offsets =
+        packed_i32(catalog, "building_input_candidate_offsets");
+    const std::vector<int32_t> input_candidate_goods =
+        packed_i32(catalog, "building_input_candidate_good_ids");
+    const std::vector<int32_t> input_candidate_efficiencies =
+        packed_i32(catalog, "building_input_candidate_efficiency_q16");
     const std::vector<int32_t> output_goods = packed_i32(catalog, "building_output_good_ids");
     const std::vector<int64_t> output_qty = packed_i64(catalog, "building_output_quantities");
     _building_output_cost_shares_q16 =
@@ -2395,6 +2434,11 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         construction_qty.size() != construction_goods.size() ||
         input_offsets.back() != static_cast<int32_t>(input_goods.size()) ||
         input_qty.size() != input_goods.size() ||
+        input_candidate_offsets.size() != input_goods.size() + 1 ||
+        input_candidate_offsets.empty() || input_candidate_offsets.front() != 0 ||
+        !std::is_sorted(input_candidate_offsets.begin(), input_candidate_offsets.end()) ||
+        input_candidate_offsets.back() != static_cast<int32_t>(input_candidate_goods.size()) ||
+        input_candidate_efficiencies.size() != input_candidate_goods.size() ||
         output_offsets.back() != static_cast<int32_t>(output_goods.size()) ||
         output_qty.size() != output_goods.size() ||
         output_cost_share_offsets.back() !=
@@ -2439,10 +2483,30 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     };
     if (!compile_goods(construction_goods, construction_qty, _building_construction_goods,
                        "building_construction_good_invalid") ||
-        !compile_goods(input_goods, input_qty, _building_inputs,
-                       "building_input_good_invalid") ||
         !compile_goods(output_goods, output_qty, _building_outputs,
                        "building_output_good_invalid")) return false;
+    _building_inputs.resize(input_goods.size());
+    _building_input_candidates.resize(input_candidate_goods.size());
+    for (size_t i = 0; i < input_goods.size(); ++i) {
+        if (input_goods[i] < 0 || input_goods[i] >= static_cast<int32_t>(_good_ids.size()) ||
+            input_qty[i] <= 0 || input_candidate_offsets[i] >= input_candidate_offsets[i + 1]) {
+            error = "building_input_good_invalid";
+            return false;
+        }
+        _building_inputs[i] = {input_goods[i], input_qty[i], input_candidate_offsets[i],
+                               input_candidate_offsets[i + 1] - input_candidate_offsets[i]};
+    }
+    for (size_t i = 0; i < input_candidate_goods.size(); ++i) {
+        if (input_candidate_goods[i] < 0 ||
+            input_candidate_goods[i] >= static_cast<int32_t>(_good_ids.size()) ||
+            input_candidate_efficiencies[i] <= 0 ||
+            input_candidate_efficiencies[i] > Q16_ONE * 4) {
+            error = "building_input_candidate_invalid";
+            return false;
+        }
+        _building_input_candidates[i] = {
+            input_candidate_goods[i], input_candidate_efficiencies[i]};
+    }
     _building_resources.resize(resource_ids.size());
     _resource_adjacent_access.assign(_resource_ids.size(), uint8_t{0});
     for (size_t i = 0; i < resource_ids.size(); ++i) {
@@ -2480,14 +2544,24 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
                                    condition_values[i]};
     }
     _building_types.resize(types);
+    std::vector<std::pair<int32_t, int32_t>> upgrade_pairs;
+    upgrade_pairs.reserve(types);
     for (size_t i = 0; i < types; ++i) {
+        const int32_t family = _building_upgrade_family_indices[i];
+        const int32_t tier = _building_upgrade_tiers[i];
+        if (family < -1 || family >= static_cast<int32_t>(_building_upgrade_family_ids.size()) ||
+            (family < 0 && tier != 0) || (family >= 0 && tier <= 0)) {
+            error = "building_upgrade_entry_invalid";
+            return false;
+        }
+        if (family >= 0) upgrade_pairs.emplace_back(family, tier);
         if (owner_prof[i] < 0 || owner_prof[i] >= static_cast<int32_t>(_profession_ids.size()) ||
 			owner_slots[i] != 1 || wages[i] < 0 || construction_days[i] < 0 ||
 			_building_kinds[i] < 0 || _building_kinds[i] > 1 ||
-            behavior_ids[i] < 0 || behavior_ids[i] > 2 || behavior_versions[i] != 1 ||
+			behavior_ids[i] < 0 || behavior_ids[i] > 2 || behavior_versions[i] != 1 ||
 			output_offsets[i] == output_offsets[i + 1] ||
 			(_building_kinds[i] == 0 && resource_offsets[i] == resource_offsets[i + 1]) ||
-			(_building_kinds[i] == 1 && resource_offsets[i] != resource_offsets[i + 1]) ||
+			(_building_kinds[i] != 0 && resource_offsets[i] != resource_offsets[i + 1]) ||
 			(_building_kinds[i] == 0 && behavior_ids[i] == 0) ||
 			(_building_kinds[i] == 1 && behavior_ids[i] != 0) ||
             target_margins[i] < 0 || target_margins[i] > Q16_ONE * 4 ||
@@ -2500,6 +2574,23 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             (behavior_ids[i] != 2 && generation_offsets[i] != generation_offsets[i + 1])) {
             error = "building_type_entry_invalid";
             return false;
+        }
+        if (owner_prof[i] == _merchant_profession_id) {
+            const bool one_output = output_offsets[i + 1] - output_offsets[i] == 1;
+            const bool one_resource = resource_offsets[i + 1] - resource_offsets[i] == 1;
+            const int32_t output_good = one_output ? output_goods[output_offsets[i]] : -1;
+            const int32_t resource = one_resource ? resource_ids[resource_offsets[i]] : -1;
+            const bool gold = output_good >= 0 && _good_ids[output_good] == "gold" &&
+                resource >= 0 && _resource_ids[resource] == "gold_ore";
+            const bool silver = output_good >= 0 && _good_ids[output_good] == "silver" &&
+                resource >= 0 && _resource_ids[resource] == "silver_ore";
+            if (_building_kinds[i] != 0 || behavior_ids[i] != 1 ||
+                employee_offsets[i] != employee_offsets[i + 1] ||
+                input_offsets[i] != input_offsets[i + 1] || !one_output || !one_resource ||
+                resource_modes[resource_offsets[i]] != 0 || (!gold && !silver)) {
+                error = "merchant_building_must_be_early_bullion_collector";
+                return false;
+            }
         }
         int64_t explicit_share_sum = 0;
         for (int32_t s = output_cost_share_offsets[i];
@@ -2516,7 +2607,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             return false;
         }
         _building_types[i] = {
-			_building_kinds[i], owner_prof[i], owner_slots[i], wages[i],
+			_building_kinds[i], family, tier, owner_prof[i], owner_slots[i], wages[i],
             employee_offsets[i], employee_offsets[i + 1] - employee_offsets[i],
             construction_offsets[i], construction_offsets[i + 1] - construction_offsets[i],
             input_offsets[i], input_offsets[i + 1] - input_offsets[i],
@@ -2528,6 +2619,11 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             construction_days[i], behavior_ids[i], behavior_versions[i],
             target_margins[i], supply_elasticities[i], output_cost_share_offsets[i],
             output_cost_share_offsets[i + 1] - output_cost_share_offsets[i]};
+    }
+    std::sort(upgrade_pairs.begin(), upgrade_pairs.end());
+    if (std::adjacent_find(upgrade_pairs.begin(), upgrade_pairs.end()) != upgrade_pairs.end()) {
+        error = "building_upgrade_family_tier_duplicate";
+        return false;
     }
     return true;
 }
@@ -2673,8 +2769,12 @@ void NativeEconomyRuntime::rebuild_market_signals() {
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size())) continue;
         const BuildingType &type = _building_types[group.type_id];
-        for (int32_t i = 0; i < type.input_count; ++i)
-            keys.emplace_back(group.cell, _building_inputs[type.input_begin + i].good_id);
+        for (int32_t i = 0; i < type.input_count; ++i) {
+            const ProductionInput &input = _building_inputs[type.input_begin + i];
+            for (int32_t c = input.candidate_begin;
+                 c < input.candidate_begin + input.candidate_count; ++c)
+                keys.emplace_back(group.cell, _building_input_candidates[c].good_id);
+        }
         for (int32_t i = 0; i < type.output_count; ++i)
             keys.emplace_back(group.cell, _building_outputs[type.output_begin + i].good_id);
     }
@@ -3107,11 +3207,33 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(std::string &error) {
         int64_t input_cost = 0;
         int64_t employee_wages = 0;
         int64_t revenue = 0;
+        bool inputs_available = true;
         for (int32_t i = 0; i < type.input_count; ++i) {
-            const GoodAmount &item = _building_inputs[type.input_begin + i];
+            const ProductionInput &item = _building_inputs[type.input_begin + i];
+            int64_t best_effective_price = std::numeric_limits<int64_t>::max();
+            for (int32_t c = item.candidate_begin;
+                 c < item.candidate_begin + item.candidate_count; ++c) {
+                const InputCandidate &candidate = _building_input_candidates[c];
+                if (!good_available(group.cell, candidate.good_id, true)) continue;
+                const int64_t effective_price = mul_div_sat(
+                    _market.price[_market.index(market, candidate.good_id)], Q16_ONE,
+                    candidate.efficiency_q16, _saturation_count);
+                best_effective_price = std::min(best_effective_price, effective_price);
+            }
+            if (best_effective_price == std::numeric_limits<int64_t>::max()) {
+                inputs_available = false;
+                break;
+            }
             input_cost = saturating_add(input_cost, mul_div_sat(
-                item.quantity, _market.price[_market.index(market, item.good_id)],
-                GOODS_SCALE, _saturation_count), _saturation_count);
+                item.quantity, best_effective_price, GOODS_SCALE,
+                _saturation_count), _saturation_count);
+        }
+        if (!inputs_available) {
+            group.sample_unit_input_cost = 0;
+            group.last_margin_gap_q16 = -Q16_ONE;
+            group.planned_utilization_q16 = 0;
+            group.last_expected_revenue = 0;
+            continue;
         }
         for (int32_t r = 0; r < type.employee_count; ++r) {
             const JobRole &role = _building_employee_roles[type.employee_begin + r];
@@ -3438,6 +3560,11 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     const BuildingType &type = _building_types[type_id];
     if (!building_available(cell, type_id, true)) {
         _last_building_rejection_reason = "building_technology_locked";
+        ++_rejected_commands;
+        return true;
+    }
+    if (!building_constructible(cell, type_id, true)) {
+        _last_building_rejection_reason = "building_tier_obsolete_for_construction";
         ++_rejected_commands;
         return true;
     }
@@ -3899,6 +4026,52 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
         _building_wages_unpaid = saturating_add(
             _building_wages_unpaid, total_due - owner_paid, _saturation_count);
     }
+    auto physical_input_quantity = [&](int64_t effective,
+                                       const InputCandidate &candidate) -> int64_t {
+        int64_t physical = mul_div_sat(
+            effective, Q16_ONE, candidate.efficiency_q16, _saturation_count);
+        if (mul_div_sat(physical, candidate.efficiency_q16, Q16_ONE,
+                        _saturation_count) < effective)
+            physical = saturating_add(physical, 1, _saturation_count);
+        return physical;
+    };
+    auto select_input_candidate = [&](const ProductionInput &input,
+                                      bool require_stock,
+                                      int64_t effective_required) -> int32_t {
+        int32_t best = -1;
+        int64_t best_capacity_q16 = -1;
+        int64_t best_effective_price = std::numeric_limits<int64_t>::max();
+        for (int32_t c = input.candidate_begin;
+             c < input.candidate_begin + input.candidate_count; ++c) {
+            const InputCandidate &candidate = _building_input_candidates[c];
+            if (!good_available(cell, candidate.good_id, true)) continue;
+            if (require_stock &&
+                _market.stock[_market.index(market, candidate.good_id)] <= 0) continue;
+            int64_t capacity_q16 = Q16_ONE;
+            if (require_stock && effective_required > 0) {
+                const int64_t physical_required = physical_input_quantity(
+                    effective_required, candidate);
+                capacity_q16 = physical_required > 0 ? std::min<int64_t>(
+                    Q16_ONE, mul_div_sat(
+                        _market.stock[_market.index(market, candidate.good_id)],
+                        Q16_ONE, physical_required, _saturation_count)) : Q16_ONE;
+            }
+            const int64_t effective_price = mul_div_sat(
+                _market.price[_market.index(market, candidate.good_id)], Q16_ONE,
+                candidate.efficiency_q16, _saturation_count);
+            if (capacity_q16 > best_capacity_q16 ||
+                (capacity_q16 == best_capacity_q16 &&
+                 (effective_price < best_effective_price ||
+                  (effective_price == best_effective_price &&
+                   (best < 0 || candidate.good_id <
+                    _building_input_candidates[best].good_id))))) {
+                best = c;
+                best_capacity_q16 = capacity_q16;
+                best_effective_price = effective_price;
+            }
+        }
+        return best;
+    };
     auto process_phase = [&](bool cycle_flow_phase) -> bool {
         offers.clear();
         for (int32_t g = begin; g < end; ++g) {
@@ -3929,16 +4102,26 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
             }
             const int64_t building_days = saturating_mul(
                 group.count, std::max(1, _epoch_days), _saturation_count);
+            int64_t full_input_cost = 0;
             for (int32_t i = 0; i < type.input_count; ++i) {
-                const GoodAmount &item = _building_inputs[type.input_begin + i];
-                const int64_t base = saturating_mul(
+                const ProductionInput &item = _building_inputs[type.input_begin + i];
+                const int64_t effective = saturating_mul(
                     building_days, item.quantity, _saturation_count);
-                if (base > 0) scale_q16 = std::min(scale_q16, mul_div_sat(
-                    _market.stock[_market.index(market, item.good_id)], Q16_ONE,
-                    base, _saturation_count));
+                const int32_t selected = select_input_candidate(item, true, effective);
+                if (selected < 0) {
+                    scale_q16 = 0;
+                    continue;
+                }
+                const InputCandidate &candidate = _building_input_candidates[selected];
+                const int64_t physical = physical_input_quantity(effective, candidate);
+                if (physical > 0) scale_q16 = std::min(scale_q16, mul_div_sat(
+                    _market.stock[_market.index(market, candidate.good_id)], Q16_ONE,
+                    physical, _saturation_count));
+                full_input_cost = saturating_add(full_input_cost, mul_div_sat(
+                    physical, _market.price[_market.index(market, candidate.good_id)],
+                    GOODS_SCALE, _saturation_count), _saturation_count);
             }
-            const int64_t base_cost = saturating_mul(
-                building_days, group.sample_unit_input_cost, _saturation_count);
+            const int64_t base_cost = full_input_cost;
             if (base_cost > 0) scale_q16 = std::min(scale_q16, mul_div_sat(
                 std::max<int64_t>(0, _population.funds[owner_slot]), Q16_ONE,
                 base_cost, _saturation_count));
@@ -3986,19 +4169,30 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                         _building_resource_generated, qty, _saturation_count);
                 }
             }
+            if (scale_q16 == 0) continue;
             touch_accounting_slot(owner_slot);
-            const int64_t actual_cost = mul_div_sat(
-                base_cost, scale_q16, Q16_ONE, _saturation_count);
+            int64_t actual_cost = 0;
             for (int32_t i = 0; i < type.input_count; ++i) {
-                const GoodAmount &item = _building_inputs[type.input_begin + i];
-                const int64_t qty = mul_div_sat(saturating_mul(
-                    building_days, item.quantity, _saturation_count),
-                    scale_q16, Q16_ONE, _saturation_count);
-                _market.stock[_market.index(market, item.good_id)] -= qty;
+                const ProductionInput &item = _building_inputs[type.input_begin + i];
+                const int64_t effective = saturating_mul(
+                    building_days, item.quantity, _saturation_count);
+                const int32_t selected = select_input_candidate(item, true, effective);
+                if (selected < 0) {
+                    error = "building_input_candidate_selection_drift";
+                    return false;
+                }
+                const InputCandidate &candidate = _building_input_candidates[selected];
+                const int64_t full_physical = physical_input_quantity(effective, candidate);
+                const int64_t qty = mul_div_sat(
+                    full_physical, scale_q16, Q16_ONE, _saturation_count);
+                _market.stock[_market.index(market, candidate.good_id)] -= qty;
+                actual_cost = saturating_add(actual_cost, mul_div_sat(
+                    qty, _market.price[_market.index(market, candidate.good_id)],
+                    GOODS_SCALE, _saturation_count), _saturation_count);
                 group.last_input = saturating_add(group.last_input, qty, _saturation_count);
                 _production_inputs_consumed = saturating_add(
                     _production_inputs_consumed, qty, _saturation_count);
-                if (_good_storage_modes[item.good_id] == 1) {
+                if (_good_storage_modes[candidate.good_id] == 1) {
                     _cycle_flow_consumed = saturating_add(
                         _cycle_flow_consumed, qty, _saturation_count);
                 }
@@ -4063,8 +4257,8 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                 paid = mul_div_sat(sold, issue_value, GOODS_SCALE, _saturation_count);
                 _explicit_money_mint = saturating_add(
                     _explicit_money_mint, paid, _saturation_count);
-                _anchored_money_issued = saturating_add(
-                    _anchored_money_issued, paid, _saturation_count);
+                _bullion_money_issued = saturating_add(
+                    _bullion_money_issued, paid, _saturation_count);
                 if (_good_ids[offer.good] == "gold") {
                     _gold_accepted = saturating_add(_gold_accepted, sold, _saturation_count);
                     _gold_money_issued = saturating_add(
@@ -4219,12 +4413,16 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
         const int64_t building_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
         for (int32_t i = 0; i < type.input_count; ++i) {
-            const GoodAmount &item = _building_inputs[type.input_begin + i];
-            const int64_t planned = mul_div_sat(saturating_mul(
+            const ProductionInput &item = _building_inputs[type.input_begin + i];
+            const int32_t selected = select_input_candidate(item, false, 0);
+            if (selected < 0) continue;
+            const InputCandidate &candidate = _building_input_candidates[selected];
+            const int64_t effective = mul_div_sat(saturating_mul(
                 building_days, item.quantity, _saturation_count),
                 group.planned_utilization_q16, Q16_ONE, _saturation_count);
-            business_observed[item.good_id] = saturating_add(
-                business_observed[item.good_id], planned, _saturation_count);
+            const int64_t planned = physical_input_quantity(effective, candidate);
+            business_observed[candidate.good_id] = saturating_add(
+                business_observed[candidate.good_id], planned, _saturation_count);
         }
         int64_t reference_total = 0;
         if (type.output_cost_share_count == 0) {
@@ -5802,7 +6000,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _production_output_stock = 0;
     _production_output_discarded = 0;
     _producer_revenue = 0;
-	_anchored_money_issued = 0;
+	_bullion_money_issued = 0;
 	_gold_accepted = 0;
 	_silver_accepted = 0;
 	_gold_money_issued = 0;
@@ -7061,7 +7259,7 @@ bool NativeEconomyRuntime::publish_epoch(std::string &error) {
     _closing_totals.cohort_funds = saturating_sub(
         _closing_totals.cohort_funds, _structural_funds_to_treasury, _saturation_count);
 	_closing_totals.cohort_funds = saturating_add(
-		_closing_totals.cohort_funds, _anchored_money_issued, _saturation_count);
+		_closing_totals.cohort_funds, _bullion_money_issued, _saturation_count);
     _closing_totals.country_cash = _country_runtime == nullptr ? 0 : _country_runtime->total_cash();
     const int64_t population_expected = _opening_totals.population + _births - _deaths +
                                         _external_population_delta;
@@ -7575,7 +7773,10 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_commands); cap(_structural_commands); cap(_committed_cells);
     cap(_staging_cells); cap(_structural_touched_cells);
     cap(_building_types); cap(_building_employee_roles); cap(_building_construction_goods);
-    cap(_building_inputs); cap(_building_outputs); cap(_building_resources);
+	cap(_building_upgrade_family_ids); cap(_building_upgrade_family_indices);
+	cap(_building_upgrade_tiers);
+    cap(_building_inputs); cap(_building_input_candidates);
+    cap(_building_outputs); cap(_building_resources);
 	cap(_building_output_cost_shares_q16);
 	cap(_cycle_flow_good_ids);
     cap(_building_resource_generation);
@@ -7674,7 +7875,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["production_output_stock"] = _production_output_stock;
     out["production_output_discarded"] = _production_output_discarded;
     out["producer_revenue"] = _producer_revenue;
-	out["anchored_money_issued"] = _anchored_money_issued;
+	out["bullion_money_issued"] = _bullion_money_issued;
 	out["gold_accepted"] = _gold_accepted;
 	out["silver_accepted"] = _silver_accepted;
 	out["gold_money_issued"] = _gold_money_issued;
@@ -7992,7 +8193,20 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     PackedInt32Array demand_good_offsets;
     PackedInt32Array demand_good_indices;
     PackedInt64Array demand_per_capita_daily;
+    PackedStringArray demand_need_stable_ids;
+    for (const std::string &id : _need_ids) {
+        demand_need_stable_ids.push_back(String(id.c_str()));
+    }
+    PackedInt32Array demand_need_offsets;
+    PackedInt32Array demand_need_indices;
+    PackedInt32Array demand_need_variant_offsets;
+    PackedInt32Array demand_variant_component_offsets;
+    PackedInt32Array demand_component_good_indices;
+    PackedInt64Array demand_component_per_capita_daily;
     demand_good_offsets.push_back(0);
+    demand_need_offsets.push_back(0);
+    demand_need_variant_offsets.push_back(0);
+    demand_variant_component_offsets.push_back(0);
     const int32_t market = _market.cell_to_market[cell_idx];
     std::vector<int64_t> variant_scores;
     std::vector<int64_t> variant_prices;
@@ -8006,6 +8220,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
                        preview_saturation_count);
     for (int32_t slot : slots) {
         std::fill(good_quantities.begin(), good_quantities.end(), int64_t{0});
+        const int64_t population = std::max<int64_t>(1, _population.population[slot]);
         const uint32_t signature_id = _population.signature_id[slot];
         if (signature_id < _signatures.size()) {
             const Signature &signature = _signatures[signature_id];
@@ -8019,6 +8234,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
                     slot, need_index, 1, need_environment[need_index],
                     need_composites[need_index], preview_saturation_count);
                 if (desired <= 0) continue;
+                demand_need_indices.push_back(need.stable_id);
                 int64_t prefix_score = 0;
                 int64_t allocated = 0;
                 for (int32_t v = 0; v < need.variant_count; ++v) {
@@ -8029,22 +8245,28 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
                                                      preview_saturation_count);
                     const int64_t units = std::max<int64_t>(0, next - allocated);
                     allocated = next;
-                    if (units <= 0) continue;
                     const VariantChoice &variant = _variants[variant_id];
                     for (int32_t c = 0; c < variant.component_count; ++c) {
                         const NeedComponent &component =
                             _components[variant.component_begin + c];
-                        const int64_t quantity = mul_div_sat(
-                            units, component.qty_per_need, GOODS_SCALE,
-                            preview_saturation_count);
+                        const int64_t quantity = units > 0
+                            ? mul_div_sat(units, component.qty_per_need, GOODS_SCALE,
+                                          preview_saturation_count)
+                            : 0;
                         good_quantities[component.good_id] = saturating_add(
                             good_quantities[component.good_id], quantity,
                             preview_saturation_count);
+                        demand_component_good_indices.push_back(component.good_id);
+                        demand_component_per_capita_daily.push_back(quantity / population);
                     }
+                    demand_variant_component_offsets.push_back(
+                        demand_component_good_indices.size());
                 }
+                demand_need_variant_offsets.push_back(
+                    demand_variant_component_offsets.size() - 1);
             }
         }
-        const int64_t population = std::max<int64_t>(1, _population.population[slot]);
+        demand_need_offsets.push_back(demand_need_indices.size());
         for (int32_t good = 0; good < _market.good_count; ++good) {
             const int64_t per_capita = good_quantities[good] / population;
             if (per_capita <= 0) continue;
@@ -8057,6 +8279,13 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["demand_good_indices"] = demand_good_indices;
     out["demand_per_capita_daily"] = demand_per_capita_daily;
     out["demand_good_stable_ids"] = demand_good_stable_ids;
+    out["demand_need_stable_ids"] = demand_need_stable_ids;
+    out["demand_need_offsets"] = demand_need_offsets;
+    out["demand_need_indices"] = demand_need_indices;
+    out["demand_need_variant_offsets"] = demand_need_variant_offsets;
+    out["demand_variant_component_offsets"] = demand_variant_component_offsets;
+    out["demand_component_good_indices"] = demand_component_good_indices;
+    out["demand_component_per_capita_daily"] = demand_component_per_capita_daily;
     out["demand_preview_basis"] = _epoch_active
         ? "live_slice_economy_current_environment_daily"
         : "committed_economy_current_environment_daily";
@@ -8249,9 +8478,13 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt32Array target_operating_margin_q16;
     PackedInt32Array supply_price_elasticity_q16;
 	PackedInt32Array building_kinds;
+	PackedInt32Array upgrade_family_indices;
+	PackedInt32Array upgrade_tiers;
+	PackedInt32Array highest_available_tiers;
 	PackedInt32Array technology_tag_offsets;
 	PackedStringArray technology_tags;
 	PackedByteArray technology_available;
+	PackedByteArray construction_available;
 	technology_tag_offsets.push_back(0);
     type_counts.resize(static_cast<int64_t>(_building_types.size()));
     type_counts.fill(0);
@@ -8263,8 +8496,23 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     }
 	for (size_t i = 0; i < _building_types.size(); ++i) {
 		building_kinds.push_back(_building_types[i].kind);
+		upgrade_family_indices.push_back(_building_upgrade_family_indices[i]);
+		upgrade_tiers.push_back(_building_upgrade_tiers[i]);
 		technology_available.push_back(building_available(
 			cell_idx, static_cast<int32_t>(i), false) ? 1 : 0);
+		construction_available.push_back(building_constructible(
+			cell_idx, static_cast<int32_t>(i), false) ? 1 : 0);
+		int32_t highest_tier = 0;
+		const int32_t family = _building_upgrade_family_indices[i];
+		if (family >= 0) {
+			for (size_t candidate = 0; candidate < _building_types.size(); ++candidate) {
+				if (_building_upgrade_family_indices[candidate] == family &&
+					building_available(cell_idx, static_cast<int32_t>(candidate), false)) {
+					highest_tier = std::max(highest_tier, _building_upgrade_tiers[candidate]);
+				}
+			}
+		}
+		highest_available_tiers.push_back(highest_tier);
 		for (int32_t k = _building_technology_tag_offsets[i];
 			 k < _building_technology_tag_offsets[i + 1]; ++k) {
 			technology_tags.push_back(String(_building_technology_tags[k].c_str()));
@@ -8391,9 +8639,17 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["target_operating_margin_q16_by_type"] = target_operating_margin_q16;
     out["supply_price_elasticity_q16_by_type"] = supply_price_elasticity_q16;
 	out["building_kinds"] = building_kinds;
+	PackedStringArray upgrade_family_ids;
+	for (const std::string &id : _building_upgrade_family_ids)
+		upgrade_family_ids.push_back(String(id.c_str()));
+	out["building_upgrade_family_ids"] = upgrade_family_ids;
+	out["building_upgrade_family_indices"] = upgrade_family_indices;
+	out["building_upgrade_tiers"] = upgrade_tiers;
+	out["building_highest_available_tiers"] = highest_available_tiers;
 	out["building_technology_tag_offsets"] = technology_tag_offsets;
 	out["building_technology_tags"] = technology_tags;
 	out["building_technology_available"] = technology_available;
+	out["building_construction_available"] = construction_available;
     out["group_type_ids"] = group_type_ids;
     out["owner_signature_ids"] = owner_signature_ids;
     out["group_counts"] = group_counts;

@@ -24,7 +24,7 @@ func _run() -> void:
 	var goods: PackedStringArray = compiled.good_ids
 	var grain := goods.find("grain")
 	var hunting := technologies.find("tech.hunting")
-	var deep_space := technologies.find("tech.deep_space_systems")
+	var autonomous_systems := technologies.find("tech.autonomous_systems")
 	var profile := {"country_runtime_mode": "ACTIVE",
 		"starting_technology_ids": PackedStringArray(["tech.hunting"])}
 	var default_ext := _new_ext(3)
@@ -111,14 +111,14 @@ func _run() -> void:
 		{"opcode": 2, "day": 2, "sequence": 1, "handle": beta.country_handle,
 			"cell": -1, "aux": -1, "stable_id": "", "name": "贝塔共和国"},
 		{"opcode": 4, "day": 2, "sequence": 2, "handle": beta.country_handle,
-			"cell": -1, "aux": deep_space, "stable_id": "", "name": ""},
+			"cell": -1, "aux": autonomous_systems, "stable_id": "", "name": ""},
 	])
 	ext.submit_country_commands(rename_and_tech)
 	_expect("rename and country technology commit", bool(ext.run_country_slice({"day_index": 2}).get("ok", false)))
 	var beta_after: Dictionary = ext.get_country_snapshot(beta.country_handle)
 	_expect("country-wide metadata query reflects commit",
 		String(beta_after.country_name) == "贝塔共和国" and
-		(beta_after.technology_ids as PackedStringArray).has("tech.deep_space_systems"))
+		(beta_after.technology_ids as PackedStringArray).has("tech.autonomous_systems"))
 
 	var continuation_profile := profile.duplicate(true)
 	continuation_profile.country_max_commands_per_slice = 1

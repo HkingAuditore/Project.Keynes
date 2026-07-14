@@ -40,7 +40,7 @@
 #        + init_noise   * noise01(cell_pos, init_noise_scale)   # noise01 ∈ [0,1]
 #        + init_province * 2*(province01(family)-0.55)
 #        + init_belt     * 2*(ridge(family)-0.72)
-#   reserve0 = max(0, suit)                           # habitat 不匹配时为 0
+#   reserve0 = max(0, suit) * init_reserve_scale      # habitat 不匹配时为 0
 # 斑块化技巧（矿脉/油田）：负 base + 资源局部 noise + 同族地质省/矿带；共享场中心化，
 # 省外和矿带外会压低储量，避免每个陆地地块集齐大多数矿种。
 # 可选生态适宜度（作物/多年生/动物资源）：默认 init_climate_fit=0 且
@@ -102,6 +102,9 @@ var habitat_mode: String = "legacy"
 @export var init_base: float = 0.0
 @export var init_temp: float = 0.0
 @export var init_moisture: float = 0.0
+## Content-level abundance multiplier applied after suitability is resolved.
+## It changes deposit quantity without changing deposit presence or topology.
+@export_range(0.1, 100.0, 0.1) var init_reserve_scale: float = 1.0
 
 # ─── 扩展初始储量因子（「地块自身情况」，map generation 仅一次）──────────
 # 默认 0 / {} → 不参与，保持与旧公式逐位一致（向后兼容）。

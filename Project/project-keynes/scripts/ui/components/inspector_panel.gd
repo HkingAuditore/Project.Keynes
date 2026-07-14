@@ -7,6 +7,7 @@ const MarketListScript = preload("res://scripts/ui/components/market_list.gd")
 
 signal close_requested()
 signal tab_data_requested(tab_id: String)
+signal demand_details_requested(details: Dictionary)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
@@ -363,6 +364,8 @@ func _build_category_block(data: Dictionary) -> void:
 		_add_group_separator()
 		_cohort_list = CohortListScript.new()
 		_cohort_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_cohort_list.demand_details_requested.connect(
+			func(details: Dictionary) -> void: demand_details_requested.emit(details))
 		_cohort_list.set_rows(cohort_rows)
 		_content_box.add_child(_cohort_list)
 

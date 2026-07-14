@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"nuclear_medicine_center"
-display_name = "核医学中心"
+display_name = "放射性药物工坊"
 building_kind = "industrial"
 technology_tags = PackedStringArray("tech.nuclear_fission")
 construction_days = 0

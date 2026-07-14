@@ -12,6 +12,11 @@ extends Resource
 @export var icon: Texture2D = null
 @export var category_id: StringName = &"misc"
 @export var technology_tags: PackedStringArray = PackedStringArray()
+## Production recipes may accept a category instead of one exact good. The
+## quality gate rejects obsolete substitutes; efficiency converts physical
+## quantity into effective recipe quantity (Q16, 65536 = 100%).
+@export_range(0, 1000, 1) var production_quality_level: int = 0
+@export_range(1, 262144, 1) var production_efficiency_q16: int = 65536
 @export_enum("stock", "cycle_flow") var storage_mode: String = "stock"
 ## Stock goods participate in domestic arbitrage by default. cycle_flow goods
 ## are always forced off by the native catalog compiler.

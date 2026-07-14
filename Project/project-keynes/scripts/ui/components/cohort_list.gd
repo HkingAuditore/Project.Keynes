@@ -1,8 +1,11 @@
 extends VBoxContainer
 class_name CohortList
 
+signal demand_details_requested(details: Dictionary)
+
 var _row_refs: Dictionary = {}
 var _expanded: Dictionary = {}
+var _row_data: Dictionary = {}
 
 
 func set_rows(rows: Array) -> void:
@@ -10,6 +13,7 @@ func set_rows(rows: Array) -> void:
 		child.queue_free()
 	_row_refs.clear()
 	_expanded.clear()
+	_row_data.clear()
 	add_theme_constant_override("separation", UITokens.SPACE_XS)
 	for raw in rows:
 		var data: Dictionary = raw
@@ -30,6 +34,7 @@ func update_rows(rows: Array) -> void:
 			continue
 		if not _row_refs.has(row_id):
 			_row_refs[row_id] = _create_row(row_id, data)
+		_row_data[row_id] = data.duplicate(true)
 		_apply_row(row_id, _row_refs[row_id], data)
 
 
@@ -119,7 +124,7 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	var finance := _create_finance_summary(details)
 	var income_group := _create_ledger_group(details, "收入构成", "trend_up", UITokens.GOOD)
 	var expense_group := _create_ledger_group(details, "支出构成", "trend_down", UITokens.RISK)
-	var demand := _create_demand_summary(details)
+	var demand := _create_demand_summary(details, row_id)
 
 	var refs := {"panel": panel, "button": button, "icon": icon, "name": name_label,
 		"status": status_label, "population": population_label, "wealth": wealth_label,
@@ -197,7 +202,7 @@ func _create_ledger_group(parent: VBoxContainer, title: String, icon_key: String
 	return {"panel": panel, "rows": rows, "refs": {}, "accent": accent}
 
 
-func _create_demand_summary(parent: VBoxContainer) -> Dictionary:
+func _create_demand_summary(parent: VBoxContainer, row_id: String) -> Dictionary:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
 		Color(0.040, 0.035, 0.029, 0.98), Color(UITokens.RESOURCE.r, UITokens.RESOURCE.g, UITokens.RESOURCE.b, 0.30)))
@@ -224,12 +229,33 @@ func _create_demand_summary(parent: VBoxContainer) -> Dictionary:
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	value.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
 	top.add_child(value)
+	var details_button := Button.new()
+	details_button.custom_minimum_size = Vector2(30.0, 28.0)
+	details_button.focus_mode = Control.FOCUS_NONE
+	details_button.tooltip_text = "查看消费需求明细"
+	IconBadge.apply_to_button(details_button, "overview", 13)
+	details_button.pressed.connect(func() -> void: _request_demand_details(row_id))
+	top.add_child(details_button)
 	var subtitle := Label.new()
 	subtitle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	subtitle.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	subtitle.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	box.add_child(subtitle)
-	return {"panel": panel, "value": value, "subtitle": subtitle}
+	return {"panel": panel, "value": value, "subtitle": subtitle, "button": details_button}
+
+
+func _request_demand_details(row_id: String) -> void:
+	var data: Dictionary = _row_data.get(row_id, {})
+	if data.is_empty():
+		return
+	var summary: Dictionary = data.get("demand_summary", {})
+	demand_details_requested.emit({
+		"cohort_name": String(data.get("name", "阶层")),
+		"rows": (data.get("demand_rows", []) as Array).duplicate(true),
+		"groups": (data.get("demand_groups", []) as Array).duplicate(true),
+		"total_quantity": String(summary.get("total_quantity", "—")),
+		"total_daily_cost": String(summary.get("total_daily_cost", "—")),
+	})
 
 
 func _sync_ledger_rows(group: Dictionary, rows: Array) -> void:
@@ -290,4 +316,5 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	(demand.get("value") as Label).text = String(demand_data.get("value", ""))
 	(demand.get("subtitle") as Label).text = String(demand_data.get("subtitle", ""))
 	(demand.get("panel") as Control).visible = not demand_data.is_empty()
+	(demand.get("button") as Button).disabled = (data.get("demand_rows", []) as Array).is_empty()
 	set_expanded(row_id, bool(_expanded.get(row_id, false)))

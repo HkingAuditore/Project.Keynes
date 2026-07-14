@@ -7,6 +7,10 @@ extends Resource
 @export var icon: Texture2D = null
 @export_enum("collector", "industrial") var building_kind: String = "industrial"
 @export var technology_tags: PackedStringArray = PackedStringArray()
+## Optional construction-upgrade family. Existing lower-tier buildings keep
+## operating, but only the highest technology-available tier may be built.
+@export var upgrade_family_id: StringName = &""
+@export_range(0, 255, 1) var upgrade_tier: int = 0
 
 ## Construction is accepted atomically at an economy sample boundary. The
 ## fixed delay is intentionally small-scope: no builders or staged progress.
@@ -28,6 +32,12 @@ extends Resource
 ## Quantities are per building per simulation day in GOODS_SCALE (1000).
 @export var input_good_ids: PackedStringArray = PackedStringArray()
 @export var input_quantities_per_day: PackedInt64Array = PackedInt64Array()
+## Optional parallel input constraints. Empty category IDs preserve exact-good
+## recipes. A category input accepts every technology-available good in that
+## category whose production quality meets the minimum; its good-level Q16
+## efficiency determines physical consumption.
+@export var input_category_ids: PackedStringArray = PackedStringArray()
+@export var input_min_quality_levels: PackedInt32Array = PackedInt32Array()
 @export var output_good_ids: PackedStringArray = PackedStringArray()
 @export var output_quantities_per_day: PackedInt64Array = PackedInt64Array()
 ## Price V3 supply response. The optional output cost shares must align with
@@ -36,6 +46,9 @@ extends Resource
 @export_range(0, 262144, 1) var supply_price_elasticity_q16: int = 65536
 @export var output_cost_shares_q16: PackedInt32Array = PackedInt32Array()
 @export var resource_ids: PackedStringArray = PackedStringArray()
+## Resource reserve units and output good units are intentionally independent.
+## Their ratio is the extractor's content-level efficiency and may differ by
+## technology, collection method, resource type, and co-product recipe.
 @export var resource_quantities_per_day: PackedInt64Array = PackedInt64Array()
 ## Parallel to resource_ids. extract quantities are per building/day and are
 ## removed from the local reserve; capacity quantities are required per

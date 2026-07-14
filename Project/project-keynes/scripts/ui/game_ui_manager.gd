@@ -9,10 +9,12 @@ signal regenerate_requested()
 signal clear_selection_requested()
 
 const RIGHT_PANEL_WIDTH := 460.0
+const DemandDetailDialogScript = preload("res://scripts/ui/components/demand_detail_dialog.gd")
 
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
+var _demand_detail_dialog
 var _inspector_view_model: CellInspectorViewModel
 var _selected_cell: HexCell
 var _last_cached_panel_ms: int = 0
@@ -51,6 +53,8 @@ func set_world_context(
 			_country_facade.country_committed.connect(callback)
 	if _right_panel != null:
 		_right_panel.reset_for_world()
+	if _demand_detail_dialog != null:
+		_demand_detail_dialog.close_dialog()
 
 
 func set_diagnostics_source(source: Node) -> void:
@@ -88,6 +92,8 @@ func show_cell_panel(cell: HexCell) -> void:
 func hide_cell_panel() -> void:
 	_selected_cell = null
 	_set_inspector_trace_cell(-1)
+	if _demand_detail_dialog != null:
+		_demand_detail_dialog.close_dialog()
 	if _right_panel != null:
 		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
 
@@ -136,6 +142,11 @@ func _on_inspector_tab_data_requested(tab_id: String) -> void:
 		return
 	_right_panel.set_tab_category(
 		tab_id, _inspector_view_model.build_tab_category(_selected_cell, tab_id))
+
+
+func _on_demand_details_requested(details: Dictionary) -> void:
+	if _demand_detail_dialog != null:
+		_demand_detail_dialog.show_details(details)
 
 
 func _set_inspector_trace_cell(cell_idx: int) -> void:
@@ -217,7 +228,12 @@ func _build_ui() -> void:
 	_right_panel.offset_bottom = -UITokens.SPACE_MD
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
+	_right_panel.demand_details_requested.connect(_on_demand_details_requested)
 	add_child(_right_panel)
+
+	_demand_detail_dialog = DemandDetailDialogScript.new()
+	_demand_detail_dialog.name = "DemandDetailDialog"
+	add_child(_demand_detail_dialog)
 
 	_gm_console = DebugConsole.new()
 	_gm_console.name = "GMConsole"

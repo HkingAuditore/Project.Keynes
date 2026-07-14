@@ -79,6 +79,8 @@ static func compile_native_columns() -> Dictionary:
 	var trade_enabled := PackedInt32Array()
 	var transport_load_per_unit_q16 := PackedInt32Array()
 	var category_ids := PackedStringArray()
+	var production_quality_levels := PackedInt32Array()
+	var production_efficiencies_q16 := PackedInt32Array()
 	var storage_modes := PackedInt32Array()
 	var monetary_issue_values := PackedInt64Array()
 	var technology_tag_offsets := PackedInt32Array([0])
@@ -88,14 +90,20 @@ static func compile_native_columns() -> Dictionary:
 		var category_id := String(p.get("category_id"))
 		var storage_mode := String(p.get("storage_mode"))
 		var issue_value := int(p.get("monetary_issue_value"))
+		var quality_level := int(p.get("production_quality_level"))
+		var production_efficiency := int(p.get("production_efficiency_q16"))
 		if category_id == "" or storage_mode not in ["stock", "cycle_flow"]:
 			return {"ok": false, "reason": "invalid good metadata: %s" % stable_id}
+		if quality_level < 0 or production_efficiency <= 0 or production_efficiency > 262144:
+			return {"ok": false, "reason": "invalid production substitute metadata: %s" % stable_id}
 		if storage_mode == "cycle_flow" and stable_id != "electricity":
 			return {"ok": false, "reason": "only electricity may use cycle_flow: %s" % stable_id}
 		if issue_value < 0 or (issue_value > 0 and stable_id not in ["gold", "silver"]):
 			return {"ok": false, "reason": "invalid monetary issue good: %s" % stable_id}
 		ids.append(stable_id)
 		category_ids.append(category_id)
+		production_quality_levels.append(quality_level)
+		production_efficiencies_q16.append(production_efficiency)
 		storage_modes.append(1 if storage_mode == "cycle_flow" else 0)
 		monetary_issue_values.append(issue_value)
 		var tags: PackedStringArray = p.get("technology_tags")
@@ -132,6 +140,8 @@ static func compile_native_columns() -> Dictionary:
 		"ok": true,
 		"good_ids": ids,
 		"good_category_ids": category_ids,
+		"good_production_quality_levels": production_quality_levels,
+		"good_production_efficiency_q16": production_efficiencies_q16,
 		"good_storage_modes": storage_modes,
 		"good_monetary_issue_values": monetary_issue_values,
 		"good_technology_tag_offsets": technology_tag_offsets,

@@ -6,6 +6,7 @@ id = &"paddy_land"
 display_name = "水田容量"
 reserve_component = &"cell.res_paddy_land_reserve"
 habitat_mode = "land"
+init_reserve_scale = 1
 temp_lo = -30.0
 temp_hi = 45.0
 gen_base = 0

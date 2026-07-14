@@ -14,6 +14,8 @@ var _resource_prev_reserves: Dictionary = {}
 var _market_prev_stock: Dictionary = {}
 var _temperature_histories: Dictionary = {}
 var _temperature_history_order: Array[int] = []
+var _need_display_names: Dictionary = {}
+var _need_display_names_loaded := false
 
 
 func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clock: WorldClock, sea_level: float, hex_size: float) -> void:
@@ -122,7 +124,7 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 	var category: Dictionary
 	if tab_id == "population":
 		population_summary = _population_snapshot(idx)
-		category = _population_category(population_summary)
+		category = _population_category(population_summary, _market_snapshot(idx))
 	else:
 		population_summary = _population_summary(idx)
 		category = _geography_information_category(cell, idx, terrain_v,
@@ -155,14 +157,15 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 	var idx := int(cell.index)
 	match tab_id:
 		"population":
-			return _population_category(_population_snapshot(idx))
+			return _population_category(_population_snapshot(idx), _market_snapshot(idx))
 		"market":
 			return _market_category(_market_snapshot(idx))
 		"buildings":
 			return _building_category(_building_snapshot(idx))
 		"natural_resources":
 			return _resources_category(_resource_state(
-				idx, LandformType.is_water(_landform(cell, idx))))
+				idx, LandformType.is_water(_landform(cell, idx)),
+				_resource_visibility_context(idx)))
 		"geography":
 			var terrain_v := _terrain(cell, idx)
 			var landform_v := _landform(cell, idx)
@@ -503,7 +506,7 @@ func _building_snapshot(cell_idx: int) -> Dictionary:
 	return facade.building_cell_snapshot(cell_idx)
 
 
-func _population_category(snapshot: Dictionary) -> Dictionary:
+func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "population_unavailable", "text": "阶层运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
 	if not snapshot.has("populations"):
@@ -536,6 +539,12 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 	var demand_good_indices: PackedInt32Array = snapshot.get("demand_good_indices", PackedInt32Array())
 	var demand_quantities: PackedInt64Array = snapshot.get("demand_per_capita_daily", PackedInt64Array())
 	var demand_good_ids: PackedStringArray = snapshot.get("demand_good_stable_ids", PackedStringArray())
+	var local_prices := {}
+	if bool(market_snapshot.get("ok", false)):
+		var market_good_ids: PackedStringArray = market_snapshot.get("good_ids", PackedStringArray())
+		var market_prices: PackedInt32Array = market_snapshot.get("price", PackedInt32Array())
+		for market_good_idx in range(mini(market_good_ids.size(), market_prices.size())):
+			local_prices[String(market_good_ids[market_good_idx])] = int(market_prices[market_good_idx])
 	for i in range(populations.size()):
 		var profession_id := String(profession_ids[profession_indices[i]]) if profession_indices[i] >= 0 and profession_indices[i] < profession_ids.size() else "unknown"
 		var ethnicity_id := String(ethnicity_ids[ethnicity_indices[i]]) if ethnicity_indices[i] >= 0 and ethnicity_indices[i] < ethnicity_ids.size() else "unknown"
@@ -556,24 +565,48 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 				if good_idx >= 0 and good_idx < demand_good_ids.size() and cursor < demand_quantities.size():
 					demand_by_good[good_idx] = int(demand_quantities[cursor])
 		var demand_rows := []
+		var demand_groups := []
 		var demand_total := 0
+		var demand_total_cost := 0
+		var demand_cost_available := true
 		var demand_names := PackedStringArray()
 		for good_idx in range(demand_good_ids.size()):
 			var stable_id := String(demand_good_ids[good_idx])
 			var profile = GoodProfileRegistry.profile_by_id(stable_id)
 			var display_name := String(profile.display_name) if profile != null and String(profile.display_name) != "" else stable_id
 			var quantity := int(demand_by_good.get(good_idx, 0))
+			var has_price := local_prices.has(stable_id)
+			var price := int(local_prices.get(stable_id, 0))
+			var daily_cost := quantity * price / 1000 if has_price else 0
 			if quantity > 0:
 				demand_total += quantity
+				if has_price:
+					demand_total_cost += daily_cost
+				else:
+					demand_cost_available = false
 				if demand_names.size() < 3:
 					demand_names.append(display_name)
 			demand_rows.append({
 				"id": "demand_%s" % stable_id,
 				"name": display_name,
 				"value": "%.3f 单位/人/日" % (float(quantity) / 1000.0),
+				"quantity": "%.3f" % (float(quantity) / 1000.0),
+				"price": _money_text(price) if has_price else "—",
+				"daily_cost": _money_text(daily_cost) if has_price else "—",
+				"quantity_raw": quantity,
+				"price_raw": price if has_price else -1,
+				"daily_cost_raw": daily_cost if has_price else -1,
 				"icon": "resource",
 				"visible": quantity > 0,
 			})
+		var grouped_demand := _grouped_demand_preview(snapshot, i, local_prices)
+		if bool(grouped_demand.get("ok", false)):
+			demand_groups = grouped_demand.get("groups", [])
+			demand_rows = grouped_demand.get("rows", [])
+			demand_total = int(grouped_demand.get("total_quantity_raw", 0))
+			demand_total_cost = int(grouped_demand.get("total_daily_cost_raw", 0))
+			demand_cost_available = bool(grouped_demand.get("cost_available", true))
+			demand_names = grouped_demand.get("leading_names", PackedStringArray())
 		var income_rows := []
 		var expense_rows := []
 		if settlement_available and settlement_offsets.size() == populations.size() + 1:
@@ -608,9 +641,15 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 			"accent": UITokens.ACCENT,
 			"icon": "growth",
 			"demand_rows": demand_rows,
+			"demand_groups": demand_groups,
 			"income_rows": income_rows,
 			"expense_rows": expense_rows,
-			"demand_summary": {"value": "%d 类 · %.3f 单位/人/日" % [demand_count, float(demand_total) / 1000.0], "subtitle": demand_subtitle},
+			"demand_summary": {
+				"value": "%d 类 · %.3f 单位/人/日" % [demand_count, float(demand_total) / 1000.0],
+				"subtitle": demand_subtitle,
+				"total_quantity": "%.3f" % (float(demand_total) / 1000.0),
+				"total_daily_cost": _money_text(demand_total_cost) if demand_cost_available else "—",
+			},
 			"visible": true,
 		})
 	var insights := []
@@ -630,6 +669,122 @@ func _population_category(snapshot: Dictionary) -> Dictionary:
 	}
 
 
+func _grouped_demand_preview(snapshot: Dictionary, cohort_idx: int,
+		local_prices: Dictionary) -> Dictionary:
+	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
+	var good_ids: PackedStringArray = snapshot.get("demand_good_stable_ids", PackedStringArray())
+	var need_ids: PackedStringArray = snapshot.get("demand_need_stable_ids", PackedStringArray())
+	var need_offsets: PackedInt32Array = snapshot.get("demand_need_offsets", PackedInt32Array())
+	var need_indices: PackedInt32Array = snapshot.get("demand_need_indices", PackedInt32Array())
+	var need_variant_offsets: PackedInt32Array = snapshot.get(
+		"demand_need_variant_offsets", PackedInt32Array())
+	var variant_component_offsets: PackedInt32Array = snapshot.get(
+		"demand_variant_component_offsets", PackedInt32Array())
+	var component_good_indices: PackedInt32Array = snapshot.get(
+		"demand_component_good_indices", PackedInt32Array())
+	var component_quantities: PackedInt64Array = snapshot.get(
+		"demand_component_per_capita_daily", PackedInt64Array())
+	if cohort_idx < 0 or cohort_idx >= populations.size() \
+			or need_offsets.size() != populations.size() + 1 \
+			or need_variant_offsets.size() != need_indices.size() + 1 \
+			or variant_component_offsets.is_empty() \
+			or component_good_indices.size() != component_quantities.size() \
+			or variant_component_offsets[-1] != component_good_indices.size():
+		return {"ok": false}
+	var need_begin := int(need_offsets[cohort_idx])
+	var need_end := int(need_offsets[cohort_idx + 1])
+	if need_begin < 0 or need_end < need_begin or need_end > need_indices.size():
+		return {"ok": false}
+	var groups := []
+	var rows := []
+	var total_quantity := 0
+	var total_cost := 0
+	var cost_available := true
+	var leading_names := PackedStringArray()
+	for need_cursor in range(need_begin, need_end):
+		var need_idx := int(need_indices[need_cursor])
+		if need_idx < 0 or need_idx >= need_ids.size():
+			return {"ok": false}
+		var variant_begin := int(need_variant_offsets[need_cursor])
+		var variant_end := int(need_variant_offsets[need_cursor + 1])
+		if variant_begin < 0 or variant_end < variant_begin \
+				or variant_end + 1 > variant_component_offsets.size():
+			return {"ok": false}
+		var group_rows := []
+		var has_bundle := false
+		for variant_cursor in range(variant_begin, variant_end):
+			var component_begin := int(variant_component_offsets[variant_cursor])
+			var component_end := int(variant_component_offsets[variant_cursor + 1])
+			if component_begin < 0 or component_end < component_begin \
+					or component_end > component_good_indices.size():
+				return {"ok": false}
+			var component_count := component_end - component_begin
+			has_bundle = has_bundle or component_count > 1
+			for component_cursor in range(component_begin, component_end):
+				var good_idx := int(component_good_indices[component_cursor])
+				if good_idx < 0 or good_idx >= good_ids.size():
+					return {"ok": false}
+				var quantity := int(component_quantities[component_cursor])
+				if quantity <= 0:
+					continue
+				var stable_id := String(good_ids[good_idx])
+				var profile = GoodProfileRegistry.profile_by_id(stable_id)
+				var display_name := String(profile.display_name) \
+					if profile != null and String(profile.display_name) != "" else stable_id
+				var has_price := local_prices.has(stable_id)
+				var price := int(local_prices.get(stable_id, 0))
+				var daily_cost := quantity * price / 1000 if has_price else 0
+				var row := {
+					"id": "demand_%s" % stable_id,
+					"name": display_name,
+					"quantity": "%.3f" % (float(quantity) / 1000.0),
+					"price": _money_text(price) if has_price else "—",
+					"daily_cost": _money_text(daily_cost) if has_price else "—",
+					"quantity_raw": quantity,
+					"price_raw": price if has_price else -1,
+					"daily_cost_raw": daily_cost if has_price else -1,
+					"variant_number": variant_cursor - variant_begin + 1,
+					"variant_count": variant_end - variant_begin,
+					"component_count": component_count,
+					"visible": true,
+				}
+				group_rows.append(row)
+				rows.append(row)
+				total_quantity += quantity
+				if has_price:
+					total_cost += daily_cost
+				else:
+					cost_available = false
+				if leading_names.size() < 3:
+					leading_names.append(display_name)
+		if group_rows.is_empty():
+			continue
+		var need_id := String(need_ids[need_idx])
+		groups.append({
+			"id": need_id,
+			"name": _need_display_name(need_id),
+			"variant_count": variant_end - variant_begin,
+			"has_bundle": has_bundle,
+			"rows": group_rows,
+		})
+	return {
+		"ok": true,
+		"groups": groups,
+		"rows": rows,
+		"total_quantity_raw": total_quantity,
+		"total_daily_cost_raw": total_cost,
+		"cost_available": cost_available,
+		"leading_names": leading_names,
+	}
+
+
+func _need_display_name(stable_id: String) -> String:
+	if not _need_display_names_loaded:
+		_need_display_names = EconomyCatalog.need_display_names()
+		_need_display_names_loaded = true
+	return String(_need_display_names.get(stable_id, stable_id))
+
+
 func _market_category(snapshot: Dictionary) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "market_unavailable", "text": "市场运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "resource"}]}
@@ -644,9 +799,14 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 	var offered_supply_ema: PackedInt64Array = snapshot.get("offered_supply_ema", PackedInt64Array())
 	var cost_anchor: PackedInt32Array = snapshot.get("cost_anchor_price", PackedInt32Array())
 	var shortage_q16: PackedInt32Array = snapshot.get("shortage_q16", PackedInt32Array())
+	var technology_available: PackedByteArray = snapshot.get(
+		"good_technology_available", PackedByteArray())
+	var enforce_technology := technology_available.size() == good_ids.size()
 	var market_id := int(snapshot.get("market_id", snapshot.get("cell_idx", -1)))
 	var sample_day := _current_sample_day()
 	for i in range(good_ids.size()):
+		if enforce_technology and technology_available[i] == 0:
+			continue
 		var stable_id := String(good_ids[i])
 		var profile = GoodProfileRegistry.profile_by_id(stable_id)
 		var display_name := String(profile.display_name) if profile != null else stable_id
@@ -988,14 +1148,83 @@ func _weather_field(cell: HexCell, idx: int) -> Dictionary:
 	return {"precip": clampf(precip, 0.0, 1.0), "vapor": clampf(vapor, 0.0, 1.0), "cloud": clampf(cloud, 0.0, 1.0)}
 
 
-func _resource_state(idx: int, is_water: bool) -> Array:
+func _resource_visibility_context(cell_idx: int) -> Dictionary:
+	var context := {
+		"enforce_discovery": false,
+		"technology_ids": PackedStringArray(),
+		"enforce_extraction": false,
+		"extractable_resource_ids": {},
+	}
+	if _generator == null or not _generator.has_method("get_country_facade"):
+		return context
+	var country_facade = _generator.get_country_facade()
+	if country_facade == null or not country_facade.has_method("cell_summary") \
+			or not country_facade.has_method("snapshot"):
+		return context
+	var summary: Dictionary = country_facade.cell_summary(cell_idx)
+	if not bool(summary.get("ok", false)):
+		return context
+	context.enforce_discovery = true
+	if bool(summary.get("owned", false)):
+		var country: Dictionary = country_facade.snapshot(int(summary.get("country_handle", 0)))
+		if not bool(country.get("ok", false)):
+			context.enforce_discovery = false
+		else:
+			context.technology_ids = country.get("technology_ids", PackedStringArray())
+	var extractable := _extractable_resource_ids(_building_snapshot(cell_idx))
+	if bool(extractable.get("ok", false)):
+		context.enforce_extraction = true
+		context.extractable_resource_ids = extractable.ids
+	return context
+
+
+func _extractable_resource_ids(snapshot: Dictionary) -> Dictionary:
+	if not bool(snapshot.get("ok", false)):
+		return {"ok": false}
+	var kinds: PackedInt32Array = snapshot.get("building_kinds", PackedInt32Array())
+	var available: PackedByteArray = snapshot.get(
+		"building_technology_available", PackedByteArray())
+	var offsets: PackedInt32Array = snapshot.get(
+		"building_resource_offsets", PackedInt32Array())
+	var resource_indices: PackedInt32Array = snapshot.get(
+		"building_production_resource_ids", PackedInt32Array())
+	var resource_ids: PackedStringArray = snapshot.get(
+		"building_resource_ids", PackedStringArray())
+	if kinds.is_empty() or available.size() != kinds.size() or offsets.size() != kinds.size() + 1:
+		return {"ok": false}
+	var ids := {}
+	for type_id in range(kinds.size()):
+		if kinds[type_id] != 0 or available[type_id] == 0:
+			continue
+		var begin := int(offsets[type_id])
+		var end := int(offsets[type_id + 1])
+		if begin < 0 or end < begin or end > resource_indices.size():
+			return {"ok": false}
+		for edge in range(begin, end):
+			var resource_idx := int(resource_indices[edge])
+			if resource_idx < 0 or resource_idx >= resource_ids.size():
+				return {"ok": false}
+			ids[StringName(resource_ids[resource_idx])] = true
+	return {"ok": true, "ids": ids}
+
+
+func _resource_state(idx: int, is_water: bool, visibility: Dictionary = {}) -> Array:
 	ResourceProfileRegistry.ensure_loaded()
 	var items: Array = []
+	var enforce_discovery := bool(visibility.get("enforce_discovery", false))
+	var technology_ids: PackedStringArray = visibility.get(
+		"technology_ids", PackedStringArray())
+	var enforce_extraction := bool(visibility.get("enforce_extraction", false))
+	var extractable_resource_ids: Dictionary = visibility.get("extractable_resource_ids", {})
 	var habitat_mask := 1 if not is_water else 0
 	if _map != null and idx >= 0 and idx < _map.resource_habitat_mask_arr.size():
 		habitat_mask = int(_map.resource_habitat_mask_arr[idx])
 	var sample_day := _current_sample_day()
 	for p in ResourceProfileRegistry.ordered():
+		if enforce_discovery and not ResourceProfileRegistry.discovery_visible(p, technology_ids):
+			continue
+		if enforce_extraction and not extractable_resource_ids.has(StringName(p.id)):
+			continue
 		var resource_id := String(p.id)
 		var name_cn: String = String(p.display_name) if String(p.display_name) != "" else String(p.id)
 		var available := ResourceProfileRegistry.habitat_available(p, habitat_mask)
@@ -1060,6 +1289,7 @@ func _resource_reference_reserve(profile: ResourceProfile) -> float:
 	initial_peak += maxf(float(profile.init_belt) * 0.56, 0.0)
 	initial_peak += _max_positive_weight(profile.init_landform_weights)
 	initial_peak += _max_positive_weight(profile.init_vegetation_weights)
+	initial_peak *= maxf(float(profile.init_reserve_scale), 0.0)
 
 	# 可再生资源还要容纳最适气候下的长期平衡储量 P / decay_self。
 	var runtime_peak := 0.0

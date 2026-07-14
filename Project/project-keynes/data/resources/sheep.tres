@@ -7,6 +7,7 @@ script = ExtResource("1")
 id = &"sheep"
 display_name = "羊"
 reserve_component = &"cell.res_sheep_reserve"
+init_reserve_scale = 2.0
 land_only = true
 temp_lo = -12.0
 temp_hi = 32.0

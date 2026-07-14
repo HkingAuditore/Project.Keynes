@@ -7,6 +7,7 @@ script = ExtResource("1")
 id = &"clay"
 display_name = "黏土"
 reserve_component = &"cell.res_clay_reserve"
+init_reserve_scale = 8.0
 land_only = true
 temp_lo = -30.0
 temp_hi = 40.0

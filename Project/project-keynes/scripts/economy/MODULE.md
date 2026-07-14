@@ -41,13 +41,16 @@
 - 商人正常消费；每日需求/预算重置；同 tick 最多一次替代 fallback。
 - 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
 - 商品可由显式库存命令或 BUILDING_GRAPH 生产进入市场。
+- 商人不能拥有普通生产建筑。唯一例外是 `placer_gold_working` 与
+  `surface_silver_working`：无商品投入、无雇员，消耗对应真实矿藏且只产金或银。
+  市场接受金银时按 `monetary_issue_value` 向业主发行货币，计入
+  `explicit_money_mint/bullion_money_issued`，不允许无资源铸币。
 - 国内贸易只沿同一冻结国家的可贸易地形运输；发运即托管源货物和目的商人现金，到达边界结算。
 - 生产默认 5 日结算周期；`market_cycle_days=0` 才启用按规模自动周期。
-- 世界设置中的测试经济 fixture 默认关闭；启用时在可通行陆地同步生成 cohort、市场库存和
-  资源适配的专业化建筑。每个聚落保留配送中心以保证商人和基础就业；collector 仅在本地 reserve
-  能支撑配方时生成，数量受资源容量和测试上限约束；industrial 只落在少量确定性专业化地块，并
-  优先选择已有本地上游产出的地块。生成顺序固定为建筑 owner-lot → catalog 岗位汇总 → cohort →
-  市场库存；职业 cohort 只随本地实际 owner/employee 岗位生成，
+- 世界设置中的测试经济 fixture 默认关闭；启用时使用石器中期科技，只在可见资源能支撑配方的
+  地块放置 collector，并只在已有全部本地上游产出的地块放置 industrial。升级族只放置当前最高
+  可用档。生成顺序固定为建筑 owner-lot → catalog 岗位汇总 → cohort；初始就业和市场库存均为零，
+  由原生图在后续周期结算。职业 cohort 只随本地实际 owner/employee 岗位生成，
   仅用于开发测试，不能作为正式历史人口来源。
 
 ## 调度
@@ -70,6 +73,11 @@ EMA；同一 owner 现金不足时比例支付并令其 owner-lot 本周期停�
 `consume_local_resources` 的资源边分为 `extract` 与 `capacity`：前者按本地储量限产并发布负 delta，
 后者只限制建筑数量/产能而不扣减储量。农场以旱作耕地、水田或种植园容量生产 crop goods，
 不再生成小麦/玉米等自然资源。负 pending delta 会立即压低下一经济周期的有效可采储量以防超采。
+自然资源储量单位不与 goods 单位作 1:1 映射；extract 效率由各 BuildingProfile 的资源投入和
+总输出共同定义，当前目录按采集方式与技术分为 `2:1` 至 `25:1`，同资源的后期矿井通常高于
+早期开采点。多副产品按各输出数量之和计算。新地图 bootstrap 另以 ResourceProfile 的
+`init_reserve_scale` 放大初值：农业 capacity 为 `1×`、可再生资源为 `2×`、地质/不可再生资源为
+`8×`；它不改变矿脉分布、每日再生公式或原生扣减/守恒逻辑。
 选中地块 Inspector 使用 owner-lot 的实际收入、投入成本、工资、资源需求与采收账本显示关系；
 人口页通过独立单地块 SELECTIVE 目标读取上次提交周期的人均收支与精确来源，首次选中等待
 下一次结算，且不会覆盖调试 trace filter；市场默认只显示价格、库存与无前缀增减值。
@@ -79,16 +87,31 @@ GDScript 只附加 catalog 展示名
 生成期冷路径，把 dense catalog 目录、岗位、投入产出和资源列还原为 stable ID；运行期就业、
 生产和工资仍完全由 C++ 权威计算。
 
+`BuildingProfile.upgrade_family_id/upgrade_tier` 编译为稳定 family/tier 目录。国家解锁更高档后，
+旧档 BUILD 以 `building_tier_obsolete_for_construction` 拒绝；已有 owner-lot 仍按其原始科技条件
+生产，不自动升级或拆除。`subsistence_food` 与 `household_cloth` 都只有 gathering、pottery、
+guild、steam 四档，蒸汽档封顶。
+
+生产投入可保持精确 good，也可配置 `input_category_ids + input_min_quality_levels`。目录把每条
+类别投入预编译为候选 good/效率 CSR；native 只考虑本国科技可用的候选，按有效单位成本和 stable
+good ID 稳定选择。`GoodProfile.production_quality_level` 控制最低等级，
+`production_efficiency_q16` 把物理库存换算为有效投入。当前工具等级为打制石器 1/50%、青铜工具
+2/80%、标准工具 3/100%、精密工具 4/150%，木材、狩猎、行会和部分古典配方可直接使用相应等级，
+不再通过交换站把时代商品转换成通用工具。
+
 ## 现代内容目录
 
-- 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；跨时代手写扩展在其上形成
-  153 goods、190 buildings、32 professions、15 needs。劳动关系职业和稀有矿物收敛有意改变
+- 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，
+  跨时代扩展后的全目录为 142 goods、174 buildings、32 professions、15 needs。目录清理有意改变
   stable-ID 表，旧 catalog 存档不兼容。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
-- `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；35 个注册资源全部有 collector。
+- `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；35 个注册资源全部有
+  collector。merchant 业主例外仅限上述两个早期金银 collector。
 - 35 种资源受 `land/marine_water/freshwater` habitat 门控；海鱼存在海洋水格，淡水资源存在
   湖泊水格或河流格。岸上渔业/水厂通过 native `local_and_adjacent` 资源边访问并扣减真实水格。
   矿产初值叠加资源局部斑块、
   同族地质省与矿带。栽培作物只存在于 goods，不进入 DataCore resource slots。
-- 黄金/白银收购是生产运行时唯一 mint 来源；电力是唯一 cycle-flow，utility prepass 同周期供给，
-  余量在周期边界清零。以上行为均由 C++ BUILDING_GRAPH 执行。
+- 黄金/白银收购是生产运行时唯一的内生货币发行来源；电力是唯一 cycle-flow，utility prepass
+  同周期供给，余量在周期边界清零，并且在家庭公用事业结算完成前不进入家庭能源需求。
+- 软件、数字服务、AI 模型、轨道科研、遥测、卫星、深空探测与聚变燃料链已从目录删除；战略矿产
+  保留内部 stable ID，并新增 `nuclear_fuel` 加工，核电与同位素反应堆不直接消耗战略矿物材料。

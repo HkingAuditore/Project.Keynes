@@ -5,9 +5,11 @@
 [resource]
 script = ExtResource("1")
 id = &"rare_earth_ore"
-display_name = "稀土精矿"
+display_name = "战略矿物精矿"
 category_id = &"primary"
 technology_tags = PackedStringArray("industry.primary", "tech.geological_prospecting")
+production_quality_level = 0
+production_efficiency_q16 = 65536
 storage_mode = "stock"
 monetary_issue_value = 0
 default_price = 10000

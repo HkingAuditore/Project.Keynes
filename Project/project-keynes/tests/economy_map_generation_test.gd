@@ -33,8 +33,14 @@ func _init() -> void:
 			_expect("generated economy includes building groups",
 				_sum_i64(buildings.get("building_counts_by_type", PackedInt64Array())) > 0)
 			_expect("building snapshot is committed", bool(buildings.get("committed", false)))
-		_expect("populated cells expose sparse resource-specialized local economies",
-			_all_populated_cells_are_specialized(map, facade))
+		_expect("generated economy starts with zero goods and unemployed people",
+			_all_populated_cells_start_empty_and_unemployed(map, facade))
+		_expect("populated cells expose mid-stone resource-specialized local economies",
+			_all_populated_cells_are_mid_stone_specialized(map, facade))
+		if populated_cell >= 0:
+			_expect("player inspector hides technology-locked goods and resources",
+				_inspector_visibility_respects_technology(
+					map, generator, facade, populated_cell))
 	if failures == 0:
 		print("[economy-map-generation] PASS")
 	quit(0 if failures == 0 else 1)
@@ -77,10 +83,7 @@ func _sum_i64(values: PackedInt64Array) -> int:
 	return total
 
 
-func _all_populated_cells_are_specialized(map: MapData, facade) -> bool:
-	var expected_ids: PackedStringArray = facade.building_type_ids()
-	if expected_ids.is_empty():
-		return false
+func _all_populated_cells_are_mid_stone_specialized(map: MapData, facade) -> bool:
 	var local_sets := {}
 	var global_types := {}
 	var populated_count := 0
@@ -89,7 +92,7 @@ func _all_populated_cells_are_specialized(map: MapData, facade) -> bool:
 		if int(population.get("population", 0)) <= 0:
 			continue
 		populated_count += 1
-		if int(population.get("cohort_count", 0)) < 2:
+		if int(population.get("cohort_count", 0)) < 1:
 			return false
 		var buildings: Dictionary = facade.building_cell_snapshot(cell)
 		var actual_ids: PackedStringArray = buildings.get("building_type_ids", PackedStringArray())
@@ -100,16 +103,88 @@ func _all_populated_cells_are_specialized(map: MapData, facade) -> bool:
 			if type_idx >= counts.size() or counts[type_idx] <= 0:
 				continue
 			var building_id := StringName(actual_ids[type_idx])
+			if not _building_is_mid_stone(facade, building_id):
+				return false
 			local_ids.append(String(building_id))
 			global_types[building_id] = true
 			if not _collector_respects_local_resources(
 					map, facade, cell, building_id, int(counts[type_idx])):
 				return false
-		if local_ids.is_empty() or local_ids.size() >= expected_ids.size():
+		if local_ids.is_empty():
 			return false
 		local_sets["|".join(local_ids)] = true
-	return populated_count > 1 and local_sets.size() > 1 and \
-		global_types.size() * 2 >= expected_ids.size()
+	return populated_count > 1 and local_sets.size() > 1 and global_types.size() > 1
+
+
+func _all_populated_cells_start_empty_and_unemployed(map: MapData, facade) -> bool:
+	var populated_count := 0
+	for cell in range(map.cell_count()):
+		var population: Dictionary = facade.population_cell_snapshot(cell)
+		var total := int(population.get("population", 0))
+		if total <= 0:
+			continue
+		populated_count += 1
+		if _sum_i64(population.get("owner_employed_by_cohort", PackedInt64Array())) != 0 or \
+				_sum_i64(population.get("employee_employed_by_cohort", PackedInt64Array())) != 0 or \
+				_sum_i64(population.get("unemployed_by_cohort", PackedInt64Array())) != total:
+			return false
+		if _sum_i64(facade.market_cell_snapshot(cell).get("stock", PackedInt64Array())) != 0:
+			return false
+	return populated_count > 1
+
+
+func _inspector_visibility_respects_technology(
+		map: MapData, generator: MapGenerator, facade, cell_idx: int) -> bool:
+	var cell := map.cell_at(cell_idx)
+	if cell == null:
+		return false
+	var view_model := CellInspectorViewModel.new()
+	view_model.set_context(map, generator, null, null, 0.45, 10.0)
+	var market_snapshot: Dictionary = facade.market_cell_snapshot(cell_idx)
+	var good_ids: PackedStringArray = market_snapshot.get("good_ids", PackedStringArray())
+	var available: PackedByteArray = market_snapshot.get(
+		"good_technology_available", PackedByteArray())
+	if available.size() != good_ids.size():
+		return false
+	var market_rows: Array = view_model.build_tab_category(
+		cell, "market").get("market_rows", [])
+	if market_rows.is_empty() or market_rows.size() >= good_ids.size():
+		return false
+	for row in market_rows:
+		var stable_id := String((row as Dictionary).get("id", "")).trim_prefix("market_")
+		var good_idx := good_ids.find(stable_id)
+		if good_idx < 0 or available[good_idx] == 0:
+			return false
+	var visibility: Dictionary = view_model._resource_visibility_context(cell_idx)
+	if not bool(visibility.get("enforce_discovery", false)) \
+			or not bool(visibility.get("enforce_extraction", false)):
+		return false
+	var extractable: Dictionary = visibility.get("extractable_resource_ids", {})
+	var resources: Array = view_model._resource_state(
+		cell_idx, LandformType.is_water(int(cell.landform)), visibility)
+	for resource in resources:
+		if not extractable.has(StringName((resource as Dictionary).get("id", ""))):
+			return false
+	return _find_resource(resources, &"rare_earth").is_empty()
+
+
+func _find_resource(resources: Array, stable_id: StringName) -> Dictionary:
+	for resource in resources:
+		if StringName((resource as Dictionary).get("id", "")) == stable_id:
+			return resource
+	return {}
+
+
+func _building_is_mid_stone(facade, building_id: StringName) -> bool:
+	var spec: Dictionary = facade.building_placement_spec(building_id)
+	if not bool(spec.get("ok", false)):
+		return false
+	for tag in spec.get("technology_tags", PackedStringArray()):
+		var technology := String(tag)
+		if technology.begins_with("tech.") and technology not in [
+				"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control"]:
+			return false
+	return true
 
 
 func _collector_respects_local_resources(map: MapData, facade, cell: int,

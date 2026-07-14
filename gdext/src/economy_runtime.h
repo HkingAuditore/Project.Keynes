@@ -245,6 +245,8 @@ private:
 
     struct BuildingType {
 		int32_t kind = 1; // 0=collector, 1=industrial.
+        int32_t upgrade_family_id = -1;
+        int32_t upgrade_tier = 0;
         int32_t owner_profession_id = -1;
         int64_t owner_slots_per_building = 0;
         int64_t wage_per_employee_per_day = 0;
@@ -282,6 +284,18 @@ private:
     struct GoodAmount {
         int32_t good_id = -1;
         int64_t quantity = 0;
+    };
+
+    struct ProductionInput {
+        int32_t preferred_good_id = -1;
+        int64_t quantity = 0;
+        int32_t candidate_begin = 0;
+        int32_t candidate_count = 0;
+    };
+
+    struct InputCandidate {
+        int32_t good_id = -1;
+        int32_t efficiency_q16 = Q16_ONE;
     };
 
     struct ResourceAmount {
@@ -999,7 +1013,7 @@ private:
     int64_t _production_output_stock = 0;
     int64_t _production_output_discarded = 0;
     int64_t _producer_revenue = 0;
-	int64_t _anchored_money_issued = 0;
+	int64_t _bullion_money_issued = 0;
 	int64_t _gold_accepted = 0;
 	int64_t _silver_accepted = 0;
 	int64_t _gold_money_issued = 0;
@@ -1183,6 +1197,9 @@ private:
 
     std::vector<std::string> _building_type_ids;
 	std::vector<int32_t> _building_kinds;
+	std::vector<std::string> _building_upgrade_family_ids;
+	std::vector<int32_t> _building_upgrade_family_indices;
+	std::vector<int32_t> _building_upgrade_tiers;
 	std::vector<int32_t> _building_technology_tag_offsets;
 	std::vector<std::string> _building_technology_tags;
     std::vector<int32_t> _building_technology_offsets;
@@ -1199,7 +1216,8 @@ private:
     std::vector<BuildingType> _building_types;
     std::vector<JobRole> _building_employee_roles;
     std::vector<GoodAmount> _building_construction_goods;
-    std::vector<GoodAmount> _building_inputs;
+    std::vector<ProductionInput> _building_inputs;
+    std::vector<InputCandidate> _building_input_candidates;
     std::vector<GoodAmount> _building_outputs;
     std::vector<int32_t> _building_output_cost_shares_q16;
     std::vector<ResourceAmount> _building_resources;
@@ -1265,6 +1283,8 @@ private:
                               bool frozen = true) const;
     bool building_available(int32_t cell, int32_t type_id,
                             bool frozen = true) const;
+    bool building_constructible(int32_t cell, int32_t type_id,
+                                bool frozen = true) const;
     bool capture_country_epoch(std::string &error);
     bool apply_build_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);

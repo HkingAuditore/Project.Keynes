@@ -65,9 +65,10 @@ sources = (
 addons_bin = "../Project/project-keynes/addons/dots_ext/bin/"
 
 platform = env["platform"]
+output_basename = os.environ.get("DOTS_EXT_OUTPUT_BASENAME", "dots_ext")
 if platform == "windows":
-    output_path = addons_bin + "windows/dots_ext{}{}".format(
-        env["suffix"], env["SHLIBSUFFIX"]
+    output_path = addons_bin + "windows/{}{}{}".format(
+        output_basename, env["suffix"], env["SHLIBSUFFIX"]
     )
 elif platform == "linux" or platform == "linuxbsd":
     output_path = addons_bin + "linux/libdots_ext{}{}".format(
