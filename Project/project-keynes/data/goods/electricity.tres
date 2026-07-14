@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"electricity"
 display_name = "电力"
-category_id = &"energy"
+category_id = &"electricity"
+substitution_category_ids = PackedStringArray("electricity")
 technology_tags = PackedStringArray("industry.energy", "tech.electrification")
 production_quality_level = 0
 production_efficiency_q16 = 65536

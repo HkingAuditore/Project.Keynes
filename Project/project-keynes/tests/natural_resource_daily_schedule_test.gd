@@ -42,14 +42,13 @@ func _run() -> void:
 		return
 
 	var n: int = map.cell_count()
-	var water: PackedByteArray = map.is_water_arr
 	_expect("map has cells", n > 0)
 	if n == 0:
 		_finish()
 		return
 
 	var probe: Dictionary = _find_growth_probe(map, n)
-	_expect("found a renewable resource land cell with growth headroom", not probe.is_empty())
+	_expect("found a renewable resource habitat-valid cell with growth headroom", not probe.is_empty())
 	if probe.is_empty():
 		_finish()
 		return
@@ -59,11 +58,14 @@ func _run() -> void:
 	var probe_id: String = String(probe.get("id", ""))
 	var before_arr: PackedFloat32Array = map.get(probe_field)
 	var before: float = before_arr[probe_idx]
-	# 记录全图陆地总储量，作为整体演化信号。
-	var land_sum_before: float = 0.0
+	var probe_profile: ResourceProfile = probe.get("profile", null) as ResourceProfile
+	var habitat: PackedByteArray = map.resource_habitat_mask_arr
+	# 记录全图 habitat-valid 总储量，作为整体演化信号。
+	var habitat_sum_before: float = 0.0
 	for i in range(n):
-		if not (water.size() > i and water[i] != 0):
-			land_sum_before += before_arr[i]
+		if probe_profile != null and habitat.size() > i \
+				and ResourceProfileRegistry.habitat_available(probe_profile, int(habitat[i])):
+			habitat_sum_before += before_arr[i]
 
 	# 半隐式稳定性回归：跟踪两个动态资源在 probe 格的逐日序列，断言尾段不会爆炸横跳。
 	var saltpeter_field: String = _field_for("saltpeter")
@@ -97,24 +99,25 @@ func _run() -> void:
 	# 重新取数组（flush 回 MapData 后是新值）。
 	var after_arr: PackedFloat32Array = map.get(probe_field)
 	var after: float = after_arr[probe_idx]
-	var land_sum_after: float = 0.0
+	var habitat_sum_after: float = 0.0
 	for i in range(n):
-		if not (water.size() > i and water[i] != 0):
-			land_sum_after += after_arr[i]
+		if probe_profile != null and habitat.size() > i \
+				and ResourceProfileRegistry.habitat_available(probe_profile, int(habitat[i])):
+			habitat_sum_after += after_arr[i]
 
 	print("  probe cell %d: %s %.4f → %.4f (Δ=%+.4f) over %d days" % [
 		probe_idx, probe_id, before, after, after - before, DAYS])
-	print("  land %s sum: %.3f → %.3f (Δ=%+.3f); job ran %d/%d days, budget-skipped %d" % [
+	print("  habitat-valid %s sum: %.3f → %.3f (Δ=%+.3f); job ran %d/%d days, budget-skipped %d" % [
 		probe_id,
-		land_sum_before, land_sum_after, land_sum_after - land_sum_before, ran_days, DAYS, skipped_budget_days])
+		habitat_sum_before, habitat_sum_after, habitat_sum_after - habitat_sum_before, ran_days, DAYS, skipped_budget_days])
 
 	_expect("natural_resource_daily ran every day (no budget skip)", ran_days >= DAYS and skipped_budget_days == 0)
-	_expect("probe land cell reserve increased over time", after > before + 0.002)
-	_expect("total land reserve increased over time", land_sum_after > land_sum_before + 0.01)
+	_expect("probe habitat-valid cell reserve increased over time", after > before + 0.002)
+	_expect("total habitat-valid reserve increased over time", habitat_sum_after > habitat_sum_before + 0.01)
 
-	# ── 公式鲁棒性：全部 28 种资源在多日演化后必须有限且非负。
+	# ── 公式鲁棒性：全部 30 种资源在多日演化后必须有限且非负。
 	var profiles: Array = ResourceProfileRegistry.ordered()
-	_expect("registry loaded 28 resources", profiles.size() == 28)
+	_expect("registry loaded 30 resources", profiles.size() == 30)
 	var all_finite_nonnegative: bool = true
 	var bad_detail: String = ""
 	for p in profiles:
@@ -138,7 +141,7 @@ func _run() -> void:
 			break
 	if not all_finite_nonnegative:
 		printerr("  [detail] %s" % bad_detail)
-	_expect("all 28 resources finite & nonnegative", all_finite_nonnegative)
+	_expect("all 30 resources finite & nonnegative", all_finite_nonnegative)
 
 	# 横跳回归：尾段（最后 5 日）的逐日变化必须小于当前量级的合理比例。
 	var saltpeter_tail: float = _tail_max_step(saltpeter_seq, 5)
@@ -152,11 +155,11 @@ func _run() -> void:
 	_finish()
 
 
-# 选择一个当前气候下按参考公式会自然增长的陆地格。
+# 选择一个当前气候下按参考公式会自然增长的 habitat-valid 格。
 func _find_growth_probe(map: MapData, n: int) -> Dictionary:
-	var water: PackedByteArray = map.is_water_arr
 	var temp: PackedFloat32Array = map.temp_arr
 	var moist: PackedFloat32Array = map.moisture_arr
+	var habitat: PackedByteArray = map.resource_habitat_mask_arr
 	var best: Dictionary = {}
 	var best_growth: float = 0.0001
 	for p in ResourceProfileRegistry.ordered():
@@ -169,13 +172,13 @@ func _find_growth_probe(map: MapData, n: int) -> Dictionary:
 		if arr.size() != n:
 			continue
 		for i in range(n):
-			if bool(p.land_only) and water.size() > i and water[i] != 0:
+			if habitat.size() <= i or not ResourceProfileRegistry.habitat_available(p, int(habitat[i])):
 				continue
 			var next_v: float = _reference_step_value(p, arr[i], temp[i], moist[i])
 			var growth: float = next_v - arr[i]
 			if growth > best_growth:
 				best_growth = growth
-				best = {"id": String(p.id), "field": field, "idx": i}
+				best = {"id": String(p.id), "field": field, "idx": i, "profile": p}
 	return best
 
 

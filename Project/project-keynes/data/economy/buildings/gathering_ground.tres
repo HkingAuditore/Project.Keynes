@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"gathering_ground"
-display_name = "采集地"
+display_name = "采集营地"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.gathering")
 upgrade_family_id = &"subsistence_food"

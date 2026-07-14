@@ -79,6 +79,8 @@ static func compile_native_columns() -> Dictionary:
 	var trade_enabled := PackedInt32Array()
 	var transport_load_per_unit_q16 := PackedInt32Array()
 	var category_ids := PackedStringArray()
+	var substitution_category_offsets := PackedInt32Array([0])
+	var substitution_category_ids := PackedStringArray()
 	var production_quality_levels := PackedInt32Array()
 	var production_efficiencies_q16 := PackedInt32Array()
 	var storage_modes := PackedInt32Array()
@@ -88,12 +90,28 @@ static func compile_native_columns() -> Dictionary:
 	for p in _ordered:
 		var stable_id := String(p.get("id"))
 		var category_id := String(p.get("category_id"))
+		var configured_substitution_categories: PackedStringArray = p.get(
+			"substitution_category_ids")
 		var storage_mode := String(p.get("storage_mode"))
 		var issue_value := int(p.get("monetary_issue_value"))
 		var quality_level := int(p.get("production_quality_level"))
 		var production_efficiency := int(p.get("production_efficiency_q16"))
 		if category_id == "" or storage_mode not in ["stock", "cycle_flow"]:
 			return {"ok": false, "reason": "invalid good metadata: %s" % stable_id}
+		var normalized_categories := PackedStringArray()
+		var seen_categories := {}
+		if configured_substitution_categories.is_empty():
+			normalized_categories.append(category_id)
+		else:
+			for configured_category in configured_substitution_categories:
+				var normalized_category := String(configured_category).strip_edges()
+				if normalized_category == "" or seen_categories.has(normalized_category):
+					return {"ok": false, "reason": "invalid good substitution categories: %s" % stable_id}
+				seen_categories[normalized_category] = true
+				normalized_categories.append(normalized_category)
+		if not normalized_categories.has(category_id):
+			return {"ok": false, "reason": "primary good category missing from substitution roles: %s" % stable_id}
+		normalized_categories.sort()
 		if quality_level < 0 or production_efficiency <= 0 or production_efficiency > 262144:
 			return {"ok": false, "reason": "invalid production substitute metadata: %s" % stable_id}
 		if storage_mode == "cycle_flow" and stable_id != "electricity":
@@ -102,6 +120,8 @@ static func compile_native_columns() -> Dictionary:
 			return {"ok": false, "reason": "invalid monetary issue good: %s" % stable_id}
 		ids.append(stable_id)
 		category_ids.append(category_id)
+		substitution_category_ids.append_array(normalized_categories)
+		substitution_category_offsets.append(substitution_category_ids.size())
 		production_quality_levels.append(quality_level)
 		production_efficiencies_q16.append(production_efficiency)
 		storage_modes.append(1 if storage_mode == "cycle_flow" else 0)
@@ -140,6 +160,8 @@ static func compile_native_columns() -> Dictionary:
 		"ok": true,
 		"good_ids": ids,
 		"good_category_ids": category_ids,
+		"good_substitution_category_offsets": substitution_category_offsets,
+		"good_substitution_category_ids": substitution_category_ids,
 		"good_production_quality_levels": production_quality_levels,
 		"good_production_efficiency_q16": production_efficiencies_q16,
 		"good_storage_modes": storage_modes,

@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"advanced_chips"
 display_name = "先进芯片"
-category_id = &"electronics"
+category_id = &"processor_component"
+substitution_category_ids = PackedStringArray("processor_component")
 technology_tags = PackedStringArray("tech.machine_learning")
 default_price = 110000
 min_price = 11000

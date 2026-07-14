@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"nuclear_fuel"
 display_name = "核燃料"
-category_id = &"chemicals"
+category_id = &"nuclear_fuel"
+substitution_category_ids = PackedStringArray("nuclear_fuel")
 technology_tags = PackedStringArray("industry.chemicals", "tech.nuclear_fission")
 production_quality_level = 0
 production_efficiency_q16 = 65536

@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"bakery"
+display_name = "面包坊"
+building_kind = "industrial"
+technology_tags = PackedStringArray("industry.food", "tech.pottery")
+upgrade_family_id = &"bread_baking"
+upgrade_tier = 1
+construction_days = 0
+owner_profession_id = &"artisan"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("apprentice")
+employee_slots_per_building = PackedInt64Array(3)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(1000)
+input_good_ids = PackedStringArray("wheat_grain")
+input_quantities_per_day = PackedInt64Array(1000)
+input_category_ids = PackedStringArray("")
+input_min_quality_levels = PackedInt32Array(0)
+input_candidate_offsets = PackedInt32Array(0, 3)
+input_candidate_good_ids = PackedStringArray("wheat_grain", "grain", "corn_grain")
+input_candidate_efficiency_q16 = PackedInt32Array(65536, 58982, 49152)
+output_good_ids = PackedStringArray("bread")
+output_quantities_per_day = PackedInt64Array(1007)
+target_operating_margin_q16 = 9830
+supply_price_elasticity_q16 = 65536
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "none"

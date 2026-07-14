@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"gathered_plants"
 display_name = "采集植物食物"
-category_id = &"food"
+category_id = &"gathered_plants"
+substitution_category_ids = PackedStringArray("gathered_plants")
 technology_tags = PackedStringArray("tech.gathering")
 default_price = 5000
 min_price = 500

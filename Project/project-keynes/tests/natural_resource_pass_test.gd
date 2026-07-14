@@ -10,7 +10,7 @@ extends SceneTree
 #   3. DCWorldExt 导出 run_natural_resource_pass。
 #   4. 原生 pass 在小地图上行为正确，且与 GDScript 公式模板逐资源逐 cell A/B 对拍一致：
 #      - timber（可再生，land）：适宜陆地格增长；水面格清零。
-#      - marine_fish / freshwater_fish：只在对应海岸/内陆水域可达地块生长。
+#      - marine_fish：只在海洋水域可达地块生长；淡水鱼不再是 DataCore 资源。
 #      - iron_ore（不可再生，全 0 系数）：无 extra 时保持不变，extra 单 tick 生效并清零。
 #      - reserve 保持非负。
 #
@@ -56,7 +56,7 @@ func _test_registry_knobs() -> void:
 	ResourceProfileRegistry.ensure_loaded()
 	var count: int = ResourceProfileRegistry.count()
 	_expect("registry loaded >=2 profiles", count >= 2)
-	_expect("registry loaded 37 profiles", count == 37)
+	_expect("registry loaded 30 profiles", count == 30)
 	var knobs: Dictionary = ResourceProfileRegistry.build_pass_knobs()
 	_expect("knobs resource_count matches registry count", int(knobs.get("resource_count", 0)) == count)
 	var slots: PackedStringArray = knobs.get("reserve_slots", PackedStringArray())
@@ -65,11 +65,17 @@ func _test_registry_knobs() -> void:
 	var ai: int = _slot_index(slots, "cell_res_arable_land_reserve")
 	var ii: int = _slot_index(slots, "cell_res_iron_ore_reserve")
 	var gi: int = _slot_index(slots, "cell_res_wild_game_reserve")
-	var fi: int = _slot_index(slots, "cell_res_freshwater_fish_reserve")
+	var pi: int = _slot_index(slots, "cell_res_pasture_reserve")
 	_expect("reserve_slots has arable_land", ai >= 0)
 	_expect("reserve_slots has iron_ore", ii >= 0)
 	_expect("reserve_slots has wild_game", gi >= 0)
-	_expect("reserve_slots has freshwater_fish", fi >= 0)
+	_expect("reserve_slots has pasture", pi >= 0)
+	_expect("reserve_slots retired freshwater_fish", _slot_index(slots, "cell_res_freshwater_fish_reserve") < 0)
+	for retired_slot in ["cell_res_uranium_ore_reserve", "cell_res_nickel_ore_reserve",
+			"cell_res_platinum_ore_reserve", "cell_res_lithium_reserve",
+			"cell_res_cobalt_ore_reserve", "cell_res_natural_graphite_reserve"]:
+		_expect("reserve_slots retired strategic split: %s" % retired_slot,
+			_slot_index(slots, retired_slot) < 0)
 	_expect("knobs has no capacity array", not knobs.has("capacity"))
 	_expect("knobs exports habitat modes and mask slot",
 		(knobs.get("habitat_modes", PackedInt32Array()) as PackedInt32Array).size() == count and
@@ -82,8 +88,8 @@ func _test_registry_knobs() -> void:
 		_expect("iron gen_self==0 (non-renewable)", is_equal_approx(gen_self[ii], 0.0))
 	if gi >= 0:
 		_expect("wild_game extra slot", gi < extra_slots.size() and extra_slots[gi] == "cell_res_wild_game_extra_change")
-	if fi >= 0:
-		_expect("freshwater fish extra slot", fi < extra_slots.size() and extra_slots[fi] == "cell_res_freshwater_fish_extra_change")
+	if pi >= 0:
+		_expect("pasture extra slot", pi < extra_slots.size() and extra_slots[pi] == "cell_res_pasture_extra_change")
 
 
 func _slot_index(slots: PackedStringArray, name: String) -> int:
@@ -203,15 +209,11 @@ func _test_native_pass() -> void:
 
 	# 关键不变量抽查。
 	var marine_i: int = _profile_index(profiles, "marine_fish")
-	var fresh_i: int = _profile_index(profiles, "freshwater_fish")
 	if marine_i >= 0:
 		var marine: PackedFloat32Array = map.get(fields[marine_i])
 		_expect("marine fish only lives on marine water",
 			marine[3] > 0.0 and is_equal_approx(marine[0], 0.0) and is_equal_approx(marine[2], 0.0))
-	if fresh_i >= 0:
-		var fresh: PackedFloat32Array = map.get(fields[fresh_i])
-		_expect("freshwater fish lives on river and lake cells",
-			fresh[4] > 0.0 and fresh[7] > 0.0 and is_equal_approx(fresh[0], 0.0) and is_equal_approx(fresh[3], 0.0))
+	_expect("freshwater fish profile retired", _profile_index(profiles, "freshwater_fish") < 0)
 
 	var ii: int = _profile_index(profiles, "iron_ore")
 	if ii >= 0:

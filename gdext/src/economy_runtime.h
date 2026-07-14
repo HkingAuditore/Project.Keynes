@@ -320,6 +320,7 @@ private:
         int64_t count = 0;
         int64_t filled_owner = 0;
         int32_t employee_fill_begin = 0;
+        int32_t last_input_selection_begin = 0;
         int64_t last_capacity_q16 = 0;
         int64_t last_input = 0;
         int64_t last_output = 0;
@@ -944,7 +945,7 @@ private:
     int32_t _max_rules_per_plan = MAX_RULES_PER_PLAN;
     int64_t _wealth_reference_per_capita = MONEY_SCALE * 10;
     int32_t _living_cost_base_plan_id = -1;
-    std::string _living_cost_base_plan_stable_id = "subsistence_household";
+    std::string _living_cost_base_plan_stable_id = "survival_household";
     int32_t _wage_ema_alpha_q16 = 8192;
     int32_t _wage_max_rise_q16_per_day = 6554;
     int32_t _wage_max_fall_q16_per_day = 1311;
@@ -1227,6 +1228,9 @@ private:
     std::vector<int32_t> _building_cell_offsets;
     std::vector<int32_t> _building_active_cells;
     std::vector<int64_t> _building_employee_filled;
+    // Inspector-only last purchased good per (building group, input slot).
+    // This diagnostic lane is intentionally excluded from save and state hash.
+    std::vector<int32_t> _building_last_input_selected_goods;
     std::vector<int64_t> _building_role_contract_wage;
     std::vector<int64_t> _building_role_base_living_cost;
     std::vector<int64_t> _building_role_living_cost;

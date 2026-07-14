@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"horses"
 display_name = "马匹"
-category_id = &"primary"
-technology_tags = PackedStringArray("industry.primary", "tech.manuscript_culture")
+category_id = &"horses"
+substitution_category_ids = PackedStringArray("horses")
+technology_tags = PackedStringArray("industry.primary", "tech.bronze_casting")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

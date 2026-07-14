@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"pharmaceuticals"
 display_name = "药品"
-category_id = &"chemicals"
-technology_tags = PackedStringArray("industry.chemicals", "tech.nuclear_fission")
+category_id = &"pharmaceuticals"
+substitution_category_ids = PackedStringArray("pharmaceuticals")
+technology_tags = PackedStringArray("industry.chemicals", "tech.experimental_science")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

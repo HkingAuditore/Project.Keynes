@@ -11,8 +11,8 @@ extends SceneTree
 #      - copper_ore：火山格（init_volcano）> 非火山。
 #      - clay：有河流（init_river）> 无河流（其余条件相同）。
 #      - timber：森林植被（init_vegetation_weights）> 裸地。
-#      - wild_game / cattle / 三类农业容量有各自偏向。
-#      - marine_fish 位于海洋水格，freshwater_fish 位于湖泊水格或河流格。
+#      - wild_game / pasture / 三类农业容量有各自偏向。
+#      - marine_fish 位于海洋水格；淡水和淡水鱼不再是经济资源槽。
 #   3. 矿产由资源局部斑块 + 同族地质省 + 矿带共同决定，固定 seed 可重放。
 #   4. 不变量：所有资源有限非负；不符合 habitat 的地块储量为 0。
 #
@@ -155,18 +155,9 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 	var wild_game := _res_arr(map, profiles, "wild_game")
 	if wild_game.size() >= 12:
 		_expect("wild_game: 森林/草地 > 裸地", maxf(wild_game[C_FOREST], wild_game[C_GRASS]) > wild_game[C_PLAIN])
-
-	var cattle := _res_arr(map, profiles, "cattle")
-	if cattle.size() >= 12:
-		_expect("cattle: 草地 > 裸地", cattle[C_GRASS] > cattle[C_PLAIN])
-
-	var sheep := _res_arr(map, profiles, "sheep")
-	if sheep.size() >= 12:
-		_expect("sheep: 凉爽丘陵草甸 > 湿热森林", sheep[C_COOL_HILL] > sheep[C_WET_FOREST])
-
-	var pigs := _res_arr(map, profiles, "pigs")
-	if pigs.size() >= 12:
-		_expect("pigs: 湿热森林 > 裸地", pigs[C_WET_FOREST] > pigs[C_PLAIN])
+	var pasture := _res_arr(map, profiles, "pasture")
+	if pasture.size() >= 12:
+		_expect("pasture: grassland > bare land", pasture[C_GRASS] > pasture[C_PLAIN])
 
 	var arable := _res_arr(map, profiles, "arable_land")
 	if arable.size() >= 12:
@@ -179,23 +170,16 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 	var plantation := _res_arr(map, profiles, "plantation_land")
 	if plantation.size() >= 12:
 		_expect("plantation_land: 湿热森林 > 凉爽丘陵", plantation[C_WET_FOREST] > plantation[C_COOL_HILL])
-
 	var marine := _res_arr(map, profiles, "marine_fish")
-	var fresh := _res_arr(map, profiles, "freshwater_fish")
-	var fresh_water := _res_arr(map, profiles, "fresh_water")
 	var habitat: PackedByteArray = map.resource_habitat_mask_arr
-	if marine.size() >= 12 and fresh.size() >= 12:
+	if marine.size() >= 12:
 		_expect("ocean water cell contains marine fish", (habitat[C_WATER] & 2) != 0 and marine[C_WATER] > 0.0)
 		_expect("adjacent shore does not store marine fish", (habitat[C_NORIVER] & 2) == 0 and is_equal_approx(marine[C_NORIVER], 0.0))
-		_expect("river cell contains freshwater fish", (habitat[C_RIVER] & 4) != 0 and fresh[C_RIVER] > 0.0)
-		_expect("lake water cell contains freshwater fish", (habitat[C_LAKE] & 4) != 0 and fresh[C_LAKE] > 0.0)
-		_expect("dry inland land has no freshwater fish", (habitat[C_PLAIN] & 4) == 0 and is_equal_approx(fresh[C_PLAIN], 0.0))
-	if fresh_water.size() >= 12:
-		_expect("fresh water reserve follows river/lake access",
-			fresh_water[C_RIVER] > 0.0 and is_equal_approx(fresh_water[C_PLAIN], 0.0))
+	_expect("freshwater resources retired from DataCore",
+		_res_arr(map, profiles, "freshwater_fish").is_empty() and
+		_res_arr(map, profiles, "fresh_water").is_empty())
 
 
-# ─── 整体差异化（非全图统一）──────────────────────────────────────
 func _test_differentiation(map: MapData, profiles: Array, n: int) -> void:
 	var land_cells: Array = [C_PLAIN, C_MOUNTAIN, C_PEAK, C_RIVER, C_NORIVER, C_FOREST]
 	var any_varied: bool = false
@@ -256,10 +240,9 @@ func _test_quantity_scale(map: MapData, profiles: Array, n: int) -> void:
 
 
 func _test_reserve_scale_configuration(profiles: Array) -> void:
-	var capacity_ids := ["arable_land", "fertile_soil", "paddy_land", "plantation_land"]
-	var renewable_ids := ["cattle", "fresh_water", "freshwater_fish", "horses",
-		"marine_fish", "pigs", "sheep", "timber", "wild_game"]
-	var scales_ok := profiles.size() == 35
+	var capacity_ids := ["arable_land", "fertile_soil", "paddy_land", "plantation_land", "pasture"]
+	var renewable_ids := ["marine_fish", "timber", "wild_game"]
+	var scales_ok := profiles.size() == 30
 	for profile in profiles:
 		var resource_id := String(profile.id)
 		var expected := 1.0 if resource_id in capacity_ids else \

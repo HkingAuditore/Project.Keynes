@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"processed_food"
 display_name = "加工食品"
-category_id = &"food"
+category_id = &"processed_food"
+substitution_category_ids = PackedStringArray("processed_food")
 technology_tags = PackedStringArray("industry.food", "tech.fire_control")
 production_quality_level = 0
 production_efficiency_q16 = 65536

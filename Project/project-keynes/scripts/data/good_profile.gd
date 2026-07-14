@@ -10,7 +10,16 @@ extends Resource
 @export var id: StringName = &""
 @export var display_name: String = ""
 @export var icon: Texture2D = null
+## Backward-compatible primary production-substitution role. This is not an
+## industry or UI taxonomy; new content should also populate the multi-role
+## substitution_category_ids below.
 @export var category_id: StringName = &"misc"
+## A good may fulfil several recipe roles. A building input_category_id selects
+## exactly one role, so membership does not imply universal interchangeability.
+## Exact inputs and explicit candidate lists remain available for narrower or
+## efficiency-weighted recipe choices. Household substitution remains defined
+## by NeedProfile variants.
+@export var substitution_category_ids: PackedStringArray = PackedStringArray()
 @export var technology_tags: PackedStringArray = PackedStringArray()
 ## Production recipes may accept a category instead of one exact good. The
 ## quality gate rejects obsolete substitutes; efficiency converts physical

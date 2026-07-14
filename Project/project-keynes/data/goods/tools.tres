@@ -5,9 +5,10 @@
 [resource]
 script = ExtResource("1")
 id = &"tools"
-display_name = "工具"
+display_name = "金属工具"
 category_id = &"tools"
-technology_tags = PackedStringArray("industry.tools", "tech.stone_knapping")
+substitution_category_ids = PackedStringArray("tools")
+technology_tags = PackedStringArray("industry.tools", "tech.masonry")
 production_quality_level = 3
 production_efficiency_q16 = 65536
 storage_mode = "stock"

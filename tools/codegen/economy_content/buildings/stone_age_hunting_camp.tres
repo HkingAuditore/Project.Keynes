@@ -3,9 +3,11 @@
 [resource]
 script = ExtResource("1")
 id = &"stone_age_hunting_camp"
-display_name = "石器时代狩猎营地"
+display_name = "狩猎营地"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.hunting")
+upgrade_family_id = &"hunting"
+upgrade_tier = 1
 construction_days = 0
 owner_profession_id = &"hunter"
 owner_slots_per_building = 1
@@ -17,8 +19,8 @@ input_good_ids = PackedStringArray("chipped_stone_tools")
 input_quantities_per_day = PackedInt64Array(100)
 input_category_ids = PackedStringArray("tools")
 input_min_quality_levels = PackedInt32Array(1)
-output_good_ids = PackedStringArray("game_meat", "raw_hide")
-output_quantities_per_day = PackedInt64Array(2000, 500)
+output_good_ids = PackedStringArray("game_meat", "raw_hide", "fur")
+output_quantities_per_day = PackedInt64Array(2000, 500, 200)
 resource_ids = PackedStringArray("wild_game")
 resource_quantities_per_day = PackedInt64Array(500)
 resource_interaction_modes = PackedStringArray("extract")

@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"cement"
 display_name = "水泥"
-category_id = &"construction"
-technology_tags = PackedStringArray("industry.construction", "tech.legacy_modern_economy")
+category_id = &"cement"
+substitution_category_ids = PackedStringArray("cement")
+technology_tags = PackedStringArray("industry.construction", "tech.steam_power")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

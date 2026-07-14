@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="ConsumptionPlanProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/consumption_plan_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"extractive_household"
+display_name = "Extractive Household Consumption"
+need_ids = PackedStringArray("staple_food", "protein", "produce", "clothing", "housing", "hygiene", "healthcare", "household_goods", "home_energy", "work_equipment")
+priorities = PackedInt32Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+base_qty_per_person = PackedInt64Array(425, 425, 425, 17, 17, 17, 17, 17, 17, 17)
+wealth_elasticity_q16 = PackedInt32Array(8192, 8192, 8192, 65536, 65536, 65536, 65536, 65536, 65536, 65536)
+wealth_min_q16 = PackedInt32Array(8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192, 8192)
+wealth_max_q16 = PackedInt32Array(262144, 262144, 262144, 262144, 262144, 262144, 262144, 262144, 262144, 262144)
+quantity_env_curve_ids = PackedStringArray("", "", "", "cold_clothing_quantity", "", "", "", "", "", "")
+need_variant_offsets = PackedInt32Array(0, 4, 8, 11, 15, 16, 18, 19, 21, 23, 26)
+variant_ids = PackedStringArray("staple_food_0", "staple_food_1", "staple_food_2", "staple_food_3", "protein_4", "protein_5", "protein_6", "protein_7", "produce_8", "produce_9", "produce_10", "clothing_11", "clothing_12", "clothing_13", "clothing_14", "housing_15", "hygiene_16", "hygiene_17", "healthcare_18", "household_goods_19", "household_goods_20", "home_energy_21", "home_energy_22", "work_equipment_23", "work_equipment_24", "work_equipment_25")
+variant_preference_q16 = PackedInt32Array(65536, 65536, 65536, 65536, 81920, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 81920, 65536, 73728, 81920, 65536)
+variant_price_elasticity_q16 = PackedInt32Array(65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536)
+variant_preference_env_curve_ids = PackedStringArray("", "", "", "", "", "", "", "", "", "", "", "warm_cloth_preference", "warm_cloth_preference", "cold_fur_preference", "warm_cloth_preference", "", "", "", "", "", "", "", "", "", "", "")
+variant_component_offsets = PackedInt32Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26)
+component_good_ids = PackedStringArray("prepared_staples", "bread", "grain", "gathered_plants", "meat", "fish", "canned_fish", "dairy_products", "processed_food", "gathered_plants", "vegetables", "clothing", "cloth", "fur", "footwear", "construction_components", "soap", "detergent", "pharmaceuticals", "furniture", "pottery", "refined_fuel", "natural_gas", "tools", "precision_tools", "scientific_instruments")
+component_qty_per_need = PackedInt64Array(1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000)

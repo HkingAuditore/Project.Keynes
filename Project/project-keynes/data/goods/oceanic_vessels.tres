@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"oceanic_vessels"
 display_name = "远洋船舶"
-category_id = &"transport_equipment"
+category_id = &"oceanic_vessels"
+substitution_category_ids = PackedStringArray("oceanic_vessels")
 technology_tags = PackedStringArray("tech.oceanic_navigation")
 default_price = 120000
 min_price = 12000

@@ -3,9 +3,11 @@
 [resource]
 script = ExtResource("1")
 id = &"early_copper_mine"
-display_name = "早期铜矿"
+display_name = "浅层铜矿"
 building_kind = "collector"
 technology_tags = PackedStringArray("tech.bronze_casting")
+upgrade_family_id = &"copper_extraction"
+upgrade_tier = 1
 construction_days = 0
 owner_profession_id = &"landlord"
 owner_slots_per_building = 1

@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"lead"
 display_name = "铅"
-category_id = &"metals"
-technology_tags = PackedStringArray("industry.metals", "tech.legacy_modern_economy")
+category_id = &"lead"
+substitution_category_ids = PackedStringArray("lead")
+technology_tags = PackedStringArray("industry.metals", "tech.steam_power")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

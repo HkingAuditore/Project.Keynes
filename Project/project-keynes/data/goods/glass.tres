@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"glass"
 display_name = "玻璃"
-category_id = &"construction"
+category_id = &"glass"
+substitution_category_ids = PackedStringArray("glass")
 technology_tags = PackedStringArray("industry.construction", "tech.masonry")
 production_quality_level = 0
 production_efficiency_q16 = 65536

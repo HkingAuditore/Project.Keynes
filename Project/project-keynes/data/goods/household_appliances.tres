@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"household_appliances"
 display_name = "家用电器"
-category_id = &"machinery"
-technology_tags = PackedStringArray("industry.machinery", "tech.legacy_modern_economy")
+category_id = &"household_appliances"
+substitution_category_ids = PackedStringArray("household_appliances")
+technology_tags = PackedStringArray("industry.machinery", "tech.electrification")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

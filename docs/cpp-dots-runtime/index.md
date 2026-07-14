@@ -56,6 +56,9 @@
 15. [Economy Save / Migration / SOP](./economy-save-migration-sop.md)
     - PKEC 流式存档、catalog migration 和新增内容流程。
 
+16. [Cross-Era Industry Tech Tree](./cross-era-industry-tech-tree.md)
+    - 经济目录的时代分层、科技标签、产业链深化、升级族和退役/合并规则。
+
 ## 可复用 Economy Skill
 
 仓库内 Skill 位于

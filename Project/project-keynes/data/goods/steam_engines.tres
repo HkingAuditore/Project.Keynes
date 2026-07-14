@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"steam_engines"
 display_name = "蒸汽机"
-category_id = &"machinery"
+category_id = &"prime_mover"
+substitution_category_ids = PackedStringArray("prime_mover", "industrial_prime_mover", "agricultural_prime_mover")
 technology_tags = PackedStringArray("tech.steam_power")
 default_price = 80000
 min_price = 8000

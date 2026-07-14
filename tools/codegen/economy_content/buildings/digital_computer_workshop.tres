@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"digital_computer_workshop"
-display_name = "数字计算机工场"
+display_name = "早期计算机工场"
 building_kind = "industrial"
 technology_tags = PackedStringArray("tech.digital_computing")
 construction_days = 0

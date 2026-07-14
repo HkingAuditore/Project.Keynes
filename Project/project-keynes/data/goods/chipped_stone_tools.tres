@@ -5,6 +5,7 @@ script = ExtResource("1")
 id = &"chipped_stone_tools"
 display_name = "打制石器"
 category_id = &"tools"
+substitution_category_ids = PackedStringArray("tools")
 technology_tags = PackedStringArray("tech.stone_knapping")
 production_quality_level = 1
 production_efficiency_q16 = 32768

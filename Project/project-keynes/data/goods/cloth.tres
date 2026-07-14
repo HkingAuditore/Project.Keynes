@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"cloth"
 display_name = "布料"
-category_id = &"textile"
+category_id = &"rag_paper_fiber"
+substitution_category_ids = PackedStringArray("rag_paper_fiber")
 technology_tags = PackedStringArray("industry.textile", "tech.gathering")
 production_quality_level = 0
 production_efficiency_q16 = 65536

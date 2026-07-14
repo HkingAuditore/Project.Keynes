@@ -41,8 +41,8 @@
 - 商人正常消费；每日需求/预算重置；同 tick 最多一次替代 fallback。
 - 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
 - 商品可由显式库存命令或 BUILDING_GRAPH 生产进入市场。
-- 商人不能拥有普通生产建筑。唯一例外是 `placer_gold_working` 与
-  `surface_silver_working`：无商品投入、无雇员，消耗对应真实矿藏且只产金或银。
+- 商人不能拥有普通生产建筑。例外仅限金银 collector：必须只有一种金/银产出、只消耗严格对应的
+  金/银矿藏、使用 extract 模式且不生成资源；允许后期矿井拥有雇员和工具输入。
   市场接受金银时按 `monetary_issue_value` 向业主发行货币，计入
   `explicit_money_mint/bullion_money_issued`，不允许无资源铸币。
 - 国内贸易只沿同一冻结国家的可贸易地形运输；发运即托管源货物和目的商人现金，到达边界结算。
@@ -92,23 +92,31 @@ GDScript 只附加 catalog 展示名
 生产，不自动升级或拆除。`subsistence_food` 与 `household_cloth` 都只有 gathering、pottery、
 guild、steam 四档，蒸汽档封顶。
 
-生产投入可保持精确 good，也可配置 `input_category_ids + input_min_quality_levels`。目录把每条
-类别投入预编译为候选 good/效率 CSR；native 只考虑本国科技可用的候选，按有效单位成本和 stable
+生产投入可保持精确 good，也可配置 `input_category_ids + input_min_quality_levels`，或使用
+`input_candidate_offsets/input_candidate_good_ids/input_candidate_efficiency_q16` 表达配方专属替代品。
+三种模式在单个输入槽互斥；目录把候选按 stable good ID 规范化为 good/效率 CSR。native 只考虑本国科技可用的候选，按库存满足度、有效单位成本和 stable
 good ID 稳定选择。`GoodProfile.production_quality_level` 控制最低等级，
 `production_efficiency_q16` 把物理库存换算为有效投入。当前工具等级为打制石器 1/50%、青铜工具
 2/80%、标准工具 3/100%、精密工具 4/150%，木材、狩猎、行会和部分古典配方可直接使用相应等级，
 不再通过交换站把时代商品转换成通用工具。
+`GoodProfile.substitution_category_ids` 允许一个 good 同时加入多个配方角色组；每个建筑槽只选择
+一个角色，因此多重归类不会自动产生全局互换。`category_id` 仅保留为主角色兼容字段。
+`starchy_staple` 同时覆盖地域谷物与马铃薯并供熟制主食槽使用，`cereal_grain` 则保持谷物专属；
+食用油和工业润滑剂不共享类目，机器零件从蒸汽时代起直接消费矿物润滑剂。
+建筑 snapshot 另以 `group_input_selected_offsets/group_input_selected_good_ids` 返回每个建筑组、每个
+输入槽上次实际采购的 good；Inspector 将它标为“当前”。该诊断 lane 不参与权威 state hash 或
+PKEC v11 save，restore 后在下一次成功生产前显示为未知。
 
 ## 现代内容目录
 
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，
-  跨时代扩展后的全目录为 142 goods、174 buildings、32 professions、15 needs。目录清理有意改变
+  跨时代扩展后的全目录为 122 goods、302 production-method buildings、32 professions、17 needs 和 8 consumption plans。目录清理有意改变
   stable-ID 表，旧 catalog 存档不兼容。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
-- `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；35 个注册资源全部有
-  collector。merchant 业主例外仅限上述两个早期金银 collector。
-- 35 种资源受 `land/marine_water/freshwater` habitat 门控；海鱼存在海洋水格，淡水资源存在
-  湖泊水格或河流格。岸上渔业/水厂通过 native `local_and_adjacent` 资源边访问并扣减真实水格。
+- `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
+  collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。
+- 30 种资源受 `land/marine_water/freshwater` habitat 门控；海鱼存在海洋水格，淡水/淡水鱼不再是
+  DataCore 经济资源。岸上渔业通过 native `local_and_adjacent` 资源边访问并扣减真实水格。
   矿产初值叠加资源局部斑块、
   同族地质省与矿带。栽培作物只存在于 goods，不进入 DataCore resource slots。
 - 黄金/白银收购是生产运行时唯一的内生货币发行来源；电力是唯一 cycle-flow，utility prepass

@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"radio_equipment"
 display_name = "无线电设备"
-category_id = &"communication"
+category_id = &"radio_equipment"
+substitution_category_ids = PackedStringArray("radio_equipment")
 technology_tags = PackedStringArray("tech.radio")
 default_price = 65000
 min_price = 6500

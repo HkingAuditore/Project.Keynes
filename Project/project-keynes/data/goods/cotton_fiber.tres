@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"cotton_fiber"
 display_name = "棉纤维"
-category_id = &"primary"
+category_id = &"spinnable_fiber"
+substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "rag_paper_fiber")
 technology_tags = PackedStringArray("industry.primary", "tech.oceanic_navigation")
 production_quality_level = 0
 production_efficiency_q16 = 65536

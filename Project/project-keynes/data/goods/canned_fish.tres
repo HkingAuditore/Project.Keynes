@@ -5,9 +5,10 @@
 [resource]
 script = ExtResource("1")
 id = &"canned_fish"
-display_name = "水产罐头"
-category_id = &"food"
-technology_tags = PackedStringArray("industry.food", "tech.legacy_modern_economy")
+display_name = "鱼罐头"
+category_id = &"canned_fish"
+substitution_category_ids = PackedStringArray("canned_fish")
+technology_tags = PackedStringArray("industry.food", "tech.precision_engineering")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

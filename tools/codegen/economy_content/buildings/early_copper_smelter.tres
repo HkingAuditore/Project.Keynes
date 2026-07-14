@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"early_copper_smelter"
-display_name = "早期炼铜炉"
+display_name = "土法炼铜炉"
 building_kind = "industrial"
 technology_tags = PackedStringArray("tech.bronze_casting")
 construction_days = 0

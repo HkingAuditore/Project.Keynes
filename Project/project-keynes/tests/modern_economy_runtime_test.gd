@@ -36,6 +36,8 @@ func _run() -> void:
 	var industrial_worker := signatures.find("industrial_worker|default")
 	var electrician := signatures.find("electrician|default")
 	var engineer := signatures.find("engineer|default")
+	var metallurgist := signatures.find("metallurgist|default")
+	var technician := signatures.find("technician|default")
 	var manager := signatures.find("manager|default")
 	var goods: PackedStringArray = compiled.good_ids
 	var stock := PackedInt64Array()
@@ -44,23 +46,34 @@ func _run() -> void:
 	stock[goods.find("coal")] = 100000
 	stock[goods.find("tools")] = 100000
 	stock[goods.find("explosives")] = 100000
+	stock[goods.find("bauxite")] = 100000
+	stock[goods.find("industrial_machinery")] = 100000
 	var types: PackedStringArray = compiled.building_type_ids
 	var boot: Dictionary = ext.bootstrap_economy({
-		"cell_indices": PackedInt32Array([0, 0, 0, 0, 0, 0, 0]),
+		"cell_indices": PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([
-			industrialist, merchant, miner, industrial_worker, electrician, engineer, manager]),
-		"population": PackedInt64Array([5, 10, 40, 30, 20, 15, 20]),
+			industrialist, merchant, miner, industrial_worker, electrician, engineer,
+			metallurgist, technician, manager]),
+		"population": PackedInt64Array([10, 10, 50, 80, 20, 15, 20, 20, 20]),
 		"funds": PackedInt64Array([
-			100000000, 100000000, 1000000, 1000000, 1000000, 1000000, 1000000]),
+			100000000, 100000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000,
+			1000000]),
 	}, {
 		"stock": stock,
-		"building_cells": PackedInt32Array([0, 0, 0]),
+		"building_cells": PackedInt32Array([0, 0, 0, 0]),
 		"building_type_ids": PackedInt32Array([
-			types.find("electricity_plant"), types.find("gold_mine"), types.find("silver_mine")]),
-		"building_owner_signature_ids": PackedInt32Array([industrialist, industrialist, industrialist]),
-		"building_counts": PackedInt64Array([3, 1, 1]),
+			types.find("electricity_plant"), types.find("gold_mine"), types.find("silver_mine"),
+			types.find("aluminum_plant")]),
+		"building_owner_signature_ids": PackedInt32Array([
+			industrialist, merchant, merchant, industrialist]),
+		"building_counts": PackedInt64Array([3, 1, 1, 1]),
 	})
-	_expect("power and bullion buildings bootstrap", bool(boot.get("ok", false)))
+	var boot_ok := bool(boot.get("ok", false))
+	_expect("power and bullion buildings bootstrap" if boot_ok else
+		"power and bullion buildings bootstrap: %s" % String(boot.get("reason", "unknown")),
+		boot_ok)
+	if not boot_ok:
+		return
 	var report := _run_day(ext, 0)
 	if bool(report.get("fatal", false)):
 		print("  runtime report: ", report)
@@ -92,6 +105,18 @@ func _run() -> void:
 		(market.good_storage_modes as PackedInt32Array)[goods.find("electricity")] == 1 and
 		(market.good_monetary_issue_values as PackedInt64Array)[goods.find("gold")] == 800000)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var aluminum_group := (buildings.group_type_ids as PackedInt32Array).find(
+		types.find("aluminum_plant"))
+	var selected_offsets: PackedInt32Array = buildings.group_input_selected_offsets
+	var selected_goods: PackedInt32Array = buildings.group_input_selected_good_ids
+	var selected_begin := int(selected_offsets[aluminum_group]) if aluminum_group >= 0 else -1
+	_expect("building snapshot reports actual per-slot input selections",
+		aluminum_group >= 0 and aluminum_group + 1 < selected_offsets.size() and
+		int(selected_offsets[aluminum_group + 1]) - selected_begin == 4 and
+		selected_goods[selected_begin] == goods.find("bauxite") and
+		selected_goods[selected_begin + 1] == goods.find("electricity") and
+		selected_goods[selected_begin + 2] == goods.find("tools") and
+		selected_goods[selected_begin + 3] == goods.find("industrial_machinery"))
 	_expect("building snapshot exposes kind and technology tags",
 		(buildings.building_kinds as PackedInt32Array).size() == types.size() and
 		(buildings.building_technology_tag_offsets as PackedInt32Array).size() == types.size() + 1 and

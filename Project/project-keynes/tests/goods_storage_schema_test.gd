@@ -26,11 +26,13 @@ func _run() -> void:
 		(catalog.good_ids as PackedStringArray).has("coal") and
 		(catalog.good_ids as PackedStringArray).has("fur") and
 		(catalog.good_ids as PackedStringArray).has("grain") and
-		(catalog.good_ids as PackedStringArray).has("mutton"))
+		(catalog.good_ids as PackedStringArray).has("meat"))
 	_expect("merchant profession compiles", (catalog.profession_ids as PackedStringArray).has("merchant"))
-	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 15 and
+	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 17 and
 		(catalog.need_ids as PackedStringArray).has("staple_food") and
-		(catalog.need_ids as PackedStringArray).has("healthcare"))
+		(catalog.need_ids as PackedStringArray).has("healthcare") and
+		(catalog.need_ids as PackedStringArray).has("work_equipment") and
+		(catalog.need_ids as PackedStringArray).has("status_goods"))
 	var living_weights: PackedInt32Array = catalog.need_living_cost_weights_q16
 	var need_ids: PackedStringArray = catalog.need_ids
 	_expect("living cost weights classify essential consumer and luxury needs",
@@ -93,7 +95,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var goods: PackedStringArray = compiled.good_ids
 	var commands := _stock_commands(0, goods, {
 		"grain": 1000000,
-		"mutton": 500000,
+		"meat": 500000,
 		"cloth": 250000,
 		"fur": 250000,
 	}, 0)
@@ -213,7 +215,7 @@ func _test_economy_event_trace(compiled: Dictionary) -> void:
 		int(kinds.get("MARKET_SETTLED", 0)) > 0 and int(kinds.get("EPOCH_COMMITTED", 0)) > 0)
 	var goods: PackedStringArray = compiled.good_ids
 	ext.submit_economy_commands(_stock_commands(0, goods, {
-		"grain": 100000, "mutton": 50000, "cloth": 50000, "fur": 50000}, 0))
+		"grain": 100000, "meat": 50000, "cloth": 50000, "fur": 50000}, 0))
 	_expect("in-flight event journal remains private", int(ext.poll_economy_events({
 		"consumer_id": &"trace_test", "max_events": 128}).get("count", -1)) == 0)
 	var report := _run_day(ext, 0)
@@ -256,7 +258,7 @@ func _test_environment_substitution(compiled: Dictionary) -> void:
 	var cold: Object = _configured_single_worker(compiled, 0.0, 77)
 	var warm: Object = _configured_single_worker(compiled, 1.0, 77)
 	var goods: PackedStringArray = compiled.good_ids
-	var stock := {"grain": 1000000, "mutton": 1000000, "cloth": 1000000, "fur": 1000000}
+	var stock := {"grain": 1000000, "meat": 1000000, "cloth": 1000000, "fur": 1000000}
 	_expect("cold stock accepted", bool(cold.submit_economy_commands(_stock_commands(0, goods, stock, 0)).get("ok", false)))
 	_expect("warm stock accepted", bool(warm.submit_economy_commands(_stock_commands(0, goods, stock, 0)).get("ok", false)))
 	_run_day(cold, 0)
@@ -301,7 +303,7 @@ func _test_cycle_approximation(compiled: Dictionary) -> void:
 	var reference := _configured_cycle_worker(compiled, 1, 301)
 	var approximate := _configured_cycle_worker(compiled, DAYS, 301)
 	var goods: PackedStringArray = compiled.good_ids
-	var stock := {"grain": 10000000, "mutton": 10000000,
+	var stock := {"grain": 10000000, "meat": 10000000,
 		"cloth": 10000000, "fur": 10000000}
 	reference.submit_economy_commands(_stock_commands(0, goods, stock, 0))
 	approximate.submit_economy_commands(_stock_commands(0, goods, stock, 0))
@@ -354,7 +356,7 @@ func _measure_cycle_error(compiled: Dictionary, days: int) -> Dictionary:
 	var reference := _configured_cycle_worker(compiled, 1, 700 + days)
 	var approximate := _configured_cycle_worker(compiled, days, 700 + days)
 	var goods: PackedStringArray = compiled.good_ids
-	var stock := {"grain": 100000000, "mutton": 100000000,
+	var stock := {"grain": 100000000, "meat": 100000000,
 		"cloth": 100000000, "fur": 100000000}
 	reference.submit_economy_commands(_stock_commands(0, goods, stock, 0))
 	approximate.submit_economy_commands(_stock_commands(0, goods, stock, 0))
@@ -429,7 +431,7 @@ func _test_worker_scalar_equivalence(compiled: Dictionary) -> void:
 	var scalar: Object = _configured_many_workers(compiled, false, 96)
 	var worker: Object = _configured_many_workers(compiled, true, 96)
 	var goods: PackedStringArray = compiled.good_ids
-	var stock := {"grain": 1000000, "mutton": 1000000, "cloth": 1000000, "fur": 1000000}
+	var stock := {"grain": 1000000, "meat": 1000000, "cloth": 1000000, "fur": 1000000}
 	for cell in range(96):
 		scalar.submit_economy_commands(_stock_commands(cell, goods, stock, 0, cell * 10))
 		worker.submit_economy_commands(_stock_commands(cell, goods, stock, 0, cell * 10))

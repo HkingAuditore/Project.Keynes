@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"logs"
 display_name = "原木"
-category_id = &"primary"
+category_id = &"logs"
+substitution_category_ids = PackedStringArray("logs")
 technology_tags = PackedStringArray("industry.primary", "tech.gathering")
 production_quality_level = 0
 production_efficiency_q16 = 65536

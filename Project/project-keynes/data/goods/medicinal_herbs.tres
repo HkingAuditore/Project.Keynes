@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"medicinal_herbs"
 display_name = "药材"
-category_id = &"primary"
+category_id = &"medicinal_herbs"
+substitution_category_ids = PackedStringArray("medicinal_herbs")
 technology_tags = PackedStringArray("industry.primary", "tech.oceanic_navigation")
 production_quality_level = 0
 production_efficiency_q16 = 65536

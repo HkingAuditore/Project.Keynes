@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"natural_gas"
 display_name = "天然气"
-category_id = &"primary"
-technology_tags = PackedStringArray("industry.primary", "tech.legacy_modern_economy")
+category_id = &"natural_gas"
+substitution_category_ids = PackedStringArray("natural_gas")
+technology_tags = PackedStringArray("industry.primary", "tech.electrification")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

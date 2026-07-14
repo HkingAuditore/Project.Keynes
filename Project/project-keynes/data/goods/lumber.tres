@@ -5,8 +5,9 @@
 [resource]
 script = ExtResource("1")
 id = &"lumber"
-display_name = "锯材"
-category_id = &"forestry"
+display_name = "木材"
+category_id = &"lumber"
+substitution_category_ids = PackedStringArray("lumber")
 technology_tags = PackedStringArray("industry.forestry", "tech.gathering")
 production_quality_level = 0
 production_efficiency_q16 = 65536

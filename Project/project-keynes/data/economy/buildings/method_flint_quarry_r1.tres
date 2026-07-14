@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"method_flint_quarry_r1"
+display_name = "改良燧石矿坑"
+building_kind = "collector"
+technology_tags = PackedStringArray("industry.primary", "tech.bronze_casting")
+upgrade_family_id = &""
+upgrade_tier = 0
+construction_days = 0
+owner_profession_id = &"artisan"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("miner")
+employee_slots_per_building = PackedInt64Array(8)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(1500)
+input_good_ids = PackedStringArray("tools")
+input_quantities_per_day = PackedInt64Array(500)
+input_category_ids = PackedStringArray("tools")
+input_min_quality_levels = PackedInt32Array(2)
+input_candidate_offsets = PackedInt32Array(0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("flint")
+output_quantities_per_day = PackedInt64Array(8261)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = PackedStringArray("flint")
+resource_quantities_per_day = PackedInt64Array(413)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "consume_local_resources"

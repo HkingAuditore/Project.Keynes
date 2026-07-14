@@ -5,8 +5,9 @@
 [resource]
 script = ExtResource("1")
 id = &"rare_earth_ore"
-display_name = "战略矿物精矿"
-category_id = &"primary"
+display_name = "战略矿石"
+category_id = &"rare_earth_ore"
+substitution_category_ids = PackedStringArray("rare_earth_ore")
 technology_tags = PackedStringArray("industry.primary", "tech.geological_prospecting")
 production_quality_level = 0
 production_efficiency_q16 = 65536

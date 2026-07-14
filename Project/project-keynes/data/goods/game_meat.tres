@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"game_meat"
 display_name = "野味"
-category_id = &"primary"
+category_id = &"game_meat"
+substitution_category_ids = PackedStringArray("game_meat")
 technology_tags = PackedStringArray("industry.primary", "tech.hunting")
 production_quality_level = 0
 production_efficiency_q16 = 65536

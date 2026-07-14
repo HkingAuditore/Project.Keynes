@@ -77,7 +77,7 @@ func _init() -> void:
 				building_ms.append(float(report.get("elapsed_ms", 0.0)))
 	building_ms.sort()
 	all_ms.sort()
-	print("[building_bench] cells=%d groups=%d cohorts=%d building_slices=%d avg=%.3fms p95=%.3fms max=%.3fms all_max=%.3fms wage_plan=%.3fms labor_signal=%.3fms labor_edges=%d memory=%.1fMB hash=%d errors=%d/%d/%d discarded=%d resource=%d/%d/%d extract_limited=%d capacity_checks=%d capacity_limited=%d" % [
+	print("[building_bench] cells=%d groups=%d cohorts=%d building_slices=%d avg=%.3fms p95=%.3fms max=%.3fms all_max=%.3fms wage_plan=%.3fms labor_signal=%.3fms labor_edges=%d memory=%.1fMB hash=%d errors=%d/%d/%d discarded=%d unpaid=%d resource=%d/%d/%d extract_limited=%d capacity_checks=%d capacity_limited=%d" % [
 		cells, int(report.get("building_group_count", 0)), int(report.get("cohort_count", 0)),
 		building_ms.size(), _mean(building_ms), _p95(building_ms),
 		building_ms[-1] if not building_ms.is_empty() else 0.0,
@@ -88,6 +88,7 @@ func _init() -> void:
 		float(report.get("memory_bytes", 0)) / 1048576.0, ext.get_economy_state_hash(),
 		int(report.get("population_error", 1)), int(report.get("money_error", 1)),
 		int(report.get("goods_error", 1)), int(report.get("production_output_discarded", 0)),
+		int(report.get("building_wages_unpaid", 0)),
 		int(report.get("building_resource_generated", 0)),
 		int(report.get("building_resource_consumed", 0)),
 		int(report.get("building_resource_net_delta", 0)),

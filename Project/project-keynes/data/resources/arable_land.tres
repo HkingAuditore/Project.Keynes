@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"arable_land"
-display_name = "旱作耕地"
+display_name = "旱地承载力"
 reserve_component = &"cell.res_arable_land_reserve"
 habitat_mode = "land"
 init_reserve_scale = 1

@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"paper"
 display_name = "纸张"
-category_id = &"forestry"
-technology_tags = PackedStringArray("industry.forestry", "tech.legacy_modern_economy")
+category_id = &"paper"
+substitution_category_ids = PackedStringArray("paper")
+technology_tags = PackedStringArray("industry.forestry", "tech.writing")
 production_quality_level = 0
 production_efficiency_q16 = 65536
 storage_mode = "stock"

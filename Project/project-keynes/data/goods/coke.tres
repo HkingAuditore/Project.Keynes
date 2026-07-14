@@ -4,7 +4,8 @@
 script = ExtResource("1")
 id = &"coke"
 display_name = "焦炭"
-category_id = &"energy"
+category_id = &"coke"
+substitution_category_ids = PackedStringArray("coke")
 technology_tags = PackedStringArray("tech.coke_smelting")
 default_price = 13000
 min_price = 1300

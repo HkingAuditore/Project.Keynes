@@ -38,7 +38,7 @@ Runtime hydrology 新增的契约：
 - `cell.river_flow` / `cell_river_flow`：`F32`，`map_field=river_flow_arr`，owner 为 `map_generation`。这是生成期归一化河宽/径流权重，season river ecology 可直接读 slot 区分普通河道与强径流主河。
 - `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
 - Legacy `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见。Native daily graph 中的 `runtime_hydrology` 节点复用 round 起点 refresh，依赖前序 weather node 已在 C++ slots 中发布当日 precip。
-- `cell.res_timber_reserve`、`cell.res_stone_reserve`、`cell.res_arable_land_reserve` 等 37 个自然资源/农业容量储量字段：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。另有一一对应的 `cell.res_*_extra_change` 字段；生产发布一次性采收/开采 delta，资源 pass 只应用一次后清零。`cell.resource_habitat_mask`（U8）编码 land/marine-water/freshwater：海鱼保存在海洋水格，淡水/淡水鱼保存在湖泊水格或河流格。小麦、玉米等栽培作物不再拥有 DataCore slot，而是 MarketStore goods。新增资源需加 reserve/extra 常量 + MapData 数组 + schema 行 + codegen + 重 build，并登记 `ResourceProfileRegistry._PROFILE_PATHS`。knobs 使用 `habitat_modes`/`habitat_mask_slot` 和 `dt_days`；五日 catchup 仅放大自然演化，不重复放大 external delta。
+- `cell.res_timber_reserve`、`cell.res_stone_reserve`、`cell.res_arable_land_reserve` 等 30 个自然资源/农业容量储量字段：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。另有一一对应的 `cell.res_*_extra_change` 字段；生产发布一次性采收/开采 delta，资源 pass 只应用一次后清零。`cell.resource_habitat_mask`（U8）仍编码 land/marine-water/freshwater habitat，但当前经济目录只有 `marine_fish` 使用水域鱼类资源；淡水/淡水鱼不再占用 DataCore 经济资源 slot。小麦、玉米等栽培作物不再拥有 DataCore slot，而是 MarketStore goods。新增资源需加 reserve/extra 常量 + MapData 数组 + schema 行 + codegen + 重 build，并登记 `ResourceProfileRegistry._PROFILE_PATHS`。knobs 使用 `habitat_modes`/`habitat_mask_slot` 和 `dt_days`；五日 catchup 仅放大自然演化，不重复放大 external delta。
 
 建筑 sample boundary 还从 `MapData.neighbor_indices_packed()` 捕获静态六邻拓扑。目录中的
 `building_production_resource_access_modes` 决定 local 或 local-and-adjacent；NativeEconomyRuntime
@@ -506,9 +506,9 @@ Dictionary DCWorldExt::run_my_pass(Dictionary knobs) {
 | 每个 stage 都 `refresh_slots_from_map()` | sync 成本累积 | round 开始一次 refresh，stage 间沿用 C++ slot。 |
 | fallback 没有 `fallback_reason` | 日志只看到 `path=gdscript`，无法定位 | 返回具体原因：missing_method、missing_slot、bad_size、stale_dll。 |
 
-现代经济资源扩展后，DataCore 明确持有 37 组 `cell.res_<id>_reserve` 与
+现代经济资源扩展后，DataCore 明确持有 30 组 `cell.res_<id>_reserve` 与
 `cell.res_<id>_extra_change` F32 slots；`component_schema.gd` 是唯一 bind-table 输入，生成结果为
-159 个 component entries（另含 `cell.resource_habitat_mask`）。goods、building、profession 和 technology tags 仍只存在于 economy
+138 个 component entries（另含 `cell.resource_habitat_mask`）。goods、building、profession 和 technology tags 仍只存在于 economy
 catalog/native runtime，不进入 MapData。`DCWorldExt` 在 sample boundary 批量解析资源 slot，生产
 结束后按资源列批量写回 extra-change，边界内没有逐 cell Object 调用。
 

@@ -3,6 +3,6 @@
 [resource]
 script = ExtResource("1")
 id = &"industrialist"
-display_name = "工业业主"
-default_consumption_plan_id = &"landlord_household"
+display_name = "工业资本家"
+default_consumption_plan_id = &"owner_household"
 technology_tags = PackedStringArray("tech.steam_power")

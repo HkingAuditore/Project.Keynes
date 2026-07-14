@@ -3,20 +3,20 @@
 [resource]
 script = ExtResource("1")
 id = &"steam_engine_works"
-display_name = "蒸汽机制造厂"
+display_name = "蒸汽机工厂"
 building_kind = "industrial"
 technology_tags = PackedStringArray("tech.steam_power")
 construction_days = 0
 owner_profession_id = &"industrialist"
 owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray("industrial_worker", "engineer", "manager")
-employee_slots_per_building = PackedInt64Array(10, 4, 2)
+employee_slots_per_building = PackedInt64Array(16, 6, 2)
 employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive")
 employee_reference_wages_per_day = PackedInt64Array(5000, 7000, 9000)
 input_good_ids = PackedStringArray("coke", "steel", "precision_tools")
 input_quantities_per_day = PackedInt64Array(500, 1000, 200)
 output_good_ids = PackedStringArray("steam_engines")
-output_quantities_per_day = PackedInt64Array(700)
+output_quantities_per_day = PackedInt64Array(2987)
 resource_ids = PackedStringArray()
 resource_quantities_per_day = PackedInt64Array()
 resource_interaction_modes = PackedStringArray()

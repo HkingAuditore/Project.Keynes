@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"cabinetmaker_workshop"
+display_name = "细木家具工坊"
+building_kind = "industrial"
+technology_tags = PackedStringArray("industry.consumer", "tech.guild_organization")
+upgrade_family_id = &"fine_furniture_making"
+upgrade_tier = 1
+construction_days = 0
+owner_profession_id = &"guild_master"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("apprentice", "journeyman")
+employee_slots_per_building = PackedInt64Array(6, 6)
+employee_wage_policy_ids = PackedStringArray("fixed", "fixed")
+employee_reference_wages_per_day = PackedInt64Array(1000, 2500)
+input_good_ids = PackedStringArray("lumber", "cloth", "tools")
+input_quantities_per_day = PackedInt64Array(1000, 1000, 250)
+input_category_ids = PackedStringArray("", "", "tools")
+input_min_quality_levels = PackedInt32Array(0, 0, 2)
+input_candidate_offsets = PackedInt32Array(0, 0, 2, 2)
+input_candidate_good_ids = PackedStringArray("cloth", "leather")
+input_candidate_efficiency_q16 = PackedInt32Array(65536, 65536)
+output_good_ids = PackedStringArray("fine_furniture")
+output_quantities_per_day = PackedInt64Array(1560)
+target_operating_margin_q16 = 13107
+supply_price_elasticity_q16 = 65536
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "none"

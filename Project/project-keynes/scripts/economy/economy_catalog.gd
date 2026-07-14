@@ -267,7 +267,9 @@ static func compile_native_catalog() -> Dictionary:
 	catalog["market_catalog_compat_hash_v8"] = _catalog_hash(market_v8_columns)
 	var building_columns := _compile_building_columns(
 		profession_index, good_index, good_columns.good_storage_modes,
-		good_columns.good_category_ids, good_columns.good_production_quality_levels,
+		good_columns.good_substitution_category_offsets,
+		good_columns.good_substitution_category_ids,
+		good_columns.good_production_quality_levels,
 		good_columns.good_production_efficiency_q16)
 	if not bool(building_columns.get("ok", false)):
 		return building_columns
@@ -340,9 +342,32 @@ static func need_display_names() -> Dictionary:
 
 static func _compile_building_columns(profession_index: Dictionary,
 		good_index: Dictionary, good_storage_modes: PackedInt32Array,
-		good_category_ids: PackedStringArray, good_quality_levels: PackedInt32Array,
+		good_substitution_category_offsets: PackedInt32Array,
+		good_substitution_category_ids: PackedStringArray,
+		good_quality_levels: PackedInt32Array,
 		good_efficiencies_q16: PackedInt32Array) -> Dictionary:
 	var profiles := _load_resources(BUILDING_DIR)
+	var good_count := good_quality_levels.size()
+	if good_efficiencies_q16.size() != good_count \
+			or good_substitution_category_offsets.size() != good_count + 1 \
+			or good_substitution_category_offsets[0] != 0 \
+			or good_substitution_category_offsets[-1] != good_substitution_category_ids.size():
+		return {"ok": false, "reason": "good substitution category columns mismatch"}
+	var category_good_indices := {}
+	for good_idx in range(good_count):
+		var begin := int(good_substitution_category_offsets[good_idx])
+		var end := int(good_substitution_category_offsets[good_idx + 1])
+		if begin < 0 or end <= begin or end > good_substitution_category_ids.size():
+			return {"ok": false, "reason": "good substitution category offsets invalid"}
+		for category_edge in range(begin, end):
+			var category_id := String(good_substitution_category_ids[category_edge])
+			if category_id == "":
+				return {"ok": false, "reason": "empty good substitution category"}
+			if not category_good_indices.has(category_id):
+				category_good_indices[category_id] = PackedInt32Array()
+			var members: PackedInt32Array = category_good_indices[category_id]
+			members.append(good_idx)
+			category_good_indices[category_id] = members
 	var used_resource_ids := {}
 	for profile in profiles:
 		for resource_id in profile.resource_ids:
@@ -525,10 +550,18 @@ static func _compile_building_columns(profession_index: Dictionary,
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
 		var configured_categories: PackedStringArray = profile.input_category_ids
 		var configured_min_levels: PackedInt32Array = profile.input_min_quality_levels
+		var explicit_offsets: PackedInt32Array = profile.input_candidate_offsets
+		var explicit_good_ids: PackedStringArray = profile.input_candidate_good_ids
+		var explicit_efficiencies: PackedInt32Array = profile.input_candidate_efficiency_q16
 		if not configured_categories.is_empty() and configured_categories.size() != profile.input_good_ids.size():
 			return {"ok": false, "reason": "building input category columns mismatch: %s" % stable_id}
 		if not configured_min_levels.is_empty() and configured_min_levels.size() != profile.input_good_ids.size():
 			return {"ok": false, "reason": "building input quality columns mismatch: %s" % stable_id}
+		var explicit_candidate_error := _validate_explicit_input_candidates(profile, good_index)
+		if explicit_candidate_error != "":
+			return {"ok": false, "reason": "%s: %s" % [explicit_candidate_error, stable_id]}
+		var has_explicit_candidates := explicit_offsets.size() > 1 \
+			or not explicit_good_ids.is_empty() or not explicit_efficiencies.is_empty()
 		for input_idx in range(profile.input_good_ids.size()):
 			var category_id := String(configured_categories[input_idx]) if not configured_categories.is_empty() else ""
 			var min_level := int(configured_min_levels[input_idx]) if not configured_min_levels.is_empty() else 0
@@ -536,13 +569,27 @@ static func _compile_building_columns(profession_index: Dictionary,
 				return {"ok": false, "reason": "negative building input quality: %s" % stable_id}
 			input_category_ids.append(category_id)
 			input_min_quality_levels.append(min_level)
-			if category_id == "":
+			var explicit_begin := int(explicit_offsets[input_idx]) if has_explicit_candidates else 0
+			var explicit_end := int(explicit_offsets[input_idx + 1]) if has_explicit_candidates else 0
+			if explicit_end > explicit_begin:
+				var sorted_candidates: Array[Dictionary] = []
+				for candidate_idx in range(explicit_begin, explicit_end):
+					var candidate_id := String(explicit_good_ids[candidate_idx])
+					var efficiency := int(explicit_efficiencies[candidate_idx])
+					sorted_candidates.append({"id": candidate_id, "efficiency": efficiency})
+				sorted_candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+					return String(a.id) < String(b.id))
+				for candidate in sorted_candidates:
+					input_candidate_goods.append(int(good_index[String(candidate.id)]))
+					input_candidate_efficiencies.append(int(candidate.efficiency))
+			elif category_id == "":
 				input_candidate_goods.append(int(good_index[String(profile.input_good_ids[input_idx])]))
 				input_candidate_efficiencies.append(Q16_ONE)
 			else:
-				for good_idx in range(good_category_ids.size()):
-					if String(good_category_ids[good_idx]) == category_id \
-							and int(good_quality_levels[good_idx]) >= min_level:
+				var category_members: PackedInt32Array = category_good_indices.get(
+					category_id, PackedInt32Array())
+				for good_idx in category_members:
+					if int(good_quality_levels[good_idx]) >= min_level:
 						input_candidate_goods.append(good_idx)
 						input_candidate_efficiencies.append(int(good_efficiencies_q16[good_idx]))
 				if input_candidate_offsets[-1] == input_candidate_goods.size():
@@ -602,15 +649,15 @@ static func _compile_building_columns(profession_index: Dictionary,
 		if owner_id == "merchant":
 			var merchant_bullion_valid: bool = building_kind == "collector" \
 				and behavior_id == "consume_local_resources" \
-				and role_ids.is_empty() and profile.input_good_ids.is_empty() \
 				and profile.output_good_ids.size() == 1 and prod_ids.size() == 1 \
-				and String(prod_modes[0]) == "extract"
+				and String(prod_modes[0]) == "extract" \
+				and profile.resource_generation_ids.is_empty()
 			if merchant_bullion_valid:
 				var bullion_id := String(profile.output_good_ids[0])
 				merchant_bullion_valid = (bullion_id == "gold" and String(prod_ids[0]) == "gold_ore") \
 					or (bullion_id == "silver" and String(prod_ids[0]) == "silver_ore")
 			if not merchant_bullion_valid:
-				return {"ok": false, "reason": "merchant may only own early bullion collector: %s" % stable_id}
+				return {"ok": false, "reason": "merchant may only own matching bullion collector: %s" % stable_id}
 		if building_kind == "collector" and prod_ids.is_empty():
 			return {"ok": false, "reason": "collector requires natural resource: %s" % stable_id}
 		if building_kind != "collector" and not prod_ids.is_empty():
@@ -727,6 +774,46 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_condition_references": condition_references,
 		"building_condition_values": condition_values,
 	}
+
+
+static func _validate_explicit_input_candidates(profile: Resource,
+		good_index: Dictionary) -> String:
+	var offsets: PackedInt32Array = profile.input_candidate_offsets
+	var candidate_ids: PackedStringArray = profile.input_candidate_good_ids
+	var efficiencies: PackedInt32Array = profile.input_candidate_efficiency_q16
+	var has_explicit_candidates := offsets.size() > 1 \
+		or not candidate_ids.is_empty() or not efficiencies.is_empty()
+	if not has_explicit_candidates:
+		return ""
+	if offsets.size() != profile.input_good_ids.size() + 1 or offsets[0] != 0 \
+			or candidate_ids.size() != efficiencies.size() \
+			or offsets[-1] != candidate_ids.size():
+		return "building explicit input candidate columns mismatch"
+	for offset_idx in range(1, offsets.size()):
+		if offsets[offset_idx] < offsets[offset_idx - 1]:
+			return "building explicit input candidate offsets invalid"
+	var configured_categories: PackedStringArray = profile.input_category_ids
+	for input_idx in range(profile.input_good_ids.size()):
+		var begin := int(offsets[input_idx])
+		var end := int(offsets[input_idx + 1])
+		if end <= begin:
+			continue
+		var category_id := String(configured_categories[input_idx]) \
+			if not configured_categories.is_empty() else ""
+		if category_id != "":
+			return "building input cannot combine category and explicit candidates"
+		var preferred_id := String(profile.input_good_ids[input_idx])
+		var seen_candidates := {}
+		for candidate_idx in range(begin, end):
+			var candidate_id := String(candidate_ids[candidate_idx])
+			var efficiency := int(efficiencies[candidate_idx])
+			if not good_index.has(candidate_id) or seen_candidates.has(candidate_id) \
+					or efficiency <= 0 or efficiency > 262144:
+				return "invalid building explicit input candidate"
+			seen_candidates[candidate_id] = true
+		if not seen_candidates.has(preferred_id):
+			return "preferred building input missing from explicit candidates"
+	return ""
 
 static func _append_building_goods(ids: PackedStringArray, quantities: PackedInt64Array,
 		good_index: Dictionary, out_ids: PackedInt32Array,

@@ -576,11 +576,12 @@ reserve'      = max(0, (reserve_ext + P) / (1 + L))       # dt_days=1
 `reserve' = clamp(reserve + gen − decay)` 对旧 `capacity` 模型下刚性配置会被硬上限
 clamp 成横跳；当前模型改为无硬上限的半隐式线性自衰减。
 
-`habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater`。海洋鱼类直接写在
-深海、海洋与浅海水格；淡水和淡水鱼类写在湖泊水格及河流格，岸上不复制资源储量。
-habitat 外储量为 0。岸上渔业/水厂通过建筑资源边的 `local_and_adjacent` 模式访问本格与六邻格。
-当前目录含 35 种注册自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
-自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量和肥沃土壤
+`habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater`。当前目录只有
+`marine_fish` 使用水域鱼类资源，直接写在深海、海洋与浅海水格；淡水/淡水鱼不再是
+DataCore 经济资源。habitat 外储量为 0。岸上渔业通过建筑资源边的 `local_and_adjacent`
+模式访问本格与六邻格；公共供水以后另行设计，不进入食品/饮料配方。
+当前目录含 30 种注册自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
+自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量、牧场容量和肥沃土壤
 是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；林木、渔业、土壤、
 野生/半野生动物通过 `gen_self`、适宜度和压力衰减表达自然增长/消失。
 
@@ -614,8 +615,8 @@ reserve0 = max(0, suit) * init_reserve_scale[r]         # habitat 不可用时�
   资源出现位置。当前内容使用 capacity `1×`、可再生 `2×`、地质/不可再生资源 `8×`；旧档已有
   reserve 不回填倍率，新建地图才应用。
 - 现有 .tres 调参示例：金属矿按 mafic/felsic/hydrothermal/sedimentary 等 family 共享地质省和矿带；
-  `clay` 偏三角洲/河流；`timber` 跟森林植被和温湿适宜度；三类农业容量由地形、水系和气候决定；
-  `marine_fish/freshwater_fish` 先由水域 habitat 门控，再以独立资源动态推进。
+  `clay` 偏三角洲/河流；`timber` 跟森林植被和温湿适宜度；三类农业容量与 `pasture`
+  由地形、水系和气候决定；`marine_fish` 先由海洋 habitat 门控，再以独立资源动态推进。
 
 **输入 / 输出**：
 
@@ -2249,7 +2250,7 @@ MapData/DataCore，也不产生全局建筑财务矩阵。
 循环只访问 POD/vector/raw scalar，不访问 Godot Object 或 Dictionary。
 
 现代目录把建筑显式编译为 `collector=0` 或 `industrial=1`。collector 必须有 resource CSR，
-industrial 的 resource CSR 必须为空；两者都可有多个 goods input/output。35 个资源 reserve 与
+industrial 的 resource CSR 必须为空；两者都可有多个 goods input/output。30 个资源 reserve 与
 extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass，经济 runtime 仍只
 在 sample boundary 读取 raw slot pointers 并向 extra-change 发布 delta。
 
