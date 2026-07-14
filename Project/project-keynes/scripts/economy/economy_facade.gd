@@ -209,6 +209,11 @@ func _attach_building_display_metadata(snapshot: Dictionary) -> void:
 		"signature_profession_ids", "building_owner_profession_ids", "building_owner_slots",
 		"building_employee_offsets", "building_employee_profession_ids", "building_employee_slots",
 		"building_input_offsets", "building_input_good_ids", "building_input_quantities",
+		"building_input_category_ids", "building_input_min_quality_levels",
+		"building_input_candidate_offsets", "building_input_candidate_good_ids",
+		"building_input_candidate_efficiency_q16", "building_upgrade_family_ids",
+		"building_upgrade_family_indices", "building_upgrade_tiers",
+		"building_behavior_ids",
 		"building_output_offsets", "building_output_good_ids", "building_output_quantities",
 		"building_resource_ids", "building_resource_offsets", "building_production_resource_ids",
 		"building_production_resource_quantities", "building_production_resource_modes",
@@ -218,6 +223,7 @@ func _attach_building_display_metadata(snapshot: Dictionary) -> void:
 		"building_resource_generation_floor_q16", "building_kinds",
 		"building_technology_tag_offsets", "building_technology_tags", "good_ids",
 		"good_category_ids", "good_storage_modes", "good_monetary_issue_values",
+		"good_production_quality_levels", "good_production_efficiency_q16",
 		"good_technology_tag_offsets", "good_technology_tags",
 	]:
 		snapshot[key] = _catalog.get(key)
@@ -279,6 +285,16 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 		"building_output_offsets", "building_output_good_ids")
 	var production_resources := _stable_ids_from_catalog_range(type_id, resource_ids,
 		"building_resource_offsets", "building_production_resource_ids")
+	var technology_offsets: PackedInt32Array = _catalog.get(
+		"building_technology_tag_offsets", PackedInt32Array())
+	var technology_tags: PackedStringArray = _catalog.get(
+		"building_technology_tags", PackedStringArray())
+	var input_categories_all: PackedStringArray = _catalog.get(
+		"building_input_category_ids", PackedStringArray())
+	var input_min_levels_all: PackedInt32Array = _catalog.get(
+		"building_input_min_quality_levels", PackedInt32Array())
+	var good_categories: PackedStringArray = _catalog.get(
+		"good_category_ids", PackedStringArray())
 	if not bool(input_goods.get("ok", false)) or not bool(output_goods.get("ok", false)) \
 			or not bool(production_resources.get("ok", false)):
 		return {"ok": false, "reason": "building placement catalog shape invalid"}
@@ -289,22 +305,59 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 		"building_production_resource_modes", PackedInt32Array())
 	var access_modes: PackedInt32Array = _catalog.get(
 		"building_production_resource_access_modes", PackedInt32Array())
+	var family_ids: PackedStringArray = _catalog.get(
+		"building_upgrade_family_ids", PackedStringArray())
+	var family_indices: PackedInt32Array = _catalog.get(
+		"building_upgrade_family_indices", PackedInt32Array())
+	var upgrade_tiers: PackedInt32Array = _catalog.get(
+		"building_upgrade_tiers", PackedInt32Array())
 	var resource_begin := int(production_resources.begin)
 	var resource_end := int(production_resources.end)
-	if type_id >= kinds.size() or resource_end > quantities.size() or resource_end > modes.size() \
-			or resource_end > access_modes.size():
+	if type_id >= kinds.size() or type_id >= family_indices.size() \
+			or type_id >= upgrade_tiers.size() \
+			or resource_end > quantities.size() or resource_end > modes.size() \
+			or resource_end > access_modes.size() or type_id + 1 >= technology_offsets.size():
 		return {"ok": false, "reason": "building placement resource columns invalid"}
+	var technology_begin := int(technology_offsets[type_id])
+	var technology_end := int(technology_offsets[type_id + 1])
+	var input_begin := int(input_goods.begin)
+	var input_end := int(input_goods.end)
+	if technology_begin < 0 or technology_end < technology_begin \
+			or technology_end > technology_tags.size() or input_end > input_categories_all.size() \
+			or input_end > input_min_levels_all.size():
+		return {"ok": false, "reason": "building placement technology columns invalid"}
+	var output_categories := PackedStringArray()
+	for good_id in output_goods.ids:
+		var good_idx := good_ids.find(String(good_id))
+		output_categories.append(String(good_categories[good_idx]) \
+			if good_idx >= 0 and good_idx < good_categories.size() else "")
+	var family_idx := int(family_indices[type_id])
+	var higher_tier_ids := PackedStringArray()
+	if family_idx >= 0:
+		for candidate in range(type_ids.size()):
+			if candidate < family_indices.size() and candidate < upgrade_tiers.size() \
+					and int(family_indices[candidate]) == family_idx \
+					and int(upgrade_tiers[candidate]) > int(upgrade_tiers[type_id]):
+				higher_tier_ids.append(type_ids[candidate])
 	return {
 		"ok": true,
 		"type_id": type_id,
 		"stable_id": String(building_id),
 		"kind": int(kinds[type_id]),
+		"upgrade_family_id": family_ids[family_idx] \
+			if family_idx >= 0 and family_idx < family_ids.size() else "",
+		"upgrade_tier": int(upgrade_tiers[type_id]),
+		"higher_tier_building_ids": higher_tier_ids,
 		"input_good_ids": input_goods.ids,
+		"input_category_ids": input_categories_all.slice(input_begin, input_end),
+		"input_min_quality_levels": input_min_levels_all.slice(input_begin, input_end),
 		"output_good_ids": output_goods.ids,
+		"output_category_ids": output_categories,
 		"resource_ids": production_resources.ids,
 		"resource_quantities": quantities.slice(resource_begin, resource_end),
 		"resource_modes": modes.slice(resource_begin, resource_end),
 		"resource_access_modes": access_modes.slice(resource_begin, resource_end),
+		"technology_tags": technology_tags.slice(technology_begin, technology_end),
 	}
 
 func _stable_ids_from_catalog_range(type_id: int, stable_ids: PackedStringArray,

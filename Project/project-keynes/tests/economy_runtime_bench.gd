@@ -3,11 +3,13 @@ extends SceneTree
 # Opt-in Market V2 benchmark:
 #   godot --headless --path . --script res://tests/economy_runtime_bench.gd
 #   godot --headless --path . --script res://tests/economy_runtime_bench.gd -- --desktop
+#   godot --headless --path . --script res://tests/economy_runtime_bench.gd -- --fixed5
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var snapshot_only := "--snapshot" in args
 	var desktop := "--desktop" in args
+	var fixed_five := "--fixed5" in args
 	var trade_active := "--trade-active" in args
 	var cells := 1 if snapshot_only else (100000 if desktop else 10000)
 	var cohorts_per_cell := 100 if snapshot_only or desktop else 20
@@ -19,7 +21,7 @@ func _init() -> void:
 		"money_scale": 10000, "goods_scale": 1000, "ratio_scale": 65536,
 		"rate_scale": 4294967296, "cells_per_slice": 5000,
 		"commands_per_slice": 16384, "max_rules_per_plan": 32,
-		"market_cycle_days": 0, "market_max_cycle_days": 365,
+		"market_cycle_days": 5 if fixed_five else 0, "market_max_cycle_days": 365,
 		"market_target_cohorts_per_slice": 30000 if desktop else 4000,
 		"worker_enabled": true, "worker_market_threshold": 64,
 		"worker_tasks_hint": 8 if "--tasks8" in args else 0,

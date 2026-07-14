@@ -3,19 +3,15 @@ extends RefCounted
 
 const GOODS_SCALE := 1000
 const MONEY_SCALE := 10000
-const STOCK_DAYS := 30
-const MERCHANT_CAPACITY_PERCENT := 1
 const COLLECTOR_COUNT_CAP := 24
 const EXTRACT_RESERVE_DAYS := 5
-const INDUSTRIAL_CELL_DIVISOR := 12
-const INDUSTRIAL_CELL_CAP := 24
 
-const BASE_BUILDING_IDS := [
-	&"distribution_center",
+const MID_STONE_TECHNOLOGY_IDS := [
+	"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control",
 ]
 
 
-static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
+static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary:
 	if map == null or facade == null or not facade.is_configured():
 		return {"ok": false, "reason": "test_bootstrap_runtime_unavailable"}
 	var profession_ids := facade.profession_ids()
@@ -33,6 +29,7 @@ static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
 	if building_ids.is_empty():
 		return {"ok": false, "reason": "test_bootstrap_building_catalog_empty"}
 	var building_specs := {}
+	var eligible_building_ids := PackedStringArray()
 	for building_id in building_ids:
 		var job_spec: Dictionary = facade.building_job_spec(StringName(building_id))
 		var placement_spec: Dictionary = facade.building_placement_spec(StringName(building_id))
@@ -45,13 +42,25 @@ static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
 		for key in placement_spec:
 			job_spec[key] = placement_spec[key]
 		building_specs[StringName(building_id)] = job_spec
-	for building_id in BASE_BUILDING_IDS:
-		if not building_specs.has(building_id):
-			return {
-				"ok": false,
-				"reason": "test_bootstrap_base_building_missing",
-				"missing_building": String(building_id),
-			}
+		if _technology_available(placement_spec.technology_tags):
+			eligible_building_ids.append(building_id)
+	var highest_tier_by_family := {}
+	for building_id in eligible_building_ids:
+		var spec: Dictionary = building_specs[StringName(building_id)]
+		var family := String(spec.get("upgrade_family_id", ""))
+		if family != "":
+			highest_tier_by_family[family] = maxi(
+				int(highest_tier_by_family.get(family, 0)), int(spec.get("upgrade_tier", 0)))
+	var filtered_eligible := PackedStringArray()
+	for building_id in eligible_building_ids:
+		var spec: Dictionary = building_specs[StringName(building_id)]
+		var family := String(spec.get("upgrade_family_id", ""))
+		if family == "" or int(spec.get("upgrade_tier", 0)) == int(
+				highest_tier_by_family.get(family, 0)):
+			filtered_eligible.append(building_id)
+	eligible_building_ids = filtered_eligible
+	if eligible_building_ids.is_empty():
+		return {"ok": false, "reason": "test_bootstrap_mid_stone_catalog_empty"}
 
 	var passable_cells := PackedInt32Array()
 	for cell_idx in range(map.cell_count()):
@@ -60,27 +69,18 @@ static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
 			passable_cells.append(cell_idx)
 	if passable_cells.is_empty():
 		return {"ok": false, "reason": "test_bootstrap_no_passable_land"}
-	var resource_arrays := _resource_arrays(map)
+	var resource_arrays := _resource_arrays(map, PackedStringArray(MID_STONE_TECHNOLOGY_IDS))
 	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed()
 	var groups_by_cell := {}
 	var outputs_by_cell := {}
-	var produced_goods := {}
-	var target_settlement_capacity := 0
 	for cell_idx in passable_cells:
-		var settlement_capacity := 1000 + _population_jitter(seed, cell_idx)
-		target_settlement_capacity += settlement_capacity
-		var distribution: Dictionary = building_specs[&"distribution_center"]
-		var distribution_count := _ceil_div(
-			maxi(1, settlement_capacity * MERCHANT_CAPACITY_PERCENT / 100),
-			int(distribution.owner_slots))
-		groups_by_cell[cell_idx] = [{"spec": distribution, "count": distribution_count}]
+		groups_by_cell[cell_idx] = []
 		outputs_by_cell[cell_idx] = {}
-		_mark_outputs(distribution, outputs_by_cell[cell_idx], produced_goods)
 
-	for building_id_raw in building_ids:
+	for building_id_raw in eligible_building_ids:
 		var building_id := StringName(building_id_raw)
 		var spec: Dictionary = building_specs[building_id]
-		if building_id in BASE_BUILDING_IDS or int(spec.kind) != 0:
+		if int(spec.kind) != 0:
 			continue
 		for cell_idx in passable_cells:
 			var count := _collector_count_at(spec, cell_idx, resource_arrays, neighbor_indices,
@@ -88,36 +88,38 @@ static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
 			if count <= 0:
 				continue
 			(groups_by_cell[cell_idx] as Array).append({"spec": spec, "count": count})
-			_mark_outputs(spec, outputs_by_cell[cell_idx], produced_goods)
+			_mark_outputs(spec, outputs_by_cell[cell_idx])
 
 	var pending_industries := []
-	for building_id_raw in building_ids:
+	for building_id_raw in eligible_building_ids:
 		var building_id := StringName(building_id_raw)
 		var spec: Dictionary = building_specs[building_id]
-		if building_id not in BASE_BUILDING_IDS and int(spec.kind) == 1:
+		if int(spec.kind) == 1:
 			pending_industries.append(spec)
 	while not pending_industries.is_empty():
-		var best_idx := 0
-		var best_readiness := -1
-		for i in range(pending_industries.size()):
-			var readiness := _input_readiness(pending_industries[i], produced_goods)
-			if readiness > best_readiness:
-				best_readiness = readiness
-				best_idx = i
-		var spec: Dictionary = pending_industries.pop_at(best_idx)
-		for cell_idx in _select_industrial_cells(
-				spec, passable_cells, outputs_by_cell, seed):
-			(groups_by_cell[cell_idx] as Array).append({"spec": spec, "count": 1})
-			_mark_outputs(spec, outputs_by_cell[cell_idx], produced_goods)
+		var placed_any := false
+		for i in range(pending_industries.size() - 1, -1, -1):
+			var spec: Dictionary = pending_industries[i]
+			var selected_cells := PackedInt32Array()
+			for cell_idx in passable_cells:
+				if _inputs_ready(spec, outputs_by_cell[cell_idx]):
+					selected_cells.append(cell_idx)
+			if selected_cells.is_empty():
+				continue
+			pending_industries.remove_at(i)
+			placed_any = true
+			for cell_idx in selected_cells:
+				(groups_by_cell[cell_idx] as Array).append({"spec": spec, "count": 1})
+				_mark_outputs(spec, outputs_by_cell[cell_idx])
+		if not placed_any:
+			break
 
 	var cell_indices := PackedInt32Array()
 	var signature_ids := PackedInt32Array()
 	var populations := PackedInt64Array()
 	var funds := PackedInt64Array()
 	var populated_cells := PackedInt32Array()
-	var population_by_cell := PackedInt64Array()
-	population_by_cell.resize(map.cell_count())
-	population_by_cell.fill(0)
+	var total_population := 0
 	var building_cells := PackedInt32Array()
 	var building_types := PackedInt32Array()
 	var building_owners := PackedInt32Array()
@@ -127,6 +129,8 @@ static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
 
 	for cell_idx in passable_cells:
 		var generated_groups: Array = groups_by_cell[cell_idx]
+		if generated_groups.is_empty():
+			continue
 		generated_groups.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 			return int(a.spec.type_id) < int(b.spec.type_id))
 		for group in generated_groups:
@@ -152,18 +156,9 @@ static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
 			funds.append(population * _money_per_capita(profession) * MONEY_SCALE)
 			actual_population += population
 			generated_professions[profession] = true
-		populated_cells.append(cell_idx)
-		population_by_cell[cell_idx] = actual_population
-
-	var good_ids := facade.good_ids()
-	var stock := PackedInt64Array()
-	stock.resize(map.cell_count() * good_ids.size())
-	stock.fill(0)
-	for cell_idx in populated_cells:
-		var stock_per_good := int(population_by_cell[cell_idx]) * STOCK_DAYS * GOODS_SCALE
-		var row_begin := int(cell_idx) * good_ids.size()
-		for good_idx in range(good_ids.size()):
-			stock[row_begin + good_idx] = stock_per_good
+		if actual_population > 0:
+			populated_cells.append(cell_idx)
+			total_population += actual_population
 
 	return {
 		"ok": true,
@@ -173,7 +168,7 @@ static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
 			"population": populations,
 			"funds": funds,
 		},
-		"market_packet": {"stock": stock},
+		"market_packet": {},
 		"building_packet": {
 			"building_cells": building_cells,
 			"building_type_ids": building_types,
@@ -183,22 +178,28 @@ static func build(map: MapData, facade: EconomyFacade, seed: int) -> Dictionary:
 		"populated_cells": populated_cells.size(),
 		"cohort_count": populations.size(),
 		"building_group_count": building_counts.size(),
-		"total_population": _sum_i64(population_by_cell),
-		"target_settlement_capacity": target_settlement_capacity,
-		"population_source": "resource_specialized_building_jobs_v4",
+		"total_population": total_population,
+		"population_source": "mid_stone_visible_resources_unemployed_v5",
+		"initial_employment": "unemployed",
+		"initial_stock_units": 0,
+		"technology_ids": PackedStringArray(MID_STONE_TECHNOLOGY_IDS),
+		"visible_resource_type_count": resource_arrays.size(),
 		"building_type_count": building_ids.size(),
+		"eligible_building_type_count": eligible_building_ids.size(),
 		"placed_building_type_count": placed_building_types.size(),
 		"unplaced_building_type_count": building_ids.size() - placed_building_types.size(),
 		"catalog_profession_count": profession_ids.size(),
 		"generated_profession_count": generated_professions.size(),
-		"good_count": good_ids.size(),
-}
+		"good_count": facade.good_ids().size(),
+	}
 
 
-static func _resource_arrays(map: MapData) -> Dictionary:
+static func _resource_arrays(map: MapData, technology_ids: PackedStringArray) -> Dictionary:
 	ResourceProfileRegistry.ensure_loaded()
 	var out := {}
 	for profile in ResourceProfileRegistry.ordered():
+		if not ResourceProfileRegistry.discovery_visible(profile, technology_ids):
+			continue
 		var field := ResourceProfileRegistry.reserve_map_field(profile)
 		if field == "":
 			continue
@@ -255,41 +256,38 @@ static func _accessible_resource_reserve(reserves: PackedFloat32Array, cell_idx:
 	return total
 
 
-static func _mark_outputs(spec: Dictionary, local_outputs: Dictionary,
-		global_outputs: Dictionary) -> void:
+static func _mark_outputs(spec: Dictionary, local_outputs: Dictionary) -> void:
 	var output_ids: PackedStringArray = spec.output_good_ids
-	for good_id in output_ids:
+	var output_categories: PackedStringArray = spec.get(
+		"output_category_ids", PackedStringArray())
+	for i in range(output_ids.size()):
+		var good_id := output_ids[i]
 		local_outputs[StringName(good_id)] = true
-		global_outputs[StringName(good_id)] = true
+		if i < output_categories.size() and String(output_categories[i]) != "":
+			local_outputs[StringName("category:%s" % String(output_categories[i]))] = true
 
 
-static func _input_readiness(spec: Dictionary, available_outputs: Dictionary) -> int:
-	var score := 0
+static func _inputs_ready(spec: Dictionary, available_outputs: Dictionary) -> bool:
 	var input_ids: PackedStringArray = spec.input_good_ids
-	for good_id in input_ids:
-		if available_outputs.has(StringName(good_id)):
-			score += 1
-	return score
+	var input_categories: PackedStringArray = spec.get(
+		"input_category_ids", PackedStringArray())
+	if input_ids.is_empty():
+		return false
+	for i in range(input_ids.size()):
+		var category := String(input_categories[i]) if i < input_categories.size() else ""
+		if category != "" and available_outputs.has(StringName("category:%s" % category)):
+			continue
+		if not available_outputs.has(StringName(input_ids[i])):
+			return false
+	return true
 
 
-static func _select_industrial_cells(spec: Dictionary, passable_cells: PackedInt32Array,
-		outputs_by_cell: Dictionary, seed: int) -> PackedInt32Array:
-	var scored := []
-	for cell_idx in passable_cells:
-		var upstream := _input_readiness(spec, outputs_by_cell[cell_idx])
-		var tie_break := int(hash("%d:%d:%s" % [seed, cell_idx, String(spec.stable_id)])) \
-			& 0x3fffffff
-		scored.append({"cell": int(cell_idx), "score": upstream * 0x40000000 + tie_break})
-	scored.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if int(a.score) != int(b.score):
-			return int(a.score) > int(b.score)
-		return int(a.cell) < int(b.cell))
-	var target_count := clampi(_ceil_div(passable_cells.size(), INDUSTRIAL_CELL_DIVISOR),
-		1, mini(INDUSTRIAL_CELL_CAP, passable_cells.size()))
-	var selected := PackedInt32Array()
-	for i in range(target_count):
-		selected.append(int(scored[i].cell))
-	return selected
+static func _technology_available(tags: PackedStringArray) -> bool:
+	for tag in tags:
+		var stable_id := String(tag)
+		if stable_id.begins_with("tech.") and not MID_STONE_TECHNOLOGY_IDS.has(stable_id):
+			return false
+	return true
 
 
 static func _money_per_capita(profession: StringName) -> int:
@@ -328,26 +326,8 @@ static func _accumulate_building_jobs(spec: Dictionary, count: int, jobs: Dictio
 		jobs[profession] = int(jobs.get(profession, 0)) + count * int(slots[i])
 
 
-static func _ceil_div(numerator: int, denominator: int) -> int:
-	if numerator <= 0:
-		return 0
-	return (numerator + maxi(1, denominator) - 1) / maxi(1, denominator)
-
-
 static func _terrain_at(map: MapData, cell_idx: int) -> int:
 	if cell_idx >= 0 and cell_idx < map.terrain_arr.size():
 		return int(map.terrain_arr[cell_idx])
 	var cell := map.cell_at(cell_idx)
 	return int(cell.terrain) if cell != null else TerrainType.TERRAIN.OCEAN
-
-
-static func _population_jitter(seed: int, cell_idx: int) -> int:
-	var seed_part := absi(seed % 2147483647)
-	return int((seed_part * 1103 + cell_idx * 9176 + 2654435761) % 1024)
-
-
-static func _sum_i64(values: PackedInt64Array) -> int:
-	var total := 0
-	for value in values:
-		total += int(value)
-	return total

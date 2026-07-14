@@ -24,12 +24,10 @@ static var ERAS: Array[Dictionary] = [
 	{"id": &"atomic", "display_name": "原子时代", "tags": PackedStringArray([
 		"tech.geological_prospecting", "tech.advanced_metallurgy", "tech.nuclear_fission"])},
 	{"id": &"information", "display_name": "信息时代", "tags": PackedStringArray([
-		"tech.digital_computing", "tech.fiber_optics", "tech.networked_computing",
+		"tech.digital_computing", "tech.networked_computing",
 		"tech.legacy_modern_economy"])},
 	{"id": &"ai", "display_name": "人工智能时代", "tags": PackedStringArray([
-		"tech.machine_learning", "tech.autonomous_systems", "tech.orbital_flight",
-		"tech.orbital_industry", "tech.fusion_power", "tech.asteroid_resource_recovery",
-		"tech.deep_space_systems"])},
+		"tech.machine_learning", "tech.autonomous_systems"])},
 ]
 
 static func era_for_tag(technology_id: StringName) -> StringName:

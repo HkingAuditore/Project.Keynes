@@ -4,3 +4,4 @@
 script = ExtResource("1")
 id = &"recreation"
 display_name = "娱乐"
+living_cost_weight_q16 = 0

@@ -117,9 +117,16 @@ PackedArrays；UI 只查询选中地块。
 直接读取 DataCore slots；查询只使用局部临时数组，不改变 state hash、report、存档或
 持久内存布局。
 
-世界生成页的“生成测试经济数据”默认关闭。显式启用后，先在可通行陆地创建确定性的
-农场、纺织工坊、庄园和煤矿 owner-lot，再从这些建筑编译后的 owner/employee 岗位容量
-聚合出自耕农/工人/地主/商人 cohort，最后按实际人口填充 30 日测试库存。它是开发 fixture，
+同一查询还返回 `demand_need_offsets/indices`、`demand_need_variant_offsets`、
+`demand_variant_component_offsets`、`demand_component_good_indices` 与
+`demand_component_per_capita_daily` 的嵌套 CSR。Inspector 据此按 need 分组，将同一 need
+下的 variant 标为互为替代，并将同一 variant 的多个 component 标为配套组合；不得从已按
+good 汇总的旧列反推分组，因为同一 good 可以属于多个 need。新增列仍是 selected-cell
+冷查询输出，不进入 catalog hash、PKEC schema 或持久状态。
+
+世界生成页的“生成测试经济数据”默认关闭。显式启用后使用石器中期科技，只在已发现资源能
+支撑配方的地块放置 collector，并只在本地上游齐全时放置 industrial；升级族只放置最高可用档。
+随后按 owner/employee 岗位容量聚合 cohort，初始就业和库存保持为零。它是开发 fixture，
 不是正式历史人口来源。
 
 ## 实测门槛
@@ -141,7 +148,7 @@ Market V2 共用冻结周期和原子发布边界，但不进入 `household_mark
 `MapData`/`HexCell`/DataCore schema；运行时以按 `(cell, building_type,
 owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR 只遍历有建筑地块。
 
-`BuildingProfile` 编译 owner/employee role、建造成本、输入/输出、自然资源交互模式和 postfix
+`BuildingProfile` 编译 owner/employee role、建造成本、输入/输出、投入候选 CSR、自然资源交互模式和 postfix
 建造条件。人口仍保持唯一 `(cell, signature)` cohort；lane 新增 owner/employee employed
 计数，失业为 population 减两者。工资 ABI 位于 employee role：`adaptive` 以本地基础生活
 成本、岗位 cohort 消费篮子和本地岗位合同工资 EMA 形成生活工资硬下限；`fixed` 仅保留给
@@ -149,6 +156,22 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 劳工的食宿/份额，使用 profession stable ID 区分关系；它不提供法律身份、地租倒流、迁徙限制
 或 owner-lot 人身绑定。业主现金不足时按 owner 全部 role 义务稳定比例支付，相关 owner-lot
 本周期停产。工资仍按本地同职业实际就业权重分配，不铸币且保持资金守恒。
+
+普通生产建筑禁止使用 merchant owner。唯一例外是石器期砂金与露天银矿点：无商品投入、无雇员，
+必须消耗匹配的金/银矿藏且只产对应金银。市场接受产出时按固定面值增加业主商人资金，并进入
+`_explicit_money_mint`、`bullion_money_issued`、金银分项发行额与 closing audit。后期金银矿仍由
+industrialist 持有并保留工业投入、矿工和管理岗位。不存在虚空商站铸币分支。
+
+投入边可以是精确 good，也可以声明 category 与最低质量等级。`EconomyCatalog` 将类别展开为按
+stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。native 在冻结国家科技可用的候选
+中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
+`ceil(effective_required / efficiency)`，库存、业主现金与 goods audit 仍记录实际物理数量。
+这使木材等配方可以直接使用打制石器、青铜、标准或精密工具，不再需要商品转换站。
+
+`upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
+档位，旧档返回 `building_tier_obsolete_for_construction`；生产仍只检查该建筑原始科技，因此旧
+owner-lot 继续生产且不会自动转换。快照发布 family、tier、highest available tier 和当前可建状态。
+食物与家庭织布各只有 gathering、pottery、guild、steam 四档，蒸汽后不再扩展。
 
 周期开始先按冻结价格计算每栋建筑的投入替换成本、完整工资义务、预期 producer settlement
 收入与目标营业利润率，作为诊断和销售后利润分享依据。计划利用率固定为 `Q16_ONE`；亏损不再
@@ -160,12 +183,16 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 `max(0, reserve + min(pending_extra_change, 0))` 作为有效可采储量：尚未被资源 pass 消费的负
 delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacity` 模式：extract 按产量扣减并
 发布负 delta；capacity 只以 `reserve / (building_count × requirement)` 限制产能，不扣减储量。
+自然资源 reserve 与 goods 使用相同的定点尺度，但不是同一种经济单位。extract 配方按采集方式、
+技术和资源类型使用 `2:1` 至 `25:1` 的总产出/资源投入效率；例如砂金淘洗 `2:1`、露天银矿
+`4:1`、蒸汽煤铁矿 `12:1`、现代煤铁矿 `20:1`。多副产品按输出总量计算。原生公式仍分别读取
+资源投入量和物资产出量，因此效率分级不增加新状态、调度、API 或存档字段。
 农场使用旱作耕地/水田/种植园容量和肥沃土壤生产 crop goods，不再培育 crop resource。
 资源边另有 `local/local_and_adjacent` 访问模式。海鱼与淡水鱼储量位于水域格，岸上渔港在冻结
 sample boundary 捕获的六邻拓扑上汇总本格+邻格，并按稳定来源顺序扣减真实水格；无需在岸格
 复制鱼群，也不会创建跨格 GDScript 经济状态。
 
-世界设置启用测试经济数据时，fixture 先生成农场、纺织工坊、庄园和商铺 owner-lot，随后
+世界设置启用测试经济数据时，fixture 先生成资源适配的自给、采集与本地产业 owner-lot，随后
 通过 `EconomyFacade.building_job_spec()` 读取 catalog 岗位列并派生 cohort。人口结构不再作为
 建筑生成输入；建筑岗位配置变化会直接改变新地图的职业人口结构。
 
@@ -243,9 +270,10 @@ TRACE_OFF 为 `2.112/8.914/8.914ms`、111.3MB。两者核心 state hash 均为
 10M SELECTIVE 相对同版本 TRACE_OFF 的 avg/p95 增量约 2.5%/2.7%；固定五日建筑 soak
 增量约 2.9%/1.2%。两档核心 state hash 在 trace 模式间不变，journal 均低于 32MB 默认上限。
 
-## 跨时代产业目录与货币发行（2026-07-13）
+## 跨时代产业目录与货币发行（2026-07-14）
 
-现代基线由可复现的 `tools/codegen/gen_modern_economy_content.ps1` 生成，跨时代扩展后目录为 153 goods、190
+现代基线由可复现且支持只读 `-Check` 的 `tools/codegen/gen_modern_economy_content.ps1` 生成，
+跨时代扩展后全目录为 142 goods、174
 building types、32 professions 和 15 household needs。35 种注册自然资源均至少被一个
 `collector` 引用；`industrial` 只能消费 goods。所有建筑恰好一个 owner job，科技解锁仅以
 `technology_tags` 进入 catalog/snapshot；只有 `tech.*` 是可执行条件。runtime 把条件解析为 dense technology IDs，
@@ -257,19 +285,24 @@ forager/hunter/artisan 自营；青铜和古典使用小规模 apprentice 与 en
 industrial_worker、technician、engineer、manager、researcher 组成多角色企业。该变化只修改
 catalog/content，PopulationStore、signature ABI、BUILDING_GRAPH 和 PKEC byte schema 均未改变。
 
-锂、钴、石墨、镍、铂族和铀的独立目录项合并为抽象
-`rare_earth → rare_earth_ore → rare_earth_metals`。旧 DataCore 资源 slots 暂时保留但不再由
+锂、钴、石墨、镍、铂族和铀的独立目录项合并为显示为“战略矿产”的
+`rare_earth → rare_earth_ore → rare_earth_metals` 稳定内部链，并新增独立 `nuclear_fuel` 加工。
+核电站与同位素反应堆不再直接消费战略矿物材料。旧 DataCore 资源 slots 暂时保留但不再由
 ResourceProfileRegistry 注册；因此 MapData/slot ABI 不变，当前 catalog 和旧 PKEC stable-ID 表
 不兼容。
 
-`gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/10000 money subunits。商人接收
+`gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/10000 money subunits。市场接收
 建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通
 库存参与珠宝、电子等生产且不重复发行。report 分别发布 accepted quantity、issued money 和
-`anchored_money_issued`，普通产出仍受 merchant cash cap。
+`bullion_money_issued`，普通产出仍受 merchant cash cap。
 
 `electricity` 是唯一 `cycle_flow` good。`building_production` 内先运行只产出 cycle-flow 的
 utility groups并结算 offers，再运行其他 groups；其余电力在 cell 生产结束时清零并计入 goods
-sink。report 发布 `cycle_flow_produced/consumed/discarded`，跨周期市场库存必须为零。
+sink。report 发布 `cycle_flow_produced/consumed/discarded`，跨周期市场库存必须为零；家庭公用
+事业结算尚未实现，因此家庭能源替代不包含电力。
+
+软件、数字服务、AI 模型、轨道科研、遥测、卫星、深空探测、轨道回收与聚变燃料链本轮删除，
+不再伪装为可交易服务或地表商品。本轮不建立服务经济或轨道市场替代系统。
 
 2026-07-12 template_release Price V3 验证：100-good/200k-cohort auto N=50 为
 avg/p95/max `1.883/2.766/3.126ms`、`101.0MB`；200-good/10M-cohort auto N=334 为

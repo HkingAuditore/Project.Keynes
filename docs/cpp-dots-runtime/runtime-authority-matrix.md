@@ -20,8 +20,8 @@
 
 ## Economy Authority
 
-经济域当前仍为 C++ `NativeEconomyRuntime` ACTIVE authority：153-good MarketStore、190 类稀疏
-owner-lot、Price V3 稀疏企业信号、自适应工资/奖金、金银锚定发行和电力 utility prepass 都在
+经济域当前仍为 C++ `NativeEconomyRuntime` ACTIVE authority：142-good MarketStore、174 类稀疏
+owner-lot、两组四档升级族、Price V3 稀疏企业信号、自适应工资/奖金、真实金银锚定发行和电力 utility prepass 都在
 ECONOMY_GRAPH/BUILDING_GRAPH 内完成。GDScript 只编译 profile/technology tags、桥接 35 个注册自然
 资源 slots、提交命令和查询选中 cell；不存在 GDScript 货币、价格、生产或贸易 fallback。
 国家身份、领土、科技和国库由 `NativeCountryRuntime` 单一权威持有；经济周期冻结国家映射与科技，

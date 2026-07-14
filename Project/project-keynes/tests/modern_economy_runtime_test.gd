@@ -34,7 +34,7 @@ func _run() -> void:
 	var merchant := signatures.find("merchant|default")
 	var miner := signatures.find("miner|default")
 	var industrial_worker := signatures.find("industrial_worker|default")
-	var technician := signatures.find("technician|default")
+	var electrician := signatures.find("electrician|default")
 	var engineer := signatures.find("engineer|default")
 	var manager := signatures.find("manager|default")
 	var goods: PackedStringArray = compiled.good_ids
@@ -48,7 +48,7 @@ func _run() -> void:
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([
-			industrialist, merchant, miner, industrial_worker, technician, engineer, manager]),
+			industrialist, merchant, miner, industrial_worker, electrician, engineer, manager]),
 		"population": PackedInt64Array([5, 10, 40, 30, 20, 15, 20]),
 		"funds": PackedInt64Array([
 			100000000, 100000000, 1000000, 1000000, 1000000, 1000000, 1000000]),
@@ -73,8 +73,8 @@ func _run() -> void:
 		gold_issued == gold_accepted * 800000 / 1000)
 	_expect("silver issues configured value", silver_accepted > 0 and
 		silver_issued == silver_accepted * 10000 / 1000)
-	_expect("only bullion contributes anchored mint",
-		int(report.get("anchored_money_issued", 0)) == gold_issued + silver_issued)
+	_expect("only accepted bullion contributes monetary issue",
+		int(report.get("bullion_money_issued", 0)) == gold_issued + silver_issued)
 	var flow_produced := int(report.get("cycle_flow_produced", 0))
 	var flow_consumed := int(report.get("cycle_flow_consumed", 0))
 	var flow_discarded := int(report.get("cycle_flow_discarded", 0))
@@ -97,6 +97,7 @@ func _run() -> void:
 		(buildings.building_technology_tag_offsets as PackedInt32Array).size() == types.size() + 1 and
 		(buildings.building_technology_tags as PackedStringArray).size() > 0)
 	_test_technology_gating(compiled, native_catalog)
+	_test_upgrade_gating(compiled, native_catalog)
 
 func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -> void:
 	var ext := _new_ext(compiled)
@@ -119,17 +120,26 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 	var initial_technologies: Dictionary = ext.get_country_snapshot(country_summary.country_handle)
 	var market: Dictionary = ext.get_market_cell_snapshot(0)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
-	var deep_type := types.find("deep_space_probe_works")
+	var advanced_type := types.find("autonomous_systems_plant")
+	var early_gold_type := types.find("placer_gold_working")
+	var early_silver_type := types.find("surface_silver_working")
 	_expect("stone start unlocks hunting and gathering",
 		(initial_technologies.technology_ids as PackedStringArray).has("tech.hunting") and
 		(initial_technologies.technology_ids as PackedStringArray).has("tech.gathering"))
-	_expect("deep-space technology starts locked",
-		not (initial_technologies.technology_ids as PackedStringArray).has("tech.deep_space_systems"))
+	_expect("post-industrial technology starts locked",
+		not (initial_technologies.technology_ids as PackedStringArray).has("tech.autonomous_systems"))
 	_expect("stone start hides legacy modern goods but exposes gathered food",
 		(market.good_technology_available as PackedByteArray)[goods.find("computers")] == 0 and
 		(market.good_technology_available as PackedByteArray)[goods.find("gathered_plants")] == 1)
+	_expect("stone start exposes bullion goods and early workings",
+		(market.good_technology_available as PackedByteArray)[goods.find("gold")] == 1 and
+		(market.good_technology_available as PackedByteArray)[goods.find("silver")] == 1 and
+		early_gold_type >= 0 and early_silver_type >= 0 and
+		(buildings.building_technology_available as PackedByteArray)[early_gold_type] == 1 and
+		(buildings.building_technology_available as PackedByteArray)[early_silver_type] == 1)
 	_expect("technology-locked building is unavailable",
-		deep_type >= 0 and (buildings.building_technology_available as PackedByteArray)[deep_type] == 0)
+		advanced_type >= 0 and
+		(buildings.building_technology_available as PackedByteArray)[advanced_type] == 0)
 	var technologies: PackedStringArray = compiled.technology_ids
 	var grant: Dictionary = ext.submit_country_commands({
 		"opcodes": PackedInt32Array([4]),
@@ -137,7 +147,7 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 		"sequences": PackedInt64Array([1]),
 		"target_handles": PackedInt64Array([country_summary.country_handle]),
 		"cell_indices": PackedInt32Array([-1]),
-		"aux_i32": PackedInt32Array([technologies.find("tech.deep_space_systems")]),
+		"aux_i32": PackedInt32Array([technologies.find("tech.autonomous_systems")]),
 		"stable_ids": PackedStringArray([""]),
 		"display_names": PackedStringArray([""]),
 	})
@@ -147,9 +157,178 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 	var unlocked: Dictionary = ext.get_country_snapshot(country_summary.country_handle)
 	var unlocked_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("technology grant becomes committed cell state",
-		(unlocked.technology_ids as PackedStringArray).has("tech.deep_space_systems"))
+		(unlocked.technology_ids as PackedStringArray).has("tech.autonomous_systems"))
 	_expect("granted technology unlocks tagged building",
-		(unlocked_buildings.building_technology_available as PackedByteArray)[deep_type] == 1)
+		(unlocked_buildings.building_technology_available as PackedByteArray)[advanced_type] == 1)
+
+
+func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> void:
+	var ext := _new_ext(compiled)
+	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 1
+	profile.market_runtime_mode = "ACTIVE"
+	_expect("upgrade test runtime configures", bool(ext.configure_economy(
+		native_catalog, profile, 1, 2202).get("ok", false)))
+	var signatures: PackedStringArray = compiled.signature_keys
+	var forager := signatures.find("forager|default")
+	var artisan := signatures.find("artisan|default")
+	var farmer := signatures.find("subsistence_farmer|default")
+	var merchant := signatures.find("merchant|default")
+	_expect("upgrade test population bootstraps", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([forager, artisan, farmer, merchant]),
+		"population": PackedInt64Array([4, 4, 4, 4]),
+		"funds": PackedInt64Array([10000000, 10000000, 10000000, 10000000]),
+	}, {}).get("ok", false)))
+	var types: PackedStringArray = compiled.building_type_ids
+	var gathering := types.find("gathering_ground")
+	var early_farm := types.find("subsistence_farm")
+	var guild_farm := types.find("three_field_smallholding")
+	var steam_farm := types.find("improved_smallholding")
+	var early_weaving := types.find("household_weaving_shelter")
+	var pottery_weaving := types.find("household_loom")
+	var guild_weaving := types.find("cottage_weaving")
+	var steam_weaving := types.find("improved_domestic_loom")
+	var forager_handle := _handle_for_signature(ext.get_population_cell_snapshot(0), forager)
+	_expect("stone tier build command queues", bool(ext.submit_economy_commands(
+		_build_command(0, 1, forager_handle, gathering)).get("ok", false)))
+	var stone_report := _run_day(ext, 0)
+	var stone_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("stone tier builds before replacement",
+		int(stone_report.get("rejected_commands", 0)) == 0 and
+		_building_count(stone_buildings, gathering) == 1)
+	var first_production_report := _run_day(ext, 1)
+	stone_buildings = ext.get_building_cell_snapshot(0)
+	_expect("zero-day construction produces from the following cycle",
+		_building_last_output(stone_buildings, gathering) > 0)
+
+	_grant_technology(ext, compiled, "tech.pottery", 2, 1)
+	_expect("obsolete stone build command queues for native rejection", bool(
+		ext.submit_economy_commands(_build_command(2, 2, forager_handle, gathering)).get("ok", false)))
+	var pottery_report := _run_day(ext, 2)
+	var pottery_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("higher tier rejects new stone construction with exact reason",
+		int(pottery_report.get("rejected_commands", 0)) == 1 and
+		String(pottery_report.get("last_building_rejection_reason", "")) ==
+			"building_tier_obsolete_for_construction")
+	_expect("existing stone building keeps producing after replacement",
+		_building_count(pottery_buildings, gathering) == 1 and
+		_building_last_output(pottery_buildings, gathering) > 0)
+	_expect("pottery tier is the only constructible family tier",
+		_tier_state(pottery_buildings, gathering, 2, false) and
+		_tier_state(pottery_buildings, early_farm, 2, true) and
+		_tier_state(pottery_buildings, early_weaving, 2, false) and
+		_tier_state(pottery_buildings, pottery_weaving, 2, true))
+
+	_grant_technology(ext, compiled, "tech.guild_organization", 3, 2)
+	_run_day(ext, 3)
+	var guild_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("guild tier replaces pottery construction without deleting old assets",
+		_tier_state(guild_buildings, early_farm, 3, false) and
+		_tier_state(guild_buildings, guild_farm, 3, true) and
+		_tier_state(guild_buildings, pottery_weaving, 3, false) and
+		_tier_state(guild_buildings, guild_weaving, 3, true) and
+		_building_count(guild_buildings, gathering) == 1)
+
+	_grant_technology(ext, compiled, "tech.steam_power", 4, 3)
+	_run_day(ext, 4)
+	var steam_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("steam tier is the final constructible subsistence tier",
+		_tier_state(steam_buildings, guild_farm, 4, false) and
+		_tier_state(steam_buildings, steam_farm, 4, true) and
+		_tier_state(steam_buildings, guild_weaving, 4, false) and
+		_tier_state(steam_buildings, steam_weaving, 4, true))
+
+	_grant_technology(ext, compiled, "tech.autonomous_systems", 5, 4)
+	_run_day(ext, 5)
+	var post_industrial: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("post-industrial technology does not create a fifth subsistence tier",
+		_tier_state(post_industrial, steam_farm, 4, true) and
+		_tier_state(post_industrial, steam_weaving, 4, true) and
+		_max_family_tier(post_industrial, "subsistence_food") == 4 and
+		_max_family_tier(post_industrial, "household_cloth") == 4)
+	_expect("upgrade cycles conserve all ledgers",
+		int(stone_report.get("population_error", 1)) == 0 and
+		int(first_production_report.get("population_error", 1)) == 0 and
+		int(pottery_report.get("population_error", 1)) == 0 and
+		int(pottery_report.get("money_error", 1)) == 0 and
+		int(pottery_report.get("goods_error", 1)) == 0)
+
+
+func _grant_technology(ext: Object, compiled: Dictionary, technology_id: String,
+		day: int, sequence: int) -> void:
+	var country: Dictionary = ext.get_country_cell_summary(0)
+	var technologies: PackedStringArray = compiled.technology_ids
+	var queued: Dictionary = ext.submit_country_commands({
+		"opcodes": PackedInt32Array([4]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([sequence]),
+		"target_handles": PackedInt64Array([country.country_handle]),
+		"cell_indices": PackedInt32Array([-1]),
+		"aux_i32": PackedInt32Array([technologies.find(technology_id)]),
+		"stable_ids": PackedStringArray([""]),
+		"display_names": PackedStringArray([""]),
+	})
+	_expect("technology grant queues: %s" % technology_id, bool(queued.get("ok", false)))
+	_expect("technology grant commits: %s" % technology_id,
+		bool(ext.run_country_slice({"day_index": day}).get("done", false)))
+
+
+func _build_command(day: int, sequence: int, owner_handle: int, type_id: int) -> Dictionary:
+	return {
+		"opcodes": PackedInt32Array([10]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([sequence]),
+		"target_handles": PackedInt64Array([owner_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([type_id]),
+		"i64_0": PackedInt64Array([1]),
+		"i64_1": PackedInt64Array([0]),
+	}
+
+
+func _handle_for_signature(snapshot: Dictionary, signature_id: int) -> int:
+	var signatures: PackedInt32Array = snapshot.get("signature_ids", PackedInt32Array())
+	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
+	var row := signatures.find(signature_id)
+	return int(handles[row]) if row >= 0 and row < handles.size() else 0
+
+
+func _building_count(snapshot: Dictionary, type_id: int) -> int:
+	var counts: PackedInt64Array = snapshot.get("building_counts_by_type", PackedInt64Array())
+	return int(counts[type_id]) if type_id >= 0 and type_id < counts.size() else 0
+
+
+func _building_last_output(snapshot: Dictionary, type_id: int) -> int:
+	var group_types: PackedInt32Array = snapshot.get("group_type_ids", PackedInt32Array())
+	var outputs: PackedInt64Array = snapshot.get("last_output", PackedInt64Array())
+	var group := group_types.find(type_id)
+	return int(outputs[group]) if group >= 0 and group < outputs.size() else 0
+
+
+func _tier_state(snapshot: Dictionary, type_id: int, highest_tier: int,
+		constructible: bool) -> bool:
+	var highest: PackedInt32Array = snapshot.get(
+		"building_highest_available_tiers", PackedInt32Array())
+	var available: PackedByteArray = snapshot.get(
+		"building_construction_available", PackedByteArray())
+	return type_id >= 0 and type_id < highest.size() and type_id < available.size() \
+		and int(highest[type_id]) == highest_tier \
+		and bool(available[type_id]) == constructible
+
+
+func _max_family_tier(snapshot: Dictionary, family_id: String) -> int:
+	var family_ids: PackedStringArray = snapshot.get(
+		"building_upgrade_family_ids", PackedStringArray())
+	var family_indices: PackedInt32Array = snapshot.get(
+		"building_upgrade_family_indices", PackedInt32Array())
+	var tiers: PackedInt32Array = snapshot.get("building_upgrade_tiers", PackedInt32Array())
+	var family := family_ids.find(family_id)
+	var maximum := 0
+	for type_id in range(family_indices.size()):
+		if family_indices[type_id] == family and type_id < tiers.size():
+			maximum = maxi(maximum, int(tiers[type_id]))
+	return maximum
 
 func _new_ext(catalog: Dictionary) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
@@ -167,7 +346,7 @@ func _new_ext(catalog: Dictionary) -> Object:
 	for i in range(resources.size()):
 		var reserve_sid: int = ext.register_component(StringName(reserve_slots[i]), 0, 1, false)
 		var extra_sid: int = ext.register_component(StringName(extra_slots[i]), 0, 1, false)
-		var reserve := 1000.0 if resources[i] in ["gold_ore", "silver_ore"] else 0.0
+		var reserve := 1000.0
 		ext.write_f32_range(reserve_sid, 0, PackedFloat32Array([reserve]))
 		ext.write_f32_range(extra_sid, 0, PackedFloat32Array([0.0]))
 	return ext

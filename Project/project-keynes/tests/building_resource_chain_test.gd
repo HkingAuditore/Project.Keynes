@@ -23,8 +23,11 @@ func _run() -> void:
 	var generation_offsets: PackedInt32Array = compiled.building_resource_generation_offsets
 	var behavior_ids: PackedInt32Array = compiled.building_behavior_ids
 	var input_offsets: PackedInt32Array = compiled.building_input_offsets
+	var output_offsets: PackedInt32Array = compiled.building_output_offsets
+	var output_quantities: PackedInt64Array = compiled.building_output_quantities
 	var resource_offsets: PackedInt32Array = compiled.building_resource_offsets
 	var production_resources: PackedInt32Array = compiled.building_production_resource_ids
+	var production_resource_quantities: PackedInt64Array = compiled.building_production_resource_quantities
 	var production_modes: PackedInt32Array = compiled.building_production_resource_modes
 	var farm_type := types.find("subsistence_farm")
 	var corn_farm_type := types.find("landed_estate")
@@ -33,6 +36,34 @@ func _run() -> void:
 	_expect("all modern resources enter sorted building catalog",
 		resources.size() == 35 and resources.has("coal") and resources.has("arable_land") and
 		resources.has("paddy_land") and resources.has("freshwater_fish"))
+	var conversion_ratios := {}
+	var minimum_conversion_ok := true
+	for type_idx in range(types.size()):
+		var extracted := 0
+		for edge in range(resource_offsets[type_idx], resource_offsets[type_idx + 1]):
+			if production_modes[edge] == 0:
+				extracted += int(production_resource_quantities[edge])
+		if extracted <= 0:
+			continue
+		var produced := 0
+		for edge in range(output_offsets[type_idx], output_offsets[type_idx + 1]):
+			produced += int(output_quantities[edge])
+		conversion_ratios[String(types[type_idx])] = float(produced) / float(extracted)
+		minimum_conversion_ok = minimum_conversion_ok and produced >= extracted * 2
+	var distinct_ratios := {}
+	for ratio in conversion_ratios.values():
+		distinct_ratios[int(round(float(ratio) * 1000.0))] = true
+	_expect("extractors use multiple content-level conversion efficiencies",
+		minimum_conversion_ok and distinct_ratios.size() >= 8)
+	_expect("mining efficiency improves across historical building tiers",
+		is_equal_approx(float(conversion_ratios.get("placer_gold_working", 0.0)), 2.0) and
+		is_equal_approx(float(conversion_ratios.get("gold_mine", 0.0)), 20.0) and
+		is_equal_approx(float(conversion_ratios.get("surface_silver_working", 0.0)), 4.0) and
+		is_equal_approx(float(conversion_ratios.get("silver_mine", 0.0)), 20.0) and
+		float(conversion_ratios.get("coal_mine", 0.0)) >
+			float(conversion_ratios.get("steam_coal_mine", 0.0)) and
+		float(conversion_ratios.get("iron_ore_collector", 0.0)) >
+			float(conversion_ratios.get("steam_iron_mine", 0.0)))
 	_expect("farm uses capacity behavior without generated crop resource",
 		behavior_ids[farm_type] == 1 and
 		generation_offsets[farm_type + 1] == generation_offsets[farm_type])
@@ -94,8 +125,9 @@ func _run() -> void:
 		full_output > 0 and int((farm.last_resource as PackedInt64Array)[farm_group]) == 0 and
 		int((farm.last_resource_generated as PackedInt64Array)[farm_group]) == 0)
 	var farm_market: Dictionary = ext.get_market_cell_snapshot(0)
-	_expect("wheat and corn production visibly accumulates in local market inventory",
-		_good_value(farm_market, "wheat_grain") > 0 and _good_value(farm_market, "corn_grain") > 0 and
+	_expect("subsistence grain, vegetables, and corn accumulate in local market inventory",
+		_good_value(farm_market, "grain") > 0 and _good_value(farm_market, "vegetables") > 0 and
+		_good_value(farm_market, "corn_grain") > 0 and
 		int((farm.last_output as PackedInt64Array)[corn_group]) > 0)
 	_expect("mine extracts local coal", int((mine.last_resource as PackedInt64Array)[0]) > 0)
 	_expect("resource report separates capacity checks from extraction",
@@ -186,13 +218,14 @@ func _run_adjacent_fishery(catalog: Dictionary) -> bool:
 	var fish_resource := (catalog.building_resource_ids as PackedStringArray).find("marine_fish")
 	var first_extracted := int((building.last_resource as PackedInt64Array)[group]) if group >= 0 else 0
 	var second_extracted := int((second_building.last_resource as PackedInt64Array)[second_group]) if second_group >= 0 else 0
+	var total_output := int((building.last_output as PackedInt64Array)[group]) + \
+		int((second_building.last_output as PackedInt64Array)[second_group])
 	return bool(report.get("done", false)) and group >= 0 and second_group >= 0 and \
-		int((building.last_output as PackedInt64Array)[group]) + \
-		int((second_building.last_output as PackedInt64Array)[second_group]) > 0 and \
-		first_extracted + second_extracted == 750 and \
+		total_output == 2000 and first_extracted + second_extracted == 250 and \
+		total_output == (first_extracted + second_extracted) * 8 and \
 		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[fish_resource]) == 750 and \
 		is_equal_approx(map.res_marine_fish_extra_change_arr[0], 0.0) and \
-		is_equal_approx(map.res_marine_fish_extra_change_arr[1], -0.75) and \
+		is_equal_approx(map.res_marine_fish_extra_change_arr[1], -0.25) and \
 		is_equal_approx(map.res_marine_fish_extra_change_arr[2], 0.0)
 
 func _run_half_filled_estate(catalog: Dictionary) -> bool:

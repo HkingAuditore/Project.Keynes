@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"radio_equipment"
+display_name = "无线电设备"
+category_id = &"communication"
+technology_tags = PackedStringArray("tech.radio")
+default_price = 65000
+min_price = 6500
+max_price = 650000

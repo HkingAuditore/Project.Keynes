@@ -1241,8 +1241,8 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
   `building_base_wages_due/paid`、奖金、产出收入与商人购买力，不能用铸币掩盖。
 - `wage_plan_ms` 长：比较 active labor keys、当地 cohort/signature 数与消费篮子边数；不得退化
   为 cell×profession 或 cohort×building 稠密矩阵。
-- 金银场景检查 `gold/silver_accepted`、对应 issued money 和 `anchored_money_issued`；只有后者可
-  增加 `_explicit_money_mint`。普通 producer revenue 增长但 anchored=0 时总货币必须不变。
+- 金银场景检查 `gold/silver_accepted`、对应 issued money 和 `bullion_money_issued`；总发行额必须
+  等于两个分项之和并增加 `_explicit_money_mint`。普通 producer revenue 增长但 bullion=0 时总货币必须不变。
 - 电力场景检查 `cycle_flow_produced/consumed/discarded`，committed market electricity stock 必须为
   0。active-cell 性能不得每 cell 扫全部 goods；清零只遍历预编译 `cycle_flow_good_ids`。
 - 现代 124-good 目录会放大 MarketStore、price loop、snapshot 和 event 成本；与旧 5-good building

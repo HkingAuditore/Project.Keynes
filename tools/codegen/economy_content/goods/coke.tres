@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"coke"
+display_name = "焦炭"
+category_id = &"energy"
+technology_tags = PackedStringArray("tech.coke_smelting")
+default_price = 13000
+min_price = 1300
+max_price = 130000

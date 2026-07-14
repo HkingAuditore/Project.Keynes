@@ -170,6 +170,16 @@ func _initialize() -> void:
 		failures.append("iron density still behaves like a raw absolute threshold")
 	if String(sheep_row.get("density", "")) != "稀少":
 		failures.append("sheep density did not use its resource-specific reference scale")
+	var gated_resources: Array = view_model._resource_state(0, false, {
+		"enforce_discovery": true,
+		"technology_ids": PackedStringArray(),
+		"enforce_extraction": true,
+		"extractable_resource_ids": {&"timber": true, &"rare_earth": true},
+	})
+	if _find_by_id(gated_resources, "timber").is_empty() \
+			or not _find_by_id(gated_resources, "rare_earth").is_empty() \
+			or not _find_by_id(gated_resources, "iron_ore").is_empty():
+		failures.append("resource dossier did not enforce discovery and extraction technology")
 
 	var population_category: Dictionary = view_model._population_category({
 		"ok": true,
@@ -200,7 +210,18 @@ func _initialize() -> void:
 		"demand_good_indices": PackedInt32Array([0, 1]),
 		"demand_per_capita_daily": PackedInt64Array([800, 40]),
 		"demand_good_stable_ids": PackedStringArray(["grain", "cloth"]),
+		"demand_need_stable_ids": PackedStringArray(["staple_food"]),
+		"demand_need_offsets": PackedInt32Array([0, 1]),
+		"demand_need_indices": PackedInt32Array([0]),
+		"demand_need_variant_offsets": PackedInt32Array([0, 2]),
+		"demand_variant_component_offsets": PackedInt32Array([0, 1, 2]),
+		"demand_component_good_indices": PackedInt32Array([0, 1]),
+		"demand_component_per_capita_daily": PackedInt64Array([800, 40]),
 		"demand_preview_environment_ready": true,
+	}, {
+		"ok": true,
+		"good_ids": PackedStringArray(["grain", "cloth"]),
+		"price": PackedInt32Array([12500, 25000]),
 	})
 	var cohort_rows: Array = population_category.get("cohort_rows", [])
 	if cohort_rows.size() != 1 or not String(cohort_rows[0].get("wealth", "")).contains("40"):
@@ -217,6 +238,23 @@ func _initialize() -> void:
 		failures.append("population dossier did not expose non-zero cashflow sources")
 	elif not String((cohort_rows[0].get("demand_summary", {}) as Dictionary).get("value", "")).begins_with("2 类"):
 		failures.append("population dossier did not collapse demands into a readable summary")
+	else:
+		var demand_rows: Array = cohort_rows[0].get("demand_rows", [])
+		var grain_demand := _find_by_id(demand_rows, "demand_grain")
+		var cloth_demand := _find_by_id(demand_rows, "demand_cloth")
+		var demand_summary: Dictionary = cohort_rows[0].get("demand_summary", {})
+		var demand_groups: Array = cohort_rows[0].get("demand_groups", [])
+		if String(grain_demand.get("quantity", "")) != "0.800" \
+				or String(grain_demand.get("price", "")) != "1.25" \
+				or String(grain_demand.get("daily_cost", "")) != "1":
+			failures.append("population demand detail did not combine quantity with the local grain price")
+		elif String(cloth_demand.get("daily_cost", "")) != "0.1" \
+				or String(demand_summary.get("total_daily_cost", "")) != "1.1":
+			failures.append("population demand detail did not calculate per-capita daily spending")
+		elif demand_groups.size() != 1 \
+				or String(demand_groups[0].get("name", "")) != "主食" \
+				or int(demand_groups[0].get("variant_count", 0)) != 2:
+			failures.append("population demand detail did not preserve substitute grouping")
 
 	var unavailable_population: Dictionary = view_model._population_category({
 		"ok": true,
@@ -237,6 +275,23 @@ func _initialize() -> void:
 	if _find_by_id(unavailable_market.get("insights", []),
 			"market_details_unavailable").is_empty():
 		failures.append("incomplete market snapshot did not report a query failure")
+	var gated_market: Dictionary = view_model._market_category({
+		"ok": true,
+		"market_id": 0,
+		"good_ids": PackedStringArray(["gathered_plants", "autonomous_systems"]),
+		"good_technology_available": PackedByteArray([1, 0]),
+		"stock": PackedInt64Array([1000, 0]),
+		"price": PackedInt32Array([10000, 10000]),
+		"demand_ema": PackedInt64Array([0, 0]),
+		"business_demand_ema": PackedInt64Array([0, 0]),
+		"offered_supply_ema": PackedInt64Array([0, 0]),
+		"cost_anchor_price": PackedInt32Array([0, 0]),
+		"shortage_q16": PackedInt32Array([0, 0]),
+	})
+	var gated_market_rows: Array = gated_market.get("market_rows", [])
+	if gated_market_rows.size() != 1 \
+			or String(gated_market_rows[0].get("id", "")) != "market_gathered_plants":
+		failures.append("market dossier exposed technology-locked goods")
 
 	var daily_cache := {}
 	var first_delta: float = view_model._sample_daily_delta(daily_cache, "0:wheat_grain", 10.0, 4)

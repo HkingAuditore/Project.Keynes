@@ -601,7 +601,7 @@ suit = init_base[r] + init_temp[r]*tn + init_moisture[r]*m
      + init_climate_fit[r] * climate_fit                # 可选最适温湿区间
      + init_province[r] * 2*(province01(family)-0.55)   # 同族共享大尺度地质省
      + init_belt[r]     * 2*(ridge(family)-0.72)        # 同族共享狭长矿带
-reserve0 = max(0, suit)                                 # habitat 不可用时为 0
+reserve0 = max(0, suit) * init_reserve_scale[r]         # habitat 不可用时为 0
 ```
 
 - 数据源全部来自 bake 后已就位的 SoA：`temp/moisture/is_water/elevation/landform/vegetation/has_river/is_lake_seed/has_volcano/cell_pos_x,y`。
@@ -610,6 +610,9 @@ reserve0 = max(0, suit)                                 # habitat 不可用时�
   同时拥有大多数矿物；同族矿物仍在大尺度上相关。所有场由 map seed 派生，可确定性重放。
 - 可选最适区间：
   `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日 `gen_self` 受适宜度削弱；`decay_stress` 控制不适宜气候下的自然衰退。默认全 0，旧资源行为不变。
+- `init_reserve_scale` 在 suitability、地质省和矿带全部求值后统一缩放正储量，只改变数量而不改变
+  资源出现位置。当前内容使用 capacity `1×`、可再生 `2×`、地质/不可再生资源 `8×`；旧档已有
+  reserve 不回填倍率，新建地图才应用。
 - 现有 .tres 调参示例：金属矿按 mafic/felsic/hydrothermal/sedimentary 等 family 共享地质省和矿带；
   `clay` 偏三角洲/河流；`timber` 跟森林植被和温湿适宜度；三类农业容量由地形、水系和气候决定；
   `marine_fish/freshwater_fish` 先由水域 habitat 门控，再以独立资源动态推进。
@@ -2223,6 +2226,10 @@ extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode�
 0..5”稳定去重，先汇总最多 7 格确定产能，再从同一顺序的真实来源格扣减并发布 delta；相邻
 多个渔场共享水域时读取同一个 `_resource_remaining`，不会重复开采。
 
+目录同时编译 `upgrade_family_id/upgrade_tier`。BUILD 在冻结国家科技下计算同族最高可用档，
+旧档只拒绝新建；既有 owner-lot 的生产路径仍只检查自身科技。该规则不增加生产 stage 或存档
+owner-lot 字段，快照仅发布 family/tier/highest/construction-available 冷查询列。
+
 employee role 使用 `adaptive/fixed/none` role ABI。adaptive 工资取当地基础与岗位生活成本
 上限，并向本地岗位合同工资 EMA 按周期涨跌幅收敛。同一 owner 的基础工资义务先汇总再按现金
 稳定比例支付；未足额 owner-lot 本期停产。生产销售后，超过目标业主利润的 25% 形成奖金池。
@@ -2242,13 +2249,14 @@ MapData/DataCore，也不产生全局建筑财务矩阵。
 循环只访问 POD/vector/raw scalar，不访问 Godot Object 或 Dictionary。
 
 现代目录把建筑显式编译为 `collector=0` 或 `industrial=1`。collector 必须有 resource CSR，
-industrial 的 resource CSR 必须为空；两者都可有多个 goods input/output。37 个资源 reserve 与
+industrial 的 resource CSR 必须为空；两者都可有多个 goods input/output。35 个资源 reserve 与
 extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass，经济 runtime 仍只
 在 sample boundary 读取 raw slot pointers 并向 extra-change 发布 delta。
 
 电力生产者由 output 的 `good_storage_modes=cycle_flow` 判定并在同一 cell 的普通生产前执行。
-金银 output 由 `good_monetary_issue_values` 进入锚定发行分支；其余 offer 保持价格降序与商人
-现金封顶规则。
+家庭需求不消费 cycle-flow 电力。金银 output 由 `good_monetary_issue_values` 进入实物锚定发行
+分支并累计 `bullion_money_issued`；其余 offer 保持价格降序与商人现金封顶规则。merchant owner
+只允许两个无商品投入、无雇员、消耗匹配矿藏且单产金/银的早期 collector。
 
 两相生产完成后，将配方计划投入、实际 offer（含 discarded）和输出单位成本聚合进稀疏
 `MarketSignalStore`。多输出建筑可配置 Q16 cost shares；未配置时按冻结参考产值稳定分摊。

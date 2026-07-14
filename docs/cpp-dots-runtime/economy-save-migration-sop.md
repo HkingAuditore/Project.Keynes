@@ -62,8 +62,9 @@ restore 要先配置并完整恢复 PKCN v1，再用当前资源 catalog 调 `co
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v11 与 PKCN v1 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。新增/删除/改 ID
-时必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
+当前 PKEC v11 与 PKCN v1 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。
+本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。
+未来新增/删除/改 ID 若要兼容，必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
 迁移器应：
 
 1. 读取旧 ID 表。
@@ -157,10 +158,11 @@ event/delta ring。详细历史通过独立 PKEJ v1 chunk stream 归档；读入
 
 ## 现代目录兼容边界
 
-153-good/190-building/32-profession 跨时代目录的 good/building/profession/need、存储模式、
-货币锚、劳动岗位与 Price V3 参数均进入 catalog hash。2026-07-13 的劳动关系重排和稀有矿物
-收敛删除了旧 stable IDs；旧目录存档会以明确的 catalog mismatch 拒绝恢复，本期不做跨目录
-库存、signature 或建筑 type remap。周期流电力在 committed boundary 恒为零，发行累计只通过已提交 cohort
+142-good/174-building/32-profession 跨时代目录的 good/building/profession/need、升级族与档位、
+存储模式、货币锚、劳动岗位与 Price V3 参数均进入 catalog hash。2026-07-14 的服务/轨道链删除、
+自给升级族与核燃料链改变了稳定目录；旧目录存档会以明确的 catalog mismatch 拒绝恢复，本期不做
+跨目录库存、signature 或建筑 type remap。PKEC 仍为 v11，因为 owner-lot 与各 section 的字节布局
+未变。周期流电力在 committed boundary 恒为零，发行累计只通过已提交 cohort
 funds/market stock 与 audit history 体现，不新增独立持久账户。
 
 # PKEC v7 自适应价格与建筑经济计划迁移

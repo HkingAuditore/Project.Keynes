@@ -143,6 +143,22 @@ The preview reuses the native wealth/environment/substitute/complement demand ke
 committed population/funds/prices and never stores a global cohort-by-good matrix. Preview-local
 saturation is reported but does not mutate runtime metrics or the deterministic state hash.
 
+The same selected-cell query also exposes nested preview CSR for presentation without attempting to
+reconstruct variants from the good aggregate:
+
+```text
+demand_need_offsets                 cohort -> need entry
+demand_need_indices                 need entry -> stable need index
+demand_need_variant_offsets         need entry -> variant entry
+demand_variant_component_offsets    variant entry -> component entry
+demand_component_good_indices       component entry -> stable good index
+demand_component_per_capita_daily   component entry quantity
+```
+
+Variants under one need are substitutes; multiple components under one variant are complements.
+These columns are bounded query output only and do not change catalog identity, save layout, or
+runtime authority.
+
 ## 6. Save and visibility
 
 PKEC schema v11 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
@@ -161,12 +177,26 @@ queries between slices return complete current population, market, and building 
 `snapshot_source=committed`. Queries are read-only, never expose a global live matrix, and never show
 a normal "details pending" UI state.
 
-The optional world-setup test bootstrap is OFF by default. When explicitly enabled it gives every
-passable settlement a distribution center, places collectors only where local resource reserves can
-support their recipes, and distributes each industrial type across a bounded deterministic subset
-of cells while preferring local upstream outputs. It derives profession cohorts only from the
-resulting local owner/employee job capacity, then fills thirty days of stock. This is a development
+The optional world-setup test bootstrap is OFF by default. When explicitly enabled it uses the
+mid-Stone-Age technology set, places collectors only where discovered local/adjacent reserves can
+support their recipes, and places unlocked industrial chains only where every input has a local
+producer. It derives profession cohorts from local owner/employee job capacity but leaves all
+employment counters and market stock at zero for the native graph to fill. This is a development
 fixture, not a production historical population provider.
+
+Gold and silver deposits are intentionally early-visible monetary anchors. Gathering technology
+unlocks low-yield merchant-owned gold and silver workings with no goods inputs or employees; they
+extract the matching real deposit and output only bullion. Later employee-bearing mines remain
+industrialist-owned production. Accepted bullion uses the native issue path, publishes
+`bullion_money_issued` plus gold/silver splits, and remains inside exact money and goods audits.
+
+Player Inspector visibility is technology-filtered without changing native authority. Market
+snapshots retain the complete dense goods catalog for stable indices, save, and hashing, while the
+ViewModel renders only rows whose `good_technology_available` value is true. Natural-resource
+reserves remain physically present in MapData; the ViewModel renders only resources that satisfy
+`discovery_technology_tags` and have at least one technology-available collector in the selected
+cell's country. Missing snapshot metadata fails open so stale/unavailable native detail does not
+silently erase the whole dossier.
 
 ## 7. Source map
 
@@ -199,3 +229,15 @@ slots and publishes resource extraction through `extra_change`.
 PKEC v8 extends owner-lot/role state with adaptive contract wages, living-cost and local-wage
 anchors, base/bonus settlement and wage suspension. These fields, v7 building economics, and sparse
 market/labor signals are authoritative deterministic state in save round-trip and hashing.
+
+Building input categories compile to native candidate CSR with good quality and Q16 efficiency;
+candidate selection remains technology-gated, deterministic, and native-owned. Merchant cohorts
+may not own ordinary production. The only merchant-owner profiles are the two early bullion
+collectors described above; both GDScript and native catalog validation enforce their exact recipe.
+
+Building upgrade families compile stable family IDs and per-type tiers. Construction checks the
+highest technology-available tier and rejects an older BUILD with
+`building_tier_obsolete_for_construction`; production checks only the building's own technology, so
+existing older assets continue operating. Building snapshots expose family indices, tiers, highest
+available tiers, and construction availability. These catalog additions change the catalog hash but
+not the PKEC v11 byte layout.

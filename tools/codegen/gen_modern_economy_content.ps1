@@ -1,4 +1,7 @@
-param([string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path)
+param(
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path,
+    [switch]$Check
+)
 
 $ErrorActionPreference = 'Stop'
 $project = Join-Path $RepoRoot 'Project/project-keynes'
@@ -8,10 +11,39 @@ $professionsDir = Join-Path $project 'data/economy/professions'
 $needsDir = Join-Path $project 'data/economy/needs'
 $plansDir = Join-Path $project 'data/economy/consumption_plans'
 $resourcesDir = Join-Path $project 'data/resources'
+$curatedContentDir = Join-Path $PSScriptRoot 'economy_content'
 $utf8 = [System.Text.UTF8Encoding]::new($false)
+$managedPaths = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
 
 function Write-Utf8([string]$Path, [string]$Content) {
-    [System.IO.File]::WriteAllText($Path, ($Content.TrimEnd() + "`n"), $utf8)
+    [void]$managedPaths.Add([System.IO.Path]::GetFullPath($Path))
+    $expected = $Content.TrimEnd() + "`n"
+    if ($Check) {
+        if (-not (Test-Path -LiteralPath $Path)) { throw "generated file missing: $Path" }
+        $actual = [System.IO.File]::ReadAllText($Path).Replace("`r`n", "`n")
+        if ($actual -ne $expected.Replace("`r`n", "`n")) {
+            throw "generated file stale: $Path"
+        }
+        return
+    }
+    [System.IO.File]::WriteAllText($Path, $expected, $utf8)
+}
+
+function Sync-CuratedDirectory([string]$Source, [string]$Target) {
+    if (-not (Test-Path -LiteralPath $Source)) { throw "curated content directory missing: $Source" }
+    foreach ($template in Get-ChildItem -LiteralPath $Source -Filter '*.tres' -File | Sort-Object Name) {
+        $content = [System.IO.File]::ReadAllText($template.FullName)
+        Write-Utf8 (Join-Path $Target $template.Name) $content
+    }
+}
+
+function Assert-FullyManaged([string]$Directory) {
+    foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter '*.tres' -File) {
+        if (-not $managedPaths.Contains([System.IO.Path]::GetFullPath($file.FullName))) {
+            throw "unmanaged economy content file: $($file.FullName)"
+        }
+    }
 }
 function PSArray([string[]]$Values) {
     if ($Values.Count -eq 0) { return 'PackedStringArray()' }
@@ -35,7 +67,7 @@ $resourceRows = @(
     @('copper_ore','铜矿','copper_ore'), @('iron_ore','铁矿','iron_ore'),
     @('gold_ore','金矿','gold'), @('silver_ore','银矿','silver'),
     @('salt','盐','salt'), @('rubber_tree','橡胶树','latex'),
-    @('saltpeter','硝石','saltpeter'), @('rare_earth','稀土矿','rare_earth_ore'),
+    @('saltpeter','硝石','saltpeter'), @('rare_earth','战略矿产','rare_earth_ore'),
     @('clay','黏土','clay'), @('horses','马匹','horses'),
     @('wild_game','野生动物','game_meat'), @('spice_plants','香料植物','spices'),
     @('flax','亚麻','flax_fiber'), @('cotton','棉花','cotton_fiber'),
@@ -59,9 +91,9 @@ $naturalResourceRows += @(
 $processedGroups = [ordered]@{
     forestry = @('lumber','wood_pulp','paper','packaging','printed_materials','furniture')
     construction = @('cut_stone','bricks','lime','cement','concrete','glass','construction_components')
-    food = @('grain','flour','bread','rice_food','corn_food','potato_food','animal_feed','edible_oil','processed_food','dairy_products','beef','mutton','pork','canned_fish','beverages')
+    food = @('grain','flour','bread','rice_food','corn_food','potato_food','edible_oil','processed_food','dairy_products','beef','mutton','pork','canned_fish','beverages')
     textile = @('fur','raw_hide','leather','wool','flax_yarn','cotton_yarn','textile','cloth','synthetic_fiber','clothing','footwear')
-    chemicals = @('refined_fuel','lubricants','petrochemicals','plastics','synthetic_rubber','industrial_chemicals','fertilizer','explosives','soap','detergent','pharmaceuticals')
+    chemicals = @('refined_fuel','lubricants','petrochemicals','plastics','synthetic_rubber','industrial_chemicals','fertilizer','explosives','soap','detergent','pharmaceuticals','nuclear_fuel')
     metals = @('pig_iron','steel','stainless_steel','copper','aluminum','tin','lead','zinc','manganese_alloy','rare_earth_metals','wire')
     machinery = @('tools','machine_parts','industrial_machinery','agricultural_machinery','electric_motor','engines','batteries','electrical_equipment','electronic_components','semiconductors','computers','telecom_equipment','household_appliances','automobiles','railway_equipment')
     consumer = @('jewelry','clean_water')
@@ -74,35 +106,40 @@ function Add-Good([string]$Id, [string]$Name, [string]$Category) {
     $goods[$Id] = @{ name=$Name; category=$Category }
 }
 $goodNames = @{
-    logs='原木'; raw_stone='原石'; vegetables='蔬菜'; wheat_grain='小麦'; rice_grain='稻米'; corn_grain='玉米'; potatoes='马铃薯'; coal='煤炭'; crude_oil='原油'; natural_gas='天然气'; copper_ore='铜矿石'; iron_ore='铁矿石'; gold='黄金'; silver='白银'; salt='食盐'; latex='天然乳胶'; saltpeter='硝石'; rare_earth_ore='稀土精矿'; clay='黏土'; horses='马匹'; game_meat='野味'; spices='香料'; flax_fiber='亚麻纤维'; cotton_fiber='棉纤维'; cattle='牛'; sheep='羊'; pigs='猪'; medicinal_herbs='药材'; raw_water='原水'; fish='鱼类'; bauxite='铝土矿'; limestone='石灰石'; silica_sand='硅砂'; phosphate_rock='磷矿石'; tin_ore='锡矿石'; lead_ore='铅矿石'; zinc_ore='锌矿石'; manganese_ore='锰矿石'; sulfur='硫磺';
-    lumber='锯材'; wood_pulp='纸浆'; paper='纸张'; packaging='包装材料'; printed_materials='印刷品'; furniture='家具'; cut_stone='石材'; bricks='砖'; lime='石灰'; cement='水泥'; concrete='混凝土'; glass='玻璃'; construction_components='建筑构件'; grain='混合谷物'; flour='面粉'; bread='面包'; rice_food='米制食品'; corn_food='玉米食品'; potato_food='薯类食品'; animal_feed='饲料'; edible_oil='食用油'; processed_food='加工食品'; dairy_products='乳制品'; beef='牛肉'; mutton='羊肉'; pork='猪肉'; canned_fish='水产罐头'; beverages='饮料'; fur='皮毛'; raw_hide='生皮'; leather='皮革'; wool='羊毛'; flax_yarn='亚麻纱'; cotton_yarn='棉纱'; textile='纺织品'; cloth='布料'; synthetic_fiber='合成纤维'; clothing='服装'; footwear='鞋靴'; refined_fuel='成品燃料'; lubricants='润滑油'; petrochemicals='石化原料'; plastics='塑料'; synthetic_rubber='合成橡胶'; industrial_chemicals='工业化学品'; fertilizer='化肥'; explosives='炸药'; soap='肥皂'; detergent='清洁剂'; pharmaceuticals='药品'; pig_iron='生铁'; steel='钢材'; stainless_steel='不锈钢'; copper='铜'; aluminum='铝'; tin='锡'; lead='铅'; zinc='锌'; manganese_alloy='锰合金'; rare_earth_metals='稀土金属'; wire='电线'; tools='工具'; machine_parts='机械零件'; industrial_machinery='工业机械'; agricultural_machinery='农业机械'; electric_motor='电动机'; engines='发动机'; batteries='电池'; electrical_equipment='电气设备'; electronic_components='电子元件'; semiconductors='半导体'; computers='计算机'; telecom_equipment='通信设备'; household_appliances='家用电器'; automobiles='汽车'; railway_equipment='铁路设备'; jewelry='珠宝'; clean_water='净水'; electricity='电力'
+    logs='原木'; raw_stone='原石'; vegetables='蔬菜'; wheat_grain='小麦'; rice_grain='稻米'; corn_grain='玉米'; potatoes='马铃薯'; coal='煤炭'; crude_oil='原油'; natural_gas='天然气'; copper_ore='铜矿石'; iron_ore='铁矿石'; gold='黄金'; silver='白银'; salt='食盐'; latex='天然乳胶'; saltpeter='硝石'; rare_earth_ore='战略矿物精矿'; clay='黏土'; horses='马匹'; game_meat='野味'; spices='香料'; flax_fiber='亚麻纤维'; cotton_fiber='棉纤维'; cattle='牛'; sheep='羊'; pigs='猪'; medicinal_herbs='药材'; raw_water='原水'; fish='鱼类'; bauxite='铝土矿'; limestone='石灰石'; silica_sand='硅砂'; phosphate_rock='磷矿石'; tin_ore='锡矿石'; lead_ore='铅矿石'; zinc_ore='锌矿石'; manganese_ore='锰矿石'; sulfur='硫磺';
+    lumber='锯材'; wood_pulp='纸浆'; paper='纸张'; packaging='包装材料'; printed_materials='印刷品'; furniture='家具'; cut_stone='石材'; bricks='砖'; lime='石灰'; cement='水泥'; concrete='混凝土'; glass='玻璃'; construction_components='建筑构件'; grain='混合谷物'; flour='面粉'; bread='面包'; rice_food='米制食品'; corn_food='玉米食品'; potato_food='薯类食品'; animal_feed='饲料'; edible_oil='食用油'; processed_food='加工食品'; dairy_products='乳制品'; beef='牛肉'; mutton='羊肉'; pork='猪肉'; canned_fish='水产罐头'; beverages='饮料'; fur='皮毛'; raw_hide='生皮'; leather='皮革'; wool='羊毛'; flax_yarn='亚麻纱'; cotton_yarn='棉纱'; textile='纺织品'; cloth='布料'; synthetic_fiber='合成纤维'; clothing='服装'; footwear='鞋靴'; refined_fuel='成品燃料'; lubricants='润滑油'; petrochemicals='石化原料'; plastics='塑料'; synthetic_rubber='合成橡胶'; industrial_chemicals='工业化学品'; fertilizer='化肥'; explosives='炸药'; soap='肥皂'; detergent='清洁剂'; pharmaceuticals='药品'; nuclear_fuel='核燃料'; pig_iron='生铁'; steel='钢材'; stainless_steel='不锈钢'; copper='铜'; aluminum='铝'; tin='锡'; lead='铅'; zinc='锌'; manganese_alloy='锰合金'; rare_earth_metals='战略矿物材料'; wire='电线'; tools='工具'; machine_parts='机械零件'; industrial_machinery='工业机械'; agricultural_machinery='农业机械'; electric_motor='电动机'; engines='发动机'; batteries='电池'; electrical_equipment='电气设备'; electronic_components='电子元件'; semiconductors='半导体'; computers='计算机'; telecom_equipment='通信设备'; household_appliances='家用电器'; automobiles='汽车'; railway_equipment='铁路设备'; jewelry='珠宝'; clean_water='净水'; electricity='电力'
 }
 foreach ($row in $resourceRows) { Add-Good $row[2] $goodNames[$row[2]] 'primary' }
 foreach ($category in $processedGroups.Keys) {
     foreach ($id in $processedGroups[$category]) {
-        if (-not $goods.Contains($id)) { Add-Good $id $goodNames[$id] $category }
+        if (-not $goods.Contains($id)) { Add-Good $id $goodNames[$id] $(if ($id -eq 'tools') { 'tools' } else { $category }) }
     }
 }
 if ($goods.Count -lt 110) { throw "generated good baseline unexpectedly small: $($goods.Count)" }
 
-$categoryPrice = @{ primary=10000; forestry=18000; construction=22000; food=16000; textile=24000; chemicals=30000; metals=36000; machinery=52000; consumer=60000; energy=12000 }
+$categoryPrice = @{ primary=10000; forestry=18000; construction=22000; food=16000; textile=24000; chemicals=30000; metals=36000; machinery=52000; tools=52000; consumer=60000; energy=12000 }
 function Technology-For-Good([string]$Id) {
     $technologyByGood = @{
-        logs='tech.gathering'; lumber='tech.gathering'; game_meat='tech.hunting'
+        logs='tech.gathering'; lumber='tech.gathering'; game_meat='tech.hunting'; gold='tech.gathering'; silver='tech.gathering'
         fur='tech.hunting'; raw_hide='tech.hunting'; processed_food='tech.fire_control'
+        cloth='tech.gathering'; grain='tech.pottery'; vegetables='tech.pottery'
         tools='tech.stone_knapping'; clay='tech.pottery'; furniture='tech.pottery'
         copper_ore='tech.bronze_casting'; copper='tech.bronze_casting'
         tin_ore='tech.bronze_casting'; tin='tech.bronze_casting'
+        corn_grain='tech.manuscript_culture'; pigs='tech.manuscript_culture'; horses='tech.manuscript_culture'
+        cattle='tech.guild_organization'; sheep='tech.guild_organization'
+        flax_fiber='tech.oceanic_navigation'; cotton_fiber='tech.oceanic_navigation'
+        spices='tech.oceanic_navigation'; latex='tech.oceanic_navigation'; medicinal_herbs='tech.oceanic_navigation'
         raw_stone='tech.masonry'; silica_sand='tech.masonry'; cut_stone='tech.masonry'
         glass='tech.masonry'; construction_components='tech.masonry'
-        cloth='tech.guild_organization'; printed_materials='tech.printing_press'
+        printed_materials='tech.printing_press'
         industrial_machinery='tech.precision_engineering'; coal='tech.coke_smelting'
         iron_ore='tech.steam_power'; steel='tech.steam_power'
         railway_equipment='tech.steam_power'; electricity='tech.electrification'
         electrical_equipment='tech.electrification'; electronic_components='tech.radio'
-        pharmaceuticals='tech.nuclear_fission'; semiconductors='tech.digital_computing'
+        pharmaceuticals='tech.nuclear_fission'; nuclear_fuel='tech.nuclear_fission'; semiconductors='tech.digital_computing'
         computers='tech.digital_computing'; telecom_equipment='tech.networked_computing'
-        batteries='tech.autonomous_systems'; electric_motor='tech.autonomous_systems'
+        batteries='tech.legacy_modern_economy'; electric_motor='tech.legacy_modern_economy'
         rare_earth_ore='tech.geological_prospecting'; rare_earth_metals='tech.advanced_metallurgy'
     }
     if ($technologyByGood.ContainsKey($Id)) { return $technologyByGood[$Id] }
@@ -139,6 +176,8 @@ id = &"$id"
 display_name = "$($g.name)"
 category_id = &"$($g.category)"
 technology_tags = PackedStringArray("industry.$($g.category)", "$technology")
+production_quality_level = $(if ($id -eq 'tools') { 3 } else { 0 })
+production_efficiency_q16 = 65536
 storage_mode = "$mode"
 monetary_issue_value = $issue
 default_price = $price
@@ -216,10 +255,10 @@ technology_tags = PackedStringArray("$($row[3])")
 }
 
 $needRows = @(
-    @('staple_food','主食'), @('protein','蛋白质'), @('produce','蔬果'), @('clothing','衣着'),
-    @('housing','住房维护'), @('household_goods','家庭用品'), @('hygiene','卫生'), @('healthcare','医疗'),
-    @('home_energy','家庭能源'), @('transport','交通'), @('communication','通信'),
-    @('education_culture','教育文化'), @('recreation','娱乐'), @('durable_goods','耐用品'), @('luxury','奢侈品')
+    @('staple_food','主食',65536), @('protein','蛋白质',65536), @('produce','蔬果',65536), @('clothing','衣着',65536),
+    @('housing','住房维护',65536), @('household_goods','家庭用品',32768), @('hygiene','卫生',65536), @('healthcare','医疗',65536),
+    @('home_energy','家庭能源',65536), @('transport','交通',32768), @('communication','通信',32768),
+    @('education_culture','教育文化',0), @('recreation','娱乐',0), @('durable_goods','耐用品',0), @('luxury','奢侈品',0)
 )
 foreach ($row in $needRows) {
     Write-Utf8 (Join-Path $needsDir "$($row[0]).tres") @"
@@ -229,20 +268,21 @@ foreach ($row in $needRows) {
 script = ExtResource("1")
 id = &"$($row[0])"
 display_name = "$($row[1])"
+living_cost_weight_q16 = $($row[2])
 "@
 }
 
 $needSpecs = @(
-    @{id='staple_food'; variants=@(@('grain'),@('bread'),@('rice_food'),@('potato_food'))},
-    @{id='protein'; variants=@(@('beef'),@('mutton'),@('pork'),@('canned_fish'))},
-    @{id='produce'; variants=@(@('processed_food'))}, @{id='clothing'; variants=@(@('clothing'),@('cloth'),@('fur'),@('footwear'))},
-    @{id='housing'; variants=@(@('construction_components'))}, @{id='household_goods'; variants=@(@('furniture'))},
+    @{id='staple_food'; variants=@(@('grain'),@('bread'),@('rice_food'),@('potato_food'),@('gathered_plants'))},
+    @{id='protein'; variants=@(@('beef'),@('mutton'),@('pork'),@('canned_fish'),@('game_meat'))},
+    @{id='produce'; variants=@(@('processed_food'),@('gathered_plants'),@('vegetables'))}, @{id='clothing'; variants=@(@('clothing'),@('cloth'),@('fur'),@('footwear'))},
+    @{id='housing'; variants=@(@('construction_components'))}, @{id='household_goods'; variants=@(@('furniture'),@('pottery'))},
     @{id='hygiene'; variants=@(@('soap','detergent'))}, @{id='healthcare'; variants=@(@('pharmaceuticals'))},
-    @{id='home_energy'; variants=@(@('electricity'),@('refined_fuel'),@('natural_gas'))},
+    @{id='home_energy'; variants=@(@('refined_fuel'),@('natural_gas'))},
     @{id='transport'; variants=@(@('automobiles','refined_fuel'),@('railway_equipment'))},
-    @{id='communication'; variants=@(@('telecom_equipment'))},
-    @{id='education_culture'; variants=@(@('printed_materials'),@('computers'))},
-    @{id='recreation'; variants=@(@('computers'),@('horses'))}, @{id='durable_goods'; variants=@(@('household_appliances'))},
+    @{id='communication'; variants=@(@('telecom_equipment'),@('radio_equipment'))},
+    @{id='education_culture'; variants=@(@('printed_materials'),@('computers'),@('manuscripts'),@('codices'))},
+    @{id='recreation'; variants=@(@('computers'),@('horses'))}, @{id='durable_goods'; variants=@(@('household_appliances'),@('autonomous_systems'))},
     @{id='luxury'; variants=@(@('jewelry'),@('beverages'))}
 )
 function Write-Plan([string]$Id, [string]$Name, [int]$Scale) {
@@ -263,7 +303,7 @@ function Write-Plan([string]$Id, [string]$Name, [int]$Scale) {
         }
         $needOffsets += $v
     }
-    if ($componentIds.Count -gt 32) { throw "plan component limit: $Id" }
+    if ($componentIds.Count -gt 64) { throw "plan component limit: $Id" }
     $content = @"
 [gd_resource type="Resource" script_class="ConsumptionPlanProfile" load_steps=2 format=3]
 [ext_resource type="Script" path="res://scripts/data/consumption_plan_profile.gd" id="1"]
@@ -300,14 +340,14 @@ $deps = @{
     cut_stone=@('raw_stone','tools'); bricks=@('clay','coal'); lime=@('limestone','coal'); cement=@('lime','clay'); concrete=@('cement','raw_stone'); glass=@('silica_sand','coal'); construction_components=@('concrete','steel','glass','bricks','cut_stone');
     grain=@('wheat_grain','rice_grain','corn_grain'); flour=@('grain'); bread=@('flour','clean_water'); rice_food=@('rice_grain','clean_water'); corn_food=@('corn_grain','clean_water'); potato_food=@('potatoes','edible_oil'); animal_feed=@('grain'); edible_oil=@('corn_grain'); processed_food=@('vegetables','game_meat','dairy_products','corn_food','spices','salt','packaging'); dairy_products=@('cattle','clean_water'); beef=@('cattle'); mutton=@('sheep'); pork=@('pigs'); canned_fish=@('fish','salt','packaging'); beverages=@('clean_water','sugar_placeholder');
     raw_hide=@('cattle'); leather=@('raw_hide','industrial_chemicals'); wool=@('sheep'); flax_yarn=@('flax_fiber'); cotton_yarn=@('cotton_fiber'); textile=@('flax_yarn','cotton_yarn','wool'); cloth=@('textile'); synthetic_fiber=@('petrochemicals'); clothing=@('cloth','synthetic_fiber','fur'); footwear=@('leather','synthetic_rubber','latex');
-    refined_fuel=@('crude_oil'); lubricants=@('crude_oil'); petrochemicals=@('crude_oil','natural_gas'); plastics=@('petrochemicals'); synthetic_rubber=@('petrochemicals','sulfur'); industrial_chemicals=@('sulfur','salt'); fertilizer=@('phosphate_rock','natural_gas'); explosives=@('saltpeter','sulfur'); soap=@('edible_oil','salt'); detergent=@('petrochemicals','industrial_chemicals'); pharmaceuticals=@('medicinal_herbs','industrial_chemicals');
-    pig_iron=@('iron_ore','coal'); steel=@('pig_iron','coal'); stainless_steel=@('steel','rare_earth_metals','manganese_alloy'); copper=@('copper_ore','coal'); aluminum=@('bauxite','electricity'); tin=@('tin_ore','coal'); lead=@('lead_ore','coal'); zinc=@('zinc_ore','coal'); manganese_alloy=@('manganese_ore','steel'); rare_earth_metals=@('rare_earth_ore','industrial_chemicals'); wire=@('copper','plastics');
+    refined_fuel=@('crude_oil'); lubricants=@('crude_oil'); petrochemicals=@('crude_oil','natural_gas'); plastics=@('petrochemicals'); synthetic_rubber=@('petrochemicals','sulfur'); industrial_chemicals=@('sulfur','salt'); fertilizer=@('phosphate_rock','natural_gas'); explosives=@('saltpeter','sulfur'); soap=@('edible_oil','salt'); detergent=@('petrochemicals','industrial_chemicals'); pharmaceuticals=@('medicinal_herbs','industrial_chemicals'); nuclear_fuel=@('rare_earth_metals');
+    pig_iron=@('iron_ore','coal'); steel=@('pig_iron','coal'); stainless_steel=@('steel','rare_earth_metals','manganese_alloy'); copper=@('copper_ore','coal'); aluminum=@('bauxite','electricity'); tin=@('tin_ore','coal'); lead=@('lead_ore','coal'); zinc=@('zinc_ore','coal'); manganese_alloy=@('manganese_ore','steel'); rare_earth_metals=@('rare_earth_ore'); wire=@('copper','plastics');
     tools=@('steel','lumber'); machine_parts=@('steel','lubricants'); industrial_machinery=@('machine_parts','electric_motor'); agricultural_machinery=@('industrial_machinery','engines'); electric_motor=@('copper','steel'); engines=@('steel','aluminum','machine_parts'); batteries=@('lead','rare_earth_metals','industrial_chemicals'); electrical_equipment=@('wire','steel','plastics'); electronic_components=@('copper','tin','zinc','plastics','rare_earth_metals'); semiconductors=@('silica_sand','industrial_chemicals','electricity'); computers=@('semiconductors','electronic_components','plastics'); telecom_equipment=@('semiconductors','wire','batteries','plastics'); household_appliances=@('electrical_equipment','stainless_steel','plastics'); automobiles=@('engines','steel','batteries','synthetic_rubber'); railway_equipment=@('stainless_steel','engines','electrical_equipment'); jewelry=@('gold','silver','rare_earth_metals'); clean_water=@('raw_water','industrial_chemicals'); electricity=@('coal')
 }
 $deps.beverages = @('clean_water','processed_food','packaging')
 
 function Collector-Id([string]$Resource) {
-    switch ($Resource) { 'wheat' {'subsistence_farm'} 'corn' {'landed_estate'} 'coal' {'coal_mine'} 'gold_ore' {'gold_mine'} 'silver_ore' {'silver_mine'} default {"${Resource}_collector"} }
+    switch ($Resource) { 'wheat' {'wheat_farm'} 'corn' {'landed_estate'} 'coal' {'coal_mine'} 'gold_ore' {'gold_mine'} 'silver_ore' {'silver_mine'} default {"${Resource}_collector"} }
 }
 function Collector-Display-Name([string]$Resource,[string]$ResourceName) {
     switch ($Resource) {
@@ -327,24 +367,52 @@ function Worker-For-Resource([string]$Resource) {
     return 'miner'
 }
 function Technology-For-Building([string]$Id) {
-    if ($Id -in @('subsistence_farm','rice_collector','potato_collector','fertile_soil_collector')) { return 'tech.pottery' }
     if ($Id -in @('landed_estate','pigs_collector','horses_collector')) { return 'tech.manuscript_culture' }
     if ($Id -in @('cattle_collector','sheep_collector')) { return 'tech.guild_organization' }
     if ($Id -in @('flax_collector','cotton_collector','spice_plants_collector','rubber_tree_collector','medicinal_herbs_collector')) { return 'tech.oceanic_navigation' }
-    if ($Id -eq 'textile_workshop') { return 'tech.guild_organization' }
     if ($Id -eq 'wild_game_collector') { return 'tech.hunting' }
     if ($Id -in @('timber_collector','lumber_plant')) { return 'tech.gathering' }
     if ($Id -eq 'electricity_plant') { return 'tech.electrification' }
     if ($Id -eq 'rare_earth_collector') { return 'tech.geological_prospecting' }
     if ($Id -eq 'rare_earth_metals_plant') { return 'tech.advanced_metallurgy' }
+    if ($Id -eq 'nuclear_fuel_plant') { return 'tech.nuclear_fission' }
     if ($Id -eq 'nuclear_power_plant') { return 'tech.nuclear_fission' }
     return 'tech.legacy_modern_economy'
 }
+function Extraction-Ratio-For-Building([string]$Id) {
+    if ($Id -in @('marine_fish_collector','freshwater_fish_collector')) { return 8 }
+    if ($Id -in @('cattle_collector','sheep_collector','pigs_collector','horses_collector')) { return 10 }
+    if ($Id -in @('clay_collector','limestone_collector','silica_sand_collector','stone_collector','salt_collector')) { return 10 }
+    if ($Id -eq 'timber_collector') { return 16 }
+    if ($Id -eq 'wild_game_collector') { return 20 }
+    if ($Id -in @('fresh_water_collector','oil_collector','natural_gas_collector','rare_earth_collector')) { return 25 }
+    return 20
+}
 function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[string]$Worker,[string[]]$Inputs,[string[]]$Outputs,[string[]]$Resources,[string[]]$ResourceModes,[string]$Behavior,[string]$Category) {
-    # Ten output units per building/day keeps placeholder recipes viable once
-    # wages and replacement-cost pricing are authoritative.
-    $unitQty = if ($Id -eq 'marine_fish_collector') { [long]1000 } elseif ($Id -eq 'freshwater_fish_collector') { [long]400 } else { [long]10000 }
-    $inputQty = @($Inputs | ForEach-Object { [long]1000 }); $outputQty = @($Outputs | ForEach-Object { $unitQty }); $resourceQty = @($Resources | ForEach-Object { $unitQty })
+    # Resource-to-goods conversion is content-level extraction efficiency.
+    # It varies by collection method and technology instead of using 1:1 or a global ratio.
+    $unitQty = switch ($Id) {
+        'marine_fish_collector' { [long]1000 }
+        'freshwater_fish_collector' { [long]400 }
+        'electricity_plant' { [long]9000 }
+        'gas_power_plant' { [long]12000 }
+        'oil_power_plant' { [long]10500 }
+        'nuclear_power_plant' { [long]18000 }
+        default { [long]10000 }
+    }
+    $inputQty = @($Inputs | ForEach-Object { [long]1000 })
+    $outputQty = @($Outputs | ForEach-Object { $unitQty })
+    $outputTotal = [long](($outputQty | Measure-Object -Sum).Sum)
+    $extractCount = @($ResourceModes | Where-Object { $_ -eq 'extract' }).Count
+    $extractionRatio = Extraction-Ratio-For-Building $Id
+    $extractQty = if ($extractCount -gt 0) {
+        [long][Math]::Max(1, [Math]::Floor($outputTotal / ($extractionRatio * $extractCount)))
+    } else { [long]0 }
+    $resourceQty = @(
+        for ($i = 0; $i -lt $Resources.Count; $i++) {
+            if ($ResourceModes[$i] -eq 'extract') { $extractQty } else { $unitQty }
+        }
+    )
     $resourceAccessModes = @($Resources | ForEach-Object {
         if ($_ -in @('fresh_water','marine_fish','freshwater_fish')) { 'local_and_adjacent' } else { 'local' }
     })
@@ -352,7 +420,7 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     [long[]]$roleSlots = @()
     [string[]]$roleWagePolicies = @()
     [long[]]$roleWages = @()
-    if ($Id -in @('subsistence_farm','rice_collector','potato_collector','fertile_soil_collector')) {
+    if ($Id -in @('rice_collector','potato_collector','fertile_soil_collector')) {
         $Owner = 'subsistence_farmer'
     } elseif ($Id -in @('landed_estate','pigs_collector','horses_collector')) {
         $Owner = 'landlord'; $roleIds = @('serf'); $roleSlots = @(10)
@@ -369,12 +437,6 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         $Owner = 'forager'
     } elseif ($Id -eq 'lumber_plant') {
         $Owner = 'artisan'
-    } elseif ($Id -eq 'textile_workshop') {
-        $Owner = 'guild_master'; $roleIds = @('apprentice', 'journeyman'); $roleSlots = @(4, 6)
-        $roleWagePolicies = @('fixed', 'fixed'); $roleWages = @(1000, 3000)
-    } elseif ($Id -eq 'distribution_center') {
-        $Owner = 'merchant'; $roleIds = @('industrial_worker', 'transport_worker', 'manager'); $roleSlots = @(10, 5, 2)
-        $roleWagePolicies = @('adaptive', 'adaptive', 'adaptive'); $roleWages = @(5000, 7000, 9000)
     } elseif ($Kind -eq 'collector') {
         $Owner = 'industrialist'; $roleIds = @($Worker, 'manager'); $roleSlots = @(14, 2)
         $roleWagePolicies = @('adaptive', 'adaptive'); $roleWages = @(5000, 9000)
@@ -389,6 +451,10 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         }
     }
     $technology = Technology-For-Building $Id
+    $inputCategories = @($Inputs | ForEach-Object { if ($_ -eq 'tools') { 'tools' } else { '' } })
+    $inputMinLevels = @($Inputs | ForEach-Object {
+        if ($_ -ne 'tools') { 0 } elseif ($technology -eq 'tech.legacy_modern_economy') { 3 } else { 1 }
+    })
     $generationIds = @(); $generationQty = @(); $floor = 0
 	$targetMargin = if ($Kind -eq 'collector') { 6554 } else { 9830 }
 	$supplyElasticity = if ($Kind -eq 'collector') { 32768 } else { 65536 }
@@ -412,6 +478,8 @@ employee_wage_policy_ids = $(PSArray $roleWagePolicies)
 employee_reference_wages_per_day = $(PI64 $roleWages)
 input_good_ids = $(PSArray $Inputs)
 input_quantities_per_day = $(PI64 $inputQty)
+input_category_ids = $(PSArray $inputCategories)
+input_min_quality_levels = $(PI32 $inputMinLevels)
 output_good_ids = $(PSArray $Outputs)
 output_quantities_per_day = $(PI64 $outputQty)
 target_operating_margin_q16 = $targetMargin
@@ -428,6 +496,50 @@ behavior_id = "$Behavior"
     Write-Utf8 (Join-Path $buildingsDir "$Id.tres") $content
 }
 
+function Write-SelfSufficientBuilding(
+    [string]$Id, [string]$Name, [string]$Technology, [string]$Family,
+    [int]$Tier, [string]$Owner, [string[]]$Outputs, [long[]]$OutputQty,
+    [string[]]$Resources, [long[]]$ResourceQty) {
+    $shares = if ($Outputs.Count -eq 2) { @(32768, 32768) } else { @() }
+    $content = @"
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"$Id"
+display_name = "$Name"
+building_kind = "collector"
+technology_tags = PackedStringArray("$Technology")
+upgrade_family_id = &"$Family"
+upgrade_tier = $Tier
+construction_days = 0
+owner_profession_id = &"$Owner"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray()
+employee_slots_per_building = PackedInt64Array()
+employee_wage_policy_ids = PackedStringArray()
+employee_reference_wages_per_day = PackedInt64Array()
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+output_good_ids = $(PSArray $Outputs)
+output_quantities_per_day = $(PI64 $OutputQty)
+output_cost_shares_q16 = $(PI32 $shares)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = $(PSArray $Resources)
+resource_quantities_per_day = $(PI64 $ResourceQty)
+resource_interaction_modes = $(PSArray @($Resources | ForEach-Object { 'capacity' }))
+resource_access_modes = $(PSArray @($Resources | ForEach-Object { 'local' }))
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "consume_local_resources"
+wage_policy_id = "none"
+wage_per_employee_per_day = 0
+"@
+    Write-Utf8 (Join-Path $buildingsDir "$Id.tres") $content
+}
+
 $buildingIds = [System.Collections.Generic.HashSet[string]]::new()
 foreach ($row in $resourceRows) {
     $sourceRid=$row[0]; $rid=$sourceRid; $outputs=@($row[2]); if ($sourceRid -eq 'wild_game') { $outputs += 'fur' }
@@ -439,17 +551,18 @@ foreach ($row in $resourceRows) {
 	} elseif ($sourceRid -in @('spice_plants','rubber_tree','medicinal_herbs')) {
 		$buildingResources = @('plantation_land','fertile_soil'); $resourceModes = @('capacity','capacity')
 	}
-	$owner = if ($sourceRid -eq 'corn') { 'landlord' } elseif ($sourceRid -in @('wheat','rice','potato','fertile_soil')) { 'subsistence_farmer' } elseif ($sourceRid -in @('spice_plants','flax','cotton','cattle','sheep','pigs','horses','medicinal_herbs')) { 'landlord' } else { 'industrialist' }
+	$owner = if ($sourceRid -eq 'corn') { 'landlord' } elseif ($sourceRid -in @('rice','potato','fertile_soil')) { 'subsistence_farmer' } elseif ($sourceRid -in @('spice_plants','flax','cotton','cattle','sheep','pigs','horses','medicinal_herbs')) { 'landlord' } else { 'industrialist' }
     $behavior = if ($sourceRid -in $cultivatedResourceIds -or $sourceRid -eq 'fertile_soil') { 'consume_local_resources' } elseif ($sourceRid -in @('cattle','sheep','pigs','horses','wild_game','timber')) { 'cultivate_local_resources' } else { 'consume_local_resources' }
     $id=Collector-Id $sourceRid; [void]$buildingIds.Add($id)
     $collectorInputs = @()
-    if ($rid -in @('wheat','rice','corn','potato','fertile_soil','spice_plants','flax','cotton','medicinal_herbs')) { $collectorInputs = @('fertilizer','agricultural_machinery') }
-    elseif ($rid -in @('cattle','sheep','pigs','horses')) { $collectorInputs = @('animal_feed') }
+    if ($rid -in @('wheat','rice','potato','fertile_soil')) { $collectorInputs = @('fertilizer','agricultural_machinery') }
     elseif ($rid -in @('coal','copper_ore','iron_ore','gold_ore','silver_ore','saltpeter','rare_earth','clay','bauxite','limestone','silica_sand','phosphate_rock','tin_ore','lead_ore','zinc_ore','manganese_ore','sulfur')) { $collectorInputs = @('tools','explosives','electricity') }
     elseif ($rid -in @('oil','natural_gas')) { $collectorInputs = @('industrial_machinery','electricity') }
     elseif ($rid -eq 'timber') { $collectorInputs = @('tools') }
-	if ($rid -in @('wheat','corn','coal')) { $collectorInputs = @() }
-	$collectorWorker = if ($sourceRid -in @('wheat','corn')) { '' } else { Worker-For-Resource $sourceRid }
+	if ($rid -in @('corn','coal','cattle','sheep','pigs','horses',
+        'spice_plants','flax','cotton','medicinal_herbs')) { $collectorInputs = @() }
+	if ($rid -eq 'rare_earth') { $collectorInputs = @('tools') }
+	$collectorWorker = if ($sourceRid -eq 'corn') { '' } else { Worker-For-Resource $sourceRid }
     $collectorDisplayName = Collector-Display-Name $sourceRid $row[1]
     Write-Building $id $collectorDisplayName 'collector' $owner $collectorWorker $collectorInputs $outputs $buildingResources $resourceModes $behavior 'primary'
 }
@@ -462,20 +575,47 @@ foreach ($category in $processedGroups.Keys) {
         if (-not $buildingIds.Add($id)) { throw "duplicate building id: $id" }
         $worker = switch ($category) { 'forestry' {'artisan'} 'construction' {'construction_worker'} 'food' {'industrial_worker'} 'textile' {'artisan'} 'chemicals' {'chemist'} 'metals' {'metallurgist'} 'machinery' {'machinist'} 'consumer' {'artisan'} 'energy' {'electrician'} default {'technician'} }
 		$industryOwner = 'industrialist'
-		if ($id -eq 'textile_workshop') { $industryOwner = 'landlord'; $worker = 'worker' }
 		Write-Building $id "$($goodNames[$good])工厂" 'industrial' $industryOwner $worker @($deps[$good]) @($good) @() @() 'none' $category
     }
 }
 foreach ($power in @(
     @('gas_power_plant','燃气发电厂','natural_gas'),
     @('oil_power_plant','燃油发电厂','refined_fuel'),
-    @('nuclear_power_plant','核电站','rare_earth_metals')
+    @('nuclear_power_plant','核电站','nuclear_fuel')
 )) {
     if (-not $buildingIds.Add($power[0])) { throw "duplicate building id: $($power[0])" }
     Write-Building $power[0] $power[1] 'industrial' 'industrialist' 'electrician' @($power[2]) @('electricity') @() @() 'none' 'energy'
 }
-if (-not $buildingIds.Add('distribution_center')) { throw 'duplicate building id: distribution_center' }
-Write-Building 'distribution_center' '配送中心' 'industrial' 'merchant' 'worker' @('paper') @('packaging') @() @() 'none' 'consumer'
+
+# Persistent owner-operated subsistence families. Higher tiers obsolete only
+# new construction; lower tiers remain valid production assets.
+Write-SelfSufficientBuilding 'gathering_ground' '采集地' 'tech.gathering' `
+    'subsistence_food' 1 'forager' @('gathered_plants') @(3000) `
+    @('fertile_soil') @(1000)
+Write-SelfSufficientBuilding 'subsistence_farm' '早期自耕农田' 'tech.pottery' `
+    'subsistence_food' 2 'subsistence_farmer' @('grain','vegetables') @(4000,4000) `
+    @('arable_land','fertile_soil') @(10000,10000)
+Write-SelfSufficientBuilding 'three_field_smallholding' '轮作自耕农田' 'tech.guild_organization' `
+    'subsistence_food' 3 'subsistence_farmer' @('grain','vegetables') @(6000,6000) `
+    @('arable_land','fertile_soil') @(8000,8000)
+Write-SelfSufficientBuilding 'improved_smallholding' '改良自耕农田' 'tech.steam_power' `
+    'subsistence_food' 4 'subsistence_farmer' @('grain','vegetables') @(8000,8000) `
+    @('arable_land','fertile_soil') @(6000,6000)
+Write-SelfSufficientBuilding 'household_weaving_shelter' '家庭手织棚' 'tech.gathering' `
+    'household_cloth' 1 'artisan' @('cloth') @(120) @('fertile_soil') @(1000)
+Write-SelfSufficientBuilding 'household_loom' '家庭织机坊' 'tech.pottery' `
+    'household_cloth' 2 'artisan' @('cloth') @(220) `
+    @('arable_land','fertile_soil') @(10000,10000)
+Write-SelfSufficientBuilding 'cottage_weaving' '乡村家庭织坊' 'tech.guild_organization' `
+    'household_cloth' 3 'artisan' @('cloth') @(400) `
+    @('arable_land','fertile_soil') @(8000,8000)
+Write-SelfSufficientBuilding 'improved_domestic_loom' '改良家庭织坊' 'tech.steam_power' `
+    'household_cloth' 4 'artisan' @('cloth') @(600) `
+    @('arable_land','fertile_soil') @(6000,6000)
+foreach ($id in @('gathering_ground','subsistence_farm','three_field_smallholding','improved_smallholding',
+    'household_weaving_shelter','household_loom','cottage_weaving','improved_domestic_loom')) {
+    if (-not $buildingIds.Add($id)) { throw "duplicate subsistence building id: $id" }
+}
 if ($buildingIds.Count -lt 90) { throw "building count below target: $($buildingIds.Count)" }
 
 $generatedResourceIds = @('fresh_water','marine_fish','freshwater_fish',
@@ -492,6 +632,8 @@ foreach ($row in $newResources) {
     $initNoise=100000.0; $noiseScale=0.07
     $family=''; $province=0.0; $belt=0.0; $provinceScale=0.012; $beltScale=0.035
     $tempOpt=0.5; $tempTol=1.0; $moistureOpt=0.5; $moistureTol=1.0
+    $reserveScale = if ($id -in @('fresh_water','marine_fish','freshwater_fish')) { 2.0 } `
+        elseif ($id -in @('arable_land','paddy_land','plantation_land')) { 1.0 } else { 8.0 }
     switch ($id) {
         'fresh_water' { $genBase=1.0; $genSelf=0.01; $decaySelf=0.005; $initBase=-60.0; $initMoisture=80.0; $initRiver=400.0; $initNoise=80.0; $noiseScale=0.04 }
         'marine_fish' { $genBase=2.0; $genSelf=0.02; $decaySelf=0.002; $initBase=400.0; $initNoise=1200.0; $noiseScale=0.045 }
@@ -518,6 +660,7 @@ id = &"$id"
 display_name = "$($row[1])"
 reserve_component = &"cell.res_${id}_reserve"
 habitat_mode = "$habitat"
+init_reserve_scale = $reserveScale
 temp_lo = -30.0
 temp_hi = 45.0
 gen_base = $genBase
@@ -545,4 +688,15 @@ climate_moisture_tol = $moistureTol
     Write-Utf8 (Join-Path $resourcesDir "$id.tres") $content
 }
 
-Write-Host "Generated $($goods.Count) goods, $($buildingIds.Count) buildings, $($professionRows.Count) professions, $($needRows.Count) needs, and $($naturalResourceRows.Count) resource mappings."
+Sync-CuratedDirectory (Join-Path $curatedContentDir 'goods') $goodsDir
+Sync-CuratedDirectory (Join-Path $curatedContentDir 'buildings') $buildingsDir
+Sync-CuratedDirectory (Join-Path $curatedContentDir 'resources') $resourcesDir
+
+foreach ($directory in @($goodsDir, $buildingsDir, $professionsDir, $needsDir, $plansDir, $resourcesDir)) {
+    Assert-FullyManaged $directory
+}
+
+$fullGoodsCount = @(Get-ChildItem -LiteralPath $goodsDir -Filter '*.tres' -File).Count
+$fullBuildingCount = @(Get-ChildItem -LiteralPath $buildingsDir -Filter '*.tres' -File).Count
+$fullResourceCount = @(Get-ChildItem -LiteralPath $resourcesDir -Filter '*.tres' -File).Count
+Write-Host "Generated $fullGoodsCount goods, $fullBuildingCount buildings, $($professionRows.Count) professions, $($needRows.Count) needs, and $fullResourceCount resources."

@@ -52,6 +52,19 @@ closing_stock      = opening_stock + explicit_stock_delta - consumed_goods
 
 任何误差非零或内部不变量破坏都进入 fatal；不为千万 cohort 创建回滚副本。
 
+不存在按建筑数量无条件发行的商站铸币行为。货币内生发行只能来自市场实际接受的
+金银产出，发行数量受建筑到岗、投入、真实矿藏、产出和接受量共同约束。
+
+类别生产投入使用 good-level 效率换算物理消耗：
+
+```text
+effective_unit_cost = price * Q16 / efficiency_q16
+physical_required   = ceil(effective_required * Q16 / efficiency_q16)
+```
+
+候选先受冻结科技与最低质量门控，再按有效单位成本、good stable index 排序选择。goods 守恒扣除
+`physical_required`，不会把低等级工具先转换为通用工具。
+
 ## 编译后的需求 ABI
 
 V2 hot loop 不使用旧的逐 rule formula registry。资源在 bootstrap 编译为：
@@ -139,8 +152,9 @@ explicit_money_mint += issued
 market_stock += accepted_goods
 ```
 
-只有 stable ID `gold`、`silver` 可配置正发行值。金银后续交易是普通 cohort 间转账，不再次
-mint。周期流物资在 utility prepass 进入 MarketStore，同周期工业输入照常计入
+只有 stable ID `gold`、`silver` 可配置正发行值。`bullion_money_issued` 等于金银分项发行额之和；
+早期 merchant 矿点因此把发行额直接交给矿点业主，后期 industrialist 矿山同样遵循此公式。
+金银后续交易是普通 cohort 间转账，不再次 mint。周期流物资在 utility prepass 进入 MarketStore，同周期工业输入照常计入
 `production_inputs_consumed`；周期末剩余量计入 `cycle_flow_discarded`，因此 goods 守恒为：
 
 ```text

@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"manuscripts"
+display_name = "手抄文书"
+category_id = &"culture"
+technology_tags = PackedStringArray("tech.writing")
+default_price = 24000
+min_price = 2400
+max_price = 240000

@@ -5891,7 +5891,7 @@ func natural_resource_last_result() -> Dictionary:
 #      + init_elevation*clamp(elevation,0,1) + init_landform_weights[lf]
 #      + init_vegetation_weights[veg] + init_river*water_feature
 #      + init_volcano*volc + init_noise*noise01(cell_pos, init_noise_scale)
-# reserve0 = max(0, suit)（land_only 时水面格为 0）。
+# reserve0 = max(0, suit) * init_reserve_scale（land_only 时水面格为 0）。
 # 在 init_soa_from_bake 之后调用（temp/moisture/water/elevation/landform/vegetation/
 # has_river/is_lake_seed/has_volcano/cell_pos 均已就位）。新因子默认 0/{} → 行为不变。
 func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
@@ -5959,6 +5959,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var w_volc: float = float(p.init_volcano)
 		var w_noise: float = float(p.init_noise)
 		var w_climate_fit: float = float(p.init_climate_fit)
+		var reserve_scale: float = maxf(float(p.init_reserve_scale), 0.0)
 		var lf_w: Dictionary = p.init_landform_weights
 		var veg_w: Dictionary = p.init_vegetation_weights
 		var use_elev: bool = have_elev and w_elev != 0.0
@@ -6033,7 +6034,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 				var belt_ridge := 1.0 - absf(belt_noise.get_noise_2d(posx_arr[i], posy_arr[i]))
 				# ridge 高于阈值才形成矿带；其余区域施加负贡献，形成狭长稀疏矿脉。
 				suit += float(p.init_belt) * (belt_ridge - 0.72) * 2.0
-			arr[i] = maxf(0.0, suit)
+			arr[i] = maxf(0.0, suit) * reserve_scale
 		map_ref.set(field, arr)
 
 

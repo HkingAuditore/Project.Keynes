@@ -6,6 +6,7 @@ id = &"lead_ore"
 display_name = "铅矿"
 reserve_component = &"cell.res_lead_ore_reserve"
 habitat_mode = "land"
+init_reserve_scale = 8
 temp_lo = -30.0
 temp_hi = 45.0
 gen_base = 0

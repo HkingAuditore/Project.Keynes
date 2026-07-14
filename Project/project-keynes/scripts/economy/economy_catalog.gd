@@ -266,7 +266,9 @@ static func compile_native_catalog() -> Dictionary:
 	catalog["market_catalog_hash"] = _catalog_hash(catalog)
 	catalog["market_catalog_compat_hash_v8"] = _catalog_hash(market_v8_columns)
 	var building_columns := _compile_building_columns(
-		profession_index, good_index, good_columns.good_storage_modes)
+		profession_index, good_index, good_columns.good_storage_modes,
+		good_columns.good_category_ids, good_columns.good_production_quality_levels,
+		good_columns.good_production_efficiency_q16)
 	if not bool(building_columns.get("ok", false)):
 		return building_columns
 	building_columns.erase("ok")
@@ -291,6 +293,13 @@ static func compile_native_catalog() -> Dictionary:
 	technology_ids.sort()
 	catalog["technology_ids"] = technology_ids
 	var building_v7_columns := building_columns.duplicate(true)
+	for key in [
+		"building_upgrade_family_ids", "building_upgrade_family_indices",
+		"building_upgrade_tiers", "building_input_category_ids",
+		"building_input_min_quality_levels", "building_input_candidate_offsets",
+		"building_input_candidate_good_ids", "building_input_candidate_efficiency_q16",
+	]:
+		building_v7_columns.erase(key)
 	building_v7_columns.erase("building_employee_wage_policies")
 	building_v7_columns.erase("building_employee_reference_wages_per_day")
 	var building_v6_columns := building_v7_columns.duplicate(true)
@@ -318,8 +327,21 @@ static func compile_native_catalog() -> Dictionary:
 	catalog["ok"] = true
 	return catalog
 
+
+static func need_display_names() -> Dictionary:
+	var names := {}
+	for need in _load_resources(NEED_DIR):
+		var stable_id := String(need.id)
+		if stable_id == "":
+			continue
+		var display_name := String(need.display_name)
+		names[stable_id] = display_name if display_name != "" else stable_id
+	return names
+
 static func _compile_building_columns(profession_index: Dictionary,
-		good_index: Dictionary, good_storage_modes: PackedInt32Array) -> Dictionary:
+		good_index: Dictionary, good_storage_modes: PackedInt32Array,
+		good_category_ids: PackedStringArray, good_quality_levels: PackedInt32Array,
+		good_efficiencies_q16: PackedInt32Array) -> Dictionary:
 	var profiles := _load_resources(BUILDING_DIR)
 	var used_resource_ids := {}
 	for profile in profiles:
@@ -361,6 +383,16 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var building_kinds := PackedInt32Array()
 	var technology_tag_offsets := PackedInt32Array([0])
 	var technology_tags := PackedStringArray()
+	var upgrade_family_set := {}
+	for profile in profiles:
+		var family_id := String(profile.upgrade_family_id).strip_edges()
+		if family_id != "":
+			upgrade_family_set[family_id] = true
+	var upgrade_family_ids := PackedStringArray(upgrade_family_set.keys())
+	upgrade_family_ids.sort()
+	var upgrade_family_indices := PackedInt32Array()
+	var upgrade_tiers := PackedInt32Array()
+	var used_upgrade_tiers := {}
 	var employee_offsets := PackedInt32Array([0])
 	var employee_professions := PackedInt32Array()
 	var employee_slot_counts := PackedInt64Array()
@@ -372,6 +404,11 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var input_offsets := PackedInt32Array([0])
 	var input_goods := PackedInt32Array()
 	var input_quantities := PackedInt64Array()
+	var input_category_ids := PackedStringArray()
+	var input_min_quality_levels := PackedInt32Array()
+	var input_candidate_offsets := PackedInt32Array([0])
+	var input_candidate_goods := PackedInt32Array()
+	var input_candidate_efficiencies := PackedInt32Array()
 	var output_offsets := PackedInt32Array([0])
 	var output_goods := PackedInt32Array()
 	var output_quantities := PackedInt64Array()
@@ -403,6 +440,20 @@ static func _compile_building_columns(profession_index: Dictionary,
 		if building_kind not in ["collector", "industrial"]:
 			return {"ok": false, "reason": "invalid building kind: %s" % stable_id}
 		building_kinds.append(0 if building_kind == "collector" else 1)
+		var upgrade_family_id := String(profile.upgrade_family_id).strip_edges()
+		var upgrade_tier := int(profile.upgrade_tier)
+		if (upgrade_family_id == "" and upgrade_tier != 0) \
+				or (upgrade_family_id != "" and upgrade_tier <= 0):
+			return {"ok": false, "reason": "invalid building upgrade tier: %s" % stable_id}
+		var upgrade_family_idx := upgrade_family_ids.find(upgrade_family_id) \
+			if upgrade_family_id != "" else -1
+		var upgrade_key := "%d:%d" % [upgrade_family_idx, upgrade_tier]
+		if upgrade_family_idx >= 0 and used_upgrade_tiers.has(upgrade_key):
+			return {"ok": false, "reason": "duplicate building upgrade tier: %s" % stable_id}
+		if upgrade_family_idx >= 0:
+			used_upgrade_tiers[upgrade_key] = true
+		upgrade_family_indices.append(upgrade_family_idx)
+		upgrade_tiers.append(upgrade_tier)
 		for tag in profile.technology_tags:
 			if String(tag).strip_edges() == "":
 				return {"ok": false, "reason": "empty building technology tag: %s" % stable_id}
@@ -472,6 +523,31 @@ static func _compile_building_columns(profession_index: Dictionary,
 		error = _append_building_goods(profile.input_good_ids,
 			profile.input_quantities_per_day, good_index, input_goods, input_quantities)
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
+		var configured_categories: PackedStringArray = profile.input_category_ids
+		var configured_min_levels: PackedInt32Array = profile.input_min_quality_levels
+		if not configured_categories.is_empty() and configured_categories.size() != profile.input_good_ids.size():
+			return {"ok": false, "reason": "building input category columns mismatch: %s" % stable_id}
+		if not configured_min_levels.is_empty() and configured_min_levels.size() != profile.input_good_ids.size():
+			return {"ok": false, "reason": "building input quality columns mismatch: %s" % stable_id}
+		for input_idx in range(profile.input_good_ids.size()):
+			var category_id := String(configured_categories[input_idx]) if not configured_categories.is_empty() else ""
+			var min_level := int(configured_min_levels[input_idx]) if not configured_min_levels.is_empty() else 0
+			if min_level < 0:
+				return {"ok": false, "reason": "negative building input quality: %s" % stable_id}
+			input_category_ids.append(category_id)
+			input_min_quality_levels.append(min_level)
+			if category_id == "":
+				input_candidate_goods.append(int(good_index[String(profile.input_good_ids[input_idx])]))
+				input_candidate_efficiencies.append(Q16_ONE)
+			else:
+				for good_idx in range(good_category_ids.size()):
+					if String(good_category_ids[good_idx]) == category_id \
+							and int(good_quality_levels[good_idx]) >= min_level:
+						input_candidate_goods.append(good_idx)
+						input_candidate_efficiencies.append(int(good_efficiencies_q16[good_idx]))
+				if input_candidate_offsets[-1] == input_candidate_goods.size():
+					return {"ok": false, "reason": "building input category has no candidates: %s" % stable_id}
+			input_candidate_offsets.append(input_candidate_goods.size())
 		input_offsets.append(input_goods.size())
 		error = _append_building_goods(profile.output_good_ids,
 			profile.output_quantities_per_day, good_index, output_goods, output_quantities)
@@ -523,10 +599,22 @@ static func _compile_building_columns(profession_index: Dictionary,
 			production_resource_modes.append(0 if interaction_mode == "extract" else 1)
 			production_resource_access_modes.append(0 if access_mode == "local" else 1)
 		production_resource_offsets.append(production_resources.size())
+		if owner_id == "merchant":
+			var merchant_bullion_valid: bool = building_kind == "collector" \
+				and behavior_id == "consume_local_resources" \
+				and role_ids.is_empty() and profile.input_good_ids.is_empty() \
+				and profile.output_good_ids.size() == 1 and prod_ids.size() == 1 \
+				and String(prod_modes[0]) == "extract"
+			if merchant_bullion_valid:
+				var bullion_id := String(profile.output_good_ids[0])
+				merchant_bullion_valid = (bullion_id == "gold" and String(prod_ids[0]) == "gold_ore") \
+					or (bullion_id == "silver" and String(prod_ids[0]) == "silver_ore")
+			if not merchant_bullion_valid:
+				return {"ok": false, "reason": "merchant may only own early bullion collector: %s" % stable_id}
 		if building_kind == "collector" and prod_ids.is_empty():
 			return {"ok": false, "reason": "collector requires natural resource: %s" % stable_id}
-		if building_kind == "industrial" and not prod_ids.is_empty():
-			return {"ok": false, "reason": "industrial building cannot consume natural resource: %s" % stable_id}
+		if building_kind != "collector" and not prod_ids.is_empty():
+			return {"ok": false, "reason": "non-collector building cannot consume natural resource: %s" % stable_id}
 		if building_kind == "collector" and behavior_id == "none":
 			return {"ok": false, "reason": "collector requires resource behavior: %s" % stable_id}
 		if building_kind == "industrial" and behavior_id != "none":
@@ -588,6 +676,9 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_kinds": building_kinds,
 		"building_technology_tag_offsets": technology_tag_offsets,
 		"building_technology_tags": technology_tags,
+		"building_upgrade_family_ids": upgrade_family_ids,
+		"building_upgrade_family_indices": upgrade_family_indices,
+		"building_upgrade_tiers": upgrade_tiers,
 		"building_owner_profession_ids": owner_professions,
 		"building_owner_slots": owner_slots,
 		"building_wage_per_employee_per_day": wages_per_employee_per_day,
@@ -607,6 +698,11 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_input_offsets": input_offsets,
 		"building_input_good_ids": input_goods,
 		"building_input_quantities": input_quantities,
+		"building_input_category_ids": input_category_ids,
+		"building_input_min_quality_levels": input_min_quality_levels,
+		"building_input_candidate_offsets": input_candidate_offsets,
+		"building_input_candidate_good_ids": input_candidate_goods,
+		"building_input_candidate_efficiency_q16": input_candidate_efficiencies,
 		"building_output_offsets": output_offsets,
 		"building_output_good_ids": output_goods,
 		"building_output_quantities": output_quantities,

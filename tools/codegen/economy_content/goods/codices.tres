@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"codices"
+display_name = "手抄典籍"
+category_id = &"culture"
+technology_tags = PackedStringArray("tech.manuscript_culture")
+default_price = 32000
+min_price = 3200
+max_price = 320000
