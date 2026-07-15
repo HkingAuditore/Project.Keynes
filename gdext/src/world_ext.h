@@ -229,6 +229,9 @@ public:
     godot::Dictionary run_economy_fixed_math_probe(const godot::Dictionary &vectors) const;
     int64_t get_economy_state_hash() const;
     godot::Dictionary reset_economy(const godot::String &reason);
+    godot::Dictionary start_economy_csv_recording(const godot::Dictionary &config);
+    godot::Dictionary request_stop_economy_csv_recording();
+    godot::Dictionary get_economy_csv_recording_status() const;
     godot::Dictionary begin_economy_save(int chunk_bytes = 4 * 1024 * 1024);
     godot::PackedByteArray read_economy_save_chunk(int max_bytes = 4 * 1024 * 1024);
     godot::Dictionary end_economy_save();
@@ -2147,6 +2150,7 @@ private:
     // economy_runtime.{h,cpp}; opaque here so the existing world header does
     // not expose the large chunk/market implementation to every pass TU.
     void                                     *_economy_runtime        = nullptr;
+    void                                     *_economy_csv_recorder   = nullptr;
     int64_t                                   _economy_last_notified_event_id = 0;
     void                                     *_country_runtime        = nullptr;
 

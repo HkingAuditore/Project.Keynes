@@ -33,6 +33,8 @@ func _initialize() -> void:
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation", &"cell_is_water", &"cell_has_river"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid, 0, enum_values if slot_name == &"cell_terrain" else PackedByteArray([0, 0, 0, 0]))
+	var csv_resource_slot_ids := PackedInt32Array()
+	var csv_resource_ids := PackedStringArray()
 	for i in range((compiled.building_resource_ids as PackedStringArray).size()):
 		var reserve_sid: int = ext.register_component(
 			StringName(compiled.building_resource_reserve_slots[i]), 0, 1, false)
@@ -41,6 +43,8 @@ func _initialize() -> void:
 		ext.write_f32_range(reserve_sid, 0, _resource_values(
 			map, StringName(compiled.building_resource_ids[i])))
 		ext.write_f32_range(extra_sid, 0, PackedFloat32Array([0.0, 0.0, 0.0, 0.0]))
+		csv_resource_slot_ids.append(reserve_sid)
+		csv_resource_ids.append(String(compiled.building_resource_ids[i]))
 	var facade = EconomyFacadeScript.new()
 	var profile = load("res://data/economy/default_economy.tres").duplicate(true)
 	profile.market_cycle_days = 1
@@ -79,10 +83,12 @@ func _initialize() -> void:
 		int(first.get("generated_profession_count", 0)) <= facade.profession_ids().size())
 	_expect("population exactly matches generated building jobs",
 		_population_matches_fixture(first, facade))
-	_expect("bootstrap reports mid-stone unemployed population source",
+	_expect("bootstrap reports formula-based initial finance source",
 		String(first.get("population_source", "")) ==
-			"mid_stone_visible_resources_capacity_balanced_unemployed_v6" and
+			"mid_stone_visible_resources_capacity_balanced_bootstrap_finance_v8" and
 		String(first.get("initial_employment", "")) == "unemployed")
+	_expect("all cohorts receive survival funds and owner/merchant additions reconcile",
+		_fixture_bootstrap_finance_reconciles(first, facade))
 	_expect("every populated fixture cell covers conservative food and clothing demand",
 		_basic_capacity_is_covered(first))
 	_expect("same seed is deterministic",
@@ -93,8 +99,12 @@ func _initialize() -> void:
 	var boot: Dictionary = facade.bootstrap(
 		first.population_packet, first.market_packet, first.building_packet)
 	_expect("native bootstrap accepts fixture", bool(boot.get("ok", false)))
+	_expect("pre-seeded merchants require no native repair",
+		int(boot.get("merchant_repairs", -1)) == 0)
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
+	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
+	_expect("native CSV v2 recorder starts", bool(csv_test.get("ok", false)))
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("unsupported land cells receive no unsustainable settlement",
@@ -169,6 +179,64 @@ func _initialize() -> void:
 	_expect("second cycle consumes category-compatible stone tools",
 		bool(second_cycle.get("done", false)) and not bool(second_cycle.get("fatal", false)) and
 		int(second_cycle.get("production_inputs_consumed", 0)) > 0)
+	var third_cycle: Dictionary = _run_day(ext, 2)
+	_expect("third recorder cycle commits", bool(third_cycle.get("done", false)) and
+		not bool(third_cycle.get("fatal", false)))
+	_verify_csv_recorder(ext, csv_test, csv_resource_slot_ids, csv_resource_ids)
+	var invalid_cell_start := _start_csv_recorder(
+		ext, map, csv_resource_slot_ids, csv_resource_ids,
+		5_000_000, false, 0, -1, PackedInt32Array([map.cell_count()]))
+	_expect("CSV rejects an out-of-range explicit cell",
+		not bool(invalid_cell_start.get("ok", true)) and
+		str(invalid_cell_start.get("error_message", "")) == "cell_index_out_of_range")
+	_cleanup_csv_paths(invalid_cell_start.get("test_paths", {}))
+	var selected_cell_start := _start_csv_recorder(
+		ext, map, csv_resource_slot_ids, csv_resource_ids,
+		5_000_000, false, 0, -1, PackedInt32Array([0, 0]))
+	_expect("single-cell CSV starts and normalizes duplicate indices",
+		bool(selected_cell_start.get("ok", false)) and
+		str(selected_cell_start.get("cell_scope", "")) == "selected" and
+		int(selected_cell_start.get("sampled_cell_count", 0)) == 1 and
+		int(selected_cell_start.get("selected_cell_index", -1)) == 0)
+	_run_day(ext, 3)
+	_verify_single_cell_csv(ext, selected_cell_start, 0)
+	var overload_start := _start_csv_recorder(
+		ext, map, csv_resource_slot_ids, csv_resource_ids, 5_000_000, true, 250)
+	_expect("slow-writer recorder starts", bool(overload_start.get("ok", false)))
+	_run_day(ext, 4)
+	_run_day(ext, 5)
+	_run_day(ext, 6)
+	var overload_status := _wait_csv_terminal(ext)
+	_expect("double buffer overload stops without blocking or dropping accepted batches",
+		str(overload_status.get("error_code", "")) == "queue_full" and
+		int(overload_status.get("captured_epochs", 0)) == 2 and
+		int(overload_status.get("written_epochs", 0)) == 2 and
+		int(overload_status.get("first_unrecorded_epoch", -1)) >= 0)
+	_cleanup_csv_paths(overload_start.get("test_paths", {}))
+	var limit_start := _start_csv_recorder(
+		ext, map, csv_resource_slot_ids, csv_resource_ids, 1, false, 0)
+	_expect("row-limit recorder starts", bool(limit_start.get("ok", false)))
+	_run_day(ext, 7)
+	var limit_status := _wait_csv_terminal(ext)
+	_expect("row limit rejects the whole epoch without partial rows",
+		str(limit_status.get("error_code", "")) == "row_limit" and
+		int(limit_status.get("captured_epochs", -1)) == 0 and
+		int(limit_status.get("written_rows", -1)) == 0)
+	_cleanup_csv_paths(limit_start.get("test_paths", {}))
+	var failure_start := _start_csv_recorder(
+		ext, map, csv_resource_slot_ids, csv_resource_ids, 5_000_000, false, 0, 32)
+	_expect("write-failure recorder starts", bool(failure_start.get("ok", false)))
+	_run_day(ext, 8)
+	var failure_status := _wait_csv_terminal(ext)
+	_expect("injected write failure reports one accepted but no committed file epoch",
+		str(failure_status.get("error_code", "")) == "write_failed" and
+		int(failure_status.get("captured_epochs", 0)) == 1 and
+		int(failure_status.get("written_epochs", -1)) == 0)
+	for path in (failure_start.get("test_paths", {}) as Dictionary).values():
+		var text := FileAccess.get_file_as_string(str(path)).trim_prefix("﻿")
+		_expect("write failure rolls every CSV back to its header",
+			text.split("\n", false).size() == 1)
+	_cleanup_csv_paths(failure_start.get("test_paths", {}))
 	_finish()
 
 
@@ -208,6 +276,147 @@ func _resource_values(map: MapData, resource_id: StringName) -> PackedFloat32Arr
 		var field := ResourceProfileRegistry.reserve_map_field(profile)
 		return map.get(field) if field != "" else PackedFloat32Array()
 	return PackedFloat32Array()
+
+
+func _start_csv_recorder(ext: Object, map: MapData, resource_slots: PackedInt32Array,
+		resource_ids: PackedStringArray, max_rows: int = 5_000_000,
+		summary_only: bool = false, test_write_delay_ms: int = 0,
+		test_fail_after_bytes: int = -1,
+		cell_indices: PackedInt32Array = PackedInt32Array()) -> Dictionary:
+	var q := PackedInt32Array()
+	var r := PackedInt32Array()
+	var s := PackedInt32Array()
+	q.resize(map.cell_count())
+	r.resize(map.cell_count())
+	s.resize(map.cell_count())
+	for idx in range(map.cell_count()):
+		var cell = map.cell_at(idx)
+		q[idx] = cell.q
+		r[idx] = cell.r
+		s[idx] = cell.s
+	var dir := ProjectSettings.globalize_path("user://economy_csv_v2_test")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var paths := {}
+	for dim in ["summary", "cohorts", "buildings", "resources", "market"]:
+		paths[dim] = dir.path_join("integration_v2_%s.csv" % dim)
+		if FileAccess.file_exists(paths[dim]):
+			DirAccess.remove_absolute(paths[dim])
+	var result: Dictionary = ext.start_economy_csv_recording({
+		"record_summary": true,
+		"record_cohorts": not summary_only,
+		"record_buildings": not summary_only,
+		"record_resources": not summary_only,
+		"record_market": not summary_only,
+		"cell_stride": 1,
+		"cell_indices": cell_indices,
+		"max_rows": max_rows,
+		"test_write_delay_ms": test_write_delay_ms,
+		"test_fail_after_bytes": test_fail_after_bytes,
+		"q_arr": q,
+		"r_arr": r,
+		"s_arr": s,
+		"resource_slot_ids": resource_slots,
+		"resource_ids": resource_ids,
+		"paths": paths,
+	})
+	result["test_paths"] = paths
+	return result
+
+
+func _verify_single_cell_csv(ext: Object, start_result: Dictionary,
+		expected_cell: int) -> void:
+	var status := _wait_csv_terminal(ext)
+	_expect("single-cell CSV drains one accepted commit",
+		str(status.get("state", "")) == "completed" and
+		int(status.get("captured_epochs", 0)) == 1 and
+		int(status.get("written_epochs", 0)) == 1)
+	var paths: Dictionary = start_result.get("test_paths", {})
+	var summary_lines := FileAccess.get_file_as_string(str(paths.summary)) \
+		.trim_prefix("﻿").split("\n", false)
+	_expect("summary remains one global row per selected-cell epoch", summary_lines.size() == 2)
+	for dim in ["cohorts", "buildings", "resources", "market"]:
+		var lines := FileAccess.get_file_as_string(str(paths[dim])) \
+			.trim_prefix("﻿").split("\n", false)
+		_expect("single-cell %s contains data" % dim, lines.size() > 1)
+		for line_idx in range(1, lines.size()):
+			var columns := lines[line_idx].split(",", true)
+			_expect("single-cell %s row %d is filtered" % [dim, line_idx],
+				columns.size() > 3 and int(columns[3]) == expected_cell)
+	_cleanup_csv_paths(paths)
+
+
+func _verify_csv_recorder(ext: Object, start_result: Dictionary,
+		resource_slots: PackedInt32Array, resource_ids: PackedStringArray) -> void:
+	ext.request_stop_economy_csv_recording()
+	var status: Dictionary = ext.get_economy_csv_recording_status()
+	var deadline := Time.get_ticks_msec() + 5000
+	while str(status.get("state", "")) == "draining" and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(1)
+		status = ext.get_economy_csv_recording_status()
+	_expect("CSV worker drains asynchronously", str(status.get("state", "")) == "completed")
+	_expect("CSV captures and writes exactly three commits",
+		int(status.get("captured_epochs", 0)) == 3 and
+		int(status.get("written_epochs", 0)) == 3)
+	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
+	var paths: Dictionary = start_result.get("test_paths", {})
+	var expected_columns := {"summary": 34, "cohorts": 23, "buildings": 42,
+		"resources": 9, "market": 26}
+	for dim in expected_columns:
+		var path: String = str(paths.get(dim, ""))
+		var bytes := FileAccess.get_file_as_bytes(path)
+		_expect("%s CSV has UTF-8 BOM" % dim,
+			bytes.size() >= 3 and bytes[0] == 0xEF and bytes[1] == 0xBB and bytes[2] == 0xBF)
+		var text := bytes.get_string_from_utf8().trim_prefix("﻿")
+		var lines := text.split("\n", false)
+		_expect("%s CSV contains data" % dim, lines.size() > 1)
+		_expect("%s CSV header column count" % dim,
+			lines[0].split(",", true).size() == int(expected_columns[dim]))
+		for line_idx in range(1, lines.size()):
+			_expect("%s CSV row %d column count" % [dim, line_idx],
+				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
+	if not resource_slots.is_empty() and not resource_ids.is_empty():
+		var reserves: PackedFloat32Array = ext.snapshot_f32(resource_slots[0])
+		var resource_text := FileAccess.get_file_as_string(str(paths.resources)).trim_prefix("﻿")
+		var found := false
+		for line in resource_text.split("\n", false).slice(1):
+			var cols := line.split(",", true)
+			if cols.size() == 9 and int(cols[0]) == 3 and int(cols[3]) == 0 \
+					and cols[7] == resource_ids[0]:
+				found = is_equal_approx(float(cols[8]), reserves[0])
+				break
+		_expect("resource CSV uses post-delta committed slot value", found)
+	var market_snapshot: Dictionary = ext.get_market_cell_snapshot(0)
+	var market_goods: PackedStringArray = market_snapshot.get("good_ids", PackedStringArray())
+	var market_pressure: PackedInt32Array = market_snapshot.get(
+		"price_pressure_total_q16", PackedInt32Array())
+	if not market_goods.is_empty() and not market_pressure.is_empty():
+		var market_text := FileAccess.get_file_as_string(str(paths.market)).trim_prefix("﻿")
+		var pressure_matches := false
+		for line in market_text.split("\n", false).slice(1):
+			var cols := line.split(",", true)
+			if cols.size() == 26 and int(cols[0]) == 3 and int(cols[3]) == 0 \
+					and cols[7] == market_goods[0]:
+				pressure_matches = int(cols[18]) == market_pressure[0]
+				break
+		_expect("worker price-pressure encoding matches committed native snapshot",
+			pressure_matches)
+	_cleanup_csv_paths(paths)
+
+
+func _wait_csv_terminal(ext: Object) -> Dictionary:
+	ext.request_stop_economy_csv_recording()
+	var status: Dictionary = ext.get_economy_csv_recording_status()
+	var deadline := Time.get_ticks_msec() + 5000
+	while str(status.get("state", "")) in ["opening", "recording", "draining"] \
+			and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(1)
+		status = ext.get_economy_csv_recording_status()
+	return status
+
+
+func _cleanup_csv_paths(paths: Dictionary) -> void:
+	for path in paths.values():
+		DirAccess.remove_absolute(str(path))
 
 
 func _sum_u8(values: PackedByteArray) -> int:
@@ -303,6 +512,33 @@ func _population_matches_fixture(packet: Dictionary, facade) -> bool:
 			var key := "%d:%d" % [building_cells[i], signature]
 			expected[key] = int(expected.get(key, 0)) + \
 				int(building_counts[i]) * int(slots[role])
+	var merchant_signature: int = facade.signature_id(&"merchant", &"default")
+	var profession_ids: PackedStringArray = facade.profession_ids()
+	var expected_cells := {}
+	for key in expected:
+		var cell := int(String(key).get_slice(":", 0))
+		expected_cells[cell] = true
+	for cell in expected_cells:
+		var merchant_key := "%d:%d" % [cell, merchant_signature]
+		if int(expected.get(merchant_key, 0)) > 0:
+			continue
+		var selected_key := ""
+		var selected_population := 0
+		for profession_id in profession_ids:
+			var signature: int = facade.signature_id(StringName(profession_id), &"default")
+			if signature == merchant_signature:
+				continue
+			var candidate_key := "%d:%d" % [cell, signature]
+			var candidate_population := int(expected.get(candidate_key, 0))
+			if candidate_population > selected_population:
+				selected_key = candidate_key
+				selected_population = candidate_population
+		if selected_key == "":
+			return false
+		expected[selected_key] = selected_population - 1
+		if int(expected[selected_key]) == 0:
+			expected.erase(selected_key)
+		expected[merchant_key] = 1
 	var population_packet: Dictionary = packet.population_packet
 	var cells: PackedInt32Array = population_packet.cell_indices
 	var signatures: PackedInt32Array = population_packet.signature_ids
@@ -317,6 +553,39 @@ func _population_matches_fixture(packet: Dictionary, facade) -> bool:
 		if int(actual.get(key, -1)) != int(expected[key]):
 			return false
 	return actual.size() == expected.size()
+
+
+func _fixture_bootstrap_finance_reconciles(packet: Dictionary, facade) -> bool:
+	var population_packet: Dictionary = packet.population_packet
+	var cells: PackedInt32Array = population_packet.cell_indices
+	var signatures: PackedInt32Array = population_packet.signature_ids
+	var funds: PackedInt64Array = population_packet.funds
+	var survival: PackedInt64Array = packet.get("survival_funds_by_cohort", PackedInt64Array())
+	var owners: PackedInt64Array = packet.get(
+		"owner_operating_funds_by_cohort", PackedInt64Array())
+	var merchants: PackedInt64Array = packet.get(
+		"merchant_inventory_funds_by_cohort", PackedInt64Array())
+	if survival.size() != funds.size() or owners.size() != funds.size() \
+			or merchants.size() != funds.size() or int(packet.get("survival_fund_days", 0)) != 30:
+		return false
+	var merchant_signature: int = facade.signature_id(&"merchant", &"default")
+	var funded_cells := {}
+	var survival_total := 0
+	var owner_total := 0
+	var merchant_total := 0
+	for i in range(funds.size()):
+		if survival[i] < 0 or owners[i] < 0 or merchants[i] < 0 \
+				or funds[i] != survival[i] + owners[i] + merchants[i]:
+			return false
+		survival_total += survival[i]
+		owner_total += owners[i]
+		merchant_total += merchants[i]
+		if signatures[i] == merchant_signature and merchants[i] > 0:
+			funded_cells[cells[i]] = true
+	return survival_total == int(packet.get("initial_survival_funds", -1)) and \
+		owner_total == int(packet.get("initial_owner_operating_funds", -1)) and \
+		merchant_total == int(packet.get("initial_merchant_inventory_funds", -1)) and \
+		funded_cells.size() == int(packet.get("populated_cells", -1))
 
 
 func _basic_capacity_is_covered(fixture: Dictionary) -> bool:

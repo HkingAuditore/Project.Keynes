@@ -6,7 +6,7 @@
 
 `player_game.tscn` 运行时默认显示右上角 `PerfMiniHUD`；F4 切换显隐。顶栏 GM 按钮、
 反引号或 F1 打开精简性能面板，可查看 last-tick、30-tick Top-N、climate/weather/economy
-breakdown，并执行性能快照、性能 CSV 和地块 CSV 录制。玩家场景的诊断数据源是
+breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 录制。玩家场景的诊断数据源是
 `WorldRuntimeHost`，它在同一 daily tick 上分段记录：
 
 - `t_sus_ms`：`MapGenerator.sus_tick_daily()`，包含 climate、economy 和其他 SUS jobs。
@@ -20,9 +20,20 @@ breakdown，并执行性能快照、性能 CSV 和地块 CSV 录制。玩家场�
   `fast_ms_after_recorders` / recorder summary。
 
 性能 CSV 在桌面写入仓库 `tmp/perf_record_*.csv`，地块 CSV 写入
-`tmp/tile_data_record_*.csv`；移动端分别写入 `user://perf` 和 `user://tile_data`。
+`tmp/tile_data_record_*.csv`，经济录制按提交 epoch 写入 `tmp/economy_record_*.csv`；
+移动端分别写入 `user://perf`、`user://tile_data` 和 `user://economy_data`。
 全量地块录制会同步编码、写盘，可能主动制造卡顿，因此先录性能基线，再短时开启地块录制，
 并检查 `tile_ms/format_ms/flush_ms/encoder_path`。
+
+经济录制已使用原生 CSV v3 双缓冲：GM 面板显示 `captured/written epoch`、
+`queued_batches`、`capture_ms_last/p95/max` 和 worker 耗时。正常录制为 `recording`，点击停止后为
+`draining`，排空后为 `completed`。`queue_full` 表示长期产生速度超过编码/磁盘吞吐，recorder
+已保留并写完所有已接受 epoch，同时用 `first_unrecorded_epoch` 标明停止边界；`row_limit`
+表示下一完整 epoch 会超过上限，因此整批未接收；`write_failed` 表示文件错误，五表回退到
+上一个完整 epoch。不要把后台 worker 时间算进 SUS job 耗时，主线程成本看 `capture_ms_*`。
+若只需排查一个地块，先在地图选中它，再勾选 GM 面板的“仅录制当前地块”后开始；选区会在
+start 时锁定，文件名包含 `cell/q/r`。这种模式显著减少四张明细表的抓取、编码与写盘量，但
+summary 仍是全局一行，不能把它误当成该地块的小计。
 
 ## 先看三层日志
 
@@ -1237,9 +1248,15 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
 - 矿场跨多个经济周期但资源 pass 尚未运行时，负 pending 必须降低 effective reserve；关注
   `building_resource_limited_groups` 与 generated/consumed/net_delta，枯竭后产出应为 0。
 - committed 后 population/money/goods error 仍必须精确为 0；`building_wages_unpaid>0` 与
-  `wage_suspended_building_groups>0` 表示销售后仍无法足额支付生活工资，不表示该轮生产为零。
-  先比较 `building_base_wages_due/paid`、投入采购现金、产出收入、销售后分配与商人购买力，不能
+  `wage_suspended_building_groups>0` 表示销售后仍无法足额支付生活工资，不表示该轮生产为零；
+  `loss_suspended_building_groups>0` 才表示企业亏损状态机已停产。结合建筑 CSV 的
+  `operating_state/severe_loss_cycles/recovery_cycles/purchase_intent_capacity_q16/realized_profit_margin_q16`
+  判断停产原因。
+- 先比较 `building_base_wages_due/paid`、投入采购现金、产出收入、销售后分配与商人购买力，不能
   用铸币掩盖。
+- 市场 CSV v3 还提供 `realized_withdrawal_ema/merchant_inventory_target/merchant_procurement_shortfall`；
+  summary 提供 `merchant_procurement_budget/reserved/spent`。若商人现金归零，先验证 spent 未超过
+  budget 且 reserved 约为冻结期初现金的 25%，再排查居民消费或外部命令，而不是把采购阶段误判为耗尽现金。
 - `wage_plan_ms` 长：比较 active labor keys、当地 cohort/signature 数与消费篮子边数；不得退化
   为 cell×profession 或 cohort×building 稠密矩阵。
 - 金银场景检查 `gold/silver_accepted`、对应 issued money 和 `bullion_money_issued`；总发行额必须

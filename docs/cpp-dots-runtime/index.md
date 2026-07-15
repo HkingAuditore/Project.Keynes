@@ -36,7 +36,7 @@
    - PopulationCohort chunk、MarketStore、handle、并行边界和公共 API。
 
 9. [Domestic Trade Runtime](./domestic-trade-runtime.md)
-   - 国内六邻接运输、稀疏贸易信号、有界寻路、贸易单托管结算、PKEC v11 与软切片契约。
+   - 国内六邻接运输、稀疏贸易信号、有界寻路、贸易单托管结算、PKEC v12 与软切片契约。
 
 10. [Native Country Runtime](./native-country-runtime.md)
    - CountryStore SoA、handle、领土 CSR、国家科技、现金/商品国库、命令与查询契约。
@@ -45,7 +45,7 @@
     - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
-    - `country_daily`、命令屏障、PKCN v1 + PKEC v11 顺序与兼容性拒绝。
+    - `country_daily`、命令屏障、PKCN v1 + PKEC v12 顺序与兼容性拒绝。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。

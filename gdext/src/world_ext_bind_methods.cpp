@@ -156,6 +156,12 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_economy_state_hash);
     ClassDB::bind_method(D_METHOD("reset_economy", "reason"),
                          &DCWorldExt::reset_economy);
+    ClassDB::bind_method(D_METHOD("start_economy_csv_recording", "config"),
+                         &DCWorldExt::start_economy_csv_recording);
+    ClassDB::bind_method(D_METHOD("request_stop_economy_csv_recording"),
+                         &DCWorldExt::request_stop_economy_csv_recording);
+    ClassDB::bind_method(D_METHOD("get_economy_csv_recording_status"),
+                         &DCWorldExt::get_economy_csv_recording_status);
     ClassDB::bind_method(D_METHOD("begin_economy_save", "chunk_bytes"),
                          &DCWorldExt::begin_economy_save, DEFVAL(4 * 1024 * 1024));
     ClassDB::bind_method(D_METHOD("read_economy_save_chunk", "max_bytes"),

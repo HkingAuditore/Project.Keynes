@@ -15,13 +15,14 @@
 namespace pk {
 
 class NativeCountryRuntime;
+class EconomyCsvRecorder;
 
 // NativeEconomyRuntime is the sole mutable authority for population cohorts
 // and markets. Godot containers are accepted/emitted only at coarse API
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 11;
+    static constexpr int32_t SCHEMA_VERSION = 12;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
@@ -143,6 +144,7 @@ public:
                                 std::string &error);
 
 private:
+    friend class EconomyCsvRecorder;
     enum class Stage : int32_t {
         IDLE = 0,
         EPOCH_BEGIN = 1,
@@ -203,6 +205,8 @@ private:
         int32_t wealth_elasticity_q16 = 0;
         int32_t wealth_min_q16 = 0;
         int32_t wealth_max_q16 = Q16_ONE;
+        int32_t price_quantity_elasticity_q16 = Q16_ONE;
+        int32_t price_quantity_floor_q16 = 0;
         int32_t quantity_env_curve = -1;
         int32_t living_cost_weight_q16 = 0;
     };
@@ -341,6 +345,11 @@ private:
         int64_t last_base_wages_due = 0;
         int64_t last_bonus_paid = 0;
         int64_t last_bonus_due = 0;
+        int64_t purchase_intent_capacity_q16 = 0;
+        int32_t realized_profit_margin_q16 = 0;
+        uint16_t severe_loss_cycles = 0;
+        uint16_t recovery_cycles = 0;
+        uint8_t operating_state = 0; // 0=ACTIVE, 1=SUSPENDED_LOSS.
         uint8_t wage_suspended = 0;
     };
 
@@ -417,6 +426,7 @@ private:
         std::vector<int32_t> good_ids;
         std::vector<int64_t> business_demand_ema;
         std::vector<int64_t> offered_supply_ema;
+        std::vector<int64_t> realized_withdrawal_ema;
         std::vector<int32_t> cost_anchor_price;
 
         void clear(int32_t cells) {
@@ -424,6 +434,7 @@ private:
             good_ids.clear();
             business_demand_ema.clear();
             offered_supply_ema.clear();
+            realized_withdrawal_ema.clear();
             cost_anchor_price.clear();
         }
     };
@@ -963,10 +974,16 @@ private:
     int32_t _wage_max_rise_q16_per_day = 6554;
     int32_t _wage_max_fall_q16_per_day = 1311;
     int32_t _employee_profit_share_q16 = 16384;
+    int32_t _building_severe_loss_threshold_q16 = -16384;
+    int32_t _building_severe_loss_cycles = 3;
+    int32_t _building_restart_margin_q16 = 6554;
+    int32_t _building_restart_cycles = 2;
+    int32_t _merchant_procurement_cash_reserve_q16 = 16384;
+    int32_t _merchant_market_making_days_q16 = Q16_ONE;
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     int32_t _market_runtime_mode = 1; // 0=OFF, 1=PROBE, 2=ACTIVE.
-    int32_t _trade_runtime_mode = 1; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    int32_t _trade_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
     int64_t _trade_capacity_per_merchant_q16 = 64 * Q16_ONE;
     int32_t _trade_speed_cost_per_day = 4;
     int32_t _trade_min_margin_q16 = 3277;
@@ -1044,6 +1061,10 @@ private:
     int64_t _building_bonus_paid = 0;
     int64_t _building_bonus_due = 0;
     int64_t _wage_suspended_building_groups = 0;
+    int64_t _loss_suspended_building_groups = 0;
+    int64_t _merchant_procurement_budget = 0;
+    int64_t _merchant_procurement_reserved = 0;
+    int64_t _merchant_procurement_spent = 0;
     int64_t _labor_signal_updates = 0;
     int64_t _building_resource_generated = 0;
     int64_t _building_resource_consumed = 0;
@@ -1126,6 +1147,7 @@ private:
     MarketSignalStore _market_signals;
     std::vector<int64_t> _epoch_business_demand_ema;
     std::vector<int64_t> _epoch_offered_supply_ema;
+    std::vector<int64_t> _epoch_nonhousehold_withdrawals;
     std::vector<int32_t> _epoch_cost_anchor_price;
     std::vector<OwnerRetainedOutput> _owner_retained_outputs;
     TradeTopologyStore _trade_topology;

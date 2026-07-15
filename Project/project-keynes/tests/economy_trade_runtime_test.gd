@@ -93,8 +93,8 @@ func _run() -> void:
 	_expect("in-transit committed boundary conserves", bool(report.get("done", false)) and
 		int(report.get("goods_error", 1)) == 0 and int(report.get("money_error", 1)) == 0)
 	var saved := _save_economy(ext)
-	_expect("PKEC v11 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 11)
+	_expect("PKEC v12 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 12)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -423,7 +423,7 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1
 	profile.market_runtime_mode = "ACTIVE"
-	profile.trade_runtime_mode = "PROBE"
+	profile.trade_runtime_mode = "ACTIVE"
 	CountryTestHelper.configure_all_technologies(ext, catalog, 1, 4415)
 	ext.configure_economy(catalog, profile, 1, 4415)
 	_capture_line_topology(ext, 1)
@@ -437,18 +437,30 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	_advance_day(ext, 0)
 	var saved := _save_economy(ext)
 	var compat_hash := int(compiled.get("catalog_compat_hash_v10", 0))
-	var v10_chunks := _convert_v11_chunks_to_v10(saved.get("chunks", []), compat_hash)
+	var v11_chunks := _convert_v12_chunks_to_v11(saved.get("chunks", []))
+	var v11_restored := _new_ext(compiled, 1)
+	CountryTestHelper.configure_all_technologies(v11_restored, catalog, 1, 4415)
+	v11_restored.configure_economy(catalog, profile, 1, 4415)
+	var v11_result := _restore_economy(v11_restored, v11_chunks)
+	_expect("compatible PKEC v11 ACTIVE migrates into v12 state",
+		bool(v11_result.get("ok", false)) and
+		int(v11_restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
+	var v11_probe_chunks := _set_v11_trade_mode(v11_chunks, 1)
+	var probe_restored := _new_ext(compiled, 1)
+	CountryTestHelper.configure_all_technologies(probe_restored, catalog, 1, 4415)
+	probe_restored.configure_economy(catalog, profile, 1, 4415)
+	var probe_result := _restore_economy(probe_restored, v11_probe_chunks)
+	_expect("ACTIVE trade explicitly rejects PKEC v11 PROBE",
+		not bool(probe_result.get("ok", true)) and
+		String(probe_result.get("reason", "")) == "save_trade_profile_mismatch")
+	var v10_chunks := _convert_v11_chunks_to_v10(v11_chunks, compat_hash)
 	var restored := _new_ext(compiled, 1)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 1, 4415)
 	restored.configure_economy(catalog, profile, 1, 4415)
 	var result := _restore_economy(restored, v10_chunks)
-	_expect("PKEC v10 migrates to empty trade state",
-		compat_hash != 0 and bool(result.get("ok", false)) and
-		int(restored.get_trade_orders_for_cell(0, 0, 64).get("total", -1)) == 0 and
-		int(restored.get_economy_report().get("trade_escrow_cash", -1)) == 0)
-	_expect("PKEC v10 migration preserves legacy authoritative hash",
-		bool(result.get("ok", false)) and
-		int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
+	_expect("ACTIVE trade explicitly rejects PKEC v10",
+		compat_hash != 0 and not bool(result.get("ok", true)) and
+		String(result.get("reason", "")) == "active_trade_rejects_v10_economy_save")
 
 func _new_ext(catalog: Dictionary, cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
@@ -569,6 +581,37 @@ func _convert_v11_chunks_to_v10(chunks: Array, compat_hash: int) -> Array:
 			chunk.append_array(legacy_payload)
 		elif section == 12:
 			chunk.encode_u16(6, 10)
+		converted.append(chunk)
+	return converted
+
+func _convert_v12_chunks_to_v11(chunks: Array) -> Array:
+	var converted: Array[PackedByteArray] = []
+	for source_value in chunks:
+		var source := source_value as PackedByteArray
+		if source.size() < 16:
+			continue
+		var section := int(source.decode_u16(6))
+		var chunk := source.duplicate()
+		chunk.encode_u16(4, 11)
+		if section == 0:
+			var payload := source.slice(16)
+			# v12 appends six i32 business-policy fields after the v11 trade block.
+			var legacy_payload := payload.slice(0, 260)
+			legacy_payload.append_array(payload.slice(284))
+			chunk = source.slice(0, 16)
+			chunk.encode_u16(4, 11)
+			chunk.encode_u32(12, legacy_payload.size())
+			chunk.append_array(legacy_payload)
+		converted.append(chunk)
+	return converted
+
+func _set_v11_trade_mode(chunks: Array, mode: int) -> Array:
+	var converted: Array[PackedByteArray] = []
+	for source_value in chunks:
+		var chunk := (source_value as PackedByteArray).duplicate()
+		if chunk.size() >= 220 and int(chunk.decode_u16(6)) == 0:
+			# Chunk header (16) + v11 fixed header (184) + counts/id (16).
+			chunk.encode_s32(216, mode)
 		converted.append(chunk)
 	return converted
 

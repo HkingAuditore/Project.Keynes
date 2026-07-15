@@ -53,3 +53,7 @@ climate_moisture_opt = 0.55
 climate_moisture_tol = 0.38
 runtime_climate_fit_weight = 0.75
 decay_stress = 0.55
+ecology_capacity = 600.0
+ecology_growth_rate = 0.01
+ecology_immigration = 0.02
+ecology_stress_mortality_rate = 0.01

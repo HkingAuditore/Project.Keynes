@@ -76,10 +76,15 @@ var _topn_label: Label
 # _perf_recorder 在 set_main() 时创建并注入到 _main，避免与 main 自己生命周期解耦。
 const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
 const TileDataRecorderScript = preload("res://scripts/ui/tile_data_recorder.gd")
+const EconomyDataRecorderScript = preload("res://scripts/ui/economy_data_recorder.gd")
 var _record_btn: Button
 var _perf_recorder: RefCounted = null
 var _tile_record_btn: Button
 var _tile_data_recorder: RefCounted = null
+var _economy_record_btn: Button
+var _economy_record_checkboxes: Dictionary = {}
+var _economy_current_cell_checkbox: CheckBox
+var _economy_data_recorder: RefCounted = null
 # _show_record_toast 期间冻结 _refresh_record_btn_text，避免 timer 把绿色提示文本盖回去
 var _record_btn_toast_until_msec: int = 0
 var _tile_record_btn_toast_until_msec: int = 0
@@ -145,6 +150,13 @@ func set_main(m: Node) -> void:
 		_tile_data_recorder.call("bind_main", m)
 	if m != null and m.has_method("set_tile_data_recorder"):
 		m.call("set_tile_data_recorder", _tile_data_recorder)
+	# 经济数据录制器：与地块录制器并列挂接，共享 main 的 fast_tick 注入点。
+	if _economy_data_recorder == null:
+		_economy_data_recorder = EconomyDataRecorderScript.new()
+	if _economy_data_recorder.has_method("bind_main"):
+		_economy_data_recorder.call("bind_main", m)
+	if m != null and m.has_method("set_economy_data_recorder"):
+		m.call("set_economy_data_recorder", _economy_data_recorder)
 	_refresh_from_state()
 
 # 由 main.gd 在 F6/F8 等外部路径修改状态后调用；不立即刷新，避免同帧 UI 抖动。
@@ -483,6 +495,46 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	_tile_record_btn.pressed.connect(_on_btn_toggle_tile_record)
 	tile_ctrl_row.add_child(_tile_record_btn)
 	parent.add_child(tile_ctrl_row)
+
+	# 经济数据录制：每个经济 epoch（5 天提交）写一组 CSV，维度可独立开关。
+	var econ_dims: Array = [
+		["summary", "汇总"], ["cohorts", "阶层"], ["buildings", "建筑"],
+		["resources", "自然资源"], ["market", "物资"],
+	]
+	var econ_chk_row := HBoxContainer.new()
+	econ_chk_row.add_theme_constant_override("separation", 10)
+	_economy_record_checkboxes.clear()
+	for dim_pair in econ_dims:
+		var dim_key: String = dim_pair[0]
+		var dim_label: String = dim_pair[1]
+		var chk := CheckBox.new()
+		chk.text = dim_label
+		chk.button_pressed = true
+		chk.tooltip_text = "录制维度开关：%s" % dim_key
+		chk.pressed.connect(_on_economy_dim_toggled.bind(dim_key, chk))
+		_economy_record_checkboxes[dim_key] = chk
+		econ_chk_row.add_child(chk)
+	parent.add_child(econ_chk_row)
+
+	var econ_scope_row := HBoxContainer.new()
+	econ_scope_row.add_theme_constant_override("separation", 6)
+	_economy_current_cell_checkbox = CheckBox.new()
+	_economy_current_cell_checkbox.text = "仅录制当前地块"
+	_economy_current_cell_checkbox.tooltip_text = \
+		"开始时锁定当前选中地块；汇总表仍是全局，其余四表只写该地块"
+	_economy_current_cell_checkbox.pressed.connect(_on_economy_scope_toggled)
+	econ_scope_row.add_child(_economy_current_cell_checkbox)
+	parent.add_child(econ_scope_row)
+
+	var econ_ctrl_row := HBoxContainer.new()
+	econ_ctrl_row.add_theme_constant_override("separation", 6)
+	_economy_record_btn = Button.new()
+	_economy_record_btn.text = "⏺ 开始经济录制"
+	_economy_record_btn.tooltip_text = "每个经济 epoch 写一组 CSV（汇总/阶层/建筑/自然资源/物资，按上方开关）→ 桌面 ../../tmp；手机 user://economy_data"
+	_economy_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_economy_record_btn.pressed.connect(_on_btn_toggle_economy_record)
+	econ_ctrl_row.add_child(_economy_record_btn)
+	parent.add_child(econ_ctrl_row)
 
 	_telemetry_vbox = VBoxContainer.new()
 	_telemetry_vbox.add_theme_constant_override("separation", 4)
@@ -946,6 +998,7 @@ func _refresh_sim_perf_lines() -> void:
 	# 复用 _telemetry_timer，不新建 Timer。
 	_refresh_record_btn_text()
 	_refresh_tile_record_btn_text()
+	_refresh_economy_record_btn_text()
 
 
 # 2026-05-19：新增 ── 暂停 / 快照 / Top-N 工具函数
@@ -1186,6 +1239,108 @@ func _show_tile_record_toast(msg: String, is_error: bool) -> void:
 		if _tile_record_btn != null and is_instance_valid(_tile_record_btn):
 			_tile_record_btn.remove_theme_color_override("font_color")
 			_refresh_tile_record_btn_text(true)
+	)
+
+
+# 经济录制维度开关（录制中改会被忽略，start 时生效）
+func _on_economy_dim_toggled(dim_key: String, chk: CheckBox) -> void:
+	if _economy_data_recorder == null:
+		return
+	var pressed: bool = chk.button_pressed
+	match dim_key:
+		"summary":
+			_economy_data_recorder.call("set_record_summary", pressed)
+		"cohorts":
+			_economy_data_recorder.call("set_record_cohorts", pressed)
+		"buildings":
+			_economy_data_recorder.call("set_record_buildings", pressed)
+		"resources":
+			_economy_data_recorder.call("set_record_resources", pressed)
+		"market":
+			_economy_data_recorder.call("set_record_market", pressed)
+
+
+func _on_economy_scope_toggled() -> void:
+	if _economy_data_recorder == null or _economy_current_cell_checkbox == null:
+		return
+	_economy_data_recorder.call(
+		"set_current_cell_only", _economy_current_cell_checkbox.button_pressed)
+
+
+func _on_btn_toggle_economy_record() -> void:
+	if _economy_data_recorder == null:
+		return
+	var summary: Dictionary = _economy_data_recorder.call("sampling_summary") \
+		if _economy_data_recorder.has_method("sampling_summary") else {}
+	var state: String = str(summary.get("state", "idle"))
+	if state == "draining" or state == "opening":
+		_show_economy_record_toast("后台正在收尾，请稍候", false)
+		return
+	if state == "recording":
+		if _economy_data_recorder.has_method("stop_and_export"):
+			_economy_data_recorder.call("stop_and_export")
+		_show_economy_record_toast("已停止抓取，后台正在写完剩余批次", false)
+	else:
+		if _economy_data_recorder.has_method("start"):
+			_economy_data_recorder.call("start")
+		_refresh_economy_record_btn_text(true)
+
+
+func _refresh_economy_record_btn_text(force: bool = false) -> void:
+	if _economy_record_btn == null or _economy_data_recorder == null:
+		return
+	var summary: Dictionary = _economy_data_recorder.call("sampling_summary") \
+		if _economy_data_recorder.has_method("sampling_summary") else {}
+	var state: String = str(summary.get("state", "idle"))
+	var captured_epochs: int = int(summary.get("captured_epochs", 0))
+	var written_epochs: int = int(summary.get("written_epochs", 0))
+	var rows: int = int(summary.get("captured_rows", 0))
+	var queue: int = int(summary.get("queued_batches", 0))
+	var capture_ms: float = float(summary.get("capture_ms_last", 0.0))
+	var current_cell_only: bool = bool(summary.get("current_cell_only", false))
+	var selected_cell_index: int = int(summary.get("selected_cell_index", -1))
+	if _economy_current_cell_checkbox != null:
+		_economy_current_cell_checkbox.disabled = state in ["opening", "recording", "draining"]
+	if state == "recording":
+		var scope_text: String = "地块 #%d，" % selected_cell_index \
+			if current_cell_only else "全图，"
+		_economy_record_btn.text = "⏹ 停止并导出（%s抓取 %d / 写入 %d epoch，%d 行，队列 %d，%.1fms）" % [
+			scope_text, captured_epochs, written_epochs, rows, queue, capture_ms,
+		]
+		_economy_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))
+	elif state == "draining" or state == "opening":
+		_economy_record_btn.text = "⏳ 正在后台收尾（写入 %d/%d epoch，队列 %d）" % [
+			written_epochs, captured_epochs, queue,
+		]
+		_economy_record_btn.add_theme_color_override("font_color", Color(0.95, 0.75, 0.30))
+	elif state == "error":
+		var error_label: String = str(summary.get("error_message", ""))
+		if error_label == "":
+			error_label = str(summary.get("error_code", "write_failed"))
+		_economy_record_btn.text = "⚠ 录制停止：%s（点击重新开始）" % error_label
+		_economy_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
+	elif state == "completed":
+		var path_count: int = (summary.get("paths", PackedStringArray()) as PackedStringArray).size()
+		_economy_record_btn.text = "✓ 已导出 %d 个 CSV（点击重新开始）" % path_count
+		_economy_record_btn.add_theme_color_override("font_color", Color(0.55, 0.95, 0.55))
+	else:
+		_economy_record_btn.text = "⏺ 开始经济数据录制"
+		_economy_record_btn.remove_theme_color_override("font_color")
+
+
+func _show_economy_record_toast(msg: String, is_error: bool) -> void:
+	if _economy_record_btn == null:
+		return
+	_economy_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	if is_error:
+		_economy_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
+	else:
+		_economy_record_btn.add_theme_color_override("font_color", Color(0.55, 0.95, 0.55))
+	var t := get_tree().create_timer(2.0)
+	t.timeout.connect(func() -> void:
+		if _economy_record_btn != null and is_instance_valid(_economy_record_btn):
+			_economy_record_btn.remove_theme_color_override("font_color")
+			_refresh_economy_record_btn_text(true)
 	)
 
 

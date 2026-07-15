@@ -4,6 +4,7 @@
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
 #include "economy_runtime.h"           // Independent ECONOMY_GRAPH authority
+#include "economy_csv_recorder.h"      // Debug-only committed CSV writer
 #include "country_runtime.h"           // Independent COUNTRY_GRAPH authority
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
@@ -59,6 +60,10 @@ using namespace godot;
 
 DCWorldExt::DCWorldExt() = default;
 DCWorldExt::~DCWorldExt() {
+    if (_economy_csv_recorder != nullptr) {
+        delete static_cast<EconomyCsvRecorder *>(_economy_csv_recorder);
+        _economy_csv_recorder = nullptr;
+    }
     if (_economy_runtime != nullptr) {
         delete static_cast<NativeEconomyRuntime *>(_economy_runtime);
         _economy_runtime = nullptr;

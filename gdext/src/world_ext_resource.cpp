@@ -183,8 +183,16 @@ inline float natres_step_scalar_ecology_dt(float t_val, float m_val, float reser
     const float capacity = std::max(0.0f, rr.ecology_capacity * runtime_fit);
     const float growth_factor = 1.0f + std::max(0.0f, rr.ecology_growth_rate) * runtime_fit;
     const float immigration = std::max(0.0f, rr.ecology_immigration) * runtime_fit;
+    // Carrying capacity already represents ordinary habitat degradation. Applying
+    // stress mortality to every point below perfect fit double-counted that penalty
+    // and made otherwise viable populations converge toward the immigration floor.
+    // Reserve explicit mortality for the acutely unsuitable bottom quarter only.
+    constexpr float ACUTE_STRESS_FIT_THRESHOLD = 0.25f;
+    const float acute_stress = dc_clampf(
+        (ACUTE_STRESS_FIT_THRESHOLD - climate_fit) / ACUTE_STRESS_FIT_THRESHOLD,
+        0.0f, 1.0f);
     const float stress_denom = 1.0f + std::max(0.0f, rr.ecology_stress_mortality_rate) *
-                                      (1.0f - runtime_fit);
+                                      acute_stress;
     float v = std::max(0.0f, reserve + extra_change);
     for (int day = 0; day < std::max(1, dt_days); ++day) {
         const float seeded = v + immigration;

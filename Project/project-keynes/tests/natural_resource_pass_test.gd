@@ -62,6 +62,14 @@ func _test_registry_knobs() -> void:
 	var slots: PackedStringArray = knobs.get("reserve_slots", PackedStringArray())
 	var extra_slots: PackedStringArray = knobs.get("extra_change_slots", PackedStringArray())
 	var gen_self: PackedFloat32Array = knobs.get("gen_self", PackedFloat32Array())
+	var gen_moisture: PackedFloat32Array = knobs.get(
+		"gen_moisture", PackedFloat32Array())
+	var decay_self: PackedFloat32Array = knobs.get(
+		"decay_self", PackedFloat32Array())
+	var runtime_fit_weight: PackedFloat32Array = knobs.get(
+		"runtime_climate_fit_weight", PackedFloat32Array())
+	var decay_stress: PackedFloat32Array = knobs.get(
+		"decay_stress", PackedFloat32Array())
 	var ecology_capacity: PackedFloat32Array = knobs.get(
 		"ecology_capacity", PackedFloat32Array())
 	var ecology_growth_rate: PackedFloat32Array = knobs.get(
@@ -73,10 +81,12 @@ func _test_registry_knobs() -> void:
 	var ai: int = _slot_index(slots, "cell_res_arable_land_reserve")
 	var ii: int = _slot_index(slots, "cell_res_iron_ore_reserve")
 	var gi: int = _slot_index(slots, "cell_res_wild_game_reserve")
+	var fi: int = _slot_index(slots, "cell_res_fertile_soil_reserve")
 	var pi: int = _slot_index(slots, "cell_res_pasture_reserve")
 	_expect("reserve_slots has arable_land", ai >= 0)
 	_expect("reserve_slots has iron_ore", ii >= 0)
 	_expect("reserve_slots has wild_game", gi >= 0)
+	_expect("reserve_slots has fertile_soil", fi >= 0)
 	_expect("reserve_slots has pasture", pi >= 0)
 	_expect("reserve_slots retired freshwater_fish", _slot_index(slots, "cell_res_freshwater_fish_reserve") < 0)
 	for retired_slot in ["cell_res_uranium_ore_reserve", "cell_res_nickel_ore_reserve",
@@ -102,6 +112,14 @@ func _test_registry_knobs() -> void:
 			gi < ecology_immigration.size() and ecology_immigration[gi] > 0.0 and
 			gi < ecology_stress_mortality_rate.size() and
 			ecology_stress_mortality_rate[gi] > 0.0)
+	if fi >= 0:
+		var minimum_runtime_fit := 1.0 - float(runtime_fit_weight[fi])
+		var minimum_daily_production := float(gen_self[fi]) * minimum_runtime_fit - \
+			float(decay_stress[fi]) * (1.0 - minimum_runtime_fit)
+		var minimum_equilibrium := minimum_daily_production / float(decay_self[fi])
+		_expect("fertile_soil keeps a positive worst-climate equilibrium",
+			fi < gen_moisture.size() and minimum_daily_production > 0.0 and
+			minimum_equilibrium >= 4999.0)
 	if pi >= 0:
 		_expect("pasture extra slot", pi < extra_slots.size() and extra_slots[pi] == "cell_res_pasture_extra_change")
 
@@ -286,6 +304,11 @@ func _test_native_pass() -> void:
 		wild[0] = 0.0
 		wild[1] = capacity * 0.5
 		wild[2] = capacity * 2.0
+		var ordinary_raw_fit := 0.5
+		var ordinary_runtime_fit := lerpf(
+			1.0, ordinary_raw_fit, float(wild_profile.runtime_climate_fit_weight))
+		var ordinary_capacity := capacity * ordinary_runtime_fit
+		wild[3] = ordinary_capacity * 0.5
 		wild[4] = capacity * 0.5
 		wild_extra.fill(0.0)
 		var ideal_temp := float(wild_profile.temp_lo) + float(wild_profile.climate_temp_opt) * (
@@ -294,6 +317,11 @@ func _test_native_pass() -> void:
 		moist[0] = wild_profile.climate_moisture_opt
 		moist[1] = wild_profile.climate_moisture_opt
 		moist[2] = wild_profile.climate_moisture_opt
+		temp[3] = float(wild_profile.temp_lo) + (
+			float(wild_profile.climate_temp_opt) +
+			float(wild_profile.climate_temp_tol) * (1.0 - ordinary_raw_fit)) * (
+			float(wild_profile.temp_hi) - float(wild_profile.temp_lo))
+		moist[3] = wild_profile.climate_moisture_opt
 		temp[4] = wild_profile.temp_lo
 		moist[4] = 0.0
 		map.set(fields[wild_i], wild)
@@ -307,26 +335,58 @@ func _test_native_pass() -> void:
 		_expect("wild_game recovers from zero through immigration", wild[0] > 0.0)
 		_expect("wild_game grows below carrying capacity", wild[1] > capacity * 0.5)
 		_expect("wild_game naturally declines above carrying capacity", wild[2] < capacity * 2.0)
+		_expect("wild_game grows in ordinary non-ideal climate",
+			wild[3] > ordinary_capacity * 0.5)
 		_expect("wild_game climate stress suppresses population",
 			wild[4] < wild[1])
 
 		# 24 座石器时代狩猎营地每天合计采收 12 单位；按五日经济周期一次扣 60。
 		# 连续一年后仍应保有过半承载量，避免测试经济再次在数个周期内归零。
 		wild[0] = capacity
+		wild[3] = ordinary_capacity
 		wild_extra.fill(0.0)
 		map.set(fields[wild_i], wild)
 		map.set(extra_fields[wild_i], wild_extra)
 		ext.refresh_slots_from_map()
 		knobs["dt_days"] = 5
-		for _cycle in range(73):
+		for _cycle in range(365):
 			wild_extra = map.get(extra_fields[wild_i])
 			wild_extra[0] = -60.0
+			wild_extra[3] = -60.0
 			map.set(extra_fields[wild_i], wild_extra)
 			ext.refresh_slots_from_map()
 			ext.run_natural_resource_pass(knobs)
 		wild = map.get(fields[wild_i])
-		_expect("wild_game sustains one year of 24-camp harvest at ideal habitat",
+		_expect("wild_game sustains five years of 24-camp harvest at ideal habitat",
 			wild[0] > capacity * 0.5)
+		_expect("wild_game sustains five years of 24-camp harvest in ordinary climate",
+			wild[3] > ordinary_capacity * 0.35)
+
+	var fertile_i: int = _profile_index(profiles, "fertile_soil")
+	if fertile_i >= 0:
+		var fertile_profile = profiles[fertile_i]
+		var fertile: PackedFloat32Array = map.get(fields[fertile_i])
+		var fertile_extra: PackedFloat32Array = map.get(extra_fields[fertile_i])
+		fertile[0] = 1.0
+		fertile_extra.fill(0.0)
+		temp[0] = fertile_profile.temp_lo
+		moist[0] = 0.0
+		map.set(fields[fertile_i], fertile)
+		map.set(extra_fields[fertile_i], fertile_extra)
+		map.temp_arr = temp
+		map.moisture_arr = moist
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 30
+		for _month in range(34):
+			ext.run_natural_resource_pass(knobs)
+		fertile = map.get(fields[fertile_i])
+		var minimum_fit := 1.0 - float(fertile_profile.runtime_climate_fit_weight)
+		var minimum_p := ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE * (
+			float(fertile_profile.gen_self) * minimum_fit -
+			float(fertile_profile.decay_stress) * (1.0 - minimum_fit))
+		var minimum_equilibrium := minimum_p / float(fertile_profile.decay_self)
+		_expect("fertile_soil remains above 75% of its floor after 1020 days",
+			fertile[0] > minimum_equilibrium * 0.75)
 
 
 func _profile_index(profiles: Array, id_name: String) -> int:
@@ -357,19 +417,22 @@ func _reference_step(res_idx: int, reserve_in: PackedFloat32Array, extra_in: Pac
 		var extra_change: float = extra_in[i] if i < extra_in.size() else 0.0
 		# 半隐式（IMEX）：与 C++ run_natural_resource_pass / fallback 同模板。
 		var fit_weight: float = clampf(p.runtime_climate_fit_weight, 0.0, 1.0)
+		var climate_fit: float = 1.0
 		var runtime_fit: float = 1.0
 		if fit_weight != 0.0 or p.decay_stress != 0.0:
 			var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
 			var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
-			runtime_fit = lerpf(1.0, temp_fit * moisture_fit, fit_weight)
+			climate_fit = temp_fit * moisture_fit
+			runtime_fit = lerpf(1.0, climate_fit, fit_weight)
 		var reserve_after_external := maxf(0.0, reserve + extra_change)
 		var v: float
 		if float(p.ecology_capacity) > 0.0:
 			var capacity := maxf(0.0, float(p.ecology_capacity) * quantity_scale * runtime_fit)
 			var growth_factor := 1.0 + maxf(0.0, float(p.ecology_growth_rate)) * runtime_fit
 			var immigration := maxf(0.0, float(p.ecology_immigration)) * quantity_scale * runtime_fit
+			var acute_stress := clampf((0.25 - climate_fit) / 0.25, 0.0, 1.0)
 			var stress_denom := 1.0 + maxf(0.0, float(
-				p.ecology_stress_mortality_rate)) * (1.0 - runtime_fit)
+				p.ecology_stress_mortality_rate)) * acute_stress
 			v = reserve_after_external
 			for _day in range(maxi(1, dt_days)):
 				var seeded := v + immigration

@@ -43,6 +43,35 @@ employee funds/income += stable_prefix_share(base_paid)
 `25% * max(0, revenue - input - base_due - target_owner_profit)` 成为员工奖金池。
 基础工资与奖金都是 cohort 间转账，既不改变总资金，也不进入 explicit mint/burn。
 
+企业采购和实际生产使用两个容量：
+
+```text
+purchase_intent_capacity = min(available, owner employment, each critical role employment,
+                               owner input-cash coverage, natural-resource coverage)
+realized_capacity        = min(purchase_intent_capacity, each local input-stock coverage)
+business_demand          = unit input * building_days * purchase_intent_capacity
+realized_profit_margin   = (sales - input cost - base wages due)
+                           / max(input cost + base wages due, MONEY_SCALE)
+```
+
+本地缺货不把采购意图归零，只把实际产能压到库存瓶颈；无人、无输入资金、资源枯竭或
+`SUSPENDED_LOSS` 则两者均为零。实际有经营成本的利润率连续三周期 `<= -25%` 后停产；无生产且
+无成本的纯缺货周期不累计。停产期用当前价格、最低有效输入成本和合同工资计算反事实利润，连续
+两周期 `>= +10%` 且业主资金覆盖一栋一周期成本后恢复。
+
+商人采购预算为：
+
+```text
+target = (realized_withdrawal_ema + export_ema) * target_inventory_days
+       + max(feasible_household_and_business_demand - realized_withdrawal_ema, 0) * epoch_days
+cold_start_target = max(target, offered_daily_output * 1 day)  # 无消费/出口历史
+gap = max(target - current_stock, 0)
+procurement_budget = opening_merchant_cash * 75%
+good_budget_share = procurement_budget * (gap * buy_price) / sum(gap * buy_price)
+```
+
+预算余数按稳定 good ID 和 building group 顺序落位；金银铸币结算不受普通采购预算限制。
+
 每次提交严格校验：
 
 ```text

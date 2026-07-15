@@ -2,7 +2,7 @@
 
 > 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v4`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v11 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v12 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治和一般自然人口变化；仅实现缺乏食品/气候所需衣着造成的生存死亡。
 
 ## 权威与禁止事项
@@ -39,7 +39,7 @@
 - 一地块一市场；库存由该地块全部商人 cohort 按人口共同持有。
 - 人口非零但无商人时，从最大非商人 cohort 转 1 人并按比例转资金。
 - 购买资金直接进入商人 cohort，无 `market_cash`。
-- 商人正常消费；每日需求/预算重置；同 tick 最多一次替代 fallback。
+- 商人正常消费；企业采购开始冻结现金并保留 25%，按实际出库/出口 EMA 形成的库存缺口价值分配预算；同 tick 最多一次替代 fallback。
 - 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
 - `staple_food/protein/produce` 是内部营养与价格分配子篮子，对玩家统一显示“食品”；野味、
   鱼、肉、谷物、采集植物和已解锁加工食物均按替代品展示，即使当前分配量为零也不隐藏。
@@ -50,7 +50,7 @@
   同一 good 跨 need 只允许 refined_fuel、computers、beverages、fur 四种明确多用途；展示层聚合
   数量与支出，不重复渲染。铁路设备、远洋船舶和科学仪器不再代理居民服务消费。
 - 商品可由显式库存命令或 BUILDING_GRAPH 生产进入市场。
-- 建筑先购买原料并生产；业主按自己的消费计划从单商品需求变体中留用本期所需产出，剩余产出
+- 建筑先按就业、输入资金和资源计算采购意图，再按本地输入库存计算实际产能；缺货输入保留受约束补货意图。业主按自己的消费计划从单商品需求变体中留用本期所需产出，剩余产出
   才出售给市场，再从销售后资金统一分配基础工资和奖金；居民随后使用本期收入购买本期新商品。
   留用品不产生虚假收入或支出，未消费余量回记来源建筑的丢弃量。最终欠薪继续报告，但不会追溯
   取消已完成生产。
@@ -58,15 +58,17 @@
   金/银矿藏、使用 extract 模式且不生成资源；允许后期矿井拥有雇员和工具输入。
   市场接受金银时按 `monetary_issue_value` 向业主发行货币，计入
   `explicit_money_mint/bullion_money_issued`，不允许无资源铸币。
-- 国内贸易只沿同一冻结国家的可贸易地形运输；发运即托管源货物和目的商人现金，到达边界结算。
+- 国内贸易默认 ACTIVE，只沿同一冻结国家的可贸易地形运输；发运即托管源货物和目的商人现金，到达边界结算。
 - 生产默认 5 日结算周期；`market_cycle_days=0` 才启用按规模自动周期。
 - 世界设置中的测试经济 fixture 默认关闭；启用时使用石器中期科技，只在可见资源能支撑配方的
   地块放置 collector，并只在已有全部本地上游产出的地块放置 industrial。升级族只放置当前最高
   可用档。生成器按输出减直接消费品投入计算净产能，以食品 `1300`、衣着 `4`
   GOODS_SCALE/人/日为保守下限；只削减重复建筑并保留每种可用建筑至少一栋。连一人最低需求都
   无法覆盖的地块不生成测试聚落，避免必然停工和死亡。生成顺序固定为建筑 owner-lot → catalog
-  岗位汇总 → cohort；初始就业和市场库存均为零，由原生图在后续周期结算。该 fixture 仅用于开发
-  测试，不能作为正式历史人口来源。
+  岗位汇总 → cohort；每个有人口地块会预先把最大非商人 cohort 的 1 人转为商人。所有 cohort
+  获得 30 日 `survival_household` 生存金，业主追加两周期最低有效输入成本，商人追加本地产出目标库存金。
+  总人口仍等于建筑岗位人口，初始就业和市场库存均为零，由原生图
+  在后续周期结算。该 fixture 仅用于开发测试，不能作为正式历史人口来源。
 
 ## 调度
 
@@ -83,8 +85,10 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 `EconomyFacade.build/demolish/building_cell_snapshot` 是 GDScript 粗边界；建筑、岗位、生产、所有权
 份额和账本只由 C++ 修改。employee role 的 `adaptive` 工资使用当地生活成本与岗位合同工资
 EMA；同一 owner 在产品销售后按可用现金比例支付。销售后超过目标业主利润的
-25% 形成奖金池。亏损本身不再降低就业需求或计划利用率。生产后只对建筑实际输入/输出边更新
-稀疏企业需求、供给和成本锚，并更新稀疏 `(cell, profession)` 劳动市场信号，
+25% 形成奖金池。实际利润率连续三周期不高于 -25% 后转为亏损停产；停产不分配岗位、不采购、
+不生产、不贡献企业需求，反事实利润连续两周期达到 +10% 且业主资金充足后恢复。生产后按采购
+意图更新稀疏企业需求，并按真实居民/企业/建设出库更新实际出库 EMA、供给和成本锚，同时更新
+稀疏 `(cell, profession)` 劳动市场信号，
 供下一周期 Price V3 使用。
 `consume_local_resources` 的资源边分为 `extract` 与 `capacity`：前者按本地储量限产并发布负 delta，
 后者只限制建筑数量/产能而不扣减储量。农场以旱作耕地、水田或种植园容量生产 crop goods，
@@ -121,14 +125,14 @@ good ID 稳定选择。`GoodProfile.production_quality_level` 控制最低等级
 食用油和工业润滑剂不共享类目，机器零件从蒸汽时代起直接消费矿物润滑剂。
 建筑 snapshot 另以 `group_input_selected_offsets/group_input_selected_good_ids` 返回每个建筑组、每个
 输入槽上次实际采购的 good；Inspector 将它标为“当前”。该诊断 lane 不参与权威 state hash 或
-PKEC v11 save，restore 后在下一次成功生产前显示为未知。
+PKEC v12 save，restore 后在下一次成功生产前显示为未知。
 
 ## 现代内容目录
 
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
   只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 120 goods、259
   production-method buildings、32 professions、17 needs 和 8 consumption plans。消费重平衡不改
-  stable-ID 表或 PKEC v11 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
+  stable-ID 表或 PKEC v12 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
 - `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
   collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。

@@ -45,7 +45,7 @@ Runtime hydrology 新增的契约：
 负责跨最多 7 格汇总 `_resource_remaining` 并把 extraction delta 写回真实来源格。邻接数组只在
 冻结周期边界跨桥一次，不进入逐建筑 Object/GDScript 调用。Inspector 冷查询同时发布本地与
 邻域可达 reserve/pending/effective 三列。
-- Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v11 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
+- Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v12 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
 
 国内贸易拓扑也不进入 DataCore schema。`MapData.neighbor_indices_packed()` 与
 `economy_trade_passable_lut()` / `economy_trade_move_cost_lut()` 在经济边界通过
@@ -53,6 +53,8 @@ Runtime hydrology 新增的契约：
 `cell_country` 构建连通分量。地图只提供输入，不持有路线、信号、订单或托管。
 
 Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口、市场、建筑标签按当前可见标签惰性调用 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。贸易单使用 `get_trade_orders_for_cell(cell, offset, limit)` 分页查询并返回物资行 CSR，禁止全局订单矩阵。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md) 与 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
+
+经济 CSV v3 是同一 committed visibility boundary 的 debug consumer。`DCWorldExt::run_economy_slice()` 先完成 `publish_epoch()`，再把建筑自然资源 delta 写入/flush 到 DataCore reserve slot，最后才允许 `EconomyCsvRecorder` 把 native cohort/market/building SoA 与资源 slot 复制进一个空闲 POD buffer。后台 worker 只接触 `std::vector`、字符串表和绝对路径，不访问 Godot API 或运行中的 runtime。控制面仅绑定 `start_economy_csv_recording(config)`、`request_stop_economy_csv_recording()`、`get_economy_csv_recording_status()`；GDScript 不再逐 cell 调 snapshot API。`config.cell_indices` 为空时按 `cell_stride` 取全图样本，非空时排序去重并覆盖 stride；GM 的“当前地块”只传一个在 start 时锁定的 index。summary 仍是全局提交摘要，cohorts/buildings/resources/market 仅遍历显式样本。双缓冲满时自动停止接收并排空已接受批次，不阻塞经济提交；CSV 调试状态不进入 PKEC、replay hash 或 simulation authority。
 
 ## PackedArray CoW 公理
 

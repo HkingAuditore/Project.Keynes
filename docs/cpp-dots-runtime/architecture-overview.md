@@ -176,7 +176,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 
 经济运行时通过窄 C++ 指针桥在 sample day 冻结归属、国家科技、generation/hash，并在整个结算
 周期使用该快照。国内贸易拓扑也以该冻结归属生成国家连通分量；新订单只走同一非中立国家，
-已发运订单不因后续边界变化取消。PKCN v1 是国家状态存档，PKEC v11 引用匹配的 PKCN identity
+已发运订单不因后续边界变化取消。PKCN v1 是国家状态存档，PKEC v12 引用匹配的 PKCN identity
 并持久化在途订单、托管与贸易 EMA；恢复顺序固定为
 PKCN 后 PKEC。详见 [Native Country Runtime](./native-country-runtime.md)、
 [Country / Economy Bridge](./country-economy-bridge.md) 和
