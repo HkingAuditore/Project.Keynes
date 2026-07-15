@@ -78,11 +78,9 @@ func _test_default_active_gate(compiled: Dictionary) -> void:
 
 func _test_survival_labor_and_mortality(compiled: Dictionary) -> void:
 	var goods: PackedStringArray = compiled.good_ids
-	var food_stock := {
+	var staple_stock := {
 		"prepared_staples": 1000000, "bread": 1000000, "grain": 1000000,
-		"gathered_plants": 1000000, "game_meat": 1000000, "meat": 1000000,
-		"canned_fish": 1000000, "dairy_products": 1000000,
-		"vegetables": 1000000, "processed_food": 1000000,
+		"gathered_plants": 1000000,
 	}
 	var hot := _new_ext(1, 1.0)
 	var catalog := compiled.duplicate(true)
@@ -100,14 +98,14 @@ func _test_survival_labor_and_mortality(compiled: Dictionary) -> void:
 		"population": PackedInt64Array([100]),
 		"funds": PackedInt64Array([100000000]),
 	}, {})
-	hot.submit_economy_commands(_stock_commands(0, goods, food_stock, 0))
+	hot.submit_economy_commands(_stock_commands(0, goods, staple_stock, 0))
 	var hot_report := _run_day(hot, 0)
 	var hot_pop: Dictionary = hot.get_population_cell_snapshot(0)
 	var hot_satisfaction: PackedInt32Array = hot_pop.satisfaction_by_cohort_q16
 	var hot_survives := true
 	for value in hot_satisfaction:
 		hot_survives = hot_survives and int(value) >= 32768
-	_expect("fish is optional when other food is sufficient and heat waives clothing",
+	_expect("staples alone prevent starvation and heat waives clothing",
 		hot_survives and int(hot_report.get("deaths", -1)) == 0 and
 		int(hot_report.get("population_error", 1)) == 0 and
 		_good_value(hot.get_market_cell_snapshot(0), "stock", "fish") == 0)
@@ -134,6 +132,25 @@ func _test_survival_labor_and_mortality(compiled: Dictionary) -> void:
 		int(cold_report.get("deaths", 0)) > 0 and
 		int(cold_report.get("population_error", 1)) == 0 and
 		int(cold.get_population_cell_summary(0).population) < 100)
+
+	var exposed := _new_ext(1, 0.0)
+	var exposed_profile := _native_profile(false, 1)
+	exposed_profile.starvation_death_rate_q32 = 429496730
+	_expect("cold exposure test country bootstraps",
+		CountryTestHelper.configure_all_technologies(exposed, catalog, 1, 143))
+	_expect("cold exposure runtime configures",
+		bool(exposed.configure_economy(catalog, exposed_profile, 1, 143).get("ok", false)))
+	exposed.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([worker_sig]),
+		"population": PackedInt64Array([100]),
+		"funds": PackedInt64Array([100000000]),
+	}, {})
+	exposed.submit_economy_commands(_stock_commands(0, goods, staple_stock, 0))
+	var exposed_report := _run_day(exposed, 0)
+	_expect("missing clothing adds mortality only in severe cold",
+		int(exposed_report.get("deaths", 0)) > 0 and
+		int(exposed_report.get("population_error", 1)) == 0)
 
 func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.1)
@@ -623,10 +640,10 @@ func _configured_many_workers(compiled: Dictionary, workers: bool, cells: int) -
 func _new_ext(cells: int, temperature: float) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	ext.create_entities(cells)
-	var values := PackedFloat32Array()
-	values.resize(cells)
-	values.fill(temperature)
 	for slot_name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover", &"cell_weather_intensity"]:
+		var values := PackedFloat32Array()
+		values.resize(cells)
+		values.fill(temperature if slot_name == &"cell_temp" else 0.0)
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, values)
 	return ext

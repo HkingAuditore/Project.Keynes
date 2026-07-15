@@ -2143,6 +2143,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         _survival_food_need_stable_ids.push_back(
             static_cast<int32_t>(found - _need_ids.begin()));
     }
+    _survival_staple_need_stable_id = _survival_food_need_stable_ids.front();
     const auto clothing = std::lower_bound(_need_ids.begin(), _need_ids.end(), "clothing");
     if (clothing == _need_ids.end() || *clothing != "clothing") {
         error = "survival_clothing_need_missing:clothing";
@@ -6907,6 +6908,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<int64_t> cohort_filled;
     thread_local std::vector<int64_t> cohort_food_desired;
     thread_local std::vector<int64_t> cohort_food_filled;
+    thread_local std::vector<int64_t> cohort_staple_desired;
+    thread_local std::vector<int64_t> cohort_staple_filled;
     thread_local std::vector<int64_t> cohort_clothing_desired;
     thread_local std::vector<int64_t> cohort_clothing_filled;
     thread_local std::vector<int64_t> good_demand;
@@ -6959,6 +6962,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     cohort_filled.assign(cohort_count, 0);
     cohort_food_desired.assign(cohort_count, 0);
     cohort_food_filled.assign(cohort_count, 0);
+    cohort_staple_desired.assign(cohort_count, 0);
+    cohort_staple_filled.assign(cohort_count, 0);
     cohort_clothing_desired.assign(cohort_count, 0);
     cohort_clothing_filled.assign(cohort_count, 0);
     good_demand.assign(_market.good_count, 0);
@@ -7377,6 +7382,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 cohort_food_desired[local], state.desired_units, sat);
             cohort_food_filled[local] = saturating_add(
                 cohort_food_filled[local], state.filled_units, sat);
+            if (stable_need == _survival_staple_need_stable_id) {
+                cohort_staple_desired[local] = saturating_add(
+                    cohort_staple_desired[local], state.desired_units, sat);
+                cohort_staple_filled[local] = saturating_add(
+                    cohort_staple_filled[local], state.filled_units, sat);
+            }
         } else if (stable_need == _survival_clothing_need_stable_id) {
             cohort_clothing_desired[local] = saturating_add(
                 cohort_clothing_desired[local], state.desired_units, sat);
@@ -7397,15 +7408,33 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         remaining_market_population, std::max<int64_t>(0, _population.population[slot]), sat);
     for (int32_t local = 0; local < cohort_count; ++local) {
         const int32_t slot = slots[local];
-        const int64_t food_q16 = cohort_food_desired[local] <= 0 ? Q16_ONE - 1
+        const int64_t balanced_food_q16 = cohort_food_desired[local] <= 0 ? Q16_ONE - 1
             : std::clamp<int64_t>(mul_div_sat(
                 cohort_food_filled[local], Q16_ONE, cohort_food_desired[local], sat),
                 0, Q16_ONE - 1);
+        const int64_t staple_q16 = cohort_staple_desired[local] <= 0 ? Q16_ONE - 1
+            : std::clamp<int64_t>(mul_div_sat(
+                cohort_staple_filled[local], Q16_ONE, cohort_staple_desired[local], sat),
+                0, Q16_ONE - 1);
+        // 主食单独覆盖最低热量生存；蛋白质与蔬果仍可通过综合膳食补足缺口。
+        const int64_t food_q16 = std::max(staple_q16, balanced_food_q16);
         const int64_t clothing_q16 = cohort_clothing_desired[local] <= 0 ? Q16_ONE - 1
             : std::clamp<int64_t>(mul_div_sat(
                 cohort_clothing_filled[local], Q16_ONE,
                 cohort_clothing_desired[local], sat), 0, Q16_ONE - 1);
-        const int64_t survival_q16 = std::min(food_q16, clothing_q16);
+        const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+        const int64_t temperature_q16 = cell >= 0 && cell < _cell_count
+            ? _environment_temperature_q16[cell] : Q16_ONE / 2;
+        const int64_t snow_q16 = cell >= 0 && cell < _cell_count
+            ? _environment_snow_q16[cell] : 0;
+        const int64_t temperature_exposure_q16 = std::clamp<int64_t>(
+            (Q16_ONE / 2 - temperature_q16) * 2, 0, Q16_ONE);
+        const int64_t cold_exposure_q16 = std::max<int64_t>(
+            temperature_exposure_q16, std::clamp<int64_t>(snow_q16, 0, Q16_ONE));
+        const int64_t clothing_deficit_q16 = Q16_ONE - clothing_q16;
+        const int64_t cold_clothing_ceiling_q16 = Q16_ONE - mul_div_sat(
+            cold_exposure_q16, clothing_deficit_q16, Q16_ONE, sat);
+        const int64_t survival_q16 = std::min(food_q16, cold_clothing_ceiling_q16);
         _population.needs_satisfaction[slot] = static_cast<uint16_t>(survival_q16);
         _population.worst_need_id[slot] = cohort_worst_need[local];
         const int64_t net_income = saturating_sub(_population.epoch_income[slot],

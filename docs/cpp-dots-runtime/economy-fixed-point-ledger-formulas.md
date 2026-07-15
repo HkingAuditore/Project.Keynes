@@ -142,9 +142,13 @@ allocation_i = floor(prefix_i * available / total)
 允许曲线为零，因此无需衣着也视为满足。权威 Q16 值为：
 
 ```text
-food_sat     = sum(food_filled) / sum(food_desired)
+balanced_food_sat = sum(food_filled) / sum(food_desired)
+staple_sat   = staple_filled / staple_desired
+food_sat     = max(staple_sat, balanced_food_sat)
 clothing_sat = clothing_desired == 0 ? 1 : clothing_filled / clothing_desired
-survival_sat = min(food_sat, clothing_sat)
+cold_exposure = max(clamp((0.5 - temperature) * 2, 0, 1), snow_cover)
+cold_clothing_ceiling = 1 - cold_exposure * (1 - clothing_sat)
+survival_sat = min(food_sat, cold_clothing_ceiling)
 starvation_deficit = max(0, starvation_satisfaction_threshold - survival_sat)
 ```
 
