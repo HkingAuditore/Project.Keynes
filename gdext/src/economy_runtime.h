@@ -671,6 +671,13 @@ private:
         int64_t unit_price = 0;
     };
 
+    struct OwnerRetainedOutput {
+        int32_t owner_slot = -1;
+        int32_t good_id = -1;
+        int32_t building_group = -1;
+        int64_t quantity = 0;
+    };
+
     struct EventLeg;
     struct CashflowEntry;
 
@@ -684,6 +691,8 @@ private:
         int64_t processed_components = 0;
         int64_t saturation_count = 0;
         int64_t consumed_goods = 0;
+        int64_t retained_output_consumed = 0;
+        int64_t retained_output_discarded = 0;
         int64_t births = 0;
         int64_t deaths = 0;
         int64_t closing_population = 0;
@@ -946,6 +955,10 @@ private:
     int64_t _wealth_reference_per_capita = MONEY_SCALE * 10;
     int32_t _living_cost_base_plan_id = -1;
     std::string _living_cost_base_plan_stable_id = "survival_household";
+    std::vector<int32_t> _survival_food_need_stable_ids;
+    int32_t _survival_clothing_need_stable_id = -1;
+    int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
+    int64_t _starvation_death_rate_q32 = Q32_ONE / 200;
     int32_t _wage_ema_alpha_q16 = 8192;
     int32_t _wage_max_rise_q16_per_day = 6554;
     int32_t _wage_max_fall_q16_per_day = 1311;
@@ -1013,6 +1026,8 @@ private:
     int64_t _production_inputs_consumed = 0;
     int64_t _production_output_stock = 0;
     int64_t _production_output_discarded = 0;
+    int64_t _production_output_retained = 0;
+    int64_t _owner_output_consumed = 0;
     int64_t _producer_revenue = 0;
 	int64_t _bullion_money_issued = 0;
 	int64_t _gold_accepted = 0;
@@ -1109,6 +1124,10 @@ private:
     PopulationStore _population;
     MarketStore _market;
     MarketSignalStore _market_signals;
+    std::vector<int64_t> _epoch_business_demand_ema;
+    std::vector<int64_t> _epoch_offered_supply_ema;
+    std::vector<int32_t> _epoch_cost_anchor_price;
+    std::vector<OwnerRetainedOutput> _owner_retained_outputs;
     TradeTopologyStore _trade_topology;
     TradePlanStore _trade_plan;
     TradeOrderStore _trade_orders;

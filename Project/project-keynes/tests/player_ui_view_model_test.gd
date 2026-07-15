@@ -209,41 +209,45 @@ func _initialize() -> void:
 		"demand_good_offsets": PackedInt32Array([0, 2]),
 		"demand_good_indices": PackedInt32Array([0, 1]),
 		"demand_per_capita_daily": PackedInt64Array([800, 40]),
-		"demand_good_stable_ids": PackedStringArray(["grain", "cloth"]),
-		"demand_need_stable_ids": PackedStringArray(["staple_food"]),
-		"demand_need_offsets": PackedInt32Array([0, 1]),
-		"demand_need_indices": PackedInt32Array([0]),
-		"demand_need_variant_offsets": PackedInt32Array([0, 2]),
-		"demand_variant_component_offsets": PackedInt32Array([0, 1, 2]),
-		"demand_component_good_indices": PackedInt32Array([0, 1]),
-		"demand_component_per_capita_daily": PackedInt64Array([800, 40]),
+		"demand_good_stable_ids": PackedStringArray(["grain", "cloth", "fur", "clothing"]),
+		"demand_need_stable_ids": PackedStringArray(["staple_food", "produce", "clothing"]),
+		"demand_need_offsets": PackedInt32Array([0, 3]),
+		"demand_need_indices": PackedInt32Array([0, 1, 2]),
+		"demand_need_variant_offsets": PackedInt32Array([0, 1, 2, 5]),
+		"demand_variant_component_offsets": PackedInt32Array([0, 1, 2, 3, 4, 5]),
+		"demand_component_good_indices": PackedInt32Array([0, 0, 1, 2, 3]),
+		"demand_component_per_capita_daily": PackedInt64Array([500, 300, 40, 0, 0]),
 		"demand_preview_environment_ready": true,
 	}, {
 		"ok": true,
-		"good_ids": PackedStringArray(["grain", "cloth"]),
-		"price": PackedInt32Array([12500, 25000]),
+		"good_ids": PackedStringArray(["grain", "cloth", "fur", "clothing"]),
+		"price": PackedInt32Array([12500, 25000, 24000, 32000]),
+		"good_technology_available": PackedByteArray([1, 1, 1, 0]),
 	})
 	var cohort_rows: Array = population_category.get("cohort_rows", [])
 	if cohort_rows.size() != 1 or not String(cohort_rows[0].get("wealth", "")).contains("40"):
 		failures.append("population dossier did not calculate per-capita wealth")
 	elif (cohort_rows[0].get("demand_rows", []) as Array).filter(
 		func(row: Dictionary) -> bool: return bool(row.get("visible", false))
-	).size() != 2:
-		failures.append("population dossier did not expose all non-zero per-capita demands")
+	).size() != 3:
+		failures.append("population dossier did not expose positive and unlocked alternative demands")
 	elif String(cohort_rows[0].get("income", "")) != "+1" \
 			or String(cohort_rows[0].get("expense", "")) != "−0.5":
 		failures.append("population dossier did not expose last-settlement per-capita cashflow")
 	elif (cohort_rows[0].get("income_rows", []) as Array).size() != 1 \
 			or (cohort_rows[0].get("expense_rows", []) as Array).size() != 1:
 		failures.append("population dossier did not expose non-zero cashflow sources")
-	elif not String((cohort_rows[0].get("demand_summary", {}) as Dictionary).get("value", "")).begins_with("2 类"):
+	elif String((cohort_rows[0].get("demand_summary", {}) as Dictionary).get("value", "")) \
+			!= "2 项用途 · 3 种商品":
 		failures.append("population dossier did not collapse demands into a readable summary")
 	else:
 		var demand_rows: Array = cohort_rows[0].get("demand_rows", [])
+		var demand_groups: Array = cohort_rows[0].get("demand_groups", [])
 		var grain_demand := _find_by_id(demand_rows, "demand_grain")
 		var cloth_demand := _find_by_id(demand_rows, "demand_cloth")
+		var fur_demand := _find_by_id(demand_rows, "demand_fur")
+		var locked_clothing := _find_by_id(demand_rows, "demand_clothing")
 		var demand_summary: Dictionary = cohort_rows[0].get("demand_summary", {})
-		var demand_groups: Array = cohort_rows[0].get("demand_groups", [])
 		if String(grain_demand.get("quantity", "")) != "0.800" \
 				or String(grain_demand.get("price", "")) != "1.25" \
 				or String(grain_demand.get("daily_cost", "")) != "1":
@@ -251,10 +255,20 @@ func _initialize() -> void:
 		elif String(cloth_demand.get("daily_cost", "")) != "0.1" \
 				or String(demand_summary.get("total_daily_cost", "")) != "1.1":
 			failures.append("population demand detail did not calculate per-capita daily spending")
-		elif demand_groups.size() != 1 \
-				or String(demand_groups[0].get("id", "")) != "staple_food" \
-				or int(demand_groups[0].get("variant_count", 0)) != 2:
-			failures.append("population demand detail did not preserve substitute grouping")
+		elif demand_groups.size() != 2 \
+				or String((demand_groups[0] as Dictionary).get("name", "")) != "食品" \
+				or String((demand_groups[1] as Dictionary).get("name", "")) != "衣着" \
+				or ((demand_groups[1] as Dictionary).get("rows", []) as Array).size() != 2:
+			failures.append("population demand detail did not group goods by player-facing usage")
+		elif demand_rows.any(func(row: Dictionary) -> bool:
+			return String(row.get("category_text", "")).contains("替代品")):
+			failures.append("population demand rows still expose redundant substitute wording")
+		elif String(fur_demand.get("quantity", "")) != "0.000" \
+				or not bool(fur_demand.get("visible", false)) \
+				or not bool(fur_demand.get("is_unallocated_alternative", false)):
+			failures.append("unlocked zero-allocation substitute disappeared from demand detail")
+		elif bool(locked_clothing.get("visible", true)):
+			failures.append("technology-locked substitute leaked into demand detail")
 
 	var unavailable_population: Dictionary = view_model._population_category({
 		"ok": true,

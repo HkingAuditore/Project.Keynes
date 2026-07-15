@@ -5891,7 +5891,8 @@ func natural_resource_last_result() -> Dictionary:
 #      + init_elevation*clamp(elevation,0,1) + init_landform_weights[lf]
 #      + init_vegetation_weights[veg] + init_river*water_feature
 #      + init_volcano*volc + init_noise*noise01(cell_pos, init_noise_scale)
-# reserve0 = max(0, suit) * init_reserve_scale（land_only 时水面格为 0）。
+# reserve0 = max(0, suit) * init_reserve_scale * CELL_AREA_RESOURCE_SCALE
+# （land_only 时水面格为 0）。
 # 在 init_soa_from_bake 之后调用（temp/moisture/water/elevation/landform/vegetation/
 # has_river/is_lake_seed/has_volcano/cell_pos 均已就位）。新因子默认 0/{} → 行为不变。
 func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
@@ -5959,7 +5960,8 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var w_volc: float = float(p.init_volcano)
 		var w_noise: float = float(p.init_noise)
 		var w_climate_fit: float = float(p.init_climate_fit)
-		var reserve_scale: float = maxf(float(p.init_reserve_scale), 0.0)
+		var reserve_scale: float = maxf(float(p.init_reserve_scale), 0.0) * \
+			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
 		var lf_w: Dictionary = p.init_landform_weights
 		var veg_w: Dictionary = p.init_vegetation_weights
 		var use_elev: bool = have_elev and w_elev != 0.0
@@ -5971,6 +5973,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var family_id := String(p.geology_family_id)
 		var use_province := have_pos and not family_id.is_empty() and absf(p.init_province) > 0.0
 		var use_belt := have_pos and not family_id.is_empty() and absf(p.init_belt) > 0.0
+		var ranked_cells := []
 		# 噪声按「资源」独立创建（map seed ⊕ 资源 id hash），保证可复现且各资源斑块互不重合。
 		var noise: FastNoiseLite = null
 		if use_noise:
@@ -6035,6 +6038,19 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 				# ridge 高于阈值才形成矿带；其余区域施加负贡献，形成狭长稀疏矿脉。
 				suit += float(p.init_belt) * (belt_ridge - 0.72) * 2.0
 			arr[i] = maxf(0.0, suit) * reserve_scale
+			if float(p.init_min_coverage) > 0.0 and float(p.init_min_reserve) > 0.0:
+				ranked_cells.append({"cell": i, "suit": suit})
+		var target_cells := mini(ranked_cells.size(), ceili(
+			float(ranked_cells.size()) * clampf(float(p.init_min_coverage), 0.0, 1.0)))
+		if target_cells > 0:
+			ranked_cells.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+				if not is_equal_approx(float(a.suit), float(b.suit)):
+					return float(a.suit) > float(b.suit)
+				return int(a.cell) < int(b.cell))
+			for rank in range(target_cells):
+				var cell := int(ranked_cells[rank].cell)
+				arr[cell] = maxf(arr[cell], float(p.init_min_reserve) * \
+					ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE)
 		map_ref.set(field, arr)
 
 
@@ -6080,6 +6096,7 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 	var total_delta: float = 0.0
 	var published: PackedStringArray = PackedStringArray()
 	var published_resources: int = 0
+	var quantity_scale := ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
 	for p in ResourceProfileRegistry.ordered():
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		if field == "":
@@ -6094,6 +6111,10 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 		var hi: float = p.temp_hi
 		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
 		var habitat_code: int = ResourceProfileRegistry.habitat_code(p)
+		var has_natural_dynamics: bool = p.gen_base != 0.0 or p.gen_temp != 0.0 or \
+			p.gen_moisture != 0.0 or p.gen_self != 0.0 or p.decay_base != 0.0 or \
+			p.decay_temp != 0.0 or p.decay_moisture != 0.0 or p.decay_self != 0.0 or \
+			p.decay_stress != 0.0 or p.ecology_capacity > 0.0
 		for i in range(n_cells):
 			if habitat_code > 0 and (i >= habitat_arr.size() or not
 					ResourceProfileRegistry.habitat_available(p, int(habitat_arr[i]))):
@@ -6112,28 +6133,49 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 				var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
 				var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
 				runtime_fit = lerpf(1.0, temp_fit * moisture_fit, fit_weight)
-			var gen_climate: float = p.gen_base + p.gen_temp * tn + p.gen_moisture * m
-			var decay_climate: float = p.decay_base + p.decay_temp * tn + p.decay_moisture * m
-			var gen_self_eff: float = p.gen_self * runtime_fit
-			var P: float = gen_climate + gen_self_eff - decay_climate - p.decay_stress * (1.0 - runtime_fit)
-			var L: float = p.decay_self
-			if L < 0.0:
-				L = 0.0
-			var inv_denom: float = 1.0 / (1.0 + L)
-			var v: float
 			var reserve_after_external := maxf(0.0, reserve + extra_change)
-			if dt_days <= 1:
-				v = (reserve_after_external + P) * inv_denom
-			elif absf(1.0 - inv_denom) < 0.000001:
-				v = reserve_after_external + P * float(dt_days)
+			var v: float
+			if not has_natural_dynamics:
+				arr[i] = reserve_after_external
+				v = float(arr[i])
+				if have_extra:
+					extra_arr[i] = reserve_after_external - v if reserve_after_external > 0.0 else 0.0
+			elif float(p.ecology_capacity) > 0.0:
+				var capacity := maxf(0.0, float(p.ecology_capacity) * quantity_scale * runtime_fit)
+				var growth_factor := 1.0 + maxf(0.0, float(p.ecology_growth_rate)) * runtime_fit
+				var immigration := maxf(0.0, float(p.ecology_immigration)) * quantity_scale * runtime_fit
+				var stress_denom := 1.0 + maxf(0.0, float(
+					p.ecology_stress_mortality_rate)) * (1.0 - runtime_fit)
+				v = reserve_after_external
+				for _day in range(maxi(1, dt_days)):
+					var seeded := v + immigration
+					if capacity <= 0.000001:
+						v = 0.0
+						continue
+					var density_denom := 1.0 + (growth_factor - 1.0) * seeded / capacity
+					v = maxf(0.0, growth_factor * seeded / density_denom / stress_denom)
 			else:
-				var a_pow: float = pow(inv_denom, float(dt_days))
-				var b: float = P * inv_denom
-				v = a_pow * reserve_after_external + b * (1.0 - a_pow) / (1.0 - inv_denom)
+				var gen_climate: float = quantity_scale * (
+					p.gen_base + p.gen_temp * tn + p.gen_moisture * m)
+				var decay_climate: float = quantity_scale * (
+					p.decay_base + p.decay_temp * tn + p.decay_moisture * m)
+				var gen_self_eff: float = quantity_scale * p.gen_self * runtime_fit
+				var P: float = gen_climate + gen_self_eff - decay_climate - \
+					quantity_scale * p.decay_stress * (1.0 - runtime_fit)
+				var L: float = maxf(0.0, p.decay_self)
+				var inv_denom: float = 1.0 / (1.0 + L)
+				if dt_days <= 1:
+					v = (reserve_after_external + P) * inv_denom
+				elif absf(1.0 - inv_denom) < 0.000001:
+					v = reserve_after_external + P * float(dt_days)
+				else:
+					var a_pow: float = pow(inv_denom, float(dt_days))
+					var b: float = P * inv_denom
+					v = a_pow * reserve_after_external + b * (1.0 - a_pow) / (1.0 - inv_denom)
 			if v < 0.0:
 				v = 0.0
 			arr[i] = v
-			if have_extra:
+			if have_extra and has_natural_dynamics:
 				extra_arr[i] = 0.0
 			total_delta += (v - reserve)
 		map_ref.set(field, arr)

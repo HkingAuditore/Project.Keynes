@@ -19,10 +19,14 @@ Stages are stable diagnostic ABI:
 3. `trade_settle`: deliver due cargo and retry unclaimed seller escrow.
 4. `ledger_apply`: consume commands due at the sample day.
 5. `trade_dispatch`: in ACTIVE, validate and escrow the completed candidate batch; PROBE only reports.
-6. `household_market`: process one cohort-budgeted market range per simulation day.
-7. `structural_commit`: stable-sort and apply ECB work.
-8. `wait_commit`: keep completed internal state hidden until `sample_day + N - 1`.
-9. `aggregate_publish`: publish summaries, market rows, audits, trade EMA, and report.
+6. `building_employment`: fill sparse owner/employee roles from population alive at epoch start.
+7. `building_production`: buy inputs, produce/sell output, and distribute post-sale income.
+8. `household_market`: process one cohort-budgeted market range per simulation day against current
+   epoch income and post-production stock.
+9. `structural_commit`: stable-sort and apply ECB work.
+10. `wait_commit`: keep completed internal state hidden until `sample_day + N - 1`.
+11. `building_commit`: commit ready construction at the publication boundary.
+12. `aggregate_publish`: publish summaries, market rows, audits, trade EMA, and report.
 
 Do not publish half-computed market rows. Do not run market work inside the environmental
 `SCHEDULE_GRAPH`.
@@ -105,11 +109,11 @@ Standard fixed scenario versus N=1 daily reference:
 
 | N | Consumption error | Spending error |
 | ---: | ---: | ---: |
-| 10 | 14.43% | 19.72% |
-| 20 | 29.05% | 41.26% |
-| 50 | 56.86% | 94.53% |
-| 100 | 15.17% | 25.16% |
-| 334 | 63.42% | 3.99% |
+| 10 | 4.12% | 1.78% |
+| 20 | 7.56% | 4.39% |
+| 50 | 17.21% | 12.25% |
+| 100 | 31.28% | 26.10% |
+| 334 | 57.82% | 96.33% |
 
 This table is scenario evidence, not a global or monotonic bound. Conservation does not measure
 behavioral approximation error.
@@ -134,8 +138,8 @@ behavioral approximation error.
   churn, and route-cache cap; do not add an all-pairs distance table.
 ## Building stages
 
-PKEC v3 adds `building_employment` before wait-commit and `building_production`/
-`building_commit` after the deadline. Empty building worlds skip them. Nonempty worlds use sorted
+PKEC v3 adds `building_employment` and `building_production` before household clearing, with
+`building_commit` after wait-commit. Empty building worlds skip the first two. Nonempty worlds use sorted
 cell CSR and visit only active building cells; never scan all groups once per cell. The usual
 deadline barrier applies if these stages miss commit.
 

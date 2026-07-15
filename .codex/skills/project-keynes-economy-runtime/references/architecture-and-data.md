@@ -170,7 +170,8 @@ configuration, and section counts. Restore PKCN v1 first. PKEC v10 migrates to e
 rebuilds topology; PKEC v2-v9 return `legacy_countryless_economy_save_unsupported`; do not
 synthesize a global treasury or per-cell technology during restore.
 
-During `household_market`, `structural_commit`, or `wait_commit`, save and gameplay systems must not
+During `building_employment`, `building_production`, `household_market`, `structural_commit`, or
+`wait_commit`, save and gameplay systems must not
 observe internal mutation. The selected-cell Inspector is the bounded exception: synchronous native
 queries between slices return complete current population, market, and building arrays with
 `snapshot_source=live_slice` and `committed=false`. At a boundary they return
@@ -180,9 +181,11 @@ a normal "details pending" UI state.
 The optional world-setup test bootstrap is OFF by default. When explicitly enabled it uses the
 mid-Stone-Age technology set, places collectors only where discovered local/adjacent reserves can
 support their recipes, and places unlocked industrial chains only where every input has a local
-producer. It derives profession cohorts from local owner/employee job capacity but leaves all
-employment counters and market stock at zero for the native graph to fill. This is a development
-fixture, not a production historical population provider.
+producer. It checks net food and clothing capacity against conservative per-capita daily floors,
+trims duplicate buildings while preserving one of each available type, and suppresses settlements
+that cannot support even one person. It derives profession cohorts from the retained local
+owner/employee job capacity but leaves all employment counters and market stock at zero for the
+native graph to fill. This is a development fixture, not a production historical population provider.
 
 Gold and silver deposits are intentionally early-visible monetary anchors. Gathering technology
 unlocks low-yield merchant-owned gold and silver workings with no goods inputs or employees; they

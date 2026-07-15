@@ -27,18 +27,19 @@ market stock -= actual component quantity
 同一交易内扣款和收入严格相等。显式命令支持 treasury transfer、mint、burn、库存
 增减、人口增减、迁移和换签名；V2 游戏行为只依赖显式库存增加，不生成商品或工资。
 
-BUILDING_GRAPH 在 Market V2 后追加 role-level 自适应工资转账：
+BUILDING_GRAPH 在居民清算前执行 role-level 自适应工资转账：
 
 ```text
 living_floor = max(local_base_living_cost, local_profession_living_cost)
 contract_wage = bounded_move(previous, max(living_floor, local_contract_wage_ema))
 base_due = filled_employee_jobs * contract_wage * epoch_days
-base_paid = proportional_owner_cash_share(base_due)
+base_paid = proportional_post_sale_owner_cash_share(base_due)
 owner funds/expense -=/+ base_paid
 employee funds/income += stable_prefix_share(base_paid)
 ```
 
-同一 owner 资金不足时全部 role 比例支付且 owner-lot 本期停产。生产销售完成后，
+生产只按业主现有资金购买物理投入，不预付工资；产出出售后，同一 owner 对全部 role 比例支付。
+最终欠薪只形成诊断和取消奖金，不追溯停止本期生产。随后，
 `25% * max(0, revenue - input - base_due - target_owner_profit)` 成为员工奖金池。
 基础工资与奖金都是 cohort 间转账，既不改变总资金，也不进入 explicit mint/burn。
 
@@ -78,7 +79,7 @@ variant_component_offsets
 component(good_id, qty_per_need)
 ```
 
-平均按 16 needs 设计，plan 硬上限 32；每 need 最多 4 variants，每 variant 最多 4
+平均按 16 needs 设计，plan 硬上限 32；每 need 最多 8 variants，每 variant 最多 4
 components。`fixed_per_capita` 等旧 FormulaDefinition 仅保留 ABI/数学回归兼容，不在
 Market V2 household hot loop 调用。新增 V2 行为应扩展版本化 native kernel 和 catalog
 schema，而不是注册 GDScript 公式。
@@ -100,11 +101,29 @@ allocation_i = floor(prefix_i * available / total)
 顺序固定为 market、cohort slot、need priority、variant、component。该方法精确耗尽可用
 额度且无逐单位余数循环。
 
+## 生存、劳动与死亡
+
+目录仍保留主食、蛋白质和蔬果三个内部子 need，以表达营养、价格和技术替代；生存判定把它们
+按实际 desired/filled 数量合并为一个食品篮子。衣着单独计算，数量先乘 17 点温度曲线；最热端
+允许曲线为零，因此无需衣着也视为满足。权威 Q16 值为：
+
+```text
+food_sat     = sum(food_filled) / sum(food_desired)
+clothing_sat = clothing_desired == 0 ? 1 : clothing_filled / clothing_desired
+survival_sat = min(food_sat, clothing_sat)
+starvation_deficit = max(0, starvation_satisfaction_threshold - survival_sat)
+```
+
+周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。默认饥饿满足度阈值是 50%；
+低于阈值的缺口乘 `starvation_death_rate_q32`，与 cohort 的既有 Q32
+死亡率及 `demography_residual` 合并后按周期天数确定性取整。死亡计入 `births/deaths` 和人口
+守恒；每个仍有市场库存的地块至少保留一名人口，避免产生无所有者库存。
+
 ## 价格
 
 每个商品以 `period_demand/N` 更新居民需求 EMA；effective alpha 为
 `min(1, daily_alpha*N)`。Price V3 的总需求是居民需求 EMA 与稀疏企业投入需求 EMA 之和；
-供给使用建筑实际 offer（含未成交丢弃）EMA。每个活跃 `(cell, good)` 只维护一条稀疏信号，
+供给使用建筑实际 offer（含未成交丢弃、排除业主留用）EMA。每个活跃 `(cell, good)` 只维护一条稀疏信号，
 不存在 `market×good×building` 稠密矩阵。
 
 ```text
@@ -116,13 +135,15 @@ pressure = w_excess*excess + w_inventory*inventory + w_shortage*shortage
 elastic_pressure = pressure / demand_price_elasticity
 ```
 
-成本锚来自冻结采样价下的实际投入替换成本与应付工资，按显式 output cost share 或参考产值份额
-分摊；金银法定发行品不使用零售成本锚。供给不足时成本锚置信度随供给降低，避免没有成交的
-理论成本强推价格。无需求、无供给、无库存的商品缓慢回归目录默认价。
+成本锚来自实际原料成本、应付合同工资与 `target_operating_margin_q16` 目标利润，按显式 output
+cost share 或参考产值份额分摊；`adaptive` 合同工资已由基础生活篮子、岗位生活篮子和当地工资
+EMA 形成硬下限，因此生活成本通过工资进入成本锚，不再另加一个会重复计算的价格项。金银法定
+发行品不使用零售成本锚。供给不足时成本锚置信度随供给降低，避免没有成交的理论成本强推价格。
+无需求、无供给、无库存的商品缓慢回归目录默认价。
 
 价格变化先应用 good-specific `price_adjust_q16` 与单日 max rise/fall，再以
 `daily_change*N` 做确定性一阶冻结积分，最后应用绝对 min/max。该算法避免对每个
-market-good 做 N 次反馈或幂运算；误差由版本化 `frozen_sample_adaptive_price_v2`
+market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v4`
 近似契约显式控制。
 
 cohort income EMA 同样读取周期净收入日均值，effective alpha 为
@@ -162,3 +183,7 @@ closing_stock = opening_stock + explicit_stock_delta + accepted_output
                 - household_consumption - construction_inputs
                 - production_inputs - cycle_flow_discarded
 ```
+
+业主留用是同一周期内的生产 source 与 owner consumption sink：实际消费量同时计入
+`production_output_retained` 和 `owner_output_consumed`，两项在 goods audit 中对消；未消费留用品
+直接进入 `production_output_discarded`，不进入 closing stock。它不产生收入、支出或商人结算。

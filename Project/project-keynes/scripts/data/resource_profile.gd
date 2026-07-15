@@ -40,7 +40,12 @@
 #        + init_noise   * noise01(cell_pos, init_noise_scale)   # noise01 ∈ [0,1]
 #        + init_province * 2*(province01(family)-0.55)
 #        + init_belt     * 2*(ridge(family)-0.72)
-#   reserve0 = max(0, suit) * init_reserve_scale      # habitat 不匹配时为 0
+#   reserve0 = max(0, suit) * init_reserve_scale
+#              * ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+#                                                     # habitat 不匹配时为 0
+# 可选 `init_min_coverage/init_min_reserve` 在每种资源完成全图 suit 计算后，按 suit
+# 降序选择最适宜的前 N 个有效 habitat 地块并确保最低储量。它用于防止有限地图因连续
+# 噪声/地质场截断而整图缺失关键资源；默认 0，不影响未配置资源，也不会随机均匀撒矿。
 # 斑块化技巧（矿脉/油田）：负 base + 资源局部 noise + 同族地质省/矿带；共享场中心化，
 # 省外和矿带外会压低储量，避免每个陆地地块集齐大多数矿种。
 # 可选生态适宜度（作物/多年生/动物资源）：默认 init_climate_fit=0 且
@@ -54,6 +59,18 @@
 #   runtime_fit = lerp(1, climate_fit, runtime_climate_fit_weight)
 #   P += gen_self * runtime_fit - decay_stress * (1 - runtime_fit)
 # 所有新因子默认 0 / {} → 不设置时行为与旧「仅温度+湿度」公式完全一致（向后兼容）。
+#
+# 动物等种群型资源可选用密度制约生态模型（ecology_capacity > 0）：
+#   runtime_capacity = ecology_capacity * runtime_fit
+#   seeded           = reserve + ecology_immigration * runtime_fit
+#   growth_factor    = 1 + ecology_growth_rate * runtime_fit
+#   reserve'         = growth_factor * seeded /
+#                      (1 + (growth_factor - 1) * seeded / runtime_capacity)
+#   reserve'        /= 1 + ecology_stress_mortality_rate * (1 - runtime_fit)
+# 这是离散 Beverton-Holt 增长：低密度自然恢复，接近承载量时增长趋零，超过承载量
+# 时自然下降；迁入项允许被开采到 0 的适生地缓慢恢复。dt_days 逐日迭代该非线性式，
+# external extra_change 仍只在第一天前应用一次。静态大矿床无法用 float32 表示的小额变化
+# 会保留在 extra_change 中跨周期累计。默认 capacity=0 保留上述 IMEX 公式。
 #
 # One .tres per resource, collected by ResourceProfileRegistry.
 
@@ -105,6 +122,8 @@ var habitat_mode: String = "legacy"
 ## Content-level abundance multiplier applied after suitability is resolved.
 ## It changes deposit quantity without changing deposit presence or topology.
 @export_range(0.1, 100.0, 0.1) var init_reserve_scale: float = 1.0
+@export_range(0.0, 1.0, 0.001) var init_min_coverage: float = 0.0
+@export_range(0.0, 10000000.0, 1.0) var init_min_reserve: float = 0.0
 
 # ─── 扩展初始储量因子（「地块自身情况」，map generation 仅一次）──────────
 # 默认 0 / {} → 不参与，保持与旧公式逐位一致（向后兼容）。
@@ -135,3 +154,9 @@ var habitat_mode: String = "legacy"
 @export var init_climate_fit: float = 0.0
 @export var runtime_climate_fit_weight: float = 0.0
 @export var decay_stress: float = 0.0
+
+# ─── Optional density-dependent ecology dynamics ────────────────────────
+@export_range(0.0, 1000000.0, 1.0) var ecology_capacity: float = 0.0
+@export_range(0.0, 1.0, 0.001) var ecology_growth_rate: float = 0.0
+@export_range(0.0, 1000.0, 0.01) var ecology_immigration: float = 0.0
+@export_range(0.0, 1.0, 0.001) var ecology_stress_mortality_rate: float = 0.0

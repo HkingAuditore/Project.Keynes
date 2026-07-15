@@ -6,8 +6,9 @@
 每天在 20 个 slice 内完成整图，单 slice 约处理 50 万 cohort，因此 p95 约 89ms。
 瓶颈是固定点除法、need/bundle 展开和内存带宽，不是跨语言 Dictionary。
 
-Market V2 / Price V3 现采用 `frozen_sample_adaptive_price_v2`：周期起点冻结人口、资金、价格、库存和四类
-环境输入；在 N 个模拟日内按地块连续 range 错峰计算，需求量一次性乘 N；所有地块与
+Market V2 / Price V3 现采用 `production_income_consumption_v4`：周期起点冻结价格、科技、环境、
+资源和企业价格信号；建筑生产会在居民清算前改变资金与库存，使本期收入和新商品可参与本期消费。
+在 N 个模拟日内按地块连续 range 错峰计算，需求量一次性乘 N；所有地块与
 结构命令完成后，最早在周期截止日统一发布 N 日交易总量。
 
 ## 周期选择
@@ -35,10 +36,14 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 3. `trade_settle`：结算到期货物/卖方托管，货物可参与当期本地市场。
 4. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
 5. `trade_dispatch`：ACTIVE 稳定裁剪并托管发运；PROBE 只报告候选。
-6. `household_market`：每天最多一个 cohort-budgeted market range，计算 N 日总需求/交易。
-7. `structural_commit`：稳定提交本轮结构 ECB。
-8. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
-9. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
+6. `building_employment`：按周期开始时仍存活人口分配 owner/employee 岗位并计算合同工资。
+7. `building_production`：购买投入、生产并出售产出，再分配基础工资/奖金并更新企业信号。
+8. `household_market`：每天最多一个 cohort-budgeted market range，使用本期收入和新库存计算 N 日总需求/交易、食品与
+   气候衣着生存满足，并以 Q32 residual 结算缺乏基本生活资料造成的死亡。
+9. `structural_commit`：稳定提交本轮结构 ECB。
+10. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
+11. `building_commit`：提交到期建设项目并重建必要的稀疏岗位范围。
+12. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
 
 周期内 save、gameplay 和其他经济写者只观察上一 committed state；Inspector 的有界选中
 地块查询可观察最近完成 native slice 的完整状态，并明确标记为 `live_slice`。`epoch_income/expense` 在发布后
@@ -85,11 +90,11 @@ worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 | N | 总消费误差 | 总支出误差 |
 | ---: | ---: | ---: |
-| 10 | 14.43% | 19.72% |
-| 20 | 29.05% | 41.26% |
-| 50 | 56.86% | 94.53% |
-| 100 | 15.17% | 25.16% |
-| 334 | 63.42% | 3.99% |
+| 10 | 4.12% | 1.78% |
+| 20 | 7.56% | 4.39% |
+| 50 | 17.21% | 12.25% |
+| 100 | 31.28% | 26.10% |
+| 334 | 57.82% | 96.33% |
 
 误差不保证随 N 单调，因为资金/库存约束和价格边界会改变交易分支。表格只代表标准固定
 场景，不是全局数学上界。需要更高精度的玩法可强制较短周期；性能不足时 report 会明确
@@ -98,13 +103,13 @@ worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 当前冻结周期的稳定阶段顺序为：
 
-`epoch_begin → trade_settle → ledger_apply → trade_dispatch → household_market → structural_commit →
-building_employment → wait_commit → building_production → building_commit → aggregate_publish`。
+`epoch_begin → trade_settle → ledger_apply → trade_dispatch → building_employment →
+building_production → household_market → structural_commit → wait_commit → building_commit →
+aggregate_publish`。
 
-无已建建筑时 employment/production 两阶段直接跳过。在截止日前完成的居民市场仍进入
-`wait_commit`；截止日只处理有建筑地块的 CSR range。未完成时沿用
-`commit_due && !done` same-day barrier catch-up，不提前阻塞日历。新产出在 production 后加入
-库存，保证不会被同一周期居民市场消费。
+无已建建筑时 employment/production 两阶段直接跳过。建筑阶段和居民市场可以在截止日前错峰完成，
+随后进入 `wait_commit`；未完成时沿用 `commit_due && !done` same-day barrier catch-up，不提前阻塞
+日历。新产出在 production 后加入库存，居民清算因此可在同一周期购买。
 
 `building_production` 对每个 active cell 内部执行 utility prepass：所有产出 `cycle_flow`
 good 的建筑先购买普通库存燃料、生产并结算电力，随后其他建筑可以同周期购买该电力。最后仅遍历
@@ -116,6 +121,8 @@ stage，外部 cursor、deadline 和 committed visibility 保持不变。
 确定性边界。
 
 PKEC v8 在 `building_employment` 的同一 active-cell slice 内先计算生活成本与合同工资，
-不增加 epoch-boundary 全量扫描。`building_production` 内部固定为基础工资按 owner 比例
-结算、欠薪停产、生产销售、超额利润奖金与劳动信号更新四相；外部 stage ABI 和默认五日
+不增加 epoch-boundary 全量扫描。`building_production` 内部固定为买入原料、生产、业主按消费计划
+留用匹配产出、剩余产出出售、销售后基础工资、超额利润奖金与劳动信号更新；生产前不再转账工资，
+留用品不产生现金流，最终欠薪仍通过原字段报告。
+外部 stage ABI 和默认五日
 冻结/截止日屏障不变。

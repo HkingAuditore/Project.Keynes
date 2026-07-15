@@ -42,7 +42,7 @@ func show_details(details: Dictionary) -> void:
 				func(row: Dictionary) -> bool: return bool(row.get("visible", true)))
 			if visible_rows.is_empty():
 				continue
-			_add_group_header(group)
+			_add_group_header(group, visible_rows.size())
 			for raw_row in visible_rows:
 				_add_demand_row(raw_row)
 				visible_count += 1
@@ -192,34 +192,37 @@ func _clear_rows() -> void:
 
 
 func _add_demand_row(row: Dictionary) -> void:
-	var row_name := String(row.get("name", "未知商品"))
-	if int(row.get("variant_count", 1)) > 1:
-		row_name = "方案 %d · %s" % [int(row.get("variant_number", 1)), row_name]
-	if int(row.get("component_count", 1)) > 1:
-		row_name += "（配套）"
-	_add_table_label(_rows_grid, row_name, 188.0,
-		HORIZONTAL_ALIGNMENT_LEFT, UITokens.TEXT_MAIN)
+	_add_product_cell(row)
 	_add_table_label(_rows_grid, String(row.get("quantity", "—")), 112.0,
-		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MAIN)
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MAIN, false, 34.0)
 	_add_table_label(_rows_grid, String(row.get("price", "—")), 112.0,
-		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED)
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 34.0)
 	_add_table_label(_rows_grid, String(row.get("daily_cost", "—")), 120.0,
-		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.RESOURCE)
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.RESOURCE, false, 34.0)
 
 
-func _add_group_header(group: Dictionary) -> void:
-	var variant_count := int(group.get("variant_count", 1))
-	var relation := ""
-	if variant_count > 1:
-		relation = "%d 个方案互为替代" % variant_count
-	if bool(group.get("has_bundle", false)):
-		relation += " · 含配套组合" if relation != "" else "配套组合"
-	_add_table_label(_rows_grid, String(group.get("name", group.get("id", "需求"))), 188.0,
-		HORIZONTAL_ALIGNMENT_LEFT, UITokens.RESOURCE, true)
-	_add_table_label(_rows_grid, "", 112.0, HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED)
-	_add_table_label(_rows_grid, "", 112.0, HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED)
-	_add_table_label(_rows_grid, relation, 120.0,
-		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, true)
+func _add_product_cell(row: Dictionary) -> void:
+	var cell := MarginContainer.new()
+	cell.custom_minimum_size = Vector2(188.0, 34.0)
+	cell.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
+	_rows_grid.add_child(cell)
+	var name_label := Label.new()
+	name_label.text = String(row.get("name", "未知商品"))
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	name_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
+	cell.add_child(name_label)
+
+
+func _add_group_header(group: Dictionary, row_count: int) -> void:
+	_add_table_label(_rows_grid, String(group.get("name", "其他")), 188.0,
+		HORIZONTAL_ALIGNMENT_LEFT, UITokens.RESOURCE, true, 30.0)
+	_add_table_label(_rows_grid, "", 112.0,
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 30.0)
+	_add_table_label(_rows_grid, "", 112.0,
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 30.0)
+	_add_table_label(_rows_grid, "%d 种商品" % row_count, 120.0,
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 30.0)
 
 
 func _add_table_label(
@@ -228,11 +231,12 @@ func _add_table_label(
 	minimum_width: float,
 	alignment: HorizontalAlignment,
 	color: Color,
-	strong: bool = false
+	strong: bool = false,
+	minimum_height: float = 26.0
 ) -> void:
 	var label := Label.new()
 	label.text = text
-	label.custom_minimum_size = Vector2(minimum_width, 26.0)
+	label.custom_minimum_size = Vector2(minimum_width, minimum_height)
 	label.horizontal_alignment = alignment
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS

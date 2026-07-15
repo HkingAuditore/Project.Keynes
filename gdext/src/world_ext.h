@@ -638,26 +638,27 @@ public:
     //   GDScript wrapper：MapGenerator.run_natural_resource_pass_native
     //   System：NaturalResourceDailySystem（每日，priority 排在 climate 之后）
     //
-    //   每 tick（per cell，per resource r）固定模板 + 每资源系数。半隐式（IMEX）积分：
-    //   生成/衰减拆成常数生产项 P 与线性损失率 L（损失隐式），对任意系数无条件稳定
-    //   （不过冲、不在 0↔capacity 横跳）：
+    //   默认资源使用半隐式（IMEX）常数生产 + 线性损失模板：
     //     tn            = clamp((temp - temp_lo[r]) / (temp_hi[r] - temp_lo[r]), 0, 1)
     //     m             = moisture
     //     gen_climate   = gen_base[r]   + gen_temp[r]*tn   + gen_moisture[r]*m
     //     decay_climate = decay_base[r] + decay_temp[r]*tn + decay_moisture[r]*m
     //     P             = gen_climate + gen_self[r] - decay_climate
-    //     L             = capacity[r] > 0 ? max(0, (gen_self[r] + decay_self[r]) / capacity[r]) : 0
-    //     reserve'      = clamp((reserve + P) / (1 + L), 0, capacity[r])
-    //   均衡点 reserve* = capacity[r]·P/(gen_self[r]+decay_self[r])，与旧显式 Euler 一致。
-    //   land_only[r]==1 时水面格跳过（保持 0）。
+    //     L             = max(0, decay_self[r])
+    //     reserve'      = max(0, (reserve + P) / (1 + L))
+    //   ecology_capacity[r] > 0 的种群资源走 Beverton-Holt 密度增长：适生度缩放
+    //   承载量/增长/迁入，超过承载量时自然下降，气候压力增加比例死亡。多日 stride
+    //   逐日迭代非线性式；extra_change 始终只应用一次。
     //
     //   knobs（GDScript 一次打包，ResourceProfileRegistry.build_pass_knobs + n_cells）：
     //     标量： n_cells (int), resource_count (int)
     //     PackedStringArray： reserve_slots（C++ slot 名，长度 resource_count）
     //     PackedFloat32Array（长度 resource_count，按资源索引对齐）：
-    //       capacity, land_only, temp_lo, temp_hi,
+    //       habitat_modes, temp_lo, temp_hi,
     //       gen_base/gen_temp/gen_moisture/gen_self,
-    //       decay_base/decay_temp/decay_moisture/decay_self
+    //       decay_base/decay_temp/decay_moisture/decay_self,
+    //       ecology_capacity/ecology_growth_rate/ecology_immigration/
+    //       ecology_stress_mortality_rate
     //
     //   读：cell_temp / cell_moisture / cell_is_water
     //   写：每个 reserve_slots[r]（clamp 后 flush 回 MapData）

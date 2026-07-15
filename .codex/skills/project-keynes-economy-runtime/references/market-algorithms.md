@@ -27,10 +27,12 @@ curves. Float is allowed only for timing/UI.
 
 ## 2. Frozen-period model
 
-The authority model is `frozen_sample_adaptive_price_v2`.
+The authority model is `production_income_consumption_v4`.
 
-At sample day, freeze population, funds, price, stock, profession/ethnicity/plan, and four environment
-signals. Calculate the whole N-day period from that state. The production default is N=5. Setting
+At sample day, freeze prices, profession/ethnicity/plan, technology, resources, enterprise price
+signals, and four environment signals. Population alive at the boundary enters employment;
+building input purchases, output sales, and income distribution then update funds and stock before
+household clearing. Calculate the whole N-day period from that state. The production default is N=5. Setting
 `market_cycle_days=0` selects scale-driven automatic N.
 
 This is an approximation, not N sequential daily integrations. Keep its state invisible until
@@ -110,6 +112,9 @@ demand price elasticity before applying the good-specific adjustment rate. Monet
 not use retail cost anchors. Clamp to per-day max rise/fall, multiply the frozen daily change by N,
 apply one linear price update, then clamp absolute min/max. This avoids N feedback loops and dense
 building-by-good storage while making production costs and business demand economically visible.
+The cost anchor includes actual material cost, contract wages due, and the target operating margin.
+Adaptive contract wages already contain the base/role living-cost floors, so do not add a second
+living-cost price term.
 
 ## Domestic trade planning and settlement
 
@@ -149,13 +154,18 @@ catalog, market shape, merchant index, environment day, command handles, and cap
 mutation. Enter fatal state on an internal invariant break; do not copy 10M cohorts for rollback.
 ## Building transactions
 
-Run building production outside `household_market`, after the household stage and at the frozen
-deadline. Owner input purchases transfer money directly to local merchant cohorts. Producer output
-offers sort by local retail price descending and use each good's configured merchant buy factor;
+Run building production outside `household_market` but before household clearing. Owner input
+purchases transfer money directly to local merchant cohorts. Producer output
+first satisfies matching single-component variants in the owner's own consumption plan. Retained
+goods create no cashflow; consume them before paid household orders and attribute any unused amount
+to the source building's discarded output. Remaining offers sort by local retail price descending
+and use each good's configured merchant buy factor;
 merchant positive funds cap the purchased quantity and the remainder is discarded. Track
 construction/input sinks and accepted output separately in the goods audit. Role-level adaptive
-base wages use local living-cost and contract-wage anchors. Aggregate obligations by owner, suspend
-production after a shortfall, and settle post-sale excess-profit bonuses without minting money.
+base wages use local living-cost and contract-wage anchors. Settle base wages from post-sale owner
+cash, report any final shortfall without cancelling current production, and settle post-sale
+excess-profit bonuses without minting money. Households then spend same-period income against the
+post-production market stock.
 
 At epoch begin, compute each owner-lot's frozen expected producer revenue, input replacement cost,
 full wage obligation, and target-margin gap for diagnostics and post-sale profit sharing. Keep

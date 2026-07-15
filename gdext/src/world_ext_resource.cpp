@@ -82,6 +82,12 @@ struct NatResRuntime {
     float climate_moisture_tol = 1.0f;
     float runtime_fit_weight = 0.0f;
     float decay_stress = 0.0f;
+    float ecology_capacity = 0.0f;
+    float ecology_growth_rate = 0.0f;
+    float ecology_immigration = 0.0f;
+    float ecology_stress_mortality_rate = 0.0f;
+    bool use_ecology = false;
+    bool has_natural_dynamics = false;
 };
 
 // 单 cell 半隐式更新（化简形式）。SIMD 尾段 + 非 AVX2 构建共用，保证三路一致。
@@ -162,6 +168,35 @@ inline float natres_step_scalar_fit_dt(float t_val, float m_val, float reserve,
         v = a_pow * reserve_after_external + b * (1.0f - a_pow) / (1.0f - inv_denom);
     }
     if (v < 0.0f) v = 0.0f;
+    return v;
+}
+
+inline float natres_step_scalar_ecology_dt(float t_val, float m_val, float reserve,
+                                           float extra_change,
+                                           const NatResRuntime &rr, int dt_days) {
+    const float tn = dc_clampf((t_val - rr.lo) * rr.inv_span, 0.0f, 1.0f);
+    const float climate_fit = natres_fit_factor(tn, m_val,
+                                                rr.climate_temp_opt, rr.climate_temp_tol,
+                                                rr.climate_moisture_opt, rr.climate_moisture_tol);
+    const float fit_w = dc_clampf(rr.runtime_fit_weight, 0.0f, 1.0f);
+    const float runtime_fit = 1.0f + (climate_fit - 1.0f) * fit_w;
+    const float capacity = std::max(0.0f, rr.ecology_capacity * runtime_fit);
+    const float growth_factor = 1.0f + std::max(0.0f, rr.ecology_growth_rate) * runtime_fit;
+    const float immigration = std::max(0.0f, rr.ecology_immigration) * runtime_fit;
+    const float stress_denom = 1.0f + std::max(0.0f, rr.ecology_stress_mortality_rate) *
+                                      (1.0f - runtime_fit);
+    float v = std::max(0.0f, reserve + extra_change);
+    for (int day = 0; day < std::max(1, dt_days); ++day) {
+        const float seeded = v + immigration;
+        if (capacity <= 1e-6f) {
+            v = 0.0f;
+            continue;
+        }
+        const float density_denom = 1.0f +
+            (growth_factor - 1.0f) * seeded / capacity;
+        v = density_denom > 0.0f ? growth_factor * seeded / density_denom : 0.0f;
+        v = std::max(0.0f, v / stress_denom);
+    }
     return v;
 }
 
@@ -266,7 +301,9 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         !knobs.has("decay_base") || !knobs.has("decay_temp") || !knobs.has("decay_moisture") || !knobs.has("decay_self") ||
         !knobs.has("climate_temp_opt") || !knobs.has("climate_temp_tol") ||
         !knobs.has("climate_moisture_opt") || !knobs.has("climate_moisture_tol") ||
-        !knobs.has("runtime_climate_fit_weight") || !knobs.has("decay_stress")) {
+        !knobs.has("runtime_climate_fit_weight") || !knobs.has("decay_stress") ||
+        !knobs.has("ecology_capacity") || !knobs.has("ecology_growth_rate") ||
+        !knobs.has("ecology_immigration") || !knobs.has("ecology_stress_mortality_rate")) {
         return fail("knobs_missing_keys");
     }
 
@@ -289,6 +326,10 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     PackedFloat32Array climate_moisture_tol = knobs["climate_moisture_tol"];
     PackedFloat32Array runtime_climate_fit_weight = knobs["runtime_climate_fit_weight"];
     PackedFloat32Array decay_stress = knobs["decay_stress"];
+    PackedFloat32Array ecology_capacity = knobs["ecology_capacity"];
+    PackedFloat32Array ecology_growth_rate = knobs["ecology_growth_rate"];
+    PackedFloat32Array ecology_immigration = knobs["ecology_immigration"];
+    PackedFloat32Array ecology_stress_mortality_rate = knobs["ecology_stress_mortality_rate"];
 
     if (reserve_slots.size() < resource_count || extra_change_slots.size() < resource_count ||
         habitat_modes.size() < resource_count || temp_lo.size() < resource_count || temp_hi.size() < resource_count ||
@@ -298,7 +339,10 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         decay_moisture.size() < resource_count || decay_self.size() < resource_count ||
         climate_temp_opt.size() < resource_count || climate_temp_tol.size() < resource_count ||
         climate_moisture_opt.size() < resource_count || climate_moisture_tol.size() < resource_count ||
-        runtime_climate_fit_weight.size() < resource_count || decay_stress.size() < resource_count) {
+        runtime_climate_fit_weight.size() < resource_count || decay_stress.size() < resource_count ||
+        ecology_capacity.size() < resource_count || ecology_growth_rate.size() < resource_count ||
+        ecology_immigration.size() < resource_count ||
+        ecology_stress_mortality_rate.size() < resource_count) {
         return fail("knob_array_size_mismatch");
     }
 
@@ -353,6 +397,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         const float gb = gen_base[r], gt = gen_temp[r], gm = gen_moisture[r], gs = gen_self[r];
         const float db = decay_base[r], dt = decay_temp[r], dm = decay_moisture[r], ds = decay_self[r];
         const float stress = decay_stress[r];
+        const bool use_ecology = ecology_capacity[r] > 0.0f;
         float * const X = _slots.write[sid_extra].arr_f32.ptrw();
         bool has_extra_change = false;
         for (int i = 0; i < n_cells; ++i) {
@@ -362,7 +407,8 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
             }
         }
         const bool has_natural_dynamics = gb != 0.0f || gt != 0.0f || gm != 0.0f || gs != 0.0f ||
-                db != 0.0f || dt != 0.0f || dm != 0.0f || ds != 0.0f || stress != 0.0f;
+                db != 0.0f || dt != 0.0f || dm != 0.0f || ds != 0.0f || stress != 0.0f ||
+                use_ecology;
         if (!has_natural_dynamics && !has_extra_change) {
             ++skipped_static_resources;
             continue;
@@ -386,7 +432,8 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         rr.c1 = gt - dt;
         rr.c2 = gm - dm;
         rr.inv_denom = 1.0f / (1.0f + L);
-        rr.use_climate_fit = runtime_climate_fit_weight[r] != 0.0f || stress != 0.0f;
+        rr.use_climate_fit = runtime_climate_fit_weight[r] != 0.0f || stress != 0.0f ||
+                             use_ecology;
         rr.gb = gb;
         rr.gt = gt;
         rr.gm = gm;
@@ -401,6 +448,12 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         rr.climate_moisture_tol = climate_moisture_tol[r];
         rr.runtime_fit_weight = runtime_climate_fit_weight[r];
         rr.decay_stress = stress;
+        rr.ecology_capacity = ecology_capacity[r];
+        rr.ecology_growth_rate = ecology_growth_rate[r];
+        rr.ecology_immigration = ecology_immigration[r];
+        rr.ecology_stress_mortality_rate = ecology_stress_mortality_rate[r];
+        rr.use_ecology = use_ecology;
+        rr.has_natural_dynamics = has_natural_dynamics;
         dynamic_resources.push_back(rr);
     }
 
@@ -457,16 +510,34 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                     }
                     const float reserve = R[i];
                     const float extra_change = rr.use_extra ? rr.X[i] : 0.0f;
-                    const float v = rr.use_climate_fit
-                            ? natres_step_scalar_fit_dt(T[i], M[i], reserve, extra_change, rr, dt_days)
-                            : natres_step_scalar_dt(T[i], M[i], reserve,
-                                                    rr.lo, rr.inv_span,
-                                                    rr.c0, rr.c1, rr.c2,
-                                                    rr.inv_denom, extra_change,
-                                                    dt_days);
+                    float v = reserve;
+                    if (!rr.has_natural_dynamics && rr.use_extra) {
+                        // Province-scale deposits can exceed float32's unit precision. Preserve
+                        // the unrepresentable extraction remainder in the existing extra slot so
+                        // repeated small mine deltas eventually reduce the authoritative reserve.
+                        const double exact = std::max(
+                            0.0, static_cast<double>(reserve) +
+                                 static_cast<double>(extra_change));
+                        v = static_cast<float>(exact);
+                        rr.X[i] = exact > 0.0
+                            ? static_cast<float>(exact - static_cast<double>(v))
+                            : 0.0f;
+                    } else {
+                        v = rr.use_ecology
+                                ? natres_step_scalar_ecology_dt(
+                                    T[i], M[i], reserve, extra_change, rr, dt_days)
+                                : (rr.use_climate_fit
+                                    ? natres_step_scalar_fit_dt(
+                                        T[i], M[i], reserve, extra_change, rr, dt_days)
+                                    : natres_step_scalar_dt(T[i], M[i], reserve,
+                                                           rr.lo, rr.inv_span,
+                                                           rr.c0, rr.c1, rr.c2,
+                                                           rr.inv_denom, extra_change,
+                                                           dt_days));
+                        if (rr.use_extra) rr.X[i] = 0.0f;
+                    }
                     seg += double(v - reserve);
                     R[i] = v;
-                    if (rr.use_extra) rr.X[i] = 0.0f;
                 }
             }
             local.sum += seg;

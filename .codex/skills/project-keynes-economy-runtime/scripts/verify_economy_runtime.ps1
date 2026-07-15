@@ -75,6 +75,8 @@ if ($Godot) {
 	if ($LASTEXITCODE -ne 0) { throw 'Economy test bootstrap failed' }
 	& $GodotExe --headless --path $project --script res://tests/economy_map_generation_test.gd
 	if ($LASTEXITCODE -ne 0) { throw 'Economy map generation test failed' }
+	& $GodotExe --headless --path $project --script res://tests/natural_resource_distribution_capacity_test.gd
+	if ($LASTEXITCODE -ne 0) { throw 'Natural resource distribution capacity test failed' }
 }
 
 Write-Output 'Project.Keynes economy runtime verification passed.'

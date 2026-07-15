@@ -125,10 +125,13 @@ func _run() -> void:
 		full_output > 0 and int((farm.last_resource as PackedInt64Array)[farm_group]) == 0 and
 		int((farm.last_resource_generated as PackedInt64Array)[farm_group]) == 0)
 	var farm_market: Dictionary = ext.get_market_cell_snapshot(0)
-	_expect("subsistence grain, vegetables, and corn accumulate in local market inventory",
-		_good_value(farm_market, "grain") > 0 and _good_value(farm_market, "vegetables") > 0 and
-		_good_value(farm_market, "corn_grain") > 0 and
-		int((farm.last_output as PackedInt64Array)[corn_group]) > 0)
+	_expect("subsistence grain, vegetables, and corn are produced and sold before consumption",
+		full_output > 0 and int((farm.last_sold as PackedInt64Array)[farm_group]) > 0 and
+		int((farm.last_output as PackedInt64Array)[corn_group]) > 0 and
+		int((farm.last_sold as PackedInt64Array)[corn_group]) > 0 and
+		_good_value(farm_market, "grain") >= 0 and
+		_good_value(farm_market, "vegetables") >= 0 and
+		_good_value(farm_market, "corn_grain") >= 0)
 	_expect("mine extracts local coal", int((mine.last_resource as PackedInt64Array)[0]) > 0)
 	_expect("resource report separates capacity checks from extraction",
 		int(day0.get("building_resource_capacity_checks", 0)) >= 2 and
@@ -206,7 +209,7 @@ func _run_adjacent_fishery(catalog: Dictionary) -> bool:
 	}, {
 		"building_cells": PackedInt32Array([0, 2]),
 		"building_type_ids": PackedInt32Array([fishery, fishery]),
-		"building_owner_signature_ids": PackedInt32Array([artisan, artisan]),
+		"building_owner_signature_ids": PackedInt32Array([fisher, fisher]),
 		"building_counts": PackedInt64Array([1, 1]),
 	}).get("ok", false)):
 		return false

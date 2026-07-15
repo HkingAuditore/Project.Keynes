@@ -155,6 +155,9 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 	var wild_game := _res_arr(map, profiles, "wild_game")
 	if wild_game.size() >= 12:
 		_expect("wild_game: 森林/草地 > 裸地", maxf(wild_game[C_FOREST], wild_game[C_GRASS]) > wild_game[C_PLAIN])
+		_expect("wild_game: 适宜普通陆地保有省级基础种群", wild_game[C_PLAIN] > 10000.0)
+		_expect("wild_game: 森林或草地形成高储量种群",
+			maxf(wild_game[C_FOREST], wild_game[C_GRASS]) > 30000.0)
 	var pasture := _res_arr(map, profiles, "pasture")
 	if pasture.size() >= 12:
 		_expect("pasture: grassland > bare land", pasture[C_GRASS] > pasture[C_PLAIN])
@@ -240,15 +243,15 @@ func _test_quantity_scale(map: MapData, profiles: Array, n: int) -> void:
 
 
 func _test_reserve_scale_configuration(profiles: Array) -> void:
-	var capacity_ids := ["arable_land", "fertile_soil", "paddy_land", "plantation_land", "pasture"]
-	var renewable_ids := ["marine_fish", "timber", "wild_game"]
+	_expect("战略地块使用省级 100x 资源面积倍率",
+		ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE >= 100.0)
 	var scales_ok := profiles.size() == 30
 	for profile in profiles:
 		var resource_id := String(profile.id)
-		var expected := 1.0 if resource_id in capacity_ids else \
-			(2.0 if resource_id in renewable_ids else 8.0)
+		var expected := 16.0 if resource_id == "plantation_land" else \
+			(4.0 if resource_id in ["marine_fish", "timber", "wild_game"] else 8.0)
 		scales_ok = scales_ok and is_equal_approx(float(profile.init_reserve_scale), expected)
-	_expect("资源初始储量按 capacity 1x、可再生 2x、地质资源 8x 分级", scales_ok)
+	_expect("资源初始储量按一般 8x、可再生 4x、种植园 16x 分级", scales_ok)
 
 
 func _test_reserve_scale_application(profiles: Array) -> void:

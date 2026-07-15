@@ -32,6 +32,10 @@ extends Resource
 @export var merchant_profession_id: StringName = &"merchant"
 @export var wealth_reference_per_capita: int = 100000
 @export var living_cost_base_plan_id: StringName = &"survival_household"
+## Survival satisfaction reaches full workforce capacity at this food/clothing ratio.
+@export_range(1, 65536, 1) var starvation_satisfaction_threshold_q16: int = 32768
+## Maximum per-person daily Q32 mortality when survival satisfaction is zero.
+@export_range(0, 4294967296, 1) var starvation_death_rate_q32: int = 21474836
 @export_range(0, 65536, 1) var wage_ema_alpha_q16: int = 8192
 @export_range(0, 65536, 1) var wage_max_rise_q16_per_day: int = 6554
 @export_range(0, 65536, 1) var wage_max_fall_q16_per_day: int = 1311
@@ -79,6 +83,8 @@ func to_native_profile() -> Dictionary:
 		"merchant_profession_id": String(merchant_profession_id),
 		"wealth_reference_per_capita": wealth_reference_per_capita,
 		"living_cost_base_plan_id": String(living_cost_base_plan_id),
+		"starvation_satisfaction_threshold_q16": starvation_satisfaction_threshold_q16,
+		"starvation_death_rate_q32": starvation_death_rate_q32,
 		"wage_ema_alpha_q16": wage_ema_alpha_q16,
 		"wage_max_rise_q16_per_day": wage_max_rise_q16_per_day,
 		"wage_max_fall_q16_per_day": wage_max_fall_q16_per_day,

@@ -91,14 +91,15 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
 - Compile sorted building IDs, owner/employee roles, construction/input/output goods, natural
   resources, postfix construction conditions, behavior ID/version, and valid role-level wage policies before
   mutating runtime state.
-- Run `building_employment` before `wait_commit`; run `building_production` and `building_commit`
-  only at the frozen deadline after household settlement. Empty building worlds must skip these
-  stages without changing results.
+- Run `building_employment` and `building_production` before `household_market`, then hold completed
+  internal state in `wait_commit` until the frozen deadline; run `building_commit` immediately before
+  publish. Empty building worlds must skip the first two stages without changing results.
 - Buy construction and production inputs from local merchant cohorts. Sort producer offers by local
   retail price descending, apply the configured merchant buy factor, cap purchases by merchant cash,
   and report discarded remainder.
-- Cap wage transfer by owner cash and pay only committed local employees. Report paid and unpaid
-  wages separately without changing total money.
+- Buy inputs and produce/sell output before wage transfer. Then cap wage transfer by post-sale owner
+  cash and pay only committed local employees. Report paid and unpaid wages separately without
+  changing total money; arrears do not retroactively cancel current production.
 - Use sorted cell CSR and visit active building cells/groups only. Never scan all building groups
   once per cell or materialize Godot objects in the native graph.
 - Keep pending construction, committed building groups, role fills, per-cohort employment, building
@@ -124,7 +125,9 @@ default five-day behavior.
 
 When changing cadence or approximation:
 
-- Preserve sample-day frozen population/funds/price/stock/environment semantics.
+- Preserve sample-day frozen price/environment/technology/resource semantics. Under
+  `production_income_consumption_v4`, only in-epoch building sale and income distribution may change
+  funds/stock before household clearing; mid-cycle gameplay writes must remain deferred.
 - Freeze building ownership, role fills, construction readiness, geographic/resource context, and
   production inputs for the same cycle boundary; do not let mid-cycle gameplay writes leak into it.
 - Multiply period demand by N and normalize demand/income EMA inputs back to daily values.

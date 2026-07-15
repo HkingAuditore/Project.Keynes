@@ -284,6 +284,10 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 		"building_input_offsets", "building_input_good_ids")
 	var output_goods := _stable_ids_from_catalog_range(type_id, good_ids,
 		"building_output_offsets", "building_output_good_ids")
+	var input_quantities_all: PackedInt64Array = _catalog.get(
+		"building_input_quantities", PackedInt64Array())
+	var output_quantities_all: PackedInt64Array = _catalog.get(
+		"building_output_quantities", PackedInt64Array())
 	var production_resources := _stable_ids_from_catalog_range(type_id, resource_ids,
 		"building_resource_offsets", "building_production_resource_ids")
 	var technology_offsets: PackedInt32Array = _catalog.get(
@@ -335,7 +339,9 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 	var input_end := int(input_goods.end)
 	if technology_begin < 0 or technology_end < technology_begin \
 			or technology_end > technology_tags.size() or input_end > input_categories_all.size() \
-			or input_end > input_min_levels_all.size() or input_end >= candidate_offsets_all.size():
+			or input_end > input_min_levels_all.size() or input_end >= candidate_offsets_all.size() \
+			or input_end > input_quantities_all.size() \
+			or int(output_goods.end) > output_quantities_all.size():
 		return {"ok": false, "reason": "building placement technology columns invalid"}
 	var local_candidate_offsets := PackedInt32Array([0])
 	var local_candidate_good_ids := PackedStringArray()
@@ -389,12 +395,15 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 		"upgrade_tier": int(upgrade_tiers[type_id]),
 		"higher_tier_building_ids": higher_tier_ids,
 		"input_good_ids": input_goods.ids,
+		"input_quantities": input_quantities_all.slice(input_begin, input_end),
 		"input_category_ids": input_categories_all.slice(input_begin, input_end),
 		"input_min_quality_levels": input_min_levels_all.slice(input_begin, input_end),
 		"input_candidate_offsets": local_candidate_offsets,
 		"input_candidate_good_ids": local_candidate_good_ids,
 		"input_candidate_efficiency_q16": local_candidate_efficiencies,
 		"output_good_ids": output_goods.ids,
+		"output_quantities": output_quantities_all.slice(
+			int(output_goods.begin), int(output_goods.end)),
 		"output_category_ids": output_categories,
 		"output_substitution_category_offsets": output_substitution_offsets,
 		"output_substitution_category_ids": output_substitution_ids,

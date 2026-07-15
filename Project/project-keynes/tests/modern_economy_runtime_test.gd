@@ -65,7 +65,7 @@ func _run() -> void:
 			types.find("electricity_plant"), types.find("gold_mine"), types.find("silver_mine"),
 			types.find("aluminum_plant")]),
 		"building_owner_signature_ids": PackedInt32Array([
-			industrialist, merchant, merchant, industrialist]),
+			industrialist, industrialist, industrialist, industrialist]),
 		"building_counts": PackedInt64Array([3, 1, 1, 1]),
 	})
 	var boot_ok := bool(boot.get("ok", false))
