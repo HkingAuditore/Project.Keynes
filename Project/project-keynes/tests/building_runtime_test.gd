@@ -35,6 +35,7 @@ func _run() -> void:
 	profile.market_cycle_days = 1
 	profile.market_runtime_mode = "ACTIVE"
 	_test_production_income_consumption_order(catalog, profile)
+	_test_scarce_output_cost_floor(catalog, profile)
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
@@ -209,6 +210,7 @@ func _run() -> void:
 		(compiled.building_resource_ids as PackedStringArray).size())
 	_expect("building snapshot stays committed", bool(buildings.get("committed", false)))
 	var funded_output := int((buildings.last_output as PackedInt64Array)[0])
+	var discarded_output := int((buildings.last_discarded as PackedInt64Array)[0])
 	pop = ext.get_population_cell_snapshot(0)
 	landlord_row = _row_for_signature(pop, landlord_sig)
 	var owner_funds := int((pop.funds_by_cohort as PackedInt64Array)[landlord_row])
@@ -237,6 +239,9 @@ func _run() -> void:
 		day2_paid_total == 0 and day2_due_total > 0)
 	var constrained_intent := int(
 		(buildings.purchase_intent_capacity_q16 as PackedInt64Array)[0])
+	_expect("unsold output lowers the next active production plan",
+		discarded_output > 0 and
+		int((buildings.planned_utilization_q16 as PackedInt32Array)[0]) < 65536)
 	_expect("zero owner input funds suppress intent and production",
 		constrained_intent == 0 and
 		int((buildings.last_output as PackedInt64Array)[0]) == 0 and funded_output > 0)
@@ -358,6 +363,55 @@ func _test_production_income_consumption_order(catalog: Dictionary, profile: Dic
 	var closing_prepared := _good_value(market, "stock", "prepared_staples")
 	_expect("same-cycle produced food is sold before household clearing",
 		sold > 0 and closing_prepared >= 0 and closing_prepared < sold)
+
+func _test_scarce_output_cost_floor(source_catalog: Dictionary, profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var plant_id := (catalog.building_type_ids as PackedStringArray).find("staple_food_plant")
+	var output_offsets: PackedInt32Array = catalog.building_output_offsets
+	var output_quantities: PackedInt64Array = catalog.building_output_quantities
+	output_quantities[int(output_offsets[plant_id])] = 1000
+	catalog.building_output_quantities = output_quantities
+	var ext := _new_ext(catalog)
+	_expect("cost-floor country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 178))
+	_expect("cost-floor runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 178).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var owner_sig := signatures.find("industrialist|default")
+	var worker_sig := signatures.find("industrial_worker|default")
+	var manager_sig := signatures.find("manager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(1000000)
+	stock[(catalog.good_ids as PackedStringArray).find("prepared_staples")] = 0
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([owner_sig, worker_sig, manager_sig, merchant_sig]),
+		"population": PackedInt64Array([5, 100, 10, 10]),
+		"funds": PackedInt64Array([100000000, 1000000, 1000000, 100000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([plant_id]),
+		"building_owner_signature_ids": PackedInt32Array([owner_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("cost-floor plant bootstraps", bool(boot.get("ok", false)))
+	_run_day(ext, 0)
+	var market0: Dictionary = ext.get_market_cell_snapshot(0)
+	var price0 := _good_i32_value(market0, "price", "prepared_staples")
+	var anchor0 := _good_i32_value(market0, "cost_anchor_price", "prepared_staples")
+	var target0 := _good_value(market0, "merchant_inventory_target", "prepared_staples")
+	var stock0 := _good_value(market0, "stock", "prepared_staples")
+	_run_day(ext, 1)
+	var market1: Dictionary = ext.get_market_cell_snapshot(0)
+	var price1 := _good_i32_value(market1, "price", "prepared_staples")
+	var rate_limited_floor := mini(anchor0, price0 + int(price0 * 8192 / 65536))
+	_expect("scarce output publishes a cost anchor above its market price",
+		anchor0 > price0 and stock0 < target0)
+	_expect("scarce output price rises to the rate-limited producer cost floor",
+		price1 >= rate_limited_floor)
 
 func _new_ext(catalog: Dictionary) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

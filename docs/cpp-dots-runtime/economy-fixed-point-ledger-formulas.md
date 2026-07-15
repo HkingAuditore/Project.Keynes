@@ -101,7 +101,8 @@ V2 hot loop 不使用旧的逐 rule formula registry。资源在 bootstrap 编�
 
 ```text
 plan_need_offsets
-need(priority, base_qty, wealth elasticity/min/max, quantity_env_curve)
+need(priority, base_qty, wealth elasticity/min/max,
+     price_quantity_elasticity/floor, quantity_env_curve)
 need_variant_offsets
 variant(preference, price elasticity, preference_env_curve)
 variant_component_offsets
@@ -115,8 +116,12 @@ schema，而不是注册 GDScript 公式。
 
 ## 数量、替代和互补
 
-需求量由人口、人均财富幂函数、民族 need factor、sample-day 环境曲线和周期天数相乘。variant 权重由
-基础偏好、价格弹性和偏好环境曲线决定，再以稳定整数份额拆分 need。一个 variant 的
+需求量由人口、人均财富幂函数、民族 need factor、sample-day 环境曲线、周期天数和 need 总量价格
+因子相乘。variant 权重由基础偏好、价格弹性和偏好环境曲线决定，再以稳定整数份额拆分 need；其
+归一化 composite 价格分数再按 `price_quantity_elasticity_q16` 求幂并应用
+`price_quantity_floor_q16`。这一因子按 market×need 预计算，不在 cohort hot loop 重复求幂。
+主食与衣着使用较低弹性和正下限，仍随市场价与人均存款缩量；蛋白质及非刚需没有刚性购买下限，
+当所有替代品都昂贵时可以接近零。一个 variant 的
 多个 components 是互补 bundle，实际 bundle 数取各 component 可供量的最小值；同一
 need 的 variants 是替代品，首选不足只允许一次 fallback，防止组合搜索爆炸。
 
@@ -167,12 +172,19 @@ elastic_pressure = pressure / demand_price_elasticity
 成本锚来自实际原料成本、应付合同工资与 `target_operating_margin_q16` 目标利润，按显式 output
 cost share 或参考产值份额分摊；`adaptive` 合同工资已由基础生活篮子、岗位生活篮子和当地工资
 EMA 形成硬下限，因此生活成本通过工资进入成本锚，不再另加一个会重复计算的价格项。金银法定
-发行品不使用零售成本锚。供给不足时成本锚置信度随供给降低，避免没有成交的理论成本强推价格。
+发行品不使用零售成本锚。库存低于目标且仍有需求时，成本锚同时成为受单日最大涨幅约束的价格
+下限；库存已经堆积时仍只保留软压力，不阻止降价清仓。供给不足时软成本项置信度随供给降低，
+避免没有成交的理论成本无条件强推价格。
 无需求、无供给、无库存的商品缓慢回归目录默认价。
+
+企业在 ACTIVE 状态下按上一周期 `sold / (sold + discarded)` 调整下一周期计划利用率，并使用
+`supply_price_elasticity_q16` 作为响应增益。全部售罄时向满产恢复；存在未成交丢弃时向实际市场
+吸收量收缩，但保留 1/32 的探测产能。只有连续严重亏损状态机能完全停产。这样“商人库存目标已满”
+不会继续诱发满产、丢弃和虚假成本亏损。
 
 价格变化先应用 good-specific `price_adjust_q16` 与单日 max rise/fall，再以
 `daily_change*N` 做确定性一阶冻结积分，最后应用绝对 min/max。该算法避免对每个
-market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v4`
+market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v5`
 近似契约显式控制。
 
 cohort income EMA 同样读取周期净收入日均值，effective alpha 为

@@ -6130,7 +6130,8 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 			var fit_weight: float = clampf(p.runtime_climate_fit_weight, 0.0, 1.0)
 			var climate_fit: float = 1.0
 			var runtime_fit: float = 1.0
-			if fit_weight != 0.0 or p.decay_stress != 0.0:
+			if fit_weight != 0.0 or p.decay_stress != 0.0 or \
+					p.ecology_stress_mortality_rate != 0.0:
 				var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
 				var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
 				climate_fit = temp_fit * moisture_fit

@@ -160,7 +160,7 @@ WorldClock.day_changed(day_idx)
 
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
-- `natural_resource_daily`：30 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；所有数量型储量/自然增减统一乘省级地块面积倍率 `100×`，分布形状和无量纲增长/衰减率不变。普通资源使用线性 IMEX，野生动物使用适生度承载量、密度增长、迁入恢复和压力死亡模型。海鱼储量属于海洋格，淡水/淡水鱼不再是经济资源 slot。external delta 一次性应用，`dt_days` 仅推进自然项。岸上渔业由 NativeEconomyRuntime 通过 frozen 六邻拓扑读取并扣减真实水格。初始矿产由资源局部斑块、同族地质省和矿带共同生成；关键资源可按原始适宜度排名配置最低全球矿点覆盖，避免有限地图整类缺矿。
+- `natural_resource_daily`：30 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；所有数量型储量/自然增减统一乘省级地块面积倍率 `100×`，分布形状和无量纲增长/衰减率不变。普通资源使用线性 IMEX，野生动物使用适生度承载量、密度增长、迁入恢复和仅作用于原始适生度最低 25% 的急性压力死亡模型，避免普通非理想气候同时被承载量和死亡率重复惩罚。海鱼储量属于海洋格，淡水/淡水鱼不再是经济资源 slot。external delta 一次性应用，`dt_days` 仅推进自然项。岸上渔业由 NativeEconomyRuntime 通过 frozen 六邻拓扑读取并扣减真实水格。初始矿产由资源局部斑块、同族地质省和矿带共同生成；关键资源可按原始适宜度排名配置最低全球矿点覆盖，避免有限地图整类缺矿。
 - 物资与阶层已进入独立原生经济域：`GoodProfileRegistry` 编译 stable goods，
   `PopulationStore`/`MarketStore` 保存状态，`economy_daily` 推进 `ECONOMY_GRAPH`。
   它们不属于 cell schema；自然资源仍由 `natural_resource_daily` 推进，生产供货走命令账本。

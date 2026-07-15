@@ -34,6 +34,12 @@
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
 - PKEC v12 保存并哈希企业状态/连续数/采购意图容量/实际利润率和实际出库 EMA。兼容参数一致的 v11 ACTIVE 可迁移；ACTIVE 配置明确拒绝 v11 PROBE 和 v10。
 
+## 2026-07-15 价格弹性、成本底线与生态修正
+
+- 消费目录新增 need 总量价格弹性和刚需下限。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食与衣着保留正下限但仍随价格和财富缩量，蛋白质及非刚需可在全体替代品过贵时接近零。
+- 低于目标库存且仍有需求时，生产成本锚成为受单日涨幅上限约束的零售价格底线；库存堆积时不启用硬底线。企业同时按上一周期售罄率缩放下一周期计划利用率，避免商人拒收后继续满产并丢弃。
+- 野生动物承载力继续随普通适生度下降，但压力死亡只作用于原始温湿适生度最低 25% 的急性区间，消除普通非理想气候的重复惩罚。理想与普通气候的 24 营地五年采集均有回归覆盖。
+
 ## PopulationCohort
 
 同一 `(cell, profession, ethnicity)` 只保留一个聚合 cohort。每页 64 lane，字段采用
@@ -74,7 +80,7 @@ EMA、实际 offer 供给 EMA 与单位成本锚；key 只来自现有建筑输�
 
 catalog 编译成 CSR：plan→needs、need→variants、variant→components。
 
-- need：优先级、人均基础量、连续财富弹性/上下限、数量环境曲线。
+- need：优先级、人均基础量、连续财富弹性/上下限、总量价格弹性/刚需下限、数量环境曲线。
 - variant：偏好权重、价格弹性、偏好环境曲线。
 - component：good 与每份 bundle 所需数量。
 - 同一 need 的 variants 是替代方案；同一 variant 的 components 是必须按比例满足的
@@ -83,6 +89,8 @@ catalog 编译成 CSR：plan→needs、need→variants、variant→components。
 每 cohort 每日按优先级重置预算和需求。财富是 `funds/population` 相对
 `wealth_reference_per_capita` 的连续定点函数，不形成额外身份分桶。民族以稀疏 need
 修正表参与数量计算；温度、湿度、积雪和天气强度通过 17 点 Q16 曲线影响数量或偏好。
+variant 价格分数先决定替代份额，再形成 market×need 的总量价格因子。主食和衣着保留正下限但
+仍会随价格、人均存款缩量；蛋白质与非刚需在所有替代品过贵时可以接近零购买。
 
 ## 周期清算顺序
 
@@ -396,3 +404,9 @@ avg/p95/max `2.290/2.961/3.589ms`、`94.2MB`；200 goods / 10M cohorts 为
 `5.372/6.072/8.891ms`、`1663.8MB`。加入 frozen 六邻资源访问后的 10k owner-lot 混合建筑档为
 `2.129/8.643/8.643ms`、`110.2MB`，记录 `capacity_checks=10000`、
 `capacity_limited=0`、`extract_limited=0`，population/money/goods error 仍为 `0/0/0`。
+
+2026-07-15 need 总量价格弹性与企业售罄率响应加入后的 template_release 复核：同一 synthetic
+10k cells / 200k cohorts / 100 goods / 16 needs，auto `N=50`、SELECTIVE 为 2500 samples、
+avg/p95/max `2.064/2.919/12.441ms`、`112.8MB`；固定 `N=5`、`TRACE_OFF` 为
+`2.185/3.269/3.892ms`、`94.6MB`。相对 2026-07-14 固定五日 TRACE_OFF 的 p95 增幅为 9.6%，
+低于 10% 门槛；总量价格幂仍只按 market×need 预计算，不进入 cohort hot loop。

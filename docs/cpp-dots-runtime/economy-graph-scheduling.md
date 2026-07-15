@@ -6,7 +6,7 @@
 每天在 20 个 slice 内完成整图，单 slice 约处理 50 万 cohort，因此 p95 约 89ms。
 瓶颈是固定点除法、need/bundle 展开和内存带宽，不是跨语言 Dictionary。
 
-Market V2 / Price V3 现采用 `production_income_consumption_v4`：周期起点冻结价格、科技、环境、
+Market V2 / Price V3 现采用 `production_income_consumption_v5`：周期起点冻结价格、科技、环境、
 资源和企业价格信号；建筑生产会在居民清算前改变资金与库存，使本期收入和新商品可参与本期消费。
 在 N 个模拟日内按地块连续 range 错峰计算，需求量一次性乘 N；所有地块与
 结构命令完成后，最早在周期截止日统一发布 N 日交易总量。
