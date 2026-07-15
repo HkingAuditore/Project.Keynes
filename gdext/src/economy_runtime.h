@@ -615,6 +615,7 @@ private:
         int64_t inventory_q16 = 0;
         int64_t shortage_q16 = 0;
         int64_t cost_q16 = 0;
+        int64_t cost_floor_price = 0;
         int64_t idle_q16 = 0;
         int64_t total_q16 = 0;
         int64_t change_q16 = 0;

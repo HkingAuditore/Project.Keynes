@@ -308,7 +308,7 @@ func _test_native_pass() -> void:
 		var ordinary_runtime_fit := lerpf(
 			1.0, ordinary_raw_fit, float(wild_profile.runtime_climate_fit_weight))
 		var ordinary_capacity := capacity * ordinary_runtime_fit
-		wild[3] = ordinary_capacity * 0.5
+		wild[5] = ordinary_capacity * 0.5
 		wild[4] = capacity * 0.5
 		wild_extra.fill(0.0)
 		var ideal_temp := float(wild_profile.temp_lo) + float(wild_profile.climate_temp_opt) * (
@@ -317,11 +317,11 @@ func _test_native_pass() -> void:
 		moist[0] = wild_profile.climate_moisture_opt
 		moist[1] = wild_profile.climate_moisture_opt
 		moist[2] = wild_profile.climate_moisture_opt
-		temp[3] = float(wild_profile.temp_lo) + (
+		temp[5] = float(wild_profile.temp_lo) + (
 			float(wild_profile.climate_temp_opt) +
 			float(wild_profile.climate_temp_tol) * (1.0 - ordinary_raw_fit)) * (
 			float(wild_profile.temp_hi) - float(wild_profile.temp_lo))
-		moist[3] = wild_profile.climate_moisture_opt
+		moist[5] = wild_profile.climate_moisture_opt
 		temp[4] = wild_profile.temp_lo
 		moist[4] = 0.0
 		map.set(fields[wild_i], wild)
@@ -336,14 +336,14 @@ func _test_native_pass() -> void:
 		_expect("wild_game grows below carrying capacity", wild[1] > capacity * 0.5)
 		_expect("wild_game naturally declines above carrying capacity", wild[2] < capacity * 2.0)
 		_expect("wild_game grows in ordinary non-ideal climate",
-			wild[3] > ordinary_capacity * 0.5)
+			wild[5] > ordinary_capacity * 0.5)
 		_expect("wild_game climate stress suppresses population",
 			wild[4] < wild[1])
 
 		# 24 座石器时代狩猎营地每天合计采收 12 单位；按五日经济周期一次扣 60。
 		# 连续一年后仍应保有过半承载量，避免测试经济再次在数个周期内归零。
 		wild[0] = capacity
-		wild[3] = ordinary_capacity
+		wild[5] = ordinary_capacity
 		wild_extra.fill(0.0)
 		map.set(fields[wild_i], wild)
 		map.set(extra_fields[wild_i], wild_extra)
@@ -352,7 +352,7 @@ func _test_native_pass() -> void:
 		for _cycle in range(365):
 			wild_extra = map.get(extra_fields[wild_i])
 			wild_extra[0] = -60.0
-			wild_extra[3] = -60.0
+			wild_extra[5] = -60.0
 			map.set(extra_fields[wild_i], wild_extra)
 			ext.refresh_slots_from_map()
 			ext.run_natural_resource_pass(knobs)
@@ -360,7 +360,7 @@ func _test_native_pass() -> void:
 		_expect("wild_game sustains five years of 24-camp harvest at ideal habitat",
 			wild[0] > capacity * 0.5)
 		_expect("wild_game sustains five years of 24-camp harvest in ordinary climate",
-			wild[3] > ordinary_capacity * 0.35)
+			wild[5] > ordinary_capacity * 0.35)
 
 	var fertile_i: int = _profile_index(profiles, "fertile_soil")
 	if fertile_i >= 0:
@@ -419,7 +419,8 @@ func _reference_step(res_idx: int, reserve_in: PackedFloat32Array, extra_in: Pac
 		var fit_weight: float = clampf(p.runtime_climate_fit_weight, 0.0, 1.0)
 		var climate_fit: float = 1.0
 		var runtime_fit: float = 1.0
-		if fit_weight != 0.0 or p.decay_stress != 0.0:
+		if fit_weight != 0.0 or p.decay_stress != 0.0 or \
+				p.ecology_stress_mortality_rate != 0.0:
 			var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
 			var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
 			climate_fit = temp_fit * moisture_fit

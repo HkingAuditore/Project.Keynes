@@ -3421,12 +3421,38 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(std::string &error) {
                 group.recovery_cycles = 0;
             }
         }
-        group.planned_utilization_q16 = group.operating_state == 0
-            ? static_cast<int32_t>(Q16_ONE) : 0;
+        if (group.operating_state == 0) {
+            int64_t utilization = group.planned_utilization_q16 > 0
+                ? group.planned_utilization_q16 : Q16_ONE;
+            const int64_t sellable_output = saturating_add(
+                group.last_sold, group.last_discarded, _saturation_count);
+            if (group.last_output > 0 && sellable_output > 0) {
+                const int64_t sell_through_q16 = std::clamp<int64_t>(mul_div_sat(
+                    group.last_sold, Q16_ONE, sellable_output, _saturation_count),
+                    0, Q16_ONE);
+                const int64_t target_utilization = group.last_discarded > 0
+                    ? mul_div_sat(utilization, sell_through_q16, Q16_ONE,
+                                  _saturation_count)
+                    : Q16_ONE;
+                const int64_t response_q16 = std::clamp<int64_t>(
+                    type.supply_price_elasticity_q16, 0, Q16_ONE);
+                utilization = saturating_add(utilization, mul_div_sat(
+                    target_utilization - utilization, response_q16, Q16_ONE,
+                    _saturation_count), _saturation_count);
+            }
+            // Keep a small market probe while active. The loss state machine remains
+            // the authority for a complete stop and can later restart the group.
+            group.planned_utilization_q16 = static_cast<int32_t>(
+                std::clamp<int64_t>(utilization, Q16_ONE / 32, Q16_ONE));
+        } else {
+            group.planned_utilization_q16 = 0;
+        }
         group.purchase_intent_capacity_q16 = 0;
         const int64_t group_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
-        group.last_expected_revenue = saturating_mul(group_days, revenue, _saturation_count);
+        group.last_expected_revenue = mul_div_sat(
+            saturating_mul(group_days, revenue, _saturation_count),
+            group.planned_utilization_q16, Q16_ONE, _saturation_count);
         if (margin_gap < 0) ++_unprofitable_building_groups;
         if (group.operating_state != 0) ++_loss_suspended_building_groups;
         _utilization_sum_q16 = saturating_add(
@@ -3457,12 +3483,13 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
     out.excess_q16 = std::clamp<int64_t>(mul_div_sat(
         saturating_sub(demand, out.supply, sat), Q16_ONE,
         std::max<int64_t>(GOODS_SCALE, flow), sat), -Q16_ONE, Q16_ONE);
+    int64_t inventory_target = 0;
     if (_good_storage_modes[good] == 0) {
-        const int64_t target = mul_div_sat(
+        inventory_target = mul_div_sat(
             demand, _good_target_inventory_days_q16[good], Q16_ONE, sat);
         out.inventory_q16 = std::clamp<int64_t>(mul_div_sat(
-            saturating_sub(target, stock, sat), Q16_ONE,
-            std::max<int64_t>(GOODS_SCALE, target), sat), -Q16_ONE, Q16_ONE);
+            saturating_sub(inventory_target, stock, sat), Q16_ONE,
+            std::max<int64_t>(GOODS_SCALE, inventory_target), sat), -Q16_ONE, Q16_ONE);
         out.shortage_q16 = std::clamp<int64_t>(shortage_q16, 0, Q16_ONE);
     }
     const int64_t price = std::max<int64_t>(1, _market.price[_market.index(market, good)]);
@@ -3476,6 +3503,10 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
         out.cost_q16 = mul_div_sat(std::clamp<int64_t>(mul_div_sat(
             anchor - price, Q16_ONE, std::max<int64_t>(anchor, price), sat),
             -Q16_ONE, Q16_ONE), confidence, Q16_ONE, sat);
+        if (anchor > price && demand > 0 &&
+            (stock < inventory_target || shortage_q16 > 0)) {
+            out.cost_floor_price = anchor;
+        }
     }
     if (demand == 0 && out.supply == 0 && stock == 0) {
         out.idle_q16 = std::clamp<int64_t>(mul_div_sat(
@@ -5385,7 +5416,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["market_cycle_days"] = _epoch_days;
     out["markets_per_slice"] = _cells_per_slice;
     out["market_target_cohorts_per_slice"] = _target_cohorts_per_slice;
-    out["approximation_model"] = "production_income_consumption_v4";
+    out["approximation_model"] = "production_income_consumption_v5";
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = merchant_repairs;
     out["building_group_count"] = static_cast<int64_t>(_buildings.size());
@@ -5596,8 +5627,16 @@ int32_t NativeEconomyRuntime::estimate_trade_price(
         -static_cast<int64_t>(_good_max_price_fall_q16[good]),
         static_cast<int64_t>(_good_max_price_rise_q16[good]));
     const int64_t period_change = saturating_mul(change, std::max(1, _epoch_days), sat);
-    const int64_t next = saturating_add(_market.price[index], mul_div_sat(
+    int64_t next = saturating_add(_market.price[index], mul_div_sat(
         _market.price[index], period_change, Q16_ONE, sat), sat);
+    if (pressure.cost_floor_price > _market.price[index]) {
+        const int64_t max_rise_period = saturating_mul(
+            _good_max_price_rise_q16[good], std::max(1, _epoch_days), sat);
+        const int64_t max_cost_price = saturating_add(_market.price[index], mul_div_sat(
+            _market.price[index], max_rise_period, Q16_ONE, sat), sat);
+        next = std::max(next, std::min<int64_t>(
+            pressure.cost_floor_price, max_cost_price));
+    }
     return static_cast<int32_t>(std::clamp<int64_t>(
         next, _good_min_price[good], _good_max_price[good]));
 }
@@ -7457,6 +7496,14 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int64_t period_change_q16 = saturating_mul(change_q16, _epoch_days, sat);
         int64_t next_price = saturating_add(_market.price[idx],
             mul_div_sat(_market.price[idx], period_change_q16, Q16_ONE, sat), sat);
+        if (pressure.cost_floor_price > _market.price[idx]) {
+            const int64_t max_rise_period_q16 = saturating_mul(
+                _good_max_price_rise_q16[good], _epoch_days, sat);
+            const int64_t max_cost_price = saturating_add(_market.price[idx], mul_div_sat(
+                _market.price[idx], max_rise_period_q16, Q16_ONE, sat), sat);
+            next_price = std::max(next_price, std::min<int64_t>(
+                pressure.cost_floor_price, max_cost_price));
+        }
         const int64_t bounded = std::clamp<int64_t>(next_price,
                                                     _good_min_price[good], _good_max_price[good]);
         if (unclamped != change_q16 || bounded != next_price) ++result.price_cap_hits;
@@ -8586,8 +8633,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["market_cycle_days"] = _epoch_days;
     out["market_target_cohorts_per_slice"] = _target_cohorts_per_slice;
     out["market_max_cycle_days"] = _max_epoch_days;
-    out["approximation_version"] = 3;
-    out["approximation_model"] = "production_income_consumption_v4";
+    out["approximation_version"] = 4;
+    out["approximation_model"] = "production_income_consumption_v5";
     out["starvation_satisfaction_threshold_q16"] =
         _starvation_satisfaction_threshold_q16;
     out["starvation_death_rate_q32"] = _starvation_death_rate_q32;

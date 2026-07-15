@@ -39,6 +39,11 @@ func _run() -> void:
 		int(living_weights[need_ids.find("staple_food")]) == 65536 and
 		int(living_weights[need_ids.find("communication")]) == 32768 and
 		int(living_weights[need_ids.find("luxury")]) == 0)
+	_expect("need catalog compiles total quantity price response",
+		(catalog.need_price_quantity_elasticity_q16 as PackedInt32Array).size() ==
+		(catalog.need_stable_ids as PackedInt32Array).size() and
+		(catalog.need_price_quantity_floor_q16 as PackedInt32Array).size() ==
+		(catalog.need_stable_ids as PackedInt32Array).size())
 	_expect("old fur slot removed", DCComponentSchema.find_by_name(&"cell.goods_fur_qty").is_empty())
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("  [SKIP] DCWorldExt unavailable")
@@ -48,6 +53,7 @@ func _run() -> void:
 	_test_merchant_trade_and_save(catalog)
 	_test_economy_event_trace(catalog)
 	_test_environment_substitution(catalog)
+	_test_price_quantity_response(catalog)
 	_test_survival_labor_and_mortality(catalog)
 	_test_demand_preview_query(catalog)
 	_test_cycle_approximation(catalog)
@@ -350,6 +356,44 @@ func _test_environment_substitution(compiled: Dictionary) -> void:
 	_expect("cold environment increases fur demand", cold_fur_used > warm_fur_used)
 	_expect("environment snapshot day published", int(cold.get_economy_report().environment_day) == 0)
 
+func _test_price_quantity_response(compiled: Dictionary) -> void:
+	var baseline := _configured_price_worker(compiled, 1801)
+	var expensive := _configured_price_worker(compiled, 1802)
+	var goods: PackedStringArray = compiled.good_ids
+	var staple_ids := ["prepared_staples", "bread", "grain", "gathered_plants"]
+	var protein_ids := ["game_meat", "meat", "fish", "canned_fish", "dairy_products"]
+	var clothing_ids := ["cloth", "fur", "clothing", "footwear"]
+	var basket := {}
+	for good_id in staple_ids + protein_ids + clothing_ids:
+		basket[good_id] = 2000000
+	baseline.submit_economy_commands(_stock_commands(0, goods, basket, 0))
+	_run_day(baseline, 0)
+	var baseline_market: Dictionary = baseline.get_market_cell_snapshot(0)
+	for day in range(8):
+		_run_day(expensive, day)
+	var expensive_before: Dictionary = expensive.get_market_cell_snapshot(0)
+	expensive.submit_economy_commands(_stock_commands(0, goods, basket, 8))
+	_run_day(expensive, 8)
+	var expensive_market: Dictionary = expensive.get_market_cell_snapshot(0)
+	var baseline_protein := _basket_consumed(baseline_market, protein_ids, 2000000)
+	var expensive_protein := _basket_consumed(expensive_market, protein_ids, 2000000)
+	var baseline_staple := _basket_consumed(baseline_market, staple_ids, 2000000)
+	var expensive_staple := _basket_consumed(expensive_market, staple_ids, 2000000)
+	var baseline_clothing := _basket_consumed(baseline_market, clothing_ids, 2000000)
+	var expensive_clothing := _basket_consumed(expensive_market, clothing_ids, 2000000)
+	_expect("shortage raises wild-game price before residents buy it",
+		_good_value(expensive_before, "price", "game_meat") >
+		_good_value(baseline_market, "price", "game_meat"))
+	_expect("expensive protein basket sharply reduces purchased quantity",
+		baseline_protein > 0 and expensive_protein * 2 < baseline_protein)
+	_expect("staple and clothing remain necessities but still scale down with price",
+		baseline_staple > 0 and baseline_clothing > 0 and
+		expensive_staple > 0 and expensive_staple < baseline_staple and
+		expensive_clothing > 0 and expensive_clothing < baseline_clothing)
+	_expect("necessities are less price elastic than protein",
+		expensive_staple * baseline_protein > expensive_protein * baseline_staple and
+		expensive_clothing * baseline_protein > expensive_protein * baseline_clothing)
+
 func _test_demand_preview_query(compiled: Dictionary) -> void:
 	var cold: Object = _configured_single_worker(compiled, 0.0, 1701)
 	var warm: Object = _configured_single_worker(compiled, 1.0, 1701)
@@ -537,6 +581,26 @@ func _configured_single_worker(compiled: Dictionary, temperature: float, seed: i
 	}, {})
 	return ext
 
+func _configured_price_worker(compiled: Dictionary, seed: int) -> Object:
+	var ext: Object = _new_ext(1, 0.5)
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	_expect("price-response country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, seed))
+	var profile := _native_profile(false, 1)
+	profile.starvation_death_rate_q32 = 0
+	_expect("price-response economy configures",
+		bool(ext.configure_economy(catalog, profile, 1, seed).get("ok", false)))
+	var signature: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([signature]),
+		"population": PackedInt64Array([100]),
+		"funds": PackedInt64Array([100000000]),
+	}, {})
+	_expect("price-response population bootstraps", bool(boot.get("ok", false)))
+	return ext
+
 func _configured_many_workers(compiled: Dictionary, workers: bool, cells: int) -> Object:
 	var ext: Object = _new_ext(cells, 0.25)
 	var catalog := compiled.duplicate(true)
@@ -643,6 +707,12 @@ func _preview_good_total(snapshot: Dictionary, good_id: String) -> int:
 		for cursor in range(int(offsets[cohort]), int(offsets[cohort + 1])):
 			if cursor < indices.size() and cursor < quantities.size() and indices[cursor] == target:
 				total += int(quantities[cursor]) * int(populations[cohort])
+	return total
+
+func _basket_consumed(snapshot: Dictionary, good_ids: Array, added_per_good: int) -> int:
+	var total := 0
+	for good_id in good_ids:
+		total += maxi(0, added_per_good - _good_value(snapshot, "stock", String(good_id)))
 	return total
 
 func _merchant_funds(snapshot: Dictionary) -> int:

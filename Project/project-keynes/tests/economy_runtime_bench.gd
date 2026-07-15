@@ -364,6 +364,8 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 	var wealth_elasticity := PackedInt32Array()
 	var wealth_min := PackedInt32Array()
 	var wealth_max := PackedInt32Array()
+	var price_quantity_elasticity := PackedInt32Array()
+	var price_quantity_floor := PackedInt32Array()
 	var need_env := PackedInt32Array()
 	var need_variant_offsets := PackedInt32Array([0])
 	var variant_preference := PackedInt32Array()
@@ -386,6 +388,8 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		wealth_elasticity.append(16384)
 		wealth_min.append(32768)
 		wealth_max.append(131072)
+		price_quantity_elasticity.append(65536)
+		price_quantity_floor.append(0)
 		need_env.append(-1)
 		need_variant_offsets.append(need + 1)
 		variant_preference.append(65536)
@@ -435,6 +439,8 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		"need_living_cost_weights_q16": need_living_cost_weights,
 		"need_base_qty_per_person": base_qty, "need_wealth_elasticity_q16": wealth_elasticity,
 		"need_wealth_min_q16": wealth_min, "need_wealth_max_q16": wealth_max,
+		"need_price_quantity_elasticity_q16": price_quantity_elasticity,
+		"need_price_quantity_floor_q16": price_quantity_floor,
 		"need_quantity_env_curve_ids": need_env, "need_variant_offsets": need_variant_offsets,
 		"variant_preference_q16": variant_preference, "variant_price_elasticity_q16": variant_elasticity,
 		"variant_preference_env_curve_ids": variant_env, "variant_component_offsets": variant_component_offsets,

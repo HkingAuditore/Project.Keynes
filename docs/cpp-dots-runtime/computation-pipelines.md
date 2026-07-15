@@ -584,11 +584,14 @@ seeded           = reserve_ext + ecology_immigration * runtime_fit
 growth_factor    = 1 + ecology_growth_rate * runtime_fit
 reserve'         = growth_factor * seeded /
                    (1 + (growth_factor - 1) * seeded / runtime_capacity)
-reserve'        /= 1 + ecology_stress_mortality_rate * (1 - runtime_fit)
+acute_stress     = clamp((0.25 - raw_climate_fit) / 0.25, 0, 1)
+reserve'        /= 1 + ecology_stress_mortality_rate * acute_stress
 ```
 
 低密度种群自然恢复，接近承载量时增长趋零，超过承载量时自然下降；迁入项允许适生地
-从零缓慢恢复。非线性生态分支在 `dt_days > 1` 时逐日迭代，外部变化仍只应用一次。
+从零缓慢恢复。普通非理想气候已经通过较低承载量表达，不再重复承受压力死亡；显式死亡只作用于
+原始温湿适生度最低 25% 的急性气候压力。非线性生态分支在 `dt_days > 1` 时逐日迭代，外部变化
+仍只应用一次。
 
 `habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater`。当前目录只有
 `marine_fish` 使用水域鱼类资源，直接写在深海、海洋与浅海水格；淡水/淡水鱼不再是
@@ -599,7 +602,8 @@ DataCore 经济资源。habitat 外储量为 0。岸上渔业通过建筑资源�
 是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；林木、渔业和土壤
 沿用线性 IMEX，野生动物启用密度制约生态分支。`fertile_soil` 的最差适宜度净自然项保持为正，
 其省级面积缩放后的长期储量下限为 5000；`wild_game` 使用 600×100 的理想承载量、1% 日增长、
-正迁入和压力死亡，因此适生地可从零恢复，并能承受测试 bootstrap 每格最多 24 座狩猎营地的长期采收。
+正迁入和急性压力死亡，因此适生地可从零恢复，并能承受理想或普通非理想气候下每格最多 24 座
+石器时代狩猎营地的五年连续采收回归。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
 在 `init_soa_from_bake` 之后、`_setup_sus` bind 之前跑一次（仅 GDScript，无 C++ 副本；运行期不重算）。
@@ -638,7 +642,7 @@ habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低
   `province` 与 ridge-shaped `belt` 场。两种共享场均中心化，省外/矿带外产生负贡献，避免每块陆地
   同时拥有大多数矿物；同族矿物仍在大尺度上相关。所有场由 map seed 派生，可确定性重放。
 - 可选最适区间：
-  `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日动态受适宜度削弱；线性模型用 `decay_stress`，生态模型用 `ecology_stress_mortality_rate` 表达不适宜气候下的比例死亡。生态参数默认全 0，旧资源行为不变。
+  `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日动态受适宜度削弱；线性模型用 `decay_stress`，生态模型用 `ecology_stress_mortality_rate` 仅表达原始适生度低于 0.25 的急性气候比例死亡。生态参数默认全 0，旧资源行为不变。
 - `init_reserve_scale` 在 suitability、地质省和矿带全部求值后统一缩放正储量，只改变数量而不改变
   资源出现位置。当前内容以一般资源/农业容量 `8×`、林木/海鱼/野生动物 `4×`、
   热湿种植园 `16×` 为主要量级；旧档已有

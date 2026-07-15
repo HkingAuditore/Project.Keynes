@@ -1,6 +1,6 @@
 # economy — 原生阶层与本地市场模块
 
-> 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v4`）。功能、守恒、确定性与
+> 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v5`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v12 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治和一般自然人口变化；仅实现缺乏食品/气候所需衣着造成的生存死亡。
@@ -90,6 +90,9 @@ EMA；同一 owner 在产品销售后按可用现金比例支付。销售后超�
 意图更新稀疏企业需求，并按真实居民/企业/建设出库更新实际出库 EMA、供给和成本锚，同时更新
 稀疏 `(cell, profession)` 劳动市场信号，
 供下一周期 Price V3 使用。
+ACTIVE 企业还按上一周期售罄率与 `supply_price_elasticity_q16` 调整计划利用率；未成交产出会缩减
+下一周期岗位、采购和产量，全部售罄则逐步回到满产。库存低于目标且仍有需求时，成本锚是受商品
+单日涨幅限制的价格底线；库存堆积时仍允许价格跌破成本清仓。
 `consume_local_resources` 的资源边分为 `extract` 与 `capacity`：前者按本地储量限产并发布负 delta，
 后者只限制建筑数量/产能而不扣减储量。农场以旱作耕地、水田或种植园容量生产 crop goods，
 不再生成小麦/玉米等自然资源。负 pending delta 会立即压低下一经济周期的有效可采储量以防超采。
