@@ -1,6 +1,8 @@
 ﻿param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path,
-    [switch]$Check
+    [switch]$Check,
+    [ValidateSet('All', 'Consumption')]
+    [string]$Scope = 'All'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,7 +18,20 @@ $utf8 = [System.Text.UTF8Encoding]::new($false)
 $managedPaths = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
 
+function Is-Consumption-Path([string]$Path) {
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    foreach ($directory in @($professionsDir, $needsDir, $plansDir)) {
+        $prefix = [System.IO.Path]::GetFullPath($directory).TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+        if ($fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Write-Utf8([string]$Path, [string]$Content) {
+    if ($Scope -eq 'Consumption' -and -not (Is-Consumption-Path $Path)) { return }
     [void]$managedPaths.Add([System.IO.Path]::GetFullPath($Path))
     $expected = $Content.TrimEnd() + "`n"
     if ($Check) {
@@ -52,6 +67,8 @@ function Sync-CuratedDirectory([string]$Source, [string]$Target) {
 }
 
 function Assert-FullyManaged([string]$Directory) {
+    if ($Scope -eq 'Consumption' -and
+        -not (Is-Consumption-Path (Join-Path $Directory '_scope_probe'))) { return }
     foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter '*.tres' -File) {
         if (-not $managedPaths.Contains([System.IO.Path]::GetFullPath($file.FullName))) {
             if ($Check) { throw "retired generated file remains: $($file.FullName)" }
@@ -160,11 +177,12 @@ $goodNames = @{
 $substitutionCategoriesByGood = @{}
 function Add-Substitution-Group([string]$CategoryId, [string[]]$GoodIds) {
     foreach ($goodId in $GoodIds) {
-        [string[]]$memberships = if ($substitutionCategoriesByGood.ContainsKey($goodId)) {
-            $substitutionCategoriesByGood[$goodId]
-        } else { @() }
+        [string[]]$memberships = @()
+        if ($substitutionCategoriesByGood.ContainsKey($goodId)) {
+            $memberships = [string[]]$substitutionCategoriesByGood[$goodId]
+        }
         if ($CategoryId -notin $memberships) {
-            $substitutionCategoriesByGood[$goodId] = [string[]](@($memberships) + @($CategoryId))
+            $substitutionCategoriesByGood[$goodId] = [string[]]($memberships + @($CategoryId))
         }
     }
 }
@@ -397,15 +415,15 @@ technology_tags = PackedStringArray("$($row[3])")
 }
 
 $needRows = @(
-    @('staple_food','Staple Food',65536), @('protein','Protein',65536),
-    @('produce','Produce',65536), @('clothing','Clothing',65536),
-    @('housing','Housing Upkeep',65536), @('household_goods','Household Goods',32768),
-    @('hygiene','Hygiene',65536), @('healthcare','Healthcare',65536),
-    @('home_energy','Home Energy',65536), @('transport','Transport',32768),
-    @('communication','Communication',32768), @('education_culture','Education Culture',0),
-    @('recreation','Recreation',0), @('durable_goods','Durable Goods',0),
-    @('work_equipment','Work Equipment',32768), @('luxury','Luxury',0),
-    @('status_goods','Status Goods',0)
+    @('staple_food','食品',65536), @('protein','食品',65536),
+    @('produce','食品',65536), @('clothing','衣着',65536),
+    @('housing','居住维护',65536), @('household_goods','家庭用品',32768),
+    @('hygiene','清洁卫生',65536), @('healthcare','医疗保健',65536),
+    @('home_energy','家庭能源',65536), @('transport','个人交通',32768),
+    @('communication','通信',32768), @('education_culture','教育与文化',0),
+    @('recreation','休闲娱乐',0), @('durable_goods','耐用消费品',0),
+    @('work_equipment','职业装备',32768), @('luxury','奢侈消费',0),
+    @('status_goods','身份消费',0)
 )
 foreach ($row in $needRows) {
     Write-Utf8 (Join-Path $needsDir "$($row[0]).tres") @"
@@ -420,26 +438,44 @@ living_cost_weight_q16 = $($row[2])
 }
 
 $needSpecs = @(
-    @{id='staple_food'; variants=@(@('prepared_staples'),@('bread'),@('grain'),@('gathered_plants'))},
-    @{id='protein'; variants=@(@('meat'),@('fish'),@('canned_fish'),@('dairy_products'))},
-    @{id='produce'; variants=@(@('processed_food'),@('gathered_plants'),@('vegetables'))},
-    @{id='clothing'; variants=@(@('clothing'),@('cloth'),@('fur'),@('footwear'))},
-    @{id='housing'; variants=@(@('construction_components'))},
-    @{id='household_goods'; variants=@(@('furniture'),@('pottery'))},
-    @{id='hygiene'; variants=@(@('soap'),@('detergent'))},
-    @{id='healthcare'; variants=@(@('pharmaceuticals'))},
-    @{id='home_energy'; variants=@(@('refined_fuel'),@('natural_gas'))},
-    @{id='transport'; variants=@(@('automobiles','refined_fuel'),@('railway_equipment'),@('oceanic_vessels'))},
-    @{id='communication'; variants=@(@('telecom_equipment'),@('radio_equipment'))},
-    @{id='education_culture'; variants=@(@('printed_materials'),@('computers'),@('manuscripts'))},
-    @{id='recreation'; variants=@(@('computers'),@('horses'))},
-    @{id='durable_goods'; variants=@(@('household_appliances'),@('autonomous_systems'))},
-    @{id='work_equipment'; variants=@(@('tools'),@('precision_tools'),@('scientific_instruments'))},
-    @{id='luxury'; variants=@(@('beverages'),@('fine_clothing'),@('fine_furniture'))},
-    @{id='status_goods'; variants=@(@('jewelry'),@('fur'),@('spices'))}
+    @{id='staple_food'; tier='essential'; base=550; wealth=4096; min=49152; max=81920; price=98304;
+        variants=@(@('prepared_staples'),@('bread'),@('grain'),@('gathered_plants'))},
+    @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=131072; price=98304;
+        variants=@(@('game_meat'),@('meat'),@('fish'),@('canned_fish'),@('dairy_products'))},
+    @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=131072; price=98304;
+        variants=@(@('vegetables'),@('processed_food'))},
+    @{id='clothing'; tier='essential'; base=3; wealth=32768; min=16384; max=196608; price=65536;
+        variants=@(@('cloth'),@('fur'),@('clothing'),@('footwear'))},
+    @{id='housing'; tier='essential'; base=5; wealth=32768; min=16384; max=196608; price=65536;
+        variants=@(@('construction_components'))},
+    @{id='household_goods'; tier='comfort'; base=2; wealth=49152; min=8192; max=262144; price=49152;
+        variants=@(@('pottery'),@('furniture'))},
+    @{id='hygiene'; tier='essential'; base=10; wealth=32768; min=16384; max=196608; price=65536;
+        variants=@(@('soap'),@('detergent'))},
+    @{id='healthcare'; tier='essential'; base=3; wealth=32768; min=16384; max=196608; price=32768;
+        variants=@(@('medicinal_herbs'),@('pharmaceuticals'))},
+    @{id='home_energy'; tier='essential'; base=80; wealth=32768; min=16384; max=196608; price=65536;
+        variants=@(@('logs'),@('coal'),@('natural_gas'),@('refined_fuel'))},
+    @{id='transport'; tier='comfort'; base=3; wealth=49152; min=8192; max=262144; price=49152;
+        variants=@(@('horses'),@('automobiles','refined_fuel'))},
+    @{id='communication'; tier='comfort'; base=1; wealth=49152; min=8192; max=262144; price=49152;
+        variants=@(@('radio_equipment'),@('telecom_equipment'))},
+    @{id='education_culture'; tier='comfort'; base=2; wealth=49152; min=8192; max=262144; price=49152;
+        variants=@(@('manuscripts'),@('printed_materials'),@('computers'))},
+    @{id='recreation'; tier='comfort'; base=3; wealth=49152; min=8192; max=262144; price=49152;
+        variants=@(@('beverages'),@('computers'))},
+    @{id='durable_goods'; tier='luxury'; base=1; wealth=65536; min=4096; max=393216; price=32768;
+        variants=@(@('household_appliances'),@('autonomous_systems'))},
+    @{id='work_equipment'; tier='comfort'; base=2; wealth=49152; min=8192; max=262144; price=49152;
+        variants=@(@('chipped_stone_tools'),@('bronze_tools'),@('tools'),@('precision_tools'))},
+    @{id='luxury'; tier='luxury'; base=1; wealth=98304; min=1024; max=524288; price=32768;
+        variants=@(@('beverages'),@('fine_clothing'),@('fine_furniture'))},
+    @{id='status_goods'; tier='luxury'; base=1; wealth=98304; min=1024; max=524288; price=32768;
+        variants=@(@('jewelry'),@('fur'),@('spices'))}
 )
 
-function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds, [int]$Scale,
+function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
+        [int]$EssentialScale, [int]$ComfortScale, [int]$LuxuryScale,
         [hashtable]$PreferenceOverrides) {
     $needIds = @(); $priorities = @(); $base = @(); $elasticity = @(); $mins = @(); $maxs = @(); $env = @()
     $needOffsets = @(0); $variantIds = @(); $preferences = @(); $variantElasticity = @(); $variantEnv = @()
@@ -449,9 +485,17 @@ function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds, [int]$
         $spec = $needSpecs | Where-Object { $_.id -eq $needId } | Select-Object -First 1
         if ($null -eq $spec) { throw "unknown need in plan ${Id}: $needId" }
         $n = $needIds.Count; $needIds += $spec.id; $priorities += $n
-        $essentialQty = if ($needId -in @('staple_food','protein','produce')) { 500 } else { 20 }
-        $base += [Math]::Max(1, [int]($essentialQty * $Scale / 100))
-        $elasticity += $(if ($needId -in @('staple_food','protein','produce')) { 8192 } else { 65536 }); $mins += 8192; $maxs += 262144
+        $scale = switch ($spec.tier) {
+            'essential' { $EssentialScale }
+            'comfort' { $ComfortScale }
+            'luxury' { $LuxuryScale }
+            default { throw "unknown need tier in plan ${Id}: $($spec.tier)" }
+        }
+        $scaledBase = [int][Math]::Floor(([int64]$spec.base * $scale + 50) / 100.0)
+        $base += [Math]::Max(1, $scaledBase)
+        $elasticity += [int]$spec.wealth
+        $mins += [int]$spec.min
+        $maxs += [int]$spec.max
         $env += $(if ($spec.id -eq 'clothing') { 'cold_clothing_quantity' } else { '' })
         foreach ($variant in $spec.variants) {
             $variantIds += "$($spec.id)_$v"
@@ -459,7 +503,7 @@ function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds, [int]$
             $preferences += $(if ($PreferenceOverrides.ContainsKey($preferenceGood)) {
                 [int]$PreferenceOverrides[$preferenceGood]
             } else { 65536 })
-            $variantElasticity += 65536
+            $variantElasticity += [int]$spec.price
             $variantEnv += $(if ($spec.id -eq 'clothing' -and $variant -contains 'fur') { 'cold_fur_preference' } elseif ($spec.id -eq 'clothing') { 'warm_cloth_preference' } else { '' })
             foreach ($good in $variant) { $componentIds += $good; $componentQty += 1000; $c++ }
             $componentOffsets += $c; $v++
@@ -491,36 +535,37 @@ component_good_ids = $(PSArray $componentIds)
 component_qty_per_need = $(PI64 $componentQty)
 "@
 }
-$coreNeeds = @('staple_food','protein','produce','clothing','housing','hygiene','healthcare')
-Write-Plan 'survival_household' 'Survival Household Consumption' $coreNeeds 55 @{
-    gathered_plants=98304; grain=81920; cloth=81920; fur=73728
+$coreNeeds = @('staple_food','protein','produce','clothing','housing','household_goods',
+    'hygiene','healthcare','home_energy')
+Write-Plan 'survival_household' '生存型家庭消费' $coreNeeds 80 35 0 @{
+    gathered_plants=98304; grain=81920; cloth=81920; fur=73728; logs=98304; medicinal_herbs=81920
 }
-Write-Plan 'agrarian_household' 'Agrarian Household Consumption' `
-    ($coreNeeds + @('household_goods','work_equipment','recreation')) 80 @{
-    prepared_staples=81920; tools=98304; horses=81920; pottery=73728
+Write-Plan 'agrarian_household' '农业型家庭消费' `
+    ($coreNeeds + @('transport','work_equipment','recreation')) 95 75 0 @{
+    prepared_staples=81920; tools=98304; horses=81920; pottery=73728; vegetables=81920
 }
-Write-Plan 'extractive_household' 'Extractive Household Consumption' `
-    ($coreNeeds + @('household_goods','home_energy','work_equipment')) 85 @{
-    meat=81920; refined_fuel=81920; precision_tools=81920; tools=73728
+Write-Plan 'extractive_household' '采掘型家庭消费' `
+    ($coreNeeds + @('transport','work_equipment')) 105 85 0 @{
+    meat=81920; coal=81920; refined_fuel=81920; precision_tools=81920; tools=73728
 }
-Write-Plan 'industrial_worker_household' 'Industrial Worker Household Consumption' `
-    ($coreNeeds + @('household_goods','home_energy','transport','work_equipment')) 80 @{
-    bread=81920; clothing=81920; railway_equipment=81920; tools=81920
+Write-Plan 'industrial_worker_household' '产业工人家庭消费' `
+    ($coreNeeds + @('transport','work_equipment')) 100 85 0 @{
+    bread=81920; clothing=81920; automobiles=81920; tools=81920
 }
-Write-Plan 'artisan_household' 'Artisan Household Consumption' `
-    ($coreNeeds + @('household_goods','education_culture','work_equipment','luxury')) 100 @{
+Write-Plan 'artisan_household' '工匠型家庭消费' `
+    ($coreNeeds + @('education_culture','work_equipment','luxury')) 105 105 80 @{
     clothing=81920; precision_tools=98304; manuscripts=81920; fine_furniture=73728
 }
-Write-Plan 'technical_household' 'Technical Household Consumption' `
-    ($coreNeeds + @('home_energy','transport','communication','education_culture','durable_goods','work_equipment','luxury')) 100 @{
-    scientific_instruments=98304; precision_tools=81920; computers=98304; telecom_equipment=81920
+Write-Plan 'technical_household' '技术型家庭消费' `
+    ($coreNeeds + @('transport','communication','education_culture','recreation','durable_goods','work_equipment','luxury')) 110 125 120 @{
+    precision_tools=81920; computers=98304; telecom_equipment=81920; pharmaceuticals=81920
 }
-Write-Plan 'merchant_household' 'Merchant Household Consumption' `
-    ($coreNeeds + @('household_goods','transport','communication','education_culture','recreation','durable_goods','luxury','status_goods')) 120 @{
+Write-Plan 'merchant_household' '商人家庭消费' `
+    ($coreNeeds + @('transport','communication','education_culture','recreation','durable_goods','luxury','status_goods')) 115 150 180 @{
     automobiles=81920; telecom_equipment=81920; beverages=81920; jewelry=98304; spices=81920
 }
-Write-Plan 'owner_household' 'Owner Household Consumption' `
-    ($coreNeeds + @('household_goods','transport','communication','education_culture','recreation','durable_goods','luxury','status_goods')) 135 @{
+Write-Plan 'owner_household' '业主家庭消费' `
+    ($coreNeeds + @('transport','communication','education_culture','recreation','durable_goods','luxury','status_goods')) 120 175 240 @{
     fine_clothing=98304; fine_furniture=98304; jewelry=98304; fur=81920; automobiles=81920
 }
 
@@ -931,7 +976,9 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         $technology = Technology-For-Good $Outputs[0]
     }
     $rank = Technology-Rank $technology
-    [long[]]$inputQtySeed = if ($InputQuantityOverride.Count -gt 0) {
+    [long[]]$inputQtySeed = if ($Inputs.Count -eq 0) {
+        @()
+    } elseif ($InputQuantityOverride.Count -gt 0) {
         @($InputQuantityOverride | ForEach-Object { [long]$_ })
     } else {
         @($Inputs | ForEach-Object { [long]1000 })
@@ -963,7 +1010,7 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         $Inputs -notcontains 'industrial_machinery') {
         $Inputs += 'industrial_machinery'; $inputQtySeed += [long]200
     }
-    [long[]]$inputQty = @($inputQtySeed)
+    [long[]]$inputQty = $inputQtySeed
     $outputQty = @($Outputs | ForEach-Object { $unitQty })
     $outputTotal = [long](($outputQty | Measure-Object -Sum).Sum)
     $extractCount = @($ResourceModes | Where-Object { $_ -eq 'extract' }).Count
@@ -983,11 +1030,17 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     [long[]]$roleSlots = @()
     [string[]]$roleWagePolicies = @()
     [long[]]$roleWages = @()
-    if ($Outputs.Count -eq 1 -and $Outputs[0] -in @('gold','silver') -and $Kind -eq 'collector') {
+    if ($Outputs.Count -eq 1 -and $Outputs[0] -in @('gold','silver') -and
+        $Kind -eq 'collector' -and $rank -lt 6) {
         $Owner = 'merchant'
-        if ($rank -ge 6 -and $Worker -ne '') {
-            $roleIds = @($Worker, 'manager'); $roleSlots = @(12, 2)
-            $roleWagePolicies = @('adaptive', 'adaptive'); $roleWages = @(5000, 9000)
+    } elseif ($rank -eq 0) {
+        # Stone-age production is owner-operated. Choose the producer cohort
+        # that performs the work instead of manufacturing an employer class.
+        if ($Kind -eq 'collector') {
+            if ($Id -eq 'timber_collector') { $Owner = 'forager' }
+            elseif ($Worker -ne '') { $Owner = $Worker }
+        } else {
+            $Owner = 'artisan'
         }
     } elseif ($Id -in @('rice_collector','potato_collector','fertile_soil_collector','wheat_farm','flax_collector')) {
         $Owner = 'subsistence_farmer'
@@ -1027,7 +1080,7 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         $Owner = 'artisan'; $roleIds = @('apprentice'); $roleSlots = @(3)
         $roleWagePolicies = @('fixed'); $roleWages = @(1000)
     } elseif ($Kind -eq 'collector' -and $rank -lt 6) {
-        $Owner = 'artisan'
+        if ($Worker -ne '') { $Owner = $Worker }
         if ($Worker -ne '') {
             $roleIds = @($Worker); $roleSlots = @(8)
             $roleWagePolicies = @('fixed'); $roleWages = @(1500)
@@ -1568,6 +1621,7 @@ function Good-Rank-From-File([string]$GoodId) {
 
 function Worker-For-Method([string]$Kind, [string]$Category, [string[]]$Resources) {
     if ($Kind -eq 'collector') {
+        if ($Resources -contains 'wild_game') { return 'hunter' }
         if (@($Resources | Where-Object { $_ -in @('arable_land','paddy_land','plantation_land','pasture','fertile_soil') }).Count -gt 0) { return 'agricultural_worker' }
         if ($Resources -contains 'marine_fish') { return 'fisher' }
         if ($Resources -contains 'timber') { return 'forestry_worker' }
@@ -1692,6 +1746,7 @@ function Add-Production-Method([string]$SourceId, [int]$TargetRank) {
     } else {
         Worker-For-Output $outputs[0] $category
     }
+    if ($SourceId -eq 'gathering_ground') { $worker = 'forager' }
     $methodId = "method_${SourceId}_r${TargetRank}"
     $methodName = if ($methodNameOverrides.ContainsKey($methodId)) {
         $methodNameOverrides[$methodId]
@@ -1783,4 +1838,9 @@ foreach ($directory in @($goodsDir, $buildingsDir, $professionsDir, $needsDir, $
 $fullGoodsCount = @(Get-ChildItem -LiteralPath $goodsDir -Filter '*.tres' -File).Count
 $fullBuildingCount = @(Get-ChildItem -LiteralPath $buildingsDir -Filter '*.tres' -File).Count
 $fullResourceCount = @(Get-ChildItem -LiteralPath $resourcesDir -Filter '*.tres' -File).Count
-Write-Host "Generated $fullGoodsCount goods, $fullBuildingCount buildings, $($professionRows.Count) professions, $($needRows.Count) needs, and $fullResourceCount resources."
+if ($Scope -eq 'Consumption') {
+    $planCount = @(Get-ChildItem -LiteralPath $plansDir -Filter '*.tres' -File).Count
+    Write-Host "Generated $($professionRows.Count) professions, $($needRows.Count) needs, and $planCount consumption plans."
+} else {
+    Write-Host "Generated $fullGoodsCount goods, $fullBuildingCount buildings, $($professionRows.Count) professions, $($needRows.Count) needs, and $fullResourceCount resources."
+}

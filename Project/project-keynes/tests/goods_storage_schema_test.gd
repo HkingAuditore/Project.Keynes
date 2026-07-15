@@ -48,6 +48,7 @@ func _run() -> void:
 	_test_merchant_trade_and_save(catalog)
 	_test_economy_event_trace(catalog)
 	_test_environment_substitution(catalog)
+	_test_survival_labor_and_mortality(catalog)
 	_test_demand_preview_query(catalog)
 	_test_cycle_approximation(catalog)
 	_test_cycle_deadline_catchup(catalog)
@@ -66,6 +67,65 @@ func _test_default_active_gate(compiled: Dictionary) -> void:
 	_expect("default market cycle is five days", int(boot.get("market_cycle_days", 0)) == 5)
 	_expect("ACTIVE enters production scheduler", bool(ext.economy_should_run(0)) and
 		String(ext.get_economy_report().get("market_runtime_mode", "")) == "ACTIVE")
+
+func _test_survival_labor_and_mortality(compiled: Dictionary) -> void:
+	var goods: PackedStringArray = compiled.good_ids
+	var food_stock := {
+		"prepared_staples": 1000000, "bread": 1000000, "grain": 1000000,
+		"gathered_plants": 1000000, "game_meat": 1000000, "meat": 1000000,
+		"canned_fish": 1000000, "dairy_products": 1000000,
+		"vegetables": 1000000, "processed_food": 1000000,
+	}
+	var hot := _new_ext(1, 1.0)
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	var hot_profile := _native_profile(false, 1)
+	hot_profile.starvation_death_rate_q32 = 429496730
+	_expect("hot survival test country bootstraps",
+		CountryTestHelper.configure_all_technologies(hot, catalog, 1, 141))
+	_expect("hot survival runtime configures",
+		bool(hot.configure_economy(catalog, hot_profile, 1, 141).get("ok", false)))
+	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
+	hot.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([worker_sig]),
+		"population": PackedInt64Array([100]),
+		"funds": PackedInt64Array([100000000]),
+	}, {})
+	hot.submit_economy_commands(_stock_commands(0, goods, food_stock, 0))
+	var hot_report := _run_day(hot, 0)
+	var hot_pop: Dictionary = hot.get_population_cell_snapshot(0)
+	var hot_satisfaction: PackedInt32Array = hot_pop.satisfaction_by_cohort_q16
+	var hot_survives := true
+	for value in hot_satisfaction:
+		hot_survives = hot_survives and int(value) >= 32768
+	_expect("fish is optional when other food is sufficient and heat waives clothing",
+		hot_survives and int(hot_report.get("deaths", -1)) == 0 and
+		int(hot_report.get("population_error", 1)) == 0 and
+		_good_value(hot.get_market_cell_snapshot(0), "stock", "fish") == 0)
+
+	var cold := _new_ext(1, 0.0)
+	var cold_profile := _native_profile(false, 1)
+	cold_profile.starvation_death_rate_q32 = 429496730
+	_expect("cold starvation test country bootstraps",
+		CountryTestHelper.configure_all_technologies(cold, catalog, 1, 142))
+	_expect("cold starvation runtime configures",
+		bool(cold.configure_economy(catalog, cold_profile, 1, 142).get("ok", false)))
+	cold.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([worker_sig]),
+		"population": PackedInt64Array([100]),
+		"funds": PackedInt64Array([100000000]),
+	}, {})
+	cold.submit_economy_commands(_stock_commands(0, goods, {
+		"cloth": 1000000, "fur": 1000000, "clothing": 1000000,
+		"footwear": 1000000,
+	}, 0))
+	var cold_report := _run_day(cold, 0)
+	_expect("food deprivation causes deterministic audited deaths",
+		int(cold_report.get("deaths", 0)) > 0 and
+		int(cold_report.get("population_error", 1)) == 0 and
+		int(cold.get_population_cell_summary(0).population) < 100)
 
 func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.1)
@@ -104,6 +164,14 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var before_market: Dictionary = ext.get_market_cell_snapshot(0)
 	var report := _run_day(ext, 0)
 	_expect("daily market commits", bool(report.get("done", false)) and not bool(report.get("fatal", false)))
+	print("  [household-workload] needs=%d variants=%d components=%d" % [
+		int(report.get("processed_needs", -1)), int(report.get("processed_variants", -1)),
+		int(report.get("processed_components", -1))])
+	# The four extra component visits are the bounded same-period shortage fallback.
+	_expect("worker and merchant process the bounded catalog shape",
+		int(report.get("processed_needs", -1)) == 27 \
+		and int(report.get("processed_variants", -1)) == 75 \
+		and int(report.get("processed_components", -1)) == 81)
 	_expect("market population conservation exact", int(report.get("population_error", 1)) == 0)
 	_expect("market money conservation exact", int(report.get("money_error", 1)) == 0)
 	_expect("market goods conservation exact", int(report.get("goods_error", 1)) == 0)
@@ -182,6 +250,16 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("countryless PKEC v9 is rejected precisely",
 		not bool(legacy_result.get("ok", true)) and
 		String(legacy_result.get("reason", "")) == "legacy_countryless_economy_save_unsupported")
+	var mismatch_target: Object = _new_ext(1, 0.1)
+	var mismatch_catalog := catalog.duplicate(true)
+	mismatch_catalog["catalog_hash"] = int(catalog.catalog_hash) + 1
+	_expect("changed consumption catalog configures as a distinct catalog",
+		bool(mismatch_target.configure_economy(mismatch_catalog, profile, 1, 42).get("ok", false)))
+	mismatch_target.begin_economy_restore()
+	var mismatch_result: Dictionary = mismatch_target.feed_economy_restore_chunk(chunks[0])
+	_expect("old catalog hash save is rejected precisely",
+		not bool(mismatch_result.get("ok", true)) and
+		String(mismatch_result.get("reason", "")) == "save_catalog_scale_or_capacity_mismatch")
 	var restored: Object = _new_ext(1, 0.1)
 	_expect("restore target configures", bool(restored.configure_economy(catalog, profile, 1, 42).get("ok", false)))
 	_expect("PKCN restore begins before PKEC", bool(restored.begin_country_restore().get("ok", false)))

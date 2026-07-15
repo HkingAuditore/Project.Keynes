@@ -88,7 +88,8 @@ catalog 编译成 CSR：plan→needs、need→variants、variant→components。
 7. 以日均居民需求更新 EMA，合并上一周期企业需求/供给与成本锚，用 Price V3 冻结压力的
    一阶 N 日积分更新下周期价格。
 
-household market 本身不执行出生、死亡、迁移、就业、工资、税收或生产。国内贸易在同一经济
+household market 在建筑生产、产品出售和收入分配后计算食品/衣着生存满足，并执行确定性缺乏
+生存资料死亡；它自身不执行出生、迁移、就业、工资、税收或生产。国内贸易在同一经济
 边界的 `trade_settle` / `trade_dispatch` 阶段运行：到货先进入目的库存，发运先移除源库存并
 托管目的商人现金；随后 household market 只使用剩余/已到货状态。人口命令仍是底层结构 ABI，
 居民清算不改变人口。完整契约见 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
@@ -119,15 +120,18 @@ PackedArrays；UI 只查询选中地块。
 
 同一查询还返回 `demand_need_offsets/indices`、`demand_need_variant_offsets`、
 `demand_variant_component_offsets`、`demand_component_good_indices` 与
-`demand_component_per_capita_daily` 的嵌套 CSR。Inspector 据此按 need 分组，将同一 need
-下的 variant 标为互为替代，并将同一 variant 的多个 component 标为配套组合；不得从已按
-good 汇总的旧列反推分组，因为同一 good 可以属于多个 need。新增列仍是 selected-cell
-冷查询输出，不进入 catalog hash、PKEC schema 或持久状态。
+`demand_component_per_capita_daily` 的嵌套 CSR。Inspector 始终以 `demand_good_*` 聚合列作为
+商品数量与支出的唯一来源；嵌套列只为每个商品附加 `need_ids`、中文 `need_names`、`category_text`
+和 `has_bundle` 展示元数据。同一 good 属于多个 need 时仍只显示一行并列出全部用途，不生成
+替代方案分组，也不得用嵌套 component 行重新累计总量。新增列仍是 selected-cell 冷查询输出，
+不进入 catalog hash、PKEC schema 或持久状态。
 
 世界生成页的“生成测试经济数据”默认关闭。显式启用后使用石器中期科技，只在已发现资源能
 支撑配方的地块放置 collector，并只在本地上游齐全时放置 industrial；升级族只放置最高可用档。
-随后按 owner/employee 岗位容量聚合 cohort，初始就业和库存保持为零。它是开发 fixture，
-不是正式历史人口来源。
+候选建筑按食品 `1300`、衣着 `4` GOODS_SCALE/人/日检查净产能；食品/衣着直接消费品作为产出
+增加容量、作为生产投入扣减容量。削减时只移除重复栋数并保留每种可用建筑至少一栋，仍无法覆盖
+一人最低需求的地块不生成聚落。随后按保留的 owner/employee 岗位容量聚合 cohort，初始就业和
+库存保持为零。它是开发 fixture，不是正式历史人口来源。
 
 ## 实测门槛
 
@@ -154,8 +158,9 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 成本、岗位 cohort 消费篮子和本地岗位合同工资 EMA 形成生活工资硬下限；`fixed` 仅保留给
 显式固定报酬内容。当前跨时代目录用低额 `fixed` 报酬近似奴隶维持、农奴供养、租佃和契约
 劳工的食宿/份额，使用 profession stable ID 区分关系；它不提供法律身份、地租倒流、迁徙限制
-或 owner-lot 人身绑定。业主现金不足时按 owner 全部 role 义务稳定比例支付，相关 owner-lot
-本周期停产。工资仍按本地同职业实际就业权重分配，不铸币且保持资金守恒。
+或 owner-lot 人身绑定。产品出售后，业主现金不足时按 owner 全部 role 义务稳定比例支付；最终
+欠薪取消奖金并保留诊断，但不追溯取消本期生产。工资仍按本地同职业实际就业权重分配，不铸币且
+保持资金守恒。
 
 普通生产建筑禁止使用 merchant owner。唯一例外是石器期砂金与露天银矿点：无商品投入、无雇员，
 必须消耗匹配的金/银矿藏且只产对应金银。市场接受产出时按固定面值增加业主商人资金，并进入
@@ -177,9 +182,12 @@ owner-lot 继续生产且不会自动转换。快照发布 family、tier、highe
 收入与目标营业利润率，作为诊断和销售后利润分享依据。计划利用率固定为 `Q16_ONE`；亏损不再
 缩放岗位需求或产能，实际产能只由到岗、投入、业主资金和资源约束决定。
 
-生产在居民市场之后、周期截止日执行，因此产出下一周期才参与居民消费。业主按本地价购买
-输入；商人按 good-specific `merchant_buy_price_factor_q16`（默认 95%）并按本地市场价从高
-到低收购，现金耗尽后剩余产出丢弃。建筑采样使用
+周期开始时仍存活人口先就业；随后业主按本地价购买输入并生产。每个 owner 按当前财富、环境、
+替代品偏好和消费计划计算本周期需求，只对单组件 variant 从自己生产的匹配商品中先行留用，
+其余产出才进入 offer。商人按 good-specific `merchant_buy_price_factor_q16`（默认 95%）并按本地
+市场价从高到低收购，现金耗尽后剩余产出丢弃；销售后统一分配工资和奖金，居民再用本期收入购买
+包括本期新产出在内的库存。留用品直接增加该 owner 的 need filled，不转移资金；未消费余量按
+来源 owner-lot 计入 `last_discarded`。建筑采样使用
 `max(0, reserve + min(pending_extra_change, 0))` 作为有效可采储量：尚未被资源 pass 消费的负
 delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacity` 模式：extract 按产量扣减并
 发布负 delta；capacity 只以 `reserve / (building_count × requirement)` 限制产能，不扣减储量。
@@ -193,8 +201,10 @@ sample boundary 捕获的六邻拓扑上汇总本格+邻格，并按稳定来源
 复制鱼群，也不会创建跨格 GDScript 经济状态。
 
 世界设置启用测试经济数据时，fixture 先生成资源适配的自给、采集与本地产业 owner-lot，随后
-通过 `EconomyFacade.building_job_spec()` 读取 catalog 岗位列并派生 cohort。人口结构不再作为
-建筑生成输入；建筑岗位配置变化会直接改变新地图的职业人口结构。
+通过 `EconomyFacade.building_job_spec()` 读取 catalog 岗位列并派生 cohort。生成前用
+`building_placement_spec()` 的投入/产出数量检查本地食品和衣着净产能，削减重复建筑；不具备最低
+承载力的地块不生成人口。人口结构不再作为建筑生成输入；建筑岗位配置变化会直接改变新地图的
+职业人口结构。
 
 Inspector 首屏通过 `get_population_cell_summary` 只读取人口聚合值；人口需求、市场、建筑与自然
 资源明细由可见标签惰性读取，避免点击成本随全局 goods/building catalog 扩张。完整 snapshot 在
@@ -203,6 +213,7 @@ Facade/UI 只读传递，不再为缓存和返回值各做一次递归深拷贝�
 公共冷路径 `get_building_cell_snapshot` 返回建筑 owner-lot、岗位实到、周期投入/产出/销售、
 资源容量/采收及选中地块的 reserve/pending/effective 三列。PKEC v5 的历史字段
 `last_resource_generated` 仍为 byte-layout 兼容保留；当前 crop-capacity 目录不依赖正培育。
+食品和气候衣着不足在居民清算后产生确定性死亡，不以前一周期满足度前置削减就业人口。
 Inspector 对 capacity 边显示有效容量，对 extract 边显示实际采收。v4 的实际投入成本与实付工资继续用于
 利润；v8 另保存 role 合同工资、生活成本、当地均薪、基础工资/奖金、欠薪停产标记和稀疏
 LaborMarketStore。亏损不再缩减计划利用率；生产完成后仅将超过目标业主利润的 25% 结为奖金。
@@ -308,9 +319,29 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 `bullion_money_issued`，普通产出仍受 merchant cash cap。merchant 建筑预检只允许单一金/银产出、
 严格对应的唯一金/银矿藏、extract 行为且无资源生成；后期矿井可以有雇员和工具输入。
 
-职业消费使用八套结构不同的原型；`survival_household` 是自适应工资的生活成本基准。`luxury`
-使用 beverages、fine_clothing、fine_furniture，`status_goods` 使用 jewelry、fur、spices。
-需求/计划变更只改变 catalog hash；PKEC v11 byte schema 与五日默认 cadence 不变。
+职业消费使用八套结构不同的原型；全部原型都包含主食、蛋白质、蔬果、衣着、居住、家庭用品、
+卫生、医疗和家庭能源九项基础需求，其他舒适/奢侈需求按生存、农业、采掘、产业工人、工匠、
+技术、商人和业主原型分层。基准数量不再用统一的 food/non-food 常数，而按实际消费频率配置；
+各原型再分别应用基础、舒适、奢侈三档比例，财富弹性从主食的低弹性逐步提高到身份消费。
+`survival_household` 继续作为自适应工资的生活成本基准。
+
+三个饮食 need 对 UI 统一显示为“食品”，但 native 仍分别保留营养、价格和技术替代权重；野味是
+蛋白质替代品。Inspector 从嵌套 CSR 枚举计划内全部组件，以 market 科技位过滤，零分配但已解锁
+的替代品仍显示；数量和支出仍只来自 `demand_good_*` 聚合列。`needs_satisfaction` 的权威语义改为
+食品总满足与气候衣着满足的较小值。周期开始时仍存活人口先就业和生产；默认 50% 是消费后的
+饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death 审计和结构
+回收路径，不新增 PKEC v11 字段。
+
+建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
+`wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
+
+居民直接消费不再使用 railway_equipment、oceanic_vessels 或 scientific_instruments 代理交通/科研
+服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
+仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
+Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC v11 按现有
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝，byte schema 与五日默认 cadence 不变。
+生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
+野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 
 `electricity` 是唯一 `cycle_flow` good。`building_production` 内先运行只产出 cycle-flow 的
 utility groups并结算 offers，再运行其他 groups；其余电力在 cell 生产结束时清零并计入 goods

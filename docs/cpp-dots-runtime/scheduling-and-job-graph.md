@@ -725,8 +725,8 @@ throughout (no budget bypass / logical drift).
 DC component。无建筑时 BUILDING_GRAPH 零成本跳过；有建筑时只调度 active-cell CSR，阶段名固定
 为 `building_employment`、`building_production`、`building_commit`。
 
-`building_production` 的外部 stage ABI 不变。PKEC v8 先按 owner 汇总并比例结算基础工资，
-欠薪 owner-lot 停产；其余建筑内部仍先运行产出
+`building_production` 的外部 stage ABI 不变。业主先购买原料并完成生产/出售，再按 owner 汇总
+并比例支付基础工资；最终欠薪保留诊断标记但取消奖金，不追溯停止本期生产。建筑内部仍先运行产出
 `cycle_flow` 的 utility groups 并完成商人收购，再运行其余 collector/industrial groups，最后
 清空剩余 cycle-flow 库存。utility producer 禁止同时消费 cycle-flow，因而不引入递归依赖或
 新的 scheduler node；五日冻结、deadline barrier 和 continuation cursor 均保持原契约。
@@ -744,7 +744,8 @@ market×good pair 扫描、路线搜索和 Dijkstra 扩展工作单元；AUTO �
 `economy_day_barrier=false`，因此 WorldClock 正常前进。
 
 到经济提交边界时顺序固定为 `trade_settle → external_ledger → trade_dispatch →
-household_market`。ACTIVE 若规划片恰与新周期到期重合，先执行一片规划，再在后续 slice 进入
+building_employment → building_production → household_market`。ACTIVE 若规划片恰与新周期到期
+重合，先执行一片规划，再在后续 slice 进入
 本地市场；只有整个到期经济图未完成才沿用既有 same-day catchup。PROBE 只生成/报告建议，
 不延迟旧本地市场 cadence，也不修改经济状态 hash。详见
 [Domestic Trade Runtime](./domestic-trade-runtime.md)。

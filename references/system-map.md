@@ -160,7 +160,7 @@ WorldClock.day_changed(day_idx)
 
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
-- `natural_resource_daily`：30 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；海鱼储量属于海洋格，淡水/淡水鱼不再是经济资源 slot。external delta 一次性应用，`dt_days` 仅推进自然项。岸上渔业由 NativeEconomyRuntime 通过 frozen 六邻拓扑读取并扣减真实水格。初始矿产由资源局部斑块、同族地质省和矿带共同生成。
+- `natural_resource_daily`：30 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；所有数量型储量/自然增减统一乘省级地块面积倍率 `100×`，分布形状和无量纲增长/衰减率不变。普通资源使用线性 IMEX，野生动物使用适生度承载量、密度增长、迁入恢复和压力死亡模型。海鱼储量属于海洋格，淡水/淡水鱼不再是经济资源 slot。external delta 一次性应用，`dt_days` 仅推进自然项。岸上渔业由 NativeEconomyRuntime 通过 frozen 六邻拓扑读取并扣减真实水格。初始矿产由资源局部斑块、同族地质省和矿带共同生成；关键资源可按原始适宜度排名配置最低全球矿点覆盖，避免有限地图整类缺矿。
 - 物资与阶层已进入独立原生经济域：`GoodProfileRegistry` 编译 stable goods，
   `PopulationStore`/`MarketStore` 保存状态，`economy_daily` 推进 `ECONOMY_GRAPH`。
   它们不属于 cell schema；自然资源仍由 `natural_resource_daily` 推进，生产供货走命令账本。
@@ -318,7 +318,7 @@ cohort×good 矩阵。
 
 ## 当前非目标
 
-Market V2 清算本身不包含生产建筑、就业、工资或运输；这些行为由同一 C++ 权威中的后置
+Market V2 清算本身不包含生产建筑、就业、工资或运输；这些行为由同一 C++ 权威中、居民清算前的
 BUILDING_GRAPH 与国内 Trade V1 阶段承担。税制、跨国贸易/关税、外交、政治系统和人口自然
 变化仍是非目标，不能另建平行 GDScript 经济状态。
 ## Building / employment / production
@@ -337,8 +337,8 @@ BUILDING_GRAPH 内部 utility prepass 先生产 `electricity` cycle-flow，普�
 审计，是唯一生产性货币输入；merchant 只可拥有单一产出并严格匹配真实金/银矿藏的 collector，
 后期档允许雇员和工具输入。
 PKEC v8 的 employee-role 自适应工资在 active-cell employment slice 内计算：基础与岗位生活
-成本形成硬下限，本地合同工资 EMA 提供岗位均薪锚；owner 基础工资不足时比例支付并停产，
-生产后的 owner-lot 超额利润按 25% 形成奖金。LaborMarketStore 为 native 稀疏 CSR，不进入
+成本形成硬下限，本地合同工资 EMA 提供岗位均薪锚；owner 在生产出售后按可用资金比例支付，
+最终欠薪不追溯取消生产；owner-lot 超额利润按 25% 形成奖金。LaborMarketStore 为 native 稀疏 CSR，不进入
 DataCore 或 MapData。
 # Country runtime module map
 

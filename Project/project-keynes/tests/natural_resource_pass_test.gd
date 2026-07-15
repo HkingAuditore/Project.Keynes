@@ -62,6 +62,14 @@ func _test_registry_knobs() -> void:
 	var slots: PackedStringArray = knobs.get("reserve_slots", PackedStringArray())
 	var extra_slots: PackedStringArray = knobs.get("extra_change_slots", PackedStringArray())
 	var gen_self: PackedFloat32Array = knobs.get("gen_self", PackedFloat32Array())
+	var ecology_capacity: PackedFloat32Array = knobs.get(
+		"ecology_capacity", PackedFloat32Array())
+	var ecology_growth_rate: PackedFloat32Array = knobs.get(
+		"ecology_growth_rate", PackedFloat32Array())
+	var ecology_immigration: PackedFloat32Array = knobs.get(
+		"ecology_immigration", PackedFloat32Array())
+	var ecology_stress_mortality_rate: PackedFloat32Array = knobs.get(
+		"ecology_stress_mortality_rate", PackedFloat32Array())
 	var ai: int = _slot_index(slots, "cell_res_arable_land_reserve")
 	var ii: int = _slot_index(slots, "cell_res_iron_ore_reserve")
 	var gi: int = _slot_index(slots, "cell_res_wild_game_reserve")
@@ -88,6 +96,12 @@ func _test_registry_knobs() -> void:
 		_expect("iron gen_self==0 (non-renewable)", is_equal_approx(gen_self[ii], 0.0))
 	if gi >= 0:
 		_expect("wild_game extra slot", gi < extra_slots.size() and extra_slots[gi] == "cell_res_wild_game_extra_change")
+		_expect("wild_game enables province-scale density-dependent ecology",
+			gi < ecology_capacity.size() and ecology_capacity[gi] >= 60000.0 and
+			gi < ecology_growth_rate.size() and ecology_growth_rate[gi] > 0.0 and
+			gi < ecology_immigration.size() and ecology_immigration[gi] > 0.0 and
+			gi < ecology_stress_mortality_rate.size() and
+			ecology_stress_mortality_rate[gi] > 0.0)
 	if pi >= 0:
 		_expect("pasture extra slot", pi < extra_slots.size() and extra_slots[pi] == "cell_res_pasture_extra_change")
 
@@ -197,9 +211,12 @@ func _test_native_pass() -> void:
 			ab_detail = "%s size %d != %d" % [String(p.id), got.size(), n]
 			break
 		for i in range(n):
-			if absf(got[i] - exp[i]) > tol:
+			# 省级数量尺度下 GDScript double 参考值与 native float32 允许约 2 ULP。
+			var cell_tol := maxf(tol, absf(exp[i]) * 4.0e-7)
+			if absf(got[i] - exp[i]) > cell_tol:
 				ab_ok = false
-				ab_detail = "%s[%d] native=%s ref=%s (tol=%s)" % [String(p.id), i, str(got[i]), str(exp[i]), str(tol)]
+				ab_detail = "%s[%d] native=%s ref=%s (tol=%s)" % [
+					String(p.id), i, str(got[i]), str(exp[i]), str(cell_tol)]
 				break
 		if not ab_ok:
 			break
@@ -239,6 +256,78 @@ func _test_native_pass() -> void:
 		igot = map.get(fields[ii])
 		_expect("dt=5 applies iron external delta exactly once", absf(igot[0] - 1.5) < 1e-4)
 
+		# 数亿级省域矿床的 float32 ULP 大于单矿周期扣减；extra slot 必须累计余量，
+		# 不能因为本周期 reserve 无法表示变化就把开采量清零。
+		const LARGE_STATIC_RESERVE := 500000000.0
+		igot[0] = LARGE_STATIC_RESERVE
+		iextra[0] = 0.0
+		map.set(fields[ii], igot)
+		map.set(extra_fields[ii], iextra)
+		for _cycle in range(128):
+			iextra = map.get(extra_fields[ii])
+			iextra[0] -= 0.5
+			map.set(extra_fields[ii], iextra)
+			ext.refresh_slots_from_map()
+			ext.run_natural_resource_pass(knobs)
+		igot = map.get(fields[ii])
+		iextra = map.get(extra_fields[ii])
+		_expect("large static deposits retain sub-ULP extraction remainder",
+			absf((igot[0] + iextra[0]) - (LARGE_STATIC_RESERVE - 64.0)) < 0.01)
+		_expect("accumulated sub-ULP extraction eventually lowers reserve",
+			igot[0] < LARGE_STATIC_RESERVE)
+
+	var wild_i: int = _profile_index(profiles, "wild_game")
+	if wild_i >= 0:
+		var wild_profile = profiles[wild_i]
+		var wild: PackedFloat32Array = map.get(fields[wild_i])
+		var wild_extra: PackedFloat32Array = map.get(extra_fields[wild_i])
+		var capacity := float(wild_profile.ecology_capacity) * \
+			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+		wild[0] = 0.0
+		wild[1] = capacity * 0.5
+		wild[2] = capacity * 2.0
+		wild[4] = capacity * 0.5
+		wild_extra.fill(0.0)
+		var ideal_temp := float(wild_profile.temp_lo) + float(wild_profile.climate_temp_opt) * (
+			float(wild_profile.temp_hi) - float(wild_profile.temp_lo))
+		temp[0] = ideal_temp; temp[1] = ideal_temp; temp[2] = ideal_temp
+		moist[0] = wild_profile.climate_moisture_opt
+		moist[1] = wild_profile.climate_moisture_opt
+		moist[2] = wild_profile.climate_moisture_opt
+		temp[4] = wild_profile.temp_lo
+		moist[4] = 0.0
+		map.set(fields[wild_i], wild)
+		map.set(extra_fields[wild_i], wild_extra)
+		map.temp_arr = temp
+		map.moisture_arr = moist
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 1
+		ext.run_natural_resource_pass(knobs)
+		wild = map.get(fields[wild_i])
+		_expect("wild_game recovers from zero through immigration", wild[0] > 0.0)
+		_expect("wild_game grows below carrying capacity", wild[1] > capacity * 0.5)
+		_expect("wild_game naturally declines above carrying capacity", wild[2] < capacity * 2.0)
+		_expect("wild_game climate stress suppresses population",
+			wild[4] < wild[1])
+
+		# 24 座石器时代狩猎营地每天合计采收 12 单位；按五日经济周期一次扣 60。
+		# 连续一年后仍应保有过半承载量，避免测试经济再次在数个周期内归零。
+		wild[0] = capacity
+		wild_extra.fill(0.0)
+		map.set(fields[wild_i], wild)
+		map.set(extra_fields[wild_i], wild_extra)
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 5
+		for _cycle in range(73):
+			wild_extra = map.get(extra_fields[wild_i])
+			wild_extra[0] = -60.0
+			map.set(extra_fields[wild_i], wild_extra)
+			ext.refresh_slots_from_map()
+			ext.run_natural_resource_pass(knobs)
+		wild = map.get(fields[wild_i])
+		_expect("wild_game sustains one year of 24-camp harvest at ideal habitat",
+			wild[0] > capacity * 0.5)
+
 
 func _profile_index(profiles: Array, id_name: String) -> int:
 	for i in range(profiles.size()):
@@ -254,6 +343,7 @@ func _reference_step(res_idx: int, reserve_in: PackedFloat32Array, extra_in: Pac
 	var profiles: Array = ResourceProfileRegistry.ordered()
 	var p = profiles[res_idx]
 	var out := reserve_in.duplicate()
+	var quantity_scale := ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
 	var lo: float = p.temp_lo
 	var hi: float = p.temp_hi
 	var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
@@ -272,23 +362,39 @@ func _reference_step(res_idx: int, reserve_in: PackedFloat32Array, extra_in: Pac
 			var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
 			var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
 			runtime_fit = lerpf(1.0, temp_fit * moisture_fit, fit_weight)
-		var gen_climate: float = p.gen_base + p.gen_temp * tn + p.gen_moisture * m
-		var decay_climate: float = p.decay_base + p.decay_temp * tn + p.decay_moisture * m
-		var gen_self_eff: float = p.gen_self * runtime_fit
-		var P: float = gen_climate + gen_self_eff - decay_climate - p.decay_stress * (1.0 - runtime_fit)
-		var L: float = p.decay_self
-		if L < 0.0:
-			L = 0.0
 		var reserve_after_external := maxf(0.0, reserve + extra_change)
 		var v: float
-		if dt_days <= 1:
-			v = (reserve_after_external + P) / (1.0 + L)
-		elif L <= 0.0:
-			v = reserve_after_external + P * float(dt_days)
+		if float(p.ecology_capacity) > 0.0:
+			var capacity := maxf(0.0, float(p.ecology_capacity) * quantity_scale * runtime_fit)
+			var growth_factor := 1.0 + maxf(0.0, float(p.ecology_growth_rate)) * runtime_fit
+			var immigration := maxf(0.0, float(p.ecology_immigration)) * quantity_scale * runtime_fit
+			var stress_denom := 1.0 + maxf(0.0, float(
+				p.ecology_stress_mortality_rate)) * (1.0 - runtime_fit)
+			v = reserve_after_external
+			for _day in range(maxi(1, dt_days)):
+				var seeded := v + immigration
+				if capacity <= 0.000001:
+					v = 0.0
+					continue
+				var density_denom := 1.0 + (growth_factor - 1.0) * seeded / capacity
+				v = maxf(0.0, growth_factor * seeded / density_denom / stress_denom)
 		else:
-			var inv_denom := 1.0 / (1.0 + L)
-			var a_pow := pow(inv_denom, float(dt_days))
-			v = a_pow * reserve_after_external + P * inv_denom * (1.0 - a_pow) / (1.0 - inv_denom)
+			var gen_climate: float = quantity_scale * (
+				p.gen_base + p.gen_temp * tn + p.gen_moisture * m)
+			var decay_climate: float = quantity_scale * (
+				p.decay_base + p.decay_temp * tn + p.decay_moisture * m)
+			var gen_self_eff: float = quantity_scale * p.gen_self * runtime_fit
+			var P: float = gen_climate + gen_self_eff - decay_climate - \
+				quantity_scale * p.decay_stress * (1.0 - runtime_fit)
+			var L: float = maxf(0.0, p.decay_self)
+			if dt_days <= 1:
+				v = (reserve_after_external + P) / (1.0 + L)
+			elif L <= 0.0:
+				v = reserve_after_external + P * float(dt_days)
+			else:
+				var inv_denom := 1.0 / (1.0 + L)
+				var a_pow := pow(inv_denom, float(dt_days))
+				v = a_pow * reserve_after_external + P * inv_denom * (1.0 - a_pow) / (1.0 - inv_denom)
 		if v < 0.0:
 			v = 0.0
 		out[i] = v

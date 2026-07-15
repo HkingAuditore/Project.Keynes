@@ -5,6 +5,7 @@ $project = Join-Path $RepoRoot 'Project/project-keynes'
 $buildingDir = Join-Path $project 'data/economy/buildings'
 $goodDir = Join-Path $project 'data/goods'
 $professionDir = Join-Path $project 'data/economy/professions'
+$needDir = Join-Path $project 'data/economy/needs'
 $planDir = Join-Path $project 'data/economy/consumption_plans'
 $resourceDir = Join-Path $project 'data/resources'
 $failures = [System.Collections.Generic.List[string]]::new()
@@ -150,6 +151,10 @@ $forbiddenBroadCategories = @('primary','forestry','construction','food','textil
 $singleProducerExceptions = @{
     chipped_stone_tools='one canonical knapping method; redundant hafted shelter retired'
 }
+$deferredCapitalGoods = @{
+    railway_equipment='awaits railway infrastructure or transport-service demand'
+    oceanic_vessels='awaits port, fleet, or transport-service demand'
+}
 foreach ($good in $goods.Values) {
     foreach ($category in $good.Categories) {
         if ($category -in $forbiddenBroadCategories) {
@@ -196,14 +201,68 @@ if ($goods.ContainsKey('edible_oil') -and $goods.ContainsKey('lubricants') -and
     $failures.Add('food oil is incorrectly grouped with industrial lubricants')
 }
 
+$expectedNeedNames = [ordered]@{
+    staple_food='食品'; protein='食品'; produce='食品'; clothing='衣着'
+    housing='居住维护'; household_goods='家庭用品'; hygiene='清洁卫生'; healthcare='医疗保健'
+    home_energy='家庭能源'; transport='个人交通'; communication='通信'
+    education_culture='教育与文化'; recreation='休闲娱乐'; durable_goods='耐用消费品'
+    work_equipment='职业装备'; luxury='奢侈消费'; status_goods='身份消费'
+}
+$needs = @{}
+foreach ($file in Get-ChildItem -LiteralPath $needDir -Filter '*.tres') {
+    $p = Read-Profile $file
+    $id = @(Values $p.id)[0]
+    Assert-Chinese-DisplayName $p "need:$id"
+    if ([string]::IsNullOrWhiteSpace($id) -or $needs.ContainsKey($id)) {
+        $failures.Add("invalid or duplicate need: $($file.Name)")
+        continue
+    }
+    $displayName = @(Values $p.display_name)[0]
+    if (-not $expectedNeedNames.Contains($id) -or $displayName -ne $expectedNeedNames[$id]) {
+        $failures.Add("need display name drift: $id -> $displayName")
+    }
+    $needs[$id] = $true
+}
+if ($needs.Count -ne $expectedNeedNames.Count) {
+    $failures.Add("expected $($expectedNeedNames.Count) household needs, found $($needs.Count)")
+}
+
+$expectedPlanProfessions = @{
+    owner_household=@('landlord','industrialist')
+    merchant_household=@('merchant')
+    survival_household=@('subsistence_farmer','forager','enslaved_laborer','serf','apprentice')
+    agrarian_household=@('agricultural_worker','pastoralist','hunter','fisher','forestry_worker',
+        'tenant_farmer','indentured_laborer')
+    extractive_household=@('miner','petroleum_worker')
+    industrial_worker_household=@('worker','construction_worker','industrial_worker','transport_worker')
+    artisan_household=@('artisan','metallurgist','guild_master','journeyman')
+    technical_household=@('machinist','technician','engineer','chemist','electrician','manager','researcher')
+}
+$expectedProfessionPlans = @{}
+foreach ($planId in $expectedPlanProfessions.Keys) {
+    foreach ($professionId in $expectedPlanProfessions[$planId]) {
+        $expectedProfessionPlans[$professionId] = $planId
+    }
+}
+
 $professions = @{}
+$professionPlans = @{}
 foreach ($file in Get-ChildItem -LiteralPath $professionDir -Filter '*.tres') {
     $p = Read-Profile $file
     $id = @(Values $p.id)[0]
     Assert-Chinese-DisplayName $p "profession:$id"
     $rank = Rank @(Values $p.technology_tags) "profession:$id"
     if ($rank -lt 0) { $failures.Add("profession has no executable technology: $id") }
+    $planId = @(Values $p.default_consumption_plan_id)[0]
+    if (-not $expectedProfessionPlans.ContainsKey($id) -or
+        $expectedProfessionPlans[$id] -ne $planId) {
+        $failures.Add("profession consumption plan drift: $id -> $planId")
+    }
     $professions[$id] = $rank
+    $professionPlans[$id] = $planId
+}
+if ($professionPlans.Count -ne 32) {
+    $failures.Add("expected 32 profession consumption mappings, found $($professionPlans.Count)")
 }
 
 $buildings = @{}
@@ -474,9 +533,50 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
 # Operating structure is part of the production method, not decorative metadata.
 # Large factories must show capital equipment and differentiated labor, while
 # small workshops and institutional centers may remain intentionally compact.
+$stoneOwnerPolicy = @{
+    communal_hearth='forager'; flint_quarry='forager'; gathering_ground='forager'
+    household_weaving_shelter='artisan'; knapping_workshop='artisan'; lumber_plant='artisan'
+    marine_fish_collector='fisher'; placer_gold_working='merchant'
+    stone_age_hunting_camp='hunter'; stone_collector='forager'
+    surface_silver_working='merchant'; timber_collector='forager'
+}
+$preindustrialCoercedLabor = @(
+    'early_clay_pit','early_copper_mine','early_tin_mine','classical_silica_pit'
+)
+$mineralResources = @(
+    'bauxite','clay','coal','copper_ore','flint','gold_ore','iron_ore','lead_ore',
+    'limestone','manganese_ore','phosphate_rock','rare_earth','salt','saltpeter',
+    'silica_sand','silver_ore','stone','sulfur','tin_ore','zinc_ore'
+)
 $smallFacilityExceptions = @('digital_computer_workshop','nuclear_medicine_center')
 foreach ($building in $buildings.Values) {
     $employeeTotal = [long](($building.RoleSlots | Measure-Object -Sum).Sum)
+    if ($building.Rank -eq 0) {
+        if ($building.Roles.Count -ne 0) {
+            $failures.Add("stone-age building must be owner-operated: $($building.Id)")
+        }
+        if (-not $stoneOwnerPolicy.ContainsKey($building.Id)) {
+            $failures.Add("stone-age building lacks reviewed owner policy: $($building.Id)")
+        } elseif ($building.Owner -ne $stoneOwnerPolicy[$building.Id]) {
+            $failures.Add("stone-age building owner mismatch: $($building.Id) -> $($building.Owner)")
+        }
+    }
+    if ($building.Rank -ge 1 -and $building.Rank -lt 6 -and
+        $building.Kind -eq 'collector' -and $building.Id -notin $preindustrialCoercedLabor) {
+        $expectedOccupation = ''
+        if ($building.Id -eq 'method_gathering_ground_r1') { $expectedOccupation = 'forager' }
+        elseif ($building.Resources -contains 'wild_game') { $expectedOccupation = 'hunter' }
+        elseif ($building.Resources -contains 'marine_fish') { $expectedOccupation = 'fisher' }
+        elseif ($building.Resources -contains 'timber') { $expectedOccupation = 'forestry_worker' }
+        elseif (@($building.Resources | Where-Object { $_ -in $mineralResources }).Count -gt 0) {
+            $expectedOccupation = 'miner'
+        }
+        if ($expectedOccupation -ne '' -and
+            ($building.Owner -ne $expectedOccupation -or
+                $building.Roles -notcontains $expectedOccupation)) {
+            $failures.Add("preindustrial collector owner/worker mismatch: $($building.Id) expected=$expectedOccupation owner=$($building.Owner) roles=$($building.Roles -join ',')")
+        }
+    }
     $factoryLike = $building.Kind -eq 'industrial' -and $building.Rank -ge 6 -and
         $building.Id -notin $smallFacilityExceptions
     if ($factoryLike) {
@@ -728,49 +828,214 @@ foreach ($expectation in @(
     }
 }
 
+$coreHouseholdNeeds = @('staple_food','protein','produce','clothing','housing','household_goods',
+    'hygiene','healthcare','home_energy')
+$expectedPlanNeeds = @{
+    survival_household=$coreHouseholdNeeds
+    agrarian_household=@($coreHouseholdNeeds + @('transport','work_equipment','recreation'))
+    extractive_household=@($coreHouseholdNeeds + @('transport','work_equipment'))
+    industrial_worker_household=@($coreHouseholdNeeds + @('transport','work_equipment'))
+    artisan_household=@($coreHouseholdNeeds + @('education_culture','work_equipment','luxury'))
+    technical_household=@($coreHouseholdNeeds + @('transport','communication','education_culture',
+        'recreation','durable_goods','work_equipment','luxury'))
+    merchant_household=@($coreHouseholdNeeds + @('transport','communication','education_culture',
+        'recreation','durable_goods','luxury','status_goods'))
+    owner_household=@($coreHouseholdNeeds + @('transport','communication','education_culture',
+        'recreation','durable_goods','luxury','status_goods'))
+}
+$expectedPlanNames = @{
+    survival_household='生存型家庭消费'; agrarian_household='农业型家庭消费'
+    extractive_household='采掘型家庭消费'; industrial_worker_household='产业工人家庭消费'
+    artisan_household='工匠型家庭消费'; technical_household='技术型家庭消费'
+    merchant_household='商人家庭消费'; owner_household='业主家庭消费'
+}
+$needPolicies = @{
+    staple_food=@(550,'essential',4096,49152,81920,98304)
+    protein=@(180,'essential',16384,32768,131072,98304)
+    produce=@(300,'essential',16384,32768,131072,98304)
+    clothing=@(3,'essential',32768,16384,196608,65536)
+    housing=@(5,'essential',32768,16384,196608,65536)
+    household_goods=@(2,'comfort',49152,8192,262144,49152)
+    hygiene=@(10,'essential',32768,16384,196608,65536)
+    healthcare=@(3,'essential',32768,16384,196608,32768)
+    home_energy=@(80,'essential',32768,16384,196608,65536)
+    transport=@(3,'comfort',49152,8192,262144,49152)
+    communication=@(1,'comfort',49152,8192,262144,49152)
+    education_culture=@(2,'comfort',49152,8192,262144,49152)
+    recreation=@(3,'comfort',49152,8192,262144,49152)
+    durable_goods=@(1,'luxury',65536,4096,393216,32768)
+    work_equipment=@(2,'comfort',49152,8192,262144,49152)
+    luxury=@(1,'luxury',98304,1024,524288,32768)
+    status_goods=@(1,'luxury',98304,1024,524288,32768)
+}
+$expectedNeedVariants = @{
+    staple_food=@('prepared_staples','bread','grain','gathered_plants')
+    protein=@('game_meat','meat','fish','canned_fish','dairy_products')
+    produce=@('vegetables','processed_food')
+    clothing=@('cloth','fur','clothing','footwear')
+    housing=@('construction_components')
+    household_goods=@('pottery','furniture')
+    hygiene=@('soap','detergent')
+    healthcare=@('medicinal_herbs','pharmaceuticals')
+    home_energy=@('logs','coal','natural_gas','refined_fuel')
+    transport=@('horses','automobiles+refined_fuel')
+    communication=@('radio_equipment','telecom_equipment')
+    education_culture=@('manuscripts','printed_materials','computers')
+    recreation=@('beverages','computers')
+    durable_goods=@('household_appliances','autonomous_systems')
+    work_equipment=@('chipped_stone_tools','bronze_tools','tools','precision_tools')
+    luxury=@('beverages','fine_clothing','fine_furniture')
+    status_goods=@('jewelry','fur','spices')
+}
+$planScales = @{
+    survival_household=@(80,35,0); agrarian_household=@(95,75,0)
+    extractive_household=@(105,85,0); industrial_worker_household=@(100,85,0)
+    artisan_household=@(105,105,80); technical_household=@(110,125,120)
+    merchant_household=@(115,150,180); owner_household=@(120,175,240)
+}
+$allowedCrossNeedUses = @{
+    refined_fuel=@('home_energy','transport')
+    computers=@('education_culture','recreation')
+    beverages=@('recreation','luxury')
+    fur=@('clothing','status_goods')
+}
+$forbiddenHouseholdGoods = @('railway_equipment','oceanic_vessels','scientific_instruments','electricity')
+$expectedHouseholdGoods = @(
+    'prepared_staples','bread','grain','gathered_plants','game_meat','meat','fish','canned_fish','dairy_products',
+    'vegetables','processed_food','cloth','fur','clothing','footwear','construction_components',
+    'pottery','furniture','soap','detergent','medicinal_herbs','pharmaceuticals','logs','coal',
+    'natural_gas','refined_fuel','horses','automobiles','radio_equipment','telecom_equipment',
+    'manuscripts','printed_materials','computers','beverages','household_appliances',
+    'autonomous_systems','chipped_stone_tools','bronze_tools','tools','precision_tools',
+    'fine_clothing','fine_furniture','jewelry','spices'
+)
+
 $planSignatures = @{}
 $planCount = 0
 foreach ($file in Get-ChildItem -LiteralPath $planDir -Filter '*.tres') {
     $p = Read-Profile $file
     $planCount++
     $planId = @(Values $p.id)[0]
+    Assert-Chinese-DisplayName $p "consumption_plan:$planId"
+    $displayName = @(Values $p.display_name)[0]
     $planNeeds = @(Values $p.need_ids)
+    $priorities = @(Numbers $p.priorities)
+    $baseQuantities = @(Numbers $p.base_qty_per_person)
+    $wealthElasticities = @(Numbers $p.wealth_elasticity_q16)
+    $wealthMinimums = @(Numbers $p.wealth_min_q16)
+    $wealthMaximums = @(Numbers $p.wealth_max_q16)
     $variantOffsets = @(Numbers $p.need_variant_offsets)
     $variantPreferences = @(Numbers $p.variant_preference_q16)
+    $variantPriceElasticities = @(Numbers $p.variant_price_elasticity_q16)
     $variantComponentOffsets = @(Numbers $p.variant_component_offsets)
     $componentGoodIds = @(Values $p.component_good_ids)
-    if ($planNeeds.Count -gt 16 -or $variantOffsets.Count -ne $planNeeds.Count + 1) {
+    $componentQuantities = @(Numbers $p.component_qty_per_need)
+
+    if (-not $expectedPlanNeeds.ContainsKey($planId) -or
+        ($planNeeds -join ',') -ne ($expectedPlanNeeds[$planId] -join ',')) {
+        $failures.Add("consumption plan need set drift: $planId")
+    }
+    if (-not $expectedPlanNames.ContainsKey($planId) -or $displayName -ne $expectedPlanNames[$planId]) {
+        $failures.Add("consumption plan display name drift: $planId -> $displayName")
+    }
+    if ($planNeeds.Count -gt 16 -or $planNeeds.Count -ne @($planNeeds | Select-Object -Unique).Count -or
+        $variantOffsets.Count -ne $planNeeds.Count + 1 -or $priorities.Count -ne $planNeeds.Count -or
+        $baseQuantities.Count -ne $planNeeds.Count -or $wealthElasticities.Count -ne $planNeeds.Count -or
+        $wealthMinimums.Count -ne $planNeeds.Count -or $wealthMaximums.Count -ne $planNeeds.Count -or
+        $variantPreferences.Count -ne $variantPriceElasticities.Count -or
+        $variantComponentOffsets.Count -ne $variantPreferences.Count + 1 -or
+        $componentGoodIds.Count -ne $componentQuantities.Count) {
         $failures.Add("consumption plan shape invalid: $planId")
-    } else {
-        for ($i = 0; $i -lt $planNeeds.Count; $i++) {
-            if ($variantOffsets[$i + 1] - $variantOffsets[$i] -gt 4) {
-                $failures.Add("need has more than four variants: $planId -> $($planNeeds[$i])")
+        continue
+    }
+
+    $goodNeedUses = @{}
+    for ($needIndex = 0; $needIndex -lt $planNeeds.Count; $needIndex++) {
+        $needId = $planNeeds[$needIndex]
+        if ($priorities[$needIndex] -ne $needIndex -or -not $needPolicies.ContainsKey($needId)) {
+            $failures.Add("consumption priority or policy invalid: $planId -> $needId")
+            continue
+        }
+        $policy = $needPolicies[$needId]
+        $scales = $planScales[$planId]
+        $scale = switch ($policy[1]) {
+            'essential' { $scales[0] }
+            'comfort' { $scales[1] }
+            'luxury' { $scales[2] }
+        }
+        $expectedBase = [Math]::Max(1, [int][Math]::Floor(
+            ([int64]$policy[0] * [int]$scale + 50) / 100.0))
+        if ($baseQuantities[$needIndex] -ne $expectedBase -or
+            $wealthElasticities[$needIndex] -ne $policy[2] -or
+            $wealthMinimums[$needIndex] -ne $policy[3] -or
+            $wealthMaximums[$needIndex] -ne $policy[4]) {
+            $failures.Add("consumption quantity or wealth policy drift: $planId -> $needId")
+        }
+        $variantBegin = [int]$variantOffsets[$needIndex]
+        $variantEnd = [int]$variantOffsets[$needIndex + 1]
+        if ($variantEnd -le $variantBegin -or $variantEnd - $variantBegin -gt 8) {
+            $failures.Add("need variant count invalid: $planId -> $needId")
+            continue
+        }
+        $variantKeys = @{}
+        for ($variantIndex = $variantBegin; $variantIndex -lt $variantEnd; $variantIndex++) {
+            if ($variantPriceElasticities[$variantIndex] -ne $policy[5]) {
+                $failures.Add("variant price elasticity drift: $planId -> $needId")
+            }
+            $componentBegin = [int]$variantComponentOffsets[$variantIndex]
+            $componentEnd = [int]$variantComponentOffsets[$variantIndex + 1]
+            if ($componentBegin -lt 0 -or $componentEnd -le $componentBegin -or
+                $componentEnd -gt $componentGoodIds.Count -or $componentEnd - $componentBegin -gt 4) {
+                $failures.Add("variant component shape invalid: $planId -> $needId")
+                continue
+            }
+            $components = @($componentGoodIds[$componentBegin..($componentEnd - 1)])
+            if (@($components | Select-Object -Unique).Count -ne $components.Count) {
+                $failures.Add("duplicate component in need variant: $planId -> $needId")
+            }
+            $variantKey = $components -join '+'
+            if ($variantKeys.ContainsKey($variantKey)) {
+                $failures.Add("duplicate need variant: $planId -> $needId -> $variantKey")
+            } else { $variantKeys[$variantKey] = $true }
+            for ($componentIndex = $componentBegin; $componentIndex -lt $componentEnd; $componentIndex++) {
+                $good = $componentGoodIds[$componentIndex]
+                if ($componentQuantities[$componentIndex] -ne 1000) {
+                    $failures.Add("household component quantity drift: $planId -> $needId -> $good")
+                }
+                if (-not $goodNeedUses.ContainsKey($good)) { $goodNeedUses[$good] = @() }
+                $goodNeedUses[$good] = @($goodNeedUses[$good]) + @($needId)
             }
         }
-    }
-    foreach ($coreNeed in @('staple_food','protein','produce','clothing','housing','hygiene','healthcare')) {
-        if ($coreNeed -notin $planNeeds) { $failures.Add("core need missing from plan: $planId -> $coreNeed") }
-    }
-    $cultureNeedIndex = [Array]::IndexOf($planNeeds, 'education_culture')
-    if ($cultureNeedIndex -ge 0 -and $variantOffsets.Count -eq $planNeeds.Count + 1 -and
-        $variantComponentOffsets.Count -gt $variantOffsets[$cultureNeedIndex + 1]) {
-        $cultureGoods = @()
-        for ($variantIndex = [int]$variantOffsets[$cultureNeedIndex];
-            $variantIndex -lt [int]$variantOffsets[$cultureNeedIndex + 1]; $variantIndex++) {
-            $begin = [int]$variantComponentOffsets[$variantIndex]
-            $end = [int]$variantComponentOffsets[$variantIndex + 1]
-            if ($begin -ge 0 -and $end -ge $begin -and $end -le $componentGoodIds.Count) {
-                $cultureGoods += $componentGoodIds[$begin..($end - 1)]
-            }
+        $actualVariants = @($variantKeys.Keys | Sort-Object)
+        $expectedVariants = @($expectedNeedVariants[$needId] | Sort-Object)
+        if (($actualVariants -join ',') -ne ($expectedVariants -join ',')) {
+            $failures.Add("household need variant classification drift: $planId -> $needId")
         }
-        if ('manuscripts' -notin $cultureGoods -or 'printed_materials' -notin $cultureGoods) {
-            $failures.Add("education culture must evolve from manuscripts to print: $planId")
+    }
+    if ($building.Id -in @('gold_mine','silver_mine') -and
+        ($building.Owner -ne 'industrialist' -or
+            $building.Roles -notcontains 'miner' -or $building.Roles -notcontains 'manager')) {
+        $failures.Add("industrial bullion mine has wrong ownership or staffing: $($building.Id)")
+    }
+
+    foreach ($good in $goodNeedUses.Keys) {
+        $actualUses = @($goodNeedUses[$good] | Select-Object -Unique | Sort-Object)
+        if ($actualUses.Count -le 1) { continue }
+        if (-not $allowedCrossNeedUses.ContainsKey($good)) {
+            $failures.Add("unapproved cross-need household good: $planId -> $good")
+            continue
+        }
+        $expectedUses = @($allowedCrossNeedUses[$good] | Where-Object { $_ -in $planNeeds } | Sort-Object)
+        if (($actualUses -join ',') -ne ($expectedUses -join ',')) {
+            $failures.Add("cross-need household use drift: $planId -> $good")
         }
     }
     foreach ($good in $componentGoodIds) {
         if (-not $goods.ContainsKey($good)) { $failures.Add("need component missing: $($file.Name) -> $good") }
         else { $goods[$good].Demanded = $true }
-        if ($good -eq 'electricity') { $failures.Add("household electricity is not cycle-aligned: $($file.Name)") }
+        if ($good -in $forbiddenHouseholdGoods) {
+            $failures.Add("capital or cycle-flow good entered household demand: $($file.Name) -> $good")
+        }
     }
     $signature = ($planNeeds -join ',') + '|' + ($variantPreferences -join ',') + '|' +
         ($componentGoodIds -join ',')
@@ -779,6 +1044,11 @@ foreach ($file in Get-ChildItem -LiteralPath $planDir -Filter '*.tres') {
     } else { $planSignatures[$signature] = $planId }
 }
 if ($planCount -ne 8) { $failures.Add("expected eight consumption prototypes, found $planCount") }
+$actualHouseholdGoods = @($goods.Values | Where-Object { $_.Demanded } |
+    ForEach-Object { $_.Id } | Sort-Object)
+if (($actualHouseholdGoods -join ',') -ne (($expectedHouseholdGoods | Sort-Object) -join ',')) {
+    $failures.Add('household consumer good coverage drift')
+}
 
 function Inputs-Ready($Building, $ReachableGoods, [int]$MaxRank) {
     for ($i = 0; $i -lt $Building.Inputs.Count; $i++) {
@@ -850,7 +1120,7 @@ foreach ($good in $goods.Values) {
         $failures.Add("good has no producer: $($good.Id)")
     }
     if ($good.Producers.Count -gt 0 -and $good.Consumers.Count -eq 0 -and -not $good.Demanded -and
-        $good.Id -notin @('gold','silver')) {
+        $good.Id -notin @('gold','silver') -and -not $deferredCapitalGoods.ContainsKey($good.Id)) {
         $failures.Add("produced good has no use: $($good.Id)")
     }
     if ($good.Producers.Count -eq 0 -and $good.Consumers.Count -eq 0 -and -not $good.Demanded) {

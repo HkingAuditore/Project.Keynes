@@ -3,5 +3,5 @@
 [resource]
 script = ExtResource("1")
 id = &"status_goods"
-display_name = "Status Goods"
+display_name = "身份消费"
 living_cost_weight_q16 = 0

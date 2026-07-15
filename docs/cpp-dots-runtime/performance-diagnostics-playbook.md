@@ -1237,8 +1237,9 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
 - 矿场跨多个经济周期但资源 pass 尚未运行时，负 pending 必须降低 effective reserve；关注
   `building_resource_limited_groups` 与 generated/consumed/net_delta，枯竭后产出应为 0。
 - committed 后 population/money/goods error 仍必须精确为 0；`building_wages_unpaid>0` 与
-  `wage_suspended_building_groups>0` 表示业主无法足额支付生活工资。先比较
-  `building_base_wages_due/paid`、奖金、产出收入与商人购买力，不能用铸币掩盖。
+  `wage_suspended_building_groups>0` 表示销售后仍无法足额支付生活工资，不表示该轮生产为零。
+  先比较 `building_base_wages_due/paid`、投入采购现金、产出收入、销售后分配与商人购买力，不能
+  用铸币掩盖。
 - `wage_plan_ms` 长：比较 active labor keys、当地 cohort/signature 数与消费篮子边数；不得退化
   为 cell×profession 或 cohort×building 稠密矩阵。
 - 金银场景检查 `gold/silver_accepted`、对应 issued money 和 `bullion_money_issued`；总发行额必须

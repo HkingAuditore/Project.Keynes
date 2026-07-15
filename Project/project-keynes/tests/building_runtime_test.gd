@@ -34,6 +34,7 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1
 	profile.market_runtime_mode = "ACTIVE"
+	_test_production_income_consumption_order(catalog, profile)
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
@@ -92,6 +93,15 @@ func _run() -> void:
 		planned_utilization == 65536 and filled_jobs > 0 and filled_jobs <= 20)
 	_expect("mine produces output", int((buildings.last_output as PackedInt64Array)[0]) > 0)
 	_expect("merchant buys at least part of output", int((buildings.last_sold as PackedInt64Array)[0]) > 0)
+	var retained_output := int((buildings.last_retained as PackedInt64Array)[0])
+	_expect("owner consumes retained output before the remainder reaches merchants",
+		retained_output > 0 and
+		int(day1.get("production_output_retained", 0)) == retained_output and
+		int(day1.get("owner_output_consumed", 0)) == retained_output)
+	_expect("building output reconciles sale, owner retention, and discard",
+		int((buildings.last_output as PackedInt64Array)[0]) ==
+			int((buildings.last_sold as PackedInt64Array)[0]) + retained_output +
+			int((buildings.last_discarded as PackedInt64Array)[0]))
 	var contract_wages: PackedInt64Array = buildings.employee_contract_wages_per_day
 	var base_living: PackedInt64Array = buildings.employee_base_living_cost_per_day
 	var role_living: PackedInt64Array = buildings.employee_role_living_cost_per_day
@@ -202,16 +212,23 @@ func _run() -> void:
 	_expect("owner cash drain command accepted", bool(drain.get("ok", false)))
 	var day2 := _run_day(ext, 2)
 	buildings = ext.get_building_cell_snapshot(0)
-	_expect("insolvent owner partially pays base wage",
-		int((buildings.employee_base_wage_paid as PackedInt64Array)[0]) <
-		int((buildings.employee_base_wage_due as PackedInt64Array)[0]) and
-		int(day2.get("building_wages_unpaid", 0)) > 0)
-	_expect("base wage shortfall suspends production without resource use",
-		int((buildings.wage_suspended as PackedByteArray)[0]) == 1 and
-		int((buildings.last_input as PackedInt64Array)[0]) == 0 and
-		int((buildings.last_output as PackedInt64Array)[0]) == 0 and
-		int((buildings.last_resource as PackedInt64Array)[0]) == 0 and
-		int(day2.get("wage_suspended_building_groups", 0)) == 1)
+	var day2_base_paid: PackedInt64Array = buildings.employee_base_wage_paid
+	var day2_base_due: PackedInt64Array = buildings.employee_base_wage_due
+	var day2_paid_total := 0
+	var day2_due_total := 0
+	for value in day2_base_paid:
+		day2_paid_total += int(value)
+	for value in day2_base_due:
+		day2_due_total += int(value)
+	_expect("temporary payroll shortfall is repaid from same-cycle sales",
+		day2_paid_total > 100000 and day2_paid_total <= day2_due_total)
+	_expect("temporary payroll shortfall no longer suppresses viable production",
+		int((buildings.last_output as PackedInt64Array)[0]) > 0 and
+		int((buildings.last_resource as PackedInt64Array)[0]) > 0 and
+		int((buildings.last_sold as PackedInt64Array)[0]) > 0)
+	_expect("final wage arrears flag matches post-sale payroll",
+		(int((buildings.wage_suspended as PackedByteArray)[0]) != 0) ==
+		(day2_paid_total < day2_due_total))
 	_expect("insolvent wage cycle conserves money and goods",
 		int(day2.get("money_error", 1)) == 0 and int(day2.get("goods_error", 1)) == 0)
 	var drained_pop: Dictionary = ext.get_population_cell_snapshot(0)
@@ -260,6 +277,58 @@ func _run() -> void:
 		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == int(filled_by_role[0]) and
 		int((restored_buildings.employee_filled as PackedInt64Array)[1]) == int(filled_by_role[1]))
 	print("=== native building runtime %s ===" % ("PASS" if failures == 0 else "FAIL"))
+
+func _test_production_income_consumption_order(catalog: Dictionary, profile: Dictionary) -> void:
+	var ext := _new_ext(catalog)
+	_expect("phase-order country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 177))
+	_expect("phase-order runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 177).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var owner_sig := signatures.find("industrialist|default")
+	var worker_sig := signatures.find("industrial_worker|default")
+	var manager_sig := signatures.find("manager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var plant_id := (catalog.building_type_ids as PackedStringArray).find("staple_food_plant")
+	var prepared_good := (catalog.good_ids as PackedStringArray).find("prepared_staples")
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(100000)
+	stock[prepared_good] = 0
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([owner_sig, worker_sig, manager_sig, merchant_sig]),
+		"population": PackedInt64Array([5, 100, 10, 10]),
+		"funds": PackedInt64Array([10000000, 0, 0, 10000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([plant_id]),
+		"building_owner_signature_ids": PackedInt32Array([owner_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("phase-order population and plant bootstrap", bool(boot.get("ok", false)))
+	var report := _run_day(ext, 0)
+	_expect("phase-order cycle conserves all ledgers",
+		bool(report.get("done", false)) and not bool(report.get("fatal", false)) and
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+	var pop: Dictionary = ext.get_population_cell_snapshot(0)
+	var worker_row := _row_for_signature(pop, worker_sig)
+	var manager_row := _row_for_signature(pop, manager_sig)
+	var incomes: PackedInt64Array = pop.epoch_income_by_cohort
+	var expenses: PackedInt64Array = pop.epoch_expense_by_cohort
+	_expect("zero-cash employees spend same-cycle wage income",
+		worker_row >= 0 and manager_row >= 0 and
+		int(incomes[worker_row]) > 0 and int(expenses[worker_row]) > 0 and
+		int(incomes[manager_row]) > 0 and int(expenses[manager_row]) > 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var sold := int((buildings.last_sold as PackedInt64Array)[0])
+	var market: Dictionary = ext.get_market_cell_snapshot(0)
+	var closing_prepared := _good_value(market, "stock", "prepared_staples")
+	_expect("same-cycle produced food is sold before household clearing",
+		sold > 0 and closing_prepared >= 0 and closing_prepared < sold)
 
 func _new_ext(catalog: Dictionary) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

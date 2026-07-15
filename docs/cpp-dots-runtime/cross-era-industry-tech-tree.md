@@ -67,5 +67,5 @@
 当前生成目录为 `30 resources / 120 goods / 259 production-method buildings / 32 professions / 17 needs / 8 consumption plans`。同一物资的后续生产法复用原 good ID；建筑代表有宏观意义的生产方式，不是为时代凑数的同名升级或新增转手中间品。马匹只保留两个前工业生产阶段，不随通用升级生成器延伸到后工业时代。
 各时代新增建筑数为 `12 / 25 / 17 / 23 / 14 / 12 / 55 / 36 / 16 / 19 / 30`。解锁密度服从实际技术变迁，蒸汽与电气革命是集中扩张点；不再以“每时代至少若干建筑”的数量门槛制造低份额产业。持续产业逐代获得新方法，边缘产业在显式终止时代后由既有建筑继续运行、被其他产品吸收或退出宏观呈现。
 32 个职业映射到 survival、agrarian、extractive、industrial_worker、artisan、technical、merchant、owner
-八套原型；每个 need 最多四个 variants。旧 PKEC catalog
+八套原型；每个 need 最多八个 variants。旧 PKEC catalog
 存档会因 catalog mismatch 明确拒绝恢复，不做静默 ID remap。

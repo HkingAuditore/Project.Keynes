@@ -18,6 +18,10 @@ class_name ResourceProfileRegistry
 # 显式 preload，保证 ResourceProfile 类在本脚本解析前已被 Godot 加载。
 const _ResourceProfileScript = preload("res://scripts/data/resource_profile.gd")
 
+# 一个战略地图格约代表广东省量级面积。Profile 中的数量系数以基础区域为标定单位，
+# 所有初始储量、最低矿床和自然增减量统一按此面积倍率换算；增长/衰减率不缩放。
+const CELL_AREA_RESOURCE_SCALE: float = 100.0
+
 const _PROFILE_PATHS: Array = [
 	"res://data/resources/timber.tres",
 	"res://data/resources/stone.tres",
@@ -154,6 +158,7 @@ static func extra_change_map_field(p: ResourceProfile) -> String:
 # 所有平行数组按资源索引对齐；schema 缺失（cpp_name 为空）的资源会被整体跳过。
 static func build_pass_knobs() -> Dictionary:
 	ensure_loaded()
+	var quantity_scale := CELL_AREA_RESOURCE_SCALE
 	var reserve_slots := PackedStringArray()
 	var extra_change_slots := PackedStringArray()
 	var habitat_modes := PackedInt32Array()
@@ -173,6 +178,10 @@ static func build_pass_knobs() -> Dictionary:
 	var climate_moisture_tol := PackedFloat32Array()
 	var runtime_climate_fit_weight := PackedFloat32Array()
 	var decay_stress := PackedFloat32Array()
+	var ecology_capacity := PackedFloat32Array()
+	var ecology_growth_rate := PackedFloat32Array()
+	var ecology_immigration := PackedFloat32Array()
+	var ecology_stress_mortality_rate := PackedFloat32Array()
 	for p in _ordered:
 		var cpp_name: String = reserve_cpp_name(p)
 		var extra_cpp_name: String = extra_change_cpp_name(p)
@@ -185,20 +194,24 @@ static func build_pass_knobs() -> Dictionary:
 		habitat_modes.append(habitat_code(p))
 		temp_lo.append(p.temp_lo)
 		temp_hi.append(p.temp_hi)
-		gen_base.append(p.gen_base)
-		gen_temp.append(p.gen_temp)
-		gen_moisture.append(p.gen_moisture)
-		gen_self.append(p.gen_self)
-		decay_base.append(p.decay_base)
-		decay_temp.append(p.decay_temp)
-		decay_moisture.append(p.decay_moisture)
+		gen_base.append(p.gen_base * quantity_scale)
+		gen_temp.append(p.gen_temp * quantity_scale)
+		gen_moisture.append(p.gen_moisture * quantity_scale)
+		gen_self.append(p.gen_self * quantity_scale)
+		decay_base.append(p.decay_base * quantity_scale)
+		decay_temp.append(p.decay_temp * quantity_scale)
+		decay_moisture.append(p.decay_moisture * quantity_scale)
 		decay_self.append(p.decay_self)
 		climate_temp_opt.append(p.climate_temp_opt)
 		climate_temp_tol.append(p.climate_temp_tol)
 		climate_moisture_opt.append(p.climate_moisture_opt)
 		climate_moisture_tol.append(p.climate_moisture_tol)
 		runtime_climate_fit_weight.append(p.runtime_climate_fit_weight)
-		decay_stress.append(p.decay_stress)
+		decay_stress.append(p.decay_stress * quantity_scale)
+		ecology_capacity.append(p.ecology_capacity * quantity_scale)
+		ecology_growth_rate.append(p.ecology_growth_rate)
+		ecology_immigration.append(p.ecology_immigration * quantity_scale)
+		ecology_stress_mortality_rate.append(p.ecology_stress_mortality_rate)
 	return {
 		"resource_count": reserve_slots.size(),
 		"reserve_slots": reserve_slots,
@@ -221,4 +234,8 @@ static func build_pass_knobs() -> Dictionary:
 		"climate_moisture_tol": climate_moisture_tol,
 		"runtime_climate_fit_weight": runtime_climate_fit_weight,
 		"decay_stress": decay_stress,
+		"ecology_capacity": ecology_capacity,
+		"ecology_growth_rate": ecology_growth_rate,
+		"ecology_immigration": ecology_immigration,
+		"ecology_stress_mortality_rate": ecology_stress_mortality_rate,
 	}

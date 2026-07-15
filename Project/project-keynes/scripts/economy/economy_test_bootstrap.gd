@@ -5,6 +5,17 @@ const GOODS_SCALE := 1000
 const MONEY_SCALE := 10000
 const COLLECTOR_COUNT_CAP := 24
 const EXTRACT_RESERVE_DAYS := 5
+const FOOD_REQUIREMENT_PER_CAPITA := 1300
+const CLOTHING_REQUIREMENT_PER_CAPITA := 4
+
+const FOOD_GOOD_IDS := {
+	"prepared_staples": true, "bread": true, "grain": true, "gathered_plants": true,
+	"game_meat": true, "meat": true, "fish": true, "canned_fish": true,
+	"dairy_products": true, "vegetables": true, "processed_food": true,
+}
+const CLOTHING_GOOD_IDS := {
+	"cloth": true, "fur": true, "clothing": true, "footwear": true,
+}
 
 const MID_STONE_TECHNOLOGY_IDS := [
 	"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control",
@@ -114,6 +125,24 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		if not placed_any:
 			break
 
+	var basic_capacity_trimmed_buildings := 0
+	var basic_capacity_deficient_cells := 0
+	var basic_capacity_cell_indices := PackedInt32Array()
+	var basic_capacity_population := PackedInt64Array()
+	var basic_food_capacity := PackedInt64Array()
+	var basic_clothing_capacity := PackedInt64Array()
+	for cell_idx in passable_cells:
+		var balance := _balance_basic_capacity(groups_by_cell[cell_idx])
+		basic_capacity_trimmed_buildings += int(balance.trimmed_buildings)
+		if not bool(balance.covered):
+			basic_capacity_deficient_cells += 1
+		var totals: Dictionary = balance.totals
+		if int(totals.population) > 0:
+			basic_capacity_cell_indices.append(cell_idx)
+			basic_capacity_population.append(int(totals.population))
+			basic_food_capacity.append(int(totals.food))
+			basic_clothing_capacity.append(int(totals.clothing))
+
 	var cell_indices := PackedInt32Array()
 	var signature_ids := PackedInt32Array()
 	var populations := PackedInt64Array()
@@ -179,7 +208,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"cohort_count": populations.size(),
 		"building_group_count": building_counts.size(),
 		"total_population": total_population,
-		"population_source": "mid_stone_visible_resources_unemployed_v5",
+		"population_source": "mid_stone_visible_resources_capacity_balanced_unemployed_v6",
 		"initial_employment": "unemployed",
 		"initial_stock_units": 0,
 		"technology_ids": PackedStringArray(MID_STONE_TECHNOLOGY_IDS),
@@ -190,8 +219,115 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"unplaced_building_type_count": building_ids.size() - placed_building_types.size(),
 		"catalog_profession_count": profession_ids.size(),
 		"generated_profession_count": generated_professions.size(),
+		"basic_capacity_trimmed_buildings": basic_capacity_trimmed_buildings,
+		"basic_capacity_deficient_cells": basic_capacity_deficient_cells,
+		"food_requirement_per_capita": FOOD_REQUIREMENT_PER_CAPITA,
+		"clothing_requirement_per_capita": CLOTHING_REQUIREMENT_PER_CAPITA,
+		"basic_capacity_cell_indices": basic_capacity_cell_indices,
+		"basic_capacity_population": basic_capacity_population,
+		"basic_food_capacity": basic_food_capacity,
+		"basic_clothing_capacity": basic_clothing_capacity,
 		"good_count": facade.good_ids().size(),
 	}
+
+
+static func _balance_basic_capacity(groups: Array) -> Dictionary:
+	var trimmed := 0
+	while true:
+		var totals := _basic_capacity_totals(groups)
+		var population := int(totals.population)
+		var current_deficit := _basic_capacity_deficit_people(totals)
+		if population > 0 and current_deficit == 0:
+			break
+		var best := -1
+		var best_deficit := current_deficit
+		for i in range(groups.size()):
+			var group: Dictionary = groups[i]
+			if int(group.count) <= 1:
+				continue
+			var per_building := _building_basic_capacity(group.spec)
+			var next_population := maxi(0, population - int(per_building.jobs))
+			var next_food := int(totals.food) - int(per_building.food)
+			var next_clothing := int(totals.clothing) - int(per_building.clothing)
+			if next_population <= 0:
+				continue
+			var deficit := _basic_capacity_deficit_people({
+				"population": next_population,
+				"food": next_food,
+				"clothing": next_clothing,
+			})
+			if deficit < best_deficit or \
+					(best >= 0 and deficit == best_deficit and i > best):
+				best = i
+				best_deficit = deficit
+		if best < 0:
+			break
+		groups[best].count = int(groups[best].count) - 1
+		trimmed += 1
+	for i in range(groups.size() - 1, -1, -1):
+		if int(groups[i].count) <= 0:
+			groups.remove_at(i)
+	var final_totals := _basic_capacity_totals(groups)
+	var final_population := int(final_totals.population)
+	var covered := final_population > 0 and \
+		int(final_totals.food) >= final_population * FOOD_REQUIREMENT_PER_CAPITA and \
+		int(final_totals.clothing) >= final_population * CLOTHING_REQUIREMENT_PER_CAPITA
+	if not covered:
+		for group in groups:
+			trimmed += maxi(0, int(group.count))
+		groups.clear()
+		final_totals = {"population": 0, "food": 0, "clothing": 0}
+	return {
+		"trimmed_buildings": trimmed,
+		"covered": covered,
+		"totals": final_totals,
+	}
+
+
+static func _basic_capacity_deficit_people(totals: Dictionary) -> int:
+	var population := maxi(0, int(totals.population))
+	var food_deficit := maxi(
+		0, population * FOOD_REQUIREMENT_PER_CAPITA - int(totals.food))
+	var clothing_deficit := maxi(
+		0, population * CLOTHING_REQUIREMENT_PER_CAPITA - int(totals.clothing))
+	return ceili(float(food_deficit) / float(FOOD_REQUIREMENT_PER_CAPITA)) + \
+		ceili(float(clothing_deficit) / float(CLOTHING_REQUIREMENT_PER_CAPITA))
+
+
+static func _basic_capacity_totals(groups: Array) -> Dictionary:
+	var population := 0
+	var food := 0
+	var clothing := 0
+	for group in groups:
+		var count := int(group.count)
+		var per_building := _building_basic_capacity(group.spec)
+		population += count * int(per_building.jobs)
+		food += count * int(per_building.food)
+		clothing += count * int(per_building.clothing)
+	return {"population": population, "food": food, "clothing": clothing}
+
+
+static func _building_basic_capacity(spec: Dictionary) -> Dictionary:
+	var jobs := int(spec.owner_slots)
+	for slots in spec.employee_slots:
+		jobs += int(slots)
+	var food := 0
+	var clothing := 0
+	var input_ids: PackedStringArray = spec.get("input_good_ids", PackedStringArray())
+	var input_quantities: PackedInt64Array = spec.get("input_quantities", PackedInt64Array())
+	for i in range(mini(input_ids.size(), input_quantities.size())):
+		if FOOD_GOOD_IDS.has(String(input_ids[i])):
+			food -= int(input_quantities[i])
+		if CLOTHING_GOOD_IDS.has(String(input_ids[i])):
+			clothing -= int(input_quantities[i])
+	var output_ids: PackedStringArray = spec.get("output_good_ids", PackedStringArray())
+	var output_quantities: PackedInt64Array = spec.get("output_quantities", PackedInt64Array())
+	for i in range(mini(output_ids.size(), output_quantities.size())):
+		if FOOD_GOOD_IDS.has(String(output_ids[i])):
+			food += int(output_quantities[i])
+		if CLOTHING_GOOD_IDS.has(String(output_ids[i])):
+			clothing += int(output_quantities[i])
+	return {"jobs": jobs, "food": food, "clothing": clothing}
 
 
 static func _resource_arrays(map: MapData, technology_ids: PackedStringArray) -> Dictionary:

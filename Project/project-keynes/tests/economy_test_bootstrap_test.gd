@@ -66,7 +66,9 @@ func _initialize() -> void:
 	if not first_ok or not same_ok:
 		_finish()
 		return
-	_expect("both passable land cells are populated", int(first.get("populated_cells", 0)) == 2)
+	_expect("only basic-capacity-covered land cells are populated",
+		int(first.get("populated_cells", 0)) == 1 and
+		int(first.get("basic_capacity_deficient_cells", 0)) == 1)
 	var catalog_buildings: PackedStringArray = facade.building_type_ids()
 	_expect("fixture is restricted to a sparse mid-stone subset",
 		int(first.get("building_group_count", 0)) > 0 and
@@ -78,8 +80,11 @@ func _initialize() -> void:
 	_expect("population exactly matches generated building jobs",
 		_population_matches_fixture(first, facade))
 	_expect("bootstrap reports mid-stone unemployed population source",
-		String(first.get("population_source", "")) == "mid_stone_visible_resources_unemployed_v5" and
+		String(first.get("population_source", "")) ==
+			"mid_stone_visible_resources_capacity_balanced_unemployed_v6" and
 		String(first.get("initial_employment", "")) == "unemployed")
+	_expect("every populated fixture cell covers conservative food and clothing demand",
+		_basic_capacity_is_covered(first))
 	_expect("same seed is deterministic",
 		first.population_packet.population == same.population_packet.population and
 		first.population_packet.funds == same.population_packet.funds)
@@ -92,26 +97,26 @@ func _initialize() -> void:
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
-	_expect("land cells receive different specialized building sets",
-		_building_sets_differ(buildings, second_buildings))
+	_expect("unsupported land cells receive no unsustainable settlement",
+		int(second_buildings.get("group_count", 0)) == 0)
 	_expect("fertile soil and flint create their mid-stone chains",
 		_has_building(buildings, "gathering_ground") and
 		_has_building(buildings, "flint_quarry") and
 		_has_building(buildings, "knapping_workshop"))
 	_expect("wild game respects local and adjacent building access modes",
 		_has_building(buildings, "stone_age_hunting_camp") and
-		_has_building(second_buildings, "stone_age_hunting_camp") and
 		not _has_building(buildings, "wild_game_collector") and
 		not _has_building(second_buildings, "wild_game_collector"))
-	_expect("early bullion workings follow visible gold and silver deposits",
+	_expect("early bullion appears only where a viable settlement can support it",
 		_has_building(buildings, "placer_gold_working") and
-		_has_building(second_buildings, "surface_silver_working"))
+		not _has_building(second_buildings, "surface_silver_working"))
 	_expect("stone household weaving is part of the self-sufficient fixture",
 		_has_building(buildings, "household_weaving_shelter"))
 	var initial_land: Dictionary = facade.population_cell_snapshot(0)
 	var initial_second_land: Dictionary = facade.population_cell_snapshot(1)
-	_expect("all bootstrapped people start unemployed",
-		_all_population_unemployed(initial_land) and _all_population_unemployed(initial_second_land))
+	_expect("all bootstrapped people start unemployed and suppressed cells stay empty",
+		_all_population_unemployed(initial_land) and
+		int(initial_second_land.get("population", -1)) == 0)
 	_expect("native markets start with zero goods",
 		_all_market_stock_zero(facade.market_cell_snapshot(0)) and
 		_all_market_stock_zero(facade.market_cell_snapshot(1)))
@@ -122,8 +127,8 @@ func _initialize() -> void:
 	var second_land: Dictionary = facade.population_cell_snapshot(1)
 	var ocean: Dictionary = facade.population_cell_snapshot(2)
 	var mountain: Dictionary = facade.population_cell_snapshot(3)
-	_expect("land cells expose resource-specific professions",
-		int(land.get("cohort_count", 0)) > 1 and int(second_land.get("cohort_count", 0)) > 1)
+	_expect("viable land exposes resource-specific professions and unsupported land stays empty",
+		int(land.get("cohort_count", 0)) > 1 and int(second_land.get("cohort_count", 0)) == 0)
 	_expect("land has merchant", _sum_u8(land.get("merchant_flags", PackedByteArray())) >= 1)
 	_expect("water and impassable cells stay empty", int(ocean.get("population", -1)) == 0 and int(mountain.get("population", -1)) == 0)
 	_expect("demand preview CSR aligns with cohorts",
@@ -135,20 +140,21 @@ func _initialize() -> void:
 		_sum_i64(land.get("unemployed_by_cohort", PackedInt64Array())) ==
 		_sum_i64(land.get("populations", PackedInt64Array())))
 	_expect("employment logic hires after bootstrap",
-		_sum_i64(land.get("owner_employed_by_cohort", PackedInt64Array())) +
-		_sum_i64(second_land.get("owner_employed_by_cohort", PackedInt64Array())) > 0)
+		_sum_i64(land.get("owner_employed_by_cohort", PackedInt64Array())) > 0)
 	_expect("first cycle accumulates produced goods from zero",
 		_market_stock_total(facade.market_cell_snapshot(0)) +
 		_market_stock_total(facade.market_cell_snapshot(1)) > 0)
 	_expect("early bullion creates the initial monetary inflow",
 		int(cycle.get("gold_accepted", 0)) > 0 and
-		int(cycle.get("silver_accepted", 0)) > 0 and
+		int(cycle.get("silver_accepted", -1)) == 0 and
 		int(cycle.get("bullion_money_issued", 0)) ==
 			int(cycle.get("gold_money_issued", 0)) +
 			int(cycle.get("silver_money_issued", 0)))
-	_expect("early cloth production creates market stock from zero",
+	_expect("early cloth production reaches owners before any market remainder",
 		_good_stock(facade.market_cell_snapshot(0), "cloth") +
-		_good_stock(facade.market_cell_snapshot(1), "cloth") > 0)
+			_good_stock(facade.market_cell_snapshot(1), "cloth") > 0 or
+		_building_has_retained_output(
+			facade.building_cell_snapshot(0), "household_weaving_shelter"))
 	_expect("retired virtual mint is absent",
 		not _has_building(buildings, "shell_money_station") and
 		not _has_building(buildings, "stone_tool_exchange"))
@@ -156,14 +162,13 @@ func _initialize() -> void:
 		int(cycle.get("population_error", 1)) == 0 and
 		int(cycle.get("money_error", 1)) == 0 and int(cycle.get("goods_error", 1)) == 0)
 	var substitute_stock: Dictionary = facade.add_stock(
-		1, &"chipped_stone_tools", 100000, 1, 9001)
+		0, &"chipped_stone_tools", 100000, 1, 9001)
 	_expect("stone tool substitute stock command is accepted",
 		bool(substitute_stock.get("ok", false)))
 	var second_cycle: Dictionary = _run_day(ext, 1)
 	_expect("second cycle consumes category-compatible stone tools",
 		bool(second_cycle.get("done", false)) and not bool(second_cycle.get("fatal", false)) and
-		int(second_cycle.get("production_inputs_consumed", 0)) > 0 and
-		_building_has_capacity(facade.building_cell_snapshot(1), "timber_collector"))
+		int(second_cycle.get("production_inputs_consumed", 0)) > 0)
 	_finish()
 
 
@@ -226,30 +231,13 @@ func _has_building(snapshot: Dictionary, building_id: String) -> bool:
 	return idx >= 0 and idx < counts.size() and counts[idx] > 0
 
 
-func _building_sets_differ(first: Dictionary, second: Dictionary) -> bool:
-	var first_ids: PackedStringArray = first.get("building_type_ids", PackedStringArray())
-	var second_ids: PackedStringArray = second.get("building_type_ids", PackedStringArray())
-	var first_counts: PackedInt64Array = first.get("building_counts_by_type", PackedInt64Array())
-	var second_counts: PackedInt64Array = second.get("building_counts_by_type", PackedInt64Array())
-	if first_ids.is_empty() or second_ids.is_empty():
-		return false
-	for i in range(first_ids.size()):
-		var second_idx := second_ids.find(first_ids[i])
-		var first_positive := i < first_counts.size() and first_counts[i] > 0
-		var second_positive := second_idx >= 0 and second_idx < second_counts.size() \
-			and second_counts[second_idx] > 0
-		if first_positive != second_positive:
-			return true
-	return false
-
-
-func _building_has_capacity(snapshot: Dictionary, building_id: String) -> bool:
+func _building_has_retained_output(snapshot: Dictionary, building_id: String) -> bool:
 	var ids: PackedStringArray = snapshot.get("building_type_ids", PackedStringArray())
 	var groups: PackedInt32Array = snapshot.get("group_type_ids", PackedInt32Array())
-	var capacities: PackedInt64Array = snapshot.get("capacity_q16", PackedInt64Array())
+	var retained: PackedInt64Array = snapshot.get("last_retained", PackedInt64Array())
 	var type_id := ids.find(building_id)
 	for i in range(groups.size()):
-		if groups[i] == type_id and i < capacities.size() and capacities[i] > 0:
+		if int(groups[i]) == type_id and i < retained.size() and int(retained[i]) > 0:
 			return true
 	return false
 
@@ -329,6 +317,27 @@ func _population_matches_fixture(packet: Dictionary, facade) -> bool:
 		if int(actual.get(key, -1)) != int(expected[key]):
 			return false
 	return actual.size() == expected.size()
+
+
+func _basic_capacity_is_covered(fixture: Dictionary) -> bool:
+	var populations: PackedInt64Array = fixture.get(
+		"basic_capacity_population", PackedInt64Array())
+	var food: PackedInt64Array = fixture.get("basic_food_capacity", PackedInt64Array())
+	var clothing: PackedInt64Array = fixture.get(
+		"basic_clothing_capacity", PackedInt64Array())
+	if populations.is_empty() or populations.size() != food.size() or \
+			populations.size() != clothing.size():
+		return false
+	var food_per_capita := int(fixture.get("food_requirement_per_capita", 0))
+	var clothing_per_capita := int(fixture.get("clothing_requirement_per_capita", 0))
+	if food_per_capita <= 0 or clothing_per_capita <= 0:
+		return false
+	for i in range(populations.size()):
+		if int(populations[i]) <= 0 or \
+				int(food[i]) < int(populations[i]) * food_per_capita or \
+				int(clothing[i]) < int(populations[i]) * clothing_per_capita:
+			return false
+	return true
 
 
 func _run_day(ext: Object, day: int) -> Dictionary:

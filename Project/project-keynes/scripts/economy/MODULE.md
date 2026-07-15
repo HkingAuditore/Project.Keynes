@@ -1,9 +1,9 @@
 # economy — 原生阶层与本地市场模块
 
-> 状态：Market V2 / Price V3 ACTIVE（`frozen_sample_adaptive_price_v2`）。功能、守恒、确定性与
+> 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v4`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v11 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
-> 跨国贸易/关税、政治和人口自然变化。
+> 跨国贸易/关税、政治和一般自然人口变化；仅实现缺乏食品/气候所需衣着造成的生存死亡。
 
 ## 权威与禁止事项
 
@@ -12,7 +12,8 @@
 - `EconomyCatalog` 冷启动编译 stable ID/CSR/PackedArrays；`EconomyFacade` 只打包命令和查询。
 - `EconomyDailySystem` 是 SUS/WorldClock 薄壳；gameplay/save 只读 committed，Inspector 的选中
   cell 冷查询可读取切片间最新完整 snapshot，并以 `snapshot_source` 标记来源。
-- 人口 snapshot 用 cohort-major CSR 返回原生计算的预计单位/人/日；查询不持久化
+- 人口 snapshot 用 cohort-major CSR 返回原生计算的预计单位/人/日；Inspector 先按玩家可见用途
+  归并商品，再在组内显示唯一商品行；嵌套 need/variant/component 列只提供用途归组与 `has_bundle` 展示元数据。查询不持久化
   cohort×good 矩阵，也不修改 state hash。
 - 禁止把 goods/cohort 放回 MapData/component schema，禁止 GDScript 全世界遍历或逐 cohort setter。
 - 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；未来税收
@@ -40,7 +41,19 @@
 - 购买资金直接进入商人 cohort，无 `market_cash`。
 - 商人正常消费；每日需求/预算重置；同 tick 最多一次替代 fallback。
 - 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
+- `staple_food/protein/produce` 是内部营养与价格分配子篮子，对玩家统一显示“食品”；野味、
+  鱼、肉、谷物、采集植物和已解锁加工食物均按替代品展示，即使当前分配量为零也不隐藏。
+- 生存满足取“食品总满足”和“气候修正衣着满足”的较小值；高温可把衣着需求降到零。
+  周期开始时仍存活人口先参与就业和生产，profile 的 50% 阈值只用于消费后的确定性饥饿死亡，
+  不再前置削减劳动力并锁死自给生产。
+- 八套职业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。
+  同一 good 跨 need 只允许 refined_fuel、computers、beverages、fur 四种明确多用途；展示层聚合
+  数量与支出，不重复渲染。铁路设备、远洋船舶和科学仪器不再代理居民服务消费。
 - 商品可由显式库存命令或 BUILDING_GRAPH 生产进入市场。
+- 建筑先购买原料并生产；业主按自己的消费计划从单商品需求变体中留用本期所需产出，剩余产出
+  才出售给市场，再从销售后资金统一分配基础工资和奖金；居民随后使用本期收入购买本期新商品。
+  留用品不产生虚假收入或支出，未消费余量回记来源建筑的丢弃量。最终欠薪继续报告，但不会追溯
+  取消已完成生产。
 - 商人不能拥有普通生产建筑。例外仅限金银 collector：必须只有一种金/银产出、只消耗严格对应的
   金/银矿藏、使用 extract 模式且不生成资源；允许后期矿井拥有雇员和工具输入。
   市场接受金银时按 `monetary_issue_value` 向业主发行货币，计入
@@ -49,13 +62,16 @@
 - 生产默认 5 日结算周期；`market_cycle_days=0` 才启用按规模自动周期。
 - 世界设置中的测试经济 fixture 默认关闭；启用时使用石器中期科技，只在可见资源能支撑配方的
   地块放置 collector，并只在已有全部本地上游产出的地块放置 industrial。升级族只放置当前最高
-  可用档。生成顺序固定为建筑 owner-lot → catalog 岗位汇总 → cohort；初始就业和市场库存均为零，
-  由原生图在后续周期结算。职业 cohort 只随本地实际 owner/employee 岗位生成，
-  仅用于开发测试，不能作为正式历史人口来源。
+  可用档。生成器按输出减直接消费品投入计算净产能，以食品 `1300`、衣着 `4`
+  GOODS_SCALE/人/日为保守下限；只削减重复建筑并保留每种可用建筑至少一栋。连一人最低需求都
+  无法覆盖的地块不生成测试聚落，避免必然停工和死亡。生成顺序固定为建筑 owner-lot → catalog
+  岗位汇总 → cohort；初始就业和市场库存均为零，由原生图在后续周期结算。该 fixture 仅用于开发
+  测试，不能作为正式历史人口来源。
 
 ## 调度
 
-周期 sample day 捕获四类环境 slots，并从冻结资金/人口/价格计算 N 日交易总量。地块
+周期 sample day 捕获四类环境 slots，并冻结价格、科技、资源和企业价格信号；建筑先改变本期
+资金与库存，居民再据此计算 N 日交易总量。地块
 在 N 日内按 cohort 数错峰，提前完成后等待结算日统一发布；只有结算日仍未完成才开启
 WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入环境 native round。
 
@@ -66,7 +82,7 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 `BuildingProfile` 位于 `data/economy/buildings/`，由 `EconomyCatalog` 编译进 native catalog。
 `EconomyFacade.build/demolish/building_cell_snapshot` 是 GDScript 粗边界；建筑、岗位、生产、所有权
 份额和账本只由 C++ 修改。employee role 的 `adaptive` 工资使用当地生活成本与岗位合同工资
-EMA；同一 owner 现金不足时比例支付并令其 owner-lot 本周期停产。销售后超过目标业主利润的
+EMA；同一 owner 在产品销售后按可用现金比例支付。销售后超过目标业主利润的
 25% 形成奖金池。亏损本身不再降低就业需求或计划利用率。生产后只对建筑实际输入/输出边更新
 稀疏企业需求、供给和成本锚，并更新稀疏 `(cell, profession)` 劳动市场信号，
 供下一周期 Price V3 使用。
@@ -109,9 +125,10 @@ PKEC v11 save，restore 后在下一次成功生产前显示为未知。
 
 ## 现代内容目录
 
-- 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，
-  跨时代扩展后的全目录为 122 goods、302 production-method buildings、32 professions、17 needs 和 8 consumption plans。目录清理有意改变
-  stable-ID 表，旧 catalog 存档不兼容。
+- 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
+  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 120 goods、259
+  production-method buildings、32 professions、17 needs 和 8 consumption plans。消费重平衡不改
+  stable-ID 表或 PKEC v11 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
 - `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
   collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。
