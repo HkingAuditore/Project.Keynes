@@ -968,6 +968,7 @@ private:
     int32_t _living_cost_base_plan_id = -1;
     std::string _living_cost_base_plan_stable_id = "survival_household";
     std::vector<int32_t> _survival_food_need_stable_ids;
+    int32_t _survival_staple_need_stable_id = -1;
     int32_t _survival_clothing_need_stable_id = -1;
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
     int64_t _starvation_death_rate_q32 = Q32_ONE / 200;
