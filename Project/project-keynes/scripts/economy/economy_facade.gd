@@ -481,6 +481,39 @@ func profession_ids() -> PackedStringArray:
 func building_type_ids() -> PackedStringArray:
 	return (_catalog.get("building_type_ids", PackedStringArray()) as PackedStringArray).duplicate()
 
+## Cold-path bootstrap view of the same compiled columns consumed by the native runtime.
+## This deliberately exposes only finance inputs; runtime authority remains in C++.
+func bootstrap_finance_columns() -> Dictionary:
+	var result := {}
+	for key in [
+		"good_ids", "good_default_price", "good_target_inventory_days_q16",
+		"good_merchant_buy_factor_q16", "good_monetary_issue_values",
+		"plan_ids", "plan_need_offsets", "need_ids", "need_living_cost_weights_q16",
+		"need_stable_ids", "need_base_qty_per_person", "need_quantity_env_curve_ids",
+		"need_variant_offsets", "variant_preference_q16",
+		"variant_preference_env_curve_ids", "variant_component_offsets",
+		"component_good_ids", "component_qty_per_need", "environment_curve_signal_ids",
+		"environment_curve_values_q16", "ethnicity_need_factor_q16",
+		"signature_ethnicity_ids",
+	]:
+		result[key] = _catalog.get(key)
+	result["living_cost_base_plan_id"] = String(_profile.living_cost_base_plan_id)
+	return result
+
+func bootstrap_cycle_days(cohort_count: int) -> int:
+	if _profile == null:
+		return 1
+	var maximum := maxi(1, int(_profile.market_max_cycle_days))
+	var configured := int(_profile.market_cycle_days)
+	if configured > 0:
+		return mini(configured, maximum)
+	if not bool(_profile.auto_slice_by_scale) or cohort_count <= 0:
+		return 1
+	var target := int(_profile.market_target_cohorts_per_slice)
+	if target <= 0:
+		target = 4000 if cohort_count <= 500000 else (12000 if cohort_count <= 2000000 else 30000)
+	return clampi((cohort_count + target - 1) / target, 1, maximum)
+
 func _attach_population_display_metadata(snapshot: Dictionary) -> void:
 	var profession_ids: PackedStringArray = snapshot.get(
 		"profession_stable_ids", PackedStringArray())

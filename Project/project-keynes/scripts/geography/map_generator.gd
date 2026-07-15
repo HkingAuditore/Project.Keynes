@@ -6128,11 +6128,13 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 			var extra_change: float = extra_arr[i] if have_extra else 0.0
 			# 半隐式（IMEX）：与 C++ run_natural_resource_pass 逐 op 同模板。
 			var fit_weight: float = clampf(p.runtime_climate_fit_weight, 0.0, 1.0)
+			var climate_fit: float = 1.0
 			var runtime_fit: float = 1.0
 			if fit_weight != 0.0 or p.decay_stress != 0.0:
 				var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
 				var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
-				runtime_fit = lerpf(1.0, temp_fit * moisture_fit, fit_weight)
+				climate_fit = temp_fit * moisture_fit
+				runtime_fit = lerpf(1.0, climate_fit, fit_weight)
 			var reserve_after_external := maxf(0.0, reserve + extra_change)
 			var v: float
 			if not has_natural_dynamics:
@@ -6144,8 +6146,11 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 				var capacity := maxf(0.0, float(p.ecology_capacity) * quantity_scale * runtime_fit)
 				var growth_factor := 1.0 + maxf(0.0, float(p.ecology_growth_rate)) * runtime_fit
 				var immigration := maxf(0.0, float(p.ecology_immigration)) * quantity_scale * runtime_fit
+				# Capacity already accounts for ordinary habitat quality. Mortality is
+				# reserved for the acutely unsuitable bottom quarter of raw climate fit.
+				var acute_stress := clampf((0.25 - climate_fit) / 0.25, 0.0, 1.0)
 				var stress_denom := 1.0 + maxf(0.0, float(
-					p.ecology_stress_mortality_rate)) * (1.0 - runtime_fit)
+					p.ecology_stress_mortality_rate)) * acute_stress
 				v = reserve_after_external
 				for _day in range(maxi(1, dt_days)):
 					var seeded := v + immigration

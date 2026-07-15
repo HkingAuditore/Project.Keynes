@@ -11,6 +11,11 @@ extends Resource
 @export var wealth_elasticity_q16: PackedInt32Array = PackedInt32Array()
 @export var wealth_min_q16: PackedInt32Array = PackedInt32Array()
 @export var wealth_max_q16: PackedInt32Array = PackedInt32Array()
+## Variant elasticity chooses among substitutes. These columns separately scale
+## the total need when every available substitute is expensive. The floor keeps
+## necessities inelastic without making them immune to price and household wealth.
+@export var price_quantity_elasticity_q16: PackedInt32Array = PackedInt32Array()
+@export var price_quantity_floor_q16: PackedInt32Array = PackedInt32Array()
 @export var quantity_env_curve_ids: PackedStringArray = PackedStringArray()
 @export var need_variant_offsets: PackedInt32Array = PackedInt32Array([0])
 

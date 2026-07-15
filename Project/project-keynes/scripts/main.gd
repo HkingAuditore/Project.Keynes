@@ -383,6 +383,7 @@ var _perf_recorder: RefCounted = null
 # DebugConsole 地块数据录制按钮注入的 TileDataRecorder 实例。与 PerfRecorder
 # 共用 fast_tick sample 时机，但 recorder 自己从 MapData 读取 cell-level SoA。
 var _tile_data_recorder: RefCounted = null
+var _economy_data_recorder: RefCounted = null
 var _last_recorder_perf_summary: Dictionary = {}
 var _recorder_warn_last_frame: int = 0
 
@@ -1579,7 +1580,8 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		t_ui_ms: float, fast_ms: float, was_skipped_day: bool) -> Dictionary:
 	var perf_ready: bool = _recorder_ready(_perf_recorder)
 	var tile_ready: bool = _recorder_ready(_tile_data_recorder)
-	if not perf_ready and not tile_ready:
+	var economy_ready: bool = _recorder_ready(_economy_data_recorder)
+	if not perf_ready and not tile_ready and not economy_ready:
 		return {}
 	var t_recorders_us0: int = Time.get_ticks_usec()
 	var out: Dictionary = {
@@ -1650,6 +1652,19 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		else:
 			out["tile_rows"] = rows_after - rows_before
 			out["tile_recorded"] = int(out["tile_rows"]) > 0
+	out["economy_recording"] = economy_ready
+	if economy_ready:
+		var t_eco_us0: int = Time.get_ticks_usec()
+		var eco_result = _economy_data_recorder.call("on_fast_tick", sample)
+		out["economy_ms"] = (Time.get_ticks_usec() - t_eco_us0) / 1000.0
+		if eco_result is Dictionary:
+			out["economy_recorded"] = bool(eco_result.get("recorded", false))
+			out["economy_rows"] = int(eco_result.get("rows", 0))
+			out["economy_reason"] = str(eco_result.get("reason", ""))
+			out["economy_epoch_id"] = int(eco_result.get("epoch_id", -1))
+		else:
+			out["economy_rows"] = 0
+			out["economy_recorded"] = false
 	out["total_ms"] = (Time.get_ticks_usec() - t_recorders_us0) / 1000.0
 	return out
 
@@ -3357,6 +3372,14 @@ func set_tile_data_recorder(rec: RefCounted) -> void:
 
 func get_tile_data_recorder() -> RefCounted:
 	return _tile_data_recorder
+
+
+func set_economy_data_recorder(rec: RefCounted) -> void:
+	_economy_data_recorder = rec
+
+
+func get_economy_data_recorder() -> RefCounted:
+	return _economy_data_recorder
 
 
 # DOTS-Final-Push 任务 10：终端稳态指标 verdict 入口。

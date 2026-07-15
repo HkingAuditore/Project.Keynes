@@ -32,12 +32,12 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 ## 图阶段
 
 1. `trade_planning`：上次发布后以确定工作单元扫描稀疏信号并有界寻路；是无屏障软任务。
-2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境，冻结输入，并生成建筑利润/利用率计划。
+2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境，冻结输入，并推进建筑严重亏损停产/反事实恢复状态。
 3. `trade_settle`：结算到期货物/卖方托管，货物可参与当期本地市场。
 4. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
 5. `trade_dispatch`：ACTIVE 稳定裁剪并托管发运；PROBE 只报告候选。
 6. `building_employment`：按周期开始时仍存活人口分配 owner/employee 岗位并计算合同工资。
-7. `building_production`：购买投入、生产并出售产出，再分配基础工资/奖金并更新企业信号。
+7. `building_production`：先算受就业/资金/资源约束的采购意图，再用本地输入库存得到实际产能；购买投入、生产并出售产出，分配基础工资/奖金，最后更新企业意图、实际出库、供给与成本信号。
 8. `household_market`：每天最多一个 cohort-budgeted market range，使用本期收入和新库存计算 N 日总需求/交易、食品与
    气候衣着生存满足，并以 Q32 residual 结算缺乏基本生活资料造成的死亡。
 9. `structural_commit`：稳定提交本轮结构 ECB。
@@ -74,7 +74,7 @@ in-flight 本身不是错误，周期内世界日正常推进。report 提供
 
 ## ACTIVE 与报告
 
-本地市场默认 ACTIVE。贸易使用独立 `trade_runtime_mode`，默认 PROBE，按
+本地市场与国内贸易均默认 ACTIVE。贸易使用独立 `trade_runtime_mode`，按
 OFF → PROBE → ACTIVE 门禁上线；PROBE 不改变库存、资金、订单或 authoritative state hash。
 
 除通用 stage/cursor/timing/audit 字段外，报告必须包含：`market_cycle_days`、

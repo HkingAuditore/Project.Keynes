@@ -10,9 +10,9 @@
 | Store | 内容 | 持久化 |
 | --- | --- | --- |
 | `TradeTopologyStore` | 六邻接、可贸易通行、进入成本、冻结国家连通分量、拓扑代际 | 否；加载后从地图与国家快照重建 |
-| `TradeSignalStore` / `TradeFlowSignalStore` | 稀疏盈余/缺口、价格压力工作集、进出口 EMA | 进出口 EMA 是 PKEC v11 权威状态；规划工作集不保存 |
+| `TradeSignalStore` / `TradeFlowSignalStore` | 稀疏盈余/缺口、价格压力工作集、进出口 EMA | 进出口 EMA 是 PKEC v12 权威状态；规划工作集不保存 |
 | `TradePlanStore` | 轮转扫描游标、有界 Dijkstra scratch、候选缓冲、固定容量路线缓存 | 否 |
-| `TradeOrderStore` | 稳定订单 ID、路线端点、到达日、物资行 CSR、卖方快照 CSR、货物/现金托管 | 是，PKEC v11 |
+| `TradeOrderStore` | 稳定订单 ID、路线端点、到达日、物资行 CSR、卖方快照 CSR、货物/现金托管 | 是，PKEC v12 |
 
 常驻复杂度保持为 `O(cell + edge + active_signal + in_flight_order)`。禁止全源最短路、
 全市场×全物资候选矩阵或逐路径 Godot Object。路线缓存、信号、候选和订单均受
@@ -38,6 +38,7 @@
 
 模式由 `trade_runtime_mode=OFF|PROBE|ACTIVE` 控制。OFF 不扫描；PROBE 执行与 ACTIVE 相同的
 确定性候选计算但不改变库存、资金、订单或 state hash；ACTIVE 才预留与发运。
+默认 profile 与 C++ 缺省值均为 `ACTIVE`；`OFF/PROBE` 必须由测试或特殊配置显式指定。
 
 规划在上次 `AGGREGATE_PUBLISH` 后形成只读工作集，并由 `economy_should_run()` 暴露为软任务。
 `EconomyDailySystem` 继续每 tick 最多一片、默认 0.8 ms 预算；预算转为确定性的扫描 pair 数、
@@ -97,15 +98,16 @@ PKEJ economy journal，但不逐笔灌入通用 gameplay event ring。
 `get_economy_report()` 提供规划 phase/进度、信号/候选数、接受和拒绝原因、路线扩展、缓存
 命中/未命中、国家运力/利用率、在途订单/货物、现金托管、结算滞后及阶段耗时。
 
-## PKEC v11 与兼容性
+## PKEC v12 与兼容性
 
 PKEC v11 在 v10 国家桥格式上增加贸易订单和贸易流 EMA sections，并在 header 保存稳定
 `next_order_id` 与已解析贸易配置。路线缓存、拓扑、Dijkstra scratch、未完成扫描和候选不存档。
 加载后先恢复 PKCN v1，再恢复 PKEC；贸易拓扑由下一次地图捕获重建。
 
-PKEC v10 可读取，并确定性迁移为“空在途订单、空托管、空贸易 EMA、待重建拓扑”。为避免
-新增 good/terrain 贸易字段破坏旧存档，catalog 同时编译 `catalog_compat_hash_v10` 只用于 v10
-校验。PKEC v2-v9 仍精确拒绝为 `legacy_countryless_economy_save_unsupported`。
+PKEC v12 增加企业停产状态、连续计数、采购意图容量、实际利润率、实际出库 EMA 和对应策略参数。
+参数一致的 v11 ACTIVE 可迁移并将新增字段初始化为确定性默认值；新的 ACTIVE 配置严格拒绝
+v11 PROBE（`save_trade_profile_mismatch`）和 v10（`active_trade_rejects_v10_economy_save`）。
+PKEC v2-v9 仍精确拒绝为 `legacy_countryless_economy_save_unsupported`。
 
 ## 2026-07-13 release 基准
 

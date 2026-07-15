@@ -438,13 +438,13 @@ living_cost_weight_q16 = $($row[2])
 }
 
 $needSpecs = @(
-    @{id='staple_food'; tier='essential'; base=550; wealth=4096; min=49152; max=81920; price=98304;
+    @{id='staple_food'; tier='essential'; base=550; wealth=4096; min=49152; max=81920; price=98304; quantityPrice=16384; quantityFloor=32768;
         variants=@(@('prepared_staples'),@('bread'),@('grain'),@('gathered_plants'))},
-    @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=131072; price=98304;
+    @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=98304; quantityFloor=0;
         variants=@(@('game_meat'),@('meat'),@('fish'),@('canned_fish'),@('dairy_products'))},
-    @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=131072; price=98304;
+    @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=65536; quantityFloor=4096;
         variants=@(@('vegetables'),@('processed_food'))},
-    @{id='clothing'; tier='essential'; base=3; wealth=32768; min=16384; max=196608; price=65536;
+    @{id='clothing'; tier='essential'; base=3; wealth=32768; min=16384; max=196608; price=65536; quantityPrice=32768; quantityFloor=16384;
         variants=@(@('cloth'),@('fur'),@('clothing'),@('footwear'))},
     @{id='housing'; tier='essential'; base=5; wealth=32768; min=16384; max=196608; price=65536;
         variants=@(@('construction_components'))},
@@ -477,7 +477,7 @@ $needSpecs = @(
 function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
         [int]$EssentialScale, [int]$ComfortScale, [int]$LuxuryScale,
         [hashtable]$PreferenceOverrides) {
-    $needIds = @(); $priorities = @(); $base = @(); $elasticity = @(); $mins = @(); $maxs = @(); $env = @()
+    $needIds = @(); $priorities = @(); $base = @(); $elasticity = @(); $mins = @(); $maxs = @(); $quantityPrice = @(); $quantityFloor = @(); $env = @()
     $needOffsets = @(0); $variantIds = @(); $preferences = @(); $variantElasticity = @(); $variantEnv = @()
     $componentOffsets = @(0); $componentIds = @(); $componentQty = @()
     $v = 0; $c = 0
@@ -496,6 +496,8 @@ function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
         $elasticity += [int]$spec.wealth
         $mins += [int]$spec.min
         $maxs += [int]$spec.max
+        $quantityPrice += $(if ($spec.ContainsKey('quantityPrice')) { [int]$spec.quantityPrice } elseif ($spec.tier -eq 'comfort') { 98304 } elseif ($spec.tier -eq 'luxury') { 131072 } else { 65536 })
+        $quantityFloor += $(if ($spec.ContainsKey('quantityFloor')) { [int]$spec.quantityFloor } elseif ($spec.tier -eq 'essential') { 4096 } else { 0 })
         $env += $(if ($spec.id -eq 'clothing') { 'cold_clothing_quantity' } else { '' })
         foreach ($variant in $spec.variants) {
             $variantIds += "$($spec.id)_$v"
@@ -524,6 +526,8 @@ base_qty_per_person = $(PI64 $base)
 wealth_elasticity_q16 = $(PI32 $elasticity)
 wealth_min_q16 = $(PI32 $mins)
 wealth_max_q16 = $(PI32 $maxs)
+price_quantity_elasticity_q16 = $(PI32 $quantityPrice)
+price_quantity_floor_q16 = $(PI32 $quantityFloor)
 quantity_env_curve_ids = $(PSArray $env)
 need_variant_offsets = $(PI32 $needOffsets)
 variant_ids = $(PSArray $variantIds)

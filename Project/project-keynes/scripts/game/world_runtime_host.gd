@@ -37,6 +37,7 @@ var _current_map: MapData = null
 var _world_data: WorldData = null
 var _generator: MapGenerator = null
 var _view_adapter: DCViewAdapter = null
+var _selected_cell: HexCell = null
 var _tod_profile: TODProfile = null
 var _last_seed: int = 0
 var _last_tick_report: Dictionary = {}
@@ -47,6 +48,7 @@ var _last_recorder_perf_summary: Dictionary = {}
 var _last_ui_perf_summary: Dictionary = {}
 var _perf_recorder: RefCounted = null
 var _tile_data_recorder: RefCounted = null
+var _economy_data_recorder: RefCounted = null
 var _pending_tick_start_usec: int = 0
 var _pending_tick_sus_ms: float = 0.0
 var _pending_tick_render_ms: float = 0.0
@@ -62,6 +64,14 @@ func configure(renderer: HexRenderer, camera: MapCamera, world_clock: WorldClock
 
 func current_map() -> MapData:
 	return _current_map
+
+
+func set_selected_cell(cell: HexCell) -> void:
+	_selected_cell = cell
+
+
+func get_selected_cell() -> HexCell:
+	return _selected_cell
 
 
 func world_data() -> WorldData:
@@ -85,6 +95,7 @@ func last_tick_report() -> Dictionary:
 
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
+	_selected_cell = null
 	world_generation_started.emit()
 	if _generator != null and _generator.has_method("sus_reset_all"):
 		_generator.sus_reset_all()
@@ -307,6 +318,14 @@ func get_tile_data_recorder() -> RefCounted:
 	return _tile_data_recorder
 
 
+func set_economy_data_recorder(recorder: RefCounted) -> void:
+	_economy_data_recorder = recorder
+
+
+func get_economy_data_recorder() -> RefCounted:
+	return _economy_data_recorder
+
+
 func _publish_fast_tick_perf_sample(
 		t_sus_ms: float,
 		t_render_ms: float,
@@ -316,18 +335,24 @@ func _publish_fast_tick_perf_sample(
 ) -> Dictionary:
 	var perf_ready := _recorder_ready(_perf_recorder)
 	var tile_ready := _recorder_ready(_tile_data_recorder)
-	if not perf_ready and not tile_ready:
+	var economy_ready := _recorder_ready(_economy_data_recorder)
+	if not perf_ready and not tile_ready and not economy_ready:
 		return {}
 	var started_usec := Time.get_ticks_usec()
 	var out: Dictionary = {
 		"total_ms": 0.0,
 		"perf_ms": 0.0,
 		"tile_ms": 0.0,
+		"economy_ms": 0.0,
 		"perf_recording": perf_ready,
 		"tile_recording": tile_ready,
+		"economy_recording": economy_ready,
 		"tile_recorded": false,
 		"tile_rows": 0,
 		"tile_reason": "",
+		"economy_recorded": false,
+		"economy_rows": 0,
+		"economy_reason": "",
 	}
 	var sample: Dictionary = {
 		"tick_idx": _fast_tick_count,
@@ -370,6 +395,16 @@ func _publish_fast_tick_perf_sample(
 			]:
 				if tile_dict.has(key):
 					out["tile_%s" % str(key)] = tile_dict[key]
+	if economy_ready:
+		var economy_started_usec := Time.get_ticks_usec()
+		var economy_result = _economy_data_recorder.call("on_fast_tick", sample)
+		out["economy_ms"] = (Time.get_ticks_usec() - economy_started_usec) / 1000.0
+		if economy_result is Dictionary:
+			var economy_dict := economy_result as Dictionary
+			out["economy_recorded"] = bool(economy_dict.get("recorded", false))
+			out["economy_rows"] = int(economy_dict.get("rows", 0))
+			out["economy_reason"] = str(economy_dict.get("reason", ""))
+			out["economy_epoch_id"] = int(economy_dict.get("epoch_id", -1))
 	out["total_ms"] = (Time.get_ticks_usec() - started_usec) / 1000.0
 	return out
 

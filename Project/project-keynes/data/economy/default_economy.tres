@@ -8,3 +8,4 @@ market_cycle_days = 5
 market_max_cycle_days = 365
 market_target_cohorts_per_slice = 0
 market_runtime_mode = "ACTIVE"
+trade_runtime_mode = "ACTIVE"

@@ -93,6 +93,12 @@ func _run() -> void:
 		planned_utilization == 65536 and filled_jobs > 0 and filled_jobs <= 20)
 	_expect("mine produces output", int((buildings.last_output as PackedInt64Array)[0]) > 0)
 	_expect("merchant buys at least part of output", int((buildings.last_sold as PackedInt64Array)[0]) > 0)
+	_expect("merchant procurement freezes a 25 percent reserve and stays in budget",
+		int(day1.get("merchant_procurement_reserved", 0)) > 0 and
+		int(day1.get("merchant_procurement_budget", 0)) >=
+			int(day1.get("merchant_procurement_spent", -1)) and
+		int(day1.get("merchant_procurement_budget", 0)) >=
+			int(day1.get("merchant_procurement_reserved", 0)) * 2)
 	var retained_output := int((buildings.last_retained as PackedInt64Array)[0])
 	_expect("owner consumes retained output before the remainder reaches merchants",
 		retained_output > 0 and
@@ -124,8 +130,9 @@ func _run() -> void:
 	var excess_profit := maxi(0,
 		int((buildings.last_revenue as PackedInt64Array)[0]) - base_operating_cost - target_profit)
 	var expected_bonus := int((excess_profit * 16384) / 65536)
-	_expect("owner-lot excess profit creates exact employee bonus pool",
-		bonus_due == expected_bonus and bonus_paid == bonus_due and bonus_due > 0)
+	var payroll_suspended := int((buildings.wage_suspended as PackedByteArray)[0]) != 0
+	_expect("owner-lot bonus is exact after fully funded base payroll",
+		bonus_due == (0 if payroll_suspended else expected_bonus) and bonus_paid == bonus_due)
 	_expect("building snapshot reports priced tool input cost",
 		int((buildings.last_input as PackedInt64Array)[0]) > 0 and
 		int((buildings.last_input_cost as PackedInt64Array)[0]) > 0)
@@ -179,6 +186,11 @@ func _run() -> void:
 	_expect("price v3 publishes sparse coal supply and cost anchor",
 		_good_value(market, "offered_supply_ema", "coal") > 0 and
 		_good_i32_value(market, "cost_anchor_price", "coal") > 0)
+	_expect("market publishes realized withdrawals and merchant inventory targets",
+		(market.realized_withdrawal_ema as PackedInt64Array).size() ==
+			(market.good_ids as PackedStringArray).size() and
+		_good_value(market, "merchant_inventory_target", "coal") > 0 and
+		_has_positive(market.realized_withdrawal_ema as PackedInt64Array))
 	_expect("building snapshot publishes economic cost diagnostics",
 		int((buildings.last_wages_due as PackedInt64Array)[0]) >= base_wages and
 		int((buildings.last_operating_cost as PackedInt64Array)[0]) >= expected_wages and
@@ -196,6 +208,7 @@ func _run() -> void:
 		(buildings.building_resource_effective_reserve as PackedInt64Array).size() ==
 		(compiled.building_resource_ids as PackedStringArray).size())
 	_expect("building snapshot stays committed", bool(buildings.get("committed", false)))
+	var funded_output := int((buildings.last_output as PackedInt64Array)[0])
 	pop = ext.get_population_cell_snapshot(0)
 	landlord_row = _row_for_signature(pop, landlord_sig)
 	var owner_funds := int((pop.funds_by_cohort as PackedInt64Array)[landlord_row])
@@ -206,7 +219,7 @@ func _run() -> void:
 		"target_handles": PackedInt64Array([owner_handle]),
 		"i32_0": PackedInt32Array([0]),
 		"i32_1": PackedInt32Array([0]),
-		"i64_0": PackedInt64Array([maxi(0, owner_funds - 100000)]),
+		"i64_0": PackedInt64Array([owner_funds]),
 		"i64_1": PackedInt64Array([0]),
 	})
 	_expect("owner cash drain command accepted", bool(drain.get("ok", false)))
@@ -220,12 +233,13 @@ func _run() -> void:
 		day2_paid_total += int(value)
 	for value in day2_base_due:
 		day2_due_total += int(value)
-	_expect("temporary payroll shortfall is repaid from same-cycle sales",
-		day2_paid_total > 100000 and day2_paid_total <= day2_due_total)
-	_expect("temporary payroll shortfall no longer suppresses viable production",
-		int((buildings.last_output as PackedInt64Array)[0]) > 0 and
-		int((buildings.last_resource as PackedInt64Array)[0]) > 0 and
-		int((buildings.last_sold as PackedInt64Array)[0]) > 0)
+	_expect("zero owner cash cannot fund payroll",
+		day2_paid_total == 0 and day2_due_total > 0)
+	var constrained_intent := int(
+		(buildings.purchase_intent_capacity_q16 as PackedInt64Array)[0])
+	_expect("zero owner input funds suppress intent and production",
+		constrained_intent == 0 and
+		int((buildings.last_output as PackedInt64Array)[0]) == 0 and funded_output > 0)
 	_expect("final wage arrears flag matches post-sale payroll",
 		(int((buildings.wage_suspended as PackedByteArray)[0]) != 0) ==
 		(day2_paid_total < day2_due_total))
@@ -235,6 +249,20 @@ func _run() -> void:
 	_expect("treasury transfer is exposed as a settlement source",
 		_cashflow_has_source(drained_pop,
 			_row_for_signature(drained_pop, landlord_sig), "transfer", false))
+	_run_day(ext, 3)
+	var loss_two: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("second severe-loss cycle remains active",
+		int((loss_two.severe_loss_cycles as PackedInt32Array)[0]) == 2 and
+		int((loss_two.operating_state as PackedByteArray)[0]) == 0)
+	_run_day(ext, 4)
+	var suspended: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("third severe-loss cycle suspends the building",
+		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 3 and
+		int((suspended.operating_state as PackedByteArray)[0]) == 1)
+	_expect("loss-suspended building has no jobs intent or output",
+		int((suspended.filled_owner as PackedInt64Array)[0]) == 0 and
+		int((suspended.purchase_intent_capacity_q16 as PackedInt64Array)[0]) == 0 and
+		int((suspended.last_output as PackedInt64Array)[0]) == 0)
 	var country_chunks: Array[PackedByteArray] = []
 	var country_save_begin: Dictionary = ext.begin_country_save(4096)
 	_expect("building PKCN save begins", bool(country_save_begin.get("ok", false)))
@@ -245,7 +273,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v11 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 11)
+	_expect("building v12 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 12)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -272,10 +300,11 @@ func _run() -> void:
 		print("  restored wage snapshot=", restored.get_building_cell_snapshot(0))
 	_expect("building save hash round-trips", restored_hash == source_hash)
 	var restored_buildings: Dictionary = restored.get_building_cell_snapshot(0)
-	_expect("restored mine and jobs remain committed",
+	_expect("restored mine preserves loss suspension and zero jobs",
 		int((restored_buildings.building_counts_by_type as PackedInt64Array)[mine_id]) == 1 and
-		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == int(filled_by_role[0]) and
-		int((restored_buildings.employee_filled as PackedInt64Array)[1]) == int(filled_by_role[1]))
+		int((restored_buildings.operating_state as PackedByteArray)[0]) == 1 and
+		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == 0 and
+		int((restored_buildings.employee_filled as PackedInt64Array)[1]) == 0)
 	print("=== native building runtime %s ===" % ("PASS" if failures == 0 else "FAIL"))
 
 func _test_production_income_consumption_order(catalog: Dictionary, profile: Dictionary) -> void:
@@ -374,6 +403,12 @@ func _good_value(snapshot: Dictionary, column: String, good_id: String) -> int:
 func _good_i32_value(snapshot: Dictionary, column: String, good_id: String) -> int:
 	var index := (snapshot.good_ids as PackedStringArray).find(good_id)
 	return int((snapshot[column] as PackedInt32Array)[index]) if index >= 0 else 0
+
+func _has_positive(values: PackedInt64Array) -> bool:
+	for value in values:
+		if int(value) > 0:
+			return true
+	return false
 
 func _cashflow_total_for_row(snapshot: Dictionary, row: int, income: bool) -> int:
 	if row < 0:

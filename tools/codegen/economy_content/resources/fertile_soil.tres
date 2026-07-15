@@ -47,4 +47,4 @@ climate_temp_tol = 0.45
 climate_moisture_opt = 0.62
 climate_moisture_tol = 0.38
 runtime_climate_fit_weight = 0.7
-decay_stress = 1.8
+decay_stress = 0.5

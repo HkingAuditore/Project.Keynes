@@ -597,7 +597,9 @@ DataCore 经济资源。habitat 外储量为 0。岸上渔业通过建筑资源�
 当前目录含 30 种注册自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
 自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量、牧场容量和肥沃土壤
 是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；林木、渔业和土壤
-沿用线性 IMEX，野生动物启用密度制约生态分支。
+沿用线性 IMEX，野生动物启用密度制约生态分支。`fertile_soil` 的最差适宜度净自然项保持为正，
+其省级面积缩放后的长期储量下限为 5000；`wild_game` 使用 600×100 的理想承载量、1% 日增长、
+正迁入和压力死亡，因此适生地可从零恢复，并能承受测试 bootstrap 每格最多 24 座狩猎营地的长期采收。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
 在 `init_soa_from_bake` 之后、`_setup_sus` bind 之前跑一次（仅 GDScript，无 C++ 副本；运行期不重算）。
@@ -695,6 +697,17 @@ Market V2 固定一地块一市场。周期起点读取温度/湿度/积雪/天�
 variant 的 components 作为互补 bundle 清算，不同 variants 做一次替代 fallback。
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
+
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v3 尾部：`world_ext_economy.cpp`
+先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
+本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
+流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
+分块写入。达到全局行数上限或两个 buffer 同时占用时均在 epoch 边界停止，不产生部分 epoch，
+也不改变 ECONOMY_GRAPH cadence、audit、save 或 hash。
+
+录制范围在 start 时冻结：空 `cell_indices` 使用 `cell_stride`，显式 indices 则排序去重并覆盖
+stride。单地块模式只为该 cell 预留 cohort/building/resource/market 行和贸易流 scratch；全局
+summary 仍每个 commit 输出一行。切换地图选区不会改变正在进行的录制。
 
 输入/输出、定点尺度、账本和存档详见：
 
@@ -2247,10 +2260,11 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
 
 `BuildingProfile → EconomyCatalog CSR → NativeEconomyRuntime BUILDING_GRAPH → committed building/
 population/market snapshots`。岗位按本地 profession 匹配，owner lot 先占 owner job，employee
-需求按 profession 使用稳定 prefix quotient 分配。生产容量取 owner/各 employee role 的最小
-到岗比例，再受输入库存、业主资金和 sample-day 有效 resource reserve 限制。周期开始时仍存活
-人口先参与就业，不以前一周期满足度缩减岗位供给；亏损只作为 owner-lot 诊断与奖金输入，不再
-缩放岗位需求或计划利用率。有效可采储量合入尚未消费的负 pending
+需求按 profession 使用稳定 prefix quotient 分配。采购意图容量取 owner/各 employee role 的最小
+到岗比例，再受业主输入资金和 sample-day 有效 resource reserve 限制；实际产能额外受每项本地
+输入库存限制。周期开始时仍存活人口先参与就业，不以前一周期满足度缩减岗位供给；连续三周期
+严重负利润的 owner-lot 进入 `SUSPENDED_LOSS`，停产时不分配岗位、不采购、不生产、不贡献企业需求。
+有效可采储量合入尚未消费的负 pending
 extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode：`extract` 以有效储量限制产能并
 发布负 delta；`capacity` 以 `reserve / (building_count × requirement)` 限产，但不写资源 delta。
 小麦/玉米等农场走农业 capacity → crop goods，只有真正的采集/采矿/渔业边执行 extract。
@@ -2268,7 +2282,8 @@ employee role 使用 `adaptive/fixed/none` role ABI。adaptive 工资取当地�
 但不追溯停止本期生产。超过目标业主利润的 25% 形成奖金池。
 基础工资和奖金均按本地同职业 `employee_employed` 权重分配，只在 cohort funds 间转账。
 
-每个建筑 owner-lot 同时记录本周期 `last_input_cost`、`last_wages_paid`、`last_wages_due`、
+每个建筑 owner-lot 同时记录权威 `operating_state`、严重亏损/恢复连续数、采购意图容量、实际利润率，
+以及本周期 `last_input_cost`、`last_wages_paid`、`last_wages_due`、
 `last_base_wages_*`、`last_bonus_*`、`wage_suspended`、
 `last_expected_revenue`、`last_operating_cost`、`last_margin_gap_q16`、计划利用率与
 `last_resource_generated`，并与
@@ -2278,8 +2293,9 @@ MapData/DataCore，也不产生全局建筑财务矩阵。
 归一化为“单位/栋/日”；该值反映到岗、库存、资金和资源约束后的实际效率，不展示理论配方。
 
 生产 output 先按 owner 当前消费计划预留可直接满足的单组件 variant 商品，再把余量形成
-cell-local offers，按当前 retail price 降序稳定排序；商人只用正 cohort funds 按 good-specific
-producer factor 付款，成交量进入 MarketStore，未成交量计入 discarded。household market 先用
+cell-local offers。商人按实际出库/出口 EMA 和 target inventory days 计算库存缺口，冻结期初现金并
+保留 25%，按 `缺口 × producer price` 的价值权重及稳定 good/group 顺序采购；库存达到目标时不再
+收购。成交量进入 MarketStore，未成交量计入 discarded。household market 先用
 留用品填充 owner need，不扣资金；未消费余量按来源建筑回记 discarded。所有热循环只访问
 POD/vector/raw scalar，不访问 Godot Object 或 Dictionary。
 
@@ -2290,10 +2306,11 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 
 电力生产者由 output 的 `good_storage_modes=cycle_flow` 判定并在同一 cell 的普通生产前执行。
 家庭需求不消费 cycle-flow 电力。金银 output 由 `good_monetary_issue_values` 进入实物锚定发行
-分支并累计 `bullion_money_issued`；其余 offer 保持价格降序与商人现金封顶规则。merchant owner
+分支并累计 `bullion_money_issued`；其余 offer 走缺口加权预算和商人现金保留规则。merchant owner
 只允许两个无商品投入、无雇员、消耗匹配矿藏且单产金/银的早期 collector。
 
-两相生产完成后，将配方计划投入、实际 offer（含 discarded、排除业主留用）和输出单位成本聚合进稀疏
-`MarketSignalStore`。多输出建筑可配置 Q16 cost shares；未配置时按冻结参考产值稳定分摊。
+两相生产完成后，将受就业/资金/资源约束的可行采购意图、实际 offer（含 discarded、排除业主留用）
+和输出单位成本聚合进稀疏 `MarketSignalStore`；居民消费、企业输入和建设消费另聚合为
+`realized_withdrawal_ema`。多输出建筑可配置 Q16 cost shares；未配置时按冻结参考产值稳定分摊。
 成本单位价包含实际原料、应付合同工资和目标营业利润；生活成本通过 adaptive 合同工资进入，
 不额外重复叠加。这些信号只反馈下一周期 Price V3，不在本周期形成代数环。

@@ -76,6 +76,8 @@ static func compile_native_catalog() -> Dictionary:
 	var need_wealth_elasticity := PackedInt32Array()
 	var need_wealth_min := PackedInt32Array()
 	var need_wealth_max := PackedInt32Array()
+	var need_price_quantity_elasticity := PackedInt32Array()
+	var need_price_quantity_floor := PackedInt32Array()
 	var need_env_curve_ids := PackedInt32Array()
 	var need_variant_offsets := PackedInt32Array([0])
 	var variant_preference := PackedInt32Array()
@@ -92,6 +94,8 @@ static func compile_native_catalog() -> Dictionary:
 				or plan.wealth_elasticity_q16.size() != need_count \
 				or plan.wealth_min_q16.size() != need_count \
 				or plan.wealth_max_q16.size() != need_count \
+				or plan.price_quantity_elasticity_q16.size() != need_count \
+				or plan.price_quantity_floor_q16.size() != need_count \
 				or plan.quantity_env_curve_ids.size() != need_count \
 				or plan.need_variant_offsets.size() != need_count + 1 \
 				or plan.need_variant_offsets[0] != 0:
@@ -123,6 +127,13 @@ static func compile_native_catalog() -> Dictionary:
 			need_wealth_elasticity.append(int(plan.wealth_elasticity_q16[n]))
 			need_wealth_min.append(int(plan.wealth_min_q16[n]))
 			need_wealth_max.append(int(plan.wealth_max_q16[n]))
+			var price_quantity_elasticity := int(plan.price_quantity_elasticity_q16[n])
+			var price_quantity_floor := int(plan.price_quantity_floor_q16[n])
+			if price_quantity_elasticity < 0 or price_quantity_elasticity > Q16_ONE * 4 \
+					or price_quantity_floor < 0 or price_quantity_floor > Q16_ONE:
+				return {"ok": false, "reason": "invalid price quantity response in plan %s" % String(plan.id)}
+			need_price_quantity_elasticity.append(price_quantity_elasticity)
+			need_price_quantity_floor.append(price_quantity_floor)
 			need_env_curve_ids.append(_optional_index(curve_index, String(plan.quantity_env_curve_ids[n])))
 			need_variant_offsets.append(need_variant_offsets[-1] + ve - vb)
 		for v in range(variant_count):
@@ -216,6 +227,8 @@ static func compile_native_catalog() -> Dictionary:
 		"need_wealth_elasticity_q16": need_wealth_elasticity,
 		"need_wealth_min_q16": need_wealth_min,
 		"need_wealth_max_q16": need_wealth_max,
+		"need_price_quantity_elasticity_q16": need_price_quantity_elasticity,
+		"need_price_quantity_floor_q16": need_price_quantity_floor,
 		"need_quantity_env_curve_ids": need_env_curve_ids,
 		"need_variant_offsets": need_variant_offsets,
 		"variant_preference_q16": variant_preference,

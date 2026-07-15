@@ -64,6 +64,8 @@ func _test_default_active_gate(compiled: Dictionary) -> void:
 		catalog, profile.to_native_profile(), 1, 1).get("ok", false)))
 	var boot: Dictionary = ext.bootstrap_economy({}, {})
 	_expect("empty ACTIVE bootstrap succeeds", bool(boot.get("ok", false)))
+	_expect("default domestic trade mode is ACTIVE",
+		String(ext.get_economy_report().get("trade_runtime_mode", "")) == "ACTIVE")
 	_expect("default market cycle is five days", int(boot.get("market_cycle_days", 0)) == 5)
 	_expect("ACTIVE enters production scheduler", bool(ext.economy_should_run(0)) and
 		String(ext.get_economy_report().get("market_runtime_mode", "")) == "ACTIVE")
@@ -231,15 +233,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v11 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 11)
+	_expect("v12 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 12)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v11 save emits chunks", chunks.size() >= 11)
-	_expect("v11 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v12 save emits chunks", chunks.size() >= 11)
+	_expect("v12 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
@@ -270,7 +272,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	for chunk in chunks:
 		_expect("restore chunk accepted", bool(restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
-	_expect("v11 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
+	_expect("v12 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)

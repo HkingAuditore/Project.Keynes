@@ -2,11 +2,14 @@ class_name EconomyTestBootstrap
 extends RefCounted
 
 const GOODS_SCALE := 1000
-const MONEY_SCALE := 10000
+const Q16_ONE := 65536
+const INT64_MAX := 9223372036854775807
 const COLLECTOR_COUNT_CAP := 24
 const EXTRACT_RESERVE_DAYS := 5
 const FOOD_REQUIREMENT_PER_CAPITA := 1300
 const CLOTHING_REQUIREMENT_PER_CAPITA := 4
+const SURVIVAL_FUND_DAYS := 30
+const OWNER_OPERATING_CYCLES := 2
 
 const FOOD_GOOD_IDS := {
 	"prepared_staples": true, "bread": true, "grain": true, "gathered_plants": true,
@@ -37,6 +40,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			}
 		signatures[StringName(profession_id)] = signature
 	var building_ids := facade.building_type_ids()
+	var finance: Dictionary = facade.bootstrap_finance_columns()
 	if building_ids.is_empty():
 		return {"ok": false, "reason": "test_bootstrap_building_catalog_empty"}
 	var building_specs := {}
@@ -155,6 +159,9 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	var building_counts := PackedInt64Array()
 	var generated_professions := {}
 	var placed_building_types := {}
+	var merchant_bootstrap_substitutions := 0
+	var owner_daily_input_cost_by_key := {}
+	var merchant_daily_inventory_value_by_cell := {}
 
 	for cell_idx in passable_cells:
 		var generated_groups: Array = groups_by_cell[cell_idx]
@@ -165,14 +172,31 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		for group in generated_groups:
 			var job_spec: Dictionary = group.spec
 			var count := int(group.count)
+			var owner_signature := facade.signature_id(
+				StringName(job_spec.owner_profession), &"default")
 			_append_building_group(building_cells, building_types, building_owners,
 				building_counts, cell_idx, int(job_spec.type_id),
-				facade.signature_id(StringName(job_spec.owner_profession), &"default"), count)
+				owner_signature, count)
+			var owner_key := "%d:%d" % [cell_idx, owner_signature]
+			owner_daily_input_cost_by_key[owner_key] = int(
+				owner_daily_input_cost_by_key.get(owner_key, 0)) + \
+				_default_input_cost_per_day(job_spec, finance) * count
+			merchant_daily_inventory_value_by_cell[cell_idx] = int(
+				merchant_daily_inventory_value_by_cell.get(cell_idx, 0)) + \
+				_default_output_inventory_value_per_day(job_spec, finance) * count
 			placed_building_types[StringName(job_spec.stable_id)] = true
 
 		var jobs_by_profession := {}
 		for group in generated_groups:
 			_accumulate_building_jobs(group.spec, int(group.count), jobs_by_profession)
+		if int(jobs_by_profession.get(&"merchant", 0)) <= 0:
+			var merchant_source := _largest_nonmerchant_profession(
+				jobs_by_profession, profession_ids)
+			if merchant_source != &"":
+				jobs_by_profession[merchant_source] = \
+					int(jobs_by_profession.get(merchant_source, 0)) - 1
+				jobs_by_profession[&"merchant"] = 1
+				merchant_bootstrap_substitutions += 1
 		var actual_population := 0
 		for profession_id in profession_ids:
 			var profession := StringName(profession_id)
@@ -182,12 +206,42 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			cell_indices.append(cell_idx)
 			signature_ids.append(int(signatures[profession]))
 			populations.append(population)
-			funds.append(population * _money_per_capita(profession) * MONEY_SCALE)
+			funds.append(0)
 			actual_population += population
 			generated_professions[profession] = true
 		if actual_population > 0:
 			populated_cells.append(cell_idx)
 			total_population += actual_population
+
+	var cycle_days := facade.bootstrap_cycle_days(populations.size())
+	var initial_survival_funds := 0
+	var initial_owner_operating_funds := 0
+	var initial_merchant_inventory_funds := 0
+	var survival_funds_by_cohort := PackedInt64Array()
+	var owner_operating_funds_by_cohort := PackedInt64Array()
+	var merchant_inventory_funds_by_cohort := PackedInt64Array()
+	var merchant_signature := int(signatures.get(&"merchant", -1))
+	for cohort in range(populations.size()):
+		var cell_idx := int(cell_indices[cohort])
+		var signature_id := int(signature_ids[cohort])
+		var survival := _sat_mul_nonnegative(_sat_mul_nonnegative(
+			_survival_cost_per_person_per_day(map, cell_idx, signature_id, finance),
+			int(populations[cohort])), SURVIVAL_FUND_DAYS)
+		var owner := _sat_mul_nonnegative(_sat_mul_nonnegative(int(
+			owner_daily_input_cost_by_key.get("%d:%d" % [cell_idx, signature_id], 0)),
+			cycle_days), OWNER_OPERATING_CYCLES)
+		var merchant := int(merchant_daily_inventory_value_by_cell.get(cell_idx, 0)) \
+			if signature_id == merchant_signature else 0
+		funds[cohort] = _sat_add_nonnegative(
+			_sat_add_nonnegative(survival, owner), merchant)
+		survival_funds_by_cohort.append(survival)
+		owner_operating_funds_by_cohort.append(owner)
+		merchant_inventory_funds_by_cohort.append(merchant)
+		initial_survival_funds = _sat_add_nonnegative(initial_survival_funds, survival)
+		initial_owner_operating_funds = _sat_add_nonnegative(
+			initial_owner_operating_funds, owner)
+		initial_merchant_inventory_funds = _sat_add_nonnegative(
+			initial_merchant_inventory_funds, merchant)
 
 	return {
 		"ok": true,
@@ -208,9 +262,19 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"cohort_count": populations.size(),
 		"building_group_count": building_counts.size(),
 		"total_population": total_population,
-		"population_source": "mid_stone_visible_resources_capacity_balanced_unemployed_v6",
+		"population_source": "mid_stone_visible_resources_capacity_balanced_bootstrap_finance_v8",
 		"initial_employment": "unemployed",
 		"initial_stock_units": 0,
+		"bootstrap_cycle_days": cycle_days,
+		"survival_fund_days": SURVIVAL_FUND_DAYS,
+		"owner_operating_cycles": OWNER_OPERATING_CYCLES,
+		"initial_survival_funds": initial_survival_funds,
+		"initial_owner_operating_funds": initial_owner_operating_funds,
+		"initial_merchant_inventory_funds": initial_merchant_inventory_funds,
+		"survival_funds_by_cohort": survival_funds_by_cohort,
+		"owner_operating_funds_by_cohort": owner_operating_funds_by_cohort,
+		"merchant_inventory_funds_by_cohort": merchant_inventory_funds_by_cohort,
+		"merchant_bootstrap_substitutions": merchant_bootstrap_substitutions,
 		"technology_ids": PackedStringArray(MID_STONE_TECHNOLOGY_IDS),
 		"visible_resource_type_count": resource_arrays.size(),
 		"building_type_count": building_ids.size(),
@@ -426,17 +490,204 @@ static func _technology_available(tags: PackedStringArray) -> bool:
 	return true
 
 
-static func _money_per_capita(profession: StringName) -> int:
-	if profession == &"landlord" or profession == &"industrialist":
-		return 500
-	if profession == &"merchant":
-		return 200
-	if profession == &"subsistence_farmer":
-		return 20
-	if profession in [&"artisan", &"chemist", &"electrician", &"engineer", &"machinist",
-			&"metallurgist", &"petroleum_worker", &"technician"]:
-		return 80
-	return 40
+static func _default_input_cost_per_day(spec: Dictionary, finance: Dictionary) -> int:
+	var good_ids: PackedStringArray = finance.get("good_ids", PackedStringArray())
+	var prices: PackedInt32Array = finance.get("good_default_price", PackedInt32Array())
+	var quantities: PackedInt64Array = spec.get("input_quantities", PackedInt64Array())
+	var offsets: PackedInt32Array = spec.get("input_candidate_offsets", PackedInt32Array())
+	var candidates: PackedStringArray = spec.get("input_candidate_good_ids", PackedStringArray())
+	var efficiencies: PackedInt32Array = spec.get(
+		"input_candidate_efficiency_q16", PackedInt32Array())
+	var total := 0
+	for input_idx in range(quantities.size()):
+		if input_idx + 1 >= offsets.size():
+			continue
+		var cheapest := -1
+		for candidate_idx in range(int(offsets[input_idx]), int(offsets[input_idx + 1])):
+			if candidate_idx >= candidates.size() or candidate_idx >= efficiencies.size():
+				continue
+			var good_idx := good_ids.find(String(candidates[candidate_idx]))
+			var efficiency := int(efficiencies[candidate_idx])
+			if good_idx < 0 or good_idx >= prices.size() or efficiency <= 0:
+				continue
+			var physical := (int(quantities[input_idx]) * Q16_ONE + efficiency - 1) / efficiency
+			var cost := physical * int(prices[good_idx]) / GOODS_SCALE
+			if cheapest < 0 or cost < cheapest:
+				cheapest = cost
+		if cheapest > 0:
+			total += cheapest
+	return total
+
+
+static func _default_output_inventory_value_per_day(
+		spec: Dictionary, finance: Dictionary) -> int:
+	var good_ids: PackedStringArray = finance.get("good_ids", PackedStringArray())
+	var prices: PackedInt32Array = finance.get("good_default_price", PackedInt32Array())
+	var target_days: PackedInt32Array = finance.get(
+		"good_target_inventory_days_q16", PackedInt32Array())
+	var buy_factors: PackedInt32Array = finance.get(
+		"good_merchant_buy_factor_q16", PackedInt32Array())
+	var issue_values: PackedInt64Array = finance.get(
+		"good_monetary_issue_values", PackedInt64Array())
+	var outputs: PackedStringArray = spec.get("output_good_ids", PackedStringArray())
+	var quantities: PackedInt64Array = spec.get("output_quantities", PackedInt64Array())
+	var total := 0
+	for output_idx in range(mini(outputs.size(), quantities.size())):
+		var good_idx := good_ids.find(String(outputs[output_idx]))
+		if good_idx < 0 or good_idx >= prices.size() or good_idx >= target_days.size() \
+				or good_idx >= buy_factors.size():
+			continue
+		if good_idx < issue_values.size() and int(issue_values[good_idx]) > 0:
+			continue
+		var target_quantity := int(quantities[output_idx]) * int(target_days[good_idx]) / Q16_ONE
+		var buy_price := int(prices[good_idx]) * int(buy_factors[good_idx]) / Q16_ONE
+		total += target_quantity * buy_price / GOODS_SCALE
+	return total
+
+
+static func _survival_cost_per_person_per_day(
+		map: MapData, cell_idx: int, signature_id: int, finance: Dictionary) -> int:
+	var plan_ids: PackedStringArray = finance.get("plan_ids", PackedStringArray())
+	var plan_id := plan_ids.find(String(finance.get(
+		"living_cost_base_plan_id", "survival_household")))
+	var plan_offsets: PackedInt32Array = finance.get("plan_need_offsets", PackedInt32Array())
+	var signature_ethnicity: PackedInt32Array = finance.get(
+		"signature_ethnicity_ids", PackedInt32Array())
+	if plan_id < 0 or plan_id + 1 >= plan_offsets.size() \
+			or signature_id < 0 or signature_id >= signature_ethnicity.size():
+		return 0
+	var need_ids: PackedStringArray = finance.get("need_ids", PackedStringArray())
+	var living_weights: PackedInt32Array = finance.get(
+		"need_living_cost_weights_q16", PackedInt32Array())
+	var stable_needs: PackedInt32Array = finance.get("need_stable_ids", PackedInt32Array())
+	var base_quantities: PackedInt64Array = finance.get(
+		"need_base_qty_per_person", PackedInt64Array())
+	var need_curves: PackedInt32Array = finance.get(
+		"need_quantity_env_curve_ids", PackedInt32Array())
+	var need_variant_offsets: PackedInt32Array = finance.get(
+		"need_variant_offsets", PackedInt32Array())
+	var preferences: PackedInt32Array = finance.get(
+		"variant_preference_q16", PackedInt32Array())
+	var preference_curves: PackedInt32Array = finance.get(
+		"variant_preference_env_curve_ids", PackedInt32Array())
+	var component_offsets: PackedInt32Array = finance.get(
+		"variant_component_offsets", PackedInt32Array())
+	var component_goods: PackedInt32Array = finance.get(
+		"component_good_ids", PackedInt32Array())
+	var component_quantities: PackedInt64Array = finance.get(
+		"component_qty_per_need", PackedInt64Array())
+	var prices: PackedInt32Array = finance.get("good_default_price", PackedInt32Array())
+	var ethnicity_factors: PackedInt32Array = finance.get(
+		"ethnicity_need_factor_q16", PackedInt32Array())
+	var ethnicity := int(signature_ethnicity[signature_id])
+	var total := 0
+	for need_idx in range(int(plan_offsets[plan_id]), int(plan_offsets[plan_id + 1])):
+		if need_idx >= stable_needs.size() or need_idx >= base_quantities.size() \
+				or need_idx >= need_curves.size() or need_idx + 1 >= need_variant_offsets.size():
+			continue
+		var stable_need := int(stable_needs[need_idx])
+		if stable_need < 0 or stable_need >= living_weights.size():
+			continue
+		var score_sum := 0
+		var weighted_price := 0
+		for variant in range(int(need_variant_offsets[need_idx]),
+				int(need_variant_offsets[need_idx + 1])):
+			if variant >= preferences.size() or variant >= preference_curves.size() \
+					or variant + 1 >= component_offsets.size():
+				continue
+			var unit_price := 0
+			for component in range(int(component_offsets[variant]),
+					int(component_offsets[variant + 1])):
+				if component >= component_goods.size() or component >= component_quantities.size():
+					continue
+				var good_idx := int(component_goods[component])
+				if good_idx >= 0 and good_idx < prices.size():
+					unit_price += int(component_quantities[component]) * int(prices[good_idx]) / GOODS_SCALE
+			var score := int(preferences[variant]) * _sample_environment_curve(
+				finance, int(preference_curves[variant]), map, cell_idx) / Q16_ONE
+			score_sum += maxi(0, score)
+			weighted_price += maxi(1, unit_price) * maxi(0, score)
+		if score_sum <= 0:
+			continue
+		var quantity := int(base_quantities[need_idx]) * int(living_weights[stable_need]) / Q16_ONE
+		quantity = quantity * _sample_environment_curve(
+			finance, int(need_curves[need_idx]), map, cell_idx) / Q16_ONE
+		var factor_index := ethnicity * need_ids.size() + stable_need
+		if factor_index >= 0 and factor_index < ethnicity_factors.size():
+			quantity = quantity * int(ethnicity_factors[factor_index]) / Q16_ONE
+		total += quantity * (weighted_price / score_sum) / GOODS_SCALE
+	return maxi(0, total)
+
+
+static func _sample_environment_curve(
+		finance: Dictionary, curve_id: int, map: MapData, cell_idx: int) -> int:
+	if curve_id < 0:
+		return Q16_ONE
+	var signals: PackedInt32Array = finance.get(
+		"environment_curve_signal_ids", PackedInt32Array())
+	var values: PackedInt32Array = finance.get(
+		"environment_curve_values_q16", PackedInt32Array())
+	if curve_id >= signals.size() or (curve_id + 1) * 17 > values.size():
+		return 0
+	var signal_q16 := _environment_signal_q16(map, cell_idx, int(signals[curve_id]))
+	var scaled := clampi(signal_q16, 0, Q16_ONE) * 16
+	var lo := mini(16, scaled / Q16_ONE)
+	var hi := mini(16, lo + 1)
+	var fraction := scaled - lo * Q16_ONE
+	var begin := curve_id * 17
+	return int(values[begin + lo]) + \
+		(int(values[begin + hi]) - int(values[begin + lo])) * fraction / Q16_ONE
+
+
+static func _environment_signal_q16(map: MapData, cell_idx: int, signal_id: int) -> int:
+	var values: PackedFloat32Array
+	var fallback := 0.0
+	match signal_id:
+		0:
+			values = map.temp_arr
+			fallback = 0.5
+		1:
+			values = map.moisture_arr
+			fallback = 0.5
+		2:
+			values = map.snow_cover_arr
+		3:
+			values = map.weather_intensity_arr
+		_:
+			return 0
+	var value := float(values[cell_idx]) if cell_idx >= 0 and cell_idx < values.size() else fallback
+	if not is_finite(value):
+		value = fallback
+	return clampi(roundi(clampf(value, 0.0, 1.0) * Q16_ONE), 0, Q16_ONE)
+
+
+static func _sat_add_nonnegative(a: int, b: int) -> int:
+	a = maxi(0, a)
+	b = maxi(0, b)
+	return INT64_MAX if a > INT64_MAX - b else a + b
+
+
+static func _sat_mul_nonnegative(a: int, b: int) -> int:
+	a = maxi(0, a)
+	b = maxi(0, b)
+	if a == 0 or b == 0:
+		return 0
+	return INT64_MAX if a > INT64_MAX / b else a * b
+
+
+static func _largest_nonmerchant_profession(jobs: Dictionary,
+		profession_ids: PackedStringArray) -> StringName:
+	var selected := StringName()
+	var selected_population := 0
+	for profession_id in profession_ids:
+		var profession := StringName(profession_id)
+		if profession == &"merchant":
+			continue
+		var population := int(jobs.get(profession, 0))
+		if population > selected_population:
+			selected = profession
+			selected_population = population
+	return selected
 
 
 static func _append_building_group(cells: PackedInt32Array, types: PackedInt32Array,

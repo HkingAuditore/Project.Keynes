@@ -40,11 +40,17 @@ extends Resource
 @export_range(0, 65536, 1) var wage_max_rise_q16_per_day: int = 6554
 @export_range(0, 65536, 1) var wage_max_fall_q16_per_day: int = 1311
 @export_range(0, 65536, 1) var employee_profit_share_q16: int = 16384
+@export_range(-65536, 0, 1) var building_severe_loss_threshold_q16: int = -16384
+@export_range(1, 32, 1) var building_severe_loss_cycles: int = 3
+@export_range(0, 65536, 1) var building_restart_margin_q16: int = 6554
+@export_range(1, 32, 1) var building_restart_cycles: int = 2
+@export_range(0, 65536, 1) var merchant_procurement_cash_reserve_q16: int = 16384
+@export_range(0, 524288, 1) var merchant_market_making_days_q16: int = 65536
 ## Frozen-cycle Market V2 has passed the mobile and 10M-cohort ACTIVE gates.
 @export_enum("OFF", "PROBE", "ACTIVE") var market_runtime_mode: String = "ACTIVE"
 
 ## Domestic cross-cell trade rolls out independently from the local market.
-@export_enum("OFF", "PROBE", "ACTIVE") var trade_runtime_mode: String = "PROBE"
+@export_enum("OFF", "PROBE", "ACTIVE") var trade_runtime_mode: String = "ACTIVE"
 @export_range(1, 2147483647, 1) var trade_capacity_per_merchant_q16: int = 4194304
 @export_range(1, 1000000, 1) var trade_speed_cost_per_day: int = 4
 @export_range(0, 65536, 1) var trade_min_margin_q16: int = 3277
@@ -89,6 +95,12 @@ func to_native_profile() -> Dictionary:
 		"wage_max_rise_q16_per_day": wage_max_rise_q16_per_day,
 		"wage_max_fall_q16_per_day": wage_max_fall_q16_per_day,
 		"employee_profit_share_q16": employee_profit_share_q16,
+		"building_severe_loss_threshold_q16": building_severe_loss_threshold_q16,
+		"building_severe_loss_cycles": building_severe_loss_cycles,
+		"building_restart_margin_q16": building_restart_margin_q16,
+		"building_restart_cycles": building_restart_cycles,
+		"merchant_procurement_cash_reserve_q16": merchant_procurement_cash_reserve_q16,
+		"merchant_market_making_days_q16": merchant_market_making_days_q16,
 		"market_runtime_mode": market_runtime_mode,
 		"trade_runtime_mode": trade_runtime_mode,
 		"trade_capacity_per_merchant_q16": trade_capacity_per_merchant_q16,

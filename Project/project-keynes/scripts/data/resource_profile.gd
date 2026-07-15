@@ -66,7 +66,10 @@
 #   growth_factor    = 1 + ecology_growth_rate * runtime_fit
 #   reserve'         = growth_factor * seeded /
 #                      (1 + (growth_factor - 1) * seeded / runtime_capacity)
-#   reserve'        /= 1 + ecology_stress_mortality_rate * (1 - runtime_fit)
+#   acute_stress     = clamp((0.25 - raw_climate_fit) / 0.25, 0, 1)
+#   reserve'        /= 1 + ecology_stress_mortality_rate * acute_stress
+# Ordinary suboptimal habitat is already represented by the lower carrying
+# capacity; explicit stress mortality is reserved for acutely unsuitable climate.
 # 这是离散 Beverton-Holt 增长：低密度自然恢复，接近承载量时增长趋零，超过承载量
 # 时自然下降；迁入项允许被开采到 0 的适生地缓慢恢复。dt_days 逐日迭代该非线性式，
 # external extra_change 仍只在第一天前应用一次。静态大矿床无法用 float32 表示的小额变化

@@ -31,7 +31,7 @@
 
 Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `res://scenes/world_setup.tscn`，它只挂 `scripts/ui/world_setup.gd`，负责地图尺寸、seed、海平面、大陆数量和若干友好化 climate 控件。点击生成后默认进入 `res://scenes/player_game.tscn`，并通过 meta/settings 把 setup 配置交给 `scripts/game/player_game.gd` / `scripts/game/world_runtime_host.gd`。启动页的「调试场景」按钮仍进入 `res://scenes/main.tscn`，保留旧 debug/runtime lab。
 
-`player_game.gd` 是面向玩家的轻量场景装配层。它连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的精简 GM 性能模式：顶栏按钮、反引号或 F1 打开性能面板，F4 切换 FPS HUD；性能 CSV 与地块 CSV 仍由既有 `PerfRecorder` / `TileDataRecorder` 生成。玩家场景不挂 `DataOverlayLayer`、soak/A-B 或旧 debug lab 的模拟/视觉开关。
+`player_game.gd` 是面向玩家的轻量场景装配层。它连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的精简 GM 性能模式：顶栏按钮、反引号或 F1 打开性能面板，F4 切换 FPS HUD；性能 CSV、地块 CSV 与只读经济 epoch CSV 分别由既有 `PerfRecorder`、`TileDataRecorder` 和 `EconomyDataRecorder` 生成。玩家场景不挂 `DataOverlayLayer`、soak/A-B 或旧 debug lab 的模拟/视觉开关。
 
 `main.gd` 是当前 debug 主场景协调者，仍然很大。它负责：
 
@@ -259,6 +259,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 - `perf_recorder.gd`：fast tick / SUS 运行期性能记录。
 - `tile_data_recorder.gd`：tile CSV 诊断，C++ 可用 `encode_tile_csv_rows()` 加速行编码。
+- `economy_data_recorder.gd`：经济 CSV v3 的薄控制面；可在开始时锁定“全图”或“当前选中地块”。`DCWorldExt` 在成功 commit 且资源 delta 已回写后，把五表 POD 快照交给原生 `EconomyCsvRecorder` 双缓冲，后台线程负责 CSV 编码和写盘。v3 记录企业停产/采购意图/利润率、实际出库/库存目标/采购缺口和商人采购预算。单地块模式保留全局 summary，其余四表按显式 `cell_indices` 过滤；该 recorder 只读 committed 状态，不进入经济权威、PKEC 或 state hash。
 - `world_runtime_host.gd`：玩家场景的诊断数据源；记录 SUS、renderer sync、选中面板 UI patch 和 recorder 墙钟，并向上述 HUD/录制器提供与 debug `main.gd` 同形的只读 getter。
 - `tools/dots_soak_dump.gd`、`tools/dots_soak_ab_runner.gd`：DOTS soak/A-B 相关工具。
 
@@ -306,7 +307,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 启用仅供开发的确定性测试经济 fixture；默认关闭。fixture 先生成当前科技最高可用档的资源适配
 建筑 owner-lot，再从 catalog owner/employee 岗位容量派生 cohort，初始库存与就业保持为零。状态实现位于
 `DCWorldExt` 组合持有的 `NativeEconomyRuntime`：PopulationCohort pages、商人共同
-所有的 MarketStore、need/bundle 清算、国内贸易拓扑/订单/托管、账本、冻结周期 continuation、审计和 PKEC v11
+所有的 MarketStore、企业停产/采购意图/实际出库、need/bundle 清算、国内贸易拓扑/订单/托管、账本、冻结周期 continuation、审计和 PKEC v12
 存档全部在 C++。默认模式是 ACTIVE、固定 5 日周期；设 `market_cycle_days=0` 时才按
 4k/12k/30k cohort slice 自动选择 N。在 N 日内错峰计算并于截止日统一发布；未按时
 完成才冻结日历 catchup。Inspector 的人口/市场页只查询选中 cell 的 committed snapshot；
@@ -352,6 +353,6 @@ DataCore 或 MapData。
 - DataCore mirror: `cell.country_slot` / `MapData.country_slot_arr` only.
 - Economy consumer: narrow native bridge in `economy_runtime.{h,cpp}`; frozen country epoch,
   country/cohort cash transfer, country/market goods transfer, and combined conservation.
-- Persistence: PKCN v1 first, then PKEC v11 with matching schema/generation/hash; v10 migrates with empty trade state.
+- Persistence: PKCN v1 first, then PKEC v12 with matching schema/generation/hash; compatible v11 ACTIVE migrates, while ACTIVE rejects v11 PROBE and v10.
 - Player-facing read path: selected cell → `CountryFacade.cell_summary()` →
   `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.

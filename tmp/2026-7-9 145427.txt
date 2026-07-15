@@ -1,0 +1,502 @@
+0 param: --remote-debug
+1 param: tcp://localhost:6007
+2 param: --xr_mode_regular
+3 param: --xr-mode
+4 param: off
+5 param: --fullscreen
+6 param: --background_color
+7 param: #000000
+ADDING: classes.dex
+ADDING: classes10.dex
+ADDING: classes11.dex
+ADDING: classes12.dex
+ADDING: classes13.dex
+ADDING: classes14.dex
+ADDING: classes2.dex
+ADDING: classes3.dex
+ADDING: classes4.dex
+ADDING: classes5.dex
+ADDING: classes6.dex
+ADDING: classes7.dex
+ADDING: classes8.dex
+ADDING: classes9.dex
+ADDING: lib/arm64-v8a/libc++_shared.so
+ADDING: lib/arm64-v8a/libgodot_android.so
+Adding application metadata org.godotengine.rendering.method
+Adding application metadata org.godotengine.editor.version
+Adding feature android.hardware.vulkan.level
+Adding feature android.hardware.vulkan.version
+Adding permission android.permission.INTERNET
+ADDING: AndroidManifest.xml
+ADDING: res/anim-v21/fragment_fast_out_extra_slow_in.xml
+ADDING: res/animator/fragment_close_enter.xml
+ADDING: res/animator/fragment_close_exit.xml
+ADDING: res/animator/fragment_fade_enter.xml
+ADDING: res/animator/fragment_fade_exit.xml
+ADDING: res/animator/fragment_open_enter.xml
+ADDING: res/animator/fragment_open_exit.xml
+ADDING: res/drawable-hdpi-v4/notification_bg_low_normal.9.png
+ADDING: res/drawable-hdpi-v4/notification_bg_low_pressed.9.png
+ADDING: res/drawable-hdpi-v4/notification_bg_normal.9.png
+ADDING: res/drawable-hdpi-v4/notification_bg_normal_pressed.9.png
+ADDING: res/drawable-hdpi-v4/notify_panel_notification_icon_bg.png
+ADDING: res/drawable-mdpi-v4/notification_bg_low_normal.9.png
+ADDING: res/drawable-mdpi-v4/notification_bg_low_pressed.9.png
+ADDING: res/drawable-mdpi-v4/notification_bg_normal.9.png
+ADDING: res/drawable-mdpi-v4/notification_bg_normal_pressed.9.png
+ADDING: res/drawable-mdpi-v4/notify_panel_notification_icon_bg.png
+ADDING: res/drawable-v21/notification_action_background.xml
+ADDING: res/drawable-v23/compat_splash_screen.xml
+ADDING: res/drawable-v23/compat_splash_screen_no_icon_background.xml
+ADDING: res/drawable-xhdpi-v4/notification_bg_low_normal.9.png
+ADDING: res/drawable-xhdpi-v4/notification_bg_low_pressed.9.png
+ADDING: res/drawable-xhdpi-v4/notification_bg_normal.9.png
+ADDING: res/drawable-xhdpi-v4/notification_bg_normal_pressed.9.png
+ADDING: res/drawable-xhdpi-v4/notify_panel_notification_icon_bg.png
+ADDING: res/drawable/icon_background.xml
+ADDING: res/drawable/notification_bg.xml
+ADDING: res/drawable/notification_bg_low.xml
+ADDING: res/drawable/notification_icon_background.xml
+ADDING: res/drawable/notification_tile_bg.xml
+ADDING: res/layout-v21/notification_action.xml
+ADDING: res/layout-v21/notification_action_tombstone.xml
+ADDING: res/layout-v21/notification_template_custom_big.xml
+ADDING: res/layout-v21/notification_template_icon_group.xml
+ADDING: res/layout/custom_dialog.xml
+ADDING: res/layout/downloading_expansion.xml
+ADDING: res/layout/godot_app_layout.xml
+ADDING: res/layout/notification_template_part_chronometer.xml
+ADDING: res/layout/notification_template_part_time.xml
+ADDING: res/layout/remote_godot_fragment_layout.xml
+ADDING: res/layout/snackbar.xml
+ADDING: res/layout/splash_screen_view.xml
+ADDING: res/layout/status_bar_ongoing_event_progress_bar.xml
+ADDING: res/mipmap-anydpi-v26/icon.xml
+ADDING: res/mipmap-hdpi-v4/icon.webp
+ADDING: res/mipmap-hdpi-v4/icon_background.webp
+ADDING: res/mipmap-hdpi-v4/icon_foreground.webp
+ADDING: res/mipmap-hdpi-v4/icon_monochrome.webp
+ADDING: res/mipmap-mdpi-v4/icon.webp
+ADDING: res/mipmap-mdpi-v4/icon_background.webp
+ADDING: res/mipmap-mdpi-v4/icon_foreground.webp
+ADDING: res/mipmap-mdpi-v4/icon_monochrome.webp
+ADDING: res/mipmap-xhdpi-v4/icon.webp
+ADDING: res/mipmap-xhdpi-v4/icon_background.webp
+ADDING: res/mipmap-xhdpi-v4/icon_foreground.webp
+ADDING: res/mipmap-xhdpi-v4/icon_monochrome.webp
+ADDING: res/mipmap-xxhdpi-v4/icon.webp
+ADDING: res/mipmap-xxhdpi-v4/icon_background.webp
+ADDING: res/mipmap-xxhdpi-v4/icon_foreground.webp
+ADDING: res/mipmap-xxhdpi-v4/icon_monochrome.webp
+ADDING: res/mipmap-xxxhdpi-v4/icon.webp
+ADDING: res/mipmap-xxxhdpi-v4/icon_background.webp
+ADDING: res/mipmap-xxxhdpi-v4/icon_foreground.webp
+ADDING: res/mipmap-xxxhdpi-v4/icon_monochrome.webp
+ADDING: res/mipmap/icon.webp
+ADDING: res/mipmap/icon_background.webp
+ADDING: res/mipmap/icon_foreground.webp
+ADDING: res/mipmap/icon_monochrome.webp
+ADDING: res/xml/godot_provider_paths.xml
+ADDING: resources.arsc
+ADDING: DebugProbesKt.bin
+ADDING: kotlin/annotation/annotation.kotlin_builtins
+ADDING: kotlin/collections/collections.kotlin_builtins
+ADDING: kotlin/concurrent/atomics/atomics.kotlin_builtins
+ADDING: kotlin/coroutines/coroutines.kotlin_builtins
+ADDING: kotlin/internal/internal.kotlin_builtins
+ADDING: kotlin/kotlin.kotlin_builtins
+ADDING: kotlin/ranges/ranges.kotlin_builtins
+ADDING: kotlin/reflect/reflect.kotlin_builtins
+Signing binary using: 
+C:/Users/hkinghuang/AppData/Local/Android/Sdk/build-tools/35.0.0/apksigner.bat sign --verbose --ks <REDACTED> --ks-pass pass:<REDACTED> --ks-key-alias <REDACTED> C:/Users/hkinghuang/AppData/Local/Temp/tmpexport.1783579952.apk
+Signed
+
+Installing to device (please wait...): Xiaomi 24129PN74C
+--- Debugging over USB ---
+--- DEBUGGING OVER USB ---
+Reverse result: 0
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+Vulkan 1.3.284 - Forward Mobile - Using Device #0: Qualcomm - Adreno (TM) 830
+
+[mobile/safe-area] TopBar safe rect + horizontal scroll + buttons minimum 72x56
+[mobile/debug-overlay] 60 FPS 调查面板挂载完成（默认收起，Tools 展开）
+[WorldSetup] ClimateProfile path=res://data/world/earth_like.tres mobile=true split_weather=true wind_period=6 native_stride=20 native_budget=20 natres_stride=10 dyn_visual_stride=8 weather_advect_steps=2
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=6400 native_ms=43.676 water=1597 land=4803
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=6400 native_ms=5.154 lakes=260 rivers=473 volcanoes=7
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=6 largest=878 | land_below_sea=0.1% | terr_distinct=26 entropy=3.975bit | river_ratio=7.391%
+MapGenerator v7: per-cell 299ms (6400 cells, path=gdext_base)
+MapBaker v6: hm=(512, 288) seed=2163706863
+[splash] bake stage=terrain fraction=0.00
+    [fused] terrain=322.3ms erosion=2.8ms(ok=true) river=19.0ms(ok=true) latitude=0.0ms coast_sdf=2.1ms(ok=true)
+  geometry fields (fused C++): 399ms
+[splash] bake stage=physical fraction=0.62
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[splash] bake stage=atlas fraction=0.82
+[splash] bake stage=encode fraction=0.88
+  encode: 1558ms
+MapBaker v6: total 1957ms
+[splash] bake stage=done fraction=1.00
+MapGenerator v7: bake 2099ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 88 components bound (auto-registered=88; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=6400
+[native_generation] path=gdext n=6400 published=9 native_ms=0.233 compute_ms=0.157 flush_ms=0.075
+[hex_cell] facade ENABLED (6400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.99ms wind=1.39ms psi=0.74ms(ran=true) upwelling=0.29ms total=5.86ms
+PhysicalCirculation solve@phase=1.50 total=7ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 7ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload"]
+[main] view adapter rebuilt: kind=World | DCViewAdapter.World(n=6400, components=87, src=map_data)
+[detail_scatter/REBUILD] reason=renderer_rebuild layers=3 total_rebuild_ms=1370.95 total_inst=1621 total_cand=1560 budget={ "total_instances": 1621, "budget": 9000, "visible_fraction": 1.0, "layer_count": 3 }
+  [detail_scatter/TOP1] name=GrassLayer rebuild=480.88ms path=gdext_chunked inst=800 cand=765 wrap=35 reason=
+  [detail_scatter/TOP2] name=ShrubLayer1 rebuild=472.49ms path=gdext_chunked inst=750 cand=728 wrap=22 reason=
+  [detail_scatter/TOP3] name=TreeLayer2 rebuild=417.57ms path=gdext_chunked inst=71 cand=67 wrap=4 reason=
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[DIAG pass_a_entry] day=0 phase=0.001 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=6400
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=38400, got nb_size=38400)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15031
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.7129 n_cells=6400 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.71ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=6400 nb=38400)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15022
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.1789 n=6400 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.18ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=6400 nb=38400)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15023
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0759 n=6400 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.08ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=38400, got neighbor_indices.size()=38400)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15034
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.1432 n_cells=6400 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.14ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.14ms (water=1412, flipped=0, phase=0.001)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.953 avg=0.432 | water n=1412 t_min_w=0.000 below_form=783 (55.5%) | SIF pos=753 max=0.400 avg_w=0.1333 near_thr=284 | climate_anom=0.000
+[sea_ice/slow-dump] tick=0 path=gdext total_wall=7.43ms (pack=0.01 refresh=0.00 native=0.14 native_wall=0.25 sync=0.47 flip=0.03) water=1412 flipped=0
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=38400, got neighbor_indices.size()=38400)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15036
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.1451 donor_table.size()=28 n_cells=6400 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.15ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 505ms (cells=6400, phase=0.001) | A=6.5 B=4.6 ocean=10.5 wind=473.0 sea_ice=7.5 ice_bake=0.0 transp=3.5 path=data_core_cells_only
+=== World baked in 3184ms ===
+  OCEAN: 652
+  COAST: 584
+  TUNDRA: 714
+  GLACIER: 160
+  TAIGA: 335
+  FLOODPLAIN: 516
+  DELTA: 7
+  STEPPE: 678
+  KELP: 73
+  SWAMP: 38
+  FOREST: 263
+  GRASSLAND: 195
+  MOUNTAIN: 415
+  BADLANDS: 717
+  CHAPARRAL: 78
+  DESERT: 102
+  MESA: 35
+  OASIS: 67
+  REEF: 103
+  SNOW: 5
+  MANGROVE: 3
+  JUNGLE: 217
+  SAVANNA: 186
+  SALT_FLAT: 5
+  LAKE: 251
+  COLD_DESERT: 1
+[weather-layer/quality] prepended #define MOBILE_QUALITY_LOW to res://shaders/weather_overlay.gdshader
+[hex_renderer/quality] prepended #define MOBILE_QUALITY_LOW to res://shaders/world_map.gdshader
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[DOTS-Final-Push] (no profile bound)
+[weather-layer][lut] #1 update_usec=37669082 last_usec=37669082 lerp=0.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #2 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #3 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #4 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #5 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #6 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #7 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #8 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #9 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #10 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #11 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather-layer][lut] #12 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=6400
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+fast tick #1: 14ms (sus=14.04 render=0.01 ui=0.00 skipped_day=false)
+[clock/step] delta=16.7ms speed=1x target=0.02d ran=0 loop=0.00ms proc=0.51ms carry=0.74
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=1946 isw_mis=0 terrain_written=true isw_written=false
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #13 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=1451 isw_mis=0 terrain_written=true isw_written=false
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=16.7ms speed=1x target=0.02d ran=0 loop=0.00ms proc=0.29ms carry=0.73
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=280 isw_mis=0 terrain_written=true isw_written=false
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.238 slp_out=6400 n_cells=6400 map_slp=6400 published=false
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.238 slp_out=6400 n=6400 published=false -> commit_ok
+[weather-layer][lut] #14 update_usec=37669082 last_usec=37669082 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.214 slp_out=6400 n_cells=6400 map_slp=6400 published=false
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.214 slp_out=6400 n=6400 published=false -> commit_ok
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[day/seg] full=10.19ms label=0.04 season_phase=0.01 fast=10 post=0.13 skipped=false
+[clock/step] delta=16.4ms speed=50x target=0.82d ran=1 loop=10.22ms proc=10.34ms carry=0.14
+[natural_resource/slow-dump] tick=10 day=10 wall=2.64 cpp=2.117 compute=2.039 loop=1.662 flush=0.298 wrapper=0.492 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=4255.32754
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#8 tick=11 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#3: rc=0.211 slp_out=6400 n_cells=6400 map_slp=6400 published=false
+[slp_field][RT-DIAG] call#3 phase=0.0438 rc=0.211 slp_out=6400 n=6400 published=false -> commit_ok
+[slp_field][RT-DIAG] call#4 phase=0.0438 rc=0.164 slp_out=6400 n=6400 published=false -> commit_ok
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=518 isw_mis=0 terrain_written=true isw_written=false
+[native_daily/slow-dump] tick=19 day=19 sample=19 commit=-1 age=0/20 over=false state=active stage=climate_pass_a/climate_pass_a_struct node=climate_pass_a/climate_pass_a_struct cursor=0-1 cells=-1--1/0 done=false progress=0.05 wall=6.80 shell=7.07 shell_gap=0.27 bundle=4.84 jit=0.00 keys=[] native_call=1.86 cpp=1.75 compute=0.00 refresh=0.11 flush=0.00 apply=0.09 round=1.75 weather=0.00 prebuilt=true path=gdext_native_daily_slice
+[slp_field][RT-DIAG] call#5 phase=0.0438 rc=0.146 slp_out=6400 n=6400 published=false -> commit_ok
+[slp_field] gdext path ACTIVE — first run elapsed=1.79ms (legacy GDScript baseline ~36ms; target < 3ms)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=56 isw_mis=0 terrain_written=true isw_written=false
+[weather/slow-dump] tick=35 path=gdext_native_daily_slice tick_ms=6.36 (adv=4.94 spawn=0.00 dist=0.55 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=0
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver] gdext path ACTIVE — first run elapsed=0.54ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+[psi_solver] commit-diag call#1: rc=0.539 n_water=838 n_cells=6400 published=true
+[upwelling/DIAG#1] gate: prof=true pflag_attr=true pflag_val=true ext=true method=true wind_cpp=true idx=true -> cpp_gate=true
+[upwelling/DIAG#1] cpp-call: ret_type=27 fallback=false reason='' elapsed_native_ms=0.019
+[upwelling/DIAG#1] BREAKDOWN: T1_nb_pack=0.00ms T2_knobs=0.01ms T3_refresh_slots=0.13ms T4_cpp_call=0.04ms (n=6400)
+[weather-layer][lut] #15 update_usec=50280592 last_usec=50280592 lerp=0.473 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=28 isw_mis=0 terrain_written=true isw_written=false
+[native_daily/slow-dump] tick=55 day=55 sample=39 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=10.05 shell=10.40 shell_gap=0.35 bundle=0.00 jit=0.01 keys=[] native_call=9.05 cpp=8.92 compute=15.47 refresh=0.13 flush=0.00 apply=1.00 round=19.58 weather=8.17 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=55 field=6.07 commit=0.97 commit_loop=0.97 dist=0.69 summary=0.41 cyclone=0.02 stage_b=0.00 adv=6.07 fronts=12 active=1.000 lut_dirty=6400 conv_dirty=6373
+[hex-renderer] set_weather_fronts(n=4) layer=WeatherLayer
+[natural_resource/slow-dump] tick=70 day=70 wall=3.62 cpp=3.500 compute=3.468 loop=2.839 flush=0.338 wrapper=0.068 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1497.04550
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=18 isw_mis=0 terrain_written=true isw_written=false
+[weather/slow-dump] tick=75 path=gdext_native_daily_slice tick_ms=6.77 (adv=5.15 spawn=0.00 dist=0.70 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[phys_solve][RT] start#2 phase=0.8285 pending=nan solve_ocean=false ext=true idx=true soa=true
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=24 isw_mis=0 terrain_written=true isw_written=false
+[native_daily/slow-dump] tick=96 day=96 sample=79 commit=-1 age=17/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=5.01 shell=5.28 shell_gap=0.27 bundle=0.00 jit=0.00 keys=[] native_call=4.35 cpp=4.27 compute=10.77 refresh=0.11 flush=0.00 apply=0.66 round=13.97 weather=3.84 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=96 field=2.66 commit=0.28 commit_loop=0.28 dist=0.49 summary=0.39 cyclone=0.02 stage_b=0.00 adv=2.66 fronts=12 active=1.000 lut_dirty=6400 conv_dirty=6318
+[day/seg] full=5.45ms label=0.06 season_phase=0.02 fast=5 post=0.36 skipped=false
+[clock/step] delta=18.8ms speed=50x target=0.94d ran=1 loop=5.52ms proc=5.63ms carry=0.08
+[psi_solver] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver] commit-diag call#2: rc=0.700 n_water=770 n_cells=6400 published=true
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=326 isw_mis=0 terrain_written=true isw_written=false
+[weather/slow-dump] tick=117 path=gdext_native_daily_slice tick_ms=8.04 (adv=6.35 spawn=0.00 dist=0.65 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=430 isw_mis=0 terrain_written=true isw_written=false
+[native_daily/slow-dump] tick=139 day=139 sample=123 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=8.33 shell=8.68 shell_gap=0.35 bundle=0.00 jit=0.01 keys=[] native_call=7.35 cpp=7.22 compute=14.38 refresh=0.12 flush=0.00 apply=0.98 round=18.35 weather=6.58 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=139 field=4.70 commit=0.42 commit_loop=0.42 dist=0.73 summary=0.69 cyclone=0.05 stage_b=0.00 adv=4.70 fronts=12 active=1.000 lut_dirty=6400 conv_dirty=6322
+[weather-layer][lut] #16 update_usec=52439310 last_usec=52439310 lerp=0.186 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[phys_solve][RT] start#3 phase=1.6139 pending=nan solve_ocean=false ext=true idx=true soa=true
+[natural_resource/slow-dump] tick=150 day=150 wall=2.27 cpp=2.166 compute=2.127 loop=1.632 flush=0.193 wrapper=0.069 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1373.22653
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=52 isw_mis=0 terrain_written=true isw_written=false
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=15 isw_mis=0 terrain_written=true isw_written=false
+[weather/slow-dump] tick=179 path=gdext_native_daily_slice tick_ms=7.60 (adv=5.56 spawn=0.00 dist=0.76 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[native_daily/slow-dump] tick=179 day=179 sample=163 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=10.65 shell=11.02 shell_gap=0.37 bundle=0.00 jit=0.01 keys=[] native_call=8.45 cpp=8.32 compute=14.45 refresh=0.09 flush=0.00 apply=2.20 round=17.74 weather=7.60 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=179 field=5.56 commit=0.43 commit_loop=0.43 dist=0.76 summary=0.82 cyclone=0.03 stage_b=0.00 adv=5.56 fronts=12 active=1.000 lut_dirty=6399 conv_dirty=6345
+[psi_solver] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver] commit-diag call#3: rc=1.905 n_water=817 n_cells=6400 published=true
+[natural_resource/slow-dump] tick=210 day=210 wall=1.76 cpp=1.686 compute=1.665 loop=1.415 flush=0.186 wrapper=0.045 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1321.33493
+[weather/slow-dump] tick=219 path=gdext_native_daily_slice tick_ms=5.89 (adv=4.43 spawn=0.00 dist=0.54 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[native_daily/slow-dump] tick=219 day=219 sample=203 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=8.30 shell=8.55 shell_gap=0.26 bundle=0.00 jit=0.01 keys=[] native_call=6.52 cpp=6.43 compute=13.24 refresh=0.09 flush=0.00 apply=1.77 round=16.58 weather=5.89 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=219 field=4.43 commit=0.34 commit_loop=0.34 dist=0.54 summary=0.57 cyclone=0.02 stage_b=0.00 adv=4.43 fronts=12 active=1.000 lut_dirty=6397 conv_dirty=6319
+[phys_solve][RT] start#4 phase=2.4059 pending=nan solve_ocean=false ext=true idx=true soa=true
+[day/seg] full=15.73ms label=0.07 season_phase=0.03 fast=16 post=-0.37 skipped=false
+[clock/step] delta=16.8ms speed=50x target=0.84d ran=1 loop=15.82ms proc=15.94ms carry=0.05
+[weather-layer][lut] #17 update_usec=54536034 last_usec=54536034 lerp=0.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather/slow-dump] tick=259 path=gdext_native_daily_slice tick_ms=8.44 (adv=5.97 spawn=0.00 dist=1.02 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[native_daily/slow-dump] tick=259 day=259 sample=243 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=12.76 shell=13.24 shell_gap=0.48 bundle=0.00 jit=0.01 keys=[] native_call=9.53 cpp=9.34 compute=14.95 refresh=0.12 flush=0.00 apply=3.23 round=18.68 weather=8.44 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=259 field=5.97 commit=0.46 commit_loop=0.46 dist=1.02 summary=0.96 cyclone=0.03 stage_b=0.00 adv=5.97 fronts=12 active=0.996 lut_dirty=6372 conv_dirty=6297
+[natural_resource/slow-dump] tick=270 day=270 wall=2.67 cpp=2.570 compute=2.537 loop=2.222 flush=0.260 wrapper=0.062 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1282.49921
+[phys_solve][RT] start#5 phase=3.1935 pending=nan solve_ocean=false ext=true idx=true soa=true
+[native_daily/slow-dump] tick=298 day=298 sample=285 commit=-1 age=13/20 over=false state=active stage=wind_surface/wind_surface_knobs node=wind_surface/wind_surface_knobs cursor=4-6 cells=-1--1/0 done=false progress=0.29 wall=5.53 shell=6.09 shell_gap=0.56 bundle=0.07 jit=0.07 keys=["wind_air_knobs", "wind_surface_knobs"] native_call=3.73 cpp=3.51 compute=8.73 refresh=0.08 flush=0.00 apply=1.73 round=11.70 weather=0.00 prebuilt=true path=gdext_native_daily_slice
+[SUS-cpp] last 300 ticks: season_refresh ran=300 avg=0.09ms p95=0.14ms max=2.29ms slices=300
+[SUS-cpp] last 300 ticks: natural_resource_daily ran=30 avg=2.3ms p95=3.84ms max=3.98ms slices=30 skipped[policy_gated=270]
+[SUS-cpp] last 300 ticks: enum_atlas_upload ran=38 avg=0.26ms p95=0.57ms max=3.27ms slices=38 skipped[policy_gated=262]
+[SUS-cpp] last 300 ticks: ocean_currents ran=100 avg=3.1ms p95=6.9ms max=7.91ms slices=100 skipped[policy_gated=200]
+[SUS-cpp] last 300 ticks: native_daily_sim ran=293 avg=2.8ms p95=7.93ms max=13.63ms slices=293 skipped[frame_budget_exhausted=4,policy_gated=3]
+[SUS-cpp] last 300 ticks: dynamic_visual_atlas_upload ran=38 avg=1.4ms p95=2.25ms max=2.45ms slices=38 skipped[policy_gated=228,frame_budget_exhausted=34]
+[SUS-cpp] budget last 300 ticks: total_p95=9.58ms max=13.73ms over_1ms=222 largest=native_daily_sim/weather_stage_b/weather_knobs path=gdext_native_daily_slice 13.6ms
+[SUS-cpp] world: bound=true entities=6400 components=87 pools=1
+[weather/slow-dump] tick=321 path=gdext_native_daily_slice tick_ms=5.14 (adv=3.47 spawn=0.00 dist=0.61 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[natural_resource/slow-dump] tick=330 day=330 wall=3.44 cpp=3.320 compute=3.269 loop=2.863 flush=0.191 wrapper=0.084 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1255.92265
+[day/seg] full=4.70ms label=0.04 season_phase=0.02 fast=5 post=-0.36 skipped=false
+[clock/step] delta=21.3ms speed=50x target=1.06d ran=1 loop=4.75ms proc=4.83ms carry=0.23
+[weather-layer][lut] #18 update_usec=56298523 last_usec=56298523 lerp=0.568 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[native_daily/slow-dump] tick=338 day=338 sample=325 commit=-1 age=13/20 over=false state=active stage=wind_surface/wind_surface_knobs node=wind_surface/wind_surface_knobs cursor=4-6 cells=-1--1/0 done=false progress=0.29 wall=5.39 shell=5.81 shell_gap=0.42 bundle=0.07 jit=0.07 keys=["wind_air_knobs", "wind_surface_knobs"] native_call=3.63 cpp=3.41 compute=7.86 refresh=0.13 flush=0.00 apply=1.69 round=11.06 weather=0.00 prebuilt=true path=gdext_native_daily_slice
+[weather/slow-dump] tick=363 path=gdext_native_daily_slice tick_ms=6.06 (adv=4.19 spawn=0.00 dist=0.56 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[phys_solve][RT] start#6 phase=3.9868 pending=nan solve_ocean=false ext=true idx=true soa=true
+fast tick #365: 3ms (sus=2.97 render=0.01 ui=0.00 skipped_day=false)
+Yearly refresh 21ms
+[native_daily/slow-dump] tick=369 day=369 sample=367 commit=-1 age=2/20 over=false state=active stage=ocean_water/ocean_water_knobs node=ocean_water/ocean_water_knobs cursor=2-2 cells=0-1067/6400 done=false progress=0.10 wall=5.39 shell=5.74 shell_gap=0.35 bundle=3.66 jit=3.66 keys=["ocean_water_knobs", "ocean_land_knobs"] native_call=0.58 cpp=0.46 compute=0.98 refresh=0.25 flush=0.00 apply=1.14 round=3.27 weather=0.00 prebuilt=true path=gdext_native_daily_slice
+[natural_resource/slow-dump] tick=390 day=390 wall=3.46 cpp=3.312 compute=3.271 loop=2.864 flush=0.338 wrapper=0.088 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1250.47729
+[native_daily/slow-dump] tick=403 day=403 sample=389 commit=-1 age=14/20 over=false state=active stage=wind_surface/wind_surface_knobs node=wind_surface/wind_surface_knobs cursor=4-6 cells=-1--1/0 done=false progress=0.29 wall=5.63 shell=6.09 shell_gap=0.46 bundle=0.05 jit=0.05 keys=["wind_air_knobs", "wind_surface_knobs"] native_call=3.99 cpp=3.76 compute=9.89 refresh=0.10 flush=0.00 apply=1.59 round=12.54 weather=0.00 prebuilt=true path=gdext_native_daily_slice
+[weather/slow-dump] tick=406 path=gdext_native_daily_slice tick_ms=7.23 (adv=4.92 spawn=0.00 dist=0.74 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[weather-layer][lut] #19 update_usec=57696064 last_usec=57696064 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[clock/step] delta=15.0ms speed=20x target=0.30d ran=0 loop=0.00ms proc=0.22ms carry=0.64
+[native_daily/slow-dump] tick=435 day=435 sample=435 commit=-1 age=0/20 over=false state=active stage=climate_pass_a/climate_pass_a_struct node=climate_pass_a/climate_pass_a_struct cursor=0-1 cells=-1--1/0 done=false progress=0.05 wall=10.72 shell=11.12 shell_gap=0.39 bundle=7.04 jit=0.00 keys=[] native_call=3.47 cpp=3.31 compute=0.00 refresh=0.17 flush=0.00 apply=0.22 round=3.31 weather=0.00 prebuilt=true path=gdext_native_daily_slice
+[phys_solve][RT] start#7 phase=0.7780 pending=nan solve_ocean=false ext=true idx=true soa=true
+[day/seg] full=11.46ms label=0.13 season_phase=0.05 fast=11 post=0.28 skipped=false
+[clock/step] delta=15.3ms speed=20x target=0.31d ran=1 loop=11.57ms proc=11.72ms carry=0.18
+[weather-layer][lut] #20 update_usec=59914688 last_usec=59914688 lerp=0.826 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[natural_resource/slow-dump] tick=450 day=450 wall=2.96 cpp=2.828 compute=2.787 loop=2.203 flush=0.353 wrapper=0.081 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1181.71541
+[weather/slow-dump] tick=454 path=gdext_native_daily_slice tick_ms=10.06 (adv=7.17 spawn=0.00 dist=1.06 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[native_daily/slow-dump] tick=475 day=475 sample=459 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=9.64 shell=9.99 shell_gap=0.35 bundle=0.00 jit=0.01 keys=[] native_call=8.62 cpp=8.49 compute=18.30 refresh=0.18 flush=0.00 apply=1.02 round=24.10 weather=7.69 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=475 field=5.67 commit=0.47 commit_loop=0.47 dist=0.73 summary=0.81 cyclone=0.02 stage_b=0.00 adv=5.67 fronts=12 active=0.996 lut_dirty=6375 conv_dirty=6248
+[weather-layer][lut] #21 update_usec=62171348 last_usec=62171348 lerp=0.433 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[clock/step] delta=16.7ms speed=20x target=0.33d ran=0 loop=0.00ms proc=0.23ms carry=0.65
+[weather/slow-dump] tick=497 path=gdext_native_daily_slice tick_ms=8.37 (adv=6.44 spawn=0.00 dist=0.71 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[phys_solve][RT] start#8 phase=1.5669 pending=nan solve_ocean=false ext=true idx=true soa=true
+[natural_resource/slow-dump] tick=510 day=510 wall=4.13 cpp=4.003 compute=3.952 loop=3.575 flush=0.221 wrapper=0.087 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1145.52534
+[native_daily/slow-dump] tick=521 day=521 sample=503 commit=-1 age=18/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=10.55 shell=10.90 shell_gap=0.35 bundle=0.00 jit=0.02 keys=[] native_call=9.51 cpp=9.38 compute=17.72 refresh=0.14 flush=0.00 apply=1.04 round=22.38 weather=8.52 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=521 field=6.33 commit=0.48 commit_loop=0.48 dist=0.84 summary=0.85 cyclone=0.03 stage_b=0.00 adv=6.33 fronts=12 active=1.000 lut_dirty=6400 conv_dirty=6331
+[clock/step] delta=15.3ms speed=20x target=0.31d ran=0 loop=0.00ms proc=0.28ms carry=0.75
+[weather-layer][lut] #22 update_usec=64459456 last_usec=64459456 lerp=0.123 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[weather/slow-dump] tick=541 path=gdext_native_daily_slice tick_ms=6.95 (adv=4.48 spawn=0.00 dist=0.73 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[native_daily/slow-dump] tick=561 day=561 sample=545 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=10.74 shell=11.11 shell_gap=0.37 bundle=0.00 jit=0.02 keys=[] native_call=9.70 cpp=9.57 compute=16.99 refresh=0.14 flush=0.00 apply=1.04 round=21.27 weather=8.65 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=561 field=6.03 commit=0.46 commit_loop=0.46 dist=0.73 summary=1.40 cyclone=0.03 stage_b=0.00 adv=6.03 fronts=12 active=1.000 lut_dirty=6398 conv_dirty=6315
+[weather-layer][lut] #23 update_usec=66463062 last_usec=66463062 lerp=0.152 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[day/seg] full=10.89ms label=0.13 season_phase=0.10 fast=10 post=0.67 skipped=false
+[clock/step] delta=22.2ms speed=20x target=0.44d ran=1 loop=10.97ms proc=11.10ms carry=0.43
+[natural_resource/slow-dump] tick=570 day=570 wall=2.24 cpp=2.143 compute=2.118 loop=1.832 flush=0.194 wrapper=0.057 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1125.18807
+[phys_solve][RT] start#9 phase=2.3560 pending=nan solve_ocean=false ext=true idx=true soa=true
+[weather/slow-dump] tick=581 path=gdext_native_daily_slice tick_ms=7.09 (adv=4.56 spawn=0.00 dist=0.74 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[SUS-cpp] last 300 ticks: season_refresh ran=300 avg=0.1ms p95=0.16ms max=0.31ms slices=300
+[SUS-cpp] last 300 ticks: natural_resource_daily ran=30 avg=3.18ms p95=4.62ms max=5.13ms slices=30 skipped[policy_gated=270]
+[SUS-cpp] last 300 ticks: enum_atlas_upload ran=37 avg=0.2ms p95=0.56ms max=0.56ms slices=37 skipped[policy_gated=263]
+[SUS-cpp] last 300 ticks: ocean_currents ran=100 avg=3.93ms p95=8.86ms max=10.77ms slices=100 skipped[policy_gated=200]
+[SUS-cpp] last 300 ticks: native_daily_sim ran=278 avg=3.4ms p95=9.69ms max=15.51ms slices=278 skipped[frame_budget_exhausted=17,policy_gated=5]
+[SUS-cpp] last 300 ticks: dynamic_visual_atlas_upload ran=37 avg=1.65ms p95=2.32ms max=2.85ms slices=37 skipped[policy_gated=216,frame_budget_exhausted=47]
+[SUS-cpp] budget last 300 ticks: total_p95=10.94ms max=15.66ms over_1ms=262 largest=native_daily_sim/weather_stage_b/weather_knobs path=gdext_native_daily_slice 15.47ms
+[SUS-cpp] world: bound=true entities=6400 components=87 pools=1
+[native_daily/slow-dump] tick=603 day=603 sample=585 commit=-1 age=18/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=8.87 shell=9.18 shell_gap=0.31 bundle=0.00 jit=0.01 keys=[] native_call=7.87 cpp=7.71 compute=15.84 refresh=0.14 flush=0.00 apply=1.00 round=20.14 weather=7.09 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=603 field=4.58 commit=0.46 commit_loop=0.46 dist=0.76 summary=1.27 cyclone=0.03 stage_b=0.00 adv=4.58 fronts=12 active=1.000 lut_dirty=6397 conv_dirty=6308
+[weather-layer][lut] #24 update_usec=68576272 last_usec=68576272 lerp=0.043 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[day/seg] full=15.10ms label=0.19 season_phase=0.05 fast=14 post=0.85 skipped=false
+[clock/step] delta=15.3ms speed=20x target=0.31d ran=1 loop=15.18ms proc=15.29ms carry=0.12
+[weather/slow-dump] tick=623 path=gdext_native_daily_slice tick_ms=8.80 (adv=6.52 spawn=0.00 dist=0.73 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[natural_resource/slow-dump] tick=630 day=630 wall=2.32 cpp=2.190 compute=2.083 loop=1.825 flush=0.192 wrapper=0.086 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1090.56142
+[native_daily/slow-dump] tick=643 day=643 sample=627 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=8.44 shell=8.74 shell_gap=0.30 bundle=0.00 jit=0.01 keys=[] native_call=7.41 cpp=7.27 compute=15.38 refresh=0.18 flush=0.00 apply=1.03 round=20.18 weather=6.66 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=643 field=4.66 commit=0.47 commit_loop=0.47 dist=0.73 summary=0.78 cyclone=0.02 stage_b=0.00 adv=4.66 fronts=12 active=0.997 lut_dirty=6381 conv_dirty=6303
+[clock/step] delta=22.2ms speed=20x target=0.44d ran=0 loop=0.00ms proc=0.10ms carry=0.67
+[weather-layer][lut] #25 update_usec=70570508 last_usec=70570508 lerp=0.052 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[phys_solve][RT] start#10 phase=3.1450 pending=nan solve_ocean=false ext=true idx=true soa=true
+[weather/slow-dump] tick=663 path=gdext_native_daily_slice tick_ms=5.61 (adv=3.80 spawn=0.00 dist=0.76 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[native_daily/slow-dump] tick=683 day=683 sample=667 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=5.25 shell=5.46 shell_gap=0.22 bundle=0.00 jit=0.01 keys=[] native_call=4.65 cpp=4.56 compute=12.66 refresh=0.14 flush=0.00 apply=0.60 round=16.91 weather=4.12 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=683 field=2.96 commit=0.28 commit_loop=0.28 dist=0.44 summary=0.42 cyclone=0.02 stage_b=0.00 adv=2.96 fronts=12 active=0.999 lut_dirty=6394 conv_dirty=6327
+[weather-layer][lut] #26 update_usec=72563269 last_usec=72563269 lerp=0.060 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[clock/step] delta=14.4ms speed=20x target=0.29d ran=0 loop=0.00ms proc=0.26ms carry=0.70
+[natural_resource/slow-dump] tick=690 day=690 wall=2.67 cpp=2.553 compute=2.522 loop=2.200 flush=0.265 wrapper=0.067 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1068.25535
+[weather/slow-dump] tick=704 path=gdext_native_daily_slice tick_ms=6.04 (adv=4.23 spawn=0.00 dist=0.64 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[clock/step] delta=14.6ms speed=20x target=0.29d ran=0 loop=0.00ms proc=0.11ms carry=0.56
+[phys_solve][RT] start#11 phase=3.9326 pending=nan solve_ocean=false ext=true idx=true soa=true
+[native_daily/slow-dump] tick=725 day=725 sample=709 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=8.88 shell=9.24 shell_gap=0.36 bundle=0.00 jit=0.02 keys=[] native_call=7.80 cpp=7.67 compute=15.81 refresh=0.13 flush=0.00 apply=1.09 round=20.44 weather=6.71 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=725 field=4.39 commit=0.48 commit_loop=0.48 dist=0.75 summary=1.05 cyclone=0.03 stage_b=0.00 adv=4.39 fronts=12 active=1.000 lut_dirty=6400 conv_dirty=6330
+[weather-layer][lut] #27 update_usec=73618488 last_usec=73618488 lerp=0.984 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+fast tick #730: 13ms (sus=13.03 render=0.01 ui=0.00 skipped_day=false)
+Yearly refresh 18ms
+[weather/slow-dump] tick=746 path=gdext_native_daily_slice tick_ms=8.03 (adv=5.65 spawn=0.00 dist=0.76 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[natural_resource/slow-dump] tick=750 day=750 wall=4.48 cpp=4.285 compute=4.234 loop=3.677 flush=0.462 wrapper=0.116 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1065.38313
+[native_daily/slow-dump] tick=767 day=767 sample=751 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=9.83 shell=10.10 shell_gap=0.28 bundle=0.00 jit=0.01 keys=[] native_call=8.77 cpp=8.61 compute=16.28 refresh=0.13 flush=0.00 apply=1.05 round=20.54 weather=7.74 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=767 field=4.55 commit=0.54 commit_loop=0.54 dist=0.88 summary=1.75 cyclone=0.03 stage_b=0.00 adv=4.55 fronts=12 active=1.000 lut_dirty=6400 conv_dirty=6276
+[weather-layer][lut] #28 update_usec=75704138 last_usec=75704138 lerp=0.895 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[clock/step] delta=13.9ms speed=20x target=0.28d ran=0 loop=0.00ms proc=0.09ms carry=0.35
+[weather/slow-dump] tick=788 path=gdext_native_daily_slice tick_ms=6.69 (adv=4.53 spawn=0.00 dist=0.78 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[phys_solve][RT] start#12 phase=0.7226 pending=nan solve_ocean=false ext=true idx=true soa=true
+[day/seg] full=6.12ms label=0.07 season_phase=0.02 fast=6 post=0.03 skipped=false
+[clock/step] delta=13.9ms speed=20x target=0.28d ran=1 loop=6.24ms proc=6.36ms carry=0.03
+[weather-layer][lut] #29 update_usec=77818443 last_usec=77818443 lerp=0.776 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[native_daily/slow-dump] tick=809 day=809 sample=793 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=12.82 shell=13.22 shell_gap=0.40 bundle=0.00 jit=0.01 keys=[] native_call=11.84 cpp=11.70 compute=20.74 refresh=0.13 flush=0.00 apply=0.98 round=25.43 weather=10.96 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=809 field=8.54 commit=0.49 commit_loop=0.49 dist=0.63 summary=1.28 cyclone=0.02 stage_b=0.00 adv=8.54 fronts=12 active=0.998 lut_dirty=6384 conv_dirty=6269
+[weather/slow-dump] tick=831 path=gdext_native_daily_slice tick_ms=11.00 (adv=7.53 spawn=0.00 dist=1.10 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[natural_resource/slow-dump] tick=840 day=840 wall=2.73 cpp=2.605 compute=2.572 loop=2.224 flush=0.272 wrapper=0.077 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=1000.06508
+[sea-ice/probe] cell=HexCell(19,44,-63) terrain=FLOODPLAIN river=false frac_cpu=0.0000 biome=29 sea ice visual source moved to dyn_lut.a; per-pixel probe retired
+[weather-layer][lut] #30 update_usec=79984765 last_usec=79984765 lerp=0.612 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[clock/step] delta=24.1ms speed=20x target=0.48d ran=0 loop=0.00ms proc=0.09ms carry=0.62
+[native_daily/slow-dump] tick=852 day=852 sample=835 commit=-1 age=17/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=5.32 shell=5.57 shell_gap=0.25 bundle=0.00 jit=0.01 keys=[] native_call=4.64 cpp=4.55 compute=15.46 refresh=0.13 flush=0.00 apply=0.67 round=22.15 weather=4.12 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=852 field=2.77 commit=0.31 commit_loop=0.31 dist=0.51 summary=0.52 cyclone=0.02 stage_b=0.00 adv=2.77 fronts=12 active=0.999 lut_dirty=6395 conv_dirty=6304
+[sea-ice/probe] cell=HexCell(17,44,-61) terrain=FOREST river=false frac_cpu=0.0000 biome=4 sea ice visual source moved to dyn_lut.a; per-pixel probe retired
+[phys_solve][RT] start#13 phase=1.5094 pending=nan solve_ocean=false ext=true idx=true soa=true
+[weather/slow-dump] tick=873 path=gdext_native_daily_slice tick_ms=6.56 (adv=4.62 spawn=0.00 dist=0.72 cyc=0.03 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[weather-layer][lut] #31 update_usec=82061706 last_usec=82061706 lerp=0.548 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[day/seg] full=10.67ms label=0.12 season_phase=0.05 fast=10 post=0.50 skipped=false
+[clock/step] delta=24.5ms speed=20x target=0.49d ran=1 loop=10.75ms proc=10.87ms carry=0.03
+[native_daily/slow-dump] tick=893 day=893 sample=877 commit=-1 age=16/20 over=false state=active stage=weather_stage_b/weather_knobs node=weather_stage_b/weather_knobs cursor=12-19 cells=-1--1/0 done=false progress=0.90 wall=11.21 shell=11.56 shell_gap=0.35 bundle=0.00 jit=0.02 keys=[] native_call=10.15 cpp=10.01 compute=19.79 refresh=0.14 flush=0.00 apply=1.05 round=24.51 weather=9.17 prebuilt=true path=gdext_native_daily_slice
+[native_daily/slow-dump/weather] tick=893 field=7.18 commit=0.45 commit_loop=0.45 dist=0.72 summary=0.79 cyclone=0.02 stage_b=0.00 adv=7.18 fronts=12 active=1.000 lut_dirty=6400 conv_dirty=6314
+[natural_resource/slow-dump] tick=900 day=900 wall=1.55 cpp=1.466 compute=1.444 loop=1.250 flush=0.149 wrapper=0.055 layout=cell_range_fused_seq_dt dispatches=0 resources=9/12 skipped_static=3 published=true total_delta=979.29498
+[SUS-cpp] last 300 ticks: season_refresh ran=300 avg=0.11ms p95=0.15ms max=0.22ms slices=300
+[SUS-cpp] last 300 ticks: natural_resource_daily ran=30 avg=2.72ms p95=4.11ms max=4.82ms slices=30 skipped[policy_gated=270]
+[SUS-cpp] last 300 ticks: enum_atlas_upload ran=38 avg=0.26ms p95=0.88ms max=1.06ms slices=38 skipped[policy_gated=262]
+[SUS-cpp] last 300 ticks: ocean_currents ran=100 avg=3.69ms p95=7.25ms max=8.63ms slices=100 skipped[policy_gated=200]
+[SUS-cpp] last 300 ticks: native_daily_sim ran=290 avg=3.54ms p95=9.47ms max=16.26ms slices=290 skipped[frame_budget_exhausted=7,policy_gated=3]
+[SUS-cpp] last 300 ticks: dynamic_visual_atlas_upload ran=38 avg=1.59ms p95=2.36ms max=2.36ms slices=38 skipped[policy_gated=212,frame_budget_exhausted=50]
+[SUS-cpp] budget last 300 ticks: total_p95=10.4ms max=16.32ms over_1ms=278 largest=native_daily_sim/weather_stage_b/weather_knobs path=gdext_native_daily_slice 16.22ms
+[SUS-cpp] world: bound=true entities=6400 components=87 pools=1
+[weather/slow-dump] tick=913 path=gdext_native_daily_slice tick_ms=7.89 (adv=5.64 spawn=0.00 dist=0.65 cyc=0.02 stage_b=0.00 albedo=0.00 veg_dyn=0.00 feedback=0.00 cover_rb=0.00 veg_rb=0.00) fronts=12
+[weather-layer][lut] #32 update_usec=84075424 last_usec=84075424 lerp=0.549 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[phys_solve][RT] start#14 phase=2.2986 pending=nan solve_ocean=false ext=true idx=true soa=true
+[clock/step] delta=27.8ms speed=20x target=0.56d ran=0 loop=0.00ms proc=0.07ms carry=0.92
+[weather-layer][lut] #33 update_usec=86160708 last_usec=86160708 lerp=0.467 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[clock/step] delta=23.3ms speed=20x target=0.47d ran=0 loop=0.00ms proc=0.12ms carry=0.95
+[weather-layer][lut] #34 update_usec=88163629 last_usec=88163629 lerp=0.472 prev_tex=true curr_tex=true dims=(2048, 4) visible=true
+[phys_solve][RT] start#15 phase=3.0881 pending=nan solve_ocean=false ext=true idx=true soa=true
+[clock/step] delta=27.8ms speed=20x target=0.56d ran=0 loop=0.00ms proc=0.10ms carry=0.62
+--- Debugging process stopped ---

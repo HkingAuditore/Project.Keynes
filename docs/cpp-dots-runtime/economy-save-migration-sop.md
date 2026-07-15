@@ -51,8 +51,8 @@ restore 要先配置并完整恢复 PKCN v1，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v11，并与 PKCN v1 交叉绑定。v10 使用兼容 catalog hash 读取并迁移为
-空在途订单、空托管、空贸易 EMA；拓扑和未完成规划从不存档，加载后重建。PKEC v2-v9 缺少国家权威状态，读取时
+当前写出 schema 为 PKEC v12，并与 PKCN v1 交叉绑定。参数一致的 v11 ACTIVE 可迁移；
+ACTIVE 配置拒绝 v11 PROBE 和 v10。拓扑和未完成规划从不存档，加载后重建。PKEC v2-v9 缺少国家权威状态，读取时
 精确返回 `legacy_countryless_economy_save_unsupported`；不再通过默认国家、全解锁科技或全局
 国库静默迁移。联合存档只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
 
@@ -62,7 +62,7 @@ restore 要先配置并完整恢复 PKCN v1，再用当前资源 catalog 调 `co
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v11 与 PKCN v1 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。
+当前 PKEC v12 与 PKCN v1 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。
 未来新增/删除/改 ID 若要兼容，必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
 迁移器应：
@@ -161,8 +161,7 @@ event/delta ring。详细历史通过独立 PKEJ v1 chunk stream 归档；读入
 142-good/174-building/32-profession 跨时代目录的 good/building/profession/need、升级族与档位、
 存储模式、货币锚、劳动岗位与 Price V3 参数均进入 catalog hash。2026-07-14 的服务/轨道链删除、
 自给升级族与核燃料链改变了稳定目录；旧目录存档会以明确的 catalog mismatch 拒绝恢复，本期不做
-跨目录库存、signature 或建筑 type remap。PKEC 仍为 v11，因为 owner-lot 与各 section 的字节布局
-未变。周期流电力在 committed boundary 恒为零，发行累计只通过已提交 cohort
+跨目录库存、signature 或建筑 type remap。周期流电力在 committed boundary 恒为零，发行累计只通过已提交 cohort
 funds/market stock 与 audit history 体现，不新增独立持久账户。
 
 # PKEC v7 自适应价格与建筑经济计划迁移
@@ -187,3 +186,16 @@ job-days 与支付率；END 移至 section 10，header 追加 labor signal count
 v7 restore 使用 role reference wage 初始化合同工资，劳动市场信号在下一冻结周期重建。
 编译器同时发布排除 v8 新目录列的 v7-compatible market/building hash。v8 round-trip
 必须保持 group、role、LaborMarketStore 和其 CSR offsets 的完整 state hash。
+
+# PKEC v12 企业停产、库存目标与实际出库迁移
+
+v12 header 在 v11 贸易参数后追加严重亏损阈值/周期、恢复阈值/周期、商人现金保留率和冷启动
+做市天数。BUILDINGS 记录追加 `purchase_intent_capacity_q16`、`realized_profit_margin_q16`、
+`severe_loss_cycles`、`recovery_cycles` 与 `operating_state`；MARKET SIGNALS 记录追加
+`realized_withdrawal_ema`。这些字段均参与权威 state hash。
+
+v11 ACTIVE 迁移把新增企业字段初始化为 ACTIVE/0，并把实际出库 EMA 初始化为 0；只有当前六项
+策略参数等于 v12 默认值时允许迁移。v11 PROBE 在 ACTIVE 配置下以
+`save_trade_profile_mismatch` 拒绝；v10 在 ACTIVE 配置下以
+`active_trade_rejects_v10_economy_save` 拒绝。v12 round-trip 必须保存停产连续数、采购意图和
+实际出库历史，避免加载后企业或商人预算发生无提示跳变。

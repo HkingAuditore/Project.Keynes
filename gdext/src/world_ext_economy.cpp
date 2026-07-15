@@ -1,6 +1,7 @@
 #include "world_ext.h"
 
 #include "economy_runtime.h"
+#include "economy_csv_recorder.h"
 #include "country_runtime.h"
 
 #include <algorithm>
@@ -53,6 +54,8 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
             Dictionary(), all_land);
         if (!static_cast<bool>(bootstrapped.get("ok", false))) return bootstrapped;
     }
+    if (_economy_csv_recorder != nullptr)
+        static_cast<EconomyCsvRecorder *>(_economy_csv_recorder)->request_stop();
     if (_economy_runtime == nullptr) _economy_runtime = new NativeEconomyRuntime();
     runtime_from(_economy_runtime)->attach_country_runtime(
         static_cast<NativeCountryRuntime *>(_country_runtime));
@@ -259,6 +262,29 @@ Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
         result["building_resource_delta_cells"] = changed;
         result["published_to_slot"] = changed > 0;
     }
+    // The recorder observes only a fully published epoch. Resource slots have
+    // already received building deltas above, so all five tables share one
+    // committed boundary.
+    if (_economy_csv_recorder != nullptr) {
+        EconomyCsvRecorder *recorder =
+            static_cast<EconomyCsvRecorder *>(_economy_csv_recorder);
+        if (recorder->wants_capture()) {
+            std::vector<const float *> resource_arrays;
+            resource_arrays.reserve(recorder->resource_slot_ids().size());
+            for (int32_t sid : recorder->resource_slot_ids()) {
+                const bool valid = sid >= 0 && sid < _slots.size() &&
+                    _slots[sid].dtype == SlotDType::F32 &&
+                    _slots[sid].arr_f32.size() == recorder->configured_cell_count();
+                resource_arrays.push_back(valid ? _slots[sid].arr_f32.ptr() : nullptr);
+            }
+            std::string capture_reason;
+            const bool captured = recorder->capture_committed(
+                *runtime, resource_arrays, capture_reason);
+            result["economy_csv_captured"] = captured;
+            if (!capture_reason.empty())
+                result["economy_csv_capture_reason"] = String(capture_reason.c_str());
+        }
+    }
     const int64_t newest_event_id = static_cast<int64_t>(
         result.get("economy_event_newest_id", int64_t{0}));
     if (static_cast<bool>(result.get("done", false)) &&
@@ -446,6 +472,8 @@ int64_t DCWorldExt::get_economy_state_hash() const {
 }
 
 Dictionary DCWorldExt::reset_economy(const String &reason) {
+    if (_economy_csv_recorder != nullptr)
+        static_cast<EconomyCsvRecorder *>(_economy_csv_recorder)->request_stop();
     if (_economy_runtime == nullptr) {
         Dictionary out;
         out["ok"] = true;
@@ -454,6 +482,88 @@ Dictionary DCWorldExt::reset_economy(const String &reason) {
     }
     _economy_last_notified_event_id = 0;
     return runtime_from(_economy_runtime)->reset(reason);
+}
+
+Dictionary DCWorldExt::start_economy_csv_recording(const Dictionary &config) {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["error_code"] = "economy_unavailable";
+        return out;
+    }
+    EconomyCsvRecorder::Config native;
+    native.enabled[EconomyCsvRecorder::SUMMARY] = config.get("record_summary", true);
+    native.enabled[EconomyCsvRecorder::COHORTS] = config.get("record_cohorts", true);
+    native.enabled[EconomyCsvRecorder::BUILDINGS] = config.get("record_buildings", true);
+    native.enabled[EconomyCsvRecorder::RESOURCES] = config.get("record_resources", true);
+    native.enabled[EconomyCsvRecorder::MARKET] = config.get("record_market", true);
+    native.cell_stride = static_cast<int32_t>(config.get("cell_stride", 1));
+    native.max_rows = static_cast<int64_t>(config.get("max_rows", int64_t{5'000'000}));
+    native.test_write_delay_ms = std::clamp<int32_t>(
+        static_cast<int32_t>(config.get("test_write_delay_ms", 0)), 0, 5000);
+    native.test_fail_after_bytes = std::max<int64_t>(
+        -1, static_cast<int64_t>(config.get("test_fail_after_bytes", int64_t{-1})));
+
+    auto copy_i32 = [](const PackedInt32Array &src, std::vector<int32_t> &dst) {
+        dst.resize(static_cast<size_t>(src.size()));
+        if (src.size() > 0) std::copy(src.ptr(), src.ptr() + src.size(), dst.begin());
+    };
+    copy_i32(config.get("q_arr", PackedInt32Array()), native.q);
+    copy_i32(config.get("r_arr", PackedInt32Array()), native.r);
+    copy_i32(config.get("s_arr", PackedInt32Array()), native.s);
+    copy_i32(config.get("cell_indices", PackedInt32Array()), native.cell_indices);
+    copy_i32(config.get("resource_slot_ids", PackedInt32Array()), native.resource_slot_ids);
+
+    const PackedStringArray resource_ids = config.get("resource_ids", PackedStringArray());
+    for (int64_t i = 0; i < resource_ids.size(); ++i) {
+        const auto bytes = String(resource_ids[i]).utf8();
+        native.resource_ids.emplace_back(bytes.get_data(), static_cast<size_t>(bytes.length()));
+    }
+    const Dictionary paths = config.get("paths", Dictionary());
+    static constexpr const char *keys[EconomyCsvRecorder::DIM_COUNT] = {
+        "summary", "cohorts", "buildings", "resources", "market"
+    };
+    for (int32_t dim = 0; dim < EconomyCsvRecorder::DIM_COUNT; ++dim) {
+        const String path = paths.get(keys[dim], String());
+        const auto bytes = path.utf8();
+        native.paths[dim].assign(bytes.get_data(), static_cast<size_t>(bytes.length()));
+    }
+
+    if (_economy_csv_recorder == nullptr)
+        _economy_csv_recorder = new EconomyCsvRecorder();
+    std::string error;
+    EconomyCsvRecorder *recorder =
+        static_cast<EconomyCsvRecorder *>(_economy_csv_recorder);
+    const bool ok = recorder->start(native, *runtime_from(_economy_runtime), error);
+    out = recorder->status();
+    out["ok"] = ok;
+    if (!ok && !error.empty()) out["error_message"] = String(error.c_str());
+    return out;
+}
+
+Dictionary DCWorldExt::request_stop_economy_csv_recording() {
+    if (_economy_csv_recorder == nullptr) return get_economy_csv_recording_status();
+    EconomyCsvRecorder *recorder =
+        static_cast<EconomyCsvRecorder *>(_economy_csv_recorder);
+    recorder->request_stop();
+    return recorder->status();
+}
+
+Dictionary DCWorldExt::get_economy_csv_recording_status() const {
+    if (_economy_csv_recorder != nullptr)
+        return static_cast<EconomyCsvRecorder *>(_economy_csv_recorder)->status();
+    Dictionary out;
+    out["state"] = "idle";
+    out["schema_version"] = EconomyCsvRecorder::SCHEMA_VERSION;
+    out["recording"] = false;
+    out["draining"] = false;
+    out["captured_epochs"] = 0;
+    out["written_epochs"] = 0;
+    out["captured_rows"] = 0;
+    out["written_rows"] = 0;
+    out["bytes_written"] = 0;
+    out["paths"] = PackedStringArray();
+    return out;
 }
 
 Dictionary DCWorldExt::begin_economy_save(int chunk_bytes) {

@@ -43,6 +43,7 @@ func _connect_signals() -> void:
 	_runtime_host.world_generation_failed.connect(_on_world_generation_failed)
 	_runtime_host.generation_progress.connect(_ui_manager.set_generation_progress)
 	_map_interaction.cell_selected.connect(_selection.select_cell)
+	_selection.selection_changed.connect(_runtime_host.set_selected_cell)
 	_ui_manager.fit_requested.connect(_on_fit_requested)
 	_ui_manager.regenerate_requested.connect(_on_regenerate_requested)
 	_ui_manager.setup_requested.connect(_return_to_world_setup)

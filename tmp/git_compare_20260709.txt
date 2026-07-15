@@ -1,0 +1,37 @@
+================================================================================
+Git 更新前对比报告  (工作区 vs origin/master,  基于正确 blob 哈希)
+本地 HEAD=a5efc27  远程 HEAD=60c3cb0
+================================================================================
+重叠文件:23   仅远程改:2
+
+work vs 远程       HEAD      远程        工作区        文件
+--------------------------------------------------------------------------------
+已含最新(无冲突)        af5bb194  ec859762  ec859762   Project/project-keynes/addons/dots_ext/bin/android/libdots_ext.android.template_release.arm64.so
+已含最新(无冲突)        cf517bf2  049c9939  049c9939   Project/project-keynes/addons/dots_ext/bin/windows/dots_ext.windows.template_debug.x86_64.dll
+已含最新(无冲突)        017b72a3  887b3d51  887b3d51   Project/project-keynes/addons/dots_ext/bin/windows/dots_ext.windows.template_debug.x86_64.exp
+已含最新(无冲突)        3b0bf8c8  71a998a7  71a998a7   Project/project-keynes/addons/dots_ext/bin/windows/dots_ext.windows.template_debug.x86_64.lib
+已含最新(无冲突)        39f09f72  57515f8d  57515f8d   Project/project-keynes/addons/dots_ext/bin/windows/dots_ext.windows.template_release.x86_64.dll
+已含最新(无冲突)        47fe8c08  fc93ccd7  fc93ccd7   Project/project-keynes/addons/dots_ext/bin/windows/dots_ext.windows.template_release.x86_64.exp
+已含最新(无冲突)        00098b6d  35ea5244  35ea5244   Project/project-keynes/addons/dots_ext/bin/windows/dots_ext.windows.template_release.x86_64.lib
+已含最新(无冲突)        0340e9fc  cc9af07b  cc9af07b   Project/project-keynes/data/README.md
+已含最新(无冲突)        9393aac7  2a3b61dd  2a3b61dd   Project/project-keynes/data/world/earth_like.tres
+已含最新(无冲突)        bc08d6a4  b099d3ad  b099d3ad   Project/project-keynes/data/world/earth_like_mobile_complex.tres
+已含最新(无冲突)        2a76a599  6b2989bb  6b2989bb   Project/project-keynes/scripts/data/climate_profile.gd
+已含最新(无冲突)        af656600  7c759d01  7c759d01   Project/project-keynes/scripts/geography/map_generator.gd
+已含最新(无冲突)        c646fdf3  2cc3438b  2cc3438b   Project/project-keynes/scripts/main.gd
+已含最新(无冲突)        a6a82d82  53b2003b  53b2003b   Project/project-keynes/scripts/simulation/sus/jobs/native_daily_sim_job.gd
+已含最新(无冲突)        7ae29a7c  1f26c8cb  1f26c8cb   Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd
+已含最新(无冲突)        9a0b13b9  f73ff8be  f73ff8be   Project/project-keynes/scripts/ui/debug_console.gd
+已含最新(无冲突)        62bc4d49  fb5e0907  fb5e0907   Project/project-keynes/scripts/ui/perf_recorder.gd
+已含最新(无冲突)        3f548d3d  134755be  134755be   Project/project-keynes/scripts/ui/tile_data_recorder.gd
+已含最新(无冲突)        a3c1246b  a292dda8  a292dda8   Project/project-keynes/shaders/world_map.gdshader
+已含最新(无冲突)        6b327502  c14f0dbe  c14f0dbe   docs/cpp-dots-runtime/computation-pipelines.md
+已含最新(无冲突)        3c41e2a8  dd3d609c  dd3d609c   docs/cpp-dots-runtime/performance-diagnostics-playbook.md
+已含最新(无冲突)        7a650343  8231ef28  8231ef28   docs/cpp-dots-runtime/scheduling-and-job-graph.md
+已含最新(无冲突)        b4979437  2b4b1c36  2b4b1c36   gdext/src/sus_scheduler_ext.h
+
+结论: 工作区已==远程(无需处理)=23   真正会冲突/需合并=0
+
+仅远程改(本地未动, pull 会直接带入):
+  + Project/project-keynes/addons/dots_ext/bin/android/libdots_ext.android.template_debug.arm64.so
+  + Project/project-keynes/addons/dots_ext/bin/windows/~dots_ext.windows.template_debug.x86_64.dll
