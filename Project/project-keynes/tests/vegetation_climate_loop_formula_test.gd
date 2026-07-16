@@ -25,8 +25,11 @@ func _run() -> void:
 	_test_weather_resistance_reduces_stress()
 	_test_weather_pressure_write_gate()
 	_test_succession_min_gain()
+	_test_rainforest_threshold_alignment()
+	_test_native_cadence_day_scale()
 	_test_low_vitality_damping()
 	_test_succession_reset_and_cooldown()
+	_test_succession_candidate_publish()
 	_finish()
 
 
@@ -79,6 +82,33 @@ func _test_succession_min_gain() -> void:
 	_expect("small/no compat gain blocks succession", not eligible)
 
 
+func _test_rainforest_threshold_alignment() -> void:
+	var profile = VegetationProfileRegistry.get_profile(
+		int(VegetationType.VEG.TROPICAL_RAINFOREST))
+	var lower_non_drought_bound: float = float(profile.ideal_moist) - float(profile.moist_tolerance)
+	var observed_compat: float = VegetationType.climate_compat_score(
+		int(VegetationType.VEG.TROPICAL_RAINFOREST), 0.78, 0.52)
+	_expect("generated rainforest threshold is not born in acute drought",
+		lower_non_drought_bound <= 0.50)
+	_expect("observed warm humid rainforest remains ecologically viable",
+		observed_compat >= 0.25)
+
+
+func _test_native_cadence_day_scale() -> void:
+	var map := MapData.new(1, 1)
+	map.set_cell(HexCell.new(0, 0))
+	map._build_indices()
+	map.init_soa_from_bake()
+	var generator := MapGenerator.new()
+	var stage_b_stride_calls: int = int(_cp.weather_vegetation_dynamics_stride)
+	var knobs: Dictionary = generator._build_native_daily_stage_b_knobs(
+		map, _cp, stage_b_stride_calls, 10.0)
+	_expect("native vegetation cadence accumulates real game days",
+		is_equal_approx(float(knobs.get("day_scale", 0.0)),
+			float(stage_b_stride_calls) * 10.0) and
+		int(knobs.get("streak_days", 0)) == stage_b_stride_calls * 10)
+
+
 func _test_low_vitality_damping() -> void:
 	var normal_drop: float = 0.30 - _vitality_step(0.30, 0.0, 1.0)
 	var low_drop: float = 0.10 - _vitality_step(0.10, 0.0, 1.0)
@@ -92,6 +122,34 @@ func _test_succession_reset_and_cooldown() -> void:
 	_expect("upgrade reset target remains conservative", is_equal_approx(upgraded_vitality, 0.7))
 	_expect("succession cooldown stores negative streak days", _cooldown_streak_after_change() == -int(_cp.vegetation_succession_cooldown_days))
 	_expect("cooldown advances toward zero", _advance_cooldown(-30, 10) == -20)
+
+
+func _test_succession_candidate_publish() -> void:
+	var map := MapData.new(1, 1)
+	var cell := HexCell.new(0, 0)
+	cell.vegetation = int(VegetationType.VEG.TROPICAL_RAINFOREST)
+	cell.base_vegetation = int(VegetationType.VEG.TROPICAL_RAINFOREST)
+	cell.vegetation_vitality = 0.20
+	map.set_cell(cell)
+	map._build_indices()
+	map.init_soa_from_bake()
+	var generator := MapGenerator.new()
+	var applied: int = generator._apply_vegetation_succession_candidates(
+		map,
+		PackedInt32Array([0]),
+		PackedByteArray([int(VegetationType.VEG.TROPICAL_DRY_FOREST)]),
+		_cp)
+	_expect("native succession candidate is applied", applied == 1)
+	_expect("succession publishes vegetation to cell and map SoA",
+		int(cell.vegetation) == int(VegetationType.VEG.TROPICAL_DRY_FOREST) and
+		int(map.vegetation_arr[0]) == int(VegetationType.VEG.TROPICAL_DRY_FOREST))
+	_expect("succession publishes base vegetation and visible state",
+		int(cell.base_vegetation) == int(VegetationType.VEG.TROPICAL_DRY_FOREST) and
+		int(map.base_vegetation_arr[0]) == int(VegetationType.VEG.TROPICAL_DRY_FOREST) and
+		int(cell.current_state.get("vegetation", -1)) == int(VegetationType.VEG.TROPICAL_DRY_FOREST))
+	_expect("succession resets vitality softly and starts cooldown",
+		cell.vegetation_vitality > 0.20 and cell._vitality_low_streak < 0 and
+		cell._vitality_high_streak < 0)
 
 
 func _plant_water(base_moisture: float, water_balance_30d: float, soil_moisture: float) -> float:

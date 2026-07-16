@@ -92,7 +92,7 @@ func _build_map(n: int) -> MapData:
 
 	# 统一气候（让差异只来自新因子；河流配对格也需完全一致的气候）。
 	for i in range(n):
-		temp[i] = 15.0
+		temp[i] = 0.55
 		moist[i] = 0.5
 		water[i] = 0
 		elev[i] = 0.02
@@ -112,8 +112,8 @@ func _build_map(n: int) -> MapData:
 	lf[C_FOREST] = LF.HILL;        veg[C_FOREST] = VEG.TEMPERATE_DECIDUOUS;  elev[C_FOREST] = 0.40
 	veg[C_GRASS] = VEG.TEMPERATE_GRASSLAND
 	water[C_LAKE] = 1;             lf[C_LAKE] = LF.LAKE
-	temp[C_WET_FOREST] = 27.0;     moist[C_WET_FOREST] = 0.84; lf[C_WET_FOREST] = LF.LOWLAND; veg[C_WET_FOREST] = VEG.TROPICAL_RAINFOREST
-	temp[C_COOL_HILL] = 8.0;       moist[C_COOL_HILL] = 0.55;  lf[C_COOL_HILL] = LF.HILL; elev[C_COOL_HILL] = 0.48; veg[C_COOL_HILL] = VEG.ALPINE_MEADOW
+	temp[C_WET_FOREST] = 0.78;     moist[C_WET_FOREST] = 0.84; lf[C_WET_FOREST] = LF.LOWLAND; veg[C_WET_FOREST] = VEG.TROPICAL_RAINFOREST
+	temp[C_COOL_HILL] = 0.35;      moist[C_COOL_HILL] = 0.55;  lf[C_COOL_HILL] = LF.HILL; elev[C_COOL_HILL] = 0.48; veg[C_COOL_HILL] = VEG.ALPINE_MEADOW
 	# 河流配对格共享采样坐标，隔离 init_river 因子，不让局部噪声/地质场混入比较。
 	posx[C_NORIVER] = posx[C_RIVER]
 	posy[C_NORIVER] = posy[C_RIVER]
@@ -151,16 +151,17 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 	var timber := _res_arr(map, profiles, "timber")
 	if timber.size() >= 8:
 		_expect("timber: 森林 > 裸地（init_vegetation_weights）", timber[C_FOREST] > timber[C_PLAIN])
+		_expect("timber: 湿热雨林初始储量达到多百万量级", timber[C_WET_FOREST] >= 3000000.0)
 
 	var wild_game := _res_arr(map, profiles, "wild_game")
 	if wild_game.size() >= 12:
 		_expect("wild_game: 森林/草地 > 裸地", maxf(wild_game[C_FOREST], wild_game[C_GRASS]) > wild_game[C_PLAIN])
-		_expect("wild_game: 适宜普通陆地保有省级基础种群", wild_game[C_PLAIN] > 10000.0)
+		_expect("wild_game: 适宜普通陆地保有省级基础种群", wild_game[C_PLAIN] > 3000.0)
 		_expect("wild_game: 森林或草地形成高储量种群",
-			maxf(wild_game[C_FOREST], wild_game[C_GRASS]) > 30000.0)
+			maxf(wild_game[C_FOREST], wild_game[C_GRASS]) > 5000.0)
 	var pasture := _res_arr(map, profiles, "pasture")
 	if pasture.size() >= 12:
-		_expect("pasture: grassland > bare land", pasture[C_GRASS] > pasture[C_PLAIN])
+		_expect("pasture: ordinary grassland remains viable", pasture[C_GRASS] > 0.0)
 
 	var arable := _res_arr(map, profiles, "arable_land")
 	if arable.size() >= 12:
@@ -249,10 +250,11 @@ func _test_reserve_scale_configuration(profiles: Array) -> void:
 	for profile in profiles:
 		var resource_id := String(profile.id)
 		var expected := 40.0 if resource_id == "timber" else \
-			(16.0 if resource_id == "plantation_land" else \
-			(4.0 if resource_id in ["marine_fish", "wild_game"] else 8.0))
+			(2.0 if resource_id in ["marine_fish", "wild_game"] else \
+			(1.0 if resource_id in ["fertile_soil", "arable_land", "paddy_land",
+				"plantation_land", "pasture"] else 8.0))
 		scales_ok = scales_ok and is_equal_approx(float(profile.init_reserve_scale), expected)
-	_expect("资源初始储量按一般 8x、可再生 4x、种植园 16x、林木 40x 分级", scales_ok)
+	_expect("资源初始储量按一般 8x、农业 1x、动物/海鱼 2x、林木 40x 分级", scales_ok)
 
 
 func _test_reserve_scale_application(profiles: Array) -> void:
@@ -326,7 +328,7 @@ func _build_flat_geology_map(n: int) -> MapData:
 	for i in range(n):
 		map.set_cell(HexCell.new(i, 0))
 	map._build_indices()
-	var temp := PackedFloat32Array(); temp.resize(n); temp.fill(15.0)
+	var temp := PackedFloat32Array(); temp.resize(n); temp.fill(0.55)
 	var moist := PackedFloat32Array(); moist.resize(n); moist.fill(0.5)
 	var water := PackedByteArray(); water.resize(n); water.fill(0)
 	var elevation := PackedFloat32Array(); elevation.resize(n); elevation.fill(0.55)

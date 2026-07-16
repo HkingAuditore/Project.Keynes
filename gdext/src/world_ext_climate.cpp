@@ -397,7 +397,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                 if (pweatherv != nullptr) {
                     float vapor = pweatherv[i];
                     if (vapor < 0.0f) vapor = 0.0f; else if (vapor > 1.0f) vapor = 1.0f;
-                    moisture_target = moisture_target + (vapor - moisture_target) * moisture_vapor_w;
+                    const float vapor_reference = bm * 0.15f;
+                    moisture_target += (vapor - vapor_reference) * moisture_vapor_w;
                 }
                 if (pprecip != nullptr) {
                     float precip = pprecip[i];
@@ -406,8 +407,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                 }
                 if (psoil != nullptr) {
                     float soil = psoil[i];
-                    if (soil < 0.0f) soil = 0.0f; else if (soil > 1.0f) soil = 1.0f;
-                    moisture_target = moisture_target + (soil - moisture_target) * moisture_soil_w;
+                    if (soil < -0.5f) soil = -0.5f; else if (soil > 0.5f) soil = 0.5f;
+                    moisture_target += soil * moisture_soil_w;
                 }
                 if (pwb != nullptr) {
                     float wb = pwb[i];
@@ -818,7 +819,8 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 if (pweatherv != nullptr) {
                     float vapor = pweatherv[i];
                     if (vapor < 0.0f) vapor = 0.0f; else if (vapor > 1.0f) vapor = 1.0f;
-                    moisture_target = moisture_target + (vapor - moisture_target) * moisture_vapor_w;
+                    const float vapor_reference = bm * 0.15f;
+                    moisture_target += (vapor - vapor_reference) * moisture_vapor_w;
                 }
                 if (pprecip != nullptr) {
                     float precip = pprecip[i];
@@ -827,8 +829,8 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 }
                 if (psoil != nullptr) {
                     float soil = psoil[i];
-                    if (soil < 0.0f) soil = 0.0f; else if (soil > 1.0f) soil = 1.0f;
-                    moisture_target = moisture_target + (soil - moisture_target) * moisture_soil_w;
+                    if (soil < -0.5f) soil = -0.5f; else if (soil > 0.5f) soil = 0.5f;
+                    moisture_target += soil * moisture_soil_w;
                 }
                 if (pwb != nullptr) {
                     float wb = pwb[i];
@@ -3824,6 +3826,12 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     const float flood_threshold = knobs.has("hydro_flood_threshold") ? std::max(0.01f, float(knobs["hydro_flood_threshold"])) : 2.2f;
     const float snowpack_melt_temp_gain = knobs.has("snowpack_melt_temp_gain") ? float(knobs["snowpack_melt_temp_gain"]) : 0.22f;
     const float snowpack_melt_sun_gain = knobs.has("snowpack_melt_sun_gain") ? float(knobs["snowpack_melt_sun_gain"]) : 0.12f;
+    const float dt_days = knobs.has("dt_days") ? dc_clampf(float(knobs["dt_days"]), 1.0f, 30.0f) : 1.0f;
+    const float baseflow_recession_eff = 1.0f - std::pow(1.0f - baseflow_recession, dt_days);
+    const float discharge_ema_eff = 1.0f - std::pow(1.0f - discharge_ema, dt_days);
+    const float nonriver_discharge_decay = std::pow(1.0f - discharge_ema * 0.5f, dt_days);
+    const float soil_decay_eff = std::pow(0.985f, dt_days);
+    const float water_balance_ema_eff = 1.0f - std::pow(1.0f - (1.0f / 30.0f), dt_days);
     PackedInt32Array neighbor_indices;
     if (knobs.has("neighbor_indices")) {
         neighbor_indices = knobs["neighbor_indices"];
@@ -3877,11 +3885,11 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
         const uint8_t wt = WTYPE[i];
         const float hydro_precip = wf_is_precip_weather_type(wt) ? PREC[i] : 0.0f;
         const float wet_event = ((wt == 2 || wt == 3 || wt == 7) ? 0.12f : 0.0f) * INTEN[i];
-        const float precip = std::max(0.0f, hydro_precip + wet_event) * precip_scale;
+        const float precip_daily = std::max(0.0f, hydro_precip + wet_event) * precip_scale;
         const float melt_potential = std::max(0.0f, TEMP[i] - 0.24f) * snowpack_melt_temp_gain
             + std::max(0.0f, HEAT[i]) * snowpack_melt_sun_gain;
-        const float snowmelt = std::min(std::max(0.0f, SNOWP[i]), melt_potential) * snowmelt_scale;
-        const float water_in = precip + snowmelt;
+        const float snowmelt = std::min(std::max(0.0f, SNOWP[i]), melt_potential * dt_days) * snowmelt_scale;
+        const float water_in = precip_daily * dt_days + snowmelt;
         water_in_total += double(water_in);
 
         const float wetness = dc_clampf((SOIL[i] + 0.5f) * 0.55f + BASE_M[i] * 0.25f + MOIST[i] * 0.20f, 0.0f, 1.0f);
@@ -3895,16 +3903,17 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
         const float infiltration = is_water ? 0.0f : water_in * (1.0f - runoff_coeff) * infiltration_rate;
 
         GW[i] = std::max(0.0f, GW[i] + infiltration * 0.55f);
-        const float baseflow = GW[i] * baseflow_recession;
+        const float baseflow = GW[i] * baseflow_recession_eff;
         GW[i] = std::max(0.0f, GW[i] - baseflow);
         const float local_runoff = quick_runoff + baseflow;
         RUNOFF[i] = local_runoff;
         incoming[size_t(i)] += local_runoff;
         if (local_runoff > 0.0001f) ++runoff_source_cells;
 
-        const float daily_balance = dc_clampf(water_in - quick_runoff - infiltration * 0.35f, -1.0f, 1.0f);
-        SOIL[i] = dc_clampf(SOIL[i] * 0.985f + infiltration * 0.16f - quick_runoff * 0.025f, -0.5f, 0.5f);
-        WB30[i] = WB30[i] + (daily_balance - WB30[i]) * (1.0f / 30.0f);
+        const float daily_balance = dc_clampf(
+            (water_in - quick_runoff - infiltration * 0.35f) / dt_days, -1.0f, 1.0f);
+        SOIL[i] = dc_clampf(SOIL[i] * soil_decay_eff + infiltration * 0.16f - quick_runoff * 0.025f, -0.5f, 0.5f);
+        WB30[i] = WB30[i] + (daily_balance - WB30[i]) * water_balance_ema_eff;
 
         if (child_count[size_t(i)] == 0) queue.push_back(i);
     }
@@ -3915,7 +3924,8 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
         const bool is_lake = wf_is_water_terrain(TERR[i]) && TERR[i] != 0;
         float outflow = incoming[size_t(i)];
         if (is_channel) {
-            const float release = is_lake ? lake_release : channel_release;
+            const float release_daily = is_lake ? lake_release : channel_release;
+            const float release = 1.0f - std::pow(1.0f - release_daily, dt_days);
             STORAGE[i] = std::max(0.0f, STORAGE[i] + incoming[size_t(i)]);
             outflow = STORAGE[i] * release;
             STORAGE[i] = std::max(0.0f, STORAGE[i] - outflow);
@@ -3947,7 +3957,7 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     for (int i = 0; i < n_cells; ++i) {
         if (HAS_RIV[i] == 0 && !wf_is_water_terrain(TERR[i])) {
             Q[i] = 0.0f;
-            Q30[i] = std::max(0.0f, Q30[i] * (1.0f - discharge_ema * 0.5f));
+            Q30[i] = std::max(0.0f, Q30[i] * nonriver_discharge_decay);
             continue;
         }
         q_max = std::max(q_max, Q[i]);
@@ -3957,7 +3967,7 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     for (int i = 0; i < n_cells; ++i) {
         if (HAS_RIV[i] == 0 && !wf_is_water_terrain(TERR[i])) continue;
         const float q_norm = dc_clampf(std::log1p(std::max(0.0f, Q[i])) / denom, 0.0f, 1.0f);
-        Q30[i] = dc_clampf(Q30[i] + (q_norm - Q30[i]) * discharge_ema, 0.0f, 1.0f);
+        Q30[i] = dc_clampf(Q30[i] + (q_norm - Q30[i]) * discharge_ema_eff, 0.0f, 1.0f);
         if (HAS_RIV[i] != 0 && Q30[i] > flood_threshold) ++flood_candidate_count;
         if (HAS_RIV[i] != 0) {
             const float bank_gain = Q30[i] * bank_moisture_gain;
@@ -4006,6 +4016,7 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     out["flush_ms"] = flush_ms;
     out["n_cells"] = n_cells;
     out["processed_cells"] = n_cells;
+    out["dt_days"] = dt_days;
     out["runoff_source_cells"] = runoff_source_cells;
     out["river_cells_processed"] = river_cells_processed;
     out["riparian_neighbor_touches"] = riparian_neighbor_touches;
@@ -6604,6 +6615,11 @@ struct ClimateRoundScalars {
     double insol_amp = 0.20;       // sync 路径 default 0.20
     double insol_gain = 1.0;
     double moist_scale_now = 1.0;
+    float  runtime_moisture_base_relax_rate = 0.24f;
+    float  runtime_moisture_weather_vapor_weight = 0.12f;
+    float  runtime_moisture_precip_weight = 0.20f;
+    float  runtime_moisture_soil_weight = 0.15f;
+    float  runtime_moisture_water_balance_weight = 0.08f;
     int    days_per_year = 365;
     double sea_level = 0.5;
 
@@ -6742,6 +6758,9 @@ struct ClimateInputBuf {
     std::vector<float>   moisture;         // transp 输入；pass_b 输入（read + write）
     std::vector<float>   elevation;        // pass_a / pass_b 读
     std::vector<float>   base_moisture;    // pass_a 读
+    std::vector<float>   weather_vapor;    // pass_a: atmospheric anomaly source
+    std::vector<float>   soil_moisture;    // pass_a: signed hydrology anomaly
+    std::vector<float>   water_balance_30d;// pass_a: signed long-window anomaly
     std::vector<float>   lat_norm;         // pass_a / pass_b 读
     // [climate-zone-fix P2] 海洋性因子 ∈[0,1]，1=紧贴海岸/0=深内陆（由 dist_ocean 指数衰减得到）。
     // pass_a 用它对陆地缩小季节振幅，形成沿海小年较差（温带海洋性 Cfb）。缺省空→不调温。
@@ -7010,6 +7029,11 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     const float insol_amp_gain = insol_amp * insol_gain;
     const float land_continentality = 1.0f;  // compatibility field; pass-A helper ignores it
     const float moist_scale    = (float)in.scalars.moist_scale_now;
+    const float moisture_relax = dc_clampf(in.scalars.runtime_moisture_base_relax_rate, 0.0f, 1.0f);
+    const float moisture_vapor_w = dc_clampf(in.scalars.runtime_moisture_weather_vapor_weight, 0.0f, 1.0f);
+    const float moisture_precip_w = dc_clampf(in.scalars.runtime_moisture_precip_weight, 0.0f, 1.0f);
+    const float moisture_soil_w = dc_clampf(in.scalars.runtime_moisture_soil_weight, 0.0f, 1.0f);
+    const float moisture_wb_w = dc_clampf(in.scalars.runtime_moisture_water_balance_weight, 0.0f, 1.0f);
     const float insol_dev_min  = (float)in.scalars.insol_dev_min;
     const float insol_dev_max  = (float)in.scalars.insol_dev_max;
     const float thermal_land   = (float)in.scalars.thermal_inertia_land;
@@ -7021,6 +7045,7 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     float thermal_dt = (float)in.scalars.thermal_dt_days;
     if (thermal_dt < 1.0f) thermal_dt = 1.0f;
     else if (thermal_dt > 30.0f) thermal_dt = 30.0f;
+    const float moisture_relax_eff = 1.0f - std::pow(1.0f - moisture_relax, thermal_dt);
     const float thermal_land_eff  = pk_thermal_alpha_eff(thermal_land,  thermal_dt);
     const float thermal_water_eff = pk_thermal_alpha_eff(thermal_water, thermal_dt);
     const float thermal_snow_eff  = pk_thermal_alpha_eff(thermal_snow,  thermal_dt);
@@ -7065,6 +7090,10 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     const uint8_t *EI_IN = in.ema_initialized.data();
     const float *PE = in.elevation.data();
     const float *PBM = in.base_moisture.data();
+    const float *PWEATHERV = ((int)in.weather_vapor.size() == n) ? in.weather_vapor.data() : nullptr;
+    const float *PPRECIP = ((int)in.weather_precip.size() == n) ? in.weather_precip.data() : nullptr;
+    const float *PSOIL = ((int)in.soil_moisture.size() == n) ? in.soil_moisture.data() : nullptr;
+    const float *PWB = ((int)in.water_balance_30d.size() == n) ? in.water_balance_30d.data() : nullptr;
     const float *PLN = in.lat_norm.data();
     // Item 4：主线程预烘焙的年均日照 LUT（尺寸匹配才启用，否则 null → inline 回退）。
     const float *INSOL_MEAN_BAKED =
@@ -7128,7 +7157,24 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
             float bm = PBM[i] * scale_eff;
             if (bm > 1.0f) bm = 1.0f;
             else if (bm < 0.0f) bm = 0.0f;
-            moisture_now = bm;
+            float moisture_target = bm;
+            if (PWEATHERV != nullptr) {
+                const float vapor = dc_clampf(PWEATHERV[i], 0.0f, 1.0f);
+                moisture_target += (vapor - bm * 0.15f) * moisture_vapor_w;
+            }
+            if (PPRECIP != nullptr) {
+                moisture_target += dc_clampf(PPRECIP[i], 0.0f, 1.0f) * moisture_precip_w;
+            }
+            if (PSOIL != nullptr) {
+                moisture_target += dc_clampf(PSOIL[i], -0.5f, 0.5f) * moisture_soil_w;
+            }
+            if (PWB != nullptr) {
+                moisture_target += dc_clampf(PWB[i], -1.0f, 1.0f) * moisture_wb_w;
+            }
+            moisture_target = dc_clampf(moisture_target, 0.0f, 1.0f);
+            const float previous = ((int)in.moisture.size() == n)
+                ? dc_clampf(in.moisture[size_t(i)], 0.0f, 1.0f) : moisture_target;
+            moisture_now = previous + (moisture_target - previous) * moisture_relax_eff;
         }
 
         // (c) temperature
@@ -8922,6 +8968,10 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         _read_pu8_to_vec(input,  "ema_initialized",     t->in_buf.ema_initialized,     n_cells);
         _read_pf32_to_vec(input, "elevation",           t->in_buf.elevation,           n_cells);
         _read_pf32_to_vec(input, "base_moisture",       t->in_buf.base_moisture,       n_cells);
+        _read_pf32_to_vec(input, "weather_vapor",       t->in_buf.weather_vapor,       n_cells);
+        _read_pf32_to_vec(input, "weather_precip",      t->in_buf.weather_precip,      n_cells);
+        _read_pf32_to_vec(input, "soil_moisture",       t->in_buf.soil_moisture,       n_cells);
+        _read_pf32_to_vec(input, "water_balance_30d",   t->in_buf.water_balance_30d,   n_cells);
         _read_pf32_to_vec(input, "lat_norm",            t->in_buf.lat_norm,            n_cells);
         // [climate-zone-fix P2] 海洋性调温因子（静态 per-cell；缺省空→不调温）
         _read_pf32_to_vec(input, "maritime_factor",     t->in_buf.maritime,            n_cells);
@@ -8968,6 +9018,11 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         t->in_buf.scalars.insol_amp        = double(input.get("insol_amp", 0.20));
         t->in_buf.scalars.insol_gain       = double(input.get("insol_gain", 1.0));
         t->in_buf.scalars.moist_scale_now  = double(input.get("moist_scale_now", 1.0));
+        t->in_buf.scalars.runtime_moisture_base_relax_rate = float(input.get("runtime_moisture_base_relax_rate", 0.24));
+        t->in_buf.scalars.runtime_moisture_weather_vapor_weight = float(input.get("runtime_moisture_weather_vapor_weight", 0.12));
+        t->in_buf.scalars.runtime_moisture_precip_weight = float(input.get("runtime_moisture_precip_weight", 0.20));
+        t->in_buf.scalars.runtime_moisture_soil_weight = float(input.get("runtime_moisture_soil_weight", 0.15));
+        t->in_buf.scalars.runtime_moisture_water_balance_weight = float(input.get("runtime_moisture_water_balance_weight", 0.08));
         t->in_buf.scalars.days_per_year    = int(input.get("days_per_year", 365));
         t->in_buf.scalars.sea_level        = double(input.get("sea_level", 0.5));
         // pass_a 扩展 scalars

@@ -70,6 +70,11 @@ static func ensure_loaded() -> void:
 		if res == null:
 			push_warning("ResourceProfileRegistry: failed to load %s" % path)
 			continue
+		if float(res.temp_lo) < 0.0 or float(res.temp_hi) > 1.0 \
+				or float(res.temp_hi) <= float(res.temp_lo):
+			push_error("ResourceProfileRegistry: %s uses invalid temperature range [%s,%s]; expected normalized [0,1]" % [
+				path, str(res.temp_lo), str(res.temp_hi)])
+			continue
 		_ordered.append(res)
 
 

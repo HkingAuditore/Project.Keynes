@@ -84,6 +84,8 @@ func _run() -> void:
 	_expect("visual boundary is split from authority blockers", retained_boundary_seen)
 
 	var exec_ctx := SusTickContext.make(9100, CHECK_DAYS + 1, float((CHECK_DAYS + 1) % 365) / 365.0, 1.0, &"native_hydrology_exec")
+	var moisture_before: PackedFloat32Array = map.moisture_arr.duplicate()
+	var temp_before: PackedFloat32Array = map.temp_arr.duplicate()
 	var exec_res: Dictionary = generator.run_native_daily_tick_from_job(exec_ctx, map, world)
 	var exec_breakdown: Dictionary = exec_res.get("breakdown", {})
 	var exec_published: Array = exec_res.get("published_slots", [])
@@ -92,6 +94,10 @@ func _run() -> void:
 	_expect("native hydrology execution succeeds", int(exec_res.get("rc", -1)) == 0)
 	_expect("native hydrology node published slots", bool(exec_breakdown.get("hydrology_published_to_slot", false)))
 	_expect("native hydrology timing is reported", float(exec_breakdown.get("hydrology_ms", 0.0)) >= 0.0)
+	print("  [hydrology/dt] reported=%.3f configured_stride=%d" % [
+		float(exec_breakdown.get("hydrology_dt_days", 0.0)), profile.native_daily_sim_stride])
+	_expect("native hydrology receives the configured elapsed days",
+			is_equal_approx(float(exec_breakdown.get("hydrology_dt_days", 0.0)), float(profile.native_daily_sim_stride)))
 	_expect("native hydrology authority is verified", str(exec_hydro_authority.get("phase", "")) == "native_active_verified")
 	_expect("native hydrology published river discharge slot", exec_published.has("cell_river_discharge"))
 	_expect("native hydrology published water balance slot", exec_published.has("cell_water_balance_30d"))
@@ -100,6 +106,12 @@ func _run() -> void:
 	_expect("water balance slot is finite", _arr_finite(map.water_balance_30d_arr))
 	_expect("river discharge slot is finite", _arr_finite(map.river_discharge_arr))
 	_expect("river discharge 30d slot is finite", _arr_finite(map.river_discharge_30d_arr))
+	_expect("ACTIVE round freezes committed moisture before bundle capture",
+			_arr_max_abs_diff(map.moisture_arr_prev, moisture_before) < 0.000001)
+	_expect("ACTIVE round freezes committed temperature before bundle capture",
+			_arr_max_abs_diff(map.temp_arr_prev, temp_before) < 0.000001)
+	_expect("weather moisture classification shares the round snapshot",
+			_arr_max_abs_diff(map.weather_classification_moisture_arr, moisture_before) < 0.000001)
 	_finish()
 
 
@@ -134,6 +146,15 @@ func _arr_finite(arr: PackedFloat32Array) -> bool:
 		if is_nan(v) or is_inf(v):
 			return false
 	return true
+
+
+func _arr_max_abs_diff(a: PackedFloat32Array, b: PackedFloat32Array) -> float:
+	if a.size() != b.size():
+		return INF
+	var out: float = 0.0
+	for i in range(a.size()):
+		out = maxf(out, absf(a[i] - b[i]))
+	return out
 
 
 func _expect(label: String, ok: bool) -> void:

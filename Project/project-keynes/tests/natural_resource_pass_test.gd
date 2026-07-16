@@ -58,6 +58,13 @@ func _test_registry_knobs() -> void:
 	_expect("registry loaded >=2 profiles", count >= 2)
 	_expect("registry loaded 30 profiles", count == 30)
 	var knobs: Dictionary = ResourceProfileRegistry.build_pass_knobs()
+	var normalized_temperature_contract: bool = true
+	for profile in ResourceProfileRegistry.ordered():
+		normalized_temperature_contract = normalized_temperature_contract \
+				and float(profile.temp_lo) >= 0.0 and float(profile.temp_hi) <= 1.0 \
+				and float(profile.temp_hi) > float(profile.temp_lo)
+	_expect("all resource temperature ranges use map-normalized [0,1] units",
+		normalized_temperature_contract)
 	_expect("knobs resource_count matches registry count", int(knobs.get("resource_count", 0)) == count)
 	var slots: PackedStringArray = knobs.get("reserve_slots", PackedStringArray())
 	var extra_slots: PackedStringArray = knobs.get("extra_change_slots", PackedStringArray())
@@ -159,7 +166,7 @@ func _test_native_pass() -> void:
 	water.resize(n)
 	habitat.resize(n)
 	for i in range(n):
-		temp[i] = -12.0 + 2.4 * float(i)                       # -12 .. 33.6 °C
+		temp[i] = float(i) / float(n - 1)                     # 地图气候温度 [0,1]
 		moist[i] = clampf(float(i) / float(n - 1), 0.0, 1.0)
 		water[i] = 1 if (i % 4 == 3) else 0                    # 水面格散布在 body 与 tail 段
 		habitat[i] = 0 if water[i] != 0 else 1
@@ -319,6 +326,19 @@ func _test_native_pass() -> void:
 		var rainforest_runtime_fit := lerpf(1.0, rainforest_raw_fit,
 			float(timber_profile.runtime_climate_fit_weight))
 		var rainforest_capacity := timber_capacity * rainforest_runtime_fit
+		var observed_rainforest_temp := 0.77
+		var observed_rainforest_moisture := 0.56
+		var observed_tn := clampf((observed_rainforest_temp - float(timber_profile.temp_lo)) / \
+			maxf(float(timber_profile.temp_hi) - float(timber_profile.temp_lo), 0.0001), 0.0, 1.0)
+		var observed_temp_fit := 1.0 - clampf(absf(
+			observed_tn - float(timber_profile.climate_temp_opt)) / maxf(
+			float(timber_profile.climate_temp_tol), 0.0001), 0.0, 1.0)
+		var observed_moisture_fit := 1.0 - clampf(absf(
+			observed_rainforest_moisture - float(timber_profile.climate_moisture_opt)) / maxf(
+			float(timber_profile.climate_moisture_tol), 0.0001), 0.0, 1.0)
+		var observed_runtime_fit := lerpf(1.0, observed_temp_fit * observed_moisture_fit,
+			float(timber_profile.runtime_climate_fit_weight))
+		var observed_capacity := timber_capacity * observed_runtime_fit
 		var acute_temp := float(timber_profile.temp_lo)
 		var acute_moisture := float(timber_profile.climate_moisture_opt)
 		var acute_temp_fit := 1.0 - clampf(absf(
@@ -330,6 +350,8 @@ func _test_native_pass() -> void:
 		var acute_capacity := timber_capacity * acute_runtime_fit
 		_expect("timber treats hot humid rainforest as non-acute habitat",
 			rainforest_raw_fit >= 0.25)
+		_expect("observed tropical rainforest keeps multi-million timber capacity",
+			observed_capacity >= 4000000.0)
 		_expect("timber regression covers acute low climate fit", acute_raw_fit < 0.05)
 		temp[0] = ideal_timber_temp
 		moist[0] = timber_profile.climate_moisture_opt
@@ -456,7 +478,7 @@ func _test_native_pass() -> void:
 		map.moisture_arr = moist
 		ext.refresh_slots_from_map()
 		knobs["dt_days"] = 30
-		for _month in range(34):
+		for _month in range(47):
 			ext.run_natural_resource_pass(knobs)
 		fertile = map.get(fields[fertile_i])
 		var minimum_fit := 1.0 - float(fertile_profile.runtime_climate_fit_weight)
@@ -464,7 +486,7 @@ func _test_native_pass() -> void:
 			float(fertile_profile.gen_self) * minimum_fit -
 			float(fertile_profile.decay_stress) * (1.0 - minimum_fit))
 		var minimum_equilibrium := minimum_p / float(fertile_profile.decay_self)
-		_expect("fertile_soil remains above 75% of its floor after 1020 days",
+		_expect("fertile_soil remains above 75% of its floor after 1410 days",
 			fertile[0] > minimum_equilibrium * 0.75)
 
 

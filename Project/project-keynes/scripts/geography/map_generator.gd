@@ -2093,7 +2093,8 @@ func _native_daily_base_tick_knobs(ctx: SusTickContext) -> Dictionary:
 	}
 
 
-func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int) -> Dictionary:
+func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int,
+		elapsed_days_per_call: float = 1.0) -> Dictionary:
 	if map == null or cp_now == null:
 		return {}
 	var n_cells: int = map.cell_count()
@@ -2123,7 +2124,9 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int) ->
 		knobs["albedo_table"] = _build_albedo_donor_table()
 	if run_veg_dyn:
 		_ensure_vegdyn_lut()
-		var veg_dyn_scale_raw: float = float(veg_dyn_stride)
+		# stage_b 的 stride 以“调用次数”计，而原生 daily graph 本身也可能跨多天调用。
+		# 两层 cadence 必须相乘，才能让 vitality / succession streak 按真实游戏日推进。
+		var veg_dyn_scale_raw: float = float(veg_dyn_stride) * maxf(elapsed_days_per_call, 1.0)
 		var veg_dyn_scale_eff: float = maxf(veg_dyn_scale_raw, 1.0)
 		knobs["day_scale"] = veg_dyn_scale_raw
 		knobs["streak_days"] = maxi(1, int(round(veg_dyn_scale_eff)))
@@ -2785,7 +2788,8 @@ func _build_native_daily_sea_ice_knobs(
 	}
 
 
-func _build_native_daily_runtime_hydrology_knobs(map: MapData, cp_now) -> Dictionary:
+func _build_native_daily_runtime_hydrology_knobs(map: MapData, cp_now,
+		dt_days: float = 1.0) -> Dictionary:
 	if map == null or cp_now == null:
 		return {}
 	if cp_now.get("runtime_hydrology_enabled") == null \
@@ -2795,6 +2799,7 @@ func _build_native_daily_runtime_hydrology_knobs(map: MapData, cp_now) -> Dictio
 		return {}
 	return {
 		"n_cells": map.cell_count(),
+		"dt_days": clampf(dt_days, 1.0, 30.0),
 		"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
 		"hydro_precip_scale": float(cp_now.hydro_precip_scale),
 		"hydro_snowmelt_scale": float(cp_now.hydro_snowmelt_scale),
@@ -3149,7 +3154,8 @@ func _build_native_daily_bundle(
 				var stage_b_knobs_prebuilt: Dictionary = _build_native_daily_stage_b_knobs(
 					map,
 					cp_now,
-					maxi(0, _weather_stage_b_call_index)
+					maxi(0, _weather_stage_b_call_index),
+					float(_native_daily_contract_stride_days())
 				)
 				var weather_super_prebuilt: Dictionary = _build_native_daily_weather_super_knobs(
 					ctx,
@@ -3218,7 +3224,8 @@ func _build_native_daily_bundle(
 	var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 		map,
 		cp_now,
-		maxi(0, _weather_stage_b_call_index)
+		maxi(0, _weather_stage_b_call_index),
+		float(_native_daily_contract_stride_days())
 	)
 	bundle["season_cadence_policy"] = _native_daily_season_cadence_policy(
 		cp_now,
@@ -3236,7 +3243,11 @@ func _build_native_daily_bundle(
 			or native_weather_active_bootstrap
 	var runtime_hydrology_active: bool = cp_now.get("runtime_hydrology_enabled") != null \
 			and bool(cp_now.runtime_hydrology_enabled)
-	var runtime_hydrology_knobs: Dictionary = _build_native_daily_runtime_hydrology_knobs(map, cp_now)
+	var runtime_hydrology_knobs: Dictionary = _build_native_daily_runtime_hydrology_knobs(
+		map,
+		cp_now,
+		float(_native_daily_contract_stride_days()) if commit_side_effects else 1.0
+	)
 	# Stagger 对齐：weather + stage_b 节点只在 legacy weather bucket 到期 tick 推进。
 	# 注册/SHADOW probe 用 force_weather_embed=true 强制纳入以保留 readiness 校验。
 	var weather_due_this_tick: bool = force_weather_embed \
@@ -3405,7 +3416,8 @@ func _build_native_daily_slice_bundle_patch(
 			var stage_b_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 				map,
 				cp_now,
-				maxi(0, _weather_stage_b_call_index)
+				maxi(0, _weather_stage_b_call_index),
+				float(_native_daily_contract_stride_days())
 			)
 			patch["stage_b_knobs"] = stage_b_knobs
 		12:
@@ -3427,7 +3439,8 @@ func _build_native_daily_slice_bundle_patch(
 				var stage_b_knobs_for_weather: Dictionary = _build_native_daily_stage_b_knobs(
 					map,
 					cp_now,
-					maxi(0, _weather_stage_b_call_index)
+					maxi(0, _weather_stage_b_call_index),
+					float(_native_daily_contract_stride_days())
 				)
 				var weather_super: Dictionary = _build_native_daily_weather_super_knobs(
 					ctx,
@@ -3449,13 +3462,18 @@ func _build_native_daily_slice_bundle_patch(
 			else:
 				patch["weather_knobs"] = {}
 		19:
-			var runtime_hydrology_knobs: Dictionary = _build_native_daily_runtime_hydrology_knobs(map, cp_now)
+			var runtime_hydrology_knobs: Dictionary = _build_native_daily_runtime_hydrology_knobs(
+				map,
+				cp_now,
+				float(_native_daily_contract_stride_days())
+			)
 			patch["runtime_hydrology_knobs"] = runtime_hydrology_knobs
 		20:
 			var stage_b_after_hydrology_knobs: Dictionary = _build_native_daily_stage_b_knobs(
 				map,
 				cp_now,
-				maxi(0, _weather_stage_b_call_index)
+				maxi(0, _weather_stage_b_call_index),
+				float(_native_daily_contract_stride_days())
 			)
 			patch["stage_b_after_hydrology_knobs"] = stage_b_after_hydrology_knobs
 	return patch
@@ -4255,6 +4273,84 @@ func _native_daily_fronts_signature_diff(prev: PackedStringArray, next: PackedSt
 	}
 
 
+func _apply_vegetation_succession_candidates(map: MapData,
+		indices: PackedInt32Array, to_vegetation: PackedByteArray, cp_now) -> int:
+	if map == null or cp_now == null:
+		return 0
+	var candidate_count: int = mini(indices.size(), to_vegetation.size())
+	if candidate_count <= 0:
+		return 0
+	_ensure_vegdyn_lut()
+	var applied_indices := PackedInt32Array()
+	var applied_vegetation := PackedByteArray()
+	applied_indices.resize(candidate_count)
+	applied_vegetation.resize(candidate_count)
+	var applied_count: int = 0
+	var cooldown_days: int = int(cp_now.vegetation_succession_cooldown_days) \
+			if cp_now.get("vegetation_succession_cooldown_days") != null else 30
+	var degrade_reset_target: float = float(cp_now.vegetation_degrade_reset_target) \
+			if cp_now.get("vegetation_degrade_reset_target") != null else 0.75
+	for k in range(candidate_count):
+		var idx: int = indices[k]
+		if idx < 0 or idx >= map.cell_count():
+			continue
+		var cell: HexCell = map.cell_at(idx)
+		if cell == null:
+			continue
+		var previous_vegetation: int = int(cell.vegetation)
+		var next_vegetation: int = int(to_vegetation[k])
+		if next_vegetation == previous_vegetation:
+			continue
+		var is_degrade: bool = previous_vegetation < _gdext_vegdyn_next_down_cached.size() \
+				and int(_gdext_vegdyn_next_down_cached[previous_vegetation]) == next_vegetation
+		cell.vegetation = next_vegetation
+		cell.base_vegetation = next_vegetation
+		var target_vitality: float = degrade_reset_target if is_degrade else 0.7
+		cell.vegetation_vitality = (cell.vegetation_vitality + target_vitality) * 0.5
+		if cooldown_days > 0:
+			cell._vitality_low_streak = -cooldown_days
+			cell._vitality_high_streak = -cooldown_days
+		cell.current_state["vegetation"] = next_vegetation
+		if idx < map.vegetation_arr.size():
+			map.vegetation_arr[idx] = next_vegetation & 0xFF
+		if idx < map.base_vegetation_arr.size():
+			map.base_vegetation_arr[idx] = next_vegetation & 0xFF
+		if idx < map.vegetation_vitality_arr.size():
+			map.vegetation_vitality_arr[idx] = cell.vegetation_vitality
+		if idx < map.vitality_low_streak_arr.size():
+			map.vitality_low_streak_arr[idx] = cell._vitality_low_streak
+		if idx < map.vitality_high_streak_arr.size():
+			map.vitality_high_streak_arr[idx] = cell._vitality_high_streak
+		if map.has_method("mark_climate_dirty"):
+			map.mark_climate_dirty(idx)
+		applied_indices[applied_count] = idx
+		applied_vegetation[applied_count] = next_vegetation & 0xFF
+		applied_count += 1
+	if applied_count <= 0:
+		return 0
+	applied_indices.resize(applied_count)
+	applied_vegetation.resize(applied_count)
+	# vegetation/base_vegetation 不是 HexCell facade 字段；显式发布到两侧权威槽位。
+	if _data_core_world != null and _data_core_world.has_method("write_u8_indexed"):
+		var vegetation_cid: int = _data_core_world.component_id(DCComponentIds.CELL_VEGETATION)
+		if vegetation_cid >= 0:
+			_data_core_world.write_u8_indexed(vegetation_cid, applied_indices, applied_vegetation)
+		var base_vegetation_cid: int = _data_core_world.component_id(DCComponentIds.CELL_BASE_VEGETATION)
+		if base_vegetation_cid >= 0:
+			_data_core_world.write_u8_indexed(base_vegetation_cid, applied_indices, applied_vegetation)
+		if _data_core_world.has_method("mark_dirty_indexed"):
+			_data_core_world.mark_dirty_indexed(applied_indices)
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("write_u8_indexed"):
+		var vegetation_ext_cid: int = _world_ext_u8_component_id(DCComponentIds.CELL_VEGETATION)
+		if vegetation_ext_cid >= 0:
+			_data_core_world_ext.write_u8_indexed(vegetation_ext_cid, applied_indices, applied_vegetation)
+		var base_vegetation_ext_cid: int = _world_ext_u8_component_id(DCComponentIds.CELL_BASE_VEGETATION)
+		if base_vegetation_ext_cid >= 0:
+			_data_core_world_ext.write_u8_indexed(base_vegetation_ext_cid, applied_indices, applied_vegetation)
+	queue_detail_scatter_refresh(applied_indices)
+	return applied_count
+
+
 func _apply_native_daily_visual_intents(res: Dictionary, breakdown: Dictionary,
 		fronts_out: Array, map: MapData, world: WorldData) -> void:
 	var slot_sigs: PackedStringArray = _native_daily_front_slot_signatures(fronts_out)
@@ -4292,20 +4388,21 @@ func _apply_native_daily_visual_intents(res: Dictionary, breakdown: Dictionary,
 		res["weather_lut_published"] = false
 		res["weather_lut_publish_path"] = "not_requested"
 
+	var succession_indices: PackedInt32Array = breakdown.get(
+		"succession_indices", PackedInt32Array())
+	var succession_to_vegetation: PackedByteArray = breakdown.get(
+		"succession_to_veg", PackedByteArray())
+	var succession_applied: int = _apply_vegetation_succession_candidates(
+		map, succession_indices, succession_to_vegetation, _c())
+	res["succession_applied_count"] = succession_applied
+
 	if _baker != null:
 		var cover_dirty: bool = _weather_system != null \
 				and _weather_system.has_method("has_cover_dirty") \
 				and bool(_weather_system.has_cover_dirty())
 		if cover_dirty:
 			_mark_enum_atlas_dirty(true, false)
-		var succ_indices = breakdown.get("succession_indices", null)
-		var veg_dirty: bool = succ_indices != null \
-				and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
-				and (succ_indices as PackedInt32Array).size() > 0
-		if veg_dirty:
-			queue_detail_scatter_refresh(succ_indices as PackedInt32Array)
-		if not veg_dirty:
-			veg_dirty = int(breakdown.get("stat_succession_count", 0)) > 0
+		var veg_dirty: bool = succession_applied > 0
 		if veg_dirty or intents.has("detail_scatter"):
 			_mark_enum_atlas_dirty(false, true)
 		if intents.has("enum_atlas") and not (cover_dirty or veg_dirty):
@@ -4615,6 +4712,11 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 		# ACTIVE slice graph may take many simulation days to complete a round.
 		# Build the bootstrap bundle once, but defer sea-ice dt consumption and
 		# refresh dynamic pass knobs just-in-time before their native node runs.
+		# Freeze the last committed climate state before any bundle captures MapData
+		# arrays. Legacy ClimateDailySystem already does this; ACTIVE must honor the
+		# same transaction boundary or *_prev/classification remain generation-era.
+		if _map != null and _map.has_soa() and _map.has_method("soa_begin_climate_transaction"):
+			_map.soa_begin_climate_transaction()
 		_native_daily_capture_finalizer_start_state(_map)
 		var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world, true, 1.0, false, false, true)
 		bundle_ms = float(Time.get_ticks_usec() - bundle_t0) / 1000.0
@@ -4865,6 +4967,8 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 		return { "rc": -1, "fail_stage": "gdext_unavailable" }
 	var wall_t0: int = Time.get_ticks_usec()
 	var bundle_t0: int = wall_t0
+	if _map != null and _map.has_soa() and _map.has_method("soa_begin_climate_transaction"):
+		_map.soa_begin_climate_transaction()
 	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world, true)
 	var bundle_ms: float = float(Time.get_ticks_usec() - bundle_t0) / 1000.0
 	var unified_weather_embedded: bool = bundle.has("weather_knobs")
@@ -4929,6 +5033,8 @@ func run_native_sim_tick_from_job(ctx: SusTickContext, _map: MapData, _world: Wo
 		return run_native_daily_tick_from_job(ctx, _map, _world)
 	var wall_t0: int = Time.get_ticks_usec()
 	var bundle_t0: int = wall_t0
+	if _map != null and _map.has_soa() and _map.has_method("soa_begin_climate_transaction"):
+		_map.soa_begin_climate_transaction()
 	var bundle: Dictionary = _build_native_daily_bundle(ctx, _map, _world, true)
 	var bundle_ms: float = float(Time.get_ticks_usec() - bundle_t0) / 1000.0
 	var unified_weather_embedded: bool = bundle.has("weather_knobs")
@@ -9240,11 +9346,15 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 			var moisture_target: float = clampf(cell.base_moisture * scale_eff, 0.0, 1.0)
 			if cell_idx >= 0 and cell_idx < map.weather_vapor_arr.size():
 				var vapor: float = clampf(map.weather_vapor_arr[cell_idx], 0.0, 1.0)
-				moisture_target = lerpf(moisture_target, vapor, runtime_moisture_vapor_w)
+				# weather_vapor is atmospheric water mass (~0.15 * terrain moisture at
+				# equilibrium), not an absolute [0,1] terrain-moisture target.
+				var vapor_reference: float = clampf(cell.base_moisture * scale_eff, 0.0, 1.0) * 0.15
+				moisture_target += (vapor - vapor_reference) * runtime_moisture_vapor_w
 			if cell_idx >= 0 and cell_idx < map.weather_precip_arr.size():
 				moisture_target += clampf(map.weather_precip_arr[cell_idx], 0.0, 1.0) * runtime_moisture_precip_w
 			if cell_idx >= 0 and cell_idx < map.soil_moisture_arr.size():
-				moisture_target = lerpf(moisture_target, clampf(map.soil_moisture_arr[cell_idx], 0.0, 1.0), runtime_moisture_soil_w)
+				# soil_moisture is a signed hydrology anomaly in [-0.5, 0.5].
+				moisture_target += clampf(map.soil_moisture_arr[cell_idx], -0.5, 0.5) * runtime_moisture_soil_w
 			if cell_idx >= 0 and cell_idx < map.water_balance_30d_arr.size():
 				moisture_target += clampf(map.water_balance_30d_arr[cell_idx], -1.0, 1.0) * runtime_moisture_wb_w
 			moisture_now = lerpf(clampf(cell.moisture, 0.0, 1.0), clampf(moisture_target, 0.0, 1.0), runtime_moisture_relax)
@@ -11420,11 +11530,12 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			var bm: float = base_moist_a[i] * scale_eff
 			var moisture_target: float = clampf(bm, 0.0, 1.0)
 			if weather_vapor_a.size() == n:
-				moisture_target = lerpf(moisture_target, clampf(weather_vapor_a[i], 0.0, 1.0), runtime_moisture_vapor_w)
+				var vapor_reference: float = clampf(bm, 0.0, 1.0) * 0.15
+				moisture_target += (clampf(weather_vapor_a[i], 0.0, 1.0) - vapor_reference) * runtime_moisture_vapor_w
 			if weather_precip_a.size() == n:
 				moisture_target += clampf(weather_precip_a[i], 0.0, 1.0) * runtime_moisture_precip_w
 			if soil_moisture_a.size() == n:
-				moisture_target = lerpf(moisture_target, clampf(soil_moisture_a[i], 0.0, 1.0), runtime_moisture_soil_w)
+				moisture_target += clampf(soil_moisture_a[i], -0.5, 0.5) * runtime_moisture_soil_w
 			if water_balance_a.size() == n:
 				moisture_target += clampf(water_balance_a[i], -1.0, 1.0) * runtime_moisture_wb_w
 			moisture_now = lerpf(clampf(moist_a[i], 0.0, 1.0), clampf(moisture_target, 0.0, 1.0), runtime_moisture_relax_eff)
@@ -13088,16 +13199,18 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 	#     直接写 cell.cover；mark cover dirty 让 baker 重烘。
 	#   - vegetation_dirty: cpp veg_dyn 段返回 succession_indices / succession_to_veg；非空
 	#     即视为 vegetation 有改动。
+	var merged_succession_indices: PackedInt32Array = br.get(
+		"succession_indices", PackedInt32Array())
+	var merged_succession_to_vegetation: PackedByteArray = br.get(
+		"succession_to_veg", PackedByteArray())
+	var merged_succession_applied: int = _apply_vegetation_succession_candidates(
+		map, merged_succession_indices, merged_succession_to_vegetation, cp_now)
+	br["succession_applied_count"] = merged_succession_applied
+	_last_weather_breakdown["succession_applied_count"] = merged_succession_applied
 	if _baker != null:
 		if _weather_system.has_method("has_cover_dirty") and bool(_weather_system.has_cover_dirty()):
 			_mark_enum_atlas_dirty(true, false)
-		var succ_indices = br.get("succession_indices", null)
-		var veg_dirty: bool = succ_indices != null and (typeof(succ_indices) == TYPE_PACKED_INT32_ARRAY) \
-				and (succ_indices as PackedInt32Array).size() > 0
-		if veg_dirty:
-			queue_detail_scatter_refresh(succ_indices as PackedInt32Array)
-		if not veg_dirty:
-			veg_dirty = int(br.get("stat_succession_count", 0)) > 0
+		var veg_dirty: bool = merged_succession_applied > 0
 		if veg_dirty:
 			_mark_enum_atlas_dirty(false, true)
 
@@ -13367,6 +13480,7 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 	var refresh_ms: float = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
 	var knobs: Dictionary = {
 		"n_cells": map.cell_count(),
+		"dt_days": clampf(_consume_weather_dt_days(), 1.0, 30.0),
 		"neighbor_indices": map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array(),
 		"hydro_precip_scale": float(cp_now.hydro_precip_scale),
 		"hydro_snowmelt_scale": float(cp_now.hydro_snowmelt_scale),
@@ -13622,41 +13736,10 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 			# 因此 unpack 回灌循环（n_cells × 3 PackedArray.get + cell setter）可整段删除，
 			# 这是 wall ≤ 1ms 收益的核心来源。
 			if combined_run_veg_dyn:
-				# 演替候选（与 _apply_vegetation_dynamics L7099-7115 完全一致）
-				# 注：succession 后处理会显式覆写 vegetation_vitality（0.65/0.7），
-				# cell.vegetation_vitality = new_vit_c 通过 facade setter 自动 write_f32
-				# 到 SoA，与 map.vegetation_vitality_arr 引用一致。
 				var succ_indices_c: PackedInt32Array = knobs_c.get("succession_indices", PackedInt32Array())
 				var succ_to_veg_c: PackedByteArray = knobs_c.get("succession_to_veg", PackedByteArray())
-				var n_succ_c: int = succ_indices_c.size()
-				if n_succ_c > 0:
-					queue_detail_scatter_refresh(succ_indices_c)
-				for k in range(n_succ_c):
-					var ci_c: int = succ_indices_c[k]
-					if ci_c < 0 or ci_c >= n_cells_c:
-						continue
-					var c_succ: HexCell = cells_c[ci_c]
-					var prev_veg_c: int = int(c_succ.vegetation)
-					var new_veg_c: int = int(succ_to_veg_c[k])
-					var is_degrade_c: bool = (prev_veg_c < _gdext_vegdyn_next_down_cached.size() \
-							and int(_gdext_vegdyn_next_down_cached[prev_veg_c]) == new_veg_c \
-							and new_veg_c != prev_veg_c)
-					c_succ.vegetation = new_veg_c
-					c_succ.base_vegetation = new_veg_c
-					# vegetation-survival-rebalance v2：软重置代替硬重置。
-					# 原本 new_vit_c = 0.65/0.7 会把 vitality 拉回足以触发
-					# 下一轮演替中间的仰角 → 全图永远抽在 0.7 附近。
-					# 改为 (old + target) * 0.5 后，vitality 保留历史梯度，
-					# 热力图重新发热，还能防连锁死亡。
-					var prev_vit_c: float = c_succ.vegetation_vitality
-					var target_vit_c: float = (float(cp_now.vegetation_degrade_reset_target) if cp_now.get("vegetation_degrade_reset_target") != null else 0.75) if is_degrade_c else 0.7
-					c_succ.vegetation_vitality = (prev_vit_c + target_vit_c) * 0.5  # facade setter → world.write_f32
-					var cooldown_days_c: int = int(cp_now.vegetation_succession_cooldown_days) if cp_now.get("vegetation_succession_cooldown_days") != null else 30
-					if cooldown_days_c > 0:
-						c_succ._vitality_low_streak = -cooldown_days_c
-						c_succ._vitality_high_streak = -cooldown_days_c
-					c_succ.current_state["vegetation"] = new_veg_c
-					vegetation_dirty = true
+				vegetation_dirty = _apply_vegetation_succession_candidates(
+					map, succ_indices_c, succ_to_veg_c, cp_now) > 0
 
 			# FEEDBACK 写回：cpp 已直写 SoA _slots[sid_soil/sid_vgp]，与 map.soil_moisture_arr /
 			# vegetation_growth_pressure_arr 共享 PackedArray 引用。HexCell 端 soil_moisture /
