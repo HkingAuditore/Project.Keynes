@@ -708,6 +708,7 @@ private:
         int64_t owner_working_capital_reserved = 0;
         int64_t births = 0;
         int64_t deaths = 0;
+        int64_t unemployed_population_delta = 0;
         int64_t closing_population = 0;
         int64_t closing_cohort_funds = 0;
         int64_t closing_goods_stock = 0;
@@ -1402,6 +1403,7 @@ private:
     bool apply_build_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell, std::string &error);
+    bool reconcile_building_employment_after_population_change(std::string &error);
     bool run_building_production_cell(int32_t cell, std::string &error);
     int32_t gather_resource_cells(int32_t cell, int32_t access_mode,
                                   int32_t *out_cells, int32_t capacity) const;

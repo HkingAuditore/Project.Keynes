@@ -85,8 +85,20 @@ func _initialize() -> void:
 		_population_matches_fixture(first, facade))
 	_expect("bootstrap reports formula-based initial finance source",
 		String(first.get("population_source", "")) ==
-			"mid_stone_visible_resources_capacity_balanced_bootstrap_finance_v8" and
+			"mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v10" and
+		int(first.get("cell_population_cap", 0)) == 300 and
 		String(first.get("initial_employment", "")) == "unemployed")
+	_expect("carrying-capacity balancing retains useful repeated buildings",
+		int(first.get("basic_capacity_initial_buildings", 0)) >
+			int(first.get("basic_capacity_final_buildings", 0)) and
+		int(first.get("basic_capacity_initial_buildings", 0)) -
+			int(first.get("basic_capacity_final_buildings", 0)) ==
+			int(first.get("basic_capacity_trimmed_buildings", 0)) and
+		_max_building_group_count(first) > 1 and
+		_max_building_group_count(first) <= 24)
+	_expect("each passable cell population follows its zero-to-300 carrying capacity",
+		_population_matches_carrying_capacity(first) and
+		int(first.get("carrying_capacity_total", -1)) == int(first.get("total_population", 0)))
 	_expect("all cohorts receive survival funds and owner/merchant additions reconcile",
 		_fixture_bootstrap_finance_reconciles(first, facade))
 	_expect("every populated fixture cell covers conservative food and clothing demand",
@@ -104,7 +116,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v2 recorder starts", bool(csv_test.get("ok", false)))
+	_expect("native CSV v6 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 6)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("both viable land cells receive sustainable settlements",
@@ -295,11 +308,11 @@ func _start_csv_recorder(ext: Object, map: MapData, resource_slots: PackedInt32A
 		q[idx] = cell.q
 		r[idx] = cell.r
 		s[idx] = cell.s
-	var dir := ProjectSettings.globalize_path("user://economy_csv_v2_test")
+	var dir := ProjectSettings.globalize_path("user://economy_csv_v6_test")
 	DirAccess.make_dir_recursive_absolute(dir)
 	var paths := {}
 	for dim in ["summary", "cohorts", "buildings", "resources", "market"]:
-		paths[dim] = dir.path_join("integration_v2_%s.csv" % dim)
+		paths[dim] = dir.path_join("integration_v6_%s.csv" % dim)
 		if FileAccess.file_exists(paths[dim]):
 			DirAccess.remove_absolute(paths[dim])
 	var result: Dictionary = ext.start_economy_csv_recording({
@@ -360,7 +373,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 39, "cohorts": 23, "buildings": 42,
+	var expected_columns := {"summary": 39, "cohorts": 23, "buildings": 45,
 		"resources": 9, "market": 28}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
@@ -375,6 +388,29 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		for line_idx in range(1, lines.size()):
 			_expect("%s CSV row %d column count" % [dim, line_idx],
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
+	var building_text := FileAccess.get_file_as_string(str(paths.buildings)).trim_prefix("﻿")
+	var building_lines := building_text.split("\n", false)
+	var building_header := building_lines[0].split(",", true)
+	var owner_capacity_col := building_header.find("owner_capacity")
+	var owner_required_col := building_header.find("owner_required")
+	var filled_owner_col := building_header.find("filled_owner")
+	var owner_openings_col := building_header.find("owner_openings")
+	var owner_columns_valid := owner_capacity_col >= 0 and owner_required_col >= 0 \
+		and filled_owner_col >= 0 and owner_openings_col >= 0
+	var owner_rows_valid := owner_columns_valid
+	for line in building_lines.slice(1):
+		var columns := line.split(",", true)
+		if columns.size() != int(expected_columns.buildings) or int(columns[7]) != 0:
+			continue
+		var capacity := int(columns[owner_capacity_col])
+		var required := int(columns[owner_required_col])
+		var filled := int(columns[filled_owner_col])
+		var openings := int(columns[owner_openings_col])
+		if capacity < required or openings != maxi(0, required - filled):
+			owner_rows_valid = false
+			break
+	_expect("building CSV v6 separates owner capacity, planned jobs, and openings",
+		owner_columns_valid and owner_rows_valid)
 	if not resource_slots.is_empty() and not resource_ids.is_empty():
 		var reserves: PackedFloat32Array = ext.snapshot_f32(resource_slots[0])
 		var resource_text := FileAccess.get_file_as_string(str(paths.resources)).trim_prefix("﻿")
@@ -432,6 +468,40 @@ func _sum_i64(values: PackedInt64Array) -> int:
 	for value in values:
 		total += int(value)
 	return total
+
+
+func _max_building_group_count(fixture: Dictionary) -> int:
+	var packet: Dictionary = fixture.get("building_packet", {})
+	var counts: PackedInt64Array = packet.get("building_counts", PackedInt64Array())
+	var maximum := 0
+	for count in counts:
+		maximum = maxi(maximum, int(count))
+	return maximum
+
+
+func _population_matches_carrying_capacity(fixture: Dictionary) -> bool:
+	var capacity_cells: PackedInt32Array = fixture.get(
+		"carrying_capacity_cell_indices", PackedInt32Array())
+	var capacities: PackedInt64Array = fixture.get(
+		"carrying_capacity_population", PackedInt64Array())
+	var packet: Dictionary = fixture.get("population_packet", {})
+	var population_cells: PackedInt32Array = packet.get("cell_indices", PackedInt32Array())
+	var populations: PackedInt64Array = packet.get("population", PackedInt64Array())
+	if capacity_cells.is_empty() or capacity_cells.size() != capacities.size() or \
+			population_cells.size() != populations.size():
+		return false
+	var population_by_cell := {}
+	for cohort in range(population_cells.size()):
+		var cell := int(population_cells[cohort])
+		population_by_cell[cell] = int(population_by_cell.get(cell, 0)) + int(populations[cohort])
+	var distinct_capacities := {}
+	for i in range(capacity_cells.size()):
+		var capacity := int(capacities[i])
+		if capacity < 0 or capacity > 300 or \
+				int(population_by_cell.get(int(capacity_cells[i]), 0)) != capacity:
+			return false
+		distinct_capacities[capacity] = true
+	return distinct_capacities.size() > 1
 
 
 func _has_building(snapshot: Dictionary, building_id: String) -> bool:

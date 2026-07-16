@@ -710,6 +710,15 @@ EconomyDailySystem (SUS shell)
   -> committed cell summary + audit report
 ```
 
+生成期的 `MapGenerator._setup_economy_runtime()` 先配置并 bootstrap country authority，再配置
+economy，随后在任何人口/市场/建筑 bootstrap 之前一次性调用
+`capture_economy_trade_topology(neighbors, terrain, passable_lut, move_cost_lut, generation)`。
+默认 ACTIVE 模式只有在 `trade_topology_ready=true` 后才继续注册 `economy_daily`。
+显式测试经济夹具会先按可见资源生成候选建筑；collector 的 24 仅是资源支持上限，随后
+`_balance_basic_capacity()` 以 `min(岗位容量, 净食物承载人数, 净衣着承载人数, 300)` 为每格目标
+人口；商栈岗位包含在容量需求内。平衡器在每种已投放建筑至少保留一栋的条件下，只删除超过目标
+所需的重复建筑，再由剩余岗位反推初始人口。贫瘠格可以为 0，资源丰富格最多为 300。
+
 Market V2 固定一地块一市场。周期起点读取温度/湿度/积雪/天气 Q16 snapshot，
 按 plan→need→variant→component CSR 从冻结状态计算 N 日连续财富、民族和环境需求；同一
 variant 的 components 作为互补 bundle 清算，不同 variants 做一次替代 fallback。
@@ -718,7 +727,7 @@ variant 的 components 作为互补 bundle 清算，不同 variants 做一次替
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v5 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v6 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
@@ -2295,6 +2304,9 @@ population/market snapshots`。岗位按本地 profession 匹配，owner lot 先
 到岗比例，再受业主输入资金和 sample-day 有效 resource reserve 限制；实际产能额外受每项本地
 输入库存限制。周期开始时仍存活人口先参与就业，不以前一周期满足度缩减岗位供给；连续三周期
 严重负利润的 owner-lot 进入 `SUSPENDED_LOSS`，停产时不分配岗位、不采购、不生产、不贡献企业需求。
+多个建筑组共享 owner signature 时，owner fill 总和按盈利/利用率优先级受该 cohort 存活人口约束；
+household demography 和 structural commit 后再做一次只裁不招的 committed 对账，避免死亡后出现
+建筑组幽灵填充。补招仍只发生在下一次 `building_employment`，不会改变已经完成的生产与工资结算。
 有效可采储量合入尚未消费的负 pending
 extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode：`extract` 以有效储量限制产能并
 发布负 delta；`capacity` 以 `reserve / (building_count × requirement)` 限产，但不写资源 delta。
@@ -2322,6 +2334,8 @@ employee role 使用 `adaptive/fixed/none` role ABI。adaptive 工资取当地�
 MapData/DataCore，也不产生全局建筑财务矩阵。
 建筑快照同时发布最近结算的 `period_days`，Inspector 将实际投入/产出总量按建筑数和周期天数
 归一化为“单位/栋/日”；该值反映到岗、库存、资金和资源约束后的实际效率，不展示理论配方。
+岗位 UI 使用 `owner_required` 和 `owner_openings`，并把 `owner_capacity - owner_required` 标为闲置产能，
+不再把未启用的物理 owner 槽位显示为招聘空缺。
 
 生产 output 先按 owner 当前消费计划预留可直接满足的单组件 variant 商品，再把余量形成
 cell-local offers。商人按实际出库/出口 EMA 和 target inventory days 计算库存缺口，冻结期初现金并

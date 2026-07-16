@@ -25,7 +25,7 @@ breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 
 全量地块录制会同步编码、写盘，可能主动制造卡顿，因此先录性能基线，再短时开启地块录制，
 并检查 `tile_ms/format_ms/flush_ms/encoder_path`。
 
-经济录制已使用原生 CSV v5 双缓冲：GM 面板显示 `captured/written epoch`、
+经济录制已使用原生 CSV v6 双缓冲：GM 面板显示 `captured/written epoch`、
 `queued_batches`、`capture_ms_last/p95/max` 和 worker 耗时。正常录制为 `recording`，点击停止后为
 `draining`，排空后为 `completed`。`queue_full` 表示长期产生速度超过编码/磁盘吞吐，recorder
 已保留并写完所有已接受 epoch，同时用 `first_unrecorded_epoch` 标明停止边界；`row_limit`
@@ -1254,7 +1254,7 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
   判断停产原因。
 - 先比较 `building_base_wages_due/paid`、投入采购现金、产出收入、销售后分配与商人购买力，不能
   用铸币掩盖。
-- 市场 CSV v5 还提供 `realized_withdrawal_ema/production_input_reserve/household_available_stock/merchant_inventory_target/merchant_procurement_shortfall`；summary 同步提供 `owner_working_capital_reserved/production_input_reserved/production_input_reserve_shortfall/production_output_supported/producer_support_money_issued`；
+- CSV v6 building 行用 `owner_capacity/owner_required/filled_owner/owner_openings` 区分物理容量、本期岗位、实际到岗和真实招聘空缺；不要再用 `count - filled_owner` 推断失业者可进入的岗位。market 还提供 `realized_withdrawal_ema/production_input_reserve/household_available_stock/merchant_inventory_target/merchant_procurement_shortfall`；summary 同步提供 `owner_working_capital_reserved/production_input_reserved/production_input_reserve_shortfall/production_output_supported/producer_support_money_issued`；
   summary 提供 `merchant_procurement_budget/reserved/spent`。若商人现金归零，先验证 spent 未超过
   budget 且 reserved 约为冻结期初现金的 25%，再排查居民消费或外部命令，而不是把采购阶段误判为耗尽现金。
 - `wage_plan_ms` 长：比较 active labor keys、当地 cohort/signature 数与消费篮子边数；不得退化

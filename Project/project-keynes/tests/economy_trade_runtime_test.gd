@@ -93,8 +93,8 @@ func _run() -> void:
 	_expect("in-transit committed boundary conserves", bool(report.get("done", false)) and
 		int(report.get("goods_error", 1)) == 0 and int(report.get("money_error", 1)) == 0)
 	var saved := _save_economy(ext)
-	_expect("PKEC v12 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 12)
+	_expect("PKEC v13 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 13)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -442,7 +442,7 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	CountryTestHelper.configure_all_technologies(v11_restored, catalog, 1, 4415)
 	v11_restored.configure_economy(catalog, profile, 1, 4415)
 	var v11_result := _restore_economy(v11_restored, v11_chunks)
-	_expect("compatible PKEC v11 ACTIVE migrates into v12 state",
+	_expect("compatible PKEC v11 ACTIVE migrates into current state",
 		bool(v11_result.get("ok", false)) and
 		int(v11_restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var v11_probe_chunks := _set_v11_trade_mode(v11_chunks, 1)

@@ -33,7 +33,7 @@
 - 商人库存目标使用实际出库 EMA、出口 EMA、目录目标天数和至多一周期短缺恢复量；无历史时只建立一日当前可售产出的冷启动库存。采购开始冻结现金，只允许使用 75%，再按 `库存缺口 × 收购价` 和稳定 good/group 顺序分配预算。
 - ACTIVE owner-lot 在家庭清算前按已到岗业主份额、计划利用率和冻结单位投入成本保留下周期营运资金；该资金仍在 owner cohort 账户内，但不会被本期居民订单花掉。报告发布 `owner_working_capital_reserved`。
 - 食物生产者按三类食品总需求的饥饿阈值留存产出；精确消费 variant 之后的剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量，保证狩猎、捕鱼等单一食物生产者具备真实自给能力。
-- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。商人目标库存至少覆盖预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v5 逐商品列用于诊断。缓存不进入 PKEC v12，可从建筑和市场信号状态重建。
+- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。商人目标库存至少覆盖预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v6 逐商品列用于诊断。缓存不进入 PKEC v12，可从建筑和市场信号状态重建。
 - 正常商人现金/配额无法购买的可储存余货不再丢弃：全部进入商人所有库存，生产者获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`；cycle-flow 余量仍丢弃。托底后库存高于正常目标会压低下一周期利用率。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
 - PKEC v12 保存并哈希企业状态/连续数/采购意图容量/实际利润率和实际出库 EMA。兼容参数一致的 v11 ACTIVE 可迁移；ACTIVE 配置明确拒绝 v11 PROBE 和 v10。
@@ -134,10 +134,13 @@ PackedArrays；UI 只查询选中地块。
 
 贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入和分页
 `get_trade_orders_for_cell(cell, offset, limit)` 冷查询；禁止跨桥返回全局路线/订单矩阵。
+正式地图由 `MapGenerator._setup_economy_runtime()` 在 economy configure 后、bootstrap 前
+捕获一次静态邻接、terrain passability 与 move-cost LUT。默认 `trade_runtime_mode=ACTIVE`；
+非 `OFF` 模式捕获失败会中止经济初始化，不允许继续运行一个 topology-not-ready 的假 ACTIVE。
 
 调试录制控制面另提供 `start_economy_csv_recording(config)`、
 `request_stop_economy_csv_recording()` 和 `get_economy_csv_recording_status()`。它们管理独立的
-`EconomyCsvRecorder`，只在成功 committed publish 且资源 delta 已回写后抓取 CSV v5 POD
+`EconomyCsvRecorder`，只在成功 committed publish 且资源 delta 已回写后抓取 CSV v6 POD
 批次；worker 编码/写盘状态不属于 runtime report、PKEC 或 state hash。状态包含
 `captured/written epochs/rows`、`bytes_written`、`queued_batches`、主线程 capture 与 worker
 耗时、`buffer_memory_bytes`、路径、`error_code` 和 `first_unrecorded_epoch`。
@@ -228,6 +231,10 @@ owner-lot 继续生产且不会自动转换。快照发布 family、tier、highe
 `filled_owner`/`_building_employee_filled`（缩产差额裁员 → 超出目标的在岗人口迁往 `unemployed|eth`），
 再让活跃建筑按 `(realized_profit_margin_q16, planned_utilization_q16, group_index)` 稳定序**跨建筑类型**
 优先从失业池增量招人（先喂最赚钱；招人跨原职业，失业者可被任意缺人建筑吸收，ethnicity 不变）；
+同一 owner signature 被多个建筑组共享时，现有 `filled_owner` 也按该优先级夹到该 cohort 的存活人口，
+防止人口减少后各组分别“已填满”但 cohort 无对应在岗人口。household demography 与 structural commit
+之后、publish 之前另执行一次只裁不招的就业对账，使 committed `filled_owner`、role fill 与 cohort
+`owner_employed/employee_employed` 始终一致；新空缺留到下一周期正常招聘，不追溯改变本期生产或工资。
 利用率坍缩时失业者获跨周期缓冲、可长期失业，不再每周期从零重摊。商人全程排除（`ensure_merchant_invariant`
 保持），其失业/商业萧条为独立后续设计。随后业主按本地价购买输入并生产。每个 owner 从统一
 `survival_household` 基础量、冻结人口/环境和民族修正计算无财富/价格弹性的生存量，只对主食、蛋白质、蔬果保留饥饿阈值比例，并按寒冷
@@ -250,9 +257,10 @@ sample boundary 捕获的六邻拓扑上汇总本格+邻格，并按稳定来源
 
 世界设置启用测试经济数据时，fixture 先生成资源适配的自给、采集与本地产业 owner-lot，随后
 通过 `EconomyFacade.building_job_spec()` 读取 catalog 岗位列并派生 cohort。生成前用
-`building_placement_spec()` 的投入/产出数量检查本地食品和衣着净产能，削减重复建筑；不具备最低
-承载力的地块不生成人口。人口结构不再作为建筑生成输入；建筑岗位配置变化会直接改变新地图的
-职业人口结构。
+`building_placement_spec()` 的投入/产出数量计算本地净食品和衣着容量。每格目标人口为岗位容量、
+食品承载人数、衣着承载人数的最小值，并封顶 `300`；商栈的一个 merchant 岗位也计入人口和生存
+容量。重复建筑只削减到该目标，每种已投放类型至少保留一栋；不具备最低承载力的地块不生成人口。
+人口结构不再作为建筑生成输入；建筑岗位配置变化会直接改变新地图的职业人口结构。
 
 Inspector 首屏通过 `get_population_cell_summary` 只读取人口聚合值；人口需求、市场、建筑与自然
 资源明细由可见标签惰性读取，避免点击成本随全局 goods/building catalog 扩张。完整 snapshot 在

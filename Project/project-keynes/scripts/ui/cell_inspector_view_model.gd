@@ -861,7 +861,11 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 	var group_types: PackedInt32Array = snapshot.get("group_type_ids", PackedInt32Array())
 	var owner_signatures: PackedInt32Array = snapshot.get("owner_signature_ids", PackedInt32Array())
 	var group_counts: PackedInt64Array = snapshot.get("group_counts", PackedInt64Array())
+	var owner_capacity: PackedInt64Array = snapshot.get("owner_capacity", PackedInt64Array())
+	var owner_required_by_group: PackedInt64Array = snapshot.get("owner_required", PackedInt64Array())
 	var filled_owner: PackedInt64Array = snapshot.get("filled_owner", PackedInt64Array())
+	var owner_openings: PackedInt64Array = snapshot.get("owner_openings", PackedInt64Array())
+	var planned_utilization: PackedInt32Array = snapshot.get("planned_utilization_q16", PackedInt32Array())
 	var capacity_q16: PackedInt64Array = snapshot.get("capacity_q16", PackedInt64Array())
 	var last_input: PackedInt64Array = snapshot.get("last_input", PackedInt64Array())
 	var last_output: PackedInt64Array = snapshot.get("last_output", PackedInt64Array())
@@ -888,10 +892,18 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 		var wages_due := int(last_wages_due[i]) if i < last_wages_due.size() else wages
 		var operating_cost := int(last_operating_cost[i]) if i < last_operating_cost.size() else input_cost + wages_due
 		var profit := revenue - operating_cost
-		var owner_required := count * int(owner_slots[type_idx]) if type_idx >= 0 and type_idx < owner_slots.size() else count
+		var owner_physical_capacity := int(owner_capacity[i]) if i < owner_capacity.size() else \
+			(count * int(owner_slots[type_idx]) if type_idx >= 0 and type_idx < owner_slots.size() else count)
+		var owner_required := int(owner_required_by_group[i]) if i < owner_required_by_group.size() else 0
+		if i >= owner_required_by_group.size():
+			var utilization := int(planned_utilization[i]) if i < planned_utilization.size() else 65536
+			owner_required = int(owner_physical_capacity * utilization / 65536.0)
+			if owner_required == 0 and owner_physical_capacity > 0 and utilization > 0:
+				owner_required = 1
 		var owner_actual := int(filled_owner[i]) if i < filled_owner.size() else 0
+		var owner_open := int(owner_openings[i]) if i < owner_openings.size() else maxi(0, owner_required - owner_actual)
 		var job_rows := [
-			{"id": "owner_job", "name": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1), "value": "%d / %d" % [owner_actual, owner_required], "ratio": float(owner_actual) / float(owner_required) if owner_required > 0 else 1.0},
+			{"id": "owner_job", "name": "业主（本期岗位） · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1), "value": "%d / %d" % [owner_actual, owner_required], "ratio": float(owner_actual) / float(owner_required) if owner_required > 0 else 1.0},
 		]
 		if role_offsets.size() == group_types.size() + 1:
 			for role in range(role_offsets[i], role_offsets[i + 1]):
@@ -939,8 +951,15 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 			for role in range(role_offsets[i], role_offsets[i + 1]):
 				staffing_required += int(role_required[role]) if role < role_required.size() else 0
 				staffing_actual += int(role_filled[role]) if role < role_filled.size() else 0
-		var status := "到岗 %d/%d · 产能 %.1f%%" % [staffing_actual, staffing_required,
-			float(capacity_q16[i]) * 100.0 / 65536.0 if i < capacity_q16.size() else 0.0]
+		var status_parts: Array[String] = ["本期到岗 %d/%d" % [staffing_actual, staffing_required]]
+		if owner_open > 0:
+			status_parts.append("招聘空缺 %d" % owner_open)
+		var idle_owner_capacity := maxi(0, owner_physical_capacity - owner_required)
+		if idle_owner_capacity > 0:
+			status_parts.append("闲置产能 %d 席" % idle_owner_capacity)
+		status_parts.append("实际产能 %.1f%%" % (
+			float(capacity_q16[i]) * 100.0 / 65536.0 if i < capacity_q16.size() else 0.0))
+		var status := " · ".join(status_parts)
 		if i < wage_suspended.size() and int(wage_suspended[i]) != 0:
 			status = "工资未足额支付 · 本期停产"
 		if i < capacity_q16.size() and int(capacity_q16[i]) == 0 and _building_resource_depleted(snapshot, type_idx):

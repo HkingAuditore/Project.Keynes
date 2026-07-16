@@ -4431,6 +4431,28 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
                     std::max<int64_t>(0, _building_employee_filled[fi]), _saturation_count);
             }
         }
+        // Reuse the same profitability/utilization priority for retaining incumbent
+        // owners and for hiring replacements. Population can shrink after the prior
+        // employment pass, so per-group target clamps alone are insufficient when
+        // several groups share one owner signature.
+        thread_local std::vector<int32_t> hire_order;
+        hire_order.clear();
+        for (int32_t g = first; g < last; ++g) {
+            BuildingGroup &group = _buildings[g];
+            if (group.cell != cell || group.count <= 0 ||
+                !building_available(cell, group.type_id, true)) continue;
+            hire_order.push_back(g);
+        }
+        std::stable_sort(hire_order.begin(), hire_order.end(),
+                         [&](int32_t a, int32_t b) {
+            const BuildingGroup &ga = _buildings[a];
+            const BuildingGroup &gb = _buildings[b];
+            if (ga.realized_profit_margin_q16 != gb.realized_profit_margin_q16)
+                return ga.realized_profit_margin_q16 > gb.realized_profit_margin_q16;
+            if (ga.planned_utilization_q16 != gb.planned_utilization_q16)
+                return ga.planned_utilization_q16 > gb.planned_utilization_q16;
+            return a < b;
+        });
 
         // ---- 第1步 析出：把超出目标的在岗人口迁往 unemployed|eth ----
         // (a) 先把每个 group 的 filled_owner / _building_employee_filled 夹到目标
@@ -4446,6 +4468,31 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
             if (group.filled_owner > group_owner_target[g - first]) {
                 group.filled_owner = group_owner_target[g - first];
             }
+        }
+        // A cohort can lose population during household demography while its
+        // building-group fill counters still describe the previous epoch. Clamp
+        // the aggregate fill for each owner signature to the live cohort population
+        // before deriving retained employment. Higher-priority groups retain their
+        // incumbents first; any released target is eligible for normal hiring below.
+        thread_local std::vector<int64_t> sig_owner_remaining;
+        sig_owner_remaining.assign(_signatures.size(), 0);
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            const uint32_t sig = _population.signature_id[slot];
+            if (sig >= sig_owner_remaining.size()) return;
+            sig_owner_remaining[sig] = saturating_add(
+                sig_owner_remaining[sig],
+                std::max<int64_t>(0, _population.population[slot]), _saturation_count);
+        });
+        for (int32_t g : hire_order) {
+            BuildingGroup &group = _buildings[g];
+            if (group.owner_signature_id < 0 ||
+                group.owner_signature_id >= static_cast<int32_t>(sig_owner_remaining.size())) {
+                group.filled_owner = 0;
+                continue;
+            }
+            int64_t &remaining = sig_owner_remaining[group.owner_signature_id];
+            group.filled_owner = std::min(std::max<int64_t>(0, group.filled_owner), remaining);
+            remaining -= group.filled_owner;
         }
         // employee 侧夹紧：profession p 若 Σfilled > Σtarget，按 group 稳定序
         // 从后往前削减各 role fill 到 demand。用 remaining[p] 追踪该 profession
@@ -4589,24 +4636,6 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
         // 优先级键：(realized_profit_margin_q16 desc, planned_utilization_q16 desc,
         //            group_index asc)。排序粒度=跨 BuildingGroup（跨建筑类型）；
         // 同 type_id+同 owner_signature 聚合的组内盈利/利用率相同，组内不排（稳定序）。
-        thread_local std::vector<int32_t> hire_order;
-        hire_order.clear();
-        for (int32_t g = first; g < last; ++g) {
-            BuildingGroup &group = _buildings[g];
-            if (group.cell != cell || group.count <= 0 ||
-                !building_available(cell, group.type_id, true)) continue;
-            hire_order.push_back(g);
-        }
-        std::stable_sort(hire_order.begin(), hire_order.end(),
-                         [&](int32_t a, int32_t b) {
-            const BuildingGroup &ga = _buildings[a];
-            const BuildingGroup &gb = _buildings[b];
-            if (ga.realized_profit_margin_q16 != gb.realized_profit_margin_q16)
-                return ga.realized_profit_margin_q16 > gb.realized_profit_margin_q16;
-            if (ga.planned_utilization_q16 != gb.planned_utilization_q16)
-                return ga.planned_utilization_q16 > gb.planned_utilization_q16;
-            return a < b;   // group_index asc（稳定序兜底）
-        });
         // 池可用量：按 eth 缓存各 unemployed|eth slot 的当前人口与 slot id。
         // 招 owner 需精确 eth（group.owner_signature 的 eth）；招 employee 可跨 eth
         // （按 eth 升序取池，保确定）。招人在遍历外逐 group 执行迁移，每次迁移后
@@ -4754,6 +4783,157 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
                  SUBJECT_BUILDING_GROUP, cell, first, last - first,
                  local_owner, local_employee, local_unemployed, last - first,
                  event_legs.empty() ? nullptr : &event_legs);
+    return true;
+}
+
+bool NativeEconomyRuntime::reconcile_building_employment_after_population_change(
+        std::string &error) {
+    const int32_t professions = static_cast<int32_t>(_profession_ids.size());
+    thread_local std::vector<int32_t> priority;
+    thread_local std::vector<int64_t> sig_population;
+    thread_local std::vector<int64_t> sig_owner_filled;
+    thread_local std::vector<int64_t> sig_owner_distributed;
+    thread_local std::vector<int64_t> profession_capacity;
+    thread_local std::vector<int64_t> profession_filled;
+    thread_local std::vector<int64_t> profession_prefix;
+    thread_local std::vector<int64_t> profession_distributed;
+
+    for (int32_t cell : _building_active_cells) {
+        const int32_t first = _building_cell_offsets[cell];
+        const int32_t last = _building_cell_offsets[cell + 1];
+        int64_t owner_before = 0;
+        int64_t employee_before = 0;
+        int64_t unemployed_before = 0;
+        sig_population.assign(_signatures.size(), 0);
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            const uint32_t sig = _population.signature_id[slot];
+            if (sig < sig_population.size()) {
+                sig_population[sig] = saturating_add(sig_population[sig],
+                    std::max<int64_t>(0, _population.population[slot]), _saturation_count);
+            }
+            owner_before = saturating_add(owner_before,
+                std::max<int64_t>(0, _population.owner_employed[slot]), _saturation_count);
+            employee_before = saturating_add(employee_before,
+                std::max<int64_t>(0, _population.employee_employed[slot]), _saturation_count);
+            unemployed_before = saturating_add(unemployed_before, std::max<int64_t>(0,
+                _population.population[slot] - _population.owner_employed[slot] -
+                _population.employee_employed[slot]), _saturation_count);
+        });
+
+        priority.clear();
+        for (int32_t g = first; g < last; ++g) {
+            BuildingGroup &group = _buildings[g];
+            if (group.cell != cell || group.count <= 0 ||
+                !building_available(cell, group.type_id, true)) {
+                group.filled_owner = 0;
+                if (group.type_id >= 0 &&
+                    group.type_id < static_cast<int32_t>(_building_types.size())) {
+                    const BuildingType &type = _building_types[group.type_id];
+                    for (int32_t r = 0; r < type.employee_count; ++r)
+                        _building_employee_filled[group.employee_fill_begin + r] = 0;
+                }
+                continue;
+            }
+            priority.push_back(g);
+        }
+        std::stable_sort(priority.begin(), priority.end(), [&](int32_t a, int32_t b) {
+            const BuildingGroup &ga = _buildings[a];
+            const BuildingGroup &gb = _buildings[b];
+            if (ga.realized_profit_margin_q16 != gb.realized_profit_margin_q16)
+                return ga.realized_profit_margin_q16 > gb.realized_profit_margin_q16;
+            if (ga.planned_utilization_q16 != gb.planned_utilization_q16)
+                return ga.planned_utilization_q16 > gb.planned_utilization_q16;
+            return a < b;
+        });
+
+        sig_owner_filled.assign(_signatures.size(), 0);
+        for (int32_t g : priority) {
+            BuildingGroup &group = _buildings[g];
+            const int32_t sig = group.owner_signature_id;
+            if (sig < 0 || sig >= static_cast<int32_t>(sig_population.size())) {
+                error = "building_owner_signature_invalid_after_population_change";
+                return false;
+            }
+            const int64_t available = std::max<int64_t>(
+                0, sig_population[sig] - sig_owner_filled[sig]);
+            group.filled_owner = std::min(
+                std::max<int64_t>(0, group.filled_owner), available);
+            sig_owner_filled[sig] = saturating_add(
+                sig_owner_filled[sig], group.filled_owner, _saturation_count);
+        }
+
+        profession_capacity.assign(professions, 0);
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            if (is_merchant_slot(slot)) return;
+            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+            const int32_t profession = _signatures[sig].profession_id;
+            if (profession == _unemployed_profession_id) return;
+            const int64_t owner = std::min(sig_owner_filled[sig],
+                std::max<int64_t>(0, _population.population[slot]));
+            profession_capacity[profession] = saturating_add(
+                profession_capacity[profession],
+                std::max<int64_t>(0, _population.population[slot] - owner),
+                _saturation_count);
+        });
+        profession_filled.assign(professions, 0);
+        for (int32_t g : priority) {
+            BuildingGroup &group = _buildings[g];
+            const BuildingType &type = _building_types[group.type_id];
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                const int32_t index = group.employee_fill_begin + r;
+                const int64_t available = std::max<int64_t>(
+                    0, profession_capacity[role.profession_id] -
+                        profession_filled[role.profession_id]);
+                _building_employee_filled[index] = std::min(
+                    std::max<int64_t>(0, _building_employee_filled[index]), available);
+                profession_filled[role.profession_id] = saturating_add(
+                    profession_filled[role.profession_id],
+                    _building_employee_filled[index], _saturation_count);
+            }
+        }
+
+        sig_owner_distributed.assign(_signatures.size(), 0);
+        profession_prefix.assign(professions, 0);
+        profession_distributed.assign(professions, 0);
+        int64_t owner_after = 0;
+        int64_t employee_after = 0;
+        int64_t unemployed_after = 0;
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+            const int32_t profession = _signatures[sig].profession_id;
+            const int64_t population = std::max<int64_t>(0, _population.population[slot]);
+            const int64_t owner = std::min(population, std::max<int64_t>(
+                0, sig_owner_filled[sig] - sig_owner_distributed[sig]));
+            sig_owner_distributed[sig] = saturating_add(
+                sig_owner_distributed[sig], owner, _saturation_count);
+            int64_t employee = 0;
+            if (!is_merchant_slot(slot) && profession != _unemployed_profession_id) {
+                const int64_t capacity = std::max<int64_t>(0, population - owner);
+                profession_prefix[profession] = saturating_add(
+                    profession_prefix[profession], capacity, _saturation_count);
+                const int64_t next = profession_capacity[profession] > 0
+                    ? mul_div_sat(profession_filled[profession],
+                        profession_prefix[profession], profession_capacity[profession],
+                        _saturation_count) : 0;
+                employee = std::min(capacity, std::max<int64_t>(
+                    0, next - profession_distributed[profession]));
+                profession_distributed[profession] = next;
+            }
+            _population.owner_employed[slot] = owner;
+            _population.employee_employed[slot] = employee;
+            owner_after = saturating_add(owner_after, owner, _saturation_count);
+            employee_after = saturating_add(employee_after, employee, _saturation_count);
+            unemployed_after = saturating_add(unemployed_after,
+                std::max<int64_t>(0, population - owner - employee), _saturation_count);
+        });
+        _filled_owner_jobs = saturating_add(_filled_owner_jobs,
+            owner_after - owner_before, _saturation_count);
+        _filled_employee_jobs = saturating_add(_filled_employee_jobs,
+            employee_after - employee_before, _saturation_count);
+        _unemployed_population = saturating_add(_unemployed_population,
+            unemployed_after - unemployed_before, _saturation_count);
+    }
     return true;
 }
 
@@ -8437,6 +8617,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 std::max(1, _epoch_days), sat), sat);
         int64_t deaths = death_numerator_q32 / Q32_ONE;
         const int64_t population_before = std::max<int64_t>(0, _population.population[slot]);
+        const int64_t unemployed_before = std::max<int64_t>(0,
+            population_before - _population.owner_employed[slot] -
+                _population.employee_employed[slot]);
         const int64_t market_survivor_floor = remaining_market_population <= population_before ? 1 : 0;
         deaths = std::clamp<int64_t>(deaths, 0,
             std::max<int64_t>(0, population_before - market_survivor_floor));
@@ -8444,6 +8627,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             ? 0 : death_numerator_q32 % Q32_ONE;
         if (deaths > 0) {
             _population.population[slot] -= deaths;
+            const int64_t unemployed_after = std::max<int64_t>(0,
+                _population.population[slot] - _population.owner_employed[slot] -
+                    _population.employee_employed[slot]);
+            result.unemployed_population_delta = saturating_add(
+                result.unemployed_population_delta,
+                unemployed_after - unemployed_before, sat);
             remaining_market_population -= deaths;
             result.deaths = saturating_add(result.deaths, deaths, sat);
             if (_population.population[slot] == 0) {
@@ -8595,6 +8784,13 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
             error = "country_treasury_estate_transfer_failed";
             return false;
         }
+        // A demography command can drain a cohort after the employment stage.
+        // Remove its stale lane counts before releasing the slot; the committed
+        // reconciliation pass below then clips the corresponding group fills.
+        _filled_owner_jobs = saturating_sub(_filled_owner_jobs,
+            std::max<int64_t>(0, _population.owner_employed[source]), _saturation_count);
+        _filled_employee_jobs = saturating_sub(_filled_employee_jobs,
+            std::max<int64_t>(0, _population.employee_employed[source]), _saturation_count);
         _population.funds[source] = 0;
         _population.release_slot(source);
         _population.reclaim_empty_pages(source_cell);
@@ -9208,6 +9404,9 @@ Dictionary NativeEconomyRuntime::run_slice(const Dictionary &ctx) {
                     market_result.owner_working_capital_reserved, _saturation_count);
                 _births = saturating_add(_births, market_result.births, _saturation_count);
                 _deaths = saturating_add(_deaths, market_result.deaths, _saturation_count);
+                _unemployed_population = saturating_add(
+                    _unemployed_population, market_result.unemployed_population_delta,
+                    _saturation_count);
                 _publish_accum.population = saturating_add(
                     _publish_accum.population, market_result.closing_population, _saturation_count);
                 _publish_accum.cohort_funds = saturating_add(
@@ -9314,6 +9513,10 @@ Dictionary NativeEconomyRuntime::run_slice(const Dictionary &ctx) {
             _structure_ms += elapsed_ms(start);
             structural_range_used = true;
             if (_fatal || _structural_cursor < static_cast<int32_t>(_structural_commands.size())) break;
+            if (!reconcile_building_employment_after_population_change(error)) {
+                fail(error.empty() ? "building_employment_reconcile_failed" : error);
+                break;
+            }
             _stage = Stage::WAIT_COMMIT;
             continue;
         }
@@ -10273,7 +10476,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt32Array group_type_ids;
     PackedInt32Array owner_signature_ids;
     PackedInt64Array group_counts;
+    PackedInt64Array owner_capacity;
+    PackedInt64Array owner_required;
     PackedInt64Array filled_owner;
+    PackedInt64Array owner_openings;
     PackedInt32Array employee_fill_offsets;
     PackedInt32Array employee_profession_ids;
     PackedInt64Array employee_required;
@@ -10326,10 +10532,22 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         const BuildingGroup &group = _buildings[group_idx];
         if (group.cell != cell_idx || group.count <= 0) continue;
         type_counts.set(group.type_id, type_counts[group.type_id] + group.count);
+        const BuildingType &type = _building_types[group.type_id];
+        int64_t snapshot_sat = 0;
+        const int64_t full_owner_capacity = saturating_mul(
+            group.count, type.owner_slots_per_building, snapshot_sat);
+        int64_t planned_owner_required = mul_div_sat(
+            full_owner_capacity, group.planned_utilization_q16, Q16_ONE, snapshot_sat);
+        if (planned_owner_required == 0 && full_owner_capacity > 0 &&
+            group.planned_utilization_q16 > 0) planned_owner_required = 1;
         group_type_ids.push_back(group.type_id);
         owner_signature_ids.push_back(group.owner_signature_id);
         group_counts.push_back(group.count);
+        owner_capacity.push_back(full_owner_capacity);
+        owner_required.push_back(planned_owner_required);
         filled_owner.push_back(group.filled_owner);
+        owner_openings.push_back(std::max<int64_t>(
+            0, planned_owner_required - group.filled_owner));
         capacity_q16.push_back(group.last_capacity_q16);
         purchase_intent_capacity_q16.push_back(group.purchase_intent_capacity_q16);
         realized_profit_margin_q16.push_back(group.realized_profit_margin_q16);
@@ -10357,7 +10575,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         last_bonus_due.push_back(group.last_bonus_due);
         last_bonus_paid.push_back(group.last_bonus_paid);
         wage_suspended.push_back(group.wage_suspended);
-        const BuildingType &type = _building_types[group.type_id];
         for (int32_t input = 0; input < type.input_count; ++input) {
             const int32_t index = group.last_input_selection_begin + input;
             group_input_selected_good_ids.push_back(
@@ -10385,7 +10602,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
                 _building_role_base_wage_paid[role_index]);
             employee_bonus_due.push_back(_building_role_bonus_due[role_index]);
             employee_bonus_paid.push_back(_building_role_bonus_paid[role_index]);
-            int64_t snapshot_sat = 0;
             const int64_t full_required = saturating_mul(
                 group.count, role.slots_per_building, snapshot_sat);
             int64_t planned_required = mul_div_sat(
@@ -10428,7 +10644,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["group_type_ids"] = group_type_ids;
     out["owner_signature_ids"] = owner_signature_ids;
     out["group_counts"] = group_counts;
+    out["owner_capacity"] = owner_capacity;
+    out["owner_required"] = owner_required;
     out["filled_owner"] = filled_owner;
+    out["owner_openings"] = owner_openings;
     out["employee_fill_offsets"] = employee_fill_offsets;
     out["employee_profession_ids"] = employee_profession_ids;
     out["employee_required"] = employee_required;

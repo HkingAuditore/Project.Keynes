@@ -1,6 +1,6 @@
 # economy_data_recorder.gd
 #
-# GM 面板的经济录制控制面。经济快照抓取、CSV v5 编码和写盘全部由
+# GM 面板的经济录制控制面。经济快照抓取、CSV v6 编码和写盘全部由
 # DCWorldExt/EconomyCsvRecorder 完成；这里仅准备静态配置并轮询状态。
 class_name EconomyDataRecorder
 extends RefCounted
@@ -113,7 +113,7 @@ func start() -> void:
 		push_warning("[economy-record] start failed: world/map unavailable")
 		return
 	if not world.has_method("start_economy_csv_recording"):
-		push_error("[economy-record] native CSV v5 API unavailable; rebuild dots_ext")
+		push_error("[economy-record] native CSV v6 API unavailable; rebuild dots_ext")
 		return
 	if not map.has_method("cell_count") or not map.has_method("cell_at"):
 		push_error("[economy-record] MapData coordinate API unavailable")

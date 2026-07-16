@@ -23,7 +23,7 @@ constexpr size_t WRITE_CHUNK_BYTES = 1024 * 1024;
 constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
     "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,producer_support_money_issued,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,trade_runtime_mode,trade_topology_ready,population_error,money_error,goods_error\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,cohort_index,handle,signature_id,profession_id,ethnicity_id,population,funds,epoch_income,epoch_expense,income_ema,satisfaction_q16,worst_need_id,is_merchant,owner_employed,employee_employed,unemployed\n",
-    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,is_construction,group_index,type_id,owner_signature_id,count,filled_owner,employee_required,employee_filled,wage_suspended,capacity_q16,purchase_intent_capacity_q16,realized_profit_margin_q16,severe_loss_cycles,recovery_cycles,operating_state,last_input,last_output,last_sold,last_discarded,last_retained,last_resource,last_resource_generated,last_revenue,last_input_cost,last_wages_paid,last_wages_due,last_expected_revenue,last_operating_cost,last_margin_gap_q16,planned_utilization_q16,last_base_wages_due,last_base_wages_paid,last_bonus_due,last_bonus_paid,construction_ready_days\n",
+    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,is_construction,group_index,type_id,owner_signature_id,count,owner_capacity,owner_required,filled_owner,owner_openings,employee_required,employee_filled,wage_suspended,capacity_q16,purchase_intent_capacity_q16,realized_profit_margin_q16,severe_loss_cycles,recovery_cycles,operating_state,last_input,last_output,last_sold,last_discarded,last_retained,last_resource,last_resource_generated,last_revenue,last_input_cost,last_wages_paid,last_wages_due,last_expected_revenue,last_operating_cost,last_margin_gap_q16,planned_utilization_q16,last_base_wages_due,last_base_wages_paid,last_bonus_due,last_bonus_paid,construction_ready_days\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,reserve\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound\n",
 };
@@ -583,7 +583,19 @@ bool EconomyCsvRecorder::fill_batch(
                     BuildingRow row;
                     row.c = common; row.group_index = group_index++; row.type_id = group.type_id;
                     row.owner_signature_id = group.owner_signature_id; row.count = group.count;
-                    row.filled_owner = group.filled_owner; row.wage_suspended = group.wage_suspended != 0;
+                    const auto &type = runtime._building_types[group.type_id];
+                    int64_t snapshot_sat = 0;
+                    row.owner_capacity = runtime.saturating_mul(
+                        group.count, type.owner_slots_per_building, snapshot_sat);
+                    row.owner_required = runtime.mul_div_sat(
+                        row.owner_capacity, group.planned_utilization_q16,
+                        NativeEconomyRuntime::Q16_ONE, snapshot_sat);
+                    if (row.owner_required == 0 && row.owner_capacity > 0 &&
+                        group.planned_utilization_q16 > 0) row.owner_required = 1;
+                    row.filled_owner = group.filled_owner;
+                    row.owner_openings = std::max<int64_t>(
+                        0, row.owner_required - row.filled_owner);
+                    row.wage_suspended = group.wage_suspended != 0;
                     row.capacity_q16 = group.last_capacity_q16; row.last_input = group.last_input;
                     row.purchase_intent_capacity_q16 = group.purchase_intent_capacity_q16;
                     row.realized_profit_margin_q16 = group.realized_profit_margin_q16;
@@ -604,8 +616,6 @@ bool EconomyCsvRecorder::fill_batch(
                     row.last_base_wages_due = group.last_base_wages_due;
                     row.last_base_wages_paid = group.last_base_wages_paid;
                     row.last_bonus_due = group.last_bonus_due; row.last_bonus_paid = group.last_bonus_paid;
-                    const auto &type = runtime._building_types[group.type_id];
-                    int64_t snapshot_sat = 0;
                     for (int32_t role = 0; role < type.employee_count; ++role) {
                         const auto &job = runtime._building_employee_roles[type.employee_begin + role];
                         const int64_t full = runtime.saturating_mul(group.count, job.slots_per_building, snapshot_sat);
@@ -809,10 +819,12 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         append_common(chunk, row.c); field(chunk, row.construction ? 1 : 0); field(chunk, row.group_index);
         field(chunk, row.type_id); field(chunk, row.owner_signature_id); field(chunk, row.count);
         if (row.construction) {
-            for (int i = 0; i < 29; ++i) blank_field(chunk);
+            for (int i = 0; i < 32; ++i) blank_field(chunk);
             append_int(chunk, row.construction_ready_day);
         } else {
-            field(chunk, row.filled_owner); field(chunk, row.employee_required); field(chunk, row.employee_filled);
+            field(chunk, row.owner_capacity); field(chunk, row.owner_required);
+            field(chunk, row.filled_owner); field(chunk, row.owner_openings);
+            field(chunk, row.employee_required); field(chunk, row.employee_filled);
             field(chunk, row.wage_suspended ? 1 : 0); field(chunk, row.capacity_q16);
             field(chunk, row.purchase_intent_capacity_q16);
             field(chunk, row.realized_profit_margin_q16); field(chunk, row.severe_loss_cycles);

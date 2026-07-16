@@ -149,7 +149,7 @@ func _create_rows_card(parent: VBoxContainer, title_text: String, icon_key: Stri
 	title.add_theme_color_override("font_color", accent)
 	title_row.add_child(title)
 	var hint := Label.new()
-	hint.text = "实际 / 岗位" if show_progress else "本期每栋 / 日"
+	hint.text = "实际 / 本期岗位" if show_progress else "本期每栋 / 日"
 	hint.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	title_row.add_child(hint)
