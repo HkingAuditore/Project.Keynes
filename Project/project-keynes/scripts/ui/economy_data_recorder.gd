@@ -1,6 +1,6 @@
 # economy_data_recorder.gd
 #
-# GM 面板的经济录制控制面。经济快照抓取、CSV v3 编码和写盘全部由
+# GM 面板的经济录制控制面。经济快照抓取、CSV v5 编码和写盘全部由
 # DCWorldExt/EconomyCsvRecorder 完成；这里仅准备静态配置并轮询状态。
 class_name EconomyDataRecorder
 extends RefCounted
@@ -113,7 +113,7 @@ func start() -> void:
 		push_warning("[economy-record] start failed: world/map unavailable")
 		return
 	if not world.has_method("start_economy_csv_recording"):
-		push_error("[economy-record] native CSV v3 API unavailable; rebuild dots_ext")
+		push_error("[economy-record] native CSV v5 API unavailable; rebuild dots_ext")
 		return
 	if not map.has_method("cell_count") or not map.has_method("cell_at"):
 		push_error("[economy-record] MapData coordinate API unavailable")
@@ -176,7 +176,7 @@ func start() -> void:
 	var native_paths: Dictionary = {}
 	for dim in ["summary", "cohorts", "buildings", "resources", "market"]:
 		native_paths[dim] = export_dir.path_join(
-			"economy_record_%s_v3%s_%s.csv" % [ts, scope_tag, dim])
+			"economy_record_%s_v5%s_%s.csv" % [ts, scope_tag, dim])
 
 	_status = world.call("start_economy_csv_recording", {
 		"record_summary": _record_summary,
@@ -205,7 +205,7 @@ func start() -> void:
 			error_code = "start_failed"
 		_set_local_start_error(error_code, str(_status.get("error_message", "unknown")))
 		return
-	print("[economy-record] native v3 start cells=%d sampled=%d resources=%d stride=%d max_rows=%d dims=%s" % [
+	print("[economy-record] native v5 start cells=%d sampled=%d resources=%d stride=%d max_rows=%d dims=%s" % [
 		cell_count, int(_status.get("sampled_cell_count", 0)), resource_ids.size(),
 		_cell_stride, _max_rows, _enabled_dims_string(),
 	])

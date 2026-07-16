@@ -294,6 +294,46 @@ func _test_native_pass() -> void:
 		_expect("accumulated sub-ULP extraction eventually lowers reserve",
 			igot[0] < LARGE_STATIC_RESERVE)
 
+	var timber_i: int = _profile_index(profiles, "timber")
+	if timber_i >= 0:
+		var timber_profile = profiles[timber_i]
+		var timber: PackedFloat32Array = map.get(fields[timber_i])
+		var timber_extra: PackedFloat32Array = map.get(extra_fields[timber_i])
+		var timber_capacity := float(timber_profile.ecology_capacity) * \
+			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+		var ideal_timber_temp := float(timber_profile.temp_lo) + \
+			float(timber_profile.climate_temp_opt) * \
+			(float(timber_profile.temp_hi) - float(timber_profile.temp_lo))
+		temp[0] = ideal_timber_temp
+		moist[0] = timber_profile.climate_moisture_opt
+		timber[0] = timber_capacity * 0.5
+		timber_extra.fill(0.0)
+		map.set(fields[timber_i], timber)
+		map.set(extra_fields[timber_i], timber_extra)
+		map.temp_arr = temp
+		map.moisture_arr = moist
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 1
+		ext.run_natural_resource_pass(knobs)
+		timber = map.get(fields[timber_i])
+		_expect("timber naturally grows below carrying capacity",
+			timber[0] > timber_capacity * 0.5)
+		timber[0] = timber_capacity
+		timber_extra.fill(0.0)
+		map.set(fields[timber_i], timber)
+		map.set(extra_fields[timber_i], timber_extra)
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 5
+		for _cycle in range(365):
+			timber_extra = map.get(extra_fields[timber_i])
+			timber_extra[0] = -450.0
+			map.set(extra_fields[timber_i], timber_extra)
+			ext.refresh_slots_from_map()
+			ext.run_natural_resource_pass(knobs)
+		timber = map.get(fields[timber_i])
+		_expect("timber sustains five years of one-camp harvest in ideal habitat",
+			timber[0] > timber_capacity * 0.5)
+
 	var wild_i: int = _profile_index(profiles, "wild_game")
 	if wild_i >= 0:
 		var wild_profile = profiles[wild_i]

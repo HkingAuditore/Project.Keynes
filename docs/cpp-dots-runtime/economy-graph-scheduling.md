@@ -6,7 +6,7 @@
 每天在 20 个 slice 内完成整图，单 slice 约处理 50 万 cohort，因此 p95 约 89ms。
 瓶颈是固定点除法、need/bundle 展开和内存带宽，不是跨语言 Dictionary。
 
-Market V2 / Price V3 现采用 `production_income_consumption_v5`：周期起点冻结价格、科技、环境、
+Market V2 / Price V3 现采用 `production_income_consumption_v10`：周期起点冻结价格、科技、环境、
 资源和企业价格信号；建筑生产会在居民清算前改变资金与库存，使本期收入和新商品可参与本期消费。
 在 N 个模拟日内按地块连续 range 错峰计算，需求量一次性乘 N；所有地块与
 结构命令完成后，最早在周期截止日统一发布 N 日交易总量。
@@ -38,8 +38,7 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 5. `trade_dispatch`：ACTIVE 稳定裁剪并托管发运；PROBE 只报告候选。
 6. `building_employment`：按周期开始时仍存活人口分配 owner/employee 岗位并计算合同工资。
 7. `building_production`：先算受就业/资金/资源约束的采购意图，再用本地输入库存得到实际产能；购买投入、生产并出售产出，分配基础工资/奖金，最后更新企业意图、实际出库、供给与成本信号。
-8. `household_market`：每天最多一个 cohort-budgeted market range，使用本期收入和新库存计算 N 日总需求/交易、食品与
-   气候衣着生存满足，并以 Q32 residual 结算缺乏基本生活资料造成的死亡。
+8. `household_market`：每天最多一个 cohort-budgeted market range，先保护 ACTIVE owner 下一周期投入现金，使用本期收入和新库存计算 N 日总需求/交易；自产食物可补足总生存热量池，再计算食品与气候衣着生存满足，并以 Q32 residual 结算缺乏基本生活资料造成的死亡。
 9. `structural_commit`：稳定提交本轮结构 ECB。
 10. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
 11. `building_commit`：提交到期建设项目并重建必要的稀疏岗位范围。
@@ -122,7 +121,20 @@ stage，外部 cursor、deadline 和 committed visibility 保持不变。
 
 PKEC v8 在 `building_employment` 的同一 active-cell slice 内先计算生活成本与合同工资，
 不增加 epoch-boundary 全量扫描。`building_production` 内部固定为买入原料、生产、业主按消费计划
-留用匹配产出、剩余产出出售、销售后基础工资、超额利润奖金与劳动信号更新；生产前不再转账工资，
-留用品不产生现金流，最终欠薪仍通过原字段报告。
+只按饥饿阈值和寒冷暴露留用最低生存产出、剩余产出出售、销售后基础工资、超额利润奖金与劳动
+信号更新；留用品不产生现金流，最终欠薪仍通过原字段报告。利用率忽略不超过 1% 的舍入丢弃，
+并在零库存高短缺时主动恢复。`epoch_begin` 按下一周期计划重建稀疏生产投入硬预留；
+`household_market` 在预算和最终结算两处保护 owner 营运资金，并只向家庭开放扣除投入预留后的库存。
+国内贸易规划/派单同样不能导出预留库存。预留缓存可由已持久化建筑状态确定性重建，因此
+ECONOMY_GRAPH stage、截止日语义和 PKEC v12 布局均不变化。
+
+v10 从统一 `survival_household` 目录建立无财富/价格弹性的冻结 `survival_required`；生存品订单、
+生产者自留和死亡分母共享该基准。短缺恢复读取扣除生产投入预留后的家庭可用库存，并容忍 1 个
+goods 子单位残量。该目录索引可重建，不新增 stage、DataCore 槽或 PKEC 字段。
+
+v8 在 `building_production` 的正常商人现金结算后，把可储存余货全部托底入库，并按冻结零售价
+20% 增加 owner 资金与 `explicit_money_mint`。该发行在同一 building slice 内完成，不新增 stage；
+托底后高于正常目标的库存由下一次 `epoch_begin` 利用率计划吸收。事件现金流 schema v4 增加
+`producer_support_issuance`，CSV v5 summary 增加托底数量和发行额。
 外部 stage ABI 和默认五日
 冻结/截止日屏障不变。

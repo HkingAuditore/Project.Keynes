@@ -314,8 +314,12 @@ func _test_economy_event_trace(compiled: Dictionary) -> void:
 		"cells": PackedInt32Array([0])}).get("ok", false)))
 	var schema: Dictionary = ext.get_economy_event_schema()
 	var kinds: Dictionary = schema.get("kinds", {})
-	_expect("economy event schema exposes market and epoch kinds",
-		int(kinds.get("MARKET_SETTLED", 0)) > 0 and int(kinds.get("EPOCH_COMMITTED", 0)) > 0)
+	var cashflow_sources: Dictionary = schema.get("cashflow_sources", {})
+	_expect("economy event schema exposes support issuance and settlement kinds",
+		int(schema.get("version", 0)) == 4 and
+		int(kinds.get("MARKET_SETTLED", 0)) > 0 and
+		int(kinds.get("EPOCH_COMMITTED", 0)) > 0 and
+		int(cashflow_sources.get("PRODUCER_SUPPORT_ISSUANCE", 0)) > 0)
 	var goods: PackedStringArray = compiled.good_ids
 	ext.submit_economy_commands(_stock_commands(0, goods, {
 		"grain": 100000, "meat": 50000, "cloth": 50000, "fur": 50000}, 0))

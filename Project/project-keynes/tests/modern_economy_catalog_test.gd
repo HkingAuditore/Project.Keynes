@@ -87,6 +87,22 @@ func _audit(catalog: Dictionary) -> void:
 		wheat_farm != null and String(wheat_farm.id) == "wheat_farm" and
 		wheat_farm.resource_ids.has("arable_land"))
 	var gathering = load("res://data/economy/buildings/gathering_ground.tres")
+	var stone_hunting = load(
+		"res://data/economy/buildings/stone_age_hunting_camp.tres")
+	_expect("stone hunting tool demand fits the local knapping chain",
+		stone_hunting != null and
+		stone_hunting.input_good_ids == PackedStringArray(["chipped_stone_tools"]) and
+		stone_hunting.input_quantities_per_day == PackedInt64Array([5]))
+	var stone_collector = load("res://data/economy/buildings/stone_collector.tres")
+	var timber_collector = load("res://data/economy/buildings/timber_collector.tres")
+	var bronze_tools = load("res://data/economy/buildings/bronze_tool_workshop.tres")
+	var ore_bronze = load("res://data/economy/buildings/ore_bronzesmith_camp.tres")
+	_expect("early collectors keep tool maintenance below local workshop output",
+		stone_collector.input_quantities_per_day == PackedInt64Array([100]) and
+		timber_collector.input_quantities_per_day == PackedInt64Array([100]))
+	_expect("bronze workshops avoid material-cost dominated recipes",
+		bronze_tools.input_quantities_per_day == PackedInt64Array([1500, 500]) and
+		ore_bronze.input_quantities_per_day == PackedInt64Array([500, 500, 500]))
 	var early_gold = load("res://data/economy/buildings/placer_gold_working.tres")
 	var early_silver = load("res://data/economy/buildings/surface_silver_working.tres")
 	var bronze_workshop = load("res://data/economy/buildings/bronze_tool_workshop.tres")
@@ -106,6 +122,16 @@ func _audit(catalog: Dictionary) -> void:
 			stone_building != null and
 			String(stone_building.owner_profession_id) == stone_owner_policy[building_id] and
 			stone_building.employee_profession_ids.is_empty())
+	_expect("stone hunting sustains its hunter and yields fewer byproducts",
+		stone_hunting != null and
+		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide", "fur"]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([3200, 800, 320]) and
+		stone_hunting.output_quantities_per_day[0] >= 171 and
+		stone_hunting.output_quantities_per_day[0] >
+			stone_hunting.output_quantities_per_day[1] and
+		stone_hunting.output_quantities_per_day[1] >
+			stone_hunting.output_quantities_per_day[2] and
+		stone_hunting.resource_quantities_per_day == PackedInt64Array([715]))
 	_expect("early bullion production is owner-operated and input-free",
 		String(early_gold.owner_profession_id) == "merchant" and
 		String(early_silver.owner_profession_id) == "merchant" and
@@ -853,16 +879,16 @@ func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
 	var tiers: PackedInt32Array = catalog.building_upgrade_tiers
 	var expected := {
 		"subsistence_food": [
-			["gathering_ground", 1, 3000],
+			["gathering_ground", 1, 5600],
 			["subsistence_farm", 2, 8000],
 			["three_field_smallholding", 3, 12000],
 			["improved_smallholding", 4, 16000],
 		],
 		"household_cloth": [
-			["household_weaving_shelter", 1, 120],
-			["household_loom", 2, 220],
-			["cottage_weaving", 3, 400],
-			["improved_domestic_loom", 4, 600],
+			["household_weaving_shelter", 1, 889],
+			["household_loom", 2, 1320],
+			["cottage_weaving", 3, 2400],
+			["improved_domestic_loom", 4, 3600],
 		],
 	}
 	var output_offsets: PackedInt32Array = catalog.building_output_offsets
