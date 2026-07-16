@@ -261,6 +261,7 @@ bool DCWorldExt::_exec_node_runtime_hydrology(Dictionary& bundle,
     breakdown["hydrology_native_ms"] = native_ms;
     breakdown["hydrology_compute_ms"] = double(hydro.get("compute_ms", 0.0));
     breakdown["hydrology_flush_ms"] = double(hydro.get("flush_ms", 0.0));
+    breakdown["hydrology_dt_days"] = double(hydro.get("dt_days", 1.0));
     breakdown["hydrology_water_budget_error"] = double(hydro.get("water_budget_error", 0.0));
     breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));
     breakdown["hydrology_river_discharge_max"] = double(hydro.get("river_discharge_max", 0.0));

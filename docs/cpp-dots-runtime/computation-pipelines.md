@@ -218,6 +218,8 @@ parity 说明：用户不要求 bit-equal（迁移后人工验证）。latitude 
 
 链路：天气场 commit 后，`weather_refresh` 在 stage-b 前可选运行 `hydrology_discharge`。C++ pass 读取 `cell_hydro_parent` 静态排水拓扑、`neighbor_indices` 邻接表，以及 `cell_weather_precip`、`cell_snowpack`、`cell_soil_moisture`、`cell_water_balance_30d`、`cell_vegetation_vitality` 等运行期状态；先计算本地产流、入渗、地下水基流，再用 parent graph 做上游到下游路由。输出 `cell_river_discharge`、`cell_river_discharge_30d`、`cell_river_storage`、`cell_groundwater_storage`、`cell_surface_runoff`，并回写 `cell_soil_moisture` 和 `cell_water_balance_30d`。河道格会按 30 日流量给自身河岸湿润加成，并以较小比例扩散到一圈相邻陆地格，让“毗邻河流”的地块进入土壤水/水分平衡闭环。
 
+`dt_days` 必须等于本次天气/权威采样跨过的真实游戏天数；降水与融雪累计量按 dt 积分，soil/WB30/Q30、地下水衰减和河道释放使用 `1-(1-rate)^dt`（或等价幂衰减）换算，不能在 `native_daily_sim_stride>1` 时仍只推进一天。
+
 调度原因：它读取当天已提交的 `weather_precip`，所以不放在 `refresh_climate_daily`；它又会影响 stage-b 的植被动态与反馈，所以放在 `weather_summary` 之后、`refresh_daily_stage_b` 之前。默认 `ClimateProfile.runtime_hydrology_enabled=false`，关闭时保留静态生成期河流行为。
 
 返回 report：`path=gdext`、`published_to_slot=true`、`native_ms`、`compute_ms`、`flush_ms`、`refresh_ms`、`n_cells`、`water_budget_error`、`river_discharge_p95`、`river_discharge_max`、`riparian_neighbor_touches`、`flood_candidate_count`。若 slot 缺失或 size 不匹配，返回 `published_to_slot=false` 和 `fallback_reason`，旧静态河流仍可继续显示。
@@ -316,7 +318,7 @@ C++ 入口：
 
 - temperature/elevation/latitude/neighbors/terrain/water/solar geometry and thermal-inertia knobs。
 - 部分 scalar 来自 `ClimateProfile`。
-- 气候自然性修复（2026-06-27）：`cell_moisture` 不再每日硬回填到 `base_moisture`。pass-A 以 `runtime_moisture_base_relax_rate` 做慢层 relax，并可用既有 `weather_vapor`、`weather_precip`、`soil_moisture`、`water_balance_30d` 信号参与 target；不新增持久 slot，native、threaded native 与 GDScript fallback 需要保持同一套 knob。
+- 气候自然性修复（2026-06-27，2026-07-17 单位修正）：`cell_moisture` 不再每日硬回填到 `base_moisture`。pass-A 以 `runtime_moisture_base_relax_rate` 做慢层 relax，并可用既有 `weather_vapor`、`weather_precip`、`soil_moisture`、`water_balance_30d` 信号参与 target；不新增持久 slot，scalar native、threaded native、async worker 与 GDScript fallback 需要保持同一套输入和 knob。这里 `base_moisture/cell_moisture` 是绝对地表湿度，`weather_vapor` 是量级约为 `0.15 * base_moisture` 的大气水汽，因此只允许把 `weather_vapor - 0.15 * base_target` 作为异常量加到 target；`soil_moisture` 是 `[-0.5,0.5]` 的有符号水文异常，也只能加权相加。禁止再把这两个字段当 `[0,1]` 绝对湿度与 target 做 `lerp`，也禁止 async pass-A 丢弃这些输入后直接覆盖为 seasonal base，否则都会给陆格注入系统性偏差。
 
 公式约束（2026-06-27 legacy parity）：
 
@@ -556,6 +558,11 @@ Ocean land 算法概要：
 采用**半隐式（IMEX）积分** —— 把生成/衰减拆成「常数生产项 P」与「线性损失率 L」，
 损失项隐式求解，故对任意系数（含极端自系数）都**无条件稳定**，单调趋近均衡、不过冲：
 
+`temp`、`temp_lo`、`temp_hi` 的权威单位统一为地图气候温度 `[0,1]`；不得在
+`ResourceProfile` 中混入摄氏范围。2026-07-16 前资源目录曾保留 `-30..45` 一类摄氏式范围，
+但运行时实际传入 `[0,1]`，会把热带格的 `tn` 压到接近 0，进而错误压低林木、野生动物、
+肥沃土壤等所有启用温度适宜度的资源承载量。目录、默认 codegen 与回归测试现共同守住该契约。
+
 ```text
 tn            = clamp((temp - temp_lo[r]) / (temp_hi[r] - temp_lo[r]), 0, 1)
 m             = moisture
@@ -651,7 +658,7 @@ habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低
 - 可选最适区间：
   `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日动态受适宜度削弱；线性模型用 `decay_stress`，生态模型用 `ecology_stress_mortality_rate` 仅表达原始适生度低于 0.25 的急性气候比例死亡。生态参数默认全 0，旧资源行为不变。
 - `init_reserve_scale` 在 suitability、地质省和矿带全部求值后统一缩放正储量，只改变数量而不改变
-  资源出现位置。当前地质/不可再生资源通常为 `8×`、农业 capacity 为 `1×`、林木为 `4×`、
+  资源出现位置。当前地质/不可再生资源通常为 `8×`、农业 capacity 为 `1×`、林木为 `40×`、
   海鱼与野生动物为 `2×`；最低覆盖/储量在缩放后独立应用。旧档已有
   reserve 不回填倍率，新建地图才应用。
 - 现有 .tres 调参示例：金属矿按 mafic/felsic/hydrothermal/sedimentary 等 family 共享地质省和矿带；
@@ -1473,6 +1480,17 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
 - drought stress 与 heat stress 分开：`vegetation_drought_stress` 来自长期
   `plant_water` 低于植被理想水分的程度，天气类型为 DROUGHT 时只额外抬高；HEATWAVE 只进入
   heat stress。降水不应正向提高 drought stress。
+- 热带雨林生成门槛约为 `moisture > 0.50`，其 profile 的 `ideal_moist/moist_tolerance`
+  必须让该门槛不落入急性干旱区。当前为 `0.68/0.25`，因此低于约 `0.43` 才进入 profile
+  容差外；持续偏干仍可向热带季雨林退化，但新生成的雨林不会从第一天就被当成严重旱害。
+- 原生 stage-b 返回的 `succession_indices/succession_to_veg` 只是候选结果。ACTIVE native daily、
+  merged weather 与 legacy combined 三条边界统一调用
+  `_apply_vegetation_succession_candidates()`，显式写回 `HexCell`、`MapData.vegetation_arr /
+  base_vegetation_arr`、DataCore/WorldExt 的 `cell_vegetation/cell_base_vegetation` 槽位，再触发
+  enum atlas 与 detail scatter dirty。候选未发布不得计作已完成演替。
+- `weather_vegetation_dynamics_stride` 是 stage-b 调用次数，`native_daily_sim_stride` 是每次
+  native graph 跨过的游戏日；native 路径的 vitality/streak `day_scale` 使用两者乘积，避免
+  例如 `10 × 10` cadence 实际跨过 100 日却只累计 10 日。
 
 **验收指标**：
 

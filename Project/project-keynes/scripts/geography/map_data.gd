@@ -963,6 +963,14 @@ func soa_swap_double_buffer() -> void:
 ## 插值可以读 *_prev，避免切片期间看到一半旧值、一半新值。
 func soa_begin_climate_transaction() -> void:
 	soa_swap_double_buffer()
+	# Weather classification must observe the same committed snapshot as the
+	# climate transaction.  Native-daily ACTIVE does not enter FieldSolver's
+	# legacy begin-slice hook, so leaving these arrays there made biome/weather
+	# classification read a map-generation-era value indefinitely.
+	if weather_classification_temp_arr.size() == temp_arr_prev.size():
+		weather_classification_temp_arr = temp_arr_prev.duplicate()
+	if weather_classification_moisture_arr.size() == moisture_arr_prev.size():
+		weather_classification_moisture_arr = moisture_arr_prev.duplicate()
 
 # ─── Dirty Mask 操作 API（阶段 A.1 仅占位；阶段 A.2 正式投入使用） ──────────
 func mark_climate_dirty(idx: int) -> void:

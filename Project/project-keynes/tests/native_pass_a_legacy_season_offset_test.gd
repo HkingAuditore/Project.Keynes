@@ -34,7 +34,120 @@ func _run() -> void:
 			absf(float(low["baseline"]) - float(high["baseline"])) < 0.000001)
 	_expect("subpolar summer still has positive seasonal signal",
 			float(low["season_offset"]) > 0.10)
+	_test_runtime_moisture_units()
 	_finish()
+
+
+func _test_runtime_moisture_units() -> void:
+	var base_target: float = _run_moisture_case(0.0, 0.0, 0.0, 0.0)
+	var equilibrium_vapor: float = _run_moisture_case(base_target * 0.15, 0.0, 0.12, 0.15)
+	var equilibrium_vapor_threaded: float = _run_moisture_case(base_target * 0.15, 0.0, 0.12, 0.15, true)
+	var equilibrium_vapor_async: float = _run_async_moisture_case(base_target * 0.15)
+	var wet_soil: float = _run_moisture_case(base_target * 0.15, 0.20, 0.12, 0.15)
+	var dry_soil: float = _run_moisture_case(base_target * 0.15, -0.20, 0.12, 0.15)
+	_expect("equilibrium atmospheric vapor does not dry terrain moisture",
+			absf(equilibrium_vapor - base_target) < 0.000001)
+	_expect("threaded pass-A uses the same vapor/soil units",
+			absf(equilibrium_vapor_threaded - equilibrium_vapor) < 0.000001)
+	_expect("async pass-A uses the same vapor/soil units",
+			absf(equilibrium_vapor_async - equilibrium_vapor) < 0.000001)
+	_expect("positive signed soil anomaly is additive",
+			absf(wet_soil - (base_target + 0.03)) < 0.000001)
+	_expect("negative signed soil anomaly remains a drought signal",
+			absf(dry_soil - (base_target - 0.03)) < 0.000001)
+
+
+func _run_moisture_case(vapor: float, soil: float, vapor_weight: float,
+		soil_weight: float, threaded: bool = false) -> float:
+	var ext := DCWorldExt.new()
+	var map := MapData.new(1, 1)
+	_seed_subpolar_land_map(map)
+	map.base_moisture_arr[0] = 0.60
+	map.moisture_arr[0] = 0.60
+	map.weather_vapor_arr[0] = vapor
+	map.soil_moisture_arr[0] = soil
+	_expect("bind_map_data succeeds for moisture-unit case", bool(ext.bind_map_data(map)))
+	var cp_struct := {
+		"use_sparse": false,
+		"moist_scale_now": 1.0,
+		"season_phase": 2.0,
+		"days_per_year": 365,
+		"axial_tilt_deg": 23.5,
+		"day_length_gain": 0.35,
+		"solar_gain": 1.0,
+		"insol_dev_min": -1.0,
+		"insol_dev_max": 1.0,
+		"runtime_moisture_base_relax_rate": 1.0,
+		"runtime_moisture_weather_vapor_weight": vapor_weight,
+		"runtime_moisture_precip_weight": 0.0,
+		"runtime_moisture_soil_weight": soil_weight,
+		"runtime_moisture_water_balance_weight": 0.0,
+		"thermal_dt_days": 1.0,
+		"thermal_daily_delta_cap": 1.0,
+	}
+	var rc: float = float(ext.run_climate_pass_a_thread(cp_struct, 2.0, 2.0, 2)) \
+			if threaded else float(ext.run_climate_pass_a(cp_struct, 2.0, 2.0))
+	_expect("pass-A moisture-unit case executed", rc >= 0.0)
+	return float(map.moisture_arr[0])
+
+
+func _run_async_moisture_case(vapor: float) -> float:
+	var ext := DCWorldExt.new()
+	var map := MapData.new(1, 1)
+	_seed_subpolar_land_map(map)
+	map.base_moisture_arr[0] = 0.60
+	map.moisture_arr[0] = 0.60
+	map.weather_vapor_arr[0] = vapor
+	_expect("bind_map_data succeeds for async moisture-unit case", bool(ext.bind_map_data(map)))
+	ext.async_climate_round_register()
+	var input := {
+		"n_cells": 1,
+		"passes_mask": 0x01,
+		"is_water": map.is_water_arr,
+		"terrain": map.terrain_arr,
+		"cover": map.cover_arr,
+		"ema_initialized": map.ema_initialized_arr,
+		"elevation": map.elevation_arr,
+		"base_moisture": map.base_moisture_arr,
+		"weather_vapor": map.weather_vapor_arr,
+		"weather_precip": map.weather_precip_arr,
+		"soil_moisture": map.soil_moisture_arr,
+		"water_balance_30d": map.water_balance_30d_arr,
+		"lat_norm": map.cell_lat_norm_arr,
+		"temp_baseline_year": map.temp_baseline_year_arr,
+		"temp": map.temp_arr,
+		"temp_30d": map.temp_30d_arr,
+		"temp_365d": map.temp_365d_arr,
+		"thermal_energy": map.thermal_energy_arr,
+		"snowpack": map.snowpack_arr,
+		"moisture": map.moisture_arr,
+		"season_phase": 2.0,
+		"axial_tilt_deg": 23.5,
+		"day_length_gain": 0.35,
+		"solar_gain": 1.0,
+		"insol_amp": 0.20,
+		"insol_gain": 1.0,
+		"moist_scale_now": 1.0,
+		"insol_dev_min": -1.0,
+		"insol_dev_max": 1.0,
+		"runtime_moisture_base_relax_rate": 1.0,
+		"runtime_moisture_weather_vapor_weight": 0.12,
+		"runtime_moisture_precip_weight": 0.0,
+		"runtime_moisture_soil_weight": 0.15,
+		"runtime_moisture_water_balance_weight": 0.0,
+		"thermal_dt_days": 1.0,
+		"thermal_daily_delta_cap": 1.0,
+	}
+	_expect("async moisture-unit case kicked", bool(ext.async_climate_round_kick(input)))
+	var poll_result: Dictionary = {}
+	for _attempt in range(1000):
+		poll_result = ext.async_climate_round_poll()
+		if not poll_result.is_empty():
+			break
+		OS.delay_msec(1)
+	_expect("async moisture-unit case completed", not poll_result.is_empty())
+	ext.async_climate_round_shutdown()
+	return float(map.moisture_arr[0])
 
 
 func _run_case(land_continentality: float) -> Dictionary:

@@ -17,6 +17,7 @@
 # 损失率 L」，损失项隐式求解，因此对任意系数都 **无条件稳定**（单调趋近均衡，不会
 # 因硬上限 clamp 出现横跳）：
 #   tn            = clamp((temp - temp_lo) / (temp_hi - temp_lo), 0, 1)
+#                   # temp / temp_lo / temp_hi 均使用地图气候归一化单位 [0,1]
 #   m             = moisture                          # 已是 [0,1]
 #   gen_climate   = gen_base   + gen_temp*tn   + gen_moisture*m
 #   decay_climate = decay_base + decay_temp*tn + decay_moisture*m
@@ -103,8 +104,8 @@ var habitat_mode: String = "legacy"
 @export var land_only: bool = true            # legacy compatibility only
 
 # ─── Formula input normalization ────────────────────────────────────────
-@export var temp_lo: float = -30.0            # 温度归一化下界（摄氏）
-@export var temp_hi: float = 40.0             # 温度归一化上界（摄氏）
+@export_range(0.0, 1.0, 0.01) var temp_lo: float = 0.0 # 地图气候温度下界 [0,1]
+@export_range(0.0, 1.0, 0.01) var temp_hi: float = 1.0 # 地图气候温度上界 [0,1]
 
 # ─── Generation coefficients ────────────────────────────────────────────
 @export var gen_base: float = 0.0
@@ -149,7 +150,7 @@ var habitat_mode: String = "legacy"
 @export var init_belt_scale: float = 0.035
 
 # ─── Optional climate suitability (bootstrap + daily pass) ───────────────
-# climate_*_opt/tol 作用在归一化后的 tn/moisture 上，而不是直接摄氏温度。
+# climate_*_opt/tol 作用在归一化后的 tn/moisture 上。
 @export var climate_temp_opt: float = 0.5
 @export var climate_temp_tol: float = 1.0
 @export var climate_moisture_opt: float = 0.5

@@ -102,7 +102,7 @@ DCSystemScheduler
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |
 | `ocean_currents` | `simulation/sus/jobs/ocean_currents_job.gd` | physical ocean stages：SLP、wind、PSI、upwelling、raster、pixel commit。 | GDScript stage machine + C++ kernels/raster。同 tick daily wind 若已成功跑 `wind` 段且 physical stage 正在 `phys_wind`，job 会复用该 wind 并让出到下一 tick，避免 daily/physical wind 双跑；`elapsed_ms` 现在按 physical stage-local 计时，`job_elapsed_ms` 保留整 job 墙钟。各 physical stage 内部支持**按 cell 区间切片**（`start_idx`/`end_idx` knob，由 `MapBaker` 的 stage 内 cell cursor 驱动），由 `ClimateProfile.physical_cell_slice_enabled` / `physical_cell_slice_divisor` profile-gate 控制，默认关闭。 |
 | `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | enum/dyn/eco cell LUT、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助；不再发布 `weather_lut`。cell-indirection 主路径会在 dirty mask 明确为 0、LUT 纹理已存在且无生态 transition 待推进时返回 `path=cell_indirection_lut_skip`，避免无效全量 LUT refresh；`weather_lut` 在 `weather_refresh` commit/merged/direct 完成点内联发布。 |
-| `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | ACTIVE hot path 调 `DCWorldExt::run_native_daily_slice()`，C++ 持有 graph continuation / node cursor；GDScript 只做 SUS shell、bundle round-start、fallback/debug 和 Godot visual boundary。Scheduler report 只提升关键字段，不再嵌完整 `native_daily_report` 大字典；slow dump/debug 可回读 `MapGenerator.native_daily_last_result()`。 |
+| `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | ACTIVE hot path 调 `DCWorldExt::run_native_daily_slice()`，C++ 持有 graph continuation / node cursor；GDScript做 SUS shell、bundle round-start、fallback/debug 和 Godot visual/演替发布边界。stage-b 的 vegetation stride 按调用次数计，vitality/streak 的实际 `day_scale = weather_vegetation_dynamics_stride × native_daily_sim_stride`；C++ 返回的 succession candidates 必须在 GDScript 边界写回 vegetation/base_vegetation 槽位。Scheduler report 只提升关键字段，不再嵌完整 `native_daily_report` 大字典；slow dump/debug 可回读 `MapGenerator.native_daily_last_result()`。 |
 
 ### Native daily report contract
 
@@ -123,7 +123,7 @@ DCSystemScheduler
   `native_daily_contract_state`。`commit_over_budget=true` 会触发
   `[native_daily/contract]` warn；该状态表示调度契约违约，必须降低 N/加 slices/放宽
   budget 或继续拆热点，而不是接受静默漂移。中间 N 天可以读取上一轮权威状态或轻量插值；
-  更新日必须用真实 `dt_days`（例如 sea-ice cap 随 N 放宽）推进，避免误差跨周期累积。
+  更新日必须用真实 `dt_days`（例如 sea-ice cap 随 N 放宽，runtime hydrology 的降水/融雪累计与 soil/WB30/Q30/地下水/河道状态也按 N 日等效推进）推进，避免误差跨周期累积。ACTIVE round 在 bundle 构建前冻结 climate `*_prev` 与 weather classification 快照，确保降频不会让分类长期读取地图生成态。
   `earth_like.tres` 资源保留 10/10 作为基准；`main.gd` 在移动端未被 WorldSetup 显式覆盖时
   会运行时提升为 20/20，并同步 `native_daily_sea_ice_spread_dt_cap_days=20`。
 - **错峰执行（`native_daily_spread_across_ticks`，2026-06，默认 false）**：打开后

@@ -137,7 +137,7 @@ func _seed_climate(map: MapData, n: int) -> void:
 	moist.resize(n)
 	water.resize(n)
 	for i in range(n):
-		temp[i] = -20.0 + 50.0 * (float(i % 97) / 96.0)     # -20 .. 30 °C
+		temp[i] = float(i % 97) / 96.0                       # 地图气候温度 [0,1]
 		moist[i] = float(i % 53) / 52.0                       # 0 .. 1
 		water[i] = 1 if (i % 7 == 0) else 0                  # ~14% 水面格
 	map.temp_arr = temp
