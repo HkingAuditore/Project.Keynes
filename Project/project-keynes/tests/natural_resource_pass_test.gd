@@ -304,9 +304,42 @@ func _test_native_pass() -> void:
 		var ideal_timber_temp := float(timber_profile.temp_lo) + \
 			float(timber_profile.climate_temp_opt) * \
 			(float(timber_profile.temp_hi) - float(timber_profile.temp_lo))
+		# 高温高湿雨林必须属于适生林地，不能因湿度超过旧窄容差而触发急性死亡。
+		var rainforest_tn := 0.90
+		var rainforest_moisture := 0.95
+		var rainforest_temp := float(timber_profile.temp_lo) + rainforest_tn * \
+			(float(timber_profile.temp_hi) - float(timber_profile.temp_lo))
+		var rainforest_temp_fit := 1.0 - clampf(absf(
+			rainforest_tn - float(timber_profile.climate_temp_opt)) / maxf(
+			float(timber_profile.climate_temp_tol), 0.0001), 0.0, 1.0)
+		var rainforest_moisture_fit := 1.0 - clampf(absf(
+			rainforest_moisture - float(timber_profile.climate_moisture_opt)) / maxf(
+			float(timber_profile.climate_moisture_tol), 0.0001), 0.0, 1.0)
+		var rainforest_raw_fit := rainforest_temp_fit * rainforest_moisture_fit
+		var rainforest_runtime_fit := lerpf(1.0, rainforest_raw_fit,
+			float(timber_profile.runtime_climate_fit_weight))
+		var rainforest_capacity := timber_capacity * rainforest_runtime_fit
+		var acute_temp := float(timber_profile.temp_lo)
+		var acute_moisture := float(timber_profile.climate_moisture_opt)
+		var acute_temp_fit := 1.0 - clampf(absf(
+			float(timber_profile.climate_temp_opt)) / maxf(
+			float(timber_profile.climate_temp_tol), 0.0001), 0.0, 1.0)
+		var acute_raw_fit := acute_temp_fit
+		var acute_runtime_fit := lerpf(1.0, acute_raw_fit,
+			float(timber_profile.runtime_climate_fit_weight))
+		var acute_capacity := timber_capacity * acute_runtime_fit
+		_expect("timber treats hot humid rainforest as non-acute habitat",
+			rainforest_raw_fit >= 0.25)
+		_expect("timber regression covers acute low climate fit", acute_raw_fit < 0.05)
 		temp[0] = ideal_timber_temp
 		moist[0] = timber_profile.climate_moisture_opt
+		temp[1] = rainforest_temp
+		moist[1] = rainforest_moisture
+		temp[2] = acute_temp
+		moist[2] = acute_moisture
 		timber[0] = timber_capacity * 0.5
+		timber[1] = rainforest_capacity
+		timber[2] = acute_capacity * 0.5
 		timber_extra.fill(0.0)
 		map.set(fields[timber_i], timber)
 		map.set(extra_fields[timber_i], timber_extra)
@@ -318,7 +351,10 @@ func _test_native_pass() -> void:
 		timber = map.get(fields[timber_i])
 		_expect("timber naturally grows below carrying capacity",
 			timber[0] > timber_capacity * 0.5)
+		_expect("timber grows below climate-adjusted capacity under acute stress",
+			timber[2] > acute_capacity * 0.5)
 		timber[0] = timber_capacity
+		timber[1] = rainforest_capacity
 		timber_extra.fill(0.0)
 		map.set(fields[timber_i], timber)
 		map.set(extra_fields[timber_i], timber_extra)
@@ -327,12 +363,15 @@ func _test_native_pass() -> void:
 		for _cycle in range(365):
 			timber_extra = map.get(extra_fields[timber_i])
 			timber_extra[0] = -450.0
+			timber_extra[1] = -450.0
 			map.set(extra_fields[timber_i], timber_extra)
 			ext.refresh_slots_from_map()
 			ext.run_natural_resource_pass(knobs)
 		timber = map.get(fields[timber_i])
 		_expect("timber sustains five years of one-camp harvest in ideal habitat",
 			timber[0] > timber_capacity * 0.5)
+		_expect("timber sustains five years of one-camp harvest in rainforest habitat",
+			timber[1] > rainforest_capacity * 0.5)
 
 	var wild_i: int = _profile_index(profiles, "wild_game")
 	if wild_i >= 0:

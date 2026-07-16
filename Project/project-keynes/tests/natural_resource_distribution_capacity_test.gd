@@ -83,7 +83,7 @@ func _init() -> void:
 		float((stats.get("plantation_land", {}) as Dictionary).get("coverage", 1.0)) <= 0.35)
 	_expect("timber reaches a meaningful share of land",
 		float((stats.get("timber", {}) as Dictionary).get("coverage", 0.0)) >= 0.30 and
-		float((stats.get("timber", {}) as Dictionary).get("median", 0.0)) >= 30000.0)
+		float((stats.get("timber", {}) as Dictionary).get("median", 0.0)) >= 3000000.0)
 	_expect("marine fish covers marine habitat with durable stock",
 		float((stats.get("marine_fish", {}) as Dictionary).get("coverage", 0.0)) >= 0.99 and
 		float((stats.get("marine_fish", {}) as Dictionary).get("median", 0.0)) >= 300000.0)

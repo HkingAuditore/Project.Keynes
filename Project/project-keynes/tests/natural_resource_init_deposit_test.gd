@@ -248,10 +248,11 @@ func _test_reserve_scale_configuration(profiles: Array) -> void:
 	var scales_ok := profiles.size() == 30
 	for profile in profiles:
 		var resource_id := String(profile.id)
-		var expected := 16.0 if resource_id == "plantation_land" else \
-			(4.0 if resource_id in ["marine_fish", "timber", "wild_game"] else 8.0)
+		var expected := 40.0 if resource_id == "timber" else \
+			(16.0 if resource_id == "plantation_land" else \
+			(4.0 if resource_id in ["marine_fish", "wild_game"] else 8.0))
 		scales_ok = scales_ok and is_equal_approx(float(profile.init_reserve_scale), expected)
-	_expect("资源初始储量按一般 8x、可再生 4x、种植园 16x 分级", scales_ok)
+	_expect("资源初始储量按一般 8x、可再生 4x、种植园 16x、林木 40x 分级", scales_ok)
 
 
 func _test_reserve_scale_application(profiles: Array) -> void:

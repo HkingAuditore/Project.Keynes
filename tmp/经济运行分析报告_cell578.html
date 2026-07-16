@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project.Keynes 石器时代经济运行分析 · cell 578</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0d1117; --panel:#161b22; --panel2:#1c2333; --border:#2d333b;
+  --txt:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --red:#f85149; --green:#3fb950;
+  --amber:#d29922; --purple:#bc8cff; --cyan:#39c5cf;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.7;padding:0 0 80px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+header{background:linear-gradient(135deg,#161b22,#1c2333);border-bottom:1px solid var(--border);padding:38px 0 30px;margin-bottom:6px}
+header .wrap{padding-top:0}
+h1{font-size:26px;font-weight:700;letter-spacing:.5px}
+.sub{color:var(--muted);margin-top:8px;font-size:14px}
+.tag{display:inline-block;background:var(--panel2);border:1px solid var(--border);color:var(--cyan);border-radius:20px;padding:3px 12px;font-size:12px;margin:10px 6px 0 0}
+h2{font-size:20px;margin:34px 0 14px;padding-left:12px;border-left:4px solid var(--accent);color:#fff}
+h3{font-size:16px;margin:22px 0 10px;color:var(--purple)}
+p{margin:10px 0;color:var(--txt)}
+.muted{color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin:16px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:800px){.grid,.grid3{grid-template-columns:1fr}}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px;text-align:center}
+.kpi .v{font-size:26px;font-weight:700;margin:4px 0}
+.kpi .l{color:var(--muted);font-size:13px}
+.bad{color:var(--red)} .good{color:var(--green)} .warn{color:var(--amber)} .info{color:var(--accent)}
+.chartbox{position:relative;height:300px;margin-top:8px}
+.chartbox.sm{height:250px}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+th,td{border:1px solid var(--border);padding:8px 10px;text-align:right}
+th{background:var(--panel2);color:var(--cyan);font-weight:600;text-align:right}
+td:first-child,th:first-child{text-align:left}
+tr:hover{background:var(--panel2)}
+.verdict{border-radius:12px;padding:16px 20px;margin:14px 0;border:1px solid}
+.v-bad{background:rgba(248,81,73,.08);border-color:var(--red)}
+.v-warn{background:rgba(210,153,34,.08);border-color:var(--amber)}
+.v-good{background:rgba(63,185,80,.08);border-color:var(--green)}
+.verdict b{font-size:15px}
+ul{margin:8px 0 8px 22px} li{margin:6px 0}
+.flow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:14px 0;font-size:13px}
+.flow .n{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+.flow .n.r{border-color:var(--red);color:#ffb4ae}
+.flow .a{color:var(--muted)}
+.badge{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--border)}
+code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12.5px;color:var(--amber)}
+.foot{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
+.num{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>🕯️ Project.Keynes 石器时代经济运行分析</h1>
+  <div class="sub">样本单元 cell 578 · 模拟第 10 → 2045 天 · 408 个 5 天周期 · 恒定人口 229</div>
+  <div>
+    <span class="tag">经济运行时诊断</span>
+    <span class="tag">失业 / 物价 / 阶层 / 建筑投入产出</span>
+    <span class="tag">结合 economy_runtime.cpp 源码</span>
+  </div>
+</div></header>
+
+<div class="wrap">
+
+<!-- ============ 总体结论 ============ -->
+<h2>总体结论一句话</h2>
+<div class="verdict v-bad">
+  <b>❌ 这套经济不健康，且不是"波动"，而是收敛到一个失灵的稳态。</b>
+  <p style="margin:8px 0 0">人口零增长的 cell 578 里，就业岗位从 196 稳步塌缩到 124，失业者从 33 涨到 105（占人口 46%）；
+  与此同时全部货币（+2530%）持续向 <b>商人 + 矿工</b> 两个阶层单调聚集（占 98%），而失业者、猎人、渔民资产归零。
+  两种核心生活品（熟食、石器）价格永久顶在天花板、永久短缺，但产它们的作坊却被系统压到 3% 产能——
+  这是<b>供给侧机制与定价机制互相锁死</b>的结果。</p>
+</div>
+
+<div class="grid3">
+  <div class="kpi"><div class="l">失业者（cell 578）</div><div class="v bad num">33 → 105</div><div class="l">占人口 14% → 46%</div></div>
+  <div class="kpi"><div class="l">在岗岗位</div><div class="v bad num">196 → 124</div><div class="l">-37%</div></div>
+  <div class="kpi"><div class="l">全局平均失业率</div><div class="v bad num">53.8%</div><div class="l">summary 全图</div></div>
+  <div class="kpi"><div class="l">商人资金</div><div class="v warn num">×111</div><div class="l">2152 → 239035 元</div></div>
+  <div class="kpi"><div class="l">熟食/石器价格</div><div class="v bad num">47× / 81×</div><div class="l">顶到 max，永久短缺</div></div>
+  <div class="kpi"><div class="l">木材资源</div><div class="v bad num">-99%</div><div class="l">191061 → 1681（枯竭）</div></div>
+</div>
+
+<!-- ============ 0. 特点 ============ -->
+<h2>0 · 当前经济体现出什么特点</h2>
+<div class="card">
+<ul>
+  <li><b>原始"自雇采集"结构</b>：13 类建筑里 11 类是 <span class="badge">owner-only 无雇员</span>（采集/渔/狩猎/燧石/织造/火塘），
+  真正雇工的只有 placer_gold_working（金）和 surface_silver_working（银）两座矿。就业 ≈ "有多少人能自雇当 owner"。</li>
+  <li><b>收敛到失灵稳态</b>：约 day 500 后所有宏观量几乎不再变化（失业 ~100、停业建筑 ~1、价格钉死），是"稳定的病态均衡"，不是尚在调整。</li>
+  <li><b>货币单调聚集、无回流</b>：gold/silver 卖给商人时"铸币"注入货币，总资金从 1.3 万涨到 34.5 万且只涨不跌；没有税收/再分配/遗产/破产清算把钱送回流通。</li>
+  <li><b>食物结构畸形</b>：居民靠 <code>gathered_plants</code>（采集植物，价 0.43）和 <code>fish</code>（0.10）活着；本该更优的 <code>processed_food</code>（熟食）长期买不到。</li>
+  <li><b>守恒正确</b>：population / money / goods 审计误差全程为 0，说明是<b>设计/参数问题，不是记账 bug</b>。</li>
+</ul>
+</div>
+
+<!-- ============ 1. 健康度 ============ -->
+<h2>1 · 这个经济健康吗？</h2>
+<div class="grid">
+  <div class="card">
+    <h3>就业与失业（cell 578）</h3>
+    <div class="chartbox"><canvas id="cEmp"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>各阶层资金份额（末期）</h3>
+    <div class="chartbox"><canvas id="cFunds"></canvas></div>
+  </div>
+</div>
+<div class="verdict v-bad"><b>判断：不健康。</b>
+  <ul>
+    <li><span class="bad">就业塌缩</span>：owner 岗位 158→86，失业 33→105，且单向恶化后钉死。</li>
+    <li><span class="bad">分配极化</span>：末期商人占 69%、矿工占 29% 的全部资金；失业者人均仅 5.6 元、净收入 -101 元/周期（吃老本）。</li>
+    <li><span class="bad">部分阶层已崩</span>：渔民满意度 1.0→0.68、资金归零；猎人从 24 人萎缩到 3 人、资金 1052→2 元。</li>
+    <li><span class="good">唯一健康处</span>：账目守恒、人口未饿死（因采集/渔业保住了最低生存食物）。</li>
+  </ul>
+</div>
+
+<!-- ============ 2. 失业 ============ -->
+<h2>2 · 为什么产生大量失业者？</h2>
+<p>失业不是"人太多"，而是<b>建筑产能被系统主动压缩、把在岗人口挤出去</b>。核心是就业阶段的一条负反馈链：</p>
+<div class="card">
+<div class="flow">
+  <span class="n">某建筑产品卖不动<br><span class="muted">sell_through &lt; 1</span></span>
+  <span class="a">→</span>
+  <span class="n r">利用率 ×= 售出率<br><span class="muted">util *= sell_through</span></span>
+  <span class="a">→</span>
+  <span class="n r">下周期招人目标下降<br><span class="muted">planned_util↓</span></span>
+  <span class="a">→</span>
+  <span class="n r">多余 owner 被迁出<br>→ unemployed 池</span>
+  <span class="a">→</span>
+  <span class="n r">失业消费退化 survival<br>收入≈0，无力买货</span>
+  <span class="a">↺</span>
+  <span class="n r">总需求进一步下降</span>
+</div>
+<p class="muted" style="font-size:13px">源码：<code>economy_runtime.cpp:3827-3848</code>（利用率随售出率衰减，探测下限普通品 1/32≈3.1%，食品/电力 1/6≈16.7%）；
+<code>:4435-4690</code>（第 1 步按目标裁员进池，第 2 步按"利润率降序"给最赚钱的建筑优先补人）。</p>
+</div>
+<h3>末期各建筑的利用率 & 实际雇员（暴露空转）</h3>
+<div class="card"><div class="chartbox"><canvas id="cUtil"></canvas></div></div>
+<div class="verdict v-warn">
+  <b>三条具体致因：</b>
+  <ul>
+    <li><b>需求侧塌方（主因）</b>：采集营地(gathering)自己产的 gathered_plants 已够全村吃 → 燧石场(util 3.1%)、织造(3.1%)、狩猎营(16.7%)、渔场(46%)的产品缺乏买家，被压到探测下限，每座甩出约 20+ 名 owner-operator（采集营地一座就有 24 个槽只填 23 人的例子，其余同类建筑几乎全空）。</li>
+    <li><b>投入买不到 → 停摆</b>：stone_collector 因缺工具类投入连续亏损 3 周期后熔断停业（<code>operating_state=1</code>），owner 破产后<b>没钱重启</b>（重启需 owner 现金），永久缺人。</li>
+    <li><b>"先喂最赚钱建筑"的马太效应</b>：招人按利润率降序，金/银矿(margin=1.0)永远优先吃满劳动力，采集/渔/狩猎这些真正养活人的低毛利建筑长期招不满。</li>
+  </ul>
+</div>
+
+<!-- ============ 3. 建筑投入产出 ============ -->
+<h2>3 · 各建筑原材料/产出设计是否科学？</h2>
+<p>配方本身的<b>物料比例</b>大体合理（工具是消耗品、加工有增值），但<b>产出量 × 定价</b>与需求严重脱节，导致"配方能盈利但市场不需要"。</p>
+<table>
+<thead><tr><th>建筑</th><th>投入/天</th><th>产出/天</th><th>观测毛利率</th><th>问题</th></tr></thead>
+<tbody>
+<tr><td>采集营地 gathering_ground</td><td>—</td><td>gathered_plants 5.6</td><td class="good">~100%</td><td>产能过剩，压制其他食物</td></tr>
+<tr><td>公共火塘 communal_hearth</td><td>采集1.0+野味0.5</td><td>processed_food 1.8</td><td class="bad">~98%(虚高)</td><td class="bad">owner-only，产 9 需 26，永久缺货</td></tr>
+<tr><td>打制石器 knapping_workshop</td><td>flint 1.0</td><td>tools 2.955</td><td class="bad">~100%(虚高)</td><td class="bad">同上，产 0.5 需 3.3，价 81×</td></tr>
+<tr><td>狩猎营 hunting_camp</td><td>石器 0.005</td><td>肉3.2+皮0.8+毛0.32</td><td>~96%</td><td>买不起 7.35 元的石器 → util 16%</td></tr>
+<tr><td>燧石场 flint_quarry</td><td>—</td><td>flint 3.927</td><td>~100%</td><td class="warn">flint 库存堆到 5042，无人要</td></tr>
+<tr><td>伐木场 timber_collector</td><td>tools 0.1</td><td>logs 1.808</td><td class="bad">-11%</td><td class="bad">亏损仍在采，木材资源 -99%</td></tr>
+</tbody>
+</table>
+<div class="verdict v-warn"><b>核心设计缺陷：加工类建筑（火塘/石器坊）是"1 人 owner-only"，规模上限被写死，无法随缺货/涨价扩张产能</b>。
+于是"缺货 → 涨价到天花板 → 仍不增产 → 永久短缺"。而采集/燧石/毛皮/生皮类<b>产能过剩且无下游消化</b>（fur 库存 1390、raw_hide 9840、flint 5042 全部滞销）。
+建议：加工链改为可雇工、可多组扩张；上游采集类设产量随资源/库存的负反馈上限。</div>
+
+<!-- ============ 4. 市场/物价 ============ -->
+<h2>4 · 市场机制 / 物价机制是否科学？</h2>
+<div class="grid">
+  <div class="card"><h3>失灵商品：价格 vs 成本锚（末期）</h3><div class="chartbox sm"><canvas id="cPrice"></canvas></div></div>
+  <div class="card"><h3>熟食价格与短缺率长期走势</h3><div class="chartbox sm"><canvas id="cPfTrend"></canvas></div></div>
+</div>
+<p>定价框架本身是<b>合理的成本加成 + 供需/短缺/库存多因子调价</b>（<code>economy_runtime.cpp:3883-3950, 5694-5784</code>），
+理论自洽。但在本场景暴露两类失灵：</p>
+<div class="verdict v-bad">
+  <ul>
+    <li><b>价格能到天花板，供给却零弹性</b>：processed_food 钉死在 <code>max_price=16.0</code>（锚价仅 0.34，47×）、shortage 永久 0.93；
+    chipped_stone_tools 7.35（锚 0.09，81×）。价格信号完全失去"引导增产"的功能，因为供给端产能被机制锁死（见第 3 点）。</li>
+    <li><b>价格机制无法向下传导到工资/成本</b>：石器涨到 7.35 元，但下游狩猎营买不起 → 减产 → 肉更少 → 熟食原料更缺，形成价格向上死锁。</li>
+    <li><b>滞销品价格趴在地板</b>：flint 0.04、raw_stone 0.10、gathered_plants 锚价卡在 0.05 下限；大量库存无人问津，占用商人资金却不流通。</li>
+  </ul>
+  <b>结论：机制设计"方向正确"，但缺少①供给对高价的产能响应；②价格上限过高（16 元 vs 0.34 成本，几乎无封顶意义）；③滞销品的产量自动收敛。</b>
+</div>
+
+<!-- ============ 5. 阶层流动/消费/存款 ============ -->
+<h2>5 · 各阶层的流动 / 消费 / 存款是否科学？</h2>
+<div class="grid">
+  <div class="card"><h3>资金累积：商人 & 矿工独大</h3><div class="chartbox sm"><canvas id="cWealth"></canvas></div></div>
+  <div class="card"><h3>阶层人口迁移（失业池膨胀）</h3><div class="chartbox sm"><canvas id="cProfPop"></canvas></div></div>
+</div>
+<table>
+<thead><tr><th>阶层</th><th>人口</th><th>收入/期</th><th>支出/期</th><th>净</th><th>存款(元)</th></tr></thead>
+<tbody>
+<tr><td>商人 merchant</td><td>20</td><td>1450</td><td>895</td><td class="good">+555</td><td class="warn num">239035</td></tr>
+<tr><td>矿工 miner</td><td>38</td><td>428</td><td>179</td><td class="good">+249</td><td class="warn num">99849</td></tr>
+<tr><td>采集者 forager</td><td>49</td><td>416</td><td>307</td><td class="good">+109</td><td class="num">1361</td></tr>
+<tr><td>工匠 artisan</td><td>3</td><td>3.3</td><td>14</td><td class="bad">-11</td><td class="num">4072</td></tr>
+<tr><td>渔民 fisher</td><td>11</td><td>3.5</td><td>3.5</td><td>0</td><td class="bad num">0</td></tr>
+<tr><td>失业 unemployed</td><td>105</td><td>0.8</td><td>102</td><td class="bad">-101</td><td class="bad num">584</td></tr>
+</tbody>
+</table>
+<div class="verdict v-bad">
+  <b>不科学，主要体现在"存款"这一维：</b>
+  <ul>
+    <li><b>流动</b>：worker↔unemployed 的迁移机制是合理的（跨职业再就业），但实际单向流入失业池，没有真正的"向上流动"路径（失业者无法自雇成为 owner）。</li>
+    <li><b>消费</b>：合理——失业者降级为生存消费、富人消费更多；但因收入断绝，失业者只能吃老本，消费循环断裂。</li>
+    <li><b>存款（最不合理）</b>：<span class="bad">财富只进不出、单调集中</span>。商人靠买卖价差 + 铸币把全村 69% 的钱吸走且永不释放；没有税收、再投资建新建筑、破产清算、遗产等把资金重新注入生产与消费。这使经济逐步"抽干流动性"，穷者愈穷。</li>
+  </ul>
+</div>
+
+<!-- ============ 6. 改进 ============ -->
+<h2>6 · 如何改进这个经济模型</h2>
+<div class="grid">
+<div class="card">
+<h3 class="info">A. 打通供给侧产能响应（最高优先级）</h3>
+<ul>
+  <li>加工链（火塘/石器坊）改为<b>可雇工 + 可多组扩张</b>，让 planned_utilization 能突破 owner-only 的 1 人上限，随缺货/高价增产。</li>
+  <li>把利用率负反馈的<b>探测下限对"必需消费品"调高</b>（如生存食物/工具 ≥ 1/3），避免关键民生品被压到 3% 空转。</li>
+  <li>停业熔断后，允许用<b>公共/社区资金或商人再投资</b>重启破产的关键建筑，打破"owner 破产→永久停摆"。</li>
+</ul>
+</div>
+<div class="card">
+<h3 class="info">B. 修复物价传导</h3>
+<ul>
+  <li>把 max_price 相对锚价的倍数<b>收紧</b>（如 ≤ 3-4× 锚价），16 元 vs 0.34 成本的天花板形同虚设。</li>
+  <li>让<b>高价直接拉高该建筑招人/产能预算</b>，而不仅是账面价格。</li>
+  <li>滞销品（flint/fur/raw_hide 库存爆仓）产量应随库存/售出率<b>主动收敛到 0</b>，而不是靠 producer support 长期补贴。</li>
+</ul>
+</div>
+<div class="card">
+<h3 class="info">C. 建立货币回流机制</h3>
+<ul>
+  <li>加入<b>税收 / 再分配 / 消费税</b>把商人囤积的钱送回流通，或让商人利润<b>强制再投资</b>为新建筑（创造 owner 岗位）。</li>
+  <li>给<b>失业救济或公共工程</b>，让失业者保留最低消费，维持需求循环。</li>
+  <li>审视 gold/silver "铸币"注入速率——当前是货币单调膨胀的源头，应与经济规模挂钩。</li>
+</ul>
+</div>
+<div class="card">
+<h3 class="bad">D. 修复资源生成 bug（务必核查）</h3>
+<ul>
+  <li><b>timber -99% 枯竭</b>但伐木场亏损仍在采：需给 <code>cultivate</code> 再生量 ≥ 采伐量，或亏损即停采。</li>
+  <li><b>fertile_soil +585535、clay +7.38M、wild_game +19030、salt +7871 反向暴涨</b>：capacity/regeneration 类资源在无上限累积，疑似养护/容量回补越界，应设<b>储量上限（clamp）</b>。</li>
+  <li>建议加一条不变量测试：资源储量在无外部注入时不应单调超过初始容量。</li>
+</ul>
+</div>
+</div>
+<div class="verdict v-good"><b>改进路线优先级：</b> D（资源 bug，正确性）→ A（供给弹性，解失业）→ B（物价传导）→ C（货币回流，解极化）。
+其中 A 能同时缓解失业与短缺，是收益最高的一步。</div>
+
+<div class="foot">
+  数据：economy_record_20260716_222059_v5_cell578_q11_r14 · 全局 summary + cell 578 明细<br>
+  结合源码 gdext/src/economy_runtime.cpp、data/economy/buildings/*.tres · 由 🕯️ 砚灯 生成
+</div>
+</div>
+
+<script>
+const C={txt:'#e6edf3',mut:'#8b949e',grid:'#2d333b',red:'#f85149',green:'#3fb950',blue:'#58a6ff',amber:'#d29922',purple:'#bc8cff',cyan:'#39c5cf'};
+Chart.defaults.color=C.mut; Chart.defaults.borderColor=C.grid; Chart.defaults.font.family="'Segoe UI','Microsoft YaHei',sans-serif";
+const days=[10,15,20,25,520,1030,1540,2045];
+const ownerE=[158,147,104,90,108,91,89,86];
+const empE=[38,38,38,38,38,38,38,38];
+const unemp=[33,44,87,101,83,100,102,105];
+
+new Chart(cEmp,{type:'line',data:{labels:days,datasets:[
+ {label:'自雇 owner 岗位',data:ownerE,borderColor:C.blue,backgroundColor:'transparent',tension:.25,borderWidth:2},
+ {label:'雇员岗位',data:empE,borderColor:C.cyan,backgroundColor:'transparent',tension:.25,borderWidth:2},
+ {label:'失业人口',data:unemp,borderColor:C.red,backgroundColor:'rgba(248,81,73,.12)',fill:true,tension:.25,borderWidth:2}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.txt}}},scales:{x:{title:{display:true,text:'模拟天',color:C.mut}},y:{grid:{color:C.grid}}}}});
+
+new Chart(cFunds,{type:'doughnut',data:{labels:['商人 69%','矿工 29%','工匠 1.2%','采集者 0.4%','失业 0.2%'],
+ datasets:[{data:[69.3,28.95,1.18,0.39,0.17],backgroundColor:[C.amber,C.purple,C.cyan,C.green,C.red],borderColor:C.grid}]},
+ options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:C.txt}}}}});
+
+const bld=['金矿','银矿','采集营','火塘','商栈','伐木场','渔场','狩猎营','燧石场','织造','石器坊','石料场'];
+const util=[100,100,100,100,100,100,46.5,16.7,3.1,3.1,3.1,0];
+const empfill=[36,2,0,0,0,0,0,0,0,0,0,0];
+new Chart(cUtil,{type:'bar',data:{labels:bld,datasets:[
+ {label:'计划利用率 %',data:util,backgroundColor:util.map(v=>v>=90?C.green:v>=40?C.amber:C.red),yAxisID:'y'},
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.txt}},tooltip:{callbacks:{afterLabel:(c)=>'雇员在岗: '+empfill[c.dataIndex]}}},scales:{y:{grid:{color:C.grid},title:{display:true,text:'利用率 %',color:C.mut}}}}});
+
+new Chart(cPrice,{type:'bar',data:{labels:['熟食','石器','木材','采集植物','燧石'],datasets:[
+ {label:'成交价',data:[16.0,7.35,1.23,0.43,0.04],backgroundColor:C.red},
+ {label:'成本锚价',data:[0.34,0.09,1.01,0.05,0.04],backgroundColor:C.blue}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.txt}}},scales:{y:{type:'logarithmic',grid:{color:C.grid},title:{display:true,text:'元/单位(对数)',color:C.mut}}}}});
+
+new Chart(cPfTrend,{type:'line',data:{labels:[10,1030,2045],datasets:[
+ {label:'熟食价格(元)',data:[2.52,16,16],borderColor:C.red,tension:.2,borderWidth:2,yAxisID:'y'},
+ {label:'短缺率',data:[1.0,0.93,0.93],borderColor:C.amber,tension:.2,borderWidth:2,yAxisID:'y1'}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.txt}}},scales:{
+ y:{position:'left',grid:{color:C.grid},title:{display:true,text:'价格',color:C.mut}},
+ y1:{position:'right',min:0,max:1,grid:{drawOnChartArea:false},title:{display:true,text:'短缺率',color:C.mut}}}}});
+
+new Chart(cWealth,{type:'line',data:{labels:[10,1030,2045],datasets:[
+ {label:'商人',data:[2152,124173,239035],borderColor:C.amber,tension:.2,borderWidth:2},
+ {label:'矿工',data:[2277,50028,99849],borderColor:C.purple,tension:.2,borderWidth:2},
+ {label:'采集者',data:[3808,1599,1361],borderColor:C.green,tension:.2,borderWidth:2},
+ {label:'失业',data:[1620,863,584],borderColor:C.red,tension:.2,borderWidth:2}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.txt}}},scales:{y:{grid:{color:C.grid},title:{display:true,text:'存款(元)',color:C.mut}}}}});
+
+new Chart(cProfPop,{type:'line',data:{labels:[10,1030,2045],datasets:[
+ {label:'失业',data:[33,100,105],borderColor:C.red,backgroundColor:'rgba(248,81,73,.12)',fill:true,tension:.2,borderWidth:2},
+ {label:'采集者',data:[76,49,49],borderColor:C.green,tension:.2,borderWidth:2},
+ {label:'猎人',data:[24,3,3],borderColor:C.amber,tension:.2,borderWidth:2},
+ {label:'渔民',data:[24,16,11],borderColor:C.cyan,tension:.2,borderWidth:2}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:C.txt}}},scales:{y:{grid:{color:C.grid},title:{display:true,text:'人口',color:C.mut}}}}});
+</script>
+</body>
+</html>
