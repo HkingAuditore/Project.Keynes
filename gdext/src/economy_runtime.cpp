@@ -1175,11 +1175,13 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         dict_num<int32_t>(profile, "wage_ema_alpha_q16", 8192), 0,
         static_cast<int32_t>(Q16_ONE));
     _wage_max_rise_q16_per_day = std::clamp(
-        dict_num<int32_t>(profile, "wage_max_rise_q16_per_day", 6554), 0,
+        dict_num<int32_t>(profile, "wage_max_rise_q16_per_day", 1311), 0,
         static_cast<int32_t>(Q16_ONE));
     _wage_max_fall_q16_per_day = std::clamp(
         dict_num<int32_t>(profile, "wage_max_fall_q16_per_day", 1311), 0,
         static_cast<int32_t>(Q16_ONE));
+    _wage_income_cap_ratio_q16 = std::max(0,
+        dict_num<int32_t>(profile, "wage_income_cap_ratio_q16", 78643));
     _employee_profit_share_q16 = std::clamp(
         dict_num<int32_t>(profile, "employee_profit_share_q16", 16384), 0,
         static_cast<int32_t>(Q16_ONE));
@@ -1200,6 +1202,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         dict_num<int32_t>(profile, "merchant_market_making_days_q16", Q16_ONE),
         0, static_cast<int32_t>(Q16_ONE * 8));
     _merchant_profession_stable_id = dict_string(profile, "merchant_profession_id", "merchant");
+    _unemployed_profession_stable_id = dict_string(profile, "unemployed_profession_id", "unemployed");
     const std::string runtime_mode = dict_string(profile, "market_runtime_mode", "PROBE");
     _market_runtime_mode = runtime_mode == "OFF" ? 0 : (runtime_mode == "PROBE" ? 1 : 2);
     const std::string trade_mode = dict_string(profile, "trade_runtime_mode", "ACTIVE");
@@ -2363,6 +2366,38 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         error = "merchant_profession_missing:" + _merchant_profession_stable_id;
         return false;
     }
+    // The unemployed profession is optional: catalogs that predate the explicit
+    // unemployment model simply leave it unresolved (-1), and the employment pass
+    // falls back to the derived population - owner - employee accounting. When it
+    // is present it enables the persistent unemployed-pool signatures.
+    _unemployed_profession_id = -1;
+    for (size_t p = 0; p < _profession_ids.size(); ++p) {
+        if (_profession_ids[p] == _unemployed_profession_stable_id) {
+            _unemployed_profession_id = static_cast<int32_t>(p);
+            break;
+        }
+    }
+    // Build the dense (profession, ethnicity) -> signature lookup. Deterministic:
+    // signatures are the profession x ethnicity cartesian product, so at most one
+    // entry per (profession, ethnicity). Any unfilled cell stays -1.
+    {
+        const size_t n_prof = _profession_ids.size();
+        const size_t n_eth = _ethnicity_ids.size();
+        _signature_by_profession_ethnicity.assign(n_prof * n_eth, -1);
+        for (size_t i = 0; i < _signatures.size(); ++i) {
+            const int32_t prof = _signatures[i].profession_id;
+            const int32_t eth = _signatures[i].ethnicity_id;
+            if (prof < 0 || eth < 0 || static_cast<size_t>(prof) >= n_prof ||
+                static_cast<size_t>(eth) >= n_eth) {
+                error = "signature_profession_ethnicity_out_of_range";
+                return false;
+            }
+            const size_t idx = static_cast<size_t>(prof) * n_eth + static_cast<size_t>(eth);
+            if (_signature_by_profession_ethnicity[idx] < 0) {
+                _signature_by_profession_ethnicity[idx] = static_cast<int32_t>(i);
+            }
+        }
+    }
     _ethnicity_need_factor_q16 = packed_i32(catalog, "ethnicity_need_factor_q16");
     if (_ethnicity_need_factor_q16.empty()) {
         _ethnicity_need_factor_q16.assign(_ethnicity_ids.size() * _need_ids.size(), Q16_ONE);
@@ -2685,15 +2720,21 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             return false;
         }
         if (family >= 0) upgrade_pairs.emplace_back(family, tier);
+        // Route B: building_kind 2 == service (merchant post): no output, no
+        // resource, behavior_id must be none(0). Kinds 0 (collector) and 1
+        // (industrial) keep their original output/resource/behavior coupling.
+        const bool kind_is_service = _building_kinds[i] == 2;
         if (owner_prof[i] < 0 || owner_prof[i] >= static_cast<int32_t>(_profession_ids.size()) ||
 			owner_slots[i] != 1 || wages[i] < 0 || construction_days[i] < 0 ||
-			_building_kinds[i] < 0 || _building_kinds[i] > 1 ||
+			_building_kinds[i] < 0 || _building_kinds[i] > 2 ||
 			behavior_ids[i] < 0 || behavior_ids[i] > 2 || behavior_versions[i] != 1 ||
-			output_offsets[i] == output_offsets[i + 1] ||
+			(!kind_is_service && output_offsets[i] == output_offsets[i + 1]) ||
+			(kind_is_service && output_offsets[i] != output_offsets[i + 1]) ||
 			(_building_kinds[i] == 0 && resource_offsets[i] == resource_offsets[i + 1]) ||
 			(_building_kinds[i] != 0 && resource_offsets[i] != resource_offsets[i + 1]) ||
 			(_building_kinds[i] == 0 && behavior_ids[i] == 0) ||
 			(_building_kinds[i] == 1 && behavior_ids[i] != 0) ||
+			(kind_is_service && behavior_ids[i] != 0) ||
             target_margins[i] < 0 || target_margins[i] > Q16_ONE * 4 ||
             supply_elasticities[i] < 0 || supply_elasticities[i] > Q16_ONE * 4 ||
             (output_cost_share_offsets[i + 1] - output_cost_share_offsets[i] != 0 &&
@@ -2705,7 +2746,12 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             error = "building_type_entry_invalid";
             return false;
         }
-        if (owner_prof[i] == _merchant_profession_id) {
+        if (owner_prof[i] == _merchant_profession_id && !kind_is_service) {
+            // Route B: a service merchant post (kind 2) is a valid
+            // merchant-owned building. Its no-output/no-resource/behavior-none
+            // shape is already enforced above, so it bypasses the bullion
+            // collector requirement. Non-service merchant buildings must still
+            // be a matching gold/silver collector.
             const bool one_output = output_offsets[i + 1] - output_offsets[i] == 1;
             const bool one_resource = resource_offsets[i + 1] - resource_offsets[i] == 1;
             const int32_t output_good = one_output ? output_goods[output_offsets[i]] : -1;
@@ -3217,9 +3263,21 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
     thread_local int32_t cached_moisture = std::numeric_limits<int32_t>::min();
     thread_local int32_t cached_snow = std::numeric_limits<int32_t>::min();
     thread_local int32_t cached_weather = std::numeric_limits<int32_t>::min();
+    thread_local uint64_t cached_stock_presence = 0;
     const int32_t market = _market.cell_to_market[cell];
     const auto price_begin = _market.price.begin() +
         static_cast<int64_t>(market) * _market.good_count;
+    const auto stock_begin = _market.stock.begin() +
+        static_cast<int64_t>(market) * _market.good_count;
+    // Living cost now depends on which goods are purchasable (stock > 0), so the
+    // cache must invalidate when the in-stock set changes even if prices did not.
+    // We only need the sign of each stock (a good's exact quantity does not move
+    // living cost), so hash a purchasable-bitset rather than snapshotting stock.
+    uint64_t stock_presence = 1469598103934665603ULL; // FNV-1a offset basis
+    for (int32_t g = 0; g < _market.good_count; ++g) {
+        const uint64_t bit = (*(stock_begin + g) > 0) ? 1ULL : 0ULL;
+        stock_presence = (stock_presence ^ bit) * 1099511628211ULL;
+    }
     const bool same_basis =
         cached_prices.size() == static_cast<size_t>(_market.good_count) &&
         cached_catalog_hash == _catalog_hash &&
@@ -3227,6 +3285,7 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
         cached_moisture == _environment_moisture_q16[cell] &&
         cached_snow == _environment_snow_q16[cell] &&
         cached_weather == _environment_weather_q16[cell] &&
+        cached_stock_presence == stock_presence &&
         std::equal(cached_prices.begin(), cached_prices.end(), price_begin);
     if (!same_basis) {
         cached_prices.assign(price_begin, price_begin + _market.good_count);
@@ -3235,6 +3294,7 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
         cached_moisture = _environment_moisture_q16[cell];
         cached_snow = _environment_snow_q16[cell];
         cached_weather = _environment_weather_q16[cell];
+        cached_stock_presence = stock_presence;
         cache.assign(_plans.size() * _ethnicity_ids.size(), -1);
     }
     auto cost = [&](int32_t signature_id, int32_t plan_override) {
@@ -3250,14 +3310,91 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
             const Need &need = _needs[need_index];
             const int64_t score_sum = need_score_sums[need_index];
             if (need.living_cost_weight_q16 <= 0 || score_sum <= 0) continue;
-            int64_t weighted_price = 0;
+            // Living cost must reflect what a rational consumer would actually
+            // pay to satisfy this need, not the average of every listed variant.
+            // A variant whose components are out of stock (or a variant that has
+            // spiked to a ceiling nobody trades at) is not a real option: the
+            // consumer substitutes to a cheaper variant that is in stock (e.g.
+            // gathered_plants / game_meat). We therefore aggregate ONLY over
+            // in-stock variants, score-weighted for preference among the real
+            // options, and clamp the result to a slack multiple of the cheapest
+            // in-stock variant so a mid-priced substitute cannot inflate cost.
+            int64_t avail_num = 0;      // Sum(price * score) over in-stock variants
+            int64_t avail_score = 0;    // Sum(score) over in-stock variants
+            int64_t avail_ref_num = 0;  // Sum(reference_price * score) over in-stock
+            int64_t min_avail_price = 0; // Cheapest in-stock variant unit price
             for (int32_t v = 0; v < need.variant_count; ++v) {
                 const int32_t variant = need.variant_begin + v;
-                weighted_price = saturating_add(weighted_price,
-                    saturating_mul(variant_prices[variant],
-                                   variant_scores[variant], sat), sat);
+                // A variant is purchasable only if every component good has stock.
+                const VariantChoice &vc = _variants[variant];
+                bool in_stock = vc.component_count > 0;
+                for (int32_t c = 0; c < vc.component_count; ++c) {
+                    const NeedComponent &comp = _components[vc.component_begin + c];
+                    if (_market.stock[_market.index(market, comp.good_id)] <= 0) {
+                        in_stock = false;
+                        break;
+                    }
+                }
+                if (!in_stock) continue;
+                const int64_t vp = variant_prices[variant];
+                const int64_t vs = variant_scores[variant];
+                avail_num = saturating_add(avail_num,
+                    saturating_mul(vp, vs, sat), sat);
+                avail_score = saturating_add(avail_score, vs, sat);
+                avail_ref_num = saturating_add(avail_ref_num,
+                    saturating_mul(vc.reference_unit_price, vs, sat), sat);
+                if (min_avail_price == 0 || vp < min_avail_price) {
+                    min_avail_price = vp;
+                }
             }
-            weighted_price /= score_sum;
+            if (avail_score <= 0) {
+                // Every variant of this need is out of stock: the consumer cannot
+                // spend anything on it, so it contributes nothing to living cost.
+                // (Wage floors should only cover goods people can actually buy;
+                // an unpurchasable need does not create a real cost of living, and
+                // its ghost/ceiling listing prices must not pollute the aggregate.
+                // Genuine survival pressure comes from staple_food/protein having
+                // no cheap in-stock substitute, which those needs handle directly.)
+                continue;
+            }
+            int64_t weighted_price = avail_num / avail_score;
+            // Clamp to 1.5x the cheapest in-stock option: consumers will not
+            // pay far above the cheapest viable substitute they can actually buy.
+            const int64_t price_cap = saturating_mul(
+                min_avail_price, 98304 /* 1.5 in Q16 */, sat) >> 16;
+            if (price_cap > 0 && weighted_price > price_cap) {
+                weighted_price = price_cap;
+            }
+            // Essentialness cap: even if every in-stock variant is expensive, a
+            // NON-essential need must not manufacture society-wide inflation. Only
+            // the essential portion of a price rise feeds living cost (and thus the
+            // wage floor). Essentialness is read from the need's demand floor
+            // (price_quantity_floor_q16): a high floor means demand stays high even
+            // when prices soar (a true necessity like staple grain, which should
+            // track market price fully), while a zero floor means demand collapses
+            // to nothing when prices rise (a discretionary need like protein/produce
+            // with substitutes -- consumers simply stop buying, so it must not lift
+            // the cost of living). floor is in [0, 0.5]; scale by 2 so a 0.5 floor
+            // maps to full pass-through and 0 maps to no pass-through.
+            // A free "buffer band" up to 1.5x the reference price passes through
+            // unclamped: a mild price rise is normal and should be reflected even
+            // for discretionary needs ("a little more expensive is fine"). Only
+            // the portion ABOVE that band is throttled by essentialness, so a
+            // runaway spike ("it soared, so I just stop buying") cannot inflate
+            // the cost of living for a non-essential need.
+            const int64_t ref_price = avail_ref_num / avail_score;
+            const int64_t buffer_threshold =
+                saturating_mul(ref_price, 98304 /* 1.5 in Q16 */, sat) >> 16;
+            if (weighted_price > buffer_threshold && buffer_threshold > 0) {
+                int64_t essential_q16 = saturating_mul(
+                    need.price_quantity_floor_q16, 2, sat);
+                if (essential_q16 > Q16_ONE) essential_q16 = Q16_ONE;
+                if (essential_q16 < 0) essential_q16 = 0;
+                const int64_t excess = weighted_price - buffer_threshold;
+                const int64_t allowed_excess =
+                    saturating_mul(excess, essential_q16, sat) >> 16;
+                weighted_price = saturating_add(buffer_threshold, allowed_excess, sat);
+            }
             int64_t quantity = saturating_mul(
                 need.base_qty_per_person, need.living_cost_weight_q16, sat) >> 16;
             quantity = saturating_mul(
@@ -3350,16 +3487,58 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
             BuildingGroup &group = _buildings[g];
             if (!building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
+            // Affordability damping: derive a per-employee wage ceiling from the
+            // building's expected revenue divided across all its employee slots,
+            // scaled by _wage_income_cap_ratio_q16. A rational employer cannot
+            // sustainably pay wages far above the revenue each employee supports,
+            // so the living-cost floor is not allowed to push contract wages past
+            // this ceiling. Falls back to no cap (ceiling=0) when revenue is not
+            // yet known (e.g. first cycle) so the loss/suspension machinery, not a
+            // wage collapse, handles genuinely unaffordable buildings.
+            int64_t affordable_ceiling = 0;
+            if (_wage_income_cap_ratio_q16 > 0) {
+                int64_t group_employee_slots = 0;
+                for (int32_t rr = 0; rr < type.employee_count; ++rr) {
+                    const JobRole &rrole =
+                        _building_employee_roles[type.employee_begin + rr];
+                    group_employee_slots = saturating_add(group_employee_slots,
+                        saturating_mul(group.count, rrole.slots_per_building,
+                                       _saturation_count), _saturation_count);
+                }
+                const int64_t basis = group.last_expected_revenue > 0
+                    ? group.last_expected_revenue : group.last_revenue;
+                if (basis > 0 && group_employee_slots > 0) {
+                    const int64_t per_emp = basis / group_employee_slots;
+                    affordable_ceiling = mul_div_sat(per_emp,
+                        _wage_income_cap_ratio_q16, Q16_ONE, _saturation_count);
+                }
+            }
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
                 if (role.profession_id != profession) continue;
                 const int32_t index = group.employee_fill_begin + r;
-                const int64_t floor = std::max(general_cost, role_cost);
+                int64_t floor = std::max(general_cost, role_cost);
+                // Clamp the living-cost floor to the employer's ability to pay,
+                // but never below the configured reference wage (so a viable
+                // building still offers at least its nominal wage).
+                if (affordable_ceiling > 0) {
+                    const int64_t floor_cap = std::max(
+                        role.reference_wage_per_day, affordable_ceiling);
+                    floor = std::min(floor, floor_cap);
+                }
                 int64_t current = _building_role_contract_wage[index] > 0
                     ? _building_role_contract_wage[index] : role.reference_wage_per_day;
                 int64_t next = role.reference_wage_per_day;
                 if (role.wage_policy == 2) {
-                    const int64_t desired = std::max(floor, local_average);
+                    int64_t desired = std::max(floor, local_average);
+                    // Damping also caps the target the wage chases toward, so an
+                    // inflated local-average signal cannot drag wages past the
+                    // employer's affordability either.
+                    if (affordable_ceiling > 0) {
+                        const int64_t desired_cap = std::max(
+                            role.reference_wage_per_day, affordable_ceiling);
+                        desired = std::min(desired, desired_cap);
+                    }
                     if (desired > current) {
                         const int64_t cap = std::max<int64_t>(1, mul_div_sat(
                             current, saturating_mul(_wage_max_rise_q16_per_day,
@@ -4148,12 +4327,12 @@ bool NativeEconomyRuntime::apply_demolish_command(const Command &cmd, int32_t ow
 
 bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::string &error) {
     if (!prepare_cell_wages(cell, error)) return false;
+    // demand[p] = profession p 本周期 employee 目标之和；fill[p] = 夹紧后在岗
+    // employee 之和。二者在 A1 两步逻辑中被 std::fill 重置复用（见下）。
     thread_local std::vector<int64_t> demand;
-    thread_local std::vector<int64_t> available;
     thread_local std::vector<int64_t> fill;
     const int32_t professions = static_cast<int32_t>(_profession_ids.size());
     demand.assign(professions, 0);
-    available.assign(professions, 0);
     fill.assign(professions, 0);
     const int32_t first = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
         ? _building_cell_offsets[cell] : 0;
@@ -4176,121 +4355,351 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
         return scaled;
     };
     const bool trace_detail = trace_detail_for_cell(cell);
-    thread_local std::vector<int32_t> trace_slots;
+    // A1 迁移会 allocate/release slot，裸 slot id 会失效；trace 快照改存稳定
+    // handle，事件生成时用 valid_handle 解析回当前 slot（失效则跳过该 leg）。
+    thread_local std::vector<uint64_t> trace_handles;
     thread_local std::vector<int64_t> trace_owner_before;
     thread_local std::vector<int64_t> trace_employee_before;
-    trace_slots.clear(); trace_owner_before.clear(); trace_employee_before.clear();
+    trace_handles.clear(); trace_owner_before.clear(); trace_employee_before.clear();
     if (trace_detail) {
         _population.for_each_in_cell(cell, [&](int32_t slot) {
-            trace_slots.push_back(slot);
+            trace_handles.push_back(_population.handle_for_slot(slot));
             trace_owner_before.push_back(_population.owner_employed[slot]);
             trace_employee_before.push_back(_population.employee_employed[slot]);
         });
     }
-    _population.for_each_in_cell(cell, [&](int32_t slot) {
-        _population.owner_employed[slot] = 0;
-        _population.employee_employed[slot] = 0;
-    });
-    for (int32_t g = first; g < last; ++g) {
-        if (_buildings[g].cell == cell && _buildings[g].count > 0) {
-            _buildings[g].filled_owner = 0;
-            const BuildingType &type = _building_types[_buildings[g].type_id];
-            for (int32_t r = 0; r < type.employee_count; ++r) {
-                _building_employee_filled[_buildings[g].employee_fill_begin + r] = 0;
-            }
-        }
-    }
+    // ================================================================
+    // A1 路径：失业池增量就业（统一净增量迁移，用户 2026-07-16 拍板）
+    // ----------------------------------------------------------------
+    // 不变量（employment 结束时对每个非 merchant、非 unemployed 的
+    //   profession|eth slot 成立）：owner_employed + employee_employed
+    //   == population，即在岗 slot 里没有闲置人口；任何未被任何建筑雇佣
+    //   的人都真实迁往 unemployed|eth slot（独立 cohort 身份 + plan_unemployed，
+    //   消费退化为 survival food → satisfaction 掉 → starvation 自然死上升，
+    //   失业惩罚由 demography 自动施加，无需硬编死亡率）。
+    //
+    // 两步结构（数学上等价于"消失清理 + 建筑驱动裁员 + 优先级招人"三阶段
+    //   合并，但 owner/employee 在同一 slot 内自然竞争 population，无需在阶段
+    //   间显式传递 slot 剩余容量）：
+    //   [第1步 析出] 每个在岗 slot 按本周期 planned_utilization 目标算
+    //     desired_working；surplus = population - desired_working 的部分迁往
+    //     unemployed|eth。消失/不可用建筑目标为 0，其在岗人口自然全部进池。
+    //     执行后所有活跃 group 的 filled_* 被夹到"目标或更少"，多余人口全在池中。
+    //   [第2步 招人] unemployed 池此刻汇集了各 eth 的全部失业者（含本周期刚
+    //     进池的 + 历史长期失业的）。活跃 group 按优先级
+    //     (realized_profit_margin_q16 desc, planned_utilization_q16 desc,
+    //      group_index asc) 跨建筑类型排序，依次把 filled_owner/filled_employee
+    //     补到目标，从 unemployed|eth 真实迁回对应 profession|eth slot（受池
+    //     可用量约束）。低优先级/亏损 group 招不满即长期缺人 → "先喂最赚钱"。
+    //     招人跨 profession：失业 farmer 可被招为 miner（profession 是可变就业
+    //     状态，架构决策4）。
+    //
+    // 关键工程约束：move_cohort_population 会 allocate/release slot，破坏
+    //   for_each_in_cell 的页链迭代器。故所有迁移都"先只读遍历收集计划到
+    //   thread_local 缓冲，遍历结束后再统一执行迁移"（学 ensure_merchant_invariant）。
+    //   Route B: 商栈(merchant_post) owner 现在参与就业分配——merchant slot 的
+    //   owner_employed 计入 filled_owner、纳入析出/聚合；但保底每有人 cell 至少
+    //   1 个 merchant 不被裁(护住 rebuild_merchant_ranges 做市索引不变量)。
+    //   emp_capacity 第一遍仍跳过 merchant(商人不做 employee，仅 owner 岗)。
+    // ================================================================
     if (first < last) {
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const int32_t signature = static_cast<int32_t>(_population.signature_id[slot]);
-            int64_t total_owner_demand = 0;
-            for (int32_t g = first; g < last; ++g) {
-                BuildingGroup &group = _buildings[g];
-                if (group.cell != cell || group.count <= 0 ||
-                    !building_available(cell, group.type_id, true) ||
-                    group.owner_signature_id != signature) continue;
-                const BuildingType &type = _building_types[group.type_id];
-                total_owner_demand = saturating_add(total_owner_demand,
-                    planned_owner_demand(group, type),
-                    _saturation_count);
-            }
-            const int64_t total_fill = std::min(
-                std::max<int64_t>(0, _population.population[slot]), total_owner_demand);
-            int64_t prefix = 0;
-            int64_t distributed = 0;
-            for (int32_t g = first; g < last; ++g) {
-                BuildingGroup &group = _buildings[g];
-                if (group.cell != cell || group.count <= 0 ||
-                    !building_available(cell, group.type_id, true) ||
-                    group.owner_signature_id != signature) continue;
-                const BuildingType &type = _building_types[group.type_id];
-                prefix = saturating_add(prefix,
-                    planned_owner_demand(group, type),
-                    _saturation_count);
-                const int64_t next = total_owner_demand > 0
-                    ? mul_div_sat(total_fill, prefix, total_owner_demand, _saturation_count) : 0;
-                group.filled_owner = std::max<int64_t>(0, next - distributed);
-                distributed = next;
-            }
-            _population.owner_employed[slot] = total_fill;
-            _filled_owner_jobs = saturating_add(_filled_owner_jobs, total_fill, _saturation_count);
-        });
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const int32_t signature = static_cast<int32_t>(_population.signature_id[slot]);
-            const int32_t profession = _signatures[signature].profession_id;
-            if (!profession_available(cell, profession, true)) return;
-            available[profession] = saturating_add(available[profession],
-                std::max<int64_t>(0, _population.population[slot] -
-                                     _population.owner_employed[slot]),
-                _saturation_count);
-        });
+        const int32_t n_eth = static_cast<int32_t>(_ethnicity_ids.size());
+
+        // ---- 目标计算：本周期各 group 期望的 owner / 各 role employee ----
+        // 用 thread_local 缓冲避免每 cell 分配。
+        thread_local std::vector<int64_t> group_owner_target;      // 每 group owner 目标
+        group_owner_target.assign(static_cast<size_t>(last - first), 0);
+        // profession 级 employee 目标 / 在岗（跨 eth 聚合，沿用旧 employee 语义）。
+        std::fill(demand.begin(), demand.end(), 0);   // demand[p] = Σ planned_role_demand
+        std::fill(fill.begin(), fill.end(), 0);       // fill[p]   = Σ 当前在岗 employee
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
-            if (group.cell != cell || group.count <= 0 ||
-                !building_available(cell, group.type_id, true)) continue;
+            if (group.cell != cell) continue;
+            const bool active = group.count > 0 &&
+                                building_available(cell, group.type_id, true);
             const BuildingType &type = _building_types[group.type_id];
+            // owner 目标：不可用/count<=0 → 0（其在岗人口将全部进池）。
+            const int64_t owner_target = active ? planned_owner_demand(group, type) : 0;
+            group_owner_target[g - first] = owner_target;
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
-                demand[role.profession_id] = saturating_add(demand[role.profession_id],
-                    planned_role_demand(group, role),
-                    _saturation_count);
+                const int32_t p = role.profession_id;
+                const int64_t role_target = active ? planned_role_demand(group, role) : 0;
+                demand[p] = saturating_add(demand[p], role_target, _saturation_count);
+                const int32_t fi = group.employee_fill_begin + r;
+                fill[p] = saturating_add(fill[p],
+                    std::max<int64_t>(0, _building_employee_filled[fi]), _saturation_count);
             }
         }
-        std::vector<int64_t> prefix(professions, 0);
-        std::vector<int64_t> distributed(professions, 0);
+
+        // ---- 第1步 析出：把超出目标的在岗人口迁往 unemployed|eth ----
+        // (a) 先把每个 group 的 filled_owner / _building_employee_filled 夹到目标
+        //     （裁员：filled > target 的差额释放）。employee 按 profession 稳定序
+        //     在多 group 间削减（同 profession 聚合，逐 group 削到 target）。
+        // (b) 再按 profession|eth slot 聚合"该 slot 应保留的在岗人口"，把
+        //     population - retained 迁往 unemployed|eth。
+        //
+        // owner 侧夹紧（建筑驱动：每 group 独立按自身 filled-target 裁）。
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
-            if (group.cell != cell || group.count <= 0 ||
-                !building_available(cell, group.type_id, true)) continue;
+            if (group.cell != cell || group.count <= 0) continue;
+            if (group.filled_owner > group_owner_target[g - first]) {
+                group.filled_owner = group_owner_target[g - first];
+            }
+        }
+        // employee 侧夹紧：profession p 若 Σfilled > Σtarget，按 group 稳定序
+        // 从后往前削减各 role fill 到 demand。用 remaining[p] 追踪该 profession
+        // 允许保留的总在岗数，逐 group 分配 min(role_filled, remaining)。
+        thread_local std::vector<int64_t> emp_remaining;   // 每 profession 允许保留的在岗上限
+        emp_remaining.assign(professions, 0);
+        for (int32_t p = 0; p < professions; ++p) {
+            emp_remaining[p] = std::min(fill[p], demand[p]);   // 裁员后保留 = min(在岗, 目标)
+        }
+        std::fill(fill.begin(), fill.end(), 0);   // 重算为夹紧后的实际在岗
+        for (int32_t g = first; g < last; ++g) {
+            BuildingGroup &group = _buildings[g];
+            if (group.cell != cell || group.count <= 0) continue;
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
                 const int32_t p = role.profession_id;
-                const int64_t role_demand = planned_role_demand(group, role);
-                prefix[p] = saturating_add(prefix[p], role_demand, _saturation_count);
-                const int64_t total = std::min(available[p], demand[p]);
-                const int64_t next = demand[p] > 0
-                    ? mul_div_sat(total, prefix[p], demand[p], _saturation_count) : 0;
-                const int64_t role_fill = std::max<int64_t>(0, next - distributed[p]);
-                distributed[p] = next;
-                _building_employee_filled[group.employee_fill_begin + r] = role_fill;
-                fill[p] = saturating_add(fill[p], role_fill, _saturation_count);
+                const int32_t fi = group.employee_fill_begin + r;
+                const int64_t cur = std::max<int64_t>(0, _building_employee_filled[fi]);
+                const int64_t keep = std::min(cur, emp_remaining[p]);
+                _building_employee_filled[fi] = keep;
+                emp_remaining[p] -= keep;
+                fill[p] = saturating_add(fill[p], keep, _saturation_count);
             }
         }
-        std::fill(prefix.begin(), prefix.end(), 0);
-        std::fill(distributed.begin(), distributed.end(), 0);
+
+        // (b) 计算每个 profession|eth slot 夹紧后应保留的在岗人口，收集迁往池的差额。
+        //     owner_retained[slot] = 该 signature 各 group filled_owner 之和；
+        //     employee_retained[slot] = 该 profession 在岗 employee 按 slot 稳定序摊派。
+        //     retained = owner_retained + employee_retained（A1: <= population）。
+        //     surplus = population - retained → 迁往 unemployed|eth。
+        //
+        // 先按 signature 聚合 owner filled（owner 绑定精确 signature）。
+        thread_local std::vector<int64_t> sig_owner_retained;   // 按 signature id
+        sig_owner_retained.assign(_signatures.size(), 0);
+        for (int32_t g = first; g < last; ++g) {
+            BuildingGroup &group = _buildings[g];
+            if (group.cell != cell || group.count <= 0) continue;
+            if (group.owner_signature_id < 0 ||
+                group.owner_signature_id >= static_cast<int32_t>(_signatures.size())) continue;
+            sig_owner_retained[group.owner_signature_id] = saturating_add(
+                sig_owner_retained[group.owner_signature_id],
+                std::max<int64_t>(0, group.filled_owner), _saturation_count);
+        }
+        // employee 在岗按 profession 稳定序摊派到各 slot（同 profession 的多 eth
+        // slot 按 signature_id 升序，用 cohort 可容纳量比例摊派，前缀和保确定）。
+        thread_local std::vector<int64_t> emp_prefix;
+        thread_local std::vector<int64_t> emp_distributed;
+        thread_local std::vector<int64_t> emp_capacity;   // 每 profession 各 slot 可当 employee 的容量之和
+        emp_prefix.assign(professions, 0);
+        emp_distributed.assign(professions, 0);
+        emp_capacity.assign(professions, 0);
+        // 第一遍：算每 profession 的 employee 容量总量 = Σ(population - owner_retained)。
         _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const int32_t signature = static_cast<int32_t>(_population.signature_id[slot]);
-            const int32_t p = _signatures[signature].profession_id;
-            const int64_t cohort_available = std::max<int64_t>(
-                0, _population.population[slot] - _population.owner_employed[slot]);
-            prefix[p] = saturating_add(prefix[p], cohort_available, _saturation_count);
-            const int64_t next = available[p] > 0
-                ? mul_div_sat(fill[p], prefix[p], available[p], _saturation_count) : 0;
-            _population.employee_employed[slot] = std::max<int64_t>(0, next - distributed[p]);
-            distributed[p] = next;
+            if (is_merchant_slot(slot)) return;
+            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+            const int32_t p = _signatures[sig].profession_id;
+            if (p == _unemployed_profession_id) return;
+            const int64_t owner_here = std::min(sig_owner_retained[sig],
+                std::max<int64_t>(0, _population.population[slot]));
+            const int64_t cap = std::max<int64_t>(0, _population.population[slot] - owner_here);
+            emp_capacity[p] = saturating_add(emp_capacity[p], cap, _saturation_count);
+        });
+        // 第二遍：只读收集每个 slot 的 surplus（迁往池）到缓冲，遍历后统一迁移。
+        // owner_retained 按 signature 在多 slot 间也需稳定序摊派（同 signature 通常
+        // 只有一个 slot；多页时按遍历序，前缀和保确定）。
+        thread_local std::vector<int64_t> sig_owner_distributed;
+        sig_owner_distributed.assign(_signatures.size(), 0);
+        thread_local std::vector<int32_t> shed_source_slots;   // surplus 来源 slot
+        thread_local std::vector<int32_t> shed_dest_eth;       // 对应 eth（→ unemployed|eth）
+        thread_local std::vector<int64_t> shed_pop;            // surplus 人数
+        shed_source_slots.clear(); shed_dest_eth.clear(); shed_pop.clear();
+        // Route B: merchant slots are no longer skipped wholesale. A merchant
+        // slot may now carry a merchant-post owner (sig_owner_retained>0) that
+        // must be aggregated/right-sized like any other owner. But the market
+        // maker invariant (rebuild_merchant_ranges requires >=1 merchant per
+        // populated cell) forbids shedding the last merchant, so a merchant
+        // slot keeps a floor of max(owner_here, 1) retained. Non-merchant slots
+        // are unchanged.
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+            const int32_t p = _signatures[sig].profession_id;
+            const int32_t eth = _signatures[sig].ethnicity_id;
+            const int64_t pop = std::max<int64_t>(0, _population.population[slot]);
+            if (p == _unemployed_profession_id) {
+                // 失业 slot：本步不动（它是池，招人步骤才从中迁出）。
+                return;
+            }
+            const bool merchant_here = is_merchant_slot(slot);
+            // owner 在本 slot 的份额（同 signature 多 slot 时稳定序摊派）。
+            const int64_t owner_here = std::min(
+                std::max<int64_t>(0, sig_owner_retained[sig] - sig_owner_distributed[sig]), pop);
+            sig_owner_distributed[sig] = saturating_add(sig_owner_distributed[sig],
+                                                        owner_here, _saturation_count);
+            if (merchant_here) {
+                // 商人 slot 不做 employee（仅 owner 岗）；保底 1 个做市商不裁。
+                const int64_t retained = std::min(pop,
+                    std::max<int64_t>(owner_here, pop > 0 ? 1 : 0));
+                _population.owner_employed[slot] = owner_here;
+                _population.employee_employed[slot] = 0;
+                const int64_t surplus = std::max<int64_t>(0, pop - retained);
+                if (surplus > 0 && eth >= 0 && eth < n_eth) {
+                    shed_source_slots.push_back(slot);
+                    shed_dest_eth.push_back(eth);
+                    shed_pop.push_back(surplus);
+                }
+                return;
+            }
+            // employee 在本 slot 的份额：按容量比例摊派 fill[p]。
+            const int64_t cap_here = std::max<int64_t>(0, pop - owner_here);
+            emp_prefix[p] = saturating_add(emp_prefix[p], cap_here, _saturation_count);
+            const int64_t emp_next = emp_capacity[p] > 0
+                ? mul_div_sat(fill[p], emp_prefix[p], emp_capacity[p], _saturation_count) : 0;
+            const int64_t emp_here = std::max<int64_t>(0, emp_next - emp_distributed[p]);
+            emp_distributed[p] = emp_next;
+            const int64_t retained = std::min(pop, saturating_add(owner_here, emp_here,
+                                                                   _saturation_count));
+            _population.owner_employed[slot] = owner_here;
+            _population.employee_employed[slot] = std::min(emp_here,
+                std::max<int64_t>(0, pop - owner_here));
+            const int64_t surplus = std::max<int64_t>(0, pop - retained);
+            if (surplus > 0 && eth >= 0 && eth < n_eth) {
+                shed_source_slots.push_back(slot);
+                shed_dest_eth.push_back(eth);
+                shed_pop.push_back(surplus);
+            }
+        });
+        // 遍历外执行析出迁移（在岗 profession|eth → unemployed|eth）。
+        for (size_t i = 0; i < shed_source_slots.size(); ++i) {
+            const int32_t src = shed_source_slots[i];
+            const int32_t dest_sig = unemployed_signature_for_ethnicity(shed_dest_eth[i]);
+            if (dest_sig < 0) continue;   // 无 unemployed signature（向后兼容）：留原 slot。
+            if (dest_sig == static_cast<int32_t>(_population.signature_id[src])) continue;
+            bool drained = false;
+            if (!move_cohort_population(src, cell, dest_sig, shed_pop[i], error, &drained)) {
+                return false;
+            }
+        }
+
+        // ---- 第2步 招人：按优先级从 unemployed 池增量迁回 ----
+        // 优先级键：(realized_profit_margin_q16 desc, planned_utilization_q16 desc,
+        //            group_index asc)。排序粒度=跨 BuildingGroup（跨建筑类型）；
+        // 同 type_id+同 owner_signature 聚合的组内盈利/利用率相同，组内不排（稳定序）。
+        thread_local std::vector<int32_t> hire_order;
+        hire_order.clear();
+        for (int32_t g = first; g < last; ++g) {
+            BuildingGroup &group = _buildings[g];
+            if (group.cell != cell || group.count <= 0 ||
+                !building_available(cell, group.type_id, true)) continue;
+            hire_order.push_back(g);
+        }
+        std::stable_sort(hire_order.begin(), hire_order.end(),
+                         [&](int32_t a, int32_t b) {
+            const BuildingGroup &ga = _buildings[a];
+            const BuildingGroup &gb = _buildings[b];
+            if (ga.realized_profit_margin_q16 != gb.realized_profit_margin_q16)
+                return ga.realized_profit_margin_q16 > gb.realized_profit_margin_q16;
+            if (ga.planned_utilization_q16 != gb.planned_utilization_q16)
+                return ga.planned_utilization_q16 > gb.planned_utilization_q16;
+            return a < b;   // group_index asc（稳定序兜底）
+        });
+        // 池可用量：按 eth 缓存各 unemployed|eth slot 的当前人口与 slot id。
+        // 招 owner 需精确 eth（group.owner_signature 的 eth）；招 employee 可跨 eth
+        // （按 eth 升序取池，保确定）。招人在遍历外逐 group 执行迁移，每次迁移后
+        // 重新定位池 slot（可能被 drain 释放）。
+        auto pool_slot_for_eth = [&](int32_t eth) -> int32_t {
+            const int32_t sig = unemployed_signature_for_ethnicity(eth);
+            if (sig < 0) return -1;
+            return _population.find_signature(cell, static_cast<uint32_t>(sig));
+        };
+        for (size_t oi = 0; oi < hire_order.size(); ++oi) {
+            const int32_t g = hire_order[oi];
+            BuildingGroup &group = _buildings[g];
+            const BuildingType &type = _building_types[group.type_id];
+            // --- owner 招募（精确 eth = owner_signature 的 eth）---
+            const int64_t owner_target = group_owner_target[g - first];
+            int64_t owner_need = std::max<int64_t>(0, owner_target - group.filled_owner);
+            if (owner_need > 0 && group.owner_signature_id >= 0 &&
+                group.owner_signature_id < static_cast<int32_t>(_signatures.size())) {
+                const int32_t owner_eth = _signatures[group.owner_signature_id].ethnicity_id;
+                const int32_t pool = pool_slot_for_eth(owner_eth);
+                if (pool >= 0) {
+                    const int64_t avail = std::max<int64_t>(0, _population.population[pool]);
+                    const int64_t take = std::min(owner_need, avail);
+                    if (take > 0 &&
+                        group.owner_signature_id != static_cast<int32_t>(
+                            _population.signature_id[pool])) {
+                        bool drained = false;
+                        if (!move_cohort_population(pool, cell, group.owner_signature_id,
+                                                    take, error, &drained)) {
+                            return false;
+                        }
+                        group.filled_owner = saturating_add(group.filled_owner, take,
+                                                            _saturation_count);
+                        // 迁回的人在其目标 profession|eth slot 记为在岗 owner。
+                        const int32_t dest = _population.find_signature(
+                            cell, static_cast<uint32_t>(group.owner_signature_id));
+                        if (dest >= 0) {
+                            _population.owner_employed[dest] = saturating_add(
+                                _population.owner_employed[dest], take, _saturation_count);
+                        }
+                    }
+                }
+            }
+            // --- employee 招募（每 role，profession 匹配，跨 eth 按升序取池）---
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                const int32_t p = role.profession_id;
+                if (!profession_available(cell, p, true)) continue;
+                const int32_t fi = group.employee_fill_begin + r;
+                const int64_t role_target = planned_role_demand(group, role);
+                int64_t need = std::max<int64_t>(0,
+                    role_target - std::max<int64_t>(0, _building_employee_filled[fi]));
+                if (need <= 0) continue;
+                // 目标 slot 按具体 eth 定（跨 eth 招募，按 eth 升序稳定取池）。
+                for (int32_t eth = 0; eth < n_eth && need > 0; ++eth) {
+                    const int32_t pool = pool_slot_for_eth(eth);
+                    if (pool < 0) continue;
+                    const int64_t avail = std::max<int64_t>(0, _population.population[pool]);
+                    if (avail <= 0) continue;
+                    const int32_t target_sig = signature_for_profession_ethnicity(p, eth);
+                    if (target_sig < 0) continue;
+                    if (target_sig == static_cast<int32_t>(_population.signature_id[pool]))
+                        continue;
+                    const int64_t take = std::min(need, avail);
+                    if (take <= 0) continue;
+                    bool drained = false;
+                    if (!move_cohort_population(pool, cell, target_sig, take, error, &drained)) {
+                        return false;
+                    }
+                    _building_employee_filled[fi] = saturating_add(
+                        _building_employee_filled[fi], take, _saturation_count);
+                    const int32_t dest = _population.find_signature(
+                        cell, static_cast<uint32_t>(target_sig));
+                    if (dest >= 0) {
+                        _population.employee_employed[dest] = saturating_add(
+                            _population.employee_employed[dest], take, _saturation_count);
+                    }
+                    need -= take;
+                }
+            }
+        }
+        // 更新全局在岗计数器（_filled_owner_jobs / _filled_employee_jobs）。
+        // A1 下这些是 cell 内 owner_employed / employee_employed 之和；此处按 cell
+        // 重新聚合避免跨周期漂移（旧逻辑每周期从零累加，这里同样每 cell 重扫）。
+        // Route B: merchant slots are no longer skipped — a merchant-post owner
+        // (owner_employed>0) now counts toward _filled_owner_jobs like any
+        // owner. A floating market-maker (invariant fallback, owner_employed==0)
+        // contributes nothing, so aggregating it is harmless.
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            _filled_owner_jobs = saturating_add(_filled_owner_jobs,
+                std::max<int64_t>(0, _population.owner_employed[slot]), _saturation_count);
             _filled_employee_jobs = saturating_add(_filled_employee_jobs,
-                _population.employee_employed[slot], _saturation_count);
+                std::max<int64_t>(0, _population.employee_employed[slot]), _saturation_count);
         });
     }
     int64_t local_owner = 0;
@@ -4310,9 +4719,24 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
     });
     std::vector<EventLeg> event_legs;
     if (trace_detail) {
-        for (size_t i = 0; i < trace_slots.size(); ++i) {
-            const int32_t slot = trace_slots[i];
-            const int64_t handle = static_cast<int64_t>(_population.handle_for_slot(slot));
+        for (size_t i = 0; i < trace_handles.size(); ++i) {
+            int32_t slot = -1;
+            if (!_population.valid_handle(trace_handles[i], slot)) {
+                // 该 cohort 已被 A1 迁移完全 drain（例如整职业裁光进池并释放）：
+                // 记为归零 leg，subject 用快照 handle，便于审计闭合。
+                if (trace_owner_before[i] != 0) {
+                    event_legs.push_back({FIELD_COHORT_OWNER_EMPLOYED, SUBJECT_COHORT,
+                                          static_cast<int64_t>(trace_handles[i]), -1,
+                                          trace_owner_before[i], 0});
+                }
+                if (trace_employee_before[i] != 0) {
+                    event_legs.push_back({FIELD_COHORT_EMPLOYEE_EMPLOYED, SUBJECT_COHORT,
+                                          static_cast<int64_t>(trace_handles[i]), -1,
+                                          trace_employee_before[i], 0});
+                }
+                continue;
+            }
+            const int64_t handle = static_cast<int64_t>(trace_handles[i]);
             if (trace_owner_before[i] != _population.owner_employed[slot]) {
                 event_legs.push_back({FIELD_COHORT_OWNER_EMPLOYED, SUBJECT_COHORT, handle,
                                       -1, trace_owner_before[i],
@@ -4970,6 +5394,20 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                     _silver_money_issued = saturating_add(
                         _silver_money_issued, paid, _saturation_count);
                 }
+                // Bullion mint is the primary sink for monetary goods (gold/silver):
+                // the whole sellable batch is absorbed by the money system every epoch.
+                // Feed this back into the withdrawal signal so the utilization planner
+                // (see prepare_building_economic_plan inventory-absorption path) does
+                // not treat mint-cleared bullion as unsellable inventory and throttle
+                // production to the probe floor. Without this, demand_ema stays 0,
+                // target inventory collapses to ~0, stock >> target, and util decays.
+                const int32_t bullion_signal = market_signal_index(cell, offer.good);
+                if (bullion_signal >= 0 && bullion_signal < static_cast<int32_t>(
+                        _epoch_nonhousehold_withdrawals.size())) {
+                    _epoch_nonhousehold_withdrawals[bullion_signal] = saturating_add(
+                        _epoch_nonhousehold_withdrawals[bullion_signal], sold,
+                        _saturation_count);
+                }
             } else {
                 const int64_t available_budget = std::max<int64_t>(
                     0, budget_by_good[offer.good] - spent_by_good[offer.good]);
@@ -5026,6 +5464,22 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
             _market.stock[_market.index(market, offer.good)] = saturating_add(
                 _market.stock[_market.index(market, offer.good)], accepted,
                 _saturation_count);
+            if (issue_value > 0) {
+                // Coined bullion is consumed by the money system: the sold batch
+                // was minted into currency (see the issue_value branch above), so
+                // it must not linger as market stock. Net stock change for these
+                // goods is zero (+accepted then -sold, and supported==0 here).
+                // Record the removal as an explicit goods-conservation sink so the
+                // closing-stock check stays balanced. Without this, gold/silver
+                // stock accrues as ghost inventory, the utilization planner reads
+                // it as unsellable surplus, and throttles production to the probe
+                // floor -> owner/employee targets collapse -> mines shed workers.
+                _market.stock[_market.index(market, offer.good)] = saturating_sub(
+                    _market.stock[_market.index(market, offer.good)], sold,
+                    _saturation_count);
+                _bullion_stock_consumed = saturating_add(
+                    _bullion_stock_consumed, sold, _saturation_count);
+            }
             group.last_sold = saturating_add(
                 group.last_sold, accepted, _saturation_count);
             const int64_t unsold = offer.sellable - accepted;
@@ -6849,6 +7303,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _producer_revenue = 0;
 	_producer_support_money_issued = 0;
 	_bullion_money_issued = 0;
+	_bullion_stock_consumed = 0;
 	_gold_accepted = 0;
 	_silver_accepted = 0;
 	_gold_money_issued = 0;
@@ -8163,11 +8618,24 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
     }
     if (cmd.cell == source_cell &&
         cmd.signature == static_cast<int32_t>(_population.signature_id[source])) return true;
+    return move_cohort_population(source, cmd.cell, cmd.signature, cmd.population, error);
+}
+
+bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_cell,
+                                                  int32_t dest_signature,
+                                                  int64_t requested_pop,
+                                                  std::string &error,
+                                                  bool *source_drained_out) {
+    if (source_drained_out != nullptr) *source_drained_out = false;
+    const int32_t source_cell = _population.page_cell[source / PAGE_SIZE];
+    const int64_t source_handle = static_cast<int64_t>(_population.handle_for_slot(source));
+    const int32_t cmd_cell = dest_cell;
+    const int32_t cmd_signature = dest_signature;
     const int64_t source_pop = std::max<int64_t>(0, _population.population[source]);
-    const int64_t move_pop = std::min(std::max<int64_t>(0, cmd.population), source_pop);
+    const int64_t move_pop = std::min(std::max<int64_t>(0, requested_pop), source_pop);
     if (move_pop == 0) return true;
     _structural_touched_cells.push_back(source_cell);
-    _structural_touched_cells.push_back(cmd.cell);
+    _structural_touched_cells.push_back(cmd_cell);
     const int64_t move_funds = move_pop == source_pop
                                    ? _population.funds[source]
                                    : mul_div_sat(_population.funds[source], move_pop, source_pop,
@@ -8197,7 +8665,7 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
     const int64_t source_ema_before = _population.income_ema[source];
     const int64_t source_residual_before = _population.demography_residual[source];
 
-    const int32_t destination = _population.allocate_slot(cmd.cell, static_cast<uint32_t>(cmd.signature));
+    const int32_t destination = _population.allocate_slot(cmd_cell, static_cast<uint32_t>(cmd_signature));
     if (destination < 0) {
         error = "structural_destination_allocation_failed";
         return false;
@@ -8255,9 +8723,10 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
         _population.funds[source] = 0;
         _population.release_slot(source);
         _population.reclaim_empty_pages(source_cell);
+        if (source_drained_out != nullptr) *source_drained_out = true;
     }
     std::vector<EventLeg> legs;
-    if (trace_detail_for_cell(source_cell) || trace_detail_for_cell(cmd.cell)) {
+    if (trace_detail_for_cell(source_cell) || trace_detail_for_cell(cmd_cell)) {
         legs.push_back({FIELD_COHORT_POPULATION, SUBJECT_COHORT, source_handle, -1,
                         source_population_before, source_population_before - move_pop});
         legs.push_back({FIELD_COHORT_FUNDS, SUBJECT_COHORT, source_handle, -1,
@@ -8287,8 +8756,8 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
     }
     trace_append(EVENT_STRUCTURAL_CHANGE,
                  static_cast<int32_t>(Stage::STRUCTURAL_COMMIT), source_cell,
-                 SUBJECT_COHORT, source_handle, cmd.signature, cmd.cell,
-                 move_pop, move_funds, source_cell, cmd.cell,
+                 SUBJECT_COHORT, source_handle, cmd_signature, cmd_cell,
+                 move_pop, move_funds, source_cell, cmd_cell,
                  legs.empty() ? nullptr : &legs);
     return true;
 }
@@ -8437,7 +8906,7 @@ bool NativeEconomyRuntime::publish_epoch(std::string &error) {
                                    _production_output_stock + _production_output_retained -
                                    _consumed_goods - _owner_output_consumed -
 								   _construction_goods_consumed - _production_inputs_consumed -
-								   _cycle_flow_discarded;
+								   _cycle_flow_discarded - _bullion_stock_consumed;
     if (_closing_totals.population != population_expected) {
         error = "population_conservation_failed";
         return false;
@@ -9096,6 +9565,7 @@ Dictionary NativeEconomyRuntime::report() const {
 	out["producer_support_price_numerator"] = PRODUCER_SUPPORT_PRICE_NUMERATOR;
 	out["producer_support_price_denominator"] = PRODUCER_SUPPORT_PRICE_DENOMINATOR;
 	out["bullion_money_issued"] = _bullion_money_issued;
+	out["bullion_stock_consumed"] = _bullion_stock_consumed;
 	out["gold_accepted"] = _gold_accepted;
 	out["silver_accepted"] = _silver_accepted;
 	out["gold_money_issued"] = _gold_money_issued;
@@ -9197,7 +9667,7 @@ Dictionary NativeEconomyRuntime::report() const {
                _production_output_stock + _production_output_retained -
                _consumed_goods - _owner_output_consumed -
 			   _construction_goods_consumed - _production_inputs_consumed -
-			   _cycle_flow_discarded);
+			   _cycle_flow_discarded - _bullion_stock_consumed);
     out["saturation_count"] = _saturation_count;
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
@@ -10864,7 +11334,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 11 && schema != 10) {
+    if (schema != SCHEMA_VERSION && schema != 12 && schema != 11 && schema != 10) {
         error = schema >= 2 && schema <= 9
             ? "legacy_countryless_economy_save_unsupported"
             : "economy_save_schema_unsupported";

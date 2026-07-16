@@ -190,7 +190,13 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 
 `BuildingProfile` 编译 owner/employee role、建造成本、输入/输出、投入候选 CSR、自然资源交互模式和 postfix
 建造条件。人口仍保持唯一 `(cell, signature)` cohort；lane 新增 owner/employee employed
-计数，失业为 population 减两者。工资 ABI 位于 employee role：`adaptive` 以本地基础生活
+计数。**失业者是一等 cohort**：新增保留 profession `unemployed`（消费走极简 `plan_unemployed`，
+仅 survival food），按 ethnicity 分桶生成 `unemployed|<eth>` signature；失业惩罚由 starvation
+自动施加（收入 0 + 只吃 survival food → satisfaction 掉 → 自然死上升，无硬编死亡率）。就业为
+**跨周期存量**（A1 真实人口迁移）：非商人/非失业的 `profession|eth` cohort 恒有
+`owner_employed + employee_employed == population`（无闲置，未被雇佣者立即迁往 `unemployed|eth`）；
+`_unemployed_population` = Σ(unemployed cohort population)，是派生量、不进 save/hash（失业 cohort
+本身随 population section 存档）。工资 ABI 位于 employee role：`adaptive` 以本地基础生活
 成本、岗位 cohort 消费篮子和本地岗位合同工资 EMA 形成生活工资硬下限；`fixed` 仅保留给
 显式固定报酬内容。当前跨时代目录用低额 `fixed` 报酬近似奴隶维持、农奴供养、租佃和契约
 劳工的食宿/份额，使用 profession stable ID 区分关系；它不提供法律身份、地租倒流、迁徙限制
@@ -218,7 +224,12 @@ owner-lot 继续生产且不会自动转换。快照发布 family、tier、highe
 收入与目标营业利润率，作为诊断和销售后利润分享依据。计划利用率按可售产出的真实售罄率调整，
 耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；严重亏损状态机仍是完全停产的唯一入口。生产者自留只在该业主实际生产的单组分生存食品或寒冷衣物之间重新归一化，不再把最低生存额稀释到其无法生产的理想替代品上。
 
-周期开始时仍存活人口先就业；随后业主按本地价购买输入并生产。每个 owner 从统一
+周期开始时先做**增量就业**（不再全量清零重建）：按本周期计划利用率目标夹紧各建筑
+`filled_owner`/`_building_employee_filled`（缩产差额裁员 → 超出目标的在岗人口迁往 `unemployed|eth`），
+再让活跃建筑按 `(realized_profit_margin_q16, planned_utilization_q16, group_index)` 稳定序**跨建筑类型**
+优先从失业池增量招人（先喂最赚钱；招人跨原职业，失业者可被任意缺人建筑吸收，ethnicity 不变）；
+利用率坍缩时失业者获跨周期缓冲、可长期失业，不再每周期从零重摊。商人全程排除（`ensure_merchant_invariant`
+保持），其失业/商业萧条为独立后续设计。随后业主按本地价购买输入并生产。每个 owner 从统一
 `survival_household` 基础量、冻结人口/环境和民族修正计算无财富/价格弹性的生存量，只对主食、蛋白质、蔬果保留饥饿阈值比例，并按寒冷
 暴露保留最低衣物；其他需求和超过最低量的产出直接进入 offer。商人按 actual withdrawal/export EMA、目标库存天数和冷启动一日产出计算
 库存缺口，以 good-specific `merchant_buy_price_factor_q16`（默认 95%）计价；期初现金保留 25%，
