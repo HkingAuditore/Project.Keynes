@@ -8218,8 +8218,8 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 		return TerrainType.TERRAIN.DESERT
 
 	if temperature > 0.38:
-		if moisture > 0.55:
-			return TerrainType.TERRAIN.FOREST     # 温带阔叶林
+		if moisture > 0.48:
+			return TerrainType.TERRAIN.FOREST     # 温带阔叶林（门槛 0.55→0.48 贴合湿度天花板 p90≈0.56）
 		if moisture > 0.32:
 			return TerrainType.TERRAIN.GRASSLAND  # 温带草地
 		if moisture > 0.20:
@@ -8442,7 +8442,7 @@ func _whittaker_vegetation(temperature: float, moisture: float, landform: int) -
 		return VegetationType.VEG.ALPINE_TUNDRA if is_alpine else VegetationType.VEG.TEMPERATE_STEPPE
 	# 暖温带
 	if temperature < 0.55:
-		if moisture > 0.55:
+		if moisture > 0.48:                          # 门槛 0.55→0.48，与 _decide_terrain 同步，贴合湿度天花板 p90≈0.56
 			if is_alpine:
 				return VegetationType.VEG.TEMPERATE_CONIFER
 			if is_hilly:

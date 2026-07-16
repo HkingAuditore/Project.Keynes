@@ -163,10 +163,22 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	var owner_daily_input_cost_by_key := {}
 	var merchant_daily_inventory_value_by_cell := {}
 
+	# Route B: every populated cell gets exactly one merchant post (商栈). Its
+	# owner (merchant) is the cell's market maker and now lives inside the
+	# employment system as a real building owner. A cell has population iff it
+	# already holds at least one collector/industrial group, so we attach the
+	# post to those cells. This replaces the old "carve a merchant out of the
+	# largest non-merchant profession" substitution (189-199 below): the post's
+	# owner accumulates merchant jobs directly, so that path stops firing.
+	var merchant_post_spec: Dictionary = building_specs.get(&"merchant_post", {})
+	var merchant_post_available := not merchant_post_spec.is_empty() \
+		and _technology_available(merchant_post_spec.get("technology_tags", PackedStringArray()))
 	for cell_idx in passable_cells:
 		var generated_groups: Array = groups_by_cell[cell_idx]
 		if generated_groups.is_empty():
 			continue
+		if merchant_post_available:
+			generated_groups.append({"spec": merchant_post_spec, "count": 1})
 		generated_groups.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 			return int(a.spec.type_id) < int(b.spec.type_id))
 		for group in generated_groups:

@@ -22,7 +22,7 @@ class EconomyCsvRecorder;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 12;
+    static constexpr int32_t SCHEMA_VERSION = 13;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
@@ -978,8 +978,12 @@ private:
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
     int64_t _starvation_death_rate_q32 = Q32_ONE / 200;
     int32_t _wage_ema_alpha_q16 = 8192;
-    int32_t _wage_max_rise_q16_per_day = 6554;
+    int32_t _wage_max_rise_q16_per_day = 1311;
     int32_t _wage_max_fall_q16_per_day = 1311;
+    // Damping: contract wage floor may not exceed the building's per-employee
+    // affordable revenue times this ratio (Q16). Prevents living-cost floor from
+    // pushing wages far beyond what the employer can pay. 0 disables the cap.
+    int32_t _wage_income_cap_ratio_q16 = 78643; // ~1.2x
     int32_t _employee_profit_share_q16 = 16384;
     int32_t _building_severe_loss_threshold_q16 = -16384;
     int32_t _building_severe_loss_cycles = 3;
@@ -989,6 +993,12 @@ private:
     int32_t _merchant_market_making_days_q16 = Q16_ONE;
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
+    // Reserved profession representing unemployed population. Resolved from the
+    // catalog like the merchant profession; used by the employment pass to keep
+    // laid-off / idle population in dedicated unemployed signatures instead of
+    // deriving unemployment as population - owner - employee. Never a building role.
+    int32_t _unemployed_profession_id = -1;
+    std::string _unemployed_profession_stable_id = "unemployed";
     int32_t _market_runtime_mode = 1; // 0=OFF, 1=PROBE, 2=ACTIVE.
     int32_t _trade_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
     int64_t _trade_capacity_per_merchant_q16 = 64 * Q16_ONE;
@@ -1056,6 +1066,11 @@ private:
     int64_t _producer_revenue = 0;
 	int64_t _producer_support_money_issued = 0;
 	int64_t _bullion_money_issued = 0;
+	// Bullion (gold/silver) physically absorbed by the mint each epoch. The
+	// monetary system consumes the sold batch: the coined goods leave market
+	// stock instead of accumulating as ghost inventory. Tracked as an explicit
+	// goods-conservation sink so closing stock stays balanced.
+	int64_t _bullion_stock_consumed = 0;
 	int64_t _gold_accepted = 0;
 	int64_t _silver_accepted = 0;
 	int64_t _gold_money_issued = 0;
@@ -1171,6 +1186,11 @@ private:
     std::vector<FormulaDefinition> _formulas;
     std::unordered_map<std::string, int32_t> _formula_by_id;
     std::vector<Signature> _signatures;
+    // Dense (profession_id * n_ethnicity + ethnicity_id) -> signature_id lookup,
+    // -1 when absent. Built once alongside _signatures. Lets the employment pass
+    // resolve "the signature for this profession worker of this ethnicity" and
+    // "the unemployed signature for this ethnicity" in O(1) without scanning.
+    std::vector<int32_t> _signature_by_profession_ethnicity;
     std::vector<Plan> _plans;
     std::vector<Need> _needs;
     std::vector<VariantChoice> _variants;
@@ -1329,6 +1349,26 @@ private:
     bool apply_command(const Command &cmd, std::string &error);
     bool process_market_cell(int32_t market, MarketResult &result, std::string &error);
     bool commit_structural(const StructuralCommand &cmd, std::string &error);
+    // Core cohort migration primitive extracted from commit_structural. Moves up
+    // to `requested_pop` people from `source` into the (dest_cell, dest_signature)
+    // cohort, carrying a proportional share of funds/income/expense/ema/residual,
+    // population-weighting needs_satisfaction, and transferring any rounding
+    // residue of a fully-drained source to the treasury (never burned). Pushes
+    // both cells onto _structural_touched_cells and appends a structural trace.
+    // Callers are responsible for command-level guards (profession_available,
+    // same-cell/same-signature no-op) before invoking it. Returns false only on a
+    // hard failure (allocation / treasury transfer); an empty move is a no-op true.
+    //
+    // `source_drained_out` (optional): set to true when the move emptied `source`
+    // and released its slot, false otherwise. The employment pass (in-line layoff
+    // / hiring) iterates a *snapshot* of a cell's slots -- it must never migrate
+    // from inside for_each_in_cell -- and uses this flag to skip a snapshot slot
+    // that a prior migration in the same loop already released, preventing
+    // stale-slot reuse. When null it is ignored (commit_structural path).
+    bool move_cohort_population(int32_t source, int32_t dest_cell,
+                                int32_t dest_signature, int64_t requested_pop,
+                                std::string &error,
+                                bool *source_drained_out = nullptr);
     bool publish_epoch(std::string &error);
     bool compile_building_catalog(const godot::Dictionary &catalog, std::string &error);
     bool evaluate_building_conditions(int32_t type_id, int32_t cell) const;
@@ -1343,6 +1383,21 @@ private:
                             bool frozen = true) const;
     bool building_constructible(int32_t cell, int32_t type_id,
                                 bool frozen = true) const;
+    // O(1) signature lookup helpers backed by _signature_by_profession_ethnicity.
+    // Return -1 when no such signature exists (e.g. unemployed profession absent).
+    inline int32_t signature_for_profession_ethnicity(int32_t profession_id,
+                                                       int32_t ethnicity_id) const {
+        if (profession_id < 0 || ethnicity_id < 0) return -1;
+        const int32_t n_eth = static_cast<int32_t>(_ethnicity_ids.size());
+        if (ethnicity_id >= n_eth) return -1;
+        const size_t idx = static_cast<size_t>(profession_id) * static_cast<size_t>(n_eth) +
+                           static_cast<size_t>(ethnicity_id);
+        if (idx >= _signature_by_profession_ethnicity.size()) return -1;
+        return _signature_by_profession_ethnicity[idx];
+    }
+    inline int32_t unemployed_signature_for_ethnicity(int32_t ethnicity_id) const {
+        return signature_for_profession_ethnicity(_unemployed_profession_id, ethnicity_id);
+    }
     bool capture_country_epoch(std::string &error);
     bool apply_build_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);

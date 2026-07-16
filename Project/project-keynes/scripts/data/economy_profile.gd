@@ -30,6 +30,11 @@ extends Resource
 @export_range(65536, 268435456, 65536) var economy_trace_detail_epoch_bytes: int = 8388608
 @export_range(1, 65536, 1) var economy_trace_poll_max_events: int = 4096
 @export var merchant_profession_id: StringName = &"merchant"
+## Reserved profession id used for unemployed population buckets. Native resolves
+## this to a profession index so the employment pass can identify (and skip when
+## laying off / target when idling) the unemployed signatures. Must match the
+## reserved `unemployed` profession catalog entry and MUST NOT be a building role.
+@export var unemployed_profession_id: StringName = &"unemployed"
 @export var wealth_reference_per_capita: int = 100000
 @export var living_cost_base_plan_id: StringName = &"survival_household"
 ## Survival satisfaction reaches full workforce capacity at this caloric/cold-exposure ratio.
@@ -37,8 +42,12 @@ extends Resource
 ## Maximum per-person daily Q32 mortality when survival satisfaction is zero.
 @export_range(0, 4294967296, 1) var starvation_death_rate_q32: int = 21474836
 @export_range(0, 65536, 1) var wage_ema_alpha_q16: int = 8192
-@export_range(0, 65536, 1) var wage_max_rise_q16_per_day: int = 6554
+@export_range(0, 65536, 1) var wage_max_rise_q16_per_day: int = 1311
 @export_range(0, 65536, 1) var wage_max_fall_q16_per_day: int = 1311
+## Damping: the living-cost wage floor is capped at each building's per-employee
+## expected revenue times this ratio (Q16, 65536 = 1.0). Keeps a rational employer
+## from being forced to pay wages far above what its revenue can support. 0 disables.
+@export_range(0, 655360, 1) var wage_income_cap_ratio_q16: int = 78643
 @export_range(0, 65536, 1) var employee_profit_share_q16: int = 16384
 @export_range(-65536, 0, 1) var building_severe_loss_threshold_q16: int = -16384
 @export_range(1, 32, 1) var building_severe_loss_cycles: int = 3
@@ -87,6 +96,7 @@ func to_native_profile() -> Dictionary:
 		"economy_trace_detail_epoch_bytes": economy_trace_detail_epoch_bytes,
 		"economy_trace_poll_max_events": economy_trace_poll_max_events,
 		"merchant_profession_id": String(merchant_profession_id),
+		"unemployed_profession_id": String(unemployed_profession_id),
 		"wealth_reference_per_capita": wealth_reference_per_capita,
 		"living_cost_base_plan_id": String(living_cost_base_plan_id),
 		"starvation_satisfaction_threshold_q16": starvation_satisfaction_threshold_q16,
@@ -94,6 +104,7 @@ func to_native_profile() -> Dictionary:
 		"wage_ema_alpha_q16": wage_ema_alpha_q16,
 		"wage_max_rise_q16_per_day": wage_max_rise_q16_per_day,
 		"wage_max_fall_q16_per_day": wage_max_fall_q16_per_day,
+		"wage_income_cap_ratio_q16": wage_income_cap_ratio_q16,
 		"employee_profit_share_q16": employee_profit_share_q16,
 		"building_severe_loss_threshold_q16": building_severe_loss_threshold_q16,
 		"building_severe_loss_cycles": building_severe_loss_cycles,

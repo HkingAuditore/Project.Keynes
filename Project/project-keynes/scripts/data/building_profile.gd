@@ -5,7 +5,7 @@ extends Resource
 @export var id: StringName = &""
 @export var display_name: String = ""
 @export var icon: Texture2D = null
-@export_enum("collector", "industrial") var building_kind: String = "industrial"
+@export_enum("collector", "industrial", "service") var building_kind: String = "industrial"
 @export var technology_tags: PackedStringArray = PackedStringArray()
 ## Optional construction-upgrade family. Existing lower-tier buildings keep
 ## operating, but only the highest technology-available tier may be built.

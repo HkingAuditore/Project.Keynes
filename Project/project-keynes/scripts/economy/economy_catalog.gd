@@ -9,6 +9,12 @@ const CURVE_DIR := "res://data/economy/environment_curves"
 const BUILDING_DIR := "res://data/economy/buildings"
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
 const Q16_ONE := 65536
+## Reserved profession that represents unemployed population buckets. It is a
+## legal signature profession (one signature per ethnicity is auto-generated),
+## but MUST NEVER be usable as a building owner or employee role -- otherwise the
+## unemployed pool could "hire itself". Catalog validation rejects any building
+## that references it.
+const UNEMPLOYED_PROFESSION_ID := "unemployed"
 const SIGNAL_IDS := {
 	"temperature": 0,
 	"moisture": 1,
@@ -472,12 +478,14 @@ static func _compile_building_columns(profession_index: Dictionary,
 		var stable_id := String(profile.id)
 		var owner_id := String(profile.owner_profession_id)
 		if stable_id == "" or type_ids.has(stable_id) or not profession_index.has(owner_id) \
+				or owner_id == UNEMPLOYED_PROFESSION_ID \
 				or int(profile.owner_slots_per_building) != 1 or int(profile.construction_days) < 0:
 			return {"ok": false, "reason": "invalid building type: %s" % stable_id}
 		var building_kind := String(profile.building_kind)
-		if building_kind not in ["collector", "industrial"]:
+		if building_kind not in ["collector", "industrial", "service"]:
 			return {"ok": false, "reason": "invalid building kind: %s" % stable_id}
-		building_kinds.append(0 if building_kind == "collector" else 1)
+		building_kinds.append(0 if building_kind == "collector" \
+			else (2 if building_kind == "service" else 1))
 		var upgrade_family_id := String(profile.upgrade_family_id).strip_edges()
 		var upgrade_tier := int(profile.upgrade_tier)
 		if (upgrade_family_id == "" and upgrade_tier != 0) \
@@ -544,6 +552,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 			var role_policy := String(role_wage_policies[i]) if not role_wage_policies.is_empty() else wage_policy
 			var role_reference := int(role_reference_wages[i]) if not role_reference_wages.is_empty() else wage_per_employee
 			if not profession_index.has(profession_id) or int(role_slots[i]) <= 0 \
+					or profession_id == UNEMPLOYED_PROFESSION_ID \
 					or role_policy not in ["none", "fixed", "adaptive"] \
 					or role_reference < 0 or (role_policy != "none" and role_reference <= 0):
 				return {"ok": false, "reason": "invalid building employee role: %s" % stable_id}
@@ -626,7 +635,10 @@ static func _compile_building_columns(profession_index: Dictionary,
 			if share_total != Q16_ONE:
 				return {"ok": false, "reason": "building output cost shares must sum to Q16: %s" % stable_id}
 		output_cost_share_offsets.append(output_cost_shares.size())
-		if profile.output_good_ids.is_empty():
+		if building_kind == "service":
+			if not profile.output_good_ids.is_empty():
+				return {"ok": false, "reason": "service building must have no output: %s" % stable_id}
+		elif profile.output_good_ids.is_empty():
 			return {"ok": false, "reason": "building has no output: %s" % stable_id}
 		var produces_cycle_flow := false
 		var consumes_cycle_flow := false
@@ -660,6 +672,12 @@ static func _compile_building_columns(profession_index: Dictionary,
 			production_resource_access_modes.append(0 if access_mode == "local" else 1)
 		production_resource_offsets.append(production_resources.size())
 		if owner_id == "merchant":
+			# Route B: a merchant may own either a matching bullion collector
+			# (gold/silver) or a service "merchant post" (no output/resource).
+			var merchant_service_valid: bool = building_kind == "service" \
+				and behavior_id == "none" \
+				and profile.output_good_ids.is_empty() and prod_ids.is_empty() \
+				and profile.resource_generation_ids.is_empty()
 			var merchant_bullion_valid: bool = building_kind == "collector" \
 				and behavior_id == "consume_local_resources" \
 				and profile.output_good_ids.size() == 1 and prod_ids.size() == 1 \
@@ -669,8 +687,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 				var bullion_id := String(profile.output_good_ids[0])
 				merchant_bullion_valid = (bullion_id == "gold" and String(prod_ids[0]) == "gold_ore") \
 					or (bullion_id == "silver" and String(prod_ids[0]) == "silver_ore")
-			if not merchant_bullion_valid:
-				return {"ok": false, "reason": "merchant may only own matching bullion collector: %s" % stable_id}
+			if not merchant_bullion_valid and not merchant_service_valid:
+				return {"ok": false, "reason": "merchant may only own matching bullion collector or service post: %s" % stable_id}
 		if building_kind == "collector" and prod_ids.is_empty():
 			return {"ok": false, "reason": "collector requires natural resource: %s" % stable_id}
 		if building_kind != "collector" and not prod_ids.is_empty():
@@ -679,6 +697,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 			return {"ok": false, "reason": "collector requires resource behavior: %s" % stable_id}
 		if building_kind == "industrial" and behavior_id != "none":
 			return {"ok": false, "reason": "industrial building cannot use resource behavior: %s" % stable_id}
+		if building_kind == "service" and behavior_id != "none":
+			return {"ok": false, "reason": "service building cannot use resource behavior: %s" % stable_id}
 		var generation_ids: PackedStringArray = profile.resource_generation_ids
 		var generation_qty: PackedInt64Array = profile.resource_generation_quantities_per_day
 		if generation_ids.size() != generation_qty.size():
