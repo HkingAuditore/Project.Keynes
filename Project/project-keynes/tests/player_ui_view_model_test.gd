@@ -199,12 +199,12 @@ func _initialize() -> void:
 		"merchant_flags": PackedByteArray([0]),
 		"settlement_detail_available": true,
 		"settlement_period_days": 5,
-		"settlement_cashflow_source_stable_ids": PackedStringArray(["wages", "owner_operations", "merchant_household_sales", "merchant_business_sales", "transfer", "household_consumption"]),
-		"settlement_cashflow_offsets": PackedInt32Array([0, 2]),
-		"settlement_cashflow_source_indices": PackedInt32Array([0, 5]),
-		"settlement_cashflow_income": PackedInt64Array([1000000, 0]),
-		"settlement_cashflow_expense": PackedInt64Array([0, 500000]),
-		"settlement_income_by_cohort": PackedInt64Array([1000000]),
+		"settlement_cashflow_source_stable_ids": PackedStringArray(["wages", "owner_operations", "merchant_household_sales", "merchant_business_sales", "transfer", "household_consumption", "producer_support_issuance"]),
+		"settlement_cashflow_offsets": PackedInt32Array([0, 3]),
+		"settlement_cashflow_source_indices": PackedInt32Array([0, 5, 6]),
+		"settlement_cashflow_income": PackedInt64Array([1000000, 0, 500000]),
+		"settlement_cashflow_expense": PackedInt64Array([0, 500000, 0]),
+		"settlement_income_by_cohort": PackedInt64Array([1500000]),
 		"settlement_expense_by_cohort": PackedInt64Array([500000]),
 		"demand_good_offsets": PackedInt32Array([0, 2]),
 		"demand_good_indices": PackedInt32Array([0, 1]),
@@ -231,12 +231,15 @@ func _initialize() -> void:
 		func(row: Dictionary) -> bool: return bool(row.get("visible", false))
 	).size() != 3:
 		failures.append("population dossier did not expose positive and unlocked alternative demands")
-	elif String(cohort_rows[0].get("income", "")) != "+1" \
+	elif String(cohort_rows[0].get("income", "")) != "+1.5" \
 			or String(cohort_rows[0].get("expense", "")) != "−0.5":
 		failures.append("population dossier did not expose last-settlement per-capita cashflow")
-	elif (cohort_rows[0].get("income_rows", []) as Array).size() != 1 \
+	elif (cohort_rows[0].get("income_rows", []) as Array).size() != 2 \
 			or (cohort_rows[0].get("expense_rows", []) as Array).size() != 1:
 		failures.append("population dossier did not expose non-zero cashflow sources")
+	elif String(_find_by_id(cohort_rows[0].get("income_rows", []),
+			"income_producer_support_issuance").get("name", "")) != "托底收购":
+		failures.append("population dossier did not label producer support issuance")
 	elif String((cohort_rows[0].get("demand_summary", {}) as Dictionary).get("value", "")) \
 			!= "2 项用途 · 3 种商品":
 		failures.append("population dossier did not collapse demands into a readable summary")

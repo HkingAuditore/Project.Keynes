@@ -1,6 +1,7 @@
 param([string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path)
 
 $ErrorActionPreference = 'Stop'
+$DesignSellThroughQ16 = 52429
 $project = Join-Path $RepoRoot 'Project/project-keynes'
 $buildingDir = Join-Path $project 'data/economy/buildings'
 $goodDir = Join-Path $project 'data/goods'
@@ -221,7 +222,12 @@ foreach ($file in Get-ChildItem -LiteralPath $needDir -Filter '*.tres') {
     if (-not $expectedNeedNames.Contains($id) -or $displayName -ne $expectedNeedNames[$id]) {
         $failures.Add("need display name drift: $id -> $displayName")
     }
-    $needs[$id] = $true
+    $needs[$id] = [pscustomobject]@{
+        Id = $id
+        LivingWeight = if ($p.ContainsKey('living_cost_weight_q16')) {
+            [long]$p.living_cost_weight_q16
+        } else { 0 }
+    }
 }
 if ($needs.Count -ne $expectedNeedNames.Count) {
     $failures.Add("expected $($expectedNeedNames.Count) household needs, found $($needs.Count)")
@@ -265,6 +271,60 @@ if ($professionPlans.Count -ne 32) {
     $failures.Add("expected 32 profession consumption mappings, found $($professionPlans.Count)")
 }
 
+$referenceLivingCostByPlan = @{}
+function Reference-Living-Cost-For-Plan([string]$PlanId) {
+    if ($referenceLivingCostByPlan.ContainsKey($PlanId)) {
+        return [long]$referenceLivingCostByPlan[$PlanId]
+    }
+    $path = Join-Path $planDir "$PlanId.tres"
+    if (-not (Test-Path -LiteralPath $path)) { throw "living-cost plan missing: $PlanId" }
+    $p = Read-Profile (Get-Item -LiteralPath $path)
+    $needIds = @(Values $p.need_ids)
+    $baseQty = @(Numbers $p.base_qty_per_person)
+    $variantOffsets = @(Numbers $p.need_variant_offsets)
+    $preferences = @(Numbers $p.variant_preference_q16)
+    $componentOffsets = @(Numbers $p.variant_component_offsets)
+    $componentGoods = @(Values $p.component_good_ids)
+    $componentQty = @(Numbers $p.component_qty_per_need)
+    if ($needIds.Count -ne $baseQty.Count -or $variantOffsets.Count -ne $needIds.Count + 1) {
+        throw "living-cost plan columns mismatch: $PlanId"
+    }
+    [double]$total = 0
+    for ($needIndex = 0; $needIndex -lt $needIds.Count; $needIndex++) {
+        $needId = $needIds[$needIndex]
+        if (-not $needs.ContainsKey($needId) -or $needs[$needId].LivingWeight -le 0) { continue }
+        [long]$scoreSum = 0
+        [double]$weightedPrice = 0
+        for ($variant = [int]$variantOffsets[$needIndex];
+                $variant -lt [int]$variantOffsets[$needIndex + 1]; $variant++) {
+            [double]$unitPrice = 0
+            for ($component = [int]$componentOffsets[$variant];
+                    $component -lt [int]$componentOffsets[$variant + 1]; $component++) {
+                $goodId = $componentGoods[$component]
+                if (-not $goods.ContainsKey($goodId)) { continue }
+                $unitPrice += [double]$componentQty[$component] *
+                    [double]$goods[$goodId].DefaultPrice / 1000.0
+            }
+            $score = [long]$preferences[$variant]
+            $scoreSum += $score
+            $weightedPrice += $unitPrice * [double]$score
+        }
+        if ($scoreSum -le 0) { continue }
+        $quantity = [double]$baseQty[$needIndex] *
+            [double]$needs[$needId].LivingWeight / 65536.0
+        $total += $quantity * ($weightedPrice / [double]$scoreSum) / 1000.0
+    }
+    $result = [long][Math]::Ceiling($total)
+    $referenceLivingCostByPlan[$PlanId] = $result
+    return $result
+}
+
+$professionLivingCosts = @{}
+foreach ($professionId in $professionPlans.Keys) {
+    $professionLivingCosts[$professionId] =
+        Reference-Living-Cost-For-Plan $professionPlans[$professionId]
+}
+
 $buildings = @{}
 $recipeSignatures = @{}
 $familyTiers = @{}
@@ -287,15 +347,20 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     $inputQuantities = @(Numbers $p.input_quantities_per_day)
     $outputQuantities = @(Numbers $p.output_quantities_per_day)
     $resources = @(Values $p.resource_ids)
+    $resourceQuantities = @(Numbers $p.resource_quantities_per_day)
     $resourceModes = @(Values $p.resource_interaction_modes)
     $roles = @(Values $p.employee_profession_ids)
     $roleSlots = @(Numbers $p.employee_slots_per_building)
+    $rolePolicies = @(Values $p.employee_wage_policy_ids)
     $roleWages = @(Numbers $p.employee_reference_wages_per_day)
     $rank = Rank @(Values $p.technology_tags) "building:$id"
     if ($rank -lt 0) { $failures.Add("building has no executable technology: $id") }
     if (-not $eraBuildingCounts.ContainsKey($rank)) { $eraBuildingCounts[$rank] = 0 }
     $eraBuildingCounts[$rank] = [int]$eraBuildingCounts[$rank] + 1
     $owner = @(Values $p.owner_profession_id)[0]
+    $ownerSlots = if ($p.ContainsKey('owner_slots_per_building')) {
+        [long]$p.owner_slots_per_building
+    } else { 1 }
     $kind = @(Values $p.building_kind)[0]
     $family = @(Values $p.upgrade_family_id)[0]
     $tier = if ($p.ContainsKey('upgrade_tier')) { [int]$p.upgrade_tier } else { 0 }
@@ -340,9 +405,12 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     $building = [pscustomobject]@{
         Id = $id; Rank = $rank; Kind = $kind; Owner = $owner; Inputs = $inputs; Categories = $categories
         MinLevels = $minLevels; Outputs = $outputs; Resources = $resources
-        ResourceModes = $resourceModes; Roles = $roles; Family = $family; Tier = $tier
+        ResourceModes = $resourceModes; ResourceQuantities = $resourceQuantities
+        Roles = $roles; RolePolicies = $rolePolicies; Family = $family; Tier = $tier
         CandidateSlots = $candidateSlots; InputQuantities = $inputQuantities
-        OutputQuantities = $outputQuantities; RoleSlots = $roleSlots; RoleWages = $roleWages
+        OutputQuantities = $outputQuantities; OwnerSlots = $ownerSlots
+        RoleSlots = $roleSlots; RoleWages = $roleWages; Revenue = [double]0
+        InputCost = [double]0; OperatingCost = [double]0
     }
     $buildings[$id] = $building
 
@@ -350,8 +418,13 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
         $failures.Add("invalid building kind: $id -> $kind")
     }
     if ($outputs.Count -eq 0) { $failures.Add("building has no physical output: $id") }
-    if ($resources.Count -ne $resourceModes.Count) {
+    if ($resources.Count -ne $resourceModes.Count -or
+        $resources.Count -ne $resourceQuantities.Count) {
         $failures.Add("building resource columns mismatch: $id")
+    }
+    if ($ownerSlots -le 0 -or $roles.Count -ne $roleSlots.Count -or
+        $roles.Count -ne $rolePolicies.Count -or $roles.Count -ne $roleWages.Count) {
+        $failures.Add("building labor columns mismatch: $id")
     }
     if ($kind -eq 'collector' -and $resources.Count -eq 0) {
         $failures.Add("collector has no natural resource: $id")
@@ -483,18 +556,56 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
         $revenue += [double]$outputQuantities[$i] * [double]$goods[$outputs[$i]].DefaultPrice / 1000.0 *
             [double]$goods[$outputs[$i]].BuyFactor / 65536.0
     }
+    $building.Revenue = $revenue
     $operatingCost = $inputCost + $wageCost
-    if ($operatingCost -gt 0 -and $outputs -notcontains 'gold' -and $outputs -notcontains 'silver') {
-        if ($revenue -le $operatingCost) {
-            $failures.Add("building loses money at default prices: $id revenue=$([Math]::Round($revenue)) cost=$([Math]::Round($operatingCost))")
-        } else {
-            $margin = ($revenue - $operatingCost) / $revenue
-            $luxuryOutput = @($outputs | Where-Object { $_ -in @('jewelry','fine_clothing','fine_furniture') }).Count -gt 0
-            $minimumMargin = if ($luxuryOutput) { 0.15 } else { 0.05 }
-            $maximumMargin = if ($luxuryOutput) { 0.30 } else { 0.30 }
-            if ($margin -lt $minimumMargin -or $margin -gt $maximumMargin) {
-                $failures.Add("building default margin out of band: $id -> $([Math]::Round($margin * 100, 1))%")
-            }
+    $building.InputCost = $inputCost
+    $building.OperatingCost = $operatingCost
+    if ($outputs -notcontains 'gold' -and $outputs -notcontains 'silver') {
+        $ownerLivingCost = if ($professionLivingCosts.ContainsKey($owner)) {
+            [double]$professionLivingCosts[$owner] * $ownerSlots
+        } else { 0.0 }
+        $targetMargin = if ($p.ContainsKey('target_operating_margin_q16')) {
+            [long]$p.target_operating_margin_q16
+        } else { 9830 }
+        $marginRevenue = $operatingCost * 65536.0 /
+            [Math]::Max(1, 65536 - $targetMargin)
+        $breakEvenRevenue = [Math]::Max(
+            $marginRevenue, $operatingCost + $ownerLivingCost)
+        $requiredRevenue = $breakEvenRevenue * 65536.0 / $DesignSellThroughQ16
+        if ($revenue + 1.0 -lt $requiredRevenue) {
+            $failures.Add("building revenue below sustainable floor: $id revenue=$([Math]::Round($revenue)) required=$([Math]::Round($requiredRevenue))")
+        }
+        if ($inputCost -gt $revenue * 0.60 + 1.0) {
+            $failures.Add("building material cost share above 60%: $id input=$([Math]::Round($inputCost)) revenue=$([Math]::Round($revenue))")
+        }
+    }
+    $jobs = [long]$ownerSlots + [long](($roleSlots | Measure-Object -Sum).Sum)
+    for ($i = 0; $i -lt [Math]::Min($inputs.Count, $inputQuantities.Count); $i++) {
+        $isTool = $inputs[$i] -in @('chipped_stone_tools','bronze_tools','tools','precision_tools') -or
+            ($i -lt $categories.Count -and $categories[$i] -eq 'tools')
+        if ($isTool -and $inputQuantities[$i] -gt [Math]::Max(1, $jobs * 100)) {
+            $failures.Add("building tool input above per-job cap: $id -> $($inputQuantities[$i])/$jobs")
+        }
+    }
+    $inputQuantityTotal = [double](($inputQuantities | Measure-Object -Sum).Sum)
+    $outputQuantityTotal = [double](($outputQuantities | Measure-Object -Sum).Sum)
+    if ($kind -eq 'industrial' -and $outputQuantityTotal -gt 0 -and
+        $inputQuantityTotal -gt $outputQuantityTotal * 3.0 + 1.0) {
+        $failures.Add("building physical input/output ratio above 3:1: $id -> $([Math]::Round($inputQuantityTotal / $outputQuantityTotal, 2))")
+    }
+    $extractQuantity = [double]0
+    for ($i = 0; $i -lt [Math]::Min($resourceModes.Count, $resourceQuantities.Count); $i++) {
+        if ($resourceModes[$i] -eq 'extract') { $extractQuantity += $resourceQuantities[$i] }
+    }
+    if ($extractQuantity -gt 0) {
+        $outputTotal = [double](($outputQuantities | Measure-Object -Sum).Sum)
+        $extractionRatio = $outputTotal / $extractQuantity
+        if ($extractionRatio -lt 1.98 -or $extractionRatio -gt 25.25) {
+            $failures.Add("building extraction ratio out of band: $id -> $([Math]::Round($extractionRatio, 2))")
+        }
+        if ($id -in @('steam_coal_mine','steam_iron_mine') -and
+            [Math]::Abs($extractionRatio - 12.0) -gt 0.12) {
+            $failures.Add("steam mine extraction ratio drift: $id -> $([Math]::Round($extractionRatio, 2))")
         }
     }
     if ($id -in @('cattle_collector','sheep_collector','pigs_collector','horses_collector',
@@ -559,6 +670,12 @@ foreach ($building in $buildings.Values) {
             $failures.Add("stone-age building lacks reviewed owner policy: $($building.Id)")
         } elseif ($building.Owner -ne $stoneOwnerPolicy[$building.Id]) {
             $failures.Add("stone-age building owner mismatch: $($building.Id) -> $($building.Owner)")
+        }
+    }
+    for ($i = 0; $i -lt [Math]::Min($roles.Count, $roleWages.Count); $i++) {
+        if ($professionLivingCosts.ContainsKey($roles[$i]) -and
+            $roleWages[$i] -lt $professionLivingCosts[$roles[$i]]) {
+            $failures.Add("building wage below reference living cost: $id role=$($roles[$i]) wage=$($roleWages[$i]) floor=$($professionLivingCosts[$roles[$i]])")
         }
     }
     if ($building.Rank -ge 1 -and $building.Rank -lt 6 -and
@@ -1250,4 +1367,4 @@ if ($failures.Count -gt 0) {
     foreach ($failure in $failures) { Write-Host "ERROR: $failure" }
     throw "economy content audit failed: $($failures.Count) issue(s)"
 }
-Write-Host "Economy content audit passed: $($goods.Count) goods, $($buildings.Count) buildings."
+Write-Host "Economy content audit passed: $($goods.Count) goods, $($buildings.Count) buildings; all non-bullion recipes cover costs, owner living needs, and target margin at 80% sell-through."

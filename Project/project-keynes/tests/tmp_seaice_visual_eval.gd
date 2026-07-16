@@ -1,5 +1,7 @@
 extends SceneTree
 
+const MapGeneratorScript = preload("res://scripts/geography/map_generator.gd")
+
 # Headless diagnostic for the "large-map sea-ice visual frozen while numbers change" bug.
 #
 # Symptom (user, real device): on small/medium maps sea ice renders/melts seasonally;
@@ -62,7 +64,7 @@ func _run_case(w: int, h: int) -> void:
 	cfg.continent_size = 0.9
 	cfg.river_count = 8
 	cfg.climate_profile = profile
-	var gen := MapGenerator.new()
+	var gen = MapGeneratorScript.new()
 	gen.climate_profile = profile
 	var generated: Dictionary = gen.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null) as MapData

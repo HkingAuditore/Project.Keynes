@@ -576,7 +576,7 @@ reserve'      = max(0, (reserve_ext + P) / (1 + L))       # dt_days=1
 `reserve' = clamp(reserve + gen − decay)` 对旧 `capacity` 模型下刚性配置会被硬上限
 clamp 成横跳；当前模型改为无硬上限的半隐式线性自衰减。
 
-`ecology_capacity > 0` 的动物种群改走稳定的离散 Beverton-Holt 密度增长：
+`ecology_capacity > 0` 的动物种群与林木改走稳定的离散 Beverton-Holt 密度增长：
 
 ```text
 runtime_capacity = ecology_capacity * runtime_fit
@@ -599,11 +599,14 @@ DataCore 经济资源。habitat 外储量为 0。岸上渔业通过建筑资源�
 模式访问本格与六邻格；公共供水以后另行设计，不进入食品/饮料配方。
 当前目录含 30 种注册自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
 自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量、牧场容量和肥沃土壤
-是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；林木、渔业和土壤
-沿用线性 IMEX，野生动物启用密度制约生态分支。`fertile_soil` 的最差适宜度净自然项保持为正，
+是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；土壤
+沿用线性 IMEX，野生动物、林木与海鱼启用密度制约生态分支。`fertile_soil` 的最差适宜度净自然项保持为正，
 其省级面积缩放后的长期储量下限为 5000；`wild_game` 使用 600×100 的理想承载量、1% 日增长、
 正迁入和急性压力死亡，因此适生地可从零恢复，并能承受理想或普通非理想气候下每格最多 24 座
-石器时代狩猎营地的五年连续采收回归。
+石器时代狩猎营地的五年连续采收回归。`timber` 使用 `1200×100` 理想承载量、1% 日增长与
+正迁入，最适生 30% 陆地初始储量不低于 30,000，并通过单伐木场五年采收回归。
+`marine_fish` 覆盖全部海洋 habitat，初始储量不低于 `3000×100`，以 `5000×100`
+为理想承载量、2% 日增长和正迁入恢复，避免旧线性平衡长期侵蚀初始鱼群。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
 在 `init_soa_from_bake` 之后、`_setup_sus` bind 之前跑一次（仅 GDScript，无 C++ 副本；运行期不重算）。
@@ -630,7 +633,8 @@ reserve0 = max(0, suit) * init_reserve_scale[r]
 habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低储量。该保底用于避免关键
 矿产因连续噪声、地质省和矿带共同截断而整图缺失；默认 0，不改变未配置资源，也不会
 均匀撒矿。最低储量同样乘面积倍率。相同 suit 以 cell index 稳定决胜，因此同 seed
-可确定性重放。
+可确定性重放。当前关键矿产仅保底最适生 0.5%；旱地/牧场保底 60%，水田/种植园保底
+20%，肥沃土壤保底 60%，其储量下限按目录中最大单栋 capacity 配方乘目标可承载建筑数标定。
 
 `ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE = 100.0` 表示一个战略地图格约为广东省
 量级面积。它统一缩放所有资源的初始储量、最低矿床、线性模型绝对生成/衰减量，以及
@@ -644,8 +648,8 @@ habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低
 - 可选最适区间：
   `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日动态受适宜度削弱；线性模型用 `decay_stress`，生态模型用 `ecology_stress_mortality_rate` 仅表达原始适生度低于 0.25 的急性气候比例死亡。生态参数默认全 0，旧资源行为不变。
 - `init_reserve_scale` 在 suitability、地质省和矿带全部求值后统一缩放正储量，只改变数量而不改变
-  资源出现位置。当前内容以一般资源/农业容量 `8×`、林木/海鱼/野生动物 `4×`、
-  热湿种植园 `16×` 为主要量级；旧档已有
+  资源出现位置。当前地质/不可再生资源通常为 `8×`、农业 capacity 为 `1×`、林木为 `4×`、
+  海鱼与野生动物为 `2×`；最低覆盖/储量在缩放后独立应用。旧档已有
   reserve 不回填倍率，新建地图才应用。
 - 现有 .tres 调参示例：金属矿按 mafic/felsic/hydrothermal/sedimentary 等 family 共享地质省和矿带；
   `clay` 偏三角洲/河流；`timber` 跟森林植被和温湿适宜度；三类农业容量与 `pasture`
@@ -688,7 +692,7 @@ EconomyDailySystem (SUS shell)
   -> DCWorldExt.run_economy_slice
   -> ECONOMY_GRAPH
   -> PopulationStore pages + MarketStore matrix
-  -> need/wealth/environment demand + budget
+  -> fixed survival_required + need/wealth/environment demand + budget
   -> domestic trade settle / dispatch (ACTIVE only)
   -> bundle clear + one substitution fallback + merchant settlement
   -> demand EMA / next-day price
@@ -699,10 +703,12 @@ EconomyDailySystem (SUS shell)
 Market V2 固定一地块一市场。周期起点读取温度/湿度/积雪/天气 Q16 snapshot，
 按 plan→need→variant→component CSR 从冻结状态计算 N 日连续财富、民族和环境需求；同一
 variant 的 components 作为互补 bundle 清算，不同 variants 做一次替代 fallback。
+主食、蛋白质、蔬果和衣着先从 `survival_household` 计算无财富/价格弹性的冻结下限；普通需求仍
+使用原弹性核，实际生存品订单取两者最大值，自留和死亡复用该下限。
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v3 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v5 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流

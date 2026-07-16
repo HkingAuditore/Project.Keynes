@@ -6,6 +6,7 @@
 )
 
 $ErrorActionPreference = 'Stop'
+$DesignSellThroughQ16 = 52429 # 80%; leaves room for inventory/discard and price noise.
 $project = Join-Path $RepoRoot 'Project/project-keynes'
 $goodsDir = Join-Path $project 'data/goods'
 $buildingsDir = Join-Path $project 'data/economy/buildings'
@@ -731,6 +732,10 @@ function Tool-Min-Quality-For-Rank([int]$Rank) {
 }
 
 function Extraction-Ratio-For-Building([string]$Id) {
+    if ($Id -eq 'stone_age_hunting_camp') { return 2 }
+    if ($Id -in @('early_clay_pit','early_copper_mine','early_tin_mine')) { return 2 }
+    if ($Id -eq 'classical_silica_pit') { return 4 }
+    if ($Id -in @('steam_coal_mine','steam_iron_mine')) { return 12 }
     if ($Id -eq 'marine_fish_collector') { return 8 }
     if ($Id -in @('clay_collector','limestone_collector','silica_sand_collector','stone_collector','salt_collector')) { return 10 }
     if ($Id -eq 'timber_collector') { return 16 }
@@ -797,6 +802,79 @@ function Content-Numbers([string]$Content, [string]$Field) {
         ForEach-Object { [long]$_.Value })
 }
 
+function Content-String([string]$Content, [string]$Field, [string]$DefaultValue = '') {
+    $pattern = '(?m)^' + [regex]::Escape($Field) + ' = &?"([^"]*)"\r?$'
+    $match = [regex]::Match($Content, $pattern)
+    return $(if ($match.Success) { $match.Groups[1].Value } else { $DefaultValue })
+}
+
+function Content-Integer([string]$Content, [string]$Field, [long]$DefaultValue = 0) {
+    $match = [regex]::Match($Content, "(?m)^${Field} = (-?\d+)\r?$")
+    return $(if ($match.Success) { [long]$match.Groups[1].Value } else { $DefaultValue })
+}
+
+$referenceLivingCostByPlan = @{}
+function Reference-Living-Cost-For-Plan([string]$PlanId) {
+    if ($referenceLivingCostByPlan.ContainsKey($PlanId)) {
+        return [long]$referenceLivingCostByPlan[$PlanId]
+    }
+    $path = Join-Path $plansDir "$PlanId.tres"
+    if (-not (Test-Path -LiteralPath $path)) { throw "living-cost plan missing: $PlanId" }
+    $content = [System.IO.File]::ReadAllText($path)
+    $needIds = @(Content-Strings $content 'need_ids')
+    $baseQty = @(Content-Numbers $content 'base_qty_per_person')
+    $variantOffsets = @(Content-Numbers $content 'need_variant_offsets')
+    $preferences = @(Content-Numbers $content 'variant_preference_q16')
+    $componentOffsets = @(Content-Numbers $content 'variant_component_offsets')
+    $componentGoods = @(Content-Strings $content 'component_good_ids')
+    $componentQty = @(Content-Numbers $content 'component_qty_per_need')
+    if ($needIds.Count -ne $baseQty.Count -or $variantOffsets.Count -ne $needIds.Count + 1) {
+        throw "living-cost plan columns mismatch: $PlanId"
+    }
+    [double]$total = 0
+    for ($needIndex = 0; $needIndex -lt $needIds.Count; $needIndex++) {
+        $needPath = Join-Path $needsDir "$($needIds[$needIndex]).tres"
+        if (-not (Test-Path -LiteralPath $needPath)) {
+            throw "living-cost need missing: $($needIds[$needIndex])"
+        }
+        $needContent = [System.IO.File]::ReadAllText($needPath)
+        $livingWeight = Content-Integer $needContent 'living_cost_weight_q16' 0
+        if ($livingWeight -le 0) { continue }
+        [long]$scoreSum = 0
+        [double]$weightedPrice = 0
+        for ($variant = [int]$variantOffsets[$needIndex];
+                $variant -lt [int]$variantOffsets[$needIndex + 1]; $variant++) {
+            [double]$unitPrice = 0
+            for ($component = [int]$componentOffsets[$variant];
+                    $component -lt [int]$componentOffsets[$variant + 1]; $component++) {
+                $unitPrice += [double]$componentQty[$component] *
+                    [double](Default-Price-For-Good $componentGoods[$component]) / 1000.0
+            }
+            $score = [long]$preferences[$variant]
+            $scoreSum += $score
+            $weightedPrice += $unitPrice * [double]$score
+        }
+        if ($scoreSum -le 0) { continue }
+        $quantity = [double]$baseQty[$needIndex] * [double]$livingWeight / 65536.0
+        $total += $quantity * ($weightedPrice / [double]$scoreSum) / 1000.0
+    }
+    $result = [long][Math]::Ceiling($total)
+    $referenceLivingCostByPlan[$PlanId] = $result
+    return $result
+}
+
+function Reference-Living-Cost-For-Profession([string]$ProfessionId) {
+    $path = Join-Path $professionsDir "$ProfessionId.tres"
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "living-cost profession missing: $ProfessionId"
+    }
+    $planId = Content-String ([System.IO.File]::ReadAllText($path)) 'default_consumption_plan_id'
+    if ([string]::IsNullOrWhiteSpace($planId)) {
+        throw "profession living-cost plan missing: $ProfessionId"
+    }
+    return Reference-Living-Cost-For-Plan $planId
+}
+
 function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
     $inputs = @(Content-Strings $Content 'input_good_ids')
     $inputQty = @(Content-Numbers $Content 'input_quantities_per_day')
@@ -805,8 +883,41 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
     $outputs = @(Content-Strings $Content 'output_good_ids')
     $outputQty = @(Content-Numbers $Content 'output_quantities_per_day')
     $roleSlots = @(Content-Numbers $Content 'employee_slots_per_building')
+    $roleIds = @(Content-Strings $Content 'employee_profession_ids')
     $roleWages = @(Content-Numbers $Content 'employee_reference_wages_per_day')
     $technologyTags = @(Content-Strings $Content 'technology_tags')
+    $ownerSlots = Content-Integer $Content 'owner_slots_per_building' 1
+    $jobs = [long]$ownerSlots + [long](($roleSlots | Measure-Object -Sum).Sum)
+    $recipeInputOverrides = @{
+        # Keep early local chains financeable without inflating their output merely
+        # to pay for excessive intermediate consumption.
+        bronze_tool_workshop = [long[]]@(1500, 500)
+        ore_bronzesmith_camp = [long[]]@(500, 500, 500)
+    }
+    if ($recipeInputOverrides.ContainsKey($Id)) {
+        $inputQty = @($recipeInputOverrides[$Id])
+    }
+    for ($i = 0; $i -lt [Math]::Min($inputs.Count, $inputQty.Count); $i++) {
+        $isTool = $inputs[$i] -in @('chipped_stone_tools','bronze_tools','tools','precision_tools') -or
+            ($i -lt $inputCategories.Count -and $inputCategories[$i] -eq 'tools')
+        if (-not $isTool) { continue }
+        $toolCap = [Math]::Max(1, $jobs * 100)
+        $inputQty[$i] = [Math]::Min([long]$inputQty[$i], [long]$toolCap)
+    }
+    if ($Id -eq 'stone_age_hunting_camp' -and $inputs.Count -eq 1 -and
+            $inputs[0] -eq 'chipped_stone_tools') {
+        # One local knapping workshop must be able to equip the resource-supported
+        # hunting camps created by the mid-stone bootstrap.
+        $inputQty[0] = 5
+        $Content = [regex]::Replace($Content,
+            '(?m)^output_quantities_per_day = PackedInt64Array\(.*\)\r?$',
+            'output_quantities_per_day = PackedInt64Array(3200, 800, 320)')
+    }
+    if ($inputs.Count -gt 0 -and $inputQty.Count -eq $inputs.Count) {
+        $Content = [regex]::Replace($Content,
+            '(?m)^input_quantities_per_day = PackedInt64Array\(.*\)\r?$',
+            'input_quantities_per_day = ' + (PI64 @($inputQty)))
+    }
     $buildingRank = -1
     foreach ($technologyTag in $technologyTags) {
         if ($technologyTag.StartsWith('tech.')) {
@@ -843,23 +954,67 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
         }
         $cost += [double]$inputQty[$i] * $effectivePrice / 1000.0
     }
+    for ($i = 0; $i -lt [Math]::Min($roleIds.Count, $roleWages.Count); $i++) {
+        $roleWages[$i] = [Math]::Max(
+            [long]$roleWages[$i], (Reference-Living-Cost-For-Profession $roleIds[$i]))
+    }
+    if ($roleWages.Count -gt 0) {
+        $Content = [regex]::Replace($Content,
+            '(?m)^employee_reference_wages_per_day = PackedInt64Array\(.*\)\r?$',
+            'employee_reference_wages_per_day = ' + (PI64 @($roleWages)))
+        if ($roleWages.Count -eq 1 -and
+            [regex]::IsMatch($Content, '(?m)^wage_per_employee_per_day = \d+\r?$')) {
+            $Content = [regex]::Replace($Content,
+                '(?m)^wage_per_employee_per_day = \d+\r?$',
+                "wage_per_employee_per_day = $($roleWages[0])")
+        }
+    }
     for ($i = 0; $i -lt [Math]::Min($roleSlots.Count, $roleWages.Count); $i++) {
         $cost += [double]$roleSlots[$i] * [double]$roleWages[$i]
     }
-    if ($cost -le 0 -or $outputs -contains 'gold' -or $outputs -contains 'silver') { return $Content }
+    if ($outputs -contains 'gold' -or $outputs -contains 'silver') { return $Content }
+    $ownerId = Content-String $Content 'owner_profession_id'
+    $ownerSlots = [Math]::Max(1, (Content-Integer $Content 'owner_slots_per_building' 1))
+    $ownerLivingCost = [double](Reference-Living-Cost-For-Profession $ownerId) * $ownerSlots
     $marginMatch = [regex]::Match($Content, '(?m)^target_operating_margin_q16 = (\d+)\r?$')
     $targetMargin = if ($marginMatch.Success) { [int]$marginMatch.Groups[1].Value } else { 9830 }
     if (@($outputs | Where-Object { $_ -in @('jewelry','fine_clothing','fine_furniture') }).Count -gt 0) {
         $targetMargin = 13107
     }
-    $outputPriceTotal = [double]0
-    foreach ($output in $outputs) { $outputPriceTotal += Default-Price-For-Good $output }
-    $requiredRevenue = [Math]::Ceiling($cost * 65536.0 / [Math]::Max(1, 65536 - $targetMargin))
-    $unitQty = [long][Math]::Ceiling(
-        $requiredRevenue * 1000.0 * 65536.0 / [Math]::Max(1.0, $outputPriceTotal * 62259.0))
-    if ($unitQty -lt 1) { $unitQty = 1 }
-    $replacement = 'output_quantities_per_day = ' + (PI64 @($outputs | ForEach-Object { $unitQty }))
-    return [regex]::Replace($Content, '(?m)^output_quantities_per_day = PackedInt64Array\(.*\)\r?$', $replacement)
+    $marginRevenue = [Math]::Ceiling(
+        $cost * 65536.0 / [Math]::Max(1, 65536 - $targetMargin))
+    $breakEvenRevenue = [Math]::Max(
+        $marginRevenue, [Math]::Ceiling($cost + $ownerLivingCost))
+    $requiredRevenue = [Math]::Ceiling(
+        $breakEvenRevenue * 65536.0 / $DesignSellThroughQ16)
+    [double]$baseRevenue = 0
+    for ($i = 0; $i -lt $outputs.Count; $i++) {
+        $baseRevenue += [double]$outputQty[$i] *
+            [double](Default-Price-For-Good $outputs[$i]) / 1000.0 * 62259.0 / 65536.0
+    }
+    if ($baseRevenue -le 0) { throw "curated building output value missing: $Id" }
+    $scale = [double]$requiredRevenue / $baseRevenue
+    $scaledOutputQty = @($outputQty | ForEach-Object {
+        [long][Math]::Max(1, [Math]::Ceiling([double]$_ * $scale))
+    })
+    $Content = [regex]::Replace($Content,
+        '(?m)^output_quantities_per_day = PackedInt64Array\(.*\)\r?$',
+        'output_quantities_per_day = ' + (PI64 @($scaledOutputQty)))
+    $resourceModes = @(Content-Strings $Content 'resource_interaction_modes')
+    $resourceQty = @(Content-Numbers $Content 'resource_quantities_per_day')
+    $extractCount = @($resourceModes | Where-Object { $_ -eq 'extract' }).Count
+    if ($extractCount -gt 0 -and $resourceQty.Count -eq $resourceModes.Count) {
+        $outputTotal = [long](($scaledOutputQty | Measure-Object -Sum).Sum)
+        $extractQty = [long][Math]::Max(1, [Math]::Floor(
+            $outputTotal / ((Extraction-Ratio-For-Building $Id) * $extractCount)))
+        for ($i = 0; $i -lt $resourceModes.Count; $i++) {
+            if ($resourceModes[$i] -eq 'extract') { $resourceQty[$i] = $extractQty }
+        }
+        $Content = [regex]::Replace($Content,
+            '(?m)^resource_quantities_per_day = PackedInt64Array\(.*\)\r?$',
+            'resource_quantities_per_day = ' + (PI64 @($resourceQty)))
+    }
+    return $Content
 }
 
 $explicitInputCandidates = @{
@@ -952,7 +1107,7 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     [string]$TechnologyOverride = '',[long[]]$InputQuantityOverride = @(),
     [string]$RecipeSourceId = '') {
     $unitQty = switch ($Id) {
-        'marine_fish_collector' { [long]1000 }
+        'marine_fish_collector' { [long]3600 }
         'pastoral_camp' { [long]3000 } 'manorial_pasture' { [long]5000 }
         'ranching_station' { [long]9000 } 'horse_breeding_camp' { [long]700 }
         'horse_breeder' { [long]1200 }
@@ -1027,6 +1182,7 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
             if ($ResourceModes[$i] -eq 'extract') { $extractQty } else { $unitQty }
         }
     )
+    if ($Id -eq 'marine_fish_collector') { $resourceQty = @([long]242) }
     $resourceAccessModes = @($Resources | ForEach-Object {
         if ($_ -eq 'marine_fish') { 'local_and_adjacent' } else { 'local' }
     })
@@ -1152,6 +1308,11 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
             })
         }
     }
+    for ($roleIndex = 0; $roleIndex -lt $roleIds.Count; $roleIndex++) {
+        $roleWages[$roleIndex] = [Math]::Max(
+            [long]$roleWages[$roleIndex],
+            (Reference-Living-Cost-For-Profession $roleIds[$roleIndex]))
+    }
     $candidateOffsets = @(0); $candidateGoodIds = @(); $candidateEfficiencies = @()
     $candidateSpecs = @()
     $recipeKey = if ([string]::IsNullOrWhiteSpace($RecipeSourceId)) { $Id } else { $RecipeSourceId }
@@ -1203,6 +1364,19 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     $inputMinLevels = @($Inputs | ForEach-Object {
         if ($_ -ne 'tools') { 0 } else { Tool-Min-Quality-For-Rank $rank }
     })
+    if ($Id -eq 'ore_bronzesmith_camp') {
+        $inputQty = [long[]]@(500, 500, 500)
+    }
+    $jobs = [long]1 + [long](($roleSlots | Measure-Object -Sum).Sum)
+    for ($inputIndex = 0; $inputIndex -lt $Inputs.Count; $inputIndex++) {
+        $isTool = $Inputs[$inputIndex] -in @(
+            'chipped_stone_tools','bronze_tools','tools','precision_tools') -or
+            ($inputIndex -lt $inputCategories.Count -and
+             $inputCategories[$inputIndex] -eq 'tools')
+        if (-not $isTool) { continue }
+        $inputQty[$inputIndex] = [Math]::Min(
+            [long]$inputQty[$inputIndex], [long][Math]::Max(1, $jobs * 100))
+    }
     $generationIds = @(); $generationQty = @(); $floor = 0
     $targetMargin = if ($Kind -eq 'collector') { 6554 } else { 9830 }
     $supplyElasticity = if ($Kind -eq 'collector') { 32768 } else { 65536 }
@@ -1244,11 +1418,16 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         $dailyWageCost += [long]$roleSlots[$roleIndex] * [long]$roleWages[$roleIndex]
     }
     $dailyCost = $dailyInputCost + $dailyWageCost
-    if ($dailyCost -gt 0 -and -not ($Outputs | Where-Object { $_ -in @('gold','silver') })) {
+    $ownerLivingCost = Reference-Living-Cost-For-Profession $Owner
+    if (-not ($Outputs | Where-Object { $_ -in @('gold','silver') })) {
         $outputPriceTotal = [long]0
         foreach ($output in $Outputs) { $outputPriceTotal += Default-Price-For-Good $output }
-        $requiredRevenue = [long][Math]::Ceiling(
+        $marginRevenue = [long][Math]::Ceiling(
             [double]$dailyCost * 65536.0 / [Math]::Max(1, 65536 - $targetMargin))
+        $breakEvenRevenue = [long][Math]::Max(
+            $marginRevenue, [Math]::Ceiling([double]$dailyCost + $ownerLivingCost))
+        $requiredRevenue = [long][Math]::Ceiling(
+            [double]$breakEvenRevenue * 65536.0 / $DesignSellThroughQ16)
         $unitQty = [long][Math]::Ceiling(
             [double]$requiredRevenue * 1000.0 * 65536.0 / [Math]::Max(1.0, [double]$outputPriceTotal * 62259.0))
         if ($unitQty -lt 1) { $unitQty = 1 }
@@ -1324,6 +1503,22 @@ function Add-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[st
 function Write-SelfSufficientBuilding([string]$Id, [string]$Name, [string]$Technology, [string]$Family,
     [int]$Tier, [string]$Owner, [string[]]$Outputs, [long[]]$OutputQty,
     [string[]]$Resources, [long[]]$ResourceQty) {
+    [double]$baseRevenue = 0
+    for ($i = 0; $i -lt $Outputs.Count; $i++) {
+        $buyFactor = Good-Integer-Field $Outputs[$i] 'merchant_buy_price_factor_q16' 62259
+        $baseRevenue += [double]$OutputQty[$i] *
+            [double](Default-Price-For-Good $Outputs[$i]) / 1000.0 *
+            [double]$buyFactor / 65536.0
+    }
+    $ownerLivingCost = [double](Reference-Living-Cost-For-Profession $Owner)
+    $requiredRevenue = $ownerLivingCost * 65536.0 / $DesignSellThroughQ16
+    if ($baseRevenue -le 0) { throw "self-sufficient output value missing: $Id" }
+    if ($baseRevenue -lt $requiredRevenue) {
+        $scale = $requiredRevenue / $baseRevenue
+        $OutputQty = @($OutputQty | ForEach-Object {
+            [long][Math]::Max(1, [Math]::Ceiling([double]$_ * $scale))
+        })
+    }
     $shares = if ($Outputs.Count -eq 2) { @(32768, 32768) } else { @() }
     Write-Utf8 (Join-Path $buildingsDir "$Id.tres") @"
 [gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
@@ -1501,7 +1696,7 @@ foreach ($power in @(
 }
 
 Write-SelfSufficientBuilding 'gathering_ground' '采集营地' 'tech.gathering' `
-    'subsistence_food' 1 'forager' @('gathered_plants') @(3000) @('fertile_soil') @(1000)
+    'subsistence_food' 1 'forager' @('gathered_plants') @(5600) @('fertile_soil') @(1000)
 Write-SelfSufficientBuilding 'subsistence_farm' '自给农庄' 'tech.pottery' `
     'subsistence_food' 2 'subsistence_farmer' @('grain','vegetables') @(4000,4000) @('arable_land','fertile_soil') @(10000,10000)
 Write-SelfSufficientBuilding 'three_field_smallholding' '三圃制小农场' 'tech.guild_organization' `
@@ -1509,13 +1704,13 @@ Write-SelfSufficientBuilding 'three_field_smallholding' '三圃制小农场' 'te
 Write-SelfSufficientBuilding 'improved_smallholding' '改良小农场' 'tech.steam_power' `
     'subsistence_food' 4 'subsistence_farmer' @('grain','vegetables') @(8000,8000) @('arable_land','fertile_soil') @(6000,6000)
 Write-SelfSufficientBuilding 'household_weaving_shelter' '家庭织造棚' 'tech.gathering' `
-    'household_cloth' 1 'artisan' @('cloth') @(120) @('fertile_soil') @(1000)
+    'household_cloth' 1 'artisan' @('cloth') @(720) @('fertile_soil') @(1000)
 Write-SelfSufficientBuilding 'household_loom' '家用织机' 'tech.pottery' `
-    'household_cloth' 2 'artisan' @('cloth') @(220) @('arable_land','fertile_soil') @(10000,10000)
+    'household_cloth' 2 'artisan' @('cloth') @(1320) @('arable_land','fertile_soil') @(10000,10000)
 Write-SelfSufficientBuilding 'cottage_weaving' '家庭纺织坊' 'tech.guild_organization' `
-    'household_cloth' 3 'artisan' @('cloth') @(400) @('arable_land','fertile_soil') @(8000,8000)
+    'household_cloth' 3 'artisan' @('cloth') @(2400) @('arable_land','fertile_soil') @(8000,8000)
 Write-SelfSufficientBuilding 'improved_domestic_loom' '改良家用织机' 'tech.steam_power' `
-    'household_cloth' 4 'artisan' @('cloth') @(600) @('arable_land','fertile_soil') @(6000,6000)
+    'household_cloth' 4 'artisan' @('cloth') @(3600) @('arable_land','fertile_soil') @(6000,6000)
 foreach ($id in @('gathering_ground','subsistence_farm','three_field_smallholding','improved_smallholding',
     'household_weaving_shelter','household_loom','cottage_weaving','improved_domestic_loom')) {
     if (-not $buildingIds.Add($id)) { throw "duplicate subsistence building id: $id" }
@@ -1535,13 +1730,15 @@ foreach ($row in $newResources) {
     $initNoise=100000.0; $noiseScale=0.07
     $family=''; $province=0.0; $belt=0.0; $provinceScale=0.012; $beltScale=0.035
     $tempOpt=0.5; $tempTol=1.0; $moistureOpt=0.5; $moistureTol=1.0
+    $minCoverage=0.005; $minReserve=10000.0
+    $ecologyCapacity=0.0; $ecologyGrowth=0.0; $ecologyImmigration=0.0; $ecologyStressMortality=0.0
     $reserveScale = if ($id -eq 'marine_fish') { 2.0 } elseif ($id -in @('arable_land','paddy_land','plantation_land','pasture')) { 1.0 } else { 8.0 }
     switch ($id) {
-        'marine_fish' { $genBase=2.0; $genSelf=0.02; $decaySelf=0.002; $initBase=400.0; $initNoise=1200.0; $noiseScale=0.045 }
-        'arable_land' { $initBase=-40.0; $initMoisture=25.0; $initElevation=-35.0; $initRiver=30.0; $initClimateFit=140.0; $initNoise=30.0; $tempOpt=0.55; $tempTol=0.42; $moistureOpt=0.55; $moistureTol=0.4 }
-        'paddy_land' { $initBase=-90.0; $initMoisture=70.0; $initElevation=-25.0; $initRiver=180.0; $initClimateFit=120.0; $initNoise=20.0; $tempOpt=0.68; $tempTol=0.32; $moistureOpt=0.78; $moistureTol=0.28 }
-        'plantation_land' { $initBase=-85.0; $initMoisture=55.0; $initElevation=-20.0; $initClimateFit=150.0; $initNoise=35.0; $tempOpt=0.72; $tempTol=0.3; $moistureOpt=0.7; $moistureTol=0.3 }
-        'pasture' { $initBase=-55.0; $initMoisture=15.0; $initElevation=-20.0; $initRiver=20.0; $initClimateFit=150.0; $initNoise=35.0; $tempOpt=0.52; $tempTol=0.45; $moistureOpt=0.48; $moistureTol=0.45 }
+        'marine_fish' { $genBase=0.0; $genSelf=0.0; $decaySelf=0.0; $initBase=400.0; $initNoise=1200.0; $noiseScale=0.045; $minCoverage=1.0; $minReserve=3000.0; $ecologyCapacity=5000.0; $ecologyGrowth=0.02; $ecologyImmigration=0.2; $ecologyStressMortality=0.01 }
+        'arable_land' { $initBase=-40.0; $initMoisture=25.0; $initElevation=-35.0; $initRiver=30.0; $initClimateFit=140.0; $initNoise=30.0; $tempOpt=0.55; $tempTol=0.42; $moistureOpt=0.55; $moistureTol=0.4; $minCoverage=0.6; $minReserve=1250.0 }
+        'paddy_land' { $initBase=-90.0; $initMoisture=70.0; $initElevation=-25.0; $initRiver=180.0; $initClimateFit=120.0; $initNoise=20.0; $tempOpt=0.68; $tempTol=0.32; $moistureOpt=0.78; $moistureTol=0.28; $minCoverage=0.2; $minReserve=600.0 }
+        'plantation_land' { $initBase=-85.0; $initMoisture=55.0; $initElevation=-20.0; $initClimateFit=150.0; $initNoise=35.0; $tempOpt=0.72; $tempTol=0.3; $moistureOpt=0.7; $moistureTol=0.3; $minCoverage=0.2; $minReserve=1400.0 }
+        'pasture' { $initBase=-55.0; $initMoisture=15.0; $initElevation=-20.0; $initRiver=20.0; $initClimateFit=150.0; $initNoise=35.0; $tempOpt=0.52; $tempTol=0.45; $moistureOpt=0.48; $moistureTol=0.45; $minCoverage=0.6; $minReserve=1250.0 }
         'bauxite' { $family='laterite'; $initBase=-380000.0; $initMoisture=180000.0; $initElevation=80000.0; $province=220000.0; $belt=100000.0; $initNoise=180000.0 }
         'limestone' { $family='sedimentary'; $initBase=-260000.0; $province=300000.0; $belt=140000.0; $initNoise=180000.0 }
         'silica_sand' { $family='surface'; $initBase=-190000.0; $initRiver=100000.0; $province=120000.0; $belt=80000.0; $initNoise=220000.0 }
@@ -1562,6 +1759,8 @@ display_name = "$($row[1])"
 reserve_component = &"cell.res_${id}_reserve"
 habitat_mode = "$habitat"
 init_reserve_scale = $reserveScale
+init_min_coverage = $minCoverage
+init_min_reserve = $minReserve
 temp_lo = -30.0
 temp_hi = 45.0
 gen_base = $genBase
@@ -1585,6 +1784,10 @@ climate_temp_opt = $tempOpt
 climate_temp_tol = $tempTol
 climate_moisture_opt = $moistureOpt
 climate_moisture_tol = $moistureTol
+ecology_capacity = $ecologyCapacity
+ecology_growth_rate = $ecologyGrowth
+ecology_immigration = $ecologyImmigration
+ecology_stress_mortality_rate = $ecologyStressMortality
 "@
 }
 

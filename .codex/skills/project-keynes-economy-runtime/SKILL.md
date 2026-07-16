@@ -76,8 +76,10 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
 - Keep hot loops free of Dictionary, Callable, Object access, string lookup, allocation, and exceptions.
 - Keep money, goods, population, ratios, rates, and rounding deterministic and saturating.
 - Keep population, money, and goods audit error exactly zero.
-- Account for construction/input sinks, accepted output, discarded output, resource extraction,
-  wages paid, and wages unpaid explicitly. Never mint owner, employee, or merchant funds.
+- Account for construction/input sinks, accepted output, supported output, discarded output,
+  resource extraction, wages paid, and wages unpaid explicitly. Never mint owner, employee, or
+  merchant funds except the versioned bullion and one-fifth-retail producer-support issuance paths;
+  both exceptions must increment explicit money mint and publish their own diagnostics.
 - Keep partially computed market/building/planning state invisible to gameplay writers and save.
   Authoritative dispatched trade orders and escrow are the explicit PKEC v11 exception. Selected-cell
   inspector queries may read the latest slice-complete native state, must report `snapshot_source`,
@@ -95,8 +97,9 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
   internal state in `wait_commit` until the frozen deadline; run `building_commit` immediately before
   publish. Empty building worlds must skip the first two stages without changing results.
 - Buy construction and production inputs from local merchant cohorts. Sort producer offers by local
-  retail price descending, apply the configured merchant buy factor, cap purchases by merchant cash,
-  and report discarded remainder.
+  retail price descending, apply the configured merchant buy factor, and cap normal purchases by
+  merchant cash. Put remaining storable output into merchant inventory through the audited
+  one-fifth-retail producer-support issuance path; only non-storable remainder is discarded.
 - Buy inputs and produce/sell output before wage transfer. Then cap wage transfer by post-sale owner
   cash and pay only committed local employees. Report paid and unpaid wages separately without
   changing total money; arrears do not retroactively cancel current production.
@@ -126,7 +129,7 @@ default five-day behavior.
 When changing cadence or approximation:
 
 - Preserve sample-day frozen price/environment/technology/resource semantics. Under
-  `production_income_consumption_v4`, only in-epoch building sale and income distribution may change
+  `production_income_consumption_v10`, only in-epoch building sale and income distribution may change
   funds/stock before household clearing; mid-cycle gameplay writes must remain deferred.
 - Freeze building ownership, role fills, construction readiness, geographic/resource context, and
   production inputs for the same cycle boundary; do not let mid-cycle gameplay writes leak into it.

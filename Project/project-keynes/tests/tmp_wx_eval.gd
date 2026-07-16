@@ -1,5 +1,7 @@
 extends SceneTree
 
+const MapGeneratorScript = preload("res://scripts/geography/map_generator.gd")
+
 # Headless weather-quality eval. Reproduces the tile_data_record CSV analysis
 # (weather-type histogram, per-cell variety, land/water field means, key field
 # correlations) so weather-model changes can be measured before/after.
@@ -60,7 +62,7 @@ func _init() -> void:
 	cfg.sea_level = 0.58
 	cfg.continent_size = 0.72
 	cfg.climate_profile = profile
-	var gen := MapGenerator.new()
+	var gen = MapGeneratorScript.new()
 	gen.climate_profile = profile
 	var generated: Dictionary = gen.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null) as MapData

@@ -705,6 +705,7 @@ private:
         int64_t consumed_goods = 0;
         int64_t retained_output_consumed = 0;
         int64_t retained_output_discarded = 0;
+        int64_t owner_working_capital_reserved = 0;
         int64_t births = 0;
         int64_t deaths = 0;
         int64_t closing_population = 0;
@@ -747,6 +748,7 @@ private:
         CASHFLOW_CONSTRUCTION = 9,
         CASHFLOW_MERCHANT_PROCUREMENT = 10,
         CASHFLOW_OTHER = 11,
+        CASHFLOW_PRODUCER_SUPPORT = 12,
     };
 
     enum EventKind : int32_t {
@@ -968,6 +970,9 @@ private:
     int32_t _living_cost_base_plan_id = -1;
     std::string _living_cost_base_plan_stable_id = "survival_household";
     std::vector<int32_t> _survival_food_need_stable_ids;
+    std::vector<int32_t> _survival_required_need_indices;
+    std::vector<uint8_t> _survival_food_good_mask;
+    std::vector<uint8_t> _survival_staple_good_mask;
     int32_t _survival_staple_need_stable_id = -1;
     int32_t _survival_clothing_need_stable_id = -1;
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
@@ -1046,8 +1051,10 @@ private:
     int64_t _production_output_stock = 0;
     int64_t _production_output_discarded = 0;
     int64_t _production_output_retained = 0;
+    int64_t _production_output_supported = 0;
     int64_t _owner_output_consumed = 0;
     int64_t _producer_revenue = 0;
+	int64_t _producer_support_money_issued = 0;
 	int64_t _bullion_money_issued = 0;
 	int64_t _gold_accepted = 0;
 	int64_t _silver_accepted = 0;
@@ -1066,7 +1073,10 @@ private:
     int64_t _loss_suspended_building_groups = 0;
     int64_t _merchant_procurement_budget = 0;
     int64_t _merchant_procurement_reserved = 0;
+    int64_t _owner_working_capital_reserved = 0;
     int64_t _merchant_procurement_spent = 0;
+    int64_t _production_input_reserved = 0;
+    int64_t _production_input_reserve_shortfall = 0;
     int64_t _labor_signal_updates = 0;
     int64_t _building_resource_generated = 0;
     int64_t _building_resource_consumed = 0;
@@ -1151,6 +1161,7 @@ private:
     std::vector<int64_t> _epoch_offered_supply_ema;
     std::vector<int64_t> _epoch_nonhousehold_withdrawals;
     std::vector<int32_t> _epoch_cost_anchor_price;
+    std::vector<int64_t> _production_input_reserve;
     std::vector<OwnerRetainedOutput> _owner_retained_outputs;
     TradeTopologyStore _trade_topology;
     TradePlanStore _trade_plan;
@@ -1345,6 +1356,7 @@ private:
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
     void rebuild_market_signals();
+    void rebuild_production_input_reserves();
     void rebuild_labor_signals();
     int32_t labor_signal_index(int32_t cell, int32_t profession) const;
     int64_t living_cost_for_signature(int32_t cell, int32_t signature_id,
@@ -1417,6 +1429,10 @@ private:
                                int64_t environment_factor_q16,
                                int64_t composite_factor_q16,
                                int64_t &saturation_count) const;
+    int64_t survival_required_units(int32_t slot, int32_t stable_need_id,
+                                    int32_t dt_days,
+                                    const EnvironmentSample &sample,
+                                    int64_t &saturation_count) const;
     godot::Dictionary population_cell_snapshot_impl(
         int32_t cell_idx, const EnvironmentSample &sample) const;
     static void formula_fixed_per_capita(const FormulaBatchInput &in, int64_t *out,

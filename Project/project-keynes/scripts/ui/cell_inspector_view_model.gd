@@ -1183,6 +1183,7 @@ func _cashflow_source_name(source_id: String, income: bool) -> String:
 		"owner_wages": return "雇员工资"
 		"construction": return "建设"
 		"merchant_procurement": return "商品收购"
+		"producer_support_issuance": return "托底收购"
 		_: return "其他收入" if income else "其他支出"
 
 

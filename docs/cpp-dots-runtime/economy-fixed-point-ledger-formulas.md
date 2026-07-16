@@ -72,6 +72,19 @@ good_budget_share = procurement_budget * (gap * buy_price) / sum(gap * buy_price
 
 预算余数按稳定 good ID 和 building group 顺序落位；金银铸币结算不受普通采购预算限制。
 
+普通商人采购完成后，所有可储存余货按冻结本地零售价的 20% 托底：
+
+```text
+supported_qty = storable_offer - normal_merchant_purchase
+support_money = max(1, floor(supported_qty * frozen_retail_price / (GOODS_SCALE * 5)))
+market_stock += supported_qty
+owner_funds += support_money
+explicit_money_mint += support_money
+```
+
+托底不扣商人资金。`production_output_supported` 和 `producer_support_money_issued` 分别报告入库量
+和发行额；周期流余量不能入库，仍进入真实 discard sink。
+
 每次提交严格校验：
 
 ```text
@@ -125,6 +138,16 @@ schema，而不是注册 GDScript 公式。
 多个 components 是互补 bundle，实际 bundle 数取各 component 可供量的最小值；同一
 need 的 variants 是替代品，首选不足只允许一次 fallback，防止组合搜索爆炸。
 
+主食、蛋白质、蔬果和衣着另算冻结生存量：
+
+```text
+survival_required = population * survival_household.base_qty * N
+survival_required *= ethnicity_factor * sample_day_environment_factor
+clearing_desired   = max(elastic_desired, survival_required)
+```
+
+它不乘财富或价格 composite。生产者自留和死亡分母读取同一结果，避免销售收入改变最低生存标准。
+
 资金和库存短缺使用累计前缀商：
 
 ```text
@@ -161,7 +184,7 @@ starvation_deficit = max(0, starvation_satisfaction_threshold - survival_sat)
 
 每个商品以 `period_demand/N` 更新居民需求 EMA；effective alpha 为
 `min(1, daily_alpha*N)`。Price V3 的总需求是居民需求 EMA 与稀疏企业投入需求 EMA 之和；
-供给使用建筑实际 offer（含未成交丢弃、排除业主留用）EMA。每个活跃 `(cell, good)` 只维护一条稀疏信号，
+供给使用建筑实际 offer（含托底入库和周期流丢弃、排除业主留用）EMA。每个活跃 `(cell, good)` 只维护一条稀疏信号，
 不存在 `market×good×building` 稠密矩阵。
 
 ```text
@@ -182,13 +205,13 @@ EMA 形成硬下限，因此生活成本通过工资进入成本锚，不再另�
 无需求、无供给、无库存的商品缓慢回归目录默认价。
 
 企业在 ACTIVE 状态下按上一周期 `sold / (sold + discarded)` 调整下一周期计划利用率，并使用
-`supply_price_elasticity_q16` 作为响应增益。全部售罄时向满产恢复；存在未成交丢弃时向实际市场
-吸收量收缩，但保留 1/32 的探测产能。只有连续严重亏损状态机能完全停产。这样“商人库存目标已满”
-不会继续诱发满产、丢弃和虚假成本亏损。
+`supply_price_elasticity_q16` 作为响应增益。丢弃率不超过 1% 时视为定点舍入噪声并向满产恢复；
+任一产出的 `max(0, stock - production_input_reserve) <= 1` 且短缺率至少 12.5% 时也主动向满产恢复。真实丢弃或托底后仍高于正常目标的
+库存会按市场吸收能力收缩利用率。耐储商品保留 1/32 的探测产能，易腐/周期流商品保留 1/6，防止食品生产者的探测产量低于最低生存量；只有连续严重亏损状态机能完全停产。最低生存自留按业主实际生产的单组分食物/衣物重新归一化，不向无法自产的替代品分摊配额。
 
 价格变化先应用 good-specific `price_adjust_q16` 与单日 max rise/fall，再以
 `daily_change*N` 做确定性一阶冻结积分，最后应用绝对 min/max。该算法避免对每个
-market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v5`
+market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v10`
 近似契约显式控制。
 
 cohort income EMA 同样读取周期净收入日均值，effective alpha 为
@@ -229,6 +252,27 @@ closing_stock = opening_stock + explicit_stock_delta + accepted_output
                 - production_inputs - cycle_flow_discarded
 ```
 
-业主留用是同一周期内的生产 source 与 owner consumption sink：实际消费量同时计入
+食物生产业主按主食、蛋白质、蔬果的总 desired 数量留足饥饿阈值热量；先匹配原消费计划的
+精确 variant，剩余自产食物可跨三类食品计入紧急生存热量，但不改变各 need 的普通满足度或
+最差 need。衣物按冻结温度/积雪造成的寒冷暴露反推最低比例，其他需求不享受生产者优先权。
+剩余商品进入本地市场，与其他 cohort 共同清算。
+留用仍是同一周期内的生产 source 与 owner consumption sink：实际消费量同时计入
 `production_output_retained` 和 `owner_output_consumed`，两项在 goods audit 中对消；未消费留用品
 直接进入 `production_output_discarded`，不进入 closing stock。它不产生收入、支出或商人结算。
+
+居民预算清算前，运行时按每个 ACTIVE owner-lot 的建筑数、周期天数、已到岗业主比例、计划利用率
+和冻结单位投入成本计算下一周期营运资金。该金额仍属于 owner cohort，只从本期家庭下单预算和
+最终支出上限中扣除，不产生资金转移；`owner_working_capital_reserved` 报告本周期受保护总额。
+
+生产投入另有商品侧硬预留。运行时按建筑数、周期天数和计划利用率向上取整下一周期物理投入，
+对每个 input slot 选择冻结价格下最便宜的可用候选，聚合为稀疏 `(cell, good)` 预留：
+
+```text
+household_available_stock = max(0, stock - production_input_reserve)
+merchant_inventory_target = max(normal_target, production_input_reserve)
+exportable_stock           = max(0, stock - production_input_reserve)
+```
+
+预留本身不改变库存所有权，也不是 goods sink；居民和国内贸易只能清算预留以上的库存。缓存由建筑
+与周期计划确定性重建，不进入 PKEC v12 字节布局。报告和 CSV v5 发布预留总量、缺口及逐商品家庭
+可用库存。

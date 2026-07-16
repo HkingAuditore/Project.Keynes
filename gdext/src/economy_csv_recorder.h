@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 3;
+    static constexpr int32_t SCHEMA_VERSION = 5;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -93,6 +93,8 @@ public:
         int64_t production_output_stock = 0;
         int64_t production_output_discarded = 0;
         int64_t production_output_retained = 0;
+        int64_t production_output_supported = 0;
+        int64_t producer_support_money_issued = 0;
         int64_t building_wages_paid = 0;
         int64_t building_wages_unpaid = 0;
         int64_t building_resource_generated = 0;
@@ -102,6 +104,9 @@ public:
         int64_t merchant_procurement_budget = 0;
         int64_t merchant_procurement_reserved = 0;
         int64_t merchant_procurement_spent = 0;
+        int64_t owner_working_capital_reserved = 0;
+        int64_t production_input_reserved = 0;
+        int64_t production_input_reserve_shortfall = 0;
         int32_t trade_runtime_mode = 0;
         bool trade_topology_ready = false;
         int64_t population_error = 0;
@@ -179,6 +184,8 @@ public:
         int64_t business_demand_ema = 0;
         int64_t offered_supply_ema = 0;
         int64_t realized_withdrawal_ema = 0;
+        int64_t production_input_reserve = 0;
+        int64_t household_available_stock = 0;
         int64_t merchant_inventory_target = 0;
         int64_t merchant_procurement_shortfall = 0;
         int32_t cost_anchor_price = 0;

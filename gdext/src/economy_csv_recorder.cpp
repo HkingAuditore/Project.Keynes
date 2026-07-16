@@ -21,11 +21,11 @@ using Clock = std::chrono::steady_clock;
 constexpr size_t WRITE_CHUNK_BYTES = 1024 * 1024;
 
 constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
-    "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,production_output_stock,production_output_discarded,production_output_retained,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_reserved,merchant_procurement_spent,trade_runtime_mode,trade_topology_ready,population_error,money_error,goods_error\n",
+    "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,producer_support_money_issued,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,trade_runtime_mode,trade_topology_ready,population_error,money_error,goods_error\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,cohort_index,handle,signature_id,profession_id,ethnicity_id,population,funds,epoch_income,epoch_expense,income_ema,satisfaction_q16,worst_need_id,is_merchant,owner_employed,employee_employed,unemployed\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,is_construction,group_index,type_id,owner_signature_id,count,filled_owner,employee_required,employee_filled,wage_suspended,capacity_q16,purchase_intent_capacity_q16,realized_profit_margin_q16,severe_loss_cycles,recovery_cycles,operating_state,last_input,last_output,last_sold,last_discarded,last_retained,last_resource,last_resource_generated,last_revenue,last_input_cost,last_wages_paid,last_wages_due,last_expected_revenue,last_operating_cost,last_margin_gap_q16,planned_utilization_q16,last_base_wages_due,last_base_wages_paid,last_bonus_due,last_bonus_paid,construction_ready_days\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,reserve\n",
-    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound\n",
+    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound\n",
 };
 
 template <typename T>
@@ -492,6 +492,8 @@ bool EconomyCsvRecorder::fill_batch(
         row.production_output_stock = runtime._production_output_stock;
         row.production_output_discarded = runtime._production_output_discarded;
         row.production_output_retained = runtime._production_output_retained;
+        row.production_output_supported = runtime._production_output_supported;
+        row.producer_support_money_issued = runtime._producer_support_money_issued;
         row.building_wages_paid = runtime._building_wages_paid;
         row.building_wages_unpaid = runtime._building_wages_unpaid;
         row.building_resource_generated = runtime._building_resource_generated;
@@ -502,6 +504,10 @@ bool EconomyCsvRecorder::fill_batch(
         row.merchant_procurement_budget = runtime._merchant_procurement_budget;
         row.merchant_procurement_reserved = runtime._merchant_procurement_reserved;
         row.merchant_procurement_spent = runtime._merchant_procurement_spent;
+        row.owner_working_capital_reserved = runtime._owner_working_capital_reserved;
+        row.production_input_reserved = runtime._production_input_reserved;
+        row.production_input_reserve_shortfall =
+            runtime._production_input_reserve_shortfall;
         row.trade_runtime_mode = runtime._trade_runtime_mode;
         row.trade_topology_ready = runtime._trade_topology.ready;
         batch.summary.push_back(row);
@@ -650,6 +656,11 @@ bool EconomyCsvRecorder::fill_batch(
                 row.offered_supply_ema = signal >= 0 ? runtime._market_signals.offered_supply_ema[signal] : 0;
                 row.realized_withdrawal_ema = signal >= 0
                     ? runtime._market_signals.realized_withdrawal_ema[signal] : 0;
+                row.production_input_reserve = signal >= 0 && signal <
+                        static_cast<int32_t>(runtime._production_input_reserve.size())
+                    ? runtime._production_input_reserve[signal] : 0;
+                row.household_available_stock = std::max<int64_t>(
+                    0, row.stock - row.production_input_reserve);
                 row.cost_anchor_price = signal >= 0 ? runtime._market_signals.cost_anchor_price[signal] : 0;
                 row.pressure_business_demand = signal < 0 ? 0 : (frozen_signals
                     ? runtime._epoch_business_demand_ema[signal]
@@ -687,6 +698,8 @@ bool EconomyCsvRecorder::fill_batch(
                             runtime._merchant_market_making_days_q16,
                             NativeEconomyRuntime::Q16_ONE, target_sat));
                 }
+                row.merchant_inventory_target = std::max(
+                    row.merchant_inventory_target, row.production_input_reserve);
                 row.merchant_procurement_shortfall = std::max<int64_t>(
                     0, row.merchant_inventory_target - row.stock);
                 const size_t flat = static_cast<size_t>(_sample_cell_positions[cell]) *
@@ -765,12 +778,16 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.pending_construction_count); field(chunk, row.filled_owner_jobs);
         field(chunk, row.filled_employee_jobs); field(chunk, row.unemployed_population);
         field(chunk, row.production_output_stock); field(chunk, row.production_output_discarded);
-        field(chunk, row.production_output_retained); field(chunk, row.building_wages_paid);
+        field(chunk, row.production_output_retained); field(chunk, row.production_output_supported);
+        field(chunk, row.producer_support_money_issued); field(chunk, row.building_wages_paid);
         field(chunk, row.building_wages_unpaid); field(chunk, row.building_resource_generated);
         field(chunk, row.building_resource_consumed); field(chunk, row.building_resource_net_delta);
         field(chunk, row.loss_suspended_building_groups);
         field(chunk, row.merchant_procurement_budget); field(chunk, row.merchant_procurement_reserved);
         field(chunk, row.merchant_procurement_spent);
+        field(chunk, row.owner_working_capital_reserved);
+        field(chunk, row.production_input_reserved);
+        field(chunk, row.production_input_reserve_shortfall);
         text_field(chunk, trade_mode_name(row.trade_runtime_mode)); bool_field(chunk, row.trade_topology_ready);
         field(chunk, row.population_error); field(chunk, row.money_error); field(chunk, row.goods_error);
         chunk.push_back('\n'); if (!maybe_flush(SUMMARY)) goto write_failed;
@@ -824,7 +841,8 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         append_common(chunk, row.c); text_field(chunk, _good_ids[row.good_index]);
         field(chunk, row.stock); field(chunk, row.price); field(chunk, row.demand_ema);
         field(chunk, row.business_demand_ema); field(chunk, row.offered_supply_ema);
-        field(chunk, row.realized_withdrawal_ema); field(chunk, row.merchant_inventory_target);
+        field(chunk, row.realized_withdrawal_ema); field(chunk, row.production_input_reserve);
+        field(chunk, row.household_available_stock); field(chunk, row.merchant_inventory_target);
         field(chunk, row.merchant_procurement_shortfall);
         field(chunk, row.cost_anchor_price); field(chunk, row.shortage_q16);
         field(chunk, price_pressure_total_q16(row));
