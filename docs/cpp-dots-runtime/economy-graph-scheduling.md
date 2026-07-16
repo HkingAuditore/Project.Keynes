@@ -135,6 +135,7 @@ goods 子单位残量。该目录索引可重建，不新增 stage、DataCore �
 v8 在 `building_production` 的正常商人现金结算后，把可储存余货全部托底入库，并按冻结零售价
 20% 增加 owner 资金与 `explicit_money_mint`。该发行在同一 building slice 内完成，不新增 stage；
 托底后高于正常目标的库存由下一次 `epoch_begin` 利用率计划吸收。事件现金流 schema v4 增加
-`producer_support_issuance`，CSV v5 summary 增加托底数量和发行额。
+`producer_support_issuance`，CSV v6 summary 保留托底数量和发行额，building 行新增 owner 容量、
+本期岗位和真实空缺口径。
 外部 stage ABI 和默认五日
 冻结/截止日屏障不变。

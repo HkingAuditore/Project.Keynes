@@ -32,7 +32,9 @@
 - v1 的 `trade_zone_id` 等于冻结的 `cell_country`。路径上的每个地块必须属于同一非中立国家；
   国界/地形变更只使新规划失效，已经发运的订单按出发契约完成。
 - `MapData` 只提供静态六邻接和 256 项 terrain LUT；它不是贸易状态 owner。生产路径在经济
-  sample boundary 通过 `capture_economy_trade_topology()` 粗粒度捕获一次。
+  初始化时由 `MapGenerator` 在 economy configure 后、bootstrap 前通过
+  `capture_economy_trade_topology()` 粗粒度捕获一次。非 `OFF` 模式下捕获失败会使本次经济
+  初始化显式失败；启动报告必须满足 `trade_topology_ready=true` 且 topology generation 非零。
 
 ## 预算化规划
 

@@ -19,7 +19,9 @@
 - 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；未来税收
   仍必须走原生守恒边界。
 - 六邻贸易拓扑、稀疏规划、路线缓存、在途订单和托管由 NativeEconomyRuntime 持有；MapData
-  只在经济边界提供邻接与 terrain LUT，UI 只允许分页查询单地块订单。
+  只在经济初始化边界提供邻接与 terrain LUT。`MapGenerator` 在 economy configure 后、
+  bootstrap 前捕获一次拓扑；非 OFF 模式捕获失败即中止本次经济初始化。UI 只允许分页
+  查询单地块订单。
 
 ## V2 资源
 
@@ -67,9 +69,10 @@
 - 世界设置中的测试经济 fixture 默认关闭；启用时使用石器中期科技，只在可见资源能支撑配方的
   地块放置 collector，并只在已有全部本地上游产出的地块放置 industrial。升级族只放置当前最高
   可用档。生成器按输出减直接消费品投入计算净产能，以食品 `1300`、衣着 `4`
-  GOODS_SCALE/人/日为保守下限；只削减重复建筑并保留每种可用建筑至少一栋。连一人最低需求都
+  GOODS_SCALE/人/日为保守下限。每格承载人口取岗位、净食品、净衣着三种容量的最小值并封顶
+  `300`；平衡器保留每种可用建筑至少一栋，只把重复建筑削减到该承载目标。连一人最低需求都
   无法覆盖的地块不生成测试聚落，避免必然停工和死亡。生成顺序固定为建筑 owner-lot → catalog
-  岗位汇总 → cohort；每个有人口地块会预先把最大非商人 cohort 的 1 人转为商人。所有 cohort
+  岗位汇总 → cohort；每个有人口地块优先放置一个商栈提供真实 merchant 岗位。所有 cohort
   获得 30 日 `survival_household` 生存金，业主追加两周期最低有效输入成本，商人追加本地产出目标库存金。
   总人口仍等于建筑岗位人口，初始就业和市场库存均为零，由原生图
   在后续周期结算。该 fixture 仅用于开发测试，不能作为正式历史人口来源。
@@ -97,6 +100,9 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 意图更新稀疏企业需求，并按真实居民/企业/建设出库更新实际出库 EMA、供给和成本锚，同时更新
 稀疏 `(cell, profession)` 劳动市场信号，
 供下一周期 Price V3 使用。
+`building_cell_snapshot` 用 `owner_capacity` 表示完整物理槽位、`owner_required` 表示按本期计划
+利用率启用的岗位、`filled_owner` 表示实际到岗、`owner_openings` 表示可从失业池补充的真实空缺。
+UI 不得使用 `building count - filled_owner` 作为招聘空缺。
 ACTIVE 企业还按上一周期售罄率与 `supply_price_elasticity_q16` 调整计划利用率；丢弃率不超过
 1% 时按舍入噪声处理，家庭可用库存不超过 1 个 goods 子单位且短缺率至少 12.5% 时主动恢复，真实未成交才缩减下一周期岗位、
 采购和产量。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生产者最低生存自留只在

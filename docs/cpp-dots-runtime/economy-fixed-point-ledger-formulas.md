@@ -274,5 +274,5 @@ exportable_stock           = max(0, stock - production_input_reserve)
 ```
 
 预留本身不改变库存所有权，也不是 goods sink；居民和国内贸易只能清算预留以上的库存。缓存由建筑
-与周期计划确定性重建，不进入 PKEC v12 字节布局。报告和 CSV v5 发布预留总量、缺口及逐商品家庭
+与周期计划确定性重建，不进入 PKEC v12 字节布局。报告和 CSV v6 发布预留总量、缺口及逐商品家庭
 可用库存。

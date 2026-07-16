@@ -5,6 +5,7 @@ const GOODS_SCALE := 1000
 const Q16_ONE := 65536
 const INT64_MAX := 9223372036854775807
 const COLLECTOR_COUNT_CAP := 24
+const CELL_POPULATION_CAP := 300
 const EXTRACT_RESERVE_DAYS := 5
 const FOOD_REQUIREMENT_PER_CAPITA := 1300
 const CLOTHING_REQUIREMENT_PER_CAPITA := 4
@@ -129,15 +130,35 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		if not placed_any:
 			break
 
+	var merchant_post_spec: Dictionary = building_specs.get(&"merchant_post", {})
+	var merchant_post_available := not merchant_post_spec.is_empty() \
+		and _technology_available(merchant_post_spec.get("technology_tags", PackedStringArray()))
+	var basic_capacity_initial_buildings := 0
 	var basic_capacity_trimmed_buildings := 0
 	var basic_capacity_deficient_cells := 0
+	var carrying_capacity_cell_indices := PackedInt32Array()
+	var carrying_capacity_population := PackedInt64Array()
+	var carrying_capacity_min := CELL_POPULATION_CAP
+	var carrying_capacity_max := 0
+	var carrying_capacity_total := 0
 	var basic_capacity_cell_indices := PackedInt32Array()
 	var basic_capacity_population := PackedInt64Array()
 	var basic_food_capacity := PackedInt64Array()
 	var basic_clothing_capacity := PackedInt64Array()
 	for cell_idx in passable_cells:
-		var balance := _balance_basic_capacity(groups_by_cell[cell_idx])
+		for group in groups_by_cell[cell_idx]:
+			basic_capacity_initial_buildings += maxi(0, int(group.count))
+		var reserved_population := 1 if merchant_post_available and not \
+			(groups_by_cell[cell_idx] as Array).is_empty() else 0
+		var balance := _balance_basic_capacity(
+			groups_by_cell[cell_idx], reserved_population)
 		basic_capacity_trimmed_buildings += int(balance.trimmed_buildings)
+		carrying_capacity_cell_indices.append(cell_idx)
+		var target_population := int(balance.target_population)
+		carrying_capacity_population.append(target_population)
+		carrying_capacity_min = mini(carrying_capacity_min, target_population)
+		carrying_capacity_max = maxi(carrying_capacity_max, target_population)
+		carrying_capacity_total += target_population
 		if not bool(balance.covered):
 			basic_capacity_deficient_cells += 1
 		var totals: Dictionary = balance.totals
@@ -170,9 +191,6 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	# post to those cells. This replaces the old "carve a merchant out of the
 	# largest non-merchant profession" substitution (189-199 below): the post's
 	# owner accumulates merchant jobs directly, so that path stops firing.
-	var merchant_post_spec: Dictionary = building_specs.get(&"merchant_post", {})
-	var merchant_post_available := not merchant_post_spec.is_empty() \
-		and _technology_available(merchant_post_spec.get("technology_tags", PackedStringArray()))
 	for cell_idx in passable_cells:
 		var generated_groups: Array = groups_by_cell[cell_idx]
 		if generated_groups.is_empty():
@@ -274,7 +292,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"cohort_count": populations.size(),
 		"building_group_count": building_counts.size(),
 		"total_population": total_population,
-		"population_source": "mid_stone_visible_resources_capacity_balanced_bootstrap_finance_v8",
+		"population_source": "mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v10",
+		"cell_population_cap": CELL_POPULATION_CAP,
 		"initial_employment": "unemployed",
 		"initial_stock_units": 0,
 		"bootstrap_cycle_days": cycle_days,
@@ -295,8 +314,16 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"unplaced_building_type_count": building_ids.size() - placed_building_types.size(),
 		"catalog_profession_count": profession_ids.size(),
 		"generated_profession_count": generated_professions.size(),
+		"basic_capacity_initial_buildings": basic_capacity_initial_buildings,
+		"basic_capacity_final_buildings":
+			basic_capacity_initial_buildings - basic_capacity_trimmed_buildings,
 		"basic_capacity_trimmed_buildings": basic_capacity_trimmed_buildings,
 		"basic_capacity_deficient_cells": basic_capacity_deficient_cells,
+		"carrying_capacity_cell_indices": carrying_capacity_cell_indices,
+		"carrying_capacity_population": carrying_capacity_population,
+		"carrying_capacity_min": carrying_capacity_min,
+		"carrying_capacity_max": carrying_capacity_max,
+		"carrying_capacity_total": carrying_capacity_total,
 		"food_requirement_per_capita": FOOD_REQUIREMENT_PER_CAPITA,
 		"clothing_requirement_per_capita": CLOTHING_REQUIREMENT_PER_CAPITA,
 		"basic_capacity_cell_indices": basic_capacity_cell_indices,
@@ -307,13 +334,15 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	}
 
 
-static func _balance_basic_capacity(groups: Array) -> Dictionary:
+static func _balance_basic_capacity(groups: Array, reserved_population: int = 0) -> Dictionary:
 	var trimmed := 0
+	var initial_totals := _basic_capacity_totals(groups, reserved_population)
+	var target_population := _carrying_capacity_population(initial_totals)
 	while true:
-		var totals := _basic_capacity_totals(groups)
+		var totals := _basic_capacity_totals(groups, reserved_population)
 		var population := int(totals.population)
 		var current_deficit := _basic_capacity_deficit_people(totals)
-		if population > 0 and current_deficit == 0:
+		if population <= target_population and current_deficit == 0:
 			break
 		var best := -1
 		var best_deficit := current_deficit
@@ -332,8 +361,10 @@ static func _balance_basic_capacity(groups: Array) -> Dictionary:
 				"food": next_food,
 				"clothing": next_clothing,
 			})
-			if deficit < best_deficit or \
-					(best >= 0 and deficit == best_deficit and i > best):
+			var acceptable := deficit < current_deficit or \
+				(current_deficit == 0 and population > target_population and deficit == 0)
+			if acceptable and (best < 0 or deficit < best_deficit or \
+					(deficit == best_deficit and i > best)):
 				best = i
 				best_deficit = deficit
 		if best < 0:
@@ -343,7 +374,7 @@ static func _balance_basic_capacity(groups: Array) -> Dictionary:
 	for i in range(groups.size() - 1, -1, -1):
 		if int(groups[i].count) <= 0:
 			groups.remove_at(i)
-	var final_totals := _basic_capacity_totals(groups)
+	var final_totals := _basic_capacity_totals(groups, reserved_population)
 	var final_population := int(final_totals.population)
 	var covered := final_population > 0 and \
 		int(final_totals.food) >= final_population * FOOD_REQUIREMENT_PER_CAPITA and \
@@ -352,9 +383,11 @@ static func _balance_basic_capacity(groups: Array) -> Dictionary:
 		for group in groups:
 			trimmed += maxi(0, int(group.count))
 		groups.clear()
+		target_population = 0
 		final_totals = {"population": 0, "food": 0, "clothing": 0}
 	return {
 		"trimmed_buildings": trimmed,
+		"target_population": target_population,
 		"covered": covered,
 		"totals": final_totals,
 	}
@@ -370,8 +403,17 @@ static func _basic_capacity_deficit_people(totals: Dictionary) -> int:
 		ceili(float(clothing_deficit) / float(CLOTHING_REQUIREMENT_PER_CAPITA))
 
 
-static func _basic_capacity_totals(groups: Array) -> Dictionary:
-	var population := 0
+static func _carrying_capacity_population(totals: Dictionary) -> int:
+	var workforce := maxi(0, int(totals.population))
+	var food_capacity := int(maxi(0, int(totals.food)) / FOOD_REQUIREMENT_PER_CAPITA)
+	var clothing_capacity := int(
+		maxi(0, int(totals.clothing)) / CLOTHING_REQUIREMENT_PER_CAPITA)
+	return clampi(mini(workforce, mini(food_capacity, clothing_capacity)),
+		0, CELL_POPULATION_CAP)
+
+
+static func _basic_capacity_totals(groups: Array, reserved_population: int = 0) -> Dictionary:
+	var population := maxi(0, reserved_population)
 	var food := 0
 	var clothing := 0
 	for group in groups:

@@ -182,8 +182,10 @@ The optional world-setup test bootstrap is OFF by default. When explicitly enabl
 mid-Stone-Age technology set, places collectors only where discovered local/adjacent reserves can
 support their recipes, and places unlocked industrial chains only where every input has a local
 producer. It checks net food and clothing capacity against conservative per-capita daily floors,
-trims duplicate buildings while preserving one of each available type, and suppresses settlements
-that cannot support even one person. It derives profession cohorts from the retained local
+then sets each cell's target population to the minimum of job, net-food, and net-clothing capacity,
+capped at 300 including the merchant-post job. It trims only duplicate buildings beyond that target
+while preserving one of each available type, and suppresses settlements that cannot support even
+one person. It derives profession cohorts from the retained local
 owner/employee job capacity but leaves all employment counters and market stock at zero for the
 native graph to fill. This is a development fixture, not a production historical population provider.
 

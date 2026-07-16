@@ -28,6 +28,11 @@ func _init() -> void:
 	if facade != null:
 		_expect("facade exposes recipe candidates and multi-role output metadata",
 			_substitution_metadata_valid(facade))
+		var economy_report: Dictionary = facade.report()
+		_expect("generated map enables active inter-cell trade topology",
+			String(economy_report.get("trade_runtime_mode", "")) == "ACTIVE" and
+			bool(economy_report.get("trade_topology_ready", false)) and
+			int(economy_report.get("trade_topology_generation", 0)) > 0)
 	if map != null and facade != null:
 		var populated_cell := _first_populated_cell(map, facade)
 		_expect("generated map has populated land", populated_cell >= 0)
@@ -38,6 +43,8 @@ func _init() -> void:
 			_expect("building snapshot is committed", bool(buildings.get("committed", false)))
 		_expect("generated economy starts with zero goods and unemployed people",
 			_all_populated_cells_start_empty_and_unemployed(map, facade))
+		_expect("passable land population follows a varied zero-to-300 distribution",
+			_land_population_distribution_valid(map, facade))
 		_expect("populated cells expose mid-stone resource-specialized local economies",
 			_all_populated_cells_are_mid_stone_specialized(map, facade))
 		if populated_cell >= 0:
@@ -55,6 +62,21 @@ func _first_populated_cell(map: MapData, facade) -> int:
 		if int(snapshot.get("population", 0)) > 0:
 			return cell
 	return -1
+
+
+func _land_population_distribution_valid(map: MapData, facade) -> bool:
+	var populations := {}
+	var passable_land := 0
+	for cell in range(map.cell_count()):
+		var terrain := int(map.terrain_arr[cell])
+		if MapData.terrain_is_water(terrain) or not TerrainType.is_passable_land(terrain):
+			continue
+		passable_land += 1
+		var population := int(facade.population_cell_snapshot(cell).get("population", 0))
+		if population < 0 or population > 300:
+			return false
+		populations[population] = true
+	return passable_land > 1 and populations.size() > 1
 
 
 func _water_resource_habitats_valid(map: MapData) -> bool:

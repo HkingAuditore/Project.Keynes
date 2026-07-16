@@ -41,6 +41,7 @@ func _run() -> void:
 	_test_shortage_recovery_uses_household_stock(catalog, profile)
 	_test_production_input_hard_reserve(catalog, profile)
 	_test_producer_support_issuance(catalog, profile)
+	_test_owner_fill_reconciles_after_population_loss(catalog, profile)
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
@@ -317,6 +318,80 @@ func _run() -> void:
 		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == 0 and
 		int((restored_buildings.employee_filled as PackedInt64Array)[1]) == 0)
 	print("=== native building runtime %s ===" % ("PASS" if failures == 0 else "FAIL"))
+
+func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
+		profile: Dictionary) -> void:
+	var ext := _new_ext(catalog)
+	_expect("owner-reconcile country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 183))
+	_expect("owner-reconcile runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 183).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var owner_types := PackedInt32Array([
+		building_ids.find("household_weaving_shelter"),
+		building_ids.find("knapping_workshop"),
+		building_ids.find("lumber_plant"),
+	])
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(1000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([artisan_sig, unemployed_sig, merchant_sig]),
+		"population": PackedInt64Array([3, 1, 1]),
+		"funds": PackedInt64Array([100000000, 1000000, 100000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0, 0, 0]),
+		"building_type_ids": owner_types,
+		"building_owner_signature_ids": PackedInt32Array([
+			artisan_sig, artisan_sig, artisan_sig]),
+		"building_counts": PackedInt64Array([1, 1, 1]),
+	})
+	_expect("owner-reconcile fixture bootstraps", bool(boot.get("ok", false)))
+	_run_day(ext, 0)
+	var opening_pop: Dictionary = ext.get_population_cell_snapshot(0)
+	var artisan_handle := _handle_for_profession(opening_pop, artisan_sig)
+	_expect("owner-reconcile artisan handle exists", artisan_handle != 0)
+	var remove_one: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([6]),
+		"effective_days": PackedInt64Array([1]),
+		"sequences": PackedInt64Array([1]),
+		"target_handles": PackedInt64Array([artisan_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([0]),
+		"i64_0": PackedInt64Array([-1]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("owner-reconcile population loss queues", bool(remove_one.get("ok", false)))
+	var day1 := _run_day(ext, 1)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var pop: Dictionary = ext.get_population_cell_snapshot(0)
+	var filled_total := _sum_i64(buildings.filled_owner as PackedInt64Array)
+	var required_total := _sum_i64(buildings.owner_required as PackedInt64Array)
+	var cohort_owner_total := _sum_i64(pop.owner_employed_by_cohort as PackedInt64Array)
+	var unemployed_row := _row_for_signature(pop, unemployed_sig)
+	var unemployed_pool_population := int((pop.populations as PackedInt64Array)[unemployed_row]) \
+		if unemployed_row >= 0 else 0
+	_expect("owner snapshot separates capacity, planned jobs, and openings",
+		(buildings.owner_capacity as PackedInt64Array).size() == 3 and
+		(buildings.owner_required as PackedInt64Array).size() == 3 and
+		(buildings.owner_openings as PackedInt64Array).size() == 3 and
+		_sum_i64(buildings.owner_capacity as PackedInt64Array) >= required_total)
+	_expect("shared owner signature fill reconciles to cohort employment",
+		filled_total == required_total and filled_total == cohort_owner_total and
+		_sum_i64(buildings.owner_openings as PackedInt64Array) == 0)
+	_expect("released owner target hires from the unemployed pool",
+		filled_total == 3 and unemployed_pool_population == 0)
+	_expect("owner reconciliation conserves every ledger",
+		int(day1.get("population_error", 1)) == 0 and
+		int(day1.get("money_error", 1)) == 0 and
+		int(day1.get("goods_error", 1)) == 0)
+
 
 func _test_production_income_consumption_order(catalog: Dictionary, profile: Dictionary) -> void:
 	var ext := _new_ext(catalog)
@@ -780,6 +855,13 @@ func _has_positive(values: PackedInt64Array) -> bool:
 		if int(value) > 0:
 			return true
 	return false
+
+
+func _sum_i64(values: PackedInt64Array) -> int:
+	var total := 0
+	for value in values:
+		total += int(value)
+	return total
 
 func _cashflow_total_for_row(snapshot: Dictionary, row: int, income: bool) -> int:
 	if row < 0:

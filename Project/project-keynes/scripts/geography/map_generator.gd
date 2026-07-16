@@ -1458,6 +1458,25 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[economy] configure failed: %s" % String(configured.get("reason", "unknown")))
 		_economy_facade = null
 		return
+	var economy_config_report: Dictionary = _economy_facade.report()
+	var trade_runtime_mode := String(economy_config_report.get("trade_runtime_mode", "OFF"))
+	if trade_runtime_mode != "OFF":
+		if not _data_core_world_ext.has_method("capture_economy_trade_topology"):
+			push_error("[economy] trade topology API unavailable while trade mode is %s" %
+				trade_runtime_mode)
+			_economy_facade = null
+			return
+		var trade_topology: Dictionary = _data_core_world_ext.capture_economy_trade_topology(
+			map.neighbor_indices_packed(),
+			map.terrain_arr,
+			map.economy_trade_passable_lut(),
+			map.economy_trade_move_cost_lut(),
+			1)
+		if not bool(trade_topology.get("ok", false)):
+			push_error("[economy] trade topology capture failed: %s" % String(
+				trade_topology.get("reason", "unknown")))
+			_economy_facade = null
+			return
 	# Production bootstrap remains empty. The explicit test fixture is a
 	# generation-time cold path and never becomes a historical population source.
 	var population_packet: Dictionary = {}
@@ -1488,12 +1507,16 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		if not _world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
 			_world_clock_ref.simulation_backpressure_pulse.connect(continuation_cb)
 	var economy_report: Dictionary = _economy_facade.report()
-	print("[economy] %s native graph cells=%d goods=%d cohorts=%d epoch_days=%d" % [
+	print(("[economy] %s native graph cells=%d goods=%d cohorts=%d epoch_days=%d "
+			+ "trade=%s topology_ready=%s topology_generation=%d") % [
 		String(economy_report.get("market_runtime_mode", "OFF")),
 		map.cell_count(),
 		int(bootstrapped.get("good_count", 0)),
 		int(bootstrapped.get("cohort_count", 0)),
 		int(bootstrapped.get("epoch_days", 1)),
+		String(economy_report.get("trade_runtime_mode", "OFF")),
+		str(bool(economy_report.get("trade_topology_ready", false))),
+		int(economy_report.get("trade_topology_generation", 0)),
 	])
 	print("[country] %s native authority countries=%d cells=%d generation=%d" % [
 		String(country_bootstrapped.get("runtime_mode", "OFF")),
@@ -1502,7 +1525,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	])
 	if _test_economy_bootstrap_enabled:
 		print(("[economy/test-bootstrap] populated_cells=%d population=%d cohorts=%d "
-			+ "professions=%d/%d building_groups=%d building_types=%d/%d goods=%d") % [
+			+ "professions=%d/%d building_groups=%d building_types=%d/%d "
+			+ "capacity_buildings=%d->%d trimmed=%d population_range=%d..%d cap=%d goods=%d") % [
 			int(test_bootstrap_report.get("populated_cells", 0)),
 			int(test_bootstrap_report.get("total_population", 0)),
 			int(test_bootstrap_report.get("cohort_count", 0)),
@@ -1511,6 +1535,12 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			int(test_bootstrap_report.get("building_group_count", 0)),
 			int(test_bootstrap_report.get("placed_building_type_count", 0)),
 			int(test_bootstrap_report.get("building_type_count", 0)),
+			int(test_bootstrap_report.get("basic_capacity_initial_buildings", 0)),
+			int(test_bootstrap_report.get("basic_capacity_final_buildings", 0)),
+			int(test_bootstrap_report.get("basic_capacity_trimmed_buildings", 0)),
+			int(test_bootstrap_report.get("carrying_capacity_min", 0)),
+			int(test_bootstrap_report.get("carrying_capacity_max", 0)),
+			int(test_bootstrap_report.get("cell_population_cap", 0)),
 			int(test_bootstrap_report.get("good_count", 0)),
 		])
 
