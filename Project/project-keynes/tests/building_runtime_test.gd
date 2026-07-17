@@ -342,7 +342,7 @@ func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0]),
 		"signature_ids": PackedInt32Array([artisan_sig, unemployed_sig, merchant_sig]),
-		"population": PackedInt64Array([3, 1, 1]),
+		"population": PackedInt64Array([4, 1, 1]),
 		"funds": PackedInt64Array([100000000, 1000000, 100000000]),
 	}, {
 		"stock": stock,
@@ -386,7 +386,7 @@ func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
 		filled_total == required_total and filled_total == cohort_owner_total and
 		_sum_i64(buildings.owner_openings as PackedInt64Array) == 0)
 	_expect("released owner target hires from the unemployed pool",
-		filled_total == 3 and unemployed_pool_population == 0)
+		filled_total == required_total and filled_total == 4 and unemployed_pool_population == 0)
 	_expect("owner reconciliation conserves every ledger",
 		int(day1.get("population_error", 1)) == 0 and
 		int(day1.get("money_error", 1)) == 0 and

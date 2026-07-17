@@ -18,6 +18,8 @@
 - 禁止把 goods/cohort 放回 MapData/component schema，禁止 GDScript 全世界遍历或逐 cohort setter。
 - 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；未来税收
   仍必须走原生守恒边界。
+- `owner_slots_per_building` 是正整数物理容量；普通企业通常为 1，家庭式采集/狩猎单位可用多个
+  同职业共同经营岗位。计划利用率同时缩放 owner required，所有填充仍受对应 cohort 人口约束。
 - 六邻贸易拓扑、稀疏规划、路线缓存、在途订单和托管由 NativeEconomyRuntime 持有；MapData
   只在经济初始化边界提供邻接与 terrain LUT。`MapGenerator` 在 economy configure 后、
   bootstrap 前捕获一次拓扑；非 OFF 模式捕获失败即中止本次经济初始化。UI 只允许分页
@@ -100,12 +102,13 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 意图更新稀疏企业需求，并按真实居民/企业/建设出库更新实际出库 EMA、供给和成本锚，同时更新
 稀疏 `(cell, profession)` 劳动市场信号，
 供下一周期 Price V3 使用。
-`building_cell_snapshot` 用 `owner_capacity` 表示完整物理槽位、`owner_required` 表示按本期计划
-利用率启用的岗位、`filled_owner` 表示实际到岗、`owner_openings` 表示可从失业池补充的真实空缺。
+`building_cell_snapshot` 用 `owner_capacity` 表示完整物理槽位；活跃企业的 `owner_required`
+等于该容量，只有亏损停产或不可用建筑才为 0。`filled_owner` 表示实际到岗，`owner_openings`
+表示可从失业池补充的真实空缺。employee required 仍按本期计划利用率缩放。
 UI 不得使用 `building count - filled_owner` 作为招聘空缺。
 ACTIVE 企业还按上一周期售罄率与 `supply_price_elasticity_q16` 调整计划利用率；丢弃率不超过
-1% 时按舍入噪声处理，家庭可用库存不超过 1 个 goods 子单位且短缺率至少 12.5% 时主动恢复，真实未成交才缩减下一周期岗位、
-采购和产量。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生产者最低生存自留只在
+1% 时按舍入噪声处理，家庭可用库存不超过 1 个 goods 子单位且短缺率至少 12.5% 时主动恢复，真实未成交只缩减下一周期 employee 岗位、
+采购和产量，不把仍在经营的 owner 转为失业。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生产者最低生存自留只在
 该业主实际生产的单组分食物/寒冷衣物之间重新归一化，剩余产出仍进入全体家庭公平清算。库存低于目标且仍有需求时，成本锚是受商品
 单日涨幅限制的价格底线；库存堆积时仍允许价格跌破成本清仓。
 `survival_required` 统一使用 `survival_household` 基础量、冻结人口/环境和民族修正，不读取财富或

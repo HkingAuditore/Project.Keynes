@@ -12,6 +12,15 @@ const CLOTHING_REQUIREMENT_PER_CAPITA := 4
 const SURVIVAL_FUND_DAYS := 30
 const OWNER_OPERATING_CYCLES := 2
 
+const TEST_COLLECTOR_COUNT_CAPS := {
+	"flint_quarry": 1,
+	"household_weaving_shelter": 2,
+	"placer_gold_working": 1,
+	"stone_collector": 1,
+	"surface_silver_working": 1,
+	"timber_collector": 8,
+}
+
 const FOOD_GOOD_IDS := {
 	"prepared_staples": true, "bread": true, "grain": true, "gathered_plants": true,
 	"game_meat": true, "meat": true, "fish": true, "canned_fish": true,
@@ -473,7 +482,9 @@ static func _collector_count_at(spec: Dictionary, cell_idx: int,
 	if resource_ids.is_empty() or resource_ids.size() != quantities.size() \
 			or resource_ids.size() != modes.size() or resource_ids.size() != access_modes.size():
 		return 0
-	var supported := COLLECTOR_COUNT_CAP
+	var count_cap := clampi(int(TEST_COLLECTOR_COUNT_CAPS.get(
+		String(spec.get("stable_id", "")), COLLECTOR_COUNT_CAP)), 1, COLLECTOR_COUNT_CAP)
+	var supported := count_cap
 	for i in range(resource_ids.size()):
 		var resource_id := StringName(resource_ids[i])
 		if not resource_arrays.has(resource_id):
@@ -490,7 +501,7 @@ static func _collector_count_at(spec: Dictionary, cell_idx: int,
 		if local_supported <= 0:
 			return 0
 		supported = mini(supported, local_supported)
-	return clampi(supported, 0, COLLECTOR_COUNT_CAP)
+	return clampi(supported, 0, count_cap)
 
 
 static func _accessible_resource_reserve(reserves: PackedFloat32Array, cell_idx: int,
