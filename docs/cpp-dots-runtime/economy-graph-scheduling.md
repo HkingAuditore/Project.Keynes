@@ -6,7 +6,7 @@
 每天在 20 个 slice 内完成整图，单 slice 约处理 50 万 cohort，因此 p95 约 89ms。
 瓶颈是固定点除法、need/bundle 展开和内存带宽，不是跨语言 Dictionary。
 
-Market V2 / Price V3 现采用 `production_income_consumption_v10`：周期起点冻结价格、科技、环境、
+Market V2 / Price V3 现采用 `production_income_consumption_v11`：周期起点冻结价格、科技、环境、
 资源和企业价格信号；建筑生产会在居民清算前改变资金与库存，使本期收入和新商品可参与本期消费。
 在 N 个模拟日内按地块连续 range 错峰计算，需求量一次性乘 N；所有地块与
 结构命令完成后，最早在周期截止日统一发布 N 日交易总量。
@@ -35,7 +35,8 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境，冻结输入，并推进建筑严重亏损停产/反事实恢复状态。
 3. `trade_settle`：结算到期货物/卖方托管，货物可参与当期本地市场。
 4. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
-5. `trade_dispatch`：ACTIVE 稳定裁剪并托管发运；PROBE 只报告候选。
+5. `trade_dispatch`：在本地 household 清算完成后，ACTIVE 按本地需求/投入 reserve 稳定裁剪并
+   托管发运；PROBE 只报告候选。
 6. `building_employment`：按周期开始时仍存活人口分配 owner/employee 岗位并计算合同工资。
 7. `building_production`：先算受就业/资金/资源约束的采购意图，再用本地输入库存得到实际产能；购买投入、生产并出售产出，分配基础工资/奖金，最后更新企业意图、实际出库、供给与成本信号。
 8. `household_market`：每天最多一个 cohort-budgeted market range，先保护 ACTIVE owner 下一周期投入现金，使用本期收入和新库存计算 N 日总需求/交易；自产食物可补足总生存热量池，再计算食品与气候衣着生存满足，并以 Q32 residual 结算缺乏基本生活资料造成的死亡。
@@ -102,8 +103,8 @@ worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 当前冻结周期的稳定阶段顺序为：
 
-`epoch_begin → trade_settle → ledger_apply → trade_dispatch → building_employment →
-building_production → household_market → structural_commit → wait_commit → building_commit →
+`epoch_begin → trade_settle → ledger_apply → building_employment → building_production →
+household_market → trade_dispatch → structural_commit → wait_commit → building_commit →
 aggregate_publish`。
 
 无已建建筑时 employment/production 两阶段直接跳过。建筑阶段和居民市场可以在截止日前错峰完成，
@@ -126,16 +127,16 @@ PKEC v8 在 `building_employment` 的同一 active-cell slice 内先计算生活
 并在零库存高短缺时主动恢复。`epoch_begin` 按下一周期计划重建稀疏生产投入硬预留；
 `household_market` 在预算和最终结算两处保护 owner 营运资金，并只向家庭开放扣除投入预留后的库存。
 国内贸易规划/派单同样不能导出预留库存。预留缓存可由已持久化建筑状态确定性重建，因此
-ECONOMY_GRAPH stage、截止日语义和 PKEC v12 布局均不变化。
+ECONOMY_GRAPH stage、截止日语义和 PKEC v13 布局均不变化。
 
-v10 从统一 `survival_household` 目录建立无财富/价格弹性的冻结 `survival_required`；生存品订单、
+v11 继续从统一 `survival_household` 目录建立无财富/价格弹性的冻结 `survival_required`；生存品订单、
 生产者自留和死亡分母共享该基准。短缺恢复读取扣除生产投入预留后的家庭可用库存，并容忍 1 个
-goods 子单位残量。该目录索引可重建，不新增 stage、DataCore 槽或 PKEC 字段。
+goods 子单位残量。生存食物组的利用率下限按同一业主人口跨过饥饿阈值所需的自留量动态计算。
+投入预留按互补配方共同可执行容量缩放，非生存加工让家庭生存食物优先；生产者托底只填正常目标库存缺口，超目标余量丢弃。上述缓存均可重建，不新增 stage、DataCore 槽或 PKEC 字段。
 
-v8 在 `building_production` 的正常商人现金结算后，把可储存余货全部托底入库，并按冻结零售价
-20% 增加 owner 资金与 `explicit_money_mint`。该发行在同一 building slice 内完成，不新增 stage；
-托底后高于正常目标的库存由下一次 `epoch_begin` 利用率计划吸收。事件现金流 schema v4 增加
-`producer_support_issuance`，CSV v6 summary 保留托底数量和发行额，building 行新增 owner 容量、
+v11 在 `building_production` 的正常商人现金结算后，仅把目标库存剩余缺口托底入库，并按冻结零售价
+20% 增加 owner 资金与 `explicit_money_mint`；超过目标的余量进入 discard。该发行在同一 building slice 内完成，不新增 stage。事件现金流 schema v4 沿用
+`producer_support_issuance`，CSV v8 summary 保留托底数量、发行额、金银货币流、贸易活性游标和拒绝诊断，building 行新增 owner 容量、
 本期岗位和真实空缺口径。
 外部 stage ABI 和默认五日
 冻结/截止日屏障不变。

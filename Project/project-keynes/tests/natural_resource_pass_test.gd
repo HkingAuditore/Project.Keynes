@@ -441,8 +441,12 @@ func _test_native_pass() -> void:
 		_expect("wild_game climate stress suppresses population",
 			wild[4] < wild[1])
 
-		# 24 座石器时代狩猎营地每天合计采收 12 单位；按五日经济周期一次扣 60。
-		# 连续一年后仍应保有过半承载量，避免测试经济再次在数个周期内归零。
+		# 从权威建筑内容读取真实采收率。715 GOODS_SCALE = 0.715 资源单位/栋/日；
+		# 24 座营地按五日周期一次扣 85.8，避免用过时的 60 低估生态压力。
+		var hunting_profile = load(
+			"res://data/economy/buildings/stone_age_hunting_camp.tres")
+		var harvest_per_cycle := 24.0 * float(
+			hunting_profile.resource_quantities_per_day[0]) / 1000.0 * 5.0
 		wild[0] = capacity
 		wild[5] = ordinary_capacity
 		wild_extra.fill(0.0)
@@ -452,16 +456,16 @@ func _test_native_pass() -> void:
 		knobs["dt_days"] = 5
 		for _cycle in range(365):
 			wild_extra = map.get(extra_fields[wild_i])
-			wild_extra[0] = -60.0
-			wild_extra[5] = -60.0
+			wild_extra[0] = -harvest_per_cycle
+			wild_extra[5] = -harvest_per_cycle
 			map.set(extra_fields[wild_i], wild_extra)
 			ext.refresh_slots_from_map()
 			ext.run_natural_resource_pass(knobs)
 		wild = map.get(fields[wild_i])
 		_expect("wild_game sustains five years of 24-camp harvest at ideal habitat",
-			wild[0] > capacity * 0.5)
+			wild[0] > capacity * 0.85)
 		_expect("wild_game sustains five years of 24-camp harvest in ordinary climate",
-			wild[5] > ordinary_capacity * 0.35)
+			wild[5] > ordinary_capacity * 0.75)
 
 	var fertile_i: int = _profile_index(profiles, "fertile_soil")
 	if fertile_i >= 0:

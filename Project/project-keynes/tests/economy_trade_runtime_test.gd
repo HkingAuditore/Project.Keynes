@@ -71,6 +71,10 @@ func _run() -> void:
 	report = _advance_day(ext, 2)
 	report = _advance_day(ext, 3)
 	report = _advance_day(ext, 4)
+	_expect("trade waits for local household settlement",
+		String(report.get("stage", "")) == "household_market" and
+		int(ext.get_trade_orders_for_cell(0, 0, 64).get("total", -1)) == 0)
+	report = _advance_day(ext, 5)
 	var orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
 	_expect("profitable domestic route dispatches", bool(orders.get("ok", false)) and
 		int(orders.get("total", 0)) > 0)
@@ -89,9 +93,22 @@ func _run() -> void:
 			(orders.order_ids as PackedInt64Array).size() + 1 and
 		(orders.line_good_ids as PackedInt32Array).size() >= 2)
 
-	report = _advance_day(ext, 5)
 	_expect("in-transit committed boundary conserves", bool(report.get("done", false)) and
 		int(report.get("goods_error", 1)) == 0 and int(report.get("money_error", 1)) == 0)
+	var source_after_dispatch: Dictionary = ext.get_market_cell_snapshot(0)
+	var source_good_index := (source_after_dispatch.good_ids as PackedStringArray).find(
+		"gathered_plants")
+	var local_target := int((source_after_dispatch.demand_ema as PackedInt64Array)[
+		source_good_index]) + int((source_after_dispatch.business_demand_ema as
+		PackedInt64Array)[source_good_index])
+	var inventory_ratio := int((compiled.good_inventory_target_ratios_q16 as
+		PackedInt32Array)[gathered])
+	local_target = local_target * int(profile.merchant_market_making_days_q16) / 65536
+	local_target = local_target * inventory_ratio / 65536
+	local_target = maxi(local_target, int((source_after_dispatch.production_input_reserve as
+		PackedInt64Array)[source_good_index]))
+	_expect("dispatch preserves the source market local-demand reserve",
+		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
 	_expect("PKEC v13 saves in-transit escrow", bool(saved.get("ok", false)) and
 		int(saved.get("schema", 0)) == 13)
@@ -121,6 +138,8 @@ func _run() -> void:
 	_test_probe_is_read_only(compiled, catalog)
 	_test_country_boundary(compiled, catalog)
 	_test_topology_contract(compiled, catalog)
+	_test_cold_start_inventory_horizon(compiled, catalog)
+	_test_price_capped_survival_shortage_routes(compiled, catalog)
 	_test_unprofitable_rejected(compiled, catalog)
 	_test_invalid_seller_rebind(compiled, catalog)
 	_test_worker_scalar_equivalence(compiled, catalog)
@@ -153,7 +172,7 @@ func _test_probe_is_read_only(compiled: Dictionary, catalog: Dictionary) -> void
 	}
 	ext.bootstrap_economy(packet, {})
 	off.bootstrap_economy(packet, {})
-	for day in range(5):
+	for day in range(6):
 		_advance_day(ext, day)
 		_advance_day(off, day)
 	_expect("PROBE emits no authoritative orders",
@@ -214,7 +233,7 @@ func _test_country_boundary(compiled: Dictionary, catalog: Dictionary) -> void:
 		"population": PackedInt64Array([100, 100]),
 		"funds": PackedInt64Array([100000000, 100000000]),
 	}, {"stock": stock, "price": price})
-	for day in range(5):
+	for day in range(6):
 		_advance_day(ext, day)
 	_expect("routes cannot cross frozen country boundary",
 		int(ext.get_trade_orders_for_cell(0, 0, 64).get("total", -1)) == 0)
@@ -238,11 +257,143 @@ func _test_topology_contract(compiled: Dictionary, catalog: Dictionary) -> void:
 	_expect("explicitly enabled water terrain is trade passable",
 		bool(ext.capture_economy_trade_topology(
 			neighbors, water_terrain, passable, costs, 7).get("ok", false)))
+	var first_generation := int(ext.get_economy_report().get(
+		"trade_topology_generation", 0))
+	var first_hash := int(ext.get_economy_report().get("trade_topology_hash", 0))
+	var first_reset_count := int(ext.get_economy_report().get(
+		"trade_plan_reset_count", -1))
+	_expect("identical topology refresh ignores unrelated caller generation",
+		bool(ext.capture_economy_trade_topology(
+			neighbors, water_terrain, passable, costs, 8).get("ok", false)) and
+		int(ext.get_economy_report().get(
+			"trade_topology_generation", -1)) == first_generation)
+	passable[10] = 1
+	costs[10] = 3
+	var equivalent_terrain := PackedByteArray([10, 10])
+	var equivalent: Dictionary = ext.capture_economy_trade_topology(
+		neighbors, equivalent_terrain, passable, costs, 9)
+	var equivalent_report: Dictionary = ext.get_economy_report()
+	_expect("terrain remap with identical trade semantics preserves the plan",
+		bool(equivalent.get("ok", false)) and
+		int(equivalent_report.get("trade_topology_generation", -1)) == first_generation and
+		int(equivalent_report.get("trade_topology_hash", -1)) == first_hash and
+		int(equivalent_report.get("trade_plan_reset_count", -1)) == first_reset_count)
+	_expect("trade liveness diagnostics expose both planning cursors",
+		equivalent_report.has("trade_scan_cursor") and
+		equivalent_report.has("trade_route_cursor") and
+		equivalent_report.has("trade_route_total") and
+		equivalent_report.has("trade_last_plan_reset_reason"))
+	costs[10] = 4
+	var changed: Dictionary = ext.capture_economy_trade_topology(
+		neighbors, equivalent_terrain, passable, costs, 10)
+	var changed_report: Dictionary = ext.get_economy_report()
+	_expect("real normalized trade-cost change resets the plan once",
+		bool(changed.get("ok", false)) and
+		int(changed_report.get("trade_topology_generation", -1)) > first_generation and
+		int(changed_report.get("trade_plan_reset_count", -1)) == first_reset_count + 1 and
+		String(changed_report.get("trade_last_plan_reset_reason", "")) ==
+			"normalized_topology_changed")
 	costs[9] = 0
 	var invalid: Dictionary = ext.capture_economy_trade_topology(
 		neighbors, water_terrain, passable, costs, 8)
 	_expect("zero-cost passable trade terrain is rejected",
 		not bool(invalid.get("ok", true)))
+
+func _test_cold_start_inventory_horizon(compiled: Dictionary,
+		catalog: Dictionary) -> void:
+	var ext := _new_ext(compiled, 1)
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 2
+	profile.market_runtime_mode = "ACTIVE"
+	profile.trade_runtime_mode = "OFF"
+	CountryTestHelper.configure_all_technologies(ext, catalog, 1, 4417)
+	ext.configure_economy(catalog, profile, 1, 4417)
+	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
+	var goods: PackedStringArray = compiled.good_ids
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(0)
+	var prices: PackedInt32Array = compiled.good_default_price.duplicate()
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([merchant]),
+		"population": PackedInt64Array([100]),
+		"funds": PackedInt64Array([1000000000]),
+	}, {"stock": stock, "price": prices})
+	_expect("cold-start inventory fixture bootstraps", bool(boot.get("ok", false)))
+	_advance_day(ext, 0)
+	_advance_day(ext, 1)
+	var market: Dictionary = ext.get_market_cell_snapshot(0)
+	var demand: PackedInt64Array = market.demand_ema
+	var business: PackedInt64Array = market.business_demand_ema
+	var realized: PackedInt64Array = market.realized_withdrawal_ema
+	var offered: PackedInt64Array = market.offered_supply_ema
+	var reserves: PackedInt64Array = market.production_input_reserve
+	var targets: PackedInt64Array = market.merchant_inventory_target
+	var ratios: PackedInt32Array = compiled.good_inventory_target_ratios_q16
+	var storage_modes: PackedInt32Array = compiled.good_storage_modes
+	var candidate := -1
+	for good in range(goods.size()):
+		if storage_modes[good] == 0 and demand[good] + business[good] > 0 and \
+				realized[good] == 0 and offered[good] == 0 and reserves[good] == 0:
+			candidate = good
+			break
+	var exact := false
+	var exceeds_epoch_recovery := false
+	if candidate >= 0:
+		var feasible_daily := int(demand[candidate] + business[candidate])
+		var target_days_q16 := int(profile.merchant_market_making_days_q16) * \
+			int(ratios[candidate]) / 65536
+		var expected := feasible_daily * target_days_q16 / 65536
+		exact = int(targets[candidate]) == expected
+		exceeds_epoch_recovery = expected > feasible_daily * int(profile.market_cycle_days)
+	_expect("zero-supply demand still receives its configured inventory horizon",
+		candidate >= 0 and exact and exceeds_epoch_recovery)
+
+func _test_price_capped_survival_shortage_routes(compiled: Dictionary, catalog: Dictionary) -> void:
+	var ext := _new_ext(compiled, 2)
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 2
+	profile.market_runtime_mode = "ACTIVE"
+	profile.trade_runtime_mode = "ACTIVE"
+	profile.trade_signal_pairs_per_slice = 1048576
+	profile.trade_route_searches_per_slice = 64
+	profile.trade_capacity_per_merchant_q16 = 67108864
+	profile.trade_min_margin_q16 = 3277
+	CountryTestHelper.configure_all_technologies(ext, catalog, 2, 4418)
+	ext.configure_economy(catalog, profile, 2, 4418)
+	_capture_line_topology(ext, 2)
+	var goods: PackedStringArray = compiled.good_ids
+	var good := goods.find("gathered_plants")
+	var stock := PackedInt64Array()
+	stock.resize(goods.size() * 2)
+	stock[good] = 100000000
+	var price := PackedInt32Array()
+	price.resize(goods.size() * 2)
+	for cell in range(2):
+		for g in range(goods.size()):
+			price[cell * goods.size() + g] = int(
+				(compiled.good_default_price as PackedInt32Array)[g])
+	price[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	price[goods.size() + good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
+	ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 1]),
+		"signature_ids": PackedInt32Array([merchant, merchant]),
+		"population": PackedInt64Array([100, 100]),
+		"funds": PackedInt64Array([1000000000, 1000000000]),
+	}, {"stock": stock, "price": price})
+	var report: Dictionary = {}
+	for day in range(6):
+		report = _advance_day(ext, day)
+	var orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
+	_expect("price-capped survival shortage can route at zero spread",
+		int(orders.get("total", 0)) > 0 and
+		int(report.get("trade_candidates_accepted", 0)) > 0)
+	_expect("price-capped survival relief remains conserved",
+		int(report.get("goods_error", 1)) == 0 and int(report.get("money_error", 1)) == 0)
 
 func _test_unprofitable_rejected(compiled: Dictionary, catalog: Dictionary) -> void:
 	var ext := _new_ext(compiled, 2)
@@ -277,7 +428,7 @@ func _test_unprofitable_rejected(compiled: Dictionary, catalog: Dictionary) -> v
 		"population": PackedInt64Array([100, 100]),
 		"funds": PackedInt64Array([1000000000, 1000000000]),
 	}, {"stock": stock, "price": price})
-	for day in range(5):
+	for day in range(6):
 		_advance_day(ext, day)
 	_expect("negative expected profit creates no trade order",
 		int(ext.get_trade_orders_for_cell(0, 0, 64).get("total", -1)) == 0)
@@ -318,7 +469,7 @@ func _test_invalid_seller_rebind(compiled: Dictionary, catalog: Dictionary) -> v
 		"population": PackedInt64Array([10, 20, 100]),
 		"funds": PackedInt64Array([1000000, 1000000, 1000000000]),
 	}, {"stock": stock, "price": prices})
-	for day in range(5):
+	for day in range(6):
 		_advance_day(ext, day)
 	var orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
 	if int(orders.get("total", 0)) <= 0:
@@ -338,7 +489,7 @@ func _test_invalid_seller_rebind(compiled: Dictionary, catalog: Dictionary) -> v
 	_expect("seller move queues after dispatch",
 		bool(ext.submit_economy_commands(move).get("ok", false)))
 	var last_report: Dictionary = {}
-	for day in range(5, arrival + 1):
+	for day in range(6, arrival + 1):
 		last_report = _advance_day(ext, day)
 	var rebound_snapshot: Dictionary = ext.get_population_cell_snapshot(0)
 	var rebound_handle := 0
@@ -400,18 +551,19 @@ func _test_worker_scalar_equivalence(compiled: Dictionary, catalog: Dictionary) 
 	}
 	scalar.bootstrap_economy(population_packet, {"stock": stock, "price": prices})
 	worker.bootstrap_economy(population_packet, {"stock": stock, "price": prices})
-	for day in range(5):
+	for day in range(6):
 		_advance_day(scalar, day)
 		_advance_day(worker, day)
 	var scalar_orders: Dictionary = scalar.get_trade_orders_for_cell(0, 0, 64)
 	var worker_orders: Dictionary = worker.get_trade_orders_for_cell(0, 0, 64)
 	_expect("worker and scalar emit identical trade orders",
+		int(scalar_orders.get("total", 0)) > 0 and
 		scalar_orders.order_ids == worker_orders.order_ids and
 		scalar_orders.arrival_days == worker_orders.arrival_days and
 		scalar_orders.line_offsets == worker_orders.line_offsets and
 		scalar_orders.line_good_ids == worker_orders.line_good_ids and
 		scalar_orders.line_quantities == worker_orders.line_quantities)
-	for day in range(5, 7):
+	for day in range(6, 8):
 		_advance_day(scalar, day)
 		_advance_day(worker, day)
 	_expect("worker and scalar final trade hashes match",
@@ -442,9 +594,10 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	CountryTestHelper.configure_all_technologies(v11_restored, catalog, 1, 4415)
 	v11_restored.configure_economy(catalog, profile, 1, 4415)
 	var v11_result := _restore_economy(v11_restored, v11_chunks)
-	_expect("compatible PKEC v11 ACTIVE migrates into current state",
-		bool(v11_result.get("ok", false)) and
-		int(v11_restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
+	_expect("PKEC v11 with the legacy merchant policy is rejected explicitly",
+		not bool(v11_result.get("ok", true)) and
+		String(v11_result.get("reason", "")) ==
+			"save_business_policy_profile_mismatch")
 	var v11_probe_chunks := _set_v11_trade_mode(v11_chunks, 1)
 	var probe_restored := _new_ext(compiled, 1)
 	CountryTestHelper.configure_all_technologies(probe_restored, catalog, 1, 4415)

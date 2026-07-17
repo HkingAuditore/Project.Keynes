@@ -39,6 +39,14 @@ func _run() -> void:
 		int(living_weights[need_ids.find("staple_food")]) == 65536 and
 		int(living_weights[need_ids.find("communication")]) == 32768 and
 		int(living_weights[need_ids.find("luxury")]) == 0)
+	var good_ids: PackedStringArray = catalog.good_ids
+	var inventory_ratios: PackedInt32Array = catalog.good_inventory_target_ratios_q16
+	_expect("inventory ratios prioritize essentials over ordinary and luxury goods",
+		int(inventory_ratios[good_ids.find("prepared_staples")]) == 98304 and
+		int(inventory_ratios[good_ids.find("pharmaceuticals")]) == 81920 and
+		int(inventory_ratios[good_ids.find("tools")]) == 65536 and
+		int(inventory_ratios[good_ids.find("jewelry")]) == 43691 and
+		int(inventory_ratios[good_ids.find("electricity")]) == 0)
 	_expect("need catalog compiles total quantity price response",
 		(catalog.need_price_quantity_elasticity_q16 as PackedInt32Array).size() ==
 		(catalog.need_stable_ids as PackedInt32Array).size() and
@@ -73,6 +81,8 @@ func _test_default_active_gate(compiled: Dictionary) -> void:
 	_expect("default domestic trade mode is ACTIVE",
 		String(ext.get_economy_report().get("trade_runtime_mode", "")) == "ACTIVE")
 	_expect("default market cycle is five days", int(boot.get("market_cycle_days", 0)) == 5)
+	_expect("default merchant inventory baseline is thirty days",
+		int(ext.get_economy_report().get("merchant_market_making_days_q16", 0)) == 1966080)
 	_expect("ACTIVE enters production scheduler", bool(ext.economy_should_run(0)) and
 		String(ext.get_economy_report().get("market_runtime_mode", "")) == "ACTIVE")
 
@@ -256,15 +266,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v12 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 12)
+	_expect("v13 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 13)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v12 save emits chunks", chunks.size() >= 11)
-	_expect("v12 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v13 save emits chunks", chunks.size() >= 11)
+	_expect("v13 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
@@ -295,7 +305,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	for chunk in chunks:
 		_expect("restore chunk accepted", bool(restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
-	_expect("v12 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
+	_expect("v13 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)
@@ -458,8 +468,10 @@ func _test_cycle_approximation(compiled: Dictionary) -> void:
 		reference_spend += _sum_i64(reference.get_population_cell_snapshot(0).epoch_expense_by_cohort)
 		var result: Dictionary = approximate.run_economy_slice({"day_index": day, "tick_index": day})
 		if day == 0:
-			_expect("N-day cycle freezes committed visibility", not bool(result.get("done", true)) and
-				String(result.get("stage", "")) == "wait_commit")
+			_expect("N-day cycle freezes committed visibility",
+				not bool(result.get("done", true)) and
+				bool(result.get("epoch_active", false)) and
+				String(result.get("stage", "")) != "aggregate_publish")
 			var live_hash_before: int = approximate.get_economy_state_hash()
 			var live_population: Dictionary = approximate.get_population_cell_snapshot(0)
 			var live_market: Dictionary = approximate.get_market_cell_snapshot(0)

@@ -45,11 +45,11 @@ extends Resource
 @export var max_price: int = 100000000
 @export var price_adjust_q16: int = 2048
 
-## Market V2 demand and next-day price formation. All values are Q16 except
-## target_inventory_days_q16, which is also Q16 days.
+## Market V2 demand and next-day price formation. Inventory targets multiply
+## EconomyProfile's baseline days by this per-good Q16 ratio.
 @export var demand_price_elasticity_q16: int = 65536
 @export var demand_ema_alpha_q16: int = 16384
-@export var target_inventory_days_q16: int = 196608
+@export_range(0, 262144, 1) var inventory_target_ratio_q16: int = 65536
 @export var inventory_weight_q16: int = 32768
 @export var shortage_weight_q16: int = 65536
 @export var excess_demand_weight_q16: int = 8192

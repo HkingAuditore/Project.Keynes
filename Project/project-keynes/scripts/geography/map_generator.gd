@@ -6027,9 +6027,9 @@ func natural_resource_last_result() -> Dictionary:
 #      + init_elevation*clamp(elevation,0,1) + init_landform_weights[lf]
 #      + init_vegetation_weights[veg] + init_river*water_feature
 #      + init_volcano*volc + init_noise*noise01(cell_pos, init_noise_scale)
-# reserve0 = max(0, suit) * init_reserve_scale * CELL_AREA_RESOURCE_SCALE
-# （land_only 时水面格为 0）。
-# 在 init_soa_from_bake 之后调用（temp/moisture/water/elevation/landform/vegetation/
+# reserve0 = max(max(0, suit) * init_reserve_scale, init_floor_reserve) * CELL_AREA_RESOURCE_SCALE
+# （habitat 或 terrain/vegetation exclusion 不匹配时为 0）。
+# 在 init_soa_from_bake 之后调用（temp/moisture/water/terrain/elevation/landform/vegetation/
 # has_river/is_lake_seed/has_volcano/cell_pos 均已就位）。新因子默认 0/{} → 行为不变。
 func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	if map_ref == null:
@@ -6040,6 +6040,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	var temp_arr: PackedFloat32Array = map_ref.temp_arr
 	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
 	var water_arr: PackedByteArray = map_ref.is_water_arr
+	var terrain_arr: PackedByteArray = map_ref.terrain_arr
 	var elev_arr: PackedFloat32Array = map_ref.elevation_arr
 	var lf_arr: PackedByteArray = map_ref.landform_arr
 	var veg_arr: PackedByteArray = map_ref.vegetation_arr
@@ -6049,6 +6050,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	var posx_arr: PackedFloat32Array = map_ref.cell_pos_x_arr
 	var posy_arr: PackedFloat32Array = map_ref.cell_pos_y_arr
 	var have_water: bool = water_arr.size() >= n_cells
+	var have_terrain: bool = terrain_arr.size() >= n_cells
 	var have_elev: bool = elev_arr.size() >= n_cells
 	var have_lf: bool = lf_arr.size() >= n_cells
 	var have_veg: bool = veg_arr.size() >= n_cells
@@ -6100,6 +6102,16 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
 		var lf_w: Dictionary = p.init_landform_weights
 		var veg_w: Dictionary = p.init_vegetation_weights
+		var excluded_terrain := {}
+		if have_terrain:
+			for terrain_id in p.init_excluded_terrain_ids:
+				excluded_terrain[int(terrain_id)] = true
+		var excluded_vegetation := {}
+		if have_veg:
+			for vegetation_id in p.init_excluded_vegetation_ids:
+				excluded_vegetation[int(vegetation_id)] = true
+		var floor_reserve: float = maxf(float(p.init_floor_reserve), 0.0) * \
+			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
 		var use_elev: bool = have_elev and w_elev != 0.0
 		var use_lf: bool = have_lf and not lf_w.is_empty()
 		var use_veg: bool = have_veg and not veg_w.is_empty()
@@ -6142,6 +6154,12 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 					p, int(habitat_arr[i])):
 				arr[i] = 0.0
 				continue
+			if have_terrain and excluded_terrain.has(int(terrain_arr[i])):
+				arr[i] = 0.0
+				continue
+			if have_veg and excluded_vegetation.has(int(veg_arr[i])):
+				arr[i] = 0.0
+				continue
 			var temp_v: float = temp_arr[i] if i < temp_arr.size() else 0.0
 			var m: float = moist_arr[i] if i < moist_arr.size() else 0.0
 			var tn: float = clampf((temp_v - lo) * inv_span, 0.0, 1.0)
@@ -6174,6 +6192,8 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 				# ridge 高于阈值才形成矿带；其余区域施加负贡献，形成狭长稀疏矿脉。
 				suit += float(p.init_belt) * (belt_ridge - 0.72) * 2.0
 			arr[i] = maxf(0.0, suit) * reserve_scale
+			if floor_reserve > 0.0:
+				arr[i] = maxf(arr[i], floor_reserve)
 			if float(p.init_min_coverage) > 0.0 and float(p.init_min_reserve) > 0.0:
 				ranked_cells.append({"cell": i, "suit": suit})
 		var target_cells := mini(ranked_cells.size(), ceili(

@@ -306,6 +306,19 @@ function Technology-For-Good([string]$Id) {
     throw "good lacks explicit technology: $Id"
 }
 
+function Inventory-Target-Ratio-For-Good([string]$Id) {
+    $essential = @('bread','canned_fish','corn_grain','dairy_products','edible_oil','fish',
+        'game_meat','grain','livestock_products','meat','potatoes','prepared_staples',
+        'processed_food','rice_grain','salt','vegetables','wheat_grain')
+    $important = @('clothing','coal','detergent','footwear','medicinal_herbs',
+        'natural_gas','pharmaceuticals','refined_fuel','soap')
+    $luxury = @('beverages','fine_clothing','fine_furniture','fur','jewelry','spices')
+    if ($essential -contains $Id) { return 98304 } # 1.50 x 30 = 45 days.
+    if ($important -contains $Id) { return 81920 } # 1.25 x 30 = 37.5 days.
+    if ($luxury -contains $Id) { return 43691 } # Approximately 20 days.
+    return 65536 # 1.00 x 30 = 30 days.
+}
+
 foreach ($id in $goods.Keys) {
     $g = $goods[$id]
     $substitutionCategories = @(Substitution-Categories-For-Good $id)
@@ -319,13 +332,7 @@ foreach ($id in $goods.Keys) {
         'metals' { 45875 } 'machinery' { 75366 } 'consumer' { 85197 }
         'energy' { 19661 } default { 65536 }
     }
-    $targetDays = switch ($g.category) {
-        'primary' { 458752 } 'food' { 327680 }
-        'forestry' { 655360 } 'construction' { 655360 }
-        'textile' { 655360 } 'chemicals' { 655360 } 'metals' { 655360 }
-        'machinery' { 1310720 } 'consumer' { 983040 } 'energy' { 327680 }
-        default { 196608 }
-    }
+    $inventoryTargetRatio = Inventory-Target-Ratio-For-Good $id
     $priceAdjust = [Math]::Max(512, [int][Math]::Round(2048.0 * $demandElasticity / 65536.0))
     $issue = if ($id -eq 'gold') { 800000 } elseif ($id -eq 'silver') { 10000 } else { 0 }
     $mode = if ($id -eq 'electricity') { 'cycle_flow' } else { 'stock' }
@@ -352,7 +359,7 @@ max_price = $($price * 10)
 price_adjust_q16 = $priceAdjust
 demand_price_elasticity_q16 = $demandElasticity
 demand_ema_alpha_q16 = 16384
-target_inventory_days_q16 = $(if ($mode -eq 'cycle_flow') { 0 } else { $targetDays })
+inventory_target_ratio_q16 = $(if ($mode -eq 'cycle_flow') { 0 } else { $inventoryTargetRatio })
 inventory_weight_q16 = 32768
 shortage_weight_q16 = $(if ($mode -eq 'cycle_flow') { 0 } else { 65536 })
 excess_demand_weight_q16 = $(if ($mode -eq 'cycle_flow') { 65536 } else { 8192 })
@@ -909,9 +916,6 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
         # One local knapping workshop must be able to equip the resource-supported
         # hunting camps created by the mid-stone bootstrap.
         $inputQty[0] = 5
-        $Content = [regex]::Replace($Content,
-            '(?m)^output_quantities_per_day = PackedInt64Array\(.*\)\r?$',
-            'output_quantities_per_day = PackedInt64Array(3200, 800, 320)')
     }
     if ($inputs.Count -gt 0 -and $inputQty.Count -eq $inputs.Count) {
         $Content = [regex]::Replace($Content,
@@ -1005,8 +1009,15 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
     $extractCount = @($resourceModes | Where-Object { $_ -eq 'extract' }).Count
     if ($extractCount -gt 0 -and $resourceQty.Count -eq $resourceModes.Count) {
         $outputTotal = [long](($scaledOutputQty | Measure-Object -Sum).Sum)
-        $extractQty = [long][Math]::Max(1, [Math]::Floor(
-            $outputTotal / ((Extraction-Ratio-For-Building $Id) * $extractCount)))
+        $extractQty = if ($Id -eq 'stone_age_hunting_camp') {
+            # Wild-game capacity is the binding ecological constraint. Preserve
+            # the field-tested depletion rate while shifting the catch away from
+            # stockpiling hide and fur.
+            [long]715
+        } else {
+            [long][Math]::Max(1, [Math]::Floor(
+                $outputTotal / ((Extraction-Ratio-For-Building $Id) * $extractCount)))
+        }
         for ($i = 0; $i -lt $resourceModes.Count; $i++) {
             if ($resourceModes[$i] -eq 'extract') { $resourceQty[$i] = $extractQty }
         }
@@ -1430,6 +1441,12 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
             [double]$breakEvenRevenue * 65536.0 / $DesignSellThroughQ16)
         $unitQty = [long][Math]::Ceiling(
             [double]$requiredRevenue * 1000.0 * 65536.0 / [Math]::Max(1.0, [double]$outputPriceTotal * 62259.0))
+        if ($Id -eq 'marine_fish_collector') {
+            # A coastal fishing unit is intentionally a small owner-operated
+            # producer. Keep a modest food buffer without the former three-owner
+            # cost multiplier or an industrial-scale catch.
+            $unitQty = [Math]::Max([long]2000, $unitQty)
+        }
         if ($unitQty -lt 1) { $unitQty = 1 }
         if ($unitQty -gt 10000000) { throw "implausible calibrated output quantity: $Id -> $unitQty" }
         $calibratedRevenue = [double]$unitQty * [double]$outputPriceTotal / 1000.0 * 62259.0 / 65536.0
@@ -1502,7 +1519,7 @@ function Add-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[st
 
 function Write-SelfSufficientBuilding([string]$Id, [string]$Name, [string]$Technology, [string]$Family,
     [int]$Tier, [string]$Owner, [string[]]$Outputs, [long[]]$OutputQty,
-    [string[]]$Resources, [long[]]$ResourceQty) {
+    [string[]]$Resources, [long[]]$ResourceQty, [int]$OwnerSlots = 1) {
     [double]$baseRevenue = 0
     for ($i = 0; $i -lt $Outputs.Count; $i++) {
         $buyFactor = Good-Integer-Field $Outputs[$i] 'merchant_buy_price_factor_q16' 62259
@@ -1510,7 +1527,7 @@ function Write-SelfSufficientBuilding([string]$Id, [string]$Name, [string]$Techn
             [double](Default-Price-For-Good $Outputs[$i]) / 1000.0 *
             [double]$buyFactor / 65536.0
     }
-    $ownerLivingCost = [double](Reference-Living-Cost-For-Profession $Owner)
+    $ownerLivingCost = [double](Reference-Living-Cost-For-Profession $Owner) * [Math]::Max(1, $OwnerSlots)
     $requiredRevenue = $ownerLivingCost * 65536.0 / $DesignSellThroughQ16
     if ($baseRevenue -le 0) { throw "self-sufficient output value missing: $Id" }
     if ($baseRevenue -lt $requiredRevenue) {
@@ -1533,7 +1550,7 @@ upgrade_family_id = &"$Family"
 upgrade_tier = $Tier
 construction_days = 0
 owner_profession_id = &"$Owner"
-owner_slots_per_building = 1
+owner_slots_per_building = $OwnerSlots
 employee_profession_ids = PackedStringArray()
 employee_slots_per_building = PackedInt64Array()
 employee_wage_policy_ids = PackedStringArray()
@@ -1696,7 +1713,7 @@ foreach ($power in @(
 }
 
 Write-SelfSufficientBuilding 'gathering_ground' '采集营地' 'tech.gathering' `
-    'subsistence_food' 1 'forager' @('gathered_plants') @(5600) @('fertile_soil') @(1000)
+    'subsistence_food' 1 'forager' @('gathered_plants') @(7000) @('fertile_soil') @(1000) 2
 Write-SelfSufficientBuilding 'subsistence_farm' '自给农庄' 'tech.pottery' `
     'subsistence_food' 2 'subsistence_farmer' @('grain','vegetables') @(4000,4000) @('arable_land','fertile_soil') @(10000,10000)
 Write-SelfSufficientBuilding 'three_field_smallholding' '三圃制小农场' 'tech.guild_organization' `
@@ -1704,7 +1721,7 @@ Write-SelfSufficientBuilding 'three_field_smallholding' '三圃制小农场' 'te
 Write-SelfSufficientBuilding 'improved_smallholding' '改良小农场' 'tech.steam_power' `
     'subsistence_food' 4 'subsistence_farmer' @('grain','vegetables') @(8000,8000) @('arable_land','fertile_soil') @(6000,6000)
 Write-SelfSufficientBuilding 'household_weaving_shelter' '家庭织造棚' 'tech.gathering' `
-    'household_cloth' 1 'artisan' @('cloth') @(720) @('fertile_soil') @(1000)
+    'household_cloth' 1 'artisan' @('cloth') @(900) @('fertile_soil') @(1000)
 Write-SelfSufficientBuilding 'household_loom' '家用织机' 'tech.pottery' `
     'household_cloth' 2 'artisan' @('cloth') @(1320) @('arable_land','fertile_soil') @(10000,10000)
 Write-SelfSufficientBuilding 'cottage_weaving' '家庭纺织坊' 'tech.guild_organization' `

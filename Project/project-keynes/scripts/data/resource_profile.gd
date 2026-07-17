@@ -44,6 +44,10 @@
 #   reserve0 = max(0, suit) * init_reserve_scale
 #              * ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
 #                                                     # habitat 不匹配时为 0
+# 可选 `init_excluded_terrain_ids/init_excluded_vegetation_ids` 在 habitat 之后进一步排除
+# 某些地形/植被（例如林木排除沙漠/寒漠/极旱荒漠）。可选 `init_floor_reserve` 对剩余
+# 有效 habitat 地块提供逐格基础储量，和 `init_min_coverage/init_min_reserve` 的「最适生
+# 前 N% 保底」语义分离，适合表达“广泛存在但区域丰度不同”的资源。
 # 可选 `init_min_coverage/init_min_reserve` 在每种资源完成全图 suit 计算后，按 suit
 # 降序选择最适宜的前 N 个有效 habitat 地块并确保最低储量。它用于防止有限地图因连续
 # 噪声/地质场截断而整图缺失关键资源；默认 0，不影响未配置资源，也不会随机均匀撒矿。
@@ -126,6 +130,15 @@ var habitat_mode: String = "legacy"
 ## Content-level abundance multiplier applied after suitability is resolved.
 ## It changes deposit quantity without changing deposit presence or topology.
 @export_range(0.1, 100.0, 0.1) var init_reserve_scale: float = 1.0
+## TerrainType.TERRAIN ids excluded after habitat filtering during bootstrap.
+## Empty by default for backward compatibility.
+@export var init_excluded_terrain_ids: PackedInt32Array = PackedInt32Array()
+## VegetationType.VEG ids excluded after habitat filtering during bootstrap.
+## Empty by default for backward compatibility.
+@export var init_excluded_vegetation_ids: PackedInt32Array = PackedInt32Array()
+## Minimum reserve for every non-excluded valid habitat cell. This is separate
+## from init_min_coverage/init_min_reserve, which only boosts the best cells.
+@export_range(0.0, 10000000.0, 1.0) var init_floor_reserve: float = 0.0
 @export_range(0.0, 1.0, 0.001) var init_min_coverage: float = 0.0
 @export_range(0.0, 10000000.0, 1.0) var init_min_reserve: float = 0.0
 

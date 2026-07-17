@@ -32,6 +32,10 @@ extends Resource
 ## Quantities are per building per simulation day in GOODS_SCALE (1000).
 @export var input_good_ids: PackedStringArray = PackedStringArray()
 @export var input_quantities_per_day: PackedInt64Array = PackedInt64Array()
+## Parallel Q16 hardness per input slot. Empty preserves legacy fully hard inputs.
+## 65536 means missing stock stops production; 0 means the input is purely optional;
+## intermediate values leave a baseline output floor when the input is missing.
+@export var input_required_q16: PackedInt32Array = PackedInt32Array()
 ## Optional parallel input constraints. Empty category IDs preserve exact-good
 ## recipes. A category input accepts every technology-available good in that
 ## category whose production quality meets the minimum; its good-level Q16

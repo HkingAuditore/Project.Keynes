@@ -117,8 +117,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v6 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 6)
+	_expect("native CSV v8 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 8)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("both viable land cells receive sustainable settlements",
@@ -407,7 +407,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 39, "cohorts": 23, "buildings": 45,
+	var expected_columns := {"summary": 85, "cohorts": 23, "buildings": 46,
 		"resources": 9, "market": 28}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
@@ -427,9 +427,11 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 	var building_header := building_lines[0].split(",", true)
 	var owner_capacity_col := building_header.find("owner_capacity")
 	var owner_required_col := building_header.find("owner_required")
+	var planned_owner_equivalent_col := building_header.find("planned_owner_equivalent")
 	var filled_owner_col := building_header.find("filled_owner")
 	var owner_openings_col := building_header.find("owner_openings")
 	var owner_columns_valid := owner_capacity_col >= 0 and owner_required_col >= 0 \
+		and planned_owner_equivalent_col >= 0 \
 		and filled_owner_col >= 0 and owner_openings_col >= 0
 	var owner_rows_valid := owner_columns_valid
 	for line in building_lines.slice(1):
@@ -438,12 +440,14 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 			continue
 		var capacity := int(columns[owner_capacity_col])
 		var required := int(columns[owner_required_col])
+		var planned_equivalent := int(columns[planned_owner_equivalent_col])
 		var filled := int(columns[filled_owner_col])
 		var openings := int(columns[owner_openings_col])
-		if capacity < required or openings != maxi(0, required - filled):
+		if required != capacity or planned_equivalent > required \
+				or openings != maxi(0, required - filled):
 			owner_rows_valid = false
 			break
-	_expect("building CSV v6 separates owner capacity, planned jobs, and openings",
+	_expect("building CSV v8 separates owner capacity, active jobs, planned equivalent, and openings",
 		owner_columns_valid and owner_rows_valid)
 	if not resource_slots.is_empty() and not resource_ids.is_empty():
 		var reserves: PackedFloat32Array = ext.snapshot_f32(resource_slots[0])

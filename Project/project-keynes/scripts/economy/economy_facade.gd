@@ -486,7 +486,7 @@ func building_type_ids() -> PackedStringArray:
 func bootstrap_finance_columns() -> Dictionary:
 	var result := {}
 	for key in [
-		"good_ids", "good_default_price", "good_target_inventory_days_q16",
+		"good_ids", "good_default_price", "good_inventory_target_ratios_q16",
 		"good_merchant_buy_factor_q16", "good_monetary_issue_values",
 		"plan_ids", "plan_need_offsets", "need_ids", "need_living_cost_weights_q16",
 		"need_stable_ids", "need_base_qty_per_person", "need_quantity_env_curve_ids",
@@ -497,6 +497,14 @@ func bootstrap_finance_columns() -> Dictionary:
 		"signature_ethnicity_ids",
 	]:
 		result[key] = _catalog.get(key)
+	var ratios: PackedInt32Array = result.get(
+		"good_inventory_target_ratios_q16", PackedInt32Array())
+	var target_days := PackedInt32Array()
+	target_days.resize(ratios.size())
+	for good_idx in range(ratios.size()):
+		target_days[good_idx] = int(_profile.merchant_market_making_days_q16) * \
+			int(ratios[good_idx]) / 65536
+	result["good_target_inventory_days_q16"] = target_days
 	result["living_cost_base_plan_id"] = String(_profile.living_cost_base_plan_id)
 	return result
 

@@ -15,7 +15,7 @@
 | cohort、handle、人口、资金、收入/支出、满足度 | C++ `PopulationStore` | GDScript 无逐 cohort setter。 |
 | 本地库存、价格、居民需求 EMA、短缺率 | C++ `MarketStore` | 无 per-cell goods component，无匿名市场现金。 |
 | 企业可行需求/供给 EMA、实际出库 EMA、成本锚 | C++ 稀疏 `MarketSignalStore` | 仅保存建筑实际引用的 `(cell, good)` 边；实际出库用于商人库存目标。 |
-| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v12 保存订单/托管/EMA。 |
+| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v13 保存订单/托管/EMA。 |
 | 需求、预算、bundle 清算、替代 fallback、商人结算、Price V3 | C++ Market V2 hot loop | 不访问 Godot Object/Callable/Dictionary。 |
 | 周期环境快照 | DataCore 环境 slots → C++ Q16 snapshot | 周期 sample day 捕获 temp/moisture/snow/weather，周期内冻结。 |
 | catalog 编译 | `EconomyCatalog`/`EconomyFacade` 冷路径 | stable ID 排序后一次性提交 PackedArrays。 |
@@ -30,18 +30,19 @@
 - 国内贸易默认 `ACTIVE`；`OFF/PROBE` 仅供显式配置和测试。范围仍是冻结的同一国家、可通行且连通地块。
 - 企业采购意图容量取建筑可用性、业主/关键岗位就业率、业主输入资金覆盖率和自然资源覆盖率的瓶颈；实际产能再叠加本地输入库存瓶颈。缺货输入保留受约束的补货意图，但不能产生实际产出。
 - 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资) / max(经营成本, MONEY_SCALE)` 计算。连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`；停产期间岗位、采购、产出和企业需求全为零。反事实利润连续两周期达到 +10%，且业主可支付一栋一周期输入和基础工资后恢复。
-- 商人库存目标使用实际出库 EMA、出口 EMA、目录目标天数和至多一周期短缺恢复量；无历史时只建立一日当前可售产出的冷启动库存。采购开始冻结现金，只允许使用 75%，再按 `库存缺口 × 收购价` 和稳定 good/group 顺序分配预算。
+- 商人库存目标使用 `max(可行 household/business 日需求, 实际出库 EMA) + 出口 EMA` 乘 30 日基线和 good-specific 比例后的有效天数；因此零供给、零成交但已有需求的商品也保留完整配置周期，不再退化为单个 economy epoch。仅当需求、出库和出口都为零时，使用当期可售日产量建立首周期供给探测库存。采购开始冻结现金并保留 12.5%，再按 `库存缺口 × 收购价` 和稳定 good/group 顺序分配预算。默认必需品 45 日、重要民生品 37.5 日、普通品 30 日、奢侈品约 20 日、`cycle_flow` 为 0。
+- `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
 - ACTIVE owner-lot 在家庭清算前按已到岗业主份额、计划利用率和冻结单位投入成本保留下周期营运资金；该资金仍在 owner cohort 账户内，但不会被本期居民订单花掉。报告发布 `owner_working_capital_reserved`。
 - 食物生产者按三类食品总需求的饥饿阈值留存产出；精确消费 variant 之后的剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量，保证狩猎、捕鱼等单一食物生产者具备真实自给能力。
-- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。商人目标库存至少覆盖预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v6 逐商品列用于诊断。缓存不进入 PKEC v12，可从建筑和市场信号状态重建。
-- 正常商人现金/配额无法购买的可储存余货不再丢弃：全部进入商人所有库存，生产者获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`；cycle-flow 余量仍丢弃。托底后库存高于正常目标会压低下一周期利用率。
+- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v8 逐商品列用于诊断。缓存不进入 PKEC v13，可从建筑和市场信号状态重建。
+- 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v12 保存并哈希企业状态/连续数/采购意图容量/实际利润率和实际出库 EMA。兼容参数一致的 v11 ACTIVE 可迁移；ACTIVE 配置明确拒绝 v11 PROBE 和 v10。
+- PKEC v13 保存并哈希企业状态/连续数/采购意图容量/实际利润率和实际出库 EMA。仅兼容参数一致的 v12/v11 ACTIVE；旧默认 v11 的 25%/1 日商人策略与当前 12.5%/30 日分档库存基线不一致并明确拒绝。ACTIVE 配置也拒绝 v11 PROBE 和 v10。
 
 ## 2026-07-15 价格弹性、成本底线与生态修正
 
 - 消费目录新增 need 总量价格弹性和刚需下限。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食与衣着保留正下限但仍随价格和财富缩量，蛋白质及非刚需可在全体替代品过贵时接近零。
-- 低于目标库存且仍有需求时，生产成本锚成为受单日涨幅上限约束的零售价格底线；库存堆积时不启用硬底线。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不超过 1 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限。
+- 低于目标库存且仍有需求时，生产成本锚成为受单日涨幅上限约束的零售价格底线；库存堆积时不启用硬底线。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不超过 1 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；生存食物生产者另按同一业主人口跨过饥饿阈值所需的自留量计算动态下限，取二者较高值。
 - 全建筑目录改用默认生活成本和 80% 保守售出率校准：每个 employee role 的 fixed/adaptive 参考工资至少覆盖其职业生活篮子；按默认商人收购价折算后的可售收入同时覆盖投入、工资、目标营业利润和业主生活成本。石器狩猎营地现代表 5 个共同经营岗位，日产 `7000/250/100` 野味/生皮/毛皮；采集营地同样代表 5 个共同经营岗位并日产 `7000` 采集植物。两类基础食物建筑均提供每岗位 `1400` 的日产主食产能，略高于测试承载力的 `1300` 保守底线。家庭织造棚代表 2 个共同岗位、日产 `600` 布匹；燧石采掘场降为日产 `1200`、采收 `60`，保持 20:1 资源效率。
 - `audit_economy_content.ps1` 遍历 259 个建筑并检查 80% 售出率盈利、role 工资、生产原料成本不超过商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`、工业总投入/总产出不超过 `3:1`，以及 `2:1` 至 `25:1` extract 效率；蒸汽煤铁矿固定复核约 `12:1`。这是 catalog/content 校准，会改变 building catalog hash，但不改变 PKEC 字节布局。
 - 野生动物承载力继续随普通适生度下降，但压力死亡只作用于原始温湿适生度最低 25% 的急性区间，消除普通非理想气候的重复惩罚。理想与普通气候的 24 营地五年采集均有回归覆盖。
@@ -114,7 +115,8 @@ variant 价格分数先决定替代份额，再形成 market×need 的总量价�
 
 household market 在建筑生产、产品出售和收入分配后计算食品/衣着生存满足，并执行确定性缺乏
 生存资料死亡；它自身不执行出生、迁移、就业、工资、税收或生产。国内贸易在同一经济
-边界的 `trade_settle` / `trade_dispatch` 阶段运行：到货先进入目的库存，发运先移除源库存并
+边界的 `trade_settle` / `trade_dispatch` 阶段运行：到货先进入目的库存；新发运等待本地 household
+清算完成，并保留最新本地需求目标库存和生产投入 reserve 后才移除源库存并
 托管目的商人现金；随后 household market 只使用剩余/已到货状态。人口命令仍是底层结构 ABI，
 居民清算不改变人口。完整契约见 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
 
@@ -140,7 +142,7 @@ PackedArrays；UI 只查询选中地块。
 
 调试录制控制面另提供 `start_economy_csv_recording(config)`、
 `request_stop_economy_csv_recording()` 和 `get_economy_csv_recording_status()`。它们管理独立的
-`EconomyCsvRecorder`，只在成功 committed publish 且资源 delta 已回写后抓取 CSV v6 POD
+`EconomyCsvRecorder`，只在成功 committed publish 且资源 delta 已回写后抓取 CSV v8 POD
 批次；worker 编码/写盘状态不属于 runtime report、PKEC 或 state hash。状态包含
 `captured/written epochs/rows`、`bytes_written`、`queued_batches`、主线程 capture 与 worker
 耗时、`buffer_memory_bytes`、路径、`error_code` 和 `first_unrecorded_epoch`。
@@ -184,7 +186,7 @@ Windows / Godot 4.6.2 / template_release / 2026-07-11。下表是显式
 
 错峰把 10M p95 从约 89ms 降至约 4ms；惰性会计清零和按需 merchant rebuild 消除了
 周期边界 90/30ms 尖峰。代价是可配置的结算延迟与 reference 误差，详见调度文档。
-# Native Building / Employment Runtime（PKEC v12 + PKCN v1）
+# Native Building / Employment Runtime（PKEC v13 + PKCN v1）
 
 建筑、岗位与生产由 `NativeEconomyRuntime` 内独立的 `BUILDING_GRAPH` 管理，仍与
 Market V2 共用冻结周期和原子发布边界，但不进入 `household_market` 热循环。建筑不进入
@@ -213,10 +215,12 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 industrialist 持有并保留工业投入、矿工和管理岗位。不存在虚空商站铸币分支。
 
 投入边可以是精确 good，也可以声明 category 与最低质量等级。`EconomyCatalog` 将类别展开为按
-stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。native 在冻结国家科技可用的候选
+stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每个输入槽另有
+`input_required_q16`：默认 `65536` 保持旧的硬互补行为；`0..65535` 表示软输入，缺货时保留
+`1 - required` 的产能底线，库存/现金越接近完整物理需求，产能越线性恢复到满产。native 在冻结国家科技可用的候选
 中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
-`ceil(effective_required / efficiency)`，库存、业主现金与 goods audit 仍记录实际物理数量。
-这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。
+`ceil(effective_required / efficiency)` 乘以该产能实际需要的输入购买比例；若完整物理需求为正且购买比例为正，scaled 购买量至少为 1，避免硬输入在极低利用率下被截断为“零成本免费生产”。库存、业主现金与 goods audit 仍记录实际物理数量。
+这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地的工具槽当前设为 `32768`，无工具时仍能低效狩猎，有工具时恢复到完整效率。
 
 `upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
 档位，旧档返回 `building_tier_obsolete_for_construction`；生产仍只检查该建筑原始科技，因此旧
@@ -238,9 +242,11 @@ owner-lot 继续生产且不会自动转换。快照发布 family、tier、highe
 利用率坍缩时失业者获跨周期缓冲、可长期失业，不再每周期从零重摊。商人全程排除（`ensure_merchant_invariant`
 保持），其失业/商业萧条为独立后续设计。随后业主按本地价购买输入并生产。每个 owner 从统一
 `survival_household` 基础量、冻结人口/环境和民族修正计算无财富/价格弹性的生存量，只对主食、蛋白质、蔬果保留饥饿阈值比例，并按寒冷
-暴露保留最低衣物；其他需求和超过最低量的产出直接进入 offer。商人按 actual withdrawal/export EMA、目标库存天数和冷启动一日产出计算
-库存缺口，以 good-specific `merchant_buy_price_factor_q16`（默认 95%）计价；期初现金保留 25%，
-其余预算按缺口价值和稳定 good/group 顺序分配；未获正常采购的可储存余货按本地零售价 20% 托底发行并入库，只有 cycle-flow 余量丢弃。销售后统一分配工资和奖金，居民再用本期收入购买
+暴露保留最低衣物；其他需求和超过最低量的产出直接进入 offer。商人按 `max(feasible demand, actual withdrawal) + export EMA` 与 30 日基线乘商品比例后的有效库存天数计算
+库存缺口，以 good-specific `merchant_buy_price_factor_q16`（默认 95%）计价；期初现金保留 12.5%。
+若 survival food / cold-clothing 出现居民短缺，或生产投入 reserve 大于当前库存，native 会把 `last_shortage_q16` / reserve shortfall 转为 `trade_relief_pressure_q16`，提高本地库存目标和商人采购目标；建设命令因材料库存不足被拒绝时，也会把材料缺口写入 business demand / non-household withdrawal，使后续采购和贸易能看到长期建设短缺。未解锁施工材料直接返回 `building_construction_good_locked`，不会生成采购需求。
+无历史出库或本地供给时仍按完整有效天数建立冷启动做市库存，
+其余预算按缺口价值和稳定 good/group 顺序分配；未获正常采购的耐储余货按本地零售价 20% 托底发行并入库，`cycle_flow` 余货先低价清算/托底、再在 cell 边界清零。销售后统一分配工资和奖金，居民再用本期收入购买
 包括本期新产出在内的库存。留用品直接增加该 owner 的 need filled，不转移资金；未消费余量按
 来源 owner-lot 计入 `last_discarded`。建筑采样使用
 `max(0, reserve + min(pending_extra_change, 0))` 作为有效可采储量：尚未被资源 pass 消费的负
@@ -371,7 +377,7 @@ catalog/content，PopulationStore、signature ABI、BUILDING_GRAPH 和 PKEC byte
 显式 CSR 携带配方级 Q16 效率并由 `EconomyCatalog` 按 stable good ID 规范化，native 继续使用
 既有 InputCandidate 库存满足度、有效价格和 stable ID 决策。建筑查询通过
 `group_input_selected_offsets/group_input_selected_good_ids` 返回每槽上次实际采购项；这是有界的
-Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC v12。restore 后保持 `-1`
+Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC v13。restore 后保持 `-1`
 直到下一次成功生产。该扩展没有修改权威公式或存档字段。
 
 `gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/10000 money subunits。市场接收
@@ -399,13 +405,13 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 居民直接消费不再使用 railway_equipment、oceanic_vessels 或 scientific_instruments 代理交通/科研
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
-Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC v12 按现有
+Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC v13 按现有
 `save_catalog_scale_or_capacity_mismatch` 路径拒绝，byte schema 与五日默认 cadence 不变。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 
 `electricity` 是唯一 `cycle_flow` good。`building_production` 内先运行只产出 cycle-flow 的
-utility groups并结算 offers，再运行其他 groups；其余电力在 cell 生产结束时清零并计入 goods
+utility groups并结算 offers，再运行其他 groups；cycle-flow 产出会先按本周期可售量进入同周期低价清算/producer support，随后剩余电力在 cell 生产结束时清零并计入 goods
 sink。report 发布 `cycle_flow_produced/consumed/discarded`，跨周期市场库存必须为零；家庭公用
 事业结算尚未实现，因此家庭能源替代不包含电力。
 
