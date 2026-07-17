@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project.Keynes 物价决定调试器 · frozen_sample_adaptive_price_v2</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171b21; --panel2:#1d222b; --line:#2a313c;
+    --txt:#d7dde6; --muted:#8b95a3; --accent:#6ea8fe; --accent2:#51cf66;
+    --excess:#ff6b6b; --inventory:#4dabf7; --shortage:#ffd43b; --cost:#51cf66; --idle:#868e96;
+    --warn:#ff922b; --ok:#51cf66; --bad:#ff6b6b;
+    --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;font-size:13px;line-height:1.5}
+  header{padding:18px 22px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#14181e,#0f1216)}
+  header h1{margin:0 0 4px;font-size:18px;letter-spacing:.3px}
+  header .sub{color:var(--muted);font-size:12px}
+  .wrap{display:grid;grid-template-columns:380px 1fr;gap:16px;padding:16px 22px;align-items:start}
+  @media(max-width:980px){.wrap{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .panel h2{margin:0 0 10px;font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:.6px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .field{margin-bottom:9px}
+  .field label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-bottom:3px}
+  .field label .hint{font-family:var(--mono);color:var(--accent2);font-size:11px}
+  .field input,.field select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 7px;font-family:var(--mono);font-size:12px}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+  .seg{display:flex;gap:6px;margin-bottom:10px}
+  .seg button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:6px 4px;cursor:pointer;font-size:11px}
+  .seg button:hover{border-color:var(--accent);color:var(--txt)}
+  .seg button.on{background:#243042;border-color:var(--accent);color:var(--txt)}
+  .toggle{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}
+  .toggle input{width:auto}
+  .out-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .stat .k{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .stat .v{font-family:var(--mono);font-size:15px;margin-top:2px}
+  .stat .v small{font-size:11px;color:var(--muted)}
+  .flags{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
+  .flag{font-size:11px;padding:3px 8px;border-radius:20px;border:1px solid var(--line)}
+  .flag.hit{background:#3a2a12;border-color:var(--warn);color:var(--warn)}
+  .flag.clean{color:var(--muted)}
+  .chartbox{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:14px}
+  .chartbox h3{margin:0 0 8px;font-size:12px;color:var(--muted);font-weight:600}
+  svg{display:block;width:100%;height:auto}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;font-size:11px;color:var(--muted)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  .formula{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:#0c0f13;border:1px solid var(--line);border-radius:8px;padding:10px 12px;line-height:1.7;overflow-x:auto}
+  .formula b{color:var(--accent)}
+  .note{font-size:11.5px;color:var(--muted);margin:8px 0;padding-left:10px;border-left:2px solid var(--line)}
+  .big{font-size:26px;font-family:var(--mono)}
+  .delta-up{color:var(--excess)} .delta-down{color:var(--inventory)}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;font-family:var(--mono)}
+  th,td{text-align:right;padding:4px 8px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600}
+  .row-btn{background:var(--panel2);border:1px solid var(--line);color:var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:12px}
+  .row-btn:hover{border-color:var(--accent)}
+  .actions{display:flex;gap:10px;margin-top:6px}
+  .preset{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);cursor:pointer}
+  .preset:hover{border-color:var(--accent)}
+  .presets{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🕯️ 物价决定调试器 — <span style="color:var(--accent2)">frozen_sample_adaptive_price_v2</span></h1>
+  <div class="sub">在采样日冻结人口/资金/价格/库存/环境，整个 N 天周期（默认 N=5）由冻结状态一次性算出价格。下方工具逐行复刻 <code style="font-family:var(--mono)">economy_runtime::price_pressure()</code> + 价格应用逻辑（Q16 定点 / int64 饱和运算）。</div>
+</header>
+
+<div class="wrap">
+  <!-- ============ 左：输入 ============ -->
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>场景预设</h2>
+      <div class="presets" id="presets"></div>
+      <div class="note" style="margin-bottom:0">预设只改"市场信号 + 货物参数"，运行参数（epoch_days）保持。点预设后右侧会立即重算。</div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>市场信号（每个市场 × 每种货物）</h2>
+      <div class="field"><label>家庭需求 EMA <span class="hint">demand_ema</span></label><input id="household_demand" type="number" step="any"></div>
+      <div class="field"><label>建筑/商业需求 EMA <span class="hint">business_demand</span></label><input id="business_demand" type="number" step="any"></div>
+      <div class="field"><label>供给 EMA <span class="hint">offered_supply</span></label><input id="supply" type="number" step="any"></div>
+      <div class="field"><label>当前库存 <span class="hint">stock</span></label><input id="stock" type="number" step="any"></div>
+      <div class="field"><label>短缺率 <span class="hint">shortage_q16 (0~1)</span></label><input id="shortage" type="number" step="0.01" min="0" max="1"></div>
+      <div class="field"><label>当前价格 <span class="hint">price</span></label><input id="price" type="number" step="any"></div>
+      <label class="toggle"><input id="has_signal" type="checkbox"> 存在建筑信号（signal_index ≥ 0，启用商业需求/供给/成本锚）</label>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>货物参数（good profile）</h2>
+      <div class="grid2">
+        <div class="field"><label>默认价 <span class="hint">default_price</span></label><input id="default_price" type="number" step="any"></div>
+        <div class="field"><label>最低价 <span class="hint">min_price</span></label><input id="min_price" type="number" step="any"></div>
+        <div class="field"><label>最高价 <span class="hint">max_price</span></label><input id="max_price" type="number" step="any"></div>
+        <div class="field"><label>成本锚 <span class="hint">cost_anchor</span></label><input id="cost_anchor" type="number" step="any"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>价格调节率 <span class="hint">price_adjust</span></label><input id="price_adjust" type="number" step="0.001"></div>
+        <div class="field"><label>需求价格弹性 <span class="hint">elasticity</span></label><input id="elasticity" type="number" step="0.01"></div>
+        <div class="field"><label>目标库存天数 <span class="hint">inv_days</span></label><input id="inv_days" type="number" step="0.1"></div>
+        <div class="field"><label>日最大涨幅 <span class="hint">max_rise</span></label><input id="max_rise" type="number" step="0.01"></div>
+        <div class="field"><label>日最大跌幅 <span class="hint">max_fall</span></label><input id="max_fall" type="number" step="0.01"></div>
+        <div class="field"><label>货币发行品 <span class="hint">monetary</span></label><input id="monetary" type="number" step="1"></div>
+      </div>
+      <div class="note" style="margin:2px 0 8px">下列 5 个为"压力权重"（占 total_q16 的比例，0~1）：</div>
+      <div class="grid2">
+        <div class="field"><label>过剩需求权重</label><input id="w_excess" type="number" step="0.001"></div>
+        <div class="field"><label>库存缺口权重</label><input id="w_inventory" type="number" step="0.001"></div>
+        <div class="field"><label>短缺权重</label><input id="w_shortage" type="number" step="0.001"></div>
+        <div class="field"><label>成本锚权重</label><input id="w_cost" type="number" step="0.001"></div>
+        <div class="field"><label>闲置回归权重</label><input id="w_idle" type="number" step="0.001"></div>
+        <div class="field"><label>存储模式 <span class="hint">0=库存压</span></label><input id="storage_mode" type="number" step="1"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>运行参数</h2>
+      <div class="field"><label>周期天数 <span class="hint">epoch_days (默认5)</span></label><input id="epoch_days" type="number" step="1" min="1"></div>
+      <div class="field"><label>投影周期数 <span class="hint">project N</span></label><input id="proj_n" type="number" step="1" min="1" value="40"></div>
+      <div class="actions">
+        <button class="row-btn" id="btn_step">推进 1 周期 →</button>
+        <button class="row-btn" id="btn_reset">回到初始价</button>
+      </div>
+      <div class="note" style="margin-bottom:0">投影严格遵循引擎"冻结期"语义：信号在整周期内保持不变，<b>只有价格</b>随周期更新。推进按钮会把算出的新价写回"当前价格"。</div>
+    </div>
+  </div>
+
+  <!-- ============ 右：输出 ============ -->
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>本周期价格结论</h2>
+      <div class="out-grid">
+        <div class="stat"><div class="k">综合压力 total_q16</div><div class="v" id="o_total">—</div></div>
+        <div class="stat"><div class="k">本周期变化 change_q16</div><div class="v" id="o_change">—</div></div>
+        <div class="stat"><div class="k">下期价格（未夹）</div><div class="v" id="o_next">—</div></div>
+        <div class="stat" style="grid-column:span 2"><div class="k">最终价格（夹到 min/max）</div><div class="big" id="o_bounded">—</div></div>
+      </div>
+      <div class="flags" id="flags"></div>
+      <div class="formula" id="f_trace"></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>五因子压力分解（对 total_q16 的贡献）</h2>
+      <div class="chartbox">
+        <h3>各因子信号值 (q16 → 比例 -1~+1) 与加权贡献</h3>
+        <div id="chart_bars"></div>
+        <div class="legend">
+          <span><i style="background:var(--excess)"></i>过剩需求 excess</span>
+          <span><i style="background:var(--inventory)"></i>库存缺口 inventory</span>
+          <span><i style="background:var(--shortage)"></i>短缺 shortage</span>
+          <span><i style="background:var(--cost)"></i>成本锚 cost</span>
+          <span><i style="background:var(--idle)"></i>闲置回归 idle</span>
+        </div>
+      </div>
+      <div class="note">贡献_i = 信号_i × 权重_i。正=推高价格，负=压低价格。total_q16 = Σ贡献；再 ÷弹性、×调节率 → change_q16。</div>
+      <table id="tbl_components">
+        <thead><tr><th>因子</th><th>信号 q16</th><th>信号比例</th><th>权重</th><th>加权贡献</th><th>方向</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>价格多周期投影（冻结信号）</h2>
+      <div class="chartbox">
+        <h3>价格轨迹（红=触顶 max，蓝=触底 min）</h3>
+        <div id="chart_line"></div>
+      </div>
+      <div class="note">斜率为每周期的百分比变化 = change_q16 × epoch_days。引擎用一阶线性积分（而非 N 次反馈），避免 N 反馈环与密集存储。</div>
+    </div>
+
+    <div class="panel">
+      <h2>模型速览</h2>
+      <div class="formula">
+<b>demand</b> = 家庭需求EMA + 商业需求EMA<br>
+<b>flow</b> = demand + 供给EMA<br>
+<b>excess</b> = clamp((demand − supply)/max(1000,flow), −1, +1)<br>
+<b>inventory</b> = clamp((目标库存 − stock)/max(1000,目标库存), −1, +1)  &nbsp;（仅 storage_mode==0）<br>
+<b>shortage</b> = clamp(短缺率, 0, 1)<br>
+<b>cost</b> = clamp((锚−价)/max(锚,价), −1, +1) × min(1, 供给/demand)  &nbsp;（仅非货币品且有锚；锚&gt;价且缺货→设硬底价）<br>
+<b>idle</b> = clamp((默认价−价)/max(1,max(默认价,价)), −1, +1)  &nbsp;（仅 demand==supply==stock==0）<br>
+<b>total</b> = excess·w_excess + inventory·w_inv + shortage·w_short + cost·w_cost + idle·w_idle<br>
+<b>elasticity</b> = clamp(弹性, 0.25, 4)<br>
+<b>change_q16</b> = (total / elasticity) × 价格调节率<br>
+<b>change'</b> = clamp(change_q16, −日最大跌, +日最大涨)<br>
+<b>next</b> = 价 + 价 × (change' × epoch_days) / 65536<br>
+<b>final</b> = clamp(next, min_price, max_price)
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Q16 / 定点 / int64 饱和 =====
+const Q16 = 65536, GOODS = 1000;
+const I64MAX = 9223372036854775807n, I64MIN = -9223372036854775808n;
+let SAT = 0;
+const B = n => BigInt(Math.round(Number(n)));
+function clampB(b){ if(b>I64MAX){SAT++;return I64MAX;} if(b<I64MIN){SAT++;return I64MIN;} return b; }
+function mulDivSat(a,b,div){ const A=B(a),C=B(b),D=B(div); if(D===0n) return 0; return Number(clampB(A*C/D)); }
+function satAdd(a,b){ return Number(clampB(B(a)+B(b))); }
+function satSub(a,b){ return Number(clampB(B(a)-B(b))); }
+function satMul(a,b){ return Number(clampB(B(a)*B(b))); }
+function clamp(v,lo,hi){ return Math.min(Math.max(v,lo),hi); }
+const q = n => (n/Q16);                       // q16 → 比例
+const fmt = n => (Math.round(n)).toLocaleString('en-US');
+const sign = n => (n>0?'+':(n<0?'':'')) + n.toFixed(4);
+
+// ===== 读取 UI =====
+function read(){
+  const g = id => parseFloat(document.getElementById(id).value);
+  return {
+    household_demand: g('household_demand'), business_demand: g('business_demand'),
+    supply: g('supply'), stock: g('stock'), shortage: g('shortage'), price: g('price'),
+    has_signal: document.getElementById('has_signal').checked,
+    default_price: g('default_price'), min_price: g('min_price'), max_price: g('max_price'),
+    cost_anchor: g('cost_anchor'),
+    price_adjust_q16: Math.round(g('price_adjust')*Q16),
+    elasticity_q16: Math.round(g('elasticity')*Q16),
+    inv_days_q16: Math.round(g('inv_days')*Q16),
+    max_rise_q16: Math.round(g('max_rise')*Q16),
+    max_fall_q16: Math.round(g('max_fall')*Q16),
+    monetary: g('monetary'), storage_mode: g('storage_mode'),
+    w_excess_q16: Math.round(g('w_excess')*Q16), w_inventory_q16: Math.round(g('w_inventory')*Q16),
+    w_shortage_q16: Math.round(g('w_shortage')*Q16), w_cost_q16: Math.round(g('w_cost')*Q16),
+    w_idle_q16: Math.round(g('w_idle')*Q16),
+    epoch_days: g('epoch_days'), proj_n: g('proj_n'),
+  };
+}
+
+// ===== 核心：复刻 price_pressure + 价格应用 =====
+function compute(s, priceOverride){
+  const price = (priceOverride!=null)?priceOverride:s.price;
+  const signal = s.has_signal;
+  const household = Math.max(0, s.household_demand);
+  const business = signal ? s.business_demand : 0;
+  const supply = signal ? s.supply : 0;
+  const demand = satAdd(household, business);
+  const flow = satAdd(demand, supply);
+  const excess_q16 = clamp(mulDivSat(satSub(demand,supply), Q16, Math.max(GOODS, flow)), -Q16, Q16);
+
+  let inventory_q16 = 0, inventory_target = 0;
+  if (s.storage_mode === 0){
+    inventory_target = mulDivSat(demand, s.inv_days_q16, Q16);
+    inventory_q16 = clamp(mulDivSat(satSub(inventory_target, s.stock), Q16, Math.max(GOODS, inventory_target)), -Q16, Q16);
+  }
+  const shortage_q16 = clamp(Math.round(s.shortage*Q16), 0, Q16);
+
+  const p = Math.max(1, price);
+  const anchor = (signal && s.monetary===0 && s.cost_anchor>0) ? s.cost_anchor : 0;
+  let cost_q16 = 0, cost_floor = 0;
+  if (signal && s.monetary===0 && s.cost_anchor>0){
+    const confidence = Math.min(Q16, mulDivSat(supply, Q16, Math.max(GOODS, demand)));
+    cost_q16 = mulDivSat(clamp(mulDivSat(satSub(s.cost_anchor,p), Q16, Math.max(s.cost_anchor,p)), -Q16, Q16), confidence, Q16);
+    if (s.cost_anchor > p && demand > 0 && (s.stock < inventory_target || shortage_q16 > 0)){
+      cost_floor = s.cost_anchor;
+    }
+  }
+  let idle_q16 = 0;
+  if (demand===0 && supply===0 && s.stock===0){
+    idle_q16 = clamp(mulDivSat(satSub(s.default_price,p), Q16, Math.max(1, Math.max(s.default_price,p))), -Q16, Q16);
+  }
+
+  const c_excess = mulDivSat(excess_q16, s.w_excess_q16, Q16);
+  const c_inventory = mulDivSat(inventory_q16, s.w_inventory_q16, Q16);
+  const c_shortage = mulDivSat(shortage_q16, s.w_shortage_q16, Q16);
+  const c_cost = mulDivSat(cost_q16, s.w_cost_q16, Q16);
+  const c_idle = mulDivSat(idle_q16, s.w_idle_q16, Q16);
+  const total_q16 = satAdd(satAdd(satAdd(satAdd(c_excess,c_inventory),c_shortage),c_cost),c_idle);
+
+  const elasticity = clamp(s.elasticity_q16, Q16/4, Q16*4);
+  const adjusted = mulDivSat(total_q16, Q16, elasticity);
+  const change_q16 = mulDivSat(adjusted, s.price_adjust_q16, Q16);
+
+  // 应用
+  const change_clamped = clamp(change_q16, -s.max_fall_q16, s.max_rise_q16);
+  const period_change = satMul(change_clamped, s.epoch_days);
+  let next = satAdd(p, mulDivSat(p, period_change, Q16));
+  let floorApplied = false;
+  if (cost_floor > p){
+    floorApplied = true;
+    const max_rise_period = satMul(s.max_rise_q16, s.epoch_days);
+    const max_cost = satAdd(p, mulDivSat(p, max_rise_period, Q16));
+    next = Math.max(next, Math.min(cost_floor, max_cost));
+  }
+  const bounded = Math.round(clamp(next, s.min_price, s.max_price));
+
+  return {
+    demand, supply, flow, excess_q16, inventory_q16, inventory_target, shortage_q16,
+    cost_q16, cost_floor, idle_q16, confidence: signal&&s.monetary===0&&s.cost_anchor>0?Math.min(Q16, mulDivSat(supply,Q16,Math.max(GOODS,demand))):0,
+    c_excess, c_inventory, c_shortage, c_cost, c_idle, total_q16,
+    elasticity, elasticity_clamped: elasticity!==s.elasticity_q16, adjusted, change_q16,
+    change_clamped, period_change, next, bounded, floorApplied,
+    cap_hit: (change_q16!==change_clamped) || (next!==bounded),
+  };
+}
+
+// ===== 渲染 =====
+function render(){
+  const s = read();
+  const r = compute(s);
+  const dPct = (r.bounded - s.price);
+  const dPctRel = s.price? (dPct/s.price*100):0;
+
+  document.getElementById('o_total').textContent = (r.total_q16/Q16).toFixed(4);
+  const chEl = document.getElementById('o_change');
+  chEl.textContent = (r.change_q16/Q16>=0?'+':'') + (r.change_q16/Q16).toFixed(4);
+  chEl.className = 'v ' + (r.change_q16>=0?'delta-up':'delta-down');
+  document.getElementById('o_next').textContent = fmt(r.next);
+  const bEl = document.getElementById('o_bounded');
+  bEl.textContent = fmt(r.bounded) + '  (' + (dPctRel>=0?'+':'') + dPctRel.toFixed(2) + '%/周期)';
+  bEl.className = 'big ' + (dPct>=0?'delta-up':'delta-down');
+
+  // flags
+  const fl = document.getElementById('flags'); fl.innerHTML='';
+  const mk = (txt,hit)=>{const e=document.createElement('span');e.className='flag '+(hit?'hit':'clean');e.textContent=txt;fl.appendChild(e);};
+  mk('日涨跌夹断'+(r.change_q16!==r.change_clamped?' ✔':' —'), r.change_q16!==r.change_clamped);
+  mk('触顶/触底'+(r.next!==r.bounded?' ✔':' —'), r.next!==r.bounded);
+  mk('成本硬底价'+(r.floorApplied?' ✔':' —'), r.floorApplied);
+  mk('弹性被夹'+(r.elasticity_clamped?' ✔':' —'), r.elasticity_clamped);
+  mk('库存压启用'+(s.storage_mode===0?' ✔':' 关'), s.storage_mode===0);
+  mk('货币发行品'+(s.monetary!==0?' ✔ 无成本锚':''), s.monetary!==0);
+
+  // trace
+  document.getElementById('f_trace').innerHTML =
+`<b>demand</b>=${fmt(r.demand)}  <b>flow</b>=${fmt(r.flow)}<br>`+
+`<b>excess</b>=${r.excess_q16/Q16>=0?'+':''}${(r.excess_q16/Q16).toFixed(4)}  `+
+`<b>inventory</b>=${r.inventory_q16/Q16>=0?'+':''}${(r.inventory_q16/Q16).toFixed(4)} (目标库存=${fmt(r.inventory_target)})  `+
+`<b>shortage</b>=${(r.shortage_q16/Q16).toFixed(4)}<br>`+
+`<b>cost</b>=${r.cost_q16/Q16>=0?'+':''}${(r.cost_q16/Q16).toFixed(4)} (置信度=${(r.confidence/Q16).toFixed(2)}·锚=${fmt(s.cost_anchor)})  `+
+`<b>idle</b>=${r.idle_q16/Q16>=0?'+':''}${(r.idle_q16/Q16).toFixed(4)}<br>`+
+`<b>total</b>=Σ加权=${r.total_q16/Q16>=0?'+':''}${(r.total_q16/Q16).toFixed(4)}  `+
+`<b>÷弹性(${(r.elasticity/Q16).toFixed(2)})</b> → <b>×调节(${(s.price_adjust_q16/Q16).toFixed(3)})</b> → change=${(r.change_q16/Q16).toFixed(4)}<br>`+
+`period_change=change×${s.epoch_days}=${r.period_change/Q16>=0?'+':''}${(r.period_change/Q16).toFixed(4)}  `+
+`<b>next</b>=${fmt(r.next)}  →  <b>final</b>=${fmt(r.bounded)}`;
+
+  // 表格
+  const rows = [
+    ['过剩需求','excess',r.excess_q16,s.w_excess_q16,r.c_excess],
+    ['库存缺口','inventory',r.inventory_q16,s.w_inventory_q16,r.c_inventory],
+    ['短缺','shortage',r.shortage_q16,s.w_shortage_q16,r.c_shortage],
+    ['成本锚','cost',r.cost_q16,s.w_cost_q16,r.c_cost],
+    ['闲置回归','idle',r.idle_q16,s.w_idle_q16,r.c_idle],
+  ];
+  const tb = document.querySelector('#tbl_components tbody'); tb.innerHTML='';
+  rows.forEach(([name,en,sig,w,cont])=>{
+    const tr=document.createElement('tr');
+    const dir = cont>0?'<span class="delta-up">↑ 推高</span>':(cont<0?'<span class="delta-down">↓ 压低</span>':'—');
+    tr.innerHTML=`<td>${name} <small style="color:var(--muted)">${en}</small></td>`+
+      `<td>${sig}</td><td>${(sig/Q16).toFixed(3)}</td><td>${(w/Q16).toFixed(3)}</td>`+
+      `<td>${cont>0?'+':''}${cont}</td><td>${dir}</td>`;
+    tb.appendChild(tr);
+  });
+
+  drawBars(r);
+  drawLine(s, r);
+}
+
+// ---- 柱状图：5 因子信号 + 加权贡献 ----
+function drawBars(r){
+  const W=560,H=210,pad=28, mid=H/2;
+  const data=[
+    {n:'过剩',v:r.excess_q16,c:'var(--excess)',cont:r.c_excess},
+    {n:'库存',v:r.inventory_q16,c:'var(--inventory)',cont:r.c_inventory},
+    {n:'短缺',v:r.shortage_q16,c:'var(--shortage)',cont:r.c_shortage},
+    {n:'成本',v:r.cost_q16,c:'var(--cost)',cont:r.c_cost},
+    {n:'闲置',v:r.idle_q16,c:'var(--idle)',cont:r.c_idle},
+  ];
+  const maxV = Math.max(1, ...data.map(d=>Math.abs(d.v)));
+  const scale = (H/2 - pad)/Q16;
+  const bw = (W-pad*2)/data.length * 0.5;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">`;
+  svg+=`<line x1="${pad}" y1="${mid}" x2="${W-pad}" y2="${mid}" stroke="#2a313c"/>`;
+  // 参考刻度 ±1
+  svg+=`<text x="2" y="${pad+4}" fill="#8b95a3" font-size="10">+1</text>`;
+  svg+=`<text x="2" y="${H-pad+4}" fill="#8b95a3" font-size="10">-1</text>`;
+  data.forEach((d,i)=>{
+    const cx = pad + (i+0.5)*(W-pad*2)/data.length;
+    const h = d.v*scale;
+    const y = h>=0? mid-h : mid;
+    svg+=`<rect x="${cx-bw/2}" y="${y}" width="${bw}" height="${Math.abs(h)}" fill="${d.c}" opacity="0.9" rx="2"/>`;
+    svg+=`<text x="${cx}" y="${h>=0?mid-h-5:mid-h+13}" fill="#d7dde6" font-size="10" text-anchor="middle">${(d.v/Q16).toFixed(2)}</text>`;
+    svg+=`<text x="${cx}" y="${H-6}" fill="#8b95a3" font-size="10.5" text-anchor="middle">${d.n}</text>`;
+    // 加权贡献小标
+    svg+=`<text x="${cx}" y="${pad-2}" fill="${d.cont>=0?'#ff6b6b':'#4dabf7'}" font-size="9" text-anchor="middle">${d.cont>0?'+':''}${d.cont}</text>`;
+  });
+  svg+=`</svg>`;
+  document.getElementById('chart_bars').innerHTML=svg;
+}
+
+// ---- 折线图：价格投影 ----
+function drawLine(s, r){
+  const N = Math.max(2, Math.round(s.proj_n)||40);
+  let price = s.price;
+  const pts=[];
+  for(let i=0;i<N;i++){
+    const rr = compute(s, price);
+    pts.push({i, price:rr.bounded, top:rr.bounded>=s.max_price-1e-6, bot:rr.bounded<=s.min_price+1e-6});
+    price = rr.bounded;
+    if(rr.bounded===s.max_price || rr.bounded===s.min_price){
+      // 触顶/触底后通常继续贴边（除非压力反向），仍继续画
+    }
+  }
+  const W=560,H=220,padL=46,padR=10,padT=12,padB=22;
+  const lo=Math.min(s.min_price, ...pts.map(p=>p.price));
+  const hi=Math.max(s.max_price, ...pts.map(p=>p.price));
+  const span=Math.max(1, hi-lo);
+  const X=i=> padL + i*(W-padL-padR)/(N-1);
+  const Y=v=> padT + (1-(v-lo)/span)*(H-padT-padB);
+  let svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">`;
+  // 网格 + 轴
+  [lo, lo+span/2, hi].forEach(v=>{
+    svg+=`<line x1="${padL}" y1="${Y(v)}" x2="${W-padR}" y2="${Y(v)}" stroke="#1d222b"/>`;
+    svg+=`<text x="${padL-5}" y="${Y(v)+3}" fill="#8b95a3" font-size="9" text-anchor="end">${fmt(v)}</text>`;
+  });
+  svg+=`<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#2a313c"/>`;
+  // min/max 带
+  svg+=`<line x1="${padL}" y1="${Y(s.max_price)}" x2="${W-padR}" y2="${Y(s.max_price)}" stroke="#ff6b6b" stroke-dasharray="3 3" opacity="0.5"/>`;
+  svg+=`<line x1="${padL}" y1="${Y(s.min_price)}" x2="${W-padR}" y2="${Y(s.min_price)}" stroke="#4dabf7" stroke-dasharray="3 3" opacity="0.5"/>`;
+  // 路径
+  let d='';
+  pts.forEach((p,i)=>{ d += (i?'L':'M')+X(i)+' '+Y(p.price)+' '; });
+  svg+=`<path d="${d}" fill="none" stroke="#6ea8fe" stroke-width="2"/>`;
+  pts.forEach((p,i)=>{
+    if(i===0||i===N-1||p.top||p.bot){
+      svg+=`<circle cx="${X(i)}" cy="${Y(p.price)}" r="3" fill="${p.top?'#ff6b6b':(p.bot?'#4dabf7':'#6ea8fe')}"/>`;
+    }
+  });
+  svg+=`<text x="${W-padR}" y="${H-6}" fill="#8b95a3" font-size="9" text-anchor="end">周期 → (共${N})</text>`;
+  svg+=`</svg>`;
+  document.getElementById('chart_line').innerHTML=svg;
+}
+
+// ===== 预设 =====
+const PRESETS = {
+  '均衡':{household_demand:1000,business_demand:200,supply:1200,stock:5000,shortage:0.0,price:100,
+    default_price:100,min_price:20,max_price:500,cost_anchor:80,price_adjust:0.02,elasticity:1.0,
+    inv_days:5,max_rise:0.25,max_fall:0.25,monetary:0,storage_mode:0,
+    w_excess:0.125,w_inventory:0.125,w_shortage:0.125,w_cost:0.25,w_idle:0.0078,has_signal:true,epoch_days:5},
+  '稀缺涨价':{household_demand:3000,business_demand:1000,supply:500,stock:300,shortage:0.7,price:100,
+    default_price:100,min_price:20,max_price:500,cost_anchor:120,price_adjust:0.03,elasticity:0.8,
+    inv_days:5,max_rise:0.25,max_fall:0.25,monetary:0,storage_mode:0,
+    w_excess:0.2,w_inventory:0.2,w_shortage:0.25,w_cost:0.3,w_idle:0.0078,has_signal:true,epoch_days:5},
+  '供给过剩':{household_demand:400,business_demand:100,supply:5000,stock:20000,shortage:0.0,price:100,
+    default_price:100,min_price:20,max_price:500,cost_anchor:60,price_adjust:0.02,elasticity:1.2,
+    inv_days:5,max_rise:0.25,max_fall:0.25,monetary:0,storage_mode:0,
+    w_excess:0.15,w_inventory:0.15,w_shortage:0.1,w_cost:0.2,w_idle:0.0078,has_signal:true,epoch_days:5},
+  '成本推动':{household_demand:900,business_demand:300,supply:1100,stock:4000,shortage:0.1,price:100,
+    default_price:100,min_price:20,max_price:500,cost_anchor:300,price_adjust:0.04,elasticity:0.6,
+    inv_days:5,max_rise:0.25,max_fall:0.25,monetary:0,storage_mode:0,
+    w_excess:0.125,w_inventory:0.125,w_shortage:0.1,w_cost:0.6,w_idle:0.0078,has_signal:true,epoch_days:5},
+  '死市回归':{household_demand:0,business_demand:0,supply:0,stock:0,shortage:0.0,price:250,
+    default_price:100,min_price:20,max_price:500,cost_anchor:0,price_adjust:0.02,elasticity:1.0,
+    inv_days:5,max_rise:0.25,max_fall:0.25,monetary:0,storage_mode:0,
+    w_excess:0.125,w_inventory:0.125,w_shortage:0.125,w_cost:0.25,w_idle:0.05,has_signal:true,epoch_days:5},
+  '货币发行品':{household_demand:1500,business_demand:500,supply:800,stock:2000,shortage:0.3,price:100,
+    default_price:100,min_price:20,max_price:500,cost_anchor:90,price_adjust:0.02,elasticity:1.0,
+    inv_days:5,max_rise:0.25,max_fall:0.25,monetary:1,storage_mode:0,
+    w_excess:0.2,w_inventory:0.1,w_shortage:0.15,w_cost:0.25,w_idle:0.0078,has_signal:true,epoch_days:5},
+};
+function applyPreset(name){
+  const p = PRESETS[name]; if(!p) return;
+  for(const k in p){
+    if(k==='has_signal'){document.getElementById('has_signal').checked=p[k];continue;}
+    document.getElementById(k).value=p[k];
+  }
+  render();
+}
+const pc=document.getElementById('presets');
+Object.keys(PRESETS).forEach(n=>{
+  const b=document.createElement('button');b.className='preset';b.textContent=n;
+  b.onclick=()=>applyPreset(n); pc.appendChild(b);
+});
+
+// ===== 绑定 =====
+['household_demand','business_demand','supply','stock','shortage','price','has_signal',
+ 'default_price','min_price','max_price','cost_anchor','price_adjust','elasticity','inv_days',
+ 'max_rise','max_fall','monetary','w_excess','w_inventory','w_shortage','w_cost','w_idle',
+ 'storage_mode','epoch_days','proj_n'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', render);
+  document.getElementById(id).addEventListener('change', render);
+});
+document.getElementById('btn_step').onclick=()=>{
+  const s=read(); const r=compute(s);
+  document.getElementById('price').value=r.bounded; render();
+};
+document.getElementById('btn_reset').onclick=()=>{ applyPreset('均衡'); };
+
+// 初始
+applyPreset('均衡');
+</script>
+</body>
+</html>

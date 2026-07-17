@@ -10,7 +10,7 @@ extends SceneTree
 #      - iron_ore：山地（地貌+海拔权重）> 平原（斑块矿脉负 base + 噪声）。
 #      - copper_ore：火山格（init_volcano）> 非火山。
 #      - clay：有河流（init_river）> 无河流（其余条件相同）。
-#      - timber：森林植被（init_vegetation_weights）> 裸地。
+#      - timber：森林植被（init_vegetation_weights）> 裸地；普通非沙漠陆地有 floor，沙漠为 0。
 #      - wild_game / pasture / 三类农业容量有各自偏向。
 #      - marine_fish 位于海洋水格；淡水和淡水鱼不再是经济资源槽。
 #   3. 矿产由资源局部斑块 + 同族地质省 + 矿带共同决定，固定 seed 可重放。
@@ -22,7 +22,7 @@ extends SceneTree
 var _checks: int = 0
 var _failures: int = 0
 
-# cell 布局（n=12）：
+# cell 布局（n=13）：
 const C_PLAIN: int = 0       # 平原 / 裸地 / 无水无火山（参照基准）
 const C_MOUNTAIN: int = 1    # 山地 + 高海拔（iron 高）
 const C_PEAK: int = 2        # 高峰 + 更高海拔
@@ -35,6 +35,7 @@ const C_GRASS: int = 8       # 平原 + 温带草原（牛/野生动物高）
 const C_LAKE: int = 9        # 湖泊水格（淡水资源）
 const C_WET_FOREST: int = 10 # 湿热低地森林（香料/猪高）
 const C_COOL_HILL: int = 11  # 凉爽丘陵草甸（羊/草药高）
+const C_DESERT: int = 12     # 沙漠 / 极旱荒漠（timber 应排除）
 
 
 func _init() -> void:
@@ -51,7 +52,7 @@ func _run() -> void:
 		print("=== init deposit summary: %d checks, %d failures ===" % [_checks, _failures])
 		return
 
-	var n: int = 12
+	var n: int = 13
 	var map := _build_map(n)
 	var gen := MapGenerator.new()
 	gen._bootstrap_natural_resource_deposits(map, null)
@@ -76,11 +77,13 @@ func _build_map(n: int) -> MapData:
 	map._build_indices()
 
 	var LF = LandformType.LF
+	var TERRAIN = TerrainType.TERRAIN
 	var VEG = VegetationType.VEG
 
 	var temp := PackedFloat32Array();    temp.resize(n)
 	var moist := PackedFloat32Array();   moist.resize(n)
 	var water := PackedByteArray();      water.resize(n)
+	var terrain := PackedByteArray();    terrain.resize(n)
 	var elev := PackedFloat32Array();    elev.resize(n)
 	var lf := PackedByteArray();         lf.resize(n)
 	var veg := PackedByteArray();        veg.resize(n)
@@ -95,6 +98,7 @@ func _build_map(n: int) -> MapData:
 		temp[i] = 0.55
 		moist[i] = 0.5
 		water[i] = 0
+		terrain[i] = TERRAIN.PLAIN
 		elev[i] = 0.02
 		lf[i] = LF.PLAIN
 		veg[i] = VEG.NONE
@@ -108,12 +112,13 @@ func _build_map(n: int) -> MapData:
 	lf[C_PEAK] = LF.PEAK;          elev[C_PEAK] = 0.92
 	lf[C_VOLCANO] = LF.VOLCANO;    elev[C_VOLCANO] = 0.70;  volcano[C_VOLCANO] = 1
 	river[C_RIVER] = 1                                       # 仅此项区别于 C_NORIVER
-	water[C_WATER] = 1;            lf[C_WATER] = LF.OCEAN
-	lf[C_FOREST] = LF.HILL;        veg[C_FOREST] = VEG.TEMPERATE_DECIDUOUS;  elev[C_FOREST] = 0.40
-	veg[C_GRASS] = VEG.TEMPERATE_GRASSLAND
-	water[C_LAKE] = 1;             lf[C_LAKE] = LF.LAKE
-	temp[C_WET_FOREST] = 0.78;     moist[C_WET_FOREST] = 0.84; lf[C_WET_FOREST] = LF.LOWLAND; veg[C_WET_FOREST] = VEG.TROPICAL_RAINFOREST
-	temp[C_COOL_HILL] = 0.35;      moist[C_COOL_HILL] = 0.55;  lf[C_COOL_HILL] = LF.HILL; elev[C_COOL_HILL] = 0.48; veg[C_COOL_HILL] = VEG.ALPINE_MEADOW
+	water[C_WATER] = 1;            lf[C_WATER] = LF.OCEAN; terrain[C_WATER] = TERRAIN.OCEAN
+	lf[C_FOREST] = LF.HILL;        veg[C_FOREST] = VEG.TEMPERATE_DECIDUOUS;  elev[C_FOREST] = 0.40; terrain[C_FOREST] = TERRAIN.FOREST
+	veg[C_GRASS] = VEG.TEMPERATE_GRASSLAND; terrain[C_GRASS] = TERRAIN.GRASSLAND
+	water[C_LAKE] = 1;             lf[C_LAKE] = LF.LAKE; terrain[C_LAKE] = TERRAIN.LAKE
+	temp[C_WET_FOREST] = 0.78;     moist[C_WET_FOREST] = 0.84; lf[C_WET_FOREST] = LF.LOWLAND; veg[C_WET_FOREST] = VEG.TROPICAL_RAINFOREST; terrain[C_WET_FOREST] = TERRAIN.JUNGLE
+	temp[C_COOL_HILL] = 0.35;      moist[C_COOL_HILL] = 0.55;  lf[C_COOL_HILL] = LF.HILL; elev[C_COOL_HILL] = 0.48; veg[C_COOL_HILL] = VEG.ALPINE_MEADOW; terrain[C_COOL_HILL] = TERRAIN.HILL
+	terrain[C_DESERT] = TERRAIN.DESERT; veg[C_DESERT] = VEG.XERIC_DESERT
 	# 河流配对格共享采样坐标，隔离 init_river 因子，不让局部噪声/地质场混入比较。
 	posx[C_NORIVER] = posx[C_RIVER]
 	posy[C_NORIVER] = posy[C_RIVER]
@@ -121,6 +126,7 @@ func _build_map(n: int) -> MapData:
 	map.temp_arr = temp
 	map.moisture_arr = moist
 	map.is_water_arr = water
+	map.terrain_arr = terrain
 	map.elevation_arr = elev
 	map.landform_arr = lf
 	map.vegetation_arr = veg
@@ -149,8 +155,10 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 		_expect("clay: 有河流 > 无河流（仅差 init_river）", clay[C_RIVER] > clay[C_NORIVER])
 
 	var timber := _res_arr(map, profiles, "timber")
-	if timber.size() >= 8:
+	if timber.size() >= 13:
 		_expect("timber: 森林 > 裸地（init_vegetation_weights）", timber[C_FOREST] > timber[C_PLAIN])
+		_expect("timber: 非沙漠普通陆地也有基础林木储量", timber[C_PLAIN] > 0.0)
+		_expect("timber: 沙漠/极旱荒漠被排除", is_equal_approx(timber[C_DESERT], 0.0))
 		_expect("timber: 湿热雨林初始储量达到多百万量级", timber[C_WET_FOREST] >= 3000000.0)
 
 	var wild_game := _res_arr(map, profiles, "wild_game")
@@ -250,11 +258,12 @@ func _test_reserve_scale_configuration(profiles: Array) -> void:
 	for profile in profiles:
 		var resource_id := String(profile.id)
 		var expected := 40.0 if resource_id == "timber" else \
-			(2.0 if resource_id in ["marine_fish", "wild_game"] else \
+			(3.0 if resource_id == "wild_game" else \
+			(2.0 if resource_id == "marine_fish" else \
 			(1.0 if resource_id in ["fertile_soil", "arable_land", "paddy_land",
-				"plantation_land", "pasture"] else 8.0))
+				"plantation_land", "pasture"] else 8.0)))
 		scales_ok = scales_ok and is_equal_approx(float(profile.init_reserve_scale), expected)
-	_expect("资源初始储量按一般 8x、农业 1x、动物/海鱼 2x、林木 40x 分级", scales_ok)
+	_expect("资源初始储量按一般 8x、农业 1x、野生动物 3x、海鱼 2x、林木 40x 分级", scales_ok)
 
 
 func _test_reserve_scale_application(profiles: Array) -> void:

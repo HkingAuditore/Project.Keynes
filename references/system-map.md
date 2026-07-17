@@ -315,6 +315,10 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 人口页的预计单位/人/日由 C++ 复用正式需求内核生成 cohort-major CSR，不保存全局
 cohort×good 矩阵。
 
+国内贸易软规划以 neighbor、terrain LUT 映射后的 passable/enter-cost 和冻结国界作为唯一失效语义；
+原始 terrain ID 的季节性重分类不重置 scan。CSV v8 summary 发布 scan/route cursor、规范化拓扑哈希、
+计划重置计数和最近原因，供长时间经济切片检查规划活性。
+
 旧 `cell.goods_*` / `MapData.goods_*` 已删除；新增 good 是 `.tres` 数据操作。自然资源
 `cell.res_*` 仍是 cell schema，未来生产系统通过经济 command 入库，不直接修改市场。
 
@@ -354,6 +358,7 @@ DataCore 或 MapData。
 - DataCore mirror: `cell.country_slot` / `MapData.country_slot_arr` only.
 - Economy consumer: narrow native bridge in `economy_runtime.{h,cpp}`; frozen country epoch,
   country/cohort cash transfer, country/market goods transfer, and combined conservation.
-- Persistence: PKCN v1 first, then PKEC v12 with matching schema/generation/hash; compatible v11 ACTIVE migrates, while ACTIVE rejects v11 PROBE and v10.
+- Persistence: PKCN v1 first, then PKEC v13 with matching schema/generation/hash；旧默认 v11 ACTIVE
+  因商人策略从 25%/1 日改为 12.5%/30 日分档库存基线而明确拒绝，ACTIVE 同时拒绝 v11 PROBE 和 v10。
 - Player-facing read path: selected cell → `CountryFacade.cell_summary()` →
   `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.

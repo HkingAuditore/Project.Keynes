@@ -202,6 +202,59 @@ table.grid th { position: sticky; top: 0; background: var(--bg-3); color: var(--
 table.grid tr:hover td { background: var(--bg-2); cursor: pointer; }
 .table-container .empty { padding: 30px; color: var(--text-faint); text-align: center; }
 
+/* ───────────────────────────── 数值预计算 ───────────────────────────── */
+.balance-controls {
+  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  padding: 9px 14px; background: var(--bg-2); border-bottom: 1px solid var(--border); flex: 0 0 auto;
+}
+.balance-controls label { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; }
+.balance-controls select, .balance-controls input[type="number"] {
+  background: var(--bg); border: 1px solid var(--border-2); color: var(--text);
+  border-radius: 6px; padding: 5px 7px; font: 12px var(--sans);
+}
+.balance-controls select { max-width: 190px; }
+.balance-controls input[type="number"] { width: 70px; text-align: right; }
+.balance-controls select:focus, .balance-controls input:focus { outline: none; border-color: var(--accent); }
+.balance-note {
+  flex: 0 0 auto; padding: 8px 14px; color: var(--text-faint); background: #111621;
+  border-bottom: 1px solid var(--border); font-size: 11.5px; line-height: 1.55;
+}
+.balance-container { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 28px; }
+.balance-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.balance-metric {
+  min-height: 92px; display: flex; flex-direction: column; justify-content: center;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px;
+}
+.balance-metric span { color: var(--text-dim); font-size: 11.5px; }
+.balance-metric b { color: var(--text); font-size: 21px; margin: 5px 0 2px; font-variant-numeric: tabular-nums; }
+.balance-metric small { color: var(--text-faint); font-size: 10.5px; line-height: 1.35; }
+.balance-metric.good { border-color: #285b49; }
+.balance-metric.good b { color: var(--good); }
+.balance-metric.bad { border-color: #693733; }
+.balance-metric.bad b { color: var(--bad); }
+.balance-panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+.balance-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.balance-panel-head h3 { margin: 0 0 3px; font-size: 14px; }
+.balance-panel-head p { margin: 0; color: var(--text-faint); font-size: 11px; }
+.balance-panel-head > span { color: var(--text-dim); font-size: 11.5px; white-space: nowrap; }
+.balance-table-wrap { max-height: 430px; overflow: auto; }
+.balance-grid { font-variant-numeric: tabular-nums; }
+.balance-grid th { z-index: 2; }
+.balance-grid td { white-space: nowrap; }
+.balance-grid td:first-child { min-width: 190px; white-space: normal; }
+.balance-grid td:first-child b { display: block; color: var(--text); font-weight: 600; }
+.balance-grid td:first-child small { display: block; color: var(--text-faint); font: 10px var(--mono); margin-top: 2px; }
+.balance-grid tr.row-bad td:first-child { border-left: 3px solid var(--bad); }
+.balance-grid tr.row-warn td:first-child { border-left: 3px solid var(--warn); }
+.balance-grid tr.row-info td:first-child { border-left: 3px solid var(--info); }
+.balance-grid tr.row-good td:first-child { border-left: 3px solid transparent; }
+.num-bad { color: var(--bad); font-weight: 650; }
+.num-good { color: var(--good); }
+.balance-bars { width: 150px; display: grid; gap: 3px; }
+.balance-bars i { height: 5px; display: block; min-width: 1px; border-radius: 3px; }
+.balance-bars i.supply { background: var(--good); }
+.balance-bars i.demand { background: var(--bad); }
+
 /* ───────── 诊断 ───────── */
 .diag-container { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; }
 .diag-section { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }

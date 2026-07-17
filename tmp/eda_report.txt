@@ -1,0 +1,169 @@
+======================================================================
+SUMMARY (per-epoch)
+======================================================================
+epochs recorded: 1733
+day_index range: 5 .. 8665
+columns: ['epoch_row_id', 'epoch_id', 'day_index', 'epoch_active', 'stage', 'progress_q16', 'sample_day', 'commit_day', 'cohort_count', 'market_count', 'good_count', 'building_type_count', 'building_group_count', 'pending_construction_count', 'filled_owner_jobs', 'filled_employee_jobs', 'unemployed_population', 'production_output_stock', 'production_output_discarded', 'production_output_retained', 'production_output_supported', 'producer_support_money_issued', 'building_wages_paid', 'building_wages_unpaid', 'building_resource_generated', 'building_resource_consumed', 'building_resource_net_delta', 'loss_suspended_building_groups', 'merchant_procurement_budget', 'merchant_procurement_reserved', 'merchant_procurement_spent', 'owner_working_capital_reserved', 'production_input_reserved', 'production_input_reserve_shortfall', 'trade_runtime_mode', 'trade_topology_ready', 'population_error', 'money_error', 'goods_error']
+--- key series first vs last ---
+  cohort_count                           first=             6e+03  last=           3.4e+03  min=3.4e+03  max=6.62e+03
+  building_group_count                   first=          1.25e+04  last=          1.25e+04  min=1.25e+04  max=1.25e+04
+  pending_construction_count             first=                 0  last=                 0  min=0  max=0
+  filled_owner_jobs                      first=          3.11e+05  last=          1.14e+05  min=1.14e+05  max=3.11e+05
+  filled_employee_jobs                   first=           2.4e+03  last=          2.14e+03  min=2.14e+03  max=2.81e+03
+  unemployed_population                  first=          1.22e+03  last=               275  min=0  max=1.22e+03
+  production_output_stock                first=             9e+08  last=          5.59e+07  min=5.17e+07  max=1.65e+09
+  production_output_discarded            first=                 0  last=                 0  min=0  max=1.33e+04
+  production_output_retained             first=          1.92e+08  last=          1.26e+08  min=1.26e+08  max=4.79e+08
+  production_output_supported            first=           7.1e+08  last=          4.69e+07  min=4.29e+07  max=1.35e+09
+  producer_support_money_issued          first=          7.75e+08  last=          5.12e+06  min=4.68e+06  max=2.74e+09
+  building_wages_paid                    first=          1.76e+08  last=          2.42e+08  min=1.76e+08  max=2.9e+08
+  building_wages_unpaid                  first=                 0  last=                 0  min=0  max=3.39e+05
+  building_resource_generated            first=                 0  last=          2.34e+03  min=0  max=1.49e+07
+  building_resource_consumed             first=          8.22e+06  last=          2.24e+06  min=2.2e+06  max=1.1e+08
+  building_resource_net_delta            first=         -8.22e+06  last=         -2.24e+06  min=-9.55e+07  max=-2.2e+06
+  loss_suspended_building_groups         first=                 0  last=               742  min=0  max=742
+  merchant_procurement_budget            first=             1e+10  last=          2.46e+11  min=7.66e+09  max=2.46e+11
+  merchant_procurement_reserved          first=          3.33e+09  last=           8.2e+10  min=2.55e+09  max=8.2e+10
+  merchant_procurement_spent             first=          9.41e+08  last=          5.93e+06  min=2.05e+06  max=4.34e+09
+  production_input_reserve_shortfall     first=          1.18e+07  last=           8.5e+06  min=3.46e+05  max=1.18e+07
+  population_error                       first=                 0  last=                 0  min=0  max=0
+  money_error                            first=                 0  last=                 0  min=0  max=0
+  goods_error                            first=                 0  last=                 0  min=0  max=0
+--- unemployment share of (employed+unemployed) ---
+  unemployed %: first=0.39  last=0.24  mean=0.18  max=0.39
+--- waste ratio (discarded / (stock+discarded+retained)) ---
+  waste %: first=0.00  last=0.00  mean=0.00  max=0.00
+--- wage unpaid ratio ---
+  unpaid wage %: first=0.00  last=0.00  mean=0.01  max=0.13
+  loss_suspended_building_groups: min=0 max=742 mean=714.85
+  production_input_reserve_shortfall: min=3.46e+05 max=1.18e+07 mean=7.82e+06
+  population_error/money_error/goods_error all: pop_max=0 money_max=0 goods_max=0
+  trade_runtime_mode values: {'ACTIVE': 1733}
+  epoch_active: {False: 1733}
+  stage values: {'trade_planning': 1733}
+
+======================================================================
+COHORTS
+======================================================================
+rows: 5692  distinct epochs: 1733  distinct cohort_index: 5
+cohort rows per epoch: min=3 max=5 mean=3.3
+total population first epoch=255 last=130
+unemployed first=1 last=0  % first=0.39 last=0.00
+owner_employed first=251 last=126
+employee_employed first=3 last=4
+merchant cohorts count (is_merchant sum) first=1 last=1
+total funds first=108411042 last=1199295917  (money sub-units; /10000 = units)
+--- by profession_id (last epoch recorded) ---
+               pop  unem  own  emp      funds  n  unem_pct
+profession_id                                             
+9              123     0  123    0     255473  1       0.0
+22               4     0    0    4  704612105  1       0.0
+20               3     0    3    0  494428339  1       0.0
+--- satisfaction_q16 (last epoch) quantiles ---
+  min=0 max=65535 mean=0.818
+  worst_need_id value counts (top): {11: 4926, 5: 350, 10: 264, 13: 152}
+--- funds per person (last epoch) quantiles (funds/10000/pop) ---
+  min=0.21 p25=8240.58 median=16480.94 p75=17048.12 max=17615.30
+
+======================================================================
+BUILDINGS
+======================================================================
+rows: 17330  distinct epochs: 1733
+is_construction value counts: {0: 17330}
+operating_state value counts: {0: 17330}  (0=active,1=suspended_loss)
+wage_suspended value counts: {0: 17330}
+--- top building types by row count (name | rows | %construction | %suspended | %wage_susp) ---
+  [ 30] communal_hearth              n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [ 65] flint_quarry                 n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [ 69] gathering_ground             n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [ 79] household_weaving_shelter    n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [ 90] knapping_workshop            n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [106] merchant_post                n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [203] placer_gold_working          n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [238] stone_age_hunting_camp       n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [239] stone_collector              n= 1733  constr=0.00  susp=0.00  wsup=0.00
+  [242] surface_silver_working       n= 1733  constr=0.00  susp=0.00  wsup=0.00
+
+last epoch operating building rows: 10
+  owner fill ratio mean=1.232  (0 means unfilled)
+  employee fill ratio mean=1.000
+  % with zero owner fill: 30.0
+  % with zero employee fill: 80.0
+  last_margin_gap_q16 mean=0.5530  median=1.0000
+  realized_profit_margin_q16: present? 20.0% nonzero
+  severe_loss_cycles>0: 0.0%
+  last_discarded sum=0  last_retained sum=1.35e+05  last_sold sum=1.79e+04
+  last_resource_generated sum=0  last_resource sum(consumed)=2.76e+03
+  last_revenue sum=5.88e+05  last_input_cost sum=0  last_wages_paid sum=4.58e+05  last_wages_due sum=4.58e+05
+
+======================================================================
+MARKET
+======================================================================
+rows: 207960  distinct goods: 120  distinct epochs: 1733
+storage_mode value counts: {0: 206227, 1: 1733}
+trade_enabled value counts: {1: 206227, 0: 1733}
+goods with any activity (stock>0|demand>0|busdemand>0): 11 of 120
+--- last epoch: 11 active goods (stock>0/demand>0) ---
+            good_id   stock  price  demand_ema  business_demand_ema  offered_supply_ema  shortage_q16  price_pressure_total_q16  cost_anchor_price     category_id  storage_mode
+           raw_hide 1039961   2400           0                    0                   0             0                    -32768               2400        raw_hide             0
+              flint  304452    400           0                    0                  36             0                    -33062                400           flint             0
+          raw_stone   65822   1000           0                    0                   0             0                    -32768               1000       raw_stone             0
+    gathered_plants    5000    557       10854                  999                 964         12852                     47777                500 gathered_plants             0
+          game_meat       1 100000         504                  498                   0         65535                    106490               1000       game_meat             0
+chipped_stone_tools       1  90000           2                    4                   0         65535                     66141                900           tools             0
+              cloth       0 240000           7                    0                   0         65535                     67885               2400 rag_paper_fiber             0
+               fish       0 100000         504                    0                   0         65535                    102431                  0            fish             0
+                fur       0 240000           8                    0                   0         65535                     68221               2400             fur             0
+     processed_food       0 160000        1680                    0                   0         65513                    106473               1600  processed_food             0
+               logs       0 100000         448                    0                   0         65535                    101973                  0            logs             0
+
+category_id distribution among ALL goods: {'starchy_staple': 8665, 'tools': 6932, 'spinnable_fiber': 6932, 'prime_mover': 5199, 'processor_component': 3466, 'precious_metal': 3466, 'elastomer': 3466, 'ferrous_stock': 3466, 'agricultural_machinery': 1733, 'structural_metal': 1733, 'automobiles': 1733, 'autonomous_systems': 1733, 'batteries': 1733, 'bauxite': 1733, 'beverages': 1733, 'bread': 1733, 'bricks': 1733, 'canned_fish': 1733, 'cement': 1733, 'clay': 1733, 'rag_paper_fiber': 1733, 'clothing': 1733, 'coal': 1733, 'coke': 1733, 'computers': 1733, 'concrete': 1733, 'construction_components': 1733, 'copper': 1733, 'copper_ore': 1733, 'crude_oil': 1733, 'dairy_products': 1733, 'detergent': 1733, 'edible_oil': 1733, 'electrical_equipment': 1733, 'electricity': 1733, 'electronic_components': 1733, 'explosives': 1733, 'fertilizer': 1733, 'fine_clothing': 1733, 'fine_furniture': 1733, 'fish': 1733, 'flint': 1733, 'footwear': 1733, 'fur': 1733, 'furniture': 1733, 'game_meat': 1733, 'gathered_plants': 1733, 'glass': 1733, 'horses': 1733, 'household_appliances': 1733, 'industrial_chemicals': 1733, 'industrial_machinery': 1733, 'insulated_cable': 1733, 'iron_ore': 1733, 'jewelry': 1733, 'lead': 1733, 'lead_ore': 1733, 'leather': 1733, 'lime': 1733, 'limestone': 1733, 'livestock_products': 1733, 'logs': 1733, 'lubricants': 1733, 'lumber': 1733, 'machine_parts': 1733, 'manganese_ore': 1733, 'manuscripts': 1733, 'meat': 1733, 'medicinal_herbs': 1733, 'natural_gas': 1733, 'nuclear_fuel': 1733, 'oceanic_vessels': 1733, 'packaging': 1733, 'paper': 1733, 'petrochemicals': 1733, 'pharmaceuticals': 1733, 'phosphate_rock': 1733, 'plastics': 1733, 'pottery': 1733, 'prepared_staples': 1733, 'printed_materials': 1733, 'processed_food': 1733, 'radio_equipment': 1733, 'railway_equipment': 1733, 'rare_earth_metals': 1733, 'rare_earth_ore': 1733, 'raw_hide': 1733, 'raw_stone': 1733, 'reactor_components': 1733, 'refined_fuel': 1733, 'salt': 1733, 'saltpeter': 1733, 'scientific_instruments': 1733, 'silica_sand': 1733, 'soap': 1733, 'spices': 1733, 'sulfur': 1733, 'telecom_equipment': 1733, 'tin': 1733, 'tin_ore': 1733, 'vegetables': 1733, 'wire': 1733, 'zinc': 1733, 'zinc_ore': 1733}
+--- price trajectory (first vs last epoch) for active goods ---
+  chipped_stone_tools          price first=11236 last=90000  shortage_last=65535  pprice_last=66141
+  cloth                        price first=25774 last=240000  shortage_last=65535  pprice_last=67885
+  fish                         price first=12539 last=100000  shortage_last=65535  pprice_last=102431
+  flint                        price first=3688 last=400  shortage_last=0  pprice_last=-33062
+  fur                          price first=29765 last=240000  shortage_last=65535  pprice_last=68221
+  game_meat                    price first=12539 last=100000  shortage_last=65535  pprice_last=106490
+  gathered_plants              price first=5294 last=557  shortage_last=12852  pprice_last=47777
+  logs                         price first=12539 last=100000  shortage_last=65535  pprice_last=101973
+  processed_food               price first=20062 last=160000  shortage_last=65513  pprice_last=106473
+  raw_hide                     price first=24000 last=2400  shortage_last=0  pprice_last=-32768
+  raw_stone                    price first=10000 last=1000  shortage_last=0  pprice_last=-32768
+
+======================================================================
+RESOURCES
+======================================================================
+rows: 51990  distinct resources: 30  distinct epochs: 1733
+                        first          last      change_%
+resource_id                                              
+stone            4.109423e+08  4.109423e+08  0.000000e+00
+coal             3.006638e+08  3.006638e+08  0.000000e+00
+iron_ore         2.180741e+08  2.180741e+08  0.000000e+00
+flint            1.158403e+08  1.158403e+08 -8.632577e-06
+copper_ore       7.132282e+07  7.132282e+07  0.000000e+00
+silver_ore       8.728242e+06  8.723913e+06 -4.959762e-02
+gold_ore         8.505248e+06  8.504815e+06 -5.090974e-03
+clay             1.020492e+07  6.513974e+06 -3.616827e+01
+timber           1.372675e+01  4.956200e+06  3.610604e+07
+rare_earth       4.936733e+06  4.936733e+06  0.000000e+00
+fertile_soil     3.527303e+05  8.205147e+05  1.326182e+02
+salt             1.281071e+03  3.055427e+05  2.375056e+04
+saltpeter        3.315578e+02  6.322562e+04  1.896926e+04
+wild_game        3.913966e+03  8.845676e+03  1.260029e+02
+oil              0.000000e+00  0.000000e+00           NaN
+natural_gas      0.000000e+00  0.000000e+00           NaN
+arable_land      0.000000e+00  0.000000e+00           NaN
+marine_fish      0.000000e+00  0.000000e+00           NaN
+plantation_land  0.000000e+00  0.000000e+00           NaN
+pasture          0.000000e+00  0.000000e+00           NaN
+bauxite          0.000000e+00  0.000000e+00           NaN
+paddy_land       0.000000e+00  0.000000e+00           NaN
+limestone        0.000000e+00  0.000000e+00           NaN
+silica_sand      0.000000e+00  0.000000e+00           NaN
+tin_ore          0.000000e+00  0.000000e+00           NaN
+phosphate_rock   0.000000e+00  0.000000e+00           NaN
+lead_ore         0.000000e+00  0.000000e+00           NaN
+zinc_ore         0.000000e+00  0.000000e+00           NaN
+manganese_ore    0.000000e+00  0.000000e+00           NaN
+sulfur           0.000000e+00  0.000000e+00           NaN

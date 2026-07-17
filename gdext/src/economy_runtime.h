@@ -295,6 +295,7 @@ private:
         int64_t quantity = 0;
         int32_t candidate_begin = 0;
         int32_t candidate_count = 0;
+        int32_t required_q16 = Q16_ONE;
     };
 
     struct InputCandidate {
@@ -446,7 +447,10 @@ private:
         std::vector<int32_t> component;
         uint64_t topology_generation = 0;
         uint64_t topology_hash = 0;
-        uint64_t component_country_generation = 0;
+        // Hash of the frozen cell->country ownership map used to build
+        // components. Country cash/treasury generations must not invalidate
+        // routing when borders did not change.
+        uint64_t component_country_hash = 0;
         bool ready = false;
 
         void clear() {
@@ -456,7 +460,7 @@ private:
             component.clear();
             topology_generation = 0;
             topology_hash = 0;
-            component_country_generation = 0;
+            component_country_hash = 0;
             ready = false;
         }
     };
@@ -482,7 +486,7 @@ private:
         int64_t capacity_work = 0;
         int64_t density_q16 = 0;
         uint64_t topology_generation = 0;
-        uint64_t country_generation = 0;
+        uint64_t country_topology_hash = 0;
     };
 
     struct TradePlanStore {
@@ -491,7 +495,7 @@ private:
         int64_t scan_cursor = 0;
         int32_t route_cursor = 0;
         int64_t scan_total = 0;
-        uint64_t country_generation = 0;
+        uint64_t country_topology_hash = 0;
         uint64_t topology_generation = 0;
         std::vector<TradeSignal> sources;
         std::vector<TradeSignal> destinations;
@@ -525,7 +529,7 @@ private:
             route_cache_costs.clear();
             search_stamp = 0;
             completed_scans = 0;
-            country_generation = 0;
+            country_topology_hash = 0;
             topology_generation = 0;
         }
     };
@@ -974,6 +978,7 @@ private:
     std::vector<int32_t> _survival_required_need_indices;
     std::vector<uint8_t> _survival_food_good_mask;
     std::vector<uint8_t> _survival_staple_good_mask;
+    std::vector<uint8_t> _survival_clothing_good_mask;
     int32_t _survival_staple_need_stable_id = -1;
     int32_t _survival_clothing_need_stable_id = -1;
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
@@ -990,8 +995,8 @@ private:
     int32_t _building_severe_loss_cycles = 3;
     int32_t _building_restart_margin_q16 = 6554;
     int32_t _building_restart_cycles = 2;
-    int32_t _merchant_procurement_cash_reserve_q16 = 16384;
-    int32_t _merchant_market_making_days_q16 = Q16_ONE;
+    int32_t _merchant_procurement_cash_reserve_q16 = 8192;
+    int32_t _merchant_market_making_days_q16 = Q16_ONE * 30;
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     // Reserved profession representing unemployed population. Resolved from the
@@ -1118,6 +1123,9 @@ private:
     int64_t _trade_capacity_available = 0;
     int64_t _trade_capacity_used = 0;
     int64_t _trade_settlement_lag_days = 0;
+    int64_t _trade_plan_reset_count = 0;
+    int64_t _trade_topology_content_change_count = 0;
+    std::string _trade_last_plan_reset_reason = "none";
     int64_t _building_resource_capacity_checks = 0;
     int64_t _building_resource_capacity_limited_groups = 0;
     std::string _last_building_rejection_reason;
@@ -1289,6 +1297,7 @@ private:
     int32_t _epoch_country_technology_words = 0;
     uint64_t _epoch_country_generation = 0;
     uint64_t _epoch_country_hash = 0;
+    uint64_t _epoch_country_topology_hash = 0;
     std::vector<BuildingType> _building_types;
     std::vector<JobRole> _building_employee_roles;
     std::vector<GoodAmount> _building_construction_goods;
@@ -1338,6 +1347,16 @@ private:
                                     int32_t country, int32_t &expansions);
     int32_t estimate_trade_price(int32_t market, int32_t good,
                                  int64_t stock_after, int64_t &sat) const;
+    int64_t trade_relief_pressure_q16(int32_t market, int32_t good,
+                                      int64_t &sat) const;
+    int64_t trade_local_stock_target(int32_t market, int32_t good,
+                                     int64_t &sat) const;
+    int64_t merchant_inventory_target(int32_t market, int32_t good,
+                                      int32_t signal_index,
+                                      int64_t realized_withdrawal,
+                                      int64_t export_ema,
+                                      int64_t cold_start_daily_supply,
+                                      int64_t &sat) const;
     bool settle_due_trade_orders(std::string &error);
     bool dispatch_trade_candidates(std::string &error);
     void update_trade_flow_ema();
@@ -1413,6 +1432,7 @@ private:
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
     void rebuild_market_signals();
+    int32_t ensure_market_signal_index(int32_t cell, int32_t good);
     void rebuild_production_input_reserves();
     void rebuild_labor_signals();
     int32_t labor_signal_index(int32_t cell, int32_t profession) const;

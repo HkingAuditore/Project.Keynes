@@ -743,8 +743,9 @@ market×good pair 扫描、路线搜索和 Dijkstra 扩展工作单元；AUTO �
 实际耗时改变结果。未完成时 `economy_should_run()` 继续返回软任务，但
 `economy_day_barrier=false`，因此 WorldClock 正常前进。
 
-到经济提交边界时顺序固定为 `trade_settle → external_ledger → trade_dispatch →
-building_employment → building_production → household_market`。ACTIVE 若规划片恰与新周期到期
+到经济提交边界时顺序固定为 `trade_settle → external_ledger → building_employment →
+building_production → household_market → trade_dispatch → structural_commit`。出口派发单独占一个
+continuation slice，并按本地清算后的库存目标再次裁剪。ACTIVE 若规划片恰与新周期到期
 重合，先执行一片规划，再在后续 slice 进入
 本地市场；只有整个到期经济图未完成才沿用既有 same-day catchup。PROBE 只生成/报告建议，
 不延迟旧本地市场 cadence，也不修改经济状态 hash。详见

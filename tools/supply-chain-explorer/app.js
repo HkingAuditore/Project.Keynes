@@ -1,5 +1,5 @@
 /*
- * app.js — 扫描流程 + 三视图 + 交互
+ * app.js — 扫描流程 + 产业链/数值/时代/表格/诊断视图 + 交互
  * 依赖 parser.js（window.SC）
  */
 (function () {
@@ -17,6 +17,11 @@
     view: 'graph', mode: 'building', eraFilter: new Set(),
     search: '', showLabels: false, selected: null, // {id,type}
     layout: { w: 0, h: 0 }
+  };
+  const balanceState = {
+    eraOrder: null, cumulative: true, buildingCount: 1, utilization: 1,
+    sellThrough: 0.8, professionScale: 1, latestUpgradeOnly: true,
+    includeHouseholds: true
   };
   let MODEL = null;
   let view = { x: 0, y: 0, scale: 1 };
@@ -65,6 +70,8 @@
   }
   function q16(v) { return (Number(v || 0) / 65536).toFixed(2); }
   function goodsQty(v) { return (Number(v || 0) / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 3 }); }
+  function money(v) { return (Number(v || 0) / 10000).toLocaleString('zh-CN', { maximumFractionDigits: 2 }); }
+  function percent(v) { return Number.isFinite(v) ? (Number(v) * 100).toFixed(1) + '%' : '∞'; }
   function toast(msg) {
     const t = $('toast'); t.textContent = msg; t.hidden = false;
     clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600);
@@ -176,10 +183,12 @@
     state.fitted = false;
     showApp();
     buildEraChips();
+    buildBalanceControls();
     setStatus('done', `已扫描：${MODEL.buildings.length} 建筑 / ${MODEL.goods.length} 物资 / ${MODEL.resources.length} 资源 / ${MODEL.professions.length} 职业`);
     switchView('graph');
     renderEras();
     renderTable();
+    renderBalance();
     renderDiag();
   }
 
@@ -214,15 +223,98 @@
   function switchView(v) {
     state.view = v;
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === v));
-    ['graph', 'eras', 'table', 'diag'].forEach((x) => {
+    ['graph', 'balance', 'eras', 'table', 'diag'].forEach((x) => {
       const el = $('view-' + x);
       if (x === v) { el.hidden = false; el.style.display = ''; }
       else { el.hidden = true; el.style.display = 'none'; }
     });
     if (v === 'graph') renderGraph();
+    if (v === 'balance') renderBalance();
     if (v === 'eras') renderEras();
     if (v === 'table') renderTable();
     if (v === 'diag') renderDiag();
+  }
+
+  // ───────────────────────────── 数值预计算 ─────────────────────────────
+  function buildBalanceControls() {
+    const select = $('balanceEra');
+    select.innerHTML = MODEL.eras.map((era, index) =>
+      `<option value="${index}"${index === MODEL.eras.length - 1 ? ' selected' : ''}>${esc(era.display_name)} · ${esc(era.id)}</option>`
+    ).join('');
+    balanceState.eraOrder = Math.max(0, MODEL.eras.length - 1);
+  }
+
+  function balanceOptionsFromControls() {
+    balanceState.eraOrder = Number($('balanceEra').value);
+    balanceState.cumulative = $('balanceScope').value === 'cumulative';
+    balanceState.buildingCount = Math.max(0, Number($('balanceBuildingCount').value || 0));
+    balanceState.utilization = Math.max(0, Math.min(1, Number($('balanceUtilization').value || 0) / 100));
+    balanceState.sellThrough = Math.max(0, Math.min(1, Number($('balanceSellThrough').value || 0) / 100));
+    balanceState.professionScale = Math.max(0, Number($('balancePopulationScale').value || 0));
+    balanceState.latestUpgradeOnly = $('balanceLatestOnly').checked;
+    balanceState.includeHouseholds = $('balanceHouseholds').checked;
+    return balanceState;
+  }
+
+  function balanceMetric(label, value, tone, note) {
+    return `<div class="balance-metric ${tone || ''}"><span>${esc(label)}</span><b>${esc(value)}</b>${note ? `<small>${esc(note)}</small>` : ''}</div>`;
+  }
+
+  function renderBalance() {
+    if (!MODEL || !$('balance-container')) return;
+    const result = SC.computeBalanceScenario(MODEL, balanceOptionsFromControls());
+    const totals = result.totals;
+    let html = '<div class="balance-summary">';
+    html += balanceMetric('纳入建筑', `${totals.buildingTypes} 类 / ${totals.buildingCount.toLocaleString('zh-CN')} 座`, '', '按当前时代与升级族过滤');
+    html += balanceMetric('岗位人口', totals.workforce.toLocaleString('zh-CN', { maximumFractionDigits: 1 }), '', '建筑 owner + employee 岗位');
+    html += balanceMetric('亏损建筑类型', String(totals.lossBuildingTypes), totals.lossBuildingTypes ? 'bad' : 'good', `低于目标利润率 ${totals.belowTargetBuildingTypes} 类`);
+    html += balanceMetric('短缺物资', String(totals.shortageGoods), totals.shortageGoods ? 'bad' : 'good', '承接产出 < 建筑投入 + 居民消费');
+    html += balanceMetric('商人承接产值', money(totals.acceptedOutputValue), '', '货币单位/日');
+    html += balanceMetric('居民参考消费', money(totals.householdCost), '', '货币单位/日');
+    html += '</div>';
+
+    const goods = result.goods.slice().sort((a, b) => {
+      const ar = a.demand > 0 ? a.net / a.demand : a.net;
+      const br = b.demand > 0 ? b.net / b.demand : b.net;
+      return ar - br || String(a.good.id).localeCompare(String(b.good.id));
+    });
+    html += `<section class="balance-panel"><div class="balance-panel-head"><div><h3>物资供需</h3><p>产出已乘利用率与商人承接率；需求分为生产投入和岗位居民消费。</p></div><span>${goods.length} 种活跃物资</span></div>`;
+    html += '<div class="balance-table-wrap"><table class="grid balance-grid"><thead><tr><th>物资</th><th>承接供给</th><th>建筑投入</th><th>居民消费</th><th>净额</th><th>覆盖率</th><th>供需对比</th></tr></thead><tbody>';
+    goods.forEach((row) => {
+      const max = Math.max(row.supply, row.demand, 1);
+      const tone = row.net < -1e-6 ? 'row-bad' : (row.demand > 0 && row.coverage < 1.15 ? 'row-warn' : 'row-good');
+      html += `<tr class="${tone}" data-pick="good:${esc(row.good.id)}"><td><b>${esc(row.good.display_name || row.good.id)}</b><small>${esc(row.good.id)}</small></td>` +
+        `<td>${goodsQty(row.supply)}</td><td>${goodsQty(row.buildingDemand)}</td><td>${goodsQty(row.householdDemand)}</td>` +
+        `<td class="${row.net < 0 ? 'num-bad' : 'num-good'}">${row.net >= 0 ? '+' : ''}${goodsQty(row.net)}</td><td>${percent(row.coverage)}</td>` +
+        `<td><div class="balance-bars"><i class="supply" style="width:${Math.max(1, row.supply / max * 100)}%"></i><i class="demand" style="width:${Math.max(1, row.demand / max * 100)}%"></i></div></td></tr>`;
+    });
+    html += '</tbody></table></div></section>';
+
+    const buildings = result.buildings.slice().sort((a, b) => a.margin - b.margin || String(a.building.id).localeCompare(String(b.building.id)));
+    html += `<section class="balance-panel"><div class="balance-panel-head"><div><h3>建筑单位经济</h3><p>收入使用各产出物资的 merchant buy factor；成本包含选定投入、员工参考工资和业主参考生活费。</p></div><span>${buildings.length} 类建筑</span></div>`;
+    html += '<div class="balance-table-wrap"><table class="grid balance-grid"><thead><tr><th>建筑</th><th>承接收入</th><th>投入成本</th><th>员工工资</th><th>业主生活费</th><th>净盈余</th><th>利润率 / 目标</th><th>盈亏平衡售出率</th></tr></thead><tbody>';
+    buildings.forEach((row) => {
+      const tone = row.isMonetaryIssue ? 'row-info' : (row.surplus < 0 ? 'row-bad' : (!row.sustainable ? 'row-warn' : 'row-good'));
+      html += `<tr class="${tone}" data-pick="building:${esc(row.building.id)}"><td><b>${esc(row.building.display_name || row.building.id)}</b><small>${esc(row.building.id)}${row.hasUnpricedResource ? ' · 自然资源未定价' : ''}${row.isMonetaryIssue ? ' · 货币发行例外' : ''}</small></td>` +
+        `<td>${money(row.acceptedOutputValue)}</td><td>${money(row.inputCost)}</td><td>${money(row.employeeWages)}</td><td>${money(row.ownerLivingCost)}</td>` +
+        `<td class="${row.surplus < 0 ? 'num-bad' : 'num-good'}">${row.surplus >= 0 ? '+' : ''}${money(row.surplus)}</td><td>${percent(row.margin)} / ${percent(row.targetMargin)}</td><td>${percent(row.breakEvenSellThrough)}</td></tr>`;
+    });
+    html += '</tbody></table></div></section>';
+
+    const professions = result.professions.slice().sort((a, b) => b.perPersonCost - a.perPersonCost || String(a.profession.id).localeCompare(String(b.profession.id)));
+    html += `<section class="balance-panel"><div class="balance-panel-head"><div><h3>职业居民消费</h3><p>每人每日参考篮子直接由职业绑定的 ConsumptionPlanProfile 展开。</p></div><span>${professions.length} 种在岗职业</span></div>`;
+    html += '<div class="balance-table-wrap"><table class="grid balance-grid"><thead><tr><th>职业</th><th>情景人口</th><th>需求项</th><th>消费物资</th><th>人均日消费</th><th>情景总消费</th></tr></thead><tbody>';
+    professions.forEach((row) => {
+      html += `<tr data-pick="profession:${esc(row.profession.id)}"><td><b>${esc(row.profession.display_name || row.profession.id)}</b><small>${esc(row.profession.id)}</small></td>` +
+        `<td>${row.population.toLocaleString('zh-CN', { maximumFractionDigits: 1 })}</td><td>${row.needs.length}</td><td>${Object.keys(row.goods).length}</td>` +
+        `<td>${row.hasPlan ? money(row.perPersonCost) : '无消费计划'}</td><td>${money(row.totalCost)}</td></tr>`;
+    });
+    html += '</tbody></table></div></section>';
+    const cont = $('balance-container');
+    cont.innerHTML = html;
+    cont.querySelectorAll('[data-pick]').forEach((el) => {
+      el.onclick = () => { const [type, id] = el.dataset.pick.split(':'); focusNode(id, type); };
+    });
   }
 
   // ───────────────────────────── 产业链图 ─────────────────────────────
@@ -895,6 +987,14 @@
     $('tableSearch').oninput = (e) => { tableState.filter = e.target.value; if (state.view === 'table') renderTable(); };
     $('showLabels').onchange = (e) => { state.showLabels = e.target.checked; if (state.view === 'graph') renderGraph(); };
     $('fitBtn').onclick = fitToWindow;
+    ['balanceEra', 'balanceScope', 'balanceBuildingCount', 'balanceUtilization',
+      'balanceSellThrough', 'balancePopulationScale', 'balanceLatestOnly', 'balanceHouseholds']
+      .forEach((id) => {
+        const el = $(id);
+        el.addEventListener(el.type === 'number' ? 'input' : 'change', debounce(() => {
+          if (state.view === 'balance') renderBalance();
+        }, el.type === 'number' ? 100 : 0));
+      });
 
     // 平移/缩放
     const svgEl = $('graph');

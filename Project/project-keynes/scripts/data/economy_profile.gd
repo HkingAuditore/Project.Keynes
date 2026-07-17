@@ -53,8 +53,11 @@ extends Resource
 @export_range(1, 32, 1) var building_severe_loss_cycles: int = 3
 @export_range(0, 65536, 1) var building_restart_margin_q16: int = 6554
 @export_range(1, 32, 1) var building_restart_cycles: int = 2
-@export_range(0, 65536, 1) var merchant_procurement_cash_reserve_q16: int = 16384
-@export_range(0, 524288, 1) var merchant_market_making_days_q16: int = 65536
+## Merchants keep 12.5% of frozen opening cash while procurement is active.
+@export_range(0, 65536, 1) var merchant_procurement_cash_reserve_q16: int = 8192
+## Base inventory horizon before each good's configured target ratio is applied.
+## 1966080 is 30 deterministic Q16 days.
+@export_range(0, 7864320, 1) var merchant_market_making_days_q16: int = 1966080
 ## Frozen-cycle Market V2 has passed the mobile and 10M-cohort ACTIVE gates.
 @export_enum("OFF", "PROBE", "ACTIVE") var market_runtime_mode: String = "ACTIVE"
 

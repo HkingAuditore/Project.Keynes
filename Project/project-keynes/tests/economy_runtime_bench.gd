@@ -27,6 +27,7 @@ func _init() -> void:
 		"market_target_cohorts_per_slice": 30000 if desktop else 4000,
 		"worker_enabled": true, "worker_market_threshold": 64,
 		"worker_tasks_hint": 8 if "--tasks8" in args else 0,
+		"merchant_market_making_days_q16": 1966080,
 		"merchant_profession_id": "merchant", "wealth_reference_per_capita": 100000,
 		"living_cost_base_plan_id": "plan",
 		"market_runtime_mode": "ACTIVE",
@@ -330,7 +331,7 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 	var adjust := PackedInt32Array()
 	var elasticity := PackedInt32Array()
 	var ema := PackedInt32Array()
-	var target_days := PackedInt32Array()
+	var inventory_target_ratios := PackedInt32Array()
 	var inventory_weight := PackedInt32Array()
 	var shortage_weight := PackedInt32Array()
 	var rise := PackedInt32Array()
@@ -348,7 +349,7 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		adjust.append(2048)
 		elasticity.append(65536)
 		ema.append(16384)
-		target_days.append(196608)
+		inventory_target_ratios.append(65536)
 		inventory_weight.append(32768)
 		shortage_weight.append(65536)
 		rise.append(8192)
@@ -426,7 +427,8 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		"good_default_price": default_price, "good_initial_stock": initial_stock,
 		"good_min_price": min_price, "good_max_price": max_price,
 		"good_price_adjust_q16": adjust, "good_demand_price_elasticity_q16": elasticity,
-		"good_demand_ema_alpha_q16": ema, "good_target_inventory_days_q16": target_days,
+		"good_demand_ema_alpha_q16": ema,
+		"good_inventory_target_ratios_q16": inventory_target_ratios,
 		"good_inventory_weight_q16": inventory_weight, "good_shortage_weight_q16": shortage_weight,
 		"good_max_price_rise_q16": rise, "good_max_price_fall_q16": fall,
 		"good_category_ids": categories, "good_storage_modes": storage_modes,

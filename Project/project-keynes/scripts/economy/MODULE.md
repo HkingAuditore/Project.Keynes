@@ -1,8 +1,8 @@
 # economy — 原生阶层与本地市场模块
 
-> 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v10`）。功能、守恒、确定性与
+> 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v11`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v12 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v13 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治和一般自然人口变化；仅实现缺乏食品/气候所需衣着造成的生存死亡。
 
 ## 权威与禁止事项
@@ -19,7 +19,7 @@
 - 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；未来税收
   仍必须走原生守恒边界。
 - `owner_slots_per_building` 是正整数物理容量；普通企业通常为 1，家庭式采集/狩猎单位可用多个
-  同职业共同经营岗位。计划利用率同时缩放 owner required，所有填充仍受对应 cohort 人口约束。
+  同职业共同经营岗位。活跃 owner-lot 的 owner required 等于物理容量，计划利用率只缩放 employee required 与产量；所有填充仍受对应 cohort 人口约束。
 - 六邻贸易拓扑、稀疏规划、路线缓存、在途订单和托管由 NativeEconomyRuntime 持有；MapData
   只在经济初始化边界提供邻接与 terrain LUT。`MapGenerator` 在 economy configure 后、
   bootstrap 前捕获一次拓扑；非 OFF 模式捕获失败即中止本次经济初始化。UI 只允许分页
@@ -58,10 +58,8 @@
   才出售给市场，再从销售后资金统一分配基础工资和奖金；居民随后使用本期收入购买本期新商品。
   留用品不产生虚假收入或支出，未消费余量回记来源建筑的丢弃量。最终欠薪继续报告，但不会追溯
   取消已完成生产。家庭清算会保留 ACTIVE 企业按已到岗业主比例与计划利用率计算的下一周期投入
-  营运资金；市场库存则按建筑计划硬预留下周期物理投入，居民消费和国内出口只能使用预留以上库存，
-  商人采购目标至少覆盖预留缺口。商人现金或正常采购配额不足时，可储存余货仍全部进入商人库存；
-  native 按冻结本地零售价的 20% 向生产者发行托底货币，计入显式 mint。电力等 cycle-flow 不能托底
-  入库。托底后的库存超过正常目标会继续压低下一周期利用率，避免托底发行制造虚假终端需求。
+  营运资金；市场库存只按整套互补配方可执行的共同容量预留下周期物理投入，非生存加工不得提前锁住生存食物；居民消费和国内出口只能使用预留以上库存。
+  商人采购目标以 `max(可行日需求, 实际出库 EMA) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；零供给但已有需求的商品仍使用完整 30 日分档基线。仅当需求、出库和出口都为零时，以当期可售日产量建立首周期供给探测库存。商人现金或正常采购配额不足时，仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
 - 商人不能拥有普通生产建筑。例外仅限金银 collector：必须只有一种金/银产出、只消耗严格对应的
   金/银矿藏、使用 extract 模式且不生成资源；允许后期矿井拥有雇员和工具输入。
   市场接受金银时按 `monetary_issue_value` 向业主发行货币，计入
@@ -108,9 +106,10 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 UI 不得使用 `building count - filled_owner` 作为招聘空缺。
 ACTIVE 企业还按上一周期售罄率与 `supply_price_elasticity_q16` 调整计划利用率；丢弃率不超过
 1% 时按舍入噪声处理，家庭可用库存不超过 1 个 goods 子单位且短缺率至少 12.5% 时主动恢复，真实未成交只缩减下一周期 employee 岗位、
-采购和产量，不把仍在经营的 owner 转为失业。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生产者最低生存自留只在
+采购和产量，不把仍在经营的 owner 转为失业。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生存食物组还按同一业主人口的饥饿阈值自留需求计算动态下限并取较高值。生产者最低生存自留只在
 该业主实际生产的单组分食物/寒冷衣物之间重新归一化，剩余产出仍进入全体家庭公平清算。库存低于目标且仍有需求时，成本锚是受商品
 单日涨幅限制的价格底线；库存堆积时仍允许价格跌破成本清仓。
+生产投入预留按互补配方的共同可执行比例缩放；任一投入缺失时不会继续锁住其他投入。非生存加工若消耗生存食物，则家庭生存清算优先，企业只使用剩余量。生产者托底只覆盖正常目标库存尚未填满的部分，超目标余量进入 discard，不再无条件发行货币入库。
 `survival_required` 统一使用 `survival_household` 基础量、冻结人口/环境和民族修正，不读取财富或
 价格 composite；普通消费仍使用财富/价格弹性，但生存品下单、自留和死亡共享同一冻结下限。
 `consume_local_resources` 的资源边分为 `extract` 与 `capacity`：前者按本地储量限产并发布负 delta，
@@ -153,14 +152,21 @@ good ID 稳定选择。`GoodProfile.production_quality_level` 控制最低等级
 食用油和工业润滑剂不共享类目，机器零件从蒸汽时代起直接消费矿物润滑剂。
 建筑 snapshot 另以 `group_input_selected_offsets/group_input_selected_good_ids` 返回每个建筑组、每个
 输入槽上次实际采购的 good；Inspector 将它标为“当前”。该诊断 lane 不参与权威 state hash 或
-PKEC v12 save，restore 后在下一次成功生产前显示为未知。
+PKEC v13 save，restore 后在下一次成功生产前显示为未知。
 
 ## 现代内容目录
 
+- `tools/supply-chain-explorer/index.html` 是只读的设计时经济数值工作台。它直接扫描当前
+  `BuildingProfile`、`GoodProfile`、`ProfessionProfile`、`NeedProfile` 与
+  `ConsumptionPlanProfile`，在默认价格、财富/环境/族群系数为 1 的 reference scenario 下预计算
+  建筑投入/承接收入/工资/业主生活费/盈亏平衡售出率，以及由建筑岗位人口形成的居民消费和逐物资
+  供需缺口。它复用 catalog 的 need→variant→component 与投入候选效率语义，不读取 CSV、不写资源、
+  不参与 PKEC、catalog hash 或模拟权威；动态资金、库存、价格、自留与托底结果仍只能由 native runtime
+  或 Inspector/录制数据验证。
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
   只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 120 goods、259
   production-method buildings、32 professions、17 needs 和 8 consumption plans。消费重平衡不改
-  stable-ID 表或 PKEC v12 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
+  stable-ID 表或 PKEC v13 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
 - `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
   collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。

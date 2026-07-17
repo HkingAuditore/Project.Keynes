@@ -64,7 +64,8 @@ static func compile_native_columns() -> Dictionary:
 	var adjust_q16 := PackedInt32Array()
 	var demand_elasticity := PackedInt32Array()
 	var demand_ema_alpha := PackedInt32Array()
-	var target_inventory_days := PackedInt32Array()
+	var inventory_target_ratios_q16 := PackedInt32Array()
+	var compatibility_target_inventory_days_q16 := PackedInt32Array()
 	var inventory_weight := PackedInt32Array()
 	var shortage_weight := PackedInt32Array()
 	var excess_demand_weight := PackedInt32Array()
@@ -139,7 +140,14 @@ static func compile_native_columns() -> Dictionary:
 		adjust_q16.append(int(p.get("price_adjust_q16")))
 		demand_elasticity.append(int(p.get("demand_price_elasticity_q16")))
 		demand_ema_alpha.append(int(p.get("demand_ema_alpha_q16")))
-		target_inventory_days.append(int(p.get("target_inventory_days_q16")))
+		var inventory_target_ratio := int(p.get("inventory_target_ratio_q16"))
+		if inventory_target_ratio < 0 or inventory_target_ratio > 262144:
+			return {"ok": false, "reason": "invalid inventory target ratio: %s" % stable_id}
+		inventory_target_ratios_q16.append(inventory_target_ratio)
+		# Keep the legacy absolute-days column so a stale DLL fails soft during
+		# editor hot reload instead of aborting economy/population bootstrap.
+		compatibility_target_inventory_days_q16.append(
+			1966080 * inventory_target_ratio / 65536)
 		inventory_weight.append(int(p.get("inventory_weight_q16")))
 		shortage_weight.append(int(p.get("shortage_weight_q16")))
 		excess_demand_weight.append(int(p.get("excess_demand_weight_q16")))
@@ -175,7 +183,8 @@ static func compile_native_columns() -> Dictionary:
 		"good_price_adjust_q16": adjust_q16,
 		"good_demand_price_elasticity_q16": demand_elasticity,
 		"good_demand_ema_alpha_q16": demand_ema_alpha,
-		"good_target_inventory_days_q16": target_inventory_days,
+		"good_inventory_target_ratios_q16": inventory_target_ratios_q16,
+		"good_target_inventory_days_q16": compatibility_target_inventory_days_q16,
 		"good_inventory_weight_q16": inventory_weight,
 		"good_shortage_weight_q16": shortage_weight,
 		"good_excess_demand_weight_q16": excess_demand_weight,

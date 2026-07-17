@@ -47,11 +47,16 @@
 路线搜索数和扩展数，不用墙钟决定模拟结果。规划不申请 WorldClock 屏障；若未完成，下次从
 轮转游标继续。当前默认每片扫描 16,384 pair、执行 2 个源路线搜索。
 
-1. 分片扫描 market-major `(cell, good)`，只保留有库存盈余或价格/库存缺口的稀疏信号。
+计划失效只看规范化贸易拓扑内容哈希与冻结 `cell → country` 归属哈希。拓扑内容哈希只包含六邻接、
+由 terrain LUT 映射后的 `passable` 和 `enter_cost`，不包含原始 `terrain_id`；因此季节性地形重分类若不改变
+贸易通行语义，不会丢弃未完成扫描。国家现金、国库物资或科技变化造成的通用 country generation 增长也
+不重置路线扫描。实际通行/成本或国界变化仍会确定性失效并重建连通分量。
+
+1. 分片扫描 market-major `(cell, good)`，只保留有库存盈余或价格/库存缺口的稀疏信号；未解锁 good、禁运 good、`cycle_flow` good 不进入贸易扫描。
 2. 对盈余源运行多目标有界整数 Dijkstra；找到 K 个可盈利目的地或达到扩展上限即停止。
    路线成本与商品无关，可跨商品复用。
 3. 用源端减库存、目的端加库存后的现有 Price V3 压力估计交易后价差：
-   `expected_profit = quantity * (estimated_destination_price - estimated_source_price)`。
+   `expected_profit = quantity * (estimated_destination_price - estimated_source_price)`。普通贸易仍要求达到最小 margin 与正利润；若目的地存在严重 survival / 生产投入 relief pressure，且估计价差非负，则允许零价差 relief route 生成候选，使用合成正收益只参与排序和 density，避免 price cap 把救济运输全部卡死。
 4. 运力工作量为
    `quantity * transport_load_per_unit_q16 * route_cost`。每国每周期的区域运力池来自冻结
    商人人口乘 `trade_capacity_per_merchant_population_q16`，不跨周期结转。
@@ -67,12 +72,14 @@ scalar/worker 的 authoritative hash 相同。未来若并行路线搜索，work
 经济边界顺序为：
 
 ```text
-trade_settle -> external_ledger -> trade_dispatch -> household_market
--> structural/employment/production -> aggregate_publish
+trade_settle -> external_ledger -> building_employment -> building_production
+-> household_market -> trade_dispatch -> structural_commit -> aggregate_publish
 ```
 
-发运立即从源 `MarketStore.stock` 移除货物，并按目的地商人人口稳定分摊购买资金扣款；货物和
-现金分别进入订单托管。这样当期居民市场只能消费剩余库存/资金，不会重复出售或超额购买。
+到货先进入目的市场，可参与本期本地清算；新出口必须等待所有本地家庭完成本期购买。派发时
+再次按最新 household/business demand EMA、30 日基线乘 good-specific 比例后的有效库存天数、survival/input relief pressure 和生产投入 reserve 计算源地保留量，
+只从其上的真实余量移除货物；普通路线再次检查 margin/profit，relief route 仍只允许非负价差，并按目的地商人人口稳定分摊购买资金扣款；货物和现金分别进入
+订单托管，不会重复出售或超额购买。
 同一源、目的、对齐到达日的多种商品合并为一个多行 CSR 订单；反向运输始终是另一订单。
 
 原始 ETA 是 `ceil(route_cost / trade_speed)`，到达日向上对齐到首个固定经济提交边界。到达时
@@ -97,8 +104,9 @@ PKEJ economy journal，但不逐笔灌入通用 gameplay event ring。
 以及地块级托管金额和下一到达日。`get_trade_orders_for_cell(cell, offset, limit)` 只返回与一个
 地块相关的分页订单和物资行 CSR；禁止 UI 请求全局订单矩阵。
 
-`get_economy_report()` 提供规划 phase/进度、信号/候选数、接受和拒绝原因、路线扩展、缓存
-命中/未命中、国家运力/利用率、在途订单/货物、现金托管、结算滞后及阶段耗时。
+`get_economy_report()` 提供规划 phase、scan/route cursor 与 total、拓扑哈希、规范化拓扑变化/计划重置计数和
+最近重置原因，以及信号/候选数、接受和拒绝原因、路线扩展、缓存命中/未命中、国家运力/利用率、
+在途订单/货物、现金托管、结算滞后及阶段耗时。CSV v8 summary 同步保留这些活性字段。
 
 ## PKEC v12 与兼容性
 
@@ -107,8 +115,10 @@ PKEC v11 在 v10 国家桥格式上增加贸易订单和贸易流 EMA sections�
 加载后先恢复 PKCN v1，再恢复 PKEC；贸易拓扑由下一次地图捕获重建。
 
 PKEC v12 增加企业停产状态、连续计数、采购意图容量、实际利润率、实际出库 EMA 和对应策略参数。
-参数一致的 v11 ACTIVE 可迁移并将新增字段初始化为确定性默认值；新的 ACTIVE 配置严格拒绝
-v11 PROBE（`save_trade_profile_mismatch`）和 v10（`active_trade_rejects_v10_economy_save`）。
+参数一致的 v11 ACTIVE 才可迁移并将新增字段初始化为确定性默认值；当前 12.5% / 30 日分档库存基线商人策略
+与旧 v11 的 25% / 1 日隐式默认值不一致；当前策略为 12.5% 现金保留与 30 日分档库存基线，因此旧默认档明确返回
+`save_business_policy_profile_mismatch`。ACTIVE 仍严格拒绝 v11 PROBE
+（`save_trade_profile_mismatch`）和 v10（`active_trade_rejects_v10_economy_save`）。
 PKEC v2-v9 仍精确拒绝为 `legacy_countryless_economy_save_unsupported`。
 
 ## 2026-07-13 release 基准

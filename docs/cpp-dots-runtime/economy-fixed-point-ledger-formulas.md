@@ -46,44 +46,59 @@ employee funds/income += stable_prefix_share(base_paid)
 企业采购和实际生产使用两个容量：
 
 ```text
+hardness                = input_required_q16 / Q16_ONE
+input_floor             = 1 - hardness
+input_bound             = input_floor + hardness * local_input_stock_coverage
+input_purchase_scale    = max(0, realized_capacity - input_floor) / hardness
 purchase_intent_capacity = min(available, owner employment, each critical role employment,
                                owner input-cash coverage, natural-resource coverage)
-realized_capacity        = min(purchase_intent_capacity, each local input-stock coverage)
-business_demand          = unit input * building_days * purchase_intent_capacity
+realized_capacity        = min(purchase_intent_capacity, each input_bound)
+business_demand          = unit input * building_days * input_purchase_scale(purchase_intent_capacity)
 realized_profit_margin   = (sales - input cost - base wages due)
                            / max(input cost + base wages due, MONEY_SCALE)
 ```
 
+`input_required_q16=65536` 是旧硬互补：缺任一输入则实际产能为 0；软输入把缺货影响限制在该槽位的
+hardness 权重内，例如 `32768` 的工具槽在无库存时仍保留半产能，库存/现金足够时恢复满产。
 本地缺货不把采购意图归零，只把实际产能压到库存瓶颈；无人、无输入资金、资源枯竭或
-`SUSPENDED_LOSS` 则两者均为零。实际有经营成本的利润率连续三周期 `<= -25%` 后停产；无生产且
-无成本的纯缺货周期不累计。停产期用当前价格、最低有效输入成本和合同工资计算反事实利润，连续
+`SUSPENDED_LOSS` 则两者均为零。输入购买量使用 fixed-point 比例缩放，但只要完整物理需求为正且购买比例为正，实际购买/成本数量至少为 1；因此硬输入不会在极低产能下被向下截断成零投入免费生产。
+实际有经营成本的利润率连续三周期 `<= -25%` 后停产；无生产且无成本的纯缺货周期不累计。停产期用当前价格、最低有效输入成本和合同工资计算反事实利润，连续
 两周期 `>= +10%` 且业主资金覆盖一栋一周期成本后恢复。
 
 商人采购预算为：
 
 ```text
-target = (realized_withdrawal_ema + export_ema) * target_inventory_days
-       + max(feasible_household_and_business_demand - realized_withdrawal_ema, 0) * epoch_days
-cold_start_target = max(target, offered_daily_output * 1 day)  # 无消费/出口历史
+target_inventory_days = 30 days * good_inventory_target_ratio
+protected_daily_demand = max(feasible_household_and_business_demand,
+                             realized_withdrawal_ema)
+if protected_daily_demand == 0 and export_ema == 0:
+    protected_daily_demand = offered_daily_output  # 首周期供给探测
+target = (protected_daily_demand + export_ema) * target_inventory_days
 gap = max(target - current_stock, 0)
-procurement_budget = opening_merchant_cash * 75%
+procurement_budget = opening_merchant_cash * 87.5%
 good_budget_share = procurement_budget * (gap * buy_price) / sum(gap * buy_price)
 ```
 
+默认比例分为：生存必需品 1.50（45 日）、重要民生/医疗能源 1.25（37.5 日）、
+普通原料与工业品 1.00（30 日）、奢侈品约 0.667（20 日）；`cycle_flow` 为 0。
+比例在目录加载时一次性编译成 Q16 有效天数，市场热循环仍只读取 dense 整数列。
+
 预算余数按稳定 good ID 和 building group 顺序落位；金银铸币结算不受普通采购预算限制。
 
-普通商人采购完成后，所有可储存余货按冻结本地零售价的 20% 托底：
+普通商人采购完成后，对正常目标库存尚未填满的耐储余货按冻结本地零售价的 20% 托底；`cycle_flow` 余货也会在本周期内先获得低价清算/托底机会，但不会跨周期留存在市场库存：
 
 ```text
-supported_qty = storable_offer - normal_merchant_purchase
+supported_qty = min(offer_sellable - normal_merchant_purchase,
+                    remaining_target_inventory_gap)
 support_money = max(1, floor(supported_qty * frozen_retail_price / (GOODS_SCALE * 5)))
-market_stock += supported_qty
+if storage_mode != cycle_flow:
+    market_stock += supported_qty
 owner_funds += support_money
 explicit_money_mint += support_money
 ```
 
-托底不扣商人资金。`production_output_supported` 和 `producer_support_money_issued` 分别报告入库量
-和发行额；周期流余量不能入库，仍进入真实 discard sink。
+托底不扣商人资金。`production_output_supported` 和 `producer_support_money_issued` 分别报告接受量
+和发行额；超过目标库存的普通余量与周期流边界剩余量都进入真实 discard sink。
 
 每次提交严格校验：
 
@@ -207,11 +222,13 @@ EMA 形成硬下限，因此生活成本通过工资进入成本锚，不再另�
 企业在 ACTIVE 状态下按上一周期 `sold / (sold + discarded)` 调整下一周期计划利用率，并使用
 `supply_price_elasticity_q16` 作为响应增益。丢弃率不超过 1% 时视为定点舍入噪声并向满产恢复；
 任一产出的 `max(0, stock - production_input_reserve) <= 1` 且短缺率至少 12.5% 时也主动向满产恢复。真实丢弃或托底后仍高于正常目标的
-库存会按市场吸收能力收缩利用率。耐储商品保留 1/32 的探测产能，易腐/周期流商品保留 1/6，防止食品生产者的探测产量低于最低生存量；只有连续严重亏损状态机能完全停产。最低生存自留按业主实际生产的单组分食物/衣物重新归一化，不向无法自产的替代品分摊配额。
+库存会按市场吸收能力收缩利用率。耐储商品保留 1/32 的探测产能，易腐/周期流商品保留 1/6；生存食物组再按同一业主人口跨过饥饿阈值所需的自留量计算动态利用率下限，并取较高者。只有连续严重亏损状态机能完全停产。最低生存自留按业主实际生产的单组分食物/衣物重新归一化，不向无法自产的替代品分摊配额。
+
+生产投入预留先对同组互补投入求共同可执行比例，按该比例同步缩放每项预留；同一商品被多个槽位选中时先合并需求，防止超额锁库。非生存产出若消耗生存食物，则整套投入不在家庭清算前预留，家庭先满足生存需求，建筑生产阶段再使用余量。`production_input_reserve_shortfall` 累计期望预留未能组成完整配方的差额，以及本期生产消耗后实际库存低于既定预留的差额。
 
 价格变化先应用 good-specific `price_adjust_q16` 与单日 max rise/fall，再以
 `daily_change*N` 做确定性一阶冻结积分，最后应用绝对 min/max。该算法避免对每个
-market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v10`
+market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v11`
 近似契约显式控制。
 
 cohort income EMA 同样读取周期净收入日均值，effective alpha 为
@@ -264,8 +281,9 @@ closing_stock = opening_stock + explicit_stock_delta + accepted_output
 和冻结单位投入成本计算下一周期营运资金。该金额仍属于 owner cohort，只从本期家庭下单预算和
 最终支出上限中扣除，不产生资金转移；`owner_working_capital_reserved` 报告本周期受保护总额。
 
-生产投入另有商品侧硬预留。运行时按建筑数、周期天数和计划利用率向上取整下一周期物理投入，
-对每个 input slot 选择冻结价格下最便宜的可用候选，聚合为稀疏 `(cell, good)` 预留：
+生产投入另有商品侧预留。运行时按建筑数、周期天数、计划利用率和每槽 `input_required_q16`
+向上取整下一周期实际需要购买的物理投入；当计划利用率低于软输入的无货产能底线时，该槽不预留。
+对每个 input slot 优先选择库存覆盖率最高、再按冻结有效价格和 stable ID 决胜的可用候选；同组互补输入按共同可执行比例缩放后聚合为稀疏 `(cell, good)` 预留：
 
 ```text
 household_available_stock = max(0, stock - production_input_reserve)
@@ -274,5 +292,5 @@ exportable_stock           = max(0, stock - production_input_reserve)
 ```
 
 预留本身不改变库存所有权，也不是 goods sink；居民和国内贸易只能清算预留以上的库存。缓存由建筑
-与周期计划确定性重建，不进入 PKEC v12 字节布局。报告和 CSV v6 发布预留总量、缺口及逐商品家庭
+与周期计划确定性重建，不进入 PKEC v13 字节布局。报告和 CSV v8 发布预留总量、期望与结算末受保护库存之差及逐商品家庭
 可用库存。

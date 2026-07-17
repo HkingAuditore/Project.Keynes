@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Project.Keynes 产业链可视化扫描</title>
+  <title>Project.Keynes 经济数值工作台</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,8 +11,8 @@
     <div class="brand">
       <span class="logo">⛓</span>
       <div>
-        <h1>产业链可视化扫描</h1>
-        <p class="sub">Project.Keynes · 纯前端 · 每次打开自动扫描</p>
+        <h1>经济数值工作台</h1>
+        <p class="sub">Project.Keynes · 直接读取当前内容资源 · 纯前端只读</p>
       </div>
     </div>
     <div class="scan-controls">
@@ -27,9 +27,9 @@
   <!-- 首次引导 -->
   <section id="intro" class="intro">
     <div class="intro-card">
-      <h2>欢迎使用产业链扫描器</h2>
+      <h2>欢迎使用经济数值工作台</h2>
       <p>本工具会<strong>读取游戏项目里的产业链数据</strong>（建筑 / 物资 / 自然资源 / 职业 / 时代），
-         并生成三类可视化：产业链全流程图、节点建筑与职业岗位、各实体的解锁时代。</p>
+         并提供产业链图、建筑盈亏、居民消费和供需缺口预计算。</p>
       <ul>
         <li><b>Chrome / Edge</b>：点「选择项目根目录」选一次，之后每次打开自动重新扫描。</li>
         <li><b>Firefox / Safari</b>：用「选择文件夹」回退，每次打开手动选一次。</li>
@@ -43,6 +43,7 @@
   <div id="app" class="app" hidden>
     <nav id="tabs" class="tabs">
       <button class="tab active" data-view="graph">产业链图</button>
+      <button class="tab" data-view="balance">数值预计算</button>
       <button class="tab" data-view="eras">解锁时代总览</button>
       <button class="tab" data-view="table">实体表格</button>
       <button class="tab" data-view="diag">诊断</button>
@@ -67,6 +68,22 @@
             <svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg>
             <div id="graph-legend" class="graph-legend"></div>
           </div>
+        </section>
+
+        <!-- 视图：设计时数值预计算 -->
+        <section id="view-balance" class="view" hidden>
+          <div class="balance-controls">
+            <label>计算到时代 <select id="balanceEra"></select></label>
+            <label>范围 <select id="balanceScope"><option value="cumulative">累计可用</option><option value="current">仅本时代新增</option></select></label>
+            <label>每种建筑 <input id="balanceBuildingCount" type="number" min="0" max="100000" step="1" value="1"></label>
+            <label>产能利用率 <input id="balanceUtilization" type="number" min="0" max="100" step="5" value="100"><span>%</span></label>
+            <label>商人承接/售出率 <input id="balanceSellThrough" type="number" min="0" max="100" step="5" value="80"><span>%</span></label>
+            <label>岗位人口倍率 <input id="balancePopulationScale" type="number" min="0" max="1000" step="0.1" value="1"></label>
+            <label class="chk"><input id="balanceLatestOnly" type="checkbox" checked> 每个升级族只用最高级</label>
+            <label class="chk"><input id="balanceHouseholds" type="checkbox" checked> 计入岗位人口消费</label>
+          </div>
+          <div class="balance-note">参考情景：默认价格、库存充足、财富/环境/族群系数为 1。居民替代品按当前 preference 分摊；建筑类目/候选投入按“默认价格 ÷ 效率”选择最低成本物资。该结果用于内容校准，不等同于含资金、库存和价格反馈的运行时模拟。</div>
+          <div id="balance-container" class="balance-container"></div>
         </section>
 
         <!-- 视图：时代总览 -->

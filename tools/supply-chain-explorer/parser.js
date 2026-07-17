@@ -37,7 +37,7 @@
       production_quality_level: 0, production_efficiency_q16: 65536, storage_mode: 'stock',
       trade_enabled: true, transport_load_per_unit_q16: 65536, monetary_issue_value: 0,
       default_price: 10000, initial_stock: 0, min_price: 1, max_price: 100000000, price_adjust_q16: 2048,
-      demand_price_elasticity_q16: 65536, demand_ema_alpha_q16: 16384, target_inventory_days_q16: 196608,
+      demand_price_elasticity_q16: 65536, demand_ema_alpha_q16: 16384, inventory_target_ratio_q16: 65536,
       inventory_weight_q16: 32768, shortage_weight_q16: 65536, excess_demand_weight_q16: 8192,
       cost_anchor_weight_q16: 16384, inactive_reversion_weight_q16: 512, business_demand_ema_alpha_q16: 8192,
       supply_ema_alpha_q16: 8192, cost_ema_alpha_q16: 4096, max_price_rise_q16: 8192, max_price_fall_q16: 4096,
@@ -538,7 +538,253 @@
     };
   }
 
-  const API = { parseTres, parseEraFile, classifyAndParse, buildModel, DEFAULTS, unquote };
+  // ───────────────────────────── 设计时数值预计算 ─────────────────────────────
+  const GOODS_SCALE = 1000;
+  const Q16_ONE = 65536;
+  // Generated recipes round quantities and revenue to integer money subunits.
+  // Ten subunits equal 0.001 display currency and keep ceil/floating boundaries
+  // from appearing as an economic loss.
+  const MONEY_TOLERANCE = 10;
+
+  function addAmount(map, key, amount) {
+    if (!key || !Number.isFinite(amount) || amount === 0) return;
+    map[key] = (map[key] || 0) + amount;
+  }
+
+  // 默认价格正是 catalog 编译 variant reference price 的来源；在财富、环境、
+  // 族群系数均为 1 时，runtime 的 substitute score 退化为 preference 权重。
+  function professionReferenceDemand(model, professionOrId, rawOptions) {
+    const options = rawOptions || {};
+    const maxEra = Number.isFinite(options.eraOrder) ? options.eraOrder : Number.POSITIVE_INFINITY;
+    const profession = typeof professionOrId === 'string'
+      ? model.professionById[professionOrId] : professionOrId;
+    const plan = profession && model.planById[profession.default_consumption_plan_id];
+    const goods = {};
+    const needs = [];
+    let totalCost = 0, livingCost = 0;
+    if (!profession || !plan) {
+      return { profession, plan: plan || null, goods, needs, totalCost, livingCost, hasPlan: false };
+    }
+    (plan.needDetails || []).forEach((need) => {
+      const variants = (need.variants || []).filter((variant) =>
+        Number(variant.preferenceQ16 || 0) > 0 && (variant.components || []).every((component) => {
+          const good = model.goodById[component.good];
+          return good && (good.eraPrimary == null || good.eraOrder <= maxEra);
+        })
+      );
+      const scoreSum = variants.reduce((sum, variant) => sum + Number(variant.preferenceQ16 || 0), 0);
+      let needCost = 0;
+      if (scoreSum > 0) variants.forEach((variant) => {
+        const share = Number(variant.preferenceQ16 || 0) / scoreSum;
+        const bundleUnits = Number(need.baseQty || 0) * share;
+        (variant.components || []).forEach((component) => {
+          const quantity = bundleUnits * Number(component.qty || 0) / GOODS_SCALE;
+          addAmount(goods, component.good, quantity);
+          const good = model.goodById[component.good];
+          if (good) needCost += quantity * Number(good.default_price || 0) / GOODS_SCALE;
+        });
+      });
+      totalCost += needCost;
+      const needProfile = model.needById[need.id];
+      const livingWeight = Number(needProfile && needProfile.living_cost_weight_q16 || 0) / Q16_ONE;
+      livingCost += needCost * livingWeight;
+      needs.push({ id: need.id, quantity: Number(need.baseQty || 0), cost: needCost, livingWeight });
+    });
+    return { profession, plan, goods, needs, totalCost, livingCost, hasPlan: true };
+  }
+
+  function inputCandidates(model, input, maxEra) {
+    const available = (good) => good && (!Number.isFinite(maxEra) || good.eraPrimary == null || good.eraOrder <= maxEra);
+    if (input.candidateEdge) {
+      return (input.candidates || []).map((candidate) => ({
+        good: model.goodById[candidate.good], efficiencyQ16: Number(candidate.efficiency || Q16_ONE)
+      })).filter((row) => available(row.good));
+    }
+    if (input.categoryEdge) {
+      return (model.goodsBySubstitutionCategory[input.category] || []).map((id) => model.goodById[id])
+        .filter((good) => available(good) && Number(good.production_quality_level || 0) >= Number(input.minQuality || 0))
+        .map((good) => ({ good, efficiencyQ16: Number(good.production_efficiency_q16 || Q16_ONE) }));
+    }
+    const good = model.goodById[input.good];
+    return available(good) ? [{ good, efficiencyQ16: Q16_ONE }] : [];
+  }
+
+  function resolveReferenceInput(model, input, rawOptions) {
+    const options = rawOptions || {};
+    const candidates = inputCandidates(model, input, options.eraOrder).map((candidate) => {
+      const efficiency = Math.max(1, candidate.efficiencyQ16);
+      const physicalQty = Number(input.qty || 0) * Q16_ONE / efficiency;
+      const cost = physicalQty * Number(candidate.good.default_price || 0) / GOODS_SCALE;
+      return { good: candidate.good, efficiencyQ16: efficiency, physicalQty, cost };
+    });
+    candidates.sort((a, b) => a.cost - b.cost || String(a.good.id).localeCompare(String(b.good.id)));
+    return candidates[0] || null;
+  }
+
+  function eligibleBuildings(model, options) {
+    const maxEra = Number.isFinite(options.eraOrder) ? options.eraOrder : Number.POSITIVE_INFINITY;
+    const cumulative = options.cumulative !== false;
+    let rows = model.buildings.filter((building) => {
+      if (building.eraPrimary == null) return false;
+      return cumulative ? building.eraOrder <= maxEra : building.eraOrder === maxEra;
+    });
+    if (options.latestUpgradeOnly !== false) {
+      const best = {};
+      rows.forEach((building) => {
+        const family = String(building.upgrade_family_id || '');
+        if (!family) return;
+        const current = best[family];
+        if (!current || Number(building.upgrade_tier || 0) > Number(current.upgrade_tier || 0) ||
+            (Number(building.upgrade_tier || 0) === Number(current.upgrade_tier || 0) && building.id < current.id)) {
+          best[family] = building;
+        }
+      });
+      rows = rows.filter((building) => !building.upgrade_family_id || best[building.upgrade_family_id] === building);
+    }
+    return rows.sort((a, b) => a.eraOrder - b.eraOrder || String(a.id).localeCompare(String(b.id)));
+  }
+
+  function computeBalanceScenario(model, rawOptions) {
+    const options = Object.assign({
+      eraOrder: model.eras.length - 1,
+      cumulative: true,
+      latestUpgradeOnly: true,
+      buildingCount: 1,
+      utilization: 1,
+      sellThrough: 0.8,
+      professionScale: 1,
+      includeHouseholds: true,
+      buildingCounts: null,
+      professionPopulations: null
+    }, rawOptions || {});
+    const utilization = Math.max(0, Math.min(1, Number(options.utilization)));
+    const sellThrough = Math.max(0, Math.min(1, Number(options.sellThrough)));
+    const professionScale = Math.max(0, Number(options.professionScale));
+    const uniformCount = Math.max(0, Number(options.buildingCount));
+    const supply = {}, buildingDemand = {}, householdDemand = {}, professionPopulation = {};
+    const professionCache = {};
+    const buildings = [];
+
+    function professionDemand(id) {
+      if (!professionCache[id]) professionCache[id] = professionReferenceDemand(model, id, { eraOrder: options.eraOrder });
+      return professionCache[id];
+    }
+
+    eligibleBuildings(model, options).forEach((building) => {
+      const count = options.buildingCounts && options.buildingCounts[building.id] != null
+        ? Math.max(0, Number(options.buildingCounts[building.id])) : uniformCount;
+      if (count <= 0) return;
+      let inputCost = 0;
+      const selectedInputs = [];
+      (building.consumes || []).forEach((input) => {
+        const selected = resolveReferenceInput(model, input, { eraOrder: options.eraOrder });
+        if (!selected) return;
+        const quantity = selected.physicalQty * count * utilization;
+        addAmount(buildingDemand, selected.good.id, quantity);
+        inputCost += selected.cost * count * utilization;
+        selectedInputs.push({ good: selected.good.id, quantity, efficiencyQ16: selected.efficiencyQ16 });
+      });
+      let retailOutputValue = 0;
+      let fullAcceptedRevenue = 0;
+      let acceptedOutputValue = 0;
+      let isMonetaryIssue = false;
+      (building.produces || []).forEach((output) => {
+        const good = model.goodById[output.good];
+        if (!good) return;
+        if (Number(good.monetary_issue_value || 0) > 0) isMonetaryIssue = true;
+        const grossQuantity = Number(output.qty || 0) * count * utilization;
+        const acceptedQuantity = grossQuantity * sellThrough;
+        addAmount(supply, output.good, acceptedQuantity);
+        const retail = grossQuantity * Number(good.default_price || 0) / GOODS_SCALE;
+        retailOutputValue += retail;
+        const producerRevenue = retail * Number(good.merchant_buy_price_factor_q16 || 0) / Q16_ONE;
+        fullAcceptedRevenue += producerRevenue;
+        acceptedOutputValue += producerRevenue * sellThrough;
+      });
+      let employeeWages = 0;
+      const employeeIds = building.employee_profession_ids || [];
+      const employeeSlots = building.employee_slots_per_building || [];
+      const employeeReferenceWages = building.employee_reference_wages_per_day || [];
+      employeeIds.forEach((professionId, index) => {
+        const slots = Number(employeeSlots[index] == null ? 1 : employeeSlots[index]) * count * utilization;
+        addAmount(professionPopulation, professionId, slots * professionScale);
+        employeeWages += Number(employeeReferenceWages[index] || building.wage_per_employee_per_day || 0) * slots;
+      });
+      const ownerSlots = Number(building.owner_slots_per_building || 1) * count * utilization;
+      if (building.owner_profession_id) addAmount(professionPopulation, building.owner_profession_id, ownerSlots * professionScale);
+      const ownerLivingCost = building.owner_profession_id
+        ? professionDemand(building.owner_profession_id).livingCost * ownerSlots : 0;
+      const operatingCost = inputCost + employeeWages;
+      const totalCost = operatingCost + ownerLivingCost;
+      const surplus = acceptedOutputValue - totalCost;
+      const margin = acceptedOutputValue > 0 ? (acceptedOutputValue - operatingCost) / acceptedOutputValue : (operatingCost > 0 ? -1 : 0);
+      const targetMargin = Number(building.target_operating_margin_q16 || 0) / Q16_ONE;
+      const requiredRevenue = Math.max(
+        operatingCost / Math.max(1 / Q16_ONE, 1 - targetMargin), totalCost);
+      const breakEvenSellThrough = fullAcceptedRevenue > 0 ? requiredRevenue / fullAcceptedRevenue : Number.POSITIVE_INFINITY;
+      buildings.push({
+        building, count, inputCost, employeeWages, ownerLivingCost, operatingCost, totalCost,
+        retailOutputValue, acceptedOutputValue, surplus, margin, breakEvenSellThrough,
+        targetMargin, requiredRevenue,
+        sustainable: acceptedOutputValue + MONEY_TOLERANCE >= requiredRevenue,
+        selectedInputs, hasUnpricedResource: (building.extracts || []).length > 0, isMonetaryIssue
+      });
+    });
+
+    if (options.professionPopulations) {
+      Object.keys(options.professionPopulations).forEach((id) => {
+        professionPopulation[id] = Math.max(0, Number(options.professionPopulations[id]));
+      });
+    }
+
+    const professions = [];
+    Object.keys(professionPopulation).sort().forEach((id) => {
+      const population = professionPopulation[id];
+      const reference = professionDemand(id);
+      if (options.includeHouseholds) Object.keys(reference.goods).forEach((goodId) => {
+        addAmount(householdDemand, goodId, reference.goods[goodId] * population);
+      });
+      professions.push({ profession: model.professionById[id] || { id, display_name: id }, population,
+        perPersonCost: reference.totalCost, totalCost: reference.totalCost * population,
+        goods: reference.goods, needs: reference.needs, hasPlan: reference.hasPlan });
+    });
+
+    const goods = model.goods.map((good) => {
+      const produced = supply[good.id] || 0;
+      const business = buildingDemand[good.id] || 0;
+      const household = options.includeHouseholds ? (householdDemand[good.id] || 0) : 0;
+      const demand = business + household;
+      const net = produced - demand;
+      return {
+        good, supply: produced, buildingDemand: business, householdDemand: household,
+        demand, net, coverage: demand > 0 ? produced / demand : (produced > 0 ? Number.POSITIVE_INFINITY : 1),
+        supplyValue: produced * Number(good.default_price || 0) / GOODS_SCALE,
+        demandValue: demand * Number(good.default_price || 0) / GOODS_SCALE
+      };
+    }).filter((row) => row.supply > 0 || row.demand > 0);
+
+    const totals = {
+      buildingTypes: buildings.length,
+      buildingCount: buildings.reduce((sum, row) => sum + row.count, 0),
+      workforce: professions.reduce((sum, row) => sum + row.population, 0),
+      acceptedOutputValue: buildings.reduce((sum, row) => sum + row.acceptedOutputValue, 0),
+      inputCost: buildings.reduce((sum, row) => sum + row.inputCost, 0),
+      employeeWages: buildings.reduce((sum, row) => sum + row.employeeWages, 0),
+      ownerLivingCost: buildings.reduce((sum, row) => sum + row.ownerLivingCost, 0),
+      householdCost: professions.reduce((sum, row) => sum + row.totalCost, 0),
+      lossBuildingTypes: buildings.filter((row) =>
+        !row.isMonetaryIssue && row.surplus < -MONEY_TOLERANCE).length,
+      belowTargetBuildingTypes: buildings.filter((row) => !row.isMonetaryIssue && !row.sustainable).length,
+      shortageGoods: goods.filter((row) => row.net < -1e-6).length
+    };
+    return { options, buildings, professions, goods, totals };
+  }
+
+  const API = {
+    parseTres, parseEraFile, classifyAndParse, buildModel,
+    professionReferenceDemand, resolveReferenceInput, eligibleBuildings, computeBalanceScenario,
+    DEFAULTS, unquote, GOODS_SCALE, Q16_ONE
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.SC = API;
 })(typeof window !== 'undefined' ? window : globalThis);

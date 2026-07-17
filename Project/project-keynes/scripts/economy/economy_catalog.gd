@@ -316,8 +316,9 @@ static func compile_native_catalog() -> Dictionary:
 	var building_v7_columns := building_columns.duplicate(true)
 	for key in [
 		"building_upgrade_family_ids", "building_upgrade_family_indices",
-		"building_upgrade_tiers", "building_input_category_ids",
-		"building_input_min_quality_levels", "building_input_candidate_offsets",
+		"building_upgrade_tiers", "building_input_required_q16",
+		"building_input_category_ids", "building_input_min_quality_levels",
+		"building_input_candidate_offsets",
 		"building_input_candidate_good_ids", "building_input_candidate_efficiency_q16",
 	]:
 		building_v7_columns.erase(key)
@@ -448,6 +449,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var input_offsets := PackedInt32Array([0])
 	var input_goods := PackedInt32Array()
 	var input_quantities := PackedInt64Array()
+	var input_required_q16 := PackedInt32Array()
 	var input_category_ids := PackedStringArray()
 	var input_min_quality_levels := PackedInt32Array()
 	var input_candidate_offsets := PackedInt32Array([0])
@@ -570,6 +572,9 @@ static func _compile_building_columns(profession_index: Dictionary,
 		error = _append_building_goods(profile.input_good_ids,
 			profile.input_quantities_per_day, good_index, input_goods, input_quantities)
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
+		var configured_required: PackedInt32Array = profile.input_required_q16
+		if not configured_required.is_empty() and configured_required.size() != profile.input_good_ids.size():
+			return {"ok": false, "reason": "building input required columns mismatch: %s" % stable_id}
 		var configured_categories: PackedStringArray = profile.input_category_ids
 		var configured_min_levels: PackedInt32Array = profile.input_min_quality_levels
 		var explicit_offsets: PackedInt32Array = profile.input_candidate_offsets
@@ -585,10 +590,14 @@ static func _compile_building_columns(profession_index: Dictionary,
 		var has_explicit_candidates := explicit_offsets.size() > 1 \
 			or not explicit_good_ids.is_empty() or not explicit_efficiencies.is_empty()
 		for input_idx in range(profile.input_good_ids.size()):
+			var required_q16 := int(configured_required[input_idx]) if not configured_required.is_empty() else Q16_ONE
 			var category_id := String(configured_categories[input_idx]) if not configured_categories.is_empty() else ""
 			var min_level := int(configured_min_levels[input_idx]) if not configured_min_levels.is_empty() else 0
+			if required_q16 < 0 or required_q16 > Q16_ONE:
+				return {"ok": false, "reason": "invalid building input required q16: %s" % stable_id}
 			if min_level < 0:
 				return {"ok": false, "reason": "negative building input quality: %s" % stable_id}
+			input_required_q16.append(required_q16)
 			input_category_ids.append(category_id)
 			input_min_quality_levels.append(min_level)
 			var explicit_begin := int(explicit_offsets[input_idx]) if has_explicit_candidates else 0
@@ -778,6 +787,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_input_offsets": input_offsets,
 		"building_input_good_ids": input_goods,
 		"building_input_quantities": input_quantities,
+		"building_input_required_q16": input_required_q16,
 		"building_input_category_ids": input_category_ids,
 		"building_input_min_quality_levels": input_min_quality_levels,
 		"building_input_candidate_offsets": input_candidate_offsets,
