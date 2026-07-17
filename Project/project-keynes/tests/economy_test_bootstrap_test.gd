@@ -88,14 +88,15 @@ func _initialize() -> void:
 			"mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v10" and
 		int(first.get("cell_population_cap", 0)) == 300 and
 		String(first.get("initial_employment", "")) == "unemployed")
-	_expect("carrying-capacity balancing retains useful repeated buildings",
-		int(first.get("basic_capacity_initial_buildings", 0)) >
+	_expect("carrying-capacity balancing honors demand-calibrated collector caps",
+		int(first.get("basic_capacity_initial_buildings", 0)) >=
 			int(first.get("basic_capacity_final_buildings", 0)) and
 		int(first.get("basic_capacity_initial_buildings", 0)) -
 			int(first.get("basic_capacity_final_buildings", 0)) ==
 			int(first.get("basic_capacity_trimmed_buildings", 0)) and
 		_max_building_group_count(first) > 1 and
-		_max_building_group_count(first) <= 24)
+		_max_building_group_count(first) <= 24 and
+		_fixture_respects_test_collector_caps(first, facade))
 	_expect("each passable cell population follows its zero-to-300 carrying capacity",
 		_population_matches_carrying_capacity(first) and
 		int(first.get("carrying_capacity_total", -1)) == int(first.get("total_population", 0)))
@@ -251,6 +252,39 @@ func _initialize() -> void:
 		_expect("write failure rolls every CSV back to its header",
 			text.split("\n", false).size() == 1)
 	_cleanup_csv_paths(failure_start.get("test_paths", {}))
+	var soak_start: Dictionary = facade.population_cell_snapshot(0)
+	var soak_start_population := _sum_i64(soak_start.get("populations", PackedInt64Array()))
+	var soak_start_unemployed := _sum_i64(
+		soak_start.get("unemployed_by_cohort", PackedInt64Array()))
+	var soak_audits_ok := true
+	var soak_supported := 0
+	var soak_stocked := 0
+	for day in range(9, 129):
+		var soak_cycle := _run_day(ext, day)
+		soak_audits_ok = soak_audits_ok and bool(soak_cycle.get("done", false)) and \
+			not bool(soak_cycle.get("fatal", false)) and \
+			int(soak_cycle.get("population_error", 1)) == 0 and \
+			int(soak_cycle.get("money_error", 1)) == 0 and \
+			int(soak_cycle.get("goods_error", 1)) == 0
+		soak_supported += int(soak_cycle.get("production_output_supported", 0))
+		soak_stocked += int(soak_cycle.get("production_output_stock", 0))
+	var soak_final: Dictionary = facade.population_cell_snapshot(0)
+	var soak_final_population := _sum_i64(soak_final.get("populations", PackedInt64Array()))
+	var soak_final_unemployed := _sum_i64(
+		soak_final.get("unemployed_by_cohort", PackedInt64Array()))
+	var soak_support_q16 := int(soak_supported * 65536 / maxi(1, soak_stocked))
+	print("[economy-test-bootstrap/soak] population=%d->%d unemployed=%d->%d support=%.1f%%" % [
+		soak_start_population, soak_final_population,
+		soak_start_unemployed, soak_final_unemployed,
+		float(soak_support_q16) * 100.0 / 65536.0,
+	])
+	_expect("120-cycle calibrated bootstrap conserves every ledger", soak_audits_ok)
+	_expect("120-cycle calibrated bootstrap retains at least 95 percent population",
+		soak_final_population * 100 >= soak_start_population * 95)
+	_expect("120-cycle calibrated bootstrap ends below 15 percent unemployment",
+		soak_final_unemployed * 100 <= maxi(1, soak_final_population) * 15)
+	_expect("120-cycle calibrated bootstrap keeps producer support below 90 percent",
+		soak_support_q16 <= int(0.90 * 65536))
 	_finish()
 
 
@@ -502,6 +536,31 @@ func _population_matches_carrying_capacity(fixture: Dictionary) -> bool:
 			return false
 		distinct_capacities[capacity] = true
 	return distinct_capacities.size() > 1
+
+
+func _fixture_respects_test_collector_caps(fixture: Dictionary, facade) -> bool:
+	var packet: Dictionary = fixture.get("building_packet", {})
+	var type_ids: PackedInt32Array = packet.get("building_type_ids", PackedInt32Array())
+	var counts: PackedInt64Array = packet.get("building_counts", PackedInt64Array())
+	var stable_ids: PackedStringArray = facade.building_type_ids()
+	var caps := {
+		"flint_quarry": 1,
+		"household_weaving_shelter": 2,
+		"placer_gold_working": 1,
+		"stone_collector": 1,
+		"surface_silver_working": 1,
+		"timber_collector": 8,
+	}
+	if type_ids.size() != counts.size():
+		return false
+	for i in range(type_ids.size()):
+		var type_id := int(type_ids[i])
+		if type_id < 0 or type_id >= stable_ids.size():
+			return false
+		var stable_id := String(stable_ids[type_id])
+		if caps.has(stable_id) and int(counts[i]) > int(caps[stable_id]):
+			return false
+	return true
 
 
 func _has_building(snapshot: Dictionary, building_id: String) -> bool:

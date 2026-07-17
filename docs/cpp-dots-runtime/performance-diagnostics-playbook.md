@@ -1254,7 +1254,7 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
   判断停产原因。
 - 先比较 `building_base_wages_due/paid`、投入采购现金、产出收入、销售后分配与商人购买力，不能
   用铸币掩盖。
-- CSV v6 building 行用 `owner_capacity/owner_required/filled_owner/owner_openings` 区分物理容量、本期岗位、实际到岗和真实招聘空缺；不要再用 `count - filled_owner` 推断失业者可进入的岗位。market 还提供 `realized_withdrawal_ema/production_input_reserve/household_available_stock/merchant_inventory_target/merchant_procurement_shortfall`；summary 同步提供 `owner_working_capital_reserved/production_input_reserved/production_input_reserve_shortfall/production_output_supported/producer_support_money_issued`；
+- CSV v6 building 行用 `owner_capacity/owner_required/filled_owner/owner_openings` 区分物理容量、活跃 owner 岗位、实际到岗和真实招聘空缺；活跃组 required 等于 capacity，只有亏损停产/不可用组为 0，employee required 才随 planned utilization 缩放。不要再用 `count - filled_owner` 推断失业者可进入的岗位。market 还提供 `realized_withdrawal_ema/production_input_reserve/household_available_stock/merchant_inventory_target/merchant_procurement_shortfall`；summary 同步提供 `owner_working_capital_reserved/production_input_reserved/production_input_reserve_shortfall/production_output_supported/producer_support_money_issued`；
   summary 提供 `merchant_procurement_budget/reserved/spent`。若商人现金归零，先验证 spent 未超过
   budget 且 reserved 约为冻结期初现金的 25%，再排查居民消费或外部命令，而不是把采购阶段误判为耗尽现金。
 - `wage_plan_ms` 长：比较 active labor keys、当地 cohort/signature 数与消费篮子边数；不得退化

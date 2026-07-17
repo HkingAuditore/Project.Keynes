@@ -2334,8 +2334,9 @@ employee role 使用 `adaptive/fixed/none` role ABI。adaptive 工资取当地�
 MapData/DataCore，也不产生全局建筑财务矩阵。
 建筑快照同时发布最近结算的 `period_days`，Inspector 将实际投入/产出总量按建筑数和周期天数
 归一化为“单位/栋/日”；该值反映到岗、库存、资金和资源约束后的实际效率，不展示理论配方。
-岗位 UI 使用 `owner_required` 和 `owner_openings`，并把 `owner_capacity - owner_required` 标为闲置产能，
-不再把未启用的物理 owner 槽位显示为招聘空缺。
+岗位 UI 使用 `owner_required` 和 `owner_openings`。活跃组的 owner required 等于物理容量，
+亏损停产/不可用组才把 owner required 置零；planned utilization 只缩放 employee required 与产量。
+UI 不再用建筑数量推断招聘空缺。
 
 生产 output 先按 owner 当前消费计划预留可直接满足的单组件 variant 商品，再把余量形成
 cell-local offers。商人按实际出库/出口 EMA 和 target inventory days 计算库存缺口，冻结期初现金并

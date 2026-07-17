@@ -479,7 +479,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 		var owner_id := String(profile.owner_profession_id)
 		if stable_id == "" or type_ids.has(stable_id) or not profession_index.has(owner_id) \
 				or owner_id == UNEMPLOYED_PROFESSION_ID \
-				or int(profile.owner_slots_per_building) != 1 or int(profile.construction_days) < 0:
+				or int(profile.owner_slots_per_building) <= 0 or int(profile.construction_days) < 0:
 			return {"ok": false, "reason": "invalid building type: %s" % stable_id}
 		var building_kind := String(profile.building_kind)
 		if building_kind not in ["collector", "industrial", "service"]:

@@ -2725,10 +2725,10 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         // (industrial) keep their original output/resource/behavior coupling.
         const bool kind_is_service = _building_kinds[i] == 2;
         if (owner_prof[i] < 0 || owner_prof[i] >= static_cast<int32_t>(_profession_ids.size()) ||
-			owner_slots[i] != 1 || wages[i] < 0 || construction_days[i] < 0 ||
-			_building_kinds[i] < 0 || _building_kinds[i] > 2 ||
-			behavior_ids[i] < 0 || behavior_ids[i] > 2 || behavior_versions[i] != 1 ||
-			(!kind_is_service && output_offsets[i] == output_offsets[i + 1]) ||
+            owner_slots[i] <= 0 || wages[i] < 0 || construction_days[i] < 0 ||
+            _building_kinds[i] < 0 || _building_kinds[i] > 2 ||
+            behavior_ids[i] < 0 || behavior_ids[i] > 2 || behavior_versions[i] != 1 ||
+            (!kind_is_service && output_offsets[i] == output_offsets[i + 1]) ||
 			(kind_is_service && output_offsets[i] != output_offsets[i + 1]) ||
 			(_building_kinds[i] == 0 && resource_offsets[i] == resource_offsets[i + 1]) ||
 			(_building_kinds[i] != 0 && resource_offsets[i] != resource_offsets[i + 1]) ||
@@ -4349,10 +4349,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
     auto planned_owner_demand = [&](const BuildingGroup &group, const BuildingType &type) {
         const int64_t full = saturating_mul(
             group.count, type.owner_slots_per_building, _saturation_count);
-        int64_t scaled = mul_div_sat(
-            full, group.planned_utilization_q16, Q16_ONE, _saturation_count);
-        if (scaled == 0 && full > 0 && group.planned_utilization_q16 > 0) scaled = 1;
-        return scaled;
+        return group.planned_utilization_q16 > 0 ? full : 0;
     };
     const bool trace_detail = trace_detail_for_cell(cell);
     // A1 迁移会 allocate/release slot，裸 slot id 会失效；trace 快照改存稳定
@@ -10536,10 +10533,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         int64_t snapshot_sat = 0;
         const int64_t full_owner_capacity = saturating_mul(
             group.count, type.owner_slots_per_building, snapshot_sat);
-        int64_t planned_owner_required = mul_div_sat(
-            full_owner_capacity, group.planned_utilization_q16, Q16_ONE, snapshot_sat);
-        if (planned_owner_required == 0 && full_owner_capacity > 0 &&
-            group.planned_utilization_q16 > 0) planned_owner_required = 1;
+        const int64_t planned_owner_required = group.planned_utilization_q16 > 0
+            ? full_owner_capacity : 0;
         group_type_ids.push_back(group.type_id);
         owner_signature_ids.push_back(group.owner_signature_id);
         group_counts.push_back(group.count);

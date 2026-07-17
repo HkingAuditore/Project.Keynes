@@ -125,13 +125,14 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("stone hunting sustains its hunter and yields fewer byproducts",
 		stone_hunting != null and
 		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide", "fur"]) and
-		stone_hunting.output_quantities_per_day == PackedInt64Array([3200, 800, 320]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([7000, 250, 100]) and
 		stone_hunting.output_quantities_per_day[0] >= 171 and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and
 		stone_hunting.output_quantities_per_day[1] >
 			stone_hunting.output_quantities_per_day[2] and
-		stone_hunting.resource_quantities_per_day == PackedInt64Array([715]))
+		stone_hunting.resource_quantities_per_day == PackedInt64Array([715]) and
+		stone_hunting.owner_slots_per_building == 5)
 	_expect("early bullion production is owner-operated and input-free",
 		String(early_gold.owner_profession_id) == "merchant" and
 		String(early_silver.owner_profession_id) == "merchant" and
@@ -325,7 +326,15 @@ func _audit(catalog: Dictionary) -> void:
 	var used_resources := {}
 	var production_resources: PackedInt32Array = catalog.building_production_resource_ids
 	for type_id in range(buildings.size()):
-		_expect("one owner job: %s" % buildings[type_id], owners[type_id] == 1)
+		var expected_owner_slots := 1
+		if buildings[type_id] in ["gathering_ground", "stone_age_hunting_camp"]:
+			expected_owner_slots = 5
+		elif buildings[type_id] == "household_weaving_shelter":
+			expected_owner_slots = 2
+		elif buildings[type_id] == "marine_fish_collector":
+			expected_owner_slots = 3
+		_expect("calibrated owner jobs: %s" % buildings[type_id],
+			owners[type_id] == expected_owner_slots)
 		_expect("building has physical output: %s" % buildings[type_id],
 			output_offsets[type_id + 1] > output_offsets[type_id])
 		_expect("building kind is collector or industry: %s" % buildings[type_id],
@@ -879,13 +888,13 @@ func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
 	var tiers: PackedInt32Array = catalog.building_upgrade_tiers
 	var expected := {
 		"subsistence_food": [
-			["gathering_ground", 1, 5600],
+			["gathering_ground", 1, 7000],
 			["subsistence_farm", 2, 8000],
 			["three_field_smallholding", 3, 12000],
 			["improved_smallholding", 4, 16000],
 		],
 		"household_cloth": [
-			["household_weaving_shelter", 1, 889],
+			["household_weaving_shelter", 1, 600],
 			["household_loom", 2, 1320],
 			["cottage_weaving", 3, 2400],
 			["improved_domestic_loom", 4, 3600],
