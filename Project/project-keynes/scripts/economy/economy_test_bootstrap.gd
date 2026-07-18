@@ -11,6 +11,7 @@ const FOOD_REQUIREMENT_PER_CAPITA := 1300
 const CLOTHING_REQUIREMENT_PER_CAPITA := 4
 const SURVIVAL_FUND_DAYS := 30
 const OWNER_OPERATING_CYCLES := 2
+const MIN_SMALL_PROFESSION_POPULATION := 2
 
 const TEST_COLLECTOR_COUNT_CAPS := {
 	"flint_quarry": 1,
@@ -18,7 +19,12 @@ const TEST_COLLECTOR_COUNT_CAPS := {
 	"placer_gold_working": 1,
 	"stone_collector": 1,
 	"surface_silver_working": 1,
-	"timber_collector": 8,
+	"timber_collector": 3,
+}
+
+const MID_STONE_EXCLUDED_BUILDING_IDS := {
+	"lumber_plant": true,
+	"stone_collector": true,
 }
 
 const FOOD_GOOD_IDS := {
@@ -67,7 +73,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		for key in placement_spec:
 			job_spec[key] = placement_spec[key]
 		building_specs[StringName(building_id)] = job_spec
-		if _technology_available(placement_spec.technology_tags):
+		if _technology_available(placement_spec.technology_tags) and not \
+			MID_STONE_EXCLUDED_BUILDING_IDS.has(String(building_id)):
 			eligible_building_ids.append(building_id)
 	var highest_tier_by_family := {}
 	for building_id in eligible_building_ids:
@@ -95,7 +102,6 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	if passable_cells.is_empty():
 		return {"ok": false, "reason": "test_bootstrap_no_passable_land"}
 	var resource_arrays := _resource_arrays(map, PackedStringArray(MID_STONE_TECHNOLOGY_IDS))
-	var neighbor_indices: PackedInt32Array = map.neighbor_indices_packed()
 	var groups_by_cell := {}
 	var outputs_by_cell := {}
 	for cell_idx in passable_cells:
@@ -108,8 +114,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		if int(spec.kind) != 0:
 			continue
 		for cell_idx in passable_cells:
-			var count := _collector_count_at(spec, cell_idx, resource_arrays, neighbor_indices,
-				map.cell_count())
+			var count := _collector_count_at(spec, cell_idx, resource_arrays)
 			if count <= 0:
 				continue
 			(groups_by_cell[cell_idx] as Array).append({"spec": spec, "count": count})
@@ -242,6 +247,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			var population := int(jobs_by_profession.get(profession, 0))
 			if population <= 0:
 				continue
+			if population < MIN_SMALL_PROFESSION_POPULATION and profession != &"merchant":
+				population = MIN_SMALL_PROFESSION_POPULATION
 			cell_indices.append(cell_idx)
 			signature_ids.append(int(signatures[profession]))
 			populations.append(population)
@@ -251,6 +258,17 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		if actual_population > 0:
 			populated_cells.append(cell_idx)
 			total_population += actual_population
+			var capacity_idx := carrying_capacity_cell_indices.find(cell_idx)
+			if capacity_idx >= 0:
+				carrying_capacity_population[capacity_idx] = actual_population
+
+	carrying_capacity_min = CELL_POPULATION_CAP
+	carrying_capacity_max = 0
+	carrying_capacity_total = 0
+	for population in carrying_capacity_population:
+		carrying_capacity_min = mini(carrying_capacity_min, int(population))
+		carrying_capacity_max = maxi(carrying_capacity_max, int(population))
+		carrying_capacity_total += int(population)
 
 	var cycle_days := facade.bootstrap_cycle_days(populations.size())
 	var initial_survival_funds := 0
@@ -301,7 +319,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"cohort_count": populations.size(),
 		"building_group_count": building_counts.size(),
 		"total_population": total_population,
-		"population_source": "mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v10",
+		"population_source": "mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v11",
 		"cell_population_cap": CELL_POPULATION_CAP,
 		"initial_employment": "unemployed",
 		"initial_stock_units": 0,
@@ -473,8 +491,7 @@ static func _resource_arrays(map: MapData, technology_ids: PackedStringArray) ->
 
 
 static func _collector_count_at(spec: Dictionary, cell_idx: int,
-		resource_arrays: Dictionary, neighbor_indices: PackedInt32Array,
-		cell_count: int) -> int:
+		resource_arrays: Dictionary) -> int:
 	var resource_ids: PackedStringArray = spec.resource_ids
 	var quantities: PackedInt64Array = spec.resource_quantities
 	var modes: PackedInt32Array = spec.resource_modes
@@ -495,30 +512,14 @@ static func _collector_count_at(spec: Dictionary, cell_idx: int,
 			required *= EXTRACT_RESERVE_DAYS
 		if cell_idx < 0 or cell_idx >= reserves.size() or required <= 0.0:
 			return 0
-		var available := _accessible_resource_reserve(reserves, cell_idx,
-			int(access_modes[i]), neighbor_indices, cell_count)
+		if int(access_modes[i]) != 0:
+			return 0
+		var available := maxf(0.0, reserves[cell_idx])
 		var local_supported := int(floor(available / required))
 		if local_supported <= 0:
 			return 0
 		supported = mini(supported, local_supported)
 	return clampi(supported, 0, count_cap)
-
-
-static func _accessible_resource_reserve(reserves: PackedFloat32Array, cell_idx: int,
-		access_mode: int, neighbor_indices: PackedInt32Array, cell_count: int) -> float:
-	if cell_idx < 0 or cell_idx >= reserves.size():
-		return 0.0
-	var total := maxf(0.0, reserves[cell_idx])
-	if access_mode != 1 or neighbor_indices.size() != cell_count * 6:
-		return total
-	var visited := {cell_idx: true}
-	for direction in range(6):
-		var neighbor := int(neighbor_indices[cell_idx * 6 + direction])
-		if neighbor < 0 or neighbor >= reserves.size() or visited.has(neighbor):
-			continue
-		visited[neighbor] = true
-		total += maxf(0.0, reserves[neighbor])
-	return total
 
 
 static func _mark_outputs(spec: Dictionary, local_outputs: Dictionary) -> void:

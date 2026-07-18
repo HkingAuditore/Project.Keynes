@@ -1012,7 +1012,7 @@ private:
     int32_t _trade_min_margin_q16 = 3277;
     int32_t _trade_target_count = 4;
     int32_t _trade_signal_pairs_per_slice = 16384;
-    int32_t _trade_route_searches_per_slice = 2;
+    int32_t _trade_route_searches_per_slice = 128;
     int32_t _trade_max_route_expansions = 8192;
     int32_t _trade_route_cache_entries = 16384;
     int32_t _trade_max_signals = 32768;
@@ -1112,6 +1112,10 @@ private:
     int64_t _trade_candidates_generated = 0;
     int64_t _trade_candidates_accepted = 0;
     int64_t _trade_rejected_profit = 0;
+    int64_t _trade_rejected_no_spread = 0;
+    int64_t _trade_rejected_margin = 0;
+    int64_t _trade_quantity_profit_clips = 0;
+    int64_t _trade_relief_candidates = 0;
     int64_t _trade_rejected_capacity = 0;
     int64_t _trade_rejected_stock = 0;
     int64_t _trade_rejected_cash = 0;
@@ -1258,10 +1262,12 @@ private:
     std::vector<uint8_t> _building_is_water;
     std::vector<uint8_t> _building_has_river;
     std::vector<int32_t> _building_neighbors;
-    std::vector<uint8_t> _resource_adjacent_access;
     std::vector<int64_t> _resource_snapshot;
     std::vector<int64_t> _resource_remaining;
     std::vector<int64_t> _resource_deltas;
+    // Debug/recording visibility for the most recently published building
+    // resource changes. It is derived epoch output, not save/hash authority.
+    std::vector<int64_t> _last_published_resource_deltas;
     std::vector<std::string> _resource_ids;
     std::vector<std::string> _resource_reserve_slots;
     std::vector<std::string> _resource_extra_slots;
@@ -1351,12 +1357,21 @@ private:
                                       int64_t &sat) const;
     int64_t trade_local_stock_target(int32_t market, int32_t good,
                                      int64_t &sat) const;
+    int64_t profitable_trade_quantity(int32_t source, int32_t destination,
+                                      int32_t good, int64_t max_quantity,
+                                      bool relief_route, int32_t &source_price,
+                                      int32_t &destination_price,
+                                      int64_t &profit, int64_t &margin_q16,
+                                      int64_t &sat) const;
     int64_t merchant_inventory_target(int32_t market, int32_t good,
                                       int32_t signal_index,
                                       int64_t realized_withdrawal,
                                       int64_t export_ema,
                                       int64_t cold_start_daily_supply,
                                       int64_t &sat) const;
+    int32_t effective_merchant_buy_factor_q16(
+        int32_t market, int32_t good, int64_t target, int64_t stock,
+        int64_t &sat) const;
     bool settle_due_trade_orders(std::string &error);
     bool dispatch_trade_candidates(std::string &error);
     void update_trade_flow_ema();
@@ -1424,8 +1439,6 @@ private:
     bool run_building_employment_cell(int32_t cell, std::string &error);
     bool reconcile_building_employment_after_population_change(std::string &error);
     bool run_building_production_cell(int32_t cell, std::string &error);
-    int32_t gather_resource_cells(int32_t cell, int32_t access_mode,
-                                  int32_t *out_cells, int32_t capacity) const;
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
     void commit_ready_construction();

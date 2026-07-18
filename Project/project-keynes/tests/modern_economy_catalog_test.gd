@@ -28,8 +28,8 @@ func _audit(catalog: Dictionary) -> void:
 	var needs: PackedStringArray = catalog.need_ids
 	var resources: PackedStringArray = catalog.building_resource_ids
 	_expect("simplified catalog has 120 goods", goods.size() == 120)
-	_expect("bounded catalog has 259 production methods", buildings.size() == 259)
-	_expect("32 labor-relation professions", professions.size() == 32)
+	_expect("bounded catalog has 260 production methods", buildings.size() == 260)
+	_expect("33 labor-relation professions", professions.size() == 33)
 	_expect("17 differentiated household needs", needs.size() == 17)
 	_expect("30 registered natural resources", ResourceRegistryScript.count() == 30)
 	_expect("building catalog references 30 distinct natural resources", resources.size() == 30)
@@ -71,10 +71,11 @@ func _audit(catalog: Dictionary) -> void:
 			goods.find(retired_chain_good) < 0)
 	for terminal_good in ["prepared_staples", "fine_clothing", "fine_furniture"]:
 		_expect("new terminal good exists: %s" % terminal_good, goods.find(terminal_good) >= 0)
-	_expect("eight consumption prototypes compile",
+	_expect("nine consumption prototypes compile",
 		catalog.plan_ids == PackedStringArray(["agrarian_household", "artisan_household",
 			"extractive_household", "industrial_worker_household", "merchant_household",
-			"owner_household", "survival_household", "technical_household"]))
+			"owner_household", "plan_unemployed", "survival_household",
+			"technical_household"]))
 	_expect("occupational and status needs compile",
 		needs.has("work_equipment") and needs.has("status_goods"))
 	_audit_household_consumption(catalog)
@@ -105,6 +106,24 @@ func _audit(catalog: Dictionary) -> void:
 		ore_bronze.input_quantities_per_day == PackedInt64Array([500, 500, 500]))
 	var early_gold = load("res://data/economy/buildings/placer_gold_working.tres")
 	var early_silver = load("res://data/economy/buildings/surface_silver_working.tres")
+	var hearth = load("res://data/economy/buildings/communal_hearth.tres")
+	var knapping = load("res://data/economy/buildings/knapping_workshop.tres")
+	var early_weaving = load("res://data/economy/buildings/household_weaving_shelter.tres")
+	_expect("stone production chains have physical, demand-scaled inputs",
+		hearth.input_quantities_per_day == PackedInt64Array([7000, 3500]) and
+		hearth.input_required_q16 == PackedInt32Array([65536, 32768]) and
+		knapping.input_quantities_per_day == PackedInt64Array([100]) and
+		knapping.output_quantities_per_day == PackedInt64Array([140]) and
+		early_weaving.input_good_ids == PackedStringArray(["gathered_plants"]) and
+		early_weaving.input_quantities_per_day == PackedInt64Array([120]) and
+		early_weaving.output_quantities_per_day == PackedInt64Array([90]) and
+		String(early_weaving.building_kind) == "industrial")
+	_expect("primitive logging extracts rather than creates timber",
+		timber_collector.resource_generation_ids.is_empty() and
+		String(timber_collector.behavior_id) == "consume_local_resources")
+	_expect("early gold employment and wage scale is bounded",
+		early_gold.employee_slots_per_building == PackedInt64Array([1]) and
+		early_gold.employee_reference_wages_per_day == PackedInt64Array([40000]))
 	var bronze_workshop = load("res://data/economy/buildings/bronze_tool_workshop.tres")
 	var guild_hall = load("res://data/economy/buildings/guild_hall.tres")
 	var steam_works = load("res://data/economy/buildings/steam_engine_works.tres")
@@ -112,9 +131,9 @@ func _audit(catalog: Dictionary) -> void:
 		"communal_hearth": "forager", "flint_quarry": "forager",
 		"gathering_ground": "forager", "household_weaving_shelter": "artisan",
 		"knapping_workshop": "artisan", "lumber_plant": "artisan",
-		"marine_fish_collector": "fisher", "placer_gold_working": "merchant",
+		"marine_fish_collector": "fisher",
 		"stone_age_hunting_camp": "hunter", "stone_collector": "forager",
-		"surface_silver_working": "merchant", "timber_collector": "forager",
+		"timber_collector": "forager",
 	}
 	for building_id in stone_owner_policy:
 		var stone_building = load("res://data/economy/buildings/%s.tres" % building_id)
@@ -125,20 +144,22 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("stone hunting sustains its hunter and yields fewer byproducts",
 		stone_hunting != null and
 		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide", "fur"]) and
-		stone_hunting.output_quantities_per_day == PackedInt64Array([7000, 250, 100]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([3728, 45, 23]) and
 		stone_hunting.output_quantities_per_day[0] >= 171 and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and
 		stone_hunting.output_quantities_per_day[1] >
 			stone_hunting.output_quantities_per_day[2] and
 		stone_hunting.resource_quantities_per_day == PackedInt64Array([715]) and
-		stone_hunting.owner_slots_per_building == 5)
-	_expect("early bullion production is owner-operated and input-free",
+		stone_hunting.owner_slots_per_building == 2)
+	_expect("early bullion production is merchant-owned, staffed, and input-free",
 		String(early_gold.owner_profession_id) == "merchant" and
 		String(early_silver.owner_profession_id) == "merchant" and
 		early_gold.input_good_ids.is_empty() and early_silver.input_good_ids.is_empty() and
-		early_gold.employee_profession_ids.is_empty() and
-		early_silver.employee_profession_ids.is_empty() and
+		early_gold.employee_profession_ids == PackedStringArray(["miner"]) and
+		early_silver.employee_profession_ids == PackedStringArray(["miner"]) and
+		early_gold.employee_slots_per_building == PackedInt64Array([1]) and
+		early_silver.employee_slots_per_building == PackedInt64Array([2]) and
 		early_gold.technology_tags.has("tech.gathering") and
 		early_silver.technology_tags.has("tech.gathering"))
 	_expect("bronze workshop uses a small apprentice household",
@@ -293,9 +314,9 @@ func _audit(catalog: Dictionary) -> void:
 			"bronze", "manganese_alloy"]:
 		_expect("single-use intermediate removed: %s" % retired_good,
 			goods.find(retired_good) < 0)
-	_expect("water resources use explicit geographic habitats",
+	_expect("marine resources use explicit coastal-land habitats",
 		ResourceRegistryScript.habitat_code(ResourceRegistryScript.ordered().filter(
-			func(p): return String(p.id) == "marine_fish")[0]) == 2)
+			func(p): return String(p.id) == "marine_fish")[0]) == 4)
 	var flint_resource = ResourceRegistryScript.ordered().filter(
 		func(p): return String(p.id) == "flint")[0]
 	var rare_earth_resource = ResourceRegistryScript.ordered().filter(
@@ -328,22 +349,21 @@ func _audit(catalog: Dictionary) -> void:
 	for type_id in range(buildings.size()):
 		var expected_owner_slots := 1
 		if buildings[type_id] in ["gathering_ground", "stone_age_hunting_camp"]:
-			expected_owner_slots = 5
-		elif buildings[type_id] == "household_weaving_shelter":
 			expected_owner_slots = 2
-		elif buildings[type_id] == "marine_fish_collector":
-			expected_owner_slots = 3
 		_expect("calibrated owner jobs: %s" % buildings[type_id],
 			owners[type_id] == expected_owner_slots)
 		_expect("building has physical output: %s" % buildings[type_id],
+			buildings[type_id] == "merchant_post" or
 			output_offsets[type_id + 1] > output_offsets[type_id])
 		_expect("building kind is collector or industry: %s" % buildings[type_id],
-			kinds[type_id] in [0, 1])
+			kinds[type_id] in [0, 1] or
+			(buildings[type_id] == "merchant_post" and kinds[type_id] == 2))
 		_expect("building behavior remains physical: %s" % buildings[type_id],
 			behavior_ids[type_id] in [0, 1, 2])
 		_expect("merchant owns only matching bullion collectors: %s" % buildings[type_id],
 			owner_professions[type_id] != merchant_profession or
-			buildings[type_id] in ["placer_gold_working", "surface_silver_working"])
+			buildings[type_id] in ["merchant_post", "placer_gold_working",
+				"surface_silver_working"])
 		if employee_offsets[type_id + 1] > employee_offsets[type_id]:
 			_expect("employee roles have positive reference wages: %s" % buildings[type_id],
 				_range_positive(role_reference_wages, employee_offsets[type_id],
@@ -367,8 +387,8 @@ func _audit(catalog: Dictionary) -> void:
 	var marine_type := buildings.find("marine_fish_collector")
 	_expect("single fishery chain produces early fish",
 		marine_type >= 0 and output_quantities[output_offsets[marine_type]] > 0)
-	_expect("shore fisheries use local plus adjacent water resources",
-		resource_access_modes[resource_offsets[marine_type]] == 1)
+	_expect("every natural resource edge is strictly local",
+		_range_all(resource_access_modes, 0, resource_access_modes.size(), 0))
 
 	var issue_values: PackedInt64Array = catalog.good_monetary_issue_values
 	var storage_modes: PackedInt32Array = catalog.good_storage_modes
@@ -382,8 +402,8 @@ func _audit(catalog: Dictionary) -> void:
 		if issue_values[good] > 0: issued.append(goods[good])
 		if storage_modes[good] == 1: flows.append(goods[good])
 	_expect("only gold and silver issue money", issued == PackedStringArray(["gold", "silver"]))
-	_expect("gold to silver issue ratio is 80 to 1",
-		issue_values[goods.find("gold")] == 800000 and issue_values[goods.find("silver")] == 10000)
+	_expect("gold and silver issue values cover early mine labor and owner livelihood",
+		issue_values[goods.find("gold")] == 800000 and issue_values[goods.find("silver")] == 50000)
 	_expect("electricity is the only cycle-flow good", flows == PackedStringArray(["electricity"]))
 	for retired_bucket in ["primary", "forestry", "construction", "food", "textile",
 			"chemicals", "metals", "machinery", "consumer", "energy"]:
@@ -595,11 +615,11 @@ func _audit(catalog: Dictionary) -> void:
 		_all_ranges_have_tech(catalog.good_technology_tag_offsets,
 			catalog.good_technology_tags, goods.size()))
 	_expect("every building has an executable technology requirement",
-		_all_ranges_have_tech(catalog.building_technology_tag_offsets,
-			catalog.building_technology_tags, buildings.size()))
+		_all_ranges_have_tech_except(catalog.building_technology_tag_offsets,
+			catalog.building_technology_tags, buildings, ["merchant_post"]))
 	_expect("every profession has an executable technology requirement",
-		_all_ranges_have_tech(catalog.profession_technology_tag_offsets,
-			catalog.profession_technology_tags, professions.size()))
+		_all_ranges_have_tech_except(catalog.profession_technology_tag_offsets,
+			catalog.profession_technology_tags, professions, ["unemployed"]))
 
 	var consumed := {}
 	var input_goods: PackedInt32Array = catalog.building_input_good_ids
@@ -669,6 +689,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 	var core_needs := ["staple_food", "protein", "produce", "clothing", "housing",
 		"household_goods", "hygiene", "healthcare", "home_energy"]
 	var expected_plan_needs := {
+		"plan_unemployed": ["staple_food"],
 		"survival_household": core_needs,
 		"agrarian_household": core_needs + ["transport", "work_equipment", "recreation"],
 		"extractive_household": core_needs + ["transport", "work_equipment"],
@@ -682,6 +703,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 			"recreation", "durable_goods", "luxury", "status_goods"],
 	}
 	var plan_scales := {
+		"plan_unemployed": [80, 0, 0],
 		"survival_household": [80, 35, 0], "agrarian_household": [95, 75, 0],
 		"extractive_household": [105, 85, 0], "industrial_worker_household": [100, 85, 0],
 		"artisan_household": [105, 105, 80], "technical_household": [110, 125, 120],
@@ -894,7 +916,7 @@ func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
 			["improved_smallholding", 4, 16000],
 		],
 		"household_cloth": [
-			["household_weaving_shelter", 1, 600],
+			["household_weaving_shelter", 1, 90],
 			["household_loom", 2, 1320],
 			["cottage_weaving", 3, 2400],
 			["improved_domestic_loom", 4, 3600],
@@ -917,8 +939,10 @@ func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
 			_expect("upgrade tier is unique and aligned: %s" % row[0],
 				type_id >= 0 and family_indices[type_id] == family_index and
 				tiers[type_id] == row[1])
-			_expect("subsistence tier has no market input or employees: %s" % row[0],
-				type_id >= 0 and input_offsets[type_id] == input_offsets[type_id + 1] and
+			var expected_inputs := 1 if row[0] == "household_weaving_shelter" else 0
+			_expect("subsistence tier has bounded inputs and no employees: %s" % row[0],
+				type_id >= 0 and
+				input_offsets[type_id + 1] - input_offsets[type_id] == expected_inputs and
 				employee_offsets[type_id] == employee_offsets[type_id + 1])
 			_expect("subsistence output is calibrated and rises: %s" % row[0],
 				total_output == row[2] and total_output > previous_output)
@@ -964,6 +988,19 @@ func _all_ranges_have_tech(offsets: PackedInt32Array, tags: PackedStringArray,
 		for edge in range(offsets[item], offsets[item + 1]):
 			found = found or String(tags[edge]).begins_with("tech.")
 		if not found:
+			return false
+	return true
+
+
+func _all_ranges_have_tech_except(offsets: PackedInt32Array, tags: PackedStringArray,
+		stable_ids: PackedStringArray, allowed_missing: Array) -> bool:
+	if offsets.size() != stable_ids.size() + 1:
+		return false
+	for item in range(stable_ids.size()):
+		var found := false
+		for edge in range(offsets[item], offsets[item + 1]):
+			found = found or String(tags[edge]).begins_with("tech.")
+		if not found and not allowed_missing.has(String(stable_ids[item])):
 			return false
 	return true
 

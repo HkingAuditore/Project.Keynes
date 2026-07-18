@@ -521,7 +521,9 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var ethnicity_names: PackedStringArray = snapshot.get("ethnicity_display_names", PackedStringArray())
 	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
 	var funds: PackedInt64Array = snapshot.get("funds_by_cohort", PackedInt64Array())
-	var satisfaction: PackedInt32Array = snapshot.get("satisfaction_by_cohort_q16", PackedInt32Array())
+	var satisfaction: PackedInt32Array = snapshot.get(
+		"survival_satisfaction_by_cohort_q16",
+		snapshot.get("satisfaction_by_cohort_q16", PackedInt32Array()))
 	var merchant_flags: PackedByteArray = snapshot.get("merchant_flags", PackedByteArray())
 	var owner_employed: PackedInt64Array = snapshot.get("owner_employed_by_cohort", PackedInt64Array())
 	var employee_employed: PackedInt64Array = snapshot.get("employee_employed_by_cohort", PackedInt64Array())

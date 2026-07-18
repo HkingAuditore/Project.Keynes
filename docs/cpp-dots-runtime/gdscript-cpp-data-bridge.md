@@ -2,6 +2,9 @@
 
 本文记录 GDScript、DataCore、C++ GDExtension 之间的数据传递契约。性能问题里大量“明明设计上应该走 C++，日志却显示 `path=gdscript`”或“C++ 已经算完但画面/后续 pass 没变”的原因，都来自这里的同步边界。
 
+> 贸易拓扑的地形输入固定为地图生成权威的 `MapData.base_terrain_arr` / `cell_base_terrain`。
+> `cell_terrain` 归气候动态层所有，海冰等季节性切换不得进入贸易拓扑哈希。
+
 ## 参与者
 
 | 角色 | 文件 | 职责 |
@@ -39,14 +42,13 @@ Runtime hydrology 新增的契约：
 - `cell.river_discharge`、`cell.river_discharge_30d`、`cell.river_storage`、`cell.groundwater_storage`、`cell.surface_runoff`：`F32`，owner 为 `runtime.hydrology`。这些字段由 `run_runtime_hydrology_pass` 写入并 `_flush_slot_to_map()` 回 `MapData`。
 - Legacy `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见，并从 weather cadence 游标传入真实 `dt_days`。Native daily graph 中的 `runtime_hydrology` 节点复用 round 起点 refresh，依赖前序 weather node 已在 C++ slots 中发布当日 precip，并使用 `native_daily_sim_stride` 作为本轮 dt。
 - Native daily ACTIVE 在构建 round bootstrap bundle **之前**调用 `MapData.soa_begin_climate_transaction()`；该边界同时冻结 `temp/moisture/snow/sea_ice *_prev` 和 `weather_classification_temp/moisture`。若在 bundle 之后才冻结，weather knobs 会捕获错误引用；若完全不冻结，classification 与 `*_prev` 会永久停在地图生成态。
-- `cell.res_timber_reserve`、`cell.res_stone_reserve`、`cell.res_arable_land_reserve` 等 30 个自然资源/农业容量储量字段：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。另有一一对应的 `cell.res_*_extra_change` 字段；生产发布一次性采收/开采 delta，资源 pass 只应用一次后清零。`cell.resource_habitat_mask`（U8）仍编码 land/marine-water/freshwater habitat，但当前经济目录只有 `marine_fish` 使用水域鱼类资源；淡水/淡水鱼不再占用 DataCore 经济资源 slot。小麦、玉米等栽培作物不再拥有 DataCore slot，而是 MarketStore goods。新增资源需加 reserve/extra 常量 + MapData 数组 + schema 行 + codegen + 重 build，并登记 `ResourceProfileRegistry._PROFILE_PATHS`。knobs 使用 `habitat_modes`/`habitat_mask_slot` 和 `dt_days`；五日 catchup 仅放大自然演化，不重复放大 external delta。
+- `cell.res_timber_reserve`、`cell.res_stone_reserve`、`cell.res_arable_land_reserve` 等 30 个自然资源/农业容量储量字段：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。另有一一对应的 `cell.res_*_extra_change` 字段；生产发布一次性采收/开采 delta，资源 pass 只应用一次后清零。`cell.resource_habitat_mask`（U8）编码 land/marine-water/freshwater/coastal-land habitat；`marine_fish` 使用与海洋水格相邻的 coastal-land bit，使沿岸渔场只读取本格储量。淡水/淡水鱼不再占用 DataCore 经济资源 slot。小麦、玉米等栽培作物不再拥有 DataCore slot，而是 MarketStore goods。新增资源需加 reserve/extra 常量 + MapData 数组 + schema 行 + codegen + 重 build，并登记 `ResourceProfileRegistry._PROFILE_PATHS`。knobs 使用 `habitat_modes`/`habitat_mask_slot` 和 `dt_days`；五日 catchup 仅放大自然演化，不重复放大 external delta。
 - 资源 pass 的 `cell_temp` 与 `ResourceProfile.temp_lo/temp_hi` 均使用 `[0,1]` 地图气候单位；目录审计禁止摄氏式范围。植被 dynamics 的 C++ 返回包中 `succession_indices/succession_to_veg` 不直接改变 enum 权威；`MapGenerator._apply_vegetation_succession_candidates()` 在 Godot 边界批量写 `cell_vegetation/cell_base_vegetation` 到 DCWorld 与 DCWorldExt，并同步 HexCell/MapData 后才对视觉消费者可见。
 
-建筑 sample boundary 还从 `MapData.neighbor_indices_packed()` 捕获静态六邻拓扑。目录中的
-`building_production_resource_access_modes` 决定 local 或 local-and-adjacent；NativeEconomyRuntime
-负责跨最多 7 格汇总 `_resource_remaining` 并把 extraction delta 写回真实来源格。邻接数组只在
-冻结周期边界跨桥一次，不进入逐建筑 Object/GDScript 调用。Inspector 冷查询同时发布本地与
-邻域可达 reserve/pending/effective 三列。
+建筑 sample boundary 仍从 `MapData.neighbor_indices_packed()` 捕获静态六邻拓扑，供建筑条件和
+国内贸易使用；它不再参与资源采集。目录保留
+`building_production_resource_access_modes` 对齐列，但所有值必须为 local/0，GDScript catalog 和
+NativeEconomyRuntime 都拒绝非零值。生产和 Inspector 可达储量查询只读取建筑本格。
 - Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v13 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
 
 国内贸易拓扑也不进入 DataCore schema。`MapData.neighbor_indices_packed()` 与
@@ -606,3 +608,11 @@ Price V3 的企业需求 EMA、实际供给 EMA 与成本锚同样只存在 nati
 `submit_country_commands` / `run_country_slice` 与 snapshot/save API。经济热路径不通过该 Facade，
 而由 `NativeEconomyRuntime` 直接持有窄类型 `NativeCountryRuntime*`，在 sample day 复制纯数值冻结
 快照。这样避免 Dictionary/Object/string lookup 和 GDScript 往返，也避免为全国一致科技制造逐格副本。
+## Economy recorder CSV v9
+
+CSV v9 keeps C++ as the only economy authority and adds derived diagnostics at
+the committed boundary. Building rows include owner living cost, livelihood requirement, viability
+operating cost, and income gap. Resource rows now publish opening reserve,
+natural net change, previously pending artificial change applied, current
+artificial change pending, and closing reserve. The recorder history is debug
+state only: it is excluded from simulation state hash and PKEC save data.

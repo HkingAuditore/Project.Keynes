@@ -21,10 +21,10 @@ using Clock = std::chrono::steady_clock;
 constexpr size_t WRITE_CHUNK_BYTES = 1024 * 1024;
 
 constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
-    "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,births,deaths,production_inputs_consumed,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,owner_output_consumed,producer_revenue,producer_support_money_issued,bullion_money_issued,bullion_stock_consumed,gold_accepted,silver_accepted,gold_money_issued,silver_money_issued,cycle_flow_produced,cycle_flow_consumed,cycle_flow_discarded,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,trade_runtime_mode,trade_topology_ready,trade_topology_generation,trade_topology_hash,trade_country_generation,trade_plan_phase,trade_scan_cursor,trade_scan_total,trade_route_cursor,trade_route_total,trade_completed_scans,trade_plan_reset_count,trade_topology_content_change_count,trade_last_plan_reset_reason,trade_source_signals,trade_destination_signals,trade_ready_candidates,trade_route_expansions,trade_route_cache_hits,trade_route_cache_misses,trade_candidates_generated,trade_candidates_accepted,trade_rejected_profit,trade_rejected_capacity,trade_rejected_stock,trade_rejected_cash,trade_rejected_route,trade_rejected_order_cap,trade_orders_in_flight,trade_orders_dispatched,trade_orders_arrived,trade_unclaimed_orders,trade_capacity_available,trade_capacity_used,population_error,money_error,goods_error\n",
+    "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,births,deaths,production_inputs_consumed,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,owner_output_consumed,producer_revenue,producer_support_money_issued,bullion_money_issued,bullion_stock_consumed,gold_accepted,silver_accepted,gold_money_issued,silver_money_issued,cycle_flow_produced,cycle_flow_consumed,cycle_flow_discarded,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,trade_runtime_mode,trade_topology_ready,trade_topology_generation,trade_topology_hash,trade_country_generation,trade_plan_phase,trade_scan_cursor,trade_scan_total,trade_route_cursor,trade_route_total,trade_completed_scans,trade_plan_reset_count,trade_topology_content_change_count,trade_last_plan_reset_reason,trade_source_signals,trade_destination_signals,trade_ready_candidates,trade_route_expansions,trade_route_cache_hits,trade_route_cache_misses,trade_candidates_generated,trade_candidates_accepted,trade_rejected_profit,trade_rejected_no_spread,trade_rejected_margin,trade_quantity_profit_clips,trade_relief_candidates,trade_rejected_capacity,trade_rejected_stock,trade_rejected_cash,trade_rejected_route,trade_rejected_order_cap,trade_orders_in_flight,trade_orders_dispatched,trade_orders_arrived,trade_unclaimed_orders,trade_capacity_available,trade_capacity_used,population_error,money_error,goods_error\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,cohort_index,handle,signature_id,profession_id,ethnicity_id,population,funds,epoch_income,epoch_expense,income_ema,satisfaction_q16,worst_need_id,is_merchant,owner_employed,employee_employed,unemployed\n",
-    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,is_construction,group_index,type_id,owner_signature_id,count,owner_capacity,owner_required,planned_owner_equivalent,filled_owner,owner_openings,employee_required,employee_filled,wage_suspended,capacity_q16,purchase_intent_capacity_q16,realized_profit_margin_q16,severe_loss_cycles,recovery_cycles,operating_state,last_input,last_output,last_sold,last_discarded,last_retained,last_resource,last_resource_generated,last_revenue,last_input_cost,last_wages_paid,last_wages_due,last_expected_revenue,last_operating_cost,last_margin_gap_q16,planned_utilization_q16,last_base_wages_due,last_base_wages_paid,last_bonus_due,last_bonus_paid,construction_ready_days\n",
-    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,reserve\n",
+    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,is_construction,group_index,type_id,owner_signature_id,count,owner_capacity,owner_required,planned_owner_equivalent,filled_owner,owner_openings,employee_required,employee_filled,wage_suspended,capacity_q16,purchase_intent_capacity_q16,realized_profit_margin_q16,severe_loss_cycles,recovery_cycles,operating_state,last_input,last_output,last_sold,last_discarded,last_retained,last_resource,last_resource_generated,last_revenue,last_input_cost,last_wages_paid,last_wages_due,last_expected_revenue,last_operating_cost,last_margin_gap_q16,planned_utilization_q16,last_base_wages_due,last_base_wages_paid,last_bonus_due,last_bonus_paid,owner_living_cost_per_day,owner_livelihood_required,viability_operating_cost,viability_income_gap,construction_ready_days\n",
+    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,opening_reserve,natural_net_change,artificial_change_applied,artificial_change_pending,reserve\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound\n",
 };
 
@@ -212,6 +212,23 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
     _sample_cell_positions.assign(static_cast<size_t>(runtime._cell_count), -1);
     for (int32_t i = 0; i < static_cast<int32_t>(_sample_cells.size()); ++i)
         _sample_cell_positions[_sample_cells[i]] = i;
+    _resource_runtime_indices.assign(_config.resource_ids.size(), -1);
+    for (size_t resource = 0; resource < _config.resource_ids.size(); ++resource) {
+        const auto it = std::lower_bound(runtime._resource_ids.begin(),
+                                         runtime._resource_ids.end(),
+                                         _config.resource_ids[resource]);
+        if (it == runtime._resource_ids.end() || *it != _config.resource_ids[resource]) {
+            error = "resource_id_not_in_runtime";
+            return false;
+        }
+        _resource_runtime_indices[resource] = static_cast<int32_t>(
+            std::distance(runtime._resource_ids.begin(), it));
+    }
+    const size_t resource_history_size = static_cast<size_t>(runtime._cell_count) *
+        _config.resource_ids.size();
+    _previous_resource_reserve.assign(resource_history_size, 0.0f);
+    _pending_resource_artificial.assign(resource_history_size, 0);
+    _resource_history_valid.assign(resource_history_size, uint8_t{0});
     _good_ids = runtime._good_ids;
     _good_category_ids = runtime._good_category_ids;
     _good_default_price = runtime._good_default_price;
@@ -550,6 +567,10 @@ bool EconomyCsvRecorder::fill_batch(
         row.trade_candidates_generated = runtime._trade_candidates_generated;
         row.trade_candidates_accepted = runtime._trade_candidates_accepted;
         row.trade_rejected_profit = runtime._trade_rejected_profit;
+        row.trade_rejected_no_spread = runtime._trade_rejected_no_spread;
+        row.trade_rejected_margin = runtime._trade_rejected_margin;
+        row.trade_quantity_profit_clips = runtime._trade_quantity_profit_clips;
+        row.trade_relief_candidates = runtime._trade_relief_candidates;
         row.trade_rejected_capacity = runtime._trade_rejected_capacity;
         row.trade_rejected_stock = runtime._trade_rejected_stock;
         row.trade_rejected_cash = runtime._trade_rejected_cash;
@@ -669,6 +690,19 @@ bool EconomyCsvRecorder::fill_batch(
                     row.last_base_wages_due = group.last_base_wages_due;
                     row.last_base_wages_paid = group.last_base_wages_paid;
                     row.last_bonus_due = group.last_bonus_due; row.last_bonus_paid = group.last_bonus_paid;
+                    row.owner_living_cost_per_day = runtime.living_cost_for_signature(
+                        cell, group.owner_signature_id, -1, snapshot_sat);
+                    row.owner_livelihood_required = runtime.saturating_mul(
+                        runtime.saturating_mul(row.owner_living_cost_per_day,
+                            std::max<int64_t>(0, group.filled_owner), snapshot_sat),
+                        std::max(1, runtime._epoch_days), snapshot_sat);
+                    row.viability_operating_cost = runtime.saturating_add(
+                        runtime.saturating_add(group.last_input_cost,
+                            group.last_base_wages_due, snapshot_sat),
+                        row.owner_livelihood_required, snapshot_sat);
+                    row.viability_income_gap = runtime.saturating_sub(
+                        group.last_revenue, row.viability_operating_cost,
+                        snapshot_sat);
                     for (int32_t role = 0; role < type.employee_count; ++role) {
                         const auto &job = runtime._building_employee_roles[type.employee_begin + role];
                         const int64_t full = runtime.saturating_mul(group.count, job.slots_per_building, snapshot_sat);
@@ -697,7 +731,38 @@ bool EconomyCsvRecorder::fill_batch(
                     error = "resource_slot_unavailable";
                     return false;
                 }
-                batch.resources.push_back(ResourceRow{common, resource, resource_arrays[resource][cell]});
+                const size_t flat = static_cast<size_t>(resource) *
+                    runtime._cell_count + cell;
+                const float closing = resource_arrays[resource][cell];
+                const bool valid = flat < _resource_history_valid.size() &&
+                    _resource_history_valid[flat] != 0;
+                const float opening = valid ? _previous_resource_reserve[flat] : closing;
+                const int64_t applied_fixed = valid
+                    ? _pending_resource_artificial[flat] : 0;
+                const int32_t runtime_resource = resource <
+                        static_cast<int32_t>(_resource_runtime_indices.size())
+                    ? _resource_runtime_indices[resource] : -1;
+                const size_t runtime_flat = runtime_resource >= 0
+                    ? static_cast<size_t>(runtime_resource) * runtime._cell_count + cell
+                    : runtime._last_published_resource_deltas.size();
+                const int64_t pending_fixed = runtime_flat <
+                        runtime._last_published_resource_deltas.size()
+                    ? runtime._last_published_resource_deltas[runtime_flat] : 0;
+                const float applied = static_cast<float>(applied_fixed) /
+                    static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
+                ResourceRow row;
+                row.c = common;
+                row.resource_index = resource;
+                row.opening_reserve = opening;
+                row.artificial_change_applied = applied;
+                row.artificial_change_pending = static_cast<float>(pending_fixed) /
+                    static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
+                row.reserve = closing;
+                row.natural_net_change = closing - opening - applied;
+                batch.resources.push_back(row);
+                _previous_resource_reserve[flat] = closing;
+                _pending_resource_artificial[flat] = pending_fixed;
+                _resource_history_valid[flat] = 1;
             }
         }
         if (_config.enabled[MARKET]) {
@@ -854,7 +919,9 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.trade_ready_candidates); field(chunk, row.trade_route_expansions);
         field(chunk, row.trade_route_cache_hits); field(chunk, row.trade_route_cache_misses);
         field(chunk, row.trade_candidates_generated); field(chunk, row.trade_candidates_accepted);
-        field(chunk, row.trade_rejected_profit); field(chunk, row.trade_rejected_capacity);
+        field(chunk, row.trade_rejected_profit); field(chunk, row.trade_rejected_no_spread);
+        field(chunk, row.trade_rejected_margin); field(chunk, row.trade_quantity_profit_clips);
+        field(chunk, row.trade_relief_candidates); field(chunk, row.trade_rejected_capacity);
         field(chunk, row.trade_rejected_stock); field(chunk, row.trade_rejected_cash);
         field(chunk, row.trade_rejected_route); field(chunk, row.trade_rejected_order_cap);
         field(chunk, row.trade_orders_in_flight); field(chunk, row.trade_orders_dispatched);
@@ -880,7 +947,7 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         append_common(chunk, row.c); field(chunk, row.construction ? 1 : 0); field(chunk, row.group_index);
         field(chunk, row.type_id); field(chunk, row.owner_signature_id); field(chunk, row.count);
         if (row.construction) {
-            for (int i = 0; i < 33; ++i) blank_field(chunk);
+            for (int i = 0; i < 37; ++i) blank_field(chunk);
             append_int(chunk, row.construction_ready_day);
         } else {
             field(chunk, row.owner_capacity); field(chunk, row.owner_required);
@@ -898,6 +965,10 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
             field(chunk, row.last_operating_cost); field(chunk, row.last_margin_gap_q16);
             field(chunk, row.planned_utilization_q16); field(chunk, row.last_base_wages_due);
             field(chunk, row.last_base_wages_paid); field(chunk, row.last_bonus_due); field(chunk, row.last_bonus_paid);
+            field(chunk, row.owner_living_cost_per_day);
+            field(chunk, row.owner_livelihood_required);
+            field(chunk, row.viability_operating_cost);
+            field(chunk, row.viability_income_gap);
             blank_field(chunk);
         }
         chunk.push_back('\n'); if (!maybe_flush(BUILDINGS)) goto write_failed;
@@ -906,6 +977,10 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
 
     if (_config.enabled[RESOURCES]) for (const ResourceRow &row : batch.resources) {
         append_common(chunk, row.c); text_field(chunk, _config.resource_ids[row.resource_index]);
+        chunk.push_back(','); append_float(chunk, row.opening_reserve);
+        chunk.push_back(','); append_float(chunk, row.natural_net_change);
+        chunk.push_back(','); append_float(chunk, row.artificial_change_applied);
+        chunk.push_back(','); append_float(chunk, row.artificial_change_pending);
         chunk.push_back(','); append_float(chunk, row.reserve); chunk.push_back('\n');
         if (!maybe_flush(RESOURCES)) goto write_failed;
     }

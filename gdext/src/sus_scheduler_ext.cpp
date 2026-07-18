@@ -238,6 +238,8 @@ void SusSchedulerExt::register_job(Object *job, Dictionary descriptor) {
     je.priority             = (int)  descriptor.get("priority",             100);
     je.must_run             = (bool) descriptor.get("must_run",             false);
     je.use_job_should_run   = (bool) descriptor.get("use_job_should_run",   false);
+    je.use_job_deadline_critical = (bool) descriptor.get(
+        "use_job_deadline_critical", false);
     je.starvation_threshold = (int)  descriptor.get("starvation_threshold", 0);
     je.max_slices_per_tick  = (int)  descriptor.get("max_slices_per_tick",  0);
     je.slice_budget_ms      = (float)(double)descriptor.get("slice_budget_ms", 4.0);
@@ -465,13 +467,26 @@ void SusSchedulerExt::tick(Object *ctx) {
         report["tick_index"]     = ctx_view.tick_index;
         report["source"]         = ctx_view.source;
 
+        // Deadline-bound authority work must get one chance to start even
+        // when an earlier job consumed the ordinary frame budget. This is a
+        // dynamic, opt-in gate: normal pre-deadline economy/country slices
+        // remain budgeted and must_run stays false.
+        bool deadline_critical = false;
+        if (job.use_job_deadline_critical && job.job_obj != nullptr) {
+            deadline_critical = (bool)job.job_obj->call(
+                "is_deadline_critical", Variant(ctx));
+        }
+        report["deadline_critical"] = deadline_critical;
+        report["deadline_budget_bypass"] = false;
+
         // ─── Budget / starvation gate (GD line 179-196) ──────────────────
         int64_t elapsed_us_now = _now_us() - tick_start_us;
         bool starving = (!_strict_budget_enabled)
                      && (job.starvation_threshold > 0)
                      && (job.starvation_count >= job.starvation_threshold);
 
-        if (_strict_budget_enabled && optional_jobs_ran > 0 && !job.must_run) {
+        if (_strict_budget_enabled && optional_jobs_ran > 0 && !job.must_run &&
+            !deadline_critical) {
             report["skipped_reason"] = String("strict_budget_one_job");
             _last_report[Variant(job.id)] = report;
             _record_skipped(job.id, String("strict_budget_one_job"));
@@ -479,13 +494,19 @@ void SusSchedulerExt::tick(Object *ctx) {
             jobs_skipped += 1;
             continue;
         }
-        if (elapsed_us_now >= budget_us && !job.must_run && !starving) {
+        if (elapsed_us_now >= budget_us && !job.must_run && !starving &&
+            !deadline_critical) {
             report["skipped_reason"] = String("frame_budget_exhausted");
             _last_report[Variant(job.id)] = report;
             _record_skipped(job.id, String("frame_budget_exhausted"));
             job.starvation_count += 1;
             jobs_skipped += 1;
             continue;
+        }
+        if (deadline_critical && !job.must_run &&
+            ((_strict_budget_enabled && optional_jobs_ran > 0) ||
+             elapsed_us_now >= budget_us)) {
+            report["deadline_budget_bypass"] = true;
         }
 
         // ─── Policy gate (GD line 199-204) ───────────────────────────────

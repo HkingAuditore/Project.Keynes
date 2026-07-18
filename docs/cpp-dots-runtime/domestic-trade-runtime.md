@@ -136,7 +136,37 @@ Windows / Godot 4.6.2 / `template_release`，`tests/economy_runtime_bench.gd -- 
 分布，因此该对比是压力上界记录，不替代后续同状态 A/B。规划 core 采用确定工作单元；slice
 p95 包含 native report/bridge 开销。
 
+## 交易后报价与数量裁剪（2026-07-18）
+
+候选不再以完整 `min(source_surplus, destination_gap)` 做一次报价后整批接受或拒绝。运行时固定源/目的
+当前库存，对候选数量做确定性整数二分，寻找交易后仍满足条件的最大数量：普通路线要求正价差且
+达到 `trade_min_margin_q16`，relief 路线要求价差非负。价格按“源库存减数量、目的库存加数量”重新
+估计，因此批量把两地价格推过头时会缩量成交，而不是让生产地完全收不到贸易现金。
+
+dispatch 在本地居民结算完成后，按最新源地保护库存、目的商人现金和国家运力裁剪，再执行同一盈利
+数量检查。诊断把无价差与利润率不足分开报告，并统计数量裁剪与 relief 候选：
+`trade_rejected_no_spread`、`trade_rejected_margin`、`trade_quantity_profit_clips`、
+`trade_relief_candidates`。这些计数不进入存档或权威 hash。
+
+默认每 slice 路线源搜索预算由 2 提高到 16。2400 地块基准中单次扫描约产生 3.5k 个源信号；旧实现
+还会等全部源搜索结束才形成首批 `ready_candidates`，即使每个候选本身盈利也会多年无法派发。现在
+每个经济边界把自上次结算以来积累的确定性候选块稳定排序并交给 dispatch，路线 cursor 继续前进；
+dispatch 的二次价格、库存、现金、运力和拓扑检查保证部分发布不会超卖，cursor 则保证最终公平。
+
 ## v1 非目标
 
 不含跨国贸易、关税、自贸区、外交、逐边拥堵、运输工资、运输建筑产能、港口或换装。
 水域可以作为内容配置的普通贸易地块，但不模拟真正的陆海联运。
+## 2026-07-18 bounded planner completion
+
+The default planning slice now permits 128 route searches (valid range
+`1..256`). Before route expansion, signals are deterministically grouped by
+`(country, good)` and pruned to the four cheapest/highest-quantity sources and
+the eight highest-price/highest-quantity destinations. Existing Dijkstra route
+validation, source local-demand reserve, destination gap, profit clipping,
+escrow, capacity, and arrival contracts remain authoritative.
+
+This is bounded candidate selection, not a topology shortcut: completed full
+scans advance and restart from fresh frozen signals, while final dispatch can
+still be zero when no route survives the current profit/stock/cash constraints.
+No trade state or PKEC field was added.

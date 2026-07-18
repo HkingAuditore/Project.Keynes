@@ -334,7 +334,7 @@ foreach ($id in $goods.Keys) {
     }
     $inventoryTargetRatio = Inventory-Target-Ratio-For-Good $id
     $priceAdjust = [Math]::Max(512, [int][Math]::Round(2048.0 * $demandElasticity / 65536.0))
-    $issue = if ($id -eq 'gold') { 800000 } elseif ($id -eq 'silver') { 10000 } else { 0 }
+    $issue = if ($id -eq 'gold') { 800000 } elseif ($id -eq 'silver') { 50000 } else { 0 }
     $mode = if ($id -eq 'electricity') { 'cycle_flow' } else { 'stock' }
     Write-Utf8 (Join-Path $goodsDir "$id.tres") @"
 [gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
@@ -1194,9 +1194,7 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         }
     )
     if ($Id -eq 'marine_fish_collector') { $resourceQty = @([long]242) }
-    $resourceAccessModes = @($Resources | ForEach-Object {
-        if ($_ -eq 'marine_fish') { 'local_and_adjacent' } else { 'local' }
-    })
+    $resourceAccessModes = @($Resources | ForEach-Object { 'local' })
     [string[]]$roleIds = @()
     [long[]]$roleSlots = @()
     [string[]]$roleWagePolicies = @()
@@ -1740,7 +1738,7 @@ $generatedResourceIds = @('marine_fish','arable_land','paddy_land','plantation_l
 $newResources = $naturalResourceRows | Where-Object { $_[0] -in $generatedResourceIds }
 foreach ($row in $newResources) {
     $id = $row[0]
-    $habitat = if ($id -eq 'marine_fish') { 'marine_water' } else { 'land' }
+    $habitat = if ($id -eq 'marine_fish') { 'coastal_land' } else { 'land' }
     $genBase=0.0; $genSelf=0.0; $decaySelf=0.0
     $initBase=-120000.0; $initTemp=0.0; $initMoisture=0.0; $initElevation=0.0
     $initRiver=0.0; $initVolcano=0.0; $initClimateFit=0.0

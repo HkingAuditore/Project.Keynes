@@ -7,7 +7,7 @@ script = ExtResource("1")
 id = &"stone"
 display_name = "石料"
 reserve_component = &"cell.res_stone_reserve"
-init_reserve_scale = 8.0
+init_reserve_scale = 0.1
 land_only = true
 temp_lo = 0.0
 temp_hi = 1.0
@@ -19,23 +19,23 @@ decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 0.0
 decay_self = 0.0
-init_base = -50000.0
+init_base = -6500.0
 init_temp = 0.0
 init_moisture = 0.0
-init_elevation = 250000.0
-init_noise = 150000.0
+init_elevation = 32500.0
+init_noise = 19500.0
 init_noise_scale = 0.06
 init_landform_weights = {
-6: 350000.0,
-7: 500000.0,
-8: 600000.0,
-10: 500000.0,
-11: 200000.0,
-12: 400000.0,
-13: 400000.0,
-14: 300000.0,
-15: 600000.0
+6: 45500.0,
+7: 65000.0,
+8: 78000.0,
+10: 65000.0,
+11: 26000.0,
+12: 52000.0,
+13: 52000.0,
+14: 39000.0,
+15: 78000.0
 }
 geology_family_id = &"surface"
-init_province = 80000.0
-init_belt = 50000.0
+init_province = 10400.0
+init_belt = 6500.0

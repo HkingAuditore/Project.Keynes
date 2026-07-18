@@ -47,8 +47,8 @@ func _run() -> void:
 		_finish()
 		return
 
-	var probe: Dictionary = _find_growth_probe(map, n)
-	_expect("found a renewable resource habitat-valid cell with growth headroom", not probe.is_empty())
+	var probe: Dictionary = _find_dynamic_probe(map, n)
+	_expect("found a renewable resource habitat-valid cell away from equilibrium", not probe.is_empty())
 	if probe.is_empty():
 		_finish()
 		return
@@ -112,8 +112,10 @@ func _run() -> void:
 		habitat_sum_before, habitat_sum_after, habitat_sum_after - habitat_sum_before, ran_days, DAYS, skipped_budget_days])
 
 	_expect("natural_resource_daily ran every day (no budget skip)", ran_days >= DAYS and skipped_budget_days == 0)
-	_expect("probe habitat-valid cell reserve increased over time", after > before + 0.002)
-	_expect("total habitat-valid reserve increased over time", habitat_sum_after > habitat_sum_before + 0.01)
+	_expect("probe habitat-valid cell reserve evolved toward equilibrium",
+		absf(after - before) > 0.002)
+	_expect("total habitat-valid reserve evolved over time",
+		absf(habitat_sum_after - habitat_sum_before) > 0.01)
 
 	# ── 公式鲁棒性：全部 30 种资源在多日演化后必须有限且非负。
 	var profiles: Array = ResourceProfileRegistry.ordered()
@@ -156,14 +158,14 @@ func _run() -> void:
 
 
 # 选择一个当前气候下按参考公式会自然增长的 habitat-valid 格。
-func _find_growth_probe(map: MapData, n: int) -> Dictionary:
+func _find_dynamic_probe(map: MapData, n: int) -> Dictionary:
 	var temp: PackedFloat32Array = map.temp_arr
 	var moist: PackedFloat32Array = map.moisture_arr
 	var habitat: PackedByteArray = map.resource_habitat_mask_arr
 	var best: Dictionary = {}
-	var best_growth: float = 0.0001
+	var best_change: float = 0.0001
 	for p in ResourceProfileRegistry.ordered():
-		if float(p.gen_self) <= 0.0:
+		if float(p.gen_self) <= 0.0 and float(p.ecology_capacity) <= 0.0:
 			continue
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		if field == "":
@@ -175,10 +177,11 @@ func _find_growth_probe(map: MapData, n: int) -> Dictionary:
 			if habitat.size() <= i or not ResourceProfileRegistry.habitat_available(p, int(habitat[i])):
 				continue
 			var next_v: float = _reference_step_value(p, arr[i], temp[i], moist[i])
-			var growth: float = next_v - arr[i]
-			if growth > best_growth:
-				best_growth = growth
-				best = {"id": String(p.id), "field": field, "idx": i, "profile": p}
+			var change: float = next_v - arr[i]
+			if absf(change) > best_change:
+				best_change = absf(change)
+				best = {"id": String(p.id), "field": field, "idx": i,
+					"profile": p, "direction": signf(change)}
 	return best
 
 
@@ -186,12 +189,24 @@ func _reference_step_value(p: ResourceProfile, reserve: float, temp_v: float, mo
 	var inv_span: float = (1.0 / (p.temp_hi - p.temp_lo)) if p.temp_hi > p.temp_lo else 0.0
 	var tn: float = clampf((temp_v - p.temp_lo) * inv_span, 0.0, 1.0)
 	var m: float = moist_v
+	var raw_temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
+	var raw_moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
+	var raw_climate_fit: float = raw_temp_fit * raw_moisture_fit
 	var fit_weight: float = clampf(p.runtime_climate_fit_weight, 0.0, 1.0)
 	var runtime_fit: float = 1.0
 	if fit_weight != 0.0 or p.decay_stress != 0.0:
-		var temp_fit: float = 1.0 - clampf(absf(tn - p.climate_temp_opt) / maxf(p.climate_temp_tol, 0.0001), 0.0, 1.0)
-		var moisture_fit: float = 1.0 - clampf(absf(m - p.climate_moisture_opt) / maxf(p.climate_moisture_tol, 0.0001), 0.0, 1.0)
-		runtime_fit = lerpf(1.0, temp_fit * moisture_fit, fit_weight)
+		runtime_fit = lerpf(1.0, raw_climate_fit, fit_weight)
+	if p.ecology_capacity > 0.0:
+		var runtime_capacity: float = p.ecology_capacity * runtime_fit
+		if runtime_capacity <= 0.0:
+			return 0.0
+		var seeded: float = maxf(0.0, reserve + p.ecology_immigration * runtime_fit)
+		var growth_factor: float = 1.0 + p.ecology_growth_rate * runtime_fit
+		var v_ecology: float = growth_factor * seeded / maxf(
+			0.000001, 1.0 + (growth_factor - 1.0) * seeded / runtime_capacity)
+		var acute_stress: float = clampf((0.25 - raw_climate_fit) / 0.25, 0.0, 1.0)
+		v_ecology /= 1.0 + p.ecology_stress_mortality_rate * acute_stress
+		return maxf(v_ecology, 0.0)
 	var gen_self_eff: float = p.gen_self * runtime_fit
 	var gen_climate: float = p.gen_base + p.gen_temp * tn + p.gen_moisture * m
 	var decay_climate: float = p.decay_base + p.decay_temp * tn + p.decay_moisture * m

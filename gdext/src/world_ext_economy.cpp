@@ -93,7 +93,10 @@ Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
         _map_data->has_method(StringName("neighbor_indices_packed")) &&
         _map_data->has_method(StringName("economy_trade_passable_lut")) &&
         _map_data->has_method(StringName("economy_trade_move_cost_lut"))) {
-        const int terrain_sid = component_id(StringName("cell_terrain"));
+        // Trade routes follow the generated geography, not the climate-owned
+        // dynamic terrain lane.  In particular, seasonal sea-ice flips must
+        // not invalidate and rebuild the route plan every economy cycle.
+        const int terrain_sid = component_id(StringName("cell_base_terrain"));
         const Variant neighbor_variant = _map_data->call(
             StringName("neighbor_indices_packed"));
         const Variant passable_variant = _map_data->call(

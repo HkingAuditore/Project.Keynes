@@ -750,3 +750,16 @@ continuation slice，并按本地清算后的库存目标再次裁剪。ACTIVE �
 本地市场；只有整个到期经济图未完成才沿用既有 same-day catchup。PROBE 只生成/报告建议，
 不延迟旧本地市场 cadence，也不修改经济状态 hash。详见
 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
+
+## Deadline-critical dynamic budget bypass（2026-07-18）
+
+`SusJob.use_job_deadline_critical` 默认关闭。仅 opt-in job 可通过只读、常数时间的
+`is_deadline_critical(ctx)` 在当日返回 true，并绕过一次 frame budget 或 strict-budget 的“是否启动”
+门槛；它不会改成 `must_run`，依赖 gate、`max_slices_per_tick` 和 slice loop 预算仍正常生效。
+`SusSchedulerExt` 与 GDScript fallback 保持同一语义，并在 per-job report 发布
+`deadline_critical` / `deadline_budget_bypass`。
+
+`country_daily` 在当天确有到期国家命令时启用该门槛；`economy_daily` 只在冻结周期已达到
+`cycle_deadline_day` 时启用。WorldClock 每次 `_advance_one_sim_day()` 返回后立即重读
+`country_day_barrier` / `economy_day_barrier`，因此 day handler 当天新升起屏障时，同一渲染帧
+不能再越过下一天。常规周期工作与贸易规划仍按普通软预算运行。

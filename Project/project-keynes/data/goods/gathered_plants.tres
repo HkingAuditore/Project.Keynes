@@ -8,6 +8,6 @@ category_id = &"gathered_plants"
 substitution_category_ids = PackedStringArray("gathered_plants")
 technology_tags = PackedStringArray("tech.gathering")
 default_price = 5000
-inventory_target_ratio_q16 = 98304
+inventory_target_ratio_q16 = 65536
 min_price = 500
 max_price = 50000

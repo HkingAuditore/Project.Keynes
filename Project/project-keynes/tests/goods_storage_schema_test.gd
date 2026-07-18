@@ -47,6 +47,11 @@ func _run() -> void:
 		int(inventory_ratios[good_ids.find("tools")]) == 65536 and
 		int(inventory_ratios[good_ids.find("jewelry")]) == 43691 and
 		int(inventory_ratios[good_ids.find("electricity")]) == 0)
+	_expect("stone food keeps a full thirty-day merchant target",
+		int(inventory_ratios[good_ids.find("gathered_plants")]) == 65536 and
+		int(inventory_ratios[good_ids.find("game_meat")]) == 65536 and
+		int(inventory_ratios[good_ids.find("processed_food")]) == 65536 and
+		int(inventory_ratios[good_ids.find("fish")]) == 65536)
 	_expect("need catalog compiles total quantity price response",
 		(catalog.need_price_quantity_elasticity_q16 as PackedInt32Array).size() ==
 		(catalog.need_stable_ids as PackedInt32Array).size() and

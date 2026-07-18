@@ -81,11 +81,11 @@ func _initialize() -> void:
 	_expect("professions follow actual local building jobs",
 		int(first.get("generated_profession_count", 0)) > 1 and
 		int(first.get("generated_profession_count", 0)) <= facade.profession_ids().size())
-	_expect("population exactly matches generated building jobs",
+	_expect("population follows jobs with a two-person reserve for tiny nonmerchant cohorts",
 		_population_matches_fixture(first, facade))
 	_expect("bootstrap reports formula-based initial finance source",
 		String(first.get("population_source", "")) ==
-			"mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v10" and
+			"mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v11" and
 		int(first.get("cell_population_cap", 0)) == 300 and
 		String(first.get("initial_employment", "")) == "unemployed")
 	_expect("carrying-capacity balancing honors demand-calibrated collector caps",
@@ -117,8 +117,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v8 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 8)
+	_expect("native CSV v9 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 9)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("both viable land cells receive sustainable settlements",
@@ -128,7 +128,7 @@ func _initialize() -> void:
 		_has_building(buildings, "gathering_ground") and
 		_has_building(buildings, "flint_quarry") and
 		_has_building(buildings, "knapping_workshop"))
-	_expect("wild game respects local and adjacent building access modes",
+	_expect("wild game creates hunting only where the local reserve exists",
 		_has_building(buildings, "stone_age_hunting_camp") and
 		_has_building(second_buildings, "stone_age_hunting_camp") and
 		not _has_building(buildings, "wild_game_collector") and
@@ -136,10 +136,15 @@ func _initialize() -> void:
 	_expect("each viable settlement exposes its local early bullion building",
 		_has_building(buildings, "placer_gold_working") and
 		_has_building(second_buildings, "surface_silver_working"))
-	_expect("stone household weaving is part of the self-sufficient fixture",
+	_expect("stone household weaving consumes gathered plant fiber",
 		_has_building(buildings, "household_weaving_shelter"))
 	var initial_land: Dictionary = facade.population_cell_snapshot(0)
 	var initial_second_land: Dictionary = facade.population_cell_snapshot(1)
+	_expect("survival satisfaction alias matches the compatibility fields",
+		int(initial_land.get("survival_satisfaction_q16", -1)) ==
+			int(initial_land.get("satisfaction_q16", -2)) and
+		initial_land.get("survival_satisfaction_by_cohort_q16", PackedInt32Array()) ==
+			initial_land.get("satisfaction_by_cohort_q16", PackedInt32Array()))
 	_expect("all bootstrapped people on both viable cells start unemployed",
 		_all_population_unemployed(initial_land) and
 		_all_population_unemployed(initial_second_land) and
@@ -177,9 +182,6 @@ func _initialize() -> void:
 		int(cycle.get("bullion_money_issued", 0)) ==
 			int(cycle.get("gold_money_issued", 0)) +
 			int(cycle.get("silver_money_issued", 0)))
-	_expect("early cloth output reconciles without requiring producer priority",
-		_building_output_reconciles(
-			facade.building_cell_snapshot(0), "household_weaving_shelter"))
 	_expect("retired virtual mint is absent",
 		not _has_building(buildings, "shell_money_station") and
 		not _has_building(buildings, "stone_tool_exchange"))
@@ -194,6 +196,9 @@ func _initialize() -> void:
 	_expect("second cycle consumes category-compatible stone tools",
 		bool(second_cycle.get("done", false)) and not bool(second_cycle.get("fatal", false)) and
 		int(second_cycle.get("production_inputs_consumed", 0)) > 0)
+	_expect("plant-fiber cloth output reconciles after its upstream stock exists",
+		_building_output_reconciles(
+			facade.building_cell_snapshot(0), "household_weaving_shelter"))
 	var third_cycle: Dictionary = _run_day(ext, 2)
 	_expect("third recorder cycle commits", bool(third_cycle.get("done", false)) and
 		not bool(third_cycle.get("fatal", false)))
@@ -309,8 +314,11 @@ func _make_map() -> MapData:
 		if field == "":
 			continue
 		var values := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
-		if String(profile.id) in ["fertile_soil", "flint", "gold_ore", "wild_game"]:
+		if String(profile.id) in ["fertile_soil", "flint", "gold_ore"]:
 			values[0] = 1000000.0
+		elif String(profile.id) == "wild_game":
+			values[0] = 1000000.0
+			values[1] = 1000000.0
 		elif String(profile.id) in ["timber", "rare_earth", "silver_ore"]:
 			values[1] = 1000000.0
 		map.set(field, values)
@@ -407,8 +415,8 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 85, "cohorts": 23, "buildings": 46,
-		"resources": 9, "market": 28}
+	var expected_columns := {"summary": 89, "cohorts": 23, "buildings": 50,
+		"resources": 13, "market": 28}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
 		var bytes := FileAccess.get_file_as_bytes(path)
@@ -447,7 +455,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				or openings != maxi(0, required - filled):
 			owner_rows_valid = false
 			break
-	_expect("building CSV v8 separates owner capacity, active jobs, planned equivalent, and openings",
+	_expect("building CSV v9 separates owner capacity, active jobs, planned equivalent, and openings",
 		owner_columns_valid and owner_rows_valid)
 	if not resource_slots.is_empty() and not resource_ids.is_empty():
 		var reserves: PackedFloat32Array = ext.snapshot_f32(resource_slots[0])
@@ -455,11 +463,20 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		var found := false
 		for line in resource_text.split("\n", false).slice(1):
 			var cols := line.split(",", true)
-			if cols.size() == 9 and int(cols[0]) == 3 and int(cols[3]) == 0 \
+			if cols.size() == 13 and int(cols[0]) == 3 and int(cols[3]) == 0 \
 					and cols[7] == resource_ids[0]:
-				found = is_equal_approx(float(cols[8]), reserves[0])
+				found = is_equal_approx(float(cols[12]), reserves[0])
 				break
 		_expect("resource CSV uses post-delta committed slot value", found)
+		var wild_pending_is_local := false
+		for line in resource_text.split("\n", false).slice(1):
+			var cols := line.split(",", true)
+			if cols.size() == 13 and int(cols[3]) == 0 and cols[7] == "wild_game" \
+					and float(cols[11]) < 0.0:
+				wild_pending_is_local = true
+				break
+		_expect("resource CSV maps native artificial deltas by stable resource id",
+			wild_pending_is_local)
 	var market_snapshot: Dictionary = ext.get_market_cell_snapshot(0)
 	var market_goods: PackedStringArray = market_snapshot.get("good_ids", PackedStringArray())
 	var market_pressure: PackedInt32Array = market_snapshot.get(
@@ -553,7 +570,7 @@ func _fixture_respects_test_collector_caps(fixture: Dictionary, facade) -> bool:
 		"placer_gold_working": 1,
 		"stone_collector": 1,
 		"surface_silver_working": 1,
-		"timber_collector": 8,
+		"timber_collector": 3,
 	}
 	if type_ids.size() != counts.size():
 		return false
@@ -679,6 +696,11 @@ func _population_matches_fixture(packet: Dictionary, facade) -> bool:
 		if int(expected[selected_key]) == 0:
 			expected.erase(selected_key)
 		expected[merchant_key] = 1
+	for key in expected.keys():
+		var signature := int(String(key).get_slice(":", 1))
+		var population := int(expected[key])
+		if signature != merchant_signature and population > 0 and population < 2:
+			expected[key] = 2
 	var population_packet: Dictionary = packet.population_packet
 	var cells: PackedInt32Array = population_packet.cell_indices
 	var signatures: PackedInt32Array = population_packet.signature_ids

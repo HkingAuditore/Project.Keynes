@@ -111,7 +111,7 @@ static func habitat_code(p: ResourceProfile) -> int:
 	if habitat == "marine_access": habitat = "marine_water"
 	if habitat == "freshwater_access": habitat = "freshwater"
 	return int({"any": 0, "land": 1, "marine_water": 2,
-		"freshwater": 3}.get(habitat, -1))
+		"freshwater": 3, "coastal_land": 4}.get(habitat, -1))
 
 
 static func habitat_available(p: ResourceProfile, mask: int) -> bool:
@@ -120,6 +120,7 @@ static func habitat_available(p: ResourceProfile, mask: int) -> bool:
 		1: return (mask & 1) != 0
 		2: return (mask & 2) != 0
 		3: return (mask & 4) != 0
+		4: return (mask & 8) != 0
 	return false
 
 

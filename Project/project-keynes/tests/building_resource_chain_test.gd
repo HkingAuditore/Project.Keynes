@@ -58,7 +58,7 @@ func _run() -> void:
 	_expect("mining efficiency improves across historical building tiers",
 		is_equal_approx(float(conversion_ratios.get("placer_gold_working", 0.0)), 2.0) and
 		is_equal_approx(float(conversion_ratios.get("gold_mine", 0.0)), 20.0) and
-		is_equal_approx(float(conversion_ratios.get("surface_silver_working", 0.0)), 4.0) and
+		is_equal_approx(float(conversion_ratios.get("surface_silver_working", 0.0)), 5.0) and
 		is_equal_approx(float(conversion_ratios.get("silver_mine", 0.0)), 20.0))
 	_expect("farm uses capacity behavior without generated crop resource",
 		behavior_ids[farm_type] == 1 and
@@ -156,12 +156,12 @@ func _run() -> void:
 		int(empty.get("goods_error", 1)) == 0)
 	_expect("resource production worker/scalar hashes match",
 		_run_hash_scenario(compiled, false) == _run_hash_scenario(compiled, true))
-	_expect("shore fishery extracts from the real adjacent water cell",
-		_run_adjacent_fishery(compiled))
+	_expect("shore fishery extracts only its local coastal-land reserve",
+		_run_local_fishery(compiled))
 	print("=== building resource chain %s ===" % ("PASS" if failures == 0 else "FAIL"))
 
 
-func _run_adjacent_fishery(catalog: Dictionary) -> bool:
+func _run_local_fishery(catalog: Dictionary) -> bool:
 	var map := MapData.new(3, 1)
 	var shore := HexCell.new(0, 0)
 	shore.terrain = TerrainType.TERRAIN.PLAIN
@@ -177,10 +177,11 @@ func _run_adjacent_fishery(catalog: Dictionary) -> bool:
 	map.set_cell(second_shore)
 	map._build_indices()
 	map.init_soa_from_bake()
-	map.res_marine_fish_reserve_arr[1] = 0.75
-	map.resource_habitat_mask_arr[0] = 1
+	map.res_marine_fish_reserve_arr[0] = 0.75
+	map.res_marine_fish_reserve_arr[2] = 0.75
+	map.resource_habitat_mask_arr[0] = 9
 	map.resource_habitat_mask_arr[1] = 2
-	map.resource_habitat_mask_arr[2] = 1
+	map.resource_habitat_mask_arr[2] = 9
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	if not bool(ext.bind_map_data(map)):
 		return false
@@ -232,9 +233,11 @@ func _run_adjacent_fishery(catalog: Dictionary) -> bool:
 		total_output == per_building_output * 2 and \
 		first_extracted + second_extracted == expected_resource and \
 		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[fish_resource]) == 750 and \
-		is_equal_approx(map.res_marine_fish_extra_change_arr[0], 0.0) and \
-		is_equal_approx(map.res_marine_fish_extra_change_arr[1], -float(expected_resource) / 1000.0) and \
-		is_equal_approx(map.res_marine_fish_extra_change_arr[2], 0.0)
+		is_equal_approx(map.res_marine_fish_extra_change_arr[0],
+			-float(per_building_resource) / 1000.0) and \
+		is_equal_approx(map.res_marine_fish_extra_change_arr[1], 0.0) and \
+		is_equal_approx(map.res_marine_fish_extra_change_arr[2],
+			-float(per_building_resource) / 1000.0)
 
 
 func _all_positive(values: Array) -> bool:
