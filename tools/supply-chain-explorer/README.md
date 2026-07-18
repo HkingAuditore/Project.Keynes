@@ -26,6 +26,8 @@
 - Python 3.10 或更新版本。
 - `numpy` 与 `scipy`，可用 `python -m pip install -r tools/supply-chain-explorer/requirements.txt` 安装。
 
+Windows 双击入口会在仓库根目录的 `.venv-economy-validator` 中创建独立 Python 环境，并在首次运行时自动安装上述依赖；首次运行需要能够访问 Python 包索引。后续运行会复用该环境，不会修改系统 Python。
+
 ### 运行
 
 Windows 最简单的方式：在仓库根目录双击 `打开经济校验器.cmd`。它会直接执行并在完成后自动打开
