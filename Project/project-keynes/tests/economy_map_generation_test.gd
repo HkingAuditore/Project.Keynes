@@ -21,8 +21,8 @@ func _init() -> void:
 	var map: MapData = generated.get("map", null)
 	_expect("map generated", map != null)
 	if map != null:
-		_expect("generated fisheries live on water/river habitats",
-			_water_resource_habitats_valid(map))
+		_expect("generated fisheries use local coastal-land reserves",
+			_coastal_resource_habitats_valid(map))
 	var facade = generator.get_economy_facade()
 	_expect("economy facade configured", facade != null and facade.is_configured())
 	if facade != null:
@@ -79,21 +79,33 @@ func _land_population_distribution_valid(map: MapData, facade) -> bool:
 	return passable_land > 1 and populations.size() > 1
 
 
-func _water_resource_habitats_valid(map: MapData) -> bool:
+func _coastal_resource_habitats_valid(map: MapData) -> bool:
 	var marine: PackedFloat32Array = map.res_marine_fish_reserve_arr
 	if marine.size() != map.cell_count():
 		return false
-	var found_marine_water := false
+	var found_coastal_land := false
+	var neighbors := map.neighbor_indices_packed()
 	for cell in range(map.cell_count()):
 		var is_water := cell < map.is_water_arr.size() and map.is_water_arr[cell] != 0
-		var landform := int(map.landform_arr[cell]) if cell < map.landform_arr.size() else -1
-		var marine_habitat := is_water and landform in [LandformType.LF.DEEP_OCEAN,
-			LandformType.LF.OCEAN, LandformType.LF.COAST]
 		if marine[cell] > 0.0:
-			if not marine_habitat:
+			if is_water or cell >= map.resource_habitat_mask_arr.size() \
+					or (int(map.resource_habitat_mask_arr[cell]) & 8) == 0:
 				return false
-			found_marine_water = true
-	return found_marine_water
+			var touches_marine_water := false
+			for direction in range(6):
+				var neighbor := int(neighbors[cell * 6 + direction])
+				if neighbor < 0 or neighbor >= map.cell_count() \
+						or map.is_water_arr[neighbor] == 0:
+					continue
+				var landform := int(map.landform_arr[neighbor])
+				if landform in [LandformType.LF.DEEP_OCEAN,
+						LandformType.LF.OCEAN, LandformType.LF.COAST]:
+					touches_marine_water = true
+					break
+			if not touches_marine_water:
+				return false
+			found_coastal_land = true
+	return found_coastal_land
 
 
 func _sum_i64(values: PackedInt64Array) -> int:

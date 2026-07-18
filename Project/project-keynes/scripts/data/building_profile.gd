@@ -64,9 +64,8 @@ extends Resource
 ## removed from the local reserve; capacity quantities are required per
 ## building, constrain output, and are never removed or multiplied by dt.
 @export var resource_interaction_modes: PackedStringArray = PackedStringArray()
-## Parallel to resource_ids. local reads only the building cell;
-## local_and_adjacent reads the building cell plus its six hex neighbors and
-## applies extraction deltas to the real source cells in stable order.
+## Parallel to resource_ids. All production resources are local: extraction and
+## capacity checks read only the building cell's reserve.
 @export var resource_access_modes: PackedStringArray = PackedStringArray()
 @export var resource_generation_ids: PackedStringArray = PackedStringArray()
 @export var resource_generation_quantities_per_day: PackedInt64Array = PackedInt64Array()

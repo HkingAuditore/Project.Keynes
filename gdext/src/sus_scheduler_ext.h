@@ -95,6 +95,7 @@ public:
     //     "priority"             : int,
     //     "must_run"             : bool,
     //     "use_job_should_run"   : bool,   // opt-in GDScript should_run gate
+    //     "use_job_deadline_critical": bool, // dynamic pre-budget bypass gate
     //     "starvation_threshold" : int,
     //     "max_slices_per_tick"  : int,
     //     "slice_budget_ms"      : float,
@@ -178,6 +179,7 @@ private:
         int               priority             = 100;
         bool              must_run             = false;
         bool              use_job_should_run   = false;
+        bool              use_job_deadline_critical = false;
         int               starvation_threshold = 0;
         int               max_slices_per_tick  = 0;
         float             slice_budget_ms      = 4.0f;

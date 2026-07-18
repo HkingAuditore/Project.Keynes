@@ -1468,7 +1468,7 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			return
 		var trade_topology: Dictionary = _data_core_world_ext.capture_economy_trade_topology(
 			map.neighbor_indices_packed(),
-			map.terrain_arr,
+			map.base_terrain_arr,
 			map.economy_trade_passable_lut(),
 			map.economy_trade_move_cost_lut(),
 			1)
@@ -6058,6 +6058,8 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	var have_lake: bool = lake_arr.size() >= n_cells
 	var have_volcano: bool = volcano_arr.size() >= n_cells
 	var have_pos: bool = posx_arr.size() >= n_cells and posy_arr.size() >= n_cells
+	var neighbor_indices: PackedInt32Array = map_ref.neighbor_indices_packed()
+	var have_neighbors: bool = neighbor_indices.size() >= n_cells * 6
 	var habitat_arr: PackedByteArray = map_ref.resource_habitat_mask_arr
 	if habitat_arr.size() < n_cells:
 		habitat_arr.resize(n_cells)
@@ -6069,6 +6071,17 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 			mask |= 1
 			if have_river and river_arr[i] != 0:
 				mask |= 4
+			if have_neighbors:
+				for direction in range(6):
+					var neighbor := int(neighbor_indices[i * 6 + direction])
+					if neighbor < 0 or neighbor >= n_cells or not have_water \
+							or water_arr[neighbor] == 0:
+						continue
+					var neighbor_landform := int(lf_arr[neighbor]) if have_lf else -1
+					if neighbor_landform in [LandformType.LF.DEEP_OCEAN,
+							LandformType.LF.OCEAN, LandformType.LF.COAST]:
+						mask |= 8
+						break
 		elif landform in [LandformType.LF.DEEP_OCEAN, LandformType.LF.OCEAN,
 				LandformType.LF.COAST]:
 			mask |= 2

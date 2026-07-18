@@ -21,6 +21,12 @@ var policy: SusPolicy = null
 ## Enable this only when job-local state in should_run() changes eligibility.
 var use_job_should_run: bool = false
 
+## Opt into one cheap pre-budget callback for deadline-bound authority work.
+## Unlike must_run, this bypasses the frame/strict budget gate only while
+## is_deadline_critical(ctx) returns true. Keep it limited to jobs whose
+## committed simulation day would otherwise be skipped.
+var use_job_deadline_critical: bool = false
+
 ## Per-slice soft budget (ms). SUS uses this only as advisory; actual cutoff
 ## is enforced by the scheduler-wide frame_budget_ms.
 var slice_budget_ms: float = 4.0
@@ -92,6 +98,12 @@ func should_run(ctx: SusTickContext) -> bool:
 	if policy == null:
 		return true
 	return policy.should_run(self, ctx)
+
+
+## Dynamic budget-bypass gate. Subclasses opting in must keep this read-only
+## and bounded; SUS calls it before the ordinary frame-budget gate.
+func is_deadline_critical(_ctx: SusTickContext) -> bool:
+	return false
 
 
 ## Run a single slice. Implementations should:

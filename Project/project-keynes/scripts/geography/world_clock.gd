@@ -201,6 +201,10 @@ func _process(delta: float) -> void:
 		_day_carry -= 1.0
 		_advance_one_sim_day()
 		ran += 1
+		# A day_changed handler may have raised a country/economy settlement
+		# barrier. Re-read it before this render frame advances another day.
+		hard_day_barrier = _simulation_backpressure_sources.has(&"economy_day_barrier") or \
+			_simulation_backpressure_sources.has(&"country_day_barrier")
 
 	# best-effort：本帧没追完的整数天直接丢弃，只保留 < 1 天的小数 carry。这是杜绝
 	# spiral 的关键——债务永不累积，过载时有效倍速平滑降级、FPS 保持稳定。

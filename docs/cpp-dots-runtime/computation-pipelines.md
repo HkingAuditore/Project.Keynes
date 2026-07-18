@@ -600,16 +600,16 @@ reserve'        /= 1 + ecology_stress_mortality_rate * acute_stress
 原始温湿适生度最低 25% 的急性气候压力。非线性生态分支在 `dt_days > 1` 时逐日迭代，外部变化
 仍只应用一次。
 
-`habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater`。当前目录只有
-`marine_fish` 使用水域鱼类资源，直接写在深海、海洋与浅海水格；淡水/淡水鱼不再是
-DataCore 经济资源。habitat 外储量为 0。岸上渔业通过建筑资源边的 `local_and_adjacent`
-模式访问本格与六邻格；公共供水以后另行设计，不进入食品/饮料配方。
+`habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater / coastal_land`。
+`marine_fish` 使用 coastal-land bit，直接写在与深海、海洋或浅海水格相邻的沿海陆格；淡水/淡水鱼
+不再是 DataCore 经济资源。habitat 外储量为 0。所有建筑资源边只允许读取本格；公共供水以后
+另行设计，不进入食品/饮料配方。
 当前目录含 30 种注册自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
 自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量、牧场容量和肥沃土壤
 是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；土壤
 沿用线性 IMEX，野生动物、林木与海鱼启用密度制约生态分支。`fertile_soil` 的最差适宜度净自然项保持为正，
-其省级面积缩放后的长期储量下限为 5000；`wild_game` 使用 1200×100 的理想承载量、2.5% 日增长、
-`0.05×100` 日迁入和 0.3% 最大急性压力死亡；适生地可从零恢复，并以真实的
+其省级面积缩放后的长期储量下限为 5000；`wild_game` 使用 1200×100 的理想承载量、0.065% 日增长、
+`0.01×100` 日迁入，并关闭季节性急性压力死亡；气候仍通过承载量表达长期适生差异，适生地可从零恢复，并以真实的
 `24 × 0.715 × 5 = 85.8` 每周期采收量通过理想/普通气候五年高位回归。`timber` 使用
 `100000×100` 理想承载量、1% 日增长与
 正迁入；生成期排除沙漠/寒漠/极旱荒漠，剩余非沙漠陆地有 `1000×100` 的基础林木 floor，
@@ -617,7 +617,7 @@ DataCore 经济资源。habitat 外储量为 0。岸上渔业通过建筑资源�
 雨林不会落入原始适宜度低于 `0.25` 的急性压力死亡区。林木急性压力死亡率为 `0.0001`（最大
 `0.01%/日`），避免把每日气候异常按动物级 `1%/日` 复利成森林崩溃；低适宜度回归只验证低于
 气候调整承载量时仍可正增长，不规定长期库存必须保持某个承载量百分比。
-`marine_fish` 覆盖全部海洋 habitat，初始储量不低于 `3000×100`，以 `5000×100`
+`marine_fish` 覆盖全部沿海陆地 habitat，初始储量不低于 `3000×100`，以 `5000×100`
 为理想承载量、2% 日增长和正迁入恢复，避免旧线性平衡长期侵蚀初始鱼群。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
@@ -663,14 +663,14 @@ habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低
   `province` 与 ridge-shaped `belt` 场。两种共享场均中心化，省外/矿带外产生负贡献，避免每块陆地
   同时拥有大多数矿物；同族矿物仍在大尺度上相关。所有场由 map seed 派生，可确定性重放。
 - 可选最适区间：
-  `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日动态受适宜度削弱；线性模型用 `decay_stress`，生态模型用 `ecology_stress_mortality_rate` 仅表达原始适生度低于 0.25 的急性气候比例死亡。生态参数默认全 0，旧资源行为不变。
+  `climate_fit = temp_fit * moisture_fit`，其中 `temp_fit/moisture_fit` 按归一化温度/湿度到 `climate_*_opt` 的距离线性衰减。`init_climate_fit` 控制生成期适宜度；`runtime_climate_fit_weight` 控制每日动态受适宜度削弱；线性模型用 `decay_stress`，生态模型可用 `ecology_stress_mortality_rate` 表达原始适生度低于 0.25 的急性气候比例死亡。野生动物将该项设为 0，避免把季节气候波动复利成异常死亡；生态参数默认全 0，旧资源行为不变。
 - `init_reserve_scale` 在 suitability、地质省和矿带全部求值后统一缩放正储量，只改变数量而不改变
   资源出现位置。当前地质/不可再生资源通常为 `8×`、农业 capacity 为 `1×`、林木为 `40×`、
   海鱼为 `2×`、野生动物为 `3×`；最低覆盖/储量在缩放后独立应用。旧档已有
   reserve 不回填倍率，新建地图才应用。
 - 现有 .tres 调参示例：金属矿按 mafic/felsic/hydrothermal/sedimentary 等 family 共享地质省和矿带；
   `clay` 偏三角洲/河流；`timber` 用 exclusion 排除沙漠/寒漠/极旱荒漠，用 floor 保证非沙漠陆地基础林木，再由森林植被和温湿适宜度拉开区域差异；三类农业容量与 `pasture`
-  由地形、水系和气候决定；`marine_fish` 先由海洋 habitat 门控，再以独立资源动态推进。
+  由地形、水系和气候决定；`marine_fish` 先由沿海陆地 habitat 门控，再以独立资源动态推进。
 - Earth-like 1000-cell 固定 seed 回归还验证所有生产资源全局存在、农业容量中位承载、
   林木/海鱼覆盖和种植园选择性，见 `tests/natural_resource_distribution_capacity_test.gd`。
 
@@ -2318,9 +2318,9 @@ household demography 和 structural commit 后再做一次只裁不招的 commit
 extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode：`extract` 以有效储量限制产能并
 发布负 delta；`capacity` 以 `reserve / (building_count × requirement)` 限产，但不写资源 delta。
 小麦/玉米等农场走农业 capacity → crop goods，只有真正的采集/采矿/渔业边执行 extract。
-资源边还编译 `local/local_and_adjacent` access mode。邻域采集在 native 热循环中按“本格、方向
-0..5”稳定去重，先汇总最多 7 格确定产能，再从同一顺序的真实来源格扣减并发布 delta；相邻
-多个渔场共享水域时读取同一个 `_resource_remaining`，不会重复开采。
+资源边仍编译对齐的 access-mode 列，但当前契约只接受 `local/0`。GDScript catalog 与 native
+configure 双重拒绝非零值；产能检查、扣减和 Inspector 可达储量都直接读取建筑本格，生产热循环
+不再执行邻格 gather。
 
 目录同时编译 `upgrade_family_id/upgrade_tier`。BUILD 在冻结国家科技下计算同族最高可用档，
 旧档只拒绝新建；既有 owner-lot 的生产路径仍只检查自身科技。该规则不增加生产 stage 或存档

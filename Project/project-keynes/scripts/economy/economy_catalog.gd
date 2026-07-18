@@ -673,12 +673,12 @@ static func _compile_building_columns(profession_index: Dictionary,
 			var access_mode := String(prod_access[i])
 			if not resource_index.has(resource_id) or int(prod_qty[i]) <= 0 \
 					or interaction_mode not in ["extract", "capacity"] \
-					or access_mode not in ["local", "local_and_adjacent"]:
+					or access_mode != "local":
 				return {"ok": false, "reason": "invalid building production resource: %s" % stable_id}
 			production_resources.append(int(resource_index[resource_id]))
 			production_resource_quantities.append(int(prod_qty[i]))
 			production_resource_modes.append(0 if interaction_mode == "extract" else 1)
-			production_resource_access_modes.append(0 if access_mode == "local" else 1)
+			production_resource_access_modes.append(0)
 		production_resource_offsets.append(production_resources.size())
 		if owner_id == "merchant":
 			# Route B: a merchant may own either a matching bullion collector

@@ -13,6 +13,7 @@ func _init(p_facade, p_world_clock: WorldClock = null) -> void:
 	must_run = false
 	max_slices_per_tick = 1
 	use_job_should_run = true
+	use_job_deadline_critical = true
 	starvation_threshold = 2
 	slice_budget_ms = 0.8
 	policy = SusPolicyScript.AlwaysPolicy.new()
@@ -28,6 +29,12 @@ func declare_writes() -> Array[StringName]:
 func should_run(ctx: SusTickContext) -> bool:
 	return facade != null and facade.is_configured() and \
 		bool(facade.world_ext().country_should_run(ctx.day_index))
+
+
+func is_deadline_critical(ctx: SusTickContext) -> bool:
+	# Country commands effective today must commit before the economy freezes
+	# its country snapshot for the same day.
+	return ctx != null and should_run(ctx)
 
 func tick(ctx) -> Dictionary:
 	var started_us := Time.get_ticks_usec()

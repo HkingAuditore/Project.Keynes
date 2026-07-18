@@ -38,6 +38,16 @@ owner funds/expense -=/+ base_paid
 employee funds/income += stable_prefix_share(base_paid)
 ```
 
+adaptive 的 living/local target 还受日口径企业可负担上限约束：
+
+```text
+daily_operating_budget = full_capacity_daily_revenue / (1 + target_margin)
+daily_wage_pool = max(0, daily_operating_budget - full_capacity_daily_inputs)
+affordable_wage_per_employee = daily_wage_pool / employee_slots * wage_income_cap_ratio
+```
+
+目录参考工资仍是最低报价；该上限只防止 epoch 总收入被误当成单日收入，并为停产恢复提供同口径反事实报价。
+
 生产只按业主现有资金购买物理投入，不预付工资；产出出售后，同一 owner 对全部 role 比例支付。
 最终欠薪只形成诊断和取消奖金，不追溯停止本期生产。随后，
 `25% * max(0, revenue - input - base_due - target_owner_profit)` 成为员工奖金池。
@@ -69,15 +79,22 @@ hardness 权重内，例如 `32768` 的工具槽在无库存时仍保留半产�
 
 ```text
 target_inventory_days = 30 days * good_inventory_target_ratio
+smoothed_supply_floor = offered_daily_output * (1/2 if survival_good else 1/4)
 protected_daily_demand = max(feasible_household_and_business_demand,
-                             realized_withdrawal_ema)
+                             realized_withdrawal_ema,
+                             smoothed_supply_floor)
 if protected_daily_demand == 0 and export_ema == 0:
     protected_daily_demand = offered_daily_output  # 首周期供给探测
 target = (protected_daily_demand + export_ema) * target_inventory_days
 gap = max(target - current_stock, 0)
 procurement_budget = opening_merchant_cash * 87.5%
-good_budget_share = procurement_budget * (gap * buy_price) / sum(gap * buy_price)
+priority = 1 + survival_priority + shortage_pressure + input_reserve_shortfall
+good_budget_share = min(procurement_budget, sum(gap * buy_price))
+                    * (gap * buy_price * priority)
+                    / sum(gap * buy_price * priority)
 ```
+
+权重只改变有限现金的购买顺序，总预算仍由真实缺口价值封顶；配置库存天数和目标量级不因本轮调整缩小。
 
 默认比例分为：生存必需品 1.50（45 日）、重要民生/医疗能源 1.25（37.5 日）、
 普通原料与工业品 1.00（30 日）、奢侈品约 0.667（20 日）；`cycle_flow` 为 0。
@@ -294,3 +311,28 @@ exportable_stock           = max(0, stock - production_input_reserve)
 预留本身不改变库存所有权，也不是 goods sink；居民和国内贸易只能清算预留以上的库存。缓存由建筑
 与周期计划确定性重建，不进入 PKEC v13 字节布局。报告和 CSV v8 发布预留总量、期望与结算末受保护库存之差及逐商品家庭
 可用库存。
+## 2026-07-18 owner livelihood and capped procurement formulas
+
+For an owner signature in one cell, the business cash buffer is:
+
+```text
+required_household = base_living_cost_per_owner_day * filled_owner * epoch_days
+owner_cash_reserve = min(required_household, owner_cohort_cash / 2)
+input_cash_available = max(0, owner_cohort_cash - owner_cash_reserve)
+```
+
+Employee base payroll is paid before this buffer is applied. Profit bonuses use
+the buffered balance. The viability anchor for an owner lot is:
+
+```text
+owner_livelihood = base_living_cost_per_owner_day * filled_owner * epoch_days
+viability_operating_cost = paid_input_cost + employee_wage_due + owner_livelihood
+viability_income_gap = realized_revenue - viability_operating_cost
+```
+
+For each offered good, `purchase_cap` is the value of the remaining unchanged
+inventory-target gap at its effective bid. The merchant budget is allocated in
+priority-weight proportion, but each allocation is capped at `purchase_cap`.
+Cash released by a cap is deterministically redistributed among the remaining
+positive gaps. Every debit remains a merchant-to-producer transfer; the existing
+bounded producer-support branch is the only mint in this path.

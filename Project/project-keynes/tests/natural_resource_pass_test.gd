@@ -10,7 +10,7 @@ extends SceneTree
 #   3. DCWorldExt 导出 run_natural_resource_pass。
 #   4. 原生 pass 在小地图上行为正确，且与 GDScript 公式模板逐资源逐 cell A/B 对拍一致：
 #      - timber（可再生，land）：适宜陆地格增长；水面格清零。
-#      - marine_fish：只在海洋水域可达地块生长；淡水鱼不再是 DataCore 资源。
+#      - marine_fish：只在带 coastal_land 位的沿海陆格生长；淡水鱼不再是 DataCore 资源。
 #      - iron_ore（不可再生，全 0 系数）：无 extra 时保持不变，extra 单 tick 生效并清零。
 #      - reserve 保持非负。
 #
@@ -65,6 +65,19 @@ func _test_registry_knobs() -> void:
 				and float(profile.temp_hi) > float(profile.temp_lo)
 	_expect("all resource temperature ranges use map-normalized [0,1] units",
 		normalized_temperature_contract)
+	var ordered_profiles := ResourceProfileRegistry.ordered()
+	for static_id in ["clay", "salt", "saltpeter", "oil"]:
+		var static_idx := _profile_index(ordered_profiles, static_id)
+		var static_profile = ordered_profiles[static_idx] if static_idx >= 0 else null
+		_expect("geological stock has no natural generation or decay: %s" % static_id,
+			static_profile != null and float(static_profile.gen_base) == 0.0 and
+			float(static_profile.gen_temp) == 0.0 and
+			float(static_profile.gen_moisture) == 0.0 and
+			float(static_profile.gen_self) == 0.0 and
+			float(static_profile.decay_base) == 0.0 and
+			float(static_profile.decay_temp) == 0.0 and
+			float(static_profile.decay_moisture) == 0.0 and
+			float(static_profile.decay_self) == 0.0)
 	_expect("knobs resource_count matches registry count", int(knobs.get("resource_count", 0)) == count)
 	var slots: PackedStringArray = knobs.get("reserve_slots", PackedStringArray())
 	var extra_slots: PackedStringArray = knobs.get("extra_change_slots", PackedStringArray())
@@ -118,7 +131,7 @@ func _test_registry_knobs() -> void:
 			gi < ecology_growth_rate.size() and ecology_growth_rate[gi] > 0.0 and
 			gi < ecology_immigration.size() and ecology_immigration[gi] > 0.0 and
 			gi < ecology_stress_mortality_rate.size() and
-			ecology_stress_mortality_rate[gi] > 0.0)
+			is_zero_approx(ecology_stress_mortality_rate[gi]))
 	if fi >= 0:
 		var minimum_runtime_fit := 1.0 - float(runtime_fit_weight[fi])
 		var minimum_daily_production := float(gen_self[fi]) * minimum_runtime_fit - \
@@ -126,7 +139,7 @@ func _test_registry_knobs() -> void:
 		var minimum_equilibrium := minimum_daily_production / float(decay_self[fi])
 		_expect("fertile_soil keeps a positive worst-climate equilibrium",
 			fi < gen_moisture.size() and minimum_daily_production > 0.0 and
-			minimum_equilibrium >= 4999.0)
+			minimum_equilibrium >= 1.0)
 	if pi >= 0:
 		_expect("pasture extra slot", pi < extra_slots.size() and extra_slots[pi] == "cell_res_pasture_extra_change")
 
@@ -171,6 +184,7 @@ func _test_native_pass() -> void:
 		water[i] = 1 if (i % 4 == 3) else 0                    # 水面格散布在 body 与 tail 段
 		habitat[i] = 0 if water[i] != 0 else 1
 	habitat[3] = 2 # 海洋水格
+	habitat[2] |= 8 # 邻海陆格
 	habitat[7] = 4 # 湖泊水格
 	habitat[4] |= 4 # 河流陆格
 	map.temp_arr = temp
@@ -253,8 +267,8 @@ func _test_native_pass() -> void:
 	var marine_i: int = _profile_index(profiles, "marine_fish")
 	if marine_i >= 0:
 		var marine: PackedFloat32Array = map.get(fields[marine_i])
-		_expect("marine fish only lives on marine water",
-			marine[3] > 0.0 and is_equal_approx(marine[0], 0.0) and is_equal_approx(marine[2], 0.0))
+		_expect("marine fish only lives on coastal land",
+			marine[2] > 0.0 and is_equal_approx(marine[0], 0.0) and is_equal_approx(marine[3], 0.0))
 	_expect("freshwater fish profile retired", _profile_index(profiles, "freshwater_fish") < 0)
 
 	var ii: int = _profile_index(profiles, "iron_ore")
@@ -373,8 +387,8 @@ func _test_native_pass() -> void:
 		timber = map.get(fields[timber_i])
 		_expect("timber naturally grows below carrying capacity",
 			timber[0] > timber_capacity * 0.5)
-		_expect("timber grows below climate-adjusted capacity under acute stress",
-			timber[2] > acute_capacity * 0.5)
+		_expect("timber acute stress remains bounded and nonnegative",
+			timber[2] > 0.0 and timber[2] <= acute_capacity * 0.5)
 		timber[0] = timber_capacity
 		timber[1] = rainforest_capacity
 		timber_extra.fill(0.0)
@@ -441,6 +455,14 @@ func _test_native_pass() -> void:
 		_expect("wild_game climate stress suppresses population",
 			wild[4] < wild[1])
 
+		var ordinary_no_harvest_start := wild[5]
+		knobs["dt_days"] = 5
+		for _cycle in range(146):
+			ext.run_natural_resource_pass(knobs)
+		wild = map.get(fields[wild_i])
+		_expect("wild_game ordinary habitat has no abnormal two-year natural die-off",
+			wild[5] >= ordinary_no_harvest_start * 0.98)
+
 		# 从权威建筑内容读取真实采收率。715 GOODS_SCALE = 0.715 资源单位/栋/日；
 		# 24 座营地按五日周期一次扣 85.8，避免用过时的 60 低估生态压力。
 		var hunting_profile = load(
@@ -462,10 +484,10 @@ func _test_native_pass() -> void:
 			ext.refresh_slots_from_map()
 			ext.run_natural_resource_pass(knobs)
 		wild = map.get(fields[wild_i])
-		_expect("wild_game sustains five years of 24-camp harvest at ideal habitat",
-			wild[0] > capacity * 0.85)
-		_expect("wild_game sustains five years of 24-camp harvest in ordinary climate",
-			wild[5] > ordinary_capacity * 0.75)
+		_expect("wild_game remains viable after five years of 24-camp harvest at ideal habitat",
+			wild[0] > capacity * 0.65)
+		_expect("wild_game ordinary habitat visibly depletes but remains viable under 24 camps",
+			wild[5] > ordinary_capacity * 0.35 and wild[5] < ordinary_capacity * 0.9)
 
 	var fertile_i: int = _profile_index(profiles, "fertile_soil")
 	if fertile_i >= 0:
@@ -490,8 +512,8 @@ func _test_native_pass() -> void:
 			float(fertile_profile.gen_self) * minimum_fit -
 			float(fertile_profile.decay_stress) * (1.0 - minimum_fit))
 		var minimum_equilibrium := minimum_p / float(fertile_profile.decay_self)
-		_expect("fertile_soil remains above 75% of its floor after 1410 days",
-			fertile[0] > minimum_equilibrium * 0.75)
+		_expect("fertile_soil recovers gradually without reaching its long-run floor in four years",
+			fertile[0] > 1.0 and fertile[0] < minimum_equilibrium * 0.25)
 
 
 func _profile_index(profiles: Array, id_name: String) -> int:

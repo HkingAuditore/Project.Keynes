@@ -100,10 +100,9 @@ extends Resource
 @export var reserve_component: StringName = &""
 
 ## legacy preserves old profiles while generated modern content uses the
-## explicit habitat contract. Marine resources live on ocean water cells;
-## freshwater resources live on lake water or river cells. Shore buildings
-## reach them through BuildingProfile.resource_access_modes.
-@export_enum("legacy", "land", "marine_water", "freshwater", "any") \
+## explicit habitat contract. Harvestable marine resources live on coastal
+## land cells so every extractor can consume only its own cell's reserve.
+@export_enum("legacy", "land", "marine_water", "freshwater", "coastal_land", "any") \
 var habitat_mode: String = "legacy"
 @export var land_only: bool = true            # legacy compatibility only
 

@@ -5,6 +5,10 @@
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v13 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治和一般自然人口变化；仅实现缺乏食品/气候所需衣着造成的生存死亡。
 
+> 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
+> 满意度公开字段是“食品与气候衣着的较低值”的生存满足度。黏土、盐、石油是静态地质存量，
+> 肥沃土壤缓慢恢复，伐木只发布开采 delta、不再由建筑生成森林。
+
 ## 权威与禁止事项
 
 - C++ `NativeEconomyRuntime` 拥有全部可变经济状态和 hot loop。
@@ -43,14 +47,14 @@
 - 一地块一市场；库存由该地块全部商人 cohort 按人口共同持有。
 - 人口非零但无商人时，从最大非商人 cohort 转 1 人并按比例转资金。
 - 购买资金直接进入商人 cohort，无 `market_cash`。
-- 商人正常消费；企业采购开始冻结现金并保留 25%，按实际出库/出口 EMA 形成的库存缺口价值分配预算；同 tick 最多一次替代 fallback。
+- 商人正常消费；企业采购开始冻结现金并保留 12.5%，按实际出库/出口 EMA 形成的库存缺口价值分配预算；同 tick 最多一次替代 fallback。
 - 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
 - `staple_food/protein/produce` 是内部营养与价格分配子篮子，对玩家统一显示“食品”；野味、
   鱼、肉、谷物、采集植物和已解锁加工食物均按替代品展示，即使当前分配量为零也不隐藏。
 - 生存满足取“食品总满足”和“气候修正衣着满足”的较小值；高温可把衣着需求降到零。
   周期开始时仍存活人口先参与就业和生产，profile 的 50% 阈值只用于消费后的确定性饥饿死亡，
   不再前置削减劳动力并锁死自给生产。
-- 八套职业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。
+- 八套在业职业原型加一套失业者生存原型；在业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。
   同一 good 跨 need 只允许 refined_fuel、computers、beverages、fur 四种明确多用途；展示层聚合
   数量与支出，不重复渲染。铁路设备、远洋船舶和科学仪器不再代理居民服务消费。
 - 商品可由显式库存命令或 BUILDING_GRAPH 生产进入市场。
@@ -59,7 +63,10 @@
   留用品不产生虚假收入或支出，未消费余量回记来源建筑的丢弃量。最终欠薪继续报告，但不会追溯
   取消已完成生产。家庭清算会保留 ACTIVE 企业按已到岗业主比例与计划利用率计算的下一周期投入
   营运资金；市场库存只按整套互补配方可执行的共同容量预留下周期物理投入，非生存加工不得提前锁住生存食物；居民消费和国内出口只能使用预留以上库存。
-  商人采购目标以 `max(可行日需求, 实际出库 EMA) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；零供给但已有需求的商品仍使用完整 30 日分档基线。仅当需求、出库和出口都为零时，以当期可售日产量建立首周期供给探测库存。商人现金或正常采购配额不足时，仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
+  商人采购目标以 `max(可行日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；生存品供给下限为平滑日产量的 1/2，其他耐储品为 1/4，配置库存天数和目标量级不缩小。现金不足时按生存品、居民短缺、生产投入 reserve 缺口提高预算权重；权重只改变购买顺序，总预算仍以真实采购价值为上限。仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
+
+- 自适应工资的可负担上限使用当前冻结价格下的“满产日收入”，先扣除日投入并预留目标营业利润，再按员工槽位折算；不得再把整个 epoch 的收入直接当作单日工资依据。亏损停产建筑使用同一反事实日收入报价，停产期间岗位目标为零。
+- 国内贸易先取源地真实盈余与目的地缺口，再用确定性整数二分裁剪到交易后仍满足利润率的最大数量；relief 路线只要求交易后价差非负。发运前按最新库存、现金和运力再次裁剪，避免整批候选因一次过量报价被全部拒绝。
 - 商人不能拥有普通生产建筑。例外仅限金银 collector：必须只有一种金/银产出、只消耗严格对应的
   金/银矿藏、使用 extract 模式且不生成资源；允许后期矿井拥有雇员和工具输入。
   市场接受金银时按 `monetary_issue_value` 向业主发行货币，计入
@@ -164,17 +171,31 @@ PKEC v13 save，restore 后在下一次成功生产前显示为未知。
   不参与 PKEC、catalog hash 或模拟权威；动态资金、库存、价格、自留与托底结果仍只能由 native runtime
   或 Inspector/录制数据验证。
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
-  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 120 goods、259
-  production-method buildings、32 professions、17 needs 和 8 consumption plans。消费重平衡不改
+  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 120 goods、260
+  production-method buildings、33 professions、17 needs 和 9 consumption plans。消费重平衡不改
   stable-ID 表或 PKEC v13 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
 - `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
   collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。
-- 30 种资源受 `land/marine_water/freshwater` habitat 门控；海鱼存在海洋水格，淡水/淡水鱼不再是
-  DataCore 经济资源。岸上渔业通过 native `local_and_adjacent` 资源边访问并扣减真实水格。
+- 30 种资源受 `land/marine_water/freshwater/coastal_land` habitat 门控；海鱼储量存在与海洋
+  水格相邻的沿海陆格，淡水/淡水鱼不再是 DataCore 经济资源。所有建筑资源边都必须为 `local`，
+  native 只检查并扣减建筑本格储量，不存在邻域采集。
   矿产初值叠加资源局部斑块、
   同族地质省与矿带。栽培作物只存在于 goods，不进入 DataCore resource slots。
 - 黄金/白银面值发行和普通可储存余货的 20% 托底发行是生产运行时的两类内生货币发行来源；电力是唯一 cycle-flow，utility prepass
   同周期供给，余量在周期边界清零，并且在家庭公用事业结算完成前不进入家庭能源需求。
 - 软件、数字服务、AI 模型、轨道科研、遥测、卫星、深空探测与聚变燃料链已从目录删除；战略矿产
   保留内部 stable ID，并新增 `nuclear_fuel` 加工，核电与同位素反应堆不直接消耗战略矿物材料。
+## 2026-07-18 balance contract
+
+- Runtime authority remains `NativeEconomyRuntime`; profiles and this module are
+  configuration/catalog inputs only.
+- Owner livelihood participates in expected viability and output cost anchors.
+  The cash buffer is capped at half of current owner-cohort cash, never blocks
+  employee base payroll, and does not mint or transfer money.
+- Merchant inventory horizons and targets are not reduced. Bid strength rises
+  with the frozen target gap, and weighted procurement is capped and
+  redistributed so unused priority budget reaches other real gaps.
+- Stone-Age household weaving and knapping use local-demand-sized batches.
+- CSV recorder schema v9 adds viability and natural/artificial resource-flow
+  diagnostics without adding save-state authority.

@@ -15,6 +15,7 @@ func _init(p_facade, p_world_clock: WorldClock = null) -> void:
 	must_run = false
 	max_slices_per_tick = 1
 	use_job_should_run = true
+	use_job_deadline_critical = true
 	starvation_threshold = 2
 	slice_budget_ms = 0.8
 	policy = SusPolicyScript.AlwaysPolicy.new()
@@ -47,6 +48,24 @@ func should_run(ctx: SusTickContext) -> bool:
 	var ext: Object = facade.world_ext()
 	return ext != null and ext.has_method("economy_should_run") \
 		and bool(ext.economy_should_run(ctx.day_index))
+
+
+func is_deadline_critical(ctx: SusTickContext) -> bool:
+	if facade == null or not facade.is_configured() or ctx == null:
+		return false
+	var report: Dictionary = facade.report()
+	if bool(report.get("epoch_active", false)):
+		return int(ctx.day_index) >= int(
+			report.get("cycle_deadline_day", 9223372036854775807))
+	# The fixed cadence is also a deadline: if the job is budget-skipped on the
+	# first eligible start day, the whole five-day schedule drifts by one day.
+	# Do not use should_run() here because an idle trade-planning continuation is
+	# soft work; derive only the local-cycle due condition from committed state.
+	# Cadence is anchored to the prior frozen sample, not the wall-clock commit
+	# day; a four-day continuation must not add another full epoch of delay.
+	var committed_sample_day := int(report.get("sample_day", -1))
+	var epoch_days := maxi(1, int(report.get("epoch_days", 1)))
+	return int(ctx.day_index) - committed_sample_day >= epoch_days
 
 func tick(ctx) -> Dictionary:
 	var started_us := Time.get_ticks_usec()

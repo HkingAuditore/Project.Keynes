@@ -68,7 +68,7 @@ extends Resource
 @export_range(0, 65536, 1) var trade_min_margin_q16: int = 3277
 @export_range(1, 8, 1) var trade_target_count: int = 4
 @export_range(256, 1048576, 256) var trade_signal_pairs_per_slice: int = 16384
-@export_range(1, 64, 1) var trade_route_searches_per_slice: int = 2
+@export_range(1, 256, 1) var trade_route_searches_per_slice: int = 128
 @export_range(64, 1000000, 64) var trade_max_route_expansions: int = 8192
 @export_range(64, 4194304, 64) var trade_route_cache_entries: int = 16384
 @export_range(64, 1048576, 64) var trade_max_signals: int = 32768

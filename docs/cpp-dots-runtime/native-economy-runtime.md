@@ -8,6 +8,17 @@
 > 2026-07-11 状态：冻结周期错峰版默认 `market_runtime_mode=ACTIVE`、结算周期 5 日。功能、守恒、
 > worker/scalar 确定性、移动和 10M cohort 性能门槛均已通过。
 
+## 2026-07-18 石器经济与资源平衡修正
+
+- 国内贸易拓扑只读取 `cell_base_terrain`；气候系统对 `cell_terrain` 的季节性海冰切换不再改变规范化拓扑哈希或重置路线计划。
+- `satisfaction_q16` 保持兼容，新增同值的 `survival_satisfaction_q16` 与 cohort 数组别名，明确该指标是食品与气候衣着两者较低值，不代表全部舒适/奢侈需求。
+- 石器食物的商品库存比例从 1.5 调到 1.0，即仍维持完整 30 日目标；生产者托底收购和现金保留规则不变，避免采购量断崖式下降。
+- 火塘配方扩大为每日 `7000` 植物 + `3500` 肉类 → `12628` 加工食品，肉类为 50% 软约束；打制石器为 `1600` 燧石 → `2200` 工具；家庭织造改为消耗 `1200` 采集植物，不再无原料产布。伐木建筑只开采森林，不再反向生成人工林。
+- 黄金/白银发行价值为 `800000/50000`；淘金场和露天银矿分别雇用 1/2 名矿工，参考日薪统一为
+  `40000`。满产发行收入可覆盖矿工工资、merchant 业主生计与约 14% 目标利润，矿工收入相对当前
+  生存消费形成小幅正结余。测试聚落把单人非商人职业保留为至少 2 人，以便在暂不模拟出生时避免职业链一次损失即消失。
+- 黏土、盐、石油按地质存量处理，不再自然生成或自发消退；肥沃土壤长期平衡量基本不变，但日变化率降为原来的约 1/20。金矿、燧石和石料初始储量改用 `0.1` 丰度倍率，并同步缩小适宜度系数，防止省级面积倍率造成超长寿命矿床。
+
 ## 权威边界
 
 | 数据/行为 | 权威 | 契约 |
@@ -30,7 +41,7 @@
 - 国内贸易默认 `ACTIVE`；`OFF/PROBE` 仅供显式配置和测试。范围仍是冻结的同一国家、可通行且连通地块。
 - 企业采购意图容量取建筑可用性、业主/关键岗位就业率、业主输入资金覆盖率和自然资源覆盖率的瓶颈；实际产能再叠加本地输入库存瓶颈。缺货输入保留受约束的补货意图，但不能产生实际产出。
 - 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资) / max(经营成本, MONEY_SCALE)` 计算。连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`；停产期间岗位、采购、产出和企业需求全为零。反事实利润连续两周期达到 +10%，且业主可支付一栋一周期输入和基础工资后恢复。
-- 商人库存目标使用 `max(可行 household/business 日需求, 实际出库 EMA) + 出口 EMA` 乘 30 日基线和 good-specific 比例后的有效天数；因此零供给、零成交但已有需求的商品也保留完整配置周期，不再退化为单个 economy epoch。仅当需求、出库和出口都为零时，使用当期可售日产量建立首周期供给探测库存。采购开始冻结现金并保留 12.5%，再按 `库存缺口 × 收购价` 和稳定 good/group 顺序分配预算。默认必需品 45 日、重要民生品 37.5 日、普通品 30 日、奢侈品约 20 日、`cycle_flow` 为 0。
+- 商人库存目标使用 `max(可行 household/business 日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 30 日基线和 good-specific 比例后的有效天数；生存食品/御寒衣物的供给下限为供给 EMA 的 1/2，其他耐储品为 1/4，库存天数和目标量级不下调。采购开始冻结现金并保留 12.5%；有限现金按生存品、短缺压力、生产投入 reserve 缺口加权，但总采购预算仍封顶于真实缺口价值，避免“提高优先级”反而造成有钱不买。`cycle_flow` 目标仍为 0。
 - `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
 - ACTIVE owner-lot 在家庭清算前按已到岗业主份额、计划利用率和冻结单位投入成本保留下周期营运资金；该资金仍在 owner cohort 账户内，但不会被本期居民订单花掉。报告发布 `owner_working_capital_reserved`。
 - 食物生产者按三类食品总需求的饥饿阈值留存产出；精确消费 variant 之后的剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量，保证狩猎、捕鱼等单一食物生产者具备真实自给能力。
@@ -43,8 +54,14 @@
 
 - 消费目录新增 need 总量价格弹性和刚需下限。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食与衣着保留正下限但仍随价格和财富缩量，蛋白质及非刚需可在全体替代品过贵时接近零。
 - 低于目标库存且仍有需求时，生产成本锚成为受单日涨幅上限约束的零售价格底线；库存堆积时不启用硬底线。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不超过 1 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；生存食物生产者另按同一业主人口跨过饥饿阈值所需的自留量计算动态下限，取二者较高值。
-- 全建筑目录改用默认生活成本和 80% 保守售出率校准：每个 employee role 的 fixed/adaptive 参考工资至少覆盖其职业生活篮子；按默认商人收购价折算后的可售收入同时覆盖投入、工资、目标营业利润和业主生活成本。石器狩猎营地现代表 5 个共同经营岗位，日产 `7000/250/100` 野味/生皮/毛皮；采集营地同样代表 5 个共同经营岗位并日产 `7000` 采集植物。两类基础食物建筑均提供每岗位 `1400` 的日产主食产能，略高于测试承载力的 `1300` 保守底线。家庭织造棚代表 2 个共同岗位、日产 `600` 布匹；燧石采掘场降为日产 `1200`、采收 `60`，保持 20:1 资源效率。
-- `audit_economy_content.ps1` 遍历 259 个建筑并检查 80% 售出率盈利、role 工资、生产原料成本不超过商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`、工业总投入/总产出不超过 `3:1`，以及 `2:1` 至 `25:1` extract 效率；蒸汽煤铁矿固定复核约 `12:1`。这是 catalog/content 校准，会改变 building catalog hash，但不改变 PKEC 字节布局。
+- 全建筑目录改用默认生活成本和 80% 保守售出率校准。当前石器狩猎营地为 2 个共同经营岗位，日产 `3728/45/23` 野味/生皮/毛皮；采集营地为 2 个岗位、日产 `7000` 采集植物；家庭织造棚为 1 个岗位、日产 `900` 布匹并消耗采集植物。早期砂金/露天银矿由 merchant 所有，但分别雇用 1/2 个 miner 岗位。
+- `audit_economy_content.ps1` 遍历 260 个建筑并检查 80% 售出率盈利、role 工资、生产原料成本不超过商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`、工业总投入/总产出不超过 `3:1`，以及 `2:1` 至 `25:1` extract 效率；蒸汽煤铁矿固定复核约 `12:1`。这是 catalog/content 校准，会改变 building catalog hash，但不改变 PKEC 字节布局。
+
+### 2026-07-18 调度、贸易与工资稳定性修正
+
+- `country_daily` 和 `economy_daily` 仅在当日确属提交截止点时动态声明 `deadline_critical`，可绕过一次 tick 内的 frame/strict 启动门槛，但仍受单 slice 与 continuation 上限约束；`must_run` 保持 false。WorldClock 每推进一天后立即重读 country/economy barrier，不能在同一渲染帧越过刚升起的截止屏障。
+- 贸易候选数量用交易后源/目的库存重新报价，并以确定性整数二分裁剪为仍满足最小利润率的最大数量；relief 路线允许零价差但禁止负价差。发运前依据最新库存、现金和国家运力二次裁剪。报告增加 `trade_rejected_no_spread`、`trade_rejected_margin`、`trade_quantity_profit_clips`、`trade_relief_candidates`。
+- adaptive 工资可负担上限改为日流量：`满产日结算收入 / (1 + 目标利润率) - 日投入` 得到工资池，再除以员工槽位并应用工资收入缓冲比例。停产建筑也使用该反事实报价，避免周期总收入被错当成日收入而把工资放大约 `epoch_days` 倍。
 - 野生动物承载力继续随普通适生度下降，但压力死亡只作用于原始温湿适生度最低 25% 的急性区间，消除普通非理想气候的重复惩罚。理想与普通气候的 24 营地五年采集均有回归覆盖。
 - 林木改用理想承载量 `1200×100`、1% 日增长和正迁入的 Beverton-Holt 分支；新地图只对适生度最高的 30% 陆地保证 30,000 最低储量。它在低于承载量时自然增长，并通过单伐木场五年持续采收回归。
 
@@ -209,7 +226,7 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 欠薪取消奖金并保留诊断，但不追溯取消本期生产。工资仍按本地同职业实际就业权重分配，不铸币且
 保持资金守恒。
 
-普通生产建筑禁止使用 merchant owner。唯一例外是石器期砂金与露天银矿点：无商品投入、无雇员，
+普通生产建筑禁止使用 merchant owner。唯一例外是石器期砂金与露天银矿点：无商品投入、保留对应矿工岗位，
 必须消耗匹配的金/银矿藏且只产对应金银。市场接受产出时按固定面值增加业主商人资金，并进入
 `_explicit_money_mint`、`bullion_money_issued`、金银分项发行额与 closing audit。后期金银矿仍由
 industrialist 持有并保留工业投入、矿工和管理岗位。不存在虚空商站铸币分支。
@@ -257,9 +274,9 @@ delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacit
 `4:1`、蒸汽煤铁矿 `12:1`、现代煤铁矿 `20:1`。多副产品按输出总量计算。原生公式仍分别读取
 资源投入量和物资产出量，因此效率分级不增加新状态、调度、API 或存档字段。
 农场使用旱作耕地/水田/种植园容量和肥沃土壤生产 crop goods，不再培育 crop resource。
-资源边另有 `local/local_and_adjacent` 访问模式。海鱼与淡水鱼储量位于水域格，岸上渔港在冻结
-sample boundary 捕获的六邻拓扑上汇总本格+邻格，并按稳定来源顺序扣减真实水格；无需在岸格
-复制鱼群，也不会创建跨格 GDScript 经济状态。
+资源边只允许 `local`。海鱼储量由 `coastal_land` habitat 直接生成在与海洋相邻的沿海陆格，
+岸上渔场、狩猎营、矿山和农场 capacity 都只检查建筑本格；catalog 和 native 配置同时拒绝非本格
+访问模式。该约束不增加运行时状态，且移除了生产热循环的邻格 gather。
 
 世界设置启用测试经济数据时，fixture 先生成资源适配的自给、采集与本地产业 owner-lot，随后
 通过 `EconomyFacade.building_job_spec()` 读取 catalog 岗位列并派生 cohort。生成前用
@@ -347,8 +364,8 @@ TRACE_OFF 为 `2.112/8.914/8.914ms`、111.3MB。两者核心 state hash 均为
 ## 跨时代产业目录与货币发行（2026-07-14）
 
 现代基线由可复现且支持只读 `-Check` 的 `tools/codegen/gen_modern_economy_content.ps1` 生成，
-跨时代扩展后全目录为 120 goods、259
-building types、32 professions、17 household needs 和 8 consumption plans。30 种注册自然资源均至少被一个
+跨时代扩展后全目录为 120 goods、260
+building types、33 professions、17 household needs 和 9 consumption plans。30 种注册自然资源均至少被一个
 `collector` 引用；`industrial` 只能消费 goods。所有建筑恰好一个 owner job，科技解锁仅以
 `technology_tags` 进入 catalog/snapshot；只有 `tech.*` 是可执行条件。runtime 把条件解析为 dense technology IDs，
 由 `NativeCountryRuntime` 以每国家 bitset 持久化；经济在周期边界冻结 `cell → country`、国家 generation/hash 与科技 bits，统一过滤物资替代、职业就业、建造与生产。其他标签命名空间只作冷元数据。
@@ -380,7 +397,7 @@ catalog/content，PopulationStore、signature ABI、BUILDING_GRAPH 和 PKEC byte
 Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC v13。restore 后保持 `-1`
 直到下一次成功生产。该扩展没有修改权威公式或存档字段。
 
-`gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/10000 money subunits。市场接收
+`gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/50000 money subunits。市场接收
 建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通
 库存参与珠宝、电子等生产且不重复发行。report 分别发布 accepted quantity、issued money 和
 `bullion_money_issued`。普通产出的正常采购仍受 merchant cash cap，余货则走低价托底发行。merchant 建筑预检只允许单一金/银产出、
@@ -447,3 +464,28 @@ avg/p95/max `2.290/2.961/3.589ms`、`94.2MB`；200 goods / 10M cohorts 为
 avg/p95/max `2.064/2.919/12.441ms`、`112.8MB`；固定 `N=5`、`TRACE_OFF` 为
 `2.185/3.269/3.892ms`、`94.6MB`。相对 2026-07-14 固定五日 TRACE_OFF 的 p95 增幅为 9.6%，
 低于 10% 门槛；总量价格幂仍只按 market×need 预计算，不进入 cohort hot loop。
+## 2026-07-18 producer viability and procurement calibration
+
+- Owner-operated building plans and output cost anchors include the filled
+  owners' frozen-period base living cost. This is a viability/cost signal, not
+  a wage transfer and not a new wallet. Realized-loss suspension still uses
+  actually paid inputs and employee base wages, so an imputed owner income does
+  not create a fake cash loss.
+- A producer cohort reserves at most one period of base household cost and at
+  most half of its current cash. The reserve constrains physical inputs and
+  discretionary profit bonuses. Contracted employee base wages remain senior
+  claims and may use the full owner balance; the reserve therefore cannot
+  manufacture wage arrears or permanently lock a viable workshop out of its
+  next input purchase.
+- Merchant bids interpolate from the configured base buy factor toward frozen
+  retail price as shortage or the unchanged inventory-target gap grows.
+  Procurement budgets are weighted by survival, shortage, and production-input
+  urgency, capped by each good's actual target gap value, and repeatedly
+  redistributed when a high-priority good reaches that cap. Inventory horizon
+  and target quantities are unchanged.
+- The mid-Stone-Age hand workshop lots are demand-sized: household weaving uses
+  `120 -> 90` goods units/day and knapping uses `100 -> 140` units/day. This
+  prevents one five-day cottage batch from overshooting local cloth/tool demand
+  by an order of magnitude while preserving physical inputs and owner jobs.
+- These fields are derived from existing authority columns. PKEC schema and the
+  five-day committed cadence do not change.

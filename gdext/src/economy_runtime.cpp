@@ -744,6 +744,7 @@ bool NativeEconomyRuntime::capture_trade_topology(
 
 bool NativeEconomyRuntime::drain_building_resource_deltas(std::vector<int64_t> &out) {
     if (!_resource_deltas_ready) return false;
+    _last_published_resource_deltas = _resource_deltas;
     out = _resource_deltas;
     _resource_deltas_ready = false;
     std::fill(_resource_deltas.begin(), _resource_deltas.end(), int64_t{0});
@@ -1228,7 +1229,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _trade_signal_pairs_per_slice = std::clamp(dict_num<int32_t>(
         profile, "trade_signal_pairs_per_slice", 16384), 256, 1 << 20);
     _trade_route_searches_per_slice = std::clamp(dict_num<int32_t>(
-        profile, "trade_route_searches_per_slice", 2), 1, 64);
+        profile, "trade_route_searches_per_slice", 128), 1, 256);
     _trade_max_route_expansions = std::clamp(dict_num<int32_t>(
         profile, "trade_max_route_expansions", 8192), 64, 1000000);
     _trade_route_cache_entries = std::clamp(dict_num<int32_t>(
@@ -1374,67 +1375,35 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     return true;
 }
 
-int32_t NativeEconomyRuntime::gather_resource_cells(
-        int32_t cell, int32_t access_mode, int32_t *out_cells, int32_t capacity) const {
-    if (out_cells == nullptr || capacity <= 0 || cell < 0 || cell >= _cell_count) return 0;
-    int32_t count = 0;
-    out_cells[count++] = cell;
-    if (access_mode != 1 || _building_neighbors.size() != static_cast<size_t>(_cell_count) * 6) {
-        return count;
-    }
-    for (int32_t direction = 0; direction < 6 && count < capacity; ++direction) {
-        const int32_t neighbor = _building_neighbors[static_cast<size_t>(cell) * 6 + direction];
-        if (neighbor < 0 || neighbor >= _cell_count) continue;
-        bool duplicate = false;
-        for (int32_t i = 0; i < count; ++i) {
-            if (out_cells[i] == neighbor) {
-                duplicate = true;
-                break;
-            }
-        }
-        if (!duplicate) out_cells[count++] = neighbor;
-    }
-    return count;
-}
-
 int32_t NativeEconomyRuntime::building_resource_access_cells(
         int32_t cell, int32_t resource_id, int32_t *out_cells, int32_t capacity) const {
-    if (resource_id < 0 || resource_id >= static_cast<int32_t>(_resource_adjacent_access.size())) {
+    if (out_cells == nullptr || capacity <= 0 || cell < 0 || cell >= _cell_count ||
+        resource_id < 0 || resource_id >= static_cast<int32_t>(_resource_ids.size())) {
         return 0;
     }
-    return gather_resource_cells(cell, _resource_adjacent_access[resource_id] != 0 ? 1 : 0,
-                                 out_cells, capacity);
+    out_cells[0] = cell;
+    return 1;
 }
 
 int64_t NativeEconomyRuntime::available_resource_amount(
         const ResourceAmount &item, int32_t cell) const {
-    int32_t cells[7];
-    const int32_t source_count = gather_resource_cells(cell, item.access_mode, cells, 7);
-    int64_t total = 0;
-    for (int32_t i = 0; i < source_count; ++i) {
-        const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cells[i];
-        const int64_t value = std::max<int64_t>(0, _resource_remaining[idx]);
-        if (total > std::numeric_limits<int64_t>::max() - value) {
-            return std::numeric_limits<int64_t>::max();
-        }
-        total += value;
-    }
-    return total;
+    if (cell < 0 || cell >= _cell_count || item.resource_id < 0 ||
+        item.resource_id >= static_cast<int32_t>(_resource_ids.size())) return 0;
+    const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cell;
+    return std::max<int64_t>(0, _resource_remaining[idx]);
 }
 
 void NativeEconomyRuntime::consume_resource_amount(
         const ResourceAmount &item, int32_t cell, int64_t quantity) {
-    int32_t cells[7];
-    const int32_t source_count = gather_resource_cells(cell, item.access_mode, cells, 7);
-    int64_t remaining = std::max<int64_t>(0, quantity);
-    for (int32_t i = 0; i < source_count && remaining > 0; ++i) {
-        const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cells[i];
-        const int64_t taken = std::min<int64_t>(remaining, std::max<int64_t>(0, _resource_remaining[idx]));
-        if (taken <= 0) continue;
-        _resource_remaining[idx] -= taken;
-        _resource_deltas[idx] = saturating_sub(_resource_deltas[idx], taken, _saturation_count);
-        remaining -= taken;
-    }
+    if (cell < 0 || cell >= _cell_count || item.resource_id < 0 ||
+        item.resource_id >= static_cast<int32_t>(_resource_ids.size())) return;
+    const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cell;
+    const int64_t taken = std::min<int64_t>(
+        std::max<int64_t>(0, quantity), std::max<int64_t>(0, _resource_remaining[idx]));
+    if (taken <= 0) return;
+    _resource_remaining[idx] -= taken;
+    _resource_deltas[idx] = saturating_sub(
+        _resource_deltas[idx], taken, _saturation_count);
 }
 
 uint64_t NativeEconomyRuntime::trace_hash_mix(uint64_t hash, uint64_t value) {
@@ -2544,7 +2513,6 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _building_output_cost_shares_q16.clear();
         _building_resources.clear();
         _building_resource_generation.clear();
-        _resource_adjacent_access.assign(_resource_ids.size(), uint8_t{0});
         _building_conditions.clear();
         return true;
     }
@@ -2728,19 +2696,15 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             input_candidate_goods[i], input_candidate_efficiencies[i]};
     }
     _building_resources.resize(resource_ids.size());
-    _resource_adjacent_access.assign(_resource_ids.size(), uint8_t{0});
     for (size_t i = 0; i < resource_ids.size(); ++i) {
         if (resource_ids[i] < 0 || resource_ids[i] >= static_cast<int32_t>(_resource_ids.size()) ||
             resource_qty[i] <= 0 || resource_modes[i] < 0 || resource_modes[i] > 1 ||
-            resource_access_modes[i] < 0 || resource_access_modes[i] > 1) {
+            resource_access_modes[i] != 0) {
             error = "building_production_resource_invalid";
             return false;
         }
         _building_resources[i] = {resource_ids[i], resource_qty[i], resource_modes[i],
                                   resource_access_modes[i]};
-        if (resource_access_modes[i] == 1) {
-            _resource_adjacent_access[resource_ids[i]] = 1;
-        }
     }
     _building_resource_generation.resize(generation_ids.size());
     for (size_t i = 0; i < generation_ids.size(); ++i) {
@@ -3672,14 +3636,13 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
             BuildingGroup &group = _buildings[g];
             if (!building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
-            // Affordability damping: derive a per-employee wage ceiling from the
-            // building's expected revenue divided across all its employee slots,
-            // scaled by _wage_income_cap_ratio_q16. A rational employer cannot
-            // sustainably pay wages far above the revenue each employee supports,
-            // so the living-cost floor is not allowed to push contract wages past
-            // this ceiling. Falls back to no cap (ceiling=0) when revenue is not
-            // yet known (e.g. first cycle) so the loss/suspension machinery, not a
-            // wage collapse, handles genuinely unaffordable buildings.
+            // Affordability damping is a daily-flow calculation. Historical
+            // last_expected_revenue is an epoch total, so comparing it directly
+            // with a per-day wage lets contract wages grow by roughly epoch_days.
+            // Quote the current full-capacity daily output instead, reserve daily
+            // inputs plus the configured operating margin, then divide the
+            // remaining wage pool across all employee slots. This also gives a
+            // suspended building a stable recovery quote instead of a zero basis.
             int64_t affordable_ceiling = 0;
             if (_wage_income_cap_ratio_q16 > 0) {
                 int64_t group_employee_slots = 0;
@@ -3690,11 +3653,56 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                         saturating_mul(group.count, rrole.slots_per_building,
                                        _saturation_count), _saturation_count);
                 }
-                const int64_t basis = group.last_expected_revenue > 0
-                    ? group.last_expected_revenue : group.last_revenue;
-                if (basis > 0 && group_employee_slots > 0) {
-                    const int64_t per_emp = basis / group_employee_slots;
-                    affordable_ceiling = mul_div_sat(per_emp,
+                const int32_t market = _market.cell_to_market[cell];
+                int64_t daily_revenue_per_building = 0;
+                for (int32_t output_index = 0;
+                     output_index < type.output_count; ++output_index) {
+                    const GoodAmount &output =
+                        _building_outputs[type.output_begin + output_index];
+                    int64_t settlement = _good_monetary_issue_values[output.good_id];
+                    if (settlement <= 0) {
+                        const int32_t output_signal = market_signal_index(
+                            cell, output.good_id);
+                        const int32_t output_flow = trade_flow_index(
+                            cell, output.good_id, false);
+                        const int64_t output_target = merchant_inventory_target(
+                            market, output.good_id, output_signal,
+                            output_signal >= 0 ? _market_signals.realized_withdrawal_ema[
+                                output_signal] : 0,
+                            output_flow >= 0 ? _trade_flows.export_ema[output_flow] : 0,
+                            output.quantity, _saturation_count);
+                        const int32_t buy_factor = effective_merchant_buy_factor_q16(
+                            market, output.good_id, output_target,
+                            _market.stock[_market.index(market, output.good_id)],
+                            _saturation_count);
+                        settlement = mul_div_sat(
+                            _market.price[_market.index(market, output.good_id)],
+                            buy_factor, Q16_ONE, _saturation_count);
+                    }
+                    daily_revenue_per_building = saturating_add(
+                        daily_revenue_per_building, mul_div_sat(
+                            output.quantity, settlement, GOODS_SCALE,
+                            _saturation_count), _saturation_count);
+                }
+                if (daily_revenue_per_building > 0 && group_employee_slots > 0) {
+                    const int64_t daily_revenue = saturating_mul(
+                        daily_revenue_per_building, group.count, _saturation_count);
+                    const int64_t margin_denominator = saturating_add(
+                        Q16_ONE, std::max<int32_t>(0,
+                            type.target_operating_margin_q16), _saturation_count);
+                    const int64_t operating_budget = mul_div_sat(
+                        daily_revenue, Q16_ONE,
+                        std::max<int64_t>(1, margin_denominator),
+                        _saturation_count);
+                    const int64_t daily_inputs = saturating_mul(
+                        std::max<int64_t>(0, group.sample_unit_input_cost),
+                        group.count, _saturation_count);
+                    const int64_t daily_wage_pool = std::max<int64_t>(
+                        0, saturating_sub(operating_budget, daily_inputs,
+                                          _saturation_count));
+                    const int64_t sustainable_per_employee =
+                        daily_wage_pool / group_employee_slots;
+                    affordable_ceiling = mul_div_sat(sustainable_per_employee,
                         _wage_income_cap_ratio_q16, Q16_ONE, _saturation_count);
                 }
             }
@@ -3950,6 +3958,10 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(std::string &error) {
         const int32_t market = _market.cell_to_market[group.cell];
         int64_t input_cost = 0;
         int64_t employee_wages = 0;
+        const int64_t owner_living_cost = saturating_mul(
+            living_cost_for_signature(group.cell, group.owner_signature_id, -1,
+                                      _saturation_count),
+            type.owner_slots_per_building, _saturation_count);
         int64_t revenue = 0;
         bool inputs_available = true;
         for (int32_t i = 0; i < type.input_count; ++i) {
@@ -3999,15 +4011,32 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(std::string &error) {
         for (int32_t i = 0; i < type.output_count; ++i) {
             const GoodAmount &item = _building_outputs[type.output_begin + i];
             int64_t settlement = _good_monetary_issue_values[item.good_id];
-            if (settlement <= 0) settlement = mul_div_sat(
-                _market.price[_market.index(market, item.good_id)],
-                _good_merchant_buy_factor_q16[item.good_id], Q16_ONE,
-                _saturation_count);
+            if (settlement <= 0) {
+                const int32_t output_signal = market_signal_index(
+                    group.cell, item.good_id);
+                const int32_t output_flow = trade_flow_index(
+                    group.cell, item.good_id, false);
+                const int64_t output_target = merchant_inventory_target(
+                    market, item.good_id, output_signal,
+                    output_signal >= 0 ? _market_signals.realized_withdrawal_ema[
+                        output_signal] : 0,
+                    output_flow >= 0 ? _trade_flows.export_ema[output_flow] : 0,
+                    item.quantity, _saturation_count);
+                const int32_t buy_factor = effective_merchant_buy_factor_q16(
+                    market, item.good_id, output_target,
+                    _market.stock[_market.index(market, item.good_id)],
+                    _saturation_count);
+                settlement = mul_div_sat(
+                    _market.price[_market.index(market, item.good_id)],
+                    buy_factor, Q16_ONE, _saturation_count);
+            }
             revenue = saturating_add(revenue, mul_div_sat(
                 item.quantity, settlement, GOODS_SCALE, _saturation_count),
                 _saturation_count);
         }
-        const int64_t operating = saturating_add(input_cost, employee_wages, _saturation_count);
+        const int64_t operating = saturating_add(saturating_add(
+            input_cost, employee_wages, _saturation_count),
+            owner_living_cost, _saturation_count);
         const int64_t required = saturating_add(operating, mul_div_sat(
             operating, type.target_operating_margin_q16, Q16_ONE,
             _saturation_count), _saturation_count);
@@ -4724,8 +4753,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell) continue;
-            const bool active = group.count > 0 &&
-                                building_available(cell, group.type_id, true);
+            const bool active = group.count > 0 && group.operating_state == 0 &&
+                                 building_available(cell, group.type_id, true);
             const BuildingType &type = _building_types[group.type_id];
             // owner 目标：不可用/count<=0 → 0（其在岗人口将全部进池）。
             const int64_t owner_target = active ? planned_owner_demand(group, type) : 0;
@@ -4752,7 +4781,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(int32_t cell, std::strin
         labor_shortage_priority_q16.assign(static_cast<size_t>(last - first), 0);
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
-            if (group.cell != cell || group.count <= 0 ||
+            if (group.cell != cell || group.count <= 0 || group.operating_state != 0 ||
                 !building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
             const int32_t market = _market.cell_to_market[cell];
@@ -5693,7 +5722,8 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
             };
             auto clamp_scale_to_owner_funds = [&](int64_t output_scale_q16,
                                                   bool require_stock) -> int64_t {
-                const int64_t funds = std::max<int64_t>(0, _population.funds[owner_slot]);
+                const int64_t funds = std::max<int64_t>(
+                    0, _population.funds[owner_slot]);
                 if (input_cost_at_scale(output_scale_q16, require_stock) <= funds) {
                     return output_scale_q16;
                 }
@@ -5866,15 +5896,19 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
         });
         thread_local std::vector<int64_t> sellable_by_good;
         thread_local std::vector<int64_t> quota_by_good;
+        thread_local std::vector<int64_t> purchase_value_by_good;
         thread_local std::vector<int64_t> budget_by_good;
         thread_local std::vector<int64_t> spent_by_good;
         thread_local std::vector<int64_t> weight_by_good;
+        thread_local std::vector<int32_t> buy_factor_by_good;
         thread_local std::vector<int32_t> touched_goods;
         sellable_by_good.assign(_market.good_count, 0);
         quota_by_good.assign(_market.good_count, 0);
+        purchase_value_by_good.assign(_market.good_count, 0);
         budget_by_good.assign(_market.good_count, 0);
         spent_by_good.assign(_market.good_count, 0);
         weight_by_good.assign(_market.good_count, 0);
+        buy_factor_by_good.assign(_market.good_count, 0);
         touched_goods.clear();
         int32_t last_touched = -1;
         for (Offer &offer : offers) {
@@ -5914,6 +5948,7 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
             }
         }
         int64_t total_weight = 0;
+        int64_t total_purchase_value = 0;
         for (int32_t good : touched_goods) {
             const int32_t signal = market_signal_index(cell, good);
             const int64_t realized = signal >= 0
@@ -5935,32 +5970,116 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                     sellable_by_good[good], std::max<int64_t>(
                         0, target - _market.stock[_market.index(market, good)]));
             }
+            buy_factor_by_good[good] = effective_merchant_buy_factor_q16(
+                market, good, target,
+                _market.stock[_market.index(market, good)], _saturation_count);
             const int64_t buy_price = std::max<int64_t>(1, mul_div_sat(
                 _market.price[_market.index(market, good)],
-                _good_merchant_buy_factor_q16[good], Q16_ONE, _saturation_count));
-            weight_by_good[good] = mul_div_sat(
+                buy_factor_by_good[good], Q16_ONE, _saturation_count));
+            const int64_t base_weight = mul_div_sat(
                 quota_by_good[good], buy_price, GOODS_SCALE, _saturation_count);
+            purchase_value_by_good[good] = base_weight;
+            total_purchase_value = saturating_add(
+                total_purchase_value, base_weight, _saturation_count);
+            int64_t priority_q16 = Q16_ONE;
+            if (_survival_food_good_mask[good] != 0 ||
+                _survival_clothing_good_mask[good] != 0) {
+                priority_q16 = saturating_add(
+                    priority_q16, 2 * Q16_ONE, _saturation_count);
+            }
+            const int64_t market_index = _market.index(market, good);
+            priority_q16 = saturating_add(priority_q16, mul_div_sat(
+                std::clamp<int64_t>(_market.last_shortage_q16[market_index],
+                                    0, Q16_ONE),
+                2 * Q16_ONE, Q16_ONE, _saturation_count),
+                _saturation_count);
+            if (signal >= 0 && signal < static_cast<int32_t>(
+                    _production_input_reserve.size())) {
+                const int64_t reserve = std::max<int64_t>(
+                    0, _production_input_reserve[signal]);
+                const int64_t stock = std::max<int64_t>(
+                    0, _market.stock[market_index]);
+                if (reserve > stock) {
+                    priority_q16 = saturating_add(priority_q16, mul_div_sat(
+                        reserve - stock, 2 * Q16_ONE,
+                        std::max<int64_t>(1, reserve), _saturation_count),
+                        _saturation_count);
+                }
+            }
+            weight_by_good[good] = mul_div_sat(
+                base_weight, priority_q16, Q16_ONE, _saturation_count);
             total_weight = saturating_add(
                 total_weight, weight_by_good[good], _saturation_count);
         }
         const int64_t allocated_budget = std::min(
-            merchant_procurement_remaining, total_weight);
+            merchant_procurement_remaining, total_purchase_value);
+        // Weighted procurement is a capped allocation: no good can use more
+        // cash than its current inventory gap is worth. A single proportional
+        // pass used to over-allocate high-priority goods beyond that cap and
+        // strand the unused cash while other genuine gaps went unfunded. Peel
+        // off capped goods, then redistribute their excess deterministically
+        // among the remaining gaps without changing inventory targets.
+        int64_t remaining_budget = allocated_budget;
+        int64_t remaining_weight = total_weight;
+        while (remaining_budget > 0 && remaining_weight > 0) {
+            bool capped_any = false;
+            for (int32_t good : touched_goods) {
+                const int64_t weight = weight_by_good[good];
+                const int64_t cap = purchase_value_by_good[good];
+                if (weight <= 0 || cap <= 0) continue;
+                const int64_t share = mul_div_sat(
+                    remaining_budget, weight, remaining_weight,
+                    _saturation_count);
+                if (share < cap) continue;
+                budget_by_good[good] = cap;
+                remaining_budget = std::max<int64_t>(
+                    0, remaining_budget - cap);
+                remaining_weight = std::max<int64_t>(
+                    0, remaining_weight - weight);
+                weight_by_good[good] = 0;
+                capped_any = true;
+            }
+            if (!capped_any) break;
+        }
         int64_t weight_prefix = 0;
         int64_t budget_distributed = 0;
         for (int32_t good : touched_goods) {
+            const int64_t weight = weight_by_good[good];
+            if (weight <= 0 || remaining_weight <= 0) continue;
             weight_prefix = saturating_add(
-                weight_prefix, weight_by_good[good], _saturation_count);
-            const int64_t next = total_weight > 0 ? mul_div_sat(
-                allocated_budget, weight_prefix, total_weight, _saturation_count) : 0;
-            budget_by_good[good] = std::max<int64_t>(0, next - budget_distributed);
+                weight_prefix, weight, _saturation_count);
+            const int64_t next = mul_div_sat(
+                remaining_budget, weight_prefix, remaining_weight,
+                _saturation_count);
+            const int64_t share = std::max<int64_t>(
+                0, next - budget_distributed);
+            budget_by_good[good] = std::min<int64_t>(
+                purchase_value_by_good[good], share);
             budget_distributed = next;
+        }
+        int64_t assigned = 0;
+        for (int32_t good : touched_goods) {
+            assigned = saturating_add(
+                assigned, budget_by_good[good], _saturation_count);
+        }
+        int64_t rounding_remainder = std::max<int64_t>(
+            0, allocated_budget - assigned);
+        for (int32_t good : touched_goods) {
+            if (rounding_remainder <= 0) break;
+            const int64_t headroom = std::max<int64_t>(
+                0, purchase_value_by_good[good] - budget_by_good[good]);
+            const int64_t extra = std::min<int64_t>(
+                headroom, rounding_remainder);
+            budget_by_good[good] += extra;
+            rounding_remainder -= extra;
         }
         for (const Offer &offer : offers) {
             BuildingGroup &group = _buildings[offer.group];
             const int64_t issue_value = _good_monetary_issue_values[offer.good];
             const int64_t buy_price = std::max<int64_t>(1, mul_div_sat(
                 _market.price[_market.index(market, offer.good)],
-                _good_merchant_buy_factor_q16[offer.good], Q16_ONE, _saturation_count));
+                std::max<int32_t>(1, buy_factor_by_good[offer.good]),
+                Q16_ONE, _saturation_count));
             int64_t sold = offer.sellable;
             int64_t paid = 0;
             int64_t supported = 0;
@@ -6110,7 +6229,8 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                 _saturation_count);
         }
         const int64_t available = owner_slot >= 0
-            ? std::min(total_due, std::max<int64_t>(0, _population.funds[owner_slot])) : 0;
+            ? std::min(total_due, std::max<int64_t>(
+                0, _population.funds[owner_slot])) : 0;
         int64_t prefix = 0;
         int64_t allocated = 0;
         int64_t owner_paid = 0;
@@ -6198,7 +6318,8 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                     total_due, _buildings[g].last_bonus_due, _saturation_count);
         }
         const int64_t available = owner_slot >= 0
-            ? std::min(total_due, std::max<int64_t>(0, _population.funds[owner_slot])) : 0;
+            ? std::min(total_due, std::max<int64_t>(
+                0, _population.funds[owner_slot])) : 0;
         int64_t prefix = 0;
         int64_t allocated = 0;
         int64_t owner_paid = 0;
@@ -6269,6 +6390,13 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
         const BuildingType &type = _building_types[group.type_id];
         const int64_t building_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
+        const int64_t owner_livelihood = saturating_mul(saturating_mul(
+            living_cost_for_signature(cell, group.owner_signature_id, -1,
+                                      _saturation_count),
+            std::max<int64_t>(0, group.filled_owner), _saturation_count),
+            std::max(1, _epoch_days), _saturation_count);
+        const int64_t viability_operating_cost = saturating_add(
+            group.last_operating_cost, owner_livelihood, _saturation_count);
         for (int32_t i = 0; i < type.input_count; ++i) {
             const ProductionInput &item = _building_inputs[type.input_begin + i];
             const int32_t selected = select_input_candidate(item, false, 0);
@@ -6305,14 +6433,14 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                 prefix = saturating_add(prefix,
                     _building_output_cost_shares_q16[type.output_cost_share_begin + i],
                     _saturation_count);
-                next_allocated = mul_div_sat(group.last_operating_cost, prefix,
+                next_allocated = mul_div_sat(viability_operating_cost, prefix,
                                               Q16_ONE, _saturation_count);
             } else {
                 prefix = saturating_add(prefix, saturating_mul(
                     item.quantity, _good_default_price[item.good_id], _saturation_count),
                     _saturation_count);
                 next_allocated = reference_total > 0 ? mul_div_sat(
-                    group.last_operating_cost, prefix, reference_total,
+                    viability_operating_cost, prefix, reference_total,
                     _saturation_count) : 0;
             }
             const int64_t allocated = std::max<int64_t>(0, next_allocated - allocated_before);
@@ -6323,9 +6451,21 @@ bool NativeEconomyRuntime::run_building_production_cell(int32_t cell, std::strin
                 _saturation_count), _saturation_count);
             const int64_t settlement_unit = mul_div_sat(
                 required, GOODS_SCALE, qty, _saturation_count);
+            const int32_t output_signal = market_signal_index(cell, item.good_id);
+            const int32_t output_flow = trade_flow_index(cell, item.good_id, false);
+            const int64_t output_target = merchant_inventory_target(
+                market, item.good_id, output_signal,
+                output_signal >= 0 ? _market_signals.realized_withdrawal_ema[
+                    output_signal] : 0,
+                output_flow >= 0 ? _trade_flows.export_ema[output_flow] : 0,
+                qty / std::max(1, _epoch_days), _saturation_count);
+            const int32_t buy_factor = effective_merchant_buy_factor_q16(
+                market, item.good_id, output_target,
+                _market.stock[_market.index(market, item.good_id)],
+                _saturation_count);
             const int64_t retail_target = mul_div_sat(
                 settlement_unit, Q16_ONE,
-                std::max<int32_t>(1, _good_merchant_buy_factor_q16[item.good_id]),
+                std::max<int32_t>(1, buy_factor),
                 _saturation_count);
             anchor_weighted[item.good_id] = saturating_add(
                 anchor_weighted[item.good_id], saturating_mul(
@@ -7116,6 +7256,58 @@ int64_t NativeEconomyRuntime::trade_local_stock_target(
     return std::max<int64_t>(0, target);
 }
 
+int64_t NativeEconomyRuntime::profitable_trade_quantity(
+        int32_t source, int32_t destination, int32_t good,
+        int64_t max_quantity, bool relief_route, int32_t &source_price,
+        int32_t &destination_price, int64_t &profit, int64_t &margin_q16,
+        int64_t &sat) const {
+    source_price = destination_price = 0;
+    profit = margin_q16 = 0;
+    if (max_quantity <= 0) return 0;
+    const int64_t source_stock = _market.stock[_market.index(source, good)];
+    const int64_t destination_stock = _market.stock[_market.index(destination, good)];
+    auto quote = [&](int64_t quantity, int32_t &quoted_source,
+                     int32_t &quoted_destination, int64_t &quoted_profit,
+                     int64_t &quoted_margin) {
+        quoted_source = estimate_trade_price(
+            source, good, source_stock - quantity, sat);
+        quoted_destination = estimate_trade_price(
+            destination, good, destination_stock + quantity, sat);
+        const int64_t spread = static_cast<int64_t>(quoted_destination) - quoted_source;
+        quoted_margin = spread <= 0 ? 0 : mul_div_sat(
+            spread, Q16_ONE, std::max<int64_t>(1, quoted_source), sat);
+        quoted_profit = spread <= 0 ? 0 : std::max<int64_t>(1, mul_div_sat(
+            quantity, spread, GOODS_SCALE, sat));
+        return relief_route ? spread >= 0
+            : (spread > 0 && quoted_margin >= _trade_min_margin_q16);
+    };
+    int64_t low = 1;
+    int64_t high = max_quantity;
+    int64_t best = 0;
+    while (low <= high) {
+        const int64_t mid = low + (high - low) / 2;
+        int32_t quoted_source = 0;
+        int32_t quoted_destination = 0;
+        int64_t quoted_profit = 0;
+        int64_t quoted_margin = 0;
+        if (quote(mid, quoted_source, quoted_destination,
+                  quoted_profit, quoted_margin)) {
+            best = mid;
+            source_price = quoted_source;
+            destination_price = quoted_destination;
+            profit = quoted_profit;
+            margin_q16 = quoted_margin;
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+    if (best > 0 && best != max_quantity) {
+        quote(best, source_price, destination_price, profit, margin_q16);
+    }
+    return best;
+}
+
 int64_t NativeEconomyRuntime::merchant_inventory_target(
         int32_t market, int32_t good, int32_t signal_index,
         int64_t realized_withdrawal,
@@ -7128,6 +7320,19 @@ int64_t NativeEconomyRuntime::merchant_inventory_target(
         feasible_daily, _market_signals.business_demand_ema[signal_index], sat);
     int64_t protected_daily = std::max<int64_t>(
         std::max<int64_t>(0, realized_withdrawal), feasible_daily);
+    // Preserve the configured inventory-day target and add a smoothed
+    // producer-income floor. This avoids procurement collapsing solely
+    // because a short demand EMA window dipped while producers stayed active.
+    int64_t smoothed_supply = std::max<int64_t>(0, cold_start_daily_supply);
+    if (signal_index >= 0 && signal_index < static_cast<int32_t>(
+            _market_signals.offered_supply_ema.size())) {
+        smoothed_supply = std::max<int64_t>(smoothed_supply,
+            _market_signals.offered_supply_ema[signal_index]);
+    }
+    const bool survival_good = _survival_food_good_mask[good] != 0 ||
+        _survival_clothing_good_mask[good] != 0;
+    protected_daily = std::max<int64_t>(protected_daily,
+        smoothed_supply / (survival_good ? 2 : 4));
     if (protected_daily == 0 && export_ema <= 0) {
         protected_daily = std::max<int64_t>(0, cold_start_daily_supply);
     }
@@ -7147,6 +7352,24 @@ int64_t NativeEconomyRuntime::merchant_inventory_target(
         target = std::max(target, _production_input_reserve[signal_index]);
     }
     return std::max<int64_t>(0, target);
+}
+
+int32_t NativeEconomyRuntime::effective_merchant_buy_factor_q16(
+        int32_t market, int32_t good, int64_t target, int64_t stock,
+        int64_t &sat) const {
+    if (good < 0 || good >= _market.good_count || market < 0 ||
+        market >= _market.market_count) return 0;
+    const int64_t base = std::clamp<int64_t>(
+        _good_merchant_buy_factor_q16[good], 0, Q16_ONE);
+    int64_t pressure = std::clamp<int64_t>(
+        _market.last_shortage_q16[_market.index(market, good)], 0, Q16_ONE);
+    if (target > 0 && stock < target) {
+        pressure = std::max<int64_t>(pressure, std::clamp<int64_t>(
+            mul_div_sat(target - stock, Q16_ONE, target, sat), 0, Q16_ONE));
+    }
+    return static_cast<int32_t>(std::clamp<int64_t>(saturating_add(
+        base, mul_div_sat(Q16_ONE - base, pressure, Q16_ONE, sat), sat),
+        base, Q16_ONE));
 }
 
 int32_t NativeEconomyRuntime::cached_trade_route_cost(
@@ -7231,32 +7454,42 @@ bool NativeEconomyRuntime::route_trade_source(int32_t source_index, std::string 
     int32_t accepted = 0;
     auto append_candidate = [&](const TradeSignal &destination, int32_t route_cost) {
         int64_t sat = 0;
-        const int64_t quantity = std::min(source.quantity, destination.quantity);
-        if (quantity <= 0 || route_cost <= 0) return false;
-        const int64_t source_stock = _market.stock[
-            _market.index(source.cell, source.good)];
-        const int64_t destination_stock = _market.stock[
-            _market.index(destination.cell, source.good)];
-        const int32_t source_price = estimate_trade_price(
-            source.cell, source.good, source_stock - quantity, sat);
-        const int32_t destination_price = estimate_trade_price(
-            destination.cell, source.good, destination_stock + quantity, sat);
-        const int64_t spread = static_cast<int64_t>(destination_price) - source_price;
-        const int64_t margin_q16 = spread <= 0 ? 0 : mul_div_sat(
-            spread, Q16_ONE, std::max<int64_t>(1, source_price), sat);
-        int64_t profit = spread <= 0 ? 0 : mul_div_sat(
-            quantity, spread, GOODS_SCALE, sat);
-        const int64_t load = mul_div_sat(quantity,
-            _good_transport_load_per_unit_q16[source.good], GOODS_SCALE, sat);
-        const int64_t capacity = saturating_mul(load, route_cost, sat);
+        const int64_t requested_quantity = std::min(
+            source.quantity, destination.quantity);
+        if (requested_quantity <= 0 || route_cost <= 0) return false;
         const int64_t relief_q16 = trade_relief_pressure_q16(
             destination.cell, source.good, sat);
-        const bool relief_route = relief_q16 >= Q16_ONE / 8 && spread >= 0;
-        if ((!relief_route && (margin_q16 < _trade_min_margin_q16 || profit <= 0)) ||
-            capacity <= 0) {
+        const bool relief_route = relief_q16 >= Q16_ONE / 8;
+        int32_t source_price = 0;
+        int32_t destination_price = 0;
+        int64_t profit = 0;
+        int64_t margin_q16 = 0;
+        const int64_t quantity = profitable_trade_quantity(
+            source.cell, destination.cell, source.good, requested_quantity,
+            relief_route, source_price, destination_price, profit,
+            margin_q16, sat);
+        if (quantity <= 0) {
+            int32_t unit_source = 0;
+            int32_t unit_destination = 0;
+            int64_t unit_profit = 0;
+            int64_t unit_margin = 0;
+            profitable_trade_quantity(source.cell, destination.cell, source.good,
+                1, true, unit_source, unit_destination, unit_profit,
+                unit_margin, sat);
+            if (unit_destination <= unit_source) ++_trade_rejected_no_spread;
+            else ++_trade_rejected_margin;
             ++_trade_rejected_profit;
             return false;
         }
+        if (quantity < requested_quantity) ++_trade_quantity_profit_clips;
+        const int64_t load = mul_div_sat(quantity,
+            _good_transport_load_per_unit_q16[source.good], GOODS_SCALE, sat);
+        const int64_t capacity = saturating_mul(load, route_cost, sat);
+        if (capacity <= 0) {
+            ++_trade_rejected_profit;
+            return false;
+        }
+        if (relief_route) ++_trade_relief_candidates;
         if (relief_route && profit <= 0) {
             profit = std::max<int64_t>(1, mul_div_sat(
                 mul_div_sat(quantity, std::max<int64_t>(1, source_price),
@@ -7437,14 +7670,43 @@ bool NativeEconomyRuntime::run_trade_planner_slice(
                 [](const TradeSignal &a, const TradeSignal &b) {
                     if (a.country != b.country) return a.country < b.country;
                     if (a.good != b.good) return a.good < b.good;
+                    if (a.price != b.price) return a.price < b.price;
+                    if (a.quantity != b.quantity) return a.quantity > b.quantity;
                     return a.cell < b.cell;
                 });
             std::stable_sort(_trade_plan.destinations.begin(), _trade_plan.destinations.end(),
                 [](const TradeSignal &a, const TradeSignal &b) {
                     if (a.country != b.country) return a.country < b.country;
                     if (a.good != b.good) return a.good < b.good;
+                    if (a.price != b.price) return a.price > b.price;
+                    if (a.quantity != b.quantity) return a.quantity > b.quantity;
                     return a.cell < b.cell;
                 });
+            // A dense world can expose thousands of tiny surplus cells for one
+            // good. Routing every source makes a five-day planner take years to
+            // complete while adding little economic value. Keep the strongest
+            // deterministic per-country/good pools, then let the existing
+            // nearest-target Dijkstra and profit clipping choose actual routes.
+            auto keep_group_limit = [](std::vector<TradeSignal> &signals,
+                                       int32_t limit) {
+                if (signals.empty() || limit <= 0) return;
+                std::vector<TradeSignal> kept;
+                kept.reserve(signals.size());
+                int32_t last_country = std::numeric_limits<int32_t>::min();
+                int32_t last_good = std::numeric_limits<int32_t>::min();
+                int32_t count = 0;
+                for (const TradeSignal &signal : signals) {
+                    if (signal.country != last_country || signal.good != last_good) {
+                        last_country = signal.country;
+                        last_good = signal.good;
+                        count = 0;
+                    }
+                    if (count++ < limit) kept.push_back(signal);
+                }
+                signals.swap(kept);
+            };
+            keep_group_limit(_trade_plan.sources, 4);
+            keep_group_limit(_trade_plan.destinations, 8);
             _trade_plan.phase = TradePlanStore::ROUTE;
             _trade_plan.route_cursor = 0;
         }
@@ -7695,6 +7957,29 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
 
 bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
     const auto started = Clock::now();
+    // A full global route scan may span hundreds of fixed five-day cycles on
+    // a populated map. Publish the deterministic chunk accumulated since the
+    // prior settlement instead of withholding every profitable route until
+    // the final source is visited. Dispatch revalidates price, stock, cash,
+    // capacity and topology below, so partial publication remains conservative
+    // while the stable route cursor provides eventual fairness.
+    if (_trade_plan.ready_candidates.empty() &&
+        !_trade_plan.working_candidates.empty()) {
+        _trade_plan.ready_candidates.swap(_trade_plan.working_candidates);
+        std::stable_sort(_trade_plan.ready_candidates.begin(),
+            _trade_plan.ready_candidates.end(), [](const TradeCandidate &a,
+                                                    const TradeCandidate &b) {
+                if (a.density_q16 != b.density_q16)
+                    return a.density_q16 > b.density_q16;
+                if (a.expected_profit != b.expected_profit)
+                    return a.expected_profit > b.expected_profit;
+                if (a.route_cost != b.route_cost) return a.route_cost < b.route_cost;
+                if (a.source != b.source) return a.source < b.source;
+                if (a.destination != b.destination)
+                    return a.destination < b.destination;
+                return a.good < b.good;
+            });
+    }
     std::vector<int64_t> country_capacity(static_cast<size_t>(
         std::max(0, _epoch_country_count)), 0);
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
@@ -7787,22 +8072,24 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             ++_trade_rejected_cash;
             continue;
         }
-        clipped.source_price = estimate_trade_price(candidate.source, candidate.good,
-            _market.stock[market_index] - clipped.quantity, sat);
-        clipped.destination_price = estimate_trade_price(
-            candidate.destination, candidate.good,
-            _market.stock[destination_index] + clipped.quantity, sat);
-        const int64_t spread = static_cast<int64_t>(clipped.destination_price) -
-            clipped.source_price;
-        const int64_t margin_q16 = spread <= 0 ? 0 : mul_div_sat(
-            spread, Q16_ONE, std::max<int64_t>(1, clipped.source_price), sat);
-        clipped.expected_profit = spread <= 0 ? 0 : mul_div_sat(
-            clipped.quantity, spread, GOODS_SCALE, sat);
-        clipped.capacity_work = mul_div_sat(
-            clipped.quantity, unit_work, GOODS_SCALE, sat);
         const int64_t relief_q16 = trade_relief_pressure_q16(
             candidate.destination, candidate.good, sat);
-        const bool relief_route = relief_q16 >= Q16_ONE / 8 && spread >= 0;
+        const bool relief_route = relief_q16 >= Q16_ONE / 8;
+        const int64_t before_profit_clip = clipped.quantity;
+        int64_t margin_q16 = 0;
+        clipped.quantity = profitable_trade_quantity(
+            candidate.source, candidate.destination, candidate.good,
+            clipped.quantity, relief_route, clipped.source_price,
+            clipped.destination_price, clipped.expected_profit,
+            margin_q16, sat);
+        if (clipped.quantity <= 0) {
+            ++_trade_rejected_profit;
+            ++_trade_rejected_margin;
+            continue;
+        }
+        if (clipped.quantity < before_profit_clip) ++_trade_quantity_profit_clips;
+        clipped.capacity_work = mul_div_sat(
+            clipped.quantity, unit_work, GOODS_SCALE, sat);
         if (relief_route && clipped.expected_profit <= 0) {
             clipped.expected_profit = std::max<int64_t>(1, mul_div_sat(
                 mul_div_sat(clipped.quantity, std::max<int64_t>(1, clipped.source_price),
@@ -7811,8 +8098,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         }
         clipped.density_q16 = clipped.capacity_work <= 0 ? 0 : mul_div_sat(
             clipped.expected_profit, Q16_ONE, clipped.capacity_work, sat);
-        if ((!relief_route && (margin_q16 < _trade_min_margin_q16 ||
-                clipped.expected_profit <= 0)) || clipped.capacity_work <= 0) {
+        if (clipped.capacity_work <= 0) {
             ++_trade_rejected_profit;
             continue;
         }
@@ -8079,6 +8365,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _staging_cells = _committed_cells;
     _resource_remaining = _resource_snapshot;
     _resource_deltas.assign(_resource_snapshot.size(), 0);
+    if (_last_published_resource_deltas.size() != _resource_snapshot.size())
+        _last_published_resource_deltas.assign(_resource_snapshot.size(), 0);
     _resource_deltas_ready = false;
 }
 
@@ -10198,9 +10486,10 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_building_role_base_wage_due); cap(_building_role_base_wage_paid);
     cap(_building_role_bonus_due); cap(_building_role_bonus_paid);
     cap(_pending_construction); cap(_resource_snapshot); cap(_resource_remaining);
-    cap(_resource_deltas); cap(_building_elevation_q16); cap(_building_terrain);
+    cap(_resource_deltas); cap(_last_published_resource_deltas);
+    cap(_building_elevation_q16); cap(_building_terrain);
     cap(_building_landform); cap(_building_vegetation); cap(_building_is_water);
-    cap(_building_has_river); cap(_building_neighbors); cap(_resource_adjacent_access);
+    cap(_building_has_river); cap(_building_neighbors);
     bytes += trace_memory_bytes();
     return bytes;
 }
@@ -10371,6 +10660,10 @@ Dictionary NativeEconomyRuntime::report() const {
     out["trade_candidates_generated"] = _trade_candidates_generated;
     out["trade_candidates_accepted"] = _trade_candidates_accepted;
     out["trade_rejected_profit"] = _trade_rejected_profit;
+    out["trade_rejected_no_spread"] = _trade_rejected_no_spread;
+    out["trade_rejected_margin"] = _trade_rejected_margin;
+    out["trade_quantity_profit_clips"] = _trade_quantity_profit_clips;
+    out["trade_relief_candidates"] = _trade_relief_candidates;
     out["trade_rejected_capacity"] = _trade_rejected_capacity;
     out["trade_rejected_stock"] = _trade_rejected_stock;
     out["trade_rejected_cash"] = _trade_rejected_cash;
@@ -10469,6 +10762,7 @@ Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const
     out["epoch_expense"] = summary.epoch_expense;
     out["cohort_count"] = summary.cohort_count;
     out["satisfaction_q16"] = summary.satisfaction_q16;
+    out["survival_satisfaction_q16"] = summary.satisfaction_q16;
     out["epoch_id"] = _epoch_id;
     return out;
 }
@@ -10512,6 +10806,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["epoch_expense"] = summary.epoch_expense;
     out["cohort_count"] = summary.cohort_count;
     out["satisfaction_q16"] = summary.satisfaction_q16;
+    out["survival_satisfaction_q16"] = summary.satisfaction_q16;
     out["epoch_id"] = _epoch_id;
     PackedInt64Array handles;
     PackedInt32Array signatures;
@@ -10560,6 +10855,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["epoch_expense_by_cohort"] = expenses;
     out["income_ema_by_cohort"] = income_ema;
     out["satisfaction_by_cohort_q16"] = satisfaction;
+    out["survival_satisfaction_by_cohort_q16"] = satisfaction;
     out["worst_need_ids"] = worst_need_ids;
     out["merchant_flags"] = merchant_flags;
     out["owner_employed_by_cohort"] = owner_employed;
@@ -11572,10 +11868,10 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _building_is_water.clear();
     _building_has_river.clear();
     _building_neighbors.clear();
-    _resource_adjacent_access.clear();
     _resource_snapshot.clear();
     _resource_remaining.clear();
     _resource_deltas.clear();
+    _last_published_resource_deltas.clear();
     _epoch_cell_country.clear();
     _epoch_country_technologies.clear();
     _epoch_country_count = 0;

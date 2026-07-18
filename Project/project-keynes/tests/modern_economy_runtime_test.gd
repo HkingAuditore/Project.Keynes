@@ -85,7 +85,7 @@ func _run() -> void:
 	_expect("gold issues configured value", gold_accepted > 0 and
 		gold_issued == gold_accepted * 800000 / 1000)
 	_expect("silver issues configured value", silver_accepted > 0 and
-		silver_issued == silver_accepted * 10000 / 1000)
+		silver_issued == silver_accepted * 50000 / 1000)
 	_expect("only accepted bullion contributes monetary issue",
 		int(report.get("bullion_money_issued", 0)) == gold_issued + silver_issued)
 	var flow_produced := int(report.get("cycle_flow_produced", 0))
@@ -97,9 +97,10 @@ func _run() -> void:
 	_expect("all ledgers conserve exactly", int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and int(report.get("goods_error", 1)) == 0)
 	var market: Dictionary = ext.get_market_cell_snapshot(0)
-	_expect("accepted bullion enters merchant inventory",
-		_good_value(market, "stock", "gold") == gold_accepted and
-		_good_value(market, "stock", "silver") == silver_accepted)
+	_expect("accepted bullion is consumed by monetary issuance",
+		_good_value(market, "stock", "gold") == 0 and
+		_good_value(market, "stock", "silver") == 0 and
+		int(report.get("bullion_stock_consumed", 0)) == gold_accepted + silver_accepted)
 	_expect("cycle-flow inventory does not cross boundary", _good_value(market, "stock", "electricity") == 0)
 	_expect("market snapshot exposes metadata",
 		(market.good_storage_modes as PackedInt32Array)[goods.find("electricity")] == 1 and
@@ -228,6 +229,9 @@ func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> v
 		_building_last_output(stone_buildings, gathering) > 0)
 
 	_grant_technology(ext, compiled, "tech.pottery", 2, 1)
+	# Employment migration may replace the cohort slot and therefore its
+	# generation-tagged handle; commands must target the current owner handle.
+	forager_handle = _handle_for_signature(ext.get_population_cell_snapshot(0), forager)
 	_expect("obsolete stone build command queues for native rejection", bool(
 		ext.submit_economy_commands(_build_command(2, 2, forager_handle, gathering)).get("ok", false)))
 	var pottery_report := _run_day(ext, 2)

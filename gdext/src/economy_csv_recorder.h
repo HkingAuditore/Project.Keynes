@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 8;
+    static constexpr int32_t SCHEMA_VERSION = 9;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -144,6 +144,10 @@ public:
         int64_t trade_candidates_generated = 0;
         int64_t trade_candidates_accepted = 0;
         int64_t trade_rejected_profit = 0;
+        int64_t trade_rejected_no_spread = 0;
+        int64_t trade_rejected_margin = 0;
+        int64_t trade_quantity_profit_clips = 0;
+        int64_t trade_relief_candidates = 0;
         int64_t trade_rejected_capacity = 0;
         int64_t trade_rejected_stock = 0;
         int64_t trade_rejected_cash = 0;
@@ -220,10 +224,22 @@ public:
         int64_t last_base_wages_paid = 0;
         int64_t last_bonus_due = 0;
         int64_t last_bonus_paid = 0;
+        int64_t owner_living_cost_per_day = 0;
+        int64_t owner_livelihood_required = 0;
+        int64_t viability_operating_cost = 0;
+        int64_t viability_income_gap = 0;
         int64_t construction_ready_day = 0;
     };
 
-    struct ResourceRow { CommonCell c; int32_t resource_index = -1; float reserve = 0.0f; };
+    struct ResourceRow {
+        CommonCell c;
+        int32_t resource_index = -1;
+        float opening_reserve = 0.0f;
+        float natural_net_change = 0.0f;
+        float artificial_change_applied = 0.0f;
+        float artificial_change_pending = 0.0f;
+        float reserve = 0.0f;
+    };
 
     struct MarketRow {
         CommonCell c;
@@ -295,6 +311,12 @@ private:
     std::vector<int64_t> _good_monetary_issue_values;
     std::vector<int32_t> _sample_cells;
     std::vector<int32_t> _sample_cell_positions;
+    // Recorder resource rows follow the caller's slot order, while native
+    // building deltas follow the economy catalog's stable-id order.
+    std::vector<int32_t> _resource_runtime_indices;
+    std::vector<float> _previous_resource_reserve;
+    std::vector<int64_t> _pending_resource_artificial;
+    std::vector<uint8_t> _resource_history_valid;
     std::array<Batch, 2> _buffers;
     std::array<BufferState, 2> _buffer_states{{FREE, FREE}};
     std::deque<int32_t> _ready;

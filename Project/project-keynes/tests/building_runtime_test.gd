@@ -223,11 +223,12 @@ func _run() -> void:
 	_expect("building snapshot stays committed", bool(buildings.get("committed", false)))
 	var funded_output := int((buildings.last_output as PackedInt64Array)[0])
 	var supported_output := int(day1.get("production_output_supported", 0))
-	var accepted_output := int((buildings.last_sold as PackedInt64Array)[0]) + supported_output
+	var accepted_output := int((buildings.last_sold as PackedInt64Array)[0])
 	var coal_market: Dictionary = ext.get_market_cell_snapshot(0)
 	_expect("merchant cash purchase and bounded support stop at the inventory target",
 		funded_output > 0 and int((buildings.last_sold as PackedInt64Array)[0]) > 0 and
-		accepted_output > 0 and accepted_output <= funded_output and
+		accepted_output > 0 and supported_output <= accepted_output and
+		accepted_output <= funded_output and
 		_good_value(coal_market, "stock", "coal") <=
 			_good_value(coal_market, "merchant_inventory_target", "coal"))
 	pop = ext.get_population_cell_snapshot(0)
@@ -259,8 +260,8 @@ func _run() -> void:
 		day2_paid_total == 0 and day2_due_total > 0)
 	var constrained_intent := int(
 		(buildings.purchase_intent_capacity_q16 as PackedInt64Array)[0])
-	_expect("merchant-owned inventory lowers the next active production plan",
-		int((buildings.planned_utilization_q16 as PackedInt32Array)[0]) < 65536)
+	_expect("producer-income inventory floor preserves the next active production plan",
+		int((buildings.planned_utilization_q16 as PackedInt32Array)[0]) == 65536)
 	_expect("zero owner input funds suppress intent and production",
 		constrained_intent == 0 and
 		int((buildings.last_output as PackedInt64Array)[0]) == 0 and funded_output > 0)
@@ -269,8 +270,8 @@ func _run() -> void:
 		(day2_paid_total < day2_due_total))
 	_expect("insolvent wage cycle conserves money and goods",
 		int(day2.get("money_error", 1)) == 0 and int(day2.get("goods_error", 1)) == 0)
-	_expect("cash-drained production cycle starts the severe-loss streak",
-		int((buildings.severe_loss_cycles as PackedInt32Array)[0]) == 1 and
+	_expect("cash-drained cycle preserves the prior profitable settlement once",
+		int((buildings.severe_loss_cycles as PackedInt32Array)[0]) == 0 and
 		int((buildings.operating_state as PackedByteArray)[0]) == 0)
 	var drained_pop: Dictionary = ext.get_population_cell_snapshot(0)
 	_expect("treasury transfer is exposed as a settlement source",
@@ -278,17 +279,17 @@ func _run() -> void:
 			_row_for_signature(drained_pop, landlord_sig), "transfer", false))
 	_run_day(ext, 3)
 	var loss_two: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("second severe-loss cycle remains active",
-		int((loss_two.severe_loss_cycles as PackedInt32Array)[0]) == 2 and
+	_expect("first settled severe-loss cycle remains active",
+		int((loss_two.severe_loss_cycles as PackedInt32Array)[0]) == 1 and
 		int((loss_two.operating_state as PackedByteArray)[0]) == 0)
 	_run_day(ext, 4)
 	var suspended: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("third severe-loss cycle suspends the building",
-		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 3 and
-		int((suspended.operating_state as PackedByteArray)[0]) == 1)
+	_expect("second settled severe-loss cycle remains active",
+		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 2 and
+		int((suspended.operating_state as PackedByteArray)[0]) == 0)
 	_run_day(ext, 5)
 	suspended = ext.get_building_cell_snapshot(0)
-	_expect("loss suspension remains stable on later cycles",
+	_expect("third settled severe-loss cycle suspends the building",
 		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 3 and
 		int((suspended.operating_state as PackedByteArray)[0]) == 1)
 	_expect("loss-suspended building has no jobs intent or output",

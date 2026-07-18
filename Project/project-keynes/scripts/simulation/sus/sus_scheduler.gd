@@ -216,6 +216,7 @@ func _descriptor_from_job(job: SusJob) -> Dictionary:
 		"priority": int(job.priority),
 		"must_run": bool(job.must_run),
 		"use_job_should_run": bool(job.use_job_should_run),
+		"use_job_deadline_critical": bool(job.use_job_deadline_critical),
 		"starvation_threshold": int(job.starvation_threshold),
 		"max_slices_per_tick": int(job.max_slices_per_tick),
 		"slice_budget_ms": float(job.slice_budget_ms),
@@ -348,6 +349,10 @@ func tick(ctx: SusTickContext) -> void:
 			"tick_index": ctx.tick_index,
 			"source": ctx.source,
 		}
+		var deadline_critical := bool(job.use_job_deadline_critical) and \
+			bool(job.is_deadline_critical(ctx))
+		report["deadline_critical"] = deadline_critical
+		report["deadline_budget_bypass"] = false
 
 		# Budget exhausted: skip starting any new job (already-started slices
 		# in earlier loop iterations have already finished this tick — we don't
@@ -362,20 +367,26 @@ func tick(ctx: SusTickContext) -> void:
 		var starving: bool = not strict_budget_enabled \
 				and job.starvation_threshold > 0 \
 				and job._starvation_count >= job.starvation_threshold
-		if strict_budget_enabled and optional_jobs_ran > 0 and not bool(job.must_run):
+		if strict_budget_enabled and optional_jobs_ran > 0 and \
+				not bool(job.must_run) and not deadline_critical:
 			report["skipped_reason"] = "strict_budget_one_job"
 			_last_report[job.id] = report
 			_record_skipped(job.id, "strict_budget_one_job")
 			job._starvation_count += 1
 			jobs_skipped += 1
 			continue
-		if elapsed_us_now >= budget_us and not bool(job.must_run) and not starving:
+		if elapsed_us_now >= budget_us and not bool(job.must_run) and \
+				not starving and not deadline_critical:
 			report["skipped_reason"] = "frame_budget_exhausted"
 			_last_report[job.id] = report
 			_record_skipped(job.id, "frame_budget_exhausted")
 			job._starvation_count += 1
 			jobs_skipped += 1
 			continue
+		if deadline_critical and not bool(job.must_run) and (
+				(strict_budget_enabled and optional_jobs_ran > 0) or
+				elapsed_us_now >= budget_us):
+			report["deadline_budget_bypass"] = true
 
 		# Policy gate.
 		if not job.should_run(ctx):
