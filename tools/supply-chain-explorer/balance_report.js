@@ -6,7 +6,7 @@ const SC = require('./parser.js');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const projectRoot = path.join(repoRoot, 'Project', 'project-keynes');
-const data = { buildings: [], goods: [], resources: [], professions: [], plans: [], needs: [] };
+const data = { buildings: [], goods: [], resources: [], professions: [], plans: [], needs: [], economies: [] };
 
 function walk(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -15,7 +15,7 @@ function walk(directory) {
     else if (entry.isFile() && entry.name.endsWith('.tres')) {
       const parsed = SC.classifyAndParse(entry.name, fs.readFileSync(fullPath, 'utf8'));
       if (parsed && parsed.error) throw new Error(`${fullPath}: ${parsed.error}`);
-      if (parsed && parsed.record) data[`${parsed.type}s`].push(parsed.record);
+      if (parsed && parsed.record) data[SC.collectionKey(parsed.type)].push(parsed.record);
     }
   }
 }

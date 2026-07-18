@@ -7,7 +7,7 @@ const SC = require('./parser.js');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const projectRoot = path.join(repoRoot, 'Project', 'project-keynes');
-const data = { buildings: [], goods: [], resources: [], professions: [], plans: [], needs: [] };
+const data = { buildings: [], goods: [], resources: [], professions: [], plans: [], needs: [], economies: [] };
 
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -16,7 +16,7 @@ function walk(dir) {
     else if (entry.isFile() && entry.name.endsWith('.tres')) {
       const parsed = SC.classifyAndParse(entry.name, fs.readFileSync(full, 'utf8'));
       if (parsed && parsed.error) throw new Error(`${full}: ${parsed.error}`);
-      if (parsed && parsed.record) data[parsed.type + 's'].push(parsed.record);
+      if (parsed && parsed.record) data[SC.collectionKey(parsed.type)].push(parsed.record);
     }
   }
 }
@@ -24,6 +24,7 @@ function walk(dir) {
 walk(path.join(projectRoot, 'data'));
 const taxonomy = fs.readFileSync(path.join(projectRoot, 'scripts', 'economy', 'technology_taxonomy.gd'), 'utf8');
 const model = SC.buildModel(Object.assign(data, { eras: SC.parseEraFile(taxonomy) }));
+const compiled = SC.compileAnalyticalModel(model);
 const scenario = SC.computeBalanceScenario(model, {
   eraOrder: model.eras.length - 1,
   cumulative: true,
@@ -44,6 +45,8 @@ assert.ok(scenario.goods.length > 0);
 assert.ok(scenario.buildings.every((row) => Number.isFinite(row.inputCost) && Number.isFinite(row.surplus)));
 assert.ok(scenario.professions.every((row) => Number.isFinite(row.perPersonCost)));
 assert.ok(scenario.goods.every((row) => Number.isFinite(row.supply) && Number.isFinite(row.demand)));
+assert.equal(compiled.schema, 'project-keynes-economy-balance-model');
+assert.equal(compiled.resources.find((row) => row.id === 'wild_game').ecology_growth_rate, 0.001495);
 
 for (let eraOrder = 0; eraOrder < model.eras.length; eraOrder++) {
   const eraScenario = SC.computeBalanceScenario(model, {

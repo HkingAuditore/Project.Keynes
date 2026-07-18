@@ -70,4 +70,18 @@ assert.equal(byGood.efficient_feed.buildingDemand, 500);
 assert.equal(byGood.grain.householdDemand, 1500);
 assert.equal(byGood.meal.householdDemand, 1500);
 
+const economy = SC.classifyAndParse('default_economy.tres', `
+[gd_resource type="Resource" script_class="EconomyProfile" load_steps=2 format=3]
+[resource]
+market_cycle_days = 7
+`);
+assert.equal(economy.type, 'economy');
+assert.equal(economy.record.market_cycle_days, 7);
+assert.equal(SC.collectionKey(economy.type), 'economies');
+
+const compiled = SC.compileAnalyticalModel(model);
+assert.equal(compiled.schema_version, 1);
+assert.equal(compiled.buildings[0].id, 'factory');
+assert.equal(compiled.scales.goods, 1000);
+
 console.log('supply-chain-explorer parser tests passed');

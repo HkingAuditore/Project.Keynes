@@ -1,0 +1,416 @@
+{
+  "schema": "project-keynes-economy-balance-report",
+  "schema_version": 1,
+  "method": {
+    "engine": "offline_catalog_math",
+    "godot_started": false,
+    "resource_formula": "current IMEX / Beverton-Holt profile formula",
+    "resource_topology": "local_cell_only",
+    "runtime_parity": false,
+    "limitations": [
+      "不包含 NativeEconomyRuntime 的冻结周期、整数取整、EMA 历史、商人现金上限和实际贸易拓扑",
+      "配方候选在当前价格下选择最低有效成本物资",
+      "阶层满意度是必要生活费预算覆盖的设计时近似值"
+    ]
+  },
+  "scenario": {
+    "name": "stone_age_reference_cell",
+    "era": "stone",
+    "cumulative": true,
+    "latest_upgrade_only": true,
+    "default_building_count": 0,
+    "building_counts": {
+      "stone_age_hunting_camp": 1
+    },
+    "solve_utilization": true,
+    "target_utilization": 0.65,
+    "utilization": 0.65,
+    "building_utilization": {},
+    "sell_through": 0.8,
+    "profession_populations": {},
+    "prices": {},
+    "trade_enabled": false,
+    "resource_context": {
+      "default": {
+        "temperature": 0.5,
+        "moisture": 0.5,
+        "reserve_fraction_of_capacity": 0.8
+      },
+      "wild_game": {
+        "reserve": 12065,
+        "temperature": 0.52,
+        "moisture": 0.55
+      }
+    },
+    "projection_days": [
+      365,
+      730,
+      3650
+    ],
+    "corridors": {
+      "renewable_replacement_warn": 0.9,
+      "renewable_replacement_good": 1.0,
+      "goods_coverage_warn": 0.9,
+      "goods_coverage_excess": 2.0,
+      "household_essential_coverage_warn": 1.0,
+      "inventory_cover_cycles_min": 1.0
+    }
+  },
+  "summary": {
+    "verdict": "fail",
+    "failures": 2,
+    "warnings": 7,
+    "active_buildings": 1,
+    "active_goods": 9,
+    "active_cohorts": 1,
+    "active_resources": 1
+  },
+  "solver": {
+    "attempted": true,
+    "success": true,
+    "message": "`ftol` termination condition is satisfied.",
+    "cost": 4.656545734003788,
+    "optimality": 3.2436442310989404e-06,
+    "evaluations": 7,
+    "residual_norm": 3.051735812289061
+  },
+  "audit": [
+    {
+      "severity": "warn",
+      "code": "no_local_producer",
+      "entity": "chipped_stone_tools",
+      "message": "场景存在需求但没有本地生产建筑"
+    },
+    {
+      "severity": "warn",
+      "code": "no_local_producer",
+      "entity": "cloth",
+      "message": "场景存在需求但没有本地生产建筑"
+    },
+    {
+      "severity": "warn",
+      "code": "no_local_producer",
+      "entity": "fish",
+      "message": "场景存在需求但没有本地生产建筑"
+    },
+    {
+      "severity": "warn",
+      "code": "no_local_producer",
+      "entity": "gathered_plants",
+      "message": "场景存在需求但没有本地生产建筑"
+    },
+    {
+      "severity": "warn",
+      "code": "no_local_producer",
+      "entity": "logs",
+      "message": "场景存在需求但没有本地生产建筑"
+    },
+    {
+      "severity": "warn",
+      "code": "no_local_producer",
+      "entity": "processed_food",
+      "message": "场景存在需求但没有本地生产建筑"
+    }
+  ],
+  "buildings": [
+    {
+      "id": "stone_age_hunting_camp",
+      "name": "狩猎营地",
+      "count": 1.0,
+      "utilization": 0.6075770307705507,
+      "accepted_revenue": 17967.890720403266,
+      "retail_output_value": 23642.037421343666,
+      "input_cost": 54.681932769349565,
+      "wages": 0.0,
+      "owner_living_cost": 19452.0,
+      "operating_cost": 54.681932769349565,
+      "surplus_after_owner_living": -1538.7912123660826,
+      "margin": 0.9969566860339787,
+      "target_margin": 0.149993896484375,
+      "break_even_sell_through": 0.8685129372751015,
+      "sustainable": false,
+      "is_monetary_issue": false,
+      "selected_inputs": [
+        {
+          "good": "chipped_stone_tools",
+          "quantity": 6.075770307705507
+        }
+      ]
+    }
+  ],
+  "goods": [
+    {
+      "id": "chipped_stone_tools",
+      "name": "打制石器",
+      "supply": 0.0,
+      "full_output": 0.0,
+      "business_demand": 6.075770307705507,
+      "household_demand": 4.0,
+      "demand": 10.075770307705508,
+      "net": -10.075770307705508,
+      "coverage": 0.0
+    },
+    {
+      "id": "cloth",
+      "name": "布料",
+      "supply": 0.0,
+      "full_output": 0.0,
+      "business_demand": 0.0,
+      "household_demand": 3.0,
+      "demand": 3.0,
+      "net": -3.0,
+      "coverage": 0.0
+    },
+    {
+      "id": "fish",
+      "name": "鱼类",
+      "supply": 0.0,
+      "full_output": 0.0,
+      "business_demand": 0.0,
+      "household_demand": 171.0,
+      "demand": 171.0,
+      "net": -171.0,
+      "coverage": 0.0
+    },
+    {
+      "id": "fur",
+      "name": "毛皮",
+      "supply": 11.179417366178134,
+      "full_output": 13.974271707722666,
+      "business_demand": 0.0,
+      "household_demand": 3.0,
+      "demand": 3.0,
+      "net": 8.179417366178134,
+      "coverage": 3.7264724553927113
+    },
+    {
+      "id": "game_meat",
+      "name": "野味",
+      "supply": 1812.0377365700906,
+      "full_output": 2265.047170712613,
+      "business_demand": 0.0,
+      "household_demand": 171.0,
+      "demand": 171.0,
+      "net": 1641.0377365700906,
+      "coverage": 10.596711909766611
+    },
+    {
+      "id": "gathered_plants",
+      "name": "采集植物食物",
+      "supply": 0.0,
+      "full_output": 0.0,
+      "business_demand": 0.0,
+      "household_demand": 1046.0,
+      "demand": 1046.0,
+      "net": -1046.0,
+      "coverage": 0.0
+    },
+    {
+      "id": "logs",
+      "name": "原木",
+      "supply": 0.0,
+      "full_output": 0.0,
+      "business_demand": 0.0,
+      "household_demand": 152.0,
+      "demand": 152.0,
+      "net": -152.0,
+      "coverage": 0.0
+    },
+    {
+      "id": "processed_food",
+      "name": "加工食品",
+      "supply": 0.0,
+      "full_output": 0.0,
+      "business_demand": 0.0,
+      "household_demand": 570.0,
+      "demand": 570.0,
+      "net": -570.0,
+      "coverage": 0.0
+    },
+    {
+      "id": "raw_hide",
+      "name": "生皮",
+      "supply": 21.872773107739828,
+      "full_output": 27.340966384674783,
+      "business_demand": 0.0,
+      "household_demand": 0.0,
+      "demand": 0.0,
+      "net": 21.872773107739828,
+      "coverage": "Infinity"
+    }
+  ],
+  "cohorts": [
+    {
+      "id": "hunter",
+      "name": "猎人",
+      "population": 2.0,
+      "income": 17913.208787633917,
+      "expense": 19470.0,
+      "essential_expense": 19452.0,
+      "savings": -1556.7912123660826,
+      "savings_rate": -0.08690744527249564,
+      "essential_coverage": 0.9208929049780957,
+      "reference_satisfaction": 0.9208929049780957,
+      "owner_loss": 0.0,
+      "has_plan": true
+    }
+  ],
+  "resources": [
+    {
+      "id": "wild_game",
+      "name": "野生动物",
+      "renewable": true,
+      "status": "fail",
+      "reason": "当前储量下自然补充不足以覆盖本格采集",
+      "initial_reserve": 12065.0,
+      "climate_fit": 1.0,
+      "runtime_fit": 1.0,
+      "harvest_per_day": 434.41757700094377,
+      "generation_per_day": 0.0,
+      "natural_change_at_initial_per_day": 17.22244313734518,
+      "replacement_ratio_at_initial": 0.039644904002831736,
+      "max_sustainable_harvest_per_day": 45.81650591753714,
+      "equilibria": [
+        {
+          "reserve": 1.0014949875230417,
+          "derivative": 0.0,
+          "stable": true
+        }
+      ],
+      "projections": {
+        "365": {
+          "reserve": 1.0014949875230417,
+          "change": -12063.998505012478,
+          "change_ratio": -0.9999169917125966,
+          "natural_change": 597.3205008397547,
+          "artificial_change": -12661.319005851941
+        },
+        "730": {
+          "reserve": 1.0014949875230417,
+          "change": -12063.998505012478,
+          "change_ratio": -0.9999169917125966,
+          "natural_change": 962.8661712856767,
+          "artificial_change": -13026.864676297531
+        },
+        "3650": {
+          "reserve": 1.0014949875230417,
+          "change": -12063.998505012478,
+          "change_ratio": -0.9999169917125966,
+          "natural_change": 3887.231534853053,
+          "artificial_change": -15951.230039862252
+        }
+      },
+      "exhausted_day": null
+    }
+  ],
+  "market_stability": {
+    "model": "本格库存—价格二状态参考线性化；不等同于运行时 EMA/资金/贸易回放",
+    "maximum_spectral_radius": 0.9992784107816075,
+    "locally_stable": true,
+    "goods": [
+      {
+        "id": "chipped_stone_tools",
+        "target_days": 30.0,
+        "inventory_cover_cycles": 6.0,
+        "spectral_radius": 0.9954239464424118,
+        "locally_stable": true
+      },
+      {
+        "id": "cloth",
+        "target_days": 30.0,
+        "inventory_cover_cycles": 6.0,
+        "spectral_radius": 0.9988984264690449,
+        "locally_stable": true
+      },
+      {
+        "id": "fish",
+        "target_days": 30.0,
+        "inventory_cover_cycles": 6.0,
+        "spectral_radius": 0.9969354036148842,
+        "locally_stable": true
+      },
+      {
+        "id": "fur",
+        "target_days": 20.000152587890625,
+        "inventory_cover_cycles": 4.000030517578125,
+        "spectral_radius": 0.9992784107816075,
+        "locally_stable": true
+      },
+      {
+        "id": "game_meat",
+        "target_days": 30.0,
+        "inventory_cover_cycles": 6.0,
+        "spectral_radius": 0.9969354036148842,
+        "locally_stable": true
+      },
+      {
+        "id": "gathered_plants",
+        "target_days": 30.0,
+        "inventory_cover_cycles": 6.0,
+        "spectral_radius": 0.9847800092753577,
+        "locally_stable": true
+      },
+      {
+        "id": "logs",
+        "target_days": 30.0,
+        "inventory_cover_cycles": 6.0,
+        "spectral_radius": 0.9969354036182212,
+        "locally_stable": true
+      },
+      {
+        "id": "processed_food",
+        "target_days": 30.0,
+        "inventory_cover_cycles": 6.0,
+        "spectral_radius": 0.9981474751239169,
+        "locally_stable": true
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "domain": "resource",
+      "entity": "wild_game",
+      "message": "当前替代率 0.040；先验证有效自然补充约 ×25.22，或等比例降低采集，再做长期投影。"
+    },
+    {
+      "domain": "building",
+      "entity": "stone_age_hunting_camp",
+      "message": "目标盈亏平衡承接率为 86.9%；检查物理产出、收购价和工资，勿用缩小库存目标掩盖亏损。"
+    },
+    {
+      "domain": "cohort",
+      "entity": "hunter",
+      "message": "必要生活费覆盖率 92.1%；优先修复对应建筑营收与已支付工资。"
+    },
+    {
+      "domain": "market",
+      "entity": "chipped_stone_tools",
+      "message": "当前完全没有本格供给；补齐生产/替代链，或在场景中显式启用可用贸易。"
+    },
+    {
+      "domain": "market",
+      "entity": "cloth",
+      "message": "当前完全没有本格供给；补齐生产/替代链，或在场景中显式启用可用贸易。"
+    },
+    {
+      "domain": "market",
+      "entity": "fish",
+      "message": "当前完全没有本格供给；补齐生产/替代链，或在场景中显式启用可用贸易。"
+    },
+    {
+      "domain": "market",
+      "entity": "gathered_plants",
+      "message": "当前完全没有本格供给；补齐生产/替代链，或在场景中显式启用可用贸易。"
+    },
+    {
+      "domain": "market",
+      "entity": "logs",
+      "message": "当前完全没有本格供给；补齐生产/替代链，或在场景中显式启用可用贸易。"
+    },
+    {
+      "domain": "market",
+      "entity": "processed_food",
+      "message": "当前完全没有本格供给；补齐生产/替代链，或在场景中显式启用可用贸易。"
+    }
+  ]
+}

@@ -130,7 +130,7 @@
   }
 
   async function scanFromHandle(root) {
-    const data = { buildings: [], goods: [], resources: [], professions: [], plans: [], needs: [] };
+    const data = { buildings: [], goods: [], resources: [], professions: [], plans: [], needs: [], economies: [] };
     let eraText = null, count = 0;
     setStatus('scanning', '扫描中…');
     await walkHandle(root, async (relPath, text) => {
@@ -138,7 +138,7 @@
       if (baseName === 'technology_taxonomy.gd') { eraText = text; return; }
       const r = SC.classifyAndParse(baseName, text);
       if (r && r.error) console.error('[supply-chain-explorer] 解析文件失败', { relPath, error: r.error });
-      if (r && r.record) data[r.type + 's'].push(r.record);
+      if (r && r.record) data[SC.collectionKey(r.type)].push(r.record);
       count++;
       if (count % 30 === 0) setStatus('scanning', `扫描中… ${count} 文件`);
     });
@@ -146,7 +146,7 @@
   }
 
   function scanFromInput(fileList) {
-    const data = { buildings: [], goods: [], resources: [], professions: [], plans: [], needs: [] };
+    const data = { buildings: [], goods: [], resources: [], professions: [], plans: [], needs: [], economies: [] };
     let eraText = null;
     const files = Array.from(fileList).filter((f) => {
       // 跳过非经济数据目录
@@ -164,7 +164,7 @@
         else if (f.name.endsWith('.tres')) {
           const r = SC.classifyAndParse(f.name, text);
           if (r && r.error) console.error('[supply-chain-explorer] 解析文件失败', { file: f.webkitRelativePath || f.name, error: r.error });
-          if (r && r.record) data[r.type + 's'].push(r.record);
+          if (r && r.record) data[SC.collectionKey(r.type)].push(r.record);
         }
         setStatus('scanning', `读取中… ${done}/${files.length}`);
         step();
