@@ -21,7 +21,7 @@
       owner_profession_id: '', owner_slots_per_building: 1,
       employee_profession_ids: [], employee_slots_per_building: [],
       employee_wage_policy_ids: [], employee_reference_wages_per_day: [],
-      input_good_ids: [], input_quantities_per_day: [],
+      input_good_ids: [], input_quantities_per_day: [], input_required_q16: [],
       input_category_ids: [], input_min_quality_levels: [],
       input_candidate_offsets: [0], input_candidate_good_ids: [], input_candidate_efficiency_q16: [],
       output_good_ids: [], output_quantities_per_day: [],
@@ -46,16 +46,20 @@
     resource: {
       id: '', display_name: '', icon: null, discovery_technology_tags: [],
       reserve_component: '', habitat_mode: 'legacy', land_only: true,
-      temp_lo: -30.0, temp_hi: 40.0,
+      temp_lo: 0.0, temp_hi: 1.0,
       gen_base: 0, gen_temp: 0, gen_moisture: 0, gen_self: 0,
       decay_base: 0, decay_temp: 0, decay_moisture: 0, decay_self: 0,
       init_base: 0, init_temp: 0, init_moisture: 0, init_reserve_scale: 1.0,
+      init_excluded_terrain_ids: [], init_excluded_vegetation_ids: [],
+      init_floor_reserve: 0, init_min_coverage: 0, init_min_reserve: 0,
       init_elevation: 0, init_river: 0, init_volcano: 0,
       init_landform_weights: {}, init_vegetation_weights: {},
       init_noise: 0, init_noise_scale: 0.05,
       geology_family_id: '', init_province: 0, init_province_scale: 0.012, init_belt: 0, init_belt_scale: 0.035,
       climate_temp_opt: 0.5, climate_temp_tol: 1.0, climate_moisture_opt: 0.5, climate_moisture_tol: 1.0,
-      init_climate_fit: 0, runtime_climate_fit_weight: 0, decay_stress: 0
+      init_climate_fit: 0, runtime_climate_fit_weight: 0, decay_stress: 0,
+      ecology_capacity: 0, ecology_growth_rate: 0, ecology_immigration: 0,
+      ecology_stress_mortality_rate: 0
     },
     profession: {
       id: '', display_name: '', icon: null, default_consumption_plan_id: '', technology_tags: [],
@@ -63,6 +67,26 @@
     },
     need: {
       id: '', display_name: '', use_tags: [], living_cost_weight_q16: 0
+    },
+    plan: {
+      id: '', display_name: '', need_ids: [], priorities: [], base_qty_per_person: [],
+      wealth_elasticity_q16: [], wealth_min_q16: [], wealth_max_q16: [],
+      price_quantity_elasticity_q16: [], price_quantity_floor_q16: [],
+      quantity_env_curve_ids: [], need_variant_offsets: [0], variant_ids: [],
+      variant_preference_q16: [], variant_price_elasticity_q16: [],
+      variant_preference_env_curve_ids: [], variant_component_offsets: [0],
+      component_good_ids: [], component_qty_per_need: []
+    },
+    economy: {
+      money_scale: 10000, goods_scale: 1000, ratio_scale: 65536, rate_scale: 4294967296,
+      market_cycle_days: 5, market_max_cycle_days: 365,
+      merchant_profession_id: 'merchant', unemployed_profession_id: 'unemployed',
+      wealth_reference_per_capita: 100000, living_cost_base_plan_id: 'survival_household',
+      starvation_satisfaction_threshold_q16: 32768,
+      wage_income_cap_ratio_q16: 78643, employee_profit_share_q16: 16384,
+      merchant_procurement_cash_reserve_q16: 8192,
+      merchant_market_making_days_q16: 1966080,
+      market_runtime_mode: 'ACTIVE', trade_runtime_mode: 'ACTIVE'
     }
   };
 
@@ -207,8 +231,12 @@
   const SCRIPT_CLASS_MAP = {
     BuildingProfile: 'building', GoodProfile: 'good',
     ResourceProfile: 'resource', ProfessionProfile: 'profession',
-    ConsumptionPlanProfile: 'plan', NeedProfile: 'need'
+    ConsumptionPlanProfile: 'plan', NeedProfile: 'need', EconomyProfile: 'economy'
   };
+
+  function collectionKey(type) {
+    return type === 'economy' ? 'economies' : `${type}s`;
+  }
 
   function classifyAndParse(filename, text) {
     const m = text.match(/script_class="(\w+)"/);
@@ -229,6 +257,10 @@
 
   // ───────────────────────────── 图模型构建 ─────────────────────────────
   function buildModel(data) {
+    const economyProfiles = data.economies || [];
+    const economyProfile = Object.assign({}, DEFAULTS.economy,
+      economyProfiles.length ? economyProfiles[economyProfiles.length - 1] : {});
+    const resourceQuantityScale = Number(data.resourceQuantityScale || 100);
     const eras = (data.eras || []).map((e, idx) => ({ id: e.id, display_name: e.display_name, order: idx, tags: e.tags || [] }));
     const eraIndex = {};
     eras.forEach((e) => { eraIndex[e.id] = e.order; });
@@ -530,11 +562,42 @@
     }));
 
     return {
+      economyProfile, resourceQuantityScale,
       eras, tagToEra, eraIndex,
       buildings, goods, resources, professions, plans, needs,
       buildingById, goodById, resourceById, professionById, planById, needById,
       goodsByCategory, goodsBySubstitutionCategory, categoryList,
       diagnostics: { orphanGoods, singleSourceGoods, isolatedBuildings, categoryOnlyGoods, popOnlyGoods, eraDistribution }
+    };
+  }
+
+  // 为外部数学求解器编译稳定、无索引别名和 Set 的只读 JSON 模型。
+  function compileAnalyticalModel(model) {
+    function clone(value) {
+      return JSON.parse(JSON.stringify(value, (key, item) => {
+        if (item instanceof Set) return Array.from(item);
+        if (key === 'producedBy' || key === 'consumedBy' || key === 'consumedByPop' ||
+            key === 'extractedBy' || key === 'employedBy' || key === '_consumedByCat') return undefined;
+        return item;
+      }));
+    }
+    return {
+      schema: 'project-keynes-economy-balance-model',
+      schema_version: 1,
+      scales: {
+        goods: Number(model.economyProfile.goods_scale || GOODS_SCALE),
+        money: Number(model.economyProfile.money_scale || 10000),
+        ratio: Number(model.economyProfile.ratio_scale || Q16_ONE),
+        resource_quantity: Number(model.resourceQuantityScale || 100)
+      },
+      economy_profile: clone(model.economyProfile),
+      eras: clone(model.eras),
+      goods: clone(model.goods),
+      resources: clone(model.resources),
+      professions: clone(model.professions),
+      plans: clone(model.plans),
+      needs: clone(model.needs),
+      buildings: clone(model.buildings)
     };
   }
 
@@ -783,6 +846,7 @@
   const API = {
     parseTres, parseEraFile, classifyAndParse, buildModel,
     professionReferenceDemand, resolveReferenceInput, eligibleBuildings, computeBalanceScenario,
+    compileAnalyticalModel, collectionKey,
     DEFAULTS, unquote, GOODS_SCALE, Q16_ONE
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

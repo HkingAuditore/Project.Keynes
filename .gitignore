@@ -1,1 +1,3 @@
 /tmp/perf_record_*
+__pycache__/
+*.py[cod]

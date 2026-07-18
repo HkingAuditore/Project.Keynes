@@ -1,0 +1,30 @@
+{
+  "name": "stone_age_reference_cell",
+  "era": "stone",
+  "cumulative": true,
+  "latest_upgrade_only": true,
+  "default_building_count": 0,
+  "building_counts": {
+    "stone_age_hunting_camp": 1
+  },
+  "solve_utilization": true,
+  "target_utilization": 0.65,
+  "utilization": 0.65,
+  "sell_through": 0.8,
+  "profession_populations": {},
+  "prices": {},
+  "trade_enabled": false,
+  "resource_context": {
+    "default": {
+      "temperature": 0.5,
+      "moisture": 0.5,
+      "reserve_fraction_of_capacity": 0.8
+    },
+    "wild_game": {
+      "reserve": 12065,
+      "temperature": 0.52,
+      "moisture": 0.55
+    }
+  },
+  "projection_days": [365, 730, 3650]
+}
