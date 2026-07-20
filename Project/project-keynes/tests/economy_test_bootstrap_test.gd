@@ -47,7 +47,7 @@ func _initialize() -> void:
 		csv_resource_ids.append(String(compiled.building_resource_ids[i]))
 	var facade = EconomyFacadeScript.new()
 	var profile = load("res://data/economy/default_economy.tres").duplicate(true)
-	profile.market_cycle_days = 1
+	profile.market_cycle_days = 5
 	var native_catalog := compiled.duplicate(true)
 	native_catalog.erase("ok")
 	_expect("all-technology test country bootstraps", CountryTestHelper.configure_all_technologies(
@@ -179,12 +179,11 @@ func _initialize() -> void:
 	_expect("first cycle accumulates produced goods from zero",
 		_market_stock_total(facade.market_cell_snapshot(0)) +
 		_market_stock_total(facade.market_cell_snapshot(1)) > 0)
-	_expect("early bullion creates the initial monetary inflow",
+	_expect("phase-zero bullion creates the initial monetary inflow",
 		int(cycle.get("gold_accepted", 0)) > 0 and
-		int(cycle.get("silver_accepted", 0)) > 0 and
+		int(cycle.get("silver_accepted", 0)) == 0 and
 		int(cycle.get("bullion_money_issued", 0)) ==
-			int(cycle.get("gold_money_issued", 0)) +
-			int(cycle.get("silver_money_issued", 0)))
+			int(cycle.get("gold_money_issued", 0)))
 	_expect("retired virtual mint is absent",
 		not _has_building(buildings, "shell_money_station") and
 		not _has_building(buildings, "stone_tool_exchange"))
@@ -418,8 +417,8 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 95, "cohorts": 23, "buildings": 50,
-		"resources": 13, "market": 28}
+	var expected_columns := {"summary": 105, "cohorts": 23, "buildings": 55,
+		"resources": 15, "market": 36}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
 		var bytes := FileAccess.get_file_as_bytes(path)
@@ -435,7 +434,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
 	var summary_text := FileAccess.get_file_as_string(str(paths.summary)).trim_prefix("﻿")
 	var summary_header := summary_text.split("\n", false)[0].split(",", true)
-	_expect("summary CSV v10 exposes endogenous investment diagnostics",
+	_expect("summary CSV v14 exposes endogenous investment diagnostics",
 		[
 			"construction_goods_consumed", "building_investment_candidates",
 			"building_owner_mobility", "building_investments_started",
@@ -467,7 +466,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				or openings != maxi(0, required - filled):
 			owner_rows_valid = false
 			break
-	_expect("building CSV v10 separates owner capacity, active jobs, planned equivalent, and openings",
+	_expect("building CSV v14 separates owner capacity, active jobs, planned equivalent, and openings",
 		owner_columns_valid and owner_rows_valid)
 	if not resource_slots.is_empty() and not resource_ids.is_empty():
 		var reserves: PackedFloat32Array = ext.snapshot_f32(resource_slots[0])
@@ -475,7 +474,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		var found := false
 		for line in resource_text.split("\n", false).slice(1):
 			var cols := line.split(",", true)
-			if cols.size() == 13 and int(cols[0]) == 3 and int(cols[3]) == 0 \
+			if cols.size() == int(expected_columns.resources) and int(cols[0]) == 3 and int(cols[3]) == 0 \
 					and cols[7] == resource_ids[0]:
 				found = is_equal_approx(float(cols[12]), reserves[0])
 				break
@@ -483,7 +482,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		var wild_pending_is_local := false
 		for line in resource_text.split("\n", false).slice(1):
 			var cols := line.split(",", true)
-			if cols.size() == 13 and int(cols[3]) == 0 and cols[7] == "wild_game" \
+			if cols.size() == int(expected_columns.resources) and int(cols[3]) == 0 and cols[7] == "wild_game" \
 					and float(cols[11]) < 0.0:
 				wild_pending_is_local = true
 				break
@@ -498,7 +497,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		var pressure_matches := false
 		for line in market_text.split("\n", false).slice(1):
 			var cols := line.split(",", true)
-			if cols.size() == 28 and int(cols[0]) == 3 and int(cols[3]) == 0 \
+			if cols.size() == int(expected_columns.market) and int(cols[0]) == 3 and int(cols[3]) == 0 \
 					and cols[7] == market_goods[0]:
 				pressure_matches = int(cols[20]) == market_pressure[0]
 				break
@@ -790,8 +789,12 @@ func _basic_capacity_is_covered(fixture: Dictionary) -> bool:
 
 func _run_day(ext: Object, day: int) -> Dictionary:
 	var report := {}
+	var simulation_day := day * 5
 	for slice in range(256):
-		report = ext.run_economy_slice({"day_index": day, "tick_index": day * 1000 + slice})
+		report = ext.run_economy_slice({
+			"day_index": simulation_day,
+			"tick_index": simulation_day * 1000 + slice,
+		})
 		if bool(report.get("done", false)):
 			return report
 	return report

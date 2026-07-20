@@ -144,11 +144,10 @@ func _init() -> void:
 	for epoch in range(epochs):
 		_set_environment(ext, cells, 0.25 + float(epoch & 1) * 0.5)
 		for cycle_day in range(cycle_days):
-			var trade_before := float(ext.get_economy_report().get("trade_plan_ms", 0.0))
 			var call_started := Time.get_ticks_usec()
 			var result: Dictionary = ext.run_economy_slice({"day_index": day, "tick_index": day})
 			call_wall_ms.append(float(Time.get_ticks_usec() - call_started) / 1000.0)
-			var trade_delta := float(result.get("trade_plan_ms", 0.0)) - trade_before
+			var trade_delta := float(result.get("trade_plan_ms", 0.0))
 			if trade_delta > 0.0:
 				trade_slice_ms.append(float(result.get("elapsed_ms", 0.0)))
 				trade_core_ms.append(trade_delta)
@@ -161,11 +160,10 @@ func _init() -> void:
 			var catchup := 0
 			while not bool(result.get("done", false)) and bool(result.get("commit_due", false)):
 				catchup += 1
-				trade_before = float(ext.get_economy_report().get("trade_plan_ms", 0.0))
 				call_started = Time.get_ticks_usec()
 				result = ext.run_economy_slice({"day_index": day, "tick_index": day * 1024 + catchup})
 				call_wall_ms.append(float(Time.get_ticks_usec() - call_started) / 1000.0)
-				trade_delta = float(result.get("trade_plan_ms", 0.0)) - trade_before
+				trade_delta = float(result.get("trade_plan_ms", 0.0))
 				if trade_delta > 0.0:
 					trade_slice_ms.append(float(result.get("elapsed_ms", 0.0)))
 					trade_core_ms.append(trade_delta)

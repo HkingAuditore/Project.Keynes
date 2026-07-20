@@ -278,7 +278,12 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		carrying_capacity_max = maxi(carrying_capacity_max, int(population))
 		carrying_capacity_total += int(population)
 
-	var cycle_days := facade.bootstrap_cycle_days(populations.size())
+	var active_building_cells := {}
+	for building_cell in building_cells:
+		active_building_cells[int(building_cell)] = true
+	var cycle_days := facade.bootstrap_cycle_days(
+		populations.size(), map.cell_count(), active_building_cells.size(),
+		building_cells.size())
 	var initial_survival_funds := 0
 	var initial_owner_operating_funds := 0
 	var initial_merchant_inventory_funds := 0

@@ -309,7 +309,7 @@ exportable_stock           = max(0, stock - production_input_reserve)
 ```
 
 预留本身不改变库存所有权，也不是 goods sink；居民和国内贸易只能清算预留以上的库存。缓存由建筑
-与周期计划确定性重建，不进入 PKEC v13 字节布局。报告和 CSV v10 发布预留总量、期望与结算末受保护库存之差及逐商品家庭
+与周期计划确定性重建，不进入 PKEC 字节布局。报告和 CSV v10 发布预留总量、期望与结算末受保护库存之差及逐商品家庭
 可用库存。
 
 ## 2026-07-20 endogenous owner investment
@@ -362,3 +362,53 @@ priority-weight proportion, but each allocation is capped at `purchase_cap`.
 Cash released by a cap is deterministically redistributed among the remaining
 positive gaps. Every debit remains a merchant-to-producer transfer; the existing
 bounded producer-support branch is the only mint in this path.
+## PKEC v14 capital and demand identities
+
+The production demand identity is
+`desired_input = recipe * building_count * epoch_days * planned_utilization`,
+`funded_input <= desired_input`, and
+`unfunded_input = desired_input - funded_input`. Desired quantities are signals;
+only funded quantities can debit merchant inventory and owner cash.
+
+Owner working capital is a deterministic allocation of existing cohort cash.
+The allocator protects `min(livelihood, owner_cash / 2)` and the base-payroll
+cash gap not covered by frozen expected sales. Input debits, output sales, and
+post-sale proportional payroll preserve the existing money ledger.
+
+Entrepreneurship moves one population unit and exactly `required_capital` from
+one non-merchant cohort to the target owner cohort. Any proportional cash carried
+by population movement is corrected by an explicit transfer or refund before
+construction. Construction then debits real goods, pays real merchant cohorts,
+and records every population, funds, stock, expense, and income event leg.
+
+## PKEC v15 rolling audit boundary
+
+Each due cell still applies the same fixed-point five-day formulas. Staggering
+changes only which cells transact on a simulation day. Trade escrow and transit
+goods remain part of global money/goods totals and daily arrivals transfer those
+stocks without waiting for a local settlement. Population, money, and goods
+errors must be exactly zero after every daily publish, not only after all five
+phases have run.
+
+## PKEC v15 production parallel reduction
+
+Parallel building production does not change any Q16, money, goods, resource,
+wage, merchant, support-mint, or bullion formula. Each due cell owns disjoint
+authoritative lanes, so workers apply real transfers directly without atomics.
+Only cell-local saturation counters, additive diagnostics, retained-output rows,
+cashflow drafts, and trace drafts enter `ProductionResult`. Native then reduces
+results in stable cursor order with the existing saturating operators; the
+working-capital error bound remains a maximum rather than a sum.
+
+Consequently the audit identities are unchanged:
+
+```text
+population_error == 0
+money_error == 0
+goods_error == 0
+explicit_money_mint == producer_support_money_issued + bullion_money_issued
+```
+
+Worker dispatch is not permission to approximate cash, goods, population, or
+resource conservation. Controlled approximation remains limited to the already
+documented fixed-point planning bounds and rolling observation latency.

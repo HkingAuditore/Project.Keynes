@@ -168,6 +168,16 @@ public:
         int64_t building_investments_started = 0;
         int64_t building_investment_blocked_funds = 0;
         int64_t building_investment_blocked_materials = 0;
+        int64_t building_investment_blocked_sponsor_capital = 0;
+        int64_t building_investment_blocked_resources = 0;
+        int64_t building_investment_capital_transferred = 0;
+        int64_t desired_business_demand = 0;
+        int64_t funded_business_demand = 0;
+        int64_t unfunded_business_demand = 0;
+        int64_t owner_working_capital_allocated = 0;
+        int64_t trade_signal_max_age_days = 0;
+        int64_t trade_first_dispatch_delay_max_days = 0;
+        int64_t trade_response_deadline_misses = 0;
     };
 
     struct CohortRow {
@@ -207,6 +217,11 @@ public:
         bool wage_suspended = false;
         int64_t capacity_q16 = 0;
         int64_t purchase_intent_capacity_q16 = 0;
+        int64_t funded_capacity_q16 = 0;
+        int64_t owner_working_capital_allocated = 0;
+        int64_t investment_score_q16 = 0;
+        int64_t investment_payback_days = 0;
+        int32_t investment_rejection_reason = 0;
         int32_t realized_profit_margin_q16 = 0;
         int32_t severe_loss_cycles = 0;
         int32_t recovery_cycles = 0;
@@ -245,6 +260,8 @@ public:
         float artificial_change_applied = 0.0f;
         float artificial_change_pending = 0.0f;
         float reserve = 0.0f;
+        int64_t safe_yield = 0;
+        int64_t projected_life_days = 0;
     };
 
     struct MarketRow {
@@ -254,12 +271,20 @@ public:
         int32_t price = 0;
         int64_t demand_ema = 0;
         int64_t business_demand_ema = 0;
+        int64_t desired_business_demand = 0;
+        int64_t funded_business_demand = 0;
+        int64_t unfunded_business_demand = 0;
         int64_t offered_supply_ema = 0;
         int64_t realized_withdrawal_ema = 0;
         int64_t production_input_reserve = 0;
         int64_t household_available_stock = 0;
         int64_t merchant_inventory_target = 0;
         int64_t merchant_procurement_shortfall = 0;
+        int64_t trade_export_safety_stock = 0;
+        int64_t trade_import_fill_target = 0;
+        int32_t trade_relief_pressure_q16 = 0;
+        int32_t trade_signal_age_days = 0;
+        int32_t trade_first_dispatch_delay_days = -1;
         int32_t cost_anchor_price = 0;
         int32_t shortage_q16 = 0;
         int64_t pressure_business_demand = 0;

@@ -22,7 +22,8 @@ class EconomyCsvRecorder;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 13;
+    static constexpr int32_t SCHEMA_VERSION = 15;
+    static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
@@ -73,7 +74,7 @@ public:
                              const float *weather_intensity, int32_t count,
                              std::string &error);
     bool needs_environment_capture(int64_t day_index) const {
-        return !_epoch_active && day_index - _last_committed_day >= _epoch_days &&
+        return !_epoch_active && day_index > _last_committed_day &&
                _environment_day != day_index;
     }
     bool should_run(int64_t day_index) const;
@@ -124,7 +125,7 @@ public:
                                   const std::vector<const float *> &resource_changes,
                                   int32_t count, std::string &error);
     bool needs_building_context_capture(int64_t day_index) const {
-        return !_epoch_active && day_index - _last_committed_day >= _epoch_days &&
+        return !_epoch_active && day_index > _last_committed_day &&
                _building_context_day != day_index;
     }
     const std::vector<std::string> &building_resource_reserve_slots() const {
@@ -160,6 +161,7 @@ private:
         TRADE_SETTLE = 11,
         TRADE_DISPATCH = 12,
         TRADE_PLANNING = 13,
+        BUILDING_PLAN = 14,
     };
 
     struct FormulaBatchInput {
@@ -363,6 +365,11 @@ private:
         int64_t sequence = 0;
     };
 
+    struct InvestmentExistingType {
+        int32_t group = -1;
+        bool vacancy = false;
+    };
+
     struct PopulationStore {
         std::vector<int32_t> cell_first_page;
         std::vector<int32_t> page_next;
@@ -471,6 +478,7 @@ private:
         int32_t country = -1;
         int32_t price = 0;
         int64_t quantity = 0;
+        int32_t age_days = 0;
     };
 
     struct TradeCandidate {
@@ -485,6 +493,7 @@ private:
         int64_t expected_profit = 0;
         int64_t capacity_work = 0;
         int64_t density_q16 = 0;
+        int32_t signal_age_days = 0;
         uint64_t topology_generation = 0;
         uint64_t country_topology_hash = 0;
     };
@@ -495,6 +504,9 @@ private:
         int64_t scan_cursor = 0;
         int32_t route_cursor = 0;
         int64_t scan_total = 0;
+        std::vector<int32_t> scan_cells;
+        std::vector<int32_t> scan_goods;
+        std::vector<int64_t> scan_inbound;
         uint64_t country_topology_hash = 0;
         uint64_t topology_generation = 0;
         std::vector<TradeSignal> sources;
@@ -516,6 +528,9 @@ private:
             scan_cursor = 0;
             route_cursor = 0;
             scan_total = 0;
+            scan_cells.clear();
+            scan_goods.clear();
+            scan_inbound.clear();
             sources.clear();
             destinations.clear();
             working_candidates.clear();
@@ -732,6 +747,7 @@ private:
         std::vector<EventLeg> trace_legs;
         std::vector<CashflowEntry> cashflows;
         std::vector<StructuralCommand> structural_commands;
+        std::vector<int32_t> trade_active_goods;
     };
 
     enum TraceMode : int32_t {
@@ -860,6 +876,75 @@ private:
         int64_t expense = 0;
     };
 
+    struct ProductionTraceDraft {
+        int32_t kind = 0;
+        int32_t stage = 0;
+        int32_t cell = -1;
+        int32_t subject_kind = SUBJECT_NONE;
+        int64_t subject_id = 0;
+        int32_t subject_i0 = -1;
+        int32_t subject_i1 = -1;
+        int64_t value0 = 0;
+        int64_t value1 = 0;
+        int64_t value2 = 0;
+        int64_t value3 = 0;
+        int32_t flags = 0;
+        std::vector<EventLeg> legs;
+    };
+
+    struct ProductionCashflowDraft {
+        int32_t cell = -1;
+        CashflowEntry entry;
+    };
+
+    struct ProductionResult {
+        bool ok = true;
+        std::string error;
+        int64_t saturation_count = 0;
+        int64_t processed_building_groups = 0;
+        int64_t merchant_procurement_budget = 0;
+        int64_t merchant_procurement_reserved = 0;
+        int64_t merchant_procurement_spent = 0;
+        int64_t owner_working_capital_allocated = 0;
+        int64_t working_capital_scale_error_bound_q16 = 0;
+        int64_t building_resource_capacity_checks = 0;
+        int64_t building_resource_limited_groups = 0;
+        int64_t building_resource_capacity_limited_groups = 0;
+        int64_t building_resource_generated = 0;
+        int64_t building_resource_consumed = 0;
+        int64_t production_inputs_consumed = 0;
+        int64_t production_output_stock = 0;
+        int64_t production_output_discarded = 0;
+        int64_t production_output_supported = 0;
+        int64_t producer_revenue = 0;
+        int64_t producer_support_money_issued = 0;
+        int64_t explicit_money_mint = 0;
+        int64_t bullion_money_issued = 0;
+        int64_t bullion_stock_consumed = 0;
+        int64_t gold_accepted = 0;
+        int64_t silver_accepted = 0;
+        int64_t gold_money_issued = 0;
+        int64_t silver_money_issued = 0;
+        int64_t cycle_flow_produced = 0;
+        int64_t cycle_flow_consumed = 0;
+        int64_t cycle_flow_discarded = 0;
+        int64_t building_wages_paid = 0;
+        int64_t building_wages_unpaid = 0;
+        int64_t building_base_wages_paid = 0;
+        int64_t building_base_wages_due = 0;
+        int64_t building_bonus_paid = 0;
+        int64_t building_bonus_due = 0;
+        int64_t wage_suspended_building_groups = 0;
+        int64_t desired_business_demand = 0;
+        int64_t funded_business_demand = 0;
+        int64_t unfunded_business_demand = 0;
+        int64_t market_signal_updates = 0;
+        double market_signal_ms = 0.0;
+        std::vector<OwnerRetainedOutput> retained_outputs;
+        std::vector<ProductionTraceDraft> trace_drafts;
+        std::vector<ProductionCashflowDraft> cashflow_drafts;
+    };
+
     struct EventBatch {
         int64_t epoch_id = 0;
         int64_t sample_day = -1;
@@ -963,10 +1048,19 @@ private:
     int32_t _cell_count = 0;
     int32_t _cells_per_slice = 256;
     bool _auto_slice_by_scale = true;
+    int32_t _building_cells_per_slice = 64;
+    int32_t _building_groups_per_slice = 512;
+    bool _auto_building_slice_by_scale = true;
     int32_t _commands_per_slice = 16384;
     int32_t _epoch_days = 1;
-    int32_t _configured_epoch_days = 5;
+    int32_t _configured_epoch_days = 0;
+    int32_t _min_epoch_days = 5;
     int32_t _max_epoch_days = 365;
+    int32_t _estimated_market_slices_per_epoch = 1;
+    int32_t _estimated_building_slices_per_epoch = 0;
+    int32_t _estimated_total_slices_per_epoch = 1;
+    bool _workload_deadline_feasible = true;
+    bool _workload_cycle_clamped = false;
     int64_t _configured_target_cohorts_per_slice = 0;
     int64_t _target_cohorts_per_slice = 30000;
     int32_t _commit_lag_budget_days = 0;
@@ -1011,8 +1105,8 @@ private:
     int32_t _trade_speed_cost_per_day = 4;
     int32_t _trade_min_margin_q16 = 3277;
     int32_t _trade_target_count = 4;
-    int32_t _trade_signal_pairs_per_slice = 16384;
-    int32_t _trade_route_searches_per_slice = 128;
+    int32_t _trade_signal_pairs_per_slice = 4096;
+    int32_t _trade_route_searches_per_slice = 32;
     int32_t _trade_max_route_expansions = 8192;
     int32_t _trade_route_cache_entries = 16384;
     int32_t _trade_max_signals = 32768;
@@ -1020,6 +1114,20 @@ private:
     int32_t _trade_max_orders = 4096;
     int32_t _trade_flow_ema_alpha_q16 = 8192;
     int32_t _trade_max_stock_share_q16 = 16384;
+    int32_t _trade_export_floor_days = 5;
+    int32_t _trade_export_inventory_fraction_q16 = Q16_ONE / 2;
+    int32_t _trade_import_fill_fraction_q16 = Q16_ONE / 2;
+    int32_t _trade_response_days = 15;
+    int32_t _investment_review_days = 10;
+    int32_t _investment_min_shortage_q16 = Q16_ONE / 8;
+    int32_t _investment_min_utilization_q16 = 42598;
+    int32_t _investment_max_payback_days = 365;
+    int32_t _investment_operating_cycles = 2;
+    int32_t _resource_min_reserve_q16 = 22938;
+    int32_t _resource_safe_harvest_q16 = Q16_ONE / 2;
+    int32_t _resource_min_horizon_days = 3650;
+    int32_t _bullion_monthly_issue_cap_q16 = 655;
+    int32_t _producer_support_monthly_cap_q16 = 3277;
     bool _worker_enabled = true;
     int32_t _worker_market_threshold = 256;
     int32_t _worker_tasks_hint = 0;
@@ -1045,6 +1153,9 @@ private:
     int32_t _command_cursor = 0;
     int32_t _structural_cursor = 0;
     int32_t _building_cell_cursor = 0;
+    int32_t _building_plan_phase = 0;
+    int32_t _building_commit_phase = 0;
+    bool _investment_population_changed = false;
     int32_t _processed_cells = 0;
     int64_t _processed_cohorts = 0;
     int64_t _processed_rules = 0;
@@ -1068,6 +1179,14 @@ private:
     int64_t _building_investments_started = 0;
     int64_t _building_investment_blocked_funds = 0;
     int64_t _building_investment_blocked_materials = 0;
+    int64_t _building_investment_blocked_sponsor_capital = 0;
+    int64_t _building_investment_blocked_resources = 0;
+    int64_t _building_investment_capital_transferred = 0;
+    int64_t _desired_business_demand = 0;
+    int64_t _funded_business_demand = 0;
+    int64_t _unfunded_business_demand = 0;
+    int64_t _owner_working_capital_allocated = 0;
+    int64_t _working_capital_scale_error_bound_q16 = 0;
     int64_t _production_inputs_consumed = 0;
     int64_t _production_output_stock = 0;
     int64_t _production_output_discarded = 0;
@@ -1133,12 +1252,25 @@ private:
     int64_t _trade_capacity_used = 0;
     int64_t _trade_settlement_lag_days = 0;
     int64_t _trade_plan_reset_count = 0;
+    int64_t _trade_signal_max_age_days = 0;
+    int64_t _trade_first_dispatch_delay_max_days = 0;
+    int64_t _trade_response_deadline_misses = 0;
     int64_t _trade_topology_content_change_count = 0;
     std::string _trade_last_plan_reset_reason = "none";
     int64_t _building_resource_capacity_checks = 0;
     int64_t _building_resource_capacity_limited_groups = 0;
     std::string _last_building_rejection_reason;
     int32_t _worker_tasks = 1;
+    int32_t _production_worker_tasks = 1;
+    double _production_merge_ms = 0.0;
+    int32_t _rolling_phase = 0;
+    int32_t _rolling_due_cells = 0;
+    int32_t _rolling_processed_cells = 0;
+    int32_t _rolling_deferred_cells = 0;
+    int64_t _settlement_watermark = -1;
+    int64_t _settlement_newest_day = -1;
+    int64_t _settlement_max_age_days = 0;
+    int64_t _rolling_deadline_violations = 0;
 
     int32_t _trace_mode = TRACE_SELECTIVE;
     int64_t _trace_memory_budget = 32LL * 1024 * 1024;
@@ -1177,12 +1309,16 @@ private:
     double _employment_ms = 0.0;
     double _production_ms = 0.0;
     double _building_plan_ms = 0.0;
+    double _investment_ms = 0.0;
     double _market_signal_ms = 0.0;
     double _wage_plan_ms = 0.0;
     double _labor_signal_ms = 0.0;
     double _trade_plan_ms = 0.0;
     double _trade_settle_ms = 0.0;
     double _trade_dispatch_ms = 0.0;
+    double _prepare_ms = 0.0;
+    double _audit_ms = 0.0;
+    double _watermark_ms = 0.0;
 
     AuditTotals _opening_totals;
     AuditTotals _closing_totals;
@@ -1191,10 +1327,53 @@ private:
     MarketStore _market;
     MarketSignalStore _market_signals;
     std::vector<int64_t> _epoch_business_demand_ema;
+    std::vector<int64_t> _epoch_desired_business_demand;
+    std::vector<int64_t> _epoch_funded_business_demand;
     std::vector<int64_t> _epoch_offered_supply_ema;
     std::vector<int64_t> _epoch_nonhousehold_withdrawals;
     std::vector<int32_t> _epoch_cost_anchor_price;
     std::vector<int64_t> _production_input_reserve;
+    // Building retention and household clearing share the same frozen basis.
+    // These non-authoritative arrays avoid repeating elasticity/pow work.
+    std::vector<int64_t> _demand_basis_cache_day;
+    std::vector<int64_t> _demand_basis_variant_scores;
+    std::vector<int64_t> _demand_basis_variant_prices;
+    std::vector<int64_t> _demand_basis_need_score_sums;
+    std::vector<int64_t> _demand_basis_need_composites;
+    std::vector<int64_t> _demand_basis_need_environment;
+    // Persistent per-cell rolling settlement state. Phase is derived from the
+    // stable cell id; last day and generation are PKEC v15 authority.
+    std::vector<int64_t> _cell_last_settlement_day;
+    std::vector<uint32_t> _cell_settlement_generation;
+    std::vector<uint32_t> _cell_price_stock_gen;
+    std::vector<uint32_t> _cell_owner_cash_gen;
+    std::vector<uint32_t> _cell_population_gen;
+    std::vector<uint32_t> _cell_building_structure_gen;
+    std::vector<uint32_t> _cell_technology_gen;
+    std::vector<uint32_t> _cell_resource_gen;
+    std::vector<uint32_t> _cell_trade_gen;
+    // Transaction worksets are deterministic, sorted and never persisted.
+    std::vector<int32_t> _epoch_market_ids;
+    std::vector<int32_t> _epoch_settlement_cells;
+    std::vector<int32_t> _epoch_building_cells;
+    // Epoch-transient lanes. They are rebuilt from the frozen sample and are
+    // intentionally excluded from save data and the authoritative state hash.
+    std::vector<int64_t> _building_survival_utilization_floor_q16;
+    std::vector<int64_t> _building_funded_capacity_q16;
+    std::vector<int64_t> _building_working_capital_allocated;
+    std::vector<int64_t> _building_investment_score_q16;
+    std::vector<int64_t> _building_investment_payback_days;
+    std::vector<int32_t> _building_investment_rejection;
+    std::unordered_map<uint64_t, uint8_t> _investment_pending_by_cell_type;
+    std::unordered_map<uint64_t, InvestmentExistingType>
+        _investment_existing_by_cell_type;
+    std::unordered_map<uint64_t, int64_t> _investment_harvest_by_cell_resource;
+    std::vector<int32_t> _investment_employment_cells;
+    std::vector<uint64_t> _trade_active_keys;
+    // Diagnostic-only sparse clocks keyed independently from authoritative EMA state.
+    std::vector<uint64_t> _trade_signal_clock_keys;
+    std::vector<int64_t> _trade_signal_first_seen_day;
+    std::vector<int64_t> _trade_signal_first_dispatch_day;
     std::vector<OwnerRetainedOutput> _owner_retained_outputs;
     TradeTopologyStore _trade_topology;
     TradePlanStore _trade_plan;
@@ -1269,6 +1448,18 @@ private:
     std::vector<int32_t> _building_neighbors;
     std::vector<int64_t> _resource_snapshot;
     std::vector<int64_t> _resource_remaining;
+    std::vector<int64_t> _resource_gen_base;
+    std::vector<int64_t> _resource_gen_temp;
+    std::vector<int64_t> _resource_gen_moisture;
+    std::vector<int64_t> _resource_gen_self;
+    std::vector<int64_t> _resource_decay_base;
+    std::vector<int64_t> _resource_decay_temp;
+    std::vector<int64_t> _resource_decay_moisture;
+    std::vector<int32_t> _resource_decay_self_q16;
+    std::vector<int64_t> _resource_ecology_capacity;
+    std::vector<int32_t> _resource_ecology_growth_q16;
+    std::vector<int32_t> _resource_temp_lo_q16;
+    std::vector<int32_t> _resource_temp_hi_q16;
     std::vector<int64_t> _resource_deltas;
     // Debug/recording visibility for the most recently published building
     // resource changes. It is derived epoch output, not save/hash authority.
@@ -1338,9 +1529,11 @@ private:
     int64_t _building_catalog_hash = 0;
     int64_t _building_catalog_compat_hash_v6 = 0;
     int64_t _building_catalog_compat_hash_v7 = 0;
+    int64_t _building_catalog_compat_hash_v13 = 0;
     int64_t _catalog_compat_hash_v7 = 0;
     int64_t _catalog_compat_hash_v8 = 0;
     int64_t _catalog_compat_hash_v10 = 0;
+    int64_t _catalog_compat_hash_v13 = 0;
 
     SaveState _save;
     RestoreState _restore;
@@ -1362,6 +1555,8 @@ private:
                                       int64_t &sat) const;
     int64_t trade_local_stock_target(int32_t market, int32_t good,
                                      int64_t &sat) const;
+    int64_t trade_export_floor(int32_t market, int32_t good,
+                               int64_t &sat) const;
     int64_t profitable_trade_quantity(int32_t source, int32_t destination,
                                       int32_t good, int64_t max_quantity,
                                       bool relief_route, int32_t &source_price,
@@ -1381,6 +1576,8 @@ private:
     bool dispatch_trade_candidates(std::string &error);
     void update_trade_flow_ema();
     int32_t trade_flow_index(int32_t cell, int32_t good, bool create);
+    int32_t trade_signal_clock_index(int32_t cell, int32_t good) const;
+    int32_t ensure_trade_signal_clock_index(int32_t cell, int32_t good);
     int64_t credit_trade_sellers(int32_t order_index, int64_t amount);
     void rebuild_trade_arrival_buckets();
     void compact_trade_orders(const std::vector<uint8_t> &remove);
@@ -1442,9 +1639,15 @@ private:
     bool apply_build_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell, std::string &error);
-    bool reconcile_building_employment_after_population_change(std::string &error);
-    bool run_building_production_cell(int32_t cell, std::string &error);
-    bool run_endogenous_building_investment(bool &population_changed,
+    bool reconcile_building_employment_after_population_change(
+        const std::vector<int32_t> &affected_cells, std::string &error);
+    bool run_building_production_cell(int32_t cell, ProductionResult &result,
+                                      std::string &error);
+    void merge_building_production_result(ProductionResult &result);
+    bool run_endogenous_building_investment(int32_t ordinal_begin,
+                                            int32_t ordinal_end,
+                                            bool initialize,
+                                            bool &population_changed,
                                             std::string &error);
     int32_t find_entrepreneur_source(int32_t cell, int32_t target_signature,
                                      int64_t required_capital,
@@ -1452,12 +1655,14 @@ private:
     int64_t projected_owner_income_per_day(const BuildingGroup &group);
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
-    bool commit_ready_construction();
+    bool commit_ready_construction(std::vector<int32_t> &changed_cells);
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
     void rebuild_market_signals();
     int32_t ensure_market_signal_index(int32_t cell, int32_t good);
-    void rebuild_production_input_reserves();
+    void rebuild_production_input_reserves(int32_t active_begin = 0,
+                                           int32_t active_end = -1,
+                                           bool initialize = true);
     void rebuild_labor_signals();
     int32_t labor_signal_index(int32_t cell, int32_t profession) const;
     int64_t living_cost_for_signature(int32_t cell, int32_t signature_id,
@@ -1469,7 +1674,8 @@ private:
         const std::vector<int64_t> &need_environment, int64_t &sat);
     bool prepare_cell_wages(int32_t cell, std::string &error);
     void update_cell_labor_signals(int32_t cell);
-    bool prepare_building_economic_plan(std::string &error);
+    bool prepare_building_economic_plan(int32_t active_begin, int32_t active_end,
+                                        std::string &error);
     int32_t market_signal_index(int32_t cell, int32_t good) const;
     PricePressure price_pressure(int32_t market, int32_t good, int64_t household_demand,
                                  int64_t stock, int64_t shortage_q16,
@@ -1478,12 +1684,15 @@ private:
                                 int32_t owner_signature_id) const;
     int32_t find_cohort_slot(int32_t cell, int32_t signature_id) const;
     int64_t credit_local_merchants(int32_t cell, int64_t amount,
-                                   int32_t cashflow_source = CASHFLOW_MERCHANT_BUSINESS);
+                                   int32_t cashflow_source = CASHFLOW_MERCHANT_BUSINESS,
+                                   int64_t *saturation_override = nullptr);
     int64_t debit_local_merchants(int32_t cell, int64_t amount,
-                                  int32_t cashflow_source = CASHFLOW_MERCHANT_PROCUREMENT);
+                                  int32_t cashflow_source = CASHFLOW_MERCHANT_PROCUREMENT,
+                                  int64_t *saturation_override = nullptr);
     int64_t pay_building_wage_amount(int32_t cell, int32_t owner_slot,
                                      int32_t profession_id, int64_t filled_jobs,
-                                     int64_t due, int64_t payment_cap);
+                                     int64_t due, int64_t payment_cap,
+                                     int64_t *saturation_override = nullptr);
     void fail(const std::string &reason);
     void clear_epoch_metrics();
     void rebuild_committed_summaries();
@@ -1497,7 +1706,9 @@ private:
     void touch_accounting_slot(int32_t slot);
     AuditTotals audit_totals() const;
     int64_t memory_bytes() const;
-    int32_t choose_epoch_days(int64_t cohort_count) const;
+    int32_t choose_epoch_days(int64_t cohort_count);
+    int32_t building_slice_end(int32_t active_begin) const;
+    int32_t estimate_building_ranges() const;
     int32_t stage_progress_q16() const;
     const char *stage_name() const;
 
@@ -1526,6 +1737,15 @@ private:
                             std::vector<int64_t> &need_composites,
                             std::vector<int64_t> &need_environment,
                             int64_t &saturation_count) const;
+    void build_demand_basis_cached(int32_t cell, int32_t market,
+                                   const EnvironmentSample &sample,
+                                   std::vector<int64_t> &variant_scores,
+                                   std::vector<int64_t> &variant_prices,
+                                   std::vector<int64_t> &need_score_sums,
+                                   std::vector<int64_t> &need_composites,
+                                   std::vector<int64_t> &need_environment,
+                                   int64_t &saturation_count);
+    void prepare_due_demand_basis_cache();
     int64_t desired_need_units(int32_t slot, int32_t need_index, int32_t dt_days,
                                int64_t environment_factor_q16,
                                int64_t composite_factor_q16,
@@ -1560,6 +1780,7 @@ private:
     void trace_evict_to_budget();
     int64_t trace_memory_bytes() const;
     static uint64_t trace_hash_mix(uint64_t hash, uint64_t value);
+    static thread_local ProductionResult *_production_result_sink;
 };
 
 } // namespace pk

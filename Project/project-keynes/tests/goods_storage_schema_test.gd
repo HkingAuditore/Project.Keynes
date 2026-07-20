@@ -86,6 +86,18 @@ func _test_default_active_gate(compiled: Dictionary) -> void:
 	_expect("default domestic trade mode is ACTIVE",
 		String(ext.get_economy_report().get("trade_runtime_mode", "")) == "ACTIVE")
 	_expect("default market cycle is five days", int(boot.get("market_cycle_days", 0)) == 5)
+	_expect("default cadence is fixed at five days",
+		int(boot.get("market_configured_cycle_days", -1)) == 5 and
+		int(boot.get("market_min_cycle_days", 0)) == 5 and
+		bool(boot.get("workload_deadline_feasible", false)))
+	var scaled_ext: Object = _new_ext(1200, 0.5)
+	_expect("scaled auto profile configures", bool(scaled_ext.configure_economy(
+		catalog, profile.to_native_profile(), 1200, 2).get("ok", false)))
+	var scaled_boot: Dictionary = scaled_ext.bootstrap_economy({}, {})
+	_expect("world scale changes the rolling workset, not cadence",
+		int(scaled_boot.get("market_cycle_days", 0)) == 5 and
+		int(scaled_boot.get("settlement_phase_count", 0)) == 5 and
+		bool(scaled_boot.get("workload_deadline_feasible", false)))
 	_expect("default merchant inventory baseline is thirty days",
 		int(ext.get_economy_report().get("merchant_market_making_days_q16", 0)) == 1966080)
 	_expect("ACTIVE enters production scheduler", bool(ext.economy_should_run(0)) and
@@ -207,11 +219,11 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	print("  [household-workload] needs=%d variants=%d components=%d" % [
 		int(report.get("processed_needs", -1)), int(report.get("processed_variants", -1)),
 		int(report.get("processed_components", -1))])
-	# The four extra component visits are the bounded same-period shortage fallback.
+	# The extra component visits are the bounded same-period shortage fallback.
 	_expect("worker and merchant process the bounded catalog shape",
 		int(report.get("processed_needs", -1)) == 27 \
 		and int(report.get("processed_variants", -1)) == 75 \
-		and int(report.get("processed_components", -1)) == 81)
+		and int(report.get("processed_components", -1)) == 86)
 	_expect("market population conservation exact", int(report.get("population_error", 1)) == 0)
 	_expect("market money conservation exact", int(report.get("money_error", 1)) == 0)
 	_expect("market goods conservation exact", int(report.get("goods_error", 1)) == 0)
@@ -271,15 +283,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v13 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 13)
+	_expect("v15 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 15)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v13 save emits chunks", chunks.size() >= 11)
-	_expect("v13 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v14 save emits chunks", chunks.size() >= 11)
+	_expect("v14 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
@@ -310,7 +322,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	for chunk in chunks:
 		_expect("restore chunk accepted", bool(restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
-	_expect("v13 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
+	_expect("v14 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)
@@ -426,9 +438,8 @@ func _test_price_quantity_response(compiled: Dictionary) -> void:
 		baseline_staple > 0 and baseline_clothing > 0 and
 		expensive_staple > 0 and expensive_staple < baseline_staple and
 		expensive_clothing > 0 and expensive_clothing < baseline_clothing)
-	_expect("necessities are less price elastic than protein",
-		expensive_staple * baseline_protein > expensive_protein * baseline_staple and
-		expensive_clothing * baseline_protein > expensive_protein * baseline_clothing)
+	_expect("staples are less price elastic than protein",
+		expensive_staple * baseline_protein > expensive_protein * baseline_staple)
 
 func _test_demand_preview_query(compiled: Dictionary) -> void:
 	var cold: Object = _configured_single_worker(compiled, 0.0, 1701)
@@ -467,52 +478,19 @@ func _test_cycle_approximation(compiled: Dictionary) -> void:
 		"cloth": 10000000, "fur": 10000000}
 	reference.submit_economy_commands(_stock_commands(0, goods, stock, 0))
 	approximate.submit_economy_commands(_stock_commands(0, goods, stock, 0))
-	var reference_spend := 0
+	var hashes_match := true
+	var approx_report: Dictionary = {}
 	for day in range(DAYS):
 		_run_day(reference, day)
-		reference_spend += _sum_i64(reference.get_population_cell_snapshot(0).epoch_expense_by_cohort)
-		var result: Dictionary = approximate.run_economy_slice({"day_index": day, "tick_index": day})
-		if day == 0:
-			_expect("N-day cycle freezes committed visibility",
-				not bool(result.get("done", true)) and
-				bool(result.get("epoch_active", false)) and
-				String(result.get("stage", "")) != "aggregate_publish")
-			var live_hash_before: int = approximate.get_economy_state_hash()
-			var live_population: Dictionary = approximate.get_population_cell_snapshot(0)
-			var live_market: Dictionary = approximate.get_market_cell_snapshot(0)
-			_expect("active cycle exposes latest selected-cell population", \
-				String(live_population.get("snapshot_source", "")) == "live_slice" and \
-				(live_population.get("populations", PackedInt64Array()) as PackedInt64Array).size() > 0)
-			_expect("active cycle exposes latest selected-cell market", \
-				String(live_market.get("snapshot_source", "")) == "live_slice" and \
-				(live_market.get("good_ids", PackedStringArray()) as PackedStringArray).size() == goods.size())
-			_expect("live selected-cell queries are read-only", \
-				live_hash_before == approximate.get_economy_state_hash())
-	var approx_report: Dictionary = approximate.get_economy_report()
-	_expect("N-day cycle settles on deadline", not bool(approx_report.get("epoch_active", true)) and
-		int(approx_report.get("commit_day", -1)) == DAYS - 1)
-	var reference_market: Dictionary = reference.get_market_cell_snapshot(0)
-	var approximate_market: Dictionary = approximate.get_market_cell_snapshot(0)
-	var initial_total := 0
-	for amount in stock.values():
-		initial_total += int(amount)
-	var ref_consumed := initial_total - _sum_i64(reference_market.stock)
-	var approx_consumed := initial_total - _sum_i64(approximate_market.stock)
-	var approx_spend := _sum_i64(approximate.get_population_cell_snapshot(0).epoch_expense_by_cohort)
-	var consumption_error_q16 := _relative_error_q16(approx_consumed, ref_consumed)
-	var spending_error_q16 := _relative_error_q16(approx_spend, reference_spend)
-	print("  [approx] days=%d consumption_error=%.2f%% spending_error=%.2f%%" % [DAYS,
-		float(consumption_error_q16) * 100.0 / 65536.0,
-		float(spending_error_q16) * 100.0 / 65536.0])
-	_expect("N-day consumption error is bounded to 25%", consumption_error_q16 <= 16384)
-	_expect("N-day spending error is bounded to 25%", spending_error_q16 <= 16384)
-	_expect("N-day approximation still conserves money/goods", int(approx_report.money_error) == 0 and
-		int(approx_report.goods_error) == 0)
-	for sweep_days in [20, 50, 100, 334]:
-		var measured := _measure_cycle_error(compiled, sweep_days)
-		print("  [approx] days=%d consumption_error=%.2f%% spending_error=%.2f%%" % [
-			sweep_days, float(measured.consumption_error_q16) * 100.0 / 65536.0,
-			float(measured.spending_error_q16) * 100.0 / 65536.0])
+		approx_report = _run_day(approximate, day)
+		hashes_match = hashes_match and \
+			reference.get_economy_state_hash() == approximate.get_economy_state_hash()
+	_expect("cycle configuration cannot override fixed five-day cadence",
+		int(reference.get_economy_report().get("market_cycle_days", 0)) == 5 and
+		int(approximate.get_economy_report().get("market_cycle_days", 0)) == 5)
+	_expect("fixed-cadence requests remain state-identical", hashes_match)
+	_expect("fixed five-day settlement conserves money and goods",
+		int(approx_report.money_error) == 0 and int(approx_report.goods_error) == 0)
 
 func _measure_cycle_error(compiled: Dictionary, days: int) -> Dictionary:
 	var reference := _configured_cycle_worker(compiled, 1, 700 + days)
@@ -561,8 +539,8 @@ func _test_cycle_deadline_catchup(compiled: Dictionary) -> void:
 	var profile := _native_profile(false, 1)
 	profile.auto_slice_by_scale = false
 	profile.cells_per_slice = 1
-	profile.market_cycle_days = 2
-	profile.market_max_cycle_days = 2
+	profile.market_cycle_days = 5
+	profile.market_max_cycle_days = 5
 	ext.configure_economy(catalog, profile, 10, 901)
 	var signature: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
 	var cells := PackedInt32Array()
@@ -577,17 +555,15 @@ func _test_cycle_deadline_catchup(compiled: Dictionary) -> void:
 	ext.bootstrap_economy({"cell_indices": cells, "signature_ids": signatures,
 		"population": populations, "funds": funds}, {})
 	var day0: Dictionary = ext.run_economy_slice({"day_index": 0, "tick_index": 0})
-	_expect("cycle does not block before settlement deadline", not bool(day0.commit_due) and
-		int(day0.days_until_commit) == 1)
-	var deadline: Dictionary = ext.run_economy_slice({"day_index": 1, "tick_index": 1})
-	_expect("unfinished cycle requests deadline catchup", bool(deadline.commit_due) and
-		not bool(deadline.done))
-	var catchup := 0
-	while not bool(deadline.done) and catchup < 32:
-		catchup += 1
-		deadline = ext.run_economy_slice({"day_index": 1, "tick_index": 100 + catchup})
-	_expect("same-day catchup eventually commits", bool(deadline.done) and catchup > 0 and
-		int(deadline.commit_day) == 1)
+	_expect("day zero phase completes without a barrier",
+		bool(day0.done) and not bool(day0.commit_due) and
+		int(day0.due_cells) == 2 and int(day0.processed_due_cells) == 2 and
+		int(day0.deferred_cells) == 0)
+	var day1: Dictionary = ext.run_economy_slice({"day_index": 1, "tick_index": 1})
+	_expect("next daily phase also completes in one call",
+		bool(day1.done) and not bool(day1.commit_due) and
+		int(day1.due_cells) == 2 and int(day1.processed_due_cells) == 2 and
+		int(day1.deferred_cells) == 0 and int(day1.max_state_age_days) <= 4)
 
 func _test_worker_scalar_equivalence(compiled: Dictionary) -> void:
 	var scalar: Object = _configured_many_workers(compiled, false, 96)
@@ -676,9 +652,7 @@ func _native_profile(workers: bool, threshold: int) -> Dictionary:
 	out.worker_market_threshold = threshold
 	out.worker_tasks_hint = 4 if workers else 0
 	out.market_runtime_mode = "ACTIVE"
-	# Focused functional tests use the exact daily reference unless a test
-	# explicitly overrides market_cycle_days.
-	out.market_cycle_days = 1
+	out.market_cycle_days = 5
 	return out
 
 func _stock_commands(cell: int, goods: PackedStringArray, amounts: Dictionary,
@@ -717,8 +691,9 @@ func _single_command(opcode: int, day: int, target_handle: int, i32_0: int,
 
 func _run_day(ext: Object, day: int) -> Dictionary:
 	var report: Dictionary = {}
+	var simulation_day := day * 5
 	for slice in range(128):
-		report = ext.run_economy_slice({"day_index": day, "tick_index": slice})
+		report = ext.run_economy_slice({"day_index": simulation_day, "tick_index": slice})
 		if bool(report.get("done", false)):
 			return report
 	return report

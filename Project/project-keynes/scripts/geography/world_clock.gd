@@ -183,6 +183,10 @@ func _process(delta: float) -> void:
 		_simulation_backpressure_sources.has(&"country_day_barrier")
 	if hard_day_barrier:
 		simulation_backpressure_pulse.emit(_last_day)
+		# A time-boxed continuation may drain the barrier synchronously. Re-read
+		# it so a completed bucket does not cost an otherwise empty render frame.
+		hard_day_barrier = _simulation_backpressure_sources.has(&"economy_day_barrier") or \
+			_simulation_backpressure_sources.has(&"country_day_barrier")
 	var effective_speed := 0.0 if hard_day_barrier else (
 		minf(speed_multiplier, 1.0) if has_simulation_backpressure() else speed_multiplier)
 	var target: float = delta * effective_speed

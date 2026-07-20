@@ -15,16 +15,18 @@ Market V2 / Price V3 现采用 `production_income_consumption_v12`：周期起�
 
 `EconomyProfile` 提供：
 
-- `market_cycle_days`：生产默认 5；0 为按 cohort 预算自动，其他正数强制 N。
+- `market_cycle_days`：生产默认 0，按市场、cohort 与建筑工作量自动；其他正数强制 N。
+- `market_min_cycle_days`：自动周期下限，默认 5。
 - `market_max_cycle_days`：自动周期上限，默认 365。
 - `market_target_cohorts_per_slice`：0 为规模自动；小/中/大世界分别使用
   4k/12k/30k cohort。
 
-自动公式为 `ceil(active_cohorts / target_cohorts_per_slice)`，再 clamp 到周期上限。
+自动公式先计算 `raw = max(market ranges, cohort ranges) + 4 * building ranges + 4`，
+再对超过五日基础周期的部分增加 50% 的确定性 scheduler availability slack，最后 clamp 到周期上限。
 cell range 同时受计划 `markets_per_slice` 和实际 cohort 数约束，因此人口分布不均时不会
 静默生成超长 slice；若周期上限导致工作未完成，截止日进入 same-day catchup。
 
-生产默认固定 5 日周期。性能验收脚本显式设置自动模式：200k cohort 得到 50 日，
+生产默认使用确定性工作量自动周期。显式正数保留固定周期：200k cohort 的旧纯市场档得到 50 日，
 10M cohort 得到 334 日。周期越长，平均与 p95 越低，但价格、财富和环境反馈延迟/误差
 越大。固定 5 日在极端 10M 档无法于五个普通 slice 内完成，会在截止日进入有界
 same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 0 自动。
@@ -32,18 +34,20 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 ## 图阶段
 
 1. `trade_planning`：上次发布后以确定工作单元扫描稀疏信号并有界寻路；是无屏障软任务。
-2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境，冻结输入，并推进建筑严重亏损停产/反事实恢复状态。
-3. `trade_settle`：结算到期货物/卖方托管，货物可参与当期本地市场。
-4. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
-5. `trade_dispatch`：在本地 household 清算完成后，ACTIVE 按本地需求/投入 reserve 稳定裁剪并
-   托管发运；PROBE 只报告候选。
+2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境并冻结输入。
+3. `building_plan`：按 active-cell CSR 分片推进建筑严重亏损/恢复、利用率计划；第二遍按同一
+   cursor 分片重建生产投入 reserve。两遍完成前不进入账本或生产阶段。
+4. `trade_settle`：结算到期货物/卖方托管，货物可参与当期本地市场。
+5. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
 6. `building_employment`：按周期开始时仍存活人口分配 owner/employee 岗位并计算合同工资。
 7. `building_production`：先算受就业/资金/资源约束的采购意图，再用本地输入库存得到实际产能；购买投入、生产并出售产出，分配基础工资/奖金，最后更新企业意图、实际出库、供给与成本信号。
 8. `household_market`：每天最多一个 cohort-budgeted market range，先保护 ACTIVE owner 下一周期投入现金，使用本期收入和新库存计算 N 日总需求/交易；自产食物可补足总生存热量池，再计算食品与气候衣着生存满足，并以 Q32 residual 结算缺乏基本生活资料造成的死亡。
-9. `structural_commit`：稳定提交本轮结构 ECB。
-10. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
-11. `building_commit`：提交到期建设项目；在 30 日资本评估窗口按盈利、需求缺口、个人储蓄和建材库存选择每地块至多一座 industrial 新建项目，随后重建必要的稀疏岗位范围。
-12. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
+9. `trade_dispatch`：在全部本地 household 清算完成后，ACTIVE 按本地需求/投入 reserve 稳定裁剪并
+   托管发运；PROBE 只报告候选。
+10. `structural_commit`：稳定提交本轮结构 ECB。
+11. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
+12. `building_commit`：提交到期建设项目；在 30 日资本评估窗口按盈利、需求缺口、个人储蓄和建材库存选择每地块至多一座 industrial 新建项目，随后重建必要的稀疏岗位范围。
+13. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
 
 周期内 save、gameplay 和其他经济写者只观察上一 committed state；Inspector 的有界选中
 地块查询可观察最近完成 native slice 的完整状态，并明确标记为 `live_slice`。`epoch_income/expense` 在发布后
@@ -82,6 +86,11 @@ OFF → PROBE → ACTIVE 门禁上线；PROBE 不改变库存、资金、订单�
 `max_command_latency_days`、deadline 字段、merchant repairs、price cap hits 与
 continuation slices。
 
+`STRUCTURAL_COMMIT` 可能释放当期死亡的唯一 merchant cohort。所有受影响 cell 必须在
+building employment reconcile 与 `BUILDING_COMMIT` 的内生施工交易之前修复 merchant
+invariant 并重建 merchant CSR；`AGGREGATE_PUBLISH` 保留最终校验，但不能作为建筑交易前
+的首次修复点。
+
 worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 ## 误差契约
@@ -103,7 +112,7 @@ worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 当前冻结周期的稳定阶段顺序为：
 
-`epoch_begin → trade_settle → ledger_apply → building_employment → building_production →
+`epoch_begin → building_plan(plan → input_reserve) → trade_settle → ledger_apply → building_employment → building_production →
 household_market → trade_dispatch → structural_commit → wait_commit → building_commit →
 aggregate_publish`。
 
@@ -127,7 +136,19 @@ PKEC v8 在 `building_employment` 的同一 active-cell slice 内先计算生活
 并在零库存高短缺时主动恢复。`epoch_begin` 按下一周期计划重建稀疏生产投入硬预留；
 `household_market` 在预算和最终结算两处保护 owner 营运资金，并只向家庭开放扣除投入预留后的库存。
 国内贸易规划/派单同样不能导出预留库存。预留缓存可由已持久化建筑状态确定性重建，因此
-ECONOMY_GRAPH stage、截止日语义和 PKEC v13 布局均不变化。
+ECONOMY_GRAPH stage、截止日语义和 PKEC 权威布局均不变化。
+
+### 建筑计划 continuation（2026-07-20）
+
+`building_plan` 不再在 `start_epoch()` 内同步执行全图扫描。原生 runtime 在 sample-day 冻结后持有
+`building_plan_phase` 与 active-cell cursor，分别完成经济计划和投入 reserve 两遍；每个 native call
+最多消费 `building_cells_per_slice` 个 active cell。默认值 `0` 确定性采用 256 个 active cell。
+该 cursor、业主生存利用率缓存和 reserve 构建临时量不保存、不哈希，也不向 committed
+snapshot 暴露；周期中保存继续以 `save_requires_committed_boundary` 拒绝。
+
+营运资金不足时的产能裁剪使用 8 次固定整数二分，始终返回已验证不超预算的下界；相对请求区间
+最多低估 `1/256`（约 0.39%）。`working_capital_scale_error_bound_q16` 发布本周期实际未决上界，
+用于在平台调优时区分可控数值误差与真实现金短缺。
 
 v11 继续从统一 `survival_household` 目录建立无财富/价格弹性的冻结 `survival_required`；生存品订单、
 生产者自留和死亡分母共享该基准。短缺恢复读取扣除生产投入预留后的家庭可用库存，并容忍 1 个
@@ -138,10 +159,83 @@ v11 在 `building_production` 的正常商人现金结算后，仅把目标库�
 20% 增加 owner 资金与 `explicit_money_mint`；超过目标的余量进入 discard。该发行在同一 building slice 内完成，不新增 stage。事件现金流 schema v4 沿用
 `producer_support_issuance`，CSV v8 summary 保留托底数量、发行额、金银货币流、贸易活性游标和拒绝诊断，building 行新增 owner 容量、
 本期岗位和真实空缺口径。
-外部 stage ABI 和默认五日
-冻结/截止日屏障不变。
+外部 stage ABI 和冻结/截止日屏障不变；生产默认 cadence 已由后述 workload-auto 规则取代固定五日。
 
 v12 在 `building_commit` 增加原生内生投资。评估使用本周期已完成的企业计划和市场信号，
 但只在跨过 30 日边界时允许新增建筑；普通周期不会重复扩建。已有业主空缺仍由
 `building_employment` 优先处理。自动新建排除 collector/service，并复用 BUILD 的建材库存、
 出资者资金、商人收入、事件和守恒账本。该节流由 committed day 推导，不新增 PKEC 字段。
+## 2026-07-20 cadence changes
+
+The production default is workload-auto cadence (`market_cycle_days=0`) with a
+five-day floor. Explicit positive values remain forced for tests and manual
+high-fidelity runs. Auto mode fixes market ranges at at most 128 markets and
+building ranges at 256 active building cells, then estimates the deadline as:
+
+`max(market cell ranges, cohort ranges) + 4 * building ranges + 4 fixed stages`,
+plus 50 percent deterministic scheduler slack above the five-day floor.
+
+The estimate is clamped by `market_max_cycle_days`. Reports expose configured
+and effective cadence, market/building/total slice estimates,
+`workload_deadline_feasible`, and `workload_cycle_clamped`. These values depend
+only on authoritative workload, never frame rate or speed scale.
+
+At a due boundary, one pending trade-planner slice is returned separately from
+`epoch_begin`. `boundary_continuation_required` requests one same-day WorldClock
+continuation so trade scanning no longer stacks with the first building-plan
+range and does not shift the sample day. This is distinct from deadline
+catch-up; normal auto workloads must report zero deadline barrier slices.
+
+Investment review is an independent 10-day boundary checked in
+`building_commit`; vacancy repair still runs whenever a committed cycle exposes
+an owner opening. Each cell may start at most one building per review.
+
+Trade signal collection is fused into existing building and market per-good
+work. The sparse planner continues between settlement boundaries under its scan
+and route budgets. At each settlement boundary, a completed candidate set or safe
+completed prefix may dispatch after stock, cash, capacity, topology, and country
+revalidation. No daily all-building-type scan was added: the full constructible
+catalog is evaluated only on the 10-day investment review for populated cells.
+
+`building_commit_phase` separates ready-construction commit, bounded investment
+cell ranges, and final employment reconciliation. Each investment continuation
+consumes at most `building_cells_per_slice` rolling-phase cells. Its transient
+pending/existing/resource indexes are built once per epoch commit and released
+after finalization. Candidate evaluation may later move to read-only worker
+ranges, but sponsor funds, materials, population movement, and construction
+creation must be revalidated and committed in stable cell order.
+
+## Rolling five-phase graph (PKEC v15, current)
+
+The former global epoch and workload-selected cadence are superseded. Every day
+the native graph builds the sorted workset for `cell_id % 5 == day % 5` and
+finishes that bucket through bounded same-day continuation. One native call
+consumes at most one building, market, or structural range; `done=false` raises
+the existing day barrier and real-frame pulse until the final publish. Each cell
+uses a fixed five-day transaction, so adjacent committed dates differ by at most
+four days and one cell's consecutive settlement dates differ by exactly five.
+
+Daily order is country snapshot, resource update, trade arrival/refund, eligible
+commands, due local transactions, sparse trade planning/dispatch, then stable
+reduction and publish. Trade arrival never changes a cell's settlement date.
+Normal operation has no `WAIT_COMMIT`, deadline catchup, or deferred cell. The
+legacy stage enum value remains only for old trace decoding and immediately
+falls through when encountered.
+
+## Building production worker partition
+
+`building_production` keeps the same rolling stage and due-cell cursor. Within
+one bounded production range, native may dispatch disjoint cells to
+`WorkerThreadPool`; no new economy graph stage, SUS job, dependency edge, or
+publish boundary is introduced. This is currently legal only while each cell
+owns the same-numbered market. Workers write only that cell's cohorts, building
+groups, market, resource-delta column, and sparse signal rows. Per-cell
+`ProductionResult` diagnostics and trace drafts are merged in cursor order before
+the stage advances, preserving deterministic event order and global reductions.
+
+The same body runs as one task below `worker_market_threshold`, when workers are
+disabled or unavailable, when the range/group workload is too small, or when a
+non-identity cell-to-market mapping is detected. These fallbacks are native and
+do not change five-day cadence, the range boundary, or same-day continuation.
+The frame timebox can schedule another continuation after this range completes;
+it cannot preempt a production range already executing.

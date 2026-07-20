@@ -15,7 +15,11 @@ breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 
 - `bd_ui_live_patch_build_ms`：右侧面板 ViewModel 读取选中地块/原生快照并构造
   live patch 的墙钟。
 - `bd_ui_live_patch_apply_ms`：`InspectorPanel` 把 live patch 应用到当前可见控件的墙钟。
-  `bd_ui_ran=false` 表示该 tick 未达到 750ms 面板刷新节流；`bd_ui_tab` 记录当前标签页。
+  `bd_ui_ran=false` 表示该 tick 未达到 750ms 面板刷新节流，或人口 tab 的
+  generation/common hash 均未变化而被脏检查短路；`bd_ui_tab` 记录当前标签页。
+  人口 tab 先比较 selected-cell `settlement_generation`，仅在 generation 变化时读取并构建
+  cohort/market 明细，再以 category hash 避免内容相同的控件 apply。公共气候/国家/人口摘要
+  使用独立 hash，不会被 population generation 冻结。
 - `fast_ms`：以上路径与少量调度胶水的总墙钟；录制器开销另见
   `fast_ms_after_recorders` / recorder summary。
 
@@ -1213,15 +1217,21 @@ stage 判断：
 - `structural_commit` 长：迁移/转职/归零事件过多，查 ECB 来源，不能在此全局 compact。
 - `wait_commit`：计算已提前完成，正在等周期截止日；这是冻结结算隔离，不是卡死。
 - `aggregate_publish` 长：cell summary 或审计扫描异常；不得改成全世界 Dictionary。
-- `building_plan_ms` 长：检查是否按 owner-lot 重复解析 catalog/字符串；计划只能访问预编译 CSR
-  与冻结价格。`zero_utilization_building_groups` 高时对照 expected revenue、operating cost、margin gap。
+- `building_plan_ms` 是整周期两遍 continuation 的累计时间，不能当作单帧墙钟；先看当前
+  `stage=building_plan`、`building_plan_phase`、`building_cells_per_slice` 和该 slice 的 `elapsed_ms`。
+  若单片仍长，检查是否按 owner-lot 重复解析 catalog/字符串；计划只能访问预编译 CSR 与冻结价格。
+  `zero_utilization_building_groups` 高时对照 expected revenue、operating cost、margin gap。
 - `market_signal_ms` 长：比较 `market_signal_edges/updates` 与实际建筑 input/output 边；不得退化为
   `cell_count × good_count` 扫描。
+- `trade_plan_ms` 只表示当前 native `run_slice()` 的 planner 墙钟，不累计到下一 slice、
+  下一日或下一 epoch。未运行 planner 的 continuation 应为 0；bench/CSV 直接读取当前值，
+  不得用前后 report 做差。若该值看似长期保持旧峰值，优先检查 DLL 是否未重建。
 
 上述 stage ms 在 worker 路径是 task CPU 时间之和，slice `elapsed_ms` 才是墙钟。
 正常冻结周期中 `epoch_active=true/commit_due=false` 时不得出现屏障；世界日应继续推进。
 只有 `commit_due=true && done=false` 才应看到 `economy_day_barrier`，此时模拟日不前进，
-real-frame pulse 令 `continuation_slices` 增加并最终解除。周期边界出现全量尖峰时，检查
+real-frame pulse 会在 `sim_frame_budget_ms` 时间盒内连续执行 bounded ranges，令
+`continuation_slices` 增加并最终解除；耗尽预算后留到下一帧。周期边界出现全量尖峰时，检查
 是否误恢复“全 cohort 会计清零”或“无结构变化也重建 merchant CSR”。
 
 误差排障同时记录 `market_cycle_days/approximation_model`。消费/价格异常首先用较短强制
@@ -1236,8 +1246,40 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
 
 - `building_employment` 长：比较 active building cells、group count、owner/employee filled；不应出现
   `cell_count × group_count` 扫描。
-- `building_production` 长：检查 processed groups、input/resource/output edge 数、高价 offer
-  排序，以及 `labor_signal_ms` 与 owner payroll/bonus 分摊。
+## Economy rolling-bucket stall diagnosis (2026-07-20, current)
+
+Production cadence is always five days. A periodic stall must be attributed to
+the current daily phase using `settlement_phase`, `due_cells`, active building
+groups, processed cohorts, active goods, worker count, and the stage timings.
+Do not change cadence or enlarge a deadline to hide the stall.
+
+A healthy completed report has `processed_due_cells==due_cells`,
+`deferred_cells=0`, `max_state_age_days<=4`, and
+`rolling_deadline_violations=0`. During the current due bucket,
+`commit_due && !done` plus an economy day barrier is expected: each real-frame
+continuation consumes at most one building, market, or structural range. Diagnose
+stalls when the stage/cursor stops advancing, one bounded slice still exceeds the
+frame budget materially, or the final report retains deferred cells. Trade
+planning remains bounded daily soft work and cannot postpone local settlement.
+
+Current rolling reports split previously unattributed work into `prepare_ms`,
+`audit_ms`, `watermark_ms`, and `building_investment_ms`. `audit_ms` is included
+inside prepare/publish wall time and must not be added to them as an independent
+wall-time component. Demand-basis precomputation uses stable disjoint worker
+ranges; a high `building_production_ms` after this cache is warm points to actual
+input/output/payroll work rather than repeated household elasticity formulas.
+
+生产并行诊断必须读取 `building_production_worker_tasks`，不要用 household/market 的
+`worker_tasks` 代替。`building_production_ms` 是整个 production range 的 wall time；
+`building_production_merge_ms` 已包含在其中，不得再次相加。任务数为 1 时依次检查
+`worker_enabled`、`worker_market_threshold`、本 range 的 cell/group 数、WTP 可用性，以及
+`cell_to_market[cell] == cell` 所有权契约。任务数大于 1 但收益差时，重点比较 cell 间 group/edge
+偏斜、高价 offer 排序、retained output/SELECTIVE trace fanout 与 merge 占比；不要靠增加任务数
+掩盖单个超重 cell，因为 range 内一个 cell 仍是不可再分的确定性单元。
+
+- `building_production` 长：检查 `building_cells_per_slice`、processed groups、input/resource/output edge
+  数、高价 offer 排序，以及 `labor_signal_ms` 与 owner payroll/bonus 分摊。营运资金裁剪的
+  `working_capital_scale_error_bound_q16` 应不超过请求区间的约 `1/256`；它是保守低估界，不是透支误差。
 - Price V3 异常：从市场快照逐项检查 household/business demand、offered supply、cost anchor、
   excess/inventory/shortage/cost/idle pressure 和 projected change，不能只看最终价格猜原因。
 - `production_output_discarded>0`：商人正资金不足，不是库存 publish 失败。
