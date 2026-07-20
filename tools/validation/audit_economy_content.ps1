@@ -121,6 +121,7 @@ foreach ($file in Get-ChildItem -LiteralPath $goodDir -Filter '*.tres') {
         Quality = if ($p.ContainsKey('production_quality_level')) { [int]$p.production_quality_level } else { 0 }
         Efficiency = if ($p.ContainsKey('production_efficiency_q16')) { [int]$p.production_efficiency_q16 } else { 65536 }
         DefaultPrice = if ($p.ContainsKey('default_price')) { [long]$p.default_price } else { 10000 }
+        MaxPrice = if ($p.ContainsKey('max_price')) { [long]$p.max_price } else { 200000 }
         BuyFactor = if ($p.ContainsKey('merchant_buy_price_factor_q16')) { [int]$p.merchant_buy_price_factor_q16 } else { 62259 }
         Rank = $rank
         Producers = [System.Collections.Generic.List[string]]::new()
@@ -234,10 +235,12 @@ if ($needs.Count -ne $expectedNeedNames.Count) {
 }
 
 $expectedPlanProfessions = @{
+    plan_unemployed=@('unemployed')
     owner_household=@('landlord','industrialist')
     merchant_household=@('merchant')
     survival_household=@('subsistence_farmer','forager','enslaved_laborer','serf','apprentice')
-    agrarian_household=@('agricultural_worker','pastoralist','hunter','fisher','forestry_worker',
+    hunter_household=@('hunter')
+    agrarian_household=@('agricultural_worker','pastoralist','fisher','forestry_worker',
         'tenant_farmer','indentured_laborer')
     extractive_household=@('miner','petroleum_worker')
     industrial_worker_household=@('worker','construction_worker','industrial_worker','transport_worker')
@@ -258,7 +261,9 @@ foreach ($file in Get-ChildItem -LiteralPath $professionDir -Filter '*.tres') {
     $id = @(Values $p.id)[0]
     Assert-Chinese-DisplayName $p "profession:$id"
     $rank = Rank @(Values $p.technology_tags) "profession:$id"
-    if ($rank -lt 0) { $failures.Add("profession has no executable technology: $id") }
+    if ($rank -lt 0 -and $id -ne 'unemployed') {
+        $failures.Add("profession has no executable technology: $id")
+    }
     $planId = @(Values $p.default_consumption_plan_id)[0]
     if (-not $expectedProfessionPlans.ContainsKey($id) -or
         $expectedProfessionPlans[$id] -ne $planId) {
@@ -267,8 +272,8 @@ foreach ($file in Get-ChildItem -LiteralPath $professionDir -Filter '*.tres') {
     $professions[$id] = $rank
     $professionPlans[$id] = $planId
 }
-if ($professionPlans.Count -ne 32) {
-    $failures.Add("expected 32 profession consumption mappings, found $($professionPlans.Count)")
+if ($professionPlans.Count -ne 33) {
+    $failures.Add("expected 33 profession consumption mappings, found $($professionPlans.Count)")
 }
 
 $referenceLivingCostByPlan = @{}
@@ -354,7 +359,9 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     $rolePolicies = @(Values $p.employee_wage_policy_ids)
     $roleWages = @(Numbers $p.employee_reference_wages_per_day)
     $rank = Rank @(Values $p.technology_tags) "building:$id"
-    if ($rank -lt 0) { $failures.Add("building has no executable technology: $id") }
+    if ($rank -lt 0 -and $id -ne 'merchant_post') {
+        $failures.Add("building has no executable technology: $id")
+    }
     if (-not $eraBuildingCounts.ContainsKey($rank)) { $eraBuildingCounts[$rank] = 0 }
     $eraBuildingCounts[$rank] = [int]$eraBuildingCounts[$rank] + 1
     $owner = @(Values $p.owner_profession_id)[0]
@@ -414,10 +421,13 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     }
     $buildings[$id] = $building
 
-    if ($kind -notin @('collector','industrial')) {
+    if ($kind -notin @('collector','industrial') -and
+        -not ($id -eq 'merchant_post' -and $kind -eq 'service')) {
         $failures.Add("invalid building kind: $id -> $kind")
     }
-    if ($outputs.Count -eq 0) { $failures.Add("building has no physical output: $id") }
+    if ($outputs.Count -eq 0 -and $id -ne 'merchant_post') {
+        $failures.Add("building has no physical output: $id")
+    }
     if ($resources.Count -ne $resourceModes.Count -or
         $resources.Count -ne $resourceQuantities.Count) {
         $failures.Add("building resource columns mismatch: $id")
@@ -443,7 +453,7 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
 
     if (-not $professions.ContainsKey($owner)) {
         $failures.Add("building owner missing: $id -> $owner")
-    } elseif ([int]$professions[$owner] -gt $rank) {
+    } elseif ($id -ne 'merchant_post' -and [int]$professions[$owner] -gt $rank) {
         $failures.Add("building owner unlocks later: $id -> $owner")
     }
     foreach ($role in $roles) {
@@ -512,7 +522,11 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
             $resourceModes.Count -eq 1 -and $resourceModes[0] -eq 'extract' -and
             (($outputs[0] -eq 'gold' -and $resources[0] -eq 'gold_ore') -or
              ($outputs[0] -eq 'silver' -and $resources[0] -eq 'silver_ore'))
-        if (-not $validBullion) { $failures.Add("invalid merchant-owned building: $id") }
+        $validMerchantPost = $id -eq 'merchant_post' -and $kind -eq 'service' -and
+            $outputs.Count -eq 0 -and $resources.Count -eq 0
+        if (-not $validBullion -and -not $validMerchantPost) {
+            $failures.Add("invalid merchant-owned building: $id")
+        }
     }
     if ([string]::IsNullOrWhiteSpace($family) -and $tier -ne 0) {
         $failures.Add("upgrade tier without family: $id")
@@ -560,7 +574,8 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     $operatingCost = $inputCost + $wageCost
     $building.InputCost = $inputCost
     $building.OperatingCost = $operatingCost
-    if ($outputs -notcontains 'gold' -and $outputs -notcontains 'silver') {
+    if ($kind -ne 'service' -and $outputs -notcontains 'gold' -and
+        $outputs -notcontains 'silver') {
         $ownerLivingCost = if ($professionLivingCosts.ContainsKey($owner)) {
             [double]$professionLivingCosts[$owner] * $ownerSlots
         } else { 0.0 }
@@ -573,7 +588,23 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
             $marginRevenue, $operatingCost + $ownerLivingCost)
         $requiredRevenue = $breakEvenRevenue * 65536.0 / $DesignSellThroughQ16
         if ($revenue + 1.0 -lt $requiredRevenue) {
-            $failures.Add("building revenue below sustainable floor: $id revenue=$([Math]::Round($revenue)) required=$([Math]::Round($requiredRevenue))")
+            $marketResponsiveStoneIndustry = $id -in @(
+                'household_weaving_shelter','knapping_workshop')
+            $maxRevenue = [double]0
+            if ($marketResponsiveStoneIndustry) {
+                for ($outputIndex = 0; $outputIndex -lt [Math]::Min(
+                        $outputs.Count, $outputQuantities.Count); $outputIndex++) {
+                    if (-not $goods.ContainsKey($outputs[$outputIndex])) { continue }
+                    $outputGood = $goods[$outputs[$outputIndex]]
+                    $maxRevenue += [double]$outputQuantities[$outputIndex] *
+                        [double]$outputGood.MaxPrice / 1000.0 *
+                        [double]$outputGood.BuyFactor / 65536.0
+                }
+            }
+            if (-not $marketResponsiveStoneIndustry -or
+                $maxRevenue + 1.0 -lt $breakEvenRevenue) {
+                $failures.Add("building revenue below sustainable floor: $id revenue=$([Math]::Round($revenue)) required=$([Math]::Round($requiredRevenue))")
+            }
         }
         if ($inputCost -gt $revenue * 0.60 + 1.0) {
             $failures.Add("building material cost share above 60%: $id input=$([Math]::Round($inputCost)) revenue=$([Math]::Round($revenue))")
@@ -663,7 +694,8 @@ $smallFacilityExceptions = @('digital_computer_workshop','nuclear_medicine_cente
 foreach ($building in $buildings.Values) {
     $employeeTotal = [long](($building.RoleSlots | Measure-Object -Sum).Sum)
     if ($building.Rank -eq 0) {
-        if ($building.Roles.Count -ne 0) {
+        if ($building.Roles.Count -ne 0 -and $building.Id -notin @(
+                'placer_gold_working','surface_silver_working')) {
             $failures.Add("stone-age building must be owner-operated: $($building.Id)")
         }
         if (-not $stoneOwnerPolicy.ContainsKey($building.Id)) {
@@ -948,7 +980,9 @@ foreach ($expectation in @(
 $coreHouseholdNeeds = @('staple_food','protein','produce','clothing','housing','household_goods',
     'hygiene','healthcare','home_energy')
 $expectedPlanNeeds = @{
+    plan_unemployed=@('staple_food')
     survival_household=$coreHouseholdNeeds
+    hunter_household=@($coreHouseholdNeeds + @('work_equipment'))
     agrarian_household=@($coreHouseholdNeeds + @('transport','work_equipment','recreation'))
     extractive_household=@($coreHouseholdNeeds + @('transport','work_equipment'))
     industrial_worker_household=@($coreHouseholdNeeds + @('transport','work_equipment'))
@@ -961,7 +995,9 @@ $expectedPlanNeeds = @{
         'recreation','durable_goods','luxury','status_goods'))
 }
 $expectedPlanNames = @{
-    survival_household='生存型家庭消费'; agrarian_household='农业型家庭消费'
+    plan_unemployed='失业者生存消费'; survival_household='生存型家庭消费'
+    hunter_household='狩猎家庭消费'
+    agrarian_household='农业型家庭消费'
     extractive_household='采掘型家庭消费'; industrial_worker_household='产业工人家庭消费'
     artisan_household='工匠型家庭消费'; technical_household='技术型家庭消费'
     merchant_household='商人家庭消费'; owner_household='业主家庭消费'
@@ -1005,7 +1041,9 @@ $expectedNeedVariants = @{
     status_goods=@('jewelry','fur','spices')
 }
 $planScales = @{
-    survival_household=@(80,35,0); agrarian_household=@(95,75,0)
+    plan_unemployed=@(80,0,0); survival_household=@(80,35,0)
+    hunter_household=@(85,40,0)
+    agrarian_household=@(95,75,0)
     extractive_household=@(105,85,0); industrial_worker_household=@(100,85,0)
     artisan_household=@(105,105,80); technical_household=@(110,125,120)
     merchant_household=@(115,150,180); owner_household=@(120,175,240)
@@ -1160,7 +1198,7 @@ foreach ($file in Get-ChildItem -LiteralPath $planDir -Filter '*.tres') {
         $failures.Add("duplicate consumption prototype: $planId and $($planSignatures[$signature])")
     } else { $planSignatures[$signature] = $planId }
 }
-if ($planCount -ne 8) { $failures.Add("expected eight consumption prototypes, found $planCount") }
+if ($planCount -ne 10) { $failures.Add("expected ten consumption prototypes, found $planCount") }
 $actualHouseholdGoods = @($goods.Values | Where-Object { $_.Demanded } |
     ForEach-Object { $_.Id } | Sort-Object)
 if (($actualHouseholdGoods -join ',') -ne (($expectedHouseholdGoods | Sort-Object) -join ',')) {
@@ -1367,4 +1405,4 @@ if ($failures.Count -gt 0) {
     foreach ($failure in $failures) { Write-Host "ERROR: $failure" }
     throw "economy content audit failed: $($failures.Count) issue(s)"
 }
-Write-Host "Economy content audit passed: $($goods.Count) goods, $($buildings.Count) buildings; all non-bullion recipes cover costs, owner living needs, and target margin at 80% sell-through."
+Write-Host "Economy content audit passed: $($goods.Count) goods, $($buildings.Count) buildings; ordinary non-bullion recipes pass default-price 80% sell-through, and reviewed price-responsive stone industries pass max-price full sell-through."

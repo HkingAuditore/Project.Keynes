@@ -71,9 +71,10 @@ func _audit(catalog: Dictionary) -> void:
 			goods.find(retired_chain_good) < 0)
 	for terminal_good in ["prepared_staples", "fine_clothing", "fine_furniture"]:
 		_expect("new terminal good exists: %s" % terminal_good, goods.find(terminal_good) >= 0)
-	_expect("nine consumption prototypes compile",
+	_expect("ten consumption prototypes compile",
 		catalog.plan_ids == PackedStringArray(["agrarian_household", "artisan_household",
-			"extractive_household", "industrial_worker_household", "merchant_household",
+			"extractive_household", "hunter_household", "industrial_worker_household",
+			"merchant_household",
 			"owner_household", "plan_unemployed", "survival_household",
 			"technical_household"]))
 	_expect("occupational and status needs compile",
@@ -112,11 +113,16 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("stone production chains have physical, demand-scaled inputs",
 		hearth.input_quantities_per_day == PackedInt64Array([7000, 3500]) and
 		hearth.input_required_q16 == PackedInt32Array([65536, 32768]) and
+		knapping.construction_good_ids == PackedStringArray(["logs", "flint"]) and
+		knapping.construction_quantities == PackedInt64Array([1000, 500]) and
 		knapping.input_quantities_per_day == PackedInt64Array([100]) and
-		knapping.output_quantities_per_day == PackedInt64Array([140]) and
+		knapping.output_quantities_per_day == PackedInt64Array([220]) and
+		early_weaving.construction_good_ids == PackedStringArray(
+			["logs", "gathered_plants"]) and
+		early_weaving.construction_quantities == PackedInt64Array([2000, 4000]) and
 		early_weaving.input_good_ids == PackedStringArray(["gathered_plants"]) and
 		early_weaving.input_quantities_per_day == PackedInt64Array([120]) and
-		early_weaving.output_quantities_per_day == PackedInt64Array([90]) and
+		early_weaving.output_quantities_per_day == PackedInt64Array([110]) and
 		String(early_weaving.building_kind) == "industrial")
 	_expect("primitive logging extracts rather than creates timber",
 		timber_collector.resource_generation_ids.is_empty() and
@@ -691,6 +697,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 	var expected_plan_needs := {
 		"plan_unemployed": ["staple_food"],
 		"survival_household": core_needs,
+		"hunter_household": core_needs + ["work_equipment"],
 		"agrarian_household": core_needs + ["transport", "work_equipment", "recreation"],
 		"extractive_household": core_needs + ["transport", "work_equipment"],
 		"industrial_worker_household": core_needs + ["transport", "work_equipment"],
@@ -704,7 +711,8 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 	}
 	var plan_scales := {
 		"plan_unemployed": [80, 0, 0],
-		"survival_household": [80, 35, 0], "agrarian_household": [95, 75, 0],
+		"survival_household": [80, 35, 0], "hunter_household": [85, 40, 0],
+		"agrarian_household": [95, 75, 0],
 		"extractive_household": [105, 85, 0], "industrial_worker_household": [100, 85, 0],
 		"artisan_household": [105, 105, 80], "technical_household": [110, 125, 120],
 		"merchant_household": [115, 150, 180], "owner_household": [120, 175, 240],
@@ -818,7 +826,9 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"owner_household": ["landlord", "industrialist"],
 		"merchant_household": ["merchant"],
 		"survival_household": ["subsistence_farmer", "forager", "enslaved_laborer", "serf", "apprentice"],
-		"agrarian_household": ["agricultural_worker", "pastoralist", "hunter", "fisher", "forestry_worker", "tenant_farmer", "indentured_laborer"],
+		"hunter_household": ["hunter"],
+		"agrarian_household": ["agricultural_worker", "pastoralist", "fisher",
+			"forestry_worker", "tenant_farmer", "indentured_laborer"],
 		"extractive_household": ["miner", "petroleum_worker"],
 		"industrial_worker_household": ["worker", "construction_worker", "industrial_worker", "transport_worker"],
 		"artisan_household": ["artisan", "metallurgist", "guild_master", "journeyman"],
@@ -916,7 +926,7 @@ func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
 			["improved_smallholding", 4, 16000],
 		],
 		"household_cloth": [
-			["household_weaving_shelter", 1, 90],
+			["household_weaving_shelter", 1, 110],
 			["household_loom", 2, 1320],
 			["cottage_weaving", 3, 2400],
 			["improved_domestic_loom", 4, 3600],

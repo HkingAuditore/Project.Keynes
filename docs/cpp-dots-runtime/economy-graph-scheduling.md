@@ -6,7 +6,7 @@
 每天在 20 个 slice 内完成整图，单 slice 约处理 50 万 cohort，因此 p95 约 89ms。
 瓶颈是固定点除法、need/bundle 展开和内存带宽，不是跨语言 Dictionary。
 
-Market V2 / Price V3 现采用 `production_income_consumption_v11`：周期起点冻结价格、科技、环境、
+Market V2 / Price V3 现采用 `production_income_consumption_v12`：周期起点冻结价格、科技、环境、
 资源和企业价格信号；建筑生产会在居民清算前改变资金与库存，使本期收入和新商品可参与本期消费。
 在 N 个模拟日内按地块连续 range 错峰计算，需求量一次性乘 N；所有地块与
 结构命令完成后，最早在周期截止日统一发布 N 日交易总量。
@@ -42,7 +42,7 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 8. `household_market`：每天最多一个 cohort-budgeted market range，先保护 ACTIVE owner 下一周期投入现金，使用本期收入和新库存计算 N 日总需求/交易；自产食物可补足总生存热量池，再计算食品与气候衣着生存满足，并以 Q32 residual 结算缺乏基本生活资料造成的死亡。
 9. `structural_commit`：稳定提交本轮结构 ECB。
 10. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
-11. `building_commit`：提交到期建设项目并重建必要的稀疏岗位范围。
+11. `building_commit`：提交到期建设项目；在 30 日资本评估窗口按盈利、需求缺口、个人储蓄和建材库存选择每地块至多一座 industrial 新建项目，随后重建必要的稀疏岗位范围。
 12. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
 
 周期内 save、gameplay 和其他经济写者只观察上一 committed state；Inspector 的有界选中
@@ -140,3 +140,8 @@ v11 在 `building_production` 的正常商人现金结算后，仅把目标库�
 本期岗位和真实空缺口径。
 外部 stage ABI 和默认五日
 冻结/截止日屏障不变。
+
+v12 在 `building_commit` 增加原生内生投资。评估使用本周期已完成的企业计划和市场信号，
+但只在跨过 30 日边界时允许新增建筑；普通周期不会重复扩建。已有业主空缺仍由
+`building_employment` 优先处理。自动新建排除 collector/service，并复用 BUILD 的建材库存、
+出资者资金、商人收入、事件和守恒账本。该节流由 committed day 推导，不新增 PKEC 字段。

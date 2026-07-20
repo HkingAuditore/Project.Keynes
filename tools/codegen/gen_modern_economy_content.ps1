@@ -382,10 +382,10 @@ $professionRows = @(
     @('industrialist','工业资本家','owner_household','tech.steam_power'),
     @('agricultural_worker','农业工人','agrarian_household','tech.pottery'),
     @('pastoralist','牧民','agrarian_household','tech.pottery'),
-    @('hunter','猎人','agrarian_household','tech.hunting'),
+    @('hunter','猎人','hunter_household','tech.hunting'),
     @('fisher','渔民','agrarian_household','tech.hunting'),
     @('forestry_worker','林业工人','agrarian_household','tech.gathering'),
-    @('miner','矿工','extractive_household','tech.bronze_casting'),
+    @('miner','矿工','extractive_household','tech.gathering'),
     @('petroleum_worker','石油工人','extractive_household','tech.steam_power'),
     @('construction_worker','建筑工人','industrial_worker_household','tech.masonry'),
     @('artisan','工匠','artisan_household','tech.gathering'),
@@ -406,10 +406,16 @@ $professionRows = @(
     @('apprentice','学徒','survival_household','tech.pottery'),
     @('journeyman','熟练工','artisan_household','tech.writing'),
     @('manager','经理','technical_household','tech.steam_power'),
-    @('researcher','研究员','technical_household','tech.experimental_science')
+    @('researcher','研究员','technical_household','tech.experimental_science'),
+    @('unemployed','失业者','plan_unemployed','')
 )
-if ($professionRows.Count -ne 32) { throw 'profession catalog baseline must be 32' }
+if ($professionRows.Count -ne 33) { throw 'profession catalog baseline must be 33' }
 foreach ($row in $professionRows) {
+    $professionTechnologyTags = if ([string]::IsNullOrWhiteSpace([string]$row[3])) {
+        'PackedStringArray()'
+    } else {
+        'PackedStringArray("' + [string]$row[3] + '")'
+    }
     Write-Utf8 (Join-Path $professionsDir "$($row[0]).tres") @"
 [gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
 [ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
@@ -418,7 +424,7 @@ script = ExtResource("1")
 id = &"$($row[0])"
 display_name = "$($row[1])"
 default_consumption_plan_id = &"$($row[2])"
-technology_tags = PackedStringArray("$($row[3])")
+technology_tags = $professionTechnologyTags
 "@
 }
 
@@ -448,7 +454,7 @@ living_cost_weight_q16 = $($row[2])
 $needSpecs = @(
     @{id='staple_food'; tier='essential'; base=550; wealth=4096; min=49152; max=81920; price=98304; quantityPrice=16384; quantityFloor=32768;
         variants=@(@('prepared_staples'),@('bread'),@('grain'),@('gathered_plants'))},
-    @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=98304; quantityFloor=0;
+    @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=98304; quantityFloor=9830;
         variants=@(@('game_meat'),@('meat'),@('fish'),@('canned_fish'),@('dairy_products'))},
     @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=65536; quantityFloor=4096;
         variants=@(@('vegetables'),@('processed_food'))},
@@ -549,12 +555,20 @@ component_qty_per_need = $(PI64 $componentQty)
 }
 $coreNeeds = @('staple_food','protein','produce','clothing','housing','household_goods',
     'hygiene','healthcare','home_energy')
+Write-Plan 'plan_unemployed' '失业者生存消费' @('staple_food') 80 0 0 @{
+    grain=81920; gathered_plants=98304
+}
 Write-Plan 'survival_household' '生存型家庭消费' $coreNeeds 80 35 0 @{
     gathered_plants=98304; grain=81920; cloth=81920; fur=73728; logs=98304; medicinal_herbs=81920
 }
 Write-Plan 'agrarian_household' '农业型家庭消费' `
     ($coreNeeds + @('transport','work_equipment','recreation')) 95 75 0 @{
     prepared_staples=81920; tools=98304; horses=81920; pottery=73728; vegetables=81920
+}
+Write-Plan 'hunter_household' '狩猎家庭消费' `
+    ($coreNeeds + @('work_equipment')) 85 40 0 @{
+    gathered_plants=81920; game_meat=98304; fur=81920; logs=81920
+    chipped_stone_tools=81920; medicinal_herbs=81920
 }
 Write-Plan 'extractive_household' '采掘型家庭消费' `
     ($coreNeeds + @('transport','work_equipment')) 105 85 0 @{
@@ -1718,8 +1732,44 @@ Write-SelfSufficientBuilding 'three_field_smallholding' '三圃制小农场' 'te
     'subsistence_food' 3 'subsistence_farmer' @('grain','vegetables') @(6000,6000) @('arable_land','fertile_soil') @(8000,8000)
 Write-SelfSufficientBuilding 'improved_smallholding' '改良小农场' 'tech.steam_power' `
     'subsistence_food' 4 'subsistence_farmer' @('grain','vegetables') @(8000,8000) @('arable_land','fertile_soil') @(6000,6000)
-Write-SelfSufficientBuilding 'household_weaving_shelter' '家庭织造棚' 'tech.gathering' `
-    'household_cloth' 1 'artisan' @('cloth') @(900) @('fertile_soil') @(1000)
+Write-Utf8 (Join-Path $buildingsDir 'household_weaving_shelter.tres') @"
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"household_weaving_shelter"
+display_name = "家庭织造棚"
+building_kind = "industrial"
+technology_tags = PackedStringArray("tech.gathering")
+upgrade_family_id = &"household_cloth"
+upgrade_tier = 1
+construction_days = 0
+construction_good_ids = PackedStringArray("logs", "gathered_plants")
+construction_quantities = PackedInt64Array(2000, 4000)
+owner_profession_id = &"artisan"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray()
+employee_slots_per_building = PackedInt64Array()
+employee_wage_policy_ids = PackedStringArray()
+employee_reference_wages_per_day = PackedInt64Array()
+input_good_ids = PackedStringArray("gathered_plants")
+input_quantities_per_day = PackedInt64Array(120)
+output_good_ids = PackedStringArray("cloth")
+output_quantities_per_day = PackedInt64Array(110)
+output_cost_shares_q16 = PackedInt32Array()
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "none"
+wage_policy_id = "none"
+wage_per_employee_per_day = 0
+"@
 Write-SelfSufficientBuilding 'household_loom' '家用织机' 'tech.pottery' `
     'household_cloth' 2 'artisan' @('cloth') @(1320) @('arable_land','fertile_soil') @(10000,10000)
 Write-SelfSufficientBuilding 'cottage_weaving' '家庭纺织坊' 'tech.guild_organization' `

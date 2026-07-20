@@ -17,9 +17,15 @@ const TEST_COLLECTOR_COUNT_CAPS := {
 	"flint_quarry": 1,
 	"household_weaving_shelter": 2,
 	"placer_gold_working": 1,
+	"stone_age_hunting_camp": 12,
 	"stone_collector": 1,
 	"surface_silver_working": 1,
 	"timber_collector": 3,
+}
+
+const TEST_INDUSTRY_COUNTS := {
+	"communal_hearth": 2,
+	"knapping_workshop": 3,
 }
 
 const MID_STONE_EXCLUDED_BUILDING_IDS := {
@@ -139,7 +145,9 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			pending_industries.remove_at(i)
 			placed_any = true
 			for cell_idx in selected_cells:
-				(groups_by_cell[cell_idx] as Array).append({"spec": spec, "count": 1})
+				var count := maxi(1, int(TEST_INDUSTRY_COUNTS.get(
+					String(spec.get("stable_id", "")), 1)))
+				(groups_by_cell[cell_idx] as Array).append({"spec": spec, "count": count})
 				_mark_outputs(spec, outputs_by_cell[cell_idx])
 		if not placed_any:
 			break

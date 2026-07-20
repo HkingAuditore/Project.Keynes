@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 9;
+    static constexpr int32_t SCHEMA_VERSION = 10;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -162,6 +162,12 @@ public:
         int64_t population_error = 0;
         int64_t money_error = 0;
         int64_t goods_error = 0;
+        int64_t construction_goods_consumed = 0;
+        int64_t building_investment_candidates = 0;
+        int64_t building_owner_mobility = 0;
+        int64_t building_investments_started = 0;
+        int64_t building_investment_blocked_funds = 0;
+        int64_t building_investment_blocked_materials = 0;
     };
 
     struct CohortRow {

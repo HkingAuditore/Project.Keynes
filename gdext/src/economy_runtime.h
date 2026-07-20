@@ -1063,6 +1063,11 @@ private:
     int64_t _filled_employee_jobs = 0;
     int64_t _unemployed_population = 0;
     int64_t _construction_goods_consumed = 0;
+    int64_t _building_investment_candidates = 0;
+    int64_t _building_owner_mobility = 0;
+    int64_t _building_investments_started = 0;
+    int64_t _building_investment_blocked_funds = 0;
+    int64_t _building_investment_blocked_materials = 0;
     int64_t _production_inputs_consumed = 0;
     int64_t _production_output_stock = 0;
     int64_t _production_output_discarded = 0;
@@ -1439,9 +1444,15 @@ private:
     bool run_building_employment_cell(int32_t cell, std::string &error);
     bool reconcile_building_employment_after_population_change(std::string &error);
     bool run_building_production_cell(int32_t cell, std::string &error);
+    bool run_endogenous_building_investment(bool &population_changed,
+                                            std::string &error);
+    int32_t find_entrepreneur_source(int32_t cell, int32_t target_signature,
+                                     int64_t required_capital,
+                                     int64_t target_income_per_day) const;
+    int64_t projected_owner_income_per_day(const BuildingGroup &group);
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
-    void commit_ready_construction();
+    bool commit_ready_construction();
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
     void rebuild_market_signals();

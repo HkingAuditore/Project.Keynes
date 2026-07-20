@@ -45,6 +45,7 @@ func _run() -> void:
 	_test_cycle_flow_output_clears_before_discard(catalog, profile)
 	_test_construction_shortage_feeds_procurement_signal(catalog, profile)
 	_test_owner_fill_reconciles_after_population_loss(catalog, profile)
+	_test_endogenous_owner_investment(catalog, profile)
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
@@ -412,6 +413,105 @@ func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
 		int(day1.get("population_error", 1)) == 0 and
 		int(day1.get("money_error", 1)) == 0 and
 		int(day1.get("goods_error", 1)) == 0)
+
+
+func _test_endogenous_owner_investment(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var hunter_sig := signatures.find("hunter|default")
+	var forager_sig := signatures.find("forager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var knapping_id := building_ids.find("knapping_workshop")
+	var hunting_id := building_ids.find("stone_age_hunting_camp")
+	var timber_id := building_ids.find("timber_collector")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	# Keep this fixture's demand signal deterministic: the hunting camps consume
+	# only chipped stone tools and require more than two workshops can supply.
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var hunting_input := int(input_offsets[hunting_id])
+	var input_quantities: PackedInt64Array = catalog.building_input_quantities
+	input_quantities[hunting_input] = 1000
+	catalog.building_input_quantities = input_quantities
+	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
+	for candidate_idx in range(
+			int(candidate_offsets[hunting_input]),
+			int(candidate_offsets[hunting_input + 1])):
+		candidate_goods[candidate_idx] = tool_good
+	catalog.building_input_candidate_good_ids = candidate_goods
+	var ext := _new_ext(catalog)
+	_expect("owner-investment country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 285))
+	_expect("owner-investment runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 285).get("ok", false)))
+	var resource_ids: PackedStringArray = catalog.building_resource_ids
+	var wild_game_resource := resource_ids.find("wild_game")
+	var reserve_slots: PackedStringArray = catalog.building_resource_reserve_slots
+	var wild_game_reserve: int = int(ext.component_id(StringName(
+		reserve_slots[wild_game_resource])))
+	ext.write_f32_range(wild_game_reserve, 0, PackedFloat32Array([1000000000.0]))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	stock[tool_good] = 0
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	prices[tool_good] = int((catalog.good_max_price as PackedInt32Array)[tool_good])
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			artisan_sig, hunter_sig, forager_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 20, 3, 1]),
+		"funds": PackedInt64Array([100000, 500000000, 30000000, 100000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0, 0]),
+		"building_type_ids": PackedInt32Array([
+			knapping_id, hunting_id, timber_id]),
+		"building_owner_signature_ids": PackedInt32Array([
+			artisan_sig, hunter_sig, forager_sig]),
+		"building_counts": PackedInt64Array([2, 10, 3]),
+	})
+	_expect("owner-investment settlement bootstraps", bool(boot.get("ok", false)))
+	var day0 := _run_day(ext, 0)
+	var pop0: Dictionary = ext.get_population_cell_snapshot(0)
+	var artisan_row0 := _row_for_signature(pop0, artisan_sig)
+	var artisan_population0 := int((pop0.populations as PackedInt64Array)[artisan_row0]) \
+		if artisan_row0 >= 0 else 0
+	_expect("employment fills the existing profitable owner opening first",
+		int(day0.get("building_investments_started", 0)) == 0 and
+		artisan_population0 == 2)
+	_expect("existing owner-opening employment conserves every ledger",
+		int(day0.get("population_error", 1)) == 0 and
+		int(day0.get("money_error", 1)) == 0 and
+		int(day0.get("goods_error", 1)) == 0)
+	var investment_day := day0
+	for day in range(1, 31):
+		investment_day = _run_day(ext, day)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var knapping_count := int((buildings.building_counts_by_type as PackedInt64Array)[
+		knapping_id])
+	_expect("monthly capital review buys materials and expands once",
+		int(investment_day.get("building_investments_started", 0)) == 1 and
+		int(investment_day.get("construction_goods_consumed", 0)) == 1500 and
+		knapping_count == 3)
+	_expect("endogenous construction conserves every ledger",
+		int(investment_day.get("population_error", 1)) == 0 and
+		int(investment_day.get("money_error", 1)) == 0 and
+		int(investment_day.get("goods_error", 1)) == 0)
+	var day31 := _run_day(ext, 31)
+	buildings = ext.get_building_cell_snapshot(0)
+	knapping_count = int((buildings.building_counts_by_type as PackedInt64Array)[
+		knapping_id])
+	_expect("capital review prevents next-day repeat expansion",
+		int(day31.get("building_investments_started", 0)) == 0 and
+		knapping_count == 3)
 
 
 func _test_production_income_consumption_order(catalog: Dictionary, profile: Dictionary) -> void:
@@ -880,9 +980,9 @@ func _test_producer_support_issuance(source_catalog: Dictionary,
 	_expect("support issuance is a distinct producer cashflow",
 		_cashflow_has_source(pop, owner_row, "producer_support_issuance", true))
 	_expect("support issuance is explicitly audited",
-		int(report.get("approximation_version", 0)) == 11 and
+		int(report.get("approximation_version", 0)) == 12 and
 		str(report.get("approximation_model", "")) ==
-			"production_income_consumption_v11" and
+			"production_income_consumption_v12" and
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)

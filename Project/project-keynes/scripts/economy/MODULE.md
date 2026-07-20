@@ -1,6 +1,6 @@
 # economy — 原生阶层与本地市场模块
 
-> 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v11`）。功能、守恒、确定性与
+> 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v13 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治和一般自然人口变化；仅实现缺乏食品/气候所需衣着造成的生存死亡。
@@ -54,7 +54,8 @@
 - 生存满足取“食品总满足”和“气候修正衣着满足”的较小值；高温可把衣着需求降到零。
   周期开始时仍存活人口先参与就业和生产，profile 的 50% 阈值只用于消费后的确定性饥饿死亡，
   不再前置削减劳动力并锁死自给生产。
-- 八套在业职业原型加一套失业者生存原型；在业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。
+- 九套在业职业原型加一套失业者生存原型；在业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。猎人使用独立的
+  `hunter_household`，保留职业装备但移除农业型家庭的交通和娱乐需求，并降低基础/舒适消费尺度。
   同一 good 跨 need 只允许 refined_fuel、computers、beverages、fur 四种明确多用途；展示层聚合
   数量与支出，不重复渲染。铁路设备、远洋船舶和科学仪器不再代理居民服务消费。
 - 商品可由显式库存命令或 BUILDING_GRAPH 生产进入市场。
@@ -74,8 +75,10 @@
 - 国内贸易默认 ACTIVE，只沿同一冻结国家的可贸易地形运输；发运即托管源货物和目的商人现金，到达边界结算。
 - 生产默认 5 日结算周期；`market_cycle_days=0` 才启用按规模自动周期。
 - 世界设置中的测试经济 fixture 默认关闭；启用时使用石器中期科技，只在可见资源能支撑配方的
-  地块放置 collector，并只在已有全部本地上游产出的地块放置 industrial。升级族只放置当前最高
-  可用档。生成器按输出减直接消费品投入计算净产能，以食品 `1300`、衣着 `4`
+  地块放置 collector，并只在已有全部本地上游产出的地块放置 industrial。石器本地链使用保守的
+  多建筑容量基线：每格先配置两座公共火塘和三座石器打制工坊，狩猎营地最多十二座，再交给承载
+  平衡器处理；单座石器工坊日产 `220`、家庭织造棚日产 `110`，不改变自然资源储量或增长率。
+  升级族只放置当前最高可用档。生成器按输出减直接消费品投入计算净产能，以食品 `1300`、衣着 `4`
   GOODS_SCALE/人/日为保守下限。每格承载人口取岗位、净食品、净衣着三种容量的最小值并封顶
   `300`；平衡器保留每种可用建筑至少一栋，只把重复建筑削减到该承载目标。连一人最低需求都
   无法覆盖的地块不生成测试聚落，避免必然停工和死亡。生成顺序固定为建筑 owner-lot → catalog
@@ -111,6 +114,11 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 等于该容量，只有亏损停产或不可用建筑才为 0。`filled_owner` 表示实际到岗，`owner_openings`
 表示可从失业池补充的真实空缺。employee required 仍按本期计划利用率缩放。
 UI 不得使用 `building count - filled_owner` 作为招聘空缺。
+`building_commit` 每跨过 30 日边界运行一次内生资本评估。就业先填已有岗位；只有 owner 已满、
+达到建筑目标利润率、利用率至少 75%、需求压力至少 12.5% 且缺口足以吸收半座日产能的 industrial
+建筑才可新增一座。出资者人均储蓄必须覆盖本地现价建材和 30 日生活储备，目标收入还须比来源
+收入高 12.5%；转职人口携带储蓄并复用 BUILD 的商人付款与商品 sink。collector/service 禁止
+价格驱动自动扩张，每地块每次评估最多一座。
 ACTIVE 企业还按上一周期售罄率与 `supply_price_elasticity_q16` 调整计划利用率；丢弃率不超过
 1% 时按舍入噪声处理，家庭可用库存不超过 1 个 goods 子单位且短缺率至少 12.5% 时主动恢复，真实未成交只缩减下一周期 employee 岗位、
 采购和产量，不把仍在经营的 owner 转为失业。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生存食物组还按同一业主人口的饥饿阈值自留需求计算动态下限并取较高值。生产者最低生存自留只在
@@ -172,7 +180,7 @@ PKEC v13 save，restore 后在下一次成功生产前显示为未知。
   或 Inspector/录制数据验证。
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
   只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 120 goods、260
-  production-method buildings、33 professions、17 needs 和 9 consumption plans。消费重平衡不改
+  production-method buildings、33 professions、17 needs 和 10 consumption plans。消费重平衡不改
   stable-ID 表或 PKEC v13 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
 - `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
