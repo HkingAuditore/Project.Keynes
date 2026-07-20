@@ -181,7 +181,10 @@ a normal "details pending" UI state.
 The optional world-setup test bootstrap is OFF by default. When explicitly enabled it uses the
 mid-Stone-Age technology set, places collectors only where discovered local/adjacent reserves can
 support their recipes, and places unlocked industrial chains only where every input has a local
-producer. It checks net food and clothing capacity against conservative per-capita daily floors,
+producer. Where their local inputs exist, the fixture uses conservative processing-chain baselines
+of two communal hearths and three knapping workshops, with hunting camps capped at twelve per cell,
+without changing natural-resource reserves or growth rates. It checks net food and clothing capacity
+against conservative per-capita daily floors,
 then sets each cell's target population to the minimum of job, net-food, and net-clothing capacity,
 capped at 300 including the merchant-post job. It trims only duplicate buildings beyond that target
 while preserving one of each available type, and suppresses settlements that cannot support even
@@ -246,3 +249,11 @@ highest technology-available tier and rejects an older BUILD with
 existing older assets continue operating. Building snapshots expose family indices, tiers, highest
 available tiers, and construction availability. These catalog additions change the catalog hash but
 not the PKEC v11 byte layout.
+
+At `building_commit`, endogenous owner investment may create one industrial building per cell only
+when a 30-day capital-review boundary is crossed. Existing vacancies remain employment concerns.
+Expansion requires the configured target margin, at least 75% planned utilization, persistent
+demand pressure, enough local construction stock, and an entrepreneur whose per-capita funds cover
+materials plus 30 living-cost days. The entrepreneur moves one person and proportional funds into
+the owner signature before the normal BUILD transaction pays local merchants. Collectors and
+services are excluded so price signals alone cannot expand natural-resource extraction.

@@ -21,7 +21,7 @@ using Clock = std::chrono::steady_clock;
 constexpr size_t WRITE_CHUNK_BYTES = 1024 * 1024;
 
 constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
-    "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,births,deaths,production_inputs_consumed,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,owner_output_consumed,producer_revenue,producer_support_money_issued,bullion_money_issued,bullion_stock_consumed,gold_accepted,silver_accepted,gold_money_issued,silver_money_issued,cycle_flow_produced,cycle_flow_consumed,cycle_flow_discarded,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,trade_runtime_mode,trade_topology_ready,trade_topology_generation,trade_topology_hash,trade_country_generation,trade_plan_phase,trade_scan_cursor,trade_scan_total,trade_route_cursor,trade_route_total,trade_completed_scans,trade_plan_reset_count,trade_topology_content_change_count,trade_last_plan_reset_reason,trade_source_signals,trade_destination_signals,trade_ready_candidates,trade_route_expansions,trade_route_cache_hits,trade_route_cache_misses,trade_candidates_generated,trade_candidates_accepted,trade_rejected_profit,trade_rejected_no_spread,trade_rejected_margin,trade_quantity_profit_clips,trade_relief_candidates,trade_rejected_capacity,trade_rejected_stock,trade_rejected_cash,trade_rejected_route,trade_rejected_order_cap,trade_orders_in_flight,trade_orders_dispatched,trade_orders_arrived,trade_unclaimed_orders,trade_capacity_available,trade_capacity_used,population_error,money_error,goods_error\n",
+    "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,births,deaths,production_inputs_consumed,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,owner_output_consumed,producer_revenue,producer_support_money_issued,bullion_money_issued,bullion_stock_consumed,gold_accepted,silver_accepted,gold_money_issued,silver_money_issued,cycle_flow_produced,cycle_flow_consumed,cycle_flow_discarded,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,trade_runtime_mode,trade_topology_ready,trade_topology_generation,trade_topology_hash,trade_country_generation,trade_plan_phase,trade_scan_cursor,trade_scan_total,trade_route_cursor,trade_route_total,trade_completed_scans,trade_plan_reset_count,trade_topology_content_change_count,trade_last_plan_reset_reason,trade_source_signals,trade_destination_signals,trade_ready_candidates,trade_route_expansions,trade_route_cache_hits,trade_route_cache_misses,trade_candidates_generated,trade_candidates_accepted,trade_rejected_profit,trade_rejected_no_spread,trade_rejected_margin,trade_quantity_profit_clips,trade_relief_candidates,trade_rejected_capacity,trade_rejected_stock,trade_rejected_cash,trade_rejected_route,trade_rejected_order_cap,trade_orders_in_flight,trade_orders_dispatched,trade_orders_arrived,trade_unclaimed_orders,trade_capacity_available,trade_capacity_used,population_error,money_error,goods_error,construction_goods_consumed,building_investment_candidates,building_owner_mobility,building_investments_started,building_investment_blocked_funds,building_investment_blocked_materials\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,cohort_index,handle,signature_id,profession_id,ethnicity_id,population,funds,epoch_income,epoch_expense,income_ema,satisfaction_q16,worst_need_id,is_merchant,owner_employed,employee_employed,unemployed\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,is_construction,group_index,type_id,owner_signature_id,count,owner_capacity,owner_required,planned_owner_equivalent,filled_owner,owner_openings,employee_required,employee_filled,wage_suspended,capacity_q16,purchase_intent_capacity_q16,realized_profit_margin_q16,severe_loss_cycles,recovery_cycles,operating_state,last_input,last_output,last_sold,last_discarded,last_retained,last_resource,last_resource_generated,last_revenue,last_input_cost,last_wages_paid,last_wages_due,last_expected_revenue,last_operating_cost,last_margin_gap_q16,planned_utilization_q16,last_base_wages_due,last_base_wages_paid,last_bonus_due,last_bonus_paid,owner_living_cost_per_day,owner_livelihood_required,viability_operating_cost,viability_income_gap,construction_ready_days\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,opening_reserve,natural_net_change,artificial_change_applied,artificial_change_pending,reserve\n",
@@ -543,6 +543,14 @@ bool EconomyCsvRecorder::fill_batch(
         row.production_input_reserved = runtime._production_input_reserved;
         row.production_input_reserve_shortfall =
             runtime._production_input_reserve_shortfall;
+        row.construction_goods_consumed = runtime._construction_goods_consumed;
+        row.building_investment_candidates = runtime._building_investment_candidates;
+        row.building_owner_mobility = runtime._building_owner_mobility;
+        row.building_investments_started = runtime._building_investments_started;
+        row.building_investment_blocked_funds =
+            runtime._building_investment_blocked_funds;
+        row.building_investment_blocked_materials =
+            runtime._building_investment_blocked_materials;
         row.trade_runtime_mode = runtime._trade_runtime_mode;
         row.trade_topology_ready = runtime._trade_topology.ready;
         row.trade_topology_generation = runtime._trade_topology.topology_generation;
@@ -928,6 +936,12 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.trade_orders_arrived); field(chunk, row.trade_unclaimed_orders);
         field(chunk, row.trade_capacity_available); field(chunk, row.trade_capacity_used);
         field(chunk, row.population_error); field(chunk, row.money_error); field(chunk, row.goods_error);
+        field(chunk, row.construction_goods_consumed);
+        field(chunk, row.building_investment_candidates);
+        field(chunk, row.building_owner_mobility);
+        field(chunk, row.building_investments_started);
+        field(chunk, row.building_investment_blocked_funds);
+        field(chunk, row.building_investment_blocked_materials);
         chunk.push_back('\n'); if (!maybe_flush(SUMMARY)) goto write_failed;
     }
     if (!flush(SUMMARY)) goto write_failed;

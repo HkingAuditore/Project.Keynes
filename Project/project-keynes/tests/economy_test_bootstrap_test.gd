@@ -117,8 +117,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v9 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 9)
+	_expect("native CSV v10 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 10)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("both viable land cells receive sustainable settlements",
@@ -138,6 +138,9 @@ func _initialize() -> void:
 		_has_building(second_buildings, "surface_silver_working"))
 	_expect("stone household weaving consumes gathered plant fiber",
 		_has_building(buildings, "household_weaving_shelter"))
+	_expect("stone industrial fixture uses conservative local chain counts",
+		_building_count(buildings, "communal_hearth") == 2 and
+		_building_count(buildings, "knapping_workshop") == 3)
 	var initial_land: Dictionary = facade.population_cell_snapshot(0)
 	var initial_second_land: Dictionary = facade.population_cell_snapshot(1)
 	_expect("survival satisfaction alias matches the compatibility fields",
@@ -415,7 +418,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 89, "cohorts": 23, "buildings": 50,
+	var expected_columns := {"summary": 95, "cohorts": 23, "buildings": 50,
 		"resources": 13, "market": 28}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
@@ -430,6 +433,15 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		for line_idx in range(1, lines.size()):
 			_expect("%s CSV row %d column count" % [dim, line_idx],
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
+	var summary_text := FileAccess.get_file_as_string(str(paths.summary)).trim_prefix("﻿")
+	var summary_header := summary_text.split("\n", false)[0].split(",", true)
+	_expect("summary CSV v10 exposes endogenous investment diagnostics",
+		[
+			"construction_goods_consumed", "building_investment_candidates",
+			"building_owner_mobility", "building_investments_started",
+			"building_investment_blocked_funds",
+			"building_investment_blocked_materials",
+		].all(func(column: String) -> bool: return summary_header.has(column)))
 	var building_text := FileAccess.get_file_as_string(str(paths.buildings)).trim_prefix("﻿")
 	var building_lines := building_text.split("\n", false)
 	var building_header := building_lines[0].split(",", true)
@@ -455,7 +467,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				or openings != maxi(0, required - filled):
 			owner_rows_valid = false
 			break
-	_expect("building CSV v9 separates owner capacity, active jobs, planned equivalent, and openings",
+	_expect("building CSV v10 separates owner capacity, active jobs, planned equivalent, and openings",
 		owner_columns_valid and owner_rows_valid)
 	if not resource_slots.is_empty() and not resource_ids.is_empty():
 		var reserves: PackedFloat32Array = ext.snapshot_f32(resource_slots[0])
@@ -568,6 +580,7 @@ func _fixture_respects_test_collector_caps(fixture: Dictionary, facade) -> bool:
 		"flint_quarry": 1,
 		"household_weaving_shelter": 2,
 		"placer_gold_working": 1,
+		"stone_age_hunting_camp": 12,
 		"stone_collector": 1,
 		"surface_silver_working": 1,
 		"timber_collector": 3,
@@ -585,10 +598,14 @@ func _fixture_respects_test_collector_caps(fixture: Dictionary, facade) -> bool:
 
 
 func _has_building(snapshot: Dictionary, building_id: String) -> bool:
+	return _building_count(snapshot, building_id) > 0
+
+
+func _building_count(snapshot: Dictionary, building_id: String) -> int:
 	var ids: PackedStringArray = snapshot.get("building_type_ids", PackedStringArray())
 	var counts: PackedInt64Array = snapshot.get("building_counts_by_type", PackedInt64Array())
 	var idx := ids.find(building_id)
-	return idx >= 0 and idx < counts.size() and counts[idx] > 0
+	return int(counts[idx]) if idx >= 0 and idx < counts.size() else 0
 
 
 func _building_output_reconciles(snapshot: Dictionary, building_id: String) -> bool:

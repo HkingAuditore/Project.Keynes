@@ -245,7 +245,7 @@ EMA 形成硬下限，因此生活成本通过工资进入成本锚，不再另�
 
 价格变化先应用 good-specific `price_adjust_q16` 与单日 max rise/fall，再以
 `daily_change*N` 做确定性一阶冻结积分，最后应用绝对 min/max。该算法避免对每个
-market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v11`
+market-good 做 N 次反馈或幂运算；误差由版本化 `production_income_consumption_v12`
 近似契约显式控制。
 
 cohort income EMA 同样读取周期净收入日均值，effective alpha 为
@@ -309,8 +309,34 @@ exportable_stock           = max(0, stock - production_input_reserve)
 ```
 
 预留本身不改变库存所有权，也不是 goods sink；居民和国内贸易只能清算预留以上的库存。缓存由建筑
-与周期计划确定性重建，不进入 PKEC v13 字节布局。报告和 CSV v8 发布预留总量、期望与结算末受保护库存之差及逐商品家庭
+与周期计划确定性重建，不进入 PKEC v13 字节布局。报告和 CSV v10 发布预留总量、期望与结算末受保护库存之差及逐商品家庭
 可用库存。
+
+## 2026-07-20 endogenous owner investment
+
+每 30 日资本评估窗口，已满员 industrial owner-lot 才可扩建。候选门槛为：
+
+```text
+margin_gap_q16 >= 0                         # 已达到建筑自身 target margin
+planned_utilization_q16 >= 0.75
+demand_pressure_q16 >= 0.125
+demand_ema - offered_supply_ema >= unit_output / 2
+projected_owner_income >= owner_living_cost * 1.10
+target_income >= source_income_per_capita * 1.125
+required_capital = construction_cost_at_local_prices
+                 + owner_living_cost * 30
+source_funds_per_capita >= required_capital
+```
+
+`demand_pressure_q16` 取成交短缺率与正需求缺口比例的较大值。出资人口按 cohort 人口比例携带
+资金转入目标业主 signature，随后复用 BUILD：建材从 merchant-owned stock 扣除，建设款从业主
+cohort 转给本地商人。每地块每个评估窗口至多一座；collector/service 不参与。goods audit 继续为：
+
+```text
+closing_stock = opening_stock + explicit_stock_delta + accepted_output
+                - household_consumption - construction_inputs
+                - production_inputs - cycle_flow_discarded
+```
 ## 2026-07-18 owner livelihood and capped procurement formulas
 
 For an owner signature in one cell, the business cash buffer is:

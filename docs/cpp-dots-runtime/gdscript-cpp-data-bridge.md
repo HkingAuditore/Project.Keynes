@@ -608,11 +608,13 @@ Price V3 的企业需求 EMA、实际供给 EMA 与成本锚同样只存在 nati
 `submit_country_commands` / `run_country_slice` 与 snapshot/save API。经济热路径不通过该 Facade，
 而由 `NativeEconomyRuntime` 直接持有窄类型 `NativeCountryRuntime*`，在 sample day 复制纯数值冻结
 快照。这样避免 Dictionary/Object/string lookup 和 GDScript 往返，也避免为全国一致科技制造逐格副本。
-## Economy recorder CSV v9
+## Economy recorder CSV v10
 
-CSV v9 keeps C++ as the only economy authority and adds derived diagnostics at
+CSV v10 keeps C++ as the only economy authority and adds derived diagnostics at
 the committed boundary. Building rows include owner living cost, livelihood requirement, viability
 operating cost, and income gap. Resource rows now publish opening reserve,
 natural net change, previously pending artificial change applied, current
 artificial change pending, and closing reserve. The recorder history is debug
-state only: it is excluded from simulation state hash and PKEC save data.
+state only: it is excluded from simulation state hash and PKEC save data. Summary rows append
+construction goods consumed plus endogenous investment candidates, owner mobility, starts, and
+fund/material blocking counters.

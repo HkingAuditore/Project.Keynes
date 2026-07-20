@@ -27,7 +27,7 @@ curves. Float is allowed only for timing/UI.
 
 ## 2. Frozen-period model
 
-The authority model is `production_income_consumption_v10`.
+The authority model is `production_income_consumption_v12`.
 
 At sample day, freeze prices, profession/ethnicity/plan, technology, resources, enterprise price
 signals, and four environment signals. Population alive at the boundary enters employment;
@@ -201,3 +201,11 @@ must cover this reserve. Household clearing and domestic export may use only sto
 reserve is derived state rather than a PKEC field: rebuild it after catalog/building restoration and
 whenever the sparse building signal shape or cycle plan changes. Report both the requested reserve
 and its remaining stock shortfall.
+
+At a 30-day capital-review boundary, a fully owned industrial lot can expand only if it already
+meets its configured target margin, planned utilization is at least 75%, demand pressure is at least
+12.5%, and the demand/supply deficit can absorb at least half of one building's daily output. The
+new owner's projected income must cover 110% of living cost and exceed source income by 12.5%.
+Per-capita source funds must cover local-price construction goods plus 30 living-cost days. Move one
+person with proportional funds, then use the ordinary BUILD transfer and construction-goods sink.
+Do not apply this price-driven path to collectors or services.
