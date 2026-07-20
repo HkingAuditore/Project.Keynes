@@ -412,3 +412,71 @@ explicit_money_mint == producer_support_money_issued + bullion_money_issued
 Worker dispatch is not permission to approximate cash, goods, population, or
 resource conservation. Controlled approximation remains limited to the already
 documented fixed-point planning bounds and rolling observation latency.
+
+## 2026-07-20 investment viability and rolling employment diagnostics
+
+Employment totals are derived per cell and per rolling epoch. Recomputing one
+cell first removes that cell's cached contribution only when the cache belongs
+to the current epoch, then adds the replacement. Structural reconciliation may
+therefore run on a non-due cell without subtracting a contribution that has not
+yet been published; global owner jobs, employee jobs, and unemployment remain
+nonnegative derived diagnostics and do not enter PKEC or the state hash.
+
+Endogenous investment reviews each `(cell, building_type)` as one aggregate.
+For each output, installed daily capacity is:
+
+```text
+installed_capacity = unit_output_per_day * installed_building_count
+ordinary expansion requires demand > installed_capacity * 1.10
+survival expansion requires demand > installed_capacity * 1.05
+```
+
+Existing output must also have at least 80% sell-through and at most 10%
+discard. Pending construction, suspended capacity, owner vacancies, materials,
+resources, input chains, sponsor cash, and installed-capacity sufficiency have
+distinct rejection codes. A suspended owner lot retains one owner slot for
+recovery but hires no employees and produces nothing.
+
+For one proposed building at planned utilization `u`:
+
+```text
+variable_cost = (daily_inputs + daily_employee_wages) * u
+owner_livelihood = owner_daily_living_cost * owner_slots
+operating_cost = variable_cost + owner_livelihood
+required_revenue = operating_cost * (1 + target_operating_margin)
+profit = revenue - operating_cost
+payback_days = ceil(required_capital / profit)
+required_capital = construction_cost
+                 + daily_inputs * operating_cycles * epoch_days
+                 + daily_employee_wages * epoch_days
+                 + owner_livelihood * 30
+```
+
+Revenue must cover owner livelihood and the target markup over operating cost;
+the former `profit / revenue` comparison is not used. All arithmetic remains
+saturating fixed point and every approved build still performs real population,
+cash, construction-stock, and merchant-income transfers.
+
+## CSV v12 derived balance formulas
+
+The opening-cash ceiling is not a procurement demand measure. CSV v12 reports:
+
+```text
+procurement_opportunity = sum(inventory_gap_good * producer_buy_price_good)
+procurement_allocated = min(merchant_cash_after_reserve, procurement_opportunity)
+procurement_unspent_allocated = max(0, procurement_allocated - procurement_spent)
+
+in_kind_value = retained_quantity_consumed * committed_retail_price / GOODS_SCALE
+cash_expense_coverage = cash_income / cash_expense
+livelihood_coverage = (cash_income + in_kind_value) /
+                      (cash_expense + in_kind_value)
+```
+
+In-kind value is a welfare diagnostic, not a monetary transfer. It does not change
+cohort funds, merchant funds, the money audit, PKEC v15 bytes, or the state hash.
+
+Utilization still follows realized sell-through, but high discard accelerates the
+existing response. A discard rate of at least 25% applies a response floor of 0.75;
+at least 50% applies a response of 1.0 when no active shortage recovery is required.
+A real shortage recovery signal retains priority, and the existing survival/probe
+utilization floor remains authoritative.

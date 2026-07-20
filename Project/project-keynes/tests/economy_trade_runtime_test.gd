@@ -110,9 +110,18 @@ func _run() -> void:
 		"gathered_plants")
 	var dispatch_delay := int((destination_after_dispatch.trade_first_dispatch_delay_days as
 		PackedInt32Array)[destination_good_index])
+	var last_attempt := int((destination_after_dispatch.trade_last_attempt_day as
+		PackedInt64Array)[destination_good_index])
+	var last_rejection := int((destination_after_dispatch.trade_last_rejection_reason as
+		PackedInt32Array)[destination_good_index])
+	var deadline_exceeded := int((destination_after_dispatch.trade_deadline_exceeded as
+		PackedByteArray)[destination_good_index])
 	_expect("new shortage receives its first dispatch within the response target",
 		dispatch_delay >= 0 and dispatch_delay <= 15 and
-		int(report.get("trade_response_deadline_misses", -1)) == 0)
+		int(report.get("trade_response_deadline_misses", -1)) == 0 and
+		int(report.get("trade_response_deadline_misses_cumulative", -1)) == 0)
+	_expect("trade signal records its last dispatch attempt and deadline state",
+		last_attempt >= 0 and last_rejection == 8 and deadline_exceeded == 0)
 
 	_expect("in-transit committed boundary conserves", bool(report.get("done", false)) and
 		int(report.get("goods_error", 1)) == 0 and int(report.get("money_error", 1)) == 0)
@@ -459,6 +468,11 @@ func _test_unprofitable_rejected(compiled: Dictionary, catalog: Dictionary) -> v
 		_advance_day(ext, day)
 	_expect("negative expected profit creates no trade order",
 		int(ext.get_trade_orders_for_cell(0, 0, 64).get("total", -1)) == 0)
+	var destination: Dictionary = ext.get_market_cell_snapshot(1)
+	var attempts: PackedInt64Array = destination.trade_last_attempt_day
+	var reasons: PackedInt32Array = destination.trade_last_rejection_reason
+	_expect("unprofitable shortage records an explicit rejection",
+		int(attempts[good]) >= 0 and int(reasons[good]) in [1, 2])
 
 func _test_invalid_seller_rebind(compiled: Dictionary, catalog: Dictionary) -> void:
 	var ext := _new_ext(compiled, 2)

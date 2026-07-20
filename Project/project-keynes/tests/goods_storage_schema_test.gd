@@ -47,10 +47,10 @@ func _run() -> void:
 		int(inventory_ratios[good_ids.find("tools")]) == 65536 and
 		int(inventory_ratios[good_ids.find("jewelry")]) == 43691 and
 		int(inventory_ratios[good_ids.find("electricity")]) == 0)
-	_expect("stone food keeps a full thirty-day merchant target",
+	_expect("stone food keeps explicit merchant inventory horizons",
 		int(inventory_ratios[good_ids.find("gathered_plants")]) == 65536 and
 		int(inventory_ratios[good_ids.find("game_meat")]) == 65536 and
-		int(inventory_ratios[good_ids.find("processed_food")]) == 65536 and
+		int(inventory_ratios[good_ids.find("processed_food")]) == 43691 and
 		int(inventory_ratios[good_ids.find("fish")]) == 65536)
 	_expect("need catalog compiles total quantity price response",
 		(catalog.need_price_quantity_elasticity_q16 as PackedInt32Array).size() ==
@@ -555,12 +555,23 @@ func _test_cycle_deadline_catchup(compiled: Dictionary) -> void:
 	ext.bootstrap_economy({"cell_indices": cells, "signature_ids": signatures,
 		"population": populations, "funds": funds}, {})
 	var day0: Dictionary = ext.run_economy_slice({"day_index": 0, "tick_index": 0})
-	_expect("day zero phase completes without a barrier",
+	_expect("day zero phase enters bounded catchup without a fatal barrier",
+		not bool(day0.done) and bool(day0.commit_due) and not bool(day0.fatal) and
+		int(day0.due_cells) == 2)
+	for slice in range(1, 128):
+		day0 = ext.run_economy_slice({"day_index": 0, "tick_index": slice})
+		if bool(day0.done):
+			break
+	_expect("day zero phase completes through continuation",
 		bool(day0.done) and not bool(day0.commit_due) and
 		int(day0.due_cells) == 2 and int(day0.processed_due_cells) == 2 and
 		int(day0.deferred_cells) == 0)
 	var day1: Dictionary = ext.run_economy_slice({"day_index": 1, "tick_index": 1})
-	_expect("next daily phase also completes in one call",
+	for slice in range(2, 128):
+		if bool(day1.done):
+			break
+		day1 = ext.run_economy_slice({"day_index": 1, "tick_index": slice})
+	_expect("next daily phase also completes through continuation",
 		bool(day1.done) and not bool(day1.commit_due) and
 		int(day1.due_cells) == 2 and int(day1.processed_due_cells) == 2 and
 		int(day1.deferred_cells) == 0 and int(day1.max_state_age_days) <= 4)

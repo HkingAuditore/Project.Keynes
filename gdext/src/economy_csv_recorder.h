@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 10;
+    static constexpr int32_t SCHEMA_VERSION = 12;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -116,6 +116,9 @@ public:
         int64_t building_resource_net_delta = 0;
         int64_t loss_suspended_building_groups = 0;
         int64_t merchant_procurement_budget = 0;
+        int64_t merchant_procurement_opportunity = 0;
+        int64_t merchant_procurement_allocated = 0;
+        int64_t merchant_procurement_unspent_allocated = 0;
         int64_t merchant_procurement_reserved = 0;
         int64_t merchant_procurement_spent = 0;
         int64_t owner_working_capital_reserved = 0;
@@ -178,6 +181,15 @@ public:
         int64_t trade_signal_max_age_days = 0;
         int64_t trade_first_dispatch_delay_max_days = 0;
         int64_t trade_response_deadline_misses = 0;
+        int64_t trade_response_deadline_misses_cumulative = 0;
+        int64_t trade_unresolved_no_attempt = 0;
+        int64_t trade_unresolved_no_spread = 0;
+        int64_t trade_unresolved_margin = 0;
+        int64_t trade_unresolved_route = 0;
+        int64_t trade_unresolved_stock = 0;
+        int64_t trade_unresolved_capacity = 0;
+        int64_t trade_unresolved_cash = 0;
+        int64_t trade_unresolved_order_cap = 0;
     };
 
     struct CohortRow {
@@ -191,6 +203,9 @@ public:
         int64_t funds = 0;
         int64_t epoch_income = 0;
         int64_t epoch_expense = 0;
+        int64_t epoch_in_kind_income = 0;
+        int64_t cash_expense_coverage_q16 = 0;
+        int64_t livelihood_coverage_q16 = 0;
         int64_t income_ema = 0;
         int32_t satisfaction_q16 = 0;
         int32_t worst_need_id = -1;
@@ -257,8 +272,14 @@ public:
         int32_t resource_index = -1;
         float opening_reserve = 0.0f;
         float natural_net_change = 0.0f;
+        float natural_positive_change = 0.0f;
+        float natural_negative_change = 0.0f;
         float artificial_change_applied = 0.0f;
         float artificial_change_pending = 0.0f;
+        float artificial_generation_applied = 0.0f;
+        float artificial_extraction_applied = 0.0f;
+        float artificial_generation_pending = 0.0f;
+        float artificial_extraction_pending = 0.0f;
         float reserve = 0.0f;
         int64_t safe_yield = 0;
         int64_t projected_life_days = 0;
@@ -285,6 +306,9 @@ public:
         int32_t trade_relief_pressure_q16 = 0;
         int32_t trade_signal_age_days = 0;
         int32_t trade_first_dispatch_delay_days = -1;
+        int64_t trade_last_attempt_day = -1;
+        int32_t trade_last_rejection_reason = 0;
+        bool trade_deadline_exceeded = false;
         int32_t cost_anchor_price = 0;
         int32_t shortage_q16 = 0;
         int64_t pressure_business_demand = 0;

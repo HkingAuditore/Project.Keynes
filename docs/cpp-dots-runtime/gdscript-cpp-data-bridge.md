@@ -610,9 +610,9 @@ Price V3 的企业需求 EMA、实际供给 EMA 与成本锚同样只存在 nati
 `submit_country_commands` / `run_country_slice` 与 snapshot/save API。经济热路径不通过该 Facade，
 而由 `NativeEconomyRuntime` 直接持有窄类型 `NativeCountryRuntime*`，在 sample day 复制纯数值冻结
 快照。这样避免 Dictionary/Object/string lookup 和 GDScript 往返，也避免为全国一致科技制造逐格副本。
-## Economy recorder CSV v10
+## Economy recorder CSV v11
 
-CSV v10 keeps C++ as the only economy authority and adds derived diagnostics at
+CSV v11 keeps C++ as the only economy authority and adds derived diagnostics at
 the committed boundary. Building rows include owner living cost, livelihood requirement, viability
 operating cost, and income gap. Resource rows now publish opening reserve,
 natural net change, previously pending artificial change applied, current
@@ -620,6 +620,17 @@ artificial change pending, and closing reserve. The recorder history is debug
 state only: it is excluded from simulation state hash and PKEC save data. Summary rows append
 construction goods consumed plus endogenous investment candidates, owner mobility, starts, and
 fund/material blocking counters.
+
+Resource rows retain signed `natural_net_change` and signed artificial deltas,
+and add positive-valued natural increase/decrease plus artificial
+generation/extraction columns for direct stock-flow checks. Natural positive and
+negative columns decompose the observed net change; they are not a claim that
+simultaneous gross ecological birth and death were separately observed.
+Summary rows distinguish current unresolved trade deadline misses from
+cumulative unique shortage episodes. Market rows add last trade attempt day,
+last rejection reason, and current deadline-exceeded state. All v11 additions
+are recorder/snapshot diagnostics only; no DataCore slot, PKEC field, or mutable
+GDScript economy state is added.
 ## Economy v15 bridge additions
 
 GDScript compiles resource profile coefficients and v15 behavior knobs into

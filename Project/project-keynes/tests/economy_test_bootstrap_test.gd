@@ -117,8 +117,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v10 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 10)
+	_expect("native CSV v11 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 12)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("both viable land cells receive sustainable settlements",
@@ -417,8 +417,8 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 105, "cohorts": 23, "buildings": 55,
-		"resources": 15, "market": 36}
+	var expected_columns := {"summary": 117, "cohorts": 26, "buildings": 55,
+		"resources": 21, "market": 39}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
 		var bytes := FileAccess.get_file_as_bytes(path)
@@ -434,12 +434,13 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
 	var summary_text := FileAccess.get_file_as_string(str(paths.summary)).trim_prefix("﻿")
 	var summary_header := summary_text.split("\n", false)[0].split(",", true)
-	_expect("summary CSV v14 exposes endogenous investment diagnostics",
+	_expect("summary CSV v11 exposes investment and trade deadline diagnostics",
 		[
 			"construction_goods_consumed", "building_investment_candidates",
 			"building_owner_mobility", "building_investments_started",
 			"building_investment_blocked_funds",
 			"building_investment_blocked_materials",
+			"trade_response_deadline_misses_cumulative",
 		].all(func(column: String) -> bool: return summary_header.has(column)))
 	var building_text := FileAccess.get_file_as_string(str(paths.buildings)).trim_prefix("﻿")
 	var building_lines := building_text.split("\n", false)
@@ -471,19 +472,22 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 	if not resource_slots.is_empty() and not resource_ids.is_empty():
 		var reserves: PackedFloat32Array = ext.snapshot_f32(resource_slots[0])
 		var resource_text := FileAccess.get_file_as_string(str(paths.resources)).trim_prefix("﻿")
+		var resource_header := resource_text.split("\n", false)[0].split(",", true)
+		var reserve_col := resource_header.find("reserve")
+		var pending_col := resource_header.find("artificial_change_pending")
 		var found := false
 		for line in resource_text.split("\n", false).slice(1):
 			var cols := line.split(",", true)
 			if cols.size() == int(expected_columns.resources) and int(cols[0]) == 3 and int(cols[3]) == 0 \
 					and cols[7] == resource_ids[0]:
-				found = is_equal_approx(float(cols[12]), reserves[0])
+				found = reserve_col >= 0 and is_equal_approx(float(cols[reserve_col]), reserves[0])
 				break
 		_expect("resource CSV uses post-delta committed slot value", found)
 		var wild_pending_is_local := false
 		for line in resource_text.split("\n", false).slice(1):
 			var cols := line.split(",", true)
 			if cols.size() == int(expected_columns.resources) and int(cols[3]) == 0 and cols[7] == "wild_game" \
-					and float(cols[11]) < 0.0:
+					and pending_col >= 0 and float(cols[pending_col]) < 0.0:
 				wild_pending_is_local = true
 				break
 		_expect("resource CSV maps native artificial deltas by stable resource id",
@@ -494,12 +498,14 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		"price_pressure_total_q16", PackedInt32Array())
 	if not market_goods.is_empty() and not market_pressure.is_empty():
 		var market_text := FileAccess.get_file_as_string(str(paths.market)).trim_prefix("﻿")
+		var market_header := market_text.split("\n", false)[0].split(",", true)
+		var pressure_col := market_header.find("price_pressure_total_q16")
 		var pressure_matches := false
 		for line in market_text.split("\n", false).slice(1):
 			var cols := line.split(",", true)
 			if cols.size() == int(expected_columns.market) and int(cols[0]) == 3 and int(cols[3]) == 0 \
 					and cols[7] == market_goods[0]:
-				pressure_matches = int(cols[20]) == market_pressure[0]
+				pressure_matches = pressure_col >= 0 and int(cols[pressure_col]) == market_pressure[0]
 				break
 		_expect("worker price-pressure encoding matches committed native snapshot",
 			pressure_matches)

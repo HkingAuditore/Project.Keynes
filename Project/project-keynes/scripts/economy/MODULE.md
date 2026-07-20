@@ -227,6 +227,13 @@ sparse market/building signals, protects five days plus 50 percent target stock,
 fills to 50 percent target, and prioritizes signals approaching the 15-day first
 dispatch target.
 
+The bounded trade planner rotates its deterministic active-signal scan origin by
+simulation day. Within each country/good group it prioritizes never-attempted
+destinations, then attempted-but-unserved destinations, then destinations that
+already received a first dispatch. Committed diagnostics recompute current
+deadline misses from all live signal clocks rather than from only the planner
+slice that happened to run that day.
+
 ## PKEC v15 rolling settlement (current)
 
 Production uses five stable daily buckets: cell `c` settles when
@@ -263,3 +270,16 @@ the catalog/profile/report shell and gains no economy authority. Reports expose
 `building_production_worker_tasks` and `building_production_merge_ms`, with merge
 time included in `building_production_ms`. There is no bridge, save-schema,
 state-hash, DataCore-slot, stage, or cadence change.
+
+2026-07-20 remediation keeps the same authority and cadence. Rolling employment
+reports replace one cell's cached current-epoch contribution atomically, so a
+non-due structural reconciliation cannot make unemployment negative. Investment
+aggregates installed counts across every `(cell,type)`, includes owner livelihood
+in operating cost, compares demand with total installed output, and reports
+explicit rejection reasons. Loss-suspended groups retain one recovery owner but
+no employee demand or production. CSV schema v12 adds resource flow direction,
+procurement opportunity/allocation, in-kind livelihood coverage, and unresolved
+trade-rejection buckets. These remain derived debug state outside PKEC and replay
+hash. High discard accelerates the existing utilization response when no active
+shortage recovery is required, while preserving shortage recovery and the
+survival/probe floor.

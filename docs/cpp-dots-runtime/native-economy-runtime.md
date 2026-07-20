@@ -591,3 +591,58 @@ event ordering. Reports expose `building_production_worker_tasks` and
 `building_production_merge_ms`; merge time is already included in
 `building_production_ms`. This changes neither PKEC v15 bytes nor state-hash,
 DataCore, bridge, stage, cadence, or continuation inputs.
+
+## 2026-07-20 economy remediation
+
+`NativeEconomyRuntime` remains the sole mutable authority and the default
+five-day rolling settlement is unchanged. Employment report totals now use a
+per-cell epoch replacement cache, so non-due construction or population
+reconciliation cannot create negative unemployment by subtracting live state
+that was never counted in the current epoch.
+
+Investment V2 aggregates all owner lots of the same `(cell,type)`, compares
+demand with total installed output, includes owner livelihood in operating cost,
+uses markup over cost for the target margin, and gates expansion on recent
+sell-through/discard. Rejection codes are: `0` none, `1` pending construction,
+`2` suspended capacity, `3` owner vacancy, `4` installed capacity sufficient,
+`5` owner livelihood, `6` sell-through, `7` discard, `8` input chain, `9` target
+margin, `10` payback, `11` sponsor capital, `12` materials, and `13` resource.
+Suspended groups retain one owner for the existing two-profitable-cycle restart
+state machine, but retain no employee demand or production intent.
+
+Trade diagnostics distinguish the current unresolved deadline count from
+`trade_response_deadline_misses_cumulative`, which increments once per shortage
+episode. Selected-cell market snapshots and CSV expose last attempt day, last
+rejection reason, and whether the signal is currently over deadline. Diagnostic
+reason codes are `0` none, `1` no spread, `2` margin, `3` route, `4` source
+stock, `5` capacity, `6` destination cash, `7` order cap, and `8` dispatched.
+The current count and maximum age are recomputed from every live signal clock at
+the committed boundary; planner-slice resets cannot hide unresolved signals.
+Bounded signal collection rotates its deterministic scan origin by simulation day,
+and destination ranking serves never-attempted signals before rejected or already
+dispatched signals. Destinations with no matching source receive reason `4`
+directly at scan completion. This prevents fixed cell/good ordering and the
+per-country/good target cap from starving the same settlements forever. These
+clocks and scan-order diagnostics are derived state and remain outside PKEC and
+state hash.
+
+## CSV v12 livelihood and response diagnostics
+
+CSV v12 separates the merchant opening-cash ceiling from real procurement opportunity.
+`merchant_procurement_opportunity` is the priced inventory gap, `allocated` is the
+cash assigned to that opportunity, and `unspent_allocated` is assigned cash that did
+not settle. Producer-retained goods consumed by their owner cohort are valued at the
+committed local retail price and exposed as `epoch_in_kind_income`, with cash-only and
+combined livelihood coverage. This diagnostic lane resets per epoch, follows
+proportional cohort migration, and remains outside PKEC v15 and state hash.
+
+Current overdue trade signals are bucketed by last rejection reason. The buckets sum
+to `trade_response_deadline_misses` and distinguish no attempt, no spread, margin,
+route, source stock, capacity, destination cash, and order-cap failures. They are live
+diagnostics, not cumulative authoritative state.
+
+High output discard accelerates the existing utilization response when no active
+shortage recovery is required. At 25% discard the response is at least 0.75; at 50%
+it is immediate. A real shortage recovery signal still has priority, and the
+survival/probe floor remains authoritative, so this changes neither the five-day
+cadence nor suspension authority.

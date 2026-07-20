@@ -366,8 +366,33 @@ private:
     };
 
     struct InvestmentExistingType {
-        int32_t group = -1;
-        bool vacancy = false;
+        int32_t first_group = -1;
+        int32_t last_group = -1;
+        int32_t representative_group = -1;
+        int64_t installed_count = 0;
+        int64_t active_count = 0;
+        int64_t suspended_count = 0;
+        int64_t filled_owner = 0;
+        int64_t owner_required = 0;
+        int64_t last_sold = 0;
+        int64_t last_discarded = 0;
+    };
+
+    enum InvestmentRejection : int32_t {
+        INVESTMENT_REJECTION_NONE = 0,
+        INVESTMENT_REJECTION_PENDING_CONSTRUCTION = 1,
+        INVESTMENT_REJECTION_SUSPENDED_CAPACITY = 2,
+        INVESTMENT_REJECTION_ACTIVE_OWNER_VACANCY = 3,
+        INVESTMENT_REJECTION_INSTALLED_CAPACITY_SUFFICIENT = 4,
+        INVESTMENT_REJECTION_OWNER_LIVELIHOOD = 5,
+        INVESTMENT_REJECTION_SELL_THROUGH = 6,
+        INVESTMENT_REJECTION_DISCARD = 7,
+        INVESTMENT_REJECTION_INPUT_CHAIN = 8,
+        INVESTMENT_REJECTION_TARGET_MARGIN = 9,
+        INVESTMENT_REJECTION_PAYBACK = 10,
+        INVESTMENT_REJECTION_SPONSOR_CAPITAL = 11,
+        INVESTMENT_REJECTION_MATERIALS = 12,
+        INVESTMENT_REJECTION_RESOURCE = 13,
     };
 
     struct PopulationStore {
@@ -383,6 +408,9 @@ private:
         std::vector<int64_t> funds;
         std::vector<int64_t> epoch_income;
         std::vector<int64_t> epoch_expense;
+        // Derived diagnostic: retail value of goods consumed from producer-retained output.
+        // It is reset with the epoch and intentionally excluded from save/hash authority.
+        std::vector<int64_t> epoch_in_kind_income;
         std::vector<int64_t> income_ema;
         std::vector<uint16_t> needs_satisfaction;
         std::vector<uint16_t> worst_need_id;
@@ -479,6 +507,7 @@ private:
         int32_t price = 0;
         int64_t quantity = 0;
         int32_t age_days = 0;
+        int32_t response_priority = 0;
     };
 
     struct TradeCandidate {
@@ -876,6 +905,18 @@ private:
         int64_t expense = 0;
     };
 
+    enum TradeSignalDiagnosticReason : int32_t {
+        TRADE_SIGNAL_DIAG_NONE = 0,
+        TRADE_SIGNAL_DIAG_NO_SPREAD = 1,
+        TRADE_SIGNAL_DIAG_MARGIN = 2,
+        TRADE_SIGNAL_DIAG_ROUTE = 3,
+        TRADE_SIGNAL_DIAG_STOCK = 4,
+        TRADE_SIGNAL_DIAG_CAPACITY = 5,
+        TRADE_SIGNAL_DIAG_CASH = 6,
+        TRADE_SIGNAL_DIAG_ORDER_CAP = 7,
+        TRADE_SIGNAL_DIAG_DISPATCHED = 8,
+    };
+
     struct ProductionTraceDraft {
         int32_t kind = 0;
         int32_t stage = 0;
@@ -903,6 +944,9 @@ private:
         int64_t saturation_count = 0;
         int64_t processed_building_groups = 0;
         int64_t merchant_procurement_budget = 0;
+        int64_t merchant_procurement_opportunity = 0;
+        int64_t merchant_procurement_allocated = 0;
+        int64_t merchant_procurement_unspent_allocated = 0;
         int64_t merchant_procurement_reserved = 0;
         int64_t merchant_procurement_spent = 0;
         int64_t owner_working_capital_allocated = 0;
@@ -1217,6 +1261,9 @@ private:
     int64_t _wage_suspended_building_groups = 0;
     int64_t _loss_suspended_building_groups = 0;
     int64_t _merchant_procurement_budget = 0;
+    int64_t _merchant_procurement_opportunity = 0;
+    int64_t _merchant_procurement_allocated = 0;
+    int64_t _merchant_procurement_unspent_allocated = 0;
     int64_t _merchant_procurement_reserved = 0;
     int64_t _owner_working_capital_reserved = 0;
     int64_t _merchant_procurement_spent = 0;
@@ -1255,6 +1302,15 @@ private:
     int64_t _trade_signal_max_age_days = 0;
     int64_t _trade_first_dispatch_delay_max_days = 0;
     int64_t _trade_response_deadline_misses = 0;
+    int64_t _trade_response_deadline_misses_cumulative = 0;
+    int64_t _trade_unresolved_no_attempt = 0;
+    int64_t _trade_unresolved_no_spread = 0;
+    int64_t _trade_unresolved_margin = 0;
+    int64_t _trade_unresolved_route = 0;
+    int64_t _trade_unresolved_stock = 0;
+    int64_t _trade_unresolved_capacity = 0;
+    int64_t _trade_unresolved_cash = 0;
+    int64_t _trade_unresolved_order_cap = 0;
     int64_t _trade_topology_content_change_count = 0;
     std::string _trade_last_plan_reset_reason = "none";
     int64_t _building_resource_capacity_checks = 0;
@@ -1356,6 +1412,14 @@ private:
     std::vector<int32_t> _epoch_market_ids;
     std::vector<int32_t> _epoch_settlement_cells;
     std::vector<int32_t> _epoch_building_cells;
+    // Diagnostic-only per-cell contributions for the current rolling epoch.
+    // Employment can be recomputed after structural changes; replacing the
+    // cached contribution avoids subtracting a cell that was never counted in
+    // this epoch and keeps the published totals non-negative.
+    std::vector<int64_t> _employment_metrics_epoch_by_cell;
+    std::vector<int64_t> _employment_owner_jobs_by_cell;
+    std::vector<int64_t> _employment_employee_jobs_by_cell;
+    std::vector<int64_t> _employment_unemployed_by_cell;
     // Epoch-transient lanes. They are rebuilt from the frozen sample and are
     // intentionally excluded from save data and the authoritative state hash.
     std::vector<int64_t> _building_survival_utilization_floor_q16;
@@ -1374,6 +1438,9 @@ private:
     std::vector<uint64_t> _trade_signal_clock_keys;
     std::vector<int64_t> _trade_signal_first_seen_day;
     std::vector<int64_t> _trade_signal_first_dispatch_day;
+    std::vector<int64_t> _trade_signal_last_attempt_day;
+    std::vector<int32_t> _trade_signal_last_rejection_reason;
+    std::vector<uint8_t> _trade_signal_deadline_reported;
     std::vector<OwnerRetainedOutput> _owner_retained_outputs;
     TradeTopologyStore _trade_topology;
     TradePlanStore _trade_plan;
@@ -1578,6 +1645,8 @@ private:
     int32_t trade_flow_index(int32_t cell, int32_t good, bool create);
     int32_t trade_signal_clock_index(int32_t cell, int32_t good) const;
     int32_t ensure_trade_signal_clock_index(int32_t cell, int32_t good);
+    void record_trade_signal_attempt(int32_t cell, int32_t good, int32_t reason);
+    void refresh_trade_response_diagnostics();
     int64_t credit_trade_sellers(int32_t order_index, int64_t amount);
     void rebuild_trade_arrival_buckets();
     void compact_trade_orders(const std::vector<uint8_t> &remove);
@@ -1639,6 +1708,9 @@ private:
     bool apply_build_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell, std::string &error);
+    void replace_employment_metrics_for_cell(int32_t cell, int64_t owner_jobs,
+                                             int64_t employee_jobs,
+                                             int64_t unemployed_population);
     bool reconcile_building_employment_after_population_change(
         const std::vector<int32_t> &affected_cells, std::string &error);
     bool run_building_production_cell(int32_t cell, ProductionResult &result,
