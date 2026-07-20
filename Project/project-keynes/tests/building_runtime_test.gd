@@ -46,7 +46,10 @@ func _run() -> void:
 	_test_construction_shortage_feeds_procurement_signal(catalog, profile)
 	_test_owner_fill_reconciles_after_population_loss(catalog, profile)
 	_test_last_building_demolition_releases_profession_cohorts(catalog, profile)
+	_test_non_due_construction_employment_metrics(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
+	_test_investment_respects_installed_capacity(catalog, profile)
+	_test_investment_requires_owner_livelihood(catalog, profile)
 	_test_endogenous_investment_repairs_dead_merchant(catalog, profile)
 	_test_building_plan_continuation(catalog, profile)
 	_test_production_worker_scalar_equivalence(catalog, profile)
@@ -299,8 +302,8 @@ func _run() -> void:
 	_expect("third settled severe-loss cycle suspends the building",
 		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 3 and
 		int((suspended.operating_state as PackedByteArray)[0]) == 1)
-	_expect("loss-suspended building has no jobs intent or output",
-		int((suspended.filled_owner as PackedInt64Array)[0]) == 0 and
+	_expect("loss-suspended building retains one recovery owner but no production intent",
+		int((suspended.filled_owner as PackedInt64Array)[0]) == 1 and
 		int((suspended.purchase_intent_capacity_q16 as PackedInt64Array)[0]) == 0 and
 		int((suspended.last_output as PackedInt64Array)[0]) == 0)
 	var country_chunks: Array[PackedByteArray] = []
@@ -345,6 +348,53 @@ func _run() -> void:
 		int((restored_buildings.operating_state as PackedByteArray)[0]) == 1 and
 		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == 0 and
 		int((restored_buildings.employee_filled as PackedInt64Array)[1]) == 0)
+	var recovery_pop: Dictionary = ext.get_population_cell_snapshot(0)
+	var recovery_owner_handle := _handle_for_profession(recovery_pop, landlord_sig)
+	var recapitalize: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([2]),
+		"effective_days": PackedInt64Array([6]),
+		"sequences": PackedInt64Array([3]),
+		"target_handles": PackedInt64Array([recovery_owner_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([0]),
+		"i64_0": PackedInt64Array([1000000000]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("suspended owner recapitalization command accepted",
+		recovery_owner_handle != 0 and bool(recapitalize.get("ok", false)))
+	var recovery_one_report := _run_day(ext, 6)
+	var recovery_one: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("first solvent recovery cycle remains suspended",
+		int((recovery_one.recovery_cycles as PackedInt32Array)[0]) == 0 and
+		int((recovery_one.operating_state as PackedByteArray)[0]) == 1)
+	_expect("first recovery cycle conserves all ledgers",
+		int(recovery_one_report.get("population_error", 1)) == 0 and
+		int(recovery_one_report.get("money_error", 1)) == 0 and
+		int(recovery_one_report.get("goods_error", 1)) == 0)
+	var restart_report := _run_day(ext, 7)
+	var restarted: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("second solvent recovery cycle advances toward restart",
+		int((restarted.recovery_cycles as PackedInt32Array)[0]) == 1 and
+		int((restarted.operating_state as PackedByteArray)[0]) == 1)
+	_expect("restart cycle conserves all ledgers",
+		int(restart_report.get("population_error", 1)) == 0 and
+		int(restart_report.get("money_error", 1)) == 0 and
+		int(restart_report.get("goods_error", 1)) == 0)
+	var resumed_report := _run_day(ext, 8)
+	var resumed: Dictionary = ext.get_building_cell_snapshot(0)
+	var resumed_employee_total := 0
+	for value in resumed.employee_filled as PackedInt64Array:
+		resumed_employee_total += int(value)
+	_expect("restarted building rehires and resumes funded output",
+		int((resumed.operating_state as PackedByteArray)[0]) == 0 and
+		int((resumed.recovery_cycles as PackedInt32Array)[0]) == 0 and
+		resumed_employee_total > 0 and
+		int((resumed.funded_capacity_q16 as PackedInt64Array)[0]) > 0 and
+		int((resumed.last_output as PackedInt64Array)[0]) > 0)
+	_expect("resumed production conserves all ledgers",
+		int(resumed_report.get("population_error", 1)) == 0 and
+		int(resumed_report.get("money_error", 1)) == 0 and
+		int(resumed_report.get("goods_error", 1)) == 0)
 	print("=== native building runtime %s ===" % ("PASS" if failures == 0 else "FAIL"))
 
 func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
@@ -504,6 +554,66 @@ func _test_last_building_demolition_releases_profession_cohorts(
 		int(closing_report.get("goods_error", 1)) == 0)
 
 
+func _test_non_due_construction_employment_metrics(
+		catalog: Dictionary, source_profile: Dictionary) -> void:
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var ext := _new_ext(catalog, 2)
+	_expect("non-due construction country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 2, 185))
+	_expect("non-due construction runtime configures",
+		bool(ext.configure_economy(catalog, profile, 2, 185).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var knapping_id := (catalog.building_type_ids as PackedStringArray).find(
+		"knapping_workshop")
+	var goods: PackedStringArray = catalog.good_ids
+	var stock := PackedInt64Array()
+	stock.resize(goods.size() * 2)
+	stock.fill(1000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 1, 1, 1]),
+		"signature_ids": PackedInt32Array([
+			merchant_sig, artisan_sig, unemployed_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1, 9, 1]),
+		"funds": PackedInt64Array([100000000, 100000000, 9000000, 100000000]),
+	}, {"stock": stock})
+	_expect("non-due construction fixture bootstraps", bool(boot.get("ok", false)))
+	var owner_snapshot: Dictionary = ext.get_population_cell_snapshot(1)
+	var owner_handle := _handle_for_profession(owner_snapshot, artisan_sig)
+	var submit: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([10]),
+		"effective_days": PackedInt64Array([0]),
+		"sequences": PackedInt64Array([401]),
+		"target_handles": PackedInt64Array([owner_handle]),
+		"i32_0": PackedInt32Array([1]),
+		"i32_1": PackedInt32Array([knapping_id]),
+		"i64_0": PackedInt64Array([1]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("non-due construction command queues", bool(submit.get("ok", false)))
+	# Simulation day 0 settles phase-0 markets. Cell 1 is counted only when the
+	# immediate construction commit explicitly reconciles its employment.
+	var report := _run_day(ext, 0)
+	var closing: Dictionary = ext.get_population_cell_snapshot(1)
+	var populations: PackedInt64Array = closing.populations
+	var owners: PackedInt64Array = closing.owner_employed_by_cohort
+	var employees: PackedInt64Array = closing.employee_employed_by_cohort
+	var expected_unemployed := 0
+	for row in range(populations.size()):
+		expected_unemployed += maxi(0,
+			int(populations[row]) - int(owners[row]) - int(employees[row]))
+	_expect("non-due employment metrics atomically add the first cell contribution",
+		int(report.get("unemployed_population", -1)) == expected_unemployed and
+		int(report.get("unemployed_population", -1)) >= 0)
+	_expect("non-due construction conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
 func _test_endogenous_owner_investment(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
@@ -520,6 +630,7 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	var timber_id := building_ids.find("timber_collector")
 	var goods: PackedStringArray = catalog.good_ids
 	var tool_good := goods.find("chipped_stone_tools")
+	_minimize_household_good_demand(catalog, tool_good)
 	# Keep this fixture's demand signal deterministic: the hunting camps consume
 	# only chipped stone tools and require more than two workshops can supply.
 	var input_offsets: PackedInt32Array = catalog.building_input_offsets
@@ -580,27 +691,168 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 		int(day0.get("population_error", 1)) == 0 and
 		int(day0.get("money_error", 1)) == 0 and
 		int(day0.get("goods_error", 1)) == 0)
-	var investment_day := day0
-	for day in range(1, 31):
-		investment_day = _run_day(ext, day)
+	_run_day(ext, 1)
+	var investment_day := _run_day(ext, 2)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var knapping_count := int((buildings.building_counts_by_type as PackedInt64Array)[
 		knapping_id])
 	_expect("ten-day capital review buys materials and expands at most once",
 		int(investment_day.get("building_investments_started", 0)) == 1 and
 		int(investment_day.get("construction_goods_consumed", 0)) == 1500 and
-		knapping_count >= 3)
+		knapping_count == 3)
 	_expect("endogenous construction conserves every ledger",
 		int(investment_day.get("population_error", 1)) == 0 and
 		int(investment_day.get("money_error", 1)) == 0 and
 		int(investment_day.get("goods_error", 1)) == 0)
-	var day31 := _run_day(ext, 31)
+	var day31 := _run_day(ext, 3)
 	buildings = ext.get_building_cell_snapshot(0)
 	knapping_count = int((buildings.building_counts_by_type as PackedInt64Array)[
 		knapping_id])
 	_expect("non-review day prevents repeat expansion",
 		int(day31.get("building_investments_started", 0)) == 0 and
-		knapping_count >= 3)
+		knapping_count == 3)
+
+
+func _test_investment_respects_installed_capacity(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var hunter_sig := signatures.find("hunter|default")
+	var forager_sig := signatures.find("forager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var knapping_id := building_ids.find("knapping_workshop")
+	var hunting_id := building_ids.find("stone_age_hunting_camp")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	_minimize_household_good_demand(catalog, tool_good)
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var hunting_input := int(input_offsets[hunting_id])
+	var input_quantities: PackedInt64Array = catalog.building_input_quantities
+	input_quantities[hunting_input] = 210
+	catalog.building_input_quantities = input_quantities
+	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
+	for candidate_idx in range(
+			int(candidate_offsets[hunting_input]),
+			int(candidate_offsets[hunting_input + 1])):
+		candidate_goods[candidate_idx] = tool_good
+	catalog.building_input_candidate_good_ids = candidate_goods
+	var ext := _new_ext(catalog)
+	_expect("installed-capacity country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 287))
+	_expect("installed-capacity runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 287).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	stock[tool_good] = 0
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	prices[tool_good] = int((catalog.good_max_price as PackedInt32Array)[tool_good])
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			artisan_sig, hunter_sig, forager_sig, merchant_sig]),
+		"population": PackedInt64Array([3, 3, 20, 1]),
+		"funds": PackedInt64Array([300000000, 300000000, 900000000, 300000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([knapping_id, hunting_id]),
+		"building_owner_signature_ids": PackedInt32Array([artisan_sig, hunter_sig]),
+		"building_counts": PackedInt64Array([3, 3]),
+	})
+	_expect("installed-capacity fixture bootstraps", bool(boot.get("ok", false)))
+	var report := {}
+	for day in range(3):
+		report = _run_day(ext, day)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var count := int((buildings.building_counts_by_type as PackedInt64Array)[knapping_id])
+	var group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
+	var rejection := int((buildings.investment_rejection_reason as PackedInt32Array)[group]) \
+		if group >= 0 else -1
+	_expect("installed stone-tool capacity blocks redundant construction",
+		count == 3 and int(report.get("building_investments_started", 0)) == 0 and
+		rejection == 4)
+	_expect("installed-capacity review conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
+func _test_investment_requires_owner_livelihood(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var hunter_sig := signatures.find("hunter|default")
+	var forager_sig := signatures.find("forager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var knapping_id := building_ids.find("knapping_workshop")
+	var hunting_id := building_ids.find("stone_age_hunting_camp")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	_minimize_household_good_demand(catalog, tool_good)
+	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var default_prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	max_prices[tool_good] = 9000
+	default_prices[tool_good] = 9000
+	catalog.good_max_price = max_prices
+	catalog.good_default_price = default_prices
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var hunting_input := int(input_offsets[hunting_id])
+	var input_quantities: PackedInt64Array = catalog.building_input_quantities
+	input_quantities[hunting_input] = 2000
+	catalog.building_input_quantities = input_quantities
+	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
+	for candidate_idx in range(
+			int(candidate_offsets[hunting_input]),
+			int(candidate_offsets[hunting_input + 1])):
+		candidate_goods[candidate_idx] = tool_good
+	catalog.building_input_candidate_good_ids = candidate_goods
+	var ext := _new_ext(catalog)
+	_expect("owner-livelihood country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 288))
+	_expect("owner-livelihood runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 288).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	stock[tool_good] = 0
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			artisan_sig, hunter_sig, forager_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 20, 20, 1]),
+		"funds": PackedInt64Array([1000000, 500000000, 900000000, 300000000]),
+	}, {
+		"stock": stock,
+		"price": default_prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([knapping_id, hunting_id]),
+		"building_owner_signature_ids": PackedInt32Array([artisan_sig, hunter_sig]),
+		"building_counts": PackedInt64Array([1, 10]),
+	})
+	_expect("owner-livelihood fixture bootstraps", bool(boot.get("ok", false)))
+	var report := {}
+	for day in range(3):
+		report = _run_day(ext, day)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var count := int((buildings.building_counts_by_type as PackedInt64Array)[knapping_id])
+	var group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
+	var rejection := int((buildings.investment_rejection_reason as PackedInt32Array)[group]) \
+		if group >= 0 else -1
+	_expect("shortage cannot approve a workshop that misses owner livelihood",
+		count == 1 and int(report.get("building_investments_started", 0)) == 0 and
+		rejection == 5)
 
 
 func _test_endogenous_investment_repairs_dead_merchant(source_catalog: Dictionary,
@@ -622,6 +874,7 @@ func _test_endogenous_investment_repairs_dead_merchant(source_catalog: Dictionar
 	var timber_id := building_ids.find("timber_collector")
 	var goods: PackedStringArray = catalog.good_ids
 	var tool_good := goods.find("chipped_stone_tools")
+	_minimize_household_good_demand(catalog, tool_good)
 	var input_offsets: PackedInt32Array = catalog.building_input_offsets
 	var hunting_input := int(input_offsets[hunting_id])
 	var input_quantities: PackedInt64Array = catalog.building_input_quantities
@@ -668,13 +921,18 @@ func _test_endogenous_investment_repairs_dead_merchant(source_catalog: Dictionar
 		"building_counts": PackedInt64Array([2, 10, 3]),
 	})
 	_expect("dead-merchant investment fixture bootstraps", bool(boot.get("ok", false)))
-	var report := _run_day(ext, 0)
+	var repair_report := _run_day(ext, 0)
 	var pop: Dictionary = ext.get_population_cell_snapshot(0)
-	_expect("structural commit repairs merchant before endogenous construction",
-		bool(report.get("done", false)) and not bool(report.get("fatal", false)) and
-		int(report.get("merchant_repairs", 0)) > 0 and
-		int(report.get("building_investments_started", 0)) == 1 and
+	_expect("structural commit repairs merchant before the capital review",
+		bool(repair_report.get("done", false)) and
+		not bool(repair_report.get("fatal", false)) and
+		int(repair_report.get("merchant_repairs", 0)) > 0 and
+		int(repair_report.get("building_investments_started", 0)) == 0 and
 		_sum_u8(pop.merchant_flags as PackedByteArray) == 1)
+	_run_day(ext, 1)
+	var report := _run_day(ext, 2)
+	_expect("repaired merchant supports the next endogenous construction review",
+		int(report.get("building_investments_started", 0)) == 1)
 	_expect("dead-merchant construction conserves every ledger",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
@@ -1303,11 +1561,20 @@ func _test_building_plan_continuation(source_catalog: Dictionary,
 	_expect("continuation fixture bootstraps",
 		_bootstrap_continuation_fixture(sliced, catalog, CELL_COUNT))
 	var report: Dictionary = sliced.run_economy_slice({"day_index": 0, "tick_index": 0})
-	_expect("due rolling bucket completes in one native call",
+	_expect("one-cell building budget enters bounded continuation",
+		not bool(report.get("done", true)) and
+		not bool(report.get("fatal", false)) and
+		str(report.get("stage", "")) == "building_plan" and
+		int(report.get("building_cells_per_slice", 0)) == 1)
+	for slice in range(1, 256):
+		report = sliced.run_economy_slice({"day_index": 0, "tick_index": slice})
+		if bool(report.get("done", false)):
+			break
+	_expect("due rolling bucket completes through continuation slices",
 		bool(report.get("done", false)) and
 		not bool(report.get("fatal", false)) and
 		int(report.get("deferred_cells", -1)) == 0 and
-		int(report.get("building_cells_per_slice", 0)) == 1)
+		int(report.get("continuation_slices", 0)) > 1)
 	var save_attempt: Dictionary = sliced.begin_economy_save(65536)
 	_expect("completed rolling transaction can save immediately",
 		bool(save_attempt.get("ok", false)))
@@ -1488,6 +1755,22 @@ func _sum_i64(values: PackedInt64Array) -> int:
 	for value in values:
 		total += int(value)
 	return total
+
+
+func _sum_u8(values: PackedByteArray) -> int:
+	var total := 0
+	for value in values:
+		total += int(value)
+	return total
+
+
+func _minimize_household_good_demand(catalog: Dictionary, good_id: int) -> void:
+	var component_goods: PackedInt32Array = catalog.component_good_ids
+	var component_quantities: PackedInt64Array = catalog.component_qty_per_need.duplicate()
+	for component in range(component_goods.size()):
+		if int(component_goods[component]) == good_id:
+			component_quantities[component] = 1
+	catalog.component_qty_per_need = component_quantities
 
 func _cashflow_total_for_row(snapshot: Dictionary, row: int, income: bool) -> int:
 	if row < 0:

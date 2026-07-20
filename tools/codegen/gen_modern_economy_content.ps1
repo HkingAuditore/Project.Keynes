@@ -990,6 +990,11 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
     for ($i = 0; $i -lt [Math]::Min($roleSlots.Count, $roleWages.Count); $i++) {
         $cost += [double]$roleSlots[$i] * [double]$roleWages[$i]
     }
+    if ($Id -in @('knapping_workshop', 'communal_hearth')) {
+        # These Stone Age recipes are physical balance anchors. Price and living-cost
+        # calibration must not silently rewrite their audited throughput.
+        return $Content
+    }
     if ($outputs -contains 'gold' -or $outputs -contains 'silver') { return $Content }
     $ownerId = Content-String $Content 'owner_profession_id'
     $ownerSlots = [Math]::Max(1, (Content-Integer $Content 'owner_slots_per_building' 1))
