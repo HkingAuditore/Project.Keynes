@@ -57,15 +57,9 @@ func is_deadline_critical(ctx: SusTickContext) -> bool:
 	if bool(report.get("epoch_active", false)):
 		return int(ctx.day_index) >= int(
 			report.get("cycle_deadline_day", 9223372036854775807))
-	# The fixed cadence is also a deadline: if the job is budget-skipped on the
-	# first eligible start day, the whole five-day schedule drifts by one day.
-	# Do not use should_run() here because an idle trade-planning continuation is
-	# soft work; derive only the local-cycle due condition from committed state.
-	# Cadence is anchored to the prior frozen sample, not the wall-clock commit
-	# day; a four-day continuation must not add another full epoch of delay.
-	var committed_sample_day := int(report.get("sample_day", -1))
-	var epoch_days := maxi(1, int(report.get("epoch_days", 1)))
-	return int(ctx.day_index) - committed_sample_day >= epoch_days
+	# One phase is due every simulation day. Skipping the first eligible call
+	# would make that phase older than the rolling four-day visibility bound.
+	return int(ctx.day_index) > int(report.get("newest_state_day", -1))
 
 func tick(ctx) -> Dictionary:
 	var started_us := Time.get_ticks_usec()
@@ -86,8 +80,10 @@ func tick(ctx) -> Dictionary:
 	# advances. Only stop the calendar at its settlement deadline (or on fatal),
 	# then use real-frame continuation pulses to finish any missed slices.
 	var commit_due := bool(result.get("commit_due", false))
+	var boundary_continuation := bool(
+		result.get("boundary_continuation_required", false))
 	var day_barrier := bool(result.get("fatal", false)) or (
-		not bool(result.get("done", true)) and commit_due)
+		not bool(result.get("done", true)) and (commit_due or boundary_continuation))
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"economy", over_budget)
 		world_clock.request_simulation_backpressure(&"economy_day_barrier", day_barrier)
@@ -106,9 +102,27 @@ func tick(ctx) -> Dictionary:
 		"processed_cells": int(result.get("processed_cells", 0)),
 		"processed_cohorts": int(result.get("processed_cohorts", 0)),
 		"processed_rules": int(result.get("processed_rules", 0)),
+		"settlement_phase": int(result.get("settlement_phase", -1)),
+		"due_cells": int(result.get("due_cells", 0)),
+		"processed_due_cells": int(result.get("processed_due_cells", 0)),
+		"deferred_cells": int(result.get("deferred_cells", 0)),
+		"settlement_watermark": int(result.get("settlement_watermark", -1)),
+		"max_state_age_days": int(result.get("max_state_age_days", 0)),
 		"commit_over_budget": over_budget,
 		"commit_due": commit_due,
+		"boundary_continuation_required": boundary_continuation,
 		"market_cycle_days": int(result.get("market_cycle_days", 1)),
+		"market_configured_cycle_days": int(
+			result.get("market_configured_cycle_days", 0)),
+		"estimated_market_slices_per_epoch": int(
+			result.get("estimated_market_slices_per_epoch", 0)),
+		"estimated_building_slices_per_epoch": int(
+			result.get("estimated_building_slices_per_epoch", 0)),
+		"estimated_total_slices_per_epoch": int(
+			result.get("estimated_total_slices_per_epoch", 0)),
+		"workload_deadline_feasible": bool(
+			result.get("workload_deadline_feasible", true)),
+		"workload_cycle_clamped": bool(result.get("workload_cycle_clamped", false)),
 		"fatal": bool(result.get("fatal", false)),
 	}
 

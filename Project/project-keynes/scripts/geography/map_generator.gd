@@ -1014,6 +1014,8 @@ var _economy_facade = null
 var _economy_daily_job = null
 var _country_facade = null
 var _country_daily_job = null
+const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
+const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
 var _test_economy_bootstrap_enabled: bool = false
 var _natural_resource_pass_knobs: Dictionary = {}
 var _last_natural_resource_report: Dictionary = {}
@@ -1570,23 +1572,50 @@ func _continue_economy_inflight(day_index: int) -> void:
 		return
 	var speed: float = float(_world_clock_ref.speed_multiplier) if _world_clock_ref != null else 1.0
 	var season: float = float(_world_clock_ref.season_phase()) if _world_clock_ref != null else 0.0
-	var ctx: SusTickContext = SusTickContext.make(day_index, day_index, speed, season, &"country_economy_continuation")
-	if _country_daily_job != null and _country_facade != null and \
-			bool(_country_facade.world_ext().country_should_run(day_index)):
-		_sus.continue_system(&"country_daily", ctx)
-		if bool(_country_facade.world_ext().country_should_run(day_index)):
-			return
+	var ctx: SusTickContext = SusTickContext.make(
+		day_index, day_index, season, speed, &"country_economy_continuation")
+	var budget_ms := ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS
 	if _world_clock_ref != null:
-		_world_clock_ref.request_simulation_backpressure(&"country_day_barrier", false)
-	if _economy_daily_job == null or _economy_facade == null:
-		return
-	var report: Dictionary = _economy_facade.report() if _economy_facade != null else {}
-	if not bool(report.get("epoch_active", false)) and not bool(report.get("fatal", false)):
-		if not bool(_economy_facade.world_ext().economy_should_run(day_index)):
+		var configured_budget = _world_clock_ref.get("sim_frame_budget_ms")
+		if configured_budget != null:
+			budget_ms = maxf(0.25, float(configured_budget))
+	var started_us := Time.get_ticks_usec()
+	var continuation_count := 0
+	while continuation_count < ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME:
+		if _country_daily_job != null and _country_facade != null and \
+				bool(_country_facade.world_ext().country_should_run(day_index)):
+			_sus.continue_system(&"country_daily", ctx)
+			continuation_count += 1
+			if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+				return
+			if bool(_country_facade.world_ext().country_should_run(day_index)):
+				continue
+		if _world_clock_ref != null:
+			_world_clock_ref.request_simulation_backpressure(&"country_day_barrier", false)
+		if _economy_daily_job == null or _economy_facade == null:
 			if _world_clock_ref != null:
 				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
 			return
-	_sus.continue_system(&"economy_daily", ctx)
+		var report: Dictionary = _economy_facade.report()
+		if bool(report.get("fatal", false)):
+			return
+		if not bool(report.get("epoch_active", false)) and \
+				not bool(_economy_facade.world_ext().economy_should_run(day_index)):
+			if _world_clock_ref != null:
+				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
+			return
+		_sus.continue_system(&"economy_daily", ctx)
+		continuation_count += 1
+		report = _economy_facade.report()
+		if bool(report.get("fatal", false)):
+			return
+		if not bool(report.get("epoch_active", false)) and \
+				not bool(_economy_facade.world_ext().economy_should_run(day_index)):
+			if _world_clock_ref != null:
+				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
+			return
+		if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+			return
 
 
 func _native_daily_slice_available() -> bool:

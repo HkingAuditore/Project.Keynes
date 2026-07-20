@@ -6,10 +6,13 @@ class CountingEconomyFacade extends RefCounted:
 	var population_calls := 0
 	var market_calls := 0
 	var building_calls := 0
+	var settlement_generation := 7
+	var population := 100
 
 	func population_cell_summary(_cell_idx: int) -> Dictionary:
 		summary_calls += 1
-		return {"ok": true, "population": 100, "cohort_count": 1}
+		return {"ok": true, "population": population, "cohort_count": 1,
+			"settlement_generation": settlement_generation}
 
 	func population_cell_snapshot(_cell_idx: int) -> Dictionary:
 		population_calls += 1
@@ -69,6 +72,24 @@ func _initialize() -> void:
 			or counting_generator.facade.population_calls != 0 \
 			or counting_generator.facade.building_calls != 0:
 		failures.append("lazy market tab queried unrelated economy detail")
+	var population_revision := lazy_view_model.live_patch_revision(cell, "population")
+	var population_patch := lazy_view_model.build_live_patch(
+		cell, "population", false, population_revision.get("population_summary", {}))
+	if int(population_revision.get("category_generation", -1)) != 7 \
+			or population_patch.has("category") \
+			or counting_generator.facade.population_calls != 0 \
+			or counting_generator.facade.market_calls != 1:
+		failures.append("population generation gate queried or built unchanged detail")
+	var common_hash_before := int(population_revision.get("common_hash", 0))
+	counting_generator.facade.population = 101
+	var changed_revision := lazy_view_model.live_patch_revision(cell, "population")
+	if int(changed_revision.get("common_hash", 0)) == common_hash_before \
+			or int(changed_revision.get("category_generation", -1)) != 7:
+		failures.append("population common hash did not track rendered summary independently")
+	lazy_view_model.build_live_patch(cell, "population", true)
+	if counting_generator.facade.population_calls != 1 \
+			or counting_generator.facade.market_calls != 2:
+		failures.append("dirty population generation did not build both detail snapshots")
 
 	if model.is_empty():
 		failures.append("view model returned an empty model")

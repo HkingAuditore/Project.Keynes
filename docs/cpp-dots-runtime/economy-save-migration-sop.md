@@ -51,8 +51,10 @@ restore 要先配置并完整恢复 PKCN v1，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v13，并与 PKCN v1 交叉绑定。只有参数一致的 v11 ACTIVE 可迁移；
-旧默认 v11 的 25%/1 日商人策略与当前 12.5%/30 日分档库存基线不一致，返回
+当前写出 schema 为 PKEC v15，并与 PKCN v1 交叉绑定。PKEC v14 通过确定性
+`v14_rolling_phase_bootstrap` 迁移每 cell phase/结算日，PKEC v13 再沿既有兼容 hash 路径补齐
+v14 行为参数后迁移。只有参数一致的 v11 ACTIVE 可迁移；旧默认 v11 的
+25%/1 日商人策略与当前 12.5%/30 日分档库存基线不一致，返回
 `save_business_policy_profile_mismatch`；
 ACTIVE 配置拒绝 v11 PROBE 和 v10。拓扑和未完成规划从不存档，加载后重建。PKEC v2-v9 缺少国家权威状态，读取时
 精确返回 `legacy_countryless_economy_save_unsupported`；不再通过默认国家、全解锁科技或全局
@@ -201,3 +203,33 @@ v11 ACTIVE 迁移把新增企业字段初始化为 ACTIVE/0，并把实际出库
 `save_trade_profile_mismatch` 拒绝；v10 在 ACTIVE 配置下以
 `active_trade_rejects_v10_economy_save` 拒绝。v12 round-trip 必须保存停产连续数、采购意图和
 实际出库历史，避免加载后企业或商人预算发生无提示跳变。
+## PKEC v14
+
+PKEC v14 persists the new behavior configuration and validates it at restore:
+trade export days/fractions, import fill fraction, response days, investment
+review/shortage/utilization/payback/operating cycles, resource reserve and safe
+harvest ratios, resource horizon, bullion issue cap, and producer support cap.
+The compiled resource generation, decay, ecology, climate-window, and growth
+columns participate in the catalog and building hashes.
+
+PKEC v13 is accepted only through the compiled v13 compatibility hashes. At the
+commit boundary it receives the v14 default behavior values; desired/funded
+demand, working-capital allocations, trade candidates, sparse response clocks,
+investment scores, and rejection diagnostics are reconstructed transient state.
+PKEC v10 and mismatched legacy ACTIVE/PROBE trade policies retain their explicit
+rejection paths. PKCN must still restore before PKEC.
+
+## PKEC v15 (current)
+
+PKEC v15 adds per-cell `last_settlement_day`, settlement generation, stable
+phase validation, and the price/stock, owner-cash, population, building,
+technology, resource, and trade dirty generations. Save is allowed only after
+the daily local bucket, trade transactions, stable reduction, and publish have
+completed.
+
+PKEC v14 is migrated at restore by assigning phase `cell_id % 5` and deriving a
+logical last settlement day no later than the saved committed day. The first
+post-restore transaction still uses `dt=5`. Restore reports
+`v14_rolling_phase_bootstrap` and immediately performs catalog/country binding,
+state hash, and full conservation validation. The bootstrap itself creates no
+cash, goods, population, buildings, escrow, or resource delta.

@@ -2,7 +2,7 @@
 
 > 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v13 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v15 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治和一般自然人口变化；仅实现缺乏食品/气候所需衣着造成的生存死亡。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
@@ -20,6 +20,9 @@
   归并商品，再在组内显示唯一商品行；嵌套 need/variant/component 列只提供用途归组与 `has_bundle` 展示元数据。查询不持久化
   cohort×good 矩阵，也不修改 state hash。
 - 禁止把 goods/cohort 放回 MapData/component schema，禁止 GDScript 全世界遍历或逐 cohort setter。
+- `BUILDING_PLAN` 由 C++ 按 active-cell CSR 做两遍 continuation（经济计划、投入 reserve）；
+  `building_cells_per_slice=0` 确定性采用 256 个 active cell。阶段 cursor 与计划缓存只属周期
+  临时状态，不进入 PKEC 或权威 hash，GDScript 只转发 profile 和调度 report。
 - 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；未来税收
   仍必须走原生守恒边界。
 - `owner_slots_per_building` 是正整数物理容量；普通企业通常为 1，家庭式采集/狩猎单位可用多个
@@ -73,7 +76,7 @@
   市场接受金银时按 `monetary_issue_value` 向业主发行货币，计入
   `explicit_money_mint/bullion_money_issued`，不允许无资源铸币。
 - 国内贸易默认 ACTIVE，只沿同一冻结国家的可贸易地形运输；发运即托管源货物和目的商人现金，到达边界结算。
-- 生产默认 5 日结算周期；`market_cycle_days=0` 才启用按规模自动周期。
+- 生产周期固定为五日滚动相位；世界规模只改变每日到期桶的工作量，不再自动扩大周期。
 - 世界设置中的测试经济 fixture 默认关闭；启用时使用石器中期科技，只在可见资源能支撑配方的
   地块放置 collector，并只在已有全部本地上游产出的地块放置 industrial。石器本地链使用保守的
   多建筑容量基线：每格先配置两座公共火塘和三座石器打制工坊，狩猎营地最多十二座，再交给承载
@@ -167,7 +170,7 @@ good ID 稳定选择。`GoodProfile.production_quality_level` 控制最低等级
 食用油和工业润滑剂不共享类目，机器零件从蒸汽时代起直接消费矿物润滑剂。
 建筑 snapshot 另以 `group_input_selected_offsets/group_input_selected_good_ids` 返回每个建筑组、每个
 输入槽上次实际采购的 good；Inspector 将它标为“当前”。该诊断 lane 不参与权威 state hash 或
-PKEC v13 save，restore 后在下一次成功生产前显示为未知。
+PKEC save，restore 后在下一次成功生产前显示为未知。
 
 ## 现代内容目录
 
@@ -181,7 +184,7 @@ PKEC v13 save，restore 后在下一次成功生产前显示为未知。
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
   只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 120 goods、260
   production-method buildings、33 professions、17 needs 和 10 consumption plans。消费重平衡不改
-  stable-ID 表或 PKEC v13 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
+  stable-ID 表或 PKEC v14 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
 - `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
   collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。
@@ -207,3 +210,56 @@ PKEC v13 save，restore 后在下一次成功生产前显示为未知。
 - Stone-Age household weaving and knapping use local-demand-sized batches.
 - CSV recorder schema v9 adds viability and natural/artificial resource-flow
   diagnostics without adding save-state authority.
+## 2026-07-20 v14 override
+
+This section supersedes older descriptions of 30-day industrial-only automatic
+investment and PKEC v13. The default runtime now uses 10-day Investment V2 over
+all constructible industrial and collector types, including locally missing
+types. Collector candidates must pass renewable reserve/safe-yield or 3650-day
+deposit-life checks; bullion candidates also pass the 1 percent monthly issuance
+cap. Service buildings remain excluded.
+
+Business demand is split into desired, funded, and unfunded quantities. Desired
+demand remains visible when an owner is poor, while funded demand alone controls
+real purchases and production. Working capital is allocated across each owner's
+building portfolio by deterministic economic priority. Domestic trade consumes
+sparse market/building signals, protects five days plus 50 percent target stock,
+fills to 50 percent target, and prioritizes signals approaching the 15-day first
+dispatch target.
+
+## PKEC v15 rolling settlement (current)
+
+Production uses five stable daily buckets: cell `c` settles when
+`day % 5 == c % 5`, always with `dt=5`. Each populated cell therefore settles
+exactly every five days and committed state age is at most four days. The due
+bucket completes and publishes behind the same-day barrier through bounded
+native continuation calls. A real-frame pulse may execute multiple consecutive
+continuations within `sim_frame_budget_ms`; one call still consumes at most one
+building, market, or structural range. Workload-auto cadence and global
+`WAIT_COMMIT` are not production paths. Trade arrival remains daily.
+
+Current saves are PKEC v15 and persist per-cell settlement day/generation plus
+dirty generations. PKEC v14 restores with deterministic
+`v14_rolling_phase_bootstrap`; no population, cash, goods, or building state is
+created by migration. Older v14/v13 wording above is historical.
+
+The native hot path caches the frozen demand basis once per due cell and shares
+it between building retention and household clearing. Building-cell cache rows
+are prepared in deterministic worker ranges and are neither save nor hash
+authority. Reports expose `prepare_ms`, `audit_ms`, `watermark_ms`, and
+`building_investment_ms` for rolling-stall diagnosis.
+
+Building plan now aggregates owner survival floors in linear cell-local passes;
+market-signal scratch storage follows each cell's sparse signal CSR instead of
+the full catalog. Investment uses transient `(cell,type)` and `(cell,resource)`
+indexes and advances through `building_commit_phase` cell continuations.
+
+Building production may partition one existing due-cell range through the native
+WorkerThreadPool while `cell_to_market[cell] == cell` proves disjoint ownership.
+Workers write only cell-local authoritative lanes and emit one `ProductionResult`
+per cell. Native merges diagnostics, retained output, cashflows, and traces in
+cursor order; the scalar fallback uses the same body and merge. GDScript remains
+the catalog/profile/report shell and gains no economy authority. Reports expose
+`building_production_worker_tasks` and `building_production_merge_ms`, with merge
+time included in `building_production_ms`. There is no bridge, save-schema,
+state-hash, DataCore-slot, stage, or cadence change.

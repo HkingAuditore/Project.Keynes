@@ -508,19 +508,36 @@ func bootstrap_finance_columns() -> Dictionary:
 	result["living_cost_base_plan_id"] = String(_profile.living_cost_base_plan_id)
 	return result
 
-func bootstrap_cycle_days(cohort_count: int) -> int:
+func bootstrap_cycle_days(cohort_count: int, market_count: int = 0,
+		active_building_cell_count: int = 0, building_group_count: int = 0) -> int:
 	if _profile == null:
 		return 1
 	var maximum := maxi(1, int(_profile.market_max_cycle_days))
 	var configured := int(_profile.market_cycle_days)
 	if configured > 0:
 		return mini(configured, maximum)
-	if not bool(_profile.auto_slice_by_scale) or cohort_count <= 0:
-		return 1
 	var target := int(_profile.market_target_cohorts_per_slice)
 	if target <= 0:
 		target = 4000 if cohort_count <= 500000 else (12000 if cohort_count <= 2000000 else 30000)
-	return clampi((cohort_count + target - 1) / target, 1, maximum)
+	var market_budget := maxi(1, int(_profile.cells_per_slice))
+	if bool(_profile.auto_slice_by_scale):
+		market_budget = clampi(market_count, 1, 128)
+	var market_slices := maxi(1, (market_count + market_budget - 1) / market_budget)
+	var cohort_slices := (cohort_count + target - 1) / target if cohort_count > 0 else 0
+	market_slices = maxi(market_slices, cohort_slices)
+	var building_budget := int(_profile.building_cells_per_slice)
+	if building_budget <= 0:
+		building_budget = 256
+	var building_ranges := (active_building_cell_count + building_budget - 1) / \
+		building_budget if active_building_cell_count > 0 else 0
+	var group_budget := maxi(1, int(_profile.building_groups_per_slice))
+	var group_ranges := (building_group_count + group_budget - 1) / group_budget \
+		if building_group_count > 0 else 0
+	building_ranges = maxi(building_ranges, group_ranges)
+	var minimum := maxi(1, int(_profile.market_min_cycle_days))
+	var raw_total := maxi(minimum, market_slices + building_ranges * 4 + 4)
+	var scheduler_slack := maxi(0, (raw_total - minimum + 1) / 2)
+	return clampi(raw_total + scheduler_slack, 1, maximum)
 
 func _attach_population_display_metadata(snapshot: Dictionary) -> void:
 	var profession_ids: PackedStringArray = snapshot.get(

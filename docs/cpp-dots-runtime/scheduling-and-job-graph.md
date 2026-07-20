@@ -96,7 +96,7 @@ DCSystemScheduler
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
 | `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_native` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。`StridePolicy(stride,0)`，无 bucket phase。**保留边界 job**（native/legacy 两路径都注册）+ `must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
 | `country_daily` | `simulation/systems/country_daily_system.gd` | ACTIVE 国家命令图；原子预检/应用/发布领土、名称与科技变化。 | priority 255；`must_run=false`、`max_slices=1`、`use_job_should_run=true`；无到期命令零 slice，跨帧批次使用 `country_day_barrier`。 |
-| `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；按地块/cohort 预算错峰 N 日居民市场。国内贸易规划复用同一 job 的软 slice。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
+| `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；建筑计划/投入 reserve 使用两遍 active-cell continuation，随后按建筑 cell/cohort 预算错峰生产与 N 日居民市场。国内贸易规划复用同一 job 的软 slice。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。`building_cells_per_slice=0` 自动取市场 cell budget 的 1/4 并封顶 512；贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |
@@ -731,6 +731,13 @@ DC component。无建筑时 BUILDING_GRAPH 零成本跳过；有建筑时只调�
 清空剩余 cycle-flow 库存。utility producer 禁止同时消费 cycle-flow，因而不引入递归依赖或
 新的 scheduler node；五日冻结、deadline barrier 和 continuation cursor 均保持原契约。
 
+该 stage 可在一次既有 production range 内部调用 `parallel_for_range`，按 due cell 分派原生
+WorkerThreadPool 任务。任务只写 cell-local cohort/building/market/resource/signal lane；跨 cell 的
+诊断、留用品、现金流与 trace 先写入 `ProductionResult`，随后按原 cursor 顺序稳定归并。它不是
+新的 SUS job，不新增 graph node、dependency 或 barrier。低于阈值、WTP 不可用或
+`cell_to_market[cell] != cell` 时走同一原生 body 的单任务路径。frame budget 只能决定 range 完成后
+是否继续下一 continuation，不能中断正在执行的 range。
+
 `epoch_begin` 在进入就业阶段前按冻结样本生成 owner-lot 收入/成本诊断；生活成本与合同工资
 在 `building_employment` 的 active-cell slice 内计算。生产结束后才更新稀疏企业
 需求/供给/成本信号。Price V3 在本周期只读取上一 committed 信号，因此不新增图节点、跨阶段
@@ -750,6 +757,34 @@ continuation slice，并按本地清算后的库存目标再次裁剪。ACTIVE �
 本地市场；只有整个到期经济图未完成才沿用既有 same-day catchup。PROBE 只生成/报告建议，
 不延迟旧本地市场 cadence，也不修改经济状态 hash。详见
 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
+
+## Economy rolling five-phase cadence (2026-07-20, current)
+
+`economy_daily` keeps C++ stage-state authority and production cadence is fixed
+at five days. On simulation day `d`, one stable bucket is due:
+`cell_id % 5 == d % 5`. World scale changes the number of cells in that bucket,
+never the cadence. Bounded native calls process at most one building, market, or
+structural range and return `done=false` while the bucket is incomplete. The
+same-day barrier then drives consecutive bounded continuations within the
+real-frame `sim_frame_budget_ms` time box until daily trade
+arrival, stable reduction, and publish finish. The completed report has
+`deferred_cells=0` and `max_state_age_days<=4`; an in-flight barrier is expected
+continuation behavior, not a missed-deadline anomaly.
+When the pulse drains the barrier synchronously, `WorldClock` rechecks the source
+set and may continue consuming the current frame's calendar allowance; completion
+does not force an otherwise empty render frame.
+
+Incremental trade planning advances one bounded slice each day but cannot delay
+the local bucket. Trade arrival is a daily transaction and does not wait for the
+destination's next local settlement. Workload-auto cadence and global
+`WAIT_COMMIT` are retained only as historical/reference terminology and are not
+production scheduling paths.
+
+Before serial building production, due building cells precompute their frozen
+demand basis in deterministic contiguous worker ranges. Workers write only their
+cell-owned cache slices; the main thread reduces saturation counters by cell ID.
+This is a cache-preparation substage, not a new authority or visible simulation
+stage, and worker count cannot affect the state/event hash.
 
 ## Deadline-critical dynamic budget bypass（2026-07-18）
 

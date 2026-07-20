@@ -18,6 +18,12 @@ var _demand_detail_dialog
 var _inspector_view_model: CellInspectorViewModel
 var _selected_cell: HexCell
 var _last_cached_panel_ms: int = 0
+var _live_revision_cell := -1
+var _live_revision_tab := ""
+var _live_common_hash := 0
+var _live_category_generation := -1
+var _live_category_hash := 0
+var _live_revision_valid := false
 var _country_facade = null
 var _gm_console: DebugConsole
 var _perf_hud: PerfMiniHUD
@@ -45,6 +51,7 @@ func set_world_context(
 	if _inspector_view_model == null:
 		_inspector_view_model = CellInspectorViewModel.new()
 	_inspector_view_model.set_context(map, generator, view_adapter, world_clock, sea_level, hex_size)
+	_invalidate_live_revision()
 	_country_facade = generator.get_country_facade() if generator != null and \
 		generator.has_method("get_country_facade") else null
 	if _country_facade != null and _country_facade.has_signal("country_committed"):
@@ -77,6 +84,7 @@ func toggle_perf_hud() -> void:
 
 func show_cell_panel(cell: HexCell) -> void:
 	_selected_cell = cell
+	_invalidate_live_revision()
 	_last_cached_panel_ms = Time.get_ticks_msec()
 	if _inspector_view_model == null or _right_panel == null:
 		return
@@ -91,6 +99,7 @@ func show_cell_panel(cell: HexCell) -> void:
 
 func hide_cell_panel() -> void:
 	_selected_cell = null
+	_invalidate_live_revision()
 	_set_inspector_trace_cell(-1)
 	if _demand_detail_dialog != null:
 		_demand_detail_dialog.close_dialog()
@@ -107,16 +116,57 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 	}
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return timing
-	timing["tab"] = _right_panel.current_tab()
+	var tab_id := _right_panel.current_tab()
+	timing["tab"] = tab_id
 	_inspector_view_model.observe_temperature(_selected_cell, day_idx)
 	var now_ms := Time.get_ticks_msec()
 	if not force and now_ms - _last_cached_panel_ms < 750:
 		return timing
 	_last_cached_panel_ms = now_ms
+	var include_category := true
+	var revision: Dictionary = {}
+	var common_dirty := true
+	var category_dirty := true
+	var cell_idx := int(_selected_cell.index)
+	var same_target := _live_revision_valid and _live_revision_cell == cell_idx \
+		and _live_revision_tab == tab_id
+	if tab_id == "population":
+		revision = _inspector_view_model.live_patch_revision(_selected_cell, tab_id)
+		var common_hash := int(revision.get("common_hash", 0))
+		var category_generation := int(revision.get("category_generation", -1))
+		common_dirty = force or not same_target or common_hash != _live_common_hash
+		category_dirty = force or not same_target or \
+			category_generation != _live_category_generation
+		include_category = category_dirty
+		if not common_dirty and not category_dirty:
+			return timing
 	var build_started_usec := Time.get_ticks_usec()
-	var patch := _inspector_view_model.build_live_patch(_selected_cell, _right_panel.current_tab())
+	var patch := _inspector_view_model.build_live_patch(
+		_selected_cell,
+		tab_id,
+		include_category,
+		revision.get("population_summary", {})
+	)
 	timing["live_patch_build_ms"] = (
 		Time.get_ticks_usec() - build_started_usec) / 1000.0
+	if tab_id == "population":
+		if not common_dirty:
+			patch.erase("header")
+			patch.erase("score")
+			patch.erase("summary_cards")
+		if patch.has("category"):
+			var category_hash := hash(patch["category"])
+			if not force and same_target and category_hash == _live_category_hash:
+				patch.erase("category")
+			else:
+				_live_category_hash = category_hash
+		_live_revision_cell = cell_idx
+		_live_revision_tab = tab_id
+		_live_common_hash = int(revision.get("common_hash", 0))
+		_live_category_generation = int(revision.get("category_generation", -1))
+		_live_revision_valid = true
+		if not common_dirty and not patch.has("category"):
+			return timing
 	var apply_started_usec := Time.get_ticks_usec()
 	_right_panel.apply_live_patch(patch)
 	timing["live_patch_apply_ms"] = (
@@ -128,6 +178,7 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 func refresh_selected_panel() -> void:
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return
+	_invalidate_live_revision()
 	_right_panel.set_model_for_selection(_inspector_view_model.build(_selected_cell))
 
 
@@ -140,8 +191,18 @@ func _on_country_committed(_report: Dictionary) -> void:
 func _on_inspector_tab_data_requested(tab_id: String) -> void:
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return
+	_invalidate_live_revision()
 	_right_panel.set_tab_category(
 		tab_id, _inspector_view_model.build_tab_category(_selected_cell, tab_id))
+
+
+func _invalidate_live_revision() -> void:
+	_live_revision_cell = -1
+	_live_revision_tab = ""
+	_live_common_hash = 0
+	_live_category_generation = -1
+	_live_category_hash = 0
+	_live_revision_valid = false
 
 
 func _on_demand_details_requested(details: Dictionary) -> void:

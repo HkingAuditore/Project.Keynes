@@ -82,7 +82,7 @@ trade_settle -> external_ledger -> building_employment -> building_production
 订单托管，不会重复出售或超额购买。
 同一源、目的、对齐到达日的多种商品合并为一个多行 CSR 订单；反向运输始终是另一订单。
 
-原始 ETA 是 `ceil(route_cost / trade_speed)`，到达日向上对齐到首个固定经济提交边界。到达时
+ETA 是 `departure_day + ceil(route_cost / trade_speed)`，按日处理，不再向上对齐本地五日结算边界。到达时
 先把货物放入目的市场，因此可参与当期本地市场；价格仍只由 Price V3 更新，贸易代码不直接
 写价。现金按发运时卖方 merchant handle/人口权重支付；handle 失效时重绑定到源地块当前商人，
 仍无人接收则订单进入 `WAITING_RECEIVER`，货物不重复交付，现金保留为可审计托管并在后续边界
@@ -170,3 +170,29 @@ This is bounded candidate selection, not a topology shortcut: completed full
 scans advance and restart from fresh frozen signals, while final dispatch can
 still be zero when no route survives the current profit/stock/cash constraints.
 No trade state or PKEC field was added.
+## 2026-07-20 sparse planner and relief routes
+
+Trade planning no longer scans `market_count * good_count`. The existing market
+and building goods loops append sparse `(cell, good)` keys when stock, demand,
+price bounds, input reserves, EMA state, or in-flight orders make the pair
+active. Each five-day boundary may dispatch the completed candidate prefix;
+stable cursors and deterministic ordering preserve fairness.
+
+The export floor is the maximum of the production-input reserve, five days of
+realized withdrawal, and 50 percent of merchant target inventory. At most 25
+percent of source stock is offered. The import fill target is the maximum of the
+production reserve and 50 percent of merchant target inventory, with in-flight
+cargo deducted from the gap.
+
+Relief pressure is the maximum of survival shortage, unfunded desired business
+demand, production-reserve shortage, and price-cap pressure. Ordinary routes
+still require a non-negative spread and 5 percent minimum margin. Relief routes
+may use zero spread but never negative spread. Source stock, destination merchant
+cash escrow, country transport capacity, topology, and conservation are
+revalidated at dispatch.
+
+Diagnostic-only sparse clocks record signal age and first dispatch delay. Older
+signals sort ahead of newer destinations and candidates. Reports and CSV expose
+the maximum age, maximum first-dispatch delay, and signals that exceed the
+configured 15-day response target without dispatch; these clocks do not enter
+PKEC or the authoritative state hash.

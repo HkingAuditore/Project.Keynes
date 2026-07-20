@@ -9,12 +9,17 @@ extends Resource
 
 @export_range(1, 65536, 1) var cells_per_slice: int = 5000
 @export var auto_slice_by_scale: bool = true
-## Production defaults to a five-day settlement cycle. Set 0 for cohort-budget auto cadence.
-@export_range(0, 3650, 1) var market_cycle_days: int = 5
-@export_range(1, 3650, 1) var market_max_cycle_days: int = 365
-## Dominant hot-loop budget. Auto cadence targets at most this many cohorts
-## per simulation-day market slice, then settles all N-day totals together.
-## 0 selects 4k/12k/30k automatically for small/medium/large worlds.
+## 0 uses a deterministic 256-active-cell building range. Positive values override it.
+@export_range(0, 65536, 1) var building_cells_per_slice: int = 0
+## Dense settlements are additionally bounded by actual building groups.
+@export_range(1, 65536, 1) var building_groups_per_slice: int = 512
+## ABI-compatible profile fields. Native v15 fixes all three to five days and
+## distributes cells across five deterministic daily phases.
+@export_range(5, 5, 1) var market_cycle_days: int = 5
+@export_range(5, 5, 1) var market_min_cycle_days: int = 5
+@export_range(5, 5, 1) var market_max_cycle_days: int = 5
+## Per-native-call cohort guard retained for custom tests. Production rolling
+## settlement normally completes its entire due phase in one call.
 @export_range(0, 1000000, 1000) var market_target_cohorts_per_slice: int = 0
 @export_range(1, 1048576, 1) var commands_per_slice: int = 16384
 @export_range(1, 32, 1) var max_rules_per_plan: int = 32
@@ -67,8 +72,8 @@ extends Resource
 @export_range(1, 1000000, 1) var trade_speed_cost_per_day: int = 4
 @export_range(0, 65536, 1) var trade_min_margin_q16: int = 3277
 @export_range(1, 8, 1) var trade_target_count: int = 4
-@export_range(256, 1048576, 256) var trade_signal_pairs_per_slice: int = 16384
-@export_range(1, 256, 1) var trade_route_searches_per_slice: int = 128
+@export_range(256, 1048576, 256) var trade_signal_pairs_per_slice: int = 4096
+@export_range(1, 256, 1) var trade_route_searches_per_slice: int = 32
 @export_range(64, 1000000, 64) var trade_max_route_expansions: int = 8192
 @export_range(64, 4194304, 64) var trade_route_cache_entries: int = 16384
 @export_range(64, 1048576, 64) var trade_max_signals: int = 32768
@@ -76,6 +81,20 @@ extends Resource
 @export_range(16, 1048576, 16) var trade_max_orders: int = 4096
 @export_range(0, 65536, 1) var trade_flow_ema_alpha_q16: int = 8192
 @export_range(1, 65536, 1) var trade_max_stock_share_q16: int = 16384
+@export_range(1, 365, 1) var trade_export_floor_days: int = 5
+@export_range(0, 65536, 1) var trade_export_inventory_fraction_q16: int = 32768
+@export_range(0, 65536, 1) var trade_import_fill_fraction_q16: int = 32768
+@export_range(1, 365, 1) var trade_response_days: int = 15
+@export_range(1, 3650, 1) var investment_review_days: int = 10
+@export_range(0, 65536, 1) var investment_min_shortage_q16: int = 8192
+@export_range(0, 65536, 1) var investment_min_utilization_q16: int = 42598
+@export_range(1, 36500, 1) var investment_max_payback_days: int = 365
+@export_range(1, 12, 1) var investment_operating_cycles: int = 2
+@export_range(0, 65536, 1) var resource_min_reserve_q16: int = 22938
+@export_range(0, 65536, 1) var resource_safe_harvest_q16: int = 32768
+@export_range(1, 365000, 1) var resource_min_horizon_days: int = 3650
+@export_range(0, 65536, 1) var bullion_monthly_issue_cap_q16: int = 655
+@export_range(0, 65536, 1) var producer_support_monthly_cap_q16: int = 3277
 
 func to_native_profile() -> Dictionary:
 	return {
@@ -85,7 +104,10 @@ func to_native_profile() -> Dictionary:
 		"rate_scale": rate_scale,
 		"cells_per_slice": cells_per_slice,
 		"auto_slice_by_scale": auto_slice_by_scale,
+		"building_cells_per_slice": building_cells_per_slice,
+		"building_groups_per_slice": building_groups_per_slice,
 		"market_cycle_days": market_cycle_days,
+		"market_min_cycle_days": market_min_cycle_days,
 		"market_max_cycle_days": market_max_cycle_days,
 		"market_target_cohorts_per_slice": market_target_cohorts_per_slice,
 		"commands_per_slice": commands_per_slice,
@@ -130,4 +152,18 @@ func to_native_profile() -> Dictionary:
 		"trade_max_orders": trade_max_orders,
 		"trade_flow_ema_alpha_q16": trade_flow_ema_alpha_q16,
 		"trade_max_stock_share_q16": trade_max_stock_share_q16,
+		"trade_export_floor_days": trade_export_floor_days,
+		"trade_export_inventory_fraction_q16": trade_export_inventory_fraction_q16,
+		"trade_import_fill_fraction_q16": trade_import_fill_fraction_q16,
+		"trade_response_days": trade_response_days,
+		"investment_review_days": investment_review_days,
+		"investment_min_shortage_q16": investment_min_shortage_q16,
+		"investment_min_utilization_q16": investment_min_utilization_q16,
+		"investment_max_payback_days": investment_max_payback_days,
+		"investment_operating_cycles": investment_operating_cycles,
+		"resource_min_reserve_q16": resource_min_reserve_q16,
+		"resource_safe_harvest_q16": resource_safe_harvest_q16,
+		"resource_min_horizon_days": resource_min_horizon_days,
+		"bullion_monthly_issue_cap_q16": bullion_monthly_issue_cap_q16,
+		"producer_support_monthly_cap_q16": producer_support_monthly_cap_q16,
 	}

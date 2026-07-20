@@ -2368,3 +2368,12 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 `realized_withdrawal_ema`。多输出建筑可配置 Q16 cost shares；未配置时按冻结参考产值稳定分摊。
 成本单位价包含实际原料、应付合同工资和目标营业利润；生活成本通过 adaptive 合同工资进入，
 不额外重复叠加。这些信号只反馈下一周期 Price V3，不在本周期形成代数环。
+
+滚动 PKEC v15 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
+临时量只分配该 cell 的稀疏 CSR lane；investment 复用 epoch-transient `(cell,type)` 与
+`(cell,resource)` 索引，并在 `building_commit_phase` 中按 cell range continuation。生产阶段则在
+当前 `market_id == cell_id` 契约下按 due cell 并行：worker 直接写互不重叠的 cohort、building、
+market、resource-delta 和 signal lane，把跨 cell 诊断、留用品、现金流及 trace 写入每 cell 的
+`ProductionResult`。主线程按原 cursor 顺序归并后才推进 stage，因此 scalar/worker 的权威状态与
+事件顺序一致。`building_production_worker_tasks` 报告实际选择的任务数，
+`building_production_merge_ms` 报告包含在 `building_production_ms` 内的归并成本。

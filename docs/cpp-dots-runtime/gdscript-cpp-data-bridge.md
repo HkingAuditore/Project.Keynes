@@ -49,7 +49,7 @@ Runtime hydrology 新增的契约：
 国内贸易使用；它不再参与资源采集。目录保留
 `building_production_resource_access_modes` 对齐列，但所有值必须为 local/0，GDScript catalog 和
 NativeEconomyRuntime 都拒绝非零值。生产和 Inspector 可达储量查询只读取建筑本格。
-- Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v13 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
+- Goods 已退出 cell schema。库存/价格/需求 EMA/短缺由 `NativeEconomyRuntime::MarketStore` 的 market-major 定点矩阵持有，库存属于本地 merchant cohorts，成交资金直接进入商人而非匿名 market cash。UI 通过 `get_market_cell_snapshot(cell_idx)` 冷路径查询。旧 Dictionary 存档多出的 `cell_goods_*` key 被自然忽略；新经济状态只走 PKEC v14 byte chunks。新增 good 只新增资源，不再改 `MapData` 或 bind table。
 
 国内贸易拓扑也不进入 DataCore schema。`MapData.neighbor_indices_packed()` 与
 `economy_trade_passable_lut()` / `economy_trade_move_cost_lut()` 在经济边界通过
@@ -106,7 +106,9 @@ handler 是只读观察者。需要改变经济时必须提交 economy command�
 
 玩家人口 Inspector 另用 `set_economy_inspector_trace_cell(cell)` 注册一个单地块目标，不覆盖
 调试 `set_economy_trace_filter`。`get_population_cell_snapshot` 会返回上次提交周期的稀疏
-cashflow CSR、周期日期和 `settlement_detail_available/pending`；首次选中等待下一次提交。
+cashflow CSR、周期日期和 `settlement_detail_available/pending`。滚动五相模式只在该地块实际
+到期结算时提交新的完整 cashflow 批次；其余相位继续保留上一次完整分类，首次选中则保持
+pending 直到该地块首次到期结算。
 该缓存不进入 DataCore slot、PKEC 存档或核心 state hash。
 
 ## GDScript 写入 C++ 可见数据
@@ -618,3 +620,23 @@ artificial change pending, and closing reserve. The recorder history is debug
 state only: it is excluded from simulation state hash and PKEC save data. Summary rows append
 construction goods consumed plus endogenous investment candidates, owner mobility, starts, and
 fund/material blocking counters.
+## Economy v15 bridge additions
+
+GDScript compiles resource profile coefficients and v15 behavior knobs into
+packed catalog/profile columns at configure time. The native hot loop reads only
+those fixed columns and frozen environment/resource arrays; it never reads a
+Godot `Resource`, `Dictionary`, or stable-id string during settlement.
+
+Selected-cell building snapshots expose desired/funded capacity, allocated
+working capital, investment score, payback, and rejection reason. Market
+snapshots expose desired/funded/unfunded business demand, export safety stock,
+import fill target, relief pressure, signal age, and first-dispatch delay. These
+are read-only diagnostic views over native state and do not create a GDScript
+economy authority.
+
+Rolling query snapshots also expose `state_day`, `age_days`, and
+`snapshot_source=rolling_committed`. Global reports expose the settlement
+watermark, newest committed state day, maximum state age, due/processed/deferred
+cell counts, and the stable settlement phase. C++ remains the only mutable
+authority; GDScript does not merge rolling cell state into a synthetic same-day
+world snapshot.

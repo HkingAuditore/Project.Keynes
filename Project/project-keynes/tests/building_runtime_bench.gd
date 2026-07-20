@@ -5,6 +5,9 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var cells := 10000
+	for arg in args:
+		if arg.begins_with("--cells="):
+			cells = clampi(int(arg.trim_prefix("--cells=")), 1, 1000000)
 	var catalog: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	if not bool(catalog.get("ok", false)):
 		printerr(catalog)
@@ -14,10 +17,12 @@ func _init() -> void:
 	var native_catalog := catalog.duplicate(true)
 	native_catalog.erase("ok")
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
-	profile.market_cycle_days = 5
+	profile.market_cycle_days = 0 if "--auto" in args else 5
 	profile.market_runtime_mode = "ACTIVE"
-	profile.worker_enabled = true
+	profile.worker_enabled = not "--scalar" in args
 	profile.worker_market_threshold = 64
+	if "--no-investment" in args:
+		profile.investment_review_days = 3650
 	profile.economy_trace_mode = "OFF" if "--trace-off" in args else "SELECTIVE"
 	if not bool(ext.configure_economy(native_catalog, profile, cells, 20260711).get("ok", false)):
 		printerr("configure failed")
@@ -62,15 +67,20 @@ func _init() -> void:
 	var building_ms := PackedFloat64Array()
 	var all_ms := PackedFloat64Array()
 	var report := {}
-	var days := 25 if "--event-soak" in args else 5
+	var days := 25 if "--event-soak" in args else (
+		int(boot.get("market_cycle_days", 5)) if "--auto" in args else 5)
+	var barrier_slices := 0
 	for day in range(days):
 		report = ext.run_economy_slice({"day_index": day, "tick_index": day})
 		all_ms.append(float(report.get("elapsed_ms", 0.0)))
 		if bool(report.get("building_range_used", false)):
 			building_ms.append(float(report.get("elapsed_ms", 0.0)))
 		var catchup := 0
-		while not bool(report.get("done", false)) and bool(report.get("commit_due", false)):
+		while not bool(report.get("done", false)) and (
+				bool(report.get("commit_due", false)) or
+				bool(report.get("boundary_continuation_required", false))):
 			catchup += 1
+			barrier_slices += 1
 			report = ext.run_economy_slice({"day_index": day, "tick_index": day * 1000 + catchup})
 			all_ms.append(float(report.get("elapsed_ms", 0.0)))
 			if bool(report.get("building_range_used", false)):
@@ -102,6 +112,30 @@ func _init() -> void:
 		float(report.get("event_publish_ms", 0.0)),
 		float(report.get("economy_trace_memory_bytes", 0)) / 1048576.0,
 		int(report.get("economy_event_last_batch_count", 0)),
+	])
+	print("[building_cadence_bench] configured=%d effective=%d estimated=%d market=%d building=%d feasible=%s clamped=%s barrier_slices=%d" % [
+		int(report.get("market_configured_cycle_days", -1)),
+		int(report.get("market_cycle_days", -1)),
+		int(report.get("estimated_total_slices_per_epoch", -1)),
+		int(report.get("estimated_market_slices_per_epoch", -1)),
+		int(report.get("estimated_building_slices_per_epoch", -1)),
+		str(report.get("workload_deadline_feasible", false)),
+		str(report.get("workload_cycle_clamped", false)), barrier_slices,
+	])
+	print("[building_stage_bench] prepare=%.3fms audit=%.3fms watermark=%.3fms plan=%.3fms employment=%.3fms production=%.3fms production_merge=%.3fms production_tasks=%d investment=%.3fms formula=%.3fms clear=%.3fms price=%.3fms merchant=%.3fms trade_plan=%.3fms trade_dispatch=%.3fms publish=%.3fms processed_cells=%d processed_cohorts=%d groups=%d" % [
+		float(report.get("prepare_ms", 0.0)), float(report.get("audit_ms", 0.0)),
+		float(report.get("watermark_ms", 0.0)),
+		float(report.get("building_plan_ms", 0.0)),
+		float(report.get("building_employment_ms", 0.0)),
+		float(report.get("building_production_ms", 0.0)),
+		float(report.get("building_production_merge_ms", 0.0)),
+		int(report.get("building_production_worker_tasks", 1)),
+		float(report.get("building_investment_ms", 0.0)),
+		float(report.get("formula_ms", 0.0)), float(report.get("clear_ms", 0.0)),
+		float(report.get("price_ms", 0.0)), float(report.get("merchant_settle_ms", 0.0)),
+		float(report.get("trade_plan_ms", 0.0)), float(report.get("trade_dispatch_ms", 0.0)),
+		float(report.get("publish_ms", 0.0)), int(report.get("processed_cells", 0)),
+		int(report.get("processed_cohorts", 0)), int(report.get("processed_building_groups", 0)),
 	])
 	quit(0 if int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and int(report.get("goods_error", 1)) == 0 else 5)

@@ -331,12 +331,30 @@ static func compile_native_catalog() -> Dictionary:
 	]:
 		building_v6_columns.erase(key)
 	catalog["building_catalog_hash"] = _catalog_hash(building_columns)
+	var building_v13_columns := building_columns.duplicate(true)
+	for key in [
+		"building_resource_gen_base", "building_resource_gen_temp",
+		"building_resource_gen_moisture", "building_resource_gen_self",
+		"building_resource_decay_base", "building_resource_decay_temp",
+		"building_resource_decay_moisture", "building_resource_decay_self_q16",
+		"building_resource_ecology_capacity", "building_resource_ecology_growth_q16",
+		"building_resource_temp_lo_q16", "building_resource_temp_hi_q16",
+	]:
+		building_v13_columns.erase(key)
+	var building_compat_hash_v13 := _catalog_hash(building_v13_columns)
 	catalog["market_catalog_compat_hash_v6"] = market_compat_hash_v6
 	catalog["market_catalog_compat_hash_v7"] = _catalog_hash(market_v7_columns)
 	catalog["building_catalog_compat_hash_v6"] = _catalog_hash(building_v6_columns)
 	catalog["building_catalog_compat_hash_v7"] = _catalog_hash(building_v7_columns)
 	for key in building_columns:
 		catalog[key] = building_columns[key]
+	var catalog_v13 := catalog.duplicate(true)
+	for key in building_columns:
+		if not building_v13_columns.has(key):
+			catalog_v13.erase(key)
+	catalog_v13["building_catalog_hash"] = building_compat_hash_v13
+	catalog["building_catalog_compat_hash_v13"] = building_compat_hash_v13
+	catalog["catalog_compat_hash_v13"] = _catalog_hash(catalog_v13)
 	var catalog_v10 := catalog.duplicate(true)
 	catalog_v10.erase("good_trade_enabled")
 	catalog_v10.erase("good_transport_load_per_unit_q16")
@@ -403,6 +421,18 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var resource_reserve_slots := PackedStringArray()
 	var resource_extra_slots := PackedStringArray()
 	var resource_index := {}
+	var resource_gen_base := PackedInt64Array()
+	var resource_gen_temp := PackedInt64Array()
+	var resource_gen_moisture := PackedInt64Array()
+	var resource_gen_self := PackedInt64Array()
+	var resource_decay_base := PackedInt64Array()
+	var resource_decay_temp := PackedInt64Array()
+	var resource_decay_moisture := PackedInt64Array()
+	var resource_decay_self_q16 := PackedInt32Array()
+	var resource_ecology_capacity := PackedInt64Array()
+	var resource_ecology_growth_q16 := PackedInt32Array()
+	var resource_temp_lo_q16 := PackedInt32Array()
+	var resource_temp_hi_q16 := PackedInt32Array()
 	for resource in resources:
 		var stable_id := String(resource.id)
 		if not used_resource_ids.has(stable_id):
@@ -415,6 +445,19 @@ static func _compile_building_columns(profession_index: Dictionary,
 		resource_ids.append(stable_id)
 		resource_reserve_slots.append(reserve_slot)
 		resource_extra_slots.append(extra_slot)
+		var quantity_scale := ResourceRegistryScript.CELL_AREA_RESOURCE_SCALE * 1000.0
+		resource_gen_base.append(roundi(float(resource.gen_base) * quantity_scale))
+		resource_gen_temp.append(roundi(float(resource.gen_temp) * quantity_scale))
+		resource_gen_moisture.append(roundi(float(resource.gen_moisture) * quantity_scale))
+		resource_gen_self.append(roundi(float(resource.gen_self) * quantity_scale))
+		resource_decay_base.append(roundi(float(resource.decay_base) * quantity_scale))
+		resource_decay_temp.append(roundi(float(resource.decay_temp) * quantity_scale))
+		resource_decay_moisture.append(roundi(float(resource.decay_moisture) * quantity_scale))
+		resource_decay_self_q16.append(roundi(float(resource.decay_self) * Q16_ONE))
+		resource_ecology_capacity.append(roundi(float(resource.ecology_capacity) * quantity_scale))
+		resource_ecology_growth_q16.append(roundi(float(resource.ecology_growth_rate) * Q16_ONE))
+		resource_temp_lo_q16.append(roundi(float(resource.temp_lo) * Q16_ONE))
+		resource_temp_hi_q16.append(roundi(float(resource.temp_hi) * Q16_ONE))
 
 	var type_ids := PackedStringArray()
 	var owner_professions := PackedInt32Array()
@@ -801,6 +844,18 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_resource_ids": resource_ids,
 		"building_resource_reserve_slots": resource_reserve_slots,
 		"building_resource_extra_slots": resource_extra_slots,
+		"building_resource_gen_base": resource_gen_base,
+		"building_resource_gen_temp": resource_gen_temp,
+		"building_resource_gen_moisture": resource_gen_moisture,
+		"building_resource_gen_self": resource_gen_self,
+		"building_resource_decay_base": resource_decay_base,
+		"building_resource_decay_temp": resource_decay_temp,
+		"building_resource_decay_moisture": resource_decay_moisture,
+		"building_resource_decay_self_q16": resource_decay_self_q16,
+		"building_resource_ecology_capacity": resource_ecology_capacity,
+		"building_resource_ecology_growth_q16": resource_ecology_growth_q16,
+		"building_resource_temp_lo_q16": resource_temp_lo_q16,
+		"building_resource_temp_hi_q16": resource_temp_hi_q16,
 		"building_resource_offsets": production_resource_offsets,
 		"building_production_resource_ids": production_resources,
 		"building_production_resource_quantities": production_resource_quantities,

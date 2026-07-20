@@ -98,7 +98,44 @@ func build(cell: HexCell) -> Dictionary:
 	}
 
 
-func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
+func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
+	if cell == null or _map == null:
+		return {}
+	var idx := int(cell.index)
+	var tab_id := current_tab if current_tab != "" else "geography"
+	var population_summary := _population_summary(idx)
+	var country_summary := _country_summary(idx)
+	var common_state := [
+		idx,
+		_terrain(cell, idx),
+		_landform(cell, idx),
+		_temp(cell, idx),
+		_moisture(cell, idx),
+		_elevation(cell, idx),
+		_vitality(cell, _landform(cell, idx)),
+		bool(population_summary.get("ok", false)),
+		int(population_summary.get("population", 0)),
+		int(population_summary.get("cohort_count", 0)),
+		String(country_summary.get("country_name", "")),
+		int(country_summary.get("cash", 0)),
+		int(country_summary.get("nonzero_good_count", 0)),
+		int(country_summary.get("technology_count", 0)),
+	]
+	return {
+		"tab_id": tab_id,
+		"common_hash": hash(common_state),
+		"category_generation": int(population_summary.get(
+			"settlement_generation", -1)) if tab_id == "population" else -1,
+		"population_summary": population_summary,
+	}
+
+
+func build_live_patch(
+		cell: HexCell,
+		current_tab: String,
+		include_category: bool = true,
+		population_summary_override: Dictionary = {}
+) -> Dictionary:
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
@@ -123,20 +160,25 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 	var country_summary := _country_summary(idx)
 	var category: Dictionary
 	if tab_id == "population":
-		population_summary = _population_snapshot(idx)
-		category = _population_category(population_summary, _market_snapshot(idx))
+		if include_category:
+			population_summary = _population_snapshot(idx)
+			category = _population_category(population_summary, _market_snapshot(idx))
+		else:
+			population_summary = population_summary_override if not \
+				population_summary_override.is_empty() else _population_summary(idx)
 	else:
 		population_summary = _population_summary(idx)
-		category = _geography_information_category(cell, idx, terrain_v,
-			landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
-			wf, snow, vitality, passable_land, is_water) if tab_id == "geography" \
-			else build_tab_category(cell, tab_id)
-	if category.is_empty():
+		if include_category:
+			category = _geography_information_category(cell, idx, terrain_v,
+				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
+				wf, snow, vitality, passable_land, is_water) if tab_id == "geography" \
+				else build_tab_category(cell, tab_id)
+	if include_category and category.is_empty():
 		tab_id = "geography"
 		category = _geography_information_category(cell, idx, terrain_v,
 			landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
 			wf, snow, vitality, passable_land, is_water)
-	return {
+	var patch := {
 		"header": _build_header(off, terrain_v, landform_v, country_summary),
 		"score": {
 			"id": "habitability",
@@ -147,8 +189,10 @@ func build_live_patch(cell: HexCell, current_tab: String) -> Dictionary:
 		},
 		"summary_cards": _summary_cards(temp, moist, population_summary, country_summary),
 		"tab_id": tab_id,
-		"category": category,
 	}
+	if include_category:
+		patch["category"] = category
+	return patch
 
 
 func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:

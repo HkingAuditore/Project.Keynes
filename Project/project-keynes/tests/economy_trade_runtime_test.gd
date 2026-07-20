@@ -68,19 +68,32 @@ func _run() -> void:
 	_expect("opening local cycle commits exactly", bool(report.get("done", false)) and
 		not bool(report.get("fatal", false)) and int(report.get("goods_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0)
-	report = _advance_day(ext, 2)
-	report = _advance_day(ext, 3)
-	report = _advance_day(ext, 4)
-	_expect("trade waits for local household settlement",
-		String(report.get("stage", "")) == "household_market" and
-		int(ext.get_trade_orders_for_cell(0, 0, 64).get("total", -1)) == 0)
-	report = _advance_day(ext, 5)
+	_expect("rolling markets remain within the four-day visibility bound",
+		not bool(report.get("fatal", false)) and
+		int(report.get("max_state_age_days", 99)) <= 4)
+	var planner_report: Dictionary = ext.run_economy_slice({"day_index": 2, "tick_index": 2000})
+	var continuation_report: Dictionary = ext.run_economy_slice(
+		{"day_index": 2, "tick_index": 2001})
+	_expect("trade planner timing is reported on its native slice",
+		float(planner_report.get("trade_plan_ms", 0.0)) > 0.0)
+	_expect("trade planner timing does not leak into the next continuation slice",
+		not bool(planner_report.get("done", true)) and
+		is_zero_approx(float(continuation_report.get("trade_plan_ms", -1.0))))
 	var orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
+	for day in range(2, 16):
+		if int(orders.get("total", 0)) > 0:
+			break
+		report = _advance_day(ext, day)
+		orders = ext.get_trade_orders_for_cell(0, 0, 64)
 	_expect("profitable domestic route dispatches", bool(orders.get("ok", false)) and
 		int(orders.get("total", 0)) > 0)
-	_expect("route ETA aligns to cycle boundary",
+	if int(orders.get("total", 0)) <= 0:
+		return
+	var departure_day := int((orders.departure_days as PackedInt64Array)[0])
+	var arrival_day := int((orders.arrival_days as PackedInt64Array)[0])
+	_expect("route ETA uses daily transport time",
 		(orders.arrival_days as PackedInt64Array).size() > 0 and
-		int((orders.arrival_days as PackedInt64Array)[0]) % 2 == 0)
+		arrival_day == departure_day + 1)
 	_expect("dispatch escrows goods and cash",
 		int(report.get("trade_transit_goods", 0)) > 0 and
 		int(report.get("trade_escrow_cash", 0)) > 0)
@@ -92,6 +105,14 @@ func _run() -> void:
 		(orders.line_offsets as PackedInt32Array).size() ==
 			(orders.order_ids as PackedInt64Array).size() + 1 and
 		(orders.line_good_ids as PackedInt32Array).size() >= 2)
+	var destination_after_dispatch: Dictionary = ext.get_market_cell_snapshot(1)
+	var destination_good_index := (destination_after_dispatch.good_ids as PackedStringArray).find(
+		"gathered_plants")
+	var dispatch_delay := int((destination_after_dispatch.trade_first_dispatch_delay_days as
+		PackedInt32Array)[destination_good_index])
+	_expect("new shortage receives its first dispatch within the response target",
+		dispatch_delay >= 0 and dispatch_delay <= 15 and
+		int(report.get("trade_response_deadline_misses", -1)) == 0)
 
 	_expect("in-transit committed boundary conserves", bool(report.get("done", false)) and
 		int(report.get("goods_error", 1)) == 0 and int(report.get("money_error", 1)) == 0)
@@ -110,8 +131,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v13 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 13)
+	_expect("PKEC v15 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 15)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -121,14 +142,17 @@ func _run() -> void:
 		int(restored.get_trade_orders_for_cell(0, 0, 64).get("total", 0)) > 0 and
 		int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 
-	report = _advance_day(ext, 6)
+	for day in range(departure_day + 1, arrival_day + 1):
+		report = _advance_day(ext, day)
 	var destination: Dictionary = ext.get_market_cell_snapshot(1)
-	_expect("arrival settles at due boundary", int(ext.get_trade_orders_for_cell(
+	_expect("arrival settles on its daily ETA", int(ext.get_trade_orders_for_cell(
 		0, 0, 64).get("total", -1)) == 0 and
 		_sum_column(destination, "stock") > 0)
 	_expect("arrival remains exactly conserved", int(report.get("goods_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0)
-	var restored_report := _advance_day(restored, 6)
+	var restored_report: Dictionary = {}
+	for day in range(departure_day + 1, arrival_day + 1):
+		restored_report = _advance_day(restored, day)
 	_expect("restored due-day order settles once",
 		int(restored.get_trade_orders_for_cell(0, 0, 64).get("total", -1)) == 0 and
 		int(restored_report.get("goods_error", 1)) == 0 and
@@ -386,9 +410,12 @@ func _test_price_capped_survival_shortage_routes(compiled: Dictionary, catalog: 
 		"funds": PackedInt64Array([1000000000, 1000000000]),
 	}, {"stock": stock, "price": price})
 	var report: Dictionary = {}
-	for day in range(6):
+	var orders: Dictionary = {}
+	for day in range(16):
 		report = _advance_day(ext, day)
-	var orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
+		orders = ext.get_trade_orders_for_cell(0, 0, 64)
+		if int(orders.get("total", 0)) > 0:
+			break
 	_expect("price-capped survival shortage can route at zero spread",
 		int(orders.get("total", 0)) > 0 and
 		int(report.get("trade_candidates_accepted", 0)) > 0)
@@ -551,19 +578,28 @@ func _test_worker_scalar_equivalence(compiled: Dictionary, catalog: Dictionary) 
 	}
 	scalar.bootstrap_economy(population_packet, {"stock": stock, "price": prices})
 	worker.bootstrap_economy(population_packet, {"stock": stock, "price": prices})
-	for day in range(6):
+	var scalar_orders: Dictionary = {}
+	var worker_orders: Dictionary = {}
+	var emitted_day := -1
+	var daily_hashes_match := true
+	for day in range(16):
 		_advance_day(scalar, day)
 		_advance_day(worker, day)
-	var scalar_orders: Dictionary = scalar.get_trade_orders_for_cell(0, 0, 64)
-	var worker_orders: Dictionary = worker.get_trade_orders_for_cell(0, 0, 64)
+		daily_hashes_match = daily_hashes_match and \
+			int(scalar.get_economy_state_hash()) == int(worker.get_economy_state_hash())
+		scalar_orders = scalar.get_trade_orders_for_cell(0, 0, 64)
+		worker_orders = worker.get_trade_orders_for_cell(0, 0, 64)
+		if int(scalar_orders.get("total", 0)) > 0:
+			emitted_day = day
+			break
 	_expect("worker and scalar emit identical trade orders",
-		int(scalar_orders.get("total", 0)) > 0 and
+		daily_hashes_match and emitted_day >= 0 and
 		scalar_orders.order_ids == worker_orders.order_ids and
 		scalar_orders.arrival_days == worker_orders.arrival_days and
 		scalar_orders.line_offsets == worker_orders.line_offsets and
 		scalar_orders.line_good_ids == worker_orders.line_good_ids and
 		scalar_orders.line_quantities == worker_orders.line_quantities)
-	for day in range(6, 8):
+	for day in range(emitted_day + 1, emitted_day + 3):
 		_advance_day(scalar, day)
 		_advance_day(worker, day)
 	_expect("worker and scalar final trade hashes match",
@@ -589,7 +625,20 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	_advance_day(ext, 0)
 	var saved := _save_economy(ext)
 	var compat_hash := int(compiled.get("catalog_compat_hash_v10", 0))
-	var v11_chunks := _convert_v12_chunks_to_v11(saved.get("chunks", []))
+	var v14_chunks := _convert_v15_chunks_to_v14(saved.get("chunks", []))
+	var v14_restored := _new_ext(compiled, 1)
+	CountryTestHelper.configure_all_technologies(v14_restored, catalog, 1, 4415)
+	v14_restored.configure_economy(catalog, profile, 1, 4415)
+	var v14_result := _restore_economy(v14_restored, v14_chunks)
+	_expect("PKEC v14 deterministically bootstraps rolling phases",
+		bool(v14_result.get("ok", false)) and
+		String(v14_result.get("migration", "")) == "v14_rolling_phase_bootstrap")
+	var v13_chunks := _convert_v14_chunks_to_v13(v14_chunks,
+		int(compiled.get("catalog_compat_hash_v13", 0)),
+		int(compiled.get("building_catalog_compat_hash_v13", 0)))
+	var v11_chunks := _convert_v12_chunks_to_v11(v13_chunks,
+		int(compiled.get("catalog_hash", 0)),
+		int(compiled.get("building_catalog_hash", 0)))
 	var v11_restored := _new_ext(compiled, 1)
 	CountryTestHelper.configure_all_technologies(v11_restored, catalog, 1, 4415)
 	v11_restored.configure_economy(catalog, profile, 1, 4415)
@@ -669,7 +718,9 @@ func _capture_line_topology(ext: Object, cells: int, move_cost: int = 1) -> bool
 func _advance_day(ext: Object, day: int) -> Dictionary:
 	var report: Dictionary = ext.run_economy_slice({"day_index": day})
 	for continuation in range(64):
-		if bool(report.get("done", false)) or not bool(report.get("commit_due", false)):
+		if bool(report.get("done", false)) or (
+				not bool(report.get("commit_due", false)) and
+				not bool(report.get("boundary_continuation_required", false))):
 			break
 		report = ext.run_economy_slice({"day_index": day, "tick_index": continuation + 1})
 	return report
@@ -737,7 +788,8 @@ func _convert_v11_chunks_to_v10(chunks: Array, compat_hash: int) -> Array:
 		converted.append(chunk)
 	return converted
 
-func _convert_v12_chunks_to_v11(chunks: Array) -> Array:
+func _convert_v12_chunks_to_v11(chunks: Array, catalog_hash: int,
+		building_catalog_hash: int) -> Array:
 	var converted: Array[PackedByteArray] = []
 	for source_value in chunks:
 		var source := source_value as PackedByteArray
@@ -750,9 +802,57 @@ func _convert_v12_chunks_to_v11(chunks: Array) -> Array:
 			var payload := source.slice(16)
 			# v12 appends six i32 business-policy fields after the v11 trade block.
 			var legacy_payload := payload.slice(0, 260)
+			legacy_payload.encode_s64(72, catalog_hash)
+			legacy_payload.encode_s64(80, building_catalog_hash)
 			legacy_payload.append_array(payload.slice(284))
 			chunk = source.slice(0, 16)
 			chunk.encode_u16(4, 11)
+			chunk.encode_u32(12, legacy_payload.size())
+			chunk.append_array(legacy_payload)
+		converted.append(chunk)
+	return converted
+
+func _convert_v14_chunks_to_v13(chunks: Array, compat_hash: int,
+		building_compat_hash: int) -> Array:
+	var converted: Array[PackedByteArray] = []
+	for source_value in chunks:
+		var source := source_value as PackedByteArray
+		if source.size() < 16:
+			continue
+		var section := int(source.decode_u16(6))
+		var chunk := source.duplicate()
+		chunk.encode_u16(4, 13)
+		if section == 0:
+			var payload := source.slice(16)
+			# v14 appends fourteen i32 dynamic-policy fields after the v13 header.
+			var legacy_payload := payload.slice(0, 284)
+			legacy_payload.encode_s64(72, compat_hash)
+			legacy_payload.encode_s64(80, building_compat_hash)
+			legacy_payload.append_array(payload.slice(340))
+			chunk = source.slice(0, 16)
+			chunk.encode_u16(4, 13)
+			chunk.encode_u32(12, legacy_payload.size())
+			chunk.append_array(legacy_payload)
+		converted.append(chunk)
+	return converted
+
+func _convert_v15_chunks_to_v14(chunks: Array) -> Array:
+	var converted: Array[PackedByteArray] = []
+	for source_value in chunks:
+		var source := source_value as PackedByteArray
+		if source.size() < 16:
+			continue
+		var section := int(source.decode_u16(6))
+		var chunk := source.duplicate()
+		chunk.encode_u16(4, 14)
+		if section == 3:
+			var records := int(source.decode_u32(8))
+			var payload := source.slice(16)
+			var legacy_payload := PackedByteArray()
+			for record in range(records):
+				legacy_payload.append_array(payload.slice(record * 68, record * 68 + 24))
+			chunk = source.slice(0, 16)
+			chunk.encode_u16(4, 14)
 			chunk.encode_u32(12, legacy_payload.size())
 			chunk.append_array(legacy_payload)
 		converted.append(chunk)

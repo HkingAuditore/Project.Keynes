@@ -34,7 +34,7 @@
 | cohort、handle、人口、资金、收入/支出、满足度 | C++ `PopulationStore` | GDScript 无逐 cohort setter。 |
 | 本地库存、价格、居民需求 EMA、短缺率 | C++ `MarketStore` | 无 per-cell goods component，无匿名市场现金。 |
 | 企业可行需求/供给 EMA、实际出库 EMA、成本锚 | C++ 稀疏 `MarketSignalStore` | 仅保存建筑实际引用的 `(cell, good)` 边；实际出库用于商人库存目标。 |
-| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v13 保存订单/托管/EMA。 |
+| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v15 保存订单/托管/EMA。 |
 | 需求、预算、bundle 清算、替代 fallback、商人结算、Price V3 | C++ Market V2 hot loop | 不访问 Godot Object/Callable/Dictionary。 |
 | 周期环境快照 | DataCore 环境 slots → C++ Q16 snapshot | 周期 sample day 捕获 temp/moisture/snow/weather，周期内冻结。 |
 | catalog 编译 | `EconomyCatalog`/`EconomyFacade` 冷路径 | stable ID 排序后一次性提交 PackedArrays。 |
@@ -53,10 +53,12 @@
 - `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
 - ACTIVE owner-lot 在家庭清算前按已到岗业主份额、计划利用率和冻结单位投入成本保留下周期营运资金；该资金仍在 owner cohort 账户内，但不会被本期居民订单花掉。报告发布 `owner_working_capital_reserved`。
 - 食物生产者按三类食品总需求的饥饿阈值留存产出；精确消费 variant 之后的剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量，保证狩猎、捕鱼等单一食物生产者具备真实自给能力。
-- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v8 逐商品列用于诊断。缓存不进入 PKEC v13，可从建筑和市场信号状态重建。
+- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v8 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v13 保存并哈希企业状态/连续数/采购意图容量/实际利润率和实际出库 EMA。仅兼容参数一致的 v12/v11 ACTIVE；旧默认 v11 的 25%/1 日商人策略与当前 12.5%/30 日分档库存基线不一致并明确拒绝。ACTIVE 配置也拒绝 v11 PROBE 和 v10。
+- PKEC v15 是当前 writer：在 v14 企业状态/连续数、实际利润率、实际出库 EMA 和行为配置之上，保存每 cell 结算日/generation 与 dirty generations；意向/受资助需求、营运资金分配和 production worker 临时结果仍按周期确定性重建。PKEC v14 通过 rolling phase bootstrap 迁移；更早版本继续遵守参数一致性和既有拒绝路径。
+- `BUILDING_PLAN` 是原生两遍 continuation：第一遍按 active-cell CSR 计算利润、停产恢复和计划利用率，第二遍按相同稳定顺序重建生产投入 reserve。`building_cells_per_slice=0` 确定性使用 256 个 active cell；正值可做平台定标。cursor、生存利用率 floor 和 reserve 构建缓存不保存、不哈希。
+- 业主营运资金缩放使用 8 次确定性整数二分并返回可支付下界，因此绝不透支；最大利用率低估为请求区间的 `1/256`，实际 Q16 未决界由 `working_capital_scale_error_bound_q16` 报告。
 
 ## 2026-07-15 价格弹性、成本底线与生态修正
 
@@ -159,6 +161,16 @@ focused test 必须验证 worker/scalar state hash 完全相同。
 snapshot、reset、分块 save/restore、固定数学 probe 与 state hash。跨边界写入均为平行
 PackedArrays；UI 只查询选中地块。
 
+`population_cell_summary()` 与 population/market/building selected-cell snapshot
+都发布该地块的 `settlement_generation`。人口 Inspector 先用 summary generation
+判断详细 cohort/market category 是否可能变化，再对新构建的 category 做内容 hash；
+generation 未变时只允许刷新公共 header/score/summary，不得重复构建或 apply 人口明细。
+公共区域使用其实际渲染字段的 hash，因此气候或国家摘要更新不受人口 generation 限制。
+
+`trade_plan_ms` 是当前一次 `run_economy_slice()` 中 planner 的墙钟时间，不是 epoch、
+simulation day 或进程累计值。未执行 planner 的 native slice 必须报告 `0`；跨 slice
+分析直接采样该字段，禁止再用相邻 report 相减。
+
 贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入和分页
 `get_trade_orders_for_cell(cell, offset, limit)` 冷查询；禁止跨桥返回全局路线/订单矩阵。
 正式地图由 `MapGenerator._setup_economy_runtime()` 在 economy configure 后、bootstrap 前
@@ -202,7 +214,7 @@ PackedArrays；UI 只查询选中地块。
 ## 实测门槛
 
 Windows / Godot 4.6.2 / template_release / 2026-07-11。下表是显式
-`market_cycle_days=0` 的自动周期性能档，不代表默认 5 日档：
+`market_cycle_days=0` 的自动周期性能档；该模式现为生产默认：
 
 | 档位 | 样本 | avg | p95 | max | runtime memory | ACTIVE 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
@@ -211,7 +223,7 @@ Windows / Godot 4.6.2 / template_release / 2026-07-11。下表是显式
 
 错峰把 10M p95 从约 89ms 降至约 4ms；惰性会计清零和按需 merchant rebuild 消除了
 周期边界 90/30ms 尖峰。代价是可配置的结算延迟与 reference 误差，详见调度文档。
-# Native Building / Employment Runtime（PKEC v13 + PKCN v1）
+# Native Building / Employment Runtime（PKEC v14 + PKCN v1）
 
 建筑、岗位与生产由 `NativeEconomyRuntime` 内独立的 `BUILDING_GRAPH` 管理，仍与
 Market V2 共用冻结周期和原子发布边界，但不进入 `household_market` 热循环。建筑不进入
@@ -319,7 +331,7 @@ error 为 `0/0/0`，无 fallback。
 
 ## 建筑资源链性能门槛
 
-Windows / Godot 4.6.2 / template_release / 2026-07-12，默认固定 `market_cycle_days=5`：
+Windows / Godot 4.6.2 / template_release / 2026-07-12，历史显式固定 `market_cycle_days=5` 基线：
 10k cells、10k 稀疏 owner-lot（煤矿/玉米农场各半）、30k cohorts 共 9 个建筑切片，
 avg `2.152ms`、p95/max `8.834ms`、runtime memory `113.3MB`。资源生成/消耗/净变化为
 `0 / 224.995M / -224.995M` GOODS_SCALE，population/money/goods error 为 `0/0/0`，
@@ -347,8 +359,9 @@ scalar/worker 事件确定性。
 worker 仅把居民消费与商人居民销售写入局部结果，主线程再与工资、业主经营、产业供货、商人
 收购、建设和转移支付资金腿合并；提交时以 cohort 总账补齐 `other`，保证来源合计严格等于
 `epoch_income/epoch_expense`。人口快照返回上次提交的 cohort-major 稀疏 cashflow CSR、周期
-日期与 available/pending。它随 PKEJ retention 有界保留，不进入 PKEC、核心 state hash 或
-全世界 cohort 常驻布局。
+日期与 available/pending。滚动五相模式只为本日到期地块发布完整 cashflow；未到期日不会用
+旧总账对零条本日来源做 `other` 对账，而是继续返回该地块上一次完整分类。它随 PKEJ retention
+有界保留，不进入 PKEC、核心 state hash 或全世界 cohort 常驻布局。
 
 2026-07-13 固定 N=5、10k owner-lot release 复核：SELECTIVE + 单 inspector cell 的 building
 slice avg/p95/max 为 `2.236/8.884/8.884ms`、runtime 114.6MB、trace 3.4MB；同版本
@@ -402,7 +415,7 @@ catalog/content，PopulationStore、signature ABI、BUILDING_GRAPH 和 PKEC byte
 显式 CSR 携带配方级 Q16 效率并由 `EconomyCatalog` 按 stable good ID 规范化，native 继续使用
 既有 InputCandidate 库存满足度、有效价格和 stable ID 决策。建筑查询通过
 `group_input_selected_offsets/group_input_selected_good_ids` 返回每槽上次实际采购项；这是有界的
-Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC v13。restore 后保持 `-1`
+Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC。restore 后保持 `-1`
 直到下一次成功生产。该扩展没有修改权威公式或存档字段。
 
 `gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/50000 money subunits。市场接收
@@ -430,7 +443,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 居民直接消费不再使用 railway_equipment、oceanic_vessels 或 scientific_instruments 代理交通/科研
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
-Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC v13 按现有
+Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
 `save_catalog_scale_or_capacity_mismatch` 路径拒绝，byte schema 与五日默认 cadence 不变。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
@@ -459,7 +472,7 @@ SELECTIVE 的 building slices 为 `2.152/8.834/8.834ms`、`113.3MB`，三项审�
   all-slice max `11.801ms`，runtime memory `111.9MB`。
   `production_output_discarded=0`、`building_wages_unpaid=0`，population/money/goods error 为 `0/0/0`。
 
-以上是默认五日 cadence 证据，不与 auto N=50/N=334 数据混用。
+以上是历史显式固定五日 cadence 证据，不与 workload-auto 数据混用。
 
 同日 habitat/geology/crop-capacity 收口后的 `TRACE_OFF` 复核：100 goods / 200k cohorts 为
 avg/p95/max `2.290/2.961/3.589ms`、`94.2MB`；200 goods / 10M cohorts 为
@@ -497,3 +510,84 @@ avg/p95/max `2.064/2.919/12.441ms`、`112.8MB`；固定 `N=5`、`TRACE_OFF` 为
   by an order of magnitude while preserving physical inputs and owner jobs.
 - These fields are derived from existing authority columns. PKEC schema and the
   five-day committed cadence do not change.
+## 2026-07-20 PKEC v14 economic repair
+
+PKEC v14 keeps `NativeEconomyRuntime` authoritative and replaces the former
+cash-compressed production signal. Each frozen production cycle now records
+desired, funded, and unfunded business demand. Desired demand drives the sparse
+market signal, price pressure, trade relief, and investment gap; funded demand
+alone may buy inputs and produce goods.
+
+Working capital is allocated once per `(cell, owner_signature)` across all
+owned building groups. A capped livelihood reserve and the part of base payroll
+not covered by frozen expected revenue are protected. Critical survival and
+downstream-input groups receive a deterministic first-pass allocation of up to
+25 percent of desired cost, followed by score-ordered allocation. No account may
+become negative and no money is created by this allocator.
+
+Endogenous investment is reviewed every 10 days and considers every
+constructible industrial or collector type, including types absent locally.
+Required capital includes construction goods, two market cycles of inputs, one
+cycle of base wages, and 30 days of owner livelihood. One non-merchant sponsor
+must retain its entire cohort's 30-day livelihood reserve and transfer the exact
+required capital with one person. Collector entry is constrained by renewable
+reserve/safe-yield limits, a 3650-day non-renewable horizon, and the 1 percent
+30-day bullion issuance cap.
+
+The 20 percent producer-support price remains a cold-start fallback. Issuance is
+capped per cell at 5 percent of opening money per 30 days. All support and
+bullion issues remain explicit mint audit entries.
+
+## PKEC v15 rolling settlement (current)
+
+The production runtime no longer waits for a global epoch. Stable cell phase is
+`cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded
+native continuation calls run plan, employment, production, household clearing,
+price/EMA, investment, audit, and publish for the due workset. Each call consumes
+at most one building, market, or structural range. While the due bucket remains
+in flight, the same-day barrier drives consecutive bounded continuations inside
+the current real-frame `sim_frame_budget_ms` time box. It stops before starting
+another range once the budget is consumed, or after a defensive maximum of 64
+continuations. Completed cells publish together at the final boundary, with
+`max_state_age_days<=4` and `deferred_cells=0`.
+
+Trade arrivals, refunds, escrow release, and invalid-order handling are daily
+transactions. ETA is `departure_day + ceil(route_cost / daily_speed)` and is not
+aligned to a market boundary. Incremental route planning may continue across
+days, but it cannot defer the due local phase.
+
+PKEC v15 persists per-cell settlement dates/generations and dirty generations.
+PKEC v14 is the supported rolling bootstrap source. The restore result reports
+`migration=v14_rolling_phase_bootstrap`; phase assignment changes no physical or
+monetary state. References to PKEC v14 above describe the preceding economic
+repair schema, not the current save writer.
+
+The rolling hot path also keeps a non-authoritative per-cell demand-basis cache.
+Building owner-retention and household clearing share the same frozen prices,
+technology, and environment, so fixed-point elasticity/power terms are computed
+once per due cell. Due building cells precompute disjoint cache slices in stable
+worker ranges; saturation counts are reduced in cell order. The cache is excluded
+from save and state hash and is rebuilt after restore. It adds about 18.2 MiB in
+the 2400-cell building benchmark, within the 64 MiB rollout ceiling.
+
+Building planning aggregates survival utilization floors in linear cell-local
+passes over owner signatures; it no longer rescans all later groups for every
+owner. Production market-signal observation uses cell-local CSR scratch lanes
+instead of catalog-wide good arrays. Endogenous investment runs as bounded
+rolling-phase cell continuations backed by epoch-transient `(cell,type)` pending
+and existing indexes plus a `(cell,resource)` harvest index. Sponsor, population,
+cash, material, and construction mutations remain in stable cell order.
+
+Building production now partitions the due-cell range through
+`parallel_for_range` when workers are enabled, the range and group counts clear
+the configured threshold, `WorkerThreadPool` is available, and the current
+identity mapping `cell_to_market[cell] == cell` proves disjoint market ownership.
+Each worker mutates only its cell-local population, building, resource-delta,
+market, and sparse-signal lanes. Non-local diagnostics, retained output, trace
+events, and cashflow entries are accumulated in one `ProductionResult` per cell
+and merged on the native main thread in original cursor order. The scalar path
+uses the same result-and-merge contract, so worker count does not change state or
+event ordering. Reports expose `building_production_worker_tasks` and
+`building_production_merge_ms`; merge time is already included in
+`building_production_ms`. This changes neither PKEC v15 bytes nor state-hash,
+DataCore, bridge, stage, cadence, or continuation inputs.
