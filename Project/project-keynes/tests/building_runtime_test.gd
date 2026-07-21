@@ -121,10 +121,10 @@ func _run() -> void:
 		int(day1.get("merchant_procurement_budget", 0)) >=
 			int(day1.get("merchant_procurement_reserved", 0)) * 6)
 	var retained_output := int((buildings.last_retained as PackedInt64Array)[0])
-	_expect("non-survival coal is not retained ahead of the market",
-		retained_output == 0 and
-		int(day1.get("production_output_retained", 0)) == 0 and
-		int(day1.get("owner_output_consumed", 0)) == 0)
+	_expect("owner may retain produced coal for its own home-energy need",
+		retained_output > 0 and
+		int(day1.get("production_output_retained", 0)) >= retained_output and
+		int(day1.get("owner_output_consumed", 0)) > 0)
 	_expect("building output reconciles sale, owner retention, and discard",
 		int((buildings.last_output as PackedInt64Array)[0]) ==
 			int((buildings.last_sold as PackedInt64Array)[0]) + retained_output +

@@ -602,9 +602,9 @@ reserve'        /= 1 + ecology_stress_mortality_rate * acute_stress
 
 `habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater / coastal_land`。
 `marine_fish` 使用 coastal-land bit，直接写在与深海、海洋或浅海水格相邻的沿海陆格；淡水/淡水鱼
-不再是 DataCore 经济资源。habitat 外储量为 0。所有建筑资源边只允许读取本格；公共供水以后
+淡水鱼恢复为 DataCore 经济资源，位于湖泊水格及湖岸陆格。habitat 外储量为 0。所有建筑资源边只允许读取本格；公共供水以后
 另行设计，不进入食品/饮料配方。
-当前目录含 30 种注册自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
+当前目录含 31 种注册自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
 自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量、牧场容量和肥沃土壤
 是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；土壤
 沿用线性 IMEX，野生动物、林木与海鱼启用密度制约生态分支。`fertile_soil` 的最差适宜度净自然项保持为正，
@@ -730,7 +730,7 @@ Market V2 固定一地块一市场。周期起点读取温度/湿度/积雪/天�
 按 plan→need→variant→component CSR 从冻结状态计算 N 日连续财富、民族和环境需求；同一
 variant 的 components 作为互补 bundle 清算，不同 variants 做一次替代 fallback。
 主食、蛋白质、蔬果和衣着先从 `survival_household` 计算无财富/价格弹性的冻结下限；普通需求仍
-使用原弹性核，实际生存品订单取两者最大值，自留和死亡复用该下限。
+使用原弹性核，实际生存品订单取两者最大值，自留和死亡复用该下限。所有业主还可按普通 desired quantity 与正常 variant 份额自用自产物资；复合 variant 要求同一业主自产全部组件，自用计入实物收入和实际出库 EMA。
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 

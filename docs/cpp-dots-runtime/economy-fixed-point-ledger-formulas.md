@@ -238,7 +238,7 @@ EMA 形成硬下限，因此生活成本通过工资进入成本锚，不再另�
 
 企业在 ACTIVE 状态下按上一周期 `sold / (sold + discarded)` 调整下一周期计划利用率，并使用
 `supply_price_elasticity_q16` 作为响应增益。丢弃率不超过 1% 时视为定点舍入噪声并向满产恢复；
-任一产出的 `max(0, stock - production_input_reserve) <= 1` 且短缺率至少 12.5% 时也主动向满产恢复。真实丢弃或托底后仍高于正常目标的
+任一产出的 `max(0, stock - production_input_reserve)` 低于 `max(1 商品单位, max(realized_withdrawal_ema, demand_ema) × N)` 且短缺率至少 12.5% 时也主动向满产恢复。真实丢弃或托底后仍高于正常目标的
 库存会按市场吸收能力收缩利用率。耐储商品保留 1/32 的探测产能，易腐/周期流商品保留 1/6；生存食物组再按同一业主人口跨过饥饿阈值所需的自留量计算动态利用率下限，并取较高者。只有连续严重亏损状态机能完全停产。最低生存自留按业主实际生产的单组分食物/衣物重新归一化，不向无法自产的替代品分摊配额。
 
 生产投入预留先对同组互补投入求共同可执行比例，按该比例同步缩放每项预留；同一商品被多个槽位选中时先合并需求，防止超额锁库。非生存产出若消耗生存食物，则整套投入不在家庭清算前预留，家庭先满足生存需求，建筑生产阶段再使用余量。`production_input_reserve_shortfall` 累计期望预留未能组成完整配方的差额，以及本期生产消耗后实际库存低于既定预留的差额。
@@ -286,13 +286,15 @@ closing_stock = opening_stock + explicit_stock_delta + accepted_output
                 - production_inputs - cycle_flow_discarded
 ```
 
-食物生产业主按主食、蛋白质、蔬果的总 desired 数量留足饥饿阈值热量；先匹配原消费计划的
-精确 variant，剩余自产食物可跨三类食品计入紧急生存热量，但不改变各 need 的普通满足度或
-最差 need。衣物按冻结温度/积雪造成的寒冷暴露反推最低比例，其他需求不享受生产者优先权。
+所有生产业主按本 cohort 的普通 desired need quantity 和正常 variant 得分份额留用自产物资；
+多组件 variant 只有在同一业主生产齐全部组件时才能自用。食物额外留足饥饿阈值热量，并先匹配原消费计划的
+精确 variant；剩余自产食物可跨三类食品计入紧急生存热量，但不改变各 need 的普通满足度或
+最差 need。衣物另按冻结温度/积雪造成的寒冷暴露反推最低比例。
 剩余商品进入本地市场，与其他 cohort 共同清算。
 留用仍是同一周期内的生产 source 与 owner consumption sink：实际消费量同时计入
 `production_output_retained` 和 `owner_output_consumed`，两项在 goods audit 中对消；未消费留用品
-直接进入 `production_output_discarded`，不进入 closing stock。它不产生收入、支出或商人结算。
+直接进入 `production_output_discarded`，不进入 closing stock。自用不产生现金支出或商人结算，
+但按冻结零售价计入业主 `epoch_in_kind_income`，并按商品加入 `realized_withdrawal_ema` 的实际吸收量。
 
 居民预算清算前，运行时按每个 ACTIVE owner-lot 的建筑数、周期天数、已到岗业主比例、计划利用率
 和冻结单位投入成本计算下一周期营运资金。该金额仍属于 owner cohort，只从本期家庭下单预算和

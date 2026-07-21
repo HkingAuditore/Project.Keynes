@@ -113,6 +113,7 @@ var res_rare_earth_reserve_arr:   PackedFloat32Array = PackedFloat32Array()
 var res_clay_reserve_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_wild_game_reserve_arr:    PackedFloat32Array = PackedFloat32Array()
 var res_marine_fish_reserve_arr: PackedFloat32Array = PackedFloat32Array()
+var res_freshwater_fish_reserve_arr: PackedFloat32Array = PackedFloat32Array()
 var res_arable_land_reserve_arr: PackedFloat32Array = PackedFloat32Array()
 var res_paddy_land_reserve_arr: PackedFloat32Array = PackedFloat32Array()
 var res_plantation_land_reserve_arr: PackedFloat32Array = PackedFloat32Array()
@@ -143,6 +144,7 @@ var res_rare_earth_extra_change_arr:   PackedFloat32Array = PackedFloat32Array()
 var res_clay_extra_change_arr:         PackedFloat32Array = PackedFloat32Array()
 var res_wild_game_extra_change_arr:    PackedFloat32Array = PackedFloat32Array()
 var res_marine_fish_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
+var res_freshwater_fish_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
 var res_arable_land_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
 var res_paddy_land_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
 var res_plantation_land_extra_change_arr: PackedFloat32Array = PackedFloat32Array()
@@ -636,6 +638,7 @@ func _alloc_soa(n: int) -> void:
 	res_clay_reserve_arr.resize(n)
 	res_wild_game_reserve_arr.resize(n)
 	res_marine_fish_reserve_arr.resize(n)
+	res_freshwater_fish_reserve_arr.resize(n)
 	res_arable_land_reserve_arr.resize(n)
 	res_paddy_land_reserve_arr.resize(n)
 	res_plantation_land_reserve_arr.resize(n)
@@ -666,6 +669,7 @@ func _alloc_soa(n: int) -> void:
 	res_clay_extra_change_arr.resize(n)
 	res_wild_game_extra_change_arr.resize(n)
 	res_marine_fish_extra_change_arr.resize(n)
+	res_freshwater_fish_extra_change_arr.resize(n)
 	res_arable_land_extra_change_arr.resize(n)
 	res_paddy_land_extra_change_arr.resize(n)
 	res_plantation_land_extra_change_arr.resize(n)
@@ -839,6 +843,7 @@ func rebuild_soa_from_cells() -> void:
 		res_clay_reserve_arr[i] = 0.0
 		res_wild_game_reserve_arr[i] = 0.0
 		res_marine_fish_reserve_arr[i] = 0.0
+		res_freshwater_fish_reserve_arr[i] = 0.0
 		res_arable_land_reserve_arr[i] = 0.0
 		res_paddy_land_reserve_arr[i] = 0.0
 		res_plantation_land_reserve_arr[i] = 0.0
@@ -869,6 +874,7 @@ func rebuild_soa_from_cells() -> void:
 		res_clay_extra_change_arr[i] = 0.0
 		res_wild_game_extra_change_arr[i] = 0.0
 		res_marine_fish_extra_change_arr[i] = 0.0
+		res_freshwater_fish_extra_change_arr[i] = 0.0
 		res_arable_land_extra_change_arr[i] = 0.0
 		res_paddy_land_extra_change_arr[i] = 0.0
 		res_plantation_land_extra_change_arr[i] = 0.0

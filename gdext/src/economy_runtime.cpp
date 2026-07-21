@@ -4370,15 +4370,21 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                     ? _production_input_reserve[signal] : 0;
                 const int64_t household_available_stock = std::max<int64_t>(
                     0, _market.stock[market_index] - input_reserve);
-                if (household_available_stock <= STOCK_ROUNDING_TOLERANCE &&
+                const int64_t realized = signal >= 0
+                    ? _market_signals.realized_withdrawal_ema[signal] : 0;
+                const int64_t daily_absorption = std::max<int64_t>(
+                    realized, _market.demand_ema[market_index]);
+                const int64_t recovery_stock_limit = std::max<int64_t>(
+                    GOODS_SCALE, saturating_mul(
+                        daily_absorption, std::max(1, _epoch_days),
+                        _saturation_count));
+                if (household_available_stock <= recovery_stock_limit &&
                     _market.last_shortage_q16[market_index] >=
                         SHORTAGE_RECOVERY_THRESHOLD_Q16) {
                     shortage_recovery = true;
                     break;
                 }
                 if (_good_storage_modes[good] != 0) continue;
-                const int64_t realized = signal >= 0
-                    ? _market_signals.realized_withdrawal_ema[signal] : 0;
                 const int32_t flow = trade_flow_index(group.cell, good, false);
                 const int64_t exports = flow >= 0
                     ? _trade_flows.export_ema[flow] : 0;
@@ -5903,13 +5909,20 @@ bool NativeEconomyRuntime::run_building_production_cell(
         }
         int64_t survival_food_desired = 0;
         int64_t survival_staple_desired = 0;
+        int64_t produced_food_desired = 0;
         for (int32_t n = 0; n < plan.need_count; ++n) {
             const int32_t need_index = plan.need_begin + n;
             const Need &need = _needs[need_index];
             const int32_t stable_need = need.stable_id;
-            if (std::find(_survival_food_need_stable_ids.begin(),
-                          _survival_food_need_stable_ids.end(), stable_need) !=
-                _survival_food_need_stable_ids.end()) {
+            const bool survival_food = std::find(
+                _survival_food_need_stable_ids.begin(),
+                _survival_food_need_stable_ids.end(), stable_need) !=
+                _survival_food_need_stable_ids.end();
+            const int64_t ordinary_desired = desired_need_units(
+                owner_slot, need_index, _epoch_days,
+                retention_need_environment[need_index],
+                retention_need_composites[need_index], _saturation_count);
+            if (survival_food) {
                 const int64_t food_desired = survival_required_units(
                     owner_slot, stable_need, _epoch_days,
                     retention_environment, _saturation_count);
@@ -5920,50 +5933,59 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     survival_staple_desired = saturating_add(
                         survival_staple_desired, food_desired, _saturation_count);
                 }
-                continue;
             }
-            if (stable_need != _survival_clothing_need_stable_id ||
-                population <= 0 || clothing_retention_q16 <= 0) continue;
-            int64_t produced_score_sum = 0;
-            for (int32_t v = 0; v < need.variant_count; ++v) {
-                const int32_t variant_id = need.variant_begin + v;
-                const VariantChoice &variant = _variants[variant_id];
-                if (variant.component_count != 1) continue;
-                const NeedComponent &component = _components[variant.component_begin];
-                const size_t index = owner * static_cast<size_t>(_market.good_count) +
-                                     component.good_id;
-                if (retention_produced_goods[index] == 0) continue;
-                produced_score_sum = saturating_add(
-                    produced_score_sum, retention_variant_scores[variant_id],
-                    _saturation_count);
+            int64_t desired = ordinary_desired;
+            if (stable_need == _survival_clothing_need_stable_id &&
+                population > 0 && clothing_retention_q16 > 0) {
+                const int64_t full_desired = survival_required_units(
+                    owner_slot, stable_need, _epoch_days,
+                    retention_environment, _saturation_count);
+                desired = std::max<int64_t>(desired, mul_div_sat(
+                    full_desired, clothing_retention_q16, Q16_ONE,
+                    _saturation_count));
             }
-            if (produced_score_sum <= 0) continue;
-            const int64_t full_desired = survival_required_units(
-                owner_slot, stable_need, _epoch_days,
-                retention_environment, _saturation_count);
-            const int64_t desired = mul_div_sat(
-                full_desired, clothing_retention_q16, Q16_ONE, _saturation_count);
+            const int64_t score_sum = retention_need_score_sums[need_index];
+            if (desired <= 0 || score_sum <= 0) continue;
             int64_t score_prefix = 0;
             int64_t allocated = 0;
             for (int32_t v = 0; v < need.variant_count; ++v) {
                 const int32_t variant_id = need.variant_begin + v;
                 const VariantChoice &variant = _variants[variant_id];
-                if (variant.component_count != 1) continue;
-                const NeedComponent &component = _components[variant.component_begin];
-                const size_t index = owner * static_cast<size_t>(_market.good_count) +
-                                     component.good_id;
-                if (retention_produced_goods[index] == 0) continue;
                 score_prefix = saturating_add(
                     score_prefix, retention_variant_scores[variant_id], _saturation_count);
                 const int64_t next = mul_div_sat(
-                    desired, score_prefix, produced_score_sum, _saturation_count);
+                    desired, score_prefix, score_sum, _saturation_count);
                 const int64_t units = std::max<int64_t>(0, next - allocated);
                 allocated = next;
                 if (units <= 0) continue;
-                retention_targets[index] = saturating_add(
-                    retention_targets[index], mul_div_sat(
-                        units, component.qty_per_need, GOODS_SCALE, _saturation_count),
-                    _saturation_count);
+                bool fully_produced = variant.component_count > 0;
+                for (int32_t c = 0; c < variant.component_count; ++c) {
+                    const NeedComponent &component = _components[
+                        variant.component_begin + c];
+                    const size_t index = owner * static_cast<size_t>(
+                        _market.good_count) + component.good_id;
+                    if (retention_produced_goods[index] == 0) {
+                        fully_produced = false;
+                        break;
+                    }
+                }
+                if (!fully_produced) continue;
+                for (int32_t c = 0; c < variant.component_count; ++c) {
+                    const NeedComponent &component = _components[
+                        variant.component_begin + c];
+                    const int64_t quantity = mul_div_sat(
+                        units, component.qty_per_need, GOODS_SCALE,
+                        _saturation_count);
+                    if (survival_food) {
+                        produced_food_desired = saturating_add(
+                            produced_food_desired, quantity, _saturation_count);
+                    } else {
+                        const size_t index = owner * static_cast<size_t>(
+                            _market.good_count) + component.good_id;
+                        retention_targets[index] = saturating_add(
+                            retention_targets[index], quantity, _saturation_count);
+                    }
+                }
             }
         }
         if (produces_survival_food && population > 0) {
@@ -5972,7 +5994,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t numerator = saturating_add(saturating_mul(
                 desired, _starvation_satisfaction_threshold_q16,
                 _saturation_count), Q16_ONE - 1, _saturation_count);
-            retention_food_targets[owner] = numerator / Q16_ONE;
+            retention_food_targets[owner] = std::max<int64_t>(
+                numerator / Q16_ONE, produced_food_desired);
             retention_food_staple_route[owner] = produces_staple_food ? 1 : 0;
         }
     }
@@ -10652,6 +10675,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     cohort_staple_filled.assign(cohort_count, 0);
     cohort_clothing_required.assign(cohort_count, 0);
     cohort_clothing_filled.assign(cohort_count, 0);
+    result.retained_consumed_by_good.assign(_market.good_count, 0);
     cohort_working_capital_reserve.assign(cohort_count, 0);
     production_input_floor.assign(_market.good_count, 0);
     good_demand.assign(_market.good_count, 0);
@@ -10831,6 +10855,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int64_t value = mul_div_sat(quantity, price, GOODS_SCALE, sat);
         _population.epoch_in_kind_income[owner_slot] = saturating_add(
             _population.epoch_in_kind_income[owner_slot], value, sat);
+        result.retained_consumed_by_good[good_id] = saturating_add(
+            result.retained_consumed_by_good[good_id], quantity, sat);
     };
     for (BundleOrder &order : primary_orders) {
         const VariantChoice &variant = _variants[order.variant_index];
@@ -11333,7 +11359,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     _epoch_nonhousehold_withdrawals.size())
                 ? _epoch_nonhousehold_withdrawals[signal_index] : 0;
             const int64_t observed_daily = saturating_add(
-                good_sales[good], nonhousehold, sat) / std::max(1, _epoch_days);
+                saturating_add(good_sales[good], nonhousehold, sat),
+                result.retained_consumed_by_good[good], sat) /
+                std::max(1, _epoch_days);
             const int64_t old_withdrawal =
                 _market_signals.realized_withdrawal_ema[signal_index];
             _market_signals.realized_withdrawal_ema[signal_index] = saturating_add(

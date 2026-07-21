@@ -753,6 +753,7 @@ private:
         int64_t consumed_goods = 0;
         int64_t retained_output_consumed = 0;
         int64_t retained_output_discarded = 0;
+        std::vector<int64_t> retained_consumed_by_good;
         int64_t owner_working_capital_reserved = 0;
         int64_t births = 0;
         int64_t deaths = 0;

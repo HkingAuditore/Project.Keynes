@@ -10,7 +10,7 @@
 - 信息时代以前发现的每种 good 至少有两种生产方式；后续方法复用同一 good，并加入当代工具、能源或控制投入，不复制终端物资。
 - 自然资源只表达地形/生态容量或确实有地区分布与科技门槛差异的对象。牛、羊、猪、马不再是自然资源；`pasture` 表达畜牧容量。
 - 淡水不进入经济配方。河湖供水和公共事业以后单独设计，不作为面包、米食、饮料等物资的隐藏投入。
-- 鱼类保留粗粒度链条：`marine_fish -> fish`；淡水捕鱼以后由水域系统或通用 fishery 能力表达，不再有 `freshwater_fish` DataCore 资源。
+- 鱼类保留粗粒度链条：`marine_fish -> fish`；淡水捕鱼由 `freshwater_fish` 湖泊/湖岸资源和淡水捕鱼营地表达。
 - 野生动物保留为早期生态资源：`wild_game -> game_meat/raw_hide/fur`，由 `stone_age_hunting_camp` 产出，农业时代后重要性下降。一个石器营地代表 5 个共同经营岗位，日产 `7000/250/100` GOODS_SCALE 的野味、生皮和毛皮；主食产能为每岗位 `1400`，略高于测试承载力的保守生存线，同时压低副产品过剩。`715` 的野生动物扣减使用独立资源单位，不能直接解释为商品重量转换率。
 - 雇佣关系随时代复杂化：自营/家庭劳动 -> 学徒和行会 -> 地主/农奴/契约劳工 -> 工业工人/技师/工程师/经理。
 
@@ -50,7 +50,7 @@
 
 ## 退役与合并
 
-- 自然资源退役：`cattle`, `sheep`, `pigs`, `horses`, `fresh_water`, `freshwater_fish`。
+- 自然资源退役：`cattle`, `sheep`, `pigs`, `horses`, `fresh_water`。
 - goods 退役：`cattle`, `sheep`, `pigs`, `raw_water`, `clean_water`, `beef`, `mutton`, `pork`。
 - 冗余链 goods 退役：`flour`, `rice_food`, `corn_food`, `potato_food`, `wood_pulp`, `pig_iron`,
   `flax_yarn`, `cotton_yarn`, `textile`, `cut_stone`, `dressed_masonry`。
@@ -64,7 +64,7 @@
 
 ## 当前目录规模
 
-当前生成目录为 `30 resources / 120 goods / 259 production-method buildings / 32 professions / 17 needs / 8 consumption plans`。同一物资的后续生产法复用原 good ID；建筑代表有宏观意义的生产方式，不是为时代凑数的同名升级或新增转手中间品。马匹只保留两个前工业生产阶段，不随通用升级生成器延伸到后工业时代。
+当前生成目录为 `31 resources / 120 goods / 261 production-method buildings / 33 professions / 18 needs / 8 consumption plans`。同一物资的后续生产法复用原 good ID；建筑代表有宏观意义的生产方式，不是为时代凑数的同名升级或新增转手中间品。马匹只保留两个前工业生产阶段，不随通用升级生成器延伸到后工业时代。
 各时代新增建筑数为 `12 / 25 / 17 / 23 / 14 / 12 / 55 / 36 / 16 / 19 / 30`。解锁密度服从实际技术变迁，蒸汽与电气革命是集中扩张点；不再以“每时代至少若干建筑”的数量门槛制造低份额产业。持续产业逐代获得新方法，边缘产业在显式终止时代后由既有建筑继续运行、被其他产品吸收或退出宏观呈现。
 32 个职业映射到 survival、agrarian、extractive、industrial_worker、artisan、technical、merchant、owner
 八套原型；每个 need 最多八个 variants。旧 PKEC catalog

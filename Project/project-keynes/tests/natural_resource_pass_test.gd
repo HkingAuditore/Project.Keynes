@@ -10,7 +10,7 @@ extends SceneTree
 #   3. DCWorldExt 导出 run_natural_resource_pass。
 #   4. 原生 pass 在小地图上行为正确，且与 GDScript 公式模板逐资源逐 cell A/B 对拍一致：
 #      - timber（可再生，land）：适宜陆地格增长；水面格清零。
-#      - marine_fish：只在带 coastal_land 位的沿海陆格生长；淡水鱼不再是 DataCore 资源。
+	#      - marine_fish：只在带 coastal_land 位的沿海陆格生长；freshwater_fish 只在淡水格生长。
 #      - iron_ore（不可再生，全 0 系数）：无 extra 时保持不变，extra 单 tick 生效并清零。
 #      - reserve 保持非负。
 #
@@ -56,7 +56,7 @@ func _test_registry_knobs() -> void:
 	ResourceProfileRegistry.ensure_loaded()
 	var count: int = ResourceProfileRegistry.count()
 	_expect("registry loaded >=2 profiles", count >= 2)
-	_expect("registry loaded 30 profiles", count == 30)
+	_expect("registry loaded 31 profiles", count == 31)
 	var knobs: Dictionary = ResourceProfileRegistry.build_pass_knobs()
 	var normalized_temperature_contract: bool = true
 	for profile in ResourceProfileRegistry.ordered():
@@ -108,7 +108,7 @@ func _test_registry_knobs() -> void:
 	_expect("reserve_slots has wild_game", gi >= 0)
 	_expect("reserve_slots has fertile_soil", fi >= 0)
 	_expect("reserve_slots has pasture", pi >= 0)
-	_expect("reserve_slots retired freshwater_fish", _slot_index(slots, "cell_res_freshwater_fish_reserve") < 0)
+	_expect("reserve_slots includes freshwater_fish", _slot_index(slots, "cell_res_freshwater_fish_reserve") >= 0)
 	for retired_slot in ["cell_res_uranium_ore_reserve", "cell_res_nickel_ore_reserve",
 			"cell_res_platinum_ore_reserve", "cell_res_lithium_reserve",
 			"cell_res_cobalt_ore_reserve", "cell_res_natural_graphite_reserve"]:
@@ -269,7 +269,12 @@ func _test_native_pass() -> void:
 		var marine: PackedFloat32Array = map.get(fields[marine_i])
 		_expect("marine fish only lives on coastal land",
 			marine[2] > 0.0 and is_equal_approx(marine[0], 0.0) and is_equal_approx(marine[3], 0.0))
-	_expect("freshwater fish profile retired", _profile_index(profiles, "freshwater_fish") < 0)
+	var freshwater_i: int = _profile_index(profiles, "freshwater_fish")
+	if freshwater_i >= 0:
+		var freshwater: PackedFloat32Array = map.get(fields[freshwater_i])
+		_expect("freshwater fish only lives on freshwater habitat",
+			freshwater[7] > 0.0 and is_equal_approx(freshwater[0], 0.0) and
+			is_equal_approx(freshwater[3], 0.0))
 
 	var ii: int = _profile_index(profiles, "iron_ore")
 	if ii >= 0:
