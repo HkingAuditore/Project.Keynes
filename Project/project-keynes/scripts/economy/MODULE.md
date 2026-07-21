@@ -3,7 +3,7 @@
 > 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v15 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
-> 跨国贸易/关税、政治和一般自然人口变化；仅实现缺乏食品/气候所需衣着造成的生存死亡。
+> 跨国贸易/关税、政治、年龄与家庭结构；自然出生和死亡由原生 household/structural 路径处理。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
 > 满意度公开字段是“食品与气候衣着的较低值”的生存满足度。黏土、盐、石油是静态地质存量，
@@ -36,7 +36,7 @@
 
 - `GoodProfile`：价格、居民/企业/供给/成本 EMA、需求弹性、目标库存、各压力权重、日涨跌幅、
   `trade_enabled` 与单位运输负载。
-- `ProfessionProfile`：职业 stable ID 与默认 consumption plan；人口地块必须能解析 merchant。
+- `ProfessionProfile`：职业 stable ID、默认 consumption plan 和 Q32 出生/死亡率；人口地块必须能解析 merchant 与 unemployed。
 - `EthnicityProfile`：稀疏 need 数量修正。
 - `NeedProfile`：优先级、基础数量、生活成本 Q16 权重、连续财富函数、环境数量曲线、替代
   variants 与互补 components。
@@ -57,6 +57,9 @@
 - 生存满足取“食品总满足”和“气候修正衣着满足”的较小值；高温可把衣着需求降到零。
   周期开始时仍存活人口先参与就业和生产，profile 的 50% 阈值只用于消费后的确定性饥饿死亡，
   不再前置削减劳动力并锁死自给生产。
+- cohort 出生量按人数、`birth_rate_q32` 和当前生存满足率计算；默认年出生率 3.0%、自然死亡率
+  2.5%，健康人口长期净增长目标约 0.5%。同地块同民族的出生贡献在 worker 内聚合，经 Q32
+  确定性哈希舍入后于 `STRUCTURAL_COMMIT` 加入 `unemployed|eth`，不携带资金且不在同周期招聘。
 - 九套在业职业原型加一套失业者生存原型；在业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。猎人使用独立的
   `hunter_household`，保留职业装备但移除农业型家庭的交通和娱乐需求，并降低基础/舒适消费尺度。
   同一 good 跨 need 只允许 refined_fuel、computers、beverages、fur 四种明确多用途；展示层聚合
@@ -79,7 +82,7 @@
 - 生产周期固定为五日滚动相位；世界规模只改变每日到期桶的工作量，不再自动扩大周期。
 - 世界设置中的测试经济 fixture 默认关闭；启用时使用石器中期科技，只在可见资源能支撑配方的
   地块放置 collector，并只在已有全部本地上游产出的地块放置 industrial。石器本地链使用保守的
-  多建筑容量基线：每格先配置两座公共火塘和三座石器打制工坊，狩猎营地最多十二座，再交给承载
+  多建筑容量基线：每格先配置两座工匠经营的公共火塘和一座石器打制工坊，狩猎营地最多十二座，再交给承载
   平衡器处理；单座石器工坊日产 `220`、家庭织造棚日产 `110`，不改变自然资源储量或增长率。
   升级族只放置当前最高可用档。生成器按输出减直接消费品投入计算净产能，以食品 `1300`、衣着 `4`
   GOODS_SCALE/人/日为保守下限。每格承载人口取岗位、净食品、净衣着三种容量的最小值并封顶
@@ -213,11 +216,55 @@ PKEC save，restore 后在下一次成功生产前显示为未知。
 ## 2026-07-20 v14 override
 
 This section supersedes older descriptions of 30-day industrial-only automatic
-investment and PKEC v13. The default runtime now uses 10-day Investment V2 over
+investment and PKEC v13. The default runtime now uses 10-day Investment V5 over
 all constructible industrial and collector types, including locally missing
 types. Collector candidates must pass renewable reserve/safe-yield or 3650-day
 deposit-life checks; bullion candidates also pass the 1 percent monthly issuance
 cap. Service buildings remain excluded.
+
+Investment V5 leaves owner vacancies to the employment pass. Every cohort with
+cash above its 30-day household reserve may sponsor construction, including the
+target owner profession and merchant cohorts with more than one person.
+Projected owner income must exceed current per-capita income; the relative gain
+is sampled as a deterministic fixed-point probability. A winning sponsor moves
+to the configured owner profession only when it is not already there.
+Installed capacity remains a score input but is no longer an approval gate.
+Profitable entry can proceed in an existing local market when sell-through,
+discard, target margin, owner livelihood, payback, sponsor capital, relative
+income, probability, and resource-safety checks all pass.
+Primitive collectors with no construction recipe participate with zero
+construction cost, but retain the existing operating-capital, owner-livelihood,
+profitability, payback, probability, bullion, and resource-safety gates.
+
+Default merchant inventory coverage is 60 days before applying each good's
+ratio. Procurement, trade, and bootstrap merchant funding retain that full
+derived target. Price V3 instead derives its inventory target from at most one
+five-day settlement period, so a balanced current flow is not priced as a
+60-day shortage. No parallel inventory state is introduced.
+
+Catalog `min_price` and `max_price` remain legacy reference metadata. Normal
+settlement, cost-anchor smoothing, trade quotes, bootstrap, and restore use only
+the positive `int32` numeric guards `[1, INT32_MAX]`. Per-day rise/fall limits
+remain the normal volatility control, and the producer cost anchor remains a
+dynamic soft floor when active supply confirms the cost signal.
+
+Production utilization uses household demand plus sparse business demand.
+Business-only tools and intermediates recover from the industrial probe floor
+when desired downstream inputs exceed realized withdrawals and available stock.
+Realized owner-lot margin deducts the filled owners' minimum livelihood for the
+period in addition to inputs and base wages; this livelihood test does not add a
+cash transfer or a new ledger account.
+
+The test-economy bootstrap uses local visible reserve abundance and a 3650-day
+static extraction horizon to size collectors, then places industry only where
+that cell exposes the required upstream outputs. This is deterministic bootstrap
+configuration and does not move runtime building authority out of C++.
+
+The 2026-07-21 selected-cell calibration keeps full owner self-retention but
+raises `timber_collector` logs from 1808 to 5424 per day and Stone-Age hunting
+outputs from `3728/45/23` to `4846/59/30`. Test bootstrap starts one knapping
+workshop per supported local chain instead of three, avoiding immediate artisan
+overcapacity before endogenous investment has observed demand.
 
 Business demand is split into desired, funded, and unfunded quantities. Desired
 demand remains visible when an owner is poor, while funded demand alone controls
@@ -260,6 +307,9 @@ Building plan now aggregates owner survival floors in linear cell-local passes;
 market-signal scratch storage follows each cell's sparse signal CSR instead of
 the full catalog. Investment uses transient `(cell,type)` and `(cell,resource)`
 indexes and advances through `building_commit_phase` cell continuations.
+Reports and recorder summaries expose `building_investment_probability_skips`;
+`building_owner_mobility` is emitted only for an actual construction sponsor
+profession change.
 
 Building production may partition one existing due-cell range through the native
 WorkerThreadPool while `cell_to_market[cell] == cell` proves disjoint ownership.
@@ -274,12 +324,37 @@ state-hash, DataCore-slot, stage, or cadence change.
 2026-07-20 remediation keeps the same authority and cadence. Rolling employment
 reports replace one cell's cached current-epoch contribution atomically, so a
 non-due structural reconciliation cannot make unemployment negative. Investment
-aggregates installed counts across every `(cell,type)`, includes owner livelihood
-in operating cost, compares demand with total installed output, and reports
-explicit rejection reasons. Loss-suspended groups retain one recovery owner but
-no employee demand or production. CSV schema v12 adds resource flow direction,
+aggregates actual offered supply across every `(cell,good)`, includes owner livelihood
+in operating cost, compares the remaining demand deficit with input coverage, and reports
+explicit rejection reasons. Loss-suspended groups retain one recovery owner only when
+no active non-service owner vacancy exists. CSV schema v12 adds resource flow direction,
 procurement opportunity/allocation, in-kind livelihood coverage, and unresolved
 trade-rejection buckets. These remain derived debug state outside PKEC and replay
 hash. High discard accelerates the existing utilization response when no active
 shortage recovery is required, while preserving shortage recovery and the
 survival/probe floor.
+
+CSV schema v13 adds `building_investment_probability_skips` to distinguish a
+cash-qualified cohort losing its deterministic investment roll from capital,
+material, resource, and profitability rejection. It does not change PKEC v15.
+
+CSV schema v14 adds ACTIVE owner-job mobility diagnostics. After ordinary
+unemployed hiring, an ACTIVE non-service vacancy may attract one same-ethnicity
+owner from an ACTIVE non-service group with at least one owner only when projected owner income is
+higher. Targets sort by income descending and sources ascending; the relative
+income gain drives a stateless `seed/day/cell/target_group/source_group` roll.
+Each group can participate in one successful move per five-day period. Same-profession
+movement changes group fill only; cross-profession movement reuses proportional
+cohort migration. The last local merchant, SUSPENDED, service, unavailable, and
+different-ethnicity groups are excluded. This adds no construction, capital flow,
+stage, PKEC v15 field, state-hash field, DataCore slot, or GDScript authority.
+
+The 2026-07-21 native correction separates the full-health
+`survival_production_target_q16` from the starvation threshold. Household-consumed
+retained output offsets source-building owner livelihood at frozen retail value without
+creating cash. Household settlement is the single input-working-capital protection point;
+production keeps only the uncovered wage reserve. Suspended owners move through the
+existing unemployed-pool hiring path when an active non-service owner vacancy exists.
+Investment uses actual offered-supply deficits and input stock/supply coverage, not
+installed recipe capacity. These changes remain inside `NativeEconomyRuntime`; no
+GDScript authority, save schema, DataCore slot, or cadence was added.

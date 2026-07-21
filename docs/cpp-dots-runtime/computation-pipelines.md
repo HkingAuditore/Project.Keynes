@@ -730,11 +730,11 @@ Market V2 固定一地块一市场。周期起点读取温度/湿度/积雪/天�
 按 plan→need→variant→component CSR 从冻结状态计算 N 日连续财富、民族和环境需求；同一
 variant 的 components 作为互补 bundle 清算，不同 variants 做一次替代 fallback。
 主食、蛋白质、蔬果和衣着先从 `survival_household` 计算无财富/价格弹性的冻结下限；普通需求仍
-使用原弹性核，实际生存品订单取两者最大值，自留和死亡复用该下限。所有业主还可按普通 desired quantity 与正常 variant 份额自用自产物资；复合 variant 要求同一业主自产全部组件，自用计入实物收入和实际出库 EMA。
+使用原弹性核，实际生存品订单取两者最大值，自留和死亡复用该下限。所有业主还可按普通 desired quantity 与正常 variant 份额自用自产物资；复合 variant 按组件分别判定（自家产出的组件自留、未产出的走市场），自用计入实物收入和实际出库 EMA。
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v8 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v14 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
@@ -2314,6 +2314,10 @@ population/market snapshots`。岗位按本地 profession 匹配，owner lot 先
 多个建筑组共享 owner signature 时，owner fill 总和按盈利/利用率优先级受该 cohort 存活人口约束；
 household demography 和 structural commit 后再做一次只裁不招的 committed 对账，避免死亡后出现
 建筑组幽灵填充。补招仍只发生在下一次 `building_employment`，不会改变已经完成的生产与工资结算。
+`building_employment` 内部先完成失业池招聘，再对剩余 ACTIVE 非服务业主空缺执行一次冻结匹配：
+目标按预期业主日收入降序、来源按收入升序，同民族且目标收入更高时使用
+`seed/day/cell/target_group/source_group` 的确定性概率。同职业只改组填充，跨职业复用 cohort 迁移；
+每个目标/来源组每周期最多成功一次。调度阶段、五日 cadence、DataCore slots 与 GDScript 权威边界不变。
 有效可采储量合入尚未消费的负 pending
 extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode：`extract` 以有效储量限制产能并
 发布负 delta；`capacity` 以 `reserve / (building_count × requirement)` 限产，但不写资源 delta。
@@ -2371,9 +2375,31 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 
 滚动 PKEC v15 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
 临时量只分配该 cell 的稀疏 CSR lane；investment 复用 epoch-transient `(cell,type)` 与
-`(cell,resource)` 索引，并在 `building_commit_phase` 中按 cell range continuation。生产阶段则在
+`(cell,resource)` 索引，并在 `building_commit_phase` 中按 cell range continuation。投资只处理
+新增建筑：业主空缺仍由 employment 填补；资金充足 cohort 按“目标业主日收入高于当前人均
+`income_ema`”进入确定性概率抽样，中签后才迁入建筑目录指定的业主职业。生产阶段则在
 当前 `market_id == cell_id` 契约下按 due cell 并行：worker 直接写互不重叠的 cohort、building、
 market、resource-delta 和 signal lane，把跨 cell 诊断、留用品、现金流及 trace 写入每 cell 的
 `ProductionResult`。主线程按原 cursor 顺序归并后才推进 stage，因此 scalar/worker 的权威状态与
 事件顺序一致。`building_production_worker_tasks` 报告实际选择的任务数，
 `building_production_merge_ms` 报告包含在 `building_production_ms` 内的归并成本。
+
+The 2026-07-21 correction keeps this pipeline and authority unchanged. Building plan
+uses a separate full-health subsistence target for food and cold-weather clothing.
+Production emits source-group retained goods; household settlement returns sparse
+frozen-value credits, and the main-thread merge recomputes realized margins before
+investment. Household settlement is the sole working-capital protection point, while
+production retains only the uncovered wage reserve. Employment releases a suspended
+owner only when an active non-service owner vacancy can receive that person through the
+existing unemployed-pool path. Investment reads actual offered-supply EMA and caps its
+output-deficit utilization by input stock/supply coverage instead of nameplate capacity.
+No stage, bridge, slot, save, hash, or cadence contract changes.
+
+Price V3 now forks two transient calculations from the same frozen market signals. The
+merchant branch keeps the full good-specific inventory horizon for procurement and
+trade. The price branch caps its safety-stock horizon at the five-day settlement period,
+then combines flow imbalance, short inventory, realized shortage, production cost, and
+inactive-price reversion. The result is rate-limited and guarded only to positive
+`int32`; legacy catalog price bounds do not feed back into settlement or trade relief.
+`price_inventory_target` is snapshot diagnostics only. This adds no authority, stage,
+save field, or hash input.

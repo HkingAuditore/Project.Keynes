@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>经济运行时 v8 · cell1104 石器时代财富分配诊断</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel2:#1d222b; --border:#2a303c;
+  --fg:#e6e9ef; --muted:#9aa4b2; --accent:#6ea8fe; --good:#4ade80; --warn:#fbbf24; --bad:#f87171;
+  --rich:#f59e0b; --poor:#60a5fa;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;line-height:1.65;font-size:15px}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+h1{font-size:26px;margin:0 0 4px;font-weight:700}
+.sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+h2{font-size:20px;margin:36px 0 12px;padding-left:11px;border-left:4px solid var(--accent)}
+h3{font-size:16px;margin:22px 0 8px;color:#cdd5e0}
+p{margin:9px 0}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:14px 0}
+.tldr{background:linear-gradient(135deg,#1a2233,#171a21);border:1px solid #33405a}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0}
+.kpi{background:var(--panel2);border:1px solid var(--border);border-radius:9px;padding:13px 15px}
+.kpi .v{font-size:22px;font-weight:700}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:2px}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border)}
+th:first-child,td:first-child{text-align:left}
+thead th{background:var(--panel2);color:#cdd5e0;font-weight:600;position:sticky;top:0}
+tbody tr:hover{background:#1c212b}
+.rich{color:var(--rich);font-weight:600}
+.poor{color:var(--poor);font-weight:600}
+.tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:12px;font-weight:600}
+.t-bad{background:#3a1e22;color:var(--bad)} .t-warn{background:#3a331a;color:var(--warn)} .t-good{background:#1e3a26;color:var(--good)}
+.chain{background:var(--panel2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;font-size:14px}
+.chain b{color:var(--accent)}
+ul{margin:8px 0;padding-left:22px} li{margin:5px 0}
+.flag{border-left:3px solid var(--bad);padding-left:12px;margin:10px 0}
+.flag.w{border-color:var(--warn)} .flag.g{border-color:var(--good)}
+code{background:#222833;padding:1px 6px;border-radius:4px;font-size:13px;color:#e0b0ff}
+.small{font-size:12.5px;color:var(--muted)}
+.bar{height:9px;border-radius:5px;background:#232935;overflow:hidden;margin-top:5px}
+.bar>i{display:block;height:100%}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>经济运行时 v8 · cell1104 石器时代 财富分配诊断</h1>
+<div class="sub">数据源：<code>economy_record_20260721_104404_v8_cell1104_q15_r18_*.csv</code> ｜ 采样 day 2–1023（1022 个记录日）｜ 单元格 96 人 / 6 阶层 / 11 类建筑</div>
+
+<div class="card tldr">
+<b>一句话结论：</b>守恒完全正确（人口/货币/物资误差恒为 0），但这是一个<b>结构性两极分化、货币持续通胀、人口只减不增</b>的"表面存活、实则不健康"的经济。财富差距的根因<u>不是</u>劳动或产量，而是<b>"谁占有高毛利加工建筑 / 铸币矿"</b>——采集者独占食品加工垄断（communal_hearth），矿工领取铸币矿的高工资；而渔民产出的鱼严重过剩且无加工链，价格被打到地板，只能靠实物自给糊口、现金储蓄归零。
+</div>
+
+<div class="grid">
+  <div class="kpi"><div class="v" style="color:var(--good)">0 / 0 / 0</div><div class="l">人口/货币/物资守恒误差（全程）</div></div>
+  <div class="kpi"><div class="v" style="color:var(--bad)">×3.02</div><div class="l">单元格现金总量膨胀（84.9M→256.5M）</div></div>
+  <div class="kpi"><div class="v" style="color:var(--bad)">0 出生 / 8514 死亡</div><div class="l">全图（人口只减不增）</div></div>
+  <div class="kpi"><div class="v" style="color:var(--rich)">~700,000×</div><div class="l">最富/最穷阶层人均财富差</div></div>
+</div>
+
+<h2>1. 财富分配：从"人均齐平"到"极端两极"</h2>
+<p>Day 2 时六个阶层人均现金几乎相同（36–38 万，商人因初始铺底 1697 万），到 Day 1023 演变为：</p>
+
+<table>
+<thead><tr><th>阶层</th><th>人数</th><th>Day2 人均现金</th><th>Day1023 人均现金</th><th>本期人均现金收入</th><th>人均实物收入</th><th>人均支出</th><th>满意度</th><th>判定</th></tr></thead>
+<tbody>
+<tr><td class="rich">采集者 forager</td><td>39</td><td>376,789</td><td class="rich">5,788,440</td><td>286,533</td><td>40,717</td><td>242,418</td><td>1.00</td><td><span class="tag t-bad">暴富</span></td></tr>
+<tr><td class="rich">矿工 miner</td><td>2</td><td>356,340</td><td class="rich">5,006,442</td><td>1,118,750</td><td>0</td><td>1,223,758</td><td>1.00</td><td><span class="tag t-bad">暴富</span></td></tr>
+<tr><td class="rich">商人 merchant</td><td>3</td><td>16,965,041</td><td class="rich">6,256,680</td><td>5,811,594</td><td>0</td><td>6,033,597</td><td>1.00</td><td><span class="tag t-warn">高但缩水</span></td></tr>
+<tr><td>猎人 hunter</td><td>24</td><td>357,250</td><td>79,463</td><td>187,898</td><td>206,075</td><td>202,843</td><td>1.00</td><td><span class="tag t-warn">中下</span></td></tr>
+<tr><td class="poor">工匠 artisan</td><td>4</td><td>360,840</td><td class="poor">8,570</td><td>142,619</td><td>52</td><td>135,702</td><td>1.00</td><td><span class="tag t-bad">赤贫</span></td></tr>
+<tr><td class="poor">渔民 fisher</td><td>24</td><td>356,340</td><td class="poor">0.3</td><td>35,040</td><td>14,329</td><td>35,039</td><td>1.00</td><td><span class="tag t-bad">彻底归零</span></td></tr>
+</tbody>
+</table>
+<p class="small">注：满意度全部≈1.0 是"假象健康"——所有采食阶层靠<b>实物自给</b>（in-kind）满足食物需求，现金贫穷并不表现为饥荒，因此系统内没有任何反馈压力去纠正它。</p>
+
+<h2>2. 为什么采集者 / 矿工暴富，渔民 / 工匠赤贫（核心）</h2>
+<p>把"建筑所有权"和"产出定价"叠在一起，机制一目了然。财富流向<b>建筑的所有者</b>，而非劳动量或产量：</p>
+
+<table>
+<thead><tr><th>阶层</th><th>拥有/受雇的建筑</th><th>产品</th><th>产品单价</th><th>现金来源性质</th></tr></thead>
+<tbody>
+<tr><td class="rich">采集者</td><td>communal_hearth（食品加工）+ gathering_ground + timber + flint</td><td>processed_food（主食）</td><td class="rich">~160/单位（高）</td><td><b>加工垄断毛利</b>：低价买原料，高价卖主食</td></tr>
+<tr><td class="rich">矿工</td><td>受雇于商人的 placer_gold / surface_silver</td><td>gold / silver</td><td class="rich">铸币价（极高）</td><td><b>铸币矿高工资</b>（40000/日参考工资）</td></tr>
+<tr><td>猎人</td><td>hunting_camp</td><td>game_meat</td><td>1.48（中）</td><td>大部分实物自食，少量售现</td></tr>
+<tr><td class="poor">工匠</td><td>knapping_workshop + weaving_shelter</td><td>chipped_stone_tools</td><td>3.20（高但量小）</td><td>产量小、须高价买主食，现金外流</td></tr>
+<tr><td class="poor">渔民</td><td>freshwater_fishing_camp ×24</td><td>fish</td><td class="poor">0.107（地板价）</td><td>鱼严重过剩，售现仅够抵现金支出</td></tr>
+</tbody>
+</table>
+
+<h3>因果链 A — 采集者的"食品加工垄断"</h3>
+<div class="chain">
+<code>communal_hearth</code>（<b>owner = forager</b>，本单元格唯一食品加工厂）每期买入
+<b>gathered_plants 7000</b>（@0.36，采集者自产）+ <b>game_meat 3500</b>（@1.48，向猎人买）
+→ 产出 <b>processed_food 12628</b>。<br>
+<span class="flag w">修正：processed_food <b>不是</b>最优先的 staple_food 必需品——按 <code>survival_household</code> 消费计划，staple_food（优先级0）由 prepared_staples/bread/grain/<b>gathered_plants</b> 满足；processed_food 只满足低优先级的 <code>produce</code> 需求（优先级2），且家庭对其价格弹性=1.0，<b>高价确实会抑制购买</b>。炉灶的高利润来自<b>食品加工增值 + 纵向一体（自产原料又占加工）+ 本格唯一加工厂、无竞争入场</b>，而非"必需品垄断"。</span><br>
+单期毛利 ≈ <b>778 万</b>（收入 1010 万 − 原料成本 232 万），毛利率被顶到上限 <b>margin=1.0（100%）</b>；
+<b>全程累计利润 71.6 亿</b>。39 名采集者靠这一栋建筑坐收 5.78M/人。
+</div>
+
+<h3>因果链 B — 矿工/商人的"铸币矿"</h3>
+<div class="chain">
+<code>placer_gold_working</code> / <code>surface_silver_working</code>（<b>owner = merchant，employee = miner</b>）产出 gold/silver，
+<b>被直接铸成货币</b>（gold/silver 市场库存恒为 0，全程铸币注入 <b>gold 47.4B + silver 29.1B = 76.6B</b>）。
+这是一台"印钞机"：矿场永远有钱付工资（矿工累计领薪 456M，仅 2 人分），商人赚差价。<br>
+新铸货币<b>先流入矿主与矿工</b>（坎蒂隆效应：拿到新钱者在物价上涨前先享受购买力），是全单元格现金 ×3.02 膨胀的主源之一（另一源为 <code>producer_support_money_issued</code> 亏损补贴铸币 33.1B）。
+</div>
+
+<h3>因果链 C — 渔民的"无约束过剩 + 无加工链"</h3>
+<div class="chain">
+<code>freshwater_fishing_camp</code>：配置上抽取 <b>freshwater_fish（225/日，extract）</b>、且 supply_price_elasticity=0.5（有弹性）。
+<span class="flag w">但本格（q15,r18）<b>只有 marine_fish、没有 freshwater_fish</b>（resources 全表 30 种里 freshwater_fish 缺席，marine_fish 在列）——资源链接<b>落空</b>，产出不受储量约束，固定产 1800 鱼/日/营。本格其实存在正确的 <code>marine_fish_collector</code>（抽取 marine_fish），却没被用上。</span>
+鱼<b>有买家</b>：满足 protein 需求（优先级1），每期被抽走 <b>24,516</b>。但供远大于求（库存 <b>53.1 万</b>）→ 价格砸到 <b>0.107（近地板）</b>。
+石器时代<b>没有鱼的下游加工</b>（罐头厂未解锁）是其增值出口缺失的硬伤。
+渔民卖鱼现金<b>恰好等于现金支出</b>（cashcov=1.0，收=支=35039），蛋白靠自食 → <b>现金储蓄恒为 0</b>。
+工匠同理：产量小、且要向采集者高价买主食，现金被抽向食物价值链上游。
+</div>
+
+<h2>3. 逐项体检</h2>
+
+<div class="flag g"><b>✅ 守恒 / 数据真实性：合格。</b> 人口、货币、物资审计误差全程恒为 0，记账严谨、无凭空铸造漏洞（铸币与补贴都被显式记录）。</div>
+
+<div class="flag"><b>❌ 经济健康度：不健康（长期）。</b> 四大病征：① 全图人口只减不增（<code>births=0</code>）；② 现金总量 ×3.02 通胀无价格锚定；③ 鱼/采集物永久过剩；④ 36 个建筑组因亏损被挂起（loss_suspended）。仅靠实物自给"表面存活"。</div>
+
+<div class="flag w"><b>⚠ 自然资源平衡：数值"安全"但基本失效。</b>
+<ul>
+<li>可再生：timber 自然增长 +16.9 万 ≫ 开采 238；wild_game 再生 +5541 &gt; 猎取 2853 → 储量<b>反而增长</b>，明显<b>开采不足、无稀缺压力</b>。</li>
+<li>不可再生：gold_ore 剩余寿命 ~35510 天（约百年），silver/coal/iron 近乎无限，开采量微乎其微。</li>
+<li>fertile_soil 缓慢退化（−1808，无再生机制）。</li>
+<li><b>根本问题：产出与资源脱钩。</b> 渔场产 1800/日却<b>不消耗任何资源储量</b>；game_meat 产量（~9.6万/期）远大于 wild_game 开采（2853/全程）。资源账目虽平衡，却<b>没有约束产量</b>，于是过剩无上限。</li>
+</ul></div>
+
+<div class="flag w"><b>⚠ 市场自我调节：有反馈，但间接且被地板限死（修正）。</b> 价格<b>方向</b>正确（鱼↓0.11、皮草↑3.51、兽肉↑1.48）✅。供给端<b>确有</b>价格反馈，但：① 反馈看的是 <b>sell-through / discard / 库存过剩</b>（经 <code>planned_utilization_q16</code>，按 <code>supply_price_elasticity_q16</code> 缩放），<b>不是"价格低"本身</b>——鱼虽贱却照卖（约 72% 售罄、未大量丢弃），故不触发减产；② 自给型食物生产者有<b>生存地板</b>（survival_food 生产者最低保 1/6 产能，另有 per-group 生存地板），不能减到自家不够吃。因此"便宜的过剩鱼"仍被近满负荷产出，价格→产量的自纠环<b>对低价过剩不敏感</b>。高毛利加工厂 margin 封顶 100% 且无同格新进入者稀释（见下条）。</div>
+
+<div class="flag w"><b>⚠ 高毛利产业为何无人"加入"：有两道锁（修正）。</b>
+① <b>业主职业硬绑定</b>：<code>communal_hearth</code> 的 <code>owner_profession_id=forager</code>，build 命令、bootstrap、save-restore 三处都强制业主必须是 forager——<b>渔民根本不能成为新炉灶的业主</b>。出资者（sponsor）虽可是任意异职业富户，但新建炉灶的业主仍被指定为 forager，利润继续归采集者。矿工/商人的铸币矿同理（owner=merchant）。<br>
+② <b>物资阻塞</b>：即便被允许的投资，也要求建材已存在于<b>本地市场库存</b>（<code>_market.stock &lt; quantity</code> 直接判定，<b>不是</b>向商队采购）。但审计全部 252 个建筑发现：<b>没有任何建筑把 construction_components 当作建材</b>，它只被 classical/industrial 建筑（classical_masonry_yard、classical_public_works）使用；<b>石器时代建筑只耗 logs/flint/gathered_plants 或免建材</b>。所以 11869 次被卡几乎都来自<b>后期建筑</b>（需 steel/machinery 等），石器时代本身并非被建材卡死——这削弱了"投资能自动纠偏"的预期。<br>
+本单元格 1022 天建筑构成<b>纹丝不动</b>，赤贫渔民既无法自己拥有高毛利建筑、也无法靠投资被重配出去。</div>
+
+<div class="flag w"><b>⚠ 贸易：全图活跃，但没救本地。</b> 全图派单 26045、到货 25970（99.7%）✅；然而本单元格鱼/采集物的 <code>trade_inbound=trade_outbound=0</code>——过剩根本<b>没被外运套利</b>（可能邻格同样过剩或无利润路线），本地积压无解。</div>
+
+<div class="flag"><b>❌ 财富分配：极端且发散。</b> 起点近乎均等，终点最富（商人 6.26M）与最穷（渔民 0.3）人均差约 <b>70 万倍</b>，且<b>不收敛</b>（无劳动力流动、无遗产/税收再分配、加工与铸币租金持续单向累积）。</div>
+
+<h2>4. 建议修改方向（按优先级）</h2>
+<div class="card">
+<ol>
+<li><b>修复渔场资源错配（治渔民赤贫首要）</b>：本格只有 marine_fish、building 却抽 freshwater_fish（落空）。应让该格改用 <code>marine_fish_collector</code> 抽取实际存在的 marine_fish，使<b>有限储量约束鱼产量</b>，从根上遏制 53 万库存的过剩与 0.107 地板价。这是比"加约束"更具体的修法。</li>
+<li><b>放开高毛利建筑的业主职业绑定 / 稀释垄断租</b>：communal_hearth 的 <code>owner_profession_id=forager</code> 硬绑定是渔民无法进入食品加工的根因。可改为允许异职业富户成为业主，或允许同格新建同类工厂压低 <code>margin=1.0</code> 的封顶利润。</li>
+<li><b>铸币—通胀锚定</b>：gold/silver 直接铸币 + 亏损补贴铸币共注入 100B+，应设与人口/产出挂钩的货币量锚，或对铸币征税回收，遏制 ×3 通胀与坎蒂隆式财富集中。</li>
+<li><b>投资物资阻塞</b>：石器时代 construction_components 等本地无库存，使 11869 次投资被卡。需让投资能通过<b>商队采购</b>而非仅"本地现货库存"满足，或放宽 bootstrap 期建筑 prerequisites。</li>
+<li><b>补石器时代鱼的下游 + 让鱼进食品加工配方</b>：解锁简易熏/腌鱼，并允许 communal_hearth 等以 fish 为输入，给过剩鱼一个增值出口、同时抬升渔民售价。</li>
+<li><b>修复人口模型</b>：所有 33 个 profession 的 <code>birth_rate_q32</code> 均未设置（默认 0）→ 全图只死不生。若非刻意关闭，应补齐出生率。</li>
+</ol>
+</div>
+
+<p class="small" style="margin-top:28px">分析脚本：<code>tmp/analyze_econ_v8.py</code>、<code>analyze_cohorts.py</code>、<code>analyze_buildings.py</code>、<code>analyze_market.py</code>、<code>analyze_money.py</code>、<code>analyze_res.py</code>（ID→名称映射按 catalog 的字母序索引还原）。</p>
+
+</div>
+</body>
+</html>

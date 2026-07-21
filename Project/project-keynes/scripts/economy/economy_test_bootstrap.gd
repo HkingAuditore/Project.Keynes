@@ -6,7 +6,7 @@ const Q16_ONE := 65536
 const INT64_MAX := 9223372036854775807
 const COLLECTOR_COUNT_CAP := 24
 const CELL_POPULATION_CAP := 300
-const EXTRACT_RESERVE_DAYS := 5
+const INITIAL_RESOURCE_HORIZON_DAYS := 3650
 const FOOD_REQUIREMENT_PER_CAPITA := 1300
 const CLOTHING_REQUIREMENT_PER_CAPITA := 4
 const SURVIVAL_FUND_DAYS := 30
@@ -25,7 +25,7 @@ const TEST_COLLECTOR_COUNT_CAPS := {
 
 const TEST_INDUSTRY_COUNTS := {
 	"communal_hearth": 2,
-	"knapping_workshop": 3,
+	"knapping_workshop": 1,
 }
 
 const MID_STONE_EXCLUDED_BUILDING_IDS := {
@@ -108,6 +108,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	if passable_cells.is_empty():
 		return {"ok": false, "reason": "test_bootstrap_no_passable_land"}
 	var resource_arrays := _resource_arrays(map, PackedStringArray(MID_STONE_TECHNOLOGY_IDS))
+	var resource_peaks := _resource_peaks(resource_arrays, passable_cells)
 	var groups_by_cell := {}
 	var outputs_by_cell := {}
 	for cell_idx in passable_cells:
@@ -120,7 +121,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		if int(spec.kind) != 0:
 			continue
 		for cell_idx in passable_cells:
-			var count := _collector_count_at(spec, cell_idx, resource_arrays)
+			var count := _collector_count_at(
+				spec, cell_idx, resource_arrays, resource_peaks)
 			if count <= 0:
 				continue
 			(groups_by_cell[cell_idx] as Array).append({"spec": spec, "count": count})
@@ -332,7 +334,9 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"cohort_count": populations.size(),
 		"building_group_count": building_counts.size(),
 		"total_population": total_population,
-		"population_source": "mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v11",
+		"population_source": "mid_stone_local_resource_abundance_bootstrap_finance_v12",
+		"collector_placement_model": "local_abundance_ten_year_reserve_v1",
+		"initial_resource_horizon_days": INITIAL_RESOURCE_HORIZON_DAYS,
 		"cell_population_cap": CELL_POPULATION_CAP,
 		"initial_employment": "unemployed",
 		"initial_stock_units": 0,
@@ -503,8 +507,21 @@ static func _resource_arrays(map: MapData, technology_ids: PackedStringArray) ->
 	return out
 
 
+static func _resource_peaks(resource_arrays: Dictionary,
+		passable_cells: PackedInt32Array) -> Dictionary:
+	var out := {}
+	for resource_id in resource_arrays:
+		var reserves: PackedFloat32Array = resource_arrays[resource_id]
+		var peak := 0.0
+		for cell_idx in passable_cells:
+			if cell_idx >= 0 and cell_idx < reserves.size():
+				peak = maxf(peak, maxf(0.0, reserves[cell_idx]))
+		out[resource_id] = peak
+	return out
+
+
 static func _collector_count_at(spec: Dictionary, cell_idx: int,
-		resource_arrays: Dictionary) -> int:
+		resource_arrays: Dictionary, resource_peaks: Dictionary) -> int:
 	var resource_ids: PackedStringArray = spec.resource_ids
 	var quantities: PackedInt64Array = spec.resource_quantities
 	var modes: PackedInt32Array = spec.resource_modes
@@ -521,14 +538,20 @@ static func _collector_count_at(spec: Dictionary, cell_idx: int,
 			return 0
 		var reserves: PackedFloat32Array = resource_arrays[resource_id]
 		var required := float(quantities[i]) / float(GOODS_SCALE)
-		if int(modes[i]) == 0:
-			required *= EXTRACT_RESERVE_DAYS
 		if cell_idx < 0 or cell_idx >= reserves.size() or required <= 0.0:
 			return 0
 		if int(access_modes[i]) != 0:
 			return 0
 		var available := maxf(0.0, reserves[cell_idx])
-		var local_supported := int(floor(available / required))
+		var peak := float(resource_peaks.get(resource_id, 0.0))
+		if available <= 0.0 or peak <= 0.0:
+			return 0
+		var abundance_supported := clampi(
+			ceili(float(count_cap) * available / peak), 1, count_cap)
+		var reserve_days := INITIAL_RESOURCE_HORIZON_DAYS if int(modes[i]) == 0 else 1
+		var horizon_supported := int(floor(
+			available / (required * float(reserve_days))))
+		var local_supported := mini(abundance_supported, horizon_supported)
 		if local_supported <= 0:
 			return 0
 		supported = mini(supported, local_supported)

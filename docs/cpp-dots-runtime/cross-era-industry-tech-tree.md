@@ -11,14 +11,14 @@
 - 自然资源只表达地形/生态容量或确实有地区分布与科技门槛差异的对象。牛、羊、猪、马不再是自然资源；`pasture` 表达畜牧容量。
 - 淡水不进入经济配方。河湖供水和公共事业以后单独设计，不作为面包、米食、饮料等物资的隐藏投入。
 - 鱼类保留粗粒度链条：`marine_fish -> fish`；淡水捕鱼由 `freshwater_fish` 湖泊/湖岸资源和淡水捕鱼营地表达。
-- 野生动物保留为早期生态资源：`wild_game -> game_meat/raw_hide/fur`，由 `stone_age_hunting_camp` 产出，农业时代后重要性下降。一个石器营地代表 5 个共同经营岗位，日产 `7000/250/100` GOODS_SCALE 的野味、生皮和毛皮；主食产能为每岗位 `1400`，略高于测试承载力的保守生存线，同时压低副产品过剩。`715` 的野生动物扣减使用独立资源单位，不能直接解释为商品重量转换率。
+- 野生动物保留为早期生态资源：`wild_game -> game_meat/raw_hide/fur`，由 `stone_age_hunting_camp` 产出，农业时代后重要性下降。当前石器营地有 2 个共同经营业主岗位，日产 `4846/59/30` GOODS_SCALE 的野味、生皮和毛皮；该组数值比 2026-07-21 基线提高约 30%，用于覆盖猎人现金生活支出，同时保持副产品受本地需求约束。`715` 的野生动物扣减使用独立资源单位，不能直接解释为商品重量转换率。
 - 雇佣关系随时代复杂化：自营/家庭劳动 -> 学徒和行会 -> 地主/农奴/契约劳工 -> 工业工人/技师/工程师/经理。
 
 ## 时代表
 
 | 时代 | 科技标签 | 新引入链条 | 深化旧链条 | 劳工关系 |
 |---|---|---|---|---|
-| 石器时代 | `tech.hunting`, `tech.gathering`, `tech.stone_knapping`, `tech.fire_control` | 采集植物、野生动物、海鱼、木材、石材、燧石、打制石器、公共火塘 | 家庭手织棚提供低效布料；狩猎营地同时产出肉、皮、毛皮 | forager/hunter/fisher owner-operated |
+| 石器时代 | `tech.hunting`, `tech.gathering`, `tech.stone_knapping`, `tech.fire_control` | 采集植物、野生动物、海鱼、木材、石材、燧石、打制石器、公共火塘 | 家庭手织棚提供低效布料；狩猎营地同时产出肉、皮、毛皮 | 公共火塘/手工业由 artisan 经营；采集由 forager/hunter/fisher 自营 |
 | 青铜/早期农业 | `tech.pottery`, `tech.bronze_casting` | 旱作/水田/牧场容量，地域原粮、畜牧产品、陶器、铜锡青铜 | 原粮由统一厨房产 `prepared_staples`；面包房直接接受合理谷物候选；牧场产肉、皮、乳、毛 | 自耕农、牧民、工匠、学徒、早期地主/依附劳工 |
 | 古典时代 | `tech.writing`, `tech.masonry` | 早期铁矿、铁制工具、纸草、手稿、砖、石灰、玻璃、金银匠、酿造 | `tools` 从本时代起表示铁/钢等通用金属工具；石作直接产 `construction_components`，不再经过切石/精砌石 | 工匠作坊和少量雇佣帮工 |
 | 封建时代 | `tech.manuscript_culture`, `tech.guild_organization` | 轮作小农、行会织造、裁缝、鞋匠、华服、精美家具 | 亚麻、棉、羊毛直接织成 `cloth`，再分流 clothing、footwear、fine_clothing | 地主/农奴、地租代理、行会师傅、学徒、熟练工 |

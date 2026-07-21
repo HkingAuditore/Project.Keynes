@@ -85,7 +85,10 @@ func _initialize() -> void:
 		_population_matches_fixture(first, facade))
 	_expect("bootstrap reports formula-based initial finance source",
 		String(first.get("population_source", "")) ==
-			"mid_stone_visible_resources_carrying_capacity_bootstrap_finance_v11" and
+			"mid_stone_local_resource_abundance_bootstrap_finance_v12" and
+		String(first.get("collector_placement_model", "")) ==
+			"local_abundance_ten_year_reserve_v1" and
+		int(first.get("initial_resource_horizon_days", 0)) == 3650 and
 		int(first.get("cell_population_cap", 0)) == 300 and
 		String(first.get("initial_employment", "")) == "unemployed")
 	_expect("carrying-capacity balancing honors demand-calibrated collector caps",
@@ -97,6 +100,8 @@ func _initialize() -> void:
 		_max_building_group_count(first) > 1 and
 		_max_building_group_count(first) <= 24 and
 		_fixture_respects_test_collector_caps(first, facade))
+	_expect("every initial collector is backed by its own cell resources",
+		_fixture_collectors_use_local_resources(first, facade, map))
 	_expect("each passable cell population follows its zero-to-300 carrying capacity",
 		_population_matches_carrying_capacity(first) and
 		int(first.get("carrying_capacity_total", -1)) == int(first.get("total_population", 0)))
@@ -117,8 +122,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v11 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 12)
+	_expect("native CSV v14 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 14)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("both viable land cells receive sustainable settlements",
@@ -138,9 +143,10 @@ func _initialize() -> void:
 		_has_building(second_buildings, "surface_silver_working"))
 	_expect("stone household weaving consumes gathered plant fiber",
 		_has_building(buildings, "household_weaving_shelter"))
-	_expect("stone industrial fixture uses conservative local chain counts",
-		_building_count(buildings, "communal_hearth") == 2 and
-		_building_count(buildings, "knapping_workshop") == 3)
+	_expect("stone food fixture uses conservative local chain counts",
+		_building_count(buildings, "communal_hearth") == 2)
+	_expect("stone tool fixture starts one demand-sized workshop",
+		_building_count(buildings, "knapping_workshop") == 1)
 	var initial_land: Dictionary = facade.population_cell_snapshot(0)
 	var initial_second_land: Dictionary = facade.population_cell_snapshot(1)
 	_expect("survival satisfaction alias matches the compatibility fields",
@@ -417,7 +423,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 117, "cohorts": 26, "buildings": 55,
+	var expected_columns := {"summary": 121, "cohorts": 26, "buildings": 56,
 		"resources": 21, "market": 39}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
@@ -434,12 +440,15 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
 	var summary_text := FileAccess.get_file_as_string(str(paths.summary)).trim_prefix("﻿")
 	var summary_header := summary_text.split("\n", false)[0].split(",", true)
-	_expect("summary CSV v11 exposes investment and trade deadline diagnostics",
+	_expect("summary CSV v14 exposes owner-job, investment, and trade diagnostics",
 		[
 			"construction_goods_consumed", "building_investment_candidates",
-			"building_owner_mobility", "building_investments_started",
+			"building_owner_mobility", "building_owner_job_reallocations",
+			"building_owner_job_profession_changes",
+			"building_owner_job_probability_skips", "building_investments_started",
 			"building_investment_blocked_funds",
 			"building_investment_blocked_materials",
+			"building_investment_probability_skips",
 			"trade_response_deadline_misses_cumulative",
 		].all(func(column: String) -> bool: return summary_header.has(column)))
 	var building_text := FileAccess.get_file_as_string(str(paths.buildings)).trim_prefix("﻿")
@@ -450,9 +459,12 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 	var planned_owner_equivalent_col := building_header.find("planned_owner_equivalent")
 	var filled_owner_col := building_header.find("filled_owner")
 	var owner_openings_col := building_header.find("owner_openings")
+	var projected_owner_income_col := building_header.find(
+		"projected_owner_income_per_day")
 	var owner_columns_valid := owner_capacity_col >= 0 and owner_required_col >= 0 \
 		and planned_owner_equivalent_col >= 0 \
-		and filled_owner_col >= 0 and owner_openings_col >= 0
+		and filled_owner_col >= 0 and owner_openings_col >= 0 \
+		and projected_owner_income_col >= 0
 	var owner_rows_valid := owner_columns_valid
 	for line in building_lines.slice(1):
 		var columns := line.split(",", true)
@@ -599,6 +611,37 @@ func _fixture_respects_test_collector_caps(fixture: Dictionary, facade) -> bool:
 		var stable_id := String(stable_ids[type_id])
 		if caps.has(stable_id) and int(counts[i]) > int(caps[stable_id]):
 			return false
+	return true
+
+
+func _fixture_collectors_use_local_resources(
+		fixture: Dictionary, facade, map: MapData) -> bool:
+	var packet: Dictionary = fixture.get("building_packet", {})
+	var cells: PackedInt32Array = packet.get("building_cells", PackedInt32Array())
+	var type_ids: PackedInt32Array = packet.get("building_type_ids", PackedInt32Array())
+	var stable_ids: PackedStringArray = facade.building_type_ids()
+	if cells.size() != type_ids.size():
+		return false
+	var resource_fields := {}
+	for profile in ResourceProfileRegistry.ordered():
+		resource_fields[StringName(profile.id)] = \
+			ResourceProfileRegistry.reserve_map_field(profile)
+	for i in range(type_ids.size()):
+		var type_id := int(type_ids[i])
+		if type_id < 0 or type_id >= stable_ids.size():
+			return false
+		var spec: Dictionary = facade.building_placement_spec(
+			StringName(stable_ids[type_id]))
+		if int(spec.get("kind", -1)) != 0:
+			continue
+		for resource_id in spec.get("resource_ids", PackedStringArray()):
+			var field := String(resource_fields.get(StringName(resource_id), ""))
+			if field == "":
+				return false
+			var reserves: PackedFloat32Array = map.get(field)
+			var cell := int(cells[i])
+			if cell < 0 or cell >= reserves.size() or reserves[cell] <= 0.0:
+				return false
 	return true
 
 

@@ -147,7 +147,7 @@ static func compile_native_columns() -> Dictionary:
 		# Keep the legacy absolute-days column so a stale DLL fails soft during
 		# editor hot reload instead of aborting economy/population bootstrap.
 		compatibility_target_inventory_days_q16.append(
-			1966080 * inventory_target_ratio / 65536)
+			3932160 * inventory_target_ratio / 65536)
 		inventory_weight.append(int(p.get("inventory_weight_q16")))
 		shortage_weight.append(int(p.get("shortage_weight_q16")))
 		excess_demand_weight.append(int(p.get("excess_demand_weight_q16")))

@@ -61,7 +61,7 @@ configure 成功后、population/market/building bootstrap 前执行该捕获；
 
 Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口、市场、建筑标签按当前可见标签惰性调用 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。贸易单使用 `get_trade_orders_for_cell(cell, offset, limit)` 分页查询并返回物资行 CSR，禁止全局订单矩阵。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md) 与 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
 
-经济 CSV v8 是同一 committed visibility boundary 的 debug consumer。`DCWorldExt::run_economy_slice()` 先完成 `publish_epoch()`，再把建筑自然资源 delta 写入/flush 到 DataCore reserve slot，最后才允许 `EconomyCsvRecorder` 把 native cohort/market/building SoA 与资源 slot 复制进一个空闲 POD buffer。后台 worker 只接触 `std::vector`、字符串表和绝对路径，不访问 Godot API 或运行中的 runtime。控制面仅绑定 `start_economy_csv_recording(config)`、`request_stop_economy_csv_recording()`、`get_economy_csv_recording_status()`；GDScript 不再逐 cell 调 snapshot API。`config.cell_indices` 为空时按 `cell_stride` 取全图样本，非空时排序去重并覆盖 stride；GM 的“当前地块”只传一个在 start 时锁定的 index。summary 仍是全局提交摘要，cohorts/buildings/resources/market 仅遍历显式样本；building 行明确区分 `owner_capacity`（物理容量）、`owner_required`（活跃组等于容量、停产/不可用组为零）、`planned_owner_equivalent`（仅用于观察利用率折算量）、`filled_owner` 与 `owner_openings`。v8 summary 在既有出生/死亡、投入、生产、货币流、候选、拒绝、订单和运力字段之外，新增规范化拓扑哈希、scan/route cursor、重置计数和最近重置原因；market 继续包含逐商品投入预留、家庭可用库存和完整配置周期的商人目标库存。双缓冲满时自动停止接收并排空已接受批次，不阻塞经济提交；CSV 调试状态不进入 PKEC、replay hash 或 simulation authority。
+经济 CSV v14 是同一 committed visibility boundary 的 debug consumer。`DCWorldExt::run_economy_slice()` 先完成 `publish_epoch()`，再把建筑自然资源 delta 写入/flush 到 DataCore reserve slot，最后才允许 `EconomyCsvRecorder` 把 native cohort/market/building SoA 与资源 slot 复制进一个空闲 POD buffer。后台 worker 只接触 `std::vector`、字符串表和绝对路径，不访问 Godot API 或运行中的 runtime。控制面仅绑定 `start_economy_csv_recording(config)`、`request_stop_economy_csv_recording()`、`get_economy_csv_recording_status()`；GDScript 不再逐 cell 调 snapshot API。`config.cell_indices` 为空时按 `cell_stride` 取全图样本，非空时排序去重并覆盖 stride；GM 的“当前地块”只传一个在 start 时锁定的 index。summary 仍是全局提交摘要，cohorts/buildings/resources/market 仅遍历显式样本；building 行明确区分 `owner_capacity`（物理容量）、`owner_required`（活跃组等于容量、停产/不可用组为零）、`planned_owner_equivalent`（仅用于观察利用率折算量）、`filled_owner` 与 `owner_openings`，并发布 `projected_owner_income_per_day`。v14 summary 保留既有字段并新增 ACTIVE 业主岗位重配、跨职业和概率跳过计数；market 继续包含逐商品投入预留、家庭可用库存和完整配置周期的商人目标库存。双缓冲满时自动停止接收并排空已接受批次，不阻塞经济提交；CSV 调试状态不进入 PKEC、replay hash 或 simulation authority。
 
 ## PackedArray CoW 公理
 
@@ -619,7 +619,12 @@ natural net change, previously pending artificial change applied, current
 artificial change pending, and closing reserve. The recorder history is debug
 state only: it is excluded from simulation state hash and PKEC save data. Summary rows append
 construction goods consumed plus endogenous investment candidates, owner mobility, starts, and
-fund/material blocking counters.
+fund/material blocking counters. Investment V5 additionally publishes
+`building_investment_probability_skips`; this is committed-boundary diagnostic
+history, not mutable GDScript state or PKEC state. This appended summary column
+bumps the recorder schema to CSV v13; PKEC remains v15.
+CSV v14 subsequently appends the three ACTIVE owner-job counters and projected
+owner daily income; PKEC remains v15.
 
 Resource rows retain signed `natural_net_change` and signed artificial deltas,
 and add positive-valued natural increase/decrease plus artificial

@@ -23,9 +23,16 @@ func _run() -> void:
 		return
 	var building_ids: PackedStringArray = compiled.building_type_ids
 	_expect("coal mine type exists", building_ids.has("coal_mine"))
+	var natural_demography_catalog := compiled.duplicate(true)
 	var ext := _new_ext(compiled)
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
+	var stable_birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
+	var stable_death_rates: PackedInt64Array = catalog.signature_death_rate_q32
+	stable_birth_rates.fill(0)
+	stable_death_rates.fill(0)
+	catalog.signature_birth_rate_q32 = stable_birth_rates
+	catalog.signature_death_rate_q32 = stable_death_rates
 	var mine_id := building_ids.find("coal_mine")
 	var output_offsets: PackedInt32Array = catalog.building_output_offsets
 	var output_quantities: PackedInt64Array = catalog.building_output_quantities
@@ -34,11 +41,13 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 5
 	profile.market_runtime_mode = "ACTIVE"
+	_test_births_wait_for_next_employment(natural_demography_catalog, profile)
 	_test_production_income_consumption_order(catalog, profile)
 	_test_scarce_output_cost_floor(catalog, profile)
 	_test_survival_retention_cap(catalog, profile)
 	_test_hunter_subsistence_and_working_capital(catalog, profile)
 	_test_shortage_recovery_uses_household_stock(catalog, profile)
+	_test_business_demand_recovers_industrial_utilization(catalog, profile)
 	_test_production_input_hard_reserve(catalog, profile)
 	_test_production_input_soft_shortage(catalog, profile)
 	_test_producer_support_issuance(catalog, profile)
@@ -47,12 +56,19 @@ func _run() -> void:
 	_test_owner_fill_reconciles_after_population_loss(catalog, profile)
 	_test_last_building_demolition_releases_profession_cohorts(catalog, profile)
 	_test_non_due_construction_employment_metrics(catalog, profile)
+	_test_active_owner_income_reallocation(catalog, profile)
+	_test_same_profession_owner_income_reallocation(catalog, profile)
+	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
-	_test_investment_respects_installed_capacity(catalog, profile)
+	_test_zero_construction_collector_investment(catalog, profile)
+	_test_investment_capacity_is_not_gate(catalog, profile)
 	_test_investment_requires_owner_livelihood(catalog, profile)
 	_test_endogenous_investment_repairs_dead_merchant(catalog, profile)
 	_test_building_plan_continuation(catalog, profile)
 	_test_production_worker_scalar_equivalence(catalog, profile)
+	# Keep the legacy insolvency fixture focused on payroll state transitions;
+	# the 60-day default is covered by the market/schema tests.
+	profile.merchant_market_making_days_q16 = 1966080
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
@@ -373,29 +389,82 @@ func _run() -> void:
 		int(recovery_one_report.get("goods_error", 1)) == 0)
 	var restart_report := _run_day(ext, 7)
 	var restarted: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("second solvent recovery cycle advances toward restart",
-		int((restarted.recovery_cycles as PackedInt32Array)[0]) == 1 and
-		int((restarted.operating_state as PackedByteArray)[0]) == 1)
+	_expect("profitable alternative keeps the loss building suspended",
+		(restarted.group_type_ids as PackedInt32Array).size() > 1 and
+		int((restarted.operating_state as PackedByteArray)[0]) == 1 and
+		int((restarted.operating_state as PackedByteArray)[1]) == 0)
 	_expect("restart cycle conserves all ledgers",
 		int(restart_report.get("population_error", 1)) == 0 and
 		int(restart_report.get("money_error", 1)) == 0 and
 		int(restart_report.get("goods_error", 1)) == 0)
 	var resumed_report := _run_day(ext, 8)
 	var resumed: Dictionary = ext.get_building_cell_snapshot(0)
-	var resumed_employee_total := 0
-	for value in resumed.employee_filled as PackedInt64Array:
-		resumed_employee_total += int(value)
-	_expect("restarted building rehires and resumes funded output",
-		int((resumed.operating_state as PackedByteArray)[0]) == 0 and
-		int((resumed.recovery_cycles as PackedInt32Array)[0]) == 0 and
-		resumed_employee_total > 0 and
-		int((resumed.funded_capacity_q16 as PackedInt64Array)[0]) > 0 and
-		int((resumed.last_output as PackedInt64Array)[0]) > 0)
+	_expect("suspended zero-income owner transfers through active-first hiring",
+		int((resumed.operating_state as PackedByteArray)[0]) == 1 and
+		int((resumed.filled_owner as PackedInt64Array)[0]) == 0 and
+		int((resumed.filled_owner as PackedInt64Array)[1]) >
+			int((restarted.filled_owner as PackedInt64Array)[1]) and
+		int((resumed.last_output as PackedInt64Array)[0]) == 0)
 	_expect("resumed production conserves all ledgers",
 		int(resumed_report.get("population_error", 1)) == 0 and
 		int(resumed_report.get("money_error", 1)) == 0 and
 		int(resumed_report.get("goods_error", 1)) == 0)
 	print("=== native building runtime %s ===" % ("PASS" if failures == 0 else "FAIL"))
+
+func _test_births_wait_for_next_employment(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	catalog.erase("ok")
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
+	var death_rates: PackedInt64Array = catalog.signature_death_rate_q32
+	birth_rates.fill(0)
+	death_rates.fill(0)
+	# One artisan at full satisfaction contributes exactly one birth per five-day period.
+	birth_rates[artisan_sig] = 858993460
+	catalog.signature_birth_rate_q32 = birth_rates
+	catalog.signature_death_rate_q32 = death_rates
+	var ext := _new_ext(catalog)
+	_expect("birth-employment country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 2202))
+	_expect("birth-employment runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 2202).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(1000000000000)
+	var knapping_id := (catalog.building_type_ids as PackedStringArray).find(
+		"knapping_workshop")
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([artisan_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([1000000000000, 1000000000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([knapping_id]),
+		"building_owner_signature_ids": PackedInt32Array([artisan_sig]),
+		"building_counts": PackedInt64Array([2]),
+	})
+	_expect("birth-employment fixture bootstraps", bool(boot.get("ok", false)))
+	var report := _run_day(ext, 0)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var unemployed_row := _row_for_signature(population, unemployed_sig)
+	_expect("birth structural commit creates one unemployed cohort member",
+		int(report.get("births", 0)) == 1 and unemployed_row >= 0 and
+		int((population.populations as PackedInt64Array)[unemployed_row]) == 1 and
+		int((population.funds_by_cohort as PackedInt64Array)[unemployed_row]) == 0)
+	_expect("newborn does not fill the active owner opening in the same period",
+		_sum_i64(buildings.filled_owner as PackedInt64Array) == 1 and
+		_sum_i64(buildings.owner_openings as PackedInt64Array) == 1 and
+		int((population.owner_employed_by_cohort as PackedInt64Array)[unemployed_row]) == 0 and
+		int(report.get("population_error", 1)) == 0)
 
 func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
 		profile: Dictionary) -> void:
@@ -614,10 +683,272 @@ func _test_non_due_construction_employment_metrics(
 		int(report.get("goods_error", 1)) == 0)
 
 
+func _test_active_owner_income_reallocation(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager_sig := signatures.find("forager|default")
+	var artisan_sig := signatures.find("artisan|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var flint_id := building_ids.find("flint_quarry")
+	var knapping_id := building_ids.find("knapping_workshop")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	prices[tool_good] = 1000000000
+	max_prices[tool_good] = 1000000000
+	catalog.good_default_price = prices
+	catalog.good_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("owner-job mobility country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 431))
+	_expect("owner-job mobility runtime configures", bool(ext.configure_economy(
+		catalog, profile, 1, 431).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	var source_funds := 1234567
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([forager_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([source_funds, 1000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([flint_id, knapping_id]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig, artisan_sig]),
+		"building_counts": PackedInt64Array([2, 1]),
+	})
+	_expect("owner-job mobility fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		print("  owner-job bootstrap error=", boot)
+		return
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
+	var knapping_group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var forager_row := _row_for_signature(population, forager_sig)
+	var artisan_row := _row_for_signature(population, artisan_sig)
+	var forager_population := int((population.populations as PackedInt64Array)[forager_row]) \
+		if forager_row >= 0 else 0
+	var artisan_population := int((population.populations as PackedInt64Array)[artisan_row]) \
+		if artisan_row >= 0 else 0
+	var artisan_funds := int((population.funds_by_cohort as PackedInt64Array)[artisan_row]) \
+		if artisan_row >= 0 else 0
+	_expect("higher owner income attracts the final low-income ACTIVE owner",
+		flint_group >= 0 and knapping_group >= 0 and
+		int((buildings.owner_required as PackedInt64Array)[flint_group]) == 2 and
+		int((buildings.projected_owner_income_per_day as PackedInt64Array)[knapping_group]) >
+			int((buildings.projected_owner_income_per_day as PackedInt64Array)[flint_group]) and
+		int((buildings.filled_owner as PackedInt64Array)[flint_group]) == 0 and
+		int((buildings.filled_owner as PackedInt64Array)[knapping_group]) == 1 and
+		int(report.get("building_owner_job_reallocations", 0)) == 1 and
+		int(report.get("building_owner_job_profession_changes", 0)) == 1)
+	_expect("cross-profession owner movement transfers population and funds proportionally",
+		forager_population == 0 and artisan_population == 1 and artisan_funds > 0)
+	_expect("income-driven owner movement restores target production",
+		int((buildings.last_output as PackedInt64Array)[knapping_group]) > 0)
+	_expect("owner-job mobility conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
+func _test_same_profession_owner_income_reallocation(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager_sig := signatures.find("forager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var flint_id := building_ids.find("flint_quarry")
+	var timber_id := building_ids.find("timber_collector")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	var logs_good := goods.find("logs")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var min_prices: PackedInt32Array = catalog.good_min_price
+	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	prices[tool_good] = min_prices[tool_good]
+	prices[logs_good] = 1000000000
+	max_prices[logs_good] = 1000000000
+	catalog.good_default_price = prices
+	catalog.good_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("same-profession mobility country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 433))
+	_expect("same-profession mobility runtime configures", bool(ext.configure_economy(
+		catalog, profile, 1, 433).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([forager_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([2000000, 1000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([flint_id, timber_id]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig, forager_sig]),
+		"building_counts": PackedInt64Array([1, 1]),
+	})
+	_expect("same-profession mobility fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
+	var timber_group := (buildings.group_type_ids as PackedInt32Array).find(timber_id)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var forager_row := _row_for_signature(population, forager_sig)
+	_expect("same-profession owner movement only reallocates group fill",
+		flint_group >= 0 and timber_group >= 0 and forager_row >= 0 and
+		int((buildings.filled_owner as PackedInt64Array)[flint_group]) == 0 and
+		int((buildings.filled_owner as PackedInt64Array)[timber_group]) == 1 and
+		int((population.populations as PackedInt64Array)[forager_row]) == 1 and
+		int((population.owner_employed_by_cohort as PackedInt64Array)[forager_row]) == 1 and
+		int(report.get("building_owner_job_reallocations", 0)) == 1 and
+		int(report.get("building_owner_job_profession_changes", 0)) == 0)
+	_expect("same-profession owner movement conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+	var skip_catalog := source_catalog.duplicate(true)
+	var skip_prices: PackedInt32Array = skip_catalog.good_default_price.duplicate()
+	var skip_max_prices: PackedInt32Array = skip_catalog.good_max_price.duplicate()
+	skip_prices[tool_good] = min_prices[tool_good]
+	skip_prices[logs_good] = 3200
+	skip_max_prices[logs_good] = 3200
+	skip_catalog.good_default_price = skip_prices
+	skip_catalog.good_max_price = skip_max_prices
+	var skip_ext := _new_ext(skip_catalog)
+	_expect("owner-job probability country bootstraps",
+		CountryTestHelper.configure_all_technologies(skip_ext, skip_catalog, 1, 439))
+	_expect("owner-job probability runtime configures", bool(skip_ext.configure_economy(
+		skip_catalog, profile, 1, 439).get("ok", false)))
+	var skip_boot: Dictionary = skip_ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([forager_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([2000000, 1000000]),
+	}, {
+		"stock": stock,
+		"price": skip_prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([flint_id, timber_id]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig, forager_sig]),
+		"building_counts": PackedInt64Array([1, 1]),
+	})
+	_expect("owner-job probability fixture bootstraps", bool(skip_boot.get("ok", false)))
+	if not bool(skip_boot.get("ok", false)):
+		return
+	var skip_report := _run_day(skip_ext, 0)
+	var skip_buildings: Dictionary = skip_ext.get_building_cell_snapshot(0)
+	var skip_flint_group := (skip_buildings.group_type_ids as PackedInt32Array).find(
+		flint_id)
+	var skip_timber_group := (skip_buildings.group_type_ids as PackedInt32Array).find(
+		timber_id)
+	var skip_income: PackedInt64Array = skip_buildings.projected_owner_income_per_day
+	print("  probability fixture=", skip_income, "/", skip_buildings.filled_owner,
+		"/", skip_report.get("building_owner_job_reallocations", 0), "/",
+		skip_report.get("building_owner_job_probability_skips", 0))
+	_expect("fixed-seed marginal income gain deterministically skips movement",
+		skip_flint_group >= 0 and skip_timber_group >= 0 and
+		int(skip_income[skip_timber_group]) > int(skip_income[skip_flint_group]) and
+		int((skip_buildings.filled_owner as PackedInt64Array)[skip_flint_group]) == 1 and
+		int((skip_buildings.filled_owner as PackedInt64Array)[skip_timber_group]) == 0 and
+		int(skip_report.get("building_owner_job_reallocations", 0)) == 0 and
+		int(skip_report.get("building_owner_job_probability_skips", 0)) == 1)
+
+
+func _test_owner_income_reallocation_prefers_unemployed(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager_sig := signatures.find("forager|default")
+	var artisan_sig := signatures.find("artisan|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var flint_id := building_ids.find("flint_quarry")
+	var knapping_id := building_ids.find("knapping_workshop")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	prices[tool_good] = 1000000000
+	max_prices[tool_good] = 1000000000
+	catalog.good_default_price = prices
+	catalog.good_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("unemployed-first mobility country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 437))
+	_expect("unemployed-first mobility runtime configures", bool(ext.configure_economy(
+		catalog, profile, 1, 437).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([forager_sig, unemployed_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1, 1]),
+		"funds": PackedInt64Array([2000000, 1000000, 1000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([flint_id, knapping_id]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig, artisan_sig]),
+		"building_counts": PackedInt64Array([1, 1]),
+	})
+	_expect("unemployed-first mobility fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
+	var knapping_group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var forager_row := _row_for_signature(population, forager_sig)
+	var artisan_row := _row_for_signature(population, artisan_sig)
+	_expect("unemployed owner hiring precedes ACTIVE owner attraction",
+		flint_group >= 0 and knapping_group >= 0 and
+		int((buildings.filled_owner as PackedInt64Array)[flint_group]) == 1 and
+		int((buildings.filled_owner as PackedInt64Array)[knapping_group]) == 1 and
+		forager_row >= 0 and artisan_row >= 0 and
+		int((population.populations as PackedInt64Array)[forager_row]) == 1 and
+		int((population.populations as PackedInt64Array)[artisan_row]) == 1 and
+		int(report.get("building_owner_job_reallocations", 0)) == 0)
+	_expect("unemployed-first owner hiring conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
 func _test_endogenous_owner_investment(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
+	profile.merchant_market_making_days_q16 = 1966080
+	profile.resource_safe_harvest_q16 = 0
 	profile.starvation_death_rate_q32 = 0
 	var signatures: PackedStringArray = catalog.signature_keys
 	var artisan_sig := signatures.find("artisan|default")
@@ -630,6 +961,7 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	var timber_id := building_ids.find("timber_collector")
 	var goods: PackedStringArray = catalog.good_ids
 	var tool_good := goods.find("chipped_stone_tools")
+	_require_materials_for_primitive_collectors(catalog, tool_good)
 	_minimize_household_good_demand(catalog, tool_good)
 	# Keep this fixture's demand signal deterministic: the hunting camps consume
 	# only chipped stone tools and require more than two workshops can supply.
@@ -686,6 +1018,9 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 		if artisan_row0 >= 0 else 0
 	_expect("employment fills the existing profitable owner opening first",
 		int(day0.get("building_investments_started", 0)) == 0 and
+		int(day0.get("building_investment_candidates", 0)) == 0 and
+		int(day0.get("building_owner_mobility", 0)) == 0 and
+		int(day0.get("building_investment_capital_transferred", 0)) == 0 and
 		artisan_population0 == 2)
 	_expect("existing owner-opening employment conserves every ledger",
 		int(day0.get("population_error", 1)) == 0 and
@@ -696,8 +1031,13 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var knapping_count := int((buildings.building_counts_by_type as PackedInt64Array)[
 		knapping_id])
-	_expect("ten-day capital review buys materials and expands at most once",
+	_expect("profitable investment transitions its sponsor and starts construction",
 		int(investment_day.get("building_investments_started", 0)) == 1 and
+		int(investment_day.get("building_investment_candidates", 0)) == 1 and
+		int(investment_day.get("building_owner_mobility", 0)) == 1 and
+		int(investment_day.get("building_investment_capital_transferred", 0)) > 0 and
+		String(investment_day.get("building_investment_model", "")) ==
+			"endogenous_owner_investment_v5" and
 		int(investment_day.get("construction_goods_consumed", 0)) == 1500 and
 		knapping_count == 3)
 	_expect("endogenous construction conserves every ledger",
@@ -713,10 +1053,67 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 		knapping_count == 3)
 
 
-func _test_investment_respects_installed_capacity(source_catalog: Dictionary,
+func _test_zero_construction_collector_investment(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var goods: PackedStringArray = catalog.good_ids
+	var prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(0)
+	var ext := _new_ext(catalog)
+	_expect("zero-construction collector country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 9127))
+	_expect("zero-construction collector runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 9127).get("ok", false)))
+	var resource_slots: PackedStringArray = catalog.building_resource_reserve_slots
+	for slot_name in resource_slots:
+		var slot_id := int(ext.component_id(StringName(slot_name)))
+		if slot_id >= 0:
+			ext.write_f32_range(slot_id, 0, PackedFloat32Array([1000000000.0]))
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([artisan_sig, merchant_sig]),
+		"population": PackedInt64Array([8, 1]),
+		"funds": PackedInt64Array([1000000000, 100000000]),
+	}, {"stock": stock, "price": prices})
+	_expect("zero-construction collector fixture bootstraps", bool(boot.get("ok", false)))
+	_run_day(ext, 0)
+	_run_day(ext, 1)
+	var report := _run_day(ext, 2)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var counts: PackedInt64Array = buildings.building_counts_by_type
+	var kinds: PackedInt32Array = catalog.building_kinds
+	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
+	var primitive_count := 0
+	for type_id in range(kinds.size()):
+		if kinds[type_id] == 0 and construction_offsets[type_id] == \
+				construction_offsets[type_id + 1]:
+			primitive_count += int(counts[type_id])
+	_expect("profitable zero-construction collector passes capital and resource gates",
+		int(report.get("building_investments_started", 0)) == 1 and
+		int(report.get("building_investment_candidates", 0)) == 1 and
+		int(report.get("building_owner_mobility", 0)) == 1 and
+		int(report.get("building_investment_capital_transferred", 0)) > 0 and
+		int(report.get("construction_goods_consumed", -1)) == 0 and
+		primitive_count == 1)
+	_expect("zero-construction collector investment conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
+func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.merchant_market_making_days_q16 = 1966080
+	profile.resource_safe_harvest_q16 = 0
 	profile.starvation_death_rate_q32 = 0
 	var signatures: PackedStringArray = catalog.signature_keys
 	var artisan_sig := signatures.find("artisan|default")
@@ -728,11 +1125,12 @@ func _test_investment_respects_installed_capacity(source_catalog: Dictionary,
 	var hunting_id := building_ids.find("stone_age_hunting_camp")
 	var goods: PackedStringArray = catalog.good_ids
 	var tool_good := goods.find("chipped_stone_tools")
+	_require_materials_for_primitive_collectors(catalog, tool_good)
 	_minimize_household_good_demand(catalog, tool_good)
 	var input_offsets: PackedInt32Array = catalog.building_input_offsets
 	var hunting_input := int(input_offsets[hunting_id])
 	var input_quantities: PackedInt64Array = catalog.building_input_quantities
-	input_quantities[hunting_input] = 210
+	input_quantities[hunting_input] = 1
 	catalog.building_input_quantities = input_quantities
 	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
 	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
@@ -742,9 +1140,9 @@ func _test_investment_respects_installed_capacity(source_catalog: Dictionary,
 		candidate_goods[candidate_idx] = tool_good
 	catalog.building_input_candidate_good_ids = candidate_goods
 	var ext := _new_ext(catalog)
-	_expect("installed-capacity country bootstraps",
+	_expect("existing-market entry country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 287))
-	_expect("installed-capacity runtime configures",
+	_expect("existing-market entry runtime configures",
 		bool(ext.configure_economy(catalog, profile, 1, 287).get("ok", false)))
 	var stock := PackedInt64Array()
 	stock.resize(goods.size())
@@ -766,7 +1164,7 @@ func _test_investment_respects_installed_capacity(source_catalog: Dictionary,
 		"building_owner_signature_ids": PackedInt32Array([artisan_sig, hunter_sig]),
 		"building_counts": PackedInt64Array([3, 3]),
 	})
-	_expect("installed-capacity fixture bootstraps", bool(boot.get("ok", false)))
+	_expect("existing-market entry fixture bootstraps", bool(boot.get("ok", false)))
 	var report := {}
 	for day in range(3):
 		report = _run_day(ext, day)
@@ -775,19 +1173,70 @@ func _test_investment_respects_installed_capacity(source_catalog: Dictionary,
 	var group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
 	var rejection := int((buildings.investment_rejection_reason as PackedInt32Array)[group]) \
 		if group >= 0 else -1
-	_expect("installed stone-tool capacity blocks redundant construction",
+	_expect("installed capacity no longer rejects an otherwise reviewed entry",
 		count == 3 and int(report.get("building_investments_started", 0)) == 0 and
-		rejection == 4)
-	_expect("installed-capacity review conserves every ledger",
+		rejection == 6)
+	_expect("existing-market entry review conserves every ledger",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
+
+	var coverage_catalog := catalog.duplicate(true)
+	var construction_good_ids: PackedInt32Array = \
+		coverage_catalog.building_construction_good_ids
+	var construction_offsets: PackedInt32Array = \
+		coverage_catalog.building_construction_offsets
+	var logs_good := goods.find("logs")
+	for item in range(int(construction_offsets[knapping_id]),
+			int(construction_offsets[knapping_id + 1])):
+		construction_good_ids[item] = logs_good
+	coverage_catalog.building_construction_good_ids = construction_good_ids
+	var flint_good := goods.find("flint")
+	var coverage_stock := PackedInt64Array()
+	coverage_stock.resize(goods.size())
+	coverage_stock.fill(1000000)
+	coverage_stock[tool_good] = 0
+	coverage_stock[flint_good] = 0
+	var coverage_ext := _new_ext(coverage_catalog)
+	_expect("input-coverage country bootstraps",
+		CountryTestHelper.configure_all_technologies(coverage_ext, coverage_catalog, 1, 289))
+	_expect("input-coverage runtime configures", bool(coverage_ext.configure_economy(
+		coverage_catalog, profile, 1, 289).get("ok", false)))
+	var coverage_boot: Dictionary = coverage_ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			artisan_sig, hunter_sig, forager_sig, merchant_sig]),
+		"population": PackedInt64Array([3, 3, 20, 1]),
+		"funds": PackedInt64Array([300000000, 300000000, 900000000, 300000000]),
+	}, {
+		"stock": coverage_stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([knapping_id, hunting_id]),
+		"building_owner_signature_ids": PackedInt32Array([artisan_sig, hunter_sig]),
+		"building_counts": PackedInt64Array([3, 3]),
+	})
+	_expect("input-coverage fixture bootstraps", bool(coverage_boot.get("ok", false)))
+	var coverage_report := {}
+	for day in range(3):
+		coverage_report = _run_day(coverage_ext, day)
+	var coverage_buildings: Dictionary = coverage_ext.get_building_cell_snapshot(0)
+	var coverage_group := (coverage_buildings.group_type_ids as PackedInt32Array).find(knapping_id)
+	_expect("zero hard-input coverage rejects entry as input-chain constrained",
+		coverage_group >= 0 and int(coverage_report.get("building_investments_started", 0)) == 0 and
+		int((coverage_buildings.investment_rejection_reason as PackedInt32Array)[coverage_group]) == 8)
+	_expect("input-coverage review conserves every ledger",
+		int(coverage_report.get("population_error", 1)) == 0 and
+		int(coverage_report.get("money_error", 1)) == 0 and
+		int(coverage_report.get("goods_error", 1)) == 0)
 
 
 func _test_investment_requires_owner_livelihood(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
+	profile.merchant_market_making_days_q16 = 1966080
+	profile.resource_safe_harvest_q16 = 0
 	profile.starvation_death_rate_q32 = 0
 	var signatures: PackedStringArray = catalog.signature_keys
 	var artisan_sig := signatures.find("artisan|default")
@@ -799,6 +1248,7 @@ func _test_investment_requires_owner_livelihood(source_catalog: Dictionary,
 	var hunting_id := building_ids.find("stone_age_hunting_camp")
 	var goods: PackedStringArray = catalog.good_ids
 	var tool_good := goods.find("chipped_stone_tools")
+	_require_materials_for_primitive_collectors(catalog, tool_good)
 	_minimize_household_good_demand(catalog, tool_good)
 	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
 	var default_prices: PackedInt32Array = catalog.good_default_price.duplicate()
@@ -853,6 +1303,9 @@ func _test_investment_requires_owner_livelihood(source_catalog: Dictionary,
 	_expect("shortage cannot approve a workshop that misses owner livelihood",
 		count == 1 and int(report.get("building_investments_started", 0)) == 0 and
 		rejection == 5)
+	_expect("realized workshop margin includes owner livelihood",
+		group >= 0 and
+		int((buildings.realized_profit_margin_q16 as PackedInt32Array)[group]) < 0)
 
 
 func _test_endogenous_investment_repairs_dead_merchant(source_catalog: Dictionary,
@@ -1050,6 +1503,7 @@ func _test_survival_retention_cap(catalog: Dictionary, source_profile: Dictionar
 		bool(ext.configure_economy(catalog, profile, 1, 179).get("ok", false)))
 	var signatures: PackedStringArray = catalog.signature_keys
 	var forager_sig := signatures.find("forager|default")
+	var artisan_sig := signatures.find("artisan|default")
 	var merchant_sig := signatures.find("merchant|default")
 	var gathering_id := (catalog.building_type_ids as PackedStringArray).find("gathering_ground")
 	var goods: PackedStringArray = catalog.good_ids
@@ -1077,6 +1531,9 @@ func _test_survival_retention_cap(catalog: Dictionary, source_profile: Dictionar
 	var discarded := int((buildings.last_discarded as PackedInt64Array)[0])
 	_expect("survival retention is positive but capped below production",
 		output > 0 and retained > 0 and retained < output and sold > 0)
+	_expect("consumed retained output offsets livelihood without minting cash",
+		int((buildings.owner_livelihood_in_kind_credit as PackedInt64Array)[0]) > 0 and
+		int(report.get("money_error", 1)) == 0)
 	_expect("retention-cap output reconciles sale, retention, and discard",
 		output == retained + sold + discarded)
 	_expect("retention-cap cycle conserves every ledger",
@@ -1142,12 +1599,14 @@ func _test_hunter_subsistence_and_working_capital(source_catalog: Dictionary,
 	var pop: Dictionary = ext.get_population_cell_snapshot(0)
 	var hunter_row := _row_for_signature(pop, hunter_sig)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("forty-eight hunters survive 120 food-empty market days from dynamic subsistence",
+	_expect("forty-eight hunters finish 120 food-empty market days at healthy satisfaction",
 		hunter_row >= 0 and int((pop.populations as PackedInt64Array)[hunter_row]) == 48 and
-		int((pop.satisfaction_by_cohort_q16 as PackedInt32Array)[hunter_row]) >= 32768)
+		int((pop.satisfaction_by_cohort_q16 as PackedInt32Array)[hunter_row]) >= 58982)
 	_expect("hunter production stays above the fixed probe and protects next-period tool cash",
 		int((buildings.last_output as PackedInt64Array)[0]) > 0 and
 		int((buildings.planned_utilization_q16 as PackedInt32Array)[0]) > 65536 / 6 and
+		int((buildings.funded_capacity_q16 as PackedInt64Array)[0]) ==
+			int((buildings.purchase_intent_capacity_q16 as PackedInt64Array)[0]) and
 		reserve_seen)
 	_expect("hunter-subsistence cycles conserve every ledger", ledgers_ok)
 
@@ -1171,6 +1630,7 @@ func _test_shortage_recovery_uses_household_stock(source_catalog: Dictionary,
 		bool(ext.configure_economy(catalog, profile, 1, 183).get("ok", false)))
 	var signatures: PackedStringArray = catalog.signature_keys
 	var forager_sig := signatures.find("forager|default")
+	var artisan_sig := signatures.find("artisan|default")
 	var merchant_sig := signatures.find("merchant|default")
 	var goods: PackedStringArray = catalog.good_ids
 	var plant_id := goods.find("gathered_plants")
@@ -1178,15 +1638,15 @@ func _test_shortage_recovery_uses_household_stock(source_catalog: Dictionary,
 	stock.resize(goods.size())
 	stock[plant_id] = 1000000
 	var boot: Dictionary = ext.bootstrap_economy({
-		"cell_indices": PackedInt32Array([0, 0]),
-		"signature_ids": PackedInt32Array([forager_sig, merchant_sig]),
-		"population": PackedInt64Array([1, 1]),
-		"funds": PackedInt64Array([100000000, 100000000]),
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([forager_sig, artisan_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1, 1]),
+		"funds": PackedInt64Array([100000000, 100000000, 100000000]),
 	}, {
 		"stock": stock,
 		"building_cells": PackedInt32Array([0, 0]),
 		"building_type_ids": PackedInt32Array([gathering_id, hearth_id]),
-		"building_owner_signature_ids": PackedInt32Array([forager_sig, forager_sig]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig, artisan_sig]),
 		"building_counts": PackedInt64Array([1, 1]),
 	})
 	_expect("household-stock recovery settlement bootstraps", bool(boot.get("ok", false)))
@@ -1221,6 +1681,73 @@ func _test_shortage_recovery_uses_household_stock(source_catalog: Dictionary,
 	_expect("one-unit raw stock does not block shortage recovery",
 		row1 >= 0 and row2 >= 0 and household1 <= 1 and
 		utilization2 >= utilization1 and utilization2 > 0)
+
+func _test_business_demand_recovers_industrial_utilization(
+		source_catalog: Dictionary, source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var knapping_id := building_ids.find("knapping_workshop")
+	var timber_id := building_ids.find("timber_collector")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	var logs_good := goods.find("logs")
+	_minimize_household_good_demand(catalog, tool_good)
+	_require_materials_for_primitive_collectors(catalog, tool_good)
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var timber_input := int(input_offsets[timber_id])
+	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
+	for candidate_idx in range(
+			int(candidate_offsets[timber_input]),
+			int(candidate_offsets[timber_input + 1])):
+		candidate_goods[candidate_idx] = tool_good
+	catalog.building_input_candidate_good_ids = candidate_goods
+	var ext := _new_ext(catalog)
+	_expect("business-demand recovery country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 187))
+	_expect("business-demand recovery runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 187).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var forager_sig := signatures.find("forager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	stock[tool_good] = 0
+	stock[logs_good] = 0
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([artisan_sig, forager_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 3, 1]),
+		"funds": PackedInt64Array([200000, 200000, 1000000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([knapping_id, timber_id]),
+		"building_owner_signature_ids": PackedInt32Array([artisan_sig, forager_sig]),
+		"building_counts": PackedInt64Array([1, 3]),
+	})
+	_expect("business-demand recovery fixture bootstraps", bool(boot.get("ok", false)))
+	var ledgers_ok := true
+	for day in range(7):
+		var report := _run_day(ext, day)
+		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and \
+			int(report.get("money_error", 1)) == 0 and \
+			int(report.get("goods_error", 1)) == 0
+	var market: Dictionary = ext.get_market_cell_snapshot(0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
+	var utilization := int((buildings.planned_utilization_q16 as PackedInt32Array)[group]) \
+		if group >= 0 else 0
+	_expect("business-only tool demand remains visible to production planning",
+		_good_value(market, "business_demand_ema", "chipped_stone_tools") > 0 and
+		_good_value(market, "demand_ema", "chipped_stone_tools") == 0)
+	_expect("business shortage keeps knapping above the industrial probe floor",
+		group >= 0 and utilization > 65536 / 32)
+	_expect("business-demand recovery cycles conserve every ledger", ledgers_ok)
 
 func _test_production_input_hard_reserve(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
@@ -1762,6 +2289,28 @@ func _sum_u8(values: PackedByteArray) -> int:
 	for value in values:
 		total += int(value)
 	return total
+
+
+func _require_materials_for_primitive_collectors(
+		catalog: Dictionary, blocking_good: int) -> void:
+	var kinds: PackedInt32Array = catalog.building_kinds
+	var old_offsets: PackedInt32Array = catalog.building_construction_offsets
+	var old_goods: PackedInt32Array = catalog.building_construction_good_ids
+	var old_quantities: PackedInt64Array = catalog.building_construction_quantities
+	var offsets := PackedInt32Array([0])
+	var goods := PackedInt32Array()
+	var quantities := PackedInt64Array()
+	for type_id in range(kinds.size()):
+		for edge in range(int(old_offsets[type_id]), int(old_offsets[type_id + 1])):
+			goods.append(old_goods[edge])
+			quantities.append(old_quantities[edge])
+		if kinds[type_id] == 0 and old_offsets[type_id] == old_offsets[type_id + 1]:
+			goods.append(blocking_good)
+			quantities.append(1000000000000)
+		offsets.append(goods.size())
+	catalog.building_construction_offsets = offsets
+	catalog.building_construction_good_ids = goods
+	catalog.building_construction_quantities = quantities
 
 
 func _minimize_household_good_demand(catalog: Dictionary, good_id: int) -> void:

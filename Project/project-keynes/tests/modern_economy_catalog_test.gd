@@ -134,7 +134,7 @@ func _audit(catalog: Dictionary) -> void:
 	var guild_hall = load("res://data/economy/buildings/guild_hall.tres")
 	var steam_works = load("res://data/economy/buildings/steam_engine_works.tres")
 	var stone_owner_policy := {
-		"communal_hearth": "forager", "flint_quarry": "forager",
+		"communal_hearth": "artisan", "flint_quarry": "forager",
 		"gathering_ground": "forager", "household_weaving_shelter": "artisan",
 		"knapping_workshop": "artisan", "lumber_plant": "artisan",
 		"marine_fish_collector": "fisher",
@@ -150,7 +150,7 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("stone hunting sustains its hunter and yields fewer byproducts",
 		stone_hunting != null and
 		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide", "fur"]) and
-		stone_hunting.output_quantities_per_day == PackedInt64Array([3728, 45, 23]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([4846, 59, 30]) and
 		stone_hunting.output_quantities_per_day[0] >= 171 and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and

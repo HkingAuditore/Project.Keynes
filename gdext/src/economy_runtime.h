@@ -146,6 +146,10 @@ public:
 
 private:
     friend class EconomyCsvRecorder;
+    enum StructuralOpcode : int32_t {
+        STRUCTURAL_BIRTH = -1,
+        STRUCTURAL_REMOVE_EMPTY = 0,
+    };
     enum class Stage : int32_t {
         IDLE = 0,
         EPOCH_BEGIN = 1,
@@ -393,6 +397,7 @@ private:
         INVESTMENT_REJECTION_SPONSOR_CAPITAL = 11,
         INVESTMENT_REJECTION_MATERIALS = 12,
         INVESTMENT_REJECTION_RESOURCE = 13,
+        INVESTMENT_REJECTION_PROBABILITY = 14,
     };
 
     struct PopulationStore {
@@ -660,6 +665,7 @@ private:
         int64_t business_demand = 0;
         int64_t supply = 0;
         int64_t excess_q16 = 0;
+        int64_t inventory_target = 0;
         int64_t inventory_q16 = 0;
         int64_t shortage_q16 = 0;
         int64_t cost_q16 = 0;
@@ -738,6 +744,11 @@ private:
         int64_t quantity = 0;
     };
 
+    struct BuildingInKindCredit {
+        int32_t building_group = -1;
+        int64_t frozen_value = 0;
+    };
+
     struct EventLeg;
     struct CashflowEntry;
 
@@ -754,10 +765,11 @@ private:
         int64_t retained_output_consumed = 0;
         int64_t retained_output_discarded = 0;
         std::vector<int64_t> retained_consumed_by_good;
+        std::vector<BuildingInKindCredit> building_in_kind_credits;
         int64_t owner_working_capital_reserved = 0;
         int64_t births = 0;
         int64_t deaths = 0;
-        int64_t unemployed_population_delta = 0;
+        std::vector<int32_t> population_changed_cells;
         int64_t closing_population = 0;
         int64_t closing_cohort_funds = 0;
         int64_t closing_goods_stock = 0;
@@ -1121,6 +1133,7 @@ private:
     int32_t _survival_staple_need_stable_id = -1;
     int32_t _survival_clothing_need_stable_id = -1;
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
+    int32_t _survival_production_target_q16 = Q16_ONE;
     int64_t _starvation_death_rate_q32 = Q32_ONE / 200;
     int32_t _wage_ema_alpha_q16 = 8192;
     int32_t _wage_max_rise_q16_per_day = 1311;
@@ -1135,7 +1148,7 @@ private:
     int32_t _building_restart_margin_q16 = 6554;
     int32_t _building_restart_cycles = 2;
     int32_t _merchant_procurement_cash_reserve_q16 = 8192;
-    int32_t _merchant_market_making_days_q16 = Q16_ONE * 30;
+    int32_t _merchant_market_making_days_q16 = Q16_ONE * 60;
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     // Reserved profession representing unemployed population. Resolved from the
@@ -1221,11 +1234,15 @@ private:
     int64_t _construction_goods_consumed = 0;
     int64_t _building_investment_candidates = 0;
     int64_t _building_owner_mobility = 0;
+    int64_t _building_owner_job_reallocations = 0;
+    int64_t _building_owner_job_profession_changes = 0;
+    int64_t _building_owner_job_probability_skips = 0;
     int64_t _building_investments_started = 0;
     int64_t _building_investment_blocked_funds = 0;
     int64_t _building_investment_blocked_materials = 0;
     int64_t _building_investment_blocked_sponsor_capital = 0;
     int64_t _building_investment_blocked_resources = 0;
+    int64_t _building_investment_probability_skips = 0;
     int64_t _building_investment_capital_transferred = 0;
     int64_t _desired_business_demand = 0;
     int64_t _funded_business_demand = 0;
@@ -1426,6 +1443,7 @@ private:
     std::vector<int64_t> _building_survival_utilization_floor_q16;
     std::vector<int64_t> _building_funded_capacity_q16;
     std::vector<int64_t> _building_working_capital_allocated;
+    std::vector<int64_t> _building_owner_livelihood_credit;
     std::vector<int64_t> _building_investment_score_q16;
     std::vector<int64_t> _building_investment_payback_days;
     std::vector<int32_t> _building_investment_rejection;
@@ -1547,6 +1565,7 @@ private:
     std::vector<CellSummary> _committed_cells;
     std::vector<CellSummary> _staging_cells;
     std::vector<int32_t> _structural_touched_cells;
+    std::vector<int32_t> _population_changed_cells;
     int64_t _structural_funds_to_treasury = 0;
 
     std::vector<std::string> _building_type_ids;
@@ -1708,7 +1727,9 @@ private:
     bool capture_country_epoch(std::string &error);
     bool apply_build_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
-    bool run_building_employment_cell(int32_t cell, std::string &error);
+    bool run_building_employment_cell(int32_t cell,
+                                      bool allow_owner_job_reallocation,
+                                      std::string &error);
     void replace_employment_metrics_for_cell(int32_t cell, int64_t owner_jobs,
                                              int64_t employee_jobs,
                                              int64_t unemployed_population);
@@ -1724,8 +1745,11 @@ private:
                                             std::string &error);
     int32_t find_entrepreneur_source(int32_t cell, int32_t target_signature,
                                      int64_t required_capital,
-                                     int64_t target_income_per_day) const;
-    int64_t projected_owner_income_per_day(const BuildingGroup &group);
+                                     int64_t target_income_per_day,
+                                     int32_t building_type_id,
+                                     bool &had_eligible_sponsor) const;
+    int64_t projected_owner_income_per_day(const BuildingGroup &group,
+                                           int64_t &sat) const;
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
     bool commit_ready_construction(std::vector<int32_t> &changed_cells);

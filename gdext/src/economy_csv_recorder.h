@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 12;
+    static constexpr int32_t SCHEMA_VERSION = 14;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -168,11 +168,15 @@ public:
         int64_t construction_goods_consumed = 0;
         int64_t building_investment_candidates = 0;
         int64_t building_owner_mobility = 0;
+        int64_t building_owner_job_reallocations = 0;
+        int64_t building_owner_job_profession_changes = 0;
+        int64_t building_owner_job_probability_skips = 0;
         int64_t building_investments_started = 0;
         int64_t building_investment_blocked_funds = 0;
         int64_t building_investment_blocked_materials = 0;
         int64_t building_investment_blocked_sponsor_capital = 0;
         int64_t building_investment_blocked_resources = 0;
+        int64_t building_investment_probability_skips = 0;
         int64_t building_investment_capital_transferred = 0;
         int64_t desired_business_demand = 0;
         int64_t funded_business_demand = 0;
@@ -264,6 +268,7 @@ public:
         int64_t owner_livelihood_required = 0;
         int64_t viability_operating_cost = 0;
         int64_t viability_income_gap = 0;
+        int64_t projected_owner_income_per_day = 0;
         int64_t construction_ready_day = 0;
     };
 

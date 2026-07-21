@@ -172,7 +172,7 @@ func _run() -> void:
 	_test_country_boundary(compiled, catalog)
 	_test_topology_contract(compiled, catalog)
 	_test_cold_start_inventory_horizon(compiled, catalog)
-	_test_price_capped_survival_shortage_routes(compiled, catalog)
+	_test_survival_shortage_relief_routes(compiled, catalog)
 	_test_unprofitable_rejected(compiled, catalog)
 	_test_invalid_seller_rebind(compiled, catalog)
 	_test_worker_scalar_equivalence(compiled, catalog)
@@ -384,7 +384,7 @@ func _test_cold_start_inventory_horizon(compiled: Dictionary,
 	_expect("zero-supply demand still receives its configured inventory horizon",
 		candidate >= 0 and exact and exceeds_epoch_recovery)
 
-func _test_price_capped_survival_shortage_routes(compiled: Dictionary, catalog: Dictionary) -> void:
+func _test_survival_shortage_relief_routes(compiled: Dictionary, catalog: Dictionary) -> void:
 	var ext := _new_ext(compiled, 2)
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
@@ -425,10 +425,10 @@ func _test_price_capped_survival_shortage_routes(compiled: Dictionary, catalog: 
 		orders = ext.get_trade_orders_for_cell(0, 0, 64)
 		if int(orders.get("total", 0)) > 0:
 			break
-	_expect("price-capped survival shortage can route at zero spread",
+	_expect("survival shortage relief can route at zero spread",
 		int(orders.get("total", 0)) > 0 and
 		int(report.get("trade_candidates_accepted", 0)) > 0)
-	_expect("price-capped survival relief remains conserved",
+	_expect("survival shortage relief remains conserved",
 		int(report.get("goods_error", 1)) == 0 and int(report.get("money_error", 1)) == 0)
 
 func _test_unprofitable_rejected(compiled: Dictionary, catalog: Dictionary) -> void:

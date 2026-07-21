@@ -58,21 +58,92 @@ func _run() -> void:
 		(catalog.need_price_quantity_floor_q16 as PackedInt32Array).size() ==
 		(catalog.need_stable_ids as PackedInt32Array).size())
 	_expect("old fur slot removed", DCComponentSchema.find_by_name(&"cell.goods_fur_qty").is_empty())
+	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
+	var death_rates: PackedInt64Array = catalog.signature_death_rate_q32
+	var birth_weights: PackedInt64Array = catalog.signature_satisfaction_birth_weight_q16
+	_expect("profession defaults compile calibrated natural demography",
+		birth_rates.size() > 0 and birth_rates[0] == 353011 and
+		death_rates.size() == birth_rates.size() and death_rates[0] == 294176 and
+		birth_weights.size() == birth_rates.size() and birth_weights[0] == 65536)
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("  [SKIP] DCWorldExt unavailable")
 		_finish()
 		return
-	_test_default_active_gate(catalog)
-	_test_merchant_trade_and_save(catalog)
-	_test_economy_event_trace(catalog)
-	_test_environment_substitution(catalog)
-	_test_price_quantity_response(catalog)
-	_test_survival_labor_and_mortality(catalog)
-	_test_demand_preview_query(catalog)
-	_test_cycle_approximation(catalog)
-	_test_cycle_deadline_catchup(catalog)
+	var stable_catalog := _without_natural_demography(catalog)
+	_test_default_active_gate(stable_catalog)
+	_test_merchant_trade_and_save(stable_catalog)
+	_test_economy_event_trace(stable_catalog)
+	_test_environment_substitution(stable_catalog)
+	_test_price_quantity_response(stable_catalog)
+	_test_price_v3_numeric_guards_and_horizons(stable_catalog)
+	_test_survival_labor_and_mortality(stable_catalog)
+	_test_demand_preview_query(stable_catalog)
+	_test_cycle_approximation(stable_catalog)
+	_test_cycle_deadline_catchup(stable_catalog)
 	_test_worker_scalar_equivalence(catalog)
+	_test_satisfaction_driven_births(catalog)
 	_finish()
+
+func _without_natural_demography(compiled: Dictionary) -> Dictionary:
+	var result := compiled.duplicate(true)
+	var births: PackedInt64Array = result.signature_birth_rate_q32
+	var deaths: PackedInt64Array = result.signature_death_rate_q32
+	births.fill(0)
+	deaths.fill(0)
+	result.signature_birth_rate_q32 = births
+	result.signature_death_rate_q32 = deaths
+	return result
+
+func _test_satisfaction_driven_births(compiled: Dictionary) -> void:
+	const POPULATION := 1000000
+	var healthy := _new_ext(1, 1.0)
+	var deprived := _new_ext(1, 1.0)
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	var profile := _native_profile(false, 1)
+	profile.starvation_death_rate_q32 = 0
+	for ext in [healthy, deprived]:
+		_expect("birth fixture country bootstraps",
+			CountryTestHelper.configure_all_technologies(ext, catalog, 1, 2201))
+		_expect("birth fixture runtime configures",
+			bool(ext.configure_economy(catalog, profile, 1, 2201).get("ok", false)))
+	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
+	var unemployed_sig: int = (compiled.signature_keys as PackedStringArray).find("unemployed|default")
+	var stock := PackedInt64Array()
+	stock.resize((compiled.good_ids as PackedStringArray).size())
+	stock.fill(1000000000000)
+	var population_packet := {
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([worker_sig]),
+		"population": PackedInt64Array([POPULATION]),
+		"funds": PackedInt64Array([1000000000000000]),
+	}
+	_expect("healthy birth fixture bootstraps", bool(healthy.bootstrap_economy(
+		population_packet, {"stock": stock,
+			"price": compiled.good_default_price}).get("ok", false)))
+	var deprived_packet := population_packet.duplicate(true)
+	deprived_packet.funds = PackedInt64Array([0])
+	_expect("deprived birth fixture bootstraps",
+		bool(deprived.bootstrap_economy(deprived_packet, {}).get("ok", false)))
+	var healthy_report := _run_day(healthy, 0)
+	var deprived_report := _run_day(deprived, 0)
+	_expect("healthy satisfaction produces births above natural deaths",
+		int(healthy_report.get("births", 0)) > int(healthy_report.get("deaths", 0)) and
+		int(healthy_report.get("population_error", 1)) == 0)
+	_expect("zero survival satisfaction suppresses births but keeps natural deaths",
+		int(deprived_report.get("births", -1)) == 0 and
+		int(deprived_report.get("deaths", 0)) > 0 and
+		int(deprived_report.get("population_error", 1)) == 0)
+	var healthy_pop: Dictionary = healthy.get_population_cell_snapshot(0)
+	var signatures: PackedInt32Array = healthy_pop.signature_ids
+	var newborn_row := signatures.find(unemployed_sig)
+	_expect("births aggregate into a zero-fund same-ethnicity unemployed cohort",
+		newborn_row >= 0 and
+		int((healthy_pop.populations as PackedInt64Array)[newborn_row]) ==
+			int(healthy_report.get("births", 0)) and
+		int((healthy_pop.funds_by_cohort as PackedInt64Array)[newborn_row]) == 0 and
+		int((healthy_pop.owner_employed_by_cohort as PackedInt64Array)[newborn_row]) == 0 and
+		int((healthy_pop.employee_employed_by_cohort as PackedInt64Array)[newborn_row]) == 0)
 
 func _test_default_active_gate(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.5)
@@ -98,8 +169,8 @@ func _test_default_active_gate(compiled: Dictionary) -> void:
 		int(scaled_boot.get("market_cycle_days", 0)) == 5 and
 		int(scaled_boot.get("settlement_phase_count", 0)) == 5 and
 		bool(scaled_boot.get("workload_deadline_feasible", false)))
-	_expect("default merchant inventory baseline is thirty days",
-		int(ext.get_economy_report().get("merchant_market_making_days_q16", 0)) == 1966080)
+	_expect("default merchant inventory baseline is sixty days",
+		int(ext.get_economy_report().get("merchant_market_making_days_q16", 0)) == 3932160)
 	_expect("ACTIVE enters production scheduler", bool(ext.economy_should_run(0)) and
 		String(ext.get_economy_report().get("market_runtime_mode", "")) == "ACTIVE")
 
@@ -322,7 +393,9 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	for chunk in chunks:
 		_expect("restore chunk accepted", bool(restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
-	_expect("v14 stream restore hash exact", ext.get_economy_state_hash() == restored.get_economy_state_hash())
+	var source_hash: int = ext.get_economy_state_hash()
+	var restored_hash: int = restored.get_economy_state_hash()
+	_expect("v14 stream restore hash exact", source_hash == restored_hash)
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)
@@ -440,6 +513,54 @@ func _test_price_quantity_response(compiled: Dictionary) -> void:
 		expensive_clothing > 0 and expensive_clothing < baseline_clothing)
 	_expect("staples are less price elastic than protein",
 		expensive_staple * baseline_protein > expensive_protein * baseline_staple)
+
+func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
+	var goods: PackedStringArray = compiled.good_ids
+	var old_min_prices: PackedInt32Array = compiled.good_min_price
+	var old_max_prices: PackedInt32Array = compiled.good_max_price
+
+	var shortage := _configured_price_worker(compiled, 1811)
+	var shortage_report: Dictionary = {}
+	for day in range(16):
+		shortage_report = _run_day(shortage, day)
+	var shortage_market: Dictionary = shortage.get_market_cell_snapshot(0)
+	var game_meat := goods.find("game_meat")
+	_expect("sustained shortage can exceed the legacy catalog maximum price",
+		_good_value(shortage_market, "price", "game_meat") >
+		int(old_max_prices[game_meat]))
+	var price_target := _good_value(
+		shortage_market, "price_inventory_target", "game_meat")
+	var daily_demand := _good_value(shortage_market, "demand_ema", "game_meat") + \
+		_good_value(shortage_market, "business_demand_ema", "game_meat")
+	var merchant_target := _good_value(
+		shortage_market, "merchant_inventory_target", "game_meat")
+	_expect("price inventory pressure uses only one settlement period",
+		daily_demand > 0 and price_target == daily_demand * 5)
+	_expect("merchant procurement retains its longer inventory horizon",
+		merchant_target > price_target)
+
+	var oversupply := _configured_price_worker(compiled, 1812)
+	oversupply.submit_economy_commands(_stock_commands(
+		0, goods, {"raw_hide": 100000000}, 0))
+	var oversupply_report: Dictionary = {}
+	for day in range(36):
+		oversupply_report = _run_day(oversupply, day)
+	var oversupply_market: Dictionary = oversupply.get_market_cell_snapshot(0)
+	var raw_hide := goods.find("raw_hide")
+	_expect("persistent valueless oversupply can fall below the legacy minimum price",
+		_good_value(oversupply_market, "price", "raw_hide") <
+		int(old_min_prices[raw_hide]))
+	_expect("numeric price guards preserve positive prices and exact ledgers",
+		_good_value(oversupply_market, "price", "raw_hide") >= 1 and
+		String(oversupply.get_economy_report().get("price_runtime_bounds", "")) ==
+			"numeric_guard_only" and
+		int(oversupply.get_economy_report().get("price_numeric_guard_min", 0)) == 1 and
+		int(shortage_report.get("population_error", 1)) == 0 and
+		int(shortage_report.get("money_error", 1)) == 0 and
+		int(shortage_report.get("goods_error", 1)) == 0 and
+		int(oversupply_report.get("population_error", 1)) == 0 and
+		int(oversupply_report.get("money_error", 1)) == 0 and
+		int(oversupply_report.get("goods_error", 1)) == 0)
 
 func _test_demand_preview_query(compiled: Dictionary) -> void:
 	var cold: Object = _configured_single_worker(compiled, 0.0, 1701)

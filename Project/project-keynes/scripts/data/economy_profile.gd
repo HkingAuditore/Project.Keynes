@@ -44,6 +44,9 @@ extends Resource
 @export var living_cost_base_plan_id: StringName = &"survival_household"
 ## Survival satisfaction reaches full workforce capacity at this caloric/cold-exposure ratio.
 @export_range(1, 65536, 1) var starvation_satisfaction_threshold_q16: int = 32768
+## Subsistence producers plan and retain enough food for healthy satisfaction, independently
+## from the lower threshold where starvation mortality begins.
+@export_range(1, 65536, 1) var survival_production_target_q16: int = 65536
 ## Maximum per-person daily Q32 mortality when survival satisfaction is zero.
 @export_range(0, 4294967296, 1) var starvation_death_rate_q32: int = 21474836
 @export_range(0, 65536, 1) var wage_ema_alpha_q16: int = 8192
@@ -61,8 +64,9 @@ extends Resource
 ## Merchants keep 12.5% of frozen opening cash while procurement is active.
 @export_range(0, 65536, 1) var merchant_procurement_cash_reserve_q16: int = 8192
 ## Base inventory horizon before each good's configured target ratio is applied.
-## 1966080 is 30 deterministic Q16 days.
-@export_range(0, 7864320, 1) var merchant_market_making_days_q16: int = 1966080
+## 3932160 is 60 deterministic Q16 days: twelve production cycles and four
+## default trade-response windows.
+@export_range(0, 7864320, 1) var merchant_market_making_days_q16: int = 3932160
 ## Frozen-cycle Market V2 has passed the mobile and 10M-cohort ACTIVE gates.
 @export_enum("OFF", "PROBE", "ACTIVE") var market_runtime_mode: String = "ACTIVE"
 
@@ -125,6 +129,7 @@ func to_native_profile() -> Dictionary:
 		"wealth_reference_per_capita": wealth_reference_per_capita,
 		"living_cost_base_plan_id": String(living_cost_base_plan_id),
 		"starvation_satisfaction_threshold_q16": starvation_satisfaction_threshold_q16,
+		"survival_production_target_q16": survival_production_target_q16,
 		"starvation_death_rate_q32": starvation_death_rate_q32,
 		"wage_ema_alpha_q16": wage_ema_alpha_q16,
 		"wage_max_rise_q16_per_day": wage_max_rise_q16_per_day,
