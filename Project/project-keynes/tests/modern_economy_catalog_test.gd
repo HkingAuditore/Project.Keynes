@@ -28,11 +28,11 @@ func _audit(catalog: Dictionary) -> void:
 	var needs: PackedStringArray = catalog.need_ids
 	var resources: PackedStringArray = catalog.building_resource_ids
 	_expect("simplified catalog has 120 goods", goods.size() == 120)
-	_expect("bounded catalog has 260 production methods", buildings.size() == 260)
+	_expect("bounded catalog has 261 production methods", buildings.size() == 261)
 	_expect("33 labor-relation professions", professions.size() == 33)
-	_expect("17 differentiated household needs", needs.size() == 17)
-	_expect("30 registered natural resources", ResourceRegistryScript.count() == 30)
-	_expect("building catalog references 30 distinct natural resources", resources.size() == 30)
+	_expect("18 differentiated household needs", needs.size() == 18)
+	_expect("31 registered natural resources", ResourceRegistryScript.count() == 31)
+	_expect("building catalog references 31 distinct natural resources", resources.size() == 31)
 	for relation_profession in ["enslaved_laborer", "serf", "tenant_farmer",
 			"indentured_laborer", "apprentice", "journeyman", "manager", "researcher"]:
 		_expect("labor relation profession exists: %s" % relation_profession,
@@ -50,7 +50,7 @@ func _audit(catalog: Dictionary) -> void:
 	for capacity_id in ["arable_land", "paddy_land", "plantation_land", "pasture"]:
 		_expect("agricultural capacity resource exists: %s" % capacity_id,
 			resources.find(capacity_id) >= 0)
-	for retired_resource in ["cattle", "sheep", "pigs", "horses", "fresh_water", "freshwater_fish"]:
+	for retired_resource in ["cattle", "sheep", "pigs", "horses", "fresh_water"]:
 		_expect("retired natural resource absent: %s" % retired_resource,
 			resources.find(retired_resource) < 0)
 	for retired_good in ["cattle", "sheep", "pigs", "raw_water", "clean_water", "beef", "mutton", "pork"]:
@@ -165,7 +165,9 @@ func _audit(catalog: Dictionary) -> void:
 		early_gold.employee_profession_ids == PackedStringArray(["miner"]) and
 		early_silver.employee_profession_ids == PackedStringArray(["miner"]) and
 		early_gold.employee_slots_per_building == PackedInt64Array([1]) and
-		early_silver.employee_slots_per_building == PackedInt64Array([2]) and
+		early_silver.employee_slots_per_building == PackedInt64Array([1]) and
+		early_silver.output_quantities_per_day == PackedInt64Array([1000]) and
+		early_silver.resource_quantities_per_day == PackedInt64Array([200]) and
 		early_gold.technology_tags.has("tech.gathering") and
 		early_silver.technology_tags.has("tech.gathering"))
 	_expect("bronze workshop uses a small apprentice household",
@@ -381,7 +383,7 @@ func _audit(catalog: Dictionary) -> void:
 			_expect("industrial has no natural resource: %s" % buildings[type_id], resource_offsets[type_id + 1] == resource_offsets[type_id])
 		for edge in range(resource_offsets[type_id], resource_offsets[type_id + 1]):
 			used_resources[production_resources[edge]] = true
-	_expect("collectors cover every referenced resource", collectors >= 50 and used_resources.size() == 30)
+	_expect("collectors cover every referenced resource", collectors >= 50 and used_resources.size() == 31)
 	var resource_modes: PackedInt32Array = catalog.building_production_resource_modes
 	var resource_access_modes: PackedInt32Array = catalog.building_production_resource_access_modes
 	var output_quantities: PackedInt64Array = catalog.building_output_quantities
@@ -695,13 +697,13 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 	var core_needs := ["staple_food", "protein", "produce", "clothing", "housing",
 		"household_goods", "hygiene", "healthcare", "home_energy"]
 	var expected_plan_needs := {
-		"plan_unemployed": ["staple_food"],
-		"survival_household": core_needs,
-		"hunter_household": core_needs + ["work_equipment"],
-		"agrarian_household": core_needs + ["transport", "work_equipment", "recreation"],
-		"extractive_household": core_needs + ["transport", "work_equipment"],
-		"industrial_worker_household": core_needs + ["transport", "work_equipment"],
-		"artisan_household": core_needs + ["education_culture", "work_equipment", "luxury"],
+		"plan_unemployed": ["staple_food", "quality_of_life"],
+		"survival_household": core_needs + ["quality_of_life"],
+		"hunter_household": core_needs + ["work_equipment", "quality_of_life"],
+		"agrarian_household": core_needs + ["transport", "work_equipment", "recreation", "quality_of_life"],
+		"extractive_household": core_needs + ["transport", "work_equipment", "quality_of_life"],
+		"industrial_worker_household": core_needs + ["transport", "work_equipment", "quality_of_life"],
+		"artisan_household": core_needs + ["education_culture", "work_equipment", "luxury", "quality_of_life"],
 		"technical_household": core_needs + ["transport", "communication", "education_culture",
 			"recreation", "durable_goods", "work_equipment", "luxury"],
 		"merchant_household": core_needs + ["transport", "communication", "education_culture",
@@ -735,6 +737,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"work_equipment": [2, 1, 49152, 8192, 262144, 49152],
 		"luxury": [1, 2, 98304, 1024, 524288, 32768],
 		"status_goods": [1, 2, 98304, 1024, 524288, 32768],
+		"quality_of_life": [2, 0, 131072, 1024, 524288, 65536],
 	}
 	var expected_variants := {
 		"staple_food": ["prepared_staples", "bread", "grain", "gathered_plants"],
@@ -753,12 +756,22 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"work_equipment": ["chipped_stone_tools", "bronze_tools", "tools", "precision_tools"],
 		"luxury": ["beverages", "fine_clothing", "fine_furniture"],
 		"status_goods": ["jewelry", "fur", "spices"],
+		"quality_of_life": ["fur", "cloth", "processed_food", "furniture"],
 	}
 	var allowed_cross_uses := {
 		"refined_fuel": ["home_energy", "transport"],
 		"computers": ["education_culture", "recreation"],
 		"beverages": ["recreation", "luxury"],
-		"fur": ["clothing", "status_goods"],
+		"cloth": ["clothing", "quality_of_life"],
+		"furniture": ["household_goods", "quality_of_life"],
+		"processed_food": ["produce", "quality_of_life"],
+		"fur": ["clothing", "status_goods", "quality_of_life"],
+	}
+	var artisan_base_overrides := {
+		"staple_food": 500, "protein": 165, "produce": 275, "clothing": 3,
+		"housing": 4, "household_goods": 2, "hygiene": 9, "healthcare": 3,
+		"home_energy": 72, "education_culture": 1, "work_equipment": 2,
+		"luxury": 1, "quality_of_life": 2,
 	}
 	for plan_idx in range(plan_ids.size()):
 		var plan_id := String(plan_ids[plan_idx])
@@ -777,8 +790,9 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 			if policy.size() != 6:
 				exact = false
 				continue
-			var expected_base := maxi(1, int(floor(
-				(float(policy[0]) * float(scales[policy[1]]) + 50.0) / 100.0)))
+			var expected_base := int(artisan_base_overrides[need_id]) if plan_id == "artisan_household" else \
+				(2 if need_id == "quality_of_life" else maxi(1, int(floor(
+					(float(policy[0]) * float(scales[policy[1]]) + 50.0) / 100.0))))
 			exact = exact and need_base[cursor] == expected_base \
 				and need_wealth[cursor] == policy[2] and need_min[cursor] == policy[3] \
 				and need_max[cursor] == policy[4]

@@ -53,6 +53,7 @@ const _PROFILE_PATHS: Array = [
 	"res://data/resources/manganese_ore.tres",
 	"res://data/resources/sulfur.tres",
 	"res://data/resources/flint.tres",
+	"res://data/resources/freshwater_fish.tres",
 ]
 
 static var _ordered: Array = []        # Array[ResourceProfile]，按 _PROFILE_PATHS 顺序

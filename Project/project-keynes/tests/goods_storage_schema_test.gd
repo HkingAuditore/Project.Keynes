@@ -28,7 +28,7 @@ func _run() -> void:
 		(catalog.good_ids as PackedStringArray).has("grain") and
 		(catalog.good_ids as PackedStringArray).has("meat"))
 	_expect("merchant profession compiles", (catalog.profession_ids as PackedStringArray).has("merchant"))
-	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 17 and
+	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 18 and
 		(catalog.need_ids as PackedStringArray).has("staple_food") and
 		(catalog.need_ids as PackedStringArray).has("healthcare") and
 		(catalog.need_ids as PackedStringArray).has("work_equipment") and
@@ -221,9 +221,9 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 		int(report.get("processed_components", -1))])
 	# The extra component visits are the bounded same-period shortage fallback.
 	_expect("worker and merchant process the bounded catalog shape",
-		int(report.get("processed_needs", -1)) == 27 \
-		and int(report.get("processed_variants", -1)) == 75 \
-		and int(report.get("processed_components", -1)) == 86)
+		int(report.get("processed_needs", -1)) == 28 \
+		and int(report.get("processed_variants", -1)) == 79 \
+		and int(report.get("processed_components", -1)) == 92)
 	_expect("market population conservation exact", int(report.get("population_error", 1)) == 0)
 	_expect("market money conservation exact", int(report.get("money_error", 1)) == 0)
 	_expect("market goods conservation exact", int(report.get("goods_error", 1)) == 0)

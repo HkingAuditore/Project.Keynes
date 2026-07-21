@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 138
+// Schema entries: 140
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -124,6 +124,7 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_res_clay_reserve",                 "res_clay_reserve_arr",                 SlotDType::F32 },
     { "cell_res_wild_game_reserve",            "res_wild_game_reserve_arr",            SlotDType::F32 },
     { "cell_res_marine_fish_reserve",          "res_marine_fish_reserve_arr",          SlotDType::F32 },
+    { "cell_res_freshwater_fish_reserve",      "res_freshwater_fish_reserve_arr",      SlotDType::F32 },
     { "cell_res_arable_land_reserve",          "res_arable_land_reserve_arr",          SlotDType::F32 },
     { "cell_res_paddy_land_reserve",           "res_paddy_land_reserve_arr",           SlotDType::F32 },
     { "cell_res_plantation_land_reserve",      "res_plantation_land_reserve_arr",      SlotDType::F32 },
@@ -154,6 +155,7 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_res_clay_extra_change",            "res_clay_extra_change_arr",            SlotDType::F32 },
     { "cell_res_wild_game_extra_change",       "res_wild_game_extra_change_arr",       SlotDType::F32 },
     { "cell_res_marine_fish_extra_change",     "res_marine_fish_extra_change_arr",     SlotDType::F32 },
+    { "cell_res_freshwater_fish_extra_change", "res_freshwater_fish_extra_change_arr", SlotDType::F32 },
     { "cell_res_arable_land_extra_change",     "res_arable_land_extra_change_arr",     SlotDType::F32 },
     { "cell_res_paddy_land_extra_change",      "res_paddy_land_extra_change_arr",      SlotDType::F32 },
     { "cell_res_plantation_land_extra_change", "res_plantation_land_extra_change_arr", SlotDType::F32 },

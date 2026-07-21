@@ -6107,10 +6107,11 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 							or water_arr[neighbor] == 0:
 						continue
 					var neighbor_landform := int(lf_arr[neighbor]) if have_lf else -1
-					if neighbor_landform in [LandformType.LF.DEEP_OCEAN,
+					if neighbor_landform == LandformType.LF.LAKE:
+						mask |= 4
+					elif neighbor_landform in [LandformType.LF.DEEP_OCEAN,
 							LandformType.LF.OCEAN, LandformType.LF.COAST]:
 						mask |= 8
-						break
 		elif landform in [LandformType.LF.DEEP_OCEAN, LandformType.LF.OCEAN,
 				LandformType.LF.COAST]:
 			mask |= 2

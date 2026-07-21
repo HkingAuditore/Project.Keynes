@@ -223,18 +223,18 @@ func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> v
 	_expect("stone tier builds before replacement",
 		int(stone_report.get("rejected_commands", 0)) == 0 and
 		_building_count(stone_buildings, gathering) == 1)
-	var first_production_report := _run_day(ext, 1)
+	var first_production_report := _run_day(ext, 5)
 	stone_buildings = ext.get_building_cell_snapshot(0)
 	_expect("zero-day construction produces from the following cycle",
 		_building_last_output(stone_buildings, gathering) > 0)
 
-	_grant_technology(ext, compiled, "tech.pottery", 2, 1)
+	_grant_technology(ext, compiled, "tech.pottery", 10, 1)
 	# Employment migration may replace the cohort slot and therefore its
 	# generation-tagged handle; commands must target the current owner handle.
 	forager_handle = _handle_for_signature(ext.get_population_cell_snapshot(0), forager)
 	_expect("obsolete stone build command queues for native rejection", bool(
-		ext.submit_economy_commands(_build_command(2, 2, forager_handle, gathering)).get("ok", false)))
-	var pottery_report := _run_day(ext, 2)
+		ext.submit_economy_commands(_build_command(10, 2, forager_handle, gathering)).get("ok", false)))
+	var pottery_report := _run_day(ext, 10)
 	var pottery_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("higher tier rejects new stone construction with exact reason",
 		int(pottery_report.get("rejected_commands", 0)) == 1 and
@@ -249,8 +249,8 @@ func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> v
 		_tier_state(pottery_buildings, early_weaving, 2, false) and
 		_tier_state(pottery_buildings, pottery_weaving, 2, true))
 
-	_grant_technology(ext, compiled, "tech.guild_organization", 3, 2)
-	_run_day(ext, 3)
+	_grant_technology(ext, compiled, "tech.guild_organization", 15, 2)
+	_run_day(ext, 15)
 	var guild_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("guild tier replaces pottery construction without deleting old assets",
 		_tier_state(guild_buildings, early_farm, 3, false) and
@@ -259,8 +259,8 @@ func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> v
 		_tier_state(guild_buildings, guild_weaving, 3, true) and
 		_building_count(guild_buildings, gathering) == 1)
 
-	_grant_technology(ext, compiled, "tech.steam_power", 4, 3)
-	_run_day(ext, 4)
+	_grant_technology(ext, compiled, "tech.steam_power", 20, 3)
+	_run_day(ext, 20)
 	var steam_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("steam tier is the final constructible subsistence tier",
 		_tier_state(steam_buildings, guild_farm, 4, false) and
@@ -268,8 +268,8 @@ func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> v
 		_tier_state(steam_buildings, guild_weaving, 4, false) and
 		_tier_state(steam_buildings, steam_weaving, 4, true))
 
-	_grant_technology(ext, compiled, "tech.autonomous_systems", 5, 4)
-	_run_day(ext, 5)
+	_grant_technology(ext, compiled, "tech.autonomous_systems", 25, 4)
+	_run_day(ext, 25)
 	var post_industrial: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("post-industrial technology does not create a fifth subsistence tier",
 		_tier_state(post_industrial, steam_farm, 4, true) and

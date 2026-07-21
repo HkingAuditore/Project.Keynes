@@ -119,7 +119,7 @@ func _run() -> void:
 
 	# ── 公式鲁棒性：全部 30 种资源在多日演化后必须有限且非负。
 	var profiles: Array = ResourceProfileRegistry.ordered()
-	_expect("registry loaded 30 resources", profiles.size() == 30)
+	_expect("registry loaded 31 resources", profiles.size() == 31)
 	var all_finite_nonnegative: bool = true
 	var bad_detail: String = ""
 	for p in profiles:
@@ -143,7 +143,7 @@ func _run() -> void:
 			break
 	if not all_finite_nonnegative:
 		printerr("  [detail] %s" % bad_detail)
-	_expect("all 30 resources finite & nonnegative", all_finite_nonnegative)
+	_expect("all 31 resources finite & nonnegative", all_finite_nonnegative)
 
 	# 横跳回归：尾段（最后 5 日）的逐日变化必须小于当前量级的合理比例。
 	var saltpeter_tail: float = _tail_max_step(saltpeter_seq, 5)

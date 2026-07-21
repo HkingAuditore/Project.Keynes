@@ -79,8 +79,8 @@ adaptive 工资。完整法律身份、地租/分成、强制劳动和身份解�
 
 ## 资源抽象与内容规模
 
-当前目录为 120 goods、259 production-method buildings、32 professions、17 needs、8 consumption plans 和
-30 registered resources。锂、钴、天然
+当前目录为 120 goods、261 production-method buildings、33 professions、18 needs、8 consumption plans 和
+31 registered resources。锂、钴、天然
 石墨、镍、铂族和铀的独立矿藏、goods、DataCore slots 与采选建筑已收敛为
 内部稳定 ID 为 `rare_earth → rare_earth_ore → rare_earth_metals`、玩家显示为“战略矿产”的
 两级加工链，并新增 `nuclear_fuel` 加工。该取舍有意减少
@@ -93,7 +93,7 @@ https://www.usgs.gov/programs/mineral-resources-program/science/about-2025-list-
 储量额外采用内容级 abundance 倍率：农业 capacity `1×`、可再生资源 `2×`、矿物/油气等地质
 资源 `8×`。倍率只改变已有矿脉内的数量，不改变矿脉位置、habitat 或每日再生系数。
 
-畜牧物种、马匹、淡水/淡水鱼和旧战略矿物拆分项不再占用 DataCore reserve/extra-change
+畜牧物种、马匹和旧战略矿物拆分项不再占用 DataCore reserve/extra-change；淡水鱼恢复为湖泊/湖岸自然资源
 slots。当前资源 schema 与 30 个注册资源对齐，生成的 C++ bind table 为 138 entries；本次
 有意触发 schema/catalog 变化，需重 build GDExtension。`cycle_flow` 严格只有电力。
 

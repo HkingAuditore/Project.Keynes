@@ -12,7 +12,7 @@ extends SceneTree
 #      - clay：有河流（init_river）> 无河流（其余条件相同）。
 #      - timber：森林植被（init_vegetation_weights）> 裸地；普通非沙漠陆地有 floor，沙漠为 0。
 #      - wild_game / pasture / 三类农业容量有各自偏向。
-#      - marine_fish 位于海洋水格；淡水和淡水鱼不再是经济资源槽。
+	#      - marine_fish 位于海洋水格；freshwater_fish 位于湖泊水格及湖岸陆格。
 #   3. 矿产由资源局部斑块 + 同族地质省 + 矿带共同决定，固定 seed 可重放。
 #   4. 不变量：所有资源有限非负；不符合 habitat 的地块储量为 0。
 #
@@ -185,11 +185,18 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 	var marine := _res_arr(map, profiles, "marine_fish")
 	var habitat: PackedByteArray = map.resource_habitat_mask_arr
 	if marine.size() >= 12:
-		_expect("ocean water cell contains marine fish", (habitat[C_WATER] & 2) != 0 and marine[C_WATER] > 0.0)
-		_expect("adjacent shore does not store marine fish", (habitat[C_NORIVER] & 2) == 0 and is_equal_approx(marine[C_NORIVER], 0.0))
-	_expect("freshwater resources retired from DataCore",
-		_res_arr(map, profiles, "freshwater_fish").is_empty() and
-		_res_arr(map, profiles, "fresh_water").is_empty())
+		var coastal_cell := -1
+		for i in range(marine.size()):
+			if (habitat[i] & 8) != 0:
+				coastal_cell = i
+				break
+		_expect("coastal land cell contains marine fish", coastal_cell >= 0 and marine[coastal_cell] > 0.0)
+		_expect("ocean water cell does not store coastal marine fish", (habitat[C_WATER] & 8) == 0 and is_equal_approx(marine[C_WATER], 0.0))
+	var freshwater := _res_arr(map, profiles, "freshwater_fish")
+	if freshwater.size() >= 13:
+		_expect("lake water cell contains freshwater fish", (habitat[C_LAKE] & 4) != 0 and freshwater[C_LAKE] > 0.0)
+		_expect("ordinary land cell has no freshwater fish", (habitat[C_PLAIN] & 4) == 0 and is_equal_approx(freshwater[C_PLAIN], 0.0))
+	_expect("freshwater fish resource is registered", not freshwater.is_empty())
 
 
 func _test_differentiation(map: MapData, profiles: Array, n: int) -> void:
@@ -254,15 +261,16 @@ func _test_quantity_scale(map: MapData, profiles: Array, n: int) -> void:
 func _test_reserve_scale_configuration(profiles: Array) -> void:
 	_expect("战略地块使用省级 100x 资源面积倍率",
 		ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE >= 100.0)
-	var scales_ok := profiles.size() == 30
+	var scales_ok := profiles.size() == 31
 	for profile in profiles:
 		var resource_id := String(profile.id)
 		var expected := 0.1 if resource_id in ["gold_ore", "flint", "stone"] else \
 			(40.0 if resource_id == "timber" else \
 			(3.0 if resource_id == "wild_game" else \
 			(2.0 if resource_id == "marine_fish" else \
+			(1.5 if resource_id == "freshwater_fish" else \
 			(1.0 if resource_id in ["fertile_soil", "arable_land", "paddy_land",
-				"plantation_land", "pasture"] else 8.0))))
+				"plantation_land", "pasture"] else 8.0)))))
 		scales_ok = scales_ok and is_equal_approx(float(profile.init_reserve_scale), expected)
 	_expect("资源初始储量按一般 8x、农业 1x、野生动物 3x、海鱼 2x、林木 40x 分级", scales_ok)
 
