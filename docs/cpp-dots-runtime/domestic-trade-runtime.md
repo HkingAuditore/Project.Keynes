@@ -106,7 +106,7 @@ PKEJ economy journal，但不逐笔灌入通用 gameplay event ring。
 
 `get_economy_report()` 提供规划 phase、scan/route cursor 与 total、拓扑哈希、规范化拓扑变化/计划重置计数和
 最近重置原因，以及信号/候选数、接受和拒绝原因、路线扩展、缓存命中/未命中、国家运力/利用率、
-在途订单/货物、现金托管、结算滞后及阶段耗时。CSV v8 summary 同步保留这些活性字段。
+在途订单/货物、现金托管、结算滞后及阶段耗时。CSV v14 summary 同步保留这些活性字段。
 
 ## PKEC v12 与兼容性
 

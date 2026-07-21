@@ -78,7 +78,7 @@ hardness 权重内，例如 `32768` 的工具槽在无库存时仍保留半产�
 商人采购预算为：
 
 ```text
-target_inventory_days = 30 days * good_inventory_target_ratio
+target_inventory_days = 60 days * good_inventory_target_ratio
 smoothed_supply_floor = offered_daily_output * (1/2 if survival_good else 1/4)
 protected_daily_demand = max(feasible_household_and_business_demand,
                              realized_withdrawal_ema,
@@ -96,8 +96,8 @@ good_budget_share = min(procurement_budget, sum(gap * buy_price))
 
 权重只改变有限现金的购买顺序，总预算仍由真实缺口价值封顶；配置库存天数和目标量级不因本轮调整缩小。
 
-默认比例分为：生存必需品 1.50（45 日）、重要民生/医疗能源 1.25（37.5 日）、
-普通原料与工业品 1.00（30 日）、奢侈品约 0.667（20 日）；`cycle_flow` 为 0。
+默认比例分为：生存必需品 1.50（90 日）、重要民生/医疗能源 1.25（75 日）、
+普通原料与工业品 1.00（60 日）、奢侈品约 0.667（40 日）；`cycle_flow` 为 0。
 比例在目录加载时一次性编译成 Q16 有效天数，市场热循环仍只读取 dense 整数列。
 
 预算余数按稳定 good ID 和 building group 顺序落位；金银铸币结算不受普通采购预算限制。
@@ -190,7 +190,7 @@ allocation_i = floor(prefix_i * available / total)
 顺序固定为 market、cohort slot、need priority、variant、component。该方法精确耗尽可用
 额度且无逐单位余数循环。
 
-## 生存、劳动与死亡
+## 生存、出生、劳动与死亡
 
 目录仍保留主食、蛋白质和蔬果三个内部子 need，以表达营养、价格和技术替代；生存判定把它们
 按实际 desired/filled 数量合并为一个食品篮子。衣着单独计算，数量先乘 17 点温度曲线；最热端
@@ -204,10 +204,19 @@ clothing_sat = clothing_desired == 0 ? 1 : clothing_filled / clothing_desired
 cold_exposure = max(clamp((0.5 - temperature) * 2, 0, 1), snow_cover)
 cold_clothing_ceiling = 1 - cold_exposure * (1 - clothing_sat)
 survival_sat = min(food_sat, cold_clothing_ceiling)
+birth_factor = 1 - satisfaction_birth_weight * (1 - survival_sat)
+effective_birth_rate_q32 = birth_rate_q32 * clamp(birth_factor, 0, 1)
+expected_births_q32 = population * effective_birth_rate_q32 * epoch_days
 starvation_deficit = max(0, starvation_satisfaction_threshold - survival_sat)
 ```
 
-周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。默认饥饿满足度阈值是 50%；
+周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。
+职业默认出生率为每日 Q32 `353011`（约 3.0%/年），自然死亡率为 `294176`（约 2.5%/年），
+满足度权重为 100%。同一 cell 内按 ethnicity 汇总 `expected_births_q32`；整数部分直接出生，Q32
+小数部分使用 `seed/sample_day/cell/ethnicity` 的无状态哈希舍入，不新增 birth residual。
+新生人口在结构提交末尾合并到 `unemployed|eth`，资金、收入和就业均为零。
+
+默认饥饿满足度阈值是 50%；
 低于阈值的缺口乘 `starvation_death_rate_q32`，与 cohort 的既有 Q32
 死亡率及 `demography_residual` 合并后按周期天数确定性取整。死亡计入 `births/deaths` 和人口
 守恒；每个仍有市场库存的地块至少保留一名人口，避免产生无所有者库存。
@@ -240,6 +249,11 @@ EMA 形成硬下限，因此生活成本通过工资进入成本锚，不再另�
 `supply_price_elasticity_q16` 作为响应增益。丢弃率不超过 1% 时视为定点舍入噪声并向满产恢复；
 任一产出的 `max(0, stock - production_input_reserve)` 低于 `max(1 商品单位, max(realized_withdrawal_ema, demand_ema) × N)` 且短缺率至少 12.5% 时也主动向满产恢复。真实丢弃或托底后仍高于正常目标的
 库存会按市场吸收能力收缩利用率。耐储商品保留 1/32 的探测产能，易腐/周期流商品保留 1/6；生存食物组再按同一业主人口跨过饥饿阈值所需的自留量计算动态利用率下限，并取较高者。只有连续严重亏损状态机能完全停产。最低生存自留按业主实际生产的单组分食物/衣物重新归一化，不向无法自产的替代品分摊配额。
+
+利用率的可负担需求为居民 `demand_ema + business_demand_ema`。短缺恢复比较该总需求与
+`realized_withdrawal_ema`，而不是只读取居民 `last_shortage_q16`；企业专用工具和中间品即使没有
+家庭需求，也会按真实下游采购缺口恢复供给。已实现利润的成本分母包含实际到岗业主在本周期的
+最低生活费，以及输入成本和应付基础工资；奖金仍是利润分配，不在奖金计算前重复扣除。
 
 生产投入预留先对同组互补投入求共同可执行比例，按该比例同步缩放每项预留；同一商品被多个槽位选中时先合并需求，防止超额锁库。非生存产出若消耗生存食物，则整套投入不在家庭清算前预留，家庭先满足生存需求，建筑生产阶段再使用余量。`production_input_reserve_shortfall` 累计期望预留未能组成完整配方的差额，以及本期生产消耗后实际库存低于既定预留的差额。
 
@@ -287,7 +301,7 @@ closing_stock = opening_stock + explicit_stock_delta + accepted_output
 ```
 
 所有生产业主按本 cohort 的普通 desired need quantity 和正常 variant 得分份额留用自产物资；
-多组件 variant 只有在同一业主生产齐全部组件时才能自用。食物额外留足饥饿阈值热量，并先匹配原消费计划的
+多组件 variant 按组件分别判定：业主自家产出的组件自留，未产出的组件仍走市场购买。食物额外留足饥饿阈值热量，并先匹配原消费计划的
 精确 variant；剩余自产食物可跨三类食品计入紧急生存热量，但不改变各 need 的普通满足度或
 最差 need。衣物另按冻结温度/积雪造成的寒冷暴露反推最低比例。
 剩余商品进入本地市场，与其他 cohort 共同清算。
@@ -316,7 +330,8 @@ exportable_stock           = max(0, stock - production_input_reserve)
 
 ## 2026-07-20 endogenous owner investment
 
-每 30 日资本评估窗口，已满员 industrial owner-lot 才可扩建。候选门槛为：
+每 10 日资本评估窗口，已满员 industrial/collector owner-lot 才可扩建；没有建材配方的
+primitive collector 仍须通过营运资金、业主生活费、盈利和资源安全门槛。候选门槛为：
 
 ```text
 margin_gap_q16 >= 0                         # 已达到建筑自身 target margin
@@ -326,13 +341,16 @@ demand_ema - offered_supply_ema >= unit_output / 2
 projected_owner_income >= owner_living_cost * 1.10
 target_income >= source_income_per_capita * 1.125
 required_capital = construction_cost_at_local_prices
+                 + input_cost * operating_cycles
+                 + one_cycle_base_wages
                  + owner_living_cost * 30
 source_funds_per_capita >= required_capital
 ```
 
 `demand_pressure_q16` 取成交短缺率与正需求缺口比例的较大值。出资人口按 cohort 人口比例携带
 资金转入目标业主 signature，随后复用 BUILD：建材从 merchant-owned stock 扣除，建设款从业主
-cohort 转给本地商人。每地块每个评估窗口至多一座；collector/service 不参与。goods audit 继续为：
+cohort 转给本地商人。每地块每个评估窗口至多一座；service 不参与。零建材只适用于 collector，
+industrial 仍必须有显式建材配方。goods audit 继续为：
 
 ```text
 closing_stock = opening_stock + explicit_stock_delta + accepted_output
@@ -437,7 +455,9 @@ Existing output must also have at least 80% sell-through and at most 10%
 discard. Pending construction, suspended capacity, owner vacancies, materials,
 resources, input chains, sponsor cash, and installed-capacity sufficiency have
 distinct rejection codes. A suspended owner lot retains one owner slot for
-recovery but hires no employees and produces nothing.
+recovery but hires no employees and produces nothing. An active owner vacancy
+is resolved only by the employment pass and cannot reserve or transfer
+investment capital.
 
 For one proposed building at planned utilization `u`:
 
@@ -455,9 +475,45 @@ required_capital = construction_cost
 ```
 
 Revenue must cover owner livelihood and the target markup over operating cost;
-the former `profit / revenue` comparison is not used. All arithmetic remains
-saturating fixed point and every approved build still performs real population,
+the former `profit / revenue` comparison is not used. For each cash-qualified
+same-ethnicity cohort:
+
+```text
+current_income = max(income_ema, 0) / cohort_population
+income_gain = projected_owner_income - current_income
+investment_probability_q16 = clamp(income_gain / projected_owner_income, 1, 65536)
+```
+
+Only a positive `income_gain` is eligible. The probability roll is a stateless
+deterministic hash of `seed/day/cell/building_type/source_signature`, so replay,
+save/restore, and worker/scalar behavior remain identical. Same-profession
+owners may reinvest directly. Cross-profession winners move one person to the
+configured owner signature; the final local merchant cannot move. All arithmetic
+remains saturating fixed point and every approved build still performs real
 cash, construction-stock, and merchant-income transfers.
+
+## ACTIVE owner job income reallocation
+
+After unemployed-pool hiring, remaining ACTIVE non-service owner vacancies use
+the same relative-income probability without creating construction or capital flow:
+
+```text
+projected_owner_income_per_day =
+    max(0, frozen_expected_revenue - frozen_inputs - full_employee_wages)
+    / (full_owner_slots * epoch_days)
+
+owner_job_probability_q16 = clamp(
+    (target_income - source_income) / target_income, 1, 65536)
+```
+
+Targets require positive projected income; sources must be ACTIVE, available,
+non-service, same-ethnicity groups with at least one owner. The deterministic roll hashes
+`seed/day/cell/target_group/source_group`. A group can participate in at most one
+successful movement per epoch. Same-profession movement changes only group fill;
+cross-profession movement transfers one cohort member and its proportional funds,
+income EMA, current income/expense/in-kind income, demography residual, and
+satisfaction. No money or goods are created, consumed, or transferred between
+accounts by the job decision itself.
 
 ## CSV v12 derived balance formulas
 
@@ -482,3 +538,47 @@ existing response. A discard rate of at least 25% applies a response floor of 0.
 at least 50% applies a response of 1.0 when no active shortage recovery is required.
 A real shortage recovery signal retains priority, and the existing survival/probe
 utilization floor remains authoritative.
+
+## Healthy subsistence and effective-supply investment
+
+```text
+healthy_retention = survival_required * survival_production_target_q16 / Q16
+livelihood_cash_charge = max(0, owner_livelihood - consumed_retained_frozen_value)
+production_input_budget = owner_cash - uncovered_wage_commitment
+
+output_deficit = max(0, household_demand_ema + business_demand_ema
+                        - offered_supply_ema)
+entry_output_utilization = min(1, output_deficit / candidate_daily_output)
+input_period_supply = max(0, stock - existing_input_reserve)
+                    + offered_supply_ema * epoch_days
+input_coverage = min(1, input_period_supply / candidate_period_input)
+soft_input_bound = 1 - required_share + input_coverage * required_share
+entry_utilization = min(entry_output_utilization, every soft_input_bound)
+```
+
+The frozen-value credit is assigned only when retained goods are physically consumed.
+It is capped by owner livelihood when computing realized margin and never changes cohort
+funds, merchant funds, cash income/expense, or the money audit. Household settlement
+already preserves the production input float, so production no longer subtracts a second
+livelihood reserve from that same cash.
+
+## Price inventory and numeric guards
+
+```text
+price_inventory_days_q16 = min(good_target_inventory_days_q16,
+                               epoch_days * Q16)
+price_inventory_target = (household_demand_ema + business_demand_ema)
+                         * price_inventory_days_q16 / Q16
+inventory_pressure_q16 = clamp((price_inventory_target - stock)
+                               / max(GOODS_SCALE, price_inventory_target), -1, 1)
+
+merchant_inventory_target = protected_daily_flow
+                            * good_target_inventory_days_q16 / Q16
+final_price = clamp(rate_limited_composite_price, 1, INT32_MAX)
+```
+
+The price target is derived transiently and is not merchant inventory authority. The
+merchant target retains the full configured horizon. Catalog `min_price/max_price` do
+not clamp normal prices; the remaining bounds are integer-safety guards. The production
+cost anchor is still a dynamic soft floor and may lift an underpriced active output only
+within the configured price-rise rate.

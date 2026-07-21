@@ -11,6 +11,8 @@ extends Resource
 @export var technology_tags: PackedStringArray = PackedStringArray()
 
 ## Per-person, per-day Q32 demographic rates.
-@export var birth_rate_q32: int = 0
-@export var death_rate_q32: int = 0
+## 3.0% births and 2.5% natural deaths per 365-day year produce a
+## fully-satisfied long-run net growth target of approximately 0.5%.
+@export var birth_rate_q32: int = 353011
+@export var death_rate_q32: int = 294176
 @export var satisfaction_birth_weight_q16: int = 65536

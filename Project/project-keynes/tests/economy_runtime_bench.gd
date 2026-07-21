@@ -27,7 +27,7 @@ func _init() -> void:
 		"market_target_cohorts_per_slice": 30000 if desktop else 4000,
 		"worker_enabled": true, "worker_market_threshold": 64,
 		"worker_tasks_hint": 8 if "--tasks8" in args else 0,
-		"merchant_market_making_days_q16": 1966080,
+		"merchant_market_making_days_q16": 3932160,
 		"merchant_profession_id": "merchant", "wealth_reference_per_capita": 100000,
 		"living_cost_base_plan_id": "plan",
 		"market_runtime_mode": "ACTIVE",

@@ -41,12 +41,14 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 5. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
 6. `building_employment`：按周期开始时仍存活人口分配 owner/employee 岗位并计算合同工资。
 7. `building_production`：先算受就业/资金/资源约束的采购意图，再用本地输入库存得到实际产能；购买投入、生产并出售产出，分配基础工资/奖金，最后更新企业意图、实际出库、供给与成本信号。
-8. `household_market`：每天最多一个 cohort-budgeted market range，先保护 ACTIVE owner 下一周期投入现金，使用本期收入和新库存计算 N 日总需求/交易；自产食物可补足总生存热量池，再计算食品与气候衣着生存满足，并以 Q32 residual 结算缺乏基本生活资料造成的死亡。
+8. `household_market`：每天最多一个 cohort-budgeted market range，先保护 ACTIVE owner 下一周期投入现金，使用本期收入和新库存计算 N 日总需求/交易；自产食物可补足总生存热量池，再计算食品与气候衣着生存满足，以 Q32 residual 结算死亡，并按人数、满足率和职业/民族率聚合预期出生。
 9. `trade_dispatch`：在全部本地 household 清算完成后，ACTIVE 按本地需求/投入 reserve 稳定裁剪并
    托管发运；PROBE 只报告候选。
-10. `structural_commit`：稳定提交本轮结构 ECB。
+10. `structural_commit`：稳定提交本轮结构 ECB；先处理死亡清空与迁移，最后把每个
+    `cell×ethnicity` 的出生人口合并到 `unemployed|eth`。受影响建筑岗位只做存活人口夹紧和指标
+    对账，不在同周期招聘新生人口。
 11. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
-12. `building_commit`：提交到期建设项目；在 30 日资本评估窗口按盈利、需求缺口、个人储蓄和建材库存选择每地块至多一座 industrial 新建项目，随后重建必要的稀疏岗位范围。
+12. `building_commit`：提交到期建设项目；在 10 日资本评估窗口按盈利、需求缺口、个人储蓄、建材和资源安全选择每地块至多一座 industrial/collector 新建项目；零建材 primitive collector 仍支付营运资金与业主生活费，随后重建必要的稀疏岗位范围。
 13. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
 
 周期内 save、gameplay 和其他经济写者只观察上一 committed state；Inspector 的有界选中
@@ -59,7 +61,7 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 在本周期第一次被 ledger 或 market 触及时 O(1) 清零。所有市场在 commit 前都被访问，
 所以 committed snapshot 不会残留上周期会计值。
 
-商人 CSR 在 bootstrap 建立；普通周期不重建。只有迁移、换签名或人口归零真正触碰结构
+商人 CSR 在 bootstrap 建立；普通周期不重建。只有出生、迁移、换签名或人口归零真正触碰结构
 时，publish 才校验商人不变量并重建。该规则消除了 10M 档周期起点约 90ms 和周期末约
 30ms 的全量尖峰。
 
@@ -157,13 +159,14 @@ goods 子单位残量。生存食物组的利用率下限按同一业主人口�
 
 v11 在 `building_production` 的正常商人现金结算后，仅把目标库存剩余缺口托底入库，并按冻结零售价
 20% 增加 owner 资金与 `explicit_money_mint`；超过目标的余量进入 discard。该发行在同一 building slice 内完成，不新增 stage。事件现金流 schema v4 沿用
-`producer_support_issuance`，CSV v8 summary 保留托底数量、发行额、金银货币流、贸易活性游标和拒绝诊断，building 行新增 owner 容量、
+`producer_support_issuance`，CSV v14 summary 保留托底数量、发行额、金银货币流、贸易活性游标和拒绝诊断，building 行新增 owner 容量、
 本期岗位和真实空缺口径。
 外部 stage ABI 和冻结/截止日屏障不变；生产默认 cadence 已由后述 workload-auto 规则取代固定五日。
 
 v12 在 `building_commit` 增加原生内生投资。评估使用本周期已完成的企业计划和市场信号，
 但只在跨过 30 日边界时允许新增建筑；普通周期不会重复扩建。已有业主空缺仍由
-`building_employment` 优先处理。自动新建排除 collector/service，并复用 BUILD 的建材库存、
+`building_employment` 优先处理。自动新建排除 service；无建材配方的 primitive collector
+允许以零建材成本进入，但仍通过营运资金、业主生活费、盈利、回收期和资源安全门槛，并复用 BUILD 的建材库存、
 出资者资金、商人收入、事件和守恒账本。该节流由 committed day 推导，不新增 PKEC 字段。
 ## 2026-07-20 cadence changes
 
