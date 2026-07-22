@@ -18,6 +18,19 @@ $curatedContentDir = Join-Path $PSScriptRoot 'economy_content'
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 $managedPaths = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
+$script:syncingCurated = $false
+$script:finalizingConstruction = $false
+
+function Curated-Source-For-Target([string]$Path) {
+    $parent = Split-Path -Parent $Path
+    $bucket = if ($parent -eq $goodsDir) { 'goods' }
+        elseif ($parent -eq $buildingsDir) { 'buildings' }
+        elseif ($parent -eq $resourcesDir) { 'resources' }
+        else { '' }
+    if ($bucket -eq '') { return '' }
+    $candidate = Join-Path (Join-Path $curatedContentDir $bucket) (Split-Path -Leaf $Path)
+    return $(if (Test-Path -LiteralPath $candidate) { $candidate } else { '' })
+}
 
 function Is-Consumption-Path([string]$Path) {
     $fullPath = [System.IO.Path]::GetFullPath($Path)
@@ -34,11 +47,21 @@ function Is-Consumption-Path([string]$Path) {
 function Write-Utf8([string]$Path, [string]$Content) {
     if ($Scope -eq 'Consumption' -and -not (Is-Consumption-Path $Path)) { return }
     [void]$managedPaths.Add([System.IO.Path]::GetFullPath($Path))
+    if ($Check -and -not $script:syncingCurated -and
+        (Curated-Source-For-Target $Path) -ne '') { return }
     $expected = $Content.TrimEnd() + "`n"
     if ($Check) {
         if (-not (Test-Path -LiteralPath $Path)) { throw "generated file missing: $Path" }
         $actual = [System.IO.File]::ReadAllText($Path).Replace("`r`n", "`n")
-        if ($actual -ne $expected.Replace("`r`n", "`n")) {
+        $expectedNormalized = $expected.Replace("`r`n", "`n")
+        if ((Split-Path -Parent $Path) -eq $buildingsDir -and
+            -not $script:finalizingConstruction) {
+            $constructionLines = '(?m)^construction_(good_ids|quantities) = .+\n?'
+            $actual = [regex]::Replace($actual, $constructionLines, '')
+            $expectedNormalized = [regex]::Replace(
+                $expectedNormalized, $constructionLines, '')
+        }
+        if ($actual -ne $expectedNormalized) {
             throw "generated file stale: $Path"
         }
         return
@@ -63,7 +86,12 @@ function Sync-CuratedDirectory([string]$Source, [string]$Target) {
         } elseif ((Split-Path -Leaf $Source) -eq 'goods') {
             $content = Normalize-CuratedGood $content $template.BaseName
         }
-        Write-Utf8 (Join-Path $Target $template.Name) $content
+        $script:syncingCurated = $true
+        try {
+            Write-Utf8 (Join-Path $Target $template.Name) $content
+        } finally {
+            $script:syncingCurated = $false
+        }
     }
 }
 
@@ -255,7 +283,7 @@ $categoryPrice = @{ primary=10000; forestry=18000; construction=22000; food=1600
     consumer=60000; energy=12000 }
 function Technology-For-Good([string]$Id) {
     $technologyByGood = @{
-        logs='tech.gathering'; lumber='tech.gathering'; salt='tech.gathering'; gold='tech.gathering'; silver='tech.gathering';
+        gathered_plants='tech.gathering'; logs='tech.gathering'; lumber='tech.gathering'; salt='tech.gathering'; gold='tech.gathering'; silver='tech.gathering';
         fish='tech.hunting'; game_meat='tech.hunting'; fur='tech.hunting'; raw_hide='tech.hunting';
         cloth='tech.gathering'; tools='tech.masonry'; clay='tech.pottery';
         raw_stone='tech.stone_knapping'; vegetables='tech.pottery'; wheat_grain='tech.pottery';
@@ -297,7 +325,7 @@ function Technology-For-Good([string]$Id) {
         bauxite='tech.steam_power'; phosphate_rock='tech.steam_power'; sulfur='tech.experimental_science';
         saltpeter='tech.experimental_science'; explosives='tech.experimental_science';
         soap='tech.guild_organization'; machine_parts='tech.precision_engineering';
-        chipped_stone_tools='tech.stone_knapping'; bronze_tools='tech.bronze_casting';
+        flint='tech.stone_knapping'; chipped_stone_tools='tech.stone_knapping'; bronze_tools='tech.bronze_casting';
         steam_engines='tech.steam_power'; precision_tools='tech.precision_engineering';
         scientific_instruments='tech.experimental_science';
         advanced_chips='tech.machine_learning'; autonomous_systems='tech.autonomous_systems'
@@ -336,6 +364,12 @@ foreach ($id in $goods.Keys) {
     $priceAdjust = [Math]::Max(512, [int][Math]::Round(2048.0 * $demandElasticity / 65536.0))
     $issue = if ($id -eq 'gold') { 800000 } elseif ($id -eq 'silver') { 50000 } else { 0 }
     $mode = if ($id -eq 'electricity') { 'cycle_flow' } else { 'stock' }
+    # Curated profiles are validated by the authoritative sync at the end of
+    # this script. Do not first compare them against a generic intermediate
+    # profile in -Check mode.
+    if (Test-Path -LiteralPath (Join-Path $curatedContentDir "goods/$id.tres")) {
+        continue
+    }
     Write-Utf8 (Join-Path $goodsDir "$id.tres") @"
 [gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
 
@@ -364,7 +398,7 @@ inventory_weight_q16 = 32768
 shortage_weight_q16 = $(if ($mode -eq 'cycle_flow') { 0 } else { 65536 })
 excess_demand_weight_q16 = $(if ($mode -eq 'cycle_flow') { 65536 } else { 8192 })
 cost_anchor_weight_q16 = $(if ($issue -gt 0) { 0 } else { 16384 })
-inactive_reversion_weight_q16 = 512
+inactive_reversion_weight_q16 = 8192
 business_demand_ema_alpha_q16 = $(if ($mode -eq 'cycle_flow') { 16384 } else { 8192 })
 supply_ema_alpha_q16 = $(if ($mode -eq 'cycle_flow') { 16384 } else { 8192 })
 cost_ema_alpha_q16 = 4096
@@ -1484,6 +1518,9 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     if ($Behavior -eq 'cultivate_local_resources') {
         $generationIds = $Resources; $generationQty = @($Resources | ForEach-Object { [long]1050 }); $floor = 6554
     }
+    # Timber collection remains viable without tools; tools scale the remaining
+    # half of capacity through the existing soft-input contract.
+    $inputRequiredQ16 = if ($Id -eq 'timber_collector') { @(32768) } else { @() }
     Write-Utf8 (Join-Path $buildingsDir "$Id.tres") @"
 [gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
@@ -1504,6 +1541,7 @@ employee_wage_policy_ids = $(PSArray $roleWagePolicies)
 employee_reference_wages_per_day = $(PI64 $roleWages)
 input_good_ids = $(PSArray $Inputs)
 input_quantities_per_day = $(PI64 $inputQty)
+input_required_q16 = $(PI32 $inputRequiredQ16)
 input_category_ids = $(PSArray $inputCategories)
 input_min_quality_levels = $(PI32 $inputMinLevels)
 input_candidate_offsets = $(PI32 $candidateOffsets)
@@ -2063,7 +2101,7 @@ foreach ($goodId in @($baseProducers.Keys | Sort-Object)) {
     }
 }
 $boundedMethodTargets = @{
-    knapping_workshop=@(); gathering_ground=@(1); flint_quarry=@(1); stone_age_hunting_camp=@(4); pottery_kiln=@(3)
+    knapping_workshop=@(); freshwater_fishing_camp=@(); gathering_ground=@(1); flint_quarry=@(1); stone_age_hunting_camp=@(4); pottery_kiln=@(3)
     landed_estate=@(6); potato_collector=@(6); cotton_collector=@(6); rubber_tree_collector=@(6)
     spice_plants_collector=@(6); medicinal_herbs_collector=@(7)
     edible_oil_plant=@(6); soap_plant=@(6); packaging_plant=@(7); printed_materials_plant=@(7)
@@ -2085,6 +2123,10 @@ foreach ($sourceId in @(
     'synthetic_fiber_plant','synthetic_rubber_plant','timber_collector','wheat_farm','wire_plant',
     'wool_shed','zinc_ore_collector','zinc_plant'
 )) { [void]$persistentMethodSources.Add($sourceId) }
+# Freshwater fishing is a separate local-resource route, but it must not retire
+# the established marine fishing technology progression merely because fish now
+# has more than one producer family.
+[void]$singleMethodSources.Add('marine_fish_collector')
 foreach ($sourceId in @($singleMethodSources | Sort-Object)) {
     $sourceRank = Rank-From-Profile-Content $baseProfiles[$sourceId]
     $targets = if ($boundedMethodTargets.ContainsKey($sourceId)) {
@@ -2106,6 +2148,143 @@ foreach ($sourceId in @($singleMethodSources | Sort-Object)) {
         throw "single-method source lacks lifecycle classification: $sourceId"
     }
     foreach ($targetRank in $targets) { Add-Production-Method $sourceId $targetRank }
+}
+
+$constructionRecipeOverrides = @{
+    communal_hearth = [ordered]@{ logs=500; gathered_plants=250 }
+    coal_mine = [ordered]@{ lumber=500; bricks=750; construction_components=750 }
+    coke_ovens = [ordered]@{ lumber=500; bricks=750; construction_components=750 }
+    flint_quarry = [ordered]@{ logs=500; gathered_plants=250 }
+    freshwater_fishing_camp = [ordered]@{ logs=500; gathered_plants=250 }
+    gathering_ground = [ordered]@{ logs=1000 }
+    household_weaving_shelter = [ordered]@{ logs=2000; gathered_plants=4000 }
+    knapping_workshop = [ordered]@{ logs=1000; flint=500 }
+    lumber_plant = [ordered]@{ logs=500; gathered_plants=250 }
+    marine_fish_collector = [ordered]@{ logs=500; gathered_plants=250 }
+    placer_gold_working = [ordered]@{ logs=1000; gathered_plants=500 }
+    stone_age_hunting_camp = [ordered]@{ logs=1000; gathered_plants=500 }
+    stone_collector = [ordered]@{ logs=500; gathered_plants=250 }
+    surface_silver_working = [ordered]@{ logs=1500; gathered_plants=750 }
+    steam_coal_mine = [ordered]@{ lumber=500; bricks=750; construction_components=750 }
+    timber_collector = [ordered]@{ gathered_plants=250 }
+}
+
+# Construction-material backbone producers may only consume materials from an
+# earlier topological layer. This table is deliberately about construction
+# reachability, not about their recurring production recipes.
+$constructionBackbonePredecessors = @{
+    logs = @('gathered_plants','raw_stone','lumber','bricks','construction_components','steel','concrete','glass')
+    gathered_plants = @('logs','raw_stone','lumber','bricks','construction_components','steel','concrete','glass')
+    raw_stone = @('logs','gathered_plants','lumber','bricks','construction_components','steel','concrete','glass')
+    bricks = @('logs','raw_stone','lumber','construction_components')
+    lumber = @('logs','raw_stone','bricks')
+    construction_components = @('lumber','bricks')
+    steel = @('lumber','bricks','construction_components')
+    concrete = @('bricks','construction_components','steel')
+    glass = @('bricks','construction_components','steel')
+}
+
+function Add-Explicit-Construction-Cost([string]$Path) {
+    $content = [System.IO.File]::ReadAllText($Path)
+    $id = Content-Scalar-String $content 'id'
+    $existingGoods = @(Content-Strings $content 'construction_good_ids')
+    $existingQuantities = @(Content-Numbers $content 'construction_quantities')
+    if ($existingGoods.Count -ne $existingQuantities.Count) {
+        throw "construction columns mismatch: $id"
+    }
+
+    $rank = Rank-From-Profile-Content $content
+    $kind = Content-Scalar-String $content 'building_kind'
+    if ($rank -lt 0 -and $kind -eq 'service') { $rank = 0 }
+    if ($rank -lt 0 -or $rank -gt 10) { throw "building lacks construction rank: $id" }
+    $ownerSlots = [Math]::Max(1, (Content-Integer $content 'owner_slots_per_building' 1))
+    $employeeSlots = @(Content-Numbers $content 'employee_slots_per_building')
+    [long]$jobs = [long]$ownerSlots + [long](($employeeSlots | Measure-Object -Sum).Sum)
+    $outputs = @(Content-Strings $content 'output_good_ids')
+
+    # Material tiers are cumulative and only use goods available before or at
+    # the building's technology rank. Quantities are GOODS_SCALE per job, so a
+    # larger organization carries a proportionally larger fixed-capital bill.
+    $recipe = if ($constructionRecipeOverrides.ContainsKey($id)) {
+        $constructionRecipeOverrides[$id]
+    } elseif ($rank -eq 0) {
+        [ordered]@{ logs=500; gathered_plants=250 }
+    } elseif ($rank -eq 1) {
+        [ordered]@{ logs=750; raw_stone=500 }
+    } elseif ($rank -eq 2) {
+        [ordered]@{ logs=750; raw_stone=750; bricks=500 }
+    } elseif ($rank -le 5) {
+        [ordered]@{ lumber=750; bricks=750; construction_components=500 }
+    } elseif ($rank -eq 6) {
+        [ordered]@{ lumber=500; bricks=750; construction_components=750; steel=500 }
+    } else {
+        [ordered]@{ construction_components=1000; steel=750; concrete=750; glass=250 }
+    }
+
+    if (-not $constructionRecipeOverrides.ContainsKey($id)) {
+        $backboneOutputs = @($outputs | Where-Object {
+            $constructionBackbonePredecessors.ContainsKey($_)
+        })
+        if ($backboneOutputs.Count -gt 0) {
+            $allowed = [System.Collections.Generic.HashSet[string]]::new(
+                [System.StringComparer]::Ordinal)
+            foreach ($material in $constructionBackbonePredecessors[$backboneOutputs[0]]) {
+                [void]$allowed.Add($material)
+            }
+            for ($i = 1; $i -lt $backboneOutputs.Count; $i++) {
+                [void]$allowed.IntersectWith(
+                    [string[]]$constructionBackbonePredecessors[$backboneOutputs[$i]])
+            }
+            $filteredRecipe = [ordered]@{}
+            foreach ($material in $recipe.Keys) {
+                if ($allowed.Contains($material)) {
+                    $filteredRecipe[$material] = $recipe[$material]
+                }
+            }
+            $recipe = $filteredRecipe
+        }
+    }
+
+    $constructionGoods = @()
+    [long[]]$constructionQuantities = @()
+    foreach ($material in $recipe.Keys) {
+        # A producer cannot require its own first output as construction input.
+        if ($material -in $outputs) { continue }
+        if ((Technology-Rank (Technology-For-Good $material)) -gt $rank) {
+            throw "construction technology inversion: $id -> $material"
+        }
+        $constructionGoods += $material
+        $constructionQuantities += [long]$recipe[$material] * $jobs
+    }
+    if ($constructionGoods.Count -eq 0) {
+        throw "construction recipe has no acyclic material: id=$id rank=$rank outputs=$($outputs -join ',') candidates=$($recipe.Keys -join ',')"
+    }
+
+    $constructionLines = "construction_good_ids = $(PSArray $constructionGoods)`n" +
+        "construction_quantities = $(PI64 $constructionQuantities)"
+    if ($existingGoods.Count -gt 0) {
+        $content = [regex]::Replace($content,
+            '(?m)^construction_good_ids = PackedStringArray\(.*\)\r?\nconstruction_quantities = PackedInt64Array\(.*\)\r?$',
+            $constructionLines, 1)
+    } else {
+        $content = [regex]::Replace($content,
+            '(?m)^(construction_days = \d+\r?)$', "`$1`n$constructionLines", 1)
+    }
+    if (-not [regex]::IsMatch($content, '(?m)^construction_good_ids = PackedStringArray\(.+\)\r?$')) {
+        throw "failed to write construction cost: $id"
+    }
+    $script:finalizingConstruction = $true
+    try {
+        Write-Utf8 $Path $content
+    } finally {
+        $script:finalizingConstruction = $false
+    }
+}
+
+# Construction is authored content, not a catalog fallback. Traverse the final
+# generated + curated + upgraded building set so every runtime profile is explicit.
+foreach ($buildingFile in Get-ChildItem -LiteralPath $buildingsDir -Filter '*.tres' -File | Sort-Object Name) {
+    Add-Explicit-Construction-Cost $buildingFile.FullName
 }
 
 foreach ($directory in @($goodsDir, $buildingsDir, $professionsDir, $needsDir, $plansDir, $resourcesDir)) {

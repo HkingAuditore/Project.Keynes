@@ -407,6 +407,25 @@ private:
         INVESTMENT_REJECTION_MATERIALS = 12,
         INVESTMENT_REJECTION_RESOURCE = 13,
         INVESTMENT_REJECTION_PROBABILITY = 14,
+        INVESTMENT_REJECTION_MARKET_SIGNAL = 15,
+    };
+
+    struct InvestmentDiagnostic {
+        int32_t type_id = -1;
+        int32_t rejection_reason = INVESTMENT_REJECTION_NONE;
+        int64_t shortage_q16 = 0;
+        int64_t utilization_q16 = 0;
+        int32_t driver_good_id = -1;
+        int64_t driver_pressure_q16 = 0;
+        int64_t driver_utilization_q16 = 0;
+        int64_t driver_sellable = 0;
+        int64_t driver_merchant_sold = 0;
+        int64_t driver_sell_through_q16 = 0;
+        int64_t driver_discard_q16 = 0;
+        int64_t score_q16 = 0;
+        int64_t payback_days = 0;
+        int64_t required_capital = 0;
+        int64_t projected_profit_per_day = 0;
     };
 
     struct PopulationStore {
@@ -682,10 +701,11 @@ private:
         int64_t inventory_q16 = 0;
         int64_t shortage_q16 = 0;
         int64_t cost_q16 = 0;
-        int64_t cost_floor_price = 0;
         int64_t idle_q16 = 0;
         int64_t total_q16 = 0;
         int64_t change_q16 = 0;
+        int64_t adjustment_anchor_price = 1;
+        int64_t inactive_reversion_alpha_q16 = 0;
     };
 
     struct Command {
@@ -1447,6 +1467,12 @@ private:
     std::vector<int64_t> _epoch_desired_business_demand;
     std::vector<int64_t> _epoch_funded_business_demand;
     std::vector<int64_t> _epoch_offered_supply_ema;
+    // Current-cycle producer absorption diagnostics, aligned to the sparse
+    // (cell, good) market-signal lanes. These are transient and excluded from
+    // PKEC and the authoritative state hash.
+    std::vector<int64_t> _epoch_producer_sellable_current;
+    std::vector<int64_t> _epoch_producer_merchant_sold_current;
+    std::vector<int64_t> _epoch_producer_discarded_current;
     std::vector<int64_t> _epoch_nonhousehold_withdrawals;
     std::vector<int32_t> _epoch_cost_anchor_price;
     std::vector<int64_t> _production_input_reserve;
@@ -1491,6 +1517,11 @@ private:
     std::vector<int64_t> _building_investment_score_q16;
     std::vector<int64_t> _building_investment_payback_days;
     std::vector<int32_t> _building_investment_rejection;
+    // Bounded cold-path diagnostics for the one inspector-selected cell. These
+    // are transient, excluded from save/hash, and include absent building types.
+    int32_t _investment_diagnostic_cell = -1;
+    int64_t _investment_diagnostic_day = -1;
+    std::vector<InvestmentDiagnostic> _investment_diagnostics;
     std::unordered_map<uint64_t, uint8_t> _investment_pending_by_cell_type;
     std::unordered_map<uint64_t, InvestmentExistingType>
         _investment_existing_by_cell_type;
@@ -1770,7 +1801,8 @@ private:
         return signature_for_profession_ethnicity(_unemployed_profession_id, ethnicity_id);
     }
     bool capture_country_epoch(std::string &error);
-    bool apply_build_command(const Command &cmd, int32_t owner_slot, std::string &error);
+    bool apply_build_command(const Command &cmd, int32_t owner_slot,
+                             std::string &error, bool allow_obsolete_tier = false);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell,
                                       bool allow_owner_job_reallocation,
@@ -1826,6 +1858,9 @@ private:
     PricePressure price_pressure(int32_t market, int32_t good, int64_t household_demand,
                                  int64_t stock, int64_t shortage_q16,
                                  int32_t signal_index, int64_t &saturation_count) const;
+    int64_t next_price_v4(int32_t good, int64_t current_price,
+                          const PricePressure &pressure, int32_t days,
+                          int64_t &saturation_count, bool &rate_clamped) const;
     int32_t find_building_group(int32_t cell, int32_t type_id,
                                 int32_t owner_signature_id) const;
     int32_t find_cohort_slot(int32_t cell, int32_t signature_id) const;

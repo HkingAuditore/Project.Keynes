@@ -607,6 +607,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 			employee_reference_wages.append(role_reference)
 		employee_offsets.append(employee_professions.size())
 
+		if profile.construction_good_ids.is_empty():
+			return {"ok": false, "reason": "building requires explicit construction goods: %s" % stable_id}
 		var error := _append_building_goods(profile.construction_good_ids,
 			profile.construction_quantities, good_index, construction_goods,
 			construction_quantities)

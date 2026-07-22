@@ -50,7 +50,7 @@ extends Resource
 @export var input_candidate_efficiency_q16: PackedInt32Array = PackedInt32Array()
 @export var output_good_ids: PackedStringArray = PackedStringArray()
 @export var output_quantities_per_day: PackedInt64Array = PackedInt64Array()
-## Price V3 supply response. The optional output cost shares must align with
+## Price V4 supply response. The optional output cost shares must align with
 ## output_good_ids and sum to Q16; an empty array uses reference-value shares.
 @export_range(0, 262144, 1) var target_operating_margin_q16: int = 9830
 @export_range(0, 262144, 1) var supply_price_elasticity_q16: int = 65536

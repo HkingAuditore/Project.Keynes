@@ -8,9 +8,15 @@ func _init() -> void:
 	profile.native_generation_mode = ClimateProfile.NATIVE_MODE_ACTIVE
 	profile.native_daily_sim_mode = ClimateProfile.NATIVE_MODE_ACTIVE
 	profile.native_environment_runtime_enabled = false
-	var cfg := MapConfig.make(8, 6)
-	cfg.seed = 20260712
-	cfg.num_continents = 1
+	var test_width := int(OS.get_environment("PK_TEST_MAP_WIDTH")) \
+		if OS.has_environment("PK_TEST_MAP_WIDTH") else 8
+	var test_height := int(OS.get_environment("PK_TEST_MAP_HEIGHT")) \
+		if OS.has_environment("PK_TEST_MAP_HEIGHT") else 6
+	var cfg := MapConfig.make(test_width, test_height)
+	cfg.seed = int(OS.get_environment("PK_TEST_MAP_SEED")) \
+		if OS.has_environment("PK_TEST_MAP_SEED") else 20260712
+	cfg.num_continents = int(OS.get_environment("PK_TEST_MAP_CONTINENTS")) \
+		if OS.has_environment("PK_TEST_MAP_CONTINENTS") else 1
 	cfg.sea_level = 0.45
 	cfg.continent_size = 0.85
 	cfg.climate_profile = profile
@@ -41,8 +47,8 @@ func _init() -> void:
 			_expect("generated economy includes building groups",
 				_sum_i64(buildings.get("building_counts_by_type", PackedInt64Array())) > 0)
 			_expect("building snapshot is committed", bool(buildings.get("committed", false)))
-		_expect("generated economy starts with zero goods and unemployed people",
-			_all_populated_cells_start_empty_and_unemployed(map, facade))
+		_expect("generated economy starts with one bridge stock packet and unemployed people",
+			_all_populated_cells_start_bridged_and_unemployed(map, facade))
 		_expect("passable land population follows a varied zero-to-300 distribution",
 			_land_population_distribution_valid(map, facade))
 		_expect("populated cells expose mid-stone resource-specialized local economies",
@@ -148,7 +154,7 @@ func _all_populated_cells_are_mid_stone_specialized(map: MapData, facade) -> boo
 	return populated_count > 1 and local_sets.size() > 1 and global_types.size() > 1
 
 
-func _all_populated_cells_start_empty_and_unemployed(map: MapData, facade) -> bool:
+func _all_populated_cells_start_bridged_and_unemployed(map: MapData, facade) -> bool:
 	var populated_count := 0
 	for cell in range(map.cell_count()):
 		var population: Dictionary = facade.population_cell_snapshot(cell)
@@ -160,7 +166,8 @@ func _all_populated_cells_start_empty_and_unemployed(map: MapData, facade) -> bo
 				_sum_i64(population.get("employee_employed_by_cohort", PackedInt64Array())) != 0 or \
 				_sum_i64(population.get("unemployed_by_cohort", PackedInt64Array())) != total:
 			return false
-		if _sum_i64(facade.market_cell_snapshot(cell).get("stock", PackedInt64Array())) != 0:
+		if _sum_i64(facade.market_cell_snapshot(cell).get(
+				"stock", PackedInt64Array())) != 1750:
 			return false
 	return populated_count > 1
 

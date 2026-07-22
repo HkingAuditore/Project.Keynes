@@ -7,12 +7,18 @@ const INT64_MAX := 9223372036854775807
 const COLLECTOR_COUNT_CAP := 24
 const CELL_POPULATION_CAP := 300
 const INITIAL_RESOURCE_HORIZON_DAYS := 3650
+const CONSTRUCTION_SOURCE_MIN_HORIZON_DAYS := 365
 const FOOD_REQUIREMENT_PER_CAPITA := 1300
 const CLOTHING_REQUIREMENT_PER_CAPITA := 4
 const SURVIVAL_FUND_DAYS := 30
 const OWNER_OPERATING_CYCLES := 2
 const PLANNED_UTILIZATION_Q16 := 49152
 const INITIAL_CARRYING_CAPACITY_SHARE_Q16 := 32768
+const BOOTSTRAP_BRIDGE_STOCK := {
+	"logs": 1000,
+	"gathered_plants": 250,
+	"flint": 500,
+}
 
 const TEST_COLLECTOR_COUNT_CAPS := {
 	"flint_quarry": 1,
@@ -26,12 +32,11 @@ const TEST_COLLECTOR_COUNT_CAPS := {
 
 const TEST_INDUSTRY_COUNTS := {
 	"communal_hearth": 2,
-	"knapping_workshop": 1,
+	"knapping_workshop": 2,
 }
 
 const MID_STONE_EXCLUDED_BUILDING_IDS := {
 	"lumber_plant": true,
-	"stone_collector": true,
 }
 
 const FOOD_GOOD_IDS := {
@@ -64,6 +69,14 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		signatures[StringName(profession_id)] = signature
 	var building_ids := facade.building_type_ids()
 	var finance: Dictionary = facade.bootstrap_finance_columns()
+	var finance_good_ids: PackedStringArray = finance.get("good_ids", PackedStringArray())
+	for bridge_good in BOOTSTRAP_BRIDGE_STOCK:
+		if finance_good_ids.find(String(bridge_good)) < 0:
+			return {
+				"ok": false,
+				"reason": "test_bootstrap_bridge_good_missing",
+				"good_id": String(bridge_good),
+			}
 	if building_ids.is_empty():
 		return {"ok": false, "reason": "test_bootstrap_building_catalog_empty"}
 	var building_specs := {}
@@ -94,7 +107,9 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	for building_id in eligible_building_ids:
 		var spec: Dictionary = building_specs[StringName(building_id)]
 		var family := String(spec.get("upgrade_family_id", ""))
-		if family == "" or int(spec.get("upgrade_tier", 0)) == int(
+		if String(building_id) in [
+				"gathering_ground", "timber_collector", "stone_collector"] or \
+				family == "" or int(spec.get("upgrade_tier", 0)) == int(
 				highest_tier_by_family.get(family, 0)):
 			filtered_eligible.append(building_id)
 	eligible_building_ids = filtered_eligible
@@ -128,6 +143,48 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 				continue
 			(groups_by_cell[cell_idx] as Array).append({"spec": spec, "count": count})
 			_mark_outputs(spec, outputs_by_cell[cell_idx])
+	# 常规聚落规模仍按十年储量计算；建设根建筑只要求一年跑道，避免有真实
+	# 资源但不足十年连续满负荷的地图被误判为空经济。
+	var source_root_fallback_counts := _ensure_construction_source_roots(
+		passable_cells, groups_by_cell, outputs_by_cell, building_specs,
+		resource_arrays, resource_peaks)
+
+	# Protect one local gathering root wherever the resource placement pass made
+	# it physically valid. This root is part of the initial settlement, so later
+	# copies still pay the catalog's non-zero construction bill.
+	var gathering_spec: Dictionary = building_specs.get(&"gathering_ground", {})
+	for cell_idx in passable_cells:
+		var groups: Array = groups_by_cell[cell_idx]
+		if groups.is_empty():
+			continue
+		var gathering_group := _find_group(groups, &"gathering_ground")
+		if gathering_group.is_empty() and not gathering_spec.is_empty() and \
+				_collector_count_at(gathering_spec, cell_idx,
+					resource_arrays, resource_peaks) > 0:
+			gathering_group = {
+				"spec": gathering_spec,
+				"count": 1,
+			}
+			groups.append(gathering_group)
+			_mark_outputs(gathering_spec, outputs_by_cell[cell_idx])
+		if not gathering_group.is_empty():
+			gathering_group["bootstrap_root"] = true
+			gathering_group["bootstrap_min_count"] = 1
+	# Only source-complete trade regions may become initial settlements. Random
+	# maps commonly contain isolated resource-bearing islands; leaving those
+	# regions empty is valid, while seeding population there would create the
+	# permanently closed economy this preflight is intended to prevent.
+	var source_report := _protect_construction_sources(
+		map, passable_cells, groups_by_cell, outputs_by_cell, true)
+	if not bool(source_report.get("ok", false)):
+		source_report["source_diagnostics"] = _construction_source_diagnostics(
+			passable_cells, groups_by_cell, resource_arrays, resource_peaks,
+			source_root_fallback_counts)
+		return source_report
+	var skipped_source_components: Array = source_report.get(
+		"skipped_components", []).duplicate(true)
+	var source_candidate_component_count := int(source_report.get(
+		"candidate_component_count", 0))
 
 	var pending_industries := []
 	for building_id_raw in eligible_building_ids:
@@ -158,6 +215,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	var merchant_post_spec: Dictionary = building_specs.get(&"merchant_post", {})
 	var merchant_post_available := not merchant_post_spec.is_empty() \
 		and _technology_available(merchant_post_spec.get("technology_tags", PackedStringArray()))
+	if not merchant_post_available:
+		return {"ok": false, "reason": "bootstrap_merchant_root_missing"}
 	var basic_capacity_initial_buildings := 0
 	var basic_capacity_trimmed_buildings := 0
 	var basic_capacity_deficient_cells := 0
@@ -192,9 +251,16 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		chain_input_coverage_q16.append(int(balance.input_coverage_q16))
 		if int(totals.population) > 0:
 			basic_capacity_cell_indices.append(cell_idx)
-			basic_capacity_population.append(int(totals.population))
+			basic_capacity_population.append(target_population)
 			basic_food_capacity.append(int(totals.food))
 			basic_clothing_capacity.append(int(totals.clothing))
+	# Capacity pruning must not silently erase the only regional construction
+	# source. Revalidate the actual final root set used to build the packets.
+	source_report = _protect_construction_sources(
+		map, passable_cells, groups_by_cell)
+	if not bool(source_report.get("ok", false)):
+		return source_report
+	source_report["skipped_components"] = skipped_source_components
 
 	var cell_indices := PackedInt32Array()
 	var signature_ids := PackedInt32Array()
@@ -291,6 +357,12 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			generated_professions[&"unemployed"] = true
 			total_unemployed_population += unemployed
 		if actual_population > 0:
+			if not _has_survival_food_root(generated_groups):
+				return {
+					"ok": false,
+					"reason": "bootstrap_survival_root_missing",
+					"cell_idx": cell_idx,
+				}
 			populated_cells.append(cell_idx)
 			total_population += actual_population
 
@@ -345,7 +417,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			"population": populations,
 			"funds": funds,
 		},
-		"market_packet": {},
+		"market_packet": _bootstrap_market_packet(
+			map.cell_count(), finance, populated_cells),
 		"building_packet": {
 			"building_cells": building_cells,
 			"building_type_ids": building_types,
@@ -364,9 +437,31 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"population_source": "demand_driven_survival_capacity_bootstrap_v16",
 		"collector_placement_model": "demand_driven_minimum_chain_v16",
 		"initial_resource_horizon_days": INITIAL_RESOURCE_HORIZON_DAYS,
+		"construction_source_min_horizon_days":
+			CONSTRUCTION_SOURCE_MIN_HORIZON_DAYS,
+		"construction_source_root_fallback_counts":
+			source_root_fallback_counts,
 		"cell_population_cap": CELL_POPULATION_CAP,
 		"initial_employment": "unemployed",
-		"initial_stock_units": 0,
+		"initial_stock_units": populated_cells.size() * 1750,
+		"bootstrap_bridge_stock_per_market": BOOTSTRAP_BRIDGE_STOCK.duplicate(),
+		"bootstrap_root_building_counts": {
+			"merchant_post": populated_cells.size(),
+			"gathering_ground": _count_buildings(
+				groups_by_cell, &"gathering_ground"),
+			"timber_collector": _count_buildings(
+				groups_by_cell, &"timber_collector"),
+			"stone_collector": _count_buildings(
+				groups_by_cell, &"stone_collector"),
+		},
+		"construction_closure_ok": true,
+		"construction_source_component_count": int(
+			source_report.get("component_count", 0)),
+		"construction_source_candidate_component_count":
+			source_candidate_component_count,
+		"construction_source_components": source_report.get("components", []),
+		"construction_source_skipped_components": source_report.get(
+			"skipped_components", []),
 		"bootstrap_cycle_days": cycle_days,
 		"survival_fund_days": SURVIVAL_FUND_DAYS,
 		"owner_operating_cycles": OWNER_OPERATING_CYCLES,
@@ -418,7 +513,8 @@ static func _balance_basic_capacity(groups: Array, reserved_population: int = 0)
 		var best := -1
 		for i in range(groups.size() - 1, -1, -1):
 			var group: Dictionary = groups[i]
-			if int(group.count) <= 0:
+			if int(group.count) <= maxi(0, int(
+					group.get("bootstrap_min_count", 0))):
 				continue
 			group.count = int(group.count) - 1
 			var trial_totals := _basic_capacity_totals(groups, reserved_population)
@@ -478,15 +574,29 @@ static func _groups_input_coverage_q16(groups: Array) -> int:
 		var output_ids: PackedStringArray = spec.get("output_good_ids", PackedStringArray())
 		var output_quantities: PackedInt64Array = spec.get(
 			"output_quantities", PackedInt64Array())
+		var output_categories: PackedStringArray = spec.get(
+			"output_category_ids", PackedStringArray())
 		for i in range(mini(output_ids.size(), output_quantities.size())):
 			var output_id := StringName(output_ids[i])
-			outputs[output_id] = int(outputs.get(output_id, 0)) + \
-				count * int(output_quantities[i])
+			var quantity := count * int(output_quantities[i])
+			outputs[output_id] = int(outputs.get(output_id, 0)) + quantity
+			if i < output_categories.size() and String(output_categories[i]) != "":
+				var category_id := StringName(
+					"category:%s" % String(output_categories[i]))
+				outputs[category_id] = int(outputs.get(category_id, 0)) + quantity
 		var input_ids: PackedStringArray = spec.get("input_good_ids", PackedStringArray())
 		var input_quantities: PackedInt64Array = spec.get(
 			"input_quantities", PackedInt64Array())
+		var input_categories: PackedStringArray = spec.get(
+			"input_category_ids", PackedStringArray())
+		var input_required_q16: PackedInt32Array = spec.get(
+			"input_required_q16", PackedInt32Array())
 		for i in range(mini(input_ids.size(), input_quantities.size())):
-			var input_id := StringName(input_ids[i])
+			if i < input_required_q16.size() and input_required_q16[i] < Q16_ONE:
+				continue
+			var input_id := StringName("category:%s" % String(input_categories[i])) \
+				if i < input_categories.size() and String(input_categories[i]) != "" \
+				else StringName(input_ids[i])
 			inputs[input_id] = int(inputs.get(input_id, 0)) + \
 				count * int(input_quantities[i])
 	var coverage := Q16_ONE
@@ -505,9 +615,15 @@ static func _groups_input_paths_exist(groups: Array) -> bool:
 			_mark_outputs(group.spec, outputs)
 	for group in groups:
 		var inputs: PackedStringArray = group.spec.get("input_good_ids", PackedStringArray())
-		if int(group.count) > 0 and not inputs.is_empty() and \
-				not _inputs_ready(group.spec, outputs):
-			return false
+		var required_q16: PackedInt32Array = group.spec.get(
+			"input_required_q16", PackedInt32Array())
+		if int(group.count) <= 0:
+			continue
+		for i in range(inputs.size()):
+			if i < required_q16.size() and required_q16[i] < Q16_ONE:
+				continue
+			if not _input_slot_ready(group.spec, i, outputs):
+				return false
 	return true
 
 
@@ -523,6 +639,10 @@ static func _prune_nonessential_groups(groups: Array) -> void:
 		changed = false
 		for i in range(groups.size()):
 			if keep.has(i):
+				continue
+			if bool((groups[i] as Dictionary).get("bootstrap_root", false)):
+				keep[i] = true
+				changed = true
 				continue
 			var spec: Dictionary = groups[i].spec
 			var outputs: PackedStringArray = spec.get("output_good_ids", PackedStringArray())
@@ -540,6 +660,190 @@ static func _prune_nonessential_groups(groups: Array) -> void:
 	for i in range(groups.size() - 1, -1, -1):
 		if not keep.has(i):
 			groups.remove_at(i)
+
+
+static func _find_group(groups: Array, stable_id: StringName) -> Dictionary:
+	for group_raw in groups:
+		var group: Dictionary = group_raw
+		if StringName(group.spec.get("stable_id", "")) == stable_id:
+			return group
+	return {}
+
+
+static func _count_buildings(groups_by_cell: Dictionary,
+		stable_id: StringName) -> int:
+	var total := 0
+	for groups_raw in groups_by_cell.values():
+		for group_raw in groups_raw:
+			var group: Dictionary = group_raw
+			if StringName(group.spec.get("stable_id", "")) == stable_id:
+				total += maxi(0, int(group.count))
+	return total
+
+
+static func _ensure_construction_source_roots(passable_cells: PackedInt32Array,
+		groups_by_cell: Dictionary, outputs_by_cell: Dictionary,
+		building_specs: Dictionary, resource_arrays: Dictionary,
+		resource_peaks: Dictionary) -> Dictionary:
+	var added := {"timber_collector": 0, "stone_collector": 0}
+	for stable_id in [&"timber_collector", &"stone_collector"]:
+		var spec: Dictionary = building_specs.get(stable_id, {})
+		if spec.is_empty():
+			continue
+		for cell_idx_raw in passable_cells:
+			var cell_idx := int(cell_idx_raw)
+			var groups: Array = groups_by_cell[cell_idx]
+			if not _find_group(groups, stable_id).is_empty():
+				continue
+			if _collector_count_at(spec, cell_idx, resource_arrays,
+					resource_peaks, CONSTRUCTION_SOURCE_MIN_HORIZON_DAYS) <= 0:
+				continue
+			groups.append({"spec": spec, "count": 1})
+			_mark_outputs(spec, outputs_by_cell[cell_idx])
+			added[String(stable_id)] = int(added[String(stable_id)]) + 1
+	return added
+
+
+static func _construction_source_diagnostics(passable_cells: PackedInt32Array,
+		groups_by_cell: Dictionary, resource_arrays: Dictionary,
+		resource_peaks: Dictionary, fallback_counts: Dictionary) -> Dictionary:
+	var positive_cells := {}
+	for resource_id in [&"fertile_soil", &"timber", &"stone"]:
+		var count := 0
+		var reserves: PackedFloat32Array = resource_arrays.get(
+			resource_id, PackedFloat32Array())
+		for cell_idx_raw in passable_cells:
+			var cell_idx := int(cell_idx_raw)
+			if cell_idx >= 0 and cell_idx < reserves.size() and reserves[cell_idx] > 0.0:
+				count += 1
+		positive_cells[String(resource_id)] = count
+	return {
+		"passable_cells": passable_cells.size(),
+		"resource_positive_cells": positive_cells,
+		"resource_peaks": {
+			"fertile_soil": float(resource_peaks.get(&"fertile_soil", 0.0)),
+			"timber": float(resource_peaks.get(&"timber", 0.0)),
+			"stone": float(resource_peaks.get(&"stone", 0.0)),
+		},
+		"root_buildings": {
+			"timber_collector": _count_buildings(
+				groups_by_cell, &"timber_collector"),
+			"stone_collector": _count_buildings(
+				groups_by_cell, &"stone_collector"),
+		},
+		"fallback_roots": fallback_counts.duplicate(),
+	}
+
+
+static func _has_survival_food_root(groups: Array) -> bool:
+	for group_raw in groups:
+		var group: Dictionary = group_raw
+		var outputs: PackedStringArray = group.spec.get(
+			"output_good_ids", PackedStringArray())
+		for good_id in outputs:
+			if FOOD_GOOD_IDS.has(String(good_id)):
+				return true
+	return false
+
+
+static func _protect_construction_sources(map: MapData,
+		passable_cells: PackedInt32Array, groups_by_cell: Dictionary,
+		outputs_by_cell: Dictionary = {}, drop_incomplete_regions: bool = false
+		) -> Dictionary:
+	var passable := {}
+	for cell_idx in passable_cells:
+		passable[int(cell_idx)] = true
+	var visited := {}
+	var components := []
+	var skipped_components := []
+	var candidate_component_count := 0
+	for start_raw in passable_cells:
+		var start := int(start_raw)
+		if visited.has(start):
+			continue
+		var queue: Array[int] = [start]
+		visited[start] = true
+		var cursor := 0
+		var populated := false
+		var timber_cell := -1
+		var stone_cell := -1
+		var component_cells: Array[int] = []
+		while cursor < queue.size():
+			var cell_idx := queue[cursor]
+			cursor += 1
+			component_cells.append(cell_idx)
+			var groups: Array = groups_by_cell.get(cell_idx, [])
+			if not groups.is_empty():
+				populated = true
+				if timber_cell < 0 and not _find_group(groups, &"timber_collector").is_empty():
+					timber_cell = cell_idx
+				if stone_cell < 0 and not _find_group(groups, &"stone_collector").is_empty():
+					stone_cell = cell_idx
+			for direction in range(6):
+				var neighbor := int(map.neighbor_index(cell_idx, direction))
+				if neighbor >= 0 and passable.has(neighbor) and not visited.has(neighbor):
+					visited[neighbor] = true
+					queue.append(neighbor)
+		if not populated:
+			continue
+		candidate_component_count += 1
+		if timber_cell < 0 or stone_cell < 0:
+			var missing_component := {
+				"component_index": candidate_component_count - 1,
+				"missing_timber": timber_cell < 0,
+				"missing_stone": stone_cell < 0,
+				"cell_count": component_cells.size(),
+				"first_cell": component_cells[0] if not component_cells.is_empty() else -1,
+			}
+			if not drop_incomplete_regions:
+				missing_component["ok"] = false
+				missing_component["reason"] = "bootstrap_construction_source_missing"
+				return missing_component
+			skipped_components.append(missing_component)
+			for component_cell in component_cells:
+				groups_by_cell[component_cell] = []
+				if outputs_by_cell.has(component_cell):
+					outputs_by_cell[component_cell] = {}
+			continue
+		var timber_group := _find_group(groups_by_cell[timber_cell], &"timber_collector")
+		var stone_group := _find_group(groups_by_cell[stone_cell], &"stone_collector")
+		timber_group["bootstrap_root"] = true
+		stone_group["bootstrap_root"] = true
+		timber_group["bootstrap_min_count"] = 1
+		stone_group["bootstrap_min_count"] = 1
+		components.append({
+			"timber_cell": timber_cell,
+			"stone_cell": stone_cell,
+		})
+	if components.is_empty():
+		return {
+			"ok": false,
+			"reason": "bootstrap_construction_source_missing",
+			"candidate_component_count": candidate_component_count,
+			"skipped_components": skipped_components,
+		}
+	return {
+		"ok": true,
+		"component_count": components.size(),
+		"components": components,
+		"candidate_component_count": candidate_component_count,
+		"skipped_components": skipped_components,
+	}
+
+
+static func _bootstrap_market_packet(cell_count: int, finance: Dictionary,
+		populated_cells: PackedInt32Array) -> Dictionary:
+	var good_ids: PackedStringArray = finance.get("good_ids", PackedStringArray())
+	var stock := PackedInt64Array()
+	stock.resize(cell_count * good_ids.size())
+	stock.fill(0)
+	for cell_idx_raw in populated_cells:
+		var cell_idx := int(cell_idx_raw)
+		for good_id in BOOTSTRAP_BRIDGE_STOCK:
+			var good_idx := good_ids.find(String(good_id))
+			stock[cell_idx * good_ids.size() + good_idx] = int(
+				BOOTSTRAP_BRIDGE_STOCK[good_id])
+	return {"stock": stock}
 
 
 static func _basic_capacity_deficit_people(totals: Dictionary) -> int:
@@ -626,7 +930,8 @@ static func _resource_peaks(resource_arrays: Dictionary,
 
 
 static func _collector_count_at(spec: Dictionary, cell_idx: int,
-		resource_arrays: Dictionary, resource_peaks: Dictionary) -> int:
+		resource_arrays: Dictionary, resource_peaks: Dictionary,
+		resource_horizon_days: int = INITIAL_RESOURCE_HORIZON_DAYS) -> int:
 	var resource_ids: PackedStringArray = spec.resource_ids
 	var quantities: PackedInt64Array = spec.resource_quantities
 	var modes: PackedInt32Array = spec.resource_modes
@@ -653,7 +958,7 @@ static func _collector_count_at(spec: Dictionary, cell_idx: int,
 			return 0
 		var abundance_supported := clampi(
 			ceili(float(count_cap) * available / peak), 1, count_cap)
-		var reserve_days := INITIAL_RESOURCE_HORIZON_DAYS if int(modes[i]) == 0 else 1
+		var reserve_days := maxi(1, resource_horizon_days) if int(modes[i]) == 0 else 1
 		var horizon_supported := int(floor(
 			available / (required * float(reserve_days))))
 		var local_supported := mini(abundance_supported, horizon_supported)
@@ -676,17 +981,26 @@ static func _mark_outputs(spec: Dictionary, local_outputs: Dictionary) -> void:
 
 static func _inputs_ready(spec: Dictionary, available_outputs: Dictionary) -> bool:
 	var input_ids: PackedStringArray = spec.input_good_ids
-	var input_categories: PackedStringArray = spec.get(
-		"input_category_ids", PackedStringArray())
 	if input_ids.is_empty():
 		return false
 	for i in range(input_ids.size()):
-		var category := String(input_categories[i]) if i < input_categories.size() else ""
-		if category != "" and available_outputs.has(StringName("category:%s" % category)):
-			continue
-		if not available_outputs.has(StringName(input_ids[i])):
+		if not _input_slot_ready(spec, i, available_outputs):
 			return false
 	return true
+
+
+static func _input_slot_ready(spec: Dictionary, input_idx: int,
+		available_outputs: Dictionary) -> bool:
+	var input_ids: PackedStringArray = spec.get("input_good_ids", PackedStringArray())
+	var input_categories: PackedStringArray = spec.get(
+		"input_category_ids", PackedStringArray())
+	if input_idx < 0 or input_idx >= input_ids.size():
+		return false
+	var category := String(input_categories[input_idx]) \
+		if input_idx < input_categories.size() else ""
+	if category != "" and available_outputs.has(StringName("category:%s" % category)):
+		return true
+	return available_outputs.has(StringName(input_ids[input_idx]))
 
 
 static func _technology_available(tags: PackedStringArray) -> bool:

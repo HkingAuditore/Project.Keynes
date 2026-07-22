@@ -1488,8 +1488,14 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	if _test_economy_bootstrap_enabled:
 		test_bootstrap_report = EconomyTestBootstrapScript.build(map, _economy_facade, seed_value)
 		if not bool(test_bootstrap_report.get("ok", false)):
-			push_error("[economy] test bootstrap failed: %s" % String(
-				test_bootstrap_report.get("reason", "unknown")))
+			push_error(("[economy] test bootstrap failed: %s "
+				+ "candidate_regions=%d skipped_regions=%d details=%s diagnostics=%s") % [
+				String(test_bootstrap_report.get("reason", "unknown")),
+				int(test_bootstrap_report.get("candidate_component_count", 0)),
+				(test_bootstrap_report.get("skipped_components", []) as Array).size(),
+				str(test_bootstrap_report.get("skipped_components", [])),
+				str(test_bootstrap_report.get("source_diagnostics", {})),
+			])
 			_economy_facade = null
 			return
 		population_packet = test_bootstrap_report.get("population_packet", {})
@@ -1528,7 +1534,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	if _test_economy_bootstrap_enabled:
 		print(("[economy/test-bootstrap] populated_cells=%d population=%d cohorts=%d "
 			+ "professions=%d/%d building_groups=%d building_types=%d/%d "
-			+ "capacity_buildings=%d->%d trimmed=%d population_range=%d..%d cap=%d goods=%d") % [
+			+ "capacity_buildings=%d->%d trimmed=%d population_range=%d..%d cap=%d goods=%d "
+			+ "construction_regions=%d/%d skipped=%d") % [
 			int(test_bootstrap_report.get("populated_cells", 0)),
 			int(test_bootstrap_report.get("total_population", 0)),
 			int(test_bootstrap_report.get("cohort_count", 0)),
@@ -1544,6 +1551,11 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			int(test_bootstrap_report.get("carrying_capacity_max", 0)),
 			int(test_bootstrap_report.get("cell_population_cap", 0)),
 			int(test_bootstrap_report.get("good_count", 0)),
+			int(test_bootstrap_report.get("construction_source_component_count", 0)),
+			int(test_bootstrap_report.get(
+				"construction_source_candidate_component_count", 0)),
+			(test_bootstrap_report.get(
+				"construction_source_skipped_components", []) as Array).size(),
 		])
 
 
