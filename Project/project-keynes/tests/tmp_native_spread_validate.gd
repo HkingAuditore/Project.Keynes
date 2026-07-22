@@ -87,7 +87,7 @@ func _run(spread: bool) -> Dictionary:
 	var generator := MapGenerator.new()
 	generator.climate_profile = profile
 	generator.native_daily_slice_yield_nodes_override = _yield_override
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null) as MapData
 	if map == null:
 		print("  FAIL: generation null")

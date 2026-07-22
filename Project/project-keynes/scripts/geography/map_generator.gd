@@ -1017,6 +1017,7 @@ var _country_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
 var _test_economy_bootstrap_enabled: bool = false
+var _test_economy_population_scale: int = EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
 var _natural_resource_pass_knobs: Dictionary = {}
 var _last_natural_resource_report: Dictionary = {}
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
@@ -1158,6 +1159,8 @@ func _ensure_daily_pass_modules() -> void:
 func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	cfg.validate()
 	_abort_all_climate_passes("generate_restart")
+	bake_progress.emit("preparing", 0.03)
+	await _yield_generation_frame()
 
 	var effective_seed: int = cfg.seed if cfg.seed != 0 else randi()
 	_rng = RandomNumberGenerator.new()
@@ -1202,6 +1205,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 			+ "ClimateProfile.native_generation_mode 是否为 ACTIVE(2)。中止本次生成。")
 		return {}
 	print("MapGenerator v7: per-cell %dms (%d cells, path=gdext_base)" % [Time.get_ticks_msec() - t_total, map.cell_count()])
+	bake_progress.emit("continents", 0.28)
+	await _yield_generation_frame()
 
 	# Milestone 1：landform / vegetation / cover 三轴在 native post_base 结果里已就绪
 	# （_assemble_native_generation_map 装配时写入），无需再 _sync_axes_for_map。
@@ -1214,6 +1219,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_bootstrap_sea_ice_fraction(map, cfg)
 	# 海冰基线可能改写了部分 cell.terrain → 重新同步轴
 	_sync_axes_for_map(map, cfg)
+	bake_progress.emit("climate", 0.40)
+	await _yield_generation_frame()
 
 	var t_bake := Time.get_ticks_msec()
 	_baker = MapBaker.new()
@@ -1280,11 +1287,13 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		cell._temp_365d_mean_backing = _boot_temp
 		cell._temp_dev_from_annual_backing = 0.0
 		cell._ema_initialized = true
-	var world := _baker.bake_world(map, cfg, hex_size, effective_seed)
+	var world: WorldData = await _baker.bake_world(map, cfg, hex_size, effective_seed)
 	if _baker.has_method("prewarm_dynamic_axis_caches"):
 		_baker.prewarm_dynamic_axis_caches(map, world)
 	_last_world = world
 	print("MapGenerator v7: bake %dms" % (Time.get_ticks_msec() - t_bake))
+	bake_progress.emit("ecology", 0.90)
+	await _yield_generation_frame()
 
 	# 任务 7：在 bake 后新增一个轻量级 pass，把 MapBaker 烤好的 per-pixel 洋流场
 	# 折返为 per-cell HexCell.ocean_current。这是逻辑层的洋流字段——渲染层从这里
@@ -1396,6 +1405,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# 降到 ~0.01ms。失败（cfg/warp 未就绪）静默回退到 round 内惰性构建，行为不变。
 	if map != null and map.has_indices():
 		_ensure_season_knob_geometry_cache(map, map.cell_count())
+	bake_progress.emit("simulation", 0.96)
+	await _yield_generation_frame()
 	# ─── SUS 注册（任务 4：接入点 ① + ③）─────────────────────────────────
 	# 此时 baker.bake_world 已经一次性烘完了 ocean currents + upwelling 完整版，
 	# per-cell 也已经被 _compute_ocean_currents 回填。SUS 从这里开始接管"逐日
@@ -1404,6 +1415,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# 产物（ocean_current_buffer / ocean_upwelling_buffer / vector_atlas_tex /
 	# upwelling_tex）并回填 per-cell。
 	_setup_sus(map, world, cfg, hex_size)
+	bake_progress.emit("done", 1.0)
+	await _yield_generation_frame()
 
 	return {"map": map, "world_data": world, "seed": effective_seed}
 
@@ -1486,7 +1499,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	var building_packet: Dictionary = {}
 	var test_bootstrap_report: Dictionary = {}
 	if _test_economy_bootstrap_enabled:
-		test_bootstrap_report = EconomyTestBootstrapScript.build(map, _economy_facade, seed_value)
+		test_bootstrap_report = EconomyTestBootstrapScript.build(
+			map, _economy_facade, seed_value, _test_economy_population_scale)
 		if not bool(test_bootstrap_report.get("ok", false)):
 			push_error(("[economy] test bootstrap failed: %s "
 				+ "candidate_regions=%d skipped_regions=%d details=%s diagnostics=%s") % [
@@ -1532,10 +1546,11 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		int(country_bootstrapped.get("generation", 0)),
 	])
 	if _test_economy_bootstrap_enabled:
-		print(("[economy/test-bootstrap] populated_cells=%d population=%d cohorts=%d "
+		print(("[economy/test-bootstrap] scale_mode=%s populated_cells=%d population=%d cohorts=%d "
 			+ "professions=%d/%d building_groups=%d building_types=%d/%d "
 			+ "capacity_buildings=%d->%d trimmed=%d population_range=%d..%d cap=%d goods=%d "
-			+ "construction_regions=%d/%d skipped=%d") % [
+			+ "tiers=%s construction_regions=%d/%d skipped=%d") % [
+			String(test_bootstrap_report.get("population_scale_mode", "capacity")),
 			int(test_bootstrap_report.get("populated_cells", 0)),
 			int(test_bootstrap_report.get("total_population", 0)),
 			int(test_bootstrap_report.get("cohort_count", 0)),
@@ -1551,6 +1566,7 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			int(test_bootstrap_report.get("carrying_capacity_max", 0)),
 			int(test_bootstrap_report.get("cell_population_cap", 0)),
 			int(test_bootstrap_report.get("good_count", 0)),
+			str(test_bootstrap_report.get("population_tier_counts", {})),
 			int(test_bootstrap_report.get("construction_source_component_count", 0)),
 			int(test_bootstrap_report.get(
 				"construction_source_candidate_component_count", 0)),
@@ -1577,6 +1593,12 @@ func get_economy_report() -> Dictionary:
 
 func set_test_economy_bootstrap_enabled(enabled: bool) -> void:
 	_test_economy_bootstrap_enabled = enabled
+
+
+func set_test_economy_population_scale(scale: int) -> void:
+	_test_economy_population_scale = scale \
+		if scale in EconomyTestBootstrapScript.SUPPORTED_POPULATION_SCALES \
+		else EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
 
 
 func _continue_economy_inflight(day_index: int) -> void:
@@ -15801,7 +15823,14 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 # bake_world 阶段进度信号 forwarder：MapBaker.stage_progress → MapGenerator.bake_progress。
 # 详细 stage 含义见 map_baker.gd 顶部 stage_progress 信号注释。
 func _on_baker_stage_progress(stage: String, fraction: float) -> void:
-	bake_progress.emit(stage, fraction)
+	var mapped_stage := "encode" if stage == "done" else stage
+	bake_progress.emit(mapped_stage, lerpf(0.44, 0.88, clampf(fraction, 0.0, 1.0)))
+
+
+func _yield_generation_frame() -> void:
+	var main_loop := Engine.get_main_loop()
+	if main_loop is SceneTree:
+		await (main_loop as SceneTree).process_frame
 
 
 # ───────────────────────────────────────────────────────────────────────────

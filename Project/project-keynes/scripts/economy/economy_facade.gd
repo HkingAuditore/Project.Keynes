@@ -493,13 +493,14 @@ func bootstrap_finance_columns() -> Dictionary:
 	for key in [
 		"good_ids", "good_default_price", "good_inventory_target_ratios_q16",
 		"good_merchant_buy_factor_q16", "good_monetary_issue_values",
+		"good_technology_tag_offsets", "good_technology_tags",
 		"plan_ids", "plan_need_offsets", "need_ids", "need_living_cost_weights_q16",
 		"need_stable_ids", "need_base_qty_per_person", "need_quantity_env_curve_ids",
 		"need_variant_offsets", "variant_preference_q16",
 		"variant_preference_env_curve_ids", "variant_component_offsets",
 		"component_good_ids", "component_qty_per_need", "environment_curve_signal_ids",
 		"environment_curve_values_q16", "ethnicity_need_factor_q16",
-		"signature_ethnicity_ids",
+		"signature_ethnicity_ids", "signature_plan_ids",
 	]:
 		result[key] = _catalog.get(key)
 	var ratios: PackedInt32Array = result.get(

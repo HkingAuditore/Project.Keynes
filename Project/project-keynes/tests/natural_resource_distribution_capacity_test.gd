@@ -18,7 +18,7 @@ func _init() -> void:
 	cfg.climate_profile = profile
 	var generator := MapGenerator.new()
 	generator.climate_profile = profile
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null)
 	_expect("Earth-like audit map generates", map != null)
 	if map == null:

@@ -6,11 +6,18 @@ const Q16_ONE := 65536
 const INT64_MAX := 9223372036854775807
 const COLLECTOR_COUNT_CAP := 24
 const CELL_POPULATION_CAP := 300
+const RESOURCE_TIERED_POPULATION_SCALE := 0
+const DEFAULT_POPULATION_SCALE := RESOURCE_TIERED_POPULATION_SCALE
+const SUPPORTED_POPULATION_SCALES := [0, 1, 10, 100, 1000]
+const RESOURCE_TIER_SCALES := [1, 10, 100, 500]
 const INITIAL_RESOURCE_HORIZON_DAYS := 3650
 const CONSTRUCTION_SOURCE_MIN_HORIZON_DAYS := 365
 const FOOD_REQUIREMENT_PER_CAPITA := 1300
 const CLOTHING_REQUIREMENT_PER_CAPITA := 4
 const SURVIVAL_FUND_DAYS := 30
+const INITIAL_HOUSEHOLD_STOCK_DAYS := 1
+const INITIAL_BUILDING_INPUT_STOCK_DAYS := 1
+const RESOURCE_BUILDING_RUNWAY_DAYS := 365
 const OWNER_OPERATING_CYCLES := 2
 const PLANNED_UTILIZATION_Q16 := 49152
 const INITIAL_CARRYING_CAPACITY_SHARE_Q16 := 32768
@@ -35,10 +42,6 @@ const TEST_INDUSTRY_COUNTS := {
 	"knapping_workshop": 2,
 }
 
-const MID_STONE_EXCLUDED_BUILDING_IDS := {
-	"lumber_plant": true,
-}
-
 const FOOD_GOOD_IDS := {
 	"prepared_staples": true, "bread": true, "grain": true, "gathered_plants": true,
 	"game_meat": true, "meat": true, "fish": true, "canned_fish": true,
@@ -53,9 +56,16 @@ const MID_STONE_TECHNOLOGY_IDS := [
 ]
 
 
-static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary:
+static func build(map: MapData, facade: EconomyFacade, _seed: int,
+		population_scale: int = 1) -> Dictionary:
 	if map == null or facade == null or not facade.is_configured():
 		return {"ok": false, "reason": "test_bootstrap_runtime_unavailable"}
+	if population_scale not in SUPPORTED_POPULATION_SCALES:
+		return {
+			"ok": false,
+			"reason": "test_bootstrap_population_scale_invalid",
+			"population_scale": population_scale,
+		}
 	var profession_ids := facade.profession_ids()
 	var signatures := {}
 	for profession_id in profession_ids:
@@ -93,8 +103,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		for key in placement_spec:
 			job_spec[key] = placement_spec[key]
 		building_specs[StringName(building_id)] = job_spec
-		if _technology_available(placement_spec.technology_tags) and not \
-			MID_STONE_EXCLUDED_BUILDING_IDS.has(String(building_id)):
+		if _technology_available(placement_spec.technology_tags):
 			eligible_building_ids.append(building_id)
 	var highest_tier_by_family := {}
 	for building_id in eligible_building_ids:
@@ -237,7 +246,11 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	var basic_clothing_capacity := PackedInt64Array()
 	var chain_input_coverage_q16 := PackedInt32Array()
 	for cell_idx in passable_cells:
-		_prune_nonessential_groups(groups_by_cell[cell_idx])
+		# Every locally valid catalog chain is part of the initial economy. Keep
+		# at least one of each type while trimming only redundant copies.
+		for group in groups_by_cell[cell_idx]:
+			group["bootstrap_min_count"] = maxi(
+				1, int(group.get("bootstrap_min_count", 0)))
 		for group in groups_by_cell[cell_idx]:
 			basic_capacity_initial_buildings += maxi(0, int(group.count))
 		var reserved_population := 1 if merchant_post_available and not \
@@ -314,6 +327,32 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	source_report["components"] = _construction_source_component_summaries(
 		source_report.get("components", []))
 
+	# Capacity balancing remains physically calibrated. Resource-tiered mode
+	# ranks viable settlements by that capacity, hard-input coverage, and local
+	# visible resource abundance, then assigns deterministic quartile scales.
+	# Scaling only expands unemployed population; it never invents production.
+	var capacity_calibrated_population := carrying_capacity_population.duplicate()
+	var resource_population_scores := _resource_population_scores(
+		carrying_capacity_cell_indices, capacity_calibrated_population,
+		chain_input_coverage_q16, resource_arrays, resource_peaks)
+	var population_scales_by_cell := _population_scales_by_resource(
+		carrying_capacity_cell_indices, capacity_calibrated_population,
+		resource_population_scores) if population_scale == \
+		RESOURCE_TIERED_POPULATION_SCALE else _uniform_population_scales(
+			carrying_capacity_population.size(), population_scale)
+	var maximum_population_scale := RESOURCE_TIER_SCALES[-1] \
+		if population_scale == RESOURCE_TIERED_POPULATION_SCALE else population_scale
+	var scaled_cell_population_cap := CELL_POPULATION_CAP * maximum_population_scale
+	for i in range(carrying_capacity_population.size()):
+		carrying_capacity_population[i] = mini(
+			int(carrying_capacity_population[i]) * int(population_scales_by_cell[i]),
+			scaled_cell_population_cap)
+	var population_tier_counts := _population_tier_counts(
+		capacity_calibrated_population, population_scales_by_cell)
+	_rebalance_building_groups(groups_by_cell, carrying_capacity_cell_indices,
+		carrying_capacity_population, population_scales_by_cell, finance,
+		resource_arrays)
+
 	var cell_indices := PackedInt32Array()
 	var signature_ids := PackedInt32Array()
 	var populations := PackedInt64Array()
@@ -343,7 +382,10 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		if generated_groups.is_empty():
 			continue
 		if merchant_post_available:
-			generated_groups.append({"spec": merchant_post_spec, "count": 1})
+			var scale_idx := carrying_capacity_cell_indices.find(cell_idx)
+			var cell_scale := int(population_scales_by_cell[scale_idx]) \
+				if scale_idx >= 0 else 1
+			generated_groups.append({"spec": merchant_post_spec, "count": cell_scale})
 		generated_groups.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 			return int(a.spec.type_id) < int(b.spec.type_id))
 		for group in generated_groups:
@@ -422,7 +464,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			populated_cells.append(cell_idx)
 			total_population += actual_population
 
-	carrying_capacity_min = CELL_POPULATION_CAP
+	carrying_capacity_min = scaled_cell_population_cap
 	carrying_capacity_max = 0
 	carrying_capacity_total = 0
 	for population in carrying_capacity_population:
@@ -464,6 +506,9 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			initial_owner_operating_funds, owner)
 		initial_merchant_inventory_funds = _sat_add_nonnegative(
 			initial_merchant_inventory_funds, merchant)
+	var bootstrap_market := _bootstrap_market_packet(
+		map, finance, cell_indices, signature_ids, populations,
+		groups_by_cell, populated_cells, cycle_days)
 
 	return {
 		"ok": true,
@@ -473,8 +518,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			"population": populations,
 			"funds": funds,
 		},
-		"market_packet": _bootstrap_market_packet(
-			map.cell_count(), finance, populated_cells),
+		"market_packet": bootstrap_market.packet,
 		"building_packet": {
 			"building_cells": building_cells,
 			"building_type_ids": building_types,
@@ -490,16 +534,31 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			basic_capacity_initial_buildings - basic_capacity_trimmed_buildings,
 		"initial_unemployed_population": total_unemployed_population,
 		"chain_input_coverage_q16": chain_input_coverage_q16,
-		"population_source": "demand_driven_survival_capacity_bootstrap_v16",
-		"collector_placement_model": "demand_driven_minimum_chain_v16",
+		"population_source": "resource_tiered_complete_chain_test_bootstrap_v19",
+		"collector_placement_model": "resource_backed_complete_chain_v17",
 		"initial_resource_horizon_days": INITIAL_RESOURCE_HORIZON_DAYS,
 		"construction_source_min_horizon_days":
 			CONSTRUCTION_SOURCE_MIN_HORIZON_DAYS,
 		"construction_source_root_fallback_counts":
 			source_root_fallback_counts,
-		"cell_population_cap": CELL_POPULATION_CAP,
+		"cell_population_cap": scaled_cell_population_cap,
+		"capacity_calibrated_cell_population_cap": CELL_POPULATION_CAP,
+		"population_scale": population_scale,
+		"population_scale_mode": "resource_tiered" if population_scale == \
+			RESOURCE_TIERED_POPULATION_SCALE else (
+				"capacity" if population_scale == 1 else "uniform_stress"),
+		"population_scales_by_cell": population_scales_by_cell,
+		"population_tier_counts": population_tier_counts,
+		"resource_population_scores": resource_population_scores,
+		"building_scale_model": "household_demand_input_fixed_point_resource_runway_v1",
+		"resource_building_runway_days": RESOURCE_BUILDING_RUNWAY_DAYS,
 		"initial_employment": "unemployed",
-		"initial_stock_units": populated_cells.size() * 1750,
+		"initial_stock_units": int(bootstrap_market.total_stock),
+		"initial_household_stock_units": int(bootstrap_market.household_stock),
+		"initial_building_input_stock_units": int(bootstrap_market.building_input_stock),
+		"initial_bridge_stock_units": int(bootstrap_market.bridge_stock),
+		"initial_household_stock_days": INITIAL_HOUSEHOLD_STOCK_DAYS,
+		"initial_building_input_stock_days": INITIAL_BUILDING_INPUT_STOCK_DAYS,
 		"bootstrap_bridge_stock_per_market": BOOTSTRAP_BRIDGE_STOCK.duplicate(),
 		"bootstrap_root_building_counts": {
 			"merchant_post": populated_cells.size(),
@@ -547,6 +606,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"basic_capacity_deficient_cells": basic_capacity_deficient_cells,
 		"carrying_capacity_cell_indices": carrying_capacity_cell_indices,
 		"carrying_capacity_population": carrying_capacity_population,
+		"capacity_calibrated_population": capacity_calibrated_population,
 		"carrying_capacity_min": carrying_capacity_min,
 		"carrying_capacity_max": carrying_capacity_max,
 		"carrying_capacity_total": carrying_capacity_total,
@@ -558,6 +618,223 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"basic_clothing_capacity": basic_clothing_capacity,
 		"good_count": facade.good_ids().size(),
 	}
+
+
+static func _uniform_population_scales(count: int, scale: int) -> PackedInt32Array:
+	var scales := PackedInt32Array()
+	scales.resize(count)
+	scales.fill(scale)
+	return scales
+
+
+static func _rebalance_building_groups(groups_by_cell: Dictionary,
+		cell_indices: PackedInt32Array, populations: PackedInt64Array,
+		population_scales: PackedInt32Array, finance: Dictionary,
+		resource_arrays: Dictionary) -> void:
+	for i in range(mini(cell_indices.size(), population_scales.size())):
+		var scale := maxi(1, int(population_scales[i]))
+		var cell_idx := int(cell_indices[i])
+		var population := int(populations[i]) if i < populations.size() else 0
+		var groups: Array = groups_by_cell.get(cell_idx, [])
+		if population <= 0 or groups.is_empty():
+			continue
+		for group_raw in groups:
+			var group: Dictionary = group_raw
+			group.count = _sat_mul_nonnegative(maxi(0, int(group.count)), scale)
+		# Demand and upstream inputs depend on one another. A small deterministic
+		# fixed-point loop converges the sparse stone-age graph without adding a
+		# second runtime economy.
+		for _iteration in range(8):
+			var supply := _building_supply_by_good(groups)
+			var demand := _household_basic_demand(population, supply)
+			_add_building_input_demand(demand, groups, finance)
+			var changed := false
+			for group_raw in groups:
+				var group: Dictionary = group_raw
+				var spec: Dictionary = group.spec
+				var current := maxi(1, int(group.count))
+				var required := 1
+				var outputs: PackedStringArray = spec.get(
+					"output_good_ids", PackedStringArray())
+				var quantities: PackedInt64Array = spec.get(
+					"output_quantities", PackedInt64Array())
+				for output_idx in range(mini(outputs.size(), quantities.size())):
+					var good := StringName(outputs[output_idx])
+					var total_supply := int(supply.get(good, 0))
+					var wanted := int(demand.get(good, 0))
+					if wanted > 0 and total_supply > 0:
+						required = maxi(required,
+							(current * wanted + total_supply - 1) / total_supply)
+				var resource_cap := _resource_building_count_cap(
+					spec, cell_idx, resource_arrays)
+				if resource_cap >= 0:
+					required = mini(required, maxi(1, resource_cap))
+				if required != current:
+					group.count = required
+					changed = true
+			if not changed:
+				break
+
+
+static func _building_supply_by_good(groups: Array) -> Dictionary:
+	var supply := {}
+	for group_raw in groups:
+		var group: Dictionary = group_raw
+		var outputs: PackedStringArray = group.spec.get(
+			"output_good_ids", PackedStringArray())
+		var quantities: PackedInt64Array = group.spec.get(
+			"output_quantities", PackedInt64Array())
+		for i in range(mini(outputs.size(), quantities.size())):
+			var good := StringName(outputs[i])
+			supply[good] = _sat_add_nonnegative(int(supply.get(good, 0)),
+				_sat_mul_nonnegative(int(group.count), int(quantities[i])))
+	return supply
+
+
+static func _household_basic_demand(population: int, supply: Dictionary) -> Dictionary:
+	var demand := {}
+	_add_category_demand(demand, supply, population * 440,
+		{"prepared_staples": true, "bread": true, "grain": true,
+		"gathered_plants": true})
+	_add_category_demand(demand, supply, population * 144,
+		{"game_meat": true, "meat": true, "fish": true,
+		"canned_fish": true, "dairy_products": true})
+	_add_category_demand(demand, supply, population * 240,
+		{"vegetables": true, "processed_food": true})
+	_add_category_demand(demand, supply, population * 2, CLOTHING_GOOD_IDS)
+	return demand
+
+
+static func _add_category_demand(demand: Dictionary, supply: Dictionary,
+		quantity: int, category: Dictionary) -> void:
+	var total_supply := 0
+	for good in category:
+		total_supply = _sat_add_nonnegative(
+			total_supply, int(supply.get(StringName(good), 0)))
+	if quantity <= 0 or total_supply <= 0:
+		return
+	var prefix := 0
+	var allocated := 0
+	for good in category:
+		var stable_id := StringName(good)
+		var available := int(supply.get(stable_id, 0))
+		if available <= 0:
+			continue
+		prefix += available
+		var next := quantity * prefix / total_supply
+		demand[stable_id] = int(demand.get(stable_id, 0)) + next - allocated
+		allocated = next
+
+
+static func _add_building_input_demand(
+		demand: Dictionary, groups: Array, finance: Dictionary) -> void:
+	for group_raw in groups:
+		var group: Dictionary = group_raw
+		var spec: Dictionary = group.spec
+		var quantities: PackedInt64Array = spec.get(
+			"input_quantities", PackedInt64Array())
+		for input_idx in range(quantities.size()):
+			var selected := _initial_building_input(
+				spec, input_idx, int(quantities[input_idx]))
+			var good := StringName(selected.good_id)
+			if good == &"":
+				continue
+			demand[good] = _sat_add_nonnegative(int(demand.get(good, 0)),
+				_sat_mul_nonnegative(int(group.count), int(selected.quantity)))
+
+
+static func _resource_building_count_cap(spec: Dictionary, cell_idx: int,
+		resource_arrays: Dictionary) -> int:
+	var ids: PackedStringArray = spec.get("resource_ids", PackedStringArray())
+	var quantities: PackedInt64Array = spec.get(
+		"resource_quantities", PackedInt64Array())
+	var modes: PackedInt32Array = spec.get("resource_modes", PackedInt32Array())
+	if ids.is_empty():
+		return -1
+	var cap := INT64_MAX
+	for i in range(mini(ids.size(), mini(quantities.size(), modes.size()))):
+		var reserves: PackedFloat32Array = resource_arrays.get(
+			StringName(ids[i]), PackedFloat32Array())
+		if cell_idx < 0 or cell_idx >= reserves.size() or int(quantities[i]) <= 0:
+			return 0
+		var required := float(quantities[i]) / float(GOODS_SCALE)
+		var runway := RESOURCE_BUILDING_RUNWAY_DAYS if int(modes[i]) == 0 else 1
+		cap = mini(cap, int(floor(maxf(0.0, reserves[cell_idx]) /
+			(required * float(runway)))))
+	return cap
+
+
+static func _resource_population_scores(cell_indices: PackedInt32Array,
+		calibrated_population: PackedInt64Array, input_coverage_q16: PackedInt32Array,
+		resource_arrays: Dictionary, resource_peaks: Dictionary) -> PackedInt64Array:
+	var scores := PackedInt64Array()
+	scores.resize(cell_indices.size())
+	for i in range(cell_indices.size()):
+		var capacity := maxi(0, int(calibrated_population[i])) \
+			if i < calibrated_population.size() else 0
+		var coverage := clampi(int(input_coverage_q16[i]), 0, Q16_ONE) \
+			if i < input_coverage_q16.size() else 0
+		var abundance := _local_resource_abundance_q16(
+			int(cell_indices[i]), resource_arrays, resource_peaks)
+		# Capacity dominates because it already combines jobs, food, and clothing;
+		# coverage and abundance deterministically separate otherwise equal cells.
+		scores[i] = capacity * Q16_ONE * 2 + coverage + abundance
+	return scores
+
+
+static func _local_resource_abundance_q16(cell_idx: int,
+		resource_arrays: Dictionary, resource_peaks: Dictionary) -> int:
+	var total := 0
+	var measured := 0
+	for resource_id in resource_arrays:
+		var peak := float(resource_peaks.get(resource_id, 0.0))
+		var reserves: PackedFloat32Array = resource_arrays[resource_id]
+		if peak <= 0.0 or cell_idx < 0 or cell_idx >= reserves.size():
+			continue
+		total += clampi(roundi(maxf(0.0, reserves[cell_idx]) / peak * Q16_ONE),
+			0, Q16_ONE)
+		measured += 1
+	return total / measured if measured > 0 else 0
+
+
+static func _population_scales_by_resource(cell_indices: PackedInt32Array,
+		calibrated_population: PackedInt64Array,
+		resource_scores: PackedInt64Array) -> PackedInt32Array:
+	var scales := PackedInt32Array()
+	scales.resize(cell_indices.size())
+	scales.fill(1)
+	var ranked := []
+	for i in range(calibrated_population.size()):
+		if int(calibrated_population[i]) <= 0:
+			continue
+		ranked.append(i)
+	ranked.sort_custom(func(a: int, b: int) -> bool:
+		var score_a := int(resource_scores[a])
+		var score_b := int(resource_scores[b])
+		if score_a != score_b:
+			return score_a < score_b
+		return int(cell_indices[a]) < int(cell_indices[b]))
+	if ranked.is_empty():
+		return scales
+	for rank in range(ranked.size()):
+		var tier := mini(RESOURCE_TIER_SCALES.size() - 1,
+			rank * RESOURCE_TIER_SCALES.size() / ranked.size())
+		scales[int(ranked[rank])] = int(RESOURCE_TIER_SCALES[tier])
+	return scales
+
+
+static func _population_tier_counts(calibrated_population: PackedInt64Array,
+		population_scales: PackedInt32Array) -> Dictionary:
+	var counts := {"tens": 0, "hundreds": 0, "thousands": 0, "ten_thousands": 0}
+	for i in range(mini(calibrated_population.size(), population_scales.size())):
+		if int(calibrated_population[i]) <= 0:
+			continue
+		match int(population_scales[i]):
+			1: counts.tens += 1
+			10: counts.hundreds += 1
+			100: counts.thousands += 1
+			500: counts.ten_thousands += 1
+	return counts
 
 
 static func _balance_basic_capacity(groups: Array, reserved_population: int = 0) -> Dictionary:
@@ -731,7 +1008,6 @@ static func _prepare_regional_capacity_fallback(
 	for component_idx in range(source_components.size()):
 		var component: Dictionary = source_components[component_idx]
 		var component_cells: Array = component.get("cells", [])
-		_prune_nonessential_region(groups_by_cell, component_cells)
 		var component_groups := []
 		var active_cells := []
 		for cell_idx_raw in component_cells:
@@ -1083,19 +1359,214 @@ static func _construction_source_component_summaries(components: Array) -> Array
 	return summaries
 
 
-static func _bootstrap_market_packet(cell_count: int, finance: Dictionary,
-		populated_cells: PackedInt32Array) -> Dictionary:
+static func _bootstrap_market_packet(map: MapData, finance: Dictionary,
+		cohort_cells: PackedInt32Array, signature_ids: PackedInt32Array,
+		populations: PackedInt64Array, groups_by_cell: Dictionary,
+		populated_cells: PackedInt32Array, cycle_days: int) -> Dictionary:
 	var good_ids: PackedStringArray = finance.get("good_ids", PackedStringArray())
 	var stock := PackedInt64Array()
-	stock.resize(cell_count * good_ids.size())
+	stock.resize(map.cell_count() * good_ids.size())
 	stock.fill(0)
+	var household_stock := 0
+	for cohort in range(mini(cohort_cells.size(),
+			mini(signature_ids.size(), populations.size()))):
+		household_stock = _sat_add_nonnegative(household_stock,
+			_add_initial_household_stock(stock, good_ids, map, finance,
+				int(cohort_cells[cohort]), int(signature_ids[cohort]),
+				int(populations[cohort]), INITIAL_HOUSEHOLD_STOCK_DAYS))
+	var building_input_stock := 0
+	for cell_idx_raw in populated_cells:
+		var cell_idx := int(cell_idx_raw)
+		for group_raw in groups_by_cell.get(cell_idx, []):
+			var group: Dictionary = group_raw
+			var spec: Dictionary = group.spec
+			var inputs: PackedStringArray = spec.get(
+				"input_good_ids", PackedStringArray())
+			var quantities: PackedInt64Array = spec.get(
+				"input_quantities", PackedInt64Array())
+			for input_idx in range(mini(inputs.size(), quantities.size())):
+				var selected := _initial_building_input(spec, input_idx,
+					maxi(0, int(quantities[input_idx])))
+				var good_idx := good_ids.find(String(selected.good_id))
+				if good_idx < 0:
+					continue
+				var quantity := _sat_mul_nonnegative(
+					_sat_mul_nonnegative(maxi(0, int(group.count)),
+						int(selected.quantity)),
+					INITIAL_BUILDING_INPUT_STOCK_DAYS)
+				_add_market_stock(stock, cell_idx, good_idx, good_ids.size(), quantity)
+				building_input_stock = _sat_add_nonnegative(
+					building_input_stock, quantity)
+	var bridge_stock := 0
 	for cell_idx_raw in populated_cells:
 		var cell_idx := int(cell_idx_raw)
 		for good_id in BOOTSTRAP_BRIDGE_STOCK:
 			var good_idx := good_ids.find(String(good_id))
-			stock[cell_idx * good_ids.size() + good_idx] = int(
-				BOOTSTRAP_BRIDGE_STOCK[good_id])
-	return {"stock": stock}
+			var quantity := int(BOOTSTRAP_BRIDGE_STOCK[good_id])
+			_add_market_stock(stock, cell_idx, good_idx, good_ids.size(), quantity)
+			bridge_stock = _sat_add_nonnegative(bridge_stock, quantity)
+	return {
+		"packet": {"stock": stock},
+		"household_stock": household_stock,
+		"building_input_stock": building_input_stock,
+		"bridge_stock": bridge_stock,
+		"total_stock": _sum_i64(stock),
+	}
+
+
+static func _initial_building_input(
+		spec: Dictionary, input_idx: int, base_quantity: int) -> Dictionary:
+	var input_ids: PackedStringArray = spec.get("input_good_ids", PackedStringArray())
+	var offsets: PackedInt32Array = spec.get(
+		"input_candidate_offsets", PackedInt32Array())
+	var candidates: PackedStringArray = spec.get(
+		"input_candidate_good_ids", PackedStringArray())
+	var efficiencies: PackedInt32Array = spec.get(
+		"input_candidate_efficiency_q16", PackedInt32Array())
+	if input_idx + 1 < offsets.size():
+		var begin := int(offsets[input_idx])
+		var end := int(offsets[input_idx + 1])
+		if begin >= 0 and begin < end and begin < candidates.size():
+			var efficiency := int(efficiencies[begin]) \
+				if begin < efficiencies.size() else Q16_ONE
+			var physical := (base_quantity * Q16_ONE + maxi(1, efficiency) - 1) / \
+				maxi(1, efficiency)
+			return {"good_id": String(candidates[begin]), "quantity": physical}
+	return {
+		"good_id": String(input_ids[input_idx]) if input_idx < input_ids.size() else "",
+		"quantity": base_quantity,
+	}
+
+
+static func _add_initial_household_stock(stock: PackedInt64Array,
+		good_ids: PackedStringArray, map: MapData, finance: Dictionary,
+		cell_idx: int, signature_id: int, population: int, days: int) -> int:
+	if population <= 0 or days <= 0:
+		return 0
+	var plan_ids: PackedStringArray = finance.get("plan_ids", PackedStringArray())
+	var signature_plans: PackedInt32Array = finance.get(
+		"signature_plan_ids", PackedInt32Array())
+	var plan_idx := int(signature_plans[signature_id]) \
+		if signature_id >= 0 and signature_id < signature_plans.size() else -1
+	var plan_offsets: PackedInt32Array = finance.get(
+		"plan_need_offsets", PackedInt32Array())
+	var signature_ethnicity: PackedInt32Array = finance.get(
+		"signature_ethnicity_ids", PackedInt32Array())
+	if plan_idx < 0 or plan_idx + 1 >= plan_offsets.size() \
+			or signature_id < 0 or signature_id >= signature_ethnicity.size():
+		return 0
+	var stable_needs: PackedInt32Array = finance.get(
+		"need_stable_ids", PackedInt32Array())
+	var base_quantities: PackedInt64Array = finance.get(
+		"need_base_qty_per_person", PackedInt64Array())
+	var need_curves: PackedInt32Array = finance.get(
+		"need_quantity_env_curve_ids", PackedInt32Array())
+	var need_variant_offsets: PackedInt32Array = finance.get(
+		"need_variant_offsets", PackedInt32Array())
+	var preferences: PackedInt32Array = finance.get(
+		"variant_preference_q16", PackedInt32Array())
+	var preference_curves: PackedInt32Array = finance.get(
+		"variant_preference_env_curve_ids", PackedInt32Array())
+	var component_offsets: PackedInt32Array = finance.get(
+		"variant_component_offsets", PackedInt32Array())
+	var component_goods: PackedInt32Array = finance.get(
+		"component_good_ids", PackedInt32Array())
+	var component_quantities: PackedInt64Array = finance.get(
+		"component_qty_per_need", PackedInt64Array())
+	var need_ids: PackedStringArray = finance.get("need_ids", PackedStringArray())
+	var ethnicity_factors: PackedInt32Array = finance.get(
+		"ethnicity_need_factor_q16", PackedInt32Array())
+	var ethnicity := int(signature_ethnicity[signature_id])
+	var added := 0
+	for need_idx in range(int(plan_offsets[plan_idx]), int(plan_offsets[plan_idx + 1])):
+		if need_idx >= stable_needs.size() or need_idx >= base_quantities.size() \
+				or need_idx >= need_curves.size() or need_idx + 1 >= need_variant_offsets.size():
+			continue
+		var desired := _sat_mul_nonnegative(
+			_sat_mul_nonnegative(population, int(base_quantities[need_idx])), days)
+		desired = desired * _sample_environment_curve(
+			finance, int(need_curves[need_idx]), map, cell_idx) / Q16_ONE
+		var stable_need := int(stable_needs[need_idx])
+		if stable_need < 0 or stable_need >= need_ids.size():
+			continue
+		var factor_idx := ethnicity * need_ids.size() + stable_need
+		if factor_idx >= 0 and factor_idx < ethnicity_factors.size():
+			desired = desired * int(ethnicity_factors[factor_idx]) / Q16_ONE
+		var variant_begin := int(need_variant_offsets[need_idx])
+		var variant_end := int(need_variant_offsets[need_idx + 1])
+		var score_sum := 0
+		for variant in range(variant_begin, variant_end):
+			if variant < preferences.size() and variant < preference_curves.size() and \
+					_variant_goods_available(variant, finance, component_offsets,
+						component_goods):
+				score_sum += maxi(0, int(preferences[variant]) * _sample_environment_curve(
+					finance, int(preference_curves[variant]), map, cell_idx) / Q16_ONE)
+		if desired <= 0 or score_sum <= 0:
+			continue
+		var prefix_score := 0
+		var allocated := 0
+		for variant in range(variant_begin, variant_end):
+			if variant >= preferences.size() or variant >= preference_curves.size() \
+					or variant + 1 >= component_offsets.size() or \
+					not _variant_goods_available(
+						variant, finance, component_offsets, component_goods):
+				continue
+			prefix_score += maxi(0, int(preferences[variant]) * _sample_environment_curve(
+				finance, int(preference_curves[variant]), map, cell_idx) / Q16_ONE)
+			var next := desired * prefix_score / score_sum
+			var variant_units := maxi(0, next - allocated)
+			allocated = next
+			for component in range(int(component_offsets[variant]),
+					int(component_offsets[variant + 1])):
+				if component >= component_goods.size() or component >= component_quantities.size():
+					continue
+				var good_idx := int(component_goods[component])
+				if good_idx < 0 or good_idx >= good_ids.size():
+					continue
+				var quantity := variant_units * int(component_quantities[component]) / GOODS_SCALE
+				_add_market_stock(stock, cell_idx, good_idx, good_ids.size(), quantity)
+				added = _sat_add_nonnegative(added, quantity)
+	return added
+
+
+static func _variant_goods_available(variant: int, finance: Dictionary,
+		component_offsets: PackedInt32Array,
+		component_goods: PackedInt32Array) -> bool:
+	if variant < 0 or variant + 1 >= component_offsets.size():
+		return false
+	var offsets: PackedInt32Array = finance.get(
+		"good_technology_tag_offsets", PackedInt32Array())
+	var tags: PackedStringArray = finance.get(
+		"good_technology_tags", PackedStringArray())
+	for component in range(int(component_offsets[variant]),
+			int(component_offsets[variant + 1])):
+		if component < 0 or component >= component_goods.size():
+			return false
+		var good_idx := int(component_goods[component])
+		if good_idx < 0 or good_idx + 1 >= offsets.size():
+			return false
+		for tag_idx in range(int(offsets[good_idx]), int(offsets[good_idx + 1])):
+			if tag_idx >= tags.size():
+				return false
+			var tag := String(tags[tag_idx])
+			if tag.begins_with("tech.") and not MID_STONE_TECHNOLOGY_IDS.has(tag):
+				return false
+	return true
+
+
+static func _add_market_stock(stock: PackedInt64Array, cell_idx: int,
+		good_idx: int, good_count: int, quantity: int) -> void:
+	var index := cell_idx * good_count + good_idx
+	if quantity <= 0 or index < 0 or index >= stock.size():
+		return
+	stock[index] = _sat_add_nonnegative(int(stock[index]), quantity)
+
+
+static func _sum_i64(values: PackedInt64Array) -> int:
+	var total := 0
+	for value in values:
+		total = _sat_add_nonnegative(total, int(value))
+	return total
 
 
 static func _basic_capacity_deficit_people(totals: Dictionary) -> int:

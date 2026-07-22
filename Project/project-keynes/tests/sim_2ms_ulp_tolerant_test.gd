@@ -135,7 +135,7 @@ func _run() -> void:
 	cfg.climate_profile = profile
 	var generator := MapGenerator.new()
 	generator.climate_profile = profile
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var map = generated.get("map", null)
 	if map == null:
 		_skip("map generation returned null")

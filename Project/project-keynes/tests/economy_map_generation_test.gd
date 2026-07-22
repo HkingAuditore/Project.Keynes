@@ -23,7 +23,7 @@ func _init() -> void:
 	var generator := MapGenerator.new()
 	generator.climate_profile = profile
 	generator.set_test_economy_bootstrap_enabled(true)
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null)
 	_expect("map generated", map != null)
 	if map != null:
@@ -49,7 +49,7 @@ func _init() -> void:
 			_expect("building snapshot is committed", bool(buildings.get("committed", false)))
 		_expect("generated economy starts with one bridge stock packet and unemployed people",
 			_all_populated_cells_start_bridged_and_unemployed(map, facade))
-		_expect("passable land population follows a varied zero-to-300 distribution",
+		_expect("resource-tiered land includes tens through ten-thousands populations",
 			_land_population_distribution_valid(map, facade))
 		_expect("populated cells expose mid-stone resource-specialized local economies",
 			_all_populated_cells_are_mid_stone_specialized(map, facade))
@@ -71,7 +71,7 @@ func _first_populated_cell(map: MapData, facade) -> int:
 
 
 func _land_population_distribution_valid(map: MapData, facade) -> bool:
-	var populations := {}
+	var tiers := {"tens": 0, "hundreds": 0, "thousands": 0, "ten_thousands": 0}
 	var passable_land := 0
 	for cell in range(map.cell_count()):
 		var terrain := int(map.terrain_arr[cell])
@@ -79,10 +79,20 @@ func _land_population_distribution_valid(map: MapData, facade) -> bool:
 			continue
 		passable_land += 1
 		var population := int(facade.population_cell_snapshot(cell).get("population", 0))
-		if population < 0 or population > 300:
+		if population < 0 or population > 300000:
 			return false
-		populations[population] = true
-	return passable_land > 1 and populations.size() > 1
+		if population <= 0:
+			continue
+		if population < 100:
+			tiers.tens += 1
+		elif population < 1000:
+			tiers.hundreds += 1
+		elif population < 10000:
+			tiers.thousands += 1
+		else:
+			tiers.ten_thousands += 1
+	return passable_land > 1 and int(tiers.tens) > 0 and int(tiers.hundreds) > 0 \
+		and int(tiers.thousands) > 0 and int(tiers.ten_thousands) > 0
 
 
 func _coastal_resource_habitats_valid(map: MapData) -> bool:
@@ -166,10 +176,18 @@ func _all_populated_cells_start_bridged_and_unemployed(map: MapData, facade) -> 
 				_sum_i64(population.get("employee_employed_by_cohort", PackedInt64Array())) != 0 or \
 				_sum_i64(population.get("unemployed_by_cohort", PackedInt64Array())) != total:
 			return false
-		if _sum_i64(facade.market_cell_snapshot(cell).get(
-				"stock", PackedInt64Array())) != 1750:
+		var market: Dictionary = facade.market_cell_snapshot(cell)
+		if _sum_i64(market.get("stock", PackedInt64Array())) <= 1750 or \
+				_good_stock(market, "gathered_plants") <= 0:
 			return false
 	return populated_count > 1
+
+
+func _good_stock(snapshot: Dictionary, good_id: String) -> int:
+	var ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
+	var index := ids.find(good_id)
+	return int(stock[index]) if index >= 0 and index < stock.size() else 0
 
 
 func _inspector_visibility_respects_technology(

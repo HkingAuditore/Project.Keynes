@@ -35,7 +35,7 @@ func _run() -> void:
 	var generator := MapGenerator.new()
 	generator.climate_profile = profile
 	var gen_t0: int = Time.get_ticks_usec()
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var gen_ms: float = float(Time.get_ticks_usec() - gen_t0) / 1000.0
 	var map: MapData = generated.get("map", null) as MapData
 	var world: WorldData = generated.get("world_data", null) as WorldData

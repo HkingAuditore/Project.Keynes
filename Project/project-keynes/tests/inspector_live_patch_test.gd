@@ -191,8 +191,20 @@ func _run() -> void:
 	var loading := WorldLoadingOverlay.new()
 	loading.size = Vector2(1280.0, 720.0)
 	root.add_child(loading)
+	await process_frame
+	if not loading.size.is_equal_approx(root.size):
+		failures.append("loading overlay does not cover the full viewport")
+	var loading_center := loading.get_global_rect().get_center()
+	var card_center := loading._card.get_global_rect().get_center()
+	if loading_center.distance_to(card_center) > 1.0:
+		failures.append("loading card is not centered in the viewport")
 	loading.show_message("正在生成世界")
-	loading.set_progress("正在校准水文资料", 0.65)
+	loading.set_progress("physical", 0.65)
+	loading.set_progress("terrain", 0.20)
+	if not is_equal_approx(loading._progress.value, 65.0):
+		failures.append("loading progress regressed after an older stage update")
+	if loading._stage_label.text != "正在烘焙地形与水文图层":
+		failures.append("loading stage was not localized for players")
 	loading.hide_completed()
 	await create_timer(0.55).timeout
 	if loading.visible:

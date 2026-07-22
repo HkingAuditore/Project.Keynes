@@ -44,6 +44,7 @@ signal tile_tapped(world_pos: Vector2)
 @export var key_zoom_step: float = 1.25
 
 var _world_bounds: Rect2 = Rect2()
+var _fit_floor_zoom: float = 0.0
 var _horizontal_wrap_enabled: bool = false
 var _horizontal_wrap_period_x: float = 0.0
 
@@ -100,7 +101,11 @@ func center_on_bounds() -> void:
 	_stop_motion()
 	position = _world_bounds.position + _world_bounds.size * 0.5
 
-func fit_to_viewport(margin: float = 1.05, safe_area: Rect2 = Rect2()) -> void:
+func fit_to_viewport(
+		margin: float = 1.05,
+		safe_area: Rect2 = Rect2(),
+		fill_safe_area: bool = false
+) -> void:
 	# 用户主动"适配/重置视图"时调用（Fit 按钮 / 首次生成）。会重置缩放与位置。
 	if _world_bounds.size == Vector2.ZERO:
 		return
@@ -111,7 +116,9 @@ func fit_to_viewport(margin: float = 1.05, safe_area: Rect2 = Rect2()) -> void:
 		area = Rect2(Vector2.ZERO, vp_size)
 	var sx := area.size.x / (_world_bounds.size.x * margin)
 	var sy := area.size.y / (_world_bounds.size.y * margin)
-	var s := clampf(minf(sx, sy), zoom_min, zoom_max)
+	var requested_zoom := maxf(sx, sy) if fill_safe_area else minf(sx, sy)
+	var s := clampf(requested_zoom, zoom_min, zoom_max)
+	_fit_floor_zoom = s if fill_safe_area else 0.0
 	zoom = Vector2(s, s)
 	_target_zoom = zoom
 	# 让 safe_area 的中心对齐世界 bounds 的中心
@@ -297,7 +304,7 @@ func _handle_screen_drag(d: InputEventScreenDrag) -> void:
 	var mid := _touch_midpoint()
 	if _pinch_last_dist > 1.0:
 		var factor := dist / _pinch_last_dist
-		var target := clampf(zoom.x * factor, zoom_min, zoom_max)
+		var target := clampf(zoom.x * factor, _minimum_zoom(), zoom_max)
 		# 捏合即时跟手（不走平滑），并锚定双指中心
 		_apply_zoom_anchored(target, mid)
 		_target_zoom = zoom
@@ -357,12 +364,15 @@ func _end_press(screen_pos: Vector2) -> void:
 # ───────────────────────────── 缩放数学 ─────────────────────────────
 
 func _set_target_zoom(target_scalar: float, screen_anchor: Vector2) -> void:
-	var t := clampf(target_scalar, zoom_min, zoom_max)
+	var t := clampf(target_scalar, _minimum_zoom(), zoom_max)
 	if is_equal_approx(t, _target_zoom.x):
 		return
 	_target_zoom = Vector2(t, t)
 	_zoom_anchor_screen = screen_anchor
 	_pan_anim_active = false  # 缩放时取消聚焦动画，避免互相打架
+
+func _minimum_zoom() -> float:
+	return maxf(zoom_min, _fit_floor_zoom)
 
 func _apply_zoom_anchored(new_scalar: float, screen_anchor: Vector2) -> void:
 	var old := zoom.x

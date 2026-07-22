@@ -34,7 +34,7 @@ func _run() -> void:
 
 	var generator := MapGenerator.new()
 	generator.climate_profile = profile
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null) as MapData
 	_expect("map generation returned map", map != null)
 	if map == null:

@@ -104,7 +104,7 @@ func _run_variant(yield_override: PackedInt32Array, label: String) -> Dictionary
 	generator.native_daily_slice_yield_nodes_override = yield_override
 	generator.native_daily_finalizer_native_enabled = _finalizer_native
 
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null) as MapData
 	var world: WorldData = generated.get("world_data", null) as WorldData
 	if map == null or world == null:

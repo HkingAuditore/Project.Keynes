@@ -21,6 +21,8 @@ extends PanelContainer
 
 const REFRESH_INTERVAL: float = 0.25
 
+@export var start_visible: bool = true
+
 var _main: Node = null
 var _label: RichTextLabel
 var _timer: Timer
@@ -31,6 +33,7 @@ const FPS_SMOOTH_ALPHA: float = 0.3
 
 
 func _ready() -> void:
+	visible = start_visible
 	mouse_filter = Control.MouseFilter.MOUSE_FILTER_IGNORE
 	# 半透明背景
 	var sb := StyleBoxFlat.new()
@@ -53,7 +56,7 @@ func _ready() -> void:
 
 	_timer = Timer.new()
 	_timer.wait_time = REFRESH_INTERVAL
-	_timer.autostart = true
+	_timer.autostart = start_visible
 	_timer.timeout.connect(_refresh)
 	add_child(_timer)
 

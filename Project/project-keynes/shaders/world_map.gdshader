@@ -139,7 +139,8 @@ void fragment() {
 #endif
 
 	// enum 通道（biome/veg/cover）走 cell 索引图 + enum_lut。
-	// cid<0（map 外哨兵）使用 map_index_atlas 零初始化语义（OCEAN/NONE/NONE）。
+	// cid<0 是极地外侧的不可交互 padding。玩家地图把它表现为海冰，既明确世界边界，
+	// 也避免无归属区域看起来像可点击海洋；模拟与选格仍只认真实 cell id。
 	int biome;
 	int veg;
 	int cover;
@@ -150,7 +151,7 @@ void fragment() {
 		veg   = int(elut.g * 255.0 + 0.5);
 		cover = int(elut.b * 255.0 + 0.5);
 	} else {
-		biome = 0;
+		biome = B_SEA_ICE;
 		veg = 0;
 		cover = 0;
 	}
@@ -219,9 +220,10 @@ void fragment() {
 			wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
 			eco_transition, eco_growth, eco_valid, pixel_noise);
 	} else {
+		float visual_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
 		col = render_water_pipeline(
 			biome, cover, elev, wp, uv, scals, lat_signed, current_temp,
-			ocean_current_v, wind_v, dyns.a);
+			ocean_current_v, wind_v, visual_ice_fraction);
 	}
 
 	COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow);

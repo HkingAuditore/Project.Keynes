@@ -24,6 +24,8 @@ const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
 @export var hex_size: float = 22.0
 @export var initial_seed: int = 0
 @export var generate_test_economy_data: bool = false
+@export_enum("资源分层混合:0", "产能基线:1", "百人级:10", "千人级:100", "万人级:1000") \
+var test_economy_population_scale: int = 0
 
 @export var cell_indirection_enabled: bool = true
 @export var ocean_current_visual_enabled: bool = false
@@ -129,13 +131,14 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 
 	_generator = MapGenerator.new()
 	_generator.set_test_economy_bootstrap_enabled(generate_test_economy_data)
+	_generator.set_test_economy_population_scale(test_economy_population_scale)
 	_apply_runtime_climate_profile(_generator)
 	if _world_clock != null:
 		_generator.set_world_clock_ref(_world_clock)
 	if _generator.has_signal("bake_progress") and not _generator.bake_progress.is_connected(_on_baker_stage_progress):
 		_generator.bake_progress.connect(_on_baker_stage_progress)
 
-	var result := _generator.generate(cfg, hex_size)
+	var result: Dictionary = await _generator.generate(cfg, hex_size)
 	if result.is_empty() or not result.has("map") or not result.has("world_data"):
 		_current_map = null
 		_world_data = null
@@ -490,7 +493,7 @@ func on_year_changed(_year_idx: int) -> void:
 
 func fit_camera(safe_area: Rect2 = Rect2()) -> void:
 	if _camera != null:
-		_camera.fit_to_viewport(1.05, safe_area)
+		_camera.fit_to_viewport(1.0, safe_area, true)
 
 
 func map_wrap_period_x() -> float:
@@ -520,7 +523,7 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 		_camera.set_world_bounds(_renderer.get_world_bounds())
 		if _camera.has_method("set_horizontal_wrap"):
 			_camera.set_horizontal_wrap(map_wrap_period_x(), true)
-		_camera.fit_to_viewport(1.05, safe_area)
+		_camera.fit_to_viewport(1.0, safe_area, true)
 
 
 func _rebuild_view_adapter() -> void:
@@ -569,6 +572,10 @@ func _apply_world_setup_base_config() -> void:
 		river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
 		generate_test_economy_data = bool((base as Dictionary).get(
 			"generate_test_economy_data", generate_test_economy_data))
+		var requested_population_scale := int((base as Dictionary).get(
+			"test_economy_population_scale", test_economy_population_scale))
+		test_economy_population_scale = requested_population_scale \
+			if requested_population_scale in [0, 1, 10, 100, 1000] else 0
 	var render = config.get("render", {})
 	if render is Dictionary:
 		mobile_terrain_horizon_enabled = bool((render as Dictionary).get(

@@ -66,7 +66,7 @@ func _bench_size(w: int, h: int, nt_mt: int) -> void:
 	generator.climate_profile = profile
 
 	var gen_t0: int = Time.get_ticks_usec()
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var gen_ms: float = float(Time.get_ticks_usec() - gen_t0) / 1000.0
 	var map: MapData = generated.get("map", null) as MapData
 	if map == null:

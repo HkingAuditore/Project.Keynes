@@ -632,11 +632,13 @@ var _native_delta_common_knobs: Dictionary = {}
 var _chunked_multimesh_enabled: bool = true
 var _chunk_size_cells: int = 8
 var _chunk_nodes: Dictionary = {}
+var _chunk_wrap_nodes: Dictionary = {}
 var _chunk_instance_counts: Dictionary = {}
 
 var _mmi: MultiMeshInstance2D = null
 var _multimesh: MultiMesh = null
 var _material: ShaderMaterial = null
+var _single_wrap_nodes: Array[MultiMeshInstance2D] = []
 
 # [veg-cast-shadow] 投影 pass：专用「软边椭圆 blob」网格（不复用植株多裂片网格——复用会按各裂片
 # 高度剪切拉开 → 形状怪 + 硬边）。顶点把单位圆映射为沿太阳背光方向拉伸的椭圆，片元用径向 alpha
@@ -651,6 +653,8 @@ var _shadow_blob_mesh: ArrayMesh = null
 # 强度/尺寸全部在顶点着色器里按 TOD 太阳方位实时计算（GPU），CPU 不写这些量；太阳移动零 CPU 开销。
 # _shadow_multimesh/_shadow_mmi 仅用于「单节点(非分块)回退模式」。
 var _shadow_chunk_nodes: Dictionary = {}
+var _shadow_chunk_wrap_nodes: Dictionary = {}
+var _single_shadow_wrap_nodes: Array[MultiMeshInstance2D] = []
 var _shadow_built_total: int = 0   # 单节点回退模式：上次镜像的实例数（用于按需重建）
 var _shadow_fraction: float = 1.0
 
@@ -705,6 +709,8 @@ func clear() -> void:
 	# _shadow_chunk_nodes 已由 _clear_chunk_nodes() 释放
 	if _shadow_mmi != null:
 		_shadow_mmi.visible = false
+	_sync_single_wrap_nodes()
+	_sync_single_shadow_wrap_nodes()
 	visible = false
 
 
@@ -888,6 +894,7 @@ func refresh_for_succession(_indices: PackedInt32Array) -> void:
 	_last_incremental_missing_slots = missing_slots
 	_last_incremental_dropped_instances = dropped
 	visible = _profile().enabled and _instance_count > 0
+	_sync_single_wrap_nodes()
 	_sync_single_shadow()
 
 
@@ -961,7 +968,7 @@ func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
 		"size_x": _bounds.size.x,
 		"size_y": _bounds.size.y,
 		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
-		"wrap_edge_margin": _hex_size * 4.0,
+		"wrap_edge_margin": 0.0,
 		"grid_w": grid_w,
 		"grid_h": grid_h,
 		"offset_is_water": _native_offset_is_water(grid_w, grid_h),
@@ -1075,6 +1082,7 @@ func _apply_native_delta_payload(
 	_last_incremental_missing_slots = missing_slots
 	_last_incremental_dropped_instances = dropped
 	visible = _profile().enabled and _instance_count > 0
+	_sync_single_wrap_nodes()
 	_sync_single_shadow()
 
 
@@ -1204,7 +1212,7 @@ func _build_native_delta_common_knobs() -> Dictionary:
 		"size_x": _bounds.size.x,
 		"size_y": _bounds.size.y,
 		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
-		"wrap_edge_margin": _hex_size * 4.0,
+		"wrap_edge_margin": 0.0,
 		"grid_w": grid_w,
 		"grid_h": grid_h,
 		"offset_is_water": _native_offset_is_water(grid_w, grid_h),
@@ -1329,8 +1337,6 @@ func _generate_cell_instance_payload(cell, idx: int) -> Dictionary:
 
 	for attempt in range(attempts):
 		_try_append_instance(cell, idx, key, attempt, suitability, state)
-	_append_wrap_edge_instances()
-
 	for i in range(_instance_cell_indices.size()):
 		var inst_idx := int(_instance_cell_indices[i])
 		var inst_cell = _instance_cells[i]
@@ -1370,12 +1376,14 @@ func apply_visible_instance_fraction(fraction: float) -> void:
 			var next_visible := clampi(int(floor(float(count) * f)), 0, count)
 			node.multimesh.visible_instance_count = next_visible
 			node.visible = _profile().enabled and next_visible > 0
+			_sync_chunk_wrap_nodes(int(chunk_id))
 			any_visible = any_visible or next_visible > 0
 			# 逐帧 LOD 内联同步对应 shadow chunk 的可见数（仅 visible_instance_count，无 buffer 操作）
 			var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
 			if snode != null and is_instance_valid(snode) and snode.multimesh != null:
 				snode.multimesh.visible_instance_count = clampi(next_visible, 0, snode.multimesh.instance_count)
 				snode.visible = show_shadow and node.visible and next_visible > 0
+				_sync_shadow_chunk_wrap_nodes(int(chunk_id))
 		visible = _profile().enabled and any_visible
 		if _shadow_mmi != null:
 			_shadow_mmi.visible = false
@@ -1387,6 +1395,7 @@ func apply_visible_instance_fraction(fraction: float) -> void:
 	var next_visible := clampi(int(floor(float(_instance_count) * f)), 0, _instance_count)
 	_multimesh.visible_instance_count = next_visible
 	visible = _profile().enabled and next_visible > 0
+	_sync_single_wrap_nodes()
 	_sync_single_shadow()
 
 
@@ -1486,11 +1495,84 @@ func _clear_chunk_nodes() -> void:
 		if node != null and is_instance_valid(node):
 			node.queue_free()
 	_chunk_nodes.clear()
+	_clear_wrap_node_groups(_chunk_wrap_nodes)
 	_chunk_instance_counts.clear()
 	for snode in _shadow_chunk_nodes.values():
 		if snode != null and is_instance_valid(snode):
 			snode.queue_free()
 	_shadow_chunk_nodes.clear()
+	_clear_wrap_node_groups(_shadow_chunk_wrap_nodes)
+
+
+func _clear_wrap_node_groups(groups: Dictionary) -> void:
+	for nodes_value in groups.values():
+		var nodes: Array = nodes_value
+		for node_value in nodes:
+			var node := node_value as MultiMeshInstance2D
+			if node != null and is_instance_valid(node):
+				node.queue_free()
+	groups.clear()
+
+
+func _wrap_period_x() -> float:
+	if _map == null:
+		return 0.0
+	return HexUtils.wrap_period_x(_map.width, _hex_size)
+
+
+# 循环副本只增加渲染节点，不复制 MultiMesh buffer。分块节点仍由 Godot 按各自 AABB 剔除。
+func _sync_wrap_nodes(source: MultiMeshInstance2D, nodes: Array, name_prefix: String) -> void:
+	var period_x := _wrap_period_x()
+	if source == null or not is_instance_valid(source) or source.multimesh == null \
+			or period_x <= 0.0001:
+		for node_value in nodes:
+			var disabled_node := node_value as MultiMeshInstance2D
+			if disabled_node != null and is_instance_valid(disabled_node):
+				disabled_node.visible = false
+				disabled_node.multimesh = source.multimesh if source != null \
+					and is_instance_valid(source) else null
+		return
+	var offsets := PackedFloat32Array([-period_x, period_x])
+	for i in range(offsets.size()):
+		var node: MultiMeshInstance2D = null
+		if i < nodes.size():
+			node = nodes[i] as MultiMeshInstance2D
+		if node == null or not is_instance_valid(node):
+			node = MultiMeshInstance2D.new()
+			node.name = "%s_%s" % [name_prefix, "Left" if i == 0 else "Right"]
+			add_child(node)
+			if i < nodes.size():
+				nodes[i] = node
+			else:
+				nodes.append(node)
+		node.position = Vector2(offsets[i], 0.0)
+		node.z_index = source.z_index
+		node.material = source.material
+		node.multimesh = source.multimesh
+		node.visible = source.visible and source.multimesh != null \
+			and source.multimesh.visible_instance_count != 0
+
+
+func _sync_single_wrap_nodes() -> void:
+	_sync_wrap_nodes(_mmi, _single_wrap_nodes, "DetailWrap")
+
+
+func _sync_single_shadow_wrap_nodes() -> void:
+	_sync_wrap_nodes(_shadow_mmi, _single_shadow_wrap_nodes, "DetailShadowWrap")
+
+
+func _sync_chunk_wrap_nodes(chunk_id: int) -> void:
+	var source: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
+	var nodes: Array = _chunk_wrap_nodes.get(chunk_id, [])
+	_sync_wrap_nodes(source, nodes, "DetailChunkWrap_%d" % chunk_id)
+	_chunk_wrap_nodes[chunk_id] = nodes
+
+
+func _sync_shadow_chunk_wrap_nodes(chunk_id: int) -> void:
+	var source: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
+	var nodes: Array = _shadow_chunk_wrap_nodes.get(chunk_id, [])
+	_sync_wrap_nodes(source, nodes, "DetailShadowChunkWrap_%d" % chunk_id)
+	_shadow_chunk_wrap_nodes[chunk_id] = nodes
 
 
 # 为某植株 chunk 准备/复用对应的 shadow chunk 节点（blob 网格 + shadow 材质 + 低 z）。
@@ -1525,6 +1607,7 @@ func _mirror_shadow_chunk(chunk_id: int, buffer: PackedFloat32Array, inst: int) 
 		var ex: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
 		if ex != null and is_instance_valid(ex):
 			ex.visible = false
+			_sync_shadow_chunk_wrap_nodes(chunk_id)
 		return
 	var snode := _ensure_shadow_chunk_node(chunk_id)
 	var smm := snode.multimesh
@@ -1535,6 +1618,7 @@ func _mirror_shadow_chunk(chunk_id: int, buffer: PackedFloat32Array, inst: int) 
 	else:
 		smm.visible_instance_count = 0
 	snode.visible = visible and inst > 0
+	_sync_shadow_chunk_wrap_nodes(chunk_id)
 
 
 # 门控/全量重建时：把所有植株 chunk 重新镜像到 shadow chunk；门控关则全部隐藏。
@@ -1546,14 +1630,22 @@ func _refresh_all_shadow_chunks() -> void:
 				if orphan != null and is_instance_valid(orphan):
 					orphan.queue_free()
 				_shadow_chunk_nodes.erase(cid)
+				var orphan_wrap_nodes: Array = _shadow_chunk_wrap_nodes.get(cid, [])
+				for node_value in orphan_wrap_nodes:
+					var orphan_wrap := node_value as MultiMeshInstance2D
+					if orphan_wrap != null and is_instance_valid(orphan_wrap):
+						orphan_wrap.queue_free()
+				_shadow_chunk_wrap_nodes.erase(cid)
 		for cid in _chunk_nodes.keys():
 			var pnode: MultiMeshInstance2D = _chunk_nodes[cid]
 			if pnode != null and is_instance_valid(pnode) and pnode.multimesh != null:
 				_mirror_shadow_chunk(int(cid), pnode.multimesh.buffer, pnode.multimesh.instance_count)
 	else:
-		for snode in _shadow_chunk_nodes.values():
+		for cid in _shadow_chunk_nodes.keys():
+			var snode: MultiMeshInstance2D = _shadow_chunk_nodes[cid]
 			if snode != null and is_instance_valid(snode):
 				snode.visible = false
+				_sync_shadow_chunk_wrap_nodes(int(cid))
 
 
 # 单节点(非分块)回退模式的投影同步：仅在实例数变化(或强制)时复制 _multimesh.buffer。
@@ -1563,6 +1655,7 @@ func _sync_single_shadow(force_rebuild: bool = false) -> void:
 	if not _shadow_should_render() or not visible:
 		_shadow_multimesh.visible_instance_count = 0
 		_shadow_mmi.visible = false
+		_sync_single_shadow_wrap_nodes()
 		return
 	var total := (_multimesh.instance_count if _multimesh != null else 0)
 	if force_rebuild or total != _shadow_built_total:
@@ -1575,10 +1668,12 @@ func _sync_single_shadow(force_rebuild: bool = false) -> void:
 	if _shadow_built_total <= 0:
 		_shadow_multimesh.visible_instance_count = 0
 		_shadow_mmi.visible = false
+		_sync_single_shadow_wrap_nodes()
 		return
 	var vis := clampi(int(floor(float(_shadow_built_total) * _shadow_fraction)), 0, _shadow_built_total)
 	_shadow_multimesh.visible_instance_count = vis
 	_shadow_mmi.visible = vis > 0
+	_sync_single_shadow_wrap_nodes()
 
 
 # ─── [veg-cast-shadow] 投影 pass：blob 网格 + 单节点 buffer 复制 + 门控 ───────────
@@ -1715,6 +1810,7 @@ func _prepare_chunk_multimesh(chunk_id: int, inst: int) -> MultiMesh:
 	mm.visible_instance_count = inst
 	node.visible = _profile().enabled and inst > 0
 	_chunk_instance_counts[chunk_id] = inst
+	_sync_chunk_wrap_nodes(chunk_id)
 	return mm
 
 
@@ -1750,6 +1846,7 @@ func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: Packed
 	_clear_chunk_nodes()
 	_mmi.multimesh = null
 	_multimesh = null
+	_sync_single_wrap_nodes()
 	var by_chunk := {}
 	for i in range(inst):
 		var chunk_id := _chunk_id_for_cell_idx(int(cell_indices[i]))
@@ -2100,7 +2197,6 @@ func _rebuild_instances() -> void:
 			_try_append_instance(cell, idx, key, attempt, suitability, state)
 
 	_apply_instance_cap()
-	_append_wrap_edge_instances()
 	_instance_count = _instance_cell_indices.size()
 	_rebuild_cell_instance_lookup()
 	if _instance_count <= 0:
@@ -2131,6 +2227,7 @@ func _rebuild_instances() -> void:
 			_instance_variants[i]
 		))
 	visible = cfg.enabled and _instance_count > 0
+	_sync_single_wrap_nodes()
 	_sync_shadow_layer(true)
 	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	_last_candidate_count = _instance_scores.size()
@@ -2216,7 +2313,7 @@ func _rebuild_via_native(
 		"size_x": _bounds.size.x,
 		"size_y": _bounds.size.y,
 		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
-		"wrap_edge_margin": _hex_size * 4.0,
+		"wrap_edge_margin": 0.0,
 		"grid_w": grid_w,
 		"grid_h": grid_h,
 		"offset_is_water": offset_is_water,
@@ -2298,6 +2395,7 @@ func _rebuild_via_native(
 	_multimesh.visible_instance_count = inst
 	_mmi.multimesh = _multimesh
 	visible = cfg.enabled and inst > 0
+	_sync_single_wrap_nodes()
 	_sync_shadow_layer(true)
 	return true
 
@@ -2597,32 +2695,6 @@ func _try_append_instance(
 	_instance_seeds.append(_hash01(key, 600 + attempt))
 	_instance_variants.append(variant)
 	_instance_scores.append(world_noise * 0.66 + cell_suitability * 0.27 + _hash01(key, 7600 + attempt) * 0.07)
-
-
-func _append_wrap_edge_instances() -> void:
-	if _map == null:
-		return
-	var period_x := HexUtils.wrap_period_x(_map.width, _hex_size)
-	if period_x <= 0.0001:
-		return
-	var margin := _hex_size * 4.0
-	var original_count := _instance_positions.size()
-	for i in range(original_count):
-		var pos := _instance_positions[i]
-		var offsets := PackedFloat32Array()
-		if pos.x <= margin:
-			offsets.append(period_x)
-		if pos.x >= period_x - margin:
-			offsets.append(-period_x)
-		for ox in offsets:
-			_instance_cell_indices.append(_instance_cell_indices[i])
-			_instance_cells.append(_instance_cells[i])
-			_instance_positions.append(pos + Vector2(float(ox), 0.0))
-			_instance_rotations.append(_instance_rotations[i])
-			_instance_sizes.append(_instance_sizes[i])
-			_instance_seeds.append(_instance_seeds[i])
-			_instance_variants.append(_instance_variants[i])
-			_instance_scores.append(_instance_scores[i])
 
 
 func _apply_instance_cap() -> void:

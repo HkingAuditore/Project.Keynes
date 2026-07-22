@@ -45,7 +45,7 @@ func _run() -> void:
 	# 出于模板简洁性，下面只是一个 stub。
 	# 例：
 	#   var generator := MapGenerator.new()
-	#   var map := generator.generate(...)
+#   var generated: Dictionary = await generator.generate(...)
 	#   var world := DCWorld.new()
 	#   world.bind_map_data(map)
 	#   var cp := load("res://data/world/earth_like.tres")
