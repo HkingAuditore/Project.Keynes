@@ -102,6 +102,17 @@ func _run() -> void:
 	_expect("native hydrology published river discharge slot", exec_published.has("cell_river_discharge"))
 	_expect("native hydrology published water balance slot", exec_published.has("cell_water_balance_30d"))
 	_expect("stage_b_after_hydrology executed or was legitimately skipped", exec_breakdown.has("stage_b_ms") or not exec_published.has("cell_vegetation_vitality"))
+	if exec_breakdown.has("stage_b_ms"):
+		var stage_b_call_index: int = int(exec_breakdown.get("stage_b_call_index", -1))
+		var veg_dyn_ran: bool = bool(exec_breakdown.get("veg_dyn_ran", false))
+		var stage_b_total_runs: int = int(exec_breakdown.get("stage_b_total_runs", 0))
+		_expect("native stage-b distinguishes cadence skip from execution",
+			(stage_b_call_index < 0 and not veg_dyn_ran and stage_b_total_runs == 0) or
+			(stage_b_call_index >= 0 and stage_b_total_runs == stage_b_call_index + 1))
+		if stage_b_call_index >= 0:
+			_expect("native stage-b publishes vegetation cadence truth",
+				veg_dyn_ran \
+					== ((stage_b_call_index % maxi(1, int(profile.weather_vegetation_dynamics_stride))) == 0))
 	_expect("soil moisture slot is finite", _arr_finite(map.soil_moisture_arr))
 	_expect("water balance slot is finite", _arr_finite(map.water_balance_30d_arr))
 	_expect("river discharge slot is finite", _arr_finite(map.river_discharge_arr))

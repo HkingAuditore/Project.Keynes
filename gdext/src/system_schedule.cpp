@@ -194,6 +194,14 @@ bool DCWorldExt::_exec_node_stage_b(Dictionary& bundle,
     breakdown["albedo_ms"] = stage_b_knobs.get("albedo_ms", breakdown.get("albedo_ms", 0.0));
     breakdown["veg_dyn_ms"] = stage_b_knobs.get("veg_dyn_ms", breakdown.get("veg_dyn_ms", 0.0));
     breakdown["feedback_ms"] = stage_b_knobs.get("feedback_ms", breakdown.get("feedback_ms", 0.0));
+    const int stage_b_call_index = int(stage_b_knobs.get("stage_b_call_index", -1));
+    breakdown["stage_b_call_index"] = stage_b_call_index;
+    breakdown["albedo_ran"] = bool(stage_b_knobs.get("run_albedo", false));
+    breakdown["veg_dyn_ran"] = bool(stage_b_knobs.get("run_veg_dyn", false));
+    breakdown["feedback_ran"] = bool(stage_b_knobs.get("run_feedback", false));
+    breakdown["stage_b_combined_done"] = true;
+    breakdown["stage_b_ext_ok"] = true;
+    breakdown["stage_b_total_runs"] = stage_b_call_index >= 0 ? stage_b_call_index + 1 : 0;
     if (stage_b_knobs.has("succession_indices")) {
         breakdown["succession_indices"] = stage_b_knobs["succession_indices"];
         breakdown["succession_to_veg"] = stage_b_knobs["succession_to_veg"];
@@ -217,6 +225,14 @@ bool DCWorldExt::_exec_node_stage_b_after_hydrology(Dictionary& bundle,
     breakdown["albedo_ms"] = stage_b_knobs.get("albedo_ms", breakdown.get("albedo_ms", 0.0));
     breakdown["veg_dyn_ms"] = stage_b_knobs.get("veg_dyn_ms", breakdown.get("veg_dyn_ms", 0.0));
     breakdown["feedback_ms"] = stage_b_knobs.get("feedback_ms", breakdown.get("feedback_ms", 0.0));
+    const int stage_b_call_index = int(stage_b_knobs.get("stage_b_call_index", -1));
+    breakdown["stage_b_call_index"] = stage_b_call_index;
+    breakdown["albedo_ran"] = bool(stage_b_knobs.get("run_albedo", false));
+    breakdown["veg_dyn_ran"] = bool(stage_b_knobs.get("run_veg_dyn", false));
+    breakdown["feedback_ran"] = bool(stage_b_knobs.get("run_feedback", false));
+    breakdown["stage_b_combined_done"] = true;
+    breakdown["stage_b_ext_ok"] = true;
+    breakdown["stage_b_total_runs"] = stage_b_call_index >= 0 ? stage_b_call_index + 1 : 0;
     if (stage_b_knobs.has("succession_indices")) {
         breakdown["succession_indices"] = stage_b_knobs["succession_indices"];
         breakdown["succession_to_veg"] = stage_b_knobs["succession_to_veg"];

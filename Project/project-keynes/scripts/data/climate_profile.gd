@@ -625,15 +625,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 # （≈ 67 天可从 0 到 1），让暴雨/极旱在数周内即可看到 vitality 漂移。
 # 死区同步从 (0.4, 0.6) 收窄到 (0.48, 0.52)，避免大量 cell 永远卡在 dv=0。
 @export var vitality_change_rate: float = 0.010         # per day, at most ±0.010 (~100 days from 0 to 1)
-# 2026-05-18：演替门槛大幅放宽，让暴雨/极旱/连续不利气候有机会在 1.5 个月内触发
-# 可见的植被退化/升级。原 (0.15 / 0.90 / 180 / 360) 几乎需要 9 个月不间断的恶劣
-# 气候才能触发一次演替，玩家完全感受不到天气对地块的中长期影响。
-# 新默认：低/高阈值放宽 (0.25 / 0.75)，天数缩短到 (45 / 90)；
-# earth_like.tres 中 succession_upgrade_days 的覆盖值也同步调低（91）。
-@export var vitality_low_threshold: float = 0.25        # below → downgrade streak（only truly dying cells count）
+# 2026-07-22：退化 streak 由“濒死才计时”改为“存在更适合候选且 target<0.45”。
+# earth-like 原生 cadence 每次 vegetation pass 约代表 100 游戏日，200 日门槛要求
+# 至少两个连续不适宜样本，避免一次离散采样翻转，同时让多年漂移能够发生演替。
+@export var vitality_low_threshold: float = 0.45        # low target + better candidate → downgrade streak
 @export var vitality_high_threshold: float = 0.75       # above → upgrade streak
-@export var succession_degrade_days: int = 45           # ~1.5 个月的低 vitality
-@export var succession_upgrade_days: int = 90           # ~3 个月的高 vitality
+@export var succession_degrade_days: int = 200          # two earth-like native vegetation samples
+@export var succession_upgrade_days: int = 200
 @export_range(0.0, 1.0, 0.01) var vegetation_degrade_reset_target: float = 0.75
 @export_range(0.0, 1.0, 0.01) var vegetation_low_vitality_damping_threshold: float = 0.40
 @export_range(0, 365, 1) var vegetation_succession_cooldown_days: int = 30

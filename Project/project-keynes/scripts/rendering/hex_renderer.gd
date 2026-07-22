@@ -1107,6 +1107,16 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 	)
 
+
+func effective_tod_subsolar_uv(visual_day_phase: float, season_phase: float) -> Vector2:
+	if _tod_debug_sun_position_enabled:
+		return _tod_debug_sun_uv
+	var year_progress := fposmod(season_phase, 4.0) * 0.25
+	var declination := deg_to_rad(axial_tilt_deg) * cos(TAU * year_progress)
+	var latitude_v := clampf(0.5 + declination / PI, 0.0, 1.0)
+	return Vector2(fposmod(visual_day_phase, 1.0), latitude_v)
+
+
 func set_tod_debug_sun_height_scale(v: float) -> void:
 	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
 	if _shader_mat != null:

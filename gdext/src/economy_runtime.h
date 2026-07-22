@@ -1514,6 +1514,11 @@ private:
     std::vector<int64_t> _building_working_capital_allocated;
     std::vector<int64_t> _building_owner_livelihood_credit;
     std::vector<int64_t> _building_merchant_credit_limit;
+    // Suspended producers keep a bounded upstream demand signal without
+    // retaining labor. Permanent liquidation is reviewed only when a probe is
+    // physically and financially executable but still economically unviable.
+    std::vector<int64_t> _building_recovery_probe_capacity_q16;
+    std::vector<uint8_t> _building_recovery_liquidation_eligible;
     std::vector<int64_t> _building_investment_score_q16;
     std::vector<int64_t> _building_investment_payback_days;
     std::vector<int32_t> _building_investment_rejection;

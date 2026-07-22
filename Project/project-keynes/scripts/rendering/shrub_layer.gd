@@ -556,7 +556,9 @@ void vertex() {
 	float sun_len = length(sun_h);
 	float sun_up = max(ed.sun_dir.z, 0.0);
 	vec2 sdir = (sun_len > 1e-4) ? -sun_h / sun_len : vec2(0.0, 1.0);
-	float proj = clamp(sun_len / max(sun_up, shadow_min_sun_elevation), 0.0, shadow_max_len) * shadow_length_scale;
+	float eternal_shadow_length = day_night_enabled ? 1.0 : 0.72;
+	float proj = clamp(sun_len / max(sun_up, shadow_min_sun_elevation), 0.0, shadow_max_len)
+		* shadow_length_scale * eternal_shadow_length;
 
 	// 本实例正交基（去缩放归一化）：把世界 sdir 转到局部帧，乘回 MODEL_MATRIX(含随机旋转) 后方向统一。
 	vec2 inst_ax = vec2(MODEL_MATRIX[0].x, MODEL_MATRIX[0].y);
@@ -576,7 +578,9 @@ void vertex() {
 	VERTEX = sdl * (center_along + p.x * half_major) + perp * (p.y * shadow_foot_radius);
 
 	shadow_r = length(p);   // 网格本身 |p|<=1，传给片元做径向柔边
-	shadow_alpha_v = shadow_strength * ed.local_day * clamp(presence, 0.0, 1.0);
+	// 永昼低角度光会令密集实例阴影大面积重叠；减弱 alpha，但保留方向与移动感。
+	float eternal_shadow_alpha = day_night_enabled ? 1.0 : 0.58;
+	shadow_alpha_v = shadow_strength * eternal_shadow_alpha * ed.local_day * clamp(presence, 0.0, 1.0);
 #endif
 }
 

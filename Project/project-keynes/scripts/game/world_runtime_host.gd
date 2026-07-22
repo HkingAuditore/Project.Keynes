@@ -30,6 +30,11 @@ const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
 @export var sea_ice_atlas_enabled: bool = false
 @export var mobile_terrain_horizon_enabled: bool = false
 
+# 动态永昼：直射点经度驱动方位，直射点纬度驱动光线高度。
+@export_range(-180.0, 180.0, 1.0) var eternal_day_azimuth_offset_deg: float = -90.0
+@export_range(8.0, 85.0, 1.0) var eternal_day_base_elevation_deg: float = 30.0
+@export_range(0.0, 30.0, 1.0) var eternal_day_seasonal_drop_deg: float = 10.0
+
 var _renderer: HexRenderer = null
 var _camera: MapCamera = null
 var _world_clock: WorldClock = null
@@ -39,6 +44,7 @@ var _generator: MapGenerator = null
 var _view_adapter: DCViewAdapter = null
 var _selected_cell: HexCell = null
 var _tod_profile: TODProfile = null
+var day_night_enabled: bool = true
 var _last_seed: int = 0
 var _last_tick_report: Dictionary = {}
 var _fast_tick_count: int = 0
@@ -92,6 +98,24 @@ func last_seed() -> int:
 
 func last_tick_report() -> Dictionary:
 	return _last_tick_report.duplicate()
+
+
+func set_day_night_enabled(enabled: bool) -> void:
+	day_night_enabled = enabled
+	if _renderer != null:
+		_renderer.set_day_night_enabled(enabled)
+	if _tod_profile == null or _renderer == null:
+		return
+	var phase := _world_clock.visual_day_phase if _world_clock != null else 0.25
+	_tod_profile.recompute(phase, enabled)
+	if not enabled:
+		_tod_profile.sun_dir = _dynamic_eternal_day_direction(phase)
+	if _renderer.has_method("apply_tod"):
+		_renderer.apply_tod(_tod_profile)
+
+
+func is_day_night_enabled() -> bool:
+	return day_night_enabled
 
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
@@ -445,8 +469,35 @@ func on_visual_day_phase_changed(visual_day_phase: float) -> void:
 		return
 	_renderer.set_day_phase(visual_day_phase)
 	if _tod_profile != null and _renderer.has_method("apply_tod"):
-		_tod_profile.recompute(visual_day_phase, true)
+		_tod_profile.recompute(visual_day_phase, day_night_enabled)
+		if not day_night_enabled:
+			_tod_profile.sun_dir = _dynamic_eternal_day_direction(visual_day_phase)
 		_renderer.apply_tod(_tod_profile)
+
+
+func _dynamic_eternal_day_direction(visual_day_phase: float) -> Vector3:
+	var tilt_rad := deg_to_rad(_renderer.axial_tilt_deg) if _renderer != null else 0.4101523
+	var season_phase := _world_clock.season_phase() if _world_clock != null else 1.0
+	var subsolar_uv := Vector2(fposmod(visual_day_phase, 1.0), 0.5)
+	if _renderer != null:
+		subsolar_uv = _renderer.effective_tod_subsolar_uv(visual_day_phase, season_phase)
+	else:
+		var year_progress := fposmod(season_phase, 4.0) * 0.25
+		var fallback_declination := tilt_rad * cos(TAU * year_progress)
+		subsolar_uv.y = clampf(0.5 + fallback_declination / PI, 0.0, 1.0)
+	var declination := (subsolar_uv.y - 0.5) * PI
+	var latitude_ratio := clampf(absf(declination) / maxf(tilt_rad, 0.0001), 0.0, 1.0)
+	var elevation_deg := eternal_day_base_elevation_deg \
+		- eternal_day_seasonal_drop_deg * latitude_ratio
+	var elevation := deg_to_rad(clampf(elevation_deg, 8.0, 85.0))
+	var azimuth := TAU * subsolar_uv.x \
+		+ deg_to_rad(eternal_day_azimuth_offset_deg)
+	var horizontal := cos(elevation)
+	return Vector3(
+		cos(azimuth) * horizontal,
+		sin(azimuth) * horizontal,
+		sin(elevation)
+	).normalized()
 
 
 func on_season_changed(season_idx: int) -> void:

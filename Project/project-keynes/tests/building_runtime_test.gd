@@ -64,6 +64,7 @@ func _run() -> void:
 	_test_investment_capacity_is_not_gate(catalog, profile)
 	_test_investment_requires_owner_livelihood(catalog, profile)
 	_test_owner_only_loss_enters_lifecycle(catalog, profile)
+	_test_service_building_excluded_from_producer_lifecycle(catalog, profile)
 	_test_endogenous_investment_repairs_dead_merchant(catalog, profile)
 	_test_building_plan_continuation(catalog, profile)
 	_test_production_worker_scalar_equivalence(catalog, profile)
@@ -348,7 +349,7 @@ func _run() -> void:
 	_expect("recovery fixture schedules cash drain and merchant input replenishment",
 		recovery_owner_handle != 0 and recovery_drain_ok and
 		bool(recovery_stock.get("ok", false)))
-	_run_day(ext, 5)
+	var suspension_report := _run_day(ext, 5)
 	suspended = ext.get_building_cell_snapshot(0)
 	_expect("third settled severe-loss cycle suspends the building",
 		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 3 and
@@ -357,6 +358,9 @@ func _run() -> void:
 		int((suspended.filled_owner as PackedInt64Array)[0]) == 0 and
 		int((suspended.purchase_intent_capacity_q16 as PackedInt64Array)[0]) == 0 and
 		int((suspended.last_output as PackedInt64Array)[0]) == 0)
+	_expect("suspended producer keeps only a bounded unfunded upstream probe",
+		int(suspension_report.get("desired_business_demand", 0)) > 0 and
+		int(suspension_report.get("unfunded_business_demand", 0)) > 0)
 	var country_chunks: Array[PackedByteArray] = []
 	var country_save_begin: Dictionary = ext.begin_country_save(4096)
 	_expect("building PKCN save begins", bool(country_save_begin.get("ok", false)))
@@ -403,10 +407,12 @@ func _run() -> void:
 	var recovery_one: Dictionary = ext.get_building_cell_snapshot(0)
 	var recovery_after_pop: Dictionary = ext.get_population_cell_snapshot(0)
 	var recovery_merchant_row := _row_for_signature(recovery_after_pop, merchant_sig)
+	var recovery_mine_group := (recovery_one.group_type_ids as PackedInt32Array).find(mine_id)
 	_expect("financing commitment enables the recovery probe without merchant migration",
 		int(recovery_one_report.get("recovery_approved", 0)) > 0 and
-		int((recovery_one.operating_state as PackedByteArray)[0]) == 2 and
-		int((recovery_one.filled_owner as PackedInt64Array)[0]) > 0 and
+		recovery_mine_group >= 0 and
+		int((recovery_one.operating_state as PackedByteArray)[recovery_mine_group]) == 2 and
+		int((recovery_one.filled_owner as PackedInt64Array)[recovery_mine_group]) > 0 and
 		recovery_merchant_row >= 0 and
 		int((recovery_after_pop.populations as PackedInt64Array)[recovery_merchant_row]) == 1)
 	_expect("first recovery cycle conserves all ledgers",
@@ -415,20 +421,32 @@ func _run() -> void:
 		int(recovery_one_report.get("goods_error", 1)) == 0)
 	var restart_report := _run_day(ext, 7)
 	var restarted: Dictionary = ext.get_building_cell_snapshot(0)
+	var restarted_types: PackedInt32Array = restarted.group_type_ids
+	var restarted_mine_group := restarted_types.find(mine_id)
+	var restarted_has_active_alternative := false
+	for group in range(restarted_types.size()):
+		if group != restarted_mine_group and \
+				int((restarted.operating_state as PackedByteArray)[group]) == 0:
+			restarted_has_active_alternative = true
 	_expect("profitable alternative keeps the loss building suspended",
-		(restarted.group_type_ids as PackedInt32Array).size() > 1 and
-		int((restarted.operating_state as PackedByteArray)[0]) == 1 and
-		int((restarted.operating_state as PackedByteArray)[1]) == 0)
+		restarted_mine_group >= 0 and restarted_has_active_alternative and
+		int((restarted.operating_state as PackedByteArray)[restarted_mine_group]) == 1)
 	_expect("restart cycle conserves all ledgers",
 		int(restart_report.get("population_error", 1)) == 0 and
 		int(restart_report.get("money_error", 1)) == 0 and
 		int(restart_report.get("goods_error", 1)) == 0)
 	var resumed_report := _run_day(ext, 8)
 	var resumed: Dictionary = ext.get_building_cell_snapshot(0)
+	var resumed_types: PackedInt32Array = resumed.group_type_ids
+	var resumed_mine_group := resumed_types.find(mine_id)
+	var resumed_has_active_alternative := false
+	for group in range(resumed_types.size()):
+		if group != resumed_mine_group and \
+				int((resumed.operating_state as PackedByteArray)[group]) == 0:
+			resumed_has_active_alternative = true
 	_expect("failed recovery remains retryable without losing either building group",
-		(resumed.group_type_ids as PackedInt32Array).size() > 1 and
-		int((resumed.operating_state as PackedByteArray)[0]) in [1, 2] and
-		int((resumed.operating_state as PackedByteArray)[1]) == 0)
+		resumed_mine_group >= 0 and resumed_has_active_alternative and
+		int((resumed.operating_state as PackedByteArray)[resumed_mine_group]) in [1, 2])
 	_expect("resumed production conserves all ledgers",
 		int(resumed_report.get("population_error", 1)) == 0 and
 		int(resumed_report.get("money_error", 1)) == 0 and
@@ -1374,6 +1392,54 @@ func _test_owner_only_loss_enters_lifecycle(source_catalog: Dictionary,
 		group >= 0 and
 		int((buildings.severe_loss_cycles as PackedInt32Array)[group]) == 3 and
 		int((buildings.operating_state as PackedByteArray)[group]) == 1 and
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
+func _test_service_building_excluded_from_producer_lifecycle(
+		source_catalog: Dictionary, source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	catalog.erase("ok")
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.building_severe_loss_cycles = 2
+	var signatures: PackedStringArray = catalog.signature_keys
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var merchant_post_id := building_ids.find("merchant_post")
+	var goods: PackedStringArray = catalog.good_ids
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	var ext := _new_ext(catalog)
+	_expect("service lifecycle country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 290))
+	_expect("service lifecycle runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 290).get("ok", false)))
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([merchant_sig]),
+		"population": PackedInt64Array([1]),
+		"funds": PackedInt64Array([100000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([merchant_post_id]),
+		"building_owner_signature_ids": PackedInt32Array([merchant_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("service lifecycle fixture bootstraps", bool(boot.get("ok", false)))
+	var report := {}
+	for day in range(5):
+		report = _run_day(ext, day)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var group := (buildings.group_type_ids as PackedInt32Array).find(merchant_post_id)
+	_expect("merchant post never enters producer loss suspension",
+		group >= 0 and
+		int((buildings.operating_state as PackedByteArray)[group]) == 0 and
+		int((buildings.severe_loss_cycles as PackedInt32Array)[group]) == 0 and
+		int((buildings.recovery_failed_reviews as PackedInt32Array)[group]) == 0 and
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
