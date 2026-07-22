@@ -476,6 +476,7 @@ func set_day_phase(v: float) -> void:
 	for mat in _curtain_mats:
 		mat.set_shader_parameter("day_phase", _day_phase)
 
+
 # 季节相位：drive earth_daylight 的太阳赤纬（南/北半球长昼↔短昼）。由 HexRenderer.set_season_phase 转发。
 func set_season_phase(v: float) -> void:
 	_season_phase = v
