@@ -1166,9 +1166,9 @@ static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture,
         if (moisture > 0.22f) return 9;  // TEMPERATE_GRASSLAND
         return 10;                       // TEMPERATE_STEPPE
     }
-    if (moisture > 0.50f) return 14; // TROPICAL_RAINFOREST
-    if (moisture > 0.34f) return 15; // TROPICAL_DRY_FOREST
-    if (moisture > 0.18f) return 13; // SAVANNA
+    if (moisture > 0.58f) return 14; // TROPICAL_RAINFOREST
+    if (moisture > 0.38f) return 15; // TROPICAL_DRY_FOREST
+    if (moisture > 0.20f) return 13; // SAVANNA
     if (moisture < 0.10f) return 17; // XERIC_DESERT
     return 16; // DESERT_SCRUB
 }
@@ -1217,14 +1217,14 @@ static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, fl
             return temperature > 0.55f ? 12 : 7; // SUBTROPICAL_FOREST / TEMPERATE_DECIDUOUS
         case 11: // JUNGLE
             // [climate-zone-fix P1] 阈值随湿度天花板(p90≈0.56)下移，雨林/季风林重新可达。
-            if ((is_alpine || is_hilly) && moisture > 0.52f) return 24; // CLOUD_FOREST（热带高地云雾林）
-            if (moisture > 0.50f) return 14; // TROPICAL_RAINFOREST
-            if (moisture > 0.42f) return 25; // MONSOON_FOREST（季风半落叶）
+            if ((is_alpine || is_hilly) && moisture > 0.60f) return 24; // CLOUD_FOREST（热带高地云雾林）
+            if (moisture > 0.58f) return 14; // TROPICAL_RAINFOREST
+            if (moisture > 0.48f) return 25; // MONSOON_FOREST（季风半落叶）
             return 15; // TROPICAL_DRY_FOREST
         case 12: // SAVANNA
             if (is_alpine) return moisture > 0.45f ? 4 : 6; // 高地稀树草原 → 高山草甸/山地灌丛
             // [climate-zone-fix P1] MONSOON 门 0.45→0.42 与 JUNGLE case 对齐
-            return moisture > 0.42f ? 25 : 13; // 湿端季风林 / 否则稀树草原
+            return moisture > 0.48f ? 25 : 13; // 湿端季风林 / 否则稀树草原
         case 3:  return is_alpine ? 4 : 9; // GRASSLAND
         case 14: // STEPPE
             if (is_alpine) return temperature < 0.28f ? 3 : (moisture > 0.32f ? 4 : 6);
@@ -1457,9 +1457,9 @@ static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
     // 让 FOREST 地形在亚热带可达，修复 pk_derive_vegetation case FOREST 的 temp>0.55
     // 亚热带林死分支(原 FOREST 仅 0.38–0.55 存在→SUBTROPICAL_FOREST 永不可达)。
     if (temperature > 0.66) {              // 真热带（赤道暖湿）
-        if (moisture > 0.45) return 11;    // JUNGLE → 雨林/季风林
-        if (moisture > 0.30) return 12;    // SAVANNA
-        if (moisture > 0.18) return 14;    // STEPPE（干热草）
+        if (moisture > 0.54) return 11;    // JUNGLE → 雨林/季风林
+        if (moisture > 0.32) return 12;    // SAVANNA
+        if (moisture > 0.20) return 14;    // STEPPE（干热草）
         return 7;                          // DESERT
     }
     if (temperature > 0.55) {              // 亚热带 / 暖温带（湿端→亚热带常绿林）

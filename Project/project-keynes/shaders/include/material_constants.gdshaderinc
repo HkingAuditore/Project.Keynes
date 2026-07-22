@@ -77,7 +77,7 @@ const float NDOTL_BIAS          = 0.0005;
 const float AMBIENT_FLOOR_LAND     = 0.18;
 const float AMBIENT_FLOOR_WATER    = 0.22;
 const float HILLSHADE_BASE_LIFT    = 0.55;
-const float NIGHT_BRIGHTNESS_FLOOR = 0.55;
+const float NIGHT_BRIGHTNESS_FLOOR = 0.68;
 const float SUN_INTENSITY_GAIN     = 1.00;
 
 // ═══════════════════════════════════════════════════════════════════════

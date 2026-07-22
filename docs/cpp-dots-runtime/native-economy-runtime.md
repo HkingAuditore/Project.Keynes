@@ -807,3 +807,19 @@ shortage, utilization, score, payback, required capital, and projected daily pro
 `get_building_cell_snapshot`. CSV v18 appends candidate-only building rows (`group_index=-1`,
 `investment_candidate=1`) with the same fields. This table is excluded from PKEC and the
 authoritative state hash.
+
+## 2026-07-22 blocked-producer lifecycle correction
+
+Service buildings are outside the producer profit lifecycle; an old suspended service group
+is normalized back to `ACTIVE`. For production buildings, either an actually settled severe
+loss or an owner-occupied cycle with no input, output, extraction, or generation advances the
+bounded suspension counter. `SUSPENDED_LOSS` always releases every owner to the unemployment
+pool while preserving installed capacity.
+
+A suspended producer publishes only a small unfunded upstream probe (1/6 for survival or
+cycle-flow output, otherwise 1/32). It neither withdraws stock nor reserves labor or cash.
+Permanent-liquidation reviews advance only when the probe inputs, natural resources, and
+financing are currently executable but the counterfactual margin still misses the restart
+threshold. A supply, resource, or financing blockage resets failed liquidation reviews, so
+scarcity pauses the business without destroying it. These probe and eligibility lanes are
+epoch-transient and do not change PKEC v16 or the authoritative hash.

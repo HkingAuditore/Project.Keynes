@@ -183,6 +183,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		return source_report
 	var skipped_source_components: Array = source_report.get(
 		"skipped_components", []).duplicate(true)
+	var source_components: Array = source_report.get("components", []).duplicate(true)
 	var source_candidate_component_count := int(source_report.get(
 		"candidate_component_count", 0))
 
@@ -211,6 +212,11 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 				_mark_outputs(spec, outputs_by_cell[cell_idx])
 		if not placed_any:
 			break
+	# Keep a frozen regional candidate graph. The normal path below remains
+	# strictly cell-local; this copy is used only if that stricter pass erases
+	# every source-complete trade component merely because its food, clothing,
+	# tools and construction roots live on different cells.
+	var regional_groups_fallback: Dictionary = groups_by_cell.duplicate(true)
 
 	var merchant_post_spec: Dictionary = building_specs.get(&"merchant_post", {})
 	var merchant_post_available := not merchant_post_spec.is_empty() \
@@ -258,9 +264,55 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	# source. Revalidate the actual final root set used to build the packets.
 	source_report = _protect_construction_sources(
 		map, passable_cells, groups_by_cell)
+	var regional_capacity_fallback := false
+	var regional_capacity_fallback_cells := 0
 	if not bool(source_report.get("ok", false)):
-		return source_report
+		var fallback := _prepare_regional_capacity_fallback(
+			regional_groups_fallback, source_components)
+		if not bool(fallback.get("ok", false)):
+			source_report["source_diagnostics"] = _construction_source_diagnostics(
+				passable_cells, groups_by_cell, resource_arrays, resource_peaks,
+				source_root_fallback_counts)
+			source_report["regional_fallback"] = fallback
+			return source_report
+		groups_by_cell = fallback.groups_by_cell
+		skipped_source_components.append_array(
+			fallback.get("skipped_components", []))
+		regional_capacity_fallback = true
+		regional_capacity_fallback_cells = int(fallback.populated_cells)
+		basic_capacity_initial_buildings = 0
+		basic_capacity_trimmed_buildings = 0
+		basic_capacity_deficient_cells = 0
+		carrying_capacity_cell_indices.clear()
+		carrying_capacity_population.clear()
+		basic_capacity_cell_indices.clear()
+		basic_capacity_population.clear()
+		basic_food_capacity.clear()
+		basic_clothing_capacity.clear()
+		chain_input_coverage_q16.clear()
+		var fallback_targets: Dictionary = fallback.target_population_by_cell
+		var fallback_coverage: Dictionary = fallback.input_coverage_q16_by_cell
+		for cell_idx in passable_cells:
+			var groups: Array = groups_by_cell[cell_idx]
+			for group in groups:
+				basic_capacity_initial_buildings += maxi(0, int(group.count))
+			var target_population := int(fallback_targets.get(cell_idx, 0))
+			var totals := _basic_capacity_totals(groups, 1 if not groups.is_empty() else 0)
+			carrying_capacity_cell_indices.append(cell_idx)
+			carrying_capacity_population.append(target_population)
+			chain_input_coverage_q16.append(int(fallback_coverage.get(cell_idx, 0)))
+			if target_population > 0:
+				basic_capacity_cell_indices.append(cell_idx)
+				basic_capacity_population.append(target_population)
+				basic_food_capacity.append(int(totals.food))
+				basic_clothing_capacity.append(int(totals.clothing))
+		source_report = _protect_construction_sources(
+			map, passable_cells, groups_by_cell)
+		if not bool(source_report.get("ok", false)):
+			return source_report
 	source_report["skipped_components"] = skipped_source_components
+	source_report["components"] = _construction_source_component_summaries(
+		source_report.get("components", []))
 
 	var cell_indices := PackedInt32Array()
 	var signature_ids := PackedInt32Array()
@@ -358,6 +410,10 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			total_unemployed_population += unemployed
 		if actual_population > 0:
 			if not _has_survival_food_root(generated_groups):
+				if regional_capacity_fallback:
+					populated_cells.append(cell_idx)
+					total_population += actual_population
+					continue
 				return {
 					"ok": false,
 					"reason": "bootstrap_survival_root_missing",
@@ -462,6 +518,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"construction_source_components": source_report.get("components", []),
 		"construction_source_skipped_components": source_report.get(
 			"skipped_components", []),
+		"regional_capacity_fallback": regional_capacity_fallback,
+		"regional_capacity_fallback_cells": regional_capacity_fallback_cells,
 		"bootstrap_cycle_days": cycle_days,
 		"survival_fund_days": SURVIVAL_FUND_DAYS,
 		"owner_operating_cycles": OWNER_OPERATING_CYCLES,
@@ -662,6 +720,187 @@ static func _prune_nonessential_groups(groups: Array) -> void:
 			groups.remove_at(i)
 
 
+static func _prepare_regional_capacity_fallback(
+		candidate_groups_by_cell: Dictionary, source_components: Array) -> Dictionary:
+	var groups_by_cell: Dictionary = candidate_groups_by_cell.duplicate(true)
+	var target_population_by_cell := {}
+	var input_coverage_q16_by_cell := {}
+	var skipped_components := []
+	var accepted_components := 0
+	var populated_cells := 0
+	for component_idx in range(source_components.size()):
+		var component: Dictionary = source_components[component_idx]
+		var component_cells: Array = component.get("cells", [])
+		_prune_nonessential_region(groups_by_cell, component_cells)
+		var component_groups := []
+		var active_cells := []
+		for cell_idx_raw in component_cells:
+			var cell_idx := int(cell_idx_raw)
+			var cell_groups: Array = groups_by_cell.get(cell_idx, [])
+			if cell_groups.is_empty():
+				continue
+			active_cells.append(cell_idx)
+			component_groups.append_array(cell_groups)
+		var failure_reason := ""
+		if active_cells.is_empty():
+			failure_reason = "regional_groups_empty"
+		elif not _groups_have_survival_output(component_groups, FOOD_GOOD_IDS):
+			failure_reason = "regional_food_root_missing"
+		elif not _groups_have_survival_output(component_groups, CLOTHING_GOOD_IDS):
+			failure_reason = "regional_clothing_root_missing"
+		elif not _groups_input_paths_exist(component_groups):
+			failure_reason = "regional_hard_input_path_missing"
+		var coverage_q16 := _groups_input_coverage_q16(component_groups)
+		if failure_reason == "" and coverage_q16 <= 0:
+			failure_reason = "regional_hard_input_coverage_zero"
+		var target_population := 0
+		if failure_reason == "":
+			var totals := _basic_capacity_totals(
+				component_groups, active_cells.size())
+			var survival_capacity := _regional_planned_survival_capacity(
+				totals, active_cells.size())
+			target_population = survival_capacity * \
+				INITIAL_CARRYING_CAPACITY_SHARE_Q16 / Q16_ONE
+			if target_population < active_cells.size():
+				failure_reason = "regional_survival_capacity_too_small"
+		if failure_reason != "":
+			skipped_components.append({
+				"component_index": component_idx,
+				"reason": failure_reason,
+				"cell_count": component_cells.size(),
+			})
+			for cell_idx_raw in component_cells:
+				groups_by_cell[int(cell_idx_raw)] = []
+			continue
+		# Every retained production cell needs its merchant owner. Allocate the
+		# remaining regional carrying capacity deterministically across those
+		# cells; trade, rather than co-location, closes their survival chain.
+		for cell_idx in active_cells:
+			target_population_by_cell[cell_idx] = 1
+			input_coverage_q16_by_cell[cell_idx] = coverage_q16
+		var remaining := target_population - active_cells.size()
+		var cursor := 0
+		while remaining > 0:
+			var cell_idx := int(active_cells[cursor % active_cells.size()])
+			if int(target_population_by_cell[cell_idx]) < CELL_POPULATION_CAP:
+				target_population_by_cell[cell_idx] = \
+					int(target_population_by_cell[cell_idx]) + 1
+				remaining -= 1
+			cursor += 1
+		accepted_components += 1
+		populated_cells += active_cells.size()
+	if accepted_components <= 0:
+		return {
+			"ok": false,
+			"reason": "regional_capacity_fallback_empty",
+			"skipped_components": skipped_components,
+		}
+	return {
+		"ok": true,
+		"groups_by_cell": groups_by_cell,
+		"target_population_by_cell": target_population_by_cell,
+		"input_coverage_q16_by_cell": input_coverage_q16_by_cell,
+		"component_count": accepted_components,
+		"populated_cells": populated_cells,
+		"skipped_components": skipped_components,
+	}
+
+
+static func _prune_nonessential_region(groups_by_cell: Dictionary,
+		component_cells: Array) -> void:
+	var entries := []
+	for cell_idx_raw in component_cells:
+		var cell_idx := int(cell_idx_raw)
+		var groups: Array = groups_by_cell.get(cell_idx, [])
+		for group_idx in range(groups.size()):
+			entries.append({
+				"cell_idx": cell_idx,
+				"group_idx": group_idx,
+				"group": groups[group_idx],
+			})
+	var needed := {}
+	for good_id in FOOD_GOOD_IDS:
+		needed[StringName(good_id)] = true
+	for good_id in CLOTHING_GOOD_IDS:
+		needed[StringName(good_id)] = true
+	var keep := {}
+	var changed := true
+	while changed:
+		changed = false
+		for entry_idx in range(entries.size()):
+			if keep.has(entry_idx):
+				continue
+			var group: Dictionary = entries[entry_idx].group
+			var spec: Dictionary = group.spec
+			if not bool(group.get("bootstrap_root", false)) and \
+					not _spec_outputs_needed(spec, needed):
+				continue
+			keep[entry_idx] = true
+			changed = true
+			_mark_required_inputs(spec, needed)
+	var keep_by_cell := {}
+	for entry_idx in keep:
+		var entry: Dictionary = entries[int(entry_idx)]
+		var cell_keep: Dictionary = keep_by_cell.get(int(entry.cell_idx), {})
+		cell_keep[int(entry.group_idx)] = true
+		keep_by_cell[int(entry.cell_idx)] = cell_keep
+	for cell_idx_raw in component_cells:
+		var cell_idx := int(cell_idx_raw)
+		var groups: Array = groups_by_cell.get(cell_idx, [])
+		var cell_keep: Dictionary = keep_by_cell.get(cell_idx, {})
+		for group_idx in range(groups.size() - 1, -1, -1):
+			if not cell_keep.has(group_idx):
+				groups.remove_at(group_idx)
+
+
+static func _spec_outputs_needed(spec: Dictionary, needed: Dictionary) -> bool:
+	var output_ids: PackedStringArray = spec.get(
+		"output_good_ids", PackedStringArray())
+	var output_categories: PackedStringArray = spec.get(
+		"output_category_ids", PackedStringArray())
+	for i in range(output_ids.size()):
+		if needed.has(StringName(output_ids[i])):
+			return true
+		if i < output_categories.size() and String(output_categories[i]) != "" and \
+				needed.has(StringName("category:%s" % String(output_categories[i]))):
+			return true
+	return false
+
+
+static func _mark_required_inputs(spec: Dictionary, needed: Dictionary) -> void:
+	var input_ids: PackedStringArray = spec.get("input_good_ids", PackedStringArray())
+	var input_categories: PackedStringArray = spec.get(
+		"input_category_ids", PackedStringArray())
+	var required_q16: PackedInt32Array = spec.get(
+		"input_required_q16", PackedInt32Array())
+	for i in range(input_ids.size()):
+		if i < required_q16.size() and required_q16[i] < Q16_ONE:
+			continue
+		if i < input_categories.size() and String(input_categories[i]) != "":
+			needed[StringName("category:%s" % String(input_categories[i]))] = true
+		else:
+			needed[StringName(input_ids[i])] = true
+
+
+static func _groups_have_survival_output(groups: Array,
+		good_ids: Dictionary) -> bool:
+	for group_raw in groups:
+		var group: Dictionary = group_raw
+		for good_id in group.spec.get("output_good_ids", PackedStringArray()):
+			if good_ids.has(String(good_id)):
+				return true
+	return false
+
+
+static func _regional_planned_survival_capacity(totals: Dictionary,
+		active_cell_count: int) -> int:
+	var food := maxi(0, int(totals.food)) * PLANNED_UTILIZATION_Q16 / Q16_ONE
+	var clothing := maxi(0, int(totals.clothing)) * PLANNED_UTILIZATION_Q16 / Q16_ONE
+	return clampi(mini(food / FOOD_REQUIREMENT_PER_CAPITA,
+		clothing / CLOTHING_REQUIREMENT_PER_CAPITA), 0,
+		maxi(0, active_cell_count) * CELL_POPULATION_CAP)
+
+
 static func _find_group(groups: Array, stable_id: StringName) -> Dictionary:
 	for group_raw in groups:
 		var group: Dictionary = group_raw
@@ -814,6 +1053,7 @@ static func _protect_construction_sources(map: MapData,
 		components.append({
 			"timber_cell": timber_cell,
 			"stone_cell": stone_cell,
+			"cells": component_cells.duplicate(),
 		})
 	if components.is_empty():
 		return {
@@ -829,6 +1069,18 @@ static func _protect_construction_sources(map: MapData,
 		"candidate_component_count": candidate_component_count,
 		"skipped_components": skipped_components,
 	}
+
+
+static func _construction_source_component_summaries(components: Array) -> Array:
+	var summaries := []
+	for component_raw in components:
+		var component: Dictionary = component_raw
+		summaries.append({
+			"timber_cell": int(component.get("timber_cell", -1)),
+			"stone_cell": int(component.get("stone_cell", -1)),
+			"cell_count": (component.get("cells", []) as Array).size(),
+		})
+	return summaries
 
 
 static func _bootstrap_market_packet(cell_count: int, finance: Dictionary,

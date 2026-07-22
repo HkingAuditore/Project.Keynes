@@ -169,7 +169,7 @@ GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.u
 
 **生物群系决策树重标定（climate-zone-fix P1，2026-06-28，C++ 权威 + GDScript 1:1 镜像）**：解决"MEDIT 泛滥 21%、热带雨林 1%、亚热带林死支、savanna 缺失"——气候场有足够暖湿格但硬决策树阈值挡住（land moist 运行期 p50≈0.38/p90≈0.56，远低于旧阈）。改动点（`pk_decide_terrain_ex` / `pk_derive_vegetation` / `pk_whittaker_vegetation` in `world_ext_internal.h` + `map_generator.gd` 三函数逐位镜像 + `world_ext_generate.cpp` shrubland/chaparral pass）：
 - **热带/亚热带温度带拆分**：原单一 `temp>0.55` 热带带拆为真热带 `temp>0.66` 与亚热带/暖温带 `0.55–0.66`，让后者的 FOREST terrain 正确路由到 `SUBTROPICAL_FOREST(12)`（修死分支）。
-- **下移热带湿端阈值**：JUNGLE 门 `moist>0.65→0.45`（贴近 Af≈0.42）；`pk_derive_vegetation` 雨林 `0.72→0.50`/季风 `0.55→0.42`/云雾林 `0.70→0.52`；`pk_whittaker_vegetation` 雨林 `0.65→0.50`/热带干林 `0.40→0.34`/savanna `0.36→0.18`。
+- **热带湿端再平衡（2026-07-22）**：实测新地图雨林已扩张到陆地约 11.6%，因此把 JUNGLE 门收紧到 `moist>0.54`；`pk_derive_vegetation` 的雨林/季风林/云雾林门调整为 `0.58/0.48/0.60`；`pk_whittaker_vegetation` 的雨林/热带干林/savanna 门调整为 `0.58/0.38/0.20`。目标是让雨林落在湿度分布的湿尾，同时保留可达的季雨林过渡带。
 - **收窄 shrubland/chaparral 特征 pass**（MEDIT 21% 主因）：shrubland(生成 pass + stage5 季节刷新)加温度上限 `temp<0.58` + 湿度收窄到 `[0.20,0.44]`；chaparral 上限 `0.62→0.58`、`[0.20,0.46]`，止住"任意暖区沿海中湿格→MEDIT"的 catch-all。
 - **headless 验证（`tests/tmp_biome_eval.gd`，60×40/sea_level0.42/2 陆块 + 60d warmup + 120d sample，镜像 CSV 聚合法）**：MEDIT_SHRUB 21.0→7.3%、TROP_RAINFOREST 1.0→4.0%、SUBTROPICAL_FOREST 0.1→7.7%、SAVANNA 0.6→3.6%、MONSOON_FOREST 16.0→7.3%（更接近地球分布）。完整 Köppen 生物群系直方图复核需用新 DLL 录加速 CSV 跑 `tmp/wx_koppen.py`。
 - **新增/调整 constexpr 旋钮**：`PK_SHORE_DEEP_DIST(7，调小→深海更普遍)`、`PK_SHELF_DEPTH(0.03)`、`PK_CONT_THRESH(0.19，调大→大陆更小/海洋更宽)`、`PK_OROGENY_AMP(0.48，调大→山脉更高，上限 0.48 防削峰)`。**验证硬指标**：重生成后洋底 min elev 应从 0.286 骤降到 ~0.04，深度分档出现近海/深海；OCEAN(0) terrain 占比上升、COAST(1) 下降；STEPPE 的 temp<0.30 占比≈0；山脉高差恢复。
@@ -1508,9 +1508,10 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
 - drought stress 与 heat stress 分开：`vegetation_drought_stress` 来自长期
   `plant_water` 低于植被理想水分的程度，天气类型为 DROUGHT 时只额外抬高；HEATWAVE 只进入
   heat stress。降水不应正向提高 drought stress。
-- 热带雨林生成门槛约为 `moisture > 0.50`，其 profile 的 `ideal_moist/moist_tolerance`
+- 热带雨林生成门槛约为 `moisture > 0.58`，其 profile 的 `ideal_moist/moist_tolerance`
   必须让该门槛不落入急性干旱区。当前为 `0.68/0.25`，因此低于约 `0.43` 才进入 profile
   容差外；持续偏干仍可向热带季雨林退化，但新生成的雨林不会从第一天就被当成严重旱害。
+- 退化 streak 不再等待“当前 vitality 与 target 同时低于 0.25”。现在只有在相邻演替候选的兼容度至少高出 `succession_min_compat_gain`，且当前 target 持续低于 `vitality_low_threshold=0.45` 时才累计；earth-like 的退化/升级门均为 200 游戏日，匹配每次约 100 游戏日的原生 vegetation cadence，避免单次采样立即翻转，也保证多年气候漂移能产生实际演替。
 - 原生 stage-b 返回的 `succession_indices/succession_to_veg` 只是候选结果。ACTIVE native daily、
   merged weather 与 legacy combined 三条边界统一调用
   `_apply_vegetation_succession_candidates()`，显式写回 `HexCell`、`MapData.vegetation_arr /
@@ -2415,3 +2416,11 @@ inactive-price reversion. The result is rate-limited and guarded only to positiv
 `int32`; legacy catalog price bounds do not feed back into settlement or trade relief.
 `price_inventory_target` is snapshot diagnostics only. This adds no authority, stage,
 save field, or hash input.
+
+The 2026-07-22 lifecycle correction excludes service buildings from producer profit states.
+An owner-occupied producer with no settled production advances toward suspension and then
+releases every owner into the unemployment pool. Suspended input users retain only a 1/6 or
+1/32 unfunded demand probe. Failed liquidation reviews advance only for physically and
+financially executable probes whose counterfactual margin is still below the restart
+threshold; blockage resets the review streak. Both new lanes are transient and preserve the
+existing graph and save layout.

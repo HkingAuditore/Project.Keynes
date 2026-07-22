@@ -266,6 +266,15 @@ static extraction horizon to size collectors, then places industry only where
 that cell exposes the required upstream outputs. This is deterministic bootstrap
 configuration and does not move runtime building authority out of C++.
 
+Bootstrap capacity keeps the cell-local closed-chain path as its first choice.
+If local pruning would erase every previously construction-complete connected
+trade component, it falls back to aggregate food, clothing, and mandatory-input
+coverage inside each component and distributes carrying population
+deterministically across its retained production cells. The fallback never
+borrows across disconnected land components and still rejects missing hard-input
+paths; reports expose `regional_capacity_fallback` and
+`regional_capacity_fallback_cells`.
+
 The 2026-07-21 selected-cell calibration keeps full owner self-retention but
 raises `timber_collector` logs from 1808 to 5424 per day and Stone-Age hunting
 outputs from `3728/45/23` to `4846/59/30`. Test bootstrap starts one knapping
@@ -365,3 +374,12 @@ existing unemployed-pool hiring path when an active non-service owner vacancy ex
 Investment uses actual offered-supply deficits, persistent merchant inventory-target gaps,
 and input stock/supply coverage, not installed recipe capacity. These changes remain inside `NativeEconomyRuntime`; no
 GDScript authority, save schema, DataCore slot, or cadence was added.
+
+The 2026-07-22 lifecycle correction keeps service buildings outside producer profit states.
+Every suspended owner moves into the existing unemployed pool; an approved recovery probe
+hires again through the normal path. Owner-occupied no-production cycles can suspend a
+blocked producer, while the installed group publishes a bounded 1/6 or 1/32 unfunded
+upstream probe. Permanent liquidation reviews advance only when inputs, resources, and
+financing can execute that probe but its expected margin remains below restart; temporary
+blockage resets the failed-review streak. Probe capacity and liquidation eligibility are
+transient native lanes outside PKEC and replay hash.

@@ -29,6 +29,11 @@ const vec3 EARTH_DAYLIGHT_NOON = vec3(1.0, 0.97, 0.92);   // 正午暖白
 const vec3 EARTH_DAYLIGHT_DUSK = vec3(1.0, 0.56, 0.31);   // 晨昏暖橙（暮光带）
 const vec3 EARTH_NIGHT_AMBIENT = vec3(0.13, 0.16, 0.25);  // 夜侧冷蓝月光
 const vec3 EARTH_DAY_AMBIENT   = vec3(0.60, 0.66, 0.77);  // 白昼天空环境光
+const vec3 EARTH_MOONLIGHT     = vec3(0.48, 0.58, 0.82);  // 可读性优先的冷蓝月光
+const float EARTH_MOON_GAIN    = 0.72;
+// 永昼没有晨昏线提供运动参照：降低平铺天光、略抬方向光，使光向旋转能投射到坡面/植被/水面。
+const float EARTH_ETERNAL_AMBIENT_GAIN = 0.88;
+const float EARTH_ETERNAL_SUN_GAIN = 1.18;
 
 float earth_daylight_longitude_u(vec2 uv) {
 	if (wrap_period_x <= 0.0001) {
@@ -118,10 +123,14 @@ vec3 compute_sun_dir_enu(vec2 uv, float lat_signed) {
 }
 
 // 关闭昼夜时使用的全局平行太阳方向。
-// 它不按像素计算晨昏线，而是把全图当作一块平面接受同一束平行光。
-// 方向由 TODProfile / debug UI 推入的 tod_sun_dir 控制，方便在永昼模式下直接调光线角度。
+// 方位直接读取与晨昏线完全同源的 subsolar longitude，避免 CPU 另算 tod_sun_dir.xy
+// 带来的更新时序/材质分发偏差；-90° 只是地图经度轴到屏幕光照轴的坐标变换。
+// tod_sun_dir 只提供艺术化的季节仰角，因此直射点移动多快，永昼光向就严格同速移动。
 vec3 compute_global_parallel_sun_dir() {
-	vec3 d = vec3(tod_sun_dir.xy, max(tod_sun_dir.z, 0.08));
+	float azimuth = earth_daylight_subsolar_lon() - 1.5707963;
+	float up = max(tod_sun_dir.z, 0.08);
+	float horizontal = max(length(tod_sun_dir.xy), 1e-4);
+	vec3 d = vec3(cos(azimuth) * horizontal, sin(azimuth) * horizontal, up);
 	float len = length(d);
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
 }
@@ -136,9 +145,12 @@ struct EarthDaylight {
 	float local_day;    // 1=昼 0=夜
 	float pixel_night;  // 1 - local_day
 	float sun_high;     // 太阳高悬程度（晨昏 0 → 正午 1），驱动暖橙↔暖白
+	float moon_strength;// 夜侧月光主光强度，晨昏平滑淡入
 	vec3 sun_col;       // 方向光颜色（晨昏暖橙 ↔ 正午暖白）
 	vec3 amb_col;       // 环境光颜色（夜冷蓝 ↔ 昼天空）
 	vec3 sun_dir;       // [tod-latitude-sun] 逐像素太阳方向（shader 空间单位向量，含纬度/时角）
+	vec3 moon_dir;      // 与太阳相对的月光方向
+	vec3 moon_col;
 };
 
 // 给定像素 uv + 纬度，返回昼夜/晨昏统一光照量。enable_day_night=false → 全局平行光永昼。
@@ -152,8 +164,17 @@ EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_nig
 	ed.local_day = enable_day_night ? solar_day_factor(sinh) : 1.0;
 	ed.pixel_night = 1.0 - ed.local_day;
 	ed.sun_high = smoothstep(0.0, 0.32, sinh);
+	ed.moon_strength = enable_day_night
+		? smoothstep(0.02, 0.28, -sinh) * EARTH_MOON_GAIN
+		: 0.0;
 	ed.sun_col = mix(EARTH_DAYLIGHT_DUSK, EARTH_DAYLIGHT_NOON, ed.sun_high);
 	ed.amb_col = mix(EARTH_NIGHT_AMBIENT, EARTH_DAY_AMBIENT, ed.local_day);
+	if (!enable_day_night) {
+		ed.sun_col *= EARTH_ETERNAL_SUN_GAIN;
+		ed.amb_col *= EARTH_ETERNAL_AMBIENT_GAIN;
+	}
+	ed.moon_dir = -sdir;
+	ed.moon_col = EARTH_MOONLIGHT;
 	return ed;
 }
 

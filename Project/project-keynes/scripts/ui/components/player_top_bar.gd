@@ -3,6 +3,7 @@ class_name PlayerTopBar
 
 signal pause_toggled(paused: bool)
 signal speed_selected(speed: float)
+signal day_night_toggled(enabled: bool)
 signal setup_requested()
 signal gm_requested()
 
@@ -11,6 +12,7 @@ const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 
 var _date_label: Label
 var _pause_button: Button
+var _day_night_button: Button
 var _speed_buttons: Dictionary = {}
 
 
@@ -75,6 +77,14 @@ func bar_height() -> float:
 	return BAR_HEIGHT
 
 
+func set_day_night_enabled(enabled: bool) -> void:
+	if _day_night_button == null:
+		_ready()
+	_day_night_button.set_pressed_no_signal(enabled)
+	IconBadge.apply_to_button(_day_night_button, "moon" if enabled else "sun", 15)
+	_day_night_button.tooltip_text = "昼夜循环：%s" % ("开启" if enabled else "关闭（动态永昼，光向随直射点移动）")
+
+
 func _build_date_block() -> Control:
 	var block := PanelContainer.new()
 	var block_style := UITokens.inset_panel_style(Color(0.055, 0.048, 0.039, 0.94), UITokens.PANEL_BORDER_SOFT)
@@ -105,6 +115,15 @@ func _build_control_block() -> Control:
 	var gm_button := _icon_button("overview", "GM 性能面板（F1）")
 	gm_button.pressed.connect(func() -> void: gm_requested.emit())
 	controls.add_child(gm_button)
+
+	_day_night_button = _icon_button("moon", "昼夜循环：开启")
+	_day_night_button.toggle_mode = true
+	_day_night_button.button_pressed = true
+	_day_night_button.toggled.connect(func(enabled: bool) -> void:
+		set_day_night_enabled(enabled)
+		day_night_toggled.emit(enabled)
+	)
+	controls.add_child(_day_night_button)
 
 	var divider := VSeparator.new()
 	divider.custom_minimum_size = Vector2(8.0, 0.0)

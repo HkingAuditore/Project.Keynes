@@ -78,6 +78,21 @@ func _initialize() -> void:
 	_expect("settlement without local forest closes through a populated regional source",
 		bool(traded_source.get("ok", false)) and
 		int(traded_source.get("construction_source_component_count", 0)) == 1)
+	var distributed_source_map := _make_distributed_source_map()
+	var distributed_source: Dictionary = EconomyTestBootstrapScript.build(
+		distributed_source_map, facade, 42)
+	_expect("distributed regional survival and construction chains survive local pruning " +
+		"ok=%s fallback=%s sources=%d cells=%d reason=%s" % [
+			str(bool(distributed_source.get("ok", false))),
+			str(bool(distributed_source.get("regional_capacity_fallback", false))),
+			int(distributed_source.get("construction_source_component_count", 0)),
+			int(distributed_source.get("regional_capacity_fallback_cells", 0)),
+			String(distributed_source.get("reason", "")),
+		],
+		bool(distributed_source.get("ok", false)) and
+		bool(distributed_source.get("regional_capacity_fallback", false)) and
+		int(distributed_source.get("construction_source_component_count", 0)) == 1 and
+		int(distributed_source.get("regional_capacity_fallback_cells", 0)) >= 3)
 	var short_horizon_map := _make_map()
 	_clear_resource(short_horizon_map, &"timber")
 	_clear_resource(short_horizon_map, &"stone")
@@ -423,6 +438,42 @@ func _make_partitioned_source_map() -> MapData:
 			values[0] = 1000000.0
 			values[1] = 1000000.0
 			values[3] = 1000000.0
+		map.set(field, values)
+	return map
+
+
+func _make_distributed_source_map() -> MapData:
+	# No cell can close food, clothing, tools and construction inputs alone, but
+	# the four connected land cells form one quantitatively viable trade region.
+	var map := MapData.new(4, 1)
+	var terrains := PackedByteArray([
+		TerrainType.TERRAIN.PLAIN,
+		TerrainType.TERRAIN.PLAIN,
+		TerrainType.TERRAIN.PLAIN,
+		TerrainType.TERRAIN.PLAIN,
+	])
+	for col in range(4):
+		var cube := HexUtils.offset_to_cube(col, 0)
+		var cell := HexCell.new(cube.x, cube.y)
+		cell.terrain = terrains[col]
+		map.set_cell(cell)
+	map._build_indices()
+	map.terrain_arr = terrains
+	ResourceProfileRegistry.ensure_loaded()
+	for profile in ResourceProfileRegistry.ordered():
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if field == "":
+			continue
+		var values := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+		match String(profile.id):
+			"fertile_soil":
+				values[0] = 1000000.0
+			"flint":
+				values[1] = 1000000.0
+			"timber", "wild_game":
+				values[2] = 1000000.0
+			"stone":
+				values[3] = 1000000.0
 		map.set(field, values)
 	return map
 

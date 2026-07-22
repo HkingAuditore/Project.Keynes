@@ -3993,6 +3993,14 @@ Dictionary DCWorldExt::run_weather_refresh_daily_pass(const Dictionary &knobs) {
     br["albedo_ms"]    = stage_b_knobs.get("albedo_ms",   0.0);
     br["veg_dyn_ms"]   = stage_b_knobs.get("veg_dyn_ms",  0.0);
     br["feedback_ms"]  = stage_b_knobs.get("feedback_ms", 0.0);
+    const int stage_b_call_index = int(stage_b_knobs.get("stage_b_call_index", -1));
+    br["stage_b_call_index"] = stage_b_call_index;
+    br["albedo_ran"] = bool(stage_b_knobs.get("run_albedo", false));
+    br["veg_dyn_ran"] = bool(stage_b_knobs.get("run_veg_dyn", false));
+    br["feedback_ran"] = bool(stage_b_knobs.get("run_feedback", false));
+    br["stage_b_combined_done"] = true;
+    br["stage_b_ext_ok"] = true;
+    br["stage_b_total_runs"] = stage_b_call_index >= 0 ? stage_b_call_index + 1 : 0;
     if (stage_b_knobs.has("succession_indices")) {
         br["succession_indices"]    = stage_b_knobs["succession_indices"];
         br["succession_to_veg"]     = stage_b_knobs["succession_to_veg"];

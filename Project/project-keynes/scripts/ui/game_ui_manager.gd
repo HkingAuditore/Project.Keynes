@@ -3,6 +3,7 @@ class_name GameUIManager
 
 signal pause_toggled(paused: bool)
 signal speed_selected(speed: float)
+signal day_night_toggled(enabled: bool)
 signal fit_requested()
 signal setup_requested()
 signal regenerate_requested()
@@ -238,6 +239,11 @@ func set_world_summary(width: int, height: int, cells: int, seed: int) -> void:
 		_top_bar.set_world_summary(width, height, cells, seed)
 
 
+func set_day_night_enabled(enabled: bool) -> void:
+	if _top_bar != null:
+		_top_bar.set_day_night_enabled(enabled)
+
+
 func show_loading(message: String) -> void:
 	if _loading_overlay != null:
 		_loading_overlay.show_message(message)
@@ -275,6 +281,8 @@ func _build_ui() -> void:
 	_top_bar.offset_bottom = PlayerTopBar.BAR_HEIGHT
 	_top_bar.pause_toggled.connect(func(paused: bool) -> void: pause_toggled.emit(paused))
 	_top_bar.speed_selected.connect(func(speed: float) -> void: speed_selected.emit(speed))
+	_top_bar.day_night_toggled.connect(
+		func(enabled: bool) -> void: day_night_toggled.emit(enabled))
 	_top_bar.setup_requested.connect(func() -> void: setup_requested.emit())
 	_top_bar.gm_requested.connect(toggle_gm_panel)
 	add_child(_top_bar)

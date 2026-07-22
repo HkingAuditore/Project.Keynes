@@ -2181,6 +2181,7 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int,
 		return {}
 	var knobs: Dictionary = {
 		"n_cells": n_cells,
+		"stage_b_call_index": call_index,
 		"run_albedo": run_albedo,
 		"run_veg_dyn": run_veg_dyn,
 		"run_feedback": run_feedback,
@@ -8411,11 +8412,11 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 	# (land moist p90≈0.56)下移；旧单一"热带(>0.55)"拆成真热带(>0.66)与亚热带/暖温带
 	# (0.55–0.66)，让 FOREST 地形在亚热带可达，修复 SUBTROPICAL_FOREST 死分支。
 	if temperature > 0.66:                         # 真热带（赤道暖湿）
-		if moisture > 0.45:
+		if moisture > 0.54:
 			return TerrainType.TERRAIN.JUNGLE     # 热带雨林/季风林
-		if moisture > 0.30:
+		if moisture > 0.32:
 			return TerrainType.TERRAIN.SAVANNA    # 稀树草原
-		if moisture > 0.18:
+		if moisture > 0.20:
 			return TerrainType.TERRAIN.STEPPE
 		return TerrainType.TERRAIN.DESERT         # 热带沙漠
 
@@ -8599,18 +8600,18 @@ func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int
 		TerrainType.TERRAIN.JUNGLE:
 			# 热带高地云雾林 → 极湿雨林 → 季风半落叶 → 季雨林
 			# [climate-zone-fix P1] 阈值随湿度天花板(p90≈0.56)下移，雨林/季风林重新可达。
-			if (is_alpine or is_hilly) and cell.moisture > 0.52:
+			if (is_alpine or is_hilly) and cell.moisture > 0.60:
 				return VegetationType.VEG.CLOUD_FOREST
-			if cell.moisture > 0.50:
+			if cell.moisture > 0.58:
 				return VegetationType.VEG.TROPICAL_RAINFOREST
-			if cell.moisture > 0.42:
+			if cell.moisture > 0.48:
 				return VegetationType.VEG.MONSOON_FOREST
 			return VegetationType.VEG.TROPICAL_DRY_FOREST
 		TerrainType.TERRAIN.SAVANNA:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW if cell.moisture > 0.45 else VegetationType.VEG.BOREAL_SHRUB
 			# [climate-zone-fix P1] MONSOON 门 0.45→0.42 与 JUNGLE case 对齐
-			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.42 else VegetationType.VEG.SAVANNA
+			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.48 else VegetationType.VEG.SAVANNA
 		TerrainType.TERRAIN.GRASSLAND:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW
@@ -8672,11 +8673,11 @@ func _whittaker_vegetation(temperature: float, moisture: float, landform: int) -
 			return VegetationType.VEG.TEMPERATE_GRASSLAND
 		return VegetationType.VEG.TEMPERATE_STEPPE
 	# 真热带
-	if moisture > 0.50:
+	if moisture > 0.58:
 		return VegetationType.VEG.TROPICAL_RAINFOREST
-	if moisture > 0.34:
+	if moisture > 0.38:
 		return VegetationType.VEG.TROPICAL_DRY_FOREST
-	if moisture > 0.18:
+	if moisture > 0.20:
 		return VegetationType.VEG.SAVANNA
 	if moisture < 0.10:
 		return VegetationType.VEG.XERIC_DESERT
@@ -15072,12 +15073,18 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 				and next_r_for_streak != int(cell.vegetation) \
 				and next_r_score_for_streak >= compat + float(cp_vd.succession_min_compat_gain) \
 				and next_r_score_for_streak >= float(cp_vd.vitality_high_threshold)
+		var best_transition: int = VegetationType.best_degrade_target(cell.vegetation, temp, plant_water)
+		var best_transition_score: float = VegetationType.climate_compat_score(
+			best_transition, temp, plant_water) if best_transition != int(cell.vegetation) else -1.0
+		var degrade_candidate: bool = best_transition != int(cell.vegetation) \
+				and best_transition_score >= compat + float(cp_vd.succession_min_compat_gain)
 
-		# Streak 计数必须对应真实演替候选，避免“当前植被很健康”却倒计时升级失败。
-		if stress_max > 0.65 and target < _c().vitality_high_threshold:
+		# Streak 只为真实、更适宜的候选累计；目标适配持续偏低即可推进，
+		# 不再要求当前植被先跌到濒死值才开始计时。
+		if degrade_candidate and stress_max > 0.65 and target < _c().vitality_high_threshold:
 			cell._vitality_low_streak += maxi(streak_days, int(round(float(streak_days) * stress_max)))
 			cell._vitality_high_streak = 0
-		elif cell.vegetation_vitality < _c().vitality_low_threshold and target < _c().vitality_low_threshold:
+		elif degrade_candidate and target < _c().vitality_low_threshold:
 			cell._vitality_low_streak += streak_days
 			cell._vitality_high_streak = 0
 		elif upgrade_candidate \

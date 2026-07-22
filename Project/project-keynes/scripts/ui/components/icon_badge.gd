@@ -46,6 +46,8 @@ static func normalize_icon(icon: String) -> String:
 	match icon:
 		"☼", "太阳", "sun", "climate":
 			return "sun"
+		"moon", "day_night", "night":
+			return "moon"
 		"overview", "summary", "总览":
 			return "overview"
 		"♣", "tree", "eco", "leaf", "forest", "timber":
@@ -122,6 +124,8 @@ static func glyph_for_key(key: String) -> String:
 	match key:
 		"sun":
 			return "\uf185" # sun
+		"moon":
+			return "\uf186" # moon
 		"eco":
 			return "\uf06c" # leaf
 		"water":

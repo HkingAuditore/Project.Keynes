@@ -234,6 +234,8 @@ lit     = (direct + ambient) · mix(1, NIGHT_BRIGHTNESS_FLOOR, night_factor) · 
 lit    += emission
 ```
 
+昼侧的 `L/sun_color` 来自太阳；夜侧改用与太阳相对的冷蓝月光，并限制月光仰角以保留山脊和沟谷的方向性明暗。关闭 `day_night_enabled` 时不计算月光，回退到动态永昼全局平行光：方位在 shader 内直接读取绘制晨昏线所用的 `earth_daylight_subsolar_lon()`，因此与自动直射点严格同源、同速；CPU `tod_sun_dir.z` 只提供纬度对应的艺术化光线高度（赤道约 30°、至日约 20°）。`local_day` 始终为 1，不会生成夜区。永昼模式把已有地形坡向迎光强度放大 1.45 倍（封顶 0.55），背光坡限制在约 70% 以上；环境光保留 88%、方向光增益 118%，地形投影下限 90%。植被软阴影在永昼下缩短至 72%、alpha 降至 58%，避免密集实例重叠成黑团，同时保留光向运动。
+
 ### 6.3 旁路：hillshade-only
 
 `evaluate_hillshade_only(s)` 仅保留为 legacy/debug helper。`day_night_enabled=false` 现在表示"关闭晨昏线但保留永昼全局平行光"，仍走主 BRDF 路径。
@@ -494,7 +496,7 @@ const float NDOTL_BIAS            = 0.0005;
 const float AMBIENT_FLOOR_LAND     = 0.18;
 const float AMBIENT_FLOOR_WATER    = 0.22;
 const float HILLSHADE_BASE_LIFT    = 0.55;
-const float NIGHT_BRIGHTNESS_FLOOR = 0.55;
+const float NIGHT_BRIGHTNESS_FLOOR = 0.68;
 const float SUN_INTENSITY_GAIN     = 1.00;
 
 // Legacy Blinn-Phong（USE_PBR_BRDF=0 路径）
@@ -695,7 +697,8 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 | 3 档 shader variant | 通过 `PK_SHADER_TIER_LOW/MID/HIGH` 各编译一次，确认低档不编译 caustics/sparkle/天气细节，画面仍保主色和主形态 |
 | 4 个季节 | `season_phase ∈ {0,1,2,3}`，对照植被色与雪线 |
 | 一键回退 | 改 `USE_PBR_BRDF=false` 重编译，确认与 v9 视觉等价 |
-| 昼夜循环 | `day_phase ∈ [0,1]`，确认夜间 night_factor 不爆黑、日出日落色温过渡顺滑 |
+| 昼夜循环 | `day_phase ∈ [0,1]`，确认夜间冷蓝月光能读出地形法线、night_factor 不爆黑、日出日落色温过渡顺滑 |
+| 动态永昼切换 | 点击玩家顶栏月亮按钮，确认 `day_night_enabled=false` 后晨昏线消失，地形、天气与植被保持永昼，同时全局阴影仍跟随直射点经度旋转、随直射点纬度改变长度 |
 
 ### 15.4 性能回归
 

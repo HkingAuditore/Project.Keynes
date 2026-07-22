@@ -6,6 +6,7 @@ const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
 @export_range(0, 2, 1) var visual_quality: int = 1
 @export_range(0, 2, 1) var mobile_quality_tier: int = 0
 @export var perf_sampler_enabled: bool = false
+@export var day_night_enabled: bool = true
 
 @onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
 @onready var _camera: MapCamera = $MapCamera
@@ -48,6 +49,7 @@ func _connect_signals() -> void:
 	_ui_manager.regenerate_requested.connect(_on_regenerate_requested)
 	_ui_manager.setup_requested.connect(_return_to_world_setup)
 	_ui_manager.clear_selection_requested.connect(_selection.clear_selection)
+	_ui_manager.day_night_toggled.connect(_on_day_night_toggled)
 
 
 func _on_world_ready(
@@ -94,6 +96,12 @@ func _return_to_world_setup() -> void:
 	get_tree().change_scene_to_file(WORLD_SETUP_SCENE_PATH)
 
 
+func _on_day_night_toggled(enabled: bool) -> void:
+	day_night_enabled = enabled
+	_runtime_host.set_day_night_enabled(enabled)
+	_ui_manager.set_day_night_enabled(enabled)
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
@@ -122,6 +130,8 @@ func _push_visual_toggles() -> void:
 		_renderer.set_visual_quality(visual_quality)
 	if _renderer.has_method("set_perf_sampler_enabled"):
 		_renderer.set_perf_sampler_enabled(perf_sampler_enabled)
+	_runtime_host.set_day_night_enabled(day_night_enabled)
+	_ui_manager.set_day_night_enabled(day_night_enabled)
 	var weather_layer := _renderer.get_node_or_null("WeatherLayer")
 	if weather_layer != null and weather_layer.has_method("set_visual_quality"):
 		weather_layer.set_visual_quality(visual_quality)

@@ -62,7 +62,7 @@ struct LightingContext {
 // ─── 构造：从 uniforms 与一个 ambient_floor 推导 LightingContext ────────
 // [cylindrical-earth-daylight] 逐像素经纬度日照（晨昏线）驱动昼夜：昼夜系数 / 昼晨昏色
 //   统一由 earth_daylight.eval_earth_daylight() 给出（与水面、植被同一真源），
-//   tod_exposure 保留为全局曝光。直射光乘 local_day → 夜侧(太阳在地平线下)无方向光。
+//   tod_exposure 保留为全局曝光。昼侧用太阳主光，夜侧用冷蓝月光主光。
 LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_signed) {
 	LightingContext lc;
 	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
@@ -77,16 +77,25 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 	vec3 phys_sun = ed.sun_dir;
 	phys_sun.z = min(phys_sun.z, tod_sun_relief_max_up);
 	phys_sun = normalize(phys_sun);
+	vec3 phys_moon = ed.moon_dir;
+	// 月光保持较低入射角，让午夜仍能读出山脊和沟谷的法线差。
+	phys_moon.z = min(phys_moon.z, 0.72);
+	phys_moon = normalize(phys_moon);
 	float lat_sun_w = (tod_latitude_sun_enabled || !day_night_enabled) ? 1.0 : 0.0;
-	lc.L = normalize(mix(normalize(tod_sun_dir), phys_sun, lat_sun_w));
+	vec3 day_light_dir = normalize(mix(normalize(tod_sun_dir), phys_sun, lat_sun_w));
+	// 日月方向近乎相反，不做向量线性混合，避免晨昏中点归一化零向量。
+	float use_day_key = step(ed.moon_strength, ed.local_day);
+	lc.L = mix(phys_moon, day_light_dir, use_day_key);
 	lc.V = VIEW_DIR_TOP_DOWN;
 
 	if (USE_LINEAR_LIGHTING) {
-		// 直射光乘 local_day：夜侧(太阳在地平线下)无方向光 → 杜绝"夜里还有阳面"。
-		lc.sun_color_linear     = srgb_to_linear(ed.sun_col) * (SUN_INTENSITY_GAIN * ed.local_day);
+		// 太阳在地平线下时切到月光，避免夜里仍出现太阳向阳面。
+		lc.sun_color_linear = srgb_to_linear(ed.sun_col) * (SUN_INTENSITY_GAIN * ed.local_day)
+			+ srgb_to_linear(ed.moon_col) * ed.moon_strength;
 		lc.ambient_color_linear = srgb_to_linear(ed.amb_col);
 	} else {
-		lc.sun_color_linear     = ed.sun_col * (SUN_INTENSITY_GAIN * ed.local_day);
+		lc.sun_color_linear = ed.sun_col * (SUN_INTENSITY_GAIN * ed.local_day)
+			+ ed.moon_col * ed.moon_strength;
 		lc.ambient_color_linear = ed.amb_col;
 	}
 	lc.exposure = tod_exposure;
@@ -95,9 +104,9 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 	lc.ambient_floor = ambient_floor;
 	// [sky-sh-ambient] 暂存色板域原始量，供 BRDF 内按法线求方向化天光（见 sky_sh_ambient_brdf）。
 	lc.amb_palette = ed.amb_col;
-	lc.sun_palette = ed.sun_col;
-	lc.sun_dir_px = ed.sun_dir;
-	lc.local_day = ed.local_day;
+	lc.sun_palette = mix(ed.moon_col, ed.sun_col, ed.local_day);
+	lc.sun_dir_px = lc.L;
+	lc.local_day = max(ed.local_day, ed.moon_strength * 0.45);
 	lc.direct_shadow = terrain_horizon_direct_visibility(uv, lc.L);
 	return lc;
 }

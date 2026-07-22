@@ -625,3 +625,23 @@ merchant target retains the full configured horizon. Catalog `min_price/max_pric
 not clamp normal prices; the remaining bounds are integer-safety guards. The production
 cost anchor is still a dynamic soft floor and may lift an underpriced active output only
 within the configured price-rise rate.
+
+## Suspended producer probe and liquidation gate
+
+```text
+settled = last_output > 0 or last_input > 0 or last_resource > 0
+          or last_resource_generated > 0
+advance_suspension = (settled and realized_margin <= severe_loss_threshold)
+                     or (filled_owner > 0 and not settled)
+
+probe_scale = 1/6  if survival_or_cycle_flow_output else 1/32
+probe_executable = physical_inputs_available
+                   and natural_resources_available
+                   and financing_available
+advance_liquidation_review = probe_executable
+                             and expected_margin < restart_margin
+```
+
+Suspension sets owner demand to zero but does not remove the building. Probe demand is
+unfunded signal demand only: it changes neither stock nor cash. Non-executable reviews reset
+the consecutive failure count. Service buildings do not evaluate these formulas.

@@ -517,8 +517,19 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 			// 只要有可辨识的起伏就给足方向性；平地(slope→0)平滑淡出，避免高度图量化噪声闪烁。
 			float slope_mask = smoothstep(0.006, 0.05, slope);
 			float day_w = lc.local_day;                 // 昼夜开启时夜侧淡出；关闭时永昼=1
-			float relief = aspect * slope_mask * tod_terrain_relief_strength * day_w;
-			lit *= clamp(1.0 + relief, 0.58, 1.50);
+			// 永昼没有晨昏线作为运动参照，因此适度加强坡向明暗，让全局光方位旋转可被玩家识别。
+			// 只放大已有 terrain relief，不新增光照通路；上限避免山地出现过曝/死黑翻转。
+			float eternal_relief_gain = day_night_enabled ? 1.0 : 1.45;
+			float relief_strength = min(tod_terrain_relief_strength * eternal_relief_gain, 0.55);
+			// 永昼使用不对称坡向塑形：迎光面保留强响应，背光面限制在约 70% 以上，
+			// 避免低角度平行光与环境 AO / horizon shadow 叠乘成死黑。
+			float back_strength = day_night_enabled
+				? relief_strength
+				: min(tod_terrain_relief_strength * 0.85, 0.30);
+			float signed_strength = (aspect >= 0.0) ? relief_strength : back_strength;
+			float relief = aspect * slope_mask * signed_strength * day_w;
+			float relief_floor = day_night_enabled ? 0.58 : 0.70;
+			lit *= clamp(1.0 + relief, relief_floor, 1.50);
 		}
 	}
 	// [terrain-horizon 2026-07-03] BRDF 内只遮蔽 direct lighting，物理上正确但在当前强环境光/
@@ -526,7 +537,10 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	// lc.direct_shadow 与 local_day 门控，不影响水面和 emission，保证“投影”可读。
 	float cast_shadow = clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0);
 	if (cast_shadow > 0.001) {
-		lit *= mix(1.0, terrain_horizon_cast_floor, cast_shadow);
+		float cast_floor = day_night_enabled
+			? terrain_horizon_cast_floor
+			: max(terrain_horizon_cast_floor, 0.90);
+		lit *= mix(1.0, cast_floor, cast_shadow);
 	}
 	return lit;
 }

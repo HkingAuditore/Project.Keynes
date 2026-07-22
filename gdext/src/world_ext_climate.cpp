@@ -4279,6 +4279,37 @@ static inline float vegdyn_compat_of(
     return std::exp(-0.5f * (dt * dt + dm * dm));
 }
 
+static inline uint8_t vegdyn_best_transition(
+        uint8_t current,
+        float temp,
+        float plant_water,
+        int n_veg,
+        const float *IDT,
+        const float *IDM,
+        const float *TLT,
+        const float *TLM,
+        const uint8_t *NXU,
+        const uint8_t *NXD,
+        float &best_score) {
+    uint8_t best = current;
+    best_score = -1.0f;
+    if (current >= n_veg) return best;
+    const uint8_t down = NXD[current];
+    const uint8_t up = NXU[current];
+    if (down != current) {
+        best = down;
+        best_score = vegdyn_compat_of(down, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
+    }
+    if (up != current) {
+        const float score = vegdyn_compat_of(up, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
+        if (score > best_score) {
+            best = up;
+            best_score = score;
+        }
+    }
+    return best;
+}
+
 static inline float vegdyn_weather_stress(
         uint8_t v_id,
         int wt,
@@ -4528,7 +4559,13 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
             nxt_up_for_streak != v_id &&
             nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
             nxt_up_score_for_streak >= high_thresh;
-        if (vit < low_thresh && target < low_thresh) {
+        float best_transition_score = -1.0f;
+        const uint8_t best_transition = vegdyn_best_transition(
+            v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, NXU, NXD,
+            best_transition_score);
+        const bool degrade_candidate = best_transition != v_id &&
+            best_transition_score >= compat + succession_min_compat_gain;
+        if (degrade_candidate && target < low_thresh) {
             ls += streak_days;
             hs = 0;
         } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
@@ -4544,20 +4581,9 @@ double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
         if (ls >= degrade_days) {
             // climate-loop-closure Phase 3.2：气候导向退化目标——在 harsher/richer
             // 两候选里挑 compat 更高者(过湿→richer 湿生，过旱→harsher 荒漠)。
-            uint8_t nxt = v_id;
-            float best_sc = -1.0f;
-            if (v_id < n_veg) {
-                const uint8_t cand_d = NXD[v_id];
-                const uint8_t cand_u = NXU[v_id];
-                if (cand_d != v_id) { nxt = cand_d; best_sc = vegdyn_compat_of(cand_d, temp, plant_water, n_veg, IDT, IDM, TLT, TLM); }
-                if (cand_u != v_id) {
-                    const float su = vegdyn_compat_of(cand_u, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
-                    if (su > best_sc) { nxt = cand_u; best_sc = su; }
-                }
-            }
-            if (nxt != v_id && best_sc >= compat + succession_min_compat_gain) {
+            if (degrade_candidate) {
                 succ_indices.push_back(i);
-                succ_to_veg.push_back(nxt);
+                succ_to_veg.push_back(best_transition);
                 const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
                 ls = cooldown;
                 hs = cooldown;
@@ -4854,7 +4880,13 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
             nxt_up_for_streak != v_id &&
             nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
             nxt_up_score_for_streak >= high_thresh;
-            if (vit < low_thresh && target < low_thresh) {
+        float best_transition_score = -1.0f;
+        const uint8_t best_transition = vegdyn_best_transition(
+            v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, NXU, NXD,
+            best_transition_score);
+        const bool degrade_candidate = best_transition != v_id &&
+            best_transition_score >= compat + succession_min_compat_gain;
+            if (degrade_candidate && target < low_thresh) {
                 ls += streak_days;
                 hs = 0;
         } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
@@ -4867,20 +4899,9 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
 
             bool fired = false;
             if (ls >= degrade_days) {
-                uint8_t nxt = v_id;
-                float best_sc = -1.0f;
-                if (v_id < n_veg) {
-                    const uint8_t cand_d = NXD[v_id];
-                    const uint8_t cand_u = NXU[v_id];
-                    if (cand_d != v_id) { nxt = cand_d; best_sc = vegdyn_compat_of(cand_d, temp, plant_water, n_veg, IDT, IDM, TLT, TLM); }
-                    if (cand_u != v_id) {
-                        const float su = vegdyn_compat_of(cand_u, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
-                        if (su > best_sc) { nxt = cand_u; best_sc = su; }
-                    }
-                }
-                if (nxt != v_id && best_sc >= compat + succession_min_compat_gain) {
+                if (degrade_candidate) {
                     local.indices.push_back(i);
-                    local.to_veg.push_back(nxt);
+                    local.to_veg.push_back(best_transition);
                     const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
                     ls = cooldown;
                     hs = cooldown;
@@ -5802,11 +5823,17 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                 nxt_up_for_streak != v_id &&
                 nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
                 nxt_up_score_for_streak >= high_thresh;
-            if (vegetation_stress_enabled && stress_max > 0.65f && target < high_thresh) {
+            float best_transition_score = -1.0f;
+            const uint8_t best_transition = vegdyn_best_transition(
+                v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, NXU, NXD,
+                best_transition_score);
+            const bool degrade_candidate = best_transition != v_id &&
+                best_transition_score >= compat + succession_min_compat_gain;
+            if (degrade_candidate && vegetation_stress_enabled && stress_max > 0.65f && target < high_thresh) {
                 const int stress_days = std::max(streak_days, int(std::round(float(streak_days) * stress_max)));
                 ls += stress_days;
                 hs = 0;
-            } else if (vit < low_thresh && target < low_thresh) {
+            } else if (degrade_candidate && target < low_thresh) {
                 ls += streak_days;
                 hs = 0;
             } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
@@ -5819,20 +5846,9 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
 
             bool fired = false;
             if (ls >= degrade_days) {
-                uint8_t nxt = v_id;
-                float best_sc = -1.0f;
-                if (v_id < n_veg) {
-                    const uint8_t cand_d = NXD[v_id];
-                    const uint8_t cand_u = NXU[v_id];
-                    if (cand_d != v_id) { nxt = cand_d; best_sc = vegdyn_compat_of(cand_d, temp, plant_water, n_veg, IDT, IDM, TLT, TLM); }
-                    if (cand_u != v_id) {
-                        const float su = vegdyn_compat_of(cand_u, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
-                        if (su > best_sc) { nxt = cand_u; best_sc = su; }
-                    }
-                }
-                if (nxt != v_id && best_sc >= compat + succession_min_compat_gain) {
+                if (degrade_candidate) {
                     succ_indices.push_back(i);
-                    succ_to_veg.push_back(nxt);
+                    succ_to_veg.push_back(best_transition);
                     const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
                     ls = cooldown;
                     hs = cooldown;
