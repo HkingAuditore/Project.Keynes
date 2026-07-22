@@ -117,7 +117,9 @@ func _run() -> void:
 	var deadline_exceeded := int((destination_after_dispatch.trade_deadline_exceeded as
 		PackedByteArray)[destination_good_index])
 	_expect("new shortage receives its first dispatch within the response target",
-		dispatch_delay >= 0 and dispatch_delay <= 15 and
+		dispatch_delay == -1 and
+		int(report.get("trade_first_dispatch_delay_max_days", -1)) >= 0 and
+		int(report.get("trade_first_dispatch_delay_max_days", 16)) <= 15 and
 		int(report.get("trade_response_deadline_misses", -1)) == 0 and
 		int(report.get("trade_response_deadline_misses_cumulative", -1)) == 0)
 	_expect("trade signal records its last dispatch attempt and deadline state",
@@ -140,8 +142,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v15 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 15)
+	_expect("PKEC v16 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 16)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -638,45 +640,20 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	}, {})
 	_advance_day(ext, 0)
 	var saved := _save_economy(ext)
-	var compat_hash := int(compiled.get("catalog_compat_hash_v10", 0))
-	var v14_chunks := _convert_v15_chunks_to_v14(saved.get("chunks", []))
-	var v14_restored := _new_ext(compiled, 1)
-	CountryTestHelper.configure_all_technologies(v14_restored, catalog, 1, 4415)
-	v14_restored.configure_economy(catalog, profile, 1, 4415)
-	var v14_result := _restore_economy(v14_restored, v14_chunks)
-	_expect("PKEC v14 deterministically bootstraps rolling phases",
-		bool(v14_result.get("ok", false)) and
-		String(v14_result.get("migration", "")) == "v14_rolling_phase_bootstrap")
-	var v13_chunks := _convert_v14_chunks_to_v13(v14_chunks,
-		int(compiled.get("catalog_compat_hash_v13", 0)),
-		int(compiled.get("building_catalog_compat_hash_v13", 0)))
-	var v11_chunks := _convert_v12_chunks_to_v11(v13_chunks,
-		int(compiled.get("catalog_hash", 0)),
-		int(compiled.get("building_catalog_hash", 0)))
-	var v11_restored := _new_ext(compiled, 1)
-	CountryTestHelper.configure_all_technologies(v11_restored, catalog, 1, 4415)
-	v11_restored.configure_economy(catalog, profile, 1, 4415)
-	var v11_result := _restore_economy(v11_restored, v11_chunks)
-	_expect("PKEC v11 with the legacy merchant policy is rejected explicitly",
-		not bool(v11_result.get("ok", true)) and
-		String(v11_result.get("reason", "")) ==
-			"save_business_policy_profile_mismatch")
-	var v11_probe_chunks := _set_v11_trade_mode(v11_chunks, 1)
-	var probe_restored := _new_ext(compiled, 1)
-	CountryTestHelper.configure_all_technologies(probe_restored, catalog, 1, 4415)
-	probe_restored.configure_economy(catalog, profile, 1, 4415)
-	var probe_result := _restore_economy(probe_restored, v11_probe_chunks)
-	_expect("ACTIVE trade explicitly rejects PKEC v11 PROBE",
-		not bool(probe_result.get("ok", true)) and
-		String(probe_result.get("reason", "")) == "save_trade_profile_mismatch")
-	var v10_chunks := _convert_v11_chunks_to_v10(v11_chunks, compat_hash)
+	var legacy_chunks: Array = []
+	for value in saved.get("chunks", []):
+		var chunk := (value as PackedByteArray).duplicate()
+		if chunk.size() >= 6:
+			chunk[4] = 15
+			chunk[5] = 0
+		legacy_chunks.append(chunk)
 	var restored := _new_ext(compiled, 1)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 1, 4415)
 	restored.configure_economy(catalog, profile, 1, 4415)
-	var result := _restore_economy(restored, v10_chunks)
-	_expect("ACTIVE trade explicitly rejects PKEC v10",
-		compat_hash != 0 and not bool(result.get("ok", true)) and
-		String(result.get("reason", "")) == "active_trade_rejects_v10_economy_save")
+	var result := _restore_economy(restored, legacy_chunks)
+	_expect("PKEC v16 explicitly rejects every legacy economy save",
+		not bool(result.get("ok", true)) and
+		String(result.get("reason", "")) == "legacy_economy_save_unsupported")
 
 func _new_ext(catalog: Dictionary, cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

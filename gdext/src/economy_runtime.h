@@ -22,7 +22,7 @@ class EconomyCsvRecorder;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 15;
+    static constexpr int32_t SCHEMA_VERSION = 16;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -356,8 +356,14 @@ private:
         int32_t realized_profit_margin_q16 = 0;
         uint16_t severe_loss_cycles = 0;
         uint16_t recovery_cycles = 0;
-        uint8_t operating_state = 0; // 0=ACTIVE, 1=SUSPENDED_LOSS.
+        uint16_t recovery_failed_reviews = 0;
+        uint16_t merchant_debt_term_cycles_left = 0;
+        uint16_t merchant_debt_delinquent_cycles = 0;
+        uint8_t operating_state = 0; // 0=ACTIVE, 1=SUSPENDED_LOSS, 2=RECOVERY_PROBE.
         uint8_t wage_suspended = 0;
+        int64_t merchant_debt_principal = 0;
+        int64_t merchant_debt_premium = 0;
+        int64_t last_in_kind_livelihood_value = 0;
     };
 
     struct PendingConstruction {
@@ -367,6 +373,9 @@ private:
         int64_t count = 0;
         int64_t ready_day = 0;
         int64_t sequence = 0;
+        int64_t merchant_debt_principal = 0;
+        int64_t merchant_debt_premium = 0;
+        uint16_t merchant_debt_term_cycles_left = 0;
     };
 
     struct InvestmentExistingType {
@@ -528,6 +537,10 @@ private:
         int64_t capacity_work = 0;
         int64_t density_q16 = 0;
         int32_t signal_age_days = 0;
+        int32_t response_priority = 0;
+        uint32_t source_price_stock_generation = 0;
+        uint32_t destination_price_stock_generation = 0;
+        int64_t planned_day = -1;
         uint64_t topology_generation = 0;
         uint64_t country_topology_hash = 0;
     };
@@ -928,6 +941,7 @@ private:
         TRADE_SIGNAL_DIAG_CASH = 6,
         TRADE_SIGNAL_DIAG_ORDER_CAP = 7,
         TRADE_SIGNAL_DIAG_DISPATCHED = 8,
+        TRADE_SIGNAL_DIAG_ARBITRATED_OUT = 9,
     };
 
     struct ProductionTraceDraft {
@@ -996,6 +1010,10 @@ private:
         int64_t funded_business_demand = 0;
         int64_t unfunded_business_demand = 0;
         int64_t market_signal_updates = 0;
+        int64_t merchant_credit_committed = 0;
+        int64_t merchant_credit_drawn = 0;
+        int64_t merchant_credit_repaid = 0;
+        int64_t merchant_credit_premium_repaid = 0;
         double market_signal_ms = 0.0;
         std::vector<OwnerRetainedOutput> retained_outputs;
         std::vector<ProductionTraceDraft> trace_drafts;
@@ -1107,6 +1125,7 @@ private:
     bool _auto_slice_by_scale = true;
     int32_t _building_cells_per_slice = 64;
     int32_t _building_groups_per_slice = 512;
+    int32_t _building_output_efficiency_q16 = Q16_ONE;
     bool _auto_building_slice_by_scale = true;
     int32_t _commands_per_slice = 16384;
     int32_t _epoch_days = 1;
@@ -1149,6 +1168,12 @@ private:
     int32_t _building_restart_cycles = 2;
     int32_t _merchant_procurement_cash_reserve_q16 = 8192;
     int32_t _merchant_market_making_days_q16 = Q16_ONE * 60;
+    int32_t _merchant_credit_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    int32_t _merchant_credit_exposure_q16 = 16384;
+    int32_t _merchant_credit_premium_q16 = 3277;
+    int32_t _merchant_credit_term_cycles = 6;
+    int32_t _recovery_success_cycles = 2;
+    int32_t _recovery_liquidation_failed_reviews = 6;
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     // Reserved profession representing unemployed population. Resolved from the
@@ -1248,6 +1273,18 @@ private:
     int64_t _funded_business_demand = 0;
     int64_t _unfunded_business_demand = 0;
     int64_t _owner_working_capital_allocated = 0;
+    int64_t _merchant_credit_budget = 0;
+    int64_t _merchant_credit_committed = 0;
+    int64_t _merchant_credit_drawn = 0;
+    int64_t _merchant_credit_repaid = 0;
+    int64_t _merchant_credit_premium_repaid = 0;
+    int64_t _merchant_credit_outstanding = 0;
+    int64_t _merchant_credit_bad_debt = 0;
+    int64_t _recovery_candidates = 0;
+    int64_t _recovery_approved = 0;
+    int64_t _recovery_restarted = 0;
+    int64_t _recovery_failed = 0;
+    int64_t _recovery_liquidated_buildings = 0;
     int64_t _working_capital_scale_error_bound_q16 = 0;
     int64_t _production_inputs_consumed = 0;
     int64_t _production_output_stock = 0;
@@ -1329,6 +1366,12 @@ private:
     int64_t _trade_unresolved_capacity = 0;
     int64_t _trade_unresolved_cash = 0;
     int64_t _trade_unresolved_order_cap = 0;
+    int64_t _trade_active_keys_pruned = 0;
+    int64_t _trade_deficit_episodes_started = 0;
+    int64_t _trade_deficit_episodes_resolved = 0;
+    int64_t _trade_candidates_stale_generation = 0;
+    int64_t _trade_candidates_arbitrated_out = 0;
+    int64_t _trade_true_source_stock_failures = 0;
     int64_t _trade_topology_content_change_count = 0;
     std::string _trade_last_plan_reset_reason = "none";
     int64_t _building_resource_capacity_checks = 0;
@@ -1416,7 +1459,7 @@ private:
     std::vector<int64_t> _demand_basis_need_composites;
     std::vector<int64_t> _demand_basis_need_environment;
     // Persistent per-cell rolling settlement state. Phase is derived from the
-    // stable cell id; last day and generation are PKEC v15 authority.
+    // Stable cell id; last day and generation are PKEC v16 authority.
     std::vector<int64_t> _cell_last_settlement_day;
     std::vector<uint32_t> _cell_settlement_generation;
     std::vector<uint32_t> _cell_price_stock_gen;
@@ -1444,6 +1487,7 @@ private:
     std::vector<int64_t> _building_funded_capacity_q16;
     std::vector<int64_t> _building_working_capital_allocated;
     std::vector<int64_t> _building_owner_livelihood_credit;
+    std::vector<int64_t> _building_merchant_credit_limit;
     std::vector<int64_t> _building_investment_score_q16;
     std::vector<int64_t> _building_investment_payback_days;
     std::vector<int32_t> _building_investment_rejection;
@@ -1453,6 +1497,7 @@ private:
     std::unordered_map<uint64_t, int64_t> _investment_harvest_by_cell_resource;
     std::vector<int32_t> _investment_employment_cells;
     std::vector<uint64_t> _trade_active_keys;
+    std::unordered_map<uint64_t, uint8_t> _trade_active_key_idle_cycles;
     // Diagnostic-only sparse clocks keyed independently from authoritative EMA state.
     std::vector<uint64_t> _trade_signal_clock_keys;
     std::vector<int64_t> _trade_signal_first_seen_day;
@@ -1750,6 +1795,10 @@ private:
                                      bool &had_eligible_sponsor) const;
     int64_t projected_owner_income_per_day(const BuildingGroup &group,
                                            int64_t &sat) const;
+    int64_t building_debt_due(const BuildingGroup &group, int64_t &sat) const;
+    int64_t repay_building_debt(int32_t cell, int32_t owner_slot,
+                                BuildingGroup &group, int64_t payment_cap,
+                                int64_t &premium_paid);
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
     bool commit_ready_construction(std::vector<int32_t> &changed_cells);

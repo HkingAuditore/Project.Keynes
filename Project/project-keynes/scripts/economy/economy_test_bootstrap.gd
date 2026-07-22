@@ -11,7 +11,8 @@ const FOOD_REQUIREMENT_PER_CAPITA := 1300
 const CLOTHING_REQUIREMENT_PER_CAPITA := 4
 const SURVIVAL_FUND_DAYS := 30
 const OWNER_OPERATING_CYCLES := 2
-const MIN_SMALL_PROFESSION_POPULATION := 2
+const PLANNED_UTILIZATION_Q16 := 49152
+const INITIAL_CARRYING_CAPACITY_SHARE_Q16 := 32768
 
 const TEST_COLLECTOR_COUNT_CAPS := {
 	"flint_quarry": 1,
@@ -169,7 +170,9 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	var basic_capacity_population := PackedInt64Array()
 	var basic_food_capacity := PackedInt64Array()
 	var basic_clothing_capacity := PackedInt64Array()
+	var chain_input_coverage_q16 := PackedInt32Array()
 	for cell_idx in passable_cells:
+		_prune_nonessential_groups(groups_by_cell[cell_idx])
 		for group in groups_by_cell[cell_idx]:
 			basic_capacity_initial_buildings += maxi(0, int(group.count))
 		var reserved_population := 1 if merchant_post_available and not \
@@ -186,6 +189,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		if not bool(balance.covered):
 			basic_capacity_deficient_cells += 1
 		var totals: Dictionary = balance.totals
+		chain_input_coverage_q16.append(int(balance.input_coverage_q16))
 		if int(totals.population) > 0:
 			basic_capacity_cell_indices.append(cell_idx)
 			basic_capacity_population.append(int(totals.population))
@@ -198,6 +202,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 	var funds := PackedInt64Array()
 	var populated_cells := PackedInt32Array()
 	var total_population := 0
+	var total_unemployed_population := 0
 	var building_cells := PackedInt32Array()
 	var building_types := PackedInt32Array()
 	var building_owners := PackedInt32Array()
@@ -251,26 +256,43 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 					int(jobs_by_profession.get(merchant_source, 0)) - 1
 				jobs_by_profession[&"merchant"] = 1
 				merchant_bootstrap_substitutions += 1
+		var capacity_idx := carrying_capacity_cell_indices.find(cell_idx)
+		var target_population := int(carrying_capacity_population[capacity_idx]) \
+			if capacity_idx >= 0 else 0
 		var actual_population := 0
+		if target_population > 0 and int(jobs_by_profession.get(&"merchant", 0)) > 0:
+			cell_indices.append(cell_idx)
+			signature_ids.append(int(signatures[&"merchant"]))
+			populations.append(1)
+			funds.append(0)
+			actual_population = 1
+			generated_professions[&"merchant"] = true
 		for profession_id in profession_ids:
 			var profession := StringName(profession_id)
+			if profession == &"merchant" or profession == &"unemployed":
+				continue
 			var population := int(jobs_by_profession.get(profession, 0))
+			population = mini(population, maxi(0, target_population - actual_population))
 			if population <= 0:
 				continue
-			if population < MIN_SMALL_PROFESSION_POPULATION and profession != &"merchant":
-				population = MIN_SMALL_PROFESSION_POPULATION
 			cell_indices.append(cell_idx)
 			signature_ids.append(int(signatures[profession]))
 			populations.append(population)
 			funds.append(0)
 			actual_population += population
 			generated_professions[profession] = true
+		var unemployed := maxi(0, target_population - actual_population)
+		if unemployed > 0 and signatures.has(&"unemployed"):
+			cell_indices.append(cell_idx)
+			signature_ids.append(int(signatures[&"unemployed"]))
+			populations.append(unemployed)
+			funds.append(0)
+			actual_population += unemployed
+			generated_professions[&"unemployed"] = true
+			total_unemployed_population += unemployed
 		if actual_population > 0:
 			populated_cells.append(cell_idx)
 			total_population += actual_population
-			var capacity_idx := carrying_capacity_cell_indices.find(cell_idx)
-			if capacity_idx >= 0:
-				carrying_capacity_population[capacity_idx] = actual_population
 
 	carrying_capacity_min = CELL_POPULATION_CAP
 	carrying_capacity_max = 0
@@ -301,7 +323,7 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 			int(populations[cohort])), SURVIVAL_FUND_DAYS)
 		var owner := _sat_mul_nonnegative(_sat_mul_nonnegative(int(
 			owner_daily_input_cost_by_key.get("%d:%d" % [cell_idx, signature_id], 0)),
-			cycle_days), OWNER_OPERATING_CYCLES)
+			cycle_days), OWNER_OPERATING_CYCLES) * PLANNED_UTILIZATION_Q16 / Q16_ONE
 		var merchant := int(merchant_daily_inventory_value_by_cell.get(cell_idx, 0)) \
 			if signature_id == merchant_signature else 0
 		funds[cohort] = _sat_add_nonnegative(
@@ -334,8 +356,13 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"cohort_count": populations.size(),
 		"building_group_count": building_counts.size(),
 		"total_population": total_population,
-		"population_source": "mid_stone_local_resource_abundance_bootstrap_finance_v12",
-		"collector_placement_model": "local_abundance_ten_year_reserve_v1",
+		"target_population": carrying_capacity_total,
+		"minimum_building_count":
+			basic_capacity_initial_buildings - basic_capacity_trimmed_buildings,
+		"initial_unemployed_population": total_unemployed_population,
+		"chain_input_coverage_q16": chain_input_coverage_q16,
+		"population_source": "demand_driven_survival_capacity_bootstrap_v16",
+		"collector_placement_model": "demand_driven_minimum_chain_v16",
 		"initial_resource_horizon_days": INITIAL_RESOURCE_HORIZON_DAYS,
 		"cell_population_cap": CELL_POPULATION_CAP,
 		"initial_employment": "unemployed",
@@ -343,6 +370,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 		"bootstrap_cycle_days": cycle_days,
 		"survival_fund_days": SURVIVAL_FUND_DAYS,
 		"owner_operating_cycles": OWNER_OPERATING_CYCLES,
+		"planned_utilization_q16": PLANNED_UTILIZATION_Q16,
+		"initial_carrying_capacity_share_q16": INITIAL_CARRYING_CAPACITY_SHARE_Q16,
 		"initial_survival_funds": initial_survival_funds,
 		"initial_owner_operating_funds": initial_owner_operating_funds,
 		"initial_merchant_inventory_funds": initial_merchant_inventory_funds,
@@ -381,36 +410,24 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int) -> Dictionary
 static func _balance_basic_capacity(groups: Array, reserved_population: int = 0) -> Dictionary:
 	var trimmed := 0
 	var initial_totals := _basic_capacity_totals(groups, reserved_population)
-	var target_population := _carrying_capacity_population(initial_totals)
+	var sustainable_population := _planned_survival_capacity(initial_totals)
+	var target_population := clampi(maxi(reserved_population,
+		sustainable_population * INITIAL_CARRYING_CAPACITY_SHARE_Q16 / Q16_ONE),
+		0, CELL_POPULATION_CAP)
 	while true:
-		var totals := _basic_capacity_totals(groups, reserved_population)
-		var population := int(totals.population)
-		var current_deficit := _basic_capacity_deficit_people(totals)
-		if population <= target_population and current_deficit == 0:
-			break
 		var best := -1
-		var best_deficit := current_deficit
-		for i in range(groups.size()):
+		for i in range(groups.size() - 1, -1, -1):
 			var group: Dictionary = groups[i]
-			if int(group.count) <= 1:
+			if int(group.count) <= 0:
 				continue
-			var per_building := _building_basic_capacity(group.spec)
-			var next_population := maxi(0, population - int(per_building.jobs))
-			var next_food := int(totals.food) - int(per_building.food)
-			var next_clothing := int(totals.clothing) - int(per_building.clothing)
-			if next_population <= 0:
-				continue
-			var deficit := _basic_capacity_deficit_people({
-				"population": next_population,
-				"food": next_food,
-				"clothing": next_clothing,
-			})
-			var acceptable := deficit < current_deficit or \
-				(current_deficit == 0 and population > target_population and deficit == 0)
-			if acceptable and (best < 0 or deficit < best_deficit or \
-					(deficit == best_deficit and i > best)):
+			group.count = int(group.count) - 1
+			var trial_totals := _basic_capacity_totals(groups, reserved_population)
+			var covered := _planned_survival_capacity(trial_totals) >= target_population \
+				and _groups_input_covered(groups)
+			group.count = int(group.count) + 1
+			if covered:
 				best = i
-				best_deficit = deficit
+				break
 		if best < 0:
 			break
 		groups[best].count = int(groups[best].count) - 1
@@ -419,10 +436,9 @@ static func _balance_basic_capacity(groups: Array, reserved_population: int = 0)
 		if int(groups[i].count) <= 0:
 			groups.remove_at(i)
 	var final_totals := _basic_capacity_totals(groups, reserved_population)
-	var final_population := int(final_totals.population)
-	var covered := final_population > 0 and \
-		int(final_totals.food) >= final_population * FOOD_REQUIREMENT_PER_CAPITA and \
-		int(final_totals.clothing) >= final_population * CLOTHING_REQUIREMENT_PER_CAPITA
+	var covered := target_population > 0 and \
+		_planned_survival_capacity(final_totals) >= target_population and \
+		_groups_input_covered(groups)
 	if not covered:
 		for group in groups:
 			trimmed += maxi(0, int(group.count))
@@ -434,7 +450,96 @@ static func _balance_basic_capacity(groups: Array, reserved_population: int = 0)
 		"target_population": target_population,
 		"covered": covered,
 		"totals": final_totals,
+		"sustainable_population": sustainable_population,
+		"input_coverage_q16": _groups_input_coverage_q16(groups),
 	}
+
+
+static func _planned_survival_capacity(totals: Dictionary) -> int:
+	var food := maxi(0, int(totals.food)) * PLANNED_UTILIZATION_Q16 / Q16_ONE
+	var clothing := maxi(0, int(totals.clothing)) * PLANNED_UTILIZATION_Q16 / Q16_ONE
+	return clampi(mini(food / FOOD_REQUIREMENT_PER_CAPITA,
+		clothing / CLOTHING_REQUIREMENT_PER_CAPITA), 0, CELL_POPULATION_CAP)
+
+
+static func _groups_input_covered(groups: Array) -> bool:
+	return _groups_input_paths_exist(groups) and \
+		_groups_input_coverage_q16(groups) >= Q16_ONE
+
+
+static func _groups_input_coverage_q16(groups: Array) -> int:
+	var outputs := {}
+	var inputs := {}
+	for group in groups:
+		var count := int(group.count)
+		if count <= 0:
+			continue
+		var spec: Dictionary = group.spec
+		var output_ids: PackedStringArray = spec.get("output_good_ids", PackedStringArray())
+		var output_quantities: PackedInt64Array = spec.get(
+			"output_quantities", PackedInt64Array())
+		for i in range(mini(output_ids.size(), output_quantities.size())):
+			var output_id := StringName(output_ids[i])
+			outputs[output_id] = int(outputs.get(output_id, 0)) + \
+				count * int(output_quantities[i])
+		var input_ids: PackedStringArray = spec.get("input_good_ids", PackedStringArray())
+		var input_quantities: PackedInt64Array = spec.get(
+			"input_quantities", PackedInt64Array())
+		for i in range(mini(input_ids.size(), input_quantities.size())):
+			var input_id := StringName(input_ids[i])
+			inputs[input_id] = int(inputs.get(input_id, 0)) + \
+				count * int(input_quantities[i])
+	var coverage := Q16_ONE
+	for input_id in inputs:
+		var required := int(inputs[input_id])
+		if required <= 0:
+			continue
+		coverage = mini(coverage, int(outputs.get(input_id, 0)) * Q16_ONE / required)
+	return maxi(0, coverage)
+
+
+static func _groups_input_paths_exist(groups: Array) -> bool:
+	var outputs := {}
+	for group in groups:
+		if int(group.count) > 0:
+			_mark_outputs(group.spec, outputs)
+	for group in groups:
+		var inputs: PackedStringArray = group.spec.get("input_good_ids", PackedStringArray())
+		if int(group.count) > 0 and not inputs.is_empty() and \
+				not _inputs_ready(group.spec, outputs):
+			return false
+	return true
+
+
+static func _prune_nonessential_groups(groups: Array) -> void:
+	var needed := {}
+	for good_id in FOOD_GOOD_IDS:
+		needed[StringName(good_id)] = true
+	for good_id in CLOTHING_GOOD_IDS:
+		needed[StringName(good_id)] = true
+	var keep := {}
+	var changed := true
+	while changed:
+		changed = false
+		for i in range(groups.size()):
+			if keep.has(i):
+				continue
+			var spec: Dictionary = groups[i].spec
+			var outputs: PackedStringArray = spec.get("output_good_ids", PackedStringArray())
+			var required := false
+			for good_id in outputs:
+				if needed.has(StringName(good_id)):
+					required = true
+					break
+			if not required:
+				continue
+			keep[i] = true
+			changed = true
+			for input_id in spec.get("input_good_ids", PackedStringArray()):
+				needed[StringName(input_id)] = true
+	for i in range(groups.size() - 1, -1, -1):
+		if not keep.has(i):
+			groups.remove_at(i)
 
 
 static func _basic_capacity_deficit_people(totals: Dictionary) -> int:
@@ -641,7 +746,13 @@ static func _default_output_inventory_value_per_day(
 			continue
 		if good_idx < issue_values.size() and int(issue_values[good_idx]) > 0:
 			continue
-		var target_quantity := int(quantities[output_idx]) * int(target_days[good_idx]) / Q16_ONE
+		var market_share_q16 := Q16_ONE / 2 if FOOD_GOOD_IDS.has(
+			String(outputs[output_idx])) or CLOTHING_GOOD_IDS.has(
+			String(outputs[output_idx])) else Q16_ONE
+		var planned_quantity := int(quantities[output_idx]) * \
+			PLANNED_UTILIZATION_Q16 / Q16_ONE
+		var target_quantity := planned_quantity * int(target_days[good_idx]) / Q16_ONE
+		target_quantity = target_quantity * market_share_q16 / Q16_ONE
 		var buy_price := int(prices[good_idx]) * int(buy_factors[good_idx]) / Q16_ONE
 		total += target_quantity * buy_price / GOODS_SCALE
 	return total

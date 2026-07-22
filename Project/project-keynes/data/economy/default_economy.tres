@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+building_output_efficiency_q16 = 131072
 market_cycle_days = 5
 market_min_cycle_days = 5
 market_max_cycle_days = 5

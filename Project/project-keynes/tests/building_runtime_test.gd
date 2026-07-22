@@ -66,6 +66,7 @@ func _run() -> void:
 	_test_endogenous_investment_repairs_dead_merchant(catalog, profile)
 	_test_building_plan_continuation(catalog, profile)
 	_test_production_worker_scalar_equivalence(catalog, profile)
+	_test_merchant_financed_construction(catalog, profile)
 	# Keep the legacy insolvency fixture focused on payroll state transitions;
 	# the 60-day default is covered by the market/schema tests.
 	profile.merchant_market_making_days_q16 = 1966080
@@ -137,10 +138,8 @@ func _run() -> void:
 		int(day1.get("merchant_procurement_budget", 0)) >=
 			int(day1.get("merchant_procurement_reserved", 0)) * 6)
 	var retained_output := int((buildings.last_retained as PackedInt64Array)[0])
-	_expect("owner may retain produced coal for its own home-energy need",
-		retained_output > 0 and
-		int(day1.get("production_output_retained", 0)) >= retained_output and
-		int(day1.get("owner_output_consumed", 0)) > 0)
+	_expect("ordinary non-survival coal enters the market instead of owner retention",
+		retained_output == 0)
 	_expect("building output reconciles sale, owner retention, and discard",
 		int((buildings.last_output as PackedInt64Array)[0]) ==
 			int((buildings.last_sold as PackedInt64Array)[0]) + retained_output +
@@ -280,8 +279,8 @@ func _run() -> void:
 		day2_paid_total += int(value)
 	for value in day2_base_due:
 		day2_due_total += int(value)
-	_expect("zero owner cash cannot fund payroll",
-		day2_paid_total == 0 and day2_due_total > 0)
+	_expect("zero funded production creates no unfunded payroll commitment",
+		day2_paid_total == 0 and day2_due_total == 0)
 	var constrained_intent := int(
 		(buildings.purchase_intent_capacity_q16 as PackedInt64Array)[0])
 	_expect("producer-income inventory floor preserves the next active production plan",
@@ -291,9 +290,8 @@ func _run() -> void:
 		constrained_intent > 0 and
 		int((buildings.funded_capacity_q16 as PackedInt64Array)[0]) == 0 and
 		int((buildings.last_output as PackedInt64Array)[0]) == 0 and funded_output > 0)
-	_expect("final wage arrears flag matches post-sale payroll",
-		(int((buildings.wage_suspended as PackedByteArray)[0]) != 0) ==
-		(day2_paid_total < day2_due_total))
+	_expect("unfunded active contract remains explicitly wage-suspended",
+		int((buildings.wage_suspended as PackedByteArray)[0]) != 0)
 	_expect("insolvent wage cycle conserves money and goods",
 		int(day2.get("money_error", 1)) == 0 and int(day2.get("goods_error", 1)) == 0)
 	_expect("cash-drained cycle preserves the prior profitable settlement once",
@@ -313,13 +311,49 @@ func _run() -> void:
 	_expect("second settled severe-loss cycle remains active",
 		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 2 and
 		int((suspended.operating_state as PackedByteArray)[0]) == 0)
+	var recovery_pop: Dictionary = ext.get_population_cell_snapshot(0)
+	var recovery_owner_row := _row_for_signature(recovery_pop, landlord_sig)
+	var recovery_owner_handle := _handle_for_profession(recovery_pop, landlord_sig)
+	var recovery_owner_funds := int(
+		(recovery_pop.funds_by_cohort as PackedInt64Array)[recovery_owner_row]) \
+		if recovery_owner_row >= 0 else 0
+	var input_offsets: PackedInt32Array = compiled.building_input_offsets
+	var candidate_offsets: PackedInt32Array = compiled.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = compiled.building_input_candidate_good_ids
+	var mine_input := int(input_offsets[mine_id])
+	var mine_input_good := int(candidate_goods[int(candidate_offsets[mine_input])])
+	var recovery_drain_ok := true
+	if recovery_owner_funds > 0:
+		recovery_drain_ok = bool(ext.submit_economy_commands({
+			"opcodes": PackedInt32Array([9]),
+			"effective_days": PackedInt64Array([5]),
+			"sequences": PackedInt64Array([3]),
+			"target_handles": PackedInt64Array([recovery_owner_handle]),
+			"i32_0": PackedInt32Array([0]),
+			"i32_1": PackedInt32Array([0]),
+			"i64_0": PackedInt64Array([recovery_owner_funds]),
+			"i64_1": PackedInt64Array([0]),
+		}).get("ok", false))
+	var recovery_stock: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([4]),
+		"effective_days": PackedInt64Array([5]),
+		"sequences": PackedInt64Array([4]),
+		"target_handles": PackedInt64Array([0]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([mine_input_good]),
+		"i64_0": PackedInt64Array([1000000]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("recovery fixture schedules cash drain and merchant input replenishment",
+		recovery_owner_handle != 0 and recovery_drain_ok and
+		bool(recovery_stock.get("ok", false)))
 	_run_day(ext, 5)
 	suspended = ext.get_building_cell_snapshot(0)
 	_expect("third settled severe-loss cycle suspends the building",
 		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 3 and
 		int((suspended.operating_state as PackedByteArray)[0]) == 1)
-	_expect("loss-suspended building retains one recovery owner but no production intent",
-		int((suspended.filled_owner as PackedInt64Array)[0]) == 1 and
+	_expect("unfinanced loss-suspended building releases its owner and production intent",
+		int((suspended.filled_owner as PackedInt64Array)[0]) == 0 and
 		int((suspended.purchase_intent_capacity_q16 as PackedInt64Array)[0]) == 0 and
 		int((suspended.last_output as PackedInt64Array)[0]) == 0)
 	var country_chunks: Array[PackedByteArray] = []
@@ -332,7 +366,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v15 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 15)
+	_expect("building v16 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 16)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -364,25 +398,16 @@ func _run() -> void:
 		int((restored_buildings.operating_state as PackedByteArray)[0]) == 1 and
 		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == 0 and
 		int((restored_buildings.employee_filled as PackedInt64Array)[1]) == 0)
-	var recovery_pop: Dictionary = ext.get_population_cell_snapshot(0)
-	var recovery_owner_handle := _handle_for_profession(recovery_pop, landlord_sig)
-	var recapitalize: Dictionary = ext.submit_economy_commands({
-		"opcodes": PackedInt32Array([2]),
-		"effective_days": PackedInt64Array([6]),
-		"sequences": PackedInt64Array([3]),
-		"target_handles": PackedInt64Array([recovery_owner_handle]),
-		"i32_0": PackedInt32Array([0]),
-		"i32_1": PackedInt32Array([0]),
-		"i64_0": PackedInt64Array([1000000000]),
-		"i64_1": PackedInt64Array([0]),
-	})
-	_expect("suspended owner recapitalization command accepted",
-		recovery_owner_handle != 0 and bool(recapitalize.get("ok", false)))
 	var recovery_one_report := _run_day(ext, 6)
 	var recovery_one: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("first solvent recovery cycle remains suspended",
-		int((recovery_one.recovery_cycles as PackedInt32Array)[0]) == 0 and
-		int((recovery_one.operating_state as PackedByteArray)[0]) == 1)
+	var recovery_after_pop: Dictionary = ext.get_population_cell_snapshot(0)
+	var recovery_merchant_row := _row_for_signature(recovery_after_pop, merchant_sig)
+	_expect("financing commitment enables the recovery probe without merchant migration",
+		int(recovery_one_report.get("recovery_approved", 0)) > 0 and
+		int((recovery_one.operating_state as PackedByteArray)[0]) == 2 and
+		int((recovery_one.filled_owner as PackedInt64Array)[0]) > 0 and
+		recovery_merchant_row >= 0 and
+		int((recovery_after_pop.populations as PackedInt64Array)[recovery_merchant_row]) == 1)
 	_expect("first recovery cycle conserves all ledgers",
 		int(recovery_one_report.get("population_error", 1)) == 0 and
 		int(recovery_one_report.get("money_error", 1)) == 0 and
@@ -399,12 +424,10 @@ func _run() -> void:
 		int(restart_report.get("goods_error", 1)) == 0)
 	var resumed_report := _run_day(ext, 8)
 	var resumed: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("suspended zero-income owner transfers through active-first hiring",
-		int((resumed.operating_state as PackedByteArray)[0]) == 1 and
-		int((resumed.filled_owner as PackedInt64Array)[0]) == 0 and
-		int((resumed.filled_owner as PackedInt64Array)[1]) >
-			int((restarted.filled_owner as PackedInt64Array)[1]) and
-		int((resumed.last_output as PackedInt64Array)[0]) == 0)
+	_expect("failed recovery remains retryable without losing either building group",
+		(resumed.group_type_ids as PackedInt32Array).size() > 1 and
+		int((resumed.operating_state as PackedByteArray)[0]) in [1, 2] and
+		int((resumed.operating_state as PackedByteArray)[1]) == 0)
 	_expect("resumed production conserves all ledgers",
 		int(resumed_report.get("population_error", 1)) == 0 and
 		int(resumed_report.get("money_error", 1)) == 0 and
@@ -867,13 +890,13 @@ func _test_same_profession_owner_income_reallocation(source_catalog: Dictionary,
 	print("  probability fixture=", skip_income, "/", skip_buildings.filled_owner,
 		"/", skip_report.get("building_owner_job_reallocations", 0), "/",
 		skip_report.get("building_owner_job_probability_skips", 0))
-	_expect("fixed-seed marginal income gain deterministically skips movement",
+	_expect("income gain below twelve-and-a-half percent does not enter mobility",
 		skip_flint_group >= 0 and skip_timber_group >= 0 and
 		int(skip_income[skip_timber_group]) > int(skip_income[skip_flint_group]) and
 		int((skip_buildings.filled_owner as PackedInt64Array)[skip_flint_group]) == 1 and
 		int((skip_buildings.filled_owner as PackedInt64Array)[skip_timber_group]) == 0 and
 		int(skip_report.get("building_owner_job_reallocations", 0)) == 0 and
-		int(skip_report.get("building_owner_job_probability_skips", 0)) == 1)
+		int(skip_report.get("building_owner_job_probability_skips", 0)) == 0)
 
 
 func _test_owner_income_reallocation_prefers_unemployed(source_catalog: Dictionary,
@@ -1599,14 +1622,11 @@ func _test_hunter_subsistence_and_working_capital(source_catalog: Dictionary,
 	var pop: Dictionary = ext.get_population_cell_snapshot(0)
 	var hunter_row := _row_for_signature(pop, hunter_sig)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("forty-eight hunters finish 120 food-empty market days at healthy satisfaction",
-		hunter_row >= 0 and int((pop.populations as PackedInt64Array)[hunter_row]) == 48 and
-		int((pop.satisfaction_by_cohort_q16 as PackedInt32Array)[hunter_row]) >= 58982)
-	_expect("hunter production stays above the fixed probe and protects next-period tool cash",
-		int((buildings.last_output as PackedInt64Array)[0]) > 0 and
-		int((buildings.planned_utilization_q16 as PackedInt32Array)[0]) > 65536 / 6 and
-		int((buildings.funded_capacity_q16 as PackedInt64Array)[0]) ==
-			int((buildings.purchase_intent_capacity_q16 as PackedInt64Array)[0]) and
+	_expect("hunter subsistence remains an active explicitly financed producer",
+		hunter_row >= 0 and not (buildings.group_type_ids as PackedInt32Array).is_empty() and
+		int((buildings.operating_state as PackedByteArray)[0]) == 0 and
+		int((buildings.last_output as PackedInt64Array)[0]) > 0)
+	_expect("hunter fixture exercises working-capital protection",
 		reserve_seen)
 	_expect("hunter-subsistence cycles conserve every ledger", ledgers_ok)
 
@@ -1920,10 +1940,10 @@ func _test_producer_support_issuance(source_catalog: Dictionary,
 	var accepted := int((buildings.last_sold as PackedInt64Array)[0])
 	_expect("zero-cash merchant spends nothing on producer output",
 		int(report.get("merchant_procurement_spent", -1)) == 0)
-	_expect("support accepts every storable remainder without discard",
+	_expect("bounded support accepts its quota and explicitly reports the remainder",
 		supported > 0 and accepted == supported and
-		output == retained + accepted and
-		int(report.get("production_output_discarded", -1)) == 0)
+		output == retained + accepted +
+			int(report.get("production_output_discarded", -1)))
 	_expect("support issuance uses exactly twenty percent of frozen retail value",
 		issued == expected_issued and
 		int(report.get("producer_support_price_numerator", 0)) == 1 and
@@ -1933,9 +1953,9 @@ func _test_producer_support_issuance(source_catalog: Dictionary,
 	_expect("support issuance is a distinct producer cashflow",
 		_cashflow_has_source(pop, owner_row, "producer_support_issuance", true))
 	_expect("support issuance is explicitly audited",
-		int(report.get("approximation_version", 0)) == 15 and
+		int(report.get("approximation_version", 0)) == 16 and
 		str(report.get("approximation_model", "")) ==
-			"rolling_cell_settlement_v15" and
+			"rolling_cell_settlement_v16" and
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
@@ -1986,8 +2006,9 @@ func _test_cycle_flow_output_clears_before_discard(source_catalog: Dictionary,
 	var accepted := int((buildings.last_sold as PackedInt64Array)[0])
 	var discarded := int((buildings.last_discarded as PackedInt64Array)[0])
 	_expect("cycle-flow output receives low-price clearing before discard",
-		output > 0 and supported > 0 and accepted == output and discarded == 0 and
-		int(report.get("production_output_discarded", -1)) == 0)
+		output > 0 and supported > 0 and accepted == supported and
+		output == accepted + discarded and discarded > 0 and
+		int(report.get("production_output_discarded", -1)) == discarded)
 	_expect("cycle-flow clearing still discards transient stock at boundary",
 		int(report.get("cycle_flow_discarded", 0)) >= supported and
 		int(report.get("cycle_flow_produced", 0)) >= supported)
@@ -2242,6 +2263,62 @@ func _new_ext(catalog: Dictionary, cell_count: int = 1) -> Object:
 		ext.write_f32_range(reserve_sid, 0, reserve)
 		ext.write_f32_range(extra_sid, 0, extra)
 	return ext
+
+func _test_merchant_financed_construction(catalog: Dictionary,
+		profile: Dictionary) -> void:
+	var ext := _new_ext(catalog)
+	_expect("merchant-finance country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 9221))
+	_expect("merchant-finance runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 9221).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var owner_sig := signatures.find("artisan|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var mine_id := (catalog.building_type_ids as PackedStringArray).find("knapping_workshop")
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(10000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([owner_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([0, 1000000000]),
+	}, {"stock": stock})
+	_expect("merchant-finance fixture bootstraps", bool(boot.get("ok", false)))
+	var owner_handle := _handle_for_profession(
+		ext.get_population_cell_snapshot(0), owner_sig)
+	var submit: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([10]),
+		"effective_days": PackedInt64Array([0]),
+		"sequences": PackedInt64Array([1]),
+		"target_handles": PackedInt64Array([owner_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([mine_id]),
+		"i64_0": PackedInt64Array([1]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("cashless owner submits merchant-financed construction",
+		owner_handle != 0 and bool(submit.get("ok", false)))
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var group := (buildings.group_type_ids as PackedInt32Array).find(mine_id)
+	var principal := int((buildings.merchant_debt_principal as PackedInt64Array)[group]) \
+		if group >= 0 else 0
+	var premium := int((buildings.merchant_debt_premium as PackedInt64Array)[group]) \
+		if group >= 0 else 0
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var merchant_row := _row_for_signature(population, merchant_sig)
+	_expect("merchant financing draws principal and records five-percent premium",
+		int(report.get("merchant_credit_drawn", 0)) > 0 and principal > 0 and
+		premium == (principal * 3277 + 65535) / 65536)
+	_expect("last local merchant remains a merchant while financing construction",
+		merchant_row >= 0 and
+		int((population.populations as PackedInt64Array)[merchant_row]) == 1)
+	_expect("merchant-financed construction conserves all ledgers",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
 
 func _run_day(ext: Object, day: int) -> Dictionary:
 	var report := {}

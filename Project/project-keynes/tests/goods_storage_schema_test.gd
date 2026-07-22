@@ -14,6 +14,10 @@ func _init() -> void:
 
 func _run() -> void:
 	print("=== native market v2 runtime test ===")
+	var default_profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	_expect("default profile raises building goods output without changing recipe costs",
+		int(default_profile.get("building_output_efficiency_q16", 0)) == 131072)
 	var catalog: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("catalog compiles", bool(catalog.get("ok", false)))
 	if not bool(catalog.get("ok", false)):
@@ -354,7 +358,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v15 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 15)
+	_expect("v16 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 16)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
@@ -372,7 +376,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var legacy_result: Dictionary = legacy_target.feed_economy_restore_chunk(legacy_header)
 	_expect("countryless PKEC v9 is rejected precisely",
 		not bool(legacy_result.get("ok", true)) and
-		String(legacy_result.get("reason", "")) == "legacy_countryless_economy_save_unsupported")
+		String(legacy_result.get("reason", "")) == "legacy_economy_save_unsupported")
 	var mismatch_target: Object = _new_ext(1, 0.1)
 	var mismatch_catalog := catalog.duplicate(true)
 	mismatch_catalog["catalog_hash"] = int(catalog.catalog_hash) + 1
@@ -395,7 +399,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
 	var source_hash: int = ext.get_economy_state_hash()
 	var restored_hash: int = restored.get_economy_state_hash()
-	_expect("v14 stream restore hash exact", source_hash == restored_hash)
+	_expect("v16 stream restore hash exact", source_hash == restored_hash)
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)
