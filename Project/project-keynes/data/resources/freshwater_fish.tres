@@ -29,4 +29,3 @@ ecology_capacity = 2500.0
 ecology_growth_rate = 0.01
 ecology_immigration = 0.05
 ecology_stress_mortality_rate = 0.01
-

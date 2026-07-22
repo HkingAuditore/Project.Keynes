@@ -152,7 +152,10 @@ static func compile_native_columns() -> Dictionary:
 		shortage_weight.append(int(p.get("shortage_weight_q16")))
 		excess_demand_weight.append(int(p.get("excess_demand_weight_q16")))
 		cost_anchor_weight.append(int(p.get("cost_anchor_weight_q16")))
-		inactive_reversion_weight.append(int(p.get("inactive_reversion_weight_q16")))
+		# Price V4 uses a meaningful idle half-life even for legacy profiles that
+		# serialized the old 512 default.
+		inactive_reversion_weight.append(maxi(8192,
+			int(p.get("inactive_reversion_weight_q16"))))
 		business_demand_ema_alpha.append(int(p.get("business_demand_ema_alpha_q16")))
 		supply_ema_alpha.append(int(p.get("supply_ema_alpha_q16")))
 		cost_ema_alpha.append(int(p.get("cost_ema_alpha_q16")))

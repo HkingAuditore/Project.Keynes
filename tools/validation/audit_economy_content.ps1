@@ -1,4 +1,4 @@
-param([string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path)
+﻿param([string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path)
 
 $ErrorActionPreference = 'Stop'
 $DesignSellThroughQ16 = 52429
@@ -86,7 +86,7 @@ foreach ($file in Get-ChildItem -LiteralPath $resourceDir -Filter '*.tres') {
         $failures.Add("invalid or duplicate natural resource: $($file.Name)")
     }
 }
-foreach ($id in @('cattle','sheep','pigs','horses','fresh_water','freshwater_fish',
+foreach ($id in @('cattle','sheep','pigs','horses','fresh_water',
     'uranium_ore','nickel_ore','platinum_ore','lithium','cobalt_ore','natural_graphite')) {
     if ($resourceIds.Contains($id)) { $failures.Add("retired natural resource remains: $id") }
 }
@@ -349,6 +349,8 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     $candidateGoodIds = @(Values $p.input_candidate_good_ids)
     $candidateEfficiencies = @(Numbers $p.input_candidate_efficiency_q16)
     $outputs = @(Values $p.output_good_ids)
+    $constructionGoods = @(Values $p.construction_good_ids)
+    $constructionQuantities = @(Numbers $p.construction_quantities)
     $inputQuantities = @(Numbers $p.input_quantities_per_day)
     $outputQuantities = @(Numbers $p.output_quantities_per_day)
     $resources = @(Values $p.resource_ids)
@@ -415,6 +417,7 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
         ResourceModes = $resourceModes; ResourceQuantities = $resourceQuantities
         Roles = $roles; RolePolicies = $rolePolicies; Family = $family; Tier = $tier
         CandidateSlots = $candidateSlots; InputQuantities = $inputQuantities
+        ConstructionGoods = $constructionGoods; ConstructionQuantities = $constructionQuantities
         OutputQuantities = $outputQuantities; OwnerSlots = $ownerSlots
         RoleSlots = $roleSlots; RoleWages = $roleWages; Revenue = [double]0
         InputCost = [double]0; OperatingCost = [double]0
@@ -427,6 +430,27 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     }
     if ($outputs.Count -eq 0 -and $id -ne 'merchant_post') {
         $failures.Add("building has no physical output: $id")
+    }
+    if ($constructionGoods.Count -eq 0 -or
+        $constructionGoods.Count -ne $constructionQuantities.Count) {
+        $failures.Add("building construction columns missing or mismatched: $id")
+    }
+    for ($constructionIndex = 0; $constructionIndex -lt $constructionGoods.Count;
+            $constructionIndex++) {
+        $constructionGood = $constructionGoods[$constructionIndex]
+        if (-not $goods.ContainsKey($constructionGood)) {
+            $failures.Add("construction good missing: $id -> $constructionGood")
+            continue
+        }
+        if ([long]$constructionQuantities[$constructionIndex] -le 0) {
+            $failures.Add("construction quantity must be positive: $id -> $constructionGood")
+        }
+        if ($constructionGood -in $outputs) {
+            $failures.Add("building requires its own output for construction: $id -> $constructionGood")
+        }
+        if ([int]$goods[$constructionGood].Rank -gt $rank -and $id -ne 'merchant_post') {
+            $failures.Add("construction technology inversion: $id -> $constructionGood")
+        }
     }
     if ($resources.Count -ne $resourceModes.Count -or
         $resources.Count -ne $resourceQuantities.Count) {
@@ -505,7 +529,7 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
             if (-not $candidateFound) { $failures.Add("no era-compatible category input: $id -> $category") }
         }
     }
-    foreach ($good in @(Values $p.construction_good_ids)) {
+    foreach ($good in $constructionGoods) {
         if (-not $goods.ContainsKey($good)) { $failures.Add("construction good missing: $id -> $good") }
         else { $goods[$good].Consumers.Add($id) }
     }
@@ -677,6 +701,7 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
 # small workshops and institutional centers may remain intentionally compact.
 $stoneOwnerPolicy = @{
     communal_hearth='forager'; flint_quarry='forager'; gathering_ground='forager'
+    freshwater_fishing_camp='fisher'
     household_weaving_shelter='artisan'; knapping_workshop='artisan'; lumber_plant='artisan'
     marine_fish_collector='fisher'; placer_gold_working='merchant'
     stone_age_hunting_camp='hunter'; stone_collector='forager'
@@ -1236,19 +1261,82 @@ function Inputs-Ready($Building, $ReachableGoods, [int]$MaxRank) {
     return $true
 }
 
-# Every cumulatively unlocked era must close from zero goods stock. Natural
-# resources provide extraction capacity, but do not waive a collector's goods inputs.
+function Construction-Ready($Building, $ReachableGoods) {
+    foreach ($good in $Building.ConstructionGoods) {
+        if (-not $ReachableGoods.Contains($good)) { return $false }
+    }
+    return $true
+}
+
+function Report-Construction-Cycles($BlockedBuildings, $ReachableGoods, [int]$EraRank) {
+    if ($BlockedBuildings.Count -eq 0) { return }
+    $blockedById = @{}
+    foreach ($building in $BlockedBuildings) { $blockedById[$building.Id] = $building }
+    $reach = @{}
+    foreach ($building in $BlockedBuildings) {
+        $set = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::Ordinal)
+        [void]$set.Add($building.Id)
+        foreach ($good in @($building.ConstructionGoods + $building.Inputs)) {
+            if ($ReachableGoods.Contains($good) -or -not $goods.ContainsKey($good)) { continue }
+            foreach ($producerId in $goods[$good].Producers) {
+                if ($blockedById.ContainsKey($producerId)) { [void]$set.Add($producerId) }
+            }
+        }
+        $reach[$building.Id] = $set
+    }
+    $changed = $true
+    while ($changed) {
+        $changed = $false
+        foreach ($id in @($reach.Keys)) {
+            foreach ($next in @($reach[$id])) {
+                if (-not $reach.ContainsKey($next)) { continue }
+                foreach ($target in $reach[$next]) {
+                    if ($reach[$id].Add($target)) { $changed = $true }
+                }
+            }
+        }
+    }
+    $reported = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal)
+    foreach ($id in @($reach.Keys | Sort-Object)) {
+        $component = @($reach.Keys | Where-Object {
+            $reach[$id].Contains($_) -and $reach[$_].Contains($id)
+        } | Sort-Object)
+        if ($component.Count -le 1) { continue }
+        $key = $component -join ','
+        if ($reported.Add($key)) {
+            $failures.Add("era $EraRank construction dependency SCC: [$key]")
+        }
+    }
+}
+
+# Every cumulatively unlocked era must close from the explicit bootstrap bridge
+# stock and root buildings. Natural resources provide extraction capacity, but
+# do not waive construction goods or recurring production inputs.
 $reachableGoods = $null
 for ($eraRank = 0; $eraRank -le 10; $eraRank++) {
     $eraReachable = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::Ordinal)
     $startedBuildings = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::Ordinal)
+    foreach ($bootstrapGood in @('logs','gathered_plants','flint')) {
+        [void]$eraReachable.Add($bootstrapGood)
+    }
+    foreach ($rootId in @('gathering_ground','merchant_post','timber_collector','stone_collector')) {
+        if ($buildings.ContainsKey($rootId)) {
+            [void]$startedBuildings.Add($rootId)
+            foreach ($output in $buildings[$rootId].Outputs) {
+                [void]$eraReachable.Add($output)
+            }
+        }
+    }
     $changed = $true
     while ($changed) {
         $changed = $false
         foreach ($building in $buildings.Values) {
             if ($building.Rank -gt $eraRank -or $startedBuildings.Contains($building.Id) -or
+                -not (Construction-Ready $building $eraReachable) -or
                 -not (Inputs-Ready $building $eraReachable $eraRank)) { continue }
             [void]$startedBuildings.Add($building.Id)
             foreach ($output in $building.Outputs) {
@@ -1256,11 +1344,19 @@ for ($eraRank = 0; $eraRank -le 10; $eraRank++) {
             }
         }
     }
+    $blockedBuildings = @()
     foreach ($building in $buildings.Values) {
         if ($building.Rank -le $eraRank -and -not $startedBuildings.Contains($building.Id)) {
-            $failures.Add("era $eraRank zero-stock closure cannot start building: $($building.Id)")
+            $blockedBuildings += $building
+            $missingConstruction = @($building.ConstructionGoods | Where-Object {
+                -not $eraReachable.Contains($_) })
+            $missingInputs = @($building.Inputs | Where-Object {
+                -not $eraReachable.Contains($_) })
+            $failures.Add("era $eraRank construction closure blocked: $($building.Id) " +
+                "construction=[$($missingConstruction -join ',')] inputs=[$($missingInputs -join ',')]")
         }
     }
+    Report-Construction-Cycles $blockedBuildings $eraReachable $eraRank
     $hasStaple = $false
     foreach ($staple in @('gathered_plants','grain','bread','prepared_staples')) {
         if ($eraReachable.Contains($staple)) { $hasStaple = $true; break }

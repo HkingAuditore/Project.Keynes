@@ -547,13 +547,27 @@ func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 	oversupply.submit_economy_commands(_stock_commands(
 		0, goods, {"raw_hide": 100000000}, 0))
 	var oversupply_report: Dictionary = {}
+	var raw_hide := goods.find("raw_hide")
+	var previous_price := _good_value(
+		oversupply.get_market_cell_snapshot(0), "price", "raw_hide")
+	var directional_fall_limited := true
+	var max_fall_q16 := int(
+		(compiled.good_max_price_fall_q16 as PackedInt32Array)[raw_hide]) * 5
 	for day in range(36):
 		oversupply_report = _run_day(oversupply, day)
+		var cycle_price := _good_value(
+			oversupply.get_market_cell_snapshot(0), "price", "raw_hide")
+		var minimum_price := maxi(
+			1, previous_price - int(previous_price * max_fall_q16 / 65536))
+		directional_fall_limited = directional_fall_limited and \
+			cycle_price >= minimum_price
+		previous_price = cycle_price
 	var oversupply_market: Dictionary = oversupply.get_market_cell_snapshot(0)
-	var raw_hide := goods.find("raw_hide")
 	_expect("persistent valueless oversupply can fall below the legacy minimum price",
 		_good_value(oversupply_market, "price", "raw_hide") <
 		int(old_min_prices[raw_hide]))
+	_expect("oversupply markdown uses the current-price fall limit",
+		directional_fall_limited)
 	_expect("numeric price guards preserve positive prices and exact ledgers",
 		_good_value(oversupply_market, "price", "raw_hide") >= 1 and
 		String(oversupply.get_economy_report().get("price_runtime_bounds", "")) ==

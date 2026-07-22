@@ -11,7 +11,7 @@
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
 `building_production` 原子提款并采购投入且按工资后债务前奖金结算，household 将实际自产消费
 价值归属建筑，`building_commit` 完成复产/清算/建设债务转移。贸易派单使用代际复核和批次共享
-库存/缺口仲裁。CSV v16 暴露债务、恢复和贸易事件指标。
+库存/缺口仲裁。CSV v18 暴露债务、恢复、贸易事件、边际驱动商品和选中地块逐投资候选指标。
 
 ## 状态总览
 
@@ -742,12 +742,16 @@ variant 的 components 作为互补 bundle 清算，不同 variants 做一次替
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v16 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v18 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
 分块写入。达到全局行数上限或两个 buffer 同时占用时均在 epoch 边界停止，不产生部分 epoch，
 也不改变 ECONOMY_GRAPH cadence、audit、save 或 hash。
+
+`projected_rows` 与批次填充使用相同的建筑行集合：已提交建筑、pending construction，以及
+选中地块当前发布的逐投资候选诊断。投资诊断存在时，每个候选占一行并计入 epoch 原子行数，
+因此不会因投影遗漏而触发 `projected_row_count_changed`。
 
 录制范围在 start 时冻结：空 `cell_indices` 使用 `cell_stride`，显式 indices 则排序去重并覆盖
 stride。单地块模式只为该 cell 预留 cohort/building/resource/market 行和贸易流 scratch；全局

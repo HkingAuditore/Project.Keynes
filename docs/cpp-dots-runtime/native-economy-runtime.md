@@ -1,4 +1,4 @@
-# 原生阶层与本地市场运行时（Market V2 / Price V3）
+# 原生阶层与本地市场运行时（Market V2 / Price V4）
 
 实现入口为 `gdext/src/economy_runtime.{h,cpp}` 与
 `gdext/src/world_ext_economy.cpp`。`DCWorldExt` 组合持有独立
@@ -74,7 +74,7 @@ PKEC writer 为 v16，restore 只接受 v16。
 ## 2026-07-15 价格弹性、成本底线与生态修正
 
 - 消费目录新增 need 总量价格弹性和刚需下限。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食与衣着保留正下限但仍随价格和财富缩量，蛋白质及非刚需可在全体替代品过贵时接近零。
-- 低于目标库存且仍有需求时，生产成本锚成为受单日涨幅上限约束的零售价格底线；库存堆积时不启用硬底线。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不足 `max(1 商品单位, max(实际出库 EMA, 需求 EMA) × 周期日数)` 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；生存食物生产者另按同一业主人口跨过饥饿阈值所需的自留量计算动态下限，取二者较高值。
+- 低于目标库存且仍有需求时，生产成本锚通过受单日涨幅上限约束的正向价格压力形成动态软底；库存堆积时下跌按当前价格限速，仍可跌破成本清仓。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不足 `max(1 商品单位, max(实际出库 EMA, 需求 EMA) × 周期日数)` 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；生存食物生产者另按同一业主人口跨过饥饿阈值所需的自留量计算动态下限，取二者较高值。
 - 全建筑目录改用默认生活成本和 80% 保守售出率校准。当前石器狩猎营地为 2 个共同经营岗位，日产 `3728/45/23` 野味/生皮/毛皮；采集营地为 2 个岗位、日产 `7000` 采集植物；家庭织造棚为 1 个岗位、日产 `900` 布匹并消耗采集植物。早期砂金/露天银矿由 merchant 所有，均雇用 1 个 miner 岗位；露天银矿日产降为 `1000` GOODS_SCALE，资源扣减为 `200`。
 - `audit_economy_content.ps1` 遍历 260 个建筑并检查 80% 售出率盈利、role 工资、生产原料成本不超过商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`、工业总投入/总产出不超过 `3:1`，以及 `2:1` 至 `25:1` extract 效率；蒸汽煤铁矿固定复核约 `12:1`。这是 catalog/content 校准，会改变 building catalog hash，但不改变 PKEC 字节布局。
 
@@ -546,10 +546,9 @@ downstream-input groups receive a deterministic first-pass allocation of up to
 become negative and no money is created by this allocator.
 
 Endogenous investment is reviewed every 10 days and considers every
-constructible industrial or collector type, including types absent locally.
-Primitive collectors with an empty construction recipe are valid candidates;
-zero construction cost does not bypass operating-capital, owner-livelihood,
-profitability, payback, deterministic-probability, or resource-safety gates.
+technology-unlocked building type, including types absent locally. Every catalog
+building has an explicit, positive construction recipe; an empty recipe is a
+codegen/audit failure rather than a zero-cost investment exception.
 Required capital includes construction goods, two market cycles of inputs, one
 cycle of base wages, and 30 days of owner livelihood. Every same-ethnicity
 cohort with enough cash after retaining its full 30-day livelihood reserve is
@@ -572,6 +571,32 @@ not change.
 The 20 percent producer-support price remains a cold-start fallback. Issuance is
 capped per cell at 5 percent of opening money per 30 days. All support and
 bullion issues remain explicit mint audit entries.
+
+## 2026-07-22 construction closure and investment v6
+
+The generated catalog assigns all 261 buildings a positive construction bill.
+Recipes scale with owner plus employee slots, remove every self-output, and give
+construction-material backbone producers only earlier topological materials.
+The content audit closes construction goods and recurring production inputs
+together for ranks 0 through 10, starting from gathering/merchant/timber/stone
+roots and one-time `logs=1000`, `gathered_plants=250`, `flint=500` bridge stock.
+Unreachable components are reported as construction dependency SCCs.
+
+`endogenous_owner_investment_v6` selects one deterministic marginal output per
+candidate. Driver strength is the maximum of normalized persistent shortage and
+single-building utilization, with pressure, utilization, and stable good ID as
+tie breakers. Market thresholds, survival weighting, 80% sell-through, and 10%
+discard all read that same output. Sell-through counts merchant cash purchases
+only: owner retention, producer support, and bullion issuance do not count.
+Buildings with no sellable history skip the sell-through gate. Projected revenue
+is summed per output after applying that output's observed merchant absorption or
+persistent deficit, so a scarce primary output can drive entry without assuming
+that every by-product sells at its quoted price.
+
+The three sparse current-cycle producer lanes and all driver diagnostics are
+transient. They do not enter PKEC v16 or the state hash. CSV v18 adds the driver
+good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
+columns.
 
 ## PKEC v16 rolling settlement (current)
 
@@ -717,6 +742,24 @@ supply EMA. Zero coverage on a fully required input reports `INPUT_CHAIN`. These
 formula and derived-diagnostic changes only; PKEC v15, cadence, authority, and state hash
 layout are unchanged.
 
+## 2026-07-22 production input quote coherence
+
+Production settlement now quotes the complete input bundle before mutating market stock.
+If multiple input slots select the same good, their physical quantities are aggregated
+against the frozen stock, matching the production-input reservation rule. The final
+candidate IDs and quantities are frozen and reused for stock withdrawal and cash
+settlement, so working-capital allocation, executable utilization, and actual input cost
+cannot drift because a later slot reselects a substitute after an earlier withdrawal.
+Each group also settles against its own allocated owner-capital share before using its
+approved merchant-credit share. A recovery group no longer consumes owner cash allocated
+to sibling groups merely because that cash is visible in the shared owner cohort account.
+At withdrawal time the approved credit is intersected with current local merchant cash;
+if liquidity has changed since the frozen recovery plan, utilization is reduced before
+any stock mutation. Delinquent groups receive no merchant-credit working-capital grant.
+Internal quote/credit invariant failures now include cell, group, type, and financing
+values in the fatal reason. This changes no PKEC field, scheduler stage, or authority
+boundary.
+
 ## 2026-07-21 Price V3 dynamic range correction
 
 Price inventory pressure now uses at most one committed settlement period. The full
@@ -733,3 +776,34 @@ cost anchor remains a rate-limited dynamic soft floor. Trade relief is derived f
 shortage, unfunded business demand, and production-input reserve gaps; touching a legacy
 catalog maximum is no longer a relief signal. PKEC v15 and authoritative state layout
 are unchanged.
+
+## 2026-07-22 Price V4 anchored additive pricing and investment feedback
+
+Price V4 keeps uncapped economic prices with directional adjustment references. Frozen
+market pressure is clamped by the per-good daily rise/fall rate. Positive pressure is
+multiplied by `max(default_price, cost_anchor_price)`, so repeated equal shortages produce
+linear reference-value increments instead of exponential increments. Negative pressure is
+multiplied by the current market price, so a high production-cost anchor cannot amplify a
+glut-driven markdown into an immediate price collapse. The only remaining bounds are the
+fixed-point numeric guards. Fully idle goods use a separate bounded mean-reversion step
+toward `default_price`; legacy goods profiles receive an effective minimum inactive-reversion
+weight of 8192 Q16.
+
+The severe-loss lifecycle consumes the authoritative realized margin directly. That margin's
+denominator includes inputs, base wages, and owner livelihood minus retained-goods livelihood
+credit. It is not gated by `last_operating_cost`, which excludes owner livelihood; therefore
+owner-only workshops enter the same suspension, recovery, and liquidation path as employers.
+
+Endogenous investment now evaluates every technology-unlocked building type. Every generated
+and curated `BuildingProfile` carries an explicit construction bill selected by technology era,
+scaled by owner and employee slots, and filtered to avoid self-output bootstrap cycles; the catalog
+rejects any profile that omits construction goods. Output demand combines flow deficit with the persistent gap between current
+stock and `merchant_inventory_target`; a type is rejected with reason 15 only when both
+shortage and projected utilization are below their configured thresholds.
+
+The inspector-selected cell owns a bounded transient candidate table containing every
+evaluated unlocked type, including types with no installed group. It reports rejection,
+shortage, utilization, score, payback, required capital, and projected daily profit through
+`get_building_cell_snapshot`. CSV v18 appends candidate-only building rows (`group_index=-1`,
+`investment_candidate=1`) with the same fields. This table is excluded from PKEC and the
+authoritative state hash.

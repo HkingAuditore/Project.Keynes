@@ -1,6 +1,6 @@
 # economy — 原生阶层与本地市场模块
 
-> 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
+> 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v16 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治、年龄与家庭结构；自然出生和死亡由原生 household/structural 路径处理。
@@ -117,11 +117,11 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 不超过默认商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`，且工业总投入物量不超过
 总产出物量的三倍，避免用异常放大的产量掩盖过高投入；运行时 `adaptive` 工资再使用
 当地生活成本与岗位合同工资 EMA。同一 owner 在产品销售后按可用现金比例支付。销售后超过目标业主利润的
-25% 形成奖金池。实际利润率连续三周期不高于 -25% 后转为亏损停产；停产不分配岗位、不采购、
+25% 形成奖金池。实际利润率（投入、基础工资、业主生活成本减自产生活抵扣）连续三周期不高于 -25% 后转为亏损停产；该判定不再依赖未包含业主生活成本的 `last_operating_cost`，因此纯自营工坊也会进入同一生命周期。停产不分配岗位、不采购、
 不生产、不贡献企业需求，反事实利润连续两周期达到 +10% 且业主资金充足后恢复。生产后按采购
 意图更新稀疏企业需求，并按真实居民/企业/建设出库更新实际出库 EMA、供给和成本锚，同时更新
 稀疏 `(cell, profession)` 劳动市场信号，
-供下一周期 Price V3 使用。
+供下一周期 Price V4 使用。
 `building_cell_snapshot` 用 `owner_capacity` 表示完整物理槽位；活跃企业的 `owner_required`
 等于该容量，只有亏损停产或不可用建筑才为 0。`filled_owner` 表示实际到岗，`owner_openings`
 表示可从失业池补充的真实空缺。employee required 仍按本期计划利用率缩放。
@@ -134,8 +134,8 @@ UI 不得使用 `building count - filled_owner` 作为招聘空缺。
 ACTIVE 企业还按上一周期售罄率与 `supply_price_elasticity_q16` 调整计划利用率；丢弃率不超过
 1% 时按舍入噪声处理，家庭可用库存不超过 1 个 goods 子单位且短缺率至少 12.5% 时主动恢复，真实未成交只缩减下一周期 employee 岗位、
 采购和产量，不把仍在经营的 owner 转为失业。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生存食物组还按同一业主人口的饥饿阈值自留需求计算动态下限并取较高值。生产者最低生存自留只在
-该业主实际生产的单组分食物/寒冷衣物之间重新归一化，剩余产出仍进入全体家庭公平清算。库存低于目标且仍有需求时，成本锚是受商品
-单日涨幅限制的价格底线；库存堆积时仍允许价格跌破成本清仓。
+该业主实际生产的单组分食物/寒冷衣物之间重新归一化，剩余产出仍进入全体家庭公平清算。Price V4 上涨使用默认价/成本锚的加法步长；
+下跌使用当前价格作为步长基准，库存堆积时仍允许跌破成本清仓，但高成本锚不会放大负向跳水。
 生产投入预留按互补配方的共同可执行比例缩放；任一投入缺失时不会继续锁住其他投入。非生存加工若消耗生存食物，则家庭生存清算优先，企业只使用剩余量。生产者托底只覆盖正常目标库存尚未填满的部分，超目标余量进入 discard，不再无条件发行货币入库。
 `survival_required` 统一使用 `survival_household` 基础量、冻结人口/环境和民族修正，不读取财富或
 价格 composite；普通消费仍使用财富/价格弹性，但生存品下单、自留和死亡共享同一冻结下限。
@@ -244,7 +244,7 @@ profitability, payback, probability, bullion, and resource-safety gates.
 
 Default merchant inventory coverage is 60 days before applying each good's
 ratio. Procurement, trade, and bootstrap merchant funding retain that full
-derived target. Price V3 instead derives its inventory target from at most one
+derived target. Price V4 instead derives its pricing inventory target from at most one
 five-day settlement period, so a balanced current flow is not priced as a
 60-day shortage. No parallel inventory state is introduced.
 
@@ -362,6 +362,6 @@ retained output offsets source-building owner livelihood at frozen retail value 
 creating cash. Household settlement is the single input-working-capital protection point;
 production keeps only the uncovered wage reserve. Suspended owners move through the
 existing unemployed-pool hiring path when an active non-service owner vacancy exists.
-Investment uses actual offered-supply deficits and input stock/supply coverage, not
-installed recipe capacity. These changes remain inside `NativeEconomyRuntime`; no
+Investment uses actual offered-supply deficits, persistent merchant inventory-target gaps,
+and input stock/supply coverage, not installed recipe capacity. These changes remain inside `NativeEconomyRuntime`; no
 GDScript authority, save schema, DataCore slot, or cadence was added.

@@ -1,4 +1,20 @@
-# Market V2 / Price V3 定点数、需求曲线与守恒账本
+# Market V2 / Price V4 定点数、需求曲线与守恒账本
+
+## Price V4 参考价值加法积分
+
+令 `p` 为当前价格、`a_up=max(default_price,cost_anchor_price)`、`a_down=max(1,p)`，
+`x` 为供需、库存、短缺和成本压力经弹性及 `price_adjust_q16` 调整后的日变化率。
+对冻结的 `N` 日周期：
+
+`r = clamp(x, -max_fall, max_rise) * N`
+
+`p_market = p + (a_up if r >= 0 else a_down) * r`
+
+上涨刻意不使用 `p` 作为乘数，因此相同短缺压力不会随当前价格复利放大；下跌改用当前价格，
+使每期降幅受商品自身价格尺度约束，较高的生产成本锚不会把清仓压力放大成越过当前价格的跳水。
+若需求、供给和库存全为零，再独立执行
+`p_next = p_market + (default_price-p_market)*min(1, alpha*N)`。
+价格没有玩法上下限；`PRICE_NUMERIC_GUARD_MIN/MAX` 仅防止定点整数溢出。
 
 ## 数值 ABI
 
@@ -499,6 +515,25 @@ owners may reinvest directly. Cross-profession winners move one person to the
 configured owner signature; the final local merchant cannot move. All arithmetic
 remains saturating fixed point and every approved build still performs real
 cash, construction-stock, and merchant-income transfers.
+
+### Marginal-output investment signal (v6)
+
+For every building output `g`, investment derives persistent pressure `P_g`,
+single-building utilization `U_g`, current sellable output `Q_g`, merchant cash
+purchases `M_g`, and discarded output `D_g` on the same sparse `(cell, good)` lane:
+
+```text
+driver_strength_g = max(P_g / min_shortage, U_g / min_utilization)
+sell_through_g = M_g / Q_g
+discard_g = D_g / Q_g
+```
+
+The driver is ordered by strength, pressure, utilization, then stable good ID.
+Only its values gate the candidate. If `Q_driver == 0`, historical sell-through
+and discard gates are skipped. Producer support and owner retention never enter
+`M_g`. Expected revenue sums each output after applying its own historical
+merchant absorption, or its persistent deficit when no history exists. This
+prevents unabsorbed by-products from creating fictitious profit.
 
 ## ACTIVE owner job income reallocation
 

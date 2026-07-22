@@ -61,6 +61,56 @@ func _initialize() -> void:
 		return
 	var first: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
 	var same: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
+	var missing_source_map := _make_map()
+	_clear_resource(missing_source_map, &"stone")
+	var missing_source: Dictionary = EconomyTestBootstrapScript.build(
+		missing_source_map, facade, 42)
+	_expect("construction-source-free trade region fails explicitly",
+		not bool(missing_source.get("ok", true)) and
+		String(missing_source.get("reason", "")) ==
+			"bootstrap_construction_source_missing")
+	var traded_source_map := _make_map()
+	_set_resource_cell(traded_source_map, &"timber", 0, 0.0)
+	_set_resource_cell(traded_source_map, &"fertile_soil", 1, 1000000.0)
+	_set_resource_cell(traded_source_map, &"flint", 1, 1000000.0)
+	var traded_source: Dictionary = EconomyTestBootstrapScript.build(
+		traded_source_map, facade, 42)
+	_expect("settlement without local forest closes through a populated regional source",
+		bool(traded_source.get("ok", false)) and
+		int(traded_source.get("construction_source_component_count", 0)) == 1)
+	var short_horizon_map := _make_map()
+	_clear_resource(short_horizon_map, &"timber")
+	_clear_resource(short_horizon_map, &"stone")
+	_set_resource_cell(short_horizon_map, &"timber", 0, 500.0)
+	_set_resource_cell(short_horizon_map, &"stone", 0, 500.0)
+	var short_horizon: Dictionary = EconomyTestBootstrapScript.build(
+		short_horizon_map, facade, 42)
+	var short_fallbacks: Dictionary = short_horizon.get(
+		"construction_source_root_fallback_counts", {})
+	_expect("one-year construction roots start a map below the normal ten-year runway",
+		bool(short_horizon.get("ok", false)) and
+		int(short_fallbacks.get("timber_collector", 0)) > 0 and
+		int(short_fallbacks.get("stone_collector", 0)) > 0)
+	var isolated_incomplete_map := _make_partitioned_source_map()
+	var isolated_incomplete: Dictionary = EconomyTestBootstrapScript.build(
+		isolated_incomplete_map, facade, 42)
+	var isolated_building_cells: PackedInt32Array = isolated_incomplete.get(
+		"building_packet", {}).get("building_cells", PackedInt32Array())
+	_expect("incomplete isolated candidate stays empty without aborting a closed mainland " +
+		"ok=%s candidates=%d skipped=%d cell3=%s" % [
+			str(bool(isolated_incomplete.get("ok", false))),
+			int(isolated_incomplete.get(
+				"construction_source_candidate_component_count", 0)),
+			(isolated_incomplete.get(
+				"construction_source_skipped_components", []) as Array).size(),
+			str(isolated_building_cells.find(3) >= 0),
+		],
+		bool(isolated_incomplete.get("ok", false)) and
+		int(isolated_incomplete.get(
+			"construction_source_candidate_component_count", 0)) == 2 and
+		(isolated_incomplete.get(
+			"construction_source_skipped_components", []) as Array).size() == 1 and
+		isolated_building_cells.find(3) < 0)
 	var first_ok := bool(first.get("ok", false))
 	var same_ok := bool(same.get("ok", false))
 	_expect("fixture builds" if first_ok else "fixture builds: %s" %
@@ -113,8 +163,11 @@ func _initialize() -> void:
 	_expect("same seed is deterministic",
 		first.population_packet.population == same.population_packet.population and
 		first.population_packet.funds == same.population_packet.funds)
-	_expect("fixture supplies no initial goods", first.market_packet.is_empty() and
-		int(first.get("initial_stock_units", -1)) == 0)
+	_expect("fixture supplies one-time construction bridge stock to populated markets",
+		not first.market_packet.is_empty() and
+		int(first.get("initial_stock_units", -1)) ==
+			int(first.get("populated_cells", 0)) * 1750 and
+		bool(first.get("construction_closure_ok", false)))
 	var boot: Dictionary = facade.bootstrap(
 		first.population_packet, first.market_packet, first.building_packet)
 	_expect("native bootstrap accepts fixture", bool(boot.get("ok", false)))
@@ -146,7 +199,7 @@ func _initialize() -> void:
 		not _has_building(buildings, "household_weaving_shelter"))
 	_expect("stone food processing is demand-sized instead of fixed at two",
 		_building_count(buildings, "communal_hearth") <= 2)
-	_expect("stone tool fixture starts one demand-sized workshop",
+	_expect("stone tool fixture trims to one workshop after root-chain coverage",
 		_building_count(buildings, "knapping_workshop") == 1)
 	var initial_land: Dictionary = facade.population_cell_snapshot(0)
 	var initial_second_land: Dictionary = facade.population_cell_snapshot(1)
@@ -158,9 +211,9 @@ func _initialize() -> void:
 	_expect("bootstrapped closed-chain population starts unemployed",
 		_all_population_unemployed(initial_land) and
 		int(initial_second_land.get("population", 0)) == 0)
-	_expect("native markets start with zero goods",
-		_all_market_stock_zero(facade.market_cell_snapshot(0)) and
-		_all_market_stock_zero(facade.market_cell_snapshot(1)))
+	_expect("populated native market receives bridge stock only once",
+		_market_stock_total(facade.market_cell_snapshot(0)) == 1750 and
+		_market_stock_total(facade.market_cell_snapshot(1)) == 0)
 	var cycle: Dictionary = _run_day(ext, 0)
 	_expect("bootstrap economy cycle commits", bool(cycle.get("done", false)) and
 		not bool(cycle.get("fatal", false)))
@@ -182,9 +235,9 @@ func _initialize() -> void:
 		_sum_i64(land.get("populations", PackedInt64Array())))
 	_expect("employment logic hires after bootstrap",
 		_sum_i64(land.get("owner_employed_by_cohort", PackedInt64Array())) > 0)
-	_expect("first cycle accumulates produced goods from zero",
+	_expect("first cycle accumulates produced goods beyond the bridge stock",
 		_market_stock_total(facade.market_cell_snapshot(0)) +
-		_market_stock_total(facade.market_cell_snapshot(1)) > 0)
+		_market_stock_total(facade.market_cell_snapshot(1)) > 1750)
 	_expect("phase-zero omits nonessential bullion monetary inflow",
 		int(cycle.get("bullion_money_issued", 0)) == 0)
 	_expect("retired virtual mint is absent",
@@ -320,13 +373,56 @@ func _make_map() -> MapData:
 		if field == "":
 			continue
 		var values := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
-		if String(profile.id) in ["fertile_soil", "flint", "gold_ore"]:
+		if String(profile.id) in ["fertile_soil", "flint", "gold_ore", "stone"]:
 			values[0] = 1000000.0
 		elif String(profile.id) == "wild_game":
 			values[0] = 1000000.0
 			values[1] = 1000000.0
-		elif String(profile.id) in ["timber", "rare_earth", "silver_ore"]:
+		elif String(profile.id) == "timber":
+			values[0] = 1000000.0
 			values[1] = 1000000.0
+		elif String(profile.id) in ["rare_earth", "silver_ore"]:
+			values[1] = 1000000.0
+		map.set(field, values)
+	return map
+
+
+func _make_partitioned_source_map() -> MapData:
+	# 地图横向环绕，因此孤立陆格两侧都必须用海格隔开。
+	var map := MapData.new(6, 1)
+	var terrains := PackedByteArray([
+		TerrainType.TERRAIN.PLAIN,
+		TerrainType.TERRAIN.PLAIN,
+		TerrainType.TERRAIN.OCEAN,
+		TerrainType.TERRAIN.PLAIN,
+		TerrainType.TERRAIN.OCEAN,
+		TerrainType.TERRAIN.OCEAN,
+	])
+	for col in range(6):
+		var cube := HexUtils.offset_to_cube(col, 0)
+		var cell := HexCell.new(cube.x, cube.y)
+		cell.terrain = terrains[col]
+		map.set_cell(cell)
+	map._build_indices()
+	map.terrain_arr = terrains
+	ResourceProfileRegistry.ensure_loaded()
+	for profile in ResourceProfileRegistry.ordered():
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if field == "":
+			continue
+		var values := PackedFloat32Array()
+		values.resize(6)
+		values.fill(0.0)
+		if String(profile.id) in ["fertile_soil", "flint", "stone"]:
+			values[0] = 1000000.0
+		elif String(profile.id) == "timber":
+			values[0] = 1000000.0
+			values[1] = 1000000.0
+			values[3] = 1000000.0
+		elif String(profile.id) == "wild_game":
+			values[0] = 1000000.0
+			values[1] = 1000000.0
+			values[3] = 1000000.0
 		map.set(field, values)
 	return map
 
@@ -338,6 +434,32 @@ func _resource_values(map: MapData, resource_id: StringName) -> PackedFloat32Arr
 		var field := ResourceProfileRegistry.reserve_map_field(profile)
 		return map.get(field) if field != "" else PackedFloat32Array()
 	return PackedFloat32Array()
+
+
+func _clear_resource(map: MapData, resource_id: StringName) -> void:
+	for profile in ResourceProfileRegistry.ordered():
+		if StringName(profile.id) != resource_id:
+			continue
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if field != "":
+			var values := PackedFloat32Array()
+			values.resize(map.cell_count())
+			values.fill(0.0)
+			map.set(field, values)
+		return
+
+
+func _set_resource_cell(map: MapData, resource_id: StringName,
+		cell_idx: int, value: float) -> void:
+	for profile in ResourceProfileRegistry.ordered():
+		if StringName(profile.id) != resource_id:
+			continue
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if field != "":
+			var values: PackedFloat32Array = map.get(field)
+			values[cell_idx] = value
+			map.set(field, values)
+		return
 
 
 func _start_csv_recorder(ext: Object, map: MapData, resource_slots: PackedInt32Array,
@@ -421,7 +543,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 139, "cohorts": 26, "buildings": 62,
+	var expected_columns := {"summary": 139, "cohorts": 26, "buildings": 74,
 		"resources": 21, "market": 39}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))

@@ -209,6 +209,7 @@ func _attach_building_display_metadata(snapshot: Dictionary) -> void:
 		"signature_profession_ids", "building_owner_profession_ids", "building_owner_slots",
 		"building_employee_offsets", "building_employee_profession_ids", "building_employee_slots",
 		"building_input_offsets", "building_input_good_ids", "building_input_quantities",
+		"building_input_required_q16",
 		"building_input_category_ids", "building_input_min_quality_levels",
 		"building_input_candidate_offsets", "building_input_candidate_good_ids",
 		"building_input_candidate_efficiency_q16", "building_upgrade_family_ids",
@@ -286,6 +287,8 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 		"building_output_offsets", "building_output_good_ids")
 	var input_quantities_all: PackedInt64Array = _catalog.get(
 		"building_input_quantities", PackedInt64Array())
+	var input_required_all: PackedInt32Array = _catalog.get(
+		"building_input_required_q16", PackedInt32Array())
 	var output_quantities_all: PackedInt64Array = _catalog.get(
 		"building_output_quantities", PackedInt64Array())
 	var production_resources := _stable_ids_from_catalog_range(type_id, resource_ids,
@@ -341,6 +344,7 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 			or technology_end > technology_tags.size() or input_end > input_categories_all.size() \
 			or input_end > input_min_levels_all.size() or input_end >= candidate_offsets_all.size() \
 			or input_end > input_quantities_all.size() \
+			or input_end > input_required_all.size() \
 			or int(output_goods.end) > output_quantities_all.size():
 		return {"ok": false, "reason": "building placement technology columns invalid"}
 	var local_candidate_offsets := PackedInt32Array([0])
@@ -396,6 +400,7 @@ func building_placement_spec(building_id: StringName) -> Dictionary:
 		"higher_tier_building_ids": higher_tier_ids,
 		"input_good_ids": input_goods.ids,
 		"input_quantities": input_quantities_all.slice(input_begin, input_end),
+		"input_required_q16": input_required_all.slice(input_begin, input_end),
 		"input_category_ids": input_categories_all.slice(input_begin, input_end),
 		"input_min_quality_levels": input_min_levels_all.slice(input_begin, input_end),
 		"input_candidate_offsets": local_candidate_offsets,
