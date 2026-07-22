@@ -5,6 +5,14 @@
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
+## Economy PKEC v16 pipeline（当前）
+
+经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
+`building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
+`building_production` 原子提款并采购投入且按工资后债务前奖金结算，household 将实际自产消费
+价值归属建筑，`building_commit` 完成复产/清算/建设债务转移。贸易派单使用代际复核和批次共享
+库存/缺口仲裁。CSV v16 暴露债务、恢复和贸易事件指标。
+
 ## 状态总览
 
 | 机制 | 当前状态 | 主要 C++ 入口 | GDScript 仍负责 |
@@ -734,7 +742,7 @@ variant 的 components 作为互补 bundle 清算，不同 variants 做一次替
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v14 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v16 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
@@ -2373,7 +2381,7 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 成本单位价包含实际原料、应付合同工资和目标营业利润；生活成本通过 adaptive 合同工资进入，
 不额外重复叠加。这些信号只反馈下一周期 Price V3，不在本周期形成代数环。
 
-滚动 PKEC v15 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
+滚动 PKEC v16 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
 临时量只分配该 cell 的稀疏 CSR lane；investment 复用 epoch-transient `(cell,type)` 与
 `(cell,resource)` 索引，并在 `building_commit_phase` 中按 cell range continuation。投资只处理
 新增建筑：业主空缺仍由 employment 填补；资金充足 cohort 按“目标业主日收入高于当前人均

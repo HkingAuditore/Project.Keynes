@@ -11,6 +11,13 @@ Market V2 / Price V3 现采用 `production_income_consumption_v12`：周期起�
 在 N 个模拟日内按地块连续 range 错峰计算，需求量一次性乘 N；所有地块与
 结构命令完成后，最早在周期截止日统一发布 N 日交易总量。
 
+## v16 阶段归属
+
+没有新增调度阶段。恢复候选与商人敞口在 `epoch_begin/building_plan` 冻结；贷款提款、投入购买、
+销售、基础工资、偿债和奖金在 `building_production` 完成；自产消费价值在 household clearing
+归属来源建筑；恢复转态、10 日失败审查、清算和建设竣工在 `building_commit` 完成。所有阶段仍
+使用现有滚动五相 continuation 和同日 barrier。
+
 ## 周期选择
 
 `EconomyProfile` 提供：
@@ -159,7 +166,7 @@ goods 子单位残量。生存食物组的利用率下限按同一业主人口�
 
 v11 在 `building_production` 的正常商人现金结算后，仅把目标库存剩余缺口托底入库，并按冻结零售价
 20% 增加 owner 资金与 `explicit_money_mint`；超过目标的余量进入 discard。该发行在同一 building slice 内完成，不新增 stage。事件现金流 schema v4 沿用
-`producer_support_issuance`，CSV v14 summary 保留托底数量、发行额、金银货币流、贸易活性游标和拒绝诊断，building 行新增 owner 容量、
+`producer_support_issuance`，CSV v16 summary 保留托底数量、发行额、金银货币流、贸易活性游标和拒绝诊断，building 行新增 owner 容量、
 本期岗位和真实空缺口径。
 外部 stage ABI 和冻结/截止日屏障不变；生产默认 cadence 已由后述 workload-auto 规则取代固定五日。
 
@@ -208,7 +215,7 @@ after finalization. Candidate evaluation may later move to read-only worker
 ranges, but sponsor funds, materials, population movement, and construction
 creation must be revalidated and committed in stable cell order.
 
-## Rolling five-phase graph (PKEC v15, current)
+## Rolling five-phase graph (PKEC v16, current)
 
 The former global epoch and workload-selected cadence are superseded. Every day
 the native graph builds the sorted workset for `cell_id % 5 == day % 5` and

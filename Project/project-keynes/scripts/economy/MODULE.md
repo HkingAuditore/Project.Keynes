@@ -2,12 +2,17 @@
 
 > 状态：Market V2 / Price V3 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v15 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v16 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治、年龄与家庭结构；自然出生和死亡由原生 household/structural 路径处理。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
 > 满意度公开字段是“食品与气候衣着的较低值”的生存满足度。黏土、盐、石油是静态地质存量，
 > 肥沃土壤缓慢恢复，伐木只发布开采 delta、不再由建筑生成森林。
+
+> v16：建筑采用 ACTIVE/SUSPENDED_LOSS/RECOVERY_PROBE 三态；商人是本地聚合债权池而非普通
+> 业主职业，5% 一次性溢价、六期偿还。自产只保留生存食品和寒冷最低衣物，实际消费价值进入
+> 次期经济收益但不能偿债。贸易短缺按事件计龄并执行源库存/目的缺口批次仲裁。测试 bootstrap
+> 按 50% 可持续承载人口和 75% 利用率反推最小生存链，剩余人口进入 unemployed cohort。
 
 ## 权威与禁止事项
 
@@ -71,6 +76,7 @@
   取消已完成生产。家庭清算会保留 ACTIVE 企业按已到岗业主比例与计划利用率计算的下一周期投入
   营运资金；市场库存只按整套互补配方可执行的共同容量预留下周期物理投入，非生存加工不得提前锁住生存食物；居民消费和国内出口只能使用预留以上库存。
   商人采购目标以 `max(可行日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；生存品供给下限为平滑日产量的 1/2，其他耐储品为 1/4，配置库存天数和目标量级不缩小。现金不足时按生存品、居民短缺、生产投入 reserve 缺口提高预算权重；权重只改变购买顺序，总预算仍以真实采购价值为上限。仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
+- 默认 `building_output_efficiency_q16=131072`（2 倍）统一提高所有建筑的物资产出；建设材料、生产投入、自然资源消耗、岗位与工资保持目录原值。倍率在 native 冷路径载入输出列时应用，不改变 building catalog hash 或 PKEC 字节结构。
 
 - 自适应工资的可负担上限使用当前冻结价格下的“满产日收入”，先扣除日投入并预留目标营业利润，再按员工槽位折算；不得再把整个 epoch 的收入直接当作单日工资依据。亏损停产建筑使用同一反事实日收入报价，停产期间岗位目标为零。
 - 国内贸易先取源地真实盈余与目的地缺口，再用确定性整数二分裁剪到交易后仍满足利润率的最大数量；relief 路线只要求交易后价差非负。发运前按最新库存、现金和运力再次裁剪，避免整批候选因一次过量报价被全部拒绝。
@@ -281,7 +287,7 @@ already received a first dispatch. Committed diagnostics recompute current
 deadline misses from all live signal clocks rather than from only the planner
 slice that happened to run that day.
 
-## PKEC v15 rolling settlement (current)
+## PKEC v16 rolling settlement (current)
 
 Production uses five stable daily buckets: cell `c` settles when
 `day % 5 == c % 5`, always with `dt=5`. Each populated cell therefore settles
@@ -292,7 +298,7 @@ continuations within `sim_frame_budget_ms`; one call still consumes at most one
 building, market, or structural range. Workload-auto cadence and global
 `WAIT_COMMIT` are not production paths. Trade arrival remains daily.
 
-Current saves are PKEC v15 and persist per-cell settlement day/generation plus
+Current saves are PKEC v16 and persist per-cell settlement day/generation plus
 dirty generations. PKEC v14 restores with deterministic
 `v14_rolling_phase_bootstrap`; no population, cash, goods, or building state is
 created by migration. Older v14/v13 wording above is historical.
@@ -336,7 +342,8 @@ survival/probe floor.
 
 CSV schema v13 adds `building_investment_probability_skips` to distinguish a
 cash-qualified cohort losing its deterministic investment roll from capital,
-material, resource, and profitability rejection. It does not change PKEC v15.
+material, resource, and profitability rejection. PKEC v16 additionally persists
+aggregate merchant debt, recovery state, failed reviews, and in-kind livelihood value.
 
 CSV schema v14 adds ACTIVE owner-job mobility diagnostics. After ordinary
 unemployed hiring, an ACTIVE non-service vacancy may attract one same-ethnicity
@@ -347,7 +354,7 @@ Each group can participate in one successful move per five-day period. Same-prof
 movement changes group fill only; cross-profession movement reuses proportional
 cohort migration. The last local merchant, SUSPENDED, service, unavailable, and
 different-ethnicity groups are excluded. This adds no construction, capital flow,
-stage, PKEC v15 field, state-hash field, DataCore slot, or GDScript authority.
+stage, DataCore slot, or GDScript authority; v16 state and hash fields remain native.
 
 The 2026-07-21 native correction separates the full-health
 `survival_production_target_q16` from the starvation threshold. Household-consumed

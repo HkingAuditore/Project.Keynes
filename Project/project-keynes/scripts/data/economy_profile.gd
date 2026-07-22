@@ -13,7 +13,10 @@ extends Resource
 @export_range(0, 65536, 1) var building_cells_per_slice: int = 0
 ## Dense settlements are additionally bounded by actual building groups.
 @export_range(1, 65536, 1) var building_groups_per_slice: int = 512
-## ABI-compatible profile fields. Native v15 fixes all three to five days and
+## Global building output efficiency. It scales goods output only; construction,
+## production inputs, natural-resource use, and wages keep their catalog values.
+@export_range(65536, 262144, 1) var building_output_efficiency_q16: int = 131072
+## ABI-compatible profile fields. Native v16 fixes all three to five days and
 ## distributes cells across five deterministic daily phases.
 @export_range(5, 5, 1) var market_cycle_days: int = 5
 @export_range(5, 5, 1) var market_min_cycle_days: int = 5
@@ -67,6 +70,12 @@ extends Resource
 ## 3932160 is 60 deterministic Q16 days: twelve production cycles and four
 ## default trade-response windows.
 @export_range(0, 7864320, 1) var merchant_market_making_days_q16: int = 3932160
+@export_enum("OFF", "PROBE", "ACTIVE") var merchant_credit_runtime_mode: String = "ACTIVE"
+@export_range(0, 65536, 1) var merchant_credit_exposure_q16: int = 16384
+@export_range(0, 65536, 1) var merchant_credit_premium_q16: int = 3277
+@export_range(1, 64, 1) var merchant_credit_term_cycles: int = 6
+@export_range(1, 32, 1) var recovery_success_cycles: int = 2
+@export_range(1, 64, 1) var recovery_liquidation_failed_reviews: int = 6
 ## Frozen-cycle Market V2 has passed the mobile and 10M-cohort ACTIVE gates.
 @export_enum("OFF", "PROBE", "ACTIVE") var market_runtime_mode: String = "ACTIVE"
 
@@ -110,6 +119,7 @@ func to_native_profile() -> Dictionary:
 		"auto_slice_by_scale": auto_slice_by_scale,
 		"building_cells_per_slice": building_cells_per_slice,
 		"building_groups_per_slice": building_groups_per_slice,
+		"building_output_efficiency_q16": building_output_efficiency_q16,
 		"market_cycle_days": market_cycle_days,
 		"market_min_cycle_days": market_min_cycle_days,
 		"market_max_cycle_days": market_max_cycle_days,
@@ -142,6 +152,12 @@ func to_native_profile() -> Dictionary:
 		"building_restart_cycles": building_restart_cycles,
 		"merchant_procurement_cash_reserve_q16": merchant_procurement_cash_reserve_q16,
 		"merchant_market_making_days_q16": merchant_market_making_days_q16,
+		"merchant_credit_runtime_mode": merchant_credit_runtime_mode,
+		"merchant_credit_exposure_q16": merchant_credit_exposure_q16,
+		"merchant_credit_premium_q16": merchant_credit_premium_q16,
+		"merchant_credit_term_cycles": merchant_credit_term_cycles,
+		"recovery_success_cycles": recovery_success_cycles,
+		"recovery_liquidation_failed_reviews": recovery_liquidation_failed_reviews,
 		"market_runtime_mode": market_runtime_mode,
 		"trade_runtime_mode": trade_runtime_mode,
 		"trade_capacity_per_merchant_q16": trade_capacity_per_merchant_q16,

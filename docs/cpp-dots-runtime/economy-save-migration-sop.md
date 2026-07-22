@@ -13,6 +13,14 @@ u32 payload_bytes
 payload
 ```
 
+## PKEC v16（当前且唯一可恢复版本）
+
+v16 在建筑记录中保存聚合商人债务本金/溢价、期限、逾期周期、恢复失败审查数、三态运行状态和
+上一期自产生活价值；待建记录保存本金、溢价和期限。上述字段全部进入状态哈希、合法性检查、
+内存统计和选中格快照。restore 对 v2-v15 统一返回
+`legacy_economy_save_unsupported`，不执行隐式迁移；高于 v16 返回
+`economy_save_schema_unsupported`。
+
 section 顺序：
 
 0. header：尺度、cell/market/good/page/cohort 数、市场周期 N、seed、catalog hash、next submit
@@ -51,7 +59,8 @@ restore 要先配置并完整恢复 PKCN v1，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v15，并与 PKCN v1 交叉绑定。PKEC v14 通过确定性
+当前写出 schema 为 PKEC v16，并与 PKCN v1 交叉绑定。PKEC v2-v15 统一
+返回 `legacy_economy_save_unsupported`，不执行隐式迁移。历史上的 PKEC v14 确定性
 `v14_rolling_phase_bootstrap` 迁移每 cell phase/结算日，PKEC v13 再沿既有兼容 hash 路径补齐
 v14 行为参数后迁移。只有参数一致的 v11 ACTIVE 可迁移；旧默认 v11 的
 25%/1 日商人策略与当前 12.5%/30 日分档库存基线不一致，返回
@@ -219,7 +228,7 @@ investment scores, and rejection diagnostics are reconstructed transient state.
 PKEC v10 and mismatched legacy ACTIVE/PROBE trade policies retain their explicit
 rejection paths. PKCN must still restore before PKEC.
 
-## PKEC v15 (current)
+## PKEC v15 (historical)
 
 PKEC v15 adds per-cell `last_settlement_day`, settlement generation, stable
 phase validation, and the price/stock, owner-cash, population, building,

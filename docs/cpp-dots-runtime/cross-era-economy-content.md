@@ -11,7 +11,7 @@
 - 经济周期开始时冻结 `cell → country`、国家 generation/hash 和科技 bitset。物资替代、职业就业、建造和生产都读取冻结副本；周期中提交的国家解锁命令从下个经济周期起生效。
 - `CountryFacade` 提交 `GRANT_TECHNOLOGY` stable-ID 命令，只允许授予、不允许撤销，避免既有职业和建筑在周期内失去前提。
 - 自然资源储量始终真实存在于 DataCore。`discovery_technology_tags` 只控制地图和 Inspector 是否可见；能否开采由采集建筑自己的 `technology_tags` 独立决定。
-- PKCN v1 保存国家科技；当前 PKEC v15 保存匹配的 PKCN schema/generation/hash、企业停产/实际出库状态、国内在途贸易与动态行为配置，并增加每 cell 结算日/generation 与 dirty generations。PKEC v14 通过确定性 rolling phase bootstrap 迁移；更早版本继续执行既有策略一致性与拒绝规则，PKEC v2-v9 返回 `legacy_countryless_economy_save_unsupported`。
+- PKCN v1 保存国家科技；当前 PKEC v16 保存匹配的 PKCN schema/generation/hash、企业三态、聚合商人债务、实物收入、国内在途贸易、每 cell 结算日/generation 与 dirty generations。PKEC v2-v15 统一返回 `legacy_economy_save_unsupported`，不再隐式迁移。
 - 每个 need 最多支持 4 个替代 variant。32 个职业映射到 survival、agrarian、extractive、
   industrial_worker、artisan、technical、merchant、owner 八套计划；共同覆盖主食、衣着、住房、
   蛋白质、果蔬、卫生与医疗，并按职业加入工作装备、交通、耐用品、奢侈品和身份消费。

@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 14;
+    static constexpr int32_t SCHEMA_VERSION = 16;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -194,6 +194,24 @@ public:
         int64_t trade_unresolved_capacity = 0;
         int64_t trade_unresolved_cash = 0;
         int64_t trade_unresolved_order_cap = 0;
+        int64_t merchant_credit_budget = 0;
+        int64_t merchant_credit_committed = 0;
+        int64_t merchant_credit_drawn = 0;
+        int64_t merchant_credit_repaid = 0;
+        int64_t merchant_credit_premium_repaid = 0;
+        int64_t merchant_credit_outstanding = 0;
+        int64_t merchant_credit_bad_debt = 0;
+        int64_t recovery_candidates = 0;
+        int64_t recovery_approved = 0;
+        int64_t recovery_restarted = 0;
+        int64_t recovery_failed = 0;
+        int64_t recovery_liquidated_buildings = 0;
+        int64_t trade_active_keys_pruned = 0;
+        int64_t trade_deficit_episodes_started = 0;
+        int64_t trade_deficit_episodes_resolved = 0;
+        int64_t trade_candidates_stale_generation = 0;
+        int64_t trade_candidates_arbitrated_out = 0;
+        int64_t trade_true_source_stock_failures = 0;
     };
 
     struct CohortRow {
@@ -270,6 +288,12 @@ public:
         int64_t viability_income_gap = 0;
         int64_t projected_owner_income_per_day = 0;
         int64_t construction_ready_day = 0;
+        int64_t merchant_debt_principal = 0;
+        int64_t merchant_debt_premium = 0;
+        int32_t merchant_debt_term_cycles_left = 0;
+        int32_t merchant_debt_delinquent_cycles = 0;
+        int64_t last_in_kind_livelihood_value = 0;
+        int32_t recovery_failed_reviews = 0;
     };
 
     struct ResourceRow {

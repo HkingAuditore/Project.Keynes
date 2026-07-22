@@ -111,8 +111,8 @@ func _audit(catalog: Dictionary) -> void:
 	var knapping = load("res://data/economy/buildings/knapping_workshop.tres")
 	var early_weaving = load("res://data/economy/buildings/household_weaving_shelter.tres")
 	_expect("stone production chains have physical, demand-scaled inputs",
-		hearth.input_quantities_per_day == PackedInt64Array([7000, 3500]) and
-		hearth.input_required_q16 == PackedInt32Array([65536, 32768]) and
+		hearth.input_quantities_per_day == PackedInt64Array([7000, 3500, 2000]) and
+		hearth.input_required_q16 == PackedInt32Array([65536, 32768, 49152]) and
 		knapping.construction_good_ids == PackedStringArray(["logs", "flint"]) and
 		knapping.construction_quantities == PackedInt64Array([1000, 500]) and
 		knapping.input_quantities_per_day == PackedInt64Array([100]) and

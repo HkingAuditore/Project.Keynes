@@ -601,8 +601,9 @@ func _temperature_band(t: float) -> String:
 	if t < 0.20: return "严寒"
 	if t < 0.30: return "寒冷"
 	if t < 0.40: return "凉爽"
-	if t < 0.55: return "温暖"
-	if t < 0.75: return "炎热"
+	if t < 0.55: return "温和"
+	if t < 0.75: return "温暖"
+	if t < 0.90: return "炎热"
 	return "酷热"
 
 

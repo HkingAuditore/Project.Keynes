@@ -5,6 +5,15 @@
 `NativeEconomyRuntime`；动态人口和商品状态不进入 DataCore `_slots`，也不回填
 `MapData.goods_*`。
 
+## PKEC v16 企业重整与商人信用（当前）
+
+`NativeEconomyRuntime` 继续单独持有建筑、债务、就业和贸易状态。建筑状态为
+`ACTIVE / SUSPENDED_LOSS / RECOVERY_PROBE`；停产组可从本格商人聚合现金池取得仅用于
+建设材料或生产实物投入的信用，基础工资后、本期奖金前按本金优先偿还。连续两个成功试产周期
+恢复 ACTIVE；连续六次 10 日审查未恢复则整组清算，商栈除外，未偿债务只记坏账。
+自产实物收入按冻结零售价持久化到来源建筑，只参与经济收益和岗位选择，不可偿债。
+PKEC writer 为 v16，restore 只接受 v16。
+
 > 2026-07-11 状态：冻结周期错峰版默认 `market_runtime_mode=ACTIVE`、结算周期 5 日。功能、守恒、
 > worker/scalar 确定性、移动和 10M cohort 性能门槛均已通过。
 
@@ -34,7 +43,7 @@
 | cohort、handle、人口、资金、收入/支出、满足度 | C++ `PopulationStore` | GDScript 无逐 cohort setter。 |
 | 本地库存、价格、居民需求 EMA、短缺率 | C++ `MarketStore` | 无 per-cell goods component，无匿名市场现金。 |
 | 企业可行需求/供给 EMA、实际出库 EMA、成本锚 | C++ 稀疏 `MarketSignalStore` | 仅保存建筑实际引用的 `(cell, good)` 边；实际出库用于商人库存目标。 |
-| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v15 保存订单/托管/EMA。 |
+| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v16 保存订单/托管/EMA。 |
 | 需求、预算、bundle 清算、替代 fallback、商人结算、Price V3 | C++ Market V2 hot loop | 不访问 Godot Object/Callable/Dictionary。 |
 | 周期环境快照 | DataCore 环境 slots → C++ Q16 snapshot | 周期 sample day 捕获 temp/moisture/snow/weather，周期内冻结。 |
 | catalog 编译 | `EconomyCatalog`/`EconomyFacade` 冷路径 | stable ID 排序后一次性提交 PackedArrays。 |
@@ -48,16 +57,17 @@
 
 - 国内贸易默认 `ACTIVE`；`OFF/PROBE` 仅供显式配置和测试。范围仍是冻结的同一国家、可通行且连通地块。
 - 企业采购意图容量取建筑可用性、业主/关键岗位就业率、业主输入资金覆盖率和自然资源覆盖率的瓶颈；实际产能再叠加本地输入库存瓶颈。缺货输入保留受约束的补货意图，但不能产生实际产出。
+- `EconomyProfile.building_output_efficiency_q16` 在 native 目录载入冷路径只缩放物资产出列，默认 `131072`（2 倍）；建设材料、日常投入、自然资源扣减、岗位与工资均不缩放。它是运行配置而非目录内容，因此不改变 building catalog hash、运行时状态布局或 PKEC 字节结构。
 - 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资 - 到岗业主最低生活费) / max(经营成本, MONEY_SCALE)` 计算。业主生活费只参与企业可持续性判断，不生成额外现金支出；连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`。停产期间岗位、采购、产出和企业需求全为零；反事实利润连续两周期达到 +10%，且业主可支付一栋一周期输入、基础工资和生活费后恢复。
 - 下一周期利用率的可负担需求同时读取居民 `demand_ema` 与稀疏 `business_demand_ema`。库存不足时，以两者之和相对实际出库 EMA 的缺口触发短缺恢复；因此没有家庭终端消费、但被下游建筑持续采购的工具和中间品不会被误压到 1/32 探测产能。
 - 商人库存目标使用 `max(可行 household/business 日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 30 日基线和 good-specific 比例后的有效天数；生存食品/御寒衣物的供给下限为供给 EMA 的 1/2，其他耐储品为 1/4，库存天数和目标量级不下调。采购开始冻结现金并保留 12.5%；有限现金按生存品、短缺压力、生产投入 reserve 缺口加权，但总采购预算仍封顶于真实缺口价值，避免“提高优先级”反而造成有钱不买。`cycle_flow` 目标仍为 0。
 - `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
 - ACTIVE owner-lot 在家庭清算前按已到岗业主份额、计划利用率和冻结单位投入成本保留下周期营运资金；该资金仍在 owner cohort 账户内，但不会被本期居民订单花掉。报告发布 `owner_working_capital_reserved`。
-- 所有生产者都可按业主消费计划的实际 desired quantity 和正常 variant 份额留用自产物资；复合 variant 按组件分别判定，业主自家产出的组件自留、未产出的组件走市场购买，不再要求同一业主产齐全部组件。食物与御寒衣物另保留生存下限，剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量。自用按冻结零售价计入实物收入而不产生现金，并进入实际出库 EMA，使生产计划能够观察到真实自用需求。
+- 生产者只保留生存食品健康下限和寒冷条件下最低衣物；普通非生存自产商品全部进入市场。剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量。实际消费的自用物按冻结零售价计入来源建筑的实物收入而不产生现金，并进入实际出库 EMA；该价值影响经济收益和岗位选择，但不能偿债。
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v15 是当前 writer：在 v14 企业状态/连续数、实际利润率、实际出库 EMA 和行为配置之上，保存每 cell 结算日/generation 与 dirty generations；意向/受资助需求、营运资金分配和 production worker 临时结果仍按周期确定性重建。PKEC v14 通过 rolling phase bootstrap 迁移；更早版本继续遵守参数一致性和既有拒绝路径。
+- PKEC v16 是当前 writer：保存每 cell 结算日/generation、dirty generations、企业三态、聚合商人债务、恢复失败审查和上一期实物生活价值；意向/受资助需求、营运资金分配和 production worker 临时结果仍按周期确定性重建。v2-v15 旧档统一明确拒绝。
 - `BUILDING_PLAN` 是原生两遍 continuation：第一遍按 active-cell CSR 计算利润、停产恢复和计划利用率，第二遍按相同稳定顺序重建生产投入 reserve。`building_cells_per_slice=0` 确定性使用 256 个 active cell；正值可做平台定标。cursor、生存利用率 floor 和 reserve 构建缓存不保存、不哈希。
 - 业主营运资金缩放使用 8 次确定性整数二分并返回可支付下界，因此绝不透支；最大利用率低估为请求区间的 `1/256`，实际 Q16 未决界由 `working_capital_scale_error_bound_q16` 报告。
 
@@ -182,7 +192,7 @@ simulation day 或进程累计值。未执行 planner 的 native slice 必须报
 
 调试录制控制面另提供 `start_economy_csv_recording(config)`、
 `request_stop_economy_csv_recording()` 和 `get_economy_csv_recording_status()`。它们管理独立的
-`EconomyCsvRecorder`，只在成功 committed publish 且资源 delta 已回写后抓取 CSV v14 POD
+`EconomyCsvRecorder`，只在成功 committed publish 且资源 delta 已回写后抓取 CSV v16 POD
 批次；worker 编码/写盘状态不属于 runtime report、PKEC 或 state hash。状态包含
 `captured/written epochs/rows`、`bytes_written`、`queued_batches`、主线程 capture 与 worker
 耗时、`buffer_memory_bytes`、路径、`error_code` 和 `first_unrecorded_epoch`。
@@ -563,7 +573,7 @@ The 20 percent producer-support price remains a cold-start fallback. Issuance is
 capped per cell at 5 percent of opening money per 30 days. All support and
 bullion issues remain explicit mint audit entries.
 
-## PKEC v15 rolling settlement (current)
+## PKEC v16 rolling settlement (current)
 
 The production runtime no longer waits for a global epoch. Stable cell phase is
 `cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded
@@ -638,14 +648,11 @@ margin, `10` payback, `11` sponsor capital, `12` materials, `13` resource, and
 `14` deterministic probability skip. The summary report and CSV expose
 `building_investment_probability_skips`; `building_owner_mobility` now counts
 only profession changes attached to a construction start.
-The appended summary field bumps the recorder format to CSV v13. This is a
-diagnostic-only format change; PKEC remains v15 and authoritative state, cadence,
-and state hash are unchanged.
-CSV v14 supersedes that recorder format by adding
+CSV v14 historically added
 `building_owner_job_reallocations`, `building_owner_job_profession_changes`,
 `building_owner_job_probability_skips`, and building-row
-`projected_owner_income_per_day`. These remain derived diagnostics; PKEC v15 and
-the state-hash layout are unchanged.
+`projected_owner_income_per_day`. CSV v16 additionally publishes aggregate debt,
+recovery, in-kind income, trade episode, generation, and arbitration diagnostics.
 Suspended groups retain one owner only when no active non-service owner vacancy
 exists. Otherwise active-first employment moves that owner through the ordinary
 unemployed-pool transition. They retain no employee demand or production intent.

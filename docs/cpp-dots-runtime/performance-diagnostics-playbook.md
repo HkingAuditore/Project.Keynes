@@ -29,7 +29,7 @@ breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 
 全量地块录制会同步编码、写盘，可能主动制造卡顿，因此先录性能基线，再短时开启地块录制，
 并检查 `tile_ms/format_ms/flush_ms/encoder_path`。
 
-经济录制已使用原生 CSV v14 双缓冲：GM 面板显示 `captured/written epoch`、
+经济录制已使用原生 CSV v16 双缓冲：GM 面板显示 `captured/written epoch`、
 `queued_batches`、`capture_ms_last/p95/max` 和 worker 耗时。正常录制为 `recording`，点击停止后为
 `draining`，排空后为 `completed`。`queue_full` 表示长期产生速度超过编码/磁盘吞吐，recorder
 已保留并写完所有已接受 epoch，同时用 `first_unrecorded_epoch` 标明停止边界；`row_limit`
