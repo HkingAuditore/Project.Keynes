@@ -125,14 +125,20 @@ vec3 compute_sun_dir_enu(vec2 uv, float lat_signed) {
 // 关闭昼夜时使用年度太阳轨迹：season_phase 本身由游戏日期驱动，天然服从倍速与暂停。
 // 方位一年恰好转一圈；高度只由直射点纬度（太阳赤纬）决定，不读取日相位/视觉晨昏线。
 vec3 compute_global_parallel_sun_dir() {
+	// 调试场景的永昼方位/高度滑块沿用既有 tod_sun_dir；正式玩家模式未开启该覆盖，
+	// 因而仍进入下面与游戏日期绑定的年度自动轨迹。
+	if (tod_debug_sun_position_enabled) {
+		float debug_len = length(tod_sun_dir);
+		return (debug_len > 1e-5) ? tod_sun_dir / debug_len : vec3(0.0, 0.0, 1.0);
+	}
 	float year_progress = mod(season_phase, 4.0) * 0.25;
 	// 地形法线/阴影采样使用的是“从受光点指向光源”的方向；年度轨迹此前少了半圈，
 	// 结果正好表现为七月北坡背阴、一月南坡背阴。补上 PI 只翻转永昼水平光向。
 	float azimuth = EARTH_DAYLIGHT_TAU * year_progress + 1.5707963;
 	float declination = earth_daylight_declination();
 	float latitude_ratio = clamp(abs(declination) / max(abs(axial_tilt_rad), 1e-4), 0.0, 1.0);
-	// 春秋分 45°、南北至日 15°：扩大季节阴影长度差，同时避开近地平线的极端投影。
-	float elevation = radians(60.0 - 45.0 * latitude_ratio);
+	// 春秋分 70°、南北至日 30°：扩大季节阴影长度差，同时避开近地平线的极端投影。
+	float elevation = radians(70.0 - 40.0 * latitude_ratio);
 	vec3 d = vec3(cos(azimuth) * cos(elevation), sin(azimuth) * cos(elevation), sin(elevation));
 	float len = length(d);
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);

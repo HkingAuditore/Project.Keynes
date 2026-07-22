@@ -3,7 +3,8 @@ class_name PlayerGame
 
 const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
 
-@export_range(0, 2, 1) var visual_quality: int = 1
+# 桌面玩家场景与调试场景共用高画质基线；移动端仍由 mobile quality tier 控制预算。
+@export_range(0, 2, 1) var visual_quality: int = 2
 @export_range(0, 2, 1) var mobile_quality_tier: int = 0
 @export var perf_sampler_enabled: bool = false
 @export var day_night_enabled: bool = true

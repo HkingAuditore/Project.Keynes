@@ -2530,7 +2530,7 @@ func _debug_tod_light_dir() -> Vector3:
 func _push_tod_debug_sun_uv() -> void:
 	if _renderer != null and _renderer.has_method("set_tod_debug_sun_position"):
 		_renderer.set_tod_debug_sun_position(
-			day_night_enabled and _debug_tod_sun_uv_override_enabled,
+			(not day_night_enabled) or _debug_tod_sun_uv_override_enabled,
 			get_debug_tod_sun_uv()
 		)
 
