@@ -135,6 +135,8 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 @export var hex_size: float = 22.0
 @export var initial_seed: int = 0   # 0 = 随机
 @export var generate_test_economy_data: bool = false
+@export_enum("资源分层混合:0", "产能基线:1", "百人级:10", "千人级:100", "万人级:1000") \
+var test_economy_population_scale: int = 0
 
 # ─── Visual Presentation Overhaul（任务 1）：视觉总开关 ─────────────────
 # 六个开关一起组成"可回退的分层视觉系统"：任何一项关闭都应退化到对应基线效果。
@@ -507,7 +509,7 @@ func _ready() -> void:
 	_splash_show()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_generate_and_render(initial_seed)
+	await _generate_and_render(initial_seed)
 	_splash_hide()
 	# DataCore CLI：generator 已创建，把 CLI 缓存覆盖到 ClimateProfile。
 	_apply_data_core_cli_to_profile()
@@ -928,7 +930,7 @@ func regenerate_debug_map() -> void:
 	_splash_show()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_generate_and_render(0)
+	await _generate_and_render(0)
 	_splash_hide()
 
 func fit_debug_map() -> void:
@@ -1058,6 +1060,10 @@ func _apply_world_setup_base_config() -> void:
 	river_count = clampi(int((base as Dictionary).get("river_count", river_count)), 0, 30)
 	generate_test_economy_data = bool((base as Dictionary).get(
 		"generate_test_economy_data", generate_test_economy_data))
+	var requested_population_scale := int((base as Dictionary).get(
+		"test_economy_population_scale", test_economy_population_scale))
+	test_economy_population_scale = requested_population_scale \
+		if requested_population_scale in [0, 1, 10, 100, 1000] else 0
 	var render = config.get("render", {})
 	if render is Dictionary:
 		render_quality_mode = clampi(int((render as Dictionary).get(
@@ -2180,12 +2186,13 @@ func _generate_and_render(seed_val: int) -> void:
 	var t0: int = Time.get_ticks_msec()
 	_generator = MapGenerator.new()
 	_generator.set_test_economy_bootstrap_enabled(generate_test_economy_data)
+	_generator.set_test_economy_population_scale(test_economy_population_scale)
 	_apply_runtime_climate_profile(_generator)
-	# 移动端黑屏体感修复：订阅 generator.bake_progress 让 logcat 看到阶段切换；
-	# UI 不会实时变化（主线程被 bake_world 同步占满），但 print 帮助诊断。
+	# 订阅 cooperative generation 的阶段进度；MapGenerator / MapBaker 会在重阶段
+	# 边界主动让出一帧，因此 splash、窗口事件和进度文案能真实刷新。
 	if _generator.has_signal("bake_progress") and not _generator.bake_progress.is_connected(_on_baker_stage_progress):
 		_generator.bake_progress.connect(_on_baker_stage_progress)
-	var result := _generator.generate(cfg, hex_size)
+	var result: Dictionary = await _generator.generate(cfg, hex_size)
 	_current_map = result["map"]
 	_world_data = result["world_data"]
 	# 0.4.2 — 新地图就位后立即把 map / generator / sea_level 推给 info panel
@@ -3741,11 +3748,11 @@ func _rebuild_view_adapter() -> void:
 # 问题：bake_world 同步耗时 ~13s（620k 像素 × GDScript 双重循环 × FastNoiseLite
 # 4 频段），期间主线程被占用，UI 完全黑屏。移动端用户体感"应用挂了"。
 #
-# 当前修复（最小侵入）：
+# 当前路径：
 #   1. _ready() 入口建一个 CanvasLayer + Label 显示"正在生成世界…"
-#   2. _generate_and_render() 入口 show + `await get_tree().process_frame` × 2
-#      让 splash 真正被绘制一帧，再调用 _generator.generate(...)
-#   3. generate 返回后 hide
+#   2. `_generate_and_render()` await `MapGenerator.generate()`；generator/baker 在重阶段
+#      边界协作式让帧，窗口事件、动画和阶段进度都能继续推进。
+#   3. generate 返回后 hide。
 #
 # 期间 baker.stage_progress 信号也会被订阅并 print，便于诊断；UI 不实时变化是
 # 因为主线程被同步 bake 占满，未来 main 把 bake_world 改成 deferred / 协程

@@ -66,7 +66,7 @@ func _run_case(w: int, h: int) -> void:
 	cfg.climate_profile = profile
 	var gen = MapGeneratorScript.new()
 	gen.climate_profile = profile
-	var generated: Dictionary = gen.generate(cfg, 10.0)
+	var generated: Dictionary = await gen.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null) as MapData
 	var world = generated.get("world_data", null)
 	if map == null or world == null:

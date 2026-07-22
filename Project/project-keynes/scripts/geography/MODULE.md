@@ -48,7 +48,8 @@
 ```gdscript
 # 生成世界
 var gen := MapGenerator.new()
-var map: MapData = gen.generate(cfg)
+var generated: Dictionary = await gen.generate(cfg, hex_size)
+var map: MapData = generated["map"]
 var world: WorldData = gen.world_data
 
 # 按世界坐标查询

@@ -123,7 +123,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 
 ## 运行期初始化链路
 
-1. `MapGenerator` 构建 `MapData`，生成地形、邻接、初始 climate/weather/ocean SoA。
+1. 玩家/Debug 入口 `await MapGenerator.generate()`；`MapGenerator` / `MapBaker` 在生成阶段边界协作式让出主循环帧，然后构建 `MapData`，生成地形、邻接、初始 climate/weather/ocean SoA。
 2. `DCWorld.bind_map_data(map)` 绑定 GDScript DataCore slots。
 3. `DCWorldExt.bind_map_data(map)` 绑定 C++ slots。
 4. `_setup_sus()` 创建 systems/jobs；`DCSystemScheduler` 根据 profile 统一配置 budget、policy 和 job descriptor。
@@ -133,6 +133,8 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 8. job wrapper 进入 `MapGenerator` / `MapBaker` / `WeatherSystem`，尝试 C++ pass，失败则 fallback。
 9. pass 返回 report，scheduler 聚合为 last tick summary、job stats、budget window。
 10. `main.gd` 输出 `[fast tick WARN]`、`[SUS-cpp]` 和各 job breakdown。
+
+生成协程只改变主线程调度方式，不移动模拟或数据权威。Native base/post-base 仍由 C++ 权威计算，GDScript/Godot 仍拥有 `MapData`/`HexCell` 装配、纹理编码与上传、DataCore 初始化和场景绑定。当前不把整段生成放入 `WorkerThreadPool`：这些 Godot 对象边界不满足 worker-only POD/独占资源条件。每个单独 native/编码 pass 仍不可抢占；若某一 pass 自身形成长帧，应继续在该 pass 内切片或提供纯数据 worker kernel，而不是从 UI 层强制绘制。
 
 ## C++ 化的当前边界
 

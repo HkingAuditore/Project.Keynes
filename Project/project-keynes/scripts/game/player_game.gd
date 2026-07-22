@@ -19,17 +19,32 @@ const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
 @onready var _selection: SelectionController = $Controllers/SelectionController
 @onready var _time_controls: TimeControlsController = $Controllers/TimeControlsController
 
+var _viewport_refit_pending := false
+
 
 func _ready() -> void:
 	if OS.has_feature("mobile"):
 		PKLog.enabled = false
 	_configure_runtime()
 	_connect_signals()
+	get_viewport().size_changed.connect(_on_viewport_size_changed)
 	_push_visual_toggles()
 	_ui_manager.show_loading("正在生成世界...")
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_runtime_host.generate_world(-1, _ui_manager.map_safe_area())
+	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
+
+
+func _on_viewport_size_changed() -> void:
+	if _viewport_refit_pending:
+		return
+	_viewport_refit_pending = true
+	call_deferred("_refit_after_viewport_resize")
+
+
+func _refit_after_viewport_resize() -> void:
+	_viewport_refit_pending = false
+	_runtime_host.fit_camera(_ui_manager.map_safe_area())
 
 
 func _configure_runtime() -> void:
@@ -90,7 +105,7 @@ func _regenerate_world() -> void:
 	_ui_manager.show_loading("正在重生成世界...")
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_runtime_host.generate_world(0, _ui_manager.map_safe_area())
+	await _runtime_host.generate_world(0, _ui_manager.map_safe_area())
 
 
 func _return_to_world_setup() -> void:

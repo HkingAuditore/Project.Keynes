@@ -75,7 +75,7 @@ func _run() -> void:
 	# 例：
 	#   var generator: Node = MapGenerator.new()
 	#   root.add_child(generator)
-	#   generator.generate(seed=12345)  # 等待生成完成
+#   await generator.generate(seed=12345)  # 等待生成完成
 	#   var cp: ClimateProfile = generator._c()
 	#   var scheduler = generator._sus
 

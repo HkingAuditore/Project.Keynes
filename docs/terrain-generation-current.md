@@ -33,7 +33,7 @@
 
 ## 顶层生成流程
 
-入口函数：`MapGenerator.generate(cfg, hex_size)`。
+入口函数：`await MapGenerator.generate(cfg, hex_size)`。生成在 Godot 主线程协作式执行，并在重阶段边界让帧；不要不带 `await` 调用，也不要把包含 Godot 对象/纹理上传的整条链直接迁入 worker。
 
 1. `cfg.validate()` 校验地图配置。
 2. 解析 seed：`cfg.seed != 0` 时使用配置 seed，否则 `randi()`。

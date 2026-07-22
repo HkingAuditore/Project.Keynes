@@ -76,7 +76,7 @@ func _run_case(damp: float) -> Dictionary:
 	cfg.climate_profile = profile
 	var gen := MapGenerator.new()
 	gen.climate_profile = profile
-	var generated: Dictionary = gen.generate(cfg, 10.0)
+	var generated: Dictionary = await gen.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null) as MapData
 	if map == null:
 		return {}

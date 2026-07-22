@@ -50,7 +50,7 @@ world_setup.tscn
   -> world_setup.gd builds config/meta
   -> player_game.tscn/player_game.gd
   -> WorldRuntimeHost.generate_world()
-  -> MapGenerator.generate(cfg, hex_size)
+  -> await MapGenerator.generate(cfg, hex_size)
   -> DCWorldExt native world generation base/post-base
   -> MapData + HexCell assembly
   -> MapBaker.bake_world() produces WorldData buffers/textures
@@ -85,6 +85,7 @@ world_setup.tscn
 - `gdext/src/world_ext_generate.cpp` 和相关 `world_ext*.cpp` 提供 `run_native_world_generate_base_pass()`、`run_native_world_generate_post_base_pass()`、`run_native_world_generate_full_pass()`。
 - `MapGenerator._generate_cells_native_base()` 调 native base/post-base，`_assemble_native_generation_map()` 装配 `MapData` / `HexCell`。
 - GDScript 旧 `_generate_cells` fallback 已删除。native 失败时 `generate()` 直接中止，不应静默降级。
+- 玩家与 debug 入口必须 `await MapGenerator.generate()`。生成仍在 Godot 主线程执行，因为 `MapData`/`HexCell` 装配、`ImageTexture` 和 DataCore/Godot 对象生命周期不能粗暴迁入 worker；`MapGenerator` 与 `MapBaker` 在大陆、几何、物理、图集编码和模拟装配边界协作式 `await process_frame`，让加载 UI、窗口事件和动画持续推进。直接调用但不 `await` 会在首个让帧点提前返回，是不受支持的调用方式。
 
 生成期主要步骤：
 

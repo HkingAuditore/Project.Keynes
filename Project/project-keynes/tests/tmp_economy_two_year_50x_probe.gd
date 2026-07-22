@@ -42,7 +42,7 @@ func _run() -> int:
 	generator.set_world_clock_ref(clock)
 	generator.set_test_economy_bootstrap_enabled(true)
 	var generation_started := Time.get_ticks_usec()
-	var generated: Dictionary = generator.generate(cfg, 10.0)
+	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null)
 	if map == null:
 		push_error("[economy-50x-2y] map generation failed")

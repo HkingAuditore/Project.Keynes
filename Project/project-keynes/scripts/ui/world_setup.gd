@@ -24,6 +24,20 @@ const BASE_FIELDS := [
 	{"name": "num_continents", "label": "大陆块数", "hint": "调大：大陆核心更多、更分散", "type": "int", "default": 2, "min": 1, "max": 8, "step": 1},
 	{"name": "continent_size", "label": "大陆整体大小", "hint": "调大：每块大陆更大、更容易连成片", "type": "float", "default": 0.9, "min": 0.2, "max": 0.9, "step": 0.01},
 	{"name": "generate_test_economy_data", "label": "生成测试经济数据", "hint": "仅用于开发测试：按石器时代科技与可见资源生成临时人口和建筑，市场库存从零开始。", "type": "bool", "default": false},
+	{
+		"name": "test_economy_population_scale",
+		"label": "测试人口规模",
+		"hint": "混合模式按当地资源承载力，让同一世界同时出现十人、百人、千人、万人级聚落。",
+		"type": "option",
+		"default": 0,
+		"options": [
+			{"label": "资源分层混合（推荐）", "value": 0},
+			{"label": "产能基线（约数十人）", "value": 1},
+			{"label": "百人级（10 倍）", "value": 10},
+			{"label": "千人级（100 倍）", "value": 100},
+			{"label": "万人级（1000 倍）", "value": 1000},
+		],
+	},
 ]
 
 const CLIMATE_GROUPS := [

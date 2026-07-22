@@ -313,6 +313,7 @@ func _build_ui() -> void:
 
 	_perf_hud = PerfMiniHUD.new()
 	_perf_hud.name = "PerfMiniHUD"
+	_perf_hud.start_visible = false
 	_perf_hud.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_perf_hud.offset_left = -180.0
 	_perf_hud.offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM
@@ -323,6 +324,7 @@ func _build_ui() -> void:
 		set_diagnostics_source(_diagnostics_source)
 
 	_loading_overlay = WorldLoadingOverlay.new()
+	_loading_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_loading_overlay)
 
 	for child in get_children():

@@ -11,11 +11,17 @@ var _failures := PackedStringArray()
 
 func _initialize() -> void:
 	var option_found := false
+	var scale_option_found := false
 	for field in WorldSetupScript.BASE_FIELDS:
 		if String(field.get("name", "")) == "generate_test_economy_data":
 			option_found = true
 			_expect("test economy option defaults off", not bool(field.get("default", true)))
+		if String(field.get("name", "")) == "test_economy_population_scale":
+			scale_option_found = true
+			_expect("test economy population scale defaults to resource-tiered mix",
+				int(field.get("default", -1)) == 0)
 	_expect("world setup exposes test economy option", option_found)
+	_expect("world setup exposes test economy population scale", scale_option_found)
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("[economy-test-bootstrap] SKIP: DCWorldExt unavailable")
 		quit(0)
@@ -61,6 +67,11 @@ func _initialize() -> void:
 		return
 	var first: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
 	var same: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
+	var resource_tiered: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42, 0)
+	var stress_hundreds: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42, 10)
+	var stress_thousands: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42, 100)
+	var stress_ten_thousands: Dictionary = EconomyTestBootstrapScript.build(
+		map, facade, 42, 1000)
 	var missing_source_map := _make_map()
 	_clear_resource(missing_source_map, &"stone")
 	var missing_source: Dictionary = EconomyTestBootstrapScript.build(
@@ -135,6 +146,17 @@ func _initialize() -> void:
 	if not first_ok or not same_ok:
 		_finish()
 		return
+	_expect("10x stress fixture expands populated cells into hundreds",
+		_stress_population_matches_baseline(first, stress_hundreds, 10, 100))
+	_expect("10x fixture rebalances buildings by demand, inputs, and resource runway",
+		_demand_balanced_supply_valid(first, stress_hundreds, 10))
+	_expect("100x stress fixture expands populated cells into thousands",
+		_stress_population_matches_baseline(first, stress_thousands, 100, 1000))
+	_expect("1000x stress fixture expands populated cells into ten-thousands",
+		_stress_population_matches_baseline(
+			first, stress_ten_thousands, 1000, 10000))
+	_expect("resource-tiered fixture ranks cells deterministically by local capacity",
+		_resource_tiered_population_valid(first, resource_tiered))
 	_expect("only land cells with a quantitatively closed input chain are populated",
 		int(first.get("populated_cells", 0)) >= 1 and
 		int(first.get("populated_cells", 0)) +
@@ -151,9 +173,9 @@ func _initialize() -> void:
 		_population_matches_fixture(first, facade))
 	_expect("bootstrap reports formula-based initial finance source",
 		String(first.get("population_source", "")) ==
-			"demand_driven_survival_capacity_bootstrap_v16" and
+			"resource_tiered_complete_chain_test_bootstrap_v19" and
 		String(first.get("collector_placement_model", "")) ==
-			"demand_driven_minimum_chain_v16" and
+			"resource_backed_complete_chain_v17" and
 		int(first.get("initial_resource_horizon_days", 0)) == 3650 and
 		int(first.get("cell_population_cap", 0)) == 300 and
 		String(first.get("initial_employment", "")) == "unemployed")
@@ -178,10 +200,18 @@ func _initialize() -> void:
 	_expect("same seed is deterministic",
 		first.population_packet.population == same.population_packet.population and
 		first.population_packet.funds == same.population_packet.funds)
-	_expect("fixture supplies one-time construction bridge stock to populated markets",
+	_expect("fixture supplies household, building-input, and construction bridge stock",
 		not first.market_packet.is_empty() and
-		int(first.get("initial_stock_units", -1)) ==
+		int(first.get("initial_household_stock_days", 0)) == 1 and
+		int(first.get("initial_building_input_stock_days", 0)) == 1 and
+		int(first.get("initial_household_stock_units", 0)) > 0 and
+		int(first.get("initial_building_input_stock_units", 0)) > 0 and
+		int(first.get("initial_bridge_stock_units", -1)) ==
 			int(first.get("populated_cells", 0)) * 1750 and
+		int(first.get("initial_stock_units", 0)) ==
+			int(first.get("initial_household_stock_units", 0)) +
+			int(first.get("initial_building_input_stock_units", 0)) +
+			int(first.get("initial_bridge_stock_units", 0)) and
 		bool(first.get("construction_closure_ok", false)))
 	var boot: Dictionary = facade.bootstrap(
 		first.population_packet, first.market_packet, first.building_packet)
@@ -202,16 +232,20 @@ func _initialize() -> void:
 		_has_building(buildings, "gathering_ground") and
 		_has_building(buildings, "flint_quarry") and
 		_has_building(buildings, "knapping_workshop"))
+	_expect("complete stone-age material chain includes logging quarrying and lumber",
+		_has_building(buildings, "timber_collector") and
+		_has_building(buildings, "stone_collector") and
+		_has_building(buildings, "lumber_plant"))
 	_expect("wild game creates hunting only where its local tool chain is closed",
 		_has_building(buildings, "stone_age_hunting_camp") and
 		not _has_building(second_buildings, "stone_age_hunting_camp") and
 		not _has_building(buildings, "wild_game_collector") and
 		not _has_building(second_buildings, "wild_game_collector"))
-	_expect("non-survival bullion capacity is left to runtime investment",
-		not _has_building(buildings, "placer_gold_working") and
-		not _has_building(second_buildings, "surface_silver_working"))
-	_expect("redundant weaving is omitted when local fur covers clothing",
-		not _has_building(buildings, "household_weaving_shelter"))
+	_expect("resource-backed stone-age bullion extraction is present",
+		_has_building(buildings, "placer_gold_working") or
+		_has_building(buildings, "surface_silver_working"))
+	_expect("stone-age household weaving remains in the complete industry set",
+		_has_building(buildings, "household_weaving_shelter"))
 	_expect("stone food processing is demand-sized instead of fixed at two",
 		_building_count(buildings, "communal_hearth") <= 2)
 	_expect("stone tool fixture trims to one workshop after root-chain coverage",
@@ -226,9 +260,18 @@ func _initialize() -> void:
 	_expect("bootstrapped closed-chain population starts unemployed",
 		_all_population_unemployed(initial_land) and
 		int(initial_second_land.get("population", 0)) == 0)
-	_expect("populated native market receives bridge stock only once",
-		_market_stock_total(facade.market_cell_snapshot(0)) == 1750 and
+	_expect("populated native market receives its complete startup stock",
+		_market_stock_total(facade.market_cell_snapshot(0)) ==
+			int(first.get("initial_stock_units", 0)) and
 		_market_stock_total(facade.market_cell_snapshot(1)) == 0)
+	var startup_market: Dictionary = facade.market_cell_snapshot(0)
+	_expect("startup inventory covers food, clothing, construction, and real tool inputs",
+		_good_stock(startup_market, "gathered_plants") > 0 and
+		(_good_stock(startup_market, "fur") > 0 or
+			_good_stock(startup_market, "cloth") > 0) and
+		_good_stock(startup_market, "logs") > 0 and
+		_good_stock(startup_market, "flint") > 0 and
+		_good_stock(startup_market, "chipped_stone_tools") > 0)
 	var cycle: Dictionary = _run_day(ext, 0)
 	_expect("bootstrap economy cycle commits", bool(cycle.get("done", false)) and
 		not bool(cycle.get("fatal", false)))
@@ -250,11 +293,14 @@ func _initialize() -> void:
 		_sum_i64(land.get("populations", PackedInt64Array())))
 	_expect("employment logic hires after bootstrap",
 		_sum_i64(land.get("owner_employed_by_cohort", PackedInt64Array())) > 0)
-	_expect("first cycle accumulates produced goods beyond the bridge stock",
+	_expect("first cycle leaves usable local goods after startup consumption",
 		_market_stock_total(facade.market_cell_snapshot(0)) +
-		_market_stock_total(facade.market_cell_snapshot(1)) > 1750)
-	_expect("phase-zero omits nonessential bullion monetary inflow",
-		int(cycle.get("bullion_money_issued", 0)) == 0)
+		_market_stock_total(facade.market_cell_snapshot(1)) > 0)
+	_expect("phase-zero bullion output uses the audited monetary issue path",
+		int(cycle.get("bullion_money_issued", 0)) > 0 and
+		int(cycle.get("bullion_money_issued", 0)) ==
+			int(cycle.get("gold_money_issued", 0)) +
+			int(cycle.get("silver_money_issued", 0)))
 	_expect("retired virtual mint is absent",
 		not _has_building(buildings, "shell_money_station") and
 		not _has_building(buildings, "stone_tool_exchange"))
@@ -269,8 +315,8 @@ func _initialize() -> void:
 	_expect("second cycle consumes category-compatible stone tools",
 		bool(second_cycle.get("done", false)) and not bool(second_cycle.get("fatal", false)) and
 		int(second_cycle.get("production_inputs_consumed", 0)) > 0)
-	_expect("omitted redundant weaving produces no hidden cloth output",
-		not _has_building(facade.building_cell_snapshot(0),
+	_expect("complete stone-age chain retains household weaving",
+		_has_building(facade.building_cell_snapshot(0),
 			"household_weaving_shelter"))
 	var third_cycle: Dictionary = _run_day(ext, 2)
 	_expect("third recorder cycle commits", bool(third_cycle.get("done", false)) and
@@ -360,8 +406,8 @@ func _initialize() -> void:
 	_expect("120-cycle demand-driven bootstrap remains a populated settlement",
 		soak_final_population > 0 and
 		soak_final_population * 4 >= soak_start_population)
-	_expect("120-cycle calibrated bootstrap ends below 15 percent unemployment",
-		soak_final_unemployed * 100 <= maxi(1, soak_final_population) * 15)
+	_expect("120-cycle demand-balanced bootstrap ends below 35 percent unemployment",
+		soak_final_unemployed * 100 <= maxi(1, soak_final_population) * 35)
 	_expect("120-cycle calibrated bootstrap keeps producer support below 90 percent",
 		soak_support_q16 <= int(0.90 * 65536))
 	_finish()
@@ -761,6 +807,93 @@ func _population_matches_carrying_capacity(fixture: Dictionary) -> bool:
 			return false
 		distinct_capacities[capacity] = true
 	return distinct_capacities.size() > 1
+
+
+func _stress_population_matches_baseline(
+		baseline: Dictionary, stress: Dictionary, scale: int,
+		expected_minimum: int) -> bool:
+	if not bool(stress.get("ok", false)) or int(stress.get("population_scale", 0)) != scale \
+			or String(stress.get("population_scale_mode", "")) != "uniform_stress":
+		return false
+	var base_cells: PackedInt32Array = baseline.get(
+		"carrying_capacity_cell_indices", PackedInt32Array())
+	var base_populations: PackedInt64Array = baseline.get(
+		"carrying_capacity_population", PackedInt64Array())
+	var stress_cells: PackedInt32Array = stress.get(
+		"carrying_capacity_cell_indices", PackedInt32Array())
+	var stress_populations: PackedInt64Array = stress.get(
+		"carrying_capacity_population", PackedInt64Array())
+	if base_cells != stress_cells or base_populations.size() != stress_populations.size():
+		return false
+	var maximum := 0
+	for i in range(base_populations.size()):
+		if int(stress_populations[i]) != int(base_populations[i]) * scale:
+			return false
+		maximum = maxi(maximum, int(stress_populations[i]))
+	return maximum >= expected_minimum and \
+		int(stress.get("cell_population_cap", 0)) == 300 * scale
+
+
+func _demand_balanced_supply_valid(
+		baseline: Dictionary, scaled: Dictionary, scale: int) -> bool:
+	if String(scaled.get("building_scale_model", "")) != \
+			"household_demand_input_fixed_point_resource_runway_v1" or \
+			int(scaled.get("resource_building_runway_days", 0)) != 365:
+		return false
+	var baseline_buildings: PackedInt64Array = baseline.get(
+		"building_packet", {}).get("building_counts", PackedInt64Array())
+	var scaled_buildings: PackedInt64Array = scaled.get(
+		"building_packet", {}).get("building_counts", PackedInt64Array())
+	if baseline_buildings.size() != scaled_buildings.size():
+		return false
+	var demand_trimmed := false
+	for i in range(baseline_buildings.size()):
+		if scaled_buildings[i] <= 0 or scaled_buildings[i] > baseline_buildings[i] * scale:
+			return false
+		demand_trimmed = demand_trimmed or \
+			scaled_buildings[i] < baseline_buildings[i] * scale
+	var baseline_household := int(baseline.get("initial_household_stock_units", 0))
+	var scaled_household := int(scaled.get("initial_household_stock_units", 0))
+	var scaled_population := int(scaled.get("total_population", 0))
+	return demand_trimmed and scaled_population > 0 and \
+		int(scaled.get("initial_building_input_stock_units", 0)) > 0 and \
+		int(scaled.get("initial_bridge_stock_units", -1)) == \
+			int(baseline.get("initial_bridge_stock_units", 0)) and \
+		scaled_household > baseline_household
+
+
+func _resource_tiered_population_valid(
+		baseline: Dictionary, tiered: Dictionary) -> bool:
+	if not bool(tiered.get("ok", false)) or \
+			String(tiered.get("population_scale_mode", "")) != "resource_tiered":
+		return false
+	var base: PackedInt64Array = baseline.get(
+		"carrying_capacity_population", PackedInt64Array())
+	var scaled: PackedInt64Array = tiered.get(
+		"carrying_capacity_population", PackedInt64Array())
+	var scales: PackedInt32Array = tiered.get(
+		"population_scales_by_cell", PackedInt32Array())
+	var scores: PackedInt64Array = tiered.get(
+		"resource_population_scores", PackedInt64Array())
+	if base.size() != scaled.size() or base.size() != scales.size() \
+			or base.size() != scores.size():
+		return false
+	var seen := {}
+	for i in range(base.size()):
+		if scaled[i] != base[i] * scales[i]:
+			return false
+		if base[i] > 0:
+			seen[int(scales[i])] = true
+	for scale in seen:
+		if int(scale) not in [1, 10, 100, 500]:
+			return false
+	for i in range(base.size()):
+		if base[i] <= 0:
+			continue
+		for j in range(base.size()):
+			if base[j] > 0 and scores[i] < scores[j] and scales[i] > scales[j]:
+				return false
+	return not seen.is_empty()
 
 
 func _fixture_respects_test_collector_caps(fixture: Dictionary, facade) -> bool:

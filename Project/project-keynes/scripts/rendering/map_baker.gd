@@ -19,7 +19,7 @@
 #                                                data_overlay_baker.gd 承担）
 #
 # G.2 完成后 map_baker.gd 残留：
-#   - bake_world(map, cfg, hex_size, seed_val) -> WorldData 入口（弱协调多 baker 调用）
+#   - await bake_world(map, cfg, hex_size, seed_val) -> WorldData（协作式让帧的冷路径入口）
 #   - 各 sub-baker 的 dispatch 函数（rebake_*_tex_only / rebake_ocean_currents 等）
 #   - 共享常量（NORM_MAX 等已属本文件）
 #
@@ -821,6 +821,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 接 stage_progress 信号显示阶段进度。fraction 是按 logcat 实测耗时估的累积
 	# 进度（不是精确百分比）。
 	stage_progress.emit("terrain", 0.0)
+	await _yield_generation_frame()
 
 	# dots-total-cpp step2（2026-06-25）：bake 期几何场编排下沉 C++——一次
 	# run_bake_geometry_fields_pass 在 C++ 进程内串起 terrain-index → erosion → river →
@@ -871,6 +872,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 光栅化回 vector_atlas，供主地图海洋 tint / 水面风驱细节和 WeatherLayer advection 消费。
 
 	stage_progress.emit("physical", 0.62)
+	await _yield_generation_frame()
 	_bake_initial_physical_circulation(map, world, hex_size, cfg)
 	_bake_initial_vector_buffers(map, world, hex_size, cfg)
 
@@ -884,9 +886,11 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 
 	# 动态视觉状态统一由 map_index_atlas + LUT 提供，不再初始化逐像素 dynamic/smooth/eco/ice atlas。
 	stage_progress.emit("atlas", 0.82)
+	await _yield_generation_frame()
 
 	# 编码纹理：保留 height + map_index；动态视觉走 LUT。
 	stage_progress.emit("encode", 0.88)
+	await _yield_generation_frame()
 	t = Time.get_ticks_msec()
 	world.height_tex = DCAtlasEncoders.encode_height_tex(world.height_buffer, world.hm_size, _world_ext)
 	# [terrain-normal-bake 2026-06-25] 烘焙总体地形法线（宽半径梯度 → RG8）。地形静态，运行期
@@ -894,6 +898,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(
 		world.height_buffer, world.hm_size,
 		TERRAIN_NORMAL_COARSE_RADIUS, TERRAIN_NORMAL_SLOPE_GAIN, true, _world_ext)
+	stage_progress.emit("encode", 0.90)
+	await _yield_generation_frame()
 	# [terrain-horizon] 8 方向 horizon angle 烘焙，三条路径：
 	#   1. GPU 离屏（默认，DCFeatureFlags.terrain_horizon_gpu_bake_active）：这里只登记参数，
 	#      实际由 HexRenderer.set_map 用 SubViewport + canvas shader 在场景树内延迟烘焙（PC/移动端
@@ -931,6 +937,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		world.derived_size, null, world, map
 	)
 	prewarm_dynamic_axis_caches(map, world)
+	stage_progress.emit("encode", 0.93)
+	await _yield_generation_frame()
 	world.scalar_atlas_tex = null
 	# [river-render-restore 2026-06-19] 把河流 SDF（flow_buffer, float[0,1]）编码成 L8 纹理
 	# 接回主地图 shader。scalar_atlas 退役后此通道断供，导致 has_river 河网完全不可见。
@@ -941,6 +949,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# shader 检测到无纹理（has_water_depth_tex=false）时回退旧深浅算法。
 	world.water_depth_tex = DCAtlasEncoders.encode_r8_tex(world.water_depth_buffer, world.derived_size, world.water_depth_tex, _world_ext) if not world.water_depth_buffer.is_empty() else null
 	_rebake_terrain_detail_tex(world, hex_size)
+	stage_progress.emit("encode", 0.96)
+	await _yield_generation_frame()
 
 	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 仅 F6 调试 shader 分支采样，主路径不读；这里不再无条件烘，
@@ -950,13 +960,22 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.upwelling_tex = null
 	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
 	world.noise_tex = get_or_build_shared_noise_tex()
+	stage_progress.emit("encode", 0.98)
+	await _yield_generation_frame()
 	_ensure_cell_lut_dims(map, world)
 	bake_cell_luts(map, world)
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
 
 	print("MapBaker v6: total %dms" % (Time.get_ticks_msec() - t_total))
 	stage_progress.emit("done", 1.0)
+	await _yield_generation_frame()
 	return world
+
+
+func _yield_generation_frame() -> void:
+	var main_loop := Engine.get_main_loop()
+	if main_loop is SceneTree:
+		await (main_loop as SceneTree).process_frame
 
 # ─── Phase 2：增量重新烘焙 biome_tex ────────────────────────────────────────
 # 季节切换时只需重画 biome（其他 buffer 不变），单次只跑 ~80ms。

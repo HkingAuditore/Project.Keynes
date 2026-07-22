@@ -1,6 +1,19 @@
 extends ColorRect
 class_name WorldLoadingOverlay
 
+const STAGE_LABELS := {
+	"preparing": "正在建立世界生成参数",
+	"continents": "正在塑造大陆与海盆",
+	"climate": "正在校准纬度、气候与海冰",
+	"terrain": "正在烘焙地形与水文图层",
+	"physical": "正在求解风带与海洋环流",
+	"atlas": "正在整理生态与地块索引",
+	"encode": "正在编码地图材质与图集",
+	"ecology": "正在建立资源与生态档案",
+	"simulation": "正在装配国家、经济与模拟系统",
+	"done": "世界测绘完成",
+}
+
 var _card: PanelContainer
 var _title_label: Label
 var _stage_label: Label
@@ -8,18 +21,63 @@ var _percent_label: Label
 var _progress: ProgressBar
 var _active_tween: Tween
 var _last_stage: String = ""
+var _last_fraction: float = 0.0
+
+
+class LoadingAtlasBackdrop extends Control:
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		resized.connect(queue_redraw)
+
+	func _draw() -> void:
+		var canvas := Rect2(Vector2.ZERO, size)
+		draw_rect(canvas, Color(0.020, 0.027, 0.028, 1.0))
+		var grid_color := Color(0.32, 0.43, 0.42, 0.13)
+		var major_color := Color(0.52, 0.43, 0.27, 0.18)
+		for column in range(1, 12):
+			var x := size.x * float(column) / 12.0
+			draw_line(Vector2(x, 0.0), Vector2(x, size.y),
+				major_color if column == 6 else grid_color, 1.0)
+		for row in range(1, 8):
+			var y := size.y * float(row) / 8.0
+			draw_line(Vector2(0.0, y), Vector2(size.x, y),
+				major_color if row == 4 else grid_color, 1.0)
+		var contour_color := Color(0.34, 0.50, 0.46, 0.16)
+		for band in range(5):
+			var points := PackedVector2Array()
+			for sample in range(33):
+				var t := float(sample) / 32.0
+				var wave := sin(t * TAU * (1.15 + band * 0.17) + band * 1.7)
+				var secondary := sin(t * TAU * 3.1 - band * 0.8) * 0.32
+				points.append(Vector2(
+					t * size.x,
+					size.y * (0.18 + band * 0.155) + (wave + secondary) * size.y * 0.026
+				))
+			draw_polyline(points, contour_color, 1.25, true)
+		var compass_center := Vector2(size.x * 0.84, size.y * 0.76)
+		var compass_radius := minf(size.x, size.y) * 0.085
+		draw_arc(compass_center, compass_radius, 0.0, TAU, 64, major_color, 1.5, true)
+		draw_arc(compass_center, compass_radius * 0.72, 0.0, TAU, 48, grid_color, 1.0, true)
+		draw_line(compass_center - Vector2(compass_radius, 0.0),
+			compass_center + Vector2(compass_radius, 0.0), major_color, 1.0)
+		draw_line(compass_center - Vector2(0.0, compass_radius),
+			compass_center + Vector2(0.0, compass_radius), major_color, 1.0)
 
 
 func _ready() -> void:
 	if _card != null:
 		return
 	name = "WorldLoadingOverlay"
-	color = Color(0.018, 0.017, 0.015, 0.94)
+	color = Color(0.018, 0.022, 0.021, 1.0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var backdrop := LoadingAtlasBackdrop.new()
+	add_child(backdrop)
 
 	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 
 	_card = PanelContainer.new()
@@ -110,19 +168,20 @@ func show_message(message: String) -> void:
 	_percent_label.text = "0%"
 	_progress.value = 0.0
 	_last_stage = ""
+	_last_fraction = 0.0
 
 
 func set_progress(stage: String, fraction: float) -> void:
 	if _card == null:
 		_ready()
-	var percent := clampi(int(round(fraction * 100.0)), 0, 100)
+	_last_fraction = maxf(_last_fraction, clampf(fraction, 0.0, 1.0))
+	var percent := clampi(int(round(_last_fraction * 100.0)), 0, 100)
 	_title_label.text = "正在生成世界"
 	_percent_label.text = "%d%%" % percent
 	_progress.value = percent
 	if stage != _last_stage:
 		_last_stage = stage
-		_stage_label.text = stage
-		UIAnimation.crossfade(_stage_label, UITokens.ANIM_FAST)
+		_stage_label.text = String(STAGE_LABELS.get(stage, stage))
 
 
 func hide_completed() -> void:
