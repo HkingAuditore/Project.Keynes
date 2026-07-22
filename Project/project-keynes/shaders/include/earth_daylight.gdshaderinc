@@ -122,15 +122,18 @@ vec3 compute_sun_dir_enu(vec2 uv, float lat_signed) {
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
 }
 
-// 关闭昼夜时使用的全局平行太阳方向。
-// 方位直接读取与晨昏线完全同源的 subsolar longitude，避免 CPU 另算 tod_sun_dir.xy
-// 带来的更新时序/材质分发偏差；-90° 只是地图经度轴到屏幕光照轴的坐标变换。
-// tod_sun_dir 只提供艺术化的季节仰角，因此直射点移动多快，永昼光向就严格同速移动。
+// 关闭昼夜时使用年度太阳轨迹：season_phase 本身由游戏日期驱动，天然服从倍速与暂停。
+// 方位一年恰好转一圈；高度只由直射点纬度（太阳赤纬）决定，不读取日相位/视觉晨昏线。
 vec3 compute_global_parallel_sun_dir() {
-	float azimuth = earth_daylight_subsolar_lon() - 1.5707963;
-	float up = max(tod_sun_dir.z, 0.08);
-	float horizontal = max(length(tod_sun_dir.xy), 1e-4);
-	vec3 d = vec3(cos(azimuth) * horizontal, sin(azimuth) * horizontal, up);
+	float year_progress = mod(season_phase, 4.0) * 0.25;
+	// 地形法线/阴影采样使用的是“从受光点指向光源”的方向；年度轨迹此前少了半圈，
+	// 结果正好表现为七月北坡背阴、一月南坡背阴。补上 PI 只翻转永昼水平光向。
+	float azimuth = EARTH_DAYLIGHT_TAU * year_progress + 1.5707963;
+	float declination = earth_daylight_declination();
+	float latitude_ratio = clamp(abs(declination) / max(abs(axial_tilt_rad), 1e-4), 0.0, 1.0);
+	// 春秋分 45°、南北至日 15°：扩大季节阴影长度差，同时避开近地平线的极端投影。
+	float elevation = radians(60.0 - 45.0 * latitude_ratio);
+	vec3 d = vec3(cos(azimuth) * cos(elevation), sin(azimuth) * cos(elevation), sin(elevation));
 	float len = length(d);
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
 }
