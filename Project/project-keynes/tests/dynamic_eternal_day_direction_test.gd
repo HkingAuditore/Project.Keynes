@@ -18,9 +18,9 @@ func _run() -> void:
 	var next_winter := _annual_direction(4.0)
 
 	_expect_close("year start elevation is 15 degrees", winter.z, sin(deg_to_rad(15.0)), 0.0001)
-	_expect_close("quarter-year elevation is 45 degrees", spring.z, sin(deg_to_rad(45.0)), 0.0001)
+	_expect_close("quarter-year elevation is 60 degrees", spring.z, sin(deg_to_rad(60.0)), 0.0001)
 	_expect_close("half-year elevation is 15 degrees", summer.z, sin(deg_to_rad(15.0)), 0.0001)
-	_expect_close("three-quarter-year elevation is 45 degrees", autumn.z, sin(deg_to_rad(45.0)), 0.0001)
+	_expect_close("three-quarter-year elevation is 60 degrees", autumn.z, sin(deg_to_rad(60.0)), 0.0001)
 	_expect("annual azimuth reaches four distinct quadrants",
 		winter.y > 0.0 and spring.x < 0.0 and summer.y < 0.0 and autumn.x > 0.0)
 	_expect_close("one year closes exactly one direction loop", next_winter.distance_to(winter), 0.0, 0.0001)
@@ -31,7 +31,7 @@ func _annual_direction(season_phase: float) -> Vector3:
 	var year_progress := fposmod(season_phase, 4.0) * 0.25
 	var azimuth := TAU * year_progress + PI * 0.5
 	var latitude_ratio := absf(cos(TAU * year_progress))
-	var elevation := deg_to_rad(45.0 - 30.0 * latitude_ratio)
+	var elevation := deg_to_rad(60.0 - 45.0 * latitude_ratio)
 	return Vector3(
 		cos(azimuth) * cos(elevation),
 		sin(azimuth) * cos(elevation),
