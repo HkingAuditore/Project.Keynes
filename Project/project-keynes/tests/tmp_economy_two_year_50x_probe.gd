@@ -9,7 +9,7 @@ const DEFAULT_DAYS := 730
 
 
 func _init() -> void:
-	var exit_code := _run()
+	var exit_code := await _run()
 	quit(exit_code)
 
 
@@ -20,6 +20,7 @@ func _run() -> int:
 	var args := _arguments()
 	var seed := int(args.get("seed", DEFAULT_SEED))
 	var days := int(args.get("days", DEFAULT_DAYS))
+	var target_cell_idx := int(args.get("cell", TARGET_CELL))
 	var profile := _make_profile()
 	var setup := _load_world_setup()
 	_apply_climate_settings(profile, setup.get("climate", {}))
@@ -51,11 +52,11 @@ func _run() -> int:
 	if facade == null or not facade.is_configured():
 		push_error("[economy-50x-2y] economy facade unavailable")
 		return 4
-	if TARGET_CELL >= map.cell_count():
+	if target_cell_idx < 0 or target_cell_idx >= map.cell_count():
 		push_error("[economy-50x-2y] target cell is outside generated map")
 		return 5
-	var target_population := int(facade.population_cell_snapshot(TARGET_CELL).get("population", 0))
-	var target_cell = map.cell_at(TARGET_CELL)
+	var target_population := int(facade.population_cell_snapshot(target_cell_idx).get("population", 0))
+	var target_cell = map.cell_at(target_cell_idx)
 	if str(args.get("catalog", "false")) == "true":
 		var finance: Dictionary = facade.bootstrap_finance_columns()
 		print("[economy-50x-2y/catalog] ", JSON.stringify({
@@ -64,7 +65,7 @@ func _run() -> int:
 			"needs": finance.get("need_ids", PackedStringArray()),
 		}))
 	print("[economy-50x-2y/setup] seed=%d map=%dx%d cell=%d q=%d r=%d s=%d population=%d generation_ms=%.1f" % [
-		seed, width, height, TARGET_CELL, target_cell.q, target_cell.r, target_cell.s,
+		seed, width, height, target_cell_idx, target_cell.q, target_cell.r, target_cell.s,
 		target_population, float(Time.get_ticks_usec() - generation_started) / 1000.0,
 	])
 	if target_population <= 0:
@@ -72,13 +73,13 @@ func _run() -> int:
 		return 6
 	if days <= 0:
 		return 0
-	var resource_start := _resource_snapshot(map, TARGET_CELL)
+	var resource_start := _resource_snapshot(map, target_cell_idx)
 
 	var world: Object = generator.get_data_core_world_ext()
-	var paths := _recording_paths(seed, TARGET_CELL,
+	var paths := _recording_paths(seed, target_cell_idx,
 		str(args.get("label", "local_resource_mining_fix")))
 	var start: Dictionary = world.start_economy_csv_recording(_recording_options(
-		world, map, TARGET_CELL, paths))
+		world, map, target_cell_idx, paths))
 	if not bool(start.get("ok", false)):
 		push_error("[economy-50x-2y] recorder start failed: %s" % str(start))
 		return 7
@@ -114,7 +115,7 @@ func _run() -> int:
 			var status: Dictionary = world.get_economy_csv_recording_status()
 			print("[economy-50x-2y/progress] day=%d captured=%d written=%d population=%d" % [
 				day, int(status.get("captured_epochs", 0)), int(status.get("written_epochs", 0)),
-				int(facade.population_cell_snapshot(TARGET_CELL).get("population", 0)),
+				int(facade.population_cell_snapshot(target_cell_idx).get("population", 0)),
 			])
 
 	world.request_stop_economy_csv_recording()
@@ -122,10 +123,10 @@ func _run() -> int:
 	var run_ms := float(Time.get_ticks_usec() - run_started) / 1000.0
 	print("[economy-50x-2y/resources] ", JSON.stringify({
 		"day_0": resource_start,
-		"day_end": _resource_snapshot(map, TARGET_CELL),
+		"day_end": _resource_snapshot(map, target_cell_idx),
 	}))
 	print("[economy-50x-2y/result] seed=%d days=%d speed=50 cell=%d run_ms=%.1f barrier_pulses=%d ledger_failures=%d fatal=%s state=%s captured=%d written=%d paths=%s" % [
-		seed, days, TARGET_CELL, run_ms, barrier_pulses, ledger_failures, str(fatal),
+		seed, days, target_cell_idx, run_ms, barrier_pulses, ledger_failures, str(fatal),
 		str(final_status.get("state", "")), int(final_status.get("captured_epochs", 0)),
 		int(final_status.get("written_epochs", 0)), JSON.stringify(paths),
 	])

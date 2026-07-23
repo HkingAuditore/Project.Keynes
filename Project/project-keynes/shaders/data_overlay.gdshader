@@ -19,6 +19,10 @@ render_mode blend_mix, unshaded;
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
 uniform sampler2D overlay_tex : filter_nearest, repeat_disable;
+uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
+uniform sampler2D overlay_lut : filter_nearest, repeat_disable;
+uniform vec2 lut_dims = vec2(1.0, 1.0);
+uniform bool use_cell_lut = false;
 uniform vec2 world_origin = vec2(0.0, 0.0);
 uniform vec2 world_size   = vec2(1.0, 1.0);
 uniform float wrap_origin_x = 0.0;
@@ -182,6 +186,59 @@ const vec3 LANDFORM_COLORS[6] = vec3[6](
 	vec3(0.95, 0.97, 1.00)    // 5 冰雪
 );
 
+vec3 categorical_color(int bucket, float offset) {
+	float h = fract(float(bucket) * 0.61803398875 + offset);
+	return hsv2rgb_dir(h, 0.72);
+}
+
+vec4 sample_overlay(vec2 uv) {
+	if (!use_cell_lut) {
+		return texture(overlay_tex, uv);
+	}
+	vec4 encoded = texture(map_index_atlas, uv);
+	int lo = int(floor(encoded.g * 255.0 + 0.5));
+	int hi = int(floor(encoded.b * 255.0 + 0.5));
+	int cell_id = lo | (hi << 8);
+	int capacity = int(lut_dims.x * lut_dims.y);
+	if (cell_id == 65535 || cell_id < 0 || cell_id >= capacity) {
+		return vec4(0.0);
+	}
+	int x = cell_id % int(lut_dims.x);
+	int y = cell_id / int(lut_dims.x);
+	vec2 lut_uv = (vec2(float(x), float(y)) + vec2(0.5)) / lut_dims;
+	return texture(overlay_lut, lut_uv);
+}
+
+vec3 ramp_elevation(float v) {
+	v = clamp(v, 0.0, 1.0);
+	vec3 c0 = vec3(0.07, 0.09, 0.34);
+	vec3 c1 = vec3(0.00, 0.58, 0.88);
+	vec3 c2 = vec3(0.12, 0.72, 0.42);
+	vec3 c3 = vec3(0.96, 0.82, 0.16);
+	vec3 c4 = vec3(0.82, 0.27, 0.16);
+	vec3 c5 = vec3(0.98, 0.97, 0.94);
+	if (v < 0.28) return mix(c0, c1, v / 0.28);
+	if (v < 0.46) return mix(c1, c2, (v - 0.28) / 0.18);
+	if (v < 0.66) return mix(c2, c3, (v - 0.46) / 0.20);
+	if (v < 0.84) return mix(c3, c4, (v - 0.66) / 0.18);
+	return mix(c4, c5, (v - 0.84) / 0.16);
+}
+
+vec3 ramp_resource(float v) {
+	// Fixed, world-independent contrast curve plus a violet→magenta→orange
+	// ramp. These hues remain legible over the map's tan, green and ocean blue.
+	v = pow(clamp(v, 0.0, 1.0), 0.42);
+	vec3 c0 = vec3(0.10, 0.05, 0.32);
+	vec3 c1 = vec3(0.00, 0.48, 0.92);
+	vec3 c2 = vec3(0.76, 0.08, 0.68);
+	vec3 c3 = vec3(1.00, 0.34, 0.08);
+	vec3 c4 = vec3(1.00, 0.94, 0.20);
+	if (v < 0.25) return mix(c0, c1, v * 4.0);
+	if (v < 0.50) return mix(c1, c2, (v - 0.25) * 4.0);
+	if (v < 0.75) return mix(c2, c3, (v - 0.50) * 4.0);
+	return mix(c3, c4, (v - 0.75) * 4.0);
+}
+
 void vertex() {
 	// VERTEX 此时是 mesh 局部坐标 = 世界坐标（quad 顶点在 _build_quad_mesh
 	// 中按 bounds.position + bounds.size 给出的世界坐标写入）。
@@ -198,7 +255,7 @@ void fragment() {
 
 	if (overlay_mode != 0) {
 		vec2 uv = overlay_wrap_uv(v_uv);
-		vec4 sampled = texture(overlay_tex, uv);
+		vec4 sampled = sample_overlay(uv);
 		// A < 0.5 → 无效像素，保持 out_color = vec4(0.0)（完全透明）。
 		if (sampled.a >= 0.5) {
 			float value = sampled.r;
@@ -239,8 +296,7 @@ void fragment() {
 				int b = clamp(bucket, 0, 9);
 				rgb = BIOME_GROUP_COLORS[b];
 			} else if (overlay_mode == 12) { // LANDFORM
-				int l = clamp(bucket, 0, 5);
-				rgb = LANDFORM_COLORS[l];
+				rgb = categorical_color(clamp(bucket, 0, 15), 0.42);
 			} else if (overlay_mode == 13) { // WIND_DIR
 				// R = hue(归一化角度), G = 强度。强度低 → alpha 衰减。
 				rgb = hsv2rgb_dir(value, intensity);
@@ -262,9 +318,17 @@ void fragment() {
 				// 视觉上保持一致风格。这是 demo-only 通道（performance-charter §12.6），
 				// 真实游戏机制不应读取该字段。
 				rgb = ramp_cold_to_hot(value);
+			} else if (overlay_mode == 19) { // ELEVATION
+				rgb = ramp_elevation(value);
+				alpha_mul = 1.34;
+			} else if (overlay_mode == 20) { // VEGETATION_TYPE
+				rgb = categorical_color(bucket, 0.12);
+			} else if (overlay_mode == 21) { // RESOURCE_RESERVE
+				rgb = ramp_resource(value);
+				alpha_mul = 1.28;
 			}
 
-			out_color = vec4(rgb, base_alpha * alpha_mul);
+			out_color = vec4(rgb, clamp(base_alpha * alpha_mul, 0.0, 1.0));
 		}
 	}
 

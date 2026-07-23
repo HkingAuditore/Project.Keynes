@@ -5,7 +5,30 @@
 `NativeEconomyRuntime`；动态人口和商品状态不进入 DataCore `_slots`，也不回填
 `MapData.goods_*`。
 
-## PKEC v16 企业重整与商人信用（当前）
+## PKEC v18 多行业投资、企业重整与商人信用（当前）
+
+Endogenous entry uses `endogenous_owner_portfolio_v8`. A reviewed cell keeps
+at most four unique building types in a fixed native portfolio, fills at most
+25% of each persistent marginal-output gap, and submits one aggregate BUILD
+command per selected type. Aggregate willingness is derived once from the
+source cohort's projected disposable-income improvement; it never loops over
+persons or gives the unemployed profession an explicit priority. Shared
+population, capital, merchant credit, construction stock, and driver-good gap
+budgets are consumed once across the portfolio. When two or more types start,
+no type may exceed 50% of newly planned owner slots.
+
+Before scoring, the runtime subtracts unused installed capacity and aggregate
+pending-construction capacity from the marginal-output gap. Established types
+may grow by at most 10% per review; absent types seed at one building. A
+non-merchant must gain at least 50% Q16 disposable income to enter the merchant
+profession. The test fixture creates one merchant post per populated cell, and
+runtime employment protects only the final local merchant.
+
+Recovery liquidation remains behind the existing executable-but-unprofitable
+review gate. An approved review now retires only confirmed excess capacity,
+capped at 25% of the group per review, and moves the same proportion of
+merchant debt to bad debt. Building groups remain aggregate; no per-building
+state is introduced.
 
 `NativeEconomyRuntime` 继续单独持有建筑、债务、就业和贸易状态。建筑状态为
 `ACTIVE / SUSPENDED_LOSS / RECOVERY_PROBE`；停产组可从本格商人聚合现金池取得仅用于
@@ -299,7 +322,15 @@ owner-lot 继续生产且不会自动转换。快照发布 family、tier、highe
 保持），其失业/商业萧条为独立后续设计。随后业主按本地价购买输入并生产。每个 owner 从统一
 `survival_household` 基础量、冻结人口/环境和民族修正计算无财富/价格弹性的生存量，只对主食、蛋白质、蔬果保留饥饿阈值比例，并按寒冷
 暴露保留最低衣物；其他需求和超过最低量的产出直接进入 offer。商人按 `max(feasible demand, actual withdrawal) + export EMA` 与 30 日基线乘商品比例后的有效库存天数计算
-库存缺口，以 good-specific `merchant_buy_price_factor_q16`（默认 95%）计价；期初现金保留 12.5%。
+库存缺口，以 good-specific `merchant_buy_price_factor_q16`（默认
+`62259 / 65536 ≈ 95%`）计价。该配置是硬上限：库存为零或极端短缺也不会把生产者
+结算系数推向 100%；短缺、生存品和生产投入只改变数量与预算优先级。期初采购现金
+保留 12.5%。Price V4 的成本锚继续用“生产者所需结算价 ÷ 收购系数”反推零售目标，
+因此可同时覆盖生产者成本和商人流通毛利。
+
+国内贸易按目的地冻结 `max(0, merchant_cash - existing_order_reserved_cash -
+merchant_cash × merchant_procurement_cash_reserve_q16)`。候选裁量、利润裁剪与最终
+扣款使用同一余额并逐单递减；资金不足记录现金拒绝，不创建零数量或未充分预留订单。
 若 survival food / cold-clothing 出现居民短缺，或生产投入 reserve 大于当前库存，native 会把 `last_shortage_q16` / reserve shortfall 转为 `trade_relief_pressure_q16`，提高本地库存目标和商人采购目标；建设命令因材料库存不足被拒绝时，也会把材料缺口写入 business demand / non-household withdrawal，使后续采购和贸易能看到长期建设短缺。未解锁施工材料直接返回 `building_construction_good_locked`，不会生成采购需求。
 无历史出库或本地供给时仍按完整有效天数建立冷启动做市库存，
 其余预算按缺口价值和稳定 good/group 顺序分配；未获正常采购的耐储余货按本地零售价 20% 托底发行并入库，`cycle_flow` 余货先低价清算/托底、再在 cell 边界清零。销售后统一分配工资和奖金，居民再用本期收入购买
@@ -558,9 +589,9 @@ ratio is the investment probability, sampled deterministically from
 `seed/day/cell/type/signature`. A cross-profession winner moves one person and
 the required capital into the building's configured owner profession; an
 already matching owner cohort invests without a fabricated mobility transfer.
-Collector entry is constrained by renewable
-reserve/safe-yield limits, a 3650-day non-renewable horizon, and the 1 percent
-30-day bullion issuance cap.
+Collector entry is not constrained by reserve, safe-yield, or non-renewable
+deposit-life gates. Local construction conditions and the 1 percent 30-day
+bullion issuance cap remain.
 
 The default merchant inventory horizon is 60 days. Per-good target ratios still
 compile to one dense Q16 days column, so ordinary goods target 60 days,
@@ -593,8 +624,19 @@ is summed per output after applying that output's observed merchant absorption o
 persistent deficit, so a scarce primary output can drive entry without assuming
 that every by-product sells at its quoted price.
 
+Monetary-issue outputs are the explicit exception to ordinary market absorption.
+For a building whose outputs all have a positive `monetary_issue_value`, household
+and business demand EMA does not throttle planned utilization because production
+settlement sends the full sellable batch to the mint. Investment keeps
+`merchant_sold` limited to cash-funded merchant procurement for diagnostics, but
+treats mint settlement as 100% economic sell-through, seeds a first entrant with
+one building of mint-backed utilization, and values projected revenue at the
+catalog issue value. The existing 30-day issuance-share cap, local construction
+conditions, construction materials, wages, owner livelihood, and capital checks
+still apply; reserve, safe-yield, and deposit-life gates do not veto investment.
+
 The three sparse current-cycle producer lanes and all driver diagnostics are
-transient. They do not enter PKEC v16 or the state hash. CSV v18 adds the driver
+transient. They do not enter PKEC v16 or the state hash. CSV v19 adds the driver
 good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
 columns.
 
@@ -804,17 +846,18 @@ shortage and projected utilization are below their configured thresholds.
 The inspector-selected cell owns a bounded transient candidate table containing every
 evaluated unlocked type, including types with no installed group. It reports rejection,
 shortage, utilization, score, payback, required capital, and projected daily profit through
-`get_building_cell_snapshot`. CSV v18 appends candidate-only building rows (`group_index=-1`,
+`get_building_cell_snapshot`. CSV v19 appends candidate-only building rows (`group_index=-1`,
 `investment_candidate=1`) with the same fields. This table is excluded from PKEC and the
 authoritative state hash.
 
 ## 2026-07-22 blocked-producer lifecycle correction
 
 Service buildings are outside the producer profit lifecycle; an old suspended service group
-is normalized back to `ACTIVE`. For production buildings, either an actually settled severe
-loss or an owner-occupied cycle with no input, output, extraction, or generation advances the
-bounded suspension counter. `SUSPENDED_LOSS` always releases every owner to the unemployment
-pool while preserving installed capacity.
+is normalized back to `ACTIVE`. For production buildings, only an actually settled severe
+loss advances the bounded suspension counter. An owner-occupied cycle with no input, output,
+extraction, or generation is a recoverable execution blockage and remains active/idle.
+`SUSPENDED_LOSS` always releases every owner to the unemployment pool while preserving
+installed capacity.
 
 A suspended producer publishes only a small unfunded upstream probe (1/6 for survival or
 cycle-flow output, otherwise 1/32). It neither withdraws stock nor reserves labor or cash.
@@ -823,3 +866,22 @@ financing are currently executable but the counterfactual margin still misses th
 threshold. A supply, resource, or financing blockage resets failed liquidation reviews, so
 scarcity pauses the business without destroying it. These probe and eligibility lanes are
 epoch-transient and do not change PKEC v16 or the authoritative hash.
+
+## 2026-07-23 initial renewable configuration and test-fixture population
+
+Safe yield is an optional test-economy bootstrap calibration rule, not a runtime
+production or investment hard cap. Runtime `extract` edges consume the resource
+physically present using the existing negative-delta and exact-audit contract.
+Endogenous investment is allowed to overbuild; the resulting resource shortage,
+capacity loss, profit, suspension, and liquidation signals provide the feedback.
+
+The optional resource-tiered economy bootstrap uses the same daily yield to cap
+renewable building counts. It uses a 3650-day runway only for non-renewables.
+The capacity-balanced base owner-lots scale with population as an employment
+floor; a physical resource cap is the only reason an extractor may fall below
+that proportional count. After all building and merchant jobs are known,
+generated population is limited to `jobs / 0.95`; only the employment-target
+margin becomes initially unemployed. The explicit uniform stress scales remain
+deliberately synthetic.
+These changes add report fields only and do not change runtime authority, PKEC
+v16, the scheduler graph, or the authoritative hash.

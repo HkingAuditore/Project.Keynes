@@ -100,9 +100,11 @@ extends Resource
 @export var reserve_component: StringName = &""
 
 ## legacy preserves old profiles while generated modern content uses the
-## explicit habitat contract. Harvestable marine resources live on coastal
-## land cells so every extractor can consume only its own cell's reserve.
-@export_enum("legacy", "land", "marine_water", "freshwater", "coastal_land", "any") \
+## explicit habitat contract. `coastal_or_marine` lets one resource exist on
+## both shore land and marine water while extractors still consume only their
+## own cell's reserve.
+@export_enum("legacy", "land", "marine_water", "freshwater", "coastal_land",
+	"coastal_or_marine", "any") \
 var habitat_mode: String = "legacy"
 @export var land_only: bool = true            # legacy compatibility only
 
@@ -139,13 +141,36 @@ var habitat_mode: String = "legacy"
 ## from init_min_coverage/init_min_reserve, which only boosts the best cells.
 @export_range(0.0, 10000000.0, 1.0) var init_floor_reserve: float = 0.0
 @export_range(0.0, 1.0, 0.001) var init_min_coverage: float = 0.0
-@export_range(0.0, 10000000.0, 1.0) var init_min_reserve: float = 0.0
+@export_range(0.0, 100000000.0, 1.0) var init_min_reserve: float = 0.0
+## Exact share of valid habitat retained as deposits. Unlike
+## init_min_coverage, this is both a floor and a cap; 0 keeps legacy behavior.
+@export_range(0.0, 1.0, 0.001) var init_target_coverage: float = 0.0
+## World reserve density per valid habitat cell before CELL_AREA_RESOURCE_SCALE.
+## When positive together with init_target_coverage, bootstrap normalizes total
+## reserve to valid_cell_count * this value * cell-area scale. Coverage can
+## therefore change concentration without accidentally changing world supply.
+@export_range(0.0, 100000000.0, 1.0) var init_target_reserve_density: float = 0.0
+## Optional retained-deposit mean for resources whose total should follow
+## occupied habitat rather than whole-world habitat (for example fisheries).
+## Mineral profiles should prefer init_target_reserve_density.
+@export_range(0.0, 100000000.0, 1.0) var init_target_mean_reserve: float = 0.0
+## Shapes enrichment inside the retained region without changing its coverage
+## or total reserve. Values above 1 concentrate more reserve in the best cells.
+@export_range(0.1, 8.0, 0.1) var init_richness_exponent: float = 1.0
+## Additional dispersed small/micro deposits outside the enriched core.
+## Their reserve is carved out of the same world total rather than added to it.
+@export_range(0.0, 1.0, 0.001) var init_micro_coverage: float = 0.0
+@export_range(0.0, 0.5, 0.001) var init_micro_reserve_share: float = 0.0
+@export_range(0.0, 100000000.0, 1.0) var init_micro_min_reserve: float = 0.0
 
 # ─── 扩展初始储量因子（「地块自身情况」，map generation 仅一次）──────────
 # 默认 0 / {} → 不参与，保持与旧公式逐位一致（向后兼容）。
 @export var init_elevation: float = 0.0          # × clamp(elevation,0,1)（矿/石偏高地用正、沉积偏低地用负）
 @export var init_river: float = 0.0              # 河流或湖泊地块加成（淡水/黏土/野味偏好水边）
 @export var init_volcano: float = 0.0            # 火山地块加成（地热）
+@export var init_ocean_current: float = 0.0       # × clamp(length(ocean_current),0,1)
+@export var init_upwelling: float = 0.0           # × clamp(upwelling_strength,0,1)
+@export var init_estuary: float = 0.0             # × 河口及其近岸营养扩散强度
 # 地貌权重表：键 = LandformType.LF 序号(int)，值 = 适宜度加权。未列出的地貌按 0 计。
 @export var init_landform_weights: Dictionary = {}
 # 植被权重表：键 = VegetationType.VEG 序号(int)，值 = 适宜度加权。未列出的植被按 0 计。

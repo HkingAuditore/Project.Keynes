@@ -13,7 +13,18 @@ u32 payload_bytes
 payload
 ```
 
-## PKEC v16（当前且唯一可恢复版本）
+## PKEC v18（当前且唯一可恢复版本）
+
+PKEC v18 retains the v17 portfolio controls and additionally persists
+`investment_max_growth_share_q16`,
+`investment_new_type_seed_buildings`, and
+`investment_merchant_transition_min_improvement_q16`. PKEC v17 introduced
+`investment_gap_fill_share_q16`, `investment_portfolio_max_types`,
+`investment_max_type_owner_share_q16`, and
+`recovery_liquidation_max_share_q16`. These values affect deterministic
+investment and liquidation decisions and must match the configured
+`EconomyProfile` at restore. The writer accepts only v18; v2-v17 return
+`legacy_economy_save_unsupported`.
 
 v16 在建筑记录中保存聚合商人债务本金/溢价、期限、逾期周期、恢复失败审查数、三态运行状态和
 上一期自产生活价值；待建记录保存本金、溢价和期限。上述字段全部进入状态哈希、合法性检查、

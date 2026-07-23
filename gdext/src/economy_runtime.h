@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -22,7 +23,7 @@ class EconomyCsvRecorder;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 16;
+    static constexpr int32_t SCHEMA_VERSION = 18;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -385,6 +386,10 @@ private:
         int64_t installed_count = 0;
         int64_t active_count = 0;
         int64_t suspended_count = 0;
+        // Building-equivalent unused capacity in Q16. This is transient review
+        // state: offered supply already accounts for the utilized share, so only
+        // the unused share is reserved against the remaining demand gap.
+        int64_t idle_capacity_q16 = 0;
         int64_t filled_owner = 0;
         int64_t owner_required = 0;
         int64_t last_sold = 0;
@@ -408,6 +413,7 @@ private:
         INVESTMENT_REJECTION_RESOURCE = 13,
         INVESTMENT_REJECTION_PROBABILITY = 14,
         INVESTMENT_REJECTION_MARKET_SIGNAL = 15,
+        INVESTMENT_REJECTION_GROWTH_LIMIT = 16,
     };
 
     struct InvestmentDiagnostic {
@@ -426,6 +432,19 @@ private:
         int64_t payback_days = 0;
         int64_t required_capital = 0;
         int64_t projected_profit_per_day = 0;
+    };
+
+    struct OutputInvestmentSignal {
+        int32_t good_id = -1;
+        int64_t pressure_q16 = 0;
+        int64_t utilization_q16 = 0;
+        int64_t deficit = 0;
+        int64_t sellable = 0;
+        int64_t merchant_sold = 0;
+        int64_t discarded = 0;
+        int64_t sell_through_q16 = 0;
+        int64_t discard_q16 = 0;
+        int64_t driver_strength_q16 = 0;
     };
 
     struct PopulationStore {
@@ -746,6 +765,9 @@ private:
         int64_t goods_stock = 0;
         int64_t transit_goods = 0;
         int64_t escrow_cash = 0;
+        int64_t merchant_cash = 0;
+        int64_t merchant_inventory_retail_value = 0;
+        int64_t merchant_inventory_liquidation_value = 0;
     };
 
     struct Order {
@@ -996,6 +1018,8 @@ private:
         int64_t merchant_procurement_unspent_allocated = 0;
         int64_t merchant_procurement_reserved = 0;
         int64_t merchant_procurement_spent = 0;
+        int64_t merchant_procurement_retail_value = 0;
+        int64_t merchant_procurement_factor_weighted_cash_q16 = 0;
         int64_t owner_working_capital_allocated = 0;
         int64_t working_capital_scale_error_bound_q16 = 0;
         int64_t building_resource_capacity_checks = 0;
@@ -1226,6 +1250,13 @@ private:
     int32_t _investment_min_utilization_q16 = 42598;
     int32_t _investment_max_payback_days = 365;
     int32_t _investment_operating_cycles = 2;
+    int32_t _investment_gap_fill_share_q16 = Q16_ONE / 4;
+    int32_t _investment_portfolio_max_types = 4;
+    int32_t _investment_max_type_owner_share_q16 = Q16_ONE / 2;
+    int32_t _investment_max_growth_share_q16 = 6554;
+    int32_t _investment_new_type_seed_buildings = 1;
+    int32_t _investment_merchant_transition_min_improvement_q16 = Q16_ONE / 2;
+    int32_t _recovery_liquidation_max_share_q16 = Q16_ONE / 4;
     int32_t _resource_min_reserve_q16 = 22938;
     int32_t _resource_safe_harvest_q16 = Q16_ONE / 2;
     int32_t _resource_min_horizon_days = 3650;
@@ -1289,6 +1320,15 @@ private:
     int64_t _building_investment_blocked_resources = 0;
     int64_t _building_investment_probability_skips = 0;
     int64_t _building_investment_capital_transferred = 0;
+    int64_t _building_investment_buildings_started = 0;
+    int64_t _building_investment_portfolios_started = 0;
+    int64_t _building_investment_types_started = 0;
+    int64_t _building_investment_owner_population_moved = 0;
+    int64_t _building_investment_max_type_owner_share_q16 = 0;
+    int64_t _building_investment_demand_limited = 0;
+    int64_t _building_investment_material_limited = 0;
+    int64_t _building_investment_capital_limited = 0;
+    int64_t _building_investment_owner_population_limited = 0;
     int64_t _desired_business_demand = 0;
     int64_t _funded_business_demand = 0;
     int64_t _unfunded_business_demand = 0;
@@ -1305,6 +1345,8 @@ private:
     int64_t _recovery_restarted = 0;
     int64_t _recovery_failed = 0;
     int64_t _recovery_liquidated_buildings = 0;
+    int64_t _recovery_partially_liquidated_buildings = 0;
+    int64_t _recovery_fully_liquidated_groups = 0;
     int64_t _working_capital_scale_error_bound_q16 = 0;
     int64_t _production_inputs_consumed = 0;
     int64_t _production_output_stock = 0;
@@ -1342,6 +1384,16 @@ private:
     int64_t _merchant_procurement_reserved = 0;
     int64_t _owner_working_capital_reserved = 0;
     int64_t _merchant_procurement_spent = 0;
+    int64_t _merchant_procurement_retail_value = 0;
+    int64_t _merchant_procurement_factor_weighted_cash_q16 = 0;
+    int64_t _merchant_trade_purchase_cash = 0;
+    int64_t _merchant_trade_sale_cash = 0;
+    std::vector<int64_t> _merchant_procurement_paid_by_cell;
+    std::vector<int64_t> _merchant_procurement_retail_by_cell;
+    std::vector<int64_t> _merchant_procurement_factor_weighted_cash_by_cell;
+    std::vector<int64_t> _merchant_trade_purchase_by_cell;
+    std::vector<int64_t> _merchant_trade_sale_by_cell;
+    std::vector<int64_t> _merchant_credit_drawn_by_cell;
     int64_t _production_input_reserved = 0;
     int64_t _production_input_reserve_shortfall = 0;
     int64_t _labor_signal_updates = 0;
@@ -1527,10 +1579,12 @@ private:
     int32_t _investment_diagnostic_cell = -1;
     int64_t _investment_diagnostic_day = -1;
     std::vector<InvestmentDiagnostic> _investment_diagnostics;
-    std::unordered_map<uint64_t, uint8_t> _investment_pending_by_cell_type;
+    std::unordered_map<uint64_t, int64_t> _investment_pending_by_cell_type;
     std::unordered_map<uint64_t, InvestmentExistingType>
         _investment_existing_by_cell_type;
-    std::unordered_map<uint64_t, int64_t> _investment_harvest_by_cell_resource;
+    std::vector<int64_t> _investment_merchant_cash_by_cell;
+    std::vector<int64_t> _investment_outstanding_credit_by_cell;
+    std::vector<OutputInvestmentSignal> _investment_output_signals_scratch;
     std::vector<int32_t> _investment_employment_cells;
     std::vector<uint64_t> _trade_active_keys;
     std::unordered_map<uint64_t, uint8_t> _trade_active_key_idle_cycles;
@@ -1828,8 +1882,13 @@ private:
     int32_t find_entrepreneur_source(int32_t cell, int32_t target_signature,
                                      int64_t required_capital,
                                      int64_t target_income_per_day,
+                                     int64_t target_living_cost_per_day,
+                                     int64_t owner_slots_per_building,
                                      int32_t building_type_id,
-                                     bool &had_eligible_sponsor) const;
+                                     bool &had_eligible_sponsor,
+                                     int64_t &willing_population,
+                                     int64_t &transferable_capital,
+                                     int64_t &income_improvement_q16) const;
     int64_t projected_owner_income_per_day(const BuildingGroup &group,
                                            int64_t &sat) const;
     int64_t building_debt_due(const BuildingGroup &group, int64_t &sat) const;

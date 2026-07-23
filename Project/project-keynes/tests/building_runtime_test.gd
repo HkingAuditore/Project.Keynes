@@ -57,6 +57,7 @@ func _run() -> void:
 	_test_last_building_demolition_releases_profession_cohorts(catalog, profile)
 	_test_non_due_construction_employment_metrics(catalog, profile)
 	_test_active_owner_income_reallocation(catalog, profile)
+	_test_surplus_merchant_can_change_owner_job(catalog, profile)
 	_test_same_profession_owner_income_reallocation(catalog, profile)
 	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
@@ -139,6 +140,26 @@ func _run() -> void:
 			int(day1.get("merchant_procurement_spent", -1)) and
 		int(day1.get("merchant_procurement_budget", 0)) >=
 			int(day1.get("merchant_procurement_reserved", 0)) * 6)
+	var configured_buy_factor := int(
+		(compiled.good_merchant_buy_factor_q16 as PackedInt32Array)[goods.find("coal")])
+	_expect("shortage cannot lift merchant producer settlement above configured factor",
+		int(day1.get("merchant_effective_buy_factor_q16", -1)) == configured_buy_factor)
+	_expect("merchant liquidity report reconciles assets and operating outflow",
+		int(day1.get("merchant_economic_assets", -1)) ==
+			int(day1.get("merchant_cash", 0)) +
+			int(day1.get("merchant_inventory_liquidation_value", 0)) and
+		int(day1.get("merchant_operating_outflow", -1)) ==
+			int(day1.get("merchant_procurement_spent", 0)) +
+			int(day1.get("merchant_trade_purchase_cash", 0)) +
+			int(day1.get("merchant_credit_drawn", 0)) and
+		int(day1.get("merchant_procurement_margin_value", -1)) > 0)
+	var market_liquidity: Dictionary = ext.get_market_cell_snapshot(0)
+	_expect("selected market exposes merchant economic assets instead of cohort funds only",
+		int(market_liquidity.get("merchant_economic_assets", -1)) ==
+			int(market_liquidity.get("merchant_cash", 0)) +
+			int(market_liquidity.get("merchant_inventory_liquidation_value", 0)) and
+		int(market_liquidity.get("merchant_effective_buy_factor_q16", -1)) ==
+			configured_buy_factor)
 	var retained_output := int((buildings.last_retained as PackedInt64Array)[0])
 	_expect("ordinary non-survival coal enters the market instead of owner retention",
 		retained_output == 0)
@@ -163,6 +184,8 @@ func _run() -> void:
 		base_wages == (int(filled_by_role[0]) * int(contract_wages[0]) +
 			int(filled_by_role[1]) * int(contract_wages[1])) * 5 and
 		int((buildings.last_wages_paid as PackedInt64Array)[0]) == base_wages + bonus_paid)
+	_expect("zero filled employee roles cannot carry paid base wages",
+		not (filled_jobs == 0 and base_wages != 0))
 	var base_operating_cost := int((buildings.last_input_cost as PackedInt64Array)[0]) + base_wages
 	var target_profit := int((base_operating_cost * 6554) / 65536)
 	var excess_profit := maxi(0,
@@ -305,13 +328,13 @@ func _run() -> void:
 			_row_for_signature(drained_pop, landlord_sig), "transfer", false))
 	_run_day(ext, 3)
 	var loss_two: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("first settled severe-loss cycle remains active",
-		int((loss_two.severe_loss_cycles as PackedInt32Array)[0]) == 1 and
+	_expect("first execution-blocked cycle is not classified as a loss",
+		int((loss_two.severe_loss_cycles as PackedInt32Array)[0]) == 0 and
 		int((loss_two.operating_state as PackedByteArray)[0]) == 0)
 	_run_day(ext, 4)
 	var suspended: Dictionary = ext.get_building_cell_snapshot(0)
-	_expect("second settled severe-loss cycle remains active",
-		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 2 and
+	_expect("repeated execution blockage remains active without loss accumulation",
+		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 0 and
 		int((suspended.operating_state as PackedByteArray)[0]) == 0)
 	var recovery_pop: Dictionary = ext.get_population_cell_snapshot(0)
 	var recovery_owner_row := _row_for_signature(recovery_pop, landlord_sig)
@@ -351,14 +374,14 @@ func _run() -> void:
 		bool(recovery_stock.get("ok", false)))
 	var suspension_report := _run_day(ext, 5)
 	suspended = ext.get_building_cell_snapshot(0)
-	_expect("third settled severe-loss cycle suspends the building",
-		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 3 and
-		int((suspended.operating_state as PackedByteArray)[0]) == 1)
-	_expect("unfinanced loss-suspended building releases its owner and production intent",
-		int((suspended.filled_owner as PackedInt64Array)[0]) == 0 and
-		int((suspended.purchase_intent_capacity_q16 as PackedInt64Array)[0]) == 0 and
+	_expect("third execution-blocked cycle remains active",
+		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 0 and
+		int((suspended.operating_state as PackedByteArray)[0]) == 0)
+	_expect("blocked active building retains its owner and restart intent",
+		int((suspended.filled_owner as PackedInt64Array)[0]) > 0 and
+		int((suspended.purchase_intent_capacity_q16 as PackedInt64Array)[0]) > 0 and
 		int((suspended.last_output as PackedInt64Array)[0]) == 0)
-	_expect("suspended producer keeps only a bounded unfunded upstream probe",
+	_expect("blocked producer keeps explicit unfunded upstream demand",
 		int(suspension_report.get("desired_business_demand", 0)) > 0 and
 		int(suspension_report.get("unfunded_business_demand", 0)) > 0)
 	var country_chunks: Array[PackedByteArray] = []
@@ -371,7 +394,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v16 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 16)
+	_expect("building v18 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 18)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -398,20 +421,19 @@ func _run() -> void:
 		print("  restored wage snapshot=", restored.get_building_cell_snapshot(0))
 	_expect("building save hash round-trips", restored_hash == source_hash)
 	var restored_buildings: Dictionary = restored.get_building_cell_snapshot(0)
-	_expect("restored mine preserves loss suspension and zero jobs",
+	_expect("restored mine preserves active blocked lifecycle classification",
 		int((restored_buildings.building_counts_by_type as PackedInt64Array)[mine_id]) == 1 and
-		int((restored_buildings.operating_state as PackedByteArray)[0]) == 1 and
-		int((restored_buildings.employee_filled as PackedInt64Array)[0]) == 0 and
-		int((restored_buildings.employee_filled as PackedInt64Array)[1]) == 0)
+		int((restored_buildings.operating_state as PackedByteArray)[0]) == 0 and
+		int((restored_buildings.severe_loss_cycles as PackedInt32Array)[0]) == 0)
 	var recovery_one_report := _run_day(ext, 6)
 	var recovery_one: Dictionary = ext.get_building_cell_snapshot(0)
 	var recovery_after_pop: Dictionary = ext.get_population_cell_snapshot(0)
 	var recovery_merchant_row := _row_for_signature(recovery_after_pop, merchant_sig)
 	var recovery_mine_group := (recovery_one.group_type_ids as PackedInt32Array).find(mine_id)
-	_expect("financing commitment enables the recovery probe without merchant migration",
-		int(recovery_one_report.get("recovery_approved", 0)) > 0 and
+	_expect("restored inputs resume through the active path without a recovery probe",
+		int(recovery_one_report.get("recovery_approved", 0)) == 0 and
 		recovery_mine_group >= 0 and
-		int((recovery_one.operating_state as PackedByteArray)[recovery_mine_group]) == 2 and
+		int((recovery_one.operating_state as PackedByteArray)[recovery_mine_group]) == 0 and
 		int((recovery_one.filled_owner as PackedInt64Array)[recovery_mine_group]) > 0 and
 		recovery_merchant_row >= 0 and
 		int((recovery_after_pop.populations as PackedInt64Array)[recovery_merchant_row]) == 1)
@@ -428,9 +450,9 @@ func _run() -> void:
 		if group != restarted_mine_group and \
 				int((restarted.operating_state as PackedByteArray)[group]) == 0:
 			restarted_has_active_alternative = true
-	_expect("profitable alternative keeps the loss building suspended",
+	_expect("profitable alternative coexists with the active blocked building",
 		restarted_mine_group >= 0 and restarted_has_active_alternative and
-		int((restarted.operating_state as PackedByteArray)[restarted_mine_group]) == 1)
+		int((restarted.operating_state as PackedByteArray)[restarted_mine_group]) == 0)
 	_expect("restart cycle conserves all ledgers",
 		int(restart_report.get("population_error", 1)) == 0 and
 		int(restart_report.get("money_error", 1)) == 0 and
@@ -444,9 +466,9 @@ func _run() -> void:
 		if group != resumed_mine_group and \
 				int((resumed.operating_state as PackedByteArray)[group]) == 0:
 			resumed_has_active_alternative = true
-	_expect("failed recovery remains retryable without losing either building group",
+	_expect("blocked building remains retryable without losing either building group",
 		resumed_mine_group >= 0 and resumed_has_active_alternative and
-		int((resumed.operating_state as PackedByteArray)[resumed_mine_group]) in [1, 2])
+		int((resumed.operating_state as PackedByteArray)[resumed_mine_group]) == 0)
 	_expect("resumed production conserves all ledgers",
 		int(resumed_report.get("population_error", 1)) == 0 and
 		int(resumed_report.get("money_error", 1)) == 0 and
@@ -804,6 +826,62 @@ func _test_active_owner_income_reallocation(source_catalog: Dictionary,
 		int(report.get("goods_error", 1)) == 0)
 
 
+func _test_surplus_merchant_can_change_owner_job(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var merchant_sig := signatures.find("merchant|default")
+	var artisan_sig := signatures.find("artisan|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var merchant_post_id := building_ids.find("merchant_post")
+	var knapping_id := building_ids.find("knapping_workshop")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	prices[tool_good] = 1000000000
+	max_prices[tool_good] = 1000000000
+	catalog.good_default_price = prices
+	catalog.good_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("merchant mobility country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 432))
+	_expect("merchant mobility runtime configures", bool(ext.configure_economy(
+		catalog, profile, 1, 432).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([merchant_sig]),
+		"population": PackedInt64Array([2]),
+		"funds": PackedInt64Array([2000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([merchant_post_id, knapping_id]),
+		"building_owner_signature_ids": PackedInt32Array([merchant_sig, artisan_sig]),
+		"building_counts": PackedInt64Array([2, 1]),
+	})
+	_expect("merchant mobility fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var report := _run_day(ext, 0)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var merchant_row := _row_for_signature(population, merchant_sig)
+	var artisan_row := _row_for_signature(population, artisan_sig)
+	_expect("surplus merchant changes profession while final merchant is retained",
+		merchant_row >= 0 and artisan_row >= 0 and
+		int((population.populations as PackedInt64Array)[merchant_row]) == 1 and
+		int((population.populations as PackedInt64Array)[artisan_row]) == 1 and
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
 func _test_same_profession_owner_income_reallocation(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
@@ -1086,15 +1164,26 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	var candidate_shortages: PackedInt64Array = buildings.get(
 		"investment_candidate_shortage_q16", PackedInt64Array())
 	_expect("profitable unlocked-building investment transitions its sponsor and starts construction",
-		int(investment_day.get("building_investments_started", 0)) == 1 and
-		int(investment_day.get("building_investment_candidates", 0)) == 1 and
-		int(investment_day.get("building_owner_mobility", 0)) == 1 and
+		int(investment_day.get("building_investments_started", 0)) >= 2 and
+		int(investment_day.get("building_investments_started", 0)) <= 4 and
+		int(investment_day.get("building_investment_candidates", 0)) >=
+			int(investment_day.get("building_investments_started", 0)) and
+		int(investment_day.get("building_owner_mobility", 0)) >= 2 and
 		int(investment_day.get("building_investment_capital_transferred", 0)) > 0 and
 		String(investment_day.get("building_investment_model", "")) ==
-			"endogenous_owner_investment_v6" and
+			"endogenous_owner_portfolio_v8" and
+		int(investment_day.get("investment_max_growth_share_q16", 0)) == 6554 and
+		int(investment_day.get("investment_new_type_seed_buildings", 0)) == 1 and
+		int(investment_day.get(
+			"investment_merchant_transition_min_improvement_q16", 0)) == 32768 and
 		int(investment_day.get("construction_goods_consumed", 0)) > 0 and
-		total_building_count == 16)
-	_expect("investment v6 publishes one consistent marginal-output driver",
+		int(investment_day.get("building_investment_portfolios_started", 0)) == 1 and
+		int(investment_day.get("building_investment_types_started", 0)) ==
+			int(investment_day.get("building_investments_started", 0)) and
+		int(investment_day.get("building_investment_max_type_owner_share_q16", 65537)) <= 32768 and
+		total_building_count == 15 +
+			int(investment_day.get("building_investment_buildings_started", 0)))
+	_expect("investment v8 publishes one consistent marginal-output driver",
 		knapping_diagnostic >= 0 and
 		int(driver_goods[knapping_diagnostic]) == tool_good and
 		int(driver_pressures[knapping_diagnostic]) ==
@@ -1103,6 +1192,7 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 		int(investment_day.get("population_error", 1)) == 0 and
 		int(investment_day.get("money_error", 1)) == 0 and
 		int(investment_day.get("goods_error", 1)) == 0)
+	var invested_total := total_building_count
 	var day31 := _run_day(ext, 3)
 	buildings = ext.get_building_cell_snapshot(0)
 	total_building_count = 0
@@ -1110,7 +1200,7 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 		total_building_count += int(count)
 	_expect("non-review day prevents repeat expansion",
 		int(day31.get("building_investments_started", 0)) == 0 and
-		total_building_count == 16)
+		total_building_count == invested_total)
 
 
 func _test_all_buildings_have_explicit_construction(catalog: Dictionary) -> void:
@@ -1196,9 +1286,9 @@ func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,
 	var group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
 	var rejection := int((buildings.investment_rejection_reason as PackedInt32Array)[group]) \
 		if group >= 0 else -1
-	_expect("installed capacity no longer rejects an otherwise reviewed entry",
-		count == 3 and int(report.get("building_investments_started", 0)) == 0 and
-		rejection == 6)
+	_expect("per-review growth caps established three-building types to one start each",
+		count == 3 and rejection == 0 and
+		int(report.get("building_investment_buildings_started", -1)) == 2)
 	_expect("existing-market entry review conserves every ledger",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
@@ -1245,9 +1335,12 @@ func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,
 		coverage_report = _run_day(coverage_ext, day)
 	var coverage_buildings: Dictionary = coverage_ext.get_building_cell_snapshot(0)
 	var coverage_group := (coverage_buildings.group_type_ids as PackedInt32Array).find(knapping_id)
-	_expect("zero hard-input coverage rejects entry as input-chain constrained",
-		coverage_group >= 0 and int(coverage_report.get("building_investments_started", 0)) == 0 and
-		int((coverage_buildings.investment_rejection_reason as PackedInt32Array)[coverage_group]) == 8)
+	_expect("idle installed capacity is reserved before further entry",
+		coverage_group >= 0 and
+		int((coverage_buildings.building_counts_by_type as PackedInt64Array)[
+			knapping_id]) == 3 and
+		int((coverage_buildings.investment_rejection_reason as PackedInt32Array)[
+			coverage_group]) == 0)
 	_expect("input-coverage review conserves every ledger",
 		int(coverage_report.get("population_error", 1)) == 0 and
 		int(coverage_report.get("money_error", 1)) == 0 and
@@ -1324,8 +1417,7 @@ func _test_investment_requires_owner_livelihood(source_catalog: Dictionary,
 	var rejection := int((buildings.investment_rejection_reason as PackedInt32Array)[group]) \
 		if group >= 0 else -1
 	_expect("shortage cannot approve a workshop that misses owner livelihood",
-		count == 1 and int(report.get("building_investments_started", 0)) == 0 and
-		rejection == 5)
+		count == 1 and rejection == 5)
 	_expect("realized workshop margin includes owner livelihood",
 		group >= 0 and
 		int((buildings.realized_profit_margin_q16 as PackedInt32Array)[group]) < 0)
@@ -1522,7 +1614,8 @@ func _test_endogenous_investment_repairs_dead_merchant(source_catalog: Dictionar
 	_run_day(ext, 1)
 	var report := _run_day(ext, 2)
 	_expect("repaired merchant supports the next endogenous construction review",
-		int(report.get("building_investments_started", 0)) == 1)
+		int(report.get("building_investments_started", 0)) >= 1 and
+		int(report.get("building_investments_started", 0)) <= 4)
 	_expect("dead-merchant construction conserves every ledger",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and

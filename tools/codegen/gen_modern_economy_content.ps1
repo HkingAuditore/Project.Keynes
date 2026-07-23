@@ -1847,15 +1847,15 @@ foreach ($row in $newResources) {
         'paddy_land' { $initBase=-90.0; $initMoisture=70.0; $initElevation=-25.0; $initRiver=180.0; $initClimateFit=120.0; $initNoise=20.0; $tempOpt=0.68; $tempTol=0.32; $moistureOpt=0.78; $moistureTol=0.28; $minCoverage=0.2; $minReserve=600.0 }
         'plantation_land' { $initBase=-85.0; $initMoisture=55.0; $initElevation=-20.0; $initClimateFit=150.0; $initNoise=35.0; $tempOpt=0.72; $tempTol=0.3; $moistureOpt=0.7; $moistureTol=0.3; $minCoverage=0.2; $minReserve=1400.0 }
         'pasture' { $initBase=-55.0; $initMoisture=15.0; $initElevation=-20.0; $initRiver=20.0; $initClimateFit=150.0; $initNoise=35.0; $tempOpt=0.52; $tempTol=0.45; $moistureOpt=0.48; $moistureTol=0.45; $minCoverage=0.6; $minReserve=1250.0 }
-        'bauxite' { $family='laterite'; $initBase=-380000.0; $initMoisture=180000.0; $initElevation=80000.0; $province=220000.0; $belt=100000.0; $initNoise=180000.0 }
-        'limestone' { $family='sedimentary'; $initBase=-260000.0; $province=300000.0; $belt=140000.0; $initNoise=180000.0 }
-        'silica_sand' { $family='surface'; $initBase=-190000.0; $initRiver=100000.0; $province=120000.0; $belt=80000.0; $initNoise=220000.0 }
-        'phosphate_rock' { $family='sedimentary'; $initBase=-330000.0; $province=260000.0; $belt=160000.0; $initNoise=180000.0 }
-        'tin_ore' { $family='felsic'; $initBase=-360000.0; $initElevation=90000.0; $initRiver=50000.0; $province=190000.0; $belt=230000.0; $initNoise=160000.0 }
-        'lead_ore' { $family='hydrothermal'; $initBase=-350000.0; $initElevation=70000.0; $province=180000.0; $belt=250000.0; $initNoise=160000.0 }
-        'zinc_ore' { $family='hydrothermal'; $initBase=-330000.0; $province=190000.0; $belt=240000.0; $initNoise=170000.0 }
-        'manganese_ore' { $family='mafic'; $initBase=-340000.0; $province=210000.0; $belt=210000.0; $initNoise=170000.0 }
-        'sulfur' { $family='hydrothermal'; $initBase=-300000.0; $initVolcano=180000.0; $province=160000.0; $belt=230000.0; $initNoise=160000.0 }
+        'bauxite' { $family='laterite'; $initBase=-380000.0; $initMoisture=180000.0; $initElevation=80000.0; $province=220000.0; $belt=100000.0; $initNoise=180000.0; $minCoverage=0.04 }
+        'limestone' { $family='sedimentary'; $initBase=-260000.0; $province=300000.0; $belt=140000.0; $initNoise=180000.0; $minCoverage=0.05 }
+        'silica_sand' { $family='surface'; $initBase=-190000.0; $initRiver=100000.0; $province=120000.0; $belt=80000.0; $initNoise=220000.0; $minCoverage=0.05 }
+        'phosphate_rock' { $family='sedimentary'; $initBase=-330000.0; $province=260000.0; $belt=160000.0; $initNoise=180000.0; $minCoverage=0.04 }
+        'tin_ore' { $family='felsic'; $initBase=-360000.0; $initElevation=90000.0; $initRiver=50000.0; $province=190000.0; $belt=230000.0; $initNoise=160000.0; $minCoverage=0.03 }
+        'lead_ore' { $family='hydrothermal'; $initBase=-350000.0; $initElevation=70000.0; $province=180000.0; $belt=250000.0; $initNoise=160000.0; $minCoverage=0.03 }
+        'zinc_ore' { $family='hydrothermal'; $initBase=-330000.0; $province=190000.0; $belt=240000.0; $initNoise=170000.0; $minCoverage=0.03 }
+        'manganese_ore' { $family='mafic'; $initBase=-340000.0; $province=210000.0; $belt=210000.0; $initNoise=170000.0; $minCoverage=0.03 }
+        'sulfur' { $family='hydrothermal'; $initBase=-300000.0; $initVolcano=180000.0; $province=160000.0; $belt=230000.0; $initNoise=160000.0; $minCoverage=0.03 }
     }
     Write-Utf8 (Join-Path $resourcesDir "$id.tres") @"
 [gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]

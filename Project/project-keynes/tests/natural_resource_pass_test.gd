@@ -10,7 +10,7 @@ extends SceneTree
 #   3. DCWorldExt 导出 run_natural_resource_pass。
 #   4. 原生 pass 在小地图上行为正确，且与 GDScript 公式模板逐资源逐 cell A/B 对拍一致：
 #      - timber（可再生，land）：适宜陆地格增长；水面格清零。
-	#      - marine_fish：只在带 coastal_land 位的沿海陆格生长；freshwater_fish 只在淡水格生长。
+#      - marine_fish：在海洋水格与沿海陆格生长；freshwater_fish 只在淡水格生长。
 #      - iron_ore（不可再生，全 0 系数）：无 extra 时保持不变，extra 单 tick 生效并清零。
 #      - reserve 保持非负。
 #
@@ -267,8 +267,8 @@ func _test_native_pass() -> void:
 	var marine_i: int = _profile_index(profiles, "marine_fish")
 	if marine_i >= 0:
 		var marine: PackedFloat32Array = map.get(fields[marine_i])
-		_expect("marine fish only lives on coastal land",
-			marine[2] > 0.0 and is_equal_approx(marine[0], 0.0) and is_equal_approx(marine[3], 0.0))
+		_expect("marine fish lives on coastal land and marine water",
+			marine[2] > 0.0 and marine[3] > 0.0 and is_equal_approx(marine[0], 0.0))
 	var freshwater_i: int = _profile_index(profiles, "freshwater_fish")
 	if freshwater_i >= 0:
 		var freshwater: PackedFloat32Array = map.get(fields[freshwater_i])

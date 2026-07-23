@@ -10,6 +10,7 @@
 [ext_resource type="Script" path="res://scripts/game/map_interaction_controller.gd" id="8_map_input"]
 [ext_resource type="Script" path="res://scripts/game/selection_controller.gd" id="9_selection"]
 [ext_resource type="Script" path="res://scripts/game/time_controls_controller.gd" id="10_time"]
+[ext_resource type="Script" path="res://scripts/rendering/data_overlay_layer.gd" id="11_overlay"]
 
 [node name="PlayerGame" type="Node2D"]
 script = ExtResource("1_player")
@@ -30,6 +31,9 @@ terrain_horizon_cast_floor = 0.41
 top_level = true
 z_index = 10
 script = ExtResource("5_highlight")
+
+[node name="DataOverlayLayer" type="Node2D" parent="WorldRoot"]
+script = ExtResource("11_overlay")
 
 [node name="MapCamera" type="Camera2D" parent="."]
 script = ExtResource("3_camera")

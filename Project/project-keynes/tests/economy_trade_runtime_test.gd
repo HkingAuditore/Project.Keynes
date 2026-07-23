@@ -106,6 +106,17 @@ func _run() -> void:
 			(orders.order_ids as PackedInt64Array).size() + 1 and
 		(orders.line_good_ids as PackedInt32Array).size() >= 2)
 	var destination_after_dispatch: Dictionary = ext.get_market_cell_snapshot(1)
+	var trade_purchase_cash := int(
+		destination_after_dispatch.get("merchant_trade_purchase_cash", 0))
+	var destination_merchant_cash := int(
+		destination_after_dispatch.get("merchant_cash", 0))
+	_expect("domestic trade preserves the destination merchant operating floor",
+		trade_purchase_cash > 0 and
+		destination_merchant_cash * 7 >= trade_purchase_cash)
+	_expect("trade purchase cash is included in operating outflow",
+		int(destination_after_dispatch.get("merchant_operating_outflow", -1)) >=
+			int(destination_after_dispatch.get("merchant_trade_purchase_cash", 0)) and
+		int(report.get("merchant_trade_purchase_cash", 0)) > 0)
 	var destination_good_index := (destination_after_dispatch.good_ids as PackedStringArray).find(
 		"gathered_plants")
 	var dispatch_delay := int((destination_after_dispatch.trade_first_dispatch_delay_days as
@@ -142,8 +153,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v16 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 16)
+	_expect("PKEC v18 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 18)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -651,7 +662,7 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	CountryTestHelper.configure_all_technologies(restored, catalog, 1, 4415)
 	restored.configure_economy(catalog, profile, 1, 4415)
 	var result := _restore_economy(restored, legacy_chunks)
-	_expect("PKEC v16 explicitly rejects every legacy economy save",
+	_expect("PKEC v18 explicitly rejects every legacy economy save",
 		not bool(result.get("ok", true)) and
 		String(result.get("reason", "")) == "legacy_economy_save_unsupported")
 

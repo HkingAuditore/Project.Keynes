@@ -82,6 +82,38 @@ static func normalize_icon(icon: String) -> String:
 			return "history"
 		"geo", "terrain", "landform", "mountain":
 			return "geo"
+		"elevation":
+			return "elevation"
+		"vegetation":
+			return "vegetation"
+		"temperature":
+			return "temperature"
+		"humidity":
+			return "humidity"
+		"ocean_current":
+			return "ocean_current"
+		"resource_close", "eye_slash":
+			return "eye_slash"
+		"wood":
+			return "wood"
+		"rock":
+			return "rock"
+		"fire":
+			return "fire"
+		"metal":
+			return "metal"
+		"precious":
+			return "precious"
+		"fish":
+			return "fish"
+		"animal":
+			return "animal"
+		"earth":
+			return "earth"
+		"salt":
+			return "salt"
+		"flint":
+			return "flint"
 		"building", "buildings", "industry", "factory":
 			return "building"
 		"surface", "cover":
@@ -186,6 +218,38 @@ static func glyph_for_key(key: String) -> String:
 			return "\uf071"
 		"geo":
 			return "\uf6fc" # mountain
+		"elevation":
+			return "\uf6fc" # mountain
+		"vegetation":
+			return "\uf1bb" # tree
+		"temperature":
+			return "\uf2c9" # thermometer-half
+		"humidity":
+			return "\uf043" # droplet
+		"ocean_current":
+			return "\uf773" # water
+		"eye_slash":
+			return "\uf070"
+		"wood":
+			return "\uf1bb"
+		"rock":
+			return "\uf6fc"
+		"fire":
+			return "\uf06d"
+		"metal":
+			return "\uf6e3" # hammer
+		"precious":
+			return "\uf3a5"
+		"fish":
+			return "\uf578"
+		"animal":
+			return "\uf1b0" # paw
+		"earth":
+			return "\uf1b2" # cube
+		"salt":
+			return "\uf5d2" # mortar-pestle
+		"flint":
+			return "\uf0e7" # bolt / spark silhouette
 		"building":
 			return "\uf1ad" # building
 		_:

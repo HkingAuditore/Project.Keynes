@@ -15,6 +15,7 @@
 | `sea_ice_daily` | `SeaIceDailySystem` / climate round sea-ice stage；native daily report 另有 `authority_report.sea_ice`。 | `DCWorldExt::run_sea_ice_daily_pass` 写 sea-ice/terrain-related slots。 | Slot flush + dynamic visual LUT/atlas dirty intent；native daily graph report 宣告 `cell_sea_ice_frac` 等 published slots。 | Sea-ice helper fallback retained where ext unavailable. | Native daily graph 中 `sea_ice_knobs` 存在时可报告 native graph owner；native round 完成后 phase 可升为 `native_active_verified`。 | Terrain flip visibility、visual LUT/Godot upload 是 retained boundaries，不再阻塞 simulation authority。 |
 | `enum_atlas_upload` | `EnumAtlasUploadSystem` owns dirty patch cadence. | C++ encoder may produce patch bytes; DataCore slots are read-only inputs. | GDScript `ImageTexture` / atlas upload. | GDScript fan-out/upload fallback. | Not simulation authority; visual boundary only. | GPU upload and texture lifetime remain Godot-side. |
 | `dynamic_visual_atlas_upload` | `DynamicVisualAtlasUploadSystem` owns LUT/atlas stride and catch-up. | C++ LUT/patch encoders read slots and return byte buffers. | GDScript Image/ImageTexture update; weather LUT is published by weather commit path. | GDScript encoder fallback. | Not simulation authority; optional visual job. | GPU upload, dirty queue, renderer interpolation. |
+| Player map overlay | `WorldRuntimeHost` owns request/dirty/throttle state; it does not own simulation values. | `DataOverlayBaker.bake_cell_lut` reads the already-published `DCViewAdapter`/`MapData` snapshot and writes one RGBA8 texel per cell. | `DataOverlayLayer` binds static map-index atlas + dynamic LUT and performs Godot `ImageTexture.update`. | No simulation fallback; legacy full-raster baker remains debug-only. | Visual consumer only; it never writes slots, economy stores, MapData, or save state. | First/switch refresh is immediate; dirty refresh is coalesced to 10 Hz after authoritative flush. |
 | `native_environment_runtime` | `NativeEnvironmentRuntimeSystem` thin scheduler job; native runtime owns internal shadow/probe state. | `EnvironmentRuntime` / `DCWorldExt` where available. | Report-only unless a specific pass publishes slots. | Skip/hard fail when native runtime unavailable. | SHADOW/probe thin job unless a concrete owner gate promotes it. | Needs per-system publish contract before authority. |
 | Native world generation / bake | Awaited `MapGenerator.generate()` orchestrates cooperatively on the Godot main thread; `DCWorldExt` owns base/post-base generation data. | Native generation result package and generation publish pass write initial SoA/slots. | GDScript assembles `MapData`/`HexCell`; publish pass flushes initial runtime slots; `MapGenerator`/`MapBaker` yield frames only at stage boundaries. | Old full GDScript generation fallback is retired; failures abort generation or use scoped post-base fallback only where documented. | Native generation is C++ authoritative for base/post-base generation; cooperative yielding does not transfer authority. | Godot object assembly, `HexCell` facade, texture bake/upload remain GDScript/Godot; one native pass is still non-preemptible. |
 
@@ -93,3 +94,16 @@ fallback simulation owner. Plan, sparse market-signal observation, indexed
 investment evaluation, and investment commit continuation are likewise native
 transient work. None adds a DataCore slot, public bridge method, scheduler stage,
 PKEC field, cadence rule, or state-hash input.
+
+## Economy v18 portfolio authority override (current)
+
+`NativeEconomyRuntime` remains the sole mutable authority for endogenous
+investment. Each reviewed cell evaluates a fixed four-type portfolio and
+submits aggregate BUILD counts; source-cohort willingness and the shared
+population, capital, credit, material, and market-gap budgets are native
+fixed-point transient data. Partial liquidation reuses the existing
+BuildingGroup and recovery state and does not add per-building identity.
+`EconomyProfile` compiles the four portfolio/liquidation controls plus bounded
+growth, new-type seeding, and merchant-transition improvement controls. PKEC
+v18 persists them, while CSV v20 observes portfolio and partial-liquidation metrics.
+There is no GDScript fallback or new DataCore slot.

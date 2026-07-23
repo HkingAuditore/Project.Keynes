@@ -188,6 +188,13 @@ pending 直到该地块首次到期结算。
 
 ## Cell-index 间接寻址 LUT 是渲染产物，不进 schema
 
+玩家信息遮罩同样遵守这条边界：`DataOverlayBaker.bake_cell_lut()` 从 flush 后的
+`DCViewAdapter` / `MapData` 只读快照生成临时 RGBA8 `overlay_lut`，由
+`DataOverlayLayer` 绑定到 GPU。请求、dirty、10 Hz 节流、选中资源和 UI 展开状态都不是
+DataCore component，也不写存档。自然资源 mode 通过 profile 的 `reserve_map_field` 读取
+已有 reserve array，并与 Inspector 共用 `ResourceProfileRegistry.reference_reserve()`；
+overlay 不参与生成、补充、衰减、开采或市场结算。
+
 plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-index 间接寻址」节）。
 
 - `map_index_atlas`（`WorldData.enum_atlas_tex`）/ `enum_lut_tex` / `dyn_lut_tex` / `eco_lut_tex` / `weather_lut_tex` 是

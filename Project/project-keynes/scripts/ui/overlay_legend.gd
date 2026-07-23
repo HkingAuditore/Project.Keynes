@@ -1,5 +1,6 @@
 # overlay_legend.gd
-# 地图左下角的 overlay 图例面板，与 data_overlay.gdshader 共用同一套色带定义。
+# 可复用的 overlay 图例面板；具体屏幕位置由父 UI 决定，并与
+# data_overlay.gdshader 共用同一套色带定义。
 # 当 overlay_mode != NONE 时显示：
 #   - 连续通道 (TEMPERATURE/PRECIPITATION/HUMIDITY/VEGETATION_VITALITY)：
 #       通道名 + 横向 color ramp TextureRect + 两端数值标签 + 可选的选中指针
@@ -12,8 +13,9 @@ class_name OverlayLegend
 extends PanelContainer
 
 # Ramp 纹理宽度；高度固定 12px
-const RAMP_WIDTH: int = 192
+const RAMP_WIDTH: int = 168
 const RAMP_HEIGHT: int = 12
+const VECTOR_WHEEL_SIZE: int = 72
 
 # 色带定义（与 data_overlay.gdshader 保持同步；新增色带时两边都改）
 const DISCRETE_CLIMATE_COLORS: Array = [
@@ -59,6 +61,7 @@ const DISCRETE_LANDFORM_COLORS: Array = [
 ]
 
 var _title_label: Label
+var _icon_label: Label
 var _hint_label: Label
 var _ramp_rect: TextureRect
 
@@ -66,6 +69,7 @@ var _low_label: Label
 var _high_label: Label
 var _pointer: ColorRect         # 当前选中数值对应的色带位置指针（连续通道）
 var _discrete_list: VBoxContainer   # 离散通道的色块列表
+var _discrete_scroll: ScrollContainer
 var _continuous_box: VBoxContainer  # 连续通道的整体容器（便于整体显隐）
 # 方向型通道（WIND_DIR / OCEAN_CURRENT_DIR）专用容器：
 #   ┌────────────┐  色环（hue wheel）：东=0°/红、南=90°/绿、西=180°/青、北=270°/紫
@@ -84,7 +88,16 @@ var _last_pointer_value: float = -1.0   # NaN/未选中时隐藏指针
 func _ready() -> void:
 	mouse_filter = Control.MouseFilter.MOUSE_FILTER_IGNORE
 	visible = false
-	custom_minimum_size = Vector2(230, 0)
+	custom_minimum_size = Vector2(198, 0)
+	var style := UITokens.panel_style(
+		Color(0.055, 0.050, 0.043, 0.84), UITokens.RADIUS_SM)
+	# `_build_ui()` supplies the compact 8×6 margin. Avoid stacking the generic
+	# panel content margin on top of it, which needlessly enlarges the legend.
+	style.content_margin_left = 0.0
+	style.content_margin_top = 0.0
+	style.content_margin_right = 0.0
+	style.content_margin_bottom = 0.0
+	add_theme_stylebox_override("panel", style)
 	_build_ui()
 
 func _build_ui() -> void:
@@ -99,10 +112,18 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 4)
 	margin.add_child(vbox)
 
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 6)
+	vbox.add_child(title_row)
+	_icon_label = Label.new()
+	_icon_label.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
+	_icon_label.add_theme_font_size_override("font_size", 15)
+	_icon_label.add_theme_color_override("font_color", UITokens.ACCENT)
+	title_row.add_child(_icon_label)
 	_title_label = Label.new()
 	_title_label.text = "—"
 	_title_label.add_theme_font_size_override("font_size", 14)
-	vbox.add_child(_title_label)
+	title_row.add_child(_title_label)
 
 	_hint_label = Label.new()
 	_hint_label.text = ""
@@ -146,10 +167,15 @@ func _build_ui() -> void:
 	_ramp_rect.add_child(_pointer)
 
 	# 离散容器
+	_discrete_scroll = ScrollContainer.new()
+	_discrete_scroll.custom_minimum_size = Vector2(0.0, 0.0)
+	_discrete_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_discrete_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_discrete_scroll.visible = false
+	vbox.add_child(_discrete_scroll)
 	_discrete_list = VBoxContainer.new()
 	_discrete_list.add_theme_constant_override("separation", 2)
-	_discrete_list.visible = false
-	vbox.add_child(_discrete_list)
+	_discrete_scroll.add_child(_discrete_list)
 
 	# 方向型容器（hue 色环 + 强度色带）
 	_vector_box = VBoxContainer.new()
@@ -158,7 +184,7 @@ func _build_ui() -> void:
 	vbox.add_child(_vector_box)
 
 	_vector_wheel = TextureRect.new()
-	_vector_wheel.custom_minimum_size = Vector2(96, 96)
+	_vector_wheel.custom_minimum_size = Vector2(VECTOR_WHEEL_SIZE, VECTOR_WHEEL_SIZE)
 	_vector_wheel.stretch_mode = TextureRect.STRETCH_SCALE
 	_vector_box.add_child(_vector_wheel)
 
@@ -189,14 +215,21 @@ func _build_ui() -> void:
 	_vector_box.add_child(v_range_row)
 
 # 主入口：切换通道（含 NONE 隐藏）。
-func update_for_mode(mode: int) -> void:
+func update_for_mode(
+	mode: int,
+	title_override: String = "",
+	hint_override: String = "",
+	icon_override: String = ""
+) -> void:
 	_current_mode = mode
 	if mode == OverlayMode.MODE.NONE:
 		visible = false
 		return
 	visible = true
-	_title_label.text = OverlayMode.display_name(mode)
-	var hint := OverlayMode.domain_hint(mode)
+	_title_label.text = title_override if title_override != "" else OverlayMode.display_name(mode)
+	var icon_key := icon_override if icon_override != "" else _icon_for_mode(mode)
+	_icon_label.text = IconBadge.glyph_for_key(IconBadge.normalize_icon(icon_key))
+	var hint := hint_override if hint_override != "" else OverlayMode.domain_hint(mode)
 	_hint_label.text = hint
 	_hint_label.visible = hint != ""
 	_pointer.visible = false
@@ -204,28 +237,41 @@ func update_for_mode(mode: int) -> void:
 	_last_pointer_value = -1.0
 	if OverlayMode.is_vector(mode):
 		_continuous_box.visible = false
-		_discrete_list.visible = false
+		_discrete_scroll.visible = false
 		_vector_box.visible = true
 		_vector_arrow.visible = false
 		if _vector_wheel.texture == null:
-			_vector_wheel.texture = _build_hue_wheel_texture(96)
+			_vector_wheel.texture = _build_hue_wheel_texture(VECTOR_WHEEL_SIZE)
 		_vector_intensity_ramp.texture = _build_intensity_ramp_texture()
 		var labels_v: Array = OverlayMode.RANGE_LABEL.get(mode, ["弱", "强"])
 		_vector_low_label.text = str(labels_v[0])
 		_vector_high_label.text = str(labels_v[1])
 	elif OverlayMode.is_discrete(mode):
 		_continuous_box.visible = false
-		_discrete_list.visible = true
+		_discrete_scroll.visible = true
 		_vector_box.visible = false
 		_rebuild_discrete_list(mode)
 	else:
 		_continuous_box.visible = true
-		_discrete_list.visible = false
+		_discrete_scroll.visible = false
 		_vector_box.visible = false
 		_ramp_rect.texture = _build_ramp_texture(mode)
 		var labels: Array = OverlayMode.RANGE_LABEL.get(mode, ["0.00", "1.00"])
 		_low_label.text = str(labels[0])
 		_high_label.text = str(labels[1])
+
+
+func _icon_for_mode(mode: int) -> String:
+	match mode:
+		OverlayMode.MODE.ELEVATION: return "elevation"
+		OverlayMode.MODE.LANDFORM: return "surface"
+		OverlayMode.MODE.VEGETATION_TYPE: return "vegetation"
+		OverlayMode.MODE.TEMPERATURE: return "temperature"
+		OverlayMode.MODE.HUMIDITY: return "humidity"
+		OverlayMode.MODE.WIND_DIR: return "wind"
+		OverlayMode.MODE.OCEAN_CURRENT_DIR: return "ocean_current"
+		OverlayMode.MODE.RESOURCE_RESERVE: return "resource"
+		_: return "overview"
 
 # 选中 cell 时更新指针位置；未选中或数值不适用（离散通道）时隐藏。
 # 值应为 [0, 1]（和 baker 归一化后的相同语义）。
@@ -307,6 +353,10 @@ func _sample_ramp_color(mode: int, v: float) -> Color:
 		OverlayMode.MODE.DEMO_THERMAL_GRADIENT:
 			# Reference-impl Pass #2 复用 cold→hot 色带，与 shader 端保持一致。
 			return _ramp_cold_to_hot(v)
+		OverlayMode.MODE.ELEVATION:
+			return _ramp_elevation(v)
+		OverlayMode.MODE.RESOURCE_RESERVE:
+			return _ramp_resource(v)
 		_:
 			return Color(0.45, 0.45, 0.45)
 
@@ -375,6 +425,40 @@ func _ramp_wind(v: float) -> Color:
 		return c1.lerp(c2, (v - 0.333) / 0.333)
 	return c2.lerp(c3, (v - 0.666) / 0.334)
 
+func _ramp_elevation(v: float) -> Color:
+	var c0 := Color(0.07, 0.09, 0.34)
+	var c1 := Color(0.00, 0.58, 0.88)
+	var c2 := Color(0.12, 0.72, 0.42)
+	var c3 := Color(0.96, 0.82, 0.16)
+	var c4 := Color(0.82, 0.27, 0.16)
+	var c5 := Color(0.98, 0.97, 0.94)
+	if v < 0.28:
+		return c0.lerp(c1, v / 0.28)
+	if v < 0.46:
+		return c1.lerp(c2, (v - 0.28) / 0.18)
+	if v < 0.66:
+		return c2.lerp(c3, (v - 0.46) / 0.20)
+	if v < 0.84:
+		return c3.lerp(c4, (v - 0.66) / 0.18)
+	return c4.lerp(c5, (v - 0.84) / 0.16)
+
+func _ramp_resource(v: float) -> Color:
+	# Perceptually separated from the tan/green/blue base map. The fixed curve
+	# expands the low and middle reserve ranges without depending on world max.
+	v = pow(clampf(v, 0.0, 1.0), 0.42)
+	var c0 := Color(0.10, 0.05, 0.32)
+	var c1 := Color(0.00, 0.48, 0.92)
+	var c2 := Color(0.76, 0.08, 0.68)
+	var c3 := Color(1.00, 0.34, 0.08)
+	var c4 := Color(1.00, 0.94, 0.20)
+	if v < 0.25:
+		return c0.lerp(c1, v * 4.0)
+	if v < 0.50:
+		return c1.lerp(c2, (v - 0.25) * 4.0)
+	if v < 0.75:
+		return c2.lerp(c3, (v - 0.50) * 4.0)
+	return c3.lerp(c4, (v - 0.75) * 4.0)
+
 # 方向型通道专用色环：与 data_overlay.gdshader 的 hsv2rgb_dir 同源。
 # 半径 r = wheel_radius 的圆环代表 intensity=1.0；中心 intensity=0。
 # 圆外像素透明。
@@ -428,8 +512,14 @@ func _rebuild_discrete_list(mode: int) -> void:
 		colors = DISCRETE_BIOME_GROUP_COLORS
 		names = OverlayMode.BIOME_GROUP_NAMES
 	elif mode == OverlayMode.MODE.LANDFORM:
-		colors = DISCRETE_LANDFORM_COLORS
-		names = OverlayMode.LANDFORM_NAMES
+		for i in range(LandformType.LF.size()):
+			names.append(LandformType.name_cn(i))
+			colors.append(_categorical_color(i, 0.42))
+	elif mode == OverlayMode.MODE.VEGETATION_TYPE:
+		for i in range(VegetationType.VEG.size()):
+			names.append(VegetationType.name_cn(i))
+			colors.append(_categorical_color(i, 0.12))
+	_discrete_scroll.custom_minimum_size.y = minf(220.0, float(names.size()) * 22.0)
 	for i in range(names.size()):
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
@@ -442,3 +532,8 @@ func _rebuild_discrete_list(mode: int) -> void:
 		lb.add_theme_font_size_override("font_size", 12)
 		row.add_child(lb)
 		_discrete_list.add_child(row)
+
+
+func _categorical_color(bucket: int, offset: float) -> Color:
+	var hue := fposmod(float(bucket) * 0.61803398875 + offset, 1.0)
+	return Color.from_hsv(hue, 0.85, lerpf(0.45, 1.0, 0.72), 1.0)

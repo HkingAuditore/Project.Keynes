@@ -14,6 +14,7 @@ const MOBILE_NATIVE_DAILY_COMMIT_BUDGET_DAYS: int = 20
 const MOBILE_NATURAL_RESOURCE_STRIDE_DAYS: int = 10
 const MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE: int = 8
 const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
+const MAP_OVERLAY_REFRESH_INTERVAL_MSEC: int = 100
 
 @export var map_width: int = 60
 @export var map_height: int = 40
@@ -35,6 +36,7 @@ var test_economy_population_scale: int = 0
 var _renderer: HexRenderer = null
 var _camera: MapCamera = null
 var _world_clock: WorldClock = null
+var _map_overlay_layer: DataOverlayLayer = null
 var _current_map: MapData = null
 var _world_data: WorldData = null
 var _generator: MapGenerator = null
@@ -56,12 +58,28 @@ var _pending_tick_start_usec: int = 0
 var _pending_tick_sus_ms: float = 0.0
 var _pending_tick_render_ms: float = 0.0
 var _pending_tick_skipped_day: bool = false
+var _map_overlay_request: Dictionary = {}
+var _map_overlay_tex: ImageTexture = null
+var _map_overlay_image: Image = null
+var _map_overlay_buf: PackedByteArray = PackedByteArray()
+var _map_overlay_dirty: bool = false
+var _map_overlay_last_refresh_msec: int = 0
+var _map_overlay_refresh_count: int = 0
+var _map_overlay_merged_dirty_count: int = 0
+var _map_overlay_last_result: Dictionary = {}
 
 
-func configure(renderer: HexRenderer, camera: MapCamera, world_clock: WorldClock) -> void:
+func configure(
+	renderer: HexRenderer,
+	camera: MapCamera,
+	world_clock: WorldClock,
+	map_overlay_layer: DataOverlayLayer = null
+) -> void:
 	_renderer = renderer
 	_camera = camera
 	_world_clock = world_clock
+	_map_overlay_layer = map_overlay_layer
+	set_process(false)
 	_init_tod_profile()
 
 
@@ -115,6 +133,7 @@ func is_day_night_enabled() -> bool:
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
 	_selected_cell = null
+	clear_map_overlay()
 	world_generation_started.emit()
 	if _generator != null and _generator.has_method("sus_reset_all"):
 		_generator.sus_reset_all()
@@ -194,7 +213,97 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	_pending_tick_skipped_day = false
 	_last_tick_report = report.duplicate()
 	daily_tick_completed.emit(_last_tick_report)
+	mark_map_overlay_dirty(&"authoritative_daily_flush")
 	return _last_tick_report
+
+
+func set_map_overlay(request: Dictionary) -> void:
+	var mode := int(request.get("mode", OverlayMode.MODE.NONE))
+	if mode == OverlayMode.MODE.NONE:
+		clear_map_overlay()
+		return
+	_map_overlay_request = {
+		"mode": mode,
+		"resource_id": StringName(request.get("resource_id", &"")),
+	}
+	_map_overlay_dirty = true
+	set_process(true)
+	_refresh_map_overlay(true)
+
+
+func clear_map_overlay() -> void:
+	_map_overlay_request.clear()
+	_map_overlay_dirty = false
+	set_process(false)
+	if _map_overlay_layer != null:
+		_map_overlay_layer.hide_animated()
+
+
+func mark_map_overlay_dirty(_reason: StringName = &"runtime") -> void:
+	if _map_overlay_request.is_empty():
+		return
+	if _map_overlay_dirty:
+		_map_overlay_merged_dirty_count += 1
+	_map_overlay_dirty = true
+	set_process(true)
+
+
+func map_overlay_diagnostics() -> Dictionary:
+	return {
+		"active": not _map_overlay_request.is_empty(),
+		"request": _map_overlay_request.duplicate(),
+		"refresh_count": _map_overlay_refresh_count,
+		"merged_dirty_count": _map_overlay_merged_dirty_count,
+		"last_result": _map_overlay_last_result.duplicate(),
+	}
+
+
+func _process(_delta: float) -> void:
+	if not _map_overlay_dirty or _map_overlay_request.is_empty():
+		return
+	_refresh_map_overlay(false)
+
+
+func _refresh_map_overlay(force: bool) -> void:
+	if _map_overlay_layer == null or _current_map == null or _world_data == null \
+			or _view_adapter == null or _map_overlay_request.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	if not force and now - _map_overlay_last_refresh_msec < MAP_OVERLAY_REFRESH_INTERVAL_MSEC:
+		return
+	var mode := int(_map_overlay_request.get("mode", OverlayMode.MODE.NONE))
+	var resource_profile: ResourceProfile = null
+	if mode == OverlayMode.MODE.RESOURCE_RESERVE:
+		var wanted := StringName(_map_overlay_request.get("resource_id", &""))
+		for profile in ResourceProfileRegistry.ordered():
+			if profile != null and profile.id == wanted:
+				resource_profile = profile
+				break
+		if resource_profile == null:
+			clear_map_overlay()
+			return
+	var climate = _generator._c() if _generator != null and _generator.has_method("_c") else null
+	var phase := _world_clock.season_phase() if _world_clock != null else 0.0
+	var started := Time.get_ticks_usec()
+	var result := DataOverlayBaker.bake_cell_lut(
+		_current_map, _world_data, mode, climate, phase, _view_adapter,
+		resource_profile, _map_overlay_tex, _map_overlay_buf, _map_overlay_image
+	)
+	_map_overlay_tex = result.get("texture") as ImageTexture
+	_map_overlay_image = result.get("image") as Image
+	_map_overlay_buf = result.get("buf", PackedByteArray())
+	_map_overlay_layer.set_cell_lut_texture(_map_overlay_tex)
+	_map_overlay_layer.show_mode_animated(mode)
+	_map_overlay_dirty = false
+	set_process(false)
+	_map_overlay_last_refresh_msec = now
+	_map_overlay_refresh_count += 1
+	_map_overlay_last_result = {
+		"path": result.get("path", ""),
+		"upload_bytes": int(result.get("upload_bytes", 0)),
+		"encode_upload_ms": (Time.get_ticks_usec() - started) / 1000.0,
+		"stats": result.get("stats", {}),
+	}
 
 
 func finish_daily_tick(ui_ms: float, ui_breakdown: Dictionary = {}) -> void:
@@ -475,6 +584,7 @@ func on_season_changed(season_idx: int) -> void:
 	if _renderer != null and _renderer.has_method("begin_season_transition") and _world_clock != null:
 		_renderer.begin_season_transition(_world_clock.season_phase())
 	var cp = _generator._c() if _generator.has_method("_c") else null
+	mark_map_overlay_dirty(&"season_changed")
 	var use_legacy := false
 	if cp != null and "season_refresh_legacy_signal" in cp:
 		use_legacy = bool(cp.season_refresh_legacy_signal)
@@ -489,6 +599,7 @@ func on_season_changed(season_idx: int) -> void:
 func on_year_changed(_year_idx: int) -> void:
 	if _generator != null and _current_map != null and _world_data != null:
 		_generator.refresh_yearly(_current_map, _world_data)
+		mark_map_overlay_dirty(&"year_changed")
 
 
 func fit_camera(safe_area: Rect2 = Rect2()) -> void:
@@ -510,6 +621,13 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	if ext != null and _renderer.has_method("set_world_ext"):
 		_renderer.set_world_ext(ext)
 	_renderer.set_map(_current_map, _world_data)
+	if _map_overlay_layer != null:
+		_map_overlay_layer.set_bounds(_renderer.get_world_bounds())
+		_map_overlay_layer.set_horizontal_wrap(map_wrap_period_x())
+		_map_overlay_layer.configure_cell_lut(
+			_world_data.enum_atlas_tex,
+			_world_data.lut_dims
+		)
 	if _renderer.has_method("set_map_baker") and _generator != null and "_baker" in _generator:
 		_renderer.set_map_baker(_generator._baker)
 	if _world_clock != null:

@@ -17,9 +17,12 @@ const CLOTHING_REQUIREMENT_PER_CAPITA := 4
 const SURVIVAL_FUND_DAYS := 30
 const INITIAL_HOUSEHOLD_STOCK_DAYS := 1
 const INITIAL_BUILDING_INPUT_STOCK_DAYS := 1
-const RESOURCE_BUILDING_RUNWAY_DAYS := 365
+const RESOURCE_BUILDING_RUNWAY_DAYS := INITIAL_RESOURCE_HORIZON_DAYS
+const RENEWABLE_SAFE_HARVEST_Q16 := 32768
+const RENEWABLE_GROWTH_DIVISOR := 8
 const OWNER_OPERATING_CYCLES := 2
 const PLANNED_UTILIZATION_Q16 := 49152
+const TARGET_EMPLOYMENT_Q16 := 62259
 const INITIAL_CARRYING_CAPACITY_SHARE_Q16 := 32768
 const BOOTSTRAP_BRIDGE_STOCK := {
 	"logs": 1000,
@@ -330,7 +333,9 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 	# Capacity balancing remains physically calibrated. Resource-tiered mode
 	# ranks viable settlements by that capacity, hard-input coverage, and local
 	# visible resource abundance, then assigns deterministic quartile scales.
-	# Scaling only expands unemployed population; it never invents production.
+	# Explicit stress scales may expand unemployed population for load testing.
+	# The normal resource-tiered fixture is capped again by its generated jobs
+	# below, after demand and resource-safe building counts have converged.
 	var capacity_calibrated_population := carrying_capacity_population.duplicate()
 	var resource_population_scores := _resource_population_scores(
 		carrying_capacity_cell_indices, capacity_calibrated_population,
@@ -369,6 +374,10 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 	var merchant_bootstrap_substitutions := 0
 	var owner_daily_input_cost_by_key := {}
 	var merchant_daily_inventory_value_by_cell := {}
+	var job_capacity_by_cell := PackedInt64Array()
+	job_capacity_by_cell.resize(carrying_capacity_population.size())
+	var job_limited_population_trimmed := 0
+	var job_limited_cells := 0
 
 	# Route B: every populated cell gets exactly one merchant post (商栈). Its
 	# owner (merchant) is the cell's market maker and now lives inside the
@@ -382,10 +391,10 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 		if generated_groups.is_empty():
 			continue
 		if merchant_post_available:
-			var scale_idx := carrying_capacity_cell_indices.find(cell_idx)
-			var cell_scale := int(population_scales_by_cell[scale_idx]) \
-				if scale_idx >= 0 else 1
-			generated_groups.append({"spec": merchant_post_spec, "count": cell_scale})
+			# A merchant post is cell-level market infrastructure, not a
+			# population-scaled producer. One post supplies the invariant market
+			# maker; additional merchants must be justified by runtime demand.
+			generated_groups.append({"spec": merchant_post_spec, "count": 1})
 		generated_groups.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 			return int(a.spec.type_id) < int(b.spec.type_id))
 		for group in generated_groups:
@@ -419,6 +428,22 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 		var capacity_idx := carrying_capacity_cell_indices.find(cell_idx)
 		var target_population := int(carrying_capacity_population[capacity_idx]) \
 			if capacity_idx >= 0 else 0
+		var job_capacity := 0
+		for profession in jobs_by_profession:
+			job_capacity = _sat_add_nonnegative(
+				job_capacity, maxi(0, int(jobs_by_profession[profession])))
+		if capacity_idx >= 0:
+			job_capacity_by_cell[capacity_idx] = job_capacity
+		if population_scale == RESOURCE_TIERED_POPULATION_SCALE and \
+				target_population > 0:
+			var job_limited_population := job_capacity * Q16_ONE / \
+				TARGET_EMPLOYMENT_Q16
+			if job_limited_population < target_population:
+				job_limited_population_trimmed += \
+					target_population - job_limited_population
+				job_limited_cells += 1
+				target_population = job_limited_population
+				carrying_capacity_population[capacity_idx] = target_population
 		var actual_population := 0
 		if target_population > 0 and int(jobs_by_profession.get(&"merchant", 0)) > 0:
 			cell_indices.append(cell_idx)
@@ -471,6 +496,12 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 		carrying_capacity_min = mini(carrying_capacity_min, int(population))
 		carrying_capacity_max = maxi(carrying_capacity_max, int(population))
 		carrying_capacity_total += int(population)
+	var total_job_capacity := 0
+	for job_capacity in job_capacity_by_cell:
+		total_job_capacity = _sat_add_nonnegative(
+			total_job_capacity, maxi(0, int(job_capacity)))
+	var initial_job_coverage_q16 := Q16_ONE if total_population <= 0 else \
+		mini(Q16_ONE, total_job_capacity * Q16_ONE / total_population)
 
 	var active_building_cells := {}
 	for building_cell in building_cells:
@@ -534,8 +565,8 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 			basic_capacity_initial_buildings - basic_capacity_trimmed_buildings,
 		"initial_unemployed_population": total_unemployed_population,
 		"chain_input_coverage_q16": chain_input_coverage_q16,
-		"population_source": "resource_tiered_complete_chain_test_bootstrap_v19",
-		"collector_placement_model": "resource_backed_complete_chain_v17",
+		"population_source": "resource_tiered_complete_chain_test_bootstrap_v21",
+		"collector_placement_model": "resource_backed_complete_chain_v18",
 		"initial_resource_horizon_days": INITIAL_RESOURCE_HORIZON_DAYS,
 		"construction_source_min_horizon_days":
 			CONSTRUCTION_SOURCE_MIN_HORIZON_DAYS,
@@ -550,8 +581,20 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 		"population_scales_by_cell": population_scales_by_cell,
 		"population_tier_counts": population_tier_counts,
 		"resource_population_scores": resource_population_scores,
-		"building_scale_model": "household_demand_input_fixed_point_resource_runway_v1",
+		"building_scale_model": "household_demand_input_fixed_point_safe_yield_v2",
 		"resource_building_runway_days": RESOURCE_BUILDING_RUNWAY_DAYS,
+		"renewable_safe_harvest_q16": RENEWABLE_SAFE_HARVEST_Q16,
+		"renewable_harvest_model": "reserve_responsive_safe_yield_v1",
+		"planned_utilization_q16": PLANNED_UTILIZATION_Q16,
+		"target_employment_q16": TARGET_EMPLOYMENT_Q16,
+		"job_capacity_by_cell": job_capacity_by_cell,
+		"total_job_capacity": total_job_capacity,
+		"initial_job_coverage_q16": initial_job_coverage_q16,
+		"employment_acceptance_ok": population_scale != \
+			RESOURCE_TIERED_POPULATION_SCALE or \
+			initial_job_coverage_q16 >= TARGET_EMPLOYMENT_Q16,
+		"job_limited_population_trimmed": job_limited_population_trimmed,
+		"job_limited_cells": job_limited_cells,
 		"initial_employment": "unemployed",
 		"initial_stock_units": int(bootstrap_market.total_stock),
 		"initial_household_stock_units": int(bootstrap_market.household_stock),
@@ -582,7 +625,6 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 		"bootstrap_cycle_days": cycle_days,
 		"survival_fund_days": SURVIVAL_FUND_DAYS,
 		"owner_operating_cycles": OWNER_OPERATING_CYCLES,
-		"planned_utilization_q16": PLANNED_UTILIZATION_Q16,
 		"initial_carrying_capacity_share_q16": INITIAL_CARRYING_CAPACITY_SHARE_Q16,
 		"initial_survival_funds": initial_survival_funds,
 		"initial_owner_operating_funds": initial_owner_operating_funds,
@@ -641,6 +683,13 @@ static func _rebalance_building_groups(groups_by_cell: Dictionary,
 		for group_raw in groups:
 			var group: Dictionary = group_raw
 			group.count = _sat_mul_nonnegative(maxi(0, int(group.count)), scale)
+			# The capacity-balanced base fixture already proved that these
+			# owner-lots support its jobs and survival chain. Preserve that
+			# per-capita employment structure when population is scaled.
+			# Renewable/non-renewable physical caps below may still trim an
+			# extractor, after which the final population pass follows the
+			# actually surviving jobs.
+			group["bootstrap_scaled_employment_floor"] = int(group.count)
 		# Demand and upstream inputs depend on one another. A small deterministic
 		# fixed-point loop converges the sparse stone-age graph without adding a
 		# second runtime economy.
@@ -653,7 +702,8 @@ static func _rebalance_building_groups(groups_by_cell: Dictionary,
 				var group: Dictionary = group_raw
 				var spec: Dictionary = group.spec
 				var current := maxi(1, int(group.count))
-				var required := 1
+				var required := maxi(1, int(group.get(
+					"bootstrap_scaled_employment_floor", 1)))
 				var outputs: PackedStringArray = spec.get(
 					"output_good_ids", PackedStringArray())
 				var quantities: PackedInt64Array = spec.get(
@@ -758,10 +808,38 @@ static func _resource_building_count_cap(spec: Dictionary, cell_idx: int,
 		if cell_idx < 0 or cell_idx >= reserves.size() or int(quantities[i]) <= 0:
 			return 0
 		var required := float(quantities[i]) / float(GOODS_SCALE)
-		var runway := RESOURCE_BUILDING_RUNWAY_DAYS if int(modes[i]) == 0 else 1
-		cap = mini(cap, int(floor(maxf(0.0, reserves[cell_idx]) /
-			(required * float(runway)))))
+		if int(modes[i]) == 0:
+			var sustainable_daily_yield := _renewable_safe_yield_per_day(
+				StringName(ids[i]), maxf(0.0, reserves[cell_idx]))
+			if sustainable_daily_yield > 0.0:
+				var planned_required := required * \
+					float(PLANNED_UTILIZATION_Q16) / float(Q16_ONE)
+				cap = mini(cap, int(floor(
+					sustainable_daily_yield / planned_required)))
+			else:
+				cap = mini(cap, int(floor(maxf(0.0, reserves[cell_idx]) /
+					(required * float(RESOURCE_BUILDING_RUNWAY_DAYS)))))
+		else:
+			cap = mini(cap, int(floor(
+				maxf(0.0, reserves[cell_idx]) / required)))
 	return cap
+
+
+static func _renewable_safe_yield_per_day(
+		resource_id: StringName, local_reserve: float) -> float:
+	for profile in ResourceProfileRegistry.ordered():
+		if StringName(profile.id) != resource_id:
+			continue
+		var capacity := maxf(0.0, float(profile.ecology_capacity)) * \
+			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+		var growth := maxf(0.0, float(profile.ecology_growth_rate))
+		if capacity <= 0.0 or growth <= 0.0:
+			return 0.0
+		var yield_biomass := minf(
+			capacity / float(RENEWABLE_GROWTH_DIVISOR), local_reserve)
+		return yield_biomass * growth * \
+			float(RENEWABLE_SAFE_HARVEST_Q16) / float(Q16_ONE)
+	return 0.0
 
 
 static func _resource_population_scores(cell_indices: PackedInt32Array,

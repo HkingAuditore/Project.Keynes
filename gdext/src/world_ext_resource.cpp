@@ -398,11 +398,12 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         const float hi = temp_hi[r];
         const float inv_span = (hi > lo) ? (1.0f / (hi - lo)) : 0.0f;
         const int habitat_mode = habitat_modes[r];
-        if (habitat_mode < 0 || habitat_mode > 4) continue;
+        if (habitat_mode < 0 || habitat_mode > 5) continue;
         const bool land_gate = habitat_mode == 1 && have_water;
         const uint8_t habitat_bit = habitat_mode == 2 ? uint8_t{2} :
                                     (habitat_mode == 3 ? uint8_t{4} :
-                                     (habitat_mode == 4 ? uint8_t{8} : uint8_t{0}));
+                                     (habitat_mode == 4 ? uint8_t{8} :
+                                      (habitat_mode == 5 ? uint8_t{2 | 8} : uint8_t{0})));
         const float gb = gen_base[r], gt = gen_temp[r], gm = gen_moisture[r], gs = gen_self[r];
         const float db = decay_base[r], dt = decay_temp[r], dm = decay_moisture[r], ds = decay_self[r];
         const float stress = decay_stress[r];

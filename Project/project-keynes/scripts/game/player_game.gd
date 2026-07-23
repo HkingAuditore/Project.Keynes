@@ -12,6 +12,7 @@ const WORLD_SETUP_SCENE_PATH := "res://scenes/world_setup.tscn"
 @onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
 @onready var _camera: MapCamera = $MapCamera
 @onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
+@onready var _map_overlay: DataOverlayLayer = $WorldRoot/DataOverlayLayer
 @onready var _world_clock: WorldClock = $WorldClock
 @onready var _runtime_host: WorldRuntimeHost = $RuntimeHost
 @onready var _ui_manager: GameUIManager = $UI
@@ -48,7 +49,8 @@ func _refit_after_viewport_resize() -> void:
 
 
 func _configure_runtime() -> void:
-	_runtime_host.configure(_renderer, _camera, _world_clock)
+	_map_overlay.set_alpha(0.58)
+	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
 	_ui_manager.set_diagnostics_source(_runtime_host)
 	_map_interaction.configure(_camera, _runtime_host)
 	_selection.configure(_highlight, _camera, _runtime_host, _ui_manager)
@@ -66,6 +68,8 @@ func _connect_signals() -> void:
 	_ui_manager.setup_requested.connect(_return_to_world_setup)
 	_ui_manager.clear_selection_requested.connect(_selection.clear_selection)
 	_ui_manager.day_night_toggled.connect(_on_day_night_toggled)
+	_ui_manager.map_overlay_requested.connect(_runtime_host.set_map_overlay)
+	_ui_manager.map_overlay_cleared.connect(_runtime_host.clear_map_overlay)
 
 
 func _on_world_ready(
@@ -134,7 +138,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_world_clock.toggle_pause()
 			_time_controls.sync_ui()
 		KEY_ESCAPE:
-			_selection.clear_selection()
+			if not _ui_manager.dismiss_overlay_menu():
+				_selection.clear_selection()
 
 
 func _push_visual_toggles() -> void:

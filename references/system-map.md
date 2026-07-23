@@ -31,7 +31,7 @@
 
 Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `res://scenes/world_setup.tscn`，它只挂 `scripts/ui/world_setup.gd`，负责地图尺寸、seed、海平面、大陆数量和若干友好化 climate 控件。点击生成后默认进入 `res://scenes/player_game.tscn`，并通过 meta/settings 把 setup 配置交给 `scripts/game/player_game.gd` / `scripts/game/world_runtime_host.gd`。启动页的「调试场景」按钮仍进入 `res://scenes/main.tscn`，保留旧 debug/runtime lab。
 
-`player_game.gd` 是面向玩家的轻量场景装配层。它连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的精简 GM 性能模式：顶栏按钮、反引号或 F1 打开性能面板，F4 切换 FPS HUD；性能 CSV、地块 CSV 与只读经济 epoch CSV 分别由既有 `PerfRecorder`、`TileDataRecorder` 和 `EconomyDataRecorder` 生成。玩家场景不挂 `DataOverlayLayer`、soak/A-B 或旧 debug lab 的模拟/视觉开关。
+`player_game.gd` 是面向玩家的轻量场景装配层。它连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的精简 GM 性能模式：顶栏按钮、反引号或 F1 打开性能面板，F4 切换 FPS HUD；性能 CSV、地块 CSV 与只读经济 epoch CSV 分别由既有 `PerfRecorder`、`TileDataRecorder` 和 `EconomyDataRecorder` 生成。玩家场景挂载独立 `DataOverlayLayer`，但只使用静态 cell-index atlas + 动态 per-cell RGBA8 LUT；soak/A-B 与旧 debug lab 的全图 overlay 开关仍只在 debug 入口。
 
 `main.gd` 是当前 debug 主场景协调者，仍然很大。它负责：
 
@@ -161,7 +161,7 @@ WorldClock.day_changed(day_idx)
 
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
-- `natural_resource_daily`：31 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；`cell_temp` 与所有 `ResourceProfile.temp_lo/temp_hi` 统一为 `[0,1]`，禁止混用摄氏范围。所有数量型储量/自然增减统一乘省级地块面积倍率 `100×`，分布形状和无量纲增长/衰减率不变。普通资源使用线性 IMEX，野生动物/林木/鱼群使用适生度承载量、密度增长、迁入恢复和仅作用于原始适生度最低 25% 的急性压力死亡模型，避免普通非理想气候同时被承载量和死亡率重复惩罚。海鱼储量属于海洋格，淡水鱼储量属于湖泊水格及湖岸陆格。external delta 一次性应用，`dt_days` 仅推进自然项。岸上渔业由 NativeEconomyRuntime 通过 frozen 六邻拓扑读取并扣减真实水格。初始矿产由资源局部斑块、同族地质省和矿带共同生成；关键资源可按原始适宜度排名配置最低全球矿点覆盖，避免有限地图整类缺矿。
+- `natural_resource_daily`：31 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；`cell_temp` 与所有 `ResourceProfile.temp_lo/temp_hi` 统一为 `[0,1]`，禁止混用摄氏范围。所有数量型储量/自然增减统一乘省级地块面积倍率 `100×`，分布形状和无量纲增长/衰减率不变。普通资源使用线性 IMEX，野生动物/林木/鱼群使用适生度承载量、密度增长、迁入恢复和仅作用于原始适生度最低 25% 的急性压力死亡模型。海鱼可分布在沿海陆格和海洋水格，初始化在物理环流 flush 后读取温度、海域类型、洋流、上升流、河口营养和连续噪声，按适生度形成非均匀斑块；每格只保存本格储量。淡水鱼储量属于湖泊水格及湖岸陆格。external delta 一次性应用，`dt_days` 仅推进自然项。所有建筑资源边仍严格为 `local`，只读取并扣减建筑本格储量，不存在邻域采集。初始矿产由资源局部斑块、同族地质省和矿带共同生成；关键资源可按原始适宜度排名配置最低全球矿点覆盖。
 - 植被演替：C++ stage-b 计算 vitality/streak 并返回 succession candidates；GDScript 边界负责把 candidate 写回 `HexCell + MapData + cell_vegetation/cell_base_vegetation` 权威槽位并触发 atlas/scatter dirty。native cadence 的演替日数按 stage-b stride 与 native daily stride 的乘积累计。
 - 物资与阶层已进入独立原生经济域：`GoodProfileRegistry` 编译 stable goods，
   `PopulationStore`/`MarketStore` 保存状态，`economy_daily` 推进 `ECONOMY_GRAPH`。
@@ -214,6 +214,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 - 静态/生成期：`height_tex`、`terrain_horizon_tex`、`enum_atlas_tex`、`flow_tex`、`water_depth_tex`、`terrain_normal_tex`。
 - 运行期动态：`weather_field_tex`、`dynamic_cell_atlas_tex`、`ecology_visual_atlas_tex`、`dyn_lut_tex`、`eco_lut_tex`、`weather_lut_tex`。
 - 间接寻址：`enum_atlas_tex` 的 G/B 保存 `cell.index`，per-cell LUT 把每日更新从 pixel fan-out 降到 `n_cells` texel。
+- 玩家信息遮罩：`DataOverlayLayer` 位于基础地图/植被上方、选择高亮下方；`data_overlay.gdshader` 从 `enum_atlas_tex.GB` 解码 cell ID，再以 NEAREST 读取玩家 `overlay_lut`。世界拓扑不变时只上传 `lut_dims.x * lut_dims.y * 4` 字节，不创建地图分辨率动态纹理。
 
 `HexRenderer` 是主地图渲染节点，使用 full-screen quad 和 `world_map.gdshader`。它接收 `WorldData`、visual quality、TOD、水面、天气、detail layers 等开关。`WeatherLayer` 渲染天气 overlay，`ShrubLayer` 和 detail scatter 负责 MultiMesh/PCG 点缀。
 
@@ -249,7 +250,8 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 - `world_setup.gd`：生成前参数界面。
 - `player_game.gd`：玩家主场景装配层，负责 runtime/UI/controller wiring、基础玩家热键，以及 F1/F4 GM 性能入口。
 - `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、精简 GM 性能面板、FPS HUD、safe area 和控制信号；不直接承担逐字段渲染。
-- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
+- `ui/components/map_overlay_toolbar.gd` / `ui/overlay_legend.gd`：左侧纯图标双列信息菜单与非交互图例。资源按钮来自 `ResourceProfileRegistry`，按钮无可见文字，名称和说明通过 Tooltip/图例呈现。图例停靠右下角，Inspector 打开时自动左移避让；连续资源使用固定 profile 参考值与低值扩展的高色差色带，海拔使用同时改变色相和亮度的高对比科学色带。
+- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
 - `map_interaction_controller.gd` / `selection_controller.gd` / `time_controls_controller.gd`：玩家输入、选中态和时间控制器。
 - `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
@@ -360,6 +362,26 @@ DataCore 或 MapData。
 - Economy consumer: narrow native bridge in `economy_runtime.{h,cpp}`; frozen country epoch,
   country/cohort cash transfer, country/market goods transfer, and combined conservation.
 - Persistence: PKCN v1 first, then PKEC v13 with matching schema/generation/hash；旧默认 v11 ACTIVE
-  因商人策略从 25%/1 日改为 12.5%/30 日分档库存基线而明确拒绝，ACTIVE 同时拒绝 v11 PROBE 和 v10。
+  因商人策略从 25%/1 日改为 12.5%/30 日分档库存基线而明确拒绝，ACTIVE 同时拒绝 v11 PROBE 和 v10。生产者收购系数现为 good-specific 硬上限（默认 95%），短缺只影响采购量/优先级；国内贸易复用同一 12.5% 营运底线，并以目的地冻结余额统一完成预检与扣款。新增商人流动性指标只进入 report、选中格快照和 Economy CSV v19，不进入 PKEC v16 或 hash。
 - Player-facing read path: selected cell → `CountryFacade.cell_summary()` →
   `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.
+
+## Economy v18 portfolio investment
+
+Runtime investment uses the native `endogenous_owner_portfolio_v8` path. Every
+10-day cell review selects at most four unique building types, derives an
+aggregate entrepreneur count from disposable-income improvement, and fills at
+most 25 percent of the persistent marginal-output gap. Population, capital,
+credit, construction stock, and same-good gap budgets are shared across the
+portfolio; each type produces one aggregate BUILD command and no per-person or
+per-building loop. Multi-type portfolios cap one type at 50 percent of new
+owner slots. Before scoring, unused installed capacity and pending construction
+are deducted from the output deficit. Established types may grow at most 10
+percent per review and absent types seed at one building; entry into the
+merchant profession requires at least 50 percent projected disposable-income
+improvement. Recovery liquidation remains aggregate and retires at most 25
+percent of confirmed excess capacity per review. Only realized settled losses
+advance suspension; execution blockage remains active/idle. The test fixture
+creates one merchant post per populated cell and protects only the final local
+merchant from profession change. Policy restore is PKEC v18; debug recording
+remains Economy CSV v20.
