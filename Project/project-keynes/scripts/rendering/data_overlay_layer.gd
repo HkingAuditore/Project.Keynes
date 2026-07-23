@@ -2,7 +2,8 @@
 # 独立挂载在 WorldRoot 下的数据热力图节点，与 HexRenderer 的 WorldQuad 解耦：
 #   - 自己维护一个 MeshInstance2D（四顶点 quad，尺寸与 world_bounds 一致）
 #   - 自己维护一个 ShaderMaterial（shaders/data_overlay.gdshader）
-#   - 对外暴露 set_mode / set_alpha / set_data_texture / set_bounds 四个接口
+#   - legacy 调试路径使用 set_data_texture；玩家路径使用 configure_cell_lut /
+#     set_cell_lut_texture，以静态索引 atlas 间接读取动态 per-cell LUT
 #   - overlay_mode == NONE 时整个节点 visible=false，0 shader 开销
 #
 # z_index:
@@ -23,6 +24,8 @@ var _mode: int = 0
 var _alpha: float = 0.7
 var _has_valid_shader: bool = false
 var _has_valid_texture: bool = false
+var _use_cell_lut: bool = false
+var _transition: Tween
 
 func _ready() -> void:
 	# z_index=5：盖在 WorldQuad（默认 0）之上，但低于 CellHighlight(10)。
@@ -59,6 +62,10 @@ func _ensure_nodes() -> void:
 	_shader_mat.set_shader_parameter("wrap_period_x", _wrap_period_x)
 	# 即使还没有纹理，提供一张 1×1 占位避免 null uniform 警告
 	_shader_mat.set_shader_parameter("overlay_tex", DataOverlayBaker.get_empty_texture())
+	_shader_mat.set_shader_parameter("map_index_atlas", DataOverlayBaker.get_empty_texture())
+	_shader_mat.set_shader_parameter("overlay_lut", DataOverlayBaker.get_empty_texture())
+	_shader_mat.set_shader_parameter("lut_dims", Vector2(1.0, 1.0))
+	_shader_mat.set_shader_parameter("use_cell_lut", false)
 	_mesh_inst.material = _shader_mat
 	_has_valid_shader = true
 
@@ -109,6 +116,54 @@ func set_data_texture(tex: Texture2D) -> void:
 		_has_valid_texture = true
 	_update_visibility()
 
+## Configures the player-facing indirect backend. The atlas is static for the
+## world lifetime; only overlay_lut is subsequently updated.
+func configure_cell_lut(map_index_atlas: Texture2D, lut_dims: Vector2i) -> void:
+	_ensure_nodes()
+	if _shader_mat == null:
+		return
+	_shader_mat.set_shader_parameter(
+		"map_index_atlas",
+		map_index_atlas if map_index_atlas != null else DataOverlayBaker.get_empty_texture()
+	)
+	_shader_mat.set_shader_parameter(
+		"lut_dims",
+		Vector2(maxi(1, lut_dims.x), maxi(1, lut_dims.y))
+	)
+	_use_cell_lut = map_index_atlas != null and lut_dims.x > 0 and lut_dims.y > 0
+	_shader_mat.set_shader_parameter("use_cell_lut", _use_cell_lut)
+	_update_visibility()
+
+func set_cell_lut_texture(tex: Texture2D) -> void:
+	if _shader_mat == null:
+		return
+	_shader_mat.set_shader_parameter(
+		"overlay_lut",
+		tex if tex != null else DataOverlayBaker.get_empty_texture()
+	)
+	_has_valid_texture = tex != null
+	_update_visibility()
+
+func show_mode_animated(mode: int, duration: float = 0.15) -> void:
+	if _transition != null and _transition.is_valid():
+		_transition.kill()
+	if _mode == mode and visible:
+		modulate.a = 1.0
+		return
+	set_mode(mode)
+	modulate.a = 0.0
+	_transition = create_tween()
+	_transition.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_transition.tween_property(self, "modulate:a", 1.0, maxf(0.01, duration))
+
+func hide_animated(duration: float = 0.12) -> void:
+	if _transition != null and _transition.is_valid():
+		_transition.kill()
+	_transition = create_tween()
+	_transition.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_transition.tween_property(self, "modulate:a", 0.0, maxf(0.01, duration))
+	_transition.tween_callback(force_disable)
+
 func get_mode() -> int:
 	return _mode
 
@@ -120,6 +175,7 @@ func force_disable() -> void:
 	_mode = 0
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("overlay_mode", 0)
+	modulate.a = 1.0
 	_update_visibility()
 
 # --- 内部 -----------------------------------------------------
@@ -128,6 +184,7 @@ func _update_visibility() -> void:
 	# NONE 或纹理无效 / shader 无效时，直接隐藏以省掉 fragment 计算。
 	var should_show: bool = _has_valid_shader \
 		and _mode != 0 \
+		and _has_valid_texture \
 		and _bounds.size.x > 0.0 \
 		and _bounds.size.y > 0.0
 	visible = should_show

@@ -55,7 +55,7 @@
 - 一地块一市场；库存由该地块全部商人 cohort 按人口共同持有。
 - 人口非零但无商人时，从最大非商人 cohort 转 1 人并按比例转资金。
 - 购买资金直接进入商人 cohort，无 `market_cash`。
-- 商人正常消费；企业采购开始冻结现金并保留 12.5%，按实际出库/出口 EMA 形成的库存缺口价值分配预算；同 tick 最多一次替代 fallback。
+- 商人正常消费；企业采购开始冻结现金并保留 12.5%，按实际出库/出口 EMA 形成的库存缺口价值分配预算；生产者结算价严格使用商品 `merchant_buy_price_factor_q16`（默认 `62259/65536≈95%`）作为零售价比例，短缺只影响采购量和优先级，不能把收购系数抬到 100%；同 tick 最多一次替代 fallback。
 - 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
 - `staple_food/protein/produce` 是内部营养与价格分配子篮子，对玩家统一显示“食品”；野味、
   鱼、肉、谷物、采集植物和已解锁加工食物均按替代品展示，即使当前分配量为零也不隐藏。
@@ -76,6 +76,8 @@
   取消已完成生产。家庭清算会保留 ACTIVE 企业按已到岗业主比例与计划利用率计算的下一周期投入
   营运资金；市场库存只按整套互补配方可执行的共同容量预留下周期物理投入，非生存加工不得提前锁住生存食物；居民消费和国内出口只能使用预留以上库存。
   商人采购目标以 `max(可行日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；生存品供给下限为平滑日产量的 1/2，其他耐储品为 1/4，配置库存天数和目标量级不缩小。现金不足时按生存品、居民短缺、生产投入 reserve 缺口提高预算权重；权重只改变购买顺序，总预算仍以真实采购价值为上限。仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
+  国内贸易对每个目的地冻结同一笔现金预算：`商人正现金 - 既有订单预留 - 12.5% 营运底线`。候选裁量、利润裁剪和最终扣款共享这笔余额，生存品与关键投入也不得突破底线。
+  运行时报告、市场快照和 Economy CSV v19 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v16 或确定性哈希。
 - 默认 `building_output_efficiency_q16=131072`（2 倍）统一提高所有建筑的物资产出；建设材料、生产投入、自然资源消耗、岗位与工资保持目录原值。倍率在 native 冷路径载入输出列时应用，不改变 building catalog hash 或 PKEC 字节结构。
 
 - 自适应工资的可负担上限使用当前冻结价格下的“满产日收入”，先扣除日投入并预留目标营业利润，再按员工槽位折算；不得再把整个 epoch 的收入直接当作单日工资依据。亏损停产建筑使用同一反事实日收入报价，停产期间岗位目标为零。
@@ -163,8 +165,9 @@ extract 扣减，内容审计复核效率范围。新地图 bootstrap 另以 Res
 地质/不可再生资源为 `8×`。林木另只在适生度最高的 30% 陆地保证至少 30,000 省域储量，
 并使用承载量增长而非可能产生负净增长的线性衰减。有限地图上的关键矿产只在最适生的
 0.5% habitat 保证最低矿床，避免连续地质场把整种资源截断为零；旱地、牧场在最适生 60%、
-水田和种植园在最适生 20% 保证与最大建筑配方相匹配的承载下限。海鱼覆盖全部海洋 habitat，
-初值不低于 300,000，并以 500,000 理想承载量的密度制约模型自然恢复。
+水田和种植园在最适生 20% 保证与最大建筑配方相匹配的承载下限。海鱼在沿海陆格与海洋水格的
+联合 habitat 中保留约 72% 的适生格，温度、海域深浅、洋流、上升流、河口营养与连续噪声共同
+决定丰度，不再全海域使用同一最低储量；其理想承载量为 500,000。
 选中地块 Inspector 使用 owner-lot 的实际收入、投入成本、工资、资源需求与采收账本显示关系；
 人口页通过独立单地块 SELECTIVE 目标读取上次提交周期的人均收支与精确来源，首次选中等待
 下一次结算，且不会覆盖调试 trace filter；市场默认只显示价格、库存与无前缀增减值。
@@ -210,9 +213,11 @@ PKEC save，restore 后在下一次成功生产前显示为未知。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
 - `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
   collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。
-- 30 种资源受 `land/marine_water/freshwater/coastal_land` habitat 门控；海鱼储量存在与海洋
-  水格相邻的沿海陆格，淡水/淡水鱼不再是 DataCore 经济资源。所有建筑资源边都必须为 `local`，
-  native 只检查并扣减建筑本格储量，不存在邻域采集。
+- 30 种资源受 `land/marine_water/freshwater/coastal_land/coastal_or_marine` habitat 门控；
+  海鱼储量可存在于沿海陆格和海洋水格，二者各自属于所在 cell；河口及近岸营养只影响初始化
+  适生度，不改变资源所有权。淡水/淡水鱼不再是
+  DataCore 经济资源。所有建筑资源边都必须为 `local`，native 只检查并扣减建筑本格储量，
+  不存在邻域采集。
   矿产初值叠加资源局部斑块、
   同族地质省与矿带。栽培作物只存在于 goods，不进入 DataCore resource slots。
 - 黄金/白银面值发行和普通可储存余货的 20% 托底发行是生产运行时的两类内生货币发行来源；电力是唯一 cycle-flow，utility prepass
@@ -237,9 +242,11 @@ PKEC save，restore 后在下一次成功生产前显示为未知。
 This section supersedes older descriptions of 30-day industrial-only automatic
 investment and PKEC v13. The default runtime now uses 10-day Investment V5 over
 all constructible industrial and collector types, including locally missing
-types. Collector candidates must pass renewable reserve/safe-yield or 3650-day
-deposit-life checks; bullion candidates also pass the 1 percent monthly issuance
-cap. Service buildings remain excluded.
+types. Collector candidates are not rejected by reserve, safe-yield, or
+deposit-life gates. Local construction conditions still decide whether a type
+can exist, and actual production remains bounded by the resource physically
+present. Bullion candidates still pass the 1 percent monthly issuance cap.
+Service buildings remain excluded.
 
 Investment V5 leaves owner vacancies to the employment pass. Every cohort with
 cash above its 30-day household reserve may sponsor construction, including the
@@ -250,10 +257,10 @@ to the configured owner profession only when it is not already there.
 Installed capacity remains a score input but is no longer an approval gate.
 Profitable entry can proceed in an existing local market when sell-through,
 discard, target margin, owner livelihood, payback, sponsor capital, relative
-income, probability, and resource-safety checks all pass.
+income and probability checks all pass.
 Primitive collectors with no construction recipe participate with zero
 construction cost, but retain the existing operating-capital, owner-livelihood,
-profitability, payback, probability, bullion, and resource-safety gates.
+profitability, payback, probability, and bullion gates.
 
 Default merchant inventory coverage is 60 days before applying each good's
 ratio. Procurement, trade, and bootstrap merchant funding retain that full
@@ -396,3 +403,58 @@ upstream probe. Permanent liquidation reviews advance only when inputs, resource
 financing can execute that probe but its expected margin remains below restart; temporary
 blockage resets the failed-review streak. Probe capacity and liquidation eligibility are
 transient native lanes outside PKEC and replay hash.
+
+## 2026-07-23 renewable-harvest and fixture-employment correction
+
+The optional test-economy bootstrap no longer expands renewable extractors from a
+one-year reserve runway. Ecological resources use
+`min(local_reserve, ideal_capacity / 8) * ecology_growth_rate *
+resource_safe_harvest_q16` as their daily safe yield, divided by the recipe's
+planned utilization and per-building extraction. Non-renewable extractors retain
+the 3650-day bootstrap horizon. Scaling preserves the capacity-balanced base
+owner-lots as an employment floor; only a physical resource cap may trim below
+that proportional count. After demand/input rebalancing and merchant-post
+placement, normal resource-tiered population is capped at generated job capacity
+divided by the 95 percent employment target. Explicit 10x/100x/1000x fixtures
+remain synthetic load tests.
+
+The safe-yield calculation is bootstrap-only. Runtime production continues to
+consume the resource physically present, and endogenous investment has no
+reserve, safe-yield, or deposit-life veto. Overinvestment is therefore expressed
+through resource shortage, lower realized capacity, profit, suspension, and
+possible later liquidation rather than an approval hard cap. No authority,
+DataCore slot, scheduler stage, save field, or hash field is introduced.
+
+## 2026-07-23 portfolio investment and partial liquidation
+
+The native `endogenous_owner_portfolio_v7` review keeps at most four unique
+types per cell. It derives aggregate willingness from disposable-income
+improvement, shares population/capital/credit/material/gap budgets, fills 25
+percent of verified marginal gaps, and submits one BUILD count per type.
+Multi-type portfolios cap a type at 50 percent of new owner slots. Recovery
+liquidation retires only confirmed excess capacity and at most 25 percent of a
+group per review, with proportional bad debt. PKEC v17 persists the four policy
+controls and CSV v20 exposes the portfolio and liquidation diagnostics.
+
+## 2026-07-23 lifecycle and investment-capacity correction
+
+Producer lifecycle classification now advances `severe_loss_cycles` only from
+an actual settled production cycle whose realized margin crosses the configured
+loss threshold. Missing labor, inputs, resources, or working capital is an
+execution blockage: the group stays active/idle, retains its labor claim and
+restart intent, and does not enter loss liquidation merely because settlement
+was zero.
+
+`endogenous_owner_portfolio_v8` subtracts both unused installed output capacity
+and aggregate pending-construction output from each marginal-good deficit before
+candidate scoring. An established type may start at most 10 percent of its
+installed count in one review (rounded up); a new type seeds at one building.
+A non-merchant cohort must improve projected disposable income by at least
+50 percent Q16 before changing into the merchant profession. These are bounded
+integer calculations over the existing fixed-width portfolio.
+
+The test-economy bootstrap creates exactly one merchant post per populated cell
+instead of multiplying market infrastructure by population scale. Runtime
+employment retains only the final merchant invariant; surplus merchants may
+move through the normal aggregate profession/owner-job paths. PKEC v18 persists
+the three new deterministic policy controls and explicitly rejects v17.

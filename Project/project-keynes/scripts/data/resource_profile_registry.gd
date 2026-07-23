@@ -76,6 +76,14 @@ static func ensure_loaded() -> void:
 			push_error("ResourceProfileRegistry: %s uses invalid temperature range [%s,%s]; expected normalized [0,1]" % [
 				path, str(res.temp_lo), str(res.temp_hi)])
 			continue
+		if float(res.init_target_coverage) + float(res.init_micro_coverage) > 1.000001:
+			push_error("ResourceProfileRegistry: %s core + micro coverage exceeds 1.0" % path)
+			continue
+		if float(res.init_micro_coverage) > 0.0 \
+				and float(res.init_micro_reserve_share) <= 0.0 \
+				and float(res.init_micro_min_reserve) <= 0.0:
+			push_error("ResourceProfileRegistry: %s configures zero-reserve micro deposits" % path)
+			continue
 		_ordered.append(res)
 
 
@@ -112,7 +120,8 @@ static func habitat_code(p: ResourceProfile) -> int:
 	if habitat == "marine_access": habitat = "marine_water"
 	if habitat == "freshwater_access": habitat = "freshwater"
 	return int({"any": 0, "land": 1, "marine_water": 2,
-		"freshwater": 3, "coastal_land": 4}.get(habitat, -1))
+		"freshwater": 3, "coastal_land": 4,
+		"coastal_or_marine": 5}.get(habitat, -1))
 
 
 static func habitat_available(p: ResourceProfile, mask: int) -> bool:
@@ -122,6 +131,7 @@ static func habitat_available(p: ResourceProfile, mask: int) -> bool:
 		2: return (mask & 2) != 0
 		3: return (mask & 4) != 0
 		4: return (mask & 8) != 0
+		5: return (mask & (2 | 8)) != 0
 	return false
 
 
@@ -132,6 +142,82 @@ static func reserve_map_field(p: ResourceProfile) -> String:
 		return ""
 	var e: Dictionary = DCComponentSchema.find_by_name(p.reserve_component)
 	return String(e.get("map_field", "")) if not e.is_empty() else ""
+
+
+## Stable normalization shared by the Inspector and player map overlay.
+## It is profile-derived, so the color of a deposit does not jump when an
+## unrelated cell becomes the current world maximum.
+static func reference_reserve(p: ResourceProfile) -> float:
+	if p == null:
+		return 1.0
+	var initial_peak := float(p.init_base)
+	initial_peak += maxf(float(p.init_temp), 0.0)
+	initial_peak += maxf(float(p.init_moisture), 0.0)
+	initial_peak += maxf(float(p.init_elevation), 0.0)
+	initial_peak += maxf(float(p.init_river), 0.0)
+	initial_peak += maxf(float(p.init_volcano), 0.0)
+	initial_peak += maxf(float(p.init_ocean_current), 0.0)
+	initial_peak += maxf(float(p.init_upwelling), 0.0)
+	initial_peak += maxf(float(p.init_estuary), 0.0)
+	initial_peak += maxf(float(p.init_noise), 0.0)
+	initial_peak += maxf(float(p.init_climate_fit), 0.0)
+	initial_peak += maxf(float(p.init_province) * 0.90, 0.0)
+	initial_peak += maxf(float(p.init_belt) * 0.56, 0.0)
+	initial_peak += _max_positive_weight(p.init_landform_weights)
+	initial_peak += _max_positive_weight(p.init_vegetation_weights)
+	initial_peak *= maxf(float(p.init_reserve_scale), 0.0)
+	# `init_min_reserve` is applied after ranking but before the shared cell-area
+	# multiplier in MapGenerator. Keep the reference in exactly the same units;
+	# multiplying the suitability peak first made coverage-guaranteed resources
+	# (for example arable land) saturate the overlay at 1.0.
+	initial_peak = maxf(initial_peak, float(p.init_floor_reserve))
+	initial_peak = maxf(initial_peak, float(p.init_min_reserve))
+	initial_peak *= CELL_AREA_RESOURCE_SCALE
+	if float(p.init_target_coverage) > 0.0:
+		var normalized_mean := float(p.init_target_mean_reserve) * CELL_AREA_RESOURCE_SCALE
+		if float(p.init_target_reserve_density) > 0.0:
+			normalized_mean = float(p.init_target_reserve_density) * \
+				CELL_AREA_RESOURCE_SCALE / float(p.init_target_coverage)
+		initial_peak = maxf(initial_peak, normalized_mean)
+
+	var runtime_peak := 0.0
+	if float(p.ecology_capacity) > 0.0:
+		runtime_peak = float(p.ecology_capacity) * CELL_AREA_RESOURCE_SCALE
+	elif float(p.decay_self) > 0.000001:
+		var production := float(p.gen_base) + float(p.gen_self) - float(p.decay_base)
+		production += maxf(float(p.gen_temp) - float(p.decay_temp), 0.0)
+		production += maxf(float(p.gen_moisture) - float(p.decay_moisture), 0.0)
+		runtime_peak = maxf(production, 0.0) * CELL_AREA_RESOURCE_SCALE / float(p.decay_self)
+	return maxf(maxf(initial_peak, runtime_peak), 1.0)
+
+
+## Semantic icon registration for profiles that do not yet carry a Texture2D.
+## UI consumers render these keys through the project's Font Awesome system.
+static func icon_key(p: ResourceProfile) -> String:
+	if p == null:
+		return "unknown"
+	var id := String(p.id)
+	if id == "timber": return "wood"
+	if id in ["stone", "limestone"]: return "rock"
+	if id in ["coal", "oil", "natural_gas", "sulfur"]: return "fire"
+	if id in ["gold_ore", "silver_ore", "rare_earth"]: return "precious"
+	if id in ["copper_ore", "iron_ore", "bauxite", "tin_ore", "lead_ore",
+			"zinc_ore", "manganese_ore"]: return "metal"
+	if id == "flint": return "flint"
+	if id in ["marine_fish", "freshwater_fish"]: return "fish"
+	if id == "wild_game": return "animal"
+	if id in ["fertile_soil", "arable_land", "paddy_land", "plantation_land",
+			"pasture", "phosphate_rock"]: return "crop"
+	if id in ["clay", "silica_sand"]: return "earth"
+	if id in ["salt", "saltpeter"]: return "salt"
+	return "unknown"
+
+
+static func _max_positive_weight(weights: Dictionary) -> float:
+	var result := 0.0
+	for raw in weights.values():
+		result = maxf(result, float(raw))
+	return result
 
 
 # 某 profile 储量字段对应的 C++ slot 名（cpp_name，如 "cell_res_timber_reserve"）。

@@ -1387,9 +1387,9 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# write_f32_indexed 全字段后可彻底删除（master 手册 §3.10.3）。
 	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
 	map.init_soa_from_bake()
-	# Natural resources：SoA 就位后写入每地块初始资源储量（按 temp/moisture/terrain 适宜度）。
-	# 必须在 init_soa_from_bake 之后（数组已 resize/置 0）、_setup_sus bind 之前。
-	_bootstrap_natural_resource_deposits(map, cfg)
+	# Natural resources are bootstrapped in _setup_sus after the deferred
+	# physical circulation solve has published per-cell currents/upwelling.
+	# This keeps fisheries from silently sampling zero-valued ocean drivers.
 	var env_pixel_size: Vector2i = Vector2i.ZERO
 	if world != null and "derived_size" in world:
 		env_pixel_size = world.derived_size
@@ -1799,6 +1799,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		cfg.climate_profile = _c()
 	if _baker != null and _baker.has_method("run_deferred_initial_physical_circulation"):
 		_baker.run_deferred_initial_physical_circulation(map, world, hex_size, cfg)
+	# Resource bootstrap must observe committed physical geography. It still
+	# precedes economy bootstrap, and the explicit push keeps the native
+	# snapshot slots identical to MapData after replacing PackedArrays.
+	_bootstrap_natural_resource_deposits(map, cfg)
+	_publish_bootstrapped_natural_resources_to_runtime(map)
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
 	# 把 ext 句柄一次性下发给 WeatherSystem。ext 为 null（gdext 未编译 / 未 bind）
 	# 时 WeatherSystem 自动走 GDScript legacy path，对 caller 完全透明。
@@ -6090,7 +6095,9 @@ func natural_resource_last_result() -> Dictionary:
 # suit = init_base + init_temp*tn + init_moisture*m
 #      + init_elevation*clamp(elevation,0,1) + init_landform_weights[lf]
 #      + init_vegetation_weights[veg] + init_river*water_feature
-#      + init_volcano*volc + init_noise*noise01(cell_pos, init_noise_scale)
+#      + init_volcano*volc + init_ocean_current*current_speed
+#      + init_upwelling*upwelling + init_estuary*estuary_strength
+#      + init_noise*noise01(cell_pos, init_noise_scale)
 # reserve0 = max(max(0, suit) * init_reserve_scale, init_floor_reserve) * CELL_AREA_RESOURCE_SCALE
 # （habitat 或 terrain/vegetation exclusion 不匹配时为 0）。
 # 在 init_soa_from_bake 之后调用（temp/moisture/water/terrain/elevation/landform/vegetation/
@@ -6109,8 +6116,13 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	var lf_arr: PackedByteArray = map_ref.landform_arr
 	var veg_arr: PackedByteArray = map_ref.vegetation_arr
 	var river_arr: PackedByteArray = map_ref.has_river_arr
+	var river_flow_arr: PackedFloat32Array = map_ref.river_flow_arr
+	var river_downstream_arr: PackedInt32Array = map_ref.river_downstream_arr
 	var lake_arr: PackedByteArray = map_ref.is_lake_seed_arr
 	var volcano_arr: PackedByteArray = map_ref.has_volcano_arr
+	var ocean_x_arr: PackedFloat32Array = map_ref.ocean_current_x_arr
+	var ocean_y_arr: PackedFloat32Array = map_ref.ocean_current_y_arr
+	var upwelling_arr: PackedFloat32Array = map_ref.upwelling_strength_arr
 	var posx_arr: PackedFloat32Array = map_ref.cell_pos_x_arr
 	var posy_arr: PackedFloat32Array = map_ref.cell_pos_y_arr
 	var have_water: bool = water_arr.size() >= n_cells
@@ -6119,8 +6131,12 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	var have_lf: bool = lf_arr.size() >= n_cells
 	var have_veg: bool = veg_arr.size() >= n_cells
 	var have_river: bool = river_arr.size() >= n_cells
+	var have_river_flow: bool = river_flow_arr.size() >= n_cells
+	var have_river_downstream: bool = river_downstream_arr.size() >= n_cells
 	var have_lake: bool = lake_arr.size() >= n_cells
 	var have_volcano: bool = volcano_arr.size() >= n_cells
+	var have_ocean_current: bool = ocean_x_arr.size() >= n_cells and ocean_y_arr.size() >= n_cells
+	var have_upwelling: bool = upwelling_arr.size() >= n_cells
 	var have_pos: bool = posx_arr.size() >= n_cells and posy_arr.size() >= n_cells
 	var neighbor_indices: PackedInt32Array = map_ref.neighbor_indices_packed()
 	var have_neighbors: bool = neighbor_indices.size() >= n_cells * 6
@@ -6154,6 +6170,37 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 			mask |= 4
 		habitat_arr[i] = mask
 	map_ref.resource_habitat_mask_arr = habitat_arr
+	# River mouths are geography-derived productivity inputs, not resource access:
+	# every cell still owns and exposes only its own reserve. Mark the river cell,
+	# its ocean outlet, and a weaker one-ring marine plume.
+	var estuary_strength_arr := PackedFloat32Array()
+	estuary_strength_arr.resize(n_cells)
+	if have_river and have_river_downstream and have_lf:
+		for source in range(n_cells):
+			if river_arr[source] == 0:
+				continue
+			var outlet := int(river_downstream_arr[source])
+			if outlet < 0 or outlet >= n_cells:
+				continue
+			var outlet_landform := int(lf_arr[outlet])
+			if outlet_landform not in [LandformType.LF.DEEP_OCEAN,
+					LandformType.LF.OCEAN, LandformType.LF.COAST]:
+				continue
+			var flow_signal := 1.0 - exp(-maxf(
+				float(river_flow_arr[source]) if have_river_flow else 1.0, 0.0) * 0.25)
+			var mouth_strength := 0.75 + 0.25 * flow_signal
+			estuary_strength_arr[source] = maxf(estuary_strength_arr[source], mouth_strength)
+			estuary_strength_arr[outlet] = maxf(estuary_strength_arr[outlet], mouth_strength)
+			if have_neighbors:
+				for direction in range(6):
+					var plume_cell := int(neighbor_indices[outlet * 6 + direction])
+					if plume_cell < 0 or plume_cell >= n_cells:
+						continue
+					var plume_landform := int(lf_arr[plume_cell])
+					if plume_landform in [LandformType.LF.DEEP_OCEAN,
+							LandformType.LF.OCEAN, LandformType.LF.COAST]:
+						estuary_strength_arr[plume_cell] = maxf(
+							estuary_strength_arr[plume_cell], mouth_strength * 0.45)
 	var base_seed: int = 0
 	if cfg != null and cfg.get("seed") != null:
 		base_seed = int(cfg.get("seed"))
@@ -6174,6 +6221,9 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var w_elev: float = float(p.init_elevation)
 		var w_river: float = float(p.init_river)
 		var w_volc: float = float(p.init_volcano)
+		var w_ocean_current: float = float(p.init_ocean_current)
+		var w_upwelling: float = float(p.init_upwelling)
+		var w_estuary: float = float(p.init_estuary)
 		var w_noise: float = float(p.init_noise)
 		var w_climate_fit: float = float(p.init_climate_fit)
 		var reserve_scale: float = maxf(float(p.init_reserve_scale), 0.0) * \
@@ -6195,11 +6245,16 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 		var use_veg: bool = have_veg and not veg_w.is_empty()
 		var use_river: bool = w_river != 0.0 and (have_river or have_lake)
 		var use_volc: bool = have_volcano and w_volc != 0.0
+		var use_ocean_current: bool = have_ocean_current and w_ocean_current != 0.0
+		var use_upwelling: bool = have_upwelling and w_upwelling != 0.0
+		var use_estuary: bool = w_estuary != 0.0
 		var use_noise: bool = have_pos and absf(w_noise) > 0.0
 		var family_id := String(p.geology_family_id)
 		var use_province := have_pos and not family_id.is_empty() and absf(p.init_province) > 0.0
 		var use_belt := have_pos and not family_id.is_empty() and absf(p.init_belt) > 0.0
 		var ranked_cells := []
+		var target_coverage := clampf(float(p.init_target_coverage), 0.0, 1.0)
+		var use_ranked_distribution := target_coverage > 0.0
 		# 噪声按「资源」独立创建（map seed ⊕ 资源 id hash），保证可复现且各资源斑块互不重合。
 		var noise: FastNoiseLite = null
 		if use_noise:
@@ -6258,6 +6313,14 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 					suit += w_river
 			if use_volc and volcano_arr[i] != 0:
 				suit += w_volc
+			if use_ocean_current:
+				var current_speed := sqrt(
+					ocean_x_arr[i] * ocean_x_arr[i] + ocean_y_arr[i] * ocean_y_arr[i])
+				suit += w_ocean_current * clampf(current_speed, 0.0, 1.0)
+			if use_upwelling:
+				suit += w_upwelling * clampf(upwelling_arr[i], 0.0, 1.0)
+			if use_estuary:
+				suit += w_estuary * estuary_strength_arr[i]
 			if use_noise:
 				suit += w_noise * ((noise.get_noise_2d(posx_arr[i], posy_arr[i]) + 1.0) * 0.5)
 			if use_province:
@@ -6272,20 +6335,168 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 			arr[i] = maxf(0.0, suit) * reserve_scale
 			if floor_reserve > 0.0:
 				arr[i] = maxf(arr[i], floor_reserve)
-			if float(p.init_min_coverage) > 0.0 and float(p.init_min_reserve) > 0.0:
+			if use_ranked_distribution or (
+					float(p.init_min_coverage) > 0.0 and float(p.init_min_reserve) > 0.0):
 				ranked_cells.append({"cell": i, "suit": suit})
-		var target_cells := mini(ranked_cells.size(), ceili(
-			float(ranked_cells.size()) * clampf(float(p.init_min_coverage), 0.0, 1.0)))
+		var target_cells := 0
+		if use_ranked_distribution:
+			target_cells = mini(ranked_cells.size(), ceili(
+				float(ranked_cells.size()) * target_coverage))
+		else:
+			target_cells = mini(ranked_cells.size(), ceili(
+				float(ranked_cells.size()) * clampf(float(p.init_min_coverage), 0.0, 1.0)))
 		if target_cells > 0:
 			ranked_cells.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 				if not is_equal_approx(float(a.suit), float(b.suit)):
 					return float(a.suit) > float(b.suit)
 				return int(a.cell) < int(b.cell))
-			for rank in range(target_cells):
-				var cell := int(ranked_cells[rank].cell)
-				arr[cell] = maxf(arr[cell], float(p.init_min_reserve) * \
+			if use_ranked_distribution:
+				for ranked in ranked_cells:
+					arr[int(ranked.cell)] = 0.0
+				var micro_target := mini(
+					ranked_cells.size() - target_cells,
+					ceili(float(ranked_cells.size()) * clampf(
+						float(p.init_micro_coverage), 0.0, 1.0)))
+				var micro_cells := _select_micro_deposit_cells(
+					ranked_cells, target_cells, micro_target,
+					neighbor_indices, have_neighbors)
+				var core_cells: Array = ranked_cells.slice(0, target_cells)
+				var minimum_reserve := maxf(floor_reserve, float(p.init_min_reserve) * \
 					ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE)
+				var micro_minimum_reserve := maxf(
+					float(p.init_micro_min_reserve), 0.0) * \
+					ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+				var reserve_density := maxf(float(p.init_target_reserve_density), 0.0) * \
+					ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+				var target_mean_reserve := maxf(float(p.init_target_mean_reserve), 0.0) * \
+					ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+				if reserve_density > 0.0 or target_mean_reserve > 0.0:
+					var target_total_reserve := reserve_density * ranked_cells.size() \
+						if reserve_density > 0.0 else target_mean_reserve * target_cells
+					var core_floor_total := minimum_reserve * core_cells.size()
+					var micro_floor_total := micro_minimum_reserve * micro_cells.size()
+					var total_reserve := maxf(
+						target_total_reserve, core_floor_total + micro_floor_total)
+					var micro_budget := total_reserve * clampf(
+						float(p.init_micro_reserve_share), 0.0, 0.5) \
+						if not micro_cells.is_empty() else 0.0
+					micro_budget = maxf(micro_budget, micro_floor_total)
+					micro_budget = minf(micro_budget, total_reserve - core_floor_total)
+					_allocate_ranked_deposit_budget(
+						arr, core_cells, total_reserve - micro_budget,
+						minimum_reserve, maxf(float(p.init_richness_exponent), 0.1))
+					_allocate_ranked_deposit_budget(
+						arr, micro_cells, micro_budget,
+						micro_minimum_reserve, 0.65)
+				else:
+					for rank in range(target_cells):
+						var cell := int(ranked_cells[rank].cell)
+						arr[cell] = maxf(arr[cell], minimum_reserve)
+					for ranked in micro_cells:
+						arr[int(ranked.cell)] = maxf(
+							arr[int(ranked.cell)], micro_minimum_reserve)
+			else:
+				for rank in range(target_cells):
+					var cell := int(ranked_cells[rank].cell)
+					arr[cell] = maxf(arr[cell], float(p.init_min_reserve) * \
+						ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE)
 		map_ref.set(field, arr)
+
+
+func _select_micro_deposit_cells(ranked_cells: Array, core_count: int,
+		micro_count: int, neighbor_indices: PackedInt32Array,
+		have_neighbors: bool) -> Array:
+	if micro_count <= 0 or core_count >= ranked_cells.size():
+		return []
+	var occupied := {}
+	for rank in range(mini(core_count, ranked_cells.size())):
+		occupied[int(ranked_cells[rank].cell)] = true
+	var selected := {}
+	var result := []
+	# 第一轮保持至少一格间距，把小微矿点从富集核心和彼此之间摊开。
+	for rank in range(core_count, ranked_cells.size()):
+		if result.size() >= micro_count:
+			break
+		var cell := int(ranked_cells[rank].cell)
+		var touches_deposit := false
+		if have_neighbors:
+			for direction in range(6):
+				var neighbor := int(neighbor_indices[cell * 6 + direction])
+				if neighbor >= 0 and occupied.has(neighbor):
+					touches_deposit = true
+					break
+		if touches_deposit:
+			continue
+		result.append(ranked_cells[rank])
+		selected[cell] = true
+		occupied[cell] = true
+	# 极小地图或候选区过密时，稳定回填剩余最适宜地块。
+	for rank in range(core_count, ranked_cells.size()):
+		if result.size() >= micro_count:
+			break
+		var cell := int(ranked_cells[rank].cell)
+		if selected.has(cell):
+			continue
+		result.append(ranked_cells[rank])
+		selected[cell] = true
+	return result
+
+
+func _allocate_ranked_deposit_budget(arr: PackedFloat32Array, cells: Array,
+		budget: float, minimum_reserve: float, richness_exponent: float) -> void:
+	if cells.is_empty() or budget <= 0.0:
+		return
+	var remaining := maxf(budget - minimum_reserve * cells.size(), 0.0)
+	var best_suit := float(cells[0].suit)
+	var cutoff_suit := float(cells[-1].suit)
+	var suit_span := maxf(best_suit - cutoff_suit, 0.000001)
+	var weights := PackedFloat32Array()
+	weights.resize(cells.size())
+	var weight_sum := 0.0
+	for rank in range(cells.size()):
+		var relative_suit := clampf(
+			(float(cells[rank].suit) - cutoff_suit) / suit_span, 0.0, 1.0)
+		var weight := pow(maxf(relative_suit, 0.001), richness_exponent)
+		weights[rank] = weight
+		weight_sum += weight
+	for rank in range(cells.size()):
+		var cell := int(cells[rank].cell)
+		var enrichment := remaining * float(weights[rank]) / weight_sum \
+			if weight_sum > 0.0 else remaining / cells.size()
+		arr[cell] = minimum_reserve + enrichment
+
+
+func _publish_bootstrapped_natural_resources_to_runtime(map_ref: MapData) -> void:
+	if map_ref == null:
+		return
+	var habitat_component := &"cell.resource_habitat_mask"
+	if _data_core_world != null and _data_core_world.has_method("component_id") \
+			and _data_core_world.has_method("write_u8_range"):
+		var habitat_cid := int(_data_core_world.component_id(habitat_component))
+		if habitat_cid >= 0:
+			_data_core_world.write_u8_range(
+				habitat_cid, 0, map_ref.resource_habitat_mask_arr)
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("component_id") \
+			and _data_core_world_ext.has_method("write_u8_range"):
+		var habitat_cid_ext := int(_data_core_world_ext.component_id(habitat_component))
+		if habitat_cid_ext >= 0:
+			_data_core_world_ext.write_u8_range(
+				habitat_cid_ext, 0, map_ref.resource_habitat_mask_arr)
+	for profile in ResourceProfileRegistry.ordered():
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if field.is_empty():
+			continue
+		var values: PackedFloat32Array = map_ref.get(field)
+		if _data_core_world != null and _data_core_world.has_method("component_id") \
+				and _data_core_world.has_method("write_f32_range"):
+			var cid := int(_data_core_world.component_id(profile.reserve_component))
+			if cid >= 0:
+				_data_core_world.write_f32_range(cid, 0, values)
+		if _data_core_world_ext != null and _data_core_world_ext.has_method("component_id") \
+				and _data_core_world_ext.has_method("write_f32_range"):
+			var cid_ext := int(_data_core_world_ext.component_id(profile.reserve_component))
+			if cid_ext >= 0:
+				_data_core_world_ext.write_f32_range(cid_ext, 0, values)
 
 
 # 每日资源 pass 入口（由 NaturalResourceDailySystem.tick 调）。

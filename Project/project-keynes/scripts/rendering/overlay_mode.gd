@@ -43,6 +43,9 @@ enum MODE {
 	#   主动注入到 UI 下拉菜单。开关关闭时 baker 仍然兼容（采样到 size=0 SoA
 	#   时直接画零），但下拉菜单不应展示该项以避免误导。
 	DEMO_THERMAL_GRADIENT = 18,  # 温度梯度热应力场（demo, 连续 [0,1]）
+	ELEVATION = 19,              # 玩家地图：权威海拔
+	VEGETATION_TYPE = 20,        # 玩家地图：当前植被类型
+	RESOURCE_RESERVE = 21,       # 玩家地图：所选自然资源储量
 }
 
 # VECTOR 类通道：方向用色相、强度用亮度。它们既不是离散调色板（DISCRETE）
@@ -79,6 +82,9 @@ const DISPLAY_NAME: Dictionary = {
 	MODE.WIND_STRESS_CURL: "风应力旋度",
 	MODE.OCEAN_PSI: "流函数 ψ",
 	MODE.DEMO_THERMAL_GRADIENT: "热梯度（demo）",
+	MODE.ELEVATION: "海拔",
+	MODE.VEGETATION_TYPE: "植被",
+	MODE.RESOURCE_RESERVE: "自然资源",
 }
 
 # 连续通道的数值两端标签（Legend 显示用）。离散通道留空。
@@ -97,6 +103,8 @@ const RANGE_LABEL: Dictionary = {
 	MODE.WIND_STRESS_CURL: ["负涊", "正涊"],
 	MODE.OCEAN_PSI: ["顺时针", "逆时针"],
 	MODE.DEMO_THERMAL_GRADIENT: ["0.00", "1.00"],
+	MODE.ELEVATION: ["深海", "高峰"],
+	MODE.RESOURCE_RESERVE: ["稀少", "丰富"],
 }
 
 # 通道适用域 / 无效区域提示。DebugConsole 与 OverlayLegend 用它区分
@@ -111,6 +119,7 @@ const DOMAIN_HINT: Dictionary = {
 	MODE.WIND_STRESS_CURL: "仅水域有效；陆地透明，0.5 为中性。",
 	MODE.OCEAN_PSI: "仅水域有效；陆地透明，0.5 为中性。",
 	MODE.DEMO_THERMAL_GRADIENT: "仅 demo 数据存在时有效；数组为空会透明。",
+	MODE.RESOURCE_RESERVE: "零储量、不适生或不适用地区保持透明。",
 }
 
 
@@ -137,6 +146,9 @@ const CATEGORY: Dictionary = {
 	MODE.WIND_STRESS_CURL: CATEGORY_KIND.CONTINUOUS,
 	MODE.OCEAN_PSI: CATEGORY_KIND.CONTINUOUS,
 	MODE.DEMO_THERMAL_GRADIENT: CATEGORY_KIND.CONTINUOUS,
+	MODE.ELEVATION: CATEGORY_KIND.CONTINUOUS,
+	MODE.VEGETATION_TYPE: CATEGORY_KIND.DISCRETE,
+	MODE.RESOURCE_RESERVE: CATEGORY_KIND.CONTINUOUS,
 }
 
 # 气候带离散档位（与 main.gd 的 _climate_zone_name 同口径：按 |ny-0.5| 分 5 档）。
@@ -166,15 +178,10 @@ const BIOME_GROUP_NAMES: Array = [
 	"未分类",         # 9  fallback
 ]
 
-# LANDFORM 通道：6 档纯地理大类（与 BIOME_GROUP 的"生态视角"互补——
-# 这边只看海拔/海陆，不看植被）。
+# LANDFORM 通道：当前权威 LandformType.LF 的稳定顺序，不回退到 legacy terrain。
 const LANDFORM_NAMES: Array = [
-	"深海",           # 0  OCEAN
-	"沿海/浅水",       # 1  COAST / LAKE / DELTA / REEF / KELP / MANGROVE / OASIS
-	"平原",           # 2  PLAIN / GRASSLAND / STEPPE / DESERT / SAVANNA / SWAMP / SHRUBLAND / SALT_FLAT / FOREST / JUNGLE / TAIGA
-	"丘陵",           # 3  HILL / BADLANDS
-	"山地",           # 4  MOUNTAIN
-	"冰雪",           # 5  SNOW / TUNDRA / GLACIER / SEA_ICE
+	"深海", "海洋", "海岸", "湖泊", "平原", "低地", "丘陵", "山地",
+	"高峰", "三角洲", "荒原", "盐滩", "火山", "高原", "裂谷", "峡谷",
 ]
 
 # TERRAIN id → BIOME_GROUP bucket。新增地形需要补一项；漏项 fallback 到 9。
@@ -273,6 +280,8 @@ static func ordered_modes() -> Array:
 		MODE.WIND_STRESS_CURL,
 		MODE.OCEAN_PSI,
 		MODE.DEMO_THERMAL_GRADIENT,
+		MODE.ELEVATION,
+		MODE.VEGETATION_TYPE,
 	]
 
 static func display_name(m: int) -> String:

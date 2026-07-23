@@ -148,15 +148,27 @@ func _initialize() -> void:
 		return
 	_expect("10x stress fixture expands populated cells into hundreds",
 		_stress_population_matches_baseline(first, stress_hundreds, 10, 100))
-	_expect("10x fixture rebalances buildings by demand, inputs, and resource runway",
+	_expect("10x fixture rebalances buildings by demand, inputs, and safe resource yield",
 		_demand_balanced_supply_valid(first, stress_hundreds, 10))
 	_expect("100x stress fixture expands populated cells into thousands",
 		_stress_population_matches_baseline(first, stress_thousands, 100, 1000))
 	_expect("1000x stress fixture expands populated cells into ten-thousands",
 		_stress_population_matches_baseline(
 			first, stress_ten_thousands, 1000, 10000))
-	_expect("resource-tiered fixture ranks cells deterministically by local capacity",
-		_resource_tiered_population_valid(first, resource_tiered))
+	_expect("resource-tiered fixture ranks cells and caps population by generated jobs",
+		_resource_tiered_population_valid(first, resource_tiered) and
+		_fixture_respects_renewable_safe_yield(
+			resource_tiered, facade, map) and
+		bool(resource_tiered.get("employment_acceptance_ok", false)) and
+		int(resource_tiered.get("initial_job_coverage_q16", 0)) >=
+			int(resource_tiered.get("target_employment_q16", 65537)))
+	print("[economy-test-bootstrap/tiered] population=%d jobs=%d coverage=%.1f%% trimmed=%d" % [
+		int(resource_tiered.get("total_population", 0)),
+		int(resource_tiered.get("total_job_capacity", 0)),
+		float(resource_tiered.get("initial_job_coverage_q16", 0)) *
+			100.0 / 65536.0,
+		int(resource_tiered.get("job_limited_population_trimmed", 0)),
+	])
 	_expect("only land cells with a quantitatively closed input chain are populated",
 		int(first.get("populated_cells", 0)) >= 1 and
 		int(first.get("populated_cells", 0)) +
@@ -166,16 +178,18 @@ func _initialize() -> void:
 		int(first.get("building_group_count", 0)) > 0 and
 		int(first.get("eligible_building_type_count", 0)) < catalog_buildings.size() / 4 and
 		_fixture_uses_only_mid_stone_buildings(first, facade))
+	_expect("bootstrap creates exactly one merchant post per populated cell",
+		_fixture_has_one_merchant_post_per_populated_cell(first, facade))
 	_expect("professions follow actual local building jobs",
 		int(first.get("generated_profession_count", 0)) > 1 and
 		int(first.get("generated_profession_count", 0)) <= facade.profession_ids().size())
-	_expect("population follows actual jobs with the remainder explicitly unemployed",
+	_expect("population follows actual jobs with only the employment-target remainder unemployed",
 		_population_matches_fixture(first, facade))
 	_expect("bootstrap reports formula-based initial finance source",
 		String(first.get("population_source", "")) ==
-			"resource_tiered_complete_chain_test_bootstrap_v19" and
+			"resource_tiered_complete_chain_test_bootstrap_v21" and
 		String(first.get("collector_placement_model", "")) ==
-			"resource_backed_complete_chain_v17" and
+			"resource_backed_complete_chain_v18" and
 		int(first.get("initial_resource_horizon_days", 0)) == 3650 and
 		int(first.get("cell_population_cap", 0)) == 300 and
 		String(first.get("initial_employment", "")) == "unemployed")
@@ -221,8 +235,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v16 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 16)
+	_expect("native CSV v20 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 20)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("closed-chain land receives a settlement and the broken chain stays empty",
@@ -640,8 +654,8 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 139, "cohorts": 26, "buildings": 74,
-		"resources": 21, "market": 39}
+	var expected_columns := {"summary": 160, "cohorts": 26, "buildings": 74,
+		"resources": 21, "market": 49}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
 		var bytes := FileAccess.get_file_as_bytes(path)
@@ -657,7 +671,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
 	var summary_text := FileAccess.get_file_as_string(str(paths.summary)).trim_prefix("﻿")
 	var summary_header := summary_text.split("\n", false)[0].split(",", true)
-	_expect("summary CSV v16 exposes credit, recovery, and trade diagnostics",
+	_expect("summary CSV v20 exposes portfolio, recovery, trade, and merchant liquidity diagnostics",
 		[
 			"construction_goods_consumed", "building_investment_candidates",
 			"building_owner_mobility", "building_owner_job_reallocations",
@@ -669,6 +683,18 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 			"trade_response_deadline_misses_cumulative",
 			"merchant_credit_outstanding", "recovery_approved",
 			"trade_candidates_arbitrated_out",
+			"merchant_cash", "merchant_inventory_liquidation_value",
+			"merchant_economic_assets", "merchant_procurement_margin_value",
+			"merchant_trade_purchase_cash", "merchant_trade_sale_cash",
+			"merchant_operating_outflow", "merchant_liquidity_coverage_q16",
+			"merchant_effective_buy_factor_q16",
+			"building_investment_buildings_started",
+			"building_investment_portfolios_started",
+			"building_investment_types_started",
+			"building_investment_owner_population_moved",
+			"building_investment_max_type_owner_share_q16",
+			"recovery_partially_liquidated_buildings",
+			"recovery_fully_liquidated_groups",
 		].all(func(column: String) -> bool: return summary_header.has(column)))
 	var building_text := FileAccess.get_file_as_string(str(paths.buildings)).trim_prefix("﻿")
 	var building_lines := building_text.split("\n", false)
@@ -784,6 +810,28 @@ func _max_building_group_count(fixture: Dictionary) -> int:
 	return maximum
 
 
+func _fixture_has_one_merchant_post_per_populated_cell(
+		fixture: Dictionary, facade) -> bool:
+	var packet: Dictionary = fixture.get("building_packet", {})
+	var cells: PackedInt32Array = packet.get("building_cells", PackedInt32Array())
+	var type_ids: PackedInt32Array = packet.get("building_type_ids", PackedInt32Array())
+	var counts: PackedInt64Array = packet.get("building_counts", PackedInt64Array())
+	var stable_ids: PackedStringArray = facade.building_type_ids()
+	if cells.size() != type_ids.size() or cells.size() != counts.size():
+		return false
+	var merchant_cells := {}
+	for i in range(type_ids.size()):
+		var type_id := int(type_ids[i])
+		if type_id < 0 or type_id >= stable_ids.size():
+			return false
+		if stable_ids[type_id] != "merchant_post":
+			continue
+		if int(counts[i]) != 1 or merchant_cells.has(int(cells[i])):
+			return false
+		merchant_cells[int(cells[i])] = true
+	return merchant_cells.size() == int(fixture.get("populated_cells", 0))
+
+
 func _population_matches_carrying_capacity(fixture: Dictionary) -> bool:
 	var capacity_cells: PackedInt32Array = fixture.get(
 		"carrying_capacity_cell_indices", PackedInt32Array())
@@ -837,8 +885,9 @@ func _stress_population_matches_baseline(
 func _demand_balanced_supply_valid(
 		baseline: Dictionary, scaled: Dictionary, scale: int) -> bool:
 	if String(scaled.get("building_scale_model", "")) != \
-			"household_demand_input_fixed_point_resource_runway_v1" or \
-			int(scaled.get("resource_building_runway_days", 0)) != 365:
+			"household_demand_input_fixed_point_safe_yield_v2" or \
+			int(scaled.get("resource_building_runway_days", 0)) != 3650 or \
+			int(scaled.get("renewable_safe_harvest_q16", 0)) != 32768:
 		return false
 	var baseline_buildings: PackedInt64Array = baseline.get(
 		"building_packet", {}).get("building_counts", PackedInt64Array())
@@ -880,7 +929,7 @@ func _resource_tiered_population_valid(
 		return false
 	var seen := {}
 	for i in range(base.size()):
-		if scaled[i] != base[i] * scales[i]:
+		if scaled[i] > base[i] * scales[i]:
 			return false
 		if base[i] > 0:
 			seen[int(scales[i])] = true
@@ -893,6 +942,14 @@ func _resource_tiered_population_valid(
 		for j in range(base.size()):
 			if base[j] > 0 and scores[i] < scores[j] and scales[i] > scales[j]:
 				return false
+	var jobs: PackedInt64Array = tiered.get(
+		"job_capacity_by_cell", PackedInt64Array())
+	if jobs.size() != scaled.size() or \
+			int(tiered.get("target_employment_q16", 0)) != 62259:
+		return false
+	for i in range(scaled.size()):
+		if scaled[i] > jobs[i] * 65536 / 62259:
+			return false
 	return not seen.is_empty()
 
 
@@ -949,6 +1006,58 @@ func _fixture_collectors_use_local_resources(
 			var reserves: PackedFloat32Array = map.get(field)
 			var cell := int(cells[i])
 			if cell < 0 or cell >= reserves.size() or reserves[cell] <= 0.0:
+				return false
+	return true
+
+
+func _fixture_respects_renewable_safe_yield(
+		fixture: Dictionary, facade, map: MapData) -> bool:
+	var packet: Dictionary = fixture.get("building_packet", {})
+	var cells: PackedInt32Array = packet.get(
+		"building_cells", PackedInt32Array())
+	var type_ids: PackedInt32Array = packet.get(
+		"building_type_ids", PackedInt32Array())
+	var counts: PackedInt64Array = packet.get(
+		"building_counts", PackedInt64Array())
+	var stable_ids: PackedStringArray = facade.building_type_ids()
+	if cells.size() != type_ids.size() or cells.size() != counts.size():
+		return false
+	var profiles := {}
+	for profile in ResourceProfileRegistry.ordered():
+		profiles[StringName(profile.id)] = profile
+	for i in range(cells.size()):
+		var type_id := int(type_ids[i])
+		if type_id < 0 or type_id >= stable_ids.size():
+			return false
+		var spec: Dictionary = facade.building_placement_spec(
+			StringName(stable_ids[type_id]))
+		var resource_ids: PackedStringArray = spec.get(
+			"resource_ids", PackedStringArray())
+		var quantities: PackedInt64Array = spec.get(
+			"resource_quantities", PackedInt64Array())
+		var modes: PackedInt32Array = spec.get(
+			"resource_modes", PackedInt32Array())
+		for edge in range(mini(
+				resource_ids.size(), mini(quantities.size(), modes.size()))):
+			if int(modes[edge]) != 0 or int(quantities[edge]) <= 0:
+				continue
+			var profile = profiles.get(StringName(resource_ids[edge]))
+			if profile == null or float(profile.ecology_capacity) <= 0.0 or \
+					float(profile.ecology_growth_rate) <= 0.0:
+				continue
+			var field := ResourceProfileRegistry.reserve_map_field(profile)
+			var reserves: PackedFloat32Array = map.get(field)
+			var cell := int(cells[i])
+			if cell < 0 or cell >= reserves.size():
+				return false
+			var capacity := float(profile.ecology_capacity) * \
+				ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+			var daily_yield := minf(
+				maxf(0.0, reserves[cell]), capacity / 8.0) * \
+				float(profile.ecology_growth_rate) * 0.5
+			var planned_per_building := float(quantities[edge]) / 1000.0 * 0.75
+			var cap := int(floor(daily_yield / planned_per_building))
+			if int(counts[i]) > maxi(1, cap):
 				return false
 	return true
 

@@ -28,6 +28,8 @@ func _run() -> void:
 		CountryTestHelper.configure_all_technologies(ext, native_catalog, 1, 2200))
 	_expect("native runtime configures", bool(ext.configure_economy(
 		native_catalog, profile, 1, 2200).get("ok", false)))
+	_expect("bullion diagnostic trace registers",
+		bool(ext.set_economy_inspector_trace_cell(0).get("ok", false)))
 
 	var signatures: PackedStringArray = compiled.signature_keys
 	var industrialist := signatures.find("industrialist|default")
@@ -122,8 +124,114 @@ func _run() -> void:
 		(buildings.building_kinds as PackedInt32Array).size() == types.size() and
 		(buildings.building_technology_tag_offsets as PackedInt32Array).size() == types.size() + 1 and
 		(buildings.building_technology_tags as PackedStringArray).size() > 0)
+	_test_bullion_absorption_feedback(ext, goods, types)
+	_test_bullion_entry_valuation(compiled, native_catalog)
+	if OS.get_cmdline_user_args().has("--bullion-only"):
+		return
 	_test_technology_gating(compiled, native_catalog)
 	_test_upgrade_gating(compiled, native_catalog)
+
+func _test_bullion_absorption_feedback(ext: Object, goods: PackedStringArray,
+		types: PackedStringArray) -> void:
+	var day5 := _run_day(ext, 5)
+	var day10 := _run_day(ext, 10)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var group_types: PackedInt32Array = buildings.group_type_ids
+	var planned: PackedInt32Array = buildings.planned_utilization_q16
+	var margins: PackedInt32Array = buildings.realized_profit_margin_q16
+	var loss_cycles: PackedInt32Array = buildings.severe_loss_cycles
+	var states: PackedByteArray = buildings.operating_state
+	var driver_goods: PackedInt32Array = buildings.investment_driver_good_id
+	var driver_merchant_sold: PackedInt64Array = \
+		buildings.investment_driver_merchant_sold
+	var driver_sell_through: PackedInt64Array = \
+		buildings.investment_driver_sell_through_q16
+	for pair in [
+		[types.find("gold_mine"), goods.find("gold")],
+		[types.find("silver_mine"), goods.find("silver")],
+	]:
+		var group := group_types.find(int(pair[0]))
+		var good := int(pair[1])
+		_expect("mint absorption preserves bullion utilization: %s" %
+				String(types[int(pair[0])]),
+			group >= 0 and planned[group] == 65536 and margins[group] > 0 and
+			loss_cycles[group] == 0 and states[group] == 0)
+		_expect("mint absorption passes bullion sell-through: %s" %
+				String(types[int(pair[0])]),
+			group >= 0 and driver_goods[group] == good and
+			driver_merchant_sold[group] == 0 and
+			driver_sell_through[group] == 65536)
+	_expect("bullion feedback cycles conserve exactly",
+		int(day5.get("population_error", 1)) == 0 and
+		int(day5.get("money_error", 1)) == 0 and
+		int(day5.get("goods_error", 1)) == 0 and
+		int(day10.get("population_error", 1)) == 0 and
+		int(day10.get("money_error", 1)) == 0 and
+		int(day10.get("goods_error", 1)) == 0)
+
+func _test_bullion_entry_valuation(compiled: Dictionary,
+		native_catalog: Dictionary) -> void:
+	var ext := _new_ext(compiled)
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 1
+	profile.market_runtime_mode = "ACTIVE"
+	_expect("bullion-entry country bootstraps",
+		CountryTestHelper.configure_all_technologies(
+			ext, native_catalog, 1, 2203))
+	_expect("bullion-entry runtime configures", bool(ext.configure_economy(
+		native_catalog, profile, 1, 2203).get("ok", false)))
+	_expect("bullion-entry diagnostic trace registers",
+		bool(ext.set_economy_inspector_trace_cell(0).get("ok", false)))
+	var signatures: PackedStringArray = compiled.signature_keys
+	var industrialist := signatures.find("industrialist|default")
+	var merchant := signatures.find("merchant|default")
+	var miner := signatures.find("miner|default")
+	var manager := signatures.find("manager|default")
+	var goods: PackedStringArray = compiled.good_ids
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(100000000)
+	stock[goods.find("gold")] = 0
+	stock[goods.find("silver")] = 0
+	_expect("bullion-entry population bootstraps", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			industrialist, merchant, miner, manager]),
+		"population": PackedInt64Array([10, 10, 50, 10]),
+		"funds": PackedInt64Array([
+			1000000000000, 1000000000000, 1000000, 1000000]),
+	}, {"stock": stock}).get("ok", false)))
+	_run_day(ext, 0)
+	var review := _run_day(ext, 10)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var diagnostic_types: PackedInt32Array = \
+		buildings.investment_candidate_type_ids
+	var pressures: PackedInt64Array = \
+		buildings.investment_candidate_driver_pressure_q16
+	var utilizations: PackedInt64Array = \
+		buildings.investment_candidate_driver_utilization_q16
+	var profits: PackedInt64Array = \
+		buildings.investment_candidate_projected_profit_per_day
+	var reasons: PackedInt32Array = \
+		buildings.investment_candidate_rejection_reasons
+	var types: PackedStringArray = compiled.building_type_ids
+	for type_name in ["gold_mine", "silver_mine"]:
+		var row := diagnostic_types.find(types.find(type_name))
+		_expect("mint face value makes new bullion entry viable: %s "
+				% type_name + "(row=%d pressure=%d utilization=%d profit=%d reason=%d)" % [
+					row,
+					pressures[row] if row >= 0 else -1,
+					utilizations[row] if row >= 0 else -1,
+					profits[row] if row >= 0 else -1,
+					reasons[row] if row >= 0 else -1,
+				],
+			row >= 0 and pressures[row] == 65536 and
+			utilizations[row] == 65536 and profits[row] > 0)
+	_expect("bullion-entry review conserves exactly",
+		int(review.get("population_error", 1)) == 0 and
+		int(review.get("money_error", 1)) == 0 and
+		int(review.get("goods_error", 1)) == 0)
 
 func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -> void:
 	var ext := _new_ext(compiled)
@@ -375,7 +483,7 @@ func _new_ext(catalog: Dictionary) -> Object:
 	for i in range(resources.size()):
 		var reserve_sid: int = ext.register_component(StringName(reserve_slots[i]), 0, 1, false)
 		var extra_sid: int = ext.register_component(StringName(extra_slots[i]), 0, 1, false)
-		var reserve := 1000.0
+		var reserve := 1000000.0
 		ext.write_f32_range(reserve_sid, 0, PackedFloat32Array([reserve]))
 		ext.write_f32_range(extra_sid, 0, PackedFloat32Array([0.0]))
 	return ext

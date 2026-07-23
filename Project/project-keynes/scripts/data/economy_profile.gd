@@ -103,6 +103,17 @@ extends Resource
 @export_range(0, 65536, 1) var investment_min_utilization_q16: int = 42598
 @export_range(1, 36500, 1) var investment_max_payback_days: int = 365
 @export_range(1, 12, 1) var investment_operating_cycles: int = 2
+@export_range(1, 65536, 1) var investment_gap_fill_share_q16: int = 16384
+@export_range(1, 4, 1) var investment_portfolio_max_types: int = 4
+@export_range(1, 65536, 1) var investment_max_type_owner_share_q16: int = 32768
+## Per review, an established building type may grow by at most 10% of its
+## installed count. A previously absent type uses the separate seed limit.
+@export_range(1, 65536, 1) var investment_max_growth_share_q16: int = 6554
+@export_range(1, 1024, 1) var investment_new_type_seed_buildings: int = 1
+## A non-merchant cohort only changes profession into merchant when its
+## projected disposable-income improvement reaches this Q16 threshold.
+@export_range(1, 65536, 1) var investment_merchant_transition_min_improvement_q16: int = 32768
+@export_range(1, 65536, 1) var recovery_liquidation_max_share_q16: int = 16384
 @export_range(0, 65536, 1) var resource_min_reserve_q16: int = 22938
 @export_range(0, 65536, 1) var resource_safe_harvest_q16: int = 32768
 @export_range(1, 365000, 1) var resource_min_horizon_days: int = 3650
@@ -182,6 +193,13 @@ func to_native_profile() -> Dictionary:
 		"investment_min_utilization_q16": investment_min_utilization_q16,
 		"investment_max_payback_days": investment_max_payback_days,
 		"investment_operating_cycles": investment_operating_cycles,
+		"investment_gap_fill_share_q16": investment_gap_fill_share_q16,
+		"investment_portfolio_max_types": investment_portfolio_max_types,
+		"investment_max_type_owner_share_q16": investment_max_type_owner_share_q16,
+		"investment_max_growth_share_q16": investment_max_growth_share_q16,
+		"investment_new_type_seed_buildings": investment_new_type_seed_buildings,
+		"investment_merchant_transition_min_improvement_q16": investment_merchant_transition_min_improvement_q16,
+		"recovery_liquidation_max_share_q16": recovery_liquidation_max_share_q16,
 		"resource_min_reserve_q16": resource_min_reserve_q16,
 		"resource_safe_harvest_q16": resource_safe_harvest_q16,
 		"resource_min_horizon_days": resource_min_horizon_days,

@@ -21,12 +21,24 @@ using Clock = std::chrono::steady_clock;
 constexpr size_t WRITE_CHUNK_BYTES = 1024 * 1024;
 
 constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
-    "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,births,deaths,production_inputs_consumed,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,owner_output_consumed,producer_revenue,producer_support_money_issued,bullion_money_issued,bullion_stock_consumed,gold_accepted,silver_accepted,gold_money_issued,silver_money_issued,cycle_flow_produced,cycle_flow_consumed,cycle_flow_discarded,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_opportunity,merchant_procurement_allocated,merchant_procurement_unspent_allocated,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,trade_runtime_mode,trade_topology_ready,trade_topology_generation,trade_topology_hash,trade_country_generation,trade_plan_phase,trade_scan_cursor,trade_scan_total,trade_route_cursor,trade_route_total,trade_completed_scans,trade_plan_reset_count,trade_topology_content_change_count,trade_last_plan_reset_reason,trade_source_signals,trade_destination_signals,trade_ready_candidates,trade_route_expansions,trade_route_cache_hits,trade_route_cache_misses,trade_candidates_generated,trade_candidates_accepted,trade_rejected_profit,trade_rejected_no_spread,trade_rejected_margin,trade_quantity_profit_clips,trade_relief_candidates,trade_rejected_capacity,trade_rejected_stock,trade_rejected_cash,trade_rejected_route,trade_rejected_order_cap,trade_orders_in_flight,trade_orders_dispatched,trade_orders_arrived,trade_unclaimed_orders,trade_capacity_available,trade_capacity_used,population_error,money_error,goods_error,construction_goods_consumed,building_investment_candidates,building_owner_mobility,building_owner_job_reallocations,building_owner_job_profession_changes,building_owner_job_probability_skips,building_investments_started,building_investment_blocked_funds,building_investment_blocked_materials,building_investment_blocked_sponsor_capital,building_investment_blocked_resources,building_investment_probability_skips,building_investment_capital_transferred,desired_business_demand,funded_business_demand,unfunded_business_demand,owner_working_capital_allocated,trade_signal_max_age_days,trade_first_dispatch_delay_max_days,trade_response_deadline_misses,trade_response_deadline_misses_cumulative,trade_unresolved_no_attempt,trade_unresolved_no_spread,trade_unresolved_margin,trade_unresolved_route,trade_unresolved_stock,trade_unresolved_capacity,trade_unresolved_cash,trade_unresolved_order_cap,merchant_credit_budget,merchant_credit_committed,merchant_credit_drawn,merchant_credit_repaid,merchant_credit_premium_repaid,merchant_credit_outstanding,merchant_credit_bad_debt,recovery_candidates,recovery_approved,recovery_restarted,recovery_failed,recovery_liquidated_buildings,trade_active_keys_pruned,trade_deficit_episodes_started,trade_deficit_episodes_resolved,trade_candidates_stale_generation,trade_candidates_arbitrated_out,trade_true_source_stock_failures\n",
+    "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,births,deaths,production_inputs_consumed,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,owner_output_consumed,producer_revenue,producer_support_money_issued,bullion_money_issued,bullion_stock_consumed,gold_accepted,silver_accepted,gold_money_issued,silver_money_issued,cycle_flow_produced,cycle_flow_consumed,cycle_flow_discarded,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_opportunity,merchant_procurement_allocated,merchant_procurement_unspent_allocated,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,trade_runtime_mode,trade_topology_ready,trade_topology_generation,trade_topology_hash,trade_country_generation,trade_plan_phase,trade_scan_cursor,trade_scan_total,trade_route_cursor,trade_route_total,trade_completed_scans,trade_plan_reset_count,trade_topology_content_change_count,trade_last_plan_reset_reason,trade_source_signals,trade_destination_signals,trade_ready_candidates,trade_route_expansions,trade_route_cache_hits,trade_route_cache_misses,trade_candidates_generated,trade_candidates_accepted,trade_rejected_profit,trade_rejected_no_spread,trade_rejected_margin,trade_quantity_profit_clips,trade_relief_candidates,trade_rejected_capacity,trade_rejected_stock,trade_rejected_cash,trade_rejected_route,trade_rejected_order_cap,trade_orders_in_flight,trade_orders_dispatched,trade_orders_arrived,trade_unclaimed_orders,trade_capacity_available,trade_capacity_used,population_error,money_error,goods_error,construction_goods_consumed,building_investment_candidates,building_owner_mobility,building_owner_job_reallocations,building_owner_job_profession_changes,building_owner_job_probability_skips,building_investments_started,building_investment_blocked_funds,building_investment_blocked_materials,building_investment_blocked_sponsor_capital,building_investment_blocked_resources,building_investment_probability_skips,building_investment_capital_transferred,desired_business_demand,funded_business_demand,unfunded_business_demand,owner_working_capital_allocated,trade_signal_max_age_days,trade_first_dispatch_delay_max_days,trade_response_deadline_misses,trade_response_deadline_misses_cumulative,trade_unresolved_no_attempt,trade_unresolved_no_spread,trade_unresolved_margin,trade_unresolved_route,trade_unresolved_stock,trade_unresolved_capacity,trade_unresolved_cash,trade_unresolved_order_cap,merchant_credit_budget,merchant_credit_committed,merchant_credit_drawn,merchant_credit_repaid,merchant_credit_premium_repaid,merchant_credit_outstanding,merchant_credit_bad_debt,recovery_candidates,recovery_approved,recovery_restarted,recovery_failed,recovery_liquidated_buildings,trade_active_keys_pruned,trade_deficit_episodes_started,trade_deficit_episodes_resolved,trade_candidates_stale_generation,trade_candidates_arbitrated_out,trade_true_source_stock_failures,merchant_cash,merchant_inventory_retail_value,merchant_inventory_liquidation_value,merchant_economic_assets,merchant_procurement_margin_value,merchant_trade_purchase_cash,merchant_trade_sale_cash,merchant_operating_outflow,merchant_liquidity_coverage_q16,merchant_effective_buy_factor_q16\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,cohort_index,handle,signature_id,profession_id,ethnicity_id,population,funds,epoch_income,epoch_expense,epoch_in_kind_income,cash_expense_coverage_q16,livelihood_coverage_q16,income_ema,satisfaction_q16,worst_need_id,is_merchant,owner_employed,employee_employed,unemployed\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,is_construction,group_index,type_id,owner_signature_id,count,owner_capacity,owner_required,planned_owner_equivalent,filled_owner,owner_openings,employee_required,employee_filled,wage_suspended,capacity_q16,purchase_intent_capacity_q16,realized_profit_margin_q16,severe_loss_cycles,recovery_cycles,operating_state,last_input,last_output,last_sold,last_discarded,last_retained,last_resource,last_resource_generated,last_revenue,last_input_cost,last_wages_paid,last_wages_due,last_expected_revenue,last_operating_cost,last_margin_gap_q16,planned_utilization_q16,last_base_wages_due,last_base_wages_paid,last_bonus_due,last_bonus_paid,owner_living_cost_per_day,owner_livelihood_required,viability_operating_cost,viability_income_gap,projected_owner_income_per_day,construction_ready_days,funded_capacity_q16,owner_working_capital_allocated,investment_score_q16,investment_payback_days,investment_rejection_reason,merchant_debt_principal,merchant_debt_premium,merchant_debt_term_cycles_left,merchant_debt_delinquent_cycles,last_in_kind_livelihood_value,recovery_failed_reviews,investment_candidate,investment_shortage_q16,investment_utilization_q16,investment_required_capital,investment_projected_profit_per_day,investment_driver_good_id,investment_driver_pressure_q16,investment_driver_utilization_q16,investment_driver_sellable,investment_driver_merchant_sold,investment_driver_sell_through_q16,investment_driver_discard_q16\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,opening_reserve,natural_net_change,natural_positive_change,natural_negative_change,artificial_change_applied,artificial_change_pending,artificial_generation_applied,artificial_extraction_applied,artificial_generation_pending,artificial_extraction_pending,reserve,safe_yield,projected_life_days\n",
-    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound,desired_business_demand,funded_business_demand,unfunded_business_demand,trade_export_safety_stock,trade_import_fill_target,trade_relief_pressure_q16,trade_signal_age_days,trade_first_dispatch_delay_days,trade_last_attempt_day,trade_last_rejection_reason,trade_deadline_exceeded\n",
+    "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound,desired_business_demand,funded_business_demand,unfunded_business_demand,trade_export_safety_stock,trade_import_fill_target,trade_relief_pressure_q16,trade_signal_age_days,trade_first_dispatch_delay_days,trade_last_attempt_day,trade_last_rejection_reason,trade_deadline_exceeded,merchant_cash,merchant_inventory_retail_value,merchant_inventory_liquidation_value,merchant_economic_assets,merchant_procurement_margin_value,merchant_trade_purchase_cash,merchant_trade_sale_cash,merchant_operating_outflow,merchant_liquidity_coverage_q16,merchant_effective_buy_factor_q16\n",
 };
+constexpr const char *SUMMARY_V20_SUFFIX =
+    ",building_investment_buildings_started"
+    ",building_investment_portfolios_started"
+    ",building_investment_types_started"
+    ",building_investment_owner_population_moved"
+    ",building_investment_max_type_owner_share_q16"
+    ",building_investment_demand_limited"
+    ",building_investment_material_limited"
+    ",building_investment_capital_limited"
+    ",building_investment_owner_population_limited"
+    ",recovery_partially_liquidated_buildings"
+    ",recovery_fully_liquidated_groups\n";
 
 template <typename T>
 void append_int(std::string &out, T value) {
@@ -572,6 +584,24 @@ bool EconomyCsvRecorder::fill_batch(
             runtime._building_investment_probability_skips;
         row.building_investment_capital_transferred =
             runtime._building_investment_capital_transferred;
+        row.building_investment_buildings_started =
+            runtime._building_investment_buildings_started;
+        row.building_investment_portfolios_started =
+            runtime._building_investment_portfolios_started;
+        row.building_investment_types_started =
+            runtime._building_investment_types_started;
+        row.building_investment_owner_population_moved =
+            runtime._building_investment_owner_population_moved;
+        row.building_investment_max_type_owner_share_q16 =
+            runtime._building_investment_max_type_owner_share_q16;
+        row.building_investment_demand_limited =
+            runtime._building_investment_demand_limited;
+        row.building_investment_material_limited =
+            runtime._building_investment_material_limited;
+        row.building_investment_capital_limited =
+            runtime._building_investment_capital_limited;
+        row.building_investment_owner_population_limited =
+            runtime._building_investment_owner_population_limited;
         row.desired_business_demand = runtime._desired_business_demand;
         row.funded_business_demand = runtime._funded_business_demand;
         row.unfunded_business_demand = runtime._unfunded_business_demand;
@@ -642,12 +672,48 @@ bool EconomyCsvRecorder::fill_batch(
         row.recovery_restarted = runtime._recovery_restarted;
         row.recovery_failed = runtime._recovery_failed;
         row.recovery_liquidated_buildings = runtime._recovery_liquidated_buildings;
+        row.recovery_partially_liquidated_buildings =
+            runtime._recovery_partially_liquidated_buildings;
+        row.recovery_fully_liquidated_groups =
+            runtime._recovery_fully_liquidated_groups;
         row.trade_active_keys_pruned = runtime._trade_active_keys_pruned;
         row.trade_deficit_episodes_started = runtime._trade_deficit_episodes_started;
         row.trade_deficit_episodes_resolved = runtime._trade_deficit_episodes_resolved;
         row.trade_candidates_stale_generation = runtime._trade_candidates_stale_generation;
         row.trade_candidates_arbitrated_out = runtime._trade_candidates_arbitrated_out;
         row.trade_true_source_stock_failures = runtime._trade_true_source_stock_failures;
+        int64_t liquidity_sat = 0;
+        row.merchant_cash = runtime._closing_totals.merchant_cash;
+        row.merchant_inventory_retail_value =
+            runtime._closing_totals.merchant_inventory_retail_value;
+        row.merchant_inventory_liquidation_value =
+            runtime._closing_totals.merchant_inventory_liquidation_value;
+        row.merchant_economic_assets = runtime.saturating_add(
+            row.merchant_cash, row.merchant_inventory_liquidation_value,
+            liquidity_sat);
+        row.merchant_procurement_margin_value = std::max<int64_t>(
+            0, runtime._merchant_procurement_retail_value -
+                runtime._merchant_procurement_spent);
+        row.merchant_trade_purchase_cash =
+            runtime._merchant_trade_purchase_cash;
+        row.merchant_trade_sale_cash = runtime._merchant_trade_sale_cash;
+        row.merchant_operating_outflow = runtime.saturating_add(
+            runtime.saturating_add(runtime._merchant_procurement_spent,
+                runtime._merchant_trade_purchase_cash, liquidity_sat),
+            runtime._merchant_credit_drawn, liquidity_sat);
+        row.merchant_liquidity_coverage_q16 =
+            row.merchant_operating_outflow > 0
+                ? runtime.mul_div_sat(row.merchant_cash,
+                    NativeEconomyRuntime::Q16_ONE,
+                    row.merchant_operating_outflow, liquidity_sat)
+                : NativeEconomyRuntime::Q16_ONE;
+        row.merchant_effective_buy_factor_q16 =
+            runtime._merchant_procurement_spent > 0
+                ? static_cast<int32_t>(std::clamp<int64_t>(
+                    runtime._merchant_procurement_factor_weighted_cash_q16 /
+                        runtime._merchant_procurement_spent,
+                    0, NativeEconomyRuntime::Q16_ONE))
+                : NativeEconomyRuntime::Q16_ONE;
         for (const auto &group : runtime._buildings) {
             row.merchant_credit_outstanding += group.merchant_debt_principal +
                 group.merchant_debt_premium;
@@ -964,6 +1030,61 @@ bool EconomyCsvRecorder::fill_batch(
         }
         if (_config.enabled[MARKET]) {
             const int32_t market = runtime._market.cell_to_market[cell];
+            int64_t liquidity_sat = 0;
+            int64_t merchant_cash = 0;
+            runtime._population.for_each_in_cell(cell, [&](int32_t slot) {
+                if (!runtime.is_merchant_slot(slot)) return;
+                merchant_cash = runtime.saturating_add(
+                    merchant_cash,
+                    std::max<int64_t>(0, runtime._population.funds[slot]),
+                    liquidity_sat);
+            });
+            int64_t inventory_retail_value = 0;
+            int64_t inventory_liquidation_value = 0;
+            for (int32_t good = 0; good < runtime._market.good_count; ++good) {
+                const int64_t mi = runtime._market.index(market, good);
+                const int64_t retail_value = runtime.mul_div_sat(
+                    std::max<int64_t>(0, runtime._market.stock[mi]),
+                    std::max<int64_t>(0, runtime._market.price[mi]),
+                    NativeEconomyRuntime::GOODS_SCALE, liquidity_sat);
+                inventory_retail_value = runtime.saturating_add(
+                    inventory_retail_value, retail_value, liquidity_sat);
+                inventory_liquidation_value = runtime.saturating_add(
+                    inventory_liquidation_value,
+                    runtime.mul_div_sat(retail_value, std::clamp<int64_t>(
+                        runtime._good_merchant_buy_factor_q16[good], 0,
+                        NativeEconomyRuntime::Q16_ONE),
+                        NativeEconomyRuntime::Q16_ONE, liquidity_sat),
+                    liquidity_sat);
+            }
+            const int64_t procurement_paid =
+                cell < static_cast<int32_t>(
+                    runtime._merchant_procurement_paid_by_cell.size())
+                    ? runtime._merchant_procurement_paid_by_cell[cell] : 0;
+            const int64_t procurement_retail =
+                cell < static_cast<int32_t>(
+                    runtime._merchant_procurement_retail_by_cell.size())
+                    ? runtime._merchant_procurement_retail_by_cell[cell] : 0;
+            const int64_t procurement_factor_weighted_cash =
+                cell < static_cast<int32_t>(
+                    runtime._merchant_procurement_factor_weighted_cash_by_cell.size())
+                    ? runtime._merchant_procurement_factor_weighted_cash_by_cell[cell]
+                    : 0;
+            const int64_t trade_purchase =
+                cell < static_cast<int32_t>(
+                    runtime._merchant_trade_purchase_by_cell.size())
+                    ? runtime._merchant_trade_purchase_by_cell[cell] : 0;
+            const int64_t trade_sale =
+                cell < static_cast<int32_t>(
+                    runtime._merchant_trade_sale_by_cell.size())
+                    ? runtime._merchant_trade_sale_by_cell[cell] : 0;
+            const int64_t credit_drawn =
+                cell < static_cast<int32_t>(
+                    runtime._merchant_credit_drawn_by_cell.size())
+                    ? runtime._merchant_credit_drawn_by_cell[cell] : 0;
+            const int64_t operating_outflow = runtime.saturating_add(
+                runtime.saturating_add(procurement_paid, trade_purchase,
+                    liquidity_sat), credit_drawn, liquidity_sat);
             const bool frozen_signals =
                 runtime._epoch_business_demand_ema.size() ==
                     runtime._market_signals.business_demand_ema.size() &&
@@ -1050,6 +1171,33 @@ bool EconomyCsvRecorder::fill_batch(
                 const size_t flat = static_cast<size_t>(_sample_cell_positions[cell]) *
                                     runtime._market.good_count + good;
                 row.trade_inbound = inbound[flat]; row.trade_outbound = outbound[flat];
+                row.merchant_cash = merchant_cash;
+                row.merchant_inventory_retail_value =
+                    inventory_retail_value;
+                row.merchant_inventory_liquidation_value =
+                    inventory_liquidation_value;
+                row.merchant_economic_assets = runtime.saturating_add(
+                    merchant_cash, inventory_liquidation_value,
+                    liquidity_sat);
+                row.merchant_procurement_margin_value =
+                    std::max<int64_t>(0,
+                        procurement_retail - procurement_paid);
+                row.merchant_trade_purchase_cash = trade_purchase;
+                row.merchant_trade_sale_cash = trade_sale;
+                row.merchant_operating_outflow = operating_outflow;
+                row.merchant_liquidity_coverage_q16 =
+                    operating_outflow > 0
+                        ? runtime.mul_div_sat(merchant_cash,
+                            NativeEconomyRuntime::Q16_ONE,
+                            operating_outflow, liquidity_sat)
+                        : NativeEconomyRuntime::Q16_ONE;
+                row.merchant_effective_buy_factor_q16 =
+                    procurement_paid > 0
+                        ? static_cast<int32_t>(std::clamp<int64_t>(
+                            procurement_factor_weighted_cash /
+                                procurement_paid,
+                            0, NativeEconomyRuntime::Q16_ONE))
+                        : NativeEconomyRuntime::Q16_ONE;
                 batch.market.push_back(row);
             }
         }
@@ -1075,7 +1223,19 @@ bool EconomyCsvRecorder::open_files(std::string &error) {
         }
         static constexpr char bom[] = {'\xEF', '\xBB', '\xBF'};
         _files[dim].write(bom, 3);
-        _files[dim].write(HEADERS[dim], static_cast<std::streamsize>(std::char_traits<char>::length(HEADERS[dim])));
+        const size_t header_length =
+            std::char_traits<char>::length(HEADERS[dim]);
+        if (dim == SUMMARY && header_length > 0 &&
+            HEADERS[dim][header_length - 1] == '\n') {
+            _files[dim].write(HEADERS[dim],
+                static_cast<std::streamsize>(header_length - 1));
+            _files[dim].write(SUMMARY_V20_SUFFIX,
+                static_cast<std::streamsize>(
+                    std::char_traits<char>::length(SUMMARY_V20_SUFFIX)));
+        } else {
+            _files[dim].write(HEADERS[dim],
+                static_cast<std::streamsize>(header_length));
+        }
         if (!_files[dim].good()) {
             error = "csv_header_write_failed: " + _config.paths[dim];
             close_files();
@@ -1212,6 +1372,27 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.trade_candidates_stale_generation);
         field(chunk, row.trade_candidates_arbitrated_out);
         field(chunk, row.trade_true_source_stock_failures);
+        field(chunk, row.merchant_cash);
+        field(chunk, row.merchant_inventory_retail_value);
+        field(chunk, row.merchant_inventory_liquidation_value);
+        field(chunk, row.merchant_economic_assets);
+        field(chunk, row.merchant_procurement_margin_value);
+        field(chunk, row.merchant_trade_purchase_cash);
+        field(chunk, row.merchant_trade_sale_cash);
+        field(chunk, row.merchant_operating_outflow);
+        field(chunk, row.merchant_liquidity_coverage_q16);
+        field(chunk, row.merchant_effective_buy_factor_q16);
+        field(chunk, row.building_investment_buildings_started);
+        field(chunk, row.building_investment_portfolios_started);
+        field(chunk, row.building_investment_types_started);
+        field(chunk, row.building_investment_owner_population_moved);
+        field(chunk, row.building_investment_max_type_owner_share_q16);
+        field(chunk, row.building_investment_demand_limited);
+        field(chunk, row.building_investment_material_limited);
+        field(chunk, row.building_investment_capital_limited);
+        field(chunk, row.building_investment_owner_population_limited);
+        field(chunk, row.recovery_partially_liquidated_buildings);
+        field(chunk, row.recovery_fully_liquidated_groups);
         chunk.push_back('\n'); if (!maybe_flush(SUMMARY)) goto write_failed;
     }
     if (!flush(SUMMARY)) goto write_failed;
@@ -1325,6 +1506,16 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.trade_last_attempt_day);
         field(chunk, row.trade_last_rejection_reason);
         field(chunk, row.trade_deadline_exceeded ? 1 : 0);
+        field(chunk, row.merchant_cash);
+        field(chunk, row.merchant_inventory_retail_value);
+        field(chunk, row.merchant_inventory_liquidation_value);
+        field(chunk, row.merchant_economic_assets);
+        field(chunk, row.merchant_procurement_margin_value);
+        field(chunk, row.merchant_trade_purchase_cash);
+        field(chunk, row.merchant_trade_sale_cash);
+        field(chunk, row.merchant_operating_outflow);
+        field(chunk, row.merchant_liquidity_coverage_q16);
+        field(chunk, row.merchant_effective_buy_factor_q16);
         chunk.push_back('\n'); if (!maybe_flush(MARKET)) goto write_failed;
     }
     if (!flush(MARKET)) goto write_failed;

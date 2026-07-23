@@ -27,8 +27,8 @@ func _init() -> void:
 	var map: MapData = generated.get("map", null)
 	_expect("map generated", map != null)
 	if map != null:
-		_expect("generated fisheries use local coastal-land reserves",
-			_coastal_resource_habitats_valid(map))
+		_expect("generated marine fish covers coastal land and marine water",
+			_marine_resource_habitats_valid(map))
 	var facade = generator.get_economy_facade()
 	_expect("economy facade configured", facade != null and facade.is_configured())
 	if facade != null:
@@ -95,33 +95,25 @@ func _land_population_distribution_valid(map: MapData, facade) -> bool:
 		and int(tiers.thousands) > 0 and int(tiers.ten_thousands) > 0
 
 
-func _coastal_resource_habitats_valid(map: MapData) -> bool:
+func _marine_resource_habitats_valid(map: MapData) -> bool:
 	var marine: PackedFloat32Array = map.res_marine_fish_reserve_arr
 	if marine.size() != map.cell_count():
 		return false
 	var found_coastal_land := false
-	var neighbors := map.neighbor_indices_packed()
+	var found_marine_water := false
 	for cell in range(map.cell_count()):
-		var is_water := cell < map.is_water_arr.size() and map.is_water_arr[cell] != 0
-		if marine[cell] > 0.0:
-			if is_water or cell >= map.resource_habitat_mask_arr.size() \
-					or (int(map.resource_habitat_mask_arr[cell]) & 8) == 0:
-				return false
-			var touches_marine_water := false
-			for direction in range(6):
-				var neighbor := int(neighbors[cell * 6 + direction])
-				if neighbor < 0 or neighbor >= map.cell_count() \
-						or map.is_water_arr[neighbor] == 0:
-					continue
-				var landform := int(map.landform_arr[neighbor])
-				if landform in [LandformType.LF.DEEP_OCEAN,
-						LandformType.LF.OCEAN, LandformType.LF.COAST]:
-					touches_marine_water = true
-					break
-			if not touches_marine_water:
-				return false
+		if marine[cell] <= 0.0:
+			continue
+		if cell >= map.resource_habitat_mask_arr.size():
+			return false
+		var mask := int(map.resource_habitat_mask_arr[cell])
+		if (mask & 8) != 0:
 			found_coastal_land = true
-	return found_coastal_land
+		elif (mask & 2) != 0:
+			found_marine_water = true
+		else:
+			return false
+	return found_coastal_land and found_marine_water
 
 
 func _sum_i64(values: PackedInt64Array) -> int:
@@ -219,10 +211,15 @@ func _inspector_visibility_respects_technology(
 	var extractable: Dictionary = visibility.get("extractable_resource_ids", {})
 	var resources: Array = view_model._resource_state(
 		cell_idx, LandformType.is_water(int(cell.landform)), visibility)
+	var found_unextractable := false
 	for resource in resources:
-		if not extractable.has(StringName((resource as Dictionary).get("id", ""))):
-			return false
-	return _find_resource(resources, &"rare_earth").is_empty()
+		var row := resource as Dictionary
+		var resource_id := StringName(row.get("id", ""))
+		if not extractable.has(resource_id):
+			found_unextractable = true
+			if bool(row.get("extractable", true)):
+				return false
+	return found_unextractable and _find_resource(resources, &"rare_earth").is_empty()
 
 
 func _find_resource(resources: Array, stable_id: StringName) -> Dictionary:

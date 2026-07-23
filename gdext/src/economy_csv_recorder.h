@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 16;
+    static constexpr int32_t SCHEMA_VERSION = 20;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -178,6 +178,15 @@ public:
         int64_t building_investment_blocked_resources = 0;
         int64_t building_investment_probability_skips = 0;
         int64_t building_investment_capital_transferred = 0;
+        int64_t building_investment_buildings_started = 0;
+        int64_t building_investment_portfolios_started = 0;
+        int64_t building_investment_types_started = 0;
+        int64_t building_investment_owner_population_moved = 0;
+        int64_t building_investment_max_type_owner_share_q16 = 0;
+        int64_t building_investment_demand_limited = 0;
+        int64_t building_investment_material_limited = 0;
+        int64_t building_investment_capital_limited = 0;
+        int64_t building_investment_owner_population_limited = 0;
         int64_t desired_business_demand = 0;
         int64_t funded_business_demand = 0;
         int64_t unfunded_business_demand = 0;
@@ -206,12 +215,24 @@ public:
         int64_t recovery_restarted = 0;
         int64_t recovery_failed = 0;
         int64_t recovery_liquidated_buildings = 0;
+        int64_t recovery_partially_liquidated_buildings = 0;
+        int64_t recovery_fully_liquidated_groups = 0;
         int64_t trade_active_keys_pruned = 0;
         int64_t trade_deficit_episodes_started = 0;
         int64_t trade_deficit_episodes_resolved = 0;
         int64_t trade_candidates_stale_generation = 0;
         int64_t trade_candidates_arbitrated_out = 0;
         int64_t trade_true_source_stock_failures = 0;
+        int64_t merchant_cash = 0;
+        int64_t merchant_inventory_retail_value = 0;
+        int64_t merchant_inventory_liquidation_value = 0;
+        int64_t merchant_economic_assets = 0;
+        int64_t merchant_procurement_margin_value = 0;
+        int64_t merchant_trade_purchase_cash = 0;
+        int64_t merchant_trade_sale_cash = 0;
+        int64_t merchant_operating_outflow = 0;
+        int64_t merchant_liquidity_coverage_q16 = 0;
+        int32_t merchant_effective_buy_factor_q16 = 0;
     };
 
     struct CohortRow {
@@ -362,6 +383,16 @@ public:
         int64_t trade_export_ema = 0;
         int64_t trade_inbound = 0;
         int64_t trade_outbound = 0;
+        int64_t merchant_cash = 0;
+        int64_t merchant_inventory_retail_value = 0;
+        int64_t merchant_inventory_liquidation_value = 0;
+        int64_t merchant_economic_assets = 0;
+        int64_t merchant_procurement_margin_value = 0;
+        int64_t merchant_trade_purchase_cash = 0;
+        int64_t merchant_trade_sale_cash = 0;
+        int64_t merchant_operating_outflow = 0;
+        int64_t merchant_liquidity_coverage_q16 = 0;
+        int32_t merchant_effective_buy_factor_q16 = 0;
     };
 
 private:

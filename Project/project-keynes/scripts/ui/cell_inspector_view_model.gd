@@ -890,7 +890,12 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		"insights": [],
 		"metrics": [
 			{"id": "market_id", "title": "本地市场", "value": "#%d" % int(snapshot.get("market_id", -1)), "subtitle": "原生 MarketStore", "accent": UITokens.RESOURCE, "icon": "resource"},
-			{"id": "merchant_funds", "title": "商人资金", "value": _money_text(_sum_i64(snapshot.get("merchant_funds", PackedInt64Array()))), "subtitle": "%s 人共同持有库存" % UITokens.format_compact_number_cn(float(_sum_i64(snapshot.get("merchant_population", PackedInt64Array()))), 1), "accent": UITokens.ACCENT, "icon": "resource"},
+			{"id": "merchant_cash", "title": "商业现金", "value": _money_text(int(snapshot.get("merchant_cash", 0))), "subtitle": "可动用现金，含 12.5% 营运底线", "accent": UITokens.ACCENT, "icon": "resource"},
+			{"id": "merchant_inventory_liquidation", "title": "库存清算价值", "value": _money_text(int(snapshot.get("merchant_inventory_liquidation_value", 0))), "subtitle": "按当前零售价 × 收购系数估值", "accent": UITokens.RESOURCE, "icon": "resource"},
+			{"id": "merchant_assets", "title": "总商业资产", "value": _money_text(int(snapshot.get("merchant_economic_assets", 0))), "subtitle": "现金 + 库存清算价值", "accent": UITokens.GOOD, "icon": "resource"},
+			{"id": "merchant_coverage", "title": "周转覆盖周期", "value": "%.2f" % (float(snapshot.get("merchant_liquidity_coverage_q16", 65536)) / 65536.0), "subtitle": "期末现金 ÷ 本期经营现金流出", "accent": UITokens.ACCENT, "icon": "resource"},
+			{"id": "merchant_margin", "title": "采购毛利", "value": _money_text(int(snapshot.get("merchant_procurement_margin_value", 0))), "subtitle": "本期采购的理论零售差价", "accent": UITokens.GOOD, "icon": "resource"},
+			{"id": "merchant_trade_net", "title": "贸易净现金流", "value": _money_text(int(snapshot.get("merchant_trade_sale_cash", 0)) - int(snapshot.get("merchant_trade_purchase_cash", 0))), "subtitle": "贸易销售收入 − 贸易采购支出", "accent": UITokens.GOOD if int(snapshot.get("merchant_trade_sale_cash", 0)) >= int(snapshot.get("merchant_trade_purchase_cash", 0)) else UITokens.RISK, "icon": "resource"},
 		],
 		"market_rows": rows,
 	}
@@ -1339,11 +1344,10 @@ func _resource_state(idx: int, is_water: bool, visibility: Dictionary = {}) -> A
 	for p in ResourceProfileRegistry.ordered():
 		if enforce_discovery and not ResourceProfileRegistry.discovery_visible(p, technology_ids):
 			continue
-		if enforce_extraction and not extractable_resource_ids.has(StringName(p.id)):
-			continue
 		var resource_id := String(p.id)
 		var name_cn: String = String(p.display_name) if String(p.display_name) != "" else String(p.id)
 		var available := ResourceProfileRegistry.habitat_available(p, habitat_mask)
+		var extractable := not enforce_extraction or extractable_resource_ids.has(StringName(p.id))
 		var reference_reserve := _resource_reference_reserve(p)
 		var reserve := 0.0
 		var delta := 0.0
@@ -1353,6 +1357,7 @@ func _resource_state(idx: int, is_water: bool, visibility: Dictionary = {}) -> A
 				"name": name_cn,
 				"icon": _resource_icon(resource_id, name_cn),
 				"available": false,
+				"extractable": extractable,
 				"reserve": 0.0,
 				"delta": 0.0,
 				"density_ratio": 0.0,
@@ -1370,6 +1375,7 @@ func _resource_state(idx: int, is_water: bool, visibility: Dictionary = {}) -> A
 			"name": name_cn,
 			"icon": _resource_icon(resource_id, name_cn),
 			"available": available,
+			"extractable": extractable,
 			"reserve": reserve,
 			"delta": delta,
 			"density_ratio": density_ratio,
@@ -1391,43 +1397,7 @@ func _resource_reserve(profile, idx: int) -> float:
 
 
 func _resource_reference_reserve(profile: ResourceProfile) -> float:
-	# 初始储量各因子直接相加；地貌和植被各只命中一项，因此取各自最大正权重。
-	var initial_peak := float(profile.init_base)
-	initial_peak += maxf(float(profile.init_temp), 0.0)
-	initial_peak += maxf(float(profile.init_moisture), 0.0)
-	initial_peak += maxf(float(profile.init_elevation), 0.0)
-	initial_peak += maxf(float(profile.init_river), 0.0)
-	initial_peak += maxf(float(profile.init_volcano), 0.0)
-	initial_peak += maxf(float(profile.init_noise), 0.0)
-	initial_peak += maxf(float(profile.init_climate_fit), 0.0)
-	# bootstrap 中地质省/矿带使用中心化场；这里取其理论最大正贡献，避免矿产密度被高估。
-	initial_peak += maxf(float(profile.init_province) * 0.90, 0.0)
-	initial_peak += maxf(float(profile.init_belt) * 0.56, 0.0)
-	initial_peak += _max_positive_weight(profile.init_landform_weights)
-	initial_peak += _max_positive_weight(profile.init_vegetation_weights)
-	initial_peak *= maxf(float(profile.init_reserve_scale), 0.0)
-	initial_peak = maxf(initial_peak, float(profile.init_min_reserve))
-	initial_peak *= ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
-
-	# 可再生资源还要容纳最适气候下的长期平衡储量 P / decay_self。
-	var runtime_peak := 0.0
-	if float(profile.ecology_capacity) > 0.0:
-		runtime_peak = float(profile.ecology_capacity) * \
-			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
-	elif float(profile.decay_self) > 0.000001:
-		var peak_production := float(profile.gen_base) + float(profile.gen_self) - float(profile.decay_base)
-		peak_production += maxf(float(profile.gen_temp) - float(profile.decay_temp), 0.0)
-		peak_production += maxf(float(profile.gen_moisture) - float(profile.decay_moisture), 0.0)
-		runtime_peak = maxf(peak_production, 0.0) * \
-			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE / float(profile.decay_self)
-	return maxf(maxf(initial_peak, runtime_peak), 1.0)
-
-
-func _max_positive_weight(weights: Dictionary) -> float:
-	var result := 0.0
-	for raw in weights.values():
-		result = maxf(result, float(raw))
-	return result
+	return ResourceProfileRegistry.reference_reserve(profile)
 
 
 func _habitability_score(temp: float, moist: float, vitality: float, elev: float, passable_land: bool, is_water: bool) -> float:

@@ -5,13 +5,19 @@
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy PKEC v16 pipeline（当前）
+## Economy PKEC v18 pipeline（当前）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
 `building_production` 原子提款并采购投入且按工资后债务前奖金结算，household 将实际自产消费
 价值归属建筑，`building_commit` 完成复产/清算/建设债务转移。贸易派单使用代际复核和批次共享
-库存/缺口仲裁。CSV v18 暴露债务、恢复、贸易事件、边际驱动商品和选中地块逐投资候选指标。
+库存/缺口仲裁。CSV v20 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段及投资组合诊断。
+
+`building_commit` 的内生投资复核现在维护固定四项 portfolio：候选扫描与最终建筑数量解耦，
+共享人口/资本/信用/建材/缺口预算后，每种类型只提交一条聚合 BUILD 命令。收入改善率一次计算
+愿意转职的人口，最多填补 25% 的持续缺口；多类型组合把单类型新增业主岗位占比限制在 50%。
+清算沿用既有恢复资格，但每次最多退出 group 的 25%，债务按退出比例转坏账。CSV v20 追加
+组合开工、迁移人口、集中度、约束来源和部分/完全清算计数。
 
 ## 状态总览
 
@@ -608,9 +614,9 @@ reserve'        /= 1 + ecology_stress_mortality_rate * acute_stress
 原始温湿适生度最低 25% 的急性气候压力。非线性生态分支在 `dt_days > 1` 时逐日迭代，外部变化
 仍只应用一次。
 
-`habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater / coastal_land`。
-`marine_fish` 使用 coastal-land bit，直接写在与深海、海洋或浅海水格相邻的沿海陆格；淡水/淡水鱼
-淡水鱼恢复为 DataCore 经济资源，位于湖泊水格及湖岸陆格。habitat 外储量为 0。所有建筑资源边只允许读取本格；公共供水以后
+`habitat_modes[r]` 将储量限定为 `any / land / marine_water / freshwater / coastal_land / coastal_or_marine`。
+`marine_fish` 同时使用沿海陆格与海洋水格，但每个 cell 只保存自己的储量；淡水鱼恢复为 DataCore
+经济资源，位于湖泊水格及湖岸陆格。habitat 外储量为 0。所有建筑资源边只允许读取本格；公共供水以后
 另行设计，不进入食品/饮料配方。
 当前目录含 31 种注册自然资源；小麦、水稻、玉米、土豆、棉花、亚麻、橡胶、香料、药材均已从
 自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量、牧场容量和肥沃土壤
@@ -625,11 +631,13 @@ reserve'        /= 1 + ecology_stress_mortality_rate * acute_stress
 雨林不会落入原始适宜度低于 `0.25` 的急性压力死亡区。林木急性压力死亡率为 `0.0001`（最大
 `0.01%/日`），避免把每日气候异常按动物级 `1%/日` 复利成森林崩溃；低适宜度回归只验证低于
 气候调整承载量时仍可正增长，不规定长期库存必须保持某个承载量百分比。
-`marine_fish` 覆盖全部沿海陆地 habitat，初始储量不低于 `3000×100`，以 `5000×100`
-为理想承载量、2% 日增长和正迁入恢复，避免旧线性平衡长期侵蚀初始鱼群。
+`marine_fish` 在沿海陆格与海洋水格的联合 habitat 中按适生度保留约 72% 的有效格，初始平均
+`1800×100`，不再给全海域灌入同一最低值。适生度综合温度、海域深浅、洋流速度、上升流、河口营养
+扩散和连续空间噪声；以 `5000×100` 为理想承载量，日增长率为 0.15%，迁入为 `0.01×100`。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
-在 `init_soa_from_bake` 之后、`_setup_sus` bind 之前跑一次（仅 GDScript，无 C++ 副本；运行期不重算）。
+在 `init_soa_from_bake` 与生成期物理环流 flush 之后、经济 bootstrap 之前跑一次。随后显式把 habitat
+mask 与所有 reserve 数组推送到 GDScript DataCore 和 C++ snapshot slots，确保三者读取同一初值。
 每资源、每 cell 算一个适宜度 `suit`，直接作为无上限初值。所有因子均**数据驱动**（`ResourceProfile`），
 缺省 0 / `{}` 即不参与 ⇒ 不配置时与旧「仅温度+湿度」公式逐位一致（向后兼容）：
 
@@ -641,6 +649,9 @@ suit = init_base[r] + init_temp[r]*tn + init_moisture[r]*m
      + init_vegetation_weights[r][vegetation]          # Dictionary，缺键按 0
      + init_river[r]   * (has_river 或 is_lake_seed ? 1 : 0)
      + init_volcano[r] * (has_volcano ? 1 : 0)
+     + init_ocean_current[r] * clamp(length(ocean_current), 0, 1)
+     + init_upwelling[r] * clamp(upwelling_strength, 0, 1)
+     + init_estuary[r] * estuary_strength
      + init_noise[r]   * noise01(cell_pos, init_noise_scale[r])   # noise01 ∈ [0,1]
      + init_climate_fit[r] * climate_fit                # 可选最适温湿区间
      + init_province[r] * 2*(province01(family)-0.55)   # 同族共享大尺度地质省
@@ -656,17 +667,35 @@ terrain/vegetation；排除命中时初值强制为 0，也不参与覆盖率排
 
 有限地图还可配置 `init_min_coverage/init_min_reserve`：完成全图 suit 计算后，仅对有效且未排除的
 habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低储量。该保底用于避免关键
-矿产因连续噪声、地质省和矿带共同截断而整图缺失；默认 0，不改变未配置资源，也不会
-均匀撒矿。最低储量同样乘面积倍率。相同 suit 以 cell index 稳定决胜，因此同 seed
-可确定性重放。当前关键矿产仅保底最适生 0.5%；林木用全陆地 floor + 最适生 30% 高保底；旱地/牧场保底 60%，水田/种植园保底
-20%，肥沃土壤保底 60%，其储量下限按目录中最大单栋 capacity 配方乘目标可承载建筑数标定。
+资源整图缺失，默认 0 保持旧行为。
 
-`ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE = 100.0` 表示一个战略地图格约为广东省
-量级面积。它统一缩放所有资源的初始储量、最低矿床、线性模型绝对生成/衰减量，以及
+需要同时控制矿区、富集、小微矿点和世界总量的不可再生矿产使用四组独立约束：
+
+- `init_target_coverage`：有效 habitat 中富集核心的比例；按原始 suitability 排名选区，所以
+  地貌、局部噪声、共享地质省和矿带仍决定主要矿区。
+- `init_richness_exponent`：只改变入选矿区内部的富集曲线；值越高，储量越集中在最优矿带。
+  每个入选格仍至少获得 `init_min_reserve`，避免省级矿区只有象征性储量。
+- `init_micro_coverage/init_micro_reserve_share/init_micro_min_reserve`：在富集核心之外增加确定性的
+  小微矿点。第一轮选点要求与任何核心/小微矿格至少间隔一格，候选不足时才按 suitability
+  稳定回填；其储量从同一世界总量中划拨而不是额外生成，因此只提高地区可达性，不制造资源。
+- `init_target_reserve_density`：每个有效 habitat 格对应的世界储量密度。世界总储量严格归一化为
+  `valid_cell_count × init_target_reserve_density × CELL_AREA_RESOURCE_SCALE`，因此覆盖率调整只改变
+  集中程度，不会意外改变世界总量；世界尺寸扩大时总量按面积线性增加。生态资源可改用
+  `init_target_mean_reserve`，让总量跟随实际占用 habitat，而不是整个候选 habitat。
+
+当前富集核心覆盖率为：金矿 6%、银矿 15%、稀土/铅/锌/锰/硫/锡 3%、铝土矿/磷矿 4%、
+石灰岩 5%。核心之外另配置 5%–12% 的小微矿点，总储量份额为 5%–20%；因此工业中心仍由
+大矿区决定，但缺少富集核心的其他地区仍可能获得较低产能的本地采矿入口。
+
+`ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE = 100.0` 表示一个战略地图格约为珠三角
+量级面积。它统一缩放所有资源的初始储量、最低矿床、世界储量密度、线性模型绝对生成/衰减量，以及
 生态模型的承载量/迁入量；无量纲增长率、线性损失率、气候适宜度、分布拓扑和建筑开采量
 不缩放。因此新地图的资源数量与长期可再生平衡量均至少是基础 profile 标定的 100 倍。
 
-- 数据源全部来自 bake 后已就位的 SoA：`temp/moisture/is_water/terrain/elevation/landform/vegetation/has_river/is_lake_seed/has_volcano/cell_pos_x,y`。
+- 数据源全部来自 bake/物理环流 flush 后已就位的 SoA：
+  `temp/moisture/is_water/terrain/elevation/landform/vegetation/has_river/river_flow/river_downstream/`
+  `is_lake_seed/has_volcano/ocean_current_x,y/upwelling_strength/cell_pos_x,y`。河口强度标记河流出口
+  陆格、出口海格与较弱的一环近岸羽流；它只影响各格自己的初始化适生度，不授权跨格采集。
 - **斑块化 / 矿脉化**：资源局部噪声按 stable id 独立；矿产另以 `geology_family_id` 共享
   `province` 与 ridge-shaped `belt` 场。两种共享场均中心化，省外/矿带外产生负贡献，避免每块陆地
   同时拥有大多数矿物；同族矿物仍在大尺度上相关。所有场由 map seed 派生，可确定性重放。
@@ -678,8 +707,10 @@ habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低
   reserve 不回填倍率，新建地图才应用。
 - 现有 .tres 调参示例：金属矿按 mafic/felsic/hydrothermal/sedimentary 等 family 共享地质省和矿带；
   `clay` 偏三角洲/河流；`timber` 用 exclusion 排除沙漠/寒漠/极旱荒漠，用 floor 保证非沙漠陆地基础林木，再由森林植被和温湿适宜度拉开区域差异；三类农业容量与 `pasture`
-  由地形、水系和气候决定；`marine_fish` 先由沿海陆地 habitat 门控，再以独立资源动态推进。
-- Earth-like 1000-cell 固定 seed 回归还验证所有生产资源全局存在、农业容量中位承载、
+  由地形、水系和气候决定；`marine_fish` 由沿海陆地或海洋水格 habitat 门控，并由温度、海域类型、
+  洋流、上升流、河口与噪声共同决定初始分布。
+- Earth-like 60×40（2400-cell）固定 seed 回归还验证所有生产资源全局存在、目标矿区覆盖率、
+  世界总储量归一化、富集带差异、农业容量中位承载、
   林木/海鱼覆盖和种植园选择性，见 `tests/natural_resource_distribution_capacity_test.gd`。
 
 **输入 / 输出**：
@@ -742,7 +773,7 @@ variant 的 components 作为互补 bundle 清算，不同 variants 做一次替
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v18 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v19 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
@@ -2046,6 +2077,28 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 - 把 job graph、read/write masks、stride policy、front packed snapshot、dirty lists 继续下移到 C++。
 - GDScript fast tick 最终只调用 `run_native_sim_tick(ctx)` 并消费结构化 report。
 
+## Player Map Overlay（cell-index + per-cell LUT）
+
+玩家地图信息层复用 `DataOverlayLayer`，不建立第二套 overlay 子系统：
+
+- `WorldRuntimeHost.set_map_overlay({mode, resource_id})` 接收统一请求。
+- `DataOverlayBaker.bake_cell_lut()` 只遍历 `n_cells`，按 `cell.index` 向
+  `WorldData.lut_dims` 写一个 RGBA8 texel；buffer、`Image` 对应的 texture 句柄在世界生命周期内复用，
+  同尺寸使用 `ImageTexture.update()`。
+- `data_overlay.gdshader` 先从静态 `enum_atlas_tex.GB` 解码 cell ID，再以 NEAREST 读取
+  `overlay_lut`。无效索引、透明 texel、地图外区域直接透明。
+- 世界生成/拓扑变化时才重绑 atlas、LUT 尺寸、bounds 和 wrap；普通 tick 不重建 quad 或静态索引图。
+- daily graph 完成并 flush 后只置 dirty；同帧/连续事件合并，最多 10 Hz。首次开启、切换 mode/resource
+  和世界重建后的显式请求立即刷新；关闭后停止 `_process`，不再编码或上传。
+- 玩家路径禁止调用 `encode_overlay_atlas`、`cell_pixel_lists` 或构造 derived-size RGBA buffer。
+  2400 cells、`lut_dims=(2048,2)` 时上传固定 16384 bytes（若 LUT 紧排为 2400 texel 则有效数据约
+  9.4 KiB）；诊断通过 `map_overlay_diagnostics()` 暴露刷新、合并、耗时和 upload bytes。
+- 资源储量读取 flush 后的 `MapData` reserve array；固定归一化参考值来自
+  `ResourceProfileRegistry.reference_reserve(profile)`，与 Inspector 共用。零储量和 habitat 不匹配
+  cell 透明，UI discovery 过滤不改变物理储量或经济权威。
+
+这条链路是玩家信息遮罩的唯一动态路径。下面的 derived-resolution 路径保留给旧 debug 工具。
+
 ## Debug Data Overlay bake
 
 主要入口：
@@ -2364,9 +2417,16 @@ UI 不再用建筑数量推断招聘空缺。
 
 生产 output 先按 owner 当前消费计划预留可直接满足的单组件 variant 商品，再把余量形成
 cell-local offers。商人按 `max(可行日需求, 实际出库 EMA) + 出口 EMA` 和 target inventory days 计算库存缺口，冻结期初现金并
-保留 12.5%，库存基线取 30 日并乘 good-specific 比例（必需品更高、奢侈品更低），按 `缺口 × producer price` 的价值权重及稳定
+保留 12.5%，库存基线取 30 日并乘 good-specific 比例（必需品更高、奢侈品更低）。`producer price = retail price × merchant_buy_price_factor_q16`，默认系数 `62259/65536≈95%` 且为硬上限；短缺不会再把它抬到 100%。采购按 `缺口 × producer price` 的价值权重及稳定
 good/group 顺序采购；库存达到目标时不再
 收购。商人现金不足时，20% 零售价的生产者托底也只补足剩余目标缺口，超目标余量计入 discarded。household market 先用
+
+国内贸易的目的地预算在派单批次内冻结为
+`max(0, merchant_cash - existing_order_reserved_cash - 12.5% operating_floor)`，
+并由候选裁量、利润裁剪和最终扣款共同消费；优先路线不能突破底线。CSV v19 的
+summary 与 market 行追加 `merchant_cash`、库存零售/清算价值、总商业资产、采购
+毛利、贸易买卖现金、经营流出、流动性覆盖率及采购金额加权有效收购系数。无经营
+流出时覆盖率为 `Q16_ONE`，字段均为冻结边界上的派生观测，不参与保存或状态哈希。
 留用品填充 owner need，不扣资金；未消费余量按来源建筑回记 discarded。所有热循环只访问
 POD/vector/raw scalar，不访问 Godot Object 或 Dictionary。
 

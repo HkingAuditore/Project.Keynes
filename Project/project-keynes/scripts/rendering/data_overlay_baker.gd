@@ -23,6 +23,9 @@
 #     "value_scale"  : float,         # shader 反归一化需要的刻度（通常 1.0）
 #     "value_offset" : float,         # shader 反归一化需要的偏移（通常 0.0）
 #   }
+#
+# 玩家入口使用 bake_cell_lut()：静态 cell-index atlas 间接寻址，只写
+# WorldData.lut_dims 的每-cell texel。上面的 bake() 是旧 debug 全图兼容路径。
 class_name DataOverlayBaker
 
 # 风带采样靠静态函数；这里 preload 一次以避免每 cell 反复 load。
@@ -397,6 +400,178 @@ static func bake(
 		"cpp_fallback_reason": cpp_fallback_reason,
 	}
 
+
+## Player-facing high-performance path. It writes exactly one RGBA8 texel per
+## cell into WorldData.lut_dims and never constructs a derived-resolution image.
+static func bake_cell_lut(
+	map,
+	world,
+	mode: int,
+	climate,
+	season_phase: float,
+	adapter_override: DCViewAdapter = null,
+	resource_profile: ResourceProfile = null,
+	existing_tex: ImageTexture = null,
+	existing_buf: PackedByteArray = PackedByteArray(),
+	existing_image: Image = null
+) -> Dictionary:
+	var dims: Vector2i = world.lut_dims if world != null else Vector2i.ZERO
+	if map == null or world == null or mode == OverlayMode.MODE.NONE \
+			or dims.x <= 0 or dims.y <= 0:
+		return {
+			"texture": get_empty_texture(), "buf": PackedByteArray(),
+			"stats": _empty_stats(), "mode": mode, "path": "cell_lut",
+			"upload_bytes": 0,
+		}
+
+	var adapter: DCViewAdapter = adapter_override
+	if adapter == null:
+		adapter = DCViewAdapter.Cell.new(map.iter_cells())
+	var byte_count := dims.x * dims.y * 4
+	var buf := existing_buf
+	if buf.size() != byte_count:
+		buf = PackedByteArray()
+		buf.resize(byte_count)
+	buf.fill(0)
+
+	var reserves: PackedFloat32Array = PackedFloat32Array()
+	var habitat: PackedByteArray = map.resource_habitat_mask_arr
+	var reference := 1.0
+	if mode == OverlayMode.MODE.RESOURCE_RESERVE and resource_profile != null:
+		var field := ResourceProfileRegistry.reserve_map_field(resource_profile)
+		if field != "":
+			reserves = map.get(field)
+		reference = ResourceProfileRegistry.reference_reserve(resource_profile)
+
+	var valid_count := 0
+	var invalid_count := 0
+	var min_value := INF
+	var max_value := -INF
+	var sum_value := 0.0
+	var buckets: Dictionary = {}
+	var mode_is_discrete := OverlayMode.is_discrete(mode)
+	var temp_arr: PackedFloat32Array = map.temp_arr
+	var moisture_arr: PackedFloat32Array = map.moisture_arr
+	var elevation_arr: PackedFloat32Array = map.elevation_arr
+	var landform_arr: PackedByteArray = map.landform_arr
+	var vegetation_arr: PackedByteArray = map.vegetation_arr
+	var wind_x_arr: PackedFloat32Array = map.wind_x_arr
+	var wind_y_arr: PackedFloat32Array = map.wind_y_arr
+	var wind_speed_arr: PackedFloat32Array = map.wind_speed_arr
+	var current_x_arr: PackedFloat32Array = map.ocean_current_x_arr
+	var current_y_arr: PackedFloat32Array = map.ocean_current_y_arr
+	var is_water_arr: PackedByteArray = map.is_water_arr
+	var n_cells := mini(map.cell_count(), dims.x * dims.y)
+	for idx in range(n_cells):
+		var valid := true
+		var vector_mode := false
+		var value := 0.0
+		var intensity := 0.0
+		var bucket := 0
+		match mode:
+			OverlayMode.MODE.ELEVATION:
+				value = clampf(float(elevation_arr[idx]), 0.0, 1.0)
+			OverlayMode.MODE.LANDFORM:
+				bucket = int(landform_arr[idx])
+			OverlayMode.MODE.VEGETATION_TYPE:
+				bucket = int(vegetation_arr[idx])
+			OverlayMode.MODE.TEMPERATURE:
+				value = clampf(float(temp_arr[idx]), 0.0, 1.0)
+			OverlayMode.MODE.HUMIDITY:
+				value = clampf(float(moisture_arr[idx]), 0.0, 1.0)
+			OverlayMode.MODE.WIND_DIR:
+				var wx := float(wind_x_arr[idx])
+				var wy := float(wind_y_arr[idx])
+				var mag := sqrt(wx * wx + wy * wy)
+				valid = mag >= 0.0001
+				if valid:
+					value = fposmod(atan2(wy, wx) / TAU + 0.5, 1.0)
+					var speed := float(wind_speed_arr[idx])
+					intensity = clampf((speed if speed > 0.0001 else mag) /
+						WIND_SPEED_NORM_MAX, 0.0, 1.0)
+					vector_mode = true
+			OverlayMode.MODE.OCEAN_CURRENT_DIR:
+				valid = idx < is_water_arr.size() and is_water_arr[idx] != 0
+				if valid:
+					var ox := float(current_x_arr[idx])
+					var oy := float(current_y_arr[idx])
+					var ocean_mag := sqrt(ox * ox + oy * oy)
+					valid = ocean_mag >= 0.0001
+					if valid:
+						value = fposmod(atan2(oy, ox) / TAU + 0.5, 1.0)
+						intensity = clampf(ocean_mag / OCEAN_CURRENT_NORM_MAX, 0.0, 1.0)
+						vector_mode = true
+			OverlayMode.MODE.RESOURCE_RESERVE:
+				var reserve := float(reserves[idx]) if idx < reserves.size() else 0.0
+				var mask := int(habitat[idx]) if idx < habitat.size() else 0
+				valid = resource_profile != null \
+					and ResourceProfileRegistry.habitat_available(resource_profile, mask) \
+					and reserve > 0.0
+				value = clampf(reserve / maxf(reference, 1.0), 0.0, 1.0)
+			_:
+				var cell = map.cell_at(idx)
+				var sample := _sample_cell(
+					cell, adapter, mode, climate, season_phase, world, map,
+					world.latitude_buffer, world.latitude_buffer.size()
+				)
+				valid = bool(sample.get("valid", true))
+				value = float(sample.get("value", 0.0))
+				intensity = clampf(float(sample.get("intensity", 0.0)), 0.0, 1.0)
+				bucket = int(sample.get("bucket", 0))
+				vector_mode = bool(sample.get("vector_mode", false))
+				if vector_mode:
+					value = clampf(float(sample.get("hue", 0.0)), 0.0, 1.0)
+					intensity = clampf(float(sample.get("dir_intensity", 0.0)), 0.0, 1.0)
+		if valid and (is_nan(value) or is_inf(value)):
+			valid = false
+		if not valid:
+			invalid_count += 1
+			continue
+
+		var base := idx * 4
+		buf[base] = clampi(bucket if mode_is_discrete else int(
+			clampf(value, 0.0, 1.0) * 255.0 + 0.5), 0, 255)
+		buf[base + 1] = clampi(int(intensity * 255.0 + 0.5), 0, 255)
+		buf[base + 3] = 255
+		valid_count += 1
+		if mode_is_discrete:
+			buckets[bucket] = int(buckets.get(bucket, 0)) + 1
+		else:
+			var measured := intensity if vector_mode else value
+			min_value = minf(min_value, measured)
+			max_value = maxf(max_value, measured)
+			sum_value += measured
+
+	var img := existing_image
+	if img == null or img.get_size() != dims or img.get_format() != Image.FORMAT_RGBA8:
+		img = Image.create_from_data(dims.x, dims.y, false, Image.FORMAT_RGBA8, buf)
+	else:
+		img.set_data(dims.x, dims.y, false, Image.FORMAT_RGBA8, buf)
+	var tex := existing_tex
+	if tex == null or tex.get_size() != Vector2(dims):
+		tex = ImageTexture.create_from_image(img)
+	else:
+		tex.update(img)
+	return {
+		"texture": tex,
+		"image": img,
+		"buf": buf,
+		"mode": mode,
+		"path": "cell_lut",
+		"upload_bytes": byte_count,
+		"stats": {
+			"min": 0.0 if min_value == INF else min_value,
+			"max": 0.0 if max_value == -INF else max_value,
+			"mean": sum_value / float(valid_count) if valid_count > 0 and not mode_is_discrete else 0.0,
+			"median": 0.0,
+			"count": valid_count,
+			"invalid_count": invalid_count,
+			"near_zero_count": 0,
+			"buckets": buckets,
+			"sum": sum_value,
+		},
+	}
+
 # DOTS（debug-overlay-perf v2，2026-06-12）：encode_overlay_atlas 的 GDScript 等价
 # fan-out，仅在 cpp_path 命中但 C++ 返回 fallback 时用作兜底。逻辑与 C++ 端
 # byte-for-byte 一致：按 cell.index 读 SoA CSR，把有效 cell 的 (R, G, 0, 255)
@@ -558,13 +733,18 @@ static func _sample_cell(
 				"valid": true,
 			}
 		OverlayMode.MODE.LANDFORM:
-			# 把 cell.terrain 映射到 6 档纯地理大类（深海/沿海/平原/丘陵/山/冰雪）。
-			var t_l: int = adapter.get_terrain(idx)
-			var lform: int = 2  # 默认 fallback：平原
-			if t_l >= 0 and t_l < OverlayMode.TERRAIN_TO_LANDFORM.size():
-				lform = int(OverlayMode.TERRAIN_TO_LANDFORM[t_l])
 			return {
-				"bucket": lform,
+				"bucket": adapter.get_landform(idx),
+				"valid": true,
+			}
+		OverlayMode.MODE.ELEVATION:
+			return {
+				"value": clampf(adapter.get_elevation(idx), 0.0, 1.0),
+				"valid": true,
+			}
+		OverlayMode.MODE.VEGETATION_TYPE:
+			return {
+				"bucket": adapter.get_vegetation(idx),
 				"valid": true,
 			}
 		OverlayMode.MODE.WIND_DIR:

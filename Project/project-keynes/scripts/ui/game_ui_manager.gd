@@ -8,8 +8,11 @@ signal fit_requested()
 signal setup_requested()
 signal regenerate_requested()
 signal clear_selection_requested()
+signal map_overlay_requested(request: Dictionary)
+signal map_overlay_cleared()
 
 const RIGHT_PANEL_WIDTH := 460.0
+const OVERLAY_LEGEND_WIDTH := 198.0
 const DemandDetailDialogScript = preload("res://scripts/ui/components/demand_detail_dialog.gd")
 
 var _top_bar: PlayerTopBar
@@ -29,6 +32,8 @@ var _country_facade = null
 var _gm_console: DebugConsole
 var _perf_hud: PerfMiniHUD
 var _diagnostics_source: Node = null
+var _map_overlay_toolbar: MapOverlayToolbar
+var _map_overlay_legend: OverlayLegend
 
 
 func _ready() -> void:
@@ -61,6 +66,10 @@ func set_world_context(
 			_country_facade.country_committed.connect(callback)
 	if _right_panel != null:
 		_right_panel.reset_for_world()
+	if _map_overlay_toolbar != null:
+		_map_overlay_toolbar.reset_for_world()
+	if _map_overlay_legend != null:
+		_map_overlay_legend.update_for_mode(OverlayMode.MODE.NONE)
 	if _demand_detail_dialog != null:
 		_demand_detail_dialog.close_dialog()
 
@@ -267,10 +276,28 @@ func map_safe_area() -> Rect2:
 	var right_width := 0.0
 	if _right_panel != null and _right_panel.visible:
 		right_width = _right_panel.size.x if _right_panel.size.x > 0.0 else RIGHT_PANEL_WIDTH
+	var left_width := _map_overlay_toolbar.primary_safe_width() \
+		if _map_overlay_toolbar != null else 0.0
 	return Rect2(
-		Vector2(0.0, top_height),
-		Vector2(maxf(viewport_size.x - right_width, 1.0), maxf(viewport_size.y - top_height, 1.0))
+		Vector2(left_width, top_height),
+		Vector2(
+			maxf(viewport_size.x - right_width - left_width, 1.0),
+			maxf(viewport_size.y - top_height, 1.0)
+		)
 	)
+
+
+func dismiss_overlay_menu() -> bool:
+	return _map_overlay_toolbar != null and _map_overlay_toolbar.dismiss_submenu()
+
+
+func set_resource_discovery_context(
+	technology_ids: PackedStringArray,
+	enforce_discovery: bool = false
+) -> void:
+	if _map_overlay_toolbar != null:
+		_map_overlay_toolbar.set_resource_discovery_context(
+			technology_ids, enforce_discovery)
 
 
 func _build_ui() -> void:
@@ -297,6 +324,7 @@ func _build_ui() -> void:
 	_right_panel.offset_bottom = -UITokens.SPACE_MD
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
+	_right_panel.visibility_changed.connect(_layout_overlay_legend)
 	_right_panel.demand_details_requested.connect(_on_demand_details_requested)
 	add_child(_right_panel)
 
@@ -320,6 +348,23 @@ func _build_ui() -> void:
 	_perf_hud.offset_right = 180.0
 	add_child(_perf_hud)
 
+	_map_overlay_toolbar = MapOverlayToolbar.new()
+	_map_overlay_toolbar.name = "MapOverlayToolbar"
+	_map_overlay_toolbar.overlay_requested.connect(_on_map_overlay_requested)
+	_map_overlay_toolbar.overlay_cleared.connect(_on_map_overlay_cleared)
+	add_child(_map_overlay_toolbar)
+
+	_map_overlay_legend = OverlayLegend.new()
+	_map_overlay_legend.name = "MapOverlayLegend"
+	# Bottom-right is outside the map's main reading line and the left tool
+	# palette. The layout helper shifts it left whenever Inspector is visible.
+	_map_overlay_legend.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_map_overlay_legend.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_map_overlay_legend.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	add_child(_map_overlay_legend)
+	get_viewport().size_changed.connect(_layout_overlay_legend)
+	_layout_overlay_legend()
+
 	if _diagnostics_source != null:
 		set_diagnostics_source(_diagnostics_source)
 
@@ -330,3 +375,45 @@ func _build_ui() -> void:
 	for child in get_children():
 		if child is Control:
 			(child as Control).theme = player_theme
+
+
+func _on_map_overlay_requested(request: Dictionary) -> void:
+	var mode := int(request.get("mode", OverlayMode.MODE.NONE))
+	var title := ""
+	var icon_key := ""
+	if mode == OverlayMode.MODE.RESOURCE_RESERVE:
+		var resource_id := StringName(request.get("resource_id", &""))
+		for profile in ResourceProfileRegistry.ordered():
+			if profile != null and profile.id == resource_id:
+				title = profile.display_name
+				icon_key = ResourceProfileRegistry.icon_key(profile)
+				break
+	if _map_overlay_legend != null:
+		var hint := "透明区域无可用储量" if mode == OverlayMode.MODE.RESOURCE_RESERVE else ""
+		_map_overlay_legend.update_for_mode(mode, title, hint, icon_key)
+		call_deferred("_layout_overlay_legend")
+	map_overlay_requested.emit(request)
+
+
+func _on_map_overlay_cleared() -> void:
+	if _map_overlay_legend != null:
+		_map_overlay_legend.update_for_mode(OverlayMode.MODE.NONE)
+	map_overlay_cleared.emit()
+
+
+func _layout_overlay_legend() -> void:
+	if _map_overlay_legend == null:
+		return
+	var right_inset := UITokens.SPACE_MD
+	if _right_panel != null and _right_panel.visible:
+		var panel_width := _right_panel.size.x
+		if panel_width <= 0.0:
+			panel_width = RIGHT_PANEL_WIDTH
+		right_inset += panel_width + UITokens.SPACE_MD
+	_map_overlay_legend.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_map_overlay_legend.offset_right = -right_inset
+	_map_overlay_legend.offset_left = -right_inset - OVERLAY_LEGEND_WIDTH
+	_map_overlay_legend.offset_bottom = -UITokens.SPACE_MD
+	# A zero-height anchored rect plus BEGIN growth keeps variable legend
+	# content attached to the bottom edge instead of growing off-screen.
+	_map_overlay_legend.offset_top = -UITokens.SPACE_MD
