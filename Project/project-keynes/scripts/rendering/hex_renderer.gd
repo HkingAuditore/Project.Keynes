@@ -327,6 +327,7 @@ var _season_transition_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
 var _season_transition_mat: ShaderMaterial = null
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
+var _data_layer: MapDataLayerOverlay = null  # 玩家数据图层分块设色叠加层
 # Decoration / vegetation 散布层（数据驱动）：默认回退到 grass/shrub/tree 三个
 # @export profile；配置 decoration_manifest 后按其 layers 数组生成 N 层。
 var _detail_layers: Array = []
@@ -450,6 +451,10 @@ func _ready() -> void:
 	_weather_layer.name = "WeatherLayer"
 	_weather_layer.visual_fronts_changed.connect(_on_weather_layer_visual_fronts_changed)
 	add_child(_weather_layer)
+	# 玩家数据图层分块设色叠加层（z=3，地形 0 之上、WeatherLayer 4 之下）。
+	_data_layer = MapDataLayerOverlay.new()
+	_data_layer.name = "MapDataLayerOverlay"
+	add_child(_data_layer)
 	# 帧间插值时序:让 weather_layer._process 最晚执行,保证在 LUT 烘焙(SUS/DC 系统)之后、同帧渲染前
 	# 检测到 weather_lut_update_usec 变化并把 weather_lerp 归 0 → 消除"curr 已换帧但 lerp 还未重置"的一帧频闪。
 	_weather_layer.process_priority = 1000
@@ -2013,6 +2018,9 @@ func _apply_uniforms() -> void:
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
 		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size, _world.weather_lut_tex, _world.lut_dims, _wrap_period_x(), _map)
+	# 玩家数据图层叠加层：与 WeatherLayer 同位置 setup（bounds/atlas/lut_dims/wrap/map）
+	if _data_layer != null:
+		_data_layer.setup(bounds, _world.enum_atlas_tex, hex_size, _world.lut_dims, _wrap_period_x(), _map)
 		# [cylindrical-earth-daylight] 云光照真源相位：与 ShrubLayer spawn 同套，setup 后补推一次，
 		# 之后由 set_day_phase / set_season_phase 增量刷新（晨昏线随时间扫过）。
 		_weather_layer.set_season_phase(_season_phase)
@@ -2067,6 +2075,24 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("parchment_tint", parchment_tint)
 	sm.set_shader_parameter("parchment_strength", parchment_strength)
 	sm.set_shader_parameter("paper_grain_strength", paper_grain_strength)
+
+# ─── 玩家数据图层（分块设色 overlay）对外委托 ───────────────────────────
+func set_map_data_layer(layer_id: String) -> void:
+	if _data_layer != null:
+		_data_layer.set_layer(layer_id)
+
+func clear_map_data_layer() -> void:
+	if _data_layer != null:
+		_data_layer.clear_layer()
+
+func refresh_active_data_layer() -> void:
+	if _data_layer != null:
+		_data_layer.refresh_active()
+
+func get_active_data_layer_legend() -> Dictionary:
+	if _data_layer != null:
+		return _data_layer.get_legend_info()
+	return {}
 
 # ─── map-visual-overhaul-v1：植被四季 LUT 推送 ──────────────────────────
 # 把 VegetationProfileRegistry 加载的 24 个 VegetationProfile 的
