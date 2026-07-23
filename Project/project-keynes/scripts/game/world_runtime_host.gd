@@ -188,6 +188,9 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 			_renderer.refresh_terrain_weather_field_tex()
 		if bool(report.get("fronts_changed", false)) and _renderer.has_method("set_weather_fronts"):
 			_renderer.set_weather_fronts(report.get("fronts", []))
+		# 玩家数据图层：每日 tick 增量重建激活图层的 LUT（has_method 保护，无图层时无操作）。
+		if _renderer.has_method("refresh_active_data_layer"):
+			_renderer.refresh_active_data_layer()
 	_pending_tick_render_ms = (Time.get_ticks_usec() - t_render_usec) / 1000.0
 	# 玩家场景每次 day_changed 都真实执行一次 SUS；weather 自身的 stride/policy
 	# 不能把同日 climate/economy job 误标成“整日未刷新”。

@@ -8,6 +8,8 @@ signal fit_requested()
 signal setup_requested()
 signal regenerate_requested()
 signal clear_selection_requested()
+signal data_layer_selected(layer_id: String)
+signal data_layer_cleared()
 
 const RIGHT_PANEL_WIDTH := 460.0
 const DemandDetailDialogScript = preload("res://scripts/ui/components/demand_detail_dialog.gd")
@@ -29,6 +31,9 @@ var _country_facade = null
 var _gm_console: DebugConsole
 var _perf_hud: PerfMiniHUD
 var _diagnostics_source: Node = null
+var _data_layer_menu: MapLayerMenu = null
+var _data_layer_legend: MapLayerLegend = null
+var _renderer_ref: Node = null
 
 
 func _ready() -> void:
@@ -71,6 +76,13 @@ func set_diagnostics_source(source: Node) -> void:
 		_gm_console.set_main(source)
 	if _perf_hud != null:
 		_perf_hud.set_main(source)
+
+# 玩家数据图层叠加层（MapDataLayerOverlay）挂在 HexRenderer 上；UI 需要
+# renderer 引用，用于把激活图层的图例信息喂给 MapLayerLegend。
+func set_renderer(r: Node) -> void:
+	_renderer_ref = r
+	if _data_layer_legend != null and _data_layer_legend.is_visible_in_tree():
+		_data_layer_legend.refresh_source(_renderer_ref)
 
 
 func toggle_gm_panel() -> void:
@@ -218,11 +230,11 @@ func _set_inspector_trace_cell(cell_idx: int) -> void:
 
 
 func update_time_state(
-		year_idx: int,
-		month: int,
-		day_of_month: int,
-		paused: bool,
-		speed: float
+	year_idx: int,
+	month: int,
+	day_of_month: int,
+	paused: bool,
+	speed: float
 ) -> void:
 	if _top_bar != null:
 		_top_bar.update_time_state(
@@ -232,6 +244,9 @@ func update_time_state(
 			paused,
 			speed
 		)
+	# 玩家数据图层图例随每日 tick 刷新（储量 res_max / 类别可能变化）。
+	if _data_layer_legend != null and _renderer_ref != null:
+		_data_layer_legend.refresh_source(_renderer_ref)
 
 
 func set_world_summary(width: int, height: int, cells: int, seed: int) -> void:
@@ -326,6 +341,33 @@ func _build_ui() -> void:
 	_loading_overlay = WorldLoadingOverlay.new()
 	_loading_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_loading_overlay)
+
+	# 玩家数据图层：左侧两级菜单 + 左下角图例（分块设色 overlay 配套）。
+	_data_layer_menu = MapLayerMenu.new()
+	_data_layer_menu.name = "MapLayerMenu"
+	_data_layer_menu.layer_selected.connect(
+		func(layer_id: String, disp: String) -> void:
+			data_layer_selected.emit(layer_id)
+			if _data_layer_legend != null:
+				_data_layer_legend.set_layer(layer_id, _renderer_ref)
+	)
+	_data_layer_menu.layer_cleared.connect(
+		func() -> void:
+			data_layer_cleared.emit()
+			if _data_layer_legend != null:
+				_data_layer_legend.clear()
+	)
+	add_child(_data_layer_menu)
+
+	_data_layer_legend = MapLayerLegend.new()
+	_data_layer_legend.name = "MapLayerLegend"
+	_data_layer_legend.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_data_layer_legend.offset_left = 8.0
+	_data_layer_legend.offset_bottom = -8.0
+	_data_layer_legend.offset_right = 8.0 + 220.0
+	_data_layer_legend.offset_top = -8.0 - 200.0
+	_data_layer_legend.custom_minimum_size = Vector2(220.0, 200.0)
+	add_child(_data_layer_legend)
 
 	for child in get_children():
 		if child is Control:

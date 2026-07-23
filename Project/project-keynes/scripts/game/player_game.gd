@@ -50,6 +50,7 @@ func _refit_after_viewport_resize() -> void:
 func _configure_runtime() -> void:
 	_runtime_host.configure(_renderer, _camera, _world_clock)
 	_ui_manager.set_diagnostics_source(_runtime_host)
+	_ui_manager.set_renderer(_renderer)
 	_map_interaction.configure(_camera, _runtime_host)
 	_selection.configure(_highlight, _camera, _runtime_host, _ui_manager)
 	_time_controls.configure(_world_clock, _runtime_host, _ui_manager)
@@ -66,6 +67,8 @@ func _connect_signals() -> void:
 	_ui_manager.setup_requested.connect(_return_to_world_setup)
 	_ui_manager.clear_selection_requested.connect(_selection.clear_selection)
 	_ui_manager.day_night_toggled.connect(_on_day_night_toggled)
+	_ui_manager.data_layer_selected.connect(_renderer.set_map_data_layer)
+	_ui_manager.data_layer_cleared.connect(_renderer.clear_map_data_layer)
 
 
 func _on_world_ready(
