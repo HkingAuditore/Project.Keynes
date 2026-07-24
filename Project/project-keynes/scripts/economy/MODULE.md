@@ -2,7 +2,7 @@
 
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v16 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v19 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治、年龄与家庭结构；自然出生和死亡由原生 household/structural 路径处理。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
@@ -77,7 +77,7 @@
   营运资金；市场库存只按整套互补配方可执行的共同容量预留下周期物理投入，非生存加工不得提前锁住生存食物；居民消费和国内出口只能使用预留以上库存。
   商人采购目标以 `max(可行日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；生存品供给下限为平滑日产量的 1/2，其他耐储品为 1/4，配置库存天数和目标量级不缩小。现金不足时按生存品、居民短缺、生产投入 reserve 缺口提高预算权重；权重只改变购买顺序，总预算仍以真实采购价值为上限。仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
   国内贸易对每个目的地冻结同一笔现金预算：`商人正现金 - 既有订单预留 - 12.5% 营运底线`。候选裁量、利润裁剪和最终扣款共享这笔余额，生存品与关键投入也不得突破底线。
-  运行时报告、市场快照和 Economy CSV v19 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v16 或确定性哈希。
+  运行时报告、市场快照和 Economy CSV v19 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v19 或确定性哈希。
 - 默认 `building_output_efficiency_q16=131072`（2 倍）统一提高所有建筑的物资产出；建设材料、生产投入、自然资源消耗、岗位与工资保持目录原值。倍率在 native 冷路径载入输出列时应用，不改变 building catalog hash 或 PKEC 字节结构。
 
 - 自适应工资的可负担上限使用当前冻结价格下的“满产日收入”，先扣除日投入并预留目标营业利润，再按员工槽位折算；不得再把整个 epoch 的收入直接当作单日工资依据。亏损停产建筑使用同一反事实日收入报价，停产期间岗位目标为零。
@@ -239,13 +239,11 @@ PKEC save，restore 后在下一次成功生产前显示为未知。
   diagnostics without adding save-state authority.
 ## 2026-07-20 v14 override
 
-This section supersedes older descriptions of 30-day industrial-only automatic
-investment and PKEC v13. The default runtime now uses 10-day Investment V5 over
-all constructible industrial and collector types, including locally missing
-types. Collector candidates are not rejected by reserve, safe-yield, or
-deposit-life gates. Local construction conditions still decide whether a type
-can exist, and actual production remains bounded by the resource physically
-present. Bullion candidates still pass the 1 percent monthly issuance cap.
+This section is superseded by the PKEC v19 contract. Price-driven endogenous
+investment reviews constructible industrial types only. Collector capacity is
+created by explicit/resource policy and is bounded before employment by the
+resource physically present; service capacity follows population/trade
+topology policy. Bullion collectors therefore cannot expand from price alone.
 Service buildings remain excluded.
 
 Investment V5 leaves owner vacancies to the employment pass. Every cohort with
@@ -316,7 +314,7 @@ already received a first dispatch. Committed diagnostics recompute current
 deadline misses from all live signal clocks rather than from only the planner
 slice that happened to run that day.
 
-## PKEC v16 rolling settlement (current)
+## PKEC v19 rolling settlement (current)
 
 Production uses five stable daily buckets: cell `c` settles when
 `day % 5 == c % 5`, always with `dt=5`. Each populated cell therefore settles
@@ -327,10 +325,10 @@ continuations within `sim_frame_budget_ms`; one call still consumes at most one
 building, market, or structural range. Workload-auto cadence and global
 `WAIT_COMMIT` are not production paths. Trade arrival remains daily.
 
-Current saves are PKEC v16 and persist per-cell settlement day/generation plus
-dirty generations. PKEC v14 restores with deterministic
-`v14_rolling_phase_bootstrap`; no population, cash, goods, or building state is
-created by migration. Older v14/v13 wording above is historical.
+Current saves are PKEC v19. They persist per-cell settlement day/generation,
+dirty generations, and each building group's pending recovery result/cooldown.
+Restore accepts v18 with deterministic `pending=NONE, cooldown=0`; v2-v17 are
+rejected as legacy. Older v14/v13 migration wording above is historical.
 
 The native hot path caches the frozen demand basis once per due cell and shares
 it between building retention and household clearing. Building-cell cache rows
@@ -361,8 +359,8 @@ reports replace one cell's cached current-epoch contribution atomically, so a
 non-due structural reconciliation cannot make unemployment negative. Investment
 aggregates actual offered supply across every `(cell,good)`, includes owner livelihood
 in operating cost, compares the remaining demand deficit with input coverage, and reports
-explicit rejection reasons. Loss-suspended groups retain one recovery owner only when
-no active non-service owner vacancy exists. CSV schema v12 adds resource flow direction,
+explicit rejection reasons. Loss-suspended groups release every owner/employee; an
+approved recovery probe rehires only its scaled probe capacity. CSV schema v12 adds resource flow direction,
 procurement opportunity/allocation, in-kind livelihood coverage, and unresolved
 trade-rejection buckets. These remain derived debug state outside PKEC and replay
 hash. High discard accelerates the existing utilization response when no active
@@ -371,7 +369,7 @@ survival/probe floor.
 
 CSV schema v13 adds `building_investment_probability_skips` to distinguish a
 cash-qualified cohort losing its deterministic investment roll from capital,
-material, resource, and profitability rejection. PKEC v16 additionally persists
+material, resource, and profitability rejection. PKEC v16 historically added persisted
 aggregate merchant debt, recovery state, failed reviews, and in-kind livelihood value.
 
 CSV schema v14 adds ACTIVE owner-job mobility diagnostics. After ordinary
@@ -456,5 +454,5 @@ integer calculations over the existing fixed-width portfolio.
 The test-economy bootstrap creates exactly one merchant post per populated cell
 instead of multiplying market infrastructure by population scale. Runtime
 employment retains only the final merchant invariant; surplus merchants may
-move through the normal aggregate profession/owner-job paths. PKEC v18 persists
+move through the normal aggregate profession/owner-job paths. PKEC v19 persists
 the three new deterministic policy controls and explicitly rejects v17.

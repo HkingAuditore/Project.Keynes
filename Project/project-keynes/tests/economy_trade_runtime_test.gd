@@ -153,8 +153,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v18 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 18)
+	_expect("PKEC v19 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 19)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -662,7 +662,7 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	CountryTestHelper.configure_all_technologies(restored, catalog, 1, 4415)
 	restored.configure_economy(catalog, profile, 1, 4415)
 	var result := _restore_economy(restored, legacy_chunks)
-	_expect("PKEC v18 explicitly rejects every legacy economy save",
+	_expect("PKEC v19 explicitly rejects pre-v18 economy saves",
 		not bool(result.get("ok", true)) and
 		String(result.get("reason", "")) == "legacy_economy_save_unsupported")
 

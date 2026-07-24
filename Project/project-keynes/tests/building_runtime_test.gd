@@ -41,6 +41,8 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 5
 	profile.market_runtime_mode = "ACTIVE"
+	_test_construction_rebuild_preserves_employee_fill(compiled, profile)
+	_test_zero_resource_releases_building_labor(compiled, profile)
 	_test_births_wait_for_next_employment(natural_demography_catalog, profile)
 	_test_production_income_consumption_order(catalog, profile)
 	_test_scarce_output_cost_floor(catalog, profile)
@@ -65,6 +67,7 @@ func _run() -> void:
 	_test_investment_capacity_is_not_gate(catalog, profile)
 	_test_investment_requires_owner_livelihood(catalog, profile)
 	_test_owner_only_loss_enters_lifecycle(catalog, profile)
+	_test_recovery_failure_commits_next_cycle(catalog, profile)
 	_test_service_building_excluded_from_producer_lifecycle(catalog, profile)
 	_test_endogenous_investment_repairs_dead_merchant(catalog, profile)
 	_test_building_plan_continuation(catalog, profile)
@@ -76,6 +79,10 @@ func _run() -> void:
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
+	var coal_reserve_resource := (catalog.building_resource_ids as PackedStringArray).find("coal")
+	var coal_reserve_slot := int(ext.component_id(StringName(
+		(catalog.building_resource_reserve_slots as PackedStringArray)[coal_reserve_resource])))
+	ext.write_f32_range(coal_reserve_slot, 0, PackedFloat32Array([1000000000.0]))
 	var landlord_sig: int = (compiled.signature_keys as PackedStringArray).find("industrialist|default")
 	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("miner|default")
 	var manager_sig: int = (compiled.signature_keys as PackedStringArray).find("manager|default")
@@ -296,6 +303,7 @@ func _run() -> void:
 	_expect("owner cash drain command accepted", bool(drain.get("ok", false)))
 	var day2 := _run_day(ext, 2)
 	buildings = ext.get_building_cell_snapshot(0)
+	var mine_group := (buildings.group_type_ids as PackedInt32Array).find(mine_id)
 	var day2_base_paid: PackedInt64Array = buildings.employee_base_wage_paid
 	var day2_base_due: PackedInt64Array = buildings.employee_base_wage_due
 	var day2_paid_total := 0
@@ -304,38 +312,46 @@ func _run() -> void:
 		day2_paid_total += int(value)
 	for value in day2_base_due:
 		day2_due_total += int(value)
-	_expect("zero funded production creates no unfunded payroll commitment",
-		day2_paid_total == 0 and day2_due_total == 0)
+	var day2_group_paid := int(
+		(buildings.last_base_wages_paid as PackedInt64Array)[mine_group])
+	var day2_group_due := int(
+		(buildings.last_base_wages_due as PackedInt64Array)[mine_group])
+	_expect("unfunded active employment keeps its payroll commitment",
+		day2_group_paid == 0 and day2_group_due > 0 and
+		day2_paid_total >= day2_group_paid and day2_due_total >= day2_group_due)
 	var constrained_intent := int(
-		(buildings.purchase_intent_capacity_q16 as PackedInt64Array)[0])
+		(buildings.purchase_intent_capacity_q16 as PackedInt64Array)[mine_group])
 	_expect("producer-income inventory floor preserves the next active production plan",
-		int((buildings.planned_utilization_q16 as PackedInt32Array)[0]) > 0 and
-		int((buildings.planned_utilization_q16 as PackedInt32Array)[0]) <= 65536)
+		mine_group >= 0 and
+		int((buildings.planned_utilization_q16 as PackedInt32Array)[mine_group]) > 0 and
+		int((buildings.planned_utilization_q16 as PackedInt32Array)[mine_group]) <= 65536)
 	_expect("zero owner input funds preserve intent but suppress funded production",
 		constrained_intent > 0 and
-		int((buildings.funded_capacity_q16 as PackedInt64Array)[0]) == 0 and
-		int((buildings.last_output as PackedInt64Array)[0]) == 0 and funded_output > 0)
+		int((buildings.funded_capacity_q16 as PackedInt64Array)[mine_group]) == 0 and
+		int((buildings.last_output as PackedInt64Array)[mine_group]) == 0 and funded_output > 0)
 	_expect("unfunded active contract remains explicitly wage-suspended",
-		int((buildings.wage_suspended as PackedByteArray)[0]) != 0)
+		int((buildings.wage_suspended as PackedByteArray)[mine_group]) != 0)
 	_expect("insolvent wage cycle conserves money and goods",
 		int(day2.get("money_error", 1)) == 0 and int(day2.get("goods_error", 1)) == 0)
 	_expect("cash-drained cycle preserves the prior profitable settlement once",
-		int((buildings.severe_loss_cycles as PackedInt32Array)[0]) == 0 and
-		int((buildings.operating_state as PackedByteArray)[0]) == 0)
+		int((buildings.severe_loss_cycles as PackedInt32Array)[mine_group]) == 0 and
+		int((buildings.operating_state as PackedByteArray)[mine_group]) == 0)
 	var drained_pop: Dictionary = ext.get_population_cell_snapshot(0)
 	_expect("treasury transfer is exposed as a settlement source",
 		_cashflow_has_source(drained_pop,
 			_row_for_signature(drained_pop, landlord_sig), "transfer", false))
 	_run_day(ext, 3)
 	var loss_two: Dictionary = ext.get_building_cell_snapshot(0)
+	mine_group = (loss_two.group_type_ids as PackedInt32Array).find(mine_id)
 	_expect("first execution-blocked cycle is not classified as a loss",
-		int((loss_two.severe_loss_cycles as PackedInt32Array)[0]) == 0 and
-		int((loss_two.operating_state as PackedByteArray)[0]) == 0)
+		int((loss_two.severe_loss_cycles as PackedInt32Array)[mine_group]) == 0 and
+		int((loss_two.operating_state as PackedByteArray)[mine_group]) == 0)
 	_run_day(ext, 4)
 	var suspended: Dictionary = ext.get_building_cell_snapshot(0)
+	mine_group = (suspended.group_type_ids as PackedInt32Array).find(mine_id)
 	_expect("repeated execution blockage remains active without loss accumulation",
-		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 0 and
-		int((suspended.operating_state as PackedByteArray)[0]) == 0)
+		int((suspended.severe_loss_cycles as PackedInt32Array)[mine_group]) == 0 and
+		int((suspended.operating_state as PackedByteArray)[mine_group]) == 0)
 	var recovery_pop: Dictionary = ext.get_population_cell_snapshot(0)
 	var recovery_owner_row := _row_for_signature(recovery_pop, landlord_sig)
 	var recovery_owner_handle := _handle_for_profession(recovery_pop, landlord_sig)
@@ -374,13 +390,14 @@ func _run() -> void:
 		bool(recovery_stock.get("ok", false)))
 	var suspension_report := _run_day(ext, 5)
 	suspended = ext.get_building_cell_snapshot(0)
+	mine_group = (suspended.group_type_ids as PackedInt32Array).find(mine_id)
 	_expect("third execution-blocked cycle remains active",
-		int((suspended.severe_loss_cycles as PackedInt32Array)[0]) == 0 and
-		int((suspended.operating_state as PackedByteArray)[0]) == 0)
+		int((suspended.severe_loss_cycles as PackedInt32Array)[mine_group]) == 0 and
+		int((suspended.operating_state as PackedByteArray)[mine_group]) == 0)
 	_expect("blocked active building retains its owner and restart intent",
-		int((suspended.filled_owner as PackedInt64Array)[0]) > 0 and
-		int((suspended.purchase_intent_capacity_q16 as PackedInt64Array)[0]) > 0 and
-		int((suspended.last_output as PackedInt64Array)[0]) == 0)
+		int((suspended.filled_owner as PackedInt64Array)[mine_group]) > 0 and
+		int((suspended.purchase_intent_capacity_q16 as PackedInt64Array)[mine_group]) > 0 and
+		int((suspended.last_output as PackedInt64Array)[mine_group]) == 0)
 	_expect("blocked producer keeps explicit unfunded upstream demand",
 		int(suspension_report.get("desired_business_demand", 0)) > 0 and
 		int(suspension_report.get("unfunded_business_demand", 0)) > 0)
@@ -394,7 +411,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v18 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 18)
+	_expect("building v19 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 19)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -474,6 +491,127 @@ func _run() -> void:
 		int(resumed_report.get("money_error", 1)) == 0 and
 		int(resumed_report.get("goods_error", 1)) == 0)
 	print("=== native building runtime %s ===" % ("PASS" if failures == 0 else "FAIL"))
+
+func _test_construction_rebuild_preserves_employee_fill(
+		source_catalog: Dictionary, source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var ext := _new_ext(catalog)
+	_expect("role-rebuild country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 9193))
+	_expect("role-rebuild runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 9193).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var industrialist_sig := signatures.find("industrialist|default")
+	var miner_sig := signatures.find("miner|default")
+	var manager_sig := signatures.find("manager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var mine_id := (catalog.building_type_ids as PackedStringArray).find("coal_mine")
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(100000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			industrialist_sig, miner_sig, manager_sig, merchant_sig]),
+		"population": PackedInt64Array([4, 80, 12, 2]),
+		"funds": PackedInt64Array([1000000000, 1000000, 1000000, 1000000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([mine_id]),
+		"building_owner_signature_ids": PackedInt32Array([industrialist_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("role-rebuild fixture bootstraps", bool(boot.get("ok", false)))
+	var owner_handle := _handle_for_profession(
+		ext.get_population_cell_snapshot(0), industrialist_sig)
+	var submit: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([10]),
+		"effective_days": PackedInt64Array([0]),
+		"sequences": PackedInt64Array([9194]),
+		"target_handles": PackedInt64Array([owner_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([mine_id]),
+		"i64_0": PackedInt64Array([1]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("role-rebuild expansion queues",
+		bool(submit.get("ok", false)))
+	var report := _run_day(ext, 0)
+	var after: Dictionary = ext.get_building_cell_snapshot(0)
+	var after_fill := 0
+	for filled in after.employee_filled as PackedInt64Array:
+		after_fill += int(filled)
+	var after_required := 0
+	for required in after.employee_required as PackedInt64Array:
+		after_required += int(required)
+	var pop: Dictionary = ext.get_population_cell_snapshot(0)
+	var cohort_employee_fill := 0
+	for filled in pop.employee_employed_by_cohort as PackedInt64Array:
+		cohort_employee_fill += int(filled)
+	_expect("construction rebuild preserves incumbent employee fill",
+		int((after.building_counts_by_type as PackedInt64Array)[mine_id]) == 2 and
+		after_fill == 16 and cohort_employee_fill == after_fill and
+		after_required > after_fill)
+	_expect("role-rebuild expansion conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+func _test_zero_resource_releases_building_labor(
+		source_catalog: Dictionary, source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var ext := _new_ext(catalog)
+	_expect("zero-resource country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 9195))
+	_expect("zero-resource runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 9195).get("ok", false)))
+	var coal_resource := (catalog.building_resource_ids as PackedStringArray).find("coal")
+	var reserve_slot_name := StringName(
+		(catalog.building_resource_reserve_slots as PackedStringArray)[coal_resource])
+	var reserve_slot := int(ext.component_id(reserve_slot_name))
+	ext.write_f32_range(reserve_slot, 0, PackedFloat32Array([0.0]))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var industrialist_sig := signatures.find("industrialist|default")
+	var miner_sig := signatures.find("miner|default")
+	var manager_sig := signatures.find("manager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var mine_id := (catalog.building_type_ids as PackedStringArray).find("coal_mine")
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(100000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			industrialist_sig, miner_sig, manager_sig, merchant_sig]),
+		"population": PackedInt64Array([4, 80, 12, 2]),
+		"funds": PackedInt64Array([1000000000, 1000000, 1000000, 1000000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([mine_id]),
+		"building_owner_signature_ids": PackedInt32Array([industrialist_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("zero-resource fixture bootstraps", bool(boot.get("ok", false)))
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var employee_fill := 0
+	for filled in buildings.employee_filled as PackedInt64Array:
+		employee_fill += int(filled)
+	_expect("zero natural resource preserves assets and releases labor",
+		int((buildings.building_counts_by_type as PackedInt64Array)[mine_id]) == 1 and
+		int((buildings.planned_utilization_q16 as PackedInt32Array)[0]) == 0 and
+		int((buildings.filled_owner as PackedInt64Array)[0]) == 0 and
+		employee_fill == 0)
+	_expect("zero-resource cycle conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
 
 func _test_births_wait_for_next_employment(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
@@ -1278,17 +1416,21 @@ func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,
 		"building_counts": PackedInt64Array([3, 3]),
 	})
 	_expect("existing-market entry fixture bootstraps", bool(boot.get("ok", false)))
+	_expect("existing-market investment diagnostics register",
+		bool(ext.set_economy_inspector_trace_cell(0).get("ok", false)))
 	var report := {}
 	for day in range(3):
 		report = _run_day(ext, day)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var count := int((buildings.building_counts_by_type as PackedInt64Array)[knapping_id])
-	var group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
-	var rejection := int((buildings.investment_rejection_reason as PackedInt32Array)[group]) \
-		if group >= 0 else -1
-	_expect("per-review growth caps established three-building types to one start each",
-		count == 3 and rejection == 0 and
-		int(report.get("building_investment_buildings_started", -1)) == 2)
+	var diagnostic_types: PackedInt32Array = buildings.investment_candidate_type_ids
+	var diagnostic_rejections: PackedInt32Array = \
+		buildings.investment_candidate_rejection_reasons
+	var hunting_diagnostic := diagnostic_types.find(hunting_id)
+	_expect("price investment excludes collectors while industrial reviews continue",
+		count == 3 and hunting_diagnostic >= 0 and
+		int(diagnostic_rejections[hunting_diagnostic]) == 17 and
+		int(report.get("building_investment_buildings_started", -1)) >= 1)
 	_expect("existing-market entry review conserves every ledger",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
@@ -1335,12 +1477,12 @@ func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,
 		coverage_report = _run_day(coverage_ext, day)
 	var coverage_buildings: Dictionary = coverage_ext.get_building_cell_snapshot(0)
 	var coverage_group := (coverage_buildings.group_type_ids as PackedInt32Array).find(knapping_id)
-	_expect("idle installed capacity is reserved before further entry",
+	_expect("missing input coverage blocks further entry",
 		coverage_group >= 0 and
 		int((coverage_buildings.building_counts_by_type as PackedInt64Array)[
 			knapping_id]) == 3 and
 		int((coverage_buildings.investment_rejection_reason as PackedInt32Array)[
-			coverage_group]) == 0)
+			coverage_group]) == 8)
 	_expect("input-coverage review conserves every ledger",
 		int(coverage_report.get("population_error", 1)) == 0 and
 		int(coverage_report.get("money_error", 1)) == 0 and
@@ -1480,13 +1622,126 @@ func _test_owner_only_loss_enters_lifecycle(source_catalog: Dictionary,
 	var report := _run_day(ext, 3)
 	buildings = ext.get_building_cell_snapshot(0)
 	group = (buildings.group_type_ids as PackedInt32Array).find(loom_id)
+	var suspended_employee_fill := 0
+	for filled in buildings.employee_filled as PackedInt64Array:
+		suspended_employee_fill += int(filled)
 	_expect("third owner-only livelihood loss suspends the workshop",
 		group >= 0 and
 		int((buildings.severe_loss_cycles as PackedInt32Array)[group]) == 3 and
 		int((buildings.operating_state as PackedByteArray)[group]) == 1 and
+		int((buildings.filled_owner as PackedInt64Array)[group]) == 0 and
+		suspended_employee_fill == 0 and
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
+
+
+func _test_recovery_failure_commits_next_cycle(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.building_severe_loss_cycles = 3
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var loom_id := (catalog.building_type_ids as PackedStringArray).find("household_loom")
+	var goods: PackedStringArray = catalog.good_ids
+	var cloth_good := goods.find("cloth")
+	_minimize_household_good_demand(catalog, cloth_good)
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	prices[cloth_good] = 1000000000
+	max_prices[cloth_good] = 1000000000
+	catalog.good_default_price = prices
+	catalog.good_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("recovery-pending country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 291))
+	_expect("recovery-pending runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 291).get("ok", false)))
+	for slot_name in catalog.building_resource_reserve_slots as PackedStringArray:
+		var slot_id := int(ext.component_id(StringName(slot_name)))
+		if slot_id >= 0:
+			ext.write_f32_range(slot_id, 0, PackedFloat32Array([1000000000.0]))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	stock[cloth_good] = 1000000000
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([artisan_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([100000000, 100000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([loom_id]),
+		"building_owner_signature_ids": PackedInt32Array([artisan_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("recovery-pending fixture bootstraps", bool(boot.get("ok", false)))
+	for day in range(4):
+		_run_day(ext, day)
+	var suspended: Dictionary = ext.get_building_cell_snapshot(0)
+	var group := (suspended.group_type_ids as PackedInt32Array).find(loom_id)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var unemployed_handle := _handle_for_profession(population, unemployed_sig)
+	_expect("recovery-pending fixture reaches suspension with released owner",
+		group >= 0 and
+		int((suspended.operating_state as PackedByteArray)[group]) == 1 and
+		int((suspended.filled_owner as PackedInt64Array)[group]) == 0 and
+		unemployed_handle != 0)
+	var remove_owner: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([6]),
+		"effective_days": PackedInt64Array([20]),
+		"sequences": PackedInt64Array([1]),
+		"target_handles": PackedInt64Array([unemployed_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([0]),
+		"i64_0": PackedInt64Array([-1]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("recovery-pending owner removal queues",
+		bool(remove_owner.get("ok", false)))
+	var failed_report := _run_day(ext, 4)
+	var failed: Dictionary = ext.get_building_cell_snapshot(0)
+	group = (failed.group_type_ids as PackedInt32Array).find(loom_id)
+	_expect("failed probe remains recovery until the next frozen boundary",
+		int(failed_report.get("recovery_approved", 0)) == 1 and
+		int(failed_report.get("recovery_failed", 0)) == 1 and
+		int((failed.operating_state as PackedByteArray)[group]) == 2 and
+		int((failed.pending_operating_state as PackedByteArray)[group]) == 1 and
+		int((failed.recovery_cooldown_cycles as PackedInt32Array)[group]) == 2 and
+		int((failed.filled_owner as PackedInt64Array)[group]) == 0)
+	var commit_report := _run_day(ext, 5)
+	var committed: Dictionary = ext.get_building_cell_snapshot(0)
+	group = (committed.group_type_ids as PackedInt32Array).find(loom_id)
+	_expect("next due cycle commits suspension without rehiring",
+		int(commit_report.get("recovery_candidates", 0)) == 0 and
+		int((committed.operating_state as PackedByteArray)[group]) == 1 and
+		int((committed.pending_operating_state as PackedByteArray)[group]) == 255 and
+		int((committed.recovery_cooldown_cycles as PackedInt32Array)[group]) == 2 and
+		int((committed.filled_owner as PackedInt64Array)[group]) == 0)
+	var cooldown_report := _run_day(ext, 6)
+	var cooldown: Dictionary = ext.get_building_cell_snapshot(0)
+	group = (cooldown.group_type_ids as PackedInt32Array).find(loom_id)
+	_expect("recovery cooldown skips two complete due-cell cycles",
+		int(cooldown_report.get("recovery_candidates", 0)) == 0 and
+		int((cooldown.operating_state as PackedByteArray)[group]) == 1 and
+		int((cooldown.recovery_cooldown_cycles as PackedInt32Array)[group]) == 1)
+	_expect("recovery-pending cycles conserve every ledger",
+		int(failed_report.get("population_error", 1)) == 0 and
+		int(failed_report.get("money_error", 1)) == 0 and
+		int(failed_report.get("goods_error", 1)) == 0 and
+		int(commit_report.get("population_error", 1)) == 0 and
+		int(commit_report.get("money_error", 1)) == 0 and
+		int(commit_report.get("goods_error", 1)) == 0 and
+		int(cooldown_report.get("population_error", 1)) == 0 and
+		int(cooldown_report.get("money_error", 1)) == 0 and
+		int(cooldown_report.get("goods_error", 1)) == 0)
 
 
 func _test_service_building_excluded_from_producer_lifecycle(

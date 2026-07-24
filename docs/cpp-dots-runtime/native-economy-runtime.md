@@ -5,7 +5,7 @@
 `NativeEconomyRuntime`；动态人口和商品状态不进入 DataCore `_slots`，也不回填
 `MapData.goods_*`。
 
-## PKEC v18 多行业投资、企业重整与商人信用（当前）
+## PKEC v19 就业稳定、企业重整与商人信用（当前）
 
 Endogenous entry uses `endogenous_owner_portfolio_v8`. A reviewed cell keeps
 at most four unique building types in a fixed native portfolio, fills at most
@@ -35,7 +35,12 @@ state is introduced.
 建设材料或生产实物投入的信用，基础工资后、本期奖金前按本金优先偿还。连续两个成功试产周期
 恢复 ACTIVE；连续六次 10 日审查未恢复则整组清算，商栈除外，未偿债务只记坏账。
 自产实物收入按冻结零售价持久化到来源建筑，只参与经济收益和岗位选择，不可偿债。
-PKEC writer 为 v16，restore 只接受 v16。
+恢复试产的结果在本周期只写 `pending_operating_state`，到该 cell 下一个 frozen
+结算周期开始时才提交。失败探针保持本周期 `RECOVERY_PROBE` 的就业与发布状态一致，
+随后进入两个本地周期的冷却；探针 owner/employee 只按 probe capacity 招聘。
+建筑角色存储重建保留既有 employee fill，新扩容量保持空缺。自然资源容量在就业前压入
+`planned_utilization_q16`，零资源建筑保留资产但释放劳动力。PKEC writer 为 v19；restore
+接受 v19，并将 v18 的 pending/cooldown 默认迁移为 `NONE/0`。
 
 > 2026-07-11 状态：冻结周期错峰版默认 `market_runtime_mode=ACTIVE`、结算周期 5 日。功能、守恒、
 > worker/scalar 确定性、移动和 10M cohort 性能门槛均已通过。
@@ -66,7 +71,7 @@ PKEC writer 为 v16，restore 只接受 v16。
 | cohort、handle、人口、资金、收入/支出、满足度 | C++ `PopulationStore` | GDScript 无逐 cohort setter。 |
 | 本地库存、价格、居民需求 EMA、短缺率 | C++ `MarketStore` | 无 per-cell goods component，无匿名市场现金。 |
 | 企业可行需求/供给 EMA、实际出库 EMA、成本锚 | C++ 稀疏 `MarketSignalStore` | 仅保存建筑实际引用的 `(cell, good)` 边；实际出库用于商人库存目标。 |
-| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v16 保存订单/托管/EMA。 |
+| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v19 保存订单/托管/EMA。 |
 | 需求、预算、bundle 清算、替代 fallback、商人结算、Price V3 | C++ Market V2 hot loop | 不访问 Godot Object/Callable/Dictionary。 |
 | 周期环境快照 | DataCore 环境 slots → C++ Q16 snapshot | 周期 sample day 捕获 temp/moisture/snow/weather，周期内冻结。 |
 | catalog 编译 | `EconomyCatalog`/`EconomyFacade` 冷路径 | stable ID 排序后一次性提交 PackedArrays。 |
@@ -90,7 +95,7 @@ PKEC writer 为 v16，restore 只接受 v16。
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v16 是当前 writer：保存每 cell 结算日/generation、dirty generations、企业三态、聚合商人债务、恢复失败审查和上一期实物生活价值；意向/受资助需求、营运资金分配和 production worker 临时结果仍按周期确定性重建。v2-v15 旧档统一明确拒绝。
+- PKEC v19 是当前 writer：除既有企业三态、债务和投资参数外，保存 pending operating state 与恢复冷却周期。v18 可确定性迁移；v2-v17 旧档统一明确拒绝。
 - `BUILDING_PLAN` 是原生两遍 continuation：第一遍按 active-cell CSR 计算利润、停产恢复和计划利用率，第二遍按相同稳定顺序重建生产投入 reserve。`building_cells_per_slice=0` 确定性使用 256 个 active cell；正值可做平台定标。cursor、生存利用率 floor 和 reserve 构建缓存不保存、不哈希。
 - 业主营运资金缩放使用 8 次确定性整数二分并返回可支付下界，因此绝不透支；最大利用率低估为请求区间的 `1/256`，实际 Q16 未决界由 `working_capital_scale_error_bound_q16` 报告。
 
@@ -636,11 +641,11 @@ conditions, construction materials, wages, owner livelihood, and capital checks
 still apply; reserve, safe-yield, and deposit-life gates do not veto investment.
 
 The three sparse current-cycle producer lanes and all driver diagnostics are
-transient. They do not enter PKEC v16 or the state hash. CSV v19 adds the driver
+transient. They do not enter PKEC v19 or the state hash. CSV v19 adds the driver
 good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
 columns.
 
-## PKEC v16 rolling settlement (current)
+## PKEC v19 rolling settlement (current)
 
 The production runtime no longer waits for a global epoch. Stable cell phase is
 `cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded
@@ -658,11 +663,10 @@ transactions. ETA is `departure_day + ceil(route_cost / daily_speed)` and is not
 aligned to a market boundary. Incremental route planning may continue across
 days, but it cannot defer the due local phase.
 
-PKEC v15 persists per-cell settlement dates/generations and dirty generations.
-PKEC v14 is the supported rolling bootstrap source. The restore result reports
-`migration=v14_rolling_phase_bootstrap`; phase assignment changes no physical or
-monetary state. References to PKEC v14 above describe the preceding economic
-repair schema, not the current save writer.
+PKEC v19 persists per-cell settlement dates/generations, dirty generations, and
+building recovery pending state/cooldown. Restore accepts v18 by initializing
+those two new fields to `NONE/0`; v2-v17 are rejected as legacy. References to
+PKEC v14 above describe historical rolling migration, not the current reader.
 
 The rolling hot path also keeps a non-authoritative per-cell demand-basis cache.
 Building owner-retention and household clearing share the same frozen prices,
@@ -836,7 +840,8 @@ denominator includes inputs, base wages, and owner livelihood minus retained-goo
 credit. It is not gated by `last_operating_cost`, which excludes owner livelihood; therefore
 owner-only workshops enter the same suspension, recovery, and liquidation path as employers.
 
-Endogenous investment now evaluates every technology-unlocked building type. Every generated
+Endogenous investment now evaluates every technology-unlocked industrial building type. Collector
+capacity is created by explicit/resource policy and service capacity by population/trade topology. Every generated
 and curated `BuildingProfile` carries an explicit construction bill selected by technology era,
 scaled by owner and employee slots, and filtered to avoid self-output bootstrap cycles; the catalog
 rejects any profile that omits construction goods. Output demand combines flow deficit with the persistent gap between current
@@ -844,7 +849,8 @@ stock and `merchant_inventory_target`; a type is rejected with reason 15 only wh
 shortage and projected utilization are below their configured thresholds.
 
 The inspector-selected cell owns a bounded transient candidate table containing every
-evaluated unlocked type, including types with no installed group. It reports rejection,
+evaluated unlocked industrial type, including types with no installed group, plus explicit
+unsupported-kind rejection rows for collector/service types. It reports rejection,
 shortage, utilization, score, payback, required capital, and projected daily profit through
 `get_building_cell_snapshot`. CSV v19 appends candidate-only building rows (`group_index=-1`,
 `investment_candidate=1`) with the same fields. This table is excluded from PKEC and the
@@ -865,7 +871,12 @@ Permanent-liquidation reviews advance only when the probe inputs, natural resour
 financing are currently executable but the counterfactual margin still misses the restart
 threshold. A supply, resource, or financing blockage resets failed liquidation reviews, so
 scarcity pauses the business without destroying it. These probe and eligibility lanes are
-epoch-transient and do not change PKEC v16 or the authoritative hash.
+epoch-transient and do not change PKEC v19 or the authoritative hash.
+
+An approved `RECOVERY_PROBE` counts as successful only when the group actually executes at
+least one input, output, extraction, or generation leg and also passes its cash/economic
+checks. A zero-work probe is a failure, publishes `pending=SUSPENDED_LOSS`, and commits that
+state only at the next due-cell boundary before the two-cycle retry cooldown.
 
 ## 2026-07-23 initial renewable configuration and test-fixture population
 

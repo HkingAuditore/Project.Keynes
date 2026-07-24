@@ -9,7 +9,8 @@ extends RefCounted
 const RESOURCE_MIDDLE_NAMES: PackedStringArray = [
 	"timber", "stone", "fertile_soil", "coal", "oil", "natural_gas",
 	"copper_ore", "iron_ore", "gold_ore", "silver_ore", "salt", "saltpeter",
-	"rare_earth", "clay", "wild_game", "marine_fish", "arable_land", "paddy_land",
+	"rare_earth", "clay", "wild_game", "marine_fish", "freshwater_fish",
+	"arable_land", "paddy_land",
 	"plantation_land", "pasture", "bauxite", "limestone", "silica_sand",
 	"phosphate_rock", "tin_ore", "lead_ore", "zinc_ore", "manganese_ore",
 	"sulfur", "flint",
