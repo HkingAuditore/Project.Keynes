@@ -75,6 +75,8 @@ uniform float aquatic_response = 0.0;
 // 0 = 点缀/地貌类 archetype（岩石/雪堆/枯立木），抑制植被气候改色；1 = 植被类。
 uniform float veg_response = 1.0;
 uniform float phenology_response = 1.0;
+uniform float phenology_color_dominance = 0.64;
+uniform float albedo_light_floor = 0.38;
 // 阶段 D 精致化。
 uniform vec2 wind_dir = vec2(1.0, 0.18);     // 全局盛行风方向（归一化前可任意）
 uniform float weather_wind_boost = 0.0;      // 实时天气（风暴/季风）附加风强
@@ -264,7 +266,7 @@ float vitality_norm(float vitality) {
 }
 
 float compute_presence(vec4 dyn, vec4 eco) {
-	float dyn_valid = step(0.02, dyn.r);
+	float dyn_valid = 1.0;
 	float temp = mix(0.5, dyn.r, dyn_valid);
 	float moisture = mix(0.5, dyn.g, dyn_valid);
 	float snow = dyn.b * dyn_valid;
@@ -294,7 +296,7 @@ void vertex() {
 	vec2 shrub_uv = clamp(INSTANCE_CUSTOM.rg, vec2(0.0), vec2(1.0));
 	shrub_dyn = sample_dyn_state(shrub_uv);
 	shrub_eco = sample_eco_state(shrub_uv);
-	float dyn_valid = step(0.02, shrub_dyn.r);
+	float dyn_valid = 1.0;
 	float temp = mix(0.5, shrub_dyn.r, dyn_valid);
 	float moisture = mix(0.5, shrub_dyn.g, dyn_valid);
 	shrub_vitality_v = mix(0.70, shrub_dyn.a, dyn_valid);
@@ -380,7 +382,7 @@ void fragment() {
 	float golden = phenology.z;
 	float withered = phenology.w;
 	float snow = clamp(shrub_snow_v, 0.0, 1.0);
-	float dyn_valid = step(0.02, shrub_dyn.r);
+	float dyn_valid = 1.0;
 	float temp = mix(0.5, shrub_dyn.r, dyn_valid);
 	float moisture = mix(0.5, shrub_dyn.g, dyn_valid);
 	float vitality_n = vitality_norm(shrub_vitality_v);
@@ -407,13 +409,16 @@ void fragment() {
 	float snow_amount = clamp(snow * snow_white_strength, 0.0, 1.0);
 
 	vec3 rgb = COLOR.rgb;
+	float source_luma = dot(COLOR.rgb, vec3(0.299, 0.587, 0.114));
+	float canopy_detail = mix(0.78, 1.18, smoothstep(0.055, 0.34, source_luma));
 	vec3 phenology_color = vec3(0.0);
-	phenology_color += vec3(0.46, 0.60, 0.27) * stage_w.x; // 萌芽：嫩黄绿
-	phenology_color += vec3(0.18, 0.43, 0.24) * stage_w.y; // 繁茂：沉稳叶绿
-	phenology_color += vec3(0.72, 0.54, 0.20) * stage_w.z; // 金黄：赭金
-	phenology_color += vec3(0.42, 0.35, 0.26) * stage_w.w; // 凋零：枯褐灰
-	float phenology_mix = clamp((0.42 + vitality_color_contrast * 0.22)
-		* phenology_response * veg_response, 0.0, 0.68);
+	phenology_color += vec3(0.62, 0.72, 0.30) * stage_w.x; // 萌芽：明亮嫩黄绿
+	phenology_color += vec3(0.24, 0.51, 0.25) * stage_w.y; // 繁茂：清晰叶绿
+	phenology_color += vec3(0.82, 0.60, 0.16) * stage_w.z; // 金黄：暖金黄
+	phenology_color += vec3(0.50, 0.36, 0.22) * stage_w.w; // 凋零：枯褐
+	phenology_color *= canopy_detail;
+	float phenology_mix = clamp(phenology_color_dominance
+		* phenology_response * veg_response, 0.0, 0.94);
 	rgb = mix(rgb, phenology_color, phenology_mix);
 
 	// 气候只在物候底色上做有限偏移，避免湿润与高活力反复叠成纯绿。
@@ -426,12 +431,12 @@ void fragment() {
 	float wet_moisture_mix = pow(water_support, 0.78)
 		* moisture_color_strength * 0.34 * vitality_color_n * veg_response;
 	rgb = mix(rgb, vec3(0.68, 0.52, 0.29), dry_moisture_mix);
-	rgb = mix(rgb, vec3(0.25, 0.40, 0.35), wet_moisture_mix);
+	rgb = mix(rgb, vec3(0.28, 0.48, 0.36), wet_moisture_mix);
 	// 干燥略提亮、饱和为草黄色；湿润略压暗并冷化，远景也能读出含水差。
 	rgb *= 1.0 + dry_visual * 0.07 * moisture_color_strength * veg_response;
-	rgb *= 1.0 - wet_visual * 0.08 * moisture_color_strength * veg_response;
+	rgb *= 1.0 + wet_visual * 0.025 * moisture_color_strength * veg_response;
 	rgb = mix(rgb, vec3(0.62, 0.29, 0.15),
-		stage_w.z * autumn_red_strength * 0.16 * veg_response);
+		stage_w.z * autumn_red_strength * 0.28 * veg_response);
 	rgb = mix(rgb, vec3(0.52, 0.34, 0.22),
 		dry_hot * heat_red_strength * 0.14 * veg_response);
 	// 季节开花：萌芽期给开花类一抹亮色，积雪覆盖时收敛。
@@ -444,8 +449,8 @@ void fragment() {
 	float ao = 1.0 - (1.0 - clamp(UV.y, 0.0, 1.0)) * toon_shading * 0.38;
 	rgb *= ao;
 	float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
-	float ql = floor(luma * 3.0 + 0.5) / 3.0;
-	rgb *= (luma > 0.0015) ? mix(1.0, ql / luma, toon_shading * 0.55) : 1.0;
+	float ql = floor(luma * 5.0 + 0.5) / 5.0;
+	rgb *= (luma > 0.0015) ? mix(1.0, ql / luma, toon_shading * 0.36) : 1.0;
 	// [veg-normal-shading] 昼夜 + 法线辅助着色（最后一步）：与地形/水面统一调用 earth_daylight，
 	// 按本实例经纬度取昼夜/晨昏 + 同色板；再用「地形宏观法线 + billboard 伪法线」做 NdotL 方向光、
 	// 边缘光、接触 AO、谷地 AO，模拟真实场景光照（迎光面亮、背光面暗，随晨昏线/太阳方位变化）。
@@ -484,7 +489,7 @@ void fragment() {
 		// 谷地 AO（高画质档）：凹陷处整株压暗。
 		rgb *= 1.0 - shrub_terrain_ao * terrain_valley_ao_strength * mix(0.38, 1.0, veg_response);
 		// 保留实例本色的最低可见度；点缀物不再被植被级 AO 压成近黑色。
-		rgb = max(rgb, unlit_rgb * mix(0.54, 0.38, veg_response));
+		rgb = max(rgb, unlit_rgb * mix(0.54, albedo_light_floor, veg_response));
 	} else {
 		// 退化路径（shading 关）：旧"平直昼夜"着色，保持兼容。
 		vec3 light = max(ed.amb_col, vec3(ambient_floor)) + ed.sun_col * (ed.local_day * 0.35 * horizon_vis);
@@ -590,7 +595,7 @@ void vertex() {
 	// presence-lite：枯死 / 积雪覆盖时阴影一并消失（与植株 compute_presence 同向，省去 eco fetch）。
 	int cid = sh_decode_cell_index(uv);
 	vec4 dyn = (cid >= 0) ? texture(dyn_lut, sh_cell_lut_uv(cid)) : vec4(0.0);
-	float dyn_valid = step(0.02, dyn.r);
+	float dyn_valid = 1.0;
 	float vitality = mix(0.70, dyn.a, dyn_valid);
 	vitality = mix(vitality, 0.86, aquatic_response);
 	float snow = dyn.b * dyn_valid;
@@ -2083,16 +2088,28 @@ func _apply_profile_uniforms() -> void:
 	var is_deco := _is_decoration_archetype(arch)
 	_material.set_shader_parameter("veg_response", 0.0 if is_deco else 1.0)
 	var phenology_response := 1.0
+	var phenology_color_dominance := 0.68
+	var albedo_light_floor := 0.44
 	match arch:
+		DETAIL_TREE:
+			phenology_color_dominance = 0.90
+			albedo_light_floor = 0.52
 		DETAIL_CONIFER:
 			phenology_response = 0.28
+			phenology_color_dominance = 0.46
+			albedo_light_floor = 0.48
 		DETAIL_PALM, DETAIL_CACTUS:
 			phenology_response = 0.16
+			phenology_color_dominance = 0.40
+			albedo_light_floor = 0.48
 		DETAIL_REED:
 			phenology_response = 0.72
 		DETAIL_ROCK, DETAIL_SNOW_MOUND, DETAIL_DEAD_SNAG:
 			phenology_response = 0.0
+			phenology_color_dominance = 0.0
 	_material.set_shader_parameter("phenology_response", phenology_response)
+	_material.set_shader_parameter("phenology_color_dominance", phenology_color_dominance)
+	_material.set_shader_parameter("albedo_light_floor", albedo_light_floor)
 	_material.set_shader_parameter("aquatic_response", 1.0 if _spawn_domain() == SPAWN_WATER else 0.0)
 	# 阶段 D：按 archetype 推送外观 uniform。
 	# 开花：高山花最盛，灌木/树轻微，点缀/草不开花。
