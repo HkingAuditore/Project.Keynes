@@ -594,9 +594,12 @@ PKEC v8 的稀疏 `LaborMarketStore`、role 合同工资、生活成本、基础
 `NativeEconomyRuntime`，不新增 component slot，也不逐 cohort 跨语言调用。GDScript 仅通过
 选中地块 `get_building_cell_snapshot` 读取有界 role/labor-market 并行数组。
 建筑组查询额外发布 `owner_capacity/owner_required/owner_openings`：capacity 是完整物理 owner 槽位；
-活跃组 required 等于 capacity，只有亏损停产或不可用组为 0，openings 只等于
-`max(required - filled_owner, 0)`。planned utilization 继续缩放 production 与 employee required，
-不把仍在经营的 owner 迁入失业池。Inspector 不得再用建筑数量冒充招聘岗位。
+ACTIVE 组的 required 等于 capacity；RECOVERY 组按 recovery probe capacity 与 planned utilization
+缩放；亏损停产或不可用组为 0，openings 等于 `max(required - filled_owner, 0)`。
+`planned_owner_equivalent` 仅是 utilization-scaled 生产诊断，不参与 ACTIVE 招聘目标；planned
+utilization 继续缩放 production 与 employee required。Inspector 不得用 planned equivalent 或建筑
+数量冒充业主岗位。`projected_owner_income_per_day` 用 `max(required, filled_owner)` 作为人数分母，
+并包含已消费自留物资的冻结零售价生活价值；该字段是迁移排序诊断，不代表现金收入。
 
 该 delta 是“下一次自然资源 pass 的外部变化”，因此 `economy_daily` 声明读取 reserve，但不把
 extra_change 声明为同 tick write：natural-resource job 同时读取 extra/write reserve，若建立当日
@@ -663,3 +666,29 @@ watermark, newest committed state day, maximum state age, due/processed/deferred
 cell counts, and the stable settlement phase. C++ remains the only mutable
 authority; GDScript does not merge rolling cell state into a synthetic same-day
 world snapshot.
+
+## Moisture round-commit bridge (2026-07-24)
+
+Inside `run_native_daily_slice()`, Pass-A, Pass-B, transpiration, and weather
+distribute receive `defer_visible_publish=true`; their intermediate
+`cell_moisture` buffers stay in `DCWorldExt`. Native weather field solve also
+omits the optional GDScript `moisture_read_arr` snapshot so it reads the current
+C++ slot instead of stale `MapData.moisture_arr`.
+
+When the wrapper finalizer completes, it snapshots only the authoritative
+`cell_moisture` slot and assigns that buffer to the exact `MapData` instance
+passed into the scheduler round. This avoids relying on the bridge's retained
+bound-map object identity while keeping the 140-slot bulk flush disabled. The
+old narrow bound-map flush remains only as a stale-extension fallback.
+`MapData`, CSV, debug, and render consumers therefore observe a completed
+round, not pass-level intermediates. Other slot publish contracts and
+standalone/legacy pass flushes are unchanged.
+
+The sliced round also owns a moisture commit transaction. Its initial bulk
+refresh imports the last committed `MapData` value. After that point,
+`refresh_slots_from_map()` and `refresh_slots_from_map_keys()` skip
+`cell_moisture` until the wrapper finalizer has assigned the completed snapshot and calls
+`complete_native_daily_moisture_commit()`. This prevents unrelated systems'
+between-slice bulk refreshes from restoring the frozen visible value over the
+in-flight native slot. Native failure paths release the protection without
+publishing a partial value.

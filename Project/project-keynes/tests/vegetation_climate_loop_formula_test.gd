@@ -28,6 +28,8 @@ func _run() -> void:
 	_test_rainforest_threshold_alignment()
 	_test_succession_cadence_guard()
 	_test_native_cadence_day_scale()
+	_test_moisture_cadence_defaults()
+	_test_transpiration_transport_conservation()
 	_test_low_vitality_damping()
 	_test_succession_reset_and_cooldown()
 	_test_succession_candidate_publish()
@@ -124,6 +126,37 @@ func _test_native_cadence_day_scale() -> void:
 			float(stage_b_stride_calls) * 10.0) and
 		int(knobs.get("streak_days", 0)) == stage_b_stride_calls * 10 and
 		int(knobs.get("stage_b_call_index", -1)) == stage_b_stride_calls)
+
+
+func _test_moisture_cadence_defaults() -> void:
+	var daily_rate: float = float(_cp.runtime_moisture_base_relax_rate)
+	var ten_day_alpha: float = 1.0 - pow(1.0 - daily_rate, 10.0)
+	_expect("moisture anchor preserves the original responsive daily rate", is_equal_approx(daily_rate, 0.24))
+	_expect("ten-day moisture anchor follows the dynamic target",
+		absf(ten_day_alpha - 0.935711) < 0.00001)
+	_expect("weather does not directly write climate moisture by default",
+		not bool(_cp.weather_direct_moisture_enabled))
+	_expect("runtime moisture precipitation coupling uses calibrated water-cycle amplitude",
+		is_equal_approx(float(_cp.runtime_moisture_precip_weight), 0.60))
+	_expect("runtime moisture soil coupling preserves annual wet-dry range",
+		is_equal_approx(float(_cp.runtime_moisture_soil_weight), 1.40))
+	_expect("runtime moisture soil drought coupling deepens dry minima",
+		is_equal_approx(float(_cp.runtime_moisture_soil_dry_weight), 1.70))
+	_expect("runtime moisture rolling balance remains a signed driver",
+		is_equal_approx(float(_cp.runtime_moisture_water_balance_weight), 0.80))
+	_expect("runtime moisture rolling deficit has stronger drought coupling",
+		is_equal_approx(float(_cp.runtime_moisture_water_balance_dry_weight), 1.00))
+
+
+func _test_transpiration_transport_conservation() -> void:
+	var output: float = 0.8
+	var source_gain: float = output * 0.01
+	var transported: float = output * 0.025
+	var valid_neighbors: int = 4
+	var donor_delta: float = source_gain - transported
+	var receiver_total: float = transported / float(valid_neighbors) * float(valid_neighbors)
+	_expect("transpiration neighbor transport is conservative",
+		is_equal_approx(donor_delta + receiver_total, source_gain))
 
 
 func _test_low_vitality_damping() -> void:

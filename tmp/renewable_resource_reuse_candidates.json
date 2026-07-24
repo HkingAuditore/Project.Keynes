@@ -1,0 +1,40 @@
+{
+  "candidates": [
+    {
+      "name": "Casal2/CASAL2",
+      "stars": 28,
+      "last_commit_days": 33,
+      "license": "GPL-2.0",
+      "release_recency": 9999,
+      "docs_score": 7,
+      "quality_signals": 7,
+      "fit_score": 2,
+      "archived": false,
+      "source_url": "https://github.com/Casal2/CASAL2"
+    },
+    {
+      "name": "uaf-arctic-eco-modeling/dvm-dos-tem",
+      "stars": 25,
+      "last_commit_days": 9,
+      "license": "MIT",
+      "release_recency": 9999,
+      "docs_score": 7,
+      "quality_signals": 7,
+      "fit_score": 1,
+      "archived": false,
+      "source_url": "https://github.com/uaf-arctic-eco-modeling/dvm-dos-tem"
+    },
+    {
+      "name": "cria/openmodeller",
+      "stars": 3,
+      "last_commit_days": 632,
+      "license": "GPL-2.0",
+      "release_recency": 9999,
+      "docs_score": 5,
+      "quality_signals": 4,
+      "fit_score": 1,
+      "archived": false,
+      "source_url": "https://github.com/cria/openmodeller"
+    }
+  ]
+}

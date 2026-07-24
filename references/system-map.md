@@ -385,3 +385,24 @@ advance suspension; execution blockage remains active/idle. The test fixture
 creates one merchant post per populated cell and protects only the final local
 merchant from profession change. Policy restore is PKEC v18; debug recording
 remains Economy CSV v20.
+
+## Climate moisture round visibility
+
+- Authority: `DCWorldExt` `cell_moisture` slot.
+- Writers: climate Pass-A/Pass-B and transpiration; weather direct moisture is
+  disabled by default and hydrology reaches climate moisture through Pass-A.
+- Response: Pass-A uses the existing dt-aware moisture target relaxation at
+  `0.24/day` (`~0.936` over the default 10-day native round). Large
+  completed-round changes are intentional; intermediate-slice visibility is not.
+- Hydrology response is sign-aware: positive soil/water-balance anomalies use
+  `1.40 / 0.80`, while negative anomalies use `1.70 / 1.00`. This deepens
+  emergent drought minima without changing wet-side gains or adding a seasonal curve.
+- Native daily visibility: intermediate slices stay slot-only; `done=true`
+  snapshots `cell_moisture` into the exact round `MapData` and reports
+  `moisture_committed`, `moisture_commit_path`,
+  `moisture_commit_slot_size`, and `moisture_commit_flush_ms`.
+- Cross-slice bridge rule: after the round-start import, bulk and keyed MapData
+  refreshes preserve `cell_moisture` until the wrapper finalizer completes the
+  visible commit; this includes `natural_resource_daily` input refreshes.
+  Failure releases protection without publishing partial state.
+- Legacy/standalone visibility: existing immediate pass flushes remain.

@@ -122,6 +122,9 @@ extends Node2D
 @export_range(0.0, 1.0, 0.01) var ecology_visual_strength: float = 0.70
 @export_range(0.0, 1.0, 0.01) var snowline_visual_strength: float = 0.85
 @export_range(0.0, 1.0, 0.01) var foliage_density_strength: float = 0.75
+@export_range(0.0, 1.5, 0.01) var temperature_visual_strength: float = 1.0
+@export_range(0.0, 1.5, 0.01) var moisture_visual_strength: float = 1.0
+@export_range(0.0, 1.5, 0.01) var vitality_visual_strength: float = 1.0
 @export_range(0, 2, 1) var ecology_visual_quality: int = 2
 
 # ─── Milestone 3：天气 overlay 总强度（0 关闭，1 全力） ─────────────────
@@ -1327,6 +1330,21 @@ func set_ecology_visual_strength(v: float) -> void:
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
 
+func set_temperature_visual_strength(v: float) -> void:
+	temperature_visual_strength = clampf(v, 0.0, 1.5)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("temperature_visual_strength", temperature_visual_strength)
+
+func set_moisture_visual_strength(v: float) -> void:
+	moisture_visual_strength = clampf(v, 0.0, 1.5)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("moisture_visual_strength", moisture_visual_strength)
+
+func set_vitality_visual_strength(v: float) -> void:
+	vitality_visual_strength = clampf(v, 0.0, 1.5)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("vitality_visual_strength", vitality_visual_strength)
+
 func set_snowline_visual_strength(v: float) -> void:
 	snowline_visual_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
@@ -1955,6 +1973,9 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
 	sm.set_shader_parameter("snowline_visual_strength", snowline_visual_strength)
 	sm.set_shader_parameter("foliage_density_strength", foliage_density_strength)
+	sm.set_shader_parameter("temperature_visual_strength", temperature_visual_strength)
+	sm.set_shader_parameter("moisture_visual_strength", moisture_visual_strength)
+	sm.set_shader_parameter("vitality_visual_strength", vitality_visual_strength)
 	sm.set_shader_parameter("ecology_visual_quality", ecology_visual_quality)
 	_push_terrain_horizon_uniforms()
 	# Seasonal transition is only enabled on the temporary old-terrain overlay.

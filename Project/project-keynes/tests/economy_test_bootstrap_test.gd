@@ -162,18 +162,26 @@ func _initialize() -> void:
 		bool(resource_tiered.get("employment_acceptance_ok", false)) and
 		int(resource_tiered.get("initial_job_coverage_q16", 0)) >=
 			int(resource_tiered.get("target_employment_q16", 65537)))
-	print("[economy-test-bootstrap/tiered] population=%d jobs=%d coverage=%.1f%% trimmed=%d" % [
+	print("[economy-test-bootstrap/tiered] population=%d jobs=%d coverage=%.1f%% trimmed=%d unemployed=%d" % [
 		int(resource_tiered.get("total_population", 0)),
 		int(resource_tiered.get("total_job_capacity", 0)),
 		float(resource_tiered.get("initial_job_coverage_q16", 0)) *
 			100.0 / 65536.0,
 		int(resource_tiered.get("job_limited_population_trimmed", 0)),
+		int(resource_tiered.get("initial_unemployed_population", -1)),
 	])
 	_expect("only land cells with a quantitatively closed input chain are populated",
 		int(first.get("populated_cells", 0)) >= 1 and
 		int(first.get("populated_cells", 0)) +
 			int(first.get("basic_capacity_deficient_cells", 0)) == 2)
 	var catalog_buildings: PackedStringArray = facade.building_type_ids()
+	var communal_hearth_jobs: Dictionary = facade.building_job_spec(&"communal_hearth")
+	_expect("communal hearth uses an artisan owner and an early apprentice position",
+		bool(communal_hearth_jobs.get("ok", false)) and
+		String(communal_hearth_jobs.get("owner_profession", "")) == "artisan" and
+		communal_hearth_jobs.get("employee_professions", PackedStringArray()).has("apprentice") and
+		(communal_hearth_jobs.get("employee_slots", PackedInt64Array()) as PackedInt64Array).size() == 1 and
+		int((communal_hearth_jobs.get("employee_slots", PackedInt64Array()) as PackedInt64Array)[0]) == 1)
 	_expect("fixture is restricted to a sparse mid-stone subset",
 		int(first.get("building_group_count", 0)) > 0 and
 		int(first.get("eligible_building_type_count", 0)) < catalog_buildings.size() / 4 and
@@ -235,8 +243,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v20 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 20)
+	_expect("native CSV v21 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 21)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("closed-chain land receives a settlement and the broken chain stays empty",
@@ -360,11 +368,14 @@ func _initialize() -> void:
 	_run_day(ext, 5)
 	_run_day(ext, 6)
 	var overload_status := _wait_csv_terminal(ext)
-	_expect("double buffer overload stops without blocking or dropping accepted batches",
-		str(overload_status.get("error_code", "")) == "queue_full" and
-		int(overload_status.get("captured_epochs", 0)) == 2 and
-		int(overload_status.get("written_epochs", 0)) == 2 and
-		int(overload_status.get("first_unrecorded_epoch", -1)) >= 0)
+	_expect("double buffer overload applies lossless writer backpressure",
+		str(overload_status.get("state", "")) == "completed" and
+		str(overload_status.get("error_code", "")) == "" and
+		int(overload_status.get("captured_epochs", 0)) == 3 and
+		int(overload_status.get("written_epochs", 0)) == 3 and
+		int(overload_status.get("backpressure_wait_count", 0)) >= 1 and
+		float(overload_status.get("backpressure_wait_ms_total", 0.0)) > 0.0 and
+		int(overload_status.get("first_unrecorded_epoch", -1)) == -1)
 	_cleanup_csv_paths(overload_start.get("test_paths", {}))
 	var limit_start := _start_csv_recorder(
 		ext, map, csv_resource_slot_ids, csv_resource_ids, 1, false, 0)
@@ -654,7 +665,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 160, "cohorts": 26, "buildings": 74,
+	var expected_columns := {"summary": 164, "cohorts": 26, "buildings": 74,
 		"resources": 21, "market": 49}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
@@ -671,7 +682,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
 	var summary_text := FileAccess.get_file_as_string(str(paths.summary)).trim_prefix("﻿")
 	var summary_header := summary_text.split("\n", false)[0].split(",", true)
-	_expect("summary CSV v20 exposes portfolio, recovery, trade, and merchant liquidity diagnostics",
+	_expect("summary CSV v21 exposes portfolio, recovery, trade, and procurement-tier diagnostics",
 		[
 			"construction_goods_consumed", "building_investment_candidates",
 			"building_owner_mobility", "building_owner_job_reallocations",
@@ -695,6 +706,10 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 			"building_investment_max_type_owner_share_q16",
 			"recovery_partially_liquidated_buildings",
 			"recovery_fully_liquidated_groups",
+			"merchant_survival_procurement_required",
+			"merchant_survival_procurement_allocated",
+			"merchant_input_procurement_required",
+			"merchant_input_procurement_allocated",
 		].all(func(column: String) -> bool: return summary_header.has(column)))
 	var building_text := FileAccess.get_file_as_string(str(paths.buildings)).trim_prefix("﻿")
 	var building_lines := building_text.split("\n", false)
@@ -945,10 +960,11 @@ func _resource_tiered_population_valid(
 	var jobs: PackedInt64Array = tiered.get(
 		"job_capacity_by_cell", PackedInt64Array())
 	if jobs.size() != scaled.size() or \
-			int(tiered.get("target_employment_q16", 0)) != 62259:
+			int(tiered.get("target_employment_q16", 0)) != 65536 or \
+			int(tiered.get("initial_unemployed_population", -1)) != 0:
 		return false
 	for i in range(scaled.size()):
-		if scaled[i] > jobs[i] * 65536 / 62259:
+		if scaled[i] > jobs[i]:
 			return false
 	return not seen.is_empty()
 
@@ -1052,11 +1068,12 @@ func _fixture_respects_renewable_safe_yield(
 				return false
 			var capacity := float(profile.ecology_capacity) * \
 				ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+			var reserve_floor := maxf(0.0, reserves[cell]) * 22938.0 / 65536.0
 			var daily_yield := minf(
-				maxf(0.0, reserves[cell]), capacity / 8.0) * \
+				maxf(0.0, reserves[cell] - reserve_floor), capacity / 8.0) * \
 				float(profile.ecology_growth_rate) * 0.5
-			var planned_per_building := float(quantities[edge]) / 1000.0 * 0.75
-			var cap := int(floor(daily_yield / planned_per_building))
+			var peak_per_building := float(quantities[edge]) / 1000.0
+			var cap := int(floor(daily_yield / peak_per_building))
 			if int(counts[i]) > maxi(1, cap):
 				return false
 	return true
@@ -1134,6 +1151,9 @@ func _population_matches_fixture(packet: Dictionary, facade) -> bool:
 	var building_cells: PackedInt32Array = building_packet.building_cells
 	var building_types: PackedInt32Array = building_packet.building_type_ids
 	var building_counts: PackedInt64Array = building_packet.building_counts
+	var planned_utilization_q16 := int(packet.get("planned_utilization_q16", 65536))
+	if planned_utilization_q16 < 0 or planned_utilization_q16 > 65536:
+		return false
 	var building_ids: PackedStringArray = EconomyCatalogScript.compile_native_catalog().building_type_ids
 	for i in range(building_counts.size()):
 		var spec: Dictionary = facade.building_job_spec(
@@ -1149,8 +1169,12 @@ func _population_matches_fixture(packet: Dictionary, facade) -> bool:
 		for role in range(professions.size()):
 			var signature: int = facade.signature_id(StringName(professions[role]), &"default")
 			var key := "%d:%d" % [building_cells[i], signature]
+			var full_positions := int(building_counts[i]) * int(slots[role])
+			var retained_positions := full_positions * planned_utilization_q16 / 65536
+			if retained_positions == 0 and full_positions > 0 and planned_utilization_q16 > 0:
+				retained_positions = 1
 			job_capacity[key] = int(job_capacity.get(key, 0)) + \
-				int(building_counts[i]) * int(slots[role])
+				retained_positions
 	var merchant_signature: int = facade.signature_id(&"merchant", &"default")
 	var unemployed_signature: int = facade.signature_id(&"unemployed", &"default")
 	var population_packet: Dictionary = packet.population_packet
@@ -1181,8 +1205,11 @@ func _population_matches_fixture(packet: Dictionary, facade) -> bool:
 		var target := int(target_populations[i])
 		if target <= 0:
 			continue
+		var merchant_key := "%d:%d" % [cell, merchant_signature]
+		var expected_merchants := mini(
+			target, int(job_capacity.get(merchant_key, 0)))
 		if int(totals_by_cell.get(cell, -1)) != target or \
-				int(actual.get("%d:%d" % [cell, merchant_signature], 0)) != 1:
+				int(actual.get(merchant_key, 0)) != expected_merchants:
 			return false
 	return true
 

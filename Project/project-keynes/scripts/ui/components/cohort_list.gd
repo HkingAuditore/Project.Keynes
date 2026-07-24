@@ -90,6 +90,10 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	status_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	status_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	identity.add_child(status_label)
+	var living_icon := IconBadge.new()
+	living_icon.custom_minimum_size = Vector2(22.0, 22.0)
+	header.add_child(living_icon)
+	living_icon.mouse_filter = Control.MOUSE_FILTER_STOP
 	var population_label := Label.new()
 	population_label.custom_minimum_size = Vector2(54.0, 0.0)
 	population_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -126,7 +130,8 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	var expense_group := _create_ledger_group(details, "支出构成", "trend_down", UITokens.RISK)
 	var demand := _create_demand_summary(details, row_id)
 
-	var refs := {"panel": panel, "button": button, "icon": icon, "name": name_label,
+	var refs := {"panel": panel, "button": button, "icon": icon,
+		"living_icon": living_icon, "name": name_label,
 		"status": status_label, "population": population_label, "wealth": wealth_label,
 		"income": income_label, "expense": expense_label, "details": details,
 		"finance": finance, "income_group": income_group,
@@ -250,7 +255,11 @@ func _request_demand_details(row_id: String) -> void:
 		return
 	var summary: Dictionary = data.get("demand_summary", {})
 	demand_details_requested.emit({
-		"cohort_name": String(data.get("name", "阶层")),
+		"cohort_name": "%s · %s · %s · 满意度 %s" % [
+			String(data.get("name", "阶层")),
+			String(data.get("cohort_identity", "本地人口")),
+			String(data.get("living_standard", "待评估")),
+			String(data.get("satisfaction", "—"))],
 		"rows": (data.get("demand_rows", []) as Array).duplicate(true),
 		"groups": (data.get("demand_groups", []) as Array).duplicate(true),
 		"total_quantity": String(summary.get("total_quantity", "—")),
@@ -296,6 +305,12 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
 		Color(0.055, 0.048, 0.039, 0.96), Color(accent.r, accent.g, accent.b, 0.42)))
 	(refs.get("icon") as IconBadge).set_icon(String(data.get("icon", "growth")), accent)
+	var living_accent: Color = data.get("living_accent", UITokens.TEXT_MUTED)
+	var living_badge := refs.get("living_icon") as IconBadge
+	living_badge.set_icon(String(data.get("living_icon", "history")), living_accent)
+	living_badge.tooltip_text = "%s · 满意度 %s" % [
+		String(data.get("living_standard", "待评估")),
+		String(data.get("satisfaction", "—"))]
 	(refs.get("name") as Label).text = String(data.get("name", "阶层"))
 	(refs.get("status") as Label).text = String(data.get("status", ""))
 	(refs.get("population") as Label).text = String(data.get("population", ""))

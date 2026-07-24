@@ -194,28 +194,56 @@ func _clear_rows() -> void:
 func _add_demand_row(row: Dictionary) -> void:
 	_add_product_cell(row)
 	_add_table_label(_rows_grid, String(row.get("quantity", "—")), 112.0,
-		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MAIN, false, 34.0)
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MAIN, false, 46.0)
 	_add_table_label(_rows_grid, String(row.get("price", "—")), 112.0,
-		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 34.0)
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 46.0)
 	_add_table_label(_rows_grid, String(row.get("daily_cost", "—")), 120.0,
-		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.RESOURCE, false, 34.0)
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.RESOURCE, false, 46.0)
 
 
 func _add_product_cell(row: Dictionary) -> void:
 	var cell := MarginContainer.new()
-	cell.custom_minimum_size = Vector2(188.0, 34.0)
+	cell.custom_minimum_size = Vector2(188.0, 46.0)
 	cell.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
 	_rows_grid.add_child(cell)
+	var labels := VBoxContainer.new()
+	labels.add_theme_constant_override("separation", 0)
+	cell.add_child(labels)
 	var name_label := Label.new()
 	name_label.text = String(row.get("name", "未知商品"))
 	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	name_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	cell.add_child(name_label)
+	labels.add_child(name_label)
+	var attribution := Label.new()
+	attribution.text = _attribution_text(row)
+	attribution.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	attribution.add_theme_font_size_override("font_size", 11)
+	attribution.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+	labels.add_child(attribution)
+
+
+func _attribution_text(row: Dictionary) -> String:
+	if not bool(row.get("attribution_available", false)):
+		return "变化归因待下次结算"
+	var wealth := int(row.get("wealth_delta_raw", 0))
+	var price := int(row.get("price_delta_raw", 0))
+	if wealth == 0 and price == 0:
+		return "与上次结算相同"
+	return "财富 %s · 价格 %s" % [_signed_quantity(wealth), _signed_quantity(price)]
+
+
+func _signed_quantity(value: int) -> String:
+	return "%s%.3f" % ["+" if value > 0 else ("−" if value < 0 else ""),
+		absf(float(value)) / 1000.0]
 
 
 func _add_group_header(group: Dictionary, row_count: int) -> void:
-	_add_table_label(_rows_grid, String(group.get("name", "其他")), 188.0,
+	var group_title := String(group.get("name", "其他"))
+	var satisfaction := String(group.get("satisfaction", ""))
+	if not satisfaction.is_empty():
+		group_title += " · " + satisfaction
+	_add_table_label(_rows_grid, group_title, 188.0,
 		HORIZONTAL_ALIGNMENT_LEFT, UITokens.RESOURCE, true, 30.0)
 	_add_table_label(_rows_grid, "", 112.0,
 		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 30.0)

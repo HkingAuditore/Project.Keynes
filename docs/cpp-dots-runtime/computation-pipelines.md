@@ -11,7 +11,7 @@
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
 `building_production` 原子提款并采购投入且按工资后债务前奖金结算，household 将实际自产消费
 价值归属建筑，`building_commit` 完成复产/清算/建设债务转移。贸易派单使用代际复核和批次共享
-库存/缺口仲裁。CSV v20 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段及投资组合诊断。
+库存/缺口仲裁。CSV v21 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段、分层采购字段及投资组合诊断。
 
 恢复探针只有在实际发生投入、产出、资源消耗或资源生成且现金/经济利润条件同时通过时才计为成功；
 空执行探针写入 pending suspension，并在下一 due-cell frozen boundary 提交。提交周期及其后一个完整
@@ -20,7 +20,7 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 `building_commit` 的内生投资复核现在维护固定四项 portfolio：候选扫描与最终建筑数量解耦，
 共享人口/资本/信用/建材/缺口预算后，每种类型只提交一条聚合 BUILD 命令。收入改善率一次计算
 愿意转职的人口，最多填补 25% 的持续缺口；多类型组合把单类型新增业主岗位占比限制在 50%。
-清算沿用既有恢复资格，但每次最多退出 group 的 25%，债务按退出比例转坏账。CSV v20 追加
+清算沿用既有恢复资格，但每次最多退出 group 的 25%，债务按退出比例转坏账。CSV v21 追加
 组合开工、迁移人口、集中度、约束来源和部分/完全清算计数。
 
 ## 状态总览
@@ -336,7 +336,7 @@ C++ 入口：
 
 - temperature/elevation/latitude/neighbors/terrain/water/solar geometry and thermal-inertia knobs。
 - 部分 scalar 来自 `ClimateProfile`。
-- 气候自然性修复（2026-06-27，2026-07-17 单位修正）：`cell_moisture` 不再每日硬回填到 `base_moisture`。pass-A 以 `runtime_moisture_base_relax_rate` 做慢层 relax，并可用既有 `weather_vapor`、`weather_precip`、`soil_moisture`、`water_balance_30d` 信号参与 target；不新增持久 slot，scalar native、threaded native、async worker 与 GDScript fallback 需要保持同一套输入和 knob。这里 `base_moisture/cell_moisture` 是绝对地表湿度，`weather_vapor` 是量级约为 `0.15 * base_moisture` 的大气水汽，因此只允许把 `weather_vapor - 0.15 * base_target` 作为异常量加到 target；`soil_moisture` 是 `[-0.5,0.5]` 的有符号水文异常，也只能加权相加。禁止再把这两个字段当 `[0,1]` 绝对湿度与 target 做 `lerp`，也禁止 async pass-A 丢弃这些输入后直接覆盖为 seasonal base，否则都会给陆格注入系统性偏差。
+- 气候自然性修复（2026-06-27，2026-07-17 单位修正，2026-07-24 涌现湿度）：`cell_moisture` 不再每日硬回填到 `base_moisture`，也不再使用 `base_moisture * (1 + 0.2 * insolation_dev)` 直接制造季节湿度。`base_moisture` 只保留静态地理锚点；太阳直射变化先影响温度、蒸发、海温/洋流、风场、水汽输送与降水，再由既有 `weather_vapor`、`weather_precip`、`soil_moisture`、`water_balance_30d` 状态进入 Pass-A target。默认水汽/降水/正土壤/正水量收支权重为 `0.12 / 0.60 / 1.40 / 0.80`；负土壤和负水量收支分别使用 `1.70 / 1.00`，只放大真实水文亏缺，不修改湿润侧响应。`runtime_moisture_base_relax_rate=0.24`；不新增持久 slot，scalar native、threaded native、async worker 与 GDScript fallback 保持同一公式。这里 `weather_vapor` 是量级约为 `0.15 * base_moisture` 的大气水汽，因此只允许把 `weather_vapor - 0.15 * base_target` 作为异常量；`soil_moisture` 是 `[-0.5,0.5]` 的有符号水文异常。禁止把这些字段当绝对湿度做 `lerp`，也禁止重新引入任何基于 `season_phase` / `insolation_dev` 的直接湿度乘数。
 
 公式约束（2026-06-27 legacy parity）：
 
@@ -777,12 +777,13 @@ variant 的 components 作为互补 bundle 清算，不同 variants 做一次替
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v19 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v21 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
-分块写入。达到全局行数上限或两个 buffer 同时占用时均在 epoch 边界停止，不产生部分 epoch，
-也不改变 ECONOMY_GRAPH cadence、audit、save 或 hash。
+分块写入。达到全局行数上限时仍在 epoch 边界停止；两个 buffer 同时占用时则等待 writer
+释放一个 buffer，保留全部 committed epoch，并通过背压指标报告快进延迟。两种路径都不产生
+部分 epoch，也不改变 ECONOMY_GRAPH cadence、audit、save 或 hash。
 
 `projected_rows` 与批次填充使用相同的建筑行集合：已提交建筑、pending construction，以及
 选中地块当前发布的逐投资候选诊断。投资诊断存在时，每个候选占一行并计入 epoch 原子行数，
@@ -2415,9 +2416,14 @@ employee role 使用 `adaptive/fixed/none` role ABI。adaptive 工资取当地�
 MapData/DataCore，也不产生全局建筑财务矩阵。
 建筑快照同时发布最近结算的 `period_days`，Inspector 将实际投入/产出总量按建筑数和周期天数
 归一化为“单位/栋/日”；该值反映到岗、库存、资金和资源约束后的实际效率，不展示理论配方。
-岗位 UI 使用 `owner_required` 和 `owner_openings`。活跃组的 owner required 等于物理容量，
-亏损停产/不可用组才把 owner required 置零；planned utilization 只缩放 employee required 与产量。
+岗位 UI 使用 `owner_required` 和 `owner_openings`。`owner_capacity` 是物理 owner 槽位，
+ACTIVE 组的 `owner_required` 始终等于完整物理容量；RECOVERY 组才按 recovery probe capacity
+与 planned utilization 缩放，亏损停产/不可用组为零。`planned_owner_equivalent` 只表示利用率
+折算后的生产等效人数，不是岗位需求。employee required 与产量仍按 planned utilization 缩放，
+因此降低计划生产会降低每栋产量，而不会把仍在经营的自营业主迁入失业池。
 UI 不再用建筑数量推断招聘空缺。
+`projected_owner_income_per_day` 以 `max(owner_required, filled_owner)` 为分母，并把已结算的
+自留物资生活价值计入经济收入。自留价值只抵扣生活成本，不产生现金或 money-audit delta。
 
 生产 output 先按 owner 当前消费计划预留可直接满足的单组件 variant 商品，再把余量形成
 cell-local offers。商人按 `max(可行日需求, 实际出库 EMA) + 出口 EMA` 和 target inventory days 计算库存缺口，冻结期初现金并
@@ -2467,10 +2473,27 @@ Production emits source-group retained goods; household settlement returns spars
 frozen-value credits, and the main-thread merge recomputes realized margins before
 investment. Household settlement is the sole working-capital protection point, while
 production retains only the uncovered wage reserve. Employment releases a suspended
+Investment candidate evaluation mirrors that split conceptually: survival food/clothing is bounded
+by prospective owner livelihood, removed from merchant-sellable quantity, and valued at frozen retail
+only as an in-kind offset. It does not write goods, cash, or audit state before construction exists.
+The lifecycle uses the same economic split for owner-only self-employment: positive cash plus in-kind
+business surplus prevents suspension, while any uncovered livelihood remains a household welfare and
+demography outcome. This avoids whole-group owner release/recovery oscillation without creating jobs,
+goods, or money.
 owner only when an active non-service owner vacancy can receive that person through the
 existing unemployed-pool path. Investment reads actual offered-supply EMA and caps its
 output-deficit utilization by input stock/supply coverage instead of nameplate capacity.
 No stage, bridge, slot, save, hash, or cadence contract changes.
+
+The current investment scan admits every output driver with positive marginal
+deficit and positive projected utilization into the existing viability path.
+Shortage pressure and utilization rank candidates directly. Historical
+sell-through discounts projected merchant cash revenue, while discard remains
+an output/utilization diagnostic; neither is a hard profitability gate. The
+legacy minimum-shortage and minimum-utilization policy fields remain serialized
+for PKEC compatibility but do not filter or normalize candidates. Target margin,
+payback, sponsor capital, materials, input coverage, conditions, and natural
+resources remain authoritative approval checks.
 
 Price V3 now forks two transient calculations from the same frozen market signals. The
 merchant branch keeps the full good-specific inventory horizon for procurement and
@@ -2488,3 +2511,44 @@ releases every owner into the unemployment pool. Suspended input users retain on
 financially executable probes whose counterfactual margin is still below the restart
 threshold; blockage resets the review streak. Both new lanes are transient and preserve the
 existing graph and save layout.
+
+## CSV writer backpressure (current)
+
+The debug-only economy recorder keeps its two preallocated POD batches. If both
+are occupied, committed capture waits for the worker to return one to `FREE`;
+temporary writer saturation no longer terminates recording with `queue_full`.
+This preserves every committed epoch without allocating a third world-sized
+snapshot. `backpressure_wait_count` and `backpressure_wait_ms_total` expose the
+resulting fast-forward delay. Row limits and real file/flush failures remain
+terminal with whole-epoch rollback. Economy state, CSV columns, PKEC, hash, and
+schedule are unchanged.
+
+## Native moisture stability transaction (2026-07-24)
+
+Climate moisture remains authoritative in the C++ `cell_moisture` slot. Pass-A's
+default generated-background relaxation remains `0.24/day`; at the 10-day
+native cadence its effective response is about `0.936`. Large completed-round
+changes are intentional climate behavior. Stability comes from freezing visible
+moisture between slices and publishing once per completed round, not from
+over-damping the response. Weather distribute continues to update precipitation,
+soil moisture, water balance, snowpack, cover, and temperature, but
+`weather_direct_moisture_enabled=false` by default prevents a second direct
+write into climate moisture. Pass-A is therefore the default weather/hydrology
+integration point.
+
+Pass-A no longer multiplies land moisture by `1 + 0.2 * insolation_dev`.
+The generated `base_moisture` is static; seasonal moisture now emerges through
+the existing chain `solar geometry -> temperature/ocean heat -> evaporation ->
+wind transport/convergence -> precipitation -> soil/water balance -> moisture`.
+The default vapor/precipitation/soil/water-balance weights are respectively
+`0.12 / 0.60 / 1.40 / 0.80`. Negative soil and rolling-water-balance
+anomalies use separate `1.70 / 1.00` weights, deepening drought minima without
+changing positive hydrology gains or adding direct seasonal forcing. The earlier
+`tile_data_record_20260724_203555.csv` replay established the symmetric-weight
+baseline only; a new post-build recording is required to quantify the asymmetric
+drought minima and low-end clipping distribution.
+
+Transpiration now treats `output * transpiration_outflow_rate` as transport:
+the donor subtracts the transported amount and valid land neighbors receive the
+same total. `transpiration_self_rate` remains the vegetation moisture source.
+Standalone and fallback passes retain their existing immediate-publish behavior.

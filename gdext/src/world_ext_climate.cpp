@@ -54,6 +54,12 @@ namespace pk {
 
 using namespace godot;
 
+static inline float pk_signed_hydrology_contribution(float anomaly,
+                                                      float wet_weight,
+                                                      float dry_weight) {
+    return anomaly * (anomaly < 0.0f ? dry_weight : wet_weight);
+}
+
 
 // Per-cell annual-mean insolation memo. dc_insolation_annual_mean integrates 16
 // trig-heavy samples and depends ONLY on (cell latitude, axial_tilt, daylen) — all
@@ -177,8 +183,6 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     const float  insol_amp_gain = insol_amp * insol_gain;
     const float  land_continentality = cp_struct.has("temp_land_continentality")
                                     ? float(cp_struct["temp_land_continentality"]) : 1.0f;
-    const float  moist_scale    = cp_struct.has("moist_scale_now")
-                                    ? float(cp_struct["moist_scale_now"]) : 1.0f;
     const float  axial_tilt_deg = cp_struct.has("axial_tilt_deg")
                                     ? float(cp_struct["axial_tilt_deg"]) : 23.5f;
     const float  daylen_amp     = cp_struct.has("day_length_gain")
@@ -221,17 +225,25 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     if (moisture_vapor_w < 0.0f) moisture_vapor_w = 0.0f;
     else if (moisture_vapor_w > 1.0f) moisture_vapor_w = 1.0f;
     float moisture_precip_w = cp_struct.has("runtime_moisture_precip_weight")
-                                    ? float(cp_struct["runtime_moisture_precip_weight"]) : 0.20f;
+                                    ? float(cp_struct["runtime_moisture_precip_weight"]) : 0.60f;
     if (moisture_precip_w < 0.0f) moisture_precip_w = 0.0f;
-    else if (moisture_precip_w > 1.0f) moisture_precip_w = 1.0f;
+    else if (moisture_precip_w > 2.0f) moisture_precip_w = 2.0f;
     float moisture_soil_w = cp_struct.has("runtime_moisture_soil_weight")
-                                    ? float(cp_struct["runtime_moisture_soil_weight"]) : 0.15f;
+                                    ? float(cp_struct["runtime_moisture_soil_weight"]) : 1.40f;
     if (moisture_soil_w < 0.0f) moisture_soil_w = 0.0f;
-    else if (moisture_soil_w > 1.0f) moisture_soil_w = 1.0f;
+    else if (moisture_soil_w > 2.0f) moisture_soil_w = 2.0f;
+    float moisture_soil_dry_w = cp_struct.has("runtime_moisture_soil_dry_weight")
+                                    ? float(cp_struct["runtime_moisture_soil_dry_weight"]) : 1.70f;
+    if (moisture_soil_dry_w < 0.0f) moisture_soil_dry_w = 0.0f;
+    else if (moisture_soil_dry_w > 2.0f) moisture_soil_dry_w = 2.0f;
     float moisture_wb_w = cp_struct.has("runtime_moisture_water_balance_weight")
-                                    ? float(cp_struct["runtime_moisture_water_balance_weight"]) : 0.08f;
+                                    ? float(cp_struct["runtime_moisture_water_balance_weight"]) : 0.80f;
     if (moisture_wb_w < 0.0f) moisture_wb_w = 0.0f;
-    else if (moisture_wb_w > 1.0f) moisture_wb_w = 1.0f;
+    else if (moisture_wb_w > 2.0f) moisture_wb_w = 2.0f;
+    float moisture_wb_dry_w = cp_struct.has("runtime_moisture_water_balance_dry_weight")
+                                    ? float(cp_struct["runtime_moisture_water_balance_dry_weight"]) : 1.00f;
+    if (moisture_wb_dry_w < 0.0f) moisture_wb_dry_w = 0.0f;
+    else if (moisture_wb_dry_w > 2.0f) moisture_wb_dry_w = 2.0f;
     const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
                                     ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
     // [climate-zone-fix P2] 沿海陆地海洋性调温：season_offset *= (1 - damp*maritime_factor)。
@@ -382,15 +394,14 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), axial_tilt_deg);
             const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
-            // (b) moisture — note: dev_today is now absolute, not fractional,
-            // so the (1 + 0.2*dev) modifier becomes (1 + 0.2*abs_dev).
-            // abs_dev ∈ [−1,1] gives modifier range [0.8, 1.2] — still safe.
+            // (b) moisture. Insolation affects land moisture only through the
+            // existing temperature/evaporation/wind/ocean/precipitation loop.
+            // The generated base is a static geographic anchor, not a seasonal driver.
             float moisture_target;
             if (is_water) {
                 moisture_target = pbm[i];
             } else {
-                const float scale_eff = moist_scale * (1.0f + 0.2f * dev_today);
-                float bm = pbm[i] * scale_eff;
+                float bm = pbm[i];
                 if (bm > 1.0f) bm = 1.0f;
                 else if (bm < 0.0f) bm = 0.0f;
                 moisture_target = bm;
@@ -408,12 +419,14 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
                 if (psoil != nullptr) {
                     float soil = psoil[i];
                     if (soil < -0.5f) soil = -0.5f; else if (soil > 0.5f) soil = 0.5f;
-                    moisture_target += soil * moisture_soil_w;
+                    moisture_target += pk_signed_hydrology_contribution(
+                        soil, moisture_soil_w, moisture_soil_dry_w);
                 }
                 if (pwb != nullptr) {
                     float wb = pwb[i];
                     if (wb < -1.0f) wb = -1.0f; else if (wb > 1.0f) wb = 1.0f;
-                    moisture_target += wb * moisture_wb_w;
+                    moisture_target += pk_signed_hydrology_contribution(
+                        wb, moisture_wb_w, moisture_wb_dry_w);
                 }
                 if (moisture_target > 1.0f) moisture_target = 1.0f;
                 else if (moisture_target < 0.0f) moisture_target = 0.0f;
@@ -515,7 +528,9 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     // §11.2 flush: push CoW-detached output slots back to GDScript MapData
     // A 修复（2026-06）：pass_a 不再 flush cell_temp（不再写）；改 flush 两条
     // 新 anomaly slot（pass_a 末尾 clear 0 也算一次写）。
-    _flush_slot_to_map(sid_moisture);
+    if (!bool(cp_struct.get("defer_visible_publish", false))) {
+        _flush_slot_to_map(sid_moisture);
+    }
     _flush_slot_to_map(sid_temp_baseline);
     _flush_slot_to_map(sid_temp_seas_off);
     _flush_slot_to_map(sid_ema_init);
@@ -613,8 +628,6 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     const float  insol_amp_gain = insol_amp * insol_gain;
     const float  land_continentality = cp_struct.has("temp_land_continentality")
                                     ? float(cp_struct["temp_land_continentality"]) : 1.0f;
-    const float  moist_scale    = cp_struct.has("moist_scale_now")
-                                    ? float(cp_struct["moist_scale_now"]) : 1.0f;
     const float  axial_tilt_deg = cp_struct.has("axial_tilt_deg")
                                     ? float(cp_struct["axial_tilt_deg"]) : 23.5f;
     const float  daylen_amp     = cp_struct.has("day_length_gain")
@@ -657,17 +670,25 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     if (moisture_vapor_w < 0.0f) moisture_vapor_w = 0.0f;
     else if (moisture_vapor_w > 1.0f) moisture_vapor_w = 1.0f;
     float moisture_precip_w = cp_struct.has("runtime_moisture_precip_weight")
-                                    ? float(cp_struct["runtime_moisture_precip_weight"]) : 0.20f;
+                                    ? float(cp_struct["runtime_moisture_precip_weight"]) : 0.60f;
     if (moisture_precip_w < 0.0f) moisture_precip_w = 0.0f;
-    else if (moisture_precip_w > 1.0f) moisture_precip_w = 1.0f;
+    else if (moisture_precip_w > 2.0f) moisture_precip_w = 2.0f;
     float moisture_soil_w = cp_struct.has("runtime_moisture_soil_weight")
-                                    ? float(cp_struct["runtime_moisture_soil_weight"]) : 0.15f;
+                                    ? float(cp_struct["runtime_moisture_soil_weight"]) : 1.40f;
     if (moisture_soil_w < 0.0f) moisture_soil_w = 0.0f;
-    else if (moisture_soil_w > 1.0f) moisture_soil_w = 1.0f;
+    else if (moisture_soil_w > 2.0f) moisture_soil_w = 2.0f;
+    float moisture_soil_dry_w = cp_struct.has("runtime_moisture_soil_dry_weight")
+                                    ? float(cp_struct["runtime_moisture_soil_dry_weight"]) : 1.70f;
+    if (moisture_soil_dry_w < 0.0f) moisture_soil_dry_w = 0.0f;
+    else if (moisture_soil_dry_w > 2.0f) moisture_soil_dry_w = 2.0f;
     float moisture_wb_w = cp_struct.has("runtime_moisture_water_balance_weight")
-                                    ? float(cp_struct["runtime_moisture_water_balance_weight"]) : 0.08f;
+                                    ? float(cp_struct["runtime_moisture_water_balance_weight"]) : 0.80f;
     if (moisture_wb_w < 0.0f) moisture_wb_w = 0.0f;
-    else if (moisture_wb_w > 1.0f) moisture_wb_w = 1.0f;
+    else if (moisture_wb_w > 2.0f) moisture_wb_w = 2.0f;
+    float moisture_wb_dry_w = cp_struct.has("runtime_moisture_water_balance_dry_weight")
+                                    ? float(cp_struct["runtime_moisture_water_balance_dry_weight"]) : 1.00f;
+    if (moisture_wb_dry_w < 0.0f) moisture_wb_dry_w = 0.0f;
+    else if (moisture_wb_dry_w > 2.0f) moisture_wb_dry_w = 2.0f;
     const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
                                     ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
     // [climate-zone-fix P2] 沿海陆地海洋性调温：season_offset *= (1 - damp*maritime_factor)。
@@ -807,12 +828,13 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), axial_tilt_deg);
             const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
+            // Moisture has no direct seasonal multiplier; solar forcing reaches
+            // it through the existing water-cycle state sampled below.
             float moisture_target;
             if (is_water) {
                 moisture_target = pbm[i];
             } else {
-                const float scale_eff = moist_scale * (1.0f + 0.2f * dev_today);
-                float bm = pbm[i] * scale_eff;
+                float bm = pbm[i];
                 if (bm > 1.0f) bm = 1.0f;
                 else if (bm < 0.0f) bm = 0.0f;
                 moisture_target = bm;
@@ -830,12 +852,14 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
                 if (psoil != nullptr) {
                     float soil = psoil[i];
                     if (soil < -0.5f) soil = -0.5f; else if (soil > 0.5f) soil = 0.5f;
-                    moisture_target += soil * moisture_soil_w;
+                    moisture_target += pk_signed_hydrology_contribution(
+                        soil, moisture_soil_w, moisture_soil_dry_w);
                 }
                 if (pwb != nullptr) {
                     float wb = pwb[i];
                     if (wb < -1.0f) wb = -1.0f; else if (wb > 1.0f) wb = 1.0f;
-                    moisture_target += wb * moisture_wb_w;
+                    moisture_target += pk_signed_hydrology_contribution(
+                        wb, moisture_wb_w, moisture_wb_dry_w);
                 }
                 if (moisture_target > 1.0f) moisture_target = 1.0f;
                 else if (moisture_target < 0.0f) moisture_target = 0.0f;
@@ -926,7 +950,9 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
 
     // §11.2 flush — 与主 pass 一致。A 修复（2026-06）：不再 flush cell_temp，
     // 改 flush 两条 anomaly slot。
-    _flush_slot_to_map(sid_moisture);
+    if (!bool(cp_struct.get("defer_visible_publish", false))) {
+        _flush_slot_to_map(sid_moisture);
+    }
     _flush_slot_to_map(sid_temp_baseline);
     _flush_slot_to_map(sid_temp_seas_off);
     _flush_slot_to_map(sid_ema_init);
@@ -1661,7 +1687,9 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
 
     // §11.2 flush: A 修复（2026-06）— pass_b 不再 flush cell_temp，改 flush local anomaly。
     _flush_slot_to_map(sid_lanom);
-    _flush_slot_to_map(sid_moist);
+    if (!bool(knobs.get("defer_visible_publish", false))) {
+        _flush_slot_to_map(sid_moist);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -2060,7 +2088,9 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
     }
 
     _flush_slot_to_map(sid_lanom);
-    _flush_slot_to_map(sid_moist);
+    if (!bool(knobs.get("defer_visible_publish", false))) {
+        _flush_slot_to_map(sid_moist);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -2215,7 +2245,9 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
         }
         // A 修复（2026-06）：不再 flush cell_temp，改 flush local_anom。
         _flush_slot_to_map(sid_lanom);
-        _flush_slot_to_map(sid_moist);
+        if (!bool(knobs.get("defer_visible_publish", false))) {
+            _flush_slot_to_map(sid_moist);
+        }
         auto t1 = std::chrono::high_resolution_clock::now();
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
     }
@@ -2245,7 +2277,9 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     }
 
     _flush_slot_to_map(sid_lanom);
-    _flush_slot_to_map(sid_moist);
+    if (!bool(knobs.get("defer_visible_publish", false))) {
+        _flush_slot_to_map(sid_moist);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -3643,7 +3677,6 @@ double DCWorldExt::run_transpiration_pass(Dictionary knobs) {
     const int   n_cells     = int(knobs["n_cells"]);
     const float outflow_rate = float(knobs["outflow_rate"]);
     const float self_rate    = float(knobs["self_rate"]);
-    const float nb_share_factor = outflow_rate / 6.0f;
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
 
     PackedInt32Array   nb_arr     = knobs["neighbor_indices"];
@@ -3687,16 +3720,24 @@ double DCWorldExt::run_transpiration_pass(Dictionary knobs) {
         if (trans < 0.01f) continue;
         const float moist = M[i];
         const float output      = trans * moist;
-        const float self_share  = output * self_rate;
-        const float nb_share    = output * nb_share_factor;
-        D[i] += self_share;
+        const float self_share = output * self_rate;
 
         const int base = i * 6;
+        int valid_land_neighbors = 0;
         for (int d = 0; d < 6; ++d) {
             const int32_t nb_idx = NB[base + d];
             if (nb_idx < 0) continue;
             // Skip water neighbours (mirror of GDScript "海面邻居不接受陆地蒸腾外溢")
             if (LF[nb_idx] <= 3) continue;
+            ++valid_land_neighbors;
+        }
+        const float transported = valid_land_neighbors > 0 ? output * outflow_rate : 0.0f;
+        D[i] += self_share - transported;
+        const float nb_share = valid_land_neighbors > 0
+            ? transported / float(valid_land_neighbors) : 0.0f;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t nb_idx = NB[base + d];
+            if (nb_idx < 0 || LF[nb_idx] <= 3) continue;
             D[nb_idx] += nb_share;
         }
     }
@@ -3729,7 +3770,9 @@ double DCWorldExt::run_transpiration_pass(Dictionary knobs) {
     auto t_apply = std::chrono::high_resolution_clock::now();
 
     // §11.2 flush: push CoW-detached cell_moisture back to MapData
-    _flush_slot_to_map(sid_moisture);
+    if (!bool(knobs.get("defer_visible_publish", false))) {
+        _flush_slot_to_map(sid_moisture);
+    }
 
     auto t1 = std::chrono::high_resolution_clock::now();
     knobs["compute_ms"] = std::chrono::duration<double, std::milli>(t_compute - t0).count();
@@ -6633,9 +6676,11 @@ struct ClimateRoundScalars {
     double moist_scale_now = 1.0;
     float  runtime_moisture_base_relax_rate = 0.24f;
     float  runtime_moisture_weather_vapor_weight = 0.12f;
-    float  runtime_moisture_precip_weight = 0.20f;
-    float  runtime_moisture_soil_weight = 0.15f;
-    float  runtime_moisture_water_balance_weight = 0.08f;
+    float  runtime_moisture_precip_weight = 0.60f;
+    float  runtime_moisture_soil_weight = 1.40f;
+    float  runtime_moisture_soil_dry_weight = 1.70f;
+    float  runtime_moisture_water_balance_weight = 0.80f;
+    float  runtime_moisture_water_balance_dry_weight = 1.00f;
     int    days_per_year = 365;
     double sea_level = 0.5;
 
@@ -7044,12 +7089,13 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     const float insol_gain     = (float)in.scalars.insol_gain;
     const float insol_amp_gain = insol_amp * insol_gain;
     const float land_continentality = 1.0f;  // compatibility field; pass-A helper ignores it
-    const float moist_scale    = (float)in.scalars.moist_scale_now;
     const float moisture_relax = dc_clampf(in.scalars.runtime_moisture_base_relax_rate, 0.0f, 1.0f);
     const float moisture_vapor_w = dc_clampf(in.scalars.runtime_moisture_weather_vapor_weight, 0.0f, 1.0f);
-    const float moisture_precip_w = dc_clampf(in.scalars.runtime_moisture_precip_weight, 0.0f, 1.0f);
-    const float moisture_soil_w = dc_clampf(in.scalars.runtime_moisture_soil_weight, 0.0f, 1.0f);
-    const float moisture_wb_w = dc_clampf(in.scalars.runtime_moisture_water_balance_weight, 0.0f, 1.0f);
+    const float moisture_precip_w = dc_clampf(in.scalars.runtime_moisture_precip_weight, 0.0f, 2.0f);
+    const float moisture_soil_w = dc_clampf(in.scalars.runtime_moisture_soil_weight, 0.0f, 2.0f);
+    const float moisture_soil_dry_w = dc_clampf(in.scalars.runtime_moisture_soil_dry_weight, 0.0f, 2.0f);
+    const float moisture_wb_w = dc_clampf(in.scalars.runtime_moisture_water_balance_weight, 0.0f, 2.0f);
+    const float moisture_wb_dry_w = dc_clampf(in.scalars.runtime_moisture_water_balance_dry_weight, 0.0f, 2.0f);
     const float insol_dev_min  = (float)in.scalars.insol_dev_min;
     const float insol_dev_max  = (float)in.scalars.insol_dev_max;
     const float thermal_land   = (float)in.scalars.thermal_inertia_land;
@@ -7164,13 +7210,12 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
         const float day_length = dc_day_length_norm(ny_clamped, season_phase, axial_tilt_deg);
         const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
-        // (b) moisture
+        // (b) moisture: no direct insolation/season multiplier.
         float moisture_now;
         if (is_water) {
             moisture_now = PBM[i];
         } else {
-            const float scale_eff = moist_scale * (1.0f + 0.2f * dev_today);
-            float bm = PBM[i] * scale_eff;
+            float bm = PBM[i];
             if (bm > 1.0f) bm = 1.0f;
             else if (bm < 0.0f) bm = 0.0f;
             float moisture_target = bm;
@@ -7182,10 +7227,14 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
                 moisture_target += dc_clampf(PPRECIP[i], 0.0f, 1.0f) * moisture_precip_w;
             }
             if (PSOIL != nullptr) {
-                moisture_target += dc_clampf(PSOIL[i], -0.5f, 0.5f) * moisture_soil_w;
+                const float soil = dc_clampf(PSOIL[i], -0.5f, 0.5f);
+                moisture_target += pk_signed_hydrology_contribution(
+                    soil, moisture_soil_w, moisture_soil_dry_w);
             }
             if (PWB != nullptr) {
-                moisture_target += dc_clampf(PWB[i], -1.0f, 1.0f) * moisture_wb_w;
+                const float wb = dc_clampf(PWB[i], -1.0f, 1.0f);
+                moisture_target += pk_signed_hydrology_contribution(
+                    wb, moisture_wb_w, moisture_wb_dry_w);
             }
             moisture_target = dc_clampf(moisture_target, 0.0f, 1.0f);
             const float previous = ((int)in.moisture.size() == n)
@@ -8239,7 +8288,6 @@ static bool _async_transp_kernel_pure(const ClimateInputBuf &in,
 
     const float outflow_rate = in.scalars.transp_outflow_rate;
     const float self_rate    = in.scalars.transp_self_rate;
-    const float nb_share_factor = outflow_rate / 6.0f;
 
     // 准备工作 buffer
     if ((int)work.deltas.size() != n) work.deltas.assign(n, 0.0f);
@@ -8261,15 +8309,23 @@ static bool _async_transp_kernel_pure(const ClimateInputBuf &in,
         if (trans < 0.01f) continue;
         const float moist = M_in[i];
         const float output      = trans * moist;
-        const float self_share  = output * self_rate;
-        const float nb_share    = output * nb_share_factor;
-        D[i] += self_share;
+        const float self_share = output * self_rate;
 
         const int base = i * 6;
+        int valid_land_neighbors = 0;
         for (int d = 0; d < 6; ++d) {
             const int32_t nb_idx = NB[base + d];
             if (nb_idx < 0) continue;
             if (LF[nb_idx] <= 3) continue;     // 水面邻居不接受陆地蒸腾外溢
+            ++valid_land_neighbors;
+        }
+        const float transported = valid_land_neighbors > 0 ? output * outflow_rate : 0.0f;
+        D[i] += self_share - transported;
+        const float nb_share = valid_land_neighbors > 0
+            ? transported / float(valid_land_neighbors) : 0.0f;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t nb_idx = NB[base + d];
+            if (nb_idx < 0 || LF[nb_idx] <= 3) continue;
             D[nb_idx] += nb_share;
         }
     }
@@ -9036,9 +9092,11 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         t->in_buf.scalars.moist_scale_now  = double(input.get("moist_scale_now", 1.0));
         t->in_buf.scalars.runtime_moisture_base_relax_rate = float(input.get("runtime_moisture_base_relax_rate", 0.24));
         t->in_buf.scalars.runtime_moisture_weather_vapor_weight = float(input.get("runtime_moisture_weather_vapor_weight", 0.12));
-        t->in_buf.scalars.runtime_moisture_precip_weight = float(input.get("runtime_moisture_precip_weight", 0.20));
-        t->in_buf.scalars.runtime_moisture_soil_weight = float(input.get("runtime_moisture_soil_weight", 0.15));
-        t->in_buf.scalars.runtime_moisture_water_balance_weight = float(input.get("runtime_moisture_water_balance_weight", 0.08));
+        t->in_buf.scalars.runtime_moisture_precip_weight = float(input.get("runtime_moisture_precip_weight", 0.60));
+        t->in_buf.scalars.runtime_moisture_soil_weight = float(input.get("runtime_moisture_soil_weight", 1.40));
+        t->in_buf.scalars.runtime_moisture_soil_dry_weight = float(input.get("runtime_moisture_soil_dry_weight", 1.70));
+        t->in_buf.scalars.runtime_moisture_water_balance_weight = float(input.get("runtime_moisture_water_balance_weight", 0.80));
+        t->in_buf.scalars.runtime_moisture_water_balance_dry_weight = float(input.get("runtime_moisture_water_balance_dry_weight", 1.00));
         t->in_buf.scalars.days_per_year    = int(input.get("days_per_year", 365));
         t->in_buf.scalars.sea_level        = double(input.get("sea_level", 0.5));
         // pass_a 扩展 scalars

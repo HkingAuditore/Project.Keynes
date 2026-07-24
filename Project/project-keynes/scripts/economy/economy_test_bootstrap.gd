@@ -19,10 +19,11 @@ const INITIAL_HOUSEHOLD_STOCK_DAYS := 1
 const INITIAL_BUILDING_INPUT_STOCK_DAYS := 1
 const RESOURCE_BUILDING_RUNWAY_DAYS := INITIAL_RESOURCE_HORIZON_DAYS
 const RENEWABLE_SAFE_HARVEST_Q16 := 32768
+const RENEWABLE_MIN_RESERVE_Q16 := 22938
 const RENEWABLE_GROWTH_DIVISOR := 8
 const OWNER_OPERATING_CYCLES := 2
 const PLANNED_UTILIZATION_Q16 := 49152
-const TARGET_EMPLOYMENT_Q16 := 62259
+const TARGET_EMPLOYMENT_Q16 := Q16_ONE
 const INITIAL_CARRYING_CAPACITY_SHARE_Q16 := 32768
 const BOOTSTRAP_BRIDGE_STOCK := {
 	"logs": 1000,
@@ -446,11 +447,13 @@ static func build(map: MapData, facade: EconomyFacade, _seed: int,
 				carrying_capacity_population[capacity_idx] = target_population
 		var actual_population := 0
 		if target_population > 0 and int(jobs_by_profession.get(&"merchant", 0)) > 0:
+			var merchant_population := mini(
+				int(jobs_by_profession.get(&"merchant", 0)), target_population)
 			cell_indices.append(cell_idx)
 			signature_ids.append(int(signatures[&"merchant"]))
-			populations.append(1)
+			populations.append(merchant_population)
 			funds.append(0)
-			actual_population = 1
+			actual_population = merchant_population
 			generated_professions[&"merchant"] = true
 		for profession_id in profession_ids:
 			var profession := StringName(profession_id)
@@ -809,13 +812,12 @@ static func _resource_building_count_cap(spec: Dictionary, cell_idx: int,
 			return 0
 		var required := float(quantities[i]) / float(GOODS_SCALE)
 		if int(modes[i]) == 0:
+			var resource_id := StringName(ids[i])
 			var sustainable_daily_yield := _renewable_safe_yield_per_day(
-				StringName(ids[i]), maxf(0.0, reserves[cell_idx]))
-			if sustainable_daily_yield > 0.0:
-				var planned_required := required * \
-					float(PLANNED_UTILIZATION_Q16) / float(Q16_ONE)
+				resource_id, maxf(0.0, reserves[cell_idx]))
+			if _resource_is_renewable(resource_id):
 				cap = mini(cap, int(floor(
-					sustainable_daily_yield / planned_required)))
+					sustainable_daily_yield / required)))
 			else:
 				cap = mini(cap, int(floor(maxf(0.0, reserves[cell_idx]) /
 					(required * float(RESOURCE_BUILDING_RUNWAY_DAYS)))))
@@ -835,11 +837,22 @@ static func _renewable_safe_yield_per_day(
 		var growth := maxf(0.0, float(profile.ecology_growth_rate))
 		if capacity <= 0.0 or growth <= 0.0:
 			return 0.0
+		var reserve_floor := local_reserve * \
+			float(RENEWABLE_MIN_RESERVE_Q16) / float(Q16_ONE)
 		var yield_biomass := minf(
-			capacity / float(RENEWABLE_GROWTH_DIVISOR), local_reserve)
+			capacity / float(RENEWABLE_GROWTH_DIVISOR),
+			maxf(0.0, local_reserve - reserve_floor))
 		return yield_biomass * growth * \
 			float(RENEWABLE_SAFE_HARVEST_Q16) / float(Q16_ONE)
 	return 0.0
+
+
+static func _resource_is_renewable(resource_id: StringName) -> bool:
+	for profile in ResourceProfileRegistry.ordered():
+		if StringName(profile.id) == resource_id:
+			return float(profile.ecology_capacity) > 0.0 and \
+				float(profile.ecology_growth_rate) > 0.0
+	return false
 
 
 static func _resource_population_scores(cell_indices: PackedInt32Array,
@@ -2038,7 +2051,11 @@ static func _accumulate_building_jobs(spec: Dictionary, count: int, jobs: Dictio
 	var slots: PackedInt64Array = spec.employee_slots
 	for i in range(professions.size()):
 		var profession := StringName(professions[i])
-		jobs[profession] = int(jobs.get(profession, 0)) + count * int(slots[i])
+		var full_positions := count * int(slots[i])
+		var retained_positions := full_positions * PLANNED_UTILIZATION_Q16 / Q16_ONE
+		if retained_positions == 0 and full_positions > 0 and PLANNED_UTILIZATION_Q16 > 0:
+			retained_positions = 1
+		jobs[profession] = int(jobs.get(profession, 0)) + retained_positions
 
 
 static func _terrain_at(map: MapData, cell_idx: int) -> int:

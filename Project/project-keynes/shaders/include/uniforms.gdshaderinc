@@ -336,6 +336,9 @@ uniform float cover_axis_strength : hint_range(0.0, 1.0) = 0.65;
 uniform float ecology_visual_strength : hint_range(0.0, 1.0) = 0.70;
 uniform float snowline_visual_strength : hint_range(0.0, 1.0) = 0.85;
 uniform float foliage_density_strength : hint_range(0.0, 1.0) = 0.75;
+uniform float temperature_visual_strength : hint_range(0.0, 1.5) = 1.0;
+uniform float moisture_visual_strength : hint_range(0.0, 1.5) = 1.0;
+uniform float vitality_visual_strength : hint_range(0.0, 1.5) = 1.0;
 uniform int ecology_visual_quality : hint_range(0, 2) = 2;
 
 

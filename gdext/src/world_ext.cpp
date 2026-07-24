@@ -505,6 +505,7 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
         UtilityFunctions::push_error("[DCWorldExt] bind_map_data: null map_data");
         return false;
     }
+    _native_daily_moisture_commit_pending = false;
     _map_data = map_data;
 
     int bound_count = 0;
@@ -605,6 +606,8 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
     _native_world_configured = false;
     _native_world_cell_count = 0;
     _native_daily_tick_count = 0;
+    _native_daily_slice_active = false;
+    _native_daily_moisture_commit_pending = false;
     _native_fronts_snapshot.clear();
     _native_dirty_report.clear();
     _native_runtime_config.clear();
@@ -782,10 +785,26 @@ void DCWorldExt::flush_slots_to_map() {
     _native_dirty_report["flush_dirty_all_pending"] = false;
 }
 
+void DCWorldExt::flush_slots_to_map_keys(const PackedStringArray &slot_names) {
+    if (!_map_data) return;
+    for (int i = 0; i < slot_names.size(); ++i) {
+        const int sid = component_id(StringName(slot_names[i]));
+        if (sid >= 0) {
+            _flush_slot_to_map(sid);
+        }
+    }
+}
+
 void DCWorldExt::refresh_slots_from_map() {
     if (!_map_data) return;
     for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
         const StringName slot_name(BIND_TABLE[i].slot_name);
+        // Preserve the in-flight native moisture value while visible MapData
+        // remains frozen at the previous completed round.
+        if (_native_daily_moisture_commit_pending &&
+            slot_name == StringName("cell_moisture")) {
+            continue;
+        }
         const int sid = component_id(slot_name);
         if (sid < 0 || sid >= _slots.size()) continue;
         Slot &s = _slots.write[sid];
@@ -799,10 +818,18 @@ void DCWorldExt::refresh_slots_from_map() {
     }
 }
 
+void DCWorldExt::complete_native_daily_moisture_commit() {
+    _native_daily_moisture_commit_pending = false;
+}
+
 void DCWorldExt::refresh_slots_from_map_keys(const PackedStringArray &slot_names) {
     if (!_map_data) return;
     for (int k = 0; k < slot_names.size(); ++k) {
         const StringName requested(slot_names[k]);
+        if (_native_daily_moisture_commit_pending &&
+            requested == StringName("cell_moisture")) {
+            continue;
+        }
         const int sid = component_id(requested);
         if (sid < 0 || sid >= _slots.size()) continue;
         Slot &s = _slots.write[sid];

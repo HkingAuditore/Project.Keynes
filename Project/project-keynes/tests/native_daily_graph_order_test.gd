@@ -21,10 +21,14 @@ func _run() -> void:
 	var daily_src: String = _read_source("res://../../gdext/src/world_ext_daily_sim.cpp")
 	var schedule_src: String = _read_source("res://../../gdext/src/system_schedule.cpp")
 	var generator_src: String = _read_source("res://scripts/geography/map_generator.gd")
+	var climate_src: String = _read_source("res://../../gdext/src/world_ext_climate.cpp")
+	var weather_src: String = _read_source("res://../../gdext/src/world_ext_weather.cpp")
 
 	_expect("world_ext_daily_sim.cpp readable", not daily_src.is_empty())
 	_expect("system_schedule.cpp readable", not schedule_src.is_empty())
 	_expect("map_generator.gd readable", not generator_src.is_empty())
+	_expect("world_ext_climate.cpp readable", not climate_src.is_empty())
+	_expect("world_ext_weather.cpp readable", not weather_src.is_empty())
 	if _failures > 0:
 		_finish()
 		return
@@ -132,6 +136,23 @@ func _run() -> void:
 		"native_daily_slice_yield_nodes",
 		"_native_daily_slice_yield_bits",
 	]))
+	_expect("native moisture transaction defers intermediate publish and commits in wrapper finalizer",
+		_contains_in_order(daily_src, [
+			"cp_struct[\"defer_visible_publish\"] = true",
+			"pass_b_knobs[\"defer_visible_publish\"] = true",
+			"transpiration_knobs[\"defer_visible_publish\"] = true",
+			"weather_knobs.erase(\"moisture_read_arr\")",
+		]) and _contains_in_order(generator_src, [
+			"snapshot_f32(moisture_sid)",
+			"map.moisture_arr = moisture_snapshot",
+			"diag[\"moisture_committed\"] = moisture_committed",
+		]))
+	_expect("transpiration subtracts donor outflow before neighbor distribution",
+		climate_src.contains("D[i] += self_share - transported") and
+		climate_src.contains("transported / float(valid_land_neighbors)"))
+	_expect("weather direct moisture writes are gated",
+		weather_src.contains("weather_direct_moisture_enabled") and
+		weather_src.contains("direct_moisture_enabled"))
 
 	_finish()
 

@@ -27,7 +27,7 @@ constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,opening_reserve,natural_net_change,natural_positive_change,natural_negative_change,artificial_change_applied,artificial_change_pending,artificial_generation_applied,artificial_extraction_applied,artificial_generation_pending,artificial_extraction_pending,reserve,safe_yield,projected_life_days\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound,desired_business_demand,funded_business_demand,unfunded_business_demand,trade_export_safety_stock,trade_import_fill_target,trade_relief_pressure_q16,trade_signal_age_days,trade_first_dispatch_delay_days,trade_last_attempt_day,trade_last_rejection_reason,trade_deadline_exceeded,merchant_cash,merchant_inventory_retail_value,merchant_inventory_liquidation_value,merchant_economic_assets,merchant_procurement_margin_value,merchant_trade_purchase_cash,merchant_trade_sale_cash,merchant_operating_outflow,merchant_liquidity_coverage_q16,merchant_effective_buy_factor_q16\n",
 };
-constexpr const char *SUMMARY_V20_SUFFIX =
+constexpr const char *SUMMARY_V21_SUFFIX =
     ",building_investment_buildings_started"
     ",building_investment_portfolios_started"
     ",building_investment_types_started"
@@ -38,7 +38,11 @@ constexpr const char *SUMMARY_V20_SUFFIX =
     ",building_investment_capital_limited"
     ",building_investment_owner_population_limited"
     ",recovery_partially_liquidated_buildings"
-    ",recovery_fully_liquidated_groups\n";
+    ",recovery_fully_liquidated_groups"
+    ",merchant_survival_procurement_required"
+    ",merchant_survival_procurement_allocated"
+    ",merchant_input_procurement_required"
+    ",merchant_input_procurement_allocated\n";
 
 template <typename T>
 void append_int(std::string &out, T value) {
@@ -291,6 +295,7 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
     _captured_rows = 0; _written_rows = 0; _bytes_written = 0;
     _capture_us_last = 0; _capture_us_max = 0;
     _capture_samples_us.clear();
+    _backpressure_wait_count = 0; _backpressure_wait_us = 0;
     _encode_us_last = 0; _write_us_last = 0;
     _open_done = false; _open_ok = false;
     _accepting = false; _stop_requested = false;
@@ -443,7 +448,7 @@ bool EconomyCsvRecorder::capture_committed(
     int32_t buffer_index = -1;
     int64_t epoch_row_id = 0;
     {
-        std::lock_guard<std::mutex> lock(_mutex);
+        std::unique_lock<std::mutex> lock(_mutex);
         if (!_accepting || _state != 2) {
             reason = "not_recording";
             return false;
@@ -455,17 +460,28 @@ bool EconomyCsvRecorder::capture_committed(
         if (_captured_rows + rows > _config.max_rows) {
             set_terminal_locked("row_limit", "next committed epoch exceeds max_rows", epoch_id);
             reason = "row_limit";
-            _cv.notify_one();
+            _cv.notify_all();
             return false;
         }
-        for (int32_t i = 0; i < 2; ++i) {
-            if (_buffer_states[i] == FREE) { buffer_index = i; break; }
-        }
+        auto find_free_buffer = [&]() {
+            for (int32_t i = 0; i < 2; ++i)
+                if (_buffer_states[i] == FREE) return i;
+            return int32_t{-1};
+        };
+        buffer_index = find_free_buffer();
         if (buffer_index < 0) {
-            set_terminal_locked("queue_full", "CSV writer did not keep up with committed epochs", epoch_id);
-            reason = "queue_full";
-            _cv.notify_one();
-            return false;
+            const auto wait_start = Clock::now();
+            ++_backpressure_wait_count;
+            _cv.wait(lock, [&] {
+                return find_free_buffer() >= 0 || !_accepting || _state != 2;
+            });
+            _backpressure_wait_us += std::chrono::duration_cast<std::chrono::microseconds>(
+                Clock::now() - wait_start).count();
+            if (!_accepting || _state != 2) {
+                reason = _error_code.empty() ? "not_recording" : _error_code;
+                return false;
+            }
+            buffer_index = find_free_buffer();
         }
         _buffer_states[buffer_index] = FILLING;
         epoch_row_id = _captured_epochs + 1;
@@ -488,7 +504,7 @@ bool EconomyCsvRecorder::capture_committed(
             _buffer_states[buffer_index] = FREE;
             set_terminal_locked("capture_failed", fill_error, epoch_id);
             reason = fill_error;
-            _cv.notify_one();
+            _cv.notify_all();
             return false;
         }
         _buffer_states[buffer_index] = READY;
@@ -676,6 +692,14 @@ bool EconomyCsvRecorder::fill_batch(
             runtime._recovery_partially_liquidated_buildings;
         row.recovery_fully_liquidated_groups =
             runtime._recovery_fully_liquidated_groups;
+        row.merchant_survival_procurement_required =
+            runtime._merchant_survival_procurement_required;
+        row.merchant_survival_procurement_allocated =
+            runtime._merchant_survival_procurement_allocated;
+        row.merchant_input_procurement_required =
+            runtime._merchant_input_procurement_required;
+        row.merchant_input_procurement_allocated =
+            runtime._merchant_input_procurement_allocated;
         row.trade_active_keys_pruned = runtime._trade_active_keys_pruned;
         row.trade_deficit_episodes_started = runtime._trade_deficit_episodes_started;
         row.trade_deficit_episodes_resolved = runtime._trade_deficit_episodes_resolved;
@@ -817,21 +841,13 @@ bool EconomyCsvRecorder::fill_batch(
                             employment_utilization_q16,
                             runtime._building_recovery_probe_capacity_q16[index]);
                     }
-                    row.owner_required = 0;
-                    if (employment_utilization_q16 > 0) {
-                        row.owner_required = group.operating_state == 0
-                            ? row.owner_capacity
-                            : runtime.mul_div_sat(
-                                row.owner_capacity, employment_utilization_q16,
-                                NativeEconomyRuntime::Q16_ONE, snapshot_sat);
-                        if (row.owner_required == 0 && row.owner_capacity > 0)
-                            row.owner_required = 1;
-                    }
                     row.planned_owner_equivalent = runtime.mul_div_sat(
                         row.owner_capacity, employment_utilization_q16,
                         NativeEconomyRuntime::Q16_ONE, snapshot_sat);
                     if (row.planned_owner_equivalent == 0 && row.owner_capacity > 0 &&
                         employment_utilization_q16 > 0) row.planned_owner_equivalent = 1;
+                    row.owner_required = runtime.planned_owner_demand(
+                        group, snapshot_sat);
                     row.filled_owner = group.filled_owner;
                     row.owner_openings = std::max<int64_t>(
                         0, row.owner_required - row.filled_owner);
@@ -1010,30 +1026,44 @@ bool EconomyCsvRecorder::fill_batch(
                         runtime_resource];
                     const int64_t growth = runtime._resource_ecology_growth_q16[
                         runtime_resource];
-                    if (capacity > 0 && growth > 0) {
-                        row.safe_yield = runtime.mul_div_sat(runtime.mul_div_sat(
-                            capacity, growth, 8 * NativeEconomyRuntime::Q16_ONE,
-                            resource_sat), runtime._resource_safe_harvest_q16,
-                            NativeEconomyRuntime::Q16_ONE, resource_sat);
-                        row.projected_life_days = -1;
-                    } else {
-                        int64_t harvest = 0;
-                        if (runtime._building_cell_offsets.size() == static_cast<size_t>(
-                                runtime._cell_count + 1)) {
-                            for (int32_t group_index = runtime._building_cell_offsets[cell];
-                                 group_index < runtime._building_cell_offsets[cell + 1];
-                                 ++group_index) {
-                                const auto &group = runtime._buildings[group_index];
-                                const auto &type = runtime._building_types[group.type_id];
-                                for (int32_t edge = 0; edge < type.resource_count; ++edge) {
-                                    const auto &item = runtime._building_resources[
-                                        type.resource_begin + edge];
-                                    if (item.mode == 0 && item.resource_id == runtime_resource) {
-                                        harvest += item.quantity * group.count;
-                                    }
+                    int64_t harvest = 0;
+                    if (runtime._building_cell_offsets.size() == static_cast<size_t>(
+                            runtime._cell_count + 1)) {
+                        for (int32_t group_index = runtime._building_cell_offsets[cell];
+                             group_index < runtime._building_cell_offsets[cell + 1];
+                             ++group_index) {
+                            const auto &group = runtime._buildings[group_index];
+                            const auto &type = runtime._building_types[group.type_id];
+                            for (int32_t edge = 0; edge < type.resource_count; ++edge) {
+                                const auto &item = runtime._building_resources[
+                                    type.resource_begin + edge];
+                                if (item.mode == 0 && item.resource_id == runtime_resource) {
+                                    harvest += item.quantity * group.count;
                                 }
                             }
                         }
+                    }
+                    if (capacity > 0 && growth > 0) {
+                        const int64_t closing_fixed = static_cast<int64_t>(
+                            std::max(0.0f, closing) *
+                            NativeEconomyRuntime::GOODS_SCALE);
+                        const int64_t reserve_floor = runtime.mul_div_sat(
+                            closing_fixed, runtime._resource_min_reserve_q16,
+                            NativeEconomyRuntime::Q16_ONE, resource_sat);
+                        const int64_t yield_biomass = std::min<int64_t>(
+                            capacity / 8,
+                            std::max<int64_t>(0, closing_fixed - reserve_floor));
+                        row.safe_yield = runtime.mul_div_sat(runtime.mul_div_sat(
+                            yield_biomass, growth, NativeEconomyRuntime::Q16_ONE,
+                            resource_sat), runtime._resource_safe_harvest_q16,
+                            NativeEconomyRuntime::Q16_ONE, resource_sat);
+                        const int64_t overshoot = std::max<int64_t>(
+                            0, harvest - row.safe_yield);
+                        row.projected_life_days = overshoot > 0
+                            ? std::max<int64_t>(0, closing_fixed - reserve_floor) /
+                                overshoot
+                            : -1;
+                    } else {
                         row.projected_life_days = harvest > 0
                             ? static_cast<int64_t>(closing * NativeEconomyRuntime::GOODS_SCALE) /
                                 harvest : 0;
@@ -1246,9 +1276,9 @@ bool EconomyCsvRecorder::open_files(std::string &error) {
             HEADERS[dim][header_length - 1] == '\n') {
             _files[dim].write(HEADERS[dim],
                 static_cast<std::streamsize>(header_length - 1));
-            _files[dim].write(SUMMARY_V20_SUFFIX,
+            _files[dim].write(SUMMARY_V21_SUFFIX,
                 static_cast<std::streamsize>(
-                    std::char_traits<char>::length(SUMMARY_V20_SUFFIX)));
+                    std::char_traits<char>::length(SUMMARY_V21_SUFFIX)));
         } else {
             _files[dim].write(HEADERS[dim],
                 static_cast<std::streamsize>(header_length));
@@ -1410,6 +1440,10 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.building_investment_owner_population_limited);
         field(chunk, row.recovery_partially_liquidated_buildings);
         field(chunk, row.recovery_fully_liquidated_groups);
+        field(chunk, row.merchant_survival_procurement_required);
+        field(chunk, row.merchant_survival_procurement_allocated);
+        field(chunk, row.merchant_input_procurement_required);
+        field(chunk, row.merchant_input_procurement_allocated);
         chunk.push_back('\n'); if (!maybe_flush(SUMMARY)) goto write_failed;
     }
     if (!flush(SUMMARY)) goto write_failed;
@@ -1610,9 +1644,11 @@ void EconomyCsvRecorder::worker_main() {
                     const int32_t pending = _ready.front(); _ready.pop_front();
                     _buffers[pending].clear_rows(); _buffer_states[pending] = FREE;
                 }
+                _cv.notify_all();
                 break;
             }
         }
+        _cv.notify_all();
     }
     close_files();
     {
@@ -1620,6 +1656,7 @@ void EconomyCsvRecorder::worker_main() {
         _worker_finished = true; _worker_busy = false;
         if (_state != 5) _state = _error_code.empty() ? 4 : 5;
     }
+    _cv.notify_all();
 }
 
 void EconomyCsvRecorder::request_stop() {
@@ -1629,7 +1666,7 @@ void EconomyCsvRecorder::request_stop() {
         _accepting = false; _stop_requested = true;
         if (_state != 5) _state = 3;
     }
-    _cv.notify_one();
+    _cv.notify_all();
 }
 
 void EconomyCsvRecorder::shutdown() {
@@ -1674,6 +1711,9 @@ godot::Dictionary EconomyCsvRecorder::status() const {
     out["capture_ms_last"] = static_cast<double>(_capture_us_last) / 1000.0;
     out["capture_ms_p95"] = static_cast<double>(capture_p95_us) / 1000.0;
     out["capture_ms_max"] = static_cast<double>(_capture_us_max) / 1000.0;
+    out["backpressure_wait_count"] = _backpressure_wait_count;
+    out["backpressure_wait_ms_total"] =
+        static_cast<double>(_backpressure_wait_us) / 1000.0;
     out["worker_encode_ms_last"] = static_cast<double>(_encode_us_last) / 1000.0;
     out["worker_write_ms_last"] = static_cast<double>(_write_us_last) / 1000.0;
     out["max_rows"] = _config.max_rows;

@@ -142,6 +142,10 @@ static func normalize_icon(icon: String) -> String:
 			return "seed"
 		"warning", "risk":
 			return "warning"
+		"living_destitute", "living_struggling", "living_poor", "living_secure", "living_comfortable", "living_affluent", "living_luxury":
+			return icon
+		"profession_worker", "profession_artisan", "profession_fisher", "profession_merchant", "profession_scholar", "profession_owner", "profession_unemployed":
+			return icon
 		"", "—":
 			return ""
 		_:
@@ -182,6 +186,34 @@ static func glyph_for_key(key: String) -> String:
 			return "\uf061" # arrow-right
 		"growth":
 			return "\uf4d8" # seedling
+		"living_destitute":
+			return "\uf071" # triangle-exclamation
+		"living_struggling":
+			return "\uf554" # person-walking
+		"living_poor":
+			return "\uf015" # house
+		"living_secure":
+			return "\uf4d8" # seedling
+		"living_comfortable":
+			return "\uf005" # star
+		"living_affluent":
+			return "\uf521" # crown
+		"living_luxury":
+			return "\uf3a5" # gem
+		"profession_worker":
+			return "\uf807" # helmet-safety
+		"profession_artisan":
+			return "\uf6e3" # hammer
+		"profession_fisher":
+			return "\uf578" # fish
+		"profession_merchant":
+			return "\uf51e" # coins
+		"profession_scholar":
+			return "\uf02d" # book
+		"profession_owner":
+			return "\uf521" # crown
+		"profession_unemployed":
+			return "\uf183" # person
 		"snow":
 			return "\uf2dc" # snowflake
 		"heart":

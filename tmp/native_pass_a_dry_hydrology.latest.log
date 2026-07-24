@@ -1,0 +1,74 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native pass-A legacy season offset ===
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds
+  [PASS] pass-A native path executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds
+  [PASS] pass-A native path executed
+  [PASS] season offset ignores compatibility continentality
+  [PASS] runtime baseline ignores compatibility continentality
+  [PASS] subpolar summer still has positive seasonal signal
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for async moisture-unit case
+[async_climate_round] worker thread started
+  [PASS] async moisture-unit case kicked
+  [PASS] async moisture-unit case completed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for async moisture-unit case
+[async_climate_round] worker thread started
+  [PASS] async moisture-unit case kicked
+  [PASS] async moisture-unit case completed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for moisture-unit case
+  [PASS] pass-A moisture-unit case executed
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] bind_map_data succeeds for async moisture-unit case
+[async_climate_round] worker thread started
+  [PASS] async moisture-unit case kicked
+  [PASS] async moisture-unit case completed
+  [PASS] equilibrium atmospheric vapor does not dry terrain moisture
+  [PASS] insolation season does not directly force terrain moisture
+  [PASS] threaded pass-A uses the same vapor/soil units
+  [PASS] async pass-A uses the same vapor/soil units
+  [PASS] positive signed soil anomaly is additive
+  [PASS] negative signed soil anomaly remains a drought signal
+  [PASS] calibrated soil weight above one is not internally clipped
+  [PASS] threaded pass-A preserves calibrated soil amplitude
+  [PASS] async pass-A preserves calibrated soil amplitude
+  [PASS] positive hydrology keeps the existing wet-side weights
+  [PASS] negative hydrology uses stronger dry-side weights
+  [PASS] threaded pass-A preserves asymmetric drought response
+  [PASS] async pass-A preserves asymmetric drought response
+=== done: 51 checks, 0 failures ===

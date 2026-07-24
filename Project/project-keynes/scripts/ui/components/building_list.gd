@@ -75,10 +75,18 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	identity.add_theme_constant_override("separation", 0)
 	header.add_child(identity)
+	var name_row := HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", UITokens.SPACE_XS)
+	identity.add_child(name_row)
 	var name_label := Label.new()
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	identity.add_child(name_label)
+	name_row.add_child(name_label)
+	var state_icon := IconBadge.new()
+	state_icon.custom_minimum_size = Vector2(18.0, 18.0)
+	state_icon.mouse_filter = Control.MOUSE_FILTER_PASS
+	name_row.add_child(state_icon)
 	var owner_label := Label.new()
 	owner_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	owner_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
@@ -108,15 +116,46 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	details.add_theme_constant_override("separation", UITokens.SPACE_SM)
 	body.add_child(details)
+	var state_summary := _create_state_summary(details)
 	var jobs := _create_rows_card(details, "岗位配置", "growth", UITokens.ACCENT, true)
 	var production := _create_rows_card(details, "生产概览", "resource", UITokens.RESOURCE, false)
 	var finance := _create_finance_card(details)
 	var refs := {"panel": panel, "button": button, "icon": icon, "name": name_label,
+		"state_icon": state_icon,
 		"owner": owner_label, "count": count_label, "profit_label": profit_label,
-		"profit": profit_value, "details": details, "jobs": jobs,
+		"profit": profit_value, "details": details, "state_summary": state_summary, "jobs": jobs,
 		"production": production, "finance": finance}
 	_apply_row(row_id, refs, data)
 	return refs
+
+
+func _create_state_summary(parent: VBoxContainer) -> Dictionary:
+	var panel := PanelContainer.new()
+	parent.add_child(panel)
+	var margin := MarginContainer.new()
+	for side in ["left", "right"]:
+		margin.add_theme_constant_override("margin_%s" % side, UITokens.SPACE_SM)
+	margin.add_theme_constant_override("margin_top", 7)
+	margin.add_theme_constant_override("margin_bottom", 7)
+	panel.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 3)
+	margin.add_child(box)
+	var label := Label.new()
+	label.add_theme_font_override("font", UITokens.font_with_weight(650))
+	label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	box.add_child(label)
+	var detail := Label.new()
+	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	detail.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	detail.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
+	box.add_child(detail)
+	var meta := Label.new()
+	meta.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	meta.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	meta.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+	box.add_child(meta)
+	return {"panel": panel, "label": label, "detail": detail, "meta": meta}
 
 
 func _create_rows_card(parent: VBoxContainer, title_text: String, icon_key: String,
@@ -263,13 +302,31 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
 		Color(0.055, 0.048, 0.039, 0.96), Color(accent.r, accent.g, accent.b, 0.42)))
 	(refs.get("icon") as IconBadge).set_icon(String(data.get("icon", "building")), accent)
-	(refs.get("name") as Label).text = "%s · %s" % [String(data.get("name", "建筑")), String(data.get("status", ""))]
+	(refs.get("name") as Label).text = String(data.get("name", "建筑"))
 	(refs.get("owner") as Label).text = String(data.get("owner", ""))
 	(refs.get("count") as Label).text = String(data.get("count", ""))
 	(refs.get("profit_label") as Label).text = String(data.get("profit_label", "利润"))
 	(refs.get("profit_label") as Label).add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	(refs.get("profit") as Label).text = String(data.get("profit", ""))
 	(refs.get("profit") as Label).add_theme_color_override("font_color", accent)
+	var state_refs: Dictionary = refs.get("state_summary", {})
+	var state: Dictionary = data.get("state_summary", {})
+	var state_icon := refs.get("state_icon") as IconBadge
+	state_icon.set_icon(String(state.get("icon", "")), state.get("accent", UITokens.WARN))
+	state_icon.tooltip_text = String(state.get("label", ""))
+	var state_panel := state_refs.get("panel") as PanelContainer
+	state_panel.visible = not state.is_empty()
+	if not state.is_empty():
+		var state_accent: Color = state.get("accent", UITokens.WARN)
+		state_panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
+			Color(0.045, 0.039, 0.032, 0.98),
+			Color(state_accent.r, state_accent.g, state_accent.b, 0.46)))
+		(state_refs.get("label") as Label).text = String(state.get("label", "经营状态"))
+		(state_refs.get("label") as Label).add_theme_color_override("font_color", state_accent)
+		(state_refs.get("detail") as Label).text = String(state.get("detail", ""))
+		var state_meta := state_refs.get("meta") as Label
+		state_meta.text = String(state.get("meta", ""))
+		state_meta.visible = not state_meta.text.is_empty()
 	_sync_rows_card(refs.get("jobs", {}), data.get("job_rows", []))
 	_sync_rows_card(refs.get("production", {}), data.get("production_rows", []))
 	var finance_refs: Dictionary = refs.get("finance", {})

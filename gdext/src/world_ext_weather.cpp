@@ -2622,6 +2622,7 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     float weather_temp_anomaly_cap = knobs.has("weather_temp_anomaly_cap") ? float(knobs["weather_temp_anomaly_cap"]) : 0.025f;
     if (weather_temp_anomaly_cap < 0.0f) weather_temp_anomaly_cap = 0.0f;
     else if (weather_temp_anomaly_cap > 0.10f) weather_temp_anomaly_cap = 0.10f;
+    const bool direct_moisture_enabled = bool(knobs.get("weather_direct_moisture_enabled", false));
 
     PackedInt32Array  acc_snow_days  = knobs["accumulated_snow_days"];
     PackedInt32Array  pre_snow_cover = knobs["pre_snow_cover"];
@@ -2826,8 +2827,10 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
                 wb = wb + (daily_balance - wb) * (1.0f / 30.0f);
                 // climate-loop-closure Phase 3.1：土壤水每日衰减(×0.97)，停雨后排干。
                 soil = clampf(soil * 0.97f + daily_balance * 0.08f, -0.5f, 0.5f);
-                M[i] = clamp01(M[i] + precip * 0.35f
-                    + ((daily_balance > 0.0f) ? daily_balance * 0.04f : 0.0f));
+                if (direct_moisture_enabled) {
+                    M[i] = clamp01(M[i] + precip * 0.35f
+                        + ((daily_balance > 0.0f) ? daily_balance * 0.04f : 0.0f));
+                }
                 // climate-loop-closure Phase 2.1/2.2：物理雪线 floor（仅陆地）。
                 float snow_floor_c = 0.0f;
                 if (snowline_temp_threshold > 0.0f) {
@@ -2849,7 +2852,9 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
 
         const float td_v = (wt >= 0 && wt < 8) ? TD[wt] : 0.0f;
         const float md_v = (wt >= 0 && wt < 8) ? MD[wt] : 0.0f;
-        const float moist_now = clamp01(M[i] + md_v * intensity + precip * 0.35f);
+        const float moist_now = direct_moisture_enabled
+            ? clamp01(M[i] + md_v * intensity + precip * 0.35f)
+            : M[i];
         float temp_delta = td_v * intensity;
         if (temp_delta > weather_temp_anomaly_cap) temp_delta = weather_temp_anomaly_cap;
         else if (temp_delta < -weather_temp_anomaly_cap) temp_delta = -weather_temp_anomaly_cap;
@@ -2970,12 +2975,15 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     // ─── §11.2 flush：把 CoW-detach 后的 temp/moisture/cover 推回 GDScript
     // MapData property（与 F.1 / F.2 等同模式）。──────────────────────────
     _flush_slot_to_map(sid_temp);
-    _flush_slot_to_map(sid_moisture);
+    if (direct_moisture_enabled && !bool(knobs.get("defer_visible_publish", false))) {
+        _flush_slot_to_map(sid_moisture);
+    }
     _flush_slot_to_map(sid_snow_cover);
     _flush_slot_to_map(sid_snowpack);
     _flush_slot_to_map(sid_water_bal);
     _flush_slot_to_map(sid_soil_moist);
     _flush_slot_to_map(sid_cover);
+    out["moisture_written"] = direct_moisture_enabled;
 
     // ─── 把改写后的 PackedInt32Array 通过 out Dictionary 返回（PackedArray ptrw
     // 触发 CoW 后会重新分配 buffer，本地 acc_snow_days / pre_snow_cover 持有新

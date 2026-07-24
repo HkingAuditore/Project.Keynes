@@ -711,13 +711,18 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var feedback_decay: float = 0.5                  # multiplier applied at season boundary
 @export var feedback_per_day_clamp: float = 0.005        # |Δ| per day clamp (≤ 0.5% of base)
 
-# Runtime moisture remains anchored by the slow generated background, but
-# Pass-A should not overwrite weather/hydrology signals back to base every day.
+# Runtime moisture uses the generated background only as a static geographic anchor.
+# Seasonal solar forcing must reach it through evaporation, wind/ocean transport,
+# precipitation, soil water, and the rolling water balance, never through a direct
+# insolation multiplier in Pass-A.
 @export_range(0.0, 1.0, 0.01) var runtime_moisture_base_relax_rate: float = 0.24
+@export var weather_direct_moisture_enabled: bool = false
 @export_range(0.0, 1.0, 0.01) var runtime_moisture_weather_vapor_weight: float = 0.12
-@export_range(0.0, 1.0, 0.01) var runtime_moisture_precip_weight: float = 0.20
-@export_range(0.0, 1.0, 0.01) var runtime_moisture_soil_weight: float = 0.15
-@export_range(0.0, 1.0, 0.01) var runtime_moisture_water_balance_weight: float = 0.08
+@export_range(0.0, 2.0, 0.01) var runtime_moisture_precip_weight: float = 0.60
+@export_range(0.0, 2.0, 0.01) var runtime_moisture_soil_weight: float = 1.40
+@export_range(0.0, 2.0, 0.01) var runtime_moisture_soil_dry_weight: float = 1.70
+@export_range(0.0, 2.0, 0.01) var runtime_moisture_water_balance_weight: float = 0.80
+@export_range(0.0, 2.0, 0.01) var runtime_moisture_water_balance_dry_weight: float = 1.00
 
 # Sea-ice daily pass tunables (replace the old hard-step _apply_sea_ice_pass).
 @export_group("海冰")

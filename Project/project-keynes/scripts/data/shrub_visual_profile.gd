@@ -111,6 +111,8 @@ enum SpawnDomain {
 @export_range(0.0, 1.0, 0.01) var lush_green_strength: float = 0.72
 @export_range(0.0, 1.0, 0.01) var heat_red_strength: float = 0.55
 @export_range(0.0, 1.0, 0.01) var autumn_red_strength: float = 0.42
+@export_range(0.0, 1.0, 0.01) var temperature_color_strength: float = 0.78
+@export_range(0.0, 1.0, 0.01) var moisture_color_strength: float = 0.82
 @export_range(0.0, 1.0, 0.01) var snow_white_strength: float = 0.90
 @export_range(0.0, 1.0, 0.01) var stress_hide_strength: float = 0.78
 @export_range(0.0, 1.0, 0.01) var snow_hide_strength: float = 0.62
@@ -126,6 +128,7 @@ enum SpawnDomain {
 @export_range(0.5, 1.5, 0.01) var vitality_size_max: float = 1.08
 @export_range(0.0, 1.0, 0.01) var vitality_low_color_strength: float = 0.72
 @export_range(0.0, 1.0, 0.01) var vitality_high_color_strength: float = 0.42
+@export_range(0.0, 1.0, 0.01) var vitality_color_contrast: float = 0.90
 @export_range(0.0, 1.0, 0.01) var vitality_dieback_noise_strength: float = 0.45
 
 # ─────────────────────────────────────────────────────────────────────────

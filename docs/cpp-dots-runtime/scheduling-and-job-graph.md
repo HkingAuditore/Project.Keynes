@@ -786,6 +786,26 @@ cell-owned cache slices; the main thread reduces saturation counters by cell ID.
 This is a cache-preparation substage, not a new authority or visible simulation
 stage, and worker count cannot affect the state/event hash.
 
+## Native daily moisture commit boundary (2026-07-24)
+
+The graph order and yield nodes are unchanged. Moisture-producing nodes no
+longer publish their intermediate `MapData.moisture_arr` values from a slice.
+At wrapper-finalizer completion, the existing finalizer snapshots only
+`cell_moisture` and assigns it to the exact round `MapData`; a deferred
+finalizer slice therefore does not expose moisture early. The completed
+breakdown exposes `moisture_committed`, `moisture_commit_path`,
+`moisture_commit_slot_size`, and `moisture_commit_flush_ms`; non-final slices
+do not claim a visible moisture commit.
+
+The round-start bulk refresh runs before the native moisture transaction opens.
+While the graph and deferred wrapper finalizer are in progress, both bridge-wide
+`refresh_slots_from_map()` and keyed `refresh_slots_from_map_keys()` calls skip
+`cell_moisture`; otherwise unrelated jobs would overwrite the in-flight slot
+with the intentionally frozen visible value. This includes the
+`natural_resource_daily` climate-input refresh that runs between native slices.
+The finalizer closes the transaction only after publishing the completed slot
+snapshot. Native failure closes it without exposing a partial value.
+
 ## Deadline-critical dynamic budget bypass（2026-07-18）
 
 `SusJob.use_job_deadline_critical` 默认关闭。仅 opt-in job 可通过只读、常数时间的

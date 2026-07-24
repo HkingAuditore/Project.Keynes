@@ -29,6 +29,8 @@ public:
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int64_t Q16_ONE = 65536;
+    static constexpr int64_t MERCHANT_INVENTORY_HIGH_WATER_Q16 =
+        Q16_ONE + Q16_ONE / 5;
     static constexpr int64_t Q32_ONE = 4294967296LL;
     static constexpr int32_t MAX_RULES_PER_PLAN = 32;
     static constexpr int32_t MAX_NEEDS_PER_PLAN = 16;
@@ -810,6 +812,17 @@ private:
     struct EventLeg;
     struct CashflowEntry;
 
+    struct CohortWelfareEntry {
+        uint64_t cohort_handle = 0;
+        int32_t overall_satisfaction_q16 = 0;
+        int32_t living_standard_level = 0;
+        std::vector<int32_t> need_ids;
+        std::vector<int32_t> need_satisfaction_q16;
+        std::vector<int64_t> previous_demand_per_capita_daily;
+        std::vector<int64_t> wealth_demand_delta_per_capita_daily;
+        std::vector<int64_t> price_demand_delta_per_capita_daily;
+    };
+
     struct MarketResult {
         bool ok = true;
         std::string error;
@@ -846,6 +859,7 @@ private:
         uint64_t mutation_hash = 1469598103934665603ULL;
         std::vector<EventLeg> trace_legs;
         std::vector<CashflowEntry> cashflows;
+        std::vector<CohortWelfareEntry> welfare_entries;
         std::vector<StructuralCommand> structural_commands;
         std::vector<int32_t> trade_active_goods;
     };
@@ -1023,6 +1037,10 @@ private:
         int64_t merchant_procurement_spent = 0;
         int64_t merchant_procurement_retail_value = 0;
         int64_t merchant_procurement_factor_weighted_cash_q16 = 0;
+        int64_t merchant_survival_procurement_required = 0;
+        int64_t merchant_survival_procurement_allocated = 0;
+        int64_t merchant_input_procurement_required = 0;
+        int64_t merchant_input_procurement_allocated = 0;
         int64_t owner_working_capital_allocated = 0;
         int64_t working_capital_scale_error_bound_q16 = 0;
         int64_t building_resource_capacity_checks = 0;
@@ -1080,10 +1098,22 @@ private:
         int32_t cashflow_cell = -1;
         bool cashflow_complete = false;
         std::vector<CashflowEntry> cashflows;
+        std::vector<CohortWelfareEntry> welfare_entries;
         int64_t bytes() const {
+            int64_t welfare_bytes = 0;
+            for (const CohortWelfareEntry &entry : welfare_entries) {
+                welfare_bytes += static_cast<int64_t>(
+                    entry.need_ids.capacity() * sizeof(int32_t) +
+                    entry.need_satisfaction_q16.capacity() * sizeof(int32_t) +
+                    entry.previous_demand_per_capita_daily.capacity() * sizeof(int64_t) +
+                    entry.wealth_demand_delta_per_capita_daily.capacity() * sizeof(int64_t) +
+                    entry.price_demand_delta_per_capita_daily.capacity() * sizeof(int64_t));
+            }
             return static_cast<int64_t>(events.capacity() * sizeof(EventRecord) +
                                         legs.capacity() * sizeof(EventLeg) +
-                                        cashflows.capacity() * sizeof(CashflowEntry));
+                                        cashflows.capacity() * sizeof(CashflowEntry) +
+                                        welfare_entries.capacity() * sizeof(CohortWelfareEntry)) +
+                   welfare_bytes;
         }
     };
 
@@ -1389,6 +1419,10 @@ private:
     int64_t _merchant_procurement_spent = 0;
     int64_t _merchant_procurement_retail_value = 0;
     int64_t _merchant_procurement_factor_weighted_cash_q16 = 0;
+    int64_t _merchant_survival_procurement_required = 0;
+    int64_t _merchant_survival_procurement_allocated = 0;
+    int64_t _merchant_input_procurement_required = 0;
+    int64_t _merchant_input_procurement_allocated = 0;
     int64_t _merchant_trade_purchase_cash = 0;
     int64_t _merchant_trade_sale_cash = 0;
     std::vector<int64_t> _merchant_procurement_paid_by_cell;
@@ -1585,6 +1619,9 @@ private:
     std::unordered_map<uint64_t, int64_t> _investment_pending_by_cell_type;
     std::unordered_map<uint64_t, InvestmentExistingType>
         _investment_existing_by_cell_type;
+    // Peak daily extraction already committed by installed and pending groups,
+    // indexed as resource * cell_count + cell for the investment review only.
+    std::vector<int64_t> _investment_resource_committed_by_cell;
     std::vector<int64_t> _investment_merchant_cash_by_cell;
     std::vector<int64_t> _investment_outstanding_credit_by_cell;
     std::vector<OutputInvestmentSignal> _investment_output_signals_scratch;
@@ -1672,6 +1709,9 @@ private:
     std::vector<int32_t> _building_neighbors;
     std::vector<int64_t> _resource_snapshot;
     std::vector<int64_t> _resource_remaining;
+    // Per-epoch extract allowance for renewable resources. This is derived from
+    // the frozen reserve, never serialized, and is shared by all local extractors.
+    std::vector<int64_t> _resource_harvest_remaining;
     std::vector<int64_t> _resource_gen_base;
     std::vector<int64_t> _resource_gen_temp;
     std::vector<int64_t> _resource_gen_moisture;
@@ -1794,6 +1834,14 @@ private:
                                       int64_t export_ema,
                                       int64_t cold_start_daily_supply,
                                       int64_t &sat) const;
+    int64_t merchant_procurement_quota(int32_t market, int32_t good,
+                                       int32_t signal_index,
+                                       int64_t sellable,
+                                       int64_t target,
+                                       int64_t stock,
+                                       int64_t realized_withdrawal,
+                                       int64_t export_ema,
+                                       int64_t &sat) const;
     int32_t effective_merchant_buy_factor_q16(
         int32_t market, int32_t good, int64_t target, int64_t stock,
         int64_t &sat) const;
@@ -1894,12 +1942,16 @@ private:
                                      int64_t &income_improvement_q16) const;
     int64_t projected_owner_income_per_day(const BuildingGroup &group,
                                            int64_t &sat) const;
+    int64_t planned_owner_demand(const BuildingGroup &group,
+                                 int64_t &sat) const;
     int64_t building_debt_due(const BuildingGroup &group, int64_t &sat) const;
     int64_t repay_building_debt(int32_t cell, int32_t owner_slot,
                                 BuildingGroup &group, int64_t payment_cap,
                                 int64_t &premium_paid);
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
+    bool resource_is_renewable(int32_t resource_id) const;
+    int64_t renewable_safe_harvest(int32_t resource_id, int32_t cell) const;
     bool commit_ready_construction(std::vector<int32_t> &changed_cells);
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
@@ -1998,6 +2050,15 @@ private:
                                int64_t environment_factor_q16,
                                int64_t composite_factor_q16,
                                int64_t &saturation_count) const;
+    int64_t desired_need_units_for_funds(
+        int32_t slot, int32_t need_index, int32_t dt_days,
+        int64_t environment_factor_q16, int64_t composite_factor_q16,
+        int64_t funds, int64_t &saturation_count) const;
+    void compute_cohort_demand_preview(
+        int32_t slot, int32_t market, const EnvironmentSample &sample,
+        const std::vector<int32_t> *price_override, int64_t funds_override,
+        std::vector<int64_t> &good_per_capita_daily,
+        int64_t &saturation_count) const;
     int64_t survival_required_units(int32_t slot, int32_t stable_need_id,
                                     int32_t dt_days,
                                     const EnvironmentSample &sample,

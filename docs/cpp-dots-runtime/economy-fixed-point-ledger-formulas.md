@@ -475,13 +475,15 @@ ordinary expansion requires demand > installed_capacity * 1.10
 survival expansion requires demand > installed_capacity * 1.05
 ```
 
-Existing output must also have at least 80% sell-through and at most 10%
-discard. Pending construction, suspended capacity, owner vacancies, materials,
-resources, input chains, sponsor cash, and installed-capacity sufficiency have
-distinct rejection codes. A suspended owner lot retains one owner slot for
-recovery but hires no employees and produces nothing. An active owner vacancy
-is resolved only by the employment pass and cannot reserve or transfer
-investment capital.
+Any positive marginal output deficit with positive projected utilization may
+enter economic viability evaluation. Historical sell-through is an absorption
+estimate for projected cash revenue, not an independent 80% entry gate;
+discard is a production/utilization diagnostic, not an independent 10% veto.
+Pending construction, suspended capacity, owner vacancies, materials,
+resources, input chains, sponsor cash, and installed-capacity sufficiency retain
+distinct rejection codes. A suspended owner lot retains no production claim,
+hires no employees, and produces nothing. An active owner vacancy is resolved
+only by the employment pass and cannot reserve or transfer investment capital.
 
 For one proposed building at planned utilization `u`:
 
@@ -523,17 +525,21 @@ single-building utilization `U_g`, current sellable output `Q_g`, merchant cash
 purchases `M_g`, and discarded output `D_g` on the same sparse `(cell, good)` lane:
 
 ```text
-driver_strength_g = max(P_g / min_shortage, U_g / min_utilization)
+driver_strength_g = max(P_g, U_g)
 sell_through_g = M_g / Q_g
 discard_g = D_g / Q_g
 ```
 
 The driver is ordered by strength, pressure, utilization, then stable good ID.
-Only its values gate the candidate. If `Q_driver == 0`, historical sell-through
-and discard gates are skipped. Producer support and owner retention never enter
-`M_g`. Expected revenue sums each output after applying its own historical
-merchant absorption, or its persistent deficit when no history exists. This
-prevents unabsorbed by-products from creating fictitious profit.
+The driver must have a positive marginal deficit and positive utilization.
+Producer support and owner retention never enter `M_g`. Expected revenue sums
+each output after applying its own historical merchant absorption, or its
+persistent deficit when no history exists. Thus weak sell-through can still
+make the margin or payback calculation fail without being treated as proof of
+unprofitability by itself. Discard remains visible to utilization feedback and
+diagnostics. `investment_min_shortage_q16` and
+`investment_min_utilization_q16` remain serialized policy fields for PKEC
+compatibility but no longer gate candidate entry or normalize ranking.
 
 ## ACTIVE owner job income reallocation
 
@@ -626,6 +632,43 @@ not clamp normal prices; the remaining bounds are integer-safety guards. The pro
 cost anchor is still a dynamic soft floor and may lift an underpriced active output only
 within the configured price-rise rate.
 
+## Flow replacement procurement and producer settlement
+
+The merchant inventory target remains the long-horizon stock authority. Procurement now
+uses projected post-cycle stock so recurring withdrawals can be replaced before current
+stock falls below the target:
+
+```text
+forecast_daily = max(realized_withdrawal_ema,
+                     household_demand_ema + business_demand_ema)
+                 + export_ema
+cycle_withdrawal = forecast_daily * epoch_days
+projected_stock = max(0, current_stock - cycle_withdrawal)
+restock_quota = max(0, merchant_inventory_target - projected_stock)
+
+survival_high_water = merchant_inventory_target * 1.20
+continuity_quota = min(sellable, cycle_withdrawal,
+                       max(0, survival_high_water - projected_stock))
+procurement_quota = min(sellable, max(restock_quota, continuity_quota))
+```
+
+`continuity_quota` applies only to survival food and clothing. Stock above the high-water
+band receives no continuity purchase, so the mechanism replaces genuine flow without
+creating unlimited inventory accumulation.
+
+Existing merchant cash is allocated in strict transient tiers: survival replacement,
+production-input reserve gaps, then ordinary inventory. Each tier retains the existing
+priority-weighted capped redistribution. After each good receives a quantity and cash cap,
+that good's merchant purchase and bounded producer support are distributed among offers in
+proportion to sellable quantity using stable prefix rounding. Total quantity, cash, stock,
+and mint values remain unchanged by the split and deterministic across worker/scalar paths.
+
+For owner-signature working capital, survival producers receive the full input cost of the
+currently executable, expected-to-sell scale before ordinary score filling. Executable scale
+is capped by the existing renewable harvest/standing-resource availability and by the same
+forecast procurement quota. A physically blocked or overstocked producer therefore cannot
+consume pooled owner cash merely because its output is classified as survival.
+
 ## Suspended producer probe and liquidation gate
 
 ```text
@@ -645,3 +688,24 @@ advance_liquidation_review = probe_executable
 Suspension sets owner demand to zero but does not remove the building. Probe demand is
 unfunded signal demand only: it changes neither stock nor cash. Non-executable reviews reset
 the consecutive failure count. Service buildings do not evaluate these formulas.
+
+## Renewable harvest budget
+
+All quantities below use resource fixed units. For renewable resource `r` in
+cell `c`, the daily production and investment budget is:
+
+```text
+reserve_floor = frozen_reserve[c,r] * resource_min_reserve_q16 / Q16_ONE
+harvestable = max(0, reserve[c,r] - reserve_floor)
+yield_biomass = min(ecology_capacity[r] / 8, harvestable)
+safe_yield_daily = yield_biomass * ecology_growth_q16[r] / Q16_ONE
+                   * resource_safe_harvest_q16 / Q16_ONE
+epoch_extract_budget = safe_yield_daily * epoch_days
+```
+
+All `extract` edges in the same `(cell,resource)` lane share the epoch budget;
+`capacity` edges use standing reserve and do not spend it. Investment subtracts
+peak daily extraction committed by installed buildings, pending construction,
+and candidates already allocated in the same portfolio. Non-renewable entry uses
+`reserve / resource_min_horizon_days` as its daily budget. A zero safe-harvest
+factor disables the production budget and investment runway gates.

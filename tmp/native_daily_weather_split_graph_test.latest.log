@@ -1,0 +1,73 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native daily weather split graph ===
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=80 native_ms=0.433 water=73 land=7
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=80 native_ms=0.075 lakes=0 rivers=0 volcanoes=0
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=73 | land_below_sea=0.0% | terr_distinct=6 entropy=1.789bit | river_ratio=0.000%
+MapGenerator v7: per-cell 13ms (80 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 762) seed=737373
+    [fused] terrain=593.2ms erosion=2.3ms(ok=true) river=12.3ms(ok=true) latitude=0.2ms coast_sdf=2.7ms(ok=true)
+  geometry fields (fused C++): 681ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+WARNING: [DCWorldExt] encode_cell_luts: not bound - fallback to GDScript
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] bake_cell_luts (res://scripts/rendering/map_baker.gd:4927)
+       [1] bake_world (res://scripts/rendering/map_baker.gd:966)
+       [2] generate (res://scripts/geography/map_generator.gd:1290)
+       [3] _run (res://tests/native_daily_weather_split_graph_test.gd:36)
+       [4] _init (res://tests/native_daily_weather_split_graph_test.gd:16)
+  encode: 1101ms
+MapBaker v6: total 1782ms
+MapGenerator v7: bake 1784ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=80
+[native_generation] path=gdext n=80 published=9 native_ms=0.032 compute_ms=0.005 flush_ms=0.027
+[hex_cell] facade ENABLED (80 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.68ms wind=0.04ms psi=0.03ms(ran=true) upwelling=0.01ms total=0.85ms
+PhysicalCirculation solve@phase=1.50 total=1ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 1ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=80 goods=120 cohorts=0 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1
+[country] ACTIVE native authority countries=1 cells=80 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+  [PASS] map generation returned map
+  [PASS] map generation returned world_data
+[sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=-1.000, k x1.00)
+  [PASS] native split round succeeds
+  [PASS] native split round completes
+  [PASS] spread mode produced non-final slices
+  [PASS] non-final slices do not expose intermediate moisture
+  [PASS] native moisture slot evolves before visible commit
+  [PASS] interleaved bulk and keyed refresh preserve in-flight native moisture
+  [PASS] final visible moisture matches native slot
+  [PASS] completed round changes visible moisture
+  [PASS] monolithic weather node was skipped
+  [PASS] weather field subnode reported
+  [PASS] weather commit subnode reported
+  [PASS] weather distribute subnode reported
+  [PASS] weather summary subnode reported
+  [PASS] weather cyclone subnode reported
+  [PASS] weather aggregate reported
+  [PASS] moisture publishes once at native round completion
+  [PASS] front snapshot remains array
+=== done: 19 checks, 0 failures ===
+ERROR: 12 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 40 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

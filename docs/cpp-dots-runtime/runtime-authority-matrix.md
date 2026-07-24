@@ -106,5 +106,14 @@ BuildingGroup and recovery state and does not add per-building identity.
 `EconomyProfile` compiles the four portfolio/liquidation controls plus bounded
 growth, new-type seeding, and merchant-transition improvement controls. PKEC
 v19 persists the portfolio controls plus pending recovery state/cooldown; v18
-loads with deterministic defaults. CSV v20 observes portfolio and partial-liquidation metrics.
+loads with deterministic defaults. CSV v21 observes portfolio, partial-liquidation, and procurement-tier metrics.
 There is no GDScript fallback or new DataCore slot.
+
+## Climate moisture visibility override (current)
+
+`DCWorldExt.cell_moisture` remains the simulation authority; no schema,
+component ID, scheduler node, or save field was added. Native daily pass nodes
+retain slot authority but defer only their visible `MapData` publish until the
+round finalizer. GDScript/Godot remains a snapshot consumer. Standalone,
+legacy, PROBE, and A/B pass entry points keep immediate flush unless they
+explicitly request `defer_visible_publish`.

@@ -568,6 +568,15 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var satisfaction: PackedInt32Array = snapshot.get(
 		"survival_satisfaction_by_cohort_q16",
 		snapshot.get("satisfaction_by_cohort_q16", PackedInt32Array()))
+	var overall_satisfaction: PackedInt32Array = snapshot.get(
+		"overall_satisfaction_by_cohort_q16", satisfaction)
+	var living_levels: PackedInt32Array = snapshot.get(
+		"living_standard_level_by_cohort", PackedInt32Array())
+	var welfare_available := bool(snapshot.get("welfare_detail_available", false))
+	var welfare_need_offsets: PackedInt32Array = snapshot.get("welfare_need_offsets", PackedInt32Array())
+	var welfare_need_ids: PackedInt32Array = snapshot.get("welfare_need_ids", PackedInt32Array())
+	var welfare_need_satisfaction: PackedInt32Array = snapshot.get(
+		"welfare_need_satisfaction_q16", PackedInt32Array())
 	var merchant_flags: PackedByteArray = snapshot.get("merchant_flags", PackedByteArray())
 	var owner_employed: PackedInt64Array = snapshot.get("owner_employed_by_cohort", PackedInt64Array())
 	var employee_employed: PackedInt64Array = snapshot.get("employee_employed_by_cohort", PackedInt64Array())
@@ -585,6 +594,12 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var demand_good_indices: PackedInt32Array = snapshot.get("demand_good_indices", PackedInt32Array())
 	var demand_quantities: PackedInt64Array = snapshot.get("demand_per_capita_daily", PackedInt64Array())
 	var demand_good_ids: PackedStringArray = snapshot.get("demand_good_stable_ids", PackedStringArray())
+	var demand_need_ids: PackedStringArray = snapshot.get("demand_need_stable_ids", PackedStringArray())
+	var attribution_good_count := int(snapshot.get("demand_attribution_good_count", 0))
+	var wealth_demand_delta: PackedInt64Array = snapshot.get(
+		"demand_wealth_delta_per_capita_daily", PackedInt64Array())
+	var price_demand_delta: PackedInt64Array = snapshot.get(
+		"demand_price_delta_per_capita_daily", PackedInt64Array())
 	var local_prices := {}
 	var local_technology_available := {}
 	var enforce_local_technology := false
@@ -604,7 +619,19 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		var ethnicity_id := String(ethnicity_ids[ethnicity_indices[i]]) if ethnicity_indices[i] >= 0 and ethnicity_indices[i] < ethnicity_ids.size() else "unknown"
 		var profession_name := String(profession_names[profession_indices[i]]) if profession_indices[i] >= 0 and profession_indices[i] < profession_names.size() else profession_id
 		var ethnicity_name := String(ethnicity_names[ethnicity_indices[i]]) if ethnicity_indices[i] >= 0 and ethnicity_indices[i] < ethnicity_names.size() else ethnicity_id
-		var sat := float(satisfaction[i]) / 65536.0 if i < satisfaction.size() else 0.0
+		var sat := float(overall_satisfaction[i]) / 65536.0 if i < overall_satisfaction.size() else 0.0
+		var living_level := int(living_levels[i]) if i < living_levels.size() else -1
+		var living_name := _living_standard_name(living_level)
+		var need_satisfaction_by_id := {}
+		if welfare_need_offsets.size() == populations.size() + 1:
+			var welfare_begin := clampi(int(welfare_need_offsets[i]), 0, welfare_need_ids.size())
+			var welfare_end := clampi(int(welfare_need_offsets[i + 1]), welfare_begin, welfare_need_ids.size())
+			for welfare_cursor in range(welfare_begin, welfare_end):
+				var need_idx := int(welfare_need_ids[welfare_cursor])
+				if need_idx >= 0 and need_idx < demand_need_ids.size() \
+						and welfare_cursor < welfare_need_satisfaction.size():
+					need_satisfaction_by_id[String(demand_need_ids[need_idx])] = int(
+						welfare_need_satisfaction[welfare_cursor])
 		var population := int(populations[i])
 		var cohort_funds := int(funds[i]) if i < funds.size() else 0
 		var wealth_pc := cohort_funds / maxi(population, 1)
@@ -651,6 +678,18 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 				if demand_names.size() < 3:
 					demand_names.append(display_name)
 			var need_names: Array = metadata.get("need_names", [])
+			var need_satisfaction_total := 0
+			var need_satisfaction_count := 0
+			for raw_need_id in metadata.get("need_ids", []):
+				var need_id := String(raw_need_id)
+				if need_satisfaction_by_id.has(need_id):
+					need_satisfaction_total += int(need_satisfaction_by_id[need_id])
+					need_satisfaction_count += 1
+			var attribution_idx := i * attribution_good_count + good_idx
+			var attribution_available := welfare_available \
+				and attribution_good_count == demand_good_ids.size() \
+				and attribution_idx >= 0 and attribution_idx < wealth_demand_delta.size() \
+				and attribution_idx < price_demand_delta.size()
 			demand_rows.append({
 				"id": "demand_%s" % stable_id,
 				"stable_id": stable_id,
@@ -664,6 +703,11 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 				"daily_cost_raw": daily_cost if has_price else -1,
 				"need_ids": metadata.get("need_ids", []),
 				"need_names": need_names,
+				"need_satisfaction_q16": need_satisfaction_total / need_satisfaction_count \
+					if need_satisfaction_count > 0 else -1,
+				"attribution_available": attribution_available,
+				"wealth_delta_raw": int(wealth_demand_delta[attribution_idx]) if attribution_available else 0,
+				"price_delta_raw": int(price_demand_delta[attribution_idx]) if attribution_available else 0,
 				"has_bundle": bool(metadata.get("has_bundle", false)),
 				"has_substitute": bool(metadata.get("has_substitute", false)),
 				"is_unallocated_alternative": quantity <= 0 and unlocked_alternative,
@@ -693,18 +737,24 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		var demand_subtitle := "主要：%s%s" % ["、".join(demand_names), " 等" if demand_count > demand_names.size() else ""] if demand_count > 0 else "当前无消费需求"
 		rows.append({
 			"id": "cohort_%s" % str(handles[i] if i < handles.size() else i),
-			"name": "%s · %s" % [profession_name, ethnicity_name],
+			"name": profession_name,
+			"cohort_identity": ethnicity_name,
 			"population": "%s 人" % UITokens.format_compact_number_cn(float(population), 1),
 			"wealth": "人均 %s" % _money_text(wealth_pc),
 			"income": "+%s" % _money_text(income_pc) if settlement_available else "+—",
 			"expense": "−%s" % _money_text(expense_pc) if settlement_available else "−—",
 			"net": "%s%s" % ["+" if net_pc > 0 else ("−" if net_pc < 0 else ""), _money_text(absi(net_pc))] if settlement_available else "—",
 			"net_positive": net_pc >= 0,
-			"status": "%s就业 %s · 生存满足 %.1f%% · 结算 %d日" % [
+			"status": "%s%s · 满意度 %.1f%% · 就业 %s · 结算 %d日" % [
 				"商人 · " if i < merchant_flags.size() and merchant_flags[i] != 0 else "",
-				UITokens.format_compact_number_cn(float(owners + employees), 1), sat * 100.0, settlement_days],
+				ethnicity_name, sat * 100.0,
+				UITokens.format_compact_number_cn(float(owners + employees), 1), settlement_days],
 			"accent": UITokens.ACCENT,
-			"icon": "growth",
+			"icon": _profession_icon(profession_id),
+			"living_icon": _living_standard_icon(living_level),
+			"living_accent": _living_standard_accent(living_level),
+			"living_standard": living_name,
+			"satisfaction": "%.1f%%" % (sat * 100.0),
 			"demand_rows": demand_rows,
 			"demand_groups": demand_groups,
 			"income_rows": income_rows,
@@ -755,8 +805,63 @@ func _group_demand_rows_by_usage(rows: Array) -> Array:
 		var group_rows: Array = group.get("rows", [])
 		group_rows.append(row)
 		group["rows"] = group_rows
+		var satisfaction_total := 0
+		var satisfaction_count := 0
+		for group_row in group_rows:
+			var value := int((group_row as Dictionary).get("need_satisfaction_q16", -1))
+			if value >= 0:
+				satisfaction_total += value
+				satisfaction_count += 1
+		group["satisfaction"] = "满足 %.0f%%" % (
+			float(satisfaction_total) * 100.0 / 65536.0 / satisfaction_count) \
+			if satisfaction_count > 0 else ""
 		groups[group_idx] = group
 	return groups
+
+
+func _living_standard_name(level: int) -> String:
+	return ["赤贫", "挣扎", "贫困", "温饱", "小康", "富裕", "奢华"][level] \
+		if level >= 0 and level < 7 else "待评估"
+
+
+func _living_standard_icon(level: int) -> String:
+	return ["living_destitute", "living_struggling", "living_poor", "living_secure",
+		"living_comfortable", "living_affluent", "living_luxury"][level] \
+		if level >= 0 and level < 7 else "history"
+
+
+func _profession_icon(profession_id: String) -> String:
+	if profession_id.contains("merchant"):
+		return "profession_merchant"
+	if profession_id.contains("fisher"):
+		return "profession_fisher"
+	if profession_id.contains("hunter"):
+		return "target"
+	if profession_id.contains("forager"):
+		return "eco"
+	if profession_id.contains("farmer") or profession_id.contains("agricultural"):
+		return "crop"
+	if profession_id.contains("artisan") or profession_id.contains("smith") \
+			or profession_id.contains("carpenter"):
+		return "profession_artisan"
+	if profession_id.contains("engineer") or profession_id.contains("chemist") \
+			or profession_id.contains("scientist") or profession_id.contains("teacher"):
+		return "profession_scholar"
+	if profession_id.contains("owner") or profession_id.contains("aristocrat"):
+		return "profession_owner"
+	if profession_id.contains("unemployed"):
+		return "profession_unemployed"
+	return "profession_worker"
+
+
+func _living_standard_accent(level: int) -> Color:
+	if level <= 0:
+		return UITokens.RISK
+	if level <= 2:
+		return UITokens.WARN
+	if level <= 4:
+		return UITokens.GOOD
+	return UITokens.RESOURCE
 
 
 func _demand_good_metadata(snapshot: Dictionary, cohort_idx: int) -> Dictionary:
@@ -932,6 +1037,16 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 	var role_required: PackedInt64Array = snapshot.get("employee_required", PackedInt64Array())
 	var role_filled: PackedInt64Array = snapshot.get("employee_filled", PackedInt64Array())
 	var wage_suspended: PackedByteArray = snapshot.get("wage_suspended", PackedByteArray())
+	var operating_states: PackedByteArray = snapshot.get("operating_state", PackedByteArray())
+	var pending_operating_states: PackedByteArray = snapshot.get(
+		"pending_operating_state", PackedByteArray())
+	var severe_loss_cycles: PackedInt32Array = snapshot.get(
+		"severe_loss_cycles", PackedInt32Array())
+	var recovery_cycles: PackedInt32Array = snapshot.get("recovery_cycles", PackedInt32Array())
+	var realized_profit_margins: PackedInt32Array = snapshot.get(
+		"realized_profit_margin_q16", PackedInt32Array())
+	var technology_available: PackedByteArray = snapshot.get(
+		"building_technology_available", PackedByteArray())
 	var owner_slots: PackedInt64Array = snapshot.get("building_owner_slots", PackedInt64Array())
 	var period_days := maxi(1, int(snapshot.get("period_days", 1)))
 	for i in range(group_types.size()):
@@ -947,24 +1062,32 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 			(count * int(owner_slots[type_idx]) if type_idx >= 0 and type_idx < owner_slots.size() else count)
 		var owner_required := int(owner_required_by_group[i]) if i < owner_required_by_group.size() else 0
 		if i >= owner_required_by_group.size():
-			var utilization := int(planned_utilization[i]) if i < planned_utilization.size() else 65536
-			owner_required = int(owner_physical_capacity * utilization / 65536.0)
-			if owner_required == 0 and owner_physical_capacity > 0 and utilization > 0:
-				owner_required = 1
+			owner_required = owner_physical_capacity
 		var owner_actual := int(filled_owner[i]) if i < filled_owner.size() else 0
 		var owner_open := int(owner_openings[i]) if i < owner_openings.size() else maxi(0, owner_required - owner_actual)
+		var operating_state := int(operating_states[i]) if i < operating_states.size() else 0
+		var is_available := type_idx < 0 or type_idx >= technology_available.size() \
+			or int(technology_available[type_idx]) != 0
+		var is_loss_suspended := operating_state == 1
+		var is_recovery_probe := operating_state == 2
+		var owner_job_value := "%d / %d" % [owner_actual, owner_required]
+		if owner_required == 0 and owner_physical_capacity > 0:
+			owner_job_value += "（物理容量 %d）" % owner_physical_capacity
 		var job_rows := [
-			{"id": "owner_job", "name": "业主（本期岗位） · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1), "value": "%d / %d" % [owner_actual, owner_required], "ratio": float(owner_actual) / float(owner_required) if owner_required > 0 else 1.0},
+			{"id": "owner_job", "name": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1), "value": owner_job_value, "ratio": float(owner_actual) / float(owner_required) if owner_required > 0 else 0.0},
 		]
 		if role_offsets.size() == group_types.size() + 1:
 			for role in range(role_offsets[i], role_offsets[i + 1]):
 				var required := int(role_required[role]) if role < role_required.size() else 0
 				var filled := int(role_filled[role]) if role < role_filled.size() else 0
+				var role_value := "%d / %d" % [filled, required]
+				if required == 0 and (is_loss_suspended or not is_available):
+					role_value += "（岗位已释放）"
 				job_rows.append({
 					"id": "job_%d" % role,
 					"name": "雇员 · %s" % _profession_name(snapshot, int(role_professions[role]) if role < role_professions.size() else -1),
-					"value": "%d / %d" % [filled, required],
-					"ratio": float(filled) / float(required) if required > 0 else 1.0,
+					"value": role_value,
+					"ratio": float(filled) / float(required) if required > 0 else 0.0,
 				})
 		var production_rows := []
 		var input_row_begin := production_rows.size()
@@ -1002,28 +1125,88 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 			for role in range(role_offsets[i], role_offsets[i + 1]):
 				staffing_required += int(role_required[role]) if role < role_required.size() else 0
 				staffing_actual += int(role_filled[role]) if role < role_filled.size() else 0
-		var status_parts: Array[String] = ["本期到岗 %d/%d" % [staffing_actual, staffing_required]]
-		if owner_open > 0:
-			status_parts.append("招聘空缺 %d" % owner_open)
-		var idle_owner_capacity := maxi(0, owner_physical_capacity - owner_required)
-		if idle_owner_capacity > 0:
-			status_parts.append("闲置产能 %d 席" % idle_owner_capacity)
-		status_parts.append("实际产能 %.1f%%" % (
-			float(capacity_q16[i]) * 100.0 / 65536.0 if i < capacity_q16.size() else 0.0))
-		var status := " · ".join(status_parts)
-		if i < wage_suspended.size() and int(wage_suspended[i]) != 0:
-			status = "工资未足额支付 · 本期停产"
-		if i < capacity_q16.size() and int(capacity_q16[i]) == 0 and _building_resource_depleted(snapshot, type_idx):
-			status = "资源短缺"
+		var planned_percent := float(planned_utilization[i]) * 100.0 / 65536.0 \
+			if i < planned_utilization.size() else 100.0
+		var actual_percent := float(capacity_q16[i]) * 100.0 / 65536.0 \
+			if i < capacity_q16.size() else 0.0
+		var state_label := "正常经营"
+		var state_detail := ""
+		var state_meta := ""
+		var state_accent := UITokens.GOOD
+		var show_state_summary := false
+		if not is_available:
+			state_label = "技术停用"
+			state_detail = "建筑仍保留，但当前技术条件不可用；本期不开放岗位，也不参与生产。"
+			state_accent = UITokens.WARN
+			show_state_summary = true
+		elif is_loss_suspended:
+			state_label = "亏损停产"
+			state_detail = "建筑仍保留；因连续经营亏损已释放全部岗位，等待恢复评估。"
+			var loss_count := int(severe_loss_cycles[i]) if i < severe_loss_cycles.size() else 0
+			var realized_margin := float(realized_profit_margins[i]) * 100.0 / 65536.0 \
+				if i < realized_profit_margins.size() else 0.0
+			state_meta = "上一经营期利润率 %.1f%%" % realized_margin
+			if loss_count > 0:
+				state_meta += " · 连续亏损 %d 期" % loss_count
+			state_accent = UITokens.RISK
+			show_state_summary = true
+		elif is_recovery_probe:
+			state_label = "恢复试产"
+			state_detail = "正在以受限产能验证盈利能力；岗位只按试产规模重新开放。"
+			var recovery_count := int(recovery_cycles[i]) if i < recovery_cycles.size() else 0
+			state_meta = "恢复观察 %d 期 · 计划产量 %.1f%%" % [recovery_count, planned_percent]
+			state_accent = UITokens.WARN
+			show_state_summary = true
+		elif i < wage_suspended.size() and int(wage_suspended[i]) != 0:
+			state_label = "资金停产"
+			state_detail = "工资未足额支付，本期生产暂停；建筑和岗位配置仍然保留。"
+			state_accent = UITokens.RISK
+			show_state_summary = true
+		elif i < capacity_q16.size() and int(capacity_q16[i]) == 0 \
+				and _building_resource_depleted(snapshot, type_idx):
+			state_label = "资源短缺"
+			state_detail = "本地自然资源不足，当前无法形成有效产能。"
+			state_accent = UITokens.WARN
+			show_state_summary = true
+		else:
+			var status_parts: Array[String] = ["到岗 %d/%d" % [staffing_actual, staffing_required]]
+			if owner_open > 0:
+				status_parts.append("招聘空缺 %d" % owner_open)
+			status_parts.append("计划 %.1f%%" % planned_percent)
+			status_parts.append("产能 %.1f%%" % actual_percent)
+			state_label = " · ".join(status_parts)
+		var pending_state := int(pending_operating_states[i]) \
+			if i < pending_operating_states.size() else 255
+		if pending_state == 0 and operating_state != 0:
+			state_meta += (" · " if not state_meta.is_empty() else "") + "下期恢复正常经营"
+		elif pending_state == 1 and operating_state != 1:
+			state_meta += (" · " if not state_meta.is_empty() else "") + "下期转入亏损停产"
+		var headline_profit_label := "利润" if profit >= 0 else "亏损"
+		var headline_profit := "%s%s" % ["+" if profit > 0 else "", _money_text(profit)]
+		if is_loss_suspended:
+			headline_profit_label = "状态"
+			headline_profit = "停产"
+		elif is_recovery_probe:
+			headline_profit_label = "状态"
+			headline_profit = "试产"
+		elif not is_available:
+			headline_profit_label = "状态"
+			headline_profit = "停用"
+		if is_loss_suspended:
+			finance.warning = "本期停产，无经营流水；上方利润率来自停产前的上一经营期。"
 		rows.append({
 			"id": "building_%d_%d" % [type_idx, i],
 			"name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"),
 			"count": "%d 栋" % count,
 			"owner": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1),
-			"status": status,
-			"profit": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)],
-			"profit_label": "利润" if profit >= 0 else "亏损",
-			"accent": UITokens.GOOD if profit > 0 else (UITokens.RISK if profit < 0 else UITokens.TEXT_MUTED),
+			"status": state_label,
+			"state_summary": {"label": state_label, "detail": state_detail,
+				"meta": state_meta, "accent": state_accent,
+				"icon": "regenerate" if is_recovery_probe else "warning"} \
+				if show_state_summary else {},
+			"profit": headline_profit,
+			"profit_label": headline_profit_label,
+			"accent": state_accent if show_state_summary else (UITokens.GOOD if profit > 0 else (UITokens.RISK if profit < 0 else UITokens.TEXT_MUTED)),
 			"icon": "building", "job_rows": job_rows,
 			"production_rows": production_rows, "finance": finance, "visible": true,
 		})

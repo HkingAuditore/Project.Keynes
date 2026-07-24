@@ -29,12 +29,13 @@ breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 
 全量地块录制会同步编码、写盘，可能主动制造卡顿，因此先录性能基线，再短时开启地块录制，
 并检查 `tile_ms/format_ms/flush_ms/encoder_path`。
 
-经济录制已使用原生 CSV v16 双缓冲：GM 面板显示 `captured/written epoch`、
+经济录制已使用原生 CSV v21 双缓冲：GM 面板显示 `captured/written epoch`、
 `queued_batches`、`capture_ms_last/p95/max` 和 worker 耗时。正常录制为 `recording`，点击停止后为
-`draining`，排空后为 `completed`。`queue_full` 表示长期产生速度超过编码/磁盘吞吐，recorder
-已保留并写完所有已接受 epoch，同时用 `first_unrecorded_epoch` 标明停止边界；`row_limit`
+`draining`，排空后为 `completed`。两个 batch 都被占用时，提交抓取通过
+`backpressure_wait_count/backpressure_wait_ms_total` 无损等待 writer，不再以 `queue_full` 停止；`row_limit`
 表示下一完整 epoch 会超过上限，因此整批未接收；`write_failed` 表示文件错误，五表回退到
-上一个完整 epoch。不要把后台 worker 时间算进 SUS job 耗时，主线程成本看 `capture_ms_*`。
+上一个完整 epoch。不要把后台 worker 时间算进 SUS job 耗时；主线程复制成本看 `capture_ms_*`，
+writer 吞吐不足造成的快进减速看背压等待指标。
 若只需排查一个地块，先在地图选中它，再勾选 GM 面板的“仅录制当前地块”后开始；选区会在
 start 时锁定，文件名包含 `cell/q/r`。这种模式显著减少四张明细表的抓取、编码与写盘量，但
 summary 仍是全局一行，不能把它误当成该地块的小计。
@@ -1246,6 +1247,37 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
 
 - `building_employment` 长：比较 active building cells、group count、owner/employee filled；不应出现
   `cell_count × group_count` 扫描。
+## Moisture ping-pong diagnosis (2026-07-24)
+
+For adjacent-tick moisture jumps, first distinguish native graph slices from
+completed rounds. A completed round must report `moisture_committed=true` and
+`moisture_commit_path=slot_snapshot_to_round_map`, with
+`moisture_commit_slot_size` equal to the world cell count; intermediate slices
+should leave visible `MapData.moisture_arr` unchanged. The tile recorder exports
+the same commit fields. If the slot changes but the map does not change after
+`done=true`, inspect whether the scheduler round map and recorder map identities
+diverged; `bound_map_flush_fallback` indicates a stale-extension compatibility
+path rather than the normal commit.
+
+For low long-term variance, verify the active profile uses
+`runtime_moisture_base_relax_rate=0.24` and
+`weather_direct_moisture_enabled=false`. Direct weather injection is a
+compatibility opt-in; enabling it intentionally restores a second moisture
+writer and should be treated as a balancing experiment.
+
+At a 10-day native cadence, `0.24/day` integrates to about `0.936` per
+completed round. Large changes at completed-round boundaries are valid; a
+flash is specifically an intermediate-slice publish or a move-then-revert
+sequence. Do not reduce the response rate to hide a bridge/publish defect.
+
+If completed snapshots are bit-identical even though Pass-A inputs change,
+check for `refresh_slots_from_map()` or `refresh_slots_from_map_keys()` between native slices. The
+ACTIVE moisture transaction must preserve `cell_moisture` across those calls
+until the deferred finalizer publishes the round. Reproductions should insert
+both an explicit bulk refresh and a keyed `cell_moisture` refresh after every
+non-final slice; the native slot must stay bit-identical before/after each
+inserted refresh while visible MapData remains unchanged.
+
 ## Economy rolling-bucket stall diagnosis (2026-07-20, current)
 
 Production cadence is always five days. A periodic stall must be attributed to
@@ -1268,6 +1300,22 @@ inside prepare/publish wall time and must not be added to them as an independent
 wall-time component. Demand-basis precomputation uses stable disjoint worker
 ranges; a high `building_production_ms` after this cache is warm points to actual
 input/output/payroll work rather than repeated household elasticity formulas.
+
+Economy CSV queue saturation now applies lossless writer backpressure. Check
+`backpressure_wait_count` and `backpressure_wait_ms_total`; sustained growth
+means CSV encoding or disk throughput is limiting fast-forward, so narrow the
+sampled cells or enabled dimensions when latency matters. `row_limit`,
+`write_failed`, and `csv_flush_failed` remain terminal. A temporary two-batch
+backlog must not display the old “writer did not keep up” stop warning.
+
+Investment diagnostics must follow projected absorbed revenue, operating
+margin, payback, sponsor capital, materials, input coverage, and resource
+rejection reasons. Do not interpret sub-80% sell-through, above-10% discard,
+sub-12.5% shortage, or sub-65% utilization as independent proof that entry is
+unprofitable. Sell-through lowers projected cash revenue; discard remains a
+utilization/diagnostic signal. Legacy rejection codes `6/7` are retained but
+are not emitted by the current scan, and `15` means no positive marginal
+opportunity.
 
 生产并行诊断必须读取 `building_production_worker_tasks`，不要用 household/market 的
 `worker_tasks` 代替。`building_production_ms` 是整个 production range 的 wall time；
@@ -1296,7 +1344,9 @@ input/output/payroll work rather than repeated household elasticity formulas.
   判断停产原因。
 - 先比较 `building_base_wages_due/paid`、投入采购现金、产出收入、销售后分配与商人购买力，不能
   用铸币掩盖。
-- CSV v14 building 行用 `owner_capacity/owner_required/planned_owner_equivalent/filled_owner/owner_openings` 区分物理容量、真实活跃 owner 岗位、利用率折算观察量、实际到岗和真实招聘空缺，并用 `projected_owner_income_per_day` 解释 ACTIVE 业主流动排序；活跃组 required 等于 capacity，只有亏损停产/不可用组为 0，employee required 才随 planned utilization 缩放。不要用 planned equivalent 或 `count - filled_owner` 推断失业者可进入的岗位。summary 另提供 `building_owner_job_reallocations/building_owner_job_profession_changes/building_owner_job_probability_skips`；market 还提供 `realized_withdrawal_ema/production_input_reserve/household_available_stock/merchant_inventory_target/merchant_procurement_shortfall`；
+- CSV v14 building 行用 `owner_capacity/owner_required/planned_owner_equivalent/filled_owner/owner_openings` 区分物理容量、实际 owner 岗位目标、利用率折算生产等效人数、实际到岗和真实招聘空缺，并用 `projected_owner_income_per_day` 解释 ACTIVE 业主流动排序；ACTIVE required 等于完整 capacity，RECOVERY required 才随 probe capacity 与 planned utilization 缩放，亏损停产/不可用组为 0。employee required、投入、产量和资源消耗仍随 planned utilization 缩放。不要用 planned equivalent 或 `count - filled_owner` 推断失业者可进入的岗位。summary 另提供 `building_owner_job_reallocations/building_owner_job_profession_changes/building_owner_job_probability_skips`；market 还提供 `realized_withdrawal_ema/production_input_reserve/household_available_stock/merchant_inventory_target/merchant_procurement_shortfall`；
+  若低利用率采集建筑的 projected income 异常，核对它是否近似 `(expected cash owner pool + in-kind livelihood value) / max(owner_required, filled_owner) / period_days`。ACTIVE 的 `filled_owner > planned_owner_equivalent` 是正常的低产量自营业，不是超员；实物价值只解释生活覆盖，不应伴随现金或 money audit 增量。
+  若失业与 owner jobs 反向成千跳变，同时采集/渔业组在 ACTIVE 与 SUSPENDED 间切换，检查自营业业务盈余。无雇员组只要 `last_revenue + last_in_kind_livelihood_value > last_input_cost` 就不应累积 severe loss；生活篮子未完全覆盖应出现在 livelihood coverage，而不是整组停产。
   若 `trade_completed_scans` 长期为零，按 `trade_plan_phase → trade_scan_cursor/total → trade_route_cursor/total → trade_plan_reset_count → trade_last_plan_reset_reason` 排查活性。只有规范化后的 passable/cost/neighbor 或国界变化才应重置；纯 terrain ID 重分类不得增加 reset count；
   summary 提供 `merchant_procurement_budget/reserved/spent`。若商人现金归零，先验证 spent 未超过
   budget 且 reserved 约为冻结期初现金的 12.5%，再排查居民消费或外部命令，而不是把采购阶段误判为耗尽现金。

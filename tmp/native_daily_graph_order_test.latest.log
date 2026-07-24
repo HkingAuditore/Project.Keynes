@@ -1,0 +1,21 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native daily graph order ===
+[OK] world_ext_daily_sim.cpp readable
+[OK] system_schedule.cpp readable
+[OK] map_generator.gd readable
+[OK] world_ext_climate.cpp readable
+[OK] world_ext_weather.cpp readable
+[OK] slice graph keeps pass_b before ocean
+[OK] slice graph splits weather before hydrology
+[OK] full-run helper keeps pass_b before ocean
+[OK] system schedule keeps pass_b before ocean
+[OK] slice patch refreshes deferred native daily nodes in graph order
+[OK] atomic yield-set constant is the minimal {2,6}
+[OK] spread yield-set + mode selector exist
+[OK] deferred node declaration reaches C++
+[OK] C++ slice consumes the yield-node hint
+[OK] native moisture transaction defers intermediate publish and commits in wrapper finalizer
+[OK] transpiration subtracts donor outflow before neighbor distribution
+[OK] weather direct moisture writes are gated
+PASS native daily graph order (17 checks)

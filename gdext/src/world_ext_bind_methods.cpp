@@ -69,6 +69,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_native_daily_tick);
     ClassDB::bind_method(D_METHOD("run_native_daily_slice", "tick_knobs"),
                          &DCWorldExt::run_native_daily_slice);
+    ClassDB::bind_method(D_METHOD("complete_native_daily_moisture_commit"),
+                         &DCWorldExt::complete_native_daily_moisture_commit);
     ClassDB::bind_method(D_METHOD("run_native_daily_finalizer", "knobs"),
                          &DCWorldExt::run_native_daily_finalizer);
     ClassDB::bind_method(D_METHOD("run_native_sim_tick", "ctx"),
@@ -235,6 +237,8 @@ void DCWorldExt::_bind_methods() {
 
     // CoW flush / refresh (performance-charter §11.2)
     ClassDB::bind_method(D_METHOD("flush_slots_to_map"),    &DCWorldExt::flush_slots_to_map);
+    ClassDB::bind_method(D_METHOD("flush_slots_to_map_keys", "slot_names"),
+                         &DCWorldExt::flush_slots_to_map_keys);
     ClassDB::bind_method(D_METHOD("refresh_slots_from_map"), &DCWorldExt::refresh_slots_from_map);
     ClassDB::bind_method(D_METHOD("refresh_slots_from_map_keys", "slot_names"),
                          &DCWorldExt::refresh_slots_from_map_keys);

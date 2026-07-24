@@ -103,6 +103,10 @@ func _run() -> void:
 	if cohort_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
 		failures.append("expanded population list exceeds the inspector scroll width")
 	var cohort_refs: Dictionary = cohort_list._row_refs.get("cohort_1", {})
+	if String((cohort_refs.get("name") as Label).text) != "工人" \
+			or (cohort_refs.get("icon") as IconBadge).icon_key != "profession_worker" \
+			or (cohort_refs.get("living_icon") as IconBadge).icon_key != "living_comfortable":
+		failures.append("population header did not separate profession and living-standard icons")
 	if not String((cohort_refs.get("income") as Label).text).begins_with("收入 ") \
 			or not String((cohort_refs.get("expense") as Label).text).begins_with("支出 "):
 		failures.append("population header does not identify income and expense as ledger entries")
@@ -112,7 +116,7 @@ func _run() -> void:
 	var demand_refs: Dictionary = cohort_refs.get("demand", {})
 	(demand_refs.get("button") as Button).pressed.emit()
 	if demand_requests.size() != 1 \
-			or String((demand_requests[0] as Dictionary).get("cohort_name", "")) != "工人 · 本地人口" \
+			or String((demand_requests[0] as Dictionary).get("cohort_name", "")) != "工人 · 本地人口 · 小康 · 满意度 82.0%" \
 			or ((demand_requests[0] as Dictionary).get("rows", []) as Array).size() != 2 \
 			or ((demand_requests[0] as Dictionary).get("groups", []) as Array).size() != 1:
 		failures.append("population demand detail action did not forward the selected cohort payload")
@@ -127,9 +131,11 @@ func _run() -> void:
 				visible_detail_cells += 1
 		var has_usage_group := false
 		var has_redundant_relation_text := false
+		var detail_text := ""
 		for node in dialog._rows_grid.find_children("", "Label", true, false):
 			var label_text := String((node as Label).text)
-			has_usage_group = has_usage_group or label_text == "基本生活"
+			detail_text += label_text + "\n"
+			has_usage_group = has_usage_group or label_text == "基本生活 · 满足 82%"
 			has_redundant_relation_text = has_redundant_relation_text \
 				or label_text.contains("用途：") or label_text.contains("替代品") \
 				or label_text.begins_with("方案 ")
@@ -139,6 +145,9 @@ func _run() -> void:
 			failures.append("demand detail dialog did not render one group and two four-column rows")
 		elif not has_usage_group or has_redundant_relation_text:
 			failures.append("demand detail dialog did not express substitution through usage grouping")
+		elif not detail_text.contains("财富 +0.020 · 价格 −0.005") \
+				or not detail_text.contains("与上次结算相同"):
+			failures.append("demand detail did not show wealth and price quantity attribution")
 		elif dialog_panels.is_empty() \
 				or (dialog_panels[0] as Control).size.x > 1280.0 \
 				or (dialog_panels[0] as Control).size.y > 720.0:
@@ -162,11 +171,19 @@ func _run() -> void:
 	if building_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
 		failures.append("expanded building list exceeds the inspector scroll width")
 	var building_refs: Dictionary = building_list._row_refs.get("building_1", {})
-	for group_id in ["jobs", "production", "finance"]:
+	if String((building_refs.get("name") as Label).text) != "纺织工坊" \
+			or not (building_refs.get("state_icon") as Control).visible:
+		failures.append("building header did not keep a name-only title with an abnormal-state icon")
+	for group_id in ["state_summary", "jobs", "production", "finance"]:
 		var group_panel := ((building_refs.get(group_id, {}) as Dictionary).get("panel") as Control)
 		if group_panel != null and group_panel.size.x > building_list.size.x + 0.5:
 			failures.append("expanded building %s card exceeds the building list width" % group_id)
 			break
+	var state_refs: Dictionary = building_refs.get("state_summary", {})
+	if not (state_refs.get("panel") as Control).visible \
+			or String((state_refs.get("label") as Label).text) != "亏损停产" \
+			or not String((state_refs.get("detail") as Label).text).contains("岗位已释放"):
+		failures.append("building operating-state summary was not rendered in the expanded row")
 
 	var deferred_cohorts := CohortList.new()
 	root.add_child(deferred_cohorts)
@@ -356,30 +373,33 @@ func _market_category(step: float) -> Dictionary:
 func _population_category(step: float) -> Dictionary:
 	return {
 		"cohort_rows": [
-			{"id": "cohort_1", "name": "工人 · 本地人口", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "需求满足 80% · 结算 5日", "accent": UITokens.ACCENT, "icon": "growth", "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
-			{"id": "cohort_2", "name": "商人 · 本地人口", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "商人 · 需求满足 90% · 结算 5日", "accent": UITokens.RESOURCE, "icon": "growth", "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
+			{"id": "cohort_1", "name": "工人", "cohort_identity": "本地人口", "living_standard": "小康", "satisfaction": "82.0%", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "本地人口 · 满意度 82.0%", "accent": UITokens.ACCENT, "icon": "profession_worker", "living_icon": "living_comfortable", "living_accent": UITokens.GOOD, "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
+			{"id": "cohort_2", "name": "商人", "cohort_identity": "本地人口", "living_standard": "富裕", "satisfaction": "90.0%", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "本地人口 · 满意度 90.0%", "accent": UITokens.RESOURCE, "icon": "profession_merchant", "living_icon": "living_affluent", "living_accent": UITokens.RESOURCE, "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
 		],
 	}
 
 
 func _demand_rows(step: float) -> Array:
 	return [
-		{"id": "demand_grain", "name": "谷物", "quantity": "%.3f" % (0.8 + step * 0.0001), "price": "1.25", "daily_cost": "1", "visible": true},
-		{"id": "demand_cloth", "name": "布料", "quantity": "0.040", "price": "2.5", "daily_cost": "0.1", "visible": true},
+		{"id": "demand_grain", "name": "谷物", "quantity": "%.3f" % (0.8 + step * 0.0001), "price": "1.25", "daily_cost": "1", "attribution_available": true, "wealth_delta_raw": 20, "price_delta_raw": -5, "visible": true},
+		{"id": "demand_cloth", "name": "布料", "quantity": "0.040", "price": "2.5", "daily_cost": "0.1", "attribution_available": true, "wealth_delta_raw": 0, "price_delta_raw": 0, "visible": true},
 	]
 
 
 func _demand_groups(step: float) -> Array:
-	return [{"id": "demand_usage_basic", "name": "基本生活", "rows": _demand_rows(step)}]
+	return [{"id": "demand_usage_basic", "name": "基本生活", "satisfaction": "满足 82%", "rows": _demand_rows(step)}]
 
 
 func _building_category(step: float) -> Dictionary:
 	return {
 		"building_rows": [{
 			"id": "building_1", "name": "纺织工坊", "count": "2 栋",
-			"owner": "业主 · 地主", "status": "产能 75.0%",
-			"profit_label": "利润", "profit": "+%.1f" % (40.0 + step),
-			"accent": UITokens.GOOD, "icon": "building", "visible": true,
+			"owner": "业主 · 地主", "status": "亏损停产",
+			"profit_label": "状态", "profit": "停产",
+			"accent": UITokens.RISK, "icon": "building", "visible": true,
+			"state_summary": {"label": "亏损停产", "detail": "建筑仍保留，岗位已释放。",
+				"meta": "上一经营期利润率 -50.0% · 连续亏损 3 期",
+				"accent": UITokens.RISK, "icon": "warning"},
 			"job_rows": [
 				{"id": "owner_job", "name": "业主 · 地主", "value": "2 / 2", "ratio": 1.0},
 				{"id": "worker_job", "name": "雇员 · 工人", "value": "30 / 40", "ratio": 0.75},
