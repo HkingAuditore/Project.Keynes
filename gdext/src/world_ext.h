@@ -164,6 +164,7 @@ public:
     godot::Dictionary configure_native_world(const godot::Dictionary &knobs);
     godot::Dictionary run_native_daily_tick(const godot::Dictionary &tick_knobs);
     godot::Dictionary run_native_daily_slice(const godot::Dictionary &tick_knobs);
+    void complete_native_daily_moisture_commit();
     // ② Native finalizer kernel for the round-complete delta-cap + thermal-init loops.
     godot::Dictionary run_native_daily_finalizer(godot::Dictionary knobs);
     godot::Dictionary run_native_sim_tick(const godot::Dictionary &ctx);
@@ -301,6 +302,7 @@ public:
     // arrays back into the C++ slots (needed when GDScript code writes
     // map.*_arr between C++ passes).
     void flush_slots_to_map();
+    void flush_slots_to_map_keys(const godot::PackedStringArray &slot_names);
     void refresh_slots_from_map();
     void refresh_slots_from_map_keys(const godot::PackedStringArray &slot_names);
     // dirty-mark-batch-2026-06：把所有 pending 的 mark_dirty_all 信号一次性 emit
@@ -2085,6 +2087,7 @@ private:
     godot::Dictionary                        _native_daily_report;
     godot::Dictionary                        _native_shadow_diff_report;
     bool                                      _native_daily_slice_active = false;
+    bool                                      _native_daily_moisture_commit_pending = false;
     int                                       _native_daily_slice_node_index = 0;
     int                                       _native_daily_slice_cell_cursor = 0;
     int                                       _native_daily_slice_range_node_index = -1;

@@ -226,5 +226,7 @@ void fragment() {
 			ocean_current_v, wind_v, visual_ice_fraction);
 	}
 
-	COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow);
+	COLOR = apply_global_adjustments(
+		col, wp, pixel_noise, dyn_snow, current_temp, moist, dyn_vitality, dyn_valid,
+		cover, is_water ? 0.0 : 1.0, veg == V_NONE ? 0.0 : 1.0);
 }

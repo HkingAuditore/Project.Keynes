@@ -416,6 +416,8 @@ func _test_economy_event_trace(compiled: Dictionary) -> void:
 	}, {}).get("ok", false)))
 	_expect("trace filter accepted", bool(ext.set_economy_trace_filter({
 		"cells": PackedInt32Array([0])}).get("ok", false)))
+	_expect("inspector welfare trace accepted", bool(
+		ext.set_economy_inspector_trace_cell(0).get("ok", false)))
 	var schema: Dictionary = ext.get_economy_event_schema()
 	var kinds: Dictionary = schema.get("kinds", {})
 	var cashflow_sources: Dictionary = schema.get("cashflow_sources", {})
@@ -443,6 +445,18 @@ func _test_economy_event_trace(compiled: Dictionary) -> void:
 		event_kinds.has(int(kinds.get("EPOCH_COMMITTED", -1))))
 	_expect("selected cell emits exact delta legs",
 		(batch.get("leg_field", PackedInt32Array()) as PackedInt32Array).size() > 0)
+	var welfare: Dictionary = ext.get_population_cell_snapshot(0)
+	var cohort_count := int(welfare.get("cohort_count", 0))
+	var good_count := int(welfare.get("demand_attribution_good_count", 0))
+	_expect("selected cell publishes bounded need satisfaction and living standards",
+		bool(welfare.get("welfare_detail_available", false)) and
+		(welfare.get("overall_satisfaction_by_cohort_q16", PackedInt32Array()) as PackedInt32Array).size() == cohort_count and
+		(welfare.get("living_standard_level_by_cohort", PackedInt32Array()) as PackedInt32Array).size() == cohort_count and
+		(welfare.get("welfare_need_offsets", PackedInt32Array()) as PackedInt32Array).size() == cohort_count + 1)
+	_expect("selected cell demand attribution aligns with cohort and good columns",
+		good_count == (compiled.good_ids as PackedStringArray).size() and
+		(welfare.get("demand_wealth_delta_per_capita_daily", PackedInt64Array()) as PackedInt64Array).size() == cohort_count * good_count and
+		(welfare.get("demand_price_delta_per_capita_daily", PackedInt64Array()) as PackedInt64Array).size() == cohort_count * good_count)
 	var last_event: int = int(batch.get("last_event_id", 0))
 	ext.ack_economy_events(&"trace_test", last_event)
 	_expect("consumer ack advances independently", int(ext.poll_economy_events({

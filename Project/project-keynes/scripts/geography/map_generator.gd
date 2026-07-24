@@ -2408,9 +2408,11 @@ func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phas
 		"moist_scale_now": 1.0,
 		"runtime_moisture_base_relax_rate": float(cp_now.get("runtime_moisture_base_relax_rate")) if cp_now.get("runtime_moisture_base_relax_rate") != null else 0.24,
 		"runtime_moisture_weather_vapor_weight": float(cp_now.get("runtime_moisture_weather_vapor_weight")) if cp_now.get("runtime_moisture_weather_vapor_weight") != null else 0.12,
-		"runtime_moisture_precip_weight": float(cp_now.get("runtime_moisture_precip_weight")) if cp_now.get("runtime_moisture_precip_weight") != null else 0.20,
-		"runtime_moisture_soil_weight": float(cp_now.get("runtime_moisture_soil_weight")) if cp_now.get("runtime_moisture_soil_weight") != null else 0.15,
-		"runtime_moisture_water_balance_weight": float(cp_now.get("runtime_moisture_water_balance_weight")) if cp_now.get("runtime_moisture_water_balance_weight") != null else 0.08,
+		"runtime_moisture_precip_weight": float(cp_now.get("runtime_moisture_precip_weight")) if cp_now.get("runtime_moisture_precip_weight") != null else 0.60,
+		"runtime_moisture_soil_weight": float(cp_now.get("runtime_moisture_soil_weight")) if cp_now.get("runtime_moisture_soil_weight") != null else 1.40,
+		"runtime_moisture_soil_dry_weight": float(cp_now.get("runtime_moisture_soil_dry_weight")) if cp_now.get("runtime_moisture_soil_dry_weight") != null else 1.70,
+		"runtime_moisture_water_balance_weight": float(cp_now.get("runtime_moisture_water_balance_weight")) if cp_now.get("runtime_moisture_water_balance_weight") != null else 0.80,
+		"runtime_moisture_water_balance_dry_weight": float(cp_now.get("runtime_moisture_water_balance_dry_weight")) if cp_now.get("runtime_moisture_water_balance_dry_weight") != null else 1.00,
 		"season_phase": float(season_phase),
 		"days_per_year": days_per_year,
 		"axial_tilt_deg": float(cp_now.get("axial_tilt_deg")) if cp_now.get("axial_tilt_deg") != null else 23.5,
@@ -4062,6 +4064,35 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 		diag["finalizer_dense_components"] = dense_components
 	_gdext_ocean_anomaly_buf_cached = tta_a
 	diag["thermal_finalizer_applied"] = true
+	var moisture_commit_t0: int = Time.get_ticks_usec()
+	var moisture_committed: bool = false
+	var moisture_commit_path: String = "unavailable"
+	var moisture_commit_slot_size: int = 0
+	if _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("component_id") \
+			and _data_core_world_ext.has_method("snapshot_f32"):
+		var moisture_sid: int = int(_data_core_world_ext.component_id("cell_moisture"))
+		if moisture_sid >= 0:
+			var moisture_snapshot: PackedFloat32Array = _data_core_world_ext.snapshot_f32(moisture_sid)
+			moisture_commit_slot_size = moisture_snapshot.size()
+			if moisture_snapshot.size() == n:
+				# Commit to the exact MapData instance owned by this scheduler round.
+				map.moisture_arr = moisture_snapshot
+				moisture_committed = true
+				moisture_commit_path = "slot_snapshot_to_round_map"
+	if not moisture_committed and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("flush_slots_to_map_keys"):
+		_data_core_world_ext.flush_slots_to_map_keys(PackedStringArray(["cell_moisture"]))
+		moisture_committed = true
+		moisture_commit_path = "bound_map_flush_fallback"
+	# Release the native transaction only after the completed value is visible.
+	if _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("complete_native_daily_moisture_commit"):
+		_data_core_world_ext.complete_native_daily_moisture_commit()
+	diag["moisture_committed"] = moisture_committed
+	diag["moisture_commit_path"] = moisture_commit_path
+	diag["moisture_commit_slot_size"] = moisture_commit_slot_size
+	diag["moisture_commit_flush_ms"] = float(Time.get_ticks_usec() - moisture_commit_t0) / 1000.0
 	diag["finalizer_total_ms"] = float(Time.get_ticks_usec() - t_total_us) / 1000.0
 	return diag
 
@@ -9499,9 +9530,11 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 			"moist_scale_now":  1.0,
 			"runtime_moisture_base_relax_rate": float(cp.runtime_moisture_base_relax_rate) if "runtime_moisture_base_relax_rate" in cp else 0.24,
 			"runtime_moisture_weather_vapor_weight": float(cp.runtime_moisture_weather_vapor_weight) if "runtime_moisture_weather_vapor_weight" in cp else 0.12,
-			"runtime_moisture_precip_weight": float(cp.runtime_moisture_precip_weight) if "runtime_moisture_precip_weight" in cp else 0.20,
-			"runtime_moisture_soil_weight": float(cp.runtime_moisture_soil_weight) if "runtime_moisture_soil_weight" in cp else 0.15,
-			"runtime_moisture_water_balance_weight": float(cp.runtime_moisture_water_balance_weight) if "runtime_moisture_water_balance_weight" in cp else 0.08,
+		"runtime_moisture_precip_weight": float(cp.runtime_moisture_precip_weight) if "runtime_moisture_precip_weight" in cp else 0.60,
+		"runtime_moisture_soil_weight": float(cp.runtime_moisture_soil_weight) if "runtime_moisture_soil_weight" in cp else 1.40,
+		"runtime_moisture_soil_dry_weight": float(cp.runtime_moisture_soil_dry_weight) if "runtime_moisture_soil_dry_weight" in cp else 1.70,
+		"runtime_moisture_water_balance_weight": float(cp.runtime_moisture_water_balance_weight) if "runtime_moisture_water_balance_weight" in cp else 0.80,
+		"runtime_moisture_water_balance_dry_weight": float(cp.runtime_moisture_water_balance_dry_weight) if "runtime_moisture_water_balance_dry_weight" in cp else 1.00,
 			"season_phase":     float(season_phase),
 			"days_per_year":    _calendar_days_per_year(),
 			"axial_tilt_deg":   float(cp.axial_tilt_deg) if "axial_tilt_deg" in cp else 23.5,
@@ -9587,9 +9620,11 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 	var moist_scale_now: float = 1.0
 	var runtime_moisture_relax: float = clampf(float(cp.get("runtime_moisture_base_relax_rate")) if cp.get("runtime_moisture_base_relax_rate") != null else 0.24, 0.0, 1.0)
 	var runtime_moisture_vapor_w: float = clampf(float(cp.get("runtime_moisture_weather_vapor_weight")) if cp.get("runtime_moisture_weather_vapor_weight") != null else 0.12, 0.0, 1.0)
-	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.20, 0.0, 1.0)
-	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 0.15, 0.0, 1.0)
-	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 0.08, 0.0, 1.0)
+	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.60, 0.0, 2.0)
+	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 1.40, 0.0, 2.0)
+	var runtime_moisture_soil_dry_w: float = clampf(float(cp.get("runtime_moisture_soil_dry_weight")) if cp.get("runtime_moisture_soil_dry_weight") != null else 1.70, 0.0, 2.0)
+	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 0.80, 0.0, 2.0)
+	var runtime_moisture_wb_dry_w: float = clampf(float(cp.get("runtime_moisture_water_balance_dry_weight")) if cp.get("runtime_moisture_water_balance_dry_weight") != null else 1.00, 0.0, 2.0)
 	var axial_tilt_deg: float = float(cp.get("axial_tilt_deg")) if cp.get("axial_tilt_deg") != null else 23.5
 	var daylen_amp: float = float(cp.get("insolation_daylen_amp")) if cp.get("insolation_daylen_amp") != null else _INSOLATION_DAYLEN_AMP
 	var solar_gain: float = float(cp.get("solar_gain")) if cp.get("solar_gain") != null else 1.0
@@ -9676,26 +9711,27 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 		if cell_idx >= 0 and cell_idx < map.heat_input_arr.size():
 			map.heat_input_arr[cell_idx] = heat_input
 
-		# —— 2) 当日湿度：水汽基线由当前日照异常调制 ——
+		# —— 2) 当日湿度：只由静态地理基线与水循环状态共同决定 ——
 		var moisture_now: float
 		if _is_water(cell.terrain):
 			moisture_now = cell.base_moisture
 		else:
-			var scale_eff: float = moist_scale_now * (1.0 + 0.2 * dev_today)
-			var moisture_target: float = clampf(cell.base_moisture * scale_eff, 0.0, 1.0)
+			var moisture_target: float = clampf(cell.base_moisture, 0.0, 1.0)
 			if cell_idx >= 0 and cell_idx < map.weather_vapor_arr.size():
 				var vapor: float = clampf(map.weather_vapor_arr[cell_idx], 0.0, 1.0)
 				# weather_vapor is atmospheric water mass (~0.15 * terrain moisture at
 				# equilibrium), not an absolute [0,1] terrain-moisture target.
-				var vapor_reference: float = clampf(cell.base_moisture * scale_eff, 0.0, 1.0) * 0.15
+				var vapor_reference: float = clampf(cell.base_moisture, 0.0, 1.0) * 0.15
 				moisture_target += (vapor - vapor_reference) * runtime_moisture_vapor_w
 			if cell_idx >= 0 and cell_idx < map.weather_precip_arr.size():
 				moisture_target += clampf(map.weather_precip_arr[cell_idx], 0.0, 1.0) * runtime_moisture_precip_w
 			if cell_idx >= 0 and cell_idx < map.soil_moisture_arr.size():
 				# soil_moisture is a signed hydrology anomaly in [-0.5, 0.5].
-				moisture_target += clampf(map.soil_moisture_arr[cell_idx], -0.5, 0.5) * runtime_moisture_soil_w
+				var soil_anomaly: float = clampf(map.soil_moisture_arr[cell_idx], -0.5, 0.5)
+				moisture_target += soil_anomaly * (runtime_moisture_soil_dry_w if soil_anomaly < 0.0 else runtime_moisture_soil_w)
 			if cell_idx >= 0 and cell_idx < map.water_balance_30d_arr.size():
-				moisture_target += clampf(map.water_balance_30d_arr[cell_idx], -1.0, 1.0) * runtime_moisture_wb_w
+				var wb_anomaly: float = clampf(map.water_balance_30d_arr[cell_idx], -1.0, 1.0)
+				moisture_target += wb_anomaly * (runtime_moisture_wb_dry_w if wb_anomaly < 0.0 else runtime_moisture_wb_w)
 			moisture_now = lerpf(clampf(cell.moisture, 0.0, 1.0), clampf(moisture_target, 0.0, 1.0), runtime_moisture_relax)
 
 		# —— 3) 当日温度：日照异常生成辐射目标，后续路径再施加热惯性 ——
@@ -11755,9 +11791,11 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var runtime_moisture_relax: float = clampf(float(cp.get("runtime_moisture_base_relax_rate")) if cp.get("runtime_moisture_base_relax_rate") != null else 0.24, 0.0, 1.0)
 	var runtime_moisture_relax_eff: float = runtime_moisture_relax if thermal_dt <= 1.0 else 1.0 - pow(1.0 - runtime_moisture_relax, thermal_dt)
 	var runtime_moisture_vapor_w: float = clampf(float(cp.get("runtime_moisture_weather_vapor_weight")) if cp.get("runtime_moisture_weather_vapor_weight") != null else 0.12, 0.0, 1.0)
-	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.20, 0.0, 1.0)
-	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 0.15, 0.0, 1.0)
-	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 0.08, 0.0, 1.0)
+	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.60, 0.0, 2.0)
+	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 1.40, 0.0, 2.0)
+	var runtime_moisture_soil_dry_w: float = clampf(float(cp.get("runtime_moisture_soil_dry_weight")) if cp.get("runtime_moisture_soil_dry_weight") != null else 1.70, 0.0, 2.0)
+	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 0.80, 0.0, 2.0)
+	var runtime_moisture_wb_dry_w: float = clampf(float(cp.get("runtime_moisture_water_balance_dry_weight")) if cp.get("runtime_moisture_water_balance_dry_weight") != null else 1.00, 0.0, 2.0)
 	var snowpack_cover_low: float = float(cp.get("snowpack_cover_low")) if cp.get("snowpack_cover_low") != null else 0.05
 	var snowpack_cover_full: float = float(cp.get("snowpack_cover_full")) if cp.get("snowpack_cover_full") != null else 0.32
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化。
@@ -11865,8 +11903,8 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		if is_water_a[i] != 0:
 			moisture_now = base_moist_a[i]
 		else:
-			var scale_eff: float = moist_scale_now * (1.0 + 0.2 * dev_today)
-			var bm: float = base_moist_a[i] * scale_eff
+			# 日照不直接缩放湿度；它只通过温度、蒸发、风场、洋流和降水闭环传导。
+			var bm: float = base_moist_a[i]
 			var moisture_target: float = clampf(bm, 0.0, 1.0)
 			if weather_vapor_a.size() == n:
 				var vapor_reference: float = clampf(bm, 0.0, 1.0) * 0.15
@@ -11874,9 +11912,11 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			if weather_precip_a.size() == n:
 				moisture_target += clampf(weather_precip_a[i], 0.0, 1.0) * runtime_moisture_precip_w
 			if soil_moisture_a.size() == n:
-				moisture_target += clampf(soil_moisture_a[i], -0.5, 0.5) * runtime_moisture_soil_w
+				var soil_anomaly: float = clampf(soil_moisture_a[i], -0.5, 0.5)
+				moisture_target += soil_anomaly * (runtime_moisture_soil_dry_w if soil_anomaly < 0.0 else runtime_moisture_soil_w)
 			if water_balance_a.size() == n:
-				moisture_target += clampf(water_balance_a[i], -1.0, 1.0) * runtime_moisture_wb_w
+				var wb_anomaly: float = clampf(water_balance_a[i], -1.0, 1.0)
+				moisture_target += wb_anomaly * (runtime_moisture_wb_dry_w if wb_anomaly < 0.0 else runtime_moisture_wb_w)
 			moisture_now = lerpf(clampf(moist_a[i], 0.0, 1.0), clampf(moisture_target, 0.0, 1.0), runtime_moisture_relax_eff)
 
 		# 2) 当日温度（B1-A：temp_year = temp_baseline_year - alt_penalty(temp_height)，clamp）
@@ -14763,8 +14803,8 @@ func _apply_transpiration_pass(map: MapData) -> void:
 		# 强烈 transpiration（雨林）+ 高湿度 → 大额输出；干旱 cell 输出微弱
 		var output: float = trans * moist
 		var self_share: float = output * _c().transpiration_self_rate
-		var nb_share: float = output * _c().transpiration_outflow_rate / 6.0
-		deltas[i] = deltas[i] + self_share
+		var transported: float = output * _c().transpiration_outflow_rate
+		var valid_land_neighbors: Array[int] = []
 		if fast_indexed:
 			var base: int = i * 6
 			for d_idx in range(6):
@@ -14775,14 +14815,20 @@ func _apply_transpiration_pass(map: MapData) -> void:
 				# 海面邻居不接受陆地蒸腾外溢（避免给海加湿）
 				if LandformType.is_water(nb.landform):
 					continue
-				deltas[nb_idx] = deltas[nb_idx] + nb_share
+				valid_land_neighbors.append(nb_idx)
 		else:
 			for nb: HexCell in map.get_neighbors(cell):
 				if LandformType.is_water(nb.landform):
 					continue
 				var nb_idx_fallback: int = map.index_of(nb)
 				if nb_idx_fallback >= 0 and nb_idx_fallback < n_cells:
-					deltas[nb_idx_fallback] = deltas[nb_idx_fallback] + nb_share
+					valid_land_neighbors.append(nb_idx_fallback)
+		var transported_actual: float = transported if not valid_land_neighbors.is_empty() else 0.0
+		deltas[i] = deltas[i] + self_share - transported_actual
+		if transported_actual > 0.0:
+			var nb_share: float = transported_actual / float(valid_land_neighbors.size())
+			for nb_idx: int in valid_land_neighbors:
+				deltas[nb_idx] = deltas[nb_idx] + nb_share
 	# 阶段 2：把所有 delta 应用到 current_state.moisture（一次性，避免顺序敏感）
 	#
 	# PR-2.1.5（transpiration 模板 PR）：写路径下移到 world.write_f32_indexed。

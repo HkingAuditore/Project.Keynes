@@ -722,6 +722,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         out["tick_count"] = _native_daily_tick_count;
         _native_daily_report = out.duplicate(true);
         _native_daily_slice_active = false;
+        _native_daily_moisture_commit_pending = false;
         _native_daily_slice_cell_cursor = 0;
         _native_daily_slice_range_node_index = -1;
         _native_daily_slice_range_node_bits = 0u;
@@ -743,7 +744,6 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
 
         ++_native_daily_tick_count;
         ++_native_daily_slice_round_id;
-        _native_daily_slice_active = true;
         _native_daily_slice_node_index = 0;
         _native_daily_slice_cell_cursor = 0;
         _native_daily_slice_range_node_index = -1;
@@ -820,6 +820,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         if (bool(_native_daily_slice_bundle.get("refresh_slots_from_map", true))) {
             refresh_slots_from_map();
         }
+        // The initial refresh imports the last committed MapData state. Protect
+        // moisture from unrelated bulk refreshes until the deferred finalizer.
+        _native_daily_slice_active = true;
+        _native_daily_moisture_commit_pending = true;
         const auto t_context1 = std::chrono::high_resolution_clock::now();
         _native_daily_slice_breakdown["native_context_ms"] =
             std::chrono::duration<double, std::milli>(t_context1 - t_context0).count();
@@ -906,6 +910,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     auto exec_slice_node = [&](const NativeDailySliceNode &node) -> bool {
         if (std::strcmp(node.name, "climate_pass_a") == 0) {
             Dictionary cp_struct = as_dict(_native_daily_slice_bundle["climate_pass_a_struct"]);
+            cp_struct["defer_visible_publish"] = true;
             const double phase = double(_native_daily_slice_tick_knobs.get("season_phase", 0.0));
             const double season_phase = double(_native_daily_slice_tick_knobs.get("season_phase", phase));
             // [climate-mt 2026-07] 多核：pass_a 纯 cell-local，_thread 与 scalar 逐位等价
@@ -965,7 +970,9 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             // [climate-mt 2026-07] 多核：pass_b 写 own-cell（LANOM/M），邻居只读
             //   round-start 快照（TTA/IW）+ 预拍 temp_snapshot → 逐位等价于 scalar
             //   （_simd land 路径已在 legacy 路径生产验证）。n_tasks=0=自适应。
-            const double ms = run_climate_pass_b_thread(as_dict(_native_daily_slice_bundle["climate_pass_b_knobs"]), 0);
+            Dictionary pass_b_knobs = as_dict(_native_daily_slice_bundle["climate_pass_b_knobs"]);
+            pass_b_knobs["defer_visible_publish"] = true;
+            const double ms = run_climate_pass_b_thread(pass_b_knobs, 0);
             if (ms < 0.0) return false;
             breakdown["pass_b_ms"] = ms;
             breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
@@ -1002,7 +1009,9 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             return true;
         }
         if (std::strcmp(node.name, "transpiration") == 0) {
-            const double ms = run_transpiration_pass(as_dict(_native_daily_slice_bundle["transpiration_knobs"]));
+            Dictionary transpiration_knobs = as_dict(_native_daily_slice_bundle["transpiration_knobs"]);
+            transpiration_knobs["defer_visible_publish"] = true;
+            const double ms = run_transpiration_pass(transpiration_knobs);
             if (ms < 0.0) return false;
             breakdown["transp_ms"] = ms;
             breakdown["climate_ms"] = double(breakdown.get("climate_ms", 0.0)) + ms;
@@ -1064,7 +1073,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             }
             breakdown["weather_split_enabled"] = false;
             breakdown["weather_split_skipped_monolithic"] = false;
-            Dictionary weather = run_weather_refresh_daily_pass(as_dict(_native_daily_slice_bundle["weather_knobs"]));
+            Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            weather_knobs["defer_visible_publish"] = true;
+            weather_knobs.erase("moisture_read_arr");
+            Dictionary weather = run_weather_refresh_daily_pass(weather_knobs);
             if (int(weather.get("rc", -1)) != 0) {
                 breakdown["__weather_fail_stage_dyn"] = weather.get("fail_stage", "unknown");
                 return false;
@@ -1083,6 +1095,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         if (std::strcmp(node.name, "weather_field") == 0) {
             if (!weather_split_enabled()) return true;
             Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            weather_knobs.erase("moisture_read_arr");
             const double field_ms = run_weather_field_solve_pass(weather_knobs);
             if (field_ms < 0.0) {
                 breakdown["__weather_fail_stage_dyn"] = String("field_solve");
@@ -1136,6 +1149,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         if (std::strcmp(node.name, "weather_distribute") == 0) {
             if (!weather_split_enabled()) return true;
             Dictionary weather_knobs = as_dict(_native_daily_slice_bundle["weather_knobs"]);
+            weather_knobs["defer_visible_publish"] = true;
             const Dictionary r_dist = run_weather_distribute_pass(weather_knobs);
             const double dist_ms = double(r_dist.get("elapsed_ms", -1.0));
             if (dist_ms < 0.0) {

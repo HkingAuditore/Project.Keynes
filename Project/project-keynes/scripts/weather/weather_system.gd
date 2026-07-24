@@ -123,6 +123,7 @@ var _field_precip_carryover_max: float = 0.08
 var _field_vapor_precip_sink: float = 0.85
 var _field_vapor_relax_rate: float = 0.08
 var _weather_temp_anomaly_cap: float = 0.025
+var _weather_direct_moisture_enabled: bool = false
 var _field_orographic_lift_gain: float = 0.22
 var _field_orographic_lift_cap: float = 0.35
 var _field_wet_terrain_precip_damping: float = 0.60
@@ -752,7 +753,8 @@ func _distribute_to_cells(map: MapData) -> void:
 		# Fast-tick perf opt (C)：moisture / temperature 已升级为强类型成员，直接读写。
 		var moist_now: float = cell.moisture
 		var temp_now: float = cell.temperature
-		moist_now = clampf(moist_now + WeatherType.moisture_delta(wt) * intensity, 0.0, 1.0)
+		if _weather_direct_moisture_enabled:
+			moist_now = clampf(moist_now + WeatherType.moisture_delta(wt) * intensity, 0.0, 1.0)
 		var weather_temp_delta: float = clampf(WeatherType.temp_delta(wt) * intensity, -_weather_temp_anomaly_cap, _weather_temp_anomaly_cap)
 		temp_now = clampf(temp_now + weather_temp_delta, 0.0, 1.0)
 		# [perf 2026-05-20] 删除 cell.moisture = / cell.temperature = 单点 setter。
@@ -1173,6 +1175,7 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 			"snowpack_cover_low": _snowpack_cover_low,
 			"snowpack_cover_full": _snowpack_cover_full,
 			"weather_temp_anomaly_cap": _weather_temp_anomaly_cap,
+			"weather_direct_moisture_enabled": _weather_direct_moisture_enabled,
 			"snowline_temp_threshold": _snowline_temp_threshold,
 			"snowline_band": _snowline_band,
 		}
@@ -1202,6 +1205,7 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 		"snowpack_cover_low": _snowpack_cover_low,
 		"snowpack_cover_full": _snowpack_cover_full,
 		"weather_temp_anomaly_cap": _weather_temp_anomaly_cap,
+		"weather_direct_moisture_enabled": _weather_direct_moisture_enabled,
 		"snowline_temp_threshold": _snowline_temp_threshold,
 		"snowline_band": _snowline_band,
 		# WT.CLEAR / SNOW / NONE / FLOODING 的 enum 值。GDScript 端用 Type.WT
@@ -1620,6 +1624,8 @@ func _sync_profile_weather_knobs(cp: Resource) -> void:
 		_snow_accum_days_req = clampi(int(cp.snow_accum_days_req), 1, 8)
 	if cp.get("weather_temp_anomaly_cap") != null:
 		_weather_temp_anomaly_cap = clampf(float(cp.weather_temp_anomaly_cap), 0.0, 0.10)
+	_weather_direct_moisture_enabled = bool(cp.get("weather_direct_moisture_enabled")) \
+		if cp.get("weather_direct_moisture_enabled") != null else false
 	if cp.get("snowline_temp_threshold") != null:
 		_snowline_temp_threshold = clampf(float(cp.snowline_temp_threshold), 0.0, 1.0)
 	if cp.get("snowline_band") != null:
@@ -2815,7 +2821,9 @@ func _distribute_weather_field_to_cells_legacy(map: MapData) -> void:
 					# climate-loop-closure Phase 3.1：土壤水每日衰减(×0.97,~33日时间常数)，
 					# 使停雨后土壤能排干、持续小雨区不再单调累积到 +0.5 上限(诊断实测根因)。
 					clear_soil = clampf(clear_soil * 0.97 + clear_daily_balance * 0.08, -0.5, 0.5)
-					var clear_moist: float = clampf(moist_now + precip * 0.35 + maxf(clear_daily_balance, 0.0) * 0.04, 0.0, 1.0)
+					var clear_moist: float = moist_now
+					if _weather_direct_moisture_enabled:
+						clear_moist = clampf(moist_now + precip * 0.35 + maxf(clear_daily_balance, 0.0) * 0.04, 0.0, 1.0)
 					if _data_core_world == null:
 						cell.moisture = clear_moist
 					elif _wfd_w < _wfd_n:
@@ -2846,7 +2854,9 @@ func _distribute_weather_field_to_cells_legacy(map: MapData) -> void:
 				_wfd_env_w += 1
 			continue
 
-		moist_now = clampf(cell.moisture + WeatherType.moisture_delta(wt) * intensity + precip * 0.35, 0.0, 1.0)
+		moist_now = cell.moisture
+		if _weather_direct_moisture_enabled:
+			moist_now = clampf(moist_now + WeatherType.moisture_delta(wt) * intensity + precip * 0.35, 0.0, 1.0)
 		var weather_temp_delta: float = clampf(WeatherType.temp_delta(wt) * intensity, -_weather_temp_anomaly_cap, _weather_temp_anomaly_cap)
 		temp_now = clampf(cell.temperature + weather_temp_delta, 0.0, 1.0)
 		# [perf] 删除单点 setter；累积到批量数组（fallback 时仍走 setter 兜 backing）

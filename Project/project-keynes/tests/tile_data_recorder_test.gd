@@ -250,6 +250,11 @@ func _test_state_machine_and_export() -> void:
 	_expect(cols.find("climate_wind_mag_p95") != -1, "wind magnitude p95 column present")
 	_expect(cols.find("climate_ocean_mag_p95") != -1, "ocean magnitude p95 column present")
 	_expect(cols.find("climate_upwelling_abs_p95") != -1, "upwelling p95 column present")
+	_expect(cols.find("climate_moisture_committed") != -1 \
+		and cols.find("climate_moisture_commit_path") != -1 \
+		and cols.find("climate_moisture_commit_slot_size") != -1 \
+		and cols.find("climate_moisture_commit_flush_ms") != -1,
+		"moisture commit diagnostics present")
 	var parts0: PackedStringArray = line0.split(",")
 	var parts1: PackedStringArray = line1.split(",")
 	_expect(parts0[cols.find("row_idx")] == "0", "row 0 row_idx")

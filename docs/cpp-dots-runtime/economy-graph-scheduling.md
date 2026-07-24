@@ -167,13 +167,14 @@ goods 子单位残量。生存食物组的利用率下限按同一业主人口�
 v11 在 `building_production` 的正常商人现金结算后，仅把目标库存剩余缺口托底入库，并按冻结零售价
 20% 增加 owner 资金与 `explicit_money_mint`；超过目标的余量进入 discard。该发行在同一 building slice 内完成，不新增 stage。事件现金流 schema v4 沿用
 `producer_support_issuance`，CSV v16 summary 保留托底数量、发行额、金银货币流、贸易活性游标和拒绝诊断，building 行新增 owner 容量、
-本期岗位和真实空缺口径。
+实际业主席位、利用率折算生产等效人数和真实空缺口径。
 外部 stage ABI 和冻结/截止日屏障不变；生产默认 cadence 已由后述 workload-auto 规则取代固定五日。
 
 v12 在 `building_commit` 增加原生内生投资。评估使用本周期已完成的企业计划和市场信号，
 但只在跨过 30 日边界时允许新增建筑；普通周期不会重复扩建。已有业主空缺仍由
-`building_employment` 优先处理。自动新建排除 service；无建材配方的 primitive collector
-允许以零建材成本进入，但仍通过营运资金、业主生活费、盈利、回收期和资源安全门槛，并复用 BUILD 的建材库存、
+`building_employment` 优先处理。所有已解锁建筑类型进入同一经济评估；缺少可销售产出的 service
+会自然失败于市场信号门槛，collector 仍须通过市场需求、资源、建材、营运资金、业主生活费、
+盈利和回收期门槛，并复用 BUILD 的建材库存、
 出资者资金、商人收入、事件和守恒账本。该节流由 committed day 推导，不新增 PKEC 字段。
 ## 2026-07-20 cadence changes
 

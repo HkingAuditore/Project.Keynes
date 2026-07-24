@@ -40,13 +40,29 @@ func _run() -> void:
 
 func _test_runtime_moisture_units() -> void:
 	var base_target: float = _run_moisture_case(0.0, 0.0, 0.0, 0.0)
+	var opposite_season_target: float = _run_moisture_case(0.0, 0.0, 0.0, 0.0, false, 0.0)
 	var equilibrium_vapor: float = _run_moisture_case(base_target * 0.15, 0.0, 0.12, 0.15)
 	var equilibrium_vapor_threaded: float = _run_moisture_case(base_target * 0.15, 0.0, 0.12, 0.15, true)
 	var equilibrium_vapor_async: float = _run_async_moisture_case(base_target * 0.15)
 	var wet_soil: float = _run_moisture_case(base_target * 0.15, 0.20, 0.12, 0.15)
 	var dry_soil: float = _run_moisture_case(base_target * 0.15, -0.20, 0.12, 0.15)
+	var calibrated_wet_soil: float = _run_moisture_case(base_target * 0.15, 0.20, 0.12, 1.20)
+	var calibrated_wet_soil_threaded: float = _run_moisture_case(
+		base_target * 0.15, 0.20, 0.12, 1.20, true)
+	var calibrated_wet_soil_async: float = _run_async_moisture_case(
+		base_target * 0.15, 0.20, 1.20)
+	var asymmetric_wet_hydrology: float = _run_moisture_case(
+		base_target * 0.15, 0.10, 0.12, 1.40, false, 2.0, 1.70, 0.05, 0.80, 1.00)
+	var asymmetric_dry_hydrology: float = _run_moisture_case(
+		base_target * 0.15, -0.10, 0.12, 1.40, false, 2.0, 1.70, -0.05, 0.80, 1.00)
+	var asymmetric_dry_hydrology_threaded: float = _run_moisture_case(
+		base_target * 0.15, -0.10, 0.12, 1.40, true, 2.0, 1.70, -0.05, 0.80, 1.00)
+	var asymmetric_dry_hydrology_async: float = _run_async_moisture_case(
+		base_target * 0.15, -0.10, 1.40, 1.70, -0.05, 0.80, 1.00)
 	_expect("equilibrium atmospheric vapor does not dry terrain moisture",
 			absf(equilibrium_vapor - base_target) < 0.000001)
+	_expect("insolation season does not directly force terrain moisture",
+			absf(opposite_season_target - base_target) < 0.000001)
 	_expect("threaded pass-A uses the same vapor/soil units",
 			absf(equilibrium_vapor_threaded - equilibrium_vapor) < 0.000001)
 	_expect("async pass-A uses the same vapor/soil units",
@@ -55,10 +71,26 @@ func _test_runtime_moisture_units() -> void:
 			absf(wet_soil - (base_target + 0.03)) < 0.000001)
 	_expect("negative signed soil anomaly remains a drought signal",
 			absf(dry_soil - (base_target - 0.03)) < 0.000001)
+	_expect("calibrated soil weight above one is not internally clipped",
+			absf(calibrated_wet_soil - (base_target + 0.24)) < 0.000001)
+	_expect("threaded pass-A preserves calibrated soil amplitude",
+			absf(calibrated_wet_soil_threaded - calibrated_wet_soil) < 0.000001)
+	_expect("async pass-A preserves calibrated soil amplitude",
+			absf(calibrated_wet_soil_async - calibrated_wet_soil) < 0.000001)
+	_expect("positive hydrology keeps the existing wet-side weights",
+			absf(asymmetric_wet_hydrology - (base_target + 0.18)) < 0.000001)
+	_expect("negative hydrology uses stronger dry-side weights",
+			absf(asymmetric_dry_hydrology - (base_target - 0.22)) < 0.000001)
+	_expect("threaded pass-A preserves asymmetric drought response",
+			absf(asymmetric_dry_hydrology_threaded - asymmetric_dry_hydrology) < 0.000001)
+	_expect("async pass-A preserves asymmetric drought response",
+			absf(asymmetric_dry_hydrology_async - asymmetric_dry_hydrology) < 0.000001)
 
 
 func _run_moisture_case(vapor: float, soil: float, vapor_weight: float,
-		soil_weight: float, threaded: bool = false) -> float:
+		soil_weight: float, threaded: bool = false, season_phase: float = 2.0,
+		soil_dry_weight: float = -1.0, water_balance: float = 0.0,
+		water_balance_weight: float = 0.0, water_balance_dry_weight: float = -1.0) -> float:
 	var ext := DCWorldExt.new()
 	var map := MapData.new(1, 1)
 	_seed_subpolar_land_map(map)
@@ -66,11 +98,12 @@ func _run_moisture_case(vapor: float, soil: float, vapor_weight: float,
 	map.moisture_arr[0] = 0.60
 	map.weather_vapor_arr[0] = vapor
 	map.soil_moisture_arr[0] = soil
+	map.water_balance_30d_arr[0] = water_balance
 	_expect("bind_map_data succeeds for moisture-unit case", bool(ext.bind_map_data(map)))
 	var cp_struct := {
 		"use_sparse": false,
 		"moist_scale_now": 1.0,
-		"season_phase": 2.0,
+		"season_phase": season_phase,
 		"days_per_year": 365,
 		"axial_tilt_deg": 23.5,
 		"day_length_gain": 0.35,
@@ -81,23 +114,30 @@ func _run_moisture_case(vapor: float, soil: float, vapor_weight: float,
 		"runtime_moisture_weather_vapor_weight": vapor_weight,
 		"runtime_moisture_precip_weight": 0.0,
 		"runtime_moisture_soil_weight": soil_weight,
-		"runtime_moisture_water_balance_weight": 0.0,
+		"runtime_moisture_soil_dry_weight": soil_weight if soil_dry_weight < 0.0 else soil_dry_weight,
+		"runtime_moisture_water_balance_weight": water_balance_weight,
+		"runtime_moisture_water_balance_dry_weight": water_balance_weight if water_balance_dry_weight < 0.0 else water_balance_dry_weight,
 		"thermal_dt_days": 1.0,
 		"thermal_daily_delta_cap": 1.0,
 	}
-	var rc: float = float(ext.run_climate_pass_a_thread(cp_struct, 2.0, 2.0, 2)) \
-			if threaded else float(ext.run_climate_pass_a(cp_struct, 2.0, 2.0))
+	var rc: float = float(ext.run_climate_pass_a_thread(cp_struct, season_phase, season_phase, 2)) \
+			if threaded else float(ext.run_climate_pass_a(cp_struct, season_phase, season_phase))
 	_expect("pass-A moisture-unit case executed", rc >= 0.0)
 	return float(map.moisture_arr[0])
 
 
-func _run_async_moisture_case(vapor: float) -> float:
+func _run_async_moisture_case(vapor: float, soil: float = 0.0,
+		soil_weight: float = 0.15, soil_dry_weight: float = -1.0,
+		water_balance: float = 0.0, water_balance_weight: float = 0.0,
+		water_balance_dry_weight: float = -1.0) -> float:
 	var ext := DCWorldExt.new()
 	var map := MapData.new(1, 1)
 	_seed_subpolar_land_map(map)
 	map.base_moisture_arr[0] = 0.60
 	map.moisture_arr[0] = 0.60
 	map.weather_vapor_arr[0] = vapor
+	map.soil_moisture_arr[0] = soil
+	map.water_balance_30d_arr[0] = water_balance
 	_expect("bind_map_data succeeds for async moisture-unit case", bool(ext.bind_map_data(map)))
 	ext.async_climate_round_register()
 	var input := {
@@ -133,8 +173,10 @@ func _run_async_moisture_case(vapor: float) -> float:
 		"runtime_moisture_base_relax_rate": 1.0,
 		"runtime_moisture_weather_vapor_weight": 0.12,
 		"runtime_moisture_precip_weight": 0.0,
-		"runtime_moisture_soil_weight": 0.15,
-		"runtime_moisture_water_balance_weight": 0.0,
+		"runtime_moisture_soil_weight": soil_weight,
+		"runtime_moisture_soil_dry_weight": soil_weight if soil_dry_weight < 0.0 else soil_dry_weight,
+		"runtime_moisture_water_balance_weight": water_balance_weight,
+		"runtime_moisture_water_balance_dry_weight": water_balance_weight if water_balance_dry_weight < 0.0 else water_balance_dry_weight,
 		"thermal_dt_days": 1.0,
 		"thermal_daily_delta_cap": 1.0,
 	}

@@ -17,6 +17,16 @@ population, capital, merchant credit, construction stock, and driver-good gap
 budgets are consumed once across the portfolio. When two or more types start,
 no type may exceed 50% of newly planned owner slots.
 
+Candidate entry now requires only a marketable driver with positive marginal
+deficit and positive projected utilization. Historical sell-through still
+discounts projected cash revenue; shortage and utilization still rank the
+portfolio; discard remains a utilization/diagnostic signal. None is an
+independent 80%, 10%, 12.5%, or 65% profitability gate. Approval still requires
+the configured operating margin and payback plus sponsor capital, construction
+materials, input coverage, building conditions, and natural resources.
+`investment_min_shortage_q16` and `investment_min_utilization_q16` remain in the
+PKEC policy bytes only for compatibility.
+
 Before scoring, the runtime subtracts unused installed capacity and aggregate
 pending-construction capacity from the marginal-output gap. Established types
 may grow by at most 10% per review; absent types seed at one building. A
@@ -39,7 +49,8 @@ state is introduced.
 结算周期开始时才提交。失败探针保持本周期 `RECOVERY_PROBE` 的就业与发布状态一致，
 随后进入两个本地周期的冷却；探针 owner/employee 只按 probe capacity 招聘。
 建筑角色存储重建保留既有 employee fill，新扩容量保持空缺。自然资源容量在就业前压入
-`planned_utilization_q16`，零资源建筑保留资产但释放劳动力。PKEC writer 为 v19；restore
+`planned_utilization_q16`；零资源 ACTIVE 建筑保留资产和业主席位、释放按利用率缩放的雇员，
+若随后进入 SUSPENDED 才释放业主。PKEC writer 为 v19；restore
 接受 v19，并将 v18 的 pending/cooldown 默认迁移为 `NONE/0`。
 
 > 2026-07-11 状态：冻结周期错峰版默认 `market_runtime_mode=ACTIVE`、结算周期 5 日。功能、守恒、
@@ -315,6 +326,12 @@ owner-lot 继续生产且不会自动转换。快照发布 family、tier、highe
 优先从失业池增量招人（先喂最赚钱；招人跨原职业，失业者可被任意缺人建筑吸收，ethnicity 不变）；
 同一 owner signature 被多个建筑组共享时，现有 `filled_owner` 也按该优先级夹到该 cohort 的存活人口，
 防止人口减少后各组分别“已填满”但 cohort 无对应在岗人口。household demography 与 structural commit
+ACTIVE 自营业建筑的 planned owner demand 始终等于完整物理业主席位，planned utilization 只降低
+每栋投入、产量和资源消耗；RECOVERY 才按 probe capacity 缩放业主需求，SUSPENDED/不可用组为零。
+`planned_owner_equivalent` 是利用率折算诊断，不是可裁撤岗位，因而 ACTIVE 的 `filled_owner` 高于该值
+属于正常状态。业主岗位流动的 `projected_owner_income_per_day` 按
+`max(planned owner demand, filled_owner)` 计算人均值；已消费的自留生存物资继续按冻结零售价计作
+实物生活收入，但不铸币。
 之后、publish 之前另执行一次只裁不招的就业对账，使 committed `filled_owner`、role fill 与 cohort
 `owner_employed/employee_employed` 始终一致；新空缺留到下一周期正常招聘，不追溯改变本期生产或工资。
 失业池招聘完成后，仍有业主空缺的 ACTIVE 非服务建筑可从同民族、至少有一名业主的 ACTIVE 非服务建筑
@@ -594,9 +611,10 @@ ratio is the investment probability, sampled deterministically from
 `seed/day/cell/type/signature`. A cross-profession winner moves one person and
 the required capital into the building's configured owner profession; an
 already matching owner cohort invests without a fabricated mobility transfer.
-Collector entry is not constrained by reserve, safe-yield, or non-renewable
-deposit-life gates. Local construction conditions and the 1 percent 30-day
-bullion issuance cap remain.
+Collector entry is additionally constrained by the current cell-resource
+budget: renewables use reserve-responsive safe yield, while non-renewables must
+retain the configured deposit runway. Local construction conditions and the
+1 percent 30-day bullion issuance cap remain.
 
 The default merchant inventory horizon is 60 days. Per-good target ratios still
 compile to one dense Q16 days column, so ordinary goods target 60 days,
@@ -618,16 +636,16 @@ together for ranks 0 through 10, starting from gathering/merchant/timber/stone
 roots and one-time `logs=1000`, `gathered_plants=250`, `flint=500` bridge stock.
 Unreachable components are reported as construction dependency SCCs.
 
-`endogenous_owner_investment_v6` selects one deterministic marginal output per
-candidate. Driver strength is the maximum of normalized persistent shortage and
-single-building utilization, with pressure, utilization, and stable good ID as
-tie breakers. Market thresholds, survival weighting, 80% sell-through, and 10%
-discard all read that same output. Sell-through counts merchant cash purchases
-only: owner retention, producer support, and bullion issuance do not count.
-Buildings with no sellable history skip the sell-through gate. Projected revenue
-is summed per output after applying that output's observed merchant absorption or
-persistent deficit, so a scarce primary output can drive entry without assuming
-that every by-product sells at its quoted price.
+`endogenous_owner_portfolio_v8` selects one deterministic marginal output per
+candidate. Driver strength is the maximum of raw persistent shortage pressure
+and single-building utilization, with pressure, utilization, and stable good ID
+as tie breakers. A positive marginal deficit and utilization allow viability
+evaluation; no minimum shortage/utilization, sell-through, or discard ratio
+pre-approves or vetoes profit. Sell-through counts merchant cash purchases only:
+owner retention, producer support, and bullion issuance do not count. Projected
+revenue is summed per output after applying that output's observed merchant
+absorption or persistent deficit, so a scarce primary output can drive entry
+without assuming that every by-product sells at its quoted price.
 
 Monetary-issue outputs are the explicit exception to ordinary market absorption.
 For a building whose outputs all have a positive `monetary_issue_value`, household
@@ -638,7 +656,9 @@ treats mint settlement as 100% economic sell-through, seeds a first entrant with
 one building of mint-backed utilization, and values projected revenue at the
 catalog issue value. The existing 30-day issuance-share cap, local construction
 conditions, construction materials, wages, owner livelihood, and capital checks
-still apply; reserve, safe-yield, and deposit-life gates do not veto investment.
+still apply. Collector candidates must also fit the renewable safe-yield or
+non-renewable deposit-life budget after installed, pending, and same-review
+portfolio extraction are counted.
 
 The three sparse current-cycle producer lanes and all driver diagnostics are
 transient. They do not enter PKEC v19 or the state hash. CSV v19 adds the driver
@@ -706,17 +726,20 @@ per-cell epoch replacement cache, so non-due construction or population
 reconciliation cannot create negative unemployment by subtracting live state
 that was never counted in the current epoch.
 
-Investment V5 aggregates all owner lots of the same `(cell,type)`, compares
+Investment V8 aggregates all owner lots of the same `(cell,type)`, compares
 demand with actual offered-supply EMA, caps entry utilization by input coverage,
 includes owner livelihood in operating cost, uses markup over cost for the target
-margin, and gates expansion on recent sell-through/discard. Owner vacancies are left exclusively to building
+margin, and uses recent sell-through only to estimate cash absorption. Owner vacancies are left exclusively to building
 employment; they never transfer investment capital or count as candidates.
 Rejection codes are: `0` none, `1` pending construction,
 `2` suspended capacity, `3` owner vacancy, `4` legacy installed-capacity
-diagnostic (no longer emitted by Investment V5),
-`5` owner livelihood, `6` sell-through, `7` discard, `8` input chain, `9` target
+diagnostic (no longer emitted by Investment V8),
+`5` owner livelihood, `6` legacy sell-through, `7` legacy discard, `8` input chain, `9` target
 margin, `10` payback, `11` sponsor capital, `12` materials, `13` resource, and
-`14` deterministic probability skip. The summary report and CSV expose
+`14` deterministic probability skip. Codes `6` and `7` remain reserved for
+diagnostic/schema compatibility but the current scan does not emit them. Code
+`15` means there is no positive marginal output opportunity; it no longer means
+that a 12.5% shortage or 65% utilization threshold was missed. The summary report and CSV expose
 `building_investment_probability_skips`; `building_owner_mobility` now counts
 only profession changes attached to a construction start.
 CSV v14 historically added
@@ -786,6 +809,10 @@ installed count times recipe output. Each input edge then caps entry utilization
 soft-required share and actual one-period coverage from unreserved stock plus offered
 supply EMA. Zero coverage on a fully required input reports `INPUT_CHAIN`. These are
 formula and derived-diagnostic changes only; PKEC v15, cadence, authority, and state hash
+Candidate viability also reserves survival-food/clothing output up to the prospective owners'
+daily livelihood cost. That quantity is removed from merchant-sellable output and valued at the
+frozen retail price only as in-kind livelihood coverage; remaining output alone uses merchant
+absorption. The projection creates neither goods nor cash and changes no conservation ledger.
 layout are unchanged.
 
 ## 2026-07-22 production input quote coherence
@@ -839,9 +866,16 @@ The severe-loss lifecycle consumes the authoritative realized margin directly. T
 denominator includes inputs, base wages, and owner livelihood minus retained-goods livelihood
 credit. It is not gated by `last_operating_cost`, which excludes owner livelihood; therefore
 owner-only workshops enter the same suspension, recovery, and liquidation path as employers.
+For an owner-only self-employment group, positive realized business surplus
+`cash revenue + retained-goods livelihood value - inputs` prevents severe-loss accumulation even
+when it does not cover the owner's full livelihood basket. The remaining livelihood deficit affects
+household coverage and demography; it does not suspend a still-productive livelihood and release all
+owners. Employer groups retain the full livelihood-and-payroll lifecycle rule.
 
-Endogenous investment now evaluates every technology-unlocked industrial building type. Collector
-capacity is created by explicit/resource policy and service capacity by population/trade topology. Every generated
+Endogenous investment evaluates every technology-unlocked building type without a kind-based
+allowlist. Collectors use the same market-signal, local-resource, construction-material, viability,
+payback, and sponsor-capital gates as industrial buildings. Services without a marketable output
+naturally fail the market-signal gate until their content provides an investable demand signal. Every generated
 and curated `BuildingProfile` carries an explicit construction bill selected by technology era,
 scaled by owner and employee slots, and filtered to avoid self-output bootstrap cycles; the catalog
 rejects any profile that omits construction goods. Output demand combines flow deficit with the persistent gap between current
@@ -849,8 +883,8 @@ stock and `merchant_inventory_target`; a type is rejected with reason 15 only wh
 shortage and projected utilization are below their configured thresholds.
 
 The inspector-selected cell owns a bounded transient candidate table containing every
-evaluated unlocked industrial type, including types with no installed group, plus explicit
-unsupported-kind rejection rows for collector/service types. It reports rejection,
+evaluated unlocked type, including types with no installed group. Rejection reason 17 remains
+reserved for snapshot compatibility but is no longer emitted by the general type scan. The table reports rejection,
 shortage, utilization, score, payback, required capital, and projected daily profit through
 `get_building_cell_snapshot`. CSV v19 appends candidate-only building rows (`group_index=-1`,
 `investment_candidate=1`) with the same fields. This table is excluded from PKEC and the
@@ -880,14 +914,29 @@ state only at the next due-cell boundary before the two-cycle retry cooldown.
 
 ## 2026-07-23 initial renewable configuration and test-fixture population
 
-Safe yield is an optional test-economy bootstrap calibration rule, not a runtime
-production or investment hard cap. Runtime `extract` edges consume the resource
-physically present using the existing negative-delta and exact-audit contract.
-Endogenous investment is allowed to overbuild; the resulting resource shortage,
-capacity loss, profit, suspension, and liquidation signals provide the feedback.
+Safe yield is authoritative for runtime renewable `extract` edges. At each frozen
+cell epoch, all local extractors share a transient budget after retaining
+`resource_min_reserve_q16` of that cell's frozen stock. The catalog ecology
+capacity remains only the growth-biomass ceiling because it is not a local
+climate-adjusted carrying capacity; `capacity` edges continue to read standing stock.
+The budget is derived state, is not serialized or hashed, and extraction still
+publishes through the existing negative-delta and exact-audit contract.
 
-The optional resource-tiered economy bootstrap uses the same daily yield to cap
-renewable building counts. It uses a 3650-day runway only for non-renewables.
+Endogenous investment counts installed, pending, and same-review portfolio
+extraction before approving another collector. Renewable candidates must fit the
+daily safe yield; non-renewables must fit `reserve / resource_min_horizon_days`.
+Setting `resource_safe_harvest_q16=0` explicitly disables these gates for isolated
+fixtures and compatibility tests.
+
+Resource CSV rows keep the existing schema. `safe_yield` is now the local,
+reserve-responsive daily value rather than capacity-only potential. For a renewable,
+`projected_life_days` estimates days until the reserve floor under installed peak
+extraction above safe yield; `-1` means installed extraction does not exceed safe
+yield. Non-renewables retain the reserve divided by installed daily extraction.
+
+The optional resource-tiered economy bootstrap uses the same reserve floor and
+daily yield to cap renewable building counts at peak utilization. It uses a
+3650-day runway only for non-renewables.
 The capacity-balanced base owner-lots scale with population as an employment
 floor; a physical resource cap is the only reason an extractor may fall below
 that proportional count. After all building and merchant jobs are known,
@@ -896,3 +945,12 @@ margin becomes initially unemployed. The explicit uniform stress scales remain
 deliberately synthetic.
 These changes add report fields only and do not change runtime authority, PKEC
 v16, the scheduler graph, or the authoritative hash.
+
+## CSV writer backpressure (current)
+
+When both recorder batches are `READY/WRITING`, committed capture now waits for
+the worker to free one instead of stopping with `queue_full`; no committed epoch
+is skipped. Status adds `backpressure_wait_count` and
+`backpressure_wait_ms_total`. Row-limit and real write/flush failures remain
+terminal and atomic at epoch boundaries. This changes only debug file-I/O
+pacing, not native economy authority, PKEC, state hash, CSV columns, or cadence.

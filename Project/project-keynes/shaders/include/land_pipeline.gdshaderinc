@@ -174,10 +174,9 @@ SurfaceParams apply_seasonal_vegetation_tint(SurfaceParams surface, LandModInput
 	}
 	vec3 col = surface.base_color;
 
-	// 让真实 vegetation_vitality 调制季节振幅。dyn_valid=0 时取中性 1.0。
-	// P0-A：vitality_amp 下限抬到 0.85，让低 vitality 像素仍保留可见的换季。
+	// 低活力植被不应像健康植被一样保持完整换季色。
 	float vitality_w = mix(1.0, i.dyn_vitality, i.dyn_valid);
-	float vitality_amp = mix(0.85, 1.20, smoothstep(0.20, 0.95, vitality_w));
+	float vitality_amp = mix(0.35, 1.25, smoothstep(0.12, 0.92, vitality_w));
 
 	// N1: 季节 tint 噪声扰动 —— 复用 SETUP 0 的 pixel_noise
 	//   ① phase_jitter → 局部物候差异
@@ -211,44 +210,39 @@ SurfaceParams apply_moisture_tint(SurfaceParams surface, LandModInputs i) {
 	if (i.dyn_valid <= 0.5) {
 		return surface;
 	}
-	// P0-B：把调制强度从 0.18 抬到 0.55，让暴雨/干旱期颜色变化成为可一眼看到的视觉反馈。
-	// N2: 让"干湿边界"破碎成斑驳而非整片渐变。
-	// ⚠ [需求2 2026-06-19午] 0.55 太强：本层(动态)+climate_relief(基础)两层湿度 tint 叠加，把
-	// 相同湿度带的不同 biome 统一推成"湿→墨绿/干→黄褐"，压过 biome 本色 → 地形/群系着色差异变小。
-	// 降到 0.30 并收窄系数：保留暴雨/干旱的动态反馈，但不再主导静态着色，让 biome 色相回归主导。
+	// 动态干湿反馈保持斑驳边界，并用独立 uniform 控制整体强度。
 	float moist_jitter = (i.pixel_noise.b - 0.5) * 0.24;
 	float wet_mix = clamp(smoothstep(0.10, 0.90, i.moist) + moist_jitter, 0.0, 1.0);
-	vec3 dry_tint   = vec3(1.14, 0.97, 0.78);   // 干旱：偏砂土，不再一味压成黄褐
-	vec3 wet_tint_v = vec3(0.86, 1.04, 0.90);   // 湿润：偏冷湿润，不把所有地表推成绿油
+	vec3 dry_tint   = vec3(1.16, 0.96, 0.76);
+	vec3 wet_tint_v = vec3(0.86, 1.04, 0.91);
 	vec3 wet_tint = mix(dry_tint, wet_tint_v, wet_mix);
 	float wet_amp = mix(0.68, 1.14, i.pixel_noise.r);
 	surface.base_color *= mix(vec3(1.0), wet_tint,
-			clamp(abs(i.moist - 0.5) * 0.72 * wet_amp, 0.0, 0.24));
+			clamp(abs(i.moist - 0.5) * 0.72 * wet_amp, 0.0, 0.24)
+			* moisture_visual_strength);
 	return surface;
 }
 
 // ─── LAND 2.3：植被轴 tint（vegetation_axis_strength） ─────────────────
 // LAND 2.3: climate / altitude / wind tint; pure ALU, no extra texture fetch.
 SurfaceParams apply_climate_relief_tint(SurfaceParams surface, LandModInputs i) {
-	// [需求2 2026-06-19] 温度连续调制：冷→青白、暖→橙黄。amp 0.055~0.125 → 0.08~0.22，
-	// 让温度带在静态地图上更可读(此层不依赖 dyn_valid，生成态即生效；输入为生成气候场温度)。
+	// 温度连续调制：冷→青白、暖→橙黄；中性区轻染，极端区明显放大。
 	float temp_w = clamp((i.current_temp - 0.5) * 2.0, -1.0, 1.0);
-	vec3 cool_tint = vec3(0.80, 0.91, 1.12);
-	vec3 warm_tint = vec3(1.15, 0.95, 0.73);
-	float temp_amp = mix(0.08, 0.22, abs(temp_w));
+	vec3 cool_tint = vec3(0.78, 0.88, 1.18);
+	vec3 warm_tint = vec3(1.20, 0.92, 0.66);
+	float temp_amp = mix(0.04, 0.34, abs(temp_w)) * temperature_visual_strength;
 	surface.base_color *= mix(
 			vec3(1.0),
 			(temp_w >= 0.0) ? warm_tint : cool_tint,
 			temp_amp);
 
-	// [需求2 2026-06-19] 湿度连续基础调制(总是生效)：干→黄褐、湿→墨绿。直接体现"湿度/含水量"。
-	// ⚠ [需求2 2026-06-19午] amp 0.24→0.10：与 apply_moisture_tint 两层叠加过强会统一着色、压过
-	// biome 本色。仅保留轻微"干偏黄/湿偏绿"基底，把色相主导权交还给 biome_hue_modulate。
+	// 湿度连续基础调制：干→黄褐、湿→墨绿，保留 biome 本色作为底层辨识。
 	float moist_w = clamp(i.moist, 0.0, 1.0);
-	vec3 arid_tint  = vec3(1.10, 1.01, 0.82);
-	vec3 humid_tint = vec3(0.86, 1.02, 0.94);
+	vec3 arid_tint  = vec3(1.10, 1.00, 0.82);
+	vec3 humid_tint = vec3(0.88, 1.03, 0.94);
 	vec3 moist_tint = mix(arid_tint, humid_tint, smoothstep(0.12, 0.72, moist_w));
-	float moist_amp = clamp(abs(moist_w - 0.42) * 0.48, 0.0, 0.08);
+	float moist_amp = clamp(abs(moist_w - 0.42) * 0.48, 0.0, 0.08)
+			* moisture_visual_strength;
 	surface.base_color *= mix(vec3(1.0), moist_tint, moist_amp);
 
 	float land_h = clamp((i.elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
@@ -304,7 +298,7 @@ SurfaceParams apply_ecology_tint(SurfaceParams surface, LandModInputs i) {
 	float stress = clamp(i.eco_stress + (patch_noise - 0.5) * 0.18, 0.0, 1.0);
 	float transition_w = smoothstep(0.02, 0.75, i.eco_transition);
 
-	vec3 live_tint = mix(vec3(0.88, 1.04, 0.82), vec3(0.70, 1.12, 0.72), foliage);
+	vec3 live_tint = mix(vec3(0.92, 1.02, 0.88), vec3(0.84, 1.05, 0.82), foliage);
 	vec3 dry_tint  = mix(vec3(1.10, 0.96, 0.70), vec3(1.23, 0.86, 0.56), stress);
 	float density_w = foliage_density_strength * ecology_visual_strength
 			* smoothstep(0.10, 0.85, foliage);
@@ -313,13 +307,43 @@ SurfaceParams apply_ecology_tint(SurfaceParams surface, LandModInputs i) {
 	col *= mix(vec3(1.0), live_tint, density_w * (1.0 - stress * 0.55));
 	col *= mix(vec3(1.0), dry_tint,
 			ecology_visual_strength * smoothstep(0.22, 0.95, stress) * 0.62);
-	vec3 new_growth_tint = mix(vec3(1.0), vec3(0.82, 1.12, 0.78),
+	vec3 new_growth_tint = mix(vec3(1.0), vec3(0.92, 1.06, 0.84),
 			smoothstep(0.56, 0.82, i.eco_growth));
 	col *= mix(vec3(1.0), new_growth_tint,
 			transition_w * ecology_visual_strength * 0.28);
 	col = mix(col, col * vec3(0.93, 0.98, 0.88),
 			transition_w * (1.0 - foliage) * ecology_visual_strength * 0.35);
 	surface.base_color = col;
+	return surface;
+}
+
+// LAND 2.5: vegetation vitality is the direct visual health source of truth.
+SurfaceParams apply_vitality_health_tint(SurfaceParams surface, LandModInputs i) {
+	if (vitality_visual_strength <= 0.001
+			|| i.dyn_valid <= 0.5
+			|| i.veg == V_NONE) {
+		return surface;
+	}
+
+	float vitality = clamp(i.dyn_vitality, 0.0, 1.0);
+	float healthy_w = smoothstep(0.58, 0.96, vitality);
+	float decline_w = 1.0 - smoothstep(0.24, 0.72, vitality);
+	float dieback_w = 1.0 - smoothstep(0.06, 0.34, vitality);
+	float patch_amp = mix(0.82, 1.18, i.pixel_noise.g);
+
+	vec3 healthy_tint = vec3(0.86, 1.06, 0.82);
+	vec3 decline_tint = vec3(1.20, 0.84, 0.52);
+	vec3 dieback_tint = vec3(0.70, 0.68, 0.60);
+	float healthy_amp = healthy_w * 0.14 * vitality_visual_strength * patch_amp;
+	float decline_amp = decline_w * mix(0.30, 0.48, dieback_w)
+			* vitality_visual_strength * patch_amp;
+
+	surface.base_color *= mix(vec3(1.0), healthy_tint, clamp(healthy_amp, 0.0, 0.48));
+	surface.base_color *= mix(vec3(1.0), decline_tint, clamp(decline_amp, 0.0, 0.62));
+	surface.base_color = mix(surface.base_color, surface.base_color * dieback_tint,
+			clamp(dieback_w * 0.34 * vitality_visual_strength, 0.0, 0.52));
+	surface.roughness = mix(surface.roughness, 0.92,
+			clamp(dieback_w * 0.55 * vitality_visual_strength, 0.0, 0.75));
 	return surface;
 }
 
@@ -330,6 +354,7 @@ SurfaceParams apply_land_material_modifiers(SurfaceParams surface, LandModInputs
 	surface = apply_climate_relief_tint(surface, i);
 	surface = apply_vegetation_axis_tint(surface, i);
 	surface = apply_ecology_tint(surface, i);
+	surface = apply_vitality_health_tint(surface, i);
 	return surface;
 }
 
