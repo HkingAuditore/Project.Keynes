@@ -211,14 +211,14 @@ SurfaceParams apply_moisture_tint(SurfaceParams surface, LandModInputs i) {
 		return surface;
 	}
 	// 动态干湿反馈保持斑驳边界，并用独立 uniform 控制整体强度。
-	float moist_jitter = (i.pixel_noise.b - 0.5) * 0.24;
-	float wet_mix = clamp(smoothstep(0.10, 0.90, i.moist) + moist_jitter, 0.0, 1.0);
-	vec3 dry_tint   = vec3(1.16, 0.96, 0.76);
-	vec3 wet_tint_v = vec3(0.86, 1.04, 0.91);
+	float moist_jitter = (i.pixel_noise.b - 0.5) * 0.16;
+	float wet_mix = clamp(smoothstep(0.15, 0.86, i.moist) + moist_jitter, 0.0, 1.0);
+	vec3 dry_tint   = vec3(1.18, 1.01, 0.74);
+	vec3 wet_tint_v = vec3(0.80, 0.97, 1.04);
 	vec3 wet_tint = mix(dry_tint, wet_tint_v, wet_mix);
 	float wet_amp = mix(0.68, 1.14, i.pixel_noise.r);
 	surface.base_color *= mix(vec3(1.0), wet_tint,
-			clamp(abs(i.moist - 0.5) * 0.72 * wet_amp, 0.0, 0.24)
+			clamp(abs(i.moist - 0.50) * 1.05 * wet_amp, 0.0, 0.36)
 			* moisture_visual_strength);
 	return surface;
 }
@@ -238,10 +238,10 @@ SurfaceParams apply_climate_relief_tint(SurfaceParams surface, LandModInputs i) 
 
 	// 湿度连续基础调制：干→黄褐、湿→墨绿，保留 biome 本色作为底层辨识。
 	float moist_w = clamp(i.moist, 0.0, 1.0);
-	vec3 arid_tint  = vec3(1.10, 1.00, 0.82);
-	vec3 humid_tint = vec3(0.88, 1.03, 0.94);
-	vec3 moist_tint = mix(arid_tint, humid_tint, smoothstep(0.12, 0.72, moist_w));
-	float moist_amp = clamp(abs(moist_w - 0.42) * 0.48, 0.0, 0.08)
+	vec3 arid_tint  = vec3(1.13, 1.01, 0.78);
+	vec3 humid_tint = vec3(0.84, 0.98, 1.03);
+	vec3 moist_tint = mix(arid_tint, humid_tint, smoothstep(0.15, 0.86, moist_w));
+	float moist_amp = clamp(abs(moist_w - 0.50) * 0.62, 0.0, 0.14)
 			* moisture_visual_strength;
 	surface.base_color *= mix(vec3(1.0), moist_tint, moist_amp);
 

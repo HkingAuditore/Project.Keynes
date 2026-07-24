@@ -52,13 +52,13 @@ func _test_runtime_moisture_units() -> void:
 	var calibrated_wet_soil_async: float = _run_async_moisture_case(
 		base_target * 0.15, 0.20, 1.20)
 	var asymmetric_wet_hydrology: float = _run_moisture_case(
-		base_target * 0.15, 0.10, 0.12, 1.40, false, 2.0, 1.70, 0.05, 0.80, 1.00)
+		base_target * 0.15, 0.10, 0.12, 1.82, false, 2.0, 2.21, 0.05, 1.04, 1.30)
 	var asymmetric_dry_hydrology: float = _run_moisture_case(
-		base_target * 0.15, -0.10, 0.12, 1.40, false, 2.0, 1.70, -0.05, 0.80, 1.00)
+		base_target * 0.15, -0.10, 0.12, 1.82, false, 2.0, 2.21, -0.05, 1.04, 1.30)
 	var asymmetric_dry_hydrology_threaded: float = _run_moisture_case(
-		base_target * 0.15, -0.10, 0.12, 1.40, true, 2.0, 1.70, -0.05, 0.80, 1.00)
+		base_target * 0.15, -0.10, 0.12, 1.82, true, 2.0, 2.21, -0.05, 1.04, 1.30)
 	var asymmetric_dry_hydrology_async: float = _run_async_moisture_case(
-		base_target * 0.15, -0.10, 1.40, 1.70, -0.05, 0.80, 1.00)
+		base_target * 0.15, -0.10, 1.82, 2.21, -0.05, 1.04, 1.30)
 	_expect("equilibrium atmospheric vapor does not dry terrain moisture",
 			absf(equilibrium_vapor - base_target) < 0.000001)
 	_expect("insolation season does not directly force terrain moisture",
@@ -78,9 +78,9 @@ func _test_runtime_moisture_units() -> void:
 	_expect("async pass-A preserves calibrated soil amplitude",
 			absf(calibrated_wet_soil_async - calibrated_wet_soil) < 0.000001)
 	_expect("positive hydrology keeps the existing wet-side weights",
-			absf(asymmetric_wet_hydrology - (base_target + 0.18)) < 0.000001)
+			absf(asymmetric_wet_hydrology - (base_target + 0.234)) < 0.000001)
 	_expect("negative hydrology uses stronger dry-side weights",
-			absf(asymmetric_dry_hydrology - (base_target - 0.22)) < 0.000001)
+			absf(asymmetric_dry_hydrology - (base_target - 0.286)) < 0.000001)
 	_expect("threaded pass-A preserves asymmetric drought response",
 			absf(asymmetric_dry_hydrology_threaded - asymmetric_dry_hydrology) < 0.000001)
 	_expect("async pass-A preserves asymmetric drought response",

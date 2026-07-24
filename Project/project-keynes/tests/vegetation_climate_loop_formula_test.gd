@@ -137,15 +137,15 @@ func _test_moisture_cadence_defaults() -> void:
 	_expect("weather does not directly write climate moisture by default",
 		not bool(_cp.weather_direct_moisture_enabled))
 	_expect("runtime moisture precipitation coupling uses calibrated water-cycle amplitude",
-		is_equal_approx(float(_cp.runtime_moisture_precip_weight), 0.60))
+		is_equal_approx(float(_cp.runtime_moisture_precip_weight), 0.78))
 	_expect("runtime moisture soil coupling preserves annual wet-dry range",
-		is_equal_approx(float(_cp.runtime_moisture_soil_weight), 1.40))
+		is_equal_approx(float(_cp.runtime_moisture_soil_weight), 1.82))
 	_expect("runtime moisture soil drought coupling deepens dry minima",
-		is_equal_approx(float(_cp.runtime_moisture_soil_dry_weight), 1.70))
+		is_equal_approx(float(_cp.runtime_moisture_soil_dry_weight), 2.21))
 	_expect("runtime moisture rolling balance remains a signed driver",
-		is_equal_approx(float(_cp.runtime_moisture_water_balance_weight), 0.80))
+		is_equal_approx(float(_cp.runtime_moisture_water_balance_weight), 1.04))
 	_expect("runtime moisture rolling deficit has stronger drought coupling",
-		is_equal_approx(float(_cp.runtime_moisture_water_balance_dry_weight), 1.00))
+		is_equal_approx(float(_cp.runtime_moisture_water_balance_dry_weight), 1.30))
 
 
 func _test_transpiration_transport_conservation() -> void:

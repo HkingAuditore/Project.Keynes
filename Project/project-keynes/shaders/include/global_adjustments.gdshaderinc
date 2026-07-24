@@ -64,11 +64,12 @@ vec4 apply_global_adjustments(
 		col *= mix(vec3(1.0), (temp_axis < 0.0) ? cold_grade : warm_grade,
 				clamp(temp_w, 0.0, 0.72));
 
-		float moist_axis = clamp((moisture - 0.48) * 3.8, -1.0, 1.0);
-		float moist_w = pow(abs(moist_axis), 0.76)
-				* 0.28 * moisture_visual_strength * grade_visibility;
-		vec3 dry_grade = vec3(1.20, 0.94, 0.62);
-		vec3 wet_grade = vec3(0.80, 1.06, 0.88);
+		// 0.15..1.0 湿度范围以 0.50 为中性点；0.15 与 0.85+ 达到完整色阶。
+		float moist_axis = clamp((moisture - 0.50) * 2.86, -1.0, 1.0);
+		float moist_w = pow(abs(moist_axis), 0.72)
+				* 0.48 * moisture_visual_strength * grade_visibility;
+		vec3 dry_grade = vec3(1.22, 1.02, 0.72);
+		vec3 wet_grade = vec3(0.72, 0.94, 1.06);
 		col *= mix(vec3(1.0), (moist_axis < 0.0) ? dry_grade : wet_grade,
 				clamp(moist_w, 0.0, 0.70));
 
