@@ -336,7 +336,7 @@ C++ 入口：
 
 - temperature/elevation/latitude/neighbors/terrain/water/solar geometry and thermal-inertia knobs。
 - 部分 scalar 来自 `ClimateProfile`。
-- 气候自然性修复（2026-06-27，2026-07-17 单位修正，2026-07-24 涌现湿度）：`cell_moisture` 不再每日硬回填到 `base_moisture`，也不再使用 `base_moisture * (1 + 0.2 * insolation_dev)` 直接制造季节湿度。`base_moisture` 只保留静态地理锚点；太阳直射变化先影响温度、蒸发、海温/洋流、风场、水汽输送与降水，再由既有 `weather_vapor`、`weather_precip`、`soil_moisture`、`water_balance_30d` 状态进入 Pass-A target。默认水汽/降水/正土壤/正水量收支权重为 `0.12 / 0.60 / 1.40 / 0.80`；负土壤和负水量收支分别使用 `1.70 / 1.00`，只放大真实水文亏缺，不修改湿润侧响应。`runtime_moisture_base_relax_rate=0.24`；不新增持久 slot，scalar native、threaded native、async worker 与 GDScript fallback 保持同一公式。这里 `weather_vapor` 是量级约为 `0.15 * base_moisture` 的大气水汽，因此只允许把 `weather_vapor - 0.15 * base_target` 作为异常量；`soil_moisture` 是 `[-0.5,0.5]` 的有符号水文异常。禁止把这些字段当绝对湿度做 `lerp`，也禁止重新引入任何基于 `season_phase` / `insolation_dev` 的直接湿度乘数。
+- 气候自然性修复（2026-06-27，2026-07-17 单位修正，2026-07-24 涌现湿度）：`cell_moisture` 不再每日硬回填到 `base_moisture`，也不再使用 `base_moisture * (1 + 0.2 * insolation_dev)` 直接制造季节湿度。`base_moisture` 只保留静态地理锚点；太阳直射变化先影响温度、蒸发、海温/洋流、风场、水汽输送与降水，再由既有 `weather_vapor`、`weather_precip`、`soil_moisture`、`water_balance_30d` 状态进入 Pass-A target。默认水汽/降水/正土壤/正水量收支权重为 `0.12 / 0.78 / 1.82 / 1.04`；负土壤和负水量收支分别使用 `2.21 / 1.30`，相对上一档统一放大约 30%，只放大真实水循环异常。耦合配置上限为 `2.5`，最终湿度仍钳在 `[0,1]`。`runtime_moisture_base_relax_rate=0.24`；不新增持久 slot，scalar native、threaded native、async worker 与 GDScript fallback 保持同一公式。这里 `weather_vapor` 是量级约为 `0.15 * base_moisture` 的大气水汽，因此只允许把 `weather_vapor - 0.15 * base_target` 作为异常量；`soil_moisture` 是 `[-0.5,0.5]` 的有符号水文异常。禁止把这些字段当绝对湿度做 `lerp`，也禁止重新引入任何基于 `season_phase` / `insolation_dev` 的直接湿度乘数。
 
 公式约束（2026-06-27 legacy parity）：
 
@@ -2541,8 +2541,8 @@ The generated `base_moisture` is static; seasonal moisture now emerges through
 the existing chain `solar geometry -> temperature/ocean heat -> evaporation ->
 wind transport/convergence -> precipitation -> soil/water balance -> moisture`.
 The default vapor/precipitation/soil/water-balance weights are respectively
-`0.12 / 0.60 / 1.40 / 0.80`. Negative soil and rolling-water-balance
-anomalies use separate `1.70 / 1.00` weights, deepening drought minima without
+`0.12 / 0.78 / 1.82 / 1.04`. Negative soil and rolling-water-balance
+anomalies use separate `2.21 / 1.30` weights, deepening drought minima without
 changing positive hydrology gains or adding direct seasonal forcing. The earlier
 `tile_data_record_20260724_203555.csv` replay established the symmetric-weight
 baseline only; a new post-build recording is required to quantify the asymmetric

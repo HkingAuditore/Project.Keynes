@@ -2408,11 +2408,11 @@ func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phas
 		"moist_scale_now": 1.0,
 		"runtime_moisture_base_relax_rate": float(cp_now.get("runtime_moisture_base_relax_rate")) if cp_now.get("runtime_moisture_base_relax_rate") != null else 0.24,
 		"runtime_moisture_weather_vapor_weight": float(cp_now.get("runtime_moisture_weather_vapor_weight")) if cp_now.get("runtime_moisture_weather_vapor_weight") != null else 0.12,
-		"runtime_moisture_precip_weight": float(cp_now.get("runtime_moisture_precip_weight")) if cp_now.get("runtime_moisture_precip_weight") != null else 0.60,
-		"runtime_moisture_soil_weight": float(cp_now.get("runtime_moisture_soil_weight")) if cp_now.get("runtime_moisture_soil_weight") != null else 1.40,
-		"runtime_moisture_soil_dry_weight": float(cp_now.get("runtime_moisture_soil_dry_weight")) if cp_now.get("runtime_moisture_soil_dry_weight") != null else 1.70,
-		"runtime_moisture_water_balance_weight": float(cp_now.get("runtime_moisture_water_balance_weight")) if cp_now.get("runtime_moisture_water_balance_weight") != null else 0.80,
-		"runtime_moisture_water_balance_dry_weight": float(cp_now.get("runtime_moisture_water_balance_dry_weight")) if cp_now.get("runtime_moisture_water_balance_dry_weight") != null else 1.00,
+		"runtime_moisture_precip_weight": float(cp_now.get("runtime_moisture_precip_weight")) if cp_now.get("runtime_moisture_precip_weight") != null else 0.78,
+		"runtime_moisture_soil_weight": float(cp_now.get("runtime_moisture_soil_weight")) if cp_now.get("runtime_moisture_soil_weight") != null else 1.82,
+		"runtime_moisture_soil_dry_weight": float(cp_now.get("runtime_moisture_soil_dry_weight")) if cp_now.get("runtime_moisture_soil_dry_weight") != null else 2.21,
+		"runtime_moisture_water_balance_weight": float(cp_now.get("runtime_moisture_water_balance_weight")) if cp_now.get("runtime_moisture_water_balance_weight") != null else 1.04,
+		"runtime_moisture_water_balance_dry_weight": float(cp_now.get("runtime_moisture_water_balance_dry_weight")) if cp_now.get("runtime_moisture_water_balance_dry_weight") != null else 1.30,
 		"season_phase": float(season_phase),
 		"days_per_year": days_per_year,
 		"axial_tilt_deg": float(cp_now.get("axial_tilt_deg")) if cp_now.get("axial_tilt_deg") != null else 23.5,
@@ -9530,11 +9530,11 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 			"moist_scale_now":  1.0,
 			"runtime_moisture_base_relax_rate": float(cp.runtime_moisture_base_relax_rate) if "runtime_moisture_base_relax_rate" in cp else 0.24,
 			"runtime_moisture_weather_vapor_weight": float(cp.runtime_moisture_weather_vapor_weight) if "runtime_moisture_weather_vapor_weight" in cp else 0.12,
-		"runtime_moisture_precip_weight": float(cp.runtime_moisture_precip_weight) if "runtime_moisture_precip_weight" in cp else 0.60,
-		"runtime_moisture_soil_weight": float(cp.runtime_moisture_soil_weight) if "runtime_moisture_soil_weight" in cp else 1.40,
-		"runtime_moisture_soil_dry_weight": float(cp.runtime_moisture_soil_dry_weight) if "runtime_moisture_soil_dry_weight" in cp else 1.70,
-		"runtime_moisture_water_balance_weight": float(cp.runtime_moisture_water_balance_weight) if "runtime_moisture_water_balance_weight" in cp else 0.80,
-		"runtime_moisture_water_balance_dry_weight": float(cp.runtime_moisture_water_balance_dry_weight) if "runtime_moisture_water_balance_dry_weight" in cp else 1.00,
+		"runtime_moisture_precip_weight": float(cp.runtime_moisture_precip_weight) if "runtime_moisture_precip_weight" in cp else 0.78,
+		"runtime_moisture_soil_weight": float(cp.runtime_moisture_soil_weight) if "runtime_moisture_soil_weight" in cp else 1.82,
+		"runtime_moisture_soil_dry_weight": float(cp.runtime_moisture_soil_dry_weight) if "runtime_moisture_soil_dry_weight" in cp else 2.21,
+		"runtime_moisture_water_balance_weight": float(cp.runtime_moisture_water_balance_weight) if "runtime_moisture_water_balance_weight" in cp else 1.04,
+		"runtime_moisture_water_balance_dry_weight": float(cp.runtime_moisture_water_balance_dry_weight) if "runtime_moisture_water_balance_dry_weight" in cp else 1.30,
 			"season_phase":     float(season_phase),
 			"days_per_year":    _calendar_days_per_year(),
 			"axial_tilt_deg":   float(cp.axial_tilt_deg) if "axial_tilt_deg" in cp else 23.5,
@@ -9620,11 +9620,11 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 	var moist_scale_now: float = 1.0
 	var runtime_moisture_relax: float = clampf(float(cp.get("runtime_moisture_base_relax_rate")) if cp.get("runtime_moisture_base_relax_rate") != null else 0.24, 0.0, 1.0)
 	var runtime_moisture_vapor_w: float = clampf(float(cp.get("runtime_moisture_weather_vapor_weight")) if cp.get("runtime_moisture_weather_vapor_weight") != null else 0.12, 0.0, 1.0)
-	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.60, 0.0, 2.0)
-	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 1.40, 0.0, 2.0)
-	var runtime_moisture_soil_dry_w: float = clampf(float(cp.get("runtime_moisture_soil_dry_weight")) if cp.get("runtime_moisture_soil_dry_weight") != null else 1.70, 0.0, 2.0)
-	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 0.80, 0.0, 2.0)
-	var runtime_moisture_wb_dry_w: float = clampf(float(cp.get("runtime_moisture_water_balance_dry_weight")) if cp.get("runtime_moisture_water_balance_dry_weight") != null else 1.00, 0.0, 2.0)
+	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.78, 0.0, 2.5)
+	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 1.82, 0.0, 2.5)
+	var runtime_moisture_soil_dry_w: float = clampf(float(cp.get("runtime_moisture_soil_dry_weight")) if cp.get("runtime_moisture_soil_dry_weight") != null else 2.21, 0.0, 2.5)
+	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 1.04, 0.0, 2.5)
+	var runtime_moisture_wb_dry_w: float = clampf(float(cp.get("runtime_moisture_water_balance_dry_weight")) if cp.get("runtime_moisture_water_balance_dry_weight") != null else 1.30, 0.0, 2.5)
 	var axial_tilt_deg: float = float(cp.get("axial_tilt_deg")) if cp.get("axial_tilt_deg") != null else 23.5
 	var daylen_amp: float = float(cp.get("insolation_daylen_amp")) if cp.get("insolation_daylen_amp") != null else _INSOLATION_DAYLEN_AMP
 	var solar_gain: float = float(cp.get("solar_gain")) if cp.get("solar_gain") != null else 1.0
@@ -11791,11 +11791,11 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var runtime_moisture_relax: float = clampf(float(cp.get("runtime_moisture_base_relax_rate")) if cp.get("runtime_moisture_base_relax_rate") != null else 0.24, 0.0, 1.0)
 	var runtime_moisture_relax_eff: float = runtime_moisture_relax if thermal_dt <= 1.0 else 1.0 - pow(1.0 - runtime_moisture_relax, thermal_dt)
 	var runtime_moisture_vapor_w: float = clampf(float(cp.get("runtime_moisture_weather_vapor_weight")) if cp.get("runtime_moisture_weather_vapor_weight") != null else 0.12, 0.0, 1.0)
-	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.60, 0.0, 2.0)
-	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 1.40, 0.0, 2.0)
-	var runtime_moisture_soil_dry_w: float = clampf(float(cp.get("runtime_moisture_soil_dry_weight")) if cp.get("runtime_moisture_soil_dry_weight") != null else 1.70, 0.0, 2.0)
-	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 0.80, 0.0, 2.0)
-	var runtime_moisture_wb_dry_w: float = clampf(float(cp.get("runtime_moisture_water_balance_dry_weight")) if cp.get("runtime_moisture_water_balance_dry_weight") != null else 1.00, 0.0, 2.0)
+	var runtime_moisture_precip_w: float = clampf(float(cp.get("runtime_moisture_precip_weight")) if cp.get("runtime_moisture_precip_weight") != null else 0.78, 0.0, 2.5)
+	var runtime_moisture_soil_w: float = clampf(float(cp.get("runtime_moisture_soil_weight")) if cp.get("runtime_moisture_soil_weight") != null else 1.82, 0.0, 2.5)
+	var runtime_moisture_soil_dry_w: float = clampf(float(cp.get("runtime_moisture_soil_dry_weight")) if cp.get("runtime_moisture_soil_dry_weight") != null else 2.21, 0.0, 2.5)
+	var runtime_moisture_wb_w: float = clampf(float(cp.get("runtime_moisture_water_balance_weight")) if cp.get("runtime_moisture_water_balance_weight") != null else 1.04, 0.0, 2.5)
+	var runtime_moisture_wb_dry_w: float = clampf(float(cp.get("runtime_moisture_water_balance_dry_weight")) if cp.get("runtime_moisture_water_balance_dry_weight") != null else 1.30, 0.0, 2.5)
 	var snowpack_cover_low: float = float(cp.get("snowpack_cover_low")) if cp.get("snowpack_cover_low") != null else 0.05
 	var snowpack_cover_full: float = float(cp.get("snowpack_cover_full")) if cp.get("snowpack_cover_full") != null else 0.32
 	# DataCore（climate-datacore-migration A-4）：取数入口分支化。

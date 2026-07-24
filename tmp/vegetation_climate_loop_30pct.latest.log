@@ -1,0 +1,45 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== vegetation climate loop formula ===
+  [PASS] drought lowers plant water
+  [PASS] positive water balance raises plant water
+  [PASS] soil buffer raises plant water
+  [PASS] plant water clamps to [0,1]
+  [PASS] target above vitality raises vitality
+  [PASS] target below vitality lowers vitality
+  [PASS] negative drift uses harshness
+  [PASS] weather resistance reduces drought stress
+  [PASS] clear weather has no stress
+  [PASS] weather feedback preserves target pressure when gated
+  [PASS] weather feedback can still accumulate on non-veg-dyn ticks
+  [PASS] current biome is near-optimal test fixture
+  [PASS] small/no compat gain blocks succession
+  [PASS] generated rainforest threshold is not born in acute drought
+  [PASS] observed warm humid rainforest remains ecologically viable
+  [PASS] tropical rainforest is limited to the wet tail
+  [PASS] persistent moderate mismatch can enter degradation
+  [PASS] succession needs more than one native vegetation sample
+  [PASS] native vegetation cadence accumulates real game days
+  [PASS] moisture anchor preserves the original responsive daily rate
+  [PASS] ten-day moisture anchor follows the dynamic target
+  [PASS] weather does not directly write climate moisture by default
+  [PASS] runtime moisture precipitation coupling uses calibrated water-cycle amplitude
+  [PASS] runtime moisture soil coupling preserves annual wet-dry range
+  [PASS] runtime moisture soil drought coupling deepens dry minima
+  [PASS] runtime moisture rolling balance remains a signed driver
+  [PASS] runtime moisture rolling deficit has stronger drought coupling
+  [PASS] transpiration neighbor transport is conservative
+  [PASS] low vitality damping slows further decline
+  [PASS] degrade reset target defaults to 0.75
+  [PASS] upgrade reset target remains conservative
+  [PASS] succession cooldown stores negative streak days
+  [PASS] cooldown advances toward zero
+  [PASS] native succession candidate is applied
+  [PASS] succession publishes vegetation to cell and map SoA
+  [PASS] succession publishes base vegetation and visible state
+  [PASS] succession resets vitality softly and starts cooldown
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] native vegetation fixture binds
+  [PASS] first persistent mismatch sample only accumulates streak
+  [PASS] persistent mismatch emits climate-directed succession at the configured duration
+=== done: 40 checks, 0 failures ===

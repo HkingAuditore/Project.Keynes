@@ -389,16 +389,19 @@ void fragment() {
 	float low_vitality = pow(1.0 - smoothstep(0.60, 0.96, shrub_vitality_v), 1.08);
 	float heat_visual = smoothstep(0.52, 0.80, temp);
 	float cool_visual = 1.0 - smoothstep(0.24, 0.52, temp);
-	float dry_visual = 1.0 - smoothstep(0.22, 0.56, moisture);
-	float wet_visual = smoothstep(0.42, 0.76, moisture);
+	// 当前运行时湿度约为 0.15..1.0：0.50 为视觉中性点，两端完整展开。
+	float dry_visual = 1.0 - smoothstep(0.15, 0.50, moisture);
+	float wet_visual = smoothstep(0.50, 0.86, moisture);
 	float dry_hot = heat_visual * mix(0.32, 1.0, dry_visual);
 	float water_support = clamp(max(wet_visual, shrub_wet_v), 0.0, 1.0);
 	float dry_pressure = clamp(max(dry_visual * 0.72, shrub_dry_v), 0.0, 1.0);
 	vec4 stage_w = vec4(
 		sprouting * vitality_color_n * smoothstep(0.26, 0.54, temp) * (1.0 - dry_pressure * 0.55),
-		thriving * vitality_color_n * mix(0.72, 1.12, water_support),
-		golden * mix(0.88, 1.12, dry_yellow_strength) * (1.0 - low_vitality * 0.24),
-		withered + low_vitality * 0.92 + dry_hot * dry_pressure * 0.34);
+		thriving * vitality_color_n * mix(0.58, 1.34, water_support),
+		golden * mix(0.88, 1.12, dry_yellow_strength) * (1.0 - low_vitality * 0.24)
+			+ dry_pressure * (0.16 + heat_visual * 0.22),
+		withered + low_vitality * 0.92
+			+ dry_pressure * (0.18 + dry_hot * 0.30));
 	stage_w = max(stage_w, vec4(0.001));
 	stage_w /= dot(stage_w, vec4(1.0));
 	float snow_amount = clamp(snow * snow_white_strength, 0.0, 1.0);
@@ -418,10 +421,15 @@ void fragment() {
 		cool_visual * temperature_color_strength * 0.13 * veg_response);
 	rgb = mix(rgb, vec3(0.63, 0.45, 0.27),
 		heat_visual * temperature_color_strength * 0.14 * veg_response);
-	rgb = mix(rgb, vec3(0.60, 0.49, 0.29),
-		dry_pressure * moisture_color_strength * 0.18 * veg_response);
-	rgb = mix(rgb, vec3(0.20, 0.42, 0.28),
-		water_support * moisture_color_strength * 0.12 * vitality_color_n * veg_response);
+	float dry_moisture_mix = pow(dry_pressure, 0.78)
+		* moisture_color_strength * 0.42 * veg_response;
+	float wet_moisture_mix = pow(water_support, 0.78)
+		* moisture_color_strength * 0.34 * vitality_color_n * veg_response;
+	rgb = mix(rgb, vec3(0.68, 0.52, 0.29), dry_moisture_mix);
+	rgb = mix(rgb, vec3(0.25, 0.40, 0.35), wet_moisture_mix);
+	// 干燥略提亮、饱和为草黄色；湿润略压暗并冷化，远景也能读出含水差。
+	rgb *= 1.0 + dry_visual * 0.07 * moisture_color_strength * veg_response;
+	rgb *= 1.0 - wet_visual * 0.08 * moisture_color_strength * veg_response;
 	rgb = mix(rgb, vec3(0.62, 0.29, 0.15),
 		stage_w.z * autumn_red_strength * 0.16 * veg_response);
 	rgb = mix(rgb, vec3(0.52, 0.34, 0.22),

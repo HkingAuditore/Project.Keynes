@@ -395,7 +395,7 @@ remains Economy CSV v20.
   `0.24/day` (`~0.936` over the default 10-day native round). Large
   completed-round changes are intentional; intermediate-slice visibility is not.
 - Hydrology response is sign-aware: positive soil/water-balance anomalies use
-  `1.40 / 0.80`, while negative anomalies use `1.70 / 1.00`. This deepens
+  `1.82 / 1.04`, while negative anomalies use `2.21 / 1.30`. This deepens
   emergent drought minima without changing wet-side gains or adding a seasonal curve.
 - Native daily visibility: intermediate slices stay slot-only; `done=true`
   snapshots `cell_moisture` into the exact round `MapData` and reports
