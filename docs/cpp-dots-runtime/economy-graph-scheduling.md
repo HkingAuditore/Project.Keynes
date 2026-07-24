@@ -55,7 +55,7 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
     `cell×ethnicity` 的出生人口合并到 `unemployed|eth`。受影响建筑岗位只做存活人口夹紧和指标
     对账，不在同周期招聘新生人口。
 11. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
-12. `building_commit`：提交到期建设项目；在 10 日资本评估窗口按盈利、需求缺口、个人储蓄、建材和资源安全选择每地块至多一座 industrial/collector 新建项目；零建材 primitive collector 仍支付营运资金与业主生活费，随后重建必要的稀疏岗位范围。
+12. `building_commit`：提交到期建设项目；价格驱动的内生资本评估只允许 industrial，collector/service 必须来自显式建设、资源或拓扑策略；随后重建稀疏岗位范围，并保留既有 employee fill。
 13. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
 
 周期内 save、gameplay 和其他经济写者只观察上一 committed state；Inspector 的有界选中
@@ -121,7 +121,7 @@ worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 当前冻结周期的稳定阶段顺序为：
 
-`epoch_begin → building_plan(plan → input_reserve) → trade_settle → ledger_apply → building_employment → building_production →
+`epoch_begin(apply pending operating state/cooldown) → building_plan(plan → resource capacity → input_reserve) → trade_settle → ledger_apply → building_employment → building_production →
 household_market → trade_dispatch → structural_commit → wait_commit → building_commit →
 aggregate_publish`。
 
@@ -215,7 +215,7 @@ after finalization. Candidate evaluation may later move to read-only worker
 ranges, but sponsor funds, materials, population movement, and construction
 creation must be revalidated and committed in stable cell order.
 
-## Rolling five-phase graph (PKEC v16, current)
+## Rolling five-phase graph (PKEC v19, current)
 
 The former global epoch and workload-selected cadence are superseded. Every day
 the native graph builds the sorted workset for `cell_id % 5 == day % 5` and

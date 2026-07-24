@@ -23,7 +23,7 @@ class EconomyCsvRecorder;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 18;
+    static constexpr int32_t SCHEMA_VERSION = 19;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -331,8 +331,8 @@ private:
         int32_t owner_signature_id = -1;
         int64_t count = 0;
         int64_t filled_owner = 0;
-        int32_t employee_fill_begin = 0;
-        int32_t last_input_selection_begin = 0;
+        int32_t employee_fill_begin = -1;
+        int32_t last_input_selection_begin = -1;
         int64_t last_capacity_q16 = 0;
         int64_t last_input = 0;
         int64_t last_output = 0;
@@ -365,6 +365,8 @@ private:
         int64_t merchant_debt_principal = 0;
         int64_t merchant_debt_premium = 0;
         int64_t last_in_kind_livelihood_value = 0;
+        uint8_t pending_operating_state = 255; // 255=NONE; applied at next due-cell epoch.
+        uint16_t recovery_cooldown_cycles = 0;
     };
 
     struct PendingConstruction {
@@ -414,6 +416,7 @@ private:
         INVESTMENT_REJECTION_PROBABILITY = 14,
         INVESTMENT_REJECTION_MARKET_SIGNAL = 15,
         INVESTMENT_REJECTION_GROWTH_LIMIT = 16,
+        INVESTMENT_REJECTION_UNSUPPORTED_KIND = 17,
     };
 
     struct InvestmentDiagnostic {

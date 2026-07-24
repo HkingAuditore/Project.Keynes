@@ -5,13 +5,17 @@
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy PKEC v18 pipeline（当前）
+## Economy PKEC v19 pipeline（当前）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
 `building_production` 原子提款并采购投入且按工资后债务前奖金结算，household 将实际自产消费
 价值归属建筑，`building_commit` 完成复产/清算/建设债务转移。贸易派单使用代际复核和批次共享
 库存/缺口仲裁。CSV v20 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段及投资组合诊断。
+
+恢复探针只有在实际发生投入、产出、资源消耗或资源生成且现金/经济利润条件同时通过时才计为成功；
+空执行探针写入 pending suspension，并在下一 due-cell frozen boundary 提交。提交周期及其后一个完整
+due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch 闪烁。
 
 `building_commit` 的内生投资复核现在维护固定四项 portfolio：候选扫描与最终建筑数量解耦，
 共享人口/资本/信用/建材/缺口预算后，每种类型只提交一条聚合 BUILD 命令。收入改善率一次计算
@@ -2446,7 +2450,7 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 成本单位价包含实际原料、应付合同工资和目标营业利润；生活成本通过 adaptive 合同工资进入，
 不额外重复叠加。这些信号只反馈下一周期 Price V3，不在本周期形成代数环。
 
-滚动 PKEC v16 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
+滚动 PKEC v19 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
 临时量只分配该 cell 的稀疏 CSR lane；investment 复用 epoch-transient `(cell,type)` 与
 `(cell,resource)` 索引，并在 `building_commit_phase` 中按 cell range continuation。投资只处理
 新增建筑：业主空缺仍由 employment 填补；资金充足 cohort 按“目标业主日收入高于当前人均

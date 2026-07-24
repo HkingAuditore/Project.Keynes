@@ -809,13 +809,29 @@ bool EconomyCsvRecorder::fill_batch(
                     int64_t snapshot_sat = 0;
                     row.owner_capacity = runtime.saturating_mul(
                         group.count, type.owner_slots_per_building, snapshot_sat);
-                    row.owner_required = group.planned_utilization_q16 > 0
-                        ? row.owner_capacity : 0;
+                    int64_t employment_utilization_q16 = group.operating_state == 1
+                        ? 0 : group.planned_utilization_q16;
+                    if (group.operating_state == 2 && index < static_cast<int32_t>(
+                            runtime._building_recovery_probe_capacity_q16.size())) {
+                        employment_utilization_q16 = std::min<int64_t>(
+                            employment_utilization_q16,
+                            runtime._building_recovery_probe_capacity_q16[index]);
+                    }
+                    row.owner_required = 0;
+                    if (employment_utilization_q16 > 0) {
+                        row.owner_required = group.operating_state == 0
+                            ? row.owner_capacity
+                            : runtime.mul_div_sat(
+                                row.owner_capacity, employment_utilization_q16,
+                                NativeEconomyRuntime::Q16_ONE, snapshot_sat);
+                        if (row.owner_required == 0 && row.owner_capacity > 0)
+                            row.owner_required = 1;
+                    }
                     row.planned_owner_equivalent = runtime.mul_div_sat(
-                        row.owner_capacity, group.planned_utilization_q16,
+                        row.owner_capacity, employment_utilization_q16,
                         NativeEconomyRuntime::Q16_ONE, snapshot_sat);
                     if (row.planned_owner_equivalent == 0 && row.owner_capacity > 0 &&
-                        group.planned_utilization_q16 > 0) row.planned_owner_equivalent = 1;
+                        employment_utilization_q16 > 0) row.planned_owner_equivalent = 1;
                     row.filled_owner = group.filled_owner;
                     row.owner_openings = std::max<int64_t>(
                         0, row.owner_required - row.filled_owner);
@@ -897,9 +913,10 @@ bool EconomyCsvRecorder::fill_batch(
                     for (int32_t role = 0; role < type.employee_count; ++role) {
                         const auto &job = runtime._building_employee_roles[type.employee_begin + role];
                         const int64_t full = runtime.saturating_mul(group.count, job.slots_per_building, snapshot_sat);
-                        int64_t required = runtime.mul_div_sat(full, group.planned_utilization_q16,
-                                                               NativeEconomyRuntime::Q16_ONE, snapshot_sat);
-                        if (required == 0 && full > 0 && group.planned_utilization_q16 > 0) required = 1;
+                        int64_t required = runtime.mul_div_sat(full, employment_utilization_q16,
+                            NativeEconomyRuntime::Q16_ONE, snapshot_sat);
+                        if (required == 0 && full > 0 && employment_utilization_q16 > 0)
+                            required = 1;
                         row.employee_required += required;
                         row.employee_filled += runtime._building_employee_filled[group.employee_fill_begin + role];
                     }

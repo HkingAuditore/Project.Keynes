@@ -3026,9 +3026,14 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
         int32_t owner = -1;
         int32_t role = -1;
         int64_t contract = 0;
+        int64_t filled = 0;
         int64_t base_living = 0;
         int64_t role_living = 0;
         int64_t local_average = 0;
+        int64_t base_wage_due = 0;
+        int64_t base_wage_paid = 0;
+        int64_t bonus_due = 0;
+        int64_t bonus_paid = 0;
     };
     struct SavedInputSelection {
         int32_t cell = -1;
@@ -3037,11 +3042,34 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
         int32_t input = -1;
         int32_t good = -1;
     };
+    struct SavedInvestmentDiagnostic {
+        int32_t cell = -1;
+        int32_t type = -1;
+        int32_t owner = -1;
+        int64_t score_q16 = 0;
+        int64_t payback_days = 0;
+        int32_t rejection = INVESTMENT_REJECTION_NONE;
+    };
     std::vector<SavedRole> saved;
     std::vector<SavedInputSelection> saved_input_selections;
-    for (const BuildingGroup &group : _buildings) {
+    std::vector<SavedInvestmentDiagnostic> saved_investment_diagnostics;
+    for (size_t group_index = 0; group_index < _buildings.size(); ++group_index) {
+        const BuildingGroup &group = _buildings[group_index];
         if (group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size())) continue;
+        if (group_index < _building_investment_score_q16.size() ||
+            group_index < _building_investment_payback_days.size() ||
+            group_index < _building_investment_rejection.size()) {
+            saved_investment_diagnostics.push_back({
+                group.cell, group.type_id, group.owner_signature_id,
+                group_index < _building_investment_score_q16.size()
+                    ? _building_investment_score_q16[group_index] : 0,
+                group_index < _building_investment_payback_days.size()
+                    ? _building_investment_payback_days[group_index] : 0,
+                group_index < _building_investment_rejection.size()
+                    ? _building_investment_rejection[group_index]
+                    : INVESTMENT_REJECTION_NONE});
+        }
         const BuildingType &type = _building_types[group.type_id];
         for (int32_t r = 0; r < type.employee_count; ++r) {
             const int32_t index = group.employee_fill_begin + r;
@@ -3049,9 +3077,14 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
                 index >= static_cast<int32_t>(_building_role_contract_wage.size())) continue;
             saved.push_back({group.cell, group.type_id, group.owner_signature_id, r,
                 _building_role_contract_wage[index],
+                _building_employee_filled[index],
                 _building_role_base_living_cost[index],
                 _building_role_living_cost[index],
-                _building_role_local_average_wage[index]});
+                _building_role_local_average_wage[index],
+                _building_role_base_wage_due[index],
+                _building_role_base_wage_paid[index],
+                _building_role_bonus_due[index],
+                _building_role_bonus_paid[index]});
         }
         for (int32_t input = 0; input < type.input_count; ++input) {
             const int32_t index = group.last_input_selection_begin + input;
@@ -3068,8 +3101,15 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
     });
     std::sort(saved_input_selections.begin(), saved_input_selections.end(),
               [](const SavedInputSelection &a, const SavedInputSelection &b) {
-        return std::tie(a.cell, a.type, a.owner, a.input) <
-               std::tie(b.cell, b.type, b.owner, b.input);
+               return std::tie(a.cell, a.type, a.owner, a.input) <
+                      std::tie(b.cell, b.type, b.owner, b.input);
+    });
+    std::sort(saved_investment_diagnostics.begin(),
+              saved_investment_diagnostics.end(),
+              [](const SavedInvestmentDiagnostic &a,
+                 const SavedInvestmentDiagnostic &b) {
+        return std::tie(a.cell, a.type, a.owner) <
+               std::tie(b.cell, b.type, b.owner);
     });
     std::stable_sort(_buildings.begin(), _buildings.end(), [](const BuildingGroup &a,
                                                                const BuildingGroup &b) {
@@ -3087,6 +3127,34 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
             input_selection_count += static_cast<size_t>(
                 _building_types[group.type_id].input_count);
         }
+    }
+    _building_investment_score_q16.assign(_buildings.size(), 0);
+    _building_investment_payback_days.assign(_buildings.size(), 0);
+    _building_investment_rejection.assign(
+        _buildings.size(), INVESTMENT_REJECTION_NONE);
+    size_t investment_cursor = 0;
+    for (size_t group_index = 0; group_index < _buildings.size(); ++group_index) {
+        const BuildingGroup &group = _buildings[group_index];
+        const auto key = std::tuple(
+            group.cell, group.type_id, group.owner_signature_id);
+        while (investment_cursor < saved_investment_diagnostics.size() &&
+               std::tie(saved_investment_diagnostics[investment_cursor].cell,
+                        saved_investment_diagnostics[investment_cursor].type,
+                        saved_investment_diagnostics[investment_cursor].owner) < key) {
+            ++investment_cursor;
+        }
+        if (investment_cursor >= saved_investment_diagnostics.size() ||
+            std::tie(saved_investment_diagnostics[investment_cursor].cell,
+                     saved_investment_diagnostics[investment_cursor].type,
+                     saved_investment_diagnostics[investment_cursor].owner) != key) {
+            continue;
+        }
+        _building_investment_score_q16[group_index] =
+            saved_investment_diagnostics[investment_cursor].score_q16;
+        _building_investment_payback_days[group_index] =
+            saved_investment_diagnostics[investment_cursor].payback_days;
+        _building_investment_rejection[group_index] =
+            saved_investment_diagnostics[investment_cursor].rejection;
     }
     _building_employee_filled.assign(role_count, 0);
     _building_last_input_selected_goods.assign(input_selection_count, -1);
@@ -3114,9 +3182,14 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
                 std::tie(saved[saved_cursor].cell, saved[saved_cursor].type,
                          saved[saved_cursor].owner, saved[saved_cursor].role) == key) {
                 _building_role_contract_wage[index] = saved[saved_cursor].contract;
+                _building_employee_filled[index] = saved[saved_cursor].filled;
                 _building_role_base_living_cost[index] = saved[saved_cursor].base_living;
                 _building_role_living_cost[index] = saved[saved_cursor].role_living;
                 _building_role_local_average_wage[index] = saved[saved_cursor].local_average;
+                _building_role_base_wage_due[index] = saved[saved_cursor].base_wage_due;
+                _building_role_base_wage_paid[index] = saved[saved_cursor].base_wage_paid;
+                _building_role_bonus_due[index] = saved[saved_cursor].bonus_due;
+                _building_role_bonus_paid[index] = saved[saved_cursor].bonus_paid;
             } else {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
                 _building_role_contract_wage[index] = role.reference_wage_per_day;
@@ -4428,6 +4501,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             group.severe_loss_cycles = 0;
             group.recovery_cycles = 0;
             group.recovery_failed_reviews = 0;
+            group.pending_operating_state = 255;
+            group.recovery_cooldown_cycles = 0;
         }
         bool produces_cycle_flow = false;
         bool produces_survival_food = false;
@@ -4440,7 +4515,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
         const int64_t recovery_probe_floor_q16 =
             produces_cycle_flow || produces_survival_food
                 ? Q16_ONE / 6 : Q16_ONE / 32;
-        if (type.kind != 2 && group.operating_state == 1 && group_index <
+        if (type.kind != 2 && group.operating_state != 0 && group_index <
                 static_cast<int32_t>(_building_recovery_probe_capacity_q16.size())) {
             _building_recovery_probe_capacity_q16[group_index] =
                 recovery_probe_floor_q16;
@@ -4496,6 +4571,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             group.last_expected_revenue = 0;
             if (type.kind != 2 && group.operating_state == 2) {
                 group.operating_state = 1;
+                group.pending_operating_state = 255;
             }
             // Missing a technologically available hard input is a recoverable
             // execution blockage, not evidence of a realized operating loss.
@@ -4581,6 +4657,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 // blockages. None is a realized loss observation.
                 group.severe_loss_cycles = 0;
             }
+            group.pending_operating_state = 255;
+            group.recovery_cooldown_cycles = 0;
             if (group.severe_loss_cycles >= _building_severe_loss_cycles) {
                 group.operating_state = 1;
                 group.recovery_cycles = 0;
@@ -4592,7 +4670,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 }
             }
         }
-        if (type.kind != 2 && group.operating_state == 1 && !suspended_now) {
+        if (type.kind != 2 && group.operating_state == 1 && !suspended_now &&
+            group.recovery_cooldown_cycles == 0) {
             const int32_t owner_slot = find_cohort_slot(group.cell, group.owner_signature_id);
             ++_recovery_candidates;
             const int64_t restart_input_cost = mul_div_sat(saturating_mul(
@@ -4713,6 +4792,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 cell_credit_remaining -= credit_needed;
                 if (_merchant_credit_runtime_mode == 2) {
                     group.operating_state = 2;
+                    group.pending_operating_state = 255;
                     group.recovery_cycles = 0;
                     ++_recovery_approved;
                 }
@@ -4868,6 +4948,34 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                     std::max(probe_floor_q16, survival_floor_q16), Q16_ONE));
         } else {
             group.planned_utilization_q16 = 0;
+        }
+        if ((type.behavior_id == 1 || type.behavior_id == 2) &&
+            group.planned_utilization_q16 > 0) {
+            int64_t resource_capacity_q16 = Q16_ONE;
+            const int64_t building_days = saturating_mul(
+                group.count, std::max(1, _epoch_days), _saturation_count);
+            for (int32_t i = 0; i < type.resource_count; ++i) {
+                const ResourceAmount &item =
+                    _building_resources[type.resource_begin + i];
+                const int64_t base = item.mode == 1
+                    ? saturating_mul(group.count, item.quantity, _saturation_count)
+                    : saturating_mul(building_days, item.quantity, _saturation_count);
+                if (base <= 0) continue;
+                resource_capacity_q16 = std::min<int64_t>(
+                    resource_capacity_q16,
+                    std::clamp<int64_t>(mul_div_sat(
+                        available_resource_amount(item, group.cell), Q16_ONE,
+                        base, _saturation_count), 0, Q16_ONE));
+            }
+            group.planned_utilization_q16 = static_cast<int32_t>(
+                std::min<int64_t>(group.planned_utilization_q16,
+                                  resource_capacity_q16));
+            if (group_index < static_cast<int32_t>(
+                    _building_recovery_probe_capacity_q16.size())) {
+                _building_recovery_probe_capacity_q16[group_index] = std::min(
+                    _building_recovery_probe_capacity_q16[group_index],
+                    resource_capacity_q16);
+            }
         }
         group.purchase_intent_capacity_q16 = 0;
         const int64_t group_days = saturating_mul(
@@ -5480,6 +5588,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     // employee 之和。二者在 A1 两步逻辑中被 std::fill 重置复用（见下）。
     thread_local std::vector<int64_t> demand;
     thread_local std::vector<int64_t> fill;
+    auto employment_utilization_q16 = [&](const BuildingGroup &group) {
+        int64_t utilization = group.planned_utilization_q16;
+        if (group.operating_state == 2) {
+            const int32_t index = static_cast<int32_t>(&group - _buildings.data());
+            if (index >= 0 && index < static_cast<int32_t>(
+                    _building_recovery_probe_capacity_q16.size()))
+                utilization = std::min(utilization,
+                    _building_recovery_probe_capacity_q16[index]);
+        }
+        return std::clamp<int64_t>(utilization, 0, Q16_ONE);
+    };
     const int32_t professions = static_cast<int32_t>(_profession_ids.size());
     demand.assign(professions, 0);
     fill.assign(professions, 0);
@@ -5490,9 +5609,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     auto planned_role_demand = [&](const BuildingGroup &group, const JobRole &role) {
         const int64_t full = saturating_mul(group.count, role.slots_per_building,
                                             _saturation_count);
-        int64_t scaled = mul_div_sat(full, group.planned_utilization_q16, Q16_ONE,
+        const int64_t utilization = employment_utilization_q16(group);
+        int64_t scaled = mul_div_sat(full, utilization, Q16_ONE,
                                      _saturation_count);
-        if (scaled == 0 && full > 0 && group.planned_utilization_q16 > 0) scaled = 1;
+        if (scaled == 0 && full > 0 && utilization > 0) scaled = 1;
         return scaled;
     };
     auto planned_owner_demand = [&](const BuildingGroup &group, const BuildingType &type) {
@@ -5504,7 +5624,13 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             // approved recovery probe hires again through the normal path.
             return int64_t{0};
         }
-        return group.planned_utilization_q16 > 0 ? full : 0;
+        const int64_t utilization = employment_utilization_q16(group);
+        if (utilization <= 0) return int64_t{0};
+        if (group.operating_state == 0) return full;
+        int64_t target = mul_div_sat(full, utilization, Q16_ONE,
+                                     _saturation_count);
+        if (target == 0 && full > 0) target = 1;
+        return target;
     };
     const bool trace_detail = trace_detail_for_cell(cell);
     // A1 迁移会 allocate/release slot，裸 slot id 会失效；trace 快照改存稳定
@@ -7063,10 +7189,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     if (item.mode == 1) ++_building_resource_capacity_checks;
                     const int64_t resource_scale = mul_div_sat(
                         available_resource_amount(item, cell), Q16_ONE, base, _saturation_count);
-                    if (resource_scale < intent_scale_q16 || resource_scale < scale_q16)
+                    const bool resource_capacity_bound = intent_scale_q16 > 0 &&
+                        resource_scale < Q16_ONE &&
+                        resource_scale <= intent_scale_q16;
+                    if (resource_capacity_bound || resource_scale < scale_q16)
                         resource_limited = true;
                     if (item.mode == 1 &&
-                        (resource_scale < intent_scale_q16 || resource_scale < scale_q16)) {
+                        (resource_capacity_bound || resource_scale < scale_q16)) {
                         resource_capacity_limited = true;
                     }
                     scale_q16 = std::min(scale_q16, resource_scale);
@@ -8629,9 +8758,6 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         for (int32_t type_id = 0; type_id < static_cast<int32_t>(
                 _building_types.size()); ++type_id) {
             const BuildingType &type = _building_types[type_id];
-            // Every technology-unlocked type participates. Upgrade tiers and
-            // service types are evaluated by the same market/capital rules;
-            // they are no longer silently removed from the candidate set.
             if (!building_available(cell, type_id, true)) continue;
             InvestmentDiagnostic *diagnostic = nullptr;
             bool type_has_viable_candidate = false;
@@ -8652,6 +8778,13 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 mark_rejection(existing, reason);
                 if (diagnostic != nullptr) diagnostic->rejection_reason = reason;
             };
+            // Price-driven endogenous expansion is an industrial contract.
+            // Collectors are constrained by exogenous natural-resource stock,
+            // while services follow their own population/topology rules.
+            if (type.kind != 1) {
+                reject(INVESTMENT_REJECTION_UNSUPPORTED_KIND);
+                continue;
+            }
             const auto pending_it = _investment_pending_by_cell_type.find(
                 cell_key(cell, type_id));
             const int64_t pending_count =
@@ -12180,6 +12313,28 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         if (cell % ROLLING_PHASE_COUNT == _rolling_phase)
             _epoch_building_cells.push_back(cell);
     }
+    // Recovery outcomes are committed only when this cell becomes due again.
+    // This keeps employment and the published operating state on the same
+    // frozen-cycle boundary instead of changing state after hiring has settled.
+    for (const int32_t cell : _epoch_building_cells) {
+        if (_building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1))
+            continue;
+        for (int32_t g = _building_cell_offsets[cell];
+             g < _building_cell_offsets[cell + 1]; ++g) {
+            BuildingGroup &group = _buildings[g];
+            const bool applying_pending = group.pending_operating_state <= 2;
+            if (applying_pending) {
+                group.operating_state = group.pending_operating_state;
+                group.pending_operating_state = 255;
+                if (group.operating_state == 0) {
+                    group.severe_loss_cycles = 0;
+                    group.recovery_failed_reviews = 0;
+                }
+            } else if (group.recovery_cooldown_cycles > 0) {
+                --group.recovery_cooldown_cycles;
+            }
+        }
+    }
     _rolling_due_cells = static_cast<int32_t>(_epoch_settlement_cells.size());
     _rolling_processed_cells = 0;
     _rolling_deferred_cells = 0;
@@ -14397,7 +14552,11 @@ Dictionary NativeEconomyRuntime::run_slice(const Dictionary &ctx) {
                             group.last_revenue, saturating_add(
                                 group.last_input_cost, group.last_base_wages_due,
                                 _saturation_count), _saturation_count);
-                        const bool recovery_ok = economic_income >= economic_cost &&
+                        const bool recovery_executed = group.last_output > 0 ||
+                            group.last_input > 0 || group.last_resource > 0 ||
+                            group.last_resource_generated > 0;
+                        const bool recovery_ok = recovery_executed &&
+                            economic_income >= economic_cost &&
                             cash_free_flow >= 0 && group.wage_suspended == 0 &&
                             group.merchant_debt_delinquent_cycles == 0;
                         if (recovery_ok) {
@@ -14405,14 +14564,15 @@ Dictionary NativeEconomyRuntime::run_slice(const Dictionary &ctx) {
                                 std::min<int32_t>(65535,
                                     static_cast<int32_t>(group.recovery_cycles) + 1));
                             if (group.recovery_cycles >= _recovery_success_cycles) {
-                                group.operating_state = 0;
+                                group.pending_operating_state = 0;
                                 group.recovery_cycles = 0;
                                 group.severe_loss_cycles = 0;
                                 group.recovery_failed_reviews = 0;
                                 ++_recovery_restarted;
                             }
                         } else {
-                            group.operating_state = 1;
+                            group.pending_operating_state = 1;
+                            group.recovery_cooldown_cycles = 2;
                             group.recovery_cycles = 0;
                             ++_recovery_failed;
                         }
@@ -14510,6 +14670,8 @@ Dictionary NativeEconomyRuntime::run_slice(const Dictionary &ctx) {
                     const BuildingType &type = _building_types[group.type_id];
                     if (type.kind == 2) {
                         group.operating_state = 0;
+                        group.pending_operating_state = 255;
+                        group.recovery_cooldown_cycles = 0;
                         group.severe_loss_cycles = 0;
                         group.recovery_cycles = 0;
                         group.recovery_failed_reviews = 0;
@@ -16071,6 +16233,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array investment_driver_sellable;
     PackedInt64Array investment_driver_merchant_sold;
     PackedInt64Array investment_driver_sell_through_q16;
+    PackedByteArray pending_operating_state;
+    PackedInt32Array recovery_cooldown_cycles;
     PackedInt64Array investment_driver_discard_q16;
     PackedInt32Array realized_profit_margin_q16;
     PackedInt32Array severe_loss_cycles;
@@ -16125,8 +16289,23 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         int64_t snapshot_sat = 0;
         const int64_t full_owner_capacity = saturating_mul(
             group.count, type.owner_slots_per_building, snapshot_sat);
-        const int64_t planned_owner_required = group.planned_utilization_q16 > 0
-            ? full_owner_capacity : 0;
+        int64_t employment_utilization_q16 = group.operating_state == 1
+            ? 0 : group.planned_utilization_q16;
+        if (group.operating_state == 2 && group_idx < static_cast<int32_t>(
+                _building_recovery_probe_capacity_q16.size())) {
+            employment_utilization_q16 = std::min<int64_t>(
+                employment_utilization_q16,
+                _building_recovery_probe_capacity_q16[group_idx]);
+        }
+        int64_t planned_owner_required = 0;
+        if (employment_utilization_q16 > 0) {
+            planned_owner_required = group.operating_state == 0
+                ? full_owner_capacity
+                : mul_div_sat(full_owner_capacity, employment_utilization_q16,
+                              Q16_ONE, snapshot_sat);
+            if (planned_owner_required == 0 && full_owner_capacity > 0)
+                planned_owner_required = 1;
+        }
         group_type_ids.push_back(group.type_id);
         owner_signature_ids.push_back(group.owner_signature_id);
         group_counts.push_back(group.count);
@@ -16177,6 +16356,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         severe_loss_cycles.push_back(group.severe_loss_cycles);
         recovery_cycles.push_back(group.recovery_cycles);
         recovery_failed_reviews.push_back(group.recovery_failed_reviews);
+        pending_operating_state.push_back(group.pending_operating_state);
+        recovery_cooldown_cycles.push_back(group.recovery_cooldown_cycles);
         operating_state.push_back(group.operating_state);
         merchant_debt_principal.push_back(group.merchant_debt_principal);
         merchant_debt_premium.push_back(group.merchant_debt_premium);
@@ -16234,9 +16415,9 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
             const int64_t full_required = saturating_mul(
                 group.count, role.slots_per_building, snapshot_sat);
             int64_t planned_required = mul_div_sat(
-                full_required, group.planned_utilization_q16, Q16_ONE, snapshot_sat);
+                full_required, employment_utilization_q16, Q16_ONE, snapshot_sat);
             if (planned_required == 0 && full_required > 0 &&
-                group.planned_utilization_q16 > 0) planned_required = 1;
+                employment_utilization_q16 > 0) planned_required = 1;
             employee_required.push_back(planned_required);
             employee_filled.push_back(_building_employee_filled[group.employee_fill_begin + r]);
         }
@@ -16384,6 +16565,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["realized_profit_margin_q16"] = realized_profit_margin_q16;
     out["severe_loss_cycles"] = severe_loss_cycles;
     out["recovery_cycles"] = recovery_cycles;
+    out["pending_operating_state"] = pending_operating_state;
+    out["recovery_cooldown_cycles"] = recovery_cooldown_cycles;
     out["recovery_failed_reviews"] = recovery_failed_reviews;
     out["operating_state"] = operating_state;
     out["merchant_debt_principal"] = merchant_debt_principal;
@@ -16641,6 +16824,8 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(group.merchant_debt_term_cycles_left);
         mix_u64(group.merchant_debt_delinquent_cycles);
         mix_u64(group.operating_state);
+        mix_u64(group.pending_operating_state);
+        mix_u64(group.recovery_cooldown_cycles);
         mix_u64(static_cast<uint64_t>(group.merchant_debt_principal));
         mix_u64(static_cast<uint64_t>(group.merchant_debt_premium));
         mix_u64(static_cast<uint64_t>(group.last_in_kind_livelihood_value));
@@ -17115,6 +17300,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint16_t>(payload, group.severe_loss_cycles);
             append_le<uint16_t>(payload, group.recovery_cycles);
             append_le<uint8_t>(payload, group.operating_state);
+            append_le<uint8_t>(payload, group.pending_operating_state);
+            append_le<uint16_t>(payload, group.recovery_cooldown_cycles);
             append_le<uint16_t>(payload, group.recovery_failed_reviews);
             append_le<uint16_t>(payload, group.merchant_debt_term_cycles_left);
             append_le<uint16_t>(payload, group.merchant_debt_delinquent_cycles);
@@ -17394,8 +17581,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION) {
-        error = schema >= 2 && schema < SCHEMA_VERSION
+    if (schema != SCHEMA_VERSION && schema != 18) {
+        error = schema >= 2 && schema < 18
             ? "legacy_economy_save_unsupported"
             : "economy_save_schema_unsupported";
         return false;
@@ -17897,6 +18084,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                  !read_le(bytes, cursor, group.severe_loss_cycles) ||
                  !read_le(bytes, cursor, group.recovery_cycles) ||
                  !read_le(bytes, cursor, group.operating_state) ||
+                 (_restore.schema_version >= 19 &&
+                  (!read_le(bytes, cursor, group.pending_operating_state) ||
+                   !read_le(bytes, cursor, group.recovery_cooldown_cycles))) ||
                  !read_le(bytes, cursor, group.recovery_failed_reviews) ||
                  !read_le(bytes, cursor, group.merchant_debt_term_cycles_left) ||
                  !read_le(bytes, cursor, group.merchant_debt_delinquent_cycles) ||
@@ -17913,6 +18103,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 group.count <= 0 || roles != _building_types[group.type_id].employee_count ||
                 group.purchase_intent_capacity_q16 < 0 ||
                 group.purchase_intent_capacity_q16 > Q16_ONE ||
+                (group.pending_operating_state > 2 && group.pending_operating_state != 255) ||
                 group.operating_state > 2 || group.merchant_debt_principal < 0 ||
                 group.merchant_debt_premium < 0 ||
                 group.last_in_kind_livelihood_value < 0 ||
@@ -18410,6 +18601,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             group.last_base_wages_paid > group.last_base_wages_due ||
             group.last_bonus_paid > group.last_bonus_due ||
             group.wage_suspended > 1 || group.operating_state > 2 ||
+            (group.pending_operating_state > 2 && group.pending_operating_state != 255) ||
             group.merchant_debt_principal < 0 || group.merchant_debt_premium < 0 ||
             group.last_in_kind_livelihood_value < 0 ||
             ((group.merchant_debt_principal > 0 || group.merchant_debt_premium > 0) &&

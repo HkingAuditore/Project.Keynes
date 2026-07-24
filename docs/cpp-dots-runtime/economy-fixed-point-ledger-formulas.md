@@ -354,8 +354,8 @@ exportable_stock           = max(0, stock - production_input_reserve)
 
 ## 2026-07-20 endogenous owner investment
 
-每 10 日资本评估窗口，已满员 industrial/collector owner-lot 才可扩建；没有建材配方的
-primitive collector 仍须通过营运资金、业主生活费、盈利和资源安全门槛。候选门槛为：
+价格驱动的资本评估只允许已满员 industrial owner-lot 扩建。collector 的容量由自然资源
+可行性和显式建设策略决定，service 由人口/贸易拓扑策略决定。industrial 候选门槛为：
 
 ```text
 margin_gap_q16 >= 0                         # 已达到建筑自身 target margin
