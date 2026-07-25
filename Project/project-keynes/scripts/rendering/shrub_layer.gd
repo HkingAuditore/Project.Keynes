@@ -77,6 +77,11 @@ uniform float veg_response = 1.0;
 uniform float phenology_response = 1.0;
 uniform float phenology_color_dominance = 0.64;
 uniform float albedo_light_floor = 0.38;
+uniform float color_saturation_gain = 1.0;
+uniform float color_value_gain = 1.0;
+uniform float snow_body_color_retention = 0.0;
+uniform float snow_alpha_loss_strength = 0.32;
+uniform float snow_size_floor = 0.0;       // 乔木满雪时的形体下限；草本保持 0
 // 阶段 D 精致化。
 uniform vec2 wind_dir = vec2(1.0, 0.18);     // 全局盛行风方向（归一化前可任意）
 uniform float weather_wind_boost = 0.0;      // 实时天气（风暴/季风）附加风强
@@ -310,6 +315,10 @@ void vertex() {
 	shrub_presence_v = compute_presence(shrub_dyn, shrub_eco);
 	float live_scale = mix(0.20, 1.0, smoothstep(0.0, 0.85, shrub_presence_v));
 	live_scale *= mix(vitality_size_min, vitality_size_max, pow(vitality_norm(shrub_vitality_v), 0.85));
+	// 积雪可降低 alpha 与存在感，但乔木不应因此缩成小点。仅树类由 profile 应用阶段
+	// 推送非零下限；灌木和草本的 snow_size_floor=0，保持原有压伏行为。
+	float snow_size_restore = smoothstep(0.12, 0.72, shrub_snow_v);
+	live_scale = max(live_scale, mix(live_scale, snow_size_floor, snow_size_restore));
 	VERTEX *= live_scale;
 	float top_weight = clamp(UV.y, 0.0, 1.0);
 	float seed = INSTANCE_CUSTOM.b;
@@ -358,8 +367,8 @@ void vertex() {
 // 本实例所在半球各算一次后软混合，修复"全图同步变红"（北半球秋红时南半球应为春绿）。
 vec4 shrub_phenology_amounts(float sp) {
 	float sprouting = max(1.0 - smoothstep(0.08, 0.88, sp), smoothstep(3.62, 3.98, sp));
-	float thriving = smoothstep(0.35, 1.02, sp) * (1.0 - smoothstep(1.38, 1.92, sp));
-	float golden = smoothstep(1.34, 1.96, sp) * (1.0 - smoothstep(2.48, 2.96, sp));
+	float thriving = smoothstep(0.35, 1.02, sp) * (1.0 - smoothstep(1.52, 2.06, sp));
+	float golden = smoothstep(1.58, 2.12, sp) * (1.0 - smoothstep(2.34, 2.72, sp));
 	float withered = smoothstep(2.42, 3.04, sp) * (1.0 - smoothstep(3.66, 3.98, sp));
 	vec4 amounts = vec4(sprouting, thriving, golden, withered);
 	return amounts / max(dot(amounts, vec4(1.0)), 0.001);
@@ -387,64 +396,148 @@ void fragment() {
 	float moisture = mix(0.5, shrub_dyn.g, dyn_valid);
 	float vitality_n = vitality_norm(shrub_vitality_v);
 	// 颜色使用原始活力的宽动态区间；density vitality_n 仍保留原有阈值，避免实例数量突变。
-	float vitality_color_n = smoothstep(0.58, 0.99, shrub_vitality_v);
-	float low_vitality = pow(1.0 - smoothstep(0.60, 0.96, shrub_vitality_v), 1.08);
+	float vitality_color_n = smoothstep(0.42, 0.84, shrub_vitality_v);
+	float low_vitality = pow(1.0 - smoothstep(0.28, 0.68, shrub_vitality_v), 1.12);
 	float heat_visual = smoothstep(0.52, 0.80, temp);
-	float cool_visual = 1.0 - smoothstep(0.24, 0.52, temp);
+	float cool_visual = 1.0 - smoothstep(0.20, 0.44, temp);
 	// 当前运行时湿度约为 0.15..1.0：0.50 为视觉中性点，两端完整展开。
 	float dry_visual = 1.0 - smoothstep(0.15, 0.50, moisture);
 	float wet_visual = smoothstep(0.50, 0.86, moisture);
 	float dry_hot = heat_visual * mix(0.32, 1.0, dry_visual);
 	float water_support = clamp(max(wet_visual, shrub_wet_v), 0.0, 1.0);
 	float dry_pressure = clamp(max(dry_visual * 0.72, shrub_dry_v), 0.0, 1.0);
+	// 高活力只有在水分足够时才解释为绿色；旱生植株保持黄绿/赭褐，而不是
+	// 因 vitality 较高就把整片荒漠染绿。
+	float green_water_support = smoothstep(0.28, 0.60, moisture)
+		* (1.0 - dry_pressure * 0.90);
+	// 季节相位本身不能把温暖湿润区直接判成枯萎。落叶期必须同时有低温或
+	// 干旱支持；低活力仍通过独立权重表达真实衰退。
+	float seasonal_wither_support = clamp(max(
+		1.0 - smoothstep(0.32, 0.54, temp), dry_pressure * 0.88), 0.0, 1.0);
 	vec4 stage_w = vec4(
 		sprouting * vitality_color_n * smoothstep(0.26, 0.54, temp) * (1.0 - dry_pressure * 0.55),
 		thriving * vitality_color_n * mix(0.58, 1.34, water_support),
 		golden * mix(0.88, 1.12, dry_yellow_strength) * (1.0 - low_vitality * 0.24)
-			+ dry_pressure * (0.16 + heat_visual * 0.22),
-		withered + low_vitality * 0.92
+			+ dry_pressure * (0.08 + heat_visual * 0.14),
+		withered * seasonal_wither_support + low_vitality * 0.92
 			+ dry_pressure * (0.18 + dry_hot * 0.30));
-	stage_w = max(stage_w, vec4(0.001));
+	// 收紧物候重叠，并把绿→黄的过渡拆成实例级斑块。过渡期是一部分树仍绿、
+	// 一部分树已金黄，而不是所有树都线性混成同一种橄榄黄绿。
+	stage_w = pow(max(stage_w, vec4(0.001)), vec4(1.65));
 	stage_w /= dot(stage_w, vec4(1.0));
+	float green_gold_sum = max(stage_w.y + stage_w.z, 0.001);
+	float green_gold_balance = (stage_w.z - stage_w.y) / green_gold_sum;
+	float green_gold_seed = (fract(shrub_custom.b * 71.37 + 0.19) - 0.5) * 0.20;
+	float gold_side = smoothstep(0.04, 0.20, green_gold_balance + green_gold_seed);
+	stage_w.y *= mix(1.0, 0.12, gold_side);
+	stage_w.z *= mix(0.12, 1.0, gold_side);
+	stage_w /= dot(stage_w, vec4(1.0));
+	float golden_commit = smoothstep(0.56, 0.76, stage_w.z);
 	float snow_amount = clamp(snow * snow_white_strength, 0.0, 1.0);
 
 	vec3 rgb = COLOR.rgb;
 	float source_luma = dot(COLOR.rgb, vec3(0.299, 0.587, 0.114));
 	float canopy_detail = mix(0.78, 1.18, smoothstep(0.055, 0.34, source_luma));
 	vec3 phenology_color = vec3(0.0);
-	phenology_color += vec3(0.62, 0.72, 0.30) * stage_w.x; // 萌芽：明亮嫩黄绿
-	phenology_color += vec3(0.24, 0.51, 0.25) * stage_w.y; // 繁茂：清晰叶绿
-	phenology_color += vec3(0.82, 0.60, 0.16) * stage_w.z; // 金黄：暖金黄
-	phenology_color += vec3(0.50, 0.36, 0.22) * stage_w.w; // 凋零：枯褐
+	phenology_color += vec3(0.30, 0.58, 0.25) * stage_w.x; // 萌芽：明确嫩绿，不经过黄绿中间色
+	phenology_color += vec3(0.28, 0.52, 0.24) * stage_w.y; // 繁茂：自然叶绿
+	phenology_color += vec3(0.96, 0.72, 0.10) * stage_w.z; // 金黄：明亮金黄
+	phenology_color += vec3(0.62, 0.44, 0.16) * stage_w.w; // 凋零：清晰暖褐
 	phenology_color *= canopy_detail;
 	float phenology_mix = clamp(phenology_color_dominance
 		* phenology_response * veg_response, 0.0, 0.94);
 	rgb = mix(rgb, phenology_color, phenology_mix);
 
-	// 气候只在物候底色上做有限偏移，避免湿润与高活力反复叠成纯绿。
-	rgb = mix(rgb, vec3(0.48, 0.54, 0.50),
-		cool_visual * temperature_color_strength * 0.13 * veg_response);
-	rgb = mix(rgb, vec3(0.63, 0.45, 0.27),
-		heat_visual * temperature_color_strength * 0.14 * veg_response);
-	float dry_moisture_mix = pow(dry_pressure, 0.78)
-		* moisture_color_strength * 0.42 * veg_response;
-	float wet_moisture_mix = pow(water_support, 0.78)
-		* moisture_color_strength * 0.34 * vitality_color_n * veg_response;
-	rgb = mix(rgb, vec3(0.68, 0.52, 0.29), dry_moisture_mix);
-	rgb = mix(rgb, vec3(0.28, 0.48, 0.36), wet_moisture_mix);
-	// 干燥略提亮、饱和为草黄色；湿润略压暗并冷化，远景也能读出含水差。
-	rgb *= 1.0 + dry_visual * 0.07 * moisture_color_strength * veg_response;
-	rgb *= 1.0 + wet_visual * 0.025 * moisture_color_strength * veg_response;
-	rgb = mix(rgb, vec3(0.62, 0.29, 0.15),
-		stage_w.z * autumn_red_strength * 0.28 * veg_response);
-	rgb = mix(rgb, vec3(0.52, 0.34, 0.22),
-		dry_hot * heat_red_strength * 0.14 * veg_response);
+	// 温度、湿度和活力先归一化为一个目标色，再做一次混合；避免连续乘色压灰。
+	float vitality_curve_power = mix(1.10, 0.62, vitality_color_contrast);
+	float vitality_high_w = pow(vitality_color_n, vitality_curve_power)
+		* vitality_high_color_strength;
+	float vitality_low_w = pow(1.0 - vitality_color_n, vitality_curve_power)
+		* vitality_low_color_strength;
+	float cool_w = cool_visual * temperature_color_strength * 0.58;
+	float heat_w = heat_visual * temperature_color_strength * heat_red_strength * 0.54;
+	float dry_w = pow(dry_pressure, 1.08) * moisture_color_strength
+		* dry_yellow_strength * 0.58;
+	float wet_w = pow(water_support, 0.78) * moisture_color_strength
+		* mix(wet_green_strength, lush_green_strength, vitality_color_n) * 0.58
+		* green_water_support * (1.0 - golden_commit * 0.78);
+	float healthy_w = vitality_high_w * (0.34 + water_support * lush_green_strength * 0.46)
+		* green_water_support * (1.0 - golden_commit * 0.78);
+	float decline_w = vitality_low_w * (0.48 + dry_pressure * 0.52);
+	vec3 climate_target =
+		vec3(0.48, 0.56, 0.58) * cool_w
+		+ vec3(0.66, 0.47, 0.26) * heat_w
+		+ vec3(0.78, 0.56, 0.15) * dry_w
+		+ vec3(0.22, 0.50, 0.30) * wet_w
+		+ vec3(0.22, 0.52, 0.24) * healthy_w
+		+ vec3(0.60, 0.43, 0.22) * decline_w;
+	float climate_total = cool_w + heat_w + dry_w + wet_w + healthy_w + decline_w;
+	if (climate_total > 0.001) {
+		climate_target /= climate_total;
+		float climate_dominant = max(max(max(cool_w, heat_w), max(dry_w, wet_w)),
+			max(healthy_w, decline_w));
+		float warm_climate = max(heat_visual, dry_hot);
+		float climate_mix_cap = mix(0.82, 0.66, warm_climate);
+		float climate_mix = min(clamp(climate_dominant * 0.72 * veg_response, 0.0, 0.82),
+			climate_mix_cap);
+		rgb = mix(rgb, climate_target, climate_mix);
+	}
+	// 气候混合后重新锚定金黄相位，避免湿度/活力目标色把秋叶冲回灰绿。
+	float golden_guard = golden_commit * phenology_response * veg_response;
+	rgb = mix(rgb, vec3(0.94, 0.68, 0.09),
+		clamp(golden_guard * (0.30 + dry_yellow_strength * 0.28), 0.0, 0.58));
+	// 红叶是金黄林中的实例级斑块，而不是整片黄色统一偏红。仅真实秋季物候
+	// 可触发，干旱造成的黄色不会进入红叶分支。
+	float autumn_red_seed = fract(shrub_custom.b * 43.71 + shrub_custom.a * 11.13 + 0.27);
+	float autumn_red_patch = smoothstep(0.64, 0.86, autumn_red_seed)
+		* golden_commit * golden * phenology_response * veg_response;
+	rgb = mix(rgb, vec3(0.60, 0.16, 0.07),
+		clamp(autumn_red_patch * autumn_red_strength * 0.52, 0.0, 0.42));
+	rgb = mix(rgb, vec3(0.56, 0.45, 0.29),
+		dry_hot * heat_red_strength * 0.10 * veg_response);
 	// 季节开花：萌芽期给开花类一抹亮色，积雪覆盖时收敛。
 	float bloom = bloom_strength * sprouting * vitality_n * (1.0 - snow_amount * 0.85);
 	rgb = mix(rgb, rgb * vec3(1.12, 1.0, 1.08) + vec3(0.10, 0.03, 0.08), bloom);
-	rgb = mix(rgb, vec3(0.60, 0.60, 0.53),
-		withered * 0.12 * phenology_response * veg_response);
-	rgb = mix(rgb, vec3(0.96, 0.98, 1.0), snow_amount);
+	rgb = mix(rgb, vec3(0.62, 0.45, 0.18),
+		withered * seasonal_wither_support * 0.14 * phenology_response * veg_response);
+	// 先展开色度与明度，再覆雪；严寒区收紧色度，避免健康绿色变成荧光色。
+	float grade_luma = dot(rgb, vec3(0.299, 0.587, 0.114));
+	float warm_grade_mix = max(heat_visual, dry_hot) * 0.82;
+	float effective_saturation_gain = mix(color_saturation_gain, 1.12,
+		clamp(warm_grade_mix, 0.0, 0.86));
+	float cold_grade_mix = cool_visual * temperature_color_strength * 0.90;
+	effective_saturation_gain = mix(effective_saturation_gain, 0.76,
+		clamp(cold_grade_mix, 0.0, 0.90));
+	// 绿色主导的树冠只允许轻度色度展开，防止 Profile、健康色和湿润色叠成荧光绿。
+	// 金黄与枯褐不满足 green_axis，因此仍保留清晰的全图区分度。
+	float green_axis = max(rgb.g - max(rgb.r, rgb.b), 0.0);
+	float green_chroma_w = smoothstep(0.07, 0.26, green_axis)
+		* clamp(wet_w + healthy_w + stage_w.y, 0.0, 1.0);
+	effective_saturation_gain = mix(effective_saturation_gain,
+		min(effective_saturation_gain, 1.06), green_chroma_w * 0.90);
+	rgb = mix(vec3(grade_luma), rgb, effective_saturation_gain) * color_value_gain;
+	rgb = clamp(rgb, vec3(0.0), vec3(1.0));
+	// 风格化调色板禁止大面积橄榄黄绿：它通常来自基础色、物候色和气候色的
+	// 二次混合。保持当前明度，将其按生态状态归入明确绿或明确金黄。
+	float olive_chroma = smoothstep(0.10, 0.24, min(rgb.r, rgb.g) - rgb.b);
+	float olive_rg_close = 1.0 - smoothstep(0.06, 0.18, abs(rgb.r - rgb.g));
+	float olive_w = olive_chroma * olive_rg_close * veg_response;
+	float gold_or_dry = max(golden_commit, smoothstep(0.56, 0.80, dry_pressure));
+	vec3 palette_hue = mix(vec3(0.24, 0.50, 0.25), vec3(0.82, 0.58, 0.12), gold_or_dry);
+	float palette_luma = dot(palette_hue, vec3(0.299, 0.587, 0.114));
+	palette_hue *= dot(rgb, vec3(0.299, 0.587, 0.114)) / max(palette_luma, 0.001);
+	rgb = mix(rgb, clamp(palette_hue, vec3(0.0), vec3(1.0)), olive_w * 0.82);
+	float snow_top = smoothstep(0.50, 0.88, UV.y);
+	float canopy_edge = abs(UV.x - 0.5) * 2.0;
+	float snow_interior = 1.0 - smoothstep(0.72, 0.98, canopy_edge);
+	float snow_highlight = smoothstep(0.055, 0.34, source_luma);
+	float snow_breakup = smoothstep(0.30, 0.72,
+		fract(shrub_custom.b * 37.17 + UV.x * 5.73 + UV.y * 3.19));
+	float snow_cap_mask = clamp((snow_top * 0.52 + snow_highlight * 0.34
+		+ snow_breakup * 0.08) * snow_interior, 0.0, 1.0);
+	float local_snow = snow_amount * mix(1.0, 0.18 + snow_cap_mask * 0.62,
+		snow_body_color_retention);
+	rgb = mix(rgb, vec3(0.96, 0.98, 1.0), clamp(local_snow, 0.0, 1.0));
 	// 卡通分层：基部 AO（UV.y 低=近根，压暗）+ 轻量 3 阶色调量化（在 albedo 空间做）。
 	float ao = 1.0 - (1.0 - clamp(UV.y, 0.0, 1.0)) * toon_shading * 0.38;
 	rgb *= ao;
@@ -507,7 +600,7 @@ void fragment() {
 		rgb = horizon_debug_rgb;
 	}
 	float alpha = COLOR.a * shrub_presence_v;
-	alpha *= 1.0 - snow * 0.32;
+	alpha *= 1.0 - snow * snow_alpha_loss_strength;
 	alpha = (alpha < disappear_alpha_threshold) ? 0.0 : alpha;
 	COLOR = vec4(rgb, alpha);
 }
@@ -2083,6 +2176,10 @@ func _apply_profile_uniforms() -> void:
 	_material.set_shader_parameter("vitality_low_color_strength", cfg.vitality_low_color_strength)
 	_material.set_shader_parameter("vitality_high_color_strength", cfg.vitality_high_color_strength)
 	_material.set_shader_parameter("vitality_color_contrast", cfg.vitality_color_contrast)
+	_material.set_shader_parameter("color_saturation_gain", cfg.color_saturation_gain)
+	_material.set_shader_parameter("color_value_gain", cfg.color_value_gain)
+	_material.set_shader_parameter("snow_body_color_retention", cfg.snow_body_color_retention)
+	_material.set_shader_parameter("snow_alpha_loss_strength", cfg.snow_alpha_loss_strength)
 	# 点缀/地貌类 archetype 抑制植被气候改色（岩石不该变绿/变黄）。
 	var arch := _detail_kind()
 	var is_deco := _is_decoration_archetype(arch)
@@ -2093,15 +2190,19 @@ func _apply_profile_uniforms() -> void:
 	match arch:
 		DETAIL_TREE:
 			phenology_color_dominance = 0.90
-			albedo_light_floor = 0.52
+			albedo_light_floor = 0.66
+			# 专用底色乔木（云雾林、季风林）按常绿树处理，不套用完整落叶物候。
+			if bool(cfg.base_color_override_enabled):
+				phenology_response = 0.22
+				phenology_color_dominance = 0.42
 		DETAIL_CONIFER:
 			phenology_response = 0.28
 			phenology_color_dominance = 0.46
-			albedo_light_floor = 0.48
+			albedo_light_floor = 0.68
 		DETAIL_PALM, DETAIL_CACTUS:
 			phenology_response = 0.16
 			phenology_color_dominance = 0.40
-			albedo_light_floor = 0.48
+			albedo_light_floor = 0.56
 		DETAIL_REED:
 			phenology_response = 0.72
 		DETAIL_ROCK, DETAIL_SNOW_MOUND, DETAIL_DEAD_SNAG:
@@ -2120,8 +2221,17 @@ func _apply_profile_uniforms() -> void:
 		DETAIL_REED: bloom = 0.10
 		_: bloom = 0.0
 	_material.set_shader_parameter("bloom_strength", bloom)
-	# 雪埋：植被会被积雪压伏；雪堆本身就是雪、岩石/枯木不缩。
-	_material.set_shader_parameter("snow_burial", 0.0 if is_deco else 0.55)
+	# 雪埋与尺寸下限：乔木保留完整树冠；灌木/草本仍可被积雪明显压伏。
+	var snow_burial_strength := 0.55
+	var snow_size_floor := 0.0
+	if arch == DETAIL_TREE:
+		snow_burial_strength = 0.08
+		snow_size_floor = 0.86
+	elif arch == DETAIL_CONIFER:
+		snow_burial_strength = 0.03
+		snow_size_floor = 0.94
+	_material.set_shader_parameter("snow_burial", 0.0 if is_deco else snow_burial_strength)
+	_material.set_shader_parameter("snow_size_floor", snow_size_floor)
 	# 卡通分层：所有 archetype 都受益于基部 AO，点缀类略弱以保持硬朗轮廓。
 	_material.set_shader_parameter("toon_shading", 0.22 if is_deco else 0.32)
 
@@ -3280,7 +3390,7 @@ func _base_color_for_vegetation(veg: int) -> Color:
 		DETAIL_GRASS:
 			return _grass_base_color_for_vegetation(veg)
 		DETAIL_CONIFER:
-			return Color(0.10, 0.28, 0.18, 0.96)
+			return Color(0.12, 0.34, 0.21, 0.98)
 		DETAIL_PALM:
 			return Color(0.16, 0.40, 0.20, 0.96)
 		DETAIL_CACTUS:
@@ -3315,19 +3425,19 @@ func _base_color_for_vegetation(veg: int) -> Color:
 func _tree_base_color_for_vegetation(veg: int) -> Color:
 	match veg:
 		VegetationType.VEG.TAIGA, VegetationType.VEG.TEMPERATE_CONIFER:
-			return Color(0.10, 0.30, 0.17, 0.94)
+			return Color(0.12, 0.36, 0.19, 0.96)
 		VegetationType.VEG.TEMPERATE_DECIDUOUS:
-			return Color(0.16, 0.42, 0.20, 0.94)
+			return Color(0.18, 0.48, 0.22, 0.96)
 		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			return Color(0.07, 0.34, 0.18, 0.96)
+			return Color(0.08, 0.40, 0.20, 0.98)
 		VegetationType.VEG.TROPICAL_DRY_FOREST:
-			return Color(0.24, 0.40, 0.18, 0.92)
+			return Color(0.16, 0.36, 0.18, 0.92)
 		VegetationType.VEG.SWAMP, VegetationType.VEG.MANGROVE:
 			return Color(0.08, 0.28, 0.18, 0.92)
 		VegetationType.VEG.SAVANNA:
-			return Color(0.28, 0.39, 0.18, 0.88)
+			return Color(0.18, 0.36, 0.18, 0.88)
 		_:
-			return Color(0.14, 0.36, 0.18, 0.90)
+			return Color(0.16, 0.42, 0.20, 0.94)
 
 
 func _grass_base_color_for_vegetation(veg: int) -> Color:

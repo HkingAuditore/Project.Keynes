@@ -37,6 +37,7 @@ func _run() -> void:
 	_test_csv_escape_special_chars()
 	_test_csv_escape_numbers_and_bool()
 	_test_collect_columns_fixed_first()
+	_test_continuation_columns_fixed()
 	_test_collect_columns_job_triplet_grouped()
 	_test_collect_columns_job_first_seen_order()
 	_test_collect_columns_breakdown_dynamic()
@@ -90,6 +91,14 @@ func _test_collect_columns_fixed_first() -> void:
 	# 固定列总数
 	_expect(cols.size() == PerfRecorder.FIXED_COLUMNS.size() + 3,
 		"size = fixed + 3 job cols, got=%d" % cols.size())
+
+
+func _test_continuation_columns_fixed() -> void:
+	var cols: PackedStringArray = PerfRecorder._collect_columns([])
+	var first: int = cols.find("continuation_frames")
+	var last: int = cols.find("continuation_stage_wall_ms")
+	_expect(first != -1 and last != -1, "continuation perf columns present")
+	_expect(first < last, "continuation perf columns retain fixed order")
 
 
 func _test_collect_columns_job_triplet_grouped() -> void:

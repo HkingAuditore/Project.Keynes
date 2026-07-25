@@ -56,7 +56,7 @@ func _init() -> void:
 		return
 
 	var spread: bool = variant == "spread"
-	var result: Dictionary = _run(spread)
+	var result: Dictionary = await _run(spread)
 	var fp: Dictionary = result["fp"]
 
 	if not spread:

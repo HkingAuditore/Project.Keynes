@@ -90,7 +90,7 @@ extends Node2D
 # 和 uniforms.gdshaderinc 同步。这是真正推送到 shader 的数据源（行 989）。
 @export_group("Climate")
 @export_range(0.0, 0.4, 0.01) var season_temp_amp: float = 0.32
-@export_range(0.0, 1.0, 0.01) var vegetation_season_strength: float = 0.85
+@export_range(0.0, 1.0, 0.01) var vegetation_season_strength: float = 1.0
 @export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
 @export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88
 @export_range(0.0, 1.0, 0.01) var season_transition_phase_span: float = 0.33
@@ -117,14 +117,14 @@ extends Node2D
 # cover_axis_strength：FLOODING/PERMAFROST/GLACIER 等覆盖物在 fragment 末尾的
 # 叠加强度（SNOW 仍走原 dynamic_snow 路径，避免与 snow_factor 双叠）。
 @export_group("Axes (Milestone 2)")
-@export_range(0.0, 1.0, 0.01) var vegetation_axis_strength: float = 0.35
+@export_range(0.0, 1.0, 0.01) var vegetation_axis_strength: float = 0.45
 @export_range(0.0, 1.0, 0.01) var cover_axis_strength: float = 0.65
-@export_range(0.0, 1.0, 0.01) var ecology_visual_strength: float = 0.70
+@export_range(0.0, 1.0, 0.01) var ecology_visual_strength: float = 0.90
 @export_range(0.0, 1.0, 0.01) var snowline_visual_strength: float = 0.85
-@export_range(0.0, 1.0, 0.01) var foliage_density_strength: float = 0.75
-@export_range(0.0, 1.5, 0.01) var temperature_visual_strength: float = 1.0
-@export_range(0.0, 1.5, 0.01) var moisture_visual_strength: float = 1.0
-@export_range(0.0, 1.5, 0.01) var vitality_visual_strength: float = 1.0
+@export_range(0.0, 1.0, 0.01) var foliage_density_strength: float = 0.85
+@export_range(0.0, 1.5, 0.01) var temperature_visual_strength: float = 1.25
+@export_range(0.0, 1.5, 0.01) var moisture_visual_strength: float = 1.30
+@export_range(0.0, 1.5, 0.01) var vitality_visual_strength: float = 1.25
 @export_range(0, 2, 1) var ecology_visual_quality: int = 2
 
 # ─── Milestone 3：天气 overlay 总强度（0 关闭，1 全力） ─────────────────

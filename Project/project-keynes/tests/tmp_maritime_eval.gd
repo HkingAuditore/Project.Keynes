@@ -42,8 +42,8 @@ func _init() -> void:
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("  [SKIP] DCWorldExt missing"); quit(0); return
 
-	var off := _run_case(DAMP_A)
-	var on := _run_case(DAMP_B)
+	var off := await _run_case(DAMP_A)
+	var on := await _run_case(DAMP_B)
 	if off.is_empty() or on.is_empty():
 		print("  FAIL: a case produced no data"); quit(1); return
 

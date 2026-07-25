@@ -19,7 +19,8 @@
 # 跳日帧（was_skipped_day=true）的 SUS 段不刷新，对应 cell 留空字符串，避免
 # 误把"未刷新"读作"0ms"。
 #
-# 不持有 SUS 引用，不修改任何 Job 内部逻辑——零新计时插桩。
+# 不持有 SUS 引用，不修改任何 Job 内部逻辑；continuation 计时由 MapGenerator
+# 聚合后随 fast-tick sample 传入，避免 recorder 自己驱动调度。
 class_name PerfRecorder
 extends RefCounted
 
@@ -60,6 +61,21 @@ const FIXED_COLUMNS: Array = [
 	"sim_strict_budget_enabled",
 	"sim_budget_warn_ms",
 	"economy_reserved_budget_ms",
+	# The rows are emitted at fast-tick boundaries. These fields describe the
+	# economy/country continuation pulses that completed since the prior row.
+	"continuation_frames",
+	"continuation_slices",
+	"continuation_country_slices",
+	"continuation_economy_slices",
+	"continuation_wall_ms",
+	"continuation_max_frame_wall_ms",
+	"continuation_max_slice_ms",
+	"continuation_last_slice_ms",
+	"continuation_budget_ms",
+	"continuation_last_stage",
+	"continuation_last_path",
+	"continuation_done",
+	"continuation_stage_wall_ms",
 ]
 
 # 软上限：避免误开后台跑爆内存。约 60000 帧 ≈ 30 分钟 30FPS。

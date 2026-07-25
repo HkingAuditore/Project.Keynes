@@ -64,7 +64,7 @@ func _init() -> void:
 		return
 
 	if variant == "baseline":
-		var fp: Dictionary = _run_variant(PackedInt32Array(YIELD_ALL), "baseline(one-node)")
+		var fp: Dictionary = await _run_variant(PackedInt32Array(YIELD_ALL), "baseline(one-node)")
 		if fp.is_empty():
 			print("  [FAIL] baseline produced no fingerprint")
 		else:
@@ -78,7 +78,7 @@ func _init() -> void:
 			for tok in yield_csv.split(",", false):
 				override.append(int(tok))
 		print("  batched yield override = %s (empty=default {1,2,4,6,7})" % str(override))
-		var fp_batched: Dictionary = _run_variant(override, "batched(yield=%s)" % yield_csv)
+		var fp_batched: Dictionary = await _run_variant(override, "batched(yield=%s)" % yield_csv)
 		if not FileAccess.file_exists(DUMP_PATH):
 			print("  [FAIL] baseline dump missing; run variant=baseline first")
 			quit(0)
