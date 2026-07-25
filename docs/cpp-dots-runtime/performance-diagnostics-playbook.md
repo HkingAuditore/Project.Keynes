@@ -22,6 +22,11 @@ breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 
   使用独立 hash，不会被 population generation 冻结。
 - `fast_ms`：以上路径与少量调度胶水的总墙钟；录制器开销另见
   `fast_ms_after_recorders` / recorder summary。
+- `continuation_*`：从上一个 `fast_tick` 记录完成到当前记录之间，
+  `simulation_backpressure_pulse` 执行的 country/economy continuation 汇总。
+  `continuation_wall_ms` 是这些脉冲的墙钟总和，`continuation_max_frame_wall_ms` 是单个脉冲的最大墙钟，
+  `continuation_max_slice_ms` 是其中单个 slice 的最大墙钟；`continuation_stage_wall_ms` 是按
+  `source:stage` 聚合的 JSON 字符串。它们不是当前 `fast_tick` 的子段，且没有 continuation 时为 0/空。
 
 性能 CSV 在桌面写入仓库 `tmp/perf_record_*.csv`，地块 CSV 写入
 `tmp/tile_data_record_*.csv`，经济录制按提交 epoch 写入 `tmp/economy_record_*.csv`；

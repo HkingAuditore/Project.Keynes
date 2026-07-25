@@ -1587,6 +1587,9 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 	var perf_ready: bool = _recorder_ready(_perf_recorder)
 	var tile_ready: bool = _recorder_ready(_tile_data_recorder)
 	var economy_ready: bool = _recorder_ready(_economy_data_recorder)
+	var continuation: Dictionary = {}
+	if _generator != null and _generator.has_method("consume_continuation_perf_summary"):
+		continuation = _generator.consume_continuation_perf_summary()
 	if not perf_ready and not tile_ready and not economy_ready:
 		return {}
 	var t_recorders_us0: int = Time.get_ticks_usec()
@@ -1609,6 +1612,19 @@ func _publish_fast_tick_perf_sample(t_sus_ms: float, t_render_ms: float,
 		"t_sus_ms": t_sus_ms,
 		"t_render_ms": t_render_ms,
 		"t_ui_ms": t_ui_ms,
+		"continuation_frames": int(continuation.get("frames", 0)),
+		"continuation_slices": int(continuation.get("slices", 0)),
+		"continuation_country_slices": int(continuation.get("country_slices", 0)),
+		"continuation_economy_slices": int(continuation.get("economy_slices", 0)),
+		"continuation_wall_ms": float(continuation.get("wall_ms", 0.0)),
+		"continuation_max_frame_wall_ms": float(continuation.get("max_frame_wall_ms", 0.0)),
+		"continuation_max_slice_ms": float(continuation.get("max_slice_ms", 0.0)),
+		"continuation_last_slice_ms": float(continuation.get("last_slice_ms", 0.0)),
+		"continuation_budget_ms": float(continuation.get("budget_ms", 0.0)),
+		"continuation_last_stage": str(continuation.get("last_stage", "")),
+		"continuation_last_path": str(continuation.get("last_path", "")),
+		"continuation_done": bool(continuation.get("done", false)),
+		"continuation_stage_wall_ms": JSON.stringify(continuation.get("stage_wall_ms", {})),
 	}
 	if _generator != null and _generator.has_method("sus_climate_breakdown"):
 		var climate_diag: Dictionary = _generator.sus_climate_breakdown()

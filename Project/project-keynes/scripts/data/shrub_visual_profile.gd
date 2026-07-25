@@ -106,6 +106,10 @@ enum SpawnDomain {
 @export_range(0.0, 2.0, 0.05) var vitality_patch_boost: float = 0.55
 
 @export_group("Climate Appearance")
+@export_range(0.5, 2.0, 0.01) var color_saturation_gain: float = 1.0
+@export_range(0.5, 1.5, 0.01) var color_value_gain: float = 1.0
+@export_range(0.0, 1.0, 0.01) var snow_body_color_retention: float = 0.0
+@export_range(0.0, 1.0, 0.01) var snow_alpha_loss_strength: float = 0.32
 @export_range(0.0, 1.0, 0.01) var dry_yellow_strength: float = 0.82
 @export_range(0.0, 1.0, 0.01) var wet_green_strength: float = 0.48
 @export_range(0.0, 1.0, 0.01) var lush_green_strength: float = 0.72

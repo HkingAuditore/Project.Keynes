@@ -226,6 +226,8 @@ void fragment() {
 			ocean_current_v, wind_v, visual_ice_fraction);
 	}
 
+	// 保留旧 11 参数 ABI，避免 ShaderInclude 热缓存与主 shader 热重载不同步。
+	// 气候参数仅用于接口兼容，global_adjustments 内不再消费它们。
 	COLOR = apply_global_adjustments(
 		col, wp, pixel_noise, dyn_snow, current_temp, moist, dyn_vitality, dyn_valid,
 		cover, is_water ? 0.0 : 1.0, veg == V_NONE ? 0.0 : 1.0);

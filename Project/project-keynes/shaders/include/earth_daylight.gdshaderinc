@@ -26,7 +26,7 @@ const float EARTH_DAYLIGHT_TAU = 6.2831853;
 
 // 昼/晨昏/夜色板：全图常量（不随全局相位漂移），与历史 brdf.make_lighting_context 同值。
 const vec3 EARTH_DAYLIGHT_NOON = vec3(1.0, 0.97, 0.92);   // 正午暖白
-const vec3 EARTH_DAYLIGHT_DUSK = vec3(1.0, 0.56, 0.31);   // 晨昏暖橙（暮光带）
+const vec3 EARTH_DAYLIGHT_DUSK = vec3(1.0, 0.74, 0.58);   // 晨昏暖琥珀白（避免橙色聚光）
 const vec3 EARTH_NIGHT_AMBIENT = vec3(0.13, 0.16, 0.25);  // 夜侧冷蓝月光
 const vec3 EARTH_DAY_AMBIENT   = vec3(0.60, 0.66, 0.77);  // 白昼天空环境光
 const vec3 EARTH_MOONLIGHT     = vec3(0.48, 0.58, 0.82);  // 可读性优先的冷蓝月光

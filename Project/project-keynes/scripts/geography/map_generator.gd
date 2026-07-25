@@ -1016,6 +1016,7 @@ var _country_facade = null
 var _country_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
+var _continuation_perf_pending: Dictionary = {}
 var _test_economy_bootstrap_enabled: bool = false
 var _test_economy_population_scale: int = EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
 var _natural_resource_pass_knobs: Dictionary = {}
@@ -1601,6 +1602,64 @@ func set_test_economy_population_scale(scale: int) -> void:
 		else EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
 
 
+func consume_continuation_perf_summary() -> Dictionary:
+	var out: Dictionary = _continuation_perf_pending.duplicate(true)
+	_continuation_perf_pending.clear()
+	return out
+
+
+func _record_continuation_slice(source: String, result: Dictionary, wall_ms: float) -> float:
+	if _continuation_perf_pending.is_empty():
+		_continuation_perf_pending = {
+			"frames": 0,
+			"slices": 0,
+			"country_slices": 0,
+			"economy_slices": 0,
+			"wall_ms": 0.0,
+			"max_frame_wall_ms": 0.0,
+			"max_slice_ms": 0.0,
+			"last_slice_ms": 0.0,
+			"budget_ms": 0.0,
+			"last_stage": "",
+			"last_path": "",
+			"done": false,
+			"stage_wall_ms": {},
+		}
+	var slice_ms: float = maxf(wall_ms, 0.0)
+	var stage: String = str(result.get("stage_name", result.get("stage", "")))
+	var path: String = str(result.get("path", ""))
+	if stage.is_empty():
+		stage = "unknown"
+	var stage_key := "%s:%s" % [source, stage]
+	var stage_wall_ms: Dictionary = _continuation_perf_pending.get("stage_wall_ms", {})
+	stage_wall_ms[stage_key] = float(stage_wall_ms.get(stage_key, 0.0)) + slice_ms
+	_continuation_perf_pending["stage_wall_ms"] = stage_wall_ms
+	_continuation_perf_pending["slices"] = int(_continuation_perf_pending.get("slices", 0)) + 1
+	var source_key := "%s_slices" % source
+	_continuation_perf_pending[source_key] = int(_continuation_perf_pending.get(source_key, 0)) + 1
+	_continuation_perf_pending["max_slice_ms"] = maxf(
+		float(_continuation_perf_pending.get("max_slice_ms", 0.0)), slice_ms)
+	_continuation_perf_pending["last_slice_ms"] = slice_ms
+	_continuation_perf_pending["last_stage"] = stage
+	_continuation_perf_pending["last_path"] = path
+	_continuation_perf_pending["done"] = bool(result.get("done", false))
+	return slice_ms
+
+
+func _finish_continuation_perf_frame(started_us: int, frame_slices: int,
+		frame_max_slice_ms: float, budget_ms: float) -> void:
+	if frame_slices <= 0 or _continuation_perf_pending.is_empty():
+		return
+	var frame_wall_ms: float = float(Time.get_ticks_usec() - started_us) / 1000.0
+	_continuation_perf_pending["frames"] = int(_continuation_perf_pending.get("frames", 0)) + 1
+	_continuation_perf_pending["wall_ms"] = float(_continuation_perf_pending.get("wall_ms", 0.0)) + frame_wall_ms
+	_continuation_perf_pending["max_frame_wall_ms"] = maxf(
+		float(_continuation_perf_pending.get("max_frame_wall_ms", 0.0)), frame_wall_ms)
+	_continuation_perf_pending["max_slice_ms"] = maxf(
+		float(_continuation_perf_pending.get("max_slice_ms", 0.0)), frame_max_slice_ms)
+	_continuation_perf_pending["budget_ms"] = budget_ms
+
+
 func _continue_economy_inflight(day_index: int) -> void:
 	if _sus == null:
 		return
@@ -1615,12 +1674,18 @@ func _continue_economy_inflight(day_index: int) -> void:
 			budget_ms = maxf(0.25, float(configured_budget))
 	var started_us := Time.get_ticks_usec()
 	var continuation_count := 0
+	var frame_max_slice_ms := 0.0
 	while continuation_count < ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME:
 		if _country_daily_job != null and _country_facade != null and \
 				bool(_country_facade.world_ext().country_should_run(day_index)):
-			_sus.continue_system(&"country_daily", ctx)
+			var country_slice_started_us := Time.get_ticks_usec()
+			var country_result: Dictionary = _sus.continue_system(&"country_daily", ctx)
+			var country_slice_ms: float = float(Time.get_ticks_usec() - country_slice_started_us) / 1000.0
+			frame_max_slice_ms = maxf(frame_max_slice_ms,
+				_record_continuation_slice("country", country_result, country_slice_ms))
 			continuation_count += 1
 			if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+				_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 				return
 			if bool(_country_facade.world_ext().country_should_run(day_index)):
 				continue
@@ -1629,27 +1694,38 @@ func _continue_economy_inflight(day_index: int) -> void:
 		if _economy_daily_job == null or _economy_facade == null:
 			if _world_clock_ref != null:
 				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
+			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
 		var report: Dictionary = _economy_facade.report()
 		if bool(report.get("fatal", false)):
+			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
 		if not bool(report.get("epoch_active", false)) and \
 				not bool(_economy_facade.world_ext().economy_should_run(day_index)):
 			if _world_clock_ref != null:
 				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
+			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
-		_sus.continue_system(&"economy_daily", ctx)
+		var economy_slice_started_us := Time.get_ticks_usec()
+		var economy_result: Dictionary = _sus.continue_system(&"economy_daily", ctx)
+		var economy_slice_ms: float = float(Time.get_ticks_usec() - economy_slice_started_us) / 1000.0
+		frame_max_slice_ms = maxf(frame_max_slice_ms,
+			_record_continuation_slice("economy", economy_result, economy_slice_ms))
 		continuation_count += 1
 		report = _economy_facade.report()
 		if bool(report.get("fatal", false)):
+			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
 		if not bool(report.get("epoch_active", false)) and \
 				not bool(_economy_facade.world_ext().economy_should_run(day_index)):
 			if _world_clock_ref != null:
 				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
+			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
 		if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
+	_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 
 
 func _native_daily_slice_available() -> bool:

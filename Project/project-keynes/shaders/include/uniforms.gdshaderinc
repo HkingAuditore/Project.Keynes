@@ -291,7 +291,7 @@ uniform float insolation_season_gain : hint_range(0.0, 2.0) = 1.0;
 // 【植被 / 雪 / 洋流 / 风组】
 // =========================================================================
 // 植被换色总开关与强度
-uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 1.0;
 // 动态雪量（季节性雪盖叠加在 biome SNOW 之外）总开关与强度
 uniform float dynamic_snow_strength : hint_range(0.0, 1.0) = 0.85;
 // 调试用：true 时雪盖跳过 fbm cosmetic 抖动，直接拿 dyn_snow 上屏，
@@ -331,14 +331,14 @@ uniform sampler2D ocean_upwelling_tex : source_color, filter_linear, repeat_disa
 // =========================================================================
 // 【植被轴 / 覆盖物轴 / 生态可视化组】
 // =========================================================================
-uniform float vegetation_axis_strength : hint_range(0.0, 1.0) = 0.35;
+uniform float vegetation_axis_strength : hint_range(0.0, 1.0) = 0.45;
 uniform float cover_axis_strength : hint_range(0.0, 1.0) = 0.65;
-uniform float ecology_visual_strength : hint_range(0.0, 1.0) = 0.70;
+uniform float ecology_visual_strength : hint_range(0.0, 1.0) = 0.90;
 uniform float snowline_visual_strength : hint_range(0.0, 1.0) = 0.85;
-uniform float foliage_density_strength : hint_range(0.0, 1.0) = 0.75;
-uniform float temperature_visual_strength : hint_range(0.0, 1.5) = 1.0;
-uniform float moisture_visual_strength : hint_range(0.0, 1.5) = 1.0;
-uniform float vitality_visual_strength : hint_range(0.0, 1.5) = 1.0;
+uniform float foliage_density_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float temperature_visual_strength : hint_range(0.0, 1.5) = 1.25;
+uniform float moisture_visual_strength : hint_range(0.0, 1.5) = 1.30;
+uniform float vitality_visual_strength : hint_range(0.0, 1.5) = 1.25;
 uniform int ecology_visual_quality : hint_range(0, 2) = 2;
 
 

@@ -88,7 +88,7 @@ void fragment() {
     } else {
         col = render_water_pipeline(...);  // 水面：base→specials→shade
     }
-    COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow); // 羊皮纸 + tonemap + sRGB
+    COLOR = apply_global_adjustments(col, wp, pixel_noise, dyn_snow, ...); // 羊皮纸 + tonemap + sRGB
 }
 ```
 
@@ -332,18 +332,20 @@ vec3 render_land_pipeline(
 
 ### 8.3 LAND 2.x — `apply_land_material_modifiers`
 
-四个 stage helper 串联，**只改 base_color**：
+四个 stage helper 串联；环境调色修改 `base_color`，衰退时还会提高少量
+`roughness`，积雪仍留在 LAND 3 最后覆盖：
 
 ```glsl
 struct LandModInputs { /* 13 字段 */ };
 
 surface = apply_seasonal_vegetation_tint(surface, i);   // 2.1
-surface = apply_moisture_tint(surface, i);              // 2.2
 surface = apply_vegetation_axis_tint(surface, i);       // 2.3
-surface = apply_ecology_tint(surface, i);               // 2.4
+surface = apply_environment_color_grade(surface, i);    // 2.4，温湿度/生态/活力统一合色
+surface = apply_relief_tint(surface, i);                 // 2.2，海拔/坡度/风塑形
 ```
 
-新增季节/植被 modifier：在 `LandModInputs` 加字段，写一个新 `apply_xxx_tint`，加到 `apply_land_material_modifiers` 调度即可。
+新增温湿度、生态或活力 modifier 时，应并入 `apply_environment_color_grade` 的
+权重与目标色，避免再追加独立乘色层；独立地貌或材质效果才新增 helper。
 
 ### 8.4 LAND 3.x — Overlay 拆双语义
 
@@ -426,7 +428,7 @@ return apply_water_specials(lit, surface, biome, wp, visual_quality);
 **位置**：`global_adjustments.gdshaderinc`
 
 ```glsl
-vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_snow) {
+vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_snow, ...) {
     col = apply_paper_grain(col, wp, pixel_noise);          // 羊皮纸纸纹
     col = apply_equator_band(col, ...);                     // 赤道带柔光
     col = apply_season_transition_overlay(col, pixel_noise);// 季节过渡 dissolve
@@ -439,6 +441,12 @@ vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_sno
 ```
 
 **关键修复（v10 重构）**：旧版每个 pipeline 末尾各自调一次 Reinhard，导致 land/water 视觉基准不一致；现在统一在 `apply_global_adjustments` 末端单次 tonemap，所有上游均输出 **linear-HDR**。
+
+环境与生态色只允许在 `apply_environment_color_grade` 的 albedo 阶段合成。
+`apply_global_adjustments` 不得根据温度、湿度或活力再次乘色，否则会把 BRDF
+已经计算完成的太阳光与环境光一并染色，造成局部橙光或荧光色。
+该函数继续保留历史 11 参数签名，以兼容 Godot `ShaderInclude` 热缓存；后 7 个
+气候/地表参数仅是 ABI 占位，不得恢复为后处理调色输入。
 
 ---
 
@@ -561,10 +569,10 @@ SurfaceParams apply_volcanic_ash_tint(SurfaceParams s, LandModInputs i) {
 // 3. 加到调度器
 SurfaceParams apply_land_material_modifiers(SurfaceParams s, LandModInputs i) {
     s = apply_seasonal_vegetation_tint(s, i);
-    s = apply_moisture_tint(s, i);
     s = apply_vegetation_axis_tint(s, i);
-    s = apply_ecology_tint(s, i);
-    s = apply_volcanic_ash_tint(s, i);    // ← 加在最后
+    s = apply_environment_color_grade(s, i);
+    s = apply_relief_tint(s, i);
+    s = apply_volcanic_ash_tint(s, i);    // 独立材质覆盖放在环境合色之后
     return s;
 }
 ```
