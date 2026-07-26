@@ -1,5 +1,9 @@
 # GDScript / C++ Data Bridge
 
+ACTIVE bundle 的紧凑 capsule ABI、旧 DLL fallback 和植被 indexed publish
+契约见
+[运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
+
 本文记录 GDScript、DataCore、C++ GDExtension 之间的数据传递契约。性能问题里大量“明明设计上应该走 C++，日志却显示 `path=gdscript`”或“C++ 已经算完但画面/后续 pass 没变”的原因，都来自这里的同步边界。
 
 > 贸易拓扑的地形输入固定为地图生成权威的 `MapData.base_terrain_arr` / `cell_base_terrain`。
@@ -60,6 +64,15 @@ configure 成功后、population/market/building bootstrap 前执行该捕获；
 未就绪”的静默状态。地图只提供输入，不持有路线、信号、订单或托管。
 
 Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口、市场、建筑标签按当前可见标签惰性调用 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。贸易单使用 `get_trade_orders_for_cell(cell, offset, limit)` 分页查询并返回物资行 CSR，禁止全局订单矩阵。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md) 与 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
+
+同日经济 continuation 使用绑定方法 `run_economy_slice_compact(ctx)`；它和
+`run_economy_slice(ctx)` 进入同一个 `DCWorldExt::run_economy_slice_internal`，因此环境/建筑上下文
+冻结、资源 delta flush、committed CSV capture 与 gameplay event publish 的顺序完全一致。差异只在
+native 返回字典：compact 不构造内存、债务、transit/escrow 等全量冷诊断，GDScript 也不以 compact
+结果覆盖最后一个 full report。旧 `run_economy_slice` API 和 component bind table 均不变。
+`EconomyDailySystem` 在既有 `ctx` Dictionary 中附带自身的 `slice_budget_ms`，仅供原生图在
+`building_commit`/`aggregate_publish` 内决定是否继续跨越下一个廉价子阶段；字段不进入
+DataCore、PKEC 或权威哈希，旧调用缺省为 0.8ms。
 
 经济 CSV v14 是同一 committed visibility boundary 的 debug consumer。`DCWorldExt::run_economy_slice()` 先完成 `publish_epoch()`，再把建筑自然资源 delta 写入/flush 到 DataCore reserve slot，最后才允许 `EconomyCsvRecorder` 把 native cohort/market/building SoA 与资源 slot 复制进一个空闲 POD buffer。后台 worker 只接触 `std::vector`、字符串表和绝对路径，不访问 Godot API 或运行中的 runtime。控制面仅绑定 `start_economy_csv_recording(config)`、`request_stop_economy_csv_recording()`、`get_economy_csv_recording_status()`；GDScript 不再逐 cell 调 snapshot API。`config.cell_indices` 为空时按 `cell_stride` 取全图样本，非空时排序去重并覆盖 stride；GM 的“当前地块”只传一个在 start 时锁定的 index。summary 仍是全局提交摘要，cohorts/buildings/resources/market 仅遍历显式样本；building 行明确区分 `owner_capacity`（物理容量）、`owner_required`（活跃组等于容量、停产/不可用组为零）、`planned_owner_equivalent`（仅用于观察利用率折算量）、`filled_owner` 与 `owner_openings`，并发布 `projected_owner_income_per_day`。v14 summary 保留既有字段并新增 ACTIVE 业主岗位重配、跨职业和概率跳过计数；market 继续包含逐商品投入预留、家庭可用库存和完整配置周期的商人目标库存。双缓冲满时自动停止接收并排空已接受批次，不阻塞经济提交；CSV 调试状态不进入 PKEC、replay hash 或 simulation authority。
 

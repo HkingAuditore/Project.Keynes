@@ -34,6 +34,7 @@ const FIXED_COLUMNS: Array = [
 	"timestamp_ms",
 	"was_skipped_day",
 	"fps",
+	"speed_multiplier",
 	"fast_ms",
 	"t_sus_ms",
 	"t_render_ms",
@@ -73,9 +74,17 @@ const FIXED_COLUMNS: Array = [
 	"continuation_last_slice_ms",
 	"continuation_budget_ms",
 	"continuation_last_stage",
+	"continuation_last_next_stage",
+	"continuation_last_substage",
 	"continuation_last_path",
 	"continuation_done",
+	"continuation_stage_counts",
 	"continuation_stage_wall_ms",
+	"continuation_stage_max_slice_ms",
+	"continuation_substage_counts",
+	"continuation_substage_wall_ms",
+	"continuation_substage_max_slice_ms",
+	"continuation_substage_work",
 ]
 
 # 软上限：避免误开后台跑爆内存。约 60000 帧 ≈ 30 分钟 30FPS。

@@ -1453,7 +1453,10 @@ func _format_ms_fields(d: Dictionary) -> String:
 	for k in keys:
 		var key_text: String = str(k)
 		if key_text == "elapsed_ms" or key_text == "total_ms" or key_text.ends_with("_ms"):
-			parts.append("%s=%.1f" % [key_text.replace("_ms", ""), float(d[k])])
+			var value = d[k]
+			var value_type := typeof(value)
+			if value_type == TYPE_INT or value_type == TYPE_FLOAT:
+				parts.append("%s=%.1f" % [key_text.replace("_ms", ""), float(value)])
 		if parts.size() >= 7:
 			break
 	for meta_key in ["current_pass", "pass", "stage", "substage", "path", "tab", "ran"]:

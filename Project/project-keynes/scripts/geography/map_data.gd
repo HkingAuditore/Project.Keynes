@@ -983,6 +983,12 @@ func mark_climate_dirty(idx: int) -> void:
 	if idx >= 0 and idx < climate_dirty_mask.size():
 		climate_dirty_mask[idx] = 1
 
+func mark_climate_dirty_indexed(indices: PackedInt32Array) -> void:
+	var n: int = climate_dirty_mask.size()
+	for idx in indices:
+		if idx >= 0 and idx < n:
+			climate_dirty_mask[idx] = 1
+
 func mark_weather_dirty(idx: int) -> void:
 	if idx >= 0 and idx < weather_dirty_mask.size():
 		weather_dirty_mask[idx] = 1

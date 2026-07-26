@@ -128,6 +128,9 @@ func _run() -> void:
 	_expect("build command accepted", bool(submit.get("ok", false)))
 	var day0 := _run_day(ext, 0)
 	_expect("construction cycle commits", bool(day0.get("done", false)) and not bool(day0.get("fatal", false)))
+	_expect("new building group triggers one batched topology rebuild",
+		int(day0.get("building_structure_new_groups", 0)) == 1 and
+		int(day0.get("building_structure_topology_rebuilds", 0)) == 1)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("mine completes at cycle boundary", int((buildings.building_counts_by_type as PackedInt64Array)[mine_id]) == 1)
 	var day1 := _run_day(ext, 1)
@@ -544,6 +547,9 @@ func _test_construction_rebuild_preserves_employee_fill(
 	_expect("role-rebuild expansion queues",
 		bool(submit.get("ok", false)))
 	var report := _run_day(ext, 0)
+	_expect("same-key construction uses the count-only topology fast path",
+		int(report.get("building_structure_count_only_updates", 0)) == 1 and
+		int(report.get("building_structure_topology_rebuilds", 0)) == 0)
 	var after: Dictionary = ext.get_building_cell_snapshot(0)
 	var after_fill := 0
 	for filled in after.employee_filled as PackedInt64Array:
@@ -2732,9 +2738,9 @@ func _test_producer_support_issuance(source_catalog: Dictionary,
 	_expect("support issuance is a distinct producer cashflow",
 		_cashflow_has_source(pop, owner_row, "producer_support_issuance", true))
 	_expect("support issuance is explicitly audited",
-		int(report.get("approximation_version", 0)) == 16 and
+		int(report.get("approximation_version", 0)) == 17 and
 		str(report.get("approximation_model", "")) ==
-			"rolling_cell_settlement_v16" and
+			"rolling_cell_settlement_v17_anytime" and
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
@@ -2932,16 +2938,22 @@ func _test_building_plan_continuation(source_catalog: Dictionary,
 
 func _test_production_worker_scalar_equivalence(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
-	const CELL_COUNT := 80
+	# Keep the slice below the default 64-cell WTP threshold. Production must
+	# dispatch from weighted recipe work, not from the number of cells alone.
+	const CELL_COUNT := 48
 	var catalog := source_catalog.duplicate(true)
 	var scalar_profile := source_profile.duplicate(true)
 	scalar_profile.worker_enabled = false
-	scalar_profile.worker_market_threshold = 1
+	scalar_profile.economy_investment_sparse_mode = "OFF"
+	scalar_profile.economy_closing_audit_mode = "FULL"
+	scalar_profile.worker_market_threshold = 64
 	scalar_profile.building_cells_per_slice = CELL_COUNT
 	scalar_profile.auto_slice_by_scale = false
 	var worker_profile := scalar_profile.duplicate(true)
 	worker_profile.worker_enabled = true
 	worker_profile.worker_tasks_hint = 4
+	worker_profile.economy_investment_sparse_mode = "ACTIVE"
+	worker_profile.economy_closing_audit_mode = "INCREMENTAL"
 	var scalar := _new_ext(catalog, CELL_COUNT)
 	var worker := _new_ext(catalog, CELL_COUNT)
 	_expect("production scalar country bootstraps",
@@ -2959,7 +2971,16 @@ func _test_production_worker_scalar_equivalence(source_catalog: Dictionary,
 	var scalar_report := _run_day(scalar, 0)
 	var worker_report := _run_day(worker, 0)
 	_expect("building production dispatches multiple worker tasks",
-		int(worker_report.get("building_production_worker_tasks", 1)) > 1)
+		int(worker_report.get(
+			"building_production_worker_tasks_max", 1)) > 1)
+	_expect("sub-threshold production uses weighted parallel dispatch",
+		int(worker_report.get(
+			"building_production_worker_parallel_dispatches", 0)) > 0 and
+		int(worker_report.get(
+			"building_production_worker_weight_total", 0)) >= 256)
+	_expect("building plan uses weighted parallel dispatch",
+		int(worker_report.get(
+			"building_plan_worker_parallel_dispatches", 0)) > 0)
 	_expect("building production worker and scalar hashes match",
 		scalar.get_economy_state_hash() == worker.get_economy_state_hash())
 	_expect("building production worker and scalar event hashes match",
@@ -2969,6 +2990,73 @@ func _test_production_worker_scalar_equivalence(source_catalog: Dictionary,
 		int(worker_report.get("population_error", 1)) == 0 and
 		int(worker_report.get("money_error", 1)) == 0 and
 		int(worker_report.get("goods_error", 1)) == 0)
+	var rolling_scalar_report := scalar_report
+	var rolling_worker_report := worker_report
+	var rolling_hashes_match := true
+	var rolling_ledgers_match := true
+	var saw_fast_opening_audit := false
+	var saw_full_opening_audit := false
+	var saw_fast_closing_audit := false
+	var saw_full_closing_audit := int(worker_report.get(
+		"closing_audit_full_verifications", 0)) > 0
+	var closing_audit_mismatches := int(worker_report.get(
+		"closing_audit_mismatches", 0))
+	var closing_audit_runtime_disabled := bool(worker_report.get(
+		"closing_audit_runtime_disabled", false))
+	var scheduled_review_cells := int(worker_report.get(
+		"last_completed_investment_scheduled_review_cells", 0))
+	var completed_review_cells := int(worker_report.get(
+		"last_completed_investment_review_cells", 0))
+	var sparse_considered := 0
+	var sparse_skipped := 0
+	var sparse_mismatches := 0
+	for day in range(1, 6):
+		rolling_scalar_report = _run_day(scalar, day)
+		rolling_worker_report = _run_day(worker, day)
+		rolling_hashes_match = rolling_hashes_match and \
+			scalar.get_economy_state_hash() == worker.get_economy_state_hash()
+		rolling_ledgers_match = rolling_ledgers_match and \
+			int(rolling_worker_report.get("population_error", 1)) == 0 and \
+			int(rolling_worker_report.get("money_error", 1)) == 0 and \
+			int(rolling_worker_report.get("goods_error", 1)) == 0
+		saw_fast_opening_audit = saw_fast_opening_audit or int(
+			rolling_worker_report.get("opening_audit_fast_paths", 0)) > 0
+		saw_full_opening_audit = saw_full_opening_audit or int(
+			rolling_worker_report.get("opening_audit_full_verifications", 0)) > 0
+		saw_fast_closing_audit = saw_fast_closing_audit or int(
+			rolling_worker_report.get("closing_audit_fast_paths", 0)) > 0
+		saw_full_closing_audit = saw_full_closing_audit or int(
+			rolling_worker_report.get("closing_audit_full_verifications", 0)) > 0
+		closing_audit_mismatches += int(rolling_worker_report.get(
+			"closing_audit_mismatches", 0))
+		closing_audit_runtime_disabled = closing_audit_runtime_disabled or bool(
+			rolling_worker_report.get("closing_audit_runtime_disabled", false))
+		scheduled_review_cells += int(rolling_worker_report.get(
+			"last_completed_investment_scheduled_review_cells", 0))
+		completed_review_cells += int(rolling_worker_report.get(
+			"last_completed_investment_review_cells", 0))
+		sparse_considered += int(rolling_worker_report.get(
+			"last_completed_investment_sparse_considered_types", 0))
+		sparse_skipped += int(rolling_worker_report.get(
+			"last_completed_investment_sparse_skipped_types", 0))
+		sparse_mismatches += int(rolling_worker_report.get(
+			"last_completed_investment_sparse_mismatches", 0))
+	_expect("weighted worker remains scalar-equivalent across rolling phases",
+		rolling_hashes_match)
+	_expect("incremental opening audit preserves exact rolling ledgers",
+		rolling_ledgers_match)
+	_expect("opening audit exercises fast and full verification paths",
+		saw_fast_opening_audit and saw_full_opening_audit)
+	_expect("INCREMENTAL closing audit exercises fast and full verification paths",
+		saw_fast_closing_audit and saw_full_closing_audit)
+	_expect("INCREMENTAL closing audit remains enabled and exact",
+		closing_audit_mismatches == 0 and not closing_audit_runtime_disabled)
+	_expect("investment review list executes every scheduled cell exactly once",
+		scheduled_review_cells == completed_review_cells)
+	_expect("ACTIVE investment sparse filter evaluates a strict candidate subset",
+		sparse_considered > 0 and sparse_skipped > 0)
+	_expect("ACTIVE investment sparse filter reports no viable-candidate mismatch",
+		sparse_mismatches == 0)
 
 func _bootstrap_continuation_fixture(ext: Object, catalog: Dictionary,
 		cell_count: int) -> bool:

@@ -45,7 +45,8 @@ render_mode blend_mix;
 
 //   snow_cover     依赖 common_noise.fbm + height.decode_height_rg8 + weather_front.compute_extreme_weather_mask。
 //   biome_detail   依赖 common_noise.fbm + common_noise.voronoi_cell + uniforms.B_*。
-//   earth_daylight 叶子，仅依赖 uniforms.season_phase/day_phase/axial_tilt_rad：
+//   earth_daylight 叶子，仅依赖 uniforms.season_phase/day_phase/axial_tilt_rad。
+//   植被气候物候权重内联于 land_pipeline，避免 include 热重载缓存版本错配：
 //                  地球式昼夜（晨昏线）单一真源，被 hillshade_tod/brdf/water 统一调用。
 //   hillshade_tod  依赖 uniforms.height_tex / hillshade_* / tod_* / B_* + height.decode_height_rg8 + earth_daylight。
 //   water          依赖 common_noise.* + uniforms.map_index_atlas / B_LAKE/B_REEF/B_KELP/B_SEA_ICE。
@@ -190,15 +191,11 @@ void fragment() {
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 1：季节相位 + 当前温度（每帧由 WorldClock 驱动）
 	// ───────────────────────────────────────────────────────────────────────
-	// 提前算好 lat_signed / eff_phase / season_offset / current_temp，让后续
+	// 提前算好 lat_signed / season_offset / current_temp，让后续
 	// 植被 / 雪 / 海冰 / 深海色温分支都消费同一组温度值。
 	// ═══════════════════════════════════════════════════════════════════════
 	// ─── Phase 1：季节相位 + 当前温度（每帧由 WorldClock 驱动） ───────────
 	float lat_signed = lat_norm * 2.0 - 1.0;            // [-1, 1]
-	// eff_phase 仅用于植被季节色相（vegetation_seasonal_tint）；温度偏移走 insolation 统一入口。
-	// 注：赤道带的软混合在下方 vegetation tint 块单独处理；这里保留 eff_phase 给可能
-	// 的其它消费者，但实际 vegetation 走南/北两次 tint 颜色 mix（见 N7 注释）。
-	float eff_phase = hemi_phase(season_phase, lat_signed);
 	// True Insolation-Driven：CPU / GPU 同源日照偏移；兼容 bool 不再切换 legacy 分支。
 	float season_offset = season_offset_unified(lat_signed, season_phase);
 	float derived_temp = compute_current_temp(elev, lat_signed, season_offset);

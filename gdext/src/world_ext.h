@@ -175,6 +175,7 @@ public:
     godot::Dictionary native_ocean_physical_finish(const godot::Dictionary &ctx);
     godot::Dictionary reset_native_ocean_physical_state(godot::String reason);
     godot::Dictionary get_native_ocean_physical_state_report() const;
+    godot::Dictionary get_native_ocean_physical_hot_state() const;
 
     // Native country authority. Only cell.country_slot is mirrored into the
     // DataCore/MapData bridge; identity, technology, treasury, and territory
@@ -213,6 +214,7 @@ public:
                                         const godot::Dictionary &market_packet);
     godot::Dictionary submit_economy_commands(const godot::Dictionary &packed_batch);
     godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
+    godot::Dictionary run_economy_slice_compact(const godot::Dictionary &ctx);
     bool economy_should_run(int64_t day_index) const;
     godot::Dictionary get_economy_report() const;
     godot::Dictionary get_population_cell_summary(int cell_idx) const;
@@ -1956,6 +1958,7 @@ public:
     // authority yet; it exposes the native worker lifecycle so GDScript can
     // compare against its retained _round_active/_pass_cursor state.
     godot::Dictionary get_native_climate_round_state_report();
+    godot::Dictionary get_native_climate_round_hot_state();
     godot::Dictionary reset_native_climate_round_state(const godot::String &reason = godot::String());
 
     // 析构 hook + GDScript 主动调用入口。安全 join worker。
@@ -1965,6 +1968,8 @@ protected:
     static void _bind_methods();
 
 private:
+    godot::Dictionary run_economy_slice_internal(const godot::Dictionary &ctx,
+                                                  bool compact);
     // ---- diag log toggle (Fix #11 second pass, 2026-06-16) ----
     bool _diag_logs_enabled = true;
 

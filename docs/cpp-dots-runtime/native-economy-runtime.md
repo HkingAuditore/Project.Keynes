@@ -1,5 +1,9 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
+2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和三态
+closing audit 契约见
+[运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
+
 实现入口为 `gdext/src/economy_runtime.{h,cpp}` 与
 `gdext/src/world_ext_economy.cpp`。`DCWorldExt` 组合持有独立
 `NativeEconomyRuntime`；动态人口和商品状态不进入 DataCore `_slots`，也不回填
@@ -108,6 +112,8 @@ state is introduced.
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
 - PKEC v19 是当前 writer：除既有企业三态、债务和投资参数外，保存 pending operating state 与恢复冷却周期。v18 可确定性迁移；v2-v17 旧档统一明确拒绝。
 - `BUILDING_PLAN` 是原生两遍 continuation：第一遍按 active-cell CSR 计算利润、停产恢复和计划利用率，第二遍按相同稳定顺序重建生产投入 reserve。`building_cells_per_slice=0` 确定性使用 256 个 active cell；正值可做平台定标。cursor、生存利用率 floor 和 reserve 构建缓存不保存、不哈希。
+- 建筑生产的 owner-retention scratch 只为本格实际出现的 `(owner, output good)` 建立紧凑 lane；owner signature、owner cohort slot 与 lane 都通过 thread-local generation direct map 查询。它不再为每格清零 `owner_count × good_count` 的 target/used/produced 三个稠密矩阵，也不再为每个 offer 线性搜索 owner。lane 仍按稳定建筑组/output 边首次出现顺序建立，生产、保留、offer 和账本提交顺序不变。
+- 人口或建筑结构变化后的就业对账使用 thread-local signature/profession generation scratch，只初始化 affected cell 实际出现的 signature、profession 和 role；affected cell 先用 stamp 去重后按 cell 升序处理。该 scratch 不进入 PKEC、状态 hash 或 report，岗位裁剪和人口就业分摊公式不变。
 - 业主营运资金缩放使用 8 次确定性整数二分并返回可支付下界，因此绝不透支；最大利用率低估为请求区间的 `1/256`，实际 Q16 未决界由 `working_capital_scale_error_bound_q16` 报告。
 
 ## 2026-07-15 价格弹性、成本底线与生态修正
@@ -209,9 +215,16 @@ focused test 必须验证 worker/scalar state hash 完全相同。
 ## 公共 API
 
 `configure_economy`、`bootstrap_economy`、`submit_economy_commands`、
-`economy_should_run`、`run_economy_slice`、`get_economy_report`、人口/市场 cell
+`economy_should_run`、`run_economy_slice`、`run_economy_slice_compact`、`get_economy_report`、人口/市场 cell
 snapshot、reset、分块 save/restore、固定数学 probe 与 state hash。跨边界写入均为平行
 PackedArrays；UI 只查询选中地块。
+
+`run_economy_slice` 返回 `report_mode=full`，供普通 daily tick、显式查询、UI 与录制诊断；
+same-day barrier continuation 使用 `run_economy_slice_compact`，返回
+`report_mode=compact_slice` 和调度所需的 stage/progress/cursor/work、deadline/fatal、committed event
+以及当前 trade/publish/building-commit breakdown。compact 路径不计算 `memory_bytes`、商人债务全量和
+贸易 transit/escrow 全量统计。两条 API 共用同一 native stage/cursor 和 `DCWorldExt` 提交包装，资源
+delta flush、CSV committed capture 与 gameplay event publish 均不绕过；仅返回 Dictionary 形状不同。
 
 `population_cell_summary()` 与 population/market/building selected-cell snapshot
 都发布该地块的 `settlement_generation`。人口 Inspector 先用 summary generation
@@ -221,7 +234,47 @@ generation 未变时只允许刷新公共 header/score/summary，不得重复构
 
 `trade_plan_ms` 是当前一次 `run_economy_slice()` 中 planner 的墙钟时间，不是 epoch、
 simulation day 或进程累计值。未执行 planner 的 native slice 必须报告 `0`；跨 slice
-分析直接采样该字段，禁止再用相邻 report 相减。
+分析直接采样该字段，禁止再用相邻 report 相减。`trade_plan_breakdown_ms` 以
+`trade_planning.scan_body / scan_finalize / route_prepare / route_expand /
+route_finalize / other` 完整归因该 slice，`trade_plan_breakdown_work` 同步报告扫描 pair、
+初始化 source、Dijkstra expansion 和最终候选数；这些字段只用于诊断，不进入 PKEC、
+状态哈希或确定性推进决策。
+
+每个 slice report 同时提供 `executed_stage`、`next_stage` 与 `executed_substage`：前者是本次
+调用实际支付成本的阶段，`next_stage` 是返回后的 continuation 状态，兼容字段 `stage` 仍等于
+`next_stage`。调度器和性能 CSV 必须用 `executed_stage` 归因，禁止把完成 publish 后切换出的
+`trade_planning` 当成本来源。`aggregate_publish` 的 `publish_breakdown_ms/work` 只描述当前
+slice，按 prepare、精确审计、verify、watermark、trade flow/diagnostics、trade init 与 commit
+对账；`publish_cumulative_breakdown_ms/work` 才是本 epoch 累计。分片游标与临时
+累加器不进入 PKEC 或 state hash。完整审计、贸易初始化和水位线完成前 `_epoch_active` 保持 true，
+save 继续返回 `save_requires_committed_boundary`，半发布结果不成为 gameplay 权威。
+`building_commit_breakdown_ms/work` 同样按当前 slice 报告 `review_prepare`、`special_reset`、
+`recovery_review`、`construction_commit`、`investment_prepare`、`investment` 与
+`finalize`，用于定位该 stage 内的不可抢占尖峰。
+`finalize` 内部先完成二次 construction commit 并将 affected cell 去重为升序，再以默认 128-cell
+continuation 执行就业对账，最后用独立 slice 清理投资 transient cache 并转入 publish。report 公开
+`building_finalize_cells_per_slice`；profile 为 0 时使用该默认值，正值作为兼容覆盖。该私有
+phase/cursor 不进入 PKEC v19 或 state hash，batch 边界不改变
+岗位裁剪、人口分配和 cell 提交顺序。
+
+建筑结构提交按 `(cell,type,owner signature)` 合批。竣工命中已有 group 时只更新 count 与债务，
+不得重建 role、market-signal 或 labor-signal topology；真正新增/删除 group 时，稳定有序旧 group 与
+新增尾部做一次线性 merge。每种建筑的有序唯一 input/output good 集与 employee profession 集在
+catalog 编译时烘焙，market/labor CSR 按 cell 用 generation stamp 直接生成，并通过双缓冲线性复制旧
+EMA，不再创建全局 `(cell,key)` 临时对象或做比较排序。删除 group 的 role/input span 进入按 type
+free list，后续同 type 新 group 优先复用。上述 spans、scratch store、stamp 与 free list 都是可重建
+transient 数据，不进入 PKEC v19 或 state hash；state hash 按稳定 group/role 逻辑顺序读取权威 lane，
+不依赖物理 span 编号。report 通过 `building_structure_count_only_updates/new_groups/removed_groups`、
+`building_structure_topology_rebuilds/role_span_reuses/role_span_appends` 以及
+`building_structure_group_merge_ms/market_cache_ms/labor_cache_ms` 公开结构路径与成本。
+
+冻结国家快照同时烘焙 country-major 建筑可用位与升序 building-type CSR。`building_available()`
+在 ACTIVE epoch 内走 O(1) 稠密位查询，投资目录直接遍历该国 CSR；两者均为 transient cache，
+不改变 catalog 顺序、PKEC v19 或 state hash。`building_commit.investment` 与普通建筑图分开使用
+默认 96-cell batch，report 公开 `investment_cells_per_slice`；profile 为 0 时自动采用 96，正值
+作为确定性覆盖。投资准备只聚合当日同时命中五日
+rolling phase 与资本复核 phase 的 cell，非复核 cell 的 owner-vacancy 诊断沿现有 building CSR
+直接计算，不构造全 epoch `(cell,type)` 哈希表。
 
 贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入和分页
 `get_trade_orders_for_cell(cell, offset, limit)` 冷查询；禁止跨桥返回全局路线/订单矩阵。
@@ -611,10 +664,43 @@ ratio is the investment probability, sampled deterministically from
 `seed/day/cell/type/signature`. A cross-profession winner moves one person and
 the required capital into the building's configured owner profession; an
 already matching owner cohort invests without a fabricated mobility transfer.
+
+## 2026-07-26 weighted worker and exact audit update
+
+`NativeEconomyRuntime` remains the sole mutable authority. Building-plan
+evaluation, production, and household markets now use deterministic contiguous
+weighted ranges capped by `economy_worker_task_cap` (default 6). Plan metrics and
+production/market result buffers are task-local; the authority thread waits and
+merges by task id, preserving scalar state and event hashes. No new DataCore
+slot, bridge packet, PKEC field, or fallback is introduced.
+
+Opening totals reuse the previous exact committed close on ordinary days and
+refresh country treasury cash/goods directly from `NativeCountryRuntime`.
+`economy_full_audit_verify_interval_days` defaults to 25 simulation days (five
+economy epochs) for a periodic complete opening scan. The closing audit and
+population/money/goods conservation checks remain complete on every rolling
+transaction.
 Collector entry is additionally constrained by the current cell-resource
 budget: renewables use reserve-responsive safe yield, while non-renewables must
 retain the configured deposit runway. Local construction conditions and the
 1 percent 30-day bullion issuance cap remain.
+
+Investment catalog traversal now has an exact sparse front end controlled by
+`economy_investment_sparse_mode=OFF|PROBE|ACTIVE` (default `ACTIVE`). Only a
+cell whose capital review is due refreshes its market's transient active-good
+bitset from frozen household/business demand, supply, realized withdrawals,
+exports, stock, and the exact merchant inventory target; ordinary household
+markets do not pay for a second full goods scan. A catalog-baked
+output-good-to-building CSR expands those goods to candidate types. Existing and pending local types are always retained,
+and their construction inputs close the candidate set recursively, so repair,
+growth, and same-review construction-shortage feedback cannot disappear.
+`PROBE` evaluates the full country catalog while measuring the subset. `ACTIVE`
+skips only types outside the conservative closure; inspector diagnostics and
+every `economy_full_audit_verify_interval_days` boundary still perform a full
+scan. If a full scan ever finds a viable omitted type, the runtime increments
+`investment_sparse_mismatches` and disables sparse filtering for the rest of
+the session. The reverse CSR, bitsets, and stamps are derived caches and are
+excluded from PKEC, state hash, and event hash.
 
 The default merchant inventory horizon is 60 days. Per-good target ratios still
 compile to one dense Q16 days column, so ordinary goods target 60 days,
@@ -671,7 +757,8 @@ The production runtime no longer waits for a global epoch. Stable cell phase is
 `cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded
 native continuation calls run plan, employment, production, household clearing,
 price/EMA, investment, audit, and publish for the due workset. Each call consumes
-at most one building, market, or structural range. While the due bucket remains
+up to eight deterministic chunks and may fuse cheap phase boundaries while its
+0.8 ms normal / 1.8 ms high-speed budget remains. While the due bucket remains
 in flight, the same-day barrier drives consecutive bounded continuations inside
 the current real-frame `sim_frame_budget_ms` time box. It stops before starting
 another range once the budget is consumed, or after a defensive maximum of 64
@@ -687,6 +774,27 @@ PKEC v19 persists per-cell settlement dates/generations, dirty generations, and
 building recovery pending state/cooldown. Restore accepts v18 by initializing
 those two new fields to `NONE/0`; v2-v17 are rejected as legacy. References to
 PKEC v14 above describe historical rolling migration, not the current reader.
+
+Accuracy policy is configured independently as
+`EXACT|BALANCED|FAST|CUSTOM` and rollout as `OFF|PROBE|ACTIVE`. The production
+default is `BALANCED+ACTIVE`: non-survival variant families use the certified
+anytime frontier, while deterministic 1% exact probes validate its demand and
+spending allocation. `ACTIVE` always keeps the highest-scoring exact candidate,
+begins with deterministic Top-K, and adds candidates until omitted score mass
+is below the configured regret certificate. Food/clothing survival families
+are never pruned. An invalid certificate, a failed exact probe, or an active
+cooldown takes the exact local path. `OFF` and `PROBE` remain exact
+rollback/baseline modes. Reports use
+`rolling_cell_settlement_v17_anytime` and expose decisions, probes, frontier
+size/pruning, certified regret, failures, and fallbacks. These frontiers are
+derived scratch and are not persisted.
+
+While the unresolved large-world household worker race is isolated,
+`BALANCED+ACTIVE` worlds above 4096 cells keep household market settlement
+scalar; building plan, production, and audit workers remain enabled. Report
+field `approximation_large_world_scalar_guard=true` makes this containment
+visible. The 2400-cell certified performance scene continues to use household
+workers.
 
 The rolling hot path also keeps a non-authoritative per-cell demand-basis cache.
 Building owner-retention and household clearing share the same frozen prices,
@@ -945,6 +1053,76 @@ margin becomes initially unemployed. The explicit uniform stress scales remain
 deliberately synthetic.
 These changes add report fields only and do not change runtime authority, PKEC
 v16, the scheduler graph, or the authoritative hash.
+
+## 2026-07-26 transient indexes and stable bulk signal merge
+
+The sparse market-signal CSR remains authoritative and ascending by
+`(cell, good)`. Worlds with at most four million `cell_count * good_count`
+entries additionally build a transient dense `int32` lookup. Larger worlds keep
+the existing CSR binary search. The dense table, pending-construction cell CSR,
+market result scratch, trade-clock merge scratch, and investment signal overflow
+are all rebuildable caches excluded from PKEC v19 and the state hash.
+
+Investment does not pre-create construction signals. Only a material shortage
+that reached the existing authoritative gate appends an overflow entry. The
+entry is immediately visible to later investment evaluation through the dense
+lookup, then all actually-created entries are stably merged into the aligned CSR
+lanes before aggregate publish. This preserves the reference creation set,
+`(cell, good)` order, saturation order, and final hash while avoiding repeated
+middle insertion into every aligned vector.
+
+Household result buffers retain nested vector capacity across slices. Trade
+response clocks are extended with one sorted merge per market batch instead of
+one aligned-vector insertion per `(market, good)`. Both changes retain market
+evaluation and commit order; trade clocks remain diagnostic-only. Report fields
+split worker, aggregate merge, trade-clock merge, signal insertion/flush,
+allocation growth, epoch preflight, and epoch prepare costs. `EconomyDailySystem`
+exports the bounded subset as fresh `bd_economy_*` performance CSV columns.
+
+Production uses the same transient-capacity rule: a runtime-owned
+`ProductionResult` scratch lane is reset and reused for each due-cell range
+instead of reconstructing nested vectors for every continuation. Report fields
+`production_result_allocation_growth_count/bytes` expose residual capacity
+growth; a warmed steady state should report zero. Building plan and household
+post-building passes use deterministic stage-local batching (auto is twice the
+normal building cell/group range), while investment/finalize default to 96/128
+cells. Profile overrides change only range boundaries and never stable
+evaluation or commit order.
+
+The full report also retains one `last_completed_*` snapshot captured after the
+publish COMMIT slice. It preserves completed-epoch worker counts, stage totals,
+allocation growth, and structure-rebuild diagnostics across the next
+`clear_epoch_metrics()`. The snapshot is recorder-only transient state, excluded
+from PKEC v19 and the authoritative hash.
+
+## 2026-07-27 incremental audit and review-cell scheduling
+
+Closing audit modes are `FULL`, `PROBE`, and `INCREMENTAL`; the production
+default is `INCREMENTAL` after the fixed-seed 200-day daily dual-audit gate
+completed with zero mismatch. Incremental totals are computed from opening totals plus
+the real delta of generation-stamped population/funds and market-good lanes
+captured at their first mutation. Due household/production worksets are
+pre-registered on the main thread before worker dispatch, while trade, command,
+and structural mutations touch their lanes at the native mutation site. The
+shadow, stamps, touched lists, mismatch ledger/lane, and counters are transient
+and excluded from PKEC v19 and both hashes. Bootstrap/restore rebuild the shadow;
+commit advances only touched lanes. The first day, restore boundary, anomaly,
+and every 25th day still run a complete verification; mismatch blocks publish
+and disables INCREMENTAL for the session. `PROBE` and `FULL` remain explicit
+validation and rollback modes.
+
+`building_commit.review_prepare` now builds one ascending list containing only
+the current rolling phase's populated capital-review cells. Investment finance
+initialization, pending/existing/resource aggregation, and candidate evaluation
+consume that list, and the continuation cursor is an ordinal into it. Reports
+publish `investment_scheduled_review_cells` and
+`investment_review_cells`; completed epochs require equality. Candidate
+evaluation is still scalar. After ready construction is committed,
+`building_commit.investment_prepare` now performs the transient finance and
+pending/existing/resource aggregation as its own cooperative phase; the following
+`investment` phase evaluates and commits bounded review-cell ranges. Both keys are
+always present in `building_commit_breakdown_ms/work`. The planned `>=64` read-only worker result plus
+stable main-thread revalidation/commit split is not yet production behavior.
 
 ## CSV writer backpressure (current)
 

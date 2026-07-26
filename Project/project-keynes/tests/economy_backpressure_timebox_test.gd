@@ -46,7 +46,14 @@ class FakeScheduler extends RefCounted:
 		contexts.append(ctx)
 		var runtime := country_runtime if system_id == &"country_daily" else economy_runtime
 		runtime.remaining = maxi(0, runtime.remaining - 1)
-		return {"done": runtime.remaining == 0}
+		return {
+			"done": runtime.remaining == 0,
+			"stage_name": "country_apply" if system_id == &"country_daily" \
+				else "household_market",
+			"next_stage": "country_publish" if system_id == &"country_daily" \
+				else "aggregate_publish",
+			"path": "test",
+		}
 
 
 func _initialize() -> void:
@@ -82,6 +89,18 @@ func _initialize() -> void:
 	if scheduler.contexts.is_empty() or not is_equal_approx(
 			scheduler.contexts[0].season_phase, clock.season_phase()):
 		failures.append("continuation context swapped season phase and speed")
+	var continuation_perf: Dictionary = generator.consume_continuation_perf_summary()
+	var stage_counts: Dictionary = continuation_perf.get("stage_counts", {})
+	var stage_totals: Dictionary = continuation_perf.get("stage_wall_ms", {})
+	var stage_maxima: Dictionary = continuation_perf.get("stage_max_slice_ms", {})
+	if int(stage_counts.get("country:country_apply", 0)) != 2 or \
+			int(stage_counts.get("economy:household_market", 0)) != 5:
+		failures.append("continuation stage counts did not preserve source/stage buckets")
+	if float(stage_totals.get("country:country_apply", -1.0)) < 0.0 or \
+			float(stage_maxima.get("economy:household_market", -1.0)) < 0.0:
+		failures.append("continuation stage total/max timings were not recorded")
+	if String(continuation_perf.get("last_next_stage", "")) != "aggregate_publish":
+		failures.append("continuation next stage was not retained separately")
 
 	economy_runtime.remaining = 100
 	scheduler.calls.clear()

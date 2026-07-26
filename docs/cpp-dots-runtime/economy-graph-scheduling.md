@@ -1,5 +1,8 @@
 # Market V2 冻结周期、错峰与调度契约
 
+高速档稳定合批和 `executed_stage` 归因规则见
+[运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
+
 ## 为什么不再每日全量
 
 10M cohort × 16 needs 等于每轮约 1.6 亿条需求。旧实现虽然是 C++/SoA/WTP，仍要求
@@ -40,7 +43,10 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 
 ## 图阶段
 
-1. `trade_planning`：上次发布后以确定工作单元扫描稀疏信号并有界寻路；是无屏障软任务。
+1. `trade_planning`：上次发布后以确定工作单元扫描稀疏信号并有界寻路；路线 heap 与目标状态可跨
+   native slice 续跑，每片全局最多推进 256 次有效 Dijkstra 扩展；是无屏障软任务。
+   report/性能 CSV 将该调用细分为 scan body/finalize、route prepare/expand/finalize 和 other，
+   但这些墙钟诊断不参与预算或确定性推进。
 2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境并冻结输入。
 3. `building_plan`：按 active-cell CSR 分片推进建筑严重亏损/恢复、利用率计划；第二遍按同一
    cursor 分片重建生产投入 reserve。两遍完成前不进入账本或生产阶段。
@@ -55,8 +61,28 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
     `cell×ethnicity` 的出生人口合并到 `unemployed|eth`。受影响建筑岗位只做存活人口夹紧和指标
     对账，不在同周期招聘新生人口。
 11. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
-12. `building_commit`：提交到期建设项目；价格驱动的内生资本评估只允许 industrial，collector/service 必须来自显式建设、资源或拓扑策略；随后重建稀疏岗位范围，并保留既有 employee fill。
-13. `aggregate_publish`：统一发布 summaries、价格、库存、收入/支出、贸易 EMA 和守恒审计。
+12. `building_commit`：按 review prepare、special reset、recovery review、construction commit、
+    investment prepare、investment、finalize 七个确定子阶段推进。恢复复核使用按 `cell % investment_review_days`
+    烘焙的 group CSR，每片最多 4096 group；review prepare 先生成升序的实际到期 cell 列表，
+    investment prepare 在竣工提交后只为该列表聚合 merchant、pending construction、
+    resource commitment 和 existing type；投资评估随后使用独立 96-cell batch。
+    价格驱动的内生资本评估遍历全部已解锁 building type；
+    collector/service 仍必须通过各自资源、可销售产出、材料、利润和 sponsor gate；
+    随后重建稀疏岗位范围，并保留既有 employee fill。
+    投资目录另以 market active-good bitset 和 output-good→building-type CSR 做保守候选闭包；
+    既有/在建类型及其施工物资始终保留。默认 ACTIVE，周期完整复核发现任何遗漏时会自动退回
+    全目录扫描；该缓存不改变固定五日滚动语义。
+13. `aggregate_publish`：独占一个或多个 native slice，以确定工作量子阶段推进 summaries、精确
+    守恒审计、水位线、贸易 EMA/响应诊断和下一轮贸易计划初始化。人口/市场/在途/国家审计及
+    贸易响应诊断每片
+    最多 131072 条，cell 水位线及贸易工作区每片最多 4096 条；最后校验成功后才交换 committed
+    summaries、推进 generation、发布 trace 并解除 active boundary。
+
+`EconomyDailySystem` 把自己的 `slice_budget_ms` 传给原生图。`building_commit` 与
+`aggregate_publish` 可以在墙钟预算尚未耗尽时跨越相邻的廉价子阶段，但同一次原生调用绝不消费
+同一子阶段的第二个数据块；因此 group/cell/audit/workspace 的确定性条目上限保持不变。达到预算、
+子阶段游标未完成或发生错误时立即 yield。该融合仅减少 continuation barrier，不重排依赖边，
+也不允许绕过 publish/save committed boundary。
 
 周期内 save、gameplay 和其他经济写者只观察上一 committed state；Inspector 的有界选中
 地块查询可观察最近完成 native slice 的完整状态，并明确标记为 `live_slice`。`epoch_income/expense` 在发布后
@@ -69,8 +95,9 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 所以 committed snapshot 不会残留上周期会计值。
 
 商人 CSR 在 bootstrap 建立；普通周期不重建。只有出生、迁移、换签名或人口归零真正触碰结构
-时，publish 才校验商人不变量并重建。该规则消除了 10M 档周期起点约 90ms 和周期末约
-30ms 的全量尖峰。
+时，`structural_commit` 才校验商人不变量并重建。`aggregate_publish` 复用该结果，只更新受影响
+summary 并保留空人口单元库存校验，不再重复修复和全量 CSR 重建。该规则消除了 10M 档周期
+起点约 90ms 和周期末约 30ms 的重复全量尖峰。
 
 ## WorldClock 契约
 
@@ -151,7 +178,8 @@ ECONOMY_GRAPH stage、截止日语义和 PKEC 权威布局均不变化。
 
 `building_plan` 不再在 `start_epoch()` 内同步执行全图扫描。原生 runtime 在 sample-day 冻结后持有
 `building_plan_phase` 与 active-cell cursor，分别完成经济计划和投入 reserve 两遍；每个 native call
-最多消费 `building_cells_per_slice` 个 active cell。默认值 `0` 确定性采用 256 个 active cell。
+使用独立 `building_plan_cells_per_slice`；0/auto 确定性采用普通 building cell/group range 的
+两倍（当前普通 cell 上限为 256）。household post-building 使用同样的 stage-local auto grain。
 该 cursor、业主生存利用率缓存和 reserve 构建临时量不保存、不哈希，也不向 committed
 snapshot 暴露；周期中保存继续以 `save_requires_committed_boundary` 拒绝。
 
@@ -209,9 +237,17 @@ revalidation. No daily all-building-type scan was added: the full constructible
 catalog is evaluated only on the 10-day investment review for populated cells.
 
 `building_commit_phase` separates ready-construction commit, bounded investment
-cell ranges, and final employment reconciliation. Each investment continuation
-consumes at most `building_cells_per_slice` rolling-phase cells. Its transient
-pending/existing/resource indexes are built once per epoch commit and released
+review-cell ranges, and final employment reconciliation. `review_prepare` builds
+one ascending transient list for the current rolling/review phase and positive
+committed population; non-review cells are not visited by investment. After
+`construction_commit`, `investment_prepare` builds finance,
+pending/existing/resource scratch in a separate cooperative phase. The following
+`investment` phase evaluates and commits bounded review-cell ranges; both phases
+have stable `building_commit.*` breakdown keys. Investment and finalize use
+independent deterministic defaults of 96 and 128 cells instead of inheriting
+the normal building range. Their profile overrides change only continuation
+boundaries. Transient
+pending/existing/resource indexes are built once per epoch commit for that list and released
 after finalization. Candidate evaluation may later move to read-only worker
 ranges, but sponsor funds, materials, population movement, and construction
 creation must be revalidated and committed in stable cell order.
@@ -220,9 +256,12 @@ creation must be revalidated and committed in stable cell order.
 
 The former global epoch and workload-selected cadence are superseded. Every day
 the native graph builds the sorted workset for `cell_id % 5 == day % 5` and
-finishes that bucket through bounded same-day continuation. One native call
-consumes at most one building, market, or structural range; `done=false` raises
-the existing day barrier and real-frame pulse until the final publish. Each cell
+finishes that bucket through bounded same-day continuation. One native call may
+consume up to eight deterministic ranges in stable graph order. The normal wall
+budget is 0.8 ms; at `speed_scale>=20` native uses at least 1.8 ms to amortize
+the GDScript/GDExtension/SUS bridge. Wall time only decides whether to yield
+before the next range and never changes a decision or range boundary.
+`done=false` raises the existing day barrier and real-frame pulse until the final publish. Each cell
 uses a fixed five-day transaction, so adjacent committed dates differ by at most
 four days and one cell's consecutive settlement dates differ by exactly five.
 
@@ -243,6 +282,9 @@ owns the same-numbered market. Workers write only that cell's cohorts, building
 groups, market, resource-delta column, and sparse signal rows. Per-cell
 `ProductionResult` diagnostics and trace drafts are merged in cursor order before
 the stage advances, preserving deterministic event order and global reductions.
+The result lanes are runtime-owned scratch and retain nested vector capacity
+between ranges; warmed `production_result_allocation_growth_count/bytes` should
+therefore be zero.
 
 The same body runs as one task below `worker_market_threshold`, when workers are
 disabled or unavailable, when the range/group workload is too small, or when a

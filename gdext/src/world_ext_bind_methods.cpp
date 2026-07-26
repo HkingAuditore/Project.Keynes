@@ -89,6 +89,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::reset_native_ocean_physical_state);
     ClassDB::bind_method(D_METHOD("get_native_ocean_physical_state_report"),
                          &DCWorldExt::get_native_ocean_physical_state_report);
+    ClassDB::bind_method(D_METHOD("get_native_ocean_physical_hot_state"),
+                         &DCWorldExt::get_native_ocean_physical_hot_state);
     ClassDB::bind_method(D_METHOD("configure_country", "catalog", "profile", "cell_count", "seed"),
                          &DCWorldExt::configure_country);
     ClassDB::bind_method(D_METHOD("bootstrap_country", "packet", "is_water"),
@@ -134,6 +136,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::submit_economy_commands);
     ClassDB::bind_method(D_METHOD("run_economy_slice", "ctx"),
                          &DCWorldExt::run_economy_slice);
+    ClassDB::bind_method(D_METHOD("run_economy_slice_compact", "ctx"),
+                         &DCWorldExt::run_economy_slice_compact);
     ClassDB::bind_method(D_METHOD("economy_should_run", "day_index"),
                          &DCWorldExt::economy_should_run);
     ClassDB::bind_method(D_METHOD("get_economy_report"),
@@ -638,6 +642,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::native_climate_round_finish_round);
     ClassDB::bind_method(D_METHOD("get_native_climate_round_state_report"),
                          &DCWorldExt::get_native_climate_round_state_report);
+    ClassDB::bind_method(D_METHOD("get_native_climate_round_hot_state"),
+                         &DCWorldExt::get_native_climate_round_hot_state);
     ClassDB::bind_method(D_METHOD("reset_native_climate_round_state", "reason"),
                          &DCWorldExt::reset_native_climate_round_state, DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("async_climate_round_shutdown"),

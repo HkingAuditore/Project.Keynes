@@ -22,6 +22,7 @@ func _run() -> void:
 		return
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
+	_exercise_accuracy_frontier(compiled, catalog)
 	var ext := _new_ext(compiled, 2)
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
@@ -76,9 +77,24 @@ func _run() -> void:
 		{"day_index": 2, "tick_index": 2001})
 	_expect("trade planner timing is reported on its native slice",
 		float(planner_report.get("trade_plan_ms", 0.0)) > 0.0)
+	var planner_breakdown: Dictionary = planner_report.get("trade_plan_breakdown_ms", {})
+	var planner_breakdown_total := 0.0
+	for value in planner_breakdown.values():
+		planner_breakdown_total += float(value)
+	_expect("trade planner timing exposes an accounted substage breakdown",
+		planner_breakdown.has("trade_planning.scan_body") and
+		planner_breakdown.has("trade_planning.scan_finalize") and
+		planner_breakdown.has("trade_planning.route_prepare") and
+		planner_breakdown.has("trade_planning.route_expand") and
+		planner_breakdown.has("trade_planning.route_finalize") and
+		planner_breakdown.has("trade_planning.other") and
+		planner_breakdown_total > 0.0 and
+		absf(planner_breakdown_total - float(
+			planner_report.get("trade_plan_ms", 0.0))) <= 0.05)
 	_expect("trade planner timing does not leak into the next continuation slice",
 		not bool(planner_report.get("done", true)) and
-		is_zero_approx(float(continuation_report.get("trade_plan_ms", -1.0))))
+		is_zero_approx(float(continuation_report.get("trade_plan_ms", -1.0))) and
+		String(continuation_report.get("trade_plan_substage", "x")).is_empty())
 	var orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
 	for day in range(2, 16):
 		if int(orders.get("total", 0)) > 0:
@@ -189,6 +205,8 @@ func _run() -> void:
 	_test_unprofitable_rejected(compiled, catalog)
 	_test_invalid_seller_rebind(compiled, catalog)
 	_test_worker_scalar_equivalence(compiled, catalog)
+	_test_route_expansion_continuation(compiled, catalog)
+	_test_publish_slice_contract(compiled, catalog)
 	_test_v10_migration(compiled, catalog)
 
 func _test_probe_is_read_only(compiled: Dictionary, catalog: Dictionary) -> void:
@@ -344,6 +362,212 @@ func _test_topology_contract(compiled: Dictionary, catalog: Dictionary) -> void:
 		neighbors, water_terrain, passable, costs, 8)
 	_expect("zero-cost passable trade terrain is rejected",
 		not bool(invalid.get("ok", true)))
+
+
+func _test_route_expansion_continuation(compiled: Dictionary,
+		catalog: Dictionary) -> void:
+	const CELLS := 300
+	var ext := _new_ext(compiled, CELLS)
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 2
+	profile.market_runtime_mode = "ACTIVE"
+	profile.trade_runtime_mode = "ACTIVE"
+	profile.trade_signal_pairs_per_slice = 1048576
+	profile.trade_route_searches_per_slice = 64
+	profile.trade_max_route_expansions = 1024
+	profile.trade_capacity_per_merchant_q16 = 67108864
+	profile.trade_min_margin_q16 = 0
+	_expect("long-route country configures",
+		CountryTestHelper.configure_all_technologies(ext, catalog, CELLS, 4421))
+	_expect("long-route economy configures", bool(ext.configure_economy(
+		catalog, profile, CELLS, 4421).get("ok", false)))
+	_expect("long-route topology captures", _capture_line_topology(ext, CELLS))
+	var goods: PackedStringArray = compiled.good_ids
+	var gathered := goods.find("gathered_plants")
+	var cloth := goods.find("cloth")
+	var stock := PackedInt64Array()
+	stock.resize(goods.size() * CELLS)
+	stock.fill(0)
+	stock[gathered] = 100000000
+	stock[cloth] = 100000000
+	var prices := PackedInt32Array()
+	prices.resize(goods.size() * CELLS)
+	for cell in range(CELLS):
+		for good in range(goods.size()):
+			prices[cell * goods.size() + good] = int(
+				(compiled.good_default_price as PackedInt32Array)[good])
+	for good in range(goods.size()):
+		prices[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+		prices[(CELLS - 1) * goods.size() + good] = int(
+			(compiled.good_max_price as PackedInt32Array)[good])
+	var merchant := (compiled.signature_keys as PackedStringArray).find(
+		"merchant|default")
+	_expect("long-route markets bootstrap", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, CELLS - 1]),
+		"signature_ids": PackedInt32Array([merchant, merchant]),
+		"population": PackedInt64Array([100, 100]),
+		"funds": PackedInt64Array([1000000000, 1000000000]),
+	}, {"stock": stock, "price": prices}).get("ok", false)))
+
+	_advance_day(ext, 0)
+	_advance_day(ext, 1)
+	# Reset any warm route cache while preserving the committed shortage. The
+	# next plan must therefore exercise the resumable Dijkstra path.
+	_expect("long-route topology change resets planner",
+		_capture_line_topology(ext, CELLS, 2))
+	var report: Dictionary = {}
+	var first_slice: Dictionary = {}
+	var route_seen := false
+	for day in range(2, 10):
+		report = _advance_day(ext, day)
+		for step in range(64):
+			if String(report.get("trade_plan_phase", "")) == "ROUTE":
+				route_seen = true
+			if bool(report.get("trade_route_search_active", false)):
+				first_slice = report
+				break
+			report = ext.run_economy_slice({
+				"day_index": day, "tick_index": 8000 + day * 10 + step})
+		if not first_slice.is_empty():
+			break
+	_expect("long route reaches incremental route phase", route_seen)
+	_expect("route search yields at the deterministic expansion budget " +
+		"(active=%s cursor=%d expansion=%d budget=%d)" % [
+			bool(first_slice.get("trade_route_search_active", false)),
+			int(first_slice.get("trade_route_cursor", -1)),
+			int(first_slice.get("trade_route_expansion_cursor", -1)),
+			int(first_slice.get("trade_route_expansions_per_slice", -2))],
+		not first_slice.is_empty() and
+		int(first_slice.get("trade_route_expansion_cursor", -1)) ==
+			int(first_slice.get("trade_route_expansions_per_slice", -2)))
+	var first_breakdown: Dictionary = first_slice.get("trade_plan_breakdown_ms", {})
+	var first_work: Dictionary = first_slice.get("trade_plan_breakdown_work", {})
+	_expect("resumable route slice attributes time and deterministic work to expansion",
+		float(first_breakdown.get("trade_planning.route_expand", 0.0)) > 0.0 and
+		int(first_work.get("trade_planning.route_expansions", -1)) ==
+			int(first_slice.get("trade_route_expansions_per_slice", -2)))
+	if first_slice.is_empty():
+		return
+	var source_cursor := int(first_slice.get("trade_route_cursor", -1))
+	var second_slice: Dictionary = ext.run_economy_slice({
+		"day_index": int(report.get("current_day", 0)), "tick_index": 9002})
+	var second_delta := int(second_slice.get("trade_route_expansions", 0)) - \
+		int(first_slice.get("trade_route_expansions", 0))
+	_expect("resumed route search stays within the same expansion budget",
+		second_delta >= 0 and second_delta <=
+			int(second_slice.get("trade_route_expansions_per_slice", -1)) and
+		int(second_slice.get("trade_route_cursor", source_cursor)) > source_cursor and
+			not bool(second_slice.get("trade_route_search_active", true)))
+
+
+func _test_publish_slice_contract(compiled: Dictionary,
+		catalog: Dictionary) -> void:
+	const CELLS := 300
+	var ext := _new_ext(compiled, CELLS)
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 2
+	profile.market_runtime_mode = "ACTIVE"
+	profile.trade_runtime_mode = "ACTIVE"
+	_expect("publish-slice country configures",
+		CountryTestHelper.configure_all_technologies(ext, catalog, CELLS, 4422))
+	_expect("publish-slice economy configures", bool(ext.configure_economy(
+		catalog, profile, CELLS, 4422).get("ok", false)))
+	_expect("publish-slice topology captures", _capture_line_topology(ext, CELLS))
+	var goods: PackedStringArray = compiled.good_ids
+	var stock := PackedInt64Array()
+	var prices := PackedInt32Array()
+	stock.resize(goods.size() * CELLS)
+	stock.fill(0)
+	prices.resize(goods.size() * CELLS)
+	for cell in range(CELLS):
+		for good in range(goods.size()):
+			prices[cell * goods.size() + good] = int(
+				(compiled.good_default_price as PackedInt32Array)[good])
+	var merchant := (compiled.signature_keys as PackedStringArray).find(
+		"merchant|default")
+	_expect("publish-slice markets bootstrap", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, CELLS - 1]),
+		"signature_ids": PackedInt32Array([merchant, merchant]),
+		"population": PackedInt64Array([100, 100]),
+		"funds": PackedInt64Array([1000000000, 1000000000]),
+	}, {"stock": stock, "price": prices}).get("ok", false)))
+
+	var report: Dictionary = ext.run_economy_slice({"day_index": 0})
+	var saw_commit_boundary := false
+	var saw_publish_after_commit := false
+	var previous_next := ""
+	var publish_substages: Dictionary = {}
+	var save_blocked := false
+	var bounded_publish_work := true
+	var publish_slice_breakdown_total := 0.0
+	for continuation in range(256):
+		var executed := String(report.get("executed_stage", ""))
+		var next_stage := String(report.get("next_stage", ""))
+		if executed == "building_commit" and next_stage == "aggregate_publish":
+			saw_commit_boundary = true
+		if executed == "aggregate_publish":
+			saw_publish_after_commit = true
+		if previous_next == "aggregate_publish" and not bool(report.get("done", false)):
+			bounded_publish_work = bounded_publish_work and \
+				executed == "aggregate_publish"
+		if executed == "aggregate_publish":
+			var substage := String(report.get("executed_substage", ""))
+			publish_substages[substage] = int(publish_substages.get(substage, 0)) + 1
+			var slice_breakdown_ms: Dictionary = report.get(
+				"publish_breakdown_ms", {})
+			var slice_breakdown_work: Dictionary = report.get(
+				"publish_breakdown_work", {})
+			for key in slice_breakdown_ms:
+				var value: float = float(slice_breakdown_ms[key])
+				if value > 0.0:
+					publish_substages[String(key).trim_prefix(
+						"aggregate_publish.")] = 1
+			for value in slice_breakdown_ms.values():
+				publish_slice_breakdown_total += float(value)
+			for key in slice_breakdown_work:
+				var phase_work := int(slice_breakdown_work[key])
+				var phase := String(key).trim_prefix("aggregate_publish.")
+				if phase.begins_with("audit_"):
+					bounded_publish_work = bounded_publish_work and \
+						phase_work <= 131072
+				elif phase in ["watermark", "trade_init.component_clear",
+						"trade_init.component_build",
+						"trade_init.workspace_clear"]:
+					bounded_publish_work = bounded_publish_work and \
+						phase_work <= 4096
+			if not save_blocked:
+				var save_attempt: Dictionary = ext.begin_economy_save(65536)
+				save_blocked = not bool(save_attempt.get("ok", true)) and \
+					String(save_attempt.get("reason", "")) == \
+					"save_requires_committed_boundary"
+		previous_next = next_stage
+		if bool(report.get("done", false)):
+			break
+		report = ext.run_economy_slice({
+			"day_index": 0, "tick_index": continuation + 1})
+	_expect("building commit reaches aggregate publish with optional budgeted fusion",
+		saw_commit_boundary or saw_publish_after_commit)
+	_expect("publish slices report executed stage and deterministic bounded work",
+		bounded_publish_work and publish_substages.has("audit_market") and
+		publish_substages.has("watermark") and
+		publish_substages.has("trade_init.component_build") and
+		publish_substages.has("trade_init.workspace_clear"))
+	_expect("partial publish remains outside the save boundary", save_blocked)
+	var publish_breakdown: Dictionary = report.get(
+		"publish_cumulative_breakdown_ms", {})
+	var publish_breakdown_total := 0.0
+	for value in publish_breakdown.values():
+		publish_breakdown_total += float(value)
+	_expect("publish completes with exact conservation and accounted timing",
+		bool(report.get("done", false)) and not bool(report.get("fatal", false)) and
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0 and
+		absf(publish_breakdown_total - float(report.get("publish_ms", 0.0))) <= 0.05 and
+		absf(publish_slice_breakdown_total - float(
+			report.get("publish_ms", 0.0))) <= 0.05)
 
 func _test_cold_start_inventory_horizon(compiled: Dictionary,
 		catalog: Dictionary) -> void:
@@ -879,3 +1103,47 @@ func _sum_column(snapshot: Dictionary, column: String) -> int:
 	for value in snapshot[column] as PackedInt64Array:
 		total += int(value)
 	return total
+
+func _exercise_accuracy_frontier(
+		compiled: Dictionary, catalog: Dictionary) -> void:
+	var ext := _new_ext(compiled, 2)
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.economy_accuracy_preset = "BALANCED"
+	profile.economy_approximation_runtime_mode = "ACTIVE"
+	profile.trade_runtime_mode = "OFF"
+	_expect("accuracy ACTIVE country configures",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 2, 4411))
+	_expect("accuracy ACTIVE economy configures", bool(ext.configure_economy(
+		catalog, profile, 2, 4411).get("ok", false)))
+	var goods: PackedStringArray = compiled.good_ids
+	var stock := PackedInt64Array()
+	var prices := PackedInt32Array()
+	stock.resize(goods.size() * 2)
+	stock.fill(1000000)
+	prices.resize(goods.size() * 2)
+	for cell in range(2):
+		for good in range(goods.size()):
+			prices[cell * goods.size() + good] = int(
+				(compiled.good_default_price as PackedInt32Array)[good])
+	var merchant_signature := (
+		compiled.signature_keys as PackedStringArray).find("merchant|default")
+	_expect("accuracy ACTIVE markets bootstrap", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 1]),
+		"signature_ids": PackedInt32Array([
+			merchant_signature, merchant_signature]),
+		"population": PackedInt64Array([100, 100]),
+		"funds": PackedInt64Array([1000000000, 1000000000]),
+	}, {"stock": stock, "price": prices}).get("ok", false)))
+	var report := _advance_day(ext, 0)
+	_expect("accuracy ACTIVE uses certified nested frontier",
+		String(report.get("economy_accuracy_preset", "")) == "BALANCED" and
+		bool(report.get("approximation_authoritative", false)) and
+		int(report.get("approximation_decisions", 0)) > 0 and
+		int(report.get("approximation_frontier_candidates", 0)) >=
+			int(report.get("approximation_frontier_pruned", 0)))
+	_expect("accuracy ACTIVE preserves exact ledgers",
+		not bool(report.get("fatal", false)) and
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)

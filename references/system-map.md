@@ -1,5 +1,9 @@
 # Project.Keynes System Map
 
+2026-07 性能优化只改变 transient cache、审计策略和 bridge payload，不改变
+系统拓扑；实现契约见
+[`runtime-performance-optimization-2026-07.md`](../docs/cpp-dots-runtime/runtime-performance-optimization-2026-07.md)。
+
 本文是 Project.Keynes 的开发读码地图。目标不是替代 `docs/` 下的详细设计文档，而是给后续功能、修 bug、性能诊断和 DOTS/C++ 迁移提供一份“先读这里，再进具体模块”的导航。
 
 ## 快速读码顺序
@@ -311,10 +315,14 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 启用仅供开发的确定性测试经济 fixture；默认关闭。fixture 先生成当前科技最高可用档的资源适配
 建筑 owner-lot，再从 catalog owner/employee 岗位容量派生 cohort，初始库存与就业保持为零。状态实现位于
 `DCWorldExt` 组合持有的 `NativeEconomyRuntime`：PopulationCohort pages、商人共同
-所有的 MarketStore、企业停产/采购意图/实际出库、need/bundle 清算、国内贸易拓扑/订单/托管、账本、冻结周期 continuation、审计和 PKEC v12
-存档全部在 C++。默认模式是 ACTIVE、固定 5 日周期；设 `market_cycle_days=0` 时才按
-4k/12k/30k cohort slice 自动选择 N。在 N 日内错峰计算并于截止日统一发布；未按时
-完成才冻结日历 catchup。Inspector 的人口/市场页只查询选中 cell 的 committed snapshot；
+所有的 MarketStore、企业停产/采购意图/实际出库、need/bundle 清算、国内贸易拓扑/订单/托管、
+账本、滚动五相 continuation、closing audit 和 PKEC v19 存档全部在 C++。生产 cadence
+固定为 `cell_id % 5 == day % 5`；每个到期 bucket 通过有界 same-day continuation 完整提交，
+贸易规划仍是不会阻塞本地结算的软工作。closing audit 默认 INCREMENTAL：首触 shadow delta
+每日权威提交，并在首日、restore/异常边界及每 25 日完整复核；mismatch 在发布前阻断并关闭
+本 session fast path，FULL/PROBE 保留为回滚与验证路径。投资 review prepare
+只生成当前 rolling/review phase 的升序正人口 cell 列表，相关 scratch 不进存档/hash。
+Inspector 的人口/市场页只查询选中 cell 的 committed snapshot；
 人口页的预计单位/人/日由 C++ 复用正式需求内核生成 cohort-major CSR，不保存全局
 cohort×good 矩阵。
 

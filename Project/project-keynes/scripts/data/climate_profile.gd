@@ -311,6 +311,11 @@ const NATIVE_MODE_ACTIVE: int = 2
 # stop at native_ready; when true, the native daily snapshot may report
 # native_active while Godot/MapData boundary intents still remain explicit.
 @export var native_climate_round_active_owner_enabled: bool = false
+## ACTIVE daily bundles use compact native lifecycle capsules. Full snapshots
+## remain available to SHADOW/debug callers and older extensions.
+@export var native_daily_compact_state_capsule_enabled: bool = true
+## Publish native visual mutations as one indexed batch when the ABI is present.
+@export var native_daily_sparse_visual_publish_enabled: bool = true
 # Controlled handoff gate for weather transaction authority. When false,
 # weather reports stop at native_ready after visible publish has been proven;
 # when true, native daily may report native_active while Godot texture/front

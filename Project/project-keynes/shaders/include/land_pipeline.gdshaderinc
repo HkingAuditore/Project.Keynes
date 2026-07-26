@@ -158,13 +158,13 @@ SurfaceParams compute_land_base_surface(
 // ═══════════════════════════════════════════════════════════════════════
 // LAND 2：变色层（material modifiers）
 // ───────────────────────────────────────────────────────────────────────
-//   季节与静态植被轴先建立底色；温度、湿度、生态和活力随后进入同一个
+//   气候物候与静态植被轴先建立底色；温度、湿度、生态和活力随后进入同一个
 //   归一化环境调色器，避免多个乘性色层把中间色域压灰。海拔与坡度仍独立
 //   塑形，积雪和 cover 在 LAND 3 最后覆盖。
 // ═══════════════════════════════════════════════════════════════════════
 
-// ─── LAND 2.1：季节性植被色（南北半球软混 + 物候相位扰动） ─────────────
-SurfaceParams apply_seasonal_vegetation_tint(SurfaceParams surface, LandModInputs i) {
+// ─── LAND 2.1：温度/湿度/活力驱动的植被物候色 ──────────────────────────
+SurfaceParams apply_climate_vegetation_tint(SurfaceParams surface, LandModInputs i) {
 	int biome = i.biome;
 	if (!(biome == B_FOREST || biome == B_GRASSLAND || biome == B_HILL || biome == B_PLAIN
 			|| biome == B_TAIGA || biome == B_SAVANNA || biome == B_STEPPE)) {
@@ -172,26 +172,43 @@ SurfaceParams apply_seasonal_vegetation_tint(SurfaceParams surface, LandModInput
 	}
 	vec3 col = surface.base_color;
 
-	// 低活力植被不应像健康植被一样保持完整换季色。
+	// 低活力植被不应像健康植被一样保持完整气候物候色。
 	float vitality_w = mix(1.0, i.dyn_vitality, i.dyn_valid);
 	float vitality_amp = mix(0.35, 1.25, smoothstep(0.12, 0.92, vitality_w));
-
-	// N1: 季节 tint 噪声扰动 —— 复用 SETUP 0 的 pixel_noise
-	//   ① phase_jitter → 局部物候差异
-	//   ② amp_jitter   → 同 biome 内的明灭斑驳
-	float phase_jitter = (i.pixel_noise.r - 0.5) * 0.36;
 	float amp_jitter   = mix(0.75, 1.18, i.pixel_noise.g);
-
-	// N7: 赤道半球相位硬切修复 —— 分别按南/北半球各算一次植被 tint，
-	// 然后用 lat_signed 经 smoothstep 软混合两个颜色。
-	float eq_half_width = 0.30 + (i.pixel_noise.b - 0.5) * 0.20; // [0.20, 0.40]
-	float north_w_raw = smoothstep(-eq_half_width, eq_half_width, i.lat_signed);
-	float north_w = clamp(north_w_raw + (i.pixel_noise.a - 0.5) * 0.55, 0.0, 1.0);
-	float north_phase = mod(hemi_phase(season_phase, -1.0) + phase_jitter + 4.0, 4.0);
-	float south_phase = mod(hemi_phase(season_phase, +1.0) + phase_jitter + 4.0, 4.0);
-	vec3 north_tint = vegetation_seasonal_tint_lut(i.veg, north_phase, i.wp);
-	vec3 south_tint = vegetation_seasonal_tint_lut(i.veg, south_phase, i.wp);
-	vec3 veg_tint = mix(south_tint, north_tint, north_w);
+	// 内联在调用方，避免运行时只热重载 land_pipeline、却继续命中旧 vegetation
+	// include 缓存时出现“找不到 vegetation_climate_tint_lut”的混合版本编译失败。
+	int v = clamp(i.veg, 0, V_COUNT - 1);
+	float climate_jitter = (i.pixel_noise.r * 0.70 + i.pixel_noise.a * 0.30 - 0.5) * 0.10;
+	float climate_temp = clamp(i.current_temp + climate_jitter, 0.0, 1.0);
+	float climate_moist = clamp(i.moist + climate_jitter * 0.55, 0.0, 1.0);
+	float climate_wet = smoothstep(0.30, 0.68, climate_moist);
+	float climate_dry = 1.0 - smoothstep(0.20, 0.52, climate_moist);
+	float growth_warmth = smoothstep(0.30, 0.56, climate_temp)
+			* (1.0 - smoothstep(0.82, 0.97, climate_temp));
+	float cool_transition = smoothstep(0.16, 0.34, climate_temp)
+			* (1.0 - smoothstep(0.38, 0.58, climate_temp));
+	float cold_decline = 1.0 - smoothstep(0.16, 0.38, climate_temp);
+	float low_vitality = 1.0 - smoothstep(0.30, 0.72, vitality_w);
+	float sprout_w = growth_warmth * climate_wet
+			* (1.0 - smoothstep(0.62, 0.82, climate_temp));
+	float lush_w = growth_warmth * mix(0.35, 1.0, climate_wet)
+			* (1.0 - climate_dry * 0.82);
+	float gold_w = max(cool_transition * mix(0.55, 1.0, climate_wet),
+			climate_dry * mix(0.42, 0.78,
+					1.0 - smoothstep(0.52, 0.80, climate_temp)));
+	float dormant_w = clamp(max(cold_decline, climate_dry * 0.92)
+			+ low_vitality * 0.82, 0.0, 1.0);
+	vec4 climate_weights = pow(
+			max(vec4(sprout_w, lush_w, gold_w, dormant_w), vec4(0.001)),
+			vec4(1.55));
+	climate_weights /= max(dot(climate_weights, vec4(1.0)), 0.001);
+	vec3 veg_tint = vegetation_season_lut[v * 4].rgb * climate_weights.x
+			+ vegetation_season_lut[v * 4 + 1].rgb * climate_weights.y
+			+ vegetation_season_lut[v * 4 + 2].rgb * climate_weights.z
+			+ vegetation_season_lut[v * 4 + 3].rgb * climate_weights.w;
+	veg_tint += vegetation_anomaly_shift[v].rgb * climate_anomaly;
+	veg_tint = max(veg_tint, vec3(0.0));
 
 	float strength = vegetation_season_strength * vitality_amp * amp_jitter;
 	if (biome == B_SAVANNA || biome == B_STEPPE) {
@@ -369,7 +386,7 @@ SurfaceParams apply_environment_color_grade(SurfaceParams surface, LandModInputs
 
 // ─── LAND 2：调度器 ────────────────────────────────────────────────────
 SurfaceParams apply_land_material_modifiers(SurfaceParams surface, LandModInputs i) {
-	surface = apply_seasonal_vegetation_tint(surface, i);
+	surface = apply_climate_vegetation_tint(surface, i);
 	surface = apply_vegetation_axis_tint(surface, i);
 	surface = apply_environment_color_grade(surface, i);
 	surface = apply_relief_tint(surface, i);

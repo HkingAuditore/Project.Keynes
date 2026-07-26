@@ -280,11 +280,14 @@ float compute_presence(vec4 dyn, vec4 eco) {
 	float eco_stress = eco.g;
 	float heat = smoothstep(0.74, 0.96, temp);
 	float dry = clamp(max(max((0.34 - moisture) * 1.9, heat * 0.78), eco_stress), 0.0, 1.0);
-	float cold = 1.0 - smoothstep(0.04, 0.20, temp);
-	float snow_hide = clamp(max(snow, cold * 0.55), 0.0, 1.0);
+	// 叶量直接响应当前气候，不再等待日历季节切换。中度低温开始降低落叶类
+	// 植被的可见度；phenology_response 让针叶树/棕榈等常绿类保留更多叶量。
+	float cold = 1.0 - smoothstep(0.18, 0.42, temp);
+	float snow_hide = clamp(max(snow, cold * 0.72), 0.0, 1.0);
 	float presence = pow(vitality_norm(vitality), vitality_alpha_power);
 	presence *= 1.0 - dry * stress_hide_strength;
 	presence *= 1.0 - snow_hide * snow_hide_strength;
+	presence *= 1.0 - cold * stress_hide_strength * 0.42 * phenology_response;
 	return clamp(presence, 0.0, 1.0);
 }
 
@@ -310,7 +313,7 @@ void vertex() {
 	float heat = smoothstep(0.74, 0.96, temp);
 	shrub_dry_v = clamp(max(max((0.34 - moisture) * 1.9, heat * 0.78), eco_stress), 0.0, 1.0);
 	shrub_wet_v = clamp((moisture - 0.50) * 1.85, 0.0, 1.0) * (1.0 - shrub_dry_v);
-	float cold = 1.0 - smoothstep(0.04, 0.20, temp);
+	float cold = 1.0 - smoothstep(0.18, 0.42, temp);
 	shrub_snow_v = clamp(max(shrub_dyn.b * dyn_valid, cold * 0.45), 0.0, 1.0);
 	shrub_presence_v = compute_presence(shrub_dyn, shrub_eco);
 	float live_scale = mix(0.20, 1.0, smoothstep(0.0, 0.85, shrub_presence_v));
@@ -363,33 +366,7 @@ void vertex() {
 #endif
 }
 
-// [veg-hemisphere-season] 半球季节相位 → 萌芽、繁茂、金黄、凋零四个物候权重。
-// 本实例所在半球各算一次后软混合，修复"全图同步变红"（北半球秋红时南半球应为春绿）。
-vec4 shrub_phenology_amounts(float sp) {
-	float sprouting = max(1.0 - smoothstep(0.08, 0.88, sp), smoothstep(3.62, 3.98, sp));
-	float thriving = smoothstep(0.35, 1.02, sp) * (1.0 - smoothstep(1.52, 2.06, sp));
-	float golden = smoothstep(1.58, 2.12, sp) * (1.0 - smoothstep(2.34, 2.72, sp));
-	float withered = smoothstep(2.42, 3.04, sp) * (1.0 - smoothstep(3.66, 3.98, sp));
-	vec4 amounts = vec4(sprouting, thriving, golden, withered);
-	return amounts / max(dot(amounts, vec4(1.0)), 0.001);
-}
-
 void fragment() {
-	// [veg-hemisphere-season] 季节相位按本实例纬度做半球翻转，修复全图植被同步变红：北/南各算
-	// 一组季节量(相差半年)再用纬度 smoothstep 软混合(+seed 抖动破碎赤道带)。相位映射与地形
-	// land_pipeline N7 同源(north=mod(p+3,4)/south=mod(p+1,4))，保证同格植被与地形季节同向。
-	float season_lat = clamp(shrub_custom.g, 0.0, 1.0) * 2.0 - 1.0;
-	float north_phase = mod(season_phase + 3.0, 4.0);
-	float south_phase = mod(season_phase + 1.0, 4.0);
-	float north_w = clamp(smoothstep(-0.30, 0.30, season_lat)
-		+ (fract(shrub_custom.b * 41.3) - 0.5) * 0.45, 0.0, 1.0);
-	vec4 phenology = mix(shrub_phenology_amounts(south_phase),
-		shrub_phenology_amounts(north_phase), north_w);
-	phenology /= max(dot(phenology, vec4(1.0)), 0.001);
-	float sprouting = phenology.x;
-	float thriving = phenology.y;
-	float golden = phenology.z;
-	float withered = phenology.w;
 	float snow = clamp(shrub_snow_v, 0.0, 1.0);
 	float dyn_valid = 1.0;
 	float temp = mix(0.5, shrub_dyn.r, dyn_valid);
@@ -410,16 +387,37 @@ void fragment() {
 	// 因 vitality 较高就把整片荒漠染绿。
 	float green_water_support = smoothstep(0.28, 0.60, moisture)
 		* (1.0 - dry_pressure * 0.90);
-	// 季节相位本身不能把温暖湿润区直接判成枯萎。落叶期必须同时有低温或
-	// 干旱支持；低活力仍通过独立权重表达真实衰退。
-	float seasonal_wither_support = clamp(max(
-		1.0 - smoothstep(0.32, 0.54, temp), dry_pressure * 0.88), 0.0, 1.0);
+	// 物候完全由当前温度、湿度与活力驱动；season_phase 只服务太阳高度/昼夜光照。
+	// 温暖湿润→萌芽/繁茂；温和降温或水分下降→金黄；严寒、干旱或低活力→凋零。
+	// 实例 seed 只打散阈值，避免整格植被同时切色，不改变气候含义。
+	float climate_jitter = (fract(shrub_custom.b * 41.3 + shrub_custom.a * 7.17) - 0.5) * 0.08;
+	float cool_transition = smoothstep(0.16, 0.34, temp + climate_jitter)
+		* (1.0 - smoothstep(0.38, 0.58, temp + climate_jitter));
+	float growth_warmth = smoothstep(0.30, 0.56, temp + climate_jitter)
+		* (1.0 - smoothstep(0.82, 0.97, temp));
+	float growth_moisture = smoothstep(0.30, 0.68, moisture);
+	float cold_decline = 1.0 - smoothstep(0.16, 0.38, temp + climate_jitter);
+	float sprouting = growth_warmth * growth_moisture
+		* (1.0 - smoothstep(0.62, 0.82, temp)) * vitality_color_n;
+	float thriving = growth_warmth * mix(0.35, 1.0, growth_moisture)
+		* (1.0 - dry_pressure * 0.82) * vitality_color_n;
+	float golden = max(cool_transition * mix(0.55, 1.0, growth_moisture),
+		dry_pressure * mix(0.42, 0.78, 1.0 - heat_visual));
+	float withered = clamp(max(cold_decline, dry_pressure * 0.92)
+		+ low_vitality * 0.82, 0.0, 1.0);
+	vec4 phenology = vec4(sprouting, thriving, golden, withered);
+	phenology /= max(dot(phenology, vec4(1.0)), 0.001);
+	sprouting = phenology.x;
+	thriving = phenology.y;
+	golden = phenology.z;
+	withered = phenology.w;
+	float climate_wither_support = clamp(max(cold_decline, dry_pressure * 0.88), 0.0, 1.0);
 	vec4 stage_w = vec4(
 		sprouting * vitality_color_n * smoothstep(0.26, 0.54, temp) * (1.0 - dry_pressure * 0.55),
 		thriving * vitality_color_n * mix(0.58, 1.34, water_support),
 		golden * mix(0.88, 1.12, dry_yellow_strength) * (1.0 - low_vitality * 0.24)
 			+ dry_pressure * (0.08 + heat_visual * 0.14),
-		withered * seasonal_wither_support + low_vitality * 0.92
+		withered * climate_wither_support + low_vitality * 0.92
 			+ dry_pressure * (0.18 + dry_hot * 0.30));
 	// 收紧物候重叠，并把绿→黄的过渡拆成实例级斑块。过渡期是一部分树仍绿、
 	// 一部分树已金黄，而不是所有树都线性混成同一种橄榄黄绿。
@@ -486,20 +484,23 @@ void fragment() {
 	float golden_guard = golden_commit * phenology_response * veg_response;
 	rgb = mix(rgb, vec3(0.94, 0.68, 0.09),
 		clamp(golden_guard * (0.30 + dry_yellow_strength * 0.28), 0.0, 0.58));
-	// 红叶是金黄林中的实例级斑块，而不是整片黄色统一偏红。仅真实秋季物候
-	// 可触发，干旱造成的黄色不会进入红叶分支。
+	// 红叶是温和低温且仍有一定水分时，金黄植被中的实例级斑块；纯干旱黄不触发。
+	// 先只计算 mask，实际红色锚定放到气候调色/色度展开/橄榄色修正之后，避免再次被洗回黄色。
 	float autumn_red_seed = fract(shrub_custom.b * 43.71 + shrub_custom.a * 11.13 + 0.27);
-	float autumn_red_patch = smoothstep(0.64, 0.86, autumn_red_seed)
-		* golden_commit * golden * phenology_response * veg_response;
-	rgb = mix(rgb, vec3(0.60, 0.16, 0.07),
-		clamp(autumn_red_patch * autumn_red_strength * 0.52, 0.0, 0.42));
+	float red_climate_support = smoothstep(0.16, 0.62, cool_transition)
+		* smoothstep(0.22, 0.62, growth_moisture)
+		* (1.0 - smoothstep(0.68, 0.92, dry_pressure));
+	float autumn_red_patch = smoothstep(0.44, 0.74, autumn_red_seed);
+	float autumn_red_amount = clamp(autumn_red_patch * golden_commit
+		* red_climate_support * phenology_response * veg_response
+		* autumn_red_strength * 1.12, 0.0, 0.74);
 	rgb = mix(rgb, vec3(0.56, 0.45, 0.29),
 		dry_hot * heat_red_strength * 0.10 * veg_response);
 	// 季节开花：萌芽期给开花类一抹亮色，积雪覆盖时收敛。
 	float bloom = bloom_strength * sprouting * vitality_n * (1.0 - snow_amount * 0.85);
 	rgb = mix(rgb, rgb * vec3(1.12, 1.0, 1.08) + vec3(0.10, 0.03, 0.08), bloom);
 	rgb = mix(rgb, vec3(0.62, 0.45, 0.18),
-		withered * seasonal_wither_support * 0.14 * phenology_response * veg_response);
+		withered * climate_wither_support * 0.14 * phenology_response * veg_response);
 	// 先展开色度与明度，再覆雪；严寒区收紧色度，避免健康绿色变成荧光色。
 	float grade_luma = dot(rgb, vec3(0.299, 0.587, 0.114));
 	float warm_grade_mix = max(heat_visual, dry_hot) * 0.82;
@@ -527,6 +528,11 @@ void fragment() {
 	float palette_luma = dot(palette_hue, vec3(0.299, 0.587, 0.114));
 	palette_hue *= dot(rgb, vec3(0.299, 0.587, 0.114)) / max(palette_luma, 0.001);
 	rgb = mix(rgb, clamp(palette_hue, vec3(0.0), vec3(1.0)), olive_w * 0.82);
+	// 最终红叶锚定：约一半候选树进入红叶斑块，并按 seed 在朱红/深红之间变化。
+	// 放在覆雪之前，因此雪仍能自然覆盖红叶，而后续调色不会再把红色冲淡。
+	vec3 autumn_red_color = mix(vec3(0.82, 0.20, 0.055), vec3(0.54, 0.075, 0.035),
+		smoothstep(0.52, 0.92, autumn_red_seed));
+	rgb = mix(rgb, autumn_red_color, autumn_red_amount);
 	float snow_top = smoothstep(0.50, 0.88, UV.y);
 	float canopy_edge = abs(UV.x - 0.5) * 2.0;
 	float snow_interior = 1.0 - smoothstep(0.72, 0.98, canopy_edge);

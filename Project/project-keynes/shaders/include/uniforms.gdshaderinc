@@ -567,12 +567,12 @@ const int WT_FOG      = 5;
 
 
 // =========================================================================
-// 【植被四季 LUT 组（依赖 V_COUNT 常量必须先声明）】
+// 【植被物候 LUT 组（依赖 V_COUNT 常量必须先声明）】
 // =========================================================================
-// ─── map-visual-overhaul-v1：植被四季换色 LUT ─────────────────────────
-// 24 个植被类型 × 4 季（春/夏/秋/冬）× 4 通道（rgb 叠乘色 + 保留 a）。
+// ─── map-visual-overhaul-v1：植被物候换色 LUT ─────────────────────────
+// 24 个植被类型 × 4 槽（萌芽/繁茂/金黄/休眠）× 4 通道（rgb 叠乘色 + 保留 a）。
 // 由 hex_renderer._push_vegetation_season_lut() 在 setup 时 push 一次，运行时不刷新。
-// shader 端按当前像素半球的 season_phase ∈ [0,4) 做 4 段 cubic mix，南北半球反相。
+// shader 端按当前温度、湿度与植被活力混合四槽；season_phase 不参与叶色选择。
 // climate_anomaly 叠加：vegetation_anomaly_shift[veg] * climate_anomaly。
 // 96 个 vec4 占 1.5 KiB uniform buffer，远低于 Godot 默认 16 KiB UBO 上限。
 uniform vec4 vegetation_season_lut[V_COUNT * 4];     // [veg*4 + season]

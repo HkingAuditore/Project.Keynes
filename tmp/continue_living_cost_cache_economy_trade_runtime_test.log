@@ -1,0 +1,74 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] accuracy ACTIVE country configures
+  [PASS] accuracy ACTIVE economy configures
+  [PASS] accuracy ACTIVE markets bootstrap
+  [PASS] accuracy ACTIVE uses certified nested frontier
+  [PASS] accuracy ACTIVE preserves exact ledgers
+  [PASS] country configures
+  [PASS] economy configures
+  [PASS] independent trade topology captures
+  [PASS] two markets bootstrap
+  [PASS] opening local cycle commits exactly
+  [PASS] rolling markets remain within the four-day visibility bound
+  [PASS] trade planner timing is reported on its native slice
+  [PASS] trade planner timing exposes an accounted substage breakdown
+  [PASS] trade planner timing does not leak into the next continuation slice
+  [PASS] profitable domestic route dispatches
+  [PASS] route ETA uses daily transport time
+  [PASS] dispatch escrows goods and cash
+  [PASS] country capacity reservation is bounded
+  [PASS] route order exposes CSR goods lines
+  [PASS] domestic trade preserves the destination merchant operating floor
+  [PASS] trade purchase cash is included in operating outflow
+  [PASS] new shortage receives its first dispatch within the response target
+  [PASS] trade signal records its last dispatch attempt and deadline state
+  [PASS] in-transit committed boundary conserves
+  [PASS] dispatch preserves the source market local-demand reserve
+  [PASS] PKEC v19 saves in-transit escrow
+  [PASS] mid-transit restore preserves order and hash
+  [PASS] arrival settles on its daily ETA
+  [PASS] arrival remains exactly conserved
+  [PASS] restored due-day order settles once
+  [PASS] trade changes authoritative hash only in ACTIVE
+  [PASS] PROBE emits no authoritative orders
+  [PASS] PROBE and OFF committed state hashes match
+  [PASS] routes cannot cross frozen country boundary
+  [PASS] explicitly enabled water terrain is trade passable
+  [PASS] identical topology refresh ignores unrelated caller generation
+  [PASS] terrain remap with identical trade semantics preserves the plan
+  [PASS] trade liveness diagnostics expose both planning cursors
+  [PASS] real normalized trade-cost change resets the plan once
+  [PASS] zero-cost passable trade terrain is rejected
+  [PASS] cold-start inventory fixture bootstraps
+  [PASS] zero-supply demand still receives its configured inventory horizon
+  [PASS] survival shortage relief can route at zero spread
+  [PASS] survival shortage relief remains conserved
+  [PASS] negative expected profit creates no trade order
+  [PASS] unprofitable shortage records an explicit rejection
+  [PASS] long route leaves time to invalidate seller handle
+  [PASS] seller move queues after dispatch
+  [PASS] invalid seller rebinds to current source merchant
+  [PASS] seller rebind settlement remains conserved
+  [PASS] worker and scalar emit identical trade orders
+  [PASS] worker and scalar final trade hashes match
+  [PASS] long-route country configures
+  [PASS] long-route economy configures
+  [PASS] long-route topology captures
+  [PASS] long-route markets bootstrap
+  [PASS] long-route topology change resets planner
+  [PASS] long route reaches incremental route phase
+  [PASS] route search yields at the deterministic expansion budget (active=true cursor=0 expansion=256 budget=256)
+  [PASS] resumable route slice attributes time and deterministic work to expansion
+  [PASS] resumed route search stays within the same expansion budget
+  [PASS] publish-slice country configures
+  [PASS] publish-slice economy configures
+  [PASS] publish-slice topology captures
+  [PASS] publish-slice markets bootstrap
+  [PASS] building commit reaches aggregate publish with optional budgeted fusion
+  [PASS] publish slices report executed stage and deterministic bounded work
+  [PASS] partial publish remains outside the save boundary
+  [PASS] publish completes with exact conservation and accounted timing
+  [PASS] PKEC v19 explicitly rejects pre-v18 economy saves
+=== economy trade runtime PASS ===

@@ -26,8 +26,14 @@
   cohort×good 矩阵，也不修改 state hash。
 - 禁止把 goods/cohort 放回 MapData/component schema，禁止 GDScript 全世界遍历或逐 cohort setter。
 - `BUILDING_PLAN` 由 C++ 按 active-cell CSR 做两遍 continuation（经济计划、投入 reserve）；
-  `building_cells_per_slice=0` 确定性采用 256 个 active cell。阶段 cursor 与计划缓存只属周期
+  `building_cells_per_slice=0` 确定性采用 256 个 active cell；计划与 household post-building
+  默认合并为该 cell/group range 的两倍。内生投资和最终就业对账使用独立的
+  `investment_cells_per_slice=96`、`building_finalize_cells_per_slice=128` 默认预算，避免复核
+  类型扫描与首片准备叠成长调用，同时减少亚毫秒 continuation。阶段 cursor
+  与计划缓存只属周期
   临时状态，不进入 PKEC 或权威 hash，GDScript 只转发 profile 和调度 report。
+- epoch 开始按冻结国家科技烘焙 `country -> available building types` CSR 和稠密可用位；建筑
+  hot loop 不得为每个 cell/type 重复遍历科技 requirement。该缓存只属事务，不进入 PKEC/hash。
 - 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；未来税收
   仍必须走原生守恒边界。
 - `owner_slots_per_building` 是正整数物理容量；普通企业通常为 1，家庭式采集/狩猎单位可用多个
@@ -325,6 +331,12 @@ continuations within `sim_frame_budget_ms`; one call still consumes at most one
 building, market, or structural range. Workload-auto cadence and global
 `WAIT_COMMIT` are not production paths. Trade arrival remains daily.
 
+Barrier continuations call `run_economy_slice_compact`, which retains scheduler,
+deadline, fatal, committed-event, and current stage-breakdown fields without
+rebuilding the full diagnostic report for every slice. Normal daily calls and
+explicit report/UI/recorder reads keep the full report. Both entry points share
+the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
+
 Current saves are PKEC v19. They persist per-cell settlement day/generation,
 dirty generations, and each building group's pending recovery result/cooldown.
 Restore accepts v18 with deterministic `pending=NONE, cooldown=0`; v2-v17 are
@@ -336,6 +348,16 @@ are prepared in deterministic worker ranges and are neither save nor hash
 authority. Reports expose `prepare_ms`, `audit_ms`, `watermark_ms`, and
 `building_investment_ms` for rolling-stall diagnosis.
 
+Building structure commits use a count-only fast path for an existing
+`(cell,type,owner signature)` group. A real topology change linearly merges the
+stable group prefix with new groups, reuses type-compatible role/input spans,
+and rebuilds market/labor CSR from catalog-baked per-type good/profession spans.
+Generation stamps and double-buffered CSR storage replace global `(cell,key)`
+temporary lists and comparison sorting. These caches are transient and excluded
+from PKEC v19 and state hash; logical role state is hashed in stable group order.
+Structure reports separate count-only/new/removed/rebuild/reuse counts and
+group-merge/market-cache/labor-cache milliseconds.
+
 Building plan now aggregates owner survival floors in linear cell-local passes;
 market-signal scratch storage follows each cell's sparse signal CSR instead of
 the full catalog. Investment uses transient `(cell,type)` and `(cell,resource)`
@@ -343,16 +365,43 @@ indexes and advances through `building_commit_phase` cell continuations.
 Reports and recorder summaries expose `building_investment_probability_skips`;
 `building_owner_mobility` is emitted only for an actual construction sponsor
 profession change.
+Per-slice `building_commit_breakdown_ms/work` separates review preparation,
+special reset, recovery review, construction commit, investment, and finalize.
+Finalize canonicalizes affected cells once, reconciles employment in ascending
+128-cell continuations by default, and clears investment transient caches in a separate
+slice. The private cursor is excluded from PKEC v19 and the state hash.
 
 Building production may partition one existing due-cell range through the native
 WorkerThreadPool while `cell_to_market[cell] == cell` proves disjoint ownership.
 Workers write only cell-local authoritative lanes and emit one `ProductionResult`
-per cell. Native merges diagnostics, retained output, cashflows, and traces in
+per cell. Runtime-owned result lanes retain nested vector capacity across
+continuations and publish `production_result_allocation_growth_count/bytes`.
+Native merges diagnostics, retained output, cashflows, and traces in
 cursor order; the scalar fallback uses the same body and merge. GDScript remains
 the catalog/profile/report shell and gains no economy authority. Reports expose
 `building_production_worker_tasks` and `building_production_merge_ms`, with merge
 time included in `building_production_ms`. There is no bridge, save-schema,
 state-hash, DataCore-slot, stage, or cadence change.
+
+Native continuation may fuse up to eight deterministic chunks per call. The
+budget is 0.8 ms normally and at least 1.8 ms at 20x or faster; elapsed time
+only yields before the next chunk. Household post-building and reserve
+shortfall use disjoint worker ranges and stable ordered reduction, and market
+work weights are frozen once per epoch. Investment profession changes defer the
+global merchant CSR rebuild to the end of the investment slice.
+
+Accuracy policy is `EXACT|BALANCED|FAST|CUSTOM`, independently rolled out as
+`OFF|PROBE|ACTIVE`; default is `BALANCED+ACTIVE`. Non-survival market variants
+use a deterministic Top-K anytime frontier expanded until omitted score mass is
+within its certificate. The exact best remains in every frontier, survival
+families remain exact, and invalid certificates or cooldown epochs run the
+exact path. `OFF` and `PROBE` remain exact rollback/baseline modes. These
+frontiers and diagnostics are transient and do not alter PKEC v19.
+
+The recorder-facing full report preserves the most recently committed epoch in
+flat `last_completed_*` fields. This keeps worker counts, stage totals,
+allocation growth, and structure-rebuild metrics observable after the next
+epoch resets live counters; the snapshot is transient and never saved or hashed.
 
 2026-07-20 remediation keeps the same authority and cadence. Rolling employment
 reports replace one cell's cached current-epoch contribution atomically, so a

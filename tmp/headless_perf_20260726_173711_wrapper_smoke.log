@@ -1,0 +1,59 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=80 native_ms=0.331 water=50 land=30
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=80 native_ms=0.072 lakes=0 rivers=0 volcanoes=0
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=50 | land_below_sea=0.0% | terr_distinct=10 entropy=2.554bit | river_ratio=0.000%
+MapGenerator v7: per-cell 18ms (80 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 762) seed=20260718
+    [fused] terrain=1011.8ms erosion=4.0ms(ok=true) river=9.3ms(ok=true) latitude=0.2ms coast_sdf=7.3ms(ok=true)
+  geometry fields (fused C++): 1147ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+WARNING: [DCWorldExt] encode_cell_luts: not bound - fallback to GDScript
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] bake_cell_luts (res://scripts/rendering/map_baker.gd:4927)
+       [1] bake_world (res://scripts/rendering/map_baker.gd:966)
+       [2] generate (res://scripts/geography/map_generator.gd:1291)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:160)
+       [4] _run (res://tests/headless_perf_record.gd:72)
+       [5] _init (res://tests/headless_perf_record.gd:24)
+  encode: 2010ms
+MapBaker v6: total 3157ms
+MapGenerator v7: bake 3158ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 140 components bound (auto-registered=140; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=80
+[native_generation] path=gdext n=80 published=9 native_ms=0.040 compute_ms=0.005 flush_ms=0.035
+[hex_cell] facade ENABLED (80 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.78ms wind=0.04ms psi=0.03ms(ran=true) upwelling=0.01ms total=0.93ms
+PhysicalCirculation solve@phase=1.50 total=1ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 1ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=80 goods=120 cohorts=139 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1
+[country] ACTIVE native authority countries=1 cells=80 generation=1
+[economy/test-bootstrap] scale_mode=resource_tiered populated_cells=28 population=75096 cohorts=139 professions=7/33 building_groups=284 building_types=13/261 capacity_buildings=941->328 trimmed=613 population_range=0..10023 cap=150000 goods=120 tiers={ "tens": 7, "hundreds": 7, "thousands": 7, "ten_thousands": 7 } construction_regions=2/3 skipped=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[perf-record] start (start_tick=0)
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=80
+[ocean_currents][RT] skip#1 tick=1 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[perf-record] exported rows=1 cols=846 → F:/Developent/Godot/Project.Keynes/tmp/perf_record_20260726_173718.csv
+[headless-perf/result] label=wrapper_smoke days=1 speed=50.000 seed=20260718 map=10x8 population_scale=0 generation_ms=4438.3 run_ms=17.5 barrier_pulses=1 ledger_failures=0 fatal=false rows=1 expected_rows=1 path=F:/Developent/Godot/Project.Keynes/tmp/perf_record_20260726_173718.csv
+ERROR: 12 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 96 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

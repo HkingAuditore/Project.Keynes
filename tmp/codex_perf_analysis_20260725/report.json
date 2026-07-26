@@ -1,0 +1,2046 @@
+[
+  {
+    "file": "perf_record_20260725_152414.csv",
+    "bytes": 528740815,
+    "columns": 680,
+    "rows": 1531,
+    "duration_s": 30.694,
+    "first_tick": 4.0,
+    "last_tick": 1534.0,
+    "tick_delta": 1530.0,
+    "ticks_per_second": 49.84687561086857,
+    "skipped_days": 0,
+    "json_parse_errors": 1531,
+    "metrics": {
+      "fps": {
+        "count": 1531,
+        "sum": 91213.0,
+        "mean": 59.57740039190072,
+        "p50": 60.0,
+        "p95": 61.0,
+        "p99": 61.0,
+        "max": 61.0
+      },
+      "fast_ms": {
+        "count": 1531,
+        "sum": 9740.0,
+        "mean": 6.361854996734161,
+        "p50": 6.0,
+        "p95": 13.0,
+        "p99": 21.700000000000045,
+        "max": 28.0
+      },
+      "t_sus_ms": {
+        "count": 1531,
+        "sum": 9627.44,
+        "mean": 6.28833442194644,
+        "p50": 5.586,
+        "p95": 12.7695,
+        "p99": 21.136100000000003,
+        "max": 27.91
+      },
+      "t_render_ms": {
+        "count": 1531,
+        "sum": 108.711,
+        "mean": 0.0710065316786414,
+        "p50": 0.005,
+        "p95": 0.667,
+        "p99": 0.7131000000000001,
+        "max": 0.998
+      },
+      "t_ui_ms": {
+        "count": 1531,
+        "sum": 0.271,
+        "mean": 0.00017700849118223384,
+        "p50": 0.0,
+        "p95": 0.001,
+        "p99": 0.001,
+        "max": 0.002
+      },
+      "largest_slice_ms": {
+        "count": 1531,
+        "sum": 4145.823003,
+        "mean": 2.7079183559764863,
+        "p50": 1.915,
+        "p95": 7.7825,
+        "p99": 17.117100300000015,
+        "max": 22.948999
+      },
+      "sus_sim_avg_300": {
+        "count": 1531,
+        "sum": 6724.654447,
+        "mean": 4.392328182233834,
+        "p50": 4.315855,
+        "p95": 4.9342785,
+        "p99": 5.013705099999999,
+        "max": 6.59875
+      },
+      "sus_sim_p95_300": {
+        "count": 1531,
+        "sum": 16285.586927,
+        "mean": 10.637222029392554,
+        "p50": 10.044,
+        "p95": 14.0,
+        "p99": 14.073,
+        "max": 14.073
+      },
+      "sus_sim_max_300": {
+        "count": 1531,
+        "sum": 32414.066736,
+        "mean": 21.171826738079687,
+        "p50": 20.692999,
+        "p95": 26.037001,
+        "p99": 26.037001,
+        "max": 26.037001
+      },
+      "continuation_frames": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_slices": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_country_slices": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_economy_slices": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_wall_ms": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_max_frame_wall_ms": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_max_slice_ms": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_last_slice_ms": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_budget_ms": {
+        "count": 1531,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      }
+    },
+    "largest_jobs": [
+      [
+        "economy_daily",
+        626
+      ],
+      [
+        "native_daily_sim",
+        521
+      ],
+      [
+        "ocean_currents",
+        187
+      ],
+      [
+        "natural_resource_daily",
+        183
+      ],
+      [
+        "dynamic_visual_atlas_upload",
+        14
+      ]
+    ],
+    "largest_stages": [
+      [
+        "building_production",
+        250
+      ],
+      [
+        "natural_resource_daily",
+        183
+      ],
+      [
+        "household_market",
+        135
+      ],
+      [
+        "climate_pass_a",
+        120
+      ],
+      [
+        "weather_stage_b",
+        117
+      ],
+      [
+        "ocean_land",
+        116
+      ],
+      [
+        "building_plan",
+        114
+      ],
+      [
+        "daily_wind_prepass",
+        94
+      ],
+      [
+        "wind_surface",
+        45
+      ],
+      [
+        "building_commit",
+        43
+      ],
+      [
+        "phys_slp",
+        41
+      ],
+      [
+        "runtime_hydrology",
+        40
+      ]
+    ],
+    "continuation_last_stages": [],
+    "stages": {},
+    "top_job_ms": [
+      [
+        "j_economy_daily_ms",
+        {
+          "count": 1531,
+          "sum": 3211.419004,
+          "mean": 2.0975956917047682,
+          "p50": 1.405,
+          "p95": 7.7885,
+          "p99": 17.125799300000015,
+          "max": 22.957001
+        }
+      ],
+      [
+        "j_economy_daily_job_wrapper_gap_ms",
+        {
+          "count": 1531,
+          "sum": 3211.419004,
+          "mean": 2.0975956917047682,
+          "p50": 1.405,
+          "p95": 7.7885,
+          "p99": 17.125799300000015,
+          "max": 22.957001
+        }
+      ],
+      [
+        "j_economy_daily_slice_actual_ms",
+        {
+          "count": 1531,
+          "sum": 3200.136003,
+          "mean": 2.0902259980404962,
+          "p50": 1.397,
+          "p95": 7.7825,
+          "p99": 17.117100300000015,
+          "max": 22.948999
+        }
+      ],
+      [
+        "j_economy_daily_slice_reported_ms",
+        {
+          "count": 1531,
+          "sum": 3171.914,
+          "mean": 2.0717922926192034,
+          "p50": 1.38,
+          "p95": 7.765,
+          "p99": 17.09640070000001,
+          "max": 22.919001
+        }
+      ],
+      [
+        "j_native_daily_sim_ms",
+        {
+          "count": 1531,
+          "sum": 2111.285,
+          "mean": 1.379023514043109,
+          "p50": 1.084,
+          "p95": 2.9575,
+          "p99": 3.1411000000000007,
+          "max": 6.703
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_actual_ms",
+        {
+          "count": 1531,
+          "sum": 2098.651,
+          "mean": 1.3707713912475505,
+          "p50": 1.075,
+          "p95": 2.9495,
+          "p99": 3.131200000000001,
+          "max": 6.693
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_job_shell_wall_ms",
+        {
+          "count": 1531,
+          "sum": 2048.695,
+          "mean": 1.3381417374265188,
+          "p50": 1.046,
+          "p95": 2.909,
+          "p99": 3.0749000000000004,
+          "max": 6.512
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_reported_ms",
+        {
+          "count": 1531,
+          "sum": 1827.364,
+          "mean": 1.1935754408883084,
+          "p50": 0.91,
+          "p95": 2.7625,
+          "p99": 2.885,
+          "max": 6.291
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_wrapper_wall_ms",
+        {
+          "count": 1531,
+          "sum": 1827.364,
+          "mean": 1.1935754408883084,
+          "p50": 0.91,
+          "p95": 2.7625,
+          "p99": 2.885,
+          "max": 6.291
+        }
+      ],
+      [
+        "j_ocean_currents_ms",
+        {
+          "count": 1531,
+          "sum": 598.173,
+          "mean": 0.3907073807968648,
+          "p50": 0.0,
+          "p95": 1.835,
+          "p99": 1.9988000000000001,
+          "max": 2.633
+        }
+      ],
+      [
+        "j_ocean_currents_job_wrapper_gap_ms",
+        {
+          "count": 1531,
+          "sum": 598.173,
+          "mean": 0.3907073807968648,
+          "p50": 0.0,
+          "p95": 1.835,
+          "p99": 1.9988000000000001,
+          "max": 2.633
+        }
+      ],
+      [
+        "j_ocean_currents_slice_actual_ms",
+        {
+          "count": 1531,
+          "sum": 592.878,
+          "mean": 0.3872488569562378,
+          "p50": 0.0,
+          "p95": 1.825,
+          "p99": 1.9878000000000002,
+          "max": 2.625
+        }
+      ],
+      [
+        "j_natural_resource_daily_ms",
+        {
+          "count": 1531,
+          "sum": 503.426,
+          "mean": 0.32882168517308946,
+          "p50": 0.0,
+          "p95": 1.6840000000000002,
+          "p99": 1.8048000000000002,
+          "max": 2.614
+        }
+      ],
+      [
+        "j_natural_resource_daily_job_wrapper_gap_ms",
+        {
+          "count": 1531,
+          "sum": 503.426,
+          "mean": 0.32882168517308946,
+          "p50": 0.0,
+          "p95": 1.6840000000000002,
+          "p99": 1.8048000000000002,
+          "max": 2.614
+        }
+      ],
+      [
+        "j_natural_resource_daily_slice_actual_ms",
+        {
+          "count": 1531,
+          "sum": 501.335,
+          "mean": 0.32745591116917044,
+          "p50": 0.0,
+          "p95": 1.677,
+          "p99": 1.7985000000000002,
+          "max": 2.606
+        }
+      ],
+      [
+        "j_natural_resource_daily_slice_reported_ms",
+        {
+          "count": 1531,
+          "sum": 495.375,
+          "mean": 0.32356303069888964,
+          "p50": 0.0,
+          "p95": 1.6564999999999999,
+          "p99": 1.7797,
+          "max": 2.423
+        }
+      ],
+      [
+        "j_ocean_currents_slice_reported_ms",
+        {
+          "count": 1531,
+          "sum": 304.693,
+          "mean": 0.19901567602873937,
+          "p50": 0.0,
+          "p95": 1.5630000000000002,
+          "p99": 1.7325000000000008,
+          "max": 2.433
+        }
+      ],
+      [
+        "j_ocean_currents_slice_reported_gap_ms",
+        {
+          "count": 1531,
+          "sum": 288.185,
+          "mean": 0.18823318092749836,
+          "p50": 0.0,
+          "p95": 1.4215,
+          "p99": 1.5904000000000007,
+          "max": 1.712
+        }
+      ],
+      [
+        "j_dynamic_visual_atlas_upload_ms",
+        {
+          "count": 1531,
+          "sum": 254.99,
+          "mean": 0.16655127367733508,
+          "p50": 0.0,
+          "p95": 0.677,
+          "p99": 0.7495000000000003,
+          "max": 0.967
+        }
+      ],
+      [
+        "j_dynamic_visual_atlas_upload_job_wrapper_gap_ms",
+        {
+          "count": 1531,
+          "sum": 254.99,
+          "mean": 0.16655127367733508,
+          "p50": 0.0,
+          "p95": 0.677,
+          "p99": 0.7495000000000003,
+          "max": 0.967
+        }
+      ]
+    ]
+  },
+  {
+    "file": "perf_record_20260725_152647.csv",
+    "bytes": 188918655,
+    "columns": 1000,
+    "rows": 547,
+    "duration_s": 101.593,
+    "first_tick": 3.0,
+    "last_tick": 549.0,
+    "tick_delta": 546.0,
+    "ticks_per_second": 5.3743860305336,
+    "skipped_days": 0,
+    "json_parse_errors": 0,
+    "metrics": {
+      "fps": {
+        "count": 547,
+        "sum": 31452.0,
+        "mean": 57.49908592321755,
+        "p50": 59.0,
+        "p95": 61.0,
+        "p99": 61.0,
+        "max": 61.0
+      },
+      "fast_ms": {
+        "count": 547,
+        "sum": 6012.002,
+        "mean": 10.990862888482633,
+        "p50": 10.98,
+        "p95": 14.182299999999996,
+        "p99": 15.36409999999999,
+        "max": 17.073
+      },
+      "t_sus_ms": {
+        "count": 547,
+        "sum": 5803.257,
+        "mean": 10.609244972577695,
+        "p50": 10.63,
+        "p95": 13.807799999999986,
+        "p99": 14.868879999999999,
+        "max": 16.731
+      },
+      "t_render_ms": {
+        "count": 547,
+        "sum": 41.183,
+        "mean": 0.07528884826325412,
+        "p50": 0.009,
+        "p95": 0.6986999999999999,
+        "p99": 0.747,
+        "max": 0.8
+      },
+      "t_ui_ms": {
+        "count": 547,
+        "sum": 114.018,
+        "mean": 0.20844241316270568,
+        "p50": 0.208,
+        "p95": 0.234,
+        "p99": 0.2556199999999999,
+        "max": 0.282
+      },
+      "largest_slice_ms": {
+        "count": 547,
+        "sum": 3498.69,
+        "mean": 6.396142595978063,
+        "p50": 5.982,
+        "p95": 8.4925,
+        "p99": 9.392339999999995,
+        "max": 9.745
+      },
+      "sus_sim_avg_300": {
+        "count": 547,
+        "sum": 4873.708189,
+        "mean": 8.909887,
+        "p50": 8.872791,
+        "p95": 9.127619000000001,
+        "p99": 10.137194879999992,
+        "max": 12.444
+      },
+      "sus_sim_p95_300": {
+        "count": 547,
+        "sum": 6556.033067,
+        "mean": 11.985435223034736,
+        "p50": 11.625,
+        "p95": 11.958,
+        "p99": 24.444,
+        "max": 24.444
+      },
+      "sus_sim_max_300": {
+        "count": 547,
+        "sum": 10734.739011,
+        "mean": 19.624751391224862,
+        "p50": 24.444,
+        "p95": 24.444,
+        "p99": 24.444,
+        "max": 24.444
+      },
+      "continuation_frames": {
+        "count": 547,
+        "sum": 5735.0,
+        "mean": 10.484460694698354,
+        "p50": 11.0,
+        "p95": 12.0,
+        "p99": 13.0,
+        "max": 18.0
+      },
+      "continuation_slices": {
+        "count": 547,
+        "sum": 29189.0,
+        "mean": 53.36197440585009,
+        "p50": 55.0,
+        "p95": 59.0,
+        "p99": 59.0,
+        "max": 59.0
+      },
+      "continuation_country_slices": {
+        "count": 547,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_economy_slices": {
+        "count": 547,
+        "sum": 29189.0,
+        "mean": 53.36197440585009,
+        "p50": 55.0,
+        "p95": 59.0,
+        "p99": 59.0,
+        "max": 59.0
+      },
+      "continuation_wall_ms": {
+        "count": 547,
+        "sum": 61519.086,
+        "mean": 112.46633638025595,
+        "p50": 115.548,
+        "p95": 130.77159999999998,
+        "p99": 137.93267999999992,
+        "max": 216.755
+      },
+      "continuation_max_frame_wall_ms": {
+        "count": 547,
+        "sum": 10783.46,
+        "mean": 19.71382084095064,
+        "p50": 19.69,
+        "p95": 25.471199999999996,
+        "p99": 26.638039999999986,
+        "max": 29.758
+      },
+      "continuation_max_slice_ms": {
+        "count": 547,
+        "sum": 8600.053,
+        "mean": 15.722217550274223,
+        "p50": 15.084,
+        "p95": 19.232799999999987,
+        "p99": 22.031219999999998,
+        "max": 23.395
+      },
+      "continuation_last_slice_ms": {
+        "count": 547,
+        "sum": 8597.124,
+        "mean": 15.716862888482632,
+        "p50": 15.054,
+        "p95": 19.232799999999987,
+        "p99": 22.031219999999998,
+        "max": 23.395
+      },
+      "continuation_budget_ms": {
+        "count": 547,
+        "sum": 4376.0,
+        "mean": 8.0,
+        "p50": 8.0,
+        "p95": 8.0,
+        "p99": 8.0,
+        "max": 8.0
+      }
+    },
+    "largest_jobs": [
+      [
+        "economy_daily",
+        546
+      ],
+      [
+        "native_daily_sim",
+        1
+      ]
+    ],
+    "largest_stages": [
+      [
+        "building_plan",
+        546
+      ],
+      [
+        "native_daily_complete",
+        1
+      ]
+    ],
+    "continuation_last_stages": [
+      [
+        "trade_planning",
+        547
+      ]
+    ],
+    "stages": {
+      "economy:building_commit": {
+        "count": 0.0,
+        "total_ms": 10706.644999999988,
+        "mean_slice_ms": null,
+        "row_max_p50_ms": null,
+        "row_max_p95_ms": null,
+        "max_slice_ms": null
+      },
+      "economy:building_employment": {
+        "count": 0.0,
+        "total_ms": 2192.1139999999987,
+        "mean_slice_ms": null,
+        "row_max_p50_ms": null,
+        "row_max_p95_ms": null,
+        "max_slice_ms": null
+      },
+      "economy:building_plan": {
+        "count": 0.0,
+        "total_ms": 7525.319999999996,
+        "mean_slice_ms": null,
+        "row_max_p50_ms": null,
+        "row_max_p95_ms": null,
+        "max_slice_ms": null
+      },
+      "economy:building_production": {
+        "count": 0.0,
+        "total_ms": 11616.004,
+        "mean_slice_ms": null,
+        "row_max_p50_ms": null,
+        "row_max_p95_ms": null,
+        "max_slice_ms": null
+      },
+      "economy:household_market": {
+        "count": 0.0,
+        "total_ms": 7659.218000000002,
+        "mean_slice_ms": null,
+        "row_max_p50_ms": null,
+        "row_max_p95_ms": null,
+        "max_slice_ms": null
+      },
+      "economy:trade_dispatch": {
+        "count": 0.0,
+        "total_ms": 5720.614000000007,
+        "mean_slice_ms": null,
+        "row_max_p50_ms": null,
+        "row_max_p95_ms": null,
+        "max_slice_ms": null
+      },
+      "economy:trade_planning": {
+        "count": 0.0,
+        "total_ms": 8597.124,
+        "mean_slice_ms": null,
+        "row_max_p50_ms": null,
+        "row_max_p95_ms": null,
+        "max_slice_ms": null
+      },
+      "economy:trade_settle": {
+        "count": 0.0,
+        "total_ms": 109.88200000000006,
+        "mean_slice_ms": null,
+        "row_max_p50_ms": null,
+        "row_max_p95_ms": null,
+        "max_slice_ms": null
+      }
+    },
+    "top_job_ms": [
+      [
+        "j_economy_daily_ms",
+        {
+          "count": 547,
+          "sum": 3502.362,
+          "mean": 6.402855575868373,
+          "p50": 5.989,
+          "p95": 8.5001,
+          "p99": 9.400879999999997,
+          "max": 9.753
+        }
+      ],
+      [
+        "j_economy_daily_job_wrapper_gap_ms",
+        {
+          "count": 547,
+          "sum": 3502.362,
+          "mean": 6.402855575868373,
+          "p50": 5.989,
+          "p95": 8.5001,
+          "p99": 9.400879999999997,
+          "max": 9.753
+        }
+      ],
+      [
+        "j_economy_daily_slice_actual_ms",
+        {
+          "count": 547,
+          "sum": 3497.786,
+          "mean": 6.394489945155393,
+          "p50": 5.981,
+          "p95": 8.4925,
+          "p99": 9.392339999999995,
+          "max": 9.745
+        }
+      ],
+      [
+        "j_economy_daily_slice_reported_ms",
+        {
+          "count": 547,
+          "sum": 3487.39,
+          "mean": 6.3754844606946985,
+          "p50": 5.962,
+          "p95": 8.4738,
+          "p99": 9.373799999999996,
+          "max": 9.725
+        }
+      ],
+      [
+        "j_native_daily_sim_ms",
+        {
+          "count": 547,
+          "sum": 795.874,
+          "mean": 1.4549798903107862,
+          "p50": 1.151,
+          "p95": 3.125899999999999,
+          "p99": 3.34562,
+          "max": 6.764
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_actual_ms",
+        {
+          "count": 547,
+          "sum": 791.298,
+          "mean": 1.4466142595978062,
+          "p50": 1.144,
+          "p95": 3.1168999999999984,
+          "p99": 3.33516,
+          "max": 6.754
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_job_shell_wall_ms",
+        {
+          "count": 547,
+          "sum": 772.101,
+          "mean": 1.4115191956124313,
+          "p50": 1.109,
+          "p95": 3.0659999999999994,
+          "p99": 3.2785599999999997,
+          "max": 6.551
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_reported_ms",
+        {
+          "count": 547,
+          "sum": 688.489,
+          "mean": 1.2586636197440586,
+          "p50": 0.968,
+          "p95": 2.9061999999999997,
+          "p99": 3.06962,
+          "max": 6.279
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_wrapper_wall_ms",
+        {
+          "count": 547,
+          "sum": 688.489,
+          "mean": 1.2586636197440586,
+          "p50": 0.968,
+          "p95": 2.9061999999999997,
+          "p99": 3.06962,
+          "max": 6.279
+        }
+      ],
+      [
+        "j_ocean_currents_ms",
+        {
+          "count": 547,
+          "sum": 224.125,
+          "mean": 0.40973491773308957,
+          "p50": 0.0,
+          "p95": 1.892499999999999,
+          "p99": 2.0223199999999997,
+          "max": 2.9
+        }
+      ],
+      [
+        "j_ocean_currents_job_wrapper_gap_ms",
+        {
+          "count": 547,
+          "sum": 224.125,
+          "mean": 0.40973491773308957,
+          "p50": 0.0,
+          "p95": 1.892499999999999,
+          "p99": 2.0223199999999997,
+          "max": 2.9
+        }
+      ],
+      [
+        "j_ocean_currents_slice_actual_ms",
+        {
+          "count": 547,
+          "sum": 222.249,
+          "mean": 0.4063053016453382,
+          "p50": 0.0,
+          "p95": 1.881699999999999,
+          "p99": 2.0108599999999996,
+          "max": 2.891
+        }
+      ],
+      [
+        "j_natural_resource_daily_ms",
+        {
+          "count": 547,
+          "sum": 178.662,
+          "mean": 0.32662157221206584,
+          "p50": 0.0,
+          "p95": 1.6530999999999998,
+          "p99": 1.69562,
+          "max": 2.546
+        }
+      ],
+      [
+        "j_natural_resource_daily_job_wrapper_gap_ms",
+        {
+          "count": 547,
+          "sum": 178.662,
+          "mean": 0.32662157221206584,
+          "p50": 0.0,
+          "p95": 1.6530999999999998,
+          "p99": 1.69562,
+          "max": 2.546
+        }
+      ],
+      [
+        "j_natural_resource_daily_slice_actual_ms",
+        {
+          "count": 547,
+          "sum": 177.953,
+          "mean": 0.3253254113345521,
+          "p50": 0.0,
+          "p95": 1.6467999999999998,
+          "p99": 1.6886999999999999,
+          "max": 2.539
+        }
+      ],
+      [
+        "j_ocean_currents_slice_reported_ms",
+        {
+          "count": 547,
+          "sum": 116.07,
+          "mean": 0.21219378427787933,
+          "p50": 0.0,
+          "p95": 1.6243999999999992,
+          "p99": 1.7633999999999999,
+          "max": 2.669
+        }
+      ],
+      [
+        "j_natural_resource_daily_slice_reported_ms",
+        {
+          "count": 547,
+          "sum": 175.78,
+          "mean": 0.3213528336380256,
+          "p50": 0.0,
+          "p95": 1.6147,
+          "p99": 1.6656999999999997,
+          "max": 2.467
+        }
+      ],
+      [
+        "j_ocean_currents_slice_reported_gap_ms",
+        {
+          "count": 547,
+          "sum": 106.179,
+          "mean": 0.19411151736745888,
+          "p50": 0.0,
+          "p95": 1.4774999999999996,
+          "p99": 1.64662,
+          "max": 1.836
+        }
+      ],
+      [
+        "j_enum_atlas_upload_ms",
+        {
+          "count": 547,
+          "sum": 56.306,
+          "mean": 0.10293601462522851,
+          "p50": 0.0,
+          "p95": 0.9110999999999998,
+          "p99": 1.1330199999999995,
+          "max": 1.494
+        }
+      ],
+      [
+        "j_enum_atlas_upload_job_wrapper_gap_ms",
+        {
+          "count": 547,
+          "sum": 56.306,
+          "mean": 0.10293601462522851,
+          "p50": 0.0,
+          "p95": 0.9110999999999998,
+          "p99": 1.1330199999999995,
+          "max": 1.494
+        }
+      ]
+    ]
+  },
+  {
+    "file": "perf_record_20260725_171136.csv",
+    "bytes": 105697120,
+    "columns": 683,
+    "rows": 311,
+    "duration_s": 60.061,
+    "first_tick": 2.0,
+    "last_tick": 312.0,
+    "tick_delta": 310.0,
+    "ticks_per_second": 5.161419223789148,
+    "skipped_days": 0,
+    "json_parse_errors": 0,
+    "metrics": {
+      "fps": {
+        "count": 311,
+        "sum": 18314.0,
+        "mean": 58.88745980707395,
+        "p50": 60.0,
+        "p95": 61.5,
+        "p99": 62.0,
+        "max": 62.0
+      },
+      "speed_multiplier": {
+        "count": 311,
+        "sum": 15550.0,
+        "mean": 50.0,
+        "p50": 50.0,
+        "p95": 50.0,
+        "p99": 50.0,
+        "max": 50.0
+      },
+      "fast_ms": {
+        "count": 311,
+        "sum": 3041.0,
+        "mean": 9.778135048231512,
+        "p50": 10.0,
+        "p95": 12.0,
+        "p99": 13.899999999999977,
+        "max": 19.0
+      },
+      "t_sus_ms": {
+        "count": 311,
+        "sum": 3025.974,
+        "mean": 9.729819935691319,
+        "p50": 9.662,
+        "p95": 11.6925,
+        "p99": 12.832199999999997,
+        "max": 17.616
+      },
+      "t_render_ms": {
+        "count": 311,
+        "sum": 21.541,
+        "mean": 0.0692636655948553,
+        "p50": 0.008,
+        "p95": 0.669,
+        "p99": 0.7199,
+        "max": 0.752
+      },
+      "t_ui_ms": {
+        "count": 311,
+        "sum": 0.068,
+        "mean": 0.00021864951768488748,
+        "p50": 0.0,
+        "p95": 0.001,
+        "p99": 0.001,
+        "max": 0.001
+      },
+      "largest_slice_ms": {
+        "count": 311,
+        "sum": 1758.61,
+        "mean": 5.654694533762058,
+        "p50": 5.602,
+        "p95": 5.970000000000001,
+        "p99": 6.609299999999996,
+        "max": 8.126
+      },
+      "sus_sim_avg_300": {
+        "count": 311,
+        "sum": 2490.836872,
+        "mean": 8.009121774919613,
+        "p50": 7.952398,
+        "p95": 8.206457499999999,
+        "p99": 9.782450099999986,
+        "max": 10.305
+      },
+      "sus_sim_p95_300": {
+        "count": 311,
+        "sum": 3088.596,
+        "mean": 9.931176848874598,
+        "p50": 9.665,
+        "p95": 13.513,
+        "p99": 13.513,
+        "max": 13.513
+      },
+      "sus_sim_max_300": {
+        "count": 311,
+        "sum": 4620.031,
+        "mean": 14.855405144694533,
+        "p50": 15.665,
+        "p95": 15.665,
+        "p99": 15.665,
+        "max": 15.665
+      },
+      "continuation_frames": {
+        "count": 311,
+        "sum": 3482.0,
+        "mean": 11.196141479099678,
+        "p50": 11.0,
+        "p95": 12.0,
+        "p99": 13.0,
+        "max": 18.0
+      },
+      "continuation_slices": {
+        "count": 311,
+        "sum": 17329.0,
+        "mean": 55.72025723472669,
+        "p50": 55.0,
+        "p95": 59.0,
+        "p99": 59.0,
+        "max": 59.0
+      },
+      "continuation_country_slices": {
+        "count": 311,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_economy_slices": {
+        "count": 311,
+        "sum": 17329.0,
+        "mean": 55.72025723472669,
+        "p50": 55.0,
+        "p95": 59.0,
+        "p99": 59.0,
+        "max": 59.0
+      },
+      "continuation_wall_ms": {
+        "count": 311,
+        "sum": 37037.711,
+        "mean": 119.09231832797428,
+        "p50": 118.027,
+        "p95": 127.878,
+        "p99": 150.89219999999997,
+        "max": 211.687
+      },
+      "continuation_max_frame_wall_ms": {
+        "count": 311,
+        "sum": 6202.349,
+        "mean": 19.943244372990353,
+        "p50": 18.84,
+        "p95": 24.4725,
+        "p99": 25.451399999999996,
+        "max": 40.561
+      },
+      "continuation_max_slice_ms": {
+        "count": 311,
+        "sum": 5008.732,
+        "mean": 16.105247588424437,
+        "p50": 16.006,
+        "p95": 17.426000000000002,
+        "p99": 18.529999999999998,
+        "max": 40.182
+      },
+      "continuation_last_slice_ms": {
+        "count": 311,
+        "sum": 5003.782,
+        "mean": 16.089331189710613,
+        "p50": 15.992,
+        "p95": 17.371,
+        "p99": 18.529999999999998,
+        "max": 40.182
+      },
+      "continuation_budget_ms": {
+        "count": 311,
+        "sum": 2488.0,
+        "mean": 8.0,
+        "p50": 8.0,
+        "p95": 8.0,
+        "p99": 8.0,
+        "max": 8.0
+      }
+    },
+    "largest_jobs": [
+      [
+        "economy_daily",
+        310
+      ],
+      [
+        "native_daily_sim",
+        1
+      ]
+    ],
+    "largest_stages": [
+      [
+        "building_plan",
+        310
+      ],
+      [
+        "native_daily_complete",
+        1
+      ]
+    ],
+    "continuation_last_stages": [
+      [
+        "trade_planning",
+        311
+      ]
+    ],
+    "stages": {
+      "economy:building_commit": {
+        "count": 1555.0,
+        "total_ms": 6036.314999999996,
+        "mean_slice_ms": 3.8818745980707368,
+        "row_max_p50_ms": 13.295,
+        "row_max_p95_ms": 15.699,
+        "max_slice_ms": 16.503
+      },
+      "economy:building_employment": {
+        "count": 2855.0,
+        "total_ms": 1202.7850000000005,
+        "mean_slice_ms": 0.4212907180385291,
+        "row_max_p50_ms": 0.45,
+        "row_max_p95_ms": 0.604,
+        "max_slice_ms": 0.791
+      },
+      "economy:building_plan": {
+        "count": 5710.0,
+        "total_ms": 4343.2,
+        "mean_slice_ms": 0.7606304728546409,
+        "row_max_p50_ms": 1.463,
+        "row_max_p95_ms": 1.6284999999999998,
+        "max_slice_ms": 2.453
+      },
+      "economy:building_production": {
+        "count": 3166.0,
+        "total_ms": 8193.807000000003,
+        "mean_slice_ms": 2.5880628553379665,
+        "row_max_p50_ms": 2.894,
+        "row_max_p95_ms": 3.1695,
+        "max_slice_ms": 4.164
+      },
+      "economy:household_market": {
+        "count": 3110.0,
+        "total_ms": 4518.377,
+        "mean_slice_ms": 1.452854340836013,
+        "row_max_p50_ms": 1.89,
+        "row_max_p95_ms": 2.8045,
+        "max_slice_ms": 18.3
+      },
+      "economy:trade_dispatch": {
+        "count": 311.0,
+        "total_ms": 3316.3510000000015,
+        "mean_slice_ms": 10.663508038585213,
+        "row_max_p50_ms": 10.651,
+        "row_max_p95_ms": 11.308,
+        "max_slice_ms": 13.736
+      },
+      "economy:trade_planning": {
+        "count": 311.0,
+        "total_ms": 5003.782,
+        "mean_slice_ms": 16.089331189710613,
+        "row_max_p50_ms": 15.992,
+        "row_max_p95_ms": 17.371,
+        "max_slice_ms": 40.182
+      },
+      "economy:trade_settle": {
+        "count": 311.0,
+        "total_ms": 62.07699999999998,
+        "mean_slice_ms": 0.19960450160771698,
+        "row_max_p50_ms": 0.191,
+        "row_max_p95_ms": 0.275,
+        "max_slice_ms": 0.423
+      }
+    },
+    "top_job_ms": [
+      [
+        "j_economy_daily_ms",
+        {
+          "count": 311,
+          "sum": 1760.34,
+          "mean": 5.6602572347266875,
+          "p50": 5.61,
+          "p95": 5.9715,
+          "p99": 6.430199999999994,
+          "max": 8.136
+        }
+      ],
+      [
+        "j_economy_daily_job_wrapper_gap_ms",
+        {
+          "count": 311,
+          "sum": 1760.34,
+          "mean": 5.6602572347266875,
+          "p50": 5.61,
+          "p95": 5.9715,
+          "p99": 6.430199999999994,
+          "max": 8.136
+        }
+      ],
+      [
+        "j_economy_daily_slice_actual_ms",
+        {
+          "count": 311,
+          "sum": 1757.726,
+          "mean": 5.651852090032155,
+          "p50": 5.602,
+          "p95": 5.9625,
+          "p99": 6.422999999999994,
+          "max": 8.126
+        }
+      ],
+      [
+        "j_economy_daily_slice_reported_ms",
+        {
+          "count": 311,
+          "sum": 1751.909,
+          "mean": 5.633147909967846,
+          "p50": 5.585,
+          "p95": 5.9415,
+          "p99": 6.401199999999994,
+          "max": 8.106
+        }
+      ],
+      [
+        "j_native_daily_sim_ms",
+        {
+          "count": 311,
+          "sum": 433.178,
+          "mean": 1.392855305466238,
+          "p50": 1.067,
+          "p95": 2.903,
+          "p99": 3.1162,
+          "max": 6.637
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_actual_ms",
+        {
+          "count": 311,
+          "sum": 430.682,
+          "mean": 1.3848295819935692,
+          "p50": 1.057,
+          "p95": 2.894,
+          "p99": 3.1071,
+          "max": 6.627
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_job_shell_wall_ms",
+        {
+          "count": 311,
+          "sum": 420.61,
+          "mean": 1.352443729903537,
+          "p50": 1.028,
+          "p95": 2.8465,
+          "p99": 3.0468999999999995,
+          "max": 6.451
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_reported_ms",
+        {
+          "count": 311,
+          "sum": 374.914,
+          "mean": 1.2055112540192925,
+          "p50": 0.891,
+          "p95": 2.6950000000000003,
+          "p99": 2.8627,
+          "max": 6.22
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_wrapper_wall_ms",
+        {
+          "count": 311,
+          "sum": 374.914,
+          "mean": 1.2055112540192925,
+          "p50": 0.891,
+          "p95": 2.6950000000000003,
+          "p99": 2.8627,
+          "max": 6.22
+        }
+      ],
+      [
+        "j_ocean_currents_ms",
+        {
+          "count": 311,
+          "sum": 123.017,
+          "mean": 0.3955530546623794,
+          "p50": 0.0,
+          "p95": 1.8265,
+          "p99": 2.0267999999999997,
+          "max": 2.822
+        }
+      ],
+      [
+        "j_ocean_currents_job_wrapper_gap_ms",
+        {
+          "count": 311,
+          "sum": 123.017,
+          "mean": 0.3955530546623794,
+          "p50": 0.0,
+          "p95": 1.8265,
+          "p99": 2.0267999999999997,
+          "max": 2.822
+        }
+      ],
+      [
+        "j_ocean_currents_slice_actual_ms",
+        {
+          "count": 311,
+          "sum": 121.957,
+          "mean": 0.39214469453376205,
+          "p50": 0.0,
+          "p95": 1.8170000000000002,
+          "p99": 2.0158999999999994,
+          "max": 2.811
+        }
+      ],
+      [
+        "j_ocean_currents_slice_reported_ms",
+        {
+          "count": 311,
+          "sum": 62.599,
+          "mean": 0.2012829581993569,
+          "p50": 0.0,
+          "p95": 1.5955,
+          "p99": 1.7657,
+          "max": 2.597
+        }
+      ],
+      [
+        "j_ocean_currents_slice_reported_gap_ms",
+        {
+          "count": 311,
+          "sum": 59.358,
+          "mean": 0.19086173633440515,
+          "p50": 0.0,
+          "p95": 1.487,
+          "p99": 1.6290999999999993,
+          "max": 1.752
+        }
+      ],
+      [
+        "j_natural_resource_daily_ms",
+        {
+          "count": 311,
+          "sum": 87.09,
+          "mean": 0.280032154340836,
+          "p50": 0.0,
+          "p95": 1.41,
+          "p99": 1.4369,
+          "max": 2.111
+        }
+      ],
+      [
+        "j_natural_resource_daily_job_wrapper_gap_ms",
+        {
+          "count": 311,
+          "sum": 87.09,
+          "mean": 0.280032154340836,
+          "p50": 0.0,
+          "p95": 1.41,
+          "p99": 1.4369,
+          "max": 2.111
+        }
+      ],
+      [
+        "j_natural_resource_daily_slice_actual_ms",
+        {
+          "count": 311,
+          "sum": 86.703,
+          "mean": 0.2787877813504823,
+          "p50": 0.0,
+          "p95": 1.4045,
+          "p99": 1.43,
+          "max": 2.104
+        }
+      ],
+      [
+        "j_natural_resource_daily_slice_reported_ms",
+        {
+          "count": 311,
+          "sum": 85.816,
+          "mean": 0.27593569131832796,
+          "p50": 0.0,
+          "p95": 1.392,
+          "p99": 1.4169,
+          "max": 2.037
+        }
+      ],
+      [
+        "j_enum_atlas_upload_ms",
+        {
+          "count": 311,
+          "sum": 25.768,
+          "mean": 0.08285530546623794,
+          "p50": 0.0,
+          "p95": 0.8494999999999999,
+          "p99": 0.9361999999999996,
+          "max": 1.041
+        }
+      ],
+      [
+        "j_enum_atlas_upload_job_wrapper_gap_ms",
+        {
+          "count": 311,
+          "sum": 25.768,
+          "mean": 0.08285530546623794,
+          "p50": 0.0,
+          "p95": 0.8494999999999999,
+          "p99": 0.9361999999999996,
+          "max": 1.041
+        }
+      ]
+    ]
+  },
+  {
+    "file": "perf_record_20260725_171528.csv",
+    "bytes": 237899074,
+    "columns": 1012,
+    "rows": 686,
+    "duration_s": 119.47,
+    "first_tick": 4.0,
+    "last_tick": 689.0,
+    "tick_delta": 685.0,
+    "ticks_per_second": 5.733656985017159,
+    "skipped_days": 0,
+    "json_parse_errors": 0,
+    "metrics": {
+      "fps": {
+        "count": 686,
+        "sum": 40062.0,
+        "mean": 58.39941690962099,
+        "p50": 60.0,
+        "p95": 61.0,
+        "p99": 62.0,
+        "max": 62.0
+      },
+      "speed_multiplier": {
+        "count": 686,
+        "sum": 34300.0,
+        "mean": 50.0,
+        "p50": 50.0,
+        "p95": 50.0,
+        "p99": 50.0,
+        "max": 50.0
+      },
+      "fast_ms": {
+        "count": 686,
+        "sum": 6925.358,
+        "mean": 10.095274052478134,
+        "p50": 10.231,
+        "p95": 12.0455,
+        "p99": 12.942849999999998,
+        "max": 15.714
+      },
+      "t_sus_ms": {
+        "count": 686,
+        "sum": 6664.671,
+        "mean": 9.715263848396502,
+        "p50": 9.8615,
+        "p95": 11.71925,
+        "p99": 12.63675,
+        "max": 14.43
+      },
+      "t_render_ms": {
+        "count": 686,
+        "sum": 51.484,
+        "mean": 0.07504956268221574,
+        "p50": 0.009,
+        "p95": 0.6877500000000001,
+        "p99": 0.72915,
+        "max": 0.771
+      },
+      "t_ui_ms": {
+        "count": 686,
+        "sum": 143.579,
+        "mean": 0.209298833819242,
+        "p50": 0.208,
+        "p95": 0.233,
+        "p99": 0.262,
+        "max": 0.309
+      },
+      "largest_slice_ms": {
+        "count": 686,
+        "sum": 3884.11,
+        "mean": 5.661967930029155,
+        "p50": 5.605,
+        "p95": 6.00375,
+        "p99": 6.332299999999999,
+        "max": 7.759
+      },
+      "sus_sim_avg_300": {
+        "count": 686,
+        "sum": 5473.28777,
+        "mean": 7.978553600583091,
+        "p50": 7.952914,
+        "p95": 8.043055500000001,
+        "p99": 8.625368049999999,
+        "max": 9.98275
+      },
+      "sus_sim_p95_300": {
+        "count": 686,
+        "sum": 6869.605881,
+        "mean": 10.014002741982507,
+        "p50": 9.887,
+        "p95": 9.97,
+        "p99": 16.128,
+        "max": 16.128
+      },
+      "sus_sim_max_300": {
+        "count": 686,
+        "sum": 9295.817164,
+        "mean": 13.550753883381924,
+        "p50": 12.745,
+        "p95": 16.128,
+        "p99": 16.128,
+        "max": 16.128
+      },
+      "continuation_frames": {
+        "count": 686,
+        "sum": 6847.0,
+        "mean": 9.981049562682216,
+        "p50": 10.0,
+        "p95": 12.0,
+        "p99": 13.0,
+        "max": 17.0
+      },
+      "continuation_slices": {
+        "count": 686,
+        "sum": 35970.0,
+        "mean": 52.434402332361515,
+        "p50": 51.0,
+        "p95": 59.0,
+        "p99": 59.0,
+        "max": 59.0
+      },
+      "continuation_country_slices": {
+        "count": 686,
+        "sum": 0.0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0
+      },
+      "continuation_economy_slices": {
+        "count": 686,
+        "sum": 35970.0,
+        "mean": 52.434402332361515,
+        "p50": 51.0,
+        "p95": 59.0,
+        "p99": 59.0,
+        "max": 59.0
+      },
+      "continuation_wall_ms": {
+        "count": 686,
+        "sum": 73232.749,
+        "mean": 106.75327842565598,
+        "p50": 105.8535,
+        "p95": 128.44475,
+        "p99": 136.57914999999997,
+        "max": 203.094
+      },
+      "continuation_max_frame_wall_ms": {
+        "count": 686,
+        "sum": 13498.747,
+        "mean": 19.677473760932944,
+        "p50": 20.046,
+        "p95": 24.163,
+        "p99": 25.42225,
+        "max": 64.142
+      },
+      "continuation_max_slice_ms": {
+        "count": 686,
+        "sum": 10484.715,
+        "mean": 15.283841107871721,
+        "p50": 14.915,
+        "p95": 17.812,
+        "p99": 18.835299999999997,
+        "max": 57.895
+      },
+      "continuation_last_slice_ms": {
+        "count": 686,
+        "sum": 10480.761,
+        "mean": 15.27807725947522,
+        "p50": 14.907,
+        "p95": 17.71475,
+        "p99": 18.835299999999997,
+        "max": 57.895
+      },
+      "continuation_budget_ms": {
+        "count": 686,
+        "sum": 5488.0,
+        "mean": 8.0,
+        "p50": 8.0,
+        "p95": 8.0,
+        "p99": 8.0,
+        "max": 8.0
+      }
+    },
+    "largest_jobs": [
+      [
+        "economy_daily",
+        685
+      ],
+      [
+        "native_daily_sim",
+        1
+      ]
+    ],
+    "largest_stages": [
+      [
+        "building_plan",
+        685
+      ],
+      [
+        "native_daily_complete",
+        1
+      ]
+    ],
+    "continuation_last_stages": [
+      [
+        "trade_planning",
+        686
+      ]
+    ],
+    "stages": {
+      "economy:building_commit": {
+        "count": 3430.0,
+        "total_ms": 12605.322000000004,
+        "mean_slice_ms": 3.6750209912536453,
+        "row_max_p50_ms": 12.299,
+        "row_max_p95_ms": 15.62625,
+        "max_slice_ms": 18.026
+      },
+      "economy:building_employment": {
+        "count": 5734.0,
+        "total_ms": 2592.665,
+        "mean_slice_ms": 0.45215643529822114,
+        "row_max_p50_ms": 0.49,
+        "row_max_p95_ms": 0.64375,
+        "max_slice_ms": 0.773
+      },
+      "economy:building_plan": {
+        "count": 11468.0,
+        "total_ms": 8881.385000000002,
+        "mean_slice_ms": 0.7744493372863622,
+        "row_max_p50_ms": 1.49,
+        "row_max_p95_ms": 1.6645,
+        "max_slice_ms": 2.031
+      },
+      "economy:building_production": {
+        "count": 6420.0,
+        "total_ms": 13024.477999999992,
+        "mean_slice_ms": 2.028734890965731,
+        "row_max_p50_ms": 2.8875,
+        "row_max_p95_ms": 3.124,
+        "max_slice_ms": 4.081
+      },
+      "economy:household_market": {
+        "count": 6860.0,
+        "total_ms": 9706.464999999995,
+        "mean_slice_ms": 1.414936588921282,
+        "row_max_p50_ms": 1.817,
+        "row_max_p95_ms": 2.9295,
+        "max_slice_ms": 17.858
+      },
+      "economy:trade_dispatch": {
+        "count": 686.0,
+        "total_ms": 6885.120000000002,
+        "mean_slice_ms": 10.036618075801751,
+        "row_max_p50_ms": 9.933,
+        "row_max_p95_ms": 11.12525,
+        "max_slice_ms": 11.965
+      },
+      "economy:trade_planning": {
+        "count": 686.0,
+        "total_ms": 10480.760999999995,
+        "mean_slice_ms": 15.27807725947521,
+        "row_max_p50_ms": 14.907,
+        "row_max_p95_ms": 17.71475,
+        "max_slice_ms": 57.895
+      },
+      "economy:trade_settle": {
+        "count": 686.0,
+        "total_ms": 134.96200000000022,
+        "mean_slice_ms": 0.19673760932944637,
+        "row_max_p50_ms": 0.193,
+        "row_max_p95_ms": 0.232,
+        "max_slice_ms": 0.417
+      }
+    },
+    "top_job_ms": [
+      [
+        "j_economy_daily_ms",
+        {
+          "count": 686,
+          "sum": 3888.354,
+          "mean": 5.668154518950437,
+          "p50": 5.6135,
+          "p95": 6.00675,
+          "p99": 6.317449999999999,
+          "max": 7.769
+        }
+      ],
+      [
+        "j_economy_daily_job_wrapper_gap_ms",
+        {
+          "count": 686,
+          "sum": 3888.354,
+          "mean": 5.668154518950437,
+          "p50": 5.6135,
+          "p95": 6.00675,
+          "p99": 6.317449999999999,
+          "max": 7.769
+        }
+      ],
+      [
+        "j_economy_daily_slice_actual_ms",
+        {
+          "count": 686,
+          "sum": 3882.627,
+          "mean": 5.6598061224489795,
+          "p50": 5.605,
+          "p95": 5.99775,
+          "p99": 6.306,
+          "max": 7.759
+        }
+      ],
+      [
+        "j_economy_daily_slice_reported_ms",
+        {
+          "count": 686,
+          "sum": 3869.568,
+          "mean": 5.640769679300292,
+          "p50": 5.586,
+          "p95": 5.977250000000001,
+          "p99": 6.28465,
+          "max": 7.738
+        }
+      ],
+      [
+        "j_native_daily_sim_ms",
+        {
+          "count": 686,
+          "sum": 963.773,
+          "mean": 1.4049169096209912,
+          "p50": 1.088,
+          "p95": 2.94825,
+          "p99": 3.16395,
+          "max": 7.1
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_actual_ms",
+        {
+          "count": 686,
+          "sum": 958.198,
+          "mean": 1.3967900874635568,
+          "p50": 1.08,
+          "p95": 2.9392500000000004,
+          "p99": 3.1527999999999996,
+          "max": 7.091
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_job_shell_wall_ms",
+        {
+          "count": 686,
+          "sum": 935.453,
+          "mean": 1.363634110787172,
+          "p50": 1.051,
+          "p95": 2.8865,
+          "p99": 3.0956499999999996,
+          "max": 6.873
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_reported_ms",
+        {
+          "count": 686,
+          "sum": 832.626,
+          "mean": 1.213740524781341,
+          "p50": 0.9175,
+          "p95": 2.73775,
+          "p99": 2.9164499999999998,
+          "max": 6.637
+        }
+      ],
+      [
+        "j_native_daily_sim_slice_wrapper_wall_ms",
+        {
+          "count": 686,
+          "sum": 832.626,
+          "mean": 1.213740524781341,
+          "p50": 0.9175,
+          "p95": 2.73775,
+          "p99": 2.9164499999999998,
+          "max": 6.637
+        }
+      ],
+      [
+        "j_ocean_currents_ms",
+        {
+          "count": 686,
+          "sum": 266.379,
+          "mean": 0.3883075801749271,
+          "p50": 0.0,
+          "p95": 1.8327499999999999,
+          "p99": 2.0093499999999995,
+          "max": 2.956
+        }
+      ],
+      [
+        "j_ocean_currents_job_wrapper_gap_ms",
+        {
+          "count": 686,
+          "sum": 266.379,
+          "mean": 0.3883075801749271,
+          "p50": 0.0,
+          "p95": 1.8327499999999999,
+          "p99": 2.0093499999999995,
+          "max": 2.956
+        }
+      ],
+      [
+        "j_ocean_currents_slice_actual_ms",
+        {
+          "count": 686,
+          "sum": 264.107,
+          "mean": 0.3849956268221575,
+          "p50": 0.0,
+          "p95": 1.822,
+          "p99": 1.9994999999999998,
+          "max": 2.946
+        }
+      ],
+      [
+        "j_ocean_currents_slice_reported_ms",
+        {
+          "count": 686,
+          "sum": 135.085,
+          "mean": 0.19691690962099126,
+          "p50": 0.0,
+          "p95": 1.549,
+          "p99": 1.7298499999999997,
+          "max": 2.729
+        }
+      ],
+      [
+        "j_natural_resource_daily_ms",
+        {
+          "count": 686,
+          "sum": 195.149,
+          "mean": 0.28447376093294463,
+          "p50": 0.0,
+          "p95": 1.43425,
+          "p99": 1.4853,
+          "max": 2.246
+        }
+      ],
+      [
+        "j_natural_resource_daily_job_wrapper_gap_ms",
+        {
+          "count": 686,
+          "sum": 195.149,
+          "mean": 0.28447376093294463,
+          "p50": 0.0,
+          "p95": 1.43425,
+          "p99": 1.4853,
+          "max": 2.246
+        }
+      ],
+      [
+        "j_ocean_currents_slice_reported_gap_ms",
+        {
+          "count": 686,
+          "sum": 129.022,
+          "mean": 0.18807871720116617,
+          "p50": 0.0,
+          "p95": 1.42875,
+          "p99": 1.6181999999999999,
+          "max": 1.811
+        }
+      ],
+      [
+        "j_natural_resource_daily_slice_actual_ms",
+        {
+          "count": 686,
+          "sum": 194.327,
+          "mean": 0.28327551020408165,
+          "p50": 0.0,
+          "p95": 1.4267500000000002,
+          "p99": 1.4791500000000002,
+          "max": 2.239
+        }
+      ],
+      [
+        "j_natural_resource_daily_slice_reported_ms",
+        {
+          "count": 686,
+          "sum": 192.368,
+          "mean": 0.28041982507288626,
+          "p50": 0.0,
+          "p95": 1.41375,
+          "p99": 1.4661499999999998,
+          "max": 2.167
+        }
+      ],
+      [
+        "j_enum_atlas_upload_ms",
+        {
+          "count": 686,
+          "sum": 69.917,
+          "mean": 0.1019198250728863,
+          "p50": 0.0,
+          "p95": 0.952,
+          "p99": 1.1290499999999997,
+          "max": 1.325
+        }
+      ],
+      [
+        "j_enum_atlas_upload_job_wrapper_gap_ms",
+        {
+          "count": 686,
+          "sum": 69.917,
+          "mean": 0.1019198250728863,
+          "p50": 0.0,
+          "p95": 0.952,
+          "p99": 1.1290499999999997,
+          "max": 1.325
+        }
+      ]
+    ]
+  }
+]
