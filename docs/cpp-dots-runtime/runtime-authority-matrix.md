@@ -1,5 +1,9 @@
 # Runtime Authority Matrix
 
+Transient 经济缓存与 climate/ocean hot-state capsule 不改变本矩阵的权威
+划分；具体边界见
+[运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
+
 本文记录当前日级 runtime 的权威边界。它区分“C++ 加速”“slot 写入”“tick/state authority”“visible publish”和“Godot object boundary”，避免把可运行 native pass 误判成完整 DOTS authority。
 
 | System | Stage / Cursor Owner | Slot Writer | Publish Path | Fallback Owner | ACTIVE Eligibility | Known Blockers |
@@ -94,6 +98,13 @@ fallback simulation owner. Plan, sparse market-signal observation, indexed
 investment evaluation, and investment commit continuation are likewise native
 transient work. None adds a DataCore slot, public bridge method, scheduler stage,
 PKEC field, cadence rule, or state-hash input.
+
+The investment review-cell ordinal list and closing-audit shadow/stamp/touched
+lanes are also native transient scheduling/accounting state. Worker settlement
+worksets are registered by the native main thread before dispatch; workers do
+not own or publish the audit ledger. FULL remains the exact baseline, PROBE keeps
+the full scan authoritative, and INCREMENTAL cannot become the production default
+without the documented 200-day gate. None of these lanes is serialized or hashed.
 
 ## Economy v19 employment/recovery authority override (current)
 

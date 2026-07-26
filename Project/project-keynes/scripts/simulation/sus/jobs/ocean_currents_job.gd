@@ -414,14 +414,22 @@ func last_physical_diag() -> Dictionary:
 
 func ocean_physical_state_snapshot() -> Dictionary:
 	_sync_legacy_round_state()
-	if _native_ocean_facade_available("get_native_ocean_physical_state_report"):
-		_native_ocean_state = data_core_world_ext.get_native_ocean_physical_state_report()
 	var native_path_ready: bool = str(_last_phys_diag.get("path", "")).begins_with("gdext") \
 			or str(_last_daily_wind_report.get("path", "")).begins_with("gdext")
 	var active_owner_requested: bool = false
 	var cp = cfg.climate_profile if cfg != null else null
 	if cp != null and cp.get("native_ocean_physical_active_owner_enabled") != null:
 		active_owner_requested = bool(cp.native_ocean_physical_active_owner_enabled)
+	var compact_capsule_enabled: bool = cp != null \
+			and cp.get("native_daily_compact_state_capsule_enabled") != null \
+			and bool(cp.native_daily_compact_state_capsule_enabled)
+	if active_owner_requested and compact_capsule_enabled \
+			and _native_ocean_facade_available("get_native_ocean_physical_hot_state"):
+		_native_ocean_state = data_core_world_ext.get_native_ocean_physical_hot_state()
+	elif _native_ocean_facade_available("get_native_ocean_physical_state_report"):
+		_native_ocean_state = data_core_world_ext.get_native_ocean_physical_state_report()
+	var compact_capsule: bool = bool(_native_ocean_state.get(
+			"compact_state_capsule", false))
 	var native_lifecycle_ready: bool = not _native_ocean_state.is_empty()
 	var owner: String = "gdscript_retained"
 	if native_lifecycle_ready and active_owner_requested:
@@ -452,8 +460,9 @@ func ocean_physical_state_snapshot() -> Dictionary:
 		"wind_period_ticks": wind_period_ticks,
 		"ocean_period_ticks": ocean_period_ticks,
 		"slice_count": slice_count,
-		"last_phys_diag": _last_phys_diag.duplicate(true),
-		"last_daily_wind_report": _last_daily_wind_report.duplicate(true),
+			"last_phys_diag": {} if compact_capsule else _last_phys_diag.duplicate(true),
+			"last_daily_wind_report": {} if compact_capsule else _last_daily_wind_report.duplicate(true),
+			"compact_state_capsule": compact_capsule,
 		"remaining_gdscript_authority": [
 			"visual_raster_boundary_execution",
 			"texture_commit_boundary_execution",
@@ -467,7 +476,8 @@ func ocean_physical_state_snapshot() -> Dictionary:
 		],
 	}
 	if not _native_ocean_state.is_empty():
-		snapshot["native_lifecycle_state"] = _native_ocean_state.duplicate(true)
+		snapshot["native_lifecycle_state"] = _native_ocean_state.duplicate(
+				not compact_capsule)
 		snapshot["native_owned_lifecycle_authority"] = _native_ocean_state.get("native_owned_lifecycle_authority", [
 			"physical_round_active",
 			"physical_round_id",

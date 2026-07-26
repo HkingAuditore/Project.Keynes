@@ -338,7 +338,7 @@ vec3 render_land_pipeline(
 ```glsl
 struct LandModInputs { /* 13 字段 */ };
 
-surface = apply_seasonal_vegetation_tint(surface, i);   // 2.1
+surface = apply_climate_vegetation_tint(surface, i);    // 2.1，温度/湿度/活力物候
 surface = apply_vegetation_axis_tint(surface, i);       // 2.3
 surface = apply_environment_color_grade(surface, i);    // 2.4，温湿度/生态/活力统一合色
 surface = apply_relief_tint(surface, i);                 // 2.2，海拔/坡度/风塑形
@@ -568,7 +568,7 @@ SurfaceParams apply_volcanic_ash_tint(SurfaceParams s, LandModInputs i) {
 
 // 3. 加到调度器
 SurfaceParams apply_land_material_modifiers(SurfaceParams s, LandModInputs i) {
-    s = apply_seasonal_vegetation_tint(s, i);
+    s = apply_climate_vegetation_tint(s, i);
     s = apply_vegetation_axis_tint(s, i);
     s = apply_environment_color_grade(s, i);
     s = apply_relief_tint(s, i);

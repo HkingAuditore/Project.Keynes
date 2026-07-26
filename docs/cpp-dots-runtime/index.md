@@ -1,5 +1,8 @@
 # C++/DOTS Runtime 开发文档索引
 
+当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见
+[运行时性能优化契约（2026-07）](runtime-performance-optimization-2026-07.md)。
+
 本目录记录 Project.Keynes 当前运行期 C++/DOTS 架构的真实状态，面向后续开发、排障和继续迁移。这里不是历史路线图，也不是一次性验收记录；历史文档仍保留原状，本目录负责把已经落到代码里的调度、数据通信、计算链路和性能诊断规则整理成可执行参考。
 
 ## 阅读顺序

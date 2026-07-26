@@ -9595,6 +9595,47 @@ Dictionary DCWorldExt::native_climate_round_finish_round(const Dictionary &ctx) 
     return out;
 }
 
+Dictionary DCWorldExt::get_native_climate_round_hot_state() {
+    using namespace pk_async_climate;
+    Dictionary out;
+    out["owner"] = String("DCWorldExt.AsyncClimateRoundState");
+    out["authority"] = String("native_ready_capsule");
+    out["simulation_authority"] = false;
+    out["climate_round_authority_ready"] = true;
+    out["compact_state_capsule"] = true;
+    AsyncClimateRoundState *st = _get_round_state(_async_climate_round_state);
+    if (!st) {
+        out["ready"] = false;
+        out["round_active"] = false;
+        out["pass_cursor"] = 0;
+        out["generation"] = int64_t(0);
+        out["boundary_intent_mask"] = int64_t(0);
+        return out;
+    }
+    std::lock_guard<std::mutex> g(st->state_mtx);
+    int64_t boundary_intent_mask = 0;
+    if (!st->lifecycle_start_state_intents.empty())
+        boundary_intent_mask |= 1;
+    if (!st->lifecycle_boundary_intents.empty())
+        boundary_intent_mask |= 2;
+    if (!st->lifecycle_finish_boundary_intents.empty())
+        boundary_intent_mask |= 4;
+    if (!st->lifecycle_finalize_tail_boundary_intents.empty())
+        boundary_intent_mask |= 8;
+    out["ready"] = st->task != nullptr;
+    out["round_active"] = st->lifecycle_round_active;
+    out["async_kicked"] = st->lifecycle_async_kicked;
+    out["pass_cursor"] = st->lifecycle_pass_cursor;
+    out["round_id"] = st->lifecycle_round_id;
+    out["generation"] = st->lifecycle_round_id;
+    out["tick_index"] = st->lifecycle_tick_index;
+    out["phase_locked"] = st->lifecycle_phase_locked;
+    out["stage"] = String(st->lifecycle_stage.c_str());
+    out["dirty"] = boundary_intent_mask != 0;
+    out["boundary_intent_mask"] = boundary_intent_mask;
+    return out;
+}
+
 Dictionary DCWorldExt::get_native_climate_round_state_report() {
     using namespace pk_async_climate;
     Dictionary out;

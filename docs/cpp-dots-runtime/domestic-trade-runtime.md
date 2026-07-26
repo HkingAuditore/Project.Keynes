@@ -19,12 +19,17 @@
 | --- | --- | --- |
 | `TradeTopologyStore` | 六邻接、可贸易通行、进入成本、冻结国家连通分量、拓扑代际 | 否；加载后从地图与国家快照重建 |
 | `TradeSignalStore` / `TradeFlowSignalStore` | 稀疏盈余/缺口、价格压力工作集、进出口 EMA | 进出口 EMA 是 PKEC v12 权威状态；规划工作集不保存 |
-| `TradePlanStore` | 轮转扫描游标、有界 Dijkstra scratch、候选缓冲、固定容量路线缓存 | 否 |
+| `TradePlanStore` | 轮转扫描游标、可续跑 Dijkstra heap/stamp/target/expansion cursor、候选缓冲、固定容量路线缓存 | 否 |
 | `TradeOrderStore` | 稳定订单 ID、路线端点、到达日、物资行 CSR、卖方快照 CSR、货物/现金托管 | 是，PKEC v12 |
 
 常驻复杂度保持为 `O(cell + edge + active_signal + in_flight_order)`。禁止全源最短路、
 全市场×全物资候选矩阵或逐路径 Godot Object。路线缓存、信号、候选和订单均受
 `EconomyProfile` 固定上限约束。
+
+固定容量的 `(source,destination) -> route_cost` 缓存现在可跨贸易规划轮次复用；只有
+地图贸易拓扑代际、冻结国界拓扑哈希或配置容量变化才会整体失效。缓存不保存路径，
+不参与 PKEC/state hash/event hash，命中只替代同一确定性 Dijkstra 结果。bootstrap、
+restore 与真实拓扑变化仍显式清空缓存。
 
 `TradeOrderStore` 由持久化的 `arrival_day` 确定性重建“到达日 → order index”CSR 时间桶；
 发运、压缩和恢复后重建。结算只遍历已到期桶及其中的待认领现金，不在每个经济边界扫描
@@ -53,7 +58,9 @@
 规划在上次 `AGGREGATE_PUBLISH` 后形成只读工作集，并由 `economy_should_run()` 暴露为软任务。
 `EconomyDailySystem` 继续每 tick 最多一片、默认 0.8 ms 预算；预算转为确定性的扫描 pair 数、
 路线搜索数和扩展数，不用墙钟决定模拟结果。规划不申请 WorldClock 屏障；若未完成，下次从
-轮转游标继续。当前默认每片扫描 16,384 pair、执行 2 个源路线搜索。
+轮转游标继续。当前 profile 默认每片扫描 4,096 pair、最多完成 32 个源路线搜索；路线阶段另有
+每个 native slice 256 次有效 Dijkstra 扩展的总上限，一个 source 未完成时保留 heap、stamp、
+accepted/pending target 和 expansion cursor 到下一片。
 
 计划失效只看规范化贸易拓扑内容哈希与冻结 `cell → country` 归属哈希。拓扑内容哈希只包含六邻接、
 由 terrain LUT 映射后的 `passable` 和 `enter_cost`，不包含原始 `terrain_id`；因此季节性地形重分类若不改变
@@ -61,8 +68,9 @@
 不重置路线扫描。实际通行/成本或国界变化仍会确定性失效并重建连通分量。
 
 1. 分片扫描 market-major `(cell, good)`，只保留有库存盈余或价格/库存缺口的稀疏信号；未解锁 good、禁运 good、`cycle_flow` good 不进入贸易扫描。
-2. 对盈余源运行多目标有界整数 Dijkstra；找到 K 个可盈利目的地或达到扩展上限即停止。
-   路线成本与商品无关，可跨商品复用。
+2. 对盈余源运行多目标有界整数 Dijkstra；找到 K 个可盈利目的地或达到 source 扩展上限即停止。
+   每个 native slice 最多消费 256 次有效扩展，未完成搜索跨 slice 保留原优先队列顺序；路线成本
+   与商品无关，可跨商品复用。
 3. 用源端减库存、目的端加库存后的现有 Price V3 压力估计交易后价差：
    `expected_profit = quantity * (estimated_destination_price - estimated_source_price)`。普通贸易仍要求达到最小 margin 与正利润；若目的地存在严重 survival / 生产投入 relief pressure，且估计价差非负，则允许零价差 relief route 生成候选，使用合成正收益只参与排序和 density，避免 price cap 把救济运输全部卡死。
 4. 运力工作量为
@@ -112,8 +120,10 @@ PKEJ economy journal，但不逐笔灌入通用 gameplay event ring。
 以及地块级托管金额和下一到达日。`get_trade_orders_for_cell(cell, offset, limit)` 只返回与一个
 地块相关的分页订单和物资行 CSR；禁止 UI 请求全局订单矩阵。
 
-`get_economy_report()` 提供规划 phase、scan/route cursor 与 total、拓扑哈希、规范化拓扑变化/计划重置计数和
-最近重置原因，以及信号/候选数、接受和拒绝原因、路线扩展、缓存命中/未命中、国家运力/利用率、
+`get_economy_report()` 提供规划 phase、scan/route cursor 与 total、source/destination 信号数、
+当前 source 身份、route search active、单 source expansion cursor、每片 expansion 配额、
+pending/accepted target、拓扑哈希、规范化拓扑变化/计划重置计数和最近重置原因，以及
+信号/候选数、接受和拒绝原因、路线扩展、缓存命中/未命中、国家运力/利用率、
 在途订单/货物、现金托管、结算滞后及阶段耗时。CSV v16 summary 同步保留这些活性字段，并增加事件、代际、仲裁和真实库存失败诊断。
 
 ## PKEC v12 与兼容性
@@ -167,8 +177,9 @@ dispatch 的二次价格、库存、现金、运力和拓扑检查保证部分�
 水域可以作为内容配置的普通贸易地块，但不模拟真正的陆海联运。
 ## 2026-07-18 bounded planner completion
 
-The default planning slice now permits 128 route searches (valid range
-`1..256`). Before route expansion, signals are deterministically grouped by
+The profile default planning slice permits 32 completed route searches (valid
+range `1..256`), while the native slice as a whole is capped at 256 effective
+Dijkstra expansions. Before route expansion, signals are deterministically grouped by
 `(country, good)` and pruned to the four cheapest/highest-quantity sources and
 the eight highest-price/highest-quantity destinations. Existing Dijkstra route
 validation, source local-demand reserve, destination gap, profit clipping,
@@ -177,7 +188,7 @@ escrow, capacity, and arrival contracts remain authoritative.
 This is bounded candidate selection, not a topology shortcut: completed full
 scans advance and restart from fresh frozen signals, while final dispatch can
 still be zero when no route survives the current profit/stock/cash constraints.
-No trade state or PKEC field was added.
+The resumable route cursor is transient planner state; no PKEC field was added.
 ## 2026-07-20 sparse planner and relief routes
 
 Trade planning no longer scans `market_count * good_count`. The existing market

@@ -1,10 +1,9 @@
 // vegetation.gdshaderinc
 // ─────────────────────────────────────────────────────────────────────────
-// 职责：植被四季换色（Dissolve 翻面 + LUT 派色） + 植被轴 tint。
-//        本文件提供"按 vegetation id × 季节相位"算颜色调制 tint 的全部 helper。
+// 职责：植被气候换色（温度/湿度/活力 + LUT 派色） + 植被轴 tint。
+//        四槽 LUT 现在作为萌芽/繁茂/金黄/休眠色板，不再由日历季节相位选择。
 // 调用方：fragment() 陆地分支：
-//          - vegetation_seasonal_tint_lut → 南/北半球各一次得到 north_tint /
-//            south_tint，按 lat_signed smoothstep 软混合。
+//          - land_pipeline 内联气候物候权重，再读取本文件声明所依赖的植被 LUT。
 //          - vegetation_tint / biome_accepts_vegetation_tint → 植被轴叠加段
 //            （仅在 PLAIN/HILL/MOUNTAIN/GRASSLAND 等"主色单一"地形启用）。
 //          - vegetation_seasonal_tint / _dissolve 是历史/兼容版本（不消费 veg id），

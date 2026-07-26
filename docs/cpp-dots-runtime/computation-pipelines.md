@@ -1,5 +1,8 @@
 # Simulation Computation Pipelines
 
+经济 scratch/cache 与 native daily 可见发布的 2026-07 调整见
+[运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
+
 本文按游戏机制整理当前计算链路、算法概要、C++/DOTS 化状态、输入输出和性能风险。它用于回答两个问题：
 
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
@@ -22,6 +25,14 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 愿意转职的人口，最多填补 25% 的持续缺口；多类型组合把单类型新增业主岗位占比限制在 50%。
 清算沿用既有恢复资格，但每次最多退出 group 的 25%，债务按退出比例转坏账。CSV v21 追加
 组合开工、迁移人口、集中度、约束来源和部分/完全清算计数。
+
+`building_commit.review_prepare` 生成当前 rolling/review phase 的升序正人口 cell
+列表，投资 finance/pending/existing/resource 聚合和 96-cell continuation 只消费该列表。
+候选评估目前仍是 scalar native 路径；尚未把只读 evaluate 与稳定主线程 commit 拆成 worker
+两阶段。`aggregate_publish` 的 closing audit 支持 FULL/PROBE/INCREMENTAL，并以
+generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量复核且以全量结果权威；
+200 日每日双审计零 mismatch 后，生产默认已切到 INCREMENTAL，每 25 日及 restore/异常边界
+仍执行完整复核。所有列表、shadow、stamp 和诊断均为 transient，不进入 PKEC v19/hash。
 
 ## 状态总览
 
@@ -803,7 +814,9 @@ summary 仍每个 commit 输出一行。切换地图选区不会改变正在进�
 
 household Market V2 热循环本身不包含生产、就业、工资、税或一般自然人口变化。生产/就业由集成的
 BUILDING_GRAPH 在居民清算前处理，居民阶段只追加缺乏食品/气候衣着造成的确定性死亡；国内贸易由
-同一 NativeEconomyRuntime 的独立 Trade V1 阶段处理。外部系统
+同一 NativeEconomyRuntime 的独立 Trade V1 阶段处理。Trade V1 的 multi-target Dijkstra heap
+由 native `TradePlanStore` 持有，可跨 slice 续跑，并以每片 256 次有效扩展的确定性配额推进。
+外部系统
 仍只能通过批量 ledger/stock command 供货或转账，不得直接写 MarketStore vector。自然资源
 `cell.res_*` 仍由 `NaturalResourceDailySystem` 独立推进。
 
@@ -2465,7 +2478,25 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 market、resource-delta 和 signal lane，把跨 cell 诊断、留用品、现金流及 trace 写入每 cell 的
 `ProductionResult`。主线程按原 cursor 顺序归并后才推进 stage，因此 scalar/worker 的权威状态与
 事件顺序一致。`building_production_worker_tasks` 报告实际选择的任务数，
-`building_production_merge_ms` 报告包含在 `building_production_ms` 内的归并成本。
+`building_production_merge_ms` 报告包含在 `building_production_ms` 内的归并成本。结果 lane 由
+runtime 长期持有，range 开始只重置逻辑长度和标量，保留 retained-output/cashflow/trace 容量；
+`production_result_allocation_growth_count/bytes` 用于验证热稳态不再扩容。这个 scratch 不进入
+PKEC v19 或 state hash。
+
+2026-07-26 起，production 不再以 `cell_count >= worker_market_threshold` 作为并行前提。
+每个 cell 按建筑组、输入候选、输出、岗位和资源边估算只读 work weight，再切成稳定连续
+range；building-plan evaluate 采用同一方式，把饱和、信用、恢复和利用率计数留在 task-local
+`BuildingPlanResult`，wait 后按 task id 归并。household market 的权重同时计入每市场固定商品
+扫描、cohort 和建筑组成本。三条路径统一受 `economy_worker_task_cap` 限制，默认 6；cap 只改变
+执行分区，不改变 cell/group/market 顺序、归并顺序或权威数据。生产的
+`worker_weight_total/task_weight_min/task_weight_max/imbalance_q16_max/worker_cpu_ms`，
+plan 的 `building_plan_worker_*` 和 closing market audit 的 `audit_worker_*` 是 transient
+诊断，不进入存档/hash。
+
+Opening audit 在非校验日复用上一个精确 committed close，并单独刷新 native country cash/goods
+贡献；`economy_full_audit_verify_interval_days`（默认 25 个模拟日，即 5 个经济周期）定期恢复完整 opening scan。closing
+population/market/transit/escrow/country audit 和三项守恒检查仍每个 rolling transaction 完整
+执行，因此这不是抽样审计，也没有放宽 `population/money/goods error == 0`。
 
 The 2026-07-21 correction keeps this pipeline and authority unchanged. Building plan
 uses a separate full-health subsistence target for food and cold-weather clothing.

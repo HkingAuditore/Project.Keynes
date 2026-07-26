@@ -88,17 +88,35 @@ func _test_collect_columns_fixed_first() -> void:
 	# 固定列在前
 	_expect(cols[0] == "row_idx", "fixed col 0 = row_idx")
 	_expect(cols[1] == "tick_idx", "fixed col 1 = tick_idx")
-	# 固定列总数
-	_expect(cols.size() == PerfRecorder.FIXED_COLUMNS.size() + 3,
-		"size = fixed + 3 job cols, got=%d" % cols.size())
+	# 每个 job 输出完整固定后缀列组。
+	_expect(cols.size() == PerfRecorder.FIXED_COLUMNS.size() +
+			PerfRecorder.JOB_SUFFIXES.size(),
+		"size = fixed + job suffix cols, got=%d" % cols.size())
 
 
 func _test_continuation_columns_fixed() -> void:
 	var cols: PackedStringArray = PerfRecorder._collect_columns([])
 	var first: int = cols.find("continuation_frames")
-	var last: int = cols.find("continuation_stage_wall_ms")
+	var last: int = cols.find("continuation_substage_work")
 	_expect(first != -1 and last != -1, "continuation perf columns present")
 	_expect(first < last, "continuation perf columns retain fixed order")
+	_expect(cols.find("continuation_stage_counts") != -1,
+		"continuation stage counts column present")
+	_expect(cols.find("continuation_stage_wall_ms") != -1,
+		"continuation stage total wall column present")
+	_expect(cols.find("continuation_last_substage") != -1,
+		"continuation last substage column present")
+	_expect(cols.find("continuation_last_next_stage") != -1,
+		"continuation next-stage column present")
+	_expect(cols.find("continuation_substage_counts") != -1,
+		"continuation substage counts column present")
+	_expect(cols.find("continuation_substage_wall_ms") != -1,
+		"continuation substage total wall column present")
+	_expect(cols.find("continuation_substage_max_slice_ms") != -1,
+		"continuation substage max column present")
+	_expect(cols.find("continuation_substage_work") != -1,
+		"continuation substage work column present")
+	_expect(cols.find("speed_multiplier") != -1, "speed multiplier column present")
 
 
 func _test_collect_columns_job_triplet_grouped() -> void:

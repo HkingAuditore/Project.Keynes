@@ -738,6 +738,11 @@ WorkerThreadPool 任务。任务只写 cell-local cohort/building/market/resourc
 `cell_to_market[cell] != cell` 时走同一原生 body 的单任务路径。frame budget 只能决定 range 完成后
 是否继续下一 continuation，不能中断正在执行的 range。
 
+`ProductionResult` lane 由 runtime 持有并在 range 间复用容量。计划与 household post-building
+允许使用普通 building range 两倍的确定性吞吐 batch，投资/finalize 使用独立的默认 96/128-cell
+continuation。它们只改变 native call 边界，稳定 cell/group 求值、主线程归并顺序、SUS 节点、
+五日 cadence、barrier 和 publish 契约均不改变。
+
 `epoch_begin` 在进入就业阶段前按冻结样本生成 owner-lot 收入/成本诊断；生活成本与合同工资
 在 `building_employment` 的 active-cell slice 内计算。生产结束后才更新稀疏企业
 需求/供给/成本信号。Price V3 在本周期只读取上一 committed 信号，因此不新增图节点、跨阶段
@@ -745,10 +750,37 @@ WorkerThreadPool 任务。任务只写 cell-local cohort/building/market/resourc
 
 ## Economy domestic trade slices
 
-贸易规划在 `aggregate_publish` 后初始化只读工作集，阶段名为 `trade_planning`。每片只执行配置的
-market×good pair 扫描、路线搜索和 Dijkstra 扩展工作单元；AUTO 预算也解析为确定整数，不根据
+`building_commit` 完成后必须 yield；下一次 native 调用才进入 `aggregate_publish`。发布阶段按
+prepare、closing audit、verify、watermark、trade flow/diagnostics、trade init、commit 顺序推进，
+使用固定条目预算而非墙钟决定游标。直到最后 commit，`epoch_active` 与 save boundary 保持关闭
+可见性；禁止在审计成功前交换 committed summaries。国家拓扑哈希变化时，trade init 的
+component clear、seed scan 与 BFS 也保留 queue/cursor 并按每片 4096 单元推进，不允许退回完整
+地图的一次性 BFS。
+
+Closing audit 支持 FULL/PROBE/INCREMENTAL。增量路径使用 native 首触 shadow-delta
+账本；household/production worker 的 due workset 在 dispatch 前由主线程预登记，
+worker 不并发写 audit stamp。PROBE 的全量结果仍是权威，INCREMENTAL 的周期 mismatch
+在 committed swap 前失败并关闭本 session fast path。该机制不增加 SUS node、依赖边或
+PKEC 字段。
+
+贸易规划在 `aggregate_publish` 内分片初始化只读工作集，完成发布后阶段名为 `trade_planning`。market×good
+扫描使用配置的 pair 配额；路线阶段最多完成配置的 source 数，并额外受每个 native slice 固定
+256 次有效 Dijkstra 扩展的总配额约束。未完成 source 的 heap、stamp、accepted/pending target
+和 expansion cursor 留在 `TradePlanStore`，下片从同一 source 继续。所有配额都是确定整数，不根据
 实际耗时改变结果。未完成时 `economy_should_run()` 继续返回软任务，但
 `economy_day_barrier=false`，因此 WorldClock 正常前进。
+
+slice report 的归因字段为 `executed_stage/executed_substage`；`stage` 与 `next_stage` 描述返回后的
+状态。SUS continuation 统计必须使用 executed 字段，否则 publish 的最后一片会被误记为
+`trade_planning`。
+
+同日 `country_economy_continuation` 调用 `run_economy_slice_compact`，只跨桥返回调度、屏障、事件和
+当前阶段 breakdown；普通 daily tick 与显式 `get_economy_report` 保持 full report。compact/full
+共享同一 C++ 权威推进和 `DCWorldExt` publish wrapper，不改变五日 cadence、稳定顺序、资源写回、
+CSV capture 或 event visibility。MapGenerator 以 `economy_should_run(day)` 与 slice `done/fatal`
+驱动循环，不得在每个 continuation 前后重建完整 report。
+完成 publish COMMIT 时 C++ 复制一次纯诊断 `last_completed_*` 快照，避免下一 epoch 清零 live
+counter 后 CSV 丢失 worker、allocation 和 structure 数据；该快照不参与调度、存档或 state hash。
 
 到经济提交边界时顺序固定为 `trade_settle → external_ledger → building_employment →
 building_production → household_market → trade_dispatch → structural_commit`。出口派发单独占一个
@@ -770,6 +802,11 @@ real-frame `sim_frame_budget_ms` time box until daily trade
 arrival, stable reduction, and publish finish. The completed report has
 `deferred_cells=0` and `max_state_age_days<=4`; an in-flight barrier is expected
 continuation behavior, not a missed-deadline anomaly.
+Both runtime hosts must inject `WorldClock` into `MapGenerator` before
+`generate()`, because country/economy jobs are constructed during SUS setup.
+`MapGenerator.set_world_clock_ref()` also rebinds already-created jobs and the
+`simulation_backpressure_pulse` connection as a delayed-injection safeguard;
+debug and player scenes therefore use the same barrier contract.
 When the pulse drains the barrier synchronously, `WorldClock` rechecks the source
 set and may continue consuming the current frame's calendar allowance; completion
 does not force an otherwise empty render frame.
@@ -785,6 +822,13 @@ demand basis in deterministic contiguous worker ranges. Workers write only their
 cell-owned cache slices; the main thread reduces saturation counters by cell ID.
 This is a cache-preparation substage, not a new authority or visible simulation
 stage, and worker count cannot affect the state/event hash.
+
+Building plan evaluate、building production 与 household market 现在都在原有
+`economy_daily` continuation 内使用稳定连续的 weighted ranges；它们没有新增 SUS node，也没有
+移动 `NativeEconomyRuntime` 的 stage/tick authority。默认 fan-out 上限是
+`economy_worker_task_cap=6`。一个 native range 仍不可被 SUS 抢占，SUS 只在 range 返回后决定
+是否启动下一 continuation。plan/production/market 均先 wait，再按 task id 和原 cursor 顺序归并，
+所以 scalar 与 worker 的 state/event hash 契约不变。
 
 ## Native daily moisture commit boundary (2026-07-24)
 

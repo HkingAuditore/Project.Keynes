@@ -37,6 +37,16 @@ public:
     static constexpr int32_t MAX_VARIANTS_PER_NEED = 8;
     static constexpr int32_t MAX_COMPONENTS_PER_VARIANT = 4;
     static constexpr int32_t ENV_CURVE_SAMPLES = 17;
+    static constexpr int32_t PUBLISH_ENTRIES_PER_SLICE = 4096;
+    static constexpr int32_t PUBLISH_AUDIT_ENTRIES_PER_SLICE = 131072;
+    static constexpr int32_t BUILDING_REVIEW_GROUPS_PER_SLICE = 4096;
+    static constexpr int32_t AUTO_BUILDING_CELLS_PER_SLICE = 256;
+    static constexpr int32_t AUTO_INVESTMENT_CELLS_PER_SLICE = 96;
+    static constexpr int32_t AUTO_BUILDING_FINALIZE_CELLS_PER_SLICE = 128;
+    // Cooperative planner budget. Route searches retain their heap/cursors
+    // across native slices, so this is a deterministic work cap rather than a
+    // wall-clock deadline.
+    static constexpr int32_t TRADE_ROUTE_EXPANSIONS_PER_SLICE = 256;
 
     enum CommandOpcode : int32_t {
         COMMAND_TRANSFER_TO_COHORT = 1,
@@ -72,6 +82,7 @@ public:
                                 const godot::Dictionary &market_packet);
     godot::Dictionary submit_commands(const godot::Dictionary &batch);
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
+    godot::Dictionary run_slice_compact(const godot::Dictionary &ctx);
     bool capture_environment(int64_t day_index, const float *temperature,
                              const float *moisture, const float *snow_cover,
                              const float *weather_intensity, int32_t count,
@@ -169,6 +180,41 @@ private:
         TRADE_DISPATCH = 12,
         TRADE_PLANNING = 13,
         BUILDING_PLAN = 14,
+    };
+
+    enum class PublishPhase : uint8_t {
+        PREPARE = 0,
+        AUDIT_POPULATION = 1,
+        AUDIT_MARKET = 2,
+        AUDIT_TRANSIT = 3,
+        AUDIT_ESCROW = 4,
+        AUDIT_COUNTRY = 5,
+        VERIFY = 6,
+        WATERMARK = 7,
+        TRADE_FLOW = 8,
+        TRADE_DIAGNOSTICS = 9,
+        TRADE_INIT = 10,
+        COMMIT = 11,
+        DONE = 12,
+        COUNT = 13,
+    };
+
+    static constexpr size_t BUILDING_COMMIT_PHASE_COUNT = 7;
+
+    enum class TradePlanInitPhase : uint8_t {
+        IDLE = 0,
+        COMPONENT_PREPARE = 1,
+        COMPONENT_CLEAR = 2,
+        COMPONENT_BUILD = 3,
+        PREPARE = 4,
+        INFLIGHT_BUILD = 5,
+        INFLIGHT_SORT = 6,
+        PRUNE = 7,
+        INBOUND_BUILD = 8,
+        ROTATE = 9,
+        WORKSPACE_CLEAR = 10,
+        FINALIZE = 11,
+        DONE = 12,
     };
 
     struct FormulaBatchInput {
@@ -285,6 +331,10 @@ private:
         int32_t supply_price_elasticity_q16 = Q16_ONE;
         int32_t output_cost_share_begin = 0;
         int32_t output_cost_share_count = 0;
+        int32_t market_signal_begin = 0;
+        int32_t market_signal_count = 0;
+        int32_t labor_signal_begin = 0;
+        int32_t labor_signal_count = 0;
     };
 
     struct JobRole {
@@ -381,6 +431,11 @@ private:
         int64_t merchant_debt_principal = 0;
         int64_t merchant_debt_premium = 0;
         uint16_t merchant_debt_term_cycles_left = 0;
+    };
+
+    struct BuildingRoleSpan {
+        int32_t employee_begin = -1;
+        int32_t input_begin = -1;
     };
 
     struct InvestmentExistingType {
@@ -517,6 +572,9 @@ private:
     struct MarketSignalStore {
         std::vector<int32_t> cell_offsets;
         std::vector<int32_t> good_ids;
+        // Optional O(1) (cell, good) -> sparse signal index. Rebuilt from the
+        // authoritative ascending CSR and excluded from save/hash state.
+        std::vector<int32_t> dense_index;
         std::vector<int64_t> business_demand_ema;
         std::vector<int64_t> offered_supply_ema;
         std::vector<int64_t> realized_withdrawal_ema;
@@ -525,6 +583,7 @@ private:
         void clear(int32_t cells) {
             cell_offsets.assign(static_cast<size_t>(std::max(0, cells)) + 1, 0);
             good_ids.clear();
+            dense_index.clear();
             business_demand_ema.clear();
             offered_supply_ema.clear();
             realized_withdrawal_ema.clear();
@@ -611,6 +670,13 @@ private:
         uint32_t search_stamp = 0;
         std::vector<uint64_t> route_cache_keys;
         std::vector<int32_t> route_cache_costs;
+        uint64_t route_cache_country_topology_hash = 0;
+        uint64_t route_cache_topology_generation = 0;
+        bool route_search_active = false;
+        int32_t route_search_source = -1;
+        int32_t route_search_accepted = 0;
+        int32_t route_search_pending_targets = 0;
+        int32_t route_search_expansions = 0;
         int64_t completed_scans = 0;
 
         void clear_transient() {
@@ -632,6 +698,13 @@ private:
             heap.clear();
             route_cache_keys.clear();
             route_cache_costs.clear();
+            route_cache_country_topology_hash = 0;
+            route_cache_topology_generation = 0;
+            route_search_active = false;
+            route_search_source = -1;
+            route_search_accepted = 0;
+            route_search_pending_targets = 0;
+            route_search_expansions = 0;
             search_stamp = 0;
             completed_scans = 0;
             country_topology_hash = 0;
@@ -768,11 +841,44 @@ private:
         int64_t cohort_funds = 0;
         int64_t country_cash = 0;
         int64_t goods_stock = 0;
+        int64_t country_goods = 0;
         int64_t transit_goods = 0;
         int64_t escrow_cash = 0;
         int64_t merchant_cash = 0;
         int64_t merchant_inventory_retail_value = 0;
         int64_t merchant_inventory_liquidation_value = 0;
+    };
+
+    struct TradePlanInitState {
+        TradePlanInitPhase phase = TradePlanInitPhase::IDLE;
+        size_t cursor = 0;
+        int32_t order_cursor = 0;
+        int32_t line_cursor = 0;
+        size_t active_before_prune = 0;
+        size_t rotation = 0;
+        int32_t component_seed = 0;
+        int32_t next_component = 0;
+        size_t component_queue_cursor = 0;
+        std::vector<int32_t> component_queue;
+        std::vector<uint64_t> inflight_keys;
+        std::vector<uint64_t> retained_active_keys;
+        std::vector<int64_t> rotated_inbound;
+
+        void clear() {
+            phase = TradePlanInitPhase::IDLE;
+            cursor = 0;
+            order_cursor = 0;
+            line_cursor = 0;
+            active_before_prune = 0;
+            rotation = 0;
+            component_seed = 0;
+            next_component = 0;
+            component_queue_cursor = 0;
+            component_queue.clear();
+            inflight_keys.clear();
+            retained_active_keys.clear();
+            rotated_inbound.clear();
+        }
     };
 
     struct Order {
@@ -862,6 +968,22 @@ private:
         std::vector<CohortWelfareEntry> welfare_entries;
         std::vector<StructuralCommand> structural_commands;
         std::vector<int32_t> trade_active_goods;
+        int64_t allocation_growth_count = 0;
+        int64_t allocation_growth_bytes = 0;
+        int64_t approximation_decisions = 0;
+        int64_t approximation_exact_probes = 0;
+        int64_t approximation_certificate_failures = 0;
+        int64_t approximation_exact_fallbacks = 0;
+        int64_t approximation_frontier_candidates = 0;
+        int64_t approximation_frontier_pruned = 0;
+        int64_t approximation_max_certified_regret_q16 = 0;
+        int64_t approximation_probe_violations = 0;
+        int64_t approximation_probe_max_spend_error_q16 = 0;
+        int64_t approximation_probe_max_demand_error_q16 = 0;
+        std::vector<uint8_t> approximation_variant_active;
+
+        void reset();
+        int64_t capacity_bytes() const;
     };
 
     enum TraceMode : int32_t {
@@ -1080,9 +1202,122 @@ private:
         int64_t merchant_credit_repaid = 0;
         int64_t merchant_credit_premium_repaid = 0;
         double market_signal_ms = 0.0;
+        std::vector<size_t> resource_touched_lanes;
         std::vector<OwnerRetainedOutput> retained_outputs;
         std::vector<ProductionTraceDraft> trace_drafts;
         std::vector<ProductionCashflowDraft> cashflow_drafts;
+        int64_t allocation_growth_count = 0;
+        int64_t allocation_growth_bytes = 0;
+
+        void reset();
+        int64_t capacity_bytes() const;
+    };
+
+    struct BuildingPlanResult {
+        bool ok = true;
+        std::string error;
+        int64_t saturation_count = 0;
+        int64_t merchant_credit_budget = 0;
+        int64_t merchant_credit_committed = 0;
+        int64_t recovery_candidates = 0;
+        int64_t recovery_approved = 0;
+        int64_t loss_suspended_building_groups = 0;
+        int64_t unprofitable_building_groups = 0;
+        int64_t utilization_sum_q16 = 0;
+        double worker_ms = 0.0;
+
+        void reset() {
+            *this = {};
+        }
+    };
+
+    struct CompletedEpochPerf {
+        bool valid = false;
+        int64_t epoch_id = -1;
+        int64_t sample_day = -1;
+        int64_t continuation_slices = 0;
+        int32_t market_worker_tasks_max = 1;
+        int64_t market_worker_task_sum = 0;
+        int64_t market_worker_dispatches = 0;
+        int32_t production_worker_tasks_max = 1;
+        int64_t production_worker_task_sum = 0;
+        int64_t production_worker_dispatches = 0;
+        int64_t production_worker_parallel_dispatches = 0;
+        int64_t production_worker_weight_total = 0;
+        int64_t production_worker_task_weight_min = 0;
+        int64_t production_worker_task_weight_max = 0;
+        int64_t production_worker_imbalance_q16_max = 0;
+        double production_worker_cpu_ms = 0.0;
+        int32_t audit_worker_tasks_max = 1;
+        int64_t audit_worker_dispatches = 0;
+        double audit_worker_cpu_ms = 0.0;
+        int32_t building_plan_worker_tasks_max = 1;
+        int64_t building_plan_worker_parallel_dispatches = 0;
+        double building_plan_worker_cpu_ms = 0.0;
+        int64_t opening_audit_fast_paths = 0;
+        int64_t opening_audit_full_verifications = 0;
+        int64_t closing_audit_fast_paths = 0;
+        int64_t closing_audit_full_verifications = 0;
+        int64_t closing_audit_mismatches = 0;
+        std::string closing_audit_mismatch_ledger = "none";
+        int64_t closing_audit_mismatch_lane = -1;
+        int64_t closing_audit_population_touched_lanes = 0;
+        int64_t closing_audit_market_touched_lanes = 0;
+        int64_t closing_audit_population_full_scan_entries = 0;
+        int64_t closing_audit_market_full_scan_entries = 0;
+        int64_t investment_scheduled_review_cells = 0;
+        int64_t investment_review_cells = 0;
+        int64_t investment_type_evaluations = 0;
+        int64_t investment_market_signal_rejections = 0;
+        int64_t investment_ethnicity_evaluations = 0;
+        int64_t investment_sparse_considered_types = 0;
+        int64_t investment_sparse_selected_types = 0;
+        int64_t investment_sparse_skipped_types = 0;
+        int64_t investment_sparse_mismatches = 0;
+        int64_t investment_sparse_dense_fallbacks = 0;
+        int64_t approximation_decisions = 0;
+        int64_t approximation_exact_probes = 0;
+        int64_t approximation_certificate_failures = 0;
+        int64_t approximation_exact_fallbacks = 0;
+        int64_t approximation_frontier_candidates = 0;
+        int64_t approximation_frontier_pruned = 0;
+        int64_t approximation_max_observed_regret_q16 = 0;
+        int64_t approximation_probe_violations = 0;
+        int64_t approximation_probe_max_spend_error_q16 = 0;
+        int64_t approximation_probe_max_demand_error_q16 = 0;
+        int32_t approximation_cooldown_epochs_left = 0;
+        int32_t high_speed_batch_multiplier = 1;
+        int64_t high_speed_market_dispatches_saved = 0;
+        int64_t high_speed_production_dispatches_saved = 0;
+        int64_t budgeted_building_commit_phase_fusions = 0;
+        int64_t budgeted_publish_phase_fusions = 0;
+        double building_plan_ms = 0.0;
+        double building_plan_evaluate_ms = 0.0;
+        double building_plan_reserve_ms = 0.0;
+        double building_employment_ms = 0.0;
+        double building_production_ms = 0.0;
+        double building_production_worker_ms = 0.0;
+        double building_production_merge_ms = 0.0;
+        double household_market_worker_ms = 0.0;
+        double household_market_merge_ms = 0.0;
+        double household_market_merge_aggregate_ms = 0.0;
+        double household_market_merge_trade_ms = 0.0;
+        double building_investment_ms = 0.0;
+        double aggregate_publish_ms = 0.0;
+        double aggregate_audit_ms = 0.0;
+        int64_t market_result_allocation_growth_count = 0;
+        int64_t market_result_allocation_growth_bytes = 0;
+        int64_t production_result_allocation_growth_count = 0;
+        int64_t production_result_allocation_growth_bytes = 0;
+        int64_t building_structure_count_only_updates = 0;
+        int64_t building_structure_new_groups = 0;
+        int64_t building_structure_removed_groups = 0;
+        int64_t building_structure_topology_rebuilds = 0;
+        int64_t building_structure_role_span_reuses = 0;
+        int64_t building_structure_role_span_appends = 0;
+        double building_structure_group_merge_ms = 0.0;
+        double building_structure_market_cache_ms = 0.0;
+        double building_structure_labor_cache_ms = 0.0;
     };
 
     struct EventBatch {
@@ -1196,12 +1431,28 @@ private:
     bool _fatal = false;
     std::string _fatal_reason;
     Stage _stage = Stage::IDLE;
+    Stage _executed_stage = Stage::IDLE;
+    std::string _executed_substage;
+    PublishPhase _publish_phase = PublishPhase::PREPARE;
+    size_t _publish_cursor = 0;
+    int32_t _publish_order_cursor = 0;
+    int32_t _publish_line_cursor = 0;
+    int64_t _publish_valuation_sat = 0;
+    int64_t _publish_trade_alpha = 0;
+    bool _publish_have_populated = false;
+    TradePlanInitState _trade_plan_init;
 
     int32_t _cell_count = 0;
     int32_t _cells_per_slice = 256;
     bool _auto_slice_by_scale = true;
-    int32_t _building_cells_per_slice = 64;
+    int32_t _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
     int32_t _building_groups_per_slice = 512;
+    int32_t _building_plan_cells_per_slice_override = 0;
+    int32_t _household_post_building_cells_per_slice_override = 0;
+    int32_t _investment_cells_per_slice =
+        AUTO_INVESTMENT_CELLS_PER_SLICE;
+    int32_t _building_finalize_cells_per_slice =
+        AUTO_BUILDING_FINALIZE_CELLS_PER_SLICE;
     int32_t _building_output_efficiency_q16 = Q16_ONE;
     bool _auto_building_slice_by_scale = true;
     int32_t _commands_per_slice = 16384;
@@ -1222,6 +1473,7 @@ private:
     int32_t _living_cost_base_plan_id = -1;
     std::string _living_cost_base_plan_stable_id = "survival_household";
     std::vector<int32_t> _survival_food_need_stable_ids;
+    std::vector<uint8_t> _survival_food_need_mask;
     std::vector<int32_t> _survival_required_need_indices;
     std::vector<uint8_t> _survival_food_good_mask;
     std::vector<uint8_t> _survival_staple_good_mask;
@@ -1289,6 +1541,7 @@ private:
     int32_t _investment_max_growth_share_q16 = 6554;
     int32_t _investment_new_type_seed_buildings = 1;
     int32_t _investment_merchant_transition_min_improvement_q16 = Q16_ONE / 2;
+    int32_t _investment_sparse_mode = 2;
     int32_t _recovery_liquidation_max_share_q16 = Q16_ONE / 4;
     int32_t _resource_min_reserve_q16 = 22938;
     int32_t _resource_safe_harvest_q16 = Q16_ONE / 2;
@@ -1298,6 +1551,24 @@ private:
     bool _worker_enabled = true;
     int32_t _worker_market_threshold = 256;
     int32_t _worker_tasks_hint = 0;
+    int32_t _worker_task_cap = 6;
+    bool _high_speed_batching_enabled = true;
+    int32_t _full_audit_verify_interval_days = 25;
+    // Closing audit mode: 0=FULL, 1=PROBE, 2=INCREMENTAL.
+    int32_t _closing_audit_mode = 2;
+    bool _closing_audit_runtime_disabled = false;
+    bool _closing_audit_force_full = true;
+    bool _closing_audit_incremental_this_epoch = false;
+    // Accuracy policy: 0=EXACT, 1=BALANCED, 2=FAST, 3=CUSTOM.
+    // Runtime mode: 0=OFF, 1=PROBE (exact authority), 2=ACTIVE.
+    int32_t _accuracy_preset = 1;
+    int32_t _approximation_runtime_mode = 2;
+    int32_t _accuracy_max_regret_q16 = 1966;
+    int32_t _accuracy_household_tail_share_q16 = 655;
+    int32_t _accuracy_candidate_top_k = 2;
+    int32_t _accuracy_choice_temperature_q16 = 983;
+    int32_t _accuracy_exact_probe_rate_q16 = 655;
+    int32_t _accuracy_fallback_cooldown_epochs = 10;
     int64_t _seed = 0;
     int64_t _catalog_hash = 0;
     int64_t _catalog_compat_hash_v6 = 0;
@@ -1321,8 +1592,11 @@ private:
     int32_t _structural_cursor = 0;
     int32_t _building_cell_cursor = 0;
     int32_t _building_plan_phase = 0;
+    int32_t _household_market_phase = 0;
+    int32_t _household_post_cursor = 0;
     int32_t _building_commit_phase = 0;
-    bool _investment_population_changed = false;
+    int32_t _building_commit_cursor = 0;
+    int32_t _building_finalize_phase = 0;
     int32_t _processed_cells = 0;
     int64_t _processed_cohorts = 0;
     int64_t _processed_rules = 0;
@@ -1341,6 +1615,12 @@ private:
     int64_t _filled_employee_jobs = 0;
     int64_t _unemployed_population = 0;
     int64_t _construction_goods_consumed = 0;
+    int64_t _building_structure_count_only_updates = 0;
+    int64_t _building_structure_new_groups = 0;
+    int64_t _building_structure_removed_groups = 0;
+    int64_t _building_structure_topology_rebuilds = 0;
+    int64_t _building_structure_role_span_reuses = 0;
+    int64_t _building_structure_role_span_appends = 0;
     int64_t _building_investment_candidates = 0;
     int64_t _building_owner_mobility = 0;
     int64_t _building_owner_job_reallocations = 0;
@@ -1488,7 +1768,80 @@ private:
     std::string _last_building_rejection_reason;
     int32_t _worker_tasks = 1;
     int32_t _production_worker_tasks = 1;
+    int32_t _market_worker_tasks_max = 1;
+    int64_t _market_worker_task_sum = 0;
+    int64_t _market_worker_dispatches = 0;
+    int32_t _production_worker_tasks_max = 1;
+    int64_t _production_worker_task_sum = 0;
+    int64_t _production_worker_dispatches = 0;
+    int64_t _production_worker_parallel_dispatches = 0;
+    int64_t _production_worker_weight_total = 0;
+    int64_t _production_worker_task_weight_min = 0;
+    int64_t _production_worker_task_weight_max = 0;
+    int64_t _production_worker_imbalance_q16_max = 0;
+    double _production_worker_cpu_ms = 0.0;
+    int32_t _audit_worker_tasks_max = 1;
+    int64_t _audit_worker_dispatches = 0;
+    double _audit_worker_cpu_ms = 0.0;
+    int32_t _building_plan_worker_tasks_max = 1;
+    int64_t _building_plan_worker_parallel_dispatches = 0;
+    double _building_plan_worker_cpu_ms = 0.0;
+    int64_t _opening_audit_fast_paths = 0;
+    int64_t _opening_audit_full_verifications = 0;
+    int64_t _closing_audit_fast_paths = 0;
+    int64_t _closing_audit_full_verifications = 0;
+    int64_t _closing_audit_mismatches = 0;
+    int64_t _closing_audit_population_full_scan_entries = 0;
+    int64_t _closing_audit_market_full_scan_entries = 0;
+    AuditTotals _incremental_closing_totals;
+    std::vector<int64_t> _audit_shadow_population;
+    std::vector<int64_t> _audit_shadow_funds;
+    std::vector<int64_t> _audit_shadow_market_stock;
+    std::vector<uint32_t> _audit_population_lane_stamp;
+    std::vector<uint32_t> _audit_market_lane_stamp;
+    std::vector<size_t> _audit_population_touched_lanes;
+    std::vector<size_t> _audit_market_touched_lanes;
+    uint32_t _audit_mutation_generation = 0;
+    std::string _closing_audit_mismatch_ledger = "none";
+    int64_t _closing_audit_mismatch_lane = -1;
+    int64_t _investment_scheduled_review_cells = 0;
+    int64_t _investment_review_cells = 0;
+    int64_t _investment_type_evaluations = 0;
+    int64_t _investment_market_signal_rejections = 0;
+    int64_t _investment_ethnicity_evaluations = 0;
+    int64_t _investment_sparse_considered_types = 0;
+    int64_t _investment_sparse_selected_types = 0;
+    int64_t _investment_sparse_skipped_types = 0;
+    int64_t _investment_sparse_mismatches = 0;
+    int64_t _investment_sparse_dense_fallbacks = 0;
+    int64_t _approximation_decisions = 0;
+    int64_t _approximation_exact_probes = 0;
+    int64_t _approximation_certificate_failures = 0;
+    int64_t _approximation_exact_fallbacks = 0;
+    int64_t _approximation_frontier_candidates = 0;
+    int64_t _approximation_frontier_pruned = 0;
+    int64_t _approximation_max_observed_regret_q16 = 0;
+    int64_t _approximation_probe_violations = 0;
+    int64_t _approximation_probe_max_spend_error_q16 = 0;
+    int64_t _approximation_probe_max_demand_error_q16 = 0;
+    int32_t _approximation_cooldown_epochs_left = 0;
+    int32_t _approximation_low_prune_epochs = 0;
+    int32_t _active_batch_multiplier = 1;
+    int64_t _high_speed_market_dispatches_saved = 0;
+    int64_t _high_speed_production_dispatches_saved = 0;
+    int64_t _budgeted_building_commit_phase_fusions = 0;
+    int64_t _budgeted_publish_phase_fusions = 0;
+    bool _investment_sparse_runtime_disabled = false;
     double _production_merge_ms = 0.0;
+    double _production_worker_ms = 0.0;
+    double _market_worker_ms = 0.0;
+    double _market_merge_ms = 0.0;
+    double _market_merge_aggregate_ms = 0.0;
+    double _market_merge_trade_ms = 0.0;
+    int64_t _market_result_allocation_growth_count = 0;
+    int64_t _market_result_allocation_growth_bytes = 0;
+    int64_t _production_result_allocation_growth_count = 0;
+    int64_t _production_result_allocation_growth_bytes = 0;
     int32_t _rolling_phase = 0;
     int32_t _rolling_due_cells = 0;
     int32_t _rolling_processed_cells = 0;
@@ -1535,16 +1888,41 @@ private:
     double _employment_ms = 0.0;
     double _production_ms = 0.0;
     double _building_plan_ms = 0.0;
+    double _building_plan_evaluate_ms = 0.0;
+    double _building_plan_reserve_ms = 0.0;
+    double _building_structure_group_merge_ms = 0.0;
+    double _building_structure_market_cache_ms = 0.0;
+    double _building_structure_labor_cache_ms = 0.0;
     double _investment_ms = 0.0;
     double _market_signal_ms = 0.0;
+    double _market_signal_insert_ms = 0.0;
+    double _market_signal_flush_ms = 0.0;
+    int64_t _market_signal_insert_count = 0;
     double _wage_plan_ms = 0.0;
     double _labor_signal_ms = 0.0;
     double _trade_plan_ms = 0.0;
+    double _trade_plan_scan_body_ms = 0.0;
+    double _trade_plan_scan_finalize_ms = 0.0;
+    double _trade_plan_route_prepare_ms = 0.0;
+    double _trade_plan_route_expand_ms = 0.0;
+    double _trade_plan_route_finalize_ms = 0.0;
+    int64_t _trade_plan_scan_pairs_slice = 0;
+    int64_t _trade_plan_route_sources_prepared_slice = 0;
+    int64_t _trade_plan_route_expansions_slice = 0;
+    int64_t _trade_plan_candidates_finalized_slice = 0;
     double _trade_settle_ms = 0.0;
     double _trade_dispatch_ms = 0.0;
+    double _epoch_begin_ms = 0.0;
+    double _epoch_preflight_ms = 0.0;
     double _prepare_ms = 0.0;
     double _audit_ms = 0.0;
     double _watermark_ms = 0.0;
+    std::array<double, static_cast<size_t>(PublishPhase::COUNT)> _publish_phase_ms{};
+    std::array<int64_t, static_cast<size_t>(PublishPhase::COUNT)> _publish_phase_work{};
+    std::array<double, static_cast<size_t>(PublishPhase::COUNT)> _publish_slice_phase_ms{};
+    std::array<int64_t, static_cast<size_t>(PublishPhase::COUNT)> _publish_slice_phase_work{};
+    std::array<double, BUILDING_COMMIT_PHASE_COUNT> _building_commit_slice_phase_ms{};
+    std::array<int64_t, BUILDING_COMMIT_PHASE_COUNT> _building_commit_slice_phase_work{};
 
     AuditTotals _opening_totals;
     AuditTotals _closing_totals;
@@ -1552,6 +1930,7 @@ private:
     PopulationStore _population;
     MarketStore _market;
     MarketSignalStore _market_signals;
+    MarketSignalStore _market_signals_rebuild_scratch;
     std::vector<int64_t> _epoch_business_demand_ema;
     std::vector<int64_t> _epoch_desired_business_demand;
     std::vector<int64_t> _epoch_funded_business_demand;
@@ -1586,8 +1965,13 @@ private:
     std::vector<uint32_t> _cell_trade_gen;
     // Transaction worksets are deterministic, sorted and never persisted.
     std::vector<int32_t> _epoch_market_ids;
+    std::vector<int64_t> _epoch_market_work_weights;
     std::vector<int32_t> _epoch_settlement_cells;
     std::vector<int32_t> _epoch_building_cells;
+    std::vector<int64_t> _household_post_saturation_scratch;
+    std::vector<int64_t> _household_post_restarted_scratch;
+    std::vector<int64_t> _household_post_failed_scratch;
+    std::vector<int64_t> _household_reserve_shortfall_scratch;
     // Diagnostic-only per-cell contributions for the current rolling epoch.
     // Employment can be recomputed after structural changes; replacing the
     // cached contribution avoids subtracting a cell that was never counted in
@@ -1624,23 +2008,60 @@ private:
     std::vector<int64_t> _investment_resource_committed_by_cell;
     std::vector<int64_t> _investment_merchant_cash_by_cell;
     std::vector<int64_t> _investment_outstanding_credit_by_cell;
+    std::vector<uint32_t> _investment_resource_commitment_stamp;
+    std::vector<uint32_t> _investment_cell_finance_stamp;
+    uint32_t _investment_scratch_generation = 0;
     std::vector<OutputInvestmentSignal> _investment_output_signals_scratch;
     std::vector<int32_t> _investment_employment_cells;
+    std::vector<int32_t> _investment_review_cell_indices;
+    // Catalog-derived output-good -> building-type CSR plus per-market active
+    // output bitsets. These lanes are rebuildable scheduling data and are
+    // excluded from PKEC and the authoritative state hash.
+    std::vector<int32_t> _investment_good_type_offsets;
+    std::vector<int32_t> _investment_good_type_indices;
+    std::vector<uint64_t> _investment_active_good_words;
+    std::vector<uint32_t> _investment_type_stamp;
+    std::vector<uint32_t> _investment_good_stamp;
+    uint32_t _investment_review_stamp_generation = 0;
+    std::vector<int32_t> _investment_review_types_scratch;
+    std::vector<int32_t> _investment_good_queue_scratch;
+    // Epoch-transient worker outputs. Keeping the nested vector capacities
+    // avoids rebuilding thousands of small buffers every household slice.
+    std::vector<MarketResult> _market_results_scratch;
+    std::vector<ProductionResult> _production_results_scratch;
+    // Production uses stable contiguous weighted ranges. These transient
+    // buffers are diagnostics/scheduling scratch only and never enter PKEC or
+    // the authoritative state hash.
+    std::vector<int64_t> _production_cell_weights_scratch;
+    std::vector<int32_t> _production_task_offsets_scratch;
+    std::vector<int64_t> _production_task_weights_scratch;
+    std::vector<double> _production_task_ms_scratch;
+    std::vector<AuditTotals> _audit_task_totals_scratch;
+    std::vector<int64_t> _audit_task_saturation_scratch;
+    std::vector<double> _audit_task_ms_scratch;
+    std::vector<BuildingPlanResult> _building_plan_results_scratch;
+    CompletedEpochPerf _last_completed_perf;
     std::vector<uint64_t> _trade_active_keys;
+    std::vector<uint8_t> _trade_active_key_present;
     std::unordered_map<uint64_t, uint8_t> _trade_active_key_idle_cycles;
     // Diagnostic-only sparse clocks keyed independently from authoritative EMA state.
     std::vector<uint64_t> _trade_signal_clock_keys;
+    std::vector<uint64_t> _trade_signal_bulk_keys_scratch;
     std::vector<int64_t> _trade_signal_first_seen_day;
     std::vector<int64_t> _trade_signal_first_dispatch_day;
     std::vector<int64_t> _trade_signal_last_attempt_day;
     std::vector<int32_t> _trade_signal_last_rejection_reason;
     std::vector<uint8_t> _trade_signal_deadline_reported;
+    // Investment-only append lanes. Entries are immediately visible through
+    // dense_index, then stably merged into the authoritative CSR before publish.
+    std::vector<int32_t> _market_signal_overflow_cells;
     std::vector<OwnerRetainedOutput> _owner_retained_outputs;
     TradeTopologyStore _trade_topology;
     TradePlanStore _trade_plan;
     TradeOrderStore _trade_orders;
     TradeFlowSignalStore _trade_flows;
     LaborMarketStore _labor_signals;
+    LaborMarketStore _labor_signals_rebuild_scratch;
     std::vector<FormulaDefinition> _formulas;
     std::unordered_map<std::string, int32_t> _formula_by_id;
     std::vector<Signature> _signatures;
@@ -1725,6 +2146,10 @@ private:
     std::vector<int32_t> _resource_temp_lo_q16;
     std::vector<int32_t> _resource_temp_hi_q16;
     std::vector<int64_t> _resource_deltas;
+    std::vector<uint32_t> _resource_lane_generation;
+    std::vector<size_t> _resource_touched_lanes;
+    std::vector<size_t> _last_published_resource_touched_lanes;
+    uint32_t _resource_current_generation = 0;
     // Debug/recording visibility for the most recently published building
     // resource changes. It is derived epoch output, not save/hash authority.
     std::vector<int64_t> _last_published_resource_deltas;
@@ -1742,6 +2167,9 @@ private:
     std::vector<StructuralCommand> _structural_commands;
     std::vector<CellSummary> _committed_cells;
     std::vector<CellSummary> _staging_cells;
+    std::vector<int32_t> _staging_touched_cells;
+    std::vector<uint32_t> _staging_cell_generation;
+    uint32_t _staging_current_generation = 0;
     std::vector<int32_t> _structural_touched_cells;
     std::vector<int32_t> _population_changed_cells;
     int64_t _structural_funds_to_treasury = 0;
@@ -1760,12 +2188,25 @@ private:
     NativeCountryRuntime *_country_runtime = nullptr;
     std::vector<int32_t> _epoch_cell_country;
     std::vector<uint64_t> _epoch_country_technologies;
+    // Epoch-transient country/type availability cache. Technology authority is
+    // frozen once per daily transaction, so every cell in a country shares the
+    // same result and hot loops can consume the ascending CSR directly.
+    std::vector<uint8_t> _epoch_country_building_available;
+    std::vector<uint8_t> _epoch_country_good_available;
+    std::vector<uint8_t> _epoch_country_profession_available;
+    std::vector<uint8_t> _epoch_country_variant_available;
+    std::vector<int32_t> _epoch_country_building_type_offsets;
+    std::vector<int32_t> _epoch_country_building_type_indices;
     int32_t _epoch_country_count = 0;
     int32_t _epoch_country_technology_words = 0;
     uint64_t _epoch_country_generation = 0;
     uint64_t _epoch_country_hash = 0;
     uint64_t _epoch_country_topology_hash = 0;
     std::vector<BuildingType> _building_types;
+    // Catalog-baked, sorted unique signal edges per building type. Topology
+    // rebuilds consume these spans instead of walking nested recipe columns.
+    std::vector<int32_t> _building_type_market_signal_goods;
+    std::vector<int32_t> _building_type_labor_signal_professions;
     std::vector<JobRole> _building_employee_roles;
     std::vector<GoodAmount> _building_construction_goods;
     std::vector<ProductionInput> _building_inputs;
@@ -1776,8 +2217,27 @@ private:
     std::vector<ResourceAmount> _building_resource_generation;
     std::vector<ConditionToken> _building_conditions;
     std::vector<BuildingGroup> _buildings;
+    // Transient topology scratch and reusable role/input spans. Structural
+    // commits swap the compact group lane but keep authoritative role arrays
+    // in place; these caches are reconstructed after configure/restore.
+    std::vector<BuildingGroup> _building_groups_rebuild_scratch;
+    std::vector<int32_t> _building_existing_indices_scratch;
+    std::vector<int32_t> _building_new_indices_scratch;
+    std::vector<int64_t> _building_investment_score_rebuild_scratch;
+    std::vector<int64_t> _building_investment_payback_rebuild_scratch;
+    std::vector<int32_t> _building_investment_rejection_rebuild_scratch;
+    std::vector<std::vector<BuildingRoleSpan>> _building_free_role_spans_by_type;
+    std::vector<uint32_t> _building_market_signal_stamp;
+    std::vector<uint32_t> _building_labor_signal_stamp;
+    uint32_t _building_market_signal_stamp_generation = 0;
+    uint32_t _building_labor_signal_stamp_generation = 0;
     std::vector<int32_t> _building_cell_offsets;
     std::vector<int32_t> _building_active_cells;
+    // Transient CSR baked from stable building order. Recovery reviews touch
+    // only the current cell-modulo-review bucket instead of scanning all groups.
+    std::vector<int32_t> _building_review_phase_offsets;
+    std::vector<int32_t> _building_review_group_indices;
+    std::vector<int32_t> _building_special_reset_group_indices;
     std::vector<int64_t> _building_employee_filled;
     // Inspector-only last purchased good per (building group, input slot).
     // This diagnostic lane is intentionally excluded from save and state hash.
@@ -1791,6 +2251,10 @@ private:
     std::vector<int64_t> _building_role_bonus_due;
     std::vector<int64_t> _building_role_bonus_paid;
     std::vector<PendingConstruction> _pending_construction;
+    // Epoch-transient stable CSR over pending construction. This removes the
+    // previous all-pending scan from every active building cell.
+    std::vector<int32_t> _pending_construction_cell_offsets;
+    std::vector<int32_t> _pending_construction_cell_indices;
     int64_t _building_catalog_hash = 0;
     int64_t _building_catalog_compat_hash_v6 = 0;
     int64_t _building_catalog_compat_hash_v7 = 0;
@@ -1806,12 +2270,15 @@ private:
     void register_builtin_formulas();
     bool compile_catalog(const godot::Dictionary &catalog, std::string &error);
     bool configure_profile(const godot::Dictionary &profile, std::string &error);
+    godot::Dictionary run_slice_internal(const godot::Dictionary &ctx, bool compact);
+    godot::Dictionary compact_report() const;
     bool start_epoch(int64_t day_index, std::string &error);
     bool trade_planner_should_run() const;
     bool run_trade_planner_slice(int64_t &work_done, std::string &error);
-    bool begin_trade_plan(std::string &error);
-    bool rebuild_trade_components(std::string &error);
-    bool route_trade_source(int32_t source_index, std::string &error);
+    bool begin_trade_plan_slice(int64_t &work_done, std::string &error);
+    bool route_trade_source(int32_t source_index, int32_t expansion_budget,
+                            int32_t &expansions_done, bool &source_done,
+                            std::string &error);
     int32_t cached_trade_route_cost(int32_t source, int32_t destination,
                                     int32_t country, int32_t &expansions);
     int32_t estimate_trade_price(int32_t market, int32_t good,
@@ -1851,6 +2318,8 @@ private:
     int32_t trade_flow_index(int32_t cell, int32_t good, bool create);
     int32_t trade_signal_clock_index(int32_t cell, int32_t good) const;
     int32_t ensure_trade_signal_clock_index(int32_t cell, int32_t good);
+    void ensure_trade_signal_clock_keys_bulk(
+        const std::vector<uint64_t> &sorted_unique_keys);
     void record_trade_signal_attempt(int32_t cell, int32_t good, int32_t reason);
     void refresh_trade_response_diagnostics();
     int64_t credit_trade_sellers(int32_t order_index, int64_t amount);
@@ -1881,7 +2350,8 @@ private:
                                 int32_t dest_signature, int64_t requested_pop,
                                 std::string &error,
                                 bool *source_drained_out = nullptr);
-    bool publish_epoch(std::string &error);
+    bool publish_epoch_slice(int64_t &work_done, std::string &error);
+    void reset_publish_state();
     bool compile_building_catalog(const godot::Dictionary &catalog, std::string &error);
     bool evaluate_building_conditions(int32_t type_id, int32_t cell) const;
     bool cell_has_technology(int32_t cell, int32_t technology_id, bool frozen) const;
@@ -1922,6 +2392,9 @@ private:
                                              int64_t unemployed_population);
     bool reconcile_building_employment_after_population_change(
         const std::vector<int32_t> &affected_cells, std::string &error);
+    bool reconcile_building_employment_cells_range(
+        const std::vector<int32_t> &stable_cells, int32_t begin, int32_t end,
+        std::string &error);
     bool run_building_production_cell(int32_t cell, ProductionResult &result,
                                       std::string &error);
     void merge_building_production_result(ProductionResult &result);
@@ -1930,6 +2403,13 @@ private:
                                             bool initialize,
                                             bool &population_changed,
                                             std::string &error);
+    void prepare_investment_review_cells();
+    void begin_investment_scratch_generation();
+    void ensure_investment_cell_finance_lane(int32_t cell);
+    void ensure_investment_resource_commitment_lane(size_t index);
+    int64_t investment_merchant_cash(int32_t cell) const;
+    int64_t investment_outstanding_credit(int32_t cell) const;
+    int64_t investment_resource_committed(size_t index) const;
     int32_t find_entrepreneur_source(int32_t cell, int32_t target_signature,
                                      int64_t required_capital,
                                      int64_t target_income_per_day,
@@ -1949,13 +2429,27 @@ private:
                                 BuildingGroup &group, int64_t payment_cap,
                                 int64_t &premium_paid);
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
+    void ensure_resource_lane(size_t index);
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
     bool resource_is_renewable(int32_t resource_id) const;
     int64_t renewable_safe_harvest(int32_t resource_id, int32_t cell) const;
-    bool commit_ready_construction(std::vector<int32_t> &changed_cells);
+    bool commit_ready_construction(std::vector<int32_t> &changed_cells,
+                                   bool prune_empty_groups = true);
+    void initialize_building_role_span(BuildingGroup &group);
+    void release_building_role_span(const BuildingGroup &group);
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
+    void rebuild_building_review_buckets();
+    void review_recovery_building_group(int32_t group_index);
+    void finalize_household_building_cell(int32_t cell, int64_t &saturation,
+                                          int64_t &restarted,
+                                          int64_t &failed);
+    int64_t production_reserve_shortfall_cell(int32_t cell,
+                                              int64_t &saturation) const;
+    void add_trade_active_key(int32_t market, int32_t good);
     void rebuild_market_signals();
+    void rebuild_market_signal_lookup();
+    bool flush_market_signal_overflow(std::string &error);
     int32_t ensure_market_signal_index(int32_t cell, int32_t good);
     void rebuild_production_input_reserves(int32_t active_begin = 0,
                                            int32_t active_end = -1,
@@ -1972,6 +2466,7 @@ private:
     bool prepare_cell_wages(int32_t cell, std::string &error);
     void update_cell_labor_signals(int32_t cell);
     bool prepare_building_economic_plan(int32_t active_begin, int32_t active_end,
+                                        BuildingPlanResult &result,
                                         std::string &error);
     int32_t market_signal_index(int32_t cell, int32_t good) const;
     PricePressure price_pressure(int32_t market, int32_t good, int64_t household_demand,
@@ -1995,22 +2490,40 @@ private:
                                      int64_t *saturation_override = nullptr);
     void fail(const std::string &reason);
     void clear_epoch_metrics();
+    void capture_completed_perf_snapshot();
     void rebuild_committed_summaries();
     CellSummary build_cell_summary(int32_t cell) const;
+    void stage_cell_summary(int32_t cell, const CellSummary &summary);
     void finalize_market_result(int32_t market, MarketResult &result);
+    void refresh_investment_active_goods_for_market(int32_t market,
+                                                    int64_t &saturation_count);
     bool rebuild_market_cell_ranges(std::string &error);
     bool ensure_merchant_invariant(int32_t cell, int64_t &repair_count,
                                    std::string &error);
     bool rebuild_merchant_ranges(std::string &error);
     bool is_merchant_slot(int32_t slot) const;
     void touch_accounting_slot(int32_t slot);
+    void rebuild_incremental_audit_shadow();
+    void begin_incremental_audit_epoch();
+    void audit_touch_population_lane(int32_t slot);
+    void audit_touch_market_lane(size_t index);
+    AuditTotals incremental_audit_totals() const;
+    void commit_incremental_audit_shadow();
+    void diagnose_incremental_audit_mismatch(const AuditTotals &full);
     AuditTotals audit_totals() const;
     int64_t memory_bytes() const;
     int32_t choose_epoch_days(int64_t cohort_count);
     int32_t building_slice_end(int32_t active_begin) const;
+    int32_t building_slice_end(int32_t active_begin, int32_t cell_cap,
+                               int32_t group_cap) const;
+    int32_t building_plan_slice_end(int32_t active_begin) const;
+    int32_t household_post_slice_end(int32_t active_begin) const;
     int32_t estimate_building_ranges() const;
     int32_t stage_progress_q16() const;
     const char *stage_name() const;
+    const char *stage_name(Stage stage) const;
+    const char *publish_phase_name(PublishPhase phase) const;
+    const char *trade_plan_init_phase_name(TradePlanInitPhase phase) const;
 
     static int64_t saturating_add(int64_t a, int64_t b, int64_t &saturation_count);
     static int64_t saturating_sub(int64_t a, int64_t b, int64_t &saturation_count);
@@ -2090,6 +2603,7 @@ private:
     int64_t trace_memory_bytes() const;
     static uint64_t trace_hash_mix(uint64_t hash, uint64_t value);
     static thread_local ProductionResult *_production_result_sink;
+    static thread_local MarketResult *_market_result_sink;
 };
 
 } // namespace pk

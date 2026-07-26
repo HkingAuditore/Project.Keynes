@@ -31,6 +31,12 @@ func _run() -> void:
 	var runtime := _new_runtime(compiled, catalog, profile, 92015)
 	if runtime == null:
 		return
+	_expect("default profile enables BALANCED ACTIVE approximation",
+		String(runtime.get_economy_report().get(
+			"economy_approximation_runtime_mode", "")) == "ACTIVE")
+	_expect("default profile enables INCREMENTAL closing audit",
+		String(runtime.get_economy_report().get(
+			"closing_audit_mode", "")) == "INCREMENTAL")
 	_expect("rolling inspector trace target registers",
 		bool(runtime.set_economy_inspector_trace_cell(1).get("ok", false)))
 	var traced_before: Dictionary = runtime.get_population_cell_snapshot(1)
@@ -139,27 +145,96 @@ func _validate_day(ext: Object, day: int) -> void:
 	var report: Dictionary = {}
 	var slices := 0
 	var saw_investment_range := false
+	var household_substages: Dictionary = {}
+	var commit_substages: Dictionary = {}
+	var commit_breakdown_valid := true
+	var investment_prepare_breakdown_seen := false
+	var bounded_post_work := true
+	var finalize_slices := 0
+	var compact_checked := false
+	var max_chunks := 0
+	var chunk_bounds_valid := true
 	while slices < 64:
-		report = ext.run_economy_slice({
+		var use_compact: bool = day == 0 and slices == 0 and \
+			ext.has_method("run_economy_slice_compact")
+		report = ext.run_economy_slice_compact({
+			"day_index": day,
+			"tick_index": day * 1000 + slices,
+		}) if use_compact else ext.run_economy_slice({
 			"day_index": day,
 			"tick_index": day * 1000 + slices,
 		})
+		if use_compact:
+			compact_checked = String(report.get("report_mode", "")) == "compact_slice" and \
+				report.has("executed_stage") and report.has("commit_due") and \
+				not report.has("memory_bytes")
+		var chunks := int(report.get("chunks_completed", 0))
+		max_chunks = maxi(max_chunks, chunks)
+		chunk_bounds_valid = chunk_bounds_valid and chunks >= 0 and chunks <= 8
+		var executed_stage := String(report.get("executed_stage", ""))
+		var executed_substage := String(report.get("executed_substage", ""))
+		if executed_stage == "household_market":
+			household_substages[executed_substage] = true
+			if executed_substage == "reserve_shortfall":
+				bounded_post_work = bounded_post_work and \
+					int(report.get("work_done", 0)) <= 4096 * maxi(1, chunks)
+		if executed_stage == "building_commit":
+			commit_substages[executed_substage] = true
+			var commit_breakdown: Dictionary = report.get(
+				"building_commit_breakdown_ms", {})
+			commit_breakdown_valid = commit_breakdown_valid and commit_breakdown.has(
+				"building_commit.%s" % executed_substage)
+			investment_prepare_breakdown_seen = investment_prepare_breakdown_seen or \
+				commit_breakdown.has("building_commit.investment_prepare")
+			if executed_substage in ["special_reset", "recovery_review"]:
+				bounded_post_work = bounded_post_work and \
+					int(report.get("work_done", 0)) <= int(
+						report.get("building_review_groups_per_slice", -1)) * \
+						maxi(1, chunks)
+			if executed_substage == "finalize":
+				finalize_slices += 1
+				bounded_post_work = bounded_post_work and \
+					int(report.get("work_done", 0)) <= int(
+						report.get("building_finalize_cells_per_slice", -1)) * \
+						maxi(1, chunks)
 		if String(report.get("stage", "")) == "building_commit" and \
 				int(report.get("building_commit_phase", -1)) >= 1:
 			saw_investment_range = true
 		slices += 1
 		if bool(report.get("done", false)) or bool(report.get("fatal", false)):
 			break
-	_expect("day %d uses bounded continuation slices" % day,
-		slices > 1 and slices < 64)
+	var completed := bool(report.get("done", false))
+	if String(report.get("report_mode", "")) == "compact_slice":
+		report = ext.get_economy_report()
+		report["done"] = completed
+	_expect("day %d uses bounded multi-chunk continuation" % day,
+		slices >= 1 and slices < 64 and chunk_bounds_valid and max_chunks > 0)
+	if day == 0:
+		_expect("compact slice keeps scheduler fields without full diagnostics",
+			compact_checked)
 	_expect("day %d exposes bounded investment continuation" % day,
-		saw_investment_range)
+		saw_investment_range or max_chunks > 1)
+	_expect("day %d exposes sliced household finalization" % day,
+		completed or (bounded_post_work and household_substages.has("settle")))
+	_expect("day %d exposes baked building review phases" % day,
+		commit_breakdown_valid and (commit_substages.has("investment") or
+		max_chunks > 1))
+	_expect("day %d exposes isolated investment prepare timing" % day,
+		investment_prepare_breakdown_seen)
+	_expect("day %d slices building finalize reconciliation" % day,
+		completed or (bounded_post_work and finalize_slices >= 1))
 	_expect("day %d commits one rolling phase" % day,
 		bool(report.get("done", false)) and not bool(report.get("fatal", false)) and
 		int(report.get("settlement_phase", -1)) == day % PHASE_COUNT and
 		int(report.get("due_cells", -1)) == CELL_COUNT / PHASE_COUNT and
 		int(report.get("processed_due_cells", -1)) == CELL_COUNT / PHASE_COUNT and
 		int(report.get("deferred_cells", -1)) == 0)
+	_expect("day %d preserves completed-epoch performance diagnostics" % day,
+		bool(report.get("last_completed_perf_valid", false)) and
+		int(report.get("last_completed_sample_day", -1)) == day and
+		int(report.get("last_completed_continuation_slices", -1)) == slices and
+		int(report.get("investment_cells_per_slice", -1)) == 96 and
+		int(report.get("building_finalize_cells_per_slice", -1)) == 128)
 	_expect("day %d conserves all ledgers" % day,
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and

@@ -1,5 +1,9 @@
 # Performance Diagnostics Playbook
 
+2026-07 新增的 batch multiplier/dispatch saved、approximation
+probe/cooldown、closing audit full-scan entries 与 compact capsule 字段定义见
+[运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
+
 本文用于解释运行日志，并给出排查 C++/DOTS 路径是否符合预期的流程。目标不是只看“耗时高不高”，而是定位高耗时来自 C++ compute、GDScript fallback、slot sync、flush、dirty mask、GPU upload，还是统计窗口里的旧 spike。
 
 ## 玩家场景 GM 性能入口
@@ -10,6 +14,8 @@ breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 
 `WorldRuntimeHost`，它在同一 daily tick 上分段记录：
 
 - `t_sus_ms`：`MapGenerator.sus_tick_daily()`，包含 climate、economy 和其他 SUS jobs。
+- `speed_multiplier`：采样时 `WorldClock` 的实际速度倍率；比较场景吞吐时必须先按此列分组，
+  不能只根据 UI 操作或行间隔推断档位。
 - `t_render_ms`：fronts、weather field texture 等 renderer 同步，不等于 GPU fragment 时间。
 - `t_ui_ms`：选中地块 live patch 与顶栏时间状态更新。
 - `bd_ui_live_patch_build_ms`：右侧面板 ViewModel 读取选中地块/原生快照并构造
@@ -25,14 +31,34 @@ breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 
 - `continuation_*`：从上一个 `fast_tick` 记录完成到当前记录之间，
   `simulation_backpressure_pulse` 执行的 country/economy continuation 汇总。
   `continuation_wall_ms` 是这些脉冲的墙钟总和，`continuation_max_frame_wall_ms` 是单个脉冲的最大墙钟，
-  `continuation_max_slice_ms` 是其中单个 slice 的最大墙钟；`continuation_stage_wall_ms` 是按
-  `source:stage` 聚合的 JSON 字符串。它们不是当前 `fast_tick` 的子段，且没有 continuation 时为 0/空。
+  `continuation_max_slice_ms` 是其中单个 slice 的最大墙钟；`continuation_stage_counts`、
+  `continuation_stage_wall_ms`、`continuation_stage_max_slice_ms` 分别是按 `source:stage`
+  聚合的 slice 数、累计墙钟和单片最大墙钟 JSON。`continuation_substage_counts / wall_ms /
+  max_slice_ms / work` 进一步按 `source:stage.substage` 聚合原生 planner 或 publish 子阶段；
+  `continuation_last_stage/substage` 是最后一片的实际执行阶段，
+  `continuation_last_next_stage` 是该片返回后的 continuation 状态。它们不是当前 `fast_tick`
+  的子段，且没有 continuation 时为 0/空。先用阶段最大值定位不可抢占的 native 调用，
+  再用子阶段累计/峰值和 work 判断是单位工作过贵还是工作量过大。
+  economy continuation 走 `report_mode=compact_slice`，不应在每片前后出现完整
+  `get_economy_report()`；否则 report 构造、跨语言包装和 GDScript 深复制会按 slice 数线性放大。
 
 性能 CSV 在桌面写入仓库 `tmp/perf_record_*.csv`，地块 CSV 写入
 `tmp/tile_data_record_*.csv`，经济录制按提交 epoch 写入 `tmp/economy_record_*.csv`；
 移动端分别写入 `user://perf`、`user://tile_data` 和 `user://economy_data`。
 全量地块录制会同步编码、写盘，可能主动制造卡顿，因此先录性能基线，再短时开启地块录制，
 并检查 `tile_ms/format_ms/flush_ms/encoder_path`。
+
+无需图形界面时，使用 `tests/headless_perf_record.gd` 复用生产 `WorldRuntimeHost` 与同一个
+`PerfRecorder`，确定性推进指定模拟日并输出相同的 `tmp/perf_record_*.csv` 契约：
+
+```powershell
+godot --headless --path Project/project-keynes `
+  --script res://tests/headless_perf_record.gd -- `
+  days=50 speed=50 seed=20260718 label=baseline
+```
+
+该入口保留 SUS、C++、经济 job、硬屏障 continuation 与 breakdown 采样，但 headless 没有真实 GPU；
+因此其 `t_render_ms`、FPS 和 UI 列不得与玩家图形场景直接比较。正式 GPU/交互性能仍使用玩家场景录制。
 
 经济录制已使用原生 CSV v21 双缓冲：GM 面板显示 `captured/written epoch`、
 `queued_batches`、`capture_ms_last/p95/max` 和 worker 耗时。正常录制为 `recording`，点击停止后为
@@ -550,6 +576,25 @@ tick's ψ (`cell_ocean_psi` slot) instead of zero:
 - trace OFF/SELECTIVE 与 worker/scalar 的核心 economy state hash 必须一致；worker/scalar
   `event_stream_hash` 也必须一致。
 - 10M auto cadence 与固定五日建筑 benchmark 必须分别标注，不能用自动 N 性能替代默认档证据。
+
+2026-07-26 weighted economy worker 诊断：
+
+- `last_completed_building_production_worker_parallel_dispatches` 应大于 0；只看
+  `worker_tasks` 会误读 publish 后的当前空闲值。
+- `last_completed_building_production_worker_imbalance_q16_max / 65536` 是最差 task weight
+  相对理想均分的比值；持续明显高于 1.5 时先检查重型 cell，而不是继续增加线程。
+- `last_completed_building_plan_worker_tasks_max`、`last_completed_market_worker_tasks_max` 和
+  `last_completed_audit_worker_tasks_max` 应不超过 `economy_worker_task_cap`。
+- `worker_cpu_ms` 是各 task CPU 时间之和，stage `*_ms` 是 wait wall time；二者不能直接相加。
+- `opening_audit_fast_paths/full_verifications` 区分复用 committed close 与周期完整 opening scan。
+  closing audit 读取 `closing_audit_mode/fast_paths/full_verifications`：
+  PROBE 每日同时算首触 shadow delta 与全量权威结果，INCREMENTAL 只在首日、restore、
+  异常或周期复核日全扫。任何 mismatch 或 ledger error 都是 correctness failure。
+  `closing_audit_mismatch_ledger/lane` 定位首个差异，`population/market_touched_lanes`
+  与 `population/market_full_scan_entries` 可确认 fast path 是否真实生效。
+- 100×64、约 24k building groups 的 2026-07-26 debug headless 诊断中，production
+  `44.3 -> 7.7ms`、plan `14.0 -> 3.8ms`、household worker `12.7 -> 7.4ms`；
+  该记录只用于阶段 A/B，不是 release 或图形 FPS 证据。
 
 新增 API 探针：
 
@@ -1222,23 +1267,92 @@ stage 判断：
   `worker_tasks`；`worker_tasks=1` 可能是小 range 或 WTP 不可用。
 - `structural_commit` 长：迁移/转职/归零事件过多，查 ECB 来源，不能在此全局 compact。
 - `wait_commit`：计算已提前完成，正在等周期截止日；这是冻结结算隔离，不是卡死。
-- `aggregate_publish` 长：cell summary 或审计扫描异常；不得改成全世界 Dictionary。
+- `aggregate_publish` 长：先确认 CSV 使用 `executed_stage` 而非返回后的 `stage/next_stage`。
+  再看 `executed_substage` 与当前片的 `publish_breakdown_ms/work`：人口/market/in-transit/country
+  审计及 trade-response diagnostics 预算
+  为每片 131072 条，watermark 和 trade-init workspace 为每片 4096 条。前者来自 10k-cell
+  基准中约 1ms/片的实测折中，避免 16384 条预算产生大量亚毫秒 native 往返。单片 work 在预算内但耗时
+  仍长才是单位工作成本问题；work 异常才查游标。整轮对账用
+  `publish_cumulative_breakdown_ms/work`，不可把每片返回的累计值再次求和。不得删掉精确审计或
+  改成全世界 Dictionary。
+  运行时允许在 `slice_budget_ms` 内融合多个已经完成的廉价 publish 子阶段，所以一个 slice 的
+  `work_done` 可能是多个子阶段之和；逐阶段预算必须看 `publish_breakdown_work`，不能再只用最后一个
+  `executed_substage` 对总 work 做上限判断。若同一 breakdown key 在一次调用中消耗超过其固定预算，
+  才是有界融合失效。
 - `building_plan_ms` 是整周期两遍 continuation 的累计时间，不能当作单帧墙钟；先看当前
   `stage=building_plan`、`building_plan_phase`、`building_cells_per_slice` 和该 slice 的 `elapsed_ms`。
   若单片仍长，检查是否按 owner-lot 重复解析 catalog/字符串；计划只能访问预编译 CSR 与冻结价格。
+- `building_commit.investment_prepare` 长：检查是否只为当日资本复核 cell 聚合 merchant、pending、
+  resource commitment 与 existing type。`building_commit.investment` 长：再核对
+  `investment_cells_per_slice=96`（0/auto 的解析值）；它与吞吐导向的
+  `building_cells_per_slice` 分离，并检查 frozen-country building-type CSR 是否存在；不得通过
+  增大普通 building batch 把目录评估重新塞回一个 8ms 以上调用。
+  同时比较 `investment_scheduled_review_cells` 与 `investment_review_cells`；两者应相等，
+  且前者应只包含 rolling phase、review phase 与正人口条件的交集。若接近整个 rolling bucket，
+  优先检查 review-list 构造或 profile cadence，不要把非 review cell 的建筑扫描重新加回热路径。
+  用 `building_commit_breakdown_ms/work` 区分 `review_prepare`、`special_reset`、
+  `recovery_review`、`construction_commit`、`investment_prepare`、`investment` 和
+  `finalize`；不要再把整个 stage 的峰值
+  一律归因给投资扫描。`finalize` 的就业对账默认按 128 个升序 cell 分片，
+  `work_done` 不应超过 `building_finalize_cells_per_slice`；若 prepare slice 仍长，成本来自二次
+  construction commit/结构重建，若 reconcile slice 长，才继续分析单 cell 建筑组排序和 cohort 分配。
+  结构尖峰继续看 `building_structure_count_only_updates/new_groups/removed_groups` 与
+  `building_structure_topology_rebuilds`：同 key 扩建必须只增加 count-only 且 rebuild 为 0；真正新增/
+  删除才允许一次合批 rebuild。用 `building_structure_group_merge_ms`、
+  `building_structure_market_cache_ms`、`building_structure_labor_cache_ms` 分离有序 group merge、
+  market CSR/dense lookup 和 labor CSR。三者都低但 `construction_commit` 仍高时，热点在 BUILD
+  材料/资金/pending 处理；不要继续扩大 topology cache 或把 64-cell 就业分片误认为原因。
   `zero_utilization_building_groups` 高时对照 expected revenue、operating cost、margin gap。
 - `market_signal_ms` 长：比较 `market_signal_edges/updates` 与实际建筑 input/output 边；不得退化为
   `cell_count × good_count` 扫描。
+- `household_market_merge_ms` 长：先比较
+  `household_market_merge_aggregate_ms` 与 `household_market_merge_trade_ms`。前者是稳定提交和统计归并，
+  后者包含 trade active-key/response-clock 维护。trade 占主导且新世界首轮尖峰时，检查是否仍在逐键
+  插入对齐诊断数组；正常路径应对本 market batch 做一次排序去重和稳定 bulk merge。
+- `building_investment_ms` 长且 `market_signal_insert_count` 高：比较
+  `market_signal_insert_ms` 与 `market_signal_flush_ms`。当前 dense 世界只把已实际触发的 construction
+  shortage 追加到 transient overflow，并在 investment phase 结束时一次稳定归并；
+  `market_signal_lookup_mode=csr` 表示 dense cache 被非投资冷路径失效，需继续检查调用来源。
+- 投资目录本身长时看
+  `last_completed_investment_sparse_considered_types/selected_types/skipped_types/mismatches`。
+  默认 `economy_investment_sparse_mode=ACTIVE`；`mismatches` 必须恒为 0，非零会自动退回完整扫描，
+  应视为 correctness defect。`skipped/considered` 很低说明瓶颈不是目录宽度，不能通过更激进但
+  不保守的 good 阈值换取速度。需要做权威 A/B 时，将一侧显式设为 `OFF`，跨完整五日滚动相位比较
+  state hash、event hash 和三类守恒误差。
+- `trade_route_cache_hits/misses` 用于判断固定路线是否跨规划轮次复用。命中率仍为 0 时通常表示
+  当前窗口尚未完成第二轮规划，或源/目的组合持续变化；不要把正常 miss 误报为缓存失效。若
+  topology generation/country topology hash 未变却在每轮初始化后丢失已有键，检查
+  `TradePlanStore` 的容量与失效标签。
+- 首个 `building_plan.evaluate` slice 看似偏长时同时检查 `epoch_begin_ms`、`epoch_preflight_ms` 和
+  `prepare_ms`。外层 slice 可包含 start-epoch 与第一个 plan range；固定 demand-basis 容量应在 configure
+  时预分配，不能把首次触页成本误判为 per-cell plan 算法成本。
+- `market_result_allocation_growth_count/bytes` 在热稳态应为 0。持续增长表示 MarketResult 某条 trace、
+  welfare、structural 或 trade-active lane 的容量估计不足；先修 buffer 生命周期，不要扩大 continuation。
+- `production_result_allocation_growth_count/bytes` 同样应在预热后归零。持续增长表示每 cell 的
+  retained-output、cashflow 或 trace draft scratch 容量仍在扩容；先确认生产结果确实复用，再判断
+  是否需要按实际边数预留。不要把容量增长误判为 worker 算术成本。
+- CSV 跨 epoch 对比阶段累计量、worker task 或结构重建时，优先读取
+  `last_completed_*`。普通同名字段属于当前活动 epoch，下一周期 `clear_epoch_metrics()` 后会从零开始，
+  因而可能掩盖刚完成周期的 topology rebuild、并行任务数和 allocation growth。
+- 高倍速吞吐还要比较 `barrier_pulses`。预算化子阶段融合应减少 barrier，同时单片仍受
+  `EconomyDailySystem.slice_budget_ms` 约束；用
+  `last_completed_budgeted_building_commit_phase_fusions` 与
+  `last_completed_budgeted_publish_phase_fusions` 确认减少确实来自预算内融合。不能用无上限的整轮
+  同步计算换取较少 barrier。
 - `trade_plan_ms` 只表示当前 native `run_slice()` 的 planner 墙钟，不累计到下一 slice、
   下一日或下一 epoch。未运行 planner 的 continuation 应为 0；bench/CSV 直接读取当前值，
-  不得用前后 report 做差。若该值看似长期保持旧峰值，优先检查 DLL 是否未重建。
+  不得用前后 report 做差。若该值看似长期保持旧峰值，优先检查 DLL 是否未重建。用
+  `trade_plan_breakdown_ms` 区分扫描主体、扫描排序/裁剪、路线目标/缓存准备、Dijkstra 扩展、
+  候选收尾排序和未归因胶水；再对照 `trade_plan_breakdown_work`，不要仅凭总墙钟调低扩展预算。
 
 上述 stage ms 在 worker 路径是 task CPU 时间之和，slice `elapsed_ms` 才是墙钟。
 正常冻结周期中 `epoch_active=true/commit_due=false` 时不得出现屏障；世界日应继续推进。
 只有 `commit_due=true && done=false` 才应看到 `economy_day_barrier`，此时模拟日不前进，
 real-frame pulse 会在 `sim_frame_budget_ms` 时间盒内连续执行 bounded ranges，令
 `continuation_slices` 增加并最终解除；耗尽预算后留到下一帧。周期边界出现全量尖峰时，检查
-是否误恢复“全 cohort 会计清零”或“无结构变化也重建 merchant CSR”。
+是否误恢复“全 cohort 会计清零”或“无结构变化也重建 merchant CSR”。`building_commit` 返回的
+`next_stage=aggregate_publish` 不表示本片已执行 publish；只有下一片
+`executed_stage=aggregate_publish` 才计入发布耗时。
 
 误差排障同时记录 `market_cycle_days/approximation_model`。消费/价格异常首先用较短强制
 周期复现；如果 N=1 正常而长周期偏差大，这是近似调参问题，不是守恒错误。
@@ -1294,7 +1408,9 @@ A healthy completed report has `processed_due_cells==due_cells`,
 `deferred_cells=0`, `max_state_age_days<=4`, and
 `rolling_deadline_violations=0`. During the current due bucket,
 `commit_due && !done` plus an economy day barrier is expected: each real-frame
-continuation consumes at most one building, market, or structural range. Diagnose
+continuation consumes up to eight stable-order chunks. Inspect
+`chunks_completed`, `phase_fusions`, `yield_reason`, and `budget_overrun_ms`;
+at 20x or faster the native budget floor is 1.8 ms. Diagnose
 stalls when the stage/cursor stops advancing, one bounded slice still exceeds the
 frame budget materially, or the final report retains deferred cells. Trade
 planning remains bounded daily soft work and cannot postpone local settlement.
@@ -1329,6 +1445,16 @@ opportunity.
 `cell_to_market[cell] == cell` 所有权契约。任务数大于 1 但收益差时，重点比较 cell 间 group/edge
 偏斜、高价 offer 排序、retained output/SELECTIVE trace fanout 与 merge 占比；不要靠增加任务数
 掩盖单个超重 cell，因为 range 内一个 cell 仍是不可再分的确定性单元。
+
+生产 owner-retention 的正常热路径只应按实际 `(owner, output good)` 边增长；不得恢复
+`owner_count × good_count` 的 target/used/produced 稠密清零或逐 offer 线性 owner 查找。
+`ProductionResult` 由 runtime 长期持有并按 range 复用；若 profiler 仍显示每 continuation 大量
+vector 构造/释放，说明某条新增 lane 绕过了 `reset()` 生命周期。建筑计划与 household post-building
+的 auto batch 为普通 building cell/group range 的两倍，投资和 finalize 分别默认 96/128；这些
+批次减少跨桥 continuation 数，但单片仍必须用 `elapsed_ms` 验证，不能只看阶段累计时间。
+`building_commit.finalize` 仍长时，先比较 affected cell/group/cohort 数；就业对账的 signature/
+profession scratch 已按 generation 首触初始化，若耗时仍随全 catalog 宽度增长，应检查是否有新代码
+绕过 touch helper 恢复了逐 cell 全数组清零。
 
 - `building_production` 长：检查 `building_cells_per_slice`、processed groups、input/resource/output edge
   数、高价 offer 排序，以及 `labor_signal_ms` 与 owner payroll/bonus 分摊。营运资金裁剪的

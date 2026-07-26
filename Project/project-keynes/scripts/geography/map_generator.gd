@@ -1592,6 +1592,12 @@ func get_economy_report() -> Dictionary:
 	return _economy_facade.report() if _economy_facade != null else {"configured": false}
 
 
+func get_economy_perf_report() -> Dictionary:
+	return _economy_daily_job.last_perf_report() \
+		if _economy_daily_job != null and _economy_daily_job.has_method("last_perf_report") \
+		else {}
+
+
 func set_test_economy_bootstrap_enabled(enabled: bool) -> void:
 	_test_economy_bootstrap_enabled = enabled
 
@@ -1621,19 +1627,70 @@ func _record_continuation_slice(source: String, result: Dictionary, wall_ms: flo
 			"last_slice_ms": 0.0,
 			"budget_ms": 0.0,
 			"last_stage": "",
+			"last_next_stage": "",
+			"last_substage": "",
 			"last_path": "",
 			"done": false,
+			"stage_counts": {},
 			"stage_wall_ms": {},
+			"stage_max_slice_ms": {},
+			"substage_counts": {},
+			"substage_wall_ms": {},
+			"substage_max_slice_ms": {},
+			"substage_work": {},
 		}
 	var slice_ms: float = maxf(wall_ms, 0.0)
 	var stage: String = str(result.get("stage_name", result.get("stage", "")))
+	var next_stage: String = str(result.get("next_stage", result.get("stage", "")))
+	var substage: String = str(result.get("substage", ""))
 	var path: String = str(result.get("path", ""))
 	if stage.is_empty():
 		stage = "unknown"
 	var stage_key := "%s:%s" % [source, stage]
+	var stage_counts: Dictionary = _continuation_perf_pending.get("stage_counts", {})
+	stage_counts[stage_key] = int(stage_counts.get(stage_key, 0)) + 1
+	_continuation_perf_pending["stage_counts"] = stage_counts
 	var stage_wall_ms: Dictionary = _continuation_perf_pending.get("stage_wall_ms", {})
 	stage_wall_ms[stage_key] = float(stage_wall_ms.get(stage_key, 0.0)) + slice_ms
 	_continuation_perf_pending["stage_wall_ms"] = stage_wall_ms
+	var stage_max_slice_ms: Dictionary = _continuation_perf_pending.get(
+		"stage_max_slice_ms", {})
+	stage_max_slice_ms[stage_key] = maxf(
+		float(stage_max_slice_ms.get(stage_key, 0.0)), slice_ms)
+	_continuation_perf_pending["stage_max_slice_ms"] = stage_max_slice_ms
+	var breakdown_ms_value = result.get("stage_breakdown_ms", {})
+	if breakdown_ms_value is Dictionary:
+		var substage_counts: Dictionary = _continuation_perf_pending.get(
+			"substage_counts", {})
+		var substage_wall_ms: Dictionary = _continuation_perf_pending.get(
+			"substage_wall_ms", {})
+		var substage_max_slice_ms: Dictionary = _continuation_perf_pending.get(
+			"substage_max_slice_ms", {})
+		for breakdown_name in breakdown_ms_value:
+			var breakdown_ms: float = maxf(
+				0.0, float(breakdown_ms_value.get(breakdown_name, 0.0)))
+			if breakdown_ms <= 0.0:
+				continue
+			var breakdown_key := "%s:%s" % [source, str(breakdown_name)]
+			substage_counts[breakdown_key] = int(
+				substage_counts.get(breakdown_key, 0)) + 1
+			substage_wall_ms[breakdown_key] = float(
+				substage_wall_ms.get(breakdown_key, 0.0)) + breakdown_ms
+			substage_max_slice_ms[breakdown_key] = maxf(float(
+				substage_max_slice_ms.get(breakdown_key, 0.0)), breakdown_ms)
+		_continuation_perf_pending["substage_counts"] = substage_counts
+		_continuation_perf_pending["substage_wall_ms"] = substage_wall_ms
+		_continuation_perf_pending["substage_max_slice_ms"] = substage_max_slice_ms
+	var breakdown_work_value = result.get("stage_breakdown_work", {})
+	if breakdown_work_value is Dictionary:
+		var substage_work: Dictionary = _continuation_perf_pending.get("substage_work", {})
+		for work_name in breakdown_work_value:
+			var work: int = int(breakdown_work_value.get(work_name, 0))
+			if work <= 0:
+				continue
+			var work_key := "%s:%s" % [source, str(work_name)]
+			substage_work[work_key] = int(substage_work.get(work_key, 0)) + work
+		_continuation_perf_pending["substage_work"] = substage_work
 	_continuation_perf_pending["slices"] = int(_continuation_perf_pending.get("slices", 0)) + 1
 	var source_key := "%s_slices" % source
 	_continuation_perf_pending[source_key] = int(_continuation_perf_pending.get(source_key, 0)) + 1
@@ -1641,6 +1698,8 @@ func _record_continuation_slice(source: String, result: Dictionary, wall_ms: flo
 		float(_continuation_perf_pending.get("max_slice_ms", 0.0)), slice_ms)
 	_continuation_perf_pending["last_slice_ms"] = slice_ms
 	_continuation_perf_pending["last_stage"] = stage
+	_continuation_perf_pending["last_next_stage"] = next_stage
+	_continuation_perf_pending["last_substage"] = substage
 	_continuation_perf_pending["last_path"] = path
 	_continuation_perf_pending["done"] = bool(result.get("done", false))
 	return slice_ms
@@ -1696,12 +1755,14 @@ func _continue_economy_inflight(day_index: int) -> void:
 				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
 			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
-		var report: Dictionary = _economy_facade.report()
-		if bool(report.get("fatal", false)):
-			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
-			return
-		if not bool(report.get("epoch_active", false)) and \
-				not bool(_economy_facade.world_ext().economy_should_run(day_index)):
+		var economy_ext: Object = _economy_facade.world_ext()
+		if not bool(economy_ext.economy_should_run(day_index)):
+			# This is a cold/stale-barrier path. Query the full report only here so
+			# fatal state remains distinguishable from a completed continuation.
+			var report: Dictionary = _economy_facade.report()
+			if bool(report.get("fatal", false)):
+				_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
+				return
 			if _world_clock_ref != null:
 				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
 			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
@@ -1712,12 +1773,11 @@ func _continue_economy_inflight(day_index: int) -> void:
 		frame_max_slice_ms = maxf(frame_max_slice_ms,
 			_record_continuation_slice("economy", economy_result, economy_slice_ms))
 		continuation_count += 1
-		report = _economy_facade.report()
-		if bool(report.get("fatal", false)):
+		if bool(economy_result.get("fatal", false)):
 			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
-		if not bool(report.get("epoch_active", false)) and \
-				not bool(_economy_facade.world_ext().economy_should_run(day_index)):
+		if bool(economy_result.get("done", false)) or \
+				not bool(economy_ext.economy_should_run(day_index)):
 			if _world_clock_ref != null:
 				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
 			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
@@ -2211,6 +2271,16 @@ func set_world_clock_ref(world_clock_node) -> void:
 		_baker.set_world_clock_ref(_world_clock_ref)
 	if _world_clock_ref == null:
 		return
+	# Jobs may already exist when a host injects the clock late. Keep their
+	# barrier requests and continuation pulse connection aligned with the host.
+	if _country_daily_job != null:
+		_country_daily_job.world_clock = _world_clock_ref
+	if _economy_daily_job != null:
+		_economy_daily_job.world_clock = _world_clock_ref
+	if _world_clock_ref.has_signal("simulation_backpressure_pulse"):
+		var continuation_cb := Callable(self, "_continue_economy_inflight")
+		if not _world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
+			_world_clock_ref.simulation_backpressure_pulse.connect(continuation_cb)
 	if _ocean_currents_job != null:
 		_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
 	# 任务 8：把 world_clock getter 注入给气候 / 天气 Job。
@@ -4496,6 +4566,9 @@ func _apply_vegetation_succession_candidates(map: MapData,
 			if cp_now.get("vegetation_succession_cooldown_days") != null else 30
 	var degrade_reset_target: float = float(cp_now.vegetation_degrade_reset_target) \
 			if cp_now.get("vegetation_degrade_reset_target") != null else 0.75
+	var sparse_visual_publish: bool = cp_now.get(
+			"native_daily_sparse_visual_publish_enabled") != null \
+			and bool(cp_now.native_daily_sparse_visual_publish_enabled)
 	for k in range(candidate_count):
 		var idx: int = indices[k]
 		if idx < 0 or idx >= map.cell_count():
@@ -4527,7 +4600,7 @@ func _apply_vegetation_succession_candidates(map: MapData,
 			map.vitality_low_streak_arr[idx] = cell._vitality_low_streak
 		if idx < map.vitality_high_streak_arr.size():
 			map.vitality_high_streak_arr[idx] = cell._vitality_high_streak
-		if map.has_method("mark_climate_dirty"):
+		if not sparse_visual_publish and map.has_method("mark_climate_dirty"):
 			map.mark_climate_dirty(idx)
 		applied_indices[applied_count] = idx
 		applied_vegetation[applied_count] = next_vegetation & 0xFF
@@ -4536,6 +4609,8 @@ func _apply_vegetation_succession_candidates(map: MapData,
 		return 0
 	applied_indices.resize(applied_count)
 	applied_vegetation.resize(applied_count)
+	if sparse_visual_publish and map.has_method("mark_climate_dirty_indexed"):
+		map.mark_climate_dirty_indexed(applied_indices)
 	# vegetation/base_vegetation 不是 HexCell facade 字段；显式发布到两侧权威槽位。
 	if _data_core_world != null and _data_core_world.has_method("write_u8_indexed"):
 		var vegetation_cid: int = _data_core_world.component_id(DCComponentIds.CELL_VEGETATION)
@@ -4546,7 +4621,10 @@ func _apply_vegetation_succession_candidates(map: MapData,
 			_data_core_world.write_u8_indexed(base_vegetation_cid, applied_indices, applied_vegetation)
 		if _data_core_world.has_method("mark_dirty_indexed"):
 			_data_core_world.mark_dirty_indexed(applied_indices)
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("write_u8_indexed"):
+	# The native vegetation pass already owns DCWorldExt slots. The indexed
+	# DCWorld write above is the single retained mirror update.
+	if not sparse_visual_publish and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("write_u8_indexed"):
 		var vegetation_ext_cid: int = _world_ext_u8_component_id(DCComponentIds.CELL_VEGETATION)
 		if vegetation_ext_cid >= 0:
 			_data_core_world_ext.write_u8_indexed(vegetation_ext_cid, applied_indices, applied_vegetation)

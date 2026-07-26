@@ -79,6 +79,14 @@ Dictionary DCWorldExt::submit_economy_commands(const Dictionary &packed_batch) {
 }
 
 Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
+    return run_economy_slice_internal(ctx, false);
+}
+
+Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
+    return run_economy_slice_internal(ctx, true);
+}
+
+Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool compact) {
     if (_economy_runtime == nullptr) {
         Dictionary out = unavailable();
         out["done"] = true;
@@ -238,7 +246,9 @@ Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
             return out;
         }
     }
-    Dictionary result = runtime->run_slice(ctx);
+    Dictionary result = compact
+        ? runtime->run_slice_compact(ctx)
+        : runtime->run_slice(ctx);
     std::vector<int64_t> resource_deltas;
     if (runtime->drain_building_resource_deltas(resource_deltas)) {
         const int32_t count = runtime->building_resource_extra_slots().empty()

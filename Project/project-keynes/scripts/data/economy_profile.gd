@@ -13,6 +13,13 @@ extends Resource
 @export_range(0, 65536, 1) var building_cells_per_slice: int = 0
 ## Dense settlements are additionally bounded by actual building groups.
 @export_range(1, 65536, 1) var building_groups_per_slice: int = 512
+## Stage-local batching overrides. Zero keeps deterministic auto batching:
+## plan/post-buildings use twice the normal building range, investment uses 96
+## rolling cells, and final employment reconciliation uses 128 affected cells.
+@export_range(0, 65536, 1) var building_plan_cells_per_slice: int = 0
+@export_range(0, 65536, 1) var household_post_building_cells_per_slice: int = 0
+@export_range(0, 65536, 1) var investment_cells_per_slice: int = 0
+@export_range(0, 65536, 1) var building_finalize_cells_per_slice: int = 0
 ## Global building output efficiency. It scales goods output only; construction,
 ## production inputs, natural-resource use, and wages keep their catalog values.
 @export_range(65536, 262144, 1) var building_output_efficiency_q16: int = 131072
@@ -29,6 +36,34 @@ extends Resource
 @export var worker_enabled: bool = true
 @export_range(1, 100000, 1) var worker_market_threshold: int = 64
 @export_range(0, 16, 1) var worker_tasks_hint: int = 0
+## Upper bound for economy worker fan-out. Six tasks leaves headroom for the
+## render/main thread on 8+ core desktop CPUs.
+@export_range(1, 16, 1) var economy_worker_task_cap: int = 6
+## At speed 20+ adjacent household/production ranges are paired before worker
+## dispatch. Merge order remains the original ascending cell order.
+@export var economy_high_speed_batching_enabled: bool = true
+## Recompute the complete opening ledger periodically as an independent
+## verifier. Other days reuse the last exact committed close and refresh the
+## native country treasury contribution.
+@export_range(1, 365, 1) var economy_full_audit_verify_interval_days: int = 25
+## INCREMENTAL uses the validated mutation ledger and performs a complete
+## verification every configured interval. Any mismatch blocks publication and
+## disables the fast path for the session; FULL remains the emergency baseline.
+@export_enum("FULL", "PROBE", "INCREMENTAL") var economy_closing_audit_mode: String = "INCREMENTAL"
+## Accuracy policy is independent from rollout mode. ACTIVE applies certified
+## approximate candidate sets; invalid certificates and cooldown epochs remain
+## exact. OFF and PROBE stay available as exact rollback/baseline paths.
+@export_enum("EXACT", "BALANCED", "FAST", "CUSTOM") var economy_accuracy_preset: String = "BALANCED"
+@export_enum("OFF", "PROBE", "ACTIVE") var economy_approximation_runtime_mode: String = "ACTIVE"
+@export_range(0, 65536, 1) var economy_custom_max_regret_q16: int = 1966
+@export_range(0, 65536, 1) var economy_custom_household_tail_share_q16: int = 655
+@export_range(1, 8, 1) var economy_custom_candidate_top_k: int = 4
+@export_range(0, 65536, 1) var economy_custom_choice_temperature_q16: int = 983
+@export_range(1, 65536, 1) var economy_custom_exact_probe_rate_q16: int = 655
+@export_range(1, 3650, 1) var economy_custom_fallback_cooldown_epochs: int = 10
+## PROBE compares the conservative active-good candidate set with the complete
+## investment type scan without changing authoritative results.
+@export_enum("OFF", "PROBE", "ACTIVE") var economy_investment_sparse_mode: String = "ACTIVE"
 @export_range(65536, 16777216, 65536) var save_chunk_bytes: int = 4194304
 ## Economy event journal keeps compact summaries globally and exact delta legs
 ## only for explicitly traced cells. Handlers consume committed batches.
@@ -130,6 +165,12 @@ func to_native_profile() -> Dictionary:
 		"auto_slice_by_scale": auto_slice_by_scale,
 		"building_cells_per_slice": building_cells_per_slice,
 		"building_groups_per_slice": building_groups_per_slice,
+		"building_plan_cells_per_slice": building_plan_cells_per_slice,
+		"household_post_building_cells_per_slice":
+			household_post_building_cells_per_slice,
+		"investment_cells_per_slice": investment_cells_per_slice,
+		"building_finalize_cells_per_slice":
+			building_finalize_cells_per_slice,
 		"building_output_efficiency_q16": building_output_efficiency_q16,
 		"market_cycle_days": market_cycle_days,
 		"market_min_cycle_days": market_min_cycle_days,
@@ -140,6 +181,22 @@ func to_native_profile() -> Dictionary:
 		"worker_enabled": worker_enabled,
 		"worker_market_threshold": worker_market_threshold,
 		"worker_tasks_hint": worker_tasks_hint,
+			"economy_worker_task_cap": economy_worker_task_cap,
+			"economy_high_speed_batching_enabled": economy_high_speed_batching_enabled,
+			"economy_full_audit_verify_interval_days": economy_full_audit_verify_interval_days,
+			"economy_closing_audit_mode": economy_closing_audit_mode,
+		"economy_accuracy_preset": economy_accuracy_preset,
+		"economy_approximation_runtime_mode": economy_approximation_runtime_mode,
+		"economy_custom_max_regret_q16": economy_custom_max_regret_q16,
+		"economy_custom_household_tail_share_q16":
+			economy_custom_household_tail_share_q16,
+		"economy_custom_candidate_top_k": economy_custom_candidate_top_k,
+		"economy_custom_choice_temperature_q16":
+			economy_custom_choice_temperature_q16,
+		"economy_custom_exact_probe_rate_q16": economy_custom_exact_probe_rate_q16,
+		"economy_custom_fallback_cooldown_epochs":
+			economy_custom_fallback_cooldown_epochs,
+		"economy_investment_sparse_mode": economy_investment_sparse_mode,
 		"economy_trace_mode": economy_trace_mode,
 		"economy_trace_memory_bytes": economy_trace_memory_bytes,
 		"economy_trace_retention_epochs": economy_trace_retention_epochs,

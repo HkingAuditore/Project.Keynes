@@ -2963,6 +2963,37 @@ Dictionary DCWorldExt::get_native_ocean_physical_state_report() const {
     return out;
 }
 
+Dictionary DCWorldExt::get_native_ocean_physical_hot_state() const {
+    const Dictionary &state = _native_ocean_physical_state;
+    Dictionary out;
+    out["owner"] = state.get(
+        "owner", String("DCWorldExt.NativeOceanPhysicalLifecycle"));
+    out["authority"] = String("native_ready_capsule");
+    out["simulation_authority"] =
+        bool(state.get("simulation_authority", false));
+    out["compact_state_capsule"] = true;
+    out["ready"] = !state.is_empty();
+    out["physical_round_active"] =
+        bool(state.get("physical_round_active", false));
+    out["physical_round_id"] = int64_t(
+        state.get("physical_round_id", 0));
+    out["generation"] = int64_t(
+        state.get("physical_round_id", 0));
+    out["phase_locked"] = double(
+        state.get("physical_phase_locked", 0.0));
+    out["stage"] = int64_t(state.get("stage", 0));
+    out["stage_name"] = state.get("stage_name", String("uninitialized"));
+    out["phys_solve_done"] = bool(state.get("phys_solve_done", false));
+    int64_t boundary_intent_mask = 0;
+    if (state.has("start_state_intents")) boundary_intent_mask |= 1;
+    if (state.has("step_boundary_intents")) boundary_intent_mask |= 2;
+    if (state.has("finish_boundary_intents")) boundary_intent_mask |= 4;
+    if (state.has("reset_boundary_intents")) boundary_intent_mask |= 8;
+    out["boundary_intent_mask"] = boundary_intent_mask;
+    out["dirty"] = boundary_intent_mask != 0;
+    return out;
+}
+
 Dictionary DCWorldExt::get_native_dirty_report() const {
     return _native_dirty_report.duplicate();
 }

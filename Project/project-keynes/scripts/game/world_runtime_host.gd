@@ -491,6 +491,7 @@ func _publish_fast_tick_perf_sample(
 		"timestamp_ms": Time.get_ticks_msec(),
 		"was_skipped_day": was_skipped_day,
 		"fps": Engine.get_frames_per_second(),
+		"speed_multiplier": float(_world_clock.speed_multiplier) if _world_clock != null else 0.0,
 		"fast_ms": fast_ms,
 		"t_sus_ms": t_sus_ms,
 		"t_render_ms": t_render_ms,
@@ -505,9 +506,22 @@ func _publish_fast_tick_perf_sample(
 		"continuation_last_slice_ms": float(continuation.get("last_slice_ms", 0.0)),
 		"continuation_budget_ms": float(continuation.get("budget_ms", 0.0)),
 		"continuation_last_stage": str(continuation.get("last_stage", "")),
+		"continuation_last_next_stage": str(continuation.get("last_next_stage", "")),
+		"continuation_last_substage": str(continuation.get("last_substage", "")),
 		"continuation_last_path": str(continuation.get("last_path", "")),
 		"continuation_done": bool(continuation.get("done", false)),
+		"continuation_stage_counts": JSON.stringify(continuation.get("stage_counts", {})),
 		"continuation_stage_wall_ms": JSON.stringify(continuation.get("stage_wall_ms", {})),
+		"continuation_stage_max_slice_ms": JSON.stringify(
+			continuation.get("stage_max_slice_ms", {})),
+		"continuation_substage_counts": JSON.stringify(
+			continuation.get("substage_counts", {})),
+		"continuation_substage_wall_ms": JSON.stringify(
+			continuation.get("substage_wall_ms", {})),
+		"continuation_substage_max_slice_ms": JSON.stringify(
+			continuation.get("substage_max_slice_ms", {})),
+		"continuation_substage_work": JSON.stringify(
+			continuation.get("substage_work", {})),
 	}
 	if _generator != null and _generator.has_method("sus_climate_breakdown"):
 		var climate_diag: Dictionary = _generator.sus_climate_breakdown()

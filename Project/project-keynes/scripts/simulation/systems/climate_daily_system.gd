@@ -2890,15 +2890,23 @@ func climate_round_state_snapshot() -> Dictionary:
 		current_pass = "round_finalize"
 	elif _pass_cursor >= _PASS_COUNT:
 		current_pass = "round_done"
-	var native_state: Dictionary = {}
-	if generator != null and generator.get("_data_core_world_ext") != null \
-			and generator._data_core_world_ext.has_method("get_native_climate_round_state_report"):
-		native_state = generator._data_core_world_ext.get_native_climate_round_state_report()
 	var active_owner_requested: bool = false
 	var cp_owner = generator._c() if generator != null else null
 	if cp_owner != null and cp_owner.get("native_climate_round_active_owner_enabled") != null:
 		active_owner_requested = bool(cp_owner.native_climate_round_active_owner_enabled)
-	var native_state_for_snapshot: Dictionary = native_state.duplicate(true)
+	var compact_capsule_enabled: bool = cp_owner != null \
+			and cp_owner.get("native_daily_compact_state_capsule_enabled") != null \
+			and bool(cp_owner.native_daily_compact_state_capsule_enabled)
+	var native_state: Dictionary = {}
+	var native_ext = generator._data_core_world_ext if generator != null else null
+	if native_ext != null and active_owner_requested and compact_capsule_enabled \
+			and native_ext.has_method("get_native_climate_round_hot_state"):
+		native_state = native_ext.get_native_climate_round_hot_state()
+	elif native_ext != null and native_ext.has_method("get_native_climate_round_state_report"):
+		native_state = native_ext.get_native_climate_round_state_report()
+	var compact_capsule: bool = bool(native_state.get("compact_state_capsule", false))
+	var native_state_for_snapshot: Dictionary = native_state.duplicate(
+			not compact_capsule)
 	var snapshot_owner: String = "native_ready" if bool(native_state.get("climate_round_authority_ready", false)) else "gdscript_retained"
 	if snapshot_owner == "native_ready" and active_owner_requested:
 		snapshot_owner = "native_active"
@@ -2933,14 +2941,15 @@ func climate_round_state_snapshot() -> Dictionary:
 		"async_round_kick_tick": _async_round_kick_tick,
 		"pass_generation": _pass_generation,
 		"active_pass_token": _active_pass_token,
-		"active_pass_state": _active_pass_state.duplicate(true),
-		"last_pass_diag": _last_pass_diag.duplicate(true),
+			"active_pass_state": {} if compact_capsule else _active_pass_state.duplicate(true),
+			"last_pass_diag": {} if compact_capsule else _last_pass_diag.duplicate(true),
 		"transp_stage": _transp_stage_label(_transp_stage),
 		"transp_cursor": _transp_cursor,
 		"transp_n_cells": _transp_n_cells,
 		"full_sweep_counter": _full_sweep_counter,
 		"last_phase_int_seen": _last_phase_int_seen,
-		"reset_owner": "ClimateDailySystem.reset_progress",
+			"reset_owner": "ClimateDailySystem.reset_progress",
+			"compact_state_capsule": compact_capsule,
 	}
 	if not native_state_for_snapshot.is_empty():
 		out["native_probe_state"] = native_state_for_snapshot
