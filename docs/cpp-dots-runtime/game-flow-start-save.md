@@ -133,9 +133,11 @@ While regenerating a load target, `MapGenerator` enters restore-preparation
 mode: it configures the native country catalog but does not bootstrap a
 temporary player country or settlement. After PKCN restore makes the country
 authority available, the coordinator configures the economy catalog and trade
-topology, then restores PKEC. Only after all providers finish does it register
-`country_daily`/`economy_daily` and rebuild the existing scheduler topology.
-This preserves the required `PKCN -> economy configure -> PKEC -> scheduler`
+topology, then restores PKEC. Because native PKEC restore clears transient
+topology state, finalization recaptures the same normalized topology before it
+registers `country_daily`/`economy_daily` and rebuilds the existing scheduler
+topology. This preserves the required
+`PKCN -> economy configure -> PKEC -> topology recapture -> scheduler`
 sequence.
 
 The PKSV `pkec` section is a byte-for-byte concatenation of native framed PKEC

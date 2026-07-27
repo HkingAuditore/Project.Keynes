@@ -66,6 +66,8 @@ func _run() -> void:
 		_expect("restored native authorities are bootstrapped",
 			bool(loaded_generator.get_country_report().get("bootstrapped", false))
 			and bool(loaded_generator.get_economy_report().get("bootstrapped", false)))
+		_expect("restored economy trade topology is ready",
+			bool(loaded_generator.get_economy_report().get("trade_topology_ready", false)))
 		var actual := _capture_hashes(loaded_host, loaded_clock)
 		for key in expected:
 			_expect("round-trip hash %s" % key, str(actual.get(key, "")) == str(expected[key]))
