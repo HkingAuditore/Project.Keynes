@@ -541,7 +541,9 @@ catalog/content，PopulationStore、signature ABI、BUILDING_GRAPH 和 PKEC byte
 既有 InputCandidate 库存满足度、有效价格和 stable ID 决策。建筑查询通过
 `group_input_selected_offsets/group_input_selected_good_ids` 返回每槽上次实际采购项；这是有界的
 Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC。restore 后保持 `-1`
-直到下一次成功生产。该扩展没有修改权威公式或存档字段。
+直到下一次成功生产。PKEC restore 解码每个建筑组时必须按对应 building type 的 input count
+重新分配这一 transient span，并在 `end_restore()` 校验 span 边界；缺失或越界必须在恢复阶段
+明确失败，不能延迟到后续 `BUILDING_PRODUCTION`。该扩展没有修改权威公式或存档字段。
 
 `gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/50000 money subunits。市场接收
 建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通

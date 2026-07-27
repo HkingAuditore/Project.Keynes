@@ -73,7 +73,47 @@ func _run() -> void:
 			_expect("round-trip hash %s" % key, str(actual.get(key, "")) == str(expected[key]))
 		_expect("loaded clock retains unpaused zero-speed mode",
 			not loaded_clock.paused and is_zero_approx(loaded_clock.speed_multiplier))
+		await _verify_post_restore_cycle(loaded_host, loaded_clock)
 	_finish()
+
+
+func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> void:
+	var generator := host.generator()
+	var start_day := clock.day_index()
+	var target_day := start_day + 6
+	var start_economy: Dictionary = generator.get_economy_report()
+	var start_newest_day := int(start_economy.get("newest_state_day", -1))
+	print("[save-roundtrip/post-restore] before cycle clock=%s country=%s economy=%s" % [
+		JSON.stringify(clock.export_state()),
+		JSON.stringify(generator.get_country_report()),
+		JSON.stringify(start_economy),
+	])
+	clock.set_speed(1.0)
+	clock.pause(false)
+	for frame in range(1200):
+		await get_tree().process_frame
+		var economy: Dictionary = generator.get_economy_report()
+		if bool(economy.get("fatal", false)):
+			break
+		if clock.day_index() >= target_day and \
+				int(economy.get("newest_state_day", -1)) > start_newest_day:
+			print("[save-roundtrip/post-restore] cycle completed day=%d frame=%d economy=%s" % [
+				clock.day_index(), frame, JSON.stringify(economy),
+			])
+			_expect("loaded runtime advances through a full economy settlement cycle", true)
+			_expect("loaded economy remains non-fatal after its first settlement cycle",
+				not bool(economy.get("fatal", false)))
+			clock.set_speed(0.0)
+			return
+	print("[save-roundtrip/post-restore] timeout clock=%s country=%s economy=%s" % [
+		JSON.stringify(clock.export_state()),
+		JSON.stringify(generator.get_country_report()),
+		JSON.stringify(generator.get_economy_report()),
+	])
+	_expect("loaded runtime advances through a full economy settlement cycle", false)
+	_expect("loaded economy remains non-fatal after its first settlement cycle",
+		not bool(generator.get_economy_report().get("fatal", false)))
+	clock.set_speed(0.0)
 
 
 func _wait_for_runtime(previous_scene) -> WorldRuntimeHost:
