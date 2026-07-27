@@ -59,6 +59,13 @@ func _run() -> void:
 	if loaded_host != null:
 		var loaded_scene := loaded_host.get_parent() as PlayerGame
 		var loaded_clock: WorldClock = loaded_scene.get_node("WorldClock")
+		var loaded_generator := loaded_host.generator()
+		_expect("load finalized restore-only country/economy bootstrap",
+			String(loaded_generator.gameplay_start_report().get(
+				"settlement_source", "")) == "save_restore")
+		_expect("restored native authorities are bootstrapped",
+			bool(loaded_generator.get_country_report().get("bootstrapped", false))
+			and bool(loaded_generator.get_economy_report().get("bootstrapped", false)))
 		var actual := _capture_hashes(loaded_host, loaded_clock)
 		for key in expected:
 			_expect("round-trip hash %s" % key, str(actual.get(key, "")) == str(expected[key]))

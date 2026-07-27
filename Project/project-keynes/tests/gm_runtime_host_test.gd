@@ -28,11 +28,16 @@ func _run() -> void:
 		"world readiness boundary", failures)
 	var capabilities := host.get_gm_capabilities()
 	var fog_toggle_found := false
+	var click_claim_toggle_found := false
 	for toggle in capabilities.get("toggles", []):
 		if String(toggle.get("id", "")) == "visual.fog_of_war":
 			fog_toggle_found = true
-			break
+		if String(toggle.get("id", "")) == "simulation.click_claim_territory":
+			click_claim_toggle_found = true
 	_expect(fog_toggle_found, "fog toggle capability", failures)
+	_expect(click_claim_toggle_found, "click claim toggle capability", failures)
+	_expect(host.set_gm_toggle("simulation.click_claim_territory", true).get("code") == "world_not_ready",
+		"click claim world readiness boundary", failures)
 	var fog_toggle := host.set_gm_toggle("visual.fog_of_war", false)
 	_expect(bool(fog_toggle.get("ok", false)) and not bool(fog_toggle.get("enabled", true)),
 		"fog toggle authoritative readback", failures)

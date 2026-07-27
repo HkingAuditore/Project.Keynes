@@ -1,0 +1,12 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Compile Error: Identifier not found: GameFlow
+   at: GDScript::reload (res://scripts/game/player_game.gd:31)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://tests/game_save_roundtrip_test.gd:0)
+ERROR: Failed to load script "res://tests/game_save_roundtrip_test.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 39 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

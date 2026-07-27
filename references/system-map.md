@@ -54,6 +54,8 @@ Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `r
 
 GM 的 `visual.fog_of_war` 开关复用 `WorldRuntimeHost.set_fog_of_war_enabled()`：它回读正式对局上下文门控后的实际状态，并通过既有 `VisionSolver -> enum_lut.a -> HexRenderer/Inspector` 链刷新，不直接改写国家 runtime。
 
+GM 的 `simulation.click_claim_territory` 是会话级操作模式。启用后，`SelectionController -> WorldRuntimeHost.set_selected_cell()` 仍先完成正常选中，再由 host 使用缓存的玩家国家 handle 包装既有 `country.transfer_territory`，按下一游戏日与单调 sequence 提交；水域、重复排队和已归属格在 GDScript 边界快速返回，其余领土约束继续由 `CountryFacade` / native 批次预检负责。
+
 `main.gd` 是当前 debug 主场景协调者，仍然很大。它负责：
 
 - 初始化 UI、相机、DebugConsole、InfoPanel、PerfMiniHUD、TODProfile。
@@ -242,7 +244,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 `world_map.gdshader` 读 `enum_lut.a` 对已探索但不可见的区域做去饱和灰化（零新增 texture sample），并在 `fog_early_out_enabled` 时对完全未探索像素跳过整条地形管线（默认关，须 GPU A/B 实测；且只在迷雾最低质量档放行，因为早退要求迷雾层输出常量色）。`weather_overlay.gdshader` 与 `weather_cell_curtain.gdshader` 同样按可见性屏蔽实时天气。契约见 `docs/cpp-dots-runtime/vision-fog-and-borders.md`。
 
-`fog_of_war.gdshader` 把云当高度场着色：`cloud_noise.gdshaderinc` 的 `cloud_fbm_evolve_d()` 给出带解析导数的密度场（导数即梯度 → 法线，省掉 4-tap 差分），光照走 `earth_daylight` 逐像素晨昏线，与地形/水面/植被/天气云同源。该 FBM 按屏幕足迹做 **LOD 截断**——跨不过一个像素的 octave 平滑淡出，否则缩小地图时程序化噪声会走样成沙砾状噪点；任何新增程序化噪声层都要照做。质量分 q0..q3 四档，有效档 = min(编译期 tier 上限, 运行时 `visual_quality` 映射)。
+`fog_of_war.gdshader` 使用分层 2.5D 云海：同一连续密度场派生低层 deck、中层 body 与高层 top，低层保证未探索区完全遮挡，中高层提供云团轮廓。法线拆为低强度的 1/2、1 倍频宽缓 `broad_grad` 与小振幅的 2、4 倍频锐利 `detail_grad`，禁止把三条层级阈值导数叠成尖脊；域扭曲保持低幅，避免液体大理石流线。deck/body/top 使用不同的直射、天光和多重散射权重后从下往上合成，体积不依赖强法线。自阴影沿主光方向积分前方云体质量，不再把单一高度场画成巨型峡谷。光照仍消费 `earth_daylight`，但高空云使用比地表更宽的昼夜过渡，并把日光/月光分别着色后平滑相加；晨昏区削弱方向性阴影并增加金黄散射，避免日月方向翻转形成硬线。深夜进一步把质量阴影压到弱厚度提示、把月光直射改为低方向性并让天空 SH 只读取 `broad_grad`，主要可读性由冷灰环境光与多重散射承担。各频段以不同相位随 `_world_time` 演化，`FogOfWarLayer` 与天气层同步游戏倍速。所有频段按屏幕足迹做 **LOD 截断**，东西向使用可平铺噪声。质量分 q0..q3 四档，有效档 = min(编译期 tier 上限, 运行时 `visual_quality` 映射)。
 
 `CountryBorderLayer` 的 ribbon 是**内缩梯形**：凸多边形向内偏移时边要变短（六边形每端 `d·tan30°`），外侧顶点落在 hex 角上，相邻两条在角点顶点重合。写成向外延伸会让每条边越过角点、相邻两条交叉成 X。顶点 UV 存世界单位（沿边距离 / 垂距），保证梯形两个三角形里插值精确。屏幕线宽随 zoom 次线性增长而非恒定。
 

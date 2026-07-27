@@ -624,21 +624,36 @@ func read_save_chunk() -> PackedByteArray:
 func end_save() -> Dictionary:
 	return _world_ext.end_economy_save() if _configured else {"ok": false, "reason": "not configured"}
 
-func restore_bytes(bytes: PackedByteArray, chunk_bytes: int = -1) -> Dictionary:
+func restore_bytes(bytes: PackedByteArray, _chunk_bytes: int = -1) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "not configured"}
-	var size := int(_profile.save_chunk_bytes) if chunk_bytes < 0 else chunk_bytes
 	var begun: Dictionary = _world_ext.begin_economy_restore()
 	if not bool(begun.get("ok", false)):
 		return begun
 	var cursor := 0
 	while cursor < bytes.size():
+		# PKSV stores concatenated native PKEC frames. Recover each exact frame
+		# boundary from its 16-byte little-endian header before feeding C++.
+		if bytes.size() - cursor < 16:
+			return {"ok": false, "reason": "save_chunk_header_invalid"}
+		var payload_bytes := _read_u32_le(bytes, cursor + 12)
+		var chunk_end := cursor + 16 + payload_bytes
+		if payload_bytes < 0 or chunk_end > bytes.size():
+			return {"ok": false, "reason": "save_chunk_header_invalid"}
 		var fed: Dictionary = _world_ext.feed_economy_restore_chunk(
-			bytes.slice(cursor, mini(cursor + size, bytes.size())))
+			bytes.slice(cursor, chunk_end))
 		if not bool(fed.get("ok", false)):
 			return fed
-		cursor += size
+		cursor = chunk_end
 	return _world_ext.end_economy_restore()
+
+
+static func _read_u32_le(bytes: PackedByteArray, offset: int) -> int:
+	return int(bytes[offset]) \
+		| (int(bytes[offset + 1]) << 8) \
+		| (int(bytes[offset + 2]) << 16) \
+		| (int(bytes[offset + 3]) << 24)
+
 
 func event_schema() -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_economy_event_schema"):

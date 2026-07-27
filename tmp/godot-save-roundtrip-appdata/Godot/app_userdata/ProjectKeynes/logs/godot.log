@@ -1,0 +1,285 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] game flow autoload is available
+  [PASS] game save autoload is available
+  [PASS] new game request accepted
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=3.330 water=504 land=616
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=0.493 lakes=9 rivers=26 volcanoes=0
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=3 largest=389 | land_below_sea=0.0% | terr_distinct=23 entropy=3.682bit | river_ratio=2.321%
+MapGenerator v7: per-cell 37ms (1120 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 642) seed=20260727
+    [fused] terrain=843.7ms erosion=2.2ms(ok=true) river=11.8ms(ok=true) latitude=0.1ms coast_sdf=5.1ms(ok=true)
+  geometry fields (fused C++): 934ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 2040ms
+MapBaker v6: total 2983ms
+MapGenerator v7: bake 2995ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=1120
+[native_generation] path=gdext n=1120 published=9 native_ms=0.075 compute_ms=0.049 flush_ms=0.026
+[hex_cell] facade ENABLED (1120 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.88ms wind=0.23ms psi=0.15ms(ran=true) upwelling=0.04ms total=1.52ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 0ms path=gdext
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=1120 goods=120 cohorts=4 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1
+[country] ACTIVE native authority countries=1 cells=1120 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[terrain_horizon] GPU bake start: hm_size=(1024, 642) params={ "steps": 1024, "step_px": 2.0, "max_horizon_angle": 1.57, "bias": 0.01, "height_world_scale": 2200.0, "texel_x": 1.59302473068237, "texel_y": 1.59345794392523, "wrap_period_x": 1524.20471066061 }
+[detail_scatter/REBUILD] reason=renderer_rebuild layers=3 total_rebuild_ms=132.10 total_inst=4289 total_cand=4289 budget={ "total_instances": 4289, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+  [detail_scatter/TOP1] name=ShrubLayer1 rebuild=47.99ms path=gdext_chunked inst=2334 cand=2334 wrap=0 reason=
+  [detail_scatter/TOP2] name=GrassLayer rebuild=43.50ms path=gdext_chunked inst=1821 cand=1821 wrap=0 reason=
+  [detail_scatter/TOP3] name=TreeLayer2 rebuild=40.61ms path=gdext_chunked inst=134 cand=134 wrap=0 reason=
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[vision] fog=ON player_slot=0 early_out=OFF visible=40 explored=40/1120 solve_ms=1.571 border_edges=6
+[DIAG pass_a_entry] day=0 phase=0.007 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=1120
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=6720, got nb_size=6720)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15096
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.0880 n_cells=1120 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.09ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15087
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.0608 n=1120 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.06ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15088
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0267 n=1120 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.03ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.661, k x1.00)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15099
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0363 n_cells=1120 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.04ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.04ms (water=495, flipped=0, phase=0.007)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.972 avg=0.502 | water n=495 t_min_w=0.000 below_form=145 (29.3%) | SIF pos=180 max=0.400 avg_w=0.0931 near_thr=75 | climate_anom=0.000
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15101
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.0279 donor_table.size()=28 n_cells=1120 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.03ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 56ms (cells=1120, phase=0.007) | A=1.1 B=2.5 ocean=4.5 wind=41.3 sea_ice=3.3 ice_bake=0.0 transp=3.5 path=data_core_cells_only
+[weather-layer][lut] #1 update_usec=8876480 last_usec=8876480 lerp=0.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #2 update_usec=8876480 last_usec=8876480 lerp=0.002 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] new game reached ready runtime
+  [PASS] PKSV manual save completed
+  [PASS] saved slot is visible and loadable
+  [PASS] save restores request-time pause state
+  [PASS] load request accepted
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=4.659 water=504 land=616
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=0.630 lakes=9 rivers=26 volcanoes=0
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=3 largest=389 | land_below_sea=0.0% | terr_distinct=23 entropy=3.682bit | river_ratio=2.321%
+MapGenerator v7: per-cell 30ms (1120 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 642) seed=20260727
+    [fused] terrain=793.6ms erosion=2.3ms(ok=true) river=11.4ms(ok=true) latitude=0.1ms coast_sdf=6.0ms(ok=true)
+  geometry fields (fused C++): 884ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 1648ms
+MapBaker v6: total 2540ms
+MapGenerator v7: bake 2558ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=1120
+[native_generation] path=gdext n=1120 published=9 native_ms=0.096 compute_ms=0.057 flush_ms=0.039
+[hex_cell] facade ENABLED (1120 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.81ms wind=0.22ms psi=0.13ms(ran=true) upwelling=0.04ms total=1.43ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 0ms path=gdext
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+ERROR: [economy] configure failed: country_runtime_required
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _setup_economy_runtime (res://scripts/geography/map_generator.gd:1486)
+       [1] _setup_sus (res://scripts/geography/map_generator.gd:2085)
+       [2] generate (res://scripts/geography/map_generator.gd:1423)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:16384)
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload"]
+[terrain_horizon] GPU bake start: hm_size=(1024, 642) params={ "steps": 1024, "step_px": 2.0, "max_horizon_angle": 1.57, "bias": 0.01, "height_world_scale": 2200.0, "texel_x": 1.59302473068237, "texel_y": 1.59345794392523, "wrap_period_x": 1524.20471066061 }
+[detail_scatter/REBUILD] reason=renderer_rebuild layers=3 total_rebuild_ms=131.29 total_inst=4289 total_cand=4289 budget={ "total_instances": 4289, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+  [detail_scatter/TOP1] name=TreeLayer2 rebuild=47.12ms path=gdext_chunked inst=134 cand=134 wrap=0 reason=
+  [detail_scatter/TOP2] name=ShrubLayer1 rebuild=44.03ms path=gdext_chunked inst=2334 cand=2334 wrap=0 reason=
+  [detail_scatter/TOP3] name=GrassLayer rebuild=40.14ms path=gdext_chunked inst=1821 cand=1821 wrap=0 reason=
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[vision] fog=ON player_slot=-1 early_out=OFF visible=0 explored=0/1120 solve_ms=1.466 border_edges=0
+[DIAG pass_a_entry] day=0 phase=0.006 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=1120
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=6720, got nb_size=6720)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15096
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.0895 n_cells=1120 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.09ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15087
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.0710 n=1120 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.07ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15088
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0258 n=1120 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.03ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.568, k x1.00)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15099
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0324 n_cells=1120 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.03ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.03ms (water=495, flipped=0, phase=0.006)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.972 avg=0.502 | water n=495 t_min_w=0.000 below_form=145 (29.3%) | SIF pos=180 max=0.400 avg_w=0.0931 near_thr=75 | climate_anom=0.000
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15101
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.0225 donor_table.size()=28 n_cells=1120 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.02ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 59ms (cells=1120, phase=0.006) | A=1.2 B=2.6 ocean=5.0 wind=45.4 sea_ice=2.8 ice_bake=0.0 transp=1.9 path=data_core_cells_only
+SCRIPT ERROR: Invalid call. Nonexistent function 'restore_bytes' in base 'Nil'.
+   at: _restore_economy_provider (res://scripts/game/game_save_coordinator.gd:477)
+   GDScript backtrace (most recent call first):
+       [0] _restore_economy_provider (res://scripts/game/game_save_coordinator.gd:477)
+       [1] restore_sections (res://scripts/game/runtime_state_provider.gd:68)
+       [2] restore_prepared_game (res://scripts/game/game_save_coordinator.gd:112)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:258)
+       [4] generate (res://scripts/geography/map_generator.gd:1427)
+       [5] _yield_generation_frame (res://scripts/geography/map_generator.gd:16384)
+[weather-layer][lut] #1 update_usec=13635466 last_usec=13635466 lerp=0.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #2 update_usec=13635466 last_usec=13635466 lerp=0.001 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] load reached ready runtime
+  [FAIL] load finalized restore-only country/economy bootstrap
+  [FAIL] restored native authorities are bootstrapped
+SCRIPT ERROR: Invalid call. Nonexistent function 'report' in base 'Nil'.
+   at: _capture_hashes (res://tests/game_save_roundtrip_test.gd:98)
+   GDScript backtrace (most recent call first):
+       [0] _capture_hashes (res://tests/game_save_roundtrip_test.gd:98)
+       [1] _run (res://tests/game_save_roundtrip_test.gd:69)
+       [2] _wait_for_runtime (res://tests/game_save_roundtrip_test.gd:87)
+  [FAIL] round-trip hash clock
+  [FAIL] round-trip hash dynamic_world
+  [FAIL] round-trip hash environment
+  [FAIL] round-trip hash country
+  [PASS] round-trip hash economy
+  [FAIL] round-trip hash session
+  [FAIL] round-trip hash explored
+  [PASS] loaded clock retains unpaused zero-speed mode
+game save round-trip: 8 failures
+[weather-layer][lut] #3 update_usec=13635466 last_usec=13635466 lerp=0.028 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+WARNING: 2 RIDs of type "CanvasItem" were leaked.
+   at: _free_rids (servers/rendering/renderer_canvas_cull.cpp:2692)
+ERROR: 27 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 307 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

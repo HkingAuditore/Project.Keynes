@@ -168,7 +168,15 @@ func _ready() -> void:
 
 # 由 main.gd 注入。建议在 _ready 之后立即调用，确保 UI 构建完成后就能刷新状态。
 func set_main(m: Node) -> void:
+	if _main != null and _main.has_signal("gm_action_completed"):
+		var old_callback := Callable(self, "_on_gm_action_completed")
+		if _main.is_connected("gm_action_completed", old_callback):
+			_main.disconnect("gm_action_completed", old_callback)
 	_main = m
+	if _main != null and _main.has_signal("gm_action_completed"):
+		var callback := Callable(self, "_on_gm_action_completed")
+		if not _main.is_connected("gm_action_completed", callback):
+			_main.connect("gm_action_completed", callback)
 	# Plan: perf-recording-csv-export
 	# 在注入 main 时创建 PerfRecorder 并双向挂接：DebugConsole 持有它（控制开关），
 	# main 在 fast_tick 末尾调它的 on_fast_tick。两端任一释放都不会留悬挂引用，
@@ -742,6 +750,14 @@ func _append_gm_output(message: String, is_error: bool) -> void:
 		_gm_output_lines.pop_front()
 	if _gm_command_output != null:
 		_gm_command_output.text = "\n".join(PackedStringArray(_gm_output_lines))
+
+
+func _on_gm_action_completed(action_id: String, result: Dictionary) -> void:
+	if console_mode != ConsoleMode.PLAYER_GM:
+		return
+	var prefix := "点击接管" if action_id == "country.click_claim_territory" else action_id
+	_append_gm_output("%s：%s" % [prefix, String(result.get("message", "无返回信息"))],
+		not bool(result.get("ok", false)))
 
 
 func _on_gm_recorder_pressed(recorder_id: String, callback: Callable, button: Button) -> void:

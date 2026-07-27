@@ -7,6 +7,7 @@ signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator,
 signal daily_tick_completed(report: Dictionary)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
+signal gm_action_completed(action_id: String, result: Dictionary)
 
 const WORLD_SETUP_META := &"world_setup_config"
 const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
@@ -78,11 +79,14 @@ var _map_overlay_merged_dirty_count: int = 0
 var _map_overlay_last_result: Dictionary = {}
 var _fog_of_war_enabled: bool = false
 var _player_country_slot: int = -1
+var _player_country_handle: int = 0
 var _session_request: Dictionary = {}
 var _new_game_config: Dictionary = {}
 var _load_slot_id: String = ""
 var _pending_load_bundle: Dictionary = {}
 var _gm_sequence: int = 1
+var _gm_click_claim_territory_enabled: bool = false
+var _gm_click_claim_pending_days: Dictionary = {}
 
 const GM_SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 const GM_CASH_SCALE: int = 10000
@@ -143,6 +147,8 @@ func current_map() -> MapData:
 
 func set_selected_cell(cell: HexCell) -> void:
 	_selected_cell = cell
+	if cell != null and _gm_click_claim_territory_enabled:
+		_gm_claim_selected_cell(cell)
 
 
 func get_selected_cell() -> HexCell:
@@ -209,6 +215,7 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	_generator = MapGenerator.new()
 	_generator.set_test_economy_bootstrap_enabled(generate_test_economy_data)
 	_generator.set_test_economy_population_scale(test_economy_population_scale)
+	_generator.set_save_restore_preparation_enabled(not _pending_load_bundle.is_empty())
 	if not _new_game_config.is_empty():
 		_generator.set_gameplay_start_config(_new_game_config)
 	_apply_runtime_climate_profile(_generator)
@@ -251,6 +258,10 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		var restore_result: Dictionary = save_service.restore_prepared_game(self) if save_service != null \
 			else {"ok": false, "message": "存档服务不可用。"}
 		if not bool(restore_result.get("ok", false)):
+			push_error("[save/restore] load failed code=%s message=%s" % [
+				String(restore_result.get("code", "unknown")),
+				String(restore_result.get("message", "存档恢复失败。")),
+			])
 			world_generation_failed.emit(String(restore_result.get("message", "存档恢复失败。")))
 			return
 		_pending_load_bundle.clear()
@@ -554,6 +565,7 @@ func get_gm_capabilities() -> Dictionary:
 		"commands": _gm_command_specs(technologies, goods, buildings),
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
+			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
 			{"id": "visual.fog_of_war", "label": "战争迷雾", "group": "视觉"},
 			{"id": "visual.water_effect", "label": "水面效果", "group": "视觉"},
@@ -591,11 +603,13 @@ func execute_gm_command(command_id: String, raw_args: Dictionary) -> Dictionary:
 		var state := String(args.get("state", "toggle"))
 		var paused := not _world_clock.paused if state == "toggle" else state == "on"
 		_world_clock.pause(paused)
+		on_clock_running_changed(not paused)
 		gm_toggle_changed.emit("simulation.paused", paused)
 		return _gm_ok("模拟已%s。" % ("暂停" if paused else "继续"), false, -1)
 	if command_id == "time.speed":
 		var speed := float(args.get("value", 1.0))
 		_world_clock.set_speed(speed)
+		on_clock_running_changed(true)
 		return _gm_ok("速度已设为 %d 倍。" % int(speed), false, -1)
 
 	if _generator == null or _world_clock == null:
@@ -624,6 +638,8 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 	match toggle_id:
 		"simulation.paused":
 			return {"ok": true, "enabled": _world_clock.paused}
+		"simulation.click_claim_territory":
+			return {"ok": true, "enabled": _gm_click_claim_territory_enabled}
 		"visual.day_night":
 			return {"ok": true, "enabled": day_night_enabled}
 		"visual.fog_of_war":
@@ -647,6 +663,9 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 			if _world_clock == null:
 				return _gm_error("clock_unavailable", "时钟尚未就绪。")
 			_world_clock.pause(enabled)
+			on_clock_running_changed(not enabled)
+		"simulation.click_claim_territory":
+			return _gm_set_click_claim_territory_enabled(enabled)
 		"visual.day_night":
 			set_day_night_enabled(enabled)
 		"visual.fog_of_war":
@@ -929,6 +948,68 @@ func _gm_selected_country_handle() -> int:
 	return int(facade.cell_summary(int(_selected_cell.index)).get("country_handle", 0)) if facade != null else 0
 
 
+func _gm_set_click_claim_territory_enabled(enabled: bool) -> Dictionary:
+	if enabled:
+		if _generator == null or _world_clock == null or _current_map == null:
+			return _gm_error("world_not_ready", "世界尚未生成，无法启用点击接管。")
+		if _player_country_handle == 0:
+			_player_country_handle = _resolve_player_country_handle()
+		if _player_country_handle == 0:
+			return _gm_error("player_country_unavailable", "无法解析玩家国家，点击接管未启用。")
+	_gm_click_claim_territory_enabled = enabled
+	if not enabled:
+		_gm_click_claim_pending_days.clear()
+	gm_toggle_changed.emit("simulation.click_claim_territory", enabled)
+	return {"ok": true, "code": "ok", "enabled": enabled,
+		"message": "点击地块接管领土已%s。" % ("启用" if enabled else "关闭")}
+
+
+func _gm_claim_selected_cell(cell: HexCell) -> void:
+	var cell_idx := int(cell.index)
+	if _current_map == null or cell_idx < 0 or cell_idx >= _current_map.cell_count():
+		_gm_emit_claim_result(_gm_error("invalid_cell", "所选地块无效。"), cell_idx)
+		return
+	if cell_idx < _current_map.is_water_arr.size() and _current_map.is_water_arr[cell_idx] != 0:
+		_gm_emit_claim_result(_gm_error("water_territory", "水域不能成为国家领土。"), cell_idx)
+		return
+	if _player_country_handle == 0:
+		_player_country_handle = _resolve_player_country_handle()
+	if _player_country_handle == 0:
+		_gm_emit_claim_result(_gm_error("player_country_unavailable", "无法解析玩家国家。"), cell_idx)
+		return
+	var facade = _generator.get_country_facade() if _generator != null \
+		and _generator.has_method("get_country_facade") else null
+	if facade == null:
+		_gm_emit_claim_result(_gm_error("country_facade_unavailable", "国家运行时尚未就绪。"), cell_idx)
+		return
+	var current_handle := int(facade.cell_summary(cell_idx).get("country_handle", 0))
+	if current_handle == _player_country_handle:
+		_gm_emit_claim_result({"ok": true, "code": "already_owned", "queued": false,
+			"effective_day": -1, "message": "地块 #%d 已属于玩家国家。" % cell_idx,
+			"data": {}}, cell_idx)
+		return
+	var current_day := _world_clock.day_index() if _world_clock != null else -1
+	var pending_day := int(_gm_click_claim_pending_days.get(cell_idx, -1))
+	if pending_day >= current_day:
+		_gm_emit_claim_result({"ok": true, "code": "already_queued", "queued": true,
+			"effective_day": pending_day, "message": "地块 #%d 已排队等待接管。" % cell_idx,
+			"data": {}}, cell_idx)
+		return
+	var result := execute_gm_command("country.transfer_territory", {
+		"cell": cell_idx, "country_handle": _player_country_handle})
+	if bool(result.get("ok", false)) and bool(result.get("queued", false)):
+		_gm_click_claim_pending_days[cell_idx] = int(result.get("effective_day", current_day + 1))
+	_gm_emit_claim_result(result, cell_idx)
+
+
+func _gm_emit_claim_result(raw_result: Dictionary, cell_idx: int) -> void:
+	var result := raw_result.duplicate(true)
+	var data: Dictionary = result.get("data", {}).duplicate(true)
+	data["cell"] = cell_idx
+	result["data"] = data
+	gm_action_completed.emit("country.click_claim_territory", result)
+
+
 func _gm_scaled_positive(value, scale: int) -> int:
 	var scaled := float(value) * float(scale)
 	if not is_finite(scaled) or scaled > 9.22e18:
@@ -1101,6 +1182,9 @@ func on_speed_changed(new_speed: float) -> void:
 		var weather_layer := _renderer.get_node_or_null("WeatherLayer")
 		if weather_layer != null and weather_layer.has_method("set_clock_speed_multiplier"):
 			weather_layer.set_clock_speed_multiplier(new_speed)
+		var fog_layer := _renderer.get_node_or_null("FogOfWarLayer")
+		if fog_layer != null and fog_layer.has_method("set_clock_speed_multiplier"):
+			fog_layer.set_clock_speed_multiplier(new_speed)
 		if weather_layer != null and weather_layer.has_method("reset_snapshot_pacing"):
 			weather_layer.reset_snapshot_pacing()
 	if _generator == null:
@@ -1117,6 +1201,17 @@ func on_speed_changed(new_speed: float) -> void:
 	elif new_speed >= 3.0:
 		stride = 4
 	_generator.set_weather_refresh_stride(stride)
+
+
+func on_clock_running_changed(running: bool) -> void:
+	if _renderer == null:
+		return
+	var weather_layer := _renderer.get_node_or_null("WeatherLayer")
+	if weather_layer != null and weather_layer.has_method("set_clock_running"):
+		weather_layer.set_clock_running(running)
+	var fog_layer := _renderer.get_node_or_null("FogOfWarLayer")
+	if fog_layer != null and fog_layer.has_method("set_clock_running"):
+		fog_layer.set_clock_running(running)
 
 
 func on_visual_day_phase_changed(visual_day_phase: float) -> void:
@@ -1204,6 +1299,7 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 func _bind_country_visuals() -> void:
 	_fog_of_war_enabled = _resolve_fog_of_war_enabled()
 	_player_country_slot = _resolve_player_country_slot()
+	_player_country_handle = _resolve_player_country_handle()
 	if _renderer != null and _renderer.has_method("set_fog_of_war_enabled"):
 		_renderer.set_fog_of_war_enabled(_fog_of_war_enabled, fog_early_out_enabled)
 	_connect_country_committed()
@@ -1284,6 +1380,17 @@ func _resolve_player_country_slot() -> int:
 	if start_cell < 0 or start_cell >= _current_map.country_slot_arr.size():
 		return -1
 	return int(_current_map.country_slot_arr[start_cell])
+
+
+func _resolve_player_country_handle() -> int:
+	if _generator == null or not _generator.has_method("gameplay_start_report") \
+			or not _generator.has_method("get_country_facade"):
+		return 0
+	var start_cell := int(_generator.gameplay_start_report().get("cell", -1))
+	var facade = _generator.get_country_facade()
+	if facade == null or start_cell < 0:
+		return 0
+	return int(facade.cell_summary(start_cell).get("country_handle", 0))
 
 
 func _refresh_vision() -> Dictionary:

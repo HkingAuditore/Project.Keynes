@@ -456,6 +456,7 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
         }
     }
     Dictionary out;
+    out["ok"] = true;
     out["restored"] = int(_gameplay_events.size());
     out["next_event_id"] = _gameplay_next_event_id;
     out["fallback"] = false;

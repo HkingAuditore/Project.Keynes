@@ -1276,6 +1276,9 @@ func _on_speed_changed(new_speed: float) -> void:
 		var wl = _renderer.get_node_or_null("WeatherLayer")
 		if wl != null and wl.has_method("set_clock_speed_multiplier"):
 			wl.set_clock_speed_multiplier(new_speed)
+		var fl = _renderer.get_node_or_null("FogOfWarLayer")
+		if fl != null and fl.has_method("set_clock_speed_multiplier"):
+			fl.set_clock_speed_multiplier(new_speed)
 	if _generator == null:
 		return
 	var cp = _generator._c() if _generator.has_method("_c") else null
@@ -1300,14 +1303,17 @@ func _on_speed_changed(new_speed: float) -> void:
 		if wl != null and wl.has_method("reset_snapshot_pacing"):
 			wl.reset_snapshot_pacing()
 
-# 任务 5：把 WorldClock.paused 状态转发给 WeatherLayer，让粒子/噪声同步暂停
-# （只影响表现层时间累加，粒子引擎本身仍可继续渲染已生成的粒子——避免完全定格）
+# 把 WorldClock.paused 状态转发给天气云与迷雾云。两个大气层使用同一表现时钟语义：
+# 运行时按游戏倍速，暂停时仍以 1x 真实时间缓慢活动，避免完全冻结。
 func _sync_clock_running_to_weather_layer() -> void:
 	if _renderer == null:
 		return
 	var wl = _renderer.get_node_or_null("WeatherLayer")
 	if wl != null and wl.has_method("set_clock_running"):
 		wl.set_clock_running(not _world_clock.paused)
+	var fl = _renderer.get_node_or_null("FogOfWarLayer")
+	if fl != null and fl.has_method("set_clock_running"):
+		fl.set_clock_running(not _world_clock.paused)
 
 # ─── WorldClock 信号回调 ─────────────────────────────────────────────────
 

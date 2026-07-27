@@ -1023,6 +1023,8 @@ var _test_economy_bootstrap_enabled: bool = false
 var _test_economy_population_scale: int = EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
 var _gameplay_start_context: Dictionary = {}
 var _gameplay_start_report: Dictionary = {}
+var _save_restore_preparation_enabled: bool = false
+var _save_restore_seed: int = 0
 var _natural_resource_pass_knobs: Dictionary = {}
 var _last_natural_resource_report: Dictionary = {}
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
@@ -1463,6 +1465,10 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[country] configure failed: %s" % String(country_configured.get("reason", "unknown")))
 		_country_facade = null
 		return
+	if _save_restore_preparation_enabled:
+		_save_restore_seed = seed_value
+		print("[save/restore] country configured without bootstrap; awaiting PKCN")
+		return
 	var country_packet := _build_player_country_packet() \
 		if not _gameplay_start_context.is_empty() else {}
 	if not _gameplay_start_context.is_empty() and country_packet.is_empty():
@@ -1472,35 +1478,15 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		return
 	var country_bootstrapped: Dictionary = _country_facade.bootstrap(map.is_water_arr, country_packet)
 	if not bool(country_bootstrapped.get("ok", false)):
-		push_error("[country] bootstrap failed: %s" % String(country_bootstrapped.get("reason", "unknown")))
+		push_error("[country] bootstrap failed: %s" % String(
+			country_bootstrapped.get("reason", "unknown")))
 		_country_facade = null
 		return
-	_economy_facade = EconomyFacadeScript.new()
-	var configured: Dictionary = _economy_facade.configure(
-		_data_core_world_ext, map.cell_count(), seed_value)
-	if not bool(configured.get("ok", false)):
-		push_error("[economy] configure failed: %s" % String(configured.get("reason", "unknown")))
-		_economy_facade = null
+	var economy_configured: Dictionary = _configure_economy_runtime(map, seed_value)
+	if not bool(economy_configured.get("ok", false)):
+		push_error("[economy] configure failed: %s" % String(
+			economy_configured.get("reason", "unknown")))
 		return
-	var economy_config_report: Dictionary = _economy_facade.report()
-	var trade_runtime_mode := String(economy_config_report.get("trade_runtime_mode", "OFF"))
-	if trade_runtime_mode != "OFF":
-		if not _data_core_world_ext.has_method("capture_economy_trade_topology"):
-			push_error("[economy] trade topology API unavailable while trade mode is %s" %
-				trade_runtime_mode)
-			_economy_facade = null
-			return
-		var trade_topology: Dictionary = _data_core_world_ext.capture_economy_trade_topology(
-			map.neighbor_indices_packed(),
-			map.base_terrain_arr,
-			map.economy_trade_passable_lut(),
-			map.economy_trade_move_cost_lut(),
-			1)
-		if not bool(trade_topology.get("ok", false)):
-			push_error("[economy] trade topology capture failed: %s" % String(
-				trade_topology.get("reason", "unknown")))
-			_economy_facade = null
-			return
 	# Production bootstrap remains empty. The explicit test fixture is a
 	# generation-time cold path and never becomes a historical population source.
 	var population_packet: Dictionary = {}
@@ -1544,16 +1530,11 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		return
 	# Register only after both native authorities have accepted their bootstrap
 	# packets. Country remains ordered before economy in the daily graph.
-	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
-	_sus.configure_job_from_profile(_country_daily_job, scheduler_profile, false, &"country_daily", 1)
-	_runtime_register_system(_country_daily_job)
-	_economy_daily_job = EconomyDailySystemScript.new(_economy_facade, _world_clock_ref)
-	_sus.configure_job_from_profile(_economy_daily_job, scheduler_profile, false, &"economy_daily", 1)
-	_runtime_register_system(_economy_daily_job)
-	if _world_clock_ref != null and _world_clock_ref.has_signal("simulation_backpressure_pulse"):
-		var continuation_cb := Callable(self, "_continue_economy_inflight")
-		if not _world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
-			_world_clock_ref.simulation_backpressure_pulse.connect(continuation_cb)
+	var registered: Dictionary = _register_country_economy_systems(scheduler_profile)
+	if not bool(registered.get("ok", false)):
+		push_error("[economy] scheduler registration failed: %s" % String(
+			registered.get("reason", "unknown")))
+		return
 	var economy_report: Dictionary = _economy_facade.report()
 	print(("[economy] %s native graph cells=%d goods=%d cohorts=%d epoch_days=%d "
 			+ "trade=%s topology_ready=%s topology_generation=%d") % [
@@ -1605,6 +1586,54 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		])
 
 
+func _configure_economy_runtime(map: MapData, seed_value: int) -> Dictionary:
+	if map == null or _data_core_world_ext == null:
+		return {"ok": false, "reason": "economy_world_unavailable"}
+	_economy_facade = EconomyFacadeScript.new()
+	var configured: Dictionary = _economy_facade.configure(
+		_data_core_world_ext, map.cell_count(), seed_value)
+	if not bool(configured.get("ok", false)):
+		_economy_facade = null
+		return configured
+	var economy_config_report: Dictionary = _economy_facade.report()
+	var trade_runtime_mode := String(economy_config_report.get("trade_runtime_mode", "OFF"))
+	if trade_runtime_mode == "OFF":
+		return configured
+	if not _data_core_world_ext.has_method("capture_economy_trade_topology"):
+		_economy_facade = null
+		return {"ok": false, "reason": "economy_trade_topology_api_unavailable"}
+	var trade_topology: Dictionary = _data_core_world_ext.capture_economy_trade_topology(
+		map.neighbor_indices_packed(),
+		map.base_terrain_arr,
+		map.economy_trade_passable_lut(),
+		map.economy_trade_move_cost_lut(),
+		1)
+	if not bool(trade_topology.get("ok", false)):
+		_economy_facade = null
+		return trade_topology
+	return configured
+
+
+func _register_country_economy_systems(scheduler_profile) -> Dictionary:
+	if _sus == null or _country_facade == null or _economy_facade == null:
+		return {"ok": false, "reason": "country_economy_runtime_unavailable"}
+	if _country_daily_job != null or _economy_daily_job != null:
+		return {"ok": false, "reason": "country_economy_systems_already_registered"}
+	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
+	_sus.configure_job_from_profile(
+		_country_daily_job, scheduler_profile, false, &"country_daily", 1)
+	_runtime_register_system(_country_daily_job)
+	_economy_daily_job = EconomyDailySystemScript.new(_economy_facade, _world_clock_ref)
+	_sus.configure_job_from_profile(
+		_economy_daily_job, scheduler_profile, false, &"economy_daily", 1)
+	_runtime_register_system(_economy_daily_job)
+	if _world_clock_ref != null and _world_clock_ref.has_signal("simulation_backpressure_pulse"):
+		var continuation_cb := Callable(self, "_continue_economy_inflight")
+		if not _world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
+			_world_clock_ref.simulation_backpressure_pulse.connect(continuation_cb)
+	return {"ok": true}
+
+
 func get_economy_facade():
 	return _economy_facade
 
@@ -1635,6 +1664,47 @@ func set_test_economy_population_scale(scale: int) -> void:
 	_test_economy_population_scale = scale \
 		if scale in EconomyTestBootstrapScript.SUPPORTED_POPULATION_SCALES \
 		else EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
+
+
+func set_save_restore_preparation_enabled(enabled: bool) -> void:
+	_save_restore_preparation_enabled = enabled
+
+
+func prepare_economy_save_restore_runtime() -> Dictionary:
+	if not _save_restore_preparation_enabled:
+		return {"ok": false, "reason": "save_restore_preparation_not_enabled"}
+	if _country_facade == null or not bool(
+			_country_facade.report().get("bootstrapped", false)):
+		return {"ok": false, "reason": "country_restore_incomplete"}
+	if _economy_facade != null:
+		return {"ok": false, "reason": "economy_restore_already_prepared"}
+	var configured := _configure_economy_runtime(_sus_map, _save_restore_seed)
+	if bool(configured.get("ok", false)):
+		print("[save/restore] PKCN restored; economy configured and awaiting PKEC")
+	return configured
+
+
+func finalize_save_restore_runtime() -> Dictionary:
+	if not _save_restore_preparation_enabled:
+		return {"ok": false, "reason": "save_restore_preparation_not_enabled"}
+	if _country_facade == null or _economy_facade == null:
+		return {"ok": false, "reason": "country_economy_runtime_unavailable"}
+	var country_report: Dictionary = _country_facade.report()
+	var economy_report: Dictionary = _economy_facade.report()
+	if not bool(country_report.get("bootstrapped", false)):
+		return {"ok": false, "reason": "country_restore_incomplete"}
+	if not bool(economy_report.get("bootstrapped", false)):
+		return {"ok": false, "reason": "economy_restore_incomplete"}
+	var registered: Dictionary = _register_country_economy_systems(_c())
+	if not bool(registered.get("ok", false)):
+		return registered
+	if not _runtime_build_topology("save restore finalize"):
+		return {"ok": false, "reason": "save_restore_scheduler_topology_failed"}
+	_save_restore_preparation_enabled = false
+	_gameplay_start_report["country_count"] = int(country_report.get("country_count", 0))
+	_gameplay_start_report["settlement_source"] = "save_restore"
+	print("[save/restore] PKCN and PKEC restored; country/economy systems registered")
+	return {"ok": true}
 
 
 func set_gameplay_start_config(config: Dictionary) -> void:
