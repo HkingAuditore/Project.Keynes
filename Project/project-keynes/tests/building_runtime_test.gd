@@ -450,6 +450,10 @@ func _run() -> void:
 		int((restored_buildings.operating_state as PackedByteArray)[0]) == 0 and
 		int((restored_buildings.severe_loss_cycles as PackedInt32Array)[0]) == 0)
 	var recovery_one_report := _run_day(ext, 6)
+	var restored_recovery_one_report := _run_day(restored, 6)
+	_expect("restored building input spans survive the first production cycle",
+		not bool(restored_recovery_one_report.get("fatal", false)) and
+		int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var recovery_one: Dictionary = ext.get_building_cell_snapshot(0)
 	var recovery_after_pop: Dictionary = ext.get_population_cell_snapshot(0)
 	var recovery_merchant_row := _row_for_signature(recovery_after_pop, merchant_sig)

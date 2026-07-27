@@ -140,6 +140,13 @@ topology. This preserves the required
 `PKCN -> economy configure -> PKEC -> topology recapture -> scheduler`
 sequence.
 
+PKEC restore must also reconstruct every building-group transient span before
+daily scheduling resumes. In particular, the inspector-only selected-input lane
+is allocated from each restored building type's input count and initialized to
+`-1`; it is neither serialized nor included in the state hash. Restore
+finalization validates the span shape so a missing cache fails during load
+instead of surfacing later in `BUILDING_PRODUCTION`.
+
 The PKSV `pkec` section is a byte-for-byte concatenation of native framed PKEC
 chunks. `EconomyFacade.restore_bytes()` must recover each frame from its
 16-byte header and feed exact frame boundaries to native restore; a fixed-size
@@ -154,6 +161,7 @@ Minimum gates are configuration and repository tests; deterministic start tests
 across representative seeds/sizes; one-cell ownership, resource, population,
 and building assertions; `EnvironmentRuntime` byte-exact round-trip; PKCN/PKEC
 focused tests; a PKFG round-trip that hashes `explored_arr` across save/load
-(`game_save_roundtrip_test.gd`); debug/release GDExtension builds; and
+and then advances the restored runtime through at least one complete five-phase
+economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtension builds; and
 desktop/narrow UI checks.
 For economy changes, retain 60-day, two-year, and ten-year conservation soaks.

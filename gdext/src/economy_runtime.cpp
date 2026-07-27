@@ -23493,6 +23493,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 return false;
             }
             group.employee_fill_begin = static_cast<int32_t>(_building_employee_filled.size());
+            group.last_input_selection_begin = static_cast<int32_t>(
+                _building_last_input_selected_goods.size());
+            _building_last_input_selected_goods.resize(
+                _building_last_input_selected_goods.size() +
+                    static_cast<size_t>(_building_types[group.type_id].input_count),
+                -1);
             for (int32_t r = 0; r < roles; ++r) {
                 int64_t value = 0;
                 if (!read_le(bytes, cursor, value) || value < 0) {
@@ -23993,6 +23999,14 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
         const BuildingType &type = _building_types[group.type_id];
+        if (group.last_input_selection_begin < 0 ||
+            static_cast<size_t>(group.last_input_selection_begin) +
+                    static_cast<size_t>(type.input_count) >
+                _building_last_input_selected_goods.size()) {
+            out["ok"] = false;
+            out["reason"] = "restore_building_input_selection_span_invalid";
+            return out;
+        }
         for (int32_t r = 0; r < type.employee_count; ++r) {
             const int32_t role_index = group.employee_fill_begin + r;
             if (role_index < 0 ||

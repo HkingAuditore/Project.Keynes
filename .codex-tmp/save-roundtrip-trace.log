@@ -1,0 +1,355 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] game flow autoload is available
+  [PASS] game save autoload is available
+  [PASS] new game request accepted
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=5.364 water=504 land=616
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=0.869 lakes=9 rivers=26 volcanoes=0
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=3 largest=389 | land_below_sea=0.0% | terr_distinct=23 entropy=3.682bit | river_ratio=2.321%
+MapGenerator v7: per-cell 53ms (1120 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 642) seed=20260727
+    [fused] terrain=1023.5ms erosion=3.2ms(ok=true) river=8.6ms(ok=true) latitude=0.1ms coast_sdf=9.5ms(ok=true)
+  geometry fields (fused C++): 1160ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 2641ms
+MapBaker v6: total 3862ms
+MapGenerator v7: bake 3883ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=1120
+[native_generation] path=gdext n=1120 published=9 native_ms=0.102 compute_ms=0.047 flush_ms=0.055
+[hex_cell] facade ENABLED (1120 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.26ms wind=0.36ms psi=0.21ms(ran=true) upwelling=0.08ms total=2.21ms
+PhysicalCirculation solve@phase=1.50 total=3ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 3ms
+[cell_lut] deferred encode: 0ms path=gdext
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=1120 goods=120 cohorts=4 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1
+[country] ACTIVE native authority countries=1 cells=1120 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[terrain_horizon] GPU bake start: hm_size=(1024, 642) params={ "steps": 1024, "step_px": 2.0, "max_horizon_angle": 1.57, "bias": 0.01, "height_world_scale": 2200.0, "texel_x": 1.59302473068237, "texel_y": 1.59345794392523, "wrap_period_x": 1524.20471066061 }
+[detail_scatter/REBUILD] reason=renderer_rebuild layers=3 total_rebuild_ms=207.64 total_inst=4289 total_cand=4289 budget={ "total_instances": 4289, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+  [detail_scatter/TOP1] name=ShrubLayer1 rebuild=73.45ms path=gdext_chunked inst=2334 cand=2334 wrap=0 reason=
+  [detail_scatter/TOP2] name=GrassLayer rebuild=71.79ms path=gdext_chunked inst=1821 cand=1821 wrap=0 reason=
+  [detail_scatter/TOP3] name=TreeLayer2 rebuild=62.41ms path=gdext_chunked inst=134 cand=134 wrap=0 reason=
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[vision] fog=ON player_slot=0 early_out=OFF visible=40 explored=40/1120 solve_ms=2.892 border_edges=6
+[DIAG pass_a_entry] day=0 phase=0.008 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=1120
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=6720, got nb_size=6720)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15096
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.1357 n_cells=1120 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.14ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15087
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.0756 n=1120 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.08ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15088
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0359 n=1120 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.04ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.751, k x1.00)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15099
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0494 n_cells=1120 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.05ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.05ms (water=495, flipped=0, phase=0.008)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.972 avg=0.502 | water n=495 t_min_w=0.000 below_form=145 (29.3%) | SIF pos=180 max=0.400 avg_w=0.0931 near_thr=75 | climate_anom=0.000
+[sea_ice/slow-dump] tick=0 path=gdext total_wall=5.41ms (pack=0.02 refresh=0.00 native=0.05 native_wall=0.11 sync=0.08 flip=0.02) water=495 flipped=0
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15101
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.0315 donor_table.size()=28 n_cells=1120 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.03ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 102ms (cells=1120, phase=0.008) | A=1.7 B=4.8 ocean=6.7 wind=78.9 sea_ice=5.5 ice_bake=0.0 transp=3.8 path=data_core_cells_only
+[weather-layer][lut] #1 update_usec=10586822 last_usec=10586822 lerp=0.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=1120
+[ocean_currents][RT] skip#1 tick=1 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #2 update_usec=10586822 last_usec=10586822 lerp=0.015 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] new game reached ready runtime
+[weather-layer][lut] #3 update_usec=10586822 last_usec=10586822 lerp=0.082 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] PKSV manual save completed
+  [PASS] saved slot is visible and loadable
+  [PASS] save restores request-time pause state
+  [PASS] load request accepted
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=4.575 water=504 land=616
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=0.607 lakes=9 rivers=26 volcanoes=0
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=3 largest=389 | land_below_sea=0.0% | terr_distinct=23 entropy=3.682bit | river_ratio=2.321%
+MapGenerator v7: per-cell 30ms (1120 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 642) seed=20260727
+    [fused] terrain=1157.5ms erosion=5.0ms(ok=true) river=10.2ms(ok=true) latitude=0.1ms coast_sdf=8.8ms(ok=true)
+  geometry fields (fused C++): 1287ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 2315ms
+MapBaker v6: total 3620ms
+MapGenerator v7: bake 3660ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=1120
+[native_generation] path=gdext n=1120 published=9 native_ms=0.110 compute_ms=0.052 flush_ms=0.058
+[hex_cell] facade ENABLED (1120 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.13ms wind=0.35ms psi=0.27ms(ran=true) upwelling=0.10ms total=2.14ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 0ms path=gdext
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[save/restore] country configured without bootstrap; awaiting PKCN
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload"]
+[terrain_horizon] GPU bake start: hm_size=(1024, 642) params={ "steps": 1024, "step_px": 2.0, "max_horizon_angle": 1.57, "bias": 0.01, "height_world_scale": 2200.0, "texel_x": 1.59302473068237, "texel_y": 1.59345794392523, "wrap_period_x": 1524.20471066061 }
+[detail_scatter/REBUILD] reason=renderer_rebuild layers=3 total_rebuild_ms=190.83 total_inst=4289 total_cand=4289 budget={ "total_instances": 4289, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+  [detail_scatter/TOP1] name=ShrubLayer1 rebuild=66.73ms path=gdext_chunked inst=2334 cand=2334 wrap=0 reason=
+  [detail_scatter/TOP2] name=TreeLayer2 rebuild=63.11ms path=gdext_chunked inst=134 cand=134 wrap=0 reason=
+  [detail_scatter/TOP3] name=GrassLayer rebuild=60.99ms path=gdext_chunked inst=1821 cand=1821 wrap=0 reason=
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[vision] fog=ON player_slot=-1 early_out=OFF visible=0 explored=0/1120 solve_ms=2.698 border_edges=0
+[DIAG pass_a_entry] day=0 phase=0.006 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=1120
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=6720, got nb_size=6720)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15096
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.1085 n_cells=1120 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.11ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15087
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.0571 n=1120 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.06ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15088
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0245 n=1120 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.02ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.579, k x1.00)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15099
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0543 n_cells=1120 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.05ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.05ms (water=495, flipped=0, phase=0.006)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.972 avg=0.502 | water n=495 t_min_w=0.000 below_form=145 (29.3%) | SIF pos=180 max=0.400 avg_w=0.0931 near_thr=75 | climate_anom=0.000
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15101
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.0495 donor_table.size()=28 n_cells=1120 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.05ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 76ms (cells=1120, phase=0.006) | A=1.4 B=3.2 ocean=5.7 wind=58.0 sea_ice=3.9 ice_bake=0.0 transp=3.9 path=data_core_cells_only
+[save/restore] PKCN restored; economy configured and awaiting PKEC
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[save/restore] PKCN and PKEC restored; country/economy systems registered
+[weather-layer][lut] #1 update_usec=17427937 last_usec=17427937 lerp=0.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #2 update_usec=17427937 last_usec=17427937 lerp=0.003 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] load reached ready runtime
+  [PASS] load finalized restore-only country/economy bootstrap
+  [PASS] restored native authorities are bootstrapped
+  [PASS] restored economy trade topology is ready
+  [PASS] round-trip hash clock
+  [PASS] round-trip hash dynamic_world
+  [PASS] round-trip hash environment
+  [PASS] round-trip hash country
+  [PASS] round-trip hash economy
+  [PASS] round-trip hash session
+  [PASS] round-trip hash explored
+  [PASS] loaded clock retains unpaused zero-speed mode
+[save-roundtrip/post-restore] before first day clock={"climate_anomaly":0.0,"current_day":1.00373066666667,"day_carry":0.00373066666666722,"last_day":1,"last_emit_day_phase":0.00373066666666722,"last_emit_season_phase":0.0109997881278539,"last_season":0,"last_year":0,"paused":false,"rng_seed":-5015191707336227753,"rng_state":-3111269018529856035,"schema":"WorldClock","speed_multiplier":0.0,"version":1,"visual_day_phase":0.258364422222222} country={"aggregate_publish_ms":0.0251,"bootstrapped":true,"cell_count":1120,"changed_cells":1120,"changed_countries":1,"command_apply_ms":0.0,"command_preflight_ms":0.0,"configured":true,"country_count":1,"country_day_barrier":false,"cursor_end":1121,"cursor_start":0,"day_index":-1,"done":true,"generation":1,"last_committed_day":-1,"memory_bytes":22445,"native_ms":0.0251,"path":"native_active","pending_commands":0,"pending_latency_days":0,"published_to_slot":true,"runtime_mode":"ACTIVE","schema_version":1,"slot_publish_ms":0.0251,"stage":"aggregate_publish","state_hash":4265502465336951629} economy={"accuracy_candidate_top_k":2,"accuracy_choice_temperature_q16":983,"accuracy_exact_probe_rate_q16":655,"accuracy_fallback_cooldown_epochs":10,"accuracy_household_tail_share_q16":655,"accuracy_max_regret_q16":1966,"age_days":6,"approximation_authoritative":true,"approximation_certificate_failures":0,"approximation_cooldown_epochs_left":0,"approximation_decisions":0,"approximation_exact_fallbacks":0,"approximation_exact_probes":0,"approximation_frontier_candidates":0,"approximation_frontier_pruned":0,"approximation_large_world_scalar_guard":false,"approximation_max_observed_regret_q16":0,"approximation_model":"rolling_cell_settlement_v17_anytime","approximation_probe_max_demand_error_q16":0,"approximation_probe_max_spend_error_q16":0,"approximation_probe_violations":0,"approximation_version":17,"audit_ms":0.0,"audit_worker_cpu_ms":0.0,"audit_worker_dispatches":0,"audit_worker_tasks_max":1,"auto_slice_by_scale":true,"average_planned_utilization_q16":0,"births":0,"bootstrapped":true,"boundary_continuation_required":false,"budgeted_building_commit_phase_fusions":0,"budgeted_publish_phase_fusions":0,"building_base_wages_due":0,"building_base_wages_paid":0,"building_bonus_due":0,"building_bonus_paid":0,"building_catalog_hash":6330698985718231,"building_cells_per_slice":256,"building_commit_breakdown_ms":{"building_commit.construction_commit":0.0,"building_commit.finalize":0.0,"building_commit.investment":0.0,"building_commit.investment_prepare":0.0,"building_commit.recovery_review":0.0,"building_commit.review_prepare":0.0,"building_commit.special_reset":0.0},"building_commit_breakdown_work":{"building_commit.construction_commit":0,"building_commit.finalize":0,"building_commit.investment":0,"building_commit.investment_prepare":0,"building_commit.recovery_review":0,"building_commit.review_prepare":0,"building_commit.special_reset":0},"building_commit_phase":-1,"building_employment_ms":0.0,"building_finalize_cells_per_slice":128,"building_group_count":4,"building_groups_per_slice":512,"building_investment_blocked_funds":0,"building_investment_blocked_materials":0,"building_investment_blocked_resources":0,"building_investment_blocked_sponsor_capital":0,"building_investment_buildings_started":0,"building_investment_candidates":0,"building_investment_capital_limited":0,"building_investment_capital_transferred":0,"building_investment_demand_limited":0,"building_investment_material_limited":0,"building_investment_max_type_owner_share_q16":0,"building_investment_model":"endogenous_owner_portfolio_v8","building_investment_ms":0.0,"building_investment_owner_population_limited":0,"building_investment_owner_population_moved":0,"building_investment_portfolios_started":0,"building_investment_probability_skips":0,"building_investment_types_started":0,"building_investments_started":0,"building_owner_job_probability_skips":0,"building_owner_job_profession_changes":0,"building_owner_job_reallocations":0,"building_owner_mobility":0,"building_plan_cells_per_slice":512,"building_plan_evaluate_ms":0.0,"building_plan_ms":0.0,"building_plan_phase":-1,"building_plan_reserve_ms":0.0,"building_plan_worker_cpu_ms":0.0,"building_plan_worker_parallel_dispatches":0,"building_plan_worker_tasks_max":1,"building_production_merge_ms":0.0,"building_production_ms":0.0,"building_production_worker_cpu_ms":0.0,"building_production_worker_dispatches":0,"building_production_worker_imbalance_q16_max":0,"building_production_worker_ms":0.0,"building_production_worker_parallel_dispatches":0,"building_production_worker_task_sum":0,"building_production_worker_task_weight_max":0,"building_production_worker_task_weight_min":0,"building_production_worker_tasks":1,"building_production_worker_tasks_max":1,"building_production_worker_weight_total":0,"building_resource_capacity_checks":0,"building_resource_capacity_limited_groups":0,"building_resource_consumed":0,"building_resource_generated":0,"building_resource_limited_groups":0,"building_resource_net_delta":0,"building_restart_cycles":2,"building_restart_margin_q16":6554,"building_review_groups_per_slice":4096,"building_severe_loss_cycles":3,"building_severe_loss_threshold_q16":-16384,"building_structure_count_only_updates":0,"building_structure_group_merge_ms":0.0,"building_structure_labor_cache_ms":0.0,"building_structure_market_cache_ms":0.0,"building_structure_new_groups":0,"building_structure_removed_groups":0,"building_structure_role_span_appends":0,"building_structure_role_span_reuses":0,"building_structure_topology_rebuilds":0,"building_type_count":261,"building_wages_paid":0,"building_wages_unpaid":0,"bullion_money_issued":0,"bullion_stock_consumed":0,"catalog_hash":40439423858073510,"clear_ms":0.0,"closing_audit_fast_paths":0,"closing_audit_full_verifications":0,"closing_audit_market_full_scan_entries":0,"closing_audit_market_touched_lanes":0,"closing_audit_mismatch_lane":-1,"closing_audit_mismatch_ledger":"none","closing_audit_mismatches":0,"closing_audit_mode":"INCREMENTAL","closing_audit_population_full_scan_entries":0,"closing_audit_population_touched_lanes":0,"closing_audit_runtime_disabled":false,"cohort_count":4,"commit_day":1,"commit_due":false,"commit_lag_budget_days":4,"commit_over_budget":false,"configured":true,"construction_goods_consumed":0,"continuation_slices":0,"country_commands_due":false,"country_generation":1,"country_schema_version":1,"country_state_hash":4265502465336951629,"current_day":1,"cycle_deadline_day":1,"cycle_flow_consumed":0,"cycle_flow_discarded":0,"cycle_flow_produced":0,"days_until_commit":0,"deaths":0,"deferred_cells":0,"desired_business_demand":0,"due_cells":0,"economy_accuracy_preset":"BALANCED","economy_approximation_runtime_mode":"ACTIVE","economy_event_last_batch_count":2,"economy_event_newest_id":227,"economy_trace_detail_truncated":0,"economy_trace_memory_bytes":106512,"environment_day":1,"environment_hash":3213790636978947733,"epoch_active":false,"epoch_available_building_type_count":14,"epoch_begin_ms":0.0,"epoch_days":5,"epoch_id":1,"epoch_preflight_ms":0.0,"estimated_building_slices_per_epoch":4,"estimated_market_slices_per_epoch":2,"estimated_total_slices_per_epoch":10,"event_detail_ms":0.0,"event_publish_ms":0.0018,"event_stream_hash":1553514648826614153,"event_summary_ms":0.0,"executed_stage":"idle","executed_substage":"","fallback_ms":0.0,"fatal":false,"fatal_reason":"","filled_employee_jobs":0,"filled_owner_jobs":0,"formula_ms":0.0,"funded_business_demand":0,"gold_accepted":0,"gold_money_issued":0,"good_count":120,"goods_error":0,"high_speed_batch_multiplier":1,"high_speed_batching_enabled":true,"high_speed_market_dispatches_saved":0,"high_speed_production_dispatches_saved":0,"household_market_merge_aggregate_ms":0.0,"household_market_merge_ms":0.0,"household_market_merge_trade_ms":0.0,"household_market_phase":-1,"household_market_worker_ms":0.0,"household_post_building_cells_per_slice":512,"investment_cells_per_slice":96,"investment_ethnicity_evaluations":0,"investment_gap_fill_share_q16":16384,"investment_market_signal_rejections":0,"investment_max_growth_share_q16":6554,"investment_max_type_owner_share_q16":32768,"investment_merchant_transition_min_improvement_q16":32768,"investment_new_type_seed_buildings":1,"investment_portfolio_max_types":4,"investment_review_cells":0,"investment_scheduled_review_cells":0,"investment_sparse_considered_types":0,"investment_sparse_dense_fallbacks":0,"investment_sparse_mismatches":0,"investment_sparse_mode":"ACTIVE","investment_sparse_runtime_disabled":false,"investment_sparse_selected_types":0,"investment_sparse_skipped_types":0,"investment_type_evaluations":0,"labor_signal_edges":1,"labor_signal_ms":0.0,"labor_signal_updates":0,"last_building_rejection_reason":"","last_completed_aggregate_audit_ms":0.0,"last_completed_aggregate_publish_ms":0.0,"last_completed_approximation_certificate_failures":0,"last_completed_approximation_cooldown_epochs_left":0,"last_completed_approximation_decisions":0,"last_completed_approximation_exact_fallbacks":0,"last_completed_approximation_exact_probes":0,"last_completed_approximation_frontier_candidates":0,"last_completed_approximation_frontier_pruned":0,"last_completed_approximation_max_observed_regret_q16":0,"last_completed_approximation_probe_max_demand_error_q16":0,"last_completed_approximation_probe_max_spend_error_q16":0,"last_completed_approximation_probe_violations":0,"last_completed_audit_worker_cpu_ms":0.0,"last_completed_audit_worker_dispatches":0,"last_completed_audit_worker_tasks_max":1,"last_completed_budgeted_building_commit_phase_fusions":0,"last_completed_budgeted_publish_phase_fusions":0,"last_completed_building_employment_ms":0.0,"last_completed_building_investment_ms":0.0,"last_completed_building_plan_evaluate_ms":0.0,"last_completed_building_plan_ms":0.0,"last_completed_building_plan_reserve_ms":0.0,"last_completed_building_plan_worker_cpu_ms":0.0,"last_completed_building_plan_worker_parallel_dispatches":0,"last_completed_building_plan_worker_tasks_max":1,"last_completed_building_production_merge_ms":0.0,"last_completed_building_production_ms":0.0,"last_completed_building_production_worker_cpu_ms":0.0,"last_completed_building_production_worker_dispatches":0,"last_completed_building_production_worker_imbalance_q16_max":0,"last_completed_building_production_worker_ms":0.0,"last_completed_building_production_worker_parallel_dispatches":0,"last_completed_building_production_worker_task_sum":0,"last_completed_building_production_worker_task_weight_max":0,"last_completed_building_production_worker_task_weight_min":0,"last_completed_building_production_worker_tasks_max":1,"last_completed_building_production_worker_weight_total":0,"last_completed_building_structure_count_only_updates":0,"last_completed_building_structure_group_merge_ms":0.0,"last_completed_building_structure_labor_cache_ms":0.0,"last_completed_building_structure_market_cache_ms":0.0,"last_completed_building_structure_new_groups":0,"last_completed_building_structure_removed_groups":0,"last_completed_building_structure_role_span_appends":0,"last_completed_building_structure_role_span_reuses":0,"last_completed_building_structure_topology_rebuilds":0,"last_completed_closing_audit_fast_paths":0,"last_completed_closing_audit_full_verifications":0,"last_completed_closing_audit_market_full_scan_entries":0,"last_completed_closing_audit_market_touched_lanes":0,"last_completed_closing_audit_mismatch_lane":-1,"last_completed_closing_audit_mismatch_ledger":"none","last_completed_closing_audit_mismatches":0,"last_completed_closing_audit_population_full_scan_entries":0,"last_completed_closing_audit_population_touched_lanes":0,"last_completed_continuation_slices":0,"last_completed_epoch_id":-1,"last_completed_high_speed_batch_multiplier":1,"last_completed_high_speed_market_dispatches_saved":0,"last_completed_high_speed_production_dispatches_saved":0,"last_completed_household_market_merge_aggregate_ms":0.0,"last_completed_household_market_merge_ms":0.0,"last_completed_household_market_merge_trade_ms":0.0,"last_completed_household_market_worker_ms":0.0,"last_completed_investment_ethnicity_evaluations":0,"last_completed_investment_market_signal_rejections":0,"last_completed_investment_review_cells":0,"last_completed_investment_scheduled_review_cells":0,"last_completed_investment_sparse_considered_types":0,"last_completed_investment_sparse_dense_fallbacks":0,"last_completed_investment_sparse_mismatches":0,"last_completed_investment_sparse_selected_types":0,"last_completed_investment_sparse_skipped_types":0,"last_completed_investment_type_evaluations":0,"last_completed_market_result_allocation_growth_bytes":0,"last_completed_market_result_allocation_growth_count":0,"last_completed_market_worker_dispatches":0,"last_completed_market_worker_task_sum":0,"last_completed_market_worker_tasks_max":1,"last_completed_opening_audit_fast_paths":0,"last_completed_opening_audit_full_verifications":0,"last_completed_perf_valid":false,"last_completed_production_result_allocation_growth_bytes":0,"last_completed_production_result_allocation_growth_count":0,"last_completed_sample_day":-1,"ledger_ms":0.0,"loss_suspended_building_groups":0,"market_cells_per_slice":128,"market_configured_cycle_days":5,"market_count":1120,"market_cycle_days":5,"market_max_cycle_days":5,"market_min_cycle_days":5,"market_result_allocation_growth_bytes":0,"market_result_allocation_growth_count":0,"market_runtime_mode":"ACTIVE","market_signal_edges":7,"market_signal_flush_ms":0.0,"market_signal_insert_count":0,"market_signal_insert_ms":0.0,"market_signal_lookup_entries":134400,"market_signal_lookup_mode":"dense","market_signal_ms":0.0,"market_signal_updates":0,"market_target_cohorts_per_slice":30000,"market_worker_dispatches":0,"market_worker_task_sum":0,"market_worker_tasks_max":1,"markets_per_slice":128,"max_command_latency_days":5,"max_state_age_days":6,"memory_bytes":14610987,"merchant_cash":9600000,"merchant_count":1,"merchant_credit_bad_debt":0,"merchant_credit_budget":0,"merchant_credit_committed":0,"merchant_credit_drawn":0,"merchant_credit_outstanding":0,"merchant_credit_premium_repaid":0,"merchant_credit_repaid":0,"merchant_credit_runtime_mode":"ACTIVE","merchant_economic_assets":106499686,"merchant_effective_buy_factor_q16":65536,"merchant_input_procurement_allocated":0,"merchant_input_procurement_required":0,"merchant_inventory_liquidation_value":96899686,"merchant_inventory_retail_value":102000000,"merchant_liquidity_coverage_q16":65536,"merchant_market_making_days_q16":3932160,"merchant_operating_outflow":0,"merchant_procurement_allocated":0,"merchant_procurement_budget":0,"merchant_procurement_cash_reserve_q16":8192,"merchant_procurement_margin_value":0,"merchant_procurement_opportunity":0,"merchant_procurement_reserved":0,"merchant_procurement_spent":0,"merchant_procurement_unspent_allocated":0,"merchant_repairs":0,"merchant_settle_ms":0.0,"merchant_survival_procurement_allocated":0,"merchant_survival_procurement_required":0,"merchant_trade_purchase_cash":0,"merchant_trade_sale_cash":0,"mode":"native","money_error":0,"newest_state_day":-5,"next_stage":"aggregate_publish","opening_audit_fast_paths":0,"opening_audit_full_verifications":0,"owner_output_consumed":0,"owner_working_capital_allocated":0,"owner_working_capital_reserved":0,"path":"ECONOMY_GRAPH","pending_commands":0,"pending_construction_count":0,"pending_construction_index_entries":0,"period_transactions":true,"population_error":0,"prepare_ms":0.0,"price_cap_hits":0,"price_cost_anchor_hits":0,"price_inactive_reversions":0,"price_ms":0.0,"price_numeric_guard_max":2147483647,"price_numeric_guard_min":1,"price_runtime_bounds":"numeric_guard_only","processed_building_groups":0,"processed_cells":0,"processed_cohorts":0,"processed_commands":0,"processed_components":0,"processed_due_cells":0,"processed_needs":0,"processed_rules":0,"processed_variants":0,"producer_revenue":0,"producer_support_money_issued":0,"producer_support_price_denominator":5,"producer_support_price_numerator":1,"production_input_reserve_shortfall":0,"production_input_reserved":1000,"production_inputs_consumed":0,"production_output_discarded":0,"production_output_retained":0,"production_output_stock":0,"production_output_supported":0,"production_result_allocation_growth_bytes":0,"production_result_allocation_growth_count":0,"progress_q16":65535,"publish_audit_entries_per_slice":131072,"publish_breakdown_ms":{"aggregate_publish.audit_country":0.0,"aggregate_publish.audit_escrow":0.0,"aggregate_publish.audit_market":0.0,"aggregate_publish.audit_population":0.0,"aggregate_publish.audit_transit":0.0,"aggregate_publish.commit":0.0,"aggregate_publish.done":0.0,"aggregate_publish.prepare":0.0,"aggregate_publish.trade_diagnostics":0.0,"aggregate_publish.trade_flow":0.0,"aggregate_publish.trade_init":0.0,"aggregate_publish.verify":0.0,"aggregate_publish.watermark":0.0},"publish_breakdown_work":{"aggregate_publish.audit_country":0,"aggregate_publish.audit_escrow":0,"aggregate_publish.audit_market":0,"aggregate_publish.audit_population":0,"aggregate_publish.audit_transit":0,"aggregate_publish.commit":0,"aggregate_publish.done":0,"aggregate_publish.prepare":0,"aggregate_publish.trade_diagnostics":0,"aggregate_publish.trade_flow":0,"aggregate_publish.trade_init":0,"aggregate_publish.verify":0,"aggregate_publish.watermark":0},"publish_cumulative_breakdown_ms":{"aggregate_publish.audit_country":0.0,"aggregate_publish.audit_escrow":0.0,"aggregate_publish.audit_market":0.0,"aggregate_publish.audit_population":0.0,"aggregate_publish.audit_transit":0.0,"aggregate_publish.commit":0.0,"aggregate_publish.done":0.0,"aggregate_publish.prepare":0.0,"aggregate_publish.trade_diagnostics":0.0,"aggregate_publish.trade_flow":0.0,"aggregate_publish.trade_init":0.0,"aggregate_publish.verify":0.0,"aggregate_publish.watermark":0.0},"publish_cumulative_breakdown_work":{"aggregate_publish.audit_country":0,"aggregate_publish.audit_escrow":0,"aggregate_publish.audit_market":0,"aggregate_publish.audit_population":0,"aggregate_publish.audit_transit":0,"aggregate_publish.commit":0,"aggregate_publish.done":0,"aggregate_publish.prepare":0,"aggregate_publish.trade_diagnostics":0,"aggregate_publish.trade_flow":0,"aggregate_publish.trade_init":0,"aggregate_publish.verify":0,"aggregate_publish.watermark":0},"publish_entries_per_slice":4096,"publish_ms":0.0,"publish_phase":"prepare","recovery_approved":0,"recovery_candidates":0,"recovery_failed":0,"recovery_fully_liquidated_groups":0,"recovery_liquidated_buildings":0,"recovery_liquidation_max_share_q16":16384,"recovery_partially_liquidated_buildings":0,"recovery_restarted":0,"rejected_commands":0,"report_mode":"full","rolling_deadline_violations":0,"sample_day":1,"saturation_count":0,"settlement_mode":"rolling_five_phase","settlement_phase":0,"settlement_phase_count":5,"settlement_watermark":-5,"silver_accepted":0,"silver_money_issued":0,"stage":"aggregate_publish","starvation_death_rate_q32":21474836,"starvation_satisfaction_threshold_q16":32768,"structure_ms":0.0,"survival_production_target_q16":65536,"trade_active_key_count":0,"trade_active_keys_pruned":0,"trade_arrival_bucket_count":0,"trade_candidates_accepted":0,"trade_candidates_arbitrated_out":0,"trade_candidates_generated":0,"trade_candidates_stale_generation":0,"trade_capacity_available":0,"trade_capacity_used":0,"trade_capacity_utilization_q16":0,"trade_completed_scans":0,"trade_country_generation":0,"trade_country_topology_hash":5510513833856268327,"trade_deficit_episodes_resolved":0,"trade_deficit_episodes_started":0,"trade_destination_signals":0,"trade_dispatch_ms":0.0,"trade_escrow_cash":0,"trade_first_dispatch_delay_max_days":0,"trade_last_plan_reset_reason":"initial_topology_capture","trade_orders_arrived":0,"trade_orders_dispatched":0,"trade_orders_in_flight":0,"trade_plan_breakdown_ms":{"trade_planning.other":0.0,"trade_planning.route_expand":0.0,"trade_planning.route_finalize":0.0,"trade_planning.route_prepare":0.0,"trade_planning.scan_body":0.0,"trade_planning.scan_finalize":0.0},"trade_plan_breakdown_work":{"trade_planning.candidates_finalized":0,"trade_planning.route_expansions":0,"trade_planning.route_sources_prepared":0,"trade_planning.scan_pairs":0},"trade_plan_ms":0.0,"trade_plan_phase":"IDLE","trade_plan_reset_count":0,"trade_plan_substage":"","trade_quantity_profit_clips":0,"trade_ready_candidates":0,"trade_rejected_capacity":0,"trade_rejected_cash":0,"trade_rejected_margin":0,"trade_rejected_no_spread":0,"trade_rejected_order_cap":0,"trade_rejected_profit":0,"trade_rejected_route":0,"trade_rejected_stock":0,"trade_relief_candidates":0,"trade_response_deadline_misses":0,"trade_response_deadline_misses_cumulative":0,"trade_route_accepted_targets":0,"trade_route_cache_hits":0,"trade_route_cache_misses":0,"trade_route_current_source_cell":-1,"trade_route_current_source_country":-1,"trade_route_current_source_good":-1,"trade_route_cursor":0,"trade_route_expansion_cursor":0,"trade_route_expansions":0,"trade_route_expansions_per_slice":256,"trade_route_pending_targets":0,"trade_route_search_active":false,"trade_route_search_source":-1,"trade_route_total":0,"trade_runtime_mode":"ACTIVE","trade_scan_cursor":0,"trade_scan_progress_q16":0,"trade_scan_total":0,"trade_settle_ms":0.0,"trade_settlement_lag_days":0,"trade_signal_max_age_days":0,"trade_source_signals":0,"trade_topology_content_change_count":0,"trade_topology_generation":1,"trade_topology_hash":2945233857780405365,"trade_topology_ready":true,"trade_transit_goods":0,"trade_true_source_stock_failures":0,"trade_unclaimed_orders":0,"trade_unresolved_capacity":0,"trade_unresolved_cash":0,"trade_unresolved_margin":0,"trade_unresolved_no_attempt":0,"trade_unresolved_no_spread":0,"trade_unresolved_order_cap":0,"trade_unresolved_route":0,"trade_unresolved_stock":0,"unemployed_population":0,"unfunded_business_demand":0,"unprofitable_building_groups":0,"wage_plan_ms":0.0,"wage_suspended_building_groups":0,"watermark_ms":0.0,"worker_enabled":true,"worker_market_threshold":64,"worker_tasks":1,"working_capital_scale_error_bound_q16":0,"workload_cycle_clamped":false,"workload_deadline_feasible":true,"zero_utilization_building_groups":0}
+[weather-layer][lut] #3 update_usec=17427937 last_usec=17427937 lerp=0.056 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #4 update_usec=17427937 last_usec=17427937 lerp=0.057 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #5 update_usec=17427937 last_usec=17427937 lerp=0.058 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #6 update_usec=17427937 last_usec=17427937 lerp=0.093 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #7 update_usec=17427937 last_usec=17427937 lerp=0.095 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #8 update_usec=17427937 last_usec=17427937 lerp=0.124 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #9 update_usec=17427937 last_usec=17427937 lerp=0.125 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #10 update_usec=17427937 last_usec=17427937 lerp=0.154 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #11 update_usec=17427937 last_usec=17427937 lerp=0.155 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #12 update_usec=17427937 last_usec=17427937 lerp=0.184 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=1120
+[ocean_currents][RT] skip#1 tick=2 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=2
+[DCSystemScheduler][RT] ocean_skip#1 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=186 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][RT] skip#2 tick=3 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#2 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #13 update_usec=17427937 last_usec=17427937 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[ocean_currents][RT] phys_round_start#1 tick=4 phase=0.0438 physical=true wind_period=6 ocean_period=60 slice_count=16 tps=4 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=657408 visual_active=false
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.077 slp_out=1120 n_cells=1120 map_slp=1120 published=false
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.077 slp_out=1120 n=1120 published=false -> commit_ok
+[ocean_currents][RT] phys_slice#1 tick=4 round=1 stage=phys_none->phys_slp done=false run_ocean=true need_visual=false elapsed=0.405 ocean_delta_p95=0.000000 wind_delta_p95=0.000000 slp_delta_p95=0.000000 psi_path=gdscript
+[natural_resource/slow-dump] tick=5 day=5 wall=2.02 cpp=0.412 compute=0.383 loop=0.186 flush=0.106 wrapper=1.587 layout=cell_range_fused_seq_dt dispatches=0 resources=9/31 skipped_static=22 published=true total_delta=-15535312.66202
+[ocean_currents][RT] skip#3 tick=5 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/657408 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#3 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+
+================================================================
+CrashHandlerException: Program crashed with signal 11
+Engine version: Godot Engine v4.6.2.stable.official (71f334935c000924d403448e698df4441130df18)
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] error(-1): no debug info in PE/COFF executable
+[2] error(-1): no debug info in PE/COFF executable
+[3] error(-1): no debug info in PE/COFF executable
+[4] error(-1): no debug info in PE/COFF executable
+[5] error(-1): no debug info in PE/COFF executable
+[6] error(-1): no debug info in PE/COFF executable
+[7] error(-1): no debug info in PE/COFF executable
+[8] error(-1): no debug info in PE/COFF executable
+[9] error(-1): no debug info in PE/COFF executable
+[10] error(-1): no debug info in PE/COFF executable
+[11] error(-1): no debug info in PE/COFF executable
+[12] error(-1): no debug info in PE/COFF executable
+[13] error(-1): no debug info in PE/COFF executable
+[14] error(-1): no debug info in PE/COFF executable
+[15] error(-1): no debug info in PE/COFF executable
+[16] error(-1): no debug info in PE/COFF executable
+[17] error(-1): no debug info in PE/COFF executable
+[18] error(-1): no debug info in PE/COFF executable
+[19] error(-1): no debug info in PE/COFF executable
+[20] error(-1): no debug info in PE/COFF executable
+[21] error(-1): no debug info in PE/COFF executable
+[22] error(-1): no debug info in PE/COFF executable
+[23] error(-1): no debug info in PE/COFF executable
+[24] error(-1): no debug info in PE/COFF executable
+[25] error(-1): no debug info in PE/COFF executable
+[26] error(-1): no debug info in PE/COFF executable
+[27] error(-1): no debug info in PE/COFF executable
+[28] error(-1): no debug info in PE/COFF executable
+[29] error(-1): no debug info in PE/COFF executable
+[30] error(-1): no debug info in PE/COFF executable
+[31] error(-1): no debug info in PE/COFF executable
+[32] error(-1): no debug info in PE/COFF executable
+[33] error(-1): no debug info in PE/COFF executable
+[34] error(-1): no debug info in PE/COFF executable
+[35] error(-1): no debug info in PE/COFF executable
+[36] error(-1): no debug info in PE/COFF executable
+[37] error(-1): no debug info in PE/COFF executable
+[38] error(-1): no debug info in PE/COFF executable
+[39] error(-1): no debug info in PE/COFF executable
+[40] error(-1): no debug info in PE/COFF executable
+[41] error(-1): no debug info in PE/COFF executable
+[42] error(-1): no debug info in PE/COFF executable
+[43] error(-1): no debug info in PE/COFF executable
+[44] error(-1): no debug info in PE/COFF executable
+[45] error(-1): no debug info in PE/COFF executable
+[46] error(-1): no debug info in PE/COFF executable
+[47] error(-1): no debug info in PE/COFF executable
+[48] error(-1): no debug info in PE/COFF executable
+[49] error(-1): no debug info in PE/COFF executable
+[50] error(-1): no debug info in PE/COFF executable
+-- END OF C++ BACKTRACE --
+================================================================
+GDScript backtrace (most recent call first):
+    [0] tick (res://scripts/simulation/systems/economy_daily_system.gd:78)
+    [1] run_slice (res://scripts/data_core/dc_system.gd:145)
+    [2] continue_system (res://scripts/data_core/dc_system_scheduler.gd:426)
+    [3] _continue_economy_inflight (res://scripts/geography/map_generator.gd:1917)
+    [4] _process (res://scripts/geography/world_clock.gd:185)
+-- END OF GDSCRIPT BACKTRACE --
+================================================================
