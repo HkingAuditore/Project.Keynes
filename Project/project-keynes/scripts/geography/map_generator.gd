@@ -1595,12 +1595,21 @@ func _configure_economy_runtime(map: MapData, seed_value: int) -> Dictionary:
 	if not bool(configured.get("ok", false)):
 		_economy_facade = null
 		return configured
+	var trade_topology := _capture_economy_trade_topology(map)
+	if not bool(trade_topology.get("ok", false)):
+		_economy_facade = null
+		return trade_topology
+	return configured
+
+
+func _capture_economy_trade_topology(map: MapData) -> Dictionary:
+	if map == null or _economy_facade == null or _data_core_world_ext == null:
+		return {"ok": false, "reason": "economy_world_unavailable"}
 	var economy_config_report: Dictionary = _economy_facade.report()
 	var trade_runtime_mode := String(economy_config_report.get("trade_runtime_mode", "OFF"))
 	if trade_runtime_mode == "OFF":
-		return configured
+		return {"ok": true}
 	if not _data_core_world_ext.has_method("capture_economy_trade_topology"):
-		_economy_facade = null
 		return {"ok": false, "reason": "economy_trade_topology_api_unavailable"}
 	var trade_topology: Dictionary = _data_core_world_ext.capture_economy_trade_topology(
 		map.neighbor_indices_packed(),
@@ -1608,10 +1617,7 @@ func _configure_economy_runtime(map: MapData, seed_value: int) -> Dictionary:
 		map.economy_trade_passable_lut(),
 		map.economy_trade_move_cost_lut(),
 		1)
-	if not bool(trade_topology.get("ok", false)):
-		_economy_facade = null
-		return trade_topology
-	return configured
+	return trade_topology
 
 
 func _register_country_economy_systems(scheduler_profile) -> Dictionary:
@@ -1695,6 +1701,9 @@ func finalize_save_restore_runtime() -> Dictionary:
 		return {"ok": false, "reason": "country_restore_incomplete"}
 	if not bool(economy_report.get("bootstrapped", false)):
 		return {"ok": false, "reason": "economy_restore_incomplete"}
+	var trade_topology := _capture_economy_trade_topology(_sus_map)
+	if not bool(trade_topology.get("ok", false)):
+		return trade_topology
 	var registered: Dictionary = _register_country_economy_systems(_c())
 	if not bool(registered.get("ok", false)):
 		return registered
