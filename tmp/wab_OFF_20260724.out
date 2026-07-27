@@ -1,0 +1,72 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2000 native_ms=5.955 water=824 land=1176
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2000 native_ms=1.094 lakes=33 rivers=58 volcanoes=1
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=4 largest=430 | land_below_sea=0.0% | terr_distinct=22 entropy=3.724bit | river_ratio=2.900%
+MapGenerator v7: per-cell 52ms (2000 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 722) seed=20260724
+    [fused] terrain=962.3ms erosion=2.7ms(ok=true) river=13.2ms(ok=true) latitude=0.3ms coast_sdf=6.1ms(ok=true)
+  geometry fields (fused C++): 1063ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  encode: 2389ms
+MapBaker v6: total 3456ms
+MapGenerator v7: bake 3479ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2000
+[native_generation] path=gdext n=2000 published=9 native_ms=0.121 compute_ms=0.085 flush_ms=0.036
+[hex_cell] facade ENABLED (2000 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.90ms wind=0.34ms psi=0.20ms(ran=true) upwelling=0.07ms total=1.82ms
+PhysicalCirculation solve@phase=1.50 total=3ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 4ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2000 goods=120 cohorts=4251 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1
+[country] ACTIVE native authority countries=1 cells=2000 generation=1
+[economy/test-bootstrap] scale_mode=resource_tiered populated_cells=824 population=2267569 cohorts=4251 professions=7/33 building_groups=7696 building_types=14/261 capacity_buildings=34711->10444 trimmed=24267 population_range=0..12218 cap=150000 goods=120 tiers={ "tens": 206, "hundreds": 206, "thousands": 206, "ten_thousands": 206 } construction_regions=2/3 skipped=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[perf-record] start (start_tick=0)
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2000
+[ocean_currents][RT] skip#1 tick=1 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=328 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][RT] skip#2 tick=2 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=2
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] skip#3 tick=3 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] phys_round_start#1 tick=4 phase=0.0438 physical=true wind_period=6 ocean_period=60 slice_count=16 tps=4 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=739328 visual_active=false
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.105 slp_out=2000 n_cells=2000 map_slp=2000 published=false
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.105 slp_out=2000 n=2000 published=false -> commit_ok
+[ocean_currents][RT] phys_slice#1 tick=4 round=1 stage=phys_none->phys_slp done=false run_ocean=true need_visual=false elapsed=2.793 ocean_delta_p95=0.000000 wind_delta_p95=0.000000 slp_delta_p95=0.000000 psi_path=gdscript
+[natural_resource/slow-dump] tick=5 day=5 wall=2.05 cpp=0.766 compute=0.738 loop=0.368 flush=0.216 wrapper=1.258 layout=cell_range_fused_seq_dt dispatches=0 resources=13/31 skipped_static=18 published=true total_delta=-43904645.18065
+[ocean_currents][RT] skip#4 tick=5 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/739328 tps=4 streak=0 tick_mod=1
+[sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=5.000, k x1.00)
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][daily_wind] #1 tick=6 stage=both ran=true path=gdext_daily_wind elapsed=1.179 slp=0.338 wind=0.526 passA=0.181 passB=0.066 norm=0.071 marshall=0.020 dominant=daily_wind_wind/0.526 delta=0.560669 reason=
+[ocean_currents][RT] skip#5 tick=7 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/739328 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.060 slp_out=2000 n_cells=2000 map_slp=2000 published=false
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.060 slp_out=2000 n=2000 published=false -> commit_ok
+[ocean_currents/STAGE-DIAG] init tick=8 round=1 stage=1/phys_slp path=gdext next=phys_slp elapsed_ms=2.20 slp_native=0.34 psi_native=-1.00 wind_dp95=0.560669 ocean_dp95=0.000000 slp_dp95=0.000000 phys_done=false need_visual=false
+[ocean_currents][RT] phys_slice#2 tick=8 round=1 stage=phys_slp->phys_slp done=false run_ocean=true need_visual=false elapsed=2.201 ocean_delta_p95=0.000000 wind_delta_p95=0.560669 slp_delta_p95=0.000000 psi_path=gdscript
+[ocean_currents][RT] skip#6 tick=9 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/739328 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] skip#7 tick=10 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/739328 tps=4 streak=0 tick_mod=2
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[perf-record] exported rows=10 cols=1082 → D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20260727_205547.csv
+[headless-perf/result] label=wab_OFF_20260724 days=10 speed=20.000 seed=20260724 map=50x40 population_scale=0 saved_setup=false generation_ms=8487.9 run_ms=446.1 barrier_pulses=36 ledger_failures=0 fatal=false rows=10 expected_rows=10 path=D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20260727_205547.csv

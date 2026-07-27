@@ -1,5 +1,16 @@
 # GDScript / C++ Data Bridge
 
+## Complete-save bridge
+
+PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
+section capture while each native authority emits its own versioned state:
+PKCN, PKEC, and `PKEnvironmentRuntime v1`. Environment export includes the
+resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
+round flags, stage cursors, and snapshot generations. Restore validates schema
+and dimensions before swapping any arrays. See
+[`game-flow-start-save.md`](./game-flow-start-save.md) for section and ordering
+rules.
+
 ACTIVE bundle 的紧凑 capsule ABI、旧 DLL fallback 和植被 indexed publish
 契约见
 [运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
@@ -221,6 +232,12 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
     （`cell_temp/cell_moisture/cell_snow_cover/cell_vegetation_vitality/cell_sea_ice_frac/
     cell_terrain/cell_vegetation/cell_cover`，全部已在 schema），输出 enum/dyn/eco 三张 LUT 的
     `PackedByteArray`；GDScript 只负责 `Image.create_from_data` + `ImageTexture.update`。
+  - `enum_lut` 是 **RGBA8**（缓冲 `slots_total * 4`）：R=biome / G=veg / B=cover /
+    **A=迷雾知识度 `fog_k`**。A 通道来自 `opts.fog_k_arr` 这个**可选 `PackedByteArray` 入参**，
+    而不是 slot——`VisionSolver` 的权威实现目前在 GDScript，走显式数组可以避开
+    `refresh_slots_from_map()` 用陈旧镜像覆盖 native-only 气候值的风险（与 `snow_cover_arr`
+    同一个理由）。未提供时 A 恒为 255（全知）。注意 `cell.visible` / `cell.explored`
+    **本身是 schema 组件**（见下文 vision 小节），只有派生量 `fog_k` 走入参。
   - `weather_lut`（RGBA8，R=type/G=intensity/B=cloud/A=vapor）：另读 4 个 weather slot
     （`cell_weather_type/cell_weather_intensity/cell_weather_cloud/cell_weather_vapor`）逐格量化；
     shader 中原先以 precip 驱动的雨雪/降水门控改读 G=intensity。
@@ -244,6 +261,23 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
   `n_cells → n_cells` LUT（~7KB）；cell index 静态合入 `map_index_atlas.g/b`，不进 DataCore、不参与每日 sync。
 - flag 关时本路径零触达，CoW 公理 / `published_to_slot` / `flush` / `snapshot`
   语义均不受影响。
+
+## 视野迷雾的数据落点（三层，各有不同持久化语义）
+
+`VisionSolver`（GDScript 权威，见 `vision-fog-and-borders.md`）的输入输出跨了
+三种存储，不要混为一谈：
+
+- **静态预烘焙（`WorldData`，非 slot）**：`cell_view_height` / `cell_view_block`
+  两个 `PackedByteArray`，在 `MapBaker.bake_world` 的 post_base 阶段由地形派生，
+  地形不变就永不变。它们是解算器的只读输入，不进 schema、不进存档——重新生成
+  同一个 seed 必然得到同一份。
+- **运行时状态（`MapData` + schema）**：`cell.visible` / `cell.explored` 是
+  `U8` component（`owner="vision"`），按 SOP 走 `component_schema.gd` →
+  `component_bind_table.gen.h`。`explored` 单调累积并进 PKFG 存档，`visible`
+  每次解算全量重写、不存档。
+- **派生视觉量（`MapData.fog_k_arr`，非 slot）**：blur 后的知识度，唯一消费者是
+  `enum_lut.a`。它刻意**不是** DataCore component——没有任何 C++ pass 读它，
+  进 schema 只会让每日 refresh/flush 白白多搬 2400 字节。
 
 ## C++ 读取 GDScript 最新值
 
@@ -539,7 +573,8 @@ Dictionary DCWorldExt::run_my_pass(Dictionary knobs) {
 
 现代经济资源扩展后，DataCore 明确持有 30 组 `cell.res_<id>_reserve` 与
 `cell.res_<id>_extra_change` F32 slots；`component_schema.gd` 是唯一 bind-table 输入，生成结果为
-138 个 component entries（另含 `cell.resource_habitat_mask`）。goods、building、profession 和 technology tags 仍只存在于 economy
+142 个 component entries（另含 `cell.resource_habitat_mask`，以及 `owner="vision"`
+的 `cell.visible` / `cell.explored`）。goods、building、profession 和 technology tags 仍只存在于 economy
 catalog/native runtime，不进入 MapData。`DCWorldExt` 在 sample boundary 批量解析资源 slot，生产
 结束后按资源列批量写回 extra-change，边界内没有逐 cell Object 调用。
 
@@ -691,7 +726,7 @@ C++ slot instead of stale `MapData.moisture_arr`.
 When the wrapper finalizer completes, it snapshots only the authoritative
 `cell_moisture` slot and assigns that buffer to the exact `MapData` instance
 passed into the scheduler round. This avoids relying on the bridge's retained
-bound-map object identity while keeping the 140-slot bulk flush disabled. The
+bound-map object identity while keeping the full-schema bulk flush disabled. The
 old narrow bound-map flush remains only as a stale-extension fallback.
 `MapData`, CSV, debug, and render consumers therefore observe a completed
 round, not pass-level intermediates. Other slot publish contracts and

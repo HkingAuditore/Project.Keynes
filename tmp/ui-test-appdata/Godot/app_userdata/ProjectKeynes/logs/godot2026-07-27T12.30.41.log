@@ -1,0 +1,8 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+OpenGL API 3.3.0 NVIDIA 610.74 - Compatibility - Using Device: NVIDIA - NVIDIA GeForce RTX 4080
+
+main menu capture: 1366x768 nonblack_samples=1056 path=D:\Godot\ProjectKeynes\Project.Keynes\tmp\main_menu_new_final.png
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 37 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

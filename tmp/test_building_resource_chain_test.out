@@ -1,0 +1,27 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== building resource chain test ===
+  [PASS] catalog compiles
+  [PASS] all modern resources enter sorted building catalog
+  [PASS] extractors use multiple content-level conversion efficiencies
+  [FAIL] mining efficiency improves across historical building tiers
+  [PASS] farm uses capacity behavior without generated crop resource
+  [PASS] mine extracts resources while textile is goods-only industrial
+  [PASS] farm capacity recipe is arable land plus fertile soil
+  [PASS] textile mill consumes direct fiber, power, maintenance tools, and no natural resource
+  [PASS] all-technology test country bootstraps
+  [PASS] runtime configures
+  [PASS] resource chain world bootstraps
+  [PASS] capacity farm produces goods without consuming natural resources
+  [PASS] subsistence grain, vegetables, and corn are produced and sold before consumption
+  [PASS] mine extracts local coal
+  [PASS] resource report separates capacity checks from extraction
+  [PASS] insufficient arable capacity reduces output without resource delta
+  [PASS] zero arable capacity stops farm production
+  [PASS] capacity cycles conserve economy ledgers
+  [PASS] resource production worker/scalar hashes match
+[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [FAIL] shore fishery extracts only its local coastal-land reserve
+[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] freshwater fishery extracts only its local freshwater reserve
+=== building resource chain FAIL ===

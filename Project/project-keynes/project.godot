@@ -11,9 +11,15 @@ config_version=5
 [application]
 
 config/name="ProjectKeynes"
-run/main_scene="res://scenes/world_setup.tscn"
+run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameSettings="*res://scripts/game/game_settings_service.gd"
+GameSave="*res://scripts/game/game_save_coordinator.gd"
+GameFlow="*res://scripts/game/game_flow_service.gd"
 
 [display]
 

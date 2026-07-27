@@ -1,0 +1,43 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2000 native_ms=7.086 water=790 land=1210
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2000 native_ms=0.966 lakes=66 rivers=49 volcanoes=2
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=1 bodies=4 largest=728 | land_below_sea=0.3% | terr_distinct=24 entropy=3.823bit | river_ratio=2.450%
+MapGenerator v7: per-cell 62ms (2000 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 722) seed=20260718
+    [fused] terrain=906.4ms erosion=2.5ms(ok=true) river=13.1ms(ok=true) latitude=0.1ms coast_sdf=6.4ms(ok=true)
+  geometry fields (fused C++): 1013ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  encode: 2433ms
+MapBaker v6: total 3450ms
+MapGenerator v7: bake 3478ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2000
+[native_generation] path=gdext n=2000 published=9 native_ms=0.133 compute_ms=0.092 flush_ms=0.041
+[hex_cell] facade ENABLED (2000 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.94ms wind=0.32ms psi=0.20ms(ran=true) upwelling=0.09ms total=1.85ms
+PhysicalCirculation solve@phase=1.50 total=3ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 3ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2000 goods=120 cohorts=4747 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1
+[country] ACTIVE native authority countries=1 cells=2000 generation=1
+[economy/test-bootstrap] scale_mode=resource_tiered populated_cells=962 population=2565806 cohorts=4747 professions=7/33 building_groups=8705 building_types=14/261 capacity_buildings=36148->11690 trimmed=24458 population_range=0..11343 cap=150000 goods=120 tiers={ "tens": 241, "hundreds": 240, "thousands": 241, "ten_thousands": 240 } construction_regions=2/3 skipped=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[perf-record] start (start_tick=0)
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2000
+[ocean_currents][RT] skip#1 tick=1 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed

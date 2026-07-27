@@ -1,0 +1,23 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Compile Error: Identifier not found: GameSave
+   at: GDScript::reload (res://scripts/game/world_runtime_host.gd:104)
+SCRIPT ERROR: Compile Error: Identifier not found: GameFlow
+   at: GDScript::reload (res://scripts/game/player_game.gd:31)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://tests/game_save_roundtrip_test.gd:0)
+ERROR: Failed to load script "res://tests/game_save_roundtrip_test.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+  [PASS] game flow autoload is available
+  [PASS] game save autoload is available
+  [PASS] new game request accepted
+  [FAIL] new game reached ready runtime
+game save round-trip: 1 failures
+WARNING: 1 RID of type "CanvasItem" was leaked.
+   at: _free_rids (servers/rendering/renderer_canvas_cull.cpp:2690)
+ERROR: 2 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 45 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

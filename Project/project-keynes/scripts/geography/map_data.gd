@@ -252,6 +252,20 @@ var weather_target_type_arr: PackedByteArray = PackedByteArray()
 var is_water_arr:           PackedByteArray = PackedByteArray()
 ## Read-only mirror of NativeCountryRuntime territory authority. -1 is neutral.
 var country_slot_arr:       PackedInt32Array = PackedInt32Array()
+# ─── 视野迷雾（owner = VisionSolver）────────────────────────────────────
+# visible  : 当前是否在玩家国家视野内（0/1）。每次领土变更重算，不持久化。
+# explored : 是否曾经进入过视野（0/1）。单调累积，是玩家进度，进 PKSV 的 PKFG。
+# fog_k    : 由上面两个位做 hex 邻域 blur 得到的「知识度」0..255，供 enum_lut.a
+#            与迷雾层消费。纯派生量，不进 component schema、不存档。
+#            0 = 未探索，128 ≈ 已探索未可见，255 = 完全可见。
+var visible_arr:            PackedByteArray = PackedByteArray()
+var explored_arr:           PackedByteArray = PackedByteArray()
+var fog_k_arr:              PackedByteArray = PackedByteArray()
+# 上面三个数组是否已被 VisionSolver 解算过。数组大小不能当这个判据用——
+# init_soa_from_bake 会把它们分配成全 0，那与"全图未探索"字节上无法区分。
+# 消费者（enum_lut.a）在解算前必须按全知处理，否则首帧全图会是黑的。
+# 纯运行期状态，不进存档：恢复后由 refresh_country_visuals 重解算。
+var fog_solved: bool = false
 var resource_habitat_mask_arr: PackedByteArray = PackedByteArray()
 
 # ─── Dirty Mask（需求 2.1 / 2.4 阶段 A.2 投入使用） ───────────────────────
@@ -601,6 +615,9 @@ func _alloc_soa(n: int) -> void:
 	weather_target_type_arr.resize(n)
 	is_water_arr.resize(n)
 	country_slot_arr.resize(n)
+	visible_arr.resize(n)
+	explored_arr.resize(n)
+	fog_k_arr.resize(n)
 	resource_habitat_mask_arr.resize(n)
 	climate_dirty_mask.resize(n)
 	weather_dirty_mask.resize(n)
@@ -730,6 +747,8 @@ func rebuild_soa_from_cells() -> void:
 	var n: int = _cell_array.size()
 	var hydro_parent_seed: PackedInt32Array = hydro_parent_arr.duplicate()
 	_alloc_soa(n)
+	# 下面的循环把 visible/explored/fog_k 全部清零，等同于"尚未解算"。
+	fog_solved = false
 	# size=1 单位的 cube_to_world 缓存：内层循环用 dx/dy 相对位移，常量比例对方向判定无影响。
 	for i in range(n):
 		var c: HexCell = _cell_array[i]
@@ -774,6 +793,11 @@ func rebuild_soa_from_cells() -> void:
 		weather_target_type_arr[i] = c.weather_target_type & 0xFF
 		is_water_arr[i] = MapData.terrain_is_water_u8(int(terrain_arr[i]))
 		country_slot_arr[i] = -1
+		# 视野：纯运行期 SoA（无 HexCell 镜像）。全图未探索起步，由 VisionSolver
+		# 在 country bootstrap 后首解；存档恢复时 explored 由 PKFG 覆盖。
+		visible_arr[i] = 0
+		explored_arr[i] = 0
+		fog_k_arr[i] = 0
 		climate_dirty_mask[i] = 0
 		weather_dirty_mask[i] = 0
 		# B-full Step-2：6 个新字段 AoS → SoA 一次性镜像

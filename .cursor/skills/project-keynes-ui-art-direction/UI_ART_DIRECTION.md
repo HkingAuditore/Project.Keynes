@@ -143,7 +143,7 @@ Summary
   metric cards: terrain, climate, ecology, resource
 
 Tabs
-  地理信息, 人口信息, 市场信息, 自然资源
+  overview, geography, climate, hydrology, ecology, resources, history
 
 Content
   insights
@@ -155,14 +155,13 @@ Content
 
 Each tab must answer one player-facing question:
 
-- 地理信息：地形、地貌、海拔、气候、水文与生态如何塑造此地？
-- 人口信息：这里住着哪些 cohort，他们有多少人、多少人均财富、需要什么？
-- 市场信息：本地市场有哪些物资、库存、价格与短缺压力？
-- 自然资源：此地有哪些非零自然资源及其储量？
-
-Population rows may expand into per-good daily demand, but their node tree must remain stable under
-live patch. Market rows always retain every catalog good, including zero stock; natural resources
-retain stable hidden zero rows but only show non-zero reserves.
+- Overview: What matters most?
+- Geography: Where is it and how traversable is it?
+- Climate: How does temperature/moisture/sun shape it?
+- Hydrology: What is water, cloud, snow, ocean, wind doing?
+- Ecology: Is life stable, stressed, degrading, or recovering?
+- Resources: What is valuable, available, growing, or blocked?
+- History: What has changed recently?
 
 Layout constraints:
 
@@ -378,6 +377,152 @@ Selection should be subtle:
 - Optional small contextual flyout for 1 second.
 - No constant blinking.
 
+### Fog Of War And Borders
+
+Fog carries meaning, so keep the three states visually distinct without noise:
+
+- Unexplored: opaque, slow-drifting cloud bank. It must read as "nothing is known
+  here", not as bad weather.
+- Explored but unseen: thin veil plus desaturated terrain. Colour is the signal
+  for "remembered, not current"; real-time weather is masked here for the same
+  reason.
+- Visible: unmodified.
+
+Transitions between states are softened by a two-ring blur on the underlying
+knowledge value, not by animating per-cell alpha. Do not add per-hex fade
+tweens; the fog is one full-screen pass, and the softening already exists in the
+data.
+
+The target is a sea of clouds seen from above: billowing towers catching the sun
+on top, blue-grey ravines between them, ragged cauliflower edges where the deck
+breaks up.
+
+**Do not raymarch it.** That was tried and reverted. A top-down map only ever
+shows the top surface of the deck, so hundreds of noise taps per pixel buy nothing
+the player can see, and the step count a full-screen layer can afford is low
+enough that it undersamples and looks worse than the cheap path. The fog is a
+height field plus a few probes along the sun direction, which is where every part
+of the scattering model still comes from.
+
+Five things carry the look, in rough order of importance:
+
+- **Billow noise, not plain FBM.** Ordinary FBM has isotropic contours and reads as
+  smoke or marble no matter how it is lit. `|2n-1|` gives round tops and creased
+  valleys — cumulus. Keep the low octaves as ordinary gradient noise for the broad
+  coverage swell and switch only the high ones to billow; all-billow gives a
+  uniform foam. Domain warping on top of that breaks up the direction, and the
+  displacement wants to be close to a full noise cell — without it the contours
+  stay isotropic and the layer reads as smoke.
+- **Sky occlusion by tower height, plus a multiple-scattering fill.** Tops see the
+  whole sky, ravines do not — that is what makes a cloud *sea* rather than a lit
+  surface. The fill term is what keeps the ravines from going black, and it
+  deliberately ignores the surface normal, because light bouncing in from
+  neighbouring cloud has nothing to do with local orientation.
+- **Soft normals.** A raw FBM gradient is white noise — every octave contributes
+  the same slope — and shading with it makes the cloud look like crumpled foil.
+  Damp the high octaves so lighting is driven by the large shapes and detail only
+  perturbs it.
+- **Multi-scatter extinction, not single-exponential Beer.** A single exponential
+  crushes shadows to black, which reads as smoke. Two exponentials with different
+  rates approximate the long tail that makes clouds look translucent.
+- **A near-white albedo with the darks earned by lighting.** Darkening the albedo
+  to get contrast produces a flat grey slab — this was the exact failure mode of
+  an earlier attempt. Balance direct + bounce + ambient so tower tops nearly clip
+  to white.
+
+Cellular noise was tried twice as a way to get the discrete lump-by-lump reading
+of a real cloud sea, and rolled back to billow FBM both times on the strength of
+how it actually looked. If anyone revisits it: do not build the lumps from Worley
+F1. `min()` over candidate distances has a discontinuous gradient wherever the
+nearest feature point changes, so every cell boundary becomes a hard crease and
+the screen fills with a Voronoi polygon net — straight edges around glowing cell
+centres, closer to cracked ice than to cloud. A smoother dome profile does not
+help, because the crease comes from `min()` rather than from the profile. Summing
+smooth radial kernels instead stays smooth everywhere. Note also that cellular
+noise turns its hash output directly into feature-point *positions*, so a weakly
+decorrelated hash like `fract(sin(x))` — tolerable for gradient noise, where
+interpolation hides it — shows up as lumps marching in rows.
+
+Clouds are not opaque diffuse surfaces. Their single-scattering albedo is
+essentially 1 and photons bounce dozens of times before leaving, so the shadowed
+side is nowhere near black. Anything that models them like stone — a hard `N·L`,
+no bounce term, a sky-occlusion floor pushed to zero — immediately reads as
+"missing GI".
+
+The subtler version of the same mistake is attenuating the bounce term
+*exponentially*. An exponential is Beer's law, which describes direct
+transmission of singly-scattered light. High-albedo media are in the diffusion
+regime instead, and diffusion has a much heavier tail — a rational `1/(1+kd)`
+is the cheap stand-in. Depth 2 gives 0.11 under an exponential versus 0.31 under
+the rational form, and that gap is the whole difference between stone and a cloud
+whose shadowed side still glows.
+
+Shadowed cloud is blue, not neutral grey. The lit face is warm because it sees
+the sun directly; deeper in, the sun is occluded and the dominant illuminant
+becomes skylight, which is Rayleigh-scattered and strongly blue. Water droplets
+scatter almost achromatically, so the light bouncing around inside the cloud does
+not itself turn blue — it simply fades, and the sky takes over. The multiple
+scattering fill therefore has to drift in colour from key to sky with depth. That
+warm-lit / cool-shadowed pairing carries a large share of the realism; a grey
+shadow reads as painted stone immediately. Normalise the tint colour to unit
+luminance so hue and brightness stay independently tunable.
+
+Any layer that consumes time-of-day must also consume the moonlight triple from
+`EarthDaylight`. Terrain, water and vegetation all do; a layer that forgets will
+sit pitch black over a moonlit landscape. Near the terminator that is still not
+enough: daylight and moonlight both fade to zero there and leave a gap, so a
+skylight floor is needed on top — and it must be tinted blue like the sky, not
+grey.
+
+Three more that are easy to get wrong:
+
+- A single-lobe phase function collapses to near-black whenever the sun is low,
+  because looking straight down makes the scattering angle track sun elevation.
+  Real clouds do not do this — high-order scattering has already washed out the
+  directionality — so the phase must carry an isotropic floor.
+- Never accumulate premultiplied radiance and then divide by coverage. Coverage is
+  identically 1 across unexplored territory, so dividing it back out removes every
+  bit of light and shade along with it.
+- Height-field probes (self-shadowing and similar) must use the same octave count
+  as the field they are compared against. Mismatched bands make the difference
+  dominated by frequencies only one side has, which produces speckle instead of
+  directional shadow.
+
+Lighting comes from the same per-pixel `earth_daylight` terminator as terrain,
+water, vegetation and weather clouds, so the fog is swept by dawn and dusk along
+with everything else — cold white tops at noon, warm rim light and long inter-cloud
+shadows at dusk, cold blue ambient at night. Never let the night side fall to
+black; unexplored territory turning into a dead black slab reads as a rendering
+bug.
+
+Two rules that are easy to get wrong:
+
+- **Procedural noise must fade octaves by screen footprint.** Zoomed out, high
+  octaves drop below a pixel and point-sampling turns the whole layer into
+  flickering grit. This is a general constraint for any procedural layer on a
+  zoomable map, not a fog quirk.
+- **The map wraps east-west, so the noise has to tile.** Sample points get folded
+  back into one wrap period; ordinary noise does not match across that boundary
+  and leaves a vertical seam straight down the screen. Every noise call in the fog
+  layer, including the one that breaks up the hex outline, uses the tileable
+  variants.
+- **Quality is tiered, and the cheapest tier is genuinely cheap.** q0 is flat
+  colour with a single octave and no lighting at all; q1 adds normals and sky
+  occlusion; q2/q3 add domain warping, self-shadow probes, powder, silver lining
+  and subsurface transmission. Low-end hardware gets q0, desktop gets q3. The
+  terrain early-out is only valid at q0, because it assumes the fog paints a
+  constant colour.
+
+Country borders are a double band: each side of a contested edge contributes its
+own inward ribbon, so a shared border reads as two national colours with a dark
+seam. That dark casing is what lets a saturated national colour hold up over any
+terrain — without it a gold line dissolves into yellow-green grassland.
+
+Line width is **not** constant in screen space. A fixed hairline over huge
+hexes looks cheap when zoomed in, so screen width grows sublinearly with zoom
+(`base × zoom^0.42`, clamped) while geometry stays fixed — camera zoom only
+adjusts a shader uniform and never rebuilds the mesh.
+
 ## 7. Performance Strategy
 
 ### UI Refresh Frequency
@@ -402,11 +547,6 @@ Recommended pattern:
 - `refresh_selected_daily_lines()`: throttle and update cached data; do not recreate buttons, tabs, scroll containers, or card grids.
 - `set_model(model, rebuild_visible=false)`: preserve current tab, scroll position, and interactable controls.
 - `tab_selected`: rebuild visible tab only.
-
-Economy detail exception: when a cell is first selected during an in-flight native epoch, show a
-pending committed-detail state rather than an empty-state claim. The next committed live patch may
-materialize missing stable cohort/good rows once; subsequent patches must return to value-only
-updates and preserve expansion, tab, and scroll state.
 
 ### Allocation Control
 

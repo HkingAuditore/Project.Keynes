@@ -15,6 +15,10 @@ render_mode blend_mix;
 uniform sampler2D weather_lut : filter_nearest, repeat_disable;
 uniform sampler2D weather_lut_prev : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(0.0);
+// 视野门控：enum_lut.a = 迷雾知识度 k。看不见的格子不该下实时的雨。
+// 与 weather_overlay 同约定；fog_mask_enabled 关闭时整个分支被 uniform 条件跳过。
+uniform sampler2D enum_lut : filter_nearest, repeat_disable;
+uniform bool fog_mask_enabled = false;
 uniform float weather_lerp : hint_range(0.0, 1.0) = 1.0;
 uniform float world_time = 0.0;
 uniform float weather_strength : hint_range(0.0, 1.0) = 1.0;
@@ -325,6 +329,10 @@ void fragment() {
 		COLOR = vec4(0.0);
 	} else {
 		int cid = decode_cell_id(v_custom);
+		float fog_vis = 1.0;
+		if (fog_mask_enabled) {
+			fog_vis = smoothstep(0.5, 1.0, texture(enum_lut, cell_lut_uv(cid)).a);
+		}
 		vec4 wx = sample_weather(cid);
 		int wt = int(wx.r * 255.0 + 0.5);
 		float intensity = wx.g;
@@ -345,7 +353,7 @@ void fragment() {
 #endif
 
 		// alpha 合成：雪权重适中，不过曝
-		float alpha = (rain * 0.98 + snow * 1.30 + fog * 0.34 + flash * 0.30) * edge * weather_strength * mix(0.72, 1.28, wx_strength);
+		float alpha = (rain * 0.98 + snow * 1.30 + fog * 0.34 + flash * 0.30) * edge * weather_strength * mix(0.72, 1.28, wx_strength) * fog_vis;
 		if (alpha <= 0.001) {
 			COLOR = vec4(0.0);
 		} else {

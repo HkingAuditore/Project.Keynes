@@ -1,5 +1,15 @@
 # Country Scheduling and Joint Save
 
+## PKSV coordinator boundary
+
+`GameSaveCoordinator` freezes new clock advancement and drains an already-open
+country/economy continuation once per rendered frame. Capture begins only when
+the country report is idle and the economy report is committed. PKSV restore
+regenerates/configures the world first, then restores PKCN before PKEC, and PKFG
+after both. This is the product-level wrapper around the native joint-save rule;
+details and all sections are in
+[`game-flow-start-save.md`](./game-flow-start-save.md).
+
 ## COUNTRY_GRAPH
 
 `CountryDailySystem` 注册为 `country_daily`，priority `255`，`must_run=false`，
@@ -32,6 +42,14 @@ PKEC v12 不保存全局国库与逐地块科技，header 记录对应 PKCN sche
 恢复顺序必须是 PKCN 后 PKEC；顺序或交叉 hash 不一致返回
 `economy_country_restore_order_or_hash_mismatch`。
 
+## PKFG v1（视野）
+
+PKFG 不属于国家权威，但恢复顺序依赖它：视野解算以玩家领土为源，所以 `pkfg` 必须
+排在 PKCN 之后。它只存单调的 `cell_explored`，当前可见性与知识度 `fog_k` 在恢复后由
+`WorldRuntimeHost.refresh_country_visuals()` 重算。领土变更（`country_committed`）
+同样触发这条链路，顺带重建国界 mesh。契约细节见
+[视野迷雾与国界线](./vision-fog-and-borders.md)。
+
 联合存档要求国家命令图在当前 committed day idle，且经济位于 committed boundary。PKEC v10
 迁移为空贸易状态并在加载后重建拓扑；PKEC v2-v9 不兼容，读取返回
 `legacy_countryless_economy_save_unsupported`，不再执行旧科技/国库迁移默认值。国家归属变化
@@ -40,5 +58,5 @@ PKEC v12 不保存全局国库与逐地块科技，header 记录对应 PKCN sche
 ## 验证
 
 最低验证序列：schema/binding 静态检查、debug/release GDExtension、国家 focused test、PKCN+
-PKEC round-trip、经济守恒/worker-scalar hash、30+ tick ACTIVE soak，以及 100k territory
-update、200k/10M cohort 基准。
+PKEC round-trip、PKFG `explored` round-trip 与恢复后国界/视野一致性、经济守恒/worker-scalar
+hash、30+ tick ACTIVE soak，以及 100k territory update、200k/10M cohort 基准。

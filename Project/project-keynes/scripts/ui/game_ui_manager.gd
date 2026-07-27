@@ -10,17 +10,25 @@ signal regenerate_requested()
 signal clear_selection_requested()
 signal map_overlay_requested(request: Dictionary)
 signal map_overlay_cleared()
+signal pause_menu_visibility_changed(open: bool)
+signal return_main_menu_requested()
+signal exit_game_requested()
 
 const RIGHT_PANEL_WIDTH := 460.0
 const OVERLAY_LEGEND_WIDTH := 198.0
+const GM_PANEL_TARGET_WIDTH := 560.0
+const GM_PANEL_MIN_WIDTH := 300.0
 const DemandDetailDialogScript = preload("res://scripts/ui/components/demand_detail_dialog.gd")
+const PauseMenuScript = preload("res://scripts/ui/components/pause_menu.gd")
 
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
 var _demand_detail_dialog
 var _inspector_view_model: CellInspectorViewModel
+var _map: MapData
 var _selected_cell: HexCell
+var _selected_fog_state := VisionSolver.FOG_VISIBLE
 var _last_cached_panel_ms: int = 0
 var _live_revision_cell := -1
 var _live_revision_tab := ""
@@ -34,12 +42,19 @@ var _perf_hud: PerfMiniHUD
 var _diagnostics_source: Node = null
 var _map_overlay_toolbar: MapOverlayToolbar
 var _map_overlay_legend: OverlayLegend
+var _pause_menu
+var _gm_available := false
 
 
 func _ready() -> void:
 	layer = 20
+	_gm_available = gm_available_for_build(OS.is_debug_build(), Engine.is_editor_hint())
 	_build_ui()
 	show_loading("正在生成世界")
+
+
+static func gm_available_for_build(debug_build: bool, editor_hint: bool) -> bool:
+	return debug_build or editor_hint
 
 
 func set_world_context(
@@ -56,6 +71,7 @@ func set_world_context(
 			_country_facade.country_committed.disconnect(old_callback)
 	if _inspector_view_model == null:
 		_inspector_view_model = CellInspectorViewModel.new()
+	_map = map
 	_inspector_view_model.set_context(map, generator, view_adapter, world_clock, sea_level, hex_size)
 	_invalidate_live_revision()
 	_country_facade = generator.get_country_facade() if generator != null and \
@@ -72,10 +88,20 @@ func set_world_context(
 		_map_overlay_legend.update_for_mode(OverlayMode.MODE.NONE)
 	if _demand_detail_dialog != null:
 		_demand_detail_dialog.close_dialog()
+	if _gm_console != null:
+		_gm_console.refresh_gm_capabilities()
 
 
 func set_diagnostics_source(source: Node) -> void:
+	if _diagnostics_source != null and _diagnostics_source.has_signal("gm_toggle_changed"):
+		var old_callback := Callable(self, "_on_runtime_gm_toggle_changed")
+		if _diagnostics_source.is_connected("gm_toggle_changed", old_callback):
+			_diagnostics_source.disconnect("gm_toggle_changed", old_callback)
 	_diagnostics_source = source
+	if source != null and source.has_signal("gm_toggle_changed"):
+		var callback := Callable(self, "_on_runtime_gm_toggle_changed")
+		if not source.is_connected("gm_toggle_changed", callback):
+			source.connect("gm_toggle_changed", callback)
 	if _gm_console != null:
 		_gm_console.set_main(source)
 	if _perf_hud != null:
@@ -83,8 +109,16 @@ func set_diagnostics_source(source: Node) -> void:
 
 
 func toggle_gm_panel() -> void:
-	if _gm_console != null:
-		_gm_console.visible = not _gm_console.visible
+	if not _gm_available or _gm_console == null:
+		return
+	if _gm_console.is_panel_open():
+		_gm_console.close_panel()
+	else:
+		_gm_console.open_panel()
+
+
+func is_gm_available() -> bool:
+	return _gm_available and _gm_console != null
 
 
 func toggle_perf_hud() -> void:
@@ -101,7 +135,11 @@ func show_cell_panel(cell: HexCell) -> void:
 	if cell == null:
 		hide_cell_panel()
 		return
-	_set_inspector_trace_cell(int(cell.index))
+	# 只有当前可见的格子才值得开经济追踪：未探索与已探索但看不见的格子都拿不到
+	# 经济页签，追踪它只会让 recorder 白算一份。
+	_selected_fog_state = VisionSolver.fog_state(_map, int(cell.index))
+	_set_inspector_trace_cell(int(cell.index) \
+		if _selected_fog_state == VisionSolver.FOG_VISIBLE else -1)
 	_right_panel.set_model_for_selection(_inspector_view_model.build(cell))
 	if not _right_panel.visible:
 		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
@@ -125,6 +163,15 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		"live_patch_apply_ms": 0.0,
 	}
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
+		return timing
+	# 视野状态变了意味着页签集合变了，打补丁改不动页签栏，必须整块重建。
+	var fog := VisionSolver.fog_state(_map, int(_selected_cell.index))
+	if fog != _selected_fog_state:
+		_selected_fog_state = fog
+		_set_inspector_trace_cell(int(_selected_cell.index) \
+			if fog == VisionSolver.FOG_VISIBLE else -1)
+		refresh_selected_panel()
+		timing["ran"] = true
 		return timing
 	var tab_id := _right_panel.current_tab()
 	timing["tab"] = tab_id
@@ -288,7 +335,20 @@ func map_safe_area() -> Rect2:
 
 
 func dismiss_overlay_menu() -> bool:
+	if _gm_console != null and _gm_console.is_panel_open():
+		_gm_console.close_panel()
+		return true
 	return _map_overlay_toolbar != null and _map_overlay_toolbar.dismiss_submenu()
+
+
+func toggle_pause_menu() -> void:
+	if _pause_menu != null:
+		_pause_menu.toggle()
+
+
+func show_exit_save_failure(action: String, result: Dictionary) -> void:
+	if _pause_menu != null:
+		_pause_menu.show_save_failure(action, result)
 
 
 func set_resource_discovery_context(
@@ -313,6 +373,7 @@ func _build_ui() -> void:
 	_top_bar.setup_requested.connect(func() -> void: setup_requested.emit())
 	_top_bar.gm_requested.connect(toggle_gm_panel)
 	add_child(_top_bar)
+	_top_bar.set_gm_available(_gm_available)
 
 	_right_panel = InspectorPanel.new()
 	_right_panel.name = "RightPanel"
@@ -332,12 +393,17 @@ func _build_ui() -> void:
 	_demand_detail_dialog.name = "DemandDetailDialog"
 	add_child(_demand_detail_dialog)
 
-	_gm_console = DebugConsole.new()
-	_gm_console.name = "GMConsole"
-	_gm_console.runtime_diagnostics_only = true
-	add_child(_gm_console)
-	_gm_console.position = Vector2(
-		UITokens.SPACE_SM, PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM)
+	if _gm_available:
+		_gm_console = DebugConsole.new()
+		_gm_console.name = "GMConsole"
+		_gm_console.console_mode = DebugConsole.ConsoleMode.PLAYER_GM
+		_gm_console.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+		_gm_console.custom_minimum_size = Vector2.ZERO
+		add_child(_gm_console)
+		_gm_console.set_gm_local_toggle_provider(
+			Callable(self, "_get_local_gm_toggle_state"),
+			Callable(self, "_set_local_gm_toggle"))
+		_layout_gm_panel()
 
 	_perf_hud = PerfMiniHUD.new()
 	_perf_hud.name = "PerfMiniHUD"
@@ -363,6 +429,7 @@ func _build_ui() -> void:
 	_map_overlay_legend.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	add_child(_map_overlay_legend)
 	get_viewport().size_changed.connect(_layout_overlay_legend)
+	get_viewport().size_changed.connect(_layout_gm_panel)
 	_layout_overlay_legend()
 
 	if _diagnostics_source != null:
@@ -371,6 +438,14 @@ func _build_ui() -> void:
 	_loading_overlay = WorldLoadingOverlay.new()
 	_loading_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_loading_overlay)
+
+	_pause_menu = PauseMenuScript.new()
+	_pause_menu.name = "PauseMenu"
+	_pause_menu.visibility_requested.connect(
+		func(open: bool) -> void: pause_menu_visibility_changed.emit(open))
+	_pause_menu.return_menu_requested.connect(func() -> void: return_main_menu_requested.emit())
+	_pause_menu.exit_requested.connect(func() -> void: exit_game_requested.emit())
+	add_child(_pause_menu)
 
 	for child in get_children():
 		if child is Control:
@@ -417,3 +492,34 @@ func _layout_overlay_legend() -> void:
 	# A zero-height anchored rect plus BEGIN growth keeps variable legend
 	# content attached to the bottom edge instead of growing off-screen.
 	_map_overlay_legend.offset_top = -UITokens.SPACE_MD
+
+
+func _layout_gm_panel() -> void:
+	if _gm_console == null:
+		return
+	var viewport_width := get_viewport().get_visible_rect().size.x
+	var available := viewport_width - RIGHT_PANEL_WIDTH - UITokens.SPACE_MD * 3.0
+	var panel_width := clampf(available, GM_PANEL_MIN_WIDTH, GM_PANEL_TARGET_WIDTH)
+	_gm_console.offset_left = UITokens.SPACE_SM
+	_gm_console.offset_right = UITokens.SPACE_SM + panel_width
+	_gm_console.offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM
+	_gm_console.offset_bottom = -UITokens.SPACE_SM
+
+
+func _get_local_gm_toggle_state(toggle_id: String) -> Dictionary:
+	if toggle_id == "diagnostics.perf_hud" and _perf_hud != null:
+		return {"ok": true, "enabled": _perf_hud.visible}
+	return {"ok": false, "message": "未知本地 GM 开关。"}
+
+
+func _set_local_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
+	if toggle_id != "diagnostics.perf_hud" or _perf_hud == null:
+		return {"ok": false, "message": "未知本地 GM 开关。"}
+	if _perf_hud.visible != enabled:
+		_perf_hud.toggle_visible()
+	return {"ok": true, "enabled": _perf_hud.visible, "message": "Perf HUD 已更新。"}
+
+
+func _on_runtime_gm_toggle_changed(toggle_id: String, enabled: bool) -> void:
+	if toggle_id == "visual.day_night":
+		set_day_night_enabled(enabled)

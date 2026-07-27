@@ -6,12 +6,21 @@ probe/cooldown、closing audit full-scan entries 与 compact capsule 字段定�
 
 本文用于解释运行日志，并给出排查 C++/DOTS 路径是否符合预期的流程。目标不是只看“耗时高不高”，而是定位高耗时来自 C++ compute、GDScript fallback、slot sync、flush、dirty mask、GPU upload，还是统计窗口里的旧 spike。
 
-## 玩家场景 GM 性能入口
+## 玩家场景 GM 管理入口
 
-`player_game.tscn` 运行时默认显示右上角 `PerfMiniHUD`；F4 切换显隐。顶栏 GM 按钮、
-反引号或 F1 打开精简性能面板，可查看 last-tick、30-tick Top-N、climate/weather/economy
-breakdown，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 录制。玩家场景的诊断数据源是
-`WorldRuntimeHost`，它在同一 daily tick 上分段记录：
+`player_game.tscn` 的顶栏 GM 按钮、反引号或 F1 打开左侧管理面板；Escape 优先关闭该面板。
+入口只在 editor 或 debug/dev 构建创建，release 构建不显示按钮且快捷键无效。面板包含总览、
+选中对象、指令、开关和记录五页；可查看 last-tick、调度摘要、国家/经济报告与选中地块的有界
+cohort/market/building/resource 快照，并执行性能快照、性能 CSV、地块 CSV 和经济 epoch CSV 录制。
+`PerfMiniHUD` 默认隐藏，可由 F4 或诊断开关显示。
+
+面板只在可见时以 0.5 秒间隔刷新当前页，不挂在 daily tick 上，也不重建控件树。查询统一经过
+`WorldRuntimeHost.get_gm_snapshot()`，UI 只持有显示模型，不拥有模拟状态。命令语法固定为
+`<command_id> key=value`；除暂停/速度外必须显示解析参数、目标和生效日确认，随后由
+`CountryFacade` / `EconomyFacade` 排入既有 native 队列。GM 不暴露任意 GDScript、原始 SoA 写入、
+ACTIVE/SHADOW 切换或旧迁移实验开关。
+
+玩家场景的诊断数据源是 `WorldRuntimeHost`，它在同一 daily tick 上分段记录：
 
 - `t_sus_ms`：`MapGenerator.sus_tick_daily()`，包含 climate、economy 和其他 SUS jobs。
 - `speed_multiplier`：采样时 `WorldClock` 的实际速度倍率；比较场景吞吐时必须先按此列分组，

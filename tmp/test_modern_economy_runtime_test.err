@@ -1,0 +1,4 @@
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 191 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

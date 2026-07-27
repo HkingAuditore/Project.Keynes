@@ -41,7 +41,7 @@ const F32: int = DCComponentIds.F32
 const I32: int = DCComponentIds.I32
 const U8: int  = DCComponentIds.U8
 
-# ─── CELL_SCHEMA — 140 条（截至 2026-07-09，含物资库存/价格字段；
+# ─── CELL_SCHEMA — 生产 142 条 + demo 1 条（截至 2026-07-27，含物资库存/价格与视野字段；
 #     与 component_ids.gd / world.gd / world_ext.cpp BIND_TABLE 1:1 镜像）────
 #
 # 字段 demo（可选，默认 false）：标记为 true 的条目仅在
@@ -98,6 +98,8 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.weather_target_type", cpp_name = "cell_weather_target_type",  dtype = U8,  track_prev = false, map_field = "weather_target_type_arr",   prev_field = "",                         owner = "weather.commit" },
 	{ name = &"cell.is_water",           cpp_name = "cell_is_water",              dtype = U8,  track_prev = false, map_field = "is_water_arr",              prev_field = "",                         owner = "map_generation" },
 	{ name = &"cell.country_slot",       cpp_name = "cell_country_slot",          dtype = I32, track_prev = false, map_field = "country_slot_arr",          prev_field = "",                         owner = "country_runtime" },
+	{ name = &"cell.visible",            cpp_name = "cell_visible",               dtype = U8,  track_prev = false, map_field = "visible_arr",               prev_field = "",                         owner = "vision" },
+	{ name = &"cell.explored",           cpp_name = "cell_explored",              dtype = U8,  track_prev = false, map_field = "explored_arr",              prev_field = "",                         owner = "vision" },
 	{ name = &"cell.resource_habitat_mask", cpp_name = "cell_resource_habitat_mask", dtype = U8, track_prev = false, map_field = "resource_habitat_mask_arr", prev_field = "", owner = "map_generation" },
 	{ name = &"cell.climate_dirty_mask", cpp_name = "cell_climate_dirty",         dtype = U8,  track_prev = false, map_field = "climate_dirty_mask",        prev_field = "",                         owner = "climate.pass_a" },
 	{ name = &"cell.weather_dirty_mask", cpp_name = "cell_weather_dirty",         dtype = U8,  track_prev = false, map_field = "weather_dirty_mask",        prev_field = "",                         owner = "weather.commit" },

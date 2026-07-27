@@ -1,0 +1,21 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Parse Error: Cannot infer the type of "runner" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://scripts/game/game_flow_service.gd:16)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://scripts/ui/components/pause_menu.gd:0)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://scripts/ui/game_ui_manager.gd:0)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://scripts/game/selection_controller.gd:0)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://scripts/game/game_save_coordinator.gd:0)
+ERROR: Failed to load script "res://scripts/game/game_save_coordinator.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+ERROR: Failed to instantiate an autoload, script 'res://scripts/game/game_flow_service.gd' does not inherit from 'Node'.
+   at: start (main/main.cpp:4412)
+SCRIPT ERROR: Invalid access to property or key 'quit_game' on a base object of type 'Nil'.
+   at: _show_home (res://scripts/ui/main_menu.gd:134)
+   GDScript backtrace (most recent call first):
+       [0] _show_home (res://scripts/ui/main_menu.gd:134)
+       [1] _ready (res://scripts/ui/main_menu.gd:28)

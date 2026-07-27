@@ -1,5 +1,17 @@
 # Project.Keynes System Map
 
+## Formal game entry (2026-07)
+
+`project.godot` starts `scenes/main_menu.tscn`. The product flow is
+`MainMenu -> GameFlowService -> player_game.tscn -> WorldRuntimeHost ->
+MapGenerator`; `world_setup.tscn` is a development tool only. New games use
+`NewGameConfig v1`, deterministic `StartLocationPolicy`, PKCN
+`country.player`, and `StarterSettlementBootstrap`. Complete saves are
+coordinated by `GameSaveCoordinator` and stored by `SaveRepository` as PKSV v1.
+Read [`game-flow-start-save.md`](../docs/cpp-dots-runtime/game-flow-start-save.md)
+before changing session routing, player bootstrap, save boundaries, or restore
+order.
+
 2026-07 性能优化只改变 transient cache、审计策略和 bridge payload，不改变
 系统拓扑；实现契约见
 [`runtime-performance-optimization-2026-07.md`](../docs/cpp-dots-runtime/runtime-performance-optimization-2026-07.md)。
@@ -28,14 +40,19 @@
 - C++/DOTS 运行时：读 `docs/cpp-dots-runtime/architecture-overview.md`、`docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`、`docs/cpp-dots-runtime/scheduling-and-job-graph.md`、`gdext/src/world_ext*.cpp`、`gdext/src/sus_scheduler_ext.cpp`、`gdext/src/system_schedule.cpp`。
 - 气候/天气/海洋：读 `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`、`Project/project-keynes/scripts/weather/weather_system.gd`、`Project/project-keynes/scripts/weather/field_solver.gd`、`Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`、`docs/cpp-dots-runtime/computation-pipelines.md`。
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
+- 视野迷雾与国界：读 `docs/cpp-dots-runtime/vision-fog-and-borders.md`、`Project/project-keynes/scripts/geography/vision_solver.gd`、`Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`、`Project/project-keynes/scripts/rendering/country_border_layer.gd`。
 - 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/cpp-dots-runtime/performance-diagnostics-playbook.md`、`Project/project-keynes/tests/*.gd`。
 - 阶层与市场：读 `gdext/src/economy_runtime.{h,cpp}`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd` 和 `docs/cpp-dots-runtime/native-economy-runtime.md`。
 
 ## 运行入口
 
-Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `res://scenes/world_setup.tscn`，它只挂 `scripts/ui/world_setup.gd`，负责地图尺寸、seed、海平面、大陆数量和若干友好化 climate 控件。点击生成后默认进入 `res://scenes/player_game.tscn`，并通过 meta/settings 把 setup 配置交给 `scripts/game/player_game.gd` / `scripts/game/world_runtime_host.gd`。启动页的「调试场景」按钮仍进入 `res://scenes/main.tscn`，保留旧 debug/runtime lab。
+Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `res://scenes/main_menu.tscn`（见上文「Formal game entry」），正式流程经 `GameFlowService` 进入 `res://scenes/player_game.tscn`，由 `scripts/game/player_game.gd` / `scripts/game/world_runtime_host.gd` 承接。`res://scenes/world_setup.tscn`（`scripts/ui/world_setup.gd`，地图尺寸/seed/海平面/大陆数量等友好化控件）降级为开发工具入口，`res://scenes/main.tscn` 保留旧 debug/runtime lab。
 
-`player_game.gd` 是面向玩家的轻量场景装配层。它连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的精简 GM 性能模式：顶栏按钮、反引号或 F1 打开性能面板，F4 切换 FPS HUD；性能 CSV、地块 CSV 与只读经济 epoch CSV 分别由既有 `PerfRecorder`、`TileDataRecorder` 和 `EconomyDataRecorder` 生成。玩家场景挂载独立 `DataOverlayLayer`，但只使用静态 cell-index atlas + 动态 per-cell RGBA8 LUT；soak/A-B 与旧 debug lab 的全图 overlay 开关仍只在 debug 入口。
+`player_game.gd` 是面向玩家的轻量场景装配层。它连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的 `PLAYER_GM` 模式：顶栏按钮、反引号或 F1 打开总览/选中对象/指令/开关/记录五页管理面板，F4 切换 FPS HUD；入口只在 editor 或 debug/dev 构建创建，release 不创建面板并禁用快捷键。性能 CSV、地块 CSV 与只读经济 epoch CSV 分别由既有 `PerfRecorder`、`TileDataRecorder` 和 `EconomyDataRecorder` 生成。玩家场景挂载独立 `DataOverlayLayer`，但只使用静态 cell-index atlas + 动态 per-cell RGBA8 LUT；soak/A-B 与旧 `LEGACY_DEBUG_LAB` 的全图 overlay/迁移实验开关仍只在 debug 入口。
+
+`WorldRuntimeHost` 是 GM 的稳定运行时边界：`get_gm_capabilities()` 描述白名单命令、数据页和开关，`get_gm_snapshot(section, context)` 返回带 revision 的有界快照，`execute_gm_command(id, args)` 返回结构化排队/错误结果，`set_gm_toggle(id, enabled)` 设置后再读回实际状态。`GMPanelViewModel` 只负责 `<command_id> key=value` 解析、补全、验证和固定行模型；UI 不直接写 `MapData`、DataCore SoA 或 native 对象。除时间暂停/速度外，国家与经济写操作默认排到下一游戏日，使用会话内单调 sequence 并复用 `CountryFacade` / `EconomyFacade` 的原生命令预检与冻结周期提交规则；显示货币按 `×10000`、商品按 `×1000` 转成定点整数。
+
+GM 的 `visual.fog_of_war` 开关复用 `WorldRuntimeHost.set_fog_of_war_enabled()`：它回读正式对局上下文门控后的实际状态，并通过既有 `VisionSolver -> enum_lut.a -> HexRenderer/Inspector` 链刷新，不直接改写国家 runtime。
 
 `main.gd` 是当前 debug 主场景协调者，仍然很大。它负责：
 
@@ -111,6 +128,7 @@ world_setup.tscn
 - `_cell_array`、`_cell_index`、`_neighbor_indices`，用于 hot path 的稳定索引和六邻表。
 - 大量 PackedArray SoA 字段，例如 `temp_arr`、`moisture_arr`、`weather_precip_arr`、`terrain_arr`、`ocean_current_x_arr`、`vegetation_vitality_arr`、`river_discharge_arr`。
 - `climate_dirty_mask` 和 `weather_dirty_mask`，给 atlas upload、debug 和增量路径消费。
+- 视野三件套：`visible_arr`、`explored_arr`（两者是 `owner="vision"` 的 schema 组件）和派生的 `fog_k_arr`（不进 schema，只喂 `enum_lut.a`）。
 
 `component_schema.gd` 是 cell component 的单一源。新增持久 cell 字段时按它的 SOP：
 
@@ -215,10 +233,18 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 `WorldData` 保存 CPU buffer 和 GPU `ImageTexture`：
 
-- 静态/生成期：`height_tex`、`terrain_horizon_tex`、`enum_atlas_tex`、`flow_tex`、`water_depth_tex`、`terrain_normal_tex`。
-- 运行期动态：`weather_field_tex`、`dynamic_cell_atlas_tex`、`ecology_visual_atlas_tex`、`dyn_lut_tex`、`eco_lut_tex`、`weather_lut_tex`。
-- 间接寻址：`enum_atlas_tex` 的 G/B 保存 `cell.index`，per-cell LUT 把每日更新从 pixel fan-out 降到 `n_cells` texel。
+- 静态/生成期：`height_tex`、`terrain_horizon_tex`、`enum_atlas_tex`、`flow_tex`、`water_depth_tex`、`terrain_normal_tex`；另有两个非纹理的静态视野场 `cell_view_height` / `cell_view_block`（`PackedByteArray`，`bake_world` 由地形派生，供 `VisionSolver` 只读）。
+- 运行期动态：`weather_field_tex`、`dynamic_cell_atlas_tex`、`ecology_visual_atlas_tex`、`enum_lut_tex`、`dyn_lut_tex`、`eco_lut_tex`、`weather_lut_tex`。
+- 间接寻址：`enum_atlas_tex` 的 G/B 保存 `cell.index`，per-cell LUT 把每日更新从 pixel fan-out 降到 `n_cells` texel。`enum_lut_tex` 是 **RGBA8**：R/G/B = biome/veg/cover，**A = 迷雾知识度 `fog_k`**。
 - 玩家信息遮罩：`DataOverlayLayer` 位于基础地图/植被上方、选择高亮下方；`data_overlay.gdshader` 从 `enum_atlas_tex.GB` 解码 cell ID，再以 NEAREST 读取玩家 `overlay_lut`。世界拓扑不变时只上传 `lut_dims.x * lut_dims.y * 4` 字节，不创建地图分辨率动态纹理。
+
+完整 z 序（`top_level` 的 `Node2D` 挂在 `WorldRoot` 下）：`WorldQuad` 0、`WeatherLayer` 4、`DataOverlayLayer` 5、`CountryBorderLayer` 6、`CellHighlight` 10、`FogOfWarLayer` 12。迷雾在最上层，未探索区要连天气云、国界线和选中框一起盖住。
+
+`world_map.gdshader` 读 `enum_lut.a` 对已探索但不可见的区域做去饱和灰化（零新增 texture sample），并在 `fog_early_out_enabled` 时对完全未探索像素跳过整条地形管线（默认关，须 GPU A/B 实测；且只在迷雾最低质量档放行，因为早退要求迷雾层输出常量色）。`weather_overlay.gdshader` 与 `weather_cell_curtain.gdshader` 同样按可见性屏蔽实时天气。契约见 `docs/cpp-dots-runtime/vision-fog-and-borders.md`。
+
+`fog_of_war.gdshader` 把云当高度场着色：`cloud_noise.gdshaderinc` 的 `cloud_fbm_evolve_d()` 给出带解析导数的密度场（导数即梯度 → 法线，省掉 4-tap 差分），光照走 `earth_daylight` 逐像素晨昏线，与地形/水面/植被/天气云同源。该 FBM 按屏幕足迹做 **LOD 截断**——跨不过一个像素的 octave 平滑淡出，否则缩小地图时程序化噪声会走样成沙砾状噪点；任何新增程序化噪声层都要照做。质量分 q0..q3 四档，有效档 = min(编译期 tier 上限, 运行时 `visual_quality` 映射)。
+
+`CountryBorderLayer` 的 ribbon 是**内缩梯形**：凸多边形向内偏移时边要变短（六边形每端 `d·tan30°`），外侧顶点落在 hex 角上，相邻两条在角点顶点重合。写成向外延伸会让每条边越过角点、相邻两条交叉成 X。顶点 UV 存世界单位（沿边距离 / 垂距），保证梯形两个三角形里插值精确。屏幕线宽随 zoom 次线性增长而非恒定。
 
 `HexRenderer` 是主地图渲染节点，使用 full-screen quad 和 `world_map.gdshader`。它接收 `WorldData`、visual quality、TOD、水面、天气、detail layers 等开关。`WeatherLayer` 渲染天气 overlay，`ShrubLayer` 和 detail scatter 负责 MultiMesh/PCG 点缀。
 
@@ -252,15 +278,15 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 主要 UI：
 
 - `world_setup.gd`：生成前参数界面。
-- `player_game.gd`：玩家主场景装配层，负责 runtime/UI/controller wiring、基础玩家热键，以及 F1/F4 GM 性能入口。
-- `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、精简 GM 性能面板、FPS HUD、safe area 和控制信号；不直接承担逐字段渲染。
+- `player_game.gd`：玩家主场景装配层，负责 runtime/UI/controller wiring、基础玩家热键，以及 F1/反引号 GM 面板与 F4 性能 HUD 入口；Escape 先关闭 GM，再处理地图子菜单与暂停菜单。
+- `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、`PLAYER_GM` 面板、FPS HUD、safe area 和控制信号；不直接承担逐字段渲染。左侧 GM 面板在宽屏目标宽度 560px，在 800px 视口按右侧 460px Inspector 剩余空间收缩，二者可同时使用。
 - `ui/components/map_overlay_toolbar.gd` / `ui/overlay_legend.gd`：左侧纯图标双列信息菜单与非交互图例。资源按钮来自 `ResourceProfileRegistry`，按钮无可见文字，名称和说明通过 Tooltip/图例呈现。图例停靠右下角，Inspector 打开时自动左移避让；连续资源使用固定 profile 参考值与低值扩展的高色差色带，海拔使用同时改变色相和亮度的高对比科学色带。
 - `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
 - `map_interaction_controller.gd` / `selection_controller.gd` / `time_controls_controller.gd`：玩家输入、选中态和时间控制器。
 - `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
 - `info_panel_controller.gd`：右侧地块信息面板。
-- `debug_console.gd`：overlay、模拟开关、视觉开关、诊断动作、Telemetry。
+- `debug_console.gd`：默认 `LEGACY_DEBUG_LAB` 保留 overlay、模拟开关、迁移实验与 Telemetry；正式玩家场景显式选择 `PLAYER_GM`，只展示白名单运营能力。GM 可见时只以 2Hz 刷新当前页并更新缓存控件，隐藏时停止计时器，不在日 tick 重建节点树。
 - `perf_mini_hud.gd`：常驻小型性能 HUD。
 
 记录与诊断：
@@ -373,6 +399,11 @@ DataCore 或 MapData。
   因商人策略从 25%/1 日改为 12.5%/30 日分档库存基线而明确拒绝，ACTIVE 同时拒绝 v11 PROBE 和 v10。生产者收购系数现为 good-specific 硬上限（默认 95%），短缺只影响采购量/优先级；国内贸易复用同一 12.5% 营运底线，并以目的地冻结余额统一完成预检与扣款。新增商人流动性指标只进入 report、选中格快照和 Economy CSV v19，不进入 PKEC v16 或 hash。
 - Player-facing read path: selected cell → `CountryFacade.cell_summary()` →
   `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.
+- Visual/vision hook: `country_committed` → `WorldRuntimeHost.refresh_country_visuals()` →
+  `VisionSolver` re-solve → `enum_lut.a` rebake → `CountryBorderLayer` rebuild.
+  Exploration progress persists as PKSV `pkfg` (after PKCN); the Inspector gates
+  tabs by `VisionSolver.fog_state()`. See
+  [`vision-fog-and-borders.md`](../docs/cpp-dots-runtime/vision-fog-and-borders.md).
 
 ## Economy v18 portfolio investment
 

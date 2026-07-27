@@ -13,6 +13,9 @@
   `GOODS_SCALE=1000`。
 - 只有 `cell.country_slot` 进入 DataCore/MapData。名称、科技、国库与 CSR 不进入 HexCell、
   Godot Object 或逐格 component。
+- 视野迷雾与国界线**不属于本运行时**。它们只把 `cell.country_slot` 当只读输入：
+  `VisionSolver` 以玩家领土为解算源，`CountryBorderLayer` 靠邻格归属差异生成 mesh。
+  两者的状态存在 `MapData` 与 Godot 渲染层，不进 PKCN。
 
 100k cells、512 countries、200 goods、4096 tech 的主要 POD 容量约 1.9MB；即使计入
 CSR、元数据和分配器余量，也以 `<8MB` 为验收门槛。
@@ -35,6 +38,7 @@ CSR、元数据和分配器余量，也以 `<8MB` 为验收门槛。
 冷查询为：
 
 - `get_country_cell_summary(cell)`：国家句柄/ID/名称、领土数、现金、非零物资种类和科技数。
+  无主格（`country_slot == -1`）返回 `owned=false`，`country_name` 固定为 UTF-8「无主之地」。
 - `get_country_snapshot(handle)`：元数据、领土 CSR 切片和已解锁科技 stable IDs。
 - `get_country_treasury_snapshot(handle)`：现金及非零物资 stable IDs/数量。
 - `poll_country_events(after_event_id, limit)`：已提交国家事件并行列。
@@ -46,3 +50,13 @@ CSR、元数据和分配器余量，也以 `<8MB` 为验收门槛。
 
 `ACTIVE` 是生产默认并发布 `cell.country_slot`；`PROBE` 运行原生状态但不发布该可见镜像；
 `OFF` 明确禁用依赖国家科技/国库的经济，不恢复逐地块科技或全局国库。
+
+## 国家视觉挂钩
+
+`CountryFacade.country_committed` 是领土变更的唯一广播点。`WorldRuntimeHost` 订阅它并
+调用 `refresh_country_visuals()`，按顺序重算视野、强制重烘 `enum_lut`（迷雾知识度住在
+它的 A 通道）、重建国界 mesh。领土变更极少，所以全量重建，不做增量。
+
+注意 Inspector 的国家摘要受迷雾门控：`FOG_UNEXPLORED` 的格子不展示任何国家信息，
+即使 `get_country_cell_summary()` 能返回。详见
+[视野迷雾与国界线](./vision-fog-and-borders.md)。

@@ -1,0 +1,10 @@
+-	var country_name := String(country_summary.get("country_name", "无主地"))
++	var country_name := String(country_summary.get("country_name", "无主之地"))
+-			"value": String(country_summary.get("country_name", "无主地")),
++			"value": String(country_summary.get("country_name", "无主之地")),
+-		return {"country_name": "无主地"}
++		return {"country_name": "无主之地"}
+-		return {"country_name": "无主地"}
++		return {"country_name": "无主之地"}
+-	return summary if bool(summary.get("ok", false)) else {"country_name": "无主地"}
++	return summary if bool(summary.get("ok", false)) else {"country_name": "无主之地"}

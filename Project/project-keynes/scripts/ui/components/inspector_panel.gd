@@ -11,7 +11,7 @@ signal demand_details_requested(details: Dictionary)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
-var _tabs_ready := false
+var _tabs_signature_cache := ""
 
 var _title_label: Label
 var _subtitle_label: Label
@@ -121,12 +121,16 @@ func set_model_for_selection(model: Dictionary) -> void:
 	var tabs: Array = _model.get("tabs", [])
 	if not _has_tab(tabs, _current_tab):
 		_current_tab = "geography"
-	if not _tabs_ready:
+	# 页签集合会随视野状态变化（未探索 0 个 / 已探索 1 个 / 可见 5 个），
+	# 所以不能只在首次装配时 set_tabs，得按签名判断是否需要重建页签栏。
+	var signature := _tabs_signature(tabs)
+	if signature != _tabs_signature_cache:
+		_tabs_signature_cache = signature
 		_tabs.set_tabs(tabs, _current_tab)
-		_tabs_ready = true
 	else:
 		_tabs.select_tab(_current_tab)
-	_request_tab_data_if_missing(_current_tab)
+	if not tabs.is_empty():
+		_request_tab_data_if_missing(_current_tab)
 	_render_content()
 
 
@@ -176,7 +180,7 @@ func select_tab(tab_id: String) -> void:
 func reset_for_world() -> void:
 	_model.clear()
 	_current_tab = "geography"
-	_tabs_ready = false
+	_tabs_signature_cache = ""
 	_last_score_band = -1
 	_summary_cards.clear()
 	_summary_trends.clear()
@@ -298,7 +302,14 @@ func _render_summary(score: Dictionary, cards: Array) -> void:
 
 func _apply_score(score: Dictionary, live_patch: bool) -> void:
 	if score.is_empty():
+		# 未探索格没有适宜度可言，留着上一格的表盘会读成这一格的数据。
+		# live patch 里的空 score 只表示「这次没更新」，不能据此隐藏。
+		if not live_patch and _score_gauge != null:
+			_score_gauge.visible = false
+			_last_score_band = -1
 		return
+	if _score_gauge != null:
+		_score_gauge.visible = true
 	var score_value := float(score.get("value", 0.0))
 	var score_band := _score_band(score_value)
 	if live_patch and _last_score_band >= 0 and score_band != _last_score_band:
@@ -553,6 +564,14 @@ func _request_tab_data_if_missing(tab_id: String) -> void:
 	var categories: Dictionary = _model.get("categories", {})
 	if not categories.has(tab_id):
 		tab_data_requested.emit(tab_id)
+
+
+func _tabs_signature(tabs: Array) -> String:
+	var ids := PackedStringArray()
+	for raw in tabs:
+		var tab: Dictionary = raw
+		ids.append(String(tab.get("id", "")))
+	return "|".join(ids)
 
 
 func _has_tab(tabs: Array, tab_id: String) -> bool:

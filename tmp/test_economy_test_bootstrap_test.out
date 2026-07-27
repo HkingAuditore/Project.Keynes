@@ -1,0 +1,5 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[economy-test-bootstrap/tiered] population=31 jobs=31 coverage=100.0% trimmed=1 unemployed=0
+[economy-test-bootstrap/soak] population=32->31 unemployed=4->0 support=1.7%
+[economy-test-bootstrap] PASS

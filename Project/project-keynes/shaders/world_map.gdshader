@@ -146,11 +146,17 @@ void fragment() {
 	int veg;
 	int cover;
 	int _cell_id = decode_cell_index(uv);
+	// fog_k = 视野知识度：0 未探索 / 0.5 已探索未可见 / 1 完全可见。它搭车在
+	// enum_lut 的 A 通道上，所以拿到它是**零新增 texture sample** —— 主 shader
+	// 本来就无条件采这张 LUT，只是多读一个分量。地图外 padding 视作全知，不参与
+	// 迷雾（padding 本就由迷雾层自己盖住）。
+	float fog_k = 1.0;
 	if (_cell_id >= 0) {
-		vec3 elut = texture(enum_lut, cell_lut_uv(_cell_id)).rgb;
+		vec4 elut = texture(enum_lut, cell_lut_uv(_cell_id));
 		biome = int(elut.r * 255.0 + 0.5);
 		veg   = int(elut.g * 255.0 + 0.5);
 		cover = int(elut.b * 255.0 + 0.5);
+		fog_k = elut.a;
 	} else {
 		biome = B_SEA_ICE;
 		veg = 0;
@@ -211,21 +217,38 @@ void fragment() {
 	// 每条分支都按：basecolor → 变色层 → 覆盖层 → 光照。
 	// 分支外只保留全局视觉调整（羊皮纸、季节过渡 alpha、COLOR 写出）。
 	// ═══════════════════════════════════════════════════════════════════════
-	if (!is_water) {
-		col = render_land_pipeline(
-			biome, veg, cover, landform, elev, moist, wp, uv, scals, lat_signed, current_temp,
-			wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
-			eco_transition, eco_growth, eco_valid, pixel_noise);
+	// 未探索早退：这些像素会被 FogOfWarLayer 的**完全不透明**厚云盖住，画什么都
+	// 看不见，所以整条陆地/水体/BRDF/hillshade 管线（几十次采样）可以整段跳过。
+	// GPU 分支按 wave 粒度生效：迷雾区是大片连续屏幕区域，发散 wave 只有 O(边界
+	// 周长)，相对 O(面积) 可忽略。canvas_item 的 fragment 禁用 return，所以只能
+	// 用 if/else 把两条出口都写出来。
+	bool fog_hidden = fog_early_out_enabled && (fog_k <= fog_early_out_k);
+	if (fog_hidden) {
+		COLOR = vec4(fog_unexplored_color, 1.0);
 	} else {
-		float visual_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
-		col = render_water_pipeline(
-			biome, cover, elev, wp, uv, scals, lat_signed, current_temp,
-			ocean_current_v, wind_v, visual_ice_fraction);
-	}
+		if (!is_water) {
+			col = render_land_pipeline(
+				biome, veg, cover, landform, elev, moist, wp, uv, scals, lat_signed, current_temp,
+				wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
+				eco_transition, eco_growth, eco_valid, pixel_noise);
+		} else {
+			float visual_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
+			col = render_water_pipeline(
+				biome, cover, elev, wp, uv, scals, lat_signed, current_temp,
+				ocean_current_v, wind_v, visual_ice_fraction);
+		}
 
-	// 保留旧 11 参数 ABI，避免 ShaderInclude 热缓存与主 shader 热重载不同步。
-	// 气候参数仅用于接口兼容，global_adjustments 内不再消费它们。
-	COLOR = apply_global_adjustments(
-		col, wp, pixel_noise, dyn_snow, current_temp, moist, dyn_vitality, dyn_valid,
-		cover, is_water ? 0.0 : 1.0, veg == V_NONE ? 0.0 : 1.0);
+		// 已探索但当前不可见 → 去饱和 + 压暗。k=0.5 处最灰，k=1 归零。
+		// 零新增采样，只是几条 ALU。
+		if (fog_gray_enabled) {
+			float gray_amt = (1.0 - smoothstep(0.5, 1.0, fog_k)) * fog_gray_strength;
+			col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))) * 0.82, gray_amt);
+		}
+
+		// 保留旧 11 参数 ABI，避免 ShaderInclude 热缓存与主 shader 热重载不同步。
+		// 气候参数仅用于接口兼容，global_adjustments 内不再消费它们。
+		COLOR = apply_global_adjustments(
+			col, wp, pixel_noise, dyn_snow, current_temp, moist, dyn_vitality, dyn_valid,
+			cover, is_water ? 0.0 : 1.0, veg == V_NONE ? 0.0 : 1.0);
+	}
 }

@@ -1,0 +1,17 @@
+ERROR: Can't open dynamic library: D:/Godot/ProjectKeynes/Project.Keynes/Project/project-keynes/addons/dots_ext/bin/windows/dots_ext.windows.template_debug.x86_64.dll. Error: Error 127: 找不到指定的程序。.
+   at: open_dynamic_library (platform/windows/os_windows.cpp:545)
+ERROR: Condition "!FileAccess::exists(path)" is true. Returning: ERR_FILE_NOT_FOUND
+   at: open_dynamic_library (platform/windows/os_windows.cpp:487)
+ERROR: GDExtension dynamic library not found: 'res://addons/dots_ext/dots_ext.gdextension'.
+   at: open_library (core/extension/gdextension.cpp:740)
+ERROR: Error loading extension: 'res://addons/dots_ext/dots_ext.gdextension'.
+   at: load_extensions (core/extension/gdextension_manager.cpp:329)
+ERROR: [headless-perf] DCWorldExt unavailable; rebuild and restart Godot
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _run (res://tests/headless_perf_record.gd:58)
+       [1] _init (res://tests/headless_perf_record.gd:24)
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 24 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

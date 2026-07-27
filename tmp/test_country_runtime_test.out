@@ -1,0 +1,27 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] catalog compiles
+  [OK] default country configures
+  [OK] default country owns every land cell
+  [OK] all-water default bootstrap is rejected precisely
+  [OK] duplicate territory bootstrap is rejected precisely
+  [OK] water territory bootstrap is rejected precisely
+  [OK] country configures
+  [OK] explicit country bootstraps
+  [OK] single owner and neutral land are represented
+  [OK] unowned land displays as 无主之地
+  [OK] country treasury is sparse and scaled
+  [OK] create command queues
+  [OK] create atomically transfers first territory
+  [OK] new country inherits source technology
+  [OK] last territory is protected
+  [OK] rename and country technology commit
+  [OK] country-wide metadata query reflects commit
+  [OK] cross-slice country batch keeps committed state private
+  [OK] cross-slice country batch publishes atomically on final slice
+  [OK] PKCN v1 begins
+  [OK] PKCN stream ends
+  [OK] PKCN round-trip hash exact
+  [OK] truncated PKCN stream is rejected
+  [OK] PKCN catalog mismatch is rejected precisely
+country runtime: 24 checks, 0 failures

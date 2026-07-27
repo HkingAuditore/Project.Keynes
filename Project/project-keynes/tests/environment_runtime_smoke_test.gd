@@ -83,10 +83,16 @@ func _run() -> void:
 
 	var state: Dictionary = rt.call("export_runtime_state")
 	_expect("export runtime state", int(state.get("cell_count", 0)) == n)
+	_expect("export versioned persistence schema",
+		String(state.get("schema", "")) == "PKEnvironmentRuntime" and
+		int(state.get("schema_version", 0)) == 1)
 	_expect("export thread model", str(state.get("runtime_thread_model", "")) == "single_thread_budgeted")
-	rt.call("restore_runtime_state", state)
+	var restore_result: Dictionary = rt.call("restore_runtime_state", state)
+	_expect("restore reports success", bool(restore_result.get("ok", false)))
 	var state2: Dictionary = rt.call("export_runtime_state")
 	_expect("restore runtime state", int(state2.get("snapshot_version", -1)) == int(state.get("snapshot_version", -2)))
+	_expect("all persistent environment fields round-trip exactly",
+		var_to_bytes(state2) == var_to_bytes(state))
 
 	_finish()
 

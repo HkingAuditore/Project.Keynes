@@ -130,6 +130,12 @@ static func normalize_icon(icon: String) -> String:
 			return "pause"
 		"play":
 			return "play"
+		"plus", "add", "new":
+			return "plus"
+		"back", "previous":
+			return "back"
+		"confirm", "apply", "save":
+			return "confirm"
 		"close":
 			return "close"
 		"world", "globe":
@@ -236,6 +242,12 @@ static func glyph_for_key(key: String) -> String:
 			return "\uf04c"
 		"play":
 			return "\uf04b"
+		"plus":
+			return "\uf067"
+		"back":
+			return "\uf060"
+		"confirm":
+			return "\uf00c"
 		"close":
 			return "\uf00d"
 		"world":

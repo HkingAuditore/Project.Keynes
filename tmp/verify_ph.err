@@ -1,0 +1,31 @@
+WARNING: [DCWorldExt] encode_cell_luts: not bound - fallback to GDScript
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] bake_cell_luts (res://scripts/rendering/map_baker.gd:4939)
+       [1] bake_world (res://scripts/rendering/map_baker.gd:972)
+       [2] generate (res://scripts/geography/map_generator.gd:1295)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:220)
+       [4] _run (res://tests/headless_perf_record.gd:109)
+       [5] _init (res://tests/headless_perf_record.gd:24)
+
+================================================================
+CrashHandlerException: Program crashed with signal 11
+Engine version: Godot Engine v4.6.2.stable.official (71f334935c000924d403448e698df4441130df18)
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] error(-1): no debug info in PE/COFF executable
+[2] error(-1): no debug info in PE/COFF executable
+[3] error(-1): no debug info in PE/COFF executable
+[4] error(-1): no debug info in PE/COFF executable
+[5] error(-1): no debug info in PE/COFF executable
+[6] error(-1): no debug info in PE/COFF executable
+[7] error(-1): no debug info in PE/COFF executable
+[8] error(-1): no debug info in PE/COFF executable
+[9] error(-1): no debug info in PE/COFF executable
+[10] error(-1): no debug info in PE/COFF executable
+[11] error(-1): no debug info in PE/COFF executable
+[12] error(-1): no debug info in PE/COFF executable
+[13] error(-1): no debug info in PE/COFF executable
+[14] error(-1): no debug info in PE/COFF executable
+[15] error(-1): no debug info in PE/COFF executable
+-- END OF C++ BACKTRACE --
+================================================================

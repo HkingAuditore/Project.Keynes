@@ -209,8 +209,12 @@ SurfaceParams apply_climate_vegetation_tint(SurfaceParams surface, LandModInputs
 			+ vegetation_season_lut[v * 4 + 3].rgb * climate_weights.w;
 	veg_tint += vegetation_anomaly_shift[v].rgb * climate_anomaly;
 	veg_tint = max(veg_tint, vec3(0.0));
+	// LAND 2.4 已统一负责活力 / stress 的明度衰减；物候 LUT 在此只改变色相，
+	// 避免同一气候信号连续乘暗后形成随 tick 移动的深色软斑。
+	float tint_luma = dot(veg_tint, vec3(0.299, 0.587, 0.114));
+	veg_tint = clamp(veg_tint / max(tint_luma, 0.001), vec3(0.72), vec3(1.35));
 
-	float strength = vegetation_season_strength * vitality_amp * amp_jitter;
+	float strength = clamp(vegetation_season_strength * vitality_amp * amp_jitter, 0.0, 1.0);
 	if (biome == B_SAVANNA || biome == B_STEPPE) {
 		// 草原 / 稀树草原：振幅减半（干湿季对比远不如温带森林明显）
 		strength *= 0.5;

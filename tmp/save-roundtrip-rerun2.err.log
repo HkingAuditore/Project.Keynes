@@ -1,0 +1,6 @@
+WARNING: [DCWorldExt] encode_cell_luts: not bound - fallback to GDScript
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] bake_cell_luts (res://scripts/rendering/map_baker.gd:4927)
+       [1] bake_world (res://scripts/rendering/map_baker.gd:966)
+       [2] _yield_generation_frame (res://scripts/rendering/map_baker.gd:978)

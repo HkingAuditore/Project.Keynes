@@ -1,0 +1,14 @@
+WARNING: [DCWorldExt] encode_cell_luts: not bound - fallback to GDScript
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] bake_cell_luts (res://scripts/rendering/map_baker.gd:4939)
+       [1] bake_world (res://scripts/rendering/map_baker.gd:972)
+       [2] generate (res://scripts/geography/map_generator.gd:1295)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:220)
+       [4] _run (res://tests/headless_perf_record.gd:109)
+       [5] _init (res://tests/headless_perf_record.gd:24)
+ERROR: 12 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 101 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

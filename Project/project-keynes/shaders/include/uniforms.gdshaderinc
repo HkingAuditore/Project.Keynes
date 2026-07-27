@@ -76,7 +76,7 @@ const float NOISE_TEX_SCALE = 256.0;
 // cell-index indirection 是唯一动态视觉路径。
 // map_index_atlas.g/b：cell.index 低/高字节；0xFFFF=map 外哨兵。
 //   **必须 NEAREST**：索引插值会得到垃圾 cell。
-// enum_lut（RGB8 NEAREST）：per-cell R=biome G=veg B=cover。
+// enum_lut（RGBA8 NEAREST）：per-cell R=biome G=veg B=cover A=迷雾知识度 k。
 // dyn_lut（RGBA8 NEAREST）：per-cell R=temp G=wet B=snow A=ice|vitality。
 // eco_lut（RGBA8 NEAREST）：per-cell ecology。
 // lut_dims：(lut_w, lut_h) LUT 纹理网格尺寸，shader 据此把 cell.index → texel uv。
@@ -84,6 +84,25 @@ uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut  : filter_nearest, repeat_disable;
 uniform sampler2D eco_lut  : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0, 1.0);
+
+
+// =========================================================================
+// 【视野迷雾组】
+// -------------------------------------------------------------------------
+// 知识度 k 来自 enum_lut.a，主 shader 拿它是零新增 texture sample。
+//   k = 0   未探索       → 可选早退（fog_early_out_enabled）
+//   k = 0.5 已探索未可见 → 去饱和 + 压暗，表达「这是记忆中的旧信息」
+//   k = 1   完全可见     → 原样
+// =========================================================================
+uniform bool fog_gray_enabled = true;
+uniform float fog_gray_strength : hint_range(0.0, 1.0) = 0.75;
+// 未探索像素早退：跳过整条陆地/水体/BRDF/hillshade 管线。净收益取决于
+// FogOfWarLayer 的厚云比被跳过的地形便宜，必须按实测开关，不能凭感觉默认开。
+uniform bool fog_early_out_enabled = false;
+uniform float fog_early_out_k : hint_range(0.0, 0.5) = 0.02;
+// 早退时输出的颜色。必须与 FogOfWarLayer 的 unexplored_color 一致：迷雾层做了
+// 噪声域扭曲，边界与这里的逐格判定会有一两像素错位，同色才不会露馅。
+uniform vec3 fog_unexplored_color : source_color = vec3(0.263, 0.290, 0.353);
 
 
 // =========================================================================

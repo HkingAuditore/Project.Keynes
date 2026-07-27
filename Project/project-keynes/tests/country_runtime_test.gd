@@ -83,6 +83,9 @@ func _run() -> void:
 		String(alpha.country_id) == "country.alpha" and
 		int(ext.get_country_cell_summary(2).country_slot) == -1 and
 		int(ext.get_country_cell_summary(3).country_slot) == -1)
+	_expect("unowned land displays as 无主之地",
+		String(ext.get_country_cell_summary(2).country_name) == "无主之地" and
+		String(ext.get_country_cell_summary(3).country_name) == "无主之地")
 	_expect("country treasury is sparse and scaled",
 		int(ext.get_country_treasury_snapshot(alpha.country_handle).quantities[0]) == 5000)
 

@@ -423,6 +423,55 @@ func toggle_pause() -> void:
 func pause(v: bool) -> void:
 	paused = v
 
+
+func export_state() -> Dictionary:
+	return {
+		"schema": "WorldClock",
+		"version": 1,
+		"current_day": current_day,
+		"day_carry": _day_carry,
+		"paused": paused,
+		"speed_multiplier": speed_multiplier,
+		"visual_day_phase": visual_day_phase,
+		"climate_anomaly": climate_anomaly,
+		"last_day": _last_day,
+		"last_season": _last_season,
+		"last_year": _last_year,
+		"last_emit_day_phase": _last_emit_day_phase,
+		"last_emit_season_phase": _last_emit_season_phase,
+		"rng_seed": _rng.seed if _rng != null else 0,
+		"rng_state": _rng.state if _rng != null else 0,
+	}
+
+
+func restore_state(state: Dictionary) -> Dictionary:
+	if String(state.get("schema", "")) != "WorldClock" or int(state.get("version", -1)) != 1:
+		return {"ok": false, "code": "clock_schema_incompatible", "message": "时钟存档版本不兼容。"}
+	current_day = float(state.get("current_day", 0.0))
+	_day_carry = clampf(float(state.get("day_carry", 0.0)), 0.0, 0.999999)
+	paused = bool(state.get("paused", true))
+	speed_multiplier = maxf(float(state.get("speed_multiplier", 1.0)), 0.0)
+	visual_day_phase = fposmod(float(state.get("visual_day_phase", 0.25)), 1.0)
+	climate_anomaly = clampf(float(state.get("climate_anomaly", 0.0)),
+		-climate_anomaly_max, climate_anomaly_max)
+	_last_day = int(state.get("last_day", int(floor(current_day))))
+	_last_season = int(state.get("last_season", season_index_for_day(_last_day)))
+	_last_year = int(state.get("last_year", year_index_for_day(_last_day)))
+	if _rng == null:
+		_rng = RandomNumberGenerator.new()
+	_rng.seed = int(state.get("rng_seed", 0))
+	_rng.state = int(state.get("rng_state", _rng.state))
+	_apply_phase_step_for_speed(speed_multiplier)
+	# Applying the speed tier resets the publication cursors. Restore them after
+	# the tier thresholds so the next emitted phases match the saved timeline.
+	_last_emit_day_phase = float(state.get("last_emit_day_phase", day_phase()))
+	_last_emit_season_phase = float(state.get("last_emit_season_phase", season_phase()))
+	day_phase_changed.emit(day_phase())
+	season_phase_changed.emit(season_phase())
+	visual_day_phase_changed.emit(visual_day_phase)
+	speed_changed.emit(speed_multiplier)
+	return {"ok": true, "code": "ok", "message": ""}
+
 func request_simulation_backpressure(source: StringName, active: bool) -> void:
 	if String(source) == "":
 		return

@@ -68,12 +68,15 @@ Use this flow as the default:
 ```text
 MapData / HexCell / WorldClock / MapGenerator
   -> DCViewAdapter + explicit non-schema HexCell reads
+  -> VisionSolver.fog_state(cell)   <- gates what may be shown at all
   -> CellInspectorViewModel
   -> InspectorPanel / HUD / focused UI components
   -> UITokens + UIAnimation + Godot Theme
 ```
 
 Do not let UI components directly own simulation state. Do not add a new gameplay data model for visual convenience. Do not bypass `DCViewAdapter` for schema-backed fields unless the field is explicitly HexCell-only.
+
+Fog gating happens in the view model, not in the panel. `CellInspectorViewModel.build()` filters tabs by `fog_state` and **skips building the data for filtered tabs**, so a hidden tab costs nothing. A panel that receives full data and merely hides widgets is a leak: the data was already queried and the player can reach it through any other reader.
 
 ## UI Implementation Rules
 
@@ -119,6 +122,14 @@ For numeric values, choose a visual grammar:
 - Resource collection: show the full available natural-resource list with non-zero reserves. Hide zero-reserve rows. Do not use Top-N truncation for the resource tab; solve density with compact rows, scroll, grouping, or filters.
 
 Never show more than the current decision requires. Move raw diagnostics to debug UI, not player UI.
+
+Fog of war constrains this further. Respect the three states:
+
+- `FOG_UNEXPLORED`: one "unexplored" placeholder card. No country, no economy, no terrain readout, and no economy trace subscription.
+- `FOG_EXPLORED`: geography only. Present it as remembered, not live — this is also why real-time weather is masked there.
+- `FOG_VISIBLE`: the full tab set.
+
+Because the same panel switches between these states, tab bars must rebuild from a **signature of the tab set**, not a one-shot "already built" latch.
 
 ## Performance Rules
 
@@ -168,4 +179,5 @@ Before finishing a UI change:
 - [ ] Buttons have distinct states and readable text in normal, hover, pressed, disabled, and active/toggled states.
 - [ ] Right panel content fits without clipping at 1280x720 and remains usable at fast-forward speed.
 - [ ] High-speed tick behavior does not rebuild hidden categories unnecessarily.
+- [ ] Verified in all three fog states: unexplored shows only the placeholder, explored shows geography only, visible shows everything; tabs and scroll survive switching between them.
 - [ ] Lints and available Godot parse/smoke checks have been run or their absence reported.

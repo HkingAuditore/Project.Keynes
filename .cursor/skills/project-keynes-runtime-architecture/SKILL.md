@@ -23,6 +23,8 @@ Minimum docs to consider:
 - `Project.Keynes/docs/cpp-dots-runtime/scheduling-and-job-graph.md`
 - `Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`
 - `Project.Keynes/docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
+- `Project.Keynes/docs/cpp-dots-runtime/game-flow-start-save.md`
+- `Project.Keynes/docs/cpp-dots-runtime/vision-fog-and-borders.md`
 - `Project.Keynes/references/system-map.md`
 
 ## Mandatory Grounding
@@ -185,6 +187,38 @@ Visual and upload:
 - `dynamic_visual_atlas_upload`: `DynamicVisualAtlasUploadSystem`, LUT/atlas stride and catch-up.
 - Weather LUT upload remains tied to weather commit/native visual intents.
 - Godot `ImageTexture`, renderer, WeatherFront objects, MultiMesh/detail scatter remain GDScript/Godot boundaries.
+- `enum_lut` is RGBA8: R/G/B are biome/veg/cover and A is vision fog knowledge
+  `fog_k`. `encode_cell_luts` takes it as an optional `fog_k_arr` argument, and
+  the GDScript fallback encoder must write the same value.
+- `VisionSolver`, `FogOfWarLayer`, and `CountryBorderLayer` are event-driven off
+  `country_committed`, not daily systems. They are visual/UI authority only and
+  never advance a tick or write simulation slots.
+- `fog_of_war.gdshader` consumes the shared per-pixel `earth_daylight`
+  terminator, so it must declare that include's uniform dependencies
+  (`season_phase`, `day_phase`, `axial_tilt_rad`, `tod_debug_*`, `tod_sun_dir`)
+  before the include. Missing one is a shader compile failure that `--headless`
+  cannot detect.
+- Procedural noise on the zoomable map must fade octaves by screen footprint
+  (`cloud_cumulus_fbm*`'s `lod_px`). Point-sampling sub-pixel octaves aliases the
+  whole layer into flickering grit when zoomed out.
+- **The map wraps east-west, so any full-screen procedural noise must be tileable.**
+  Sample points are folded back into one wrap period, and ordinary noise does not
+  match across the period boundary — the result is a visible vertical seam. Use
+  `cloud_grad_noise_tiled*` / `cloud_cumulus_fbm*`, and snap the domain scale so
+  the wrap period lands on a whole number of lattice cells (see
+  `fog_tileable_scale` in `fog_of_war.gdshader`). Domain-warp sub-frequencies must
+  be negative powers of two or the seam returns through the warp layer.
+- **Do not raymarch a full-screen cloud layer.** It was tried and reverted: a
+  top-down map only ever shows the top surface of the deck, so hundreds of noise
+  taps per pixel buy nothing visible, and the step count you can afford is low
+  enough to undersample. Fog uses a heightfield plus a few sun-direction probes;
+  the scattering primitives (`cloud_phase`, `cloud_beer_ms`, `cloud_powder`) live
+  in `cloud_volume.gdshaderinc`.
+- The terrain fog early-out is only valid while the fog layer paints a constant
+  colour, i.e. its lowest quality tier. `HexRenderer._effective_fog_early_out()`
+  ands the request with `FogOfWarLayer.supports_terrain_early_out()`; keep that
+  guard if you add tiers. q1+ does not even share a base albedo with
+  `unexplored_color`, so the early-out constant cannot match it.
 
 Generation and bake:
 
@@ -215,6 +249,7 @@ Update docs in the same change when any of these change:
 - Native daily graph nodes, graph order, coverage blockers, `authority_report`, `published_slots`, `visual_dirty_intents`.
 - Fallback/default path, ACTIVE/SHADOW/PROBE gate, readiness condition, or deletion/retirement status.
 - Godot visual boundary, atlas/LUT upload, weather front object behavior, renderer-visible publish.
+- LUT channel layout, renderer `z_index` ordering, PKSV section set, or fog/border visual contracts.
 - Any rename or deletion of job/system/module files.
 
 If code and docs disagree, fix both before reporting completion.

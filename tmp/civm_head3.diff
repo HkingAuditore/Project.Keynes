@@ -1,0 +1,127 @@
+@@ -51,8 +51,14 @@ func set_inspector_trace_cell(cell_idx: int) -> void:
+ 
+ 
+-func build(cell: HexCell) -> Dictionary:
++## 视野门控�?##   未探�?�?只给一条占位，完全不查经济/人口/国家（也不开经济追踪，见
++##            game_ui_manager.show_cell_panel）�?##   已探索但当前不可�?�?只给地理页签。地理是「记忆中的地形」，人口/市场/建筑/
++##            自然资源都是需要在场才能看到的实时情报�?##   可见 �?完整五个页签�?## 页签被过滤掉时对应的数据构建也不会发生：类目内容�?build_tab_category 懒加载的�?## 页签不在列表里就永远不会被请求�?func build(cell: HexCell) -> Dictionary:
+ 	if cell == null or _map == null:
+ 		return {}
+ 	var idx := int(cell.index)
++	var fog := VisionSolver.fog_state(_map, idx)
++	if fog == VisionSolver.FOG_UNEXPLORED:
++		return _build_unexplored_model_safe(cell)
++	var intel_visible := fog == VisionSolver.FOG_VISIBLE
+ 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
+ 	var terrain_v := _terrain(cell, idx)
+@@ -70,24 +76,27 @@ func build(cell: HexCell) -> Dictionary:
+ 	var is_water := LandformType.is_water(landform_v)
+ 	var passable_land := TerrainType.is_passable_land(terrain_v)
+-	var population_summary := _population_summary(idx)
+-	var country_summary := _country_summary(idx)
++	var population_summary := _population_summary(idx) if intel_visible else {}
++	var country_summary := _country_summary(idx) if intel_visible else {}
+ 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
+-	var tabs := [
+-		{"id": "geography", "label": "地理信息", "icon": "geo"},
+-		{"id": "population", "label": "人口信息", "icon": "growth"},
+-		{"id": "market", "label": "市场信息", "icon": "resource"},
+-		{"id": "buildings", "label": "建筑", "icon": "building"},
+-		{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
+-	]
++	var tabs := [{"id": "geography", "label": "地理信息", "icon": "geo"}]
++	if intel_visible:
++		tabs.append_array([
++			{"id": "population", "label": "人口信息", "icon": "growth"},
++			{"id": "market", "label": "市场信息", "icon": "resource"},
++			{"id": "buildings", "label": "建筑", "icon": "building"},
++			{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
++		])
++	var cards: Array = _summary_cards(temp, moist, population_summary, country_summary) \
++		if intel_visible else _out_of_sight_summary_cards_safe(temp, moist)
+ 	return {
+ 		"header": _build_header(off, terrain_v, landform_v, country_summary),
+ 		"score": {
+ 			"id": "habitability",
+-			"title": "适宜度",
++			"title": "适宜�?,
+ 			"value": habitability,
+ 			"caption": _score_caption(habitability),
+ 			"accent": _score_color(habitability),
+ 		},
+-		"summary_cards": _summary_cards(temp, moist, population_summary, country_summary),
++		"summary_cards": cards,
+ 		"tabs": tabs,
+ 		"categories": {
+@@ -99,4 +108,71 @@ func build(cell: HexCell) -> Dictionary:
+ 
+ 
++## 未探索格：不查任何运行时数据，只给一个占位面板。选中框仍然可以显示，
++## 玩家知道自己点到了地图上的什么位置，但拿不到任何情报�?func _build_unexplored_model(cell: HexCell) -> Dictionary:
++	var off := HexUtils.cube_to_offset(cell.q, cell.r)
++	return {
++		"header": {
++			"title": "未探索区�?,
++			"subtitle": "区域 %d, %d · 云雾之下" % [off.x + 1, off.y + 1],
++		},
++		"score": {},
++		"summary_cards": [{
++			"id": "summary_unexplored",
++			"title": "情报",
++			"value": "未知",
++			"subtitle": "尚未进入你的视野",
++			"accent": UITokens.TEXT_FAINT,
++			"icon": "geo",
++		}],
++		"tabs": [],
++		"categories": {},
++	}
++
++
++## 已探索但当前不可见：只保留不依赖「在场」的气候概览，并明确告诉玩�?## 现在看到的是旧情报�?func _out_of_sight_summary_cards(temp: float, moist: float) -> Array:
++	return [
++		{
++			"id": "summary_climate",
++			"title": "气�?,
++			"value": "%s · %s" % [_temperature_band(temp), _moisture_band(moist)],
++			"subtitle": "",
++			"accent": UITokens.CLIMATE,
++			"icon": "sun",
++		},
++		{
++			"id": "summary_unexplored",
++			"title": "情报",
++			"value": "视野之外",
++			"subtitle": "仅存地理记录，人口与市场情况未知",
++			"accent": UITokens.TEXT_FAINT,
++			"icon": "geo",
++		},
++	]
++
++
++func _build_unexplored_model_safe(cell: HexCell) -> Dictionary:
++	var off := HexUtils.cube_to_offset(cell.q, cell.r)
++	return {
++		"header": {"title": "δ̽������", "subtitle": "���� %d, %d �� ����֮��" % [
++			off.x + 1, off.y + 1]},
++		"score": {},
++		"summary_cards": [{"id": "summary_unexplored", "title": "�鱨", "value": "δ֪",
++			"subtitle": "��δ���������Ұ", "accent": UITokens.TEXT_FAINT, "icon": "geo"}],
++		"tabs": [],
++		"categories": {},
++	}
++
++
++func _out_of_sight_summary_cards_safe(temp: float, moist: float) -> Array:
++	return [
++		{"id": "summary_climate", "title": "����",
++			"value": "%s �� %s" % [_temperature_band(temp), _moisture_band(moist)],
++			"subtitle": "", "accent": UITokens.CLIMATE, "icon": "sun"},
++		{"id": "summary_unexplored", "title": "�鱨", "value": "��Ұ֮��",
++			"subtitle": "��������¼���˿����г����δ֪",
++			"accent": UITokens.TEXT_FAINT, "icon": "geo"},
++	]
++
++
+ func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
+ 	if cell == null or _map == null:

@@ -88,7 +88,7 @@ public:
     godot::Dictionary topology_summary() const;
     godot::Dictionary progress_summary() const;
     godot::Dictionary export_runtime_state() const;
-    void restore_runtime_state(const godot::Dictionary &state);
+    godot::Dictionary restore_runtime_state(const godot::Dictionary &state);
 
 protected:
     static void _bind_methods();

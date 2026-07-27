@@ -674,6 +674,8 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 | `water.gdshaderinc` / `water_pipeline.gdshaderinc` | 跳过 domain warp、额外水噪声、kelp/ice fbm、coast foam、暴雪薄冰、caustics、波坡明暗、SSS、sparkle | 取消高细节法线与额外 domain warp，保留主波形 |
 | `weather_overlay.gdshader` | 云层使用廉价密度，不采 biome atlas | overlay quality 钳到 1 |
 | `weather_cell_curtain.gdshader` | 雨雪帘跳过 broad/fine noise、fog veil、lightning | curtain quality 钳到 1 |
+| `fog_of_war.gdshader` | fog quality 钳到 0：1 octave、无光照，只出纯色 + 起伏 | fog quality 钳到 1（3 octaves + 法线漫反射 + 天空遮蔽，无域扭曲 / 无自阴影探针）；High tier 钳到 2（4 octaves + 1 层扭曲 + 2 探针） |
+| `country_border.gdshader` | 跳过沿边 wobble 噪声 | 保留 |
 | `shrub_layer.gd` 内联 shader | 跳过生态 LUT、地形法线/高度贴图 shading、horizon shadow，阴影 pass 输出透明 | 跳过 horizon shadow 与细节 shading |
 | `hex_terrain.gdshader` / `hex_edge_overlay.gdshader` | 跳过 erosion warp、边缘噪声、地/水内部细节 | 保留旧行为 |
 
@@ -683,6 +685,19 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 2. 运行期 uniform 分支只用于同档内开关、强度或 debug，不作为移动端低画质的主要性能手段。
 3. 禁止在 fragment 内写循环变长边界；所有 `for (int i = 0; i < CONST; i++)` 必须用编译期常量。
 4. 新增 fragment 贴图采样、`fbm`、`value_noise`、`voronoi_cell`、多 tap 高度/法线计算时，必须同步给 Low/Mid 写裁剪路径，并更新本节表格。
+5. 需要法线的程序化云/高度场优先用**解析导数**（`cloud_noise.gdshaderinc` 的 `cloud_cumulus_fbm_d`），不要用 4-tap 有限差分——后者要多算 4 次 FBM，全屏层承受不起。
+6. 可缩放地图上的程序化噪声必须按屏幕足迹做 **LOD 截断**（把 `fwidth(world) × 域缩放` 喂给 `cloud_cumulus_fbm*` 的 `lod_px`）。跨不过一个像素的 octave 若照采，缩小时整层会走样成沙砾状闪烁噪点。
+7. **地图东西向无限滚动，全屏程序化噪声必须可平铺。** 采样点被折回一个环绕周期后，普通噪声在周期两端对不上，接缝处就是一条肉眼可见的竖线。用 `cloud_grad_noise_tiled*` / `cloud_cumulus_fbm*`，并先用 `fog_tileable_scale` 那套办法把域缩放微调到「周期 = 4 的整数倍个噪声格」。域扭曲的子频率只能取 2 的负幂，否则子频率下周期不再是整数格。
+8. **全屏层不要做 raymarch。** 俯视地图只看得见云海顶面，沿视线积分的几百次噪声换不到对应观感。用高度场 + 几个探针把散射模型补齐：`cloud_volume.gdshaderinc` 提供相函数（`cloud_phase`）、双指数多重散射透过率（`cloud_beer_ms`）、糖粉项（`cloud_powder`）。
+9. **云的形状靠 billow 噪声，不靠打光。** 普通 FBM 的等值线各向同性，出来是烟雾／大理石纹；`|2n-1|`（`cloud_billow`）才给圆头尖谷的花椰菜团。再叠域扭曲打散走向。
+10. **明暗要直接算进颜色，不要「累积再除回覆盖度」。** 覆盖度在满云区恒为 1，除回去等于把所有明暗一起除掉，结果是一整片灰。
+11. **拿 FBM 的梯度当法线之前，必须给高频额外衰减。** 标准参数下 `amp·freq` 是常数，每个 octave 对梯度贡献相同 → 梯度是白噪声 → 着色出来是揉皱的锡纸。用 `cloud_cumulus_fbm_d` 的 `grad_falloff`（0.5 = 每高一个 octave 斜率减半），让法线取自平滑后的曲面。
+12. **云不是不透明漫反射面。** 单次散射反照率≈1，背光面不会掉黑：`light_wrap` 要给足，暗部亮度主要靠**不吃 `N·L`** 的多重散射回填项撑着，天空遮蔽的谷底要留下限。少了这些就是「没有 GI」的石头感。
+13. **高度场探针（自阴影等）必须与被比较的主场同 octave 数。** 频段不一致时差值会被主场独有的高频主导，出来是斑点噪声而不是方向性投影。
+14. **多重散射不要用指数衰减。** 指数是 Beer 定律（单次散射的直接透射）。高反照率介质（云）处于扩散输运区，尾巴厚得多，用有理式 `1/(1+k·d)`。拿 `exp()` 做 MS 回填 = 把云画成不透光的石头。
+15. **如果要拿胞状噪声（Worley）做离散鼓包，别用 F1。** `F1 = min(距离…)` 在「哪个特征点最近」切换处**梯度不连续**，整屏会显出一张 Voronoi 多边形网（直线硬棱 + 发光胞心，像裂冰），比连续 FBM 更难看；换光滑剖面救不了，折痕来自 `min()` 本身。要做就把光滑核 `(1-q)³`（`q=|v|²/R²`）**相加**（metaball）：处处 C1 连续、圆包柔和融合、且不需要 sqrt。另外胞状噪声的哈希不能用 `fract(sin(·))` —— 它的输出直接是特征点**位置**，相关性会变成成排鼓包（梯度噪声里则被插值掩盖）。云海形状这条路走过两轮后按观感回退到 billow FBM，详见 `docs/cpp-dots-runtime/vision-fog-and-borders.md`。
+16. **云的暗部要偏蓝，不是中性灰。** 深处的照明主导权从太阳交给天光（Rayleigh 散射，强烈偏蓝），所以 MS 回填的**颜色**要随深度从主光色漂向天光色。受光面暖白 + 暗面冷蓝的对比是云"看起来真"的一大半。色相 tint 先归一化到亮度 1，让改色相和改明度成为两个独立自由度。
+17. **任何吃 TOD 的图层都必须消费 `EarthDaylight` 的月光三件套**（`moon_dir`/`moon_col`/`moon_strength`），约定照抄 `brdf.make_lighting_context`。漏掉就会出现「地形有月光、这一层漆黑」。注意日月方向近乎相反，要用 `step` 硬切而不是向量插值，否则晨昏中点归一化出零向量。
 5. 与时间无关、只随地图/biome 变化的视觉细节优先烘进 atlas；当前 `terrain_detail_tex` 由 `MapBaker` 初次 bake 和 biome 轴重烘维护。
 
 ---
