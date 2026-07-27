@@ -151,6 +151,8 @@ const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
 const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
+const StartLocationPolicyScript = preload("res://scripts/game/start_location_policy.gd")
+const StarterSettlementBootstrapScript = preload("res://scripts/economy/starter_settlement_bootstrap.gd")
 
 # Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
 # DCSystemScheduler facade，由 C++ SusSchedulerExt 负责 budget/skip 统计。
@@ -1019,6 +1021,8 @@ const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
 var _continuation_perf_pending: Dictionary = {}
 var _test_economy_bootstrap_enabled: bool = false
 var _test_economy_population_scale: int = EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
+var _gameplay_start_context: Dictionary = {}
+var _gameplay_start_report: Dictionary = {}
 var _natural_resource_pass_knobs: Dictionary = {}
 var _last_natural_resource_report: Dictionary = {}
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
@@ -1459,14 +1463,18 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[country] configure failed: %s" % String(country_configured.get("reason", "unknown")))
 		_country_facade = null
 		return
-	var country_bootstrapped: Dictionary = _country_facade.bootstrap(map.is_water_arr)
+	var country_packet := _build_player_country_packet() \
+		if not _gameplay_start_context.is_empty() else {}
+	if not _gameplay_start_context.is_empty() and country_packet.is_empty():
+		_gameplay_start_report = {"ok": false, "code": "country_packet_failed",
+			"message": "无法建立玩家国家。"}
+		_country_facade = null
+		return
+	var country_bootstrapped: Dictionary = _country_facade.bootstrap(map.is_water_arr, country_packet)
 	if not bool(country_bootstrapped.get("ok", false)):
 		push_error("[country] bootstrap failed: %s" % String(country_bootstrapped.get("reason", "unknown")))
 		_country_facade = null
 		return
-	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
-	_sus.configure_job_from_profile(_country_daily_job, scheduler_profile, false, &"country_daily", 1)
-	_runtime_register_system(_country_daily_job)
 	_economy_facade = EconomyFacadeScript.new()
 	var configured: Dictionary = _economy_facade.configure(
 		_data_core_world_ext, map.cell_count(), seed_value)
@@ -1499,7 +1507,19 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	var market_packet: Dictionary = {}
 	var building_packet: Dictionary = {}
 	var test_bootstrap_report: Dictionary = {}
-	if _test_economy_bootstrap_enabled:
+	var starter_bootstrap_report: Dictionary = {}
+	if not _gameplay_start_context.is_empty():
+		starter_bootstrap_report = StarterSettlementBootstrapScript.build(
+			map, _economy_facade, int(_gameplay_start_context.get("cell", -1)),
+			String(_gameplay_start_context.get("precious_resource", "")))
+		if not bool(starter_bootstrap_report.get("ok", false)):
+			_gameplay_start_report = starter_bootstrap_report.duplicate(true)
+			_economy_facade = null
+			return
+		population_packet = starter_bootstrap_report.get("population_packet", {})
+		market_packet = starter_bootstrap_report.get("market_packet", {})
+		building_packet = starter_bootstrap_report.get("building_packet", {})
+	elif _test_economy_bootstrap_enabled:
 		test_bootstrap_report = EconomyTestBootstrapScript.build(
 			map, _economy_facade, seed_value, _test_economy_population_scale)
 		if not bool(test_bootstrap_report.get("ok", false)):
@@ -1522,6 +1542,11 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[economy] bootstrap failed: %s" % String(bootstrapped.get("reason", "unknown")))
 		_economy_facade = null
 		return
+	# Register only after both native authorities have accepted their bootstrap
+	# packets. Country remains ordered before economy in the daily graph.
+	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
+	_sus.configure_job_from_profile(_country_daily_job, scheduler_profile, false, &"country_daily", 1)
+	_runtime_register_system(_country_daily_job)
 	_economy_daily_job = EconomyDailySystemScript.new(_economy_facade, _world_clock_ref)
 	_sus.configure_job_from_profile(_economy_daily_job, scheduler_profile, false, &"economy_daily", 1)
 	_runtime_register_system(_economy_daily_job)
@@ -1546,6 +1571,10 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		int(country_bootstrapped.get("country_count", 0)), map.cell_count(),
 		int(country_bootstrapped.get("generation", 0)),
 	])
+	if not _gameplay_start_context.is_empty():
+		_gameplay_start_report["country_count"] = int(country_bootstrapped.get("country_count", 0))
+		_gameplay_start_report["total_population"] = int(starter_bootstrap_report.get("total_population", 0))
+		_gameplay_start_report["settlement_source"] = String(starter_bootstrap_report.get("source", ""))
 	if _test_economy_bootstrap_enabled:
 		print(("[economy/test-bootstrap] scale_mode=%s populated_cells=%d population=%d cohorts=%d "
 			+ "professions=%d/%d building_groups=%d building_types=%d/%d "
@@ -1606,6 +1635,44 @@ func set_test_economy_population_scale(scale: int) -> void:
 	_test_economy_population_scale = scale \
 		if scale in EconomyTestBootstrapScript.SUPPORTED_POPULATION_SCALES \
 		else EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
+
+
+func set_gameplay_start_config(config: Dictionary) -> void:
+	_gameplay_start_context = {"config": config.duplicate(true)} if not config.is_empty() else {}
+	_gameplay_start_report.clear()
+
+
+func gameplay_start_report() -> Dictionary:
+	return _gameplay_start_report.duplicate(true)
+
+
+func _build_player_country_packet() -> Dictionary:
+	if _country_facade == null or _gameplay_start_context.is_empty():
+		return {}
+	var config: Dictionary = _gameplay_start_context.get("config", {})
+	var country_config: Dictionary = config.get("country", {})
+	var catalog: Dictionary = _country_facade.native_catalog()
+	var technology_ids: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
+	var starting_ids := PackedStringArray([
+		"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control"])
+	var technology_indices := PackedInt32Array()
+	for technology_id in starting_ids:
+		var technology_index := technology_ids.find(technology_id)
+		if technology_index < 0:
+			return {}
+		technology_indices.append(technology_index)
+	return {
+		"country_ids": PackedStringArray(["country.player"]),
+		"country_names": PackedStringArray([String(country_config.get("name", "新国家"))]),
+		"country_cash": PackedInt64Array([0]),
+		"territory_offsets": PackedInt32Array([0, 1]),
+		"territory_cells": PackedInt32Array([int(_gameplay_start_context.get("cell", -1))]),
+		"technology_offsets": PackedInt32Array([0, technology_indices.size()]),
+		"technology_indices": technology_indices,
+		"treasury_offsets": PackedInt32Array([0, 0]),
+		"treasury_good_indices": PackedInt32Array(),
+		"treasury_quantities": PackedInt64Array(),
+	}
 
 
 func consume_continuation_perf_summary() -> Dictionary:
@@ -1935,11 +2002,23 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		cfg.climate_profile = _c()
 	if _baker != null and _baker.has_method("run_deferred_initial_physical_circulation"):
 		_baker.run_deferred_initial_physical_circulation(map, world, hex_size, cfg)
+	# per-cell LUT 同样推迟到这里：ext 已 bind、原生温度场已 publish，encode_cell_luts
+	# 因此能走 C++ 并读到权威气候值。仍在 generate() 内，早于渲染器绑定 lut 纹理。
+	if _baker != null and _baker.has_method("run_deferred_initial_cell_luts"):
+		_baker.run_deferred_initial_cell_luts(map, world)
 	# Resource bootstrap must observe committed physical geography. It still
 	# precedes economy bootstrap, and the explicit push keeps the native
 	# snapshot slots identical to MapData after replacing PackedArrays.
 	_bootstrap_natural_resource_deposits(map, cfg)
 	_publish_bootstrapped_natural_resources_to_runtime(map)
+	if not _gameplay_start_context.is_empty():
+		_gameplay_start_report = StartLocationPolicyScript.select_and_prepare(map, int(cfg.seed))
+		if not bool(_gameplay_start_report.get("ok", false)):
+			return
+		_gameplay_start_context.merge(_gameplay_start_report, true)
+		# Re-publish the deterministic top-ups to the bound DCWorld/DCWorldExt
+		# resource slots before country and economy bootstrap read them.
+		_publish_bootstrapped_natural_resources_to_runtime(map)
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
 	# 把 ext 句柄一次性下发给 WeatherSystem。ext 为 null（gdext 未编译 / 未 bind）
 	# 时 WeatherSystem 自动走 GDScript legacy path，对 caller 完全透明。
@@ -2181,10 +2260,22 @@ func export_environment_runtime_state() -> Dictionary:
 	return rt.call("export_runtime_state")
 
 
-func restore_environment_runtime_state(state: Dictionary) -> void:
+func restore_environment_runtime_state(state: Dictionary) -> Dictionary:
 	var rt: RefCounted = get_environment_runtime()
-	if rt != null and rt.has_method("restore_runtime_state"):
-		rt.call("restore_runtime_state", state)
+	if rt == null or not rt.has_method("restore_runtime_state"):
+		return {"ok": false, "code": "environment_provider_missing",
+			"message": "Environment runtime provider is unavailable."}
+	var result = rt.call("restore_runtime_state", state)
+	return result if result is Dictionary else {
+		"ok": false, "code": "environment_restore_contract_invalid",
+		"message": "Environment runtime restore returned an invalid result."}
+
+
+func advance_save_boundary() -> void:
+	# Save requests freeze the clock, so drain the already-open native country
+	# and economy continuations explicitly while rendering continues.
+	if _world_clock_ref != null:
+		_continue_economy_inflight(_world_clock_ref.day_index())
 
 
 func environment_runtime_step_budgeted(budget_ms: float, max_cells: int = 0, max_pixels: int = 0, max_indices: int = 0, pipeline: StringName = &"ocean") -> Dictionary:

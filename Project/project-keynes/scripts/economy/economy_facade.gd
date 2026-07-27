@@ -112,6 +112,42 @@ func add_stock(cell_idx: int, good_id: StringName, quantity: int,
 		"i64_1": 0,
 	}])
 
+func mint_to_cohort(cohort_handle: int, amount: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if amount <= 0:
+		return {"ok": false, "reason": "amount must be positive"}
+	return submit([{
+		"opcode": Opcode.MINT_TO_COHORT,
+		"effective_day": effective_day,
+		"sequence": sequence,
+		"target_handle": cohort_handle,
+		"i64_0": amount,
+	}])
+
+func burn_from_cohort(cohort_handle: int, amount: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if amount <= 0:
+		return {"ok": false, "reason": "amount must be positive"}
+	return submit([{
+		"opcode": Opcode.BURN_FROM_COHORT,
+		"effective_day": effective_day,
+		"sequence": sequence,
+		"target_handle": cohort_handle,
+		"i64_0": amount,
+	}])
+
+func add_population(cohort_handle: int, amount: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if amount <= 0:
+		return {"ok": false, "reason": "amount must be positive"}
+	return submit([{
+		"opcode": Opcode.ADD_POPULATION,
+		"effective_day": effective_day,
+		"sequence": sequence,
+		"target_handle": cohort_handle,
+		"i64_0": amount,
+	}])
+
 func transfer_country_cash_to_cohort(country_handle: int, cohort_handle: int,
 		amount: int, effective_day: int, sequence: int) -> Dictionary:
 	return submit([{"opcode": Opcode.TRANSFER_TO_COHORT,
@@ -587,6 +623,22 @@ func read_save_chunk() -> PackedByteArray:
 
 func end_save() -> Dictionary:
 	return _world_ext.end_economy_save() if _configured else {"ok": false, "reason": "not configured"}
+
+func restore_bytes(bytes: PackedByteArray, chunk_bytes: int = -1) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "not configured"}
+	var size := int(_profile.save_chunk_bytes) if chunk_bytes < 0 else chunk_bytes
+	var begun: Dictionary = _world_ext.begin_economy_restore()
+	if not bool(begun.get("ok", false)):
+		return begun
+	var cursor := 0
+	while cursor < bytes.size():
+		var fed: Dictionary = _world_ext.feed_economy_restore_chunk(
+			bytes.slice(cursor, mini(cursor + size, bytes.size())))
+		if not bool(fed.get("ok", false)):
+			return fed
+		cursor += size
+	return _world_ext.end_economy_restore()
 
 func event_schema() -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_economy_event_schema"):

@@ -13,7 +13,9 @@ const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 var _date_label: Label
 var _pause_button: Button
 var _day_night_button: Button
+var _gm_button: Button
 var _speed_buttons: Dictionary = {}
+var _gm_available := true
 
 
 func _ready() -> void:
@@ -85,6 +87,13 @@ func set_day_night_enabled(enabled: bool) -> void:
 	_day_night_button.tooltip_text = "昼夜循环：%s" % ("开启" if enabled else "关闭（动态永昼，光向随直射点移动）")
 
 
+func set_gm_available(available: bool) -> void:
+	_gm_available = available
+	if _gm_button != null:
+		_gm_button.visible = available
+		_gm_button.disabled = not available
+
+
 func _build_date_block() -> Control:
 	var block := PanelContainer.new()
 	var block_style := UITokens.inset_panel_style(Color(0.055, 0.048, 0.039, 0.94), UITokens.PANEL_BORDER_SOFT)
@@ -112,9 +121,11 @@ func _build_control_block() -> Control:
 	setup_button.pressed.connect(func() -> void: setup_requested.emit())
 	controls.add_child(setup_button)
 
-	var gm_button := _icon_button("overview", "GM 性能面板（F1）")
-	gm_button.pressed.connect(func() -> void: gm_requested.emit())
-	controls.add_child(gm_button)
+	_gm_button = _icon_button("overview", "GM 面板（F1 / `）")
+	_gm_button.visible = _gm_available
+	_gm_button.disabled = not _gm_available
+	_gm_button.pressed.connect(func() -> void: gm_requested.emit())
+	controls.add_child(_gm_button)
 
 	_day_night_button = _icon_button("moon", "昼夜循环：开启")
 	_day_night_button.toggle_mode = true

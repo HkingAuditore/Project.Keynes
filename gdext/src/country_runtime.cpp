@@ -864,7 +864,8 @@ Dictionary NativeCountryRuntime::cell_summary(int32_t cell) const {
     out["country_slot"] = slot;
     if (slot < 0) {
         out["owned"] = false;
-        out["country_name"] = "无主地";
+        // Must use utf8(): Godot String(const char*) is not UTF-8 and mojibakes CJK.
+        out["country_name"] = String::utf8("无主之地");
         out["country_handle"] = static_cast<int64_t>(0);
         return out;
     }

@@ -1,5 +1,11 @@
 # C++/DOTS Runtime 开发文档索引
 
+## Formal game flow and PKSV
+
+- [Formal Game Flow, Player Start, and PKSV](./game-flow-start-save.md): 正式主菜单、
+  `NewGameConfig`、单格国家、20 人开局、PKSV 安全边界与恢复顺序。
+- 修改启动场景、玩家出生、完整存档或退出流程前先读该文档。
+
 当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见
 [运行时性能优化契约（2026-07）](runtime-performance-optimization-2026-07.md)。
 
@@ -62,6 +68,10 @@
 16. [Cross-Era Industry Tech Tree](./cross-era-industry-tech-tree.md)
     - 经济目录的时代分层、科技标签、产业链深化、升级族和退役/合并规则。
 
+17. [视野迷雾与国界线](./vision-fog-and-borders.md)
+    - 三态视野语义、地形感知 Dijkstra 解算、`enum_lut.a` 知识度通道、渲染 z 序、
+      国界 ribbon mesh、UI 门控与 PKFG 存档边界。
+
 ## 可复用 Economy Skill
 
 仓库内 Skill 位于
@@ -96,10 +106,14 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 | Native economy | `gdext/src/economy_runtime.cpp`, `Project/project-keynes/scripts/economy/*.gd` | 独立 `ECONOMY_GRAPH`、catalog/facade、committed gameplay/save 与 selected-cell live Inspector bridge。 |
 | Native country | `gdext/src/country_runtime.cpp`, `gdext/src/world_ext_country.cpp`, `Project/project-keynes/scripts/country/*.gd` | 国家身份、领土、科技、国库、PKCN 与 `country_daily` 权威；只镜像 `cell.country_slot`。 |
 | Rendering / physical ocean | `Project/project-keynes/scripts/rendering/map_baker.gd` | SLP/wind/PSI/upwelling/raster 等 ocean currents 物理链路。 |
+| Vision / fog | `Project/project-keynes/scripts/geography/vision_solver.gd` | 静态视野场预烘、多源 Dijkstra 解算、`fog_k` 与三态 `fog_state`。 |
+| Fog / border 渲染层 | `Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`, `.../country_border_layer.gd` | 迷雾全图 quad（z=12）与国界 ribbon mesh（z=6）。 |
+| 视野编排 | `Project/project-keynes/scripts/game/world_runtime_host.gd` | `fog_of_war_enabled` / `fog_early_out_enabled`、`refresh_country_visuals()`、订阅 `country_committed`。 |
 
 ## 维护规则
 
 - 新增或迁移 C++ pass 时，同时更新 [Computation Pipelines](./computation-pipelines.md) 的状态表和对应机制小节。
 - 修改 `DCWorld` / `DCWorldExt` 通信 API 时，同时更新 [GDScript / C++ Data Bridge](./gdscript-cpp-data-bridge.md)。
 - 修改 scheduler 报告字段、skip 原因、budget 窗口或 job 注册顺序时，同时更新 [Scheduling and Job Graph](./scheduling-and-job-graph.md) 和 [Performance Diagnostics Playbook](./performance-diagnostics-playbook.md)。
+- 修改 LUT 通道布局、迷雾/国界视觉、PKSV section 集合或渲染 z 序时，同时更新 [视野迷雾与国界线](./vision-fog-and-borders.md)、[Computation Pipelines](./computation-pipelines.md) 与 [Formal Game Flow, Player Start, and PKSV](./game-flow-start-save.md)。
 - 文档里提到的符号必须能用 `rg` 在源码里找到；历史计划中的已废弃名字不要作为当前状态写入。

@@ -1,5 +1,20 @@
 # C++/DOTS Runtime 架构总览
 
+## Formal product entry and save coordination
+
+The product main scene is `main_menu.tscn`. `GameFlowService` owns one pending
+new/load request and `GameSaveCoordinator` owns the cross-provider save boundary;
+the former `world_setup` metadata path is development-only. The complete
+generation, bootstrap, PKSV, and restore contract is documented in
+[`game-flow-start-save.md`](./game-flow-start-save.md).
+
+Saving does not introduce a second simulation authority. It freezes new clock
+advancement, drains existing country/economy continuations across render frames,
+then snapshots `DCWorld`, native environment state, WorldClock, PKCN, PKEC,
+PKFG, journal, and player view. Restore regenerates static geography and applies
+PKCN before PKEC. PKFG carries only the monotonic `cell_explored` progress;
+current visibility and fog knowledge are derived and are recomputed on restore.
+
 本文说明当前运行期架构如何分层，以及每层负责什么。核心原则是：复杂 cell/pixel hot-loop 尽量在 C++ `DCWorldExt` 内以 SoA slot 跑完；GDScript 保留 orchestration、feature gate、调度状态机、UI/debug、fallback 和少量低频业务逻辑。
 
 ## 总体分层
@@ -23,6 +38,10 @@ DCWorld (GDScript) <---- schema ----> DCWorldExt (C++ GDExtension)
   v                                   v
 MapData, render atlases, weather fronts, debug views
 ```
+
+`MapData` 另持三个视野数组（`visible_arr` / `explored_arr` / `fog_k_arr`），
+`WorldData` 另持两个生成期烘死的静态视野场（`cell_view_height` /
+`cell_view_block`）；它们由 `VisionSolver` 而非任何 C++ pass 维护。
 
 ### GDScript orchestration 层
 
@@ -118,6 +137,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 | C++ pass 输出 | slot + publish/flush/snapshot | 输出必须显式发布到 GDScript 可见层。 |
 | 调度报告 | scheduler report Dictionary | `main.gd` 和 debug console 消费。 |
 | feature gates | `ClimateProfile` / `FeatureFlags` | 由 GDScript 决定 native/fallback 路径。 |
+| 视野与迷雾 | `VisionSolver`（GDScript） | 事件驱动而非每日 tick。`cell.visible`/`cell.explored` 是 schema 组件，`fog_k_arr` 是只供 `enum_lut.a` 消费的派生量；只有 `explored` 进存档。详见 [视野迷雾与国界线](./vision-fog-and-borders.md)。 |
 
 关键结论：C++ 写入 slot 不会自动让所有 GDScript 读者立刻看到。是否可见取决于该 pass 是否执行了 `_flush_slot_to_map()`、是否返回 `published_to_slot=true`、调用侧是否跳过了重复拷贝，以及 GDScript 读者是否读取的是已更新的 `MapData`/`DCWorld`。
 

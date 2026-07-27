@@ -22,6 +22,11 @@ uniform sampler2D weather_lut : filter_nearest, repeat_disable;
 uniform sampler2D weather_lut_prev : filter_nearest, repeat_disable;  // 上一仿真帧 LUT(帧间插值减两次更新间横跳)
 uniform float weather_lerp : hint_range(0.0, 1.0) = 1.0;              // 0=prev 1=curr,两次仿真更新之间随时间推进
 uniform vec2 lut_dims = vec2(0.0);
+// 视野门控：enum_lut.a = 迷雾知识度 k。已探索但当前看不见的地方不该显示实时天气
+// ——「你记得这里的地形，但不知道今天下不下雨」这个信号比灰化本身更能说明问题。
+// fog_mask_enabled 关闭时整个分支被 uniform 条件跳过，不产生额外采样。
+uniform sampler2D enum_lut : filter_nearest, repeat_disable;
+uniform bool fog_mask_enabled = false;
 
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
@@ -142,62 +147,9 @@ float hash_signed(vec2 p) {
 }
 
 // ── 解析梯度噪声（Perlin，quintic）：云形唯一来源，平滑、无纹理网格 ──
-vec2 cloud_hash22(vec2 p) {
-	p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-	return fract(sin(p) * 43758.5453123);
-}
-
-float cloud_grad_noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-	vec2 ga = -1.0 + 2.0 * cloud_hash22(i + vec2(0.0, 0.0));
-	vec2 gb = -1.0 + 2.0 * cloud_hash22(i + vec2(1.0, 0.0));
-	vec2 gc = -1.0 + 2.0 * cloud_hash22(i + vec2(0.0, 1.0));
-	vec2 gd = -1.0 + 2.0 * cloud_hash22(i + vec2(1.0, 1.0));
-	float va = dot(ga, f - vec2(0.0, 0.0));
-	float vb = dot(gb, f - vec2(1.0, 0.0));
-	float vc = dot(gc, f - vec2(0.0, 1.0));
-	float vd = dot(gd, f - vec2(1.0, 1.0));
-	float n = va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * (va - vb - vc + vd);
-	return 0.5 + 0.5 * n;
-}
-
-// 旋转去相关 FBM（标准云体）。各 octave 间旋转 → 消除网格对齐的块状感。
-float cloud_fbm(vec2 p, int octaves) {
-	mat2 m = mat2(vec2(1.6, 1.2), vec2(-1.2, 1.6));
-	float sum = 0.0;
-	float amp = 0.5;
-	for (int i = 0; i < 6; i++) {
-		if (i >= octaves) break;
-		sum += cloud_grad_noise(p) * amp;
-		p = m * p;
-		amp *= 0.5;
-	}
-	return sum;
-}
-
-// 带时间演化的 FBM：每 octave 旋转后加不同方向的时间漂移 → 云内部翻腾而非死板平移。
-float cloud_fbm_evolve(vec2 p, int octaves, float t) {
-	mat2 m = mat2(vec2(1.6, 1.2), vec2(-1.2, 1.6));
-	mat2 tm = mat2(vec2(0.76, 0.64), vec2(-0.64, 0.76));
-	float sum = 0.0;
-	float norm = 0.0;
-	float amp = 0.5;
-	vec2 sh = vec2(t * 0.17, -t * 0.13);
-	vec2 wobble = vec2(sin(t * 0.23), cos(t * 0.19)) * 0.32;
-	for (int i = 0; i < 6; i++) {
-		if (i >= octaves) break;
-		float fi = float(i);
-		sum += cloud_grad_noise(p + sh + wobble * (0.55 + fi * 0.18)) * amp;
-		norm += amp;
-		p = m * p;
-		sh = tm * sh * 0.62 + vec2(t * 0.015, -t * 0.011);
-		wobble = tm * wobble;
-		amp *= 0.5;
-	}
-	return clamp(sum / max(norm, 0.001), 0.0, 1.0);
-}
+// cloud_hash22 / cloud_grad_noise / cloud_fbm / cloud_fbm_evolve 已抽到共享
+// include，与 fog_of_war.gdshader 共用同一份实现。
+#include "res://shaders/include/cloud_noise.gdshaderinc"
 
 // ── 云密度主函数：软轮廓 + 清晰核心 + 时间扰动细节（cumulus / 雾 / front 共用）──
 // p：世界坐标（调用方已做风向 advection）。coverage：该点语义云量 [0,1]。seed：错开不同 front。
@@ -487,6 +439,13 @@ FrontField sample_field_weather(vec2 wp) {
 	vec2 uv = wx_wrap_uv((wp - world_origin) / world_size);
 	int cid_c = wx_decode_cell_index(uv);
 	if (cid_c < 0) return best;
+	// 视野屏蔽提前于所有云计算：不可见格直接退成无云，顺带把三层云 / TOD 光照 /
+	// 投影阴影整条管线一起省掉。
+	float fog_vis = 1.0;
+	if (fog_mask_enabled) {
+		fog_vis = smoothstep(0.5, 1.0, texture(enum_lut, wx_cell_lut_uv(cid_c)).a);
+		if (fog_vis < 0.01) return best;
+	}
 	vec4 center = wx_sample_lut((cid_c));
 	int wt = int(center.r * 255.0 + 0.5);
 
@@ -514,12 +473,12 @@ FrontField sample_field_weather(vec2 wp) {
 
 
 	best.color = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_colors[wt].rgb : vec3(0.0);
-	best.alpha = (wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_colors[wt].a : 0.0;
-	best.intensity = intensity_amount;
-	best.cloud = cloud_cover;
-	best.precip = precip_gate;
-	best.shadow = clamp(cloud_cover * 0.6, 0.0, 1.0);
-	best.edge = vapor_amount;
+	best.alpha = ((wt >= 0 && wt < MAX_WEATHER_TYPES) ? weather_profile_colors[wt].a : 0.0) * fog_vis;
+	best.intensity = intensity_amount * fog_vis;
+	best.cloud = cloud_cover * fog_vis;
+	best.precip = precip_gate * fog_vis;
+	best.shadow = clamp(cloud_cover * 0.6, 0.0, 1.0) * fog_vis;
+	best.edge = vapor_amount * fog_vis;
 	best.type = wt;
 	best.axis = vec2(1.0, 0.15); // 逐格无风向，用近似纬向漂移让 billboard 流动
 	return best;

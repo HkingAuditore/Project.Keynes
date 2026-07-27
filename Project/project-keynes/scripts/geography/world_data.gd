@@ -68,6 +68,15 @@ var ecology_visual_atlas_buffer: PackedByteArray = PackedByteArray()
 var dyn_atlas_smooth_buffer: PackedByteArray = PackedByteArray()  # RGBA8
 var ice_state_buffer: PackedByteArray = PackedByteArray()         # R8
 
+# ─── 视野静态预烘（per-cell，非像素 buffer）────────────────────────────
+# 地形静态，bake_world 里算一次就不再变，因此不进 MapData SoA，也不进存档
+# （读档会用同一 seed 重新 generate + bake）。
+#   cell_view_height : 观察者视高加成，由 landform 派生（山 > 丘 > 平原 > 水）。
+#   cell_view_block  : 视线穿透代价，由 landform + vegetation 派生（密林/山地高）。
+# VisionSolver 的多源 Dijkstra 直接消费这两张表。
+var cell_view_height: PackedByteArray = PackedByteArray()
+var cell_view_block: PackedByteArray = PackedByteArray()
+
 # ─── 元数据 ───────────────────────────────────────────────────────────────
 var hm_size: Vector2i = Vector2i.ZERO       # heightmap 分辨率（高，用于 hillshading）
 var derived_size: Vector2i = Vector2i.ZERO  # 派生 buffer 分辨率（低，省内存）
@@ -155,7 +164,12 @@ var noise_tex: ImageTexture
 #   R=biome，G/B=cell.index 低/高字节，A=landform；map 外像素写哨兵 0xFFFF。
 
 # enum_lut / dyn_lut / eco_lut：per-cell LUT 纹理（lut_dims 网格，NEAREST）。
-#   enum_lut(RGB8)=biome/veg/cover；dyn_lut(RGBA8)=temp/wet/snow/(ice|vitality)；
+#   enum_lut(RGBA8)=biome/veg/cover/迷雾知识度 k；
+#     A 通道搭车在 enum_lut 上，是因为主地形已经无条件采样这张 LUT——
+#     迷雾灰化与未探索早退因此是**零新增 texture sample**，只多读一个分量。
+#     代价是迷雾值被绑进 LUT 的日刷节奏，encode_cell_luts（C++）与
+#     _bake_cell_luts_gd（GDScript fallback）两条打包路径都必须带上当前值。
+#   dyn_lut(RGBA8)=temp/wet/snow/(ice|vitality)；
 #   eco_lut(RGBA8)=foliage/stress/transition/growth。更新=写 n_cells texel + 一次 update。
 # lut_dims：(lut_w, lut_h)，lut_w=min(n_cells, 2048)，lut_h=ceil(n_cells/lut_w)。
 var enum_lut_tex: ImageTexture

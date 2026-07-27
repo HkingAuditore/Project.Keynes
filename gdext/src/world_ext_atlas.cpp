@@ -1393,7 +1393,7 @@ void DCWorldExt::migrate_eco_persistent_from_gd(godot::Dictionary state) {
 //
 // 输出 3 张 LUT（行优先，宽 lut_w；texel ci 落在 (ci%lut_w, ci/lut_w)，
 // 即扁平偏移恰为 ci）：
-//   enum_lut : RGB8  R=terrain G=vegetation B=cover
+//   enum_lut : RGBA8 R=terrain G=vegetation B=cover A=迷雾知识度 k（0..255）
 //   dyn_lut  : RGBA8 R=q01(temp) G=q01(moist) B=q01(snow) A=水:q01_ice(sif)/陆:q01(vit)
 //   eco_lut  : RGBA8 R=q01(foliage) G=q01(stress) B=transition_age A=q01(growth)
 //
@@ -1481,6 +1481,15 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
     const bool snow_override_valid = snow_override.size() >= n_cells;
     const float * const __restrict SNOW_VIS =
         snow_override_valid ? snow_override.ptr() : SNOW;
+
+    // 迷雾知识度 k（VisionSolver 产出的 blur 后 per-cell 字节）走 enum_lut 的 A
+    // 通道。之所以显式传数组而不是读 slot：vision 的权威实现目前在 GDScript，
+    // 而 refresh_slots_from_map() 会把所有 slot 都从 MapData 拉一遍，可能用陈旧
+    // 镜像覆盖 native-only 的气候值 —— 与上面 snow_cover_arr 同一个理由。
+    // 未提供时 A 通道保持 255（全知），保证迷雾系统未接线时视觉不变。
+    PackedByteArray fog_k = opts.get("fog_k_arr", PackedByteArray());
+    const bool fog_k_valid = fog_k.size() >= n_cells;
+    const uint8_t * const __restrict FOGK = fog_k_valid ? fog_k.ptr() : nullptr;
     int snow_slot_diff_count = 0;
     double snow_slot_diff_sum = 0.0;
     double snow_slot_diff_max = 0.0;
@@ -1541,7 +1550,7 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
     uint8_t * const __restrict TR = st->lut_transition_age.ptrw();
     const bool eff_cache_valid = cache_valid_opt && lut_state_ok;
 
-    PackedByteArray enum_data; enum_data.resize(slots_total * 3);
+    PackedByteArray enum_data; enum_data.resize(slots_total * 4);
     PackedByteArray dyn_data;  dyn_data.resize(slots_total * 4);
     PackedByteArray eco_data;  eco_data.resize(slots_total * 4);
     PackedByteArray weather_data; weather_data.resize(slots_total * 4);
@@ -1549,19 +1558,19 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
     uint8_t * const __restrict DYN = dyn_data.ptrw();
     uint8_t * const __restrict ECO = eco_data.ptrw();
     uint8_t * const __restrict WX = weather_data.ptrw();
-    for (int i = 0; i < slots_total * 3; ++i) ENUM[i] = 0;
-    for (int i = 0; i < slots_total * 4; ++i) { DYN[i] = 0; ECO[i] = 0; WX[i] = 0; }
+    for (int i = 0; i < slots_total * 4; ++i) { ENUM[i] = 0; DYN[i] = 0; ECO[i] = 0; WX[i] = 0; }
 
     auto t0 = std::chrono::high_resolution_clock::now();
     for (int ci = 0; ci < n_cells; ++ci) {
         const uint8_t terrain = TERR[ci];
         const bool is_water = IWLUT[terrain] != 0;
 
-        // enum LUT：R=terrain G=vegetation B=cover
-        const int e3 = ci * 3;
-        ENUM[e3] = terrain;
-        ENUM[e3 + 1] = VEG[ci];
-        ENUM[e3 + 2] = COVER[ci];
+        // enum LUT：R=terrain G=vegetation B=cover A=迷雾知识度 k
+        const int e4 = ci * 4;
+        ENUM[e4] = terrain;
+        ENUM[e4 + 1] = VEG[ci];
+        ENUM[e4 + 2] = COVER[ci];
+        ENUM[e4 + 3] = FOGK != nullptr ? FOGK[ci] : uint8_t(255);
 
         // dyn LUT
         const float snow_vis = SNOW_VIS[ci];

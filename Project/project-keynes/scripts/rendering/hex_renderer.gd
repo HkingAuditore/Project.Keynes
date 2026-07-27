@@ -330,6 +330,10 @@ var _season_transition_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
 var _season_transition_mat: ShaderMaterial = null
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
+var _border_layer: CountryBorderLayer = null  # 国界线（几何 ribbon，z=6）
+var _fog_layer: FogOfWarLayer = null  # 视野迷雾（全图 quad，z=12，盖住天气与国界）
+var _fog_enabled: bool = false
+var _fog_early_out: bool = false
 # Decoration / vegetation 散布层（数据驱动）：默认回退到 grass/shrub/tree 三个
 # @export profile；配置 decoration_manifest 后按其 layers 数组生成 N 层。
 var _detail_layers: Array = []
@@ -458,6 +462,14 @@ func _ready() -> void:
 	_weather_layer.process_priority = 1000
 	if _world != null and _weather_layer.has_method("set_world_ref"):
 		_weather_layer.set_world_ref(_world)  # 帧间插值:供 weather_layer 取 weather_lut_prev_tex
+	# 国界线（z=6，在数据 overlay 之上）与视野迷雾（z=12，盖住天气/高亮/国界）。
+	# 与 WeatherLayer 同套：代码创建 + 世界坐标几何，不进 .tscn。
+	_border_layer = CountryBorderLayer.new()
+	_border_layer.name = "CountryBorderLayer"
+	add_child(_border_layer)
+	_fog_layer = FogOfWarLayer.new()
+	_fog_layer.name = "FogOfWarLayer"
+	add_child(_fog_layer)
 	_load_shader()
 	if _map != null and _world != null:
 		_rebuild()
@@ -562,6 +574,9 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 	_apply_detail_global_budget()
 	if _weather_layer != null and _weather_layer.has_method("set_mobile_quality_tier"):
 		_weather_layer.set_mobile_quality_tier(tier_define)
+	if _fog_layer != null:
+		_fog_layer.set_mobile_quality_tier(tier_define)
+		_apply_fog_early_out()
 	if _mobile_quality_tier_define == tier_define:
 		return
 	_mobile_quality_tier_define = tier_define
@@ -1049,6 +1064,56 @@ func get_world_bounds() -> Rect2:
 		return MapBaker.compute_world_bounds(_map.width, _map.height, hex_size)
 	return Rect2()
 
+## 国界线层。领土变更（country_committed）后由 WorldRuntimeHost 调 rebuild()。
+func country_border_layer() -> CountryBorderLayer:
+	return _border_layer
+
+## 视野迷雾层。迷雾值本身走 enum_lut.a，本层只负责画云。
+func fog_of_war_layer() -> FogOfWarLayer:
+	return _fog_layer
+
+## 同时开关迷雾层与主地形的迷雾响应。fog 关时主地形完全恢复改造前的行为
+## （灰化与早退都是纯 uniform 分支，关掉即零成本）。
+## early_out 是可开关的性能实验：净收益取决于厚云是否真的比被跳过的地形便宜，
+## 必须靠 headless perf A/B 决定，默认关。它还要求迷雾层在未探索处输出常量色，
+## 因此只有迷雾最低档才真正放行（见 _apply_fog_early_out）。
+func set_fog_of_war_enabled(enabled: bool, early_out: bool = false) -> void:
+	_fog_enabled = enabled
+	_fog_early_out = early_out
+	if _fog_layer != null:
+		_fog_layer.set_enabled(enabled)
+	_push_fog_uniforms()
+
+
+func is_fog_of_war_enabled() -> bool:
+	return _fog_enabled
+
+
+func _push_fog_uniforms() -> void:
+	# 天气屏蔽与主地形灰化共用同一张 enum_lut，只是消费点不同。
+	if _weather_layer != null:
+		_weather_layer.set_fog_mask(
+			_fog_enabled, _world.enum_lut_tex if _world != null else null)
+	if _shader_mat == null:
+		return
+	_shader_mat.set_shader_parameter("fog_gray_enabled", _fog_enabled)
+	_shader_mat.set_shader_parameter("fog_early_out_enabled", _effective_fog_early_out())
+	_shader_mat.set_shader_parameter("fog_unexplored_color", FogOfWarLayer.UNEXPLORED_COLOR)
+
+
+## 早退要求迷雾层在未探索处画的是一个常量色 —— 地形被完全盖住，跳过才不可见。
+## 迷雾一旦上体积云光照（q1+），颜色随位置/时间变化，早退分支那块常量色会露成
+## 死斑。所以请求的 early_out 还要与迷雾层的实际档位取与。
+func _effective_fog_early_out() -> bool:
+	if not (_fog_enabled and _fog_early_out):
+		return false
+	return _fog_layer != null and _fog_layer.supports_terrain_early_out()
+
+
+func _apply_fog_early_out() -> void:
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("fog_early_out_enabled", _effective_fog_early_out())
+
 # Phase 1：让 main.gd 在 WorldClock day_changed 时推进 shader 季节相位
 func set_season_phase(phase: float) -> void:
 	_season_phase = phase
@@ -1059,6 +1124,8 @@ func set_season_phase(phase: float) -> void:
 		_update_season_transition()
 	if _weather_layer != null:
 		_weather_layer.set_season_phase(_season_phase)
+	if _fog_layer != null:
+		_fog_layer.set_season_phase(_season_phase)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_season_phase(_season_phase)
 	)
@@ -1090,6 +1157,8 @@ func set_day_phase(v: float) -> void:
 		_season_transition_mat.set_shader_parameter("day_phase", _day_phase)
 	if _weather_layer != null:
 		_weather_layer.set_day_phase(_day_phase)
+	if _fog_layer != null:
+		_fog_layer.set_day_phase(_day_phase)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_phase(_day_phase)
 	)
@@ -1106,6 +1175,8 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 		_season_transition_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_position"):
 		_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
+	if _fog_layer != null:
+		_fog_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		if layer.has_method("set_tod_debug_sun_position"):
 			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
@@ -1120,6 +1191,8 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 		_season_transition_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_height_scale"):
 		_weather_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
+	if _fog_layer != null:
+		_fog_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		if layer.has_method("set_tod_debug_sun_height_scale"):
 			layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
@@ -1133,6 +1206,9 @@ func set_visual_quality(q: int) -> void:
 		_shader_mat.set_shader_parameter("visual_quality", visual_quality)
 	if _weather_layer != null:
 		_weather_layer.set_visual_quality(visual_quality)
+	if _fog_layer != null:
+		_fog_layer.set_visual_quality(visual_quality)
+		_apply_fog_early_out()
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_visual_quality(visual_quality)
 	)
@@ -1379,6 +1455,8 @@ func set_day_night_enabled(v: bool) -> void:
 		_shader_mat.set_shader_parameter("day_night_enabled", day_night_enabled)
 	if _weather_layer != null:
 		_weather_layer.set_day_night_enabled(day_night_enabled)
+	if _fog_layer != null:
+		_fog_layer.set_day_night_enabled(day_night_enabled)
 	# [cylindrical-earth-daylight] 植被/点缀层昼夜总开关随地形同步（关闭=永昼）。
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_night_enabled(day_night_enabled)
@@ -2049,6 +2127,24 @@ func _apply_uniforms() -> void:
 		# [parallax-rain] 俯视雨幕默认参数（可被外部 set_camera_pitch 覆盖）
 		_weather_layer.set_camera_pitch(_camera_pitch)
 		_weather_layer.set_wind(_wind_dir, _wind_strength)
+	if _border_layer != null:
+		_border_layer.set_hex_size(hex_size)
+		_border_layer.set_horizontal_wrap(_wrap_period_x())
+	if _fog_layer != null:
+		_fog_layer.setup(bounds, _world.enum_atlas_tex, _world.lut_dims, hex_size, _wrap_period_x())
+		_fog_layer.set_enum_lut_texture(_world.enum_lut_tex)
+		# [cylindrical-earth-daylight] 迷雾云的 TOD 光照与天气云同源，setup 后补推
+		# 一次相位，之后由 set_day_phase / set_season_phase 增量刷新。
+		_fog_layer.set_season_phase(_season_phase)
+		_fog_layer.set_day_phase(_day_phase)
+		_fog_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		_fog_layer.set_day_night_enabled(day_night_enabled)
+		_fog_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
+		_fog_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
+		_fog_layer.set_visual_quality(visual_quality)
+		_fog_layer.set_enabled(_fog_enabled)
+		_apply_fog_early_out()
+	_push_fog_uniforms()
 	set_weather_fronts([])
 
 	# Hypsometric 色阶

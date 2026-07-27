@@ -563,6 +563,10 @@ var _phys_psi_iters_done: int = 0
 var _phys_wind_raster_idx: int = 0
 var _phys_wind_done_by_cpp: bool = false
 var _initial_physical_deferred: bool = false
+# 同类 bind-defer 标志：per-cell LUT 编码读 DCWorldExt 的绑定 slot，而 bind_map_data
+# 要等 bake_world 返回、init_soa_from_bake 跑完才发生。就地烘必然退回 GDScript，
+# 故推迟到 bind 之后由 run_deferred_initial_cell_luts() 走 C++ 补烘。
+var _initial_cell_luts_deferred: bool = false
 
 # Item 2b (2026-07-07)：phys leaf pass cell-range 切片游标 + 总开关。
 # 默认 _phys_cell_slice_enabled=false → 完全 inert（与历史逐位等价）。开启后把 SLP/WIND/
@@ -734,6 +738,31 @@ func run_deferred_initial_physical_circulation(map: MapData, world: WorldData, h
 	_phys_wind_done_by_cpp = false
 	print("[physical_init] deferred native refresh complete: %dms" % (Time.get_ticks_msec() - t_deferred))
 	return true
+
+## bake_world 推迟下来的首次 per-cell LUT 编码。调用点必须满足两个条件：
+## DCWorldExt 已 bind（否则 encode_cell_luts 仍会退回 GDScript），且早于渲染器
+## 读取 lut 纹理（即 generate() 返回之前）。
+## 迷雾 A 通道此刻仍是全知 255 —— 真实 fog_k 要等玩家国家确定后由
+## refresh_country_visuals 重烘，这与推迟之前的行为一致。
+func run_deferred_initial_cell_luts(map: MapData, world: WorldData) -> Dictionary:
+	if not _initial_cell_luts_deferred:
+		return {"ok": false, "reason": "not_deferred"}
+	_initial_cell_luts_deferred = false
+	if map == null or world == null:
+		push_error("[cell_lut] deferred encode skipped: map/world missing")
+		return {"ok": false, "reason": "missing_map_or_world"}
+	var t_lut := Time.get_ticks_msec()
+	_ensure_cell_lut_dims(map, world)
+	var report: Dictionary = bake_cell_luts(map, world)
+	var path: String = String(report.get("lut_encode_path", "none"))
+	if path != "gdext" or bool(report.get("fallback", true)):
+		# 已经 bind 过还没走成 C++，说明方法缺失或入参不合法。按 dots-total-cpp
+		# 纪律显式报错，不让 GDScript 结果静默顶替。
+		push_error("[cell_lut] deferred encode did not use C++ (path=%s reason=%s)" % [
+			path, String(report.get("reason", ""))])
+	else:
+		print("[cell_lut] deferred encode: %dms path=gdext" % (Time.get_ticks_msec() - t_lut))
+	return report
 
 static func compute_world_bounds(width: int, height: int, hex_size: float) -> Rect2:
 	if width <= 0 or height <= 0:
@@ -962,8 +991,23 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.noise_tex = get_or_build_shared_noise_tex()
 	stage_progress.emit("encode", 0.98)
 	await _yield_generation_frame()
+	# 视野静态场（view_height / view_block）：地形一旦定型就不再变，烘一次即可。
+	# 必须排在 bake_cell_luts 之前——LUT 的 A 通道要带当前迷雾值，而首解算需要
+	# 这两张表。此刻 map SoA 尚未 init_soa_from_bake，VisionSolver 会自动走 AoS。
+	var vision_bake: Dictionary = VisionSolver.bake_static_fields(map, world)
+	if not bool(vision_bake.get("ok", false)):
+		push_warning("MapBaker: vision static bake failed - %s" % String(vision_bake.get("reason", "")))
 	_ensure_cell_lut_dims(map, world)
-	bake_cell_luts(map, world)
+	# 此刻 DCWorldExt 必然未 bind（bind_map_data 在 bake_world 返回后才跑），就地烘
+	# 只能走 GDScript。推迟到 bind 之后补烘，那时 encode_cell_luts 可用，且读到的是
+	# 原生温度场 publish 之后的权威气候值。gdext 整个类都不存在时没有可等的 bind，
+	# 就地烘作为无 DLL 环境的兜底。
+	if ClassDB.class_exists("DCWorldExt"):
+		_initial_cell_luts_deferred = true
+		print("  cell LUT encode: deferred until DCWorldExt bind")
+	else:
+		_initial_cell_luts_deferred = false
+		bake_cell_luts(map, world)
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
 
 	print("MapBaker v6: total %dms" % (Time.get_ticks_msec() - t_total))
@@ -4919,6 +4963,16 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 		report.lut_snow_source = "map_snow_cover_arr"
 	else:
 		report.lut_snow_source = "slot_or_facade"
+	# 迷雾知识度：enum_lut 的 A 通道。两条打包路径（C++ encode_cell_luts 与下面的
+	# GDScript fallback）必须都带上当前值，否则每日 LUT 重烘会把迷雾刷没、造成闪烁。
+	# 真源只有 map.fog_k_arr 一份（VisionSolver 写），不存在第二份镜像。
+	# 判据是"解算过没有"，不是数组大小：init_soa_from_bake 会把 fog_k_arr 分配成
+	# 全 0，尺寸够但内容是未初始化状态。此时传下去会让 A 通道全 0（全图未探索），
+	# 首帧整张地图变黑。解算前留空，两条打包路径都按全知 255 处理。
+	var fog_k_override: PackedByteArray = map.fog_k_arr \
+		if map.fog_solved and map.fog_k_arr.size() >= n_cells \
+		else PackedByteArray()
+	report["lut_fog_source"] = "map_fog_k_arr" if not fog_k_override.is_empty() else "none"
 	# C++ 优先路径：scalar tight loop（即便 n_cells≈2400 也在 CPP 做，含 transition tracking）。
 	if _world_ext != null and _world_ext.has_method("encode_cell_luts"):
 		# Do not call refresh_slots_from_map() here: several native climate fields can be
@@ -4934,6 +4988,7 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 			"veg_none": int(VegetationType.VEG.NONE),
 			"cache_valid": cache_valid,
 			"snow_cover_arr": snow_cover_override,
+			"fog_k_arr": fog_k_override,
 		})
 		report = out.duplicate(true)
 		report["lut_encode_path"] = "gdext"
@@ -4944,7 +4999,7 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 			var d = out.get("dyn_lut", null)
 			var c = out.get("eco_lut", null)
 			if e is PackedByteArray and d is PackedByteArray and c is PackedByteArray:
-				world.enum_lut_tex = _lut_tex_from_data(e, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
+				world.enum_lut_tex = _lut_tex_from_data(e, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
 				world.dyn_lut_tex = _lut_tex_from_data(d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 				world.eco_lut_tex = _lut_tex_from_data(c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
 				# weather LUT 发布已从动态视觉 LUT 日刷中解耦；初次 bake 或 weather_refresh commit 才更新时间戳。
@@ -4954,7 +5009,7 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 					var wx_report: Dictionary = _publish_weather_lut_bytes(wlut, world, lw, lh)
 					report.merge(wx_report, true)
 				return report
-	_bake_cell_luts_gd(map, world, lw, lh, snow_cover_override, publish_weather_lut)
+	_bake_cell_luts_gd(map, world, lw, lh, snow_cover_override, publish_weather_lut, fog_k_override)
 
 	report["lut_encode_path"] = "gdscript"
 	report["path"] = "gdscript"
@@ -4965,9 +5020,10 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 # GDScript fallback：per-cell LUT 全量烘焙（C++ encode_cell_luts 不可用时）。
 func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
 		snow_cover_override: PackedFloat32Array = PackedFloat32Array(),
-		publish_weather_lut: bool = true) -> void:
+		publish_weather_lut: bool = true,
+		fog_k_override: PackedByteArray = PackedByteArray()) -> void:
 	var slots: int = lw * lh
-	var enum_data := PackedByteArray(); enum_data.resize(slots * 3)
+	var enum_data := PackedByteArray(); enum_data.resize(slots * 4)
 	var dyn_data := PackedByteArray(); dyn_data.resize(slots * 4)
 	var eco_data := PackedByteArray(); eco_data.resize(slots * 4)
 	var weather_data := PackedByteArray(); weather_data.resize(slots * 4)
@@ -4978,10 +5034,13 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
 		var ci: int = int(cell.index)
 		if ci < 0 or ci >= slots:
 			continue
-		var e3: int = ci * 3
-		enum_data[e3]     = int(cell.terrain) & 0xFF
-		enum_data[e3 + 1] = int(cell.vegetation) & 0xFF
-		enum_data[e3 + 2] = int(cell.cover) & 0xFF
+		# enum LUT：R=terrain G=vegetation B=cover A=迷雾知识度 k（与 C++ 同布局）。
+		# 未接线时 A=255（全知），保证迷雾系统关闭时视觉与改造前一致。
+		var e4: int = ci * 4
+		enum_data[e4]     = int(cell.terrain) & 0xFF
+		enum_data[e4 + 1] = int(cell.vegetation) & 0xFF
+		enum_data[e4 + 2] = int(cell.cover) & 0xFF
+		enum_data[e4 + 3] = fog_k_override[ci] if ci < fog_k_override.size() else 255
 		var snow_override: float = snow_cover_override[ci] if ci < snow_cover_override.size() else -1.0
 		var dsig: int = _dynamic_cell_signature(cell, snow_override)
 		var d4: int = ci * 4
@@ -5002,7 +5061,7 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
 		weather_data[w4 + 1] = _q01_byte(float(cell.weather_intensity))
 		weather_data[w4 + 2] = _q01_byte(float(cell.weather_cloud))
 		weather_data[w4 + 3] = _q01_byte(float(cell.weather_vapor))
-	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGB8, world.enum_lut_tex)
+	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
 	world.dyn_lut_tex = _lut_tex_from_data(dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 	world.eco_lut_tex = _lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
 	if publish_weather_lut:

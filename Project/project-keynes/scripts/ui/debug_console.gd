@@ -25,11 +25,45 @@ extends PanelContainer
 signal overlay_mode_changed(mode: int)
 signal overlay_alpha_changed(alpha: float)
 
+enum ConsoleMode {
+	LEGACY_DEBUG_LAB,
+	PLAYER_GM,
+}
+
 # 主场景引用（提供 getter 读取运行时状态；所有回调都通过它调用 main 的方法）
 var _main: Node = null
 # 玩家场景只复用性能监视、快照与两类录制器，不暴露旧 debug lab 的
 # overlay/模拟开关，避免要求 WorldRuntimeHost 伪装成完整 main.gd。
 var runtime_diagnostics_only: bool = false
+@export var console_mode: ConsoleMode = ConsoleMode.LEGACY_DEBUG_LAB
+
+const GM_REFRESH_SECONDS := 0.5
+const GM_TABS := [
+	{"id": "overview", "label": "总览", "icon": "overview"},
+	{"id": "selected", "label": "选中对象", "icon": "target"},
+	{"id": "commands", "label": "指令", "icon": "settings"},
+	{"id": "toggles", "label": "开关", "icon": "surface"},
+	{"id": "recording", "label": "记录", "icon": "history"},
+]
+
+var _gm_tabs: CategoryTabs
+var _gm_pages: Dictionary = {}
+var _gm_data_labels: Dictionary = {}
+var _gm_capabilities: Dictionary = {}
+var _gm_command_input: LineEdit
+var _gm_suggestions: ItemList
+var _gm_command_output: RichTextLabel
+var _gm_command_help: Label
+var _gm_confirmation: ConfirmationDialog
+var _gm_pending_command: Dictionary = {}
+var _gm_history: Array = []
+var _gm_history_cursor := 0
+var _gm_output_lines: Array = []
+var _gm_toggle_container: VBoxContainer
+var _gm_toggle_buttons: Dictionary = {}
+var _gm_record_status_labels: Dictionary = {}
+var _gm_local_toggle_getter: Callable
+var _gm_local_toggle_setter: Callable
 
 # --- 内部 UI 节点缓存 -----------------------------------------------------
 var _overlay_option_btn: OptionButton
@@ -116,18 +150,19 @@ const VISUAL_SWITCHES: Array = [
 func _ready() -> void:
 	# UI 拦截：控制台内点击不应穿透到地块选中（验收 4.6）
 	mouse_filter = Control.MouseFilter.MOUSE_FILTER_STOP
-	custom_minimum_size = Vector2(PANEL_WIDTH, 0)
+	custom_minimum_size = Vector2(0.0 if console_mode == ConsoleMode.PLAYER_GM else PANEL_WIDTH, 0.0)
 	visible = false
 	# 停靠位置（TopBar 高度约 36px，空出 40 给 Label 与阴影）
 	# 这里不硬编码 anchor，交由父容器或 main 侧的锚点配置；但给一个兜底 offset
-	position = Vector2(8, 44)
+	if console_mode == ConsoleMode.LEGACY_DEBUG_LAB:
+		position = Vector2(8, 44)
 	_build_ui()
 	# Telemetry 低频定时器：Debug 面板只读缓存状态，避免打开面板后每秒制造 UI/字典开销。
 	_telemetry_timer = Timer.new()
-	_telemetry_timer.wait_time = 2.0
+	_telemetry_timer.wait_time = GM_REFRESH_SECONDS if console_mode == ConsoleMode.PLAYER_GM else 2.0
 
 	_telemetry_timer.autostart = false
-	_telemetry_timer.timeout.connect(_on_telemetry_tick)
+	_telemetry_timer.timeout.connect(_on_gm_refresh_tick if console_mode == ConsoleMode.PLAYER_GM else _on_telemetry_tick)
 	add_child(_telemetry_timer)
 	visibility_changed.connect(_on_visibility_changed)
 
@@ -157,7 +192,39 @@ func set_main(m: Node) -> void:
 		_economy_data_recorder.call("bind_main", m)
 	if m != null and m.has_method("set_economy_data_recorder"):
 		m.call("set_economy_data_recorder", _economy_data_recorder)
-	_refresh_from_state()
+	if console_mode == ConsoleMode.PLAYER_GM:
+		_gm_load_capabilities()
+		_gm_refresh_current_page()
+	else:
+		_refresh_from_state()
+
+
+func set_gm_local_toggle_provider(getter: Callable, setter: Callable) -> void:
+	_gm_local_toggle_getter = getter
+	_gm_local_toggle_setter = setter
+	if console_mode == ConsoleMode.PLAYER_GM:
+		_gm_load_capabilities()
+
+
+func refresh_gm_capabilities() -> void:
+	if console_mode == ConsoleMode.PLAYER_GM:
+		_gm_load_capabilities()
+
+
+func open_panel() -> void:
+	if visible:
+		return
+	refresh_gm_capabilities()
+	UIAnimation.fade_slide_in(self, Vector2(-28.0, 0.0))
+	_gm_refresh_current_page()
+
+
+func close_panel() -> void:
+	UIAnimation.fade_slide_out(self, Vector2(-28.0, 0.0))
+
+
+func is_panel_open() -> bool:
+	return visible
 
 # 由 main.gd 在 F6/F8 等外部路径修改状态后调用；不立即刷新，避免同帧 UI 抖动。
 func request_state_sync() -> void:
@@ -175,6 +242,9 @@ func _sync_state_if_dirty() -> void:
 
 
 func _build_ui() -> void:
+	if console_mode == ConsoleMode.PLAYER_GM:
+		_build_player_gm_ui()
+		return
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 8)
 	margin.add_theme_constant_override("margin_top", 6)
@@ -226,6 +296,497 @@ func _build_ui() -> void:
 	_build_migration_group(vbox)
 	vbox.add_child(HSeparator.new())
 	_build_telemetry_group(vbox)
+
+
+func _build_player_gm_ui() -> void:
+	add_theme_stylebox_override("panel", UITokens.panel_style(
+		Color(0.035, 0.032, 0.027, 0.985), UITokens.RADIUS_SM, UITokens.PANEL_BORDER))
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", UITokens.SPACE_MD)
+	margin.add_theme_constant_override("margin_top", UITokens.SPACE_SM)
+	margin.add_theme_constant_override("margin_right", UITokens.SPACE_MD)
+	margin.add_theme_constant_override("margin_bottom", UITokens.SPACE_MD)
+	add_child(margin)
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	margin.add_child(root)
+
+	var header := HBoxContainer.new()
+	var title := Label.new()
+	title.text = "GM 管理面板"
+	title.add_theme_font_override("font", UITokens.font_with_weight(700))
+	title.add_theme_font_size_override("font_size", UITokens.FONT_TITLE)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	var close_button := Button.new()
+	close_button.tooltip_text = "关闭 GM 面板"
+	close_button.custom_minimum_size = Vector2(34.0, 32.0)
+	IconBadge.apply_to_button(close_button, "close", 15)
+	close_button.pressed.connect(close_panel)
+	header.add_child(close_button)
+	root.add_child(header)
+
+	_gm_tabs = CategoryTabs.new()
+	_gm_tabs.set_tabs(GM_TABS, "overview")
+	_gm_tabs.tab_selected.connect(_on_gm_tab_selected)
+	root.add_child(_gm_tabs)
+
+	var page_stack := VBoxContainer.new()
+	page_stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(page_stack)
+	_build_gm_data_page(page_stack, "overview")
+	_build_gm_data_page(page_stack, "selected")
+	_build_gm_command_page(page_stack)
+	_build_gm_toggle_page(page_stack)
+	_build_gm_recording_page(page_stack)
+	_show_gm_page("overview")
+
+
+func _new_gm_page(parent: Control, page_id: String) -> VBoxContainer:
+	var page := VBoxContainer.new()
+	page.name = page_id.capitalize()
+	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	page.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	parent.add_child(page)
+	_gm_pages[page_id] = page
+	return page
+
+
+func _build_gm_data_page(parent: Control, page_id: String) -> void:
+	var page := _new_gm_page(parent, page_id)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	page.add_child(scroll)
+	var text := RichTextLabel.new()
+	text.bbcode_enabled = false
+	text.fit_content = true
+	text.scroll_active = false
+	text.selection_enabled = true
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_font_size_override("normal_font_size", UITokens.FONT_BODY)
+	text.add_theme_color_override("default_color", UITokens.TEXT_MAIN)
+	scroll.add_child(text)
+	_gm_data_labels[page_id] = text
+
+
+func _build_gm_command_page(parent: Control) -> void:
+	var page := _new_gm_page(parent, "commands")
+	_gm_command_help = Label.new()
+	_gm_command_help.text = "输入 help 查看白名单指令，输入 clear 清空输出。"
+	_gm_command_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_gm_command_help.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+	page.add_child(_gm_command_help)
+	var input_row := HBoxContainer.new()
+	_gm_command_input = LineEdit.new()
+	_gm_command_input.placeholder_text = "<command_id> key=value"
+	_gm_command_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_gm_command_input.text_changed.connect(_on_gm_command_text_changed)
+	_gm_command_input.text_submitted.connect(func(_line: String) -> void: _submit_gm_command())
+	_gm_command_input.gui_input.connect(_on_gm_command_input_event)
+	input_row.add_child(_gm_command_input)
+	var run_button := Button.new()
+	run_button.tooltip_text = "解析并执行指令"
+	run_button.custom_minimum_size = Vector2(38.0, 34.0)
+	IconBadge.apply_to_button(run_button, "confirm", 15)
+	run_button.pressed.connect(_submit_gm_command)
+	input_row.add_child(run_button)
+	page.add_child(input_row)
+	_gm_suggestions = ItemList.new()
+	_gm_suggestions.custom_minimum_size = Vector2(0.0, 96.0)
+	_gm_suggestions.visible = false
+	_gm_suggestions.item_selected.connect(_on_gm_suggestion_selected)
+	page.add_child(_gm_suggestions)
+	_gm_command_output = RichTextLabel.new()
+	_gm_command_output.bbcode_enabled = false
+	_gm_command_output.selection_enabled = true
+	_gm_command_output.scroll_following = true
+	_gm_command_output.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_gm_command_output.add_theme_color_override("default_color", UITokens.TEXT_MAIN)
+	page.add_child(_gm_command_output)
+	_gm_confirmation = ConfirmationDialog.new()
+	_gm_confirmation.title = "确认 GM 指令"
+	_gm_confirmation.ok_button_text = "确认提交"
+	_gm_confirmation.cancel_button_text = "取消"
+	_gm_confirmation.confirmed.connect(_execute_pending_gm_command)
+	add_child(_gm_confirmation)
+
+
+func _build_gm_toggle_page(parent: Control) -> void:
+	var page := _new_gm_page(parent, "toggles")
+	var hint := Label.new()
+	hint.text = "所有开关均在设置后回读运行时真值。"
+	hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+	page.add_child(hint)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	page.add_child(scroll)
+	_gm_toggle_container = VBoxContainer.new()
+	_gm_toggle_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_gm_toggle_container.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	scroll.add_child(_gm_toggle_container)
+
+
+func _build_gm_recording_page(parent: Control) -> void:
+	var page := _new_gm_page(parent, "recording")
+	var hint := Label.new()
+	hint.text = "记录器沿用现有 CSV 导出路径；再次点击对应按钮停止并导出。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+	page.add_child(hint)
+	_add_gm_recorder_row(page, "performance", "性能采样", _on_btn_toggle_record)
+	_add_gm_recorder_row(page, "tiles", "地块全量", _on_btn_toggle_tile_record)
+
+	var dims := HBoxContainer.new()
+	dims.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	_economy_record_checkboxes.clear()
+	for pair in [["summary", "汇总"], ["cohorts", "阶层"], ["buildings", "建筑"],
+			["resources", "资源"], ["market", "市场"]]:
+		var checkbox := CheckBox.new()
+		checkbox.text = String(pair[1])
+		checkbox.button_pressed = true
+		checkbox.pressed.connect(_on_economy_dim_toggled.bind(String(pair[0]), checkbox))
+		_economy_record_checkboxes[String(pair[0])] = checkbox
+		dims.add_child(checkbox)
+	page.add_child(dims)
+	_economy_current_cell_checkbox = CheckBox.new()
+	_economy_current_cell_checkbox.text = "仅当前地块"
+	_economy_current_cell_checkbox.toggled.connect(func(_pressed: bool) -> void: _on_economy_scope_toggled())
+	page.add_child(_economy_current_cell_checkbox)
+	_add_gm_recorder_row(page, "economy", "经济周期", _on_btn_toggle_economy_record)
+
+	var snapshot_row := HBoxContainer.new()
+	var snapshot_button := Button.new()
+	snapshot_button.tooltip_text = "导出当前性能快照"
+	snapshot_button.custom_minimum_size = Vector2(38.0, 34.0)
+	IconBadge.apply_to_button(snapshot_button, "save", 15)
+	snapshot_button.pressed.connect(_on_gm_snapshot_pressed)
+	snapshot_row.add_child(snapshot_button)
+	var snapshot_label := Label.new()
+	snapshot_label.text = "导出当前调度与性能快照"
+	snapshot_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	snapshot_row.add_child(snapshot_label)
+	page.add_child(snapshot_row)
+	_snapshot_btn = snapshot_button
+
+
+func _add_gm_recorder_row(parent: VBoxContainer, recorder_id: String,
+		label_text: String, callback: Callable) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	var button := Button.new()
+	button.tooltip_text = "开始或停止%s记录" % label_text
+	button.custom_minimum_size = Vector2(38.0, 34.0)
+	IconBadge.apply_to_button(button, "history", 15)
+	button.pressed.connect(_on_gm_recorder_pressed.bind(recorder_id, callback, button))
+	row.add_child(button)
+	var status := Label.new()
+	status.text = "%s · 已停止" % label_text
+	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(status)
+	parent.add_child(row)
+	_gm_record_status_labels[recorder_id] = status
+	match recorder_id:
+		"performance": _record_btn = button
+		"tiles": _tile_record_btn = button
+		"economy": _economy_record_btn = button
+
+
+func _on_gm_tab_selected(tab_id: String) -> void:
+	_show_gm_page(tab_id)
+	_gm_refresh_current_page()
+
+
+func _show_gm_page(page_id: String) -> void:
+	for key in _gm_pages.keys():
+		var page := _gm_pages[key] as Control
+		if page != null:
+			page.visible = String(key) == page_id
+	var shown := _gm_pages.get(page_id) as Control
+	if shown != null:
+		UIAnimation.crossfade(shown)
+
+
+func _gm_load_capabilities() -> void:
+	_gm_capabilities = _main.call("get_gm_capabilities") \
+		if _main != null and _main.has_method("get_gm_capabilities") else {"commands": [], "toggles": []}
+	var toggles: Array = Array(_gm_capabilities.get("toggles", [])).duplicate()
+	toggles.append({"id": "diagnostics.perf_hud", "label": "Perf HUD", "group": "诊断", "local": true})
+	_gm_capabilities["toggles"] = toggles
+	_rebuild_gm_toggle_controls(toggles)
+	var usage := PackedStringArray()
+	for command in _gm_capabilities.get("commands", []):
+		usage.append(GMPanelViewModel.describe_command(command))
+	if _gm_command_help != null:
+		_gm_command_help.tooltip_text = "\n".join(usage)
+
+
+func _rebuild_gm_toggle_controls(toggles: Array) -> void:
+	if _gm_toggle_container == null:
+		return
+	for child in _gm_toggle_container.get_children():
+		_gm_toggle_container.remove_child(child)
+		child.queue_free()
+	_gm_toggle_buttons.clear()
+	var last_group := ""
+	for raw in toggles:
+		var spec: Dictionary = raw
+		var group := String(spec.get("group", "其他"))
+		if group != last_group:
+			var header := _make_section_header(group)
+			_gm_toggle_container.add_child(header)
+			last_group = group
+		var toggle := CheckBox.new()
+		var toggle_id := String(spec.get("id", ""))
+		toggle.text = String(spec.get("label", toggle_id))
+		toggle.toggled.connect(_on_gm_toggle_changed.bind(toggle_id))
+		_gm_toggle_container.add_child(toggle)
+		_gm_toggle_buttons[toggle_id] = toggle
+
+
+func _on_gm_refresh_tick() -> void:
+	if visible:
+		_gm_refresh_current_page()
+
+
+func _gm_refresh_current_page() -> void:
+	if console_mode != ConsoleMode.PLAYER_GM or not visible:
+		return
+	var page_id := _gm_tabs.current_tab() if _gm_tabs != null else "overview"
+	if page_id == "overview" or page_id == "selected":
+		_refresh_gm_data_page(page_id)
+	elif page_id == "toggles":
+		_refresh_gm_toggles()
+	elif page_id == "recording":
+		_refresh_gm_recorders()
+
+
+func _refresh_gm_data_page(section: String) -> void:
+	var label := _gm_data_labels.get(section) as RichTextLabel
+	if label == null:
+		return
+	var snapshot: Dictionary = _main.call("get_gm_snapshot", section, {}) \
+		if _main != null and _main.has_method("get_gm_snapshot") else {
+			"ok": false, "message": "运行时尚未就绪。"}
+	var lines := PackedStringArray()
+	for raw_section in GMPanelViewModel.format_snapshot(section, snapshot):
+		var section_model: Dictionary = raw_section
+		lines.append(String(section_model.get("title", "")))
+		for raw_row in section_model.get("rows", []):
+			var row: Dictionary = raw_row
+			lines.append("  %-18s %s" % [row.get("label", ""), row.get("value", "")])
+		lines.append("")
+	label.text = "\n".join(lines)
+
+
+func _refresh_gm_toggles() -> void:
+	_suppress_sync_signals = true
+	for toggle_id in _gm_toggle_buttons.keys():
+		var result := _get_gm_toggle_state(String(toggle_id))
+		var button := _gm_toggle_buttons[toggle_id] as CheckBox
+		if button != null:
+			button.disabled = not bool(result.get("ok", false))
+			if bool(result.get("ok", false)):
+				button.set_pressed_no_signal(bool(result.get("enabled", false)))
+	_suppress_sync_signals = false
+
+
+func _get_gm_toggle_state(toggle_id: String) -> Dictionary:
+	if toggle_id == "diagnostics.perf_hud":
+		return _gm_local_toggle_getter.call(toggle_id) if _gm_local_toggle_getter.is_valid() else {
+			"ok": false, "message": "本地开关不可用"}
+	return _main.call("get_gm_toggle_state", toggle_id) \
+		if _main != null and _main.has_method("get_gm_toggle_state") else {"ok": false}
+
+
+func _on_gm_toggle_changed(enabled: bool, toggle_id: String) -> void:
+	if _suppress_sync_signals:
+		return
+	var result: Dictionary
+	if toggle_id == "diagnostics.perf_hud":
+		result = _gm_local_toggle_setter.call(toggle_id, enabled) \
+			if _gm_local_toggle_setter.is_valid() else {"ok": false, "message": "本地开关不可用"}
+	else:
+		result = _main.call("set_gm_toggle", toggle_id, enabled) \
+			if _main != null and _main.has_method("set_gm_toggle") else {"ok": false}
+	_append_gm_output(String(result.get("message", "开关已更新" if result.get("ok", false) else "开关更新失败")),
+		not bool(result.get("ok", false)))
+	_refresh_gm_toggles()
+
+
+func _on_gm_command_text_changed(line: String) -> void:
+	if _gm_suggestions == null:
+		return
+	_gm_suggestions.clear()
+	var commands: Array = _gm_capabilities.get("commands", [])
+	for suggestion in GMPanelViewModel.command_suggestions(line, commands):
+		_gm_suggestions.add_item(suggestion)
+	_gm_suggestions.visible = _gm_suggestions.item_count > 0 and line.strip_edges() != ""
+
+
+func _on_gm_suggestion_selected(index: int) -> void:
+	if _gm_command_input == null or _gm_suggestions == null:
+		return
+	var suggestion := _gm_suggestions.get_item_text(index)
+	var line := _gm_command_input.text
+	var split_at := line.rfind(" ")
+	_gm_command_input.text = suggestion if split_at < 0 else line.substr(0, split_at + 1) + suggestion
+	_gm_command_input.caret_column = _gm_command_input.text.length()
+	_gm_command_input.grab_focus()
+	_on_gm_command_text_changed(_gm_command_input.text)
+
+
+func _on_gm_command_input_event(event: InputEvent) -> void:
+	if not (event is InputEventKey) or not event.pressed or event.echo or _gm_history.is_empty():
+		return
+	if event.keycode == KEY_UP:
+		_gm_history_cursor = maxi(_gm_history_cursor - 1, 0)
+	elif event.keycode == KEY_DOWN:
+		_gm_history_cursor = mini(_gm_history_cursor + 1, _gm_history.size())
+	else:
+		return
+	_gm_command_input.text = "" if _gm_history_cursor >= _gm_history.size() else \
+		GMPanelViewModel.history_entry(_gm_history, _gm_history_cursor)
+	_gm_command_input.caret_column = _gm_command_input.text.length()
+	get_viewport().set_input_as_handled()
+
+
+func _submit_gm_command() -> void:
+	var line := _gm_command_input.text.strip_edges() if _gm_command_input != null else ""
+	if line == "clear":
+		_gm_output_lines.clear()
+		_gm_command_output.text = ""
+		_gm_command_input.clear()
+		return
+	if line == "help":
+		var usages := PackedStringArray(["可用指令："])
+		for command in _gm_capabilities.get("commands", []):
+			usages.append("  " + GMPanelViewModel.describe_command(command))
+		_append_gm_output("\n".join(usages), false)
+		_gm_command_input.clear()
+		return
+	var checked := GMPanelViewModel.validate_command(
+		GMPanelViewModel.parse_command(line), _gm_capabilities.get("commands", []))
+	if not bool(checked.get("ok", false)):
+		_append_gm_output(String(checked.get("message", "指令解析失败")), true)
+		return
+	_gm_history = GMPanelViewModel.push_history(_gm_history, line)
+	_gm_history_cursor = _gm_history.size()
+	_gm_suggestions.visible = false
+	var spec: Dictionary = checked.get("spec", {})
+	if bool(spec.get("destructive", false)):
+		_gm_pending_command = checked
+		_gm_confirmation.dialog_text = _format_gm_confirmation(checked)
+		_gm_confirmation.popup_centered(Vector2i(500, 260))
+	else:
+		_execute_gm_checked_command(checked)
+
+
+func _format_gm_confirmation(checked: Dictionary) -> String:
+	var args: Dictionary = checked.get("args", {})
+	var lines := PackedStringArray([
+		"指令：%s" % checked.get("command_id", ""),
+		"参数：",
+	])
+	var keys := args.keys()
+	keys.sort()
+	for key in keys:
+		lines.append("  %s = %s" % [key, args[key]])
+	var day := int(args.get("day", _gm_current_day() + 1))
+	lines.append("目标：%s" % _gm_command_target(args))
+	lines.append("生效日：第 %d 游戏日" % day)
+	return "\n".join(lines)
+
+
+func _gm_command_target(args: Dictionary) -> String:
+	for key in ["cell", "country_handle", "cohort_handle", "owner_handle"]:
+		if args.has(key):
+			return "%s=%s" % [key, args[key]]
+	return "当前选中对象"
+
+
+func _gm_current_day() -> int:
+	if _main == null or not _main.has_method("get_gm_snapshot"):
+		return -1
+	var snapshot: Dictionary = _main.call("get_gm_snapshot", "overview", {})
+	return int((snapshot.get("data", {}) as Dictionary).get("clock", {}).get("day_index", -1))
+
+
+func _execute_pending_gm_command() -> void:
+	if _gm_pending_command.is_empty():
+		return
+	_execute_gm_checked_command(_gm_pending_command)
+	_gm_pending_command.clear()
+
+
+func _execute_gm_checked_command(checked: Dictionary) -> void:
+	var result: Dictionary = _main.call("execute_gm_command",
+		String(checked.get("command_id", "")), checked.get("args", {})) \
+		if _main != null and _main.has_method("execute_gm_command") else {
+			"ok": false, "message": "运行时不支持 GM 指令。"}
+	_append_gm_output(String(result.get("message", "无返回信息")), not bool(result.get("ok", false)))
+	if _gm_command_input != null:
+		_gm_command_input.clear()
+	_gm_refresh_current_page()
+
+
+func _append_gm_output(message: String, is_error: bool) -> void:
+	if message == "":
+		return
+	_gm_output_lines.append("[错误] %s" % message if is_error else message)
+	while _gm_output_lines.size() > 100:
+		_gm_output_lines.pop_front()
+	if _gm_command_output != null:
+		_gm_command_output.text = "\n".join(PackedStringArray(_gm_output_lines))
+
+
+func _on_gm_recorder_pressed(recorder_id: String, callback: Callable, button: Button) -> void:
+	callback.call()
+	var result_text := _gm_sanitize_legacy_status(button.text)
+	IconBadge.apply_to_button(button, "history", 15)
+	if result_text.length() > 1:
+		_append_gm_output(result_text, false)
+	_refresh_gm_recorders()
+
+
+func _on_gm_snapshot_pressed() -> void:
+	_on_btn_snapshot()
+	var result_text := _gm_sanitize_legacy_status(_snapshot_btn.text)
+	IconBadge.apply_to_button(_snapshot_btn, "save", 15)
+	if result_text.length() > 1:
+		_append_gm_output(result_text, result_text.contains("失败"))
+
+
+func _refresh_gm_recorders() -> void:
+	var recorder_map := {
+		"performance": _perf_recorder,
+		"tiles": _tile_data_recorder,
+		"economy": _economy_data_recorder,
+	}
+	var names := {"performance": "性能采样", "tiles": "地块全量", "economy": "经济周期"}
+	for key in recorder_map.keys():
+		var recorder: RefCounted = recorder_map[key]
+		var label := _gm_record_status_labels.get(key) as Label
+		if label == null:
+			continue
+		var recording := recorder != null and recorder.has_method("is_recording") and bool(recorder.call("is_recording"))
+		var rows := int(recorder.call("row_count")) if recorder != null and recorder.has_method("row_count") else 0
+		label.text = "%s · %s · %d 行" % [names[key], "录制中" if recording else "已停止", rows]
+		label.add_theme_color_override("font_color", UITokens.WARN if recording else UITokens.TEXT_MAIN)
+	for button in [_record_btn, _tile_record_btn, _economy_record_btn]:
+		if button != null:
+			IconBadge.apply_to_button(button, "history", 15)
+
+
+func _gm_sanitize_legacy_status(text: String) -> String:
+	var result := text
+	for marker in ["⏹", "⏺", "⏳", "⏸", "📸", "⚠", "✓", "→"]:
+		result = result.replace(marker, "")
+	return result.strip_edges()
 
 func _build_overlay_group(parent: VBoxContainer) -> void:
 	var section := _make_section_header("Overlay（数据热力图）")
@@ -572,6 +1133,14 @@ func _make_section_header(text: String) -> Label:
 # --- 信号回调 -------------------------------------------------------------
 
 func _on_visibility_changed() -> void:
+	if console_mode == ConsoleMode.PLAYER_GM:
+		if visible:
+			_gm_refresh_current_page()
+			if _telemetry_timer != null:
+				_telemetry_timer.start()
+		elif _telemetry_timer != null:
+			_telemetry_timer.stop()
+		return
 	if visible:
 		_state_sync_dirty = true
 		_sync_state_if_dirty()
@@ -1085,6 +1654,10 @@ func _build_snapshot_payload() -> Dictionary:
 
 
 func _show_snapshot_toast(msg: String, is_error: bool) -> void:
+	if console_mode == ConsoleMode.PLAYER_GM:
+		_append_gm_output(msg, is_error)
+		IconBadge.apply_to_button(_snapshot_btn, "save", 15)
+		return
 	if _snapshot_btn == null:
 		return
 	var prev: String = "📸 快照→文件"
@@ -1130,6 +1703,9 @@ func _on_btn_toggle_record() -> void:
 func _refresh_record_btn_text(force: bool = false) -> void:
 	if _record_btn == null or _perf_recorder == null:
 		return
+	if console_mode == ConsoleMode.PLAYER_GM:
+		IconBadge.apply_to_button(_record_btn, "history", 15)
+		return
 	if not force and Time.get_ticks_msec() < _record_btn_toast_until_msec:
 		return
 	var recording: bool = false
@@ -1147,6 +1723,10 @@ func _refresh_record_btn_text(force: bool = false) -> void:
 
 
 func _show_record_toast(msg: String, is_error: bool) -> void:
+	if console_mode == ConsoleMode.PLAYER_GM:
+		_append_gm_output(msg, is_error)
+		IconBadge.apply_to_button(_record_btn, "history", 15)
+		return
 	if _record_btn == null:
 		return
 	_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
@@ -1187,6 +1767,9 @@ func _on_btn_toggle_tile_record() -> void:
 func _refresh_tile_record_btn_text(force: bool = false) -> void:
 	if _tile_record_btn == null or _tile_data_recorder == null:
 		return
+	if console_mode == ConsoleMode.PLAYER_GM:
+		IconBadge.apply_to_button(_tile_record_btn, "history", 15)
+		return
 	if not force and Time.get_ticks_msec() < _tile_record_btn_toast_until_msec:
 		return
 	var recording: bool = false
@@ -1226,6 +1809,10 @@ func _refresh_tile_record_btn_text(force: bool = false) -> void:
 
 
 func _show_tile_record_toast(msg: String, is_error: bool) -> void:
+	if console_mode == ConsoleMode.PLAYER_GM:
+		_append_gm_output(msg, is_error)
+		IconBadge.apply_to_button(_tile_record_btn, "history", 15)
+		return
 	if _tile_record_btn == null:
 		return
 	_tile_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
@@ -1289,6 +1876,9 @@ func _on_btn_toggle_economy_record() -> void:
 func _refresh_economy_record_btn_text(force: bool = false) -> void:
 	if _economy_record_btn == null or _economy_data_recorder == null:
 		return
+	if console_mode == ConsoleMode.PLAYER_GM:
+		IconBadge.apply_to_button(_economy_record_btn, "history", 15)
+		return
 	var summary: Dictionary = _economy_data_recorder.call("sampling_summary") \
 		if _economy_data_recorder.has_method("sampling_summary") else {}
 	var state: String = str(summary.get("state", "idle"))
@@ -1329,6 +1919,10 @@ func _refresh_economy_record_btn_text(force: bool = false) -> void:
 
 
 func _show_economy_record_toast(msg: String, is_error: bool) -> void:
+	if console_mode == ConsoleMode.PLAYER_GM:
+		_append_gm_output(msg, is_error)
+		IconBadge.apply_to_button(_economy_record_btn, "history", 15)
+		return
 	if _economy_record_btn == null:
 		return
 	_economy_record_btn.text = ("⚠ " if is_error else "✓ ") + msg

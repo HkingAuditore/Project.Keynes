@@ -66,7 +66,12 @@ world_ext.cpp        : 在 BIND_TABLE[] 里加一行 {"cell_soil_carbon", "soil_
 
 - `name` 形如 `cell.<field_name>`（dot 命名，与 DCComponentIds 常量值匹配）
 - `cpp_name` 形如 `cell_<field_name>`（underscore 命名，与 C++ pass 内 `component_id("cell_xxx")` 调用匹配）
-- `map_field` 形如 `<field_name>_arr` 或 `cell_<field_name>_arr`（与 `MapData` 既有 38 个属性命名约定一致）
+- `map_field` 形如 `<field_name>_arr` 或 `cell_<field_name>_arr`（与 `MapData` 既有属性命名约定一致）
+
+> 本文档正文里出现的条目数（38 / 39）是**当初写例子时的快照**，不是当前值。
+> 当前条目数以 `component_schema.gd` 为唯一真源；截至 2026-07-27 为生产 142 条
+> （codegen 写入 `component_bind_table.gen.h` 的数量）外加 1 条 demo-only。
+> 不要把这些数字当成断言来引用。
 
 > 历史遗留：`name` / `cpp_name` 命名不同是 GDScript 与 C++ 双侧分别独立注册时形成的，本规范不强制统一（统一会破坏现有 C++ pass 调用）。Schema 同时承载两种命名解决偏移问题。
 
@@ -139,6 +144,16 @@ scons platform=windows target=template_debug
 ```
 
 完成。新字段在两端自动注册，C++ pass 可立刻 `component_id("cell_soil_carbon")`，GDScript 可立刻 `world.view_f32(world.component_id(&"cell.soil_carbon"))`。
+
+> **真实示例（vision）**：`cell.visible` / `cell.explored`（`U8`，`track_prev=false`，
+> `owner="vision"`）按本 SOP 加入。它们与上面的模板有三点不同，新增类似字段时可参照：
+> 一是**没有 HexCell 镜像**，`rebuild_soa_from_cells` 只把它们清零，实际值由
+> `VisionSolver.solve()` 全量重写；二是**没有任何 C++ pass 读它们**——注册进 schema
+> 是为了走标准的 `MapData` 生命周期与 SoA 分配，不是为了给原生 pass 用；三是**两者持久化
+> 语义不同**，`explored` 单调累积并进 PKSV 的 `pkfg` section，`visible` 每次解算重算、
+> 不存档。派生量 `fog_k_arr` 则**刻意不进 schema**（只有渲染消费，进 schema 只会让每日
+> refresh/flush 白搬字节）。详见
+> [视野迷雾与国界线](./cpp-dots-runtime/vision-fog-and-borders.md)。
 
 > **真实示例（economy.resources）**：自然资源字段如 `cell.res_timber_reserve` / `cell.res_timber_extra_change` / `cell.res_iron_ore_reserve`（`F32`，`track_prev=false`，`owner="economy.resources"`）按本 SOP 加入。当前 28 种自然资源均遵循 reserve + extra_change 双字段约定。区别于上面的模板：这些字段在 `MapData` 是**纯运行期 SoA（无 HexCell 镜像）**，所以 `rebuild_soa_from_cells` 只在末尾把它们 `=0.0`（参照 `ocean_thermal_anomaly_arr`）；reserve 初值由 `MapGenerator._bootstrap_natural_resource_deposits` 在 `init_soa_from_bake` 之后写，extra_change 默认 0 并由自然资源 pass 消费后清零。每新增一种资源，除本 5 步外还要在 `ResourceProfileRegistry._PROFILE_PATHS` 登记对应 `.tres`（详见 computation-pipelines.md "Natural resources" 节）。
 

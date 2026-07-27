@@ -1796,7 +1796,7 @@ per-pixel GPU 上传。
 | 字段 | 格式 / 滤波 | 内容 | 更新频率 |
 | --- | --- | --- | --- |
 | `map_index_atlas`（`WorldData.enum_atlas_tex`） | RGBA8 / **NEAREST** / derived_size | R=biome；G/B=cell.index 低/高字节；`0xFFFF`=map 外哨兵；A=landform | `bake_world` + biome dirty |
-| `enum_lut_tex` | RGB8 / NEAREST / lut_dims | per-cell biome/veg/cover | daily 全量重烘（~0.1-0.3ms） |
+| `enum_lut_tex` | **RGBA8** / NEAREST / lut_dims | R=biome / G=veg / B=cover / **A=迷雾知识度 `fog_k`**（0=未探索，128=已探索不可见，255=可见；中间值是 blur 过渡带） | daily 全量重烘（~0.1-0.3ms）+ 视野变化时 `refresh_country_visuals()` 强制重烘 |
 | `dyn_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell temp/wet/snow/(ice\|vitality) | daily |
 | `eco_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell foliage/stress/transition/growth | daily |
 | `weather_lut_tex` | RGBA8 / NEAREST / lut_dims | per-cell R=weather_type / G=intensity / B=cloud / A=vapor；雨/雪视觉用 G=intensity 作为降水门控 | daily（软依赖：天气未就绪时整段 0 → 无云） |
@@ -1805,6 +1805,15 @@ per-pixel GPU 上传。
 入口：
 
 - 烘焙：`map_baker.gd::_encode_enum_atlas` 产出 map-index atlas；`bake_cell_luts` 产出四张 LUT（enum/dyn/eco/weather）。
+  **首烘时机推迟到 bind 之后**（2026-07-27）：`encode_cell_luts` 读 `DCWorldExt` 的绑定 slot，
+  而 `bind_map_data` 要等 `bake_world` 返回、`init_soa_from_bake` 跑完才发生，在 `bake_world`
+  内部就地烘 100% 会退回 GDScript。现在 `bake_world` 只设 `_initial_cell_luts_deferred`，
+  由 `_setup_sus` 内 `run_deferred_initial_cell_luts()` 补烘（紧跟
+  `run_deferred_initial_physical_circulation`，与物理环流同一套 defer 模式）。
+  该点已过 `_publish_native_generation_from_slots`，因此 LUT 编码到的是原生温度场
+  publish 之后的权威气候值，而不是 bake 期的 bootstrap 值；仍在 `generate()` 内，
+  早于渲染器绑定 LUT 纹理。gdext 整个类不存在时没有可等的 bind，就地烘作为无 DLL 兜底。
+  补烘后若仍未走成 C++ 会 `push_error`（dots-total-cpp 不降级纪律）。
 - daily 刷新：`map_baker.gd::refresh_cell_luts_daily`，由
   `dynamic_visual_atlas_upload_system.gd::tick` 每 stride 调用一次（flag 开时该 tick
   跑完 LUT 重烘即 **early-return**，整段 4-phase / C++ `run_atlas_pipeline_step` 逐像素
@@ -1814,6 +1823,17 @@ per-pixel GPU 上传。
   独立 `encode_cell_index_tex` 已退役。LUT 仍优先走 C++：
   - `DCWorldExt::encode_cell_luts(opts)`：读 8 个 SoA slot（temp/moist/snow/vit/sea_ice/
     terrain/vegetation/cover）→ per-cell enum/dyn/eco LUT（scalar tight loop，n_cells≈2400）。
+    enum 缓冲是 `slots_total * 4` 字节（RGBA8），A 通道来自**可选入参 `fog_k_arr`**
+    （`PackedByteArray`，`VisionSolver` 产出）。显式传数组而不是读 slot，理由与
+    `snow_cover_arr` 相同：`refresh_slots_from_map()` 会把所有 slot 从 MapData 拉一遍，
+    可能用陈旧镜像覆盖 native-only 的气候值。**未提供时 A 恒为 255（全知）**，
+    保证迷雾未接线时视觉不变。`map_baker.gd` 的 GDScript fallback 路径必须写同一份
+    `fog_k`，两条路径漏一条就会在 C++ 不可用时闪回全亮。
+    **是否传这个数组由 `MapData.fog_solved` 决定，不能用数组大小判断**：
+    `init_soa_from_bake` 会把 `fog_k_arr` 分配成全 0，尺寸够了但内容是"未解算"，
+    与"全图未探索"在字节上无法区分。解算前传下去会让 A 通道全 0、首帧整张地图变黑
+    （LUT 首烘推迟到 bind 之后即触发过这个回归）。`VisionSolver.solve()` 与
+    `mark_all_visible()` 置位该标志，`rebuild_soa_from_cells()` 清位。
     另读 4 个 weather slot（`cell_weather_type/intensity/cloud/precip`）→ weather LUT；weather slot
     **软依赖**：未初始化（size < n_cells）时该段全 0（云不显示），enum/dyn/eco 仍正常、不整张回退 GDScript。
     复用 `pk_atlas_sig_dynamic` / `pk_atlas_sig_ecology`（与 fan-out 编码器同一公式 → bit-equivalent）。
@@ -1831,6 +1851,14 @@ per-pixel GPU 上传。
 shader 路径（`world_map.gdshader` fragment SETUP）：
 
 - **enum**（Stage B）：`enum_lut[decode_cell_index(uv)]`；邻域 biome 直接采 `map_index_atlas.r`。
+  该次采样现在按 `vec4` 读取，`.a` 即 `fog_k`：主地形据此做已探索区去饱和灰化，
+  并在 `fog_early_out_enabled` 时对完全未探索像素整段跳过陆地/水体/BRDF/hillshade
+  管线（`canvas_item` 的 fragment 禁用 `return`，所以是把整个 fragment 体包进 `if` 块）。
+  **零新增 texture sample** —— 只是多读一个已有采样的第四分量。厚云本身由
+  `FogOfWarLayer` 在更高的 z 序绘制，主地形只负责灰化与早退。
+  注意早退**只在迷雾最低质量档放行**：它要求迷雾层输出与地形无关的常量色，而
+  q1 以上的体积云着色随位置和时间变化，早退那块常量色会露成死斑。门控在
+  `HexRenderer._effective_fog_early_out()`，细节见 `vision-fog-and-borders.md`。
 - **dyn/eco/ice**（Stage C）：desktop 4-tap 双线性（在索引图 bilinear footprint 上取
   4 个 cell 的 LUT 值按子像素权重混合，补回跨 cell 边界平滑，替代旧 CPU box-blur 的 LINEAR
   消边）；mobile 三档退单点 NEAREST（接受轻微 hex 阶梯，省 fetch）。`dyn_lut.B`

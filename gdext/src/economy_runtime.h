@@ -2168,6 +2168,11 @@ private:
     std::vector<CellSummary> _committed_cells;
     std::vector<CellSummary> _staging_cells;
     std::vector<int32_t> _staging_touched_cells;
+    // Per-task landing buffers for the market worker fan-out. Cells are
+    // partitioned one-per-market, so summary/generation writes never alias
+    // across tasks, but the touched list is a shared vector and must not be
+    // grown concurrently. Merged back into _staging_touched_cells after join.
+    std::vector<std::vector<int32_t>> _staging_touched_task_scratch;
     std::vector<uint32_t> _staging_cell_generation;
     uint32_t _staging_current_generation = 0;
     std::vector<int32_t> _structural_touched_cells;
@@ -2604,6 +2609,9 @@ private:
     static uint64_t trace_hash_mix(uint64_t hash, uint64_t value);
     static thread_local ProductionResult *_production_result_sink;
     static thread_local MarketResult *_market_result_sink;
+    // Non-null only while a market worker task is running; stage_cell_summary
+    // appends here instead of the shared list. Null on every scalar path.
+    static thread_local std::vector<int32_t> *_staging_touched_sink;
 };
 
 } // namespace pk

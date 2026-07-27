@@ -124,3 +124,33 @@ func world_ext() -> Object:
 
 func native_catalog() -> Dictionary:
 	return _catalog.duplicate(false)
+
+func begin_save(chunk_bytes: int = -1) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "not configured"}
+	return _world_ext.begin_country_save(
+		int(_profile.save_chunk_bytes) if chunk_bytes < 0 else chunk_bytes)
+
+func read_save_chunk(chunk_bytes: int = -1) -> PackedByteArray:
+	if not _configured:
+		return PackedByteArray()
+	return _world_ext.read_country_save_chunk(
+		int(_profile.save_chunk_bytes) if chunk_bytes < 0 else chunk_bytes)
+
+func end_save() -> Dictionary:
+	return _world_ext.end_country_save() if _configured else {"ok": false, "reason": "not configured"}
+
+func restore_bytes(bytes: PackedByteArray, chunk_bytes: int = 4194304) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "not configured"}
+	var begun: Dictionary = _world_ext.begin_country_restore()
+	if not bool(begun.get("ok", false)):
+		return begun
+	var cursor := 0
+	while cursor < bytes.size():
+		var fed: Dictionary = _world_ext.feed_country_restore_chunk(
+			bytes.slice(cursor, mini(cursor + chunk_bytes, bytes.size())))
+		if not bool(fed.get("ok", false)):
+			return fed
+		cursor += chunk_bytes
+	return _world_ext.end_country_restore()

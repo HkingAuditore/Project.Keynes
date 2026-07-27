@@ -50,10 +50,18 @@ func set_inspector_trace_cell(cell_idx: int) -> void:
 		facade.set_inspector_trace_cell(cell_idx)
 
 
+## 三态门控：未探索只给一条占位，不碰任何经济/人口/国家查询；已探索但当前
+## 不可见只给地理页签——地理是「记忆中的地形」，人口/市场/建筑/自然资源都是
+## 需要在场才看得到的实时情报。页签不在列表里，build_tab_category 就永远不会
+## 被请求，被过滤掉的那几次经济查询也就一并省掉了。
 func build(cell: HexCell) -> Dictionary:
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
+	var fog := VisionSolver.fog_state(_map, idx)
+	if fog == VisionSolver.FOG_UNEXPLORED:
+		return _build_unexplored_model(cell)
+	var intel_visible := fog == VisionSolver.FOG_VISIBLE
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
 	var terrain_v := _terrain(cell, idx)
 	var landform_v := _landform(cell, idx)
@@ -69,16 +77,19 @@ func build(cell: HexCell) -> Dictionary:
 	var snow := _snow_cover(cell, idx)
 	var is_water := LandformType.is_water(landform_v)
 	var passable_land := TerrainType.is_passable_land(terrain_v)
-	var population_summary := _population_summary(idx)
-	var country_summary := _country_summary(idx)
+	var population_summary := _population_summary(idx) if intel_visible else {}
+	var country_summary := _country_summary(idx) if intel_visible else {}
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
-	var tabs := [
-		{"id": "geography", "label": "地理信息", "icon": "geo"},
-		{"id": "population", "label": "人口信息", "icon": "growth"},
-		{"id": "market", "label": "市场信息", "icon": "resource"},
-		{"id": "buildings", "label": "建筑", "icon": "building"},
-		{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
-	]
+	var tabs := [{"id": "geography", "label": "地理信息", "icon": "geo"}]
+	if intel_visible:
+		tabs.append_array([
+			{"id": "population", "label": "人口信息", "icon": "growth"},
+			{"id": "market", "label": "市场信息", "icon": "resource"},
+			{"id": "buildings", "label": "建筑", "icon": "building"},
+			{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
+		])
+	var cards: Array = _summary_cards(temp, moist, population_summary, country_summary) \
+		if intel_visible else _out_of_sight_summary_cards(temp, moist)
 	return {
 		"header": _build_header(off, terrain_v, landform_v, country_summary),
 		"score": {
@@ -88,7 +99,7 @@ func build(cell: HexCell) -> Dictionary:
 			"caption": _score_caption(habitability),
 			"accent": _score_color(habitability),
 		},
-		"summary_cards": _summary_cards(temp, moist, population_summary, country_summary),
+		"summary_cards": cards,
 		"tabs": tabs,
 		"categories": {
 			"geography": _geography_information_category(cell, idx, terrain_v,
@@ -98,14 +109,60 @@ func build(cell: HexCell) -> Dictionary:
 	}
 
 
+func _build_unexplored_model(cell: HexCell) -> Dictionary:
+	var off := HexUtils.cube_to_offset(cell.q, cell.r)
+	return {
+		"header": {
+			"title": "未探索区域",
+			"subtitle": "区域 %d, %d · 云雾之下" % [off.x + 1, off.y + 1],
+		},
+		"score": {},
+		"summary_cards": [{
+			"id": "summary_unexplored",
+			"title": "情报",
+			"value": "未知",
+			"subtitle": "尚未进入你的视野",
+			"accent": UITokens.TEXT_FAINT,
+			"icon": "geo",
+		}],
+		"tabs": [],
+		"categories": {},
+	}
+
+
+func _out_of_sight_summary_cards(temp: float, moist: float) -> Array:
+	return [
+		{
+			"id": "summary_climate",
+			"title": "气候",
+			"value": "%s · %s" % [_temperature_band(temp), _moisture_band(moist)],
+			"subtitle": "",
+			"accent": UITokens.CLIMATE,
+			"icon": "sun",
+		},
+		{
+			"id": "summary_unexplored",
+			"title": "情报",
+			"value": "视野之外",
+			"subtitle": "仅存地理记录，人口与市场情况未知",
+			"accent": UITokens.TEXT_FAINT,
+			"icon": "geo",
+		},
+	]
+
+
 func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
 	var tab_id := current_tab if current_tab != "" else "geography"
-	var population_summary := _population_summary(idx)
-	var country_summary := _country_summary(idx)
+	var fog := VisionSolver.fog_state(_map, idx)
+	var intel_visible := fog == VisionSolver.FOG_VISIBLE
+	var population_summary := _population_summary(idx) if intel_visible else {}
+	var country_summary := _country_summary(idx) if intel_visible else {}
+	# fog 参与哈希：视野状态一变，页签集合也变，面板必须整体重建而不是打补丁。
 	var common_state := [
+		fog,
 		idx,
 		_terrain(cell, idx),
 		_landform(cell, idx),
@@ -139,6 +196,10 @@ func build_live_patch(
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
+	var fog := VisionSolver.fog_state(_map, idx)
+	if fog == VisionSolver.FOG_UNEXPLORED:
+		return _build_unexplored_model(cell)
+	var intel_visible := fog == VisionSolver.FOG_VISIBLE
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
 	var terrain_v := _terrain(cell, idx)
 	var landform_v := _landform(cell, idx)
@@ -156,10 +217,17 @@ func build_live_patch(
 	var passable_land := TerrainType.is_passable_land(terrain_v)
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
 	var tab_id := current_tab if current_tab != "" else "geography"
+	if not intel_visible:
+		tab_id = "geography"
 	var population_summary: Dictionary
-	var country_summary := _country_summary(idx)
+	var country_summary := _country_summary(idx) if intel_visible else {}
 	var category: Dictionary
-	if tab_id == "population":
+	if not intel_visible:
+		if include_category:
+			category = _geography_information_category(cell, idx, terrain_v,
+				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
+				wf, snow, vitality, passable_land, is_water)
+	elif tab_id == "population":
 		if include_category:
 			population_summary = _population_snapshot(idx)
 			category = _population_category(population_summary, _market_snapshot(idx))
@@ -187,7 +255,8 @@ func build_live_patch(
 			"caption": _score_caption(habitability),
 			"accent": _score_color(habitability),
 		},
-		"summary_cards": _summary_cards(temp, moist, population_summary, country_summary),
+		"summary_cards": _summary_cards(temp, moist, population_summary, country_summary) \
+			if intel_visible else _out_of_sight_summary_cards(temp, moist),
 		"tab_id": tab_id,
 	}
 	if include_category:
@@ -199,6 +268,9 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
+	# 兜底：页签栏本来就不会给出被门控掉的页签，但延迟请求可能跨越一次视野变化。
+	if VisionSolver.fog_state(_map, idx) != VisionSolver.FOG_VISIBLE and tab_id != "geography":
+		return {}
 	match tab_id:
 		"population":
 			return _population_category(_population_snapshot(idx), _market_snapshot(idx))
@@ -234,7 +306,7 @@ func _build_header(
 		landform_v: int,
 		country_summary: Dictionary
 ) -> Dictionary:
-	var country_name := String(country_summary.get("country_name", "无主地"))
+	var country_name := String(country_summary.get("country_name", "无主之地"))
 	return {
 		"title": "%s · %s" % [LandformType.name_cn(landform_v), TerrainType.terrain_name_cn(terrain_v)],
 		"subtitle": "区域 %d, %d · %s" % [off.x + 1, off.y + 1, country_name],
@@ -270,7 +342,7 @@ func _summary_cards(
 		{
 			"id": "summary_country",
 			"title": "国家",
-			"value": String(country_summary.get("country_name", "无主地")),
+			"value": String(country_summary.get("country_name", "无主之地")),
 			"subtitle": "%s · 物资 %d 类 · 科技 %d 项" % [
 				_money_text(int(country_summary.get("cash", 0))),
 				int(country_summary.get("nonzero_good_count", 0)),
@@ -524,12 +596,12 @@ func _population_summary(cell_idx: int) -> Dictionary:
 
 func _country_summary(cell_idx: int) -> Dictionary:
 	if _generator == null or not _generator.has_method("get_country_facade"):
-		return {"country_name": "无主地"}
+		return {"country_name": "无主之地"}
 	var facade = _generator.get_country_facade()
 	if facade == null or not facade.has_method("cell_summary"):
-		return {"country_name": "无主地"}
+		return {"country_name": "无主之地"}
 	var summary: Dictionary = facade.cell_summary(cell_idx)
-	return summary if bool(summary.get("ok", false)) else {"country_name": "无主地"}
+	return summary if bool(summary.get("ok", false)) else {"country_name": "无主之地"}
 
 
 func _market_snapshot(cell_idx: int) -> Dictionary:

@@ -140,6 +140,8 @@ var _noise_tex: ImageTexture = null
 var _hex_size: float = 22.0
 var _weather_field_tex: Texture2D = null
 var _weather_lut_tex: Texture2D = null
+var _fog_enum_lut_tex: Texture2D = null
+var _fog_mask_enabled: bool = false
 var _world_ref = null  # WorldData 引用(取 weather_lut_prev_tex 做帧间插值)
 var _wx_lut_last_usec: int = 0          # 上次检测到的 LUT 更新时刻
 var _wx_lut_t0_usec: int = 0            # 本插值周期起点(检测到 LUT 换帧的时刻)
@@ -347,6 +349,26 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 	_push_curtain_runtime_state()
 	_update_curtain_visibility()
 	_refresh_visibility()
+
+## 视野屏蔽。已探索但当前不可见的格子不显示实时天气——那是「记忆中的地形」，
+## 不是「现在的天气」。enum_lut 与主地形 / 迷雾层共用同一张纹理（A 通道 = k）。
+func set_fog_mask(enabled: bool, enum_lut: Texture2D) -> void:
+	_fog_mask_enabled = enabled
+	_fog_enum_lut_tex = enum_lut
+	_push_fog_mask_uniforms()
+
+
+func _push_fog_mask_uniforms() -> void:
+	var tex: Texture2D = _fog_enum_lut_tex
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("fog_mask_enabled", _fog_mask_enabled and tex != null)
+		if tex != null:
+			_overlay_mat.set_shader_parameter("enum_lut", tex)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("fog_mask_enabled", _fog_mask_enabled and tex != null)
+		if tex != null:
+			mat.set_shader_parameter("enum_lut", tex)
+
 
 # 全局天气强度（与 HexRenderer.weather_strength 同步）
 func set_weather_strength(v: float) -> void:
@@ -1198,6 +1220,7 @@ func _push_overlay_runtime_state() -> void:
 	_overlay_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 	_push_weather_profile_uniforms_to_overlay()
 	_push_fronts_to_overlay(_front_visual_snapshots)
+	_push_fog_mask_uniforms()
 
 func _push_curtain_runtime_state() -> void:
 	if _curtain_mats.is_empty():
@@ -1225,6 +1248,7 @@ func _push_curtain_runtime_state() -> void:
 		mat.set_shader_parameter("camera_pitch", _camera_pitch)
 		mat.set_shader_parameter("wind_dir", _wind_dir)
 		mat.set_shader_parameter("wind_strength", _wind_strength)
+	_push_fog_mask_uniforms()
 
 func _load_overlay_shader() -> void:
 	var shader := ResourceLoader.load(OVERLAY_SHADER_PATH, "Shader",

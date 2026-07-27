@@ -30,6 +30,8 @@ thread_local NativeEconomyRuntime::ProductionResult *
     NativeEconomyRuntime::_production_result_sink = nullptr;
 thread_local NativeEconomyRuntime::MarketResult *
     NativeEconomyRuntime::_market_result_sink = nullptr;
+thread_local std::vector<int32_t> *
+    NativeEconomyRuntime::_staging_touched_sink = nullptr;
 
 void NativeEconomyRuntime::MarketResult::reset() {
     ok = true;
@@ -11774,6 +11776,14 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
     _building_context_day = -1;
+    // A game may be saved before the first daily environment capture. Keep the
+    // persistent lanes valid from configuration onward so the PKSV/PKEC path is
+    // safe and deterministic at day zero; start_epoch still requires a same-day
+    // capture before these defaults can affect simulation.
+    _environment_temperature_q16.assign(cell_count, Q16_ONE / 2);
+    _environment_moisture_q16.assign(cell_count, Q16_ONE / 2);
+    _environment_snow_q16.assign(cell_count, 0);
+    _environment_weather_q16.assign(cell_count, 0);
     _committed_cells.assign(cell_count, {});
     const size_t cache_cells = static_cast<size_t>(cell_count);
     _demand_basis_cache_day.assign(
@@ -16969,11 +16979,16 @@ void NativeEconomyRuntime::stage_cell_summary(
         int32_t cell, const CellSummary &summary) {
     if (cell < 0 || cell >= static_cast<int32_t>(_staging_cells.size()))
         return;
+    // Worker tasks must find this already sized; growing a shared vector from
+    // several threads is exactly the race this sink split avoids.
     if (_staging_cell_generation.size() != _staging_cells.size())
         _staging_cell_generation.assign(_staging_cells.size(), 0);
     if (_staging_cell_generation[cell] != _staging_current_generation) {
         _staging_cell_generation[cell] = _staging_current_generation;
-        _staging_touched_cells.push_back(cell);
+        if (_staging_touched_sink != nullptr)
+            _staging_touched_sink->push_back(cell);
+        else
+            _staging_touched_cells.push_back(cell);
     }
     _staging_cells[cell] = summary;
 }
@@ -18625,16 +18640,37 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     _production_task_offsets_scratch[task] = boundary;
                     previous = boundary;
                 }
+                if (_staging_cell_generation.size() != _staging_cells.size())
+                    _staging_cell_generation.assign(_staging_cells.size(), 0);
+                _staging_touched_task_scratch.resize(
+                    static_cast<size_t>(_worker_tasks));
+                for (std::vector<int32_t> &buffer :
+                         _staging_touched_task_scratch) {
+                    buffer.clear();
+                }
                 auto run_market_tasks = [&](int32_t task_begin,
                                             int32_t task_end) {
+                    // parallel_for_range may run tasks on the calling thread,
+                    // so restore rather than clear the sink on the way out.
+                    std::vector<int32_t> *const outer_sink =
+                        _staging_touched_sink;
                     for (int32_t task = task_begin; task < task_end; ++task) {
+                        _staging_touched_sink =
+                            &_staging_touched_task_scratch[task];
                         run_markets(
                             _production_task_offsets_scratch[task],
                             _production_task_offsets_scratch[task + 1]);
                     }
+                    _staging_touched_sink = outer_sink;
                 };
                 parallel_for_range("pk_economy_markets", _worker_tasks,
                                    _worker_tasks, 1, run_market_tasks);
+                for (std::vector<int32_t> &buffer :
+                         _staging_touched_task_scratch) {
+                    _staging_touched_cells.insert(_staging_touched_cells.end(),
+                                                  buffer.begin(), buffer.end());
+                    buffer.clear();
+                }
             } else {
                 run_markets(0, market_count);
             }
@@ -19469,6 +19505,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_rules); cap(_rule_params); cap(_pending_commands);
     cap(_epoch_commands); cap(_structural_commands); cap(_committed_cells);
     cap(_staging_cells); cap(_staging_touched_cells);
+    for (const std::vector<int32_t> &buffer : _staging_touched_task_scratch)
+        cap(buffer);
     cap(_staging_cell_generation);
     cap(_structural_touched_cells); cap(_population_changed_cells);
     cap(_demand_basis_cache_day); cap(_demand_basis_variant_scores);
@@ -22349,6 +22387,25 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         _country_runtime->should_run(_last_committed_day)) {
         out["ok"] = false;
         out["reason"] = "save_requires_idle_country_runtime";
+        return out;
+    }
+    const size_t cells = static_cast<size_t>(_cell_count);
+    if (_market.cell_to_market.size() != cells ||
+        _environment_temperature_q16.size() != cells ||
+        _environment_moisture_q16.size() != cells ||
+        _environment_snow_q16.size() != cells ||
+        _environment_weather_q16.size() != cells ||
+        _cell_last_settlement_day.size() != cells ||
+        _cell_settlement_generation.size() != cells ||
+        _cell_price_stock_gen.size() != cells ||
+        _cell_owner_cash_gen.size() != cells ||
+        _cell_population_gen.size() != cells ||
+        _cell_building_structure_gen.size() != cells ||
+        _cell_technology_gen.size() != cells ||
+        _cell_resource_gen.size() != cells ||
+        _cell_trade_gen.size() != cells) {
+        out["ok"] = false;
+        out["reason"] = "economy_save_state_shape_invalid";
         return out;
     }
     _save = {};
