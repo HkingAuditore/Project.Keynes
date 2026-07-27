@@ -16,10 +16,13 @@ func configure(
 	_ui_manager = ui_manager
 	_connect_clock()
 	_connect_ui()
+	if _runtime_host != null and _world_clock != null:
+		_runtime_host.on_speed_changed(_world_clock.speed_multiplier)
 	sync_ui()
 
 
 func sync_ui() -> void:
+	_sync_visual_clock_state()
 	_sync_ui()
 
 
@@ -95,6 +98,7 @@ func _on_pause_toggled(paused: bool) -> void:
 	if _world_clock == null:
 		return
 	_world_clock.pause(paused)
+	_sync_visual_clock_state()
 	_sync_ui()
 
 
@@ -103,7 +107,13 @@ func _on_speed_selected(speed: float) -> void:
 		return
 	_world_clock.set_speed(speed)
 	_world_clock.pause(false)
+	_sync_visual_clock_state()
 	_sync_ui()
+
+
+func _sync_visual_clock_state() -> void:
+	if _runtime_host != null and _world_clock != null:
+		_runtime_host.on_clock_running_changed(not _world_clock.paused)
 
 
 func _sync_ui() -> void:

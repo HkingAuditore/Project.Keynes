@@ -129,6 +129,23 @@ PKCN must always precede PKEC. PKFG must follow PKCN, because re-solving
 visibility reads the restored territory. Native restore rejects crossed
 generations or catalog hashes.
 
+While regenerating a load target, `MapGenerator` enters restore-preparation
+mode: it configures the native country catalog but does not bootstrap a
+temporary player country or settlement. After PKCN restore makes the country
+authority available, the coordinator configures the economy catalog and trade
+topology, then restores PKEC. Only after all providers finish does it register
+`country_daily`/`economy_daily` and rebuild the existing scheduler topology.
+This preserves the required `PKCN -> economy configure -> PKEC -> scheduler`
+sequence.
+
+The PKSV `pkec` section is a byte-for-byte concatenation of native framed PKEC
+chunks. `EconomyFacade.restore_bytes()` must recover each frame from its
+16-byte header and feed exact frame boundaries to native restore; a fixed-size
+slice is not a valid framing rule. Native journal restore returns the same
+structured success contract as the other providers (`ok=true`,
+`fallback=false`) so the coordinator can distinguish a restored journal from
+an unavailable fallback.
+
 ## Validation
 
 Minimum gates are configuration and repository tests; deterministic start tests

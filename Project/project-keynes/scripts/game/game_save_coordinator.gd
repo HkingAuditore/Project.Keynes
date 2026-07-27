@@ -112,6 +112,21 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 		var provider_result: Dictionary = provider.restore_sections(sections, context)
 		if not bool(provider_result.get("ok", false)):
 			return provider_result
+		if String(provider.provider_id()) == "pkcn":
+			if not generator.has_method("prepare_economy_save_restore_runtime"):
+				return _result(false, "load_economy_prepare_missing",
+					"地图运行时缺少经济恢复准备接口。")
+			var prepared: Dictionary = generator.prepare_economy_save_restore_runtime()
+			if not bool(prepared.get("ok", false)):
+				return _result(false, "load_economy_prepare_failed",
+					String(prepared.get("reason", "PKCN 后无法准备经济恢复。")))
+	if not generator.has_method("finalize_save_restore_runtime"):
+		return _result(false, "load_runtime_finalize_missing",
+			"地图运行时缺少读档收尾接口。")
+	var finalized: Dictionary = generator.finalize_save_restore_runtime()
+	if not bool(finalized.get("ok", false)):
+		return _result(false, "load_runtime_finalize_failed",
+			String(finalized.get("reason", "读档后调度器初始化失败。")))
 	var slot_id := String(_pending_load.slot_id)
 	_pending_load.clear()
 	var result := _result(true, "ok", "")

@@ -32,6 +32,10 @@ var _has_valid_shader: bool = false
 var _has_atlas: bool = false
 var _enabled: bool = true
 var _world_time: float = 0.0
+# 与 WeatherLayer 同一表现时钟语义：运行时按游戏倍速推进；暂停时保留 1x 环境运动，
+# 避免整个大气层完全冻结。
+var _clock_running: bool = true
+var _clock_speed_multiplier: float = 1.0
 
 # 质量：编译期 tier 卡上限（低端机整段代码不编进去），运行时 _fog_quality 在上限内再降。
 var _mobile_quality_tier_define: String = ""
@@ -58,7 +62,8 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not visible or _shader_mat == null:
 		return
-	_world_time += delta
+	var visual_time_scale := _clock_speed_multiplier if _clock_running else 1.0
+	_world_time += delta * visual_time_scale
 	_shader_mat.set_shader_parameter("world_time", _world_time)
 
 
@@ -206,12 +211,22 @@ func is_enabled() -> bool:
 	return _enabled
 
 
+## 与 WeatherLayer 对齐的表现时钟。倍速切换立即影响云体内部演化速度。
+func set_clock_speed_multiplier(multiplier: float) -> void:
+	_clock_speed_multiplier = clampf(multiplier, 0.0, 20.0)
+
+
+## 兼容 WeatherLayer 的暂停语义：暂停模拟时大气仍以 1x 真实时间缓慢活动。
+func set_clock_running(running: bool) -> void:
+	_clock_running = running
+
+
 ## 运行时质量档。visual_quality 是 0..2，迷雾内部用 0..3：
 ## 0 → q0 超低（无光照的纯色云，给低配保底）；1 → q2 中；2 → q3 全效果。
 ##
-## 桌面端跳过 q1：q1 是不做 raymarch 的高度场浮雕，存在的意义是给移动端中档
-## 兜底（编译期 tier 会把上限卡在 q1）。桌面端要么便宜到 q0，要么就该拿到真
-## 体积积分的 q2/q3，中间那档没有意义。
+## 桌面端跳过 q1：q1 是无域扭曲/无质量阴影探针的分层云海，存在的意义是给移动端
+## 中档兜底（编译期 tier 会把上限卡在 q1）。桌面端要么便宜到 q0，要么就该拿到
+## q2/q3 的完整分层密度、散射与柔和自阴影，中间档没有意义。
 func set_visual_quality(quality: int) -> void:
 	var q := clampi(quality, 0, 2)
 	_fog_quality = [0, 2, 3][q]
