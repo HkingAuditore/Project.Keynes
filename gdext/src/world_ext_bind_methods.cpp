@@ -198,6 +198,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_building_cell_snapshot);
     ClassDB::bind_method(D_METHOD("run_economy_fixed_math_probe", "vectors"),
                          &DCWorldExt::run_economy_fixed_math_probe);
+    ClassDB::bind_method(D_METHOD(
+        "run_economy_production_climate_math_probe", "vectors"),
+        &DCWorldExt::run_economy_production_climate_math_probe);
     ClassDB::bind_method(D_METHOD("get_economy_state_hash"),
                          &DCWorldExt::get_economy_state_hash);
     ClassDB::bind_method(D_METHOD("reset_economy", "reason"),

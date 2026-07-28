@@ -169,8 +169,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v21 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 21)
+	_expect("PKEC v22 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 22)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -879,16 +879,16 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	for value in saved.get("chunks", []):
 		var chunk := (value as PackedByteArray).duplicate()
 		if chunk.size() >= 6:
-			chunk[4] = 15
+			chunk[4] = 21
 			chunk[5] = 0
 		legacy_chunks.append(chunk)
 	var restored := _new_ext(compiled, 1)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 1, 4415)
 	restored.configure_economy(catalog, profile, 1, 4415)
 	var result := _restore_economy(restored, legacy_chunks)
-	_expect("PKEC v21 explicitly rejects legacy economy saves",
+	_expect("PKEC v22 explicitly rejects legacy economy saves",
 		not bool(result.get("ok", true)) and
-		String(result.get("reason", "")) == "legacy_technology_tree_save_unsupported")
+		String(result.get("reason", "")) == "legacy_climate_production_save_unsupported")
 
 func _new_ext(catalog: Dictionary, cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
@@ -896,7 +896,8 @@ func _new_ext(catalog: Dictionary, cells: int) -> Object:
 	var scalar := PackedFloat32Array()
 	scalar.resize(cells)
 	scalar.fill(0.5)
-	for slot_name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover",
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)

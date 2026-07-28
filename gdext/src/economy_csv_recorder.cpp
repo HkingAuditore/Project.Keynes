@@ -27,7 +27,7 @@ constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,opening_reserve,natural_net_change,natural_positive_change,natural_negative_change,artificial_change_applied,artificial_change_pending,artificial_generation_applied,artificial_extraction_applied,artificial_generation_pending,artificial_extraction_pending,reserve,safe_yield,projected_life_days\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound,desired_business_demand,funded_business_demand,unfunded_business_demand,trade_export_safety_stock,trade_import_fill_target,trade_relief_pressure_q16,trade_signal_age_days,trade_first_dispatch_delay_days,trade_last_attempt_day,trade_last_rejection_reason,trade_deadline_exceeded,merchant_cash,merchant_inventory_retail_value,merchant_inventory_liquidation_value,merchant_economic_assets,merchant_procurement_margin_value,merchant_trade_purchase_cash,merchant_trade_sale_cash,merchant_operating_outflow,merchant_liquidity_coverage_q16,merchant_effective_buy_factor_q16\n",
 };
-constexpr const char *SUMMARY_V21_SUFFIX =
+constexpr const char *SUMMARY_V22_SUFFIX =
     ",building_investment_buildings_started"
     ",building_investment_portfolios_started"
     ",building_investment_types_started"
@@ -42,7 +42,15 @@ constexpr const char *SUMMARY_V21_SUFFIX =
     ",merchant_survival_procurement_required"
     ",merchant_survival_procurement_allocated"
     ",merchant_input_procurement_required"
-    ",merchant_input_procurement_allocated\n";
+    ",merchant_input_procurement_allocated"
+    ",climate_profiled_building_groups"
+    ",climate_limited_building_groups"
+    ",average_climate_capacity_q16\n";
+constexpr const char *BUILDING_V22_SUFFIX =
+    ",last_temperature_fit_q16"
+    ",last_water_fit_q16"
+    ",last_climate_capacity_q16"
+    ",last_climate_lost_output\n";
 
 template <typename T>
 void append_int(std::string &out, T value) {
@@ -568,6 +576,15 @@ bool EconomyCsvRecorder::fill_batch(
         row.building_resource_net_delta = runtime._building_resource_generated -
                                           runtime._building_resource_consumed;
         row.loss_suspended_building_groups = runtime._loss_suspended_building_groups;
+        row.climate_profiled_building_groups =
+            runtime._climate_profiled_building_groups;
+        row.climate_limited_building_groups =
+            runtime._climate_limited_building_groups;
+        row.average_climate_capacity_q16 =
+            runtime._climate_profiled_building_groups > 0
+            ? runtime._climate_capacity_sum_q16 /
+                runtime._climate_profiled_building_groups
+            : NativeEconomyRuntime::Q16_ONE;
         row.merchant_procurement_budget = runtime._merchant_procurement_budget;
         row.merchant_procurement_opportunity = runtime._merchant_procurement_opportunity;
         row.merchant_procurement_allocated = runtime._merchant_procurement_allocated;
@@ -853,6 +870,10 @@ bool EconomyCsvRecorder::fill_batch(
                         0, row.owner_required - row.filled_owner);
                     row.wage_suspended = group.wage_suspended != 0;
                     row.capacity_q16 = group.last_capacity_q16; row.last_input = group.last_input;
+                    row.last_temperature_fit_q16 = group.last_temperature_fit_q16;
+                    row.last_water_fit_q16 = group.last_water_fit_q16;
+                    row.last_climate_capacity_q16 = group.last_climate_capacity_q16;
+                    row.last_climate_lost_output = group.last_climate_lost_output;
                     row.purchase_intent_capacity_q16 = group.purchase_intent_capacity_q16;
                     row.funded_capacity_q16 = index < static_cast<int32_t>(
                         runtime._building_funded_capacity_q16.size())
@@ -1272,13 +1293,14 @@ bool EconomyCsvRecorder::open_files(std::string &error) {
         _files[dim].write(bom, 3);
         const size_t header_length =
             std::char_traits<char>::length(HEADERS[dim]);
-        if (dim == SUMMARY && header_length > 0 &&
+        if ((dim == SUMMARY || dim == BUILDINGS) && header_length > 0 &&
             HEADERS[dim][header_length - 1] == '\n') {
             _files[dim].write(HEADERS[dim],
                 static_cast<std::streamsize>(header_length - 1));
-            _files[dim].write(SUMMARY_V21_SUFFIX,
-                static_cast<std::streamsize>(
-                    std::char_traits<char>::length(SUMMARY_V21_SUFFIX)));
+            const char *suffix = dim == SUMMARY
+                ? SUMMARY_V22_SUFFIX : BUILDING_V22_SUFFIX;
+            _files[dim].write(suffix, static_cast<std::streamsize>(
+                std::char_traits<char>::length(suffix)));
         } else {
             _files[dim].write(HEADERS[dim],
                 static_cast<std::streamsize>(header_length));
@@ -1444,6 +1466,9 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.merchant_survival_procurement_allocated);
         field(chunk, row.merchant_input_procurement_required);
         field(chunk, row.merchant_input_procurement_allocated);
+        field(chunk, row.climate_profiled_building_groups);
+        field(chunk, row.climate_limited_building_groups);
+        field(chunk, row.average_climate_capacity_q16);
         chunk.push_back('\n'); if (!maybe_flush(SUMMARY)) goto write_failed;
     }
     if (!flush(SUMMARY)) goto write_failed;
@@ -1514,6 +1539,10 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.investment_driver_merchant_sold);
         field(chunk, row.investment_driver_sell_through_q16);
         field(chunk, row.investment_driver_discard_q16);
+        field(chunk, row.last_temperature_fit_q16);
+        field(chunk, row.last_water_fit_q16);
+        field(chunk, row.last_climate_capacity_q16);
+        field(chunk, row.last_climate_lost_output);
         chunk.push_back('\n'); if (!maybe_flush(BUILDINGS)) goto write_failed;
     }
     if (!flush(BUILDINGS)) goto write_failed;

@@ -2,6 +2,7 @@
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
 [resource]
 script = ExtResource("1")
+production_climate_profile_id = &"foraging_plants"
 id = &"gathering_ground"
 display_name = "采集营地"
 building_kind = "collector"

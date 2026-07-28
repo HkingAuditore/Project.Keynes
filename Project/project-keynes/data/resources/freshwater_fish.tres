@@ -13,6 +13,7 @@ init_min_coverage = 0.7
 init_min_reserve = 1200.0
 temp_lo = 0.0
 temp_hi = 1.0
+runtime_temperature_signal = "mean_30d"
 gen_base = 0.0
 gen_self = 0.0
 decay_self = 0.0

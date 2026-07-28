@@ -358,7 +358,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v21 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 21)
+	_expect("v22 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 22)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
@@ -371,12 +371,12 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
 	var legacy_header: PackedByteArray = chunks[0].duplicate()
-	legacy_header[4] = 9
+	legacy_header[4] = 21
 	legacy_header[5] = 0
 	var legacy_result: Dictionary = legacy_target.feed_economy_restore_chunk(legacy_header)
-	_expect("countryless PKEC v9 is rejected precisely",
+	_expect("PKEC v21 is rejected precisely",
 		not bool(legacy_result.get("ok", true)) and
-		String(legacy_result.get("reason", "")) == "legacy_technology_tree_save_unsupported")
+		String(legacy_result.get("reason", "")) == "legacy_climate_production_save_unsupported")
 	var mismatch_target: Object = _new_ext(1, 0.1)
 	var mismatch_catalog := catalog.duplicate(true)
 	mismatch_catalog["catalog_hash"] = int(catalog.catalog_hash) + 1
@@ -801,7 +801,8 @@ func _configured_many_workers(compiled: Dictionary, workers: bool, cells: int) -
 func _new_ext(cells: int, temperature: float) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	ext.create_entities(cells)
-	for slot_name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover", &"cell_weather_intensity"]:
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover", &"cell_weather_intensity"]:
 		var values := PackedFloat32Array()
 		values.resize(cells)
 		values.fill(temperature if slot_name == &"cell_temp" else 0.0)

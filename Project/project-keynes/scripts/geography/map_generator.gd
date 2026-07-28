@@ -3268,6 +3268,9 @@ func _build_native_daily_runtime_hydrology_knobs(map: MapData, cp_now,
 		"hydro_flood_decay": float(cp_now.hydro_flood_decay),
 		"snowpack_melt_temp_gain": float(cp_now.snowpack_melt_temp_gain),
 		"snowpack_melt_sun_gain": float(cp_now.snowpack_melt_sun_gain),
+		"plant_water_balance_weight": float(cp_now.plant_water_balance_weight),
+		"plant_soil_buffer_weight": float(cp_now.plant_soil_buffer_weight),
+		"plant_drought_penalty": float(cp_now.plant_drought_penalty),
 	}
 
 
@@ -6461,7 +6464,9 @@ func _ensure_natural_resource_knobs() -> void:
 		_natural_resource_pass_knobs = ResourceProfileRegistry.build_pass_knobs()
 		_natural_resource_refresh_keys = PackedStringArray([
 			"cell_temp",
+			"cell_temp_30d",
 			"cell_moisture",
+			"cell_plant_available_water",
 			"cell_is_water",
 			"cell_resource_habitat_mask",
 		])
@@ -6925,7 +6930,9 @@ func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
 # GDScript fallback：与 C++ run_natural_resource_pass 严格同模板，直接读写 MapData 数组。
 func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_days: int = 1) -> Dictionary:
 	var temp_arr: PackedFloat32Array = map_ref.temp_arr
+	var temp_30d_arr: PackedFloat32Array = map_ref.temp_30d_arr
 	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
+	var plant_water_arr: PackedFloat32Array = map_ref.plant_available_water_arr
 	var water_arr: PackedByteArray = map_ref.is_water_arr
 	var habitat_arr: PackedByteArray = map_ref.resource_habitat_mask_arr
 	var total_delta: float = 0.0
@@ -6946,6 +6953,10 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 		var hi: float = p.temp_hi
 		var inv_span: float = (1.0 / (hi - lo)) if hi > lo else 0.0
 		var habitat_code: int = ResourceProfileRegistry.habitat_code(p)
+		var resource_temp_arr: PackedFloat32Array = temp_30d_arr \
+			if String(p.runtime_temperature_signal) == "mean_30d" else temp_arr
+		var resource_moist_arr: PackedFloat32Array = plant_water_arr \
+			if String(p.runtime_moisture_signal) == "plant_available_water" else moist_arr
 		var has_natural_dynamics: bool = p.gen_base != 0.0 or p.gen_temp != 0.0 or \
 			p.gen_moisture != 0.0 or p.gen_self != 0.0 or p.decay_base != 0.0 or \
 			p.decay_temp != 0.0 or p.decay_moisture != 0.0 or p.decay_self != 0.0 or \
@@ -6957,8 +6968,8 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 					extra_arr[i] = 0.0
 				arr[i] = 0.0
 				continue
-			var tn: float = clampf((temp_arr[i] - lo) * inv_span, 0.0, 1.0)
-			var m: float = moist_arr[i]
+			var tn: float = clampf((resource_temp_arr[i] - lo) * inv_span, 0.0, 1.0)
+			var m: float = resource_moist_arr[i]
 			var reserve: float = arr[i]
 			var extra_change: float = extra_arr[i] if have_extra else 0.0
 			# 半隐式（IMEX）：与 C++ run_natural_resource_pass 逐 op 同模板。
@@ -14244,6 +14255,9 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 		"hydro_flood_decay": float(cp_now.hydro_flood_decay),
 		"snowpack_melt_temp_gain": float(cp_now.snowpack_melt_temp_gain),
 		"snowpack_melt_sun_gain": float(cp_now.snowpack_melt_sun_gain),
+		"plant_water_balance_weight": float(cp_now.plant_water_balance_weight),
+		"plant_soil_buffer_weight": float(cp_now.plant_soil_buffer_weight),
+		"plant_drought_penalty": float(cp_now.plant_drought_penalty),
 	}
 	var res: Dictionary = _data_core_world_ext.run_runtime_hydrology_pass(knobs)
 	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
@@ -15663,9 +15677,9 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 
 	for cell: HexCell in cells:
 		if LandformType.is_water(cell.landform):
-			_clear_cell_vegetation_state(map, cell)
-			continue
-		if int(cell.vegetation) == int(VegetationType.VEG.NONE):
+			var water_idx: int = int(cell.index)
+			if water_idx >= 0 and water_idx < map.plant_available_water_arr.size():
+				map.plant_available_water_arr[water_idx] = 0.0
 			_clear_cell_vegetation_state(map, cell)
 			continue
 		# 生态慢层读 30 日温度与 30 日水分平衡，单日天气只作为小惩罚项。
@@ -15680,6 +15694,11 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		if idx_vd >= 0 and idx_vd < map.soil_moisture_arr.size():
 			soil_moisture = map.soil_moisture_arr[idx_vd]
 		var plant_water: float = _plant_available_water(cell.moisture, water_balance_30d, soil_moisture)
+		if idx_vd >= 0 and idx_vd < map.plant_available_water_arr.size():
+			map.plant_available_water_arr[idx_vd] = plant_water
+		if int(cell.vegetation) == int(VegetationType.VEG.NONE):
+			_clear_cell_vegetation_state(map, cell)
+			continue
 		var compat: float = VegetationType.climate_compat_score(cell.vegetation, temp, plant_water)
 		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
 		var wi: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
@@ -15760,6 +15779,11 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 			_data_core_world.write_f32_dense(_cid_vcs, map.vegetation_cold_stress_arr)
 		if _cid_vrs >= 0:
 			_data_core_world.write_f32_dense(_cid_vrs, map.vegetation_regen_score_arr)
+	if _data_core_world != null:
+		var plant_water_cid: int = _data_core_world.component_id(
+			DCComponentIds.CELL_PLANT_AVAILABLE_WATER)
+		if plant_water_cid >= 0:
+			_data_core_world.write_f32_dense(plant_water_cid, map.plant_available_water_arr)
 	return any_changed
 
 # 演替触发判定：streak 达到阈值且有可演替的下一阶 → 写 cell.vegetation 并 reset。

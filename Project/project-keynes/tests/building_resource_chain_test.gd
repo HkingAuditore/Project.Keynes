@@ -391,7 +391,8 @@ func _new_ext(catalog: Dictionary) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	ext.create_entities(2)
 	var scalar := PackedFloat32Array([0.5, 0.5])
-	for slot_name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)
 	var zero_u8 := PackedByteArray([0, 0])

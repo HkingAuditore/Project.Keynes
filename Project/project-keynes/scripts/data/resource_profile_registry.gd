@@ -276,6 +276,8 @@ static func build_pass_knobs() -> Dictionary:
 	var habitat_modes := PackedInt32Array()
 	var temp_lo := PackedFloat32Array()
 	var temp_hi := PackedFloat32Array()
+	var temperature_signals := PackedInt32Array()
+	var moisture_signals := PackedInt32Array()
 	var gen_base := PackedFloat32Array()
 	var gen_temp := PackedFloat32Array()
 	var gen_moisture := PackedFloat32Array()
@@ -306,6 +308,8 @@ static func build_pass_knobs() -> Dictionary:
 		habitat_modes.append(habitat_code(p))
 		temp_lo.append(p.temp_lo)
 		temp_hi.append(p.temp_hi)
+		temperature_signals.append(1 if String(p.runtime_temperature_signal) == "mean_30d" else 0)
+		moisture_signals.append(1 if String(p.runtime_moisture_signal) == "plant_available_water" else 0)
 		gen_base.append(p.gen_base * quantity_scale)
 		gen_temp.append(p.gen_temp * quantity_scale)
 		gen_moisture.append(p.gen_moisture * quantity_scale)
@@ -332,6 +336,8 @@ static func build_pass_knobs() -> Dictionary:
 		"habitat_mask_slot": "cell_resource_habitat_mask",
 		"temp_lo": temp_lo,
 		"temp_hi": temp_hi,
+		"temperature_signals": temperature_signals,
+		"moisture_signals": moisture_signals,
 		"gen_base": gen_base,
 		"gen_temp": gen_temp,
 		"gen_moisture": gen_moisture,

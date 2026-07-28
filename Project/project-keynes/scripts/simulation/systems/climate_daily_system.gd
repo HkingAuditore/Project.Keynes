@@ -289,6 +289,7 @@ func declare_writes() -> Array[StringName]:
 		DCComponentIds.CELL_THERMAL_ENERGY,
 		DCComponentIds.CELL_SNOWPACK,
 		DCComponentIds.CELL_WATER_BALANCE_30D,
+		DCComponentIds.CELL_PLANT_AVAILABLE_WATER,
 		DCComponentIds.CELL_TEMPERATURE_TRANSPORT_ANOMALY,
 	]
 	if _standalone_sea_ice_enabled():

@@ -2,6 +2,7 @@
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
 [resource]
 script = ExtResource("1")
+production_climate_profile_id = &"dryland_crop"
 id = &"fertile_soil_collector"
 display_name = "菜蔬农场"
 building_kind = "collector"

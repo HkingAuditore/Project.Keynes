@@ -141,6 +141,7 @@ const CELL_VEGETATION_VITALITY: StringName       = &"cell.vegetation_vitality"  
 const CELL_VITALITY_LOW_STREAK: StringName       = &"cell.vitality_low_streak"        # i32
 const CELL_VITALITY_HIGH_STREAK: StringName      = &"cell.vitality_high_streak"       # i32
 const CELL_SOIL_MOISTURE: StringName             = &"cell.soil_moisture"              # f32
+const CELL_PLANT_AVAILABLE_WATER: StringName      = &"cell.plant_available_water"       # f32, [0,1]
 const CELL_VEGETATION_GROWTH_PRESSURE: StringName = &"cell.vegetation_growth_pressure" # f32
 const CELL_TEMPERATURE_TRANSPORT_ANOMALY: StringName = &"cell.temperature_transport_anomaly" # f32
 const CELL_VEGETATION_HEAT_STRESS: StringName = &"cell.vegetation_heat_stress" # f32

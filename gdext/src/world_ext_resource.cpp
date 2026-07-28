@@ -58,6 +58,8 @@ struct NatResRuntime {
     int resource_index = -1;
     float *R = nullptr;
     float *X = nullptr;
+    const float *temperature = nullptr;
+    const float *moisture = nullptr;
     float lo = 0.0f;
     float inv_span = 0.0f;
     bool land_gate = false;
@@ -289,12 +291,15 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
     // ─── Climate input slots（热循环外解析）─────────────────────────────
     const int sid_temp = component_id(StringName("cell_temp"));
+    const int sid_temp_30d = component_id(StringName("cell_temp_30d"));
     const int sid_moist = component_id(StringName("cell_moisture"));
+    const int sid_plant_water = component_id(StringName("cell_plant_available_water"));
     const int sid_water = component_id(StringName("cell_is_water"));  // 可缺失（-1）
     const int sid_habitat = component_id(StringName(
         knobs.has("habitat_mask_slot") ? String(knobs["habitat_mask_slot"]) :
         String("cell_resource_habitat_mask")));
-    if (sid_temp < 0 || sid_moist < 0) return fail("missing_climate_slot");
+    if (sid_temp < 0 || sid_temp_30d < 0 || sid_moist < 0 || sid_plant_water < 0)
+        return fail("missing_climate_slot");
 
     const int n_cells = knobs.has("n_cells") ? int(knobs["n_cells"]) : int(_entity_archetype.size());
     if (n_cells <= 0) return fail("empty_world");
@@ -305,6 +310,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
     if (!knobs.has("reserve_slots") || !knobs.has("extra_change_slots") || !knobs.has("habitat_modes") ||
         !knobs.has("temp_lo") || !knobs.has("temp_hi") ||
+        !knobs.has("temperature_signals") || !knobs.has("moisture_signals") ||
         !knobs.has("gen_base") || !knobs.has("gen_temp") || !knobs.has("gen_moisture") || !knobs.has("gen_self") ||
         !knobs.has("decay_base") || !knobs.has("decay_temp") || !knobs.has("decay_moisture") || !knobs.has("decay_self") ||
         !knobs.has("climate_temp_opt") || !knobs.has("climate_temp_tol") ||
@@ -320,6 +326,8 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     PackedInt32Array habitat_modes = knobs["habitat_modes"];
     PackedFloat32Array temp_lo = knobs["temp_lo"];
     PackedFloat32Array temp_hi = knobs["temp_hi"];
+    PackedInt32Array temperature_signals = knobs["temperature_signals"];
+    PackedInt32Array moisture_signals = knobs["moisture_signals"];
     PackedFloat32Array gen_base = knobs["gen_base"];
     PackedFloat32Array gen_temp = knobs["gen_temp"];
     PackedFloat32Array gen_moisture = knobs["gen_moisture"];
@@ -341,6 +349,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
     if (reserve_slots.size() < resource_count || extra_change_slots.size() < resource_count ||
         habitat_modes.size() < resource_count || temp_lo.size() < resource_count || temp_hi.size() < resource_count ||
+        temperature_signals.size() < resource_count || moisture_signals.size() < resource_count ||
         gen_base.size() < resource_count || gen_temp.size() < resource_count ||
         gen_moisture.size() < resource_count || gen_self.size() < resource_count ||
         decay_base.size() < resource_count || decay_temp.size() < resource_count ||
@@ -355,10 +364,14 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     }
 
     auto slot_ok_f32 = [&](int sid) -> bool { return int(_slots.write[sid].arr_f32.size()) >= n_cells; };
-    if (!slot_ok_f32(sid_temp) || !slot_ok_f32(sid_moist)) return fail("climate_slot_size_mismatch");
+    if (!slot_ok_f32(sid_temp) || !slot_ok_f32(sid_temp_30d) ||
+        !slot_ok_f32(sid_moist) || !slot_ok_f32(sid_plant_water))
+        return fail("climate_slot_size_mismatch");
 
     const float * const __restrict T = _slots.write[sid_temp].arr_f32.ptr();
+    const float * const __restrict T30 = _slots.write[sid_temp_30d].arr_f32.ptr();
     const float * const __restrict M = _slots.write[sid_moist].arr_f32.ptr();
+    const float * const __restrict PLANT_WATER = _slots.write[sid_plant_water].arr_f32.ptr();
     const bool have_water = (sid_water >= 0 && int(_slots.write[sid_water].arr_u8.size()) >= n_cells);
     const uint8_t * const __restrict WATER = have_water ? _slots.write[sid_water].arr_u8.ptr() : nullptr;
     const bool have_habitat = (sid_habitat >= 0 &&
@@ -433,6 +446,8 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         rr.resource_index = r;
         rr.R = _slots.write[sid].arr_f32.ptrw();
         rr.X = X;
+        rr.temperature = temperature_signals[r] == 1 ? T30 : T;
+        rr.moisture = moisture_signals[r] == 1 ? PLANT_WATER : M;
         rr.lo = lo;
         rr.inv_span = inv_span;
         rr.land_gate = land_gate;
@@ -493,7 +508,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                     __m256 vacc = _mm256_setzero_ps();
                     const int simd_end = end - ((end - begin) % 8);
                     for (; i + 8 <= simd_end; i += 8) {
-                        natres_simd_block(R, T, M, WATER, rr.land_gate, i,
+                        natres_simd_block(R, rr.temperature, rr.moisture, WATER, rr.land_gate, i,
                                           vlo, vinv_span, vc0, vc1, vc2,
                                           vinv_denom, vzero, vone, vacc);
                     }
@@ -535,11 +550,11 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                     } else {
                         v = rr.use_ecology
                                 ? natres_step_scalar_ecology_dt(
-                                    T[i], M[i], reserve, extra_change, rr, dt_days)
+                                    rr.temperature[i], rr.moisture[i], reserve, extra_change, rr, dt_days)
                                 : (rr.use_climate_fit
                                     ? natres_step_scalar_fit_dt(
-                                        T[i], M[i], reserve, extra_change, rr, dt_days)
-                                    : natres_step_scalar_dt(T[i], M[i], reserve,
+                                        rr.temperature[i], rr.moisture[i], reserve, extra_change, rr, dt_days)
+                                    : natres_step_scalar_dt(rr.temperature[i], rr.moisture[i], reserve,
                                                            rr.lo, rr.inv_span,
                                                            rr.c0, rr.c1, rr.c2,
                                                            rr.inv_denom, extra_change,

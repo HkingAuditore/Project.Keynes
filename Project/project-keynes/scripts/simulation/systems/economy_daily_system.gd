@@ -28,7 +28,9 @@ func feature_flag() -> StringName:
 func declare_reads() -> Array[StringName]:
 	var reads: Array[StringName] = [
 		DCComponentIds.CELL_TEMP,
+		DCComponentIds.CELL_TEMP_30D,
 		DCComponentIds.CELL_MOISTURE,
+		DCComponentIds.CELL_PLANT_AVAILABLE_WATER,
 		DCComponentIds.CELL_SNOW_COVER,
 		DCComponentIds.CELL_WEATHER_INTENSITY,
 		DCComponentIds.CELL_ELEVATION,

@@ -24,7 +24,7 @@ class ModifierRuntime;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 21;
+    static constexpr int32_t SCHEMA_VERSION = 22;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -86,7 +86,8 @@ public:
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_slice_compact(const godot::Dictionary &ctx);
     bool capture_environment(int64_t day_index, const float *temperature,
-                             const float *moisture, const float *snow_cover,
+                             const float *temperature_30d, const float *moisture,
+                             const float *plant_available_water, const float *snow_cover,
                              const float *weather_intensity, int32_t count,
                              std::string &error);
     bool needs_environment_capture(int64_t day_index) const {
@@ -108,6 +109,8 @@ public:
                                              int32_t limit) const;
     godot::Dictionary building_cell_snapshot(int32_t cell_idx) const;
     godot::Dictionary fixed_math_probe(const godot::Dictionary &vectors) const;
+    godot::Dictionary production_climate_math_probe(
+        const godot::Dictionary &vectors) const;
     int64_t state_hash() const;
     godot::Dictionary reset(const godot::String &reason);
 
@@ -290,10 +293,21 @@ private:
 
     struct EnvironmentSample {
         int32_t temperature_q16 = Q16_ONE / 2;
+        int32_t temperature_30d_q16 = Q16_ONE / 2;
         int32_t moisture_q16 = Q16_ONE / 2;
+        int32_t plant_available_water_q16 = Q16_ONE / 2;
         int32_t snow_q16 = 0;
         int32_t weather_q16 = 0;
         bool ready = false;
+    };
+
+    struct ProductionClimateProfile {
+        int32_t temperature_opt_q16 = Q16_ONE / 2;
+        int32_t temperature_tolerance_q16 = Q16_ONE;
+        int32_t water_opt_q16 = Q16_ONE / 2;
+        int32_t water_tolerance_q16 = Q16_ONE;
+        int32_t exposure_q16 = 0;
+        int32_t floor_q16 = Q16_ONE;
     };
 
     struct Signature {
@@ -308,6 +322,7 @@ private:
     struct BuildingType {
 		int32_t kind = 1; // 0=collector, 1=industrial.
         int32_t economic_sector = 2; // agriculture, extractive, manufacturing, energy, knowledge.
+        int32_t production_climate_profile_id = -1;
         int32_t upgrade_family_id = -1;
         int32_t upgrade_tier = 0;
         int32_t owner_profession_id = -1;
@@ -390,6 +405,10 @@ private:
         int32_t employee_fill_begin = -1;
         int32_t last_input_selection_begin = -1;
         int64_t last_capacity_q16 = 0;
+        int64_t last_temperature_fit_q16 = Q16_ONE;
+        int64_t last_water_fit_q16 = Q16_ONE;
+        int64_t last_climate_capacity_q16 = Q16_ONE;
+        int64_t last_climate_lost_output = 0;
         int64_t last_input = 0;
         int64_t last_output = 0;
         int64_t last_sold = 0;
@@ -1157,6 +1176,9 @@ private:
         std::string error;
         int64_t saturation_count = 0;
         int64_t processed_building_groups = 0;
+        int64_t climate_profiled_building_groups = 0;
+        int64_t climate_limited_building_groups = 0;
+        int64_t climate_capacity_sum_q16 = 0;
         int64_t merchant_procurement_budget = 0;
         int64_t merchant_procurement_opportunity = 0;
         int64_t merchant_procurement_allocated = 0;
@@ -1621,6 +1643,9 @@ private:
     int64_t _price_inactive_reversions = 0;
     int64_t _continuation_slices = 0;
     int64_t _processed_building_groups = 0;
+    int64_t _climate_profiled_building_groups = 0;
+    int64_t _climate_limited_building_groups = 0;
+    int64_t _climate_capacity_sum_q16 = 0;
     int64_t _filled_owner_jobs = 0;
     int64_t _filled_employee_jobs = 0;
     int64_t _unemployed_population = 0;
@@ -1996,6 +2021,7 @@ private:
     // Epoch-transient lanes. They are rebuilt from the frozen sample and are
     // intentionally excluded from save data and the authoritative state hash.
     std::vector<int64_t> _building_survival_utilization_floor_q16;
+    std::vector<int64_t> _building_planned_capacity_before_climate_q16;
     std::vector<int64_t> _building_funded_capacity_q16;
     std::vector<int64_t> _building_working_capital_allocated;
     std::vector<int64_t> _building_owner_livelihood_credit;
@@ -2131,7 +2157,9 @@ private:
     std::vector<int32_t> _merchant_offsets;
     std::vector<int32_t> _merchant_slots;
     std::vector<int32_t> _environment_temperature_q16;
+    std::vector<int32_t> _environment_temperature_30d_q16;
     std::vector<int32_t> _environment_moisture_q16;
+    std::vector<int32_t> _environment_plant_available_water_q16;
     std::vector<int32_t> _environment_snow_q16;
     std::vector<int32_t> _environment_weather_q16;
     std::vector<int32_t> _building_elevation_q16;
@@ -2231,6 +2259,8 @@ private:
     uint64_t _epoch_country_hash = 0;
     uint64_t _epoch_country_topology_hash = 0;
     std::vector<BuildingType> _building_types;
+    std::vector<std::string> _production_climate_profile_ids;
+    std::vector<ProductionClimateProfile> _production_climate_profiles;
     // Catalog-baked, sorted unique signal edges per building type. Topology
     // rebuilds consume these spans instead of walking nested recipe columns.
     std::vector<int32_t> _building_type_market_signal_goods;
@@ -2502,6 +2532,12 @@ private:
         const std::vector<int64_t> &need_environment, int64_t &sat);
     bool prepare_cell_wages(int32_t cell, std::string &error);
     void update_cell_labor_signals(int32_t cell);
+    int64_t production_climate_capacity_q16(
+        const BuildingType &type, int32_t cell,
+        int64_t *temperature_fit_q16, int64_t *water_fit_q16,
+        int64_t &saturation_count) const;
+    void prepare_group_climate_capacity(BuildingGroup &group,
+                                        const BuildingType &type);
     bool prepare_building_economic_plan(int32_t active_begin, int32_t active_end,
                                         BuildingPlanResult &result,
                                         std::string &error);

@@ -14,6 +14,7 @@ init_target_mean_reserve = 1800
 init_richness_exponent = 1.8
 temp_lo = 0.0
 temp_hi = 1.0
+runtime_temperature_signal = "mean_30d"
 gen_base = 0
 gen_self = 0
 decay_self = 0

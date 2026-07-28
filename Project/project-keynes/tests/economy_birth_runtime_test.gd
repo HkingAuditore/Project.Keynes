@@ -170,7 +170,8 @@ func _configured_population_world(compiled: Dictionary, workers: bool,
 func _new_ext(cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	ext.create_entities(cells)
-	for slot_name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover", &"cell_weather_intensity"]:
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover", &"cell_weather_intensity"]:
 		var values := PackedFloat32Array()
 		values.resize(cells)
 		values.fill(1.0 if slot_name == &"cell_temp" else 0.0)

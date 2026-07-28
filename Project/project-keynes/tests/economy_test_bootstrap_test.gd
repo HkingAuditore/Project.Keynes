@@ -32,7 +32,8 @@ func _initialize() -> void:
 	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("building catalog compiles", bool(compiled.get("ok", false)))
 	var environment := PackedFloat32Array([0.5, 0.5, 0.5, 0.5])
-	for slot_name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, environment)
 	var enum_values := map.terrain_arr
@@ -243,8 +244,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v21 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 21)
+	_expect("native CSV v22 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 22)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("closed-chain land receives a settlement and the broken chain stays empty",
@@ -665,7 +666,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 164, "cohorts": 26, "buildings": 74,
+	var expected_columns := {"summary": 167, "cohorts": 26, "buildings": 78,
 		"resources": 21, "market": 49}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
@@ -682,7 +683,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
 	var summary_text := FileAccess.get_file_as_string(str(paths.summary)).trim_prefix("﻿")
 	var summary_header := summary_text.split("\n", false)[0].split(",", true)
-	_expect("summary CSV v21 exposes portfolio, recovery, trade, and procurement-tier diagnostics",
+	_expect("summary CSV v22 exposes portfolio, recovery, trade, procurement, and climate diagnostics",
 		[
 			"construction_goods_consumed", "building_investment_candidates",
 			"building_owner_mobility", "building_owner_job_reallocations",
@@ -710,10 +711,17 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 			"merchant_survival_procurement_allocated",
 			"merchant_input_procurement_required",
 			"merchant_input_procurement_allocated",
+			"climate_profiled_building_groups",
+			"climate_limited_building_groups",
+			"average_climate_capacity_q16",
 		].all(func(column: String) -> bool: return summary_header.has(column)))
 	var building_text := FileAccess.get_file_as_string(str(paths.buildings)).trim_prefix("﻿")
 	var building_lines := building_text.split("\n", false)
 	var building_header := building_lines[0].split(",", true)
+	_expect("building CSV v22 exposes climate production diagnostics",
+		["last_temperature_fit_q16", "last_water_fit_q16",
+			"last_climate_capacity_q16", "last_climate_lost_output"].all(
+			func(column: String) -> bool: return building_header.has(column)))
 	var owner_capacity_col := building_header.find("owner_capacity")
 	var owner_required_col := building_header.find("owner_required")
 	var planned_owner_equivalent_col := building_header.find("planned_owner_equivalent")

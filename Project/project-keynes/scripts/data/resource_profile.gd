@@ -111,6 +111,8 @@ var habitat_mode: String = "legacy"
 # ─── Formula input normalization ────────────────────────────────────────
 @export_range(0.0, 1.0, 0.01) var temp_lo: float = 0.0 # 地图气候温度下界 [0,1]
 @export_range(0.0, 1.0, 0.01) var temp_hi: float = 1.0 # 地图气候温度上界 [0,1]
+@export_enum("current", "mean_30d") var runtime_temperature_signal: String = "current"
+@export_enum("ambient", "plant_available_water") var runtime_moisture_signal: String = "ambient"
 
 # ─── Generation coefficients ────────────────────────────────────────────
 @export var gen_base: float = 0.0

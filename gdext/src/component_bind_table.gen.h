@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 142
+// Schema entries: 143
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -98,6 +98,7 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_vitality_low_streak",              "vitality_low_streak_arr",              SlotDType::I32 },
     { "cell_vitality_high_streak",             "vitality_high_streak_arr",             SlotDType::I32 },
     { "cell_soil_moisture",                    "soil_moisture_arr",                    SlotDType::F32 },
+    { "cell_plant_available_water",            "plant_available_water_arr",            SlotDType::F32 },
     { "cell_vegetation_growth_pressure",       "vegetation_growth_pressure_arr",       SlotDType::F32 },
     { "cell_temperature_transport_anomaly",    "temperature_transport_anomaly_arr",    SlotDType::F32 },
     { "cell_vegetation_heat_stress",           "vegetation_heat_stress_arr",           SlotDType::F32 },

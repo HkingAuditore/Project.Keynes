@@ -143,13 +143,16 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
     }
     if (runtime->needs_environment_capture(day_index)) {
         const int sid_temp = component_id(StringName("cell_temp"));
+        const int sid_temp_30d = component_id(StringName("cell_temp_30d"));
         const int sid_moisture = component_id(StringName("cell_moisture"));
+        const int sid_plant_water = component_id(StringName("cell_plant_available_water"));
         const int sid_snow = component_id(StringName("cell_snow_cover"));
         const int sid_weather = component_id(StringName("cell_weather_intensity"));
         auto valid_f32 = [&](int sid) {
             return sid >= 0 && sid < _slots.size() && _slots[sid].dtype == SlotDType::F32;
         };
-        if (!valid_f32(sid_temp) || !valid_f32(sid_moisture) || !valid_f32(sid_snow) ||
+        if (!valid_f32(sid_temp) || !valid_f32(sid_temp_30d) ||
+            !valid_f32(sid_moisture) || !valid_f32(sid_plant_water) || !valid_f32(sid_snow) ||
             !valid_f32(sid_weather)) {
             Dictionary out;
             out["ok"] = false;
@@ -161,7 +164,9 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
             return out;
         }
         const int32_t count = _slots[sid_temp].arr_f32.size();
-        if (_slots[sid_moisture].arr_f32.size() != count ||
+        if (_slots[sid_temp_30d].arr_f32.size() != count ||
+            _slots[sid_moisture].arr_f32.size() != count ||
+            _slots[sid_plant_water].arr_f32.size() != count ||
             _slots[sid_snow].arr_f32.size() != count ||
             _slots[sid_weather].arr_f32.size() != count) {
             Dictionary out;
@@ -176,7 +181,9 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         std::string error;
         if (!runtime->capture_environment(day_index,
                                           _slots[sid_temp].arr_f32.ptr(),
+                                          _slots[sid_temp_30d].arr_f32.ptr(),
                                           _slots[sid_moisture].arr_f32.ptr(),
+                                          _slots[sid_plant_water].arr_f32.ptr(),
                                           _slots[sid_snow].arr_f32.ptr(),
                                           _slots[sid_weather].arr_f32.ptr(), count, error)) {
             Dictionary out;
@@ -481,6 +488,15 @@ Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
 Dictionary DCWorldExt::run_economy_fixed_math_probe(const Dictionary &vectors) const {
     if (_economy_runtime == nullptr) return unavailable();
     return runtime_from(_economy_runtime)->fixed_math_probe(vectors);
+}
+
+Dictionary DCWorldExt::run_economy_production_climate_math_probe(
+        const Dictionary &vectors) const {
+    if (_economy_runtime == nullptr) {
+        NativeEconomyRuntime probe_runtime;
+        return probe_runtime.production_climate_math_probe(vectors);
+    }
+    return runtime_from(_economy_runtime)->production_climate_math_probe(vectors);
 }
 
 int64_t DCWorldExt::get_economy_state_hash() const {

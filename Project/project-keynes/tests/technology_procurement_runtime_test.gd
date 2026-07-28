@@ -93,7 +93,8 @@ func _run_day(ext: Object, day: int) -> Dictionary:
 	return report
 
 func _register_environment(ext: Object) -> void:
-	for slot_name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover",
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid := int(ext.register_component(slot_name, 0, 1, false))
 		ext.write_f32_range(sid, 0, PackedFloat32Array([0.5]))
