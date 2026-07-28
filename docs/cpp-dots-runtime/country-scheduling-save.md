@@ -32,13 +32,15 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v1 / PKEC v12
+## PKCN v2 / PKEC v20
 
-PKCN v1 流式保存 catalog identity、国家记录、领土、科技、国库商品、future pending commands
-和 end marker。读取验证 stable catalog、cell/good/technology shape、水域领土和领土计数。
+PKCN v2 流式保存 catalog identity、国家记录、领土、科技、国库商品、future pending commands、
+Country Modifier domain 和 end marker。读取验证 stable catalog、cell/good/technology shape、
+水域领土和领土计数；v1 确定性迁移为空 Country Modifier store。
 
-PKEC v12 不保存全局国库与逐地块科技，header 记录对应 PKCN schema、generation 和 state hash；
-相对 v10 新增国内贸易订单、物资行/卖方快照 CSR、货物/现金托管和贸易 EMA。
+PKEC v20 不保存全局国库与逐地块科技，header 记录对应 PKCN schema、generation 和 state hash；
+除既有经济 sections 外，v20 保存 BuildingIdentityStore 与 Economy Modifier domain，v18/v19
+确定性迁移为空 store。
 恢复顺序必须是 PKCN 后 PKEC；顺序或交叉 hash 不一致返回
 `economy_country_restore_order_or_hash_mismatch`。
 

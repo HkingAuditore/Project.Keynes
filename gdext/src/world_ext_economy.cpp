@@ -3,6 +3,7 @@
 #include "economy_runtime.h"
 #include "economy_csv_recorder.h"
 #include "country_runtime.h"
+#include "modifier_runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -59,6 +60,8 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
     if (_economy_runtime == nullptr) _economy_runtime = new NativeEconomyRuntime();
     runtime_from(_economy_runtime)->attach_country_runtime(
         static_cast<NativeCountryRuntime *>(_country_runtime));
+    runtime_from(_economy_runtime)->attach_modifier_runtime(
+        static_cast<ModifierRuntime *>(_modifier_runtime));
     _economy_last_notified_event_id = 0;
     return runtime_from(_economy_runtime)->configure(catalog, profile, cell_count, seed);
 }

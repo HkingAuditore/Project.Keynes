@@ -1,5 +1,6 @@
 #include "world_ext.h"
 #include "country_runtime.h"
+#include "modifier_runtime.h"
 #include "economy_runtime.h"
 
 #include <chrono>
@@ -29,6 +30,11 @@ Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
                                          const Dictionary &profile,
                                          int cell_count, int64_t seed) {
     if (_country_runtime == nullptr) _country_runtime = new NativeCountryRuntime();
+    if (_modifier_runtime != nullptr)
+        static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(
+            country_runtime_from(_country_runtime));
+    country_runtime_from(_country_runtime)->attach_modifier_runtime(
+        static_cast<ModifierRuntime *>(_modifier_runtime));
     Dictionary out = country_runtime_from(_country_runtime)->configure(catalog, profile, cell_count, seed);
     if (_economy_runtime != nullptr)
         static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_country_runtime(

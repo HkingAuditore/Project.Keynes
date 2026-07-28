@@ -110,7 +110,7 @@ state is introduced.
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v19 是当前 writer：除既有企业三态、债务和投资参数外，保存 pending operating state 与恢复冷却周期。v18 可确定性迁移；v2-v17 旧档统一明确拒绝。
+- PKEC v20 是当前 writer：除 v19 的企业三态、债务、投资参数、pending operating state 与恢复冷却周期外，保存 BuildingIdentityStore 与 Economy Modifier domain。v18/v19 可确定性迁移为空 Modifier store；v2-v17 旧档统一明确拒绝。
 - `BUILDING_PLAN` 是原生两遍 continuation：第一遍按 active-cell CSR 计算利润、停产恢复和计划利用率，第二遍按相同稳定顺序重建生产投入 reserve。`building_cells_per_slice=0` 确定性使用 256 个 active cell；正值可做平台定标。cursor、生存利用率 floor 和 reserve 构建缓存不保存、不哈希。
 - 建筑生产的 owner-retention scratch 只为本格实际出现的 `(owner, output good)` 建立紧凑 lane；owner signature、owner cohort slot 与 lane 都通过 thread-local generation direct map 查询。它不再为每格清零 `owner_count × good_count` 的 target/used/produced 三个稠密矩阵，也不再为每个 offer 线性搜索 owner。lane 仍按稳定建筑组/output 边首次出现顺序建立，生产、保留、offer 和账本提交顺序不变。
 - 人口或建筑结构变化后的就业对账使用 thread-local signature/profession generation scratch，只初始化 affected cell 实际出现的 signature、profession 和 role；affected cell 先用 stamp 去重后按 cell 升序处理。该 scratch 不进入 PKEC、状态 hash 或 report，岗位裁剪和人口就业分摊公式不变。
@@ -749,11 +749,11 @@ non-renewable deposit-life budget after installed, pending, and same-review
 portfolio extraction are counted.
 
 The three sparse current-cycle producer lanes and all driver diagnostics are
-transient. They do not enter PKEC v19 or the state hash. CSV v19 adds the driver
+transient. They do not enter PKEC v20 or the state hash. CSV v19 adds the driver
 good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
 columns.
 
-## PKEC v19 rolling settlement (current)
+## PKEC v20 rolling settlement (current)
 
 The production runtime no longer waits for a global epoch. Stable cell phase is
 `cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded
@@ -772,9 +772,10 @@ transactions. ETA is `departure_day + ceil(route_cost / daily_speed)` and is not
 aligned to a market boundary. Incremental route planning may continue across
 days, but it cannot defer the due local phase.
 
-PKEC v19 persists per-cell settlement dates/generations, dirty generations, and
-building recovery pending state/cooldown. Restore accepts v18 by initializing
-those two new fields to `NONE/0`; v2-v17 are rejected as legacy. References to
+PKEC v20 persists per-cell settlement dates/generations, dirty generations,
+building recovery pending state/cooldown, BuildingIdentityStore, and the Economy
+Modifier domain. Restore accepts v18/v19 by initializing missing Modifier state
+to empty (and v18 recovery fields to `NONE/0`); v2-v17 are rejected as legacy. References to
 PKEC v14 above describe historical rolling migration, not the current reader.
 
 Accuracy policy is configured independently as

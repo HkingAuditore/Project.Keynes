@@ -17,13 +17,14 @@ namespace pk {
 
 class NativeCountryRuntime;
 class EconomyCsvRecorder;
+class ModifierRuntime;
 
 // NativeEconomyRuntime is the sole mutable authority for population cohorts
 // and markets. Godot containers are accepted/emitted only at coarse API
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 19;
+    static constexpr int32_t SCHEMA_VERSION = 20;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -67,6 +68,7 @@ public:
     NativeEconomyRuntime();
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
+    void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
     bool country_restore_allowed() const {
         return !_bootstrapped && !_save.active && !_restore.active;
     }
@@ -419,6 +421,8 @@ private:
         int64_t last_in_kind_livelihood_value = 0;
         uint8_t pending_operating_state = 255; // 255=NONE; applied at next due-cell epoch.
         uint16_t recovery_cooldown_cycles = 0;
+        uint64_t modifier_handle = 0;
+        int32_t output_factor_q16 = Q16_ONE;
     };
 
     struct PendingConstruction {
@@ -1379,6 +1383,8 @@ private:
         int32_t labor_signal_cursor = 0;
         int32_t trade_order_cursor = 0;
         int32_t trade_flow_cursor = 0;
+        std::vector<uint8_t> modifier_bytes;
+        size_t modifier_cursor = 0;
         bool end_emitted = false;
     };
 
@@ -1413,6 +1419,8 @@ private:
         int32_t last_signal_good = -1;
         int32_t last_labor_cell = -1;
         int32_t last_labor_profession = -1;
+        std::vector<uint8_t> modifier_bytes;
+        bool modifier_seen = false;
     };
 
     struct EventArchiveState {
@@ -2191,8 +2199,11 @@ private:
     std::vector<std::string> _technology_ids;
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
+    ModifierRuntime *_modifier_runtime = nullptr;
     std::vector<int32_t> _epoch_cell_country;
     std::vector<uint64_t> _epoch_country_technologies;
+    std::vector<uint64_t> _epoch_country_handles;
+    std::vector<int32_t> _epoch_country_output_factor_q16;
     // Epoch-transient country/type availability cache. Technology authority is
     // frozen once per daily transaction, so every cell in a country shares the
     // same result and hot loops can consume the ascending CSR directly.
@@ -2427,6 +2438,15 @@ private:
                                      int64_t &income_improvement_q16) const;
     int64_t projected_owner_income_per_day(const BuildingGroup &group,
                                            int64_t &sat) const;
+    int64_t effective_building_output_quantity(
+        const BuildingGroup &group, int64_t base_quantity,
+        int64_t utilization_q16, int64_t building_days,
+        int64_t &sat) const;
+    int64_t effective_building_output_quantity_for_target(
+        int32_t cell, int32_t type_id, int32_t owner_signature_id,
+        int64_t base_quantity, int64_t utilization_q16,
+        int64_t building_days, int64_t &sat);
+    void refresh_building_modifier_factors();
     int64_t planned_owner_demand(const BuildingGroup &group,
                                  int64_t &sat) const;
     int64_t building_debt_due(const BuildingGroup &group, int64_t &sat) const;

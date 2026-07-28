@@ -150,6 +150,7 @@ const DCClimateMath = preload("res://scripts/simulation/climate/climate_math.gd"
 const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
 const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
+const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const StartLocationPolicyScript = preload("res://scripts/game/start_location_policy.gd")
 const StarterSettlementBootstrapScript = preload("res://scripts/economy/starter_settlement_bootstrap.gd")
@@ -174,6 +175,7 @@ const DynamicVisualAtlasUploadSystemScript = preload("res://scripts/simulation/s
 const NativeEnvironmentRuntimeSystemScript = preload("res://scripts/simulation/systems/native_environment_runtime_system.gd")
 const EconomyDailySystemScript = preload("res://scripts/simulation/systems/economy_daily_system.gd")
 const CountryDailySystemScript = preload("res://scripts/simulation/systems/country_daily_system.gd")
+const ModifierDailySystemScript = preload("res://scripts/simulation/systems/modifier_daily_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -1016,6 +1018,8 @@ var _economy_facade = null
 var _economy_daily_job = null
 var _country_facade = null
 var _country_daily_job = null
+var _modifier_facade = null
+var _modifier_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
 var _continuation_perf_pending: Dictionary = {}
@@ -1451,13 +1455,24 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	_economy_daily_job = null
 	_country_facade = null
 	_country_daily_job = null
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_country") \
+	_modifier_facade = null
+	_modifier_daily_job = null
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_modifiers") \
+			or not _data_core_world_ext.has_method("configure_country") \
 			or not _data_core_world_ext.has_method("configure_economy"):
 		# No large GDScript fallback: an unavailable native authority leaves the
 		# economy explicitly disabled while environmental simulation continues.
 		print("[economy] native DCWorldExt economy API unavailable; economy disabled")
 		return
 	var seed_value := int(cfg.seed) if cfg != null else 0
+	_modifier_facade = ModifierFacadeScript.new()
+	var modifier_configured: Dictionary = _modifier_facade.configure(
+		_data_core_world_ext, map.cell_count(), _world_clock_ref)
+	if not bool(modifier_configured.get("ok", false)):
+		push_error("[modifier] configure failed: %s" % String(
+			modifier_configured.get("reason", "unknown")))
+		_modifier_facade = null
+		return
 	_country_facade = CountryFacadeScript.new()
 	var country_configured: Dictionary = _country_facade.configure(
 		_data_core_world_ext, map.cell_count(), seed_value)
@@ -1621,10 +1636,14 @@ func _capture_economy_trade_topology(map: MapData) -> Dictionary:
 
 
 func _register_country_economy_systems(scheduler_profile) -> Dictionary:
-	if _sus == null or _country_facade == null or _economy_facade == null:
+	if _sus == null or _modifier_facade == null or _country_facade == null or _economy_facade == null:
 		return {"ok": false, "reason": "country_economy_runtime_unavailable"}
-	if _country_daily_job != null or _economy_daily_job != null:
+	if _modifier_daily_job != null or _country_daily_job != null or _economy_daily_job != null:
 		return {"ok": false, "reason": "country_economy_systems_already_registered"}
+	_modifier_daily_job = ModifierDailySystemScript.new(_modifier_facade)
+	_sus.configure_job_from_profile(
+		_modifier_daily_job, scheduler_profile, false, &"modifier_daily", 1)
+	_runtime_register_system(_modifier_daily_job)
 	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
 	_sus.configure_job_from_profile(
 		_country_daily_job, scheduler_profile, false, &"country_daily", 1)
@@ -1646,6 +1665,14 @@ func get_economy_facade():
 
 func get_country_facade():
 	return _country_facade
+
+
+func get_modifier_facade():
+	return _modifier_facade
+
+
+func get_modifier_report() -> Dictionary:
+	return _modifier_facade.report() if _modifier_facade != null else {"configured": false}
 
 
 func get_country_report() -> Dictionary:
@@ -12260,7 +12287,11 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		var absorb_factor: float = DCClimateMath.surface_absorbed_factor(is_water_a[i] != 0, temp_365d_a[i])
 		# 冷侧软压缩（v2）：极向热输送/海洋热库托底，防中纬冬季无限过冷。与 legacy/C++ 同源。
 		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * dev_today)
-		var radiative_target: float = clampf(temp_year + season_offset, 0.0, 1.0)
+		var radiative_target: float = temp_year + season_offset
+		if _data_core_world_ext != null and _data_core_world_ext.has_method("evaluate_modifier_stat"):
+			radiative_target = float(_data_core_world_ext.evaluate_modifier_stat(
+				0, i, 0, &"climate.cell.radiative_target", radiative_target))
+		radiative_target = clampf(radiative_target, 0.0, 1.0)
 
 		# 3) 热惯性：日照只生成 radiative target，最终 temp 由长期热储量缓慢逼近。
 		var prev_temp_for_thermal: float = thermal_a[i] if thermal_a.size() == n else temp_a[i]

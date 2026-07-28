@@ -3,6 +3,7 @@
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
+#include "modifier_runtime.h"
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
 // 双保险：仍未定义时手动兜底，避免某些编译器/PCH 顺序问题。
@@ -454,7 +455,8 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
             if (!is_water && pmar != nullptr) {
                 season_offset *= (1.0f - maritime_damp * pmar[i]);
             }
-            float radiative_target = temp_year + season_offset;
+            float radiative_target = modifier_climate_radiative_target(
+                i, temp_year + season_offset);
             if (radiative_target < 0.0f) radiative_target = 0.0f;
             else if (radiative_target > 1.0f) radiative_target = 1.0f;
 
@@ -885,7 +887,8 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
             if (!is_water && pmar != nullptr) {
                 season_offset *= (1.0f - maritime_damp * pmar[i]);
             }
-            float radiative_target = temp_year + season_offset;
+            float radiative_target = modifier_climate_radiative_target(
+                i, temp_year + season_offset);
             if (radiative_target < 0.0f) radiative_target = 0.0f;
             else if (radiative_target > 1.0f) radiative_target = 1.0f;
 
@@ -6839,6 +6842,8 @@ struct ClimateInputBuf {
     std::vector<float>   temp_365d;        // pass_a 读：EMA prev
     std::vector<float>   thermal_energy;   // pass_a 读：prev_energy
     std::vector<float>   snowpack;         // pass_a 读：alpha 判断 + 计算 snow_cover
+    std::vector<float>   radiative_modifier_add;    // pass_a: frozen Modifier add
+    std::vector<float>   radiative_modifier_factor; // pass_a: frozen Modifier factor
     // pass_b 新增字段：
     std::vector<float>   pos_x;            // pass_b: 邻居方向计算；ocean_water/land 也用
     std::vector<float>   pos_y;            // pass_b; ocean_water/land 也用
@@ -7166,6 +7171,10 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
     const float *P365_IN = in.temp_365d.data();
     const float *PTH_IN = in.thermal_energy.data();
     const float *PSP_IN = in.snowpack.data();
+    const float *PRAD_ADD = ((int)in.radiative_modifier_add.size() == n)
+        ? in.radiative_modifier_add.data() : nullptr;
+    const float *PRAD_FACTOR = ((int)in.radiative_modifier_factor.size() == n)
+        ? in.radiative_modifier_factor.data() : nullptr;
     // [climate-zone-fix P2] 海洋性调温：per-cell maritime 因子 + 全局衰减比。缺省空/0→关闭。
     const float maritime_damp = (float)in.scalars.maritime_season_damp;
     const float *PMAR = ((int)in.maritime.size() == n) ? in.maritime.data() : nullptr;
@@ -7255,6 +7264,8 @@ static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
             season_offset *= (1.0f - maritime_damp * PMAR[i]);
         }
         float radiative_target = temp_year + season_offset;
+        if (PRAD_ADD != nullptr) radiative_target += PRAD_ADD[i];
+        if (PRAD_FACTOR != nullptr) radiative_target *= PRAD_FACTOR[i];
         if (radiative_target < 0.0f) radiative_target = 0.0f;
         else if (radiative_target > 1.0f) radiative_target = 1.0f;
 
@@ -9053,6 +9064,23 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         _read_pf32_to_vec(input, "temp_365d",           t->in_buf.temp_365d,           n_cells);
         _read_pf32_to_vec(input, "thermal_energy",      t->in_buf.thermal_energy,      n_cells);
         _read_pf32_to_vec(input, "snowpack",            t->in_buf.snowpack,            n_cells);
+        t->in_buf.radiative_modifier_add.assign(
+            static_cast<size_t>(n_cells), 0.0f);
+        t->in_buf.radiative_modifier_factor.assign(
+            static_cast<size_t>(n_cells), 1.0f);
+        if (_modifier_runtime != nullptr) {
+            const ModifierRuntime *modifier =
+                static_cast<const ModifierRuntime *>(_modifier_runtime);
+            for (int cell = 0; cell < n_cells; ++cell) {
+                double add = 0.0;
+                double factor = 1.0;
+                modifier->climate_radiative_terms(cell, add, factor);
+                t->in_buf.radiative_modifier_add[static_cast<size_t>(cell)] =
+                    static_cast<float>(add);
+                t->in_buf.radiative_modifier_factor[static_cast<size_t>(cell)] =
+                    static_cast<float>(factor);
+            }
+        }
 
         // Stage 2 字段（pass_b 读）。snow_cover/moisture 与 pass_a 共享。
         _read_pf32_to_vec(input, "pos_x",                     t->in_buf.pos_x,                     n_cells);

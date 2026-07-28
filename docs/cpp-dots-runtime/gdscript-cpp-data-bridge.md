@@ -1,10 +1,19 @@
 # GDScript / C++ Data Bridge
 
+## Modifier PackedArray bridge
+
+`ModifierFacade` 通过 protocol v1 平行 PackedArray 提交 apply/remove/refresh/set-stacks；
+`DCWorldExt` 在 C++ 中稳定排序后写四域 store。GDScript 不持有 bucket 或实例镜像，也不能直接
+修改 native store。command result、list、explain、journal 和 report 是冷查询；气候 fallback
+只能调用 `evaluate_modifier_stat`，生产 hot loop 使用 native helper/冻结 POD。PKCM/PKGP 直接
+传 `PackedByteArray`，PKCN/PKEC 内嵌对应 domain。详见
+[`native-modifier-runtime.md`](./native-modifier-runtime.md)。
+
 ## Complete-save bridge
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN, PKEC, and `PKEnvironmentRuntime v1`. Environment export includes the
+PKCN v2, PKEC v20, PKCM v1, PKGP v1, and `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
 and dimensions before swapping any arrays. See

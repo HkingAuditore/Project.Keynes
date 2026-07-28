@@ -13,7 +13,11 @@ u32 payload_bytes
 payload
 ```
 
-## PKEC v19（当前 writer，兼容 v18）
+## PKEC v20（当前 writer，兼容 v18/v19）
+
+PKEC v20 retains the complete v19 economy payload and adds section 12 for the
+generation-safe BuildingIdentityStore and normalized Economy Modifier domain.
+PKEC v18/v19 restore deterministically with an empty Modifier store.
 
 PKEC v19 retains the v18 portfolio controls and additionally persists each
 building group's `pending_operating_state` and `recovery_cooldown_cycles`.
@@ -29,12 +33,12 @@ PKEC v18 retains the v17 portfolio controls and persists
 `investment_max_type_owner_share_q16`, and
 `recovery_liquidation_max_share_q16`. These values affect deterministic
 investment and liquidation decisions and must match the configured
-`EconomyProfile` at restore. The writer emits v19; restore accepts v18-v19.
+`EconomyProfile` at restore. The writer emits v20; restore accepts v18-v20.
 v2-v17 return `legacy_economy_save_unsupported`.
 
 历史 v16 在建筑记录中加入聚合商人债务本金/溢价、期限、逾期周期、恢复失败审查数、三态运行状态和
 上一期自产生活价值；待建记录保存本金、溢价和期限。上述字段全部进入状态哈希、合法性检查、
-内存统计和选中格快照。当前 reader 的兼容范围以上述 v18-v19 规则为准。
+内存统计和选中格快照。当前 reader 的兼容范围以上述 v18-v20 规则为准。
 
 section 顺序：
 
@@ -52,13 +56,14 @@ section 顺序：
 9. sparse labor signal records。
 10. trade order records：订单头、物资行 CSR 与卖方快照 CSR。
 11. trade flow records：稀疏 `(cell, good)` 进出口 EMA/本周期流量。
-12. end。
+12. Modifier records：BuildingIdentityStore 与 Economy Modifier domain。
+13. end。
 
 `read_economy_save_chunk(max_bytes)` 直接从当前 native vectors 编码本 section 的
 record range，不构造巨型 Dictionary 或整份 byte buffer。page/market record 不会被
 拆跨 chunk；请求 4–16MB 是生产建议，测试可使用 64KB。
 
-restore 要先配置并完整恢复 PKCN v1，再用当前资源 catalog 调 `configure_economy()` 和
+restore 要先配置并完整恢复 PKCN v2，再用当前资源 catalog 调 `configure_economy()` 和
 `begin_economy_restore()`。每个 feed 立即解析并写恢复存储；end 时验证：
 
 - schema、尺度、catalog hash 和稳定 ID 表
@@ -74,7 +79,8 @@ restore 要先配置并完整恢复 PKCN v1，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v19，并与 PKCN v1 交叉绑定。PKEC v18 恢复时补齐新增恢复字段，PKEC v2-v17 统一
+当前写出 schema 为 PKEC v20，并与 PKCN v2 交叉绑定。PKEC v18/v19 恢复时补齐新增恢复字段并建立空
+Modifier store，PKEC v2-v17 统一
 返回 `legacy_economy_save_unsupported`，不执行隐式迁移。历史上的 PKEC v14 确定性
 `v14_rolling_phase_bootstrap` 迁移每 cell phase/结算日，PKEC v13 再沿既有兼容 hash 路径补齐
 v14 行为参数后迁移。只有参数一致的 v11 ACTIVE 可迁移；旧默认 v11 的
@@ -90,7 +96,7 @@ ACTIVE 配置拒绝 v11 PROBE 和 v10。拓扑和未完成规划从不存档，�
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v12 与 PKCN v1 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。
+当前 PKEC v20 与 PKCN v2 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。
 未来新增/删除/改 ID 若要兼容，必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
 迁移器应：

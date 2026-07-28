@@ -1,4 +1,5 @@
 #include "country_runtime.h"
+#include "modifier_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1030,6 +1031,11 @@ int64_t NativeCountryRuntime::transfer_good_from_market(int64_t country_handle, 
 bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
     if (!economy_available()) return false;
     out.cell_country_slot = _cell_country_slot;
+    out.country_handles.resize(_countries.active.size());
+    for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
+        out.country_handles[slot] = _countries.active[slot] != 0
+            ? make_handle(static_cast<int32_t>(slot)) : 0;
+    }
     out.country_technologies = _country_technologies;
     out.country_count = static_cast<int32_t>(_countries.active.size());
     out.technology_words = _technology_words;
@@ -1158,6 +1164,14 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
         append_string(out, command.display_name);
         append_le<uint64_t>(out, command.submit_order);
     }
+    std::vector<uint8_t> modifier_bytes;
+    if (_modifier_runtime != nullptr &&
+        !_modifier_runtime->serialize_domain(ModifierRuntime::COUNTRY,
+                                              modifier_bytes, error)) {
+        return false;
+    }
+    append_le<uint64_t>(out, static_cast<uint64_t>(modifier_bytes.size()));
+    out.insert(out.end(), modifier_bytes.begin(), modifier_bytes.end());
     append_le<uint32_t>(out, SAVE_END);
     return true;
 }
@@ -1170,7 +1184,7 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     int32_t cell_count = 0, country_count = 0, good_count_value = 0, tech_count = 0, tech_words = 0;
     if (!read_le(bytes, cursor, magic) || !read_le(bytes, cursor, version)) { error = "country_save_truncated"; return false; }
     if (magic != SAVE_MAGIC) { error = "country_save_magic_invalid"; return false; }
-    if (version != SCHEMA_VERSION) { error = "country_save_schema_unsupported"; return false; }
+    if (version != 1 && version != SCHEMA_VERSION) { error = "country_save_schema_unsupported"; return false; }
     if (!read_le(bytes, cursor, saved_catalog) || !read_le(bytes, cursor, generation_value) ||
         !read_le(bytes, cursor, committed_day) || !read_le(bytes, cursor, saved_submit_order) ||
         !read_le(bytes, cursor, cell_count) ||
@@ -1274,7 +1288,34 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
         commands.push_back(std::move(command));
         max_submit_order = std::max(max_submit_order, commands.back().submit_order);
     }
+    std::vector<uint8_t> modifier_bytes;
+    if (version >= 2) {
+        uint64_t modifier_size = 0;
+        if (!read_le(bytes, cursor, modifier_size) ||
+            modifier_size > static_cast<uint64_t>(bytes.size() - cursor) ||
+            modifier_size > 256ULL * 1024ULL * 1024ULL) {
+            error = "country_save_modifier_payload_invalid";
+            return false;
+        }
+        modifier_bytes.assign(bytes.begin() + static_cast<ptrdiff_t>(cursor),
+                              bytes.begin() + static_cast<ptrdiff_t>(cursor + modifier_size));
+        cursor += static_cast<size_t>(modifier_size);
+    }
     if (!read_le(bytes, cursor, end) || end != SAVE_END || cursor != bytes.size()) { error = "country_save_end_invalid"; return false; }
+
+    if (version >= 2 && !modifier_bytes.empty()) {
+        if (_modifier_runtime == nullptr) {
+            error = "country_restore_modifier_runtime_unavailable";
+            return false;
+        }
+        if (!_modifier_runtime->restore_domain(ModifierRuntime::COUNTRY,
+                                               modifier_bytes, error)) {
+            error = "country_restore_modifier_failed:" + error;
+            return false;
+        }
+    } else if (_modifier_runtime != nullptr) {
+        _modifier_runtime->clear_domain(ModifierRuntime::COUNTRY);
+    }
 
     _countries = std::move(countries);
     _cell_country_slot = std::move(owners);

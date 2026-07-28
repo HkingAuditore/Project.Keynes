@@ -158,7 +158,7 @@ func _run() -> void:
 		int(continuation_ext.get_country_cell_summary(1).country_handle) == int(continuation_beta.country_handle))
 
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v1 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 1)
+	_expect("PKCN v2 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 2)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)

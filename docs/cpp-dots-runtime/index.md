@@ -11,6 +11,14 @@
 
 本目录记录 Project.Keynes 当前运行期 C++/DOTS 架构的真实状态，面向后续开发、排障和继续迁移。这里不是历史路线图，也不是一次性验收记录；历史文档仍保留原状，本目录负责把已经落到代码里的调度、数据通信、计算链路和性能诊断规则整理成可执行参考。
 
+## Native Modifier Runtime
+
+- [Native Modifier Runtime](./native-modifier-runtime.md)：四域 ModifierStore、固定公式、
+  generation handle、scope/bucket、daily freeze、气候/国家/经济/Gameplay 接入、
+  PKCN v2/PKEC v20/PKCM v1/PKGP v1 与验证状态。
+- 修改 stat、definition、命令协议、调度依赖、领域公式或存档 schema 时，必须先读并同步
+  这份主说明与 `project-keynes-modifier-runtime` Skill。
+
 ## 阅读顺序
 
 1. [Architecture Overview](./architecture-overview.md)
@@ -54,7 +62,7 @@
     - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
-    - `country_daily`、命令屏障、PKCN v1 + PKEC v12 顺序与兼容性拒绝。
+    - `country_daily`、命令屏障、PKCN v2 + PKEC v20 顺序与兼容性拒绝。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。
@@ -105,6 +113,7 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 | Runtime orchestration | `Project/project-keynes/scripts/geography/map_generator.gd` | `_setup_sus()` 注册系统，调度 climate/ocean/weather pass。 |
 | Native economy | `gdext/src/economy_runtime.cpp`, `Project/project-keynes/scripts/economy/*.gd` | 独立 `ECONOMY_GRAPH`、catalog/facade、committed gameplay/save 与 selected-cell live Inspector bridge。 |
 | Native country | `gdext/src/country_runtime.cpp`, `gdext/src/world_ext_country.cpp`, `Project/project-keynes/scripts/country/*.gd` | 国家身份、领土、科技、国库、PKCN 与 `country_daily` 权威；只镜像 `cell.country_slot`。 |
+| Native modifier | `gdext/src/modifier_runtime.*`, `gdext/src/world_ext_modifier.cpp`, `Project/project-keynes/scripts/modifier/*.gd` | 四域独立 store、PackedArray command、explain/journal/save 与 `modifier_daily` 冻结发布。 |
 | Rendering / physical ocean | `Project/project-keynes/scripts/rendering/map_baker.gd` | SLP/wind/PSI/upwelling/raster 等 ocean currents 物理链路。 |
 | Vision / fog | `Project/project-keynes/scripts/geography/vision_solver.gd` | 静态视野场预烘、多源 Dijkstra 解算、`fog_k` 与三态 `fog_state`。 |
 | Fog / border 渲染层 | `Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`, `.../country_border_layer.gd` | 迷雾全图 quad（z=12）与国界 ribbon mesh（z=6）。 |

@@ -5,7 +5,8 @@ signal load_completed(slot_id: String, result: Dictionary)
 
 const REQUIRED_SECTIONS := [
 	"new_game_config", "world_clock", "dynamic_world", "environment",
-	"pkcn", "pkec", "pkfg", "journal", "player_context", "player_view", "preview",
+	"pkcm", "pkcn", "pkec", "pkgp", "pkfg", "journal",
+	"player_context", "player_view", "preview",
 ]
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
@@ -80,6 +81,9 @@ func prepare_load(slot_id: String) -> Dictionary:
 	var bytes_by_id: Dictionary = container.get("section_bytes", {})
 	for required in REQUIRED_SECTIONS:
 		if not bytes_by_id.has(required):
+			if required in ["pkcm", "pkgp"]:
+				bytes_by_id[required] = PackedByteArray()
+				continue
 			return _result(false, "save_provider_missing", "存档缺少必需 section：%s" % required)
 	var decoded := {}
 	for section_id in ["new_game_config", "world_clock", "dynamic_world", "environment",
@@ -90,6 +94,8 @@ func prepare_load(slot_id: String) -> Dictionary:
 		decoded[section_id] = value
 	decoded["pkcn"] = bytes_by_id.pkcn
 	decoded["pkec"] = bytes_by_id.pkec
+	decoded["pkcm"] = bytes_by_id.pkcm
+	decoded["pkgp"] = bytes_by_id.pkgp
 	decoded["preview"] = bytes_by_id.preview
 	_pending_load = {
 		"slot_id": slot_id,
@@ -260,12 +266,18 @@ func _register_providers() -> void:
 		_make_provider(&"environment", 1, PackedStringArray(["environment"]),
 			"_can_environment_provider", "_write_environment_provider",
 			"_restore_environment_provider"),
+		_make_provider(&"pkcm", 1, PackedStringArray(["pkcm"]),
+			"_can_modifier_provider", "_write_climate_modifier_provider",
+			"_restore_climate_modifier_provider"),
 		_make_provider(&"world_clock", 1, PackedStringArray(["world_clock"]),
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
-		_make_provider(&"pkcn", 1, PackedStringArray(["pkcn"]),
+		_make_provider(&"pkcn", 2, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		_make_provider(&"pkec", 19, PackedStringArray(["pkec"]),
+		_make_provider(&"pkec", 20, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
+		_make_provider(&"pkgp", 1, PackedStringArray(["pkgp"]),
+			"_can_modifier_provider", "_write_gameplay_modifier_provider",
+			"_restore_gameplay_modifier_provider"),
 		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
 		_make_provider(&"pkfg", 1, PackedStringArray(["pkfg"]),
 			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
@@ -298,7 +310,7 @@ func _provider_context(host: WorldRuntimeHost, generator: MapGenerator,
 
 
 func _manifest_compatible(raw_manifest) -> bool:
-	if not raw_manifest is Array or raw_manifest.size() != _providers.size():
+	if not raw_manifest is Array:
 		return false
 	var by_id := {}
 	for raw in raw_manifest:
@@ -308,9 +320,17 @@ func _manifest_compatible(raw_manifest) -> bool:
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
 		if not by_id.has(provider_id):
+			if provider_id in ["pkcm", "pkgp"]:
+				continue
 			return false
 		var entry: Dictionary = by_id[provider_id]
-		if int(entry.get("schema_version", -1)) != provider.schema_version():
+		var saved_schema := int(entry.get("schema_version", -1))
+		var schema_compatible: bool = saved_schema == provider.schema_version()
+		if provider_id == "pkcn":
+			schema_compatible = saved_schema in [1, 2]
+		elif provider_id == "pkec":
+			schema_compatible = saved_schema in [18, 19, 20]
+		if not schema_compatible:
 			return false
 		var actual := PackedStringArray(entry.get("sections", []))
 		var expected: PackedStringArray = provider.section_ids()
@@ -353,6 +373,17 @@ func _can_economy_provider(context: Dictionary) -> Dictionary:
 	return _result(facade != null and facade.is_configured(),
 		"ok" if facade != null and facade.is_configured() else "save_provider_missing",
 		"" if facade != null and facade.is_configured() else "PKEC provider 不可用。")
+
+
+func _can_modifier_provider(context: Dictionary) -> Dictionary:
+	var generator = context.get("generator")
+	var facade = generator.get_modifier_facade() if generator != null else null
+	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
+	var available: bool = ext != null and ext.has_method("capture_modifier_domain") \
+		and ext.has_method("restore_modifier_domain") \
+		and ext.has_method("clear_modifier_domain")
+	return _result(available, "ok" if available else "save_provider_missing",
+		"" if available else "Modifier provider 不可用。")
 
 
 func _can_vision_provider(context: Dictionary) -> Dictionary:
@@ -408,6 +439,24 @@ func _write_economy_provider(context: Dictionary) -> Dictionary:
 	var captured := _capture_native(context.generator.get_economy_facade(), "economy")
 	return {"ok": true, "sections": {"pkec": captured.bytes}} \
 		if bool(captured.get("ok", false)) else captured
+
+
+func _write_climate_modifier_provider(context: Dictionary) -> Dictionary:
+	return _write_modifier_provider(context, 0, "pkcm")
+
+
+func _write_gameplay_modifier_provider(context: Dictionary) -> Dictionary:
+	return _write_modifier_provider(context, 3, "pkgp")
+
+
+func _write_modifier_provider(context: Dictionary, domain: int,
+		section_id: String) -> Dictionary:
+	var facade = context.generator.get_modifier_facade()
+	var bytes: PackedByteArray = facade.world_ext().capture_modifier_domain(domain)
+	if bytes.is_empty():
+		return _result(false, "%s_save_failed" % section_id,
+			"Modifier domain 无法序列化。")
+	return {"ok": true, "sections": {section_id: bytes}}
 
 
 ## 只存 cell_explored：它是单调累积的玩家进度，重算不回来。cell_visible 与
@@ -485,6 +534,30 @@ func _restore_economy_provider(sections: Dictionary, context: Dictionary) -> Dic
 	var result: Dictionary = context.generator.get_economy_facade().restore_bytes(sections.pkec)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pkec_restore_failed", String(result.get("reason", "经济恢复失败。")))
+
+
+func _restore_climate_modifier_provider(sections: Dictionary,
+		context: Dictionary) -> Dictionary:
+	return _restore_modifier_provider(sections, context, 0, "pkcm")
+
+
+func _restore_gameplay_modifier_provider(sections: Dictionary,
+		context: Dictionary) -> Dictionary:
+	return _restore_modifier_provider(sections, context, 3, "pkgp")
+
+
+func _restore_modifier_provider(sections: Dictionary, context: Dictionary,
+		domain: int, section_id: String) -> Dictionary:
+	var ext = context.generator.get_modifier_facade().world_ext()
+	var bytes := PackedByteArray(sections.get(section_id, PackedByteArray()))
+	var result: Dictionary
+	if bytes.is_empty():
+		result = ext.clear_modifier_domain(domain)
+	else:
+		result = ext.restore_modifier_domain(domain, bytes)
+	return result if bool(result.get("ok", false)) else _result(false,
+		"%s_restore_failed" % section_id,
+		String(result.get("reason", "Modifier domain 恢复失败。")))
 
 
 func _restore_vision_provider(sections: Dictionary, context: Dictionary) -> Dictionary:

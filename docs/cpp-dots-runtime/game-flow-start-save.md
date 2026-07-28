@@ -75,7 +75,7 @@ backup. Incompatible generator/catalog/schema hashes are rejected rather than
 guessed or migrated.
 
 Required sections are `new_game_config`, `world_clock`, `dynamic_world`,
-`environment`, `pkcn`, `pkec`, `pkfg`, `journal`, `player_context`,
+`environment`, `pkcm`, `pkcn`, `pkec`, `pkgp`, `pkfg`, `journal`, `player_context`,
 `player_view`, and `preview`. Missing authority fails closed. `environment` uses
 `PKEnvironmentRuntime v1` and includes native core SoA, weather ping-pong,
 topology, dirty/active sets, round flags, stage cursors, and publish versions;
@@ -87,7 +87,11 @@ Every authority is registered through `RuntimeStateProvider`, whose contract is
 provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
-clock, PKCN, PKEC, PKFG, journal, then player session/view/preview.
+PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, then player session/view/preview.
+PKCM v1 saves Climate modifiers. PKCN v2 embeds Country modifiers; PKEC v20
+embeds Economy modifiers and BuildingIdentityStore; PKGP v1 saves Gameplay
+identity/base SoA and modifiers. Legacy PKCN v1/PKEC v18-v19 and PKSV files
+without PKCM/PKGP migrate those Modifier domains to empty stores.
 
 `pkfg` is `PKFogOfWar v1` and persists exactly one array: the monotonic
 `cell_explored` progress, plus the cell count it was captured at. Current
@@ -116,16 +120,18 @@ Restore order is strict:
 1. Validate PKSV header, compatibility hash, section hashes, and required set.
 2. Regenerate static terrain from the complete saved `NewGameConfig`.
 3. Restore dynamic `DCWorld` and the full native environment provider.
-4. Restore `WorldClock`.
-5. Restore PKCN.
-6. Restore PKEC after trade topology has been configured.
-7. Restore PKFG, then re-solve vision and republish `enum_lut.a` and the border
+4. Restore PKCM, then `WorldClock`.
+5. Restore PKCN v2, including Country modifiers.
+6. Restore PKEC v20 after trade topology has been configured, including Economy
+   modifiers and building identities.
+7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
 8. Restore journal and player/session context.
 9. Rebuild derived views/render resources and scheduler topology.
 10. Restore selected cell, camera position/zoom, pause, and speed.
 
-PKCN must always precede PKEC. PKFG must follow PKCN, because re-solving
+PKCM must follow environment; PKCN must precede PKEC; PKGP follows Economy
+base/identity restore. PKFG must follow PKCN, because re-solving
 visibility reads the restored territory. Native restore rejects crossed
 generations or catalog hashes.
 
@@ -160,7 +166,7 @@ an unavailable fallback.
 Minimum gates are configuration and repository tests; deterministic start tests
 across representative seeds/sizes; one-cell ownership, resource, population,
 and building assertions; `EnvironmentRuntime` byte-exact round-trip; PKCN/PKEC
-focused tests; a PKFG round-trip that hashes `explored_arr` across save/load
+focused tests; four Modifier domain round-trips; a PKFG round-trip that hashes `explored_arr` across save/load
 and then advances the restored runtime through at least one complete five-phase
 economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtension builds; and
 desktop/narrow UI checks.

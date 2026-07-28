@@ -1,0 +1,287 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <deque>
+#include <queue>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/string_name.hpp>
+#include <godot_cpp/variant/variant.hpp>
+
+namespace pk {
+
+class NativeCountryRuntime;
+
+// Shared native implementation. Each authority domain owns an independent Store;
+// catalog strings are resolved only at the Godot/save boundary.
+class ModifierRuntime {
+public:
+    static constexpr int32_t PROTOCOL_VERSION = 1;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 1;
+    static constexpr int64_t PERMANENT_EXPIRY = -1;
+
+    enum Domain : int32_t { CLIMATE = 0, COUNTRY = 1, ECONOMY = 2, GAMEPLAY = 3, DOMAIN_COUNT = 4 };
+    enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
+    enum StackPolicy : int32_t { INDEPENDENT = 0, UNIQUE_SOURCE = 1, STACK_REFRESH = 2 };
+    enum Operation : int32_t { ADD = 0, SUBTRACT = 1, MULTIPLY = 2, DIVIDE = 3 };
+    enum CommandOpcode : int32_t { COMMAND_APPLY = 1, COMMAND_REMOVE = 2, COMMAND_REFRESH = 3, COMMAND_SET_STACKS = 4 };
+    enum EventKind : int32_t {
+        EVENT_APPLY = 1, EVENT_REPLACE = 2, EVENT_STACK = 3, EVENT_REFRESH = 4,
+        EVENT_REMOVE = 5, EVENT_EXPIRE = 6, EVENT_TARGET_CLEANUP = 7, EVENT_REJECT = 8,
+    };
+
+    godot::Dictionary configure(const godot::Dictionary &catalog, int32_t cell_count);
+    godot::Dictionary submit_commands(const godot::Dictionary &packed_batch);
+    godot::Dictionary run_daily(int64_t day_index);
+    bool should_run(int64_t day_index) const;
+
+    godot::Dictionary command_result(int64_t request_id) const;
+    godot::Dictionary list_modifiers(int32_t domain, uint64_t entity_handle,
+                                     const godot::String &stat_key) const;
+    godot::Dictionary explain(int32_t domain, uint64_t entity_handle,
+                              uint64_t group_handle, const godot::String &stat_key,
+                              double base_value) const;
+    godot::Dictionary report() const;
+    godot::Dictionary poll_events(int64_t after_event_id, int32_t limit) const;
+
+    double effective_value(int32_t domain, int32_t stat_id, uint64_t entity_handle,
+                           uint64_t group_handle, double base_value) const;
+    double effective_value(int32_t domain, const char *stat_key, uint64_t entity_handle,
+                           uint64_t group_handle, double base_value) const;
+    float climate_radiative_target(int32_t cell, float base_value) const;
+    void climate_radiative_terms(int32_t cell, double &add,
+                                 double &factor) const;
+    double country_economy_output_factor(uint64_t country_handle) const;
+    double economy_building_output_factor(uint64_t building_handle,
+                                           uint64_t country_handle) const;
+
+    uint64_t register_gameplay_object(const std::string &archetype);
+    bool unregister_gameplay_object(uint64_t handle, int64_t day_index);
+    bool set_gameplay_base(uint64_t handle, const std::string &stat_key, double value,
+                           std::string &error);
+    bool gameplay_effective(uint64_t handle, uint64_t group_handle,
+                            const std::string &stat_key, double &out,
+                            std::string &error) const;
+
+    uint64_t ensure_building_identity(int32_t cell, int32_t type_id,
+                                      int32_t owner_signature_id);
+    bool retire_building_identity(int32_t cell, int32_t type_id,
+                                  int32_t owner_signature_id, int64_t day_index);
+
+    void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
+    bool serialize_domain(int32_t domain, std::vector<uint8_t> &out,
+                          std::string &error) const;
+    bool restore_domain(int32_t domain, const std::vector<uint8_t> &bytes,
+                        std::string &error);
+    void clear_domain(int32_t domain);
+    uint64_t catalog_hash() const { return _catalog_hash; }
+    bool configured() const { return _configured; }
+
+private:
+    struct StatDefinition {
+        std::string key;
+        int32_t domain = CLIMATE;
+        double min_value = 0.0;
+        double max_value = 1.0;
+        bool persistable = true;
+    };
+    struct TermDefinition { int32_t stat_id = -1; double add = 0.0; double factor = 1.0; };
+    struct Definition {
+        std::string key;
+        int32_t version = 1;
+        int32_t domain = CLIMATE;
+        int32_t policy = INDEPENDENT;
+        int32_t max_stacks = 1;
+        int32_t default_duration = -1;
+        uint32_t term_begin = 0;
+        uint32_t term_count = 0;
+    };
+    struct BucketKey {
+        int32_t stat_id = -1;
+        int32_t scope = GLOBAL;
+        uint64_t scope_id = 0;
+        bool operator==(const BucketKey &other) const {
+            return stat_id == other.stat_id && scope == other.scope && scope_id == other.scope_id;
+        }
+    };
+    struct BucketKeyHash {
+        size_t operator()(const BucketKey &key) const noexcept;
+    };
+    struct Contribution { uint32_t instance = 0; uint16_t term = 0; };
+    struct Bucket {
+        double sum_add = 0.0;
+        double product_nonzero = 1.0;
+        int32_t zero_factor_count = 0;
+        uint32_t mutations_since_rebuild = 0;
+        std::vector<Contribution> members;
+    };
+    struct UniqueKey {
+        int32_t definition_id = -1;
+        int32_t scope = GLOBAL;
+        uint64_t scope_id = 0;
+        uint64_t source_type = 0;
+        uint64_t source_id = 0;
+        bool operator==(const UniqueKey &other) const;
+    };
+    struct UniqueKeyHash { size_t operator()(const UniqueKey &key) const noexcept; };
+    struct ExpiryNode {
+        int64_t day = 0;
+        uint32_t index = 0;
+        uint32_t generation = 0;
+        uint32_t revision = 0;
+        bool operator>(const ExpiryNode &other) const;
+    };
+    struct Store {
+        std::vector<uint8_t> active;
+        std::vector<uint32_t> generation;
+        std::vector<int32_t> definition_id;
+        std::vector<uint64_t> entity_handle;
+        std::vector<uint64_t> group_handle;
+        std::vector<uint64_t> source_type;
+        std::vector<uint64_t> source_id;
+        std::vector<int32_t> scope;
+        std::vector<int32_t> stacks;
+        std::vector<int64_t> applied_day;
+        std::vector<int64_t> expiry_day;
+        std::vector<uint32_t> expiry_revision;
+        std::vector<uint32_t> free_list;
+        std::unordered_map<BucketKey, Bucket, BucketKeyHash> buckets;
+        std::unordered_map<UniqueKey, uint32_t, UniqueKeyHash> unique_instances;
+        std::priority_queue<ExpiryNode, std::vector<ExpiryNode>, std::greater<ExpiryNode>> expiry_heap;
+        uint64_t snapshot_version = 0;
+        uint64_t peak_instances = 0;
+        uint64_t active_instances = 0;
+        mutable uint64_t query_count = 0;
+        mutable uint64_t bucket_reads = 0;
+        uint64_t bucket_rebuilds = 0;
+        uint64_t apply_events = 0;
+        uint64_t remove_events = 0;
+        uint64_t expire_events = 0;
+        uint64_t reject_events = 0;
+        uint64_t target_cleanup_events = 0;
+    };
+    struct Command {
+        int32_t opcode = 0;
+        int32_t producer = 0;
+        int64_t sequence = 0;
+        int64_t effective_day = 0;
+        int64_t request_id = 0;
+        int32_t definition_id = -1;
+        int32_t domain = CLIMATE;
+        int32_t scope = ENTITY;
+        uint64_t entity_handle = 0;
+        uint64_t group_handle = 0;
+        uint64_t source_type = 0;
+        uint64_t source_id = 0;
+        int32_t duration_days = -1;
+        int32_t stacks = 1;
+        uint64_t modifier_handle = 0;
+        uint64_t submit_order = 0;
+    };
+    struct Result {
+        bool ok = false;
+        std::string reason;
+        uint64_t handle = 0;
+        int64_t day = -1;
+    };
+    struct Event {
+        int64_t id = 0;
+        int64_t day = -1;
+        int32_t kind = 0;
+        int32_t domain = CLIMATE;
+        uint64_t handle = 0;
+        int32_t definition_id = -1;
+        uint64_t entity_handle = 0;
+        uint64_t group_handle = 0;
+        int32_t scope = GLOBAL;
+        uint64_t source_type = 0;
+        uint64_t source_id = 0;
+        int32_t old_stacks = 0;
+        int32_t new_stacks = 0;
+        int64_t request_id = 0;
+        std::string reason;
+    };
+    struct IdentityStore {
+        std::vector<uint8_t> active;
+        std::vector<uint32_t> generation;
+        std::vector<std::string> labels;
+        std::vector<uint32_t> free_list;
+    };
+    struct BuildingKey {
+        int32_t cell = -1;
+        int32_t type = -1;
+        int32_t owner = -1;
+        bool operator==(const BuildingKey &other) const {
+            return cell == other.cell && type == other.type && owner == other.owner;
+        }
+    };
+    struct BuildingKeyHash { size_t operator()(const BuildingKey &key) const noexcept; };
+
+    bool compile_catalog(const godot::Dictionary &catalog, std::string &error);
+    bool validate_target(const Command &command, std::string &error) const;
+    uint64_t apply_command(const Command &command, int64_t day, Result &result);
+    bool remove_handle(int32_t domain, uint64_t handle, int64_t day, int32_t event_kind,
+                       int64_t request_id, const std::string &reason, Result *result = nullptr);
+    bool refresh_handle(const Command &command, int64_t day, Result &result);
+    bool set_stacks(const Command &command, int64_t day, Result &result);
+    void add_instance_to_buckets(int32_t domain, uint32_t index);
+    void remove_instance_from_buckets(int32_t domain, uint32_t index);
+    void rebuild_bucket(int32_t domain, const BucketKey &key, Bucket &bucket);
+    double bucket_factor(const Bucket &bucket) const;
+    double scaled_add(const TermDefinition &term, int32_t stacks) const;
+    double scaled_factor(const TermDefinition &term, int32_t stacks) const;
+    uint64_t make_handle(const Store &store, uint32_t index) const;
+    bool resolve_handle(const Store &store, uint64_t handle, uint32_t &index) const;
+    uint64_t scope_id_for(const Command &command) const;
+    void push_event(Event event);
+    void reject_command(const Command &command, int64_t day, const std::string &reason);
+    int32_t stat_id(const std::string &key) const;
+    int32_t definition_id(const std::string &key) const;
+    uint64_t allocate_identity(IdentityStore &store, const std::string &label);
+    bool valid_identity(const IdentityStore &store, uint64_t handle) const;
+    bool retire_identity(IdentityStore &store, uint64_t handle);
+    uint64_t estimated_store_bytes(int32_t domain) const;
+    void record_error(const std::string &reason) const;
+
+    bool _configured = false;
+    int32_t _cell_count = 0;
+    uint64_t _catalog_hash = 0;
+    int64_t _current_day = -1;
+    int64_t _next_request_id = 1;
+    int64_t _next_event_id = 1;
+    uint64_t _submit_order = 0;
+    uint64_t _journal_overflow = 0;
+    uint64_t _commands_applied = 0;
+    uint64_t _commands_rejected = 0;
+    uint64_t _expired = 0;
+    double _last_command_ms = 0.0;
+    double _last_expiry_ms = 0.0;
+    double _last_publish_ms = 0.0;
+    double _last_bucket_update_ms = 0.0;
+    double _last_bucket_rebuild_ms = 0.0;
+    double _bucket_update_ms_total = 0.0;
+    double _bucket_rebuild_ms_total = 0.0;
+    std::vector<StatDefinition> _stats;
+    std::vector<Definition> _definitions;
+    std::vector<TermDefinition> _terms;
+    std::unordered_map<std::string, int32_t> _stat_ids;
+    std::unordered_map<std::string, int32_t> _definition_ids;
+    std::array<Store, DOMAIN_COUNT> _stores;
+    std::vector<Command> _pending_commands;
+    std::unordered_map<int64_t, Result> _results;
+    std::deque<Event> _events;
+    mutable std::unordered_map<std::string, uint64_t> _error_counts;
+    IdentityStore _gameplay_identities;
+    std::vector<std::vector<double>> _gameplay_base_by_stat;
+    IdentityStore _building_identities;
+    std::unordered_map<BuildingKey, uint64_t, BuildingKeyHash> _building_handles;
+    NativeCountryRuntime *_country_runtime = nullptr;
+};
+
+} // namespace pk

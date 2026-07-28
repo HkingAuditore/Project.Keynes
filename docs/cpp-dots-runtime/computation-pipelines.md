@@ -1,5 +1,20 @@
 # Simulation Computation Pipelines
 
+## Modifier pipelines
+
+```text
+WorldClock day
+  -> modifier_daily: expiry -> stable command merge -> bucket/snapshot publish
+  -> climate Pass-A: base radiative target -> frozen cell modifier -> clamp -> inertia
+  -> country snapshot: country output factor -> Q16
+  -> economy freeze: country Q16 * building factor -> effective output helper
+  -> production / wage quote / survival / investment / recovery -> existing ledgers
+```
+
+Gameplay 使用独立 identity/base SoA，查询时组合 Gameplay store；对象注销只清 entity scope。
+跨域不直接写 store。完整数据结构和存档见
+[`native-modifier-runtime.md`](./native-modifier-runtime.md)。
+
 经济 scratch/cache 与 native daily 可见发布的 2026-07 调整见
 [运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
 
@@ -8,7 +23,7 @@
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy PKEC v19 pipeline（当前）
+## Economy PKEC v20 pipeline（当前）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
@@ -32,7 +47,7 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 两阶段。`aggregate_publish` 的 closing audit 支持 FULL/PROBE/INCREMENTAL，并以
 generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量复核且以全量结果权威；
 200 日每日双审计零 mismatch 后，生产默认已切到 INCREMENTAL，每 25 日及 restore/异常边界
-仍执行完整复核。所有列表、shadow、stamp 和诊断均为 transient，不进入 PKEC v19/hash。
+仍执行完整复核。所有列表、shadow、stamp 和诊断均为 transient，不进入 PKEC v20/hash。
 
 ## 状态总览
 
@@ -49,7 +64,8 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
-| CountryStore / territory / technology / treasury | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、`cell_country_slot`、领土 CSR、国家科技 bitset 和商品国库；仅 `cell.country_slot` 发布到 DataCore，PKCN v1 持久化。 |
+| CountryStore / territory / technology / treasury | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、`cell_country_slot`、领土 CSR、国家科技 bitset 和商品国库；仅 `cell.country_slot` 发布到 DataCore，PKCN v2 持久化。 |
+| ModifierStore | C++ ACTIVE authority | `modifier_daily` | 四域隔离 SoA/bucket；不写 base，发布冻结 effective 聚合与 journal。 |
 | PopulationCohort / MarketStore | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家 epoch 与 N 日 need/bundle 清算、商人结算、价格和含国家资产的审计；按 cohort 预算错峰，截止日统一 publish，不复制国家状态进 cell slots。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
@@ -2497,7 +2513,7 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 成本单位价包含实际原料、应付合同工资和目标营业利润；生活成本通过 adaptive 合同工资进入，
 不额外重复叠加。这些信号只反馈下一周期 Price V3，不在本周期形成代数环。
 
-滚动 PKEC v19 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
+滚动 PKEC v20 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
 临时量只分配该 cell 的稀疏 CSR lane；investment 复用 epoch-transient `(cell,type)` 与
 `(cell,resource)` 索引，并在 `building_commit_phase` 中按 cell range continuation。投资只处理
 新增建筑：业主空缺仍由 employment 填补；资金充足 cohort 按“目标业主日收入高于当前人均
@@ -2509,7 +2525,7 @@ market、resource-delta 和 signal lane，把跨 cell 诊断、留用品、现�
 `building_production_merge_ms` 报告包含在 `building_production_ms` 内的归并成本。结果 lane 由
 runtime 长期持有，range 开始只重置逻辑长度和标量，保留 retained-output/cashflow/trace 容量；
 `production_result_allocation_growth_count/bytes` 用于验证热稳态不再扩容。这个 scratch 不进入
-PKEC v19 或 state hash。
+PKEC v20 或 state hash。
 
 2026-07-26 起，production 不再以 `cell_count >= worker_market_threshold` 作为并行前提。
 每个 cell 按建筑组、输入候选、输出、岗位和资源边估算只读 work weight，再切成稳定连续
