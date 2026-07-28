@@ -4,6 +4,7 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <godot_cpp/variant/dictionary.hpp>
@@ -20,7 +21,7 @@ class ModifierRuntime;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 2;
+    static constexpr int32_t SCHEMA_VERSION = 3;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
@@ -30,6 +31,12 @@ public:
         COMMAND_RENAME_COUNTRY = 2,
         COMMAND_TRANSFER_TERRITORY = 3,
         COMMAND_GRANT_TECHNOLOGY = 4,
+        COMMAND_SET_RESEARCH_WEIGHTS = 5,
+        COMMAND_ENQUEUE_RESEARCH = 6,
+        COMMAND_REMOVE_RESEARCH = 7,
+        COMMAND_MOVE_RESEARCH = 8,
+        COMMAND_SET_RESEARCH_BUDGET = 9,
+        COMMAND_REVEAL_ALL_TECHNOLOGIES = 10,
     };
 
     enum RuntimeMode : int32_t { MODE_OFF = 0, MODE_PROBE = 1, MODE_ACTIVE = 2 };
@@ -58,6 +65,7 @@ public:
     godot::Dictionary cell_summary(int32_t cell) const;
     godot::Dictionary country_snapshot(int64_t handle) const;
     godot::Dictionary treasury_snapshot(int64_t handle) const;
+    godot::Dictionary research_snapshot(int64_t handle) const;
     godot::PackedInt32Array cell_country_snapshot() const;
     int64_t state_hash() const;
     void mark_slot_publication(bool published, double publish_ms,
@@ -81,6 +89,7 @@ public:
     int64_t country_handle_for_cell(int32_t cell) const;
     bool valid_handle(int64_t handle) const;
     int64_t total_cash() const;
+    int64_t cash_for_slot(int32_t country_slot) const;
     int64_t total_good(int32_t good_id) const;
     int64_t transfer_cash_to_cohort(int64_t country_handle, int64_t requested);
     int64_t transfer_cash_from_cohort(int64_t country_handle, int64_t offered);
@@ -88,6 +97,11 @@ public:
                                     int64_t requested);
     int64_t transfer_good_from_market(int64_t country_handle, int32_t good_id,
                                       int64_t offered);
+    bool research_procurement_policy(int32_t country_slot, bool &enabled,
+                                     int64_t &cash_budget, int64_t &remaining_points) const;
+    bool purchase_research_points(int32_t country_slot, int64_t quantity,
+                                  int64_t total_cost);
+    int32_t technology_points_good_id() const { return _technology_points_good_id; }
     bool economy_available() const { return _configured && _bootstrapped && _mode != MODE_OFF; }
     uint64_t generation() const { return _generation; }
     int32_t good_count() const { return static_cast<int32_t>(_good_ids.size()); }
@@ -112,6 +126,10 @@ private:
         uint64_t target_handle = 0;
         int32_t cell = -1;
         int32_t aux = -1;
+        int32_t domain = -1;
+        int32_t position = -1;
+        int32_t weights_bp[4] = {0, 0, 0, 0};
+        int64_t value = 0;
         std::string stable_id;
         std::string display_name;
         uint64_t submit_order = 0;
@@ -177,8 +195,18 @@ private:
         CountryStore countries;
         std::vector<uint64_t> technologies;
         std::vector<int64_t> goods;
+        std::vector<uint64_t> discovered;
+        std::vector<uint64_t> pending;
+        std::vector<std::vector<std::pair<int32_t, int64_t>>> progress;
+        std::vector<int32_t> research_queues;
+        std::vector<uint8_t> research_queue_lengths;
+        std::vector<int32_t> research_weights_bp;
+        std::vector<uint8_t> research_auto_purchase;
+        std::vector<int64_t> research_daily_budgets;
+        std::vector<int64_t> research_deferred_points;
         bool stage_technologies = false;
         bool stage_goods = false;
+        bool stage_research = false;
         SparseCellDelta cell_delta;
         std::vector<int32_t> cell_delta_order;
         std::vector<int32_t> direct_cell_owners;
@@ -201,6 +229,14 @@ private:
     uint64_t compute_state_hash() const;
     bool encode_save(std::vector<uint8_t> &out, std::string &error) const;
     bool decode_save(const std::vector<uint8_t> &bytes, std::string &error);
+    void initialize_country_research(int32_t slot);
+    void refresh_discovery(int32_t slot);
+    bool prerequisites_met(int32_t slot, int32_t technology) const;
+    bool prerequisites_met(const std::vector<uint64_t> &completed, int32_t slot,
+                           int32_t technology) const;
+    int64_t progress_for(int32_t slot, int32_t technology) const;
+    void set_progress(int32_t slot, int32_t technology, int64_t value);
+    int32_t run_research_day(int64_t day_index);
 
     bool _configured = false;
     bool _bootstrapped = false;
@@ -208,6 +244,7 @@ private:
     int32_t _cell_count = 0;
     int64_t _seed = 0;
     int32_t _technology_words = 0;
+    int32_t _technology_points_good_id = -1;
     ModifierRuntime *_modifier_runtime = nullptr;
     int32_t _starting_country_slot = -1;
     uint64_t _generation = 0;
@@ -221,6 +258,15 @@ private:
     std::unordered_map<std::string, int32_t> _good_index;
     std::unordered_map<std::string, int32_t> _technology_index;
     std::vector<int32_t> _starting_technologies;
+    std::vector<int32_t> _technology_domains;
+    std::vector<int64_t> _technology_costs;
+    std::vector<int32_t> _technology_prerequisite_offsets;
+    std::vector<int32_t> _technology_prerequisites;
+    std::vector<int32_t> _technology_milestone_offsets;
+    std::vector<int32_t> _technology_milestone_candidates;
+    std::vector<int32_t> _technology_milestone_required_counts;
+    std::vector<int32_t> _technology_flags;
+    std::vector<std::string> _technology_modifier_definition_keys;
     std::vector<uint8_t> _is_water;
 
     CountryStore _countries;
@@ -229,6 +275,20 @@ private:
     std::vector<int32_t> _country_cells;
     std::vector<uint64_t> _country_technologies;
     std::vector<int64_t> _country_goods;
+    std::vector<uint64_t> _country_discovered;
+    std::vector<uint64_t> _country_pending_technologies;
+    std::vector<std::vector<std::pair<int32_t, int64_t>>> _country_research_progress;
+    std::vector<int32_t> _country_research_queues;
+    std::vector<uint8_t> _country_research_queue_lengths;
+    std::vector<int32_t> _country_research_weights_bp;
+    std::vector<uint8_t> _country_research_auto_purchase;
+    std::vector<int64_t> _country_research_daily_budgets;
+    std::vector<int64_t> _country_research_deferred_points;
+    std::vector<int64_t> _country_research_purchased_total;
+    std::vector<int64_t> _country_research_consumed_total;
+    std::vector<int64_t> _country_research_progress_total;
+    std::vector<int64_t> _country_research_completed_total;
+    int64_t _last_research_day = -1;
     std::vector<Command> _pending_commands;
     std::deque<Event> _events;
     CommandBatchState _command_batch;

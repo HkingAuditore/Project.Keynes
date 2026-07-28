@@ -23,6 +23,7 @@ extends Camera2D
 
 # 当用户"点按"（而非拖拽/捏合）地图时发出，参数为世界坐标。由 main.gd 连接做选格。
 signal tile_tapped(world_pos: Vector2)
+signal zoom_changed(value: float)
 
 @export var zoom_min: float = 0.25
 @export var zoom_max: float = 3.0
@@ -51,6 +52,7 @@ var _horizontal_wrap_period_x: float = 0.0
 # ── 平滑缩放状态 ──
 var _target_zoom: Vector2 = Vector2.ONE
 var _zoom_anchor_screen: Vector2 = Vector2.ZERO
+var _last_emitted_zoom: float = -1.0
 
 # ── 鼠标/单指平移与点按状态 ──
 var _pan_active: bool = false          # 是否正在用鼠标按键拖拽平移
@@ -85,6 +87,7 @@ func _ready() -> void:
 	_target_zoom = zoom
 	_prev_position = position
 	set_process(true)
+	_emit_zoom_changed_if_needed()
 
 func set_world_bounds(bounds: Rect2) -> void:
 	_world_bounds = bounds
@@ -128,6 +131,7 @@ func fit_to_viewport(
 	var screen_offset := area_center - vp_center
 	position = world_center - screen_offset / s
 	_clamp_position()
+	_emit_zoom_changed_if_needed()
 
 # 在不改变缩放的前提下，若目标点被 UI（safe_area 之外）遮挡，则平滑平移把它移到可见区中心。
 # 已经可见时不动相机，避免每次选格都跳动。
@@ -384,6 +388,15 @@ func _apply_zoom_anchored(new_scalar: float, screen_anchor: Vector2) -> void:
 	var world_after := position + (screen_anchor - vp_center) / new_scalar
 	position += world_before - world_after
 	_clamp_position()
+	_emit_zoom_changed_if_needed()
+
+
+func _emit_zoom_changed_if_needed() -> void:
+	var value := zoom.x
+	if _last_emitted_zoom >= 0.0 and absf(value - _last_emitted_zoom) < 0.001:
+		return
+	_last_emitted_zoom = value
+	zoom_changed.emit(value)
 
 # ───────────────────────────── 坐标 / 工具 ─────────────────────────────
 

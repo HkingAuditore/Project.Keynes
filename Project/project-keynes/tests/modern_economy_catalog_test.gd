@@ -27,19 +27,19 @@ func _audit(catalog: Dictionary) -> void:
 	var professions: PackedStringArray = catalog.profession_ids
 	var needs: PackedStringArray = catalog.need_ids
 	var resources: PackedStringArray = catalog.building_resource_ids
-	_expect("simplified catalog has 120 goods", goods.size() == 120)
-	_expect("bounded catalog has 261 production methods", buildings.size() == 261)
-	_expect("33 labor-relation professions", professions.size() == 33)
-	_expect("18 differentiated household needs", needs.size() == 18)
+	_expect("technology economy catalog has 121 goods", goods.size() == 121)
+	_expect("technology economy has 272 production methods", buildings.size() == 272)
+	_expect("41 labor and research professions", professions.size() == 41)
+	_expect("17 differentiated household needs", needs.size() == 17)
 	_expect("31 registered natural resources", ResourceRegistryScript.count() == 31)
 	_expect("building catalog references 31 distinct natural resources", resources.size() == 31)
 	for relation_profession in ["enslaved_laborer", "serf", "tenant_farmer",
 			"indentured_laborer", "apprentice", "journeyman", "manager", "researcher"]:
 		_expect("labor relation profession exists: %s" % relation_profession,
 			professions.find(relation_profession) >= 0)
-	for retired_profession in ["knapper", "potter", "bronze_founder", "mason", "scribe",
+	for retired_profession in ["knapper", "potter", "bronze_founder", "mason",
 			"printer", "shipwright", "navigator", "steam_engineer", "electrical_engineer",
-			"nuclear_engineer", "software_developer", "ai_researcher",
+			"nuclear_engineer", "software_developer",
 			"space_systems_engineer", "astronaut"]:
 		_expect("over-specialized profession retired: %s" % retired_profession,
 			professions.find(retired_profession) < 0)
@@ -71,11 +71,11 @@ func _audit(catalog: Dictionary) -> void:
 			goods.find(retired_chain_good) < 0)
 	for terminal_good in ["prepared_staples", "fine_clothing", "fine_furniture"]:
 		_expect("new terminal good exists: %s" % terminal_good, goods.find(terminal_good) >= 0)
-	_expect("ten consumption prototypes compile",
+	_expect("eleven consumption prototypes compile",
 		catalog.plan_ids == PackedStringArray(["agrarian_household", "artisan_household",
 			"extractive_household", "hunter_household", "industrial_worker_household",
 			"merchant_household",
-			"owner_household", "plan_unemployed", "survival_household",
+			"owner_household", "plan_unemployed", "scholarly_household", "survival_household",
 			"technical_household"]))
 	_expect("occupational and status needs compile",
 		needs.has("work_equipment") and needs.has("status_goods"))
@@ -673,7 +673,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"refined_fuel", "horses", "automobiles", "radio_equipment", "telecom_equipment",
 		"manuscripts", "printed_materials", "computers", "beverages", "household_appliances",
 		"autonomous_systems", "chipped_stone_tools", "bronze_tools", "tools", "precision_tools",
-		"fine_clothing", "fine_furniture", "jewelry", "spices",
+		"fine_clothing", "fine_furniture", "jewelry", "spices", "technology_points",
 	])
 	expected_household_goods.sort()
 	_expect("direct household good coverage is exact",
@@ -704,6 +704,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"extractive_household": core_needs + ["transport", "work_equipment", "quality_of_life"],
 		"industrial_worker_household": core_needs + ["transport", "work_equipment", "quality_of_life"],
 		"artisan_household": core_needs + ["education_culture", "work_equipment", "luxury", "quality_of_life"],
+		"scholarly_household": core_needs + ["education_culture", "work_equipment", "luxury"],
 		"technical_household": core_needs + ["transport", "communication", "education_culture",
 			"recreation", "durable_goods", "work_equipment", "luxury"],
 		"merchant_household": core_needs + ["transport", "communication", "education_culture",
@@ -716,7 +717,8 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"survival_household": [80, 35, 0], "hunter_household": [85, 40, 0],
 		"agrarian_household": [95, 75, 0],
 		"extractive_household": [105, 85, 0], "industrial_worker_household": [100, 85, 0],
-		"artisan_household": [105, 105, 80], "technical_household": [110, 125, 120],
+		"artisan_household": [105, 105, 80], "scholarly_household": [105, 105, 80],
+		"technical_household": [110, 125, 120],
 		"merchant_household": [115, 150, 180], "owner_household": [120, 175, 240],
 	}
 	var need_policies := {
@@ -810,7 +812,8 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 				for component_idx in range(component_begin, component_end):
 					var good_id := String(goods[household_good_indices[component_idx]])
 					signature.append(good_id)
-					exact = exact and component_quantities[component_idx] == 1000
+					exact = exact and component_quantities[component_idx] == (
+						100 if good_id == "technology_points" else 1000)
 					var uses: Array = good_uses.get(good_id, [])
 					if not uses.has(need_id):
 						uses.append(need_id)
@@ -818,6 +821,11 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 				actual_variants.append("+".join(signature))
 			actual_variants.sort()
 			var expected_need_variants := PackedStringArray(expected_variants.get(need_id, []))
+			if plan_id == "technical_household" and need_id == "education_culture":
+				expected_need_variants = PackedStringArray([
+					"manuscripts+technology_points",
+					"printed_materials+technology_points",
+					"computers+technology_points"])
 			expected_need_variants.sort()
 			exact = exact and actual_variants == expected_need_variants
 		for good_id in good_uses:
@@ -846,7 +854,10 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"extractive_household": ["miner", "petroleum_worker"],
 		"industrial_worker_household": ["worker", "construction_worker", "industrial_worker", "transport_worker"],
 		"artisan_household": ["artisan", "metallurgist", "guild_master", "journeyman"],
-		"technical_household": ["machinist", "technician", "engineer", "chemist", "electrician", "manager", "researcher"],
+		"scholarly_household": ["lorekeeper", "scribe", "scholar", "natural_philosopher"],
+		"technical_household": ["machinist", "technician", "engineer", "chemist", "electrician",
+			"manager", "researcher", "scientist", "research_scientist", "data_scientist",
+			"ai_researcher"],
 	}
 	var professions: PackedStringArray = catalog.profession_ids
 	var ethnicity_count: int = (catalog.ethnicity_ids as PackedStringArray).size()

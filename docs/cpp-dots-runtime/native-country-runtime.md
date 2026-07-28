@@ -1,4 +1,4 @@
-# Native Country Runtime（PKCN v2）
+# Native Country Runtime（PKCN v3）
 
 `NativeCountryRuntime` 是国家身份、领土、国家科技与国家国库的唯一可变权威。它与
 `NativeEconomyRuntime` 同级，由 `DCWorldExt` 组合持有；GDScript 不维护第二份国家状态。
@@ -65,3 +65,6 @@ GM 的“点击地块接管领土”不新增 opcode：`WorldRuntimeHost` 在会
 注意 Inspector 的国家摘要受迷雾门控：`FOG_UNEXPLORED` 的格子不展示任何国家信息，
 即使 `get_country_cell_summary()` 能返回。详见
 [视野迷雾与国界线](./vision-fog-and-borders.md)。
+> 科技树扩展说明见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。PKCN v3
+> 新增 discovery/completed/pending bitset、稀疏研究进度、四领域队列与权重、采购政策、暂缓
+> 科技值和研究审计计数；旧版本明确拒绝恢复。

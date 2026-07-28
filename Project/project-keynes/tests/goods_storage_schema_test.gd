@@ -32,7 +32,7 @@ func _run() -> void:
 		(catalog.good_ids as PackedStringArray).has("grain") and
 		(catalog.good_ids as PackedStringArray).has("meat"))
 	_expect("merchant profession compiles", (catalog.profession_ids as PackedStringArray).has("merchant"))
-	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 18 and
+	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 17 and
 		(catalog.need_ids as PackedStringArray).has("staple_food") and
 		(catalog.need_ids as PackedStringArray).has("healthcare") and
 		(catalog.need_ids as PackedStringArray).has("work_equipment") and
@@ -358,7 +358,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v20 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 20)
+	_expect("v21 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 21)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
@@ -376,7 +376,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var legacy_result: Dictionary = legacy_target.feed_economy_restore_chunk(legacy_header)
 	_expect("countryless PKEC v9 is rejected precisely",
 		not bool(legacy_result.get("ok", true)) and
-		String(legacy_result.get("reason", "")) == "legacy_economy_save_unsupported")
+		String(legacy_result.get("reason", "")) == "legacy_technology_tree_save_unsupported")
 	var mismatch_target: Object = _new_ext(1, 0.1)
 	var mismatch_catalog := catalog.duplicate(true)
 	mismatch_catalog["catalog_hash"] = int(catalog.catalog_hash) + 1

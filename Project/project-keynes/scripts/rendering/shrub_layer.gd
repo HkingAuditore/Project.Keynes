@@ -63,6 +63,8 @@ uniform float snow_white_strength = 0.90;
 uniform float stress_hide_strength = 0.78;
 uniform float snow_hide_strength = 0.62;
 uniform float disappear_alpha_threshold = 0.08;
+uniform float lod_alpha = 1.0;
+uniform bool lod_debug_view = false;
 uniform float vitality_dead_threshold = 0.12;
 uniform float vitality_healthy_threshold = 0.72;
 uniform float vitality_alpha_power = 1.10;
@@ -605,9 +607,12 @@ void fragment() {
 	if (horizon_debug_mode) {
 		rgb = horizon_debug_rgb;
 	}
-	float alpha = COLOR.a * shrub_presence_v;
+	float alpha = COLOR.a * shrub_presence_v * lod_alpha;
 	alpha *= 1.0 - snow * snow_alpha_loss_strength;
 	alpha = (alpha < disappear_alpha_threshold) ? 0.0 : alpha;
+	if (lod_debug_view) {
+		rgb = vec3(lod_alpha);
+	}
 	COLOR = vec4(rgb, alpha);
 }
 """
@@ -630,6 +635,7 @@ uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
+uniform float lod_alpha = 1.0;
 
 uniform float season_phase = 1.0;
 uniform float day_phase = 0.25;
@@ -728,7 +734,7 @@ void vertex() {
 
 	shadow_r = length(p);   // 网格本身 |p|<=1，传给片元做径向柔边
 	// 永昼低角度光会令密集实例阴影大面积重叠；减弱 alpha，但保留方向与移动感。
-	shadow_alpha_v = shadow_strength * ed.local_day * clamp(presence, 0.0, 1.0);
+	shadow_alpha_v = shadow_strength * lod_alpha * ed.local_day * clamp(presence, 0.0, 1.0);
 #endif
 }
 
@@ -784,6 +790,7 @@ var _chunk_size_cells: int = 8
 var _chunk_nodes: Dictionary = {}
 var _chunk_wrap_nodes: Dictionary = {}
 var _chunk_instance_counts: Dictionary = {}
+var _chunk_far_instance_counts: Dictionary = {}
 
 var _mmi: MultiMeshInstance2D = null
 var _multimesh: MultiMesh = null
@@ -807,6 +814,13 @@ var _shadow_chunk_wrap_nodes: Dictionary = {}
 var _single_shadow_wrap_nodes: Array[MultiMeshInstance2D] = []
 var _shadow_built_total: int = 0   # 单节点回退模式：上次镜像的实例数（用于按需重建）
 var _shadow_fraction: float = 1.0
+var _camera_zoom: float = 1.0
+var _camera_zoom_initialized: bool = false
+var _camera_lod_hidden: bool = false
+var _lod_alpha: float = 1.0
+var _lod_zoom_t: float = 1.0
+var _lod_far_visible_fraction: float = 1.0
+var _zoom_visible_fraction: float = 1.0
 
 var _instance_cell_indices: PackedInt32Array = PackedInt32Array()
 var _instance_positions: PackedVector2Array = PackedVector2Array()
@@ -817,6 +831,7 @@ var _instance_variants: PackedFloat32Array = PackedFloat32Array()
 var _instance_scores: PackedFloat32Array = PackedFloat32Array()
 var _instance_cells: Array = []
 var _instance_count: int = 0
+var _far_instance_count: int = 0
 
 
 func _ready() -> void:
@@ -847,6 +862,7 @@ func clear() -> void:
 	_instance_scores = PackedFloat32Array()
 	_instance_cells.clear()
 	_instance_count = 0
+	_far_instance_count = 0
 	_cell_instance_lookup.clear()
 	_clear_chunk_nodes()
 	if _multimesh != null:
@@ -991,6 +1007,97 @@ func set_visual_quality(q: int) -> void:
 		_rebuild_instances()
 
 
+func set_camera_zoom(value: float) -> void:
+	var next_zoom := clampf(value, 0.01, 16.0)
+	if _camera_zoom_initialized and absf(next_zoom - _camera_zoom) < 0.001:
+		return
+	_camera_zoom = next_zoom
+	_camera_zoom_initialized = true
+	var thresholds := _resolved_lod_thresholds()
+	var start := thresholds.x
+	var finish := maxf(thresholds.y, start + 0.001)
+	var lod_t := smoothstep(start, finish, _camera_zoom)
+	var near_multiplier := _resolved_lod_near_density_multiplier()
+	_lod_zoom_t = lod_t
+	_lod_far_visible_fraction = 1.0 / maxf(near_multiplier, 1.0)
+	_zoom_visible_fraction = lerpf(_lod_far_visible_fraction, 1.0, lod_t)
+	# 远景是修改前的完整视觉基准，不再整体压低 alpha；缩放只增加实例数量。
+	_lod_alpha = 1.0
+	if _material != null:
+		_material.set_shader_parameter("lod_alpha", _lod_alpha)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("lod_alpha", _lod_alpha)
+
+	# Camera LOD never hides the whole layer. The original profile count remains
+	# the far-view baseline; pre-generated surplus instances are revealed nearby.
+	_camera_lod_hidden = false
+	apply_visible_instance_fraction(_shadow_fraction)
+
+
+func set_lod_debug_view(enabled: bool) -> void:
+	if _material != null:
+		_material.set_shader_parameter("lod_debug_view", enabled)
+
+
+func _resolved_lod_thresholds() -> Vector2:
+	var cfg := _profile()
+	var configured_start := float(cfg.get("lod_fade_start_zoom"))
+	var configured_end := float(cfg.get("lod_fade_end_zoom"))
+	if configured_start >= 0.0 and configured_end > configured_start:
+		return Vector2(configured_start, configured_end)
+	if _spawn_domain() == SPAWN_WATER:
+		return Vector2(1.20, 1.70)
+	match _detail_kind():
+		DETAIL_TREE, DETAIL_CONIFER, DETAIL_PALM, DETAIL_DEAD_SNAG:
+			return Vector2(0.45, 0.80)
+		DETAIL_SHRUB, DETAIL_CACTUS, DETAIL_REED:
+			return Vector2(0.75, 1.15)
+		DETAIL_ROCK:
+			return Vector2(0.90, 1.30)
+		_:
+			return Vector2(1.20, 1.70)
+
+
+func _resolved_lod_near_density_multiplier() -> float:
+	var cfg := _profile()
+	var configured = cfg.get("lod_near_density_multiplier")
+	if configured is float or configured is int:
+		var configured_multiplier := float(configured)
+		if configured_multiplier >= 1.0:
+			return clampf(configured_multiplier, 1.0, 3.0)
+	if _spawn_domain() == SPAWN_WATER:
+		return 1.30
+	match _detail_kind():
+		DETAIL_TREE, DETAIL_CONIFER, DETAIL_PALM, DETAIL_DEAD_SNAG:
+			return 1.75
+		DETAIL_SHRUB, DETAIL_CACTUS, DETAIL_REED:
+			return 1.60
+		DETAIL_ROCK:
+			return 1.40
+		_:
+			return 1.35
+
+
+func _effective_visible_instance_fraction() -> float:
+	if _instance_count <= 0:
+		return 0.0
+	return float(_lod_visible_count(_instance_count, _far_instance_count)) / float(_instance_count)
+
+
+func _lod_visible_count(total: int, far_count: int) -> int:
+	if total <= 0:
+		return 0
+	var near_budget_count := clampi(int(floor(float(total) * _shadow_fraction)), 0, total)
+	# The renderer-wide budget remains authoritative. When it is tighter than the
+	# far baseline, the stratified prefix still degrades evenly across occupied cells.
+	var budgeted_far_count := mini(clampi(far_count, 0, total), near_budget_count)
+	return clampi(
+		int(round(lerpf(float(budgeted_far_count), float(near_budget_count), _lod_zoom_t))),
+		0,
+		total
+	)
+
+
 func refresh_for_succession(_indices: PackedInt32Array) -> void:
 	if _map == null or _indices.is_empty():
 		return
@@ -1043,7 +1150,7 @@ func refresh_for_succession(_indices: PackedInt32Array) -> void:
 	_last_incremental_cells = cells_done
 	_last_incremental_missing_slots = missing_slots
 	_last_incremental_dropped_instances = dropped
-	visible = _profile().enabled and _instance_count > 0
+	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
 	_sync_single_wrap_nodes()
 	_sync_single_shadow()
 
@@ -1130,7 +1237,7 @@ func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
 		"rotation_mode": _rotation_mode(),
 		"random_rotation_strength": _random_rotation_strength(),
 		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
-		"spawn_radius_factor": cfg.spawn_radius_factor,
+		"spawn_radius_factor": _effective_spawn_radius_factor(),
 		"world_noise_warp_strength": cfg.world_noise_warp_strength,
 		"patch_frequency": cfg.patch_frequency,
 		"patch_cutoff": cfg.patch_cutoff,
@@ -1231,7 +1338,7 @@ func _apply_native_delta_payload(
 	_last_incremental_cells = cells_done
 	_last_incremental_missing_slots = missing_slots
 	_last_incremental_dropped_instances = dropped
-	visible = _profile().enabled and _instance_count > 0
+	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
 	_sync_single_wrap_nodes()
 	_sync_single_shadow()
 
@@ -1386,7 +1493,7 @@ func _build_native_delta_common_knobs() -> Dictionary:
 		"vegetation_weight_overrides": cfg.vegetation_weight_overrides,
 		"landform_weight_overrides": cfg.landform_weight_overrides,
 		"cover_weight_overrides": cfg.cover_weight_overrides,
-		"spawn_radius_factor": cfg.spawn_radius_factor,
+		"spawn_radius_factor": _effective_spawn_radius_factor(),
 		"world_noise_warp_strength": cfg.world_noise_warp_strength,
 		"patch_frequency": cfg.patch_frequency,
 		"patch_cutoff": cfg.patch_cutoff,
@@ -1513,8 +1620,7 @@ func instance_count() -> int:
 
 
 func apply_visible_instance_fraction(fraction: float) -> void:
-	var f := clampf(fraction, 0.0, 1.0)
-	_shadow_fraction = f
+	_shadow_fraction = clampf(fraction, 0.0, 1.0)
 	if _chunked_multimesh_enabled and not _chunk_nodes.is_empty():
 		var any_visible := false
 		var show_shadow := _shadow_should_render()
@@ -1523,9 +1629,10 @@ func apply_visible_instance_fraction(fraction: float) -> void:
 			if node == null or not is_instance_valid(node) or node.multimesh == null:
 				continue
 			var count := int(_chunk_instance_counts.get(chunk_id, 0))
-			var next_visible := clampi(int(floor(float(count) * f)), 0, count)
+			var far_count := int(_chunk_far_instance_counts.get(chunk_id, count))
+			var next_visible := _lod_visible_count(count, far_count)
 			node.multimesh.visible_instance_count = next_visible
-			node.visible = _profile().enabled and next_visible > 0
+			node.visible = _profile().enabled and not _camera_lod_hidden and next_visible > 0
 			_sync_chunk_wrap_nodes(int(chunk_id))
 			any_visible = any_visible or next_visible > 0
 			# 逐帧 LOD 内联同步对应 shadow chunk 的可见数（仅 visible_instance_count，无 buffer 操作）
@@ -1534,7 +1641,7 @@ func apply_visible_instance_fraction(fraction: float) -> void:
 				snode.multimesh.visible_instance_count = clampi(next_visible, 0, snode.multimesh.instance_count)
 				snode.visible = show_shadow and node.visible and next_visible > 0
 				_sync_shadow_chunk_wrap_nodes(int(chunk_id))
-		visible = _profile().enabled and any_visible
+		visible = _profile().enabled and not _camera_lod_hidden and any_visible
 		if _shadow_mmi != null:
 			_shadow_mmi.visible = false
 		return
@@ -1542,9 +1649,9 @@ func apply_visible_instance_fraction(fraction: float) -> void:
 		visible = false
 		_sync_single_shadow()
 		return
-	var next_visible := clampi(int(floor(float(_instance_count) * f)), 0, _instance_count)
+	var next_visible := _lod_visible_count(_instance_count, _far_instance_count)
 	_multimesh.visible_instance_count = next_visible
-	visible = _profile().enabled and next_visible > 0
+	visible = _profile().enabled and not _camera_lod_hidden and next_visible > 0
 	_sync_single_wrap_nodes()
 	_sync_single_shadow()
 
@@ -1647,6 +1754,7 @@ func _clear_chunk_nodes() -> void:
 	_chunk_nodes.clear()
 	_clear_wrap_node_groups(_chunk_wrap_nodes)
 	_chunk_instance_counts.clear()
+	_chunk_far_instance_counts.clear()
 	for snode in _shadow_chunk_nodes.values():
 		if snode != null and is_instance_valid(snode):
 			snode.queue_free()
@@ -1753,7 +1861,7 @@ func _ensure_shadow_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
 # 把某植株 chunk 的 buffer/count 镜像到对应 shadow chunk（仅该 chunk，O(chunk)）。
 # 投影方向/长度/强度/尺寸由 shadow 顶点着色器按 TOD 太阳方位实时算，故这里只需共享 transform+uv。
 func _mirror_shadow_chunk(chunk_id: int, buffer: PackedFloat32Array, inst: int) -> void:
-	if not _shadow_should_render():
+	if not _shadow_resources_enabled():
 		var ex: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
 		if ex != null and is_instance_valid(ex):
 			ex.visible = false
@@ -1764,16 +1872,17 @@ func _mirror_shadow_chunk(chunk_id: int, buffer: PackedFloat32Array, inst: int) 
 	smm.instance_count = inst
 	if inst > 0:
 		smm.buffer = buffer
-		smm.visible_instance_count = inst
+		var far_count := int(_chunk_far_instance_counts.get(chunk_id, inst))
+		smm.visible_instance_count = _lod_visible_count(inst, far_count)
 	else:
 		smm.visible_instance_count = 0
-	snode.visible = visible and inst > 0
+	snode.visible = _shadow_should_render() and visible and smm.visible_instance_count > 0
 	_sync_shadow_chunk_wrap_nodes(chunk_id)
 
 
 # 门控/全量重建时：把所有植株 chunk 重新镜像到 shadow chunk；门控关则全部隐藏。
 func _refresh_all_shadow_chunks() -> void:
-	if _shadow_should_render():
+	if _shadow_resources_enabled():
 		for cid in _shadow_chunk_nodes.keys():
 			if not _chunk_nodes.has(cid):
 				var orphan: MultiMeshInstance2D = _shadow_chunk_nodes[cid]
@@ -1802,7 +1911,7 @@ func _refresh_all_shadow_chunks() -> void:
 func _sync_single_shadow(force_rebuild: bool = false) -> void:
 	if _shadow_mmi == null or _shadow_multimesh == null:
 		return
-	if not _shadow_should_render() or not visible:
+	if not _shadow_resources_enabled():
 		_shadow_multimesh.visible_instance_count = 0
 		_shadow_mmi.visible = false
 		_sync_single_shadow_wrap_nodes()
@@ -1815,12 +1924,21 @@ func _sync_single_shadow(force_rebuild: bool = false) -> void:
 		else:
 			_shadow_multimesh.instance_count = 0
 		_shadow_built_total = total
+	if not _shadow_should_render() or not visible:
+		_shadow_multimesh.visible_instance_count = 0
+		_shadow_mmi.visible = false
+		_sync_single_shadow_wrap_nodes()
+		return
 	if _shadow_built_total <= 0:
 		_shadow_multimesh.visible_instance_count = 0
 		_shadow_mmi.visible = false
 		_sync_single_shadow_wrap_nodes()
 		return
-	var vis := clampi(int(floor(float(_shadow_built_total) * _shadow_fraction)), 0, _shadow_built_total)
+	var combined_fraction := _effective_visible_instance_fraction()
+	var vis := clampi(
+		int(floor(float(_shadow_built_total) * combined_fraction)),
+		0,
+		_shadow_built_total)
 	_shadow_multimesh.visible_instance_count = vis
 	_shadow_mmi.visible = vis > 0
 	_sync_single_shadow_wrap_nodes()
@@ -1868,23 +1986,36 @@ func _archetype_casts_shadow() -> bool:
 			return false
 
 
-func _shadow_should_render() -> bool:
+func _shadow_resources_enabled() -> bool:
 	var cfg := _profile()
 	if not cfg.enabled:
 		return false
 	var on = cfg.get("cast_shadow_enabled")
 	if on != null and not bool(on):
 		return false
-	# 性能分档：桌面 q>=1 开启；移动端默认关（除非 profile 显式允许且 tier>=2）。
+	# Performance tiers: desktop LOW off, MID/HIGH zoom gated; mobile only HIGH.
 	if OS.has_feature("mobile"):
-		var mob = cfg.get("cast_shadow_on_mobile")
-		if mob == null or not bool(mob):
-			return false
 		if _active_quality_tier() < 2:
 			return false
 	elif _active_quality_tier() < 1:
 		return false
 	return _archetype_casts_shadow()
+
+
+func _shadow_should_render() -> bool:
+	if not _shadow_resources_enabled() or _camera_lod_hidden:
+		return false
+	var cfg := _profile()
+	var configured_min = cfg.get("shadow_min_zoom")
+	var min_zoom := float(configured_min) if configured_min is float or configured_min is int else -1.0
+	if min_zoom < 0.0:
+		if OS.has_feature("mobile"):
+			min_zoom = 2.00
+		else:
+			min_zoom = 1.40 if _active_quality_tier() >= 2 else 1.80
+	if _camera_zoom < min_zoom:
+		return false
+	return true
 
 
 const _SHADOW_BUFFER_STRIDE := 16  # 2D transform(8) + color(4) + custom(4)
@@ -1946,7 +2077,157 @@ func _ensure_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
 	return node
 
 
-func _prepare_chunk_multimesh(chunk_id: int, inst: int) -> MultiMesh:
+func _lod_order_sources(
+		src_indices: Array,
+		cell_indices: PackedInt32Array,
+		buffer: PackedFloat32Array) -> Dictionary:
+	# MultiMesh.visible_instance_count only exposes a prefix. Build that prefix as a
+	# stable, cell-stratified far field, then append per-cell near-detail layers.
+	# This prevents storage order (or nth_element cap order) from making whole hexes
+	# disappear while adjacent hexes retain every instance.
+	var by_cell := {}
+	for raw_src in src_indices:
+		var src := int(raw_src)
+		if src < 0 or src >= cell_indices.size():
+			continue
+		var cell_idx := int(cell_indices[src])
+		var group: Array = by_cell.get(cell_idx, [])
+		group.append(src)
+		by_cell[cell_idx] = group
+	var cell_ids: Array = by_cell.keys()
+	cell_ids.sort()
+	for raw_cell_id in cell_ids:
+		var group: Array = by_cell[raw_cell_id]
+		group.sort_custom(func(a, b) -> bool:
+			var ai := int(a) * 16 + 14
+			var bi := int(b) * 16 + 14
+			var av := buffer[ai] if ai >= 0 and ai < buffer.size() else float(a)
+			var bv := buffer[bi] if bi >= 0 and bi < buffer.size() else float(b)
+			return av < bv
+		)
+		# East/west wrap copies share the exact same seed. Keep them in one atomic
+		# cluster so a LOD prefix never shows the source without its seam copy.
+		var clusters: Array = []
+		var last_seed := -2.0
+		for raw_src in group:
+			var src := int(raw_src)
+			var seed_idx := src * 16 + 14
+			var seed := buffer[seed_idx] if seed_idx >= 0 and seed_idx < buffer.size() else float(src)
+			if clusters.is_empty() or absf(seed - last_seed) > 0.000001:
+				clusters.append([])
+			var cluster: Array = clusters[clusters.size() - 1]
+			cluster.append(src)
+			clusters[clusters.size() - 1] = cluster
+			last_seed = seed
+		by_cell[raw_cell_id] = clusters
+
+	var multiplier := maxf(_resolved_lod_near_density_multiplier(), 1.0)
+	var far_counts := {}
+	var max_far := 0
+	var max_total := 0
+	for raw_cell_id in cell_ids:
+		var clusters: Array = by_cell[raw_cell_id]
+		var far_count := mini(clusters.size(), maxi(1, int(ceil(float(clusters.size()) / multiplier))))
+		far_counts[raw_cell_id] = far_count
+		max_far = maxi(max_far, far_count)
+		max_total = maxi(max_total, clusters.size())
+
+	var ordered: Array = []
+	# Round-robin by cell: under an emergency global budget, one representative
+	# survives in as many occupied cells as possible before second/third instances.
+	for rank in range(max_far):
+		for raw_cell_id in cell_ids:
+			var clusters: Array = by_cell[raw_cell_id]
+			if rank < int(far_counts[raw_cell_id]):
+				var cluster: Array = clusters[rank]
+				for raw_src in cluster:
+					ordered.append(int(raw_src))
+	var far_total := ordered.size()
+	for rank in range(max_total):
+		for raw_cell_id in cell_ids:
+			var clusters: Array = by_cell[raw_cell_id]
+			var far_count := int(far_counts[raw_cell_id])
+			var local_idx := far_count + rank
+			if local_idx < clusters.size():
+				var cluster: Array = clusters[local_idx]
+				for raw_src in cluster:
+					ordered.append(int(raw_src))
+	return {
+		"order": ordered,
+		"far_count": far_total,
+	}
+
+
+func _lod_reorder_native_payload(
+		buffer: PackedFloat32Array,
+		cell_indices: PackedInt32Array,
+		inst: int) -> Dictionary:
+	var src_indices: Array = []
+	for i in range(inst):
+		src_indices.append(i)
+	var lod_order := _lod_order_sources(src_indices, cell_indices, buffer)
+	var ordered_sources: Array = lod_order.get("order", [])
+	inst = mini(inst, ordered_sources.size())
+	var ordered_buffer := PackedFloat32Array()
+	var ordered_cells := PackedInt32Array()
+	ordered_buffer.resize(inst * 16)
+	ordered_cells.resize(inst)
+	for dst in range(inst):
+		var src := int(ordered_sources[dst])
+		ordered_cells[dst] = cell_indices[src]
+		for k in range(16):
+			ordered_buffer[dst * 16 + k] = buffer[src * 16 + k]
+	return {
+		"buffer": ordered_buffer,
+		"cell_indices": ordered_cells,
+		"instance_count": inst,
+		"far_count": mini(int(lod_order.get("far_count", inst)), inst),
+	}
+
+
+func _reorder_generated_instances_for_lod() -> void:
+	var n := _instance_cell_indices.size()
+	if n <= 0:
+		_far_instance_count = 0
+		return
+	var src_indices: Array = []
+	var seed_buffer := PackedFloat32Array()
+	seed_buffer.resize(n * 16)
+	for i in range(n):
+		src_indices.append(i)
+		seed_buffer[i * 16 + 14] = _instance_seeds[i]
+	var lod_order := _lod_order_sources(src_indices, _instance_cell_indices, seed_buffer)
+	var order: Array = lod_order.get("order", [])
+	var next_cell_indices := PackedInt32Array()
+	var next_positions := PackedVector2Array()
+	var next_rotations := PackedFloat32Array()
+	var next_sizes := PackedFloat32Array()
+	var next_seeds := PackedFloat32Array()
+	var next_variants := PackedFloat32Array()
+	var next_scores := PackedFloat32Array()
+	var next_cells: Array = []
+	for raw_src in order:
+		var src := int(raw_src)
+		next_cell_indices.append(_instance_cell_indices[src])
+		next_positions.append(_instance_positions[src])
+		next_rotations.append(_instance_rotations[src])
+		next_sizes.append(_instance_sizes[src])
+		next_seeds.append(_instance_seeds[src])
+		next_variants.append(_instance_variants[src])
+		next_scores.append(_instance_scores[src])
+		next_cells.append(_instance_cells[src])
+	_instance_cell_indices = next_cell_indices
+	_instance_positions = next_positions
+	_instance_rotations = next_rotations
+	_instance_sizes = next_sizes
+	_instance_seeds = next_seeds
+	_instance_variants = next_variants
+	_instance_scores = next_scores
+	_instance_cells = next_cells
+	_far_instance_count = mini(int(lod_order.get("far_count", n)), n)
+
+
+func _prepare_chunk_multimesh(chunk_id: int, inst: int, far_count: int = -1) -> MultiMesh:
 	var node := _ensure_chunk_node(chunk_id)
 	var mm := node.multimesh
 	if mm == null:
@@ -1957,20 +2238,30 @@ func _prepare_chunk_multimesh(chunk_id: int, inst: int) -> MultiMesh:
 		node.multimesh = mm
 	mm.mesh = _cached_detail_mesh()
 	mm.instance_count = inst
-	mm.visible_instance_count = inst
-	node.visible = _profile().enabled and inst > 0
 	_chunk_instance_counts[chunk_id] = inst
+	_chunk_far_instance_counts[chunk_id] = clampi(far_count if far_count >= 0 else inst, 0, inst)
+	mm.visible_instance_count = _lod_visible_count(inst, int(_chunk_far_instance_counts[chunk_id]))
+	node.visible = _profile().enabled and not _camera_lod_hidden and mm.visible_instance_count > 0
 	_sync_chunk_wrap_nodes(chunk_id)
 	return mm
 
 
-func _apply_chunk_payload(chunk_id: int, buffer: PackedFloat32Array, src_indices: Array, inst: int) -> void:
-	var mm := _prepare_chunk_multimesh(chunk_id, inst)
+func _apply_chunk_payload(
+		chunk_id: int,
+		buffer: PackedFloat32Array,
+		src_indices: Array,
+		cell_indices: PackedInt32Array,
+		inst: int) -> void:
+	var lod_order := _lod_order_sources(src_indices, cell_indices, buffer)
+	var ordered_sources: Array = lod_order.get("order", [])
+	inst = mini(inst, ordered_sources.size())
+	var far_count := mini(int(lod_order.get("far_count", inst)), inst)
+	var mm := _prepare_chunk_multimesh(chunk_id, inst, far_count)
 	if inst > 0:
 		var chunk_buffer := PackedFloat32Array()
 		chunk_buffer.resize(inst * 16)
 		for dst in range(inst):
-			var src := int(src_indices[dst])
+			var src := int(ordered_sources[dst])
 			var src_b := src * 16
 			var dst_b := dst * 16
 			for k in range(16):
@@ -1982,11 +2273,28 @@ func _apply_chunk_payload(chunk_id: int, buffer: PackedFloat32Array, src_indices
 		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
 
 
-func _apply_chunk_payload_direct(chunk_id: int, buffer: PackedFloat32Array, inst: int) -> void:
-	var mm := _prepare_chunk_multimesh(chunk_id, inst)
+func _apply_chunk_payload_direct(
+		chunk_id: int,
+		buffer: PackedFloat32Array,
+		cell_indices: PackedInt32Array,
+		inst: int) -> void:
+	var src_indices: Array = []
+	for i in range(inst):
+		src_indices.append(i)
+	var lod_order := _lod_order_sources(src_indices, cell_indices, buffer)
+	var ordered_sources: Array = lod_order.get("order", [])
+	inst = mini(inst, ordered_sources.size())
+	var far_count := mini(int(lod_order.get("far_count", inst)), inst)
+	var mm := _prepare_chunk_multimesh(chunk_id, inst, far_count)
 	if inst > 0:
-		mm.buffer = buffer
-		_mirror_shadow_chunk(chunk_id, buffer, inst)
+		var ordered_buffer := PackedFloat32Array()
+		ordered_buffer.resize(inst * 16)
+		for dst in range(inst):
+			var src := int(ordered_sources[dst])
+			for k in range(16):
+				ordered_buffer[dst * 16 + k] = buffer[src * 16 + k]
+		mm.buffer = ordered_buffer
+		_mirror_shadow_chunk(chunk_id, ordered_buffer, inst)
 	else:
 		mm.buffer = PackedFloat32Array()
 		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
@@ -2007,8 +2315,17 @@ func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: Packed
 		by_chunk[chunk_id] = srcs
 	for chunk_id in by_chunk.keys():
 		var src_indices: Array = by_chunk[chunk_id]
-		_apply_chunk_payload(int(chunk_id), buffer, src_indices, src_indices.size())
+		_apply_chunk_payload(int(chunk_id), buffer, src_indices, cell_indices, src_indices.size())
+	_refresh_instance_totals_from_chunks()
 	_last_dirty_chunks = by_chunk.size()
+
+
+func _refresh_instance_totals_from_chunks() -> void:
+	_instance_count = 0
+	_far_instance_count = 0
+	for chunk_id in _chunk_instance_counts.keys():
+		_instance_count += int(_chunk_instance_counts[chunk_id])
+		_far_instance_count += int(_chunk_far_instance_counts.get(chunk_id, _chunk_instance_counts[chunk_id]))
 
 
 func detail_chunk_plan_for_indices(indices: PackedInt32Array) -> Array:
@@ -2047,11 +2364,10 @@ func refresh_chunk_for_succession(chunk_id: int, chunk_cells: PackedInt32Array, 
 	if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
 		_last_rebuild_reason = "chunk_native_bad_payload"
 		return false
-	var old_count := int(_chunk_instance_counts.get(chunk_id, 0))
 	var apply_t0_us := Time.get_ticks_usec()
-	_apply_chunk_payload_direct(chunk_id, buffer, inst)
+	_apply_chunk_payload_direct(chunk_id, buffer, cell_indices, inst)
 	_last_native_apply_ms = float(Time.get_ticks_usec() - apply_t0_us) / 1000.0
-	_instance_count = maxi(0, _instance_count - old_count + inst)
+	_refresh_instance_totals_from_chunks()
 	_last_scatter_path = "gdext_event_chunk"
 	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	_last_candidate_count = int(res.get("candidate_count", 0))
@@ -2061,7 +2377,7 @@ func refresh_chunk_for_succession(chunk_id: int, chunk_cells: PackedInt32Array, 
 	_last_rebuild_reason = "chunked_event_update"
 	_last_incremental_cells = dirty_cell_count if dirty_cell_count > 0 else chunk_cells.size()
 	_last_dirty_chunks = 1
-	visible = _profile().enabled and _instance_count > 0
+	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
 	# 分块：shadow chunk 已在 _apply_chunk_payload_direct 内镜像（O(该chunk)）
 	return true
 
@@ -2133,16 +2449,14 @@ func _refresh_chunked_for_succession(indices: PackedInt32Array) -> bool:
 		var srcs: Array = []
 		for i in range(inst):
 			srcs.append(i)
-		_apply_chunk_payload(int(chunk_id), buffer, srcs, inst)
+		_apply_chunk_payload(int(chunk_id), buffer, srcs, cell_indices, inst)
 		total_inst += inst
 		total_candidates += int(res.get("candidate_count", 0))
 		total_wrap += int(res.get("wrap_edge_copy_count", 0))
 		total_sampled += int(res.get("sampled_cell_count", chunk_cells.size()))
 		total_active += int(res.get("active_cell_count", 0))
 		chunk_count += 1
-	_instance_count = 0
-	for v in _chunk_instance_counts.values():
-		_instance_count += int(v)
+	_refresh_instance_totals_from_chunks()
 	_last_scatter_path = "gdext_event_chunk"
 	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	_last_candidate_count = total_candidates
@@ -2152,7 +2466,7 @@ func _refresh_chunked_for_succession(indices: PackedInt32Array) -> bool:
 	_last_rebuild_reason = "chunked_event_update"
 	_last_incremental_cells = indices.size()
 	_last_dirty_chunks = chunk_count
-	visible = _profile().enabled and _instance_count > 0
+	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
 	# 分块：各脏 chunk 的 shadow 已在 _apply_chunk_payload 内镜像（O(脏chunk)）
 	return true
 
@@ -2186,6 +2500,7 @@ func _apply_profile_uniforms() -> void:
 	_material.set_shader_parameter("color_value_gain", cfg.color_value_gain)
 	_material.set_shader_parameter("snow_body_color_retention", cfg.snow_body_color_retention)
 	_material.set_shader_parameter("snow_alpha_loss_strength", cfg.snow_alpha_loss_strength)
+	_material.set_shader_parameter("lod_alpha", _lod_alpha)
 	# 点缀/地貌类 archetype 抑制植被气候改色（岩石不该变绿/变黄）。
 	var arch := _detail_kind()
 	var is_deco := _is_decoration_archetype(arch)
@@ -2260,7 +2575,11 @@ func _apply_profile_uniforms() -> void:
 	if _shadow_material != null:
 		var sc = cfg.get("shadow_color")
 		_shadow_material.set_shader_parameter("shadow_color", sc if sc is Color else Color(0.05, 0.06, 0.08, 1.0))
-		_shadow_material.set_shader_parameter("shadow_strength", _profile_float(&"shadow_strength", 0.28))
+		var shadow_strength := _profile_float(&"shadow_strength", 0.28)
+		if OS.has_feature("mobile") and _active_quality_tier() >= 2:
+			shadow_strength *= 0.5
+		_shadow_material.set_shader_parameter("shadow_strength", shadow_strength)
+		_shadow_material.set_shader_parameter("lod_alpha", _lod_alpha)
 		_shadow_material.set_shader_parameter("shadow_length_scale", _profile_float(&"shadow_length_scale", 1.0))
 		_shadow_material.set_shader_parameter("shadow_max_len", _profile_float(&"shadow_max_length", 1.4))
 		_shadow_material.set_shader_parameter("shadow_min_sun_elevation", _profile_float(&"shadow_min_sun_elevation", 0.16))
@@ -2390,6 +2709,7 @@ func _rebuild_instances() -> void:
 			_try_append_instance(cell, idx, key, attempt, suitability, state)
 
 	_apply_instance_cap()
+	_reorder_generated_instances_for_lod()
 	_instance_count = _instance_cell_indices.size()
 	_rebuild_cell_instance_lookup()
 	if _instance_count <= 0:
@@ -2403,7 +2723,7 @@ func _rebuild_instances() -> void:
 	_multimesh.use_custom_data = true
 	_multimesh.mesh = _cached_detail_mesh()
 	_multimesh.instance_count = _instance_count
-	_multimesh.visible_instance_count = _instance_count
+	_multimesh.visible_instance_count = _lod_visible_count(_instance_count, _far_instance_count)
 	_mmi.multimesh = _multimesh
 
 	for i in range(_instance_count):
@@ -2419,7 +2739,7 @@ func _rebuild_instances() -> void:
 			_instance_seeds[i],
 			_instance_variants[i]
 		))
-	visible = cfg.enabled and _instance_count > 0
+	visible = cfg.enabled and not _camera_lod_hidden and _instance_count > 0
 	_sync_single_wrap_nodes()
 	_sync_shadow_layer(true)
 	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
@@ -2518,7 +2838,7 @@ func _rebuild_via_native(
 		"rotation_mode": _rotation_mode(),
 		"random_rotation_strength": _random_rotation_strength(),
 		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
-		"spawn_radius_factor": cfg.spawn_radius_factor,
+		"spawn_radius_factor": _effective_spawn_radius_factor(),
 		"world_noise_warp_strength": cfg.world_noise_warp_strength,
 		"patch_frequency": cfg.patch_frequency,
 		"patch_cutoff": cfg.patch_cutoff,
@@ -2566,11 +2886,16 @@ func _rebuild_via_native(
 	if cell_indices.size() < inst:
 		_last_rebuild_reason = "native_missing_cell_indices"
 		return false
+	var lod_payload := _lod_reorder_native_payload(buffer, cell_indices, inst)
+	buffer = lod_payload.get("buffer", PackedFloat32Array())
+	cell_indices = lod_payload.get("cell_indices", PackedInt32Array())
+	inst = int(lod_payload.get("instance_count", 0))
+	_far_instance_count = int(lod_payload.get("far_count", inst))
 
 	if _chunked_multimesh_enabled:
 		_instance_count = inst
 		_instance_cell_indices = cell_indices
-		visible = cfg.enabled and inst > 0  # 先定 visible，使 _apply_chunk_payload 内的 shadow 镜像取到正确可见性
+		visible = cfg.enabled and not _camera_lod_hidden and inst > 0  # 先定 visible，使 _apply_chunk_payload 内的 shadow 镜像取到正确可见性
 		_apply_chunked_native_full(buffer, cell_indices, inst)
 		# shadow chunk 已随每个 _apply_chunk_payload 镜像完成（_clear_chunk_nodes 已清旧，无孤儿）
 		_last_scatter_path = "gdext_chunked"
@@ -2585,9 +2910,9 @@ func _rebuild_via_native(
 	_multimesh.mesh = _cached_detail_mesh()
 	_multimesh.instance_count = inst
 	_multimesh.buffer = buffer
-	_multimesh.visible_instance_count = inst
+	_multimesh.visible_instance_count = _lod_visible_count(inst, _far_instance_count)
 	_mmi.multimesh = _multimesh
-	visible = cfg.enabled and inst > 0
+	visible = cfg.enabled and not _camera_lod_hidden and inst > 0
 	_sync_single_wrap_nodes()
 	_sync_shadow_layer(true)
 	return true
@@ -2940,7 +3265,7 @@ func _apply_instance_cap() -> void:
 func _candidate_position(center: Vector2, key: int, attempt: int) -> Vector2:
 	var cfg := _profile()
 	var angle: float = fposmod(_hash01(key, 101) + float(attempt) * 0.61803398875, 1.0) * TAU
-	var radius: float = sqrt(_hash01(key, 200 + attempt * 37)) * _hex_size * cfg.spawn_radius_factor
+	var radius: float = sqrt(_hash01(key, 200 + attempt * 37)) * _hex_size * _effective_spawn_radius_factor()
 	var jitter: Vector2 = Vector2(cos(angle), sin(angle)) * radius
 	var base_pos: Vector2 = center + jitter
 	var warp: Vector2 = Vector2(
@@ -3791,7 +4116,7 @@ func _cell_hash_key(cell, fallback: int) -> int:
 	return fallback
 
 
-func _max_per_cell() -> int:
+func _base_max_per_cell() -> int:
 	var cfg := _profile()
 	if OS.has_feature("mobile"):
 		match _active_quality_tier():
@@ -3810,7 +4135,12 @@ func _max_per_cell() -> int:
 			return maxi(0, cfg.desktop_max_per_cell_quality2)
 
 
-func _instance_cap() -> int:
+func _max_per_cell() -> int:
+	var baseline := _base_max_per_cell()
+	return maxi(baseline, int(ceil(float(baseline) * _resolved_lod_near_density_multiplier())))
+
+
+func _base_instance_cap() -> int:
 	var cfg := _profile()
 	if OS.has_feature("mobile"):
 		match _active_quality_tier():
@@ -3827,6 +4157,11 @@ func _instance_cap() -> int:
 			return maxi(0, cfg.desktop_max_instances_quality1)
 		_:
 			return maxi(0, cfg.desktop_max_instances_quality2)
+
+
+func _instance_cap() -> int:
+	var baseline := _base_instance_cap()
+	return maxi(baseline, int(ceil(float(baseline) * _resolved_lod_near_density_multiplier())))
 
 
 func _quality_lobe_count() -> int:
@@ -3899,6 +4234,13 @@ func _profile() -> Resource:
 	return profile if profile != null else DEFAULT_PROFILE
 
 
+func _effective_spawn_radius_factor() -> float:
+	var cfg := _profile()
+	var configured_floor = cfg.get("seamless_spawn_radius_floor")
+	var overlap_floor := 1.06 if configured_floor == null else float(configured_floor)
+	return maxf(float(cfg.spawn_radius_factor), clampf(overlap_floor, 0.85, 1.35))
+
+
 func _profile_int(prop: StringName, fallback: int) -> int:
 	var v = _profile().get(prop)
 	return fallback if v == null else int(v)
@@ -3949,6 +4291,12 @@ func get_scatter_diagnostics() -> Dictionary:
 		"dropped_instances": _last_incremental_dropped_instances,
 		"spawn_domain": _spawn_domain(),
 		"detail_kind": _detail_kind(),
+		"lod_near_density_multiplier": _resolved_lod_near_density_multiplier(),
+		"lod_far_visible_fraction": _lod_far_visible_fraction,
+		"lod_far_instance_count": _far_instance_count,
+		"lod_zoom_t": _lod_zoom_t,
+		"lod_effective_visible_fraction": _effective_visible_instance_fraction(),
+		"seamless_spawn_radius": _effective_spawn_radius_factor(),
 	}
 
 

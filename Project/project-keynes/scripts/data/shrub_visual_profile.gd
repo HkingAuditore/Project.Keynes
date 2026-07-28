@@ -35,6 +35,14 @@ enum SpawnDomain {
 @export_range(0.0, 300.0, 0.05) var density_scale: float = 1.55
 @export_range(0.0, 3.0, 0.05) var wind_strength: float = 1.0
 
+@export_group("Camera Zoom LOD")
+# Negative values use the archetype defaults resolved by ShrubLayer.
+@export_range(-1.0, 3.0, 0.05) var lod_fade_start_zoom: float = -1.0
+@export_range(-1.0, 3.0, 0.05) var lod_fade_end_zoom: float = -1.0
+# 原有 profile 数量是远景基准；该倍率只预生成近景增量，不削减远景基准。
+@export_range(-1.0, 3.0, 0.05) var lod_near_density_multiplier: float = -1.0
+@export_range(-1.0, 3.0, 0.05) var shadow_min_zoom: float = -1.0
+
 @export_group("Placement Semantics")
 @export_enum("Land", "Water", "Any") var spawn_domain: int = SpawnDomain.LAND
 @export_enum("RandomFull", "Upright", "UprightJitter") var rotation_mode: int = RotationMode.RANDOM_FULL
@@ -90,6 +98,9 @@ enum SpawnDomain {
 
 @export_group("Shape")
 @export_range(0.0, 1.0, 0.01) var spawn_radius_factor: float = 0.78
+# Candidate discs must overlap adjacent hexes, otherwise even continuous world noise
+# is clipped into one visible disc/polygon per source cell.
+@export_range(0.85, 1.35, 0.01) var seamless_spawn_radius_floor: float = 1.06
 @export_range(0.01, 0.5, 0.005) var min_size_factor: float = 0.095
 @export_range(0.01, 0.5, 0.005) var max_size_factor: float = 0.19
 

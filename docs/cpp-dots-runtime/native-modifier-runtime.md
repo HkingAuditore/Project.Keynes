@@ -1,5 +1,9 @@
 # Native Modifier Runtime
 
+科技树通过永久 `UNIQUE_SOURCE` Country Modifier 提供四领域研究效率、研究成本、科研机构
+与五部门产出、施工成本/时间和国内贸易能力效果。完成节点先 pending，次日应用 Modifier
+成功后才发布完成标签；详见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。
+
 本文是 Project.Keynes 全域 Modifier Runtime 的当前实现主说明。代码、测试、
 架构文档和 `project-keynes-modifier-runtime` Skill 与本文不一致时，变更不能交付。
 

@@ -1135,3 +1135,5 @@ is skipped. Status adds `backpressure_wait_count` and
 `backpressure_wait_ms_total`. Row-limit and real write/flush failures remain
 terminal and atomic at epoch boundaries. This changes only debug file-I/O
 pacing, not native economy authority, PKEC, state hash, CSV columns, or cadence.
+> PKEC v21 新增 `government_research_procurement` 阶段、科技值采购累计与存档字段。采购发生在
+> 私人购买后、国内贸易前；详细契约见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。

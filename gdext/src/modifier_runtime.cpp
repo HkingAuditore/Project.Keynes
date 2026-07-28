@@ -914,6 +914,86 @@ double ModifierRuntime::country_economy_output_factor(uint64_t country_handle) c
                            0, 1.0);
 }
 
+double ModifierRuntime::country_sector_output_factor(
+        uint64_t country_handle, int32_t economic_sector) const {
+    static const char *SECTOR_STATS[5] = {
+        "country.output.agriculture_factor",
+        "country.output.extractive_factor",
+        "country.output.manufacturing_factor",
+        "country.output.energy_factor",
+        "country.output.knowledge_factor",
+    };
+    if (economic_sector < 0 || economic_sector >= 5) return 1.0;
+    return effective_value(COUNTRY, SECTOR_STATS[economic_sector],
+                           country_handle, 0, 1.0);
+}
+
+double ModifierRuntime::country_research_institution_output_factor(
+        uint64_t country_handle) const {
+    return effective_value(COUNTRY,
+        "country.research.institution_output_factor",
+        country_handle, 0, 1.0);
+}
+
+double ModifierRuntime::country_trade_capacity_factor(
+        uint64_t country_handle) const {
+    return effective_value(COUNTRY, "country.trade.capacity_factor",
+                           country_handle, 0, 1.0);
+}
+
+double ModifierRuntime::country_trade_speed_factor(
+        uint64_t country_handle) const {
+    return effective_value(COUNTRY, "country.trade.speed_factor",
+                           country_handle, 0, 1.0);
+}
+
+double ModifierRuntime::country_construction_cost_factor(
+        uint64_t country_handle) const {
+    return effective_value(COUNTRY, "country.construction.cost_factor",
+                           country_handle, 0, 1.0);
+}
+
+double ModifierRuntime::country_construction_time_factor(
+        uint64_t country_handle) const {
+    return effective_value(COUNTRY, "country.construction.time_factor",
+                           country_handle, 0, 1.0);
+}
+
+bool ModifierRuntime::apply_technology_effect(uint64_t country_handle,
+                                              const std::string &definition_key,
+                                              int32_t technology_id,
+                                              int64_t day_index,
+                                              std::string &error) {
+    if (!_configured) {
+        error = "modifier_not_configured";
+        return false;
+    }
+    const int32_t definition = definition_id(definition_key);
+    if (definition < 0 || _definitions[static_cast<size_t>(definition)].domain != COUNTRY) {
+        error = "technology_modifier_definition_unknown";
+        return false;
+    }
+    Command command;
+    command.opcode = COMMAND_APPLY;
+    command.definition_id = definition;
+    command.domain = COUNTRY;
+    command.scope = ENTITY;
+    command.entity_handle = country_handle;
+    command.source_type = 0x54454348ULL; // "TECH"
+    command.source_id = static_cast<uint64_t>(technology_id + 1);
+    command.duration_days = PERMANENT_EXPIRY;
+    command.stacks = 1;
+    command.effective_day = day_index;
+    Result result;
+    apply_command(command, day_index, result);
+    if (!result.ok) {
+        error = result.reason;
+        return false;
+    }
+    _current_day = std::max(_current_day, day_index);
+    return true;
+}
+
 double ModifierRuntime::economy_building_output_factor(uint64_t building_handle,
                                                         uint64_t country_handle) const {
     return effective_value(ECONOMY, "economy.building.output_factor",

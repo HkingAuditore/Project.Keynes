@@ -276,6 +276,16 @@ static func encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageT
 	return _upload_l8(data, W, H, existing)
 
 
+static func encode_rg8_tex(buf: PackedByteArray, size: Vector2i,
+		existing: ImageTexture = null) -> ImageTexture:
+	var W: int = size.x
+	var H: int = size.y
+	var expected: int = W * H * 2
+	if W <= 0 or H <= 0 or buf.size() != expected:
+		return existing
+	return _upload_rg8(buf, W, H, existing)
+
+
 static func encode_flow_tex(buf: PackedFloat32Array, size: Vector2i, existing: ImageTexture,
 		native_ext: Object = null) -> ImageTexture:
 	var W: int = size.x

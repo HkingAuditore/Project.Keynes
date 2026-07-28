@@ -1,6 +1,12 @@
 extends HBoxContainer
 class_name BadgeRow
 
+# Ellipsis trimming drops the text out of a Label's minimum size, so a badge in
+# an HBoxContainer would otherwise shrink to its padding and render blank. The
+# natural text width is reserved explicitly, capped so one long badge cannot push
+# the row past its panel.
+const MAX_BADGE_WIDTH := 132.0
+
 var _labels: Array[Label] = []
 
 
@@ -28,6 +34,10 @@ func update_badges(badges: Array) -> void:
 
 func _apply_badge(badge: Label, data: Dictionary) -> void:
 	badge.text = String(data.get("text", "—"))
+	var measured := UITokens.UI_FONT.get_string_size(badge.text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL).x
+	badge.custom_minimum_size.x = minf(measured, MAX_BADGE_WIDTH) \
+		+ float(UITokens.SPACE_SM) * 2.0 + 7.0
 	var accent: Color = data.get("accent", UITokens.ACCENT)
 	badge.add_theme_color_override("font_color", accent.lerp(UITokens.TEXT_MAIN, 0.38))
 	var style := UITokens.inset_panel_style(

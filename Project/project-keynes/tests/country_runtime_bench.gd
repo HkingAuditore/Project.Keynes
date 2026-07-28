@@ -14,9 +14,36 @@ func _init() -> void:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	ext.create_entities(CELL_COUNT)
 	ext.register_component(&"cell_country_slot", 1, 1, false)
+	var goods := _ids("good.synthetic.", GOOD_COUNT)
+	goods[0] = "technology_points"
+	var technology_ids := _ids("tech.synthetic.", TECHNOLOGY_COUNT)
+	var zero_offsets := PackedInt32Array()
+	zero_offsets.resize(TECHNOLOGY_COUNT + 1)
+	zero_offsets.fill(0)
+	var technology_domains := PackedInt32Array()
+	technology_domains.resize(TECHNOLOGY_COUNT)
+	technology_domains.fill(0)
+	var technology_costs := PackedInt64Array()
+	technology_costs.resize(TECHNOLOGY_COUNT)
+	technology_costs.fill(1)
+	var technology_metadata := PackedInt32Array()
+	technology_metadata.resize(TECHNOLOGY_COUNT)
+	technology_metadata.fill(0)
+	var modifier_keys := PackedStringArray()
+	for index in range(TECHNOLOGY_COUNT):
+		modifier_keys.append("")
 	var catalog := {
-		"good_ids": _ids("good.synthetic.", GOOD_COUNT),
-		"technology_ids": _ids("tech.synthetic.", TECHNOLOGY_COUNT),
+		"good_ids": goods,
+		"technology_ids": technology_ids,
+		"technology_domain_indices": technology_domains,
+		"technology_costs": technology_costs,
+		"technology_prerequisite_offsets": zero_offsets,
+		"technology_prerequisites": PackedInt32Array(),
+		"technology_milestone_offsets": zero_offsets,
+		"technology_milestone_candidates": PackedInt32Array(),
+		"technology_milestone_required_counts": technology_metadata,
+		"technology_flags": technology_metadata,
+		"technology_modifier_definition_keys": modifier_keys,
 	}
 	var configured: Dictionary = ext.configure_country(catalog, {
 		"country_runtime_mode": "ACTIVE",
@@ -41,6 +68,7 @@ func _init() -> void:
 		creates.target_handles.append(0)
 		creates.cell_indices.append(slot)
 		creates.aux_i32.append(-1)
+		_append_research_defaults(creates)
 		creates.stable_ids.append("country.synthetic.%04d" % slot)
 		creates.display_names.append("Synthetic %04d" % slot)
 	ext.submit_country_commands(creates)
@@ -65,6 +93,7 @@ func _init() -> void:
 			transfers.target_handles.append(handles[1 + ((cell + round_index) % (COUNTRY_COUNT - 1))])
 			transfers.cell_indices.append(cell)
 			transfers.aux_i32.append(-1)
+			_append_research_defaults(transfers)
 			transfers.stable_ids.append("")
 			transfers.display_names.append("")
 		ext.submit_country_commands(transfers)
@@ -112,9 +141,23 @@ func _empty_batch() -> Dictionary:
 		"target_handles": PackedInt64Array(),
 		"cell_indices": PackedInt32Array(),
 		"aux_i32": PackedInt32Array(),
+		"domain_i32": PackedInt32Array(),
+		"position_i32": PackedInt32Array(),
+		"weight0_bp": PackedInt32Array(),
+		"weight1_bp": PackedInt32Array(),
+		"weight2_bp": PackedInt32Array(),
+		"weight3_bp": PackedInt32Array(),
+		"value_i64": PackedInt64Array(),
 		"stable_ids": PackedStringArray(),
 		"display_names": PackedStringArray(),
 	}
+
+func _append_research_defaults(batch: Dictionary) -> void:
+	batch.domain_i32.append(-1)
+	batch.position_i32.append(-1)
+	for domain in range(4):
+		batch["weight%d_bp" % domain].append(0)
+	batch.value_i64.append(0)
 
 func _fail(stage: String, report: Dictionary) -> void:
 	push_error("country bench %s failed: %s" % [stage, report])

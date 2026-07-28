@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <numeric>
@@ -179,6 +180,43 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _technology_index.clear();
     for (int32_t i = 0; i < static_cast<int32_t>(_good_ids.size()); ++i) _good_index[_good_ids[i]] = i;
     for (int32_t i = 0; i < static_cast<int32_t>(_technology_ids.size()); ++i) _technology_index[_technology_ids[i]] = i;
+    _technology_domains = packed_i32(catalog, "technology_domain_indices");
+    _technology_costs = packed_i64(catalog, "technology_costs");
+    _technology_prerequisite_offsets = packed_i32(catalog, "technology_prerequisite_offsets");
+    _technology_prerequisites = packed_i32(catalog, "technology_prerequisites");
+    _technology_milestone_offsets = packed_i32(catalog, "technology_milestone_offsets");
+    _technology_milestone_candidates = packed_i32(catalog, "technology_milestone_candidates");
+    _technology_milestone_required_counts = packed_i32(catalog, "technology_milestone_required_counts");
+    _technology_flags = packed_i32(catalog, "technology_flags");
+    _technology_modifier_definition_keys =
+        packed_strings(catalog, "technology_modifier_definition_keys");
+    const size_t tech_count = _technology_ids.size();
+    if (_technology_domains.size() != tech_count || _technology_costs.size() != tech_count ||
+        _technology_prerequisite_offsets.size() != tech_count + 1 ||
+        _technology_milestone_offsets.size() != tech_count + 1 ||
+        _technology_milestone_required_counts.size() != tech_count ||
+        _technology_flags.size() != tech_count ||
+        _technology_modifier_definition_keys.size() != tech_count ||
+        _technology_prerequisite_offsets.front() != 0 ||
+        _technology_prerequisite_offsets.back() != static_cast<int32_t>(_technology_prerequisites.size()) ||
+        _technology_milestone_offsets.front() != 0 ||
+        _technology_milestone_offsets.back() != static_cast<int32_t>(_technology_milestone_candidates.size()))
+        return fail("country_technology_metadata_invalid");
+    for (size_t tech = 0; tech < tech_count; ++tech) {
+        if (_technology_domains[tech] < 0 || _technology_domains[tech] >= 4 ||
+            _technology_costs[tech] < 0 ||
+            _technology_milestone_required_counts[tech] < 0)
+            return fail("country_technology_metadata_invalid");
+    }
+    for (int32_t prerequisite : _technology_prerequisites)
+        if (prerequisite < 0 || prerequisite >= static_cast<int32_t>(tech_count))
+            return fail("country_technology_prerequisite_invalid");
+    for (int32_t candidate : _technology_milestone_candidates)
+        if (candidate < 0 || candidate >= static_cast<int32_t>(tech_count))
+            return fail("country_technology_milestone_candidate_invalid");
+    const auto points_it = _good_index.find("technology_points");
+    if (points_it == _good_index.end()) return fail("country_technology_points_good_missing");
+    _technology_points_good_id = points_it->second;
     _starting_technologies.clear();
     for (const std::string &id : packed_strings(profile, "starting_technology_ids")) {
         const auto it = _technology_index.find(id);
@@ -206,6 +244,20 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _country_cells.clear();
     _country_technologies.clear();
     _country_goods.clear();
+    _country_discovered.clear();
+    _country_pending_technologies.clear();
+    _country_research_progress.clear();
+    _country_research_queues.clear();
+    _country_research_queue_lengths.clear();
+    _country_research_weights_bp.clear();
+    _country_research_auto_purchase.clear();
+    _country_research_daily_budgets.clear();
+    _country_research_deferred_points.clear();
+    _country_research_purchased_total.clear();
+    _country_research_consumed_total.clear();
+    _country_research_progress_total.clear();
+    _country_research_completed_total.clear();
+    _last_research_day = -1;
     _pending_commands.clear();
     _events.clear();
     _command_batch = {};
@@ -240,7 +292,35 @@ int32_t NativeCountryRuntime::append_country(const std::string &stable_id,
     _countries.state_version.push_back(1);
     _country_technologies.resize(static_cast<size_t>(slot + 1) * _technology_words, 0);
     _country_goods.resize(static_cast<size_t>(slot + 1) * _good_ids.size(), 0);
+    initialize_country_research(slot);
     return slot;
+}
+
+std::vector<uint8_t> packed_u8(const Dictionary &d, const char *key) {
+    std::vector<uint8_t> out;
+    const StringName k(key);
+    if (!d.has(k) || d[k].get_type() != Variant::PACKED_BYTE_ARRAY) return out;
+    const PackedByteArray src = d[k];
+    out.resize(src.size());
+    if (!out.empty()) std::memcpy(out.data(), src.ptr(), out.size());
+    return out;
+}
+
+void NativeCountryRuntime::initialize_country_research(int32_t slot) {
+    const size_t countries = static_cast<size_t>(slot + 1);
+    _country_discovered.resize(countries * _technology_words, 0);
+    _country_pending_technologies.resize(countries * _technology_words, 0);
+    _country_research_progress.resize(countries);
+    _country_research_queues.resize(countries * 4U * 8U, -1);
+    _country_research_queue_lengths.resize(countries * 4U, 0);
+    _country_research_weights_bp.resize(countries * 4U, 2500);
+    _country_research_auto_purchase.resize(countries, 1);
+    _country_research_daily_budgets.resize(countries, 1000 * MONEY_SCALE);
+    _country_research_deferred_points.resize(countries, 0);
+    _country_research_purchased_total.resize(countries, 0);
+    _country_research_consumed_total.resize(countries, 0);
+    _country_research_progress_total.resize(countries, 0);
+    _country_research_completed_total.resize(countries, 0);
 }
 
 Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
@@ -260,11 +340,31 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     const std::vector<int32_t> treasury_offsets = packed_i32(packet, "treasury_offsets");
     const std::vector<int32_t> treasury_good_indices = packed_i32(packet, "treasury_good_indices");
     const std::vector<int64_t> treasury_quantities = packed_i64(packet, "treasury_quantities");
+    const std::vector<int32_t> research_weights =
+        packed_i32(packet, "research_weights_bp");
+    const std::vector<int64_t> research_budgets =
+        packed_i64(packet, "research_daily_budgets");
+    const std::vector<uint8_t> research_auto_purchase =
+        packed_u8(packet, "research_auto_purchase");
 
     _countries = {};
     std::fill(_cell_country_slot.begin(), _cell_country_slot.end(), NEUTRAL_SLOT);
     _country_technologies.clear();
     _country_goods.clear();
+    _country_discovered.clear();
+    _country_pending_technologies.clear();
+    _country_research_progress.clear();
+    _country_research_queues.clear();
+    _country_research_queue_lengths.clear();
+    _country_research_weights_bp.clear();
+    _country_research_auto_purchase.clear();
+    _country_research_daily_budgets.clear();
+    _country_research_deferred_points.clear();
+    _country_research_purchased_total.clear();
+    _country_research_consumed_total.clear();
+    _country_research_progress_total.clear();
+    _country_research_completed_total.clear();
+    _last_research_day = -1;
     _pending_commands.clear();
     _events.clear();
     _command_batch = {};
@@ -293,6 +393,11 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
              treasury_offsets.back() != static_cast<int32_t>(treasury_good_indices.size()) ||
              treasury_good_indices.size() != treasury_quantities.size())))
             return fail("country_bootstrap_csr_invalid");
+        if ((!research_weights.empty() && research_weights.size() != ids.size() * 4U) ||
+            (!research_budgets.empty() && research_budgets.size() != ids.size()) ||
+            (!research_auto_purchase.empty() &&
+             research_auto_purchase.size() != ids.size()))
+            return fail("country_bootstrap_research_shape_invalid");
 
         std::unordered_set<std::string> stable_ids;
         for (size_t i = 0; i < ids.size(); ++i) {
@@ -331,14 +436,47 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                     _country_goods[slot * _good_ids.size() + good] = quantity;
                 }
             }
+            if (!research_weights.empty()) {
+                int32_t total = 0;
+                for (int32_t domain = 0; domain < 4; ++domain) {
+                    const int32_t weight = research_weights[slot * 4U + domain];
+                    if (weight < 0 || weight > 10000)
+                        return fail("country_bootstrap_research_policy_invalid");
+                    _country_research_weights_bp[slot * 4U + domain] = weight;
+                    total += weight;
+                }
+                if (total != 10000)
+                    return fail("country_bootstrap_research_policy_invalid");
+            }
+            if (!research_budgets.empty()) {
+                if (research_budgets[slot] < 0)
+                    return fail("country_bootstrap_research_policy_invalid");
+                _country_research_daily_budgets[slot] = research_budgets[slot];
+            }
+            if (!research_auto_purchase.empty()) {
+                if (research_auto_purchase[slot] > 1)
+                    return fail("country_bootstrap_research_policy_invalid");
+                _country_research_auto_purchase[slot] =
+                    research_auto_purchase[slot];
+            }
         }
         _starting_country_slot = 0;
+    }
+
+    for (int32_t slot = 0; slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
+        for (int32_t tech = 0; tech < static_cast<int32_t>(_technology_ids.size()); ++tech) {
+            if (has_technology(slot, tech))
+                _country_discovered[static_cast<size_t>(slot) * _technology_words + tech / 64] |=
+                    1ULL << (tech % 64);
+        }
+        refresh_discovery(slot);
     }
 
     rebuild_cell_csr();
     _generation = 1;
     _bootstrapped = true;
     _last_committed_day = -1;
+    _last_research_day = -1;
     publish_report("aggregate_publish", -1, 0, 0, 0, _cell_count,
                    static_cast<int32_t>(_countries.active.size()), _mode == MODE_ACTIVE);
     Dictionary out = report();
@@ -356,17 +494,27 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
     const std::vector<int64_t> handles = packed_i64(batch, "target_handles");
     const std::vector<int32_t> cells = packed_i32(batch, "cell_indices");
     const std::vector<int32_t> aux = packed_i32(batch, "aux_i32");
+    const std::vector<int32_t> domains = packed_i32(batch, "domain_i32");
+    const std::vector<int32_t> positions = packed_i32(batch, "position_i32");
+    const std::vector<int32_t> weights0 = packed_i32(batch, "weight0_bp");
+    const std::vector<int32_t> weights1 = packed_i32(batch, "weight1_bp");
+    const std::vector<int32_t> weights2 = packed_i32(batch, "weight2_bp");
+    const std::vector<int32_t> weights3 = packed_i32(batch, "weight3_bp");
+    const std::vector<int64_t> values = packed_i64(batch, "value_i64");
     const std::vector<std::string> stable_ids = packed_strings(batch, "stable_ids");
     const std::vector<std::string> display_names = packed_strings(batch, "display_names");
     const size_t count = opcodes.size();
     if (count == 0) return fail("country_command_batch_empty");
     if (days.size() != count || sequences.size() != count || handles.size() != count ||
-        cells.size() != count || aux.size() != count || stable_ids.size() != count ||
+        cells.size() != count || aux.size() != count || domains.size() != count ||
+        positions.size() != count || weights0.size() != count || weights1.size() != count ||
+        weights2.size() != count || weights3.size() != count || values.size() != count ||
+        stable_ids.size() != count ||
         display_names.size() != count)
         return fail("country_command_batch_shape_invalid");
     _pending_commands.reserve(_pending_commands.size() + count);
     for (size_t i = 0; i < count; ++i) {
-        if (opcodes[i] < COMMAND_CREATE_COUNTRY || opcodes[i] > COMMAND_GRANT_TECHNOLOGY)
+        if (opcodes[i] < COMMAND_CREATE_COUNTRY || opcodes[i] > COMMAND_REVEAL_ALL_TECHNOLOGIES)
             return fail("country_command_opcode_invalid");
         if (days[i] < 0 || sequences[i] < 0) return fail("country_command_order_invalid");
         Command command;
@@ -376,6 +524,13 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
         command.target_handle = static_cast<uint64_t>(handles[i]);
         command.cell = cells[i];
         command.aux = aux[i];
+        command.domain = domains[i];
+        command.position = positions[i];
+        command.weights_bp[0] = weights0[i];
+        command.weights_bp[1] = weights1[i];
+        command.weights_bp[2] = weights2[i];
+        command.weights_bp[3] = weights3[i];
+        command.value = values[i];
         command.stable_id = stable_ids[i];
         command.display_name = display_names[i];
         command.submit_order = ++_submit_order;
@@ -393,6 +548,14 @@ bool NativeCountryRuntime::should_run(int64_t day_index) const {
     if (_command_batch.active) return true;
     for (const Command &command : _pending_commands)
         if (command.effective_day <= day_index) return true;
+    if (day_index > _last_research_day && _technology_points_good_id >= 0) {
+        for (uint64_t word : _country_pending_technologies) if (word != 0) return true;
+        for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
+            const int64_t stock = _country_goods[
+                slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
+            if (stock > _country_research_deferred_points[slot]) return true;
+        }
+    }
     return false;
 }
 
@@ -441,11 +604,16 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             _pending_commands.swap(future_commands);
         }
         if (_command_batch.commands.empty()) {
+            const int32_t research_changed = run_research_day(requested_day);
+            _last_committed_day = std::max(_last_committed_day, requested_day);
+            publish_report(research_changed > 0 ? "research_publish" : "idle",
+                           requested_day, 0, 0, elapsed_ms(start), 0,
+                           research_changed, _mode == MODE_ACTIVE);
             Dictionary out = report();
             out["ok"] = true;
             out["done"] = true;
-            out["stage"] = "idle";
-            out["elapsed_ms"] = 0.0;
+            out["stage"] = research_changed > 0 ? "research_publish" : "idle";
+            out["elapsed_ms"] = elapsed_ms(start);
             return out;
         }
         const auto command_less = [](const Command &lhs, const Command &rhs) {
@@ -468,7 +636,12 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             if (command.opcode == COMMAND_CREATE_COUNTRY) {
                 _command_batch.stage_technologies = true;
                 _command_batch.stage_goods = true;
+                _command_batch.stage_research = true;
             } else if (command.opcode == COMMAND_GRANT_TECHNOLOGY) {
+                _command_batch.stage_technologies = true;
+                _command_batch.stage_research = true;
+            } else if (command.opcode >= COMMAND_SET_RESEARCH_WEIGHTS) {
+                _command_batch.stage_research = true;
                 _command_batch.stage_technologies = true;
             }
             if (command.opcode != COMMAND_TRANSFER_TERRITORY || command.cell <= previous_cell) {
@@ -481,6 +654,17 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             _command_batch.technologies = _country_technologies;
         if (_command_batch.stage_goods)
             _command_batch.goods = _country_goods;
+        if (_command_batch.stage_research) {
+            _command_batch.discovered = _country_discovered;
+            _command_batch.pending = _country_pending_technologies;
+            _command_batch.progress = _country_research_progress;
+            _command_batch.research_queues = _country_research_queues;
+            _command_batch.research_queue_lengths = _country_research_queue_lengths;
+            _command_batch.research_weights_bp = _country_research_weights_bp;
+            _command_batch.research_auto_purchase = _country_research_auto_purchase;
+            _command_batch.research_daily_budgets = _country_research_daily_budgets;
+            _command_batch.research_deferred_points = _country_research_deferred_points;
+        }
         if (!_command_batch.direct_unique_territory)
             _command_batch.cell_delta.reserve(_command_batch.commands.size());
         _command_batch.cell_delta_order.reserve(_command_batch.commands.size());
@@ -547,15 +731,31 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             batch.countries.state_version.push_back(1);
             batch.technologies.resize(static_cast<size_t>(new_slot + 1) * _technology_words, 0);
             batch.goods.resize(static_cast<size_t>(new_slot + 1) * _good_ids.size(), 0);
+            batch.discovered.resize(static_cast<size_t>(new_slot + 1) * _technology_words, 0);
+            batch.pending.resize(static_cast<size_t>(new_slot + 1) * _technology_words, 0);
+            batch.progress.resize(static_cast<size_t>(new_slot + 1));
+            batch.research_queues.resize(static_cast<size_t>(new_slot + 1) * 32U, -1);
+            batch.research_queue_lengths.resize(static_cast<size_t>(new_slot + 1) * 4U, 0);
+            batch.research_weights_bp.resize(static_cast<size_t>(new_slot + 1) * 4U, 2500);
+            batch.research_auto_purchase.resize(static_cast<size_t>(new_slot + 1), 1);
+            batch.research_daily_budgets.resize(static_cast<size_t>(new_slot + 1),
+                                                1000 * MONEY_SCALE);
+            batch.research_deferred_points.resize(static_cast<size_t>(new_slot + 1), 0);
             if (old_owner >= 0) {
                 --batch.countries.territory_count[static_cast<size_t>(old_owner)];
                 for (int32_t word = 0; word < _technology_words; ++word)
                     batch.technologies[static_cast<size_t>(new_slot) * _technology_words + word] =
                         batch.technologies[static_cast<size_t>(old_owner) * _technology_words + word];
+                for (int32_t word = 0; word < _technology_words; ++word)
+                    batch.discovered[static_cast<size_t>(new_slot) * _technology_words + word] =
+                        batch.discovered[static_cast<size_t>(old_owner) * _technology_words + word];
                 mark_country(old_owner);
             } else {
                 for (int32_t tech : _starting_technologies)
                     batch.technologies[static_cast<size_t>(new_slot) * _technology_words + tech / 64] |=
+                        1ULL << (tech % 64);
+                for (int32_t tech : _starting_technologies)
+                    batch.discovered[static_cast<size_t>(new_slot) * _technology_words + tech / 64] |=
                         1ULL << (tech % 64);
             }
             if (batch.cell_delta.set(command.cell, new_slot))
@@ -611,14 +811,140 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             if (command.aux < 0 || command.aux >= static_cast<int32_t>(_technology_ids.size())) {
                 error = "country_technology_invalid"; break;
             }
-            uint64_t &word = batch.technologies[
+            uint64_t &word = batch.pending[
                 static_cast<size_t>(slot) * _technology_words + command.aux / 64];
             const uint64_t bit = 1ULL << (command.aux % 64);
-            if ((word & bit) == 0) {
+            const uint64_t completed_word = batch.technologies[
+                static_cast<size_t>(slot) * _technology_words + command.aux / 64];
+            if ((completed_word & bit) == 0 && (word & bit) == 0) {
                 word |= bit;
                 ++batch.countries.state_version[static_cast<size_t>(slot)];
                 mark_country(slot);
             }
+            event_country_handle = command.target_handle;
+            event_new_country_slot = slot;
+        } else if (command.opcode == COMMAND_SET_RESEARCH_WEIGHTS) {
+            int32_t slot = -1;
+            if (!staged_handle(command.target_handle, slot)) { error = "country_handle_invalid"; break; }
+            int32_t total = 0;
+            for (int32_t domain = 0; domain < 4; ++domain) {
+                if (command.weights_bp[domain] < 0 || command.weights_bp[domain] > 10000) {
+                    error = "country_research_weight_invalid"; break;
+                }
+                total += command.weights_bp[domain];
+            }
+            if (!error.empty()) break;
+            if (total != 10000) { error = "country_research_weight_total_invalid"; break; }
+            for (int32_t domain = 0; domain < 4; ++domain)
+                batch.research_weights_bp[static_cast<size_t>(slot) * 4U + domain] =
+                    command.weights_bp[domain];
+            batch.research_deferred_points[static_cast<size_t>(slot)] = 0;
+            ++batch.countries.state_version[static_cast<size_t>(slot)];
+            mark_country(slot);
+            event_country_handle = command.target_handle;
+            event_new_country_slot = slot;
+        } else if (command.opcode == COMMAND_ENQUEUE_RESEARCH ||
+                   command.opcode == COMMAND_MOVE_RESEARCH) {
+            int32_t slot = -1;
+            if (!staged_handle(command.target_handle, slot)) { error = "country_handle_invalid"; break; }
+            if (command.aux < 0 || command.aux >= static_cast<int32_t>(_technology_ids.size()) ||
+                command.domain < 0 || command.domain >= 4 ||
+                command.position < -1 || command.position >= 8) {
+                error = "country_research_queue_argument_invalid"; break;
+            }
+            const size_t word_index = static_cast<size_t>(slot) * _technology_words + command.aux / 64;
+            const uint64_t bit = 1ULL << (command.aux % 64);
+            if ((batch.discovered[word_index] & bit) == 0 ||
+                (batch.technologies[word_index] & bit) != 0 ||
+                (batch.pending[word_index] & bit) != 0) {
+                error = "country_research_technology_unavailable"; break;
+            }
+            const bool milestone = (_technology_flags[static_cast<size_t>(command.aux)] & 2) != 0;
+            if (!milestone && _technology_domains[static_cast<size_t>(command.aux)] != command.domain) {
+                error = "country_research_domain_mismatch"; break;
+            }
+            int32_t found_domain = -1, found_position = -1;
+            for (int32_t domain = 0; domain < 4; ++domain) {
+                const size_t length_index = static_cast<size_t>(slot) * 4U + domain;
+                const size_t queue_base = length_index * 8U;
+                for (int32_t position = 0; position < batch.research_queue_lengths[length_index]; ++position) {
+                    if (batch.research_queues[queue_base + position] == command.aux) {
+                        found_domain = domain;
+                        found_position = position;
+                    }
+                }
+            }
+            if (command.opcode == COMMAND_ENQUEUE_RESEARCH && found_domain >= 0) {
+                error = "country_research_already_queued"; break;
+            }
+            if (command.opcode == COMMAND_MOVE_RESEARCH && found_domain < 0) {
+                error = "country_research_not_queued"; break;
+            }
+            if (found_domain >= 0) {
+                const size_t old_length_index = static_cast<size_t>(slot) * 4U + found_domain;
+                const size_t old_base = old_length_index * 8U;
+                uint8_t &old_length = batch.research_queue_lengths[old_length_index];
+                for (int32_t i = found_position + 1; i < old_length; ++i)
+                    batch.research_queues[old_base + i - 1] = batch.research_queues[old_base + i];
+                batch.research_queues[old_base + --old_length] = -1;
+            }
+            const size_t length_index = static_cast<size_t>(slot) * 4U + command.domain;
+            const size_t queue_base = length_index * 8U;
+            uint8_t &length = batch.research_queue_lengths[length_index];
+            if (length >= 8) { error = "country_research_queue_full"; break; }
+            const int32_t insert_at = command.position < 0 ? length :
+                std::min<int32_t>(command.position, length);
+            for (int32_t i = length; i > insert_at; --i)
+                batch.research_queues[queue_base + i] = batch.research_queues[queue_base + i - 1];
+            batch.research_queues[queue_base + insert_at] = command.aux;
+            ++length;
+            batch.research_deferred_points[static_cast<size_t>(slot)] = 0;
+            ++batch.countries.state_version[static_cast<size_t>(slot)];
+            mark_country(slot);
+            event_country_handle = command.target_handle;
+            event_new_country_slot = slot;
+        } else if (command.opcode == COMMAND_REMOVE_RESEARCH) {
+            int32_t slot = -1;
+            if (!staged_handle(command.target_handle, slot)) { error = "country_handle_invalid"; break; }
+            bool removed = false;
+            for (int32_t domain = 0; domain < 4 && !removed; ++domain) {
+                const size_t length_index = static_cast<size_t>(slot) * 4U + domain;
+                const size_t queue_base = length_index * 8U;
+                uint8_t &length = batch.research_queue_lengths[length_index];
+                for (int32_t position = 0; position < length; ++position) {
+                    if (batch.research_queues[queue_base + position] != command.aux) continue;
+                    for (int32_t i = position + 1; i < length; ++i)
+                        batch.research_queues[queue_base + i - 1] = batch.research_queues[queue_base + i];
+                    batch.research_queues[queue_base + --length] = -1;
+                    removed = true;
+                    break;
+                }
+            }
+            if (!removed) { error = "country_research_not_queued"; break; }
+            ++batch.countries.state_version[static_cast<size_t>(slot)];
+            mark_country(slot);
+            event_country_handle = command.target_handle;
+            event_new_country_slot = slot;
+        } else if (command.opcode == COMMAND_SET_RESEARCH_BUDGET) {
+            int32_t slot = -1;
+            if (!staged_handle(command.target_handle, slot)) { error = "country_handle_invalid"; break; }
+            if (command.value < 0 || (command.aux != 0 && command.aux != 1)) {
+                error = "country_research_budget_invalid"; break;
+            }
+            batch.research_daily_budgets[static_cast<size_t>(slot)] = command.value;
+            batch.research_auto_purchase[static_cast<size_t>(slot)] = static_cast<uint8_t>(command.aux);
+            ++batch.countries.state_version[static_cast<size_t>(slot)];
+            mark_country(slot);
+            event_country_handle = command.target_handle;
+            event_new_country_slot = slot;
+        } else if (command.opcode == COMMAND_REVEAL_ALL_TECHNOLOGIES) {
+            int32_t slot = -1;
+            if (!staged_handle(command.target_handle, slot)) { error = "country_handle_invalid"; break; }
+            for (int32_t tech = 0; tech < static_cast<int32_t>(_technology_ids.size()); ++tech)
+                batch.discovered[static_cast<size_t>(slot) * _technology_words + tech / 64] |=
+                    1ULL << (tech % 64);
+            ++batch.countries.state_version[static_cast<size_t>(slot)];
+            mark_country(slot);
             event_country_handle = command.target_handle;
             event_new_country_slot = slot;
         }
@@ -696,14 +1022,40 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     CountryStore staged_countries = std::move(batch.countries);
     std::vector<uint64_t> staged_technologies = std::move(batch.technologies);
     std::vector<int64_t> staged_goods = std::move(batch.goods);
+    std::vector<uint64_t> staged_discovered = std::move(batch.discovered);
+    std::vector<uint64_t> staged_pending = std::move(batch.pending);
+    auto staged_progress = std::move(batch.progress);
+    std::vector<int32_t> staged_research_queues = std::move(batch.research_queues);
+    std::vector<uint8_t> staged_research_queue_lengths = std::move(batch.research_queue_lengths);
+    std::vector<int32_t> staged_research_weights = std::move(batch.research_weights_bp);
+    std::vector<uint8_t> staged_auto_purchase = std::move(batch.research_auto_purchase);
+    std::vector<int64_t> staged_daily_budgets = std::move(batch.research_daily_budgets);
+    std::vector<int64_t> staged_deferred_points = std::move(batch.research_deferred_points);
     const bool stage_technologies = batch.stage_technologies;
     const bool stage_goods = batch.stage_goods;
+    const bool stage_research = batch.stage_research;
     _command_batch = {};
 
     const Clock::time_point apply_start = Clock::now();
     _countries = std::move(staged_countries);
     if (stage_technologies) _country_technologies = std::move(staged_technologies);
     if (stage_goods) _country_goods = std::move(staged_goods);
+    if (stage_research) {
+        _country_discovered = std::move(staged_discovered);
+        _country_pending_technologies = std::move(staged_pending);
+        _country_research_progress = std::move(staged_progress);
+        _country_research_queues = std::move(staged_research_queues);
+        _country_research_queue_lengths = std::move(staged_research_queue_lengths);
+        _country_research_weights_bp = std::move(staged_research_weights);
+        _country_research_auto_purchase = std::move(staged_auto_purchase);
+        _country_research_daily_budgets = std::move(staged_daily_budgets);
+        _country_research_deferred_points = std::move(staged_deferred_points);
+        const size_t country_count = _countries.active.size();
+        _country_research_purchased_total.resize(country_count, 0);
+        _country_research_consumed_total.resize(country_count, 0);
+        _country_research_progress_total.resize(country_count, 0);
+        _country_research_completed_total.resize(country_count, 0);
+    }
     for (size_t i = 0; i < cell_delta_order.size(); ++i) {
         int32_t owner = NEUTRAL_SLOT;
         if (direct_unique_territory || cell_delta.get(cell_delta_order[i], owner)) {
@@ -717,10 +1069,11 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     ++_generation;
     _last_committed_day = day;
     for (Event &event : staged_events) push_event(std::move(event));
+    const int32_t research_changed = run_research_day(day);
     const double aggregate_ms = elapsed_ms(publish_start);
     publish_report("aggregate_publish", day, preflight_ms, apply_ms, aggregate_ms,
                    static_cast<int32_t>(cell_delta_order.size()),
-                   changed_country_count, _mode == MODE_ACTIVE);
+                   changed_country_count + research_changed, _mode == MODE_ACTIVE);
     Dictionary out = report();
     out["ok"] = true;
     out["done"] = true;
@@ -842,6 +1195,20 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _country_cells.clear();
     _country_technologies.clear();
     _country_goods.clear();
+    _country_discovered.clear();
+    _country_pending_technologies.clear();
+    _country_research_progress.clear();
+    _country_research_queues.clear();
+    _country_research_queue_lengths.clear();
+    _country_research_weights_bp.clear();
+    _country_research_auto_purchase.clear();
+    _country_research_daily_budgets.clear();
+    _country_research_deferred_points.clear();
+    _country_research_purchased_total.clear();
+    _country_research_consumed_total.clear();
+    _country_research_progress_total.clear();
+    _country_research_completed_total.clear();
+    _last_research_day = -1;
     _pending_commands.clear();
     _events.clear();
     _command_batch = {};
@@ -934,6 +1301,111 @@ Dictionary NativeCountryRuntime::treasury_snapshot(int64_t handle) const {
     return out;
 }
 
+Dictionary NativeCountryRuntime::research_snapshot(int64_t handle) const {
+    int32_t slot = -1;
+    if (!validate_handle(static_cast<uint64_t>(handle), slot)) return fail("country_handle_invalid");
+    PackedInt32Array states;
+    PackedInt64Array progress;
+    states.resize(static_cast<int64_t>(_technology_ids.size()));
+    progress.resize(static_cast<int64_t>(_technology_ids.size()));
+    const size_t word_base = static_cast<size_t>(slot) * _technology_words;
+    for (int32_t tech = 0; tech < static_cast<int32_t>(_technology_ids.size()); ++tech) {
+        const uint64_t bit = 1ULL << (tech % 64);
+        int32_t state = 0;
+        if ((_country_technologies[word_base + tech / 64] & bit) != 0) state = 5;
+        else if ((_country_pending_technologies[word_base + tech / 64] & bit) != 0) state = 4;
+        else if ((_country_discovered[word_base + tech / 64] & bit) != 0)
+            state = prerequisites_met(slot, tech) ? 2 : 1;
+        states.set(tech, state);
+        progress.set(tech, progress_for(slot, tech));
+    }
+    PackedInt32Array queue_offsets;
+    PackedInt32Array queue_technologies;
+    queue_offsets.push_back(0);
+    for (int32_t domain = 0; domain < 4; ++domain) {
+        const size_t length_index = static_cast<size_t>(slot) * 4U + domain;
+        const size_t queue_base = length_index * 8U;
+        const int32_t length = _country_research_queue_lengths[length_index];
+        for (int32_t position = 0; position < length; ++position) {
+            const int32_t tech = _country_research_queues[queue_base + position];
+            queue_technologies.push_back(tech);
+            if (states[tech] < 4) states.set(tech, 3);
+        }
+        queue_offsets.push_back(queue_technologies.size());
+    }
+    PackedInt32Array weights;
+    for (int32_t domain = 0; domain < 4; ++domain)
+        weights.push_back(_country_research_weights_bp[static_cast<size_t>(slot) * 4U + domain]);
+    const int64_t stock = _country_goods[
+        static_cast<size_t>(slot) * _good_ids.size() +
+        static_cast<size_t>(_technology_points_good_id)];
+    Dictionary out;
+    out["ok"] = true;
+    out["country_handle"] = handle;
+    out["technology_states"] = states;
+    out["technology_progress"] = progress;
+    out["queue_offsets"] = queue_offsets;
+    out["queue_technology_indices"] = queue_technologies;
+    out["domain_weights_bp"] = weights;
+    out["auto_purchase_enabled"] =
+        _country_research_auto_purchase[static_cast<size_t>(slot)] != 0;
+    out["daily_procurement_budget"] =
+        _country_research_daily_budgets[static_cast<size_t>(slot)];
+    out["technology_points_stock"] = stock;
+    out["deferred_unallocated_points"] =
+        _country_research_deferred_points[static_cast<size_t>(slot)];
+    out["purchased_total"] = _country_research_purchased_total[static_cast<size_t>(slot)];
+    out["consumed_total"] = _country_research_consumed_total[static_cast<size_t>(slot)];
+    out["progress_total"] = _country_research_progress_total[static_cast<size_t>(slot)];
+    out["completed_total"] = _country_research_completed_total[static_cast<size_t>(slot)];
+    out["last_research_day"] = _last_research_day;
+    out["generation"] = static_cast<int64_t>(_generation);
+    return out;
+}
+
+bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, bool &enabled,
+                                                       int64_t &cash_budget,
+                                                       int64_t &remaining_points) const {
+    if (country_slot < 0 || country_slot >= static_cast<int32_t>(_countries.active.size()) ||
+        _countries.active[static_cast<size_t>(country_slot)] == 0) return false;
+    const size_t slot = static_cast<size_t>(country_slot);
+    enabled = _country_research_auto_purchase[slot] != 0;
+    cash_budget = _country_research_daily_budgets[slot];
+    remaining_points = 0;
+    for (int32_t domain = 0; domain < 4; ++domain) {
+        const size_t length_index = slot * 4U + domain;
+        const size_t queue_base = length_index * 8U;
+        for (int32_t position = 0; position < _country_research_queue_lengths[length_index]; ++position) {
+            const int32_t tech = _country_research_queues[queue_base + position];
+            remaining_points += std::max<int64_t>(
+                0, _technology_costs[static_cast<size_t>(tech)] -
+                progress_for(country_slot, tech));
+        }
+    }
+    const int64_t stock = _country_goods[
+        slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
+    remaining_points = std::max<int64_t>(0, remaining_points - stock);
+    return true;
+}
+
+bool NativeCountryRuntime::purchase_research_points(int32_t country_slot,
+                                                     int64_t quantity,
+                                                     int64_t total_cost) {
+    if (country_slot < 0 || country_slot >= static_cast<int32_t>(_countries.active.size()) ||
+        quantity <= 0 || total_cost < 0 ||
+        _countries.cash[static_cast<size_t>(country_slot)] < total_cost) return false;
+    const size_t slot = static_cast<size_t>(country_slot);
+    int64_t &stock = _country_goods[
+        slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
+    if (quantity > std::numeric_limits<int64_t>::max() - stock) return false;
+    _countries.cash[slot] -= total_cost;
+    stock += quantity;
+    _country_research_purchased_total[slot] += quantity;
+    ++_countries.state_version[slot];
+    ++_generation;
+    return true;
+}
+
 PackedInt32Array NativeCountryRuntime::cell_country_snapshot() const {
     PackedInt32Array out;
     out.resize(static_cast<int64_t>(_cell_country_slot.size()));
@@ -946,6 +1418,88 @@ bool NativeCountryRuntime::has_technology(int32_t country_slot, int32_t technolo
         technology_id < 0 || technology_id >= static_cast<int32_t>(_technology_ids.size())) return false;
     return (_country_technologies[static_cast<size_t>(country_slot) * _technology_words + technology_id / 64] &
             (1ULL << (technology_id % 64))) != 0;
+}
+
+bool NativeCountryRuntime::prerequisites_met(const std::vector<uint64_t> &completed,
+                                              int32_t slot, int32_t technology) const {
+    if (slot < 0 || technology < 0 ||
+        technology >= static_cast<int32_t>(_technology_ids.size())) return false;
+    const size_t base = static_cast<size_t>(slot) * _technology_words;
+    const auto has = [&](int32_t tech) {
+        return (completed[base + tech / 64] & (1ULL << (tech % 64))) != 0;
+    };
+    const int32_t milestone_begin = _technology_milestone_offsets[static_cast<size_t>(technology)];
+    const int32_t milestone_end = _technology_milestone_offsets[static_cast<size_t>(technology + 1)];
+    if (milestone_end > milestone_begin) {
+        int32_t count = 0;
+        for (int32_t edge = milestone_begin; edge < milestone_end; ++edge)
+            if (has(_technology_milestone_candidates[static_cast<size_t>(edge)])) ++count;
+        return count >= _technology_milestone_required_counts[static_cast<size_t>(technology)];
+    }
+    const int32_t begin = _technology_prerequisite_offsets[static_cast<size_t>(technology)];
+    const int32_t end = _technology_prerequisite_offsets[static_cast<size_t>(technology + 1)];
+    for (int32_t edge = begin; edge < end; ++edge)
+        if (!has(_technology_prerequisites[static_cast<size_t>(edge)])) return false;
+    return true;
+}
+
+bool NativeCountryRuntime::prerequisites_met(int32_t slot, int32_t technology) const {
+    return prerequisites_met(_country_technologies, slot, technology);
+}
+
+void NativeCountryRuntime::refresh_discovery(int32_t slot) {
+    if (slot < 0 || slot >= static_cast<int32_t>(_countries.active.size())) return;
+    const size_t base = static_cast<size_t>(slot) * _technology_words;
+    for (int32_t tech = 0; tech < static_cast<int32_t>(_technology_ids.size()); ++tech) {
+        const uint64_t bit = 1ULL << (tech % 64);
+        if ((_country_technologies[base + tech / 64] & bit) != 0) {
+            _country_discovered[base + tech / 64] |= bit;
+            continue;
+        }
+        const int32_t begin = _technology_prerequisite_offsets[static_cast<size_t>(tech)];
+        const int32_t end = _technology_prerequisite_offsets[static_cast<size_t>(tech + 1)];
+        const int32_t milestone_begin = _technology_milestone_offsets[static_cast<size_t>(tech)];
+        const int32_t milestone_end = _technology_milestone_offsets[static_cast<size_t>(tech + 1)];
+        bool reveal = false;
+        if (milestone_end > milestone_begin) {
+            for (int32_t edge = milestone_begin; edge < milestone_end && !reveal; ++edge) {
+                const int32_t candidate = _technology_milestone_candidates[static_cast<size_t>(edge)];
+                reveal = (_country_technologies[base + candidate / 64] &
+                          (1ULL << (candidate % 64))) != 0;
+            }
+        } else {
+            for (int32_t edge = begin; edge < end && !reveal; ++edge) {
+                const int32_t prerequisite = _technology_prerequisites[static_cast<size_t>(edge)];
+                reveal = (_country_technologies[base + prerequisite / 64] &
+                          (1ULL << (prerequisite % 64))) != 0;
+            }
+        }
+        if (reveal) _country_discovered[base + tech / 64] |= bit;
+    }
+}
+
+int64_t NativeCountryRuntime::progress_for(int32_t slot, int32_t technology) const {
+    if (slot < 0 || slot >= static_cast<int32_t>(_country_research_progress.size())) return 0;
+    const auto &entries = _country_research_progress[static_cast<size_t>(slot)];
+    const auto it = std::lower_bound(entries.begin(), entries.end(), technology,
+        [](const std::pair<int32_t, int64_t> &entry, int32_t value) {
+            return entry.first < value;
+        });
+    return it != entries.end() && it->first == technology ? it->second : 0;
+}
+
+void NativeCountryRuntime::set_progress(int32_t slot, int32_t technology, int64_t value) {
+    auto &entries = _country_research_progress[static_cast<size_t>(slot)];
+    const auto it = std::lower_bound(entries.begin(), entries.end(), technology,
+        [](const std::pair<int32_t, int64_t> &entry, int32_t needle) {
+            return entry.first < needle;
+        });
+    if (it != entries.end() && it->first == technology) {
+        if (value <= 0) entries.erase(it);
+        else it->second = value;
+    } else if (value > 0) {
+        entries.insert(it, {technology, value});
+    }
 }
 
 int32_t NativeCountryRuntime::country_slot_for_cell(int32_t cell) const {
@@ -973,6 +1527,13 @@ int64_t NativeCountryRuntime::total_cash() const {
     return total;
 }
 
+int64_t NativeCountryRuntime::cash_for_slot(int32_t country_slot) const {
+    return country_slot >= 0 &&
+           country_slot < static_cast<int32_t>(_countries.active.size()) &&
+           _countries.active[static_cast<size_t>(country_slot)] != 0
+        ? _countries.cash[static_cast<size_t>(country_slot)] : 0;
+}
+
 int64_t NativeCountryRuntime::total_good(int32_t good_id) const {
     if (good_id < 0 || good_id >= static_cast<int32_t>(_good_ids.size())) return 0;
     int64_t total = 0;
@@ -983,6 +1544,151 @@ int64_t NativeCountryRuntime::total_good(int32_t good_id) const {
         total += value;
     }
     return total;
+}
+
+int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
+    if (day_index <= _last_research_day || _technology_points_good_id < 0) return 0;
+    int32_t changed = 0;
+    for (int32_t slot = 0; slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
+        if (_countries.active[static_cast<size_t>(slot)] == 0) continue;
+        const size_t word_base = static_cast<size_t>(slot) * _technology_words;
+        bool activated = false;
+        for (int32_t technology = 0;
+             technology < static_cast<int32_t>(_technology_ids.size());
+             ++technology) {
+            const size_t word_index = word_base + technology / 64;
+            const uint64_t bit = 1ULL << (technology % 64);
+            if ((_country_pending_technologies[word_index] & bit) == 0) continue;
+            bool modifier_ready = true;
+            if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
+                !_technology_modifier_definition_keys[static_cast<size_t>(technology)].empty()) {
+                std::string modifier_error;
+                modifier_ready = _modifier_runtime->apply_technology_effect(
+                    make_handle(slot),
+                    _technology_modifier_definition_keys[static_cast<size_t>(technology)],
+                    technology, day_index, modifier_error);
+            }
+            if (!modifier_ready) continue;
+            _country_technologies[word_index] |= bit;
+            _country_pending_technologies[word_index] &= ~bit;
+            activated = true;
+        }
+        if (activated) {
+            refresh_discovery(slot);
+            _country_research_deferred_points[static_cast<size_t>(slot)] = 0;
+            ++_countries.state_version[static_cast<size_t>(slot)];
+            ++changed;
+        }
+
+        int64_t &stock = _country_goods[
+            static_cast<size_t>(slot) * _good_ids.size() +
+            static_cast<size_t>(_technology_points_good_id)];
+        const int64_t prior_deferred = std::min(
+            _country_research_deferred_points[static_cast<size_t>(slot)], stock);
+        const int64_t available = stock - prior_deferred;
+        if (available <= 0) continue;
+
+        int64_t shares[4] = {0, 0, 0, 0};
+        int64_t remainders[4] = {0, 0, 0, 0};
+        int64_t assigned = 0;
+        for (int32_t domain = 0; domain < 4; ++domain) {
+            const int32_t weight = _country_research_weights_bp[
+                static_cast<size_t>(slot) * 4U + static_cast<size_t>(domain)];
+            const int64_t quotient = available / 10000;
+            const int64_t remainder = available % 10000;
+            shares[domain] = quotient * weight + (remainder * weight) / 10000;
+            remainders[domain] = (remainder * weight) % 10000;
+            assigned += shares[domain];
+        }
+        for (int64_t remainder_units = available - assigned; remainder_units > 0; --remainder_units) {
+            int32_t winner = 0;
+            for (int32_t domain = 1; domain < 4; ++domain)
+                if (remainders[domain] > remainders[winner]) winner = domain;
+            ++shares[winner];
+            remainders[winner] = -1;
+        }
+
+        int64_t consumed = 0;
+        int64_t newly_deferred = 0;
+        for (int32_t domain = 0; domain < 4; ++domain) {
+            int64_t domain_points = shares[domain];
+            while (domain_points > 0) {
+                const size_t length_index = static_cast<size_t>(slot) * 4U +
+                    static_cast<size_t>(domain);
+                uint8_t &length = _country_research_queue_lengths[length_index];
+                if (length == 0) break;
+                const size_t queue_base = (static_cast<size_t>(slot) * 4U +
+                    static_cast<size_t>(domain)) * 8U;
+                const int32_t technology = _country_research_queues[queue_base];
+                if (technology < 0 || has_technology(slot, technology)) {
+                    for (int32_t i = 1; i < length; ++i)
+                        _country_research_queues[queue_base + static_cast<size_t>(i - 1)] =
+                            _country_research_queues[queue_base + static_cast<size_t>(i)];
+                    _country_research_queues[queue_base + static_cast<size_t>(--length)] = -1;
+                    continue;
+                }
+                if (!prerequisites_met(slot, technology)) break;
+                const int64_t progress = progress_for(slot, technology);
+                double cost_factor = 1.0;
+                double efficiency = 1.0;
+                if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
+                    cost_factor = _modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY, "country.research.cost_factor",
+                        make_handle(slot), 0, 1.0);
+                    static const char *EFFICIENCY_STATS[4] = {
+                        "country.research.agriculture_efficiency",
+                        "country.research.engineering_efficiency",
+                        "country.research.science_efficiency",
+                        "country.research.society_efficiency",
+                    };
+                    efficiency = _modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY, EFFICIENCY_STATS[domain],
+                        make_handle(slot), 0, 1.0);
+                }
+                const int64_t effective_cost = std::max<int64_t>(
+                    1, static_cast<int64_t>(std::llround(
+                        static_cast<double>(_technology_costs[
+                            static_cast<size_t>(technology)]) * cost_factor)));
+                const int64_t remaining = std::max<int64_t>(
+                    0, effective_cost - progress);
+                const int64_t spend_needed = std::max<int64_t>(
+                    1, static_cast<int64_t>(std::ceil(
+                        static_cast<double>(remaining) /
+                        std::max(0.000001, efficiency))));
+                const int64_t spend = std::min(domain_points, spend_needed);
+                const int64_t progress_gain = std::min<int64_t>(
+                    remaining, std::max<int64_t>(1, static_cast<int64_t>(
+                        std::floor(static_cast<double>(spend) * efficiency))));
+                set_progress(slot, technology, progress + progress_gain);
+                domain_points -= spend;
+                consumed += spend;
+                _country_research_progress_total[static_cast<size_t>(slot)] += progress_gain;
+                if (progress + progress_gain >= effective_cost) {
+                    _country_pending_technologies[word_base + technology / 64] |=
+                        1ULL << (technology % 64);
+                    ++_country_research_completed_total[static_cast<size_t>(slot)];
+                    for (int32_t i = 1; i < length; ++i)
+                        _country_research_queues[queue_base + static_cast<size_t>(i - 1)] =
+                            _country_research_queues[queue_base + static_cast<size_t>(i)];
+                    _country_research_queues[queue_base + static_cast<size_t>(--length)] = -1;
+                } else {
+                    break;
+                }
+            }
+            newly_deferred += domain_points;
+        }
+        if (consumed > 0) {
+            stock -= consumed;
+            _country_research_consumed_total[static_cast<size_t>(slot)] += consumed;
+            ++_countries.state_version[static_cast<size_t>(slot)];
+            if (!activated) ++changed;
+        }
+        _country_research_deferred_points[static_cast<size_t>(slot)] =
+            std::min(stock, prior_deferred + newly_deferred);
+    }
+    _last_research_day = day_index;
+    if (changed > 0) ++_generation;
+    return changed;
 }
 
 int64_t NativeCountryRuntime::transfer_cash_to_cohort(int64_t country_handle, int64_t requested) {
@@ -1048,6 +1754,16 @@ uint64_t NativeCountryRuntime::catalog_hash() const {
     uint64_t hash = FNV_OFFSET;
     for (const std::string &id : _good_ids) hash_string(hash, id);
     for (const std::string &id : _technology_ids) hash_string(hash, id);
+    if (!_technology_domains.empty())
+        hash_bytes(hash, _technology_domains.data(), _technology_domains.size() * sizeof(int32_t));
+    if (!_technology_costs.empty())
+        hash_bytes(hash, _technology_costs.data(), _technology_costs.size() * sizeof(int64_t));
+    if (!_technology_prerequisite_offsets.empty())
+        hash_bytes(hash, _technology_prerequisite_offsets.data(),
+                   _technology_prerequisite_offsets.size() * sizeof(int32_t));
+    if (!_technology_prerequisites.empty())
+        hash_bytes(hash, _technology_prerequisites.data(),
+                   _technology_prerequisites.size() * sizeof(int32_t));
     return hash;
 }
 
@@ -1066,6 +1782,20 @@ uint64_t NativeCountryRuntime::compute_state_hash() const {
     if (!_cell_country_slot.empty()) hash_bytes(hash, _cell_country_slot.data(), _cell_country_slot.size() * sizeof(int32_t));
     if (!_country_technologies.empty()) hash_bytes(hash, _country_technologies.data(), _country_technologies.size() * sizeof(uint64_t));
     if (!_country_goods.empty()) hash_bytes(hash, _country_goods.data(), _country_goods.size() * sizeof(int64_t));
+    if (!_country_discovered.empty()) hash_bytes(hash, _country_discovered.data(), _country_discovered.size() * sizeof(uint64_t));
+    if (!_country_pending_technologies.empty()) hash_bytes(hash, _country_pending_technologies.data(), _country_pending_technologies.size() * sizeof(uint64_t));
+    if (!_country_research_queues.empty()) hash_bytes(hash, _country_research_queues.data(), _country_research_queues.size() * sizeof(int32_t));
+    if (!_country_research_queue_lengths.empty()) hash_bytes(hash, _country_research_queue_lengths.data(), _country_research_queue_lengths.size() * sizeof(uint8_t));
+    if (!_country_research_weights_bp.empty()) hash_bytes(hash, _country_research_weights_bp.data(), _country_research_weights_bp.size() * sizeof(int32_t));
+    if (!_country_research_daily_budgets.empty()) hash_bytes(hash, _country_research_daily_budgets.data(), _country_research_daily_budgets.size() * sizeof(int64_t));
+    if (!_country_research_deferred_points.empty()) hash_bytes(hash, _country_research_deferred_points.data(), _country_research_deferred_points.size() * sizeof(int64_t));
+    hash_bytes(hash, &_last_research_day, sizeof(_last_research_day));
+    for (const auto &entries : _country_research_progress) {
+        for (const auto &entry : entries) {
+            hash_bytes(hash, &entry.first, sizeof(entry.first));
+            hash_bytes(hash, &entry.second, sizeof(entry.second));
+        }
+    }
     return hash;
 }
 
@@ -1152,6 +1882,27 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
     append_vector(out, _cell_country_slot);
     append_vector(out, _country_technologies);
     append_vector(out, _country_goods);
+    append_vector(out, _country_discovered);
+    append_vector(out, _country_pending_technologies);
+    append_vector(out, _country_research_queues);
+    append_vector(out, _country_research_queue_lengths);
+    append_vector(out, _country_research_weights_bp);
+    append_vector(out, _country_research_auto_purchase);
+    append_vector(out, _country_research_daily_budgets);
+    append_vector(out, _country_research_deferred_points);
+    append_vector(out, _country_research_purchased_total);
+    append_vector(out, _country_research_consumed_total);
+    append_vector(out, _country_research_progress_total);
+    append_vector(out, _country_research_completed_total);
+    append_le<int64_t>(out, _last_research_day);
+    append_le<uint64_t>(out, static_cast<uint64_t>(_country_research_progress.size()));
+    for (const auto &entries : _country_research_progress) {
+        append_le<uint64_t>(out, static_cast<uint64_t>(entries.size()));
+        for (const auto &entry : entries) {
+            append_le<int32_t>(out, entry.first);
+            append_le<int64_t>(out, entry.second);
+        }
+    }
     append_le<uint64_t>(out, static_cast<uint64_t>(_pending_commands.size()));
     for (const Command &command : _pending_commands) {
         append_le<int32_t>(out, command.opcode);
@@ -1160,6 +1911,10 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
         append_le<uint64_t>(out, command.target_handle);
         append_le<int32_t>(out, command.cell);
         append_le<int32_t>(out, command.aux);
+        append_le<int32_t>(out, command.domain);
+        append_le<int32_t>(out, command.position);
+        for (int32_t weight : command.weights_bp) append_le<int32_t>(out, weight);
+        append_le<int64_t>(out, command.value);
         append_string(out, command.stable_id);
         append_string(out, command.display_name);
         append_le<uint64_t>(out, command.submit_order);
@@ -1184,7 +1939,10 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     int32_t cell_count = 0, country_count = 0, good_count_value = 0, tech_count = 0, tech_words = 0;
     if (!read_le(bytes, cursor, magic) || !read_le(bytes, cursor, version)) { error = "country_save_truncated"; return false; }
     if (magic != SAVE_MAGIC) { error = "country_save_magic_invalid"; return false; }
-    if (version != 1 && version != SCHEMA_VERSION) { error = "country_save_schema_unsupported"; return false; }
+    if (version != SCHEMA_VERSION) {
+        error = "legacy_technology_tree_save_unsupported";
+        return false;
+    }
     if (!read_le(bytes, cursor, saved_catalog) || !read_le(bytes, cursor, generation_value) ||
         !read_le(bytes, cursor, committed_day) || !read_le(bytes, cursor, saved_submit_order) ||
         !read_le(bytes, cursor, cell_count) ||
@@ -1227,6 +1985,88 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
         technologies.size() != static_cast<size_t>(country_count) * _technology_words ||
         !read_vector(bytes, cursor, goods, static_cast<uint64_t>(country_count) * _good_ids.size()) ||
         goods.size() != static_cast<size_t>(country_count) * _good_ids.size()) { error = "country_save_matrix_shape_invalid"; return false; }
+    std::vector<uint64_t> discovered, pending;
+    std::vector<int32_t> research_queues, research_weights;
+    std::vector<uint8_t> research_queue_lengths, auto_purchase;
+    std::vector<int64_t> daily_budgets, deferred_points, purchased_total,
+        consumed_total, progress_total, completed_total;
+    int64_t last_research_day = -1;
+    const uint64_t countries_u64 = static_cast<uint64_t>(country_count);
+    if (!read_vector(bytes, cursor, discovered, countries_u64 * _technology_words) ||
+        discovered.size() != static_cast<size_t>(country_count) * _technology_words ||
+        !read_vector(bytes, cursor, pending, countries_u64 * _technology_words) ||
+        pending.size() != static_cast<size_t>(country_count) * _technology_words ||
+        !read_vector(bytes, cursor, research_queues, countries_u64 * 32U) ||
+        research_queues.size() != static_cast<size_t>(country_count) * 32U ||
+        !read_vector(bytes, cursor, research_queue_lengths, countries_u64 * 4U) ||
+        research_queue_lengths.size() != static_cast<size_t>(country_count) * 4U ||
+        !read_vector(bytes, cursor, research_weights, countries_u64 * 4U) ||
+        research_weights.size() != static_cast<size_t>(country_count) * 4U ||
+        !read_vector(bytes, cursor, auto_purchase, countries_u64) ||
+        auto_purchase.size() != static_cast<size_t>(country_count) ||
+        !read_vector(bytes, cursor, daily_budgets, countries_u64) ||
+        !read_vector(bytes, cursor, deferred_points, countries_u64) ||
+        !read_vector(bytes, cursor, purchased_total, countries_u64) ||
+        !read_vector(bytes, cursor, consumed_total, countries_u64) ||
+        !read_vector(bytes, cursor, progress_total, countries_u64) ||
+        !read_vector(bytes, cursor, completed_total, countries_u64) ||
+        daily_budgets.size() != static_cast<size_t>(country_count) ||
+        deferred_points.size() != static_cast<size_t>(country_count) ||
+        purchased_total.size() != static_cast<size_t>(country_count) ||
+        consumed_total.size() != static_cast<size_t>(country_count) ||
+        progress_total.size() != static_cast<size_t>(country_count) ||
+        completed_total.size() != static_cast<size_t>(country_count) ||
+        !read_le(bytes, cursor, last_research_day)) {
+        error = "country_save_research_shape_invalid";
+        return false;
+    }
+    uint64_t progress_country_count = 0;
+    if (!read_le(bytes, cursor, progress_country_count) ||
+        progress_country_count != countries_u64) {
+        error = "country_save_research_progress_shape_invalid";
+        return false;
+    }
+    std::vector<std::vector<std::pair<int32_t, int64_t>>> research_progress(
+        static_cast<size_t>(country_count));
+    for (int32_t slot = 0; slot < country_count; ++slot) {
+        uint64_t entry_count = 0;
+        if (!read_le(bytes, cursor, entry_count) ||
+            entry_count > static_cast<uint64_t>(_technology_ids.size())) {
+            error = "country_save_research_progress_shape_invalid";
+            return false;
+        }
+        int32_t previous_tech = -1;
+        for (uint64_t entry = 0; entry < entry_count; ++entry) {
+            int32_t tech = -1;
+            int64_t value = 0;
+            if (!read_le(bytes, cursor, tech) || !read_le(bytes, cursor, value) ||
+                tech <= previous_tech || tech >= tech_count || value <= 0 ||
+                value > _technology_costs[static_cast<size_t>(tech)]) {
+                error = "country_save_research_progress_invalid";
+                return false;
+            }
+            research_progress[static_cast<size_t>(slot)].push_back({tech, value});
+            previous_tech = tech;
+        }
+    }
+    for (int32_t slot = 0; slot < country_count; ++slot) {
+        int32_t weight_total = 0;
+        for (int32_t domain = 0; domain < 4; ++domain) {
+            const size_t index = static_cast<size_t>(slot) * 4U + domain;
+            if (research_queue_lengths[index] > 8 ||
+                research_weights[index] < 0 || research_weights[index] > 10000) {
+                error = "country_save_research_policy_invalid";
+                return false;
+            }
+            weight_total += research_weights[index];
+        }
+        if (weight_total != 10000 || auto_purchase[static_cast<size_t>(slot)] > 1 ||
+            daily_budgets[static_cast<size_t>(slot)] < 0 ||
+            deferred_points[static_cast<size_t>(slot)] < 0) {
+            error = "country_save_research_policy_invalid";
+            return false;
+        }
+    }
     std::vector<int32_t> territory_counts(static_cast<size_t>(country_count), 0);
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
         const int32_t owner = owners[static_cast<size_t>(cell)];
@@ -1256,10 +2096,16 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
         if (!read_le(bytes, cursor, command.opcode) || !read_le(bytes, cursor, command.effective_day) ||
             !read_le(bytes, cursor, command.sequence) || !read_le(bytes, cursor, command.target_handle) ||
             !read_le(bytes, cursor, command.cell) || !read_le(bytes, cursor, command.aux) ||
+            !read_le(bytes, cursor, command.domain) || !read_le(bytes, cursor, command.position) ||
+            !read_le(bytes, cursor, command.weights_bp[0]) ||
+            !read_le(bytes, cursor, command.weights_bp[1]) ||
+            !read_le(bytes, cursor, command.weights_bp[2]) ||
+            !read_le(bytes, cursor, command.weights_bp[3]) ||
+            !read_le(bytes, cursor, command.value) ||
             !read_string(bytes, cursor, command.stable_id) || !read_string(bytes, cursor, command.display_name) ||
             !read_le(bytes, cursor, command.submit_order)) { error = "country_save_command_truncated"; return false; }
         if (command.opcode < COMMAND_CREATE_COUNTRY ||
-            command.opcode > COMMAND_GRANT_TECHNOLOGY || command.effective_day < 0 ||
+            command.opcode > COMMAND_REVEAL_ALL_TECHNOLOGIES || command.effective_day < 0 ||
             command.sequence < 0 || command.submit_order == 0 ||
             !command_submit_orders.insert(command.submit_order).second) {
             error = "country_save_command_invalid"; return false;
@@ -1281,15 +2127,19 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
                 (command.target_handle != 0 && !saved_handle_valid(command.target_handle))) {
                 error = "country_save_transfer_command_invalid"; return false;
             }
-        } else if (!saved_handle_valid(command.target_handle) || command.aux < 0 ||
-                   command.aux >= tech_count) {
+        } else if (!saved_handle_valid(command.target_handle) ||
+                   ((command.opcode == COMMAND_GRANT_TECHNOLOGY ||
+                     command.opcode == COMMAND_ENQUEUE_RESEARCH ||
+                     command.opcode == COMMAND_REMOVE_RESEARCH ||
+                     command.opcode == COMMAND_MOVE_RESEARCH) &&
+                    (command.aux < 0 || command.aux >= tech_count))) {
             error = "country_save_technology_command_invalid"; return false;
         }
         commands.push_back(std::move(command));
         max_submit_order = std::max(max_submit_order, commands.back().submit_order);
     }
     std::vector<uint8_t> modifier_bytes;
-    if (version >= 2) {
+    {
         uint64_t modifier_size = 0;
         if (!read_le(bytes, cursor, modifier_size) ||
             modifier_size > static_cast<uint64_t>(bytes.size() - cursor) ||
@@ -1303,7 +2153,7 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     }
     if (!read_le(bytes, cursor, end) || end != SAVE_END || cursor != bytes.size()) { error = "country_save_end_invalid"; return false; }
 
-    if (version >= 2 && !modifier_bytes.empty()) {
+    if (!modifier_bytes.empty()) {
         if (_modifier_runtime == nullptr) {
             error = "country_restore_modifier_runtime_unavailable";
             return false;
@@ -1321,6 +2171,20 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     _cell_country_slot = std::move(owners);
     _country_technologies = std::move(technologies);
     _country_goods = std::move(goods);
+    _country_discovered = std::move(discovered);
+    _country_pending_technologies = std::move(pending);
+    _country_research_progress = std::move(research_progress);
+    _country_research_queues = std::move(research_queues);
+    _country_research_queue_lengths = std::move(research_queue_lengths);
+    _country_research_weights_bp = std::move(research_weights);
+    _country_research_auto_purchase = std::move(auto_purchase);
+    _country_research_daily_budgets = std::move(daily_budgets);
+    _country_research_deferred_points = std::move(deferred_points);
+    _country_research_purchased_total = std::move(purchased_total);
+    _country_research_consumed_total = std::move(consumed_total);
+    _country_research_progress_total = std::move(progress_total);
+    _country_research_completed_total = std::move(completed_total);
+    _last_research_day = last_research_day;
     _pending_commands = std::move(commands);
     _generation = generation_value;
     _last_committed_day = committed_day;

@@ -208,10 +208,12 @@ func _request_exit_game() -> void:
 func _push_visual_toggles() -> void:
 	if _renderer == null:
 		return
-	visual_quality = _resolved_visual_quality(String(
-		GameSettings.values().get("render_quality", "auto")))
+	var quality_setting := String(GameSettings.values().get("render_quality", "auto"))
+	visual_quality = _resolved_visual_quality(quality_setting)
 	if OS.has_feature("mobile") and _renderer.has_method("set_mobile_quality_tier"):
-		_renderer.set_mobile_quality_tier(_mobile_quality_tier_to_define(mobile_quality_tier))
+		# Compile-time tier must be selected before runtime visual_quality is pushed.
+		# The exported mobile_quality_tier remains an inspector/debug value only.
+		_renderer.set_mobile_quality_tier(_mobile_quality_define_from_setting(quality_setting))
 	if _renderer.has_method("set_visual_quality"):
 		_renderer.set_visual_quality(visual_quality)
 	if _renderer.has_method("set_perf_sampler_enabled"):
@@ -249,3 +251,15 @@ func _mobile_quality_tier_to_define(tier: int) -> String:
 			return "MOBILE_QUALITY_HIGH"
 		_:
 			return "MOBILE_QUALITY_MID"
+
+
+func _mobile_quality_define_from_setting(quality: String) -> String:
+	match quality:
+		"medium":
+			return "MOBILE_QUALITY_MID"
+		"high":
+			return "MOBILE_QUALITY_HIGH"
+		"auto", "low":
+			return "MOBILE_QUALITY_LOW"
+		_:
+			return "MOBILE_QUALITY_LOW"

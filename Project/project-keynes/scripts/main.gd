@@ -442,6 +442,9 @@ func _ready() -> void:
 	# 地块选择改由 MapCamera 的 tile_tapped 信号驱动（仅"点按"触发，拖拽/捏合不误选）。
 	if _camera != null:
 		_camera.tile_tapped.connect(_on_map_tile_tapped)
+		if not _camera.zoom_changed.is_connected(_renderer.set_camera_zoom):
+			_camera.zoom_changed.connect(_renderer.set_camera_zoom)
+		_renderer.set_camera_zoom(_camera.zoom.x)
 
 	# Mobile safe area + 大按钮（plan §mobile-ui-safe-area，2026-06-14）：
 	# 移动端圆角屏顶部最右上区域被裁切，TopBar 默认 offset_bottom=36 紧贴顶部，
@@ -2287,6 +2290,7 @@ func _generate_and_render(seed_val: int) -> void:
 	if _camera.has_method("set_horizontal_wrap"):
 		_camera.set_horizontal_wrap(_map_wrap_period_x(), true)
 	_camera.fit_to_viewport(1.05, _map_safe_area())
+	_renderer.set_camera_zoom(_camera.zoom.x)
 
 	if _info_label != null:
 		var stats := _current_map.terrain_stats()

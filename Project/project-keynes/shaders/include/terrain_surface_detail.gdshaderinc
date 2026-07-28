@@ -1,0 +1,310 @@
+// terrain_surface_detail.gdshaderinc
+// Static terrain-edge antialiasing and one-sample world-space micro surface.
+// Dynamic cell state always remains owned by map_index_atlas's hard primary cell.
+
+struct TerrainStaticMaterial {
+	vec3 color;
+	float roughness;
+	float micro_strength;
+	float edge_factor;
+	int secondary_biome;
+};
+
+int decode_edge_secondary_index(vec2 uv) {
+	vec2 rg = texture(terrain_edge_neighbor_tex, wrap_map_uv(uv)).rg;
+	int lo = int(rg.r * 255.0 + 0.5);
+	int hi = int(rg.g * 255.0 + 0.5);
+	int cid = lo + hi * 256;
+	return (cid >= 65535) ? -1 : cid;
+}
+
+bool terrain_static_biome_is_water(int biome) {
+	return biome == B_OCEAN || biome == B_COAST || biome == B_LAKE
+			|| biome == B_REEF || biome == B_KELP || biome == B_SEA_ICE;
+}
+
+float terrain_edge_screen_width_px() {
+#if defined(PK_MOBILE_ANY)
+	if (visual_quality >= 2) { return 1.25; }
+	if (visual_quality >= 1) { return 1.00; }
+	return 1.00;
+#else
+	if (visual_quality >= 2) { return 1.75; }
+	if (visual_quality >= 1) { return 1.25; }
+	return 1.00;
+#endif
+}
+
+vec2 terrain_periodic_world_uv(vec2 wp, float tile_world_size) {
+	float period = (wrap_period_x > 0.0001) ? wrap_period_x : max(world_size.x, 1.0);
+	float repeat_count = max(1.0, floor(period / max(tile_world_size, 1.0) + 0.5));
+	float wrapped_phase = (wrap_world_x(wp.x) - wrap_origin_x) / max(period, 0.0001);
+	return vec2(wrapped_phase * repeat_count, wp.y / max(tile_world_size, 1.0));
+}
+
+float terrain_bayer2_digit(vec2 bit_xy) {
+	if (bit_xy.y < 0.5) {
+		return (bit_xy.x < 0.5) ? 0.0 : 2.0;
+	}
+	return (bit_xy.x < 0.5) ? 3.0 : 1.0;
+}
+
+// 移动端恢复 atlas-texel 锚定的 8x8 Bayer DitherUV。它只选择视觉主/副材质，
+// 不改写 map_index_atlas.GB、CSR 或任何权威 cell 状态。
+float terrain_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
+	vec2 atlas_dims = vec2(textureSize(map_index_atlas, 0));
+	vec2 wrapped_uv = wrap_map_uv(uv);
+	vec2 pixel_xy = floor(wrapped_uv * atlas_dims);
+	if (wrap_period_x > 0.0001 && world_size.x > 0.0001) {
+		float period_px = max(
+				8.0,
+				round((atlas_dims.x * wrap_period_x / world_size.x) / 8.0) * 8.0);
+		float phase = (wrap_world_x(wp.x) - wrap_origin_x) / wrap_period_x;
+		pixel_xy.x = floor(fract(phase) * period_px);
+	}
+	vec2 p = mod(pixel_xy, 8.0);
+	float value = 16.0 * terrain_bayer2_digit(mod(p, 2.0))
+			+ 4.0 * terrain_bayer2_digit(mod(floor(p * 0.5), 2.0))
+			+ terrain_bayer2_digit(floor(p * 0.25));
+	return (value + 0.5) / 64.0;
+}
+
+// Distance field and DitherUV are complementary: the distance field defines
+// the broad ecotone probability, while DitherUV converts it into stable map-
+// anchored coverage. Desktop fades the ordered coverage toward continuous
+// mixing at close zoom so enlarged 8x8 texels never dominate the material.
+float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
+	float dither_w = (terrain_mobile_dither_uv_threshold(uv, wp) < edge_w) ? 1.0 : 0.0;
+#if defined(PK_MOBILE_ANY)
+	return dither_w;
+#else
+	float far_dither = 1.0 - smoothstep(1.20, 2.20, camera_zoom);
+	float quality_strength = (visual_quality <= 0) ? 0.92
+			: ((visual_quality == 1) ? 0.74 : 0.62);
+	return mix(edge_w, dither_w, far_dither * quality_strength);
+#endif
+}
+
+// The inner fwidth band removes raster stair-steps. A wider world-space ecotone
+// provides a shared visual anchor for the final land pipeline; cell-owned
+// weather, fog, ecology and interaction state remain hard-primary data.
+float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
+	if (!has_terrain_edge_data) {
+		return 0.0;
+	}
+	float distance_to_edge = texture(terrain_edge_distance_tex, wrap_map_uv(uv)).r;
+#if defined(PK_MOBILE_ANY)
+	float mobile_quality_scale = (visual_quality <= 0) ? 0.58
+			: ((visual_quality == 1) ? 0.82 : 0.94);
+	float mobile_width = clamp(
+			terrain_ecotone_width * mobile_quality_scale,
+			1.0 / 255.0,
+			0.98);
+	return 0.5 * (1.0 - smoothstep(0.0, mobile_width, distance_to_edge));
+#else
+	float one_screen_pixel = max(fwidth(distance_to_edge), 1.0 / 255.0);
+	float aa_band = one_screen_pixel * terrain_edge_screen_width_px();
+	float aa_weight = 0.5 * (1.0 - smoothstep(0.0, aa_band, distance_to_edge));
+
+	float quality_scale = 1.0;
+	quality_scale = (visual_quality <= 0) ? 0.68 : ((visual_quality == 1) ? 0.92 : 1.0);
+	float base_width = clamp(terrain_ecotone_width * quality_scale, 0.0, 0.96);
+	float max_width = min(0.98, base_width * (1.0 + abs(terrain_ecotone_noise)));
+	if (distance_to_edge >= max_width || base_width <= 0.0001) {
+		return aa_weight;
+	}
+	float width_noise = texture(
+			noise_tex,
+			terrain_periodic_world_uv(wp, 96.0) + vec2(0.173, 0.491)).r * 2.0 - 1.0;
+	float natural_width = clamp(
+			base_width * (1.0 + width_noise * terrain_ecotone_noise),
+			min(aa_band, 0.98),
+			0.98);
+	float ecotone_weight = 0.5 * (1.0 - smoothstep(
+			0.0, max(natural_width, 0.0001), distance_to_edge));
+	return max(aa_weight, ecotone_weight);
+#endif
+}
+
+float terrain_biome_micro_strength(int biome) {
+	if (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS || biome == B_MESA) {
+		return 1.00; // rock
+	}
+	if (biome == B_DESERT || biome == B_COLD_DESERT || biome == B_COAST || biome == B_SALT_FLAT) {
+		return 0.82; // sand / dry soil
+	}
+	if (biome == B_SWAMP || biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_MANGROVE) {
+		return 0.52; // wet soil
+	}
+	if (biome == B_SNOW || biome == B_GLACIER || biome == B_TUNDRA) {
+		return 0.36; // snow / ice
+	}
+	return 0.68; // organic terrain
+}
+
+TerrainStaticMaterial compute_terrain_static_material(
+		int primary_biome,
+		float elev,
+		vec2 wp,
+		vec2 uv) {
+	TerrainStaticMaterial out_mat;
+	vec3 hyps = hypsometric_tint(elev, false);
+	vec3 detail = procedural_biome_detail(primary_biome, wp, uv);
+	out_mat.color = biome_hue_modulate(hyps, primary_biome) * detail;
+	out_mat.roughness = biome_roughness(primary_biome);
+	out_mat.micro_strength = terrain_biome_micro_strength(primary_biome);
+	out_mat.edge_factor = 0.0;
+	out_mat.secondary_biome = -1;
+
+	float edge_w = terrain_edge_secondary_weight(uv, wp);
+	if (edge_w <= 0.0001) {
+		return out_mat;
+	}
+	int secondary_id = decode_edge_secondary_index(uv);
+	if (secondary_id < 0) {
+		return out_mat;
+	}
+	int secondary_biome = int(texture(enum_lut, cell_lut_uv(secondary_id)).r * 255.0 + 0.5);
+	// The shared edge field also serves fog and weather across coastlines. Terrain
+	// alone keeps the land/water material topology hard to prevent color leakage.
+	if (terrain_static_biome_is_water(secondary_biome)
+			!= terrain_static_biome_is_water(primary_biome)) {
+		return out_mat;
+	}
+	if (secondary_biome == primary_biome) {
+		return out_mat;
+	}
+	out_mat.edge_factor = edge_w;
+	out_mat.secondary_biome = secondary_biome;
+
+	float static_w = terrain_hybrid_static_weight(edge_w, uv, wp);
+	vec3 secondary_detail = procedural_biome_detail(secondary_biome, wp, uv);
+	vec3 secondary_color = biome_hue_modulate(hyps, secondary_biome) * secondary_detail;
+	out_mat.color = mix(out_mat.color, secondary_color, static_w);
+	out_mat.roughness = mix(out_mat.roughness, biome_roughness(secondary_biome), static_w);
+	out_mat.micro_strength = mix(
+			out_mat.micro_strength,
+			terrain_biome_micro_strength(secondary_biome),
+			static_w);
+	return out_mat;
+}
+
+float terrain_micro_zoom_alpha() {
+	float fade_start;
+	float fade_end;
+#if defined(PK_MOBILE_ANY)
+	if (visual_quality >= 2) {
+		fade_start = 1.30;
+		fade_end = 1.95;
+	} else if (visual_quality >= 1) {
+		fade_start = 1.55;
+		fade_end = 2.25;
+	} else {
+		fade_start = 2.10;
+		fade_end = 2.70;
+	}
+#else
+	if (visual_quality >= 2) {
+		fade_start = 1.05;
+		fade_end = 1.65;
+	} else if (visual_quality >= 1) {
+		fade_start = 1.25;
+		fade_end = 1.85;
+	} else {
+		fade_start = 1.80;
+		fade_end = 2.50;
+	}
+#endif
+	return smoothstep(fade_start, fade_end, camera_zoom);
+}
+
+float terrain_micro_normal_quality() {
+	if (visual_quality <= 0) {
+		return 0.0;
+	}
+#if defined(PK_MOBILE_ANY)
+	return (visual_quality >= 2) ? 0.75 : 0.45;
+#else
+	return (visual_quality >= 2) ? 1.00 : 0.55;
+#endif
+}
+
+vec2 terrain_micro_uv(vec2 wp) {
+	return terrain_periodic_world_uv(wp, 64.0);
+}
+
+SurfaceParams apply_terrain_micro_surface(
+		SurfaceParams surface,
+		int biome,
+		float mixed_micro_strength,
+		vec2 wp,
+		float moist,
+		float vitality,
+		float snow_amount) {
+	if (!has_terrain_micro_tex) {
+		return surface;
+	}
+	float zoom_alpha = terrain_micro_zoom_alpha();
+	if (zoom_alpha <= 0.0001) {
+		return surface;
+	}
+
+	vec4 micro = texture(terrain_micro_tex, terrain_micro_uv(wp));
+	vec2 micro_xy = micro.rg * 2.0 - 1.0;
+	float organic = (biome == B_GRASSLAND || biome == B_FOREST || biome == B_PLAIN
+			|| biome == B_JUNGLE || biome == B_TAIGA || biome == B_SAVANNA
+			|| biome == B_STEPPE || biome == B_SHRUBLAND) ? 1.0 : 0.0;
+	float wet_suppress = mix(1.0, 0.58, smoothstep(0.55, 0.95, moist));
+	float vitality_gain = mix(1.0, mix(0.58, 1.08, clamp(vitality, 0.0, 1.0)), organic);
+	float snow_flatten = 1.0 - smoothstep(0.08, 0.88, snow_amount) * 0.88;
+	float strength = zoom_alpha * mixed_micro_strength * wet_suppress * vitality_gain;
+
+	float normal_strength = strength * terrain_micro_normal_quality() * snow_flatten * 0.16;
+	surface.normal = normalize(vec3(
+			surface.normal.xy + micro_xy * normal_strength,
+			max(surface.normal.z, 0.12)));
+
+	float rough_delta = (micro.b * 2.0 - 1.0) * 0.09 * strength;
+	surface.roughness = clamp(
+			surface.roughness + rough_delta - smoothstep(0.58, 0.98, moist) * 0.10,
+			0.08,
+			0.98);
+
+	float grain = (micro.a * 2.0 - 1.0) * 0.028 * strength * snow_flatten;
+	surface.base_color *= 1.0 + grain;
+	return surface;
+}
+
+vec3 terrain_index_debug_color(int cid) {
+	if (cid < 0) {
+		return vec3(0.0);
+	}
+	float f = float(cid);
+	return fract(vec3(0.1031, 0.11369, 0.13787) * f + vec3(0.17, 0.43, 0.71));
+}
+
+vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
+	if (terrain_surface_debug_view == 1) {
+		return terrain_index_debug_color(primary_id);
+	}
+	if (terrain_surface_debug_view == 2) {
+		return terrain_index_debug_color(
+				has_terrain_edge_data ? decode_edge_secondary_index(uv) : -1);
+	}
+	if (terrain_surface_debug_view == 3) {
+		float d = has_terrain_edge_data
+				? texture(terrain_edge_distance_tex, wrap_map_uv(uv)).r
+				: 1.0;
+		return vec3(d);
+	}
+	if (terrain_surface_debug_view == 4) {
+		return vec3(terrain_edge_secondary_weight(uv, wp) * 2.0);
+	}
+	if (terrain_surface_debug_view == 5) {
+		vec2 n = has_terrain_micro_tex
+				? texture(terrain_micro_tex, terrain_micro_uv(wp)).rg
+				: vec2(0.5);
+		return vec3(n, terrain_micro_zoom_alpha());
+	}
+	return vec3(terrain_micro_zoom_alpha());
+}

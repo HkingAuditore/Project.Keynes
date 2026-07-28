@@ -27,6 +27,10 @@ uniform vec2 lut_dims = vec2(0.0);
 // fog_mask_enabled 关闭时整个分支被 uniform 条件跳过，不产生额外采样。
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform bool fog_mask_enabled = false;
+uniform sampler2D terrain_edge_neighbor_tex : filter_nearest, repeat_disable;
+uniform sampler2D terrain_edge_distance_tex : filter_linear, repeat_disable;
+uniform bool has_terrain_edge_data = false;
+uniform float terrain_ecotone_width : hint_range(0.0, 0.96) = 0.84;
 
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
@@ -423,6 +427,61 @@ vec2 wx_cell_lut_uv(int cid) {
 	return (vec2(float(cx), float(cy)) + 0.5) / max(lut_dims, vec2(1.0));
 }
 
+int wx_decode_edge_secondary(vec2 uv) {
+	vec2 rg = texture(terrain_edge_neighbor_tex, wx_wrap_uv(uv)).rg;
+	int lo = int(rg.r * 255.0 + 0.5);
+	int hi = int(rg.g * 255.0 + 0.5);
+	int cid = lo + hi * 256;
+	return (cid >= 65535) ? -1 : cid;
+}
+
+float wx_bayer2_digit(vec2 bit_xy) {
+	if (bit_xy.y < 0.5) {
+		return (bit_xy.x < 0.5) ? 0.0 : 2.0;
+	}
+	return (bit_xy.x < 0.5) ? 3.0 : 1.0;
+}
+
+float wx_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
+	vec2 atlas_dims = vec2(textureSize(map_index_atlas, 0));
+	vec2 pixel_xy = floor(wx_wrap_uv(uv) * atlas_dims);
+	if (wrap_period_x > 0.0001 && world_size.x > 0.0001) {
+		float period_px = max(
+				8.0,
+				round((atlas_dims.x * wrap_period_x / world_size.x) / 8.0) * 8.0);
+		float phase = (wx_wrap_world_x(wp.x) - wrap_origin_x) / wrap_period_x;
+		pixel_xy.x = floor(fract(phase) * period_px);
+	}
+	vec2 p = mod(pixel_xy, 8.0);
+	float value = 16.0 * wx_bayer2_digit(mod(p, 2.0))
+			+ 4.0 * wx_bayer2_digit(mod(floor(p * 0.5), 2.0))
+			+ wx_bayer2_digit(floor(p * 0.25));
+	return (value + 0.5) / 64.0;
+}
+
+float wx_edge_secondary_weight(vec2 uv) {
+	if (!has_terrain_edge_data || terrain_ecotone_width <= 0.0001) {
+		return 0.0;
+	}
+	float edge_distance = texture(terrain_edge_distance_tex, wx_wrap_uv(uv)).r;
+	float one_screen_pixel = max(fwidth(edge_distance), 1.0 / 255.0);
+	float quality_scale;
+#if defined(MOBILE_QUALITY_LOW)
+	quality_scale = 0.58;
+#elif defined(MOBILE_QUALITY_MID)
+	quality_scale = 0.82;
+#elif defined(MOBILE_QUALITY_HIGH)
+	quality_scale = 0.94;
+#else
+	quality_scale = (weather_overlay_quality <= 0) ? 0.68
+			: ((weather_overlay_quality == 1) ? 0.92 : 1.0);
+#endif
+	float width = clamp(terrain_ecotone_width * quality_scale, one_screen_pixel, 0.98);
+	float analytic = 0.5 * (1.0 - smoothstep(0.0, width, edge_distance));
+	float aa = 0.5 * (1.0 - smoothstep(0.0, one_screen_pixel, edge_distance));
+	return max(analytic, aa);
+}
+
 // 逐格 LUT 采样(只采当前帧)。帧间插值不在这里做(否则每 tap 翻倍采样)，改在 sample_field_weather
 // 算出最终标量后、只对中心 cell 采一次 prev 做 mix → 全程只多 1 次采样。
 vec4 wx_sample_lut(int cid) {
@@ -431,7 +490,8 @@ vec4 wx_sample_lut(int cid) {
 
 // 逐格天气场采样（cloud-from-field 2026-06-20）：经 cell-index 间接寻址读 weather_lut。
 // type/intensity/cloud/vapor 取中心 cell（枚举不可插值）；只做帧间(prev)时间平滑。
-// [dither-index 2026-06-25] 跨格空间柔化已由烘焙期 cell 索引 dither 接管，云端不再做双线性。
+// Spatial transitions use the shared neighbor/distance field; the hard atlas
+// index remains authoritative and is never dither-remapped.
 // 替代旧 sample_fronts 椭圆摘要 → 云精确对应 HexCell.weather_*。
 FrontField sample_field_weather(vec2 wp) {
 	FrontField best = empty_field();
@@ -439,14 +499,32 @@ FrontField sample_field_weather(vec2 wp) {
 	vec2 uv = wx_wrap_uv((wp - world_origin) / world_size);
 	int cid_c = wx_decode_cell_index(uv);
 	if (cid_c < 0) return best;
+	float edge_w = wx_edge_secondary_weight(uv);
+	int secondary_id = (edge_w > 0.0001) ? wx_decode_edge_secondary(uv) : -1;
+#if defined(PK_MOBILE_ANY)
+	if (secondary_id >= 0 && wx_mobile_dither_uv_threshold(uv, wp) < edge_w) {
+		cid_c = secondary_id;
+	}
+	// 移动端只采样 DitherUV 选中的一个视觉 cell，避免连续混合的副 LUT 成本。
+	secondary_id = -1;
+#endif
 	// 视野屏蔽提前于所有云计算：不可见格直接退成无云，顺带把三层云 / TOD 光照 /
 	// 投影阴影整条管线一起省掉。
 	float fog_vis = 1.0;
 	if (fog_mask_enabled) {
-		fog_vis = smoothstep(0.5, 1.0, texture(enum_lut, wx_cell_lut_uv(cid_c)).a);
+		float fog_k = texture(enum_lut, wx_cell_lut_uv(cid_c)).a;
+		if (secondary_id >= 0) {
+			float secondary_k = texture(enum_lut, wx_cell_lut_uv(secondary_id)).a;
+			fog_k = mix(fog_k, secondary_k, edge_w);
+		}
+		fog_vis = smoothstep(0.5, 1.0, fog_k);
 		if (fog_vis < 0.01) return best;
 	}
 	vec4 center = wx_sample_lut((cid_c));
+	if (secondary_id >= 0) {
+		vec4 secondary = wx_sample_lut(secondary_id);
+		center.gba = mix(center.gba, secondary.gba, edge_w);
+	}
 	int wt = int(center.r * 255.0 + 0.5);
 
 	// 性能分区/连续性正解：空间柔化(4-tap+blur)已删——用户要的是时间连续,不是空间边界,且删后采样
@@ -458,6 +536,10 @@ FrontField sample_field_weather(vec2 wp) {
 	// 按 weather_lerp(weather_layer 按 LUT 实际更新节奏推进 0→1)平滑过渡到当前帧 → 消时间横跳。type 离散不插。
 	if (weather_lerp < 0.999) {
 		vec4 prev_c = texture(weather_lut_prev, wx_cell_lut_uv(cid_c));
+		if (secondary_id >= 0) {
+			vec4 prev_secondary = texture(weather_lut_prev, wx_cell_lut_uv(secondary_id));
+			prev_c.gba = mix(prev_c.gba, prev_secondary.gba, edge_w);
+		}
 		intensity_amount = mix(prev_c.g, intensity_amount, weather_lerp);
 		cloud_amount = mix(prev_c.b, cloud_amount, weather_lerp);
 		vapor_amount = mix(prev_c.a, vapor_amount, weather_lerp);

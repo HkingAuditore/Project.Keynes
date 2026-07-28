@@ -58,8 +58,19 @@ public:
     void climate_radiative_terms(int32_t cell, double &add,
                                  double &factor) const;
     double country_economy_output_factor(uint64_t country_handle) const;
+    double country_sector_output_factor(uint64_t country_handle,
+                                        int32_t economic_sector) const;
+    double country_research_institution_output_factor(uint64_t country_handle) const;
+    double country_trade_capacity_factor(uint64_t country_handle) const;
+    double country_trade_speed_factor(uint64_t country_handle) const;
+    double country_construction_cost_factor(uint64_t country_handle) const;
+    double country_construction_time_factor(uint64_t country_handle) const;
     double economy_building_output_factor(uint64_t building_handle,
                                            uint64_t country_handle) const;
+    bool apply_technology_effect(uint64_t country_handle,
+                                 const std::string &definition_key,
+                                 int32_t technology_id, int64_t day_index,
+                                 std::string &error);
 
     uint64_t register_gameplay_object(const std::string &archetype);
     bool unregister_gameplay_object(uint64_t handle, int64_t day_index);

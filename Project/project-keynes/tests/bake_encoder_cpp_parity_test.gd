@@ -32,6 +32,7 @@ func _run() -> void:
 	_test_r8_default(ext)
 	_test_flow_l8(ext)
 	_test_enum_rgba(ext)
+	_test_rg8_edge_payload()
 	_finish()
 
 
@@ -85,6 +86,19 @@ func _test_enum_rgba(ext: Object) -> void:
 	_expect("enum path is native", not bool(ret.get("fallback", true)))
 	_expect_bytes("enum RGBA bytes", ret.get("data", PackedByteArray()),
 		PackedByteArray([4, 0, 0, 9, 5, 1, 0, 10, 6, 0, 0, 9]))
+
+
+func _test_rg8_edge_payload() -> void:
+	var sentinel_payload := PackedByteArray([0, 0, 255, 255, 1, 2, 254, 255])
+	var tex := DCAtlasEncoders.encode_rg8_tex(sentinel_payload, Vector2i(2, 2))
+	_expect("edge RG8 texture created", tex != null)
+	if tex != null:
+		var image := tex.get_image()
+		_expect("edge texture format is RG8", image.get_format() == Image.FORMAT_RG8)
+		_expect_bytes("edge RG8 preserves ids and 0xFFFF sentinel",
+			image.get_data(), sentinel_payload)
+	var invalid := DCAtlasEncoders.encode_rg8_tex(PackedByteArray([1, 2, 3]), Vector2i(2, 2))
+	_expect("edge RG8 rejects invalid payload size", invalid == null)
 
 
 func _expect(name: String, cond: bool) -> void:

@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"scribal_school"
+display_name = "书记学校"
+building_kind = "industrial"
+technology_tags = PackedStringArray("industry.knowledge", "tech.record_keeping")
+upgrade_family_id = &"research_institution"
+upgrade_tier = 2
+construction_days = 20
+construction_good_ids = PackedStringArray("lumber", "bricks")
+construction_quantities = PackedInt64Array(4000, 3000)
+owner_profession_id = &"artisan"
+employee_profession_ids = PackedStringArray("scribe")
+employee_slots_per_building = PackedInt64Array(6)
+employee_wage_policy_ids = PackedStringArray("adaptive")
+employee_reference_wages_per_day = PackedInt64Array(14000)
+input_good_ids = PackedStringArray("pottery")
+input_quantities_per_day = PackedInt64Array(250)
+input_required_q16 = PackedInt32Array(32768)
+output_good_ids = PackedStringArray("technology_points")
+output_quantities_per_day = PackedInt64Array(25000)
+

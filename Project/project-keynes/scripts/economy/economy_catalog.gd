@@ -8,6 +8,7 @@ const NEED_DIR := "res://data/economy/needs"
 const CURVE_DIR := "res://data/economy/environment_curves"
 const BUILDING_DIR := "res://data/economy/buildings"
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const Q16_ONE := 65536
 ## Reserved profession that represents unemployed population buckets. It is a
 ## legal signature profession (one signature per ethnicity is auto-generated),
@@ -161,6 +162,7 @@ static func compile_native_catalog() -> Dictionary:
 		plan_need_offsets.append(need_stable_ids.size())
 
 	var profession_ids := PackedStringArray()
+	var profession_class_ids := PackedStringArray()
 	var profession_technology_tag_offsets := PackedInt32Array([0])
 	var profession_technology_tags := PackedStringArray()
 	var profession_index := {}
@@ -170,6 +172,7 @@ static func compile_native_catalog() -> Dictionary:
 				or not plan_index.has(String(professions[i].default_consumption_plan_id)):
 			return {"ok": false, "reason": "invalid profession: %s" % stable_id}
 		profession_ids.append(stable_id)
+		profession_class_ids.append(String(professions[i].profession_class_id))
 		profession_index[stable_id] = i
 		for tag in professions[i].technology_tags:
 			var normalized := String(tag).strip_edges()
@@ -217,6 +220,7 @@ static func compile_native_catalog() -> Dictionary:
 
 	var catalog := {
 		"profession_ids": profession_ids,
+		"profession_class_ids": profession_class_ids,
 		"profession_technology_tag_offsets": profession_technology_tag_offsets,
 		"profession_technology_tags": profession_technology_tags,
 		"ethnicity_ids": ethnicity_ids,
@@ -293,26 +297,35 @@ static func compile_native_catalog() -> Dictionary:
 	if not bool(building_columns.get("ok", false)):
 		return building_columns
 	building_columns.erase("ok")
+	var technology_catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
+	if not bool(technology_catalog.get("ok", false)):
+		return technology_catalog
+	var technology_ids: PackedStringArray = technology_catalog.technology_ids
 	var technology_set := {}
+	for technology_id in technology_ids:
+		technology_set[String(technology_id)] = true
 	for tag in good_columns.good_technology_tags:
 		if String(tag).begins_with("tech."):
-			technology_set[String(tag)] = true
+			if not technology_set.has(String(tag)):
+				return {"ok": false, "reason": "unknown good technology tag: %s" % String(tag)}
 	for tag in profession_technology_tags:
 		if String(tag).begins_with("tech."):
-			technology_set[String(tag)] = true
+			if not technology_set.has(String(tag)):
+				return {"ok": false, "reason": "unknown profession technology tag: %s" % String(tag)}
 	for tag in building_columns.building_technology_tags:
 		if String(tag).begins_with("tech."):
-			technology_set[String(tag)] = true
+			if not technology_set.has(String(tag)):
+				return {"ok": false, "reason": "unknown building technology tag: %s" % String(tag)}
 	for resource in ResourceRegistryScript.ordered():
 		for tag in resource.discovery_technology_tags:
 			var normalized := String(tag).strip_edges()
 			if normalized == "":
 				return {"ok": false, "reason": "empty resource discovery technology tag: %s" % String(resource.id)}
-			if normalized.begins_with("tech."):
-				technology_set[normalized] = true
-	var technology_ids := PackedStringArray(technology_set.keys())
-	technology_ids.sort()
-	catalog["technology_ids"] = technology_ids
+			if normalized.begins_with("tech.") and not technology_set.has(normalized):
+				return {"ok": false, "reason": "unknown resource technology tag: %s" % normalized}
+	for key in technology_catalog:
+		if key != "ok":
+			catalog[key] = technology_catalog[key]
 	var building_v7_columns := building_columns.duplicate(true)
 	for key in [
 		"building_upgrade_family_ids", "building_upgrade_family_indices",
@@ -469,6 +482,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var target_operating_margins := PackedInt32Array()
 	var supply_price_elasticities := PackedInt32Array()
 	var building_kinds := PackedInt32Array()
+	var building_economic_sectors := PackedInt32Array()
 	var technology_tag_offsets := PackedInt32Array([0])
 	var technology_tags := PackedStringArray()
 	var upgrade_family_set := {}
@@ -531,6 +545,22 @@ static func _compile_building_columns(profession_index: Dictionary,
 			return {"ok": false, "reason": "invalid building kind: %s" % stable_id}
 		building_kinds.append(0 if building_kind == "collector" \
 			else (2 if building_kind == "service" else 1))
+		var tags_text := ""
+		for tag in profile.technology_tags:
+			tags_text += " " + String(tag)
+		var sector := 2
+		if String(profile.upgrade_family_id) == "research_institution" \
+				or tags_text.contains("knowledge"):
+			sector = 4
+		elif building_kind == "collector":
+			sector = 1
+		elif tags_text.contains("agriculture") or tags_text.contains("food") \
+				or stable_id.contains("farm"):
+			sector = 0
+		elif tags_text.contains("energy") or tags_text.contains("electric") \
+				or stable_id.contains("power") or stable_id.contains("fuel"):
+			sector = 3
+		building_economic_sectors.append(sector)
 		var upgrade_family_id := String(profile.upgrade_family_id).strip_edges()
 		var upgrade_tier := int(profile.upgrade_tier)
 		if (upgrade_family_id == "" and upgrade_tier != 0) \
@@ -808,6 +838,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"ok": true,
 		"building_type_ids": type_ids,
 		"building_kinds": building_kinds,
+		"building_economic_sectors": building_economic_sectors,
 		"building_technology_tag_offsets": technology_tag_offsets,
 		"building_technology_tags": technology_tags,
 		"building_upgrade_family_ids": upgrade_family_ids,

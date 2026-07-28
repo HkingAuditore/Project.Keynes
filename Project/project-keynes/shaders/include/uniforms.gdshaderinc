@@ -60,6 +60,16 @@ uniform bool has_water_depth_tex = false;
 // 移动端中/高档与桌面中档用它替代每像素 fbm/voronoi；LOW 档不采样。
 uniform sampler2D terrain_detail_tex : filter_linear, repeat_disable;
 uniform bool has_terrain_detail_tex = false;
+uniform sampler2D terrain_edge_neighbor_tex : filter_nearest, repeat_disable;
+uniform sampler2D terrain_edge_distance_tex : filter_linear, repeat_disable;
+uniform bool has_terrain_edge_data = false;
+// 归一化到 bake 的 0.90 hex 中心距差范围；只混合视觉量，不改变权威状态。
+uniform float terrain_ecotone_width = 0.84;
+uniform float terrain_ecotone_noise = 0.22;
+uniform sampler2D terrain_micro_tex : filter_linear_mipmap, repeat_enable;
+uniform bool has_terrain_micro_tex = false;
+uniform float camera_zoom = 1.0;
+uniform int terrain_surface_debug_view = 0;
 // map-visual-overhaul-v1：weather_field_tex 已从主地图 shader 完全移除。
 // 海面天气视觉（storm/rain/cloud_field）现在全部由 weather_overlay.gdshader 的
 // 三层独立云（cirrus/cumulus/fog）承担——主地图保持"清爽地表"，不画云。

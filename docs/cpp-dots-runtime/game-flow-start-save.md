@@ -88,10 +88,10 @@ provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
 PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, then player session/view/preview.
-PKCM v1 saves Climate modifiers. PKCN v2 embeds Country modifiers; PKEC v20
+PKCM v1 saves Climate modifiers. PKCN v3 embeds Country modifiers and research; PKEC v21
 embeds Economy modifiers and BuildingIdentityStore; PKGP v1 saves Gameplay
-identity/base SoA and modifiers. Legacy PKCN v1/PKEC v18-v19 and PKSV files
-without PKCM/PKGP migrate those Modifier domains to empty stores.
+identity/base SoA and modifiers. Legacy PKCN/PKEC technology-tree saves are
+rejected with `legacy_technology_tree_save_unsupported`.
 
 `pkfg` is `PKFogOfWar v1` and persists exactly one array: the monotonic
 `cell_explored` progress, plus the cell count it was captured at. Current
@@ -121,8 +121,8 @@ Restore order is strict:
 2. Regenerate static terrain from the complete saved `NewGameConfig`.
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
-5. Restore PKCN v2, including Country modifiers.
-6. Restore PKEC v20 after trade topology has been configured, including Economy
+5. Restore PKCN v3, including Country modifiers and research state.
+6. Restore PKEC v21 after trade topology has been configured, including Economy
    modifiers and building identities.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.

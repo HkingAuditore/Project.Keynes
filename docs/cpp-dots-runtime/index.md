@@ -2,6 +2,9 @@
 
 ## Formal game flow and PKSV
 
+- [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)：81 项权威目录、国家研究状态、
+  科技值市场与国家采购、科技 Modifier、GraphEdit 工作区以及 PKCN v3/PKEC v21 存档契约。
+
 - [Formal Game Flow, Player Start, and PKSV](./game-flow-start-save.md): 正式主菜单、
   `NewGameConfig`、单格国家、20 人开局、PKSV 安全边界与恢复顺序。
 - 修改启动场景、玩家出生、完整存档或退出流程前先读该文档。

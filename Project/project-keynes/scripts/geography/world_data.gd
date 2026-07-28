@@ -117,10 +117,15 @@ var flow_tex: ImageTexture
 # 主水体 shader 按它做深浅着色（深海蓝 / 浅滩青 / 湖心暗），单次采样取代旧海洋邻域 + 湖泊多半径。
 # bake_world 烘焙一次，之后不变；null 时 shader 回退旧逐邻域估算。
 var water_depth_tex: ImageTexture
-# [terrain-detail-bake 2026-07-05] 静态 biome 内部细节调制图（L8, derived_size）。
-# 移动端中/高档与桌面中档用单次采样替代 fragment 内 biome_detail 的多次 fbm/voronoi；
-# LOW 档仍跳过采样，高档桌面保留程序化细节作为最高保真路径。
+# 跨 biome 连续的静态宏观细节信号（L8, derived_size）。
+# MID/HIGH 在 shader 中按材质类别调整振幅；LOW 跳过采样。纹理本身不编码硬 biome，
+# 避免 LINEAR 采样仍显露 cell/图集块状边界。
 var terrain_detail_tex: ImageTexture
+# 无抖动主 cell 的通用视觉边界辅助纹理。所有合法相邻 cell 都可成为副格；
+# RG8 为索引低/高字节，0xFFFF 表示无邻格；R8 距离场供 terrain/fog/weather 组合
+# fwidth 内层 AA 与视觉 ecotone。地表 Shader 另行拒绝跨水陆材质混合。
+var terrain_edge_neighbor_tex: ImageTexture
+var terrain_edge_distance_tex: ImageTexture
 # [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny，hm_size）。
 # 地形静态 → 运行期 shader 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap；细节法线运行期按
 # biome/性能档叠。bake_world 烘焙一次，之后不变；与 height_tex 共用 uv。
