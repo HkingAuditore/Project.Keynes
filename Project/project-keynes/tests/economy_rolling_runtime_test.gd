@@ -86,8 +86,8 @@ func _run() -> void:
 				not _cashflow_has_source(traced, "other", true) and
 				not _cashflow_has_source(traced, "other", false))
 	var saved := _save(runtime)
-	_expect("PKEC v21 saves at a daily committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 21)
+	_expect("PKEC v22 saves at a daily committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 22)
 	var restored := _new_ext(compiled)
 	_expect("restore country matches", CountryTestHelper.configure_all_technologies(
 		restored, catalog, CELL_COUNT, 92015))
@@ -259,7 +259,8 @@ func _new_ext(catalog: Dictionary) -> Object:
 	var scalar := PackedFloat32Array()
 	scalar.resize(CELL_COUNT)
 	scalar.fill(0.5)
-	for slot_name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover",
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)

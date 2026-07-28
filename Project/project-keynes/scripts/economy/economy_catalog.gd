@@ -7,6 +7,7 @@ const PLAN_DIR := "res://data/economy/consumption_plans"
 const NEED_DIR := "res://data/economy/needs"
 const CURVE_DIR := "res://data/economy/environment_curves"
 const BUILDING_DIR := "res://data/economy/buildings"
+const PRODUCTION_CLIMATE_DIR := "res://data/economy/production_climates"
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const Q16_ONE := 65536
@@ -398,6 +399,35 @@ static func _compile_building_columns(profession_index: Dictionary,
 		good_quality_levels: PackedInt32Array,
 		good_efficiencies_q16: PackedInt32Array) -> Dictionary:
 	var profiles := _load_resources(BUILDING_DIR)
+	var climate_profiles := _load_resources(PRODUCTION_CLIMATE_DIR)
+	var climate_profile_ids := PackedStringArray()
+	var climate_temperature_opt_q16 := PackedInt32Array()
+	var climate_temperature_tolerance_q16 := PackedInt32Array()
+	var climate_water_opt_q16 := PackedInt32Array()
+	var climate_water_tolerance_q16 := PackedInt32Array()
+	var climate_exposure_q16 := PackedInt32Array()
+	var climate_floor_q16 := PackedInt32Array()
+	var climate_profile_index := {}
+	for climate in climate_profiles:
+		var climate_id := String(climate.id).strip_edges()
+		if climate_id == "" or climate_profile_index.has(climate_id) \
+				or float(climate.temperature_opt) < 0.0 or float(climate.temperature_opt) > 1.0 \
+				or float(climate.water_opt) < 0.0 or float(climate.water_opt) > 1.0 \
+				or float(climate.temperature_tolerance) <= 0.0 \
+				or float(climate.temperature_tolerance) > 1.0 \
+				or float(climate.water_tolerance) <= 0.0 \
+				or float(climate.water_tolerance) > 1.0 \
+				or int(climate.exposure_q16) < 0 or int(climate.exposure_q16) > Q16_ONE \
+				or int(climate.floor_q16) < 0 or int(climate.floor_q16) > Q16_ONE:
+			return {"ok": false, "reason": "invalid production climate profile: %s" % climate_id}
+		climate_profile_index[climate_id] = climate_profile_ids.size()
+		climate_profile_ids.append(climate_id)
+		climate_temperature_opt_q16.append(roundi(float(climate.temperature_opt) * Q16_ONE))
+		climate_temperature_tolerance_q16.append(roundi(float(climate.temperature_tolerance) * Q16_ONE))
+		climate_water_opt_q16.append(roundi(float(climate.water_opt) * Q16_ONE))
+		climate_water_tolerance_q16.append(roundi(float(climate.water_tolerance) * Q16_ONE))
+		climate_exposure_q16.append(int(climate.exposure_q16))
+		climate_floor_q16.append(int(climate.floor_q16))
 	var good_count := good_quality_levels.size()
 	if good_efficiencies_q16.size() != good_count \
 			or good_substitution_category_offsets.size() != good_count + 1 \
@@ -483,6 +513,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var supply_price_elasticities := PackedInt32Array()
 	var building_kinds := PackedInt32Array()
 	var building_economic_sectors := PackedInt32Array()
+	var building_climate_profile_indices := PackedInt32Array()
 	var technology_tag_offsets := PackedInt32Array([0])
 	var technology_tags := PackedStringArray()
 	var upgrade_family_set := {}
@@ -561,6 +592,10 @@ static func _compile_building_columns(profession_index: Dictionary,
 				or stable_id.contains("power") or stable_id.contains("fuel"):
 			sector = 3
 		building_economic_sectors.append(sector)
+		var climate_id := String(profile.production_climate_profile_id).strip_edges()
+		if climate_id != "" and not climate_profile_index.has(climate_id):
+			return {"ok": false, "reason": "missing production climate profile: %s" % climate_id}
+		building_climate_profile_indices.append(int(climate_profile_index.get(climate_id, -1)))
 		var upgrade_family_id := String(profile.upgrade_family_id).strip_edges()
 		var upgrade_tier := int(profile.upgrade_tier)
 		if (upgrade_family_id == "" and upgrade_tier != 0) \
@@ -839,6 +874,14 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_type_ids": type_ids,
 		"building_kinds": building_kinds,
 		"building_economic_sectors": building_economic_sectors,
+		"building_production_climate_profile_indices": building_climate_profile_indices,
+		"production_climate_profile_ids": climate_profile_ids,
+		"production_climate_temperature_opt_q16": climate_temperature_opt_q16,
+		"production_climate_temperature_tolerance_q16": climate_temperature_tolerance_q16,
+		"production_climate_water_opt_q16": climate_water_opt_q16,
+		"production_climate_water_tolerance_q16": climate_water_tolerance_q16,
+		"production_climate_exposure_q16": climate_exposure_q16,
+		"production_climate_floor_q16": climate_floor_q16,
 		"building_technology_tag_offsets": technology_tag_offsets,
 		"building_technology_tags": technology_tags,
 		"building_upgrade_family_ids": upgrade_family_ids,

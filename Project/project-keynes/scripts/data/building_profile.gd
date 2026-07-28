@@ -11,6 +11,8 @@ extends Resource
 ## operating, but only the highest technology-available tier may be built.
 @export var upgrade_family_id: StringName = &""
 @export_range(0, 255, 1) var upgrade_tier: int = 0
+## Empty keeps non-biological production at the catalog baseline.
+@export var production_climate_profile_id: StringName = &""
 
 ## Construction is accepted atomically at an economy sample boundary. The
 ## fixed delay is intentionally small-scope: no builders or staged progress.

@@ -48,7 +48,9 @@ func _init(p_generator, p_map: MapData, p_stride: int = 1) -> void:
 func declare_reads() -> Array[StringName]:
 	var reads: Array[StringName] = [
 		DCComponentIds.CELL_TEMP,
+		DCComponentIds.CELL_TEMP_30D,
 		DCComponentIds.CELL_MOISTURE,
+		DCComponentIds.CELL_PLANT_AVAILABLE_WATER,
 		DCComponentIds.CELL_IS_WATER,
 		DCComponentIds.CELL_RESOURCE_HABITAT_MASK,
 	]

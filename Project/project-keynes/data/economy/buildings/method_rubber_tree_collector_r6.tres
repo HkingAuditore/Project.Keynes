@@ -2,6 +2,7 @@
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
 [resource]
 script = ExtResource("1")
+production_climate_profile_id = &"plantation_crop"
 id = &"method_rubber_tree_collector_r6"
 display_name = "机械化橡胶种植园"
 building_kind = "collector"

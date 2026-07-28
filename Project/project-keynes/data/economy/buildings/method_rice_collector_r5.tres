@@ -2,6 +2,7 @@
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
 [resource]
 script = ExtResource("1")
+production_climate_profile_id = &"paddy_crop"
 id = &"method_rice_collector_r5"
 display_name = "精耕稻庄"
 building_kind = "collector"

@@ -2,6 +2,7 @@
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
 [resource]
 script = ExtResource("1")
+production_climate_profile_id = &"pasture_livestock"
 id = &"manorial_pasture"
 display_name = "庄园牧场"
 building_kind = "collector"

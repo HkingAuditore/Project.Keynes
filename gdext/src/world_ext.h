@@ -274,6 +274,8 @@ public:
         int64_t generation = 0);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
     godot::Dictionary run_economy_fixed_math_probe(const godot::Dictionary &vectors) const;
+    godot::Dictionary run_economy_production_climate_math_probe(
+        const godot::Dictionary &vectors) const;
     int64_t get_economy_state_hash() const;
     godot::Dictionary reset_economy(const godot::String &reason);
     godot::Dictionary start_economy_csv_recording(const godot::Dictionary &config);

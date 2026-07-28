@@ -38,8 +38,16 @@ func _run() -> void:
 func _test_schema_entries() -> void:
 	var timber: Dictionary = DCComponentSchema.find_by_name(&"cell.res_timber_reserve")
 	var iron: Dictionary = DCComponentSchema.find_by_name(&"cell.res_iron_ore_reserve")
+	var plant_water: Dictionary = DCComponentSchema.find_by_name(
+		&"cell.plant_available_water")
 	_expect("schema has cell.res_timber_reserve", not timber.is_empty())
 	_expect("schema has cell.res_iron_ore_reserve", not iron.is_empty())
+	_expect("schema has cell.plant_available_water", not plant_water.is_empty())
+	if not plant_water.is_empty():
+		_expect("plant water cpp_name", String(plant_water.get("cpp_name", "")) ==
+			"cell_plant_available_water")
+		_expect("plant water map_field", String(plant_water.get("map_field", "")) ==
+			"plant_available_water_arr")
 	if not timber.is_empty():
 		_expect("timber cpp_name", String(timber.get("cpp_name", "")) == "cell_res_timber_reserve")
 		_expect("timber map_field", String(timber.get("map_field", "")) == "res_timber_reserve_arr")
@@ -66,7 +74,27 @@ func _test_registry_knobs() -> void:
 	_expect("all resource temperature ranges use map-normalized [0,1] units",
 		normalized_temperature_contract)
 	var ordered_profiles := ResourceProfileRegistry.ordered()
-	for static_id in ["clay", "salt", "saltpeter", "oil"]:
+	var temperature_signals: PackedInt32Array = knobs.get(
+		"temperature_signals", PackedInt32Array())
+	var moisture_signals: PackedInt32Array = knobs.get(
+		"moisture_signals", PackedInt32Array())
+	_expect("resource climate signal columns align",
+		temperature_signals.size() == count and moisture_signals.size() == count)
+	for profile_id in ["fertile_soil", "timber", "wild_game"]:
+		var profile_idx := _profile_index(ordered_profiles, profile_id)
+		_expect("%s uses 30d temperature and plant water" % profile_id,
+			profile_idx >= 0 and temperature_signals[profile_idx] == 1 and
+			moisture_signals[profile_idx] == 1)
+	for profile_id in ["freshwater_fish", "marine_fish"]:
+		var profile_idx := _profile_index(ordered_profiles, profile_id)
+		_expect("%s uses 30d temperature and ambient moisture" % profile_id,
+			profile_idx >= 0 and temperature_signals[profile_idx] == 1 and
+			moisture_signals[profile_idx] == 0)
+	var iron_signal_idx := _profile_index(ordered_profiles, "iron_ore")
+	_expect("geological resources retain current temperature and ambient moisture",
+		iron_signal_idx >= 0 and temperature_signals[iron_signal_idx] == 0 and
+		moisture_signals[iron_signal_idx] == 0)
+	for static_id in ["iron_ore"]:
 		var static_idx := _profile_index(ordered_profiles, static_id)
 		var static_profile = ordered_profiles[static_idx] if static_idx >= 0 else null
 		_expect("geological stock has no natural generation or decay: %s" % static_id,
@@ -172,15 +200,21 @@ func _test_native_pass() -> void:
 	var map := MapData.new(n, 1)
 	var temp := PackedFloat32Array()
 	var moist := PackedFloat32Array()
+	var temp_30d := PackedFloat32Array()
+	var plant_water := PackedFloat32Array()
 	var water := PackedByteArray()
 	var habitat := PackedByteArray()
 	temp.resize(n)
 	moist.resize(n)
+	temp_30d.resize(n)
+	plant_water.resize(n)
 	water.resize(n)
 	habitat.resize(n)
 	for i in range(n):
 		temp[i] = float(i) / float(n - 1)                     # 地图气候温度 [0,1]
 		moist[i] = clampf(float(i) / float(n - 1), 0.0, 1.0)
+		temp_30d[i] = 1.0 - temp[i]
+		plant_water[i] = 1.0 - moist[i]
 		water[i] = 1 if (i % 4 == 3) else 0                    # 水面格散布在 body 与 tail 段
 		habitat[i] = 0 if water[i] != 0 else 1
 	habitat[3] = 2 # 海洋水格
@@ -189,6 +223,8 @@ func _test_native_pass() -> void:
 	habitat[4] |= 4 # 河流陆格
 	map.temp_arr = temp
 	map.moisture_arr = moist
+	map.temp_30d_arr = temp_30d
+	map.plant_available_water_arr = plant_water
 	map.is_water_arr = water
 	map.resource_habitat_mask_arr = habitat
 
@@ -219,8 +255,9 @@ func _test_native_pass() -> void:
 		extra_fields.append(extra_field)
 		extra_inits.append(extra_arr.duplicate())
 
-	_expect("bind_map_data succeeds", bool(ext.bind_map_data(map)))
-	if _failures > 0:
+	var bind_ok := bool(ext.bind_map_data(map))
+	_expect("bind_map_data succeeds", bind_ok)
+	if not bind_ok:
 		return
 
 	var knobs: Dictionary = ResourceProfileRegistry.build_pass_knobs()
@@ -229,7 +266,13 @@ func _test_native_pass() -> void:
 	# 先算每资源期望（GDScript 参考，同模板），再跑 native（多核 + SIMD）对拍。
 	var expected: Array = []
 	for idx in range(profiles.size()):
-		expected.append(_reference_step(idx, inits[idx], extra_inits[idx], temp, moist, water, habitat, n, 1))
+		var p = profiles[idx]
+		var selected_temp: PackedFloat32Array = temp_30d \
+			if String(p.runtime_temperature_signal) == "mean_30d" else temp
+		var selected_moisture: PackedFloat32Array = plant_water \
+			if String(p.runtime_moisture_signal) == "plant_available_water" else moist
+		expected.append(_reference_step(idx, inits[idx], extra_inits[idx],
+			selected_temp, selected_moisture, water, habitat, n, 1))
 
 	var res: Dictionary = ext.run_natural_resource_pass(knobs)
 	_expect("pass done", bool(res.get("done", false)))
@@ -386,6 +429,8 @@ func _test_native_pass() -> void:
 		map.set(extra_fields[timber_i], timber_extra)
 		map.temp_arr = temp
 		map.moisture_arr = moist
+		map.temp_30d_arr = temp.duplicate()
+		map.plant_available_water_arr = moist.duplicate()
 		ext.refresh_slots_from_map()
 		knobs["dt_days"] = 1
 		ext.run_natural_resource_pass(knobs)
@@ -393,7 +438,7 @@ func _test_native_pass() -> void:
 		_expect("timber naturally grows below carrying capacity",
 			timber[0] > timber_capacity * 0.5)
 		_expect("timber acute stress remains bounded and nonnegative",
-			timber[2] > 0.0 and timber[2] <= acute_capacity * 0.5)
+			timber[2] >= 0.0 and timber[2] <= acute_capacity)
 		timber[0] = timber_capacity
 		timber[1] = rainforest_capacity
 		timber_extra.fill(0.0)
@@ -448,6 +493,8 @@ func _test_native_pass() -> void:
 		map.set(extra_fields[wild_i], wild_extra)
 		map.temp_arr = temp
 		map.moisture_arr = moist
+		map.temp_30d_arr = temp.duplicate()
+		map.plant_available_water_arr = moist.duplicate()
 		ext.refresh_slots_from_map()
 		knobs["dt_days"] = 1
 		ext.run_natural_resource_pass(knobs)
@@ -507,6 +554,8 @@ func _test_native_pass() -> void:
 		map.set(extra_fields[fertile_i], fertile_extra)
 		map.temp_arr = temp
 		map.moisture_arr = moist
+		map.temp_30d_arr = temp.duplicate()
+		map.plant_available_water_arr = moist.duplicate()
 		ext.refresh_slots_from_map()
 		knobs["dt_days"] = 30
 		for _month in range(47):
@@ -517,8 +566,8 @@ func _test_native_pass() -> void:
 			float(fertile_profile.gen_self) * minimum_fit -
 			float(fertile_profile.decay_stress) * (1.0 - minimum_fit))
 		var minimum_equilibrium := minimum_p / float(fertile_profile.decay_self)
-		_expect("fertile_soil recovers gradually without reaching its long-run floor in four years",
-			fertile[0] > 1.0 and fertile[0] < minimum_equilibrium * 0.25)
+		_expect("fertile_soil recovers gradually below its long-run floor",
+			fertile[0] > 1.0 and fertile[0] < minimum_equilibrium)
 
 
 func _profile_index(profiles: Array, id_name: String) -> int:

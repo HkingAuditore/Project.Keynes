@@ -33,6 +33,7 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("17 differentiated household needs", needs.size() == 17)
 	_expect("31 registered natural resources", ResourceRegistryScript.count() == 31)
 	_expect("building catalog references 31 distinct natural resources", resources.size() == 31)
+	_audit_production_climate(catalog, buildings)
 	for relation_profession in ["enslaved_laborer", "serf", "tenant_farmer",
 			"indentured_laborer", "apprentice", "journeyman", "manager", "researcher"]:
 		_expect("labor relation profession exists: %s" % relation_profession,
@@ -640,6 +641,57 @@ func _audit(catalog: Dictionary) -> void:
 		_expect("good has downstream use or monetary issue: %s" % goods[good],
 			consumed.has(good) or issue_values[good] > 0 or
 			goods[good] in ["railway_equipment", "oceanic_vessels"])
+
+
+func _audit_production_climate(catalog: Dictionary,
+		buildings: PackedStringArray) -> void:
+	var profile_ids: PackedStringArray = catalog.get(
+		"production_climate_profile_ids", PackedStringArray())
+	_expect("production climate profiles compile in stable-id order",
+		profile_ids == PackedStringArray(["dryland_crop", "foraging_plants",
+			"paddy_crop", "pasture_livestock", "plantation_crop"]))
+	var temp_opt: PackedInt32Array = catalog.get(
+		"production_climate_temperature_opt_q16", PackedInt32Array())
+	var temp_tol: PackedInt32Array = catalog.get(
+		"production_climate_temperature_tolerance_q16", PackedInt32Array())
+	var water_opt: PackedInt32Array = catalog.get(
+		"production_climate_water_opt_q16", PackedInt32Array())
+	var water_tol: PackedInt32Array = catalog.get(
+		"production_climate_water_tolerance_q16", PackedInt32Array())
+	var exposure: PackedInt32Array = catalog.get(
+		"production_climate_exposure_q16", PackedInt32Array())
+	var floors: PackedInt32Array = catalog.get(
+		"production_climate_floor_q16", PackedInt32Array())
+	var climate_columns_align := [temp_opt, temp_tol, water_opt, water_tol,
+		exposure, floors].all(func(values): return values.size() == profile_ids.size())
+	_expect("production climate fixed-point columns align", climate_columns_align)
+	var dryland := profile_ids.find("dryland_crop")
+	_expect("dryland climate profile compiles exact Q16 controls",
+		dryland >= 0 and absi(temp_opt[dryland] - int(round(0.55 * 65536.0))) <= 1 and
+		absi(temp_tol[dryland] - int(round(0.42 * 65536.0))) <= 1 and
+		absi(water_opt[dryland] - int(round(0.55 * 65536.0))) <= 1 and
+		absi(water_tol[dryland] - int(round(0.40 * 65536.0))) <= 1 and
+		exposure[dryland] == 65536 and floors[dryland] == 16384)
+	var building_profiles: PackedInt32Array = catalog.get(
+		"building_production_climate_profile_indices", PackedInt32Array())
+	_expect("building climate references align", building_profiles.size() == buildings.size())
+	var expected := {
+		"wheat_farm": "dryland_crop", "rice_collector": "paddy_crop",
+		"rubber_tree_collector": "plantation_crop",
+		"pastoral_camp": "pasture_livestock",
+		"gathering_ground": "foraging_plants",
+	}
+	for building_id in expected:
+		var building_idx := buildings.find(building_id)
+		var profile_idx := profile_ids.find(expected[building_id])
+		_expect("%s explicitly selects %s" % [building_id, expected[building_id]],
+			building_idx >= 0 and building_profiles[building_idx] == profile_idx)
+	for building_id in ["household_weaving_shelter", "timber_collector",
+			"stone_age_hunting_camp", "freshwater_fishing_camp",
+			"marine_fish_collector"]:
+		var building_idx := buildings.find(building_id)
+		_expect("%s has no direct climate production penalty" % building_id,
+			building_idx >= 0 and building_profiles[building_idx] == -1)
 
 
 func _audit_household_consumption(catalog: Dictionary) -> void:

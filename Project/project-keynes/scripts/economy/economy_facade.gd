@@ -250,6 +250,7 @@ func _attach_building_display_metadata(snapshot: Dictionary) -> void:
 		"building_input_candidate_offsets", "building_input_candidate_good_ids",
 		"building_input_candidate_efficiency_q16", "building_upgrade_family_ids",
 		"building_upgrade_family_indices", "building_upgrade_tiers",
+		"building_production_climate_profile_indices", "production_climate_profile_ids",
 		"building_behavior_ids",
 		"building_output_offsets", "building_output_good_ids", "building_output_quantities",
 		"building_resource_ids", "building_resource_offsets", "building_production_resource_ids",

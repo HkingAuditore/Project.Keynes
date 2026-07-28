@@ -1071,6 +1071,16 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 	var owner_openings: PackedInt64Array = snapshot.get("owner_openings", PackedInt64Array())
 	var planned_utilization: PackedInt32Array = snapshot.get("planned_utilization_q16", PackedInt32Array())
 	var capacity_q16: PackedInt64Array = snapshot.get("capacity_q16", PackedInt64Array())
+	var temperature_fit_q16: PackedInt64Array = snapshot.get(
+		"last_temperature_fit_q16", PackedInt64Array())
+	var water_fit_q16: PackedInt64Array = snapshot.get(
+		"last_water_fit_q16", PackedInt64Array())
+	var climate_capacity_q16: PackedInt64Array = snapshot.get(
+		"last_climate_capacity_q16", PackedInt64Array())
+	var climate_lost_output: PackedInt64Array = snapshot.get(
+		"last_climate_lost_output", PackedInt64Array())
+	var building_climate_profiles: PackedInt32Array = snapshot.get(
+		"building_production_climate_profile_indices", PackedInt32Array())
 	var last_input: PackedInt64Array = snapshot.get("last_input", PackedInt64Array())
 	var last_output: PackedInt64Array = snapshot.get("last_output", PackedInt64Array())
 	var last_resource: PackedInt64Array = snapshot.get("last_resource", PackedInt64Array())
@@ -1161,6 +1171,26 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 			int(last_output[i]) if i < last_output.size() else 0, count, period_days)
 		if production_rows.size() == output_row_begin:
 			production_rows.append({"id": "output_none", "name": "产出", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
+		var has_climate_profile := type_idx >= 0 \
+			and type_idx < building_climate_profiles.size() \
+			and int(building_climate_profiles[type_idx]) >= 0
+		if has_climate_profile:
+			var temp_fit := float(temperature_fit_q16[i]) * 100.0 / 65536.0 \
+				if i < temperature_fit_q16.size() else 100.0
+			var water_fit := float(water_fit_q16[i]) * 100.0 / 65536.0 \
+				if i < water_fit_q16.size() else 100.0
+			var climate_capacity := float(climate_capacity_q16[i]) * 100.0 / 65536.0 \
+				if i < climate_capacity_q16.size() else 100.0
+			production_rows.append({"id": "climate_fit", "name": "气候适宜度",
+				"value": "温度 %.1f%% · 水分 %.1f%% · 能力 %.1f%%" % [
+					temp_fit, water_fit, climate_capacity], "icon": "climate",
+				"accent": UITokens.GOOD if climate_capacity >= 99.9 else UITokens.WARN})
+			var lost_output := int(climate_lost_output[i]) \
+				if i < climate_lost_output.size() else 0
+			if lost_output > 0:
+				production_rows.append({"id": "climate_lost_output", "name": "气候减产",
+					"value": _actual_daily_rate(lost_output, count, period_days),
+					"icon": "warning", "accent": UITokens.WARN})
 		var finance := {
 			"revenue": _money_text(revenue),
 			"cost": _money_text(operating_cost),

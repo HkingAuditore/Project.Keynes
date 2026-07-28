@@ -117,6 +117,9 @@ void NativeEconomyRuntime::ProductionResult::reset() {
     error.clear();
     saturation_count = 0;
     processed_building_groups = 0;
+    climate_profiled_building_groups = 0;
+    climate_limited_building_groups = 0;
+    climate_capacity_sum_q16 = 0;
     merchant_procurement_budget = 0;
     merchant_procurement_opportunity = 0;
     merchant_procurement_allocated = 0;
@@ -1083,10 +1086,14 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
 }
 
 bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *temperature,
-                                               const float *moisture, const float *snow_cover,
+                                               const float *temperature_30d,
+                                               const float *moisture,
+                                               const float *plant_available_water,
+                                               const float *snow_cover,
                                                const float *weather_intensity, int32_t count,
                                                std::string &error) {
-    if (!_configured || count != _cell_count || temperature == nullptr || moisture == nullptr ||
+    if (!_configured || count != _cell_count || temperature == nullptr ||
+        temperature_30d == nullptr || moisture == nullptr || plant_available_water == nullptr ||
         snow_cover == nullptr || weather_intensity == nullptr) {
         error = "economy_environment_snapshot_invalid";
         return false;
@@ -1098,7 +1105,9 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
             0, Q16_ONE));
     };
     _environment_temperature_q16.resize(count);
+    _environment_temperature_30d_q16.resize(count);
     _environment_moisture_q16.resize(count);
+    _environment_plant_available_water_q16.resize(count);
     _environment_snow_q16.resize(count);
     _environment_weather_q16.resize(count);
     uint64_t hash = 1469598103934665603ULL;
@@ -1110,11 +1119,15 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
     };
     for (int32_t i = 0; i < count; ++i) {
         _environment_temperature_q16[i] = quantize(temperature[i]);
+        _environment_temperature_30d_q16[i] = quantize(temperature_30d[i]);
         _environment_moisture_q16[i] = quantize(moisture[i]);
+        _environment_plant_available_water_q16[i] = quantize(plant_available_water[i]);
         _environment_snow_q16[i] = quantize(snow_cover[i]);
         _environment_weather_q16[i] = quantize(weather_intensity[i]);
         mix(static_cast<uint32_t>(_environment_temperature_q16[i]));
+        mix(static_cast<uint32_t>(_environment_temperature_30d_q16[i]));
         mix(static_cast<uint32_t>(_environment_moisture_q16[i]));
+        mix(static_cast<uint32_t>(_environment_plant_available_water_q16[i]));
         mix(static_cast<uint32_t>(_environment_snow_q16[i]));
         mix(static_cast<uint32_t>(_environment_weather_q16[i]));
     }
@@ -1310,13 +1323,17 @@ NativeEconomyRuntime::EnvironmentSample NativeEconomyRuntime::environment_sample
     EnvironmentSample sample;
     if (cell < 0 || cell >= _cell_count ||
         _environment_temperature_q16.size() != static_cast<size_t>(_cell_count) ||
+        _environment_temperature_30d_q16.size() != static_cast<size_t>(_cell_count) ||
         _environment_moisture_q16.size() != static_cast<size_t>(_cell_count) ||
+        _environment_plant_available_water_q16.size() != static_cast<size_t>(_cell_count) ||
         _environment_snow_q16.size() != static_cast<size_t>(_cell_count) ||
         _environment_weather_q16.size() != static_cast<size_t>(_cell_count)) {
         return sample;
     }
     sample.temperature_q16 = _environment_temperature_q16[cell];
+    sample.temperature_30d_q16 = _environment_temperature_30d_q16[cell];
     sample.moisture_q16 = _environment_moisture_q16[cell];
+    sample.plant_available_water_q16 = _environment_plant_available_water_q16[cell];
     sample.snow_q16 = _environment_snow_q16[cell];
     sample.weather_q16 = _environment_weather_q16[cell];
     sample.ready = _environment_day >= 0;
@@ -1334,7 +1351,9 @@ NativeEconomyRuntime::EnvironmentSample NativeEconomyRuntime::environment_sample
     };
     EnvironmentSample sample;
     sample.temperature_q16 = quantize(temperature, Q16_ONE / 2);
+    sample.temperature_30d_q16 = sample.temperature_q16;
     sample.moisture_q16 = quantize(moisture, Q16_ONE / 2);
+    sample.plant_available_water_q16 = sample.moisture_q16;
     sample.snow_q16 = quantize(snow_cover, 0);
     sample.weather_q16 = quantize(weather_intensity, 0);
     sample.ready = ready;
@@ -3643,6 +3662,45 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
 bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
                                                      std::string &error) {
     _building_type_ids = packed_strings(catalog, "building_type_ids");
+	_production_climate_profile_ids = packed_strings(
+		catalog, "production_climate_profile_ids");
+	const std::vector<int32_t> climate_temp_opt = packed_i32(
+		catalog, "production_climate_temperature_opt_q16");
+	const std::vector<int32_t> climate_temp_tol = packed_i32(
+		catalog, "production_climate_temperature_tolerance_q16");
+	const std::vector<int32_t> climate_water_opt = packed_i32(
+		catalog, "production_climate_water_opt_q16");
+	const std::vector<int32_t> climate_water_tol = packed_i32(
+		catalog, "production_climate_water_tolerance_q16");
+	const std::vector<int32_t> climate_exposure = packed_i32(
+		catalog, "production_climate_exposure_q16");
+	const std::vector<int32_t> climate_floor = packed_i32(
+		catalog, "production_climate_floor_q16");
+	const size_t climate_count = _production_climate_profile_ids.size();
+	if (climate_temp_opt.size() != climate_count || climate_temp_tol.size() != climate_count ||
+		climate_water_opt.size() != climate_count || climate_water_tol.size() != climate_count ||
+		climate_exposure.size() != climate_count || climate_floor.size() != climate_count ||
+		!std::is_sorted(_production_climate_profile_ids.begin(),
+			_production_climate_profile_ids.end()) ||
+		std::adjacent_find(_production_climate_profile_ids.begin(),
+			_production_climate_profile_ids.end()) != _production_climate_profile_ids.end()) {
+		error = "production_climate_catalog_invalid";
+		return false;
+	}
+	_production_climate_profiles.resize(climate_count);
+	for (size_t i = 0; i < climate_count; ++i) {
+		if (climate_temp_opt[i] < 0 || climate_temp_opt[i] > Q16_ONE ||
+			climate_water_opt[i] < 0 || climate_water_opt[i] > Q16_ONE ||
+			climate_temp_tol[i] <= 0 || climate_temp_tol[i] > Q16_ONE ||
+			climate_water_tol[i] <= 0 || climate_water_tol[i] > Q16_ONE ||
+			climate_exposure[i] < 0 || climate_exposure[i] > Q16_ONE ||
+			climate_floor[i] < 0 || climate_floor[i] > Q16_ONE) {
+			error = "production_climate_profile_invalid";
+			return false;
+		}
+		_production_climate_profiles[i] = {climate_temp_opt[i], climate_temp_tol[i],
+			climate_water_opt[i], climate_water_tol[i], climate_exposure[i], climate_floor[i]};
+	}
 	_building_upgrade_family_ids = packed_strings(catalog, "building_upgrade_family_ids");
 	_building_upgrade_family_indices = packed_i32(catalog, "building_upgrade_family_indices");
 	_building_upgrade_tiers = packed_i32(catalog, "building_upgrade_tiers");
@@ -3720,6 +3778,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         return false;
     }
     const size_t types = _building_type_ids.size();
+	const std::vector<int32_t> climate_profile_indices = packed_i32(
+		catalog, "building_production_climate_profile_indices");
     const std::vector<int32_t> owner_prof = packed_i32(catalog, "building_owner_profession_ids");
     const std::vector<int64_t> owner_slots = packed_i64(catalog, "building_owner_slots");
     const std::vector<int64_t> wages = packed_i64(catalog, "building_wage_per_employee_per_day");
@@ -3752,7 +3812,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         construction_days.size() != types || behavior_ids.size() != types ||
 		behavior_versions.size() != types || target_margins.size() != types ||
         supply_elasticities.size() != types || _building_kinds.size() != types ||
-        _building_economic_sectors.size() != types ||
+        _building_economic_sectors.size() != types || climate_profile_indices.size() != types ||
 		_building_upgrade_family_indices.size() != types ||
 		_building_upgrade_tiers.size() != types ||
 		!offsets_valid(_building_technology_tag_offsets) ||
@@ -3943,6 +4003,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             _building_kinds[i] < 0 || _building_kinds[i] > 2 ||
             _building_economic_sectors[i] < 0 ||
             _building_economic_sectors[i] >= 5 ||
+			climate_profile_indices[i] < -1 ||
+			climate_profile_indices[i] >= static_cast<int32_t>(climate_count) ||
             behavior_ids[i] < 0 || behavior_ids[i] > 2 || behavior_versions[i] != 1 ||
             (!kind_is_service && output_offsets[i] == output_offsets[i + 1]) ||
 			(kind_is_service && output_offsets[i] != output_offsets[i + 1]) ||
@@ -3999,7 +4061,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             return false;
         }
         _building_types[i] = {
-			_building_kinds[i], _building_economic_sectors[i], family, tier,
+			_building_kinds[i], _building_economic_sectors[i], climate_profile_indices[i], family, tier,
             owner_prof[i], owner_slots[i], wages[i],
             employee_offsets[i], employee_offsets[i + 1] - employee_offsets[i],
             construction_offsets[i], construction_offsets[i + 1] - construction_offsets[i],
@@ -5511,6 +5573,50 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
     _labor_signal_ms += elapsed_ms(started);
 }
 
+int64_t NativeEconomyRuntime::production_climate_capacity_q16(
+        const BuildingType &type, int32_t cell,
+        int64_t *temperature_fit_q16, int64_t *water_fit_q16,
+        int64_t &saturation_count) const {
+    int64_t temperature_fit = Q16_ONE;
+    int64_t water_fit = Q16_ONE;
+    if (type.production_climate_profile_id < 0) {
+        if (temperature_fit_q16 != nullptr) *temperature_fit_q16 = temperature_fit;
+        if (water_fit_q16 != nullptr) *water_fit_q16 = water_fit;
+        return Q16_ONE;
+    }
+    const ProductionClimateProfile &climate = _production_climate_profiles[
+        static_cast<size_t>(type.production_climate_profile_id)];
+    const EnvironmentSample environment = environment_sample_for_cell(cell);
+    auto fit_q16 = [&](int32_t signal, int32_t optimum,
+                       int32_t tolerance) -> int64_t {
+        const int64_t delta = std::llabs(
+            static_cast<int64_t>(signal) - optimum);
+        return std::clamp<int64_t>(Q16_ONE - mul_div_sat(
+            delta, Q16_ONE, tolerance, saturation_count), 0, Q16_ONE);
+    };
+    temperature_fit = fit_q16(
+        environment.temperature_30d_q16, climate.temperature_opt_q16,
+        climate.temperature_tolerance_q16);
+    water_fit = fit_q16(
+        environment.plant_available_water_q16, climate.water_opt_q16,
+        climate.water_tolerance_q16);
+    if (temperature_fit_q16 != nullptr) *temperature_fit_q16 = temperature_fit;
+    if (water_fit_q16 != nullptr) *water_fit_q16 = water_fit;
+    const int64_t raw = std::min(temperature_fit, water_fit);
+    const int64_t bounded = std::max<int64_t>(climate.floor_q16, raw);
+    return std::clamp<int64_t>(
+        Q16_ONE - mul_div_sat(climate.exposure_q16,
+            Q16_ONE - bounded, Q16_ONE, saturation_count), 0, Q16_ONE);
+}
+
+void NativeEconomyRuntime::prepare_group_climate_capacity(
+        BuildingGroup &group, const BuildingType &type) {
+    group.last_climate_capacity_q16 = production_climate_capacity_q16(
+        type, group.cell, &group.last_temperature_fit_q16,
+        &group.last_water_fit_q16, _saturation_count);
+    group.last_climate_lost_output = 0;
+}
+
 bool NativeEconomyRuntime::prepare_building_economic_plan(
         int32_t active_begin, int32_t active_end, BuildingPlanResult &result,
         std::string &error) {
@@ -5844,6 +5950,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             return false;
         }
         const BuildingType &type = _building_types[group.type_id];
+        prepare_group_climate_capacity(group, type);
         if (type.kind == 2) {
             // Service buildings (currently merchant posts) do not settle
             // production inputs/outputs and therefore have no meaningful
@@ -6340,6 +6447,14 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                     resource_capacity_q16);
             }
         }
+        if (group_index < static_cast<int32_t>(
+                _building_planned_capacity_before_climate_q16.size())) {
+            _building_planned_capacity_before_climate_q16[group_index] =
+                group.planned_utilization_q16;
+        }
+        group.planned_utilization_q16 = static_cast<int32_t>(
+            std::min<int64_t>(group.planned_utilization_q16,
+                              group.last_climate_capacity_q16));
         group.purchase_intent_capacity_q16 = 0;
         const int64_t group_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
@@ -7903,6 +8018,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
     _production_result_sink = &result;
     int64_t &_saturation_count = result.saturation_count;
     int64_t &_processed_building_groups = result.processed_building_groups;
+    int64_t &_climate_profiled_building_groups =
+        result.climate_profiled_building_groups;
+    int64_t &_climate_limited_building_groups =
+        result.climate_limited_building_groups;
+    int64_t &_climate_capacity_sum_q16 = result.climate_capacity_sum_q16;
     int64_t &_merchant_procurement_budget = result.merchant_procurement_budget;
     int64_t &_merchant_procurement_opportunity = result.merchant_procurement_opportunity;
     int64_t &_merchant_procurement_allocated = result.merchant_procurement_allocated;
@@ -8050,6 +8170,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         group.last_bonus_paid = group.last_bonus_due = 0;
         group.wage_suspended = 0;
         const BuildingType &type = _building_types[group.type_id];
+        prepare_group_climate_capacity(group, type);
         for (int32_t input = 0; input < type.input_count; ++input) {
             _building_last_input_selected_goods[
                 group.last_input_selection_begin + input] = -1;
@@ -8381,12 +8502,20 @@ bool NativeEconomyRuntime::run_building_production_cell(
         return best;
     };
     auto desired_scale_for_group = [&](const BuildingGroup &group,
-                                       const BuildingType &type) -> int64_t {
+                                       const BuildingType &type,
+                                       bool apply_climate) -> int64_t {
         const int64_t owner_demand = saturating_mul(
             group.count, type.owner_slots_per_building, _saturation_count);
         int64_t scale = owner_demand > 0 ? std::min<int64_t>(Q16_ONE, mul_div_sat(
             group.filled_owner, Q16_ONE, owner_demand, _saturation_count)) : 0;
-        scale = std::min<int64_t>(scale, group.planned_utilization_q16);
+        const int32_t group_index = static_cast<int32_t>(
+            &group - _buildings.data());
+        const int64_t planned_capacity_q16 = !apply_climate && group_index >= 0 &&
+                group_index < static_cast<int32_t>(
+                    _building_planned_capacity_before_climate_q16.size())
+            ? _building_planned_capacity_before_climate_q16[group_index]
+            : group.planned_utilization_q16;
+        scale = std::min<int64_t>(scale, planned_capacity_q16);
         for (int32_t r = 0; r < type.employee_count; ++r) {
             const JobRole &role = _building_employee_roles[type.employee_begin + r];
             const int64_t demand = saturating_mul(
@@ -8403,6 +8532,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     building_days, item.quantity, _saturation_count)) < 0) {
                 scale = std::min<int64_t>(scale, soft_input_bound_q16(item, 0));
             }
+        }
+        if (apply_climate) {
+            scale = std::min<int64_t>(scale, group.last_climate_capacity_q16);
         }
         return std::clamp<int64_t>(scale, 0, Q16_ONE);
     };
@@ -8499,7 +8631,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             expected_revenue = saturating_add(
                 expected_revenue, group.last_expected_revenue, _saturation_count);
             filled_owner = saturating_add(filled_owner, group.filled_owner, _saturation_count);
-            const int64_t desired_scale = desired_scale_for_group(group, type);
+            const int64_t desired_scale = desired_scale_for_group(group, type, true);
             group.purchase_intent_capacity_q16 = desired_scale;
             const int64_t desired_cost = group_input_cost_at_scale(
                 group, type, desired_scale, false);
@@ -8660,9 +8792,19 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const BuildingType &type = _building_types[group.type_id];
             if (produces_cycle_flow(type) != cycle_flow_phase) continue;
             ++_processed_building_groups;
+            if (type.production_climate_profile_id >= 0) {
+                ++_climate_profiled_building_groups;
+                if (group.last_climate_capacity_q16 < Q16_ONE)
+                    ++_climate_limited_building_groups;
+                _climate_capacity_sum_q16 = saturating_add(
+                    _climate_capacity_sum_q16,
+                    group.last_climate_capacity_q16, _saturation_count);
+            }
             const int32_t owner_slot = find_cohort_slot(cell, group.owner_signature_id);
             if (owner_slot < 0) continue;
-            int64_t intent_scale_q16 = desired_scale_for_group(group, type);
+            const int64_t intent_scale_without_climate = desired_scale_for_group(
+                group, type, false);
+            int64_t intent_scale_q16 = intent_scale_without_climate;
             const int64_t building_days = saturating_mul(
                 group.count, std::max(1, _epoch_days), _saturation_count);
             const int64_t group_budget = g < static_cast<int32_t>(
@@ -8735,8 +8877,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     scale_q16, soft_input_bound_q16(item, raw_capacity_q16));
             }
             scale_q16 = clamp_scale_to_group_budget(scale_q16, true);
-            const int64_t non_resource_scale_q16 = std::clamp<int64_t>(
-                scale_q16, 0, Q16_ONE);
+            const int64_t non_resource_scale_without_climate_q16 =
+                std::clamp<int64_t>(scale_q16, 0, Q16_ONE);
             bool resource_limited = false;
             bool resource_capacity_limited = false;
             if (type.behavior_id == 1 || type.behavior_id == 2) {
@@ -8761,17 +8903,39 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     scale_q16 = std::min(scale_q16, resource_scale);
                 }
             }
-            intent_scale_q16 = std::clamp<int64_t>(intent_scale_q16, 0, Q16_ONE);
-            scale_q16 = std::clamp<int64_t>(scale_q16, 0, Q16_ONE);
+            const int64_t scale_without_climate_q16 = std::clamp<int64_t>(
+                scale_q16, 0, Q16_ONE);
+            intent_scale_q16 = std::min<int64_t>(
+                std::clamp<int64_t>(intent_scale_without_climate, 0, Q16_ONE),
+                group.last_climate_capacity_q16);
+            scale_q16 = std::min<int64_t>(
+                scale_without_climate_q16, group.last_climate_capacity_q16);
             if (resource_limited) ++_building_resource_limited_groups;
             if (resource_capacity_limited) ++_building_resource_capacity_limited_groups;
             group.purchase_intent_capacity_q16 = intent_scale_q16;
             group.last_capacity_q16 = scale_q16;
             _building_funded_capacity_q16[g] = scale_q16;
+            if (group.last_climate_capacity_q16 < Q16_ONE) {
+                for (int32_t i = 0; i < type.output_count; ++i) {
+                    const GoodAmount &output = _building_outputs[type.output_begin + i];
+                    const int64_t without_climate = effective_building_output_quantity(
+                        group, output.quantity, scale_without_climate_q16, building_days,
+                        _saturation_count);
+                    const int64_t with_climate = effective_building_output_quantity(
+                        group, output.quantity, scale_q16, building_days,
+                        _saturation_count);
+                    group.last_climate_lost_output = saturating_add(
+                        group.last_climate_lost_output,
+                        std::max<int64_t>(0, without_climate - with_climate),
+                        _saturation_count);
+                }
+            }
             if (type.behavior_id == 2) {
                 const int64_t generation_scale_q16 = std::min<int64_t>(
-                    non_resource_scale_q16,
-                    std::max<int64_t>(scale_q16, type.generation_floor_q16));
+                    group.last_climate_capacity_q16,
+                    std::min<int64_t>(non_resource_scale_without_climate_q16,
+                        std::max<int64_t>(scale_q16,
+                            type.generation_floor_q16)));
                 for (int32_t i = 0; i < type.generation_count; ++i) {
                     const ResourceAmount &item =
                         _building_resource_generation[type.generation_begin + i];
@@ -9947,6 +10111,11 @@ void NativeEconomyRuntime::merge_building_production_result(ProductionResult &re
         target = saturating_add(target, value, _saturation_count);
     };
     merge(_processed_building_groups, result.processed_building_groups);
+    merge(_climate_profiled_building_groups,
+          result.climate_profiled_building_groups);
+    merge(_climate_limited_building_groups,
+          result.climate_limited_building_groups);
+    merge(_climate_capacity_sum_q16, result.climate_capacity_sum_q16);
     merge(_merchant_procurement_budget, result.merchant_procurement_budget);
     merge(_merchant_procurement_opportunity, result.merchant_procurement_opportunity);
     merge(_merchant_procurement_allocated, result.merchant_procurement_allocated);
@@ -11209,6 +11378,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 continue;
             }
             utilization_q16 = std::min(utilization_q16, input_coverage_bound_q16);
+            utilization_q16 = std::min(utilization_q16,
+                production_climate_capacity_q16(
+                    type, cell, nullptr, nullptr, _saturation_count));
             if (utilization_q16 <= 0) {
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
                 continue;
@@ -12169,7 +12341,9 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     // safe and deterministic at day zero; start_epoch still requires a same-day
     // capture before these defaults can affect simulation.
     _environment_temperature_q16.assign(cell_count, Q16_ONE / 2);
+    _environment_temperature_30d_q16.assign(cell_count, Q16_ONE / 2);
     _environment_moisture_q16.assign(cell_count, Q16_ONE / 2);
+    _environment_plant_available_water_q16.assign(cell_count, Q16_ONE / 2);
     _environment_snow_q16.assign(cell_count, 0);
     _environment_weather_q16.assign(cell_count, 0);
     _committed_cells.assign(cell_count, {});
@@ -14866,6 +15040,9 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _price_inactive_reversions = 0;
     _continuation_slices = 0;
     _processed_building_groups = 0;
+    _climate_profiled_building_groups = 0;
+    _climate_limited_building_groups = 0;
+    _climate_capacity_sum_q16 = 0;
     _filled_owner_jobs = 0;
     _filled_employee_jobs = 0;
     _unemployed_population = 0;
@@ -15458,6 +15635,8 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _rolling_processed_cells = 0;
     _rolling_deferred_cells = 0;
     _building_survival_utilization_floor_q16.assign(_buildings.size(), 0);
+    _building_planned_capacity_before_climate_q16.assign(
+        _buildings.size(), Q16_ONE);
     _building_owner_livelihood_credit.assign(_buildings.size(), 0);
     _building_merchant_credit_limit.assign(_buildings.size(), 0);
     _building_recovery_probe_capacity_q16.assign(_buildings.size(), 0);
@@ -19795,6 +19974,9 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_population.owner_employed); cap(_population.employee_employed);
     cap(_market.stock); cap(_market.price); cap(_market.demand_ema);
     cap(_market.last_shortage_q16); cap(_market.cell_to_market);
+    cap(_environment_temperature_q16); cap(_environment_temperature_30d_q16);
+    cap(_environment_moisture_q16); cap(_environment_plant_available_water_q16);
+    cap(_environment_snow_q16); cap(_environment_weather_q16);
     cap(_audit_shadow_population); cap(_audit_shadow_funds);
     cap(_audit_shadow_market_stock);
     cap(_audit_population_lane_stamp); cap(_audit_market_lane_stamp);
@@ -19840,6 +20022,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_employment_metrics_epoch_by_cell); cap(_employment_owner_jobs_by_cell);
     cap(_employment_employee_jobs_by_cell); cap(_employment_unemployed_by_cell);
     cap(_building_survival_utilization_floor_q16);
+    cap(_building_planned_capacity_before_climate_q16);
     cap(_building_funded_capacity_q16); cap(_building_working_capital_allocated);
     cap(_building_owner_livelihood_credit);
     cap(_building_merchant_credit_limit);
@@ -20010,6 +20193,14 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["processed_cohorts"] = _processed_cohorts;
     out["processed_rules"] = _processed_rules;
     out["processed_building_groups"] = _processed_building_groups;
+    out["climate_profiled_building_groups"] =
+        _climate_profiled_building_groups;
+    out["climate_limited_building_groups"] =
+        _climate_limited_building_groups;
+    out["average_climate_capacity_q16"] =
+        _climate_profiled_building_groups > 0
+        ? _climate_capacity_sum_q16 / _climate_profiled_building_groups
+        : Q16_ONE;
 
     if (_executed_stage == Stage::TRADE_PLANNING || _trade_plan_ms > 0.0) {
         const double accounted_ms = _trade_plan_scan_body_ms +
@@ -20723,6 +20914,14 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_group_count"] = static_cast<int64_t>(_buildings.size());
     out["pending_construction_count"] = static_cast<int64_t>(_pending_construction.size());
     out["processed_building_groups"] = _processed_building_groups;
+    out["climate_profiled_building_groups"] =
+        _climate_profiled_building_groups;
+    out["climate_limited_building_groups"] =
+        _climate_limited_building_groups;
+    out["average_climate_capacity_q16"] =
+        _climate_profiled_building_groups > 0
+        ? _climate_capacity_sum_q16 / _climate_profiled_building_groups
+        : Q16_ONE;
     out["filled_owner_jobs"] = _filled_owner_jobs;
     out["filled_employee_jobs"] = _filled_employee_jobs;
     out["unemployed_population"] = _unemployed_population;
@@ -21936,6 +22135,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array employee_bonus_due;
     PackedInt64Array employee_bonus_paid;
     PackedInt64Array capacity_q16;
+    PackedInt64Array last_temperature_fit_q16;
+    PackedInt64Array last_water_fit_q16;
+    PackedInt64Array last_climate_capacity_q16;
+    PackedInt64Array last_climate_lost_output;
     PackedInt64Array purchase_intent_capacity_q16;
     PackedInt64Array funded_capacity_q16;
     PackedInt64Array owner_working_capital_allocated;
@@ -22026,6 +22229,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         owner_openings.push_back(std::max<int64_t>(
             0, planned_owner_required - group.filled_owner));
         capacity_q16.push_back(group.last_capacity_q16);
+        last_temperature_fit_q16.push_back(group.last_temperature_fit_q16);
+        last_water_fit_q16.push_back(group.last_water_fit_q16);
+        last_climate_capacity_q16.push_back(group.last_climate_capacity_q16);
+        last_climate_lost_output.push_back(group.last_climate_lost_output);
         purchase_intent_capacity_q16.push_back(group.purchase_intent_capacity_q16);
         funded_capacity_q16.push_back(group_idx < static_cast<int32_t>(
             _building_funded_capacity_q16.size())
@@ -22230,6 +22437,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["employee_bonus_due"] = employee_bonus_due;
     out["employee_bonus_paid"] = employee_bonus_paid;
     out["capacity_q16"] = capacity_q16;
+    out["last_temperature_fit_q16"] = last_temperature_fit_q16;
+    out["last_water_fit_q16"] = last_water_fit_q16;
+    out["last_climate_capacity_q16"] = last_climate_capacity_q16;
+    out["last_climate_lost_output"] = last_climate_lost_output;
     out["purchase_intent_capacity_q16"] = purchase_intent_capacity_q16;
     out["funded_capacity_q16"] = funded_capacity_q16;
     out["owner_working_capital_allocated"] = owner_working_capital_allocated;
@@ -22438,6 +22649,83 @@ Dictionary NativeEconomyRuntime::fixed_math_probe(const Dictionary &vectors) con
     return out;
 }
 
+Dictionary NativeEconomyRuntime::production_climate_math_probe(
+        const Dictionary &vectors) const {
+    Dictionary out;
+    const std::vector<int32_t> temperature = packed_i32(vectors, "temperature_q16");
+    const std::vector<int32_t> temperature_opt = packed_i32(
+        vectors, "temperature_opt_q16");
+    const std::vector<int32_t> temperature_tolerance = packed_i32(
+        vectors, "temperature_tolerance_q16");
+    const std::vector<int32_t> water = packed_i32(vectors, "water_q16");
+    const std::vector<int32_t> water_opt = packed_i32(vectors, "water_opt_q16");
+    const std::vector<int32_t> water_tolerance = packed_i32(
+        vectors, "water_tolerance_q16");
+    const std::vector<int32_t> exposure = packed_i32(vectors, "exposure_q16");
+    const std::vector<int32_t> floor = packed_i32(vectors, "floor_q16");
+    const std::vector<int32_t> enabled = packed_i32(vectors, "enabled");
+    const size_t count = temperature.size();
+    if (temperature_opt.size() != count || temperature_tolerance.size() != count ||
+        water.size() != count || water_opt.size() != count ||
+        water_tolerance.size() != count || exposure.size() != count ||
+        floor.size() != count || (!enabled.empty() && enabled.size() != count)) {
+        out["ok"] = false;
+        out["reason"] = "production_climate_math_vector_size_mismatch";
+        return out;
+    }
+    PackedInt64Array temperature_fit;
+    PackedInt64Array water_fit;
+    PackedInt64Array capacity;
+    temperature_fit.resize(static_cast<int64_t>(count));
+    water_fit.resize(static_cast<int64_t>(count));
+    capacity.resize(static_cast<int64_t>(count));
+    int64_t saturation_count = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (temperature[i] < 0 || temperature[i] > Q16_ONE ||
+            temperature_opt[i] < 0 || temperature_opt[i] > Q16_ONE ||
+            temperature_tolerance[i] <= 0 || temperature_tolerance[i] > Q16_ONE ||
+            water[i] < 0 || water[i] > Q16_ONE ||
+            water_opt[i] < 0 || water_opt[i] > Q16_ONE ||
+            water_tolerance[i] <= 0 || water_tolerance[i] > Q16_ONE ||
+            exposure[i] < 0 || exposure[i] > Q16_ONE ||
+            floor[i] < 0 || floor[i] > Q16_ONE) {
+            out["ok"] = false;
+            out["reason"] = "production_climate_math_vector_invalid";
+            return out;
+        }
+        if (!enabled.empty() && enabled[i] == 0) {
+            temperature_fit.set(static_cast<int64_t>(i), Q16_ONE);
+            water_fit.set(static_cast<int64_t>(i), Q16_ONE);
+            capacity.set(static_cast<int64_t>(i), Q16_ONE);
+            continue;
+        }
+        const int64_t temp_delta = std::llabs(
+            static_cast<int64_t>(temperature[i]) - temperature_opt[i]);
+        const int64_t water_delta = std::llabs(
+            static_cast<int64_t>(water[i]) - water_opt[i]);
+        const int64_t temp_fit = std::clamp<int64_t>(Q16_ONE - mul_div_sat(
+            temp_delta, Q16_ONE, temperature_tolerance[i], saturation_count),
+            0, Q16_ONE);
+        const int64_t moist_fit = std::clamp<int64_t>(Q16_ONE - mul_div_sat(
+            water_delta, Q16_ONE, water_tolerance[i], saturation_count),
+            0, Q16_ONE);
+        const int64_t raw = std::min(temp_fit, moist_fit);
+        const int64_t bounded = std::max<int64_t>(floor[i], raw);
+        const int64_t climate_capacity = std::clamp<int64_t>(
+            Q16_ONE - mul_div_sat(exposure[i], Q16_ONE - bounded,
+                Q16_ONE, saturation_count), 0, Q16_ONE);
+        temperature_fit.set(static_cast<int64_t>(i), temp_fit);
+        water_fit.set(static_cast<int64_t>(i), moist_fit);
+        capacity.set(static_cast<int64_t>(i), climate_capacity);
+    }
+    out["ok"] = true;
+    out["temperature_fit_q16"] = temperature_fit;
+    out["water_fit_q16"] = water_fit;
+    out["capacity_q16"] = capacity;
+    out["saturation_count"] = saturation_count;
+    return out;
+}
+
 int64_t NativeEconomyRuntime::state_hash() const {
     uint64_t hash = 1469598103934665603ULL;
     auto mix_u64 = [&](uint64_t value) {
@@ -22506,6 +22794,10 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(group.count));
         mix_u64(static_cast<uint64_t>(group.filled_owner));
         mix_u64(static_cast<uint64_t>(group.last_capacity_q16));
+        mix_u64(static_cast<uint64_t>(group.last_temperature_fit_q16));
+        mix_u64(static_cast<uint64_t>(group.last_water_fit_q16));
+        mix_u64(static_cast<uint64_t>(group.last_climate_capacity_q16));
+        mix_u64(static_cast<uint64_t>(group.last_climate_lost_output));
         mix_u64(static_cast<uint64_t>(group.last_input));
         mix_u64(static_cast<uint64_t>(group.last_output));
         mix_u64(static_cast<uint64_t>(group.last_sold));
@@ -22717,7 +23009,9 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _event_consumer_ack.clear();
     _event_archive = {};
     _environment_temperature_q16.clear();
+    _environment_temperature_30d_q16.clear();
     _environment_moisture_q16.clear();
+    _environment_plant_available_water_q16.clear();
     _environment_snow_q16.clear();
     _environment_weather_q16.clear();
     _building_elevation_q16.clear();
@@ -22818,7 +23112,9 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     const size_t cells = static_cast<size_t>(_cell_count);
     if (_market.cell_to_market.size() != cells ||
         _environment_temperature_q16.size() != cells ||
+        _environment_temperature_30d_q16.size() != cells ||
         _environment_moisture_q16.size() != cells ||
+        _environment_plant_available_water_q16.size() != cells ||
         _environment_snow_q16.size() != cells ||
         _environment_weather_q16.size() != cells ||
         _cell_last_settlement_day.size() != cells ||
@@ -23009,7 +23305,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_CELLS) {
-        const int32_t record_bytes = 68;
+        const int32_t record_bytes = 76;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min(_cell_count, _save.cell_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.cell_cursor)) * record_bytes);
@@ -23018,7 +23314,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int32_t>(payload, _save.cell_cursor);
             append_le<int32_t>(payload, _market.cell_to_market[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_temperature_q16[_save.cell_cursor]);
+            append_le<int32_t>(payload, _environment_temperature_30d_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_moisture_q16[_save.cell_cursor]);
+            append_le<int32_t>(payload, _environment_plant_available_water_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_snow_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_weather_q16[_save.cell_cursor]);
             append_le<int64_t>(payload, _cell_last_settlement_day[_save.cell_cursor]);
@@ -23072,6 +23370,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int64_t>(payload, group.count);
             append_le<int64_t>(payload, group.filled_owner);
             append_le<int64_t>(payload, group.last_capacity_q16);
+            append_le<int64_t>(payload, group.last_temperature_fit_q16);
+            append_le<int64_t>(payload, group.last_water_fit_q16);
+            append_le<int64_t>(payload, group.last_climate_capacity_q16);
+            append_le<int64_t>(payload, group.last_climate_lost_output);
             append_le<int64_t>(payload, group.last_input);
             append_le<int64_t>(payload, group.last_output);
             append_le<int64_t>(payload, group.last_sold);
@@ -23400,7 +23702,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         return false;
     }
     if (schema != SCHEMA_VERSION) {
-        error = "legacy_technology_tree_save_unsupported";
+        error = "legacy_climate_production_save_unsupported";
         return false;
     }
     if (!_restore.header_seen && section != SAVE_SECTION_HEADER) {
@@ -23750,7 +24052,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _trade_flows.clear();
         _trade_flows.cells.reserve(trade_flow_count);
         _environment_temperature_q16.assign(_cell_count, 0);
+        _environment_temperature_30d_q16.assign(_cell_count, 0);
         _environment_moisture_q16.assign(_cell_count, 0);
+        _environment_plant_available_water_q16.assign(_cell_count, 0);
         _environment_snow_q16.assign(_cell_count, 0);
         _environment_weather_q16.assign(_cell_count, 0);
         _environment_day = environment_day;
@@ -23853,7 +24157,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 return false;
             }
             if (!read_le(bytes, cursor, _environment_temperature_q16[cell]) ||
+                !read_le(bytes, cursor, _environment_temperature_30d_q16[cell]) ||
                 !read_le(bytes, cursor, _environment_moisture_q16[cell]) ||
+                !read_le(bytes, cursor, _environment_plant_available_water_q16[cell]) ||
                 !read_le(bytes, cursor, _environment_snow_q16[cell]) ||
                 !read_le(bytes, cursor, _environment_weather_q16[cell])) {
                 error = "save_cell_environment_record_invalid";
@@ -23902,6 +24208,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, group.count) ||
                 !read_le(bytes, cursor, group.filled_owner) ||
                 !read_le(bytes, cursor, group.last_capacity_q16) ||
+                !read_le(bytes, cursor, group.last_temperature_fit_q16) ||
+                !read_le(bytes, cursor, group.last_water_fit_q16) ||
+                !read_le(bytes, cursor, group.last_climate_capacity_q16) ||
+                !read_le(bytes, cursor, group.last_climate_lost_output) ||
                 !read_le(bytes, cursor, group.last_input) ||
                 !read_le(bytes, cursor, group.last_output) ||
                 !read_le(bytes, cursor, group.last_sold) ||
@@ -23947,6 +24257,13 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size()) ||
                 group.count <= 0 || roles != _building_types[group.type_id].employee_count ||
+                group.last_temperature_fit_q16 < 0 ||
+                group.last_temperature_fit_q16 > Q16_ONE ||
+                group.last_water_fit_q16 < 0 ||
+                group.last_water_fit_q16 > Q16_ONE ||
+                group.last_climate_capacity_q16 < 0 ||
+                group.last_climate_capacity_q16 > Q16_ONE ||
+                group.last_climate_lost_output < 0 ||
                 group.purchase_intent_capacity_q16 < 0 ||
                 group.purchase_intent_capacity_q16 > Q16_ONE ||
                 (group.pending_operating_state > 2 && group.pending_operating_state != 255) ||
@@ -24318,6 +24635,39 @@ Dictionary NativeEconomyRuntime::end_restore() {
         out["reason"] = "restore_section_incomplete";
         return out;
     }
+    uint64_t restored_environment_hash = 1469598103934665603ULL;
+    auto mix_environment_q16 = [&](uint32_t value) {
+        for (int32_t byte = 0; byte < 4; ++byte) {
+            restored_environment_hash ^= static_cast<uint8_t>(
+                (value >> (byte * 8)) & 0xffU);
+            restored_environment_hash *= 1099511628211ULL;
+        }
+    };
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        const int32_t values[] = {
+            _environment_temperature_q16[cell],
+            _environment_temperature_30d_q16[cell],
+            _environment_moisture_q16[cell],
+            _environment_plant_available_water_q16[cell],
+            _environment_snow_q16[cell],
+            _environment_weather_q16[cell],
+        };
+        for (int32_t value : values) {
+            if (value < 0 || value > Q16_ONE) {
+                out["ok"] = false;
+                out["reason"] = "restore_environment_value_invalid";
+                return out;
+            }
+            mix_environment_q16(static_cast<uint32_t>(value));
+        }
+    }
+    const int64_t computed_environment_hash = static_cast<int64_t>(
+        (restored_environment_hash & 0x7fffffffffffffffULL) | 1ULL);
+    if (computed_environment_hash != _environment_hash) {
+        out["ok"] = false;
+        out["reason"] = "restore_environment_hash_mismatch";
+        return out;
+    }
     std::vector<uint8_t> referenced(_population.page_next.size(), 0);
     int64_t actual_active = 0;
     for (int32_t page = 0; page < static_cast<int32_t>(_population.page_next.size()); ++page) {
@@ -24471,6 +24821,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
             (group.pending_operating_state > 2 && group.pending_operating_state != 255) ||
             group.merchant_debt_principal < 0 || group.merchant_debt_premium < 0 ||
             group.last_in_kind_livelihood_value < 0 ||
+            group.last_temperature_fit_q16 < 0 ||
+            group.last_temperature_fit_q16 > Q16_ONE ||
+            group.last_water_fit_q16 < 0 ||
+            group.last_water_fit_q16 > Q16_ONE ||
+            group.last_climate_capacity_q16 < 0 ||
+            group.last_climate_capacity_q16 > Q16_ONE ||
+            group.last_climate_lost_output < 0 ||
             ((group.merchant_debt_principal > 0 || group.merchant_debt_premium > 0) &&
              group.merchant_debt_term_cycles_left == 0 &&
              group.merchant_debt_delinquent_cycles == 0) ||

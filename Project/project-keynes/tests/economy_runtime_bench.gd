@@ -304,7 +304,8 @@ func _capture_trade_line_topology(ext: Object, cells: int) -> Dictionary:
 func _new_ext(cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	ext.create_entities(cells)
-	for name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover", &"cell_weather_intensity"]:
+	for name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover", &"cell_weather_intensity"]:
 		ext.register_component(name, 0, 1, false)
 	_set_environment(ext, cells, 0.5)
 	return ext
@@ -313,7 +314,8 @@ func _set_environment(ext: Object, cells: int, value: float) -> void:
 	var values := PackedFloat32Array()
 	values.resize(cells)
 	values.fill(value)
-	for name in [&"cell_temp", &"cell_moisture", &"cell_snow_cover", &"cell_weather_intensity"]:
+	for name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
+			&"cell_plant_available_water", &"cell_snow_cover", &"cell_weather_intensity"]:
 		ext.write_f32_range(ext.component_id(name), 0, values)
 
 func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
