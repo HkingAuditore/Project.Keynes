@@ -105,7 +105,7 @@ func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 		)
 	)
 	var icon := refs.get("icon") as IconBadge
-	icon.set_icon(String(data.get("icon", "resource")), accent)
+	icon.set_semantic(StringName(data.get("icon", &"economy.resource")), accent)
 	var name_label := refs.get("name") as Label
 	name_label.text = String(data.get("name", "资源"))
 	var density_label := refs.get("density") as Label

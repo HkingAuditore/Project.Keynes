@@ -67,7 +67,7 @@ func update_time_state(
 		_ready()
 	_date_label.text = "第%d年 · %d月%d日" % [year_idx + 1, month, day_of_month]
 	_pause_button.set_pressed_no_signal(paused)
-	IconBadge.apply_to_button(_pause_button, "play" if paused else "pause", 15)
+	IconButton.apply(_pause_button, &"action.play" if paused else &"action.pause", 15)
 	_pause_button.tooltip_text = "继续" if paused else "暂停"
 	for speed_key in _speed_buttons.keys():
 		var button := _speed_buttons[speed_key] as Button
@@ -83,7 +83,7 @@ func set_day_night_enabled(enabled: bool) -> void:
 	if _day_night_button == null:
 		_ready()
 	_day_night_button.set_pressed_no_signal(enabled)
-	IconBadge.apply_to_button(_day_night_button, "moon" if enabled else "sun", 15)
+	IconButton.apply(_day_night_button, &"climate.moon" if enabled else &"climate.sun", 15)
 	_day_night_button.tooltip_text = "昼夜循环：%s" % ("开启" if enabled else "关闭（动态永昼，光向随直射点移动）")
 
 
@@ -165,7 +165,7 @@ func _icon_button(icon_key: String, tooltip: String) -> Button:
 	button.tooltip_text = tooltip
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(34.0, 30.0)
-	IconBadge.apply_to_button(button, icon_key, 15)
+	IconButton.apply(button, StringName(icon_key), 15, tooltip)
 	return button
 
 

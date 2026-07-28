@@ -104,8 +104,9 @@ func _run() -> void:
 		failures.append("expanded population list exceeds the inspector scroll width")
 	var cohort_refs: Dictionary = cohort_list._row_refs.get("cohort_1", {})
 	if String((cohort_refs.get("name") as Label).text) != "工人" \
-			or (cohort_refs.get("icon") as IconBadge).icon_key != "profession_worker" \
-			or (cohort_refs.get("living_icon") as IconBadge).icon_key != "living_comfortable":
+			or (cohort_refs.get("icon") as IconBadge).icon_key != "profession.worker" \
+			or (cohort_refs.get("living_icon") as IconBadge).icon_key \
+					!= "population.living.comfortable":
 		failures.append("population header did not separate profession and living-standard icons")
 	if not String((cohort_refs.get("income") as Label).text).begins_with("收入 ") \
 			or not String((cohort_refs.get("expense") as Label).text).begins_with("支出 "):
@@ -373,8 +374,8 @@ func _market_category(step: float) -> Dictionary:
 func _population_category(step: float) -> Dictionary:
 	return {
 		"cohort_rows": [
-			{"id": "cohort_1", "name": "工人", "cohort_identity": "本地人口", "living_standard": "小康", "satisfaction": "82.0%", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "本地人口 · 满意度 82.0%", "accent": UITokens.ACCENT, "icon": "profession_worker", "living_icon": "living_comfortable", "living_accent": UITokens.GOOD, "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
-			{"id": "cohort_2", "name": "商人", "cohort_identity": "本地人口", "living_standard": "富裕", "satisfaction": "90.0%", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "本地人口 · 满意度 90.0%", "accent": UITokens.RESOURCE, "icon": "profession_merchant", "living_icon": "living_affluent", "living_accent": UITokens.RESOURCE, "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
+			{"id": "cohort_1", "name": "工人", "cohort_identity": "本地人口", "living_standard": "小康", "satisfaction": "82.0%", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "本地人口 · 满意度 82.0%", "accent": UITokens.ACCENT, "icon": "profession.worker", "living_icon": "living_comfortable", "living_accent": UITokens.GOOD, "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
+			{"id": "cohort_2", "name": "商人", "cohort_identity": "本地人口", "living_standard": "富裕", "satisfaction": "90.0%", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "本地人口 · 满意度 90.0%", "accent": UITokens.RESOURCE, "icon": "profession.merchant", "living_icon": "living_affluent", "living_accent": UITokens.RESOURCE, "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
 		],
 	}
 

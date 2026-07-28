@@ -69,12 +69,15 @@ func set_data(title: String, value: String, subtitle: String = "", accent: Color
 		_ready()
 	add_theme_stylebox_override("panel", UITokens.inset_panel_style(Color(0.074, 0.061, 0.046, 0.96), Color(accent.r, accent.g, accent.b, 0.46)))
 	if _icon_badge != null:
-		_icon_badge.set_icon(icon, accent)
+		_icon_badge.set_semantic(StringName(icon), accent)
 	_title_label.text = title
 	_value_label.text = value
 	_subtitle_label.text = subtitle
 	_subtitle_label.visible = subtitle != ""
-	var trend_key := IconBadge.normalize_icon(trend)
-	_trend_label.text = IconBadge.glyph_for_key(trend_key) if trend_key != "" else ""
+	var trend_key := IconCatalog.resolve_semantic(StringName(trend))
+	if trend_key == &"":
+		_trend_label.text = ""
+	else:
+		IconButton.apply_to_label(_trend_label, StringName(trend_key), UITokens.FONT_SMALL)
 	_trend_label.visible = trend != ""
 	_trend_label.add_theme_color_override("font_color", accent)

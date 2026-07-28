@@ -37,6 +37,9 @@ var _live_category_generation := -1
 var _live_category_hash := 0
 var _live_revision_valid := false
 var _country_facade = null
+var _country_view_model: CountryViewModel
+var _country_action_bar: CountryActionBar
+var _country_panel: CountryPanel
 var _gm_console: DebugConsole
 var _perf_hud: PerfMiniHUD
 var _diagnostics_source: Node = null
@@ -76,6 +79,9 @@ func set_world_context(
 	_invalidate_live_revision()
 	_country_facade = generator.get_country_facade() if generator != null and \
 		generator.has_method("get_country_facade") else null
+	if _country_view_model == null:
+		_country_view_model = CountryViewModel.new()
+	_country_view_model.set_context(generator)
 	if _country_facade != null and _country_facade.has_signal("country_committed"):
 		var callback := Callable(self, "_on_country_committed")
 		if not _country_facade.country_committed.is_connected(callback):
@@ -90,6 +96,10 @@ func set_world_context(
 		_demand_detail_dialog.close_dialog()
 	if _gm_console != null:
 		_gm_console.refresh_gm_capabilities()
+	if _country_panel != null:
+		_country_panel.visible = false
+	if _country_action_bar != null:
+		_country_action_bar.set_active("")
 
 
 func set_diagnostics_source(source: Node) -> void:
@@ -243,6 +253,33 @@ func _on_country_committed(_report: Dictionary) -> void:
 	# Country identity/territory changes are rare and may rebuild one selected
 	# dossier. Daily economy/climate ticks continue to use the live-value patch.
 	refresh_selected_panel()
+	refresh_country_summary()
+
+
+func open_country_section(section_id: String) -> void:
+	if _country_panel == null or _country_view_model == null:
+		return
+	_country_action_bar.set_active(section_id)
+	_country_panel.show_section(section_id, _country_view_model.build())
+
+
+func close_country_panel() -> void:
+	if _country_panel != null and _country_panel.is_panel_open():
+		_country_panel.close_panel()
+	if _country_action_bar != null:
+		_country_action_bar.set_active("")
+
+
+func refresh_country_summary() -> Dictionary:
+	var timing := {"ran": false, "elapsed_ms": 0.0}
+	if _country_panel == null or not _country_panel.is_panel_open() \
+			or _country_view_model == null:
+		return timing
+	var started_usec := Time.get_ticks_usec()
+	_country_panel.refresh_summary(_country_view_model.build())
+	timing["ran"] = true
+	timing["elapsed_ms"] = (Time.get_ticks_usec() - started_usec) / 1000.0
+	return timing
 
 
 func _on_inspector_tab_data_requested(tab_id: String) -> void:
@@ -325,16 +362,20 @@ func map_safe_area() -> Rect2:
 		right_width = _right_panel.size.x if _right_panel.size.x > 0.0 else RIGHT_PANEL_WIDTH
 	var left_width := _map_overlay_toolbar.primary_safe_width() \
 		if _map_overlay_toolbar != null else 0.0
+	var bottom_height := CountryActionBar.BAR_HEIGHT + UITokens.SPACE_SM
 	return Rect2(
 		Vector2(left_width, top_height),
 		Vector2(
 			maxf(viewport_size.x - right_width - left_width, 1.0),
-			maxf(viewport_size.y - top_height, 1.0)
+			maxf(viewport_size.y - top_height - bottom_height, 1.0)
 		)
 	)
 
 
 func dismiss_overlay_menu() -> bool:
+	if _country_panel != null and _country_panel.is_panel_open():
+		close_country_panel()
+		return true
 	if _gm_console != null and _gm_console.is_panel_open():
 		_gm_console.close_panel()
 		return true
@@ -420,6 +461,11 @@ func _build_ui() -> void:
 	_map_overlay_toolbar.overlay_cleared.connect(_on_map_overlay_cleared)
 	add_child(_map_overlay_toolbar)
 
+	_country_action_bar = CountryActionBar.new()
+	_country_action_bar.section_selected.connect(open_country_section)
+	add_child(_country_action_bar)
+	_layout_country_action_bar()
+
 	_map_overlay_legend = OverlayLegend.new()
 	_map_overlay_legend.name = "MapOverlayLegend"
 	# Bottom-right is outside the map's main reading line and the left tool
@@ -430,10 +476,22 @@ func _build_ui() -> void:
 	add_child(_map_overlay_legend)
 	get_viewport().size_changed.connect(_layout_overlay_legend)
 	get_viewport().size_changed.connect(_layout_gm_panel)
+	get_viewport().size_changed.connect(_layout_country_action_bar)
 	_layout_overlay_legend()
 
 	if _diagnostics_source != null:
 		set_diagnostics_source(_diagnostics_source)
+
+	_country_panel = CountryPanel.new()
+	_country_panel.close_requested.connect(func() -> void:
+		if _country_action_bar != null:
+			_country_action_bar.set_active("")
+	)
+	_country_panel.section_selected.connect(func(section_id: String) -> void:
+		if _country_action_bar != null:
+			_country_action_bar.set_active(section_id)
+	)
+	add_child(_country_panel)
 
 	_loading_overlay = WorldLoadingOverlay.new()
 	_loading_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -488,10 +546,24 @@ func _layout_overlay_legend() -> void:
 	_map_overlay_legend.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_map_overlay_legend.offset_right = -right_inset
 	_map_overlay_legend.offset_left = -right_inset - OVERLAY_LEGEND_WIDTH
-	_map_overlay_legend.offset_bottom = -UITokens.SPACE_MD
+	_map_overlay_legend.offset_bottom = -CountryActionBar.BAR_HEIGHT - UITokens.SPACE_LG
 	# A zero-height anchored rect plus BEGIN growth keeps variable legend
 	# content attached to the bottom edge instead of growing off-screen.
-	_map_overlay_legend.offset_top = -UITokens.SPACE_MD
+	_map_overlay_legend.offset_top = _map_overlay_legend.offset_bottom
+
+
+func _layout_country_action_bar() -> void:
+	if _country_action_bar == null:
+		return
+	var viewport_width := get_viewport().get_visible_rect().size.x
+	var side_margin := maxf((viewport_width - 320.0) * 0.5, UITokens.SPACE_SM)
+	_country_action_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_country_action_bar.offset_left = side_margin
+	_country_action_bar.offset_right = -side_margin
+	_country_action_bar.offset_top = -CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM
+	_country_action_bar.offset_bottom = -UITokens.SPACE_SM
+	var window_width := get_window().size.x if get_window() != null else int(viewport_width)
+	_country_action_bar.set_compact(window_width < 720)
 
 
 func _layout_gm_panel() -> void:

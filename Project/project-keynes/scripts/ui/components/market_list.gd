@@ -175,7 +175,7 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	var icon_key := String(data.get("icon", "resource"))
 	if not applied.has("icon") or applied["icon"] != icon_key \
 			or not applied.has("accent") or applied["accent"] != accent:
-		(refs.get("icon") as IconBadge).set_icon(icon_key, accent)
+		(refs.get("icon") as IconBadge).set_semantic(StringName(icon_key), accent)
 	var name_text := String(data.get("name", "商品"))
 	var name_label := refs.get("name") as Label
 	if name_label.text != name_text:

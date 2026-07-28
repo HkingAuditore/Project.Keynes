@@ -168,7 +168,7 @@ func _show_new_game() -> void:
 	var random_button := Button.new()
 	random_button.tooltip_text = "生成随机地图种子"
 	random_button.custom_minimum_size = Vector2(44, 38)
-	IconBadge.apply_to_button(random_button, "regenerate", 16)
+	IconButton.apply(random_button, &"action.refresh", 16, "生成随机地图种子")
 	random_button.pressed.connect(func() -> void: _seed_box.value = NewGameConfig.random_seed())
 	seed_row.add_child(random_button)
 	body.add_child(_field("地图种子", seed_row))
@@ -399,9 +399,7 @@ func _decorate_text_button(button: Button, text_value: String, icon: String,
 	margin.add_child(row)
 	var icon_label := Label.new()
 	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon_label.text = IconBadge.glyph_for_key(IconBadge.normalize_icon(icon))
-	icon_label.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
-	icon_label.add_theme_font_size_override("font_size", font_size)
+	IconButton.apply_to_label(icon_label, StringName(icon), font_size)
 	icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(icon_label)
 	var text_label := Label.new()

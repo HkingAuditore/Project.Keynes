@@ -193,24 +193,43 @@ static func reference_reserve(p: ResourceProfile) -> float:
 
 ## Semantic icon registration for profiles that do not yet carry a Texture2D.
 ## UI consumers render these keys through the project's Font Awesome system.
-static func icon_key(p: ResourceProfile) -> String:
+static func icon_key(p: ResourceProfile) -> StringName:
 	if p == null:
-		return "unknown"
+		return &"system.unknown"
 	var id := String(p.id)
-	if id == "timber": return "wood"
-	if id in ["stone", "limestone"]: return "rock"
-	if id in ["coal", "oil", "natural_gas", "sulfur"]: return "fire"
-	if id in ["gold_ore", "silver_ore", "rare_earth"]: return "precious"
-	if id in ["copper_ore", "iron_ore", "bauxite", "tin_ore", "lead_ore",
-			"zinc_ore", "manganese_ore"]: return "metal"
-	if id == "flint": return "flint"
-	if id in ["marine_fish", "freshwater_fish"]: return "fish"
-	if id == "wild_game": return "animal"
-	if id in ["fertile_soil", "arable_land", "paddy_land", "plantation_land",
-			"pasture", "phosphate_rock"]: return "crop"
-	if id in ["clay", "silica_sand"]: return "earth"
-	if id in ["salt", "saltpeter"]: return "salt"
-	return "unknown"
+	return {
+		"timber": &"resource.wood",
+		"stone": &"resource.rock",
+		"fertile_soil": &"resource.fertile_soil",
+		"arable_land": &"resource.arable_land",
+		"paddy_land": &"resource.paddy_land",
+		"plantation_land": &"resource.plantation_land",
+		"pasture": &"resource.pasture",
+		"coal": &"resource.coal",
+		"oil": &"resource.oil",
+		"natural_gas": &"resource.natural_gas",
+		"copper_ore": &"resource.copper",
+		"iron_ore": &"resource.iron",
+		"gold_ore": &"resource.gold",
+		"silver_ore": &"resource.silver",
+		"salt": &"resource.salt_deposit",
+		"saltpeter": &"resource.saltpeter",
+		"rare_earth": &"resource.rare_earth",
+		"clay": &"resource.clay",
+		"wild_game": &"resource.animal",
+		"marine_fish": &"resource.marine_fish",
+		"bauxite": &"resource.bauxite",
+		"limestone": &"resource.limestone",
+		"silica_sand": &"resource.silica_sand",
+		"phosphate_rock": &"resource.phosphate_rock",
+		"tin_ore": &"resource.tin",
+		"lead_ore": &"resource.lead",
+		"zinc_ore": &"resource.zinc",
+		"manganese_ore": &"resource.manganese",
+		"sulfur": &"resource.sulfur",
+		"flint": &"resource.flint",
+		"freshwater_fish": &"resource.freshwater_fish",
+	}.get(id, &"system.unknown") as StringName
 
 
 static func _max_positive_weight(weights: Dictionary) -> float:

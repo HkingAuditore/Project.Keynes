@@ -54,6 +54,11 @@ static func profile_by_id(id_value):
 	return _by_id.get(id_key, null)
 
 
+static func icon_key(id_or_profile) -> StringName:
+	var stable_id := String(id_or_profile.id) if id_or_profile is GoodProfile else String(id_or_profile)
+	return IconCatalog.good_semantic(stable_id)
+
+
 static func compile_native_columns() -> Dictionary:
 	ensure_loaded()
 	var ids := PackedStringArray()

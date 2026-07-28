@@ -228,7 +228,7 @@ func update_for_mode(
 	visible = true
 	_title_label.text = title_override if title_override != "" else OverlayMode.display_name(mode)
 	var icon_key := icon_override if icon_override != "" else _icon_for_mode(mode)
-	_icon_label.text = IconBadge.glyph_for_key(IconBadge.normalize_icon(icon_key))
+	IconButton.apply_to_label(_icon_label, StringName(icon_key), 14)
 	var hint := hint_override if hint_override != "" else OverlayMode.domain_hint(mode)
 	_hint_label.text = hint
 	_hint_label.visible = hint != ""

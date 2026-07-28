@@ -1555,6 +1555,15 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const double peak_min_land_h = getd(profile, "peak_min_land_h", 0.74);
     const double peak_min_prominence = std::max(0.0, getd(profile, "peak_min_prominence", 0.035));
     const int peak_land_cells_per_peak = std::max(1, geti(profile, "peak_land_cells_per_peak", 120));
+    const double badlands_min_relief = std::max(0.0, getd(profile, "badlands_min_relief", 0.06));
+    const int badlands_min_rugged_neighbors = std::max(1, std::min(6,
+            geti(profile, "badlands_min_rugged_neighbors", 2)));
+    const double badlands_max_land_ratio = std::clamp(
+            getd(profile, "badlands_max_land_ratio", 0.04), 0.0, 1.0);
+    const double badlands_max_arid_ratio = std::clamp(
+            getd(profile, "badlands_max_arid_ratio", 0.25), 0.0, 1.0);
+    const int badlands_max_patch_cells = std::max(1,
+            geti(profile, "badlands_max_patch_cells", 48));
     const int river_channel_init_base = std::max(2, geti(profile, "river_channel_init_cells", 16));
     // 150x100 is the tuning baseline documented in ClimateProfile. Above that,
     // fixed "upstream cell count" thresholds make every large basin sprout too
@@ -2659,37 +2668,130 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     }
 
     int badlands_touched = 0;
+    int badlands_candidate_count = 0;
+    int badlands_candidate_components = 0;
+    int badlands_budget_rejected = 0;
+    int badlands_largest_component = 0;
+    int badlands_budget = 0;
     int mesa_touched = 0;
+    int arid_source_count = 0;
+    for (int i : land) {
+        if (TERR[i] == 7 || TERR[i] == 24 || TERR[i] == 26) ++arid_source_count;
+    }
+
+    std::vector<uint8_t> badlands_candidate_mask(size_t(n), 0);
+    std::vector<double> badlands_score(size_t(n), 0.0);
     for (int i : land) {
         if (TERR[i] != 7 && TERR[i] != 26) continue;
         float min_e = E[i];
         float max_e = E[i];
         float max_nb = -1.0e9f;
         bool water_nb = false;
+        int rugged_neighbors = 0;
         for (int d = 0; d < 6; ++d) {
             const int ni = NB[size_t(i) * 6 + d];
             if (ni < 0) continue;
             min_e = std::min(min_e, E[ni]);
             max_e = std::max(max_e, E[ni]);
             max_nb = std::max(max_nb, E[ni]);
-            if (pk_is_water_terrain(TERR[ni])) water_nb = true;
+            if (pk_is_water_terrain(TERR[ni]) || RIV[ni] != 0) water_nb = true;
+            if (std::abs(double(E[ni]) - double(E[i])) >= badlands_min_relief * 0.35) {
+                ++rugged_neighbors;
+            }
         }
-        // 跳过临水格：恶地/方山是干旱侵蚀高差地貌，不应紧贴海/湖/河岸。
-        if (water_nb) continue;
-        // 回归修复(2026-06-18)：高差门槛 0.025→0.05，仅真正崎岖的干旱高差带成恶地/方山，
-        // 避免在归一化海拔上对缓坡沙漠滥铺(此前恶地 11%)。
-        if ((max_e - min_e) < 0.035f) continue;
+        // 荒原/方山是干旱侵蚀地貌，不应占用河道或紧贴海、湖、河岸。
+        if (water_nb || RIV[i] != 0) continue;
+        const double relief = double(max_e) - double(min_e);
+        if (relief < badlands_min_relief) continue;
         // 方山(MESA)：高差地貌中本格为局部高点(平顶台地)且海拔够高；
         // 否则为侵蚀沟壑恶地(BADLANDS)。
         const bool flat_top = (double(E[i]) >= double(max_nb) - 0.004) && (land_h(i) > 0.18);
         if (flat_top) {
             TERR[i] = 30; // MESA
             ++mesa_touched;
-        } else {
-            TERR[i] = 25; // BADLANDS
-            ++badlands_touched;
+            continue;
         }
+        if (rugged_neighbors < badlands_min_rugged_neighbors) continue;
+        badlands_candidate_mask[size_t(i)] = 1;
+        badlands_score[size_t(i)] = relief * 3.0
+                + (1.0 - double(M[i])) * 0.15
+                + double(rugged_neighbors) * 0.02;
+        ++badlands_candidate_count;
     }
+
+    // 荒原是沙漠中的稀有侵蚀斑块，而不是所有崎岖沙漠的默认分类。候选区按
+    // 连通分量处理，每个分量只从最高分格向邻格生长一个有界斑块；总数同时受
+    // 陆地占比和干旱地形占比约束，避免单一大陆出现数百格连续荒原。
+    struct BadlandsComponent {
+        std::vector<int> cells;
+        int seed = -1;
+        double best_score = -1.0;
+    };
+    std::vector<uint8_t> badlands_seen(size_t(n), 0);
+    std::vector<BadlandsComponent> badlands_components;
+    for (int i : land) {
+        if (!badlands_candidate_mask[size_t(i)] || badlands_seen[size_t(i)]) continue;
+        BadlandsComponent comp;
+        comp.cells.push_back(i);
+        badlands_seen[size_t(i)] = 1;
+        for (size_t qi = 0; qi < comp.cells.size(); ++qi) {
+            const int cur = comp.cells[qi];
+            const double score = badlands_score[size_t(cur)];
+            if (score > comp.best_score || (score == comp.best_score && cur < comp.seed)) {
+                comp.best_score = score;
+                comp.seed = cur;
+            }
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(cur) * 6 + d];
+                if (ni < 0 || badlands_seen[size_t(ni)]
+                        || !badlands_candidate_mask[size_t(ni)]) continue;
+                badlands_seen[size_t(ni)] = 1;
+                comp.cells.push_back(ni);
+            }
+        }
+        badlands_components.push_back(std::move(comp));
+    }
+    badlands_candidate_components = int(badlands_components.size());
+    std::sort(badlands_components.begin(), badlands_components.end(),
+            [](const BadlandsComponent &a, const BadlandsComponent &b) {
+                if (a.best_score == b.best_score) return a.seed < b.seed;
+                return a.best_score > b.best_score;
+            });
+
+    const int land_budget = int(std::floor(double(land.size()) * badlands_max_land_ratio));
+    const int arid_budget = int(std::floor(double(arid_source_count) * badlands_max_arid_ratio));
+    badlands_budget = std::max(0, std::min(land_budget, arid_budget));
+    std::vector<uint8_t> badlands_selected(size_t(n), 0);
+    std::vector<uint8_t> badlands_queued(size_t(n), 0);
+    for (const BadlandsComponent &comp : badlands_components) {
+        if (badlands_touched >= badlands_budget) break;
+        const int patch_quota = std::min({int(comp.cells.size()), badlands_max_patch_cells,
+                                          badlands_budget - badlands_touched});
+        if (patch_quota <= 0 || comp.seed < 0) continue;
+
+        std::priority_queue<std::pair<double, int>> frontier;
+        frontier.push({badlands_score[size_t(comp.seed)], -comp.seed});
+        badlands_queued[size_t(comp.seed)] = 1;
+        int patch_size = 0;
+        while (!frontier.empty() && patch_size < patch_quota) {
+            const int cur = -frontier.top().second;
+            frontier.pop();
+            if (badlands_selected[size_t(cur)]) continue;
+            badlands_selected[size_t(cur)] = 1;
+            TERR[cur] = 25; // BADLANDS
+            ++patch_size;
+            ++badlands_touched;
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(cur) * 6 + d];
+                if (ni < 0 || badlands_queued[size_t(ni)]
+                        || !badlands_candidate_mask[size_t(ni)]) continue;
+                badlands_queued[size_t(ni)] = 1;
+                frontier.push({badlands_score[size_t(ni)], -ni});
+            }
+        }
+        badlands_largest_component = std::max(badlands_largest_component, patch_size);
+    }
+    badlands_budget_rejected = badlands_candidate_count - badlands_touched;
 
     // ── terrain-overhaul 新增地形特征 pass（均仅作用于陆地，在水体清理之前）──
     // 泛滥平原(FLOODPLAIN)：紧邻河道的低海拔非干旱陆地 → 周期性泛滥的肥沃冲积带。
@@ -3411,6 +3513,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         qa_metrics["terrain_entropy_bits"] = entropy;
         qa_metrics["terrain_distinct"] = distinct_terr;
         qa_metrics["river_ratio"] = (n > 0) ? double(river_count) / double(n) : 0.0;
+        qa_metrics["badlands_land_ratio"] = (land_count_qa > 0)
+                ? double(badlands_touched) / double(land_count_qa) : 0.0;
+        qa_metrics["badlands_arid_ratio"] = (arid_source_count > 0)
+                ? double(badlands_touched) / double(arid_source_count) : 0.0;
+        qa_metrics["badlands_largest_component"] = badlands_largest_component;
     }
     out["qa_metrics"] = qa_metrics;
 
@@ -3433,6 +3540,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     stage_counts["oasis"] = oasis_touched;
     stage_counts["salt_flat"] = salt_flat_touched;
     stage_counts["badlands"] = badlands_touched;
+    stage_counts["badlands_candidates"] = badlands_candidate_count;
+    stage_counts["badlands_budget_rejected"] = badlands_budget_rejected;
     stage_counts["mesa"] = mesa_touched;
     stage_counts["floodplain"] = floodplain_touched;
     stage_counts["moor"] = moor_touched;
@@ -3466,6 +3575,13 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["river_lake_snap_count"] = river_lake_snap_touched;
     out["river_confluence_snap_count"] = river_confluence_snap_touched;
     out["desert_class_count"] = desert_class_count;
+    out["badlands_arid_source_count"] = arid_source_count;
+    out["badlands_candidate_count"] = badlands_candidate_count;
+    out["badlands_candidate_components"] = badlands_candidate_components;
+    out["badlands_selected_count"] = badlands_touched;
+    out["badlands_budget"] = badlands_budget;
+    out["badlands_budget_rejected"] = badlands_budget_rejected;
+    out["badlands_largest_component"] = badlands_largest_component;
     out["cold_desert_count"] = cold_desert_count;
     out["plateau_count"] = plateau_count;
     out["peak_count"] = peak_count;

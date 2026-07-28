@@ -59,6 +59,8 @@ func _on_day_changed(day_idx: int) -> void:
 	var ui_breakdown: Dictionary = {}
 	if _ui_manager != null:
 		ui_breakdown = _ui_manager.refresh_selected_daily_lines(false, day_idx)
+		var country_timing := _ui_manager.refresh_country_summary()
+		ui_breakdown["country_summary_ms"] = float(country_timing.get("elapsed_ms", 0.0))
 	_sync_ui()
 	_runtime_host.finish_daily_tick(
 		(Time.get_ticks_usec() - ui_started_usec) / 1000.0,
@@ -71,6 +73,7 @@ func _on_season_changed(season_idx: int) -> void:
 		_runtime_host.on_season_changed(season_idx)
 	if _ui_manager != null:
 		_ui_manager.refresh_selected_daily_lines(true)
+		_ui_manager.refresh_country_summary()
 	_sync_ui()
 
 
@@ -79,6 +82,7 @@ func _on_year_changed(year_idx: int) -> void:
 		_runtime_host.on_year_changed(year_idx)
 	if _ui_manager != null:
 		_ui_manager.refresh_selected_daily_lines(true)
+		_ui_manager.refresh_country_summary()
 	_sync_ui()
 
 
