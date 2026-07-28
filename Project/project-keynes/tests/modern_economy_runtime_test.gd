@@ -26,8 +26,9 @@ func _run() -> void:
 	profile.market_runtime_mode = "ACTIVE"
 	_expect("all-technology production country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, native_catalog, 1, 2200))
-	_expect("native runtime configures", bool(ext.configure_economy(
-		native_catalog, profile, 1, 2200).get("ok", false)))
+	var configure_report: Dictionary = ext.configure_economy(native_catalog, profile, 1, 2200)
+	_expect("native runtime configures: %s" % String(configure_report.get("reason", "ok")),
+		bool(configure_report.get("ok", false)))
 	_expect("bullion diagnostic trace registers",
 		bool(ext.set_economy_inspector_trace_cell(0).get("ok", false)))
 
@@ -282,12 +283,22 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 		"target_handles": PackedInt64Array([country_summary.country_handle]),
 		"cell_indices": PackedInt32Array([-1]),
 		"aux_i32": PackedInt32Array([technologies.find("tech.autonomous_systems")]),
+		"domain_i32": PackedInt32Array([-1]),
+		"position_i32": PackedInt32Array([-1]),
+		"weight0_bp": PackedInt32Array([0]),
+		"weight1_bp": PackedInt32Array([0]),
+		"weight2_bp": PackedInt32Array([0]),
+		"weight3_bp": PackedInt32Array([0]),
+		"value_i64": PackedInt64Array([0]),
 		"stable_ids": PackedStringArray([""]),
 		"display_names": PackedStringArray([""]),
 	})
 	_expect("technology grant command queues", bool(grant.get("ok", false)))
-	_expect("country technology grant commits", bool(ext.run_country_slice({"day_index": 0}).get("done", false)))
+	_expect("country technology grant enters pending state",
+		bool(ext.run_country_slice({"day_index": 0}).get("done", false)))
 	_expect("technology grant cycle commits", bool(_run_day(ext, 0).get("done", false)))
+	_expect("country technology grant activates next day",
+		bool(ext.run_country_slice({"day_index": 1}).get("done", false)))
 	var unlocked: Dictionary = ext.get_country_snapshot(country_summary.country_handle)
 	var unlocked_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("technology grant becomes committed cell state",
@@ -396,19 +407,30 @@ func _grant_technology(ext: Object, compiled: Dictionary, technology_id: String,
 		day: int, sequence: int) -> void:
 	var country: Dictionary = ext.get_country_cell_summary(0)
 	var technologies: PackedStringArray = compiled.technology_ids
+	var pending_day := maxi(0, day - 1)
 	var queued: Dictionary = ext.submit_country_commands({
 		"opcodes": PackedInt32Array([4]),
-		"effective_days": PackedInt64Array([day]),
+		"effective_days": PackedInt64Array([pending_day]),
 		"sequences": PackedInt64Array([sequence]),
 		"target_handles": PackedInt64Array([country.country_handle]),
 		"cell_indices": PackedInt32Array([-1]),
 		"aux_i32": PackedInt32Array([technologies.find(technology_id)]),
+		"domain_i32": PackedInt32Array([-1]),
+		"position_i32": PackedInt32Array([-1]),
+		"weight0_bp": PackedInt32Array([0]),
+		"weight1_bp": PackedInt32Array([0]),
+		"weight2_bp": PackedInt32Array([0]),
+		"weight3_bp": PackedInt32Array([0]),
+		"value_i64": PackedInt64Array([0]),
 		"stable_ids": PackedStringArray([""]),
 		"display_names": PackedStringArray([""]),
 	})
 	_expect("technology grant queues: %s" % technology_id, bool(queued.get("ok", false)))
-	_expect("technology grant commits: %s" % technology_id,
-		bool(ext.run_country_slice({"day_index": day}).get("done", false)))
+	_expect("technology grant enters pending state: %s" % technology_id,
+		bool(ext.run_country_slice({"day_index": pending_day}).get("done", false)))
+	if day > pending_day:
+		_expect("technology grant activates next day: %s" % technology_id,
+			bool(ext.run_country_slice({"day_index": day}).get("done", false)))
 
 
 func _build_command(day: int, sequence: int, owner_handle: int, type_id: int) -> Dictionary:

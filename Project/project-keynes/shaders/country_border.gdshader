@@ -7,7 +7,7 @@ render_mode blend_mix, unshaded;
 // country_border.gdshader — 国界线
 //
 // 走几何 ribbon 而不是对 map_index_atlas 做屏幕空间 edge detect：atlas 的
-// cell index 在烘焙期带 Bayer dither（map_baker 的 dither_enabled），逐像素
+// cell index 是无 Dither 的权威硬主格，逐像素
 // 反查在 hex 边界会抖 ±1 texel，画出来的线是碎的。
 //
 // CountryBorderLayer 为每个"归属与邻格不同"的 hex 边生成一条**朝本格内侧**

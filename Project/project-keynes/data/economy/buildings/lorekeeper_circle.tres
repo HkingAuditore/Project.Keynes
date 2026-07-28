@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"lorekeeper_circle"
+display_name = "传知者议事圈"
+building_kind = "industrial"
+technology_tags = PackedStringArray("industry.knowledge", "tech.fire_control")
+upgrade_family_id = &"research_institution"
+upgrade_tier = 1
+construction_days = 10
+construction_good_ids = PackedStringArray("logs", "raw_stone")
+construction_quantities = PackedInt64Array(2000, 1000)
+owner_profession_id = &"artisan"
+employee_profession_ids = PackedStringArray("lorekeeper")
+employee_slots_per_building = PackedInt64Array(4)
+employee_wage_policy_ids = PackedStringArray("adaptive")
+employee_reference_wages_per_day = PackedInt64Array(13000)
+output_good_ids = PackedStringArray("technology_points")
+output_quantities_per_day = PackedInt64Array(10000)
+

@@ -3,6 +3,8 @@
 class_name HexRenderer
 extends Node2D
 
+const TERRAIN_MICRO_TEXTURE: Texture2D = preload("res://assets/textures/terrain_micro_data.png")
+
 @export var hex_size: float = 22.0:
 	set(v):
 		hex_size = maxf(4.0, v)
@@ -145,6 +147,30 @@ var _wind_strength: float = 0.15
 # 默认值与 main.gd 一致，保证 renderer 被单独调试时也有合理初值。
 @export_group("Visual Overhaul")
 @export_range(0, 2, 1) var visual_quality: int = 1
+@export_range(0, 6, 1) var terrain_surface_debug_view: int = 0:
+	set(value):
+		terrain_surface_debug_view = clampi(value, 0, 6)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
+		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+			layer.set_lod_debug_view(terrain_surface_debug_view == 6)
+		)
+@export_range(0.0, 0.96, 0.01) var terrain_ecotone_width: float = 0.84:
+	set(value):
+		terrain_ecotone_width = clampf(value, 0.0, 0.96)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
+		if _season_transition_mat != null:
+			_season_transition_mat.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
+		_push_overlay_edge_transition_data()
+@export_range(0.0, 0.45, 0.01) var terrain_ecotone_noise: float = 0.22:
+	set(value):
+		terrain_ecotone_noise = clampf(value, 0.0, 0.45)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
+		if _season_transition_mat != null:
+			_season_transition_mat.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
+		_push_overlay_edge_transition_data()
 @export var day_night_enabled: bool = true
 @export var water_effect_enabled: bool = true
 @export var ocean_current_enabled: bool = true
@@ -346,6 +372,7 @@ var _last_detail_budget_report: Dictionary = {}
 var _world_ext = null
 var _map: MapData = null
 var _world: WorldData = null
+var _camera_zoom: float = 1.0
 
 # Phase 1：季节状态（每帧/每天由 WorldClock 推送）
 var _season_phase: float = 1.0   # 0=spring 1=summer 2=autumn 3=winter
@@ -932,6 +959,8 @@ func _spawn_detail_layers() -> void:
 			layer.set_tod(_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
 			if layer.has_method("set_tod_sun_dir"):
 				layer.set_tod_sun_dir(_tod_sun_dir)
+		layer.set_camera_zoom(_camera_zoom)
+		layer.set_lod_debug_view(terrain_surface_debug_view == 6)
 		_detail_layers.append(layer)
 
 
@@ -1213,6 +1242,35 @@ func set_visual_quality(q: int) -> void:
 		layer.set_visual_quality(visual_quality)
 	)
 	_apply_detail_global_budget()
+
+
+func set_camera_zoom(value: float) -> void:
+	var next_zoom := clampf(value, 0.01, 16.0)
+	if absf(next_zoom - _camera_zoom) < 0.001:
+		return
+	_camera_zoom = next_zoom
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("camera_zoom", _camera_zoom)
+	if _season_transition_mat != null:
+		_season_transition_mat.set_shader_parameter("camera_zoom", _camera_zoom)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		layer.set_camera_zoom(_camera_zoom)
+	)
+
+
+func _push_overlay_edge_transition_data() -> void:
+	var neighbor_tex: Texture2D = (
+		_world.terrain_edge_neighbor_tex if _world != null else null
+	)
+	var distance_tex: Texture2D = (
+		_world.terrain_edge_distance_tex if _world != null else null
+	)
+	if _weather_layer != null:
+		_weather_layer.set_edge_transition_data(
+			neighbor_tex, distance_tex, terrain_ecotone_width)
+	if _fog_layer != null:
+		_fog_layer.set_edge_transition_data(
+			neighbor_tex, distance_tex, terrain_ecotone_width)
 
 
 func _push_terrain_horizon_uniforms() -> void:
@@ -1994,6 +2052,19 @@ func _apply_uniforms() -> void:
 	# [terrain-detail-bake 2026-07-05] 静态 biome 细节调制：移动端中/高档和桌面中档用单次采样替代多噪声。
 	sm.set_shader_parameter("terrain_detail_tex", _world.terrain_detail_tex)
 	sm.set_shader_parameter("has_terrain_detail_tex", _world.terrain_detail_tex != null)
+	var edge_data_ready := (
+		_world.terrain_edge_neighbor_tex != null
+		and _world.terrain_edge_distance_tex != null
+	)
+	sm.set_shader_parameter("terrain_edge_neighbor_tex", _world.terrain_edge_neighbor_tex)
+	sm.set_shader_parameter("terrain_edge_distance_tex", _world.terrain_edge_distance_tex)
+	sm.set_shader_parameter("has_terrain_edge_data", edge_data_ready)
+	sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
+	sm.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
+	sm.set_shader_parameter("terrain_micro_tex", TERRAIN_MICRO_TEXTURE)
+	sm.set_shader_parameter("has_terrain_micro_tex", TERRAIN_MICRO_TEXTURE != null)
+	sm.set_shader_parameter("camera_zoom", _camera_zoom)
+	sm.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
 	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
 	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。
 	if _weather_layer != null:
@@ -2144,6 +2215,7 @@ func _apply_uniforms() -> void:
 		_fog_layer.set_visual_quality(visual_quality)
 		_fog_layer.set_enabled(_fog_enabled)
 		_apply_fog_early_out()
+	_push_overlay_edge_transition_data()
 	_push_fog_uniforms()
 	set_weather_fronts([])
 

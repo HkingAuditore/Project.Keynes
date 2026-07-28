@@ -3634,7 +3634,7 @@ func _init_noise(seed_val: int) -> void:
 	_ridge_noise.fractal_type = FastNoiseLite.FRACTAL_RIDGED
 	_ridge_noise.fractal_octaves = 3
 
-# ─── C++ terrain-index bake pass wrapper（含内嵌 Bayer dither #3）─────────────
+# ─── C++ terrain-index bake pass wrapper（硬主格 + 静态材质边界数据）─────────
 # 复刻 _bake_height_biome_moisture 逐像素循环并下移到 C++（run_bake_terrain_index_pass）。
 # 成功时设 world 的 5 个 buffer + CSR 三件套 + pixel_to_cell_lookup + cell_pixel_lists，
 # 返回 true；ext/方法缺失或返回 fallback / 尺寸不符时返回 false → caller 回退 GDScript。
@@ -3642,6 +3642,25 @@ const _NATIVE_TERRAIN_INDEX_METHOD := &"run_bake_terrain_index_pass"
 
 func _terrain_index_native_active() -> bool:
 	return _world_ext != null and _world_ext.has_method(_NATIVE_TERRAIN_INDEX_METHOD)
+
+
+func _upload_terrain_edge_textures(world: WorldData, report: Dictionary,
+		pix_count: int) -> void:
+	if world == null:
+		return
+	var secondary: PackedByteArray = report.get(
+		"edge_secondary_index_buffer", PackedByteArray())
+	var distance: PackedByteArray = report.get(
+		"edge_distance_buffer", PackedByteArray())
+	if secondary.size() != pix_count * 2 or distance.size() != pix_count:
+		world.terrain_edge_neighbor_tex = null
+		world.terrain_edge_distance_tex = null
+		push_warning("[terrain_edge] native boundary buffers missing/invalid; using hard cell edges.")
+		return
+	world.terrain_edge_neighbor_tex = DCAtlasEncoders.encode_rg8_tex(
+		secondary, world.derived_size, world.terrain_edge_neighbor_tex)
+	world.terrain_edge_distance_tex = DCAtlasEncoders.encode_r8_tex(
+		distance, world.derived_size, world.terrain_edge_distance_tex, _world_ext)
 
 # dots-total-cpp step2（2026-06-25）：bake 期几何场编排下沉 C++。
 # 一次请求 run_bake_geometry_fields_pass → C++ 进程内串起 terrain-index → erosion →
@@ -3710,7 +3729,6 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"n_cells": n_cells,
 		"size_x": size.x, "size_y": size.y,
 		"wrap_period_x": HexUtils.wrap_period_x(map.width, hex_size),
-		"dither_enabled": true,
 		"sea_level": world.sea_level,
 		"cell_elevation": elev_arr,
 		"cell_moisture": moist_arr,
@@ -3762,6 +3780,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	world.moisture_buffer = mbuf
 	world.vegetation_buffer = vbuf
 	world.cover_buffer = cbuf
+	_upload_terrain_edge_textures(world, rep, pix_count)
 
 	# ── 解包其余几何场 ──
 	var flow: PackedFloat32Array = rep.get("flow_buffer", PackedFloat32Array())
@@ -3866,7 +3885,6 @@ func _bake_terrain_index_native(map: MapData, hex_size: float, world: WorldData)
 		"hex_size": hex_size,
 		"wrap_period_x": HexUtils.wrap_period_x(map.width, hex_size),
 		"seed": world.bake_seed,
-		"dither_enabled": true,
 		"sea_level": world.sea_level,
 		"cell_elevation": elev_arr,
 		"cell_moisture": moist_arr,
@@ -3891,8 +3909,8 @@ func _bake_terrain_index_native(map: MapData, hex_size: float, world: WorldData)
 	world.moisture_buffer = mbuf
 	world.vegetation_buffer = vbuf
 	world.cover_buffer = cbuf
-	# CSR（by cell.index）直接接 encode_bake_enum_atlas_payload；G/B/A 由桶成员驱动，
-	# dither 改派已体现在桶里 → 索引/landform 自动一致跟随。
+	_upload_terrain_edge_textures(world, rep, pix_count)
+	# CSR（by cell.index）直接接 encode_bake_enum_atlas_payload；G/B/A 均由硬主 cell 驱动。
 	var first_px: PackedInt32Array = rep.get("cell_first_px", PackedInt32Array())
 	var pcount: PackedInt32Array = rep.get("cell_px_count", PackedInt32Array())
 	var flat: PackedInt32Array = rep.get("flat_px_indices", PackedInt32Array())
@@ -3901,7 +3919,7 @@ func _bake_terrain_index_native(map: MapData, hex_size: float, world: WorldData)
 	world.flat_px_indices_arr = flat
 	# 重建 GDScript 对象侧反向索引（rebake_*_only / dynamic / eco atlas 路径消费）：
 	#   pixel_to_cell_lookup（Array[HexCell]）+ cell_pixel_lists（Dict HexCell→PackedInt32Array）。
-	# 两者均按 dither 后的 vis_cell 归属，保证增量重烘不会还原 dither。
+	# 两者均按无抖动硬主 cell 归属，保证动态 LUT 与交互索引一致。
 	var p2c: PackedInt32Array = rep.get("pixel_to_cell_index", PackedInt32Array())
 	var lookup: Array = []; lookup.resize(pix_count)
 	if p2c.size() == pix_count:
@@ -4794,27 +4812,15 @@ func _terrain_detail_noise01(noise: FastNoiseLite, wx: float, wy: float,
 	return clampf(n * 0.5 + 0.5, 0.0, 1.0)
 
 
-func _terrain_detail_bake_scalar(biome: int, wx: float, wy: float,
+func _terrain_detail_bake_scalar(_biome: int, wx: float, wy: float,
 		wrap_period_x: float, hex_size: float) -> float:
-	if _is_water_biome_id(biome):
-		return 1.0
+	# 这里只烘焙跨 biome 连续的宏观信号；材质类别只在 shader 中调节振幅。
+	# 这样仍是一次采样，却不会把硬 cell/biome 轮廓写进 LINEAR 纹理。
 	var n: float = _terrain_detail_noise01(_detail_noise, wx, wy, wrap_period_x, hex_size, 0.18)
 	var micro: float = _terrain_detail_noise01(_detail_noise, wx, wy, wrap_period_x, hex_size, 0.45, 13.0, -7.0)
 	var ridge: float = _terrain_detail_noise01(_ridge_noise, wx, wy, wrap_period_x, hex_size, 0.22, -19.0, 31.0)
-	if _terrain_detail_is_forest_like(biome):
-		return lerpf(0.86, 1.12, n) * lerpf(0.96, 1.05, micro)
-	if _terrain_detail_is_rock_like(biome):
-		return lerpf(0.84, 1.12, ridge) * lerpf(0.97, 1.04, micro)
-	if _terrain_detail_is_desert_like(biome):
-		var bands: float = sin(wx * 0.034 + wy * 0.012 + n * 4.0) * 0.5 + 0.5
-		return lerpf(0.90, 1.10, bands) * lerpf(0.97, 1.04, micro)
-	if _terrain_detail_is_wetland_like(biome):
-		var pools: float = _terrain_detail_noise01(_detail_noise, wx, wy, wrap_period_x, hex_size, 0.36, 23.0, 11.0)
-		var pool_w: float = 1.0 - smoothstep(0.38, 0.58, pools)
-		return lerpf(0.90, 1.08, n) * lerpf(1.0, 0.82, pool_w)
-	if biome == int(TerrainType.TERRAIN.SNOW) or biome == int(TerrainType.TERRAIN.GLACIER):
-		return lerpf(0.90, 1.05, n) * lerpf(0.96, 1.02, micro)
-	return lerpf(0.92, 1.08, n) * lerpf(0.98, 1.03, micro)
+	var detail_signal: float = (n - 0.5) * 0.54 + (ridge - 0.5) * 0.31 + (micro - 0.5) * 0.15
+	return clampf(1.0 + detail_signal * 0.34, TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX)
 
 
 func _terrain_detail_to_byte(detail: float) -> int:

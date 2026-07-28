@@ -74,6 +74,7 @@ render_mode blend_mix;
 #include "res://shaders/include/hillshade_tod.gdshaderinc"
 #include "res://shaders/include/water.gdshaderinc"
 #include "res://shaders/include/surface_params.gdshaderinc"
+#include "res://shaders/include/terrain_surface_detail.gdshaderinc"
 #include "res://shaders/include/tonemap.gdshaderinc"
 #include "res://shaders/include/shore_common.gdshaderinc"
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
@@ -157,6 +158,18 @@ void fragment() {
 		veg   = int(elut.g * 255.0 + 0.5);
 		cover = int(elut.b * 255.0 + 0.5);
 		fog_k = elut.a;
+#if defined(PK_MOBILE_ANY)
+		// 与 FogOfWarLayer 使用同一移动端 DitherUV 选择，仅替换知识度的视觉采样；
+		// 地表分类、交互和动态权威状态仍属于硬主 cell。
+		float fog_edge_w = terrain_edge_secondary_weight(uv, wp);
+		if (fog_edge_w > 0.0001
+				&& terrain_mobile_dither_uv_threshold(uv, wp) < fog_edge_w) {
+			int fog_secondary_id = decode_edge_secondary_index(uv);
+			if (fog_secondary_id >= 0) {
+				fog_k = texture(enum_lut, cell_lut_uv(fog_secondary_id)).a;
+			}
+		}
+#endif
 	} else {
 		biome = B_SEA_ICE;
 		veg = 0;
@@ -193,6 +206,27 @@ void fragment() {
 	// flow + river_edge_warp 仅在陆地的 river 分支才用，这里推迟到 _if (!is_water)_ 计算，
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
+	// Ocean visual ownership deliberately combines the broad distance field with
+	// DitherUV on every platform. It only selects between two water cells; the
+	// primary cell still owns topology, interaction, simulation and the branch.
+	int visual_water_biome = biome;
+	int visual_water_cover = cover;
+	float visual_water_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
+	if (is_water && _cell_id >= 0 && has_terrain_edge_data) {
+		float water_edge_w = terrain_edge_secondary_weight(uv, wp);
+		if (water_edge_w > 0.0001
+				&& terrain_mobile_dither_uv_threshold(uv, wp) < water_edge_w) {
+			int water_secondary_id = decode_edge_secondary_index(uv);
+			if (water_secondary_id >= 0) {
+				vec4 water_secondary_enum = texture(enum_lut, cell_lut_uv(water_secondary_id));
+				int water_secondary_biome = int(water_secondary_enum.r * 255.0 + 0.5);
+				if (terrain_static_biome_is_water(water_secondary_biome)) {
+					visual_water_biome = water_secondary_biome;
+					visual_water_cover = int(water_secondary_enum.b * 255.0 + 0.5);
+				}
+			}
+		}
+	}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 1：季节相位 + 当前温度（每帧由 WorldClock 驱动）
@@ -232,10 +266,10 @@ void fragment() {
 				wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
 				eco_transition, eco_growth, eco_valid, pixel_noise);
 		} else {
-			float visual_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
 			col = render_water_pipeline(
-				biome, cover, elev, wp, uv, scals, lat_signed, current_temp,
-				ocean_current_v, wind_v, visual_ice_fraction);
+				visual_water_biome, visual_water_cover, elev, wp, uv, scals,
+				lat_signed, current_temp, ocean_current_v, wind_v,
+				visual_water_ice_fraction);
 		}
 
 		// 已探索但当前不可见 → 去饱和 + 压暗。k=0.5 处最灰，k=1 归零。
@@ -247,8 +281,12 @@ void fragment() {
 
 		// 保留旧 11 参数 ABI，避免 ShaderInclude 热缓存与主 shader 热重载不同步。
 		// 气候参数仅用于接口兼容，global_adjustments 内不再消费它们。
-		COLOR = apply_global_adjustments(
-			col, wp, pixel_noise, dyn_snow, current_temp, moist, dyn_vitality, dyn_valid,
-			cover, is_water ? 0.0 : 1.0, veg == V_NONE ? 0.0 : 1.0);
+		if (terrain_surface_debug_view > 0) {
+			COLOR = vec4(terrain_surface_debug_color(uv, wp, _cell_id), 1.0);
+		} else {
+			COLOR = apply_global_adjustments(
+				col, wp, pixel_noise, dyn_snow, current_temp, moist, dyn_vitality, dyn_valid,
+				cover, is_water ? 0.0 : 1.0, veg == V_NONE ? 0.0 : 1.0);
+		}
 	}
 }

@@ -12,6 +12,7 @@
 #include <numeric>
 #include <tuple>
 #include <type_traits>
+#include <unordered_set>
 
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
@@ -949,6 +950,134 @@ bool NativeEconomyRuntime::rebuild_merchant_ranges(std::string &error) {
                 return false;
             }
         }
+    }
+    return true;
+}
+
+bool NativeEconomyRuntime::run_government_research_procurement(std::string &error) {
+    if (_country_runtime == nullptr || !_country_runtime->economy_available()) return true;
+    const int32_t good = _country_runtime->technology_points_good_id();
+    if (good < 0 || good >= _market.good_count) {
+        error = "government_research_good_invalid";
+        return false;
+    }
+    struct Candidate {
+        int32_t country = -1;
+        int32_t market = -1;
+        int64_t price = 0;
+    };
+    thread_local std::vector<Candidate> candidates;
+    candidates.clear();
+    candidates.reserve(_epoch_market_ids.size());
+    for (const int32_t market : _epoch_market_ids) {
+        if (market < 0 || market >= _cell_count ||
+            market >= static_cast<int32_t>(_epoch_cell_country.size()) ||
+            _merchant_offsets[market] >= _merchant_offsets[market + 1]) continue;
+        const int32_t country = _epoch_cell_country[market];
+        if (country < 0 || country >= _epoch_country_count) continue;
+        const int64_t index = _market.index(market, good);
+        if (_market.stock[index] <= 0) continue;
+        candidates.push_back({country, market, _market.price[index]});
+    }
+    std::stable_sort(candidates.begin(), candidates.end(),
+        [](const Candidate &lhs, const Candidate &rhs) {
+            if (lhs.country != rhs.country) return lhs.country < rhs.country;
+            if (lhs.price != rhs.price) return lhs.price < rhs.price;
+            return lhs.market < rhs.market;
+        });
+    std::vector<int64_t> budgets(static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    std::vector<int64_t> remaining(static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    std::vector<uint8_t> enabled(static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        bool policy_enabled = false;
+        int64_t daily_budget = 0;
+        int64_t demand = 0;
+        if (!_country_runtime->research_procurement_policy(
+                country, policy_enabled, daily_budget, demand) ||
+            !policy_enabled || daily_budget <= 0 || demand <= 0) continue;
+        enabled[static_cast<size_t>(country)] = 1;
+        budgets[static_cast<size_t>(country)] = std::min(
+            _country_runtime->cash_for_slot(country),
+            saturating_mul(daily_budget, std::max(1, _epoch_days),
+                           _saturation_count));
+        remaining[static_cast<size_t>(country)] = demand;
+    }
+    for (const Candidate &candidate : candidates) {
+        const size_t country = static_cast<size_t>(candidate.country);
+        if (enabled[country] == 0 || budgets[country] <= 0 ||
+            remaining[country] <= 0 || candidate.price <= 0) continue;
+        const int64_t index = _market.index(candidate.market, good);
+        const int64_t affordable = mul_div_sat(
+            budgets[country], GOODS_SCALE, candidate.price, _saturation_count);
+        const int64_t quantity = std::min({
+            _market.stock[index], remaining[country], affordable});
+        if (quantity <= 0) continue;
+        const int64_t cash = mul_div_sat(
+            quantity, candidate.price, GOODS_SCALE, _saturation_count);
+        if (cash <= 0 || !_country_runtime->purchase_research_points(
+                candidate.country, quantity, cash)) continue;
+
+        audit_touch_market_lane(static_cast<size_t>(index));
+        _market.stock[index] -= quantity;
+        budgets[country] -= cash;
+        remaining[country] -= quantity;
+        int64_t merchant_population = 0;
+        for (int32_t edge = _merchant_offsets[candidate.market];
+             edge < _merchant_offsets[candidate.market + 1]; ++edge) {
+            merchant_population = saturating_add(
+                merchant_population,
+                _population.population[_merchant_slots[edge]],
+                _saturation_count);
+        }
+        if (merchant_population <= 0) {
+            error = "government_research_purchase_has_no_merchant";
+            return false;
+        }
+        int64_t population_prefix = 0;
+        int64_t distributed = 0;
+        for (int32_t edge = _merchant_offsets[candidate.market];
+             edge < _merchant_offsets[candidate.market + 1]; ++edge) {
+            const int32_t slot = _merchant_slots[edge];
+            audit_touch_population_lane(slot);
+            touch_accounting_slot(slot);
+            population_prefix = saturating_add(
+                population_prefix, _population.population[slot],
+                _saturation_count);
+            const int64_t next = mul_div_sat(
+                cash, population_prefix, merchant_population,
+                _saturation_count);
+            const int64_t share = std::max<int64_t>(0, next - distributed);
+            distributed = next;
+            _population.funds[slot] = saturating_add(
+                _population.funds[slot], share, _saturation_count);
+            _population.epoch_income[slot] = saturating_add(
+                _population.epoch_income[slot], share, _saturation_count);
+        }
+        const int32_t signal = market_signal_index(candidate.market, good);
+        if (signal >= 0) {
+            if (signal < static_cast<int32_t>(_epoch_nonhousehold_withdrawals.size()))
+                _epoch_nonhousehold_withdrawals[signal] = saturating_add(
+                    _epoch_nonhousehold_withdrawals[signal], quantity,
+                    _saturation_count);
+            const int64_t daily = quantity / std::max(1, _epoch_days);
+            const int64_t alpha = std::min<int64_t>(
+                Q16_ONE, static_cast<int64_t>(std::clamp<int32_t>(
+                    _good_demand_ema_alpha_q16[good], 0, Q16_ONE)) *
+                    std::max(1, _epoch_days));
+            const int64_t addition = mul_div_sat(
+                daily, alpha, Q16_ONE, _saturation_count);
+            _market_signals.business_demand_ema[signal] = saturating_add(
+                _market_signals.business_demand_ema[signal], addition,
+                _saturation_count);
+            _market_signals.realized_withdrawal_ema[signal] = saturating_add(
+                _market_signals.realized_withdrawal_ema[signal], addition,
+                _saturation_count);
+        }
+        _government_research_procured_points = saturating_add(
+            _government_research_procured_points, quantity, _saturation_count);
+        _government_research_procurement_cash = saturating_add(
+            _government_research_procurement_cash, cash, _saturation_count);
+        ++_government_research_procurement_orders;
     }
     return true;
 }
@@ -2215,11 +2344,50 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_country_topology_hash = (topology_hash & 0x7fffffffffffffffULL) | 1ULL;
     _epoch_country_output_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_sector_output_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) * 5U, Q16_ONE);
+    _epoch_country_research_output_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_trade_capacity_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_trade_speed_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_construction_cost_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_construction_time_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     if (_modifier_runtime != nullptr) {
         for (int32_t country = 0; country < _epoch_country_count; ++country) {
             _epoch_country_output_factor_q16[static_cast<size_t>(country)] =
                 modifier_factor_q16(_modifier_runtime->country_economy_output_factor(
                     _epoch_country_handles[static_cast<size_t>(country)]));
+            for (int32_t sector = 0; sector < 5; ++sector)
+                _epoch_country_sector_output_factor_q16[
+                    static_cast<size_t>(country) * 5U + sector] =
+                    modifier_factor_q16(
+                        _modifier_runtime->country_sector_output_factor(
+                            _epoch_country_handles[static_cast<size_t>(country)],
+                            sector));
+            _epoch_country_research_output_factor_q16[country] =
+                modifier_factor_q16(
+                    _modifier_runtime->country_research_institution_output_factor(
+                        _epoch_country_handles[static_cast<size_t>(country)]));
+            _epoch_country_trade_capacity_factor_q16[country] =
+                modifier_factor_q16(
+                    _modifier_runtime->country_trade_capacity_factor(
+                        _epoch_country_handles[static_cast<size_t>(country)]));
+            _epoch_country_trade_speed_factor_q16[country] =
+                modifier_factor_q16(
+                    _modifier_runtime->country_trade_speed_factor(
+                        _epoch_country_handles[static_cast<size_t>(country)]));
+            _epoch_country_construction_cost_factor_q16[country] =
+                modifier_factor_q16(
+                    _modifier_runtime->country_construction_cost_factor(
+                        _epoch_country_handles[static_cast<size_t>(country)]));
+            _epoch_country_construction_time_factor_q16[country] =
+                modifier_factor_q16(
+                    _modifier_runtime->country_construction_time_factor(
+                        _epoch_country_handles[static_cast<size_t>(country)]));
         }
     }
     refresh_building_modifier_factors();
@@ -2951,8 +3119,18 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     };
     if (!unique_sorted(_profession_ids, "profession") ||
         !unique_sorted(_ethnicity_ids, "ethnicity") ||
-        !unique_sorted(_good_ids, "good") || !unique_sorted(_plan_ids, "plan") ||
-        !unique_sorted(_technology_ids, "technology")) return false;
+        !unique_sorted(_good_ids, "good") || !unique_sorted(_plan_ids, "plan"))
+        return false;
+    {
+        std::unordered_set<std::string> technology_ids;
+        technology_ids.reserve(_technology_ids.size());
+        for (const std::string &id : _technology_ids) {
+            if (id.empty() || !technology_ids.insert(id).second) {
+                error = "technology_ids_not_unique";
+                return false;
+            }
+        }
+    }
     if (_technology_ids.size() > 4096) {
         error = "technology_count_exceeds_4096";
         return false;
@@ -2975,7 +3153,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             for (int32_t k = tag_offsets[item]; k < tag_offsets[item + 1]; ++k) {
                 const std::string &tag = tags[k];
                 if (tag.rfind("tech.", 0) != 0) continue;
-                const auto it = std::lower_bound(_technology_ids.begin(), _technology_ids.end(), tag);
+                const auto it = std::find(_technology_ids.begin(), _technology_ids.end(), tag);
                 if (it == _technology_ids.end() || *it != tag) {
                     error = std::string(reason) + ":" + tag;
                     return false;
@@ -3553,6 +3731,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     const std::vector<int32_t> supply_elasticities =
         packed_i32(catalog, "building_supply_price_elasticity_q16");
 	_building_kinds = packed_i32(catalog, "building_kinds");
+    _building_economic_sectors = packed_i32(catalog, "building_economic_sectors");
 	_building_technology_tag_offsets = packed_i32(catalog, "building_technology_tag_offsets");
 	_building_technology_tags = packed_strings(catalog, "building_technology_tags");
     const std::vector<int32_t> employee_offsets = packed_i32(catalog, "building_employee_offsets");
@@ -3573,6 +3752,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         construction_days.size() != types || behavior_ids.size() != types ||
 		behavior_versions.size() != types || target_margins.size() != types ||
         supply_elasticities.size() != types || _building_kinds.size() != types ||
+        _building_economic_sectors.size() != types ||
 		_building_upgrade_family_indices.size() != types ||
 		_building_upgrade_tiers.size() != types ||
 		!offsets_valid(_building_technology_tag_offsets) ||
@@ -3761,6 +3941,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         if (owner_prof[i] < 0 || owner_prof[i] >= static_cast<int32_t>(_profession_ids.size()) ||
             owner_slots[i] <= 0 || wages[i] < 0 || construction_days[i] < 0 ||
             _building_kinds[i] < 0 || _building_kinds[i] > 2 ||
+            _building_economic_sectors[i] < 0 ||
+            _building_economic_sectors[i] >= 5 ||
             behavior_ids[i] < 0 || behavior_ids[i] > 2 || behavior_versions[i] != 1 ||
             (!kind_is_service && output_offsets[i] == output_offsets[i + 1]) ||
 			(kind_is_service && output_offsets[i] != output_offsets[i + 1]) ||
@@ -3817,7 +3999,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             return false;
         }
         _building_types[i] = {
-			_building_kinds[i], family, tier, owner_prof[i], owner_slots[i], wages[i],
+			_building_kinds[i], _building_economic_sectors[i], family, tier,
+            owner_prof[i], owner_slots[i], wages[i],
             employee_offsets[i], employee_offsets[i + 1] - employee_offsets[i],
             construction_offsets[i], construction_offsets[i + 1] - construction_offsets[i],
             input_offsets[i], input_offsets[i + 1] - input_offsets[i],
@@ -6524,6 +6707,20 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
         return true;
     }
     const int32_t market = _market.cell_to_market[cell];
+    const int32_t country_slot = cell < static_cast<int32_t>(
+            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
+    const int32_t construction_cost_factor = country_slot >= 0 &&
+            country_slot < static_cast<int32_t>(
+                _epoch_country_construction_cost_factor_q16.size())
+        ? _epoch_country_construction_cost_factor_q16[country_slot] : Q16_ONE;
+    const int32_t construction_time_factor = country_slot >= 0 &&
+            country_slot < static_cast<int32_t>(
+                _epoch_country_construction_time_factor_q16.size())
+        ? _epoch_country_construction_time_factor_q16[country_slot] : Q16_ONE;
+    const int32_t effective_construction_days = type.construction_days <= 0 ? 0 :
+        std::max<int32_t>(1, static_cast<int32_t>(mul_div_sat(
+            type.construction_days, construction_time_factor,
+            Q16_ONE, _saturation_count)));
     int64_t total_cost = 0;
     for (int32_t i = 0; i < type.construction_count; ++i) {
         const GoodAmount &item = _building_construction_goods[type.construction_begin + i];
@@ -6532,7 +6729,9 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
             ++_rejected_commands;
             return true;
         }
-        const int64_t qty = saturating_mul(item.quantity, count, _saturation_count);
+        const int64_t qty = std::max<int64_t>(1, mul_div_sat(
+            saturating_mul(item.quantity, count, _saturation_count),
+            construction_cost_factor, Q16_ONE, _saturation_count));
         const int64_t stock = _market.stock[_market.index(market, item.good_id)];
         if (stock < qty) {
             const int32_t signal = ensure_market_signal_index(cell, item.good_id);
@@ -6659,9 +6858,12 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
         for (int32_t i = 0; i < type.construction_count; ++i) {
             const GoodAmount &item = _building_construction_goods[type.construction_begin + i];
             const int64_t idx = _market.index(market, item.good_id);
-            const int64_t qty = count > 0 && item.quantity >
+            const int64_t base_qty = count > 0 && item.quantity >
                 std::numeric_limits<int64_t>::max() / count
                     ? std::numeric_limits<int64_t>::max() : item.quantity * count;
+            const int64_t qty = std::max<int64_t>(1, mul_div_sat(
+                base_qty, construction_cost_factor, Q16_ONE,
+                _saturation_count));
             event_legs.push_back({FIELD_MARKET_STOCK, SUBJECT_MARKET, market, item.good_id,
                                   _market.stock[idx], _market.stock[idx] - qty});
         }
@@ -6669,7 +6871,9 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     touch_accounting_slot(owner_slot);
     for (int32_t i = 0; i < type.construction_count; ++i) {
         const GoodAmount &item = _building_construction_goods[type.construction_begin + i];
-        const int64_t qty = saturating_mul(item.quantity, count, _saturation_count);
+        const int64_t qty = std::max<int64_t>(1, mul_div_sat(
+            saturating_mul(item.quantity, count, _saturation_count),
+            construction_cost_factor, Q16_ONE, _saturation_count));
         const int64_t stock_index = _market.index(market, item.good_id);
         audit_touch_market_lane(static_cast<size_t>(stock_index));
         _market.stock[stock_index] -= qty;
@@ -6701,7 +6905,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
             total_cost - funding_gap, _saturation_count);
     }
     _pending_construction.push_back({cell, type_id, owner_signature, count,
-        _sample_day + type.construction_days, cmd.sequence,
+        _sample_day + effective_construction_days, cmd.sequence,
         construction_debt_principal, construction_debt_premium,
         static_cast<uint16_t>(construction_debt_principal > 0
             ? _merchant_credit_term_cycles : 0)});
@@ -6732,7 +6936,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     }
     trace_append(EVENT_CONSTRUCTION_STARTED, static_cast<int32_t>(_stage),
                  cell, SUBJECT_BUILDING_GROUP, owner_signature, type_id, -1,
-                 count, total_cost, _sample_day + type.construction_days, cmd.sequence,
+                 count, total_cost, _sample_day + effective_construction_days, cmd.sequence,
                  event_legs.empty() ? nullptr : &event_legs);
     return true;
 }
@@ -9856,8 +10060,33 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
         const double building_factor =
             _modifier_runtime->economy_building_output_factor(
                 group.modifier_handle, country_handle);
+        const int32_t sector = group.type_id >= 0 &&
+                group.type_id < static_cast<int32_t>(_building_types.size())
+            ? _building_types[static_cast<size_t>(group.type_id)].economic_sector : 2;
+        const double sector_factor = country_slot >= 0 &&
+                static_cast<size_t>(country_slot) * 5U + sector <
+                    _epoch_country_sector_output_factor_q16.size()
+            ? static_cast<double>(_epoch_country_sector_output_factor_q16[
+                static_cast<size_t>(country_slot) * 5U + sector]) / Q16_ONE
+            : 1.0;
+        bool research_institution = false;
+        if (group.type_id >= 0 &&
+            group.type_id < static_cast<int32_t>(_building_upgrade_family_indices.size())) {
+            const int32_t family = _building_upgrade_family_indices[
+                static_cast<size_t>(group.type_id)];
+            research_institution = family >= 0 &&
+                family < static_cast<int32_t>(_building_upgrade_family_ids.size()) &&
+                _building_upgrade_family_ids[static_cast<size_t>(family)] ==
+                    "research_institution";
+        }
+        const double research_factor = research_institution && country_slot >= 0 &&
+                country_slot < static_cast<int32_t>(
+                    _epoch_country_research_output_factor_q16.size())
+            ? static_cast<double>(_epoch_country_research_output_factor_q16[
+                static_cast<size_t>(country_slot)]) / Q16_ONE
+            : 1.0;
         group.output_factor_q16 = modifier_factor_q16(
-            country_factor * building_factor);
+            country_factor * sector_factor * research_factor * building_factor);
     }
 }
 
@@ -9900,7 +10129,33 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
             ? static_cast<double>(_epoch_country_output_factor_q16[
                 static_cast<size_t>(country_slot)]) / Q16_ONE
             : 1.0;
-        target.output_factor_q16 = modifier_factor_q16(country_factor *
+        const int32_t sector = type_id >= 0 &&
+                type_id < static_cast<int32_t>(_building_types.size())
+            ? _building_types[static_cast<size_t>(type_id)].economic_sector : 2;
+        const double sector_factor = country_slot >= 0 &&
+                static_cast<size_t>(country_slot) * 5U + sector <
+                    _epoch_country_sector_output_factor_q16.size()
+            ? static_cast<double>(_epoch_country_sector_output_factor_q16[
+                static_cast<size_t>(country_slot) * 5U + sector]) / Q16_ONE
+            : 1.0;
+        bool research_institution = false;
+        if (type_id >= 0 &&
+            type_id < static_cast<int32_t>(_building_upgrade_family_indices.size())) {
+            const int32_t family = _building_upgrade_family_indices[
+                static_cast<size_t>(type_id)];
+            research_institution = family >= 0 &&
+                family < static_cast<int32_t>(_building_upgrade_family_ids.size()) &&
+                _building_upgrade_family_ids[static_cast<size_t>(family)] ==
+                    "research_institution";
+        }
+        const double research_factor = research_institution && country_slot >= 0 &&
+                country_slot < static_cast<int32_t>(
+                    _epoch_country_research_output_factor_q16.size())
+            ? static_cast<double>(_epoch_country_research_output_factor_q16[
+                static_cast<size_t>(country_slot)]) / Q16_ONE
+            : 1.0;
+        target.output_factor_q16 = modifier_factor_q16(
+            country_factor * sector_factor * research_factor *
             _modifier_runtime->economy_building_output_factor(
                 target.modifier_handle, country_handle));
     }
@@ -14168,9 +14423,17 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         for (int32_t k = _merchant_offsets[cell]; k < _merchant_offsets[cell + 1]; ++k)
             merchant_population = saturating_add(merchant_population,
                 _population.population[_merchant_slots[k]], _saturation_count);
-        country_capacity[country] = saturating_add(country_capacity[country],
-            saturating_mul(merchant_population, _trade_capacity_per_merchant_q16,
-                           _saturation_count), _saturation_count);
+        const int64_t base_capacity = saturating_mul(
+            merchant_population, _trade_capacity_per_merchant_q16,
+            _saturation_count);
+        const int32_t capacity_factor = country <
+                static_cast<int32_t>(_epoch_country_trade_capacity_factor_q16.size())
+            ? _epoch_country_trade_capacity_factor_q16[country] : Q16_ONE;
+        country_capacity[country] = saturating_add(
+            country_capacity[country],
+            mul_div_sat(base_capacity, capacity_factor, Q16_ONE,
+                        _saturation_count),
+            _saturation_count);
     }
     _trade_capacity_available = std::accumulate(
         country_capacity.begin(), country_capacity.end(), int64_t{0});
@@ -14464,9 +14727,15 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         return true;
     }
     auto arrival_for = [&](const TradeCandidate &candidate) {
+        const int32_t speed_factor = candidate.country >= 0 &&
+                candidate.country < static_cast<int32_t>(
+                    _epoch_country_trade_speed_factor_q16.size())
+            ? _epoch_country_trade_speed_factor_q16[candidate.country] : Q16_ONE;
+        const int64_t effective_speed = std::max<int64_t>(
+            1, mul_div_sat(_trade_speed_cost_per_day, speed_factor,
+                           Q16_ONE, _saturation_count));
         const int64_t raw_days = std::max<int64_t>(1,
-            (candidate.route_cost + _trade_speed_cost_per_day - 1) /
-                _trade_speed_cost_per_day);
+            (candidate.route_cost + effective_speed - 1) / effective_speed);
         // Transport is a daily authority transaction. Local markets consume
         // the delivered stock on their next rolling settlement, but cargo must
         // not wait for or align to that five-day cadence.
@@ -14695,6 +14964,9 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _merchant_input_procurement_allocated = 0;
     _merchant_trade_purchase_cash = 0;
     _merchant_trade_sale_cash = 0;
+    _government_research_procured_points = 0;
+    _government_research_procurement_cash = 0;
+    _government_research_procurement_orders = 0;
     auto reset_cell_metric = [&](std::vector<int64_t> &metric) {
         if (metric.size() != static_cast<size_t>(_cell_count)) {
             metric.assign(static_cast<size_t>(_cell_count), 0);
@@ -18629,7 +18901,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 });
                 work_done += static_cast<int64_t>(_structural_commands.size());
                 _household_market_phase = 0;
-                _stage = Stage::TRADE_DISPATCH;
+                _stage = Stage::GOVERNMENT_RESEARCH_PROCUREMENT;
                 if (finish_chunk_and_should_yield()) break;
                 continue;
             }
@@ -19030,6 +19302,18 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             _household_market_phase = 1;
             continue;
         }
+        if (_stage == Stage::GOVERNMENT_RESEARCH_PROCUREMENT) {
+            _executed_stage = Stage::GOVERNMENT_RESEARCH_PROCUREMENT;
+            _executed_substage = "technology_points";
+            if (!run_government_research_procurement(error)) {
+                fail(error.empty() ? "government_research_procurement_failed" : error);
+                break;
+            }
+            ++work_done;
+            _stage = Stage::TRADE_DISPATCH;
+            if (finish_chunk_and_should_yield()) break;
+            continue;
+        }
         if (_stage == Stage::STRUCTURAL_COMMIT) {
             _executed_stage = Stage::STRUCTURAL_COMMIT;
             const auto start = Clock::now();
@@ -19395,6 +19679,8 @@ const char *NativeEconomyRuntime::stage_name(Stage stage) const {
         case Stage::TRADE_DISPATCH: return "trade_dispatch";
         case Stage::TRADE_PLANNING: return "trade_planning";
         case Stage::BUILDING_PLAN: return "building_plan";
+        case Stage::GOVERNMENT_RESEARCH_PROCUREMENT:
+            return "government_research_procurement";
     }
     return "unknown";
 }
@@ -20559,6 +20845,12 @@ Dictionary NativeEconomyRuntime::report() const {
             _merchant_procurement_spent);
     out["merchant_trade_purchase_cash"] = _merchant_trade_purchase_cash;
     out["merchant_trade_sale_cash"] = _merchant_trade_sale_cash;
+    out["government_research_procured_points"] =
+        _government_research_procured_points;
+    out["government_research_procurement_cash"] =
+        _government_research_procurement_cash;
+    out["government_research_procurement_orders"] =
+        _government_research_procurement_orders;
     out["merchant_operating_outflow"] = merchant_operating_outflow;
     out["merchant_liquidity_coverage_q16"] =
         merchant_operating_outflow > 0
@@ -22650,6 +22942,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, _resource_min_horizon_days);
         append_le<int32_t>(payload, _bullion_monthly_issue_cap_q16);
         append_le<int32_t>(payload, _producer_support_monthly_cap_q16);
+        append_le<int64_t>(payload, _government_research_procured_points);
+        append_le<int64_t>(payload, _government_research_procurement_cash);
+        append_le<int64_t>(payload, _government_research_procurement_orders);
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);
@@ -23104,10 +23399,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 19 && schema != 18) {
-        error = schema >= 2 && schema < 18
-            ? "legacy_economy_save_unsupported"
-            : "economy_save_schema_unsupported";
+    if (schema != SCHEMA_VERSION) {
+        error = "legacy_technology_tree_save_unsupported";
         return false;
     }
     if (!_restore.header_seen && section != SAVE_SECTION_HEADER) {
@@ -23126,6 +23419,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 catalog_hash = 0, money_scale = 0, goods_scale = 0, ratio_scale = 0,
                 rate_scale = 0, environment_day = -1, environment_hash = 0,
                 building_catalog_hash = 0;
+        int64_t saved_research_points = 0, saved_research_cash = 0,
+                saved_research_orders = 0;
         int32_t country_schema = 0;
         uint64_t country_generation = 0, country_hash = 0;
         uint64_t next_submit = 0;
@@ -23260,6 +23555,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             error = "save_dynamic_policy_header_payload_truncated";
             return false;
         }
+        if (!read_le(bytes, cursor, saved_research_points) ||
+            !read_le(bytes, cursor, saved_research_cash) ||
+            !read_le(bytes, cursor, saved_research_orders) ||
+            saved_research_points < 0 || saved_research_cash < 0 ||
+            saved_research_orders < 0) {
+            error = "save_research_procurement_header_payload_truncated";
+            return false;
+        }
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
             cursor != bytes.size()) {
@@ -23387,6 +23690,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _restore.expected_trade_flows = trade_flow_count;
         _next_event_id = next_event_id;
         _event_stream_hash = event_stream_hash;
+        _government_research_procured_points = saved_research_points;
+        _government_research_procurement_cash = saved_research_cash;
+        _government_research_procurement_orders = saved_research_orders;
         _audit_history.clear();
         _committed_event_batches.clear();
         _event_consumer_ack.clear();

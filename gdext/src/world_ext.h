@@ -193,6 +193,7 @@ public:
     godot::Dictionary get_country_cell_summary(int cell_idx) const;
     godot::Dictionary get_country_snapshot(int64_t handle) const;
     godot::Dictionary get_country_treasury_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_research_snapshot(int64_t handle) const;
     godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
     godot::Dictionary reset_country(const godot::String &reason);
     godot::Dictionary begin_country_save(int chunk_bytes = 4 * 1024 * 1024);
@@ -1091,8 +1092,9 @@ public:
     godot::Dictionary encode_bake_flow_tex_data(godot::Dictionary knobs);        // F32 [0,1] → L8
     godot::Dictionary encode_bake_enum_atlas_payload(godot::Dictionary knobs);   // map_index RGBA8
     godot::Dictionary encode_bake_upwelling_tex_data(godot::Dictionary knobs);   // SoA upwelling → L8
-    // 生成期 height/biome/moisture/veg/cover 逐像素烘焙 + 内嵌 Bayer dither（索引边缘融合）。
-    // 复刻 map_baker.gd::_bake_height_biome_moisture；产出 5 buffer + CSR + pixel_to_cell_index。
+    // 生成期 height/biome/moisture/veg/cover 逐像素烘焙。
+    // 离散数据使用硬主 cell；另产出副 cell RG8 + 边界距离 R8 供屏幕空间边缘混合。
+    // 复刻 map_baker.gd::_bake_height_biome_moisture；产出 7 buffer + CSR + pixel_to_cell_index。
     godot::Dictionary run_bake_terrain_index_pass(godot::Dictionary knobs);
 
     // ─── 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）────

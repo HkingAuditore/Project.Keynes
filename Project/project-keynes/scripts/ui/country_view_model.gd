@@ -1,6 +1,7 @@
 class_name CountryViewModel
 extends RefCounted
 
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
 var _generator = null
 
@@ -21,6 +22,9 @@ func build() -> Dictionary:
 	var summary: Dictionary = facade.cell_summary(start_cell)
 	if not bool(summary.get("ok", false)) or not bool(summary.get("owned", false)):
 		return _unavailable_model("玩家国家档案暂不可用")
+	var country_handle := int(summary.get("country_handle", 0))
+	var research: Dictionary = facade.research_snapshot(country_handle)
+	research["country_cash"] = int(summary.get("cash", 0))
 	return {
 		"available": true,
 		"country_name": String(summary.get("country_name", "未命名国家")),
@@ -29,6 +33,12 @@ func build() -> Dictionary:
 		"cash": int(summary.get("cash", 0)),
 		"nonzero_good_count": int(summary.get("nonzero_good_count", 0)),
 		"technology_count": int(summary.get("technology_count", 0)),
+		"country_handle": country_handle,
+		"country_facade": facade,
+		"research": research,
+		"technology_definitions": TechnologyCatalogScript.public_definitions(),
+		"technology_eras": TechnologyCatalogScript.public_era_metadata(),
+		"technology_domains": TechnologyCatalogScript.public_domain_metadata(),
 	}
 
 

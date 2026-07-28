@@ -1,7 +1,7 @@
 class_name NewGameConfig
 extends RefCounted
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 const MIN_SEED := 1
 const MAX_SEED := 2147483647
 const SIZE_PRESETS := {
@@ -22,6 +22,12 @@ var base: Dictionary = {
 }
 var world_controls: Dictionary = {}
 var climate: Dictionary = {}
+var research: Dictionary = {
+	"starting_country_cash": 2500000000000,
+	"procurement_budget_per_day": 10000000,
+	"domain_weights_bp": PackedInt32Array([2500, 2500, 2500, 2500]),
+	"auto_purchase_enabled": true,
+}
 
 
 static func create_default() -> NewGameConfig:
@@ -62,6 +68,22 @@ func validate() -> Dictionary:
 	base.num_continents = clampi(int(base.get("num_continents", 2)), 1, 8)
 	base.continent_size = clampf(float(base.get("continent_size", 0.9)), 0.2, 0.9)
 	base.river_count = clampi(int(base.get("river_count", 8)), 0, 30)
+	var starting_cash := int(research.get("starting_country_cash", -1))
+	var procurement_budget := int(research.get("procurement_budget_per_day", -1))
+	var weights: PackedInt32Array = research.get("domain_weights_bp", PackedInt32Array())
+	if starting_cash < 0 or procurement_budget < 0 or weights.size() != 4:
+		return _error("research_policy_invalid", "科研财政配置无效。")
+	var weight_total := 0
+	for weight in weights:
+		if weight < 0 or weight > 10000:
+			return _error("research_policy_invalid", "科研权重必须位于 0..100%。")
+		weight_total += weight
+	if weight_total != 10000:
+		return _error("research_weight_total_invalid", "科研权重总和必须为 100%。")
+	research.starting_country_cash = starting_cash
+	research.procurement_budget_per_day = procurement_budget
+	research.domain_weights_bp = weights
+	research.auto_purchase_enabled = bool(research.get("auto_purchase_enabled", true))
 	return {"ok": true, "code": "ok", "message": ""}
 
 
@@ -75,6 +97,7 @@ func to_dictionary() -> Dictionary:
 		"base": base.duplicate(true),
 		"world_controls": world_controls.duplicate(true),
 		"climate": climate.duplicate(true),
+		"research": research.duplicate(true),
 	}
 
 
@@ -106,6 +129,7 @@ static func from_dictionary(value: Dictionary) -> Dictionary:
 	config.base = (value.get("base", {}) as Dictionary).duplicate(true)
 	config.world_controls = (value.get("world_controls", {}) as Dictionary).duplicate(true)
 	config.climate = (value.get("climate", {}) as Dictionary).duplicate(true)
+	config.research = (value.get("research", {}) as Dictionary).duplicate(true)
 	var validation := config.validate()
 	if not bool(validation.get("ok", false)):
 		return validation

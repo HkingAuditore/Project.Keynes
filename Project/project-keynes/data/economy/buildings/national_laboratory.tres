@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"national_laboratory"
+display_name = "国家实验室"
+building_kind = "industrial"
+technology_tags = PackedStringArray("industry.knowledge", "tech.national_laboratories")
+upgrade_family_id = &"research_institution"
+upgrade_tier = 9
+construction_days = 200
+construction_good_ids = PackedStringArray("steel", "concrete", "glass", "construction_components")
+construction_quantities = PackedInt64Array(80000, 70000, 25000, 35000)
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("research_scientist", "scientist", "engineer")
+employee_slots_per_building = PackedInt64Array(48, 24, 20)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(21000, 19500, 19500)
+input_good_ids = PackedStringArray("scientific_instruments", "electricity", "precision_tools")
+input_quantities_per_day = PackedInt64Array(9000, 10000, 2500)
+input_required_q16 = PackedInt32Array(32768, 32768, 32768)
+output_good_ids = PackedStringArray("technology_points")
+output_quantities_per_day = PackedInt64Array(9000000)
+

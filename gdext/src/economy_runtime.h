@@ -24,7 +24,7 @@ class ModifierRuntime;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 20;
+    static constexpr int32_t SCHEMA_VERSION = 21;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -182,6 +182,7 @@ private:
         TRADE_DISPATCH = 12,
         TRADE_PLANNING = 13,
         BUILDING_PLAN = 14,
+        GOVERNMENT_RESEARCH_PROCUREMENT = 15,
     };
 
     enum class PublishPhase : uint8_t {
@@ -306,6 +307,7 @@ private:
 
     struct BuildingType {
 		int32_t kind = 1; // 0=collector, 1=industrial.
+        int32_t economic_sector = 2; // agriculture, extractive, manufacturing, energy, knowledge.
         int32_t upgrade_family_id = -1;
         int32_t upgrade_tier = 0;
         int32_t owner_profession_id = -1;
@@ -1713,6 +1715,9 @@ private:
     int64_t _merchant_input_procurement_allocated = 0;
     int64_t _merchant_trade_purchase_cash = 0;
     int64_t _merchant_trade_sale_cash = 0;
+    int64_t _government_research_procured_points = 0;
+    int64_t _government_research_procurement_cash = 0;
+    int64_t _government_research_procurement_orders = 0;
     std::vector<int64_t> _merchant_procurement_paid_by_cell;
     std::vector<int64_t> _merchant_procurement_retail_by_cell;
     std::vector<int64_t> _merchant_procurement_factor_weighted_cash_by_cell;
@@ -2189,6 +2194,7 @@ private:
 
     std::vector<std::string> _building_type_ids;
 	std::vector<int32_t> _building_kinds;
+    std::vector<int32_t> _building_economic_sectors;
 	std::vector<std::string> _building_upgrade_family_ids;
 	std::vector<int32_t> _building_upgrade_family_indices;
 	std::vector<int32_t> _building_upgrade_tiers;
@@ -2204,6 +2210,12 @@ private:
     std::vector<uint64_t> _epoch_country_technologies;
     std::vector<uint64_t> _epoch_country_handles;
     std::vector<int32_t> _epoch_country_output_factor_q16;
+    std::vector<int32_t> _epoch_country_sector_output_factor_q16;
+    std::vector<int32_t> _epoch_country_research_output_factor_q16;
+    std::vector<int32_t> _epoch_country_trade_capacity_factor_q16;
+    std::vector<int32_t> _epoch_country_trade_speed_factor_q16;
+    std::vector<int32_t> _epoch_country_construction_cost_factor_q16;
+    std::vector<int32_t> _epoch_country_construction_time_factor_q16;
     // Epoch-transient country/type availability cache. Technology authority is
     // frozen once per daily transaction, so every cell in a country shares the
     // same result and hot loops can consume the ascending CSR directly.
@@ -2526,6 +2538,7 @@ private:
     bool ensure_merchant_invariant(int32_t cell, int64_t &repair_count,
                                    std::string &error);
     bool rebuild_merchant_ranges(std::string &error);
+    bool run_government_research_procurement(std::string &error);
     bool is_merchant_slot(int32_t slot) const;
     void touch_accounting_slot(int32_t slot);
     void rebuild_incremental_audit_shadow();

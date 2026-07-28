@@ -48,7 +48,8 @@ const GOOD_GLYPHS := {
 	&"soap": "\ue06e", &"spices": "\uf816", &"stainless_steel": "\uf3ed",
 	&"steam_engines": "\ue5b4", &"steel": "\uf56a", &"sulfur": "\uf780",
 	&"synthetic_fiber": "\uf2a1", &"synthetic_rubber": "\uf5bf",
-	&"telecom_equipment": "\uf7c0", &"tin": "\uf466", &"tin_ore": "\uf6d1",
+	&"technology_points": "\uf0c3", &"telecom_equipment": "\uf7c0",
+	&"tin": "\uf466", &"tin_ore": "\uf6d1",
 	&"tools": "\uf552", &"vegetables": "\uf787", &"wheat_grain": "\ue52a",
 	&"wire": "\uf6ff", &"wool": "\uf696", &"zinc": "\uf0c1", &"zinc_ore": "\uf127",
 }
@@ -65,15 +66,20 @@ const GOOD_LABELS := {
 }
 
 const PROFESSION_GLYPHS := {
-	&"agricultural_worker": "\ue2cd", &"apprentice": "\uf4fd", &"artisan": "\uf4fe",
-	&"chemist": "\uf0f0", &"construction_worker": "\uf85e", &"electrician": "\ue55c",
+	&"agricultural_worker": "\ue2cd", &"ai_researcher": "\uf544",
+	&"apprentice": "\uf4fd", &"artisan": "\uf4fe",
+	&"chemist": "\uf0f0", &"construction_worker": "\uf85e",
+	&"data_scientist": "\ue473", &"electrician": "\ue55c",
 	&"engineer": "\uf4fb", &"enslaved_laborer": "\ue543", &"fisher": "\uf578",
 	&"forager": "\uf554", &"forestry_worker": "\ue54f", &"guild_master": "\uf505",
 	&"hunter": "\ue54e", &"indentured_laborer": "\uf56c", &"industrialist": "\uf0b1",
 	&"industrial_worker": "\uf807", &"journeyman": "\ue554", &"landlord": "\ue1b0",
-	&"machinist": "\uf0ad", &"manager": "\uf4fc", &"merchant": "\uf54f",
-	&"metallurgist": "\uf769", &"miner": "\ue52e", &"pastoralist": "\uf6ec",
-	&"petroleum_worker": "\ue532", &"researcher": "\uf501", &"serf": "\ue549",
+	&"lorekeeper": "\uf66a", &"machinist": "\uf0ad", &"manager": "\uf4fc",
+	&"merchant": "\uf54f", &"metallurgist": "\uf769", &"miner": "\ue52e",
+	&"natural_philosopher": "\uf5d2", &"pastoralist": "\uf6ec",
+	&"petroleum_worker": "\ue532", &"research_scientist": "\uf610",
+	&"researcher": "\uf501", &"scholar": "\uf5da", &"scientist": "\ue4f3",
+	&"scribe": "\uf5ad", &"serf": "\ue549",
 	&"subsistence_farmer": "\uf291", &"technician": "\uf54a", &"tenant_farmer": "\ue065",
 	&"transport_worker": "\uf48b", &"unemployed": "\uf506", &"worker": "\uf183",
 }
@@ -208,6 +214,17 @@ const SPECS := {
 	&"system.settings": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf013"},
 	&"system.target": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf05b"},
 	&"system.unknown": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf128"},
+	&"technology.domain.agriculture": {"family": FAMILY_FONT_AWESOME, "glyph": "\ue2cd"},
+	&"technology.domain.engineering": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf0ad"},
+	&"technology.domain.science": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf610"},
+	&"technology.domain.society": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf505"},
+	&"technology.milestone": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf521"},
+	&"technology.state.available": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf0eb"},
+	&"technology.state.completed": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf00c"},
+	&"technology.state.locked": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf023"},
+	&"technology.state.pending": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf017"},
+	&"technology.state.queued": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf0ca"},
+	&"technology.state.unknown": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf128"},
 	&"trend.down": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf063"},
 	&"trend.flat": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf061"},
 	&"trend.up": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf062"},
@@ -282,8 +299,10 @@ const COMPATIBILITY_ALIASES := {
 
 # Repeated implementation signatures must be explicitly acknowledged here.
 const ALLOWED_SHARED_IMPLEMENTATIONS := {
-	"fontawesome:glyph:f00c": [&"action.confirm", &"action.save"],
+	"fontawesome:glyph:f00c": [&"action.confirm", &"action.save",
+		&"technology.state.completed"],
 	"fontawesome:glyph:f013": [&"resource.tin", &"system.settings"],
+	"fontawesome:glyph:f017": [&"system.clock", &"technology.state.pending"],
 	"fontawesome:glyph:f043": [&"climate.humidity", &"economy.fuel", &"resource.oil"],
 	"fontawesome:glyph:f04b": [&"action.play"],
 	"fontawesome:glyph:f061": [&"trend.flat"],
@@ -291,16 +310,19 @@ const ALLOWED_SHARED_IMPLEMENTATIONS := {
 	"fontawesome:glyph:f06d": [&"economy.building.hearth", &"resource.coal", &"resource.fire"],
 	"fontawesome:glyph:f071": [&"population.living.destitute", &"status.warning"],
 	"fontawesome:glyph:f0c3": [&"economy.building.science", &"resource.saltpeter"],
+	"fontawesome:glyph:f0ca": [&"summary.overview", &"technology.state.queued"],
 	"fontawesome:glyph:f0e7": [&"economy.building.power", &"resource.flint"],
 	"fontawesome:glyph:f1ad": [&"economy.building", &"economy.building.service"],
 	"fontawesome:glyph:f1b0": [&"economy.building.hunting", &"resource.animal"],
+	"fontawesome:glyph:f128": [&"system.unknown", &"technology.state.unknown"],
 	"fontawesome:glyph:f1b2": [&"resource.clay", &"resource.earth"],
 	"fontawesome:glyph:f1bb": [&"economy.building.forestry", &"resource.wood"],
 	"fontawesome:glyph:f2e7": [&"economy.building.food", &"resource.paddy_land"],
 	"fontawesome:glyph:f3a5": [&"economy.resource", &"population.living.luxury", &"resource.precious"],
 	"fontawesome:glyph:f4d8": [&"ecology.growth", &"population.living.secure", &"resource.fertile_soil"],
 	"fontawesome:glyph:f51e": [&"population.profession.merchant", &"resource.silver"],
-	"fontawesome:glyph:f521": [&"population.living.affluent", &"population.profession.owner"],
+	"fontawesome:glyph:f521": [&"population.living.affluent",
+		&"population.profession.owner", &"technology.milestone"],
 	"fontawesome:glyph:f578": [&"economy.building.fishing", &"population.profession.fisher", &"resource.fish", &"resource.marine_fish"],
 	"fontawesome:glyph:f5d2": [&"resource.rare_earth", &"resource.salt"],
 	"fontawesome:glyph:f5fd": [&"geography.surface", &"resource.limestone"],
@@ -403,6 +425,28 @@ static func good_semantic(stable_id: String) -> StringName:
 static func profession_semantic(stable_id: String) -> StringName:
 	return StringName("profession.%s" % stable_id) \
 		if PROFESSION_GLYPHS.has(StringName(stable_id)) else &"system.unknown"
+
+
+static func technology_domain_semantic(domain_id: String) -> StringName:
+	var key := StringName("technology.domain.%s" % domain_id)
+	return key if SPECS.has(key) else &"country.technology"
+
+
+# Research state ordering matches NativeCountryRuntime's snapshot encoding.
+static func technology_state_semantic(state: int) -> StringName:
+	match state:
+		1:
+			return &"technology.state.locked"
+		2:
+			return &"technology.state.available"
+		3:
+			return &"technology.state.queued"
+		4:
+			return &"technology.state.pending"
+		5:
+			return &"technology.state.completed"
+		_:
+			return &"technology.state.unknown"
 
 
 static func building_semantic(stable_id: String, primary_good_id: String,

@@ -137,6 +137,11 @@ Dictionary DCWorldExt::get_country_treasury_snapshot(int64_t handle) const {
         : country_runtime_from(_country_runtime)->treasury_snapshot(handle);
 }
 
+Dictionary DCWorldExt::get_country_research_snapshot(int64_t handle) const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->research_snapshot(handle);
+}
+
 Dictionary DCWorldExt::poll_country_events(int64_t after_event_id, int limit) const {
     return _country_runtime == nullptr ? country_unavailable()
         : country_runtime_from(_country_runtime)->poll_events(after_event_id, limit);

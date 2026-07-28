@@ -153,7 +153,7 @@ C++ 入口：
 
 GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.update`、新尺寸 `ImageTexture.create_from_image`。因此 C++ 迁移目标是消除 CPU 字节循环，不把 Godot 渲染对象生命周期迁入 native。`patch_enum_atlas_axes` 已统一为当前 map-index RGBA8 契约：只 patch `R=biome`，不再把 vegetation/cover 写入 G/B；vegetation/cover 变化只更新 per-cell LUT/buffer，不触发 map-index atlas upload。
 
-## Terrain-index bake pass（生成期逐像素归属 + dither）
+## Terrain-index bake pass（生成期权威主归属 + 独立视觉边界场）
 
 主要入口：
 
@@ -163,7 +163,16 @@ GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.u
 
 链路：`bake_world()` 的核心逐像素循环（warp 双频 + `cube_round` 几何归属 + sextant 两邻居 barycentric + per-biome detail/ridge noise）已下移 C++。pass 全程经 knobs 传参（不依赖 bound slot —— bake 发生在 generation 期、bind 时机不定，与 `encode_bake_*` 同范式）：输入 W/H、world_bounds、hex_size、wrap_period_x、seed，以及 cell SoA（`cell_elevation/moisture/terrain/vegetation/cover` by cell.index）与 `offset_to_index` 映射；GDScript wrapper 现场从 `HexCell` 属性构建这些数组（~n_cells 次）。C++ 内用 `Ref<FastNoiseLite>` 复刻 `map_baker._init_noise`（seed+71/+233/+503/+977），并复刻 `_cyl_noise` 2D 接缝包裹。所有带 x 偏移或频率缩放的噪声调用都必须把相位原点同步传给 cylindrical helper（如 `x+31.7`、`x+91.1`、`x*CRAG_FREQ_MUL+17.9`），否则 `fposmod` seam 会被搬进地图内部。
 
-**index 边缘融合（dither #3）内嵌在本 pass**：在写 buffer 前用 Bayer 8x8 有序抖动 + barycentric 权重，对**陆-陆 / 水-水的相邻 cell 边界**把像素的"视觉归属 cell"改派给 sextant 两邻居，软化离散 cell 边界——`biome(R)`、经 `map_index_atlas.gb` 解码 per-cell 量的消费方（云 `weather_overlay` weather_lut、`dyn_lut`、`eco_lut`）。Bayer 的 x 相位按 `wrap_period_x` 映射到最接近的 8 倍数 texel 周期，而不是直接用 atlas 绝对列 `x&7`；因为 `world_bounds` 带 padding、经度周期也不保证是 8 的倍数，直接按 atlas 列会在东西接缝处跳相位。**仅 land↔water（跨水/陆域）边界回收门槛、不互相改派**，保护海岸硬边与 per-pixel `is_water`。dither 改派后：`biome(R)` / CSR 桶（驱动编码器 `G/B`=cell.index、`A`=landform）/ `vegetation` / `cover` / `pixel_to_cell_index` 全跟 `vis_cell`（单一不变量，全量 + daily 增量重烘均不还原）；`height`/`moisture` 仍走几何 self barycentric，`height` 再叠 per-pixel relief（见下"P0 relief"，防高程点阵）。
+**权威索引与视觉边界解耦**：`biome(R)`、CSR 桶（驱动编码器
+`G/B=cell.index`、`A=landform`）、`vegetation`、`cover` 与
+`pixel_to_cell_index` 全部跟随 warp 后的硬 `cube_round` 主格，不再由
+Bayer 改派。pass 同时输出 RG8 副索引和 R8 主/副中心距离差，供渲染器按档位
+处理视觉过渡。桌面 MID/HIGH 对静态材质、战争迷雾和天气使用连续距离场；
+移动端使用 atlas-texel 8×8 Bayer DitherUV 在主/副视觉 cell 间二选一，以保留
+远景颗粒与单 LUT 采样成本。该移动 Dither 只存在于 shader consumer，不会改变
+权威 cell、CSR、交互或动态状态的归属；X 相位按 `wrap_period_x` 对齐到 8 texel
+整数周期。`height`/`moisture` 仍走几何 barycentric，`height` 再叠 per-pixel
+relief（见下 “P0 relief”）。
 
 输出：`height_buffer`(F32) / `biome_buffer` / `vegetation_buffer` / `cover_buffer`(U8) / `moisture_buffer`(F32) + CSR 三件套（`cell_first_px`/`cell_px_count`/`flat_px_indices`，counting-sort by cell.index，直接喂 `encode_bake_enum_atlas_payload`）+ `pixel_to_cell_index`（wrapper 据此重建 `world.pixel_to_cell_lookup` 与 `cell_pixel_lists`）。
 
@@ -177,7 +186,7 @@ GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.u
 
 总振幅量级（谷 ≈ −0.09 ~ 峰 ≈ +0.17）与旧 `MOUNTAIN_RIDGE_AMP=0.26` 同档，下游 erosion/SDF 行为不被打乱。常量先以文件内 `constexpr`/`const` 落地（C++↔GDScript 同名同值），稳定后可按需提升到 `ClimateProfile`。
 
-下游收益：因索引层已软化，`world_map.gdshader` 的 `dyn_lut`/`eco_lut` 全档位改回 NEAREST（删 `sample_dyn_lut_smooth`/`sample_eco_lut_smooth`），`weather_overlay.gdshader` 删除 `cloud-soft-edge` 跨格双线性。旧的 `cell_blend_atlas`（运行时 shader 软混方案）已整套回滚。`dither_enabled=false` 时 C++ 输出与 GDScript ground-truth 应逐像素 bit-equal，用于 A/B parity。
+下游收益：权威主索引固定为 warp 后的 `cube_round`，`dyn_lut`、`eco_lut`、天气、迷雾和交互状态均使用同一个 NEAREST 主格，不再通过图集空间 Dither 改派归属。静态地表边界由独立的 RG8 副索引与 R8 距离纹理在屏幕空间窄带内处理；边界数据缺失时直接退化为硬主索引。C++ 单 pass 与 fused pass 应逐字节一致，并由 headless parity 测试覆盖。
 
 **分层地形法线（2026-06-25）**：渲染端 `hillshade_tod.gdshaderinc::compute_terrain_normal(uv, quality, biome)` 改为三层结构，解决"细节法线过强 → 山密密麻麻、走向不清晰"：① **粗法线**优先采样生成期烘焙的 `terrain_normal_tex`（1 fetch 拿宏观山脉走向；未绑定时回退运行期宽半径 `hillshade_coarse_radius` 4-tap）；② **细节法线**为运行期 1-texel 中心差分（4 fetch），作切向扰动叠到粗法线上，强度 = `hillshade_detail_strength × terrain_detail_factor(biome) × qf`，`terrain_detail_factor` 按 biome 分档（山地/方山满量、丘陵/荒地次之、平原/湿地系趋零）；③ **性能分档**：`MOBILE_QUALITY_LOW/MID` 与 desktop `visual_quality==0` 只算粗法线、跳过细节 4-tap。控制 uniform：`terrain_normal_tex_bound`（hex_renderer 据 `world.terrain_normal_tex` 是否存在设置）、`hillshade_coarse_strength`、`hillshade_detail_enabled`、`hillshade_detail_strength`。调用方 `land_pipeline`/`apply_tod_pbr` 已同步传 `biome`。
 
@@ -253,6 +262,90 @@ parity 说明：用户不要求 bit-equal（迁移后人工验证）。latitude 
 **遗留 GDScript 死代码**：river SDF 全链迁 C++ 后，`map_baker.gd` 的 `_trace_all_rivers` / `_trace_river_chain` / `_declared_river_downstream` / `_find_river_downstream_neighbor` / `_find_river_terminal_water_neighbor` / `_river_width_weight` / `_is_river_terminal_water` 及旧几何辅助 `_warp_river_chain` / `_catmull_rom_dense(_with_widths)` / `_catmull_rom` / `_stamp_polyline_variable` / `_stamp_polyline_binary` / `_chamfer_sdt` 均已无调用者（计算全在 C++），保留为可随时删除的死代码，不构成运行期 fallback 路径。`_clamp_buffer` 已随 erosion 迁移删除。`_is_water`（海洋洋流用）仍在用，保留。
 
 
+
+### Terrain hard-index, edge material data, and near-detail LOD (2026-07-28)
+
+`DCWorldExt::run_bake_terrain_index_pass` no longer uses atlas-space Bayer
+dithering to reassign pixel ownership. After warp and `cube_round`, the hard
+primary cell is authoritative for `biome_buffer`, `vegetation_buffer`,
+`cover_buffer`, `pixel_to_cell_index`, CSR, enum atlas GB, dynamic LUT lookup,
+fog, ecology, weather, interaction, and incremental raster updates. Height and
+moisture retain their existing barycentric interpolation.
+
+The terrain pass and the fused `run_bake_geometry_fields_pass` additionally
+return two transient visual buffers:
+
+- `edge_secondary_index_buffer`: RG8 little-endian cell index; `0xFFFF` means
+  no blendable neighbor.
+- `edge_distance_buffer`: R8 normalized primary/secondary center-distance gap;
+  zero is the equidistance boundary and 255 is the saturated cell interior.
+
+The secondary candidate is selected deterministically from the two sextant
+neighbors, with lower cell index as the tie break. It is emitted for every
+valid cell boundary, including equal-biome and land/water neighbors, so the
+same field can drive terrain, fog and weather presentation. The terrain shader
+performs its own primary/secondary water-domain check and rejects cross-domain
+material mixing, so coasts never leak land material into water; fog knowledge
+and continuous weather-cloud quantities may still transition across a coast.
+`map_baker.gd` only validates and uploads these buffers to
+`WorldData.terrain_edge_neighbor_tex` and
+`terrain_edge_distance_tex`; invalid or absent buffers produce a warning and
+a hard-primary fallback, never the retired Bayer path.
+
+On desktop, `world_map.gdshader` combines a 1--1.75 screen-pixel `fwidth()`
+inner AA band with a noise-modulated material ecotone. The R8 field saturates at a
+`0.90-hex` center-distance gap; the default width is `0.84`, producing a
+high-quality transition about `0.76 hex` wide across both sides. The static
+biome color/roughness/micro strength blend first; climate, vegetation, cover,
+snow and landform remain driven by the hard primary state and are not pulled
+back to an unsnowed static anchor at equal-biome boundaries. Dynamic LUT
+authority, topology and interaction remain primary-only. Desktop terrain also
+mixes a zoom-aware amount of map-anchored 8×8 DitherUV into the continuous
+distance-field weight: far view retains ordered coverage, while close view
+converges toward continuous material mixing. Water uses the same distance field
+as Dither probability on every platform and may select only another water cell
+for visual biome/cover input; ice fraction, temperature, current and all other
+dynamic state stay primary-owned, and water/land branch ownership never changes.
+The desktop water pipeline's existing continuous water-biome weights remain
+active, so the ocean combines both methods without a second full water render.
+On mobile,
+`world_map.gdshader`, `fog_of_war.gdshader` and `weather_overlay.gdshader` use
+the shared wrap-safe 8×8 DitherUV threshold to select one visual cell before the
+relevant LUT lookup. Desktop fog/weather retain continuous primary/secondary
+mixing. All variants fall back to hard-primary sampling when edge textures are
+absent.
+`terrain_detail_tex` stores one continuous,
+biome-independent world-space macro signal; the shader applies material-class
+amplitude after sampling, preventing a hard biome outline from being baked
+back into the linear texture. Near-surface detail is one mipmapped sample from
+the deterministic offline `terrain_micro_data.png`. The texture is generated
+from periodic multi-scale value noise rather than directional sine bands,
+using world coordinates and an integer horizontal repeat count so the
+cylindrical seam closes. Camera zoom is pushed through
+`MapCamera.zoom_changed -> HexRenderer.set_camera_zoom`; the same signal
+updates existing `ShrubLayer` materials and visibility only. It does not
+rebuild or redistribute MultiMesh instances.
+
+Camera detail LOD treats the original profile population as the far-view
+baseline. `lod_near_density_multiplier` only pre-generates an additional nearby
+pool (trees 1.75×, shrubs 1.60×, rocks 1.40×, fine details 1.35× by default).
+Each chunk is deterministically repacked into cell-stratified layers: one stable
+sample from every occupied cell first, then second samples, followed by
+near-only surplus. Consequently `visible_instance_count` cannot erase whole
+hexes merely because of buffer order. Candidate discs also overlap adjacent
+hexes (`seamless_spawn_radius_floor`) so the continuous world-noise field is not
+clipped into visible cell-shaped patches. Zoom changes only the visible prefix;
+alpha stays at the original value and no MultiMesh is rebuilt or redistributed.
+The renderer-wide instance budget remains an independent upper bound.
+
+Validation entry points:
+
+- `tests/terrain_index_edge_bake_test.gd`
+- `tests/bake_encoder_cpp_parity_test.gd`
+- `tests/terrain_shader_variant_test.gd`
+- `tests/terrain_detail_continuity_test.gd`
+- `tests/camera_detail_lod_test.gd`
+- `tests/overlay_edge_transition_shader_test.gd`
 
 ## Runtime hydrology
 

@@ -4,6 +4,25 @@ extends Resource
 const DEFAULT_PATH := "res://data/modifiers/default_modifier_catalog.tres"
 const StatDefinitionScript = preload("res://scripts/modifier/modifier_stat_definition.gd")
 const DefinitionScript = preload("res://scripts/modifier/modifier_definition.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+
+const TECHNOLOGY_STATS := [
+	["country.research.agriculture_efficiency", 0.0, 1.6],
+	["country.research.engineering_efficiency", 0.0, 1.6],
+	["country.research.science_efficiency", 0.0, 1.6],
+	["country.research.society_efficiency", 0.0, 1.6],
+	["country.research.cost_factor", 0.65, 4.0],
+	["country.research.institution_output_factor", 0.0, 3.0],
+	["country.output.agriculture_factor", 0.0, 3.0],
+	["country.output.extractive_factor", 0.0, 3.0],
+	["country.output.manufacturing_factor", 0.0, 3.0],
+	["country.output.energy_factor", 0.0, 3.0],
+	["country.output.knowledge_factor", 0.0, 3.0],
+	["country.construction.cost_factor", 0.65, 4.0],
+	["country.construction.time_factor", 0.65, 4.0],
+	["country.trade.capacity_factor", 0.0, 2.0],
+	["country.trade.speed_factor", 0.0, 1.5],
+]
 
 @export var stats: Array[Resource] = []
 @export var definitions: Array[Resource] = []
@@ -44,6 +63,16 @@ func compile_native_catalog() -> Dictionary:
 		out.stat_min_values.append(stat.min_value)
 		out.stat_max_values.append(stat.max_value)
 		out.stat_persistable.append(1 if stat.persistable else 0)
+	for row in TECHNOLOGY_STATS:
+		var key := StringName(row[0])
+		if stat_ids.has(key):
+			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+		stat_ids[key] = out.stat_keys.size()
+		out.stat_keys.append(String(key))
+		out.stat_domains.append(1)
+		out.stat_min_values.append(float(row[1]))
+		out.stat_max_values.append(float(row[2]))
+		out.stat_persistable.append(1)
 	var definition_keys := {}
 	for definition in definitions:
 		if definition == null or definition.key == &"" \
@@ -70,6 +99,34 @@ func compile_native_catalog() -> Dictionary:
 			out.term_stat_ids.append(int(stat_ids[term.stat_key]))
 			out.term_operations.append(term.operation)
 			out.term_values.append(term.value)
+		out.definition_term_offsets.append(out.term_values.size())
+	var technologies: Dictionary = TechnologyCatalogScript.compile_native_catalog()
+	if not bool(technologies.get("ok", false)):
+		return technologies
+	for i in range(technologies.technology_ids.size()):
+		if (int(technologies.technology_flags[i]) & TechnologyCatalogScript.FLAG_STARTING) != 0:
+			continue
+		var definition_key := String(technologies.technology_modifier_definition_keys[i])
+		if definition_keys.has(definition_key):
+			return {"ok": false, "reason": "modifier_definition_invalid_or_duplicate"}
+		definition_keys[definition_key] = true
+		out.definition_keys.append(definition_key)
+		out.definition_versions.append(1)
+		out.definition_domains.append(1)
+		out.definition_policies.append(1)
+		out.definition_max_stacks.append(1)
+		out.definition_default_duration.append(-1)
+		var technology_terms := TechnologyCatalogScript.modifier_terms(
+			String(technologies.technology_ids[i]),
+			int(technologies.technology_domain_indices[i]),
+			int(technologies.technology_flags[i]))
+		for term in technology_terms:
+			var stat_key := StringName(term.stat)
+			if not stat_ids.has(stat_key):
+				return {"ok": false, "reason": "modifier_term_invalid"}
+			out.term_stat_ids.append(int(stat_ids[stat_key]))
+			out.term_operations.append(int(term.operation))
+			out.term_values.append(float(term.value))
 		out.definition_term_offsets.append(out.term_values.size())
 	out["ok"] = true
 	return out

@@ -1486,6 +1486,8 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     out["vegetation_buffer"] = terr.get("vegetation_buffer", PackedByteArray());
     out["cover_buffer"] = terr.get("cover_buffer", PackedByteArray());
     out["pixel_to_cell_index"] = terr.get("pixel_to_cell_index", PackedInt32Array());
+    out["edge_secondary_index_buffer"] = terr.get("edge_secondary_index_buffer", PackedByteArray());
+    out["edge_distance_buffer"] = terr.get("edge_distance_buffer", PackedByteArray());
     out["cell_first_px"] = terr.get("cell_first_px", PackedInt32Array());
     out["cell_px_count"] = terr.get("cell_px_count", PackedInt32Array());
     out["flat_px_indices"] = terr.get("flat_px_indices", PackedInt32Array());
@@ -1519,15 +1521,12 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
 // ─────────────────────────────────────────────────────────────────────────
 // run_bake_terrain_index_pass — 生成期 height/biome/moisture/veg/cover 逐像素烘焙
 // 复刻 map_baker.gd::_bake_height_biome_moisture（warp + cube_round + sextant
-// barycentric + per-biome detail noise），并在 index 生成阶段内嵌 Bayer 8x8
-// 有序 dither：仅同域"陆-陆"异 biome 边界把像素的"视觉归属 cell"改派给邻居
-// （跳过 land-water；保护海岸硬边）。dither 只改离散色/索引归属（biome / CSR 桶 /
-// veg / cover / pixel_to_cell_index 同跟 vis_cell），height/moisture 仍走几何
-// self barycentric + terrain_self detail noise（防高程点阵）。
+// barycentric + per-biome detail noise）。离散数据始终归属 cube_round 的硬主 cell；
+// 视觉边界另行输出副 cell RG8 与边界距离 R8，避免 atlas-space dither 被近景放大。
 //
 // 全程经 knobs 传参（不依赖 bound slot —— bake 发生在 generation 期、bind 时机
 // 不确定，与 encode_bake_* 同范式）。输出 CSR 三件套（按 cell.index）直接喂
-// encode_bake_enum_atlas_payload；G/B/A 由桶成员驱动 → dither 自动一致跟随。
+// encode_bake_enum_atlas_payload；G/B/A 由硬主 cell 的桶成员驱动。
 // ─────────────────────────────────────────────────────────────────────────
 godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knobs) {
     using godot::Dictionary;
@@ -1564,7 +1563,6 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     const double hex_size = double(knobs.get("hex_size", 1.0));
     const double wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
     const int seed = int(knobs.get("seed", 0));
-    const bool dither_enabled = bool(knobs.get("dither_enabled", true));
     // [P1 hypsometric Layer A 2026-06-25] sea_level 供锚定陆地段残差重映射（caller 传 world.sea_level）。
     const double sea_level = double(knobs.get("sea_level", 0.64));
 
@@ -1606,11 +1604,6 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     constexpr double CRAG_FREQ_MUL   = 1.05;   // 岩屑频率乘子
     // TerrainType.TERRAIN 枚举（与 terrain_type.gd 顺序严格一致）
     constexpr int TT_OCEAN = 0, TT_COAST = 1;
-    // is_water 集合（与 weather_overlay 一致）：OCEAN/COAST/LAKE/REEF/SEA_ICE/KELP。
-    // 仅用于 dither 的 land↔water 门槛：跨水/陆域的相邻 cell 不互相改派（保护海岸硬边）。
-    auto is_water = [](int t) -> bool {
-        return t == 0 || t == 1 || t == 18 || t == 19 || t == 20 || t == 21;
-    };
 
     // ── FastNoiseLite：与 map_baker.gd::_init_noise 逐位同源 ──
     Ref<FastNoiseLite> warp_lo;  warp_lo.instantiate();
@@ -1698,18 +1691,6 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     static const int NDQ[6] = { 1, 0, -1, -1, 0, 1 };
     static const int NDR[6] = { 0, 1, 1, 0, -1, -1 };
 
-    // Bayer 8x8 有序抖动矩阵（值 0..63）
-    static const int BAYER8[64] = {
-        0, 32, 8, 40, 2, 34, 10, 42,
-        48, 16, 56, 24, 50, 18, 58, 26,
-        12, 44, 4, 36, 14, 46, 6, 38,
-        60, 28, 52, 20, 62, 30, 54, 22,
-        3, 35, 11, 43, 1, 33, 9, 41,
-        51, 19, 59, 27, 49, 17, 57, 25,
-        15, 47, 7, 39, 13, 45, 5, 37,
-        63, 31, 55, 23, 61, 29, 53, 21
-    };
-
     // ── 输出 buffer ──
     PackedFloat32Array height_buf;  height_buf.resize(n_pix);
     PackedByteArray biome_buf;      biome_buf.resize(n_pix);
@@ -1717,12 +1698,16 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     PackedByteArray veg_buf;        veg_buf.resize(n_pix);
     PackedByteArray cover_buf;      cover_buf.resize(n_pix);
     PackedInt32Array p2c;           p2c.resize(n_pix);
+    PackedByteArray edge_secondary_buf; edge_secondary_buf.resize(n_pix * 2);
+    PackedByteArray edge_distance_buf;  edge_distance_buf.resize(n_pix);
     float * const __restrict HBUF = height_buf.ptrw();
     uint8_t * const __restrict BBUF = biome_buf.ptrw();
     float * const __restrict MBUF = moist_buf.ptrw();
     uint8_t * const __restrict VBUF = veg_buf.ptrw();
     uint8_t * const __restrict CBUF = cover_buf.ptrw();
     int32_t * const __restrict P2C = p2c.ptrw();
+    uint8_t * const __restrict ESEC = edge_secondary_buf.ptrw();
+    uint8_t * const __restrict EDIST = edge_distance_buf.ptrw();
 
     // CSR 计数（by cell.index）
     PackedInt32Array first_px;  first_px.resize(n_cells);
@@ -1735,21 +1720,10 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     const double step_y = size_y / double(H);
     const double warp_scale = hex_size * WARP_AMP;
     const double PI = 3.14159265358979323846;
-    // Bayer 抖动不能直接用 atlas 的绝对 x 列：world_bounds 含 padding，且
-    // 经度周期对应的 texel 数不保证是 8 的倍数，直接 x&7 会在东西接缝处跳相位。
-    // 将一个 wrap period 量化到最接近的 8 倍数，让 dither 图案随圆柱经度闭合。
-    int dither_period_px = 0;
-    if (wrap_period_x > 0.0001 && step_x > 0.000001) {
-        dither_period_px = std::max(8, int(std::round((wrap_period_x / step_x) / 8.0)) * 8);
-    }
-    auto dither_x_phase = [&](double world_x, int fallback_x) -> int {
-        if (dither_period_px <= 0 || wrap_period_x <= 0.0001) return fallback_x & 7;
-        const double phase = fposmodd(world_x, wrap_period_x) / wrap_period_x;
-        int ix = int(std::floor(phase * double(dither_period_px)));
-        if (ix < 0) ix = 0;
-        else if (ix >= dither_period_px) ix = dither_period_px - 1;
-        return ix & 7;
-    };
+    // 视觉 ecotone 需要覆盖足够的 cell 内侧范围。中心距差约为实际垂直边界
+    // 距离的两倍，因此 0.90 gap 对应单侧约 0.45 hex；shader 再按质量缩放。
+    // 边界场本身对所有合法邻格通用；是否允许跨水陆混合由各视觉消费者决定。
+    constexpr double EDGE_DISTANCE_SATURATE_HEX = 0.90;
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -1801,7 +1775,6 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     for (int y = 0; y < H; ++y) {
         const double wy_base = origin_y + (double(y) + 0.5) * step_y;
         const int row = y * W;
-        const int by = (y & 7) * 8;
         for (int x = 0; x < W; ++x) {
             const double wx_base = origin_x + (double(x) + 0.5) * step_x;
 
@@ -1945,35 +1918,54 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
                         + crag * CRAG_AMP * (0.4 + 0.6 * dryness) * gate;
             }
 
-            // 8. Bayer dither：决定"视觉归属 cell"。陆-陆 / 水-水的相邻 cell 边界全部做有序抖动
-            //    改派（软化 biome / 云 weather_lut / dyn_lut / eco_lut 等一切离散 cell 边界）；
-            //    仅 land↔water（跨水/陆域）边界回收门槛、不互相改派，保护海岸硬边与 per-pixel
-            //    is_water。height/moisture 仍走几何 self barycentric（防高程点阵）。
-            int vis_idx = self_idx;
-            if (dither_enabled && self_idx >= 0) {
-                const bool self_water = is_water(terrain_self);
-                const double w1 = (nb1_idx >= 0 && is_water(int(T[nb1_idx])) == self_water) ? w_nb1 : 0.0;
-                const double w2 = (nb2_idx >= 0 && is_water(int(T[nb2_idx])) == self_water) ? w_nb2 : 0.0;
-                if (w1 > 0.0 || w2 > 0.0) {
-                    const double t = double(BAYER8[by + dither_x_phase(wx_base, x)]) / 64.0;
-                    if (t < w1) vis_idx = nb1_idx;
-                    else if (t < w1 + w2) vis_idx = nb2_idx;
-                }
+            // 8. 权威硬主索引 + 通用视觉边界辅助数据。为所有合法邻格输出副索引
+            //    和距离，让 terrain/fog/weather 各自决定能否以及如何形成 ecotone；
+            //    动态状态、CSR 与交互仍不被视觉过渡改派。
+            int edge_secondary = -1;
+            double edge_gap_hex = EDGE_DISTANCE_SATURATE_HEX;
+            if (self_idx >= 0) {
+                const double self_dx = wx - scx;
+                const double self_dy = wy - scy;
+                const double self_distance = std::sqrt(self_dx * self_dx + self_dy * self_dy);
+                auto consider_edge_neighbor = [&](int candidate_idx, double cx, double cy) {
+                    if (candidate_idx < 0 || candidate_idx >= n_cells) return;
+                    const double dx = wx - cx;
+                    const double dy = wy - cy;
+                    const double candidate_distance = std::sqrt(dx * dx + dy * dy);
+                    const double gap = std::max(0.0,
+                            (candidate_distance - self_distance) / std::max(hex_size, 0.0001));
+                    if (edge_secondary < 0 || gap < edge_gap_hex - 1e-12 ||
+                            (std::fabs(gap - edge_gap_hex) <= 1e-12 &&
+                             candidate_idx < edge_secondary)) {
+                        edge_secondary = candidate_idx;
+                        edge_gap_hex = gap;
+                    }
+                };
+                consider_edge_neighbor(nb1_idx, bx, b_y);
+                consider_edge_neighbor(nb2_idx, ccx, ccy);
             }
-            const int vis_terrain = vis_idx >= 0 ? int(T[vis_idx]) : terrain_self;
-            const int vis_veg = vis_idx >= 0 ? int(VG[vis_idx]) : veg_self;
-            const int vis_cov = vis_idx >= 0 ? int(CV[vis_idx]) : cover_self;
 
             const int idx = row + x;
             double hf = elev_final; hf = hf < 0.0 ? 0.0 : (hf > 1.0 ? 1.0 : hf);
             double mf = moist_blend; mf = mf < 0.0 ? 0.0 : (mf > 1.0 ? 1.0 : mf);
             HBUF[idx] = float(hf);
-            BBUF[idx] = uint8_t(vis_terrain & 0xFF);
+            BBUF[idx] = uint8_t(terrain_self & 0xFF);
             MBUF[idx] = float(mf);
-            VBUF[idx] = uint8_t(vis_veg & 0xFF);
-            CBUF[idx] = uint8_t(vis_cov & 0xFF);
-            P2C[idx] = vis_idx;
-            if (vis_idx >= 0 && vis_idx < n_cells) CNT[vis_idx] += 1;
+            VBUF[idx] = uint8_t(veg_self & 0xFF);
+            CBUF[idx] = uint8_t(cover_self & 0xFF);
+            P2C[idx] = self_idx;
+            if (self_idx >= 0 && self_idx < n_cells) CNT[self_idx] += 1;
+            if (edge_secondary >= 0 && edge_secondary < 0xFFFF) {
+                ESEC[idx * 2] = uint8_t(edge_secondary & 0xFF);
+                ESEC[idx * 2 + 1] = uint8_t((edge_secondary >> 8) & 0xFF);
+                const double edge_n = std::min(1.0,
+                        edge_gap_hex / EDGE_DISTANCE_SATURATE_HEX);
+                EDIST[idx] = uint8_t(std::round(edge_n * 255.0));
+            } else {
+                ESEC[idx * 2] = 0xFF;
+                ESEC[idx * 2 + 1] = 0xFF;
+                EDIST[idx] = 0xFF;
+            }
         }
     }
 
@@ -2010,6 +2002,8 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     out["vegetation_buffer"] = veg_buf;
     out["cover_buffer"] = cover_buf;
     out["pixel_to_cell_index"] = p2c;
+    out["edge_secondary_index_buffer"] = edge_secondary_buf;
+    out["edge_distance_buffer"] = edge_distance_buf;
     out["cell_first_px"] = first_px;
     out["cell_px_count"] = px_count;
     out["flat_px_indices"] = flat_px;

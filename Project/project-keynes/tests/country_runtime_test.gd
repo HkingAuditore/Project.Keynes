@@ -158,7 +158,7 @@ func _run() -> void:
 		int(continuation_ext.get_country_cell_summary(1).country_handle) == int(continuation_beta.country_handle))
 
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v2 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 2)
+	_expect("PKCN v3 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 3)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)
@@ -182,9 +182,9 @@ func _run() -> void:
 		_expect("truncated PKCN stream is rejected",
 			not bool(truncated.end_country_restore().get("ok", true)))
 	var mismatched_catalog := catalog.duplicate(true)
-	var reduced_technologies: PackedStringArray = mismatched_catalog.technology_ids
-	reduced_technologies.remove_at(reduced_technologies.size() - 1)
-	mismatched_catalog.technology_ids = reduced_technologies
+	var changed_costs: PackedInt64Array = mismatched_catalog.technology_costs.duplicate()
+	changed_costs[changed_costs.size() - 1] += 1000
+	mismatched_catalog.technology_costs = changed_costs
 	var mismatched := _new_ext(4)
 	mismatched.configure_country(mismatched_catalog, profile, 4, 99)
 	mismatched.bootstrap_country(packet, water)
@@ -203,6 +203,10 @@ func _commands(rows: Array[Dictionary]) -> Dictionary:
 	var out := {"opcodes": PackedInt32Array(), "effective_days": PackedInt64Array(),
 		"sequences": PackedInt64Array(), "target_handles": PackedInt64Array(),
 		"cell_indices": PackedInt32Array(), "aux_i32": PackedInt32Array(),
+		"domain_i32": PackedInt32Array(), "position_i32": PackedInt32Array(),
+		"weight0_bp": PackedInt32Array(), "weight1_bp": PackedInt32Array(),
+		"weight2_bp": PackedInt32Array(), "weight3_bp": PackedInt32Array(),
+		"value_i64": PackedInt64Array(),
 		"stable_ids": PackedStringArray(), "display_names": PackedStringArray()}
 	for row in rows:
 		out.opcodes.append(int(row.opcode))
@@ -211,6 +215,14 @@ func _commands(rows: Array[Dictionary]) -> Dictionary:
 		out.target_handles.append(int(row.handle))
 		out.cell_indices.append(int(row.cell))
 		out.aux_i32.append(int(row.aux))
+		out.domain_i32.append(int(row.get("domain", -1)))
+		out.position_i32.append(int(row.get("position", -1)))
+		var weights: PackedInt32Array = row.get("weights", PackedInt32Array([0, 0, 0, 0]))
+		out.weight0_bp.append(weights[0])
+		out.weight1_bp.append(weights[1])
+		out.weight2_bp.append(weights[2])
+		out.weight3_bp.append(weights[3])
+		out.value_i64.append(int(row.get("value", 0)))
 		out.stable_ids.append(String(row.stable_id))
 		out.display_names.append(String(row.name))
 	return out

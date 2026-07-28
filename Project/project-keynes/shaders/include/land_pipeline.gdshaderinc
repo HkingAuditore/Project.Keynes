@@ -50,12 +50,12 @@ SurfaceParams compute_land_base_surface(
 		float elev,
 		vec2 wp,
 		vec2 uv,
-		vec4 scals) {
-	vec3 col;
-
-	// LAND 1.1：底色 = hypsometric × biome hue × procedural detail
-	vec3 hyps = hypsometric_tint(elev, false);
-	col = biome_hue_modulate(hyps, biome) * procedural_biome_detail(biome, wp, uv);
+		vec4 scals,
+		out float mixed_micro_strength) {
+	// LAND 1.1: hard primary state with screen-space static material edge AA.
+	TerrainStaticMaterial static_mat = compute_terrain_static_material(biome, elev, wp, uv);
+	vec3 col = static_mat.color;
+	mixed_micro_strength = static_mat.micro_strength;
 
 	// [river-render-restore 2026-06-19] 河流 SDF 视觉层重新接回：flow 来自 flow_tex（scals.g）。
 	float flow = scals.g;
@@ -117,10 +117,9 @@ SurfaceParams compute_land_base_surface(
 		float contour_t = smoothstep(0.50, 0.42, dist);
 		col = mix(col, contour_color, contour_t * contour_strength);
 	}
-
 	// LAND 1.5：Normal / roughness / AO / metallic
 	vec3 normal = compute_terrain_normal(uv, visual_quality, biome);
-	float roughness = biome_roughness(biome);
+	float roughness = static_mat.roughness;
 	float ao = mix(0.92, DEFAULT_AO_LAND, clamp(normal.z, 0.0, 1.0));
 	float metallic = DEFAULT_METALLIC_LAND;
 
@@ -633,8 +632,11 @@ vec3 render_land_pipeline(
 		float eco_transition,
 		float eco_growth,
 		float eco_valid,
-		vec4 pixel_noise) {
-	SurfaceParams surface = compute_land_base_surface(biome, landform, elev, wp, uv, scals);
+	vec4 pixel_noise) {
+	float mixed_micro_strength = terrain_biome_micro_strength(biome);
+	SurfaceParams surface = compute_land_base_surface(
+			biome, landform, elev, wp, uv, scals,
+			mixed_micro_strength);
 
 	LandModInputs mi;
 	mi.biome = biome;
@@ -654,6 +656,10 @@ vec3 render_land_pipeline(
 	mi.eco_valid = eco_valid;
 	mi.pixel_noise = pixel_noise;
 	mi.wp = wp;
+	float micro_vitality = mix(1.0, dyn_vitality, dyn_valid);
+	float micro_snow = mix(0.0, dyn_snow, dyn_valid);
+	surface = apply_terrain_micro_surface(
+			surface, biome, mixed_micro_strength, wp, moist, micro_vitality, micro_snow);
 	surface = apply_land_material_modifiers(surface, mi);
 
 	surface = apply_land_color_overlays(

@@ -99,12 +99,22 @@ func configure(
 	world_clock: WorldClock,
 	map_overlay_layer: DataOverlayLayer = null
 ) -> void:
+	if _camera != null and _camera.zoom_changed.is_connected(_on_camera_zoom_changed):
+		_camera.zoom_changed.disconnect(_on_camera_zoom_changed)
 	_renderer = renderer
 	_camera = camera
 	_world_clock = world_clock
 	_map_overlay_layer = map_overlay_layer
+	if _camera != null:
+		_camera.zoom_changed.connect(_on_camera_zoom_changed)
+		_on_camera_zoom_changed(_camera.zoom.x)
 	set_process(false)
 	_init_tod_profile()
+
+
+func _on_camera_zoom_changed(value: float) -> void:
+	if _renderer != null:
+		_renderer.set_camera_zoom(value)
 
 
 func configure_session(request: Dictionary) -> Dictionary:
@@ -705,6 +715,8 @@ func _gm_command_specs(technologies: PackedStringArray = PackedStringArray(),
 			"args": [_gm_arg("country_handle", "int", false), _gm_arg("name", "string", true), _gm_day_arg()]},
 		{"id": "country.grant_technology", "label": "授予科技", "category": "国家", "destructive": true,
 			"args": [_gm_arg("country_handle", "int", false), _gm_choice_arg("technology_id", technologies), _gm_day_arg()]},
+		{"id": "country.reveal_all_technologies", "label": "揭示全部未来科技", "category": "国家", "destructive": true,
+			"args": [_gm_arg("country_handle", "int", false), _gm_day_arg()]},
 		{"id": "country.transfer_territory", "label": "转移领土", "category": "国家", "destructive": true,
 			"args": [_gm_arg("cell", "int", false), _gm_arg("country_handle", "int", true), _gm_day_arg()]},
 		{"id": "economy.add_stock", "label": "增加本地库存", "category": "经济", "destructive": true,
@@ -828,6 +840,8 @@ func _gm_execute_country_command(command_id: String, args: Dictionary,
 			return facade.rename_country(handle, String(args.name), effective_day, sequence)
 		"country.grant_technology":
 			return facade.grant_technology(handle, StringName(args.technology_id), effective_day, sequence)
+		"country.reveal_all_technologies":
+			return facade.reveal_all_technologies(handle, effective_day, sequence)
 		"country.transfer_territory":
 			return facade.transfer_territory(_gm_resolve_cell(args), handle, effective_day, sequence)
 	return {"ok": false, "reason": "unsupported_country_command"}
@@ -1288,6 +1302,7 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 		if _camera.has_method("set_horizontal_wrap"):
 			_camera.set_horizontal_wrap(map_wrap_period_x(), true)
 		_camera.fit_to_viewport(1.0, safe_area, true)
+		_renderer.set_camera_zoom(_camera.zoom.x)
 
 
 # ─── 国界线与视野迷雾 ─────────────────────────────────────────────────

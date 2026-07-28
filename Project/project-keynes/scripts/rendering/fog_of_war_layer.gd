@@ -6,7 +6,7 @@
 # 之所以不用 GPU instance 画六边形：2400 格 × 3 份 wrap 副本 = 7200 instance，
 # 每次视野变化都要重传 instance buffer，六边形还是硬边、得额外羽化；而 LUT 方案
 # 是 1 个 draw call、0 几何，视野变化只需重写 2400 个 texel。map_index_atlas 在
-# 烘焙期本就带 Bayer dither，hex 边界天然柔化。
+# 烘焙期提供硬主索引 + 独立邻格/距离场，Shader 只混合显示用知识度。
 #
 # 迷雾值不占独立纹理：它住在 enum_lut 的 A 通道（知识度 k），主地形已经无条件
 # 采样 enum_lut，因此灰化与早退都是零新增 texture sample。本层复用同一张 LUT。
@@ -30,6 +30,9 @@ var _wrap_period_x: float = 0.0
 var _hex_size: float = 22.0
 var _has_valid_shader: bool = false
 var _has_atlas: bool = false
+var _edge_neighbor_tex: Texture2D = null
+var _edge_distance_tex: Texture2D = null
+var _edge_transition_width: float = 0.84
 var _enabled: bool = true
 var _world_time: float = 0.0
 # 与 WeatherLayer 同一表现时钟语义：运行时按游戏倍速推进；暂停时保留 1x 环境运动，
@@ -92,6 +95,7 @@ func _ensure_nodes() -> void:
 	_has_valid_shader = true
 	_push_quality()
 	_push_tod()
+	_push_edge_transition_data()
 
 
 ## 编译期质量档：与 WeatherLayer 同套 —— 只在移动端给 shader 源码前置 #define，
@@ -129,6 +133,7 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 			_shader_mat.shader = sh
 			_push_quality()
 			_push_tod()
+			_push_edge_transition_data()
 
 
 ## 一次性配置。atlas 与 enum_lut 都是世界生命周期内稳定的纹理对象
@@ -172,6 +177,34 @@ func set_enum_lut_texture(tex: Texture2D) -> void:
 		tex if tex != null else DataOverlayBaker.get_empty_texture()
 	)
 	_update_visibility()
+
+
+func set_edge_transition_data(
+	neighbor_tex: Texture2D,
+	distance_tex: Texture2D,
+	width: float
+) -> void:
+	_edge_neighbor_tex = neighbor_tex
+	_edge_distance_tex = distance_tex
+	_edge_transition_width = clampf(width, 0.0, 0.96)
+	_push_edge_transition_data()
+
+
+func _push_edge_transition_data() -> void:
+	if _shader_mat == null:
+		return
+	var empty := DataOverlayBaker.get_empty_texture()
+	var ready := _edge_neighbor_tex != null and _edge_distance_tex != null
+	_shader_mat.set_shader_parameter(
+		"terrain_edge_neighbor_tex",
+		_edge_neighbor_tex if _edge_neighbor_tex != null else empty
+	)
+	_shader_mat.set_shader_parameter(
+		"terrain_edge_distance_tex",
+		_edge_distance_tex if _edge_distance_tex != null else empty
+	)
+	_shader_mat.set_shader_parameter("has_terrain_edge_data", ready)
+	_shader_mat.set_shader_parameter("terrain_ecotone_width", _edge_transition_width)
 
 
 func set_bounds(bounds: Rect2) -> void:

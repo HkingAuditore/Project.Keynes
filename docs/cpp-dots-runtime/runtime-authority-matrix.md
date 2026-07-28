@@ -5,14 +5,15 @@
 | State | Authority | Persistent provider | Rule |
 | --- | --- | --- | --- |
 | Pending new/load request | `GameFlowService` | none; one-shot process state | Never use `Engine` meta on the product path |
-| Validated world creation inputs | `NewGameConfig v1` | PKSV `new_game_config` | Store the resolved nonzero seed |
+| Validated world creation inputs | `NewGameConfig v2` | PKSV `new_game_config` | Store seed, starting country cash and research policy |
 | Player identity and territory | PKCN / `NativeCountryRuntime` | PKSV `pkcn` plus `player_context` | Only `cell.country_slot` is mirrored to cells |
 | Population, market, buildings | PKEC / `NativeEconomyRuntime` | PKSV `pkec` | Restore only after PKCN and trade topology |
 | Dynamic cell SoA | `DCWorld` / `DCWorldExt` by component contract | PKSV `dynamic_world` | Missing provider fails the save |
 | Native environment rounds | `EnvironmentRuntime` | `PKEnvironmentRuntime v1` in PKSV `environment` | Persist arrays, ping-pong, dirty sets, topology and cursors, not counters only |
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
-| Country modifiers | Country `ModifierStore` | embedded in PKCN v2 | Country output factor only; treasury/goods remain Country authority |
-| Economy/building modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v20 | Factors feed deterministic output helper, never ledgers directly |
+| Country research and technology | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v3 | Owns discovery, completion, pending, sparse progress, queues, weights and procurement policy |
+| Country modifiers | Country `ModifierStore` | embedded in PKCN v3 | Technology effects alter consumers, never ledgers directly |
+| Economy/building modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v21 | Factors feed deterministic output/construction/trade helpers, never ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |

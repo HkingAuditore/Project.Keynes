@@ -1757,6 +1757,7 @@ func _build_player_country_packet() -> Dictionary:
 		return {}
 	var config: Dictionary = _gameplay_start_context.get("config", {})
 	var country_config: Dictionary = config.get("country", {})
+	var research_config: Dictionary = config.get("research", {})
 	var catalog: Dictionary = _country_facade.native_catalog()
 	var technology_ids: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
 	var starting_ids := PackedStringArray([
@@ -1770,7 +1771,8 @@ func _build_player_country_packet() -> Dictionary:
 	return {
 		"country_ids": PackedStringArray(["country.player"]),
 		"country_names": PackedStringArray([String(country_config.get("name", "新国家"))]),
-		"country_cash": PackedInt64Array([0]),
+		"country_cash": PackedInt64Array([
+			int(research_config.get("starting_country_cash", 2500000000000))]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([int(_gameplay_start_context.get("cell", -1))]),
 		"technology_offsets": PackedInt32Array([0, technology_indices.size()]),
@@ -1778,6 +1780,12 @@ func _build_player_country_packet() -> Dictionary:
 		"treasury_offsets": PackedInt32Array([0, 0]),
 		"treasury_good_indices": PackedInt32Array(),
 		"treasury_quantities": PackedInt64Array(),
+		"research_weights_bp": research_config.get("domain_weights_bp",
+			PackedInt32Array([2500, 2500, 2500, 2500])),
+		"research_daily_budgets": PackedInt64Array([
+			int(research_config.get("procurement_budget_per_day", 10000000))]),
+		"research_auto_purchase": PackedByteArray([
+			1 if bool(research_config.get("auto_purchase_enabled", true)) else 0]),
 	}
 
 

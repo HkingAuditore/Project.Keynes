@@ -58,12 +58,16 @@ func _run() -> void:
 	_expect("country summary is available", bool(model.get("available", false)))
 	_expect("country summary has a name", not String(model.get("country_name", "")).is_empty())
 	_expect("country summary has territory", int(model.get("territory_count", 0)) > 0)
-	var summary_values: Dictionary = panel.get("_summary_values")
-	var territory_label := summary_values.get("territory") as Label
-	var territory_id := territory_label.get_instance_id() if territory_label != null else 0
+	ui.open_country_section("technology")
+	await process_frame
+	var workspace := panel.get("_technology_workspace") as Control
+	var tree: Control = workspace.tree_view() if workspace != null else null
+	var tree_id := tree.get_instance_id() if tree != null else 0
 	ui.refresh_country_summary()
-	_expect("daily summary refresh preserves nodes",
-		territory_label != null and territory_label.get_instance_id() == territory_id)
+	_expect("daily research refresh preserves the tree view",
+		tree != null and tree.get_instance_id() == tree_id)
+	_expect("technology tree draws itself instead of spawning nodes",
+		tree != null and tree.get_child_count() == 0)
 
 	var layout := panel.layout_diagnostics()
 	var dialog_rect: Rect2 = layout.get("dialog_rect", Rect2())
@@ -88,10 +92,9 @@ func _run() -> void:
 	_expect("compact country dialog fills available viewport height",
 		compact_rect.size.y >= compact_viewport.size.y - PlayerTopBar.BAR_HEIGHT \
 			- CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM * 2.0 - 1.0)
-	_expect("compact summary uses two columns",
-		(panel.get("_summary_grid") as GridContainer).columns == 2)
-	_expect("compact tabs wrap to three columns",
-		(panel.get("_tabs_grid") as GridContainer).columns == 3)
+	_expect("compact layout narrows the research policy column",
+		(panel.get("_technology_workspace") as Control).get("_policy_panel") \
+			.custom_minimum_size.x == TechnologyWorkspace.POLICY_WIDTH_COMPACT)
 	root.size = Vector2i(1280, 720)
 	await process_frame
 	await process_frame

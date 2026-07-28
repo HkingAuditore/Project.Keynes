@@ -32,7 +32,12 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v2 / PKEC v20
+## PKCN v3 / PKEC v21
+
+当前 writer 只接受 PKCN v3 与 PKEC v21。PKCN v3 增加完整国家研究状态；PKEC v21 增加
+科技值采购阶段及其审计累计。由于科技目录和 Modifier 生效语义已经改变，旧版本统一返回
+`legacy_technology_tree_save_unsupported`，不再迁移为空 store。以下旧版段落仅保留历史背景；
+当前契约以[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)为准。
 
 PKCN v2 流式保存 catalog identity、国家记录、领土、科技、国库商品、future pending commands、
 Country Modifier domain 和 end marker。读取验证 stable catalog、cell/good/technology shape、

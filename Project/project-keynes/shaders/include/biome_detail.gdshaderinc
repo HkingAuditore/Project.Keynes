@@ -41,21 +41,42 @@
 const float TERRAIN_DETAIL_BAKE_MIN = 0.70;
 const float TERRAIN_DETAIL_BAKE_MAX = 1.30;
 
-vec3 baked_biome_detail(vec2 uv) {
+float terrain_macro_amplitude(int biome) {
+	if (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS || biome == B_MESA) {
+		return 0.095;
+	}
+	if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) {
+		return 0.082;
+	}
+	if (biome == B_DESERT || biome == B_COLD_DESERT || biome == B_SALT_FLAT) {
+		return 0.075;
+	}
+	if (biome == B_SWAMP || biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_MOOR) {
+		return 0.055;
+	}
+	if (biome == B_SNOW || biome == B_GLACIER) {
+		return 0.040;
+	}
+	return 0.065;
+}
+
+vec3 baked_biome_detail(int biome, vec2 uv) {
 	float d = texture(terrain_detail_tex, wrap_map_uv(uv)).r;
-	return vec3(mix(TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX, d));
+	float signal = clamp((mix(TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX, d) - 1.0)
+			/ max(TERRAIN_DETAIL_BAKE_MAX - 1.0, 0.001), -1.0, 1.0);
+	return vec3(1.0 + signal * terrain_macro_amplitude(biome));
 }
 
 vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
-#if defined(PK_MOBILE_ANY)
-	return vec3(1.0);
-#else
-	if (visual_quality == 1 && has_terrain_detail_tex) {
-		return baked_biome_detail(uv);
-	}
 	if (visual_quality <= 0) {
 		return vec3(1.0);
 	}
+	if (has_terrain_detail_tex) {
+		return baked_biome_detail(biome, uv);
+	}
+#if defined(PK_MOBILE_ANY)
+	return vec3(1.0);
+#else
 	if (visual_quality == 1) {
 		float n = fbm(wp * 0.18, 2);
 		float amp = 0.060;

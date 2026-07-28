@@ -96,6 +96,16 @@ k 存进 **`enum_lut` 的 A 通道**，而不是新开一张 `fog_lut`。主地�
 `enum_lut` 且只用了 rgb，所以灰化与早退是**零新增 texture sample**——`_cell_id` 和
 `cell_lut_uv()` 都已经算过，只是多读一个已有采样的第四分量。
 
+渲染时 `FogOfWarLayer` 还会复用 terrain-index bake 的 RG8 邻格索引与 R8 边界距离，
+只在边界带读取一次副格 `enum_lut.a` 并混合显示用的 `k`。距离场在 `0.90 hex`
+中心距差饱和，默认宽度 `0.84`，并按桌面/移动 LOW、MID、HIGH 使用与地表一致的
+质量缩放和 `fwidth()` 内层抗锯齿。它不回写 `fog_k_arr`，不改变 Inspector/交互的
+主格知识状态；纹理缺失时直接恢复硬主格。
+
+天气云使用同一边界权重混合 `weather_lut` 的 intensity/cloud/vapor，并用同一平滑
+`k` 屏蔽实时天气；离散 weather type 与降水类别仍取主格。边界数据包含水陆邻格，
+因此云和战争迷雾可跨海岸连续；地表 Shader 另做水陆域拒绝，海岸材质不会互相渗漏。
+
 代价是迷雾值被绑进了 `enum_lut` 的日刷节奏：`encode_cell_luts()`（C++）和
 `map_baker.gd` 的 GDScript fallback **两条打包路径都必须带上当前 `fog_k`**，
 漏一条就会在该路径生效时闪回全亮。缓解办法是两条路径读同一个
@@ -425,8 +435,10 @@ q1 的存在意义只是给移动端中档兜底（编译期 tier 把上限卡�
 ## 国界线
 
 **国界必须走几何，不能在 shader 里对 `map_index_atlas` 做邻域 edge detect。**
-cell index 在烘焙期带 Bayer dither（`map_baker` 的 `dither_enabled`），逐像素反查
-在 hex 边界会抖 ±1 texel，描出来的线是碎的。而国界边数极少（60×40 地图最多 7200
+`map_index_atlas.GB` 现在保存无 Dither 的权威硬主索引，但它仍是逐像素栅格，
+用邻域 edge detect 会继承图集分辨率、地形 warp 和边界场的视觉采样策略，不能作为
+国家拓扑的真源。移动端的 Bayer DitherUV 仅在地形/迷雾/天气 shader 中根据独立
+主/副边界纹理选择视觉 cell，不会写回 atlas。国界边数很少（60×40 地图最多 7200
 条，实际通常几十到几百条），一次性烘一张 `ArrayMesh` 完全不是负担。
 
 每个「归属与邻格不同」的 hex 边，由**拥有该格的一侧**生成一条朝本格内侧的 ribbon。

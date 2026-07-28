@@ -242,13 +242,13 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 完整 z 序（`top_level` 的 `Node2D` 挂在 `WorldRoot` 下）：`WorldQuad` 0、`WeatherLayer` 4、`DataOverlayLayer` 5、`CountryBorderLayer` 6、`CellHighlight` 10、`FogOfWarLayer` 12。迷雾在最上层，未探索区要连天气云、国界线和选中框一起盖住。
 
-`world_map.gdshader` 读 `enum_lut.a` 对已探索但不可见的区域做去饱和灰化（零新增 texture sample），并在 `fog_early_out_enabled` 时对完全未探索像素跳过整条地形管线（默认关，须 GPU A/B 实测；且只在迷雾最低质量档放行，因为早退要求迷雾层输出常量色）。`weather_overlay.gdshader` 与 `weather_cell_curtain.gdshader` 同样按可见性屏蔽实时天气。契约见 `docs/cpp-dots-runtime/vision-fog-and-borders.md`。
+`world_map.gdshader` 读 `enum_lut.a` 对已探索但不可见的区域做去饱和灰化（零新增 texture sample），并在 `fog_early_out_enabled` 时对完全未探索像素跳过整条地形管线（默认关，须 GPU A/B 实测；且只在迷雾最低质量档放行，因为早退要求迷雾层输出常量色）。terrain-index bake 的 RG8 邻格索引 + R8 距离场是通用视觉边界数据：桌面地表把随 zoom 衰减的 8×8 Bayer DitherUV 覆盖混入连续距离场，远景保留稳定颗粒、近景收敛到连续材质；桌面迷雾/天气仍连续混合。海洋在所有平台都以距离场权重驱动 DitherUV 的水域主/副视觉 cell 选择，并继续叠加桌面既有的连续水体 biome weights，不执行第二次完整水体管线；Dither 只替换 biome/cover，海冰浓度、温度和洋流仍由硬主格驱动。移动端地表、迷雾和天气同样在主/副视觉 cell 间择一，以恢复低成本远景过渡。所有 Dither 都不改变硬主 cell 权威状态，且禁止跨水陆域选择；缺纹理时均硬回退。`weather_cell_curtain.gdshader` 仍按主格可见性屏蔽实时降水。契约见 `docs/cpp-dots-runtime/vision-fog-and-borders.md`。
 
 `fog_of_war.gdshader` 使用分层 2.5D 云海：同一连续密度场派生低层 deck、中层 body 与高层 top，低层保证未探索区完全遮挡，中高层提供云团轮廓。法线拆为低强度的 1/2、1 倍频宽缓 `broad_grad` 与小振幅的 2、4 倍频锐利 `detail_grad`，禁止把三条层级阈值导数叠成尖脊；域扭曲保持低幅，避免液体大理石流线。deck/body/top 使用不同的直射、天光和多重散射权重后从下往上合成，体积不依赖强法线。自阴影沿主光方向积分前方云体质量，不再把单一高度场画成巨型峡谷。光照仍消费 `earth_daylight`，但高空云使用比地表更宽的昼夜过渡，并把日光/月光分别着色后平滑相加；晨昏区削弱方向性阴影并增加金黄散射，避免日月方向翻转形成硬线。深夜进一步把质量阴影压到弱厚度提示、把月光直射改为低方向性并让天空 SH 只读取 `broad_grad`，主要可读性由冷灰环境光与多重散射承担。各频段除保留不同方向的 UV 平流外，还让可平铺噪声的晶格梯度以不同速率和方向随 `_world_time` 旋转，使 FBM 本身持续生成、消散与重组；`FogOfWarLayer` 与天气层同步游戏倍速。所有频段按屏幕足迹做 **LOD 截断**，东西向使用可平铺噪声。质量分 q0..q3 四档，有效档 = min(编译期 tier 上限, 运行时 `visual_quality` 映射)。
 
 `CountryBorderLayer` 的 ribbon 是**内缩梯形**：凸多边形向内偏移时边要变短（六边形每端 `d·tan30°`），外侧顶点落在 hex 角上，相邻两条在角点顶点重合。写成向外延伸会让每条边越过角点、相邻两条交叉成 X。顶点 UV 存世界单位（沿边距离 / 垂距），保证梯形两个三角形里插值精确。屏幕线宽随 zoom 次线性增长而非恒定。
 
-`HexRenderer` 是主地图渲染节点，使用 full-screen quad 和 `world_map.gdshader`。它接收 `WorldData`、visual quality、TOD、水面、天气、detail layers 等开关。`WeatherLayer` 渲染天气 overlay，`ShrubLayer` 和 detail scatter 负责 MultiMesh/PCG 点缀。
+`HexRenderer` 是主地图渲染节点，使用 full-screen quad 和 `world_map.gdshader`。它接收 `WorldData`、visual quality、TOD、水面、天气、detail layers 等开关。`WeatherLayer` 渲染天气 overlay，`ShrubLayer` 和 detail scatter 负责 MultiMesh/PCG 点缀。相机缩放只调整既有 MultiMesh 的可见前缀：profile 原配置数量是远景基准，构建时额外预生成受既有全局预算约束的近景实例，越近逐步放出更多树木、灌木、草和碎石；每个 chunk 的实例按 cell 稳定分层（先让所有活跃格各保留一个样本，再放第二层与近景增量），避免连续 buffer 前缀裁掉整格，东西环绕副本与源实例保持同一层级。候选散布半径设有跨格下限，使连续世界噪声不会被源 cell 轮廓裁成蜂窝斑块。缩放过程不重建、不重新随机散布，也不压低远景基准层的 Shader alpha。
 
 原则：
 
@@ -282,7 +282,8 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 - `world_setup.gd`：生成前参数界面。
 - `player_game.gd`：玩家主场景装配层，负责 runtime/UI/controller wiring、基础玩家热键，以及 F1/反引号 GM 面板与 F4 性能 HUD 入口；Escape 先关闭 GM，再处理地图子菜单与暂停菜单。
 - `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、`PLAYER_GM` 面板、FPS HUD、safe area 和控制信号；不直接承担逐字段渲染。左侧 GM 面板在宽屏目标宽度 560px，在 800px 视口按右侧 460px Inspector 剩余空间收缩，二者可同时使用。
-- `ui/components/country_action_bar.gd` / `country_panel.gd` / `ui/country_view_model.gd`：底部国家事务入口与中央只读面板。玩家国家固定由 `gameplay_start_report().cell` 解析，摘要只经 `CountryFacade.cell_summary()` 读取已提交的名称、领土、国库、非零国库商品和科技数量；日更只更新可见标签，不创建税制、政治、军事、外交状态或命令。`IconBadge` 继续以 Font Awesome 为默认族，并为国家事务集中提供 Lucide 导航图标与 Tabler 摘要图标。
+- `ui/components/country_action_bar.gd` / `country_panel.gd` / `ui/country_view_model.gd`：底部国家事务入口与全屏 section shell。玩家国家固定由 `gameplay_start_report().cell` 解析，模型只经 `CountryFacade.cell_summary()` 与 `research_snapshot()` 读取已提交状态；`CountryPanel` 自身只有 section 标题条与内容区，不再叠加国家档案 header、摘要卡或 section tab，section 切换只由底栏驱动。政治/税收/军事/外交暂用 `section_placeholder_screen.gd`，不创建任何状态或命令。`IconBadge` 继续以 Font Awesome 为默认族，并为国家事务集中提供 Lucide 导航图标与 Tabler 摘要图标。
+- `ui/technology_tree_layout.gd` / `ui/components/technology_workspace.gd` / `technology_tree_view.gd` / `research_weight_dial.gd` / `procurement_budget_slider.gd` / `technology_detail_card.gd` / `technology_queue_row.gd`：全屏科技界面。布局是纯函数一次性烘焙的静态几何；树视图单 `Control` 自绘 81 个节点，按「已揭示 ∪ 直接未知后继」裁剪迷雾并把可平移范围限制在可见集包围盒内，永远 1:1 绘制、滚轮只平移不缩放；权重盘与采购滑块拖动即预览、松手即提交，界面无任何提交按钮，权重盘的抓取区是整条轴臂、圆心为无主死区、按下未移动不发命令；日 tick 只修补状态数组与可见文本。
 - `ui/components/map_overlay_toolbar.gd` / `ui/overlay_legend.gd`：左侧纯图标双列信息菜单与非交互图例。资源按钮来自 `ResourceProfileRegistry`，按钮无可见文字，名称和说明通过 Tooltip/图例呈现。图例停靠右下角，Inspector 打开时自动左移避让；连续资源使用固定 profile 参考值与低值扩展的高色差色带，海拔使用同时改变色相和亮度的高对比科学色带。
 - `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。

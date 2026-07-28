@@ -142,6 +142,9 @@ var _weather_field_tex: Texture2D = null
 var _weather_lut_tex: Texture2D = null
 var _fog_enum_lut_tex: Texture2D = null
 var _fog_mask_enabled: bool = false
+var _edge_neighbor_tex: Texture2D = null
+var _edge_distance_tex: Texture2D = null
+var _edge_transition_width: float = 0.84
 var _world_ref = null  # WorldData 引用(取 weather_lut_prev_tex 做帧间插值)
 var _wx_lut_last_usec: int = 0          # 上次检测到的 LUT 更新时刻
 var _wx_lut_t0_usec: int = 0            # 本插值周期起点(检测到 LUT 换帧的时刻)
@@ -356,6 +359,29 @@ func set_fog_mask(enabled: bool, enum_lut: Texture2D) -> void:
 	_fog_mask_enabled = enabled
 	_fog_enum_lut_tex = enum_lut
 	_push_fog_mask_uniforms()
+
+
+func set_edge_transition_data(
+	neighbor_tex: Texture2D,
+	distance_tex: Texture2D,
+	width: float
+) -> void:
+	_edge_neighbor_tex = neighbor_tex
+	_edge_distance_tex = distance_tex
+	_edge_transition_width = clampf(width, 0.0, 0.96)
+	_push_edge_transition_data()
+
+
+func _push_edge_transition_data() -> void:
+	if _overlay_mat == null:
+		return
+	var ready := _edge_neighbor_tex != null and _edge_distance_tex != null
+	if _edge_neighbor_tex != null:
+		_overlay_mat.set_shader_parameter("terrain_edge_neighbor_tex", _edge_neighbor_tex)
+	if _edge_distance_tex != null:
+		_overlay_mat.set_shader_parameter("terrain_edge_distance_tex", _edge_distance_tex)
+	_overlay_mat.set_shader_parameter("has_terrain_edge_data", ready)
+	_overlay_mat.set_shader_parameter("terrain_ecotone_width", _edge_transition_width)
 
 
 func _push_fog_mask_uniforms() -> void:
@@ -1221,6 +1247,7 @@ func _push_overlay_runtime_state() -> void:
 	_push_weather_profile_uniforms_to_overlay()
 	_push_fronts_to_overlay(_front_visual_snapshots)
 	_push_fog_mask_uniforms()
+	_push_edge_transition_data()
 
 func _push_curtain_runtime_state() -> void:
 	if _curtain_mats.is_empty():
@@ -1267,6 +1294,7 @@ func _load_overlay_shader() -> void:
 	_overlay_mat = ShaderMaterial.new()
 	_overlay_mat.shader = shader
 	_overlay_quad.material = _overlay_mat
+	_push_edge_transition_data()
 
 func _load_curtain_shader() -> void:
 	var shader := ResourceLoader.load(CURTAIN_SHADER_PATH, "Shader",

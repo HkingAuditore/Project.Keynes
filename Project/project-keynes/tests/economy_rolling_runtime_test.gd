@@ -86,8 +86,8 @@ func _run() -> void:
 				not _cashflow_has_source(traced, "other", true) and
 				not _cashflow_has_source(traced, "other", false))
 	var saved := _save(runtime)
-	_expect("PKEC v19 saves at a daily committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 19)
+	_expect("PKEC v21 saves at a daily committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 21)
 	var restored := _new_ext(compiled)
 	_expect("restore country matches", CountryTestHelper.configure_all_technologies(
 		restored, catalog, CELL_COUNT, 92015))

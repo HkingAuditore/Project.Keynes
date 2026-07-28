@@ -12,6 +12,12 @@ enum Opcode {
 	RENAME_COUNTRY = 2,
 	TRANSFER_TERRITORY = 3,
 	GRANT_TECHNOLOGY = 4,
+	SET_RESEARCH_WEIGHTS = 5,
+	ENQUEUE_RESEARCH = 6,
+	REMOVE_RESEARCH = 7,
+	MOVE_RESEARCH = 8,
+	SET_RESEARCH_BUDGET = 9,
+	REVEAL_ALL_TECHNOLOGIES = 10,
 }
 
 var _world_ext: Object = null
@@ -56,6 +62,13 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 		"target_handles": PackedInt64Array(),
 		"cell_indices": PackedInt32Array(),
 		"aux_i32": PackedInt32Array(),
+		"domain_i32": PackedInt32Array(),
+		"position_i32": PackedInt32Array(),
+		"weight0_bp": PackedInt32Array(),
+		"weight1_bp": PackedInt32Array(),
+		"weight2_bp": PackedInt32Array(),
+		"weight3_bp": PackedInt32Array(),
+		"value_i64": PackedInt64Array(),
 		"stable_ids": PackedStringArray(),
 		"display_names": PackedStringArray(),
 	}
@@ -66,6 +79,14 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 		batch.target_handles.append(int(command.get("target_handle", 0)))
 		batch.cell_indices.append(int(command.get("cell", -1)))
 		batch.aux_i32.append(int(command.get("technology", -1)))
+		batch.domain_i32.append(int(command.get("domain", -1)))
+		batch.position_i32.append(int(command.get("position", -1)))
+		var weights: PackedInt32Array = command.get("weights_bp",
+			PackedInt32Array([0, 0, 0, 0]))
+		for domain in range(4):
+			batch["weight%d_bp" % domain].append(
+				int(weights[domain]) if domain < weights.size() else 0)
+		batch.value_i64.append(int(command.get("value", 0)))
 		batch.stable_ids.append(String(command.get("stable_id", "")))
 		batch.display_names.append(String(command.get("display_name", "")))
 	return _world_ext.submit_country_commands(batch)
@@ -94,6 +115,57 @@ func grant_technology(handle: int, technology_id: StringName,
 		return {"ok": false, "reason": "unknown technology id: %s" % String(technology_id)}
 	return submit([{"opcode": Opcode.GRANT_TECHNOLOGY, "target_handle": handle,
 		"technology": technology, "effective_day": effective_day, "sequence": sequence}])
+
+func set_research_weights(handle: int, weights_bp: PackedInt32Array,
+		effective_day: int, sequence: int) -> Dictionary:
+	if weights_bp.size() != 4:
+		return {"ok": false, "reason": "research weights require four domains"}
+	return submit([{"opcode": Opcode.SET_RESEARCH_WEIGHTS, "target_handle": handle,
+		"weights_bp": weights_bp, "effective_day": effective_day, "sequence": sequence}])
+
+func enqueue_research(handle: int, technology_id: StringName, domain: int,
+		position: int, effective_day: int, sequence: int) -> Dictionary:
+	var technology := _technology_index(technology_id)
+	if technology < 0:
+		return {"ok": false, "reason": "unknown technology id: %s" % String(technology_id)}
+	return submit([{"opcode": Opcode.ENQUEUE_RESEARCH, "target_handle": handle,
+		"technology": technology, "domain": domain, "position": position,
+		"effective_day": effective_day, "sequence": sequence}])
+
+func remove_research(handle: int, technology_id: StringName,
+		effective_day: int, sequence: int) -> Dictionary:
+	var technology := _technology_index(technology_id)
+	if technology < 0:
+		return {"ok": false, "reason": "unknown technology id: %s" % String(technology_id)}
+	return submit([{"opcode": Opcode.REMOVE_RESEARCH, "target_handle": handle,
+		"technology": technology, "effective_day": effective_day, "sequence": sequence}])
+
+func move_research(handle: int, technology_id: StringName, domain: int,
+		position: int, effective_day: int, sequence: int) -> Dictionary:
+	var technology := _technology_index(technology_id)
+	if technology < 0:
+		return {"ok": false, "reason": "unknown technology id: %s" % String(technology_id)}
+	return submit([{"opcode": Opcode.MOVE_RESEARCH, "target_handle": handle,
+		"technology": technology, "domain": domain, "position": position,
+		"effective_day": effective_day, "sequence": sequence}])
+
+func set_research_budget(handle: int, enabled: bool, daily_cash_limit: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	return submit([{"opcode": Opcode.SET_RESEARCH_BUDGET, "target_handle": handle,
+		"technology": 1 if enabled else 0, "value": maxi(0, daily_cash_limit),
+		"effective_day": effective_day, "sequence": sequence}])
+
+func reveal_all_technologies(handle: int, effective_day: int,
+		sequence: int) -> Dictionary:
+	return submit([{"opcode": Opcode.REVEAL_ALL_TECHNOLOGIES,
+		"target_handle": handle, "effective_day": effective_day, "sequence": sequence}])
+
+func research_snapshot(handle: int) -> Dictionary:
+	return _world_ext.get_country_research_snapshot(handle) if _configured else {}
+
+func _technology_index(technology_id: StringName) -> int:
+	var ids: PackedStringArray = _catalog.get("technology_ids", PackedStringArray())
+	return ids.find(String(technology_id))
 
 func cell_summary(cell: int) -> Dictionary:
 	return _world_ext.get_country_cell_summary(cell) if _configured else {}

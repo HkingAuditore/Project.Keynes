@@ -56,6 +56,10 @@ render_mode blend_mix, unshaded;
 uniform sampler2D map_index_atlas : filter_nearest, repeat_disable; // G/B = cell.index 低/高字节
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;        // A = 知识度 k
 uniform vec2 lut_dims = vec2(0.0);
+uniform sampler2D terrain_edge_neighbor_tex : filter_nearest, repeat_disable;
+uniform sampler2D terrain_edge_distance_tex : filter_linear, repeat_disable;
+uniform bool has_terrain_edge_data = false;
+uniform float terrain_ecotone_width : hint_range(0.0, 0.96) = 0.84;
 
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
@@ -174,6 +178,60 @@ vec2 fog_cell_lut_uv(int cid) {
 	int cx = cid % lw;
 	int cy = cid / lw;
 	return (vec2(float(cx), float(cy)) + 0.5) / max(lut_dims, vec2(1.0));
+}
+
+int fog_decode_edge_secondary(vec2 uv) {
+	vec2 rg = texture(terrain_edge_neighbor_tex, fog_wrap_uv(uv)).rg;
+	int lo = int(rg.r * 255.0 + 0.5);
+	int hi = int(rg.g * 255.0 + 0.5);
+	int cid = lo + hi * 256;
+	return (cid >= 65535) ? -1 : cid;
+}
+
+float fog_bayer2_digit(vec2 bit_xy) {
+	if (bit_xy.y < 0.5) {
+		return (bit_xy.x < 0.5) ? 0.0 : 2.0;
+	}
+	return (bit_xy.x < 0.5) ? 3.0 : 1.0;
+}
+
+float fog_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
+	vec2 atlas_dims = vec2(textureSize(map_index_atlas, 0));
+	vec2 pixel_xy = floor(fog_wrap_uv(uv) * atlas_dims);
+	if (wrap_period_x > 0.0001 && world_size.x > 0.0001) {
+		float period_px = max(
+				8.0,
+				round((atlas_dims.x * wrap_period_x / world_size.x) / 8.0) * 8.0);
+		float phase = (fog_wrap_world_x(wp.x) - wrap_origin_x) / wrap_period_x;
+		pixel_xy.x = floor(fract(phase) * period_px);
+	}
+	vec2 p = mod(pixel_xy, 8.0);
+	float value = 16.0 * fog_bayer2_digit(mod(p, 2.0))
+			+ 4.0 * fog_bayer2_digit(mod(floor(p * 0.5), 2.0))
+			+ fog_bayer2_digit(floor(p * 0.25));
+	return (value + 0.5) / 64.0;
+}
+
+float fog_edge_secondary_weight(vec2 uv, int q) {
+	if (!has_terrain_edge_data || terrain_ecotone_width <= 0.0001) {
+		return 0.0;
+	}
+	float edge_distance = texture(terrain_edge_distance_tex, fog_wrap_uv(uv)).r;
+	float one_screen_pixel = max(fwidth(edge_distance), 1.0 / 255.0);
+	float quality_scale;
+#if defined(MOBILE_QUALITY_LOW)
+	quality_scale = 0.58;
+#elif defined(MOBILE_QUALITY_MID)
+	quality_scale = 0.82;
+#elif defined(MOBILE_QUALITY_HIGH)
+	quality_scale = 0.94;
+#else
+	quality_scale = (q <= 0) ? 0.68 : ((q == 1) ? 0.82 : ((q == 2) ? 0.92 : 1.0));
+#endif
+	float width = clamp(terrain_ecotone_width * quality_scale, one_screen_pixel, 0.98);
+	float analytic = 0.5 * (1.0 - smoothstep(0.0, width, edge_distance));
+	float aa = 0.5 * (1.0 - smoothstep(0.0, one_screen_pixel, edge_distance));
+	return max(analytic, aa);
 }
 
 // 把域缩放微调到「环绕周期恰好等于 4 的整数倍个噪声格」。
@@ -463,7 +521,35 @@ void fragment() {
 		int cid = fog_decode_cell_index(uv);
 		// cid < 0 是极地外侧的烘焙 padding：不可交互，按未探索处理，顺带把
 		// 人造边界藏进云里。
-		float k = (cid >= 0) ? texture(enum_lut, fog_cell_lut_uv(cid)).a : 0.0;
+		float k = 0.0;
+#if defined(PK_MOBILE_ANY)
+		// Mobile DitherUV selects one visual cell before the LUT lookup. This keeps
+		// the old distant transition character without paying for two LUT samples.
+		int visual_cid = cid;
+		if (visual_cid >= 0) {
+			float edge_w = fog_edge_secondary_weight(uv, q);
+			if (edge_w > 0.0001) {
+				int secondary_id = fog_decode_edge_secondary(uv);
+				if (secondary_id >= 0
+						&& fog_mobile_dither_uv_threshold(uv, warped) < edge_w) {
+					visual_cid = secondary_id;
+				}
+			}
+			k = texture(enum_lut, fog_cell_lut_uv(visual_cid)).a;
+		}
+#else
+		k = (cid >= 0) ? texture(enum_lut, fog_cell_lut_uv(cid)).a : 0.0;
+		if (cid >= 0) {
+			float edge_w = fog_edge_secondary_weight(uv, q);
+			if (edge_w > 0.0001) {
+				int secondary_id = fog_decode_edge_secondary(uv);
+				if (secondary_id >= 0) {
+					float secondary_k = texture(enum_lut, fog_cell_lut_uv(secondary_id)).a;
+					k = mix(k, secondary_k, edge_w);
+				}
+			}
+		}
+#endif
 
 		float fog_amount = 1.0 - clamp(k, 0.0, 1.0);
 		if (fog_amount > 0.02) {
