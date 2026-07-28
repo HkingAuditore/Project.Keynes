@@ -1,4 +1,4 @@
-# Native Country Runtime（PKCN v1）
+# Native Country Runtime（PKCN v2）
 
 `NativeCountryRuntime` 是国家身份、领土、国家科技与国家国库的唯一可变权威。它与
 `NativeEconomyRuntime` 同级，由 `DCWorldExt` 组合持有；GDScript 不维护第二份国家状态。
@@ -33,7 +33,7 @@ CSR、元数据和分配器余量，也以 `<8MB` 为验收门槛。
 固定命令为 `CREATE_COUNTRY`、`RENAME_COUNTRY`、`TRANSFER_TERRITORY`、
 `GRANT_TECHNOLOGY`。命令按 `(effective_day, sequence, submit_order)` 确定性排序，先完整
 预检，再提交稀疏地块 delta。建国命令直接携带第一块领土，因此建国与领土获得原子完成；
-科技复制该地原所有国，来自无主地时使用起始科技。v1 不提供删除国家、灭国或撤销科技。
+科技复制该地原所有国，来自无主地时使用起始科技。当前版本不提供删除国家、灭国或撤销科技。
 
 GM 的“点击地块接管领土”不新增 opcode：`WorldRuntimeHost` 在会话级模式开启时监听既有
 选中回调，解析玩家国家 handle，并包装 `TRANSFER_TERRITORY` 到下一游戏日。水域、已归属和

@@ -1,0 +1,101 @@
+[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
+[ext_resource type="Script" path="res://scripts/modifier/modifier_definition.gd" id="3_definition"]
+[ext_resource type="Script" path="res://scripts/modifier/modifier_term.gd" id="4_term"]
+
+[sub_resource type="Resource" id="StatClimate"]
+script = ExtResource("2_stat")
+key = &"climate.cell.radiative_target"
+domain = 0
+min_value = 0.0
+max_value = 1.0
+
+[sub_resource type="Resource" id="StatCountry"]
+script = ExtResource("2_stat")
+key = &"country.economy_output_factor"
+domain = 1
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatBuilding"]
+script = ExtResource("2_stat")
+key = &"economy.building.output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatGameplay"]
+script = ExtResource("2_stat")
+key = &"gameplay.generic.value"
+domain = 3
+min_value = -1000000000.0
+max_value = 1000000000.0
+
+[sub_resource type="Resource" id="TermClimate"]
+script = ExtResource("4_term")
+stat_key = &"climate.cell.radiative_target"
+operation = 0
+value = 0.05
+
+[sub_resource type="Resource" id="DefClimate"]
+script = ExtResource("3_definition")
+key = &"climate.radiative_warming"
+domain = 0
+stack_policy = 2
+max_stacks = 8
+default_duration_days = 30
+terms = Array[Resource]([SubResource("TermClimate")])
+
+[sub_resource type="Resource" id="TermCountry"]
+script = ExtResource("4_term")
+stat_key = &"country.economy_output_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefCountry"]
+script = ExtResource("3_definition")
+key = &"country.economic_mobilization"
+domain = 1
+stack_policy = 1
+max_stacks = 1
+default_duration_days = 90
+terms = Array[Resource]([SubResource("TermCountry")])
+
+[sub_resource type="Resource" id="TermBuilding"]
+script = ExtResource("4_term")
+stat_key = &"economy.building.output_factor"
+operation = 2
+value = 1.15
+
+[sub_resource type="Resource" id="DefBuilding"]
+script = ExtResource("3_definition")
+key = &"economy.building.productivity_boost"
+domain = 2
+stack_policy = 2
+max_stacks = 5
+default_duration_days = 60
+terms = Array[Resource]([SubResource("TermBuilding")])
+
+[sub_resource type="Resource" id="TermGameplay"]
+script = ExtResource("4_term")
+stat_key = &"gameplay.generic.value"
+operation = 0
+value = 1.0
+
+[sub_resource type="Resource" id="DefGameplay"]
+script = ExtResource("3_definition")
+key = &"gameplay.generic.bonus"
+domain = 3
+stack_policy = 0
+max_stacks = 100
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermGameplay")])
+
+[resource]
+script = ExtResource("1_catalog")
+stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay")])

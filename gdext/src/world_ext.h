@@ -202,6 +202,49 @@ public:
     godot::Dictionary feed_country_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_country_restore();
 
+    // Shared data-oriented Modifier runtime. Four domain stores are isolated;
+    // this facade is the only GDScript mutation boundary.
+    godot::Dictionary configure_modifiers(const godot::Dictionary &catalog,
+                                          int cell_count);
+    godot::Dictionary submit_modifier_commands(const godot::Dictionary &packed_batch);
+    godot::Dictionary run_modifier_daily(int64_t day_index);
+    bool modifier_should_run(int64_t day_index) const;
+    godot::Dictionary get_modifier_command_result(int64_t request_id) const;
+    godot::Dictionary list_modifiers(int domain, int64_t entity_handle,
+                                     const godot::String &stat_key) const;
+    godot::Dictionary explain_modifier_stat(int domain, int64_t entity_handle,
+                                            int64_t group_handle,
+                                            const godot::String &stat_key,
+                                            double base_value) const;
+    godot::Dictionary get_modifier_report() const;
+    godot::Dictionary poll_modifier_events(int64_t after_event_id,
+                                           int limit = 128) const;
+    double evaluate_modifier_stat(int domain, int64_t entity_handle,
+                                  int64_t group_handle,
+                                  const godot::String &stat_key,
+                                  double base_value) const;
+    int64_t register_gameplay_modifier_object(const godot::String &archetype);
+    godot::Dictionary unregister_gameplay_modifier_object(int64_t handle,
+                                                          int64_t day_index);
+    godot::Dictionary set_gameplay_modifier_base(int64_t handle,
+                                                 const godot::String &stat_key,
+                                                 double value);
+    godot::Dictionary get_gameplay_modifier_effective(int64_t handle,
+                                                      int64_t group_handle,
+                                                      const godot::String &stat_key) const;
+    godot::PackedByteArray capture_modifier_domain(int domain) const;
+    godot::Dictionary restore_modifier_domain(int domain,
+                                              const godot::PackedByteArray &bytes);
+    godot::Dictionary clear_modifier_domain(int domain);
+
+    // Native-only hot-path helpers. They resolve no strings in the consumer loop.
+    float modifier_climate_radiative_target(int cell, float base_value) const;
+    double modifier_country_output_factor(int64_t country_handle) const;
+    int64_t ensure_modifier_building_handle(int cell, int type_id,
+                                            int owner_signature_id);
+    double modifier_building_output_factor(int64_t building_handle,
+                                           int64_t country_handle) const;
+
     // ─── Native economy runtime / ECONOMY_GRAPH ────────────────────────
     // Economy owns dynamic PopulationCohort pages, local-market matrices,
     // deterministic formula execution and committed publication. It is
@@ -2161,6 +2204,7 @@ private:
     void                                     *_economy_csv_recorder   = nullptr;
     int64_t                                   _economy_last_notified_event_id = 0;
     void                                     *_country_runtime        = nullptr;
+    void                                     *_modifier_runtime       = nullptr;
 
     // ─── Phase B+（2026-05-21）：season refresh round 切片调度 opaque state ─
     // 实际类型 pk::SeasonRoundState 在 world_ext.cpp 顶部定义（含 generation

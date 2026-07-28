@@ -97,6 +97,11 @@ DCSystemScheduler
 | `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_native` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。`StridePolicy(stride,0)`，无 bucket phase。**保留边界 job**（native/legacy 两路径都注册）+ `must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
 | `country_daily` | `simulation/systems/country_daily_system.gd` | ACTIVE 国家命令图；原子预检/应用/发布领土、名称与科技变化。 | priority 255；`must_run=false`、`max_slices=1`、`use_job_should_run=true`；无到期命令零 slice，跨帧批次使用 `country_day_barrier`。 |
 | `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；建筑计划/投入 reserve 使用两遍 active-cell continuation，随后按建筑 cell/cohort 预算错峰生产与 N 日居民市场。国内贸易规划复用同一 job 的软 slice。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。`building_cells_per_slice=0` 自动取市场 cell budget 的 1/4 并封顶 512；贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
+| `modifier_daily` | `simulation/systems/modifier_daily_system.gd` | ACTIVE `MODIFIER_GRAPH`：先过期，再按 producer/sequence 稳定执行命令并发布四域 snapshot version。 | priority 90；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、`use_job_deadline_critical=true`；有当日边界工作时预算旁路一次，保证早于 climate 100、country 255、economy 260。consumer 中产生的命令延至后续安全边界。 |
+
+Modifier 的冻结点、scope 与领域消费顺序见
+[`native-modifier-runtime.md`](./native-modifier-runtime.md)。Modifier store 不得在 climate/economy
+worker 内变更；async climate 只接收主线程冻结的 add/factor 数组。
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
 | `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |

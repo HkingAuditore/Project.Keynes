@@ -144,6 +144,8 @@ func delete_manual_slot(slot_id: String) -> Dictionary:
 
 
 static func compatibility_hash() -> String:
+	# Provider manifests and native schema readers own PKCN/PKEC/PKCM/PKGP
+	# compatibility; keep the container hash stable so legacy saves can migrate.
 	var input := "project-keynes|generator-v1|datacore-schema|pkcn|pkec-v19"
 	return _sha256(input.to_utf8_buffer())
 

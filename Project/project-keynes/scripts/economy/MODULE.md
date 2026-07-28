@@ -2,7 +2,7 @@
 
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v19 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v20 流式存档与 PKEJ 分层事件；国家身份、领土、科技和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治、年龄与家庭结构；自然出生和死亡由原生 household/structural 路径处理。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
@@ -320,7 +320,7 @@ already received a first dispatch. Committed diagnostics recompute current
 deadline misses from all live signal clocks rather than from only the planner
 slice that happened to run that day.
 
-## PKEC v19 rolling settlement (current)
+## PKEC v20 rolling settlement (current)
 
 Production uses five stable daily buckets: cell `c` settles when
 `day % 5 == c % 5`, always with `dt=5`. Each populated cell therefore settles
@@ -337,9 +337,10 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v19. They persist per-cell settlement day/generation,
-dirty generations, and each building group's pending recovery result/cooldown.
-Restore accepts v18 with deterministic `pending=NONE, cooldown=0`; v2-v17 are
+Current saves are PKEC v20. They persist per-cell settlement day/generation,
+dirty generations, each building group's pending recovery result/cooldown,
+BuildingIdentityStore, and the Economy Modifier domain. Restore accepts v18/v19
+with an empty Modifier store and v18 with deterministic `pending=NONE, cooldown=0`; v2-v17 are
 rejected as legacy. Older v14/v13 migration wording above is historical.
 
 The native hot path caches the frozen demand basis once per due cell and shares
@@ -354,7 +355,7 @@ stable group prefix with new groups, reuses type-compatible role/input spans,
 and rebuilds market/labor CSR from catalog-baked per-type good/profession spans.
 Generation stamps and double-buffered CSR storage replace global `(cell,key)`
 temporary lists and comparison sorting. These caches are transient and excluded
-from PKEC v19 and state hash; logical role state is hashed in stable group order.
+from PKEC v20 and state hash; logical role state is hashed in stable group order.
 Structure reports separate count-only/new/removed/rebuild/reuse counts and
 group-merge/market-cache/labor-cache milliseconds.
 

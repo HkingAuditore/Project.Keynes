@@ -1,5 +1,29 @@
 # Performance Diagnostics Playbook
 
+## Modifier report 与基准
+
+`MapGenerator.get_modifier_report()` / `DCWorldExt.get_modifier_report()` 当前关注：
+`active_instances_by_domain`、`peak_instances_by_domain`、`bucket_count_by_domain`、
+`query_count_by_domain`、`bucket_reads_by_domain`、`bucket_rebuilds_by_domain`、
+`snapshot_versions`、按域 apply/remove/expire/reject/cleanup 事件和估算内存数组、
+`pending_commands`、`commands_applied_total`、
+`commands_rejected_total`、`expired_total`、`journal_overflow`、`command_merge_ms`、
+`expiry_ms`、`snapshot_publish_ms`、`bucket_update_ms`、`bucket_rebuild_ms` 及累计值，
+以及排序后的 `error_reasons/error_counts`。
+
+查询数突然按 entity 数乘以 building output 数增长，说明冻结缓存被绕过；bucket read/query
+长期大于 3，说明 scope 读取发生重复；rebuild 激增通常是高频 stack/refresh 或数值异常。
+`modifier_daily` 有当日工作却出现 `frame_budget_exhausted`/`strict_budget_one_job`，说明
+deadline-critical descriptor 未生效，必须先修复同日冻结边界再分析业务输出。
+性能验收必须用相同构建、seed、地图规模和 50+ 天 baseline/after，比较 daily graph median 与
+p95。当前 3%/5% 门槛尚无匹配的同机 no-Modifier baseline，不能仅凭 focused test 宣称通过。验证入口见
+[`native-modifier-runtime.md`](./native-modifier-runtime.md)。
+
+2026-07-28 debug headless after（60x40、50 日、speed 50、seed 20260718）中，
+`modifier_daily` avg/median/p95/max 为 0.0844/0.0765/0.1110/0.1140 ms，50/50 为
+`MODIFIER_GRAPH` 且无 skip；总 SUS median/p95 为 7.4355/9.8540 ms。该次没有匹配的
+no-Modifier baseline，只能作为 after 证据，不能计算回归百分比。
+
 2026-07 新增的 batch multiplier/dispatch saved、approximation
 probe/cooldown、closing audit full-scan entries 与 compact capsule 字段定义见
 [运行时性能优化契约](runtime-performance-optimization-2026-07.md)。

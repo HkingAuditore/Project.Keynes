@@ -1,5 +1,6 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
+#include "modifier_runtime.h"
 #include "parallel_dispatcher.h"
 
 #include <algorithm>
@@ -28,6 +29,16 @@ using namespace godot;
 
 thread_local NativeEconomyRuntime::ProductionResult *
     NativeEconomyRuntime::_production_result_sink = nullptr;
+
+namespace {
+int32_t modifier_factor_q16(double factor) {
+    if (!std::isfinite(factor) || factor <= 0.0) return 0;
+    const double scaled = std::round(factor *
+        static_cast<double>(NativeEconomyRuntime::Q16_ONE));
+    return static_cast<int32_t>(std::clamp(
+        scaled, 0.0, static_cast<double>(std::numeric_limits<int32_t>::max())));
+}
+} // namespace
 thread_local NativeEconomyRuntime::MarketResult *
     NativeEconomyRuntime::_market_result_sink = nullptr;
 thread_local std::vector<int32_t> *
@@ -319,7 +330,9 @@ constexpr uint16_t SAVE_SECTION_SIGNALS = 8;
 constexpr uint16_t SAVE_SECTION_LABOR_SIGNALS = 9;
 constexpr uint16_t SAVE_SECTION_TRADE_ORDERS = 10;
 constexpr uint16_t SAVE_SECTION_TRADE_FLOWS = 11;
-constexpr uint16_t SAVE_SECTION_END = 12;
+constexpr uint16_t SAVE_SECTION_MODIFIERS = 12;
+constexpr uint16_t SAVE_SECTION_END = 13;
+constexpr uint16_t SAVE_SECTION_END_V11_TO_V19 = 12;
 constexpr uint16_t SAVE_SECTION_END_V10 = 10;
 
 constexpr uint32_t EVENT_ARCHIVE_MAGIC = 0x4a454b50U; // "PKEJ" little endian
@@ -2072,11 +2085,13 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     NativeCountryRuntime::EconomySnapshot snapshot;
     if (!_country_runtime->copy_economy_snapshot(snapshot) ||
         snapshot.cell_country_slot.size() != static_cast<size_t>(_cell_count) ||
+        snapshot.country_handles.size() != static_cast<size_t>(snapshot.country_count) ||
         snapshot.technology_words != _technology_words) {
         error = "country_snapshot_shape_invalid";
         return false;
     }
     _epoch_cell_country = std::move(snapshot.cell_country_slot);
+    _epoch_country_handles = std::move(snapshot.country_handles);
     _epoch_country_technologies = std::move(snapshot.country_technologies);
     _epoch_country_count = snapshot.country_count;
     _epoch_country_technology_words = snapshot.technology_words;
@@ -2198,6 +2213,16 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         }
     }
     _epoch_country_topology_hash = (topology_hash & 0x7fffffffffffffffULL) | 1ULL;
+    _epoch_country_output_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    if (_modifier_runtime != nullptr) {
+        for (int32_t country = 0; country < _epoch_country_count; ++country) {
+            _epoch_country_output_factor_q16[static_cast<size_t>(country)] =
+                modifier_factor_q16(_modifier_runtime->country_economy_output_factor(
+                    _epoch_country_handles[static_cast<size_t>(country)]));
+        }
+    }
+    refresh_building_modifier_factors();
     return true;
 }
 
@@ -5140,6 +5165,10 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                      output_index < type.output_count; ++output_index) {
                     const GoodAmount &output =
                         _building_outputs[type.output_begin + output_index];
+                    const int64_t effective_output =
+                        effective_building_output_quantity(
+                            group, output.quantity, Q16_ONE, 1,
+                            _saturation_count);
                     int64_t settlement = _good_monetary_issue_values[output.good_id];
                     if (settlement <= 0) {
                         const int32_t output_signal = market_signal_index(
@@ -5151,7 +5180,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                             output_signal >= 0 ? _market_signals.realized_withdrawal_ema[
                                 output_signal] : 0,
                             output_flow >= 0 ? _trade_flows.export_ema[output_flow] : 0,
-                            output.quantity, _saturation_count);
+                            effective_output, _saturation_count);
                         const int32_t buy_factor = effective_merchant_buy_factor_q16(
                             market, output.good_id, output_target,
                             _market.stock[_market.index(market, output.good_id)],
@@ -5162,7 +5191,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     }
                     daily_revenue_per_building = saturating_add(
                         daily_revenue_per_building, mul_div_sat(
-                            output.quantity, settlement, GOODS_SCALE,
+                            effective_output, settlement, GOODS_SCALE,
                             _saturation_count), _saturation_count);
                 }
                 if (daily_revenue_per_building > 0 && group_employee_slots > 0) {
@@ -5402,10 +5431,12 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                     const bool relevant = staple_route
                         ? _survival_staple_good_mask[output.good_id] != 0
                         : _survival_food_good_mask[output.good_id] != 0;
-                    const int64_t full_output = saturating_mul(
-                        saturating_mul(group.count, std::max(1, _epoch_days),
-                                       _saturation_count),
-                        output.quantity, _saturation_count);
+                    const int64_t full_output =
+                        effective_building_output_quantity(
+                            group, output.quantity, Q16_ONE,
+                            saturating_mul(group.count,
+                                std::max(1, _epoch_days), _saturation_count),
+                            _saturation_count);
                     if (relevant) group_relevant_output = saturating_add(
                         group_relevant_output, full_output, _saturation_count);
                     if (_survival_clothing_good_mask[output.good_id] != 0)
@@ -8286,10 +8317,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     critical = true;
                     survival_output = true;
                     const GoodAmount &output = _building_outputs[type.output_begin + i];
-                    const int64_t offered = mul_div_sat(saturating_mul(
-                        saturating_mul(group.count, std::max(1, _epoch_days),
-                            _saturation_count), output.quantity, _saturation_count),
-                        desired_scale, Q16_ONE, _saturation_count);
+                    const int64_t offered =
+                        effective_building_output_quantity(
+                            group, output.quantity, desired_scale,
+                            saturating_mul(group.count,
+                                std::max(1, _epoch_days), _saturation_count),
+                            _saturation_count);
                     const int32_t signal = market_signal_index(cell, good);
                     const int64_t realized = signal >= 0
                         ? _market_signals.realized_withdrawal_ema[signal] : 0;
@@ -8658,9 +8691,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
             }
             for (int32_t i = 0; i < type.output_count; ++i) {
                 const GoodAmount &item = _building_outputs[type.output_begin + i];
-                const int64_t qty = mul_div_sat(saturating_mul(
-                    building_days, item.quantity, _saturation_count),
-                    scale_q16, Q16_ONE, _saturation_count);
+                const int64_t qty = effective_building_output_quantity(
+                    group, item.quantity, scale_q16, building_days,
+                    _saturation_count);
                 if (qty > 0) offers.push_back({item.good_id, owner_slot, g, qty, 0, qty});
                 group.last_output = saturating_add(
                     group.last_output, qty, _saturation_count);
@@ -9801,6 +9834,80 @@ void NativeEconomyRuntime::merge_building_production_result(ProductionResult &re
     }
 }
 
+void NativeEconomyRuntime::refresh_building_modifier_factors() {
+    for (BuildingGroup &group : _buildings) {
+        group.output_factor_q16 = Q16_ONE;
+        if (_modifier_runtime == nullptr || group.cell < 0 ||
+            group.cell >= static_cast<int32_t>(_epoch_cell_country.size())) {
+            group.modifier_handle = 0;
+            continue;
+        }
+        const int32_t country_slot = _epoch_cell_country[static_cast<size_t>(group.cell)];
+        const uint64_t country_handle = country_slot >= 0 &&
+                country_slot < static_cast<int32_t>(_epoch_country_handles.size())
+            ? _epoch_country_handles[static_cast<size_t>(country_slot)] : 0;
+        group.modifier_handle = _modifier_runtime->ensure_building_identity(
+            group.cell, group.type_id, group.owner_signature_id);
+        const double country_factor = country_slot >= 0 &&
+                country_slot < static_cast<int32_t>(_epoch_country_output_factor_q16.size())
+            ? static_cast<double>(_epoch_country_output_factor_q16[
+                static_cast<size_t>(country_slot)]) / Q16_ONE
+            : 1.0;
+        const double building_factor =
+            _modifier_runtime->economy_building_output_factor(
+                group.modifier_handle, country_handle);
+        group.output_factor_q16 = modifier_factor_q16(
+            country_factor * building_factor);
+    }
+}
+
+int64_t NativeEconomyRuntime::effective_building_output_quantity(
+        const BuildingGroup &group, int64_t base_quantity,
+        int64_t utilization_q16, int64_t building_days,
+        int64_t &sat) const {
+    const int64_t physical_base = saturating_mul(
+        std::max<int64_t>(0, base_quantity),
+        std::max<int64_t>(0, building_days), sat);
+    const int64_t utilized = mul_div_sat(
+        physical_base, std::clamp<int64_t>(utilization_q16, 0, Q16_ONE),
+        Q16_ONE, sat);
+    return mul_div_sat(utilized,
+        std::max<int32_t>(0, group.output_factor_q16), Q16_ONE, sat);
+}
+
+int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
+        int32_t cell, int32_t type_id, int32_t owner_signature_id,
+        int64_t base_quantity, int64_t utilization_q16,
+        int64_t building_days, int64_t &sat) {
+    BuildingGroup target;
+    target.cell = cell;
+    target.type_id = type_id;
+    target.owner_signature_id = owner_signature_id;
+    target.output_factor_q16 = Q16_ONE;
+    if (_modifier_runtime != nullptr) {
+        const int32_t country_slot = cell >= 0 &&
+                cell < static_cast<int32_t>(_epoch_cell_country.size())
+            ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
+        const uint64_t country_handle = country_slot >= 0 &&
+                country_slot < static_cast<int32_t>(_epoch_country_handles.size())
+            ? _epoch_country_handles[static_cast<size_t>(country_slot)] : 0;
+        target.modifier_handle = owner_signature_id >= 0
+            ? _modifier_runtime->ensure_building_identity(
+                cell, type_id, owner_signature_id)
+            : 0;
+        const double country_factor = country_slot >= 0 &&
+                country_slot < static_cast<int32_t>(_epoch_country_output_factor_q16.size())
+            ? static_cast<double>(_epoch_country_output_factor_q16[
+                static_cast<size_t>(country_slot)]) / Q16_ONE
+            : 1.0;
+        target.output_factor_q16 = modifier_factor_q16(country_factor *
+            _modifier_runtime->economy_building_output_factor(
+                target.modifier_handle, country_handle));
+    }
+    return effective_building_output_quantity(target, base_quantity,
+        utilization_q16, building_days, sat);
+}
+
 int64_t NativeEconomyRuntime::planned_owner_demand(
         const BuildingGroup &group, int64_t &sat) const {
     if (group.type_id < 0 ||
@@ -10557,6 +10664,18 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             int32_t driver_index = -1;
             for (int32_t i = 0; i < type.output_count; ++i) {
                 const GoodAmount &output = _building_outputs[type.output_begin + i];
+                const int32_t representative_owner = existing_group >= 0
+                    ? _buildings[existing_group].owner_signature_id
+                    : signature_for_profession_ethnicity(
+                        type.owner_profession_id, 0);
+                const int64_t effective_unit_output = existing_group >= 0
+                    ? effective_building_output_quantity(
+                        _buildings[existing_group], output.quantity,
+                        Q16_ONE, 1, _saturation_count)
+                    : effective_building_output_quantity_for_target(
+                        cell, type_id, representative_owner,
+                        output.quantity, Q16_ONE, 1,
+                        _saturation_count);
                 const int64_t index = _market.index(market, output.good_id);
                 const int32_t signal = market_signal_index(cell, output.good_id);
                 const bool monetary_issue =
@@ -10593,7 +10712,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     // the first producer exists; the later issuance-cap and
                     // resource-horizon gates remain authoritative.
                     output_deficit = std::max<int64_t>(
-                        output_deficit, output.quantity);
+                        output_deficit, effective_unit_output);
                     output_pressure_q16 = Q16_ONE;
                 }
                 // Offered supply already contains the utilized portion of the
@@ -10611,7 +10730,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         _saturation_count);
                 }
                 const int64_t reserved_output = mul_div_sat(
-                    output.quantity, reserved_capacity_q16, Q16_ONE,
+                    effective_unit_output, reserved_capacity_q16, Q16_ONE,
                     _saturation_count);
                 output_deficit = std::max<int64_t>(
                     0, output_deficit - std::min(output_deficit, reserved_output));
@@ -10633,9 +10752,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 item.good_id = output.good_id;
                 item.pressure_q16 = output_pressure_q16;
                 item.deficit = output_deficit;
-                item.utilization_q16 = output.quantity > 0
+                item.utilization_q16 = effective_unit_output > 0
                     ? std::clamp<int64_t>(mul_div_sat(
-                        output_deficit, Q16_ONE, output.quantity,
+                        output_deficit, Q16_ONE, effective_unit_output,
                         _saturation_count), 0, Q16_ONE)
                     : 0;
                 if (signal >= 0 && signal < static_cast<int32_t>(
@@ -10866,9 +10985,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const GoodAmount &output =
                         _building_outputs[type.output_begin + i];
                     const OutputInvestmentSignal &output_signal = output_signals[i];
-                    const int64_t prospective_quantity = mul_div_sat(
-                        output.quantity, utilization_q16, Q16_ONE,
-                        _saturation_count);
+                    const int64_t prospective_quantity =
+                        effective_building_output_quantity_for_target(
+                            cell, type_id, target_signature,
+                            output.quantity, utilization_q16, 1,
+                            _saturation_count);
                     const int64_t retail_price = _market.price[
                         _market.index(market, output.good_id)];
                     int64_t retained_quantity = 0;
@@ -11011,8 +11132,13 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     int64_t projected_issue = 0;
                     for (int32_t i = 0; i < type.output_count; ++i) {
                         const GoodAmount &output = _building_outputs[type.output_begin + i];
+                        const int64_t monthly_output =
+                            effective_building_output_quantity_for_target(
+                                cell, type_id, target_signature,
+                                output.quantity, Q16_ONE, 30,
+                                _saturation_count);
                         projected_issue = saturating_add(projected_issue, mul_div_sat(
-                            saturating_mul(output.quantity, 30, _saturation_count),
+                            monthly_output,
                             _good_monetary_issue_values[output.good_id], GOODS_SCALE,
                             _saturation_count), _saturation_count);
                     }
@@ -11046,9 +11172,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const GoodAmount &output =
                         _building_outputs[type.output_begin + i];
                     if (output.good_id != driver.good_id) continue;
-                    candidate.driver_output_per_building = mul_div_sat(
-                        output.quantity, utilization_q16, Q16_ONE,
-                        _saturation_count);
+                    candidate.driver_output_per_building =
+                        effective_building_output_quantity_for_target(
+                            cell, type_id, target_signature,
+                            output.quantity, utilization_q16, 1,
+                            _saturation_count);
                     break;
                 }
                 candidate.willing_population = willing_population;
@@ -11693,6 +11821,10 @@ bool NativeEconomyRuntime::commit_ready_construction(
     if (prune_empty_groups || topology_changed) {
         for (const BuildingGroup &group : _buildings) {
             if (group.count > 0) continue;
+            if (_modifier_runtime != nullptr)
+                _modifier_runtime->retire_building_identity(
+                    group.cell, group.type_id, group.owner_signature_id,
+                    _current_day);
             changed_cells.push_back(group.cell);
             topology_changed = true;
             changed = true;
@@ -11702,6 +11834,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
     if (topology_changed) {
         ++_building_structure_topology_rebuilds;
         rebuild_building_role_storage();
+        refresh_building_modifier_factors();
     }
     return changed;
 }
@@ -17661,9 +17794,10 @@ void NativeEconomyRuntime::review_recovery_building_group(int32_t g) {
     for (int32_t output_index = 0; output_index < type.output_count; ++output_index) {
         const GoodAmount &output = _building_outputs[type.output_begin + output_index];
         unit_period_output = saturating_add(
-            unit_period_output, saturating_mul(
-                output.quantity, std::max<int64_t>(1, _epoch_days),
-                _saturation_count), _saturation_count);
+            unit_period_output, effective_building_output_quantity(
+                group, output.quantity, Q16_ONE,
+                std::max<int64_t>(1, _epoch_days), _saturation_count),
+            _saturation_count);
     }
     const int64_t liquidation_capacity_q16 = std::max<int64_t>(
         group.planned_utilization_q16,
@@ -22411,6 +22545,16 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     _save = {};
     _save.active = true;
     _save.chunk_bytes = std::clamp(chunk_bytes, 64 * 1024, 16 * 1024 * 1024);
+    std::string modifier_error;
+    if (_modifier_runtime != nullptr &&
+        !_modifier_runtime->serialize_domain(ModifierRuntime::ECONOMY,
+                                              _save.modifier_bytes,
+                                              modifier_error)) {
+        _save = {};
+        out["ok"] = false;
+        out["reason"] = String(modifier_error.c_str());
+        return out;
+    }
     out["ok"] = true;
     out["chunk_bytes"] = _save.chunk_bytes;
     out["schema_version"] = SCHEMA_VERSION;
@@ -22843,6 +22987,20 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         return make_save_chunk(SAVE_SECTION_TRADE_FLOWS,
             static_cast<uint32_t>(_save.trade_flow_cursor - begin), payload);
     }
+    if (_save.section == SAVE_SECTION_MODIFIERS) {
+        const size_t payload_budget = static_cast<size_t>(std::max(1, budget - 16));
+        const size_t remaining = _save.modifier_bytes.size() - _save.modifier_cursor;
+        const size_t take = std::min(remaining, payload_budget);
+        if (take > 0) {
+            payload.insert(payload.end(),
+                           _save.modifier_bytes.begin() + static_cast<ptrdiff_t>(_save.modifier_cursor),
+                           _save.modifier_bytes.begin() + static_cast<ptrdiff_t>(_save.modifier_cursor + take));
+        }
+        _save.modifier_cursor += take;
+        if (_save.modifier_cursor >= _save.modifier_bytes.size()) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_MODIFIERS,
+                               static_cast<uint32_t>(take), payload);
+    }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);
 }
@@ -22946,7 +23104,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 18) {
+    if (schema != SCHEMA_VERSION && schema != 19 && schema != 18) {
         error = schema >= 2 && schema < 18
             ? "legacy_economy_save_unsupported"
             : "economy_save_schema_unsupported";
@@ -23201,8 +23359,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             error = "save_dynamic_policy_profile_mismatch";
             return false;
         }
+        const bool country_schema_compatible =
+            country_schema == NativeCountryRuntime::SCHEMA_VERSION ||
+            (schema <= 19 && country_schema == 1);
         if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
-            country_schema != NativeCountryRuntime::SCHEMA_VERSION ||
+            !country_schema_compatible ||
             country_generation != _country_runtime->generation() ||
             country_hash != static_cast<uint64_t>(_country_runtime->state_hash())) {
             error = "economy_country_restore_order_or_hash_mismatch";
@@ -23759,7 +23920,21 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _trade_flows.period_export.push_back(period_export);
             ++_restore.restored_trade_flows;
         }
-    } else if ((schema >= 11 && section == SAVE_SECTION_END) ||
+    } else if (schema >= 20 && section == SAVE_SECTION_MODIFIERS) {
+        if (records != payload_bytes ||
+            _restore.modifier_bytes.size() + payload_bytes >
+                256ULL * 1024ULL * 1024ULL) {
+            error = "save_modifier_section_invalid";
+            return false;
+        }
+        _restore.modifier_bytes.insert(_restore.modifier_bytes.end(),
+                                       bytes.begin() + static_cast<ptrdiff_t>(cursor),
+                                       bytes.end());
+        cursor = bytes.size();
+        _restore.modifier_seen = true;
+    } else if ((schema >= 20 && section == SAVE_SECTION_END) ||
+               (schema >= 11 && schema <= 19 &&
+                section == SAVE_SECTION_END_V11_TO_V19) ||
                (schema == 10 && section == SAVE_SECTION_END_V10)) {
         if (records != 0 || payload_bytes != 0) {
             error = "save_end_chunk_invalid";
@@ -23831,7 +24006,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         _restore.restored_signals != _restore.expected_signals ||
         _restore.restored_labor_signals != _restore.expected_labor_signals ||
         _restore.restored_trade_orders != _restore.expected_trade_orders ||
-        _restore.restored_trade_flows != _restore.expected_trade_flows) {
+        _restore.restored_trade_flows != _restore.expected_trade_flows ||
+        (_restore.schema_version >= 20 && !_restore.modifier_seen)) {
         out["ok"] = false;
         out["reason"] = "restore_section_incomplete";
         return out;
@@ -24093,6 +24269,25 @@ Dictionary NativeEconomyRuntime::end_restore() {
         out["reason"] = "restore_trade_order_index_invalid";
         return out;
     }
+    if (_restore.schema_version >= 20 && !_restore.modifier_bytes.empty()) {
+        if (_modifier_runtime == nullptr) {
+            out["ok"] = false;
+            out["reason"] = "economy_restore_modifier_runtime_unavailable";
+            return out;
+        }
+        std::string modifier_restore_error;
+        if (!_modifier_runtime->restore_domain(ModifierRuntime::ECONOMY,
+                                               _restore.modifier_bytes,
+                                               modifier_restore_error)) {
+            out["ok"] = false;
+            out["reason"] = String(("economy_restore_modifier_failed:" +
+                                    modifier_restore_error).c_str());
+            return out;
+        }
+    } else if (_modifier_runtime != nullptr) {
+        _modifier_runtime->clear_domain(ModifierRuntime::ECONOMY);
+    }
+    if (_modifier_runtime != nullptr) refresh_building_modifier_factors();
     _bootstrapped = true;
     _fatal = false;
     _fatal_reason.clear();

@@ -6,6 +6,7 @@
 #include "economy_runtime.h"           // Independent ECONOMY_GRAPH authority
 #include "economy_csv_recorder.h"      // Debug-only committed CSV writer
 #include "country_runtime.h"           // Independent COUNTRY_GRAPH authority
+#include "modifier_runtime.h"          // Shared four-domain Modifier authority
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
 // 双保险：仍未定义时手动兜底，避免某些编译器/PCH 顺序问题。
@@ -60,6 +61,10 @@ using namespace godot;
 
 DCWorldExt::DCWorldExt() = default;
 DCWorldExt::~DCWorldExt() {
+    if (_modifier_runtime != nullptr) {
+        delete static_cast<ModifierRuntime *>(_modifier_runtime);
+        _modifier_runtime = nullptr;
+    }
     if (_economy_csv_recorder != nullptr) {
         delete static_cast<EconomyCsvRecorder *>(_economy_csv_recorder);
         _economy_csv_recorder = nullptr;

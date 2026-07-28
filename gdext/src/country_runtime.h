@@ -13,12 +13,14 @@
 
 namespace pk {
 
+class ModifierRuntime;
+
 // Sole mutable authority for country identity, territory, country technology,
 // and treasury state. Godot values are converted at coarse API boundaries;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 1;
+    static constexpr int32_t SCHEMA_VERSION = 2;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
@@ -34,6 +36,7 @@ public:
 
     struct EconomySnapshot {
         std::vector<int32_t> cell_country_slot;
+        std::vector<uint64_t> country_handles;
         std::vector<uint64_t> country_technologies;
         int32_t country_count = 0;
         int32_t technology_words = 0;
@@ -89,6 +92,7 @@ public:
     uint64_t generation() const { return _generation; }
     int32_t good_count() const { return static_cast<int32_t>(_good_ids.size()); }
     int32_t technology_count() const { return static_cast<int32_t>(_technology_ids.size()); }
+    void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
 
 private:
     struct CountryStore {
@@ -204,6 +208,7 @@ private:
     int32_t _cell_count = 0;
     int64_t _seed = 0;
     int32_t _technology_words = 0;
+    ModifierRuntime *_modifier_runtime = nullptr;
     int32_t _starting_country_slot = -1;
     uint64_t _generation = 0;
     uint64_t _submit_order = 0;

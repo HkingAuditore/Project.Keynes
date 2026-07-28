@@ -1,5 +1,13 @@
 # C++/DOTS Runtime 架构总览
 
+## Native Modifier authority
+
+`DCWorldExt` 内的 `ModifierRuntime` 共享实现但隔离 Climate、Country、Economy、Gameplay
+四个 store。`modifier_daily` priority 90 在所有消费者前完成命令、到期和 snapshot version
+发布。Modifier 永不拥有业务 base state；各领域仍拥有 temperature、country、economy 和
+gameplay base SoA。完整契约见
+[`native-modifier-runtime.md`](./native-modifier-runtime.md)。
+
 ## Formal product entry and save coordination
 
 The product main scene is `main_menu.tscn`. `GameFlowService` owns one pending
@@ -10,9 +18,9 @@ generation, bootstrap, PKSV, and restore contract is documented in
 
 Saving does not introduce a second simulation authority. It freezes new clock
 advancement, drains existing country/economy continuations across render frames,
-then snapshots `DCWorld`, native environment state, WorldClock, PKCN, PKEC,
+then snapshots `DCWorld`, native environment state, PKCM, WorldClock, PKCN, PKEC, PKGP,
 PKFG, journal, and player view. Restore regenerates static geography and applies
-PKCN before PKEC. PKFG carries only the monotonic `cell_explored` progress;
+PKCM after environment, PKCN before PKEC, and PKGP after PKEC. PKFG carries only the monotonic `cell_explored` progress;
 current visibility and fog knowledge are derived and are recomputed on restore.
 
 本文说明当前运行期架构如何分层，以及每层负责什么。核心原则是：复杂 cell/pixel hot-loop 尽量在 C++ `DCWorldExt` 内以 SoA slot 跑完；GDScript 保留 orchestration、feature gate、调度状态机、UI/debug、fallback 和少量低频业务逻辑。
@@ -198,9 +206,10 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 
 经济运行时通过窄 C++ 指针桥在 sample day 冻结归属、国家科技、generation/hash，并在整个结算
 周期使用该快照。国内贸易拓扑也以该冻结归属生成国家连通分量；新订单只走同一非中立国家，
-已发运订单不因后续边界变化取消。PKCN v1 是国家状态存档，PKEC v12 引用匹配的 PKCN identity
-并持久化在途订单、托管与贸易 EMA；恢复顺序固定为
-PKCN 后 PKEC。详见 [Native Country Runtime](./native-country-runtime.md)、
+已发运订单不因后续边界变化取消。当前 PKCN v2 保存国家状态与 Country Modifier domain，
+PKEC v20 引用匹配的 PKCN identity，并持久化经济状态、BuildingIdentityStore 与 Economy
+Modifier domain；完整恢复顺序固定为 PKCM、PKCN、PKEC、PKGP。详见
+[Native Modifier Runtime](./native-modifier-runtime.md)、[Native Country Runtime](./native-country-runtime.md)、
 [Country / Economy Bridge](./country-economy-bridge.md) 和
 [Country Scheduling / Save](./country-scheduling-save.md)，贸易机制见
 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
