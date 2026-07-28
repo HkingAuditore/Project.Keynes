@@ -193,7 +193,7 @@ func _create_ledger_group(parent: VBoxContainer, title: String, icon_key: String
 	box.add_child(title_row)
 	var icon := IconBadge.new()
 	icon.custom_minimum_size = Vector2(18.0, 18.0)
-	icon.set_icon(icon_key, accent)
+	icon.set_semantic(StringName(icon_key), accent)
 	title_row.add_child(icon)
 	var title_label := Label.new()
 	title_label.text = title
@@ -238,7 +238,7 @@ func _create_demand_summary(parent: VBoxContainer, row_id: String) -> Dictionary
 	details_button.custom_minimum_size = Vector2(30.0, 28.0)
 	details_button.focus_mode = Control.FOCUS_NONE
 	details_button.tooltip_text = "查看消费需求明细"
-	IconBadge.apply_to_button(details_button, "overview", 13)
+	IconButton.apply(details_button, &"summary.overview", 13, "查看消费需求明细")
 	details_button.pressed.connect(func() -> void: _request_demand_details(row_id))
 	top.add_child(details_button)
 	var subtitle := Label.new()
@@ -304,10 +304,12 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	panel.visible = bool(data.get("visible", true))
 	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
 		Color(0.055, 0.048, 0.039, 0.96), Color(accent.r, accent.g, accent.b, 0.42)))
-	(refs.get("icon") as IconBadge).set_icon(String(data.get("icon", "growth")), accent)
+	(refs.get("icon") as IconBadge).set_semantic(
+		StringName(data.get("icon", &"ecology.growth")), accent)
 	var living_accent: Color = data.get("living_accent", UITokens.TEXT_MUTED)
 	var living_badge := refs.get("living_icon") as IconBadge
-	living_badge.set_icon(String(data.get("living_icon", "history")), living_accent)
+	living_badge.set_semantic(
+		StringName(data.get("living_icon", &"action.history")), living_accent)
 	living_badge.tooltip_text = "%s · 满意度 %s" % [
 		String(data.get("living_standard", "待评估")),
 		String(data.get("satisfaction", "—"))]

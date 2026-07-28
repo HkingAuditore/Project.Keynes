@@ -390,6 +390,10 @@ include 要求调用方**在 include 之前**声明 `season_phase` / `day_phase`
 
 ### 云体表现时钟
 
+噪声演化不只移动采样 UV：`fog_grad_noise_tiled_evolve*()` 会让每个可平铺晶格角点的
+梯度按不同速率和方向随时间旋转，主形状、域扭曲和自阴影读取同一演化场，因此云团会
+原地生成、消散与重组；各 octave 的线性 drift 只负责其上的整体平流。
+
 `FogOfWarLayer` 与 `WeatherLayer` 使用相同的 `_clock_speed_multiplier` /
 `_clock_running` 接口。运行时 `_world_time += delta * speed_multiplier`，所以 x5/x20
 会同步加快 octave 相对漂移和内部翻卷；暂停时按天气层既有语义保留 1x 真实时间的缓慢

@@ -8508,6 +8508,11 @@ func _native_generation_profile_dict() -> Dictionary:
 		"peak_min_land_h",
 		"peak_min_prominence",
 		"peak_land_cells_per_peak",
+		"badlands_min_relief",
+		"badlands_min_rugged_neighbors",
+		"badlands_max_land_ratio",
+		"badlands_max_arid_ratio",
+		"badlands_max_patch_cells",
 		"canyon_min_wall",
 		"canyon_min_axis",
 	]

@@ -39,11 +39,11 @@ var runtime_diagnostics_only: bool = false
 
 const GM_REFRESH_SECONDS := 0.5
 const GM_TABS := [
-	{"id": "overview", "label": "总览", "icon": "overview"},
-	{"id": "selected", "label": "选中对象", "icon": "target"},
-	{"id": "commands", "label": "指令", "icon": "settings"},
-	{"id": "toggles", "label": "开关", "icon": "surface"},
-	{"id": "recording", "label": "记录", "icon": "history"},
+	{"id": "overview", "label": "总览", "icon": &"summary.overview"},
+	{"id": "selected", "label": "选中对象", "icon": &"system.target"},
+	{"id": "commands", "label": "指令", "icon": &"system.settings"},
+	{"id": "toggles", "label": "开关", "icon": &"geography.surface"},
+	{"id": "recording", "label": "记录", "icon": &"action.history"},
 ]
 
 var _gm_tabs: CategoryTabs
@@ -330,7 +330,7 @@ func _build_player_gm_ui() -> void:
 	var close_button := Button.new()
 	close_button.tooltip_text = "关闭 GM 面板"
 	close_button.custom_minimum_size = Vector2(34.0, 32.0)
-	IconBadge.apply_to_button(close_button, "close", 15)
+	IconButton.apply(close_button, &"action.close", 15)
 	close_button.pressed.connect(close_panel)
 	header.add_child(close_button)
 	root.add_child(header)
@@ -398,7 +398,7 @@ func _build_gm_command_page(parent: Control) -> void:
 	var run_button := Button.new()
 	run_button.tooltip_text = "解析并执行指令"
 	run_button.custom_minimum_size = Vector2(38.0, 34.0)
-	IconBadge.apply_to_button(run_button, "confirm", 15)
+	IconButton.apply(run_button, &"action.confirm", 15)
 	run_button.pressed.connect(_submit_gm_command)
 	input_row.add_child(run_button)
 	page.add_child(input_row)
@@ -470,7 +470,7 @@ func _build_gm_recording_page(parent: Control) -> void:
 	var snapshot_button := Button.new()
 	snapshot_button.tooltip_text = "导出当前性能快照"
 	snapshot_button.custom_minimum_size = Vector2(38.0, 34.0)
-	IconBadge.apply_to_button(snapshot_button, "save", 15)
+	IconButton.apply(snapshot_button, &"action.save", 15)
 	snapshot_button.pressed.connect(_on_gm_snapshot_pressed)
 	snapshot_row.add_child(snapshot_button)
 	var snapshot_label := Label.new()
@@ -488,7 +488,7 @@ func _add_gm_recorder_row(parent: VBoxContainer, recorder_id: String,
 	var button := Button.new()
 	button.tooltip_text = "开始或停止%s记录" % label_text
 	button.custom_minimum_size = Vector2(38.0, 34.0)
-	IconBadge.apply_to_button(button, "history", 15)
+	IconButton.apply(button, &"action.history", 15)
 	button.pressed.connect(_on_gm_recorder_pressed.bind(recorder_id, callback, button))
 	row.add_child(button)
 	var status := Label.new()
@@ -763,7 +763,7 @@ func _on_gm_action_completed(action_id: String, result: Dictionary) -> void:
 func _on_gm_recorder_pressed(recorder_id: String, callback: Callable, button: Button) -> void:
 	callback.call()
 	var result_text := _gm_sanitize_legacy_status(button.text)
-	IconBadge.apply_to_button(button, "history", 15)
+	IconButton.apply(button, &"action.history", 15)
 	if result_text.length() > 1:
 		_append_gm_output(result_text, false)
 	_refresh_gm_recorders()
@@ -772,7 +772,7 @@ func _on_gm_recorder_pressed(recorder_id: String, callback: Callable, button: Bu
 func _on_gm_snapshot_pressed() -> void:
 	_on_btn_snapshot()
 	var result_text := _gm_sanitize_legacy_status(_snapshot_btn.text)
-	IconBadge.apply_to_button(_snapshot_btn, "save", 15)
+	IconButton.apply(_snapshot_btn, &"action.save", 15)
 	if result_text.length() > 1:
 		_append_gm_output(result_text, result_text.contains("失败"))
 
@@ -795,7 +795,7 @@ func _refresh_gm_recorders() -> void:
 		label.add_theme_color_override("font_color", UITokens.WARN if recording else UITokens.TEXT_MAIN)
 	for button in [_record_btn, _tile_record_btn, _economy_record_btn]:
 		if button != null:
-			IconBadge.apply_to_button(button, "history", 15)
+			IconButton.apply(button, &"action.history", 15)
 
 
 func _gm_sanitize_legacy_status(text: String) -> String:
@@ -1672,7 +1672,7 @@ func _build_snapshot_payload() -> Dictionary:
 func _show_snapshot_toast(msg: String, is_error: bool) -> void:
 	if console_mode == ConsoleMode.PLAYER_GM:
 		_append_gm_output(msg, is_error)
-		IconBadge.apply_to_button(_snapshot_btn, "save", 15)
+		IconButton.apply(_snapshot_btn, &"action.save", 15)
 		return
 	if _snapshot_btn == null:
 		return
@@ -1720,7 +1720,7 @@ func _refresh_record_btn_text(force: bool = false) -> void:
 	if _record_btn == null or _perf_recorder == null:
 		return
 	if console_mode == ConsoleMode.PLAYER_GM:
-		IconBadge.apply_to_button(_record_btn, "history", 15)
+		IconButton.apply(_record_btn, &"action.history", 15)
 		return
 	if not force and Time.get_ticks_msec() < _record_btn_toast_until_msec:
 		return
@@ -1741,7 +1741,7 @@ func _refresh_record_btn_text(force: bool = false) -> void:
 func _show_record_toast(msg: String, is_error: bool) -> void:
 	if console_mode == ConsoleMode.PLAYER_GM:
 		_append_gm_output(msg, is_error)
-		IconBadge.apply_to_button(_record_btn, "history", 15)
+		IconButton.apply(_record_btn, &"action.history", 15)
 		return
 	if _record_btn == null:
 		return
@@ -1784,7 +1784,7 @@ func _refresh_tile_record_btn_text(force: bool = false) -> void:
 	if _tile_record_btn == null or _tile_data_recorder == null:
 		return
 	if console_mode == ConsoleMode.PLAYER_GM:
-		IconBadge.apply_to_button(_tile_record_btn, "history", 15)
+		IconButton.apply(_tile_record_btn, &"action.history", 15)
 		return
 	if not force and Time.get_ticks_msec() < _tile_record_btn_toast_until_msec:
 		return
@@ -1827,7 +1827,7 @@ func _refresh_tile_record_btn_text(force: bool = false) -> void:
 func _show_tile_record_toast(msg: String, is_error: bool) -> void:
 	if console_mode == ConsoleMode.PLAYER_GM:
 		_append_gm_output(msg, is_error)
-		IconBadge.apply_to_button(_tile_record_btn, "history", 15)
+		IconButton.apply(_tile_record_btn, &"action.history", 15)
 		return
 	if _tile_record_btn == null:
 		return
@@ -1893,7 +1893,7 @@ func _refresh_economy_record_btn_text(force: bool = false) -> void:
 	if _economy_record_btn == null or _economy_data_recorder == null:
 		return
 	if console_mode == ConsoleMode.PLAYER_GM:
-		IconBadge.apply_to_button(_economy_record_btn, "history", 15)
+		IconButton.apply(_economy_record_btn, &"action.history", 15)
 		return
 	var summary: Dictionary = _economy_data_recorder.call("sampling_summary") \
 		if _economy_data_recorder.has_method("sampling_summary") else {}
@@ -1937,7 +1937,7 @@ func _refresh_economy_record_btn_text(force: bool = false) -> void:
 func _show_economy_record_toast(msg: String, is_error: bool) -> void:
 	if console_mode == ConsoleMode.PLAYER_GM:
 		_append_gm_output(msg, is_error)
-		IconBadge.apply_to_button(_economy_record_btn, "history", 15)
+		IconButton.apply(_economy_record_btn, &"action.history", 15)
 		return
 	if _economy_record_btn == null:
 		return

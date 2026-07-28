@@ -127,7 +127,7 @@ func _ready() -> void:
 	content.add_child(stage_row)
 	var stage_icon := IconBadge.new()
 	stage_icon.custom_minimum_size = Vector2(28.0, 28.0)
-	stage_icon.set_icon("world", UITokens.ACCENT)
+	stage_icon.set_semantic(&"country.world", UITokens.ACCENT)
 	stage_row.add_child(stage_icon)
 	_stage_label = Label.new()
 	_stage_label.text = "正在准备地图运行时"

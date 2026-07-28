@@ -42,6 +42,7 @@ func update_items(items: Array) -> void:
 			continue
 		var data: Dictionary = items[i]
 		var accent: Color = data.get("accent", UITokens.ACCENT)
-		_icons[i].set_icon(String(data.get("icon", "overview")), accent)
+		_icons[i].set_semantic(
+			StringName(data.get("icon", &"summary.overview")), accent)
 		_labels[i].text = String(data.get("text", ""))
 		_labels[i].add_theme_color_override("font_color", UITokens.TEXT_MAIN)

@@ -1322,6 +1322,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 0.2, 0.005) var peak_min_prominence: float = 0.035
 @export_range(1, 400, 1) var peak_land_cells_per_peak: int = 120
 
+# 荒原(BADLANDS)是沙漠/寒漠中的稀有侵蚀斑块。候选格须满足局部起伏和多向崎岖度，
+# 最终数量同时受陆地比例、干旱地形比例和单斑块面积约束，避免整片沙漠被荒原替换。
+@export_range(0.0, 0.3, 0.005) var badlands_min_relief: float = 0.06
+@export_range(1, 6, 1) var badlands_min_rugged_neighbors: int = 2
+@export_range(0.0, 1.0, 0.01) var badlands_max_land_ratio: float = 0.04
+@export_range(0.0, 1.0, 0.01) var badlands_max_arid_ratio: float = 0.25
+@export_range(1, 400, 1) var badlands_max_patch_cells: int = 48
+
 # 峡谷(CANYON)：河流深切、两壁陡立的线状侵蚀峡谷（须有河道穿过），与干旱片状荒原(BADLANDS)、
 # 构造裂谷(RIFT_VALLEY)区分。canyon_min_wall=单侧陡壁最小相对高差(越大越陡才算)；canyon_min_axis=
 # 对置两壁的综合下切门槛(越大峡谷越深越稀有)。仅 C++ 生成路径消费(world_ext.cpp CANYON pass)。

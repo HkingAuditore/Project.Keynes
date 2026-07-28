@@ -241,7 +241,7 @@ func _build_header() -> Control:
 	close_button.tooltip_text = "关闭地块档案"
 	close_button.focus_mode = Control.FOCUS_NONE
 	close_button.custom_minimum_size = Vector2(34.0, 32.0)
-	IconBadge.apply_to_button(close_button, "close", 14)
+	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭地块档案")
 	close_button.pressed.connect(func() -> void: close_requested.emit())
 	header.add_child(close_button)
 	return shell
@@ -509,7 +509,10 @@ func _add_section_header(section: Dictionary) -> void:
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var icon := IconBadge.new()
 	icon.custom_minimum_size = Vector2(20.0, 20.0)
-	icon.set_icon(String(section.get("icon", "overview")), section.get("accent", UITokens.ACCENT))
+	icon.set_semantic(
+		StringName(section.get("icon", &"summary.overview")),
+		section.get("accent", UITokens.ACCENT)
+	)
 	row.add_child(icon)
 	var label := Label.new()
 	label.text = String(section.get("title", "资料"))

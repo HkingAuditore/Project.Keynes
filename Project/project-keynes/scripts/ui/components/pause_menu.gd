@@ -189,9 +189,7 @@ func _add_button(text_value: String, icon: String, callback: Callable) -> Button
 	row.add_theme_constant_override("separation", 10)
 	var icon_label := Label.new()
 	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon_label.text = IconBadge.glyph_for_key(IconBadge.normalize_icon(icon))
-	icon_label.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
-	icon_label.add_theme_font_size_override("font_size", 15)
+	IconButton.apply_to_label(icon_label, StringName(icon), 15)
 	icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(icon_label)
 	var text_label := Label.new()

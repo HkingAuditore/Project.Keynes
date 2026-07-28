@@ -81,9 +81,9 @@ func _build_ui() -> void:
 	_primary_box = VBoxContainer.new()
 	_primary_box.add_theme_constant_override("separation", UITokens.SPACE_XS)
 	primary_margin.add_child(_primary_box)
-	_add_category_button(Category.GEOGRAPHY, "geo", "地理信息", "显示海拔、地形与植被类型")
-	_add_category_button(Category.CLIMATE, "weather", "气候信息", "显示实时温度、湿度、风向与洋流")
-	_add_category_button(Category.RESOURCES, "resource", "资源信息", "显示当前所有自然资源储量")
+	_add_category_button(Category.GEOGRAPHY, &"geography.terrain", "地理信息", "显示海拔、地形与植被类型")
+	_add_category_button(Category.CLIMATE, &"climate.weather", "气候信息", "显示实时温度、湿度、风向与洋流")
+	_add_category_button(Category.RESOURCES, &"economy.resource", "资源信息", "显示当前所有自然资源储量")
 
 	_secondary_panel = _make_panel()
 	_secondary_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -121,7 +121,12 @@ func _make_margin() -> MarginContainer:
 	return margin
 
 
-func _add_category_button(category: int, icon_key: String, title: String, description: String) -> void:
+func _add_category_button(
+		category: int,
+		icon_key: StringName,
+		title: String,
+		description: String
+) -> void:
 	var button := _make_icon_button(icon_key, title, description)
 	button.pressed.connect(func() -> void:
 		_set_category(Category.NONE if _category == category else category)
@@ -170,26 +175,26 @@ func _rebuild_secondary() -> void:
 
 	match _category:
 		Category.GEOGRAPHY:
-			_add_mode_button(OverlayMode.MODE.ELEVATION, "elevation", "海拔",
+			_add_mode_button(OverlayMode.MODE.ELEVATION, &"geography.elevation", "海拔",
 				"显示各地区当前权威海拔")
-			_add_mode_button(OverlayMode.MODE.LANDFORM, "surface", "地形",
+			_add_mode_button(OverlayMode.MODE.LANDFORM, &"geography.surface", "地形",
 				"显示各地区当前地貌类型")
-			_add_mode_button(OverlayMode.MODE.VEGETATION_TYPE, "vegetation", "植被",
+			_add_mode_button(OverlayMode.MODE.VEGETATION_TYPE, &"ecology.vegetation", "植被",
 				"显示各地区当前植被类型")
 		Category.CLIMATE:
-			_add_mode_button(OverlayMode.MODE.TEMPERATURE, "temperature", "温度",
+			_add_mode_button(OverlayMode.MODE.TEMPERATURE, &"climate.temperature", "温度",
 				"显示各地区当前温度")
-			_add_mode_button(OverlayMode.MODE.HUMIDITY, "humidity", "湿度",
+			_add_mode_button(OverlayMode.MODE.HUMIDITY, &"climate.humidity", "湿度",
 				"显示各地区当前空气与地表湿润程度")
-			_add_mode_button(OverlayMode.MODE.WIND_DIR, "wind", "风向",
+			_add_mode_button(OverlayMode.MODE.WIND_DIR, &"climate.wind", "风向",
 				"以色相表示方向、亮度表示风力")
-			_add_mode_button(OverlayMode.MODE.OCEAN_CURRENT_DIR, "ocean_current", "洋流",
+			_add_mode_button(OverlayMode.MODE.OCEAN_CURRENT_DIR, &"hydrology.current", "洋流",
 				"以色相表示方向、亮度表示流速")
 		Category.RESOURCES:
 			_add_resource_buttons()
 
 	_close_button = _make_icon_button(
-		"eye_slash", "关闭图层", "关闭当前地图信息遮罩")
+		&"status.hidden", "关闭图层", "关闭当前地图信息遮罩")
 	_close_button.toggle_mode = false
 	_close_button.pressed.connect(_on_clear_pressed)
 	root.add_child(_close_button)
@@ -262,7 +267,12 @@ func _notification(what: int) -> void:
 		call_deferred("_apply_secondary_geometry")
 
 
-func _add_mode_button(mode: int, icon_key: String, title: String, description: String) -> void:
+func _add_mode_button(
+		mode: int,
+		icon_key: StringName,
+		title: String,
+		description: String
+) -> void:
 	var button := _make_icon_button(icon_key, title, description)
 	button.button_pressed = int(_active_request.get("mode", -1)) == mode
 	button.pressed.connect(func() -> void:
@@ -289,7 +299,7 @@ func _add_resource_buttons() -> void:
 			button.text = ""
 			button.expand_icon = true
 			button.icon_max_width = 24
-		elif icon_key == "unknown" and not _warned_missing_icons.has(profile.id):
+		elif icon_key == &"system.unknown" and not _warned_missing_icons.has(profile.id):
 			_warned_missing_icons[profile.id] = true
 			push_warning("MapOverlayToolbar: resource '%s' has no registered icon" % profile.id)
 		var request := {
@@ -302,14 +312,14 @@ func _add_resource_buttons() -> void:
 		_mode_buttons.append(button)
 
 
-func _make_icon_button(icon_key: String, title: String, description: String) -> Button:
+func _make_icon_button(icon_key: StringName, title: String, description: String) -> Button:
 	var button := Button.new()
 	button.custom_minimum_size = BUTTON_SIZE
 	button.toggle_mode = true
 	button.focus_mode = Control.FOCUS_ALL
 	button.mouse_filter = Control.MOUSE_FILTER_STOP
 	button.tooltip_text = "%s\n%s" % [tr(title), tr(description)]
-	IconBadge.apply_to_button(button, icon_key, 21)
+	IconButton.apply(button, icon_key, IconButton.LARGE)
 	return button
 
 

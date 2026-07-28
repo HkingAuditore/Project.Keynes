@@ -178,7 +178,7 @@ func _create_rows_card(parent: VBoxContainer, title_text: String, icon_key: Stri
 	box.add_child(title_row)
 	var icon := IconBadge.new()
 	icon.custom_minimum_size = Vector2(18.0, 18.0)
-	icon.set_icon(icon_key, accent)
+	icon.set_semantic(StringName(icon_key), accent)
 	title_row.add_child(icon)
 	var title := Label.new()
 	title.text = title_text
@@ -301,7 +301,8 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	panel.visible = bool(data.get("visible", true))
 	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
 		Color(0.055, 0.048, 0.039, 0.96), Color(accent.r, accent.g, accent.b, 0.42)))
-	(refs.get("icon") as IconBadge).set_icon(String(data.get("icon", "building")), accent)
+	(refs.get("icon") as IconBadge).set_semantic(
+		StringName(data.get("icon", &"economy.building")), accent)
 	(refs.get("name") as Label).text = String(data.get("name", "建筑"))
 	(refs.get("owner") as Label).text = String(data.get("owner", ""))
 	(refs.get("count") as Label).text = String(data.get("count", ""))
@@ -312,7 +313,7 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	var state_refs: Dictionary = refs.get("state_summary", {})
 	var state: Dictionary = data.get("state_summary", {})
 	var state_icon := refs.get("state_icon") as IconBadge
-	state_icon.set_icon(String(state.get("icon", "")), state.get("accent", UITokens.WARN))
+	state_icon.set_semantic(StringName(state.get("icon", &"")), state.get("accent", UITokens.WARN))
 	state_icon.tooltip_text = String(state.get("label", ""))
 	var state_panel := state_refs.get("panel") as PanelContainer
 	state_panel.visible = not state.is_empty()

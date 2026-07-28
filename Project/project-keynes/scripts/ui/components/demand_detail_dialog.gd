@@ -109,7 +109,7 @@ func _build_dialog() -> void:
 	body.add_child(title_row)
 	var icon := IconBadge.new()
 	icon.custom_minimum_size = Vector2(32.0, 32.0)
-	icon.set_icon("resource", UITokens.RESOURCE)
+	icon.set_semantic(&"economy.resource", UITokens.RESOURCE)
 	title_row.add_child(icon)
 	var titles := VBoxContainer.new()
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -129,7 +129,7 @@ func _build_dialog() -> void:
 	close_button.custom_minimum_size = Vector2(34.0, 34.0)
 	close_button.focus_mode = Control.FOCUS_NONE
 	close_button.tooltip_text = "关闭"
-	IconBadge.apply_to_button(close_button, "close", 14)
+	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
 	close_button.pressed.connect(close_dialog)
 	title_row.add_child(close_button)
 

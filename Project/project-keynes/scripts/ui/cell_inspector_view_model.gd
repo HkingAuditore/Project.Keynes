@@ -783,7 +783,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 				"has_bundle": bool(metadata.get("has_bundle", false)),
 				"has_substitute": bool(metadata.get("has_substitute", false)),
 				"is_unallocated_alternative": quantity <= 0 and unlocked_alternative,
-				"icon": "resource",
+				"icon": GoodProfileRegistry.icon_key(stable_id),
 				"visible": visible,
 			})
 		demand_groups = _group_demand_rows_by_usage(demand_rows)
@@ -822,7 +822,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 				ethnicity_name, sat * 100.0,
 				UITokens.format_compact_number_cn(float(owners + employees), 1), settlement_days],
 			"accent": UITokens.ACCENT,
-			"icon": _profession_icon(profession_id),
+			"icon": IconCatalog.profession_semantic(profession_id),
 			"living_icon": _living_standard_icon(living_level),
 			"living_accent": _living_standard_accent(living_level),
 			"living_standard": living_name,
@@ -900,30 +900,6 @@ func _living_standard_icon(level: int) -> String:
 	return ["living_destitute", "living_struggling", "living_poor", "living_secure",
 		"living_comfortable", "living_affluent", "living_luxury"][level] \
 		if level >= 0 and level < 7 else "history"
-
-
-func _profession_icon(profession_id: String) -> String:
-	if profession_id.contains("merchant"):
-		return "profession_merchant"
-	if profession_id.contains("fisher"):
-		return "profession_fisher"
-	if profession_id.contains("hunter"):
-		return "target"
-	if profession_id.contains("forager"):
-		return "eco"
-	if profession_id.contains("farmer") or profession_id.contains("agricultural"):
-		return "crop"
-	if profession_id.contains("artisan") or profession_id.contains("smith") \
-			or profession_id.contains("carpenter"):
-		return "profession_artisan"
-	if profession_id.contains("engineer") or profession_id.contains("chemist") \
-			or profession_id.contains("scientist") or profession_id.contains("teacher"):
-		return "profession_scholar"
-	if profession_id.contains("owner") or profession_id.contains("aristocrat"):
-		return "profession_owner"
-	if profession_id.contains("unemployed"):
-		return "profession_unemployed"
-	return "profession_worker"
 
 
 func _living_standard_accent(level: int) -> Color:
@@ -1060,7 +1036,7 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 				{"id": "shortage", "name": "短缺", "value": "%.1f%%" % shortage},
 			],
 			"accent": UITokens.RESOURCE,
-			"icon": "resource",
+			"icon": GoodProfileRegistry.icon_key(stable_id),
 			"visible": true,
 		})
 	return {
@@ -1123,6 +1099,8 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 	var period_days := maxi(1, int(snapshot.get("period_days", 1)))
 	for i in range(group_types.size()):
 		var type_idx := int(group_types[i])
+		var building_id := String(type_ids[type_idx]) \
+			if type_idx >= 0 and type_idx < type_ids.size() else ""
 		var count := int(group_counts[i]) if i < group_counts.size() else 0
 		var revenue := int(last_revenue[i]) if i < last_revenue.size() else 0
 		var input_cost := int(last_input_cost[i]) if i < last_input_cost.size() else 0
@@ -1279,7 +1257,7 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 			"profit": headline_profit,
 			"profit_label": headline_profit_label,
 			"accent": state_accent if show_state_summary else (UITokens.GOOD if profit > 0 else (UITokens.RISK if profit < 0 else UITokens.TEXT_MUTED)),
-			"icon": "building", "job_rows": job_rows,
+			"icon": _building_icon(building_id, snapshot, type_idx), "job_rows": job_rows,
 			"production_rows": production_rows, "finance": finance, "visible": true,
 		})
 	_append_construction_rows(rows, snapshot, type_ids, type_names)
@@ -1449,7 +1427,80 @@ func _append_construction_rows(rows: Array, snapshot: Dictionary, type_ids: Pack
 	var ready_days: PackedInt64Array = snapshot.get("construction_ready_days", PackedInt64Array())
 	for i in range(types.size()):
 		var type_idx := int(types[i])
-		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"), "count": "%d 栋" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": "building", "job_rows": [], "production_rows": [], "finance": {}, "visible": true})
+		var building_id := String(type_ids[type_idx]) \
+			if type_idx >= 0 and type_idx < type_ids.size() else ""
+		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (building_id if not building_id.is_empty() else "建筑"), "count": "%d 栋" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": _building_icon(building_id, snapshot, type_idx), "job_rows": [], "production_rows": [], "finance": {}, "visible": true})
+
+
+func _building_icon(type_id: String, snapshot: Dictionary = {}, type_idx: int = -1) -> StringName:
+	if type_id.is_empty():
+		return &"economy.building"
+	var output_offsets: PackedInt32Array = snapshot.get(
+		"building_output_offsets", PackedInt32Array())
+	var output_good_indices: PackedInt32Array = snapshot.get(
+		"building_output_good_ids", PackedInt32Array())
+	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	var kinds: PackedInt32Array = snapshot.get("building_kinds", PackedInt32Array())
+	if type_idx >= 0 and type_idx + 1 < output_offsets.size():
+		var output_pos := int(output_offsets[type_idx])
+		if output_pos < int(output_offsets[type_idx + 1]) \
+				and output_pos >= 0 and output_pos < output_good_indices.size():
+			var good_idx := int(output_good_indices[output_pos])
+			if good_idx >= 0 and good_idx < good_ids.size():
+				var kind := int(kinds[type_idx]) if type_idx < kinds.size() else 1
+				return IconCatalog.building_semantic(type_id, good_ids[good_idx], kind)
+	if type_id.contains("hearth"):
+		return &"economy.building.hearth"
+	if type_id.contains("gathering"):
+		return &"economy.building.gathering"
+	if type_id.contains("merchant") or type_id.contains("market") \
+			or type_id.contains("trade"):
+		return &"economy.building.market"
+	if type_id.contains("fish"):
+		return &"economy.building.fishing"
+	if type_id.contains("hunting"):
+		return &"economy.building.hunting"
+	if type_id.contains("kitchen") or type_id.contains("food") \
+			or type_id.contains("slaughterhouse"):
+		return &"economy.building.food"
+	if type_id.contains("farm") or type_id.contains("estate") \
+			or type_id.contains("pasture") or type_id.contains("rice") \
+			or type_id.contains("potato") or type_id.contains("wheat") \
+			or type_id.contains("cotton") or type_id.contains("flax") \
+			or type_id.contains("rubber_tree") or type_id.contains("spice") \
+			or type_id.contains("herbs"):
+		return &"economy.building.farm"
+	if type_id.contains("timber") or type_id.contains("lumber"):
+		return &"economy.building.forestry"
+	if type_id.contains("mine") or type_id.contains("ore_") \
+			or type_id.contains("quarry") or type_id.contains("stone_collector") \
+			or type_id.contains("coal") or type_id.contains("oil_collector") \
+			or type_id.contains("natural_gas") or type_id.contains("bauxite") \
+			or type_id.contains("limestone") or type_id.contains("silica") \
+			or type_id.contains("phosphate") or type_id.contains("salt") \
+			or type_id.contains("sulfur") or type_id.contains("rare_earth") \
+			or type_id.contains("flint"):
+		return &"economy.building.mine"
+	if type_id.contains("power"):
+		return &"economy.building.power"
+	if type_id.contains("shipyard"):
+		return &"economy.building.shipyard"
+	if type_id.contains("rail"):
+		return &"economy.building.transport"
+	if type_id.contains("scientific") or type_id.contains("medicine") \
+			or type_id.contains("pharmaceutical"):
+		return &"economy.building.science"
+	if type_id.contains("workshop") or type_id.contains("kiln") \
+			or type_id.contains("smith") or type_id.contains("tailor") \
+			or type_id.contains("tannery") or type_id.contains("scriptorium"):
+		return &"economy.building.workshop"
+	if type_id.contains("plant") or type_id.contains("works") \
+			or type_id.contains("mill") or type_id.contains("factory"):
+		return &"economy.building.factory"
+	if type_id.contains("school") or type_id.contains("hospital") \
+			or type_id.contains("office"):
+		return &"economy.building.service"
+	return &"economy.building"
 
 
 func _owner_profession_name(snapshot: Dictionary, signature_idx: int) -> String:
@@ -1610,7 +1661,7 @@ func _resource_state(idx: int, is_water: bool, visibility: Dictionary = {}) -> A
 			items.append({
 				"id": resource_id,
 				"name": name_cn,
-				"icon": _resource_icon(resource_id, name_cn),
+				"icon": ResourceProfileRegistry.icon_key(p),
 				"available": false,
 				"extractable": extractable,
 				"reserve": 0.0,
@@ -1628,7 +1679,7 @@ func _resource_state(idx: int, is_water: bool, visibility: Dictionary = {}) -> A
 		items.append({
 			"id": resource_id,
 			"name": name_cn,
-			"icon": _resource_icon(resource_id, name_cn),
+			"icon": ResourceProfileRegistry.icon_key(p),
 			"available": available,
 			"extractable": extractable,
 			"reserve": reserve,
@@ -1920,18 +1971,6 @@ func _resource_density_band(v: float) -> String:
 	if v < 0.55: return "可采"
 	if v < 0.80: return "富集"
 	return "丰饶"
-
-
-func _resource_icon(resource_id: String, name: String) -> String:
-	if resource_id in ["timber", "rubber_tree", "medicinal_herbs", "spice_plants"] or name.contains("木"):
-		return "eco"
-	if resource_id in ["fertile_soil", "wheat", "rice", "corn", "potato", "flax", "cotton"]:
-		return "crop"
-	if resource_id in ["pasture", "wild_game"]:
-		return "livestock"
-	if resource_id in ["oil", "natural_gas"]:
-		return "fuel"
-	return "resource"
 
 
 func _history_badges(cell: HexCell) -> Array:

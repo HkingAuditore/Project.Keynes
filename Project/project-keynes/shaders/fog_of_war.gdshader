@@ -191,17 +191,92 @@ vec2 fog_tileable_scale(float base_scale) {
 	return vec2(cells / wrap_period_x, cells);
 }
 
+// 时间演化的可平铺梯度噪声。与单纯给 p 加偏移不同，这里让每个晶格角点的梯度
+// 以不同速度和方向旋转，因此等值线会原地生成、消散和重组；先折叠 x 晶格坐标，
+// 仍能保证东西向周期完全一致。seed 只改变旋转速率，t=0 时保持静态场原貌。
+vec2 fog_evolving_gradient(vec2 lattice, float t, float seed) {
+	vec2 h = cloud_hash22(lattice);
+	vec2 g = -1.0 + 2.0 * h;
+	float direction = (h.x < 0.5) ? -1.0 : 1.0;
+	float rate = (0.34 + 0.32 * h.y) * (0.88 + 0.09 * seed);
+	float angle = t * rate * direction;
+	float cs = cos(angle);
+	float sn = sin(angle);
+	return vec2(cs * g.x - sn * g.y, sn * g.x + cs * g.y);
+}
+
+vec3 fog_grad_noise_tiled_evolve_d(vec2 p, float period_x, float t, float seed) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+	float x0 = i.x;
+	float x1 = i.x + 1.0;
+	if (period_x >= 1.0) {
+		x0 = mod(x0, period_x);
+		x1 = mod(x1, period_x);
+	}
+	vec2 ga = fog_evolving_gradient(vec2(x0, i.y), t, seed);
+	vec2 gb = fog_evolving_gradient(vec2(x1, i.y), t, seed);
+	vec2 gc = fog_evolving_gradient(vec2(x0, i.y + 1.0), t, seed);
+	vec2 gd = fog_evolving_gradient(vec2(x1, i.y + 1.0), t, seed);
+	float va = dot(ga, f);
+	float vb = dot(gb, f - vec2(1.0, 0.0));
+	float vc = dot(gc, f - vec2(0.0, 1.0));
+	float vd = dot(gd, f - vec2(1.0, 1.0));
+	float k1 = vb - va;
+	float k2 = vc - va;
+	float k3 = va - vb - vc + vd;
+	float n = va + k1 * u.x + k2 * u.y + k3 * u.x * u.y;
+	vec2 dn = ga + u.x * (gb - ga) + u.y * (gc - ga)
+		+ u.x * u.y * (ga - gb - gc + gd)
+		+ du * vec2(k1 + k3 * u.y, k2 + k3 * u.x);
+	return vec3(0.5 + 0.5 * n, 0.5 * dn);
+}
+
+float fog_grad_noise_tiled_evolve(vec2 p, float period_x, float t, float seed) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	float x0 = i.x;
+	float x1 = i.x + 1.0;
+	if (period_x >= 1.0) {
+		x0 = mod(x0, period_x);
+		x1 = mod(x1, period_x);
+	}
+	vec2 ga = fog_evolving_gradient(vec2(x0, i.y), t, seed);
+	vec2 gb = fog_evolving_gradient(vec2(x1, i.y), t, seed);
+	vec2 gc = fog_evolving_gradient(vec2(x0, i.y + 1.0), t, seed);
+	vec2 gd = fog_evolving_gradient(vec2(x1, i.y + 1.0), t, seed);
+	float va = dot(ga, f);
+	float vb = dot(gb, f - vec2(1.0, 0.0));
+	float vc = dot(gc, f - vec2(0.0, 1.0));
+	float vd = dot(gd, f - vec2(1.0, 1.0));
+	return 0.5 + 0.5 * (
+		va + u.x * (vb - va) + u.y * (vc - va)
+		+ u.x * u.y * (va - vb - vc + vd)
+	);
+}
+
 // 域扭曲：让 FBM 从"各向同性的糊团"变成有卷曲、有走向的云。
 //
 // 频率必须取 2 的负幂（1/2、1/4），否则子频率下的周期不再是整数格，接缝就回来了。
 // q3 叠第二层，扭曲的扭曲 —— 这是云缘出现撕扯、翻卷的来源。
 vec2 fog_domain_warp(vec2 p, float t, float period_n, int q) {
-	float w0 = cloud_grad_noise_tiled(p * 0.5 + vec2(0.0, t * 0.05), period_n * 0.5);
-	float w1 = cloud_grad_noise_tiled(p * 0.5 + vec2(5.2, 1.3 - t * 0.04), period_n * 0.5);
+	float w0 = fog_grad_noise_tiled_evolve(
+		p * 0.5 + vec2(0.0, t * 0.05), period_n * 0.5, t * 0.32, 0.0
+	);
+	float w1 = fog_grad_noise_tiled_evolve(
+		p * 0.5 + vec2(5.2, 1.3 - t * 0.04), period_n * 0.5, t * 0.29, 1.0
+	);
 	vec2 pw = p + (vec2(w0, w1) - vec2(0.5)) * (2.0 * warp_amount);
 	if (q >= 3) {
-		float w2 = cloud_grad_noise_tiled(pw * 0.25 + vec2(-3.1, 8.4), period_n * 0.25);
-		float w3 = cloud_grad_noise_tiled(pw * 0.25 + vec2(11.9, -2.6), period_n * 0.25);
+		float w2 = fog_grad_noise_tiled_evolve(
+			pw * 0.25 + vec2(-3.1, 8.4), period_n * 0.25, t * 0.21, 2.0
+		);
+		float w3 = fog_grad_noise_tiled_evolve(
+			pw * 0.25 + vec2(11.9, -2.6), period_n * 0.25, t * 0.24, 3.0
+		);
 		pw += (vec2(w2, w3) - vec2(0.5)) * (1.6 * warp_amount);
 	}
 	return pw;
@@ -237,24 +312,24 @@ FogCloudShape fog_sample_shape(
 	float f2 = fog_octave_fade(lod_px, 2.0);
 	float f3 = (q >= 2) ? fog_octave_fade(lod_px, 4.0) : 0.0;
 
-	vec3 n0 = cloud_grad_noise_tiled_d(
+	vec3 n0 = fog_grad_noise_tiled_evolve_d(
 		p * 0.5 + drift * 0.42 + vec2(7.1, -3.4),
-		period_n * 0.5
+		period_n * 0.5, t * 0.46, 0.0
 	);
-	vec3 n1 = cloud_grad_noise_tiled_d(
+	vec3 n1 = fog_grad_noise_tiled_evolve_d(
 		p + drift * 0.76 + cross_wobble * 0.10 + vec2(-11.8, 5.6),
-		period_n
+		period_n, t * 0.68, 1.0
 	);
-	vec3 n2 = cloud_grad_noise_tiled_d(
+	vec3 n2 = fog_grad_noise_tiled_evolve_d(
 		p * 2.0 + drift * 1.16 - wobble * 0.30 + vec2(19.7, 13.2),
-		period_n * 2.0
+		period_n * 2.0, t * 0.97, 2.0
 	);
 	vec3 n3 = vec3(0.5, 0.0, 0.0);
 	if (q >= 2 && f3 > 0.002) {
-		n3 = cloud_grad_noise_tiled_d(
+		n3 = fog_grad_noise_tiled_evolve_d(
 			p * 4.0 - drift * 1.42 + (wobble - cross_wobble) * 0.34
 				+ vec2(-31.4, 22.9),
-			period_n * 4.0
+			period_n * 4.0, t * 1.31, 3.0
 		);
 	}
 
@@ -320,19 +395,19 @@ float fog_shadow_mass(
 	float f0 = fog_octave_fade(lod_px, 0.5);
 	float f1 = fog_octave_fade(lod_px, 1.0);
 	float f2 = (q >= 3) ? fog_octave_fade(lod_px, 2.0) : 0.0;
-	float n0 = cloud_grad_noise_tiled(
+	float n0 = fog_grad_noise_tiled_evolve(
 		p * 0.5 + drift * 0.42 + vec2(7.1, -3.4),
-		period_n * 0.5
+		period_n * 0.5, t * 0.46, 0.0
 	);
-	float n1 = cloud_grad_noise_tiled(
+	float n1 = fog_grad_noise_tiled_evolve(
 		p + drift * 0.76 + cross_wobble * 0.10 + vec2(-11.8, 5.6),
-		period_n
+		period_n, t * 0.68, 1.0
 	);
 	float n2 = 0.5;
 	if (q >= 3 && f2 > 0.002) {
-		n2 = cloud_grad_noise_tiled(
+		n2 = fog_grad_noise_tiled_evolve(
 			p * 2.0 + drift * 1.16 - wobble * 0.30 + vec2(19.7, 13.2),
-			period_n * 2.0
+			period_n * 2.0, t * 0.97, 2.0
 		);
 	}
 	float norm = max(f0 * 0.66 + f1 * 0.30 + f2 * 0.04, 0.0001);
@@ -410,7 +485,10 @@ void fragment() {
 
 			if (q <= 0) {
 				// ── q0 超低：无导数、无光照。只要一层柔和起伏把纯色打散。
-				float n = cloud_cumulus_fbm(p, 1, t, lod_px, period_n);
+				vec2 q0_drift = vec2(t * 0.17, -t * 0.13);
+				float n = fog_grad_noise_tiled_evolve(
+					p + q0_drift, period_n, t * 0.68, 0.0
+				);
 				float shade = mix(0.86, 1.14, n);
 				col = mix(explored_color, unexplored_color, thick) * shade;
 				float thin_a = explored_alpha * presence * mix(0.76, 1.10, n);

@@ -43,7 +43,7 @@ func set_tabs(tabs: Array, current_tab: String = "") -> void:
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		icon.custom_minimum_size = Vector2(20.0, 20.0)
 		center.add_child(icon)
-		icon.set_icon(icon_key, UITokens.ACCENT)
+		icon.set_semantic(StringName(icon_key), UITokens.ACCENT)
 		btn.set_pressed_no_signal(id == _current_tab)
 		btn.pressed.connect(_on_tab_pressed.bind(id))
 		add_child(btn)
