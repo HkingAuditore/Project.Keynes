@@ -835,6 +835,12 @@ Building plan evaluate、building production 与 household market 现在都在�
 是否启动下一 continuation。plan/production/market 均先 wait，再按 task id 和原 cursor 顺序归并，
 所以 scalar 与 worker 的 state/event hash 契约不变。
 
+到期建筑 cell 在既有 building-plan prepare 内冻结并预计算各组生产气候能力，不增加 SUS node
+或经济 stage。就业需求使用气候前计划能力，保留已填岗位和合同基薪；production worker 先合并
+劳动、投入、资金、资源能力，再以冻结气候能力限幅。非到期 cell 的诊断和状态不提前变化，日内
+环境更新只在该 cell 下一次 `cell % 5` 到期时进入冻结快照。报告发布气候 Profile/限产组数与
+平均 Q16 能力；计算只访问 due-cell CSR，不执行全地图乘建筑类型扫描。
+
 ## Native daily moisture commit boundary (2026-07-24)
 
 The graph order and yield nodes are unchanged. Moisture-producing nodes no

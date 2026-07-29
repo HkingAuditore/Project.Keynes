@@ -689,6 +689,36 @@ Suspension sets owner demand to zero but does not remove the building. Probe dem
 unfunded signal demand only: it changes neither stock nor cash. Non-executable reviews reset
 the consecutive failure count. Service buildings do not evaluate these formulas.
 
+## Production climate capacity
+
+All profile inputs and results use Q16 and truncate toward zero through the
+shared saturating fixed-point helpers:
+
+```text
+fit(signal, optimum, tolerance)
+  = clamp(Q16_ONE - abs(signal - optimum) * Q16_ONE / tolerance,
+          0, Q16_ONE)
+
+temp_fit = fit(cell_temp_30d, temperature_opt, temperature_tolerance)
+water_fit = fit(cell_plant_available_water, water_opt, water_tolerance)
+raw_fit = min(temp_fit, water_fit)
+bounded_fit = max(profile_floor, raw_fit)
+climate_capacity = Q16_ONE
+                   - exposure * (Q16_ONE - bounded_fit) / Q16_ONE
+
+total_capacity = min(labor_capacity,
+                     input_capacity,
+                     capital_capacity,
+                     resource_capacity,
+                     climate_capacity)
+```
+
+Tolerance must be positive; optimum, floor, exposure, signals, fits, and
+capacity remain in `[0,Q16_ONE]`. A missing profile is exactly `Q16_ONE`.
+`climate_lost_output` is the nonnegative output difference between the feasible
+pre-climate capacity and total capacity, after the existing output and Modifier
+factors. Climate creates no goods or money and cannot increase baseline output.
+
 ## Renewable harvest budget
 
 All quantities below use resource fixed units. For renewable resource `r` in

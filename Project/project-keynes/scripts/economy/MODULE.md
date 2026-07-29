@@ -2,7 +2,7 @@
 
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v21 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究和国库由 NativeCountryRuntime 权威持有；不含税、
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v22 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究和国库由 NativeCountryRuntime 权威持有；不含税、
 > 跨国贸易/关税、政治、年龄与家庭结构；自然出生和死亡由原生 household/structural 路径处理。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
@@ -83,8 +83,14 @@
   营运资金；市场库存只按整套互补配方可执行的共同容量预留下周期物理投入，非生存加工不得提前锁住生存食物；居民消费和国内出口只能使用预留以上库存。
   商人采购目标以 `max(可行日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；生存品供给下限为平滑日产量的 1/2，其他耐储品为 1/4，配置库存天数和目标量级不缩小。现金不足时按生存品、居民短缺、生产投入 reserve 缺口提高预算权重；权重只改变购买顺序，总预算仍以真实采购价值为上限。仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
   国内贸易对每个目的地冻结同一笔现金预算：`商人正现金 - 既有订单预留 - 12.5% 营运底线`。候选裁量、利润裁剪和最终扣款共享这笔余额，生存品与关键投入也不得突破底线。
-  运行时报告、市场快照和 Economy CSV v19 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v19 或确定性哈希。
+  运行时报告、市场快照和 Economy CSV v22 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v22 或确定性哈希。
 - 默认 `building_output_efficiency_q16=131072`（2 倍）统一提高所有建筑的物资产出；建设材料、生产投入、自然资源消耗、岗位与工资保持目录原值。倍率在 native 冷路径载入输出列时应用，不改变 building catalog hash 或 PKEC 字节结构。
+- `ProductionClimateProfile` 按 stable ID 排序编译为 Q16 定长列。到期 cell 冻结 30 日温度与
+  `cell.plant_available_water`，计算温度/水分 fit，取较小值并应用 floor/exposure；无 Profile
+  恒为 `Q16_ONE`。计划产量、预计收入、留存 offer、投资 prospective output 和实际生产共用
+  同一能力。生产先求劳动、投入、资金与资源能力，再由气候限幅，因此减产同步减少投入与可耗
+  资源，但就业需求读取气候前计划，已填岗位与合同基薪义务不因当期气候被裁撤。全局 2 倍输出
+  和 Modifier 因子仍按原顺序作用，气候不能把目录基准提高到 100% 以上。
 
 - 自适应工资的可负担上限使用当前冻结价格下的“满产日收入”，先扣除日投入并预留目标营业利润，再按员工槽位折算；不得再把整个 epoch 的收入直接当作单日工资依据。亏损停产建筑使用同一反事实日收入报价，停产期间岗位目标为零。
 - 国内贸易先取源地真实盈余与目的地缺口，再用确定性整数二分裁剪到交易后仍满足利润率的最大数量；relief 路线只要求交易后价差非负。发运前按最新库存、现金和运力再次裁剪，避免整批候选因一次过量报价被全部拒绝。
@@ -320,7 +326,7 @@ already received a first dispatch. Committed diagnostics recompute current
 deadline misses from all live signal clocks rather than from only the planner
 slice that happened to run that day.
 
-## PKEC v21 rolling settlement (current)
+## PKEC v22 rolling settlement and production climate (current)
 
 Production uses five stable daily buckets: cell `c` settles when
 `day % 5 == c % 5`, always with `dt=5`. Each populated cell therefore settles
@@ -337,11 +343,12 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v21. They persist per-cell settlement day/generation,
-dirty generations, each building group's pending recovery result/cooldown,
-BuildingIdentityStore, and the Economy Modifier domain. Restore accepts v18/v19
-with an empty Modifier store and v18 with deterministic `pending=NONE, cooldown=0`; v2-v17 are
-rejected as legacy. Older v14/v13 migration wording above is historical.
+Current saves are PKEC v22. Cell records persist six frozen environment columns,
+including 30-day temperature and plant-available water. Building records persist
+temperature fit, water fit, climate capacity, and climate-lost output; all four
+enter the state hash. Restore accepts v22 only. Every other schema returns
+`legacy_climate_production_save_unsupported`; truncated, out-of-range, or
+environment-hash-mismatched records fail before the runtime becomes bootstrapped.
 
 The native hot path caches the frozen demand basis once per due cell and shares
 it between building retention and household clearing. Building-cell cache rows
@@ -355,7 +362,7 @@ stable group prefix with new groups, reuses type-compatible role/input spans,
 and rebuilds market/labor CSR from catalog-baked per-type good/profession spans.
 Generation stamps and double-buffered CSR storage replace global `(cell,key)`
 temporary lists and comparison sorting. These caches are transient and excluded
-from PKEC v21 and state hash; logical role state is hashed in stable group order.
+from PKEC v22 and state hash; logical role state is hashed in stable group order.
 Structure reports separate count-only/new/removed/rebuild/reuse counts and
 group-merge/market-cache/labor-cache milliseconds.
 

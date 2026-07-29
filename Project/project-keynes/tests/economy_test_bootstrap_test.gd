@@ -747,7 +747,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				or openings != maxi(0, required - filled):
 			owner_rows_valid = false
 			break
-	_expect("building CSV v16 separates jobs and exposes aggregate debt",
+	_expect("building CSV v22 separates jobs and exposes aggregate debt",
 		owner_columns_valid and owner_rows_valid and
 		building_header.has("merchant_debt_principal") and
 		building_header.has("last_in_kind_livelihood_value"))

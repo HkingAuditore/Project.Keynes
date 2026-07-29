@@ -7098,9 +7098,12 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     thread_local std::vector<int64_t> demand;
     thread_local std::vector<int64_t> fill;
     auto employment_utilization_q16 = [&](const BuildingGroup &group) {
-        int64_t utilization = group.planned_utilization_q16;
+        const int32_t index = static_cast<int32_t>(&group - _buildings.data());
+        int64_t utilization = index >= 0 && index < static_cast<int32_t>(
+                _building_planned_capacity_before_climate_q16.size())
+            ? _building_planned_capacity_before_climate_q16[index]
+            : group.planned_utilization_q16;
         if (group.operating_state == 2) {
-            const int32_t index = static_cast<int32_t>(&group - _buildings.data());
             if (index >= 0 && index < static_cast<int32_t>(
                     _building_recovery_probe_capacity_q16.size()))
                 utilization = std::min(utilization,
@@ -8631,7 +8634,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             expected_revenue = saturating_add(
                 expected_revenue, group.last_expected_revenue, _saturation_count);
             filled_owner = saturating_add(filled_owner, group.filled_owner, _saturation_count);
-            const int64_t desired_scale = desired_scale_for_group(group, type, true);
+            const int64_t desired_scale = desired_scale_for_group(group, type, false);
             group.purchase_intent_capacity_q16 = desired_scale;
             const int64_t desired_cost = group_input_cost_at_scale(
                 group, type, desired_scale, false);

@@ -13,28 +13,26 @@ u32 payload_bytes
 payload
 ```
 
-## PKEC v20（当前 writer，兼容 v18/v19）
+## PKEC v22（当前 writer，仅接受 v22）
 
-PKEC v20 retains the complete v19 economy payload and adds section 12 for the
-generation-safe BuildingIdentityStore and normalized Economy Modifier domain.
-PKEC v18/v19 restore deterministically with an empty Modifier store.
+PKEC v22 keeps the complete modifier, technology-procurement, rolling economy,
+trade, building, recovery, and audit payload. Its cell record is 76 bytes and
+stores current temperature, 30-day temperature, ambient moisture,
+plant-available water, snow, weather, settlement/generation lanes, and stable
+rolling phase. Its building record adds four signed i64 diagnostics immediately
+after total capacity: temperature fit, water fit, climate capacity, and
+climate-lost output.
 
-PKEC v19 retains the v18 portfolio controls and additionally persists each
-building group's `pending_operating_state` and `recovery_cooldown_cycles`.
-Recovery results therefore survive a save between production and the next
-due-cell employment boundary. A v18 building record has neither field and is
-migrated deterministically as `pending=NONE(255), cooldown=0`.
+The six environment columns share a recomputed restore hash. Fit and capacity
+must be in `[0,Q16_ONE]`; climate-lost output must be nonnegative. The four
+building diagnostics enter the authoritative state hash. Truncated records,
+invalid ranges, or an environment hash mismatch fail restore and the target does
+not become bootstrapped.
 
-PKEC v18 retains the v17 portfolio controls and persists
-`investment_max_growth_share_q16`,
-`investment_new_type_seed_buildings`, and
-`investment_merchant_transition_min_improvement_q16`. PKEC v17 introduced
-`investment_gap_fill_share_q16`, `investment_portfolio_max_types`,
-`investment_max_type_owner_share_q16`, and
-`recovery_liquidation_max_share_q16`. These values affect deterministic
-investment and liquidation decisions and must match the configured
-`EconomyProfile` at restore. The writer emits v20; restore accepts v18-v20.
-v2-v17 return `legacy_economy_save_unsupported`.
+The writer and reader accept schema 22 only. Any other schema, including v21,
+returns `legacy_climate_production_save_unsupported`. There is no implicit
+default for the two new frozen environment columns and no legacy climate
+production migration.
 
 历史 v16 在建筑记录中加入聚合商人债务本金/溢价、期限、逾期周期、恢复失败审查数、三态运行状态和
 上一期自产生活价值；待建记录保存本金、溢价和期限。上述字段全部进入状态哈希、合法性检查、
@@ -47,7 +45,7 @@ section 顺序：
    贸易计数、next trade order ID 和已解析贸易配置。
 1. page records：page chain metadata 和每页 64 lane 完整 SoA/generation。
 2. market records：所有 goods 的 stock/price/demand EMA/last shortage。
-3. cell records：恒等 `cell_to_market` 与当日四类 Q16 环境快照。
+3. cell records：恒等 `cell_to_market`、当日六类 Q16 环境快照与 rolling generation。
 4. pending commands。
 5. building owner-lot records。
 6. pending construction records。
@@ -71,7 +69,8 @@ restore 要先配置并完整恢复 PKCN v2，再用当前资源 catalog 调 `co
 - page next/cell、唯一 head、无环、无不可达页
 - active count、generation、population/funds、signature range
 - 同 cell signature 唯一
-- 一地块一市场恒等映射、stock/price/EMA/shortage range 与环境 snapshot
+- 一地块一市场恒等映射、stock/price/EMA/shortage range、六列环境 snapshot/hash
+- 建筑温度 fit、水分 fit、气候能力范围与非负气候减产量
 - pending command opcode、handle generation 和 target range
 - 已恢复 PKCN 的 schema、generation 和 state hash
 - 贸易订单端点/状态/到达日、物资行/卖方 CSR、托管数量和稳定 next ID
@@ -79,16 +78,10 @@ restore 要先配置并完整恢复 PKCN v2，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v20，并与 PKCN v2 交叉绑定。PKEC v18/v19 恢复时补齐新增恢复字段并建立空
-Modifier store，PKEC v2-v17 统一
-返回 `legacy_economy_save_unsupported`，不执行隐式迁移。历史上的 PKEC v14 确定性
-`v14_rolling_phase_bootstrap` 迁移每 cell phase/结算日，PKEC v13 再沿既有兼容 hash 路径补齐
-v14 行为参数后迁移。只有参数一致的 v11 ACTIVE 可迁移；旧默认 v11 的
-25%/1 日商人策略与当前 12.5%/30 日分档库存基线不一致，返回
-`save_business_policy_profile_mismatch`；
-ACTIVE 配置拒绝 v11 PROBE 和 v10。拓扑和未完成规划从不存档，加载后重建。PKEC v2-v9 缺少国家权威状态，读取时
-精确返回 `legacy_countryless_economy_save_unsupported`；不再通过默认国家、全解锁科技或全局
-国库静默迁移。联合存档只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
+当前写出 schema 为 PKEC v22，并与 PKCN v2 交叉绑定。PKEC v2-v21 统一返回
+`legacy_climate_production_save_unsupported`，不执行隐式迁移。后文旧版本迁移章节只记录历史
+格式演进，不代表当前 reader 仍接受这些版本。拓扑和未完成规划从不存档，加载后重建；联合存档
+只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
 
 ## catalog 身份
 
@@ -96,7 +89,7 @@ ACTIVE 配置拒绝 v11 PROBE 和 v10。拓扑和未完成规划从不存档，�
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v20 与 PKCN v2 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。
+当前 PKEC v22 与 PKCN v2 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。
 未来新增/删除/改 ID 若要兼容，必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
 迁移器应：
