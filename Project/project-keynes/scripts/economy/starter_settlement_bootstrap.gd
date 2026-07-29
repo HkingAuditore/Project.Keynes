@@ -123,6 +123,10 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			"signature_ids": signature_ids,
 			"population": populations,
 			"funds": funds,
+			# Formal opening settlements are country capitals. They keep the
+			# exact 20-person economy contract, but receive a deterministic
+			# settlement identity even before reaching the rural threshold.
+			"forced_named_cells": settlement_cells,
 		},
 		"market_packet": {"stock": stock},
 		"building_packet": {

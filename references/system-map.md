@@ -479,4 +479,6 @@ debug recording is Economy CSV v22.
 - Commit: `aggregate_publish/COMMIT` consumes deduplicated changed cells.
 - Bridge: selected-cell summary plus full settlement snapshot / bounded deltas.
 - Persistence: PKEC v24 fixed generations plus sparse stable-ID names.
+- Formal opening-country cells carry a native forced-name bit, so every
+  20-person capital is named while its prosperity tier remains population-only.
 - Visible boundary: Godot pooled label layer; no economic mirror or fallback.

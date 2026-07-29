@@ -522,9 +522,14 @@ the three new deterministic policy controls and explicitly rejects v17.
 
 ## Prosperity and settlement names
 
-- Profiles compile thresholds and stable name components; native
+- Profiles compile thresholds, complete historical names, fictional components,
+  and their allocation share; native
   `SettlementStore` owns all mutable tiers and identities.
 - No prosperity/name fields enter MapData, HexCell, or DataCore.
 - Inspector consumes selected-cell summaries; `SettlementLabelLayer` consumes
   full snapshot plus bounded deltas with fog, LOD, collision and pool limits.
 - PKEC v24 persists the state; v22/v23 rebuild it deterministically.
+- Production bootstrap marks opening-country cells as forced-name capitals:
+  they retain the exact 20-person contract and population-derived tier, but
+  always receive a deterministic settlement name. The bit round-trips in PKEC
+  v24 and is exposed as `settlement_name_forced`.

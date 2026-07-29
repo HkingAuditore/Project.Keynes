@@ -2,6 +2,12 @@ class_name SettlementNamePackProfile
 extends Resource
 
 @export var stable_id: StringName = &"default_zh"
+@export var full_name_ids: PackedStringArray
+@export var full_name_text: PackedStringArray
+@export var full_name_weights: PackedInt32Array
+@export var full_name_alias_ids: PackedStringArray
+@export var full_name_alias_targets: PackedStringArray
+@export_range(0, 65536, 1) var full_name_share_q16: int = 32768
 @export var prefix_ids: PackedStringArray
 @export var prefix_text: PackedStringArray
 @export var prefix_weights: PackedInt32Array
@@ -20,19 +26,38 @@ extends Resource
 
 
 func compile_native_columns() -> Dictionary:
-	if stable_id == &"" or not _valid_part(prefix_ids, prefix_text, prefix_weights) \
+	var has_full_names := not full_name_ids.is_empty()
+	var has_components := not prefix_ids.is_empty()
+	var compiled_full_name_weights := full_name_weights
+	if has_full_names and compiled_full_name_weights.is_empty():
+		compiled_full_name_weights.resize(full_name_ids.size())
+		compiled_full_name_weights.fill(1)
+	if stable_id == &"" or (not has_full_names and not has_components) \
+			or (has_full_names and (
+			not _valid_part(full_name_ids, full_name_text,
+				compiled_full_name_weights) \
+			or not _valid_aliases(full_name_alias_ids,
+				full_name_alias_targets, full_name_ids))) or (has_components and (
+			not _valid_part(prefix_ids, prefix_text, prefix_weights) \
 			or not _valid_part(root_ids, root_text, root_weights) \
 			or not _valid_part(suffix_ids, suffix_text, suffix_weights) \
 			or not _valid_aliases(prefix_alias_ids, prefix_alias_targets, prefix_ids) \
 			or not _valid_aliases(root_alias_ids, root_alias_targets, root_ids) \
-			or not _valid_aliases(suffix_alias_ids, suffix_alias_targets, suffix_ids):
+			or not _valid_aliases(suffix_alias_ids, suffix_alias_targets, suffix_ids))):
 		return {"ok": false, "reason": "settlement_name_pack_invalid"}
-	var combinations := prefix_ids.size() * root_ids.size() * suffix_ids.size()
-	if combinations < 4096:
+	var combinations := prefix_ids.size() * root_ids.size() * suffix_ids.size() \
+		if has_components else 0
+	if has_components and combinations < 4096:
 		return {"ok": false, "reason": "settlement_name_pack_too_small"}
 	return {
 		"ok": true,
 		"settlement_name_pack_id": String(stable_id),
+		"settlement_full_name_ids": full_name_ids,
+		"settlement_full_name_text": full_name_text,
+		"settlement_full_name_weights": compiled_full_name_weights,
+		"settlement_full_name_alias_ids": full_name_alias_ids,
+		"settlement_full_name_alias_targets": full_name_alias_targets,
+		"settlement_full_name_share_q16": full_name_share_q16,
 		"settlement_prefix_ids": prefix_ids,
 		"settlement_prefix_text": prefix_text,
 		"settlement_prefix_weights": prefix_weights,
@@ -49,7 +74,11 @@ func compile_native_columns() -> Dictionary:
 		"settlement_suffix_alias_ids": suffix_alias_ids,
 		"settlement_suffix_alias_targets": suffix_alias_targets,
 		"settlement_catalog_hash": hash([
-			stable_id, prefix_ids, prefix_text, prefix_weights,
+			stable_id, full_name_ids, full_name_text,
+			compiled_full_name_weights,
+			full_name_alias_ids, full_name_alias_targets,
+			full_name_share_q16,
+			prefix_ids, prefix_text, prefix_weights,
 			prefix_alias_ids, prefix_alias_targets,
 			root_ids, root_text, root_weights,
 			root_alias_ids, root_alias_targets,

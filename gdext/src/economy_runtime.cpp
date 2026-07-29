@@ -218,6 +218,10 @@ std::string to_utf8(const String &value) {
     return std::string(bytes.get_data(), static_cast<size_t>(bytes.length()));
 }
 
+String from_utf8(const std::string &value) {
+    return String::utf8(value.data(), static_cast<int64_t>(value.size()));
+}
+
 std::string dict_string(const Dictionary &d, const char *key,
                         const std::string &fallback = {}) {
     const StringName k(key);
@@ -4179,6 +4183,18 @@ bool NativeEconomyRuntime::compile_settlement_catalog(
     _prosperity_thresholds = packed_i64(catalog, "prosperity_thresholds");
     _prosperity_ids = packed_strings(catalog, "prosperity_ids");
     _prosperity_names = packed_strings(catalog, "prosperity_names");
+    _settlement_full_name_ids = packed_strings(
+        catalog, "settlement_full_name_ids");
+    _settlement_full_name_text = packed_strings(
+        catalog, "settlement_full_name_text");
+    _settlement_full_name_weights = packed_i32(
+        catalog, "settlement_full_name_weights");
+    _settlement_full_name_alias_ids = packed_strings(
+        catalog, "settlement_full_name_alias_ids");
+    _settlement_full_name_alias_targets = packed_strings(
+        catalog, "settlement_full_name_alias_targets");
+    _settlement_full_name_share_q16 = dict_num<int32_t>(
+        catalog, "settlement_full_name_share_q16", 32768);
     _settlement_prefix_ids = packed_strings(catalog, "settlement_prefix_ids");
     _settlement_prefix_text = packed_strings(catalog, "settlement_prefix_text");
     _settlement_prefix_weights = packed_i32(catalog, "settlement_prefix_weights");
@@ -4221,6 +4237,8 @@ bool NativeEconomyRuntime::compile_settlement_catalog(
         _settlement_named_tier < 1 ||
         _settlement_named_tier >= static_cast<int32_t>(tiers) ||
         _settlement_downgrade_bp < 1 || _settlement_downgrade_bp > 10000 ||
+        _settlement_full_name_share_q16 < 0 ||
+        _settlement_full_name_share_q16 > 65536 ||
         _prosperity_profile_hash == 0 || _settlement_catalog_hash == 0) {
         error = "settlement_profile_invalid";
         return false;
@@ -4233,12 +4251,18 @@ bool NativeEconomyRuntime::compile_settlement_catalog(
             std::all_of(weights.begin(), weights.end(),
                         [](int32_t value) { return value > 0; });
     };
-    if (!valid_part(_settlement_prefix_ids, _settlement_prefix_text,
+    const bool has_full_names = !_settlement_full_name_ids.empty();
+    const bool has_components = !_settlement_prefix_ids.empty();
+    if ((!has_full_names && !has_components) ||
+        (has_full_names && !valid_part(
+            _settlement_full_name_ids, _settlement_full_name_text,
+            _settlement_full_name_weights)) ||
+        (has_components && (!valid_part(_settlement_prefix_ids, _settlement_prefix_text,
                     _settlement_prefix_weights) ||
         !valid_part(_settlement_root_ids, _settlement_root_text,
                     _settlement_root_weights) ||
         !valid_part(_settlement_suffix_ids, _settlement_suffix_text,
-                    _settlement_suffix_weights)) {
+                    _settlement_suffix_weights)))) {
         error = "settlement_name_catalog_invalid";
         return false;
     }
@@ -4253,7 +4277,11 @@ bool NativeEconomyRuntime::compile_settlement_catalog(
         }
         return true;
     };
-    if (!valid_aliases(_settlement_prefix_alias_ids,
+    if ((has_full_names && !valid_aliases(
+            _settlement_full_name_alias_ids,
+            _settlement_full_name_alias_targets,
+            _settlement_full_name_ids)) ||
+        (has_components && (!valid_aliases(_settlement_prefix_alias_ids,
                        _settlement_prefix_alias_targets,
                        _settlement_prefix_ids) ||
         !valid_aliases(_settlement_root_alias_ids,
@@ -4261,15 +4289,20 @@ bool NativeEconomyRuntime::compile_settlement_catalog(
                        _settlement_root_ids) ||
         !valid_aliases(_settlement_suffix_alias_ids,
                        _settlement_suffix_alias_targets,
-                       _settlement_suffix_ids)) {
+                       _settlement_suffix_ids)))) {
         error = "settlement_name_alias_invalid";
         return false;
     }
-    const uint64_t combinations =
-        static_cast<uint64_t>(_settlement_prefix_ids.size()) *
+    const uint64_t component_combinations = has_components
+        ? static_cast<uint64_t>(_settlement_prefix_ids.size()) *
         static_cast<uint64_t>(_settlement_root_ids.size()) *
-        static_cast<uint64_t>(_settlement_suffix_ids.size());
-    if (combinations < 4096 || combinations > 0x7fffffffULL) {
+        static_cast<uint64_t>(_settlement_suffix_ids.size()) : 0;
+    const uint64_t combinations =
+        static_cast<uint64_t>(_settlement_full_name_ids.size()) +
+        component_combinations;
+    if (combinations == 0 ||
+        (has_components && component_combinations < 4096) ||
+        combinations > 0x7fffffffULL) {
         error = "settlement_name_combination_count_invalid";
         return false;
     }
@@ -13375,6 +13408,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     const std::vector<int32_t> signatures = packed_i32(population_packet, "signature_ids");
     const std::vector<int64_t> populations = packed_i64(population_packet, "population");
     const std::vector<int64_t> funds = packed_i64(population_packet, "funds");
+    std::vector<int32_t> forced_named_cells = packed_i32(
+        population_packet, "forced_named_cells");
     if (cells.size() != signatures.size() || cells.size() != populations.size() ||
         cells.size() != funds.size()) {
         out["ok"] = false;
@@ -13407,6 +13442,25 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         }
         _population.population[slot] = saturating_add(_population.population[slot], populations[i], _saturation_count);
         _population.funds[slot] = saturating_add(_population.funds[slot], funds[i], _saturation_count);
+    }
+    std::sort(forced_named_cells.begin(), forced_named_cells.end());
+    forced_named_cells.erase(std::unique(
+        forced_named_cells.begin(), forced_named_cells.end()),
+        forced_named_cells.end());
+    for (int32_t cell : forced_named_cells) {
+        bool has_population = false;
+        for (size_t i = 0; i < cells.size(); ++i) {
+            if (cells[i] == cell && populations[i] > 0) {
+                has_population = true;
+                break;
+            }
+        }
+        if (cell < 0 || cell >= _cell_count || !has_population) {
+            out["ok"] = false;
+            out["reason"] = "forced_named_cell_invalid";
+            _population.clear(_cell_count);
+            return out;
+        }
     }
 
     int64_t merchant_repairs = 0;
@@ -13605,6 +13659,10 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _fatal_reason.clear();
     rebuild_committed_summaries();
     initialize_settlements_from_population();
+    for (int32_t cell : forced_named_cells) {
+        _settlements.name_forced[cell] = 1;
+        assign_settlement_name(cell);
+    }
     _closing_totals = audit_totals();
     _opening_totals = _closing_totals;
     rebuild_incremental_audit_shadow();
@@ -21146,6 +21204,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_population.flags); cap(_population.demography_residual);
     cap(_population.owner_employed); cap(_population.employee_employed);
     cap(_settlements.tier); cap(_settlements.name_active);
+    cap(_settlements.name_forced);
     cap(_settlements.prosperity_generation);
     cap(_settlements.name_roll_generation);
     cap(_settlements.prefix); cap(_settlements.root); cap(_settlements.suffix);
@@ -21672,6 +21731,7 @@ Dictionary NativeEconomyRuntime::report() const {
     settlement_memory += static_cast<int64_t>(
         _settlements.tier.capacity() * sizeof(uint8_t) +
         _settlements.name_active.capacity() * sizeof(uint8_t) +
+        _settlements.name_forced.capacity() * sizeof(uint8_t) +
         _settlements.prosperity_generation.capacity() * sizeof(uint32_t) +
         _settlements.name_roll_generation.capacity() * sizeof(uint32_t) +
         _settlements.prefix.capacity() * sizeof(int32_t) +
@@ -22591,6 +22651,16 @@ std::string NativeEconomyRuntime::settlement_name_for_cell(int32_t cell) const {
     const int32_t p = _settlements.prefix[cell];
     const int32_t r = _settlements.root[cell];
     const int32_t s = _settlements.suffix[cell];
+    if (r < 0) {
+        if (p < 0 ||
+            p >= static_cast<int32_t>(_settlement_full_name_text.size()))
+            return {};
+        std::string value = _settlement_full_name_text[p];
+        if (_settlements.disambiguator[cell] > 0)
+            value += "·" + std::to_string(
+                _settlements.disambiguator[cell] + 1);
+        return value;
+    }
     if (p < 0 || p >= static_cast<int32_t>(_settlement_prefix_text.size()) ||
         r < 0 || r >= static_cast<int32_t>(_settlement_root_text.size()) ||
         s < 0 || s >= static_cast<int32_t>(_settlement_suffix_text.size()))
@@ -22605,10 +22675,12 @@ std::string NativeEconomyRuntime::settlement_name_for_cell(int32_t cell) const {
 void NativeEconomyRuntime::assign_settlement_name(int32_t cell) {
     if (cell < 0 || cell >= _cell_count ||
         _settlements.name_active[cell] != 0) return;
+    const uint64_t full_count = _settlement_full_name_text.size();
     const uint64_t pc = _settlement_prefix_text.size();
     const uint64_t rc = _settlement_root_text.size();
     const uint64_t sc = _settlement_suffix_text.size();
-    const uint64_t combinations = pc * rc * sc;
+    const uint64_t component_count = pc * rc * sc;
+    const uint64_t combinations = full_count + component_count;
     uint64_t hash = 1469598103934665603ULL;
     hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed));
     hash = trace_hash_mix(hash, static_cast<uint32_t>(cell));
@@ -22627,12 +22699,20 @@ void NativeEconomyRuntime::assign_settlement_name(int32_t cell) {
         }
         return static_cast<int32_t>(weights.size()) - 1;
     };
-    int32_t p = weighted_pick(_settlement_prefix_weights, 0x50524546ULL);
-    int32_t r = weighted_pick(_settlement_root_weights, 0x524f4f54ULL);
-    int32_t s = weighted_pick(_settlement_suffix_weights, 0x53554646ULL);
-    uint64_t flat = (static_cast<uint64_t>(p) * rc +
-                     static_cast<uint64_t>(r)) * sc +
-                    static_cast<uint64_t>(s);
+    const bool choose_full = full_count > 0 &&
+        (component_count == 0 ||
+         static_cast<int32_t>(trace_hash_mix(hash, 0x4d4f4445ULL) & 0xffffULL) <
+            _settlement_full_name_share_q16);
+    int32_t p = choose_full
+        ? weighted_pick(_settlement_full_name_weights, 0x46554c4cULL)
+        : weighted_pick(_settlement_prefix_weights, 0x50524546ULL);
+    int32_t r = choose_full ? -1 :
+        weighted_pick(_settlement_root_weights, 0x524f4f54ULL);
+    int32_t s = choose_full ? -1 :
+        weighted_pick(_settlement_suffix_weights, 0x53554646ULL);
+    uint64_t flat = choose_full ? static_cast<uint64_t>(p) :
+        full_count + (static_cast<uint64_t>(p) * rc +
+            static_cast<uint64_t>(r)) * sc + static_cast<uint64_t>(s);
     uint64_t step = (trace_hash_mix(hash, 0x53544550ULL) | 1ULL) % combinations;
     if (step == 0) step = 1;
     while (std::gcd(step, combinations) != 1) {
@@ -22643,12 +22723,20 @@ void NativeEconomyRuntime::assign_settlement_name(int32_t cell) {
     std::string name;
     for (uint64_t probe = 0; probe < combinations; ++probe) {
         const uint64_t candidate = (flat + probe * step) % combinations;
-        p = static_cast<int32_t>(candidate / (rc * sc));
-        const uint64_t tail = candidate % (rc * sc);
-        r = static_cast<int32_t>(tail / sc);
-        s = static_cast<int32_t>(tail % sc);
-        name = _settlement_prefix_text[p] + _settlement_root_text[r] +
-            _settlement_suffix_text[s];
+        if (candidate < full_count) {
+            p = static_cast<int32_t>(candidate);
+            r = -1;
+            s = -1;
+            name = _settlement_full_name_text[p];
+        } else {
+            const uint64_t component = candidate - full_count;
+            p = static_cast<int32_t>(component / (rc * sc));
+            const uint64_t tail = component % (rc * sc);
+            r = static_cast<int32_t>(tail / sc);
+            s = static_cast<int32_t>(tail % sc);
+            name = _settlement_prefix_text[p] + _settlement_root_text[r] +
+                _settlement_suffix_text[s];
+        }
         if (_settlements.active_names.find(name) ==
             _settlements.active_names.end()) {
             _settlement_name_collision_probes += static_cast<int64_t>(probe);
@@ -22657,12 +22745,21 @@ void NativeEconomyRuntime::assign_settlement_name(int32_t cell) {
         name.clear();
     }
     if (name.empty()) {
-        p = static_cast<int32_t>(flat / (rc * sc));
-        const uint64_t tail = flat % (rc * sc);
-        r = static_cast<int32_t>(tail / sc);
-        s = static_cast<int32_t>(tail % sc);
-        const std::string base = _settlement_prefix_text[p] +
-            _settlement_root_text[r] + _settlement_suffix_text[s];
+        std::string base;
+        if (flat < full_count) {
+            p = static_cast<int32_t>(flat);
+            r = -1;
+            s = -1;
+            base = _settlement_full_name_text[p];
+        } else {
+            const uint64_t component = flat - full_count;
+            p = static_cast<int32_t>(component / (rc * sc));
+            const uint64_t tail = component % (rc * sc);
+            r = static_cast<int32_t>(tail / sc);
+            s = static_cast<int32_t>(tail % sc);
+            base = _settlement_prefix_text[p] +
+                _settlement_root_text[r] + _settlement_suffix_text[s];
+        }
         do {
             ++disambiguator;
             name = base + "·" + std::to_string(disambiguator + 1);
@@ -22728,7 +22825,8 @@ void NativeEconomyRuntime::update_settlements_for_changed_cells() {
             after >= _settlement_named_tier)
             assign_settlement_name(cell);
         else if (before >= _settlement_named_tier &&
-                 after < _settlement_named_tier)
+                 after < _settlement_named_tier &&
+                 _settlements.name_forced[cell] == 0)
             release_settlement_name(cell);
         revision.changes.push_back({
             cell, after, _settlements.name_active[cell]});
@@ -22757,14 +22855,15 @@ void NativeEconomyRuntime::append_settlement_fields(
         cell >= static_cast<int32_t>(_settlements.tier.size())) return;
     const int32_t tier = _settlements.tier[cell];
     out["prosperity_tier"] = tier;
-    out["prosperity_id"] = String(_prosperity_ids[tier].c_str());
-    out["prosperity_name"] = String(_prosperity_names[tier].c_str());
+    out["prosperity_id"] = from_utf8(_prosperity_ids[tier]);
+    out["prosperity_name"] = from_utf8(_prosperity_names[tier]);
     out["prosperity_generation"] = static_cast<int64_t>(
         _settlements.prosperity_generation[cell]);
     out["settlement_name_active"] =
         _settlements.name_active[cell] != 0;
-    out["settlement_name"] = String(
-        settlement_name_for_cell(cell).c_str());
+    out["settlement_name_forced"] =
+        _settlements.name_forced[cell] != 0;
+    out["settlement_name"] = from_utf8(settlement_name_for_cell(cell));
     out["name_roll_generation"] = static_cast<int64_t>(
         _settlements.name_roll_generation[cell]);
     out["settlement_revision"] = _settlements.revision;
@@ -22787,19 +22886,22 @@ Dictionary NativeEconomyRuntime::settlement_rows(
         cells.push_back(change.cell);
         tiers.push_back(_settlements.tier[change.cell]);
         active.push_back(_settlements.name_active[change.cell]);
-        names.push_back(String(settlement_name_for_cell(change.cell).c_str()));
+        names.push_back(from_utf8(settlement_name_for_cell(change.cell)));
         const bool named = _settlements.name_active[change.cell] != 0;
+        const bool full_name = named &&
+            _settlements.root[change.cell] < 0;
         pack_ids.push_back(named
-            ? String(_settlement_name_pack_id.c_str()) : String());
+            ? from_utf8(_settlement_name_pack_id) : String());
         prefix_ids.push_back(named
-            ? String(_settlement_prefix_ids[
-                _settlements.prefix[change.cell]].c_str()) : String());
-        root_ids.push_back(named
-            ? String(_settlement_root_ids[
-                _settlements.root[change.cell]].c_str()) : String());
-        suffix_ids.push_back(named
-            ? String(_settlement_suffix_ids[
-                _settlements.suffix[change.cell]].c_str()) : String());
+            ? from_utf8((full_name ? _settlement_full_name_ids[
+                _settlements.prefix[change.cell]] : _settlement_prefix_ids[
+                _settlements.prefix[change.cell]])) : String());
+        root_ids.push_back(named && !full_name
+            ? from_utf8(_settlement_root_ids[
+                _settlements.root[change.cell]]) : String());
+        suffix_ids.push_back(named && !full_name
+            ? from_utf8(_settlement_suffix_ids[
+                _settlements.suffix[change.cell]]) : String());
         disambiguators.push_back(named
             ? static_cast<int32_t>(_settlements.disambiguator[change.cell])
             : 0);
@@ -24363,11 +24465,17 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(_settlements.prosperity_generation[cell]);
         mix_u64(_settlements.name_roll_generation[cell]);
         mix_u64(static_cast<uint64_t>(_settlements.name_active[cell]));
+        mix_u64(static_cast<uint64_t>(_settlements.name_forced[cell]));
         if (_settlements.name_active[cell] != 0) {
             mix_string(_settlement_name_pack_id);
-            mix_string(_settlement_prefix_ids[_settlements.prefix[cell]]);
-            mix_string(_settlement_root_ids[_settlements.root[cell]]);
-            mix_string(_settlement_suffix_ids[_settlements.suffix[cell]]);
+            if (_settlements.root[cell] < 0) {
+                mix_string(_settlement_full_name_ids[
+                    _settlements.prefix[cell]]);
+            } else {
+                mix_string(_settlement_prefix_ids[_settlements.prefix[cell]]);
+                mix_string(_settlement_root_ids[_settlements.root[cell]]);
+                mix_string(_settlement_suffix_ids[_settlements.suffix[cell]]);
+            }
         }
         mix_u64(_settlements.disambiguator[cell]);
         mix_u64(cell < static_cast<int32_t>(
@@ -25007,7 +25115,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                         ? _fiscal_previous_requests[lane] : 0);
             }
             append_le<uint8_t>(payload,
-                _settlements.tier[_save.cell_cursor]);
+                static_cast<uint8_t>(_settlements.tier[_save.cell_cursor] |
+                    (_settlements.name_forced[_save.cell_cursor] != 0
+                        ? 0x80U : 0U)));
             append_le<uint32_t>(payload,
                 _settlements.prosperity_generation[_save.cell_cursor]);
             append_le<uint32_t>(payload,
@@ -25328,11 +25438,13 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             std::vector<uint8_t> record;
             append_le<int32_t>(record, cell);
             append_string(record, _settlement_name_pack_id);
-            append_string(record,
-                _settlement_prefix_ids[_settlements.prefix[cell]]);
-            append_string(record,
+            const bool full_name = _settlements.root[cell] < 0;
+            append_string(record, full_name
+                ? _settlement_full_name_ids[_settlements.prefix[cell]]
+                : _settlement_prefix_ids[_settlements.prefix[cell]]);
+            append_string(record, full_name ? std::string() :
                 _settlement_root_ids[_settlements.root[cell]]);
-            append_string(record,
+            append_string(record, full_name ? std::string() :
                 _settlement_suffix_ids[_settlements.suffix[cell]]);
             append_le<uint32_t>(record, _settlements.disambiguator[cell]);
             if (!payload.empty() &&
@@ -25971,17 +26083,20 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 }
             }
             if (schema >= 24) {
-                uint8_t tier = 0;
-                if (!read_le(bytes, cursor, tier) ||
+                uint8_t tier_flags = 0;
+                if (!read_le(bytes, cursor, tier_flags) ||
                     !read_le(bytes, cursor,
                         _settlements.prosperity_generation[cell]) ||
                     !read_le(bytes, cursor,
                         _settlements.name_roll_generation[cell]) ||
-                    tier >= _prosperity_thresholds.size()) {
+                    (tier_flags & 0x7fU) >= _prosperity_thresholds.size()) {
                     error = "save_cell_settlement_state_invalid";
                     return false;
                 }
-                _settlements.tier[cell] = tier;
+                _settlements.tier[cell] =
+                    static_cast<uint8_t>(tier_flags & 0x7fU);
+                _settlements.name_forced[cell] =
+                    (tier_flags & 0x80U) != 0 ? 1 : 0;
             }
             _market.cell_to_market[cell] = market;
             ++_restore.restored_cells;
@@ -26448,21 +26563,29 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, disambiguator) ||
                 cell < 0 || cell >= _cell_count ||
                 _settlements.name_active[cell] != 0 ||
-                _settlements.tier[cell] < _settlement_named_tier ||
+                (_settlements.tier[cell] < _settlement_named_tier &&
+                 _settlements.name_forced[cell] == 0) ||
                 pack_id != _settlement_name_pack_id) {
                 error = "save_settlement_name_record_invalid";
                 return false;
             }
+            const bool full_name_mode = root_id.empty() &&
+                suffix_id.empty();
             const int32_t prefix = stable_index(
-                _settlement_prefix_ids, _settlement_prefix_alias_ids,
-                _settlement_prefix_alias_targets, prefix_id);
-            const int32_t root = stable_index(
+                full_name_mode ? _settlement_full_name_ids :
+                    _settlement_prefix_ids,
+                full_name_mode ? _settlement_full_name_alias_ids :
+                    _settlement_prefix_alias_ids,
+                full_name_mode ? _settlement_full_name_alias_targets :
+                    _settlement_prefix_alias_targets, prefix_id);
+            const int32_t root = full_name_mode ? -1 : stable_index(
                 _settlement_root_ids, _settlement_root_alias_ids,
                 _settlement_root_alias_targets, root_id);
-            const int32_t suffix = stable_index(
+            const int32_t suffix = full_name_mode ? -1 : stable_index(
                 _settlement_suffix_ids, _settlement_suffix_alias_ids,
                 _settlement_suffix_alias_targets, suffix_id);
-            if (prefix < 0 || root < 0 || suffix < 0) {
+            if (prefix < 0 ||
+                (!full_name_mode && (root < 0 || suffix < 0))) {
                 error = "save_settlement_name_component_missing";
                 return false;
             }
@@ -26595,6 +26718,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
     if (computed_environment_hash != _environment_hash) {
         out["ok"] = false;
         out["reason"] = "restore_environment_hash_mismatch";
+        out["expected_environment_hash"] = _environment_hash;
+        out["computed_environment_hash"] = computed_environment_hash;
         return out;
     }
     std::vector<uint8_t> referenced(_population.page_next.size(), 0);
@@ -26895,7 +27020,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
     } else {
         for (int32_t cell = 0; cell < _cell_count; ++cell) {
             const bool should_have_name =
-                _settlements.tier[cell] >= _settlement_named_tier;
+                _settlements.tier[cell] >= _settlement_named_tier ||
+                _settlements.name_forced[cell] != 0;
             if (should_have_name !=
                 (_settlements.name_active[cell] != 0)) {
                 out["ok"] = false;

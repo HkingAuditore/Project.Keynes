@@ -5,6 +5,56 @@
 [resource]
 script = ExtResource("1")
 stable_id = &"default_zh"
+full_name_ids = PackedStringArray(
+"changan", "luoyang", "kaifeng", "linan", "beijing", "nanjing", "chengdu", "chongqing",
+"wuhan", "guangzhou", "suzhou", "hangzhou", "yangzhou", "quanzhou", "datong", "pingyao",
+"taiyuan", "jinan", "qingdao", "tianjin", "shenyang", "harbin", "changchun", "dalian",
+"xiamen", "fuzhou", "ningbo", "wenzhou", "shaoxing", "hefei", "nanchang", "changsha",
+"jingzhou", "xiangyang", "lujiang", "handan", "linzi", "qufu", "xianyang", "dunhuang",
+"jiayuguan", "wuwei", "zhangye", "jiuquan", "yinchuan", "lanzhou", "xining", "lhasa",
+"urumqi", "kashgar", "dali", "kunming", "guiyang", "guilin", "nanning", "haikou",
+"taipei", "tainan", "gaoxiong", "xianggang", "aomen", "anyang", "zibo", "luoyang_modern",
+"rome", "athens", "sparta", "corinth", "byzantium", "constantinople", "alexandria", "memphis",
+"thebes_egypt", "cairo", "jerusalem", "damascus", "aleppo", "baghdad", "babylon", "ur",
+"nineveh", "persepolis", "susa", "samarkand", "bukhara", "tashkent", "merv", "kabul",
+"delhi", "agra", "varanasi", "pataliputra", "mumbai", "kolkata", "chennai", "lahore",
+"karachi", "kathmandu", "colombo", "ankara", "istanbul", "izmir", "tbilisi", "yerevan",
+"moscow", "novgorod", "kyiv", "warsaw", "krakow", "prague", "vienna", "budapest",
+"berlin", "hamburg", "cologne", "munich", "paris", "lyon", "marseille", "london",
+"york", "edinburgh", "dublin", "madrid", "barcelona", "seville", "lisbon", "porto",
+"venice", "florence", "milan", "naples", "genoa", "brussels", "amsterdam", "copenhagen",
+"stockholm", "oslo", "helsinki", "reykjavik", "belgrade", "sofia", "bucharest", "dubrovnik",
+"carthage", "timbuktu", "fez", "marrakesh", "lagos", "zanzibar", "axum", "addis_ababa",
+"mexico_city", "tenochtitlan", "cusco", "lima", "quito", "havana", "new_york", "boston",
+"philadelphia", "washington", "chicago", "san_francisco", "los_angeles", "montreal", "quebec", "toronto",
+"tokyo", "kyoto", "nara", "osaka", "kamakura", "seoul", "busan", "pyongyang",
+"hanoi", "hue", "saigon", "angkor", "bangkok", "ayutthaya", "yangon", "mandalay",
+"singapore", "malacca", "jakarta", "yogyakarta", "manila", "sydney", "melbourne", "auckland")
+full_name_text = PackedStringArray(
+"长安", "洛阳", "开封", "临安", "北京", "南京", "成都", "重庆",
+"武汉", "广州", "苏州", "杭州", "扬州", "泉州", "大同", "平遥",
+"太原", "济南", "青岛", "天津", "沈阳", "哈尔滨", "长春", "大连",
+"厦门", "福州", "宁波", "温州", "绍兴", "合肥", "南昌", "长沙",
+"荆州", "襄阳", "庐江", "邯郸", "临淄", "曲阜", "咸阳", "敦煌",
+"嘉峪关", "武威", "张掖", "酒泉", "银川", "兰州", "西宁", "拉萨",
+"乌鲁木齐", "喀什", "大理", "昆明", "贵阳", "桂林", "南宁", "海口",
+"台北", "台南", "高雄", "香港", "澳门", "安阳", "淄博", "洛阳市",
+"罗马", "雅典", "斯巴达", "科林斯", "拜占庭", "君士坦丁堡", "亚历山大里亚", "孟斐斯",
+"底比斯", "开罗", "耶路撒冷", "大马士革", "阿勒颇", "巴格达", "巴比伦", "乌尔",
+"尼尼微", "波斯波利斯", "苏萨", "撒马尔罕", "布哈拉", "塔什干", "木鹿", "喀布尔",
+"德里", "阿格拉", "瓦拉纳西", "华氏城", "孟买", "加尔各答", "金奈", "拉合尔",
+"卡拉奇", "加德满都", "科伦坡", "安卡拉", "伊斯坦布尔", "伊兹密尔", "第比利斯", "埃里温",
+"莫斯科", "诺夫哥罗德", "基辅", "华沙", "克拉科夫", "布拉格", "维也纳", "布达佩斯",
+"柏林", "汉堡", "科隆", "慕尼黑", "巴黎", "里昂", "马赛", "伦敦",
+"约克", "爱丁堡", "都柏林", "马德里", "巴塞罗那", "塞维利亚", "里斯本", "波尔图",
+"威尼斯", "佛罗伦萨", "米兰", "那不勒斯", "热那亚", "布鲁塞尔", "阿姆斯特丹", "哥本哈根",
+"斯德哥尔摩", "奥斯陆", "赫尔辛基", "雷克雅未克", "贝尔格莱德", "索非亚", "布加勒斯特", "杜布罗夫尼克",
+"迦太基", "廷巴克图", "非斯", "马拉喀什", "拉各斯", "桑给巴尔", "阿克苏姆", "亚的斯亚贝巴",
+"墨西哥城", "特诺奇蒂特兰", "库斯科", "利马", "基多", "哈瓦那", "纽约", "波士顿",
+"费城", "华盛顿", "芝加哥", "旧金山", "洛杉矶", "蒙特利尔", "魁北克", "多伦多",
+"东京", "京都", "奈良", "大阪", "镰仓", "首尔", "釜山", "平壤",
+"河内", "顺化", "西贡", "吴哥", "曼谷", "阿瑜陀耶", "仰光", "曼德勒",
+"新加坡", "马六甲", "雅加达", "日惹", "马尼拉", "悉尼", "墨尔本", "奥克兰")
 prefix_ids = PackedStringArray("an", "bai", "bei", "cang", "chang", "dong", "feng", "gu", "he", "jin", "ling", "nan", "qing", "shang", "xi", "yun")
 prefix_text = PackedStringArray("安", "白", "北", "苍", "长", "东", "丰", "古", "河", "金", "岭", "南", "青", "上", "西", "云")
 prefix_weights = PackedInt32Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)

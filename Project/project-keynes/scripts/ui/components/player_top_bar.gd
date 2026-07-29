@@ -82,9 +82,19 @@ func bar_height() -> float:
 func set_day_night_enabled(enabled: bool) -> void:
 	if _day_night_button == null:
 		_ready()
-	_day_night_button.set_pressed_no_signal(enabled)
-	IconButton.apply(_day_night_button, &"climate.moon" if enabled else &"climate.sun", 15)
-	_day_night_button.tooltip_text = "昼夜循环：%s" % ("开启" if enabled else "关闭（动态永昼，光向随直射点移动）")
+	var tooltip := "昼夜循环：%s" % (
+		"开启" if enabled else "关闭（动态永昼，光向随直射点移动）"
+	)
+	# IconButton.apply() 默认会把按钮配置成非 toggle；这里必须显式保留 toggle
+	# 语义，否则首次运行时状态同步后，顶栏按钮将不再发出 toggled 信号。
+	IconButton.apply(
+		_day_night_button,
+		&"climate.moon" if enabled else &"climate.sun",
+		15,
+		tooltip,
+		true,
+		enabled
+	)
 
 
 func set_gm_available(available: bool) -> void:
@@ -131,7 +141,6 @@ func _build_control_block() -> Control:
 	_day_night_button.toggle_mode = true
 	_day_night_button.button_pressed = true
 	_day_night_button.toggled.connect(func(enabled: bool) -> void:
-		set_day_night_enabled(enabled)
 		day_night_toggled.emit(enabled)
 	)
 	controls.add_child(_day_night_button)

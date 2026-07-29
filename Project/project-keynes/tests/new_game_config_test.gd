@@ -35,11 +35,13 @@ func _init() -> void:
 	_expect("main scene is formal menu", String(ProjectSettings.get_setting("application/run/main_scene")) ==
 		"res://scenes/main_menu.tscn")
 	var name_pack = load("res://data/country/default_country_names.tres")
-	var names_a: Dictionary = name_pack.select(42, 12, "苍河国")
-	var names_b: Dictionary = name_pack.select(42, 12, "苍河国")
+	var names_a: Dictionary = name_pack.select(42, 12, "罗马帝国")
+	var names_b: Dictionary = name_pack.select(42, 12, "罗马帝国")
 	_expect("foreign names deterministic", bool(names_a.ok) and names_a == names_b)
 	_expect("player name excluded",
-		(names_a.display_names as PackedStringArray).find("苍河国") < 0)
+		(names_a.display_names as PackedStringArray).find("罗马帝国") < 0)
+	_expect("historical name pack has broad capacity",
+		int(name_pack.validate(12).available) >= 60)
 	print("new game config: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

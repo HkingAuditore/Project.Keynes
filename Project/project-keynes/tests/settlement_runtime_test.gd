@@ -10,6 +10,11 @@ var _failures := 0
 func _init() -> void:
 	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("聚居地目录可编译", bool(compiled.get("ok", false)))
+	var compiled_prosperity_names: PackedStringArray = compiled.get(
+		"prosperity_names", PackedStringArray())
+	_expect("繁荣度配置保持 UTF-8",
+		compiled_prosperity_names.size() > 2 and
+		compiled_prosperity_names[2] == "乡村")
 	if bool(compiled.get("ok", false)) and ClassDB.class_exists("DCWorldExt"):
 		_run_runtime_checks(compiled)
 	print("=== settlement runtime %s: checks=%d failures=%d ===" % [
@@ -38,16 +43,68 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 				not visible_name.is_empty())
 			_expect("活跃地名世界唯一 %d" % cell, not names.has(visible_name))
 			names[visible_name] = true
+	var prosperity_display := String(source.get_population_cell_summary(2).get(
+		"prosperity_name", ""))
+	_expect("繁荣度中文通过 UTF-8 桥接", prosperity_display == "乡村")
 	var snapshot: Dictionary = source.get_named_settlement_snapshot()
 	_expect("完整快照只含有名聚居地",
 		bool(snapshot.get("full_snapshot", false)) and
 		(snapshot.get("cell_indices", PackedInt32Array()) as PackedInt32Array).size() == 6)
+	var snapshot_roots: PackedStringArray = snapshot.get(
+		"root_ids", PackedStringArray())
+	var has_historical := false
+	var has_fictional := false
+	for root_id in snapshot_roots:
+		has_historical = has_historical or String(root_id).is_empty()
+		has_fictional = has_fictional or not String(root_id).is_empty()
+	_expect("史实名与虚构组合可同时存在",
+		has_historical and has_fictional)
+	var capital: Object = _configured_world(compiled,
+		PackedInt64Array([20, 0, 0, 0, 0, 0, 0, 0]), 7410, true,
+		PackedInt32Array([0]))
+	_expect("20 人首都在乡村阈值以下仍保证命名",
+		capital != null and
+		bool(capital.get_population_cell_summary(0).get(
+			"settlement_name_active", false)) and
+		bool(capital.get_population_cell_summary(0).get(
+			"settlement_name_forced", false)))
+	if capital != null:
+		var capital_chunks := _save_chunks(capital)
+		var restored_capital: Object = _configured_world(
+			compiled, PackedInt64Array(), 7410, false)
+		var capital_restore_ok := restored_capital != null
+		if capital_restore_ok:
+			capital_restore_ok = bool(restored_capital.begin_economy_restore().get(
+				"ok", false))
+		for chunk in capital_chunks:
+			if not capital_restore_ok:
+				break
+			var capital_feed: Dictionary = restored_capital.feed_economy_restore_chunk(
+				chunk)
+			capital_restore_ok = bool(capital_feed.get("ok", false))
+			if not capital_restore_ok:
+				print("  capital restore feed failed: ", capital_feed)
+		if capital_restore_ok:
+			var capital_end: Dictionary = restored_capital.end_economy_restore()
+			capital_restore_ok = bool(capital_end.get("ok", false))
+			if not capital_restore_ok:
+				print("  capital restore end failed: ", capital_end)
+		_expect("首都强制命名状态可随 PKEC v24 恢复",
+			capital_restore_ok and
+			bool(restored_capital.get_population_cell_summary(0).get(
+				"settlement_name_forced", false)))
+		_expect("首都强制命名 PKEC v24 状态哈希一致",
+			capital_restore_ok and
+			restored_capital.get_economy_state_hash() ==
+				capital.get_economy_state_hash())
 	var replay: Object = _configured_world(compiled, populations, 7401)
 	_expect("同种子重放状态哈希一致",
 		replay != null and source.get_economy_state_hash() ==
 			replay.get_economy_state_hash())
 	var exhaustion_populations := PackedInt64Array()
-	exhaustion_populations.resize(4097)
+	var full_name_ids: PackedStringArray = compiled.get(
+		"settlement_full_name_ids", PackedStringArray())
+	exhaustion_populations.resize(4096 + full_name_ids.size() + 1)
 	exhaustion_populations.fill(100)
 	var exhausted: Object = _configured_world(
 		compiled, exhaustion_populations, 7402)
@@ -61,8 +118,9 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 			unique_exhausted[String(visible_name)] = true
 			has_disambiguator = has_disambiguator or String(visible_name).contains("·")
 		_expect("组合耗尽后仍保持世界唯一并追加序号",
-			exhausted_names.size() == 4097 and
-			unique_exhausted.size() == 4097 and has_disambiguator)
+			exhausted_names.size() == exhaustion_populations.size() and
+			unique_exhausted.size() == exhaustion_populations.size() and
+			has_disambiguator)
 
 	var rural_before: Dictionary = source.get_population_cell_summary(2)
 	var handle := int((source.get_population_cell_snapshot(2).get(
@@ -110,7 +168,8 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 
 
 func _configured_world(compiled: Dictionary, populations: PackedInt64Array,
-		seed: int, bootstrap: bool = true):
+		seed: int, bootstrap: bool = true,
+		forced_named_cells: PackedInt32Array = PackedInt32Array()):
 	var cells := maxi(1, populations.size())
 	if not bootstrap:
 		cells = 8
@@ -159,6 +218,7 @@ func _configured_world(compiled: Dictionary, populations: PackedInt64Array,
 			"signature_ids": signature_ids,
 			"population": nonzero_populations,
 			"funds": funds,
+			"forced_named_cells": forced_named_cells,
 		}, {}).get("ok", false)):
 		_expect("人口可初始化", false)
 		return null
