@@ -13,7 +13,7 @@
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v2, PKEC v20, PKCM v1, PKGP v1, and `PKEnvironmentRuntime v1`. Environment export includes the
+PKCN v2, PKEC v22, PKCM v1, PKGP v1, and `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
 and dimensions before swapping any arrays. See
@@ -67,7 +67,15 @@ Runtime hydrology 新增的契约：
 - Legacy `run_hydrology_discharge_pass_native()` 在调用 C++ 前先 `refresh_slots_from_map()`，确保 weather commit 写到 `MapData` 的 `weather_precip/snowpack/soil_moisture` 对 C++ 可见，并从 weather cadence 游标传入真实 `dt_days`。Native daily graph 中的 `runtime_hydrology` 节点复用 round 起点 refresh，依赖前序 weather node 已在 C++ slots 中发布当日 precip，并使用 `native_daily_sim_stride` 作为本轮 dt。
 - Native daily ACTIVE 在构建 round bootstrap bundle **之前**调用 `MapData.soa_begin_climate_transaction()`；该边界同时冻结 `temp/moisture/snow/sea_ice *_prev` 和 `weather_classification_temp/moisture`。若在 bundle 之后才冻结，weather knobs 会捕获错误引用；若完全不冻结，classification 与 `*_prev` 会永久停在地图生成态。
 - `cell.res_timber_reserve`、`cell.res_stone_reserve`、`cell.res_arable_land_reserve` 等 31 个自然资源/农业容量储量字段：`F32`，owner 为 `economy.resources`，`map_field=res_*_reserve_arr`。另有一一对应的 `cell.res_*_extra_change` 字段；生产发布一次性采收/开采 delta，资源 pass 只应用一次后清零。`cell.resource_habitat_mask`（U8）编码 land/marine-water/freshwater/coastal-land habitat；`marine_fish` 使用与海洋水格相邻的 coastal-land bit，`freshwater_fish` 使用湖泊水格及湖岸陆格的 freshwater bit，使渔场只读取本格储量。鱼类资源占用 DataCore 经济资源 slot。小麦、玉米等栽培作物不再拥有 DataCore slot，而是 MarketStore goods。新增资源需加 reserve/extra 常量 + MapData 数组 + schema 行 + codegen + 重 build，并登记 `ResourceProfileRegistry._PROFILE_PATHS`。knobs 使用 `habitat_modes`/`habitat_mask_slot` 和 `dt_days`；五日 catchup 仅放大自然演化，不重复放大 external delta。
+- `cell.plant_available_water` / `cell_plant_available_water`：`F32`，
+  `map_field=plant_available_water_arr`。climate owner 在陆地按基础湿度、30 日水量平衡和正土壤
+  蓄水合成并夹到 `[0,1]`，水域固定写 0。C++ combined/thread/scalar 与 GDScript fallback
+  使用同一公式并在完成边界发布。
 - 资源 pass 的 `cell_temp` 与 `ResourceProfile.temp_lo/temp_hi` 均使用 `[0,1]` 地图气候单位；目录审计禁止摄氏式范围。植被 dynamics 的 C++ 返回包中 `succession_indices/succession_to_veg` 不直接改变 enum 权威；`MapGenerator._apply_vegetation_succession_candidates()` 在 Godot 边界批量写 `cell_vegetation/cell_base_vegetation` 到 DCWorld 与 DCWorldExt，并同步 HexCell/MapData 后才对视觉消费者可见。
+- 自然资源目录逐 Profile 选择温度/水分列。`fertile_soil`、`timber`、`wild_game` 读取
+  `cell_temp_30d + cell_plant_available_water`；淡水/海洋鱼读取
+  `cell_temp_30d + cell_moisture`；地质资源继续读取即时温度与环境湿度。native pass 与
+  GDScript reference 必须逐 cell 对拍。
 
 建筑 sample boundary 仍从 `MapData.neighbor_indices_packed()` 捕获静态六邻拓扑，供建筑条件和
 国内贸易使用；它不再参与资源采集。目录保留
@@ -95,6 +103,21 @@ native 返回字典：compact 不构造内存、债务、transit/escrow 等全�
 DataCore、PKEC 或权威哈希，旧调用缺省为 0.8ms。
 
 经济 CSV v14 是同一 committed visibility boundary 的 debug consumer。`DCWorldExt::run_economy_slice()` 先完成 `publish_epoch()`，再把建筑自然资源 delta 写入/flush 到 DataCore reserve slot，最后才允许 `EconomyCsvRecorder` 把 native cohort/market/building SoA 与资源 slot 复制进一个空闲 POD buffer。后台 worker 只接触 `std::vector`、字符串表和绝对路径，不访问 Godot API 或运行中的 runtime。控制面仅绑定 `start_economy_csv_recording(config)`、`request_stop_economy_csv_recording()`、`get_economy_csv_recording_status()`；GDScript 不再逐 cell 调 snapshot API。`config.cell_indices` 为空时按 `cell_stride` 取全图样本，非空时排序去重并覆盖 stride；GM 的“当前地块”只传一个在 start 时锁定的 index。summary 仍是全局提交摘要，cohorts/buildings/resources/market 仅遍历显式样本；building 行明确区分 `owner_capacity`（物理容量）、`owner_required`（活跃组等于容量、停产/不可用组为零）、`planned_owner_equivalent`（仅用于观察利用率折算量）、`filled_owner` 与 `owner_openings`，并发布 `projected_owner_income_per_day`。v14 summary 保留既有字段并新增 ACTIVE 业主岗位重配、跨职业和概率跳过计数；market 继续包含逐商品投入预留、家庭可用库存和完整配置周期的商人目标库存。双缓冲满时自动停止接收并排空已接受批次，不阻塞经济提交；CSV 调试状态不进入 PKEC、replay hash 或 simulation authority。
+
+## Production climate bridge override (current)
+
+Each due cell is sampled once from six raw F32 slots: current temperature,
+30-day temperature, ambient moisture, plant-available water, snow, and weather.
+`world_ext_economy.cpp` quantizes all six to Q16 without per-cell Godot calls.
+They share the environment hash, shape validation, reset, memory accounting, and
+PKEC v22 cell record. The frozen values remain private until that cell's rolling
+settlement commits.
+
+Economy CSV v22 supersedes the historical v14 recorder paragraph above. Its
+building rows append temperature fit, water fit, climate capacity, and
+climate-lost output; summary rows append profiled/limited group counts and the
+average climate capacity. These are committed read-only diagnostics, not a
+second authority.
 
 ## PackedArray CoW 公理
 

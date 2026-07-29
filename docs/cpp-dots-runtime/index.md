@@ -3,7 +3,7 @@
 ## Formal game flow and PKSV
 
 - [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)：81 项权威目录、国家研究状态、
-  科技值市场与国家采购、科技 Modifier、GraphEdit 工作区以及 PKCN v3/PKEC v21 存档契约。
+  科技值市场与国家采购、科技 Modifier、GraphEdit 工作区以及 PKCN v3/PKEC v22 存档契约。
 
 - [Formal Game Flow, Player Start, and PKSV](./game-flow-start-save.md): 正式主菜单、
   `NewGameConfig`、单格国家、20 人开局、PKSV 安全边界与恢复顺序。
@@ -18,7 +18,7 @@
 
 - [Native Modifier Runtime](./native-modifier-runtime.md)：四域 ModifierStore、固定公式、
   generation handle、scope/bucket、daily freeze、气候/国家/经济/Gameplay 接入、
-  PKCN v2/PKEC v20/PKCM v1/PKGP v1 与验证状态。
+  PKCN v3/PKEC v22/PKCM v1/PKGP v1 与验证状态。
 - 修改 stat、definition、命令协议、调度依赖、领域公式或存档 schema 时，必须先读并同步
   这份主说明与 `project-keynes-modifier-runtime` Skill。
 
@@ -65,7 +65,7 @@
     - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
-    - `country_daily`、命令屏障、PKCN v2 + PKEC v20 顺序与兼容性拒绝。
+    - `country_daily`、命令屏障、PKCN v3 + PKEC v22 顺序与兼容性拒绝。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。

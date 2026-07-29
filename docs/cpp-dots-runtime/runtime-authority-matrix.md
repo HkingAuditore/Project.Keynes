@@ -13,7 +13,7 @@
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
 | Country research and technology | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v3 | Owns discovery, completion, pending, sparse progress, queues, weights and procurement policy |
 | Country modifiers | Country `ModifierStore` | embedded in PKCN v3 | Technology effects alter consumers, never ledgers directly |
-| Economy/building modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v21 | Factors feed deterministic output/construction/trade helpers, never ledgers directly |
+| Economy/building modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v22 | Factors feed deterministic output/construction/trade helpers, never ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
@@ -33,7 +33,7 @@ Transient 经济缓存与 climate/ocean hot-state capsule 不改变本矩阵的�
 | `native_daily_sim` | `DCWorldExt::run_native_daily_slice()` 持有 graph continuation、node cursor、round accumulator；GDScript 只保留 SUS shell 与 bundle boundary。 | `SCHEDULE_GRAPH` 节点调用 C++ pass 写 slots。 | Graph report `published_slots`、`visual_dirty_intents`、`authority_report`、`authority_blockers`、`retained_boundaries`；必要时 flush 到 `MapData`。 | 普通 ACTIVE 不再回 full-run；`run_native_daily_tick()` 只作 debug/probe，`run_native_sim_tick()` 作 SHADOW/A-B。 | `run_native_daily_slice` 是唯一 ACTIVE hot path；`graph_coverage_state=complete` 只由 simulation authority blockers 决定；`native_daily_legacy_daily_production_retired=true` 才允许 fallback/test-only handoff。 | Climate/weather/ocean/season owner gates 与 legacy fallback 未退休时仍阻塞；Godot/visual boundaries 只进 `retained_boundaries`。 |
 | `modifier_daily` | `ModifierRuntime` 持有四域 SoA、bucket、expiry heap、命令排序与 snapshot version。 | 不写领域 base slot；发布只读 effective 聚合。 | `MODIFIER_GRAPH` report、command result、journal；PKCM/PKGP 与 PKCN/PKEC 内嵌 domain。 | GDScript fallback 只消费同一 `evaluate_modifier_stat` 公式；无第二份可变 store。 | ACTIVE，priority 90、单 slice、无工作时零 slice。 | 独立 SHADOW 双算和目标规模性能门禁尚未完成。 |
 | `country_daily` | `NativeCountryRuntime` 持有国家 SoA、handle generation、领土 CSR、国家科技 bitset、现金/物资国库、命令游标与 state hash。 | 只把 `cell.country_slot` 发布到 DataCore/MapData；名称、科技、国库和 CSR 保持 native。 | 原子 `command_preflight → command_apply → aggregate_publish`；国家事件与粗粒度 snapshot；PKCN v2。 | PROBE/OFF 只作验证门；OFF 时依赖国家的经济禁用，不恢复旧状态。 | 默认 **ACTIVE**；priority 255、`must_run=false`、`use_job_should_run=true`，无到期命令零 slice。 | 不含灭国、科技撤销、税收、外交、战争或 AI；活跃国家至少一格，水域无主。 |
-| `economy_daily` | `NativeEconomyRuntime` 持有滚动五相结算、stage/cursor、PopulationStore、MarketStore、稀疏 MarketSignalStore/LaborMarketStore、BUILDING_GRAPH、企业三态与 pending/cooldown、聚合商人债务、国内 TradeTopology/Plan/Order/Flow stores、need/bundle 清算和 ECB；国家科技与国库由 `NativeCountryRuntime` 提供。 | 独立 native vectors；due-cell sample 冻结 `cell → country`、country output Q16、科技 bitset 和 Building modifier factor，并粗粒度捕获六邻贸易拓扑；仅资源净 delta 写回 extra-change slots。 | 每个 due bucket 通过有界 continuation 隔离半成品；统一 effective output helper 后进入守恒结算；发布 summaries、snapshots、审计与 PKEC v20 stream（兼容 v18/v19）。 | 无大规模 GDScript fallback；国家桥无效时 disabled。 | 本地市场、商人信用和国内贸易默认 **ACTIVE / 每 cell 固定 5 日**。 | Price V4 使用成本/默认价锚定的加法积分；税、跨国贸易/关税/外交仍不在本图。 |
+| `economy_daily` | `NativeEconomyRuntime` 持有滚动五相结算、stage/cursor、PopulationStore、MarketStore、稀疏 MarketSignalStore/LaborMarketStore、BUILDING_GRAPH、企业三态与 pending/cooldown、聚合商人债务、国内 TradeTopology/Plan/Order/Flow stores、need/bundle 清算和 ECB；国家科技与国库由 `NativeCountryRuntime` 提供。 | 独立 native vectors；due-cell sample 冻结六列环境、`cell → country`、country output Q16、科技 bitset 和 Building modifier factor，并粗粒度捕获六邻贸易拓扑；仅资源净 delta 写回 extra-change slots。 | 每个 due bucket 通过有界 continuation 隔离半成品；气候能力在劳动/投入/资金/资源能力后限幅；发布 summaries、snapshots、审计与仅接受 v22 的 PKEC v22 stream。 | 无大规模 GDScript fallback；国家桥无效时 disabled。 | 本地市场、商人信用和国内贸易默认 **ACTIVE / 每 cell 固定 5 日**。 | Price V4 使用成本/默认价锚定的加法积分；税、跨国贸易/关税/外交仍不在本图。 |
 | `weather_refresh` | `WeatherDCSystem` wrapper 内的 `WeatherRefreshJob` 持有 field stage/front state；`WeatherSystem` 持业务 facade。 | `DCWorldExt` weather field/distribute/summary/stage-b pass 与 GDScript fallback 写 weather slots。 | Weather commit flush、front apply、weather LUT upload intent/Godot upload。 | `WeatherRefreshJob` staged path；merged native 受 readiness gate。 | `weather_native_daily_readiness_report()` 证明 visible publish/front/LUT 后为 `native_ready`；`native_weather_transaction_active_owner_enabled=true` 后为 `native_active`，执行后可升 `native_active_verified`。 | WeatherFront Godot objects、front rebuild、ImageTexture/LUT upload、CSV visible fields 是 retained boundaries；publish readiness 未达成才是 blocker。 |
 | `runtime_hydrology` | Legacy path 由 `WeatherRefreshJob` stage 3 持有；native daily path 由 `SCHEDULE_GRAPH` 的 `runtime_hydrology` node 持有单日执行点。 | `DCWorldExt::run_runtime_hydrology_pass` 写 `soil_moisture`、`water_balance_30d`、`river_discharge*`、`river_storage`、`groundwater_storage`、`surface_runoff` slots。 | Pass 内 `_flush_slot_to_map()`；native daily graph report 宣告 hydrology published slots。 | Legacy staged path 保留为 fallback/A-B。 | `runtime_hydrology_enabled=true` 时需要 native bundle 同时包含 `weather_knobs` 与 `runtime_hydrology_knobs`；stage-b 通过 `stage_b_after_hydrology_knobs` 在 hydrology 后运行；publish 成功后 phase 为 `native_active_verified`。 | 缺 `runtime_hydrology_knobs` 才是 blocker；legacy facade 仅作 A/B/test/fallback 入口。 |
 | `ocean_currents` | `OceanCurrentsSystem` wrapper 内的 `OceanCurrentsJob` 持 physical/visual round state；native facade mirrors physical state. | `DCWorldExt` SLP/wind/PSI/upwelling/raster pass 写 slots 或 visual buffers。 | SLP/wind/current/upwelling slot flush；visual raster + texture commit 留在 Godot side。 | `OceanCurrentsJob` physical/visual staged path。 | `native_ocean_physical_active_owner_enabled=true` 且 snapshot owner 为 `native_active` 后，physical state 不再阻塞 simulation complete。 | Visual raster/texture commit、overlay upload、Godot buffers 是 retained boundaries；wrapper `_inner` 未 inline。 |
@@ -53,7 +53,7 @@ owner-lot、两组四档升级族、Price V3 稀疏企业信号、自适应工�
 ECONOMY_GRAPH/BUILDING_GRAPH 内完成。GDScript 只编译 profile/technology tags、桥接 30 个注册自然
 资源 slots、提交命令和查询选中 cell；不存在 GDScript 货币、价格、生产或贸易 fallback。
 国家身份、领土、科技和国库由 `NativeCountryRuntime` 单一权威持有；经济周期冻结国家映射与科技，
-现金/商品审计包含国家资产及贸易托管。持久格式为 PKCN v2 + PKEC v20，必须先恢复 PKCN；
+现金/商品审计包含国家资产及贸易托管。持久格式为 PKCN v2 + PKEC v22，必须先恢复 PKCN；
 兼容 v11 ACTIVE 可迁移，ACTIVE 配置拒绝 v11 PROBE/v10，v2-v9 明确返回
 `legacy_countryless_economy_save_unsupported`。
 
@@ -142,6 +142,15 @@ growth, new-type seeding, and merchant-transition improvement controls. PKEC
 v19 persists the portfolio controls plus pending recovery state/cooldown; v18
 loads with deterministic defaults. CSV v21 observes portfolio, partial-liquidation, and procurement-tier metrics.
 There is no GDScript fallback or new DataCore slot.
+
+## Economy production climate authority override (current)
+
+`DCWorldExt` owns and publishes the `cell_plant_available_water` slot, while
+`NativeEconomyRuntime` remains the sole owner of frozen Q16 environment samples,
+building climate diagnostics, plans, settlement, hash, and PKEC v22. GDScript
+compiles `ProductionClimateProfile` resources and retains the climate/resource
+reference fallbacks; it never settles production. The change adds no scheduler
+node or GDScript economy authority. Empty profile IDs are an identity capacity.
 
 ## Climate moisture visibility override (current)
 

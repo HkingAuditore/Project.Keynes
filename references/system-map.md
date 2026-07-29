@@ -426,8 +426,26 @@ improvement. Recovery liquidation remains aggregate and retires at most 25
 percent of confirmed excess capacity per review. Only realized settled losses
 advance suspension; execution blockage remains active/idle. The test fixture
 creates one merchant post per populated cell and protects only the final local
-merchant from profession change. Policy restore is PKEC v18; debug recording
-remains Economy CSV v20.
+merchant from profession change. Policy restore originated in PKEC v18; current
+debug recording is Economy CSV v22.
+
+## Plant water, ecological signals, and production climate
+
+- `cell.plant_available_water` is a climate-owned F32 DataCore/MapData slot.
+  Land cells combine base humidity, 30-day water balance, and positive soil
+  storage into `[0,1]`; water cells publish zero. Native scalar/thread/combined
+  paths and the retained GDScript fallback share the formula.
+- Natural resources select their climate columns explicitly. Fertile soil,
+  timber, and wild game use 30-day temperature plus plant water; fish use
+  30-day temperature plus ambient moisture; geological resources keep current
+  temperature and ambient moisture. Arable, paddy, plantation, and pasture land
+  remain static carrying stocks.
+- `ProductionClimateProfile` is catalog configuration. `NativeEconomyRuntime`
+  freezes due-cell 30-day temperature/plant water, applies the Q16 capacity
+  after labor/input/capital/resource limits, and publishes building diagnostics.
+  No new scheduler stage or GDScript economy authority is introduced.
+- Persistence/debug are PKEC v22 and Economy CSV v22. PKEC accepts v22 only;
+  older schemas return `legacy_climate_production_save_unsupported`.
 
 ## Climate moisture round visibility
 

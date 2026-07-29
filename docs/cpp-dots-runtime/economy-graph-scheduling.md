@@ -252,7 +252,7 @@ after finalization. Candidate evaluation may later move to read-only worker
 ranges, but sponsor funds, materials, population movement, and construction
 creation must be revalidated and committed in stable cell order.
 
-## Rolling five-phase graph (PKEC v20, current)
+## Rolling five-phase graph (PKEC v22, current)
 
 The former global epoch and workload-selected cadence are superseded. Every day
 the native graph builds the sorted workset for `cell_id % 5 == day % 5` and
@@ -271,6 +271,14 @@ reduction and publish. Trade arrival never changes a cell's settlement date.
 Normal operation has no `WAIT_COMMIT`, deadline catchup, or deferred cell. The
 legacy stage enum value remains only for old trace decoding and immediately
 falls through when encountered.
+
+Each due cell freezes six environment columns. Building-plan prepare computes
+production climate fits/capacity once per group from 30-day temperature and
+plant-available water. This is an in-stage cache, not a graph node. Employment
+uses the pre-climate plan; production applies climate only after labor, input,
+capital, and resource capacities. Non-due cells retain their last committed
+diagnostics until their next phase, so mid-cycle environment changes cannot leak
+into an in-flight or already committed cell.
 
 ## Building production worker partition
 

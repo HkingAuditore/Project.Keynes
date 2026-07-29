@@ -88,8 +88,8 @@ provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
 PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, then player session/view/preview.
-PKCM v1 saves Climate modifiers. PKCN v3 embeds Country modifiers and research; PKEC v21
-embeds Economy modifiers and BuildingIdentityStore; PKGP v1 saves Gameplay
+PKCM v1 saves Climate modifiers. PKCN v3 embeds Country modifiers and research; PKEC v22
+embeds Economy modifiers, BuildingIdentityStore, and production-climate state; PKGP v1 saves Gameplay
 identity/base SoA and modifiers. Legacy PKCN/PKEC technology-tree saves are
 rejected with `legacy_technology_tree_save_unsupported`.
 
@@ -122,8 +122,8 @@ Restore order is strict:
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
 5. Restore PKCN v3, including Country modifiers and research state.
-6. Restore PKEC v21 after trade topology has been configured, including Economy
-   modifiers and building identities.
+6. Restore PKEC v22 after trade topology has been configured, including Economy
+   modifiers, building identities, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
 8. Restore journal and player/session context.

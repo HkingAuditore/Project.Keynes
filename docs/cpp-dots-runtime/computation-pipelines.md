@@ -23,13 +23,13 @@ Gameplay 使用独立 identity/base SoA，查询时组合 Gameplay store；对�
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy PKEC v20 pipeline（当前）
+## Economy PKEC v22 pipeline（当前）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
 `building_production` 原子提款并采购投入且按工资后债务前奖金结算，household 将实际自产消费
 价值归属建筑，`building_commit` 完成复产/清算/建设债务转移。贸易派单使用代际复核和批次共享
-库存/缺口仲裁。CSV v21 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段、分层采购字段及投资组合诊断。
+库存/缺口仲裁。CSV v22 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段、分层采购字段、投资组合及气候诊断。
 
 恢复探针只有在实际发生投入、产出、资源消耗或资源生成且现金/经济利润条件同时通过时才计为成功；
 空执行探针写入 pending suspension，并在下一 due-cell frozen boundary 提交。提交周期及其后一个完整
@@ -38,7 +38,7 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 `building_commit` 的内生投资复核现在维护固定四项 portfolio：候选扫描与最终建筑数量解耦，
 共享人口/资本/信用/建材/缺口预算后，每种类型只提交一条聚合 BUILD 命令。收入改善率一次计算
 愿意转职的人口，最多填补 25% 的持续缺口；多类型组合把单类型新增业主岗位占比限制在 50%。
-清算沿用既有恢复资格，但每次最多退出 group 的 25%，债务按退出比例转坏账。CSV v21 追加
+清算沿用既有恢复资格，但每次最多退出 group 的 25%，债务按退出比例转坏账。CSV v22 包含
 组合开工、迁移人口、集中度、约束来源和部分/完全清算计数。
 
 `building_commit.review_prepare` 生成当前 rolling/review phase 的升序正人口 cell
@@ -47,7 +47,8 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 两阶段。`aggregate_publish` 的 closing audit 支持 FULL/PROBE/INCREMENTAL，并以
 generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量复核且以全量结果权威；
 200 日每日双审计零 mismatch 后，生产默认已切到 INCREMENTAL，每 25 日及 restore/异常边界
-仍执行完整复核。所有列表、shadow、stamp 和诊断均为 transient，不进入 PKEC v20/hash。
+仍执行完整复核。除 v22 明确保存的生产气候冻结值与建筑气候诊断外，列表、shadow、stamp 和
+运行期诊断均为 transient，不进入 PKEC v22/hash。
 
 ## 状态总览
 
@@ -691,7 +692,7 @@ Ocean land 算法概要：
 - `DCWorldExt::run_natural_resource_pass(knobs)`（C++ full-map pass，slot 权威 + flush 回 MapData）— [`gdext/src/world_ext_resource.cpp`](../../gdext/src/world_ext_resource.cpp)
 - `map_generator.gd::run_natural_resource_pass_native(map)`（守门员 refresh + native dispatch + GDScript fallback）
 - `map_generator.gd::_bootstrap_natural_resource_deposits(map, cfg)`（生成期一次性写初始储量）
-- `NaturalResourceDailySystem`（`natural_resource_daily`，每日 DCSystem，reads cell.temp/cell.moisture → 拓扑自动排在 climate 之后）— [`scripts/simulation/systems/natural_resource_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/natural_resource_daily_system.gd)
+- `NaturalResourceDailySystem`（`natural_resource_daily`，每日 DCSystem，按 Profile 读取即时/30 日温度与环境湿度/植物可用水 → 拓扑自动排在 climate 之后）— [`scripts/simulation/systems/natural_resource_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/natural_resource_daily_system.gd)
 - 数据驱动配置：`ResourceProfile`（.tres）+ `ResourceProfileRegistry`（`build_pass_knobs` 组装系数数组）。
 
 **模型（统一 profile，可选线性或种群生态动态）**：普通资源每 tick、每 cell、每资源 r
@@ -702,6 +703,12 @@ Ocean land 算法概要：
 `ResourceProfile` 中混入摄氏范围。2026-07-16 前资源目录曾保留 `-30..45` 一类摄氏式范围，
 但运行时实际传入 `[0,1]`，会把热带格的 `tn` 压到接近 0，进而错误压低林木、野生动物、
 肥沃土壤等所有启用温度适宜度的资源承载量。目录、默认 codegen 与回归测试现共同守住该契约。
+
+Profile 还编译 `runtime_temperature_signal` 与 `runtime_moisture_signal` 两列。肥沃土壤、林木和
+野生动物使用 `temp_30d + plant_available_water`，淡水/海洋鱼使用
+`temp_30d + ambient moisture`，地质资源使用 `current temp + ambient moisture`。C++ scalar/SIMD/
+worker 在循环外解析选择列，GDScript fallback 使用同一选择；静态土地 capacity 不随短期信号
+改写储量。
 
 ```text
 tn            = clamp((temp - temp_lo[r]) / (temp_hi[r] - temp_lo[r]), 0, 1)
@@ -899,7 +906,7 @@ variant 的 components 作为互补 bundle 清算，不同 variants 做一次替
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v21 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v22 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
@@ -2608,7 +2615,7 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 成本单位价包含实际原料、应付合同工资和目标营业利润；生活成本通过 adaptive 合同工资进入，
 不额外重复叠加。这些信号只反馈下一周期 Price V3，不在本周期形成代数环。
 
-滚动 PKEC v20 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
+滚动 PKEC v22 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
 临时量只分配该 cell 的稀疏 CSR lane；investment 复用 epoch-transient `(cell,type)` 与
 `(cell,resource)` 索引，并在 `building_commit_phase` 中按 cell range continuation。投资只处理
 新增建筑：业主空缺仍由 employment 填补；资金充足 cohort 按“目标业主日收入高于当前人均
@@ -2620,7 +2627,7 @@ market、resource-delta 和 signal lane，把跨 cell 诊断、留用品、现�
 `building_production_merge_ms` 报告包含在 `building_production_ms` 内的归并成本。结果 lane 由
 runtime 长期持有，range 开始只重置逻辑长度和标量，保留 retained-output/cashflow/trace 容量；
 `production_result_allocation_growth_count/bytes` 用于验证热稳态不再扩容。这个 scratch 不进入
-PKEC v20 或 state hash。
+PKEC v22 或 state hash。
 
 2026-07-26 起，production 不再以 `cell_count >= worker_market_threshold` 作为并行前提。
 每个 cell 按建筑组、输入候选、输出、岗位和资源边估算只读 work weight，再切成稳定连续
@@ -2631,6 +2638,33 @@ range；building-plan evaluate 采用同一方式，把饱和、信用、恢复�
 `worker_weight_total/task_weight_min/task_weight_max/imbalance_q16_max/worker_cpu_ms`，
 plan 的 `building_plan_worker_*` 和 closing market audit 的 `audit_worker_*` 是 transient
 诊断，不进入存档/hash。
+
+### Production climate capacity (PKEC v22)
+
+`ProductionClimateProfile` is compiled by stable ID into fixed Q16 columns.
+For a due building group, native prepare reads the cell's frozen 30-day
+temperature and plant-available water:
+
+```text
+temp_fit  = clamp(1 - abs(temp_30d - temp_opt) / temp_tolerance, 0, 1)
+water_fit = clamp(1 - abs(plant_water - water_opt) / water_tolerance, 0, 1)
+raw       = min(temp_fit, water_fit)
+capacity  = 1 - exposure * (1 - max(floor, raw))
+```
+
+An empty profile returns `Q16_ONE`; capacity never exceeds it. Building plan,
+expected revenue, survival retention offers, investment prospective quantities,
+and settlement reuse the same capacity helper. Employment reads the pre-climate
+plan so climate does not cancel filled jobs or base contract wages. Input,
+funding, and resource capacities are resolved before the climate cap; actual
+input/resource withdrawals therefore fall with output. The existing global
+output factor and Modifier factor remain in their prior order.
+
+`last_capacity_q16` remains total executable capacity. The group additionally
+publishes temperature fit, water fit, climate capacity, and climate-lost output.
+Production reports count profiled/limited groups and average climate capacity.
+Worker tasks write disjoint due cells and reduce in stable order, preserving the
+scalar state hash.
 
 Opening audit 在非校验日复用上一个精确 committed close，并单独刷新 native country cash/goods
 贡献；`economy_full_audit_verify_interval_days`（默认 25 个模拟日，即 5 个经济周期）定期恢复完整 opening scan。closing
