@@ -13,7 +13,7 @@ u32 payload_bytes
 payload
 ```
 
-## PKEC v23（当前 writer）
+## PKEC v23（历史 writer）
 
 PKEC v23 保留 v22 的生产气候、Modifier、科研采购、滚动经济、贸易、建筑、恢复和审计
 payload，并在 cell record 追加上一批补贴申请及 generation-safe 国家 handle；财政 section
@@ -90,7 +90,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v23，并与 PKCN v4 交叉绑定。仅 PKEC v22 通过上述显式税务迁移；
+当前写出 schema 为 PKEC v24，并与 PKCN v4 交叉绑定。PKEC v22/v23 通过显式迁移；
 PKEC v2-v21 返回相应 legacy unsupported 错误，不执行隐式迁移。后文旧版本迁移章节只记录历史
 格式演进，不代表当前 reader 仍接受这些版本。拓扑和未完成规划从不存档，加载后重建；联合存档
 只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
@@ -101,7 +101,7 @@ PKEC v2-v21 返回相应 legacy unsupported 错误，不执行隐式迁移。后
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v23 与 PKCN v4 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致；
+当前 PKEC v24 与 PKCN v4 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致；
 仅 v22→v23 的 tax stat 追加走上述逐项验证迁移。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。
 未来新增/删除/改 ID 若要兼容，必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
@@ -269,3 +269,15 @@ post-restore transaction still uses `dt=5`. Restore reports
 `v14_rolling_phase_bootstrap` and immediately performs catalog/country binding,
 state hash, and full conservation validation. The bootstrap itself creates no
 cash, goods, population, buildings, escrow, or resource delta.
+
+## PKEC v24
+
+PKEC v24 adds tier index, prosperity generation, and name-roll generation to
+the fixed cell record plus a sparse settlement-name section. Sparse records use
+pack/prefix/root/suffix stable IDs and a disambiguator. The prosperity profile
+hash must match. Name packs may add components; existing IDs resolve directly
+or through aliases. Missing components fail explicitly.
+
+PKEC v22/v23 remain readable. After population restore they rebuild tiers and
+allocate names deterministically in ascending cell order with
+`name_roll_generation=0`. PKCN still restores before PKEC.

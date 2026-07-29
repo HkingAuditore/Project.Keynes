@@ -17,6 +17,8 @@ const MOBILE_NATURAL_RESOURCE_STRIDE_DAYS: int = 10
 const MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE: int = 8
 const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
 const MAP_OVERLAY_REFRESH_INTERVAL_MSEC: int = 100
+const SettlementLabelLayerScript = preload(
+	"res://scripts/rendering/settlement_label_layer.gd")
 
 @export var map_width: int = 60
 @export var map_height: int = 40
@@ -47,6 +49,7 @@ var _renderer: HexRenderer = null
 var _camera: MapCamera = null
 var _world_clock: WorldClock = null
 var _map_overlay_layer: DataOverlayLayer = null
+var _settlement_label_layer: SettlementLabelLayer = null
 var _current_map: MapData = null
 var _world_data: WorldData = null
 var _generator: MapGenerator = null
@@ -309,6 +312,8 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 		if bool(report.get("fronts_changed", false)) and _renderer.has_method("set_weather_fronts"):
 			_renderer.set_weather_fronts(report.get("fronts", []))
 	_pending_tick_render_ms = (Time.get_ticks_usec() - t_render_usec) / 1000.0
+	if _settlement_label_layer != null:
+		_settlement_label_layer.sync_from_runtime()
 	# 玩家场景每次 day_changed 都真实执行一次 SUS；weather 自身的 stride/policy
 	# 不能把同日 climate/economy job 误标成“整日未刷新”。
 	_pending_tick_skipped_day = false
@@ -1303,6 +1308,22 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 			_camera.set_horizontal_wrap(map_wrap_period_x(), true)
 		_camera.fit_to_viewport(1.0, safe_area, true)
 		_renderer.set_camera_zoom(_camera.zoom.x)
+	_bind_settlement_labels()
+
+
+func _bind_settlement_labels() -> void:
+	if _renderer == null or _camera == null or _current_map == null \
+			or _generator == null or not _generator.has_method(
+				"get_economy_facade"):
+		return
+	if _settlement_label_layer != null and is_instance_valid(
+			_settlement_label_layer):
+		_settlement_label_layer.queue_free()
+	_settlement_label_layer = SettlementLabelLayerScript.new()
+	_renderer.add_child(_settlement_label_layer)
+	_settlement_label_layer.configure(
+		_current_map, _camera, _generator.get_economy_facade(), hex_size,
+		map_wrap_period_x(), _fog_of_war_enabled)
 
 
 # ─── 国界线与视野迷雾 ─────────────────────────────────────────────────
@@ -1356,6 +1377,9 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 	out["vision"] = _refresh_vision()
 	out["lut"] = _republish_cell_luts()
 	out["border"] = _refresh_country_borders()
+	if _settlement_label_layer != null:
+		_settlement_label_layer.set_fog_enabled(_fog_of_war_enabled)
+		_settlement_label_layer.mark_visibility_dirty()
 	return out
 
 

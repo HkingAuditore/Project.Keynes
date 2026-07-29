@@ -1,7 +1,7 @@
 # Formal Game Flow, Player Start, and PKSV
 
 This document is the current contract for the player-facing startup path, the
-single-country opening bootstrap, and complete-game persistence. The legacy
+multi-country opening bootstrap, and complete-game persistence. The legacy
 `world_setup.tscn` remains a development tool and is not a product entry point.
 
 ## Session Authority
@@ -11,8 +11,11 @@ pending `new_game` or `load_game` request and changes between
 `main_menu.tscn` and `player_game.tscn`. Product code must not use `Engine`
 metadata to move configuration between scenes.
 
-`NewGameConfig v1` is the shared UI/generator/save schema. Its top-level groups
-are `country`, `base`, `world_controls`, and `climate`. Always validate through
+`NewGameConfig v3` is the shared UI/generator/save schema. Its top-level groups
+are `country`, `base`, `world_controls`, `climate`, and `research`. The
+`country.foreign_count` field is persisted with range `0..12` and default `5`;
+v2 loads migrate to `0` so existing saves retain their single-country opening.
+Always validate through
 `validate()` or `from_dictionary()` before generation. The resolved nonzero
 seed, including a UI-generated random seed, is the value stored in PKSV.
 
@@ -23,11 +26,13 @@ The formal path has one fixed order:
 1. Generate physical geography and bake the static world.
 2. Generate natural-resource deposits and publish them to `MapData`, `DCWorld`,
    and `DCWorldExt`.
-3. Select a start with `StartLocationPolicy` and publish deterministic resource
-   top-ups through the same three mirrors.
-4. Bootstrap PKCN with stable id `country.player` and a territory CSR containing
-   only the start cell. Every other `cell.country_slot` remains `-1`.
-5. Build the production settlement packet with `StarterSettlementBootstrap`.
+3. Select the player start, then deterministically select the configured foreign
+   starts and publish all resource top-ups through the same three mirrors.
+4. Bootstrap PKCN once with `country.player` in slot 0 followed by
+   `country.foreign.001` etc.; every country owns exactly its start cell and all
+   remaining land stays unowned.
+5. Build one aggregated production settlement packet with
+   `StarterSettlementBootstrap`.
 6. Bootstrap PKEC and run its initial conservation checks.
 7. Register `country_daily` before `economy_daily`, then register the remaining
    daily systems and build scheduler topology.
@@ -50,13 +55,23 @@ exists locally, the globally rarer metal is chosen; a stable hash breaks ties.
 Generation fails with a player-facing error when no valid survival candidate
 exists.
 
-## Twenty-Person Settlement
+Foreign starts use the same survival predicate. Their minimum pairwise land
+distance is `clamp(round(min(width, height) * 0.25), 6, 16)` over the map's
+six-neighbor topology; disconnected landmasses count as infinitely distant.
+Selection is deterministic and greedily orders candidates by distance from the
+nearest selected start, natural precious metal, survival score, then cell index.
+Generation fails rather than reducing the requested count or relaxing distance.
+Display names are selected without replacement from the resource-backed Chinese
+country-name pack, excluding the player's display name.
 
-The initial population is exactly 20. It contains three foragers, two merchants,
+## Twenty-Person Settlements
+
+Every opening country receives exactly 20 people. Each settlement contains three foragers, two merchants,
 one gold miner or two silver miners, and unemployed household members for the
 remainder. It starts with one gathering ground, one timber collector, one
 merchant post, and one matching gold/silver work site. Market stocks and cohort
-funds cover the configured 60-day survival bridge. PKCN/PKEC and the economy
+funds cover the configured 60-day survival bridge. All settlements are compiled
+into one PKEC bootstrap packet. PKCN/PKEC and the economy
 ledger remain the authorities; UI code does not own this state.
 
 ## PKSV v1
@@ -88,7 +103,7 @@ provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
 PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, then player session/view/preview.
-PKCM v1 saves Climate modifiers. PKCN v4 embeds Country modifiers, research and tax policy; PKEC v23
+PKCM v1 saves Climate modifiers. PKCN v4 embeds Country modifiers, research and tax policy; PKEC v24
 embeds Economy modifiers, BuildingIdentityStore, and production-climate state; PKGP v1 saves Gameplay
 identity/base SoA and modifiers. Legacy PKCN/PKEC technology-tree saves are
 rejected with `legacy_technology_tree_save_unsupported`.
@@ -122,7 +137,7 @@ Restore order is strict:
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
 5. Restore PKCN v4, including Country modifiers, research state and tax policy.
-6. Restore PKEC v23 after trade topology has been configured, including Economy
+6. Restore PKEC v24 after trade topology has been configured, including Economy
    modifiers, building identities, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
@@ -163,8 +178,9 @@ an unavailable fallback.
 
 ## Validation
 
-Minimum gates are configuration and repository tests; deterministic start tests
-across representative seeds/sizes; one-cell ownership, resource, population,
+Minimum gates are configuration and repository tests; deterministic multi-start
+tests across representative seeds/sizes; one-cell ownership, pairwise land
+distance, unique names, resource, population,
 and building assertions; `EnvironmentRuntime` byte-exact round-trip; PKCN/PKEC
 focused tests; four Modifier domain round-trips; a PKFG round-trip that hashes `explored_arr` across save/load
 and then advances the restored runtime through at least one complete five-phase

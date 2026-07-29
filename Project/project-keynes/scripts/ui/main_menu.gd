@@ -12,6 +12,7 @@ const MAP_PRESETS := [
 var _page_root: Control
 var _status_label: Label
 var _country_edit: LineEdit
+var _foreign_count_box: SpinBox
 var _seed_box: SpinBox
 var _size_option: OptionButton
 var _width_box: SpinBox
@@ -155,6 +156,12 @@ func _show_new_game() -> void:
 	_country_edit.max_length = 32
 	_country_edit.text = "新国家"
 	body.add_child(_field("国家名称", _country_edit))
+	_foreign_count_box = _dimension_box(
+		NewGameConfig.MIN_FOREIGN_COUNT,
+		NewGameConfig.MAX_FOREIGN_COUNT,
+		NewGameConfig.DEFAULT_FOREIGN_COUNT)
+	_foreign_count_box.tooltip_text = "生成在玩家国家一定距离之外的其他国家"
+	body.add_child(_field("外国数量", _foreign_count_box))
 
 	var seed_row := HBoxContainer.new()
 	seed_row.add_theme_constant_override("separation", 8)
@@ -447,6 +454,7 @@ func _set_custom_size_enabled(enabled: bool) -> void:
 func _start_new_game() -> void:
 	var config := NewGameConfig.new()
 	config.country.name = _country_edit.text
+	config.country.foreign_count = int(_foreign_count_box.value)
 	config.base.map_width = int(_width_box.value)
 	config.base.map_height = int(_height_box.value)
 	config.base.initial_seed = int(_seed_box.value)

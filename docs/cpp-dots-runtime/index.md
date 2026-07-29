@@ -6,7 +6,7 @@
   科技值市场与国家采购、科技 Modifier、GraphEdit 工作区以及 PKCN v4/PKEC v23 存档契约。
 
 - [Formal Game Flow, Player Start, and PKSV](./game-flow-start-save.md): 正式主菜单、
-  `NewGameConfig`、单格国家、20 人开局、PKSV 安全边界与恢复顺序。
+  `NewGameConfig v3`、确定性多国单格开局、每国 20 人聚落、PKSV 安全边界与恢复顺序。
 - 修改启动场景、玩家出生、完整存档或退出流程前先读该文档。
 
 当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见

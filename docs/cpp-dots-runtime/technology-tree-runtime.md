@@ -111,7 +111,8 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 
 ## 启动、存档与兼容性
 
-- `NewGameConfig v2` 保存起始国家现金、每日科研采购预算、四领域权重和自动采购开关。
+- `NewGameConfig v3` 保存外国数量、起始国家现金、每日科研采购预算、四领域权重和自动采购开关；
+  v2 迁移时外国数量为 0。
 - PKCN v3 保存完整研究状态和目录 hash。
 - PKEC v21 保存采购累计、科技值市场/在途状态及联合审计基线。
 - PKSV 恢复顺序保持 PKCN 在 PKEC 之前。

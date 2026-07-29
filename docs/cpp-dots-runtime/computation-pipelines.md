@@ -23,7 +23,7 @@ Gameplay 使用独立 identity/base SoA，查询时组合 Gameplay store；对�
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy PKEC v23 pipeline（当前）
+## Economy PKEC v24 pipeline（当前）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
@@ -48,7 +48,7 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量复核且以全量结果权威；
 200 日每日双审计零 mismatch 后，生产默认已切到 INCREMENTAL，每 25 日及 restore/异常边界
 仍执行完整复核。除 v23 明确保存的生产气候冻结值、建筑气候诊断、补贴权重与财政累计外，
-列表、shadow、stamp 和运行期诊断均为 transient，不进入 PKEC v23/hash。
+列表、shadow、stamp 和运行期诊断均为 transient，不进入 PKEC v24/hash。
 
 ## 状态总览
 
@@ -67,7 +67,7 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
 | CountryStore / territory / technology / treasury / tax policy | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、领土 CSR、国家科技、国库与五类税表；仅 `cell.country_slot` 发布到 DataCore，PKCN v4 持久化。 |
 | ModifierStore | C++ ACTIVE authority | `modifier_daily` | 四域隔离 SoA/bucket；不写 base，发布冻结 effective 聚合与 journal。 |
-| PopulationCohort / MarketStore / fiscal escrow | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家税率、N 日 need/bundle 清算、源头扣缴与补贴托管；worker 写独占 cell lane，财政提交统一更新国库并发布 PKEC v23。 |
+| PopulationCohort / MarketStore / fiscal escrow | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家税率、N 日 need/bundle 清算、源头扣缴与补贴托管；worker 写独占 cell lane，财政提交统一更新国库并发布 PKEC v24。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
@@ -901,8 +901,9 @@ EconomyDailySystem (SUS shell)
   -> committed cell summary + audit report
 ```
 
-生成期的 `MapGenerator._setup_economy_runtime()` 先配置并 bootstrap country authority，再配置
-economy，随后在任何人口/市场/建筑 bootstrap 之前一次性调用
+生成期的 `MapGenerator._setup_economy_runtime()` 先把玩家与配置数量的外国编译为单个多国
+CSR 包并 bootstrap country authority，再配置 economy；随后把每国 20 人聚落聚合为一次
+人口/市场/建筑 bootstrap，并在此之前一次性调用
 `capture_economy_trade_topology(neighbors, terrain, passable_lut, move_cost_lut, generation)`。
 默认 ACTIVE 模式只有在 `trade_topology_ready=true` 后才继续注册 `economy_daily`。
 显式测试经济夹具会先按可见资源生成候选建筑；collector 的 24 仅是资源支持上限，随后

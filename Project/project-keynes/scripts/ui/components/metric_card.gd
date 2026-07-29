@@ -7,6 +7,7 @@ var _subtitle_label: Label
 var _trend_label: Label
 var _icon_badge: IconBadge
 var _accent: Color = UITokens.ACCENT
+var _data_signature := ""
 
 
 func _ready() -> void:
@@ -64,9 +65,15 @@ func _ready() -> void:
 
 
 func set_data(title: String, value: String, subtitle: String = "", accent: Color = UITokens.ACCENT, trend: String = "", icon: String = "") -> void:
-	_accent = accent
 	if _title_label == null:
 		_ready()
+	var signature := "%s|%s|%s|%s|%s|%s" % [
+		title, value, subtitle, accent.to_html(), trend, icon,
+	]
+	if signature == _data_signature:
+		return
+	_data_signature = signature
+	_accent = accent
 	add_theme_stylebox_override("panel", UITokens.inset_panel_style(Color(0.074, 0.061, 0.046, 0.96), Color(accent.r, accent.g, accent.b, 0.46)))
 	if _icon_badge != null:
 		_icon_badge.set_semantic(StringName(icon), accent)

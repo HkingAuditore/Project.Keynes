@@ -374,6 +374,20 @@ Dictionary DCWorldExt::get_population_cell_summary(int cell_idx) const {
     return runtime_from(_economy_runtime)->population_cell_summary(cell_idx);
 }
 
+Dictionary DCWorldExt::get_named_settlement_snapshot() const {
+    if (_economy_runtime == nullptr) {
+        return unavailable();
+    }
+    return runtime_from(_economy_runtime)->named_settlement_snapshot();
+}
+
+Dictionary DCWorldExt::get_settlement_delta(int64_t since_revision) const {
+    if (_economy_runtime == nullptr) {
+        return unavailable();
+    }
+    return runtime_from(_economy_runtime)->settlement_delta(since_revision);
+}
+
 Dictionary DCWorldExt::get_market_cell_snapshot(int cell_idx) const {
     if (_economy_runtime == nullptr) {
         return unavailable();

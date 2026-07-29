@@ -19,6 +19,7 @@ func _run() -> void:
 	profile.native_environment_runtime_enabled = false
 	var config := NewGameConfig.create_default()
 	config.country.name = "Starter Soak Nation"
+	config.country.foreign_count = 3
 	config.base.map_width = 40
 	config.base.map_height = 28
 	config.base.initial_seed = 20260727
@@ -46,6 +47,8 @@ func _run() -> void:
 		return
 	var start: Dictionary = generator.gameplay_start_report()
 	var start_cell := int(start.get("cell", -1))
+	if not bool(start.get("ok", false)):
+		print("starter bootstrap failure: ", start)
 	_expect("formal starter bootstrap succeeds",
 		bool(start.get("ok", false)) and start_cell >= 0)
 	var economy = generator.get_economy_facade()

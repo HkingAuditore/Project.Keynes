@@ -336,7 +336,9 @@ constexpr uint16_t SAVE_SECTION_TRADE_ORDERS = 10;
 constexpr uint16_t SAVE_SECTION_TRADE_FLOWS = 11;
 constexpr uint16_t SAVE_SECTION_MODIFIERS = 12;
 constexpr uint16_t SAVE_SECTION_FISCAL = 13;
-constexpr uint16_t SAVE_SECTION_END = 14;
+constexpr uint16_t SAVE_SECTION_SETTLEMENT_NAMES = 14;
+constexpr uint16_t SAVE_SECTION_END = 15;
+constexpr uint16_t SAVE_SECTION_END_V23 = 14;
 constexpr uint16_t SAVE_SECTION_END_V20_TO_V22 = 13;
 constexpr uint16_t SAVE_SECTION_END_V11_TO_V19 = 12;
 constexpr uint16_t SAVE_SECTION_END_V10 = 10;
@@ -2537,6 +2539,17 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
             static_cast<size_t>(_cell_count))
         _fiscal_previous_country_handles.assign(
             static_cast<size_t>(_cell_count), 0);
+    if (_income_taxable_base_by_slot.size() < _population.active.size())
+        _income_taxable_base_by_slot.resize(_population.active.size(), 0);
+    if (_income_subsidy_floor_by_slot.size() < _population.active.size())
+        _income_subsidy_floor_by_slot.resize(_population.active.size(), 0);
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell < 0 || cell >= _cell_count) continue;
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            _income_taxable_base_by_slot[slot] = 0;
+            _income_subsidy_floor_by_slot[slot] = 0;
+        });
+    }
     if ((_epoch_active_tax_mask & static_cast<uint8_t>(
             (1U << NativeCountryRuntime::TAX_INCOME) |
             (1U << NativeCountryRuntime::TAX_CONSUMPTION) |
@@ -2545,6 +2558,7 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
                   _fiscal_previous_requests.end(), 0);
         std::fill(_fiscal_previous_country_handles.begin(),
                   _fiscal_previous_country_handles.end(), uint64_t{0});
+        _fiscal_reservation_requests.clear();
         _fiscal_current_requests.clear();
         _fiscal_budgets.clear();
         _fiscal_remaining.clear();
@@ -2556,6 +2570,7 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
             static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
         return true;
     }
+    _fiscal_reservation_requests.assign(lane_count, 0);
     _fiscal_current_requests.assign(lane_count, 0);
     _fiscal_budgets.assign(lane_count, 0);
     _fiscal_remaining.assign(lane_count, 0);
@@ -2574,14 +2589,50 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
             if (country < 0 || country >= _epoch_country_count) continue;
             const size_t lane = static_cast<size_t>(cell) *
                 ACTIVE_TAX_KIND_COUNT + kind;
-            if (_fiscal_previous_country_handles[cell] !=
-                    _epoch_country_handles[country]) {
+            const bool history_matches =
+                _fiscal_previous_country_handles[cell] ==
+                    _epoch_country_handles[country];
+            if (!history_matches)
                 _fiscal_previous_requests[lane] = 0;
-                continue;
+            int64_t reservation_request = history_matches
+                ? std::max<int64_t>(0, _fiscal_previous_requests[lane]) : 0;
+            if (kind == NativeCountryRuntime::TAX_INCOME) {
+                int64_t baseline_request = 0;
+                _population.for_each_in_cell(cell, [&](int32_t slot) {
+                    const int32_t signature = static_cast<int32_t>(
+                        _population.signature_id[slot]);
+                    const int32_t profession = signature >= 0 &&
+                            signature < static_cast<int32_t>(_signatures.size())
+                        ? _signatures[signature].profession_id : -1;
+                    const int8_t rate = frozen_tax_rate(
+                        cell, NativeCountryRuntime::TAX_INCOME, profession);
+                    if (rate >= 0 ||
+                        _population.population[slot] <= 0) return;
+                    const int64_t per_person_daily = living_cost_for_signature(
+                        cell, signature, _living_cost_base_plan_id,
+                        _saturation_count);
+                    const int64_t floor_base = saturating_mul(
+                        saturating_mul(
+                            per_person_daily,
+                            std::max<int64_t>(0, _population.population[slot]),
+                            _saturation_count),
+                        std::max(1, _epoch_days), _saturation_count);
+                    _income_subsidy_floor_by_slot[slot] = floor_base;
+                    baseline_request = saturating_add(
+                        baseline_request,
+                        mul_div_sat(
+                            floor_base,
+                            std::abs(static_cast<int32_t>(rate)), 100,
+                            _saturation_count),
+                        _saturation_count);
+                });
+                reservation_request = std::max(
+                    reservation_request, baseline_request);
             }
+            _fiscal_reservation_requests[lane] = reservation_request;
             requested_by_country[country] = saturating_add(
                 requested_by_country[country],
-                std::max<int64_t>(0, _fiscal_previous_requests[lane]),
+                reservation_request,
                 _saturation_count);
         }
     }
@@ -2600,7 +2651,7 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
                 const size_t lane = static_cast<size_t>(cell) *
                     ACTIVE_TAX_KIND_COUNT + kind;
                 prefix = saturating_add(prefix,
-                    std::max<int64_t>(0, _fiscal_previous_requests[lane]),
+                    std::max<int64_t>(0, _fiscal_reservation_requests[lane]),
                     _saturation_count);
                 const int64_t next = mul_div_sat(
                     reserved, prefix, requested, _saturation_count);
@@ -2612,6 +2663,79 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
         }
     }
     return true;
+}
+
+void NativeEconomyRuntime::settle_income_subsidies_for_cell(
+        int32_t cell, int64_t &saturation_count) {
+    if (cell < 0 || cell >= _cell_count ||
+        (_epoch_active_tax_mask & static_cast<uint8_t>(
+            1U << NativeCountryRuntime::TAX_INCOME)) == 0)
+        return;
+    const size_t lane = static_cast<size_t>(cell) *
+        ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_INCOME;
+    if (lane >= _fiscal_current_requests.size() ||
+        lane >= _fiscal_remaining.size()) return;
+
+    thread_local std::vector<int32_t> subsidy_slots;
+    thread_local std::vector<int64_t> subsidy_requests;
+    subsidy_slots.clear();
+    subsidy_requests.clear();
+    int64_t total_base = 0;
+    int64_t total_request = 0;
+    _population.for_each_in_cell(cell, [&](int32_t slot) {
+        if (slot < 0 ||
+            slot >= static_cast<int32_t>(_income_taxable_base_by_slot.size()) ||
+            slot >= static_cast<int32_t>(_income_subsidy_floor_by_slot.size()) ||
+            _population.population[slot] <= 0) return;
+        const int32_t signature = static_cast<int32_t>(
+            _population.signature_id[slot]);
+        const int32_t profession = signature >= 0 &&
+                signature < static_cast<int32_t>(_signatures.size())
+            ? _signatures[signature].profession_id : -1;
+        const int8_t rate = frozen_tax_rate(
+            cell, NativeCountryRuntime::TAX_INCOME, profession);
+        if (rate >= 0) return;
+        const int64_t base = std::max(
+            std::max<int64_t>(0, _income_taxable_base_by_slot[slot]),
+            std::max<int64_t>(0, _income_subsidy_floor_by_slot[slot]));
+        const int64_t request = mul_div_sat(
+            base, std::abs(static_cast<int32_t>(rate)), 100,
+            saturation_count);
+        subsidy_slots.push_back(slot);
+        subsidy_requests.push_back(request);
+        total_base = saturating_add(total_base, base, saturation_count);
+        total_request = saturating_add(
+            total_request, request, saturation_count);
+    });
+    _fiscal_epoch_bases[lane] = saturating_add(
+        _fiscal_epoch_bases[lane], total_base, saturation_count);
+    _fiscal_current_requests[lane] = saturating_add(
+        _fiscal_current_requests[lane], total_request, saturation_count);
+    if (total_request <= 0) return;
+
+    const int64_t paid_total = std::min(
+        total_request, std::max<int64_t>(0, _fiscal_remaining[lane]));
+    int64_t prefix = 0;
+    int64_t allocated = 0;
+    for (size_t i = 0; i < subsidy_slots.size(); ++i) {
+        prefix = saturating_add(
+            prefix, subsidy_requests[i], saturation_count);
+        const int64_t next = mul_div_sat(
+            paid_total, prefix, total_request, saturation_count);
+        const int64_t paid = std::max<int64_t>(0, next - allocated);
+        allocated = next;
+        if (paid <= 0) continue;
+        const int32_t slot = subsidy_slots[i];
+        touch_accounting_slot(slot);
+        _population.funds[slot] = saturating_add(
+            _population.funds[slot], paid, saturation_count);
+        trace_record_cashflow(
+            cell, _population.handle_for_slot(slot),
+            CASHFLOW_INCOME_SUBSIDY, paid, 0);
+    }
+    _fiscal_remaining[lane] -= paid_total;
+    _fiscal_epoch_paid[lane] = saturating_add(
+        _fiscal_epoch_paid[lane], paid_total, saturation_count);
 }
 
 int64_t NativeEconomyRuntime::apply_fiscal_tax(
@@ -2657,12 +2781,13 @@ int64_t NativeEconomyRuntime::expected_fiscal_transfer(
     const int64_t amount = mul_div_sat(
         base, std::abs(static_cast<int32_t>(rate)), 100, saturation_count);
     if (rate > 0) return amount;
-    const int64_t previous_request = std::max<int64_t>(
-        0, _fiscal_previous_requests[lane]);
+    const int64_t reservation_request =
+        lane < _fiscal_reservation_requests.size()
+        ? std::max<int64_t>(0, _fiscal_reservation_requests[lane]) : 0;
     const int64_t budget = std::max<int64_t>(0, _fiscal_budgets[lane]);
-    if (amount <= 0 || previous_request <= 0 || budget <= 0) return 0;
+    if (amount <= 0 || reservation_request <= 0 || budget <= 0) return 0;
     const int64_t expected_paid = std::min(
-        amount, mul_div_sat(amount, budget, previous_request,
+        amount, mul_div_sat(amount, budget, reservation_request,
                             saturation_count));
     return -expected_paid;
 }
@@ -2673,8 +2798,20 @@ int64_t NativeEconomyRuntime::expected_after_tax_income(
     if (gross_income <= 0) return 0;
     const int8_t income_rate = frozen_tax_rate(
         cell, NativeCountryRuntime::TAX_INCOME, profession);
+    int64_t subsidy_base = gross_income;
+    if (income_rate < 0) {
+        const int32_t signal = labor_signal_index(cell, profession);
+        const int64_t living_floor = signal >= 0 &&
+                signal < static_cast<int32_t>(
+                    _labor_signals.role_living_cost.size())
+            ? std::max<int64_t>(
+                _labor_signals.base_living_cost[signal],
+                _labor_signals.role_living_cost[signal])
+            : 0;
+        subsidy_base = std::max(subsidy_base, living_floor);
+    }
     return saturating_sub(gross_income, expected_fiscal_transfer(
-        cell, NativeCountryRuntime::TAX_INCOME, gross_income, income_rate,
+        cell, NativeCountryRuntime::TAX_INCOME, subsidy_base, income_rate,
         saturation_count), saturation_count);
 }
 
@@ -4032,6 +4169,108 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         dict_num<int64_t>(catalog, "building_catalog_compat_hash_v13", 0);
     if (_catalog_hash == 0) {
         error = "catalog_hash_required";
+        return false;
+    }
+    return compile_settlement_catalog(catalog, error);
+}
+
+bool NativeEconomyRuntime::compile_settlement_catalog(
+        const Dictionary &catalog, std::string &error) {
+    _prosperity_thresholds = packed_i64(catalog, "prosperity_thresholds");
+    _prosperity_ids = packed_strings(catalog, "prosperity_ids");
+    _prosperity_names = packed_strings(catalog, "prosperity_names");
+    _settlement_prefix_ids = packed_strings(catalog, "settlement_prefix_ids");
+    _settlement_prefix_text = packed_strings(catalog, "settlement_prefix_text");
+    _settlement_prefix_weights = packed_i32(catalog, "settlement_prefix_weights");
+    _settlement_prefix_alias_ids = packed_strings(
+        catalog, "settlement_prefix_alias_ids");
+    _settlement_prefix_alias_targets = packed_strings(
+        catalog, "settlement_prefix_alias_targets");
+    _settlement_root_ids = packed_strings(catalog, "settlement_root_ids");
+    _settlement_root_text = packed_strings(catalog, "settlement_root_text");
+    _settlement_root_weights = packed_i32(catalog, "settlement_root_weights");
+    _settlement_root_alias_ids = packed_strings(
+        catalog, "settlement_root_alias_ids");
+    _settlement_root_alias_targets = packed_strings(
+        catalog, "settlement_root_alias_targets");
+    _settlement_suffix_ids = packed_strings(catalog, "settlement_suffix_ids");
+    _settlement_suffix_text = packed_strings(catalog, "settlement_suffix_text");
+    _settlement_suffix_weights = packed_i32(catalog, "settlement_suffix_weights");
+    _settlement_suffix_alias_ids = packed_strings(
+        catalog, "settlement_suffix_alias_ids");
+    _settlement_suffix_alias_targets = packed_strings(
+        catalog, "settlement_suffix_alias_targets");
+    _settlement_name_pack_id = dict_string(
+        catalog, "settlement_name_pack_id", "default_zh");
+    _settlement_named_tier = dict_num<int32_t>(
+        catalog, "settlement_named_tier", 2);
+    _settlement_downgrade_bp = dict_num<int32_t>(
+        catalog, "settlement_downgrade_bp", 9000);
+    _prosperity_profile_hash = dict_num<int64_t>(
+        catalog, "prosperity_profile_hash", 0);
+    _settlement_catalog_hash = dict_num<int64_t>(
+        catalog, "settlement_catalog_hash", 0);
+    const size_t tiers = _prosperity_thresholds.size();
+    if (tiers < 2 || tiers > 32 || _prosperity_ids.size() != tiers ||
+        _prosperity_names.size() != tiers || _prosperity_thresholds[0] != 0 ||
+        !std::is_sorted(_prosperity_thresholds.begin(),
+                        _prosperity_thresholds.end()) ||
+        std::adjacent_find(_prosperity_thresholds.begin(),
+                           _prosperity_thresholds.end()) !=
+            _prosperity_thresholds.end() ||
+        _settlement_named_tier < 1 ||
+        _settlement_named_tier >= static_cast<int32_t>(tiers) ||
+        _settlement_downgrade_bp < 1 || _settlement_downgrade_bp > 10000 ||
+        _prosperity_profile_hash == 0 || _settlement_catalog_hash == 0) {
+        error = "settlement_profile_invalid";
+        return false;
+    }
+    const auto valid_part = [](const std::vector<std::string> &ids,
+                               const std::vector<std::string> &text,
+                               const std::vector<int32_t> &weights) {
+        return !ids.empty() && ids.size() == text.size() &&
+            ids.size() == weights.size() &&
+            std::all_of(weights.begin(), weights.end(),
+                        [](int32_t value) { return value > 0; });
+    };
+    if (!valid_part(_settlement_prefix_ids, _settlement_prefix_text,
+                    _settlement_prefix_weights) ||
+        !valid_part(_settlement_root_ids, _settlement_root_text,
+                    _settlement_root_weights) ||
+        !valid_part(_settlement_suffix_ids, _settlement_suffix_text,
+                    _settlement_suffix_weights)) {
+        error = "settlement_name_catalog_invalid";
+        return false;
+    }
+    const auto valid_aliases = [](const std::vector<std::string> &aliases,
+                                  const std::vector<std::string> &targets,
+                                  const std::vector<std::string> &ids) {
+        if (aliases.size() != targets.size()) return false;
+        for (size_t i = 0; i < aliases.size(); ++i) {
+            if (aliases[i].empty() ||
+                std::find(ids.begin(), ids.end(), targets[i]) == ids.end())
+                return false;
+        }
+        return true;
+    };
+    if (!valid_aliases(_settlement_prefix_alias_ids,
+                       _settlement_prefix_alias_targets,
+                       _settlement_prefix_ids) ||
+        !valid_aliases(_settlement_root_alias_ids,
+                       _settlement_root_alias_targets,
+                       _settlement_root_ids) ||
+        !valid_aliases(_settlement_suffix_alias_ids,
+                       _settlement_suffix_alias_targets,
+                       _settlement_suffix_ids)) {
+        error = "settlement_name_alias_invalid";
+        return false;
+    }
+    const uint64_t combinations =
+        static_cast<uint64_t>(_settlement_prefix_ids.size()) *
+        static_cast<uint64_t>(_settlement_root_ids.size()) *
+        static_cast<uint64_t>(_settlement_suffix_ids.size());
+    if (combinations < 4096 || combinations > 0x7fffffffULL) {
+        error = "settlement_name_combination_count_invalid";
         return false;
     }
     return true;
@@ -7132,9 +7371,18 @@ int64_t NativeEconomyRuntime::pay_building_wage_amount(
                 1U << NativeCountryRuntime::TAX_INCOME)) != 0) {
             const int8_t income_rate = frozen_tax_rate(
                 cell, NativeCountryRuntime::TAX_INCOME, profession_id);
-            income_tax = apply_fiscal_tax(
-                cell, NativeCountryRuntime::TAX_INCOME, share, income_rate,
-                _saturation_count);
+            if (income_rate < 0) {
+                if (slot >= 0 && slot < static_cast<int32_t>(
+                        _income_taxable_base_by_slot.size())) {
+                    _income_taxable_base_by_slot[slot] = saturating_add(
+                        _income_taxable_base_by_slot[slot], share,
+                        _saturation_count);
+                }
+            } else {
+                income_tax = apply_fiscal_tax(
+                    cell, NativeCountryRuntime::TAX_INCOME, share, income_rate,
+                    _saturation_count);
+            }
         }
         const int64_t net_share = saturating_sub(
             share, income_tax, _saturation_count);
@@ -10247,9 +10495,19 @@ bool NativeEconomyRuntime::run_building_production_cell(
             ? _signatures[signature].profession_id : -1;
         const int8_t income_rate = frozen_tax_rate(
             cell, NativeCountryRuntime::TAX_INCOME, profession);
-        const int64_t income_tax = apply_fiscal_tax(
-            cell, NativeCountryRuntime::TAX_INCOME, net_operating_income,
-            income_rate, _saturation_count);
+        int64_t income_tax = 0;
+        if (income_rate < 0) {
+            if (owner_slot < static_cast<int32_t>(
+                    _income_taxable_base_by_slot.size())) {
+                _income_taxable_base_by_slot[owner_slot] = saturating_add(
+                    _income_taxable_base_by_slot[owner_slot],
+                    net_operating_income, _saturation_count);
+            }
+        } else {
+            income_tax = apply_fiscal_tax(
+                cell, NativeCountryRuntime::TAX_INCOME, net_operating_income,
+                income_rate, _saturation_count);
+        }
         if (income_tax == 0) continue;
         touch_accounting_slot(owner_slot);
         _population.funds[owner_slot] = saturating_sub(
@@ -10945,10 +11203,23 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     const int32_t profession = group.owner_signature_id >= 0 &&
             group.owner_signature_id < static_cast<int32_t>(_signatures.size())
         ? _signatures[group.owner_signature_id].profession_id : -1;
+    const int8_t income_rate = frozen_tax_rate(
+        group.cell, NativeCountryRuntime::TAX_INCOME, profession);
+    int64_t income_subsidy_base = taxable_income;
+    if (income_rate < 0) {
+        const int64_t living_floor = saturating_mul(
+            saturating_mul(
+                living_cost_for_signature(
+                    group.cell, group.owner_signature_id,
+                    _living_cost_base_plan_id, sat),
+                owner_jobs, sat),
+            days, sat);
+        income_subsidy_base = std::max(
+            income_subsidy_base, living_floor);
+    }
     const int64_t income_transfer = expected_fiscal_transfer(
-        group.cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
-        frozen_tax_rate(group.cell, NativeCountryRuntime::TAX_INCOME,
-                        profession), sat);
+        group.cell, NativeCountryRuntime::TAX_INCOME, income_subsidy_base,
+        income_rate, sat);
     const int64_t owner_pool = std::max<int64_t>(0, saturating_sub(
         saturating_sub(operating_income, business_transfer, sat),
         income_transfer, sat));
@@ -12062,13 +12333,16 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                                 _saturation_count),
                             std::max<int64_t>(0, business_transfer),
                             _saturation_count));
+                    const int8_t income_rate = frozen_tax_rate(
+                        cell, NativeCountryRuntime::TAX_INCOME,
+                        type.owner_profession_id);
+                    const int64_t income_subsidy_base = income_rate < 0
+                        ? std::max(taxable_owner_income, owner_livelihood)
+                        : taxable_owner_income;
                     const int64_t income_transfer =
                         expected_fiscal_transfer(
                             cell, NativeCountryRuntime::TAX_INCOME,
-                            taxable_owner_income,
-                            frozen_tax_rate(
-                                cell, NativeCountryRuntime::TAX_INCOME,
-                                type.owner_profession_id),
+                            income_subsidy_base, income_rate,
                             _saturation_count);
                     daily_after_tax_cash_revenue = saturating_sub(
                         saturating_sub(
@@ -12949,6 +13223,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_diagnostic_day = -1;
     _investment_diagnostics.clear();
     _population.clear(cell_count);
+    _settlements.clear(cell_count);
     _market.clear();
     _market_signals.clear(cell_count);
     _buildings.clear();
@@ -13042,6 +13317,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     }
     _bootstrapped = false;
     _population.clear(_cell_count);
+    _settlements.clear(_cell_count);
     _market.clear();
     _market_signals.clear(_cell_count);
     _labor_signals.clear(_cell_count);
@@ -13328,6 +13604,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _fatal = false;
     _fatal_reason.clear();
     rebuild_committed_summaries();
+    initialize_settlements_from_population();
     _closing_totals = audit_totals();
     _opening_totals = _closing_totals;
     rebuild_incremental_audit_shadow();
@@ -13364,7 +13641,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         _estimated_total_slices_per_epoch;
     out["workload_deadline_feasible"] = _workload_deadline_feasible;
     out["workload_cycle_clamped"] = _workload_cycle_clamped;
-    out["approximation_model"] = "rolling_cell_settlement_v17_anytime";
+    out["approximation_model"] = "rolling_cell_settlement_v18_income_floor";
     out["economy_accuracy_preset"] = _accuracy_preset == 0 ? "EXACT" :
         (_accuracy_preset == 1 ? "BALANCED" :
         (_accuracy_preset == 2 ? "FAST" : "CUSTOM"));
@@ -15890,6 +16167,13 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _merchant_settle_ms = 0.0;
     _price_ms = 0.0;
     _structure_ms = 0.0;
+    _prosperity_changed_cells = 0;
+    _prosperity_promotions = 0;
+    _prosperity_demotions = 0;
+    _settlement_names_assigned = 0;
+    _settlement_names_released = 0;
+    _settlement_name_collision_probes = 0;
+    _prosperity_update_ms = 0.0;
     _publish_ms = 0.0;
     _employment_ms = 0.0;
     _production_ms = 0.0;
@@ -16587,6 +16871,8 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                     static_cast<int64_t>(cmd.target_handle), -1, before, after);
             _external_population_delta = saturating_add(_external_population_delta, actual_delta,
                                                         _saturation_count);
+            if (actual_delta != 0)
+                _structural_touched_cells.push_back(event_cell);
             if (after == 0) {
                 const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
                 _structural_commands.push_back({0, slot, cell,
@@ -17718,11 +18004,20 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     signature < static_cast<int32_t>(_signatures.size())
                 ? _signatures[signature].profession_id : -1;
             const int32_t cell = cohort_cell(slot);
-            income_tax = apply_fiscal_tax(
-                cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
-                frozen_tax_rate(
-                    cell, NativeCountryRuntime::TAX_INCOME, profession),
-                sat);
+            const int8_t income_rate = frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_INCOME, profession);
+            if (income_rate < 0) {
+                if (slot >= 0 && slot < static_cast<int32_t>(
+                        _income_taxable_base_by_slot.size())) {
+                    _income_taxable_base_by_slot[slot] = saturating_add(
+                        _income_taxable_base_by_slot[slot], taxable_income,
+                        sat);
+                }
+            } else {
+                income_tax = apply_fiscal_tax(
+                    cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
+                    income_rate, sat);
+            }
         }
         const int64_t net_share = saturating_sub(share, income_tax, sat);
         _population.funds[slot] = saturating_add(
@@ -18921,6 +19216,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
     } else if (_publish_phase == PublishPhase::COMMIT) {
         _committed_cells.swap(_staging_cells);
         commit_incremental_audit_shadow();
+        update_settlements_for_changed_cells();
         for (const int32_t cell : _epoch_settlement_cells) {
             if (cell < 0 || cell >= _cell_count) continue;
             _cell_last_settlement_day[cell] = _sample_day;
@@ -19894,6 +20190,29 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 continue;
             }
             if (_household_market_phase == 3) {
+                _executed_substage = "income_subsidy";
+                cursor_start = _household_post_cursor;
+                const int32_t end = std::min<int32_t>(
+                    static_cast<int32_t>(_epoch_settlement_cells.size()),
+                    _household_post_cursor + PUBLISH_ENTRIES_PER_SLICE);
+                for (; _household_post_cursor < end;
+                     ++_household_post_cursor) {
+                    settle_income_subsidies_for_cell(
+                        _epoch_settlement_cells[_household_post_cursor],
+                        _saturation_count);
+                    ++work_done;
+                }
+                cursor_end = _household_post_cursor;
+                cell_range_used = true;
+                if (_household_post_cursor >= static_cast<int32_t>(
+                        _epoch_settlement_cells.size())) {
+                    _household_post_cursor = 0;
+                    _household_market_phase = 4;
+                }
+                if (finish_chunk_and_should_yield()) break;
+                continue;
+            }
+            if (_household_market_phase == 4) {
                 _executed_substage = "structural_sort";
                 if (_approximation_cooldown_epochs_left > 0) {
                     --_approximation_cooldown_epochs_left;
@@ -20826,6 +21145,11 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_population.needs_satisfaction); cap(_population.worst_need_id);
     cap(_population.flags); cap(_population.demography_residual);
     cap(_population.owner_employed); cap(_population.employee_employed);
+    cap(_settlements.tier); cap(_settlements.name_active);
+    cap(_settlements.prosperity_generation);
+    cap(_settlements.name_roll_generation);
+    cap(_settlements.prefix); cap(_settlements.root); cap(_settlements.suffix);
+    cap(_settlements.disambiguator);
     cap(_market.stock); cap(_market.price); cap(_market.demand_ema);
     cap(_market.last_shortage_q16); cap(_market.cell_to_market);
     cap(_environment_temperature_q16); cap(_environment_temperature_30d_q16);
@@ -20867,6 +21191,21 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_country_variant_available);
     cap(_epoch_country_building_type_offsets);
     cap(_epoch_country_building_type_indices);
+    cap(_fiscal_previous_requests);
+    cap(_fiscal_previous_country_handles);
+    cap(_fiscal_reservation_requests);
+    cap(_fiscal_current_requests); cap(_fiscal_budgets);
+    cap(_fiscal_remaining); cap(_fiscal_epoch_bases);
+    cap(_fiscal_epoch_assessed); cap(_fiscal_epoch_collected);
+    cap(_fiscal_epoch_paid); cap(_fiscal_escrow_by_country);
+    cap(_fiscal_last_bases); cap(_fiscal_last_assessed);
+    cap(_fiscal_last_collected); cap(_fiscal_last_requests);
+    cap(_fiscal_last_reserved); cap(_fiscal_last_paid);
+    cap(_fiscal_last_unmet); cap(_fiscal_cumulative_bases);
+    cap(_fiscal_cumulative_collected);
+    cap(_fiscal_cumulative_requests); cap(_fiscal_cumulative_paid);
+    cap(_income_taxable_base_by_slot);
+    cap(_income_subsidy_floor_by_slot);
     cap(_epoch_market_ids); cap(_epoch_market_work_weights);
     cap(_epoch_settlement_cells); cap(_epoch_building_cells);
     cap(_household_post_saturation_scratch);
@@ -21320,6 +21659,33 @@ Dictionary NativeEconomyRuntime::report() const {
     out["merchant_settle_ms"] = _merchant_settle_ms;
     out["price_ms"] = _price_ms;
     out["structure_ms"] = _structure_ms;
+    out["prosperity_changed_cells"] = _prosperity_changed_cells;
+    out["prosperity_promotions"] = _prosperity_promotions;
+    out["prosperity_demotions"] = _prosperity_demotions;
+    out["settlement_names_assigned"] = _settlement_names_assigned;
+    out["settlement_names_released"] = _settlement_names_released;
+    out["settlement_name_collision_probes"] =
+        _settlement_name_collision_probes;
+    out["prosperity_update_ms"] = _prosperity_update_ms;
+    out["settlement_revision"] = _settlements.revision;
+    int64_t settlement_memory = 0;
+    settlement_memory += static_cast<int64_t>(
+        _settlements.tier.capacity() * sizeof(uint8_t) +
+        _settlements.name_active.capacity() * sizeof(uint8_t) +
+        _settlements.prosperity_generation.capacity() * sizeof(uint32_t) +
+        _settlements.name_roll_generation.capacity() * sizeof(uint32_t) +
+        _settlements.prefix.capacity() * sizeof(int32_t) +
+        _settlements.root.capacity() * sizeof(int32_t) +
+        _settlements.suffix.capacity() * sizeof(int32_t) +
+        _settlements.disambiguator.capacity() * sizeof(uint32_t));
+    for (const auto &entry : _settlements.active_names)
+        settlement_memory += static_cast<int64_t>(
+            sizeof(entry) + entry.first.capacity());
+    for (const auto &revision : _settlements.revisions)
+        settlement_memory += static_cast<int64_t>(
+            sizeof(revision) + revision.changes.capacity() *
+                sizeof(SettlementChange));
+    out["settlement_memory_bytes"] = settlement_memory;
     out["publish_ms"] = _publish_ms;
     Dictionary publish_breakdown_ms;
     Dictionary publish_breakdown_work;
@@ -22124,8 +22490,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _estimated_total_slices_per_epoch;
     out["workload_deadline_feasible"] = _workload_deadline_feasible;
     out["workload_cycle_clamped"] = _workload_cycle_clamped;
-    out["approximation_version"] = 17;
-    out["approximation_model"] = "rolling_cell_settlement_v17_anytime";
+    out["approximation_version"] = 18;
+    out["approximation_model"] = "rolling_cell_settlement_v18_income_floor";
     out["economy_accuracy_preset"] = _accuracy_preset == 0 ? "EXACT" :
         (_accuracy_preset == 1 ? "BALANCED" :
         (_accuracy_preset == 2 ? "FAST" : "CUSTOM"));
@@ -22194,6 +22560,300 @@ Dictionary NativeEconomyRuntime::report() const {
     return out;
 }
 
+int64_t NativeEconomyRuntime::population_total_for_cell(int32_t cell) const {
+    if (cell < 0 ||
+        cell >= static_cast<int32_t>(_committed_cells.size()))
+        return 0;
+    return std::max<int64_t>(0, _committed_cells[cell].population);
+}
+
+uint8_t NativeEconomyRuntime::prosperity_tier_for_population(
+        int64_t population, uint8_t current) const {
+    if (_prosperity_thresholds.empty()) return 0;
+    int32_t tier = std::min<int32_t>(
+        current, static_cast<int32_t>(_prosperity_thresholds.size()) - 1);
+    while (tier + 1 < static_cast<int32_t>(_prosperity_thresholds.size()) &&
+           population >= _prosperity_thresholds[tier + 1])
+        ++tier;
+    while (tier > 0) {
+        const int64_t downgrade = (_prosperity_thresholds[tier] *
+            _settlement_downgrade_bp + 9999) / 10000;
+        if (population >= downgrade) break;
+        --tier;
+    }
+    return static_cast<uint8_t>(tier);
+}
+
+std::string NativeEconomyRuntime::settlement_name_for_cell(int32_t cell) const {
+    if (cell < 0 || cell >= _cell_count ||
+        cell >= static_cast<int32_t>(_settlements.name_active.size()) ||
+        _settlements.name_active[cell] == 0) return {};
+    const int32_t p = _settlements.prefix[cell];
+    const int32_t r = _settlements.root[cell];
+    const int32_t s = _settlements.suffix[cell];
+    if (p < 0 || p >= static_cast<int32_t>(_settlement_prefix_text.size()) ||
+        r < 0 || r >= static_cast<int32_t>(_settlement_root_text.size()) ||
+        s < 0 || s >= static_cast<int32_t>(_settlement_suffix_text.size()))
+        return {};
+    std::string value = _settlement_prefix_text[p] +
+        _settlement_root_text[r] + _settlement_suffix_text[s];
+    if (_settlements.disambiguator[cell] > 0)
+        value += "·" + std::to_string(_settlements.disambiguator[cell] + 1);
+    return value;
+}
+
+void NativeEconomyRuntime::assign_settlement_name(int32_t cell) {
+    if (cell < 0 || cell >= _cell_count ||
+        _settlements.name_active[cell] != 0) return;
+    const uint64_t pc = _settlement_prefix_text.size();
+    const uint64_t rc = _settlement_root_text.size();
+    const uint64_t sc = _settlement_suffix_text.size();
+    const uint64_t combinations = pc * rc * sc;
+    uint64_t hash = 1469598103934665603ULL;
+    hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed));
+    hash = trace_hash_mix(hash, static_cast<uint32_t>(cell));
+    hash = trace_hash_mix(hash, _settlements.name_roll_generation[cell]);
+    for (unsigned char ch : _settlement_name_pack_id)
+        hash = trace_hash_mix(hash, ch);
+    const auto weighted_pick = [&](const std::vector<int32_t> &weights,
+                                   uint64_t salt) {
+        int64_t total = 0;
+        for (int32_t weight : weights) total += weight;
+        int64_t roll = static_cast<int64_t>(
+            trace_hash_mix(hash, salt) % static_cast<uint64_t>(total));
+        for (int32_t i = 0; i < static_cast<int32_t>(weights.size()); ++i) {
+            if (roll < weights[i]) return i;
+            roll -= weights[i];
+        }
+        return static_cast<int32_t>(weights.size()) - 1;
+    };
+    int32_t p = weighted_pick(_settlement_prefix_weights, 0x50524546ULL);
+    int32_t r = weighted_pick(_settlement_root_weights, 0x524f4f54ULL);
+    int32_t s = weighted_pick(_settlement_suffix_weights, 0x53554646ULL);
+    uint64_t flat = (static_cast<uint64_t>(p) * rc +
+                     static_cast<uint64_t>(r)) * sc +
+                    static_cast<uint64_t>(s);
+    uint64_t step = (trace_hash_mix(hash, 0x53544550ULL) | 1ULL) % combinations;
+    if (step == 0) step = 1;
+    while (std::gcd(step, combinations) != 1) {
+        step = (step + 2) % combinations;
+        if (step == 0) step = 1;
+    }
+    uint32_t disambiguator = 0;
+    std::string name;
+    for (uint64_t probe = 0; probe < combinations; ++probe) {
+        const uint64_t candidate = (flat + probe * step) % combinations;
+        p = static_cast<int32_t>(candidate / (rc * sc));
+        const uint64_t tail = candidate % (rc * sc);
+        r = static_cast<int32_t>(tail / sc);
+        s = static_cast<int32_t>(tail % sc);
+        name = _settlement_prefix_text[p] + _settlement_root_text[r] +
+            _settlement_suffix_text[s];
+        if (_settlements.active_names.find(name) ==
+            _settlements.active_names.end()) {
+            _settlement_name_collision_probes += static_cast<int64_t>(probe);
+            break;
+        }
+        name.clear();
+    }
+    if (name.empty()) {
+        p = static_cast<int32_t>(flat / (rc * sc));
+        const uint64_t tail = flat % (rc * sc);
+        r = static_cast<int32_t>(tail / sc);
+        s = static_cast<int32_t>(tail % sc);
+        const std::string base = _settlement_prefix_text[p] +
+            _settlement_root_text[r] + _settlement_suffix_text[s];
+        do {
+            ++disambiguator;
+            name = base + "·" + std::to_string(disambiguator + 1);
+        } while (_settlements.active_names.find(name) !=
+                 _settlements.active_names.end());
+    }
+    _settlements.prefix[cell] = p;
+    _settlements.root[cell] = r;
+    _settlements.suffix[cell] = s;
+    _settlements.disambiguator[cell] = disambiguator;
+    _settlements.name_active[cell] = 1;
+    _settlements.active_names.emplace(name, cell);
+    ++_settlement_names_assigned;
+}
+
+void NativeEconomyRuntime::release_settlement_name(int32_t cell) {
+    if (cell < 0 || cell >= _cell_count ||
+        _settlements.name_active[cell] == 0) return;
+    _settlements.active_names.erase(settlement_name_for_cell(cell));
+    _settlements.name_active[cell] = 0;
+    _settlements.prefix[cell] = -1;
+    _settlements.root[cell] = -1;
+    _settlements.suffix[cell] = -1;
+    _settlements.disambiguator[cell] = 0;
+    ++_settlements.name_roll_generation[cell];
+    ++_settlement_names_released;
+}
+
+void NativeEconomyRuntime::initialize_settlements_from_population() {
+    _settlements.clear(_cell_count);
+    std::vector<int32_t> cells;
+    cells.reserve(_cell_count);
+    for (int32_t cell = 0; cell < _cell_count; ++cell) cells.push_back(cell);
+    for (int32_t cell : cells) {
+        const uint8_t tier = prosperity_tier_for_population(
+            population_total_for_cell(cell), 0);
+        _settlements.tier[cell] = tier;
+        if (tier >= _settlement_named_tier) assign_settlement_name(cell);
+    }
+    _settlement_names_assigned = 0;
+    _settlement_name_collision_probes = 0;
+    _settlements.revision = 1;
+}
+
+void NativeEconomyRuntime::update_settlements_for_changed_cells() {
+    const auto started = Clock::now();
+    std::sort(_population_changed_cells.begin(), _population_changed_cells.end());
+    _population_changed_cells.erase(std::unique(
+        _population_changed_cells.begin(), _population_changed_cells.end()),
+        _population_changed_cells.end());
+    SettlementRevision revision;
+    for (int32_t cell : _population_changed_cells) {
+        if (cell < 0 || cell >= _cell_count) continue;
+        const uint8_t before = _settlements.tier[cell];
+        const uint8_t after = prosperity_tier_for_population(
+            population_total_for_cell(cell), before);
+        if (after == before) continue;
+        _settlements.tier[cell] = after;
+        ++_settlements.prosperity_generation[cell];
+        if (after > before) ++_prosperity_promotions;
+        else ++_prosperity_demotions;
+        if (before < _settlement_named_tier &&
+            after >= _settlement_named_tier)
+            assign_settlement_name(cell);
+        else if (before >= _settlement_named_tier &&
+                 after < _settlement_named_tier)
+            release_settlement_name(cell);
+        revision.changes.push_back({
+            cell, after, _settlements.name_active[cell]});
+    }
+    _prosperity_changed_cells += static_cast<int64_t>(revision.changes.size());
+    if (!revision.changes.empty()) {
+        revision.revision = ++_settlements.revision;
+        _settlements.revisions.push_back(std::move(revision));
+        while (_settlements.revisions.size() > 8)
+            _settlements.revisions.pop_front();
+        size_t entries = 0;
+        for (const auto &item : _settlements.revisions)
+            entries += item.changes.size();
+        while (!_settlements.revisions.empty() &&
+               entries > static_cast<size_t>(std::max(1, _cell_count * 2))) {
+            entries -= _settlements.revisions.front().changes.size();
+            _settlements.revisions.pop_front();
+        }
+    }
+    _prosperity_update_ms += elapsed_ms(started);
+}
+
+void NativeEconomyRuntime::append_settlement_fields(
+        Dictionary &out, int32_t cell) const {
+    if (cell < 0 || cell >= _cell_count ||
+        cell >= static_cast<int32_t>(_settlements.tier.size())) return;
+    const int32_t tier = _settlements.tier[cell];
+    out["prosperity_tier"] = tier;
+    out["prosperity_id"] = String(_prosperity_ids[tier].c_str());
+    out["prosperity_name"] = String(_prosperity_names[tier].c_str());
+    out["prosperity_generation"] = static_cast<int64_t>(
+        _settlements.prosperity_generation[cell]);
+    out["settlement_name_active"] =
+        _settlements.name_active[cell] != 0;
+    out["settlement_name"] = String(
+        settlement_name_for_cell(cell).c_str());
+    out["name_roll_generation"] = static_cast<int64_t>(
+        _settlements.name_roll_generation[cell]);
+    out["settlement_revision"] = _settlements.revision;
+}
+
+Dictionary NativeEconomyRuntime::settlement_rows(
+        const std::vector<SettlementChange> &changes, bool full_snapshot) const {
+    Dictionary out;
+    PackedInt32Array cells;
+    PackedByteArray tiers;
+    PackedByteArray active;
+    PackedStringArray names;
+    PackedStringArray pack_ids;
+    PackedStringArray prefix_ids;
+    PackedStringArray root_ids;
+    PackedStringArray suffix_ids;
+    PackedInt32Array disambiguators;
+    for (const SettlementChange &change : changes) {
+        if (change.cell < 0 || change.cell >= _cell_count) continue;
+        cells.push_back(change.cell);
+        tiers.push_back(_settlements.tier[change.cell]);
+        active.push_back(_settlements.name_active[change.cell]);
+        names.push_back(String(settlement_name_for_cell(change.cell).c_str()));
+        const bool named = _settlements.name_active[change.cell] != 0;
+        pack_ids.push_back(named
+            ? String(_settlement_name_pack_id.c_str()) : String());
+        prefix_ids.push_back(named
+            ? String(_settlement_prefix_ids[
+                _settlements.prefix[change.cell]].c_str()) : String());
+        root_ids.push_back(named
+            ? String(_settlement_root_ids[
+                _settlements.root[change.cell]].c_str()) : String());
+        suffix_ids.push_back(named
+            ? String(_settlement_suffix_ids[
+                _settlements.suffix[change.cell]].c_str()) : String());
+        disambiguators.push_back(named
+            ? static_cast<int32_t>(_settlements.disambiguator[change.cell])
+            : 0);
+    }
+    out["ok"] = true;
+    out["revision"] = _settlements.revision;
+    out["full_snapshot"] = full_snapshot;
+    out["cell_indices"] = cells;
+    out["prosperity_tiers"] = tiers;
+    out["name_active"] = active;
+    out["settlement_names"] = names;
+    out["naming_pack_ids"] = pack_ids;
+    out["prefix_ids"] = prefix_ids;
+    out["root_ids"] = root_ids;
+    out["suffix_ids"] = suffix_ids;
+    out["disambiguators"] = disambiguators;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::named_settlement_snapshot() const {
+    std::vector<SettlementChange> changes;
+    changes.reserve(_settlements.active_names.size());
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        if (_settlements.name_active[cell] != 0)
+            changes.push_back({cell, _settlements.tier[cell], 1});
+    }
+    return settlement_rows(changes, true);
+}
+
+Dictionary NativeEconomyRuntime::settlement_delta(int64_t since_revision) const {
+    if (since_revision == _settlements.revision)
+        return settlement_rows({}, false);
+    if (_settlements.revisions.empty() ||
+        since_revision < _settlements.revisions.front().revision - 1)
+        return named_settlement_snapshot();
+    std::vector<SettlementChange> changes;
+    for (const SettlementRevision &revision : _settlements.revisions) {
+        if (revision.revision > since_revision)
+            changes.insert(changes.end(), revision.changes.begin(),
+                           revision.changes.end());
+    }
+    std::sort(changes.begin(), changes.end(),
+        [](const SettlementChange &a, const SettlementChange &b) {
+            return a.cell < b.cell;
+        });
+    std::vector<SettlementChange> compact;
+    for (const SettlementChange &change : changes) {
+        if (!compact.empty() && compact.back().cell == change.cell)
+            compact.back() = change;
+        else compact.push_back(change);
+    }
+    return settlement_rows(compact, false);
+}
+
 Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const {
     Dictionary out;
     out["cell_idx"] = cell_idx;
@@ -22220,6 +22880,7 @@ Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const
     out["satisfaction_q16"] = summary.satisfaction_q16;
     out["survival_satisfaction_q16"] = summary.satisfaction_q16;
     out["epoch_id"] = _epoch_id;
+    append_settlement_fields(out, cell_idx);
     return out;
 }
 
@@ -22269,6 +22930,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["satisfaction_q16"] = summary.satisfaction_q16;
     out["survival_satisfaction_q16"] = summary.satisfaction_q16;
     out["epoch_id"] = _epoch_id;
+    append_settlement_fields(out, cell_idx);
     PackedInt64Array handles;
     PackedInt32Array signatures;
     PackedInt32Array professions;
@@ -23669,9 +24331,17 @@ int64_t NativeEconomyRuntime::state_hash() const {
             hash *= 1099511628211ULL;
         }
     };
+    auto mix_string = [&](const std::string &value) {
+        mix_u64(value.size());
+        for (unsigned char byte : value) {
+            hash ^= byte;
+            hash *= 1099511628211ULL;
+        }
+    };
     mix_u64(static_cast<uint64_t>(_trade_runtime_mode != 2 &&
         _catalog_compat_hash_v10 != 0 ? _catalog_compat_hash_v10 : _catalog_hash));
     mix_u64(static_cast<uint64_t>(_building_catalog_hash));
+    mix_u64(static_cast<uint64_t>(_prosperity_profile_hash));
     mix_u64(static_cast<uint64_t>(_cell_count));
     mix_u64(static_cast<uint64_t>(_epoch_id));
     mix_u64(static_cast<uint64_t>(_epoch_days));
@@ -23689,6 +24359,17 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(_cell_technology_gen[cell]);
         mix_u64(_cell_resource_gen[cell]);
         mix_u64(_cell_trade_gen[cell]);
+        mix_u64(_settlements.tier[cell]);
+        mix_u64(_settlements.prosperity_generation[cell]);
+        mix_u64(_settlements.name_roll_generation[cell]);
+        mix_u64(static_cast<uint64_t>(_settlements.name_active[cell]));
+        if (_settlements.name_active[cell] != 0) {
+            mix_string(_settlement_name_pack_id);
+            mix_string(_settlement_prefix_ids[_settlements.prefix[cell]]);
+            mix_string(_settlement_root_ids[_settlements.root[cell]]);
+            mix_string(_settlement_suffix_ids[_settlements.suffix[cell]]);
+        }
+        mix_u64(_settlements.disambiguator[cell]);
         mix_u64(cell < static_cast<int32_t>(
             _fiscal_previous_country_handles.size())
             ? _fiscal_previous_country_handles[cell] : 0);
@@ -23909,6 +24590,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _closing_audit_mismatch_lane = -1;
     clear_epoch_metrics();
     _population.clear(0);
+    _settlements.clear(0);
     _market.clear();
     _market_signals.clear(0);
     _market_signals_rebuild_scratch.clear(0);
@@ -24001,6 +24683,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_export_tax_rates.clear();
     _fiscal_previous_requests.clear();
     _fiscal_previous_country_handles.clear();
+    _fiscal_reservation_requests.clear();
     _fiscal_current_requests.clear();
     _fiscal_budgets.clear();
     _fiscal_remaining.clear();
@@ -24020,6 +24703,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _fiscal_cumulative_collected.clear();
     _fiscal_cumulative_requests.clear();
     _fiscal_cumulative_paid.clear();
+    _income_taxable_base_by_slot.clear();
+    _income_subsidy_floor_by_slot.clear();
     _technology_words = 0;
     _buildings.clear();
     _building_groups_rebuild_scratch.clear();
@@ -24221,6 +24906,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int64_t>(payload, _government_research_procured_points);
         append_le<int64_t>(payload, _government_research_procurement_cash);
         append_le<int64_t>(payload, _government_research_procurement_orders);
+        append_le<int64_t>(payload, _prosperity_profile_hash);
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);
@@ -24285,7 +24971,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_CELLS) {
-        const int32_t record_bytes = 108;
+        const int32_t record_bytes = 117;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min(_cell_count, _save.cell_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.cell_cursor)) * record_bytes);
@@ -24320,6 +25006,12 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                     lane < _fiscal_previous_requests.size()
                         ? _fiscal_previous_requests[lane] : 0);
             }
+            append_le<uint8_t>(payload,
+                _settlements.tier[_save.cell_cursor]);
+            append_le<uint32_t>(payload,
+                _settlements.prosperity_generation[_save.cell_cursor]);
+            append_le<uint32_t>(payload,
+                _settlements.name_roll_generation[_save.cell_cursor]);
         }
         if (_save.cell_cursor >= _cell_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_CELLS,
@@ -24628,6 +25320,33 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         return make_save_chunk(SAVE_SECTION_FISCAL,
             static_cast<uint32_t>(_save.fiscal_cursor - begin), payload);
     }
+    if (_save.section == SAVE_SECTION_SETTLEMENT_NAMES) {
+        uint32_t records = 0;
+        while (_save.settlement_cursor < _cell_count) {
+            const int32_t cell = _save.settlement_cursor++;
+            if (_settlements.name_active[cell] == 0) continue;
+            std::vector<uint8_t> record;
+            append_le<int32_t>(record, cell);
+            append_string(record, _settlement_name_pack_id);
+            append_string(record,
+                _settlement_prefix_ids[_settlements.prefix[cell]]);
+            append_string(record,
+                _settlement_root_ids[_settlements.root[cell]]);
+            append_string(record,
+                _settlement_suffix_ids[_settlements.suffix[cell]]);
+            append_le<uint32_t>(record, _settlements.disambiguator[cell]);
+            if (!payload.empty() &&
+                payload.size() + record.size() >
+                    static_cast<size_t>(budget - 16)) {
+                --_save.settlement_cursor;
+                break;
+            }
+            payload.insert(payload.end(), record.begin(), record.end());
+            ++records;
+        }
+        if (_save.settlement_cursor >= _cell_count) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_SETTLEMENT_NAMES, records, payload);
+    }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);
 }
@@ -24662,6 +25381,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _restore.active = true;
     _bootstrapped = false;
     _population.clear(_cell_count);
+    _settlements.clear(_cell_count);
     _market.clear();
     _market_signals.clear(_cell_count);
     _labor_signals.clear(_cell_count);
@@ -24735,7 +25455,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 22) {
+    if (schema != SCHEMA_VERSION && schema != 23 && schema != 22) {
         error = "legacy_climate_production_save_unsupported";
         return false;
     }
@@ -24757,6 +25477,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 building_catalog_hash = 0;
         int64_t saved_research_points = 0, saved_research_cash = 0,
                 saved_research_orders = 0;
+        int64_t saved_prosperity_profile_hash = 0;
         int32_t country_schema = 0;
         uint64_t country_generation = 0, country_hash = 0;
         uint64_t next_submit = 0;
@@ -24897,6 +25618,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             saved_research_points < 0 || saved_research_cash < 0 ||
             saved_research_orders < 0) {
             error = "save_research_procurement_header_payload_truncated";
+            return false;
+        }
+        if (schema >= 24 &&
+            (!read_le(bytes, cursor, saved_prosperity_profile_hash) ||
+             saved_prosperity_profile_hash != _prosperity_profile_hash)) {
+            error = "save_prosperity_profile_hash_mismatch";
             return false;
         }
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
@@ -25242,6 +25969,19 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                         return false;
                     }
                 }
+            }
+            if (schema >= 24) {
+                uint8_t tier = 0;
+                if (!read_le(bytes, cursor, tier) ||
+                    !read_le(bytes, cursor,
+                        _settlements.prosperity_generation[cell]) ||
+                    !read_le(bytes, cursor,
+                        _settlements.name_roll_generation[cell]) ||
+                    tier >= _prosperity_thresholds.size()) {
+                    error = "save_cell_settlement_state_invalid";
+                    return false;
+                }
+                _settlements.tier[cell] = tier;
             }
             _market.cell_to_market[cell] = market;
             ++_restore.restored_cells;
@@ -25676,7 +26416,70 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_fiscal;
         }
         _restore.fiscal_seen = true;
-    } else if ((schema >= 23 && section == SAVE_SECTION_END) ||
+    } else if (schema >= 24 &&
+               section == SAVE_SECTION_SETTLEMENT_NAMES) {
+        const auto stable_index = [](
+                const std::vector<std::string> &ids,
+                const std::vector<std::string> &alias_ids,
+                const std::vector<std::string> &alias_targets,
+                const std::string &id) -> int32_t {
+            const auto found = std::find(ids.begin(), ids.end(), id);
+            if (found != ids.end())
+                return static_cast<int32_t>(found - ids.begin());
+            const auto alias = std::find(
+                alias_ids.begin(), alias_ids.end(), id);
+            if (alias == alias_ids.end()) return -1;
+            const size_t alias_index = static_cast<size_t>(
+                alias - alias_ids.begin());
+            const auto target = std::find(ids.begin(), ids.end(),
+                alias_targets[alias_index]);
+            return target == ids.end() ? -1 :
+                static_cast<int32_t>(target - ids.begin());
+        };
+        for (uint32_t record = 0; record < records; ++record) {
+            int32_t cell = -1;
+            uint32_t disambiguator = 0;
+            std::string pack_id, prefix_id, root_id, suffix_id;
+            if (!read_le(bytes, cursor, cell) ||
+                !read_string(bytes, cursor, pack_id) ||
+                !read_string(bytes, cursor, prefix_id) ||
+                !read_string(bytes, cursor, root_id) ||
+                !read_string(bytes, cursor, suffix_id) ||
+                !read_le(bytes, cursor, disambiguator) ||
+                cell < 0 || cell >= _cell_count ||
+                _settlements.name_active[cell] != 0 ||
+                _settlements.tier[cell] < _settlement_named_tier ||
+                pack_id != _settlement_name_pack_id) {
+                error = "save_settlement_name_record_invalid";
+                return false;
+            }
+            const int32_t prefix = stable_index(
+                _settlement_prefix_ids, _settlement_prefix_alias_ids,
+                _settlement_prefix_alias_targets, prefix_id);
+            const int32_t root = stable_index(
+                _settlement_root_ids, _settlement_root_alias_ids,
+                _settlement_root_alias_targets, root_id);
+            const int32_t suffix = stable_index(
+                _settlement_suffix_ids, _settlement_suffix_alias_ids,
+                _settlement_suffix_alias_targets, suffix_id);
+            if (prefix < 0 || root < 0 || suffix < 0) {
+                error = "save_settlement_name_component_missing";
+                return false;
+            }
+            _settlements.name_active[cell] = 1;
+            _settlements.prefix[cell] = prefix;
+            _settlements.root[cell] = root;
+            _settlements.suffix[cell] = suffix;
+            _settlements.disambiguator[cell] = disambiguator;
+            const std::string visible = settlement_name_for_cell(cell);
+            if (!_settlements.active_names.emplace(visible, cell).second) {
+                error = "save_settlement_name_duplicate";
+                return false;
+            }
+        }
+        _restore.settlement_names_seen = true;
+    } else if ((schema >= 24 && section == SAVE_SECTION_END) ||
+               (schema == 23 && section == SAVE_SECTION_END_V23) ||
                (schema >= 20 && schema <= 22 &&
                 section == SAVE_SECTION_END_V20_TO_V22) ||
                (schema >= 11 && schema <= 19 &&
@@ -25754,7 +26557,9 @@ Dictionary NativeEconomyRuntime::end_restore() {
         _restore.restored_trade_orders != _restore.expected_trade_orders ||
         _restore.restored_trade_flows != _restore.expected_trade_flows ||
         (_restore.schema_version >= 20 && !_restore.modifier_seen) ||
-        (_restore.schema_version >= 23 && !_restore.fiscal_seen)) {
+        (_restore.schema_version >= 23 && !_restore.fiscal_seen) ||
+        (_restore.schema_version >= 24 &&
+         !_restore.settlement_names_seen)) {
         out["ok"] = false;
         out["reason"] = "restore_section_incomplete";
         return out;
@@ -26085,6 +26890,22 @@ Dictionary NativeEconomyRuntime::end_restore() {
     _trade_plan.clear_transient();
     rebuild_trade_arrival_buckets();
     rebuild_committed_summaries();
+    if (_restore.schema_version < 24) {
+        initialize_settlements_from_population();
+    } else {
+        for (int32_t cell = 0; cell < _cell_count; ++cell) {
+            const bool should_have_name =
+                _settlements.tier[cell] >= _settlement_named_tier;
+            if (should_have_name !=
+                (_settlements.name_active[cell] != 0)) {
+                out["ok"] = false;
+                out["reason"] =
+                    "restore_settlement_name_activity_mismatch";
+                return out;
+            }
+        }
+        _settlements.revision = 1;
+    }
     _closing_totals = audit_totals();
     _opening_totals = _closing_totals;
     rebuild_incremental_audit_shadow();
@@ -26127,8 +26948,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_trade_flows"] = static_cast<int64_t>(_trade_flows.cells.size());
     out["cohort_count"] = _population.active_count;
     out["state_hash_catalog"] = _catalog_hash;
-    out["migration"] = restored_schema == 14
-        ? "v14_rolling_phase_bootstrap" : "none";
+    out["migration"] = restored_schema == 22 || restored_schema == 23
+        ? "legacy_settlement_bootstrap"
+        : (restored_schema == 14
+            ? "v14_rolling_phase_bootstrap" : "none");
     return out;
 }
 

@@ -92,6 +92,44 @@ func _run() -> void:
 		not unlocked_professions.is_empty() and String(economy.call(
 			"tax_row_name_text", "income", first_profession)) ==
 			String((unlocked_professions[0] as Dictionary).get("display_name", "")))
+	var default_rates: PackedInt32Array = policy.get(
+		"default_rates", PackedInt32Array())
+	var income_default := int(default_rates[0]) if not default_rates.is_empty() else 0
+	var preview_default := 79 if income_default == 80 else 80
+	economy.call("preview_default_rate_for_test", "income", "income", preview_default)
+	_expect("default tax edits preview immediately on inherited rows",
+		int(economy.call("tax_row_rate", "income", "__default__", "income")) ==
+			preview_default and
+		(first_profession.is_empty() or int(economy.call(
+			"tax_row_rate", "income", first_profession, "income")) ==
+				preview_default))
+	economy.call("refresh_model", model)
+	await create_timer(EconomyWorkspace.LIVE_REFRESH_INTERVAL_MSEC / 1000.0 + 0.05).timeout
+	_expect("authoritative refresh does not snap back an active tax preview",
+		first_profession.is_empty() or int(economy.call(
+			"tax_row_rate", "income", first_profession, "income")) ==
+				preview_default)
+	economy.call("set_model", model)
+	_expect("reopening tax workspace clears unconfirmed previews",
+		int(economy.call("tax_row_rate", "income", "__default__", "income")) ==
+			income_default and
+		(first_profession.is_empty() or int(economy.call(
+			"tax_row_rate", "income", first_profession, "income")) ==
+				income_default))
+	economy.call("preview_default_rate_for_test", "income", "income", preview_default)
+	economy.call("confirm_default_rate_for_test", "income", "income")
+	_expect("confirmed default tax keeps its optimistic next-day presentation",
+		int(economy.call("pending_default_rate_for_test", "income")) ==
+			preview_default and
+		(first_profession.is_empty() or int(economy.call(
+			"tax_row_rate", "income", first_profession, "income")) ==
+				preview_default))
+	economy.call("refresh_model", model)
+	await create_timer(EconomyWorkspace.LIVE_REFRESH_INTERVAL_MSEC / 1000.0 + 0.05).timeout
+	_expect("stale policy snapshots preserve the confirmed default tax",
+		first_profession.is_empty() or int(economy.call(
+			"tax_row_rate", "income", first_profession, "income")) ==
+				preview_default)
 	var unlocked_profession_ids := {}
 	for item in unlocked_professions:
 		unlocked_profession_ids[String((item as Dictionary).get("id", ""))] = true
@@ -154,6 +192,31 @@ func _run() -> void:
 	_expect("daily economy refresh patches visible values",
 		String(economy.call("cash_text")) == "2.23万" \
 			and String(economy.call("good_value_text", "grain")) == "2.5")
+	var live_summary := synthetic_model.duplicate(true)
+	live_summary["current_day"] = 100
+	live_summary["fiscal"] = {
+		"collected": PackedInt64Array([10000, 0, 0, 0, 0]),
+	}
+	economy.call("set_model", live_summary)
+	_expect("economy summary paints immediately when opened",
+		String(economy.call("tax_text")) == "1")
+	var burst_summary := live_summary.duplicate(true)
+	burst_summary["current_day"] = 101
+	burst_summary["fiscal"] = {
+		"collected": PackedInt64Array([20000, 0, 0, 0, 0]),
+	}
+	economy.call("refresh_model", burst_summary)
+	burst_summary = burst_summary.duplicate(true)
+	burst_summary["current_day"] = 102
+	burst_summary["fiscal"] = {
+		"collected": PackedInt64Array([30000, 0, 0, 0, 0]),
+	}
+	economy.call("refresh_model", burst_summary)
+	_expect("rapid economy ticks retain the stable rendered summary",
+		String(economy.call("tax_text")) == "1")
+	await create_timer(EconomyWorkspace.LIVE_REFRESH_INTERVAL_MSEC / 1000.0 + 0.05).timeout
+	_expect("coalesced economy summary applies the newest fiscal snapshot",
+		String(economy.call("tax_text")) == "3")
 
 	ui.open_country_section("technology")
 	await process_frame

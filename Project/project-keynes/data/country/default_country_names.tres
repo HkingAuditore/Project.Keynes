@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="CountryNamePackProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/country_name_pack_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = &"default_zh"
+name_ids = PackedStringArray("canghe", "beiyuan", "yunling", "qingchuan", "jinzhou", "donglu", "nanxi", "baishan", "fenggu", "changhe", "lingzhou", "shangyuan", "hepu", "mingchuan", "guyuan", "anling", "xichuan", "beiming", "dongyuan", "nanjiang", "qingluo", "cangzhou", "jinling", "yunhe")
+display_names = PackedStringArray("苍河国", "北原国", "云岭国", "青川国", "金州国", "东麓国", "南溪国", "白山国", "丰谷国", "长河国", "岭州国", "上原国", "河浦国", "明川国", "古原国", "安岭国", "西川国", "北溟国", "东原国", "南江国", "青洛国", "沧州国", "金陵国", "云河国")

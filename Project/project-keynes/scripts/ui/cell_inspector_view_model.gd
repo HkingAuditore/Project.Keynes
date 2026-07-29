@@ -91,7 +91,8 @@ func build(cell: HexCell) -> Dictionary:
 	var cards: Array = _summary_cards(temp, moist, population_summary, country_summary) \
 		if intel_visible else _out_of_sight_summary_cards(temp, moist)
 	return {
-		"header": _build_header(off, terrain_v, landform_v, country_summary),
+		"header": _build_header(off, terrain_v, landform_v, country_summary,
+			population_summary),
 		"score": {
 			"id": "habitability",
 			"title": "适宜度",
@@ -173,6 +174,9 @@ func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
 		bool(population_summary.get("ok", false)),
 		int(population_summary.get("population", 0)),
 		int(population_summary.get("cohort_count", 0)),
+		int(population_summary.get("prosperity_generation", 0)),
+		int(population_summary.get("name_roll_generation", 0)),
+		String(population_summary.get("settlement_name", "")),
 		String(country_summary.get("country_name", "")),
 		int(country_summary.get("cash", 0)),
 		int(country_summary.get("nonzero_good_count", 0)),
@@ -247,7 +251,8 @@ func build_live_patch(
 			landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
 			wf, snow, vitality, passable_land, is_water)
 	var patch := {
-		"header": _build_header(off, terrain_v, landform_v, country_summary),
+		"header": _build_header(off, terrain_v, landform_v, country_summary,
+			population_summary),
 		"score": {
 			"id": "habitability",
 			"title": "适宜度",
@@ -301,14 +306,21 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 
 
 func _build_header(
-		off: Vector2i,
-		terrain_v: int,
-		landform_v: int,
-		country_summary: Dictionary
+	off: Vector2i,
+	terrain_v: int,
+	landform_v: int,
+	country_summary: Dictionary,
+	population_summary: Dictionary = {}
 ) -> Dictionary:
 	var country_name := String(country_summary.get("country_name", "无主之地"))
+	var title := "%s · %s" % [
+		LandformType.name_cn(landform_v), TerrainType.terrain_name_cn(terrain_v)]
+	if bool(population_summary.get("settlement_name_active", false)):
+		title = "%s · %s" % [
+			String(population_summary.get("settlement_name", "")),
+			String(population_summary.get("prosperity_name", ""))]
 	return {
-		"title": "%s · %s" % [LandformType.name_cn(landform_v), TerrainType.terrain_name_cn(terrain_v)],
+		"title": title,
 		"subtitle": "区域 %d, %d · %s" % [off.x + 1, off.y + 1, country_name],
 	}
 
@@ -322,7 +334,7 @@ func _summary_cards(
 	var population_ready := bool(population_snapshot.get("ok", false))
 	var population_value := "%s 人" % UITokens.format_compact_number_cn(
 		float(population_snapshot.get("population", 0)), 1) if population_ready else "未就绪"
-	return [
+	var cards := [
 		{
 			"id": "summary_climate",
 			"title": "气候",
@@ -340,6 +352,17 @@ func _summary_cards(
 			"icon": "growth",
 		},
 		{
+			"id": "summary_prosperity",
+			"title": "繁荣度",
+			"value": String(population_snapshot.get(
+				"prosperity_name", "未就绪")) if population_ready else "未就绪",
+			"subtitle": String(population_snapshot.get(
+				"settlement_name", "尚未形成有名聚居地")) \
+				if population_ready else "等待原生经济提交",
+			"accent": UITokens.GOOD,
+			"icon": "building",
+		},
+		{
 			"id": "summary_country",
 			"title": "国家",
 			"value": String(country_summary.get("country_name", "无主之地")),
@@ -352,6 +375,7 @@ func _summary_cards(
 			"icon": "resource",
 		},
 	]
+	return cards
 
 
 func _overview_category(cell: HexCell, idx: int, cover_v: int) -> Dictionary:
@@ -850,6 +874,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		"insights": insights,
 		"metrics": [
 			{"id": "population_total", "title": "总人口", "value": "%s 人" % UITokens.format_compact_number_cn(float(snapshot.get("population", 0)), 1), "subtitle": "%d 个阶层" % int(snapshot.get("cohort_count", 0)), "accent": UITokens.ACCENT, "icon": "growth"},
+			{"id": "population_prosperity", "title": "繁荣度", "value": String(snapshot.get("prosperity_name", "未就绪")), "subtitle": String(snapshot.get("settlement_name", "尚未命名")), "accent": UITokens.GOOD, "icon": "building"},
 			{"id": "population_funds", "title": "总资金", "value": _money_text(int(snapshot.get("funds", 0))), "subtitle": "收入 %s · 支出 %s" % [_money_text(int(snapshot.get("epoch_income", 0))), _money_text(int(snapshot.get("epoch_expense", 0)))], "accent": UITokens.RESOURCE, "icon": "resource"},
 		],
 		"cohort_rows": rows,

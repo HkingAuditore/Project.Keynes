@@ -772,3 +772,12 @@ refresh imports the last committed `MapData` value. After that point,
 between-slice bulk refreshes from restoring the frozen visible value over the
 in-flight native slot. Native failure paths release the protection without
 publishing a partial value.
+
+## Settlement query bridge
+
+Prosperity and names have no DataCore slot or MapData mirror.
+`get_population_cell_summary/snapshot` exposes selected-cell fields. Map
+rendering binds through `get_named_settlement_snapshot()` and then consumes
+`get_settlement_delta(revision)` packed arrays. Native retention is bounded to
+eight revisions and `2 * cell_count` entries; an expired cursor returns
+`full_snapshot=true`.

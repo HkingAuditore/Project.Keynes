@@ -264,6 +264,8 @@ public:
     bool economy_should_run(int64_t day_index) const;
     godot::Dictionary get_economy_report() const;
     godot::Dictionary get_population_cell_summary(int cell_idx) const;
+    godot::Dictionary get_named_settlement_snapshot() const;
+    godot::Dictionary get_settlement_delta(int64_t since_revision) const;
     godot::Dictionary get_population_cell_snapshot(int cell_idx) const;
     godot::Dictionary get_market_cell_snapshot(int cell_idx) const;
     godot::Dictionary get_trade_orders_for_cell(int cell_idx, int offset = 0,

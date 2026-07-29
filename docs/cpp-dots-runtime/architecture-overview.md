@@ -207,7 +207,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 经济运行时通过窄 C++ 指针桥在 sample day 冻结归属、国家科技、generation/hash，并在整个结算
 周期使用该快照。国内贸易拓扑也以该冻结归属生成国家连通分量；新订单只走同一非中立国家，
 已发运订单不因后续边界变化取消。当前 PKCN v4 保存国家状态、研究状态、五类税务政策与
-Country Modifier domain；PKEC v23 引用匹配的 PKCN identity，并持久化经济状态、补贴权重、
+Country Modifier domain；PKEC v24 引用匹配的 PKCN identity，并持久化经济状态、补贴权重、
 财政累计、科研采购累计、BuildingIdentityStore、Economy Modifier domain 与生产气候冻结/诊断字段；
 完整恢复顺序固定为 PKCM、PKCN、PKEC、PKGP。详见
 [Native Modifier Runtime](./native-modifier-runtime.md)、[Native Country Runtime](./native-country-runtime.md)、
@@ -215,3 +215,17 @@ Country Modifier domain；PKEC v23 引用匹配的 PKCN identity，并持久化�
 [Country Scheduling / Save](./country-scheduling-save.md)，贸易机制见
 [Domestic Trade Runtime](./domestic-trade-runtime.md) 与
 [税收与财政结算运行时](./tax-fiscal-runtime.md)。
+
+## Native prosperity and settlement identity
+
+`NativeEconomyRuntime::SettlementStore` is the sole mutable owner of per-cell
+prosperity tier and settlement-name identity. Its only input is committed
+population. At `aggregate_publish/COMMIT`, it consumes the already deduplicated
+`population_changed_cells`, applies deterministic 10% downgrade hysteresis, and
+updates only changed cells. It is not mirrored into `MapData`, `HexCell`, or a
+DataCore component.
+
+GDScript compiles `SettlementProfile` and `SettlementNamePackProfile`, resolves
+stable IDs/display strings, and consumes cold snapshots or revision deltas.
+`SettlementLabelLayer` owns pooled Godot visual objects only. Inspector and map
+labels are read-only consumers and never become a parallel simulation.

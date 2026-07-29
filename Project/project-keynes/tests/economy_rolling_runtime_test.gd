@@ -101,8 +101,8 @@ func _run() -> void:
 		not bool(fiscal.get("tariffs_active", true)))
 	var saved := _save(runtime)
 	var saved_country := _save_country(runtime)
-	_expect("PKEC v23 saves at a daily committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 23)
+	_expect("PKEC v24 saves at a daily committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 24)
 	var restored := _new_ext(compiled)
 	_expect("restore country matches", CountryTestHelper.configure_all_technologies(
 		restored, catalog, CELL_COUNT, 92015))
@@ -139,9 +139,60 @@ func _run() -> void:
 		_sum_i64(funded_subsidy.get("cumulative_subsidy_paid",
 			PackedInt64Array())) > 0 and
 		int(runtime.get_country_treasury_snapshot(runtime_handle).cash) >= 0)
+	var floor_runtime := _new_runtime(compiled, catalog, profile, 92016, false)
+	if floor_runtime == null:
+		return
+	var floor_handle := int(floor_runtime.get_country_cell_summary(0).country_handle)
+	var floor_population: Dictionary = floor_runtime.get_population_cell_snapshot(0)
+	var floor_cohorts: PackedInt64Array = floor_population.get(
+		"handles", PackedInt64Array())
+	_expect("minimum-living subsidy fixture has a treasury donor",
+		not floor_cohorts.is_empty())
+	if floor_cohorts.is_empty():
+		return
+	_expect("minimum-living subsidy fixture funds treasury before activation",
+		_transfer_from_cohort(
+			floor_runtime, int(floor_cohorts[0]), 500000, 0, 1))
+	_validate_day(floor_runtime, 0)
+	_expect("negative income tax activates on the next due phase",
+		_set_income_tax(floor_runtime, floor_handle, -20, 1, 2))
+	_validate_day(floor_runtime, 1)
+	var floor_fiscal: Dictionary = floor_runtime.get_country_fiscal_snapshot(
+		floor_handle)
+	var floor_requested: PackedInt64Array = floor_fiscal.get(
+		"subsidy_requested", PackedInt64Array())
+	var floor_paid: PackedInt64Array = floor_fiscal.get(
+		"subsidy_paid", PackedInt64Array())
+	_expect("zero-market-income cohorts receive the funded living-cost floor immediately",
+		floor_requested.size() > 0 and floor_paid.size() > 0 and
+		int(floor_requested[0]) > 0 and int(floor_paid[0]) > 0 and
+		int(floor_paid[0]) <= int(floor_requested[0]) and
+		int(floor_runtime.get_country_treasury_snapshot(floor_handle).cash) >= 0)
+	var floor_saved := _save(floor_runtime)
+	var floor_country_saved := _save_country(floor_runtime)
+	var floor_restored := _new_ext(compiled)
+	_expect("income-floor restore country configures",
+		CountryTestHelper.configure_all_technologies(
+			floor_restored, catalog, CELL_COUNT, 92016))
+	_expect("income-floor country policy and treasury restore",
+		_restore_country(
+			floor_restored, floor_country_saved.get("chunks", [])))
+	_expect("income-floor economy restore configures",
+		bool(floor_restored.configure_economy(
+			catalog, profile, CELL_COUNT, 92016).get("ok", false)))
+	_expect("income-floor save restores exact hash",
+		bool(_restore(
+			floor_restored, floor_saved.get("chunks", [])).get("ok", false)) and
+		int(floor_restored.get_economy_state_hash()) ==
+			int(floor_runtime.get_economy_state_hash()))
+	_validate_day(floor_runtime, 2)
+	_validate_day(floor_restored, 2)
+	_expect("income-floor restored replay remains deterministic",
+		int(floor_restored.get_economy_state_hash()) ==
+			int(floor_runtime.get_economy_state_hash()))
 
 func _new_runtime(compiled: Dictionary, catalog: Dictionary,
-		profile: Dictionary, seed: int) -> Object:
+		profile: Dictionary, seed: int, stock_survival: bool = true) -> Object:
 	var ext := _new_ext(compiled)
 	_expect("country configures", CountryTestHelper.configure_all_technologies(
 		ext, catalog, CELL_COUNT, seed))
@@ -172,7 +223,7 @@ func _new_runtime(compiled: Dictionary, catalog: Dictionary,
 		for good in range(goods):
 			prices[cell * goods + good] = int(
 				(compiled.good_default_price as PackedInt32Array)[good])
-		if gathered >= 0:
+		if stock_survival and gathered >= 0:
 			stock[cell * goods + gathered] = 100000000
 	_expect("ten local markets bootstrap", bool(ext.bootstrap_economy({
 		"cell_indices": cells,
@@ -397,6 +448,46 @@ func _set_consumption_tax(ext: Object, handle: int, rate: int,
 	}
 	return bool(ext.submit_country_commands(batch).get("ok", false)) \
 		and bool(ext.run_country_slice({"day_index": day}).get("ok", false))
+
+
+func _set_income_tax(ext: Object, handle: int, rate: int,
+		day: int, sequence: int) -> bool:
+	var batch := {
+		"opcodes": PackedInt32Array([11]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([sequence]),
+		"target_handles": PackedInt64Array([handle]),
+		"cell_indices": PackedInt32Array([-1]),
+		"aux_i32": PackedInt32Array([-1]),
+		"domain_i32": PackedInt32Array([-1]),
+		"position_i32": PackedInt32Array([-1]),
+		"weight0_bp": PackedInt32Array([0]),
+		"weight1_bp": PackedInt32Array([0]),
+		"weight2_bp": PackedInt32Array([0]),
+		"weight3_bp": PackedInt32Array([0]),
+		"value_i64": PackedInt64Array([0]),
+		"tax_kinds": PackedInt32Array([0]),
+		"tax_item_indices": PackedInt32Array([-1]),
+		"tax_rate_percent": PackedInt32Array([rate]),
+		"stable_ids": PackedStringArray([""]),
+		"display_names": PackedStringArray([""]),
+	}
+	return bool(ext.submit_country_commands(batch).get("ok", false)) \
+		and bool(ext.run_country_slice({"day_index": day}).get("ok", false))
+
+
+func _transfer_from_cohort(ext: Object, cohort_handle: int, amount: int,
+		day: int, sequence: int) -> bool:
+	return bool(ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([9]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([sequence]),
+		"target_handles": PackedInt64Array([cohort_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([0]),
+		"i64_0": PackedInt64Array([amount]),
+		"i64_1": PackedInt64Array([0]),
+	}).get("ok", false))
 
 
 func _sum_i64(values: PackedInt64Array) -> int:
