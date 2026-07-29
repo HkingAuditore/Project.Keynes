@@ -96,6 +96,10 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 	var population: Dictionary = economy.population_cell_snapshot(cell)
 	_expect("%s starter population is 20" % label,
 		int(population.get("population", 0)) == 20)
+	_expect("%s starter capital is named" % label,
+		bool(population.get("settlement_name_active", false)) and
+		bool(population.get("settlement_name_forced", false)) and
+		not String(population.get("settlement_name", "")).is_empty())
 	var buildings: Dictionary = economy.building_cell_snapshot(cell)
 	var precious_building := "placer_gold_working" \
 		if String(start.get("precious_resource", "")) == "gold_ore" \

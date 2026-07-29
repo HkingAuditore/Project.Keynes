@@ -597,6 +597,7 @@ private:
     struct SettlementStore {
         std::vector<uint8_t> tier;
         std::vector<uint8_t> name_active;
+        std::vector<uint8_t> name_forced;
         std::vector<uint32_t> prosperity_generation;
         std::vector<uint32_t> name_roll_generation;
         std::vector<int32_t> prefix;
@@ -610,6 +611,7 @@ private:
         void clear(int32_t cells) {
             tier.assign(cells, 0);
             name_active.assign(cells, 0);
+            name_forced.assign(cells, 0);
             prosperity_generation.assign(cells, 0);
             name_roll_generation.assign(cells, 0);
             prefix.assign(cells, -1);
@@ -2295,6 +2297,12 @@ private:
     std::vector<std::string> _settlement_suffix_alias_ids;
     std::vector<std::string> _settlement_suffix_alias_targets;
     std::string _settlement_name_pack_id = "default_zh";
+    std::vector<std::string> _settlement_full_name_ids;
+    std::vector<std::string> _settlement_full_name_text;
+    std::vector<int32_t> _settlement_full_name_weights;
+    std::vector<std::string> _settlement_full_name_alias_ids;
+    std::vector<std::string> _settlement_full_name_alias_targets;
+    int32_t _settlement_full_name_share_q16 = 32768;
     int32_t _settlement_named_tier = 2;
     int32_t _settlement_downgrade_bp = 9000;
     int64_t _prosperity_profile_hash = 0;

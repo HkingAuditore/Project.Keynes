@@ -1168,7 +1168,10 @@ pacing, not native economy authority, PKEC, state hash, CSV columns, or cadence.
 ## SettlementStore
 
 `SettlementStore` is native per-cell SoA for `u8 tier`, prosperity/name
-generations, name components, and disambiguator. Exact upgrade thresholds and
+generations, name components, and disambiguator. The default pack mixes
+stable-ID historical city names with the 4096-entry fictional combination
+space; `full_name_share_q16` controls their deterministic allocation share.
+Exact upgrade thresholds and
 90% downgrade hysteresis consume committed population only. Entering tier 2
 allocates a globally unique deterministic name; leaving it releases the name
 and advances `name_roll_generation`.
@@ -1177,3 +1180,10 @@ Normal commits process only deduplicated changed cells. Reports expose changes,
 promotion/demotion, name allocation/release/collision probes,
 `prosperity_update_ms`, revision and memory. State hash and PKEC v24 include all
 authoritative settlement fields.
+
+Formal-game bootstrap can set the per-cell `name_forced` bit for opening-country
+capitals. A forced capital receives and retains a deterministic name below tier
+2 without changing its population-derived prosperity. PKEC v24 stores the bit
+backward-compatibly in the high bit of the persisted tier byte; older v24
+records have it clear. Selected-cell summaries expose
+`settlement_name_forced`.

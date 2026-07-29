@@ -73,6 +73,11 @@ merchant post, and one matching gold/silver work site. Market stocks and cohort
 funds cover the configured 60-day survival bridge. All settlements are compiled
 into one PKEC bootstrap packet. PKCN/PKEC and the economy
 ledger remain the authorities; UI code does not own this state.
+The packet marks every opening-country start cell as `forced_named_cells`.
+Native `SettlementStore` therefore assigns each capital a deterministic name
+even though 20 people remain below the ordinary rural naming threshold. This is
+a naming exception only: prosperity remains population-derived and the exact
+20-person economy contract is unchanged.
 
 ## PKSV v1
 

@@ -109,6 +109,10 @@ func _run() -> void:
 			var population: Dictionary = economy.population_cell_snapshot(settlement_cell)
 			_expect("starter population is exactly 20",
 				int(population.get("population", 0)) == 20)
+			_expect("starter capital has a deterministic settlement name",
+				bool(population.get("settlement_name_active", false)) and
+				bool(population.get("settlement_name_forced", false)) and
+				not String(population.get("settlement_name", "")).is_empty())
 			var buildings: Dictionary = economy.building_cell_snapshot(settlement_cell)
 			_expect("starter has exactly four buildings", _sum_i64(
 				buildings.get("building_counts_by_type", PackedInt64Array())) == 4)
