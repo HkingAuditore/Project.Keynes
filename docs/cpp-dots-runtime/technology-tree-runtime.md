@@ -75,9 +75,10 @@ Modifier 只改变配方结果、科技值到进度的转换、施工参数和�
 ## UI
 
 `CountryPanel` 只是全屏 shell：一条 section 标题条加内容区，不再叠加国家档案、摘要卡或
-section tab；section 切换只由底栏 `CountryActionBar` 驱动，政治/税收/军事/外交暫用统一
-`SectionPlaceholderScreen`。科技 section 挂载全屏 `TechnologyWorkspace`：顶部 icon 化状态条、
-左侧研究方针栏、中央科技树、右侧详情卡。
+section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 section 挂载只读
+`EconomyWorkspace`，经 `CountryFacade.treasury_snapshot()` 展示国家现金与全部非零国库物资；
+政治/军事/外交暂用统一 `SectionPlaceholderScreen`。科技 section 挂载全屏
+`TechnologyWorkspace`：顶部 icon 化状态条、左侧研究方针栏、中央科技树、右侧详情卡。
 
 科技树是单个自绘 `TechnologyTreeView`，不再使用 `GraphEdit`，也不为 81 个节点创建子节点。
 几何由纯函数 `TechnologyTreeLayout` 一次性烘焙：全局 DAG 层号、时代分带、同层重心排序、

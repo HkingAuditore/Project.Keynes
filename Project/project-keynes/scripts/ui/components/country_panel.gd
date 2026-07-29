@@ -4,6 +4,7 @@ class_name CountryPanel
 # Each country affair is a standalone full-bleed screen. The shell owns nothing
 # but framing, so no screen inherits another domain's dossier chrome or tabs.
 const TechnologyWorkspaceScript = preload("res://scripts/ui/components/technology_workspace.gd")
+const EconomyWorkspaceScript = preload("res://scripts/ui/components/economy_workspace.gd")
 const SectionPlaceholderScreenScript = preload(
 	"res://scripts/ui/components/section_placeholder_screen.gd")
 
@@ -13,7 +14,7 @@ signal section_selected(section_id: String)
 const SECTION_DEFINITIONS := [
 	{"id": "technology", "label": "科技", "icon": &"country.technology", "accent": UITokens.CLIMATE},
 	{"id": "politics", "label": "政治", "icon": &"country.politics", "accent": UITokens.ACCENT},
-	{"id": "taxation", "label": "税收", "icon": &"country.taxation", "accent": UITokens.RESOURCE},
+	{"id": "economy", "label": "经济", "icon": &"country.economy", "accent": UITokens.RESOURCE},
 	{"id": "military", "label": "军事", "icon": &"country.military", "accent": UITokens.RISK},
 	{"id": "diplomacy", "label": "外交", "icon": &"country.diplomacy", "accent": UITokens.WATER},
 ]
@@ -25,6 +26,7 @@ var _section_host: MarginContainer
 var _section_icon: IconBadge
 var _section_title: Label
 var _technology_workspace: Control
+var _economy_workspace: Control
 var _placeholder: Control
 var _model: Dictionary = {}
 var _section_id := ""
@@ -74,6 +76,9 @@ func _ready() -> void:
 	_technology_workspace = TechnologyWorkspaceScript.new()
 	_technology_workspace.visible = false
 	_section_host.add_child(_technology_workspace)
+	_economy_workspace = EconomyWorkspaceScript.new()
+	_economy_workspace.visible = false
+	_section_host.add_child(_economy_workspace)
 	_placeholder = SectionPlaceholderScreenScript.new()
 	_placeholder.visible = false
 	_section_host.add_child(_placeholder)
@@ -110,14 +115,17 @@ func current_section() -> String:
 	return _section_id
 
 
-# Daily ticks only push the research snapshot; the tree geometry, cards and
-# controls stay alive so fast-forward never destroys a button mid-click.
+# Daily ticks only patch the visible workspace; long-lived controls stay alive
+# so fast-forward never destroys a button or treasury row mid-read.
 func refresh_summary(model: Dictionary) -> void:
 	if not visible:
 		return
 	_model = model
 	if _section_id == "technology" and _technology_workspace != null:
 		_technology_workspace.refresh_research(model)
+		return
+	if _section_id == "economy" and _economy_workspace != null:
+		_economy_workspace.refresh_model(model)
 		return
 	_apply_section()
 
@@ -161,11 +169,16 @@ func _apply_section() -> void:
 	_section_title.text = String(definition.get("label", "国家"))
 	_section_title.add_theme_color_override("font_color", accent.lerp(UITokens.TEXT_MAIN, 0.55))
 	var technology_open := _section_id == "technology"
+	var economy_open := _section_id == "economy"
 	_technology_workspace.visible = technology_open
-	_placeholder.visible = not technology_open
+	_economy_workspace.visible = economy_open
+	_placeholder.visible = not technology_open and not economy_open
 	if technology_open:
 		_technology_workspace.set_model(_model)
 		_technology_workspace.set_compact(_compact)
+		return
+	if economy_open:
+		_economy_workspace.set_model(_model)
 		return
 	_placeholder.set_section(String(definition.get("label", "国家")),
 		definition.get("icon", &"country.affairs"), accent)

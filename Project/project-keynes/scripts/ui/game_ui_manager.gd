@@ -260,7 +260,7 @@ func open_country_section(section_id: String) -> void:
 	if _country_panel == null or _country_view_model == null:
 		return
 	_country_action_bar.set_active(section_id)
-	_country_panel.show_section(section_id, _country_view_model.build())
+	_country_panel.show_section(section_id, _country_view_model.build(section_id == "economy"))
 
 
 func close_country_panel() -> void:
@@ -276,7 +276,8 @@ func refresh_country_summary() -> Dictionary:
 			or _country_view_model == null:
 		return timing
 	var started_usec := Time.get_ticks_usec()
-	_country_panel.refresh_summary(_country_view_model.build())
+	_country_panel.refresh_summary(_country_view_model.build(
+		_country_panel.current_section() == "economy"))
 	timing["ran"] = true
 	timing["elapsed_ms"] = (Time.get_ticks_usec() - started_usec) / 1000.0
 	return timing
