@@ -19,6 +19,20 @@ func _init() -> void:
 		"ocean selects a visual-only water cell from the shared edge field")
 	_expect(source.contains("terrain_static_biome_is_water(water_secondary_biome)"),
 		"ocean DitherUV cannot cross the land/water domain")
+	_expect(source.contains("visual_land_biome"),
+		"full land material pipeline consumes a DitherUV-selected visual biome")
+	_expect(source.contains("visual_land_veg") and source.contains("visual_land_cover"),
+		"land DitherUV selects static biome/vegetation/cover axes together")
+	_expect(source.contains("!terrain_static_biome_is_water(land_secondary_biome)"),
+		"land DitherUV cannot cross the land/water domain")
+	_expect(surface_source.contains("terrain_land_dither_zoom_strength"),
+		"land DitherUV has an explicit close-view zoom fade")
+	_expect(not surface_source.contains("near_floor"),
+		"close land view has no non-zero DitherUV floor")
+	_expect(surface_source.contains("TERRAIN_DITHER_THRESHOLD_MARGIN"),
+		"terrain Bayer rank tails are compressed to prevent elongated teeth")
+	_expect(source.contains("land_dither_probability"),
+		"full land visual cell selection shares the close-view zoom fade")
 	var variants := {
 		"desktop": "",
 		"mobile_low": "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n",

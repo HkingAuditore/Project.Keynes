@@ -442,6 +442,8 @@ float wx_bayer2_digit(vec2 bit_xy) {
 	return (bit_xy.x < 0.5) ? 3.0 : 1.0;
 }
 
+const float WX_DITHER_THRESHOLD_MARGIN = 0.18;
+
 float wx_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
 	vec2 atlas_dims = vec2(textureSize(map_index_atlas, 0));
 	vec2 pixel_xy = floor(wx_wrap_uv(uv) * atlas_dims);
@@ -456,7 +458,11 @@ float wx_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
 	float value = 16.0 * wx_bayer2_digit(mod(p, 2.0))
 			+ 4.0 * wx_bayer2_digit(mod(floor(p * 0.5), 2.0))
 			+ wx_bayer2_digit(floor(p * 0.25));
-	return (value + 0.5) / 64.0;
+	float raw_threshold = (value + 0.5) / 64.0;
+	return mix(
+			WX_DITHER_THRESHOLD_MARGIN,
+			1.0 - WX_DITHER_THRESHOLD_MARGIN,
+			raw_threshold);
 }
 
 float wx_edge_secondary_weight(vec2 uv) {

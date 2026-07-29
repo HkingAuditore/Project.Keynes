@@ -21,6 +21,8 @@ func _run() -> void:
 	]:
 		var source := FileAccess.get_file_as_string(shader_path)
 		_expect(not source.is_empty(), "%s source loads" % shader_path)
+		_expect(source.contains("DITHER_THRESHOLD_MARGIN"),
+			"%s compresses Bayer rank tails" % shader_path)
 		for label in variants:
 			var shader := Shader.new()
 			shader.code = String(variants[label]) + source

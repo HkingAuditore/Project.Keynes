@@ -335,7 +335,9 @@ constexpr uint16_t SAVE_SECTION_LABOR_SIGNALS = 9;
 constexpr uint16_t SAVE_SECTION_TRADE_ORDERS = 10;
 constexpr uint16_t SAVE_SECTION_TRADE_FLOWS = 11;
 constexpr uint16_t SAVE_SECTION_MODIFIERS = 12;
-constexpr uint16_t SAVE_SECTION_END = 13;
+constexpr uint16_t SAVE_SECTION_FISCAL = 13;
+constexpr uint16_t SAVE_SECTION_END = 14;
+constexpr uint16_t SAVE_SECTION_END_V20_TO_V22 = 13;
 constexpr uint16_t SAVE_SECTION_END_V11_TO_V19 = 12;
 constexpr uint16_t SAVE_SECTION_END_V10 = 10;
 
@@ -740,7 +742,9 @@ NativeEconomyRuntime::incremental_audit_totals() const {
     totals.goods_stock += transit - totals.transit_goods;
     totals.transit_goods = transit;
     const int64_t escrow = trade_escrow_cash();
-    totals.escrow_cash = escrow;
+    int64_t ignored_saturation = 0;
+    totals.escrow_cash = saturating_add(
+        escrow, fiscal_escrow_total(), ignored_saturation);
     int64_t country_goods = 0;
     if (_country_runtime != nullptr) {
         for (int32_t good = 0; good < _market.good_count; ++good)
@@ -2245,6 +2249,25 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_country_technology_words = snapshot.technology_words;
     _epoch_country_generation = snapshot.generation;
     _epoch_country_hash = snapshot.state_hash;
+    _epoch_tax_policy_version = snapshot.tax_policy_version;
+    _epoch_income_tax_rates = std::move(snapshot.income_tax_rates);
+    _epoch_consumption_tax_rates = std::move(snapshot.consumption_tax_rates);
+    _epoch_business_tax_rates = std::move(snapshot.business_tax_rates);
+    _epoch_import_tax_rates = std::move(snapshot.import_tax_rates);
+    _epoch_export_tax_rates = std::move(snapshot.export_tax_rates);
+    const auto tax_shape_valid = [&](const std::vector<int8_t> &rates,
+                                     size_t item_count) {
+        return rates.size() == static_cast<size_t>(
+            std::max(0, _epoch_country_count)) * item_count;
+    };
+    if (!tax_shape_valid(_epoch_income_tax_rates, _profession_ids.size()) ||
+        !tax_shape_valid(_epoch_consumption_tax_rates, _good_ids.size()) ||
+        !tax_shape_valid(_epoch_business_tax_rates, _building_types.size()) ||
+        !tax_shape_valid(_epoch_import_tax_rates, _good_ids.size()) ||
+        !tax_shape_valid(_epoch_export_tax_rates, _good_ids.size())) {
+        error = "country_tax_snapshot_shape_invalid";
+        return false;
+    }
     const auto requirements_available = [&](int32_t country, int32_t begin,
                                              int32_t end,
                                              const std::vector<int32_t> &requirements) {
@@ -2377,9 +2400,30 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     if (_modifier_runtime != nullptr) {
         for (int32_t country = 0; country < _epoch_country_count; ++country) {
+            const uint64_t country_handle =
+                _epoch_country_handles[static_cast<size_t>(country)];
+            const auto freeze_tax_group = [&](const std::vector<int32_t> &stat_ids,
+                                              std::vector<int8_t> &rates,
+                                              size_t item_count) {
+                if (item_count == 0) return;
+                const size_t begin = static_cast<size_t>(country) * item_count;
+                _modifier_runtime->effective_values(
+                    ModifierRuntime::COUNTRY, stat_ids.data(), country_handle,
+                    rates.data() + begin, rates.data() + begin, item_count);
+            };
+            freeze_tax_group(_income_tax_stat_ids, _epoch_income_tax_rates,
+                             _profession_ids.size());
+            freeze_tax_group(_consumption_tax_stat_ids, _epoch_consumption_tax_rates,
+                             _good_ids.size());
+            freeze_tax_group(_business_tax_stat_ids, _epoch_business_tax_rates,
+                             _building_types.size());
+            freeze_tax_group(_import_tax_stat_ids, _epoch_import_tax_rates,
+                             _good_ids.size());
+            freeze_tax_group(_export_tax_stat_ids, _epoch_export_tax_rates,
+                             _good_ids.size());
             _epoch_country_output_factor_q16[static_cast<size_t>(country)] =
                 modifier_factor_q16(_modifier_runtime->country_economy_output_factor(
-                    _epoch_country_handles[static_cast<size_t>(country)]));
+                    country_handle));
             for (int32_t sector = 0; sector < 5; ++sector)
                 _epoch_country_sector_output_factor_q16[
                     static_cast<size_t>(country) * 5U + sector] =
@@ -2409,7 +2453,334 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                         _epoch_country_handles[static_cast<size_t>(country)]));
         }
     }
+    _epoch_active_tax_mask = 0;
+    const auto mark_active_tax = [&](int32_t kind,
+                                     const std::vector<int8_t> &rates) {
+        if (std::any_of(rates.begin(), rates.end(),
+                        [](int8_t rate) { return rate != 0; }))
+            _epoch_active_tax_mask |= static_cast<uint8_t>(1U << kind);
+    };
+    mark_active_tax(NativeCountryRuntime::TAX_INCOME,
+                    _epoch_income_tax_rates);
+    mark_active_tax(NativeCountryRuntime::TAX_CONSUMPTION,
+                    _epoch_consumption_tax_rates);
+    mark_active_tax(NativeCountryRuntime::TAX_BUSINESS,
+                    _epoch_business_tax_rates);
+    mark_active_tax(NativeCountryRuntime::TAX_IMPORT,
+                    _epoch_import_tax_rates);
+    mark_active_tax(NativeCountryRuntime::TAX_EXPORT,
+                    _epoch_export_tax_rates);
     refresh_building_modifier_factors();
+    return true;
+}
+
+int8_t NativeEconomyRuntime::frozen_tax_rate(int32_t cell, int32_t kind,
+                                              int32_t item) const {
+    if (kind < 0 || kind >= NativeCountryRuntime::TAX_KIND_COUNT ||
+        (_epoch_active_tax_mask & static_cast<uint8_t>(1U << kind)) == 0)
+        return 0;
+    if (cell < 0 || cell >= static_cast<int32_t>(_epoch_cell_country.size()) ||
+        item < 0) return 0;
+    const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+    if (country < 0 || country >= _epoch_country_count) return 0;
+    const std::vector<int8_t> *rates = nullptr;
+    size_t item_count = 0;
+    switch (kind) {
+        case NativeCountryRuntime::TAX_INCOME:
+            rates = &_epoch_income_tax_rates;
+            item_count = _profession_ids.size();
+            break;
+        case NativeCountryRuntime::TAX_CONSUMPTION:
+            rates = &_epoch_consumption_tax_rates;
+            item_count = _good_ids.size();
+            break;
+        case NativeCountryRuntime::TAX_BUSINESS:
+            rates = &_epoch_business_tax_rates;
+            item_count = _building_types.size();
+            break;
+        case NativeCountryRuntime::TAX_IMPORT:
+            rates = &_epoch_import_tax_rates;
+            item_count = _good_ids.size();
+            break;
+        case NativeCountryRuntime::TAX_EXPORT:
+            rates = &_epoch_export_tax_rates;
+            item_count = _good_ids.size();
+            break;
+        default:
+            return 0;
+    }
+    const size_t index = static_cast<size_t>(country) * item_count +
+        static_cast<size_t>(item);
+    return item < static_cast<int32_t>(item_count) && index < rates->size()
+        ? (*rates)[index] : 0;
+}
+
+int64_t NativeEconomyRuntime::fiscal_escrow_total() const {
+    int64_t total = 0;
+    int64_t ignored_saturation = 0;
+    for (const int64_t value : _fiscal_escrow_by_country)
+        total = saturating_add(total, std::max<int64_t>(0, value),
+                               ignored_saturation);
+    return total;
+}
+
+bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
+    if (_country_runtime == nullptr) {
+        error = "country_runtime_required";
+        return false;
+    }
+    const size_t lane_count = static_cast<size_t>(_cell_count) *
+        ACTIVE_TAX_KIND_COUNT;
+    if (_fiscal_previous_requests.size() != lane_count)
+        _fiscal_previous_requests.assign(lane_count, 0);
+    if (_fiscal_previous_country_handles.size() !=
+            static_cast<size_t>(_cell_count))
+        _fiscal_previous_country_handles.assign(
+            static_cast<size_t>(_cell_count), 0);
+    if ((_epoch_active_tax_mask & static_cast<uint8_t>(
+            (1U << NativeCountryRuntime::TAX_INCOME) |
+            (1U << NativeCountryRuntime::TAX_CONSUMPTION) |
+            (1U << NativeCountryRuntime::TAX_BUSINESS))) == 0) {
+        std::fill(_fiscal_previous_requests.begin(),
+                  _fiscal_previous_requests.end(), 0);
+        std::fill(_fiscal_previous_country_handles.begin(),
+                  _fiscal_previous_country_handles.end(), uint64_t{0});
+        _fiscal_current_requests.clear();
+        _fiscal_budgets.clear();
+        _fiscal_remaining.clear();
+        _fiscal_epoch_bases.clear();
+        _fiscal_epoch_assessed.clear();
+        _fiscal_epoch_collected.clear();
+        _fiscal_epoch_paid.clear();
+        _fiscal_escrow_by_country.assign(
+            static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+        return true;
+    }
+    _fiscal_current_requests.assign(lane_count, 0);
+    _fiscal_budgets.assign(lane_count, 0);
+    _fiscal_remaining.assign(lane_count, 0);
+    _fiscal_epoch_bases.assign(lane_count, 0);
+    _fiscal_epoch_assessed.assign(lane_count, 0);
+    _fiscal_epoch_collected.assign(lane_count, 0);
+    _fiscal_epoch_paid.assign(lane_count, 0);
+    _fiscal_escrow_by_country.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    std::vector<int64_t> requested_by_country(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    for (int32_t kind = 0; kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
+        for (const int32_t cell : _epoch_settlement_cells) {
+            if (cell < 0 || cell >= _cell_count) continue;
+            const int32_t country = _epoch_cell_country[cell];
+            if (country < 0 || country >= _epoch_country_count) continue;
+            const size_t lane = static_cast<size_t>(cell) *
+                ACTIVE_TAX_KIND_COUNT + kind;
+            if (_fiscal_previous_country_handles[cell] !=
+                    _epoch_country_handles[country]) {
+                _fiscal_previous_requests[lane] = 0;
+                continue;
+            }
+            requested_by_country[country] = saturating_add(
+                requested_by_country[country],
+                std::max<int64_t>(0, _fiscal_previous_requests[lane]),
+                _saturation_count);
+        }
+    }
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        const int64_t requested = requested_by_country[country];
+        if (requested <= 0) continue;
+        const int64_t reserved = _country_runtime->reserve_fiscal_cash(
+            static_cast<int64_t>(_epoch_country_handles[country]), requested);
+        _fiscal_escrow_by_country[country] = reserved;
+        int64_t prefix = 0;
+        int64_t allocated = 0;
+        for (int32_t kind = 0; kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
+            for (const int32_t cell : _epoch_settlement_cells) {
+                if (cell < 0 || cell >= _cell_count ||
+                    _epoch_cell_country[cell] != country) continue;
+                const size_t lane = static_cast<size_t>(cell) *
+                    ACTIVE_TAX_KIND_COUNT + kind;
+                prefix = saturating_add(prefix,
+                    std::max<int64_t>(0, _fiscal_previous_requests[lane]),
+                    _saturation_count);
+                const int64_t next = mul_div_sat(
+                    reserved, prefix, requested, _saturation_count);
+                const int64_t share = std::max<int64_t>(0, next - allocated);
+                allocated = next;
+                _fiscal_budgets[lane] = share;
+                _fiscal_remaining[lane] = share;
+            }
+        }
+    }
+    return true;
+}
+
+int64_t NativeEconomyRuntime::apply_fiscal_tax(
+        int32_t cell, int32_t kind, int64_t base, int8_t rate,
+        int64_t &saturation_count) {
+    if (cell < 0 || cell >= _cell_count || kind < 0 ||
+        kind >= ACTIVE_TAX_KIND_COUNT || base <= 0 || rate == 0) return 0;
+    const size_t lane = static_cast<size_t>(cell) *
+        ACTIVE_TAX_KIND_COUNT + kind;
+    if (lane >= _fiscal_epoch_bases.size()) return 0;
+    const int64_t amount = mul_div_sat(
+        base, std::abs(static_cast<int32_t>(rate)), 100, saturation_count);
+    _fiscal_epoch_bases[lane] = saturating_add(
+        _fiscal_epoch_bases[lane], base, saturation_count);
+    if (rate > 0) {
+        _fiscal_epoch_assessed[lane] = saturating_add(
+            _fiscal_epoch_assessed[lane], amount, saturation_count);
+        _fiscal_epoch_collected[lane] = saturating_add(
+            _fiscal_epoch_collected[lane], amount, saturation_count);
+        return amount;
+    }
+    _fiscal_current_requests[lane] = saturating_add(
+        _fiscal_current_requests[lane], amount, saturation_count);
+    const int64_t paid = std::min(
+        amount, std::max<int64_t>(0, _fiscal_remaining[lane]));
+    _fiscal_remaining[lane] -= paid;
+    _fiscal_epoch_paid[lane] = saturating_add(
+        _fiscal_epoch_paid[lane], paid, saturation_count);
+    return -paid;
+}
+
+int64_t NativeEconomyRuntime::expected_fiscal_transfer(
+        int32_t cell, int32_t kind, int64_t base, int8_t rate,
+        int64_t &saturation_count) const {
+    if (cell < 0 || cell >= _cell_count || kind < 0 ||
+        kind >= ACTIVE_TAX_KIND_COUNT || base <= 0 || rate == 0 ||
+        (_epoch_active_tax_mask & static_cast<uint8_t>(1U << kind)) == 0)
+        return 0;
+    const size_t lane = static_cast<size_t>(cell) *
+        ACTIVE_TAX_KIND_COUNT + kind;
+    if (lane >= _fiscal_previous_requests.size() ||
+        lane >= _fiscal_budgets.size()) return 0;
+    const int64_t amount = mul_div_sat(
+        base, std::abs(static_cast<int32_t>(rate)), 100, saturation_count);
+    if (rate > 0) return amount;
+    const int64_t previous_request = std::max<int64_t>(
+        0, _fiscal_previous_requests[lane]);
+    const int64_t budget = std::max<int64_t>(0, _fiscal_budgets[lane]);
+    if (amount <= 0 || previous_request <= 0 || budget <= 0) return 0;
+    const int64_t expected_paid = std::min(
+        amount, mul_div_sat(amount, budget, previous_request,
+                            saturation_count));
+    return -expected_paid;
+}
+
+int64_t NativeEconomyRuntime::expected_after_tax_income(
+        int32_t cell, int32_t profession, int64_t gross_income,
+        int64_t &saturation_count) const {
+    if (gross_income <= 0) return 0;
+    const int8_t income_rate = frozen_tax_rate(
+        cell, NativeCountryRuntime::TAX_INCOME, profession);
+    return saturating_sub(gross_income, expected_fiscal_transfer(
+        cell, NativeCountryRuntime::TAX_INCOME, gross_income, income_rate,
+        saturation_count), saturation_count);
+}
+
+bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
+    if (_country_runtime == nullptr) {
+        error = "country_runtime_required";
+        return false;
+    }
+    const size_t summary_count = static_cast<size_t>(
+        std::max(0, _epoch_country_count)) * NativeCountryRuntime::TAX_KIND_COUNT;
+    _fiscal_last_bases.assign(summary_count, 0);
+    _fiscal_last_assessed.assign(summary_count, 0);
+    _fiscal_last_collected.assign(summary_count, 0);
+    _fiscal_last_requests.assign(summary_count, 0);
+    _fiscal_last_reserved.assign(summary_count, 0);
+    _fiscal_last_paid.assign(summary_count, 0);
+    _fiscal_last_unmet.assign(summary_count, 0);
+    _fiscal_cumulative_bases.resize(summary_count, 0);
+    _fiscal_cumulative_collected.resize(summary_count, 0);
+    _fiscal_cumulative_requests.resize(summary_count, 0);
+    _fiscal_cumulative_paid.resize(summary_count, 0);
+    if ((_epoch_active_tax_mask & static_cast<uint8_t>(
+            (1U << NativeCountryRuntime::TAX_INCOME) |
+            (1U << NativeCountryRuntime::TAX_CONSUMPTION) |
+            (1U << NativeCountryRuntime::TAX_BUSINESS))) == 0) {
+        std::fill(_fiscal_escrow_by_country.begin(),
+                  _fiscal_escrow_by_country.end(), 0);
+        return true;
+    }
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        int64_t collected_total = 0;
+        int64_t unused_total = 0;
+        for (int32_t kind = 0; kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
+            const size_t summary = static_cast<size_t>(country) *
+                NativeCountryRuntime::TAX_KIND_COUNT + kind;
+            for (const int32_t cell : _epoch_settlement_cells) {
+                if (cell < 0 || cell >= _cell_count ||
+                    _epoch_cell_country[cell] != country) continue;
+                const size_t lane = static_cast<size_t>(cell) *
+                    ACTIVE_TAX_KIND_COUNT + kind;
+                _fiscal_last_bases[summary] = saturating_add(
+                    _fiscal_last_bases[summary], _fiscal_epoch_bases[lane],
+                    _saturation_count);
+                _fiscal_last_assessed[summary] = saturating_add(
+                    _fiscal_last_assessed[summary], _fiscal_epoch_assessed[lane],
+                    _saturation_count);
+                _fiscal_last_collected[summary] = saturating_add(
+                    _fiscal_last_collected[summary], _fiscal_epoch_collected[lane],
+                    _saturation_count);
+                _fiscal_last_requests[summary] = saturating_add(
+                    _fiscal_last_requests[summary], _fiscal_current_requests[lane],
+                    _saturation_count);
+                _fiscal_last_reserved[summary] = saturating_add(
+                    _fiscal_last_reserved[summary], _fiscal_budgets[lane],
+                    _saturation_count);
+                _fiscal_last_paid[summary] = saturating_add(
+                    _fiscal_last_paid[summary], _fiscal_epoch_paid[lane],
+                    _saturation_count);
+                unused_total = saturating_add(
+                    unused_total, _fiscal_remaining[lane], _saturation_count);
+                _fiscal_previous_requests[lane] = _fiscal_current_requests[lane];
+            }
+            _fiscal_last_unmet[summary] = std::max<int64_t>(
+                0, _fiscal_last_requests[summary] - _fiscal_last_paid[summary]);
+            _fiscal_cumulative_bases[summary] = saturating_add(
+                _fiscal_cumulative_bases[summary], _fiscal_last_bases[summary],
+                _saturation_count);
+            _fiscal_cumulative_collected[summary] = saturating_add(
+                _fiscal_cumulative_collected[summary],
+                _fiscal_last_collected[summary], _saturation_count);
+            _fiscal_cumulative_requests[summary] = saturating_add(
+                _fiscal_cumulative_requests[summary],
+                _fiscal_last_requests[summary], _saturation_count);
+            _fiscal_cumulative_paid[summary] = saturating_add(
+                _fiscal_cumulative_paid[summary], _fiscal_last_paid[summary],
+                _saturation_count);
+            collected_total = saturating_add(
+                collected_total, _fiscal_last_collected[summary],
+                _saturation_count);
+        }
+        const int64_t handle = static_cast<int64_t>(_epoch_country_handles[country]);
+        if (unused_total > 0) {
+            const int64_t returned =
+                _country_runtime->return_fiscal_cash(handle, unused_total);
+            if (returned != unused_total) {
+                error = "fiscal_escrow_return_drift";
+                return false;
+            }
+        }
+        if (collected_total > 0) {
+            const int64_t collected =
+                _country_runtime->collect_fiscal_cash(handle, collected_total);
+            if (collected != collected_total) {
+                error = "fiscal_tax_collection_drift";
+                return false;
+            }
+        }
+        _fiscal_escrow_by_country[country] = 0;
+    }
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell < 0 || cell >= _cell_count) continue;
+        const int32_t country = _epoch_cell_country[cell];
+        _fiscal_previous_country_handles[cell] =
+            country >= 0 && country < _epoch_country_count
+            ? _epoch_country_handles[country] : 0;
+    }
     return true;
 }
 
@@ -2846,6 +3217,13 @@ Dictionary NativeEconomyRuntime::event_schema() const {
     cashflow_sources["MERCHANT_PROCUREMENT"] = CASHFLOW_MERCHANT_PROCUREMENT;
     cashflow_sources["OTHER"] = CASHFLOW_OTHER;
     cashflow_sources["PRODUCER_SUPPORT_ISSUANCE"] = CASHFLOW_PRODUCER_SUPPORT;
+    cashflow_sources["INCOME_TAX"] = CASHFLOW_INCOME_TAX;
+    cashflow_sources["CONSUMPTION_TAX"] = CASHFLOW_CONSUMPTION_TAX;
+    cashflow_sources["BUSINESS_TAX"] = CASHFLOW_BUSINESS_TAX;
+    cashflow_sources["INCOME_SUBSIDY"] = CASHFLOW_INCOME_SUBSIDY;
+    cashflow_sources["CONSUMPTION_SUBSIDY"] = CASHFLOW_CONSUMPTION_SUBSIDY;
+    cashflow_sources["BUSINESS_SUBSIDY"] = CASHFLOW_BUSINESS_SUBSIDY;
+    cashflow_sources["FISCAL_ESCROW"] = CASHFLOW_FISCAL_ESCROW;
     out["cashflow_sources"] = cashflow_sources;
     out["money_scale"] = MONEY_SCALE;
     out["goods_scale"] = GOODS_SCALE;
@@ -6749,12 +7127,29 @@ int64_t NativeEconomyRuntime::pay_building_wage_amount(
         const int64_t next = mul_div_sat(paid, prefix, total_employed, _saturation_count);
         const int64_t share = std::max<int64_t>(0, next - distributed);
         distributed = next;
-        _population.funds[slot] = saturating_add(_population.funds[slot], share,
+        int64_t income_tax = 0;
+        if ((_epoch_active_tax_mask & static_cast<uint8_t>(
+                1U << NativeCountryRuntime::TAX_INCOME)) != 0) {
+            const int8_t income_rate = frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_INCOME, profession_id);
+            income_tax = apply_fiscal_tax(
+                cell, NativeCountryRuntime::TAX_INCOME, share, income_rate,
+                _saturation_count);
+        }
+        const int64_t net_share = saturating_sub(
+            share, income_tax, _saturation_count);
+        _population.funds[slot] = saturating_add(_population.funds[slot], net_share,
                                                  _saturation_count);
         _population.epoch_income[slot] = saturating_add(
             _population.epoch_income[slot], share, _saturation_count);
         trace_record_cashflow(cell, _population.handle_for_slot(slot),
                               CASHFLOW_WAGES, share, 0);
+        if (income_tax > 0)
+            trace_record_cashflow(cell, _population.handle_for_slot(slot),
+                                  CASHFLOW_INCOME_TAX, 0, income_tax);
+        else if (income_tax < 0)
+            trace_record_cashflow(cell, _population.handle_for_slot(slot),
+                                  CASHFLOW_INCOME_SUBSIDY, -income_tax, 0);
     });
     std::vector<EventLeg> legs;
     if (trace_detail) {
@@ -7217,9 +7612,15 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         thread_local std::vector<int32_t> hire_order;
         thread_local std::vector<uint8_t> labor_survival_priority;
         thread_local std::vector<int32_t> labor_shortage_priority_q16;
+        thread_local std::vector<int64_t> labor_tax_retention_q16;
+        const bool labor_income_tax_active =
+            (_epoch_active_tax_mask & static_cast<uint8_t>(
+                1U << NativeCountryRuntime::TAX_INCOME)) != 0;
         hire_order.clear();
         labor_survival_priority.assign(static_cast<size_t>(last - first), uint8_t{0});
         labor_shortage_priority_q16.assign(static_cast<size_t>(last - first), 0);
+        labor_tax_retention_q16.assign(static_cast<size_t>(last - first),
+                                       Q16_ONE);
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell || group.count <= 0 ||
@@ -7259,6 +7660,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     }
                 }
             }
+            if (labor_income_tax_active)
+                labor_tax_retention_q16[static_cast<size_t>(g - first)] =
+                    projected_employee_tax_retention_q16(
+                        group, _saturation_count);
             hire_order.push_back(g);
         }
         std::stable_sort(hire_order.begin(), hire_order.end(),
@@ -7274,6 +7679,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (labor_shortage_priority_q16[local_a] != labor_shortage_priority_q16[local_b])
                 return labor_shortage_priority_q16[local_a] >
                     labor_shortage_priority_q16[local_b];
+            if (labor_income_tax_active &&
+                    labor_tax_retention_q16[local_a] !=
+                    labor_tax_retention_q16[local_b])
+                return labor_tax_retention_q16[local_a] >
+                    labor_tax_retention_q16[local_b];
             if (ga.realized_profit_margin_q16 != gb.realized_profit_margin_q16)
                 return ga.realized_profit_margin_q16 > gb.realized_profit_margin_q16;
             if (ga.planned_utilization_q16 != gb.planned_utilization_q16)
@@ -8101,12 +8511,37 @@ bool NativeEconomyRuntime::run_building_production_cell(
         int64_t support_paid = 0;
     };
     thread_local std::vector<Offer> offers;
+    thread_local std::vector<int64_t> operation_receipts_by_group;
+    thread_local std::vector<int64_t> business_tax_by_group;
+    thread_local std::vector<int64_t> business_transfer_by_group;
     offers.clear();
     const int32_t market = _market.cell_to_market[cell];
     const int32_t begin = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
         ? _building_cell_offsets[cell] : 0;
     const int32_t end = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
         ? _building_cell_offsets[cell + 1] : 0;
+    const bool income_tax_active =
+        (_epoch_active_tax_mask & static_cast<uint8_t>(
+            1U << NativeCountryRuntime::TAX_INCOME)) != 0;
+    const bool business_tax_active =
+        (_epoch_active_tax_mask & static_cast<uint8_t>(
+            1U << NativeCountryRuntime::TAX_BUSINESS)) != 0;
+    const bool owner_operation_tax_active =
+        income_tax_active || business_tax_active;
+    if (owner_operation_tax_active)
+        operation_receipts_by_group.assign(
+            static_cast<size_t>(std::max(0, end - begin)), 0);
+    else
+        operation_receipts_by_group.clear();
+    if (business_tax_active) {
+        business_tax_by_group.assign(
+            static_cast<size_t>(std::max(0, end - begin)), 0);
+        business_transfer_by_group.assign(
+            static_cast<size_t>(std::max(0, end - begin)), 0);
+    } else {
+        business_tax_by_group.clear();
+        business_transfer_by_group.clear();
+    }
     int64_t merchant_opening_cash = 0;
     for (int32_t k = _merchant_offsets[cell]; k < _merchant_offsets[cell + 1]; ++k) {
         merchant_opening_cash = saturating_add(merchant_opening_cash,
@@ -9483,8 +9918,34 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         _saturation_count);
                 }
             }
+            int64_t business_tax = 0;
+            if (business_tax_active) {
+                const BuildingGroup &tax_group = _buildings[offer.group];
+                const int8_t business_rate = frozen_tax_rate(
+                    cell, NativeCountryRuntime::TAX_BUSINESS,
+                    tax_group.type_id);
+                business_tax = apply_fiscal_tax(
+                    cell, NativeCountryRuntime::TAX_BUSINESS, paid,
+                    business_rate, _saturation_count);
+            }
+            const int64_t producer_after_business_tax = saturating_sub(
+                paid, business_tax, _saturation_count);
             const int64_t total_paid = saturating_add(
-                paid, support_paid, _saturation_count);
+                producer_after_business_tax, support_paid, _saturation_count);
+            if (owner_operation_tax_active)
+                operation_receipts_by_group[offer.group - begin] =
+                    saturating_add(
+                        operation_receipts_by_group[offer.group - begin],
+                        paid, _saturation_count);
+            if (business_tax_active)
+                business_transfer_by_group[offer.group - begin] =
+                    saturating_add(
+                        business_transfer_by_group[offer.group - begin],
+                        business_tax, _saturation_count);
+            if (business_tax > 0)
+                business_tax_by_group[offer.group - begin] = saturating_add(
+                    business_tax_by_group[offer.group - begin], business_tax,
+                    _saturation_count);
             const int64_t accepted = saturating_add(
                 sold, supported, _saturation_count);
             touch_accounting_slot(offer.owner_slot);
@@ -9497,6 +9958,14 @@ bool NativeEconomyRuntime::run_building_production_cell(
                                   CASHFLOW_OWNER_OPERATIONS, paid, 0);
             trace_record_cashflow(cell, _population.handle_for_slot(offer.owner_slot),
                                   CASHFLOW_PRODUCER_SUPPORT, support_paid, 0);
+            if (business_tax > 0)
+                trace_record_cashflow(cell,
+                    _population.handle_for_slot(offer.owner_slot),
+                    CASHFLOW_BUSINESS_TAX, 0, business_tax);
+            else if (business_tax < 0)
+                trace_record_cashflow(cell,
+                    _population.handle_for_slot(offer.owner_slot),
+                    CASHFLOW_BUSINESS_SUBSIDY, -business_tax, 0);
             const int64_t offer_stock_index =
                 _market.index(market, offer.good);
             audit_touch_market_lane(
@@ -9748,6 +10217,50 @@ bool NativeEconomyRuntime::run_building_production_cell(
         _building_wages_unpaid = saturating_add(
             _building_wages_unpaid, total_due - owner_paid, _saturation_count);
     }
+    // Tax positive net operating income only after inputs, actually paid wages,
+    // and positive business tax are known. Tax/subsidy transfers themselves are
+    // intentionally excluded from this base and losses never cross a cycle.
+    if (income_tax_active) for (const int32_t owner_signature : payroll_owners) {
+        const int32_t owner_slot = find_cohort_slot(cell, owner_signature);
+        if (owner_slot < 0) continue;
+        int64_t net_operating_income = 0;
+        for (int32_t g = begin; g < end; ++g) {
+            if (_buildings[g].owner_signature_id != owner_signature) continue;
+            const int64_t costs = saturating_add(
+                saturating_add(_buildings[g].last_input_cost,
+                               _buildings[g].last_wages_paid,
+                               _saturation_count),
+                business_tax_active
+                    ? business_tax_by_group[g - begin] : 0,
+                _saturation_count);
+            net_operating_income = saturating_add(
+                net_operating_income,
+                saturating_sub(operation_receipts_by_group[g - begin], costs,
+                               _saturation_count),
+                _saturation_count);
+        }
+        net_operating_income = std::max<int64_t>(0, net_operating_income);
+        const int32_t signature = static_cast<int32_t>(
+            _population.signature_id[owner_slot]);
+        const int32_t profession = signature >= 0 &&
+                signature < static_cast<int32_t>(_signatures.size())
+            ? _signatures[signature].profession_id : -1;
+        const int8_t income_rate = frozen_tax_rate(
+            cell, NativeCountryRuntime::TAX_INCOME, profession);
+        const int64_t income_tax = apply_fiscal_tax(
+            cell, NativeCountryRuntime::TAX_INCOME, net_operating_income,
+            income_rate, _saturation_count);
+        if (income_tax == 0) continue;
+        touch_accounting_slot(owner_slot);
+        _population.funds[owner_slot] = saturating_sub(
+            _population.funds[owner_slot], income_tax, _saturation_count);
+        if (income_tax > 0)
+            trace_record_cashflow(cell, _population.handle_for_slot(owner_slot),
+                                  CASHFLOW_INCOME_TAX, 0, income_tax);
+        else
+            trace_record_cashflow(cell, _population.handle_for_slot(owner_slot),
+                                  CASHFLOW_INCOME_SUBSIDY, -income_tax, 0);
+    }
     for (int32_t g = begin; g < end; ++g) {
         BuildingGroup &group = _buildings[g];
         const int64_t owner_livelihood = saturating_mul(saturating_mul(
@@ -9758,8 +10271,14 @@ bool NativeEconomyRuntime::run_building_production_cell(
         const int64_t realized_cost = saturating_add(saturating_add(
             group.last_input_cost, group.last_base_wages_due, _saturation_count),
             owner_livelihood, _saturation_count);
+        const int64_t after_business_revenue = business_tax_active
+            ? saturating_sub(
+                group.last_revenue, business_transfer_by_group[g - begin],
+                _saturation_count)
+            : group.last_revenue;
         int64_t margin = realized_cost <= 0 ? 0 : mul_div_sat(
-            saturating_sub(group.last_revenue, realized_cost, _saturation_count),
+            saturating_sub(after_business_revenue, realized_cost,
+                           _saturation_count),
             Q16_ONE, std::max<int64_t>(MONEY_SCALE, realized_cost), _saturation_count);
         group.realized_profit_margin_q16 = static_cast<int32_t>(
             std::clamp<int64_t>(margin, -Q16_ONE, Q16_ONE));
@@ -10400,16 +10919,76 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
                                 sat);
         wage_cost = saturating_add(wage_cost, role_cost, sat);
     }
-    const int64_t owner_pool = std::max<int64_t>(0,
-        saturating_sub(group.last_expected_revenue,
-            saturating_add(input_cost, wage_cost, sat),
-            sat));
+    const uint8_t owner_tax_mask = static_cast<uint8_t>(
+        (1U << NativeCountryRuntime::TAX_INCOME) |
+        (1U << NativeCountryRuntime::TAX_BUSINESS));
+    if ((_epoch_active_tax_mask & owner_tax_mask) == 0) {
+        const int64_t owner_pool = std::max<int64_t>(0,
+            saturating_sub(group.last_expected_revenue,
+                saturating_add(input_cost, wage_cost, sat), sat));
+        const int64_t economic_owner_pool = saturating_add(
+            owner_pool,
+            std::max<int64_t>(0, group.last_in_kind_livelihood_value), sat);
+        return economic_owner_pool / std::max<int64_t>(1,
+            saturating_mul(owner_jobs, days, sat));
+    }
+    const int64_t operating_income = saturating_sub(
+        group.last_expected_revenue,
+        saturating_add(input_cost, wage_cost, sat), sat);
+    const int8_t business_rate = frozen_tax_rate(
+        group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+    const int64_t business_transfer = expected_fiscal_transfer(
+        group.cell, NativeCountryRuntime::TAX_BUSINESS,
+        std::max<int64_t>(0, group.last_expected_revenue), business_rate, sat);
+    const int64_t taxable_income = std::max<int64_t>(0, saturating_sub(
+        operating_income, std::max<int64_t>(0, business_transfer), sat));
+    const int32_t profession = group.owner_signature_id >= 0 &&
+            group.owner_signature_id < static_cast<int32_t>(_signatures.size())
+        ? _signatures[group.owner_signature_id].profession_id : -1;
+    const int64_t income_transfer = expected_fiscal_transfer(
+        group.cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
+        frozen_tax_rate(group.cell, NativeCountryRuntime::TAX_INCOME,
+                        profession), sat);
+    const int64_t owner_pool = std::max<int64_t>(0, saturating_sub(
+        saturating_sub(operating_income, business_transfer, sat),
+        income_transfer, sat));
     const int64_t economic_owner_pool = saturating_add(
         owner_pool, std::max<int64_t>(0, group.last_in_kind_livelihood_value), sat);
     // ACTIVE demand is physical owner capacity; RECOVERY uses probe demand.
     // In-kind livelihood remains part of the pool but never mints cash.
     return economic_owner_pool / std::max<int64_t>(1,
         saturating_mul(owner_jobs, days, sat));
+}
+
+int64_t NativeEconomyRuntime::projected_employee_tax_retention_q16(
+        const BuildingGroup &group, int64_t &sat) const {
+    if ((_epoch_active_tax_mask & static_cast<uint8_t>(
+            1U << NativeCountryRuntime::TAX_INCOME)) == 0)
+        return Q16_ONE;
+    if (group.type_id < 0 ||
+        group.type_id >= static_cast<int32_t>(_building_types.size()) ||
+        group.count <= 0) return 0;
+    const BuildingType &type = _building_types[group.type_id];
+    int64_t weighted_take_home = 0;
+    int64_t weighted_gross = 0;
+    for (int32_t r = 0; r < type.employee_count; ++r) {
+        const JobRole &role = _building_employee_roles[type.employee_begin + r];
+        const int32_t role_index = group.employee_fill_begin + r;
+        const int64_t gross_wage = role_index >= 0 && role_index <
+                static_cast<int32_t>(_building_role_contract_wage.size())
+            ? _building_role_contract_wage[role_index]
+            : role.reference_wage_per_day;
+        const int64_t take_home = expected_after_tax_income(
+            group.cell, role.profession_id, gross_wage, sat);
+        const int64_t slots = std::max<int64_t>(0,
+            role.slots_per_building);
+        weighted_take_home = saturating_add(
+            weighted_take_home, saturating_mul(take_home, slots, sat), sat);
+        weighted_gross = saturating_add(
+            weighted_gross, saturating_mul(gross_wage, slots, sat), sat);
+    }
+    if (weighted_gross <= 0) return Q16_ONE;
+    return mul_div_sat(weighted_take_home, Q16_ONE, weighted_gross, sat);
 }
 
 int64_t NativeEconomyRuntime::building_debt_due(
@@ -11463,8 +12042,42 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         mul_div_sat(absorbed_quantity, settlement_price,
                             GOODS_SCALE, _saturation_count), _saturation_count);
                 }
+                int64_t daily_after_tax_cash_revenue = daily_cash_revenue;
+                const uint8_t investment_tax_mask = static_cast<uint8_t>(
+                    (1U << NativeCountryRuntime::TAX_INCOME) |
+                    (1U << NativeCountryRuntime::TAX_BUSINESS));
+                if ((_epoch_active_tax_mask & investment_tax_mask) != 0) {
+                    const int64_t business_transfer =
+                        expected_fiscal_transfer(
+                            cell, NativeCountryRuntime::TAX_BUSINESS,
+                            daily_cash_revenue,
+                            frozen_tax_rate(
+                                cell, NativeCountryRuntime::TAX_BUSINESS,
+                                type_id),
+                            _saturation_count);
+                    const int64_t taxable_owner_income =
+                        std::max<int64_t>(0, saturating_sub(
+                            saturating_sub(
+                                daily_cash_revenue, daily_variable_cost,
+                                _saturation_count),
+                            std::max<int64_t>(0, business_transfer),
+                            _saturation_count));
+                    const int64_t income_transfer =
+                        expected_fiscal_transfer(
+                            cell, NativeCountryRuntime::TAX_INCOME,
+                            taxable_owner_income,
+                            frozen_tax_rate(
+                                cell, NativeCountryRuntime::TAX_INCOME,
+                                type.owner_profession_id),
+                            _saturation_count);
+                    daily_after_tax_cash_revenue = saturating_sub(
+                        saturating_sub(
+                            daily_cash_revenue, business_transfer,
+                            _saturation_count),
+                        income_transfer, _saturation_count);
+                }
                 const int64_t daily_economic_revenue = saturating_add(
-                    daily_cash_revenue, daily_in_kind_livelihood,
+                    daily_after_tax_cash_revenue, daily_in_kind_livelihood,
                     _saturation_count);
                 const int64_t daily_operating_cost = saturating_add(
                     daily_variable_cost, owner_livelihood, _saturation_count);
@@ -11487,9 +12100,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     ? mul_div_sat(daily_profit, Q16_ONE,
                         daily_operating_cost, _saturation_count)
                     : Q16_ONE;
-                const int64_t projected_owner_income = saturating_sub(
-                    daily_economic_revenue, daily_variable_cost,
-                    _saturation_count) /
+                const int64_t projected_owner_income = saturating_add(
+                    std::max<int64_t>(0, saturating_sub(
+                        daily_after_tax_cash_revenue, daily_variable_cost,
+                        _saturation_count)),
+                    daily_in_kind_livelihood, _saturation_count) /
                     std::max<int64_t>(1, type.owner_slots_per_building);
                 const int64_t required_capital = saturating_add(construction_cost,
                     saturating_add(saturating_mul(daily_input_cost,
@@ -12287,6 +12902,41 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         out["reason"] = String(error.c_str());
         return out;
     }
+    const auto resolve_tax_stats = [&](const char *kind,
+                                       const std::vector<std::string> &item_ids,
+                                       std::vector<int32_t> &out_ids) {
+        out_ids.clear();
+        out_ids.reserve(item_ids.size());
+        for (const std::string &item : item_ids) {
+            const std::string key = std::string("country.tax.") + kind + "." +
+                item + ".rate_pct";
+            const int32_t id = _modifier_runtime != nullptr
+                ? _modifier_runtime->stat_id_for_key(key) : -1;
+            if (id < 0) {
+                error = "modifier_tax_stat_missing:" + key;
+                return false;
+            }
+            out_ids.push_back(id);
+        }
+        return true;
+    };
+    if (_modifier_runtime == nullptr) {
+        _income_tax_stat_ids.assign(_profession_ids.size(), -1);
+        _consumption_tax_stat_ids.assign(_good_ids.size(), -1);
+        _business_tax_stat_ids.assign(_building_type_ids.size(), -1);
+        _import_tax_stat_ids.assign(_good_ids.size(), -1);
+        _export_tax_stat_ids.assign(_good_ids.size(), -1);
+    } else if (
+        !resolve_tax_stats("income", _profession_ids, _income_tax_stat_ids) ||
+        !resolve_tax_stats("consumption", _good_ids, _consumption_tax_stat_ids) ||
+        !resolve_tax_stats("business", _building_type_ids, _business_tax_stat_ids) ||
+        !resolve_tax_stats("import", _good_ids, _import_tax_stat_ids) ||
+        !resolve_tax_stats("export", _good_ids, _export_tax_stat_ids)) {
+        reset(String(error.c_str()));
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
+    }
     _cell_count = cell_count;
     _seed = seed;
     _trace_cell_mask.assign(cell_count, 0);
@@ -12659,6 +13309,10 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _cell_technology_gen.assign(_cell_count, 0);
     _cell_resource_gen.assign(_cell_count, 0);
     _cell_trade_gen.assign(_cell_count, 0);
+    _fiscal_previous_country_handles.assign(
+        static_cast<size_t>(_cell_count), 0);
+    _fiscal_previous_requests.assign(
+        static_cast<size_t>(_cell_count) * ACTIVE_TAX_KIND_COUNT, 0);
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
         _cell_last_settlement_day[cell] =
             static_cast<int64_t>(cell % ROLLING_PHASE_COUNT) - ROLLING_PHASE_COUNT;
@@ -15583,6 +16237,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         if (cell % ROLLING_PHASE_COUNT == _rolling_phase)
             _epoch_building_cells.push_back(cell);
     }
+    if (!prepare_fiscal_budgets(error)) return false;
     for (int32_t resource = 0;
          resource < static_cast<int32_t>(_resource_ids.size()); ++resource) {
         for (const int32_t cell : _epoch_building_cells) {
@@ -15673,6 +16328,11 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         } else {
             _opening_totals.country_cash = 0;
         }
+        int64_t opening_escrow_saturation = 0;
+        _opening_totals.escrow_cash = saturating_add(
+            trade_escrow_cash(), fiscal_escrow_total(),
+            opening_escrow_saturation);
+        _saturation_count += opening_escrow_saturation;
         _opening_totals.goods_stock +=
             current_country_goods - _opening_totals.country_goods;
         _opening_totals.country_goods = current_country_goods;
@@ -16036,6 +16696,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<BundleOrder> primary_orders;
     thread_local std::vector<BundleOrder> fallback_orders;
     thread_local std::vector<int64_t> cohort_spend;
+    thread_local std::vector<int64_t> cohort_base_spend;
+    thread_local std::vector<int64_t> cohort_consumption_tax;
+    thread_local std::vector<int64_t> cohort_consumption_subsidy;
     thread_local std::vector<int64_t> cohort_desired;
     thread_local std::vector<int64_t> cohort_filled;
     thread_local std::vector<int64_t> cohort_food_required;
@@ -16113,6 +16776,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     primary_orders.clear();
     fallback_orders.clear();
     cohort_spend.assign(cohort_count, 0);
+    cohort_base_spend.assign(cohort_count, 0);
+    cohort_consumption_tax.assign(cohort_count, 0);
+    cohort_consumption_subsidy.assign(cohort_count, 0);
     cohort_desired.assign(cohort_count, 0);
     cohort_filled.assign(cohort_count, 0);
     cohort_food_required.assign(cohort_count, 0);
@@ -16421,6 +17087,95 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             std::fill(approximation_variant_active.begin(),
                       approximation_variant_active.end(), uint8_t{1});
     }
+    const auto cohort_cell = [&](int32_t slot) {
+        const int32_t page = slot / PAGE_SIZE;
+        return page >= 0 && page < static_cast<int32_t>(_population.page_cell.size())
+            ? _population.page_cell[page] : -1;
+    };
+    const bool consumption_tax_active =
+        (_epoch_active_tax_mask & static_cast<uint8_t>(
+            1U << NativeCountryRuntime::TAX_CONSUMPTION)) != 0;
+    const bool income_tax_active =
+        (_epoch_active_tax_mask & static_cast<uint8_t>(
+            1U << NativeCountryRuntime::TAX_INCOME)) != 0;
+    const auto household_quote = [&](int32_t slot, int32_t variant_id,
+                                     int64_t base_price) {
+        if (!consumption_tax_active) return base_price;
+        int64_t quoted = base_price;
+        const int32_t cell = cohort_cell(slot);
+        const VariantChoice &variant = _variants[variant_id];
+        for (int32_t c = 0; c < variant.component_count; ++c) {
+            const NeedComponent &component =
+                _components[variant.component_begin + c];
+            const int8_t rate = frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                component.good_id);
+            if (rate <= 0) continue;
+            const int64_t component_value = mul_div_sat(
+                component.qty_per_need,
+                _market.price[_market.index(market, component.good_id)],
+                GOODS_SCALE, sat);
+            quoted = saturating_add(quoted, mul_div_sat(
+                component_value, rate, 100, sat), sat);
+        }
+        return std::max<int64_t>(1, quoted);
+    };
+    const auto full_consumption_subsidy = [&](const BundleOrder &order,
+                                               int64_t units) {
+        if (units <= 0) return int64_t{0};
+        const int32_t cell = cohort_cell(order.slot);
+        const VariantChoice &variant = _variants[order.variant_index];
+        int64_t subsidy = 0;
+        for (int32_t c = 0; c < variant.component_count; ++c) {
+            const NeedComponent &component =
+                _components[variant.component_begin + c];
+            const int8_t rate = frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                component.good_id);
+            if (rate >= 0) continue;
+            const int64_t quantity = mul_div_sat(
+                units, component.qty_per_need, GOODS_SCALE, sat);
+            const int64_t component_base = mul_div_sat(
+                quantity,
+                _market.price[_market.index(market, component.good_id)],
+                GOODS_SCALE, sat);
+            subsidy = saturating_add(subsidy, mul_div_sat(
+                component_base, -static_cast<int32_t>(rate), 100, sat), sat);
+        }
+        return subsidy;
+    };
+    const auto apply_subsidy_quotes = [&](std::vector<BundleOrder> &orders) {
+        if (!consumption_tax_active) return;
+        thread_local std::vector<int64_t> quoted_remaining;
+        quoted_remaining.assign(static_cast<size_t>(_cell_count), 0);
+        for (int32_t k = _market_cell_offsets[market];
+             k < _market_cell_offsets[market + 1]; ++k) {
+            const int32_t cell = _market_cells[k];
+            const size_t lane = static_cast<size_t>(cell) *
+                ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_CONSUMPTION;
+            if (lane < _fiscal_remaining.size())
+                quoted_remaining[cell] =
+                    std::max<int64_t>(0, _fiscal_remaining[lane]);
+        }
+        for (BundleOrder &order : orders) {
+            const int32_t cell = cohort_cell(order.slot);
+            if (cell < 0 || cell >= _cell_count ||
+                quoted_remaining[cell] <= 0 || order.desired_units <= 0)
+                continue;
+            const int64_t full = full_consumption_subsidy(
+                order, order.desired_units);
+            const int64_t allocated = std::min(
+                full, quoted_remaining[cell]);
+            quoted_remaining[cell] -= allocated;
+            // Floor the per-unit discount so the quoted order budget is never
+            // lower than the net cash ultimately charged at settlement.
+            order.quoted_subsidy_per_unit = mul_div_sat(
+                allocated, GOODS_SCALE, order.desired_units, sat);
+            order.unit_price = std::max<int64_t>(
+                1, saturating_sub(order.unit_price,
+                                  order.quoted_subsidy_per_unit, sat));
+        }
+    };
     for (int32_t local = 0; local < cohort_count; ++local) {
         const int32_t slot = slots[local];
         const uint32_t signature_id = _population.signature_id[slot];
@@ -16483,9 +17238,13 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 const int64_t units = std::max<int64_t>(0, next - allocated);
                 allocated = next;
                 if (units > 0) {
+                    const int64_t base_price =
+                        variant_price_cache[variant_id];
                     primary_orders.push_back({local, slot, state_index, variant_id,
                                               need.priority, units, 0, 0,
-                                              variant_price_cache[variant_id]});
+                                              household_quote(slot, variant_id,
+                                                  base_price),
+                                              base_price, 0});
                 }
             }
             ++result.processed_needs;
@@ -16656,6 +17415,52 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         }
     };
 
+    const auto record_order_settlement = [&](BundleOrder &order) {
+        if (order.filled_units <= 0) return;
+        if (!consumption_tax_active) {
+            const int64_t spend = mul_div_sat(
+                order.filled_units, order.unit_price, GOODS_SCALE, sat);
+            cohort_spend[order.local_cohort] = saturating_add(
+                cohort_spend[order.local_cohort], spend, sat);
+            return;
+        }
+        const int32_t cell = cohort_cell(order.slot);
+        const VariantChoice &variant = _variants[order.variant_index];
+        int64_t base_spend = 0;
+        int64_t positive_tax = 0;
+        int64_t subsidy = 0;
+        for (int32_t c = 0; c < variant.component_count; ++c) {
+            const NeedComponent &component =
+                _components[variant.component_begin + c];
+            const int64_t quantity = mul_div_sat(
+                order.filled_units, component.qty_per_need, GOODS_SCALE, sat);
+            const int64_t component_base = mul_div_sat(
+                quantity, _market.price[_market.index(market, component.good_id)],
+                GOODS_SCALE, sat);
+            base_spend = saturating_add(base_spend, component_base, sat);
+            const int8_t rate = frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                component.good_id);
+            const int64_t transfer = apply_fiscal_tax(
+                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                component_base, rate, sat);
+            if (transfer > 0)
+                positive_tax = saturating_add(positive_tax, transfer, sat);
+            else
+                subsidy = saturating_add(subsidy, -transfer, sat);
+        }
+        cohort_base_spend[order.local_cohort] = saturating_add(
+            cohort_base_spend[order.local_cohort], base_spend, sat);
+        cohort_consumption_tax[order.local_cohort] = saturating_add(
+            cohort_consumption_tax[order.local_cohort], positive_tax, sat);
+        cohort_consumption_subsidy[order.local_cohort] = saturating_add(
+            cohort_consumption_subsidy[order.local_cohort], subsidy, sat);
+        cohort_spend[order.local_cohort] = saturating_add(
+            cohort_spend[order.local_cohort],
+            saturating_sub(
+                saturating_add(base_spend, positive_tax, sat),
+                subsidy, sat), sat);
+    };
     auto clear_orders = [&](std::vector<BundleOrder> &orders) -> bool {
         good_counts.assign(_market.good_count, 0);
         pass_demand.assign(_market.good_count, 0);
@@ -16684,10 +17489,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             for (BundleOrder &order : orders) {
                 order.filled_units = order.funded_units;
                 if (order.filled_units <= 0) continue;
-                const int64_t spend = mul_div_sat(order.filled_units, order.unit_price,
-                                                  GOODS_SCALE, sat);
-                cohort_spend[order.local_cohort] = saturating_add(
-                    cohort_spend[order.local_cohort], spend, sat);
+                record_order_settlement(order);
                 need_states[order.need_index].filled_units = saturating_add(
                     need_states[order.need_index].filled_units, order.filled_units, sat);
             }
@@ -16755,10 +17557,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 pass_sales[component.good_id] = saturating_add(pass_sales[component.good_id],
                                                                used, sat);
             }
-            const int64_t spend = mul_div_sat(order.filled_units, order.unit_price,
-                                              GOODS_SCALE, sat);
-            cohort_spend[order.local_cohort] = saturating_add(
-                cohort_spend[order.local_cohort], spend, sat);
+            record_order_settlement(order);
             need_states[order.need_index].filled_units = saturating_add(
                 need_states[order.need_index].filled_units, order.filled_units, sat);
         }
@@ -16774,6 +17573,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     };
 
     const auto clear_start = Clock::now();
+    apply_subsidy_quotes(primary_orders);
     budget_orders(primary_orders, false);
     const bool primary_inventory_abundant = clear_orders(primary_orders);
     result.clear_ms += elapsed_ms(clear_start);
@@ -16824,10 +17624,14 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             allocated = next;
             if (units > 0) fallback_orders.push_back({
                 state.local_cohort, slots[state.local_cohort], state_index, variant_id,
-                need.priority, units, 0, 0, variant_price_cache[variant_id]});
+                need.priority, units, 0, 0,
+                household_quote(slots[state.local_cohort], variant_id,
+                    variant_price_cache[variant_id]),
+                variant_price_cache[variant_id], 0});
         }
     }
     if (!primary_inventory_abundant) {
+        apply_subsidy_quotes(fallback_orders);
         budget_orders(fallback_orders, true);
         clear_orders(fallback_orders);
     }
@@ -16861,11 +17665,20 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         _population.funds[slot] -= spend;
         _population.epoch_expense[slot] = saturating_add(
             _population.epoch_expense[slot], spend, sat);
+        const int64_t subsidy = cohort_consumption_subsidy[local];
         if (trace_detail && spend > 0) {
             result.cashflows.push_back({_population.handle_for_slot(slot),
                 CASHFLOW_HOUSEHOLD_CONSUMPTION, 0, spend});
         }
-        revenue = saturating_add(revenue, spend, sat);
+        if (trace_detail && cohort_consumption_tax[local] > 0)
+            result.cashflows.push_back({_population.handle_for_slot(slot),
+                CASHFLOW_CONSUMPTION_TAX, 0,
+                cohort_consumption_tax[local]});
+        if (trace_detail && subsidy > 0)
+            result.cashflows.push_back({_population.handle_for_slot(slot),
+                CASHFLOW_CONSUMPTION_SUBSIDY, subsidy, 0});
+        revenue = saturating_add(revenue,
+            consumption_tax_active ? cohort_base_spend[local] : spend, sat);
     }
     const int32_t merchant_begin = _merchant_offsets[market];
     const int32_t merchant_end = _merchant_offsets[market + 1];
@@ -16887,13 +17700,45 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             ? mul_div_sat(revenue, population_prefix, merchant_population, sat) : 0;
         const int64_t share = std::max<int64_t>(0, next - distributed);
         distributed = next;
-        _population.funds[slot] = saturating_add(_population.funds[slot], share, sat);
+        int64_t income_tax = 0;
+        if (income_tax_active) {
+            const int32_t local = slot >= 0 &&
+                    slot < static_cast<int32_t>(local_by_slot_stamp.size()) &&
+                    local_by_slot_stamp[slot] == local_lookup_generation
+                ? local_by_slot[slot] : -1;
+            const int64_t household_expense = local >= 0
+                ? cohort_spend[local] : 0;
+            const int64_t operating_expense = std::max<int64_t>(
+                0, _population.epoch_expense[slot] - household_expense);
+            const int64_t taxable_income =
+                std::max<int64_t>(0, share - operating_expense);
+            const int32_t signature = static_cast<int32_t>(
+                _population.signature_id[slot]);
+            const int32_t profession = signature >= 0 &&
+                    signature < static_cast<int32_t>(_signatures.size())
+                ? _signatures[signature].profession_id : -1;
+            const int32_t cell = cohort_cell(slot);
+            income_tax = apply_fiscal_tax(
+                cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
+                frozen_tax_rate(
+                    cell, NativeCountryRuntime::TAX_INCOME, profession),
+                sat);
+        }
+        const int64_t net_share = saturating_sub(share, income_tax, sat);
+        _population.funds[slot] = saturating_add(
+            _population.funds[slot], net_share, sat);
         _population.epoch_income[slot] = saturating_add(
             _population.epoch_income[slot], share, sat);
         if (trace_detail && share > 0) {
             result.cashflows.push_back({_population.handle_for_slot(slot),
                 CASHFLOW_MERCHANT_HOUSEHOLD, share, 0});
         }
+        if (trace_detail && income_tax > 0)
+            result.cashflows.push_back({_population.handle_for_slot(slot),
+                CASHFLOW_INCOME_TAX, 0, income_tax});
+        else if (trace_detail && income_tax < 0)
+            result.cashflows.push_back({_population.handle_for_slot(slot),
+                CASHFLOW_INCOME_SUBSIDY, -income_tax, 0});
     }
     result.merchant_count += merchant_end - merchant_begin;
     result.revenue = revenue;
@@ -17519,7 +18364,8 @@ NativeEconomyRuntime::AuditTotals NativeEconomyRuntime::audit_totals() const {
         }
     }
     totals.transit_goods = trade_transit_goods();
-    totals.escrow_cash = trade_escrow_cash();
+    totals.escrow_cash = saturating_add(
+        trade_escrow_cash(), fiscal_escrow_total(), valuation_sat);
     totals.goods_stock += totals.transit_goods;
     if (_country_runtime != nullptr) {
         for (int32_t good = 0; good < _market.good_count; ++good) {
@@ -19783,6 +20629,11 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 _building_commit_cursor = 0;
                 _building_finalize_phase = 0;
                 _building_commit_phase = 0;
+                if (!commit_fiscal(error)) {
+                    fail(error.empty() ? "fiscal_commit_failed" : error);
+                    record_commit_phase(0);
+                    break;
+                }
                 _stage = Stage::AGGREGATE_PUBLISH;
                 record_commit_phase(1);
                 if (finish_chunk_and_should_yield()) break;
@@ -22049,6 +22900,74 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     return out;
 }
 
+Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
+    Dictionary out;
+    const auto found = std::find(
+        _epoch_country_handles.begin(), _epoch_country_handles.end(),
+        static_cast<uint64_t>(country_handle));
+    if (!_configured || found == _epoch_country_handles.end()) {
+        out["ok"] = false;
+        out["reason"] = !_configured ? "economy_not_configured" :
+            "country_handle_invalid";
+        return out;
+    }
+    const int32_t country = static_cast<int32_t>(
+        found - _epoch_country_handles.begin());
+    PackedStringArray kinds;
+    for (const char *kind : {"income", "consumption", "business",
+                             "import", "export"})
+        kinds.push_back(kind);
+    const auto pack = [&](const std::vector<int64_t> &source) {
+        PackedInt64Array values;
+        values.resize(NativeCountryRuntime::TAX_KIND_COUNT);
+        for (int32_t kind = 0;
+             kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+            const size_t index = static_cast<size_t>(country) *
+                NativeCountryRuntime::TAX_KIND_COUNT + kind;
+            values[kind] = index < source.size() ? source[index] : 0;
+        }
+        return values;
+    };
+    const PackedInt64Array bases = pack(_fiscal_last_bases);
+    const PackedInt64Array assessed = pack(_fiscal_last_assessed);
+    const PackedInt64Array collected = pack(_fiscal_last_collected);
+    const PackedInt64Array requests = pack(_fiscal_last_requests);
+    const PackedInt64Array reserved = pack(_fiscal_last_reserved);
+    const PackedInt64Array paid = pack(_fiscal_last_paid);
+    const PackedInt64Array unmet = pack(_fiscal_last_unmet);
+    PackedInt32Array fulfillment_q16;
+    fulfillment_q16.resize(NativeCountryRuntime::TAX_KIND_COUNT);
+    for (int32_t kind = 0;
+         kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+        fulfillment_q16[kind] = requests[kind] <= 0
+            ? (reserved[kind] <= 0 ? 0 : Q16_ONE)
+            : static_cast<int32_t>(std::clamp<int64_t>(
+                (paid[kind] * Q16_ONE) / requests[kind], 0, Q16_ONE));
+    }
+    out["ok"] = true;
+    out["country_handle"] = country_handle;
+    out["sample_day"] = _sample_day;
+    out["tax_policy_version"] = static_cast<int64_t>(
+        _epoch_tax_policy_version);
+    out["tax_kinds"] = kinds;
+    out["tax_base"] = bases;
+    out["assessed"] = assessed;
+    out["collected"] = collected;
+    out["subsidy_requested"] = requests;
+    out["subsidy_reserved"] = reserved;
+    out["subsidy_paid"] = paid;
+    out["subsidy_unmet"] = unmet;
+    out["fulfillment_q16"] = fulfillment_q16;
+    out["cumulative_tax_base"] = pack(_fiscal_cumulative_bases);
+    out["cumulative_collected"] = pack(_fiscal_cumulative_collected);
+    out["cumulative_subsidy_requested"] =
+        pack(_fiscal_cumulative_requests);
+    out["cumulative_subsidy_paid"] = pack(_fiscal_cumulative_paid);
+    out["tariff_events"] = 0;
+    out["tariffs_active"] = false;
+    return out;
+}
+
 Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const {
     Dictionary out;
     out["cell_idx"] = cell_idx;
@@ -22121,6 +23040,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array owner_capacity;
     PackedInt64Array owner_required;
     PackedInt64Array projected_owner_income;
+    PackedInt64Array employee_tax_retention_q16;
     PackedInt64Array filled_owner;
     PackedInt64Array owner_openings;
     PackedInt32Array employee_fill_offsets;
@@ -22228,6 +23148,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         owner_required.push_back(planned_owner_required);
         projected_owner_income.push_back(projected_owner_income_per_day(
             group, snapshot_sat));
+        employee_tax_retention_q16.push_back(
+            projected_employee_tax_retention_q16(group, snapshot_sat));
         filled_owner.push_back(group.filled_owner);
         owner_openings.push_back(std::max<int64_t>(
             0, planned_owner_required - group.filled_owner));
@@ -22423,6 +23345,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["owner_capacity"] = owner_capacity;
     out["owner_required"] = owner_required;
     out["projected_owner_income_per_day"] = projected_owner_income;
+    out["employee_tax_retention_q16"] = employee_tax_retention_q16;
     out["filled_owner"] = filled_owner;
     out["owner_openings"] = owner_openings;
     out["employee_fill_offsets"] = employee_fill_offsets;
@@ -22757,7 +23680,25 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(_cell_technology_gen[cell]);
         mix_u64(_cell_resource_gen[cell]);
         mix_u64(_cell_trade_gen[cell]);
+        mix_u64(cell < static_cast<int32_t>(
+            _fiscal_previous_country_handles.size())
+            ? _fiscal_previous_country_handles[cell] : 0);
+        for (int32_t kind = 0; kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
+            const size_t lane = static_cast<size_t>(cell) *
+                ACTIVE_TAX_KIND_COUNT + kind;
+            mix_u64(static_cast<uint64_t>(
+                lane < _fiscal_previous_requests.size()
+                    ? _fiscal_previous_requests[lane] : 0));
+        }
     }
+    for (const int64_t value : _fiscal_cumulative_bases)
+        mix_u64(static_cast<uint64_t>(value));
+    for (const int64_t value : _fiscal_cumulative_collected)
+        mix_u64(static_cast<uint64_t>(value));
+    for (const int64_t value : _fiscal_cumulative_requests)
+        mix_u64(static_cast<uint64_t>(value));
+    for (const int64_t value : _fiscal_cumulative_paid)
+        mix_u64(static_cast<uint64_t>(value));
     for (size_t slot = 0; slot < _population.active.size(); ++slot) {
         if (_population.active[slot] == 0) continue;
         mix_u64(slot);
@@ -23043,6 +23984,33 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_country_generation = 0;
     _epoch_country_hash = 0;
     _epoch_country_topology_hash = 0;
+    _epoch_tax_policy_version = 0;
+    _epoch_income_tax_rates.clear();
+    _epoch_consumption_tax_rates.clear();
+    _epoch_business_tax_rates.clear();
+    _epoch_import_tax_rates.clear();
+    _epoch_export_tax_rates.clear();
+    _fiscal_previous_requests.clear();
+    _fiscal_previous_country_handles.clear();
+    _fiscal_current_requests.clear();
+    _fiscal_budgets.clear();
+    _fiscal_remaining.clear();
+    _fiscal_epoch_bases.clear();
+    _fiscal_epoch_assessed.clear();
+    _fiscal_epoch_collected.clear();
+    _fiscal_epoch_paid.clear();
+    _fiscal_escrow_by_country.clear();
+    _fiscal_last_bases.clear();
+    _fiscal_last_assessed.clear();
+    _fiscal_last_collected.clear();
+    _fiscal_last_requests.clear();
+    _fiscal_last_reserved.clear();
+    _fiscal_last_paid.clear();
+    _fiscal_last_unmet.clear();
+    _fiscal_cumulative_bases.clear();
+    _fiscal_cumulative_collected.clear();
+    _fiscal_cumulative_requests.clear();
+    _fiscal_cumulative_paid.clear();
     _technology_words = 0;
     _buildings.clear();
     _building_groups_rebuild_scratch.clear();
@@ -23308,7 +24276,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_CELLS) {
-        const int32_t record_bytes = 76;
+        const int32_t record_bytes = 108;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min(_cell_count, _save.cell_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.cell_cursor)) * record_bytes);
@@ -23332,6 +24300,17 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint32_t>(payload, _cell_resource_gen[_save.cell_cursor]);
             append_le<uint32_t>(payload, _cell_trade_gen[_save.cell_cursor]);
             append_le<int32_t>(payload, _save.cell_cursor % ROLLING_PHASE_COUNT);
+            const size_t fiscal_cell = static_cast<size_t>(_save.cell_cursor);
+            append_le<uint64_t>(payload,
+                fiscal_cell < _fiscal_previous_country_handles.size()
+                    ? _fiscal_previous_country_handles[fiscal_cell] : 0);
+            for (int32_t kind = 0; kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
+                const size_t lane =
+                    fiscal_cell * ACTIVE_TAX_KIND_COUNT + kind;
+                append_le<int64_t>(payload,
+                    lane < _fiscal_previous_requests.size()
+                        ? _fiscal_previous_requests[lane] : 0);
+            }
         }
         if (_save.cell_cursor >= _cell_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_CELLS,
@@ -23601,6 +24580,45 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         return make_save_chunk(SAVE_SECTION_MODIFIERS,
                                static_cast<uint32_t>(take), payload);
     }
+    if (_save.section == SAVE_SECTION_FISCAL) {
+        constexpr int32_t record_bytes =
+            4 + NativeCountryRuntime::TAX_KIND_COUNT * 11 * 8;
+        const int32_t country_count = static_cast<int32_t>(
+            _epoch_country_handles.size());
+        const int32_t max_records = std::max(
+            1, (budget - 16) / record_bytes);
+        const int32_t begin = _save.fiscal_cursor;
+        const int32_t end = std::min(
+            country_count, begin + max_records);
+        const auto append_group = [&](const std::vector<int64_t> &values,
+                                      int32_t country) {
+            for (int32_t kind = 0;
+                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                const size_t index = static_cast<size_t>(country) *
+                    NativeCountryRuntime::TAX_KIND_COUNT + kind;
+                append_le<int64_t>(payload,
+                    index < values.size() ? values[index] : 0);
+            }
+        };
+        for (; _save.fiscal_cursor < end; ++_save.fiscal_cursor) {
+            const int32_t country = _save.fiscal_cursor;
+            append_le<int32_t>(payload, country);
+            append_group(_fiscal_last_bases, country);
+            append_group(_fiscal_last_assessed, country);
+            append_group(_fiscal_last_collected, country);
+            append_group(_fiscal_last_requests, country);
+            append_group(_fiscal_last_reserved, country);
+            append_group(_fiscal_last_paid, country);
+            append_group(_fiscal_last_unmet, country);
+            append_group(_fiscal_cumulative_bases, country);
+            append_group(_fiscal_cumulative_collected, country);
+            append_group(_fiscal_cumulative_requests, country);
+            append_group(_fiscal_cumulative_paid, country);
+        }
+        if (_save.fiscal_cursor >= country_count) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_FISCAL,
+            static_cast<uint32_t>(_save.fiscal_cursor - begin), payload);
+    }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);
 }
@@ -23683,6 +24701,10 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _cell_technology_gen.assign(_cell_count, 0);
     _cell_resource_gen.assign(_cell_count, 0);
     _cell_trade_gen.assign(_cell_count, 0);
+    _fiscal_previous_country_handles.assign(
+        static_cast<size_t>(_cell_count), 0);
+    _fiscal_previous_requests.assign(
+        static_cast<size_t>(_cell_count) * ACTIVE_TAX_KIND_COUNT, 0);
     out["ok"] = true;
     out["schema_version"] = SCHEMA_VERSION;
     return out;
@@ -23704,7 +24726,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION) {
+    if (schema != SCHEMA_VERSION && schema != 22) {
         error = "legacy_climate_production_save_unsupported";
         return false;
     }
@@ -23969,11 +24991,20 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         }
         const bool country_schema_compatible =
             country_schema == NativeCountryRuntime::SCHEMA_VERSION ||
+            (schema == 22 && country_schema == 3) ||
             (schema <= 19 && country_schema == 1);
+        const uint64_t expected_country_hash =
+            schema == 22 && country_schema == 3 &&
+                    _country_runtime != nullptr
+                ? static_cast<uint64_t>(
+                    _country_runtime->state_hash_v3_compat())
+                : (_country_runtime != nullptr
+                    ? static_cast<uint64_t>(_country_runtime->state_hash())
+                    : 0);
         if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
             !country_schema_compatible ||
             country_generation != _country_runtime->generation() ||
-            country_hash != static_cast<uint64_t>(_country_runtime->state_hash())) {
+            country_hash != expected_country_hash) {
             error = "economy_country_restore_order_or_hash_mismatch";
             return false;
         }
@@ -24183,6 +25214,24 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     saved_phase != cell % ROLLING_PHASE_COUNT) {
                     error = "save_cell_rolling_state_invalid";
                     return false;
+                }
+            }
+            if (schema >= 23) {
+                if (!read_le(bytes, cursor,
+                        _fiscal_previous_country_handles[cell])) {
+                    error = "save_cell_fiscal_country_truncated";
+                    return false;
+                }
+                for (int32_t kind = 0;
+                     kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
+                    const size_t lane = static_cast<size_t>(cell) *
+                        ACTIVE_TAX_KIND_COUNT + kind;
+                    if (!read_le(bytes, cursor,
+                            _fiscal_previous_requests[lane]) ||
+                        _fiscal_previous_requests[lane] < 0) {
+                        error = "save_cell_fiscal_request_invalid";
+                        return false;
+                    }
                 }
             }
             _market.cell_to_market[cell] = market;
@@ -24558,7 +25607,69 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                                        bytes.end());
         cursor = bytes.size();
         _restore.modifier_seen = true;
-    } else if ((schema >= 20 && section == SAVE_SECTION_END) ||
+    } else if (schema >= 23 && section == SAVE_SECTION_FISCAL) {
+        NativeCountryRuntime::EconomySnapshot country_snapshot;
+        if (_country_runtime == nullptr ||
+            !_country_runtime->copy_economy_snapshot(country_snapshot)) {
+            error = "save_fiscal_country_snapshot_unavailable";
+            return false;
+        }
+        const size_t summary_count = static_cast<size_t>(
+            std::max(0, country_snapshot.country_count)) *
+            NativeCountryRuntime::TAX_KIND_COUNT;
+        const auto ensure_summary_size = [&](size_t size) {
+            _fiscal_last_bases.resize(size, 0);
+            _fiscal_last_assessed.resize(size, 0);
+            _fiscal_last_collected.resize(size, 0);
+            _fiscal_last_requests.resize(size, 0);
+            _fiscal_last_reserved.resize(size, 0);
+            _fiscal_last_paid.resize(size, 0);
+            _fiscal_last_unmet.resize(size, 0);
+            _fiscal_cumulative_bases.resize(size, 0);
+            _fiscal_cumulative_collected.resize(size, 0);
+            _fiscal_cumulative_requests.resize(size, 0);
+            _fiscal_cumulative_paid.resize(size, 0);
+        };
+        ensure_summary_size(summary_count);
+        const auto read_group = [&](std::vector<int64_t> &values,
+                                    int32_t country) {
+            for (int32_t kind = 0;
+                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                const size_t index = static_cast<size_t>(country) *
+                    NativeCountryRuntime::TAX_KIND_COUNT + kind;
+                if (index >= values.size() ||
+                    !read_le(bytes, cursor, values[index]) ||
+                    values[index] < 0)
+                    return false;
+            }
+            return true;
+        };
+        for (uint32_t record = 0; record < records; ++record) {
+            int32_t country = -1;
+            if (!read_le(bytes, cursor, country) ||
+                country != _restore.restored_fiscal ||
+                country < 0 || static_cast<size_t>(country) *
+                    NativeCountryRuntime::TAX_KIND_COUNT >= summary_count ||
+                !read_group(_fiscal_last_bases, country) ||
+                !read_group(_fiscal_last_assessed, country) ||
+                !read_group(_fiscal_last_collected, country) ||
+                !read_group(_fiscal_last_requests, country) ||
+                !read_group(_fiscal_last_reserved, country) ||
+                !read_group(_fiscal_last_paid, country) ||
+                !read_group(_fiscal_last_unmet, country) ||
+                !read_group(_fiscal_cumulative_bases, country) ||
+                !read_group(_fiscal_cumulative_collected, country) ||
+                !read_group(_fiscal_cumulative_requests, country) ||
+                !read_group(_fiscal_cumulative_paid, country)) {
+                error = "save_fiscal_record_invalid";
+                return false;
+            }
+            ++_restore.restored_fiscal;
+        }
+        _restore.fiscal_seen = true;
+    } else if ((schema >= 23 && section == SAVE_SECTION_END) ||
+               (schema >= 20 && schema <= 22 &&
+                section == SAVE_SECTION_END_V20_TO_V22) ||
                (schema >= 11 && schema <= 19 &&
                 section == SAVE_SECTION_END_V11_TO_V19) ||
                (schema == 10 && section == SAVE_SECTION_END_V10)) {
@@ -24633,7 +25744,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         _restore.restored_labor_signals != _restore.expected_labor_signals ||
         _restore.restored_trade_orders != _restore.expected_trade_orders ||
         _restore.restored_trade_flows != _restore.expected_trade_flows ||
-        (_restore.schema_version >= 20 && !_restore.modifier_seen)) {
+        (_restore.schema_version >= 20 && !_restore.modifier_seen) ||
+        (_restore.schema_version >= 23 && !_restore.fiscal_seen)) {
         out["ok"] = false;
         out["reason"] = "restore_section_incomplete";
         return out;
@@ -24944,7 +26056,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         std::string modifier_restore_error;
         if (!_modifier_runtime->restore_domain(ModifierRuntime::ECONOMY,
                                                _restore.modifier_bytes,
-                                               modifier_restore_error)) {
+                                               modifier_restore_error,
+                                               _restore.schema_version == 22)) {
             out["ok"] = false;
             out["reason"] = String(("economy_restore_modifier_failed:" +
                                     modifier_restore_error).c_str());

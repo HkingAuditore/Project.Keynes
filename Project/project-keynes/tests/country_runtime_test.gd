@@ -122,6 +122,116 @@ func _run() -> void:
 	_expect("country-wide metadata query reflects commit",
 		String(beta_after.country_name) == "贝塔共和国" and
 		(beta_after.technology_ids as PackedStringArray).has("tech.autonomous_systems"))
+	var artisan := (compiled.profession_ids as PackedStringArray).find("artisan")
+	var tax_commands := _commands([
+		{"opcode": 11, "day": 3, "sequence": 1, "handle": beta.country_handle,
+			"cell": -1, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 0, "tax_rate": 10},
+		{"opcode": 12, "day": 3, "sequence": 2, "handle": beta.country_handle,
+			"cell": -1, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 0, "tax_item": artisan, "tax_rate": -25},
+		{"opcode": 11, "day": 3, "sequence": 3, "handle": beta.country_handle,
+			"cell": -1, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 3, "tax_rate": 20},
+	])
+	_expect("tax defaults and sparse override queue",
+		bool(ext.submit_country_commands(tax_commands).get("ok", false)))
+	_expect("tax policy commits at country day boundary",
+		bool(ext.run_country_slice({"day_index": 3}).get("ok", false)))
+	var tax_policy: Dictionary = ext.get_country_tax_policy_snapshot(beta.country_handle)
+	_expect("income profession override and tariff placeholder resolve",
+		int(tax_policy.default_rates[0]) == 10 and
+		int(tax_policy.income.rates[artisan]) == -25 and
+		int(tax_policy.income.has_override[artisan]) == 1 and
+		int(tax_policy.default_rates[3]) == 20 and
+		not bool(tax_policy.tariffs_active))
+	var clear_tax := _commands([{
+		"opcode": 13, "day": 4, "sequence": 1, "handle": beta.country_handle,
+		"cell": -1, "aux": -1, "stable_id": "", "name": "",
+		"tax_kind": 0, "tax_item": artisan,
+	}])
+	ext.submit_country_commands(clear_tax)
+	ext.run_country_slice({"day_index": 4})
+	tax_policy = ext.get_country_tax_policy_snapshot(beta.country_handle)
+	_expect("cleared override inherits current default",
+		int(tax_policy.income.rates[artisan]) == 10 and
+		int(tax_policy.income.has_override[artisan]) == 0)
+	var tax_matrix_ext := _new_ext(4)
+	tax_matrix_ext.configure_country(catalog, profile, 4, 100)
+	tax_matrix_ext.bootstrap_country(packet, water)
+	var tax_matrix_handle := int(
+		tax_matrix_ext.get_country_cell_summary(0).country_handle)
+	var building_item := 0
+	var tax_items := [artisan, grain, building_item, grain, grain]
+	var tax_defaults := [-100, -50, 0, 50, 100]
+	var tax_overrides := [100, 50, 0, -50, -100]
+	var tax_rows: Array[Dictionary] = []
+	for kind in range(5):
+		tax_rows.append({
+			"opcode": 11, "day": 0, "sequence": kind * 2 + 1,
+			"handle": tax_matrix_handle, "cell": -1, "aux": -1,
+			"stable_id": "", "name": "", "tax_kind": kind,
+			"tax_rate": tax_defaults[kind],
+		})
+		tax_rows.append({
+			"opcode": 12, "day": 0, "sequence": kind * 2 + 2,
+			"handle": tax_matrix_handle, "cell": -1, "aux": -1,
+			"stable_id": "", "name": "", "tax_kind": kind,
+			"tax_item": tax_items[kind], "tax_rate": tax_overrides[kind],
+		})
+	_expect("all five tax defaults and overrides queue",
+		bool(tax_matrix_ext.submit_country_commands(
+			_commands(tax_rows)).get("ok", false)))
+	_expect("all five tax defaults and overrides commit",
+		bool(tax_matrix_ext.run_country_slice(
+			{"day_index": 0}).get("ok", false)))
+	var matrix_policy: Dictionary = tax_matrix_ext.get_country_tax_policy_snapshot(
+		tax_matrix_handle)
+	var matrix_groups := ["income", "consumption", "business", "import", "export"]
+	var matrix_valid := int(matrix_policy.get("catalog_hash", 0)) != 0
+	for kind in range(5):
+		var group: Dictionary = matrix_policy[matrix_groups[kind]]
+		matrix_valid = matrix_valid and \
+			int(matrix_policy.default_rates[kind]) == tax_defaults[kind] and \
+			int(group.rates[tax_items[kind]]) == tax_overrides[kind] and \
+			int(group.effective_rates[tax_items[kind]]) == tax_overrides[kind] and \
+			int(group.has_override[tax_items[kind]]) == 1
+	_expect("five tax kinds route to profession/good/building lanes", matrix_valid)
+	var clear_rows: Array[Dictionary] = []
+	for kind in range(5):
+		clear_rows.append({
+			"opcode": 13, "day": 1, "sequence": kind + 1,
+			"handle": tax_matrix_handle, "cell": -1, "aux": -1,
+			"stable_id": "", "name": "", "tax_kind": kind,
+			"tax_item": tax_items[kind],
+		})
+	tax_matrix_ext.submit_country_commands(_commands(clear_rows))
+	tax_matrix_ext.run_country_slice({"day_index": 1})
+	matrix_policy = tax_matrix_ext.get_country_tax_policy_snapshot(tax_matrix_handle)
+	var inheritance_valid := true
+	for kind in range(5):
+		var group: Dictionary = matrix_policy[matrix_groups[kind]]
+		inheritance_valid = inheritance_valid and \
+			int(group.rates[tax_items[kind]]) == tax_defaults[kind] and \
+			int(group.has_override[tax_items[kind]]) == 0
+	_expect("all five cleared overrides inherit current defaults",
+		inheritance_valid)
+	var invalid_rate := _commands([{
+		"opcode": 11, "day": 2, "sequence": 1,
+		"handle": tax_matrix_handle, "cell": -1, "aux": -1,
+		"stable_id": "", "name": "", "tax_kind": 0, "tax_rate": 101,
+	}])
+	var invalid_item := _commands([{
+		"opcode": 12, "day": 2, "sequence": 2,
+		"handle": tax_matrix_handle, "cell": -1, "aux": -1,
+		"stable_id": "", "name": "", "tax_kind": 2,
+		"tax_item": -1, "tax_rate": 10,
+	}])
+	_expect("illegal tax rates and dense ids reject at command boundary",
+		String(tax_matrix_ext.submit_country_commands(invalid_rate).get(
+			"reason", "")) == "country_tax_command_invalid" and
+		String(tax_matrix_ext.submit_country_commands(invalid_item).get(
+			"reason", "")) == "country_tax_command_invalid")
 
 	var continuation_profile := profile.duplicate(true)
 	continuation_profile.country_max_commands_per_slice = 1
@@ -158,7 +268,7 @@ func _run() -> void:
 		int(continuation_ext.get_country_cell_summary(1).country_handle) == int(continuation_beta.country_handle))
 
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v3 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 3)
+	_expect("PKCN v4 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 4)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)
@@ -207,6 +317,9 @@ func _commands(rows: Array[Dictionary]) -> Dictionary:
 		"weight0_bp": PackedInt32Array(), "weight1_bp": PackedInt32Array(),
 		"weight2_bp": PackedInt32Array(), "weight3_bp": PackedInt32Array(),
 		"value_i64": PackedInt64Array(),
+		"tax_kinds": PackedInt32Array(),
+		"tax_item_indices": PackedInt32Array(),
+		"tax_rate_percent": PackedInt32Array(),
 		"stable_ids": PackedStringArray(), "display_names": PackedStringArray()}
 	for row in rows:
 		out.opcodes.append(int(row.opcode))
@@ -223,6 +336,9 @@ func _commands(rows: Array[Dictionary]) -> Dictionary:
 		out.weight2_bp.append(weights[2])
 		out.weight3_bp.append(weights[3])
 		out.value_i64.append(int(row.get("value", 0)))
+		out.tax_kinds.append(int(row.get("tax_kind", -1)))
+		out.tax_item_indices.append(int(row.get("tax_item", -1)))
+		out.tax_rate_percent.append(int(row.get("tax_rate", 0)))
 		out.stable_ids.append(String(row.stable_id))
 		out.display_names.append(String(row.name))
 	return out

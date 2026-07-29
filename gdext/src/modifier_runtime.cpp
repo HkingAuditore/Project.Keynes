@@ -252,6 +252,21 @@ bool ModifierRuntime::compile_catalog(const Dictionary &catalog,
         hash = fnv_mix(hash, &definition.version, sizeof(definition.version));
     }
     for (const TermDefinition &term : terms) hash = fnv_mix(hash, &term, sizeof(term));
+    uint64_t legacy_hash = 1469598103934665603ULL;
+    for (const StatDefinition &stat : stats) {
+        if (stat.key.rfind("country.tax.", 0) == 0) continue;
+        legacy_hash = fnv_string(legacy_hash, stat.key);
+        legacy_hash = fnv_mix(legacy_hash, &stat.domain, sizeof(stat.domain));
+        legacy_hash = fnv_mix(legacy_hash, &stat.min_value, sizeof(stat.min_value));
+        legacy_hash = fnv_mix(legacy_hash, &stat.max_value, sizeof(stat.max_value));
+    }
+    for (const Definition &definition : definitions) {
+        legacy_hash = fnv_string(legacy_hash, definition.key);
+        legacy_hash = fnv_mix(
+            legacy_hash, &definition.version, sizeof(definition.version));
+    }
+    for (const TermDefinition &term : terms)
+        legacy_hash = fnv_mix(legacy_hash, &term, sizeof(term));
 
     _stats = std::move(stats);
     _definitions = std::move(definitions);
@@ -259,6 +274,7 @@ bool ModifierRuntime::compile_catalog(const Dictionary &catalog,
     _stat_ids = std::move(stat_ids);
     _definition_ids = std::move(definition_ids);
     _catalog_hash = hash;
+    _legacy_catalog_hash_without_tax = legacy_hash;
     return true;
 }
 
@@ -885,6 +901,19 @@ double ModifierRuntime::effective_value(int32_t domain, const char *key,
     return effective_value(domain, stat_id(key), entity_handle, group_handle, base_value);
 }
 
+void ModifierRuntime::effective_values(int32_t domain, const int32_t *stat_ids,
+                                       uint64_t entity_handle,
+                                       const int8_t *base_values,
+                                       int8_t *out_values, size_t count) const {
+    if (stat_ids == nullptr || base_values == nullptr || out_values == nullptr) return;
+    for (size_t i = 0; i < count; ++i) {
+        const double value = effective_value(domain, stat_ids[i], entity_handle, 0,
+                                             base_values[i]);
+        const int32_t rounded = static_cast<int32_t>(std::round(value));
+        out_values[i] = static_cast<int8_t>(std::clamp(rounded, -100, 100));
+    }
+}
+
 float ModifierRuntime::climate_radiative_target(int32_t cell, float base_value) const {
     return static_cast<float>(effective_value(CLIMATE, "climate.cell.radiative_target",
         static_cast<uint64_t>(std::max(0, cell)), 0, base_value));
@@ -1469,7 +1498,8 @@ bool ModifierRuntime::serialize_domain(int32_t domain, std::vector<uint8_t> &out
 }
 
 bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> &bytes,
-                                     std::string &error) {
+                                     std::string &error,
+                                     bool allow_tax_catalog_extension) {
     if (!_configured || domain < 0 || domain >= DOMAIN_COUNT) {
         error = "modifier_restore_domain_invalid";
         return false;
@@ -1484,7 +1514,10 @@ bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> 
         !read_le(bytes, cursor, saved_day) || !read_le(bytes, cursor, snapshot_version) ||
         !read_le(bytes, cursor, count) || magic != SAVE_MAGIC ||
         version != SAVE_SCHEMA_VERSION || saved_domain != domain ||
-        saved_catalog != _catalog_hash || count > 10000000ULL) {
+        (saved_catalog != _catalog_hash &&
+         (!allow_tax_catalog_extension ||
+          saved_catalog != _legacy_catalog_hash_without_tax)) ||
+        count > 10000000ULL) {
         error = "modifier_restore_header_invalid";
         return false;
     }

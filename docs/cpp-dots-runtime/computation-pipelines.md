@@ -23,7 +23,7 @@ Gameplay 使用独立 identity/base SoA，查询时组合 Gameplay store；对�
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy PKEC v22 pipeline（当前）
+## Economy PKEC v23 pipeline（当前）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
@@ -47,8 +47,8 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 两阶段。`aggregate_publish` 的 closing audit 支持 FULL/PROBE/INCREMENTAL，并以
 generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量复核且以全量结果权威；
 200 日每日双审计零 mismatch 后，生产默认已切到 INCREMENTAL，每 25 日及 restore/异常边界
-仍执行完整复核。除 v22 明确保存的生产气候冻结值与建筑气候诊断外，列表、shadow、stamp 和
-运行期诊断均为 transient，不进入 PKEC v22/hash。
+仍执行完整复核。除 v23 明确保存的生产气候冻结值、建筑气候诊断、补贴权重与财政累计外，
+列表、shadow、stamp 和运行期诊断均为 transient，不进入 PKEC v23/hash。
 
 ## 状态总览
 
@@ -65,9 +65,9 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
-| CountryStore / territory / technology / treasury | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、`cell_country_slot`、领土 CSR、国家科技 bitset 和商品国库；仅 `cell.country_slot` 发布到 DataCore，PKCN v2 持久化。 |
+| CountryStore / territory / technology / treasury / tax policy | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、领土 CSR、国家科技、国库与五类税表；仅 `cell.country_slot` 发布到 DataCore，PKCN v4 持久化。 |
 | ModifierStore | C++ ACTIVE authority | `modifier_daily` | 四域隔离 SoA/bucket；不写 base，发布冻结 effective 聚合与 journal。 |
-| PopulationCohort / MarketStore | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家 epoch 与 N 日 need/bundle 清算、商人结算、价格和含国家资产的审计；按 cohort 预算错峰，截止日统一 publish，不复制国家状态进 cell slots。 |
+| PopulationCohort / MarketStore / fiscal escrow | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家税率、N 日 need/bundle 清算、源头扣缴与补贴托管；worker 写独占 cell lane，财政提交统一更新国库并发布 PKEC v23。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
@@ -168,10 +168,14 @@ GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.u
 `G/B=cell.index`、`A=landform`）、`vegetation`、`cover` 与
 `pixel_to_cell_index` 全部跟随 warp 后的硬 `cube_round` 主格，不再由
 Bayer 改派。pass 同时输出 RG8 副索引和 R8 主/副中心距离差，供渲染器按档位
-处理视觉过渡。桌面 MID/HIGH 对静态材质、战争迷雾和天气使用连续距离场；
-移动端使用 atlas-texel 8×8 Bayer DitherUV 在主/副视觉 cell 间二选一，以保留
-远景颗粒与单 LUT 采样成本。该移动 Dither 只存在于 shader consumer，不会改变
-权威 cell、CSR、交互或动态状态的归属；X 相位按 `wrap_period_x` 对齐到 8 texel
+处理视觉过渡。桌面地表把连续距离场与 atlas-texel 8×8 Bayer DitherUV 混合，
+但 Dither 只用于远景并在近景完全淡出；桌面战争迷雾和天气保持连续距离场。移动端使用
+DitherUV 在主/副视觉 cell 间二选一，以保留远景颗粒与单 LUT 采样成本，同样在最
+近景完全淡出，避免放大的 atlas texel 棋盘。Dither
+只存在于 shader consumer，不会改变权威 cell、CSR、交互或动态状态的归属。
+三套 8×8 Bayer consumer 都把原始 `[0,1]` rank 压缩到 `[0.18,0.82]`；
+边界处仍保持精确 50% 覆盖，但极低 rank 不会穿过大半个宽距离场形成单 texel
+长刺。X 相位按 `wrap_period_x` 对齐到 8 texel
 整数周期。`height`/`moisture` 仍走几何 barycentric，`height` 再叠 per-pixel
 relief（见下 “P0 relief”）。
 
@@ -297,22 +301,30 @@ On desktop, `world_map.gdshader` combines a 1--1.75 screen-pixel `fwidth()`
 inner AA band with a noise-modulated material ecotone. The R8 field saturates at a
 `0.90-hex` center-distance gap; the default width is `0.84`, producing a
 high-quality transition about `0.76 hex` wide across both sides. The static
-biome color/roughness/micro strength blend first; climate, vegetation, cover,
-snow and landform remain driven by the hard primary state and are not pulled
-back to an unsnowed static anchor at equal-biome boundaries. Dynamic LUT
-authority, topology and interaction remain primary-only. Desktop terrain also
-mixes a zoom-aware amount of map-anchored 8×8 DitherUV into the continuous
-distance-field weight: far view retains ordered coverage, while close view
-converges toward continuous material mixing. Water uses the same distance field
+biome color/roughness/micro strength blend first. A distance-field-gated
+DitherUV visual cell then supplies the complete static
+biome/vegetation/cover axes to later material stages, preventing climate gates,
+vegetation tint and cover overlays from redrawing the hard primary silhouette.
+Temperature, moisture, vitality, snow amount, landform, dynamic LUT authority,
+topology and interaction remain primary-only. Desktop terrain also mixes a
+zoom-aware amount of map-anchored 8×8 DitherUV into the continuous
+distance-field weight. Its raw Bayer rank is compressed from `[0,1]` to
+`[0.18,0.82]`, preserving 50% boundary coverage while preventing near-zero
+ranks from surviving most of the broad ecotone as elongated one-texel teeth.
+The far view retains stronger ordered coverage, while
+the close view converges completely to the continuous distance field. The same
+fade gates the visual biome/vegetation/cover selection so later material stages
+cannot retain enlarged Dither blocks. Water uses the same distance field
 as Dither probability on every platform and may select only another water cell
 for visual biome/cover input; ice fraction, temperature, current and all other
 dynamic state stay primary-owned, and water/land branch ownership never changes.
 The desktop water pipeline's existing continuous water-biome weights remain
 active, so the ocean combines both methods without a second full water render.
-On mobile,
-`world_map.gdshader`, `fog_of_war.gdshader` and `weather_overlay.gdshader` use
-the shared wrap-safe 8×8 DitherUV threshold to select one visual cell before the
-relevant LUT lookup. Desktop fog/weather retain continuous primary/secondary
+On mobile, `world_map.gdshader` uses the shared wrap-safe 8×8 DitherUV threshold
+to select one visual land cell before the relevant LUT lookup in distant and
+medium views, then fades that selection to zero before the closest view.
+`fog_of_war.gdshader` and `weather_overlay.gdshader` retain their mobile
+single-cell Dither path. Desktop fog/weather retain continuous primary/secondary
 mixing. All variants fall back to hard-primary sampling when edge textures are
 absent.
 `terrain_detail_tex` stores one continuous,

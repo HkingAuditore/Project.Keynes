@@ -5,6 +5,7 @@ const DEFAULT_PATH := "res://data/modifiers/default_modifier_catalog.tres"
 const StatDefinitionScript = preload("res://scripts/modifier/modifier_stat_definition.gd")
 const DefinitionScript = preload("res://scripts/modifier/modifier_definition.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 
 const TECHNOLOGY_STATS := [
 	["country.research.agriculture_efficiency", 0.0, 1.6],
@@ -51,6 +52,8 @@ func compile_native_catalog() -> Dictionary:
 		"term_values": PackedFloat64Array(),
 	}
 	var stat_ids := {}
+	var stat_domains_by_id := PackedInt32Array()
+	var stat_allowed_operations_by_id := PackedInt32Array()
 	for stat in stats:
 		if stat == null or stat.key == &"" or stat_ids.has(stat.key):
 			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
@@ -63,6 +66,8 @@ func compile_native_catalog() -> Dictionary:
 		out.stat_min_values.append(stat.min_value)
 		out.stat_max_values.append(stat.max_value)
 		out.stat_persistable.append(1 if stat.persistable else 0)
+		stat_domains_by_id.append(stat.domain)
+		stat_allowed_operations_by_id.append(stat.allowed_operations)
 	for row in TECHNOLOGY_STATS:
 		var key := StringName(row[0])
 		if stat_ids.has(key):
@@ -73,6 +78,32 @@ func compile_native_catalog() -> Dictionary:
 		out.stat_min_values.append(float(row[1]))
 		out.stat_max_values.append(float(row[2]))
 		out.stat_persistable.append(1)
+		stat_domains_by_id.append(1)
+		stat_allowed_operations_by_id.append(15)
+	var economy: Dictionary = EconomyCatalogScript.compile_native_catalog()
+	if not bool(economy.get("ok", false)):
+		return economy
+	var tax_stat_groups := [
+		["income", economy.profession_ids],
+		["consumption", economy.good_ids],
+		["business", economy.building_type_ids],
+		["import", economy.good_ids],
+		["export", economy.good_ids],
+	]
+	for group in tax_stat_groups:
+		for item_id in group[1]:
+			var tax_key := StringName("country.tax.%s.%s.rate_pct" % [
+				String(group[0]), String(item_id)])
+			if stat_ids.has(tax_key):
+				return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+			stat_ids[tax_key] = out.stat_keys.size()
+			out.stat_keys.append(String(tax_key))
+			out.stat_domains.append(1)
+			out.stat_min_values.append(-100.0)
+			out.stat_max_values.append(100.0)
+			out.stat_persistable.append(1)
+			stat_domains_by_id.append(1)
+			stat_allowed_operations_by_id.append(15)
 	var definition_keys := {}
 	for definition in definitions:
 		if definition == null or definition.key == &"" \
@@ -91,8 +122,10 @@ func compile_native_catalog() -> Dictionary:
 		for term in definition.terms:
 			if term == null or not stat_ids.has(term.stat_key) or not is_finite(term.value):
 				return {"ok": false, "reason": "modifier_term_invalid"}
-			var stat: Resource = stats[int(stat_ids[term.stat_key])]
-			if stat.domain != definition.domain or (stat.allowed_operations & (1 << term.operation)) == 0:
+			var term_stat_id := int(stat_ids[term.stat_key])
+			if stat_domains_by_id[term_stat_id] != definition.domain \
+					or (stat_allowed_operations_by_id[term_stat_id] \
+					& (1 << term.operation)) == 0:
 				return {"ok": false, "reason": "modifier_term_domain_or_operation_invalid"}
 			if term.operation == 3 and term.value == 0.0:
 				return {"ok": false, "reason": "modifier_term_division_by_zero"}

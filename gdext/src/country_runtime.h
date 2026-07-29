@@ -21,10 +21,20 @@ class ModifierRuntime;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 3;
+    static constexpr int32_t SCHEMA_VERSION = 4;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
+    static constexpr int8_t TAX_RATE_INHERIT = 127;
+
+    enum TaxKind : int32_t {
+        TAX_INCOME = 0,
+        TAX_CONSUMPTION = 1,
+        TAX_BUSINESS = 2,
+        TAX_IMPORT = 3,
+        TAX_EXPORT = 4,
+        TAX_KIND_COUNT = 5,
+    };
 
     enum CommandOpcode : int32_t {
         COMMAND_CREATE_COUNTRY = 1,
@@ -37,6 +47,9 @@ public:
         COMMAND_MOVE_RESEARCH = 8,
         COMMAND_SET_RESEARCH_BUDGET = 9,
         COMMAND_REVEAL_ALL_TECHNOLOGIES = 10,
+        COMMAND_SET_TAX_DEFAULT = 11,
+        COMMAND_SET_TAX_OVERRIDE = 12,
+        COMMAND_CLEAR_TAX_OVERRIDE = 13,
     };
 
     enum RuntimeMode : int32_t { MODE_OFF = 0, MODE_PROBE = 1, MODE_ACTIVE = 2 };
@@ -45,8 +58,17 @@ public:
         std::vector<int32_t> cell_country_slot;
         std::vector<uint64_t> country_handles;
         std::vector<uint64_t> country_technologies;
+        std::vector<int8_t> income_tax_rates;
+        std::vector<int8_t> consumption_tax_rates;
+        std::vector<int8_t> business_tax_rates;
+        std::vector<int8_t> import_tax_rates;
+        std::vector<int8_t> export_tax_rates;
         int32_t country_count = 0;
         int32_t technology_words = 0;
+        int32_t profession_count = 0;
+        int32_t good_count = 0;
+        int32_t building_type_count = 0;
+        uint64_t tax_policy_version = 0;
         uint64_t generation = 0;
         uint64_t state_hash = 0;
     };
@@ -66,8 +88,10 @@ public:
     godot::Dictionary country_snapshot(int64_t handle) const;
     godot::Dictionary treasury_snapshot(int64_t handle) const;
     godot::Dictionary research_snapshot(int64_t handle) const;
+    godot::Dictionary tax_policy_snapshot(int64_t handle) const;
     godot::PackedInt32Array cell_country_snapshot() const;
     int64_t state_hash() const;
+    int64_t state_hash_v3_compat() const;
     void mark_slot_publication(bool published, double publish_ms,
                                const godot::String &reason = {});
 
@@ -93,6 +117,9 @@ public:
     int64_t total_good(int32_t good_id) const;
     int64_t transfer_cash_to_cohort(int64_t country_handle, int64_t requested);
     int64_t transfer_cash_from_cohort(int64_t country_handle, int64_t offered);
+    int64_t reserve_fiscal_cash(int64_t country_handle, int64_t requested);
+    int64_t return_fiscal_cash(int64_t country_handle, int64_t offered);
+    int64_t collect_fiscal_cash(int64_t country_handle, int64_t offered);
     int64_t transfer_good_to_market(int64_t country_handle, int32_t good_id,
                                     int64_t requested);
     int64_t transfer_good_from_market(int64_t country_handle, int32_t good_id,
@@ -129,6 +156,9 @@ private:
         int32_t domain = -1;
         int32_t position = -1;
         int32_t weights_bp[4] = {0, 0, 0, 0};
+        int32_t tax_kind = -1;
+        int32_t tax_item = -1;
+        int32_t tax_rate_percent = 0;
         int64_t value = 0;
         std::string stable_id;
         std::string display_name;
@@ -207,6 +237,13 @@ private:
         bool stage_technologies = false;
         bool stage_goods = false;
         bool stage_research = false;
+        bool stage_tax = false;
+        std::vector<int8_t> tax_defaults;
+        std::vector<int8_t> income_tax_overrides;
+        std::vector<int8_t> consumption_tax_overrides;
+        std::vector<int8_t> business_tax_overrides;
+        std::vector<int8_t> import_tax_overrides;
+        std::vector<int8_t> export_tax_overrides;
         SparseCellDelta cell_delta;
         std::vector<int32_t> cell_delta_order;
         std::vector<int32_t> direct_cell_owners;
@@ -220,12 +257,20 @@ private:
     uint64_t make_handle(int32_t slot) const;
     int32_t append_country(const std::string &stable_id,
                            const std::string &display_name, int64_t cash);
+    int32_t tax_item_count(int32_t kind) const;
+    const std::vector<int8_t> *tax_override_vector(int32_t kind) const;
+    std::vector<int8_t> *tax_override_vector(int32_t kind);
+    static int8_t resolved_tax_rate(const std::vector<int8_t> &defaults,
+                                    const std::vector<int8_t> &overrides,
+                                    int32_t country_slot, int32_t kind,
+                                    int32_t item, int32_t item_count);
     void rebuild_cell_csr();
     void publish_report(const char *stage, int64_t day, double preflight_ms,
                         double apply_ms, double publish_ms, int32_t changed_cells,
                         int32_t changed_countries, bool published, const std::string &reason = {});
     void push_event(Event event);
     uint64_t catalog_hash() const;
+    uint64_t catalog_hash_v3() const;
     uint64_t compute_state_hash() const;
     bool encode_save(std::vector<uint8_t> &out, std::string &error) const;
     bool decode_save(const std::vector<uint8_t> &bytes, std::string &error);
@@ -254,6 +299,8 @@ private:
     int32_t _max_commands_per_slice = 65536;
 
     std::vector<std::string> _good_ids;
+    std::vector<std::string> _profession_ids;
+    std::vector<std::string> _building_type_ids;
     std::vector<std::string> _technology_ids;
     std::unordered_map<std::string, int32_t> _good_index;
     std::unordered_map<std::string, int32_t> _technology_index;
@@ -288,6 +335,13 @@ private:
     std::vector<int64_t> _country_research_consumed_total;
     std::vector<int64_t> _country_research_progress_total;
     std::vector<int64_t> _country_research_completed_total;
+    std::vector<int8_t> _country_tax_defaults;
+    std::vector<int8_t> _country_income_tax_overrides;
+    std::vector<int8_t> _country_consumption_tax_overrides;
+    std::vector<int8_t> _country_business_tax_overrides;
+    std::vector<int8_t> _country_import_tax_overrides;
+    std::vector<int8_t> _country_export_tax_overrides;
+    uint64_t _tax_policy_version = 0;
     int64_t _last_research_day = -1;
     std::vector<Command> _pending_commands;
     std::deque<Event> _events;

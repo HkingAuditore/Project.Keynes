@@ -25,6 +25,10 @@ func build(include_treasury: bool = false) -> Dictionary:
 		return _unavailable_model("玩家国家档案暂不可用")
 	var country_handle := int(summary.get("country_handle", 0))
 	var research: Dictionary = facade.research_snapshot(country_handle)
+	var tax_policy: Dictionary = facade.tax_policy_snapshot(country_handle) \
+		if facade.has_method("tax_policy_snapshot") else {}
+	var fiscal: Dictionary = facade.fiscal_snapshot(country_handle) \
+		if facade.has_method("fiscal_snapshot") else {}
 	var treasury := _treasury_model(facade, country_handle) if include_treasury \
 		else _unavailable_treasury("当前页面未请求国库明细")
 	var treasury_available := bool(treasury.get("available", false))
@@ -43,6 +47,9 @@ func build(include_treasury: bool = false) -> Dictionary:
 		"country_handle": country_handle,
 		"country_facade": facade,
 		"treasury": treasury,
+		"tax_policy": tax_policy,
+		"fiscal": fiscal,
+		"current_day": int(facade.report().get("last_committed_day", -1)),
 		"research": research,
 		"technology_definitions": TechnologyCatalogScript.public_definitions(),
 		"technology_eras": TechnologyCatalogScript.public_era_metadata(),

@@ -113,6 +113,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_country_treasury_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_research_snapshot", "handle"),
                          &DCWorldExt::get_country_research_snapshot);
+    ClassDB::bind_method(D_METHOD("get_country_tax_policy_snapshot", "handle"),
+                         &DCWorldExt::get_country_tax_policy_snapshot);
+    ClassDB::bind_method(D_METHOD("get_country_fiscal_snapshot", "handle"),
+                         &DCWorldExt::get_country_fiscal_snapshot);
     ClassDB::bind_method(D_METHOD("poll_country_events", "after_event_id", "limit"),
                          &DCWorldExt::poll_country_events, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("reset_country", "reason"),

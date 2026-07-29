@@ -1,6 +1,6 @@
-# Native Country Runtime（PKCN v3）
+# Native Country Runtime（PKCN v4）
 
-`NativeCountryRuntime` 是国家身份、领土、国家科技与国家国库的唯一可变权威。它与
+`NativeCountryRuntime` 是国家身份、领土、国家科技、税务政策与国家国库的唯一可变权威。它与
 `NativeEconomyRuntime` 同级，由 `DCWorldExt` 组合持有；GDScript 不维护第二份国家状态。
 
 ## 数据布局
@@ -11,6 +11,8 @@
 - 科技为 `country × technology` bitset；无主地没有科技。
 - 国库物资为 `country × good` 稠密 `i64` 矩阵。现金使用 `MONEY_SCALE=10000`，物资使用
   `GOODS_SCALE=1000`。
+- 税务政策为每国五个默认整数百分比及职业/物资/建筑 dense 覆盖矩阵，`127` 表示继承。
+  存档和 UI 只公开稀疏例外；经济快照直接复制已展开的连续税率数组。
 - 只有 `cell.country_slot` 进入 DataCore/MapData。名称、科技、国库与 CSR 不进入 HexCell、
   Godot Object 或逐格 component。
 - 视野迷雾与国界线**不属于本运行时**。它们只把 `cell.country_slot` 当只读输入：
@@ -30,8 +32,8 @@ CSR、元数据和分配器余量，也以 `<8MB` 为验收门槛。
 
 ## 命令与查询
 
-固定命令为 `CREATE_COUNTRY`、`RENAME_COUNTRY`、`TRANSFER_TERRITORY`、
-`GRANT_TECHNOLOGY`。命令按 `(effective_day, sequence, submit_order)` 确定性排序，先完整
+命令包括国家/领土/科研操作及 `SET_TAX_DEFAULT`、`SET_TAX_OVERRIDE`、
+`CLEAR_TAX_OVERRIDE`。命令按 `(effective_day, sequence, submit_order)` 确定性排序，先完整
 预检，再提交稀疏地块 delta。建国命令直接携带第一块领土，因此建国与领土获得原子完成；
 科技复制该地原所有国，来自无主地时使用起始科技。当前版本不提供删除国家、灭国或撤销科技。
 
@@ -46,6 +48,9 @@ GM 的“点击地块接管领土”不新增 opcode：`WorldRuntimeHost` 在会
   无主格（`country_slot == -1`）返回 `owned=false`，`country_name` 固定为 UTF-8「无主之地」。
 - `get_country_snapshot(handle)`：元数据、领土 CSR 切片和已解锁科技 stable IDs。
 - `get_country_treasury_snapshot(handle)`：现金及非零物资 stable IDs/数量。
+- `get_country_tax_policy_snapshot(handle)`：默认率、稀疏覆盖、基础/Modifier 后有效率、
+  政策版本和 economy catalog hash。
+- `get_country_fiscal_snapshot(handle)`：由 Economy Runtime 发布的五税种财政结果。
 - `poll_country_events(after_event_id, limit)`：已提交国家事件并行列。
 
 热循环不得使用 Dictionary、Object、字符串查找或循环内分配；这些只出现在配置、命令边界、

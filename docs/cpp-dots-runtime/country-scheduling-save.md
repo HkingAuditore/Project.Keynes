@@ -32,9 +32,15 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v3 / PKEC v22
+## PKCN v4 / PKEC v23
 
-当前 writer 只接受 PKCN v3 与 PKEC v22。PKCN v3 增加完整国家研究状态；PKEC v22 在
+当前 writer 写出 PKCN v4 与 PKEC v23。PKCN v4 在 v3 研究状态之上增加五类默认税率、
+按职业/物资/建筑的稀疏覆盖和税务政策版本；PKEC v23 增加 generation-safe 的逐 cell
+上批补贴申请、财政累计和确定性 hash。PKCN v3/PKEC v22 仅通过显式税务迁移恢复为
+全零税率、空覆盖和空补贴历史；新增 tax stat 的 Modifier catalog 扩展逐项校验，其他
+catalog mismatch 不放宽。恢复仍必须先 PKCN 后 PKEC。
+
+历史 PKCN v3 增加完整国家研究状态；PKEC v22 在
 v21 科技值采购累计基础上增加生产气候冻结与诊断字段。经济旧版本统一返回
 `legacy_climate_production_save_unsupported`，不再迁移为空 store。以下旧版段落仅保留历史背景；
 当前契约以[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)为准。

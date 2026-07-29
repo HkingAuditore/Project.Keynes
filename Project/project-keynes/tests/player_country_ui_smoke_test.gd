@@ -75,6 +75,28 @@ func _run() -> void:
 	_expect("economy workspace renders every nonzero treasury good",
 		economy != null and int(economy.call("visible_good_count")) \
 			== int(treasury.get("nonzero_good_count", -1)))
+	economy.call("select_page_for_test", "income")
+	var policy: Dictionary = model.get("tax_policy", {})
+	var profession_ids: PackedStringArray = policy.get(
+		"profession_ids", PackedStringArray())
+	var first_profession := String(profession_ids[0]) \
+		if not profession_ids.is_empty() else ""
+	var first_tax_row_id := int(economy.call(
+		"tax_row_instance_id", "income", first_profession))
+	_expect("income tax page renders default and profession rows",
+		bool(policy.get("ok", false)) and
+		int(economy.call("tax_row_count", "income")) ==
+			profession_ids.size() + 1 and first_tax_row_id != 0)
+	economy.call("select_page_for_test", "import")
+	_expect("tariff page is editable but marked pending foreign trade",
+		int(economy.call("tax_row_count", "import")) > 1 and
+		not String(economy.call("tax_status_text")).is_empty())
+	economy.call("select_page_for_test", "income")
+	economy.call("refresh_model", model)
+	_expect("daily tax refresh reuses cached row nodes",
+		int(economy.call("tax_row_instance_id", "income", first_profession)) ==
+			first_tax_row_id)
+	economy.call("select_page_for_test", "treasury")
 
 	var presented := CountryViewModel.present_treasury({
 		"ok": true,
