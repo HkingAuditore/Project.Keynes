@@ -1484,7 +1484,7 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		_save_restore_seed = seed_value
 		print("[save/restore] country configured without bootstrap; awaiting PKCN")
 		return
-	var country_packet := _build_player_country_packet() \
+	var country_packet := _build_gameplay_country_packet() \
 		if not _gameplay_start_context.is_empty() else {}
 	if not _gameplay_start_context.is_empty() and country_packet.is_empty():
 		_gameplay_start_report = {"ok": false, "code": "country_packet_failed",
@@ -1510,9 +1510,11 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	var test_bootstrap_report: Dictionary = {}
 	var starter_bootstrap_report: Dictionary = {}
 	if not _gameplay_start_context.is_empty():
-		starter_bootstrap_report = StarterSettlementBootstrapScript.build(
-			map, _economy_facade, int(_gameplay_start_context.get("cell", -1)),
-			String(_gameplay_start_context.get("precious_resource", "")))
+		var country_starts: Array[Dictionary] = []
+		for start in _gameplay_start_context.get("country_starts", []):
+			country_starts.append((start as Dictionary).duplicate(true))
+		starter_bootstrap_report = StarterSettlementBootstrapScript.build_many(
+			map, _economy_facade, country_starts)
 		if not bool(starter_bootstrap_report.get("ok", false)):
 			_gameplay_start_report = starter_bootstrap_report.duplicate(true)
 			_economy_facade = null
@@ -1570,6 +1572,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	if not _gameplay_start_context.is_empty():
 		_gameplay_start_report["country_count"] = int(country_bootstrapped.get("country_count", 0))
 		_gameplay_start_report["total_population"] = int(starter_bootstrap_report.get("total_population", 0))
+		_gameplay_start_report["settlement_count"] = int(
+			starter_bootstrap_report.get("settlement_count", 0))
 		_gameplay_start_report["settlement_source"] = String(starter_bootstrap_report.get("source", ""))
 	if _test_economy_bootstrap_enabled:
 		print(("[economy/test-bootstrap] scale_mode=%s populated_cells=%d population=%d cohorts=%d "
@@ -1752,12 +1756,14 @@ func gameplay_start_report() -> Dictionary:
 	return _gameplay_start_report.duplicate(true)
 
 
-func _build_player_country_packet() -> Dictionary:
+func _build_gameplay_country_packet() -> Dictionary:
 	if _country_facade == null or _gameplay_start_context.is_empty():
 		return {}
 	var config: Dictionary = _gameplay_start_context.get("config", {})
-	var country_config: Dictionary = config.get("country", {})
 	var research_config: Dictionary = config.get("research", {})
+	var country_starts: Array = _gameplay_start_context.get("country_starts", [])
+	if country_starts.is_empty():
+		return {}
 	var catalog: Dictionary = _country_facade.native_catalog()
 	var technology_ids: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
 	var starting_ids := PackedStringArray([
@@ -1768,24 +1774,56 @@ func _build_player_country_packet() -> Dictionary:
 		if technology_index < 0:
 			return {}
 		technology_indices.append(technology_index)
+	var country_ids := PackedStringArray()
+	var country_names := PackedStringArray()
+	var country_cash := PackedInt64Array()
+	var territory_offsets := PackedInt32Array([0])
+	var territory_cells := PackedInt32Array()
+	var technology_offsets := PackedInt32Array([0])
+	var all_technology_indices := PackedInt32Array()
+	var treasury_offsets := PackedInt32Array([0])
+	var research_weights := PackedInt32Array()
+	var research_budgets := PackedInt64Array()
+	var research_auto_purchase := PackedByteArray()
+	var configured_weights: PackedInt32Array = research_config.get(
+		"domain_weights_bp", PackedInt32Array([2500, 2500, 2500, 2500]))
+	for start_value in country_starts:
+		var start: Dictionary = start_value
+		var country_id := String(start.get("country_id", ""))
+		var country_name := String(start.get("country_name", "")).strip_edges()
+		var cell := int(start.get("cell", -1))
+		if country_id.is_empty() or country_name.is_empty() or cell < 0:
+			return {}
+		country_ids.append(country_id)
+		country_names.append(country_name)
+		country_cash.append(int(research_config.get(
+			"starting_country_cash", 2500000000000)))
+		territory_cells.append(cell)
+		territory_offsets.append(territory_cells.size())
+		for technology_index in technology_indices:
+			all_technology_indices.append(technology_index)
+		technology_offsets.append(all_technology_indices.size())
+		treasury_offsets.append(0)
+		for weight in configured_weights:
+			research_weights.append(weight)
+		research_budgets.append(int(research_config.get(
+			"procurement_budget_per_day", 10000000)))
+		research_auto_purchase.append(
+			1 if bool(research_config.get("auto_purchase_enabled", true)) else 0)
 	return {
-		"country_ids": PackedStringArray(["country.player"]),
-		"country_names": PackedStringArray([String(country_config.get("name", "新国家"))]),
-		"country_cash": PackedInt64Array([
-			int(research_config.get("starting_country_cash", 2500000000000))]),
-		"territory_offsets": PackedInt32Array([0, 1]),
-		"territory_cells": PackedInt32Array([int(_gameplay_start_context.get("cell", -1))]),
-		"technology_offsets": PackedInt32Array([0, technology_indices.size()]),
-		"technology_indices": technology_indices,
-		"treasury_offsets": PackedInt32Array([0, 0]),
+		"country_ids": country_ids,
+		"country_names": country_names,
+		"country_cash": country_cash,
+		"territory_offsets": territory_offsets,
+		"territory_cells": territory_cells,
+		"technology_offsets": technology_offsets,
+		"technology_indices": all_technology_indices,
+		"treasury_offsets": treasury_offsets,
 		"treasury_good_indices": PackedInt32Array(),
 		"treasury_quantities": PackedInt64Array(),
-		"research_weights_bp": research_config.get("domain_weights_bp",
-			PackedInt32Array([2500, 2500, 2500, 2500])),
-		"research_daily_budgets": PackedInt64Array([
-			int(research_config.get("procurement_budget_per_day", 10000000))]),
-		"research_auto_purchase": PackedByteArray([
-			1 if bool(research_config.get("auto_purchase_enabled", true)) else 0]),
+		"research_weights_bp": research_weights,
+		"research_daily_budgets": research_budgets,
+		"research_auto_purchase": research_auto_purchase,
 	}
 
 
@@ -2126,7 +2164,13 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_bootstrap_natural_resource_deposits(map, cfg)
 	_publish_bootstrapped_natural_resources_to_runtime(map)
 	if not _gameplay_start_context.is_empty():
-		_gameplay_start_report = StartLocationPolicyScript.select_and_prepare(map, int(cfg.seed))
+		var gameplay_config: Dictionary = _gameplay_start_context.get("config", {})
+		var country_config: Dictionary = gameplay_config.get("country", {})
+		_gameplay_start_report = StartLocationPolicyScript.select_and_prepare(
+			map,
+			int(cfg.seed),
+			int(country_config.get("foreign_count", NewGameConfig.DEFAULT_FOREIGN_COUNT)),
+			String(country_config.get("name", "新国家")))
 		if not bool(_gameplay_start_report.get("ok", false)):
 			return
 		_gameplay_start_context.merge(_gameplay_start_report, true)

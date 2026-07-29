@@ -56,13 +56,17 @@ identifies the domestic importer/exporter and the relevant domestic merchant buy
 - Keep Modifier targets country handles. Do not add composite country-item entities.
 - Generate tax stat keys from the same sorted economy catalog used by policy arrays.
 - Quantize Modifier-effective rates half away from zero, then clamp.
-- Compute `floor(base * abs(rate) / 100)` with saturating fixed-point helpers.
+- Compute `floor(base * abs(rate) / 100)` with saturating fixed-point helpers. For negative income
+  rates only, aggregate cohort taxable income and floor its base at the frozen local
+  `survival_household` living cost times population and epoch days.
 - Withhold positive tax at the source. Never depend on a later payer cash balance.
 - Exclude transfers, minting, capital principal, tax subsidies, and losses from income tax bases.
 - Deduct positive business tax from owner operating income; never tax a business subsidy again.
 - Tax household consumption only, not building inputs, government procurement, or domestic
   merchant relocation.
-- Keep subsidies treasury-capped. First negative-rate batch with no history pays zero.
+- Keep subsidies treasury-capped. First consumption/business negative-rate batch with no history
+  pays zero; a negative income lane may seed its first reservation from the current frozen
+  minimum-living request.
 - Reserve subsidy cash before research procurement; collect current positive taxes only for the
   next batch.
 - Keep one worker per cell/lane with no shared treasury writes, locks, atomics, Godot calls,
@@ -92,7 +96,8 @@ identifies the domestic importer/exporter and the relevant domestic merchant buy
 - Owner mobility uses expected after-tax operating income.
 - Investment gates use after-tax revenue, margin, payback, and owner income improvement.
 - Negative taxes enter predictions only at the fulfillment ratio supported by the previous request
-  and current reserved budget. Never value a first-batch subsidy as guaranteed.
+  or the income lane's current minimum-living reservation weight and current reserved budget.
+  Never value an unfunded subsidy as guaranteed.
 - Realized building lifecycle margin uses actual after-business-tax producer receipts.
 
 When a formula changes, search both settlement and prediction paths. A tax that changes cash but
@@ -125,7 +130,8 @@ Verify:
 
 - all five default/override lanes and `±100%`;
 - income, consumption, and business bases and cashflows;
-- first-batch subsidy delay, proportional reservation, unused return, nonnegative treasury;
+- consumption/business first-batch delay, immediate funded income-floor reservation,
+  proportional allocation, unused return, nonnegative treasury;
 - worker/scalar, continuation, save/restore, and replay hash equality;
 - tariff configuration round-trip with zero domestic events;
 - UI unlock-filtered card grid with localized profile display names and catalog icons,

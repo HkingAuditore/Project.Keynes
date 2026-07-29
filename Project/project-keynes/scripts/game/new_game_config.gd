@@ -1,16 +1,23 @@
 class_name NewGameConfig
 extends RefCounted
 
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
+const LEGACY_SCHEMA_VERSION := 2
 const MIN_SEED := 1
 const MAX_SEED := 2147483647
+const MIN_FOREIGN_COUNT := 0
+const MAX_FOREIGN_COUNT := 12
+const DEFAULT_FOREIGN_COUNT := 5
 const SIZE_PRESETS := {
 	"small": Vector2i(40, 28),
 	"standard": Vector2i(60, 40),
 	"large": Vector2i(100, 64),
 }
 
-var country: Dictionary = {"name": "新国家"}
+var country: Dictionary = {
+	"name": "新国家",
+	"foreign_count": DEFAULT_FOREIGN_COUNT,
+}
 var base: Dictionary = {
 	"map_width": 60,
 	"map_height": 40,
@@ -53,6 +60,11 @@ func validate() -> Dictionary:
 		if codepoint < 32 or codepoint == 127:
 			return _error("country_name_control_character", "国家名称不能包含控制字符。")
 	country.name = normalized_name
+	var foreign_count := int(country.get("foreign_count", DEFAULT_FOREIGN_COUNT))
+	if foreign_count < MIN_FOREIGN_COUNT or foreign_count > MAX_FOREIGN_COUNT:
+		return _error("foreign_count_out_of_range",
+			"外国数量必须在 %d 到 %d 之间。" % [MIN_FOREIGN_COUNT, MAX_FOREIGN_COUNT])
+	country.foreign_count = foreign_count
 
 	var seed := int(base.get("initial_seed", 0))
 	if seed < MIN_SEED or seed > MAX_SEED:
@@ -122,10 +134,13 @@ static func derive_climate(controls: Dictionary) -> Dictionary:
 static func from_dictionary(value: Dictionary) -> Dictionary:
 	if String(value.get("schema", "")) != "NewGameConfig":
 		return _error("config_schema_invalid", "新游戏配置格式无效。")
-	if int(value.get("version", -1)) != SCHEMA_VERSION:
+	var source_version := int(value.get("version", -1))
+	if source_version != SCHEMA_VERSION and source_version != LEGACY_SCHEMA_VERSION:
 		return _error("config_version_incompatible", "新游戏配置版本不兼容。")
 	var config := NewGameConfig.new()
 	config.country = (value.get("country", {}) as Dictionary).duplicate(true)
+	if source_version == LEGACY_SCHEMA_VERSION:
+		config.country.foreign_count = 0
 	config.base = (value.get("base", {}) as Dictionary).duplicate(true)
 	config.world_controls = (value.get("world_controls", {}) as Dictionary).duplicate(true)
 	config.climate = (value.get("climate", {}) as Dictionary).duplicate(true)
@@ -133,7 +148,13 @@ static func from_dictionary(value: Dictionary) -> Dictionary:
 	var validation := config.validate()
 	if not bool(validation.get("ok", false)):
 		return validation
-	return {"ok": true, "code": "ok", "message": "", "config": config}
+	return {
+		"ok": true,
+		"code": "ok",
+		"message": "",
+		"config": config,
+		"migrated_from_version": source_version if source_version != SCHEMA_VERSION else 0,
+	}
 
 
 static func _error(code: String, message: String) -> Dictionary:

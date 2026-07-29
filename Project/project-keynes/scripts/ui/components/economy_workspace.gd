@@ -18,6 +18,10 @@ const CARD_SIZE := Vector2(240.0, 0.0)
 const HOVER_TINT := Color(1.10, 1.08, 1.03, 1.0)
 const ENTRANCE_STAGGER := 0.022
 const ENTRANCE_MAX_DELAY := 0.30
+# The simulation can advance dozens of days per real second. Summary cards are
+# reading instruments, so coalesce those bursts while retaining the newest
+# authoritative snapshot for the trailing refresh.
+const LIVE_REFRESH_INTERVAL_MSEC := 200
 
 var _cash_card: MetricCard
 var _tax_card: MetricCard
@@ -37,12 +41,17 @@ var _rows: Dictionary = {}
 var _model: Dictionary = {}
 var _page := "treasury"
 var _pending: Dictionary = {}
+var _preview_defaults: Dictionary = {}
 var _sequence := 1
+var _refresh_dirty := false
+var _has_rendered_model := false
+var _last_render_msec := 0
 
 
 func _ready() -> void:
 	if _cash_card != null:
 		return
+	set_process(false)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var column := VBoxContainer.new()
 	column.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -156,24 +165,55 @@ func _make_chip(label: String) -> Button:
 
 
 func set_model(model: Dictionary) -> void:
-	refresh_model(model)
+	if _cash_card == null:
+		_ready()
+	_preview_defaults.clear()
+	_model = model
+	# Opening/switching to the workspace must paint immediately. Only repeated
+	# live-tick patches are coalesced.
+	_apply_model(Time.get_ticks_msec())
 
 
 func refresh_model(model: Dictionary) -> void:
 	if _cash_card == null:
 		_ready()
 	_model = model
-	var treasury: Dictionary = model.get("treasury", {})
-	var fiscal: Dictionary = model.get("fiscal", {})
+	var now := Time.get_ticks_msec()
+	var live_day := int(model.get("current_day", -1))
+	if _has_rendered_model and live_day >= 0 \
+			and now - _last_render_msec < LIVE_REFRESH_INTERVAL_MSEC:
+		_refresh_dirty = true
+		set_process(true)
+		return
+	_apply_model(now)
+
+
+func _process(_delta: float) -> void:
+	if not _refresh_dirty:
+		set_process(false)
+		return
+	var now := Time.get_ticks_msec()
+	if now - _last_render_msec < LIVE_REFRESH_INTERVAL_MSEC:
+		return
+	_apply_model(now)
+
+
+func _apply_model(now_msec: int) -> void:
+	_refresh_dirty = false
+	_has_rendered_model = true
+	_last_render_msec = now_msec
+	set_process(false)
+	var treasury: Dictionary = _model.get("treasury", {})
+	var fiscal: Dictionary = _model.get("fiscal", {})
 	_resolve_pending_commands()
-	var available := bool(model.get("available", false))
+	var available := bool(_model.get("available", false))
 	var collected := _sum_i64(fiscal.get("collected", PackedInt64Array()))
 	var subsidy := _sum_i64(fiscal.get("subsidy_paid", PackedInt64Array()))
 	var requested := _sum_i64(fiscal.get("subsidy_requested", PackedInt64Array()))
 	var fulfillment := 1.0 if requested <= 0 else float(subsidy) / float(requested)
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
-		String(model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury")
+		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury")
 	_tax_card.set_data("上批税收", _money(collected), "所得税 / 消费税 / 营业税",
 		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
 	_subsidy_card.set_data("补贴实付", _money(subsidy), "由财政预留支付",
@@ -181,8 +221,8 @@ func refresh_model(model: Dictionary) -> void:
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
 		"首次启用时预算建立中" if requested > 0 and subsidy == 0 else "上批申请",
 		UITokens.ACCENT, "", "tax.default")
-	_country_label.text = String(model.get("country_name", ""))
-	var day := int(model.get("current_day", -1))
+	_country_label.text = String(_model.get("country_name", ""))
+	var day := int(_model.get("current_day", -1))
 	_day_label.text = "第 %d 天" % (day + 1) if day >= 0 else ""
 	_day_label.visible = day >= 0
 	_refresh_tabs()
@@ -398,6 +438,7 @@ func _ensure_card(page: String, item_id: String, label: String,
 			_on_rate_confirmed.bind(key, kind))
 		spin.get_line_edit().focus_exited.connect(
 			_on_rate_focus_exited.bind(key, kind))
+		spin.value_changed.connect(_on_rate_preview.bind(key, kind))
 		kind_row.add_child(spin)
 		spins[kind] = spin
 		var reset := Button.new()
@@ -411,6 +452,7 @@ func _ensure_card(page: String, item_id: String, label: String,
 		var clock_badge := IconBadge.new()
 		clock_badge.custom_minimum_size = Vector2(18.0, 20.0)
 		clock_badge.visible = false
+		clock_badge.tooltip_text = "命令已确认，将于下一日生效"
 		clock_badge.set_semantic(&"system.clock", UITokens.BRASS_HIGHLIGHT)
 		kind_row.add_child(clock_badge)
 		pendings[kind] = clock_badge
@@ -430,10 +472,14 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 	var signature_parts: Array[String] = []
 	for kind in card.kinds:
 		var data: Dictionary = kind_data.get(kind, {})
-		signature_parts.append("%d:%d:%d:%d" % [
-			int(data.get("base", 0)),
+		var base := int(data.get("base", 0))
+		var overridden := bool(data.get("has_override", false))
+		var visual_rate := _visual_rate(card, kind, base, overridden)
+		signature_parts.append("%d:%d:%d:%d:%d" % [
+			base,
+			visual_rate,
 			int(data.get("effective", data.get("base", 0))),
-			1 if bool(data.get("has_override", false)) else 0,
+			1 if overridden else 0,
 			1 if _pending.has("%s:%s" % [kind, String(card.item_id)]) else 0,
 		])
 	var signature := "|".join(signature_parts)
@@ -451,23 +497,37 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 		var base := int(data.get("base", 0))
 		var effective := int(data.get("effective", base))
 		var overridden := bool(data.get("has_override", false))
+		var visual_rate := _visual_rate(card, kind, base, overridden)
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
 		var line_edit := spin.get_line_edit()
 		# Never overwrite the field the player is editing; _confirm_spin reads
 		# the authoritative value back on focus loss / Enter.
 		if not line_edit.has_focus():
-			spin.set_value_no_signal(base)
+			spin.set_value_no_signal(visual_rate)
 			line_edit.add_theme_color_override("font_color",
-				UITokens.BRASS_HIGHLIGHT if overridden else UITokens.TEXT_MUTED)
+				UITokens.BRASS_HIGHLIGHT \
+					if overridden or visual_rate != base else UITokens.TEXT_MUTED)
 		((card.resets as Dictionary)[kind] as Button).visible = overridden
 		(card.overridden as Dictionary)[kind] = overridden
 		(card.rates as Dictionary)[kind] = base
 		if (card.kinds as Array).size() == 1 and not bool(card.is_default):
 			var sub := card.sub as Label
-			sub.visible = effective != base
-			if effective != base:
+			sub.visible = visual_rate == base and effective != base
+			if sub.visible:
 				sub.text = "修正后 %d%%" % effective
 	_refresh_override_frame(card)
+
+
+func _visual_rate(card: Dictionary, kind: String, authoritative_rate: int,
+		overridden: bool) -> int:
+	if bool(card.is_default) or not overridden:
+		if _preview_defaults.has(kind):
+			return int(_preview_defaults[kind])
+		var pending_default: Dictionary = _pending.get(
+			"%s:__default__" % kind, {})
+		if pending_default.has("rate"):
+			return int(pending_default.rate)
+	return authoritative_rate
 
 
 func _apply_card_frame(card: Dictionary, highlighted: bool) -> void:
@@ -546,6 +606,21 @@ func _on_rate_focus_exited(key: String, kind: String) -> void:
 	_confirm_spin(key, kind)
 
 
+func _on_rate_preview(value: float, key: String, kind: String) -> void:
+	var card: Dictionary = _rows.get(key, {})
+	if card.is_empty() or not bool(card.is_default):
+		return
+	var rate := clampi(int(value), -100, 100)
+	var authoritative := int((card.rates as Dictionary).get(kind, 0))
+	if rate == authoritative and not _has_pending_default(kind):
+		_preview_defaults.erase(kind)
+	else:
+		_preview_defaults[kind] = rate
+	# Preview changes only presentation. The command remains confirmed on
+	# Enter/focus loss and retains its next-day authoritative boundary.
+	_refresh_page()
+
+
 # Typing a rate is the override: a value equal to the inherited default clears
 # the override instead, so no separate override toggle exists anywhere.
 func _confirm_spin(key: String, kind: String) -> void:
@@ -557,8 +632,13 @@ func _confirm_spin(key: String, kind: String) -> void:
 	var current := int((card.rates as Dictionary).get(kind, 0))
 	var overridden := bool((card.overridden as Dictionary).get(kind, false))
 	if bool(card.is_default):
-		if rate != current:
+		if rate != current or _preview_defaults.has(kind):
 			_submit_rate(kind, String(card.item_id), rate, true)
+		else:
+			_preview_defaults.erase(kind)
+			_refresh_page()
+		return
+	if not overridden and rate == _default_rate(kind):
 		return
 	if rate == current and not overridden:
 		return
@@ -570,6 +650,11 @@ func _confirm_spin(key: String, kind: String) -> void:
 
 
 func _default_rate(kind: String) -> int:
+	if _preview_defaults.has(kind):
+		return int(_preview_defaults[kind])
+	var pending_default: Dictionary = _pending.get("%s:__default__" % kind, {})
+	if pending_default.has("rate"):
+		return int(pending_default.rate)
 	var policy: Dictionary = _model.get("tax_policy", {})
 	var defaults: PackedInt32Array = policy.get("default_rates", PackedInt32Array())
 	var kind_id := int(TAX_KIND[kind])
@@ -619,7 +704,9 @@ func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) ->
 		result = facade.set_tax_override(handle, int(TAX_KIND[kind]),
 			StringName(item_id), rate, _effective_day(), _next_sequence())
 	if bool(result.get("ok", false)):
-		_mark_pending(kind, item_id)
+		if is_default:
+			_preview_defaults.erase(kind)
+		_mark_pending(kind, item_id, rate if is_default else 0)
 		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 		if not card.is_empty():
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
@@ -631,7 +718,17 @@ func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) ->
 				(card.overridden as Dictionary)[kind] = true
 				((card.resets as Dictionary)[kind] as Button).visible = true
 			_refresh_override_frame(card)
+		if is_default:
+			_refresh_page()
 	else:
+		if is_default:
+			_preview_defaults.erase(kind)
+			var card: Dictionary = _rows.get(
+				"%s:__default__" % _kind_page(kind), {})
+			if not card.is_empty():
+				((card.spins as Dictionary)[kind] as SpinBox).set_value_no_signal(
+					int((card.rates as Dictionary).get(kind, 0)))
+			_refresh_page()
 		_set_status(String(result.get("reason", "税率命令提交失败")))
 
 
@@ -645,16 +742,23 @@ func _refresh_override_frame(card: Dictionary) -> void:
 	_apply_card_frame(card, any_override)
 
 
-func _mark_pending(kind: String, item_id: String) -> void:
+func _mark_pending(kind: String, item_id: String,
+		optimistic_rate: int = 0) -> void:
 	var key := "%s:%s" % [kind, item_id]
 	var policy: Dictionary = _model.get("tax_policy", {})
 	_pending[key] = {
 		"effective_day": _effective_day(),
 		"policy_version": int(policy.get("policy_version", -1)),
 	}
+	if item_id == "__default__":
+		(_pending[key] as Dictionary)["rate"] = optimistic_rate
 	var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 	if not card.is_empty():
 		((card.pendings as Dictionary)[kind] as Control).visible = true
+
+
+func _has_pending_default(kind: String) -> bool:
+	return _pending.has("%s:__default__" % kind)
 
 
 func _resolve_pending_commands() -> void:
@@ -808,6 +912,13 @@ func cash_text() -> String:
 	return value_label.text if value_label != null else ""
 
 
+func tax_text() -> String:
+	if _tax_card == null:
+		return ""
+	var value_label := _tax_card.get("_value_label") as Label
+	return value_label.text if value_label != null else ""
+
+
 func visible_good_count() -> int:
 	var count := 0
 	for row_value in _rows.values():
@@ -850,6 +961,28 @@ func tax_row_instance_id(page: String, item_id: String) -> int:
 func tax_row_name_text(page: String, item_id: String) -> String:
 	var card: Dictionary = _rows.get("%s:%s" % [page, item_id], {})
 	return (card.name as Label).text if not card.is_empty() else ""
+
+
+func tax_row_rate(page: String, item_id: String, kind: String) -> int:
+	var card: Dictionary = _rows.get("%s:%s" % [page, item_id], {})
+	if card.is_empty() or not (card.spins as Dictionary).has(kind):
+		return 0
+	return int(((card.spins as Dictionary)[kind] as SpinBox).value)
+
+
+func preview_default_rate_for_test(page: String, kind: String, rate: int) -> void:
+	var card: Dictionary = _rows.get("%s:__default__" % page, {})
+	if not card.is_empty() and (card.spins as Dictionary).has(kind):
+		((card.spins as Dictionary)[kind] as SpinBox).value = rate
+
+
+func confirm_default_rate_for_test(page: String, kind: String) -> void:
+	_confirm_spin("%s:__default__" % page, kind)
+
+
+func pending_default_rate_for_test(kind: String) -> int:
+	var pending: Dictionary = _pending.get("%s:__default__" % kind, {})
+	return int(pending.get("rate", 1000))
 
 
 func tax_status_text() -> String:

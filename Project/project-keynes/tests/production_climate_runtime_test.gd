@@ -188,8 +188,8 @@ func _test_worker_scalar_and_save(catalog: Dictionary) -> void:
 		int(scalar.ext.get_economy_state_hash()) == int(
 			worker.ext.get_economy_state_hash()))
 	var saved := _save_economy(worker.ext)
-	_expect("PKEC v23 climate save streams at a committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 23)
+	_expect("PKEC v24 climate save streams at a committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 24)
 	if not bool(saved.get("ok", false)):
 		return
 	var restored := _configured_runtime(catalog, CELL_COUNT, 4403, false)

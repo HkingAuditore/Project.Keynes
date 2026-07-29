@@ -418,7 +418,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v23 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 23)
+	_expect("building v24 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 24)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -2742,9 +2742,9 @@ func _test_producer_support_issuance(source_catalog: Dictionary,
 	_expect("support issuance is a distinct producer cashflow",
 		_cashflow_has_source(pop, owner_row, "producer_support_issuance", true))
 	_expect("support issuance is explicitly audited",
-		int(report.get("approximation_version", 0)) == 17 and
+		int(report.get("approximation_version", 0)) == 18 and
 		str(report.get("approximation_model", "")) ==
-			"rolling_cell_settlement_v17_anytime" and
+			"rolling_cell_settlement_v18_income_floor" and
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)

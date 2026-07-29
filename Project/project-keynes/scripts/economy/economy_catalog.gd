@@ -10,6 +10,7 @@ const BUILDING_DIR := "res://data/economy/buildings"
 const PRODUCTION_CLIMATE_DIR := "res://data/economy/production_climates"
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const DEFAULT_SETTLEMENT_PROFILE_PATH := "res://data/economy/default_settlement.tres"
 const Q16_ONE := 65536
 ## Reserved profession that represents unemployed population buckets. It is a
 ## legal signature profession (one signature per ethnicity is auto-generated),
@@ -378,6 +379,15 @@ static func compile_native_catalog() -> Dictionary:
 	catalog_v10["market_catalog_compat_hash_v6"] = _catalog_hash(market_v10_v6_columns)
 	catalog["catalog_compat_hash_v10"] = _catalog_hash(catalog_v10)
 	catalog["catalog_hash"] = _catalog_hash(catalog)
+	var settlement_profile = load(DEFAULT_SETTLEMENT_PROFILE_PATH)
+	if settlement_profile == null or not settlement_profile.has_method("compile_native_columns"):
+		return {"ok": false, "reason": "default settlement profile is unavailable"}
+	var settlement_columns: Dictionary = settlement_profile.compile_native_columns()
+	if not bool(settlement_columns.get("ok", false)):
+		return settlement_columns
+	for key in settlement_columns:
+		if key != "ok":
+			catalog[key] = settlement_columns[key]
 	catalog["ok"] = true
 	return catalog
 

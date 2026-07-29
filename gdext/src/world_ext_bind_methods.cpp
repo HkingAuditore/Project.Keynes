@@ -188,6 +188,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_economy_report);
     ClassDB::bind_method(D_METHOD("get_population_cell_summary", "cell_idx"),
                          &DCWorldExt::get_population_cell_summary);
+    ClassDB::bind_method(D_METHOD("get_named_settlement_snapshot"),
+                         &DCWorldExt::get_named_settlement_snapshot);
+    ClassDB::bind_method(D_METHOD("get_settlement_delta", "since_revision"),
+                         &DCWorldExt::get_settlement_delta);
     ClassDB::bind_method(D_METHOD("get_population_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_population_cell_snapshot);
     ClassDB::bind_method(D_METHOD("get_market_cell_snapshot", "cell_idx"),

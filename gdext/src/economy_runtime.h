@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <numeric>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -24,7 +25,7 @@ class ModifierRuntime;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 23;
+    static constexpr int32_t SCHEMA_VERSION = 24;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -97,6 +98,8 @@ public:
     bool should_run(int64_t day_index) const;
     godot::Dictionary report() const;
     godot::Dictionary population_cell_summary(int32_t cell_idx) const;
+    godot::Dictionary named_settlement_snapshot() const;
+    godot::Dictionary settlement_delta(int64_t since_revision) const;
     godot::Dictionary population_cell_snapshot(int32_t cell_idx) const;
     godot::Dictionary population_cell_snapshot(int32_t cell_idx,
                                                 float temperature,
@@ -577,6 +580,45 @@ private:
                     if (active[slot] != 0) fn(slot);
                 }
             }
+        }
+    };
+
+    struct SettlementChange {
+        int32_t cell = -1;
+        uint8_t tier = 0;
+        uint8_t name_active = 0;
+    };
+
+    struct SettlementRevision {
+        int64_t revision = 0;
+        std::vector<SettlementChange> changes;
+    };
+
+    struct SettlementStore {
+        std::vector<uint8_t> tier;
+        std::vector<uint8_t> name_active;
+        std::vector<uint32_t> prosperity_generation;
+        std::vector<uint32_t> name_roll_generation;
+        std::vector<int32_t> prefix;
+        std::vector<int32_t> root;
+        std::vector<int32_t> suffix;
+        std::vector<uint32_t> disambiguator;
+        std::unordered_map<std::string, int32_t> active_names;
+        std::deque<SettlementRevision> revisions;
+        int64_t revision = 0;
+
+        void clear(int32_t cells) {
+            tier.assign(cells, 0);
+            name_active.assign(cells, 0);
+            prosperity_generation.assign(cells, 0);
+            name_roll_generation.assign(cells, 0);
+            prefix.assign(cells, -1);
+            root.assign(cells, -1);
+            suffix.assign(cells, -1);
+            disambiguator.assign(cells, 0);
+            active_names.clear();
+            revisions.clear();
+            revision = 0;
         }
     };
 
@@ -1418,6 +1460,7 @@ private:
         int32_t trade_order_cursor = 0;
         int32_t trade_flow_cursor = 0;
         int32_t fiscal_cursor = 0;
+        int32_t settlement_cursor = 0;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
         bool end_emitted = false;
@@ -1458,6 +1501,7 @@ private:
         std::vector<uint8_t> modifier_bytes;
         bool modifier_seen = false;
         bool fiscal_seen = false;
+        bool settlement_names_seen = false;
     };
 
     struct EventArchiveState {
@@ -1979,6 +2023,7 @@ private:
     AuditTotals _closing_totals;
     AuditTotals _publish_accum;
     PopulationStore _population;
+    SettlementStore _settlements;
     MarketStore _market;
     MarketSignalStore _market_signals;
     MarketSignalStore _market_signals_rebuild_scratch;
@@ -2231,6 +2276,36 @@ private:
     uint32_t _staging_current_generation = 0;
     std::vector<int32_t> _structural_touched_cells;
     std::vector<int32_t> _population_changed_cells;
+    std::vector<int64_t> _prosperity_thresholds;
+    std::vector<std::string> _prosperity_ids;
+    std::vector<std::string> _prosperity_names;
+    std::vector<std::string> _settlement_prefix_ids;
+    std::vector<std::string> _settlement_prefix_text;
+    std::vector<int32_t> _settlement_prefix_weights;
+    std::vector<std::string> _settlement_prefix_alias_ids;
+    std::vector<std::string> _settlement_prefix_alias_targets;
+    std::vector<std::string> _settlement_root_ids;
+    std::vector<std::string> _settlement_root_text;
+    std::vector<int32_t> _settlement_root_weights;
+    std::vector<std::string> _settlement_root_alias_ids;
+    std::vector<std::string> _settlement_root_alias_targets;
+    std::vector<std::string> _settlement_suffix_ids;
+    std::vector<std::string> _settlement_suffix_text;
+    std::vector<int32_t> _settlement_suffix_weights;
+    std::vector<std::string> _settlement_suffix_alias_ids;
+    std::vector<std::string> _settlement_suffix_alias_targets;
+    std::string _settlement_name_pack_id = "default_zh";
+    int32_t _settlement_named_tier = 2;
+    int32_t _settlement_downgrade_bp = 9000;
+    int64_t _prosperity_profile_hash = 0;
+    int64_t _settlement_catalog_hash = 0;
+    int64_t _prosperity_changed_cells = 0;
+    int64_t _prosperity_promotions = 0;
+    int64_t _prosperity_demotions = 0;
+    int64_t _settlement_names_assigned = 0;
+    int64_t _settlement_names_released = 0;
+    int64_t _settlement_name_collision_probes = 0;
+    double _prosperity_update_ms = 0.0;
     int64_t _structural_funds_to_treasury = 0;
 
     std::vector<std::string> _building_type_ids;
@@ -2267,6 +2342,10 @@ private:
     static constexpr int32_t ACTIVE_TAX_KIND_COUNT = 3;
     std::vector<int64_t> _fiscal_previous_requests;
     std::vector<uint64_t> _fiscal_previous_country_handles;
+    // Epoch-transient reservation weights. Income lanes are seeded from the
+    // frozen minimum-living subsidy floor so a newly enabled negative income
+    // rate can pay its baseline without waiting for one historical batch.
+    std::vector<int64_t> _fiscal_reservation_requests;
     std::vector<int64_t> _fiscal_current_requests;
     std::vector<int64_t> _fiscal_budgets;
     std::vector<int64_t> _fiscal_remaining;
@@ -2286,6 +2365,9 @@ private:
     std::vector<int64_t> _fiscal_cumulative_collected;
     std::vector<int64_t> _fiscal_cumulative_requests;
     std::vector<int64_t> _fiscal_cumulative_paid;
+    // Per-slot derived epoch scratch; intentionally excluded from save/hash.
+    std::vector<int64_t> _income_taxable_base_by_slot;
+    std::vector<int64_t> _income_subsidy_floor_by_slot;
     std::vector<int32_t> _epoch_country_output_factor_q16;
     std::vector<int32_t> _epoch_country_sector_output_factor_q16;
     std::vector<int32_t> _epoch_country_research_output_factor_q16;
@@ -2489,6 +2571,8 @@ private:
     }
     bool capture_country_epoch(std::string &error);
     bool prepare_fiscal_budgets(std::string &error);
+    void settle_income_subsidies_for_cell(int32_t cell,
+                                          int64_t &saturation_count);
     bool commit_fiscal(std::string &error);
     int8_t frozen_tax_rate(int32_t cell, int32_t kind, int32_t item) const;
     int64_t apply_fiscal_tax(int32_t cell, int32_t kind, int64_t base,
@@ -2715,6 +2799,19 @@ private:
                                     int64_t &saturation_count) const;
     godot::Dictionary population_cell_snapshot_impl(
         int32_t cell_idx, const EnvironmentSample &sample) const;
+    bool compile_settlement_catalog(const godot::Dictionary &catalog,
+                                    std::string &error);
+    int64_t population_total_for_cell(int32_t cell) const;
+    uint8_t prosperity_tier_for_population(int64_t population,
+                                           uint8_t current) const;
+    std::string settlement_name_for_cell(int32_t cell) const;
+    void assign_settlement_name(int32_t cell);
+    void release_settlement_name(int32_t cell);
+    void initialize_settlements_from_population();
+    void update_settlements_for_changed_cells();
+    void append_settlement_fields(godot::Dictionary &out, int32_t cell) const;
+    godot::Dictionary settlement_rows(const std::vector<SettlementChange> &changes,
+                                      bool full_snapshot) const;
     static void formula_fixed_per_capita(const FormulaBatchInput &in, int64_t *out,
                                          int64_t &saturation_count);
     static void formula_income_price_linear(const FormulaBatchInput &in, int64_t *out,

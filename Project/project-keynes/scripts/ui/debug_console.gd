@@ -425,7 +425,8 @@ func _build_gm_command_page(parent: Control) -> void:
 func _build_gm_toggle_page(parent: Control) -> void:
 	var page := _new_gm_page(parent, "toggles")
 	var hint := Label.new()
-	hint.text = "所有开关均在设置后回读运行时真值。"
+	hint.text = "此页只显示当前运行时状态；打开面板不会应用开关，只有手动点击才会修改。"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	page.add_child(hint)
 	var scroll := ScrollContainer.new()

@@ -16,8 +16,9 @@ func _run() -> void:
 	profile.native_environment_runtime_enabled = false
 	var config := NewGameConfig.new()
 	config.country.name = "Runtime Test Nation"
-	config.base.map_width = 40
-	config.base.map_height = 28
+	config.country.foreign_count = 5
+	config.base.map_width = 60
+	config.base.map_height = 40
 	config.base.initial_seed = 20260727
 	config.base.num_continents = 2
 	config.base.continent_size = 0.9
@@ -25,7 +26,7 @@ func _run() -> void:
 	config.base.river_count = 8
 	_expect("new-game config is valid", bool(config.validate().get("ok", false)))
 
-	var map_config := MapConfig.make(40, 28)
+	var map_config := MapConfig.make(60, 40)
 	map_config.seed = 20260727
 	map_config.num_continents = 2
 	map_config.continent_size = 0.9
@@ -47,6 +48,9 @@ func _run() -> void:
 	var start: Dictionary = generator.gameplay_start_report()
 	_expect("formal start bootstrap succeeded", bool(start.get("ok", false)))
 	var cell_idx := int(start.get("cell", -1))
+	var country_starts: Array = start.get("country_starts", [])
+	_expect("requested foreign countries generated",
+		int(start.get("foreign_count", -1)) == 5 and country_starts.size() == 6)
 	_expect("start cell is in range", cell_idx >= 0 and cell_idx < map.cell_count())
 	if cell_idx >= 0 and cell_idx < map.cell_count():
 		_expect("start cell has freshwater", _has_freshwater(map, cell_idx))
@@ -62,32 +66,61 @@ func _run() -> void:
 	_expect("country facade is configured", country != null and country.is_configured())
 	if country != null:
 		var owned := 0
+		var owned_cells := {}
 		for index in range(map.cell_count()):
 			var summary: Dictionary = country.cell_summary(index)
 			if int(summary.get("country_slot", -1)) >= 0:
 				owned += 1
-				_expect("only the start cell is owned", index == cell_idx)
-		_expect("player owns exactly one cell", owned == 1)
+				owned_cells[index] = true
+		_expect("every country owns exactly one cell", owned == country_starts.size())
+		for start_value in country_starts:
+			var country_start: Dictionary = start_value
+			var country_cell := int(country_start.get("cell", -1))
+			_expect("country start is owned", owned_cells.has(country_cell))
+			var summary: Dictionary = country.cell_summary(country_cell)
+			var snapshot: Dictionary = country.snapshot(
+				int(summary.get("country_handle", -1)))
+			_expect("stable country id is preserved",
+				String(snapshot.get("country_id", "")) ==
+					String(country_start.get("country_id", "")))
+			_expect("country has one-cell territory",
+				(snapshot.get("territory_cells", PackedInt32Array())
+					as PackedInt32Array).size() == 1)
 		var start_summary: Dictionary = country.cell_summary(cell_idx)
 		var player: Dictionary = country.snapshot(int(start_summary.get("country_handle", -1)))
 		_expect("stable player country id is preserved",
 			String(player.get("country_id", "")) == "country.player")
+		var minimum_distance := int(start.get("minimum_country_distance", 0))
+		for left in range(country_starts.size()):
+			for right in range(left + 1, country_starts.size()):
+				var distance := _land_distance(map,
+					int((country_starts[left] as Dictionary).cell),
+					int((country_starts[right] as Dictionary).cell))
+				_expect("country starts respect minimum distance",
+					distance >= minimum_distance)
 
 	var economy = generator.get_economy_facade()
 	_expect("economy facade is configured", economy != null and economy.is_configured())
 	if economy != null and cell_idx >= 0:
-		var population: Dictionary = economy.population_cell_snapshot(cell_idx)
-		_expect("starter population is exactly 20", int(population.get("population", 0)) == 20)
-		var buildings: Dictionary = economy.building_cell_snapshot(cell_idx)
-		_expect("starter has exactly four buildings", _sum_i64(
-			buildings.get("building_counts_by_type", PackedInt64Array())) == 4)
-		for building_id in ["gathering_ground", "timber_collector", "merchant_post",
-				"placer_gold_working" if String(start.get("precious_resource", "")) == "gold_ore"
-				else "surface_silver_working"]:
-			_expect("starter building %s exists" % building_id,
-				_building_count(buildings, building_id) == 1)
+		for start_value in country_starts:
+			var country_start: Dictionary = start_value
+			var settlement_cell := int(country_start.get("cell", -1))
+			var precious := String(country_start.get("precious_resource", ""))
+			var population: Dictionary = economy.population_cell_snapshot(settlement_cell)
+			_expect("starter population is exactly 20",
+				int(population.get("population", 0)) == 20)
+			var buildings: Dictionary = economy.building_cell_snapshot(settlement_cell)
+			_expect("starter has exactly four buildings", _sum_i64(
+				buildings.get("building_counts_by_type", PackedInt64Array())) == 4)
+			for building_id in ["gathering_ground", "timber_collector", "merchant_post",
+					"placer_gold_working" if precious == "gold_ore"
+					else "surface_silver_working"]:
+				_expect("starter building %s exists" % building_id,
+					_building_count(buildings, building_id) == 1)
+	_expect("all settlements contribute population",
+		int(start.get("total_population", 0)) == country_starts.size() * 20)
 	_expect("production bootstrap source is used",
-		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v1")
+		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v2")
 	_finish()
 
 
@@ -111,6 +144,34 @@ func _resource_reserve(map: MapData, resource_id: String, cell_idx: int) -> floa
 			var values = map.get(ResourceProfileRegistry.reserve_map_field(resource))
 			return float(values[cell_idx])
 	return 0.0
+
+
+func _land_distance(map: MapData, source: int, target: int) -> int:
+	var distances := PackedInt32Array()
+	distances.resize(map.cell_count())
+	distances.fill(-1)
+	var queue := PackedInt32Array()
+	queue.resize(map.cell_count())
+	var head := 0
+	var tail := 1
+	queue[0] = source
+	distances[source] = 0
+	var neighbors := map.neighbor_indices_packed()
+	while head < tail:
+		var cell := int(queue[head])
+		head += 1
+		if cell == target:
+			return int(distances[cell])
+		for direction in range(6):
+			var neighbor := int(neighbors[cell * 6 + direction])
+			if neighbor < 0 or distances[neighbor] >= 0 \
+					or map.is_water_arr[neighbor] != 0 \
+					or not TerrainType.is_passable_land(int(map.terrain_arr[neighbor])):
+				continue
+			distances[neighbor] = int(distances[cell]) + 1
+			queue[tail] = neighbor
+			tail += 1
+	return 0x3fffffff
 
 
 func _building_count(snapshot: Dictionary, building_id: String) -> int:

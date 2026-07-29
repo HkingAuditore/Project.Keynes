@@ -1,6 +1,6 @@
 ---
 name: project-keynes-game-flow-runtime
-description: Guide Project.Keynes formal startup, session routing, NewGameConfig, deterministic player start selection, one-cell player-country bootstrap, production starter settlements, PKSV complete saves, safe-boundary capture, and ordered restore. Use when changing the main menu, new/load game flow, GameFlowService, player spawn resources, StarterSettlementBootstrap, GameSaveCoordinator, SaveRepository, WorldClock persistence, environment persistence, PKCN/PKEC save ordering, autosave, pause/exit flow, or related tests and documentation.
+description: Guide Project.Keynes formal startup, session routing, NewGameConfig, deterministic player/foreign start selection, one-cell country bootstrap, production starter settlements, PKSV complete saves, safe-boundary capture, and ordered restore. Use when changing the main menu, new/load game flow, GameFlowService, country spawn resources, StarterSettlementBootstrap, GameSaveCoordinator, SaveRepository, WorldClock persistence, environment persistence, PKCN/PKEC save ordering, autosave, pause/exit flow, or related tests and documentation.
 ---
 
 # Project.Keynes Game Flow Runtime
@@ -44,9 +44,9 @@ Use this sequence without reordering:
 
 1. Physical/static world generation.
 2. Natural-resource generation and publication.
-3. Deterministic start selection and resource top-up.
-4. PKCN player-country bootstrap.
-5. Production starter-settlement packet construction.
+3. Deterministic player/foreign start selection and resource top-up.
+4. One-shot PKCN multi-country bootstrap with the player in slot 0.
+5. Aggregated production starter-settlement packet construction.
 6. PKEC economy bootstrap and conservation audit.
 7. Country then economy scheduler registration.
 8. UI, selection, and camera publication.
@@ -64,17 +64,20 @@ exists. Do not fall back to an arbitrary tile.
 - Prefer a naturally present gold or silver deposit.
 - Top up fertile soil, timber, wild game, stone, flint, and one precious metal
   to profile minimums, then publish to MapData, DCWorld, and DCWorldExt.
-- Create stable country id `country.player` with exactly the start cell in its
-  territory CSR. Keep every other cell unowned.
+- Create stable country id `country.player` with exactly the player start cell.
+- Select `NewGameConfig v3`'s `0..12` foreign countries using pairwise
+  six-neighbor land distance, with disconnected land treated as infinitely far.
+- Use stable foreign IDs `country.foreign.NNN`, unique resource-backed names,
+  one start cell each, and keep all remaining cells unowned.
 
 ## Enforce the Settlement Contract
 
 Use `StarterSettlementBootstrap`; never call `EconomyTestBootstrap` from the
-formal path. Require exactly 20 people: three foragers, two merchants, one gold
+formal path. Require exactly 20 people per opening country: three foragers, two merchants, one gold
 miner or two silver miners, and unemployed household members for the remainder.
 Require one gathering ground, timber collector, merchant post, and matching
-precious-metal work site. Use EconomyFacade catalog helpers and fixed-point
-packets, provide the 60-day bridge, and retain population/money/goods
+precious-metal work site per country. Aggregate all starts through EconomyFacade
+catalog helpers and fixed-point packets, provide the 60-day bridge, and retain population/money/goods
 conservation checks.
 
 ## Enforce PKSV Boundaries
@@ -108,8 +111,9 @@ Run at minimum:
 
 - Headless project startup.
 - `new_game_config_test.gd` and `save_repository_test.gd`.
-- `gameplay_start_runtime_test.gd` for start resources, freshwater, one-cell
-  ownership, 20 population, buildings, and production-bootstrap source.
+- `gameplay_start_runtime_test.gd` for deterministic starts, pairwise distance,
+  unique identity, one-cell ownership, 20 population per country, buildings,
+  and production-bootstrap source.
 - `environment_runtime_smoke_test.gd` for byte-exact native state round-trip.
 - `game_save_roundtrip_test.gd`, which hashes `explored_arr` across save/load.
   It runs as a real session via `PK_GAME_SAVE_ROUNDTRIP_TEST=1`, not with

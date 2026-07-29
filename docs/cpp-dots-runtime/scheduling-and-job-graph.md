@@ -873,3 +873,11 @@ snapshot. Native failure closes it without exposing a partial value.
 `cycle_deadline_day` 时启用。WorldClock 每次 `_advance_one_sim_day()` 返回后立即重读
 `country_day_barrier` / `economy_day_barrier`，因此 day handler 当天新升起屏障时，同一渲染帧
 不能再越过下一天。常规周期工作与贸易规划仍按普通软预算运行。
+
+## Prosperity commit substep
+
+Prosperity adds no SUS job or scheduler edge. It runs inside economy
+`aggregate_publish/COMMIT`, after the committed summary swap and before dirty
+generations publish. Bootstrap and legacy restore may scan once; normal commits
+process only sorted, deduplicated `population_changed_cells`, so scalar and
+worker paths share one deterministic naming order.

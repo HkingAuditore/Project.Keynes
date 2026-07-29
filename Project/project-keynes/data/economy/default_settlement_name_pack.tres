@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SettlementNamePackProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/settlement_name_pack_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = &"default_zh"
+prefix_ids = PackedStringArray("an", "bai", "bei", "cang", "chang", "dong", "feng", "gu", "he", "jin", "ling", "nan", "qing", "shang", "xi", "yun")
+prefix_text = PackedStringArray("安", "白", "北", "苍", "长", "东", "丰", "古", "河", "金", "岭", "南", "青", "上", "西", "云")
+prefix_weights = PackedInt32Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+root_ids = PackedStringArray("chuan", "chun", "feng", "gang", "he", "hu", "jiang", "lin", "luo", "ming", "ping", "qiao", "quan", "shan", "yuan", "zhou")
+root_text = PackedStringArray("川", "春", "丰", "岗", "河", "湖", "江", "林", "洛", "明", "平", "桥", "泉", "山", "原", "州")
+root_weights = PackedInt32Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+suffix_ids = PackedStringArray("an", "bao", "cun", "du", "gang", "guan", "ji", "kou", "li", "pu", "ting", "wan", "xiang", "yuan", "zhen", "zhou")
+suffix_text = PackedStringArray("安", "堡", "村", "都", "港", "关", "集", "口", "里", "浦", "亭", "湾", "乡", "原", "镇", "洲")
+suffix_weights = PackedInt32Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)

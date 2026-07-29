@@ -2,12 +2,15 @@ extends Node2D
 class_name PlayerGame
 
 const MAIN_MENU_SCENE_PATH := "res://scenes/main_menu.tscn"
+const DEFAULT_DAY_NIGHT_ENABLED := true
 
 # 桌面玩家场景与调试场景共用高画质基线；移动端仍由 mobile quality tier 控制预算。
 @export_range(0, 2, 1) var visual_quality: int = 2
 @export_range(0, 2, 1) var mobile_quality_tier: int = 0
 @export var perf_sampler_enabled: bool = false
-@export var day_night_enabled: bool = true
+# 正式玩家会话固定从昼夜循环开始；运行中仍可通过顶栏或 GM 面板切换。
+# 不导出该字段，避免编辑器场景覆盖或热重载残值把新会话静默改成永昼。
+var day_night_enabled: bool = DEFAULT_DAY_NIGHT_ENABLED
 
 @onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
 @onready var _camera: MapCamera = $MapCamera

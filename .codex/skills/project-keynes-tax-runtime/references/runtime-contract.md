@@ -104,6 +104,13 @@ treasury. Negative rates transfer treasury-funded fiscal escrow to the recipient
 - Clamp each batch base to zero. Do not carry losses.
 - Exclude transfers, minting, construction investment, capital principal, producer support, tax
   subsidies, and business subsidies.
+- Positive income tax remains source-withheld. Negative income tax is aggregated once per cohort
+  after wage, owner, and merchant taxable sources complete.
+- Freeze a minimum-living base for every negative-rate cohort from the local `survival_household`
+  basket: `per_person_daily_cost * population * epoch_days`.
+- For a negative income rate use
+  `max(aggregate_taxable_income, minimum_living_base)`. The inferred floor must never be taxed by a
+  positive rate.
 
 ### Consumption tax
 
@@ -133,9 +140,10 @@ Tariff lanes remain inactive until foreign trade exists.
 At the start of each rolling bucket:
 
 1. Match the prior lane history to a generation-safe country handle.
-2. Sum the previous subsidy requests per country.
-3. Reserve `min(country cash, previous request)` before research procurement.
-4. Allocate the reserved cash proportionally by previous request.
+2. Build reservation weights. Consumption and business use the previous request; income uses
+   `max(previous request, current frozen minimum-living request)`.
+3. Reserve `min(country cash, reservation request)` before research procurement.
+4. Allocate the reserved cash proportionally by reservation weight.
 5. Resolve integer remainders by stable tax-kind then cell prefix order.
 
 Workers read their lane budget and mutate only their own lane request/remaining/paid entries.
@@ -151,8 +159,10 @@ At fiscal commit:
 5. Clear escrow before the save boundary.
 
 Current positive tax is available only to the next subsidy batch. This avoids circular funding.
-First negative-rate batch without history pays zero and establishes the next weight. Territory
-transfer invalidates history whose generation-safe country handle no longer matches.
+The first consumption/business negative-rate batch without history pays zero and establishes the
+next weight. A negative income lane may pay its frozen minimum-living request immediately. Territory
+transfer invalidates history whose generation-safe country handle no longer matches, while the
+current income minimum-living request may seed a fresh reservation.
 
 Money audits include trade and fiscal escrow. Country treasury must never become negative.
 
@@ -206,10 +216,12 @@ Do not use nominal negative rates as guaranteed income. For a negative rate:
 
 ```text
 nominal = floor(base * abs(rate) / 100)
-expected_paid = min(nominal, floor(nominal * lane_budget / previous_request))
+expected_paid = min(nominal, floor(nominal * lane_budget / reservation_weight))
 ```
 
-If previous request or lane budget is zero, expected subsidy is zero.
+For income, `reservation_weight` may be seeded by the current minimum-living request. For
+consumption/business it is the matching previous request; no reservation weight or lane budget
+means expected subsidy is zero.
 
 ## 6. Tariff boundary
 
@@ -287,7 +299,8 @@ Focused correctness:
 Fiscal:
 
 - Nonnegative treasury.
-- First-batch delay and next-batch proportional fulfillment.
+- Consumption/business first-batch delay, immediate funded income-floor reservation, and
+  proportional fulfillment.
 - Stable remainder order.
 - Unused return and research priority.
 - Territory-transfer history invalidation.

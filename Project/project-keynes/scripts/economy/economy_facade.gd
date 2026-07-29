@@ -187,6 +187,17 @@ func population_cell_summary(cell_idx: int) -> Dictionary:
 		return _world_ext.get_population_cell_summary(cell_idx)
 	return _world_ext.get_population_cell_snapshot(cell_idx)
 
+func named_settlement_snapshot() -> Dictionary:
+	if not _configured or not _world_ext.has_method(
+			"get_named_settlement_snapshot"):
+		return {"ok": false, "reason": "native settlement runtime unavailable"}
+	return _world_ext.get_named_settlement_snapshot()
+
+func settlement_delta(since_revision: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_settlement_delta"):
+		return {"ok": false, "reason": "native settlement runtime unavailable"}
+	return _world_ext.get_settlement_delta(since_revision)
+
 
 func population_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:

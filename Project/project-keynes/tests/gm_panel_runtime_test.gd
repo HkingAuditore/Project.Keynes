@@ -5,6 +5,7 @@ class FakeRuntime:
 
 	var snapshot_calls := 0
 	var command_calls := 0
+	var toggle_set_calls := 0
 	var toggle_state := false
 
 	func get_gm_capabilities() -> Dictionary:
@@ -17,7 +18,10 @@ class FakeRuntime:
 					{"name": "country_handle", "type": "int", "required": true},
 					{"name": "name", "type": "string", "required": true}]},
 			],
-			"toggles": [{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"}],
+			"toggles": [
+				{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
+				{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
+			],
 		}
 
 	func get_gm_snapshot(section: String, _context: Dictionary = {}) -> Dictionary:
@@ -37,10 +41,12 @@ class FakeRuntime:
 			return {"ok": false, "message": "测试错误"}
 		return {"ok": true, "message": "已排队", "queued": true, "effective_day": 13}
 
-	func get_gm_toggle_state(_toggle_id: String) -> Dictionary:
-		return {"ok": true, "enabled": toggle_state}
+	func get_gm_toggle_state(toggle_id: String) -> Dictionary:
+		return {"ok": true,
+			"enabled": true if toggle_id == "visual.day_night" else toggle_state}
 
 	func set_gm_toggle(_toggle_id: String, enabled: bool) -> Dictionary:
+		toggle_set_calls += 1
 		# Deliberately reject the requested state so the panel must read truth back.
 		toggle_state = not enabled
 		return {"ok": true, "enabled": toggle_state, "message": "已回读"}
@@ -64,6 +70,15 @@ func _run() -> void:
 	var calls_when_open := runtime.snapshot_calls
 	await create_timer(0.62).timeout
 	_expect(runtime.snapshot_calls > calls_when_open, "visible 2Hz refresh", failures)
+	_expect(runtime.toggle_set_calls == 0, "opening and refreshing GM panel never writes toggles", failures)
+	console.call("_show_gm_page", "toggles")
+	console.call("_refresh_gm_toggles")
+	var day_night_toggle: CheckBox = (
+		(console.get("_gm_toggle_buttons") as Dictionary).get("visual.day_night")
+	)
+	_expect(day_night_toggle != null and day_night_toggle.button_pressed,
+		"day/night checkbox mirrors enabled runtime default", failures)
+	_expect(runtime.toggle_set_calls == 0, "toggle-state readback never invokes setter", failures)
 	console.close_panel()
 	await create_timer(0.25).timeout
 	var calls_when_hidden := runtime.snapshot_calls

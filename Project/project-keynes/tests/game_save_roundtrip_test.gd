@@ -19,6 +19,12 @@ func _run() -> void:
 		return
 	var config := NewGameConfig.new()
 	config.country.name = "Roundtrip Nation"
+	var foreign_count_override := OS.get_environment("PK_GAME_SAVE_FOREIGN_COUNT")
+	config.country.foreign_count = (
+		int(foreign_count_override)
+		if not foreign_count_override.is_empty()
+		else 3
+	)
 	config.base.map_width = 40
 	config.base.map_height = 28
 	config.base.initial_seed = 20260727

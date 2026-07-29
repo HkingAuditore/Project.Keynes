@@ -5,8 +5,9 @@
 `project.godot` starts `scenes/main_menu.tscn`. The product flow is
 `MainMenu -> GameFlowService -> player_game.tscn -> WorldRuntimeHost ->
 MapGenerator`; `world_setup.tscn` is a development tool only. New games use
-`NewGameConfig v1`, deterministic `StartLocationPolicy`, PKCN
-`country.player`, and `StarterSettlementBootstrap`. Complete saves are
+`NewGameConfig v3`, deterministic multi-country `StartLocationPolicy`, PKCN
+`country.player` plus `country.foreign.NNN`, and the aggregated
+`StarterSettlementBootstrap`. Complete saves are
 coordinated by `GameSaveCoordinator` and stored by `SaveRepository` as PKSV v1.
 Read [`game-flow-start-save.md`](../docs/cpp-dots-runtime/game-flow-start-save.md)
 before changing session routing, player bootstrap, save boundaries, or restore
@@ -367,6 +368,8 @@ cohort×good 矩阵。
 
 Market V2 清算本身不包含生产建筑、就业、工资或运输；这些行为由同一 C++ 权威中、居民清算前的
 BUILDING_GRAPH 与国内 Trade V1 阶段承担。所得税、消费税和营业税已经进入原生结算；
+负所得税在结构变更前按 cohort 汇总，以冻结生存篮子生活成本作为最低税基；正所得税仍只对
+实际所得源头扣缴。
 进口/出口关税具备政策、Modifier、存档和 UI 占位，但当前国内贸易事件与金额恒为零。
 跨国贸易结算、外交和政治系统仍是非目标，不能另建平行 GDScript 经济状态。
 ## Building / employment / production
@@ -468,3 +471,12 @@ debug recording is Economy CSV v22.
   visible commit; this includes `natural_resource_daily` input refreshes.
   Failure releases protection without publishing partial state.
 - Legacy/standalone visibility: existing immediate pass flushes remain.
+
+## Prosperity / settlement naming
+
+- Authority: native economy `SettlementStore`; committed population is the only
+  input.
+- Commit: `aggregate_publish/COMMIT` consumes deduplicated changed cells.
+- Bridge: selected-cell summary plus full settlement snapshot / bounded deltas.
+- Persistence: PKEC v24 fixed generations plus sparse stable-ID names.
+- Visible boundary: Godot pooled label layer; no economic mirror or fallback.

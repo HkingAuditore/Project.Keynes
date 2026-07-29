@@ -3,7 +3,7 @@
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、税收财政、
-> PKEC v23 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
+> PKEC v24 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
 > NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄与家庭结构尚未接入；
 > 自然出生和死亡由原生 household/structural 路径处理。
 
@@ -37,7 +37,9 @@
 - epoch 开始按冻结国家科技烘焙 `country -> available building types` CSR 和稠密可用位；建筑
   hot loop 不得为每个 cell/type 重复遍历科技 requirement。该缓存只属事务，不进入 PKEC/hash。
 - 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；税率
-  冻结、应税事件、财政托管与提交同样位于原生守恒边界，详见
+  冻结、应税事件、财政托管与提交同样位于原生守恒边界。负所得税在 household 完成后按
+  cohort 汇总，税基不低于冻结 `survival_household` 本地生活成本乘人口与周期天数；正税
+  仍只按实际所得源头扣缴。详见
   `docs/cpp-dots-runtime/tax-fiscal-runtime.md`。
 - `owner_slots_per_building` 是正整数物理容量；普通企业通常为 1，家庭式采集/狩猎单位可用多个
   同职业共同经营岗位。活跃 owner-lot 的 owner required 等于物理容量，计划利用率只缩放 employee required 与产量；所有填充仍受对应 cohort 人口约束。
@@ -329,7 +331,7 @@ already received a first dispatch. Committed diagnostics recompute current
 deadline misses from all live signal clocks rather than from only the planner
 slice that happened to run that day.
 
-## PKEC v23 rolling settlement, production climate, and fiscal history (current)
+## PKEC v23 rolling settlement, production climate, and fiscal history (historical)
 
 Production uses five stable daily buckets: cell `c` settles when
 `day % 5 == c % 5`, always with `dt=5`. Each populated cell therefore settles
@@ -346,10 +348,10 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v23. Cell records persist six frozen environment columns,
+Current saves are PKEC v24. Cell records persist six frozen environment columns,
 including 30-day temperature and plant-available water. Building records persist
 temperature fit, water fit, climate capacity, and climate-lost output; all four
-enter the state hash. PKEC v23 additionally persists generation-safe subsidy
+enter the state hash. PKEC v24 additionally persists generation-safe subsidy
 history and fiscal cumulative values. Restore accepts v23 and explicitly migrates
 v22 to empty fiscal history; older schemas, truncated, out-of-range, or
 environment-hash-mismatched records fail before the runtime becomes bootstrapped.
@@ -517,3 +519,12 @@ instead of multiplying market infrastructure by population scale. Runtime
 employment retains only the final merchant invariant; surplus merchants may
 move through the normal aggregate profession/owner-job paths. PKEC v19 persists
 the three new deterministic policy controls and explicitly rejects v17.
+
+## Prosperity and settlement names
+
+- Profiles compile thresholds and stable name components; native
+  `SettlementStore` owns all mutable tiers and identities.
+- No prosperity/name fields enter MapData, HexCell, or DataCore.
+- Inspector consumes selected-cell summaries; `SettlementLabelLayer` consumes
+  full snapshot plus bounded deltas with fog, LOD, collision and pool limits.
+- PKEC v24 persists the state; v22/v23 rebuild it deterministically.

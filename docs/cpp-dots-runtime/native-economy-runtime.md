@@ -126,7 +126,7 @@ state is introduced.
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v23 是当前 writer：保存 BuildingIdentityStore、Economy Modifier domain、逐 cell 六列冻结环境、
+- PKEC v24 是当前 writer：保存 BuildingIdentityStore、Economy Modifier domain、逐 cell 六列冻结环境、
   建筑气候诊断、补贴权重与财政累计。reader 接受 v23，并显式迁移 v22 为空财政历史；v2-v21
   返回相应 legacy unsupported 错误。
 - `BUILDING_PLAN` 是原生两遍 continuation：第一遍按 active-cell CSR 计算利润、停产恢复和计划利用率，第二遍按相同稳定顺序重建生产投入 reserve。`building_cells_per_slice=0` 确定性使用 256 个 active cell；正值可做平台定标。cursor、生存利用率 floor 和 reserve 构建缓存不保存、不哈希。
@@ -501,8 +501,12 @@ scalar/worker 事件确定性。
 新增 `producer_support_issuance`，把托底发行与普通 `owner_operations` 收入分开。冻结周期中
 worker 仅把居民消费与商人居民销售写入局部结果，主线程再与工资、业主经营、产业供货、商人
 收购、建设和转移支付资金腿合并；提交时以 cohort 总账补齐 `other`，保证来源合计严格等于
-`epoch_income/epoch_expense`。工资/消费/业主结算同时按财政税率记录 `income_tax`、
-`consumption_tax`、`business_tax` 支出腿和 `income_subsidy`、`consumption_subsidy`、
+`epoch_income/epoch_expense`。正所得税继续在工资、业主净经营所得和商人家庭销售净所得的
+来源处扣缴；负所得税先写入逐 cohort 临时应税收入，在全部 household clearing 完成后的
+`income_subsidy` 子阶段，以
+`max(汇总应税收入, survival_household 本地每日成本 × 人口 × 周期天数)` 申请，并在 cell
+预算不足时按 cohort 申请同比例兑现。最低生活税基不进入正税。消费/业主结算同时按财政税率
+记录 `income_tax`、`consumption_tax`、`business_tax` 支出腿和 `income_subsidy`、`consumption_subsidy`、
 `business_subsidy` 收入腿（负税率），人口快照的 `settlement_cashflow_source_stable_ids`
 一并导出这些来源，Inspector 阶层收支按来源名展示税收支出与补贴收入。人口快照返回上次提交
 的 cohort-major 稀疏 cashflow CSR、周期日期与 available/pending。滚动五相模式只为本日到期
@@ -811,7 +815,7 @@ is below the configured regret certificate. Food/clothing survival families
 are never pruned. An invalid certificate, a failed exact probe, or an active
 cooldown takes the exact local path. `OFF` and `PROBE` remain exact
 rollback/baseline modes. Reports use
-`rolling_cell_settlement_v17_anytime` and expose decisions, probes, frontier
+`rolling_cell_settlement_v18_income_floor` and expose decisions, probes, frontier
 size/pruning, certified regret, failures, and fallbacks. These frontiers are
 derived scratch and are not persisted.
 
@@ -1160,3 +1164,16 @@ terminal and atomic at epoch boundaries. This changes only debug file-I/O
 pacing, not native economy authority, PKEC, state hash, CSV columns, or cadence.
 > PKEC v21 新增 `government_research_procurement` 阶段、科技值采购累计与存档字段。采购发生在
 > 私人购买后、国内贸易前；详细契约见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。
+
+## SettlementStore
+
+`SettlementStore` is native per-cell SoA for `u8 tier`, prosperity/name
+generations, name components, and disambiguator. Exact upgrade thresholds and
+90% downgrade hysteresis consume committed population only. Entering tier 2
+allocates a globally unique deterministic name; leaving it releases the name
+and advances `name_roll_generation`.
+
+Normal commits process only deduplicated changed cells. Reports expose changes,
+promotion/demotion, name allocation/release/collision probes,
+`prosperity_update_ms`, revision and memory. State hash and PKEC v24 include all
+authoritative settlement fields.

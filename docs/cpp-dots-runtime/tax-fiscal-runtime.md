@@ -46,7 +46,8 @@ country.tax.export.<good>.rate_pct
 - 业主转岗使用扣除预期营业税和所得税后的日收入；内生投资使用税后经营收入计算生存门槛、
   目标利润率、回本期和创业者收入改善，因此高税率可以阻止税前可行但税后不可行的项目。
 - 负税率不按名义全额进入预期。预期补贴按“本批财政预算 / 上批申请”确定性折算；首次启用
-  且没有历史申请时预期兑现为零，防止家庭或企业基于尚未建立的补贴预算做过度决策。
+  消费税或营业税且没有历史申请时预期兑现为零。负所得税例外：已冻结的人口最低生活申请
+  可在本批直接建立预留，因此零收入 cohort 不必等待一个历史批次。
 
 ## 税基和资金方向
 
@@ -58,9 +59,14 @@ floor(tax_base * abs(rate_percent) / 100)
 
 计算使用 checked/saturating `int64` 定点助手。
 
-- 工资在入账时按 cohort 职业源头扣缴所得税。建筑业主按实际经营回款减实际投入、工资和
+- 正所得税的工资在入账时按 cohort 职业源头扣缴。建筑业主按实际经营回款减实际投入、工资和
   正营业税后的正向净所得计税；商人按家庭销售回款减经营流出后的正向净所得计税。亏损不
   跨批结转，补贴、转账、铸币、投资和资本本金不形成所得税税基。
+- 负所得税改在全部应税来源完成后按 cohort 汇总结算。每个 cohort 的最低生活税基为
+  `survival_household` 生存篮子的冻结本地每日成本乘人口和批次天数；补贴税基为
+  `max(工资 + 正向业主净经营所得 + 正向商人家庭销售净所得, 最低生活税基)`。因此零收入
+  cohort 仍按最低生活税基申请，高收入 cohort 继续按实际应税收入申请。最低生活税基仅用于
+  负税，正税绝不对推定收入征收。
 - 消费税只作用于人口 cohort 的家庭订单。正税进入预算报价，商人仍只取得商品基准成交价；
   负税按本 cell 已预留额度和稳定订单顺序降低预算价，实际成交才扣用托管额度。
 - 营业税按建筑本批实际取得的生产者回款计税，多输出建筑汇总实际回款。正税源头扣除并可
@@ -74,12 +80,17 @@ floor(tax_base * abs(rate_percent) / 100)
 ## 财政托管
 
 每个五日滚动桶开始时，经济运行时读取同一 `(generation-safe country, tax kind, cell)`
-上一批的补贴申请。国家先预留 `min(cash, previous_request)` 到 fiscal escrow，再执行科研
-采购。额度按国家内上一批权重比例分配，整数余数通过“税种、cell”稳定前缀分配。
+上一批的补贴申请。消费税和营业税使用上一批申请作为权重；所得税 lane 使用
+`max(previous_request, current_minimum_living_request)`，其中当前最低生活申请可由冻结人口和
+生存篮子在批次开始时确定。国家先预留 `min(cash, reservation_request)` 到 fiscal escrow，
+再执行科研采购。额度按国家内预留权重比例分配，整数余数通过“税种、cell”稳定前缀分配。
 
-worker 只修改自己 cell 的申请、预算和实付 lane。首次启用负税但没有历史申请时，本批实付
-为零并建立下一批权重。提交时未用托管款退回国库、正税统一入库、托管清零；领土转移导致
-generation-safe 国家 handle 不匹配时，旧 cell 权重自动失效。
+工资、业主经营所得和商人家庭销售净所得先写入各自 slot 的临时应税收入列；全部 household
+market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总申请。同一 cell 的负
+所得税在预算不足时按申请额同比例分配，稳定前缀处理整数余数。消费税和营业税仍由 worker
+只修改自己 cell 的申请、预算和实付 lane；这两类补贴首次启用且没有历史申请时本批实付为零。提交时
+未用托管款退回国库、正税统一入库、托管清零；领土转移导致 generation-safe 国家 handle
+不匹配时，旧 cell 权重自动失效，但当前最低生活申请仍可建立新的所得补贴预留。
 
 `fiscal_snapshot()` 按五类税种返回上批税基、应征、实收、补贴申请、预留、实付、未满足额、
 兑现率及累计值。进口/出口项当前固定为零。
@@ -87,7 +98,7 @@ generation-safe 国家 handle 不匹配时，旧 cell 权重自动失效。
 ## 存档与迁移
 
 - PKCN v4 保存五类默认率、稀疏覆盖、政策版本和 Country Modifier domain。
-- PKEC v23 保存逐 cell 上批补贴权重、generation-safe 国家 handle、财政累计值和确定性 hash。
+- PKEC v24 保存逐 cell 上批补贴权重、generation-safe 国家 handle、财政累计值和确定性 hash。
 - PKCN v3/PKEC v22 有且只有一条显式迁移：基础税率全零、覆盖为空、补贴历史为空。新增税率
   stat 的 Modifier catalog 扩展仅在这条迁移中接受，并逐项验证旧 definition version、
   stat key 和 term payload；其他 catalog mismatch 仍拒绝。
