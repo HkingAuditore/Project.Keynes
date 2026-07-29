@@ -11,7 +11,7 @@ const ICON_SIZE := 28
 const SECTIONS := [
 	{"id": "technology", "label": "科技", "icon": &"country.technology"},
 	{"id": "politics", "label": "政治", "icon": &"country.politics"},
-	{"id": "taxation", "label": "税收", "icon": &"country.taxation"},
+	{"id": "economy", "label": "经济", "icon": &"country.economy"},
 	{"id": "military", "label": "军事", "icon": &"country.military"},
 	{"id": "diplomacy", "label": "外交", "icon": &"country.diplomacy"},
 ]

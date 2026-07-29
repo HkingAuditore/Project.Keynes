@@ -30,6 +30,8 @@ func _run() -> void:
 	_expect("country panel starts closed", not panel.is_panel_open())
 	var buttons: Dictionary = bar.get("_buttons")
 	_expect("country action bar has five sections", buttons.size() == 5)
+	_expect("economy replaces taxation in country actions",
+		buttons.has("economy") and not buttons.has("taxation"))
 	for button_value in buttons.values():
 		var action := button_value as Button
 		var action_icons := action.find_children("*", "TextureRect", true, false) \
@@ -44,7 +46,7 @@ func _run() -> void:
 			action != null and action.find_children("*", "IconBadge", true, false).is_empty())
 	_expect("country action bar is compact", bar.size.x <= 322.0)
 	var paused_before := clock.paused
-	for section_id in ["technology", "politics", "taxation", "military", "diplomacy"]:
+	for section_id in ["technology", "politics", "economy", "military", "diplomacy"]:
 		var button := buttons.get(section_id) as Button
 		_expect("%s action exists" % section_id, button != null)
 		if button != null:
@@ -54,10 +56,64 @@ func _run() -> void:
 				panel.is_panel_open() and panel.current_section() == section_id)
 	_expect("opening country affairs does not pause", clock.paused == paused_before)
 
+	ui.open_country_section("economy")
+	await process_frame
 	var model: Dictionary = panel.get("_model")
 	_expect("country summary is available", bool(model.get("available", false)))
 	_expect("country summary has a name", not String(model.get("country_name", "")).is_empty())
 	_expect("country summary has territory", int(model.get("territory_count", 0)) > 0)
+	var treasury: Dictionary = model.get("treasury", {})
+	_expect("economy summary exposes the native treasury",
+		bool(treasury.get("available", false)) \
+			and int(treasury.get("cash", -1)) == int(model.get("cash", -2)))
+	var economy := panel.get("_economy_workspace") as Control
+	_expect("economy workspace opens for the economy action",
+		economy != null and economy.visible and panel.current_section() == "economy")
+	_expect("economy workspace shows current treasury cash",
+		economy != null and String(economy.call("cash_text")) \
+			== String(treasury.get("cash_text", "")))
+	_expect("economy workspace renders every nonzero treasury good",
+		economy != null and int(economy.call("visible_good_count")) \
+			== int(treasury.get("nonzero_good_count", -1)))
+
+	var presented := CountryViewModel.present_treasury({
+		"ok": true,
+		"cash": 123456789,
+		"good_ids": PackedStringArray(["grain"]),
+		"quantities": PackedInt64Array([1250]),
+	})
+	var presented_goods: Array = presented.get("goods", [])
+	var grain_profile = GoodProfileRegistry.profile_by_id("grain")
+	_expect("treasury presentation localizes goods",
+		presented_goods.size() == 1 and grain_profile != null \
+			and String(presented_goods[0].get("display_name", "")) \
+				== String(grain_profile.display_name))
+	_expect("treasury presentation applies fixed-point scales",
+		String(presented.get("cash_text", "")) == "1.23万" \
+			and String(presented_goods[0].get("quantity_text", "")) == "1.25")
+	var synthetic_model := {
+		"available": true,
+		"country_name": "测试国家",
+		"treasury": presented,
+	}
+	economy.call("set_model", synthetic_model)
+	var economy_id: int = economy.get_instance_id()
+	var grain_row_id := int(economy.call("good_row_instance_id", "grain"))
+	var updated_presented := CountryViewModel.present_treasury({
+		"ok": true,
+		"cash": 223456789,
+		"good_ids": PackedStringArray(["grain"]),
+		"quantities": PackedInt64Array([2500]),
+	})
+	synthetic_model["treasury"] = updated_presented
+	economy.call("refresh_model", synthetic_model)
+	_expect("daily economy refresh preserves workspace and treasury rows",
+		economy.get_instance_id() == economy_id \
+			and int(economy.call("good_row_instance_id", "grain")) == grain_row_id)
+	_expect("daily economy refresh patches visible values",
+		String(economy.call("cash_text")) == "2.23万" \
+			and String(economy.call("good_value_text", "grain")) == "2.5")
+
 	ui.open_country_section("technology")
 	await process_frame
 	var workspace := panel.get("_technology_workspace") as Control
@@ -92,6 +148,13 @@ func _run() -> void:
 	_expect("compact country dialog fills available viewport height",
 		compact_rect.size.y >= compact_viewport.size.y - PlayerTopBar.BAR_HEIGHT \
 			- CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM * 2.0 - 1.0)
+	ui.open_country_section("economy")
+	await process_frame
+	var goods_scroll := economy.get("_scroll") as ScrollContainer
+	_expect("compact economy treasury uses a bounded vertical scroll",
+		goods_scroll != null \
+			and goods_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED \
+			and compact_rect.encloses(goods_scroll.get_global_rect()))
 	_expect("compact layout narrows the research policy column",
 		(panel.get("_technology_workspace") as Control).get("_policy_panel") \
 			.custom_minimum_size.x == TechnologyWorkspace.POLICY_WIDTH_COMPACT)
@@ -100,6 +163,8 @@ func _run() -> void:
 	await process_frame
 	_expect("Lucide country icon is registered",
 		IconBadge.texture_for_key("technology", IconBadge.FAMILY_LUCIDE) != null)
+	_expect("economy country icon reuses the treasury asset",
+		IconCatalog.texture_for_key(&"country.economy") != null)
 	_expect("Tabler summary icon is registered",
 		IconBadge.texture_for_key("territory", IconBadge.FAMILY_TABLER) != null)
 
