@@ -1590,6 +1590,13 @@ func _cashflow_source_name(source_id: String, income: bool) -> String:
 		"construction": return "建设"
 		"merchant_procurement": return "商品收购"
 		"producer_support_issuance": return "托底收购"
+		"income_tax": return "所得税"
+		"consumption_tax": return "消费税"
+		"business_tax": return "营业税"
+		"income_subsidy": return "收入补贴"
+		"consumption_subsidy": return "消费补贴"
+		"business_subsidy": return "经营补贴"
+		"fiscal_escrow": return "财政托管"
 		_: return "其他收入" if income else "其他支出"
 
 

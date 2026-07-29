@@ -501,10 +501,14 @@ scalar/worker 事件确定性。
 新增 `producer_support_issuance`，把托底发行与普通 `owner_operations` 收入分开。冻结周期中
 worker 仅把居民消费与商人居民销售写入局部结果，主线程再与工资、业主经营、产业供货、商人
 收购、建设和转移支付资金腿合并；提交时以 cohort 总账补齐 `other`，保证来源合计严格等于
-`epoch_income/epoch_expense`。人口快照返回上次提交的 cohort-major 稀疏 cashflow CSR、周期
-日期与 available/pending。滚动五相模式只为本日到期地块发布完整 cashflow；未到期日不会用
-旧总账对零条本日来源做 `other` 对账，而是继续返回该地块上一次完整分类。它随 PKEJ retention
-有界保留，不进入 PKEC、核心 state hash 或全世界 cohort 常驻布局。
+`epoch_income/epoch_expense`。工资/消费/业主结算同时按财政税率记录 `income_tax`、
+`consumption_tax`、`business_tax` 支出腿和 `income_subsidy`、`consumption_subsidy`、
+`business_subsidy` 收入腿（负税率），人口快照的 `settlement_cashflow_source_stable_ids`
+一并导出这些来源，Inspector 阶层收支按来源名展示税收支出与补贴收入。人口快照返回上次提交
+的 cohort-major 稀疏 cashflow CSR、周期日期与 available/pending。滚动五相模式只为本日到期
+地块发布完整 cashflow；未到期日不会用旧总账对零条本日来源做 `other` 对账，而是继续返回
+该地块上一次完整分类。它随 PKEJ retention 有界保留，不进入 PKEC、核心 state hash 或全
+世界 cohort 常驻布局。
 
 2026-07-13 固定 N=5、10k owner-lot release 复核：SELECTIVE + 单 inspector cell 的 building
 slice avg/p95/max 为 `2.236/8.884/8.884ms`、runtime 114.6MB、trace 3.4MB；同版本

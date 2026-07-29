@@ -96,6 +96,7 @@ const SPECS := {
 	&"action.pause": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf04c"},
 	&"action.play": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf04b"},
 	&"action.refresh": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf2f1"},
+	&"action.reset": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf0e2"},
 	&"action.save": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf00c"},
 	&"climate.humidity": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf043"},
 	&"climate.moon": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf186"},
@@ -209,6 +210,15 @@ const SPECS := {
 	&"status.warning": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf071"},
 	&"summary.overview": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf0ca"},
 	&"system.calendar": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf133"},
+	&"tax.business": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf19c"},
+	&"tax.consumption": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf07a"},
+	&"tax.default": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf541"},
+	&"tax.export": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf5b0"},
+	&"tax.import": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf5af"},
+	&"tax.income": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf4c0"},
+	&"tax.section": {"family": FAMILY_LUCIDE,
+		"texture": preload("res://assets/icons/lucide/taxation.svg")},
+	&"tax.tariff": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf24e"},
 	&"system.clock": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf017"},
 	&"system.seed": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf1ec"},
 	&"system.settings": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf013"},
@@ -334,6 +344,7 @@ const ALLOWED_SHARED_IMPLEMENTATIONS := {
 	"fontawesome:glyph:f773": [&"hydrology.current", &"hydrology.water", &"resource.freshwater_fish"],
 	"lucide:texture:technology.svg": [&"country.technology"],
 	"tabler:texture:technology.svg": [&"metric.technology"],
+	"tabler:texture:treasury.svg": [&"country.economy", &"metric.treasury"],
 }
 
 
