@@ -77,24 +77,43 @@ func _run() -> void:
 			== int(treasury.get("nonzero_good_count", -1)))
 	economy.call("select_page_for_test", "income")
 	var policy: Dictionary = model.get("tax_policy", {})
-	var profession_ids: PackedStringArray = policy.get(
-		"profession_ids", PackedStringArray())
-	var first_profession := String(profession_ids[0]) \
-		if not profession_ids.is_empty() else ""
+	var presentation: Dictionary = model.get("tax_presentation", {})
+	var income_pres: Dictionary = presentation.get("income", {})
+	var unlocked_professions: Array = income_pres.get("unlocked", [])
+	var first_profession := String((unlocked_professions[0] as Dictionary).get("id", "")) \
+		if not unlocked_professions.is_empty() else ""
 	var first_tax_row_id := int(economy.call(
 		"tax_row_instance_id", "income", first_profession))
-	_expect("income tax page renders default and profession rows",
-		bool(policy.get("ok", false)) and
+	_expect("income tax page renders default and unlocked profession rows",
+		bool(policy.get("ok", false)) and bool(presentation.get("ok", false)) and
 		int(economy.call("tax_row_count", "income")) ==
-			profession_ids.size() + 1 and first_tax_row_id != 0)
-	economy.call("select_page_for_test", "import")
+			unlocked_professions.size() + 1 and first_tax_row_id != 0)
+	_expect("income tax rows use localized profession names",
+		not unlocked_professions.is_empty() and String(economy.call(
+			"tax_row_name_text", "income", first_profession)) ==
+			String((unlocked_professions[0] as Dictionary).get("display_name", "")))
+	var unlocked_profession_ids := {}
+	for item in unlocked_professions:
+		unlocked_profession_ids[String((item as Dictionary).get("id", ""))] = true
+	var locked_profession := ""
+	for raw_id in policy.get("profession_ids", PackedStringArray()):
+		if not unlocked_profession_ids.has(String(raw_id)):
+			locked_profession = String(raw_id)
+			break
+	_expect("locked professions stay hidden from the income page",
+		locked_profession == "" or int(economy.call(
+			"tax_row_instance_id", "income", locked_profession)) == 0)
+	economy.call("select_page_for_test", "tariff")
+	var import_pres: Dictionary = presentation.get("import", {})
 	_expect("tariff page is editable but marked pending foreign trade",
-		int(economy.call("tax_row_count", "import")) > 1 and
+		int(economy.call("tax_row_count", "tariff")) ==
+			(import_pres.get("unlocked", []) as Array).size() + 1 and
 		not String(economy.call("tax_status_text")).is_empty())
 	economy.call("select_page_for_test", "income")
 	economy.call("refresh_model", model)
 	_expect("daily tax refresh reuses cached row nodes",
-		int(economy.call("tax_row_instance_id", "income", first_profession)) ==
+		first_tax_row_id == 0 or int(economy.call(
+			"tax_row_instance_id", "income", first_profession)) ==
 			first_tax_row_id)
 	economy.call("select_page_for_test", "treasury")
 

@@ -95,9 +95,15 @@ generation-safe 国家 handle 不匹配时，旧 cell 权重自动失效。
 
 ## UI 与验证
 
-税务页位于国家“经济”工作区内部，包含国库、所得税、消费税、营业税、进口和出口分页。
-默认率及覆盖行同时展示基础率和 Modifier 后有效率；单个输入确认后才提交次日命令。列表
-节点复用，刷新不重建树。关税页可编辑，但显示“待跨国贸易接入”。
+税务页位于国家“经济”工作区内部，包含国库、所得税、消费税、营业税和关税分页；关税
+页按物资合并展示同一物资的进口、出口两档税率。分页以卡片网格渲染：页签带税种图标与
+“已解锁 X/Y”提示，卡片内名称与税率输入相邻。CountryViewModel 的 `present_tax_policy`
+按国家已完成科技过滤条目：profile `technology_tags` 中的可执行 `tech.*` 要求全部满足
+才列入，未解锁的职业、物资和建筑不渲染；显示名来自各 profile 的中文 `display_name`，
+图标来自 IconCatalog 语义键。输入即覆盖：输入与默认不同的税率即提交次日生效的覆盖命
+令，输回默认值或点重置按钮则清除覆盖；继承默认的输入暗色显示，覆盖项黄铜高亮。修正
+后有效率与基础率不同时卡片附注“修正后 X%”。卡片节点复用，每日刷新不重建树。关税页
+可编辑，但显示“待跨国贸易接入”。
 
 最低验证集为 country、economy rolling、building、modifier、game-save 和玩家国家 UI
 focused suites，加 debug/release 构建及 50 日 production-path benchmark。确定性测试必须

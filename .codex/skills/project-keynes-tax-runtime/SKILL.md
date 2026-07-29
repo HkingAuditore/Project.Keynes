@@ -128,7 +128,9 @@ Verify:
 - first-batch subsidy delay, proportional reservation, unused return, nonnegative treasury;
 - worker/scalar, continuation, save/restore, and replay hash equality;
 - tariff configuration round-trip with zero domestic events;
-- UI pending state, clear override, filtering, tariff badge, node/scroll reuse;
+- UI unlock-filtered card grid with localized profile display names and catalog icons,
+  input-to-override plus reset-to-default, pending state, merged import/export tariff cards,
+  filtering, node/scroll reuse;
 - zero strings/Godot/shared treasury writes/transaction allocations in worker hot paths.
 
 Do not claim the 3% median / 5% p95 gate without a same-machine comparable baseline. Report

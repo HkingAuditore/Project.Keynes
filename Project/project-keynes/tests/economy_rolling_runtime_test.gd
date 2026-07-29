@@ -81,6 +81,9 @@ func _run() -> void:
 				bool(traced.get("settlement_detail_available", false)) and
 				_cashflow_has_source(traced, "transfer", true) and
 				not _cashflow_has_source(traced, "other", true))
+			_expect("due trace exposes income and consumption tax expense rows",
+				_cashflow_has_source(traced, "income_tax", false) and
+				_cashflow_has_source(traced, "consumption_tax", false))
 		elif day < 6:
 			_expect("non-due day %d preserves the last classified trace" % day,
 				int(traced.get("settlement_epoch_id", -1)) == traced_epoch and

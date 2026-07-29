@@ -22362,6 +22362,15 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     cashflow_source_ids.push_back("merchant_procurement");
     cashflow_source_ids.push_back("other");
     cashflow_source_ids.push_back("producer_support_issuance");
+    // Indices stay enum-1: tax/subsidy legs recorded via trace_record_cashflow
+    // (CASHFLOW_INCOME_TAX..CASHFLOW_FISCAL_ESCROW) resolve to these ids.
+    cashflow_source_ids.push_back("income_tax");
+    cashflow_source_ids.push_back("consumption_tax");
+    cashflow_source_ids.push_back("business_tax");
+    cashflow_source_ids.push_back("income_subsidy");
+    cashflow_source_ids.push_back("consumption_subsidy");
+    cashflow_source_ids.push_back("business_subsidy");
+    cashflow_source_ids.push_back("fiscal_escrow");
     out["settlement_cashflow_source_stable_ids"] = cashflow_source_ids;
     out["settlement_detail_available"] = settlement_batch != nullptr;
     out["settlement_detail_pending"] = settlement_batch == nullptr &&
