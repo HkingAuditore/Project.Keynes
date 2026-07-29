@@ -49,6 +49,12 @@ float terrain_bayer2_digit(vec2 bit_xy) {
 	return (bit_xy.x < 0.5) ? 3.0 : 1.0;
 }
 
+// A full [0, 1] Bayer rank contains a few near-zero samples. Across the broad
+// terrain ecotone those samples survive almost the whole band and become long,
+// one-texel "teeth". Compressing the rank tails preserves exactly 50% coverage
+// at the cell boundary while keeping every Dither island compact.
+const float TERRAIN_DITHER_THRESHOLD_MARGIN = 0.18;
+
 // 移动端恢复 atlas-texel 锚定的 8x8 Bayer DitherUV。它只选择视觉主/副材质，
 // 不改写 map_index_atlas.GB、CSR 或任何权威 cell 状态。
 float terrain_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
@@ -66,23 +72,37 @@ float terrain_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
 	float value = 16.0 * terrain_bayer2_digit(mod(p, 2.0))
 			+ 4.0 * terrain_bayer2_digit(mod(floor(p * 0.5), 2.0))
 			+ terrain_bayer2_digit(floor(p * 0.25));
-	return (value + 0.5) / 64.0;
+	float raw_threshold = (value + 0.5) / 64.0;
+	return mix(
+			TERRAIN_DITHER_THRESHOLD_MARGIN,
+			1.0 - TERRAIN_DITHER_THRESHOLD_MARGIN,
+			raw_threshold);
 }
 
 // Distance field and DitherUV are complementary: the distance field defines
 // the broad ecotone probability, while DitherUV converts it into stable map-
-// anchored coverage. Desktop fades the ordered coverage toward continuous
-// mixing at close zoom so enlarged 8x8 texels never dominate the material.
+// anchored coverage. Land Dither is strictly a distant-view aid and fades to
+// zero before close zoom, where enlarged 8x8 atlas texels become visible.
+float terrain_land_dither_zoom_strength() {
+#if defined(PK_MOBILE_ANY)
+	// Keep the inexpensive mobile treatment for longer, but never carry its
+	// atlas-sized blocks into the closest camera range.
+	return 1.0 - smoothstep(1.65, 2.45, camera_zoom);
+#else
+	return 1.0 - smoothstep(1.20, 2.05, camera_zoom);
+#endif
+}
+
 float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
 	float dither_w = (terrain_mobile_dither_uv_threshold(uv, wp) < edge_w) ? 1.0 : 0.0;
 #if defined(PK_MOBILE_ANY)
-	return dither_w;
+	float dither_strength = terrain_land_dither_zoom_strength();
 #else
-	float far_dither = 1.0 - smoothstep(1.20, 2.20, camera_zoom);
-	float quality_strength = (visual_quality <= 0) ? 0.92
+	float far_strength = (visual_quality <= 0) ? 0.92
 			: ((visual_quality == 1) ? 0.74 : 0.62);
-	return mix(edge_w, dither_w, far_dither * quality_strength);
+	float dither_strength = terrain_land_dither_zoom_strength() * far_strength;
 #endif
+	return mix(edge_w, dither_w, dither_strength);
 }
 
 // The inner fwidth band removes raster stair-steps. A wider world-space ecotone

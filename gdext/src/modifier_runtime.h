@@ -52,6 +52,10 @@ public:
 
     double effective_value(int32_t domain, int32_t stat_id, uint64_t entity_handle,
                            uint64_t group_handle, double base_value) const;
+    int32_t stat_id_for_key(const std::string &key) const { return stat_id(key); }
+    void effective_values(int32_t domain, const int32_t *stat_ids,
+                          uint64_t entity_handle, const int8_t *base_values,
+                          int8_t *out_values, size_t count) const;
     double effective_value(int32_t domain, const char *stat_key, uint64_t entity_handle,
                            uint64_t group_handle, double base_value) const;
     float climate_radiative_target(int32_t cell, float base_value) const;
@@ -89,7 +93,8 @@ public:
     bool serialize_domain(int32_t domain, std::vector<uint8_t> &out,
                           std::string &error) const;
     bool restore_domain(int32_t domain, const std::vector<uint8_t> &bytes,
-                        std::string &error);
+                        std::string &error,
+                        bool allow_tax_catalog_extension = false);
     void clear_domain(int32_t domain);
     uint64_t catalog_hash() const { return _catalog_hash; }
     bool configured() const { return _configured; }
@@ -263,6 +268,7 @@ private:
     bool _configured = false;
     int32_t _cell_count = 0;
     uint64_t _catalog_hash = 0;
+    uint64_t _legacy_catalog_hash_without_tax = 0;
     int64_t _current_day = -1;
     int64_t _next_request_id = 1;
     int64_t _next_event_id = 1;

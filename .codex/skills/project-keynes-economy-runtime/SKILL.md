@@ -1,6 +1,6 @@
 ---
 name: project-keynes-economy-runtime
-description: Guides Project.Keynes native economy runtime development and review, covering PopulationCohort, merchant-owned MarketStore, domestic trade topology/planning/orders, need/variant/component consumption, sparse building construction/employment/production, frozen settlement cycles, EconomyDailySystem scheduling, fixed-point conservation, save schema, performance/approximation diagnosis, and content expansion. Use when modifying gdext/src/economy_runtime.*, world_ext_economy.cpp, economy profiles/catalog/facade, goods/needs/professions/ethnicities/buildings, terrain trade movement, economy scheduling/UI/save/tests, or investigating economy correctness, latency, memory, and replay behavior.
+description: Guides Project.Keynes native economy runtime development and review, covering PopulationCohort, merchant-owned MarketStore, domestic trade topology/planning/orders, need/variant/component consumption, sparse building construction/employment/production, tax-aware settlement and behavior, frozen settlement cycles, EconomyDailySystem scheduling, fixed-point conservation, save schema, performance/approximation diagnosis, and content expansion. Use when modifying gdext/src/economy_runtime.*, world_ext_economy.cpp, economy profiles/catalog/facade, goods/needs/professions/ethnicities/buildings, taxation events or predictions, terrain trade movement, economy scheduling/UI/save/tests, or investigating economy correctness, latency, memory, and replay behavior.
 ---
 
 # Project.Keynes Economy Runtime
@@ -9,6 +9,9 @@ Use this skill together with `cpp-dots-runtime-development` and
 `project-keynes-runtime-architecture` when they are available. Treat the current source as the
 final truth; use these references to avoid rediscovering invariants and to detect source/document
 drift.
+
+Also load `project-keynes-tax-runtime` for tax policy, fiscal escrow, tax bases, subsidies,
+tax-aware purchase/employment/investment behavior, tariff placeholders, or PKCN/PKEC tax migration.
 
 ## Ground the task
 
@@ -69,7 +72,8 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
   Objects. DataCore may expose only sampled geographic/resource inputs and resource deltas.
 - Keep country identity, technology, cash, and goods treasury in `NativeCountryRuntime`; economy
   freezes the native country snapshot at sample day. Never restore per-cell technology or a global
-  economy treasury.
+  economy treasury. Tax policy and cash treasury remain country-owned; taxable events, frozen
+  rates, fiscal escrow, and fiscal history remain economy-owned.
 - Keep sparse building groups in stable `(cell, type, owner signature)` order. Store the sponsor's
   stable cohort signature as owner identity; do not add employer or building identity to cohort
   signatures.
@@ -85,8 +89,9 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
   inspector queries may read the latest slice-complete native state, must report `snapshot_source`,
   and must stay bounded; never copy or publish a global cohort-by-good or order matrix.
 - Keep generic production, employment, wages, and transport outside household Market V2. The native
-  building graph and PKEC v11 domestic trade graph are explicit staged exceptions. Keep tax,
-  cross-country trade/tariffs, politics, and natural demography outside this runtime until designed.
+  building graph, domestic trade graph, and dedicated tax/fiscal settlement are explicit staged
+  exceptions. Keep cross-country trade execution, active tariffs, politics, and unrelated country
+  systems outside this runtime until their own authority contracts are designed.
 
 ## Preserve the building graph contract
 

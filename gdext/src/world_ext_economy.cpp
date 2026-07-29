@@ -381,6 +381,11 @@ Dictionary DCWorldExt::get_market_cell_snapshot(int cell_idx) const {
     return runtime_from(_economy_runtime)->market_cell_snapshot(cell_idx);
 }
 
+Dictionary DCWorldExt::get_country_fiscal_snapshot(int64_t handle) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->fiscal_snapshot(handle);
+}
+
 Dictionary DCWorldExt::get_trade_orders_for_cell(
         int cell_idx, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();

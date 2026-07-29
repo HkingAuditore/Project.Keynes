@@ -13,7 +13,18 @@ u32 payload_bytes
 payload
 ```
 
-## PKEC v22（当前 writer，仅接受 v22）
+## PKEC v23（当前 writer）
+
+PKEC v23 保留 v22 的生产气候、Modifier、科研采购、滚动经济、贸易、建筑、恢复和审计
+payload，并在 cell record 追加上一批补贴申请及 generation-safe 国家 handle；财政 section
+保存五类税种的上批与累计值，end section 后移。writer 仅写 v23。
+
+reader 显式接受 v23，以及唯一的 v22→v23 税务迁移。v22 恢复为空补贴历史；对应 PKCN v3
+先迁移为全零税率与空覆盖。新增 tax stat 导致的 Modifier catalog 差异只在该迁移中接受，
+且旧 definition version、stat key 和 term payload 必须逐项匹配。其他 schema 或 catalog
+差异仍按原有精确错误拒绝。
+
+## PKEC v22（历史）
 
 PKEC v22 keeps the complete modifier, technology-procurement, rolling economy,
 trade, building, recovery, and audit payload. Its cell record is 76 bytes and
@@ -29,7 +40,7 @@ building diagnostics enter the authoritative state hash. Truncated records,
 invalid ranges, or an environment hash mismatch fail restore and the target does
 not become bootstrapped.
 
-The writer and reader accept schema 22 only. Any other schema, including v21,
+The historical v22 writer and reader accepted schema 22 only. Any other schema, including v21,
 returns `legacy_climate_production_save_unsupported`. There is no implicit
 default for the two new frozen environment columns and no legacy climate
 production migration.
@@ -55,13 +66,14 @@ section 顺序：
 10. trade order records：订单头、物资行 CSR 与卖方快照 CSR。
 11. trade flow records：稀疏 `(cell, good)` 进出口 EMA/本周期流量。
 12. Modifier records：BuildingIdentityStore 与 Economy Modifier domain。
-13. end。
+13. fiscal history（v23）：逐国家五类税种的上批与累计财政值。
+14. end（v23；v22 的 end 为 section 13）。
 
 `read_economy_save_chunk(max_bytes)` 直接从当前 native vectors 编码本 section 的
 record range，不构造巨型 Dictionary 或整份 byte buffer。page/market record 不会被
 拆跨 chunk；请求 4–16MB 是生产建议，测试可使用 64KB。
 
-restore 要先配置并完整恢复 PKCN v2，再用当前资源 catalog 调 `configure_economy()` 和
+restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `configure_economy()` 和
 `begin_economy_restore()`。每个 feed 立即解析并写恢复存储；end 时验证：
 
 - schema、尺度、catalog hash 和稳定 ID 表
@@ -78,8 +90,8 @@ restore 要先配置并完整恢复 PKCN v2，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v22，并与 PKCN v2 交叉绑定。PKEC v2-v21 统一返回
-`legacy_climate_production_save_unsupported`，不执行隐式迁移。后文旧版本迁移章节只记录历史
+当前写出 schema 为 PKEC v23，并与 PKCN v4 交叉绑定。仅 PKEC v22 通过上述显式税务迁移；
+PKEC v2-v21 返回相应 legacy unsupported 错误，不执行隐式迁移。后文旧版本迁移章节只记录历史
 格式演进，不代表当前 reader 仍接受这些版本。拓扑和未完成规划从不存档，加载后重建；联合存档
 只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
 
@@ -89,7 +101,8 @@ restore 要先配置并完整恢复 PKCN v2，再用当前资源 catalog 调 `co
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v22 与 PKCN v2 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致。
+当前 PKEC v23 与 PKCN v4 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致；
+仅 v22→v23 的 tax stat 追加走上述逐项验证迁移。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。
 未来新增/删除/改 ID 若要兼容，必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
 迁移器应：

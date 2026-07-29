@@ -194,6 +194,8 @@ public:
     godot::Dictionary get_country_snapshot(int64_t handle) const;
     godot::Dictionary get_country_treasury_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_tax_policy_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_fiscal_snapshot(int64_t handle) const;
     godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
     godot::Dictionary reset_country(const godot::String &reason);
     godot::Dictionary begin_country_save(int chunk_bytes = 4 * 1024 * 1024);

@@ -18,6 +18,17 @@ enum Opcode {
 	MOVE_RESEARCH = 8,
 	SET_RESEARCH_BUDGET = 9,
 	REVEAL_ALL_TECHNOLOGIES = 10,
+	SET_TAX_DEFAULT = 11,
+	SET_TAX_OVERRIDE = 12,
+	CLEAR_TAX_OVERRIDE = 13,
+}
+
+enum TaxKind {
+	INCOME = 0,
+	CONSUMPTION = 1,
+	BUSINESS = 2,
+	IMPORT = 3,
+	EXPORT = 4,
 }
 
 var _world_ext: Object = null
@@ -69,6 +80,9 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 		"weight2_bp": PackedInt32Array(),
 		"weight3_bp": PackedInt32Array(),
 		"value_i64": PackedInt64Array(),
+		"tax_kinds": PackedInt32Array(),
+		"tax_item_indices": PackedInt32Array(),
+		"tax_rate_percent": PackedInt32Array(),
 		"stable_ids": PackedStringArray(),
 		"display_names": PackedStringArray(),
 	}
@@ -87,6 +101,9 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 			batch["weight%d_bp" % domain].append(
 				int(weights[domain]) if domain < weights.size() else 0)
 		batch.value_i64.append(int(command.get("value", 0)))
+		batch.tax_kinds.append(int(command.get("tax_kind", -1)))
+		batch.tax_item_indices.append(int(command.get("tax_item", -1)))
+		batch.tax_rate_percent.append(int(command.get("tax_rate_percent", 0)))
 		batch.stable_ids.append(String(command.get("stable_id", "")))
 		batch.display_names.append(String(command.get("display_name", "")))
 	return _world_ext.submit_country_commands(batch)
@@ -159,6 +176,79 @@ func reveal_all_technologies(handle: int, effective_day: int,
 		sequence: int) -> Dictionary:
 	return submit([{"opcode": Opcode.REVEAL_ALL_TECHNOLOGIES,
 		"target_handle": handle, "effective_day": effective_day, "sequence": sequence}])
+
+
+func set_tax_default(handle: int, kind: int, rate_percent: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if kind < TaxKind.INCOME or kind > TaxKind.EXPORT:
+		return {"ok": false, "reason": "invalid tax kind"}
+	if rate_percent < -100 or rate_percent > 100:
+		return {"ok": false, "reason": "tax rate must be within -100..100"}
+	return submit([{
+		"opcode": Opcode.SET_TAX_DEFAULT,
+		"target_handle": handle,
+		"tax_kind": kind,
+		"tax_rate_percent": rate_percent,
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
+
+func set_tax_override(handle: int, kind: int, item_id: StringName,
+		rate_percent: int, effective_day: int, sequence: int) -> Dictionary:
+	var item := _tax_item_index(kind, item_id)
+	if item < 0:
+		return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
+	if rate_percent < -100 or rate_percent > 100:
+		return {"ok": false, "reason": "tax rate must be within -100..100"}
+	return submit([{
+		"opcode": Opcode.SET_TAX_OVERRIDE,
+		"target_handle": handle,
+		"tax_kind": kind,
+		"tax_item": item,
+		"tax_rate_percent": rate_percent,
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
+
+func clear_tax_override(handle: int, kind: int, item_id: StringName,
+		effective_day: int, sequence: int) -> Dictionary:
+	var item := _tax_item_index(kind, item_id)
+	if item < 0:
+		return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
+	return submit([{
+		"opcode": Opcode.CLEAR_TAX_OVERRIDE,
+		"target_handle": handle,
+		"tax_kind": kind,
+		"tax_item": item,
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
+
+func tax_policy_snapshot(handle: int) -> Dictionary:
+	return _world_ext.get_country_tax_policy_snapshot(handle) if _configured else {}
+
+
+func fiscal_snapshot(handle: int) -> Dictionary:
+	return _world_ext.get_country_fiscal_snapshot(handle) if _configured \
+			and _world_ext.has_method("get_country_fiscal_snapshot") else {}
+
+
+func _tax_item_index(kind: int, item_id: StringName) -> int:
+	var key := ""
+	match kind:
+		TaxKind.INCOME:
+			key = "profession_ids"
+		TaxKind.CONSUMPTION, TaxKind.IMPORT, TaxKind.EXPORT:
+			key = "good_ids"
+		TaxKind.BUSINESS:
+			key = "building_type_ids"
+		_:
+			return -1
+	var ids: PackedStringArray = _catalog.get(key, PackedStringArray())
+	return ids.find(String(item_id))
 
 func research_snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_research_snapshot(handle) if _configured else {}

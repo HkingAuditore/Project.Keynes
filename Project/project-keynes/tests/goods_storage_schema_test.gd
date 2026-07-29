@@ -358,15 +358,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v22 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 22)
+	_expect("v23 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 23)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v22 save emits chunks", chunks.size() >= 11)
-	_expect("v22 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v23 save emits chunks", chunks.size() >= 12)
+	_expect("v23 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
@@ -399,7 +399,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
 	var source_hash: int = ext.get_economy_state_hash()
 	var restored_hash: int = restored.get_economy_state_hash()
-	_expect("v22 stream restore hash exact", source_hash == restored_hash)
+	_expect("v23 stream restore hash exact", source_hash == restored_hash)
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)

@@ -1,0 +1,311 @@
+﻿kind,id,old_display_name_en,new_display_name_cn
+goods,agricultural_machinery,Agricultural Machinery,农业机械
+goods,aluminum,Aluminum,铝
+goods,automobiles,Automobiles,汽车
+goods,batteries,Batteries,电池
+goods,bauxite,Bauxite,铝土矿
+goods,beverages,Beverages,饮料
+goods,bread,Bread,面包
+goods,bricks,Bricks,砖
+goods,canned_fish,Canned Fish,鱼罐头
+goods,cement,Cement,水泥
+goods,clay,Clay,黏土
+goods,cloth,Cloth,布匹
+goods,clothing,Clothing,衣物
+goods,coal,Coal,煤炭
+goods,computers,Computers,计算机
+goods,concrete,Concrete,混凝土
+goods,construction_components,Construction Components,建筑构件
+goods,copper,Copper,铜
+goods,copper_ore,Copper Ore,铜矿
+goods,corn_food,Corn Food,玉米食品
+goods,corn_grain,Corn Grain,玉米
+goods,cotton_fiber,Cotton Fiber,棉纤维
+goods,cotton_yarn,Cotton Yarn,棉纱
+goods,crude_oil,Crude Oil,原油
+goods,cut_stone,Cut Stone,切割石料
+goods,dairy_products,Dairy Products,乳制品
+goods,detergent,Detergent,洗涤剂
+goods,edible_oil,Edible Oil,食用油
+goods,electric_motor,Electric Motor,电动机
+goods,electrical_equipment,Electrical Equipment,电气设备
+goods,electricity,Electricity,电力
+goods,electronic_components,Electronic Components,电子元件
+goods,engines,Engines,发动机
+goods,explosives,Explosives,炸药
+goods,fertilizer,Fertilizer,化肥
+goods,fish,Fish,鱼
+goods,flax_fiber,Flax Fiber,亚麻纤维
+goods,flax_yarn,Flax Yarn,亚麻纱
+goods,flour,Flour,面粉
+goods,footwear,Footwear,鞋类
+goods,fur,Fur,毛皮
+goods,furniture,Furniture,家具
+goods,game_meat,Game Meat,野味肉
+goods,glass,Glass,玻璃
+goods,gold,Gold,金
+goods,grain,Mixed Grain,杂粮
+goods,horses,Horses,马
+goods,household_appliances,Household Appliances,家用电器
+goods,industrial_chemicals,Industrial Chemicals,工业化学品
+goods,industrial_machinery,Industrial Machinery,工业机械
+goods,iron_ore,Iron Ore,铁矿
+goods,jewelry,Jewelry,珠宝
+goods,latex,Natural Latex,乳胶
+goods,lead,Lead,铅
+goods,lead_ore,Lead Ore,铅矿
+goods,leather,Leather,皮革
+goods,lime,Lime,石灰
+goods,limestone,Limestone,石灰岩
+goods,livestock_products,Livestock Products,畜产品
+goods,logs,Logs,原木
+goods,lubricants,Lubricants,润滑剂
+goods,lumber,Lumber,板材
+goods,machine_parts,Machine Parts,机械零件
+goods,manganese_alloy,Manganese Alloy,锰合金
+goods,manganese_ore,Manganese Ore,锰矿
+goods,meat,Meat,肉
+goods,medicinal_herbs,Medicinal Herbs,药材
+goods,natural_gas,Natural Gas,天然气
+goods,nuclear_fuel,Nuclear Fuel,核燃料
+goods,packaging,Packaging,包装材料
+goods,paper,Paper,纸张
+goods,petrochemicals,Petrochemicals,石化产品
+goods,pharmaceuticals,Pharmaceuticals,药品
+goods,phosphate_rock,Phosphate Rock,磷矿
+goods,pig_iron,Pig Iron,生铁
+goods,plastics,Plastics,塑料
+goods,potato_food,Potato Food,马铃薯食品
+goods,potatoes,Potatoes,马铃薯
+goods,printed_materials,Printed Materials,印刷品
+goods,processed_food,Processed Food,加工食品
+goods,railway_equipment,Railway Equipment,铁路设备
+goods,rare_earth_metals,Strategic Mineral Materials,稀土金属
+goods,rare_earth_ore,Strategic Mineral Ore,稀土矿石
+goods,raw_hide,Raw Hide,生皮
+goods,raw_stone,Raw Stone,原石
+goods,refined_fuel,Refined Fuel,精炼燃料
+goods,rice_food,Rice Food,米饭食品
+goods,rice_grain,Rice Grain,稻米
+goods,salt,Salt,盐
+goods,saltpeter,Saltpeter,硝石
+goods,semiconductors,Semiconductors,半导体
+goods,silica_sand,Silica Sand,硅砂
+goods,silver,Silver,银
+goods,soap,Soap,肥皂
+goods,spices,Spices,香料
+goods,stainless_steel,Stainless Steel,不锈钢
+goods,steel,Steel,钢
+goods,sulfur,Sulfur,硫磺
+goods,synthetic_fiber,Synthetic Fiber,合成纤维
+goods,synthetic_rubber,Synthetic Rubber,合成橡胶
+goods,telecom_equipment,Telecom Equipment,电信设备
+goods,textile,Textiles,纺织品
+goods,tin,Tin,锡
+goods,tin_ore,Tin Ore,锡矿
+goods,tools,Tools,工具
+goods,vegetables,Vegetables,蔬菜
+goods,wheat_grain,Wheat Grain,小麦
+goods,wire,Wire,金属线材
+goods,wood_pulp,Wood Pulp,木浆
+goods,wool,Wool,羊毛
+goods,zinc,Zinc,锌
+goods,zinc_ore,Zinc Ore,锌矿
+buildings,agricultural_machinery_plant,Agricultural Machinery Factory,农业机械厂
+buildings,aluminum_plant,Aluminum Factory,铝厂
+buildings,automobiles_plant,Automobiles Factory,汽车厂
+buildings,bakery,Bakery,面包坊
+buildings,batteries_plant,Batteries Factory,电池厂
+buildings,bauxite_collector,Bauxite Collector,铝土矿采集场
+buildings,beverages_plant,Beverages Factory,饮料厂
+buildings,bread_plant,Bread Factory,面包厂
+buildings,bricks_plant,Bricks Factory,砖厂
+buildings,canned_fish_plant,Canned Fish Factory,鱼罐头厂
+buildings,cement_plant,Cement Factory,水泥厂
+buildings,clay_collector,Clay Deposit Collector,黏土采集场
+buildings,cloth_plant,Cloth Factory,织布厂
+buildings,clothing_plant,Clothing Factory,制衣厂
+buildings,coal_mine,Coal Collector,煤矿
+buildings,cobbler_shop,Cobbler Shop,鞋匠铺
+buildings,computers_plant,Computers Factory,计算机制造厂
+buildings,concrete_plant,Concrete Factory,混凝土厂
+buildings,construction_components_plant,Construction Components Factory,建筑构件厂
+buildings,copper_ore_collector,Copper Deposit Collector,铜矿采集场
+buildings,copper_plant,Copper Factory,铜冶炼厂
+buildings,corn_food_plant,Corn Food Factory,玉米食品加工厂
+buildings,corn_grinding_house,Corn Grinding House,玉米研磨坊
+buildings,cottage_weaving,Cottage Weaving,家庭纺织
+buildings,cotton_collector,Cotton Farm,棉花种植园
+buildings,cotton_yarn_plant,Cotton Yarn Factory,棉纱厂
+buildings,creamery,Creamery,乳品厂
+buildings,cut_stone_plant,Cut Stone Factory,石料切割厂
+buildings,dairy_products_plant,Dairy Factory,乳制品厂
+buildings,detergent_plant,Detergent Factory,洗涤剂厂
+buildings,edible_oil_plant,Edible Oil Factory,食用油厂
+buildings,electric_motor_plant,Electric Motor Factory,电动机制造厂
+buildings,electrical_equipment_plant,Electrical Equipment Factory,电气设备厂
+buildings,electricity_plant,Electricity Factory,发电厂
+buildings,electronic_components_plant,Electronic Components Factory,电子元件厂
+buildings,engines_plant,Engines Factory,发动机制造厂
+buildings,explosives_plant,Explosives Factory,炸药厂
+buildings,fertile_soil_collector,Vegetable Farm,菜园农场
+buildings,fertilizer_plant,Fertilizer Factory,化肥厂
+buildings,flax_collector,Flax Farm,亚麻种植园
+buildings,flax_spinning_shed,Flax Spinning Shed,亚麻纺纱棚
+buildings,flax_yarn_plant,Flax Yarn Factory,亚麻纱厂
+buildings,flour_plant,Mechanized Flour Mill,面粉厂
+buildings,footwear_plant,Footwear Factory,鞋厂
+buildings,furniture_plant,Furniture Factory,家具厂
+buildings,gas_power_plant,Gas Power Plant,燃气发电厂
+buildings,gathering_ground,Gathering Ground,采集场
+buildings,glass_plant,Glass Factory,玻璃厂
+buildings,gold_mine,Gold Deposit Collector,金矿
+buildings,grain_plant,Mixed Grain Factory,杂粮加工厂
+buildings,guild_weaving_house,Guild Weaving House,行会织造坊
+buildings,horse_breeder,Horse Breeder,养马场
+buildings,household_appliances_plant,Household Appliances Factory,家电厂
+buildings,household_loom,Household Loom,家庭织机
+buildings,household_weaving_shelter,Household Weaving Shelter,家庭纺织棚
+buildings,improved_domestic_loom,Improved Domestic Loom,改良家用织机
+buildings,improved_smallholding,Improved Smallholding,改良小农庄
+buildings,industrial_chemicals_plant,Industrial Chemicals Factory,工业化学品厂
+buildings,industrial_machinery_plant,Industrial Machinery Factory,工业机械厂
+buildings,iron_ore_collector,Iron Deposit Collector,铁矿采集场
+buildings,jewelry_plant,Jewelry Factory,珠宝厂
+buildings,landed_estate,Corn Estate,庄园
+buildings,lead_ore_collector,Lead Deposit Collector,铅矿采集场
+buildings,lead_plant,Lead Factory,铅冶炼厂
+buildings,leather_plant,Leather Factory,皮革厂
+buildings,lime_plant,Lime Factory,石灰厂
+buildings,limestone_collector,Limestone Collector,石灰岩采集场
+buildings,lubricants_plant,Lubricants Factory,润滑剂厂
+buildings,lumber_plant,Lumber Factory,锯木厂
+buildings,machine_parts_plant,Machine Parts Factory,机械零件厂
+buildings,manganese_alloy_plant,Manganese Alloy Factory,锰合金厂
+buildings,manganese_ore_collector,Manganese Deposit Collector,锰矿采集场
+buildings,manorial_pasture,Manorial Pasture,庄园牧场
+buildings,marine_fish_collector,Marine Fishery,海洋渔场
+buildings,mechanized_farm,Mechanized Farm,机械化农场
+buildings,mechanized_slaughterhouse,Mechanized Slaughterhouse,机械化屠宰场
+buildings,medicinal_herbs_collector,Medicinal Herb Plantation,药材种植园
+buildings,natural_gas_collector,Natural Gas Collector,天然气采集场
+buildings,nuclear_fuel_plant,Nuclear Fuel Factory,核燃料厂
+buildings,nuclear_power_plant,Nuclear Power Plant,核电站
+buildings,oil_collector,Oil Collector,石油采集场
+buildings,oil_power_plant,Oil Power Plant,燃油发电厂
+buildings,packaging_plant,Packaging Factory,包装厂
+buildings,paper_plant,Paper Factory,造纸厂
+buildings,pastoral_camp,Pastoral Camp,游牧营地
+buildings,petrochemicals_plant,Petrochemicals Factory,石化厂
+buildings,pharmaceuticals_plant,Pharmaceuticals Factory,制药厂
+buildings,phosphate_rock_collector,Phosphate Rock Collector,磷矿采集场
+buildings,pig_iron_plant,Pig Iron Factory,生铁厂
+buildings,plastics_plant,Plastics Factory,塑料厂
+buildings,potato_collector,Potato Field,马铃薯田
+buildings,potato_food_plant,Potato Food Factory,马铃薯食品加工厂
+buildings,potato_kitchen,Potato Kitchen,马铃薯厨房
+buildings,printed_materials_plant,Printed Materials Factory,印刷厂
+buildings,processed_food_plant,Processed Food Factory,食品加工厂
+buildings,railway_equipment_plant,Railway Equipment Factory,铁路设备厂
+buildings,ranching_station,Mechanized Ranch,机械化牧场
+buildings,rare_earth_collector,Strategic Minerals Collector,战略矿产采集场
+buildings,rare_earth_metals_plant,Strategic Mineral Materials Factory,战略金属材料厂
+buildings,refined_fuel_plant,Refined Fuel Factory,精炼燃料厂
+buildings,rice_collector,Rice Farm,稻田农场
+buildings,rice_food_plant,Rice Food Factory,米饭食品加工厂
+buildings,rice_kitchen,Rice Kitchen,米饭厨房
+buildings,rubber_tree_collector,Rubber Plantation,橡胶种植园
+buildings,salt_collector,Salt Deposit Collector,盐矿采集场
+buildings,saltpeter_collector,Saltpeter Deposit Collector,硝石采集场
+buildings,semiconductors_plant,Semiconductors Factory,半导体厂
+buildings,silica_sand_collector,Silica Sand Collector,硅砂采集场
+buildings,silver_mine,Silver Deposit Collector,银矿
+buildings,slaughterhouse,Slaughterhouse,屠宰场
+buildings,soap_plant,Soap Factory,肥皂厂
+buildings,spice_plants_collector,Spice Plantation,香料种植园
+buildings,stainless_steel_plant,Stainless Steel Factory,不锈钢厂
+buildings,steel_plant,Steel Factory,钢厂
+buildings,stone_collector,Stone Collector,石料采集场
+buildings,subsistence_farm,Early Subsistence Farm,早期自给农场
+buildings,sulfur_collector,Sulfur Deposit Collector,硫磺采集场
+buildings,synthetic_fiber_plant,Synthetic Fiber Factory,合成纤维厂
+buildings,synthetic_rubber_plant,Synthetic Rubber Factory,合成橡胶厂
+buildings,synthetic_textile_mill,Synthetic Textile Mill,合成纺织厂
+buildings,tailor_shop,Tailor Shop,裁缝铺
+buildings,tannery,Tannery,制革厂
+buildings,telecom_equipment_plant,Telecom Equipment Factory,电信设备厂
+buildings,textile_mill,Textile Mill,纺织厂
+buildings,textile_workshop,Cloth Workshop,织布工坊
+buildings,three_field_smallholding,Three-Field Smallholding,三圃制小农庄
+buildings,timber_collector,Timber Collector,木材采集场
+buildings,tin_ore_collector,Tin Deposit Collector,锡矿采集场
+buildings,tin_plant,Tin Factory,锡冶炼厂
+buildings,tools_plant,Tools Factory,工具厂
+buildings,village_mill,Village Mill,乡村磨坊
+buildings,wheat_farm,Wheat Farm,小麦农场
+buildings,wire_plant,Wire Factory,金属线材厂
+buildings,wood_pulp_plant,Wood Pulp Factory,木浆厂
+buildings,wool_shed,Wool Shed,羊毛棚
+buildings,zinc_ore_collector,Zinc Deposit Collector,锌矿采集场
+buildings,zinc_plant,Zinc Factory,锌冶炼厂
+professions,agricultural_worker,Agricultural Worker,农业工人
+professions,apprentice,Apprentice,学徒
+professions,artisan,Artisan,工匠
+professions,chemist,Chemist,化学家
+professions,construction_worker,Construction Worker,建筑工人
+professions,electrician,Electrician,电工
+professions,engineer,Engineer,工程师
+professions,enslaved_laborer,Enslaved Laborer,奴隶劳工
+professions,fisher,Fisher,渔夫
+professions,forager,Forager,采集者
+professions,forestry_worker,Forestry Worker,林业工人
+professions,guild_master,Guild Master,行会师傅
+professions,hunter,Hunter,猎人
+professions,indentured_laborer,Indentured Laborer,契约劳工
+professions,industrial_worker,Industrial Worker,产业工人
+professions,industrialist,Industrialist,实业家
+professions,journeyman,Journeyman,熟练工
+professions,landlord,Landlord,地主
+professions,machinist,Machinist,机械师
+professions,manager,Manager,经理
+professions,merchant,Merchant,商人
+professions,metallurgist,Metallurgist,冶金学家
+professions,miner,Miner,矿工
+professions,pastoralist,Pastoralist,牧民
+professions,petroleum_worker,Petroleum Worker,石油工人
+professions,researcher,Researcher,研究员
+professions,serf,Serf,农奴
+professions,subsistence_farmer,Subsistence Farmer,自给农
+professions,technician,Technician,技术员
+professions,tenant_farmer,Tenant Farmer,佃农
+professions,transport_worker,Transport Worker,运输工人
+professions,worker,Worker,工人
+resources,arable_land,Arable Land Capacity,耕地
+resources,bauxite,Bauxite,铝土矿
+resources,lead_ore,Lead Deposit,铅矿
+resources,limestone,Limestone,石灰岩
+resources,manganese_ore,Manganese Deposit,锰矿
+resources,marine_fish,Marine Fish,海鱼
+resources,paddy_land,Paddy Land Capacity,水田
+resources,pasture,Pasture Capacity,牧场
+resources,phosphate_rock,Phosphate Rock,磷矿
+resources,plantation_land,Plantation Land Capacity,种植园
+resources,silica_sand,Silica Sand,硅砂
+resources,sulfur,Sulfur Deposit,硫磺
+resources,tin_ore,Tin Deposit,锡矿
+resources,zinc_ore,Zinc Deposit,锌矿
+needs,clothing,Clothing,衣物
+needs,communication,Communication,通讯
+needs,durable_goods,Durable Goods,耐用品
+needs,education_culture,Education Culture,教育文化
+needs,healthcare,Healthcare,医疗
+needs,home_energy,Home Energy,家庭能源
+needs,household_goods,Household Goods,家居用品
+needs,housing,Housing Upkeep,住房
+needs,hygiene,Hygiene,卫生
+needs,luxury,Luxury,奢侈品
+needs,produce,Produce,农产品
+needs,protein,Protein,蛋白质
+needs,recreation,Recreation,娱乐
+needs,staple_food,Staple Food,主食
+needs,transport,Transport,交通

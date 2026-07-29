@@ -2,8 +2,10 @@
 
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、PKEC v22 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究和国库由 NativeCountryRuntime 权威持有；不含税、
-> 跨国贸易/关税、政治、年龄与家庭结构；自然出生和死亡由原生 household/structural 路径处理。
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、税收财政、
+> PKEC v23 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
+> NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄与家庭结构尚未接入；
+> 自然出生和死亡由原生 household/structural 路径处理。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
 > 满意度公开字段是“食品与气候衣着的较低值”的生存满足度。黏土、盐、石油是静态地质存量，
@@ -34,8 +36,9 @@
   临时状态，不进入 PKEC 或权威 hash，GDScript 只转发 profile 和调度 report。
 - epoch 开始按冻结国家科技烘焙 `country -> available building types` CSR 和稠密可用位；建筑
   hot loop 不得为每个 cell/type 重复遍历科技 requirement。该缓存只属事务，不进入 PKEC/hash。
-- 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；未来税收
-  仍必须走原生守恒边界。
+- 建筑生产、自适应生活工资与 owner-lot 利润奖金由 BUILDING_GRAPH 直接维护守恒账本；税率
+  冻结、应税事件、财政托管与提交同样位于原生守恒边界，详见
+  `docs/cpp-dots-runtime/tax-fiscal-runtime.md`。
 - `owner_slots_per_building` 是正整数物理容量；普通企业通常为 1，家庭式采集/狩猎单位可用多个
   同职业共同经营岗位。活跃 owner-lot 的 owner required 等于物理容量，计划利用率只缩放 employee required 与产量；所有填充仍受对应 cohort 人口约束。
 - 六邻贸易拓扑、稀疏规划、路线缓存、在途订单和托管由 NativeEconomyRuntime 持有；MapData
@@ -326,7 +329,7 @@ already received a first dispatch. Committed diagnostics recompute current
 deadline misses from all live signal clocks rather than from only the planner
 slice that happened to run that day.
 
-## PKEC v22 rolling settlement and production climate (current)
+## PKEC v23 rolling settlement, production climate, and fiscal history (current)
 
 Production uses five stable daily buckets: cell `c` settles when
 `day % 5 == c % 5`, always with `dt=5`. Each populated cell therefore settles
@@ -343,11 +346,12 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v22. Cell records persist six frozen environment columns,
+Current saves are PKEC v23. Cell records persist six frozen environment columns,
 including 30-day temperature and plant-available water. Building records persist
 temperature fit, water fit, climate capacity, and climate-lost output; all four
-enter the state hash. Restore accepts v22 only. Every other schema returns
-`legacy_climate_production_save_unsupported`; truncated, out-of-range, or
+enter the state hash. PKEC v23 additionally persists generation-safe subsidy
+history and fiscal cumulative values. Restore accepts v23 and explicitly migrates
+v22 to empty fiscal history; older schemas, truncated, out-of-range, or
 environment-hash-mismatched records fail before the runtime becomes bootstrapped.
 
 The native hot path caches the frozen demand basis once per due cell and shares
@@ -362,7 +366,7 @@ stable group prefix with new groups, reuses type-compatible role/input spans,
 and rebuilds market/labor CSR from catalog-baked per-type good/profession spans.
 Generation stamps and double-buffered CSR storage replace global `(cell,key)`
 temporary lists and comparison sorting. These caches are transient and excluded
-from PKEC v22 and state hash; logical role state is hashed in stable group order.
+from PKEC v23 and state hash; logical role state is hashed in stable group order.
 Structure reports separate count-only/new/removed/rebuild/reuse counts and
 group-merge/market-cache/labor-cache milliseconds.
 

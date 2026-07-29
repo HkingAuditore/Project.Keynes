@@ -31,6 +31,10 @@ func _run() -> void:
 	var runtime := _new_runtime(compiled, catalog, profile, 92015)
 	if runtime == null:
 		return
+	var country_summary: Dictionary = runtime.get_country_cell_summary(0)
+	_expect("positive income and consumption tax policy commits",
+		_set_tax_defaults(runtime, int(country_summary.get("country_handle", 0)),
+			10, 12))
 	_expect("default profile enables BALANCED ACTIVE approximation",
 		String(runtime.get_economy_report().get(
 			"economy_approximation_runtime_mode", "")) == "ACTIVE")
@@ -85,12 +89,22 @@ func _run() -> void:
 				traced.get("settlement_cashflow_expense", PackedInt64Array()) == traced_expense and
 				not _cashflow_has_source(traced, "other", true) and
 				not _cashflow_has_source(traced, "other", false))
+	var fiscal: Dictionary = runtime.get_country_fiscal_snapshot(
+		int(country_summary.get("country_handle", 0)))
+	_expect("household tax enters country treasury without tariff events",
+		bool(fiscal.get("ok", false)) and
+		_sum_i64(fiscal.get("cumulative_collected", PackedInt64Array())) > 0 and
+		int(fiscal.get("tariff_events", -1)) == 0 and
+		not bool(fiscal.get("tariffs_active", true)))
 	var saved := _save(runtime)
-	_expect("PKEC v22 saves at a daily committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 22)
+	var saved_country := _save_country(runtime)
+	_expect("PKEC v23 saves at a daily committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 23)
 	var restored := _new_ext(compiled)
 	_expect("restore country matches", CountryTestHelper.configure_all_technologies(
 		restored, catalog, CELL_COUNT, 92015))
+	_expect("PKCN v4 tax and treasury restore matches",
+		_restore_country(restored, saved_country.get("chunks", [])))
 	_expect("restore economy configures", bool(restored.configure_economy(
 		catalog, profile, CELL_COUNT, 92015).get("ok", false)))
 	var restore_result := _restore(restored, saved.get("chunks", []))
@@ -101,6 +115,27 @@ func _run() -> void:
 		_validate_day(restored, day)
 		_expect("day %d restored replay hash" % day,
 			int(restored.get_economy_state_hash()) == int(runtime.get_economy_state_hash()))
+	var runtime_handle := int(runtime.get_country_cell_summary(0).country_handle)
+	var restored_handle := int(restored.get_country_cell_summary(0).country_handle)
+	_expect("negative consumption tax queues symmetrically",
+		_set_consumption_tax(runtime, runtime_handle, -50, 15, 20) and
+		_set_consumption_tax(restored, restored_handle, -50, 15, 20))
+	_validate_day(runtime, 15)
+	_validate_day(restored, 15)
+	var first_subsidy: Dictionary = runtime.get_country_fiscal_snapshot(runtime_handle)
+	_expect("first negative-tax batch establishes budget without payout",
+		_sum_i64(first_subsidy.get("subsidy_requested", PackedInt64Array())) > 0 and
+		_sum_i64(first_subsidy.get("subsidy_paid", PackedInt64Array())) == 0)
+	for day in range(16, 21):
+		_validate_day(runtime, day)
+		_validate_day(restored, day)
+		_expect("subsidy day %d restored replay hash" % day,
+			int(restored.get_economy_state_hash()) == int(runtime.get_economy_state_hash()))
+	var funded_subsidy: Dictionary = runtime.get_country_fiscal_snapshot(runtime_handle)
+	_expect("next matching rolling batch pays treasury-capped subsidy",
+		_sum_i64(funded_subsidy.get("cumulative_subsidy_paid",
+			PackedInt64Array())) > 0 and
+		int(runtime.get_country_treasury_snapshot(runtime_handle).cash) >= 0)
 
 func _new_runtime(compiled: Dictionary, catalog: Dictionary,
 		profile: Dictionary, seed: int) -> Object:
@@ -128,11 +163,14 @@ func _new_runtime(compiled: Dictionary, catalog: Dictionary,
 	var prices := PackedInt32Array()
 	stock.resize(CELL_COUNT * goods)
 	stock.fill(0)
+	var gathered := (compiled.good_ids as PackedStringArray).find("gathered_plants")
 	prices.resize(CELL_COUNT * goods)
 	for cell in range(CELL_COUNT):
 		for good in range(goods):
 			prices[cell * goods + good] = int(
 				(compiled.good_default_price as PackedInt32Array)[good])
+		if gathered >= 0:
+			stock[cell * goods + gathered] = 100000000
 	_expect("ten local markets bootstrap", bool(ext.bootstrap_economy({
 		"cell_indices": cells,
 		"signature_ids": signatures,
@@ -303,6 +341,67 @@ func _cashflow_has_source(snapshot: Dictionary, stable_id: String, income: bool)
 			return true
 	return false
 
+
+func _set_tax_defaults(ext: Object, handle: int, income: int,
+		consumption: int) -> bool:
+	var count := 2
+	var batch := {
+		"opcodes": PackedInt32Array([11, 11]),
+		"effective_days": PackedInt64Array([0, 0]),
+		"sequences": PackedInt64Array([1, 2]),
+		"target_handles": PackedInt64Array([handle, handle]),
+		"cell_indices": PackedInt32Array([-1, -1]),
+		"aux_i32": PackedInt32Array([-1, -1]),
+		"domain_i32": PackedInt32Array([-1, -1]),
+		"position_i32": PackedInt32Array([-1, -1]),
+		"weight0_bp": PackedInt32Array([0, 0]),
+		"weight1_bp": PackedInt32Array([0, 0]),
+		"weight2_bp": PackedInt32Array([0, 0]),
+		"weight3_bp": PackedInt32Array([0, 0]),
+		"value_i64": PackedInt64Array([0, 0]),
+		"tax_kinds": PackedInt32Array([0, 1]),
+		"tax_item_indices": PackedInt32Array([-1, -1]),
+		"tax_rate_percent": PackedInt32Array([income, consumption]),
+		"stable_ids": PackedStringArray(["", ""]),
+		"display_names": PackedStringArray(["", ""]),
+	}
+	return count == batch.opcodes.size() \
+		and bool(ext.submit_country_commands(batch).get("ok", false)) \
+		and bool(ext.run_country_slice({"day_index": 0}).get("ok", false))
+
+
+func _set_consumption_tax(ext: Object, handle: int, rate: int,
+		day: int, sequence: int) -> bool:
+	var batch := {
+		"opcodes": PackedInt32Array([11]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([sequence]),
+		"target_handles": PackedInt64Array([handle]),
+		"cell_indices": PackedInt32Array([-1]),
+		"aux_i32": PackedInt32Array([-1]),
+		"domain_i32": PackedInt32Array([-1]),
+		"position_i32": PackedInt32Array([-1]),
+		"weight0_bp": PackedInt32Array([0]),
+		"weight1_bp": PackedInt32Array([0]),
+		"weight2_bp": PackedInt32Array([0]),
+		"weight3_bp": PackedInt32Array([0]),
+		"value_i64": PackedInt64Array([0]),
+		"tax_kinds": PackedInt32Array([1]),
+		"tax_item_indices": PackedInt32Array([-1]),
+		"tax_rate_percent": PackedInt32Array([rate]),
+		"stable_ids": PackedStringArray([""]),
+		"display_names": PackedStringArray([""]),
+	}
+	return bool(ext.submit_country_commands(batch).get("ok", false)) \
+		and bool(ext.run_country_slice({"day_index": day}).get("ok", false))
+
+
+func _sum_i64(values: PackedInt64Array) -> int:
+	var total := 0
+	for value in values:
+		total += int(value)
+	return total
+
 func _save(ext: Object) -> Dictionary:
 	var begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(begin.get("ok", false)):
@@ -326,3 +425,27 @@ func _restore(ext: Object, chunks: Array) -> Dictionary:
 		if not bool(fed.get("ok", false)):
 			return fed
 	return ext.end_economy_restore()
+
+
+func _save_country(ext: Object) -> Dictionary:
+	var begin: Dictionary = ext.begin_country_save(65536)
+	if not bool(begin.get("ok", false)):
+		return begin
+	var chunks: Array[PackedByteArray] = []
+	while true:
+		var chunk: PackedByteArray = ext.read_country_save_chunk(65536)
+		if chunk.is_empty():
+			break
+		chunks.append(chunk)
+	var ended: Dictionary = ext.end_country_save()
+	return {"ok": bool(ended.get("ok", false)), "chunks": chunks}
+
+
+func _restore_country(ext: Object, chunks: Array) -> bool:
+	if not bool(ext.begin_country_restore().get("ok", false)):
+		return false
+	for value in chunks:
+		if not bool(ext.feed_country_restore_chunk(
+				value as PackedByteArray).get("ok", false)):
+			return false
+	return bool(ext.end_country_restore().get("ok", false))

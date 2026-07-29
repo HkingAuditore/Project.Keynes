@@ -24,7 +24,7 @@ class ModifierRuntime;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 22;
+    static constexpr int32_t SCHEMA_VERSION = 23;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -108,6 +108,7 @@ public:
     godot::Dictionary trade_orders_for_cell(int32_t cell_idx, int32_t offset,
                                              int32_t limit) const;
     godot::Dictionary building_cell_snapshot(int32_t cell_idx) const;
+    godot::Dictionary fiscal_snapshot(int64_t country_handle) const;
     godot::Dictionary fixed_math_probe(const godot::Dictionary &vectors) const;
     godot::Dictionary production_climate_math_probe(
         const godot::Dictionary &vectors) const;
@@ -926,6 +927,8 @@ private:
         int64_t funded_units = 0;
         int64_t filled_units = 0;
         int64_t unit_price = 0;
+        int64_t base_unit_price = 0;
+        int64_t quoted_subsidy_per_unit = 0;
     };
 
     struct OwnerRetainedOutput {
@@ -1031,6 +1034,13 @@ private:
         CASHFLOW_MERCHANT_PROCUREMENT = 10,
         CASHFLOW_OTHER = 11,
         CASHFLOW_PRODUCER_SUPPORT = 12,
+        CASHFLOW_INCOME_TAX = 13,
+        CASHFLOW_CONSUMPTION_TAX = 14,
+        CASHFLOW_BUSINESS_TAX = 15,
+        CASHFLOW_INCOME_SUBSIDY = 16,
+        CASHFLOW_CONSUMPTION_SUBSIDY = 17,
+        CASHFLOW_BUSINESS_SUBSIDY = 18,
+        CASHFLOW_FISCAL_ESCROW = 19,
     };
 
     enum EventKind : int32_t {
@@ -1407,6 +1417,7 @@ private:
         int32_t labor_signal_cursor = 0;
         int32_t trade_order_cursor = 0;
         int32_t trade_flow_cursor = 0;
+        int32_t fiscal_cursor = 0;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
         bool end_emitted = false;
@@ -1439,12 +1450,14 @@ private:
         int32_t restored_trade_orders = 0;
         int32_t expected_trade_flows = 0;
         int32_t restored_trade_flows = 0;
+        int32_t restored_fiscal = 0;
         int32_t last_signal_cell = -1;
         int32_t last_signal_good = -1;
         int32_t last_labor_cell = -1;
         int32_t last_labor_profession = -1;
         std::vector<uint8_t> modifier_bytes;
         bool modifier_seen = false;
+        bool fiscal_seen = false;
     };
 
     struct EventArchiveState {
@@ -2237,6 +2250,42 @@ private:
     std::vector<int32_t> _epoch_cell_country;
     std::vector<uint64_t> _epoch_country_technologies;
     std::vector<uint64_t> _epoch_country_handles;
+    // Catalog-resolved tax stat ids and the per-epoch effective integer rates.
+    // Only configure/capture touches ModifierRuntime; workers read these dense arrays.
+    std::vector<int32_t> _income_tax_stat_ids;
+    std::vector<int32_t> _consumption_tax_stat_ids;
+    std::vector<int32_t> _business_tax_stat_ids;
+    std::vector<int32_t> _import_tax_stat_ids;
+    std::vector<int32_t> _export_tax_stat_ids;
+    std::vector<int8_t> _epoch_income_tax_rates;
+    std::vector<int8_t> _epoch_consumption_tax_rates;
+    std::vector<int8_t> _epoch_business_tax_rates;
+    std::vector<int8_t> _epoch_import_tax_rates;
+    std::vector<int8_t> _epoch_export_tax_rates;
+    uint64_t _epoch_tax_policy_version = 0;
+    uint8_t _epoch_active_tax_mask = 0;
+    static constexpr int32_t ACTIVE_TAX_KIND_COUNT = 3;
+    std::vector<int64_t> _fiscal_previous_requests;
+    std::vector<uint64_t> _fiscal_previous_country_handles;
+    std::vector<int64_t> _fiscal_current_requests;
+    std::vector<int64_t> _fiscal_budgets;
+    std::vector<int64_t> _fiscal_remaining;
+    std::vector<int64_t> _fiscal_epoch_bases;
+    std::vector<int64_t> _fiscal_epoch_assessed;
+    std::vector<int64_t> _fiscal_epoch_collected;
+    std::vector<int64_t> _fiscal_epoch_paid;
+    std::vector<int64_t> _fiscal_escrow_by_country;
+    std::vector<int64_t> _fiscal_last_bases;
+    std::vector<int64_t> _fiscal_last_assessed;
+    std::vector<int64_t> _fiscal_last_collected;
+    std::vector<int64_t> _fiscal_last_requests;
+    std::vector<int64_t> _fiscal_last_reserved;
+    std::vector<int64_t> _fiscal_last_paid;
+    std::vector<int64_t> _fiscal_last_unmet;
+    std::vector<int64_t> _fiscal_cumulative_bases;
+    std::vector<int64_t> _fiscal_cumulative_collected;
+    std::vector<int64_t> _fiscal_cumulative_requests;
+    std::vector<int64_t> _fiscal_cumulative_paid;
     std::vector<int32_t> _epoch_country_output_factor_q16;
     std::vector<int32_t> _epoch_country_sector_output_factor_q16;
     std::vector<int32_t> _epoch_country_research_output_factor_q16;
@@ -2439,6 +2488,18 @@ private:
         return signature_for_profession_ethnicity(_unemployed_profession_id, ethnicity_id);
     }
     bool capture_country_epoch(std::string &error);
+    bool prepare_fiscal_budgets(std::string &error);
+    bool commit_fiscal(std::string &error);
+    int8_t frozen_tax_rate(int32_t cell, int32_t kind, int32_t item) const;
+    int64_t apply_fiscal_tax(int32_t cell, int32_t kind, int64_t base,
+                             int8_t rate, int64_t &saturation_count);
+    int64_t expected_fiscal_transfer(int32_t cell, int32_t kind, int64_t base,
+                                     int8_t rate,
+                                     int64_t &saturation_count) const;
+    int64_t expected_after_tax_income(int32_t cell, int32_t profession,
+                                      int64_t gross_income,
+                                      int64_t &saturation_count) const;
+    int64_t fiscal_escrow_total() const;
     bool apply_build_command(const Command &cmd, int32_t owner_slot,
                              std::string &error, bool allow_obsolete_tier = false);
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
@@ -2480,6 +2541,8 @@ private:
                                      int64_t &income_improvement_q16) const;
     int64_t projected_owner_income_per_day(const BuildingGroup &group,
                                            int64_t &sat) const;
+    int64_t projected_employee_tax_retention_q16(
+        const BuildingGroup &group, int64_t &sat) const;
     int64_t effective_building_output_quantity(
         const BuildingGroup &group, int64_t base_quantity,
         int64_t utilization_q16, int64_t building_days,

@@ -206,6 +206,32 @@ void fragment() {
 	// flow + river_edge_warp 仅在陆地的 river 分支才用，这里推迟到 _if (!is_water)_ 计算，
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
+	// The static base color already uses continuous edge blending, but later
+	// climate/vegetation/cover stages are biome-gated. Feed those stages a
+	// DitherUV-selected visual biome as well, otherwise they redraw the hard
+	// primary-cell silhouette after the distance-field blend.
+	int visual_land_biome = biome;
+	int visual_land_veg = veg;
+	int visual_land_cover = cover;
+	if (!is_water && _cell_id >= 0 && has_terrain_edge_data) {
+		float land_edge_w = terrain_edge_secondary_weight(uv, wp);
+		float land_dither_probability =
+				land_edge_w * terrain_land_dither_zoom_strength();
+		if (land_dither_probability > 0.0001
+				&& terrain_mobile_dither_uv_threshold(uv, wp)
+						< land_dither_probability) {
+			int land_secondary_id = decode_edge_secondary_index(uv);
+			if (land_secondary_id >= 0) {
+				vec4 land_secondary_enum = texture(enum_lut, cell_lut_uv(land_secondary_id));
+				int land_secondary_biome = int(land_secondary_enum.r * 255.0 + 0.5);
+				if (!terrain_static_biome_is_water(land_secondary_biome)) {
+					visual_land_biome = land_secondary_biome;
+					visual_land_veg = int(land_secondary_enum.g * 255.0 + 0.5);
+					visual_land_cover = int(land_secondary_enum.b * 255.0 + 0.5);
+				}
+			}
+		}
+	}
 	// Ocean visual ownership deliberately combines the broad distance field with
 	// DitherUV on every platform. It only selects between two water cells; the
 	// primary cell still owns topology, interaction, simulation and the branch.
@@ -262,7 +288,8 @@ void fragment() {
 	} else {
 		if (!is_water) {
 			col = render_land_pipeline(
-				biome, veg, cover, landform, elev, moist, wp, uv, scals, lat_signed, current_temp,
+				visual_land_biome, visual_land_veg, visual_land_cover, landform,
+				elev, moist, wp, uv, scals, lat_signed, current_temp,
 				wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
 				eco_transition, eco_growth, eco_valid, pixel_noise);
 		} else {
@@ -271,6 +298,8 @@ void fragment() {
 				lat_signed, current_temp, ocean_current_v, wind_v,
 				visual_water_ice_fraction);
 		}
+		int visual_surface_cover = is_water ? visual_water_cover : visual_land_cover;
+		int visual_surface_veg = is_water ? veg : visual_land_veg;
 
 		// 已探索但当前不可见 → 去饱和 + 压暗。k=0.5 处最灰，k=1 归零。
 		// 零新增采样，只是几条 ALU。
@@ -286,7 +315,8 @@ void fragment() {
 		} else {
 			COLOR = apply_global_adjustments(
 				col, wp, pixel_noise, dyn_snow, current_temp, moist, dyn_vitality, dyn_valid,
-				cover, is_water ? 0.0 : 1.0, veg == V_NONE ? 0.0 : 1.0);
+				visual_surface_cover, is_water ? 0.0 : 1.0,
+				visual_surface_veg == V_NONE ? 0.0 : 1.0);
 		}
 	}
 }

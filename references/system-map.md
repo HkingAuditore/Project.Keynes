@@ -242,7 +242,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 完整 z 序（`top_level` 的 `Node2D` 挂在 `WorldRoot` 下）：`WorldQuad` 0、`WeatherLayer` 4、`DataOverlayLayer` 5、`CountryBorderLayer` 6、`CellHighlight` 10、`FogOfWarLayer` 12。迷雾在最上层，未探索区要连天气云、国界线和选中框一起盖住。
 
-`world_map.gdshader` 读 `enum_lut.a` 对已探索但不可见的区域做去饱和灰化（零新增 texture sample），并在 `fog_early_out_enabled` 时对完全未探索像素跳过整条地形管线（默认关，须 GPU A/B 实测；且只在迷雾最低质量档放行，因为早退要求迷雾层输出常量色）。terrain-index bake 的 RG8 邻格索引 + R8 距离场是通用视觉边界数据：桌面地表把随 zoom 衰减的 8×8 Bayer DitherUV 覆盖混入连续距离场，远景保留稳定颗粒、近景收敛到连续材质；桌面迷雾/天气仍连续混合。海洋在所有平台都以距离场权重驱动 DitherUV 的水域主/副视觉 cell 选择，并继续叠加桌面既有的连续水体 biome weights，不执行第二次完整水体管线；Dither 只替换 biome/cover，海冰浓度、温度和洋流仍由硬主格驱动。移动端地表、迷雾和天气同样在主/副视觉 cell 间择一，以恢复低成本远景过渡。所有 Dither 都不改变硬主 cell 权威状态，且禁止跨水陆域选择；缺纹理时均硬回退。`weather_cell_curtain.gdshader` 仍按主格可见性屏蔽实时降水。契约见 `docs/cpp-dots-runtime/vision-fog-and-borders.md`。
+`world_map.gdshader` 读 `enum_lut.a` 对已探索但不可见的区域做去饱和灰化（零新增 texture sample），并在 `fog_early_out_enabled` 时对完全未探索像素跳过整条地形管线（默认关，须 GPU A/B 实测；且只在迷雾最低质量档放行，因为早退要求迷雾层输出常量色）。terrain-index bake 的 RG8 邻格索引 + R8 距离场是通用视觉边界数据：桌面地表把随 zoom 调整的 8×8 Bayer DitherUV 覆盖混入连续距离场，远景使用较强稳定颗粒，近景则把 Dither 完全淡出，只保留连续距离场；三套 Dither consumer 都把 Bayer 原始 rank 从 `[0,1]` 压缩到 `[0.18,0.82]`，保持边界处 50% 覆盖率，同时避免极低 rank 在宽距离场里拉成单 texel 长刺。视觉 cell 的 biome/vegetation/cover 选择使用同一淡出权重，避免完整陆地材质管线在近景留下放大的 Dither 块，动态温湿度、活力、雪量和 landform 仍由主格驱动。桌面迷雾/天气仍连续混合。海洋在所有平台都以距离场权重驱动 DitherUV 的水域主/副视觉 cell 选择，并继续叠加桌面既有的连续水体 biome weights，不执行第二次完整水体管线；Dither 只替换 biome/cover，海冰浓度、温度和洋流仍由硬主格驱动。移动端陆地 Dither 保留到更近的缩放范围，但也会在最大近景前完全淡出；移动端迷雾和天气仍在主/副视觉 cell 间择一，以恢复低成本远景过渡。所有 Dither 都不改变硬主 cell 权威状态，且禁止跨水陆域选择；缺纹理时均硬回退。`weather_cell_curtain.gdshader` 仍按主格可见性屏蔽实时降水。契约见 `docs/cpp-dots-runtime/vision-fog-and-borders.md`。
 
 `fog_of_war.gdshader` 使用分层 2.5D 云海：同一连续密度场派生低层 deck、中层 body 与高层 top，低层保证未探索区完全遮挡，中高层提供云团轮廓。法线拆为低强度的 1/2、1 倍频宽缓 `broad_grad` 与小振幅的 2、4 倍频锐利 `detail_grad`，禁止把三条层级阈值导数叠成尖脊；域扭曲保持低幅，避免液体大理石流线。deck/body/top 使用不同的直射、天光和多重散射权重后从下往上合成，体积不依赖强法线。自阴影沿主光方向积分前方云体质量，不再把单一高度场画成巨型峡谷。光照仍消费 `earth_daylight`，但高空云使用比地表更宽的昼夜过渡，并把日光/月光分别着色后平滑相加；晨昏区削弱方向性阴影并增加金黄散射，避免日月方向翻转形成硬线。深夜进一步把质量阴影压到弱厚度提示、把月光直射改为低方向性并让天空 SH 只读取 `broad_grad`，主要可读性由冷灰环境光与多重散射承担。各频段除保留不同方向的 UV 平流外，还让可平铺噪声的晶格梯度以不同速率和方向随 `_world_time` 旋转，使 FBM 本身持续生成、消散与重组；`FogOfWarLayer` 与天气层同步游戏倍速。所有频段按屏幕足迹做 **LOD 截断**，东西向使用可平铺噪声。质量分 q0..q3 四档，有效档 = min(编译期 tier 上限, 运行时 `visual_quality` 映射)。
 
@@ -366,8 +366,9 @@ cohort×good 矩阵。
 ## 当前非目标
 
 Market V2 清算本身不包含生产建筑、就业、工资或运输；这些行为由同一 C++ 权威中、居民清算前的
-BUILDING_GRAPH 与国内 Trade V1 阶段承担。税制、跨国贸易/关税、外交、政治系统和人口自然
-变化仍是非目标，不能另建平行 GDScript 经济状态。
+BUILDING_GRAPH 与国内 Trade V1 阶段承担。所得税、消费税和营业税已经进入原生结算；
+进口/出口关税具备政策、Modifier、存档和 UI 占位，但当前国内贸易事件与金额恒为零。
+跨国贸易结算、外交和政治系统仍是非目标，不能另建平行 GDScript 经济状态。
 ## Building / employment / production
 
 `BuildingProfile + GoodProfile producer factor → EconomyCatalog → DCWorldExt economy bridge →
@@ -444,8 +445,8 @@ debug recording is Economy CSV v22.
   freezes due-cell 30-day temperature/plant water, applies the Q16 capacity
   after labor/input/capital/resource limits, and publishes building diagnostics.
   No new scheduler stage or GDScript economy authority is introduced.
-- Persistence/debug are PKEC v22 and Economy CSV v22. PKEC accepts v22 only;
-  older schemas return `legacy_climate_production_save_unsupported`.
+- Persistence/debug are PKEC v23 and Economy CSV v22. PKEC v23 explicitly
+  migrates v22 to empty fiscal history; older schemas remain unsupported.
 
 ## Climate moisture round visibility
 

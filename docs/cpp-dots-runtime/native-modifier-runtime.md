@@ -164,8 +164,8 @@ active/peak/bucket/query/bucket read/rebuild/snapshot version、事件计数和�
 
 | section/schema | 内容 |
 | --- | --- |
-| PKCN v2 | Country authority + Country Modifier domain blob |
-| PKEC v20 | Economy authority + BuildingIdentityStore + Economy Modifier section |
+| PKCN v4 | Country authority, tax policy + Country Modifier domain blob |
+| PKEC v23 | Economy authority, fiscal history + BuildingIdentityStore + Economy Modifier section |
 | PKCM v1 | Climate Modifier domain |
 | PKGP v1 | Gameplay identity/base SoA + Gameplay Modifier domain |
 
@@ -173,9 +173,9 @@ active/peak/bucket/query/bucket read/rebuild/snapshot version、事件计数和�
 term payload。恢复会校验 catalog hash、definition version、term payload、handle 和 identity；
 不兼容时失败，不重放 apply event。
 
-当前恢复采用严格 catalog hash；即使只是 append-only 新增未被旧实例引用的 stat/definition，
-旧 domain blob 也会拒绝。definition alias、append-only catalog 兼容和以存档 term payload
-独立于当前 definition 继续运行尚未实现；需要显式迁移器，不能静默改效果。
+当前恢复默认采用严格 catalog hash。唯一例外是 PKCN v3/PKEC v22 到税务 schema 的显式迁移：
+允许 catalog 追加由 economy stable IDs 生成的 `country.tax.*.rate_pct` stats，但仍逐项验证旧
+stat key、definition version 与 term payload。其他 append-only 差异继续拒绝。
 
 PKCN v1、PKEC v18/v19 以及缺少 PKCM/PKGP 的旧 PKSV 迁移为空 store。focused runtime 未配置
 Modifier 时，PKCN/PKEC 写入显式空 domain marker。生产恢复顺序是 dynamic world、
@@ -186,8 +186,8 @@ environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/
 
 `tests/modifier_runtime_test.gd` 覆盖 apply/remove/expiry、stack refresh、global/group/entity、
 UNIQUE_SOURCE、stale handle、零 factor、Gameplay base/effective、journal v2、report 诊断和四域 round-trip。
-`country_runtime_test.gd` 验证 PKCN v2；`goods_storage_schema_test.gd` 与
-`building_runtime_test.gd` 的 PKEC v20 save/restore 断言通过。
+`country_runtime_test.gd` 验证 PKCN v4；`goods_storage_schema_test.gd` 与
+`building_runtime_test.gd` 的 PKEC v23 save/restore 断言通过。
 正式 `PK_GAME_SAVE_ROUNDTRIP_TEST=1` 也已通过新建世界、PKSV 保存/恢复、authority hash
 对齐和恢复后首个经济周期。两套大型 economy suite 的 v20 存档断言虽通过，但各仍有 4 个
 既有 catalog/平衡断言失败，整体退出码为 1，不能把它们列为全绿门禁。

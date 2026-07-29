@@ -11,6 +11,8 @@ Use this skill for every Modifier Runtime change. Also load:
 - `project-keynes-runtime-architecture` for scheduler, authority, bridge, or docs changes.
 - `project-keynes-country-runtime` for Country handles, PKCN, or country snapshots.
 - `project-keynes-economy-runtime` for building output, conservation, or PKEC.
+- `project-keynes-tax-runtime` for tax stat generation, frozen effective rates, fiscal behavior,
+  or tax catalog migration.
 - `project-keynes-game-flow-runtime` for PKSV providers and restore order.
 
 ## Grounding

@@ -28,6 +28,9 @@ render_mode blend_mix, unshaded;
 //   · 自阴影  沿主光方向积分前方云体质量，得到柔和光学厚度，不比较硬高度差
 //   · 散射    双指数直射透过 + 有理式多重散射 + 天空半球补光
 //   · 合成    deck/body/top 分层提亮，最后做软色调映射，避免大片截成纯白
+//   · 视差    屏幕空间假视差：用解析梯度一阶位移把三层轮廓按高度错开，零重采样
+//   · 差速    高层塔云是独立风场（异种子/异速/异向），与低层底盘相对滑动
+//   · 体积    高度 AO 压谷底直射 + 坡向轮廓光勾云团边缘 + S 曲线拉回中间调
 //
 // q2/q3 的探针只积分二维云体质量，不做每像素数十步体积 raymarch；但视觉模型已经
 // 从「一张地形高度图」改为「有低层托底的分层云体」。
@@ -47,10 +50,12 @@ render_mode blend_mix, unshaded;
 // 整段代码，运行时 uniform 让桌面端低配也能降档。
 //   q0 超低：1 octave，无光照 —— 纯色 + 一点起伏，最便宜。
 //   q1 低  ：3 频段分层密度 + 平滑法线 + TOD。无扭曲/无自阴影。
-//   q2 中  ：4 频段 + 1 层域扭曲 + 2 个质量探针 + Powder/银边/透射。
-//   q3 高  ：4 频段 + 2 层域扭曲 + 3 个质量探针 + 天空 SH 环境光。
+//   q2 中  ：4 频段 + 1 层域扭曲 + 2 个质量探针 + 独立塔云场 + Powder/银边/透射。
+//   q3 高  ：4 频段 + 2 层域扭曲 + 2 个质量探针 + 独立塔云场 + 天空 SH 环境光。
 //
-// q3 每像素约 4 个主场采样 + 4 个扭曲采样 + 3×3 个阴影采样。
+// q3 每像素 4 主场 + 4 扭曲 + 1 塔云 + 2×2 阴影 = 13 次噪声采样。
+// 阴影探针只吃 2 个低频段：第 3 频段权重仅 4%，却要多付 1/3 的探针开销；
+// 探针数 3 → 2 同理 —— 自阴影是软厚度，少一段远探针肉眼不可辨。
 // ════════════════════════════════════════════════════════════════════════
 
 uniform sampler2D map_index_atlas : filter_nearest, repeat_disable; // G/B = cell.index 低/高字节
@@ -106,7 +111,7 @@ uniform float warp_amount : hint_range(0.0, 2.5) = 0.28;
 // ── q1+ 分层云海 ──
 uniform vec3 cloud_albedo : source_color = vec3(0.97, 0.975, 1.0);
 // 宏观法线只描述宽缓云丘；细节法线频率高但振幅小，负责近看时的锐利绒边。
-uniform float cloud_relief : hint_range(0.0, 2.0) = 0.28;
+uniform float cloud_relief : hint_range(0.0, 2.0) = 0.34;
 uniform float cloud_detail_relief : hint_range(0.0, 0.5) = 0.08;
 uniform float light_wrap : hint_range(0.0, 2.0) = 1.0;
 uniform float sun_gain : hint_range(0.0, 3.0) = 0.68;
@@ -120,10 +125,10 @@ uniform float valley_sky : hint_range(0.0, 1.0) = 0.68;
 // 使用时会先归一化到亮度 1，所以这个值只改色相、不改明度。
 uniform vec3 shadow_tint : source_color = vec3(0.84, 0.91, 1.0);
 // 暗部转蓝的速度：ms_depth 乘上它得到「天光占比」。越大越早转蓝。
-uniform float shadow_tint_depth : hint_range(0.0, 3.0) = 0.62;
+uniform float shadow_tint_depth : hint_range(0.0, 3.0) = 0.75;
 // 自阴影积分范围与消光强度。两者都刻意压低，阴影应是软厚度，不是黑色沟槽。
 uniform float shadow_reach : hint_range(0.0, 6.0) = 1.15;
-uniform float shadow_absorb : hint_range(0.0, 20.0) = 2.6;
+uniform float shadow_absorb : hint_range(0.0, 20.0) = 3.2;
 // Powder（糖粉效应）权重、银边强度、次表面透射强度。
 uniform float powder_weight : hint_range(0.0, 1.0) = 0.28;
 uniform float silver_gain : hint_range(0.0, 4.0) = 0.65;
@@ -131,6 +136,23 @@ uniform float sss_gain : hint_range(0.0, 2.0) = 0.25;
 // HG 前向散射各向异性。
 uniform float phase_g : hint_range(0.0, 0.95) = 0.58;
 uniform float cloud_exposure : hint_range(0.4, 2.0) = 1.12;
+
+// ── 体积感增强（视差 / 差速 / 轮廓光）──
+// 屏幕空间假视差强度，单位 = hex 直径（屏幕四角处的高层云最大偏移）。俯视正交
+// 相机没有真视差；这里用屏幕位置近似视线方向，把高层云沿视线路径错开。
+// 它是纯屏幕函数，三块 wrap 副本取值一致，不会引入环绕接缝。
+uniform float parallax_strength : hint_range(0.0, 2.0) = 0.80;
+// 独立塔云场的漂移速度倍率：高层风比低层快，云顶相对云海底盘滑动（差速）。
+uniform float top_shear_speed : hint_range(0.0, 2.0) = 0.75;
+// 高度 AO 强度：压低谷底云缝的直射/反弹光，拉开云顶与云缝的明暗落差。
+uniform float ao_strength : hint_range(0.0, 1.0) = 0.50;
+// 坡向轮廓光强度：迎光坡提亮（背光坡另有小幅压暗，固定 0.16）。
+uniform float rim_gain : hint_range(0.0, 2.0) = 0.55;
+// 软色调映射后的 S 曲线对比度，0 = 不处理。
+uniform float volume_contrast : hint_range(0.0, 0.6) = 0.22;
+// 夜侧整体调光器：合成末端按 cloud_day 混入此倍率。夜云亮暗是艺术偏好，
+// 与其分别拧环境光/月光/填充五六个旋钮，不如给一个总闸。1 = 夜昼同亮。
+uniform float night_darkness : hint_range(0.2, 1.0) = 0.60;
 
 varying vec2 v_world;
 
@@ -195,6 +217,8 @@ float fog_bayer2_digit(vec2 bit_xy) {
 	return (bit_xy.x < 0.5) ? 3.0 : 1.0;
 }
 
+const float FOG_DITHER_THRESHOLD_MARGIN = 0.18;
+
 float fog_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
 	vec2 atlas_dims = vec2(textureSize(map_index_atlas, 0));
 	vec2 pixel_xy = floor(fog_wrap_uv(uv) * atlas_dims);
@@ -209,7 +233,11 @@ float fog_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
 	float value = 16.0 * fog_bayer2_digit(mod(p, 2.0))
 			+ 4.0 * fog_bayer2_digit(mod(floor(p * 0.5), 2.0))
 			+ fog_bayer2_digit(floor(p * 0.25));
-	return (value + 0.5) / 64.0;
+	float raw_threshold = (value + 0.5) / 64.0;
+	return mix(
+			FOG_DITHER_THRESHOLD_MARGIN,
+			1.0 - FOG_DITHER_THRESHOLD_MARGIN,
+			raw_threshold);
 }
 
 float fog_edge_secondary_weight(vec2 uv, int q) {
@@ -358,7 +386,7 @@ float fog_octave_fade(float lod_px, float frequency) {
 
 // 主形状由低频建立云丘，高频侵蚀边缘。法线明确拆成宽缓宏观坡向与低振幅锐利细节。
 FogCloudShape fog_sample_shape(
-	vec2 p, float t, float period_n, float lod_px, float cover, int q
+	vec2 p, float t, float period_n, float lod_px, float cover, int q, vec2 parallax_p
 ) {
 	vec2 drift = vec2(t * 0.12, -t * 0.08);
 	// 每个频段使用不同方向/振幅的周期摆动。线性 drift 只会让整张场平移；
@@ -402,13 +430,6 @@ FogCloudShape fog_sample_shape(
 	float detail = (n2.x * f2 * 0.78 + n3.x * f3 * 0.22) / detail_norm;
 	float shaped = clamp(macro + (detail - 0.5) * 0.10, 0.0, 1.0);
 
-	// 覆盖越低阈值越高：迷雾边界只剩破碎云团；满迷雾区则有连续低层托底。
-	float cut = mix(0.69, 0.34, cover);
-	float deck = smoothstep(cut - 0.14, cut + 0.18, shaped);
-	float body = smoothstep(cut + 0.00, cut + 0.30, shaped);
-	float top = smoothstep(cut + 0.12, cut + 0.42, shaped);
-	float veil = smoothstep(0.72, 1.0, cover) * mix(0.72, 1.0, deck);
-
 	// 宏观坡向只取 1/2、1 倍频，不再乘三条窄层级阈值的导数；后者会在每个
 	// deck/body/top 等高线上制造尖脊。限制极端梯度，保证大轮廓始终宽缓。
 	float broad_norm = max(f0 * 0.72 + f1 * 0.28, 0.0001);
@@ -418,6 +439,33 @@ FogCloudShape fog_sample_shape(
 	) / broad_norm;
 	float broad_len = length(broad_grad);
 	broad_grad *= min(1.0, 0.65 / max(broad_len, 0.0001));
+
+	// 覆盖越低阈值越高：迷雾边界只剩破碎云团；满迷雾区则有连续低层托底。
+	float cut = mix(0.69, 0.34, cover);
+
+	// 视差剪切：field(p + o) ≈ field(p) + ∇field·o。用已有的解析宏观梯度把同一朵
+	// 云的三层轮廓在屏幕上错开 —— deck 贴地不动，body 半偏移，top 全偏移。
+	// 零重采样、纯 ALU；俯视正交相机本就没有真视差，这是最便宜的替代。
+	float shaped_body = clamp(shaped + dot(broad_grad, parallax_p * 0.45), 0.0, 1.0);
+	float shaped_top = clamp(shaped + dot(broad_grad, parallax_p), 0.0, 1.0);
+
+	float deck = smoothstep(cut - 0.14, cut + 0.18, shaped);
+	float body = smoothstep(cut + 0.00, cut + 0.30, shaped_body);
+	float top = smoothstep(cut + 0.12, cut + 0.42, shaped_top);
+	float veil = smoothstep(0.72, 1.0, cover) * mix(0.72, 1.0, deck);
+
+	// 独立塔云场（q2+）：不同种子、不同漂移方向与速度的高层场，只从 deck 托底
+	// 之上长出来（gate）。云顶因此能相对低层滑动 —— 高层风更快的差速，是俯视
+	// 云海「有厚度」而非「一张噪声图」的最强线索。单次采样、不带导数：
+	// top 的高频细节本来就由主场 shaped_top 提供，塔云场只需给出漂移的大形状。
+	if (q >= 2) {
+		vec2 tower_p = p + parallax_p
+			+ vec2(t * 0.23, -t * 0.16) * top_shear_speed
+			+ vec2(47.3, -19.1);
+		float tower_field = fog_grad_noise_tiled_evolve(tower_p, period_n, t * 0.71, 5.0);
+		float tower_gate = smoothstep(cut - 0.10, cut + 0.16, shaped);
+		top = max(top, smoothstep(cut + 0.16, cut + 0.44, tower_field) * tower_gate * 0.85);
+	}
 
 	// 2、4 倍频保留空间上的锐度，但用独立的小振幅进入法线；这样细节清楚，
 	// 又不会把高频坡度放大成锡纸或岩石褶皱。LOD 砍掉 octave 时自然归零。
@@ -443,16 +491,16 @@ FogCloudShape fog_sample_shape(
 	return s;
 }
 
-// 阴影探针只取 2~3 个频段的值，不计算导数。返回前方云体质量而不是硬高度差。
+// 阴影探针只取 2 个低频段的值，不计算导数。返回前方云体质量而不是硬高度差。
+// 自阴影要的是软厚度：2x 高频段权重本来只有 4%，砍掉肉眼不可辨，探针开销省 1/3。
 float fog_shadow_mass(
-	vec2 p, float t, float period_n, float lod_px, float cover, int q
+	vec2 p, float t, float period_n, float lod_px, float cover
 ) {
 	vec2 drift = vec2(t * 0.12, -t * 0.08);
 	vec2 wobble = vec2(sin(t * 0.55), cos(t * 0.43)) * 0.34;
 	vec2 cross_wobble = vec2(-wobble.y, wobble.x);
 	float f0 = fog_octave_fade(lod_px, 0.5);
 	float f1 = fog_octave_fade(lod_px, 1.0);
-	float f2 = (q >= 3) ? fog_octave_fade(lod_px, 2.0) : 0.0;
 	float n0 = fog_grad_noise_tiled_evolve(
 		p * 0.5 + drift * 0.42 + vec2(7.1, -3.4),
 		period_n * 0.5, t * 0.46, 0.0
@@ -461,17 +509,8 @@ float fog_shadow_mass(
 		p + drift * 0.76 + cross_wobble * 0.10 + vec2(-11.8, 5.6),
 		period_n, t * 0.68, 1.0
 	);
-	float n2 = 0.5;
-	if (q >= 3 && f2 > 0.002) {
-		n2 = fog_grad_noise_tiled_evolve(
-			p * 2.0 + drift * 1.16 - wobble * 0.30 + vec2(19.7, 13.2),
-			period_n * 2.0, t * 0.97, 2.0
-		);
-	}
-	float norm = max(f0 * 0.66 + f1 * 0.30 + f2 * 0.04, 0.0001);
-	float macro = (
-		n0 * f0 * 0.66 + n1 * f1 * 0.30 + n2 * f2 * 0.04
-	) / norm;
+	float norm = max(f0 * 0.68 + f1 * 0.32, 0.0001);
+	float macro = (n0 * f0 * 0.68 + n1 * f1 * 0.32) / norm;
 	float cut = mix(0.69, 0.34, cover);
 	float body = smoothstep(cut - 0.01, cut + 0.31, macro);
 	float top = smoothstep(cut + 0.11, cut + 0.43, macro);
@@ -596,8 +635,8 @@ void fragment() {
 				float sun_strength = day_night_enabled
 					? smoothstep(-0.42, 0.24, sun_elev)
 					: 1.0;
-				float twilight = smoothstep(-0.48, -0.04, sun_elev)
-					* (1.0 - smoothstep(0.12, 0.52, sun_elev));
+				float twilight = smoothstep(-0.50, -0.02, sun_elev)
+					* (1.0 - smoothstep(0.14, 0.56, sun_elev));
 				float moon_strength = ed.moon_strength
 					* (1.0 - smoothstep(0.18, 0.78, sun_strength));
 				vec3 sun_key_col = ed.sun_col * sun_strength;
@@ -615,18 +654,41 @@ void fragment() {
 				moon_d.z = clamp(moon_d.z, 0.08, 0.72);
 				vec3 moon_L = normalize(moon_d);
 
-				// 阴影只需要一个方向。交界处仍可硬选，但下面会把方向性阴影衰减到
-				// 很弱，因此不会显出方向翻转的接缝。
-				float use_sun_axis = step(moon_strength, sun_strength);
-				vec3 L = mix(moon_L, sun_L, use_sun_axis);
-				vec2 sun_h = L.xy;
-				float sun_horiz = clamp(length(sun_h), 0.0, 1.0);
-				vec2 sun_axis = (sun_horiz > 1e-4) ? sun_h / sun_horiz : normalize(vec2(0.62, -0.38));
-				float sun_up = max(L.z, 0.0);
+				// 主光轴：方向性效果不再「翻转」，而是按日/月光强比连续混合。
+				//   · 自阴影：永远沿太阳水平轴（全天连续）；深夜由 daylight_shadow
+				//     压到 0.16，月轴阴影本就不可见 —— 切换它只会制造翻转线。
+				//   · 轮廓光/暮光坡向：本模拟 moon_dir = -sun_dir，月轴恰为日轴
+				//     镜像；对同一坡度分别算「向日/向月」两套权重按 use_sun_axis
+				//     混合，50/50 处方向性自然中和 —— 数学上严格连续，无衰减缝。
+				// 混合带刻意拉宽（±0.45 光强差 ≈ 整个晨昏区）：镜像混合本身严格连续，
+				// 唯一可见残留是「权重互换太快」—— 带越宽，迎/背光坡的明暗互换
+				// 越摊薄，肉眼越读不出这条带。昼/夜两端仍各自收敛到纯日/纯月。
+				float use_sun_axis = smoothstep(-0.45, 0.45, sun_strength - moon_strength);
+				float sun_hlen = length(sun_L.xy);
+				vec2 sun_axis_s = (sun_hlen > 1e-3)
+					? sun_L.xy / sun_hlen
+					: normalize(vec2(0.62, -0.38));
+				float moon_hlen = length(moon_L.xy);
+				vec2 moon_axis_s = (moon_hlen > 1e-3) ? moon_L.xy / moon_hlen : -sun_axis_s;
+				vec2 axis_blend = mix(moon_axis_s, sun_axis_s, use_sun_axis);
+				float axis_len = length(axis_blend);
+				float sun_horiz = clamp(mix(moon_hlen, sun_hlen, use_sun_axis), 0.0, 1.0);
+				float sun_up = max(mix(moon_L.z, sun_L.z, use_sun_axis), 0.0);
+				vec3 L = normalize(vec3((axis_blend / max(axis_len, 1e-4)) * sun_horiz, sun_up));
+
+				// 屏幕空间假视差：正交俯视没有真视差，用屏幕位置近似视线方向。
+				// 纯屏幕函数 ⇒ 三块 wrap 副本取值完全一致，不会在环绕接缝处错开；
+				// 镜头平移 / 云特征横穿屏幕时，高层云相对低层剪切滑动。
+				vec2 scr_uv = FRAGCOORD.xy * SCREEN_PIXEL_SIZE;
+				float scr_aspect = SCREEN_PIXEL_SIZE.y / max(SCREEN_PIXEL_SIZE.x, 1e-6);
+				vec2 view_dir = (scr_uv - vec2(0.5)) * vec2(scr_aspect, 1.0) * 2.0;
+				vec2 parallax_p = view_dir * parallax_strength * hex_world_diameter * scale;
 
 				float cover = clamp(fog_amount * 1.15, 0.0, 1.0);
 				vec2 pw = (q >= 2) ? fog_domain_warp(p, t, period_n, q) : p;
-				FogCloudShape shape = fog_sample_shape(pw, t, period_n, lod_px, cover, q);
+				FogCloudShape shape = fog_sample_shape(
+					pw, t, period_n, lod_px, cover, q, parallax_p
+				);
 
 				// ── 光照 ───────────────────────────────────────────────
 				vec3 N = normalize(vec3(
@@ -638,37 +700,53 @@ void fragment() {
 				));
 				float sun_ndl = dot(N, sun_L);
 				float moon_ndl = dot(N, moon_L);
-				float sun_diffuse = clamp((sun_ndl + light_wrap) / (1.0 + light_wrap), 0.0, 1.0);
+				// 动态包裹光：正午太阳近顶光，N·L 本身就平，给足包裹保持柔和；
+				// 太阳越低光越擦着云丘走，包裹收紧 → 同一片云在晨昏出现强方向性
+				// 明暗。这是「TOD 角度变化读得出来」的主要来源。
+				float dyn_wrap = mix(0.42, light_wrap, smoothstep(-0.10, 0.55, sun_elev));
+				float sun_diffuse = clamp((sun_ndl + dyn_wrap) / (1.0 + dyn_wrap), 0.0, 1.0);
 				float moon_diffuse_raw = clamp(
 					(moon_ndl + light_wrap) / (1.0 + light_wrap),
 					0.0,
 					1.0
 				);
-				// 月光在云中的可见贡献主要来自多重散射，不应像缩小版太阳一样
-				// 把每条法线沟槽照成蓝色浮雕。保留少量方向性，其余收敛到宽包裹光。
-				float moon_diffuse = mix(0.72, moon_diffuse_raw, 0.18);
+				// 月光漫反射不能完全压平：深夜它是唯一主光，全平会把夜云糊成一块
+				// 纯色蓝布。保留中等方向性勾出云丘起伏，但仍远弱于太阳的方向性。
+				float moon_diffuse = mix(0.62, moon_diffuse_raw, 0.42);
+
+				// 云丘坡向（轮廓光/暮光共用）。注意符号：高度场梯度指向坡上，
+				// 迎光坡的梯度指向**远离**太阳的一侧，即 edge_face < 0 才是迎光坡
+				// （与 N·L 一致：N 的水平分量 = -grad）。
+				vec2 slope_g = shape.broad_grad + shape.detail_grad * 0.40;
+				float slope_len = length(slope_g);
+				float edge_face = (slope_len > 1e-3)
+					? dot(slope_g / slope_len, sun_axis_s)
+					: 0.0;
+				// 向日坡权重；向月坡是其精确镜像（moon_dir=-sun_dir ⇒ 1-sun_face_s）。
+				// 按光强比混合后，晨昏线两侧同一面坡的受光权重连续过渡。
+				float sun_face_s = clamp(0.5 - 0.5 * edge_face, 0.0, 1.0);
+				float sun_face = mix(1.0 - sun_face_s, sun_face_s, use_sun_axis);
 
 				// 自阴影积分的是前方云体质量。低处权重大、塔顶权重小，形成柔和厚度，
 				// 但不再把「前方比我高」直接画成黑色峡谷。
 				float horizon_mass = 0.0;
 				if (q >= 2 && shadow_reach > 0.001) {
-					int taps = (q >= 3) ? 3 : 2;
+					// 固定 2 探针：近端 f=0.5 决定阴影形状，远端 f=1.0 提供厚度。
+					// 软阴影模型下第 3 段远探针的贡献肉眼不可辨。
 					float reach = (shadow_reach / max(cloud_scale, 0.001))
-						* clamp(sun_horiz / max(sun_up, 0.35), 0.35, 2.2);
-					for (int i = 0; i < 3; i++) {
-						if (i >= taps) { break; }
-						float f = float(i + 1) / float(taps);
+						* clamp(sun_horiz / max(sun_up, 0.28), 0.35, 3.0);
+					for (int i = 0; i < 2; i++) {
+						float f = float(i + 1) * 0.5;
 						float mass = fog_shadow_mass(
-							pw + sun_axis * (reach * f),
+							pw + sun_axis_s * (reach * f),
 							t,
 							period_n,
 							lod_px,
-							cover,
-							q
+							cover
 						);
 						horizon_mass += mass * (1.0 - 0.32 * f);
 					}
-					horizon_mass /= float(taps);
+					horizon_mass *= 0.5;
 				}
 				float local_mass = clamp(shape.body * 0.72 + shape.top * 0.28, 0.0, 1.0);
 				float excess_mass = max(0.0, horizon_mass - local_mass * 0.58);
@@ -676,11 +754,12 @@ void fragment() {
 				float valley_weight = mix(0.92, 0.32, shape.height);
 				float optical_shadow = directional_mass * valley_weight * shadow_absorb;
 				// 日光消失后不能让质量阴影恢复到满强度：真实夜云主要由天空/月光
-				// 扩散照亮，深夜只留下很弱的厚度遮蔽。晨昏区进一步压低方向性，
-				// 同时隐藏日/月轴翻转。
+				// 扩散照亮，深夜只留下很弱的厚度遮蔽（0.16 下限）。
 				float daylight_shadow = smoothstep(0.08, 0.72, sun_strength);
+				// 阴影轴全天固定为太阳水平轴（见主光轴注释），场天然连续，
+				// 不再需要任何翻转线遮蔽；twilight 只做轻微压暗。
 				float shadow_strength = mix(0.16, 1.0, daylight_shadow)
-					* mix(1.0, 0.40, twilight);
+					* mix(1.0, 0.62, twilight);
 				optical_shadow *= shadow_strength;
 				float light_t = (q >= 2) ? cloud_beer_ms(optical_shadow) : 1.0;
 				float density = max(shape.deck * 0.55, shape.body);
@@ -702,14 +781,22 @@ void fragment() {
 					/ max(dot(shadow_tint, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
 				// 地表晨昏只需在太阳几何落山附近过渡；高空云仍能看见地平线下的
 				// 散射光，因此单独使用更宽的 cloud_day，不能直接照搬 ed.amb_col。
-				vec3 cloud_ambient_col = mix(
+				// 夜侧环境光先抬亮、去饱和：EARTH_NIGHT_AMBIENT 是给地形剪影用的
+				// 深蓝，直接照云会得到一块饱和死蓝布；真实夜云是被月光与天光
+				// 照亮的暗灰蓝，内部仍有可读起伏。
+				vec3 night_amb = mix(
 					EARTH_NIGHT_AMBIENT,
+					vec3(dot(EARTH_NIGHT_AMBIENT, vec3(0.2126, 0.7152, 0.0722))),
+					0.35
+				) * 1.28;
+				vec3 cloud_ambient_col = mix(
+					night_amb,
 					EARTH_DAY_AMBIENT,
 					cloud_day
 				);
 				// EARTH_NIGHT_AMBIENT 本身已经偏蓝；深夜若再完整叠 shadow_tint，
 				// 会双重染蓝成水下色。夜侧只保留少量冷色偏移，白昼再恢复完整 tint。
-				vec3 cloud_tint = mix(vec3(1.0), tint_n, mix(0.30, 1.0, cloud_day));
+				vec3 cloud_tint = mix(vec3(1.0), tint_n, mix(0.22, 1.0, cloud_day));
 				vec3 sky_col = cloud_ambient_col * cloud_tint;
 				float sky = mix(valley_sky, 1.0, shape.height);
 				vec3 ambient = sky_col * sky * ambient_gain;
@@ -743,15 +830,21 @@ void fragment() {
 				float sss = (q >= 2)
 					? exp(-shape.thickness * 2.2) * light_t * body_edge * sss_gain
 					: 0.0;
-				vec3 direct = sun_key_col * (
-					sun_diffuse * light_t * powder * sun_gain + sun_silver
+			vec3 direct = sun_key_col * (
+				sun_diffuse * light_t * powder * sun_gain + sun_silver
 				) + moon_key_col * (
-					moon_diffuse * light_t * mix(1.0, powder, 0.35) * sun_gain * 0.30
+					moon_diffuse * light_t * mix(1.0, powder, 0.35) * sun_gain * 0.36
 					+ moon_silver
 				);
 
-				// 暮光穿过更长的大气路径后偏金橙；主要落在云塔与软边，低层只吃少量
-				// 暖色反射，避免把整条晨昏线涂成一堵橙墙。
+				// 高度 AO：云缝谷底比云顶少吃直射与反弹 —— 明暗落差是体积感的另一半。
+				// 只压直射/反弹，不动天空环境光，谷底仍被天光托住，不会死黑。
+				direct *= mix(1.0 - ao_strength * 0.90, 1.0, shape.height);
+				bounce *= mix(1.0 - ao_strength * 0.55, 1.0, shape.height);
+
+				// 暮光穿过更长的大气路径后偏金橙；只落在**朝向太阳**的坡面、云塔
+				// 与软边上。不带朝向的 fire_mask 会把晨昏带均匀刷成一圈描边光晕
+				// （像贴上去的）；低角度阳光没有道理照亮背光坡。
 				float fire_warmth = smoothstep(-0.16, 0.12, sun_elev);
 				vec3 fire_color = mix(
 					vec3(1.38, 0.56, 0.05),
@@ -759,12 +852,13 @@ void fragment() {
 					fire_warmth
 				);
 				float fire_mask = twilight * (
-					shape.deck * 0.04
+					shape.deck * 0.03
 					+ shape.body * 0.15
 					+ shape.top * 0.30
 					+ body_edge * 0.26
 				);
-				vec3 fire_scatter = fire_color * fire_mask * (0.16 + light_t * 0.12);
+				fire_mask *= mix(0.22, 1.0, sun_face) * mix(0.55, 1.0, sun_diffuse);
+				vec3 fire_scatter = fire_color * fire_mask * (0.13 + light_t * 0.12);
 
 				// 三层不能共用一套「albedo × light」：那只是在一张表面上换颜色，
 				// 法线再强也没有前后层次。低层以天光/回填为主，中层吃柔和直射，
@@ -777,6 +871,8 @@ void fragment() {
 					0.0,
 					0.34
 				);
+				// 与 fire_scatter 同向：暖色反照率只染迎光侧，背光侧保持冷灰。
+				warm_albedo *= mix(0.45, 1.0, sun_face);
 				body_albedo = mix(body_albedo, vec3(1.0, 0.72, 0.25), warm_albedo * 0.72);
 				top_albedo = mix(top_albedo, vec3(1.0, 0.82, 0.38), warm_albedo);
 
@@ -798,7 +894,35 @@ void fragment() {
 					+ deck_fill
 					+ fire_scatter
 					+ key_col * (sss * 0.24 + shape.top * 0.055);
+
+				// 坡向轮廓光（q2+）：迎光坡提亮、背光坡微压（迎光坡 = edge_face < 0）。
+				// 向日/向月两套轮廓权重互为镜像，按 use_sun_axis 混合：翻转线上
+				// 迎/背权重相等、方向性自然中和 —— 严格连续，无衰减缝。
+				// 太阳越低轮廓光越强（掠射角拉长迎光坡），正午收敛。
+				if (q >= 2) {
+					float rim_band = smoothstep(0.06, 0.38, slope_len)
+						* clamp(shape.body * 0.55 + shape.top * 0.75, 0.0, 1.0);
+					float rim_strength = mix(0.25, 1.0, key_amt)
+						* mix(1.35, 1.0, smoothstep(-0.05, 0.60, sun_elev))
+						* mix(0.45, 1.0, sun_share);
+					float rim_pos_sun = smoothstep(0.15, 0.85, -edge_face) * rim_band;
+					float rim_neg_sun = smoothstep(0.15, 0.85, edge_face) * rim_band;
+					float rim_pos = mix(rim_neg_sun, rim_pos_sun, use_sun_axis);
+					float rim_neg = mix(rim_pos_sun, rim_neg_sun, use_sun_axis);
+					col = col * (1.0 - rim_neg * 0.16 * rim_strength)
+						+ key_col * (rim_pos * rim_gain * 0.55 * rim_strength);
+				}
+
+				// 夜侧整体调光：深夜（cloud_day=0）乘 night_darkness，白昼不变。
+				col *= mix(night_darkness, 1.0, cloud_day);
 				col = fog_soft_tonemap(col);
+				// S 曲线把被 ACES 压平的中间调重新拉开：亮云顶更挺、暗云缝更沉。
+				// 夜侧强度略降：深夜只剩环境光，满强度 S 曲线仍会把夜云压死黑。
+				col = mix(
+					col,
+					col * col * (3.0 - 2.0 * col),
+					volume_contrast * mix(0.65, 1.0, cloud_day)
+				);
 				col *= mix(0.94, 1.06, clamp(shape.body * 0.45 + shape.top * 0.55, 0.0, 1.0));
 
 				// 过渡带按分层云体透明；满迷雾区仍严格 alpha=1，保证玩法信息不泄漏。

@@ -1,6 +1,6 @@
 ---
 name: project-keynes-country-runtime
-description: Guide Project.Keynes native country runtime work covering country identity and handles, territory CSR, country-level technology, cash and goods treasury, CountryDailySystem commands, the native economy bridge, PKCN/PKEC save ordering, Inspector summaries, performance, and validation. Use when changing country_runtime.*, world_ext_country.cpp, CountryFacade, country scheduling, country/economy ownership or conservation, country save/restore, or country-facing UI and tests.
+description: Guide Project.Keynes native country runtime work covering country identity and handles, territory CSR, country-level technology, cash and goods treasury, tax policy/defaults/overrides, CountryDailySystem commands, the native economy bridge, PKCN/PKEC save ordering, Inspector summaries, performance, and validation. Use when changing country_runtime.*, world_ext_country.cpp, CountryFacade, country scheduling, country tax policy or treasury, country/economy ownership or conservation, country save/restore, or country-facing UI and tests.
 ---
 
 # Project.Keynes Country Runtime
@@ -22,6 +22,9 @@ Before editing, inspect the affected code and read only the relevant references:
 Also use `project-keynes-runtime-architecture`, `project-keynes-economy-runtime`, and
 `cpp-dots-runtime-development` when available. Preserve the dirty worktree and reuse existing
 country/economy paths before introducing another subsystem.
+
+Load `project-keynes-tax-runtime` for tax commands, profession/good/building overrides, fiscal cash
+reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or tariff placeholders.
 
 ## Required workflow
 
@@ -47,8 +50,9 @@ country/economy paths before introducing another subsystem.
   country authority. See `docs/cpp-dots-runtime/vision-fog-and-borders.md`.
 - Keep `country_committed` as the single broadcast for territory change. Visual
   consumers subscribe to it; do not add a second notification path.
-- Do not add tax, research growth, diplomacy, war, country AI, deletion, or technology revocation as
-  incidental behavior.
+- Add taxation only through the dedicated tax/fiscal contract: country owns policy and treasury;
+  economy owns taxable events and fiscal escrow. Do not add research growth, diplomacy, war,
+  country AI, deletion, or technology revocation as incidental behavior.
 
 ## Verify
 

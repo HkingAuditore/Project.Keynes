@@ -1,0 +1,21 @@
+header=kind,id,old_display_name_en,new_display_name_cn
+total=310
+kinds={'goods': 112, 'buildings': 137, 'professions': 32, 'resources': 14, 'needs': 15}
+buildings:
+  buildings,agricultural_machinery_plant,Agricultural Machinery Factory,农业机械厂
+  buildings,aluminum_plant,Aluminum Factory,铝厂
+goods:
+  goods,agricultural_machinery,Agricultural Machinery,农业机械
+  goods,aluminum,Aluminum,铝
+needs:
+  needs,clothing,Clothing,衣物
+  needs,communication,Communication,通讯
+professions:
+  professions,agricultural_worker,Agricultural Worker,农业工人
+  professions,apprentice,Apprentice,学徒
+resources:
+  resources,arable_land,Arable Land Capacity,耕地
+  resources,bauxite,Bauxite,铝土矿
+ascii_or_empty_goods count=0 sample=[]
+ascii_or_empty_prof count=0 sample=[]
+ascii_or_empty_bldg count=0 sample=[]
