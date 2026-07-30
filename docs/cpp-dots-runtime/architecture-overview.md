@@ -178,6 +178,10 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 - enum/dynamic atlas 的部分 patch/cache/raster 加速。
 - 生成期 native world generation base/post-base：`run_native_world_generate_base_pass` 在 `native_generation_mode=ACTIVE` 时直接生成基础地图 SoA 结果包；`run_native_world_generate_post_base_pass` 接收该结果包并在 C++ 内完成湖泊 BFS、河流 flow accumulation、河岸/植被反馈、过渡生态、地标和水体变种。GDScript 只发请求、收 PackedArray 并装配 `MapData`/`HexCell`。
 - 生成期 native world generation publish：`run_native_world_generate_pass` 把生成后的 `MapData` SoA 初始仿真字段发布为 C++ slot 权威并 flush 回 `MapData`。
+- 生成期高分视觉 Tile：`run_bake_visual_tile_layer_pass` 只生成临时静态视觉 byte bundle，
+  GPU hierarchical horizon 只生成渲染数据；全局 geometry/CSR、HexCell、DataCore 和仿真权威
+  均不移动。Godot 仍拥有 `Texture2DArray`、上传、generation-id 原子发布和 legacy fallback。
+  详见 [Visual Tile Rendering](./visual-tile-rendering.md)。
 
 仍然保留在 GDScript 的职责包括：
 
@@ -187,6 +191,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 - low-N 或高业务复杂度对象逻辑，例如部分 weather front 对象层和 UI/debug。
 - C++ fallback ground-truth。
 - atlas GPU upload、Image/ImageTexture/RID 等 Godot 对象侧操作。
+- visual tile budget/layout、Texture2DArray 生命周期、异步 compute 编排和 renderer shader variant 绑定。
 
 ## 新增 C++/DOTS 功能的架构规则
 
@@ -215,6 +220,13 @@ Country Modifier domain；PKEC v24 引用匹配的 PKCN identity，并持久化�
 [Country Scheduling / Save](./country-scheduling-save.md)，贸易机制见
 [Domestic Trade Runtime](./domestic-trade-runtime.md) 与
 [税收与财政结算运行时](./tax-fiscal-runtime.md)。
+
+## Trigger graph
+
+`TriggerRuntime` is the native event-to-effect graph between committed event
+publication and domain consumers. It owns packed trigger state only; domain
+commands are applied by Modifier/Country/Economy adapters at safe boundaries.
+See [Native Trigger Runtime](./native-trigger-runtime.md).
 
 ## Native prosperity and settlement identity
 

@@ -121,6 +121,12 @@ world_setup.tscn
 6. `MapData.init_soa_from_bake()` 构建运行期 SoA。
 7. `_setup_sus()` 进入运行期 DataCore 和调度注册。
 
+`MapBaker` 同时维护可选的视觉 Tile 路径：全局 geometry/CSR 仍是权威基线，
+`run_bake_visual_tile_layer_pass` 只生成高分静态 `Texture2DArray` 字节，
+`VisualTileHorizonBaker` 用 GPU compute 生成分块 horizon。Compatibility 或静态失败回退
+原单图；Tile 预算不进入 HexCell、DataCore、仿真或存档。详见
+`docs/cpp-dots-runtime/visual-tile-rendering.md`。
+
 `docs/terrain-generation-current.md` 是当前地形生成的高价值文档，改生成算法前先读它。
 
 ## 数据模型
@@ -237,6 +243,8 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 `WorldData` 保存 CPU buffer 和 GPU `ImageTexture`：
 
 - 静态/生成期：`height_tex`、`terrain_horizon_tex`、`enum_atlas_tex`、`flow_tex`、`water_depth_tex`、`terrain_normal_tex`；另有两个非纹理的静态视野场 `cell_view_height` / `cell_view_block`（`PackedByteArray`，`bake_world` 由地形派生，供 `VisionSolver` 只读）。
+- 可选高分静态视觉：`visual_tiles` 持有 height/normal/map-index/flow/water/detail/edge/horizon
+  九个无 mip `Texture2DArray` 和 `VisualTileLayout`；它是视觉缓存，不替代前一行的 CPU 基线。
 - 运行期动态：`weather_field_tex`、`dynamic_cell_atlas_tex`、`ecology_visual_atlas_tex`、`enum_lut_tex`、`dyn_lut_tex`、`eco_lut_tex`、`weather_lut_tex`。
 - 间接寻址：`enum_atlas_tex` 的 G/B 保存 `cell.index`，per-cell LUT 把每日更新从 pixel fan-out 降到 `n_cells` texel。`enum_lut_tex` 是 **RGBA8**：R/G/B = biome/veg/cover，**A = 迷雾知识度 `fog_k`**。
 - 玩家信息遮罩：`DataOverlayLayer` 位于基础地图/植被上方、选择高亮下方；`data_overlay.gdshader` 从 `enum_atlas_tex.GB` 解码 cell ID，再以 NEAREST 读取玩家 `overlay_lut`。世界拓扑不变时只上传 `lut_dims.x * lut_dims.y * 4` 字节，不创建地图分辨率动态纹理。
@@ -482,3 +490,7 @@ debug recording is Economy CSV v22.
 - Formal opening-country cells carry a native forced-name bit, so every
   20-person capital is named while its prosperity tier remains population-only.
 - Visible boundary: Godot pooled label layer; no economic mirror or fallback.
+
+- TriggerRuntime: `gdext/src/trigger_runtime.{h,cpp}`, `world_ext_trigger.cpp`,
+  `scripts/trigger/trigger_facade.gd`, `trigger_daily_system.gd`; PKTR provider in
+  `game_save_coordinator.gd`.

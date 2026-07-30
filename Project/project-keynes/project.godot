@@ -41,6 +41,13 @@ enabled=PackedStringArray("res://addons/climate_profile_inspector/plugin.cfg")
 
 3d/physics_engine="Jolt Physics"
 
+[project_keynes]
+
+rendering/map_tiles/mode="tiled"
+rendering/map_tiles/budget_mp=-1.0
+rendering/map_tiles/residual_amp=0.035
+rendering/map_tiles/horizon_max_iterations=2048
+
 [rendering]
 
 rendering_device/driver.windows="d3d12"

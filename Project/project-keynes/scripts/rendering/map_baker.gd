@@ -63,6 +63,8 @@ class_name MapBaker
 signal stage_progress(stage: String, fraction: float)
 
 const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
+const VisualTileLayoutScript = preload("res://scripts/rendering/visual_tile_layout.gd")
+const VisualTileSetScript = preload("res://scripts/rendering/visual_tile_set.gd")
 # Physical Wind & Ocean Circulation：hex 域物理化求解器。当
 # ClimateProfile.physical_circulation_enabled = true 时，bake_world / 切片烘焙
 # 路径用它替换 ny-only 风场 + Ekman 洋流的旧实现，输出从 hex 字段（cell.wind_vector
@@ -436,6 +438,7 @@ var _pending_wind_buf: PackedByteArray = PackedByteArray()
 # 末尾通过 set_world_ext() 注入。null 时所有 C++ hook 走 GDScript fallback。
 # 当前用于 _PHYS_STAGE_WIND C++ 化（run_wind_field_pass）；后续可扩展给 ψ / upwelling。
 var _world_ext = null
+var _visual_tile_generation_id: int = 0
 var _last_bake_map: MapData = null
 # DOTS-Final-Push 修复：sea_ice prepare / 其他需要 ClimateProfile 的路径不能再依赖
 # `world.get("config")`（WorldData 上根本没有 config 字段，永远返回 null，导致
@@ -777,6 +780,8 @@ static func compute_world_bounds(width: int, height: int, hex_size: float) -> Re
 	)
 
 func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) -> WorldData:
+	_visual_tile_generation_id += 1
+	var visual_generation_id := _visual_tile_generation_id
 	_last_bake_map = map
 	_rng = RandomNumberGenerator.new()
 	_rng.seed = seed_val
@@ -978,6 +983,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# shader 检测到无纹理（has_water_depth_tex=false）时回退旧深浅算法。
 	world.water_depth_tex = DCAtlasEncoders.encode_r8_tex(world.water_depth_buffer, world.derived_size, world.water_depth_tex, _world_ext) if not world.water_depth_buffer.is_empty() else null
 	_rebake_terrain_detail_tex(world, hex_size)
+	await _bake_visual_tiles(map, world, hex_size, seed_val, visual_generation_id)
 	stage_progress.emit("encode", 0.96)
 	await _yield_generation_frame()
 
@@ -1020,6 +1026,180 @@ func _yield_generation_frame() -> void:
 	var main_loop := Engine.get_main_loop()
 	if main_loop is SceneTree:
 		await (main_loop as SceneTree).process_frame
+
+
+func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
+		seed_val: int, generation_id: int) -> bool:
+	if map == null or world == null:
+		return false
+	var quality := _visual_tile_quality_setting()
+	var layout = VisualTileLayoutScript.resolve(
+		world.world_bounds, world.wrap_period_x, quality, OS.has_feature("mobile"),
+		{"generation_id": generation_id}
+	)
+	if layout.mode == VisualTileLayoutScript.MODE_LEGACY:
+		world.visual_tiles = null
+		print("  visual tiles: legacy (%s)" % layout.fallback_reason)
+		return false
+	if _world_ext == null or not _world_ext.has_method("run_bake_visual_tile_layer_pass"):
+		layout.mode = VisualTileLayoutScript.MODE_LEGACY
+		layout.fallback_reason = "native_visual_tile_pass_missing"
+		world.visual_tiles = null
+		push_warning("[visual-tiles] native pass unavailable; using legacy textures")
+		return false
+
+	var tiles = VisualTileSetScript.new()
+	if not tiles.initialize_empty(layout):
+		layout.mode = VisualTileLayoutScript.MODE_LEGACY
+		layout.fallback_reason = tiles.fallback_reason
+		world.visual_tiles = tiles
+		push_warning("[visual-tiles] Texture2DArray allocation failed: %s" % tiles.fallback_reason)
+		return false
+
+	var n_cells := map.cell_count()
+	var elev := PackedFloat32Array(); elev.resize(n_cells)
+	var moist := PackedFloat32Array(); moist.resize(n_cells)
+	var terrain := PackedByteArray(); terrain.resize(n_cells)
+	var vegetation := PackedByteArray(); vegetation.resize(n_cells)
+	var cover := PackedByteArray(); cover.resize(n_cells)
+	var water_surface := PackedFloat32Array(); water_surface.resize(n_cells)
+	var offset_to_index := PackedInt32Array()
+	offset_to_index.resize(map.width * map.height)
+	offset_to_index.fill(-1)
+	for cell in map.all_cells():
+		if cell == null:
+			continue
+		var ci := int(cell.index)
+		if ci < 0 or ci >= n_cells:
+			continue
+		elev[ci] = cell.elevation
+		moist[ci] = cell.moisture
+		terrain[ci] = int(cell.terrain) & 0xFF
+		vegetation[ci] = int(cell.vegetation) & 0xFF
+		cover[ci] = int(cell.cover) & 0xFF
+		water_surface[ci] = float(cell.water_depth)
+		var off := HexUtils.cube_to_offset(cell.q, cell.r)
+		if off.y >= 0 and off.y < map.height:
+			offset_to_index[off.y * map.width + posmod(off.x, map.width)] = ci
+
+	var base_knobs := {
+		"generation_id": generation_id,
+		"map_width": map.width,
+		"map_height": map.height,
+		"n_cells": n_cells,
+		"hex_size": hex_size,
+		"seed": seed_val,
+		"wrap_period_x": world.wrap_period_x,
+		"sea_level": world.sea_level,
+		"cell_elevation": elev,
+		"cell_moisture": moist,
+		"cell_terrain": terrain,
+		"cell_vegetation": vegetation,
+		"cell_cover": cover,
+		"cell_water_depth": water_surface,
+		"cell_landform": _landform_bytes_for_map(map),
+		"offset_to_index": offset_to_index,
+		"baseline_width": world.hm_size.x,
+		"baseline_height": world.hm_size.y,
+		"baseline_origin_x": world.world_bounds.position.x,
+		"baseline_origin_y": world.world_bounds.position.y,
+		"baseline_size_x": world.world_bounds.size.x,
+		"baseline_size_y": world.world_bounds.size.y,
+		"baseline_height_buffer": world.height_buffer,
+		"baseline_flow_buffer": world.flow_buffer,
+		"baseline_water_depth_buffer": world.water_depth_buffer,
+		"algorithm_halo_px": 8,
+		"residual_amp": float(ProjectSettings.get_setting(
+			"project_keynes/rendering/map_tiles/residual_amp", 0.035)),
+		"river_stroke_hex_factor": RIVER_STROKE_HEX_FACTOR,
+		"sdf_max_dist_px": SDF_MAX_DIST_PX,
+		"shore_carve_amp": SHORE_CARVE_AMP,
+		"shore_carve_band": SHORE_CARVE_BAND,
+		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
+		"normal_radius_px": 2,
+		"normal_slope_gain": TERRAIN_NORMAL_SLOPE_GAIN,
+	}
+	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
+	var layer_reports: Array[Dictionary] = []
+	var bake_t0 := Time.get_ticks_usec()
+	for layer_id in range(layout.layer_count):
+		if generation_id != _visual_tile_generation_id:
+			tiles.fallback_reason = "stale_generation"
+			tiles.clear()
+			world.visual_tiles = tiles
+			return false
+		var tile_xy := Vector2i(layer_id % layout.grid_size.x,
+			layer_id / layout.grid_size.x)
+		var interior_origin: Vector2 = layout.visual_domain.position + Vector2(
+			tile_xy.x * layout.interior_size.x,
+			tile_xy.y * layout.interior_size.y) * texel_world
+		var physical_origin: Vector2 = interior_origin - Vector2.ONE * layout.gutter_px * texel_world
+		var physical_size: Vector2 = Vector2(layout.layer_size) * texel_world
+		var knobs: Dictionary = base_knobs.duplicate(false)
+		knobs.merge({
+			"layer_id": layer_id,
+			"width": layout.layer_size.x,
+			"height": layout.layer_size.y,
+			"origin_x": physical_origin.x,
+			"origin_y": physical_origin.y,
+			"size_x": physical_size.x,
+			"size_y": physical_size.y,
+		}, true)
+		var layer_t0 := Time.get_ticks_usec()
+		var bundle: Dictionary = _world_ext.run_bake_visual_tile_layer_pass(knobs)
+		if bundle == null or bool(bundle.get("fallback", true)) \
+				or int(bundle.get("generation_id", -1)) != generation_id:
+			tiles.fallback_reason = "native_layer_failed:%d:%s" % [
+				layer_id, String(bundle.get("reason", "invalid_bundle"))]
+			tiles.clear()
+			layout.mode = VisualTileLayoutScript.MODE_LEGACY
+			layout.fallback_reason = tiles.fallback_reason
+			world.visual_tiles = tiles
+			push_warning("[visual-tiles] %s; using complete legacy path" % tiles.fallback_reason)
+			return false
+		var upload_t0 := Time.get_ticks_usec()
+		if not tiles.upload_layer_bundle(layer_id, bundle):
+			tiles.clear()
+			layout.mode = VisualTileLayoutScript.MODE_LEGACY
+			layout.fallback_reason = tiles.fallback_reason
+			world.visual_tiles = tiles
+			push_warning("[visual-tiles] layer upload failed: %s" % tiles.fallback_reason)
+			return false
+		layer_reports.append({
+			"layer": layer_id,
+			"bake_ms": float(bundle.get("elapsed_ms", -1.0)),
+			"upload_ms": float(Time.get_ticks_usec() - upload_t0) / 1000.0,
+			"wall_ms": float(Time.get_ticks_usec() - layer_t0) / 1000.0,
+			"hashes": bundle.get("hashes", {}),
+		})
+		await _yield_generation_frame()
+
+	tiles.static_ready = true
+	# Horizon starts neutral. The renderer's asynchronous tiled horizon module replaces
+	# all layers atomically; until then no partially baked shadow field is exposed.
+	tiles.horizon_ready = false
+	tiles.ready = true
+	tiles.bake_report = layout.diagnostic_report()
+	tiles.bake_report.merge({
+		"path": "visual_tiled_static",
+		"renderer": RenderingServer.get_current_rendering_method(),
+		"total_ms": float(Time.get_ticks_usec() - bake_t0) / 1000.0,
+		"layers": layer_reports,
+		"horizon_path": "neutral_pending",
+	}, true)
+	world.visual_tiles = tiles
+	print("  visual tiles: %s" % JSON.stringify(tiles.bake_report))
+	return true
+
+
+func _visual_tile_quality_setting() -> String:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return "auto"
+	var settings := tree.root.get_node_or_null("GameSettings")
+	if settings == null or not settings.has_method("values"):
+		return "auto"
+	return String(settings.values().get("render_quality", "auto"))
 
 # ─── Phase 2：增量重新烘焙 biome_tex ────────────────────────────────────────
 # 季节切换时只需重画 biome（其他 buffer 不变），单次只跑 ~80ms。

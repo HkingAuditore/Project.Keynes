@@ -18,6 +18,10 @@ var _pool: Array[Label] = []
 var _last_camera_position := Vector2.INF
 var _last_zoom := -1.0
 var _dirty := true
+# 帧尾诊断：最近一次 _rebuild_visible_labels 墙钟（毫秒）。tick 日 sync_from_runtime
+# 会无条件置 dirty，所以重建成本逐日计入 perf 的 tail_label_ms 列。
+var _last_rebuild_ms: float = 0.0
+var _last_rebuild_label_count: int = 0
 
 
 func configure(map: MapData, camera: Camera2D, facade, hex_size: float,
@@ -86,7 +90,17 @@ func _process(_delta: float) -> void:
 		_last_zoom = zoom_value
 		_dirty = true
 	if _dirty:
+		var rebuild_started_usec := Time.get_ticks_usec()
 		_rebuild_visible_labels()
+		_last_rebuild_ms = float(Time.get_ticks_usec() - rebuild_started_usec) / 1000.0
+
+
+func get_last_rebuild_ms() -> float:
+	return _last_rebuild_ms
+
+
+func get_last_rebuild_label_count() -> int:
+	return _last_rebuild_label_count
 
 
 func _rebuild_visible_labels() -> void:
@@ -174,6 +188,7 @@ func _rebuild_visible_labels() -> void:
 		label.scale = Vector2.ONE / zoom_value
 		label.visible = true
 		used += 1
+	_last_rebuild_label_count = used
 
 
 func _ensure_pool(capacity: int) -> void:

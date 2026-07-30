@@ -332,6 +332,26 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     const double coastal_temp_moderation = getd(profile, "coastal_temp_moderation", 0.18); // 海洋温度调节强度(拉向温带)
     const double coastal_temp_scale = getd(profile, "coastal_temp_scale", 6.0);         // 海洋影响随距海(格)的衰减尺度
 
+    // ── [scale-fix 2026-07-30] 湿度/气候"格距"参数的分辨率归一 ─────────────────────
+    // 世界是固定大小的行星（经度恒 2π、纬度恒 [0,1]，噪声在归一化坐标采样，与格数无关），
+    // N 变化时 1 格的物理尺寸 ∝ 1/sqrt(N)。下列参数本质是"物理距离/每物理距离比率"，但
+    // 历史上以格数标定（基准 150×100=15000 格）→ 不缩放时小图过湿、大图内陆整片沙漠。
+    // 统一按线性分辨率比 s=sqrt(N/15000) 换算成物理一致：
+    //   · 指数衰减长度/BFS 格数阈值  ×s   （coastal_temp_scale / coastal_moist_scale / 副热带 interior ramp）
+    //   · 每格保留率类  换成每物理距离保留率 (1-r)^(1/s)（rainout_base / continental_dry）
+    //   · 加性海面增湿  ÷s   （wind_evap；cap 饱和使长距离海上穿越本来就不敏感）
+    //   · 地形增雨 upslope×gain 不动：相邻格 ΔE 自带 1/s，与"坡面格数 ∝ s"相消，天然自洽。
+    constexpr double PK_HYDRO_REF_CELLS = 15000.0;
+    const double hydro_dist_scale = std::sqrt(std::max(0.0625, double(n) / PK_HYDRO_REF_CELLS));
+    const double inv_hydro_dist_scale = 1.0 / hydro_dist_scale;
+    const double moisture_wind_evap_eff = moisture_wind_evap * inv_hydro_dist_scale;
+    const double moisture_rainout_base_eff = 1.0 - std::pow(1.0 - moisture_rainout_base, inv_hydro_dist_scale);
+    const double moisture_continental_dry_eff = 1.0 - std::pow(1.0 - moisture_continental_dry, inv_hydro_dist_scale);
+    const double coastal_temp_scale_eff = std::max(0.5, coastal_temp_scale * hydro_dist_scale);
+    const double coastal_moist_scale_eff = std::max(0.25,
+            std::max(1.0, getd(profile, "moisture_coastal_scale", 7.0)) * hydro_dist_scale);
+    const double subtropical_interior_scale_eff = std::max(0.5, 8.0 * hydro_dist_scale);
+
     // ── lake-seed / pit-fill knobs（镜像 ClimateProfile，复刻 _carve_lake_seeds / _smooth_pit_depressions）──
     const double lake_seed_freq = getd(profile, "lake_seed_freq", 0.07);
     const double lake_seed_threshold = getd(profile, "lake_seed_threshold", 0.62);
@@ -1265,7 +1285,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     auto ocean_influence = [&](int i) -> double {
         const int dd = dist_ocean[size_t(i)];
         if (dd < 0) return 0.0; // 全陆地(无海)→极内陆
-        return std::exp(-double(dd) / std::max(coastal_temp_scale, 0.5));
+        return std::exp(-double(dd) / coastal_temp_scale_eff);  // [scale-fix] ×s，见 knobs 区
     };
     // 生成期温度：纬度钟形 - 海平面相对海拔惩罚，再按海洋邻近度拉向温带(沿海冬暖夏凉)。仅用于
     // 生成期地形/biome 分类；运行时温度场同样走 pk_compute_temperature(ny, elevation, sea_level)。
@@ -1293,11 +1313,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             const bool record = (step >= width);    // 第一圈预热不写、第二圈记录
             const bool is_water = double(E[idx]) < sea_level;
             if (is_water) {
-                humidity = std::min(moisture_humidity_cap, humidity + moisture_wind_evap);
+                humidity = std::min(moisture_humidity_cap, humidity + moisture_wind_evap_eff);  // [scale-fix] ÷s
                 if (record) M[idx] = float(pk_clamp01(0.85 + 0.15 * humidity)); // 开放水域恒湿
             } else {
                 const double upslope = (prev_idx >= 0) ? std::max(0.0, double(E[idx]) - double(E[prev_idx])) : 0.0;
-                double rainout = moisture_rainout_base + upslope * moisture_orographic_gain;
+                // [scale-fix] 基础降水率换每物理距离保留率；upslope 项 ΔE 自带 1/s 不缩放。
+                double rainout = moisture_rainout_base_eff + upslope * moisture_orographic_gain;
                 if (rainout > 0.95) rainout = 0.95;
                 const double precip = humidity * rainout;
                 // [cylindrical-earth-daylight] 湿度抖动噪声圆柱采样 → 东西无缝；经度 period=width（col/width）
@@ -1307,7 +1328,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 if (record) M[idx] = float(pk_clamp01(m));
                 humidity -= precip;
                 if (humidity < 0.0) humidity = 0.0;
-                humidity *= (1.0 - moisture_continental_dry); // 大陆度：内陆持续干燥化
+                humidity *= (1.0 - moisture_continental_dry_eff); // 大陆度：内陆持续干燥化 [scale-fix] 每物理距离保留率
             }
             prev_idx = idx;
         }
@@ -1336,12 +1357,13 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // 纬向雨影结构作为上层叠加保留。max(原值, floor) 不会抹平已湿润区。
     {
         const double coastal_moist_floor = pk_clamp01(getd(profile, "moisture_coastal_floor", 0.42));
-        const double coastal_moist_scale = std::max(1.0, getd(profile, "moisture_coastal_scale", 7.0));
+        // [scale-fix 2026-07-30] 衰减长度用 knobs 区已 ×s 的 coastal_moist_scale_eff，
+        // 保持沿海保护带的物理宽度与分辨率无关（此前大图保护带物理宽度减半 → 内陆全旱）。
         for (int i = 0; i < n; ++i) {
             if (double(E[i]) < sea_level) continue;
             const int dd = dist_ocean[size_t(i)];
             if (dd <= 0) continue;
-            const double prox = std::exp(-double(dd) / coastal_moist_scale);
+            const double prox = std::exp(-double(dd) / coastal_moist_scale_eff);
             const double floor_m = moisture_land_base + coastal_moist_floor * prox;
             if (double(M[i]) < floor_m) M[i] = float(floor_m);
         }
@@ -1353,7 +1375,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         for (int i = 0; i < n; ++i) {
             if (double(E[i]) < sea_level) continue;
             const int dd = dist_ocean[size_t(i)];
-            const double interior = (dd < 0) ? 1.0 : std::clamp(double(dd) / 8.0, 0.0, 1.0);
+            // [scale-fix 2026-07-30] interior 饱和距离 8 格 ×s：此前大图 8 格只是窄海岸边，
+            // 整片亚热带陆地吃满扣湿 → 大陆几乎全沙漠。
+            const double interior = (dd < 0) ? 1.0 : std::clamp(double(dd) / subtropical_interior_scale_eff, 0.0, 1.0);
             if (interior <= 0.0) continue;
             const double abs_lat = std::abs(double(R[i]) * inv_h * 2.0 - 1.0);
             const double z = (abs_lat - subtropical_dry_center) / subtropical_dry_width;
@@ -1413,6 +1437,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     out["reason"] = String();
     out["fail_stage"] = String();
     out["published_to_slot"] = false;
+    // [scale-fix 2026-07-30] 湿度格距参数分辨率归一诊断（验证时核对：s=sqrt(N/15000)）
+    out["hydro_dist_scale"] = hydro_dist_scale;
+    out["moisture_rainout_base_effective"] = moisture_rainout_base_eff;
+    out["moisture_continental_dry_effective"] = moisture_continental_dry_eff;
+    out["moisture_wind_evap_effective"] = moisture_wind_evap_eff;
+    out["coastal_temp_scale_effective"] = coastal_temp_scale_eff;
+    out["coastal_moist_scale_effective"] = coastal_moist_scale_eff;
+    out["subtropical_interior_scale_effective"] = subtropical_interior_scale_eff;
     out["n_cells"] = n;
     out["width"] = width;
     out["height"] = height;
@@ -1511,7 +1543,17 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
 
     const double sea_level = getd(cfg, "sea_level", 0.64);
     const bool ocean_enabled = getb(cfg, "enable_ocean_heat_transport", false);
-    const int lookback = std::max(0, geti(profile, "rain_shadow_lookback", 3));
+    // ── [scale-fix 2026-07-30] 分辨率归一（与 base pass 湿度块同源）──────────────────
+    // s = sqrt(N/15000)：固定世界的线性分辨率比。凡"以格数标定的物理距离"都要换算：
+    // 雨影探针距离 ×s（下方 lookback）；relief 阈值 ×(15000/N)^0.5（relief_thresh_scale）；
+    // 河流成河阈值 / RFLOW 归一见 river_map_scale（双向）与 flow_eq_scale。
+    constexpr double PK_GEN_REF_CELLS = 15000.0;
+    const double gen_dist_scale = std::sqrt(std::max(0.0625, double(n) / PK_GEN_REF_CELLS));
+    // [scale-fix] lookback ×s 保持雨影物理到达距离恒定（0 仍是"关闭雨影"的语义，不改写）。
+    const int lookback_base = std::max(0, geti(profile, "rain_shadow_lookback", 3));
+    const int lookback = (lookback_base > 0)
+            ? std::max(1, int(std::round(double(lookback_base) * gen_dist_scale)))
+            : 0;
     const double rain_threshold = getd(profile, "rain_shadow_threshold", 0.13);
     const double rain_factor = getd(profile, "rain_shadow_factor", 0.50);
     const double river_percentile = getd(profile, "river_flow_percentile", 0.72);  // 干支流树状河网：0.80→0.72（绘出支流）
@@ -1551,11 +1593,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             plateau_relief_scale_exp);
     const double plateau_max_relief = plateau_max_relief_base * plateau_relief_scale;
     const double mountain_min_land_h = getd(profile, "mountain_min_land_h", 0.70);
-    const double mountain_min_relief = std::max(0.0, getd(profile, "mountain_min_relief", 0.115));
+    const double mountain_min_relief_base = std::max(0.0, getd(profile, "mountain_min_relief", 0.115));
     const double peak_min_land_h = getd(profile, "peak_min_land_h", 0.74);
     const double peak_min_prominence = std::max(0.0, getd(profile, "peak_min_prominence", 0.035));
     const int peak_land_cells_per_peak = std::max(1, geti(profile, "peak_land_cells_per_peak", 120));
-    const double badlands_min_relief = std::max(0.0, getd(profile, "badlands_min_relief", 0.06));
+    const double badlands_min_relief_base = std::max(0.0, getd(profile, "badlands_min_relief", 0.06));
     const int badlands_min_rugged_neighbors = std::max(1, std::min(6,
             geti(profile, "badlands_min_rugged_neighbors", 2)));
     const double badlands_max_land_ratio = std::clamp(
@@ -1564,21 +1606,30 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             getd(profile, "badlands_max_arid_ratio", 0.25), 0.0, 1.0);
     const int badlands_max_patch_cells = std::max(1,
             geti(profile, "badlands_max_patch_cells", 48));
+    // [scale-fix 2026-07-30] mountain/badlands 的 relief 阈值参照 plateau 的 (ref/N)^k 模式
+    // 补分辨率缩放，但双向、指数默认 0.5：relief = 6 邻域高差 ∝ 1/s = (ref/N)^0.5（固定
+    // 世界细采样 → 相邻格高差天然更小，大图过严/小图过松）。plateau 只向下缩且指数 0.25，
+    // 是因为它有面积占比上限当主控、阈值仅辅助；mountain/badlands 的阈值就是主门，必须
+    // 自己跟踪物理采样密度。peak_min_prominence 维持不缩（PEAK 有 land/N 数量上限主控）。
+    const double relief_thresh_scale_exp = getd(profile, "relief_thresh_scale_exp", 0.5);
+    const double relief_thresh_scale = std::pow(
+            std::max(0.25, PK_GEN_REF_CELLS / std::max(1.0, double(n))),
+            relief_thresh_scale_exp);
+    const double mountain_min_relief = mountain_min_relief_base * relief_thresh_scale;
+    const double badlands_min_relief = badlands_min_relief_base * relief_thresh_scale;
     const int river_channel_init_base = std::max(2, geti(profile, "river_channel_init_cells", 16));
-    // 150x100 is the tuning baseline documented in ClimateProfile. Above that,
-    // fixed "upstream cell count" thresholds make every large basin sprout too
-    // many tributaries, so scale only upward and keep small/normal maps unchanged.
+    // 15000 格(150×100)是 ClimateProfile 的调参基准。世界是固定大小的行星：同源点的
+    // up_count ∝ N（流域物理面积不变 → 流域格数 ∝ N），成河阈值须随 N 线性缩放才能
+    // 保持河网物理密度恒定。
     //
-    // [density-fix 2026-06-30] exponent 0.65→1.0: up_count grows ~linearly with
-    // N (sum(up_count) == land.size(), downstream cells accumulate proportionally),
-    // so the channel-init threshold must scale linearly too to keep relative
-    // river density constant across map sizes. 0.65 was sub-linear and let large
-    // maps grow denser. Linear scaling is mathematically equivalent to normalizing
-    // up_count by N — no explicit normalization pass needed.
+    // [density-fix 2026-06-30] exponent 0.65→1.0: 线性缩放等价于把 up_count 归一化。
+    // [scale-fix 2026-07-30] max(1.0,…) clamp → 双向缩放：旧 clamp 使 N<15000 的小图
+    // 不缩，阈值相对流域面积偏高(64×100 时 ~2.3×) → 支流发不出来，小图河稀反衬大图
+    // 河多。下限 0.25 仅防极端小图阈值归零。
     constexpr double river_map_reference_cells = 15000.0;
     constexpr double river_map_scale_exponent = 1.0;
     const double river_map_scale = std::pow(
-            std::max(1.0, double(n) / river_map_reference_cells),
+            std::max(0.25, double(n) / river_map_reference_cells),
             river_map_scale_exponent);
     const int channel_init = std::max(2, int(std::round(double(river_channel_init_base) * river_map_scale)));
     const int river_headwater_init = std::max(1, int(std::round(double(river_headwater_init_base) * river_map_scale)));
@@ -1746,7 +1797,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // ── 统一气候场（terrain-overhaul Phase 3）：距海距离 + 海洋温度调节 ──
     // 复用 base pass 传来的 dist_ocean_arr；缺失则按 elev<sea_level 现场重算 BFS。
     const double coastal_temp_moderation = getd(profile, "coastal_temp_moderation", 0.18);
-    const double coastal_temp_scale = getd(profile, "coastal_temp_scale", 6.0);
+    // [scale-fix 2026-07-30] 衰减长度 ×s（与 base pass 一致），保持海洋调温的物理范围恒定。
+    const double coastal_temp_scale = std::max(0.5, getd(profile, "coastal_temp_scale", 6.0) * gen_dist_scale);
     std::vector<int32_t> dist_ocean(size_t(n), -1);
     if (dist_ocean_arr.size() == n) {
         const int32_t *DO = dist_ocean_arr.ptr();
@@ -2136,12 +2188,19 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     }
     for (int i : unmark) RIV[i] = 0;
 
+    // [scale-fix 2026-07-30] RFLOW 归一化改用"基准等效流量" flow_eq = flow × (15000/N)。
+    // 同源点汇流量 ∝ N（单位面积产流率 size-invariant × 流域格数 ∝ N）→ flow_eq 跨分辨率
+    // 不变；min(≈channel-init 处流量)与 max(最大流域出口)同乘该系数，log min-max 两端不再
+    // 缩放不一致（旧法大图 log 区间更宽、中流归一流量系统性偏高 → 同一条河在大图偏宽）。
+    // 等效流量仍是 15000 格量级，log1p 的动态压缩特性不受影响。
+    const double flow_eq_scale = river_map_reference_cells / std::max(1.0, double(n));
     float max_river_flow = 0.0f;
     for (int i = 0; i < n; ++i) {
-        if (RIV[i] != 0) max_river_flow = std::max(max_river_flow, flow[size_t(i)]);
+        if (RIV[i] != 0) max_river_flow = std::max(max_river_flow, flow[size_t(i)] * float(flow_eq_scale));
     }
-    const double log_min_flow = std::log1p(std::max(double(river_threshold), 0.0));
-    const double log_max_flow = std::log1p(std::max(double(max_river_flow), double(river_threshold) + 0.001));
+    const double river_threshold_eq = double(river_threshold) * flow_eq_scale;
+    const double log_min_flow = std::log1p(std::max(river_threshold_eq, 0.0));
+    const double log_max_flow = std::log1p(std::max(double(max_river_flow), river_threshold_eq + 0.001));
     const double inv_log_range = 1.0 / std::max(log_max_flow - log_min_flow, 0.001);
     int river_lake_snap_touched = 0;
     for (int i = 0; i < n; ++i) {
@@ -2150,7 +2209,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (p >= 0 && (RIV[p] != 0 || pk_is_water_terrain(TERR[p]))) {
             RDOWN[i] = p;
         }
-        const double raw_norm = (std::log1p(std::max(double(flow[size_t(i)]), 0.0)) - log_min_flow) * inv_log_range;
+        const double raw_norm = (std::log1p(std::max(double(flow[size_t(i)]) * flow_eq_scale, 0.0)) - log_min_flow) * inv_log_range;
         RFLOW_OUT[i] = float(std::clamp(0.15 + raw_norm * 0.85, 0.15, 1.0));
     }
     for (int i : land) {
@@ -3565,6 +3624,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["river_map_reference_cells"] = river_map_reference_cells;
     out["river_map_scale"] = river_map_scale;
     out["river_map_scale_exponent"] = river_map_scale_exponent;
+    // [scale-fix 2026-07-30] 分辨率归一诊断：验证时核对 s / relief 阈值缩放 / 等效流量系数
+    out["gen_dist_scale"] = gen_dist_scale;
+    out["relief_thresh_scale"] = relief_thresh_scale;
+    out["relief_thresh_scale_exp"] = relief_thresh_scale_exp;
+    out["mountain_min_relief_effective"] = mountain_min_relief;
+    out["badlands_min_relief_effective"] = badlands_min_relief;
+    out["flow_eq_scale"] = flow_eq_scale;
+    out["rain_shadow_lookback_effective"] = lookback;
     out["river_channel_init_base"] = river_channel_init_base;
     out["river_channel_init_effective"] = channel_init;
     out["river_headwater_init_base"] = river_headwater_init_base;

@@ -25,7 +25,8 @@ class ModifierRuntime;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 24;
+    // 25: building_plan_days policy knob (semantic; plan cadence per cell).
+    static constexpr int32_t SCHEMA_VERSION = 25;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -1623,6 +1624,10 @@ private:
     int32_t _trade_import_fill_fraction_q16 = Q16_ONE / 2;
     int32_t _trade_response_days = 15;
     int32_t _investment_review_days = 10;
+    // Per-cell building plan (procurement intent) evaluation cadence. Cells
+    // are evaluated when cell % _building_plan_days == day % _building_plan_days;
+    // reserve rebuild still covers every due building cell each epoch.
+    int32_t _building_plan_days = 10;
     int32_t _investment_min_shortage_q16 = Q16_ONE / 8;
     int32_t _investment_min_utilization_q16 = 42598;
     int32_t _investment_max_payback_days = 365;
@@ -1683,6 +1688,11 @@ private:
     int32_t _command_cursor = 0;
     int32_t _structural_cursor = 0;
     int32_t _building_cell_cursor = 0;
+    // Cursor over _epoch_plan_cells for the BUILDING_PLAN evaluate phase.
+    // Reserve still walks the full _epoch_building_cells via
+    // _building_cell_cursor so production always sees a coherent (possibly
+    // stale up to _building_plan_days) per-group plan snapshot.
+    int32_t _plan_evaluate_cursor = 0;
     int32_t _building_plan_phase = 0;
     int32_t _household_market_phase = 0;
     int32_t _household_post_cursor = 0;
@@ -1913,6 +1923,11 @@ private:
     int64_t _investment_sparse_skipped_types = 0;
     int64_t _investment_sparse_mismatches = 0;
     int64_t _investment_sparse_dense_fallbacks = 0;
+    // Types skipped by the capital-feasibility gate: no local sponsor cohort
+    // (transferable <= raw funds) and no merchant credit can cover even the
+    // construction cost, so every sponsor search for that (cell, type) is
+    // guaranteed to fail. Exact no-false-negative early-out.
+    int64_t _investment_gate_capital_type_skips = 0;
     int64_t _approximation_decisions = 0;
     int64_t _approximation_exact_probes = 0;
     int64_t _approximation_certificate_failures = 0;
@@ -2014,6 +2029,18 @@ private:
     double _epoch_begin_ms = 0.0;
     double _epoch_preflight_ms = 0.0;
     double _prepare_ms = 0.0;
+    // Transient epoch-begin substage timings (diagnostics only; never saved or
+    // hashed). Sum of parts <= _epoch_begin_ms.
+    double _epoch_begin_reset_ms = 0.0;
+    double _epoch_begin_country_ms = 0.0;
+    double _epoch_begin_workset_ms = 0.0;
+    double _epoch_begin_resource_lane_ms = 0.0;
+    double _epoch_begin_fiscal_ms = 0.0;
+    double _epoch_begin_construction_csr_ms = 0.0;
+    double _epoch_begin_recovery_apply_ms = 0.0;
+    double _epoch_begin_vector_init_ms = 0.0;
+    double _epoch_begin_audit_lane_ms = 0.0;
+    double _epoch_begin_commands_ms = 0.0;
     double _audit_ms = 0.0;
     double _watermark_ms = 0.0;
     std::array<double, static_cast<size_t>(PublishPhase::COUNT)> _publish_phase_ms{};
@@ -2083,6 +2110,12 @@ private:
     std::vector<int64_t> _epoch_market_work_weights;
     std::vector<int32_t> _epoch_settlement_cells;
     std::vector<int32_t> _epoch_building_cells;
+    // Subset of _epoch_building_cells whose plan evaluation is due today:
+    // cell % _building_plan_days == day % _building_plan_days. Plan evaluation
+    // is the heavy procurement-intent pass; stretching its per-cell cadence
+    // only makes plans refresh less often (production still consumes the last
+    // computed plan), never breaks stock/cash conservation.
+    std::vector<int32_t> _epoch_plan_cells;
     std::vector<int64_t> _household_post_saturation_scratch;
     std::vector<int64_t> _household_post_restarted_scratch;
     std::vector<int64_t> _household_post_failed_scratch;
@@ -2108,6 +2141,25 @@ private:
     // physically and financially executable but still economically unviable.
     std::vector<int64_t> _building_recovery_probe_capacity_q16;
     std::vector<uint8_t> _building_recovery_liquidation_eligible;
+    // Per-group cache for refresh_building_modifier_factors, keyed on every
+    // input of group.output_factor_q16 / modifier_handle: the three frozen
+    // country factor values, country handle, ECONOMY store snapshot_version,
+    // and the (type, owner) identity. _buildings is append-only (groups are
+    // never erased or reordered), so this parallel array stays aligned across
+    // epochs. Cache hits skip both ensure_building_identity and the ECONOMY
+    // effective_value query. Transient; never saved or hashed.
+    struct BuildingFactorCacheEntry {
+        int64_t country_factor_q16 = std::numeric_limits<int64_t>::min();
+        int64_t sector_factor_q16 = 0;
+        int64_t research_factor_q16 = 0;
+        uint64_t country_handle = 0;
+        uint64_t mod_version = 0;
+        int32_t type_id = -1;
+        int32_t owner_signature_id = -1;
+    };
+    std::vector<BuildingFactorCacheEntry> _building_factor_cache;
+    int64_t _building_factor_cache_hits = 0;
+    int64_t _building_factor_cache_misses = 0;
     std::vector<int64_t> _building_investment_score_q16;
     std::vector<int64_t> _building_investment_payback_days;
     std::vector<int32_t> _building_investment_rejection;
@@ -2295,6 +2347,11 @@ private:
     uint32_t _staging_current_generation = 0;
     std::vector<int32_t> _structural_touched_cells;
     std::vector<int32_t> _population_changed_cells;
+    // Number of _structural_touched_cells entries already covered by this
+    // epoch's structural_commit employment reconcile. building_commit.finalize
+    // re-reconciles only the tail appended after that point (investment
+    // profession transitions), instead of double-reconciling the full set.
+    int64_t _structural_reconciled_upto = 0;
     std::vector<int64_t> _prosperity_thresholds;
     std::vector<std::string> _prosperity_ids;
     std::vector<std::string> _prosperity_names;
@@ -2713,6 +2770,7 @@ private:
     void prepare_group_climate_capacity(BuildingGroup &group,
                                         const BuildingType &type);
     bool prepare_building_economic_plan(int32_t active_begin, int32_t active_end,
+                                        const std::vector<int32_t> *cells_override,
                                         BuildingPlanResult &result,
                                         std::string &error);
     int32_t market_signal_index(int32_t cell, int32_t good) const;
@@ -2765,6 +2823,10 @@ private:
     int32_t building_slice_end(int32_t active_begin, int32_t cell_cap,
                                int32_t group_cap) const;
     int32_t building_plan_slice_end(int32_t active_begin) const;
+    int32_t plan_evaluate_slice_end(int32_t active_begin) const;
+    int32_t slice_end_over(const std::vector<int32_t> &cells,
+                           int32_t active_begin, int32_t cell_cap,
+                           int32_t group_cap) const;
     int32_t household_post_slice_end(int32_t active_begin) const;
     int32_t estimate_building_ranges() const;
     int32_t stage_progress_q16() const;

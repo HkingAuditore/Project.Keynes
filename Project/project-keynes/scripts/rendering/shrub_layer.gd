@@ -38,7 +38,6 @@ render_mode blend_mix, unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
-uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform sampler2D eco_lut : filter_nearest, repeat_disable;
 
@@ -47,6 +46,11 @@ uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
+#define VT_USE_MAP_INDEX
+#define VT_USE_HEIGHT
+#define VT_USE_TERRAIN_NORMAL
+#define VT_USE_HORIZON
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 
 uniform float world_time = 0.0;
 uniform float season_phase = 1.0;
@@ -104,13 +108,10 @@ uniform float tod_exposure = 1.0;        // 全局曝光（TODProfile.exposure�
 // [veg-normal-shading] 法线辅助着色：复用地形烘焙宏观法线 + 高度图（与地形 brdf 同源数据），
 // 配合 billboard UV 伪法线做 NdotL 方向光 / 边缘光 / 接触 AO / 谷地 AO。
 // terrain_normal_tex / height_tex 与地形主 shader 同一套 [0,1] 世界 UV（solar_uv=本实例 cell uv）。
-uniform sampler2D terrain_normal_tex : filter_linear, repeat_disable;
 uniform bool terrain_normal_tex_bound = false;  // 未烘焙时只用伪法线（退化）
-uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform vec2 hm_resolution = vec2(2048.0, 1536.0);
 uniform int veg_shade_quality = 2;            // 0/1/2：q2 才采高度图邻域算谷地 AO
 // [terrain-horizon 2026-07-03] 与地形同源的 8 方向 horizon shadow。同级性能档位：veg_shade_quality>=1 才采样。
-uniform sampler2D terrain_horizon_tex : filter_nearest, repeat_disable;
 uniform bool terrain_horizon_tex_bound = false;
 uniform float terrain_horizon_max_angle = 1.309;
 uniform float terrain_horizon_softness = 0.16;
@@ -152,7 +153,7 @@ varying vec2 shrub_basis_y;
 
 // height_tex：RG8 16-bit 归一化海拔，解码 (R*256+G)/257（与 height.gdshaderinc 同式）。
 float shrub_decode_height(vec2 uv) {
-	vec2 rg = texture(height_tex, uv).rg;
+	vec2 rg = visual_sample_height(uv).rg;
 	return (rg.r * 256.0 + rg.g) / 257.0;
 }
 
@@ -198,7 +199,7 @@ float shrub_sample_horizon_angle(vec2 uv, vec2 sun_xy) {
 	float angle = atan(sun_xy.y, sun_xy.x);
 	if (angle < 0.0) angle += 6.2831853;
 	float sector = angle / 0.78539816;
-	vec2 dims = vec2(textureSize(terrain_horizon_tex, 0));
+	vec2 dims = visual_static_texture_size();
 	vec2 p = shrub_wrap_map_uv(uv) * dims - vec2(0.5);
 	vec2 b = floor(p);
 	vec2 f = fract(p);
@@ -207,10 +208,10 @@ float shrub_sample_horizon_angle(vec2 uv, vec2 sun_xy) {
 	vec2 uv10 = shrub_wrap_map_uv((b + vec2(1.5, 0.5)) * inv_dims);
 	vec2 uv01 = shrub_wrap_map_uv((b + vec2(0.5, 1.5)) * inv_dims);
 	vec2 uv11 = shrub_wrap_map_uv((b + vec2(1.5, 1.5)) * inv_dims);
-	float h00 = shrub_horizon_angle_from_packed(texture(terrain_horizon_tex, uv00), sector);
-	float h10 = shrub_horizon_angle_from_packed(texture(terrain_horizon_tex, uv10), sector);
-	float h01 = shrub_horizon_angle_from_packed(texture(terrain_horizon_tex, uv01), sector);
-	float h11 = shrub_horizon_angle_from_packed(texture(terrain_horizon_tex, uv11), sector);
+	float h00 = shrub_horizon_angle_from_packed(visual_sample_horizon(uv00), sector);
+	float h10 = shrub_horizon_angle_from_packed(visual_sample_horizon(uv10), sector);
+	float h01 = shrub_horizon_angle_from_packed(visual_sample_horizon(uv01), sector);
+	float h11 = shrub_horizon_angle_from_packed(visual_sample_horizon(uv11), sector);
 	return mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
 }
 
@@ -235,7 +236,7 @@ float shrub_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
 }
 
 int decode_cell_index(vec2 uv) {
-	vec2 gb = texture(map_index_atlas, uv).gb;
+	vec2 gb = visual_sample_map_index(uv).gb;
 	int lo = int(gb.r * 255.0 + 0.5);
 	int hi = int(gb.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -349,7 +350,7 @@ void vertex() {
 	shrub_terrain_n = vec2(0.0);
 #ifndef PK_SKIP_VEGETATION_SHADING
 	if (terrain_normal_tex_bound) {
-		shrub_terrain_n = (texture(terrain_normal_tex, shrub_uv).rg * 2.0 - 1.0) * terrain_normal_influence;
+		shrub_terrain_n = (visual_sample_terrain_normal(shrub_uv).rg * 2.0 - 1.0) * terrain_normal_influence;
 	}
 #endif
 	// 谷地 AO：仅高画质档用 height_tex 邻域差判断凹陷（中心低于四邻 → 谷/坑 → 压暗）。
@@ -628,13 +629,14 @@ render_mode blend_mix, unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
-uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0, 1.0);
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
+#define VT_USE_MAP_INDEX
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 uniform float lod_alpha = 1.0;
 
 uniform float season_phase = 1.0;
@@ -666,7 +668,7 @@ varying float shadow_alpha_v;
 varying float shadow_r;   // 单位径向 0(心)..1(缘)，用于柔边
 
 int sh_decode_cell_index(vec2 uv) {
-	vec2 gb = texture(map_index_atlas, uv).gb;
+	vec2 gb = visual_sample_map_index(uv).gb;
 	int lo = int(gb.r * 255.0 + 0.5);
 	int hi = int(gb.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -763,6 +765,13 @@ var _mobile_quality_tier: int = 1
 # C++ DCWorldExt（由 hex_renderer.set_world_ext 注入）。null 或缺 encode_detail_scatter
 # 方法时，散布生成走 GDScript fallback；二者结果是同一确定性 PCG 场的等价实现。
 var _world_ext = null
+# LOD 前缀排序下沉原生 encode 的 A-B 开关：true = encode_detail_scatter 返回已按
+# _lod_order_sources 语义排好序的 buffer + far_count，apply 直接上传；false（或旧
+# DLL 缺 lod_ordered 键）走 GDScript 复刻排序兜底，两条路径语义同一契约。
+var native_lod_order_enabled := true:
+	set(value):
+		native_lod_order_enabled = value
+		_native_delta_common_knobs = {}
 # 上一次 _rebuild_instances 实际走的路径（"gdext" / "gdscript"），供调试/性能日志。
 var _last_scatter_path: String = "none"
 var _last_rebuild_ms: float = 0.0
@@ -901,10 +910,20 @@ func set_day_phase(v: float) -> void:
 
 
 func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indirection: bool) -> void:
+	var was_tiled := _visual_tiles_active()
 	_world = world
 	_bounds = bounds
 	_native_delta_common_knobs = {}
-	_sync_world_material_inputs(true)
+	if was_tiled != _visual_tiles_active():
+		_refresh_shader_variants()
+	else:
+		_sync_world_material_inputs(true)
+
+
+func _visual_tiles_active() -> bool:
+	return _world != null and _world.visual_tiles != null \
+		and bool(_world.visual_tiles.ready) \
+		and String(_world.visual_tiles.layout.mode) == "tiled"
 
 
 # [cylindrical-earth-daylight] 昼夜光照与地形同源（逐像素经纬度晨昏线）。
@@ -1515,6 +1534,10 @@ func _build_native_delta_common_knobs() -> Dictionary:
 		"vitality_density_power": cfg.vitality_density_power,
 		"vitality_alpha_power": cfg.vitality_alpha_power,
 		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
+		# LOD 前缀排序下沉：原生 encode 直接返回按 _lod_order_sources 语义排好序的
+		# buffer + far_count，chunk apply 免 GDScript 排序 + 免整段 buffer 重排。
+		"lod_order_enabled": native_lod_order_enabled,
+		"lod_near_density_multiplier": _resolved_lod_near_density_multiplier(),
 	}
 	_last_native_context_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	return common
@@ -1716,15 +1739,16 @@ func _ensure_resources() -> void:
 
 
 func _shader_quality_define_prefix() -> String:
+	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
 	if not OS.has_feature("mobile"):
-		return ""
+		return prefix
 	match _mobile_quality_tier:
 		0:
-			return "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
+			return prefix + "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
 		2:
-			return "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
+			return prefix + "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
 		_:
-			return "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
+			return prefix + "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
 
 
 func _refresh_shader_variants() -> void:
@@ -2277,24 +2301,30 @@ func _apply_chunk_payload_direct(
 		chunk_id: int,
 		buffer: PackedFloat32Array,
 		cell_indices: PackedInt32Array,
-		inst: int) -> void:
-	var src_indices: Array = []
-	for i in range(inst):
-		src_indices.append(i)
-	var lod_order := _lod_order_sources(src_indices, cell_indices, buffer)
-	var ordered_sources: Array = lod_order.get("order", [])
-	inst = mini(inst, ordered_sources.size())
-	var far_count := mini(int(lod_order.get("far_count", inst)), inst)
+		inst: int,
+		native_far_count: int = -1) -> void:
+	var far_count := mini(native_far_count, inst)
+	if native_far_count < 0:
+		# 旧 DLL（无 lod_ordered）：GDScript 复刻排序兜底，与原生序同一语义契约。
+		var src_indices: Array = []
+		for i in range(inst):
+			src_indices.append(i)
+		var lod_order := _lod_order_sources(src_indices, cell_indices, buffer)
+		var ordered_sources: Array = lod_order.get("order", [])
+		inst = mini(inst, ordered_sources.size())
+		far_count = mini(int(lod_order.get("far_count", inst)), inst)
+		if inst > 0:
+			var ordered_buffer := PackedFloat32Array()
+			ordered_buffer.resize(inst * 16)
+			for dst in range(inst):
+				var src := int(ordered_sources[dst])
+				for k in range(16):
+					ordered_buffer[dst * 16 + k] = buffer[src * 16 + k]
+			buffer = ordered_buffer
 	var mm := _prepare_chunk_multimesh(chunk_id, inst, far_count)
 	if inst > 0:
-		var ordered_buffer := PackedFloat32Array()
-		ordered_buffer.resize(inst * 16)
-		for dst in range(inst):
-			var src := int(ordered_sources[dst])
-			for k in range(16):
-				ordered_buffer[dst * 16 + k] = buffer[src * 16 + k]
-		mm.buffer = ordered_buffer
-		_mirror_shadow_chunk(chunk_id, ordered_buffer, inst)
+		mm.buffer = buffer
+		_mirror_shadow_chunk(chunk_id, buffer, inst)
 	else:
 		mm.buffer = PackedFloat32Array()
 		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
@@ -2365,7 +2395,8 @@ func refresh_chunk_for_succession(chunk_id: int, chunk_cells: PackedInt32Array, 
 		_last_rebuild_reason = "chunk_native_bad_payload"
 		return false
 	var apply_t0_us := Time.get_ticks_usec()
-	_apply_chunk_payload_direct(chunk_id, buffer, cell_indices, inst)
+	var native_far := int(res.get("far_count", -1)) if bool(res.get("lod_ordered", false)) else -1
+	_apply_chunk_payload_direct(chunk_id, buffer, cell_indices, inst, native_far)
 	_last_native_apply_ms = float(Time.get_ticks_usec() - apply_t0_us) / 1000.0
 	_refresh_instance_totals_from_chunks()
 	_last_scatter_path = "gdext_event_chunk"
@@ -2446,10 +2477,8 @@ func _refresh_chunked_for_succession(indices: PackedInt32Array) -> bool:
 		if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
 			_last_rebuild_reason = "chunk_native_bad_payload"
 			return false
-		var srcs: Array = []
-		for i in range(inst):
-			srcs.append(i)
-		_apply_chunk_payload(int(chunk_id), buffer, srcs, cell_indices, inst)
+		var native_far := int(res.get("far_count", -1)) if bool(res.get("lod_ordered", false)) else -1
+		_apply_chunk_payload_direct(int(chunk_id), buffer, cell_indices, inst, native_far)
 		total_inst += inst
 		total_candidates += int(res.get("candidate_count", 0))
 		total_wrap += int(res.get("wrap_edge_copy_count", 0))
@@ -2612,22 +2641,49 @@ func _sync_world_material_inputs(_use_cell_indirection: bool) -> void:
 		if _shadow_material != null:
 			_shadow_material.set_shader_parameter("lut_dims", Vector2.ONE)
 		return
-	_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
+	var tiled := _visual_tiles_active()
+	var tiles = _world.visual_tiles if tiled else null
+	if tiled:
+		_material.set_shader_parameter("visual_map_index_tiles", tiles.map_index)
+		_material.set_shader_parameter("visual_height_tiles", tiles.height)
+		_material.set_shader_parameter("visual_terrain_normal_tiles", tiles.terrain_normal)
+		_material.set_shader_parameter("visual_horizon_tiles", tiles.horizon)
+		_push_visual_tile_layout(_material, tiles.layout)
+	else:
+		_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	_material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	_material.set_shader_parameter("eco_lut", _world.eco_lut_tex)
 	_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
 	# [veg-normal-shading] 地形宏观法线 + 高度图（与地形 brdf 同源数据），植被 shader 用于 NdotL/谷地 AO。
-	_material.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
-	_material.set_shader_parameter("terrain_normal_tex_bound", _world.terrain_normal_tex != null)
-	_material.set_shader_parameter("height_tex", _world.height_tex)
-	_material.set_shader_parameter("hm_resolution", Vector2(_world.hm_size.x, _world.hm_size.y))
-	_material.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
-	_material.set_shader_parameter("terrain_horizon_tex_bound", _world.terrain_horizon_tex != null)
+	if not tiled:
+		_material.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
+		_material.set_shader_parameter("height_tex", _world.height_tex)
+		_material.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
+	_material.set_shader_parameter("terrain_normal_tex_bound",
+		tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
+	_material.set_shader_parameter("hm_resolution", Vector2(tiles.layout.logical_size) if tiled \
+		else Vector2(_world.hm_size.x, _world.hm_size.y))
+	_material.set_shader_parameter("terrain_horizon_tex_bound",
+		bool(tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
 	# [veg-cast-shadow] 投影 pass 需要 cell 索引/动态态做夜侧与枯死/积雪淡出。
 	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
+		if tiled:
+			_shadow_material.set_shader_parameter("visual_map_index_tiles", tiles.map_index)
+			_push_visual_tile_layout(_shadow_material, tiles.layout)
+		else:
+			_shadow_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 		_shadow_material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 		_shadow_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
+
+
+func _push_visual_tile_layout(material: ShaderMaterial, layout) -> void:
+	material.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
+	material.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
+	material.set_shader_parameter("visual_grid_size", Vector2(layout.grid_size))
+	material.set_shader_parameter("visual_interior_size", Vector2(layout.interior_size))
+	material.set_shader_parameter("visual_layer_size", Vector2(layout.layer_size))
+	material.set_shader_parameter("visual_logical_resolution", Vector2(layout.logical_size))
+	material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
 
 
 func _rebuild_instances() -> void:

@@ -35,6 +35,7 @@ var _edge_distance_tex: Texture2D = null
 var _edge_transition_width: float = 0.84
 var _enabled: bool = true
 var _world_time: float = 0.0
+var _visual_tiles = null
 # 与 WeatherLayer 同一表现时钟语义：运行时按游戏倍速推进；暂停时保留 1x 环境运动，
 # 避免整个大气层完全冻结。
 var _clock_running: bool = true
@@ -104,12 +105,45 @@ func _load_shader() -> Shader:
 	var sh := ResourceLoader.load(SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if sh == null:
 		return null
+	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
 	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
-		var src: String = sh.code
-		if not src.begins_with("#define"):
-			sh = sh.duplicate() as Shader
-			sh.code = "%s%s" % [_shader_quality_define_prefix(_mobile_quality_tier_define), src]
+		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	if not prefix.is_empty():
+		sh = sh.duplicate() as Shader
+		sh.code = prefix + sh.code
 	return sh
+
+
+func set_visual_tiles(tiles) -> void:
+	var was_tiled := _visual_tiles_active()
+	_visual_tiles = tiles
+	if _shader_mat != null and was_tiled != _visual_tiles_active():
+		var sh := _load_shader()
+		if sh != null:
+			_shader_mat.shader = sh
+	_push_visual_tile_uniforms()
+	_push_edge_transition_data()
+
+
+func _visual_tiles_active() -> bool:
+	return _visual_tiles != null and bool(_visual_tiles.ready) \
+		and String(_visual_tiles.layout.mode) == "tiled"
+
+
+func _push_visual_tile_uniforms() -> void:
+	if _shader_mat == null or not _visual_tiles_active():
+		return
+	var layout = _visual_tiles.layout
+	_shader_mat.set_shader_parameter("visual_map_index_tiles", _visual_tiles.map_index)
+	_shader_mat.set_shader_parameter("visual_edge_neighbor_tiles", _visual_tiles.edge_neighbor)
+	_shader_mat.set_shader_parameter("visual_edge_distance_tiles", _visual_tiles.edge_distance)
+	_shader_mat.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
+	_shader_mat.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
+	_shader_mat.set_shader_parameter("visual_grid_size", Vector2(layout.grid_size))
+	_shader_mat.set_shader_parameter("visual_interior_size", Vector2(layout.interior_size))
+	_shader_mat.set_shader_parameter("visual_layer_size", Vector2(layout.layer_size))
+	_shader_mat.set_shader_parameter("visual_logical_resolution", Vector2(layout.logical_size))
+	_shader_mat.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
 
 
 func _shader_quality_define_prefix(tier_define: String) -> String:
@@ -152,10 +186,12 @@ func setup(
 	if _shader_mat == null:
 		return
 	var empty := DataOverlayBaker.get_empty_texture()
-	_shader_mat.set_shader_parameter(
-		"map_index_atlas",
-		map_index_atlas if map_index_atlas != null else empty
-	)
+	if not _visual_tiles_active():
+		_shader_mat.set_shader_parameter(
+			"map_index_atlas",
+			map_index_atlas if map_index_atlas != null else empty
+		)
+	_push_visual_tile_uniforms()
 	_shader_mat.set_shader_parameter(
 		"lut_dims",
 		Vector2(maxi(1, lut_dims.x), maxi(1, lut_dims.y))
@@ -194,15 +230,16 @@ func _push_edge_transition_data() -> void:
 	if _shader_mat == null:
 		return
 	var empty := DataOverlayBaker.get_empty_texture()
-	var ready := _edge_neighbor_tex != null and _edge_distance_tex != null
-	_shader_mat.set_shader_parameter(
-		"terrain_edge_neighbor_tex",
-		_edge_neighbor_tex if _edge_neighbor_tex != null else empty
-	)
-	_shader_mat.set_shader_parameter(
-		"terrain_edge_distance_tex",
-		_edge_distance_tex if _edge_distance_tex != null else empty
-	)
+	var ready := _visual_tiles_active() or (_edge_neighbor_tex != null and _edge_distance_tex != null)
+	if not _visual_tiles_active():
+		_shader_mat.set_shader_parameter(
+			"terrain_edge_neighbor_tex",
+			_edge_neighbor_tex if _edge_neighbor_tex != null else empty
+		)
+		_shader_mat.set_shader_parameter(
+			"terrain_edge_distance_tex",
+			_edge_distance_tex if _edge_distance_tex != null else empty
+		)
 	_shader_mat.set_shader_parameter("has_terrain_edge_data", ready)
 	_shader_mat.set_shader_parameter("terrain_ecotone_width", _edge_transition_width)
 

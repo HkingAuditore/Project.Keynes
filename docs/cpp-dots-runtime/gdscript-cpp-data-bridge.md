@@ -781,3 +781,21 @@ rendering binds through `get_named_settlement_snapshot()` and then consumes
 `get_settlement_delta(revision)` packed arrays. Native retention is bounded to
 eight revisions and `2 * cell_count` entries; an expired cursor returns
 `full_snapshot=true`.
+
+Trigger catalogs cross the bridge once as packed columns. GDScript owns resource
+configuration and domain adapters; C++ owns dense trigger state and PKTR bytes.
+
+## Visual tile byte bridge
+
+Visual Tile bake is a generation-time buffer bridge, not a DataCore slot bridge.
+`MapBaker` builds the cell SoA/base knobs once and reuses the same PackedArrays for each
+`run_bake_visual_tile_layer_pass` call; C++ performs every O(n_pixels) loop and returns one
+layer's byte bundle/hash/timing. GDScript may create `Image` and call
+`Texture2DArray.update_layer()`, but must not decode or recompute pixels.
+
+`generation_id` and `layer_id` are part of every layer result. A stale result is discarded,
+and `WorldData.visual_tiles` becomes renderer-visible only after every static layer succeeds.
+Horizon compute bypasses the language bridge except for final readback/upload; its native
+fallback `run_resample_visual_horizon_layer_pass` follows the same one-layer byte contract.
+No Tile array is attached to component schema or save data. Full contract:
+[Visual Tile Rendering](./visual-tile-rendering.md).

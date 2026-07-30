@@ -4,6 +4,39 @@ class_name CellInspectorViewModel
 const TEMPERATURE_HISTORY_CAPACITY := 32
 const TEMPERATURE_HISTORY_CACHE_LIMIT := 64
 
+# 对象详情弹窗：行类型 → 页签 / 行列表键 / 中文类型名。
+const OBJECT_DETAIL_TAB := {
+	"cohort": "population",
+	"building": "buildings",
+	"good": "market",
+	"resource": "natural_resources",
+}
+const OBJECT_DETAIL_ROWS := {
+	"cohort": "cohort_rows",
+	"building": "building_rows",
+	"good": "market_rows",
+	"resource": "resource_rows",
+}
+const OBJECT_TYPE_LABELS := {
+	"cohort": "阶层",
+	"building": "建筑",
+	"good": "物资",
+	"resource": "自然资源",
+}
+# 对象类型 → 关联税种（税收契约：所得税按职业、营业税按建筑类型、
+# 消费税与进出口关税按物资；自然资源没有适用税种）。
+const OBJECT_TAX_KINDS := {
+	"cohort": ["income"],
+	"building": ["business"],
+	"good": ["consumption", "import", "export"],
+}
+const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
+	"import": 3, "export": 4}
+const TAX_KIND_LABELS := {"income": "所得税", "consumption": "消费税",
+	"business": "营业税", "import": "进口关税", "export": "出口关税"}
+const TAX_KIND_ACCENTS := {"income": UITokens.ACCENT, "consumption": UITokens.GOOD,
+	"business": UITokens.CLIMATE, "import": UITokens.WATER, "export": UITokens.WATER}
+
 var _map: MapData
 var _generator
 var _view_adapter: DCViewAdapter
@@ -16,6 +49,8 @@ var _temperature_histories: Dictionary = {}
 var _temperature_history_order: Array[int] = []
 var _need_display_names: Dictionary = {}
 var _need_display_names_loaded := false
+var _player_country_resolved := false
+var _player_country_handle_cache := -1
 
 
 func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clock: WorldClock, sea_level: float, hex_size: float) -> void:
@@ -29,6 +64,8 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_market_prev_stock.clear()
 	_temperature_histories.clear()
 	_temperature_history_order.clear()
+	_player_country_resolved = false
+	_player_country_handle_cache = -1
 
 
 func observe_temperature(cell: HexCell, day_idx: int = -1) -> void:
@@ -305,6 +342,186 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 	return {}
 
 
+## 对象详情弹窗：按请求重建对应页签 category 并取出目标行，附地块坐标、
+## 所属国家与税收切片。只读 facade/快照数据，不触碰仿真状态；与页签一致，
+## 仅当前可见（FOG_VISIBLE）地块允许打开。
+func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
+	if cell == null or _map == null:
+		return {}
+	var kind := String(request.get("kind", ""))
+	var row_id := String(request.get("row_id", ""))
+	if not OBJECT_DETAIL_TAB.has(kind) or row_id.is_empty():
+		return {}
+	var idx := int(cell.index)
+	if VisionSolver.fog_state(_map, idx) != VisionSolver.FOG_VISIBLE:
+		return {}
+	var category := build_tab_category(cell, String(OBJECT_DETAIL_TAB[kind]))
+	var row := {}
+	for raw in category.get(String(OBJECT_DETAIL_ROWS[kind]), []):
+		var candidate: Dictionary = raw
+		if String(candidate.get("id", "")) == row_id:
+			row = candidate
+			break
+	# 阶层行的 id 携带原生 (generation<<32|slot) handle，跨仿真日会随
+	# slot 回收/迁移而失效；点击到重建之间若落了一次提交，按职业名
+	# 回退匹配继任 cohort，保证点击总是打开同一职业的详情。
+	if row.is_empty() and kind == "cohort":
+		var fallback_profession := String(request.get("profession_id", ""))
+		if not fallback_profession.is_empty():
+			for raw in category.get(String(OBJECT_DETAIL_ROWS[kind]), []):
+				var candidate: Dictionary = raw
+				if String(candidate.get("profession_id", "")) == fallback_profession:
+					row = candidate
+					break
+	if row.is_empty():
+		return {}
+	var item_id := _object_tax_item_id(kind, row)
+	var country := _country_summary(idx)
+	var off := HexUtils.cube_to_offset(cell.q, cell.r)
+	return {
+		"kind": kind,
+		"row_id": String(row.get("id", row_id)),
+		"item_id": item_id,
+		"name": _object_display_name(kind, row, idx),
+		"icon": String(row.get("icon", "resource")),
+		"accent": row.get("accent", UITokens.ACCENT),
+		"subtitle": "%s · 区域 %d, %d · %s" % [
+			String(OBJECT_TYPE_LABELS[kind]), off.x + 1, off.y + 1,
+			String(country.get("country_name", "无主之地"))],
+		"row": row,
+		"tax": _tax_slice(idx, kind, item_id, country),
+		"country_facade": _generator.get_country_facade() if _generator != null \
+			and _generator.has_method("get_country_facade") else null,
+	}
+
+
+## country_committed 后的税收区刷新入口：与 build_object_detail 共用同一条
+## 只读切片路径，调用方持有 kind 与 item_id 即可。
+func tax_slice_for_object(cell_idx: int, kind: String, item_id: String) -> Dictionary:
+	return _tax_slice(cell_idx, kind, item_id, _country_summary(cell_idx))
+
+
+func _object_tax_item_id(kind: String, row: Dictionary) -> String:
+	match kind:
+		"cohort":
+			return String(row.get("profession_id", ""))
+		"building":
+			return String(row.get("building_type_id", ""))
+		"good":
+			return String(row.get("good_id", ""))
+	return ""
+
+
+# 弹窗标题永远是用户可读名：行内 name 缺失或退化为原始 stable id 时，
+# 用最新人口快照的平行数组把 profession_id 翻译回本地化名；仍失败才落到类型名。
+func _object_display_name(kind: String, row: Dictionary, cell_idx: int) -> String:
+	var name := String(row.get("name", ""))
+	if kind == "cohort":
+		var profession_id := String(row.get("profession_id", ""))
+		if name.is_empty() or name == profession_id:
+			var localized := _profession_name_for_id(_population_snapshot(cell_idx), profession_id)
+			if not localized.is_empty():
+				name = localized
+	if name.is_empty():
+		name = String(OBJECT_TYPE_LABELS.get(kind, "对象"))
+	return name
+
+
+func _profession_name_for_id(snapshot: Dictionary, profession_id: String) -> String:
+	if profession_id.is_empty():
+		return ""
+	var ids: PackedStringArray = snapshot.get("profession_stable_ids", PackedStringArray())
+	var names: PackedStringArray = snapshot.get("profession_display_names", PackedStringArray())
+	var at := ids.find(profession_id)
+	return String(names[at]) if at >= 0 and at < names.size() else ""
+
+
+func _tax_slice(cell_idx: int, kind: String, item_id: String, country: Dictionary) -> Dictionary:
+	var kinds: Array = OBJECT_TAX_KINDS.get(kind, [])
+	if kinds.is_empty() or item_id.is_empty():
+		return {"available": false, "reason": ""}
+	if not bool(country.get("ok", false)) or not bool(country.get("owned", false)):
+		return {"available": false, "reason": "无主之地没有税收政策"}
+	var facade = _generator.get_country_facade() if _generator != null \
+		and _generator.has_method("get_country_facade") else null
+	if facade == null or not facade.has_method("tax_policy_snapshot"):
+		return {"available": false, "reason": "税收政策暂不可用"}
+	var owner_handle := int(country.get("country_handle", 0))
+	var policy: Dictionary = facade.tax_policy_snapshot(owner_handle)
+	if not bool(policy.get("ok", false)):
+		return {"available": false,
+			"reason": String(policy.get("reason", "税收政策暂不可用"))}
+	var defaults: PackedInt32Array = policy.get("default_rates", PackedInt32Array())
+	var items: Array = []
+	for tax_kind_value in kinds:
+		var tax_kind := String(tax_kind_value)
+		var catalog_ids := _tax_catalog_ids(policy, tax_kind)
+		var index := -1
+		for i in range(catalog_ids.size()):
+			if String(catalog_ids[i]) == item_id:
+				index = i
+				break
+		if index < 0:
+			continue
+		var group: Dictionary = policy.get(tax_kind, {})
+		var rates: PackedInt32Array = group.get("rates", PackedInt32Array())
+		if index >= rates.size():
+			continue
+		var effective: PackedInt32Array = group.get("effective_rates", rates)
+		var flags: PackedByteArray = group.get("has_override", PackedByteArray())
+		var kind_id := int(TAX_KIND_IDS[tax_kind])
+		items.append({
+			"kind": tax_kind,
+			"kind_label": String(TAX_KIND_LABELS[tax_kind]),
+			"accent": TAX_KIND_ACCENTS[tax_kind],
+			"item_id": item_id,
+			"base": int(rates[index]),
+			"effective": int(effective[index]) if index < effective.size() \
+				else int(rates[index]),
+			"has_override": index < flags.size() and flags[index] != 0,
+			"default_rate": int(defaults[kind_id]) if kind_id < defaults.size() else 0,
+			"placeholder_note": "待跨国贸易接入：当前事件数与金额恒为零" \
+				if tax_kind == "import" or tax_kind == "export" else "",
+		})
+	if items.is_empty():
+		return {"available": false,
+			"reason": "该对象不在 %s 的税收目录中" % String(country.get("country_name", "所属国家"))}
+	var player_handle := _player_country_handle()
+	return {
+		"available": true,
+		"editable": player_handle >= 0 and owner_handle == player_handle,
+		"country_name": String(country.get("country_name", "")),
+		"country_handle": owner_handle,
+		"current_day": int(facade.report().get("last_committed_day", -1)) \
+			if facade.has_method("report") else -1,
+		"policy_version": int(policy.get("policy_version", -1)),
+		"items": items,
+	}
+
+
+func _tax_catalog_ids(policy: Dictionary, tax_kind: String) -> PackedStringArray:
+	if tax_kind == "income":
+		return policy.get("profession_ids", PackedStringArray())
+	if tax_kind == "business":
+		return policy.get("building_type_ids", PackedStringArray())
+	return policy.get("good_ids", PackedStringArray())
+
+
+func _player_country_handle() -> int:
+	if _player_country_resolved:
+		return _player_country_handle_cache
+	_player_country_resolved = true
+	_player_country_handle_cache = -1
+	if _generator != null and _generator.has_method("gameplay_start_report"):
+		var start_report: Dictionary = _generator.gameplay_start_report()
+		var start_cell := int(start_report.get("cell", -1))
+		if bool(start_report.get("ok", false)) and start_cell >= 0:
+			var summary := _country_summary(start_cell)
+			if bool(summary.get("ok", false)) and bool(summary.get("owned", false)):
+				_player_country_handle_cache = int(summary.get("country_handle", -1))
+	return _player_country_handle_cache
+
+
 func _build_header(
 	off: Vector2i,
 	terrain_v: int,
@@ -564,6 +781,7 @@ func _resources_category(resource_state: Array) -> Dictionary:
 			"value": _resource_index_text(reserve),
 			"density": density,
 			"delta": _daily_delta_text(delta),
+			"extractable": bool(item.get("extractable", true)),
 			"accent": UITokens.RESOURCE,
 			"icon": String(item.get("icon", "resource")),
 			"visible": reserve > 0.000001,
@@ -835,6 +1053,8 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"id": "cohort_%s" % str(handles[i] if i < handles.size() else i),
 			"name": profession_name,
 			"cohort_identity": ethnicity_name,
+			"profession_id": profession_id,
+			"cohort_handle": int(handles[i]) if i < handles.size() else -1,
 			"population": "%s 人" % UITokens.format_compact_number_cn(float(population), 1),
 			"wealth": "人均 %s" % _money_text(wealth_pc),
 			"income": "+%s" % _money_text(income_pc) if settlement_available else "+—",
@@ -1049,6 +1269,7 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		rows.append({
 			"id": "market_%s" % stable_id,
 			"name": display_name,
+			"good_id": stable_id,
 			"stock": "%s 单位" % UITokens.format_compact_number_cn(float(stock[i]) / 1000.0, 2),
 			"price": _money_text(prices[i] if i < prices.size() else 0),
 			"delta": _daily_delta_text(stock_daily),
@@ -1302,6 +1523,7 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 		rows.append({
 			"id": "building_%d_%d" % [type_idx, i],
 			"name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"),
+			"building_type_id": building_id,
 			"count": "%d 栋" % count,
 			"owner": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1),
 			"status": state_label,
@@ -1484,7 +1706,7 @@ func _append_construction_rows(rows: Array, snapshot: Dictionary, type_ids: Pack
 		var type_idx := int(types[i])
 		var building_id := String(type_ids[type_idx]) \
 			if type_idx >= 0 and type_idx < type_ids.size() else ""
-		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (building_id if not building_id.is_empty() else "建筑"), "count": "%d 栋" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": _building_icon(building_id, snapshot, type_idx), "job_rows": [], "production_rows": [], "finance": {}, "visible": true})
+		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (building_id if not building_id.is_empty() else "建筑"), "building_type_id": building_id, "count": "%d 栋" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": _building_icon(building_id, snapshot, type_idx), "job_rows": [], "production_rows": [], "finance": {}, "visible": true})
 
 
 func _building_icon(type_id: String, snapshot: Dictionary = {}, type_idx: int = -1) -> StringName:

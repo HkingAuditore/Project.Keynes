@@ -14,7 +14,6 @@ render_mode blend_mix;
 // 唯一的 filter_nearest 采样是 map_index_atlas（biome），仅用于 is_water 与低雾山地权重。
 // ════════════════════════════════════════════════════════════════════════
 
-uniform sampler2D map_index_atlas : filter_nearest, repeat_disable; // R = biome id / 255 ; G/B = cell.index 低/高字节
 // cell-index 间接寻址（cloud-from-field 2026-06-20）：per-cell 天气场 LUT。
 //   R=weather_type, G=intensity, B=cloud, A=vapor（与 encode_cell_luts 同布局）。
 //   decode_cell_index(uv) 用 map_index_atlas.GB 取 cell.index，再 cell_lut_uv 采样本格天气。
@@ -27,8 +26,6 @@ uniform vec2 lut_dims = vec2(0.0);
 // fog_mask_enabled 关闭时整个分支被 uniform 条件跳过，不产生额外采样。
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform bool fog_mask_enabled = false;
-uniform sampler2D terrain_edge_neighbor_tex : filter_nearest, repeat_disable;
-uniform sampler2D terrain_edge_distance_tex : filter_linear, repeat_disable;
 uniform bool has_terrain_edge_data = false;
 uniform float terrain_ecotone_width : hint_range(0.0, 0.96) = 0.84;
 
@@ -36,6 +33,10 @@ uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
+#define VT_USE_MAP_INDEX
+#define VT_USE_EDGE_NEIGHBOR
+#define VT_USE_EDGE_DISTANCE
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 uniform float world_time = 0.0;
 // 一个 hex 的“直径”（wp 单位）。邻域采样偏移按它物理换算，避免与 map_index_atlas
 // 的 hex 像素尺度发生频率共振导致六边形晶格。
@@ -413,7 +414,7 @@ float precip_cloud_opacity_bias(float precip) {
 
 // ── cell-index 间接寻址（与 cell_indirect.gdshaderinc 同公式；此处内联，避免引入 dyn/eco LUT 依赖）──
 int wx_decode_cell_index(vec2 uv) {
-	vec2 gb = texture(map_index_atlas, wx_wrap_uv(uv)).gb;
+	vec2 gb = visual_sample_map_index(wx_wrap_uv(uv)).gb;
 	int lo = int(gb.r * 255.0 + 0.5);
 	int hi = int(gb.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -428,7 +429,7 @@ vec2 wx_cell_lut_uv(int cid) {
 }
 
 int wx_decode_edge_secondary(vec2 uv) {
-	vec2 rg = texture(terrain_edge_neighbor_tex, wx_wrap_uv(uv)).rg;
+	vec2 rg = visual_sample_edge_neighbor(wx_wrap_uv(uv)).rg;
 	int lo = int(rg.r * 255.0 + 0.5);
 	int hi = int(rg.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -445,7 +446,7 @@ float wx_bayer2_digit(vec2 bit_xy) {
 const float WX_DITHER_THRESHOLD_MARGIN = 0.18;
 
 float wx_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
-	vec2 atlas_dims = vec2(textureSize(map_index_atlas, 0));
+	vec2 atlas_dims = visual_static_texture_size();
 	vec2 pixel_xy = floor(wx_wrap_uv(uv) * atlas_dims);
 	if (wrap_period_x > 0.0001 && world_size.x > 0.0001) {
 		float period_px = max(
@@ -469,7 +470,7 @@ float wx_edge_secondary_weight(vec2 uv) {
 	if (!has_terrain_edge_data || terrain_ecotone_width <= 0.0001) {
 		return 0.0;
 	}
-	float edge_distance = texture(terrain_edge_distance_tex, wx_wrap_uv(uv)).r;
+	float edge_distance = visual_sample_edge_distance(wx_wrap_uv(uv)).r;
 	float one_screen_pixel = max(fwidth(edge_distance), 1.0 / 255.0);
 	float quality_scale;
 #if defined(MOBILE_QUALITY_LOW)
@@ -592,7 +593,7 @@ void fragment() {
 	int q_weather = effective_weather_quality();
 	int biome = 0;
 #if !defined(PK_MOBILE_ANY)
-	biome = int(texture(map_index_atlas, wx_wrap_uv(uv)).r * 255.0 + 0.5);
+	biome = int(visual_sample_map_index(wx_wrap_uv(uv)).r * 255.0 + 0.5);
 #endif
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
@@ -619,7 +620,7 @@ void fragment() {
 				hash_signed(floor(wp * 0.18 + vec2(-19.0, 23.0 + float(li) * 9.0)))
 			);
 			vec2 s_uv = wx_wrap_uv(uv + m_offs[li] * ring_step + jj * 1.4 * ring_step);
-			int bs = int(texture(map_index_atlas, s_uv).r * 255.0 + 0.5);
+			int bs = int(visual_sample_map_index(s_uv).r * 255.0 + 0.5);
 			bool s_water = (bs == B_OCEAN) || (bs == B_COAST) || (bs == B_LAKE)
 					|| (bs == B_REEF) || (bs == B_KELP) || (bs == B_SEA_ICE);
 			float bw = (bs == B_MOUNTAIN) ? 1.0 : ((bs == B_HILL) ? 0.65 : (s_water ? 0.0 : 0.35));

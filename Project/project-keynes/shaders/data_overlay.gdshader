@@ -19,7 +19,6 @@ render_mode blend_mix, unshaded;
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
 uniform sampler2D overlay_tex : filter_nearest, repeat_disable;
-uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 uniform sampler2D overlay_lut : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0, 1.0);
 uniform bool use_cell_lut = false;
@@ -27,6 +26,8 @@ uniform vec2 world_origin = vec2(0.0, 0.0);
 uniform vec2 world_size   = vec2(1.0, 1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
+#define VT_USE_MAP_INDEX
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 
 uniform int overlay_mode = 0;
 uniform float base_alpha = 0.7;
@@ -195,7 +196,7 @@ vec4 sample_overlay(vec2 uv) {
 	if (!use_cell_lut) {
 		return texture(overlay_tex, uv);
 	}
-	vec4 encoded = texture(map_index_atlas, uv);
+	vec4 encoded = visual_sample_map_index(uv);
 	int lo = int(floor(encoded.g * 255.0 + 0.5));
 	int hi = int(floor(encoded.b * 255.0 + 0.5));
 	int cell_id = lo | (hi << 8);

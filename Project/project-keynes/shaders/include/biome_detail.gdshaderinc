@@ -61,7 +61,7 @@ float terrain_macro_amplitude(int biome) {
 }
 
 vec3 baked_biome_detail(int biome, vec2 uv) {
-	float d = texture(terrain_detail_tex, wrap_map_uv(uv)).r;
+	float d = visual_sample_terrain_detail(uv).r;
 	float signal = clamp((mix(TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX, d) - 1.0)
 			/ max(TERRAIN_DETAIL_BAKE_MAX - 1.0, 0.001), -1.0, 1.0);
 	return vec3(1.0 + signal * terrain_macro_amplitude(biome));

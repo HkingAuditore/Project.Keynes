@@ -169,6 +169,32 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_modifier_domain);
     ClassDB::bind_method(D_METHOD("clear_modifier_domain", "domain"),
                          &DCWorldExt::clear_modifier_domain);
+    ClassDB::bind_method(D_METHOD("configure_triggers", "catalog"),
+                         &DCWorldExt::configure_triggers);
+    ClassDB::bind_method(D_METHOD("submit_trigger_events", "batch"),
+                         &DCWorldExt::submit_trigger_events);
+    ClassDB::bind_method(D_METHOD("submit_trigger_snapshots", "batch"),
+                         &DCWorldExt::submit_trigger_snapshots);
+    ClassDB::bind_method(D_METHOD("run_trigger_daily", "day_index"),
+                         &DCWorldExt::run_trigger_daily);
+    ClassDB::bind_method(D_METHOD("trigger_should_run", "day_index"),
+                         &DCWorldExt::trigger_should_run);
+    ClassDB::bind_method(D_METHOD("poll_trigger_effects", "after_effect_id", "limit"),
+                         &DCWorldExt::poll_trigger_effects, DEFVAL(128));
+    ClassDB::bind_method(D_METHOD("ack_trigger_effects", "up_to_effect_id"),
+                         &DCWorldExt::ack_trigger_effects);
+    ClassDB::bind_method(D_METHOD("set_trigger_enabled", "batch"),
+                         &DCWorldExt::set_trigger_enabled);
+    ClassDB::bind_method(D_METHOD("resync_trigger_source", "snapshot"),
+                         &DCWorldExt::resync_trigger_source);
+    ClassDB::bind_method(D_METHOD("get_trigger_report"),
+                         &DCWorldExt::get_trigger_report);
+    ClassDB::bind_method(D_METHOD("capture_trigger_state"),
+                         &DCWorldExt::capture_trigger_state);
+    ClassDB::bind_method(D_METHOD("restore_trigger_state", "bytes"),
+                         &DCWorldExt::restore_trigger_state);
+    ClassDB::bind_method(D_METHOD("clear_trigger_state"),
+                         &DCWorldExt::clear_trigger_state);
     ClassDB::bind_method(D_METHOD("ensure_modifier_building_handle", "cell", "type_id", "owner_signature_id"),
                          &DCWorldExt::ensure_modifier_building_handle);
     // Independent native PopulationCohort + local-market authority.
@@ -535,6 +561,12 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_bake_geometry_fields_pass", "knobs"),
         &DCWorldExt::run_bake_geometry_fields_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_bake_visual_tile_layer_pass", "knobs"),
+        &DCWorldExt::run_bake_visual_tile_layer_pass);
+    ClassDB::bind_method(
+        D_METHOD("run_resample_visual_horizon_layer_pass", "knobs"),
+        &DCWorldExt::run_resample_visual_horizon_layer_pass);
     // Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F)：
     // 4 张运行期 atlas baker 的 byte-fill C++/SIMD pass。CSR 协议详见 world_ext.h。
     ClassDB::bind_method(

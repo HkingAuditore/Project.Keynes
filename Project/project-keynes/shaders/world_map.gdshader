@@ -60,6 +60,16 @@ render_mode blend_mix;
 // ─────────────────────────────────────────────────────────────────────────
 #include "res://shaders/include/shader_quality.gdshaderinc"
 #include "res://shaders/include/uniforms.gdshaderinc"
+#define VT_USE_HEIGHT
+#define VT_USE_TERRAIN_NORMAL
+#define VT_USE_HORIZON
+#define VT_USE_MAP_INDEX
+#define VT_USE_FLOW
+#define VT_USE_WATER_DEPTH
+#define VT_USE_TERRAIN_DETAIL
+#define VT_USE_EDGE_NEIGHBOR
+#define VT_USE_EDGE_DISTANCE
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"
 #include "res://shaders/include/cell_indirect.gdshaderinc"
@@ -126,7 +136,7 @@ void fragment() {
 	// [river-render-restore 2026-06-19] flow 通道单独从 flow_tex 重建（河流 SDF）。
 	// 未绑定纹理时 texture() 返回 0 → 无河，安全。land/water pipeline 读 scals.g 画河网。
 	// 低画质仍要保留静态河网；昂贵的河流动效/坡向流纹已在 land_pipeline 里按质量档裁掉。
-	scals.g = texture(flow_tex, uv).r;
+	scals.g = visual_sample_flow(uv).r;
 	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
 	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。
@@ -177,9 +187,9 @@ void fragment() {
 	}
 	// [landform 轴可视化 2026-06-25] landform id 走 map_index_atlas.A（per-pixel, NEAREST），
 	// 供陆地管线给火山/高原/峡谷/裂谷/高峰补充专属着色。地图外哨兵采样得 0（=DEEP_OCEAN，陆地分支不消费）。
-	int landform = int(texture(map_index_atlas, wrap_map_uv(uv)).a * 255.0 + 0.5);
+	int landform = int(visual_sample_map_index(uv).a * 255.0 + 0.5);
 	float moist = dyns.g;
-	float _Hf = float(textureSize(map_index_atlas, 0).y);
+	float _Hf = visual_static_texture_size().y;
 	float lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
 	float dyn_temp = dyns.r;
 	float dyn_wet = dyns.g;

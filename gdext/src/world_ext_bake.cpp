@@ -1554,6 +1554,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     const int map_w = int(knobs.get("map_width", 0));
     const int map_h = int(knobs.get("map_height", 0));
     const int n_cells = int(knobs.get("n_cells", 0));
+    const bool emit_csr = bool(knobs.get("emit_csr", true));
     if (map_w <= 0 || map_h <= 0 || n_cells <= 0) return fail("invalid map dims / n_cells");
 
     const double origin_x = double(knobs.get("origin_x", 0.0));
@@ -1954,7 +1955,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
             VBUF[idx] = uint8_t(veg_self & 0xFF);
             CBUF[idx] = uint8_t(cover_self & 0xFF);
             P2C[idx] = self_idx;
-            if (self_idx >= 0 && self_idx < n_cells) CNT[self_idx] += 1;
+            if (emit_csr && self_idx >= 0 && self_idx < n_cells) CNT[self_idx] += 1;
             if (edge_secondary >= 0 && edge_secondary < 0xFFFF) {
                 ESEC[idx * 2] = uint8_t(edge_secondary & 0xFF);
                 ESEC[idx * 2 + 1] = uint8_t((edge_secondary >> 8) & 0xFF);
@@ -1971,20 +1972,26 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
 
     // ── CSR build：prefix-sum first_px + scatter flat（counting sort，by cell.index）──
     int total_px = 0;
-    for (int c = 0; c < n_cells; ++c) {
-        if (CNT[c] > 0) { FIRST[c] = total_px; total_px += CNT[c]; }
-        else { FIRST[c] = -1; }
+    PackedInt32Array flat_px;
+    int32_t *FLAT = nullptr;
+    if (emit_csr) {
+        for (int c = 0; c < n_cells; ++c) {
+            if (CNT[c] > 0) { FIRST[c] = total_px; total_px += CNT[c]; }
+            else { FIRST[c] = -1; }
+        }
+        flat_px.resize(total_px);
+        FLAT = flat_px.ptrw();
     }
-    PackedInt32Array flat_px;  flat_px.resize(total_px);
-    int32_t * const __restrict FLAT = flat_px.ptrw();
     // 写游标：复用临时数组（各 cell 段起点）
-    std::vector<int> cursor(n_cells);
-    for (int c = 0; c < n_cells; ++c) cursor[c] = FIRST[c];
-    for (int i = 0; i < n_pix; ++i) {
-        const int c = P2C[i];
-        if (c >= 0 && c < n_cells && cursor[c] >= 0) {
-            FLAT[cursor[c]] = i;
-            cursor[c] += 1;
+    if (emit_csr) {
+        std::vector<int> cursor(n_cells);
+        for (int c = 0; c < n_cells; ++c) cursor[c] = FIRST[c];
+        for (int i = 0; i < n_pix; ++i) {
+            const int c = P2C[i];
+            if (c >= 0 && c < n_cells && cursor[c] >= 0) {
+                FLAT[cursor[c]] = i;
+                cursor[c] += 1;
+            }
         }
     }
 
@@ -2008,6 +2015,458 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     out["cell_px_count"] = px_count;
     out["flat_px_indices"] = flat_px;
     out["total_px"] = total_px;
+    out["csr_emitted"] = emit_csr;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdext_visual_tile");
+    out["elapsed_ms"] = -1.0;
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int W = int(knobs.get("width", 0));
+    const int H = int(knobs.get("height", 0));
+    const int N = W * H;
+    if (W <= 0 || H <= 0 || N <= 0) return fail("invalid tile size");
+    const double origin_x = double(knobs.get("origin_x", 0.0));
+    const double origin_y = double(knobs.get("origin_y", 0.0));
+    const double size_x = double(knobs.get("size_x", 0.0));
+    const double size_y = double(knobs.get("size_y", 0.0));
+    if (size_x <= 0.0 || size_y <= 0.0) return fail("invalid tile world rect");
+
+    const int BW = int(knobs.get("baseline_width", 0));
+    const int BH = int(knobs.get("baseline_height", 0));
+    const int BN = BW * BH;
+    PackedFloat32Array baseline_height = knobs.get("baseline_height_buffer", PackedFloat32Array());
+    PackedFloat32Array baseline_flow = knobs.get("baseline_flow_buffer", PackedFloat32Array());
+    PackedByteArray baseline_water = knobs.get("baseline_water_depth_buffer", PackedByteArray());
+    if (BW <= 0 || BH <= 0 || BN <= 0 || baseline_height.size() < BN) {
+        return fail("invalid baseline height");
+    }
+    const double base_origin_x = double(knobs.get("baseline_origin_x", 0.0));
+    const double base_origin_y = double(knobs.get("baseline_origin_y", 0.0));
+    const double base_size_x = double(knobs.get("baseline_size_x", 0.0));
+    const double base_size_y = double(knobs.get("baseline_size_y", 0.0));
+    if (base_size_x <= 0.0 || base_size_y <= 0.0) return fail("invalid baseline world rect");
+
+    const double step_x = size_x / double(W);
+    const double step_y = size_y / double(H);
+    const int halo = std::max(2, std::min(32, int(knobs.get("algorithm_halo_px", 8))));
+    const int WW = W + halo * 2;
+    const int WH = H + halo * 2;
+    const int WN = WW * WH;
+    const double work_origin_x = origin_x - double(halo) * step_x;
+    const double work_origin_y = origin_y - double(halo) * step_y;
+    const double wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
+    const double sea_level = double(knobs.get("sea_level", 0.64));
+    const double residual_amp = std::max(0.0, std::min(0.08,
+            double(knobs.get("residual_amp", 0.035))));
+    const double hex_size = std::max(0.0001, double(knobs.get("hex_size", 1.0)));
+
+    Dictionary work_knobs = knobs.duplicate(true);
+    work_knobs["width"] = WW;
+    work_knobs["height"] = WH;
+    work_knobs["origin_x"] = work_origin_x;
+    work_knobs["origin_y"] = work_origin_y;
+    work_knobs["size_x"] = step_x * double(WW);
+    work_knobs["size_y"] = step_y * double(WH);
+    work_knobs["inv_world_x"] = 1.0 / step_x;
+    work_knobs["inv_world_y"] = 1.0 / step_y;
+    work_knobs["base_radius_px"] = std::max(0.5,
+            hex_size * double(knobs.get("river_stroke_hex_factor", 0.035)) / step_x);
+    work_knobs["seam_dx"] = wrap_period_x > 0.0 ? wrap_period_x * 0.5 : size_x * 0.5;
+    work_knobs["emit_csr"] = false;
+
+    const auto t0 = std::chrono::high_resolution_clock::now();
+    Dictionary terr = run_bake_terrain_index_pass(work_knobs);
+    if (bool(terr.get("fallback", true))) return fail("terrain index failed");
+    PackedFloat32Array procedural_height = terr.get("height_buffer", PackedFloat32Array());
+    PackedByteArray biome_work = terr.get("biome_buffer", PackedByteArray());
+    PackedInt32Array p2c_work = terr.get("pixel_to_cell_index", PackedInt32Array());
+    PackedByteArray edge_work = terr.get("edge_secondary_index_buffer", PackedByteArray());
+    PackedByteArray edge_distance_work = terr.get("edge_distance_buffer", PackedByteArray());
+    if (procedural_height.size() != WN || biome_work.size() != WN ||
+            p2c_work.size() != WN || edge_work.size() != WN * 2 ||
+            edge_distance_work.size() != WN) {
+        return fail("terrain payload size mismatch");
+    }
+
+    auto wrap_world_x = [&](double x) -> double {
+        if (wrap_period_x <= 0.0001) return x;
+        double p = std::fmod(x, wrap_period_x);
+        if (p < 0.0) p += wrap_period_x;
+        return p;
+    };
+    auto cubic = [](double p0, double p1, double p2, double p3, double t) -> double {
+        const double a0 = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
+        const double a1 = p0 - 2.5 * p1 + 2.0 * p2 - 0.5 * p3;
+        const double a2 = -0.5 * p0 + 0.5 * p2;
+        return ((a0 * t + a1) * t + a2) * t + p1;
+    };
+    const float * const BASE_H = baseline_height.ptr();
+    auto sample_base_height = [&](double wx, double wy) -> double {
+        wx = wrap_world_x(wx);
+        double fx = (wx - base_origin_x) / base_size_x * double(BW) - 0.5;
+        double fy = (wy - base_origin_y) / base_size_y * double(BH) - 0.5;
+        const int ix = int(std::floor(fx));
+        const int iy = int(std::floor(fy));
+        const double tx = fx - double(ix);
+        const double ty = fy - double(iy);
+        double rows[4];
+        for (int ky = -1; ky <= 2; ++ky) {
+            const int sy = std::max(0, std::min(BH - 1, iy + ky));
+            double v[4];
+            for (int kx = -1; kx <= 2; ++kx) {
+                const int sx = std::max(0, std::min(BW - 1, ix + kx));
+                v[kx + 1] = double(BASE_H[sy * BW + sx]);
+            }
+            rows[ky + 1] = cubic(v[0], v[1], v[2], v[3], tx);
+        }
+        return std::max(0.0, std::min(1.0,
+                cubic(rows[0], rows[1], rows[2], rows[3], ty)));
+    };
+    auto sample_base_scalar = [&](const float *src, double wx, double wy) -> double {
+        wx = wrap_world_x(wx);
+        double fx = (wx - base_origin_x) / base_size_x * double(BW) - 0.5;
+        double fy = (wy - base_origin_y) / base_size_y * double(BH) - 0.5;
+        int x0 = int(std::floor(fx)), y0 = int(std::floor(fy));
+        const double tx = fx - double(x0), ty = fy - double(y0);
+        x0 = std::max(0, std::min(BW - 1, x0));
+        y0 = std::max(0, std::min(BH - 1, y0));
+        const int x1 = std::min(BW - 1, x0 + 1), y1 = std::min(BH - 1, y0 + 1);
+        const double a = double(src[y0 * BW + x0]) * (1.0 - tx) + double(src[y0 * BW + x1]) * tx;
+        const double b = double(src[y1 * BW + x0]) * (1.0 - tx) + double(src[y1 * BW + x1]) * tx;
+        return a * (1.0 - ty) + b * ty;
+    };
+    auto sample_base_byte = [&](const uint8_t *src, double wx, double wy) -> double {
+        wx = wrap_world_x(wx);
+        int sx = int(std::floor((wx - base_origin_x) / base_size_x * double(BW)));
+        int sy = int(std::floor((wy - base_origin_y) / base_size_y * double(BH)));
+        sx = std::max(0, std::min(BW - 1, sx));
+        sy = std::max(0, std::min(BH - 1, sy));
+        return double(src[sy * BW + sx]) / 255.0;
+    };
+
+    godot::Ref<godot::FastNoiseLite> residual_noise;
+    residual_noise.instantiate();
+    residual_noise->set_noise_type(godot::FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+    residual_noise->set_seed(int(knobs.get("seed", 0)) + 1597);
+    residual_noise->set_frequency(float(0.42 / hex_size));
+    residual_noise->set_fractal_type(godot::FastNoiseLite::FRACTAL_FBM);
+    residual_noise->set_fractal_octaves(3);
+    auto periodic_noise = [&](double wx, double wy) -> double {
+        if (wrap_period_x <= 0.0001) return double(residual_noise->get_noise_2d(wx, wy));
+        const double phase = wrap_world_x(wx) / wrap_period_x * (2.0 * M_PI);
+        const double radius = wrap_period_x / (2.0 * M_PI);
+        return double(residual_noise->get_noise_3d(
+                std::cos(phase) * radius, std::sin(phase) * radius, wy));
+    };
+
+    PackedFloat32Array height_work;
+    height_work.resize(WN);
+    float * const HW = height_work.ptrw();
+    const float * const PH = procedural_height.ptr();
+    const uint8_t * const BIOME_W = biome_work.ptr();
+    for (int y = 0; y < WH; ++y) {
+        const double wy = work_origin_y + (double(y) + 0.5) * step_y;
+        for (int x = 0; x < WW; ++x) {
+            const int i = y * WW + x;
+            const double wx = work_origin_x + (double(x) + 0.5) * step_x;
+            const double base = sample_base_height(wx, wy);
+            const bool water = pk_is_water_terrain(BIOME_W[i]);
+            double residual = 0.0;
+            if (!water && residual_amp > 0.0) {
+                const double n0 = periodic_noise(wx, wy);
+                const double navg = 0.25 * (periodic_noise(wx - step_x, wy) +
+                        periodic_noise(wx + step_x, wy) + periodic_noise(wx, wy - step_y) +
+                        periodic_noise(wx, wy + step_y));
+                const double relief_gate = std::max(0.12, std::min(1.0,
+                        std::fabs(double(PH[i]) - base) / 0.06));
+                residual = std::max(-residual_amp, std::min(residual_amp,
+                        (n0 - navg) * residual_amp * 3.0 * relief_gate));
+            }
+            double h = std::max(0.0, std::min(1.0, base + residual));
+            if (water) h = std::min(h, sea_level);
+            else h = std::max(h, sea_level);
+            HW[i] = float(h);
+        }
+    }
+
+    Dictionary river = run_bake_river_sdf_pass(work_knobs);
+    PackedFloat32Array flow_work = river.get("out_buf", PackedFloat32Array());
+    if (bool(river.get("fallback", true)) || flow_work.size() != WN) {
+        flow_work.resize(WN);
+        float * const FW = flow_work.ptrw();
+        const float * const BF = baseline_flow.size() >= BN ? baseline_flow.ptr() : nullptr;
+        for (int y = 0; y < WH; ++y) {
+            const double wy = work_origin_y + (double(y) + 0.5) * step_y;
+            for (int x = 0; x < WW; ++x) {
+                const double wx = work_origin_x + (double(x) + 0.5) * step_x;
+                FW[y * WW + x] = BF != nullptr ? float(sample_base_scalar(BF, wx, wy)) : 0.0f;
+            }
+        }
+    }
+    const float * const FLOW_W = flow_work.ptr();
+    for (int i = 0; i < WN; ++i) {
+        const double f = std::max(0.0, std::min(1.0, double(FLOW_W[i])));
+        if (f <= 0.02 || double(HW[i]) <= sea_level) continue;
+        const double notch = f * f * (3.0 - 2.0 * f);
+        HW[i] = float(std::max(0.0, double(HW[i]) - 0.045 * notch));
+    }
+
+    work_knobs["biome_buffer"] = biome_work;
+    Dictionary coast = run_bake_coast_sdf_pass(work_knobs);
+    if (!bool(coast.get("fallback", true))) {
+        PackedFloat32Array coast_sdf = coast.get("out_buf", PackedFloat32Array());
+        if (coast_sdf.size() == WN) {
+            const float * const CD = coast_sdf.ptr();
+            const double amp = double(knobs.get("shore_carve_amp", 0.06));
+            const int band = std::max(1, int(knobs.get("shore_carve_band", 6)));
+            for (int i = 0; i < WN; ++i) {
+                const double d = double(CD[i]);
+                if (d <= 0.0 || d > double(band) || double(HW[i]) <= sea_level) continue;
+                const double t = 1.0 - d / double(band);
+                const double notch = t * t * (3.0 - 2.0 * t);
+                HW[i] = float(std::max(sea_level, double(HW[i]) - amp * notch));
+            }
+        }
+    }
+
+    PackedByteArray height_data; height_data.resize(N * 2);
+    PackedByteArray normal_data; normal_data.resize(N * 2);
+    PackedByteArray map_index_data; map_index_data.resize(N * 4);
+    PackedByteArray flow_data; flow_data.resize(N);
+    PackedByteArray water_data; water_data.resize(N);
+    PackedByteArray detail_data; detail_data.resize(N);
+    PackedByteArray edge_data; edge_data.resize(N * 2);
+    PackedByteArray edge_distance_data; edge_distance_data.resize(N);
+    uint8_t * const HD = height_data.ptrw();
+    uint8_t * const ND = normal_data.ptrw();
+    uint8_t * const MD = map_index_data.ptrw();
+    uint8_t * const FD = flow_data.ptrw();
+    uint8_t * const WD = water_data.ptrw();
+    uint8_t * const DD = detail_data.ptrw();
+    uint8_t * const ED = edge_data.ptrw();
+    uint8_t * const EDD = edge_distance_data.ptrw();
+    const int32_t * const P2C = p2c_work.ptr();
+    const uint8_t * const EW = edge_work.ptr();
+    const uint8_t * const EDW = edge_distance_work.ptr();
+    PackedByteArray landform = knobs.get("cell_landform", PackedByteArray());
+    const uint8_t * const LF = landform.is_empty() ? nullptr : landform.ptr();
+    const int n_cells = int(knobs.get("n_cells", 0));
+    PackedFloat32Array cell_surface = knobs.get("cell_water_depth", PackedFloat32Array());
+    PackedByteArray cell_terrain = knobs.get("cell_terrain", PackedByteArray());
+    const float * const CS = cell_surface.size() >= n_cells ? cell_surface.ptr() : nullptr;
+    const uint8_t * const CT = cell_terrain.size() >= n_cells ? cell_terrain.ptr() : nullptr;
+    const uint8_t * const BWATER = baseline_water.size() >= BN ? baseline_water.ptr() : nullptr;
+    const int normal_radius = std::max(1, std::min(halo, int(knobs.get("normal_radius_px", 2))));
+    const double normal_gain = double(knobs.get("normal_slope_gain", 8.0)) /
+            double(normal_radius * 2);
+
+    godot::Ref<godot::FastNoiseLite> detail_noise;
+    detail_noise.instantiate();
+    detail_noise->set_noise_type(godot::FastNoiseLite::TYPE_SIMPLEX_SMOOTH);
+    detail_noise->set_seed(int(knobs.get("seed", 0)) + 2503);
+    detail_noise->set_frequency(float(0.18 / hex_size));
+    detail_noise->set_fractal_type(godot::FastNoiseLite::FRACTAL_FBM);
+    detail_noise->set_fractal_octaves(4);
+    auto detail_periodic = [&](double wx, double wy) -> double {
+        if (wrap_period_x <= 0.0001) return double(detail_noise->get_noise_2d(wx, wy));
+        const double phase = wrap_world_x(wx) / wrap_period_x * (2.0 * M_PI);
+        const double radius = wrap_period_x / (2.0 * M_PI);
+        return double(detail_noise->get_noise_3d(
+                std::cos(phase) * radius, std::sin(phase) * radius, wy));
+    };
+
+    for (int y = 0; y < H; ++y) {
+        const int wy_i = y + halo;
+        const double wy = origin_y + (double(y) + 0.5) * step_y;
+        for (int x = 0; x < W; ++x) {
+            const int wx_i = x + halo;
+            const int si = wy_i * WW + wx_i;
+            const int di = y * W + x;
+            const double wx = origin_x + (double(x) + 0.5) * step_x;
+            const double h = std::max(0.0, std::min(1.0, double(HW[si])));
+            const int h16 = std::max(0, std::min(65535, int(std::round(h * 65535.0))));
+            HD[di * 2] = uint8_t((h16 >> 8) & 0xFF);
+            HD[di * 2 + 1] = uint8_t(h16 & 0xFF);
+
+            const double sx = (double(HW[wy_i * WW + wx_i + normal_radius]) -
+                    double(HW[wy_i * WW + wx_i - normal_radius])) * normal_gain;
+            const double sy = (double(HW[(wy_i + normal_radius) * WW + wx_i]) -
+                    double(HW[(wy_i - normal_radius) * WW + wx_i])) * normal_gain;
+            const double inv_len = 1.0 / std::sqrt(sx * sx + sy * sy + 1.0);
+            ND[di * 2] = uint8_t(std::max(0, std::min(255,
+                    int(std::round((-sx * inv_len * 0.5 + 0.5) * 255.0)))));
+            ND[di * 2 + 1] = uint8_t(std::max(0, std::min(255,
+                    int(std::round((-sy * inv_len * 0.5 + 0.5) * 255.0)))));
+
+            const int ci = P2C[si];
+            MD[di * 4] = BIOME_W[si];
+            MD[di * 4 + 1] = ci >= 0 && ci < 0xFFFF ? uint8_t(ci & 0xFF) : 0xFF;
+            MD[di * 4 + 2] = ci >= 0 && ci < 0xFFFF ? uint8_t((ci >> 8) & 0xFF) : 0xFF;
+            MD[di * 4 + 3] = (LF != nullptr && ci >= 0 && ci < landform.size()) ? LF[ci] : 0;
+
+            const double f = std::max(0.0, std::min(1.0, double(FLOW_W[si])));
+            FD[di] = uint8_t(std::round(f * 255.0));
+            double depth = 0.0;
+            if (CS != nullptr && ci >= 0 && ci < n_cells && CS[ci] > 1e-4f) {
+                const double raw = std::max(0.0, double(CS[ci]) - h);
+                const bool lake = CT != nullptr && CT[ci] == 18;
+                depth = std::min(1.0, raw / (lake ? 0.16 : std::max(1e-4, sea_level)));
+            } else if (BWATER != nullptr) {
+                depth = sample_base_byte(BWATER, wx, wy);
+            }
+            WD[di] = uint8_t(std::round(depth * 255.0));
+            const double dn = std::max(-1.0, std::min(1.0, detail_periodic(wx, wy)));
+            DD[di] = uint8_t(std::round((dn * 0.5 + 0.5) * 255.0));
+            ED[di * 2] = EW[si * 2];
+            ED[di * 2 + 1] = EW[si * 2 + 1];
+            EDD[di] = EDW[si];
+        }
+    }
+
+    auto hash_bytes = [](const PackedByteArray &data) -> int64_t {
+        uint64_t h = 1469598103934665603ULL;
+        const uint8_t *p = data.ptr();
+        for (int i = 0; i < data.size(); ++i) {
+            h ^= uint64_t(p[i]);
+            h *= 1099511628211ULL;
+        }
+        return int64_t(h);
+    };
+    Dictionary hashes;
+    hashes["height"] = hash_bytes(height_data);
+    hashes["terrain_normal"] = hash_bytes(normal_data);
+    hashes["map_index"] = hash_bytes(map_index_data);
+    hashes["flow"] = hash_bytes(flow_data);
+    hashes["water_depth"] = hash_bytes(water_data);
+    hashes["terrain_detail"] = hash_bytes(detail_data);
+    hashes["edge_neighbor"] = hash_bytes(edge_data);
+    hashes["edge_distance"] = hash_bytes(edge_distance_data);
+
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    out["fallback"] = false;
+    out["reason"] = String();
+    out["width"] = W;
+    out["height"] = H;
+    out["generation_id"] = int(knobs.get("generation_id", 0));
+    out["layer_id"] = int(knobs.get("layer_id", 0));
+    out["height"] = height_data;
+    out["terrain_normal"] = normal_data;
+    out["map_index"] = map_index_data;
+    out["flow"] = flow_data;
+    out["water_depth"] = water_data;
+    out["terrain_detail"] = detail_data;
+    out["edge_neighbor"] = edge_data;
+    out["edge_distance"] = edge_distance_data;
+    out["hashes"] = hashes;
+    out["terrain_ms"] = double(terr.get("elapsed_ms", -1.0));
+    out["river_ms"] = double(river.get("elapsed_ms", -1.0));
+    out["coast_ms"] = double(coast.get("elapsed_ms", -1.0));
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    out["csr_emitted"] = false;
+    return out;
+}
+
+godot::Dictionary DCWorldExt::run_resample_visual_horizon_layer_pass(godot::Dictionary knobs) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::String;
+
+    Dictionary out;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["path"] = String("gdext_visual_horizon_resample");
+    out["elapsed_ms"] = -1.0;
+    auto fail = [&](const char *why) -> Dictionary {
+        out["reason"] = String(why);
+        return out;
+    };
+
+    const int src_w = int(knobs.get("source_width", 0));
+    const int src_h = int(knobs.get("source_height", 0));
+    const int dst_w = int(knobs.get("width", 0));
+    const int dst_h = int(knobs.get("height", 0));
+    if (src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) {
+        return fail("invalid size");
+    }
+    PackedByteArray source = knobs.get("source_data", PackedByteArray());
+    if (source.size() != src_w * src_h * 4) return fail("invalid source data");
+
+    const double source_origin_x = double(knobs.get("source_origin_x", 0.0));
+    const double source_origin_y = double(knobs.get("source_origin_y", 0.0));
+    const double source_size_x = double(knobs.get("source_size_x", 0.0));
+    const double source_size_y = double(knobs.get("source_size_y", 0.0));
+    const double origin_x = double(knobs.get("origin_x", 0.0));
+    const double origin_y = double(knobs.get("origin_y", 0.0));
+    const double size_x = double(knobs.get("size_x", 0.0));
+    const double size_y = double(knobs.get("size_y", 0.0));
+    const double wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
+    if (source_size_x <= 0.0 || source_size_y <= 0.0 || size_x <= 0.0 || size_y <= 0.0) {
+        return fail("invalid world rect");
+    }
+
+    PackedByteArray data;
+    data.resize(dst_w * dst_h * 4);
+    const uint8_t * const __restrict src = source.ptr();
+    uint8_t * const __restrict dst = data.ptrw();
+    const auto t0 = std::chrono::high_resolution_clock::now();
+    auto run_range = [&](int y0, int y1) {
+        for (int y = y0; y < y1; ++y) {
+            const double wy = origin_y + (double(y) + 0.5) / double(dst_h) * size_y;
+            const double v = std::max(0.0, std::min(1.0,
+                    (wy - source_origin_y) / source_size_y));
+            const int sy = std::max(0, std::min(src_h - 1,
+                    int(std::floor(v * double(src_h)))));
+            for (int x = 0; x < dst_w; ++x) {
+                double wx = origin_x + (double(x) + 0.5) / double(dst_w) * size_x;
+                if (wrap_period_x > 0.0001) {
+                    wx = std::fmod(wx, wrap_period_x);
+                    if (wx < 0.0) wx += wrap_period_x;
+                }
+                const double u = std::max(0.0, std::min(1.0,
+                        (wx - source_origin_x) / source_size_x));
+                const int sx = std::max(0, std::min(src_w - 1,
+                        int(std::floor(u * double(src_w)))));
+                const int si = (sy * src_w + sx) * 4;
+                const int di = (y * dst_w + x) * 4;
+                dst[di] = src[si];
+                dst[di + 1] = src[si + 1];
+                dst[di + 2] = src[si + 2];
+                dst[di + 3] = src[si + 3];
+            }
+        }
+    };
+    pk::parallel_for_range("pk_visual_horizon_resample", dst_h,
+            /*n_tasks=*/0, /*seq_threshold=*/64, run_range);
+    const auto t1 = std::chrono::high_resolution_clock::now();
+
+    uint64_t hash = 1469598103934665603ULL;
+    for (int i = 0; i < data.size(); ++i) {
+        hash ^= uint64_t(dst[i]);
+        hash *= 1099511628211ULL;
+    }
+    out["fallback"] = false;
+    out["data"] = data;
+    out["width"] = dst_w;
+    out["height"] = dst_h;
+    out["generation_id"] = int(knobs.get("generation_id", 0));
+    out["layer_id"] = int(knobs.get("layer_id", 0));
+    out["hash"] = int64_t(hash);
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
     return out;
 }
 

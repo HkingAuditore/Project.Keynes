@@ -838,7 +838,7 @@ stage, and worker count cannot affect the state/event hash.
 Building plan evaluate、building production 与 household market 现在都在原有
 `economy_daily` continuation 内使用稳定连续的 weighted ranges；它们没有新增 SUS node，也没有
 移动 `NativeEconomyRuntime` 的 stage/tick authority。默认 fan-out 上限是
-`economy_worker_task_cap=6`。一个 native range 仍不可被 SUS 抢占，SUS 只在 range 返回后决定
+`economy_worker_task_cap=12`。一个 native range 仍不可被 SUS 抢占，SUS 只在 range 返回后决定
 是否启动下一 continuation。plan/production/market 均先 wait，再按 task id 和原 cursor 顺序归并，
 所以 scalar 与 worker 的 state/event hash 契约不变。
 
@@ -888,3 +888,7 @@ Prosperity adds no SUS job or scheduler edge. It runs inside economy
 generations publish. Bootstrap and legacy restore may scan once; normal commits
 process only sorted, deduplicated `population_changed_cells`, so scalar and
 worker paths share one deterministic naming order.
+
+Trigger graph scheduling: `trigger_runtime` runs after committed event publication
+and before Modifier/Country/Economy consumers. Its report uses `path=TRIGGER_GRAPH`,
+`stage_name`, `progress_ratio`, and fallback/gap fields.

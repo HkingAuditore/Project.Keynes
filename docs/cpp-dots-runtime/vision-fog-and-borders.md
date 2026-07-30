@@ -27,10 +27,16 @@ flowchart LR
   vis --> lut["enum_lut.a @ lut_dims<br/>RGBA8"]
   lut --> fog["FogOfWarLayer<br/>fog_of_war.gdshader"]
   lut --> wm["world_map.gdshader<br/>灰化 + 可选早退<br/>零新增采样"]
-  lut --> wx["weather overlay / curtain<br/>按可见性屏蔽"]
+lut --> wx["weather overlay / curtain<br/>按可见性屏蔽"]
   vis --> ui["Inspector 页签门控"]
   vis --> save["PKFG 存 explored"]
 ```
+
+在 tiled 渲染变体中，FogOfWar 与 Weather overlay 的静态 `map_index + edge`
+从共享 `Texture2DArray` 读取，world-position 寻址和主地形完全相同；`enum_lut.a`、
+`weather_lut/current/prev` 仍是全局 per-cell LUT。雨雪 curtain 继续携带 cell id，
+不做 Tile 空间采样。这样改变 Tile 数只改变静态边界采样精度，不改变知识度、天气状态或存档。
+详见 [Visual Tile Rendering](./visual-tile-rendering.md)。
 
 触发点只有两个：country bootstrap 后一次（`world_ready`），以及每次
 `country_committed`。**不进每日 tick**——领土变更极少，全量重算比增量维护便宜。
@@ -580,5 +586,8 @@ ribbon 的内边界截断。
   真实渲染驱动下加载一次材质。缺 uniform 声明、include 依赖不全这类错误只有这样
   才会暴露——`fog_of_war.gdshader` 接 `earth_daylight` 时漏声明 `tod_sun_dir`
   就是一个实例，headless 全绿而真机直接编译失败。
+- `terrain_shader_variant_test.gd`、`overlay_edge_transition_shader_test.gd` 同时覆盖
+  legacy 与 `MAP_VISUAL_TILED` 源码变体；真实渲染仍需检查普通 Tile 边、首尾 X 环绕边和
+  Fog/Weather 连续性。
 - 仿真侧回归看 `bd_dynamic_visual_atlas_lut_refresh_ms`（含整个 `encode_cell_luts`）
   与 `t_sus_ms` 的比值；迷雾层的全屏 fragment 成本只能在 GPU 侧量。

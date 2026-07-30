@@ -1,6 +1,8 @@
 extends VBoxContainer
 class_name MarketList
 
+signal details_requested(request: Dictionary)
+
 var _row_refs: Dictionary = {}
 var _expanded: Dictionary = {}
 
@@ -41,9 +43,11 @@ func set_expanded(row_id: String, expanded: bool) -> void:
 	var refs: Dictionary = _row_refs[row_id]
 	if expanded:
 		_sync_details(refs, refs.get("detail_rows", []))
-	var button := refs.get("button") as Button
-	if button.button_pressed != expanded:
-		button.set_pressed_no_signal(expanded)
+	var chevron := refs.get("chevron") as Button
+	if chevron != null:
+		IconButton.apply(chevron,
+			&"action.chevron_down" if expanded else &"action.chevron_right",
+			IconButton.SMALL, "展开 / 折叠", true, expanded)
 	var details := refs.get("details") as Control
 	if details.visible != expanded:
 		details.visible = expanded
@@ -61,18 +65,27 @@ func _create_row(row_id: String) -> Dictionary:
 	body.add_theme_constant_override("separation", UITokens.SPACE_XS)
 	panel.add_child(body)
 	var button := Button.new()
-	button.toggle_mode = true
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(0.0, 54.0)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.text = ""
-	button.toggled.connect(func(expanded: bool) -> void: set_expanded(row_id, expanded))
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.pressed.connect(func() -> void: details_requested.emit(
+		{"kind": "good", "row_id": row_id}))
 	body.add_child(button)
 	var header := HBoxContainer.new()
 	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 7)
 	header.add_theme_constant_override("separation", UITokens.SPACE_SM)
 	button.add_child(header)
+	var chevron := Button.new()
+	chevron.toggle_mode = true
+	chevron.custom_minimum_size = Vector2(22.0, 22.0)
+	chevron.focus_mode = Control.FOCUS_NONE
+	chevron.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	chevron.tooltip_text = "展开 / 折叠"
+	chevron.toggled.connect(func(expanded: bool) -> void: set_expanded(row_id, expanded))
+	header.add_child(chevron)
 	var icon := IconBadge.new()
 	icon.custom_minimum_size = Vector2(26.0, 26.0)
 	header.add_child(icon)
@@ -112,7 +125,7 @@ func _create_row(row_id: String) -> Dictionary:
 	details.visible = false
 	details.add_theme_constant_override("separation", 2)
 	body.add_child(details)
-	var refs := {"panel": panel, "button": button, "icon": icon, "name": name_label,
+	var refs := {"panel": panel, "button": button, "chevron": chevron, "icon": icon, "name": name_label,
 		"stock": stock_label, "price": price_label, "delta": delta_label,
 		"risk": risk_label, "details": details, "detail_refs": {},
 		"detail_rows": [], "applied": {}}
@@ -203,15 +216,7 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	# 折叠行只缓存最新详情；展开时才创建/更新详情节点，避免日更遍历整张商品明细表。
 	var detail_rows: Array = data.get("detail_rows", [])
 	refs["detail_rows"] = detail_rows
-	var expanded := bool(_expanded.get(row_id, false))
-	if expanded:
-		_sync_details(refs, detail_rows)
-	var button := refs.get("button") as Button
-	if button.button_pressed != expanded:
-		button.set_pressed_no_signal(expanded)
-	var details := refs.get("details") as Control
-	if details.visible != expanded:
-		details.visible = expanded
+	set_expanded(row_id, bool(_expanded.get(row_id, false)))
 	applied["accent"] = accent
 	applied["icon"] = icon_key
 	applied["delta_color"] = delta_color

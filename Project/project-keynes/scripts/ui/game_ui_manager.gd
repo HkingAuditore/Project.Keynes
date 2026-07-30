@@ -19,12 +19,15 @@ const OVERLAY_LEGEND_WIDTH := 198.0
 const GM_PANEL_TARGET_WIDTH := 560.0
 const GM_PANEL_MIN_WIDTH := 300.0
 const DemandDetailDialogScript = preload("res://scripts/ui/components/demand_detail_dialog.gd")
+const ObjectDetailDialogScript = preload("res://scripts/ui/components/object_detail_dialog.gd")
 const PauseMenuScript = preload("res://scripts/ui/components/pause_menu.gd")
 
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
 var _demand_detail_dialog
+var _object_detail_dialog
+var _object_detail_context: Dictionary = {}
 var _inspector_view_model: CellInspectorViewModel
 var _map: MapData
 var _selected_cell: HexCell
@@ -94,6 +97,7 @@ func set_world_context(
 		_map_overlay_legend.update_for_mode(OverlayMode.MODE.NONE)
 	if _demand_detail_dialog != null:
 		_demand_detail_dialog.close_dialog()
+	_close_object_detail_dialog()
 	if _gm_console != null:
 		_gm_console.refresh_gm_capabilities()
 	if _country_panel != null:
@@ -137,6 +141,7 @@ func toggle_perf_hud() -> void:
 
 
 func show_cell_panel(cell: HexCell) -> void:
+	_close_object_detail_dialog()
 	_selected_cell = cell
 	_invalidate_live_revision()
 	_last_cached_panel_ms = Time.get_ticks_msec()
@@ -161,6 +166,7 @@ func hide_cell_panel() -> void:
 	_set_inspector_trace_cell(-1)
 	if _demand_detail_dialog != null:
 		_demand_detail_dialog.close_dialog()
+	_close_object_detail_dialog()
 	if _right_panel != null:
 		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
 
@@ -254,6 +260,7 @@ func _on_country_committed(_report: Dictionary) -> void:
 	# dossier. Daily economy/climate ticks continue to use the live-value patch.
 	refresh_selected_panel()
 	refresh_country_summary()
+	_refresh_object_detail_tax()
 
 
 func open_country_section(section_id: String) -> void:
@@ -303,6 +310,37 @@ func _invalidate_live_revision() -> void:
 func _on_demand_details_requested(details: Dictionary) -> void:
 	if _demand_detail_dialog != null:
 		_demand_detail_dialog.show_details(details)
+
+
+func _on_object_details_requested(request: Dictionary) -> void:
+	if _selected_cell == null or _inspector_view_model == null \
+			or _object_detail_dialog == null:
+		return
+	var payload := _inspector_view_model.build_object_detail(_selected_cell, request)
+	if payload.is_empty():
+		return
+	_object_detail_context = {
+		"cell_idx": int(_selected_cell.index),
+		"kind": String(payload.get("kind", "")),
+		"item_id": String(payload.get("item_id", "")),
+	}
+	_object_detail_dialog.show_details(payload)
+
+
+func _close_object_detail_dialog() -> void:
+	_object_detail_context = {}
+	if _object_detail_dialog != null:
+		_object_detail_dialog.close_dialog()
+
+
+func _refresh_object_detail_tax() -> void:
+	if _object_detail_dialog == null or not _object_detail_dialog.is_open() \
+			or _object_detail_context.is_empty() or _inspector_view_model == null:
+		return
+	_object_detail_dialog.refresh_tax(_inspector_view_model.tax_slice_for_object(
+		int(_object_detail_context.get("cell_idx", -1)),
+		String(_object_detail_context.get("kind", "")),
+		String(_object_detail_context.get("item_id", ""))))
 
 
 func _set_inspector_trace_cell(cell_idx: int) -> void:
@@ -429,11 +467,15 @@ func _build_ui() -> void:
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
 	_right_panel.visibility_changed.connect(_layout_overlay_legend)
 	_right_panel.demand_details_requested.connect(_on_demand_details_requested)
+	_right_panel.object_details_requested.connect(_on_object_details_requested)
 	add_child(_right_panel)
 
 	_demand_detail_dialog = DemandDetailDialogScript.new()
 	_demand_detail_dialog.name = "DemandDetailDialog"
 	add_child(_demand_detail_dialog)
+	_object_detail_dialog = ObjectDetailDialogScript.new()
+	_object_detail_dialog.name = "ObjectDetailDialog"
+	add_child(_object_detail_dialog)
 
 	if _gm_available:
 		_gm_console = DebugConsole.new()

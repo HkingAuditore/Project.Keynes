@@ -400,6 +400,8 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
         out["path"] = String("gdext");
         out["instance_count"] = 0;
         out["buffer"] = PackedFloat32Array();
+        out["lod_ordered"] = bool(knobs.get("lod_order_enabled", false));
+        out["far_count"] = 0;
         auto t1e = std::chrono::high_resolution_clock::now();
         out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1e - t0).count();
         return out;
@@ -431,6 +433,90 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
     }
 
     const int n_draw = (int)draw_insts.size();
+
+    // LOD 排序下沉（SAME_SOURCE: shrub_layer.gd::_lod_order_sources）：
+    // MultiMesh.visible_instance_count 只暴露前缀 → 把远场代表实例排成按 cell 分层
+    // 轮转的前缀，近场细节排后缀；同 seed 的东西向 wrap 副本保持原子 cluster，LOD
+    // 前缀永远不会只显示源实例而丢掉接缝副本。knob 门控：全量重建路径不传
+    // lod_order_enabled，保持 GDScript 端排序兜底（旧 DLL 行为一致）。
+    const bool lod_order_enabled = bool(knobs.get("lod_order_enabled", false));
+    int lod_far_count = n_draw;
+    if (lod_order_enabled && n_draw > 1) {
+        const double lod_multiplier = std::max(1.0, double(knobs.get("lod_near_density_multiplier", 1.0)));
+        // 1) 按 (cell_idx, seed) 排序：同 cell 连续、cell 内 seed 升序，wrap 副本
+        //    （与源实例共享精确 seed）天然相邻。
+        std::vector<int32_t> order((size_t)n_draw);
+        for (int32_t i = 0; i < n_draw; ++i) order[(size_t)i] = i;
+        std::sort(order.begin(), order.end(), [&](int32_t a, int32_t b) {
+            const Inst &ia = draw_insts[(size_t)a];
+            const Inst &ib = draw_insts[(size_t)b];
+            if (ia.cell_idx != ib.cell_idx) return ia.cell_idx < ib.cell_idx;
+            if (ia.seed != ib.seed) return ia.seed < ib.seed;
+            return a < b;
+        });
+        // 2) cell 连续段 + 链式同 seed cluster（相邻 |Δseed| ≤ 1e-6 合并）。
+        struct CellRun { int32_t cluster_base; int32_t n_clusters; int32_t far_clusters; };
+        std::vector<CellRun> runs;
+        std::vector<std::pair<int32_t, int32_t> > clusters;  // order 内的 [start, end) 片段
+        runs.reserve(64);
+        clusters.reserve((size_t)n_draw);
+        int32_t i = 0;
+        while (i < n_draw) {
+            const int32_t cell = draw_insts[(size_t)order[(size_t)i]].cell_idx;
+            const int32_t run_cluster_base = (int32_t)clusters.size();
+            int32_t cl_start = i;
+            float last_seed = draw_insts[(size_t)order[(size_t)i]].seed;
+            int32_t j = i + 1;
+            while (j < n_draw && draw_insts[(size_t)order[(size_t)j]].cell_idx == cell) {
+                const float s = draw_insts[(size_t)order[(size_t)j]].seed;
+                if (std::fabs(s - last_seed) > 1.0e-6f) {
+                    clusters.push_back(std::make_pair(cl_start, j));
+                    cl_start = j;
+                }
+                last_seed = s;
+                ++j;
+            }
+            clusters.push_back(std::make_pair(cl_start, j));
+            const int32_t n_clusters = (int32_t)clusters.size() - run_cluster_base;
+            const int32_t far_clusters = std::min(n_clusters,
+                std::max(1, (int32_t)std::ceil((double)n_clusters / lod_multiplier)));
+            runs.push_back(CellRun{run_cluster_base, n_clusters, far_clusters});
+            i = j;
+        }
+        // 3) 远场前缀按 rank 跨 cell 轮转（紧急全局预算下每个被占据 cell 至少保住
+        //    一个代表实例），近场 rank 续排后缀。
+        int32_t max_far = 0;
+        int32_t max_total = 0;
+        for (size_t r = 0; r < runs.size(); ++r) {
+            max_far = std::max(max_far, runs[r].far_clusters);
+            max_total = std::max(max_total, runs[r].n_clusters);
+        }
+        std::vector<Inst> ordered;
+        ordered.reserve((size_t)n_draw);
+        for (int32_t rank = 0; rank < max_far; ++rank) {
+            for (size_t r = 0; r < runs.size(); ++r) {
+                const CellRun &run = runs[r];
+                if (rank < run.far_clusters) {
+                    const std::pair<int32_t, int32_t> &span = clusters[(size_t)(run.cluster_base + rank)];
+                    for (int32_t k = span.first; k < span.second; ++k)
+                        ordered.push_back(draw_insts[(size_t)order[(size_t)k]]);
+                }
+            }
+        }
+        lod_far_count = (int32_t)ordered.size();
+        for (int32_t rank = 0; rank < max_total; ++rank) {
+            for (size_t r = 0; r < runs.size(); ++r) {
+                const CellRun &run = runs[r];
+                const int32_t local = run.far_clusters + rank;
+                if (local < run.n_clusters) {
+                    const std::pair<int32_t, int32_t> &span = clusters[(size_t)(run.cluster_base + local)];
+                    for (int32_t k = span.first; k < span.second; ++k)
+                        ordered.push_back(draw_insts[(size_t)order[(size_t)k]]);
+                }
+            }
+        }
+        draw_insts.swap(ordered);
+    }
 
     // MultiMesh 2D buffer：每实例 16 float（transform 8 + color 4 + custom 4）。
     PackedFloat32Array buffer;
@@ -477,6 +563,10 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
     out["wrap_edge_copy_count"] = n_draw - n_keep;
     out["buffer"] = buffer;
     out["cell_indices"] = cell_indices;
+    // lod_ordered=true 时 buffer/cell_indices 已按 LOD 前缀序排好，GDScript 端直接
+    // 上传；false（knob 未启用）时 GDScript 端复刻排序兜底，两条路径语义同一契约。
+    out["lod_ordered"] = lod_order_enabled;
+    out["far_count"] = lod_far_count;
     out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
     return out;
 }

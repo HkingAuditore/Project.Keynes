@@ -209,3 +209,6 @@ no-Modifier baseline，不能据此判定 3%/5% 回归门槛。
 
 首版不提供历史倒带、真实时间到期、任意字段反射、跨域直接写入、多父 scope 图或一次性
 资源转移。伤害、人口变化、资源转账等一次性效果必须使用各领域 command/event。
+
+Trigger effects may queue Modifier commands, but TriggerRuntime never fans out or
+mutates ModifierStore directly. Modifier remains the owner of modifier lifecycle.

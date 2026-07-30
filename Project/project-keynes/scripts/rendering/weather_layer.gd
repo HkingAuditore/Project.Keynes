@@ -146,6 +146,7 @@ var _edge_neighbor_tex: Texture2D = null
 var _edge_distance_tex: Texture2D = null
 var _edge_transition_width: float = 0.84
 var _world_ref = null  # WorldData 引用(取 weather_lut_prev_tex 做帧间插值)
+var _visual_tiles = null
 var _wx_lut_last_usec: int = 0          # 上次检测到的 LUT 更新时刻
 var _wx_lut_t0_usec: int = 0            # 本插值周期起点(检测到 LUT 换帧的时刻)
 var _wx_commit_interval_usec: float = 500000.0  # 自适应 commit 间隔(默认 0.5s)
@@ -372,13 +373,43 @@ func set_edge_transition_data(
 	_push_edge_transition_data()
 
 
+func set_visual_tiles(tiles) -> void:
+	var was_tiled := _visual_tiles_active()
+	_visual_tiles = tiles
+	var is_tiled := _visual_tiles_active()
+	if was_tiled != is_tiled and _overlay_quad != null:
+		_load_overlay_shader()
+	_push_visual_tile_uniforms()
+
+
+func _visual_tiles_active() -> bool:
+	return _visual_tiles != null and bool(_visual_tiles.ready) \
+		and String(_visual_tiles.layout.mode) == "tiled"
+
+
+func _push_visual_tile_uniforms() -> void:
+	if _overlay_mat == null or not _visual_tiles_active():
+		return
+	var layout = _visual_tiles.layout
+	_overlay_mat.set_shader_parameter("visual_map_index_tiles", _visual_tiles.map_index)
+	_overlay_mat.set_shader_parameter("visual_edge_neighbor_tiles", _visual_tiles.edge_neighbor)
+	_overlay_mat.set_shader_parameter("visual_edge_distance_tiles", _visual_tiles.edge_distance)
+	_overlay_mat.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
+	_overlay_mat.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
+	_overlay_mat.set_shader_parameter("visual_grid_size", Vector2(layout.grid_size))
+	_overlay_mat.set_shader_parameter("visual_interior_size", Vector2(layout.interior_size))
+	_overlay_mat.set_shader_parameter("visual_layer_size", Vector2(layout.layer_size))
+	_overlay_mat.set_shader_parameter("visual_logical_resolution", Vector2(layout.logical_size))
+	_overlay_mat.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
+
+
 func _push_edge_transition_data() -> void:
 	if _overlay_mat == null:
 		return
-	var ready := _edge_neighbor_tex != null and _edge_distance_tex != null
-	if _edge_neighbor_tex != null:
+	var ready := _visual_tiles_active() or (_edge_neighbor_tex != null and _edge_distance_tex != null)
+	if not _visual_tiles_active() and _edge_neighbor_tex != null:
 		_overlay_mat.set_shader_parameter("terrain_edge_neighbor_tex", _edge_neighbor_tex)
-	if _edge_distance_tex != null:
+	if not _visual_tiles_active() and _edge_distance_tex != null:
 		_overlay_mat.set_shader_parameter("terrain_edge_distance_tex", _edge_distance_tex)
 	_overlay_mat.set_shader_parameter("has_terrain_edge_data", ready)
 	_overlay_mat.set_shader_parameter("terrain_ecotone_width", _edge_transition_width)
@@ -1283,17 +1314,16 @@ func _load_overlay_shader() -> void:
 	if shader == null:
 		push_warning("WeatherLayer: shader not found at %s" % OVERLAY_SHADER_PATH)
 		return
+	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
 	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
-		var src: String = shader.code
-		if not src.begins_with("#define"):
-			shader = shader.duplicate() as Shader
-			shader.code = "%s%s" % [_shader_quality_define_prefix(_mobile_quality_tier_define), src]
-			print("[weather-layer/quality] prepended #define %s to %s" % [
-				_mobile_quality_tier_define, OVERLAY_SHADER_PATH
-			])
+		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	if not prefix.is_empty():
+		shader = shader.duplicate() as Shader
+		shader.code = prefix + shader.code
 	_overlay_mat = ShaderMaterial.new()
 	_overlay_mat.shader = shader
 	_overlay_quad.material = _overlay_mat
+	_push_visual_tile_uniforms()
 	_push_edge_transition_data()
 
 func _load_curtain_shader() -> void:

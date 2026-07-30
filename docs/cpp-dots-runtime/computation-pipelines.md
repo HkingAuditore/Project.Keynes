@@ -104,7 +104,14 @@ Post-base 地形/生态契约：`river_flow_arr` 参与河岸生态修复，低�
 
 **荒原密度控制（2026-07-28）**：`BADLANDS` 不再由所有达到单一高差门槛的 `DESERT/COLD_DESERT` 直接改写。post-base 先按 `badlands_min_relief`、`badlands_min_rugged_neighbors` 和远离海/湖/河条件构建候选，再按连通分量从最高侵蚀分数格向邻格生长有界斑块。总量同时受 `badlands_max_land_ratio`（默认 0.04）与 `badlands_max_arid_ratio`（默认 0.25）约束，单斑块受 `badlands_max_patch_cells`（默认 48）约束；未入选候选保持原 `DESERT/COLD_DESERT`。报告新增 `badlands_arid_source_count`、`badlands_candidate_count`、`badlands_candidate_components`、`badlands_selected_count`、`badlands_budget`、`badlands_budget_rejected`、`badlands_largest_component`，`qa_metrics` 同时发布陆地/干旱占比。
 
-**大地图河流密度自适应（2026-06-30）**：`river_channel_init_cells`、`river_headwater_init_cells`、`hydro_river_min_length` 仍保留 profile/UI 的相对密度语义，但 post-base C++ 会以 150×100（15000 cells，`ClimateProfile` 注释中的经验基准）为基准，只在更大地图上按 `pow(n_cells / 15000, 1.0)` 线性放大汇水格数阈值；短河最小长度按该 scale 的 1.0 次方放大（与河道阈值同步）。这样 200×150 不再用中图的固定 16 格汇水阈值切出过密支流，而会得到约 `river_channel_init_effective=32`、`river_headwater_init_effective=20`、`hydro_river_min_length_effective=10` 的有效值。`run_native_world_generate_post_base_pass` 返回 `river_map_scale` 与三个 effective/base 字段用于诊断；小于等于 15000 cells 的地图不降低阈值，旧手感保持不变。
+**大地图河流密度自适应（2026-06-30，2026-07-30 修订为双向）**：`river_channel_init_cells`、`river_headwater_init_cells`、`hydro_river_min_length` 仍保留 profile/UI 的相对密度语义，但 post-base C++ 会以 150×100（15000 cells，`ClimateProfile` 注释中的经验基准）为基准，按 `pow(n_cells / 15000, 1.0)` 线性缩放汇水格数阈值；短河最小长度按该 scale 的 1.0 次方缩放（与河道阈值同步）。这样 200×150 不再用中图的固定 16 格汇水阈值切出过密支流，而会得到约 `river_channel_init_effective=32`、`river_headwater_init_effective=20`、`hydro_river_min_length_effective=10` 的有效值。`run_native_world_generate_post_base_pass` 返回 `river_map_scale` 与三个 effective/base 字段用于诊断。**2026-07-30 修订**：原 `max(1.0, …)` clamp（"小于等于 15000 cells 的地图不降低阈值"）改为双向缩放（下限 0.25 仅防极端小图阈值归零）——诊断发现世界是固定大小的行星（噪声在归一化圆柱坐标采样，经度恒 2π、纬度恒 [0,1]），同源点汇流格数 ∝ N，旧 clamp 使小图（如 64×100=6400 cells）阈值相对流域面积偏高 ~2.3×，支流发不出来，"小图河稀"反衬出"大图河多"；双向缩放后任意分辨率河网物理密度一致。
+
+**生成期分辨率归一（scale-fix，2026-07-30）**：根因——世界是**固定大小的行星**：base/post_base 全部噪声在归一化圆柱坐标采样（`lon=col/width`、`ny=row/height`，经度恒跨 2π、纬度恒跨 [0,1]），与格数无关；改变地图尺寸不是"更大的世界"而是"同一世界的更密采样"，1 格的物理尺寸 ∝ 1/√N。凡"以格数标定的物理距离/比率"参数都必须随分辨率换算，否则同一星球在不同分辨率下气候/地貌系统性漂移（实测：150×200 大陆腹地因湿度场崩缩几乎全沙漠、河流反衬性偏多、山体采样更完整显得更高）。基准为 15000 cells（150×100，`ClimateProfile` 调参基准），线性分辨率比 `s = sqrt(max(0.0625, N/15000))`。四处修复（均在 `world_ext_generate.cpp` 内部，无绑定/接口改动）：
+
+1. **湿度模型格距归一（base pass）**：`coastal_temp_scale`、`moisture_coastal_scale`、副热带干旱带 interior 饱和距离（`dd/8` 的 8）×s；每格保留率类换成每物理距离保留率 `(1-r)^(1/s)`——`moisture_rainout_base`、`moisture_continental_dry`（纬向平流湿气每格 `×(1-rainout)×(1-dry)` 的指数衰减此前随穿越格数无限叠加，是"大图内陆全沙漠"的主因）；加性 `moisture_wind_evap` ÷s（cap 饱和使长距离海上穿越本就不敏感）。地形增雨 `upslope×gain` 刻意不动：相邻格 ΔE 自带 1/s，与"坡面格数 ∝ s"相消天然自洽。`moisture_land_base`/噪声幅度/湿度地板值是湿度量纲不是距离，不动。诊断输出 `hydro_dist_scale` + 各 `*_effective` 字段。
+2. **雨影探针距离（post_base）**：`rain_shadow_lookback` ×s 取整（0 仍是"关闭雨影"语义），保持雨影物理到达距离恒定。注：**运行期**季节雨影（`climate_daily_system.pb_rs_lookback` → `world_ext_climate.cpp`、runtime stage_1）仍传原始 profile 值，本次只归一生成期；如需运行期一致需另行处理。
+3. **RFLOW 归一化改基准等效流量（post_base）**：`flow_eq = flow × (15000/N)`——同源点汇流量 ∝ N（单位面积产流率 size-invariant × 流域格数 ∝ N）→ flow_eq 跨分辨率不变；min（≈channel-init 处流量 `river_threshold`）与 max（最大流域出口）同乘该系数后 log min-max 两端缩放一致，消除旧法"大图 log 区间更宽、中流归一流量系统性偏高 → 同一条河在大图偏宽"的不对称。等效流量保持 15000 格量级，log1p 动态压缩特性不变。下游 `PK_RIVER_INCISE` 下切、floodplain `RFLOW≥0.45`、河岸生态 `RFLOW≥0.55` 等全部 RFLOW 消费者自动变为分辨率无关。诊断输出 `flow_eq_scale`。
+4. **mountain/badlands relief 阈值缩放（post_base）**：`mountain_min_relief`、`badlands_min_relief` 按 `(15000/N)^k` 缩放（新增 profile knob `relief_thresh_scale_exp`，默认 0.5）——relief = 6 邻域高差 ∝ 1/s（固定世界细采样 → 相邻格高差天然更小），双向缩放（与 plateau 的 `min(1.0,…)^0.25` 不同：plateau 有面积占比上限当主控、阈值仅辅助；mountain/badlands 的阈值就是主门，必须自己跟踪物理采样密度）。`peak_min_prominence` 维持不缩（PEAK 有 `land/120` 数量上限主控）。诊断输出 `gen_dist_scale`、`relief_thresh_scale`、`mountain_min_relief_effective`、`badlands_min_relief_effective`。
 
 **大地图高原密度控制（2026-06-30，density-fix）**：诊断发现 PLATEAU 是唯一没有密度上限的特征地貌（PEAK 按 `land/120` 限量、RIFT 按 `land/140` 限量，唯独 PLATEAU 所有满足阈值的平坦中高海拔区全部标记），导致大地图上高原铺满。修复为四层：(1) 新增 `plateau_max_land_ratio`（默认 0.25）面积占比上限——post_base 在高原标记+山地降级完成后，按连通分量面积从大到小累计，保留至 `land × ratio` 为止，较小连通分量整体降级为 HILL（保留大高原、清理碎片）；(2) `plateau_max_relief` 按 `pow(15000/N, 0.25)` 随大地图收紧——精细 cell 采样使 per-cell relief 自然变小（同梯度高分辨率采样→更小逐格高差），固定阈值会放过过多候选，故按此因子收紧（N≤15000 时 scale=1.0 不变）；(3) `plateau_min_land_h` 默认 0.25→0.35，收紧下界排除低地"伪高原"（原区间 `land_h∈[0.25,0.90]` 对应 `E∈[0.565,0.942]` 覆盖陆地大部分中高段）；(4) `PK_PLATFORM_UNDULATE` 0.03→0.04，略增大陆地台起伏，减少完美平坦的中等海拔区。配套河流侧：`river_headwater_init_cells` 默认 6→10，减少用更低阈值主动 trace 的支流补充。`stage_counts` 新增 `plateau_demoted_to_hill` 计数。
 
@@ -153,6 +160,20 @@ C++ 入口：
 - `encode_bake_upwelling_tex_data`：F6 debug upwelling 纹理，读取已绑定 SoA 的 `cell_terrain` 和 `cell_upwelling_strength`，通过 pixel→cell index 表编码 L8；未 bind 时保留 GDScript debug fallback。
 
 GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.update`、新尺寸 `ImageTexture.create_from_image`。因此 C++ 迁移目标是消除 CPU 字节循环，不把 Godot 渲染对象生命周期迁入 native。`patch_enum_atlas_axes` 已统一为当前 map-index RGBA8 契约：只 patch `R=biome`，不再把 vegetation/cover 写入 G/B；vegetation/cover 变化只更新 per-cell LUT/buffer，不触发 map-index atlas upload。
+
+### 高分视觉 Tile 静态链路（2026-07-30）
+
+`MapBaker._bake_visual_tiles()` 在全局几何基线完成后解析 `VisualTileLayout`，复用一次构造的
+cell SoA 和全局 height/flow/water buffers，逐层调用
+`run_bake_visual_tile_layer_pass`。C++ 返回 height、normal、map-index、flow、water-depth、
+detail 和 edge 两字段的 byte bundle/hash；每层立即上传到 `Texture2DArray` 并释放 staging，
+不创建高分 `pixel_to_cell_lookup` 或 CSR。静态全层成功后才发布 `WorldData.visual_tiles.ready`。
+
+随后 `VisualTileHorizonBaker` 用 RenderingDevice 构建跨 layer max-height pyramid，并以 8 方向
+hierarchical trace 生成 nibble-packed horizon。compute 失败时
+`run_resample_visual_horizon_layer_pass` 把全局 horizon 重采样为相同布局；任一静态字段失败则
+整个世界回退 legacy。完整字段、寻址、预算、diagnostic 和验证契约见
+[Visual Tile Rendering](./visual-tile-rendering.md)。
 
 ## Terrain-index bake pass（生成期权威主归属 + 独立视觉边界场）
 
@@ -2351,8 +2372,9 @@ Chunked MultiMesh 路径：
 - `HexRenderer.detail_scatter_chunked_multimesh_enabled=true` 时，每个 `ShrubLayer` 以固定 offset-grid chunk（默认 `detail_scatter_chunk_size_cells=8`）维护 `chunk_id -> MultiMeshInstance2D`。
 - 全量 rebuild 成功路径为 `gdext_chunked`：`encode_detail_scatter` 返回整层 buffer 后 GDScript 按 `cell_indices` 拆分到 chunk MultiMesh。
 - succession event refresh 路径为 `gdext_event_chunk`：dirty cells 先聚合为 dirty chunks，每个 dirty chunk 只把 `sample_cell_indices`、MapData/WorldData packed arrays 和 profile knobs 传给 `encode_detail_scatter_delta`；C++ 内部完成 per-cell state/profile suitability 采样、attempts/color 派生和 scatter buffer 生成，GDScript 只替换对应 chunk 的 `multimesh.buffer`。
+- LOD 前缀排序同样下沉 encode（knob `lod_order_enabled` + `lod_near_density_multiplier`，SAME_SOURCE: `shrub_layer.gd::_lod_order_sources`）：C++ 在 buffer 组装前按 (cell_idx, seed) 排序、链式同 seed cluster（wrap 副本原子）+ 跨 cell rank 轮转排出远场前缀，返回 `lod_ordered=true` 与 `far_count`；`_apply_chunk_payload_direct` 收到后免 GDScript 排序、免整段 buffer 重排直接上传。旧 DLL / knob 关闭时透明回退 GDScript 复刻排序，两条路径语义同一契约（`tests/detail_scatter_lod_order_test.gd` 平价验证 far_count、远场前缀多重集与 wrap cluster 原子性）。A-B 开关：`ShrubLayer.native_lod_order_enabled`。
 - `HexRenderer` 将 dirty batch 预拆成 `(layer, chunk_id)` task，按 `detail_scatter_refresh_chunks_per_frame` 与 `detail_scatter_refresh_apply_budget_ms` 分帧提交；全局实例预算通过 `apply_visible_instance_fraction()` 分摊到每个 chunk 的 `visible_instance_count`。
-- 单 chunk apply 会复用既有 `MultiMesh`，并对 native delta 返回的单 chunk buffer 直接赋值，避免重新分配 `MultiMesh` 和再复制一遍 `buffer`。
+- 单 chunk apply 会复用既有 `MultiMesh`，并对 native delta 返回的单 chunk buffer 直接赋值（原生序直通时零重排拷贝），避免重新分配 `MultiMesh` 和再复制一遍 `buffer`。
 - 慢日志字段包含 `cells`、`chunks`、`sampled`、`active`、`water`、`ctx`、`knobs`、`native`、`apply`、`remaining`，预期 `[detail_scatter/SLOW_CHUNK]` 不再出现 dirty cells 累积到数百且单层 50ms+ 的全层 rebuild 模式；`sampled/active` 用于确认 native sampling 命中并区分“chunk 内采样 cell 数”和“真正参与散布的活跃 cell 数”。`water` 应主要由共享 offset-water cache 首次构建承担，后续 layer 应接近 0。
 
 输入 / 输出：
@@ -2646,7 +2668,7 @@ PKEC v22 或 state hash。
 每个 cell 按建筑组、输入候选、输出、岗位和资源边估算只读 work weight，再切成稳定连续
 range；building-plan evaluate 采用同一方式，把饱和、信用、恢复和利用率计数留在 task-local
 `BuildingPlanResult`，wait 后按 task id 归并。household market 的权重同时计入每市场固定商品
-扫描、cohort 和建筑组成本。三条路径统一受 `economy_worker_task_cap` 限制，默认 6；cap 只改变
+扫描、cohort 和建筑组成本。三条路径统一受 `economy_worker_task_cap` 限制，默认 12；cap 只改变
 执行分区，不改变 cell/group/market 顺序、归并顺序或权威数据。生产的
 `worker_weight_total/task_weight_min/task_weight_max/imbalance_q16_max/worker_cpu_ms`，
 plan 的 `building_plan_worker_*` 和 closing market audit 的 `audit_worker_*` 是 transient

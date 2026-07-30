@@ -53,7 +53,7 @@ ShoreSamples sample_shore_neighborhood(vec2 uv) {
 				continue;
 			}
 			vec2 suv = wrap_map_uv(uv + vec2(float(sx), float(sy)) * texel);
-			int sb = int(texture(map_index_atlas, suv).r * 255.0 + 0.5);
+			int sb = int(visual_sample_map_index(suv).r * 255.0 + 0.5);
 			bool sw = (sb == B_OCEAN) || (sb == B_COAST) || (sb == B_LAKE)
 					|| (sb == B_REEF)  || (sb == B_KELP)  || (sb == B_SEA_ICE);
 			s.nearby_water_cnt += sw ? 1.0 : 0.0;
@@ -144,5 +144,5 @@ float coast_water_coverage(vec2 uv) {
 	if (!has_water_depth_tex) {
 		return -1.0;
 	}
-	return texture(water_depth_tex, uv).r;
+	return visual_sample_water_depth(uv).r;
 }

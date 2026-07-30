@@ -37,6 +37,24 @@ func _run() -> void:
 				"%s %s exposes edge fallback gate" % [shader_path, label])
 			_expect(names.has("terrain_ecotone_width"),
 				"%s %s exposes shared transition width" % [shader_path, label])
+			var tiled_shader := Shader.new()
+			tiled_shader.code = "#define MAP_VISUAL_TILED\n" + String(variants[label]) + source
+			var tiled_uniforms := tiled_shader.get_shader_uniform_list()
+			var tiled_names := {}
+			for entry in tiled_uniforms:
+				tiled_names[String(entry.get("name", ""))] = true
+			_expect(not tiled_uniforms.is_empty(),
+				"%s %s tiled compiles" % [shader_path, label])
+			_expect(tiled_names.has("visual_map_index_tiles"),
+				"%s %s tiled exposes map-index array" % [shader_path, label])
+			_expect(tiled_names.has("visual_edge_neighbor_tiles"),
+				"%s %s tiled exposes edge-neighbor array" % [shader_path, label])
+			_expect(tiled_names.has("visual_edge_distance_tiles"),
+				"%s %s tiled exposes edge-distance array" % [shader_path, label])
+			_expect(not tiled_names.has("map_index_atlas"),
+				"%s %s tiled omits legacy map-index sampler" % [shader_path, label])
+			_expect(not tiled_names.has("terrain_edge_neighbor_tex"),
+				"%s %s tiled omits legacy edge sampler" % [shader_path, label])
 	await _validate_layer_binding()
 	print("=== overlay edge shader variants: %d checks, %d failures ===" % [
 		_checks, _failures])
