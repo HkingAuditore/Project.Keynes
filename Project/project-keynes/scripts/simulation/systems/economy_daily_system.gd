@@ -115,6 +115,10 @@ func tick(ctx) -> Dictionary:
 	elif executed_stage == "building_commit":
 		stage_breakdown_ms = result.get("building_commit_breakdown_ms", {})
 		stage_breakdown_work = result.get("building_commit_breakdown_work", {})
+	elif executed_stage == "household_market":
+		stage_breakdown_ms = result.get("household_market_breakdown_ms", {})
+		stage_breakdown_work = result.get(
+			"household_market_breakdown_work", {})
 	return {
 		"done": bool(result.get("done", true)),
 		"work_done": int(result.get("work_done", 0)),
@@ -174,6 +178,7 @@ func last_perf_report() -> Dictionary:
 		"processed_cohorts", "processed_building_groups", "worker_tasks",
 		"building_production_worker_tasks", "market_worker_tasks_max",
 			"market_worker_task_sum", "market_worker_dispatches",
+			"market_worker_parallel_dispatches",
 			"high_speed_batching_enabled", "high_speed_batch_multiplier",
 			"high_speed_market_dispatches_saved",
 			"high_speed_production_dispatches_saved",
@@ -218,6 +223,7 @@ func last_perf_report() -> Dictionary:
 		"last_completed_market_worker_tasks_max",
 		"last_completed_market_worker_task_sum",
 			"last_completed_market_worker_dispatches",
+			"last_completed_market_worker_parallel_dispatches",
 			"last_completed_high_speed_batch_multiplier",
 			"last_completed_high_speed_market_dispatches_saved",
 			"last_completed_high_speed_production_dispatches_saved",

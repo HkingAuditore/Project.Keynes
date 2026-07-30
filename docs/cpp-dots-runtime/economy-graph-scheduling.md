@@ -54,7 +54,7 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
 5. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
 6. `building_employment`：按周期开始时仍存活人口分配 owner/employee 岗位并计算合同工资。
 7. `building_production`：先算受就业/资金/资源约束的采购意图，再用本地输入库存得到实际产能；购买投入、生产并出售产出，分配基础工资/奖金，最后更新企业意图、实际出库、供给与成本信号。
-8. `household_market`：每天最多一个 cohort-budgeted market range，先保护 ACTIVE owner 下一周期投入现金，使用本期收入和新库存计算 N 日总需求/交易；自产食物可补足总生存热量池，再计算食品与气候衣着生存满足，以 Q32 residual 结算死亡，并按人数、满足率和职业/民族率聚合预期出生。全部 market 完成后，`income_subsidy` 有界子阶段在结构命令前按 cohort 汇总负所得税，以冻结 `survival_household` 生活成本托底税基并按本 cell 财政额度同比例支付。
+8. `household_market`：每天最多一个 cohort-budgeted market range，先保护 ACTIVE owner 下一周期投入现金，使用本期收入和新库存计算 N 日总需求/交易；自产食物可补足总生存热量池，再计算食品与气候衣着生存满足，以 Q32 residual 结算死亡，并按人数、满足率和职业/民族率聚合预期出生。worker 使用 thread-local landing buffer，主线程仍按稳定 market ID 合并；大世界并行不改变权威顺序。全部 market 完成后，`income_subsidy` 有界子阶段在结构命令前按 cohort 汇总负所得税，以冻结 `survival_household` 生活成本托底税基并按本 cell 财政额度同比例支付。每片可通过 `household_market_breakdown_ms/work` 区分 prepare、worker、aggregate/trade merge、trace、other 与四个收尾子阶段。
 9. `trade_dispatch`：在全部本地 household 清算完成后，ACTIVE 按本地需求/投入 reserve 稳定裁剪并
    托管发运；PROBE 只报告候选。
 10. `structural_commit`：稳定提交本轮结构 ECB；先处理死亡清空与迁移，最后把每个

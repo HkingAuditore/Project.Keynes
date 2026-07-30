@@ -795,6 +795,13 @@ continuation slice，并按本地清算后的库存目标再次裁剪。ACTIVE �
 不延迟旧本地市场 cadence，也不修改经济状态 hash。详见
 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
 
+`household_market` 的 rolling range 顺序仍由 `cell % 5` 与稳定 market ID 决定。大世界
+ACTIVE 结算使用 thread-local worker landing buffer，主线程按原顺序合并；并行只缩短 range
+内部公式计算，不新增依赖边或可见提交点。compact continuation report 以
+`household_market_breakdown_ms/work` 暴露 settle 的 prepare、worker、aggregate/trade merge、
+trace、other，以及四个收尾子阶段。多个确定性 chunk 可在同一 `slice_budget_ms` 内融合，但
+同一 market 只结算一次，五日 cadence 和 same-day catchup 语义不变。
+
 ## Economy rolling five-phase cadence (2026-07-20, current)
 
 `economy_daily` keeps C++ stage-state authority and production cadence is fixed

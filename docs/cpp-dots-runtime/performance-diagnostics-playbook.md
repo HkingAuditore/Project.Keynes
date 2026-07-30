@@ -1295,9 +1295,13 @@ epsilon 解决。`saturation_count>0` 表示输入规模/参数接近数值上�
 stage 判断：
 
 - `ledger_apply` 长：命令 range 太大，查 `processed_commands/pending_commands`。
-- `household_market` 长：比较 `processed_cohorts/needs/variants/components`、
-  `formula_ms/clear_ms/fallback_ms/merchant_settle_ms/price_ms` 与
-  `worker_tasks`；`worker_tasks=1` 可能是小 range 或 WTP 不可用。
+- `household_market` 长：先按当前片的 `household_market_breakdown_ms/work`
+  比较 `household_market.settle.prepare/worker/merge_aggregate/merge_trade/trace/other`；
+  非 settle 片再看 `post_buildings/reserve_shortfall/income_subsidy/structural_sort`。
+  worker 长时比较 `processed_cohorts/needs/variants/components`、
+  `formula_ms/clear_ms/fallback_ms/merchant_settle_ms/price_ms`。整轮实际并行次数看
+  `last_completed_market_worker_parallel_dispatches`；其为 0 时再检查 range 是否过小、
+  worker 是否启用及 WTP 是否可用，不能仅凭返回时的 `worker_tasks=1` 下结论。
 - `structural_commit` 长：迁移/转职/归零事件过多，查 ECB 来源，不能在此全局 compact。
 - `wait_commit`：计算已提前完成，正在等周期截止日；这是冻结结算隔离，不是卡死。
 - `aggregate_publish` 长：先确认 CSV 使用 `executed_stage` 而非返回后的 `stage/next_stage`。
@@ -1341,7 +1345,9 @@ stage 判断：
 - `household_market_merge_ms` 长：先比较
   `household_market_merge_aggregate_ms` 与 `household_market_merge_trade_ms`。前者是稳定提交和统计归并，
   后者包含 trade active-key/response-clock 维护。trade 占主导且新世界首轮尖峰时，检查是否仍在逐键
-  插入对齐诊断数组；正常路径应对本 market batch 做一次排序去重和稳定 bulk merge。
+  插入对齐诊断数组；正常路径应对本 market batch 做一次排序去重和稳定 bulk merge。定位单个
+  continuation 时优先使用 `household_market.settle.merge_aggregate/merge_trade`；累计
+  `household_market_merge_*` 是整轮指标，不应再次按片重复求和。
 - `building_investment_ms` 长且 `market_signal_insert_count` 高：比较
   `market_signal_insert_ms` 与 `market_signal_flush_ms`。当前 dense 世界只把已实际触发的 construction
   shortage 追加到 transient overflow，并在 investment phase 结束时一次稳定归并；
