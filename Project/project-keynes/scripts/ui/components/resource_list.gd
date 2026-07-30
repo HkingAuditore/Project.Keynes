@@ -1,6 +1,8 @@
 extends VBoxContainer
 class_name ResourceList
 
+signal details_requested(request: Dictionary)
+
 var _row_refs: Dictionary = {}
 
 
@@ -38,12 +40,21 @@ func _create_row(data: Dictionary) -> Dictionary:
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(panel)
 
+	var button := Button.new()
+	button.focus_mode = Control.FOCUS_NONE
+	button.text = ""
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.pressed.connect(func() -> void: details_requested.emit(
+		{"kind": "resource", "row_id": String(data.get("id", ""))}))
+	panel.add_child(button)
+
 	var margin := MarginContainer.new()
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
 	margin.add_theme_constant_override("margin_top", 3)
 	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
 	margin.add_theme_constant_override("margin_bottom", 3)
-	panel.add_child(margin)
+	button.add_child(margin)
 
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", UITokens.SPACE_SM)
@@ -83,6 +94,7 @@ func _create_row(data: Dictionary) -> Dictionary:
 
 	var refs := {
 		"panel": panel,
+		"button": button,
 		"icon": icon,
 		"name": name_label,
 		"density": density_label,

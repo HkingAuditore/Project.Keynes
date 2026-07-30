@@ -192,3 +192,6 @@ and then advances the restored runtime through at least one complete five-phase
 economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtension builds; and
 desktop/narrow UI checks.
 For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
+
+Save flow includes optional `PKTR` after journal/domain state. Missing PKTR in older
+saves migrates to an empty trigger state; incompatible catalog hashes reject restore.

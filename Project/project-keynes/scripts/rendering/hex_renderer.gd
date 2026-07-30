@@ -4,6 +4,8 @@ class_name HexRenderer
 extends Node2D
 
 const TERRAIN_MICRO_TEXTURE: Texture2D = preload("res://assets/textures/terrain_micro_data.png")
+const VisualTileHorizonBakerScript = preload(
+	"res://scripts/rendering/visual_tile_horizon_baker.gd")
 
 @export var hex_size: float = 22.0:
 	set(v):
@@ -228,6 +230,15 @@ var _wind_strength: float = 0.15
 @export_range(2, 32, 1) var detail_scatter_chunk_size_cells: int = 8
 @export var detail_scatter_refresh_chunks_per_frame: int = 4
 @export_range(0.0, 20.0, 0.25) var detail_scatter_refresh_apply_budget_ms: float = 4.0
+# 入队节流：succession 单元先并入去重累积器，按真实时间窗成批入队。高倍速下
+# 跨多天翻转的单元只重建一次，批次数不再随天数线性增长；低速下窗口 < 一日，
+# 延迟不可感知。0 表示逐次直通（旧行为）。
+@export_range(0.0, 1000.0, 10.0) var detail_scatter_enqueue_coalesce_ms: float = 120.0
+# 累积器硬上限：超过即提前冲刷，防止无限堆积。
+@export_range(64, 8192, 64) var detail_scatter_enqueue_max_pending_cells: int = 1024
+# 积压兜底：待处理批次数超过该阈值时，存量批次与新单元整体去重合并后重新切批，
+# 避免同一 chunk 在多个批次里被反复重建的复利积压。
+@export_range(2, 64, 1) var detail_scatter_merge_batch_threshold: int = 8
 @export var detail_scatter_refresh_log_enabled: bool = true
 @export var detail_scatter_rebuild_log_enabled: bool = true
 @export_range(0.0, 100.0, 0.25) var detail_scatter_slow_layer_ms: float = 2.0
@@ -367,11 +378,19 @@ var _detail_refresh_queue: Array = []
 var _detail_refresh_indices: PackedInt32Array = PackedInt32Array()
 var _detail_refresh_batches: Array = []
 var _last_detail_refresh_report: Dictionary = {}
+# 入队节流/合并状态：跨日去重累积器 + 上次冲刷时刻。
+var _scatter_pending_cells: PackedInt32Array = PackedInt32Array()
+var _scatter_pending_seen: Dictionary = {}
+var _scatter_last_enqueue_msec: int = 0
+# drain 信用制预算：每帧累积 apply_budget（上限 2×），chunk 按实测成本扣减。
+var _drain_credit_ms: float = 0.0
 var _last_detail_budget_report: Dictionary = {}
 # C++ DCWorldExt 引用，转发给每个散布层做 native 生成。
 var _world_ext = null
 var _map: MapData = null
 var _world: WorldData = null
+var _visual_tile_horizon_baker = null
+var _visual_tile_horizon_world: WorldData = null
 var _camera_zoom: float = 1.0
 
 # Phase 1：季节状态（每帧/每天由 WorldClock 推送）
@@ -463,6 +482,13 @@ class PerfSampler:
 		)
 
 var _perf_sampler: PerfSampler = null
+# 帧尾诊断：最近一帧 _drain_detail_refresh_queue 墙钟（毫秒）。tick 日触发的
+# 植被 succession 刷新在帧尾 drain，成本逐帧计入 perf 的 tail_vegetation_ms 列。
+var _last_detail_drain_ms: float = 0.0
+
+
+func get_last_detail_drain_ms() -> float:
+	return _last_detail_drain_ms
 
 func _ready() -> void:
 	# [parallax-rain] 初始化俯视角度
@@ -515,7 +541,9 @@ func _process(delta: float) -> void:
 		layer.set_world_time(_world_time)
 		layer.set_wind_field(_detail_wind_dir, wind_boost)
 	)
+	var drain_started_usec := Time.get_ticks_usec()
 	_drain_detail_refresh_queue()
+	_last_detail_drain_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
 	if _season_transition_mat != null:
 		_season_transition_mat.set_shader_parameter("world_time", _world_time)
 		_update_season_transition()
@@ -558,7 +586,7 @@ func _load_shader() -> void:
 		_world_quad.material = null
 		return
 	_shader_mat = ShaderMaterial.new()
-	_shader_mat.shader = fallback_shader
+	_shader_mat.shader = _apply_shader_variant_prefix(fallback_shader, shader_path)
 	_world_quad.material = _shader_mat
 	_active_shader_source_path = shader_path
 	_refresh_shader_hot_reload_baseline()
@@ -577,16 +605,30 @@ func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader:
 	# Mobile quality tier 编译时变体（2026-06-15）：移动端 prepend #define MOBILE_QUALITY_*
 	# 让 GPU 编译三种独立 shader 二进制（GPU warp 不再为所有 if 分支保留 register）。
 	# tier 由 main.gd::_mobile_shader_quality_tier_for_define() 推送（onready 时机）。
+	return _apply_shader_variant_prefix(shader, source_path)
+
+
+func _visual_tiles_active() -> bool:
+	return _world != null and _world.visual_tiles != null \
+		and bool(_world.visual_tiles.ready) \
+		and String(_world.visual_tiles.layout.mode) == "tiled"
+
+
+func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader:
+	if shader == null:
+		return null
+	var prefix := ""
+	if _visual_tiles_active():
+		prefix += "#define MAP_VISUAL_TILED\n"
 	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
-		var src: String = shader.code
-		# 检查是否已经 prepend 过（避免热重载重复加）
-		if not src.begins_with("#define"):
-			shader = shader.duplicate() as Shader
-			shader.code = "%s%s" % [_shader_quality_define_prefix(_mobile_quality_tier_define), src]
-			print("[hex_renderer/quality] prepended #define %s to %s" % [
-				_mobile_quality_tier_define, source_path
-			])
-	return shader
+		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	if prefix.is_empty():
+		return shader
+	var variant := shader.duplicate() as Shader
+	variant.code = prefix + shader.code
+	print("[hex_renderer/variant] tiled=%s quality=%s shader=%s" % [
+		_visual_tiles_active(), _mobile_quality_tier_define, source_path])
+	return variant
 
 
 # Mobile shader quality tier（2026-06-15）：由 main.gd::_push_visual_toggles 推过来。
@@ -647,7 +689,24 @@ func _for_each_vegetation_layer(callable: Callable) -> void:
 func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
 	if indices.is_empty() or _detail_layers.is_empty():
 		return
-	_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(indices))
+	for raw in indices:
+		var ci := int(raw)
+		if ci < 0 or _scatter_pending_seen.has(ci):
+			continue
+		_scatter_pending_seen[ci] = true
+		_scatter_pending_cells.append(ci)
+	var now_msec := Time.get_ticks_msec()
+	var window_due := _scatter_last_enqueue_msec <= 0 or \
+		float(now_msec - _scatter_last_enqueue_msec) >= maxf(0.0, detail_scatter_enqueue_coalesce_ms)
+	if not window_due and _scatter_pending_cells.size() < detail_scatter_enqueue_max_pending_cells:
+		return
+	_scatter_last_enqueue_msec = now_msec
+	var flushed := _scatter_pending_cells
+	_scatter_pending_cells = PackedInt32Array()
+	_scatter_pending_seen.clear()
+	if _detail_refresh_batches.size() >= maxi(2, detail_scatter_merge_batch_threshold):
+		flushed = _merge_pending_detail_refresh_batches(flushed)
+	_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(flushed))
 	if _detail_refresh_queue.is_empty():
 		_start_next_detail_refresh_batch()
 	_last_detail_refresh_report = {
@@ -697,6 +756,28 @@ func _enqueue_detail_refresh_batches(indices: PackedInt32Array) -> void:
 		_detail_refresh_batches.append(current)
 
 
+# 积压合并：把待处理批次与新单元整体去重后返回一条流，调用方负责重新切批。
+# 已在 chunk 队列中的批次不动（本批即将 drain 完）。
+func _merge_pending_detail_refresh_batches(extra: PackedInt32Array) -> PackedInt32Array:
+	var seen := {}
+	var merged := PackedInt32Array()
+	for batch in _detail_refresh_batches:
+		for raw in batch:
+			var ci := int(raw)
+			if seen.has(ci):
+				continue
+			seen[ci] = true
+			merged.append(ci)
+	for raw in extra:
+		var ci := int(raw)
+		if seen.has(ci):
+			continue
+		seen[ci] = true
+		merged.append(ci)
+	_detail_refresh_batches.clear()
+	return merged
+
+
 func _start_next_detail_refresh_batch() -> bool:
 	if not _detail_refresh_queue.is_empty():
 		return true
@@ -744,12 +825,22 @@ func _drain_detail_refresh_queue() -> void:
 		return
 	var chunk_budget := maxi(1, detail_scatter_refresh_chunks_per_frame)
 	var ms_budget := maxf(0.0, detail_scatter_refresh_apply_budget_ms)
+	# 信用制预算：每帧累积 ms_budget（上限 2× 防暴饮暴食），chunk 启动要求信用
+	# 为正、完成后按实测成本扣减（允许透支为负，最贵的 chunk 也能推进、不饿死）。
+	# 旧语义只拦第二个 chunk，首 chunk 不受预算约束：单 chunk 超预算时每帧都全
+	# 额超支；信用制把平均每帧 drain 成本硬封顶在 ms_budget，与单 chunk 成本无关。
+	if ms_budget > 0.0:
+		_drain_credit_ms = minf(_drain_credit_ms + ms_budget, ms_budget * 2.0)
 	var done := 0
 	var t0 := Time.get_ticks_usec()
 	while done < chunk_budget and not _detail_refresh_queue.is_empty():
-		if ms_budget > 0.0 and done > 0 and float(Time.get_ticks_usec() - t0) / 1000.0 >= ms_budget:
-			break
+		if ms_budget > 0.0:
+			if _drain_credit_ms <= 0.0:
+				break
+			if done > 0 and float(Time.get_ticks_usec() - t0) / 1000.0 >= ms_budget:
+				break
 		var task: Dictionary = _detail_refresh_queue.pop_front()
+		var task_t0 := Time.get_ticks_usec()
 		var layer = task.get("layer", null)
 		if layer != null and is_instance_valid(layer):
 			var layer_t0 := Time.get_ticks_usec()
@@ -783,11 +874,13 @@ func _drain_detail_refresh_queue() -> void:
 						float(d.get("native_call_ms", 0.0)),
 						float(d.get("native_apply_ms", 0.0)),
 						_detail_refresh_queue.size(),
-						int(d.get("missing_slots", 0)),
-						int(d.get("dropped_instances", 0)),
-						str(d.get("reason", "")),
-					])
-			done += 1
+					int(d.get("missing_slots", 0)),
+					int(d.get("dropped_instances", 0)),
+					str(d.get("reason", "")),
+				])
+		done += 1
+		if ms_budget > 0.0:
+			_drain_credit_ms -= float(Time.get_ticks_usec() - task_t0) / 1000.0
 	var elapsed := float(Time.get_ticks_usec() - t0) / 1000.0
 	_last_detail_refresh_report["chunks_done"] = int(_last_detail_refresh_report.get("chunks_done", 0)) + done
 	_last_detail_refresh_report["layers_done"] = int(_last_detail_refresh_report.get("chunks_done", 0))
@@ -1034,6 +1127,8 @@ func _file_modified_time(path: String) -> int:
 
 func set_map(map: MapData, world: WorldData = null) -> void:
 	var replacing_world := _world != null and world != null and _world != world
+	if replacing_world and _visual_tile_horizon_baker != null:
+		_visual_tile_horizon_baker.cancel()
 	_map = map
 	_world = world
 	if _weather_layer != null and _weather_layer.has_method("set_world_ref"):
@@ -1301,7 +1396,12 @@ var _horizon_bake_world: WorldData = null
 var _horizon_bake_waited: int = 0
 
 func _maybe_bake_terrain_horizon_gpu() -> void:
-	if _world == null or not _world.terrain_horizon_gpu_pending:
+	if _world == null:
+		return
+	if _visual_tiles_active() and not bool(_world.visual_tiles.horizon_ready):
+		_start_visual_tile_horizon_bake(_world)
+		return
+	if not _world.terrain_horizon_gpu_pending:
 		return
 	if _world.height_tex == null or _world.hm_size.x <= 0 or _world.hm_size.y <= 0:
 		print("[terrain_horizon] GPU bake skipped: height_tex=%s hm_size=%s" % [
@@ -1313,6 +1413,169 @@ func _maybe_bake_terrain_horizon_gpu() -> void:
 	_world.terrain_horizon_gpu_pending = false   # 防重入（regenerate 会重新置位）
 	print("[terrain_horizon] GPU bake start: hm_size=%s params=%s" % [str(_world.hm_size), str(params)])
 	_start_terrain_horizon_bake(_world, params)
+
+
+func _start_visual_tile_horizon_bake(world: WorldData) -> void:
+	if world == null or world.visual_tiles == null or world.visual_tiles.layout == null:
+		return
+	if _visual_tile_horizon_baker != null:
+		_visual_tile_horizon_baker.cancel()
+	var tiles = world.visual_tiles
+	var generation_id := int(tiles.layout.generation_id)
+	_visual_tile_horizon_baker = VisualTileHorizonBakerScript.new()
+	_visual_tile_horizon_world = world
+	_visual_tile_horizon_baker.completed.connect(
+		func(success: bool, report: Dictionary) -> void:
+			_on_visual_tile_horizon_completed(world, generation_id, success, report),
+		CONNECT_ONE_SHOT)
+	var params := world.terrain_horizon_gpu_params.duplicate(true)
+	params["max_iterations"] = int(ProjectSettings.get_setting(
+		"project_keynes/rendering/map_tiles/horizon_max_iterations", 2048))
+	world.terrain_horizon_gpu_pending = false
+	print("[visual-tiles/horizon] compute start generation=%d layers=%d" % [
+		generation_id, int(tiles.layout.layer_count)])
+	_visual_tile_horizon_baker.start(tiles, generation_id, params)
+
+
+func _on_visual_tile_horizon_completed(world: WorldData, generation_id: int,
+		success: bool, report: Dictionary) -> void:
+	if world == null or world.visual_tiles == null \
+			or int(world.visual_tiles.layout.generation_id) != generation_id:
+		return
+	if success:
+		_publish_visual_tile_horizon(world, report)
+		return
+	push_warning("[visual-tiles/horizon] compute failed (%s); using native baseline resample" %
+		String(report.get("reason", "unknown")))
+	_run_visual_tile_horizon_fallback(world, generation_id, report)
+
+
+func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
+		compute_report: Dictionary) -> void:
+	var tiles = world.visual_tiles
+	if _world_ext == null or not _world_ext.has_method("encode_bake_horizon_tex_data") \
+			or not _world_ext.has_method("run_resample_visual_horizon_layer_pass"):
+		_record_visual_tile_horizon_failure(world, "native_fallback_method_missing", compute_report)
+		return
+	var params := world.terrain_horizon_gpu_params
+	var source_data := PackedByteArray()
+	var source_path := "existing_global_horizon"
+	var source_ms := 0.0
+	if world.terrain_horizon_tex != null:
+		var source_image := world.terrain_horizon_tex.get_image()
+		if source_image != null:
+			if source_image.get_format() != Image.FORMAT_RGBA8:
+				source_image.convert(Image.FORMAT_RGBA8)
+			source_data = source_image.get_data()
+	if source_data.size() != world.hm_size.x * world.hm_size.y * 4:
+		source_path = "native_global_horizon"
+		var source_result: Dictionary = _world_ext.encode_bake_horizon_tex_data({
+			"height_buffer": world.height_buffer,
+			"width": world.hm_size.x,
+			"height": world.hm_size.y,
+			"world_size_x": world.world_bounds.size.x,
+			"world_size_y": world.world_bounds.size.y,
+			"wrap_x": world.wrap_period_x > 0.0001,
+			"wrap_period_x": world.wrap_period_x,
+			"steps": int(params.get("steps", 128)),
+			"step_px": float(params.get("step_px", 8.0)),
+			"max_horizon_angle": float(params.get("max_horizon_angle", 1.309)),
+			"bias": float(params.get("bias", 0.004)),
+			"height_world_scale": float(params.get("height_world_scale", 176.0)),
+		})
+		if bool(source_result.get("fallback", true)):
+			_record_visual_tile_horizon_failure(world,
+				"baseline_horizon_failed:%s" % String(source_result.get("reason", "unknown")),
+				compute_report)
+			return
+		source_data = source_result.get("data", PackedByteArray())
+		source_ms = float(source_result.get("elapsed_ms", 0.0))
+		if source_data.size() == world.hm_size.x * world.hm_size.y * 4:
+			world.terrain_horizon_tex = ImageTexture.create_from_image(Image.create_from_data(
+				world.hm_size.x, world.hm_size.y, false, Image.FORMAT_RGBA8, source_data))
+	if source_data.size() != world.hm_size.x * world.hm_size.y * 4:
+		_record_visual_tile_horizon_failure(world, "baseline_horizon_size_mismatch", compute_report)
+		return
+
+	var layout = tiles.layout
+	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
+	var layer_reports: Array[Dictionary] = []
+	var fallback_t0 := Time.get_ticks_usec()
+	for layer_id in range(layout.layer_count):
+		if _world != world or world.visual_tiles != tiles \
+				or int(layout.generation_id) != generation_id:
+			return
+		var tile_xy := Vector2i(layer_id % layout.grid_size.x,
+			layer_id / layout.grid_size.x)
+		var physical_origin: Vector2 = layout.visual_domain.position + Vector2(
+			tile_xy.x * layout.interior_size.x - layout.gutter_px,
+			tile_xy.y * layout.interior_size.y - layout.gutter_px) * texel_world
+		var result: Dictionary = _world_ext.run_resample_visual_horizon_layer_pass({
+			"generation_id": generation_id,
+			"layer_id": layer_id,
+			"source_data": source_data,
+			"source_width": world.hm_size.x,
+			"source_height": world.hm_size.y,
+			"source_origin_x": world.world_bounds.position.x,
+			"source_origin_y": world.world_bounds.position.y,
+			"source_size_x": world.world_bounds.size.x,
+			"source_size_y": world.world_bounds.size.y,
+			"width": layout.layer_size.x,
+			"height": layout.layer_size.y,
+			"origin_x": physical_origin.x,
+			"origin_y": physical_origin.y,
+			"size_x": layout.layer_size.x * texel_world.x,
+			"size_y": layout.layer_size.y * texel_world.y,
+			"wrap_period_x": layout.wrap_period_x,
+		})
+		if bool(result.get("fallback", true)) or int(result.get("generation_id", -1)) != generation_id \
+				or not tiles.upload_horizon_layer(layer_id,
+					result.get("data", PackedByteArray())):
+			_record_visual_tile_horizon_failure(world,
+				"resample_layer_failed:%d:%s" % [layer_id, String(result.get("reason", "upload"))],
+				compute_report)
+			return
+		layer_reports.append({
+			"layer": layer_id,
+			"elapsed_ms": float(result.get("elapsed_ms", 0.0)),
+			"hash": result.get("hash", 0),
+		})
+		var tree := Engine.get_main_loop() as SceneTree
+		if tree != null:
+			await tree.process_frame
+	_publish_visual_tile_horizon(world, {
+		"ok": true,
+		"path": "baseline_horizon_resample",
+		"source_path": source_path,
+		"source_ms": source_ms,
+		"layers": layer_reports,
+		"compute_failure": compute_report,
+		"total_ms": float(Time.get_ticks_usec() - fallback_t0) / 1000.0,
+	})
+
+
+func _publish_visual_tile_horizon(world: WorldData, report: Dictionary) -> void:
+	if world == null or world.visual_tiles == null:
+		return
+	world.visual_tiles.horizon_ready = true
+	world.visual_tiles.bake_report["horizon_path"] = report.get("path", "unknown")
+	world.visual_tiles.bake_report["horizon"] = report
+	if _world == world:
+		_apply_uniforms()
+	print("[visual-tiles/horizon] published %s" % JSON.stringify(report))
+
+
+func _record_visual_tile_horizon_failure(world: WorldData, reason: String,
+		compute_report: Dictionary) -> void:
+	if world != null and world.visual_tiles != null:
+		world.visual_tiles.horizon_ready = false
+		world.visual_tiles.bake_report["horizon_path"] = "neutral_failed"
+		world.visual_tiles.bake_report["horizon"] = {
+			"ok": false,
+			"reason": reason,
+			"compute_failure": compute_report,
+		}
+	push_warning("[visual-tiles/horizon] fallback failed: %s" % reason)
 
 func _start_terrain_horizon_bake(world: WorldData, params: Dictionary) -> void:
 	var shader: Shader = load(_HORIZON_BAKE_SHADER_PATH)
@@ -2028,37 +2291,72 @@ func _build_world_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
 
+func _push_visual_tile_layout_uniforms(material: ShaderMaterial, layout) -> void:
+	material.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
+	material.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
+	material.set_shader_parameter("visual_grid_size", Vector2(layout.grid_size))
+	material.set_shader_parameter("visual_interior_size", Vector2(layout.interior_size))
+	material.set_shader_parameter("visual_layer_size", Vector2(layout.layer_size))
+	material.set_shader_parameter("visual_logical_resolution", Vector2(layout.logical_size))
+	material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
+
+
 func _apply_uniforms() -> void:
 	var sm := _shader_mat
 	var bounds := _world.world_bounds
+	var tiled := _visual_tiles_active()
+	var visual_tiles = _world.visual_tiles if tiled else null
 
 	# 主地图只保留 height/enum + cell-index LUT + 共享 noise_tex。
-	sm.set_shader_parameter("height_tex",   _world.height_tex)
+	if tiled:
+		sm.set_shader_parameter("visual_height_tiles", visual_tiles.height)
+		sm.set_shader_parameter("visual_terrain_normal_tiles", visual_tiles.terrain_normal)
+		sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
+		sm.set_shader_parameter("visual_map_index_tiles", visual_tiles.map_index)
+		sm.set_shader_parameter("visual_flow_tiles", visual_tiles.flow)
+		sm.set_shader_parameter("visual_water_depth_tiles", visual_tiles.water_depth)
+		sm.set_shader_parameter("visual_terrain_detail_tiles", visual_tiles.terrain_detail)
+		sm.set_shader_parameter("visual_edge_neighbor_tiles", visual_tiles.edge_neighbor)
+		sm.set_shader_parameter("visual_edge_distance_tiles", visual_tiles.edge_distance)
+		_push_visual_tile_layout_uniforms(sm, visual_tiles.layout)
+	else:
+		sm.set_shader_parameter("height_tex", _world.height_tex)
 	# [terrain-normal-bake 2026-06-25] 总体地形法线贴图（粗法线）。绑定后 shader 用它做宏观山脉
 	# 走向；未绑定时 terrain_normal_tex_bound=false，shader 回退到运行期宽半径 4-tap。
-	sm.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
-	sm.set_shader_parameter("terrain_normal_tex_bound", _world.terrain_normal_tex != null)
+	if not tiled:
+		sm.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
+	sm.set_shader_parameter("terrain_normal_tex_bound",
+		visual_tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
 	# [terrain-horizon 2026-07-03] 8 方向 horizon angle：运行期只遮蔽直射光；未绑定/低档自动回退。
-	sm.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
-	sm.set_shader_parameter("terrain_horizon_tex_bound", _world.terrain_horizon_tex != null)
-	sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
+	if not tiled:
+		sm.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
+	sm.set_shader_parameter("terrain_horizon_tex_bound",
+		bool(visual_tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
+	if not tiled:
+		sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	# [river-render-restore 2026-06-19] 河流 SDF 纹理重新接回主地图 shader（flow 视觉层）。
-	sm.set_shader_parameter("flow_tex",     _world.flow_tex)
+	if not tiled:
+		sm.set_shader_parameter("flow_tex", _world.flow_tex)
 	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8：绑定后 shader 每水像素 1 次采样取代旧"海洋 5×5
 	# height 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算；未绑定时 has_water_depth_tex=false →
 	# water_pipeline 回退旧逐邻域算法。
-	sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
-	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
+	if not tiled:
+		sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
+	sm.set_shader_parameter("has_water_depth_tex",
+		visual_tiles.water_depth != null if tiled else _world.water_depth_tex != null)
 	# [terrain-detail-bake 2026-07-05] 静态 biome 细节调制：移动端中/高档和桌面中档用单次采样替代多噪声。
-	sm.set_shader_parameter("terrain_detail_tex", _world.terrain_detail_tex)
-	sm.set_shader_parameter("has_terrain_detail_tex", _world.terrain_detail_tex != null)
+	if not tiled:
+		sm.set_shader_parameter("terrain_detail_tex", _world.terrain_detail_tex)
+	sm.set_shader_parameter("has_terrain_detail_tex",
+		visual_tiles.terrain_detail != null if tiled else _world.terrain_detail_tex != null)
 	var edge_data_ready := (
 		_world.terrain_edge_neighbor_tex != null
 		and _world.terrain_edge_distance_tex != null
 	)
-	sm.set_shader_parameter("terrain_edge_neighbor_tex", _world.terrain_edge_neighbor_tex)
-	sm.set_shader_parameter("terrain_edge_distance_tex", _world.terrain_edge_distance_tex)
-	sm.set_shader_parameter("has_terrain_edge_data", edge_data_ready)
+	if not tiled:
+		sm.set_shader_parameter("terrain_edge_neighbor_tex", _world.terrain_edge_neighbor_tex)
+		sm.set_shader_parameter("terrain_edge_distance_tex", _world.terrain_edge_distance_tex)
+	sm.set_shader_parameter("has_terrain_edge_data", true if tiled else edge_data_ready)
 	sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
 	sm.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
 	sm.set_shader_parameter("terrain_micro_tex", TERRAIN_MICRO_TEXTURE)
@@ -2092,8 +2390,11 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("world_size", bounds.size)
 	sm.set_shader_parameter("wrap_origin_x", 0.0)
 	sm.set_shader_parameter("wrap_period_x", _wrap_period_x())
-	sm.set_shader_parameter("hm_resolution", Vector2(_world.hm_size.x, _world.hm_size.y))
-	sm.set_shader_parameter("derived_resolution", Vector2(_world.derived_size.x, _world.derived_size.y))
+	var visual_resolution := Vector2(visual_tiles.layout.logical_size) if tiled \
+		else Vector2(_world.hm_size.x, _world.hm_size.y)
+	sm.set_shader_parameter("hm_resolution", visual_resolution)
+	sm.set_shader_parameter("derived_resolution", visual_resolution if tiled \
+		else Vector2(_world.derived_size.x, _world.derived_size.y))
 	sm.set_shader_parameter("sea_level", _world.sea_level)
 
 	sm.set_shader_parameter("season_phase", _season_phase)
@@ -2182,6 +2483,7 @@ func _apply_uniforms() -> void:
 
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
+		_weather_layer.set_visual_tiles(_world.visual_tiles if tiled else null)
 		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size, _world.weather_lut_tex, _world.lut_dims, _wrap_period_x(), _map)
 		# [cylindrical-earth-daylight] 云光照真源相位：与 ShrubLayer spawn 同套，setup 后补推一次，
 		# 之后由 set_day_phase / set_season_phase 增量刷新（晨昏线随时间扫过）。
@@ -2202,6 +2504,7 @@ func _apply_uniforms() -> void:
 		_border_layer.set_hex_size(hex_size)
 		_border_layer.set_horizontal_wrap(_wrap_period_x())
 	if _fog_layer != null:
+		_fog_layer.set_visual_tiles(_world.visual_tiles if tiled else null)
 		_fog_layer.setup(bounds, _world.enum_atlas_tex, _world.lut_dims, hex_size, _wrap_period_x())
 		_fog_layer.set_enum_lut_texture(_world.enum_lut_tex)
 		# [cylindrical-earth-daylight] 迷雾云的 TOD 光照与天气云同源，setup 后补推

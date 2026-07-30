@@ -36,9 +36,11 @@ extends Resource
 @export var worker_enabled: bool = true
 @export_range(1, 100000, 1) var worker_market_threshold: int = 64
 @export_range(0, 16, 1) var worker_tasks_hint: int = 0
-## Upper bound for economy worker fan-out. Six tasks leaves headroom for the
-## render/main thread on 8+ core desktop CPUs.
-@export_range(1, 16, 1) var economy_worker_task_cap: int = 6
+## Upper bound for economy worker fan-out. Twelve tasks still leaves the
+## render/main thread headroom on 16+ core desktop CPUs; worker partition is
+## weight-balanced and deterministic, so raising the cap only changes wall
+## time, never results (worker/scalar state-hash equality is preserved).
+@export_range(1, 16, 1) var economy_worker_task_cap: int = 12
 ## At speed 20+ adjacent household/production ranges are paired before worker
 ## dispatch. Merge order remains the original ascending cell order.
 @export var economy_high_speed_batching_enabled: bool = true
@@ -134,6 +136,11 @@ extends Resource
 @export_range(0, 65536, 1) var trade_import_fill_fraction_q16: int = 32768
 @export_range(1, 365, 1) var trade_response_days: int = 15
 @export_range(1, 3650, 1) var investment_review_days: int = 10
+## Per-cell building plan (procurement intent) evaluation cadence. Plans only
+## steer the next cycles' purchases; refreshing them every 10 days instead of
+## every settlement cycle makes the economy slightly less responsive but never
+## breaks stock/cash conservation. Reserve rebuild still runs every epoch.
+@export_range(1, 3650, 1) var building_plan_days: int = 10
 @export_range(0, 65536, 1) var investment_min_shortage_q16: int = 8192
 @export_range(0, 65536, 1) var investment_min_utilization_q16: int = 42598
 @export_range(1, 36500, 1) var investment_max_payback_days: int = 365
@@ -246,6 +253,7 @@ func to_native_profile() -> Dictionary:
 		"trade_import_fill_fraction_q16": trade_import_fill_fraction_q16,
 		"trade_response_days": trade_response_days,
 		"investment_review_days": investment_review_days,
+		"building_plan_days": building_plan_days,
 		"investment_min_shortage_q16": investment_min_shortage_q16,
 		"investment_min_utilization_q16": investment_min_utilization_q16,
 		"investment_max_payback_days": investment_max_payback_days,

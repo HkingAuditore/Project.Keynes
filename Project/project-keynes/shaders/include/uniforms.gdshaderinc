@@ -30,38 +30,29 @@
 //                     A = landform id
 // scalar/vector 与旧 dynamic/smooth/ecology per-pixel atlas 已退役：
 // moisture/temp/snow/ice/eco 改由 per-cell LUT 提供，flow/风场视觉退化为中性值。
-uniform sampler2D height_tex : filter_linear, repeat_disable;
 // [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny ∈ [0,1] 映射 [-1,1]，
 // nz 在 shader 重建）。地形静态 → 运行期 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap。
 // terrain_normal_tex_bound=false（未烘焙/旧存档）时 compute_terrain_normal 回退到运行期宽半径差分。
-uniform sampler2D terrain_normal_tex : filter_linear, repeat_disable;
 uniform bool terrain_normal_tex_bound = false;
 // [terrain-horizon 2026-07-03] RGBA8 nibble-packed 8-direction horizon angle：
 // R=E/NE, G=N/NW, B=W/SW, A=S/SE（high/low nibble）。只用于遮蔽直射光。
-uniform sampler2D terrain_horizon_tex : filter_nearest, repeat_disable;
 uniform bool terrain_horizon_tex_bound = false;
 uniform float terrain_horizon_max_angle = 1.309; // ~75 degrees
 uniform float terrain_horizon_softness = 0.16;
 uniform float terrain_horizon_strength = 0.70;
 uniform float terrain_horizon_cast_floor = 0.82;
 uniform int terrain_horizon_debug_view = 0; // 0=off, 1=shadow mask, 2=direct visibility
-uniform sampler2D map_index_atlas : filter_nearest, repeat_disable;
 // [river-render-restore 2026-06-19] 河流 SDF（L8, derived_size）：R = 河流强度 [0,1]，
 // 1=河心、0=远离河道。scalar_atlas 退役后单独用这张轻量纹理把河网视觉接回（见 land_pipeline
 // 的 flow）。未绑定时采样得 0（无河），安全降级。
-uniform sampler2D flow_tex : filter_linear, repeat_disable;
 // [water-depth-tex 2026-06-26] 海/湖统一归一水深（R8, derived_size）：R = 水深 [0,1]，0=岸/陆、
 // 1=最深。C++ 生成期算好 per-cell（海洋 1-E/sea + 湖泊湖岸→湖心碗形），bake 经 pixel_to_cell_index
 // 扇出。water_pipeline 用它做深浅着色，单次采样取代旧"海洋 5×5 height 邻域 + 湖泊 16× biome 多半径"。
 // has_water_depth_tex=false（未烘焙/旧存档/fused 失败）时回退旧逐邻域估算。
-uniform sampler2D water_depth_tex : filter_linear, repeat_disable;
 uniform bool has_water_depth_tex = false;
 // [terrain-detail-bake 2026-07-05] 静态 biome 内部细节调制图（L8）。
 // 移动端中/高档与桌面中档用它替代每像素 fbm/voronoi；LOW 档不采样。
-uniform sampler2D terrain_detail_tex : filter_linear, repeat_disable;
 uniform bool has_terrain_detail_tex = false;
-uniform sampler2D terrain_edge_neighbor_tex : filter_nearest, repeat_disable;
-uniform sampler2D terrain_edge_distance_tex : filter_linear, repeat_disable;
 uniform bool has_terrain_edge_data = false;
 // 归一化到 bake 的 0.90 hex 中心距差范围；只混合视觉量，不改变权威状态。
 uniform float terrain_ecotone_width = 0.84;

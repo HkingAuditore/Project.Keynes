@@ -163,7 +163,7 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 	// ── 1. 粗法线（宏观走向）──────────────────────────────────────────
 	vec3 N_coarse;
 	if (terrain_normal_tex_bound) {
-		vec2 nxy = texture(terrain_normal_tex, wrap_map_uv(uv)).rg * 2.0 - 1.0;
+		vec2 nxy = visual_sample_terrain_normal(uv).rg * 2.0 - 1.0;
 		nxy *= hillshade_coarse_strength;                       // 运行期再缩放走向强度
 		float nz = sqrt(max(1e-4, 1.0 - clamp(dot(nxy, nxy), 0.0, 0.998)));
 		N_coarse = vec3(nxy, nz);

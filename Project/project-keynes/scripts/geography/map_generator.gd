@@ -151,6 +151,7 @@ const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
 const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
+const TriggerFacadeScript = preload("res://scripts/trigger/trigger_facade.gd")
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const StartLocationPolicyScript = preload("res://scripts/game/start_location_policy.gd")
 const StarterSettlementBootstrapScript = preload("res://scripts/economy/starter_settlement_bootstrap.gd")
@@ -176,6 +177,7 @@ const NativeEnvironmentRuntimeSystemScript = preload("res://scripts/simulation/s
 const EconomyDailySystemScript = preload("res://scripts/simulation/systems/economy_daily_system.gd")
 const CountryDailySystemScript = preload("res://scripts/simulation/systems/country_daily_system.gd")
 const ModifierDailySystemScript = preload("res://scripts/simulation/systems/modifier_daily_system.gd")
+const TriggerDailySystemScript = preload("res://scripts/simulation/systems/trigger_daily_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -1020,6 +1022,8 @@ var _country_facade = null
 var _country_daily_job = null
 var _modifier_facade = null
 var _modifier_daily_job = null
+var _trigger_facade = null
+var _trigger_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
 var _continuation_perf_pending: Dictionary = {}
@@ -1457,6 +1461,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	_country_daily_job = null
 	_modifier_facade = null
 	_modifier_daily_job = null
+	_trigger_facade = null
+	_trigger_daily_job = null
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_modifiers") \
 			or not _data_core_world_ext.has_method("configure_country") \
 			or not _data_core_world_ext.has_method("configure_economy"):
@@ -1473,6 +1479,13 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			modifier_configured.get("reason", "unknown")))
 		_modifier_facade = null
 		return
+	if _data_core_world_ext.has_method("configure_triggers") and _gameplay_event_bus != null:
+		_trigger_facade = TriggerFacadeScript.new()
+		var trigger_configured: Dictionary = _trigger_facade.configure(
+			_data_core_world_ext, _gameplay_event_bus, _world_clock_ref, _modifier_facade)
+		if not bool(trigger_configured.get("ok", false)):
+			push_error("[trigger] configure failed: %s" % String(trigger_configured.get("reason", "unknown")))
+			_trigger_facade = null
 	_country_facade = CountryFacadeScript.new()
 	var country_configured: Dictionary = _country_facade.configure(
 		_data_core_world_ext, map.cell_count(), seed_value)
@@ -1648,6 +1661,11 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 	_sus.configure_job_from_profile(
 		_modifier_daily_job, scheduler_profile, false, &"modifier_daily", 1)
 	_runtime_register_system(_modifier_daily_job)
+	if _trigger_facade != null:
+		_trigger_daily_job = TriggerDailySystemScript.new(_trigger_facade)
+		_sus.configure_job_from_profile(
+			_trigger_daily_job, scheduler_profile, false, &"trigger_runtime", 1)
+		_runtime_register_system(_trigger_daily_job)
 	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
 	_sus.configure_job_from_profile(
 		_country_daily_job, scheduler_profile, false, &"country_daily", 1)
@@ -1673,6 +1691,14 @@ func get_country_facade():
 
 func get_modifier_facade():
 	return _modifier_facade
+
+
+func get_trigger_facade():
+	return _trigger_facade
+
+
+func get_trigger_report() -> Dictionary:
+	return _trigger_facade.report() if _trigger_facade != null else {"configured": false}
 
 
 func get_modifier_report() -> Dictionary:

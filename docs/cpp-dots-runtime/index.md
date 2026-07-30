@@ -88,6 +88,10 @@
     - 三态视野语义、地形感知 Dijkstra 解算、`enum_lut.a` 知识度通道、渲染 z 序、
       国界 ribbon mesh、UI 门控与 PKFG 存档边界。
 
+18. [地图视觉 Tile 渲染](./visual-tile-rendering.md)
+    - 全局权威基线与视觉 `Texture2DArray` 的边界、预算 resolver、C++ 静态 bake、
+      GPU hierarchical horizon、统一 shader 寻址、legacy/probe/tiled 回退与验收。
+
 ## 可复用 Economy Skill
 
 仓库内 Skill 位于
@@ -123,6 +127,7 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 | Native country | `gdext/src/country_runtime.cpp`, `gdext/src/world_ext_country.cpp`, `Project/project-keynes/scripts/country/*.gd` | 国家身份、领土、科技、国库、PKCN 与 `country_daily` 权威；只镜像 `cell.country_slot`。 |
 | Native modifier | `gdext/src/modifier_runtime.*`, `gdext/src/world_ext_modifier.cpp`, `Project/project-keynes/scripts/modifier/*.gd` | 四域独立 store、PackedArray command、explain/journal/save 与 `modifier_daily` 冻结发布。 |
 | Rendering / physical ocean | `Project/project-keynes/scripts/rendering/map_baker.gd` | SLP/wind/PSI/upwelling/raster 等 ocean currents 物理链路。 |
+| Visual tile rendering | `Project/project-keynes/scripts/rendering/visual_tile_layout.gd`, `visual_tile_set.gd`, `visual_tile_horizon_baker.gd` | 视觉预算、静态 array 生命周期与异步 horizon；不拥有生成或仿真状态。 |
 | Vision / fog | `Project/project-keynes/scripts/geography/vision_solver.gd` | 静态视野场预烘、多源 Dijkstra 解算、`fog_k` 与三态 `fog_state`。 |
 | Fog / border 渲染层 | `Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`, `.../country_border_layer.gd` | 迷雾全图 quad（z=12）与国界 ribbon mesh（z=6）。 |
 | 视野编排 | `Project/project-keynes/scripts/game/world_runtime_host.gd` | `fog_of_war_enabled` / `fog_early_out_enabled`、`refresh_country_visuals()`、订阅 `country_committed`。 |

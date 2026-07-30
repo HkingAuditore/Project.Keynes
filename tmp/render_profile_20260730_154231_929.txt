@@ -1,0 +1,11 @@
+[render-profile] === GPU / Frame metrics @ frame 3263 (player GM) 2026-07-30 15:42:31 ===
+  FPS=30.0  process(sample)=31.96ms  physics=0.04ms  nav=0.00ms
+  frame wall ms over 120 samples: min=0.28 avg=24.83 p50=24.90 p95=31.19 max=37.12
+  sus_ticks=119/120 sus_frame_avg=25.03ms non_sus_frame_avg=0.28ms
+  histogram (4ms bins): [0-4)=1 [4-8)=0 [8-12)=0 [12-16)=0 [16-20)=3 [20-24)=45 [24-28)=53 [28-32)=13 [32-36)=2 [36-40)=3 [40+)=0
+  vsync_mode=1  max_fps=0  (0=Off 1=On 2=Adaptive 3=Mailbox)
+  draw_calls=715  primitives=1274580  objects=1606 (Performance monitor)
+  RenderingServer view_calls=715 view_prims=1274580
+  vram total=320.7 MB  tex=30.8 MB  buf=16.2 MB
+  nodes=2092 resources=457 orphan_nodes=1
+  msaa=0  fxaa=false  mobile=false  sus_ticks_in_window=119

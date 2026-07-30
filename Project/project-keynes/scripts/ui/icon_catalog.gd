@@ -89,6 +89,8 @@ const PROFESSION_GLYPHS := {
 const SPECS := {
 	&"action.add": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf067"},
 	&"action.back": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf060"},
+	&"action.chevron_down": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf078"},
+	&"action.chevron_right": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf054"},
 	&"action.close": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf00d"},
 	&"action.confirm": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf00c"},
 	&"action.fit": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf065"},
@@ -282,6 +284,8 @@ const COMPATIBILITY_ALIASES := {
 	"plus": &"action.add", "add": &"action.add", "new": &"action.add",
 	"back": &"action.back", "previous": &"action.back", "confirm": &"action.confirm",
 	"apply": &"action.confirm", "save": &"action.save", "close": &"action.close",
+	"expand": &"action.chevron_right", "collapse": &"action.chevron_down",
+	"chevron_right": &"action.chevron_right", "chevron_down": &"action.chevron_down",
 	"world": &"country.world", "globe": &"country.world", "clock": &"system.clock",
 	"time": &"system.clock", "calendar": &"system.calendar", "date": &"system.calendar",
 	"seed": &"system.seed", "warning": &"status.warning", "risk": &"status.warning",

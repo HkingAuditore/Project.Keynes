@@ -11,7 +11,7 @@ struct TerrainStaticMaterial {
 };
 
 int decode_edge_secondary_index(vec2 uv) {
-	vec2 rg = texture(terrain_edge_neighbor_tex, wrap_map_uv(uv)).rg;
+	vec2 rg = visual_sample_edge_neighbor(uv).rg;
 	int lo = int(rg.r * 255.0 + 0.5);
 	int hi = int(rg.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -58,7 +58,7 @@ const float TERRAIN_DITHER_THRESHOLD_MARGIN = 0.18;
 // 移动端恢复 atlas-texel 锚定的 8x8 Bayer DitherUV。它只选择视觉主/副材质，
 // 不改写 map_index_atlas.GB、CSR 或任何权威 cell 状态。
 float terrain_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
-	vec2 atlas_dims = vec2(textureSize(map_index_atlas, 0));
+	vec2 atlas_dims = visual_static_texture_size();
 	vec2 wrapped_uv = wrap_map_uv(uv);
 	vec2 pixel_xy = floor(wrapped_uv * atlas_dims);
 	if (wrap_period_x > 0.0001 && world_size.x > 0.0001) {
@@ -112,7 +112,7 @@ float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
 	if (!has_terrain_edge_data) {
 		return 0.0;
 	}
-	float distance_to_edge = texture(terrain_edge_distance_tex, wrap_map_uv(uv)).r;
+	float distance_to_edge = visual_sample_edge_distance(uv).r;
 #if defined(PK_MOBILE_ANY)
 	float mobile_quality_scale = (visual_quality <= 0) ? 0.58
 			: ((visual_quality == 1) ? 0.82 : 0.94);
@@ -313,7 +313,7 @@ vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
 	}
 	if (terrain_surface_debug_view == 3) {
 		float d = has_terrain_edge_data
-				? texture(terrain_edge_distance_tex, wrap_map_uv(uv)).r
+				? visual_sample_edge_distance(uv).r
 				: 1.0;
 		return vec3(d);
 	}

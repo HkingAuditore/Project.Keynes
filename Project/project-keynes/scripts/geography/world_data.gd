@@ -84,6 +84,9 @@ var world_bounds: Rect2 = Rect2()
 var wrap_period_x: float = 0.0
 var sea_level: float = 0.42                  # 与 cfg.sea_level 一致，[0,1] 范围
 var bake_seed: int = 0                       # Phase 2：复刷 biome_tex 时复用同一 seed
+# 高分辨率全驻留视觉 Tile。低分全局 buffer/texture 继续作为生成基线与回退，
+# 因此画质预算不会改变 HexCell、DataCore 或存档结果。
+var visual_tiles: RefCounted
 
 # ─── shader 用 ImageTexture（编码后） ─────────────────────────────────────
 # v9.atlas：把 9 张 derived 贴图合并成 3 张 atlas，降低 sampler 绑定数与 uniform 上传量。

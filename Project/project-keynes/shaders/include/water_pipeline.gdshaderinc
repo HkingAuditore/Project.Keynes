@@ -142,7 +142,7 @@ float compute_lake_shore_proxy(vec2 uv, int quality) {
 				continue;
 			}
 			vec2 o = vec2(float(ox), float(oy));
-			int b = int(texture(map_index_atlas, wrap_map_uv(uv + o * tx)).r * 255.0 + 0.5);
+			int b = int(visual_sample_map_index(uv + o * tx).r * 255.0 + 0.5);
 			float edge = (b == B_LAKE) ? 0.0 : 1.0;
 			float sw = 1.0 - 0.18 * clamp(length(o), 0.0, 1.41421356);
 			near_cnt += edge * sw;
@@ -159,7 +159,7 @@ float compute_lake_shore_proxy(vec2 uv, int quality) {
 		} else if (i == 2) {
 			o = vec2(0.0, 2.0);
 		}
-		int b = int(texture(map_index_atlas, wrap_map_uv(uv + o * tx)).r * 255.0 + 0.5);
+		int b = int(visual_sample_map_index(uv + o * tx).r * 255.0 + 0.5);
 		mid_cnt += (b == B_LAKE) ? 0.0 : 1.0;
 		mid_total += 1.0;
 	}
@@ -174,7 +174,7 @@ float compute_lake_shore_proxy(vec2 uv, int quality) {
 			} else if (i == 2) {
 				o = vec2(0.0, 3.0);
 			}
-			int b = int(texture(map_index_atlas, wrap_map_uv(uv + o * tx)).r * 255.0 + 0.5);
+			int b = int(visual_sample_map_index(uv + o * tx).r * 255.0 + 0.5);
 			far_cnt += (b == B_LAKE) ? 0.0 : 1.0;
 			far_total += 1.0;
 		}
@@ -201,7 +201,7 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 	// 每水像素仅 1 次采样，取代下方"海洋 5×5/plus height 邻域 + compute_lake_shore_proxy 的
 	// 16× biome 多半径"两套估算。湖泊深浅、海洋大陆架→深渊全部来自 C++ 真实 per-cell 深度。
 	if (has_water_depth_tex) {
-		float wd = texture(water_depth_tex, ctx.uv).r;
+		float wd = visual_sample_water_depth(ctx.uv).r;
 		ctx.depth_t = wd;
 		ctx.offshore = wd;
 		ctx.offshore_depth = wd;

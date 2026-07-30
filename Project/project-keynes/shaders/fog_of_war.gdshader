@@ -58,11 +58,8 @@ render_mode blend_mix, unshaded;
 // 探针数 3 → 2 同理 —— 自阴影是软厚度，少一段远探针肉眼不可辨。
 // ════════════════════════════════════════════════════════════════════════
 
-uniform sampler2D map_index_atlas : filter_nearest, repeat_disable; // G/B = cell.index 低/高字节
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;        // A = 知识度 k
 uniform vec2 lut_dims = vec2(0.0);
-uniform sampler2D terrain_edge_neighbor_tex : filter_nearest, repeat_disable;
-uniform sampler2D terrain_edge_distance_tex : filter_linear, repeat_disable;
 uniform bool has_terrain_edge_data = false;
 uniform float terrain_ecotone_width : hint_range(0.0, 0.96) = 0.84;
 
@@ -70,6 +67,10 @@ uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
+#define VT_USE_MAP_INDEX
+#define VT_USE_EDGE_NEIGHBOR
+#define VT_USE_EDGE_DISTANCE
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 uniform float world_time = 0.0;
 uniform float hex_world_diameter = 38.0;
 
@@ -187,7 +188,7 @@ vec2 fog_wrap_uv(vec2 uv) {
 // cell-index 间接寻址（与 cell_indirect.gdshaderinc 同公式；此处内联，避免为了
 // 一个 A 通道把 dyn/eco LUT 的 uniform 依赖全拖进来）。
 int fog_decode_cell_index(vec2 uv) {
-	vec2 gb = texture(map_index_atlas, uv).gb;
+	vec2 gb = visual_sample_map_index(uv).gb;
 	int lo = int(gb.r * 255.0 + 0.5);
 	int hi = int(gb.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -203,7 +204,7 @@ vec2 fog_cell_lut_uv(int cid) {
 }
 
 int fog_decode_edge_secondary(vec2 uv) {
-	vec2 rg = texture(terrain_edge_neighbor_tex, fog_wrap_uv(uv)).rg;
+	vec2 rg = visual_sample_edge_neighbor(fog_wrap_uv(uv)).rg;
 	int lo = int(rg.r * 255.0 + 0.5);
 	int hi = int(rg.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -220,7 +221,7 @@ float fog_bayer2_digit(vec2 bit_xy) {
 const float FOG_DITHER_THRESHOLD_MARGIN = 0.18;
 
 float fog_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
-	vec2 atlas_dims = vec2(textureSize(map_index_atlas, 0));
+	vec2 atlas_dims = visual_static_texture_size();
 	vec2 pixel_xy = floor(fog_wrap_uv(uv) * atlas_dims);
 	if (wrap_period_x > 0.0001 && world_size.x > 0.0001) {
 		float period_px = max(
@@ -244,7 +245,7 @@ float fog_edge_secondary_weight(vec2 uv, int q) {
 	if (!has_terrain_edge_data || terrain_ecotone_width <= 0.0001) {
 		return 0.0;
 	}
-	float edge_distance = texture(terrain_edge_distance_tex, fog_wrap_uv(uv)).r;
+	float edge_distance = visual_sample_edge_distance(fog_wrap_uv(uv)).r;
 	float one_screen_pixel = max(fwidth(edge_distance), 1.0 / 255.0);
 	float quality_scale;
 #if defined(MOBILE_QUALITY_LOW)

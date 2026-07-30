@@ -51,6 +51,20 @@ func _init() -> void:
 		_expect(names.has("terrain_ecotone_noise"), "%s exposes terrain ecotone noise" % label)
 		_expect(names.has("terrain_micro_tex"), "%s exposes terrain micro texture" % label)
 		_expect(names.has("camera_zoom"), "%s exposes camera zoom" % label)
+	for label in variants:
+		var shader := Shader.new()
+		shader.code = "#define MAP_VISUAL_TILED\n" + String(variants[label]) + source
+		var uniforms: Array = shader.get_shader_uniform_list()
+		var names := {}
+		for entry in uniforms:
+			names[String(entry.get("name", ""))] = true
+		_expect(not uniforms.is_empty(), "%s tiled variant compiles" % label)
+		_expect(names.has("visual_height_tiles"), "%s tiled exposes height array" % label)
+		_expect(names.has("visual_map_index_tiles"), "%s tiled exposes map-index array" % label)
+		_expect(names.has("visual_horizon_tiles"), "%s tiled exposes horizon array" % label)
+		_expect(not names.has("height_tex"), "%s tiled omits legacy height sampler" % label)
+		_expect(not names.has("map_index_atlas"), "%s tiled omits legacy map-index sampler" % label)
+		_expect(not names.has("terrain_horizon_tex"), "%s tiled omits legacy horizon sampler" % label)
 	print("=== terrain shader variants: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

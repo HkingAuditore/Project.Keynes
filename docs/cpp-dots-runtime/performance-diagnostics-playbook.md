@@ -1528,3 +1528,25 @@ profession scratch 已按 generation 首触初始化，若耗时仍随全 catalo
   0。active-cell 性能不得每 cell 扫全部 goods；清零只遍历预编译 `cycle_flow_good_ids`。
 - 现代 124-good 目录会放大 MarketStore、price loop、snapshot 和 event 成本；与旧 5-good building
   基线比较时必须标注 catalog size、trace mode 和 cadence，不能把目录规模差异归咎于单个公式。
+
+For TriggerRuntime capture event/rule/scope/effect counts, ingest/evaluate p95/p99,
+allocation count, cursor lag, gap/resync count, and pending effect depth.
+
+## Visual Tile diagnostics
+
+`visual tiles:` JSON first proves the chosen path. Record renderer, requested/effective MP,
+grid/layers/interior/gutter/logical size and estimated resident/peak bytes. A lower effective
+budget with no crash is the expected response to device limits. `path=visual_tiled_static`
+requires every layer report to contain bake/upload/wall time and deterministic field hashes.
+
+`[visual-tiles/horizon]` then reports `gpu_compute_hierarchical`,
+`baseline_horizon_resample`, or `neutral_failed`. For compute, separate shader compile,
+resource setup, command record, submit, GPU wait, readback and upload; do not attribute the
+one-time compile cost to trace. Track `non_converged_rays`: a nonzero value is conservative
+over-occlusion, but a persistent large fraction means the iteration cap or hierarchy needs
+tuning. Any static `native_layer_failed`/array creation failure must result in a complete
+legacy path, never a mixed array/single-texture material.
+
+Performance gates and the memory model are maintained in
+[Visual Tile Rendering](./visual-tile-rendering.md). Headless Dummy rendering cannot prove
+shader compilation, GPU p95, visual seams or device memory limits.

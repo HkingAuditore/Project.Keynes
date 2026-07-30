@@ -2,7 +2,7 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
 
   [PASS] catalog compiles
   [PASS] all-technology production country bootstraps
-  [PASS] native runtime configures
+  [PASS] native runtime configures: ok
   [PASS] bullion diagnostic trace registers
   [PASS] power and bullion buildings bootstrap
   [PASS] production cycle commits
@@ -26,8 +26,8 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] bullion-entry runtime configures
   [PASS] bullion-entry diagnostic trace registers
   [PASS] bullion-entry population bootstraps
-  [PASS] mint face value makes new bullion entry viable: gold_mine (row=72 pressure=65536 utilization=65536 profit=15690681 reason=0)
-  [PASS] mint face value makes new bullion entry viable: silver_mine (row=226 pressure=65536 utilization=65536 profit=690681 reason=0)
+  [PASS] mint face value makes new bullion entry viable: gold_mine (row=75 pressure=65536 utilization=65536 profit=15690681 reason=0)
+  [PASS] mint face value makes new bullion entry viable: silver_mine (row=237 pressure=65536 utilization=65536 profit=690681 reason=0)
   [PASS] bullion-entry review conserves exactly
   [PASS] stone-start runtime configures
   [PASS] stone-start runtime bootstraps
@@ -37,8 +37,9 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] stone start exposes bullion goods and early workings
   [PASS] technology-locked building is unavailable
   [PASS] technology grant command queues
-  [PASS] country technology grant commits
+  [PASS] country technology grant enters pending state
   [PASS] technology grant cycle commits
+  [PASS] country technology grant activates next day
   [PASS] technology grant becomes committed cell state
   [PASS] granted technology unlocks tagged building
   [PASS] upgrade test runtime configures
@@ -47,19 +48,23 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [FAIL] stone tier builds before replacement
   [FAIL] zero-day construction produces from the following cycle
   [PASS] technology grant queues: tech.pottery
-  [PASS] technology grant commits: tech.pottery
+  [PASS] technology grant enters pending state: tech.pottery
+  [PASS] technology grant activates next day: tech.pottery
   [PASS] obsolete stone build command queues for native rejection
   [PASS] higher tier rejects new stone construction with exact reason
   [FAIL] existing stone building keeps producing after replacement
   [PASS] pottery tier is the only constructible family tier
   [PASS] technology grant queues: tech.guild_organization
-  [PASS] technology grant commits: tech.guild_organization
+  [PASS] technology grant enters pending state: tech.guild_organization
+  [PASS] technology grant activates next day: tech.guild_organization
   [FAIL] guild tier replaces pottery construction without deleting old assets
   [PASS] technology grant queues: tech.steam_power
-  [PASS] technology grant commits: tech.steam_power
+  [PASS] technology grant enters pending state: tech.steam_power
+  [PASS] technology grant activates next day: tech.steam_power
   [PASS] steam tier is the final constructible subsistence tier
   [PASS] technology grant queues: tech.autonomous_systems
-  [PASS] technology grant commits: tech.autonomous_systems
+  [PASS] technology grant enters pending state: tech.autonomous_systems
+  [PASS] technology grant activates next day: tech.autonomous_systems
   [PASS] post-industrial technology does not create a fifth subsistence tier
   [PASS] upgrade cycles conserve all ledgers
 === modern economy runtime FAIL ===

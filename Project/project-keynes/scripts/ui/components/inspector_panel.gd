@@ -8,6 +8,7 @@ const MarketListScript = preload("res://scripts/ui/components/market_list.gd")
 signal close_requested()
 signal tab_data_requested(tab_id: String)
 signal demand_details_requested(details: Dictionary)
+signal object_details_requested(request: Dictionary)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
@@ -377,6 +378,8 @@ func _build_category_block(data: Dictionary) -> void:
 		_cohort_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_cohort_list.demand_details_requested.connect(
 			func(details: Dictionary) -> void: demand_details_requested.emit(details))
+		_cohort_list.details_requested.connect(
+			func(request: Dictionary) -> void: object_details_requested.emit(request))
 		_cohort_list.set_rows(cohort_rows)
 		_content_box.add_child(_cohort_list)
 
@@ -385,6 +388,8 @@ func _build_category_block(data: Dictionary) -> void:
 		_add_group_separator()
 		_resource_list = ResourceList.new()
 		_resource_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_resource_list.details_requested.connect(
+			func(request: Dictionary) -> void: object_details_requested.emit(request))
 		_resource_list.set_rows(resource_rows)
 		_content_box.add_child(_resource_list)
 
@@ -393,6 +398,8 @@ func _build_category_block(data: Dictionary) -> void:
 		_add_group_separator()
 		_market_list = MarketListScript.new()
 		_market_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_market_list.details_requested.connect(
+			func(request: Dictionary) -> void: object_details_requested.emit(request))
 		_market_list.set_rows(market_rows)
 		_content_box.add_child(_market_list)
 
@@ -401,6 +408,8 @@ func _build_category_block(data: Dictionary) -> void:
 		_add_group_separator()
 		_building_list = BuildingListScript.new()
 		_building_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_building_list.details_requested.connect(
+			func(request: Dictionary) -> void: object_details_requested.emit(request))
 		_building_list.set_rows(building_rows)
 		_content_box.add_child(_building_list)
 

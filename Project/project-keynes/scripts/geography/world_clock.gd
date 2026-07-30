@@ -104,6 +104,12 @@ var _user_overridden_phase_step: bool = false
 var _last_day: int = -1
 var _last_season: int = -1
 var _last_year: int = -1
+# 帧内分解诊断：continuation 脉冲段 / 日推进循环段 / 整个 _process 的最近一帧墙钟。
+# pulse 段在 loop 计时之前运行（economy/country 跨日结算 drain），是 fast_ms 与
+# loop_ms 都看不到的盲区；三者之和应 ≈ render-profile 的 sus_frame_avg。
+var _last_pulse_ms: float = 0.0
+var _last_loop_ms: float = 0.0
+var _last_full_proc_ms: float = 0.0
 var _rng: RandomNumberGenerator
 var _simulation_backpressure_sources: Dictionary = {}
 const _MONTH_LENGTHS: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -167,6 +173,7 @@ func _advance_one_sim_day() -> void:
 func _process(delta: float) -> void:
 	if paused or speed_multiplier <= 0.0:
 		return
+	var proc_start_us: int = Time.get_ticks_usec()
 	# 自初始化兜底：_emit_initial_signals（call_deferred）可能晚于首帧 _process。
 	# _last_day 仍是 -1 哨兵时，先对齐到当前整日，避免 current_day 派生出负值。
 	if _last_day < 0:
@@ -181,12 +188,14 @@ func _process(delta: float) -> void:
 	# real-frame pulse so same-day catchup can finish without deadlock.
 	var hard_day_barrier := _simulation_backpressure_sources.has(&"economy_day_barrier") or \
 		_simulation_backpressure_sources.has(&"country_day_barrier")
+	var pulse_start_us: int = Time.get_ticks_usec()
 	if hard_day_barrier:
 		simulation_backpressure_pulse.emit(_last_day)
 		# A time-boxed continuation may drain the barrier synchronously. Re-read
 		# it so a completed bucket does not cost an otherwise empty render frame.
 		hard_day_barrier = _simulation_backpressure_sources.has(&"economy_day_barrier") or \
 			_simulation_backpressure_sources.has(&"country_day_barrier")
+	_last_pulse_ms = float(Time.get_ticks_usec() - pulse_start_us) / 1000.0
 	var effective_speed := 0.0 if hard_day_barrier else (
 		minf(speed_multiplier, 1.0) if has_simulation_backpressure() else speed_multiplier)
 	var target: float = delta * effective_speed
@@ -219,7 +228,7 @@ func _process(delta: float) -> void:
 	# 日循环花了多久。和 render-profile 的 sus_frame_avg(~45ms) 对比即可定位：
 	#   loop_ms ≈ proc_ms ≪ 45ms  → 35ms 在 _process 之外（渲染/present GPU 同步）。
 	#   loop_ms ≈ 45ms            → 日循环本身超预算（budget 失效或单日 >预算）。
-	var _loop_ms: float = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	_last_loop_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 
 	# current_day 派生：已模拟整数日 + 小数 carry。低速（target<1）下 carry 平滑累加，
 	# 驱动 day_phase/season_phase 连续过渡；高速下小数部分无实际意义但无害。
@@ -241,11 +250,13 @@ func _process(delta: float) -> void:
 	_advance_visual_day_phase(delta)
 
 	# best-effort 诊断打印（临时）：每 ~120 个 _process 帧打一行，含 delta、目标天、
-	# 实际推进天数 ran、日循环墙钟 _loop_ms、整个 _process 墙钟 proc_ms。
+	# 实际推进天数 ran、continuation 脉冲段墙钟 pulse、日循环墙钟 loop、
+	# 整个 _process 墙钟 full（含 pulse + loop + 相位信号）。
+	_last_full_proc_ms = float(Time.get_ticks_usec() - proc_start_us) / 1000.0
 	if debug_step_log and Engine.get_process_frames() % 120 == 0:
-		var _proc_ms: float = float(Time.get_ticks_usec() - t0_us) / 1000.0
-		print("[clock/step] delta=%.1fms speed=%.0fx target=%.2fd ran=%d loop=%.2fms proc=%.2fms carry=%.2f"
-			% [delta * 1000.0, speed_multiplier, delta * speed_multiplier, ran, _loop_ms, _proc_ms, _day_carry])
+		print("[clock/step] delta=%.1fms speed=%.0fx target=%.2fd ran=%d pulse=%.2fms loop=%.2fms full=%.2fms carry=%.2f"
+			% [delta * 1000.0, speed_multiplier, delta * speed_multiplier, ran,
+				_last_pulse_ms, _last_loop_ms, _last_full_proc_ms, _day_carry])
 
 # ─── 派生查询 ────────────────────────────────────────────────────────────
 
@@ -490,3 +501,19 @@ func request_simulation_backpressure(source: StringName, active: bool) -> void:
 
 func has_simulation_backpressure() -> bool:
 	return not _simulation_backpressure_sources.is_empty()
+
+
+# ─── 帧内分解诊断查询 ────────────────────────────────────────────────────
+# 最近一帧的 continuation 脉冲段 / 日推进循环段 / 整个 _process 墙钟（毫秒）。
+# render-profile dump 按帧采样这些值，把 sus_frame_avg 拆成 pulse + loop + 帧尾。
+
+func get_last_pulse_ms() -> float:
+	return _last_pulse_ms
+
+
+func get_last_loop_ms() -> float:
+	return _last_loop_ms
+
+
+func get_last_full_proc_ms() -> float:
+	return _last_full_proc_ms

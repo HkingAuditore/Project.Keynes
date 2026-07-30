@@ -26,6 +26,7 @@ var _has_valid_shader: bool = false
 var _has_valid_texture: bool = false
 var _use_cell_lut: bool = false
 var _transition: Tween
+var _visual_tiles = null
 
 func _ready() -> void:
 	# z_index=5：盖在 WorldQuad（默认 0）之上，但低于 CellHighlight(10)。
@@ -122,17 +123,56 @@ func configure_cell_lut(map_index_atlas: Texture2D, lut_dims: Vector2i) -> void:
 	_ensure_nodes()
 	if _shader_mat == null:
 		return
-	_shader_mat.set_shader_parameter(
-		"map_index_atlas",
-		map_index_atlas if map_index_atlas != null else DataOverlayBaker.get_empty_texture()
-	)
+	if not _visual_tiles_active():
+		_shader_mat.set_shader_parameter(
+			"map_index_atlas",
+			map_index_atlas if map_index_atlas != null else DataOverlayBaker.get_empty_texture()
+		)
 	_shader_mat.set_shader_parameter(
 		"lut_dims",
 		Vector2(maxi(1, lut_dims.x), maxi(1, lut_dims.y))
 	)
-	_use_cell_lut = map_index_atlas != null and lut_dims.x > 0 and lut_dims.y > 0
+	_use_cell_lut = (_visual_tiles_active() or map_index_atlas != null) \
+		and lut_dims.x > 0 and lut_dims.y > 0
 	_shader_mat.set_shader_parameter("use_cell_lut", _use_cell_lut)
 	_update_visibility()
+
+
+func configure_visual_tiles(tiles) -> void:
+	var was_tiled := _visual_tiles_active()
+	_visual_tiles = tiles
+	var is_tiled := _visual_tiles_active()
+	_ensure_nodes()
+	if _shader_mat == null:
+		return
+	if was_tiled != is_tiled:
+		var shader := ResourceLoader.load(SHADER_PATH, "Shader",
+			ResourceLoader.CACHE_MODE_IGNORE) as Shader
+		if shader != null:
+			if is_tiled:
+				shader = shader.duplicate() as Shader
+				shader.code = "#define MAP_VISUAL_TILED\n" + shader.code
+			_shader_mat.shader = shader
+	_push_visual_tile_uniforms()
+
+
+func _visual_tiles_active() -> bool:
+	return _visual_tiles != null and bool(_visual_tiles.ready) \
+		and String(_visual_tiles.layout.mode) == "tiled"
+
+
+func _push_visual_tile_uniforms() -> void:
+	if _shader_mat == null or not _visual_tiles_active():
+		return
+	var layout = _visual_tiles.layout
+	_shader_mat.set_shader_parameter("visual_map_index_tiles", _visual_tiles.map_index)
+	_shader_mat.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
+	_shader_mat.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
+	_shader_mat.set_shader_parameter("visual_grid_size", Vector2(layout.grid_size))
+	_shader_mat.set_shader_parameter("visual_interior_size", Vector2(layout.interior_size))
+	_shader_mat.set_shader_parameter("visual_layer_size", Vector2(layout.layer_size))
+	_shader_mat.set_shader_parameter("visual_logical_resolution", Vector2(layout.logical_size))
+	_shader_mat.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
 
 func set_cell_lut_texture(tex: Texture2D) -> void:
 	if _shader_mat == null:

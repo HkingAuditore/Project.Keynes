@@ -97,6 +97,13 @@ public:
                         bool allow_tax_catalog_extension = false);
     void clear_domain(int32_t domain);
     uint64_t catalog_hash() const { return _catalog_hash; }
+    // Bumps on every apply/remove/expire/set-stacks mutation of the domain
+    // store. Callers may use it as an exact invalidation token for caches keyed
+    // on that domain's effective values.
+    uint64_t domain_snapshot_version(int32_t domain) const {
+        return domain >= 0 && domain < DOMAIN_COUNT
+            ? _stores[domain].snapshot_version : 0;
+    }
     bool configured() const { return _configured; }
 
 private:

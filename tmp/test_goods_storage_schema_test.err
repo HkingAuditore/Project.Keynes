@@ -1,8 +1,9 @@
-  [FAIL] modern household needs compile
   [FAIL] stone food keeps explicit merchant inventory horizons
   [FAIL] worker and merchant process the bounded catalog shape
   [FAIL] sustained shortage can exceed the legacy catalog maximum price
+ERROR: 10 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
 WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
    at: cleanup (core/object/object.cpp:2641)
-ERROR: 191 resources still in use at exit (run with --verbose for details).
+ERROR: 206 resources still in use at exit (run with --verbose for details).
    at: clear (core/io/resource.cpp:810)

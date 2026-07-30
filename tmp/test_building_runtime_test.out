@@ -322,10 +322,13 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] blocked producer keeps explicit unfunded upstream demand
   [PASS] building PKCN save begins
   [PASS] building PKCN save completes
-  [PASS] building v19 save begins
+  [PASS] building v24 save begins
   [PASS] building save completes
   [PASS] building restore country configures first
   [PASS] building PKCN restore begins
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
   [PASS] building PKCN chunk accepted
   [PASS] building PKCN restore completes
   [PASS] building restore target configures
@@ -343,9 +346,13 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] building restore chunk accepted
   [PASS] building restore chunk accepted
   [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
   [PASS] building restore completes
   [PASS] building save hash round-trips
   [PASS] restored mine preserves active blocked lifecycle classification
+  [PASS] restored building input spans survive the first production cycle
   [PASS] restored inputs resume through the active path without a recovery probe
   [PASS] first recovery cycle conserves all ledgers
   [PASS] profitable alternative coexists with the active blocked building

@@ -48,8 +48,10 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
    report/性能 CSV 将该调用细分为 scan body/finalize、route prepare/expand/finalize 和 other，
    但这些墙钟诊断不参与预算或确定性推进。
 2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境并冻结输入。
-3. `building_plan`：按 active-cell CSR 分片推进建筑严重亏损/恢复、利用率计划；第二遍按同一
-   cursor 分片重建生产投入 reserve。两遍完成前不进入账本或生产阶段。
+3. `building_plan`：第一遍（evaluate）只推进 `cell % building_plan_days == day % building_plan_days`
+   抽取的 plan 子集（默认每格 10 天评审一次，knob 经 PKEC v25 持久化并等值校验），计算建筑严重
+   亏损/恢复与利用率计划；第二遍（reserve）仍对全部到期建筑 cell 重建生产投入 reserve，未评审格
+   沿用最近一次计划。两遍完成前不进入账本或生产阶段。
 4. `trade_settle`：结算到期货物/卖方托管，货物可参与当期本地市场。
 5. `ledger_apply`：只消费 `effective_day <= sample_day` 的命令；周期中提交的命令等下轮。
 6. `building_employment`：按周期开始时仍存活人口分配 owner/employee 岗位并计算合同工资。
@@ -69,6 +71,11 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
     价格驱动的内生资本评估遍历全部已解锁 building type；
     collector/service 仍必须通过各自资源、可销售产出、材料、利润和 sponsor gate；
     随后重建稀疏岗位范围，并保留既有 employee fill。
+    finalize 的就业 reconcile 集合 = 本期竣工/清算/恢复变动 cell ∪
+    `_structural_touched_cells` 中在 `STRUCTURAL_COMMIT` reconcile 完成之后追加的尾部
+    （以 `_structural_reconciled_upto` 计数水位线截断，仅含投资 profession 迁移等晚期
+    push）；命令触发的 structural cell 已在 `STRUCTURAL_COMMIT` 结算过一次，不再被
+    finalize 整批重复 reconcile。
     投资目录另以 market active-good bitset 和 output-good→building-type CSR 做保守候选闭包；
     既有/在建类型及其施工物资始终保留。默认 ACTIVE，周期完整复核发现任何遗漏时会自动退回
     全目录扫描；该缓存不改变固定五日滚动语义。

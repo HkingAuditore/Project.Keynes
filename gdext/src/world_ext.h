@@ -240,6 +240,24 @@ public:
                                               const godot::PackedByteArray &bytes);
     godot::Dictionary clear_modifier_domain(int domain);
 
+    // Generic trigger runtime. It only ingests committed facts/snapshots and
+    // emits typed effects; domain stores apply those effects at their own
+    // safe boundary.
+    godot::Dictionary configure_triggers(const godot::Dictionary &catalog);
+    godot::Dictionary submit_trigger_events(const godot::Dictionary &batch);
+    godot::Dictionary submit_trigger_snapshots(const godot::Dictionary &batch);
+    godot::Dictionary run_trigger_daily(int64_t day_index);
+    bool trigger_should_run(int64_t day_index) const;
+    godot::Dictionary poll_trigger_effects(int64_t after_effect_id,
+                                            int limit = 128) const;
+    godot::Dictionary ack_trigger_effects(int64_t up_to_effect_id);
+    godot::Dictionary set_trigger_enabled(const godot::Dictionary &batch);
+    godot::Dictionary resync_trigger_source(const godot::Dictionary &snapshot);
+    godot::Dictionary get_trigger_report() const;
+    godot::PackedByteArray capture_trigger_state() const;
+    godot::Dictionary restore_trigger_state(const godot::PackedByteArray &bytes);
+    godot::Dictionary clear_trigger_state();
+
     // Native-only hot-path helpers. They resolve no strings in the consumer loop.
     float modifier_climate_radiative_target(int cell, float base_value) const;
     double modifier_country_output_factor(int64_t country_handle) const;
@@ -1147,6 +1165,13 @@ public:
     //   terrain sub-pass 失败 → 整体 fallback=true（caller 回退旧 per-pass / GDScript 路径）；
     //   erosion sub-pass 失败 → 用未侵蚀 height 续算（非致命），不令整体 fallback。
     godot::Dictionary run_bake_geometry_fields_pass(godot::Dictionary knobs);
+    // High-resolution visual-only tile. The low-resolution geometry remains
+    // authoritative; this pass never creates high-resolution pixel CSR data.
+    godot::Dictionary run_bake_visual_tile_layer_pass(godot::Dictionary knobs);
+    // Native fallback for tiled horizon publication. Resamples one physical
+    // tile (including gutters) from the authoritative low-resolution RGBA8
+    // horizon without introducing a GDScript per-pixel loop.
+    godot::Dictionary run_resample_visual_horizon_layer_pass(godot::Dictionary knobs);
 
     // ─── Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F) ────
     // 4 张运行期 atlas baker 的 byte-fill 阶段下沉 C++/SIMD：
@@ -2213,6 +2238,7 @@ private:
     int64_t                                   _economy_last_notified_event_id = 0;
     void                                     *_country_runtime        = nullptr;
     void                                     *_modifier_runtime       = nullptr;
+    void                                     *_trigger_runtime         = nullptr;
 
     // ─── Phase B+（2026-05-21）：season refresh round 切片调度 opaque state ─
     // 实际类型 pk::SeasonRoundState 在 world_ext.cpp 顶部定义（含 generation

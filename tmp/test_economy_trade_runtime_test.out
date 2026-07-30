@@ -26,7 +26,7 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] trade signal records its last dispatch attempt and deadline state
   [PASS] in-transit committed boundary conserves
   [PASS] dispatch preserves the source market local-demand reserve
-  [PASS] PKEC v19 saves in-transit escrow
+  [PASS] PKEC v24 saves in-transit escrow
   [PASS] mid-transit restore preserves order and hash
   [PASS] arrival settles on its daily ETA
   [PASS] arrival remains exactly conserved
@@ -70,5 +70,5 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] publish slices report executed stage and deterministic bounded work
   [PASS] partial publish remains outside the save boundary
   [PASS] publish completes with exact conservation and accounted timing
-  [PASS] PKEC v19 explicitly rejects pre-v18 economy saves
+  [PASS] PKEC v22 explicitly rejects legacy economy saves
 === economy trade runtime PASS ===

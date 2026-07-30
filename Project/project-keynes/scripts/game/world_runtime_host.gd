@@ -80,6 +80,8 @@ var _map_overlay_last_refresh_msec: int = 0
 var _map_overlay_refresh_count: int = 0
 var _map_overlay_merged_dirty_count: int = 0
 var _map_overlay_last_result: Dictionary = {}
+# 帧尾诊断累加器：自上一 perf 行以来的 overlay 重烘焙总毫秒（发布时清零）。
+var _overlay_bake_ms_accum: float = 0.0
 var _fog_of_war_enabled: bool = false
 var _player_country_slot: int = -1
 var _player_country_handle: int = 0
@@ -410,6 +412,7 @@ func _refresh_map_overlay(force: bool) -> void:
 		"encode_upload_ms": (Time.get_ticks_usec() - started) / 1000.0,
 		"stats": result.get("stats", {}),
 	}
+	_overlay_bake_ms_accum += float(_map_overlay_last_result.get("encode_upload_ms", 0.0))
 
 
 func finish_daily_tick(ui_ms: float, ui_breakdown: Dictionary = {}) -> void:
@@ -535,6 +538,159 @@ func get_environment_perf_summary() -> Dictionary:
 
 func get_recorder_perf_summary() -> Dictionary:
 	return _last_recorder_perf_summary.duplicate(false)
+
+
+# main.gd dump_render_profile() 的玩家会话等价实现（GM 面板触发，不绑热键）。
+# 采样 120 帧输出帧墙钟统计 + SUS/非 SUS 帧均耗时 + 渲染监视器，用来判断高倍速
+# 掉帧的成本落在仿真循环内还是渲染/present 侧。
+# 输出三通道：print 控制台 + 单次 TXT 快照 + 累积 CSV（A/B 对比友好），
+# 落盘路径与 PerfRecorder 一致（桌面 ../../tmp，移动端 user://perf）。
+# 返回 {ok, txt_path, csv_path} 或 {ok=false, error}，供 GM 面板回显路径。
+func dump_render_profile() -> Dictionary:
+	var fps: float = Engine.get_frames_per_second()
+	var proc_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	var nav_ms: float = Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0
+	# 120 帧采样 + 直方图 + SUS 关联：区分"60FPS 帧与 30FPS 帧混合"和"全部稳定 25ms"。
+	const _SAMPLE_FRAMES: int = 120
+	var frame_samples: PackedFloat32Array = PackedFloat32Array()
+	frame_samples.resize(_SAMPLE_FRAMES)
+	var sus_tick_marks: PackedByteArray = PackedByteArray()
+	sus_tick_marks.resize(_SAMPLE_FRAMES)
+	var sus_tick_count_t0: int = _fast_tick_count
+	var sample_t0: int = Time.get_ticks_usec()
+	for i in range(_SAMPLE_FRAMES):
+		var t0: int = Time.get_ticks_usec()
+		var sus_before: int = _fast_tick_count
+		await get_tree().process_frame
+		frame_samples[i] = float(Time.get_ticks_usec() - t0) / 1000.0
+		sus_tick_marks[i] = 1 if _fast_tick_count > sus_before else 0
+	var sample_total_ms: float = float(Time.get_ticks_usec() - sample_t0) / 1000.0
+	var sus_ticks_in_window: int = _fast_tick_count - sus_tick_count_t0
+	var arr: Array = []
+	for i in range(_SAMPLE_FRAMES):
+		arr.append(frame_samples[i])
+	arr.sort()
+	var f_min: float = arr[0]
+	var f_max: float = arr[_SAMPLE_FRAMES - 1]
+	var f_p50: float = arr[_SAMPLE_FRAMES / 2]
+	var f_p95: float = arr[int(_SAMPLE_FRAMES * 0.95)]
+	var f_avg: float = sample_total_ms / float(_SAMPLE_FRAMES)
+	# 直方图：每 4ms 一个 bin，0-40ms 共 10 个 bin，> 40ms 算 overflow
+	var bins: PackedInt32Array = PackedInt32Array()
+	bins.resize(11)
+	for v in arr:
+		var idx: int = int(v / 4.0)
+		if idx >= 10:
+			idx = 10
+		bins[idx] += 1
+	var sus_frame_total_ms: float = 0.0
+	var non_sus_frame_total_ms: float = 0.0
+	var sus_count: int = 0
+	var non_sus_count: int = 0
+	for i in range(_SAMPLE_FRAMES):
+		if sus_tick_marks[i] == 1:
+			sus_frame_total_ms += frame_samples[i]
+			sus_count += 1
+		else:
+			non_sus_frame_total_ms += frame_samples[i]
+			non_sus_count += 1
+	var sus_frame_avg: float = sus_frame_total_ms / float(maxi(1, sus_count))
+	var non_sus_frame_avg: float = non_sus_frame_total_ms / float(maxi(1, non_sus_count))
+	var draw_calls: float = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	var primitives: float = Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+	var objects: float = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
+	var vram_total: float = Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0
+	var vram_tex: float = Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED) / 1048576.0
+	var vram_buf: float = Performance.get_monitor(Performance.RENDER_BUFFER_MEM_USED) / 1048576.0
+	var nodes: float = Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+	var resources: float = Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
+	var orphan_nodes: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+	# Godot 4 没有单独的 GPU 时间 monitor；TIME_PROCESS 含 GDScript + render submit。
+	var rs_view_calls: int = -1
+	var rs_view_prims: int = -1
+	if Engine.has_singleton("RenderingServer"):
+		rs_view_calls = int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
+		rs_view_prims = int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME))
+	var msaa_setting: int = ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d", 0)
+	var fxaa_setting: bool = bool(ProjectSettings.get_setting("rendering/anti_aliasing/quality/use_fxaa", false))
+	var vsync_setting: int = int(DisplayServer.window_get_vsync_mode())  # 0=Disabled, 1=Enabled, 2=Adaptive, 3=Mailbox
+	var max_fps_setting: int = int(Engine.max_fps)
+	var dt: Dictionary = Time.get_datetime_dict_from_system()
+	var stamp: String = "%04d-%02d-%02d %02d:%02d:%02d" % [
+		int(dt.get("year", 0)), int(dt.get("month", 0)), int(dt.get("day", 0)),
+		int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
+	]
+	var lines := PackedStringArray()
+	lines.append("[render-profile] === GPU / Frame metrics @ frame %d (player GM) %s ===" % [Engine.get_frames_drawn(), stamp])
+	lines.append("  FPS=%.1f  process(sample)=%.2fms  physics=%.2fms  nav=%.2fms" % [fps, proc_ms, phys_ms, nav_ms])
+	lines.append("  frame wall ms over %d samples: min=%.2f avg=%.2f p50=%.2f p95=%.2f max=%.2f" % [_SAMPLE_FRAMES, f_min, f_avg, f_p50, f_p95, f_max])
+	lines.append("  sus_ticks=%d/%d sus_frame_avg=%.2fms non_sus_frame_avg=%.2fms" % [sus_count, _SAMPLE_FRAMES, sus_frame_avg, non_sus_frame_avg])
+	lines.append("  histogram (4ms bins): [0-4)=%d [4-8)=%d [8-12)=%d [12-16)=%d [16-20)=%d [20-24)=%d [24-28)=%d [28-32)=%d [32-36)=%d [36-40)=%d [40+)=%d" % [
+		bins[0], bins[1], bins[2], bins[3], bins[4], bins[5], bins[6], bins[7], bins[8], bins[9], bins[10]
+	])
+	lines.append("  vsync_mode=%d  max_fps=%d  (0=Off 1=On 2=Adaptive 3=Mailbox)" % [vsync_setting, max_fps_setting])
+	lines.append("  draw_calls=%d  primitives=%d  objects=%d (Performance monitor)" % [int(draw_calls), int(primitives), int(objects)])
+	lines.append("  RenderingServer view_calls=%d view_prims=%d" % [rs_view_calls, rs_view_prims])
+	lines.append("  vram total=%.1f MB  tex=%.1f MB  buf=%.1f MB" % [vram_total, vram_tex, vram_buf])
+	lines.append("  nodes=%d resources=%d orphan_nodes=%d" % [int(nodes), int(resources), int(orphan_nodes)])
+	lines.append("  msaa=%d  fxaa=%s  mobile=%s  sus_ticks_in_window=%d" % [
+		msaa_setting, str(fxaa_setting), str(OS.has_feature("mobile")), sus_ticks_in_window
+	])
+	for line in lines:
+		print(line)
+
+	var export_dir: String = _render_profile_export_dir()
+	DirAccess.make_dir_recursive_absolute(export_dir)
+	var file_stamp: String = stamp.replace("-", "").replace(":", "").replace(" ", "_")
+	var txt_path: String = export_dir.path_join("render_profile_%s_%03d.txt" % [file_stamp, Time.get_ticks_msec() % 1000])
+	var csv_path: String = export_dir.path_join("render_profile_log.csv")
+	var tf := FileAccess.open(txt_path, FileAccess.WRITE)
+	if tf == null:
+		var err: int = FileAccess.get_open_error()
+		push_error("[render-profile] open txt failed path=%s err=%d" % [txt_path, err])
+		return {"ok": false, "error": "open txt failed err=%d" % err}
+	for line in lines:
+		tf.store_line(line)
+	tf.close()
+	# 累积 CSV：一行一次 dump，列序固定，方便掉帧前后两行直接 diff。
+	var csv_exists: bool = FileAccess.file_exists(csv_path)
+	var cf := FileAccess.open(csv_path, FileAccess.READ_WRITE) if csv_exists else FileAccess.open(csv_path, FileAccess.WRITE)
+	if cf == null:
+		var err2: int = FileAccess.get_open_error()
+		push_error("[render-profile] open csv failed path=%s err=%d" % [csv_path, err2])
+		return {"ok": true, "txt_path": txt_path, "csv_path": "", "error": "csv open failed err=%d" % err2}
+	if csv_exists:
+		cf.seek_end()
+	else:
+		cf.store_line("timestamp,frame,fps,process_ms,physics_ms,nav_ms,"
+			+ "wall_min_ms,wall_avg_ms,wall_p50_ms,wall_p95_ms,wall_max_ms,"
+			+ "sus_count,sus_frame_avg_ms,non_sus_frame_avg_ms,sus_ticks_in_window,"
+			+ "hist_0_4,hist_4_8,hist_8_12,hist_12_16,hist_16_20,hist_20_24,hist_24_28,hist_28_32,hist_32_36,hist_36_40,hist_40_plus,"
+			+ "vsync_mode,max_fps,draw_calls,primitives,objects,rs_view_calls,rs_view_prims,"
+			+ "vram_total_mb,vram_tex_mb,vram_buf_mb,nodes,resources,orphan_nodes,msaa,fxaa,mobile")
+	var row := PackedStringArray([
+		stamp, str(Engine.get_frames_drawn()), "%.1f" % fps, "%.3f" % proc_ms, "%.3f" % phys_ms, "%.3f" % nav_ms,
+		"%.3f" % f_min, "%.3f" % f_avg, "%.3f" % f_p50, "%.3f" % f_p95, "%.3f" % f_max,
+		str(sus_count), "%.3f" % sus_frame_avg, "%.3f" % non_sus_frame_avg, str(sus_ticks_in_window),
+		str(bins[0]), str(bins[1]), str(bins[2]), str(bins[3]), str(bins[4]), str(bins[5]),
+		str(bins[6]), str(bins[7]), str(bins[8]), str(bins[9]), str(bins[10]),
+		str(vsync_setting), str(max_fps_setting), str(int(draw_calls)), str(int(primitives)), str(int(objects)),
+		str(rs_view_calls), str(rs_view_prims),
+		"%.1f" % vram_total, "%.1f" % vram_tex, "%.1f" % vram_buf,
+		str(int(nodes)), str(int(resources)), str(int(orphan_nodes)),
+		str(msaa_setting), str(fxaa_setting), str(OS.has_feature("mobile")),
+	])
+	cf.store_line(",".join(row))
+	cf.close()
+	print("[render-profile] dumped txt=%s csv=%s" % [txt_path, csv_path])
+	return {"ok": true, "txt_path": txt_path, "csv_path": csv_path}
+
+
+static func _render_profile_export_dir() -> String:
+	if OS.has_feature("mobile"):
+		return ProjectSettings.globalize_path("user://perf").simplify_path()
+	return ProjectSettings.globalize_path("res://").path_join("../../tmp").simplify_path()
 
 
 func set_perf_recorder(recorder: RefCounted) -> void:
@@ -1142,7 +1298,24 @@ func _publish_fast_tick_perf_sample(
 			continuation.get("substage_max_slice_ms", {})),
 		"continuation_substage_work": JSON.stringify(
 			continuation.get("substage_work", {})),
+		# WorldClock 帧内分解：pulse = 本帧 continuation 脉冲段（日循环之前运行，
+		# fast_ms 看不到）；loop/full 在帧尾才更新，此处读到的是上一帧的值，
+		# 稳态下逐行平移一帧不影响对比分析。
+		"clock_pulse_ms": _world_clock.get_last_pulse_ms() if _world_clock != null else 0.0,
+		"clock_loop_ms": _world_clock.get_last_loop_ms() if _world_clock != null else 0.0,
+		"clock_full_ms": _world_clock.get_last_full_proc_ms() if _world_clock != null else 0.0,
+		# 帧尾探针：标签重建 / 植被 succession drain 读到的是上一帧的值（这些工作
+		# 由 tick 触发、在帧尾 _process 执行，天然滞后本行一帧）；overlay 烘焙是
+		# 自上一行以来的累计值，发布后清零。
+		"tail_label_ms": _settlement_label_layer.get_last_rebuild_ms() \
+			if _settlement_label_layer != null else 0.0,
+		"tail_label_count": _settlement_label_layer.get_last_rebuild_label_count() \
+			if _settlement_label_layer != null else 0,
+		"tail_vegetation_ms": _renderer.get_last_detail_drain_ms() \
+			if _renderer != null and _renderer.has_method("get_last_detail_drain_ms") else 0.0,
+		"tail_overlay_ms": _overlay_bake_ms_accum,
 	}
+	_overlay_bake_ms_accum = 0.0
 	if _generator != null and _generator.has_method("sus_climate_breakdown"):
 		var climate_diag: Dictionary = _generator.sus_climate_breakdown()
 		if not climate_diag.is_empty():
@@ -1288,6 +1461,7 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	if _map_overlay_layer != null:
 		_map_overlay_layer.set_bounds(_renderer.get_world_bounds())
 		_map_overlay_layer.set_horizontal_wrap(map_wrap_period_x())
+		_map_overlay_layer.configure_visual_tiles(_world_data.visual_tiles)
 		_map_overlay_layer.configure_cell_lut(
 			_world_data.enum_atlas_tex,
 			_world_data.lut_dims

@@ -47,21 +47,43 @@ float sample_terrain_horizon_angle(vec2 uv, vec2 sun_xy) {
 	// Packed nibbles cannot be hardware-linearly filtered: filtering bytes before unpacking
 	// creates invalid high/low nibble blends and visible contour/moire artifacts. Use NEAREST
 	// sampler and manually bilinear-filter decoded horizon angles instead.
+	#ifdef MAP_VISUAL_TILED
+	vec2 dims = visual_logical_resolution;
+	vec2 world_p = world_origin + uv * world_size;
+	if (wrap_period_x > 0.0001) {
+		world_p.x = wrap_origin_x + mod(world_p.x - wrap_origin_x, wrap_period_x);
+	}
+	vec2 domain_uv = clamp((world_p - visual_domain_origin) /
+		max(visual_domain_size, vec2(0.0001)), vec2(0.0), vec2(1.0));
+	vec2 p = domain_uv * dims - vec2(0.5);
+	#else
 	vec2 dims = vec2(textureSize(terrain_horizon_tex, 0));
 	vec2 p = wrap_map_uv(uv) * dims - vec2(0.5);
+	#endif
 	vec2 b = floor(p);
 	vec2 f = fract(p);
 	vec2 inv_dims = 1.0 / max(dims, vec2(1.0));
 
+	#ifdef MAP_VISUAL_TILED
+	vec2 uv00 = (visual_domain_origin + (b + vec2(0.5, 0.5)) * inv_dims *
+		visual_domain_size - world_origin) / world_size;
+	vec2 uv10 = (visual_domain_origin + (b + vec2(1.5, 0.5)) * inv_dims *
+		visual_domain_size - world_origin) / world_size;
+	vec2 uv01 = (visual_domain_origin + (b + vec2(0.5, 1.5)) * inv_dims *
+		visual_domain_size - world_origin) / world_size;
+	vec2 uv11 = (visual_domain_origin + (b + vec2(1.5, 1.5)) * inv_dims *
+		visual_domain_size - world_origin) / world_size;
+	#else
 	vec2 uv00 = wrap_map_uv((b + vec2(0.5, 0.5)) * inv_dims);
 	vec2 uv10 = wrap_map_uv((b + vec2(1.5, 0.5)) * inv_dims);
 	vec2 uv01 = wrap_map_uv((b + vec2(0.5, 1.5)) * inv_dims);
 	vec2 uv11 = wrap_map_uv((b + vec2(1.5, 1.5)) * inv_dims);
+	#endif
 
-	float h00 = horizon_angle_from_packed(texture(terrain_horizon_tex, uv00), sector);
-	float h10 = horizon_angle_from_packed(texture(terrain_horizon_tex, uv10), sector);
-	float h01 = horizon_angle_from_packed(texture(terrain_horizon_tex, uv01), sector);
-	float h11 = horizon_angle_from_packed(texture(terrain_horizon_tex, uv11), sector);
+	float h00 = horizon_angle_from_packed(visual_sample_horizon(uv00), sector);
+	float h10 = horizon_angle_from_packed(visual_sample_horizon(uv10), sector);
+	float h01 = horizon_angle_from_packed(visual_sample_horizon(uv01), sector);
+	float h11 = horizon_angle_from_packed(visual_sample_horizon(uv11), sector);
 	return mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
 }
 

@@ -85,6 +85,19 @@ const FIXED_COLUMNS: Array = [
 	"continuation_substage_wall_ms",
 	"continuation_substage_max_slice_ms",
 	"continuation_substage_work",
+	# WorldClock 帧内分解（毫秒）：pulse = continuation 脉冲段（日循环之前、
+	# fast_ms 之外的盲区）；loop/full 比本行滞后一帧。frame_tail ≈
+	# (1000/fps) - clock_full_ms 即帧尾残余（标签/overlay/植被队列/deferred/渲染提交）。
+	"clock_pulse_ms",
+	"clock_loop_ms",
+	"clock_full_ms",
+	# 帧尾探针（毫秒）：tick 触发、帧尾执行的三条已知路径。label/vegetation 比
+	# 本行滞后一帧；overlay 是自上一行以来的累计。frame_tail 残余 =
+	# (1000/fps) - clock_full_ms；减去这三项即未知帧尾。
+	"tail_label_ms",
+	"tail_label_count",
+	"tail_vegetation_ms",
+	"tail_overlay_ms",
 ]
 
 # 软上限：避免误开后台跑爆内存。约 60000 帧 ≈ 30 分钟 30FPS。

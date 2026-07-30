@@ -91,6 +91,19 @@ flowchart TD
 - A system is DOTS-authoritative only when native owns state, writes slots, advances tick/cursor, and publishes a graph-level report.
 - A pass returning `published_to_slot=true` proves slot publication for that pass, not visible renderer upload.
 - Godot object lifetimes, `ImageTexture`, front objects, UI/debug, and CSV sampling remain explicit GDScript/Godot boundaries until a dedicated native object API exists.
+
+## Visual tile authority
+
+| Concern | Authority | Publish / fallback |
+| --- | --- | --- |
+| Global geometry, height, river, water, pixel CSR | `run_bake_geometry_fields_pass` + `WorldData` CPU baseline | Existing legacy textures and CPU sampling remain valid. |
+| High-resolution static visual bytes | Stateless C++ `run_bake_visual_tile_layer_pass` | GDScript uploads a complete `VisualTileSet`; never writes simulation slots. |
+| Tiled horizon | local RenderingDevice compute | Atomic `horizon_ready`; native global-horizon resample on failure. |
+| Layout, texture objects, shader variant | GDScript/Godot | `generation_id` rejects stale work; Compatibility and static failure use legacy. |
+| Per-cell enum/dyn/eco/weather state | Existing global LUT owners | Never duplicated into Tile arrays; save schema unchanged. |
+
+Changing Tile budget or `N` is a rendering-quality decision, not a generation or runtime authority change.
+See [Visual Tile Rendering](./visual-tile-rendering.md).
 ## Economy v14 authority clarification
 
 `NativeEconomyRuntime` remains the only mutable owner of cohorts, funds, market
@@ -160,3 +173,9 @@ retain slot authority but defer only their visible `MapData` publish until the
 round finalizer. GDScript/Godot remains a snapshot consumer. Standalone,
 legacy, PROBE, and A/B pass entry points keep immediate flush unless they
 explicitly request `defer_visible_publish`.
+
+## Trigger authority
+
+`TriggerRuntime` owns committed event aggregation, condition IR, the ordered
+effect buffer, and PKTR. GameplayEventBus owns facts and replay; Modifier,
+Country, Economy, and Gameplay remain owners of effect application.

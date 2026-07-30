@@ -18,7 +18,7 @@
 
 // 解码每像素 cell 索引；返回 -1 表示 map 外（0xFFFF 哨兵）。
 int decode_cell_index(vec2 uv) {
-	vec2 gb = texture(map_index_atlas, wrap_map_uv(uv)).gb;
+	vec2 gb = visual_sample_map_index(uv).gb;
 	int lo = int(gb.r * 255.0 + 0.5);
 	int hi = int(gb.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
@@ -49,4 +49,3 @@ vec4 eco_lut_nearest(vec2 uv) {
 	int cid = decode_cell_index(uv);
 	return (cid >= 0) ? texture(eco_lut, cell_lut_uv(cid)) : vec4(0.0);
 }
-

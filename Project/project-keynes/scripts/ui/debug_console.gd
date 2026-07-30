@@ -481,6 +481,20 @@ func _build_gm_recording_page(parent: Control) -> void:
 	page.add_child(snapshot_row)
 	_snapshot_btn = snapshot_button
 
+	var profile_row := HBoxContainer.new()
+	var profile_button := Button.new()
+	profile_button.tooltip_text = "采样 120 帧的帧墙钟/渲染指标，打印到控制台（编辑器输出面板 / stdout）"
+	profile_button.custom_minimum_size = Vector2(38.0, 34.0)
+	IconButton.apply(profile_button, &"summary.overview", 15)
+	profile_button.pressed.connect(_on_gm_render_profile_pressed)
+	profile_row.add_child(profile_button)
+	var profile_label := Label.new()
+	profile_label.text = "Dump 渲染性能监视器（120 帧采样 → 控制台）"
+	profile_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	profile_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	profile_row.add_child(profile_label)
+	page.add_child(profile_row)
+
 
 func _add_gm_recorder_row(parent: VBoxContainer, recorder_id: String,
 		label_text: String, callback: Callable) -> void:
@@ -776,6 +790,22 @@ func _on_gm_snapshot_pressed() -> void:
 	IconButton.apply(_snapshot_btn, &"action.save", 15)
 	if result_text.length() > 1:
 		_append_gm_output(result_text, result_text.contains("失败"))
+
+
+# render-profile dump 不绑热键：统一走 GM「记录」页按钮，实现由运行时宿主
+# （WorldRuntimeHost.dump_render_profile）提供，与录制器按钮同一套鸭子类型约定。
+func _on_gm_render_profile_pressed() -> void:
+	if _main == null or not _main.has_method("dump_render_profile"):
+		_append_gm_output("当前运行时不支持 render-profile dump", true)
+		return
+	_append_gm_output("render-profile：开始采样 120 帧（约数秒）…", false)
+	var result = await _main.call("dump_render_profile")
+	if result is Dictionary and bool(result.get("ok", false)):
+		_append_gm_output("render-profile 已写出：%s" % String(result.get("txt_path", "")), false)
+	elif result is Dictionary:
+		_append_gm_output("render-profile 写出失败：%s" % String(result.get("error", "未知错误")), true)
+	else:
+		_append_gm_output("render-profile：采样完成（控制台输出）", false)
 
 
 func _refresh_gm_recorders() -> void:

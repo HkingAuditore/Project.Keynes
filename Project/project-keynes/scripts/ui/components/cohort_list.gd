@@ -2,6 +2,7 @@ extends VBoxContainer
 class_name CohortList
 
 signal demand_details_requested(details: Dictionary)
+signal details_requested(request: Dictionary)
 
 var _row_refs: Dictionary = {}
 var _expanded: Dictionary = {}
@@ -43,7 +44,11 @@ func set_expanded(row_id: String, expanded: bool) -> void:
 		return
 	_expanded[row_id] = expanded
 	var refs: Dictionary = _row_refs[row_id]
-	(refs.get("button") as Button).set_pressed_no_signal(expanded)
+	var chevron := refs.get("chevron") as Button
+	if chevron != null:
+		IconButton.apply(chevron,
+			&"action.chevron_down" if expanded else &"action.chevron_right",
+			IconButton.SMALL, "展开 / 折叠", true, expanded)
 	(refs.get("details") as Control).visible = expanded
 
 
@@ -60,12 +65,15 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	panel.add_child(body)
 
 	var button := Button.new()
-	button.toggle_mode = true
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(0.0, 58.0)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.text = ""
-	button.toggled.connect(func(expanded: bool) -> void: set_expanded(row_id, expanded))
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.pressed.connect(func() -> void: details_requested.emit(
+		{"kind": "cohort", "row_id": row_id,
+			"profession_id": String((_row_data.get(row_id, {}) as Dictionary) \
+				.get("profession_id", ""))}))
 	body.add_child(button)
 
 	var header := HBoxContainer.new()
@@ -73,6 +81,14 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	header.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 7)
 	header.add_theme_constant_override("separation", UITokens.SPACE_SM)
 	button.add_child(header)
+	var chevron := Button.new()
+	chevron.toggle_mode = true
+	chevron.custom_minimum_size = Vector2(22.0, 22.0)
+	chevron.focus_mode = Control.FOCUS_NONE
+	chevron.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	chevron.tooltip_text = "展开 / 折叠"
+	chevron.toggled.connect(func(expanded: bool) -> void: set_expanded(row_id, expanded))
+	header.add_child(chevron)
 	var icon := IconBadge.new()
 	icon.custom_minimum_size = Vector2(26.0, 26.0)
 	header.add_child(icon)
@@ -130,7 +146,7 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	var expense_group := _create_ledger_group(details, "支出构成", "trend_down", UITokens.RISK)
 	var demand := _create_demand_summary(details, row_id)
 
-	var refs := {"panel": panel, "button": button, "icon": icon,
+	var refs := {"panel": panel, "button": button, "chevron": chevron, "icon": icon,
 		"living_icon": living_icon, "name": name_label,
 		"status": status_label, "population": population_label, "wealth": wealth_label,
 		"income": income_label, "expense": expense_label, "details": details,

@@ -20,8 +20,8 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] zero arable capacity stops farm production
   [PASS] capacity cycles conserve economy ledgers
   [PASS] resource production worker/scalar hashes match
-[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DCWorldExt] bind_map_data: 143 components bound (auto-registered=143; snapshot model; see world_ext.cpp comment & charter Â§11)
   [FAIL] shore fishery extracts only its local coastal-land reserve
-[DCWorldExt] bind_map_data: 142 components bound (auto-registered=142; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DCWorldExt] bind_map_data: 143 components bound (auto-registered=143; snapshot model; see world_ext.cpp comment & charter Â§11)
   [PASS] freshwater fishery extracts only its local freshwater reserve
 === building resource chain FAIL ===
