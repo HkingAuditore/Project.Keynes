@@ -238,6 +238,8 @@ func _validate_day(ext: Object, day: int) -> void:
 	var slices := 0
 	var saw_investment_range := false
 	var household_substages: Dictionary = {}
+	var household_breakdown_valid := true
+	var household_breakdown_seen := false
 	var commit_substages: Dictionary = {}
 	var commit_breakdown_valid := true
 	var investment_prepare_breakdown_seen := false
@@ -267,6 +269,17 @@ func _validate_day(ext: Object, day: int) -> void:
 		var executed_substage := String(report.get("executed_substage", ""))
 		if executed_stage == "household_market":
 			household_substages[executed_substage] = true
+			var household_breakdown: Dictionary = report.get(
+				"household_market_breakdown_ms", {})
+			var household_work: Dictionary = report.get(
+				"household_market_breakdown_work", {})
+			var expected_breakdown := "household_market.%s" % (
+				"settle.worker" if executed_substage == "settle"
+				else executed_substage)
+			household_breakdown_seen = true
+			household_breakdown_valid = household_breakdown_valid and \
+				household_breakdown.has(expected_breakdown) and \
+				household_work.has(expected_breakdown)
 			if executed_substage == "reserve_shortfall":
 				bounded_post_work = bounded_post_work and \
 					int(report.get("work_done", 0)) <= 4096 * maxi(1, chunks)
@@ -308,6 +321,8 @@ func _validate_day(ext: Object, day: int) -> void:
 		saw_investment_range or max_chunks > 1)
 	_expect("day %d exposes sliced household finalization" % day,
 		completed or (bounded_post_work and household_substages.has("settle")))
+	_expect("day %d exposes household slice timing breakdown" % day,
+		not household_breakdown_seen or household_breakdown_valid)
 	_expect("day %d exposes baked building review phases" % day,
 		commit_breakdown_valid and (commit_substages.has("investment") or
 		max_chunks > 1))

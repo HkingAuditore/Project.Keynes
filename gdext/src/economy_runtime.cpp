@@ -13706,8 +13706,9 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["economy_approximation_runtime_mode"] =
         _approximation_runtime_mode == 0 ? "OFF" :
         (_approximation_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["approximation_large_world_scalar_guard"] =
-        _approximation_runtime_mode == 2 && _cell_count > 4096;
+    // Retained for report compatibility. Household workers are safe on large
+    // ACTIVE worlds now that result and staging-touch sinks are thread-local.
+    out["approximation_large_world_scalar_guard"] = false;
     out["approximation_authoritative"] =
         _approximation_runtime_mode == 2 && _accuracy_preset != 0 &&
         _approximation_cooldown_epochs_left == 0;
@@ -16168,6 +16169,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _market_worker_tasks_max = 1;
     _market_worker_task_sum = 0;
     _market_worker_dispatches = 0;
+    _market_worker_parallel_dispatches = 0;
     _production_worker_tasks_max = 1;
     _production_worker_task_sum = 0;
     _production_worker_dispatches = 0;
@@ -16341,6 +16343,8 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
     snapshot.market_worker_tasks_max = _market_worker_tasks_max;
     snapshot.market_worker_task_sum = _market_worker_task_sum;
     snapshot.market_worker_dispatches = _market_worker_dispatches;
+    snapshot.market_worker_parallel_dispatches =
+        _market_worker_parallel_dispatches;
     snapshot.production_worker_tasks_max = _production_worker_tasks_max;
     snapshot.production_worker_task_sum = _production_worker_task_sum;
     snapshot.production_worker_dispatches = _production_worker_dispatches;
@@ -19539,6 +19543,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
     _publish_slice_phase_work.fill(0);
     _building_commit_slice_phase_ms.fill(0.0);
     _building_commit_slice_phase_work.fill(0);
+    _household_slice_phase_ms.fill(0.0);
+    _household_slice_phase_work.fill(0);
     Dictionary out;
     const int64_t day_index = dict_num<int64_t>(ctx, "day_index", _current_day < 0 ? 0 : _current_day);
     const double requested_slice_budget_ms = std::clamp(
@@ -20142,6 +20148,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             _executed_stage = Stage::HOUSEHOLD_MARKET;
             if (_household_market_phase == 1) {
                 _executed_substage = "post_buildings";
+                const auto phase_started = Clock::now();
                 cursor_start = _household_post_cursor;
                 const int32_t end =
                     household_post_slice_end(_household_post_cursor);
@@ -20193,11 +20200,16 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     _household_post_cursor = 0;
                     _household_market_phase = 2;
                 }
+                _household_slice_phase_ms[HOUSEHOLD_POST_BUILDINGS] +=
+                    elapsed_ms(phase_started);
+                _household_slice_phase_work[HOUSEHOLD_POST_BUILDINGS] +=
+                    end - begin;
                 if (finish_chunk_and_should_yield()) break;
                 continue;
             }
             if (_household_market_phase == 2) {
                 _executed_substage = "reserve_shortfall";
+                const auto phase_started = Clock::now();
                 cursor_start = _household_post_cursor;
                 const int32_t end = std::min<int32_t>(
                     static_cast<int32_t>(_epoch_settlement_cells.size()),
@@ -20244,12 +20256,18 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     _household_post_cursor = 0;
                     _household_market_phase = 3;
                 }
+                _household_slice_phase_ms[HOUSEHOLD_RESERVE_SHORTFALL] +=
+                    elapsed_ms(phase_started);
+                _household_slice_phase_work[HOUSEHOLD_RESERVE_SHORTFALL] +=
+                    end - begin;
                 if (finish_chunk_and_should_yield()) break;
                 continue;
             }
             if (_household_market_phase == 3) {
                 _executed_substage = "income_subsidy";
+                const auto phase_started = Clock::now();
                 cursor_start = _household_post_cursor;
+                const int32_t begin = _household_post_cursor;
                 const int32_t end = std::min<int32_t>(
                     static_cast<int32_t>(_epoch_settlement_cells.size()),
                     _household_post_cursor + PUBLISH_ENTRIES_PER_SLICE);
@@ -20267,11 +20285,16 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     _household_post_cursor = 0;
                     _household_market_phase = 4;
                 }
+                _household_slice_phase_ms[HOUSEHOLD_INCOME_SUBSIDY] +=
+                    elapsed_ms(phase_started);
+                _household_slice_phase_work[HOUSEHOLD_INCOME_SUBSIDY] +=
+                    end - begin;
                 if (finish_chunk_and_should_yield()) break;
                 continue;
             }
             if (_household_market_phase == 4) {
                 _executed_substage = "structural_sort";
+                const auto phase_started = Clock::now();
                 if (_approximation_cooldown_epochs_left > 0) {
                     --_approximation_cooldown_epochs_left;
                 } else if (_accuracy_preset != 0 &&
@@ -20305,12 +20328,17 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     return a.source_slot < b.source_slot;
                 });
                 work_done += static_cast<int64_t>(_structural_commands.size());
+                _household_slice_phase_ms[HOUSEHOLD_STRUCTURAL_SORT] +=
+                    elapsed_ms(phase_started);
+                _household_slice_phase_work[HOUSEHOLD_STRUCTURAL_SORT] +=
+                    static_cast<int64_t>(_structural_commands.size());
                 _household_market_phase = 0;
                 _stage = Stage::GOVERNMENT_RESEARCH_PROCUREMENT;
                 if (finish_chunk_and_should_yield()) break;
                 continue;
             }
             _executed_substage = "settle";
+            const auto settle_started = Clock::now();
             cursor_start = _cell_cursor;
             const int32_t begin = _cell_cursor;
             int32_t end = begin;
@@ -20387,13 +20415,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 : static_cast<int32_t>(std::clamp<int64_t>(
                     (estimated_work + 1023) / 1024, 2,
                     _worker_task_cap));
-            // A large-world ACTIVE timing race is still under diagnosis. Keep
-            // the authority path enabled, but contain household settlement to
-            // scalar above 4096 cells until worker/scalar soak is clean.
-            const bool approximation_large_world_scalar_guard =
-                _approximation_runtime_mode == 2 && _cell_count > 4096;
             _worker_tasks = _worker_enabled &&
-                                    !approximation_large_world_scalar_guard &&
                                     market_count >= 2 &&
                                     estimated_work >= 256 &&
                                     godot::WorkerThreadPool::get_singleton() != nullptr
@@ -20422,8 +20444,12 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     }
                 }
             };
+            const double slice_prepare_ms = elapsed_ms(settle_started);
+            _household_slice_phase_ms[HOUSEHOLD_PREPARE] += slice_prepare_ms;
+            _household_slice_phase_work[HOUSEHOLD_PREPARE] += market_count;
             const auto worker_started = Clock::now();
             if (_worker_tasks > 1) {
+                ++_market_worker_parallel_dispatches;
                 _production_task_offsets_scratch.assign(
                     static_cast<size_t>(_worker_tasks + 1), 0);
                 _production_task_offsets_scratch[_worker_tasks] =
@@ -20485,7 +20511,10 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             } else {
                 run_markets(0, market_count);
             }
-            _market_worker_ms += elapsed_ms(worker_started);
+            const double slice_worker_ms = elapsed_ms(worker_started);
+            _market_worker_ms += slice_worker_ms;
+            _household_slice_phase_ms[HOUSEHOLD_WORKER] += slice_worker_ms;
+            _household_slice_phase_work[HOUSEHOLD_WORKER] += market_count;
             const auto merge_started = Clock::now();
             const auto trade_bulk_started = Clock::now();
             _trade_signal_bulk_keys_scratch.clear();
@@ -20506,7 +20535,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                             _trade_signal_bulk_keys_scratch.end()),
                 _trade_signal_bulk_keys_scratch.end());
             ensure_trade_signal_clock_keys_bulk(_trade_signal_bulk_keys_scratch);
-            _market_merge_trade_ms += elapsed_ms(trade_bulk_started);
+            double slice_trade_ms = elapsed_ms(trade_bulk_started);
+            double slice_aggregate_ms = 0.0;
             for (int32_t relative = 0; relative < market_count; ++relative) {
                 const int32_t market = _epoch_market_ids[begin + relative];
                 MarketResult &market_result = _market_results_scratch[relative];
@@ -20633,8 +20663,11 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                                              market_result.structural_commands.begin(),
                                              market_result.structural_commands.end());
                 const auto aggregate_finished = Clock::now();
-                _market_merge_aggregate_ms += std::chrono::duration<double, std::milli>(
-                    aggregate_finished - aggregate_merge_started).count();
+                const double aggregate_ms =
+                    std::chrono::duration<double, std::milli>(
+                        aggregate_finished - aggregate_merge_started).count();
+                _market_merge_aggregate_ms += aggregate_ms;
+                slice_aggregate_ms += aggregate_ms;
                 const auto trade_merge_started = Clock::now();
                 for (const int32_t good : market_result.trade_active_goods) {
                     add_trade_active_key(market, good);
@@ -20667,9 +20700,10 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                         _trade_signal_deadline_reported[signal_clock] = 0;
                     }
                 }
-                _market_merge_trade_ms += elapsed_ms(trade_merge_started);
+                slice_trade_ms += elapsed_ms(trade_merge_started);
                 ++work_done;
             }
+            double slice_trace_ms = 0.0;
             if (!_fatal && _trace_mode != TRACE_OFF) {
                 const auto event_start = Clock::now();
                 for (int32_t relative = 0; relative < market_count; ++relative) {
@@ -20692,9 +20726,28 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                                  market_result.trace_legs.empty() ? nullptr :
                                      &market_result.trace_legs);
                 }
-                _event_summary_ms += elapsed_ms(event_start);
+                slice_trace_ms = elapsed_ms(event_start);
+                _event_summary_ms += slice_trace_ms;
             }
-            _market_merge_ms += elapsed_ms(merge_started);
+            const double slice_merge_ms = elapsed_ms(merge_started);
+            _market_merge_ms += slice_merge_ms;
+            _market_merge_trade_ms += slice_trade_ms;
+            _household_slice_phase_ms[HOUSEHOLD_MERGE_AGGREGATE] +=
+                slice_aggregate_ms;
+            _household_slice_phase_work[HOUSEHOLD_MERGE_AGGREGATE] +=
+                market_count;
+            _household_slice_phase_ms[HOUSEHOLD_MERGE_TRADE] +=
+                slice_trade_ms;
+            _household_slice_phase_work[HOUSEHOLD_MERGE_TRADE] +=
+                market_count;
+            _household_slice_phase_ms[HOUSEHOLD_TRACE] += slice_trace_ms;
+            _household_slice_phase_work[HOUSEHOLD_TRACE] +=
+                _trace_mode == TRACE_OFF ? 0 : market_count;
+            _household_slice_phase_ms[HOUSEHOLD_OTHER] += std::max(
+                0.0, elapsed_ms(settle_started) - slice_prepare_ms -
+                    slice_worker_ms - slice_aggregate_ms -
+                    slice_trade_ms - slice_trace_ms);
+            _household_slice_phase_work[HOUSEHOLD_OTHER] += market_count;
             _cell_cursor = end;
             cursor_end = _cell_cursor;
             cell_range_used = true;
@@ -21414,6 +21467,50 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     return bytes;
 }
 
+Dictionary NativeEconomyRuntime::household_slice_breakdown_ms() const {
+    static constexpr const char *PHASE_NAMES[HOUSEHOLD_SLICE_PHASE_COUNT] = {
+        "settle.prepare",
+        "settle.worker",
+        "settle.merge_aggregate",
+        "settle.merge_trade",
+        "settle.trace",
+        "settle.other",
+        "post_buildings",
+        "reserve_shortfall",
+        "income_subsidy",
+        "structural_sort",
+    };
+    Dictionary out;
+    for (size_t phase = 0; phase < HOUSEHOLD_SLICE_PHASE_COUNT; ++phase) {
+        const std::string key =
+            std::string("household_market.") + PHASE_NAMES[phase];
+        out[key.c_str()] = _household_slice_phase_ms[phase];
+    }
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::household_slice_breakdown_work() const {
+    static constexpr const char *PHASE_NAMES[HOUSEHOLD_SLICE_PHASE_COUNT] = {
+        "settle.prepare",
+        "settle.worker",
+        "settle.merge_aggregate",
+        "settle.merge_trade",
+        "settle.trace",
+        "settle.other",
+        "post_buildings",
+        "reserve_shortfall",
+        "income_subsidy",
+        "structural_sort",
+    };
+    Dictionary out;
+    for (size_t phase = 0; phase < HOUSEHOLD_SLICE_PHASE_COUNT; ++phase) {
+        const std::string key =
+            std::string("household_market.") + PHASE_NAMES[phase];
+        out[key.c_str()] = _household_slice_phase_work[phase];
+    }
+    return out;
+}
+
 Dictionary NativeEconomyRuntime::compact_report() const {
     Dictionary out;
     const int64_t age_days = _epoch_active
@@ -21534,6 +21631,12 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         }
         out["building_commit_breakdown_ms"] = breakdown_ms;
         out["building_commit_breakdown_work"] = breakdown_work;
+    }
+    if (_executed_stage == Stage::HOUSEHOLD_MARKET) {
+        out["household_market_breakdown_ms"] =
+            household_slice_breakdown_ms();
+        out["household_market_breakdown_work"] =
+            household_slice_breakdown_work();
     }
 
     out["economy_event_newest_id"] = _next_event_id - 1;
@@ -21775,6 +21878,10 @@ Dictionary NativeEconomyRuntime::report() const {
     out["publish_breakdown_work"] = publish_breakdown_work;
     out["publish_cumulative_breakdown_ms"] = publish_cumulative_breakdown_ms;
     out["publish_cumulative_breakdown_work"] = publish_cumulative_breakdown_work;
+    out["household_market_breakdown_ms"] =
+        household_slice_breakdown_ms();
+    out["household_market_breakdown_work"] =
+        household_slice_breakdown_work();
     static constexpr const char *BUILDING_COMMIT_PHASE_NAMES[
         BUILDING_COMMIT_PHASE_COUNT] = {
         "review_prepare", "special_reset", "recovery_review",
@@ -21916,6 +22023,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["market_worker_tasks_max"] = _market_worker_tasks_max;
     out["market_worker_task_sum"] = _market_worker_task_sum;
     out["market_worker_dispatches"] = _market_worker_dispatches;
+    out["market_worker_parallel_dispatches"] =
+        _market_worker_parallel_dispatches;
     out["building_production_worker_tasks_max"] =
         _production_worker_tasks_max;
     out["building_production_worker_task_sum"] =
@@ -22012,6 +22121,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _last_completed_perf.market_worker_task_sum;
     out["last_completed_market_worker_dispatches"] =
         _last_completed_perf.market_worker_dispatches;
+    out["last_completed_market_worker_parallel_dispatches"] =
+        _last_completed_perf.market_worker_parallel_dispatches;
     out["last_completed_building_production_worker_tasks_max"] =
         _last_completed_perf.production_worker_tasks_max;
     out["last_completed_building_production_worker_task_sum"] =
@@ -22558,8 +22669,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["economy_approximation_runtime_mode"] =
         _approximation_runtime_mode == 0 ? "OFF" :
         (_approximation_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["approximation_large_world_scalar_guard"] =
-        _approximation_runtime_mode == 2 && _cell_count > 4096;
+    out["approximation_large_world_scalar_guard"] = false;
     out["approximation_authoritative"] =
         _approximation_runtime_mode == 2 && _accuracy_preset != 0 &&
         _approximation_cooldown_epochs_left == 0;

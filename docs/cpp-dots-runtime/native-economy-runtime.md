@@ -819,12 +819,21 @@ rollback/baseline modes. Reports use
 size/pruning, certified regret, failures, and fallbacks. These frontiers are
 derived scratch and are not persisted.
 
-While the unresolved large-world household worker race is isolated,
-`BALANCED+ACTIVE` worlds above 4096 cells keep household market settlement
-scalar; building plan, production, and audit workers remain enabled. Report
-field `approximation_large_world_scalar_guard=true` makes this containment
-visible. The 2400-cell certified performance scene continues to use household
-workers.
+Household settlement now uses thread-local result/staging-touch sinks and
+per-task landing buffers, so `BALANCED+ACTIVE` worlds above 4096 cells can use
+the same deterministic worker path as smaller worlds. The compatibility report
+field `approximation_large_world_scalar_guard` remains present but is always
+`false`; `market_worker_parallel_dispatches` and its `last_completed_*`
+snapshot show how many market ranges actually used more than one worker task.
+The worker/scalar authority hash and all conservation ledgers must remain equal.
+
+Each compact `household_market` continuation also exposes
+`household_market_breakdown_ms/work`. Settlement is split into `settle.prepare`,
+`settle.worker`, `settle.merge_aggregate`, `settle.merge_trade`, `settle.trace`
+and `settle.other`; the four bounded finalization substages are reported as
+`post_buildings`, `reserve_shortfall`, `income_subsidy` and `structural_sort`.
+These fields are diagnostic only and do not change the rolling five-day
+cadence, work ordering, save schema, or state hash.
 
 The rolling hot path also keeps a non-authoritative per-cell demand-basis cache.
 Building owner-retention and household clearing share the same frozen prices,

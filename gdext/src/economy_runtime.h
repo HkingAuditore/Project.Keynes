@@ -1321,6 +1321,7 @@ private:
         int32_t market_worker_tasks_max = 1;
         int64_t market_worker_task_sum = 0;
         int64_t market_worker_dispatches = 0;
+        int64_t market_worker_parallel_dispatches = 0;
         int32_t production_worker_tasks_max = 1;
         int64_t production_worker_task_sum = 0;
         int64_t production_worker_dispatches = 0;
@@ -1868,6 +1869,7 @@ private:
     int32_t _market_worker_tasks_max = 1;
     int64_t _market_worker_task_sum = 0;
     int64_t _market_worker_dispatches = 0;
+    int64_t _market_worker_parallel_dispatches = 0;
     int32_t _production_worker_tasks_max = 1;
     int64_t _production_worker_task_sum = 0;
     int64_t _production_worker_dispatches = 0;
@@ -2020,6 +2022,21 @@ private:
     std::array<int64_t, static_cast<size_t>(PublishPhase::COUNT)> _publish_slice_phase_work{};
     std::array<double, BUILDING_COMMIT_PHASE_COUNT> _building_commit_slice_phase_ms{};
     std::array<int64_t, BUILDING_COMMIT_PHASE_COUNT> _building_commit_slice_phase_work{};
+    enum HouseholdSlicePhase : size_t {
+        HOUSEHOLD_PREPARE = 0,
+        HOUSEHOLD_WORKER,
+        HOUSEHOLD_MERGE_AGGREGATE,
+        HOUSEHOLD_MERGE_TRADE,
+        HOUSEHOLD_TRACE,
+        HOUSEHOLD_OTHER,
+        HOUSEHOLD_POST_BUILDINGS,
+        HOUSEHOLD_RESERVE_SHORTFALL,
+        HOUSEHOLD_INCOME_SUBSIDY,
+        HOUSEHOLD_STRUCTURAL_SORT,
+        HOUSEHOLD_SLICE_PHASE_COUNT,
+    };
+    std::array<double, HOUSEHOLD_SLICE_PHASE_COUNT> _household_slice_phase_ms{};
+    std::array<int64_t, HOUSEHOLD_SLICE_PHASE_COUNT> _household_slice_phase_work{};
 
     AuditTotals _opening_totals;
     AuditTotals _closing_totals;
@@ -2469,6 +2486,8 @@ private:
     bool configure_profile(const godot::Dictionary &profile, std::string &error);
     godot::Dictionary run_slice_internal(const godot::Dictionary &ctx, bool compact);
     godot::Dictionary compact_report() const;
+    godot::Dictionary household_slice_breakdown_ms() const;
+    godot::Dictionary household_slice_breakdown_work() const;
     bool start_epoch(int64_t day_index, std::string &error);
     bool trade_planner_should_run() const;
     bool run_trade_planner_slice(int64_t &work_done, std::string &error);

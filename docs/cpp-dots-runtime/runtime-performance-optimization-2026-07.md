@@ -23,11 +23,17 @@ transient，不进入存档、state hash 或 event hash。
   超过 25%，或连续两个 epoch 裁剪率低于 2% 时，进入配置的精确冷却。
 - 生产默认现为 `BALANCED+ACTIVE`。`OFF/PROBE` 永久保留为精确基线和
   回滚路径；ACTIVE 的证书失败、探针越界与 cooldown 均继续自动走精确路径。
-- 复测发现 6400-cell saved setup 的 ACTIVE household worker 存在 heap
-  corruption，而同配置 scalar 稳定。完成 worker/scalar soak 前，
-  `cell_count>4096` 的 ACTIVE household settlement 使用确定性 scalar
-  containment，并报告 `approximation_large_world_scalar_guard=true`；
-  building plan、production 与 audit worker 不受影响。
+- 6400-cell ACTIVE household 的旧 heap corruption 已通过 thread-local
+  market/staging-touch sink 和逐 task landing buffer 隔离修复；大世界 scalar
+  containment 已退出，兼容字段 `approximation_large_world_scalar_guard` 恒为
+  `false`。6400-cell worker/scalar A/B 使用相同 seed 得到相同 authority hash，
+  人口/货币/货物误差均为 0；连续 6 次 worker soak 也保持相同结果。新增
+  `market_worker_parallel_dispatches` 和 `last_completed_*` 快照，区分“允许 worker”
+  与“实际发生并行 dispatch”。
+- `household_market_breakdown_ms/work` 将每片细分为 prepare、worker、
+  aggregate merge、trade merge、trace、other，以及四个有界收尾子阶段。该诊断
+  让五个 rolling market dispatch 的真实热点可直接聚合，不改变 market range
+  顺序、五日 cadence、账本提交或存档格式。
 - 投资 sparse 候选覆盖率超过 95% 时直接遍历完整 country/type CSR，
   并通过 `investment_sparse_dense_fallbacks` 报告。
 
