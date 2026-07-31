@@ -282,6 +282,11 @@ bool DCWorldExt::_exec_node_runtime_hydrology(Dictionary& bundle,
     breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));
     breakdown["hydrology_river_discharge_max"] = double(hydro.get("river_discharge_max", 0.0));
     breakdown["hydrology_riparian_neighbor_touches"] = int(hydro.get("riparian_neighbor_touches", 0));
+    breakdown["hydrology_river_moisture_floor_touches"] = int(hydro.get("river_moisture_floor_touches", 0));
+    breakdown["hydrology_riparian_moisture_floor_touches"] = int(hydro.get("riparian_moisture_floor_touches", 0));
+    breakdown["hydrology_moisture_response_alpha"] = double(hydro.get("moisture_response_alpha", 0.0));
+    breakdown["hydrology_river_moisture_max_delta"] = double(hydro.get("river_moisture_max_delta", 0.0));
+    breakdown["hydrology_riparian_moisture_max_delta"] = double(hydro.get("riparian_moisture_max_delta", 0.0));
     breakdown["hydrology_flood_count"] = int(hydro.get("flood_count", hydro.get("flood_candidate_count", 0)));
     breakdown["hydrology_published_to_slot"] = true;
     return true;

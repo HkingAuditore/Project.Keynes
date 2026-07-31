@@ -107,7 +107,7 @@ extends Resource
 # Leeward rain-shadow: if upstream elevation delta ≥ threshold, the cell's
 # moisture is multiplied by factor (0 = completely dry; 1 = no shadow).
 @export var rain_shadow_threshold: float = 0.13
-@export var rain_shadow_factor: float = 0.50
+@export var rain_shadow_factor: float = 0.65
 
 # How many cells upwind to look back when detecting rain shadow.
 @export var rain_shadow_lookback: int = 3
@@ -647,6 +647,9 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var plant_water_balance_weight: float = 0.35
 @export var plant_soil_buffer_weight: float = 0.30
 @export var plant_drought_penalty: float = 0.25
+@export_range(0.0, 1.0, 0.01) var vegetation_min_suitability: float = 0.18
+@export_range(0.0, 0.01, 0.000001) var vegetation_tie_epsilon: float = 0.000001
+@export_range(0.0, 0.25, 0.005) var vegetation_none_hysteresis: float = 0.02
 @export var succession_min_compat_gain: float = 0.06
 @export var vegetation_stress_enabled: bool = true
 @export_range(1, 365, 1) var vegetation_stress_memory_days: int = 30
@@ -1143,7 +1146,13 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.005, 1.0, 0.005) var hydro_lake_release_rate: float = 0.18
 @export_range(0.01, 1.0, 0.005) var hydro_discharge_ema: float = 0.08
 @export_range(0.0, 0.25, 0.001) var hydro_bank_moisture_gain: float = 0.035
+# 河道与一环河岸的环境湿度下限。河流流量只提供小幅加成，确保支流也能维持
+# 浅层地下水/河岸蒸散形成的窄湿润带，而不会把整个流域直接抬成湿润气候。
+@export_range(0.0, 1.0, 0.005) var hydro_river_moisture_floor: float = 0.66
+@export_range(0.0, 1.0, 0.005) var hydro_riparian_moisture_floor: float = 0.38
 @export_range(0.0, 1.0, 0.005) var hydro_river_evap_gain: float = 0.12
+# 河流/河岸环境湿度向目标下限靠近的每日比例；0 关闭直接回灌，1 恢复硬跳。
+@export_range(0.0, 1.0, 0.005) var hydro_moisture_response_rate: float = 0.08
 @export_range(0.1, 8.0, 0.05) var hydro_flood_threshold: float = 2.2
 @export_range(0.0, 1.0, 0.005) var hydro_flood_decay: float = 0.10
 
@@ -1281,11 +1290,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.05) var moisture_smooth: float = 0.35
 @export var moisture_noise_amp: float = 0.08
 # 副热带干带：在南北副热带纬度按距海大陆度扣湿，恢复稳定的热带/暖温带荒漠带。
-# [地貌真实性 2026-06-25] strength 0.22→0.32：实测(tile_data 0625)真沙漠 DESERT 仅占陆地 0.39%，
-# 而萨王纳(SAVANNA) 高达 ~16%——副热带内陆本该出现的真荒漠(撒哈拉/阿拉伯型)被中湿萨王纳吃掉。
-# 适度加强副热带干带强度，只抽干副热带大陆内部(地理正确位置)，不影响其它纬度湿度平衡。
-# ⚠ 单值可逆，须按新 CSV 复核 DESERT/SAVANNA 占比，过头(沙漠铺满副热带)则回调。
-@export var moisture_subtropical_dry_strength: float = 0.32
+# [地貌真实性 2026-07-31] strength 回调到 0.22，并与 C++ fallback 对齐：当前 CSV/固定种子回归显示
+# 0.32 会把副热带干带扩张到陆地约 17.7%，且放大河流视觉宽度调参对生态阈值的连带影响；
+# 0.22 配合独立生态流量与最终气候重判后，仍保留稳定内陆荒漠带，同时减少假性河岸荒漠。
+@export var moisture_subtropical_dry_strength: float = 0.22
 @export_range(0.0, 1.0, 0.01) var moisture_subtropical_dry_center: float = 0.33
 @export_range(0.02, 0.5, 0.01) var moisture_subtropical_dry_width: float = 0.16
 # 全向沿海湿度地板：纬向平流忽略非纬向最近海，易出现"假内陆干燥带"。用 dist_ocean(全向 BFS)
@@ -1318,17 +1326,26 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var plateau_max_land_ratio: float = 0.25
 @export_range(0.0, 1.0, 0.01) var mountain_min_land_h: float = 0.70
 @export_range(0.0, 0.2, 0.005) var mountain_min_relief: float = 0.115
+# 小地图仍需补偿局部高差，但 0.5 会在 60x40 等尺寸上把结构地貌门槛推得过高。
+@export_range(0.0, 1.0, 0.01) var relief_thresh_scale_exp: float = 0.25
 @export_range(0.0, 1.0, 0.01) var peak_min_land_h: float = 0.74
 @export_range(0.0, 0.2, 0.005) var peak_min_prominence: float = 0.035
 @export_range(1, 400, 1) var peak_land_cells_per_peak: int = 120
 
-# 荒原(BADLANDS)是沙漠/寒漠中的稀有侵蚀斑块。候选格须满足局部起伏和多向崎岖度，
-# 最终数量同时受陆地比例、干旱地形比例和单斑块面积约束，避免整片沙漠被荒原替换。
+# 裂谷(RIFT_VALLEY)：对置断崖夹住的连续谷轴。局部高差按地图分辨率归一；
+# min_length 只过滤孤立洼点和短沟槽，不限制全图数量、面积或裂谷间距。
+@export_range(0.0, 0.2, 0.002) var rift_min_wall: float = 0.024
+@export_range(0.0, 0.3, 0.002) var rift_min_axis: float = 0.052
+@export_range(1, 40, 1) var rift_min_length_cells: int = 3
+
+# 荒原(BADLANDS)是沙漠/寒漠中的局地侵蚀斑块。候选格须满足局部起伏和多向崎岖度，
+# 并远离水系；默认由候选连通区自然决定数量和斑块大小。以下仅是调试/极端地图安全阀：
+# 比例 1.0、斑块 0 表示不截断。
 @export_range(0.0, 0.3, 0.005) var badlands_min_relief: float = 0.06
 @export_range(1, 6, 1) var badlands_min_rugged_neighbors: int = 2
-@export_range(0.0, 1.0, 0.01) var badlands_max_land_ratio: float = 0.04
-@export_range(0.0, 1.0, 0.01) var badlands_max_arid_ratio: float = 0.25
-@export_range(1, 400, 1) var badlands_max_patch_cells: int = 48
+@export_range(0.0, 1.0, 0.005) var badlands_max_land_ratio: float = 1.0
+@export_range(0.0, 1.0, 0.01) var badlands_max_arid_ratio: float = 1.0
+@export_range(0, 400, 1) var badlands_max_patch_cells: int = 0
 
 # 峡谷(CANYON)：河流深切、两壁陡立的线状侵蚀峡谷（须有河道穿过），与干旱片状荒原(BADLANDS)、
 # 构造裂谷(RIFT_VALLEY)区分。canyon_min_wall=单侧陡壁最小相对高差(越大越陡才算)；canyon_min_axis=

@@ -147,19 +147,21 @@ float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
 }
 
 float terrain_biome_micro_strength(int biome) {
+	// [micro-soften 2026-07-31] 全表下调：旧值在近距下把微法线叠到 BRDF 后，
+	// 干燥/有机地表会读成"碎石点阵"，盖过宏观坡向。岩石保留相对层次，但不再顶满。
 	if (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS || biome == B_MESA) {
-		return 1.00; // rock
+		return 0.70; // rock
 	}
 	if (biome == B_DESERT || biome == B_COLD_DESERT || biome == B_COAST || biome == B_SALT_FLAT) {
-		return 0.82; // sand / dry soil
+		return 0.48; // sand / dry soil
 	}
 	if (biome == B_SWAMP || biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_MANGROVE) {
-		return 0.52; // wet soil
+		return 0.32; // wet soil
 	}
 	if (biome == B_SNOW || biome == B_GLACIER || biome == B_TUNDRA) {
-		return 0.36; // snow / ice
+		return 0.22; // snow / ice
 	}
-	return 0.68; // organic terrain
+	return 0.40; // organic terrain
 }
 
 TerrainStaticMaterial compute_terrain_static_material(
@@ -212,27 +214,29 @@ TerrainStaticMaterial compute_terrain_static_material(
 float terrain_micro_zoom_alpha() {
 	float fade_start;
 	float fade_end;
+	// [micro-soften 2026-07-31] 整体推迟约 0.25 zoom：中距鸟瞰只看宏观坡向，
+	// 微表面留给真正近距。否则中距就开始叠砂砾法线，全图发碎。
 #if defined(PK_MOBILE_ANY)
+	if (visual_quality >= 2) {
+		fade_start = 1.55;
+		fade_end = 2.20;
+	} else if (visual_quality >= 1) {
+		fade_start = 1.80;
+		fade_end = 2.50;
+	} else {
+		fade_start = 2.35;
+		fade_end = 2.95;
+	}
+#else
 	if (visual_quality >= 2) {
 		fade_start = 1.30;
 		fade_end = 1.95;
 	} else if (visual_quality >= 1) {
-		fade_start = 1.55;
-		fade_end = 2.25;
+		fade_start = 1.50;
+		fade_end = 2.15;
 	} else {
-		fade_start = 2.10;
-		fade_end = 2.70;
-	}
-#else
-	if (visual_quality >= 2) {
-		fade_start = 1.05;
-		fade_end = 1.65;
-	} else if (visual_quality >= 1) {
-		fade_start = 1.25;
-		fade_end = 1.85;
-	} else {
-		fade_start = 1.80;
-		fade_end = 2.50;
+		fade_start = 2.05;
+		fade_end = 2.75;
 	}
 #endif
 	return smoothstep(fade_start, fade_end, camera_zoom);
@@ -250,7 +254,8 @@ float terrain_micro_normal_quality() {
 }
 
 vec2 terrain_micro_uv(vec2 wp) {
-	return terrain_periodic_world_uv(wp, 64.0);
+	// 64→110：同一张微纹理铺得更稀，凹凸特征从"砂砾点"变成更可读的地面起伏。
+	return terrain_periodic_world_uv(wp, 110.0);
 }
 
 SurfaceParams apply_terrain_micro_surface(
@@ -279,12 +284,14 @@ SurfaceParams apply_terrain_micro_surface(
 	float snow_flatten = 1.0 - smoothstep(0.08, 0.88, snow_amount) * 0.88;
 	float strength = zoom_alpha * mixed_micro_strength * wet_suppress * vitality_gain;
 
-	float normal_strength = strength * terrain_micro_normal_quality() * snow_flatten * 0.16;
+	// [normal-soften 2026-07-31] 再降到 0.045：近距碎感的另一半来自微表面法线。
+	// albedo 微粒（grain）保留更多，让"纹理感"走颜色而非法线噪声。
+	float normal_strength = strength * terrain_micro_normal_quality() * snow_flatten * 0.045;
 	surface.normal = normalize(vec3(
 			surface.normal.xy + micro_xy * normal_strength,
 			max(surface.normal.z, 0.12)));
 
-	float rough_delta = (micro.b * 2.0 - 1.0) * 0.09 * strength;
+	float rough_delta = (micro.b * 2.0 - 1.0) * 0.055 * strength;
 	surface.roughness = clamp(
 			surface.roughness + rough_delta - smoothstep(0.58, 0.98, moist) * 0.10,
 			0.08,

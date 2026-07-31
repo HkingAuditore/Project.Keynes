@@ -1101,6 +1101,15 @@ static inline int pk_upwind_dir_index_from_wind(float wx, float wy) {
     return best;
 }
 
+// Geological height keeps terrain thresholds stable when a profile moves the
+// actual sea level. Climate/snow calculations intentionally keep their own
+// actual-sea normalization.
+constexpr double PK_GEOMORPH_REF_SEA_LEVEL = 0.42;
+static inline double pk_geomorph_h(double elevation, double sea_level) {
+    constexpr double denom = 1.0 - PK_GEOMORPH_REF_SEA_LEVEL;
+    return std::max(0.0, (elevation - sea_level) / denom);
+}
+
 static inline uint8_t pk_derive_landform(uint8_t terrain, float elev, float sea_level) {
     // Terrain enum order mirrors scripts/geography/terrain_type.gd.
     // Landform enum order mirrors scripts/geography/landform_type.gd.
@@ -1116,12 +1125,11 @@ static inline uint8_t pk_derive_landform(uint8_t terrain, float elev, float sea_
     if (terrain == 29) return 4;  // FLOODPLAIN -> PLAIN geom, wet alluvial ecology
     if (terrain == 30) return 13; // MESA → PLATEAU（方山＝小型平顶台地）
 
-    const float denom = std::max(1.0f - sea_level, 0.001f);
-    const float land_h = (elev - sea_level) / denom;
-    if (land_h > 0.92f) return 8; // PEAK（仅极端高程；普通峰顶由 post-base 局部峰顶 pass 稀疏写入）
-    if (land_h > 0.70f) return 7; // MOUNTAIN（较高且陡峭的山地；山原由 PLATEAU override 接管）
-    if (land_h > 0.22f) return 6; // HILL
-    if (land_h > 0.05f) return 5; // LOWLAND
+    const double geomorph_h = pk_geomorph_h(double(elev), double(sea_level));
+    if (geomorph_h > 0.92) return 8; // PEAK（仅极端高程；普通峰顶由 post-base 局部峰顶 pass 稀疏写入）
+    if (geomorph_h > 0.70) return 7; // MOUNTAIN（较高且陡峭的山地；山原由 PLATEAU override 接管）
+    if (geomorph_h > 0.22) return 6; // HILL
+    if (geomorph_h > 0.05) return 5; // LOWLAND
     return 4; // PLAIN
 }
 
@@ -1232,6 +1240,74 @@ static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, fl
         case 7:  return moisture < 0.10f ? 17 : 16; // DESERT
         default: return pk_whittaker_vegetation(temperature, moisture, landform);
     }
+}
+
+// Generation/runtime shared ecological scorer.  Terrain and landform are only
+// soft priors here; the Gaussian climate fit remains the dominant signal.
+static inline float pk_vegetation_climate_score(float temperature, float moisture,
+                                                float ideal_temp, float ideal_moist,
+                                                float temp_tolerance, float moist_tolerance) {
+    const float st = std::max(temp_tolerance, 0.05f);
+    const float sm = std::max(moist_tolerance, 0.05f);
+    const float dt = (temperature - ideal_temp) / st;
+    const float dm = (moisture - ideal_moist) / sm;
+    return float(std::exp(-0.5 * double(dt * dt + dm * dm)));
+}
+
+static inline bool pk_vegetation_is_wet_type(uint8_t veg) {
+    return veg == 12 || veg == 13 || veg == 14 || veg == 15 || veg == 19 ||
+           veg == 20 || veg == 21 || veg == 24 || veg == 25 || veg == 27;
+}
+
+static inline bool pk_vegetation_is_alpine_type(uint8_t veg) {
+    return veg == 3 || veg == 4 || veg == 5 || veg == 6 || veg == 8 || veg == 27;
+}
+
+static inline bool pk_vegetation_is_arid_type(uint8_t veg) {
+    return veg == 10 || veg == 11 || veg == 16 || veg == 17;
+}
+
+// Returns a bounded soft multiplier.  A value of zero is reserved for a
+// physically impossible substrate and is handled separately by the caller.
+static inline float pk_vegetation_terrain_weight(uint8_t terrain, uint8_t landform,
+                                                uint8_t veg, float moisture) {
+    float w = 1.0f;
+    const bool wet = pk_vegetation_is_wet_type(veg);
+    const bool arid = pk_vegetation_is_arid_type(veg);
+    const bool alpine = pk_vegetation_is_alpine_type(veg);
+
+    switch (terrain) {
+        case 25: // BADLANDS: aridity is a prior, not a hard mapping.
+            w *= arid ? 1.10f : 0.84f;
+            break;
+        case 28: // MOOR: wet/cold vegetation is favored.
+            w *= (veg == 27) ? 1.20f : (wet ? 1.08f : 0.62f);
+            break;
+        case 29: // FLOODPLAIN: water availability still decides the winner.
+            w *= wet ? 1.16f : (arid ? 0.68f : 1.02f);
+            break;
+        case 30: // MESA: dry scrub is favored, but never forced.
+            w *= arid ? 1.08f : 0.90f;
+            break;
+        case 10: // SWAMP.
+            w *= wet ? 1.15f : 0.65f;
+            break;
+        case 16: // MANGROVE coast.
+            w *= (veg == 19) ? 1.20f : (wet ? 1.05f : 0.58f);
+            break;
+        case 15: // Mediterranean shrubland.
+            w *= (veg == 11) ? 1.14f : 0.92f;
+            break;
+        default:
+            break;
+    }
+
+    if (landform == 7 || landform == 8) { // MOUNTAIN / PEAK.
+        w *= alpine ? 1.16f : (arid && moisture > 0.45f ? 0.58f : 0.90f);
+    } else if (landform == 6) { // HILL.
+        w *= alpine ? 1.06f : 1.0f;
+    }
+    return std::clamp(w, 0.35f, 1.25f);
 }
 
 static inline uint8_t pk_derive_cover(uint8_t terrain, float snow_cover) {
@@ -1430,6 +1506,7 @@ static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
 
     const double denom = (1.0 - sea_level) > 0.001 ? (1.0 - sea_level) : 0.001;
     const double land_h = (elevation - sea_level) / denom;
+    const double geomorph_h = pk_geomorph_h(elevation, sea_level);
 
     const double snow_line = permanent_only ? 0.85 : 0.82;
     const double snow_line_temp = permanent_only ? 0.26 : 0.34;
@@ -1447,7 +1524,7 @@ static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
     // landform)，植被由 pk_derive_vegetation 按 is_alpine 给高山草甸/高山针叶林。直接提升
     // 中高海拔生物群系多样性，不再把温带森林/草原压成统一 HILL。
     const double mountain_line = permanent_only ? 0.72 : 0.70;
-    if (land_h > mountain_line) return 6;  // MOUNTAIN（真高山裸岩）
+    if (geomorph_h > mountain_line) return 6;  // MOUNTAIN（真高山裸岩）
     if (temperature < 0.20) return 8;      // TUNDRA（寒冷无林）
 
     // Whittaker：温度×湿度联立气候 biome，覆盖全部中/低海拔（起伏交给 landform）。

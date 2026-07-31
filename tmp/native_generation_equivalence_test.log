@@ -1,0 +1,42 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native generation API smoke ===
+  [PASS] start_native_generation exported
+  [PASS] run_native_generation_slice exported
+  [PASS] finish_native_generation exported
+  [PASS] run_native_world_generate_base_pass exported
+  [PASS] run_native_world_generate_post_base_pass exported
+  [PASS] run_native_world_generate_pass exported
+  [PASS] generation start accepted
+  [PASS] generation reports implemented flag
+  [PASS] generation start has no publication yet
+  [PASS] unbound generation slice falls back explicitly
+  [PASS] unbound generation fallback is explicit
+  [PASS] unbound generation reason is not_bound
+  [PASS] unbound generation reports no publication
+  [PASS] finish returns last unbound failure
+  [PASS] finish keeps explicit fallback reason
+  [PASS] generation progress remains zero while unbound
+  [PASS] direct generation pass unbound fallback
+  [PASS] direct generation reason is not_bound
+  [PASS] base generation succeeds unbound
+  [PASS] base generation path is gdext
+  [PASS] base generation does not publish slots
+  [PASS] base generation reports expected n
+  [PASS] base generation has q array
+  [PASS] base generation has elevation array
+  [PASS] base generation has terrain array
+  [PASS] post-base generation succeeds unbound
+  [PASS] post-base generation path is gdext
+  [PASS] post-base generation does not publish slots
+  [PASS] post-base generation reports expected n
+  [PASS] post-base generation has landform array
+  [PASS] post-base generation has river array
+  [PASS] post-base generation has volcano array
+=== done: 32 checks, 0 failures ===
+ERROR: 10 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 56 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

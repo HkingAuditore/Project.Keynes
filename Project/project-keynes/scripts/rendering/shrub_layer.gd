@@ -118,6 +118,15 @@ uniform float terrain_horizon_softness = 0.16;
 uniform float terrain_horizon_strength = 0.70;
 uniform float terrain_horizon_cast_floor = 0.82;
 uniform int terrain_horizon_debug_view = 0;
+// [terrain-gi 2026-07-31] 与地形共用的天空可见度 GI。植被必须跟地形用同一份 horizon
+// 与同一个 LUT，否则谷底灌木会比脚下地面亮一截、"浮"在阴影上。
+// gi_horizon_lut[n] = vec3(cos²(h_n), cos(m_n), sin(m_n))，由 HexRenderer 预计算推送。
+uniform bool gi_lut_bound = false;
+uniform vec3 gi_horizon_lut[16];
+uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.45;
+uniform float gi_bent_strength : hint_range(0.0, 1.0) = 0.35;
+uniform float gi_normal_floor : hint_range(0.0, 1.0) = 0.85;
 uniform float shading_enabled = 1.0;          // 0=退化回旧"平直昼夜"着色
 uniform float terrain_normal_influence = 0.65;
 uniform float pseudo_normal_strength = 0.85;
@@ -232,6 +241,56 @@ float shrub_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
 		sun_elev + terrain_horizon_softness, horizon_angle);
 	float horizon_day_w = smoothstep(-0.14, 0.18, light_dir.z);
 	return clamp(1.0 - shadow * terrain_horizon_strength * horizon_day_w, 0.0, 1.0);
+#endif
+}
+
+// [terrain-gi 2026-07-31] 天空可见度 + bent normal。与地形侧 terrain_horizon.gdshaderinc 同一
+// 公式（V_sky = 1/8·Σ cos²h_d），但只取最近的 1 tap 而非 4 tap 双线性：AO 是低频量，而植被是
+// 每株成千上万次片元调用，双线性带来的额外 3 次 fetch 在这里换不到可见收益。
+const float SHRUB_GI_INV_SQRT2 = 0.70710678;
+const vec2 SHRUB_GI_DIRECTIONS[8] = vec2[8](
+	vec2(1.0, 0.0), vec2(SHRUB_GI_INV_SQRT2, SHRUB_GI_INV_SQRT2),
+	vec2(0.0, 1.0), vec2(-SHRUB_GI_INV_SQRT2, SHRUB_GI_INV_SQRT2),
+	vec2(-1.0, 0.0), vec2(-SHRUB_GI_INV_SQRT2, -SHRUB_GI_INV_SQRT2),
+	vec2(0.0, -1.0), vec2(SHRUB_GI_INV_SQRT2, -SHRUB_GI_INV_SQRT2)
+);
+
+struct ShrubSkySample {
+	float visibility;
+	vec3 bent_normal;
+};
+
+ShrubSkySample shrub_sample_sky(vec2 uv) {
+	ShrubSkySample s;
+	s.visibility = 1.0;
+	s.bent_normal = vec3(0.0, 0.0, 1.0);
+#ifdef PK_SKIP_HORIZON_SHADOWS
+	return s;
+#else
+	if (!terrain_horizon_tex_bound || !gi_lut_bound || veg_shade_quality < 1) return s;
+	vec4 packed = visual_sample_horizon(shrub_wrap_map_uv(uv));
+	vec4 bytes = floor(packed * 255.0 + 0.5);
+	vec4 hi = floor(bytes * 0.0625);
+	vec4 lo = bytes - hi * 16.0;
+	int nibbles[8];
+	nibbles[0] = int(hi.r); nibbles[1] = int(lo.r);
+	nibbles[2] = int(hi.g); nibbles[3] = int(lo.g);
+	nibbles[4] = int(hi.b); nibbles[5] = int(lo.b);
+	nibbles[6] = int(hi.a); nibbles[7] = int(lo.a);
+	float sum = 0.0;
+	vec3 bent = vec3(0.0);
+	for (int d = 0; d < 8; d++) {
+		vec3 entry = gi_horizon_lut[nibbles[d]];
+		sum += entry.x;
+		bent += entry.x * vec3(SHRUB_GI_DIRECTIONS[d] * entry.y, entry.z);
+	}
+	float v_scaled = mix(1.0, clamp(sum * 0.125, 0.0, 1.0), gi_ao_strength);
+	s.visibility = clamp(mix(gi_ao_floor, 1.0, v_scaled), 0.0, 1.0);
+	float bent_len = length(bent);
+	s.bent_normal = (bent_len > 1e-4)
+		? normalize(mix(vec3(0.0, 0.0, 1.0), bent / bent_len, gi_bent_strength))
+		: vec3(0.0, 0.0, 1.0);
+	return s;
 #endif
 }
 
@@ -560,6 +619,7 @@ void fragment() {
 	float lat_signed = solar_uv.y * 2.0 - 1.0;
 	EarthDaylight ed = eval_earth_daylight(solar_uv, lat_signed, day_night_enabled);
 	float horizon_vis = shrub_horizon_direct_visibility(solar_uv, ed.sun_dir);
+	ShrubSkySample sky = shrub_sample_sky(solar_uv);
 	bool horizon_debug_mode = terrain_horizon_debug_view == 1 || terrain_horizon_debug_view == 2;
 	vec3 horizon_debug_rgb = (terrain_horizon_debug_view == 1)
 		? vec3(clamp((1.0 - horizon_vis) * ed.local_day, 0.0, 1.0))
@@ -582,25 +642,44 @@ void fragment() {
 		float rim = pow(1.0 - clamp(N.z, 0.0, 1.0), 3.0) * rim_light_strength * ed.local_day * horizon_vis;
 		// [sky-sh-ambient] 方向化天光（L1 球谐）替换平铺 amb_col：用植株法线 N 取天光 →
 		// 迎天顶/迎太阳方位面更亮、背向面更暗，弱直射(晨昏/夜)时也有体积感。与地形/水面同源。
-		vec3 light = max(eval_earth_sky_sh(ed, N), vec3(ambient_floor)) + ed.sun_col * (direct + rim);
+		// [terrain-gi] 天光方向偏转到平均可见方向、幅度乘 sky visibility，与地形侧
+		// gi_ambient_normal / gi_ambient_occlusion 同式。
+		vec3 amb_N = N;
+		if (gi_bent_strength > 0.0) {
+			vec3 mixed_n = mix(N, sky.bent_normal, gi_bent_strength);
+			amb_N = (dot(mixed_n, mixed_n) > 1e-6) ? normalize(mixed_n) : N;
+		}
+		float gi_align = clamp(dot(N, normalize(sky.bent_normal)), 0.0, 1.0);
+		float gi_ao = clamp(sky.visibility * mix(gi_normal_floor, 1.0, gi_align), 0.0, 1.0);
+		vec3 light = max(eval_earth_sky_sh(ed, amb_N) * gi_ao, vec3(ambient_floor))
+			+ ed.sun_col * (direct + rim);
 		vec3 unlit_rgb = rgb;
 		rgb *= light;
 		// 接触阴影：近根部压暗（UV.y 低=贴地），让植株"扎进"地面而非漂浮。
 		float contact = smoothstep(contact_ao_height, 0.0, UV.y) * contact_ao_strength;
 		rgb *= 1.0 - contact;
-		// 谷地 AO（高画质档）：凹陷处整株压暗。
-		rgb *= 1.0 - shrub_terrain_ao * terrain_valley_ao_strength * mix(0.38, 1.0, veg_response);
+		// 谷地 AO（高画质档）：凹陷处整株压暗。真 AO 可用时退让——两者测的是同一件事
+		// （凹陷遮蔽），叠加会把谷底灌木压成死黑；高度图启发式只在 GI 未绑定时兜底。
+		float valley_w = gi_lut_bound ? mix(1.0, 0.30, gi_ao_strength) : 1.0;
+		rgb *= 1.0 - shrub_terrain_ao * terrain_valley_ao_strength * valley_w
+			* mix(0.38, 1.0, veg_response);
 		// 保留实例本色的最低可见度；点缀物不再被植被级 AO 压成近黑色。
 		rgb = max(rgb, unlit_rgb * mix(0.54, albedo_light_floor, veg_response));
 	} else {
 		// 退化路径（shading 关）：旧"平直昼夜"着色，保持兼容。
-		vec3 light = max(ed.amb_col, vec3(ambient_floor)) + ed.sun_col * (ed.local_day * 0.35 * horizon_vis);
+		vec3 light = max(ed.amb_col * sky.visibility, vec3(ambient_floor))
+			+ ed.sun_col * (ed.local_day * 0.35 * horizon_vis);
 		rgb *= light;
 	}
 	// 与地形/水面同源的地形投影阴影；植被/点缀比陆地略轻，避免小物件在阴影中过黑。
+	// GI 开启时同样按天空可见度收敛投影底限（与 land_pipeline 同策略）：已经被 AO 压暗的
+	// 谷底不该再被制图阴影压第二次。
 	float horizon_cast = clamp((1.0 - horizon_vis) * ed.local_day, 0.0, 1.0);
 	if (horizon_cast > 0.001) {
 		float veg_floor = mix(1.0, terrain_horizon_cast_floor, 0.70);
+		if (gi_lut_bound) {
+			veg_floor = mix(1.0, veg_floor, mix(1.0, sky.visibility, gi_ao_strength));
+		}
 		rgb *= mix(1.0, veg_floor, horizon_cast);
 	}
 	rgb *= mix(1.0, mix(0.68, 0.55, veg_response), ed.pixel_night);
@@ -857,7 +936,9 @@ func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visua
 	_native_offset_is_water_cache = PackedByteArray()
 	_native_offset_cache_dims = Vector2i.ZERO
 	_native_delta_common_knobs = {}
-	_sync_world_material_inputs(false)
+	# _ready/_ensure_resources 在 world/tiles 就绪前会编出 legacy 变体；setup 才是
+	# 第一次拿到 visual_tiles 的入口，必须按实际 tiled 状态重建 shader，不能只 sync。
+	_ensure_shader_matches_tiles()
 	_rebuild_instances()
 
 
@@ -910,20 +991,37 @@ func set_day_phase(v: float) -> void:
 
 
 func set_world_material_inputs(world: WorldData, bounds: Rect2, _use_cell_indirection: bool) -> void:
-	var was_tiled := _visual_tiles_active()
 	_world = world
 	_bounds = bounds
 	_native_delta_common_knobs = {}
-	if was_tiled != _visual_tiles_active():
-		_refresh_shader_variants()
-	else:
-		_sync_world_material_inputs(true)
+	# 不能只看「_world 切换前后 tiled 是否变化」：setup 已把 _world 设成 tiled 后，
+	# 后续 _apply_uniforms 再调本函数时 was_tiled 已是 true，会永久跳过变体刷新，
+	# 植被 shader 卡在 legacy（采 map_index_atlas）而世界走 tiled（不绑 atlas）→ 全图消失。
+	_ensure_shader_matches_tiles()
 
 
 func _visual_tiles_active() -> bool:
 	return _world != null and _world.visual_tiles != null \
 		and bool(_world.visual_tiles.ready) \
 		and String(_world.visual_tiles.layout.mode) == "tiled"
+
+
+func _shader_is_tiled_variant(mat: ShaderMaterial) -> bool:
+	return mat != null and mat.shader != null \
+		and mat.shader.code.begins_with("#define MAP_VISUAL_TILED")
+
+
+# 按当前 _visual_tiles_active() 对齐主/投影 shader 变体；不一致则重建，否则只 sync。
+func _ensure_shader_matches_tiles() -> void:
+	_ensure_resources()
+	var want_tiled := _visual_tiles_active()
+	var main_ok := _shader_is_tiled_variant(_material) == want_tiled
+	var shadow_ok := _shadow_material == null \
+		or _shader_is_tiled_variant(_shadow_material) == want_tiled
+	if main_ok and shadow_ok:
+		_sync_world_material_inputs(true)
+	else:
+		_refresh_shader_variants()
 
 
 # [cylindrical-earth-daylight] 昼夜光照与地形同源（逐像素经纬度晨昏线）。
@@ -992,13 +1090,33 @@ func set_terrain_horizon_inputs(tex: Texture2D, bound: bool, strength: float, so
 		max_angle: float, cast_floor: float, debug_view: int) -> void:
 	if _material == null:
 		return
-	_material.set_shader_parameter("terrain_horizon_tex", tex)
+	# tiled 变体采 visual_horizon_tiles（由 _sync_world_material_inputs 绑定）；legacy tex 可空。
+	# bound 必须由调用方按实际就绪态传入，不能再隐含「tex!=null」。
+	if not _visual_tiles_active():
+		_material.set_shader_parameter("terrain_horizon_tex", tex)
 	_material.set_shader_parameter("terrain_horizon_tex_bound", bound)
 	_material.set_shader_parameter("terrain_horizon_strength", clampf(strength, 0.0, 1.0))
 	_material.set_shader_parameter("terrain_horizon_softness", clampf(softness, 0.01, 1.0))
 	_material.set_shader_parameter("terrain_horizon_max_angle", clampf(max_angle, 0.30, 1.5708))
 	_material.set_shader_parameter("terrain_horizon_cast_floor", clampf(cast_floor, 0.35, 1.0))
 	_material.set_shader_parameter("terrain_horizon_debug_view", clampi(debug_view, 0, 2))
+
+
+# [terrain-gi 2026-07-31] 天空可见度 LUT 与强度。lut 必须是 HexRenderer.build_gi_horizon_lut
+# 的产物（按同一 terrain_horizon_max_angle 预计算），否则植被与地形的 AO 会错位。
+# lut 为空 → gi_lut_bound=false → 植被退回启发式谷地 AO。
+func set_terrain_gi_inputs(lut: PackedVector3Array, ao_strength: float, ao_floor: float,
+		bent_strength: float, normal_floor: float) -> void:
+	if _material == null:
+		return
+	var bound: bool = lut.size() == 16
+	_material.set_shader_parameter("gi_lut_bound", bound)
+	if bound:
+		_material.set_shader_parameter("gi_horizon_lut", lut)
+	_material.set_shader_parameter("gi_ao_strength", clampf(ao_strength, 0.0, 1.0))
+	_material.set_shader_parameter("gi_ao_floor", clampf(ao_floor, 0.0, 1.0))
+	_material.set_shader_parameter("gi_bent_strength", clampf(bent_strength, 0.0, 1.0))
+	_material.set_shader_parameter("gi_normal_floor", clampf(normal_floor, 0.0, 1.0))
 
 
 # 注入 C++ DCWorldExt。可传 null 关闭 native 路径（强制 GDScript fallback）。
@@ -4383,12 +4501,18 @@ func detail_visibility_probe() -> Dictionary:
 		inst_sum += mm.instance_count
 		# 采样前几个实例的 origin（TRANSFORM_2D buffer: ox 在 +3、oy 在 +7），
 		# 用于区分"实例不可见"与"实例被放到屏幕外/原点"。
+		# 同时抽样编码器写入的存储 uv（world_ext_detail.cpp 布局：origin=buf[3]/buf[7]，
+		# custom uv=buf[12]/buf[13]）。uv 是 shader 实际消费的输入，与世界坐标分离采样
+		# 可直接区分"存储 uv 错"与"uniform/寻址错"。
 		if origin_samples.size() < 3 and mm.instance_count > 0:
 			var buf := mm.buffer
 			var take: int = mini(3 - origin_samples.size(), mm.instance_count)
 			for k in range(take):
 				if buf.size() >= (k + 1) * 16:
-					origin_samples.append(Vector2(buf[k * 16 + 3], buf[k * 16 + 7]))
+					origin_samples.append({
+						"pos": Vector2(buf[k * 16 + 3], buf[k * 16 + 7]),
+						"uv": Vector2(buf[k * 16 + 12], buf[k * 16 + 13]),
+					})
 	return {
 		"name": name,
 		"in_tree": is_inside_tree(),
@@ -4397,6 +4521,7 @@ func detail_visibility_probe() -> Dictionary:
 		"camera_lod_hidden": _camera_lod_hidden,
 		"shadow_fraction": _shadow_fraction,
 		"lod_zoom_t": _lod_zoom_t,
+		"lod_alpha": _lod_alpha,
 		"camera_zoom": _camera_zoom,
 		"instance_count": _instance_count,
 		"chunk_nodes": chunk_nodes,
@@ -4408,7 +4533,50 @@ func detail_visibility_probe() -> Dictionary:
 		"origin_samples": origin_samples,
 		"spawn_domain": _spawn_domain(),
 		"cid_probe": _cid_probe(origin_samples),
+		# [DEBUG-TEMP] chunk 材质 shader 变体 / 纹理绑定核查：duplicate(true) 深拷贝的
+		# chunk 材质在 _refresh_shader_variants 后可能滞留旧 shader 变体或缺纹理绑定。
+		"chunk_material_probe": _chunk_material_probe(),
 	}
+
+
+# [DEBUG-TEMP] 一次性检查：chunk 节点共享材质 / shader 变体 / 关键纹理参数绑定核查。
+func _chunk_material_probe() -> Dictionary:
+	var out := {
+		"tiled_active": _visual_tiles_active(),
+		"base_shader_tiled": false,
+		"map_index_param": false,
+		"grid_size_param": "",
+		"interior_param": "",
+		"domain_origin_param": "",
+		"world_size_param": "",
+		"wrap_param": 0.0,
+		"chunk_count": _chunk_nodes.size(),
+		"chunk_material_shared": 0,
+		"chunk_material_other": 0,
+	}
+	if _material == null or _material.shader == null:
+		return out
+	out["base_shader_tiled"] = _material.shader.code.begins_with("#define MAP_VISUAL_TILED")
+	if bool(out["base_shader_tiled"]):
+		var tiles_param = _material.get_shader_parameter("visual_map_index_tiles")
+		out["map_index_param"] = tiles_param != null
+		if tiles_param != null:
+			out["map_index_layers"] = tiles_param.get_layers() if tiles_param.has_method("get_layers") else -1
+		out["grid_size_param"] = str(_material.get_shader_parameter("visual_grid_size"))
+		out["interior_param"] = str(_material.get_shader_parameter("visual_interior_size"))
+		out["domain_origin_param"] = str(_material.get_shader_parameter("visual_domain_origin"))
+	else:
+		out["map_index_param"] = _material.get_shader_parameter("map_index_atlas") != null
+	out["world_size_param"] = str(_material.get_shader_parameter("world_size"))
+	out["wrap_param"] = float(_material.get_shader_parameter("wrap_period_x"))
+	for chunk_id in _chunk_nodes.keys():
+		var node: MultiMeshInstance2D = _chunk_nodes[chunk_id]
+		if node != null and is_instance_valid(node):
+			if node.material == _material:
+				out["chunk_material_shared"] += 1
+			else:
+				out["chunk_material_other"] += 1
+	return out
 
 
 # tiled 模式端到端解码探针：对实例世界坐标按 shader 的 visual_tile_address 逻辑
@@ -4422,20 +4590,22 @@ func _cid_probe(samples: Array) -> Array:
 	var layout = tiles.layout
 	var take: int = mini(2, samples.size())
 	for k in range(take):
-		var world_pos: Vector2 = samples[k]
+		var sample: Dictionary = samples[k]
+		var world_pos: Vector2 = sample["pos"]
+		var stored_uv: Vector2 = sample["uv"]
 		# 与原生编码器一致的世界坐标 → map_uv（world_ext_detail.cpp uvx/uvy 公式）。
 		var sample_x := world_pos.x
 		if _world.wrap_period_x > 0.0001:
-			sample_x = posmod(world_pos.x, _world.wrap_period_x)
+			sample_x = fposmod(world_pos.x, _world.wrap_period_x)
 		var map_uv := Vector2(
 			(sample_x - _bounds.position.x) / maxf(_bounds.size.x, 0.0001),
 			(world_pos.y - _bounds.position.y) / maxf(_bounds.size.y, 0.0001))
 		# 与 visual_tile_sampling.gdshaderinc::visual_tile_address 一致的寻址。
 		var wp := _bounds.position + map_uv * _bounds.size
 		if _world.wrap_period_x > 0.0001:
-			wp.x = posmod(wp.x, _world.wrap_period_x)
+			wp.x = fposmod(wp.x, _world.wrap_period_x)
 		var domain_uv: Vector2 = (wp - layout.visual_domain.position) / layout.visual_domain.size
-		domain_uv.x = posmod(domain_uv.x, 1.0) if _world.wrap_period_x > 0.0001 else clampf(domain_uv.x, 0.0, 1.0)
+		domain_uv.x = fposmod(domain_uv.x, 1.0) if _world.wrap_period_x > 0.0001 else clampf(domain_uv.x, 0.0, 1.0)
 		domain_uv.y = clampf(domain_uv.y, 0.0, 1.0)
 		var scaled: Vector2 = domain_uv * Vector2(layout.grid_size)
 		var tile_xy := Vector2i(mini(int(floor(scaled.x)), layout.grid_size.x - 1),
@@ -4445,7 +4615,13 @@ func _cid_probe(samples: Array) -> Array:
 		var physical_px := Vector2(gutter, gutter) + local01 * Vector2(layout.interior_size)
 		var layer: int = tile_xy.y * layout.grid_size.x + tile_xy.x
 		var entry: Dictionary = {"world_pos": world_pos, "tile_xy": tile_xy,
-			"layer": layer, "physical_px": physical_px}
+			"layer": layer, "physical_px": physical_px,
+			# 输入与中间量全量转储：静态推演与观测矛盾时的最终事实来源。
+			"in_bounds": str(_bounds), "in_wrap": _world.wrap_period_x,
+			"in_grid": str(layout.grid_size), "in_interior": str(layout.interior_size),
+			"in_domain": str(layout.visual_domain),
+			"wp": wp, "domain_uv": domain_uv, "scaled": scaled, "local01": local01,
+			"stored_uv": stored_uv}
 		if tiles.map_index != null:
 			var img := RenderingServer.texture_2d_layer_get(tiles.map_index.get_rid(), layer)
 			if img != null:
@@ -4457,6 +4633,44 @@ func _cid_probe(samples: Array) -> Array:
 				entry["cid"] = -1 if cid >= 65535 else cid
 				# 期望 cell：用地图最近 cell 对照（粗校验，容差一个 hex）。
 				entry["expect_cell"] = _nearest_cell_index(world_pos)
+			# 对照组：按"世界坐标→domain_uv 直接换算"的期望地址再采一次。
+			# 若此 cid ≈ expect_cell，则内容与公式正确，断裂在实例存储 uv；
+			# 若同样不符，则烘焙内容或 layout 契约本身有错。
+			var ref_uv := Vector2(
+				fposmod(world_pos.x, _world.wrap_period_x) / layout.visual_domain.size.x,
+				(world_pos.y - layout.visual_domain.position.y) / layout.visual_domain.size.y)
+			var ref_scaled: Vector2 = ref_uv * Vector2(layout.grid_size)
+			var ref_tile := Vector2i(mini(int(floor(ref_scaled.x)), layout.grid_size.x - 1),
+				mini(int(floor(ref_scaled.y)), layout.grid_size.y - 1))
+			var ref_local: Vector2 = ref_scaled - Vector2(ref_tile)
+			var ref_px := Vector2(gutter, gutter) + ref_local * Vector2(layout.interior_size)
+			var ref_layer: int = ref_tile.y * layout.grid_size.x + ref_tile.x
+			var ref_img := RenderingServer.texture_2d_layer_get(tiles.map_index.get_rid(), ref_layer)
+			if ref_img != null:
+				var rpx := ref_img.get_pixelv(Vector2i(ref_px))
+				var rcid := int(rpx.g * 255.0 + 0.5) + int(rpx.b * 255.0 + 0.5) * 256
+				entry["ref_tile_px"] = [ref_tile, ref_px]
+				entry["cid_ref"] = -1 if rcid >= 65535 else rcid
+			# shader 真实消费链：用实例存储 uv（编码器写入 buf[12]/[13]）走 uniform 寻址。
+			# 与 world_pos 链对照可区分"存储 uv 错"与"uniform/layout 错"。
+			var swp := _bounds.position + stored_uv * _bounds.size
+			if _world.wrap_period_x > 0.0001:
+				swp.x = fposmod(swp.x, _world.wrap_period_x)
+			var sdomain: Vector2 = (swp - layout.visual_domain.position) / layout.visual_domain.size
+			sdomain.x = fposmod(sdomain.x, 1.0) if _world.wrap_period_x > 0.0001 else clampf(sdomain.x, 0.0, 1.0)
+			sdomain.y = clampf(sdomain.y, 0.0, 1.0)
+			var sscaled: Vector2 = sdomain * Vector2(layout.grid_size)
+			var stile := Vector2i(mini(int(floor(sscaled.x)), layout.grid_size.x - 1),
+				mini(int(floor(sscaled.y)), layout.grid_size.y - 1))
+			var slocal: Vector2 = sscaled - Vector2(stile)
+			var spx := Vector2(gutter, gutter) + slocal * Vector2(layout.interior_size)
+			var slayer: int = stile.y * layout.grid_size.x + stile.x
+			var simg := RenderingServer.texture_2d_layer_get(tiles.map_index.get_rid(), slayer)
+			if simg != null:
+				var spp := simg.get_pixelv(Vector2i(spx))
+				var scid := int(spp.g * 255.0 + 0.5) + int(spp.b * 255.0 + 0.5) * 256
+				entry["shader_tile_px"] = [stile, spx]
+				entry["cid_shader"] = -1 if scid >= 65535 else scid
 		if tiles.terrain_normal != null:
 			var nimg := RenderingServer.texture_2d_layer_get(tiles.terrain_normal.get_rid(), layer)
 			if nimg != null:

@@ -467,6 +467,12 @@ func get_generator() -> MapGenerator:
 	return _generator
 
 
+func _gm_map_baker():
+	if _generator != null and "_baker" in _generator:
+		return _generator._baker
+	return null
+
+
 func get_renderer() -> HexRenderer:
 	return _renderer
 
@@ -736,7 +742,7 @@ func get_gm_capabilities() -> Dictionary:
 				goods = economy.good_ids()
 			if economy.has_method("building_type_ids"):
 				buildings = economy.building_type_ids()
-	return {
+	var capabilities := {
 		"sections": PackedStringArray(["overview", "selected"]),
 		"commands": _gm_command_specs(technologies, goods, buildings),
 		"toggles": [
@@ -751,6 +757,12 @@ func get_gm_capabilities() -> Dictionary:
 			{"id": "diagnostics.pk_log", "label": "PKLog 诊断日志", "group": "诊断"},
 		],
 	}
+	capabilities["toggles"].append({
+		"id": "diagnostics.dynamic_visual_atlas_upload",
+		"label": "Dynamic Atlas 上传",
+		"group": "诊断",
+	})
+	return capabilities
 
 
 func get_gm_snapshot(section: String, _context: Dictionary = {}) -> Dictionary:
@@ -773,6 +785,11 @@ func execute_gm_command(command_id: String, raw_args: Dictionary) -> Dictionary:
 	if not bool(validated.get("ok", false)):
 		return validated
 	var args: Dictionary = validated.get("args", {})
+	if command_id == "diagnostics.dump_atlas_river_probe":
+		var probe_baker = _gm_map_baker()
+		if probe_baker == null or not probe_baker.has_method("dump_river_atlas_probe"):
+			return _gm_error("baker_unavailable", "MapBaker 尚未就绪，无法导出采样。")
+		return probe_baker.dump_river_atlas_probe()
 	if _world_clock == null and command_id.begins_with("time."):
 		return _gm_error("clock_unavailable", "时钟尚未就绪。")
 	if command_id == "time.pause":
@@ -826,6 +843,15 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 			return _gm_renderer_toggle_state("ocean_current_enabled")
 		"visual.extreme_weather":
 			return _gm_renderer_toggle_state("extreme_weather_ground_effect_enabled")
+		"diagnostics.dynamic_visual_atlas_upload":
+			return {"ok": true, "enabled": not bool(Engine.get_meta(&"force_disable_dva_upload", false))}
+		"diagnostics.atlas_river_probe":
+			var probe_baker = _gm_map_baker()
+			if probe_baker == null or not probe_baker.has_method("get_river_atlas_probe_state"):
+				return _gm_error("baker_unavailable", "MapBaker 尚未就绪。")
+			var probe_state: Dictionary = probe_baker.get_river_atlas_probe_state()
+			probe_state["ok"] = true
+			return probe_state
 		"diagnostics.perf_sampler":
 			return _gm_renderer_toggle_state("perf_sampler_enabled")
 		"diagnostics.pk_log":
@@ -855,6 +881,16 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 		"visual.extreme_weather":
 			if not _gm_call_renderer_toggle("set_extreme_weather_ground_effect_enabled", enabled):
 				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+		"diagnostics.dynamic_visual_atlas_upload":
+			Engine.set_meta(&"force_disable_dva_upload", not enabled)
+		"diagnostics.atlas_river_probe":
+			var probe_baker = _gm_map_baker()
+			if probe_baker == null or not probe_baker.has_method("set_river_atlas_probe_enabled"):
+				return _gm_error("baker_unavailable", "MapBaker 尚未就绪。")
+			var probe_state: Dictionary = probe_baker.set_river_atlas_probe_enabled(enabled, _current_map)
+			probe_state["ok"] = true
+			gm_toggle_changed.emit(toggle_id, bool(probe_state.get("enabled", enabled)))
+			return probe_state
 		"diagnostics.perf_sampler":
 			if not _gm_call_renderer_toggle("set_perf_sampler_enabled", enabled):
 				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
@@ -871,6 +907,7 @@ func _gm_command_specs(technologies: PackedStringArray = PackedStringArray(),
 		goods: PackedStringArray = PackedStringArray(),
 		buildings: PackedStringArray = PackedStringArray()) -> Array:
 	return [
+		{"id": "diagnostics.dump_atlas_river_probe", "label": "Export Atlas river probe", "category": "diagnostics", "destructive": false, "args": []},
 		{"id": "time.pause", "label": "暂停/继续模拟", "category": "时间", "destructive": false,
 			"args": [{"name": "state", "type": "enum", "required": false,
 				"default": "toggle", "choices": PackedStringArray(["toggle", "on", "off"])}]},

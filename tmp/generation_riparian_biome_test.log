@@ -1,0 +1,12 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[generation-riparian-biome] balanced={ "land": 4747, "arid_land": 36, "river_arid": 0, "adjacent": 1567, "adjacent_arid": 0, "visual_big_rivers": 99, "river_cells": 856, "final_redecide": 891 }
+[generation-riparian-biome] harsh={ "land": 4747, "arid_land": 39, "river_arid": 0, "adjacent": 1567, "adjacent_arid": 0, "visual_big_rivers": 100, "river_cells": 856, "final_redecide": 923 }
+[generation-riparian-biome] no_riparian={ "land": 4747, "arid_land": 309, "river_arid": 0, "adjacent": 1567, "adjacent_arid": 198, "visual_big_rivers": 99, "river_cells": 856, "final_redecide": 55 }
+[generation-riparian-biome] checks=16 failures=0
+ERROR: 10 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 56 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

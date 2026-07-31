@@ -573,6 +573,9 @@ func _on_map_tile_tapped(world_pos: Vector2) -> void:
 	_select_cell(cell)
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	# Debug hotkeys are available only in debug builds. Release builds use GM.
+	if not OS.is_debug_build():
+		return
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	match event.keycode:

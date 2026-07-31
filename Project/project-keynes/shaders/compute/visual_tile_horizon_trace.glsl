@@ -13,8 +13,15 @@ layout(set = 0, binding = 2, std430) restrict buffer Metrics {
 	uint non_converged;
 	uint conservative_tail_rays;
 	uint global_fallback_rays;
-	uint _pad0;
+	uint occluder_sentinel_texels;
 } metrics;
+// [terrain-gi 2026-07-31] 遮挡源 cell id 输出。RG=主导遮挡源低/高字节，BA=次遮挡源，
+// 打包顺序与 RGBA8 纹理一致（低字节在低位）。0xFFFF=无有效遮挡源。
+// 只记录几何，不记录颜色：地表 albedo 每日随 dyn/eco LUT 变化，运行期查 bounce_lut 即可。
+layout(rgba8, set = 0, binding = 3) readonly uniform image2DArray source_map_index;
+layout(set = 0, binding = 4, std430) writeonly restrict buffer PackedOccluder {
+	uint values[];
+} occluder;
 
 layout(push_constant, std430) uniform Params {
 	ivec2 logical_size;
@@ -46,12 +53,19 @@ ivec2 mip_size(int level) {
 	return max((params.logical_size + ivec2(scale - 1)) / scale, ivec2(1));
 }
 
+// [wrap-seam-fix 2026-07-31] GLSL 规范 §5.9 规定 % 在任一操作数为负时结果**未定义**，
+// 不是 C 那样的截断取余。实测某驱动上 (-2) % 70 返回 -26，于是 `v < 0 ? v + width : v`
+// 这类兜底会算出 44 而不是 68——西向越过接缝的射线整段采到错误的列，接缝西侧出现一条
+// 明显的错误阴影带。这里保证只用非负左操作数，负数分支单独镜像回去。
 int wrap_column(int x, int width) {
 	if (params.wrap_x == 0) {
 		return clamp(x, 0, width - 1);
 	}
-	int v = x % width;
-	return v < 0 ? v + width : v;
+	if (x >= 0) {
+		return x % width;
+	}
+	int r = (-x) % width;
+	return (r == 0) ? 0 : (width - r);
 }
 
 float height_at_logical(ivec2 p, int level) {
@@ -124,6 +138,31 @@ uint quantize_angle(float slope) {
 	return uint(clamp(floor(angle / params.max_angle * 15.0 + 0.5), 0.0, 15.0));
 }
 
+// logical texel → 它所属 Tile 的 physical 坐标 + layer。与 decode shader 的
+// physical → logical 互为逆运算，共用同一 interior/gutter 契约。
+ivec3 logical_to_physical(ivec2 lp) {
+	lp.x = wrap_column(lp.x, params.logical_size.x);
+	lp.y = clamp(lp.y, 0, params.logical_size.y - 1);
+	ivec2 tile = min(lp / params.interior_size, params.grid_size - ivec2(1));
+	ivec2 local_p = lp - tile * params.interior_size + ivec2(params.gutter_px);
+	return ivec3(local_p, tile.y * params.grid_size.x + tile.x);
+}
+
+const uint OCCLUDER_SENTINEL = 0xFFFFu;
+
+// map_index 的 G/B 通道即 cell.index 低/高字节（与 cell_indirect.decode_cell_index 同源）。
+uint cell_id_at_logical(int packed_index) {
+	if (packed_index < 0) {
+		return OCCLUDER_SENTINEL;
+	}
+	ivec2 lp = ivec2(packed_index % params.logical_size.x, packed_index / params.logical_size.x);
+	vec4 texel = imageLoad(source_map_index, logical_to_physical(lp));
+	uint lo = uint(floor(texel.g * 255.0 + 0.5));
+	uint hi = uint(floor(texel.b * 255.0 + 0.5));
+	uint cid = lo + hi * 256u;
+	return (cid >= OCCLUDER_SENTINEL) ? OCCLUDER_SENTINEL : cid;
+}
+
 void main() {
 	ivec3 gid = ivec3(gl_GlobalInvocationID.xyz);
 	if (gid.x >= params.layer_size.x || gid.y >= params.layer_size.y ||
@@ -137,12 +176,15 @@ void main() {
 	vec2 origin = vec2(global_p);
 	float base_height = height_at_logical(global_p, 0);
 	uint q[8];
+	// 每方向的最强遮挡命中点，压成 logical y*W+x 省一半寄存器；-1 = 无精确命中。
+	int hit_index[8];
 
 	for (int direction_id = 0; direction_id < 8; ++direction_id) {
 		vec2 direction = DIRECTIONS[direction_id];
 		float max_distance = ray_limit(origin, direction);
 		float distance_px = 1.0;
 		float best_slope = 0.0;
+		int best_hit = -1;
 		int forced_level = -1;
 		bool converged = false;
 
@@ -172,7 +214,11 @@ void main() {
 				sample_p.x = wrap_column(sample_p.x, params.logical_size.x);
 				sample_p.y = clamp(sample_p.y, 0, params.logical_size.y - 1);
 				float dh = height_at_logical(sample_p, 0) - base_height - params.bias;
-				best_slope = max(best_slope, slope_for(dh, direction, distance_px));
+				float candidate = slope_for(dh, direction, distance_px);
+				if (candidate > best_slope) {
+					best_slope = candidate;
+					best_hit = sample_p.y * params.logical_size.x + sample_p.x;
+				}
 			}
 			distance_px += max(span_px, 1.0);
 			forced_level = -1;
@@ -194,8 +240,15 @@ void main() {
 				float span_px = min(float(1 << level), max_distance - distance_px + 1.0);
 				float upper_height = segment_upper_height(
 					origin, direction, distance_px, span_px, level);
-				best_slope = max(best_slope, slope_for(
-					upper_height - base_height - params.bias, direction, distance_px));
+				float tail_slope = slope_for(
+					upper_height - base_height - params.bias, direction, distance_px);
+				if (tail_slope > best_slope) {
+					best_slope = tail_slope;
+					// 保守 tail 只知道 span 的高度上界，不知道具体命中 texel。一旦它成为
+					// 最强遮挡，之前记录的精确命中就不再对应最大角，必须作废——宁可丢掉
+					// 这条射线的弹射贡献，也不能把错误的 cell 当成遮挡源。
+					best_hit = -1;
+				}
 				distance_px += max(span_px, 1.0);
 			}
 			if (distance_px > max_distance) {
@@ -205,12 +258,17 @@ void main() {
 				// This should only be reachable for pathological dimensions. Retain the
 				// old global bound as a last-resort conservative guarantee and report it.
 				float global_upper = height_at_logical(ivec2(0), params.mip_count - 1);
-				best_slope = max(best_slope, slope_for(
-					global_upper - base_height - params.bias, direction, max(distance_px, 1.0)));
+				float global_slope = slope_for(
+					global_upper - base_height - params.bias, direction, max(distance_px, 1.0));
+				if (global_slope > best_slope) {
+					best_slope = global_slope;
+					best_hit = -1;
+				}
 				atomicAdd(metrics.global_fallback_rays, 1u);
 			}
 		}
 		q[direction_id] = quantize_angle(best_slope);
+		hit_index[direction_id] = best_hit;
 	}
 
 	uint packed = (q[0] << 4) | q[1];
@@ -220,4 +278,32 @@ void main() {
 	uint physical_index = uint(gid.z * params.layer_size.x * params.layer_size.y +
 		gid.y * params.layer_size.x + gid.x);
 	horizon.values[physical_index] = packed;
+
+	// ── [terrain-gi 2026-07-31] top-2 遮挡方向的落点 cell ───────────────────
+	// argmax 必须对【量化后的 q】而非 best_slope 求，且用严格大于（先到先得、最小 index
+	// 优先）：运行期 shader 只能看到量化后的 nibble，两侧规则必须逐字一致，否则烘焙记录的
+	// cell 会与运行期选出的权重配错方向。
+	int d0 = -1;
+	int d1 = -1;
+	uint q0 = 0u;
+	uint q1 = 0u;
+	for (int d = 0; d < 8; ++d) {
+		if (q[d] > q0) {
+			q1 = q0;
+			d1 = d0;
+			q0 = q[d];
+			d0 = d;
+		} else if (q[d] > q1) {
+			q1 = q[d];
+			d1 = d;
+		}
+	}
+	uint cid0 = (d0 >= 0 && q0 > 0u) ? cell_id_at_logical(hit_index[d0]) : OCCLUDER_SENTINEL;
+	uint cid1 = (d1 >= 0 && q1 > 0u) ? cell_id_at_logical(hit_index[d1]) : OCCLUDER_SENTINEL;
+	if (cid0 == OCCLUDER_SENTINEL) {
+		// 主源无效时次源也不写：运行期以 cid0 为准做早退，留着 cid1 只会误导。
+		cid1 = OCCLUDER_SENTINEL;
+		atomicAdd(metrics.occluder_sentinel_texels, 1u);
+	}
+	occluder.values[physical_index] = (cid0 & 0xFFFFu) | ((cid1 & 0xFFFFu) << 16);
 }

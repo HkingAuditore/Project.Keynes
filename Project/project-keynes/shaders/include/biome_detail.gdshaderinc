@@ -10,8 +10,11 @@
 // 性能（PERF）：本函数是 fragment 内单像素 fbm 调用的最大集中地。最差路径
 //                （B_JUNGLE）：1 次 voronoi + 3 次 fbm（octaves 3/3/1）≈ 8 个
 //                octave 的噪声 fetch。其他 biome 通常 1~2 次 fbm + 0~1 次
-//                voronoi。移动端 MID/HIGH 与桌面 visual_quality==1 改读
-//                terrain_detail_tex（bake-time L8），LOW 直接跳过采样。
+//                voronoi。分档：
+//                  - 移动端 / 桌面 visual_quality<=1 + 已绑 terrain_detail_tex → 读烘焙 L8
+//                  - 桌面 visual_quality>=2 → **完整 per-biome 程序配方**（不因 tiled
+//                    绑了 L8 而早退；否则高画质永远看不到沙丘/林冠等纹理）
+//                  - visual_quality==0 → 恒等 1.0
 //
 // 每个 biome 的噪声配方一览（方便手动调整某一种地表）：
 //   B_FOREST   : voronoi(0.30) + fbm(0.40, oct=3)             — 林冠斑驳
@@ -42,22 +45,24 @@ const float TERRAIN_DETAIL_BAKE_MIN = 0.70;
 const float TERRAIN_DETAIL_BAKE_MAX = 1.30;
 
 float terrain_macro_amplitude(int biome) {
+	// [albedo-visibility 2026-07-31] 烘焙 L8 路径的幅度整体抬高：旧值 ±6~9% 在强法线
+	// 明暗下几乎不可见。移动端/中画质仍走这条廉价路径，需要能读出地表差异。
 	if (biome == B_MOUNTAIN || biome == B_HILL || biome == B_BADLANDS || biome == B_MESA) {
-		return 0.095;
+		return 0.16;
 	}
 	if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) {
-		return 0.082;
+		return 0.14;
 	}
 	if (biome == B_DESERT || biome == B_COLD_DESERT || biome == B_SALT_FLAT) {
-		return 0.075;
+		return 0.13;
 	}
 	if (biome == B_SWAMP || biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_MOOR) {
-		return 0.055;
+		return 0.10;
 	}
 	if (biome == B_SNOW || biome == B_GLACIER) {
-		return 0.040;
+		return 0.07;
 	}
-	return 0.065;
+	return 0.11;
 }
 
 vec3 baked_biome_detail(int biome, vec2 uv) {
@@ -71,12 +76,20 @@ vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
 	if (visual_quality <= 0) {
 		return vec3(1.0);
 	}
+#if defined(PK_MOBILE_ANY)
+	// 移动端始终走烘焙 L8（或跳过），不算完整程序配方。
 	if (has_terrain_detail_tex) {
 		return baked_biome_detail(biome, uv);
 	}
-#if defined(PK_MOBILE_ANY)
 	return vec3(1.0);
 #else
+	// [albedo-visibility 2026-07-31] 桌面高画质必须跑完整 per-biome 程序纹理。
+	// 旧逻辑：只要绑了 terrain_detail_tex（tiled 模式永远绑）就早退到单通道 L8，
+	// 导致 visual_quality=2 时下方整段森林/沙丘/岩纹配方变成死代码——这就是
+	// "高画质也看不出纹理"的根因。中画质继续用烘焙 L8 保性能。
+	if (visual_quality < 2 && has_terrain_detail_tex) {
+		return baked_biome_detail(biome, uv);
+	}
 	if (visual_quality == 1) {
 		float n = fbm(wp * 0.18, 2);
 		float amp = 0.060;

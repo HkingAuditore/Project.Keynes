@@ -103,9 +103,14 @@ texel 18 bytes 估算；compute 临时工作集额外按 12 bytes 估算。可�
 | `edge_neighbor` | RG8 | 2 | 次级 cell id |
 | `edge_distance` | L8 | 1 | cell 边界距离 |
 | `horizon` | RGBA8 | 4 | 8 方向、每方向 4-bit |
+| `gi_occluder` | RGBA8 | 4 | 遮挡最强两个方向的落点 cell id，RG=主源、BA=次源，低字节在前 |
+
+`horizon` 与 `gi_occluder` 是 `COMPUTE_FIELDS`：它们由 horizon compute 产出，不参与
+`upload_layer_bundle` 的静态字段上传。
 
 `ready` 表示全部静态数组可统一绑定；`horizon_ready` 单独表示异步 horizon 已完整替换
-中性数组。消费者绝不绑定部分静态 layer。
+中性数组；`gi_occluder_ready` 再单独表示弹射源可用。三者是递进关系而非同一个开关——
+occluder 失败只关闭弹射，AO 与 bent normal 仍由 horizon 驱动。消费者绝不绑定部分静态 layer。
 
 ## 原生静态 Tile bake
 
@@ -148,12 +153,30 @@ Copy-on-Write 复用，且热循环仍完全位于 C++。若后续 profiling 证
 2. pyramid shader 构建跨 layer 的 max-height 金字塔。
 3. trace shader 对物理 layer（含 gutter）的 8 个方向执行分层 branch-and-bound。
 4. 输出直接写 nibble-packed RGBA8 buffer，回读后逐层上传。
+5. 同一次 trace 顺带产出 `gi_occluder`：记录每个方向 level-0 精确命中的 texel，
+   取量化角最大的两个方向，用 `map_index` 的 G/B 通道解析成 cell id 写出。
+   保守 tail 与全局 fallback 只知道高度上界、不知道命中点，一旦它们成为最强遮挡就把
+   该方向的命中作废（写 `0xFFFF` 哨兵），宁可丢弃弹射贡献也不记录错误的 cell。
+
+烘焙层只记录"遮挡源是哪个 cell"，不记录颜色——地表 albedo 每日随 `dyn_lut` / `eco_lut`
+变化，运行期查 `bounce_lut` 即可，季节、雪盖、植被枯荣都不触发重烘。详见
+`terrain-gi-bake.md`。
 
 X 坐标先按周期环绕再解析 logical texel，Y clamp。水平射线最多一个经度周期；其他方向
 到 Y 边界停止。达到主 traversal iteration cap 时，使用沿当前射线走廊的分层 max-height
 span 完成保守 tail；每个 span 以最近距离计算斜率上界，因此只会略多遮挡，不会漏遮挡，
 也不会把全图无关山峰投成三角长影。只有 512 次 tail 仍无法覆盖的病理尺寸才使用全局最大值，
 并单独累计 `global_fallback_rays`。
+
+**环绕取模绝不能把负数交给 GLSL 的 `%`。** GLSL 规范 §5.9 规定 `%` 在任一操作数为负时
+结果**未定义**（不是 C 那样的截断取余），因此 `int v = x % width; return v < 0 ? v + width : v;`
+这种在 C++ 里正确的写法在 GPU 上不成立——实测某驱动上 `(-2) % 70` 返回 `-26`，兜底后
+得到 44 而不是 68。`wrap_column` 必须先判正负、只用非负左操作数取模。
+
+这个 bug 的表现是**东西接缝西侧一整条错误阴影带**：出错的不只是 tile 0 左侧 gutter 的
+输出 texel，而是所有向西越过 `x=0` 的射线——`height_at_logical` / `segment_upper_height`
+一旦拿到负 x 就整段采到错误的列。东侧因为 `x > width` 是正数，取模正常，所以错误是
+单侧的。C++ 侧（`world_ext_bake.cpp` 的 `((x % w) + w) % w`）不受影响，C++ 的 `%` 有定义。
 
 周期 mip 的寻址契约是“先按 level-0 `logical_size.x` 环绕，再除以 `2^level` 解析 mip cell”，
 不能把已经缩小的 cell index 按 `mip_size.x` 取模。逻辑宽度不整除 `2^level` 时，最右 mip cell
@@ -166,6 +189,13 @@ compute 在静态 Tile 发布后异步启动；完成前 shader 关闭 tiled hor
 `encode_bake_horizon_tex_data` 取得全局 RGBA8 horizon，再逐层调用
 `run_resample_visual_horizon_layer_pass`。只有所有 layer 上传成功才置
 `horizon_ready=true`；fallback 再失败则保持中性 horizon 并记录原因。
+
+fallback 路径同样能产出 occluder：给 `encode_bake_horizon_tex_data` 传
+`emit_occluder_cells=true` 与全局 map_index 字节，它会在同一次 tracing 里顺带写出
+`occluder_data`。遮挡源图与 horizon 完全同构（RGBA8、同尺寸、必须 NEAREST 重采样），
+所以复用同一个 `run_resample_visual_horizon_layer_pass`，只换 `source_data`。
+occluder 独立降级：DLL 未 rebuild 或 map_index 不可用时它保持为空、只关闭弹射，
+horizon 本身照常发布。
 
 ## 统一寻址与消费者
 
@@ -207,7 +237,9 @@ requested/effective pixels、domain、grid/layer、interior/gutter/logical size�
 resident/peak bytes，以及每层 bake/upload/wall time 和字段 hash。
 Horizon 报告记录 path、mip levels、compile/resource setup/command record/submit/GPU wait/readback/
 upload time、buffer bytes、hash、`non_converged_rays`、`conservative_tail_rays/ratio`、
-`global_fallback_rays`、`height_world_scale` 与 `sea_level`。静态层另记 raster/distance scale、
+`global_fallback_rays`、`height_world_scale`、`sea_level`，以及 GI 侧的 `gi_occluder_ok`、
+`occluder_output_bytes`、`occluder_hash` 与 `occluder_sentinel_ratio`（哨兵占比异常偏高
+说明 trace 的命中记录有问题）。静态层另记 raster/distance scale、
 换算后的 river/coast SDF 与岸坡像素范围，以及 cell edge distance 的 world/hex 单位；fallback
 另记 source path、每层时间/hash 和 compute failure。
 
@@ -222,7 +254,12 @@ upload time、buffer bytes、hash、`non_converged_rays`、`conservative_tail_ra
   变体；仅重绑 uniform 不能替代变体重编译。
 - `visual_tile_horizon_shader_test.gd`：compute source 契约。
 - `visual_tile_horizon_smoke_test.gd`：真实 RenderingDevice dispatch/readback/upload 和 gutter。
+  horizon 只是 origin 的函数，所以该测试把整行里**所有出现多于一次的 logical 列**在
+  interior 与 gutter 之间逐位对齐，而不是抽查两个像素——接缝 bug 往往只在部分列上发作。
 - `terrain_shader_variant_test.gd`、`overlay_edge_transition_shader_test.gd`：legacy/tiled shader 变体。
+- `terrain_gi_test.gd`：`gi_horizon_lut` 端点与单调性、V_sky 与 bent normal 的解析构型、
+  occluder cell id 打包往返与哨兵、弹射代表色表覆盖全部 TERRAIN，以及地形 8 变体与
+  植被 2 变体的 GI uniform 编译契约。
 
 发布门槛还包括 Windows D3D12 和 Android Vulkan 的 LOW/MID/HIGH 真机编译截图、8 MP/2 MP
 峰值内存、GPU p95、horizon exhaustive CPU 角误差和跨 Tile 视觉回归。这些是实机验收，

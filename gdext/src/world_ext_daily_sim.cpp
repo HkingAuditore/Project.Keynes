@@ -255,6 +255,7 @@ static Array native_daily_collect_published_slots(const Dictionary &bundle_dict)
         native_daily_append_unique(slots, String("cell_weather_transition_alpha"));
     }
     if (bundle_dict.has("runtime_hydrology_knobs")) {
+        native_daily_append_unique(slots, String("cell_moisture"));
         native_daily_append_unique(slots, String("cell_soil_moisture"));
         native_daily_append_unique(slots, String("cell_water_balance_30d"));
         native_daily_append_unique(slots, String("cell_river_discharge"));
@@ -452,7 +453,8 @@ static Dictionary native_daily_collect_state_snapshot(const Dictionary &bundle_d
     hydrology_authority["simulation_authority"] = bundle_dict.has("runtime_hydrology_knobs");
     hydrology_authority["published_slots_expected"] =
         bundle_dict.has("runtime_hydrology_knobs")
-            ? Array::make(String("cell_soil_moisture"),
+            ? Array::make(String("cell_moisture"),
+                          String("cell_soil_moisture"),
                           String("cell_water_balance_30d"),
                           String("cell_river_discharge"),
                           String("cell_river_discharge_30d"),
@@ -1261,6 +1263,11 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));
             breakdown["hydrology_river_discharge_max"] = double(hydro.get("river_discharge_max", 0.0));
             breakdown["hydrology_riparian_neighbor_touches"] = int(hydro.get("riparian_neighbor_touches", 0));
+            breakdown["hydrology_river_moisture_floor_touches"] = int(hydro.get("river_moisture_floor_touches", 0));
+            breakdown["hydrology_riparian_moisture_floor_touches"] = int(hydro.get("riparian_moisture_floor_touches", 0));
+            breakdown["hydrology_moisture_response_alpha"] = double(hydro.get("moisture_response_alpha", 0.0));
+            breakdown["hydrology_river_moisture_max_delta"] = double(hydro.get("river_moisture_max_delta", 0.0));
+            breakdown["hydrology_riparian_moisture_max_delta"] = double(hydro.get("riparian_moisture_max_delta", 0.0));
             breakdown["hydrology_flood_count"] = int(hydro.get("flood_count", hydro.get("flood_candidate_count", 0)));
             breakdown["hydrology_published_to_slot"] = true;
             return true;
@@ -1819,7 +1826,8 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         hydrology_authority["simulation_authority"] = false;
         hydrology_authority["published_slots_expected"] =
             bundle.has("runtime_hydrology_knobs")
-                ? Array::make(String("cell_soil_moisture"),
+                ? Array::make(String("cell_moisture"),
+                              String("cell_soil_moisture"),
                               String("cell_water_balance_30d"),
                               String("cell_river_discharge"),
                               String("cell_river_discharge_30d"),
@@ -2061,6 +2069,7 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
             append_unique(slots, String("cell_weather_transition_alpha"));
         }
         if (bundle_dict.has("runtime_hydrology_knobs")) {
+            append_unique(slots, String("cell_moisture"));
             append_unique(slots, String("cell_soil_moisture"));
             append_unique(slots, String("cell_water_balance_30d"));
             append_unique(slots, String("cell_river_discharge"));
@@ -2245,7 +2254,8 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         hydrology_authority["simulation_authority"] = bundle_dict.has("runtime_hydrology_knobs");
         hydrology_authority["published_slots_expected"] =
             bundle_dict.has("runtime_hydrology_knobs")
-                ? Array::make(String("cell_soil_moisture"),
+                ? Array::make(String("cell_moisture"),
+                              String("cell_soil_moisture"),
                               String("cell_water_balance_30d"),
                               String("cell_river_discharge"),
                               String("cell_river_discharge_30d"),
@@ -2608,6 +2618,11 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));
         breakdown["hydrology_river_discharge_max"] = double(hydro.get("river_discharge_max", 0.0));
         breakdown["hydrology_riparian_neighbor_touches"] = int(hydro.get("riparian_neighbor_touches", 0));
+        breakdown["hydrology_river_moisture_floor_touches"] = int(hydro.get("river_moisture_floor_touches", 0));
+        breakdown["hydrology_riparian_moisture_floor_touches"] = int(hydro.get("riparian_moisture_floor_touches", 0));
+        breakdown["hydrology_moisture_response_alpha"] = double(hydro.get("moisture_response_alpha", 0.0));
+        breakdown["hydrology_river_moisture_max_delta"] = double(hydro.get("river_moisture_max_delta", 0.0));
+        breakdown["hydrology_riparian_moisture_max_delta"] = double(hydro.get("riparian_moisture_max_delta", 0.0));
         breakdown["hydrology_flood_count"] = int(hydro.get("flood_count", hydro.get("flood_candidate_count", 0)));
         breakdown["hydrology_published_to_slot"] = true;
         any_pass_ran = true;

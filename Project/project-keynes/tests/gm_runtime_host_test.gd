@@ -29,18 +29,39 @@ func _run() -> void:
 	var capabilities := host.get_gm_capabilities()
 	var fog_toggle_found := false
 	var click_claim_toggle_found := false
+	var atlas_toggle_found := false
+	var river_probe_command_found := false
 	for toggle in capabilities.get("toggles", []):
 		if String(toggle.get("id", "")) == "visual.fog_of_war":
 			fog_toggle_found = true
 		if String(toggle.get("id", "")) == "simulation.click_claim_territory":
 			click_claim_toggle_found = true
+		if String(toggle.get("id", "")) == "diagnostics.dynamic_visual_atlas_upload":
+			atlas_toggle_found = true
+	for command in capabilities.get("commands", []):
+		if String(command.get("id", "")) == "diagnostics.dump_atlas_river_probe":
+			river_probe_command_found = true
 	_expect(fog_toggle_found, "fog toggle capability", failures)
 	_expect(click_claim_toggle_found, "click claim toggle capability", failures)
+	_expect(atlas_toggle_found, "dynamic atlas toggle capability", failures)
+	_expect(river_probe_command_found, "river probe command capability", failures)
+	_expect(host.execute_gm_command("diagnostics.dump_atlas_river_probe", {}).get("code") == "baker_unavailable",
+		"river probe command readiness boundary", failures)
 	_expect(host.set_gm_toggle("simulation.click_claim_territory", true).get("code") == "world_not_ready",
 		"click claim world readiness boundary", failures)
 	var fog_toggle := host.set_gm_toggle("visual.fog_of_war", false)
 	_expect(bool(fog_toggle.get("ok", false)) and not bool(fog_toggle.get("enabled", true)),
 		"fog toggle authoritative readback", failures)
+	Engine.remove_meta(&"force_disable_dva_upload")
+	var atlas_off := host.set_gm_toggle("diagnostics.dynamic_visual_atlas_upload", false)
+	_expect(bool(atlas_off.get("ok", false)) and not bool(atlas_off.get("enabled", true))
+		and bool(Engine.get_meta(&"force_disable_dva_upload", false)),
+		"dynamic atlas GM disable", failures)
+	var atlas_on := host.set_gm_toggle("diagnostics.dynamic_visual_atlas_upload", true)
+	_expect(bool(atlas_on.get("ok", false)) and bool(atlas_on.get("enabled", false))
+		and not bool(Engine.get_meta(&"force_disable_dva_upload", true)),
+		"dynamic atlas GM enable", failures)
+	Engine.remove_meta(&"force_disable_dva_upload")
 	_expect(GameUIManager.gm_available_for_build(true, false), "debug build entry", failures)
 	_expect(GameUIManager.gm_available_for_build(false, true), "editor entry", failures)
 	_expect(not GameUIManager.gm_available_for_build(false, false), "release entry hidden", failures)

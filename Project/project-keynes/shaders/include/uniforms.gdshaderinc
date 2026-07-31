@@ -42,6 +42,35 @@ uniform float terrain_horizon_softness = 0.16;
 uniform float terrain_horizon_strength = 0.70;
 uniform float terrain_horizon_cast_floor = 0.82;
 uniform int terrain_horizon_debug_view = 0; // 0=off, 1=shadow mask, 2=direct visibility
+// [terrain-gi 2026-07-31] 同一张 horizon 图派生的全局光照量。设计与推导见
+// docs/cpp-dots-runtime/terrain-gi-bake.md。三个 gi_*_strength 全部归零即可精确
+// 回退到接入 GI 之前的行为，这是视觉回归定位的主要手段。
+//   gi_horizon_lut[n] = vec3(cos²(h_n), cos(m_n), sin(m_n))，h_n = n/15·max_angle，
+//   m_n = (h_n + π/2)/2。由 HexRenderer 按 terrain_horizon_max_angle 预计算推送，
+//   让 shader 在解 4-bit 量化角时不出现任何三角函数调用。
+//   gi_lut_bound=false（未推送/旧 renderer）时 AO 与 bent normal 退化为中性值，
+//   绝不能让未初始化的全零表把地表打黑。
+uniform bool gi_lut_bound = false;
+uniform vec3 gi_horizon_lut[16];
+uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.85;
+// V_sky 的下限。几何遮蔽算出的 0 意味着"看不到任何天空"，但真实峡谷底部仍被岩壁多次
+// 散射照亮；没有下限时封闭地形会被压成死黑，暗部还会把地表 dither 的对比度一并放大。
+uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.45;
+// 0=双线性（保留高频残差）；1=2×2 箱式低通。AO 与 bent normal 共用，不增加采样次数。
+uniform float gi_ao_smoothing : hint_range(0.0, 1.0) = 0.75;
+// 环境光查询法线向 bent normal 偏转的比例。**1.0 会完全丢弃几何法线**，让环境光只跟随
+// 4-bit × 8 扇区的量化方向，出现块状跳变；保持在 0.5 以下才是"倾斜"而非"替换"。
+uniform float gi_bent_strength : hint_range(0.0, 1.0) = 0.35;
+uniform float gi_normal_floor : hint_range(0.0, 1.0) = 0.85;
+uniform float gi_bounce_strength : hint_range(0.0, 0.5) = 0.18;
+// 0=off 1=sky visibility 2=bent normal 3=occluder cell id 4=bounce only
+uniform int gi_debug_view = 0;
+// [terrain-gi 档 2] per-cell 弹射代表色（RGBA8 NEAREST，与 enum/dyn/eco 同 lut_dims 网格）。
+// RGB=该 cell 当前地表代表色，A=有效性/强度缩放（0=水体或 map 外，不参与弹射）。
+// 刻意是近似量而非 fragment albedo 的精确镜像：弹射项乘了 (1-V_sky) 与 ≤0.3 的增益，
+// 能量占比极低，公式偏差不可见，不值得再引入一处必须永久同步的 CPU/GPU 双份实现。
+uniform sampler2D bounce_lut : filter_nearest, repeat_disable;
+uniform bool gi_bounce_bound = false;
 // [river-render-restore 2026-06-19] 河流 SDF（L8, derived_size）：R = 河流强度 [0,1]，
 // 1=河心、0=远离河道。scalar_atlas 退役后单独用这张轻量纹理把河网视觉接回（见 land_pipeline
 // 的 flow）。未绑定时采样得 0（无河），安全降级。
@@ -115,8 +144,8 @@ uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
 uniform vec2 hm_resolution = vec2(2048.0, 1536.0);
 uniform vec2 derived_resolution = vec2(1024.0, 768.0);
-// World-scale reference for atlas-anchored DitherUV. Tiled rendering keeps this
-// at the global baseline resolution so changing visual MP does not resize the pattern.
+// World-scale reference for atlas-anchored DitherUV. Tiled rendering uses the current
+// logical visual resolution so the Bayer grain follows the visual raster density.
 uniform vec2 visual_reference_resolution = vec2(2048.0, 1536.0);
 
 uniform float sea_level : hint_range(0.0, 1.0) = 0.42;
@@ -432,9 +461,13 @@ uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
 //   compute_terrain_normal：① 粗法线给山脉总体走向（治"走向不清晰"）；② 细节法线只在需要的地形 +
 //   高画质上叠（治"密密麻麻"）；③ 低/中端机不算细节（性能分档）。
 uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 未绑定烘焙法线时运行期回退半径(texel)
-uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.6;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
+// [normal-soften 2026-07-31] 1.6→1.25：烘焙粗法线再放大后会把 residual 残差的中频起伏
+// 读成过硬的阴阳面，压低后宏观走向仍在、砂砾感下降。
+uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.25;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
 uniform bool  hillshade_detail_enabled = true;                          // 细节法线总开关
-uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.5;  // 细节法线全局强度（再乘 biome 因子）
+// [normal-soften 2026-07-31] 细节法线改走更宽差分 + zoom 门控，全局强度再降到 0.16。
+// 高画质不再等于"更碎"：见 hillshade_tod.compute_terrain_normal。
+uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.16;
 // [shore-normal 2026-06-25] 近岸滩坡法线：近海陆地(elev 略高于 sea_level 的窄带)单独解开细节门控，
 //   让海岸读出滩坡/切岸起伏（B_COAST 是水体不调本函数；近岸陆地多为 B_PLAIN，biome 因子≈0.12 被压平）。
 //   用 coast_sdf=elev-sea_level 做近岸 gate，不影响内陆平原(P0 真平)。
@@ -454,8 +487,8 @@ uniform float coast_shore_land_bias  : hint_range(0.0, 1.0) = 0.5;    // 过渡�
 // =========================================================================
 // ─── 河流（从 flow accumulation） ───────────────────────────────────────
 uniform float river_strength       : hint_range(0.0, 1.0) = 0.85;
-uniform float river_threshold_low  : hint_range(0.0, 1.0) = 0.62;
-uniform float river_threshold_high : hint_range(0.0, 1.0) = 0.90;
+uniform float river_threshold_low  : hint_range(0.0, 1.0) = 0.70;
+uniform float river_threshold_high : hint_range(0.0, 1.0) = 0.94;
 uniform vec3  river_color          : source_color = vec3(0.30, 0.50, 0.68);
 uniform vec3  river_outline_color  : source_color = vec3(0.16, 0.30, 0.45);
 

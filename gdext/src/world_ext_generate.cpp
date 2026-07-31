@@ -1351,26 +1351,19 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         for (int i = 0; i < n; ++i) M[i] = msm[size_t(i)];
     }
 
-    // 6c+. 全向沿海湿度地板（回归修复 2026-06-18）：纯纬向平流忽略非纬向最近海，会在大陆上
-    // 产生"假内陆干燥带"（某格距上风向海很远但其实北/南方紧邻海洋仍被判枯干）。用 dist_ocean
-    // (全向 BFS) 给一个随距海指数衰减的湿度下限：近海格(任意方向)保底湿润，深内陆自然干旱，
-    // 纬向雨影结构作为上层叠加保留。max(原值, floor) 不会抹平已湿润区。
-    {
-        const double coastal_moist_floor = pk_clamp01(getd(profile, "moisture_coastal_floor", 0.42));
-        // [scale-fix 2026-07-30] 衰减长度用 knobs 区已 ×s 的 coastal_moist_scale_eff，
-        // 保持沿海保护带的物理宽度与分辨率无关（此前大图保护带物理宽度减半 → 内陆全旱）。
-        for (int i = 0; i < n; ++i) {
-            if (double(E[i]) < sea_level) continue;
-            const int dd = dist_ocean[size_t(i)];
-            if (dd <= 0) continue;
-            const double prox = std::exp(-double(dd) / coastal_moist_scale_eff);
-            const double floor_m = moisture_land_base + coastal_moist_floor * prox;
-            if (double(M[i]) < floor_m) M[i] = float(floor_m);
-        }
+    // 全量海洋地板先参与大尺度干带计算，让近海格以海洋输入为起点，而不是以噪声低值为起点。
+    const double coastal_moist_floor = pk_clamp01(getd(profile, "moisture_coastal_floor", 0.42));
+    for (int i = 0; i < n; ++i) {
+        if (double(E[i]) < sea_level) continue;
+        const int dd = dist_ocean[size_t(i)];
+        if (dd <= 0) continue;
+        const double prox = std::exp(-double(dd) / coastal_moist_scale_eff);
+        const double floor_m = moisture_land_base + coastal_moist_floor * prox;
+        if (double(M[i]) < floor_m) M[i] = float(floor_m);
     }
 
-    // 6c++. 副热带干旱带：在南北约 20-35 度、且离海较远的陆地扣湿。
-    // 这不是噪声硬塞沙漠，而是用纬度环流 + 大陆度恢复自然荒漠带；近海由 coastal floor 保护。
+    // 6c+. 副热带干旱带：在南北约 20-35 度、且离海较远的陆地扣湿。
+    // 这不是噪声硬塞沙漠，而是用纬度环流 + 大陆度恢复自然荒漠带。
     if (subtropical_dry_strength > 0.0) {
         for (int i = 0; i < n; ++i) {
             if (double(E[i]) < sea_level) continue;
@@ -1384,6 +1377,19 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             const double dry_belt = std::exp(-0.5 * z * z);
             M[i] = float(pk_clamp01(double(M[i]) - subtropical_dry_strength * dry_belt * interior));
         }
+    }
+
+    // 6c++. 干带之后仅保留 35% 的残余海岸保障：阻止无物理依据的贴岸极旱，
+    // 但不会让海岸尺度覆盖小大陆并消灭内陆沙漠。明确雨影仍在 post-base 后置生效。
+    constexpr double PK_COASTAL_MOIST_GUARD = 0.35;
+    for (int i = 0; i < n; ++i) {
+        if (double(E[i]) < sea_level) continue;
+        const int dd = dist_ocean[size_t(i)];
+        if (dd <= 0) continue;
+        const double prox = std::exp(-double(dd) / coastal_moist_scale_eff);
+        const double guard_m = moisture_land_base
+            + coastal_moist_floor * PK_COASTAL_MOIST_GUARD * prox;
+        if (double(M[i]) < guard_m) M[i] = float(guard_m);
     }
 
     // 6d. 初判地形（permanent_only=true）：用统一气候场（海洋调节温度 + 风输送湿度）。
@@ -1555,7 +1561,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             ? std::max(1, int(std::round(double(lookback_base) * gen_dist_scale)))
             : 0;
     const double rain_threshold = getd(profile, "rain_shadow_threshold", 0.13);
-    const double rain_factor = getd(profile, "rain_shadow_factor", 0.50);
+    const double rain_factor = getd(profile, "rain_shadow_factor", 0.65);
     const double river_percentile = getd(profile, "river_flow_percentile", 0.72);  // 干支流树状河网：0.80→0.72（绘出支流）
     const int hydro_river_min_length_base = std::max(1, geti(profile, "hydro_river_min_length", 5));  // 最短河长：8→5
     const int river_headwater_init_base = std::max(1, geti(profile, "river_headwater_init_cells", 10));  // [density-fix] 6→10
@@ -1597,26 +1603,33 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const double peak_min_land_h = getd(profile, "peak_min_land_h", 0.74);
     const double peak_min_prominence = std::max(0.0, getd(profile, "peak_min_prominence", 0.035));
     const int peak_land_cells_per_peak = std::max(1, geti(profile, "peak_land_cells_per_peak", 120));
+    const double rift_min_wall_base = std::max(0.0, getd(profile, "rift_min_wall", 0.024));
+    const double rift_min_axis_base = std::max(0.0, getd(profile, "rift_min_axis", 0.052));
+    const int rift_min_length_base = std::max(1, geti(profile, "rift_min_length_cells", 3));
     const double badlands_min_relief_base = std::max(0.0, getd(profile, "badlands_min_relief", 0.06));
     const int badlands_min_rugged_neighbors = std::max(1, std::min(6,
             geti(profile, "badlands_min_rugged_neighbors", 2)));
     const double badlands_max_land_ratio = std::clamp(
-            getd(profile, "badlands_max_land_ratio", 0.04), 0.0, 1.0);
+            getd(profile, "badlands_max_land_ratio", 1.0), 0.0, 1.0);
     const double badlands_max_arid_ratio = std::clamp(
-            getd(profile, "badlands_max_arid_ratio", 0.25), 0.0, 1.0);
-    const int badlands_max_patch_cells = std::max(1,
-            geti(profile, "badlands_max_patch_cells", 48));
+            getd(profile, "badlands_max_arid_ratio", 1.0), 0.0, 1.0);
+    // 默认不截断自然候选区；调试极端地图时仍可显式设置安全阀。
+    const int badlands_max_patch_cells = std::max(0,
+            geti(profile, "badlands_max_patch_cells", 0));
     // [scale-fix 2026-07-30] mountain/badlands 的 relief 阈值参照 plateau 的 (ref/N)^k 模式
-    // 补分辨率缩放，但双向、指数默认 0.5：relief = 6 邻域高差 ∝ 1/s = (ref/N)^0.5（固定
-    // 世界细采样 → 相邻格高差天然更小，大图过严/小图过松）。plateau 只向下缩且指数 0.25，
-    // 是因为它有面积占比上限当主控、阈值仅辅助；mountain/badlands 的阈值就是主门，必须
-    // 自己跟踪物理采样密度。peak_min_prominence 维持不缩（PEAK 有 land/N 数量上限主控）。
-    const double relief_thresh_scale_exp = getd(profile, "relief_thresh_scale_exp", 0.5);
+    // 补分辨率缩放，但双向、指数默认 0.25：保留分辨率补偿，同时避免 60x40 等小地图
+    // 把 mountain/rift/badlands 的局部高差门槛放大到候选集之外。
+    // peak_min_prominence 维持不缩（PEAK 有 land/N 数量上限主控）。
+    const double relief_thresh_scale_exp = getd(profile, "relief_thresh_scale_exp", 0.25);
     const double relief_thresh_scale = std::pow(
             std::max(0.25, PK_GEN_REF_CELLS / std::max(1.0, double(n))),
             relief_thresh_scale_exp);
     const double mountain_min_relief = mountain_min_relief_base * relief_thresh_scale;
     const double badlands_min_relief = badlands_min_relief_base * relief_thresh_scale;
+    const double rift_min_wall = rift_min_wall_base * relief_thresh_scale;
+    const double rift_min_axis = rift_min_axis_base * relief_thresh_scale;
+    const int rift_min_length = std::max(1, int(std::round(
+            double(rift_min_length_base) * gen_dist_scale)));
     const int river_channel_init_base = std::max(2, geti(profile, "river_channel_init_cells", 16));
     // 15000 格(150×100)是 ClimateProfile 的调参基准。世界是固定大小的行星：同源点的
     // up_count ∝ N（流域物理面积不变 → 流域格数 ∝ N），成河阈值须随 N 线性缩放才能
@@ -1730,6 +1743,24 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     vegetation_arr.resize(n);
     PackedByteArray base_vegetation_arr;
     base_vegetation_arr.resize(n);
+    PackedFloat32Array vegetation_vitality_arr;
+    PackedFloat32Array soil_moisture_arr;
+    PackedFloat32Array water_balance_30d_arr;
+    PackedFloat32Array plant_available_water_arr;
+    PackedFloat32Array vegetation_growth_pressure_arr;
+    PackedFloat32Array vegetation_heat_stress_arr;
+    PackedFloat32Array vegetation_drought_stress_arr;
+    PackedFloat32Array vegetation_cold_stress_arr;
+    PackedFloat32Array vegetation_regen_score_arr;
+    vegetation_vitality_arr.resize(n);
+    soil_moisture_arr.resize(n);
+    water_balance_30d_arr.resize(n);
+    plant_available_water_arr.resize(n);
+    vegetation_growth_pressure_arr.resize(n);
+    vegetation_heat_stress_arr.resize(n);
+    vegetation_drought_stress_arr.resize(n);
+    vegetation_cold_stress_arr.resize(n);
+    vegetation_regen_score_arr.resize(n);
     PackedByteArray is_water_arr;
     is_water_arr.resize(n);
     PackedByteArray has_river_arr;
@@ -1754,7 +1785,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     float * const E = elevation_arr.ptrw();
     float * const M = moisture_arr.ptrw();
     float * const BM = base_moisture_arr.ptrw();
-    const float * const TEMP = temp_arr.ptr();
+    float * const TEMP = temp_arr.ptrw();
+    float * const T30 = temp_30d_arr.ptrw();
+    float * const T365 = temp_365d_arr.ptrw();
     uint8_t * const TERR = terrain_arr.ptrw();
     uint8_t * const BTERR = base_terrain_arr.ptrw();
     uint8_t * const LF = landform_arr.ptrw();
@@ -1768,6 +1801,15 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     int32_t * const RDOWN = river_downstream_arr.ptrw();
     int32_t * const HPARENT_OUT = hydro_parent_arr.ptrw();
     uint8_t * const VOLC = has_volcano_arr.ptrw();
+    float * const VITALITY = vegetation_vitality_arr.ptrw();
+    float * const SOIL = soil_moisture_arr.ptrw();
+    float * const WB30 = water_balance_30d_arr.ptrw();
+    float * const PLANT_WATER = plant_available_water_arr.ptrw();
+    float * const VG_PRESSURE = vegetation_growth_pressure_arr.ptrw();
+    float * const VHEAT = vegetation_heat_stress_arr.ptrw();
+    float * const VDROUGHT = vegetation_drought_stress_arr.ptrw();
+    float * const VCOLD = vegetation_cold_stress_arr.ptrw();
+    float * const VREGEN = vegetation_regen_score_arr.ptrw();
     float * const UP = (upwelling_arr.size() == n) ? upwelling_arr.ptrw() : nullptr;
 
     constexpr int DQ[6] = { 1, 1, 0, -1, -1, 0 };
@@ -1792,6 +1834,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     };
     auto land_h = [&](int i) -> double {
         return (double(E[i]) - sea_level) / std::max(1.0 - sea_level, 0.001);
+    };
+    auto geomorph_h = [&](int i) -> double {
+        return pk_geomorph_h(double(E[i]), sea_level);
     };
 
     // ── 统一气候场（terrain-overhaul Phase 3）：距海距离 + 海洋温度调节 ──
@@ -2202,6 +2247,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const double log_min_flow = std::log1p(std::max(river_threshold_eq, 0.0));
     const double log_max_flow = std::log1p(std::max(double(max_river_flow), river_threshold_eq + 0.001));
     const double inv_log_range = 1.0 / std::max(log_max_flow - log_min_flow, 0.001);
+    // 生态保留旧归一标尺，视觉河宽调参不得静默改变大河、三角洲和泛滥平原阈值。
+    std::vector<float> river_ecology_flow(size_t(n), 0.0f);
     int river_lake_snap_touched = 0;
     for (int i = 0; i < n; ++i) {
         if (RIV[i] == 0) continue;
@@ -2209,8 +2256,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (p >= 0 && (RIV[p] != 0 || pk_is_water_terrain(TERR[p]))) {
             RDOWN[i] = p;
         }
+        // [river-hierarchy 2026-07-31] 地板 0.15→0.06、跨度 0.85→0.94：旧地板把大量
+        // 近阈值支流顶到同一宽度带，再经 stamp 幂律后视觉几乎无差。压低地板后小支流
+        // 真正变细，干流仍可顶到 1.0。
         const double raw_norm = (std::log1p(std::max(double(flow[size_t(i)]) * flow_eq_scale, 0.0)) - log_min_flow) * inv_log_range;
-        RFLOW_OUT[i] = float(std::clamp(0.15 + raw_norm * 0.85, 0.15, 1.0));
+        river_ecology_flow[size_t(i)] = float(std::clamp(0.15 + raw_norm * 0.85, 0.15, 1.0));
+        RFLOW_OUT[i] = float(std::clamp(0.06 + raw_norm * 0.94, 0.06, 1.0));
     }
     for (int i : land) {
         if (RIV[i] == 0) continue;
@@ -2375,7 +2426,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         const uint8_t t = TERR[i];
         const double temp = gen_temp(i);
         const double lh = land_h(i);
-        const float river_w = RFLOW_OUT[i];
+        const float river_w = river_ecology_flow[size_t(i)];
         const bool strong_river = river_w >= 0.55f || flow[size_t(i)] >= river_threshold * 1.8f;
         const bool desert_like = (t == 7 || t == 24 || t == 25 || t == 26 || t == 30);
         const bool lowland_river = lh <= 0.18 || (strong_river && lh <= 0.28);
@@ -2393,6 +2444,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
                 nt = 23; // OASIS on arid upland channels
             } else if (temp > 0.30) {
                 nt = 14; // STEPPE buffer around smaller arid channels
+            } else {
+                nt = 13; // TAIGA：寒冷河谷已有高湿地板，不应继续保持 COLD_DESERT
             }
             if (nt != t) {
                 TERR[i] = nt;
@@ -2430,16 +2483,17 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     int vegetation_feedback_touched = 0;
 
     // ─── 统一距水场（water-bodies systemic, dots-total-cpp）────────────────────
-    // 海/湖/大河多源 BFS（lake/river 此处均已最终判定）：
+    // 海/湖/河流多源 BFS（lake/river 此处均已最终判定）：
     //   water_dist[i]      = 到最近水体的格距（-1 = 未达 / 远内陆，截断于 water_dist_max）
-    //   water_src_kind[i]  = 最近水源类型（0=海洋性 / 1=湖 / 2=大河；255=无）
+    //   water_src_kind[i]  = 最近水源类型（0=海洋性 / 1=湖 / 2=河流；255=无）
     // 海洋 source = ocean-connected 水格（OCEAN/COAST/REEF/SEA_ICE/KELP）；湖 = LAKE(18)；
-    // 大河 = RIV 且 RFLOW 达阈值。纯内部中间场：仅供下方气候回灌 / 水缘生态消费，
+    // 河流 = 所有 RIV；流量仅缩放局地增益。纯内部中间场：仅供下方气候回灌 / 水缘生态消费，
     // 不出境（架构铁律：O(n) 中间数据留 C++；M[]/TERR[] 的改动经既有导出自然下传）。
     const int   water_dist_max     = std::max(1, geti(cfg, "water_dist_max", 8));
     const float water_big_river_min = float(getd(cfg, "water_big_river_flow_min", 0.55));
     std::vector<int32_t> water_dist(size_t(n), -1);
     std::vector<uint8_t> water_src_kind(size_t(n), 255);
+    std::vector<float> water_src_flow(size_t(n), 0.0f);
     int water_src_sea = 0, water_src_lake = 0, water_src_river = 0;
     {
         std::vector<int> wq;
@@ -2449,10 +2503,13 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             uint8_t kind = 255;
             if (t == 18) { kind = 1; ++water_src_lake; }                 // LAKE → 湖泊效应
             else if (pk_is_water_terrain(t)) { kind = 0; ++water_src_sea; } // 海洋性
-            else if (RIV[i] != 0 && RFLOW_OUT[i] >= water_big_river_min) { kind = 2; ++water_src_river; } // 大河
+            // 所有成形河道都维持窄河岸带；water_big_river_min 只控制流量加成，
+            // 不再把多数支流排除在生态水源之外。
+            else if (RIV[i] != 0) { kind = 2; ++water_src_river; }
             if (kind != 255) {
                 water_dist[size_t(i)] = 0;
                 water_src_kind[size_t(i)] = kind;
+                if (kind == 2) water_src_flow[size_t(i)] = river_ecology_flow[size_t(i)];
                 wq.push_back(i);
             }
         }
@@ -2465,6 +2522,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
                 if (ni < 0 || water_dist[size_t(ni)] >= 0) continue;     // 越界 / 已访问
                 water_dist[size_t(ni)]     = cd + 1;
                 water_src_kind[size_t(ni)] = water_src_kind[size_t(cur)];
+                water_src_flow[size_t(ni)] = water_src_flow[size_t(cur)];
                 wq.push_back(ni);
             }
         }
@@ -2472,20 +2530,21 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
 
     // ─── 水体气候回灌（仅新增 base 阶段不存在的湖/河项；海洋项不重做）──────────────
     // 职责收紧：海洋调温 / 沿海湿度地板 / land_continentality 由 base pass 维持，
-    // 这里只补 post_base 才判定的湖泊 & 大河的近邻湿润带。全部 floor(max) 语义 +
-    // 指数衰减 + water_dist_max 截断，绝不全局抬湿、绝不二次 biome redecide
-    // （援引上方注释：二次重判抹湿是"陆地普遍过湿、沙漠消失"的元凶）。改动写入 M[]，
-    // 经既有 moisture_arr 导出自然下传给 HexCell / bake terrain-index。
+    // 这里只补 post_base 才判定的湖泊与窄河岸湿润带。全部 floor(max)/additive 语义 +
+    // 指数衰减 + water_dist_max 截断，不全局抬湿；回灌后由下方受保护的最终重判统一消费。
+    // 改动写入 M[]，经既有 moisture_arr 导出自然下传给 HexCell / bake terrain-index。
     // 注：大河河道格(RIV)本身已在 river_ecology(上方)被 floor 到 0.66/0.74；这里把湿润带
     // 外扩到河道近邻的非河道陆地，与上方不冲突（仍是 floor，取较大值）。
     // [延后] 湖泊局地温度调节：TEMP[] 为只读、且 bind 后 republish 会重算温度场，
     // 在此写温度无持久收益，需要专门的 temp-adjust 通道后再做，本期只做湿度。
+    int lakeshore_moist_touched = 0;
+    int riparian_moist_touched = 0;
     {
         const float lake_moist_floor    = float(getd(cfg, "lake_moist_floor", 0.55));
         const float lake_moist_scale    = float(std::max(0.25, getd(cfg, "lake_moist_scale", 2.5)));
+        const float river_riparian_floor= float(std::clamp(getd(cfg, "river_riparian_floor", 0.36), 0.0, 1.0));
         const float river_riparian_gain = float(getd(cfg, "river_riparian_gain", 0.12));
         const float river_riparian_scale= float(std::max(0.25, getd(cfg, "river_riparian_scale", 2.0)));
-        int lakeshore_moist_touched = 0, riparian_moist_touched = 0;
         for (int i : land) {
             const int wd = water_dist[size_t(i)];
             if (wd <= 0) continue;                                   // 0=水体自身/无效；只回灌陆地近邻带
@@ -2494,7 +2553,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
                 const float decay = std::exp(-float(wd) / lake_moist_scale);
                 const float floor_m = lake_moist_floor * decay;
                 if (M[i] < floor_m) { M[i] = floor_m; ++lakeshore_moist_touched; }
-            } else if (kind == 2) {                                 // 河谷 riparian 增湿（additive，封顶）
+            } else if (kind == 2) {                                 // 河谷 riparian 地板 + 增湿（封顶）
+                if (wd > 2) continue;                               // 河岸带保持窄，不把整个流域抬湿
+                const float flow_scale = std::max(0.01f, water_big_river_min);
+                const float flow_strength = std::clamp(water_src_flow[size_t(i)] / flow_scale, 0.0f, 1.0f);
+                if (wd == 1) {
+                    const float floor_m = river_riparian_floor + 0.06f * flow_strength;
+                    if (M[i] < floor_m) { M[i] = floor_m; ++riparian_moist_touched; }
+                }
                 const float add = river_riparian_gain * std::exp(-float(wd) / river_riparian_scale);
                 if (add > 0.0f) {
                     float m = M[i] + add;
@@ -2504,7 +2570,24 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             }
             // kind==0（海洋性）：base pass 已处理，这里不动，避免双重计算。
         }
-        (void)lakeshore_moist_touched; (void)riparian_moist_touched;
+    }
+
+    // 所有静态水分驱动完成后，用同一 gen_temp + 分类器做唯一一次最终气候重判。
+    // 河道和特征地形保留给专用覆盖 pass，避免恢复旧 vegetation-feedback 正反馈或抹掉绿洲/河漫滩。
+    int final_climate_redecide_evaluated = 0;
+    int final_climate_redecide_touched = 0;
+    for (int i : land) {
+        const uint8_t t = TERR[i];
+        if (RIV[i] != 0 || pk_is_water_terrain(t) || pk_is_permanent_landform(t)) continue;
+        if (t == 6 || t == 9 || t == 8) continue; // MOUNTAIN/SNOW/TUNDRA 保持生成期稳定边界
+        ++final_climate_redecide_evaluated;
+        const uint8_t nt = pk_decide_terrain_ex(double(E[i]), gen_temp(i),
+                                                double(M[i]), sea_level, true);
+        if (pk_is_water_terrain(nt)) continue; // 排干的 below-sea 陆地不得重新变回水体
+        if (nt != t) {
+            TERR[i] = nt;
+            ++final_climate_redecide_touched;
+        }
     }
 
     int shrubland_touched = 0;
@@ -2619,7 +2702,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     std::vector<int> volcano_candidates;
     for (int i = 0; i < n; ++i) {
         if (TERR[i] != 6) continue;
-        if (land_h(i) < volcano_min_land_h) continue;
+        if (geomorph_h(i) < volcano_min_land_h) continue;
         volcano_candidates.push_back(i);
     }
     Ref<RandomNumberGenerator> volc_rng;  volc_rng.instantiate();
@@ -2664,14 +2747,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     for (int i : land) {
         if (pk_is_water_terrain(TERR[i]) || RIV[i] == 0 || pk_is_permanent_landform(TERR[i])) continue;
         if (land_h(i) > 0.20) continue;
-        if (RFLOW_OUT[i] < 0.35f) continue;
+        if (river_ecology_flow[size_t(i)] < 0.35f) continue;
         bool ocean_nb = false;
         bool coast_nb = false;
         for (int d = 0; d < 6; ++d) {
             const int ni = NB[size_t(i) * 6 + d];
             if (ni >= 0 && (TERR[ni] == 0 || TERR[ni] == 1)) { ocean_nb = true; coast_nb = TERR[ni] == 1; break; }
         }
-        if (ocean_nb && (coast_nb || RFLOW_OUT[i] >= 0.55f)) {
+        if (ocean_nb && (coast_nb || river_ecology_flow[size_t(i)] >= 0.55f)) {
             TERR[i] = 22;
             if (M[i] < 0.78f) M[i] = 0.78f;
             ++delta_touched;
@@ -2764,7 +2847,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (relief < badlands_min_relief) continue;
         // 方山(MESA)：高差地貌中本格为局部高点(平顶台地)且海拔够高；
         // 否则为侵蚀沟壑恶地(BADLANDS)。
-        const bool flat_top = (double(E[i]) >= double(max_nb) - 0.004) && (land_h(i) > 0.18);
+        const bool flat_top = (double(E[i]) >= double(max_nb) - 0.004) && (geomorph_h(i) > 0.18);
         if (flat_top) {
             TERR[i] = 30; // MESA
             ++mesa_touched;
@@ -2778,9 +2861,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         ++badlands_candidate_count;
     }
 
-    // 荒原是沙漠中的稀有侵蚀斑块，而不是所有崎岖沙漠的默认分类。候选区按
-    // 连通分量处理，每个分量只从最高分格向邻格生长一个有界斑块；总数同时受
-    // 陆地占比和干旱地形占比约束，避免单一大陆出现数百格连续荒原。
+    // 荒原是沙漠中的局地侵蚀斑块，而不是所有崎岖沙漠的默认分类。候选区按
+    // 连通分量处理，从最高分格向邻格生长；默认让候选区自身决定斑块大小，
+    // 只有显式配置安全阀时才按总量/斑块格数截断。
     struct BadlandsComponent {
         std::vector<int> cells;
         int seed = -1;
@@ -2824,8 +2907,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     std::vector<uint8_t> badlands_queued(size_t(n), 0);
     for (const BadlandsComponent &comp : badlands_components) {
         if (badlands_touched >= badlands_budget) break;
-        const int patch_quota = std::min({int(comp.cells.size()), badlands_max_patch_cells,
-                                          badlands_budget - badlands_touched});
+        int patch_quota = std::min(int(comp.cells.size()), badlands_budget - badlands_touched);
+        if (badlands_max_patch_cells > 0) {
+            patch_quota = std::min(patch_quota, badlands_max_patch_cells);
+        }
         if (patch_quota <= 0 || comp.seed < 0) continue;
 
         std::priority_queue<std::pair<double, int>> frontier;
@@ -2868,7 +2953,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             const int ni = NB[size_t(i) * 6 + d];
             if (ni >= 0 && RIV[ni] != 0) {
                 river_nb = true;
-                if (RFLOW_OUT[ni] >= 0.45f) strong_river_nb = true;
+                if (river_ecology_flow[size_t(ni)] >= 0.45f) strong_river_nb = true;
             }
         }
         if (river_nb && (strong_river_nb || M[i] >= 0.52f)) {
@@ -3167,10 +3252,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // ── 高原(PLATEAU) landform override：高海拔、低局部起伏、连通成片的陆地 ──
     // 不新增 terrain；只把三轴 landform 覆写为 PLATEAU，保留原 biome/vegetation。
     std::vector<uint8_t> plateau_candidate(size_t(n), 0);
+    int plateau_candidate_count = 0;
     for (int i : land) {
         if (pk_is_water_terrain(TERR[i]) || VOLC[i] != 0) continue;
         if (pk_is_permanent_landform(TERR[i])) continue;
-        const double lh = land_h(i);
+        const double lh = geomorph_h(i);
         if (lh < plateau_min_land_h || lh > 0.90) continue;
         float min_e = E[i], max_e = E[i];
         int land_nb = 0;
@@ -3185,7 +3271,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         const double relief = double(max_e) - double(min_e);
         const bool broad_bench = lh >= plateau_min_land_h && relief <= plateau_max_relief;
         const bool high_bench = lh >= plateau_min_land_h + 0.10 && relief <= plateau_max_relief * 1.35;
-        if (broad_bench || high_bench) plateau_candidate[size_t(i)] = 1;
+        if (broad_bench || high_bench) {
+            plateau_candidate[size_t(i)] = 1;
+            ++plateau_candidate_count;
+        }
     }
     int plateau_touched = 0;
     std::vector<uint8_t> plateau_seen(size_t(n), 0);
@@ -3203,7 +3292,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
                 comp.push_back(ni);
             }
         }
-        const bool high_small_plateau = int(comp.size()) >= 2 && land_h(comp[0]) >= plateau_min_land_h + 0.12;
+        const bool high_small_plateau = int(comp.size()) >= 2 && geomorph_h(comp[0]) >= plateau_min_land_h + 0.12;
         if (int(comp.size()) < plateau_min_cells && !high_small_plateau) continue;
         for (int v : comp) {
             LF[v] = 13;  // PLATEAU
@@ -3215,10 +3304,13 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // ── 山地(MOUNTAIN)瘦身：山脉应是高起伏地带，高海拔平缓面应落到 PLATEAU/HILL ──
     int mountain_demoted = 0;
     int mountain_to_plateau = 0;
+    int mountain_height_candidates = 0;
+    int mountain_relief_candidates = 0;
+    int mountain_kept = 0;
     for (int i : land) {
         if (LF[i] != 7 || pk_is_water_terrain(TERR[i]) || VOLC[i] != 0) continue;
         if (TERR[i] == 22 || TERR[i] == 24 || TERR[i] == 25 || TERR[i] == 30) continue;
-        const double lh = land_h(i);
+        const double lh = geomorph_h(i);
         float min_e = E[i], max_e = E[i];
         int land_nb = 0;
         for (int d = 0; d < 6; ++d) {
@@ -3232,7 +3324,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         const double relief = double(max_e) - double(min_e);
         const bool summit_rugged = lh >= peak_min_land_h && relief >= mountain_min_relief * 0.65;
         const bool keep_mountain = lh >= mountain_min_land_h && (relief >= mountain_min_relief || summit_rugged);
-        if (keep_mountain) continue;
+        if (lh >= mountain_min_land_h) ++mountain_height_candidates;
+        if (lh >= mountain_min_land_h && (relief >= mountain_min_relief || summit_rugged)) {
+            ++mountain_relief_candidates;
+        }
+        if (keep_mountain) {
+            ++mountain_kept;
+            continue;
+        }
 
         if (lh >= plateau_min_land_h && lh <= 0.90 && relief <= plateau_max_relief * 1.10) {
             LF[i] = 13;  // PLATEAU
@@ -3307,7 +3406,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     for (int i : land) {
         if (pk_is_water_terrain(TERR[i]) || VOLC[i] != 0) continue;
         if (TERR[i] == 22 || TERR[i] == 24 || TERR[i] == 25 || TERR[i] == 30) continue;
-        const double lh = land_h(i);
+        const double lh = geomorph_h(i);
         if (lh < peak_min_land_h) continue;
         float min_nb = E[i];
         float max_nb = -1.0e9f;
@@ -3349,20 +3448,20 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         ++peak_touched;
     }
 
-    // ── 裂谷地貌(RIFT_VALLEY) override：两侧抬升夹住的稀有线状洼地 ──
-    // 先筛出“相对两侧都明显更高”的 valley-axis 候选，再按分数限量写入。
-    // 直接放宽邻高条件会把普通山谷刷成大片裂谷；这里用稀有上限保证它是地质特征而非基础地貌。
+    // ── 裂谷地貌(RIFT_VALLEY) override：两侧抬升夹住的连续线状洼地 ──
+    // 局部剖面先确定两侧断崖方向，再只沿断崖之间的谷轴连接候选。裂谷是连续构造带，
+    // 不使用全图数量、面积或格间距配额；最小物理长度仅过滤孤立洼点和短沟槽。
     int rift_touched = 0;
-    struct RiftCandidate {
-        int idx;
-        double score;
-    };
-    std::vector<RiftCandidate> rift_candidates;
-    rift_candidates.reserve(64);
+    int rift_candidate_count = 0;
+    int rift_component_count = 0;
+    int rift_rejected_fragment_count = 0;
+    int rift_largest_component = 0;
+    std::vector<uint8_t> rift_candidate(size_t(n), 0);
+    std::vector<int8_t> rift_cross_axis(size_t(n), -1);
     for (int i = 0; i < n; ++i) {
         if (pk_is_water_terrain(TERR[i])) continue;
         if (LF[i] == 8 || LF[i] == 12 || LF[i] == 13) continue; // 高峰/火山/高原保留
-        const double lh = land_h(i);
+        const double lh = geomorph_h(i);
         if (lh < 0.03 || lh > 0.72) continue;
         int higher = 0, land_nb = 0;
         double max_raise = 0.0;
@@ -3371,42 +3470,76 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             if (ni < 0 || pk_is_water_terrain(TERR[ni])) continue;
             ++land_nb;
             const double raise = double(E[ni]) - double(E[i]);
-            if (raise > 0.032) ++higher;
+            if (raise > rift_min_wall * (4.0 / 3.0)) ++higher;
             if (raise > max_raise) max_raise = raise;
         }
-        if (land_nb < 3 || higher < 2 || max_raise < 0.045) continue;
+        if (land_nb < 3 || higher < 2 || max_raise < rift_min_wall * 1.875) continue;
         double best_axis = 0.0;
+        int best_cross_axis = -1;
         for (int d = 0; d < 3; ++d) {
             const int a = NB[size_t(i) * 6 + d];
             const int b = NB[size_t(i) * 6 + ((d + 3) % 6)];
             if (a < 0 || b < 0 || pk_is_water_terrain(TERR[a]) || pk_is_water_terrain(TERR[b])) continue;
             const double ra = double(E[a]) - double(E[i]);
             const double rb = double(E[b]) - double(E[i]);
-            if (ra <= 0.024 || rb <= 0.024) continue;
-            best_axis = std::max(best_axis, std::min(ra, rb) + 0.35 * std::max(ra, rb));
+            if (ra <= rift_min_wall || rb <= rift_min_wall) continue;
+            const double axis_score = std::min(ra, rb) + 0.35 * std::max(ra, rb);
+            if (axis_score > best_axis) {
+                best_axis = axis_score;
+                best_cross_axis = d;
+            }
         }
-        if (best_axis < 0.052) continue;
-        rift_candidates.push_back({i, best_axis + 0.02 * double(higher) + 0.01 * max_raise});
+        if (best_axis < rift_min_axis || best_cross_axis < 0) continue;
+        rift_candidate[size_t(i)] = 1;
+        rift_cross_axis[size_t(i)] = int8_t(best_cross_axis);
+        ++rift_candidate_count;
     }
-    std::sort(rift_candidates.begin(), rift_candidates.end(),
-              [](const RiftCandidate &a, const RiftCandidate &b) {
-                  if (a.score == b.score) return a.idx < b.idx;
-                  return a.score > b.score;
-              });
-    const int rift_limit = std::min(48, std::max(4, int(land.size()) / 140));
-    std::vector<int> rift_placed;
-    rift_placed.reserve(size_t(rift_limit));
-    for (const RiftCandidate &cand : rift_candidates) {
-        if (rift_touched >= rift_limit) break;
-        bool far_enough = true;
-        for (int p : rift_placed) {
-            if (cube_distance(cand.idx, p) < 2) { far_enough = false; break; }
+
+    auto follows_rift_axis = [&](int cell, int dir) -> bool {
+        const int cross = int(rift_cross_axis[size_t(cell)]);
+        return cross >= 0 && dir != cross && dir != cross + 3;
+    };
+    std::vector<uint8_t> rift_seen(size_t(n), 0);
+    for (int seed_cell : land) {
+        if (!rift_candidate[size_t(seed_cell)] || rift_seen[size_t(seed_cell)]) continue;
+        std::vector<int> component;
+        component.push_back(seed_cell);
+        rift_seen[size_t(seed_cell)] = 1;
+        for (size_t qi = 0; qi < component.size(); ++qi) {
+            const int cur = component[qi];
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[size_t(cur) * 6 + d];
+                if (ni < 0 || !rift_candidate[size_t(ni)] || rift_seen[size_t(ni)]) continue;
+                if (!follows_rift_axis(cur, d) || !follows_rift_axis(ni, (d + 3) % 6)) continue;
+                rift_seen[size_t(ni)] = 1;
+                component.push_back(ni);
+            }
         }
-        if (!far_enough) continue;
-        LF[cand.idx] = 14;  // RIFT_VALLEY
-        BLF[cand.idx] = 14;
-        rift_placed.push_back(cand.idx);
-        ++rift_touched;
+        ++rift_component_count;
+        rift_largest_component = std::max(rift_largest_component, int(component.size()));
+
+        int endpoint = component.front();
+        int farthest_dist = -1;
+        for (int cell : component) {
+            const int dist = cube_distance(component.front(), cell);
+            if (dist > farthest_dist) {
+                farthest_dist = dist;
+                endpoint = cell;
+            }
+        }
+        int span_cells = 1;
+        for (int cell : component) {
+            span_cells = std::max(span_cells, cube_distance(endpoint, cell) + 1);
+        }
+        if (int(component.size()) < rift_min_length || span_cells < rift_min_length) {
+            rift_rejected_fragment_count += int(component.size());
+            continue;
+        }
+        for (int cell : component) {
+            LF[cell] = 14;  // RIFT_VALLEY
+            BLF[cell] = 14;
+            ++rift_touched;
+        }
     }
 
     // ── 峡谷(CANYON) override：河流深切、两壁陡立的线状侵蚀峡谷 ──
@@ -3421,7 +3554,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (pk_is_water_terrain(TERR[i])) continue;
         if (RIV[i] == 0) continue;                                   // 必须有河道穿过
         if (LF[i] == 8 || LF[i] == 12 || LF[i] == 13 || LF[i] == 14) continue; // 峰/火山/高原/裂谷保留
-        const double lh = land_h(i);
+        const double lh = geomorph_h(i);
         if (lh < 0.05 || lh > 0.85) continue;
         int land_nb = 0, higher = 0;
         double max_raise = 0.0;
@@ -3451,9 +3584,140 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         ++canyon_touched;
     }
 
+    const PackedFloat32Array ideal_t_arr = profile.get("veg_ideal_temp", PackedFloat32Array());
+    const PackedFloat32Array ideal_m_arr = profile.get("veg_ideal_moist", PackedFloat32Array());
+    const PackedFloat32Array tol_t_arr = profile.get("veg_temp_tol", PackedFloat32Array());
+    const PackedFloat32Array tol_m_arr = profile.get("veg_moist_tol", PackedFloat32Array());
+    const bool have_veg_profiles = ideal_t_arr.size() >= 28 && ideal_m_arr.size() >= 28 &&
+                                   tol_t_arr.size() >= 28 && tol_m_arr.size() >= 28;
+    const float min_suitability = float(std::clamp(getd(profile, "vegetation_min_suitability", 0.18), 0.0, 1.0));
+    const float tie_epsilon = float(std::max(0.0, getd(profile, "vegetation_tie_epsilon", 1e-6)));
+    const float water_balance_weight = float(std::max(0.01, getd(profile, "plant_water_balance_weight", 0.35)));
+    const float soil_buffer_weight = float(std::max(0.01, getd(profile, "plant_soil_buffer_weight", 0.30)));
+    const float drought_penalty = float(std::max(0.01, getd(profile, "plant_drought_penalty", 0.25)));
+    int vegetation_candidate_count = 0;
+    int vegetation_none_count = 0;
+    int plant_water_nonzero_land_count = 0;
+    int river_adjacent_desert_count = 0;
+    int coastal_highland_desert_count = 0;
+    double vegetation_score_sum = 0.0;
+    float vegetation_score_min = 1.0f;
+    float vegetation_score_max = 0.0f;
+    float terrain_soft_weight_min = 1.25f;
+    float terrain_soft_weight_max = 0.35f;
+    const auto vegetation_t0 = std::chrono::high_resolution_clock::now();
+
     for (int i = 0; i < n; ++i) {
-        VEG[i] = pk_derive_vegetation(TERR[i], LF[i], TEMP[i], M[i]);
+        const double temp_gen = gen_temp(i);
+        TEMP[i] = float(temp_gen); // The same coastal-adjusted source used by terrain.
+        T30[i] = TEMP[i];
+        T365[i] = TEMP[i];
+        const float delta = std::clamp(M[i] - BM[i], -0.5f, 0.5f);
+        float wb30 = 0.0f;
+        float soil = 0.0f;
+        if (delta >= 0.0f) {
+            wb30 = std::clamp(delta * 0.60f / water_balance_weight, 0.0f, 0.5f);
+            soil = std::clamp(delta * 0.40f / soil_buffer_weight, 0.0f, 0.5f);
+        } else {
+            wb30 = std::clamp(delta / drought_penalty, -0.5f, 0.0f);
+        }
+        const float plant_water = std::clamp(
+            BM[i] + std::max(wb30, 0.0f) * water_balance_weight +
+            std::max(soil, 0.0f) * soil_buffer_weight +
+            std::min(wb30, 0.0f) * drought_penalty, 0.0f, 1.0f);
+        WB30[i] = wb30;
+        SOIL[i] = soil;
+        PLANT_WATER[i] = plant_water;
+        if (IW[i] == 0 && plant_water > 0.01f) ++plant_water_nonzero_land_count;
+
+        uint8_t selected = 0;
+        float best_score = 0.0f;
+        float current_score = 0.0f;
+        if (IW[i] != 0) {
+            // Water vegetation is a physical substrate constraint.
+            if (TERR[i] == 1 && temp_gen > 0.42 && temp_gen < 0.74) selected = 26; // seagrass
+            else if (TERR[i] == 19) selected = 23; // coral reef
+            else if (TERR[i] == 21) selected = 22; // kelp forest
+        } else if (TERR[i] != 17 && TERR[i] != 24 && have_veg_profiles) {
+            for (uint8_t v = 1; v < 28; ++v) {
+                if (v == 22 || v == 23 || v == 26) continue; // water-only profiles
+                const float climate = pk_vegetation_climate_score(
+                    TEMP[i], plant_water, ideal_t_arr[v], ideal_m_arr[v], tol_t_arr[v], tol_m_arr[v]);
+                const float terrain_weight = pk_vegetation_terrain_weight(TERR[i], LF[i], v, plant_water);
+                terrain_soft_weight_min = std::min(terrain_soft_weight_min, terrain_weight);
+                terrain_soft_weight_max = std::max(terrain_soft_weight_max, terrain_weight);
+                const float score = climate * terrain_weight;
+                if (score > best_score + tie_epsilon) {
+                    best_score = score;
+                    selected = v;
+                }
+            }
+            if (best_score < min_suitability) selected = 0;
+            ++vegetation_candidate_count;
+        } else if (IW[i] == 0) {
+            selected = pk_derive_vegetation(TERR[i], LF[i], TEMP[i], M[i]);
+            best_score = selected == 0 ? 0.0f : 0.5f;
+        }
+
+        if (have_veg_profiles && selected > 0 && selected < 28) {
+            best_score = pk_vegetation_climate_score(
+                TEMP[i], plant_water, ideal_t_arr[selected], ideal_m_arr[selected],
+                tol_t_arr[selected], tol_m_arr[selected]) *
+                pk_vegetation_terrain_weight(TERR[i], LF[i], selected, plant_water);
+            const uint8_t previous = BVEG[i];
+            if (previous > 0 && previous < 28 && previous != 22 && previous != 23 && previous != 26) {
+                current_score = pk_vegetation_climate_score(
+                    TEMP[i], plant_water, ideal_t_arr[previous], ideal_m_arr[previous],
+                    tol_t_arr[previous], tol_m_arr[previous]) *
+                    pk_vegetation_terrain_weight(TERR[i], LF[i], previous, plant_water);
+            }
+        }
+        VEG[i] = selected;
+        BVEG[i] = selected;
+        if (selected == 0) ++vegetation_none_count;
+
+        if (selected > 0) {
+            const float vitality = std::clamp(0.15f + 0.85f * best_score, 0.0f, 1.0f);
+            VITALITY[i] = vitality;
+            VREGEN[i] = std::clamp(best_score, 0.0f, 1.0f);
+            VG_PRESSURE[i] = std::clamp(best_score - current_score, 0.0f, 1.0f);
+            if (have_veg_profiles && selected < 28) {
+                const float tt = std::max(tol_t_arr[selected], 0.05f);
+                const float tm = std::max(tol_m_arr[selected], 0.05f);
+                VHEAT[i] = std::clamp((TEMP[i] - ideal_t_arr[selected] - tt) / tt, 0.0f, 1.0f);
+                VCOLD[i] = std::clamp((ideal_t_arr[selected] - tt - TEMP[i]) / tt, 0.0f, 1.0f);
+                VDROUGHT[i] = std::clamp((ideal_m_arr[selected] - tm - plant_water) / tm, 0.0f, 1.0f);
+            } else {
+                VHEAT[i] = 0.0f;
+                VCOLD[i] = 0.0f;
+                VDROUGHT[i] = 0.0f;
+            }
+            vegetation_score_sum += best_score;
+            vegetation_score_min = std::min(vegetation_score_min, best_score);
+            vegetation_score_max = std::max(vegetation_score_max, best_score);
+        } else {
+            VITALITY[i] = 0.0f;
+            VG_PRESSURE[i] = 0.0f;
+            VHEAT[i] = 0.0f;
+            VDROUGHT[i] = 0.0f;
+            VCOLD[i] = 0.0f;
+            VREGEN[i] = 0.0f;
+        }
+        if (selected == 17 && (RIV[i] != 0 || [&]() {
+                for (int d = 0; d < 6; ++d) { const int ni = NB[size_t(i) * 6 + d]; if (ni >= 0 && RIV[ni] != 0) return true; }
+                return false;
+            }())) {
+            ++river_adjacent_desert_count;
+        }
+        if ((LF[i] == 6 || LF[i] == 7 || LF[i] == 8 || LF[i] == 13) &&
+            !dist_ocean.empty() && dist_ocean[size_t(i)] >= 0 && dist_ocean[size_t(i)] <= 2 &&
+            (selected == 16 || selected == 17)) {
+            ++coastal_highland_desert_count;
+        }
     }
+    const auto vegetation_t1 = std::chrono::high_resolution_clock::now();
+    const double vegetation_native_ms =
+        std::chrono::duration<double, std::milli>(vegetation_t1 - vegetation_t0).count();
 
     int water_count = 0;
     int volcano_count = 0;
@@ -3583,6 +3847,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     Dictionary stage_counts;
     stage_counts["rain_shadow"] = rain_shadow_touched;
     stage_counts["redecide"] = redecide_touched;
+    stage_counts["final_climate_redecide"] = final_climate_redecide_touched;
     stage_counts["headwater_river"] = headwater_touched;
     stage_counts["river_lake_snap"] = river_lake_snap_touched;
     stage_counts["river_confluence_snap"] = river_confluence_snap_touched;
@@ -3606,10 +3871,15 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     stage_counts["moor"] = moor_touched;
     stage_counts["chaparral"] = chaparral_touched;
     stage_counts["plateau"] = plateau_touched;
+    stage_counts["plateau_candidates"] = plateau_candidate_count;
     stage_counts["plateau_demoted_to_hill"] = plateau_demoted_to_hill;
     stage_counts["mountain_demoted"] = mountain_demoted;
     stage_counts["mountain_to_plateau"] = mountain_to_plateau;
+    stage_counts["mountain_height_candidates"] = mountain_height_candidates;
+    stage_counts["mountain_relief_candidates"] = mountain_relief_candidates;
+    stage_counts["mountain_kept"] = mountain_kept;
     stage_counts["peak_summit"] = peak_touched;
+    stage_counts["peak_candidates"] = int(peak_candidates.size());
     stage_counts["peak_demoted"] = peak_demoted;
     stage_counts["rift_valley"] = rift_touched;
     stage_counts["canyon"] = canyon_touched;
@@ -3639,9 +3909,24 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["hydro_river_min_length_base"] = hydro_river_min_length_base;
     out["hydro_river_min_length_effective"] = hydro_river_min_length;
     out["river_flow_threshold"] = double(river_threshold);
+    out["river_ecology_source_count"] = water_src_river;
+    out["lakeshore_moist_touched"] = lakeshore_moist_touched;
+    out["riparian_moist_touched"] = riparian_moist_touched;
+    out["final_climate_redecide_evaluated"] = final_climate_redecide_evaluated;
+    out["final_climate_redecide_touched"] = final_climate_redecide_touched;
     out["river_lake_snap_count"] = river_lake_snap_touched;
     out["river_confluence_snap_count"] = river_confluence_snap_touched;
     out["desert_class_count"] = desert_class_count;
+    out["rift_candidate_count"] = rift_candidate_count;
+    out["mountain_height_candidates"] = mountain_height_candidates;
+    out["mountain_relief_candidates"] = mountain_relief_candidates;
+    out["mountain_kept"] = mountain_kept;
+    out["peak_candidate_count"] = int(peak_candidates.size());
+    out["plateau_candidate_count"] = plateau_candidate_count;
+    out["rift_component_count"] = rift_component_count;
+    out["rift_rejected_fragment_count"] = rift_rejected_fragment_count;
+    out["rift_largest_component"] = rift_largest_component;
+    out["rift_min_length_effective"] = rift_min_length;
     out["badlands_arid_source_count"] = arid_source_count;
     out["badlands_candidate_count"] = badlands_candidate_count;
     out["badlands_candidate_components"] = badlands_candidate_components;
@@ -3659,6 +3944,18 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["shrubland_count"] = shrubland_count;
     out["mangrove_count"] = mangrove_count;
     out["moor_count"] = moor_count;
+    out["vegetation_candidate_count"] = vegetation_candidate_count;
+    out["vegetation_native_ms"] = vegetation_native_ms;
+    out["vegetation_none_count"] = vegetation_none_count;
+    out["vegetation_score_min"] = vegetation_candidate_count > vegetation_none_count ? vegetation_score_min : 0.0f;
+    out["vegetation_score_mean"] = vegetation_candidate_count > 0
+        ? float(vegetation_score_sum / double(std::max(1, vegetation_candidate_count))) : 0.0f;
+    out["vegetation_score_max"] = vegetation_score_max;
+    out["plant_water_nonzero_land_count"] = plant_water_nonzero_land_count;
+    out["river_adjacent_desert_count"] = river_adjacent_desert_count;
+    out["coastal_highland_desert_count"] = coastal_highland_desert_count;
+    out["terrain_soft_weight_min"] = vegetation_candidate_count > 0 ? terrain_soft_weight_min : 0.0f;
+    out["terrain_soft_weight_max"] = vegetation_candidate_count > 0 ? terrain_soft_weight_max : 0.0f;
 
     out["q_arr"] = q_arr;
     out["r_arr"] = r_arr;
@@ -3683,6 +3980,15 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["base_landform_arr"] = base_landform_arr;
     out["vegetation_arr"] = vegetation_arr;
     out["base_vegetation_arr"] = base_vegetation_arr;
+    out["vegetation_vitality_arr"] = vegetation_vitality_arr;
+    out["soil_moisture_arr"] = soil_moisture_arr;
+    out["water_balance_30d_arr"] = water_balance_30d_arr;
+    out["plant_available_water_arr"] = plant_available_water_arr;
+    out["vegetation_growth_pressure_arr"] = vegetation_growth_pressure_arr;
+    out["vegetation_heat_stress_arr"] = vegetation_heat_stress_arr;
+    out["vegetation_drought_stress_arr"] = vegetation_drought_stress_arr;
+    out["vegetation_cold_stress_arr"] = vegetation_cold_stress_arr;
+    out["vegetation_regen_score_arr"] = vegetation_regen_score_arr;
     out["cover_arr"] = cover_arr;
     out["is_water_arr"] = is_water_arr;
     out["has_river_arr"] = has_river_arr;

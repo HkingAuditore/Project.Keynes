@@ -1289,6 +1289,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 			"snow_cover": 0.0,
 			"biome": int(cell.terrain),
 			"landform": int(cell.landform),
+
 			"vegetation": int(cell.vegetation),
 			"cover": int(cell.cover),
 			# Milestone 3：天气初始为 CLEAR，等 main.gd 推第一次 day_changed 才有真实天气
@@ -3333,7 +3334,10 @@ func _build_native_daily_runtime_hydrology_knobs(map: MapData, cp_now,
 		"hydro_lake_release_rate": float(cp_now.hydro_lake_release_rate),
 		"hydro_discharge_ema": float(cp_now.hydro_discharge_ema),
 		"hydro_bank_moisture_gain": float(cp_now.hydro_bank_moisture_gain),
+		"hydro_river_moisture_floor": float(cp_now.hydro_river_moisture_floor),
+		"hydro_riparian_moisture_floor": float(cp_now.hydro_riparian_moisture_floor),
 		"hydro_river_evap_gain": float(cp_now.hydro_river_evap_gain),
+		"hydro_moisture_response_rate": float(cp_now.hydro_moisture_response_rate),
 		"hydro_flood_threshold": float(cp_now.hydro_flood_threshold),
 		"hydro_flood_decay": float(cp_now.hydro_flood_decay),
 		"snowpack_melt_temp_gain": float(cp_now.snowpack_melt_temp_gain),
@@ -8473,9 +8477,10 @@ func _native_generation_cfg_dict(cfg: MapConfig) -> Dictionary:
 		# water-bodies systemic（post_base 统一距水场 + 气候回灌 + 生态强化）：
 		#   默认值与 world_ext.cpp 内 getd/geti 默认对齐；保守、可一键回退（置 0/负即关闭对应项）。
 		"water_dist_max": 8,                  # 距水场 BFS 半径截断（格）
-		"water_big_river_flow_min": 0.55,     # "大河" source 的 RFLOW 阈值
+		"water_big_river_flow_min": 0.55,     # 河岸湿度流量加成达到上限的生态流量标尺
 		"lake_moist_floor": 0.55,             # 湖滨增湿带湿度地板（× exp 衰减）
 		"lake_moist_scale": 2.5,              # 湖滨增湿衰减尺度（格）
+		"river_riparian_floor": 0.36,         # 所有成形河流的一环湿度下限（大河最高约 +0.06）
 		"river_riparian_gain": 0.12,          # 河谷 riparian 增湿增量（× exp 衰减）
 		"river_riparian_scale": 2.0,          # 河谷增湿衰减尺度（格）
 		"swamp_water_band": 2,                # 湿地沿湖/大河成带的距水格宽（0=仅 1 格邻接）
@@ -8486,6 +8491,9 @@ func _native_generation_profile_dict() -> Dictionary:
 	var cp := _c()
 	if cp == null:
 		return {"native_generation_mode": 0}
+	# Generation and runtime vegetation use the same profile LUT.  The arrays
+	# are scratch inputs to the native pass; they are not persisted as slots.
+	_ensure_vegdyn_lut()
 	var keys := [
 		"native_generation_mode",
 		"continent_warp_amp",
@@ -8586,6 +8594,12 @@ func _native_generation_profile_dict() -> Dictionary:
 		"moisture_coastal_scale",
 		"coastal_temp_moderation",
 		"coastal_temp_scale",
+		"plant_water_balance_weight",
+		"plant_soil_buffer_weight",
+		"plant_drought_penalty",
+		"vegetation_min_suitability",
+		"vegetation_tie_epsilon",
+		"vegetation_none_hysteresis",
 		# terrain-overhaul Phase 5 特征点缀
 		"salt_flat_min_dist_ocean",
 		"chaparral_max_dist_ocean",
@@ -8594,9 +8608,13 @@ func _native_generation_profile_dict() -> Dictionary:
 		"plateau_min_cells",
 		"mountain_min_land_h",
 		"mountain_min_relief",
+		"relief_thresh_scale_exp",
 		"peak_min_land_h",
 		"peak_min_prominence",
 		"peak_land_cells_per_peak",
+		"rift_min_wall",
+		"rift_min_axis",
+		"rift_min_length_cells",
 		"badlands_min_relief",
 		"badlands_min_rugged_neighbors",
 		"badlands_max_land_ratio",
@@ -8609,6 +8627,10 @@ func _native_generation_profile_dict() -> Dictionary:
 	for k in keys:
 		if cp.get(k) != null:
 			out[k] = cp.get(k)
+	out["veg_ideal_temp"] = _gdext_vegdyn_ideal_temp_cached
+	out["veg_ideal_moist"] = _gdext_vegdyn_ideal_moist_cached
+	out["veg_temp_tol"] = _gdext_vegdyn_temp_tol_cached
+	out["veg_moist_tol"] = _gdext_vegdyn_moist_tol_cached
 	return out
 
 
@@ -8745,6 +8767,20 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 			int(final_res.get("river_count", 0)),
 			int(final_res.get("volcano_count", 0)),
 		])
+	print("[native_generation/vegetation] native_ms=%.3f candidates=%d none=%d score=[%.3f,%.3f,%.3f] plant_water_land=%d river_adjacent_desert=%d coastal_highland_desert=%d terrain_weight=[%.3f,%.3f]"
+		% [
+			float(final_res.get("vegetation_native_ms", 0.0)),
+			int(final_res.get("vegetation_candidate_count", 0)),
+			int(final_res.get("vegetation_none_count", 0)),
+			float(final_res.get("vegetation_score_min", 0.0)),
+			float(final_res.get("vegetation_score_mean", 0.0)),
+			float(final_res.get("vegetation_score_max", 0.0)),
+			int(final_res.get("plant_water_nonzero_land_count", 0)),
+			int(final_res.get("river_adjacent_desert_count", 0)),
+			int(final_res.get("coastal_highland_desert_count", 0)),
+			float(final_res.get("terrain_soft_weight_min", 0.0)),
+			float(final_res.get("terrain_soft_weight_max", 0.0)),
+		])
 	# 生成 QA 度量（地形改造回归基线）：单格水体应 →0，biome 熵/河流占比应随改造上升。
 	var qa: Dictionary = final_res.get("qa_metrics", {})
 	if not qa.is_empty():
@@ -8778,6 +8814,15 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 		"landform_arr": TYPE_PACKED_BYTE_ARRAY,
 		"vegetation_arr": TYPE_PACKED_BYTE_ARRAY,
 		"cover_arr": TYPE_PACKED_BYTE_ARRAY,
+		"vegetation_vitality_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"soil_moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"water_balance_30d_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"plant_available_water_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"vegetation_growth_pressure_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"vegetation_heat_stress_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"vegetation_drought_stress_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"vegetation_cold_stress_arr": TYPE_PACKED_FLOAT32_ARRAY,
+		"vegetation_regen_score_arr": TYPE_PACKED_FLOAT32_ARRAY,
 	}
 	for key in required.keys():
 		if not _native_generation_array_ok(res, key, n, int(required[key])):
@@ -8849,6 +8894,17 @@ func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData
 			"weather_intensity": 0.0,
 		}
 		map.set_cell(cell)
+	map.set_pending_generation_ecology({
+		"vegetation_vitality_arr": res["vegetation_vitality_arr"],
+		"soil_moisture_arr": res["soil_moisture_arr"],
+		"water_balance_30d_arr": res["water_balance_30d_arr"],
+		"plant_available_water_arr": res["plant_available_water_arr"],
+		"vegetation_growth_pressure_arr": res["vegetation_growth_pressure_arr"],
+		"vegetation_heat_stress_arr": res["vegetation_heat_stress_arr"],
+		"vegetation_drought_stress_arr": res["vegetation_drought_stress_arr"],
+		"vegetation_cold_stress_arr": res["vegetation_cold_stress_arr"],
+		"vegetation_regen_score_arr": res["vegetation_regen_score_arr"],
+	})
 	if hydro_parent_arr.size() == n:
 		map.hydro_parent_arr = hydro_parent_arr.duplicate()
 	return map
@@ -14320,7 +14376,10 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 		"hydro_lake_release_rate": float(cp_now.hydro_lake_release_rate),
 		"hydro_discharge_ema": float(cp_now.hydro_discharge_ema),
 		"hydro_bank_moisture_gain": float(cp_now.hydro_bank_moisture_gain),
+		"hydro_river_moisture_floor": float(cp_now.hydro_river_moisture_floor),
+		"hydro_riparian_moisture_floor": float(cp_now.hydro_riparian_moisture_floor),
 		"hydro_river_evap_gain": float(cp_now.hydro_river_evap_gain),
+		"hydro_moisture_response_rate": float(cp_now.hydro_moisture_response_rate),
 		"hydro_flood_threshold": float(cp_now.hydro_flood_threshold),
 		"hydro_flood_decay": float(cp_now.hydro_flood_decay),
 		"snowpack_melt_temp_gain": float(cp_now.snowpack_melt_temp_gain),
@@ -14348,6 +14407,9 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 	_last_weather_breakdown["hydrology_river_discharge_p95"] = float(res.get("river_discharge_p95", 0.0))
 	_last_weather_breakdown["hydrology_river_discharge_max"] = float(res.get("river_discharge_max", 0.0))
 	_last_weather_breakdown["hydrology_riparian_neighbor_touches"] = int(res.get("riparian_neighbor_touches", 0))
+	_last_weather_breakdown["hydrology_moisture_response_alpha"] = float(res.get("moisture_response_alpha", 0.0))
+	_last_weather_breakdown["hydrology_river_moisture_max_delta"] = float(res.get("river_moisture_max_delta", 0.0))
+	_last_weather_breakdown["hydrology_riparian_moisture_max_delta"] = float(res.get("riparian_moisture_max_delta", 0.0))
 	_last_weather_breakdown["hydrology_flood_count"] = int(res.get("flood_count", res.get("flood_candidate_count", 0)))
 	return res
 
@@ -15769,7 +15831,7 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		if int(cell.vegetation) == int(VegetationType.VEG.NONE):
 			_clear_cell_vegetation_state(map, cell)
 			continue
-		var compat: float = VegetationType.climate_compat_score(cell.vegetation, temp, plant_water)
+		var compat: float = VegetationType.suitability_score(cell.vegetation, temp, plant_water, int(cell.terrain), int(cell.landform))
 		var wt: int = cell.weather_type if cell.weather_field_initialized else WeatherType.WT.CLEAR
 		var wi: float = cell.weather_intensity if cell.weather_field_initialized else 0.0
 		var weather_stress: float = _vegetation_weather_stress(int(cell.vegetation), wt, wi)
@@ -15804,14 +15866,14 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 		var next_r_for_streak: int = VegetationType.next_in_succession(cell.vegetation, 1)
 		var next_r_score_for_streak: float = -1.0
 		if next_r_for_streak >= 0 and next_r_for_streak != int(cell.vegetation):
-			next_r_score_for_streak = VegetationType.climate_compat_score(next_r_for_streak, temp, plant_water)
+			next_r_score_for_streak = VegetationType.suitability_score(next_r_for_streak, temp, plant_water, int(cell.terrain), int(cell.landform))
 		var upgrade_candidate: bool = next_r_for_streak >= 0 \
 				and next_r_for_streak != int(cell.vegetation) \
 				and next_r_score_for_streak >= compat + float(cp_vd.succession_min_compat_gain) \
 				and next_r_score_for_streak >= float(cp_vd.vitality_high_threshold)
-		var best_transition: int = VegetationType.best_degrade_target(cell.vegetation, temp, plant_water)
-		var best_transition_score: float = VegetationType.climate_compat_score(
-			best_transition, temp, plant_water) if best_transition != int(cell.vegetation) else -1.0
+		var best_transition: int = VegetationType.best_suitability_target(cell.vegetation, temp, plant_water, int(cell.terrain), int(cell.landform))
+		var best_transition_score: float = VegetationType.suitability_score(
+			best_transition, temp, plant_water, int(cell.terrain), int(cell.landform)) if best_transition != int(cell.vegetation) else -1.0
 		var degrade_candidate: bool = best_transition != int(cell.vegetation) \
 				and best_transition_score >= compat + float(cp_vd.succession_min_compat_gain)
 
@@ -15864,12 +15926,12 @@ func _trigger_succession(cell: HexCell, temp: float = 0.5, moist: float = 0.5, c
 	var min_gain: float = float(_c().succession_min_compat_gain)
 	var current_score: float = current_compat
 	if current_score < 0.0:
-		current_score = VegetationType.climate_compat_score(cell.vegetation, temp, moist)
+		current_score = VegetationType.suitability_score(cell.vegetation, temp, moist, int(cell.terrain), int(cell.landform))
 	# 退化优先（连续不适应更紧迫）
 	if cell._vitality_low_streak >= _c().succession_degrade_days:
 		# climate-loop-closure Phase 3.2：气候导向退化目标（过湿→湿生，过旱→荒漠）。
-		var next_h: int = VegetationType.best_degrade_target(cell.vegetation, temp, moist)
-		var next_h_score: float = VegetationType.climate_compat_score(next_h, temp, moist) if next_h != cell.vegetation else -1.0
+		var next_h: int = VegetationType.best_suitability_target(cell.vegetation, temp, moist, int(cell.terrain), int(cell.landform))
+		var next_h_score: float = VegetationType.suitability_score(next_h, temp, moist, int(cell.terrain), int(cell.landform)) if next_h != cell.vegetation else -1.0
 		if next_h != cell.vegetation and next_h_score >= current_score + min_gain:
 			cell.vegetation = next_h
 			cell.base_vegetation = next_h          # 演替后基线也跟着前进
@@ -15888,7 +15950,7 @@ func _trigger_succession(cell: HexCell, temp: float = 0.5, moist: float = 0.5, c
 		return false
 	if cell._vitality_high_streak >= _c().succession_upgrade_days:
 		var next_r: int = VegetationType.next_in_succession(cell.vegetation, 1)
-		var next_r_score: float = VegetationType.climate_compat_score(next_r, temp, moist) if next_r != cell.vegetation else -1.0
+		var next_r_score: float = VegetationType.suitability_score(next_r, temp, moist, int(cell.terrain), int(cell.landform)) if next_r != cell.vegetation else -1.0
 		if next_r != cell.vegetation and next_r_score >= current_score + min_gain:
 			cell.vegetation = next_r
 			cell.base_vegetation = next_r

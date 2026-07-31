@@ -17,6 +17,12 @@ render_mode blend_mix;
 // [params-bake 2026-06-29k] 固化用户实调水面参数默认值(shade1.5/patch1.23/base1.21/detail0.75/scale0.57/sss0.22)；touch。
 // [base+patch tilling 2026-06-29l] 新增 water_base_normal_scale / water_wave_patch_scale 控制宏观涌浪与浪带的瓦片密度；touch。
 // [params-bake 2026-06-29m] 固化水面参数(patch 1.58/scale2.69、base1.17/scale0.93、detailScale0.48、sss0.18)；touch。
+// [terrain-gi 2026-07-31] 同一张 8 方向 horizon 图派生天空可见度(AO)、bent normal 与单次弹射，
+//   环境光改按 bent normal 定向、按 sky visibility 遮蔽；新增 gi_occluder tile 与 bounce_lut；touch。
+// [terrain-gi-tuning 2026-07-31b] 首轮实机配平：新增 gi_ao_floor / gi_ao_smoothing，
+//   gi_bent_strength 与 gi_normal_floor 下调（暗部死黑 + 高频碎化）；新 uniform 必须 touch。
+// [micro-soften+river-hierarchy 2026-07-31c] 微表面/细节法线全面软化 + 河宽幂律对比拉大；touch。
+// [normal-soften+albedo 2026-07-31d] residual↓、细节法线改宽差分+zoom门控、高画质恢复 per-biome 程序纹理；touch。
 // ═══════════════════════════════════════════════════════════════════════════
 // 本文件 2026-05-19 由 2299 行单文件拆分为 1 个主 shader + 多个 .gdshaderinc：
 //   uniforms / common_noise / height / climate_season / biome_color / vegetation /
@@ -53,8 +59,11 @@ render_mode blend_mix;
 //   surface_params 半 PBR Stylized 参数结构（base_color/normal/roughness/metallic/ao/emission/alpha）。
 //   tonemap        依赖 material_constants：srgb↔linear、ACES filmic、Reinhard legacy。
 //   shore_common   依赖 uniforms + material_constants：sample_shore_neighborhood / compute_shore_halo。
-//   terrain_horizon 依赖 uniforms.wrap_map_uv：解码 8 方向 horizon angle，给 BRDF direct shadow。
-//   brdf           依赖 surface_params + material_constants + tonemap + terrain_horizon：Cook-Torrance / Blinn-Phong fallback。
+//   terrain_horizon 依赖 uniforms.wrap_map_uv + visual_tile_sampling：解码 8 方向 horizon angle，
+//                  一次 4-tap 采样同时给出 direct shadow、天空可见度(AO) 与 bent normal。
+//   brdf           依赖 surface_params + material_constants + tonemap + terrain_horizon
+//                  + cell_indirect（弹射项要按遮挡源 cell id 查 bounce_lut）：
+//                  Cook-Torrance / Blinn-Phong fallback。
 //   land/water/global pipelines  最后 include，封装 fragment 的陆地/水面/全局调度算法。
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -63,6 +72,7 @@ render_mode blend_mix;
 #define VT_USE_HEIGHT
 #define VT_USE_TERRAIN_NORMAL
 #define VT_USE_HORIZON
+#define VT_USE_GI_OCCLUDER
 #define VT_USE_MAP_INDEX
 #define VT_USE_FLOW
 #define VT_USE_WATER_DEPTH

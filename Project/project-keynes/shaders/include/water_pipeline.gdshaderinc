@@ -105,7 +105,9 @@ SurfaceParams make_water_surface_params(
 	// 让 GGX 高光与天空菲涅尔在冰面上聚出清亮反光，区别于哑光积雪。
 	roughness = mix(roughness, 0.15, clamp(w_ice, 0.0, 1.0));
 	roughness = mix(roughness, 0.50, clamp(w_kelp * 0.35, 0.0, 1.0));
-	float ao = mix(0.98, 1.0, clamp(normal.z, 0.0, 1.0));
+	// [terrain-gi 2026-07-31] 与陆地同源：地形级遮蔽交给 sky visibility，这里只保留
+	// 水体自身的局部遮蔽（湖/冰面轻微压暗）。峡谷湖与近岸水域因此也会被两侧山体遮蔽。
+	float ao = gi_lut_bound ? 1.0 : mix(0.98, 1.0, clamp(normal.z, 0.0, 1.0));
 	ao = mix(ao, 0.96, clamp(w_lake * 0.25 + w_ice * 0.35, 0.0, 1.0));
 
 	// metallic：水默认非金属；冰盖区给一点金属感（菲涅尔更明显）。

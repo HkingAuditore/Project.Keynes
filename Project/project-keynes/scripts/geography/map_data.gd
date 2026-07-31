@@ -194,6 +194,9 @@ var vitality_low_streak_arr:           PackedInt32Array   = PackedInt32Array()
 var vitality_high_streak_arr:          PackedInt32Array   = PackedInt32Array()
 var soil_moisture_arr:                 PackedFloat32Array = PackedFloat32Array()
 var plant_available_water_arr:          PackedFloat32Array = PackedFloat32Array()
+## Native generation ecology bundle is applied after init_soa_from_bake(),
+## because the generic AoS->SoA bootstrap intentionally zeroes slow buffers.
+var _pending_generation_ecology: Dictionary = {}
 var vegetation_growth_pressure_arr:    PackedFloat32Array = PackedFloat32Array()
 var temperature_transport_anomaly_arr: PackedFloat32Array = PackedFloat32Array()
 var vegetation_heat_stress_arr:        PackedFloat32Array = PackedFloat32Array()
@@ -932,6 +935,28 @@ func rebuild_soa_from_cells() -> void:
 ## 新代码统一使用本名；旧 caller 保留 rebuild_soa_from_cells() 直到全部迁移完成。
 func init_soa_from_bake() -> void:
 	rebuild_soa_from_cells()
+	apply_pending_generation_ecology()
+
+
+func set_pending_generation_ecology(bundle: Dictionary) -> void:
+	_pending_generation_ecology = bundle.duplicate(true)
+
+
+func apply_pending_generation_ecology() -> void:
+	if _pending_generation_ecology.is_empty():
+		return
+	var n: int = cell_count()
+	var fields := [
+		"vegetation_vitality_arr", "soil_moisture_arr", "water_balance_30d_arr",
+		"plant_available_water_arr", "vegetation_growth_pressure_arr",
+		"vegetation_heat_stress_arr", "vegetation_drought_stress_arr",
+		"vegetation_cold_stress_arr", "vegetation_regen_score_arr",
+	]
+	for field in fields:
+		var value = _pending_generation_ecology.get(field, null)
+		if value is PackedFloat32Array and value.size() == n:
+			set(field, value.duplicate())
+	_pending_generation_ecology.clear()
 
 
 ## REMOVED PR-2.4 (2026-05-14)：flush_soa_to_cells() 已删除。

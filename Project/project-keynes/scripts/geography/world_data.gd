@@ -183,6 +183,16 @@ var noise_tex: ImageTexture
 var enum_lut_tex: ImageTexture
 var dyn_lut_tex: ImageTexture
 var eco_lut_tex: ImageTexture
+# [terrain-gi 2026-07-31] bounce_lut（RGBA8 NEAREST，同 lut_dims 网格）：per-cell 弹射代表色。
+#   RGB=该 cell 当前地表代表色（sRGB 域），A=有效性/强度缩放（0=水体或 map 外，不参与弹射）。
+#   与 enum/dyn/eco 同一次 refresh_cell_luts_daily 产出，因此雪盖/物候/枯荣变化会自动
+#   反映到弹射色上，不需要重烘任何几何。刻意是近似量而非 fragment albedo 的精确镜像——
+#   弹射项乘了 (1-V_sky) 与 ≤0.3 的增益，能量占比极低，不值得再维护一份 CPU/GPU 双实现。
+var bounce_lut_tex: ImageTexture
+# [terrain-gi 2026-07-31] legacy 全局遮挡源图（RGBA8 NEAREST，hm_size）：
+#   RG=主导遮挡源 cell id 低/高字节，BA=次遮挡源，0xFFFF=无有效遮挡源。
+#   tiled 路径用 VisualTileSet.gi_occluder；这张只服务 legacy 与 compute 失败回退。
+var gi_occluder_tex: ImageTexture
 # weather_lut（cloud-from-field 2026-06-20）：per-cell 天气场 LUT，RGBA8 NEAREST，lut_dims。
 #   R=weather_type，G=intensity，B=cloud，A=vapor。由 encode_cell_luts 与 enum/dyn/eco 同批
 #   产出（C++ 优先，GDScript fallback），weather_overlay.gdshader 经 cell-index 间接寻址逐格

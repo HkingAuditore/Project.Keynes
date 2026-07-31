@@ -336,6 +336,14 @@ func _ctx_tick_index(ctx) -> int:
 	return 0
 
 
+func _ctx_day_index(ctx) -> int:
+	if ctx is Dictionary:
+		return int(ctx.get("day_index", -1))
+	if ctx != null:
+		return int(ctx.get("day_index"))
+	return -1
+
+
 func _lut_dirty_source():
 	return dirty_world if dirty_world != null else world_data
 
@@ -436,6 +444,14 @@ func tick(ctx) -> Dictionary:
 		if dirty_count == 0 and not catchup and _lut_textures_ready() and not _lut_active_decay_pending():
 			return _build_lut_skip_report(t_start_us, tick_index, pending_before,
 					due_this_tick, due_tick, dirty_count)
+		if baker.has_method("set_river_atlas_probe_context"):
+			baker.set_river_atlas_probe_context({
+				"tick_idx": tick_index,
+				"sim_day": _ctx_day_index(ctx),
+				"catchup": catchup,
+				"due_this_tick": due_this_tick,
+				"dirty_count": dirty_count,
+			})
 		var lut_report: Dictionary = baker.refresh_cell_luts_daily(map, world_data)
 		var _lut_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
 		_lut_last_refresh_tick = tick_index

@@ -165,16 +165,20 @@ func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
+	var debug_hotkeys_enabled := OS.is_debug_build()
 	match event.keycode:
 		KEY_QUOTELEFT, KEY_F1:
-			if _ui_manager.is_gm_available():
+			if debug_hotkeys_enabled and _ui_manager.is_gm_available():
 				_ui_manager.toggle_gm_panel()
 		KEY_F4:
-			_ui_manager.toggle_perf_hud()
+			if debug_hotkeys_enabled:
+				_ui_manager.toggle_perf_hud()
 		KEY_R:
-			_regenerate_world()
+			if debug_hotkeys_enabled:
+				_regenerate_world()
 		KEY_F:
-			_runtime_host.fit_camera(_ui_manager.map_safe_area())
+			if debug_hotkeys_enabled:
+				_runtime_host.fit_camera(_ui_manager.map_safe_area())
 		KEY_SPACE:
 			_world_clock.toggle_pause()
 			_time_controls.sync_ui()
