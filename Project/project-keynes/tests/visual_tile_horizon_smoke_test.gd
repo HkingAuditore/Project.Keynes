@@ -73,13 +73,31 @@ func _run() -> void:
 			nonzero = true
 			break
 	var y: int = layout.gutter_px + layout.interior_size.y / 2
-	var ordinary_ok := first.get_pixel(layout.gutter_px + layout.interior_size.x, y) \
-		== last.get_pixel(layout.gutter_px, y)
-	var wrap_ok := first.get_pixel(0, y) \
-		== last.get_pixel(layout.gutter_px + layout.interior_size.x - 2, y)
-	if not nonzero or not ordinary_ok or not wrap_ok:
-		push_error("visual_tile_horizon_smoke_test: output mismatch nonzero=%s ordinary=%s wrap=%s" % [
-			nonzero, ordinary_ok, wrap_ok])
+	# horizon 只是 origin 的函数，所以同一个 logical texel 无论由哪个 tile（interior 还是
+	# gutter）算出来都必须逐位相同。抽查两个像素会漏掉只在部分列上发作的接缝 bug，这里
+	# 把整行里所有出现多于一次的 logical 列全部对齐检查。
+	var by_logical := {}
+	for layer_id in range(layout.layer_count):
+		var img: Image = first if layer_id == 0 else last
+		for px in range(layout.layer_size.x):
+			var lx: int = posmod(
+				layer_id * layout.interior_size.x + px - layout.gutter_px,
+				layout.logical_size.x)
+			if not by_logical.has(lx):
+				by_logical[lx] = []
+			by_logical[lx].append({"layer": layer_id, "px": px, "c": img.get_pixel(px, y)})
+	var mismatches: Array = []
+	for lx in by_logical:
+		var entries: Array = by_logical[lx]
+		for i in range(1, entries.size()):
+			if entries[i]["c"] != entries[0]["c"]:
+				mismatches.append("logical x=%d: layer%d px%d=%s vs layer%d px%d=%s" % [
+					lx, entries[0]["layer"], entries[0]["px"], entries[0]["c"],
+					entries[i]["layer"], entries[i]["px"], entries[i]["c"]])
+				break
+	if not nonzero or not mismatches.is_empty():
+		push_error("visual_tile_horizon_smoke_test: output mismatch nonzero=%s seam_mismatches=%d\n  %s"
+			% [nonzero, mismatches.size(), "\n  ".join(PackedStringArray(mismatches))])
 		quit(1)
 		return
 	print("visual_tile_horizon_smoke_test: PASS %s" % JSON.stringify(report))

@@ -69,9 +69,9 @@ SurfaceParams compute_land_base_surface(
 		river_t = clamp(river_t * pulse, 0.0, 1.0);
 	}
 #endif
-	// [需求1 2026-06-19] 增强径流量视觉差：深浅系数 0.42→0.60、深水段更接近深海色 → 宽阔干流呈
-	// 深蓝厚重、细窄支流浅青，配合烘焙端幂律宽度对比，让"大河 vs 小河"在视觉上拉开。
-	float river_depth_w = smoothstep(0.18, 1.0, river_t_raw);
+	// [river-hierarchy 2026-07-31] 河心浓度决定深浅：窄支流河心 peak 较低 → 偏浅青；
+	// 宽干流河心长时间停在 1.0 → 偏深蓝。阈值带收紧后 depth 更跟 stamp 半径挂钩。
+	float river_depth_w = smoothstep(0.35, 1.0, river_t_raw);
 	vec3 river_surface = mix(river_color * vec3(1.10, 1.08, 1.02), color_mid_ocean, 0.18);
 	vec3 river_deep = mix(river_color * vec3(0.66, 0.80, 0.98), color_deep_ocean, 0.30);
 	vec3 river_body = mix(river_surface, river_deep, river_depth_w * 0.60);
@@ -120,7 +120,13 @@ SurfaceParams compute_land_base_surface(
 	// LAND 1.5：Normal / roughness / AO / metallic
 	vec3 normal = compute_terrain_normal(uv, visual_quality, biome);
 	float roughness = static_mat.roughness;
-	float ao = mix(0.92, DEFAULT_AO_LAND, clamp(normal.z, 0.0, 1.0));
+	// [terrain-gi 2026-07-31] 地形级环境遮蔽已由 horizon 派生的 sky visibility 接管
+	//（brdf.gi_ambient_occlusion）。这条法线 z 启发式与遮挡几何无关，继续保留会与真 AO
+	// 双重压暗，因此只在 GI 未绑定（旧 renderer / LUT 未推送）时作为回退。
+	// s.ao 此后的语义收窄为"材质自身的局部遮蔽"，由下方 cover/river 分支按需微调。
+	float ao = gi_lut_bound
+		? DEFAULT_AO_LAND
+		: mix(0.92, DEFAULT_AO_LAND, clamp(normal.z, 0.0, 1.0));
 	float metallic = DEFAULT_METALLIC_LAND;
 
 	// LAND 1.5b：[河流高光 2026-06-25] 把河道当作水面而非平面蓝覆盖：降低 roughness、混入轻微
@@ -555,6 +561,27 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	if (terrain_horizon_debug_view == 2) {
 		return vec3(lc.direct_shadow);
 	}
+	// [terrain-gi 2026-07-31] GI 调试视图：1=天空可见度 2=bent normal 3=遮挡源 cell id
+	// 4=仅弹射项。3 号视图把 cell id 散列成伪彩，用于肉眼确认烘焙层的遮挡源命中是否合理。
+	if (gi_debug_view == 1) {
+		return vec3(gi_ambient_occlusion(lc, normalize(surface.normal)));
+	}
+	if (gi_debug_view == 2) {
+		return lc.bent_normal * 0.5 + vec3(0.5);
+	}
+#ifdef VT_USE_GI_OCCLUDER
+	if (gi_debug_view == 3) {
+		vec4 occ_texel = visual_sample_gi_occluder(uv);
+		float cid0 = occ_texel.r * 255.0 + occ_texel.g * 255.0 * 256.0;
+		if (occ_texel.g * 255.0 >= 254.5 && occ_texel.r * 255.0 >= 254.5) {
+			return vec3(0.0);
+		}
+		return fract(vec3(cid0 * 0.0173, cid0 * 0.0411, cid0 * 0.0929));
+	}
+#endif
+	if (gi_debug_view == 4) {
+		return lc.bounce * lc.sun_color_linear;
+	}
 	vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
 
 	// [tod 地形方向性 2026-06-25 / 加强 2026-06-25b] 在 BRDF 之上叠一层 terrain-only 的方向性
@@ -603,6 +630,14 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 		float cast_floor = day_night_enabled
 			? terrain_horizon_cast_floor
 			: max(terrain_horizon_cast_floor, 0.56);
+		// [terrain-gi 2026-07-31] 双重压暗防护。真 AO 接入后谷底已经被 sky visibility
+		// 压暗一次，若这层制图学投影仍按原强度叠加，封闭地形会被压两遍变死黑。
+		// 用 sky visibility 自适应地把 cast floor 向 1.0 抬：开阔地保持原有投影可读性，
+		// 越封闭的地方投影的额外贡献越小。这样不需要改 terrain_horizon_cast_floor 的
+		// 艺术默认值，也不会因为 gi_ao_strength 调档而需要重新配平。
+		if (gi_lut_bound) {
+			cast_floor = mix(1.0, cast_floor, mix(1.0, lc.sky_visibility, gi_ao_strength));
+		}
 		lit *= mix(1.0, cast_floor, cast_shadow);
 	}
 	return lit;

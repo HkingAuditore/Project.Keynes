@@ -66,8 +66,10 @@ const VisualTileHorizonBakerScript = preload(
 # threshold_low=外圈 outline 起点，threshold_high=内圈主色完全。
 @export_group("Rivers")
 @export_range(0.0, 1.0, 0.01) var river_strength: float = 0.85
-@export_range(0.0, 1.0, 0.01) var river_threshold_low: float = 0.62
-@export_range(0.0, 1.0, 0.01) var river_threshold_high: float = 0.90
+# [river-hierarchy 2026-07-31] 阈值收紧：配合更短的 SDF 晕圈，让可见河宽更多由
+# stamp 半径（流量）决定，而不是被同一条 0.62→0.90 的淡出带抹平。
+@export_range(0.0, 1.0, 0.01) var river_threshold_low: float = 0.70
+@export_range(0.0, 1.0, 0.01) var river_threshold_high: float = 0.94
 @export var river_color: Color = Color(0.30, 0.50, 0.68)
 @export var river_outline_color: Color = Color(0.16, 0.30, 0.45)
 
@@ -199,6 +201,43 @@ var _wind_strength: float = 0.15
 @export_range(0, 2, 1) var terrain_horizon_debug_view: int = 0:
 	set(value):
 		terrain_horizon_debug_view = clampi(value, 0, 2)
+		_push_terrain_horizon_uniforms()
+
+# [terrain-gi 2026-07-31] 从同一张 horizon 图派生的全局光照。设计见
+# docs/cpp-dots-runtime/terrain-gi-bake.md。三个强度全部归零即精确回退到接入 GI 之前，
+# 这是视觉回归定位的主要手段。
+@export_group("Terrain GI")
+@export_range(0.0, 1.0, 0.01) var gi_ao_strength: float = 0.85:
+	set(value):
+		gi_ao_strength = clampf(value, 0.0, 1.0)
+		_push_terrain_horizon_uniforms()
+## V_sky 下限。峡谷底部仍有岩壁多次散射，纯几何遮蔽的 0 会压成死黑并放大地表 dither 对比。
+@export_range(0.0, 1.0, 0.01) var gi_ao_floor: float = 0.45:
+	set(value):
+		gi_ao_floor = clampf(value, 0.0, 1.0)
+		_push_terrain_horizon_uniforms()
+## 0=双线性；1=2×2 箱式低通。滤掉视觉高度残差在 AO 上留下的颗粒感，采样次数不变。
+@export_range(0.0, 1.0, 0.01) var gi_ao_smoothing: float = 0.75:
+	set(value):
+		gi_ao_smoothing = clampf(value, 0.0, 1.0)
+		_push_terrain_horizon_uniforms()
+## 环境光法线向 bent normal 偏转的比例。1.0 会完全丢弃几何法线，导致块状跳变。
+@export_range(0.0, 1.0, 0.01) var gi_bent_strength: float = 0.35:
+	set(value):
+		gi_bent_strength = clampf(value, 0.0, 1.0)
+		_push_terrain_horizon_uniforms()
+@export_range(0.0, 1.0, 0.01) var gi_normal_floor: float = 0.85:
+	set(value):
+		gi_normal_floor = clampf(value, 0.0, 1.0)
+		_push_terrain_horizon_uniforms()
+@export_range(0.0, 0.5, 0.01) var gi_bounce_strength: float = 0.18:
+	set(value):
+		gi_bounce_strength = clampf(value, 0.0, 0.5)
+		_push_terrain_horizon_uniforms()
+## 0=off 1=sky visibility 2=bent normal 3=occluder cell id 4=bounce only
+@export_range(0, 4, 1) var gi_debug_view: int = 0:
+	set(value):
+		gi_debug_view = clampi(value, 0, 4)
 		_push_terrain_horizon_uniforms()
 
 @export_group("Visual Overhaul")
@@ -1436,13 +1475,63 @@ func _push_terrain_horizon_uniforms() -> void:
 		_shader_mat.set_shader_parameter("terrain_horizon_max_angle", terrain_horizon_max_angle)
 		_shader_mat.set_shader_parameter("terrain_horizon_cast_floor", terrain_horizon_cast_floor)
 		_shader_mat.set_shader_parameter("terrain_horizon_debug_view", terrain_horizon_debug_view)
-	var horizon_tex: Texture2D = _world.terrain_horizon_tex if _world != null else null
-	var horizon_bound: bool = horizon_tex != null
+		_push_gi_strength_uniforms(_shader_mat)
+	# tiled 模式 horizon 在 visual_tiles.horizon（Texture2DArray），不写 world.terrain_horizon_tex。
+	# 若仍按 legacy tex!=null 判断，会在 _apply_uniforms 末尾把植被 bound 盖回 false →
+	# 直射遮蔽/天空 GI 全关，植株看起来「没光照」。
+	var tiled := _visual_tiles_active()
+	var horizon_tex: Texture2D = null
+	var horizon_bound := false
+	if tiled:
+		horizon_bound = _world != null and _world.visual_tiles != null \
+			and bool(_world.visual_tiles.horizon_ready)
+	elif _world != null:
+		horizon_tex = _world.terrain_horizon_tex
+		horizon_bound = horizon_tex != null
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_terrain_horizon_inputs(horizon_tex, horizon_bound,
 			terrain_horizon_strength, terrain_horizon_softness, terrain_horizon_max_angle,
 			terrain_horizon_cast_floor, terrain_horizon_debug_view)
+		layer.set_terrain_gi_inputs(build_gi_horizon_lut(terrain_horizon_max_angle),
+			gi_ao_strength, gi_ao_floor, gi_bent_strength, gi_normal_floor)
 	)
+
+
+# [terrain-gi 2026-07-31] 4-bit 量化角的解码查表。shader 里 h_n = n/15·max_angle 只有 16 个
+# 取值，把 cos²(h) 与可见锥质心方向 m=(h+π/2)/2 的 cos/sin 预先算好推过去，fragment 侧解
+# 8 个方向的天空可见度与 bent normal 时就完全没有三角函数调用。
+# max_angle 是 uniform（可在场景里调），所以这张表不能做成 shader 常量，必须随之重推。
+static func build_gi_horizon_lut(max_angle: float) -> PackedVector3Array:
+	var lut := PackedVector3Array()
+	lut.resize(16)
+	for i in range(16):
+		var h: float = float(i) / 15.0 * max_angle
+		var m: float = (h + PI * 0.5) * 0.5
+		var c: float = cos(h)
+		lut[i] = Vector3(c * c, cos(m), sin(m))
+	return lut
+
+
+func _push_gi_strength_uniforms(sm: ShaderMaterial) -> void:
+	sm.set_shader_parameter("gi_horizon_lut", build_gi_horizon_lut(terrain_horizon_max_angle))
+	sm.set_shader_parameter("gi_lut_bound", true)
+	sm.set_shader_parameter("gi_ao_strength", gi_ao_strength)
+	sm.set_shader_parameter("gi_ao_floor", gi_ao_floor)
+	sm.set_shader_parameter("gi_ao_smoothing", gi_ao_smoothing)
+	sm.set_shader_parameter("gi_bent_strength", gi_bent_strength)
+	sm.set_shader_parameter("gi_normal_floor", gi_normal_floor)
+	sm.set_shader_parameter("gi_bounce_strength", gi_bounce_strength)
+	sm.set_shader_parameter("gi_debug_view", gi_debug_view)
+
+
+# 遮挡源纹理绑定 + 强度参数。gi_bounce_bound 由调用方在 bounce_lut 也就绪后单独置位，
+# 因为弹射需要两者同时可用；只有 occluder 而没有 bounce_lut 时应保持档 0/1 行为。
+func _push_gi_uniforms(sm: ShaderMaterial, tiled: bool, visual_tiles) -> void:
+	_push_gi_strength_uniforms(sm)
+	if tiled:
+		sm.set_shader_parameter("visual_gi_occluder_tiles", visual_tiles.gi_occluder)
+	else:
+		sm.set_shader_parameter("gi_occluder_tex", _world.gi_occluder_tex)
 
 
 # ─── Terrain Horizon GPU 离屏烘焙（plan: terrain-horizon-gpu-bake 2026-07-03） ──────
@@ -1519,7 +1608,12 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 		_record_visual_tile_horizon_failure(world, "native_fallback_method_missing", compute_report)
 		return
 	var params := world.terrain_horizon_gpu_params
+	var expected_source_bytes: int = world.hm_size.x * world.hm_size.y * 4
 	var source_data := PackedByteArray()
+	# [terrain-gi 2026-07-31] 全局遮挡源图。它与 horizon 独立降级：C++ 未 rebuild 或
+	# map_index 不可用时 occluder_source 保持为空，AO 与 bent normal 仍然正常工作
+	# （它们只需要 horizon），只有弹射项关闭。
+	var occluder_source := PackedByteArray()
 	var source_path := "existing_global_horizon"
 	var source_ms := 0.0
 	if world.terrain_horizon_tex != null:
@@ -1528,9 +1622,15 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 			if source_image.get_format() != Image.FORMAT_RGBA8:
 				source_image.convert(Image.FORMAT_RGBA8)
 			source_data = source_image.get_data()
-	if source_data.size() != world.hm_size.x * world.hm_size.y * 4:
+	if world.gi_occluder_tex != null:
+		var occ_image := world.gi_occluder_tex.get_image()
+		if occ_image != null:
+			if occ_image.get_format() != Image.FORMAT_RGBA8:
+				occ_image.convert(Image.FORMAT_RGBA8)
+			occluder_source = occ_image.get_data()
+	if source_data.size() != expected_source_bytes:
 		source_path = "native_global_horizon"
-		var source_result: Dictionary = _world_ext.encode_bake_horizon_tex_data({
+		var horizon_knobs := {
 			"height_buffer": world.height_buffer,
 			"width": world.hm_size.x,
 			"height": world.hm_size.y,
@@ -1544,7 +1644,12 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 			"bias": float(params.get("bias", 0.004)),
 			"height_world_scale": float(params.get("height_world_scale", 176.0)),
 			"sea_level": clampf(float(params.get("sea_level", world.sea_level)), 0.0, 1.0),
-		})
+		}
+		var map_index_data := _global_map_index_bytes(world)
+		if map_index_data.size() == expected_source_bytes:
+			horizon_knobs["emit_occluder_cells"] = true
+			horizon_knobs["map_index_data"] = map_index_data
+		var source_result: Dictionary = _world_ext.encode_bake_horizon_tex_data(horizon_knobs)
 		if bool(source_result.get("fallback", true)):
 			_record_visual_tile_horizon_failure(world,
 				"baseline_horizon_failed:%s" % String(source_result.get("reason", "unknown")),
@@ -1552,12 +1657,17 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 			return
 		source_data = source_result.get("data", PackedByteArray())
 		source_ms = float(source_result.get("elapsed_ms", 0.0))
-		if source_data.size() == world.hm_size.x * world.hm_size.y * 4:
+		occluder_source = source_result.get("occluder_data", PackedByteArray())
+		if source_data.size() == expected_source_bytes:
 			world.terrain_horizon_tex = ImageTexture.create_from_image(Image.create_from_data(
 				world.hm_size.x, world.hm_size.y, false, Image.FORMAT_RGBA8, source_data))
-	if source_data.size() != world.hm_size.x * world.hm_size.y * 4:
+		if occluder_source.size() == expected_source_bytes:
+			world.gi_occluder_tex = ImageTexture.create_from_image(Image.create_from_data(
+				world.hm_size.x, world.hm_size.y, false, Image.FORMAT_RGBA8, occluder_source))
+	if source_data.size() != expected_source_bytes:
 		_record_visual_tile_horizon_failure(world, "baseline_horizon_size_mismatch", compute_report)
 		return
+	var occluder_available: bool = occluder_source.size() == expected_source_bytes
 
 	var layout = tiles.layout
 	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
@@ -1572,7 +1682,7 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 		var physical_origin: Vector2 = layout.visual_domain.position + Vector2(
 			tile_xy.x * layout.interior_size.x - layout.gutter_px,
 			tile_xy.y * layout.interior_size.y - layout.gutter_px) * texel_world
-		var result: Dictionary = _world_ext.run_resample_visual_horizon_layer_pass({
+		var resample_knobs := {
 			"generation_id": generation_id,
 			"layer_id": layer_id,
 			"source_data": source_data,
@@ -1589,7 +1699,8 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 			"size_x": layout.layer_size.x * texel_world.x,
 			"size_y": layout.layer_size.y * texel_world.y,
 			"wrap_period_x": layout.wrap_period_x,
-		})
+		}
+		var result: Dictionary = _world_ext.run_resample_visual_horizon_layer_pass(resample_knobs)
 		if bool(result.get("fallback", true)) or int(result.get("generation_id", -1)) != generation_id \
 				or not tiles.upload_horizon_layer(layer_id,
 					result.get("data", PackedByteArray())):
@@ -1597,6 +1708,19 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 				"resample_layer_failed:%d:%s" % [layer_id, String(result.get("reason", "upload"))],
 				compute_report)
 			return
+		# 遮挡源图与 horizon 完全同构（RGBA8、同尺寸、必须 NEAREST），因此直接复用同一个
+		# resample pass，只换 source_data。任一层失败就整体放弃弹射，但不影响 horizon 发布。
+		if occluder_available:
+			var occ_knobs := resample_knobs.duplicate()
+			occ_knobs["source_data"] = occluder_source
+			var occ_result: Dictionary = _world_ext.run_resample_visual_horizon_layer_pass(occ_knobs)
+			if bool(occ_result.get("fallback", true)) \
+					or int(occ_result.get("generation_id", -1)) != generation_id \
+					or not tiles.upload_gi_occluder_layer(layer_id,
+						occ_result.get("data", PackedByteArray())):
+				occluder_available = false
+				push_warning("[visual-tiles/gi] occluder resample failed at layer %d; bounce disabled"
+					% layer_id)
 		layer_reports.append({
 			"layer": layer_id,
 			"elapsed_ms": float(result.get("elapsed_ms", 0.0)),
@@ -1611,15 +1735,31 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 		"source_path": source_path,
 		"source_ms": source_ms,
 		"layers": layer_reports,
+		"gi_occluder_ok": occluder_available,
 		"compute_failure": compute_report,
 		"total_ms": float(Time.get_ticks_usec() - fallback_t0) / 1000.0,
 	})
+
+
+# [terrain-gi 2026-07-31] legacy 全局 map_index（RGBA8，G/B=cell.index 低/高字节）的字节视图，
+# 供 C++ 全局 horizon pass 顺带产出遮挡源 cell。拿不到就返回空数组，调用方据此关闭弹射。
+func _global_map_index_bytes(world: WorldData) -> PackedByteArray:
+	if world == null or world.enum_atlas_tex == null:
+		return PackedByteArray()
+	var image := world.enum_atlas_tex.get_image()
+	if image == null:
+		return PackedByteArray()
+	if image.get_format() != Image.FORMAT_RGBA8:
+		image.convert(Image.FORMAT_RGBA8)
+	return image.get_data()
 
 
 func _publish_visual_tile_horizon(world: WorldData, report: Dictionary) -> void:
 	if world == null or world.visual_tiles == null:
 		return
 	world.visual_tiles.horizon_ready = true
+	# 弹射独立于 AO 降级：occluder 缺失只关闭档 2，档 0/1 仍由 horizon 驱动。
+	world.visual_tiles.gi_occluder_ready = bool(report.get("gi_occluder_ok", false))
 	world.visual_tiles.bake_report["horizon_path"] = report.get("path", "unknown")
 	world.visual_tiles.bake_report["horizon"] = report
 	if _world == world:
@@ -1631,6 +1771,7 @@ func _record_visual_tile_horizon_failure(world: WorldData, reason: String,
 		compute_report: Dictionary) -> void:
 	if world != null and world.visual_tiles != null:
 		world.visual_tiles.horizon_ready = false
+		world.visual_tiles.gi_occluder_ready = false
 		world.visual_tiles.bake_report["horizon_path"] = "neutral_failed"
 		world.visual_tiles.bake_report["horizon"] = {
 			"ok": false,
@@ -2391,10 +2532,12 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("terrain_normal_tex_bound",
 		visual_tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
 	# [terrain-horizon 2026-07-03] 8 方向 horizon angle：运行期只遮蔽直射光；未绑定/低档自动回退。
+	# [terrain-gi 2026-07-31] 同一张图还派生天空可见度(AO)/bent normal/弹射；见 _push_gi_uniforms。
 	if not tiled:
 		sm.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
 	sm.set_shader_parameter("terrain_horizon_tex_bound",
 		bool(visual_tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
+	_push_gi_uniforms(sm, tiled, visual_tiles)
 	if not tiled:
 		sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 	# [river-render-restore 2026-06-19] 河流 SDF 纹理重新接回主地图 shader（flow 视觉层）。
@@ -2445,6 +2588,10 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	sm.set_shader_parameter("eco_lut", _world.eco_lut_tex)
 	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
+	# [terrain-gi 档 2] 弹射代表色 LUT：与 enum/dyn/eco 同一 lut_dims 网格、同一日刷节奏。
+	sm.set_shader_parameter("bounce_lut", _world.bounce_lut_tex)
+	sm.set_shader_parameter("gi_bounce_bound", _world.bounce_lut_tex != null
+		and (visual_tiles.gi_occluder_ready if tiled else _world.gi_occluder_tex != null))
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_world_material_inputs(_world, bounds, _indirect_ready)
 	)
@@ -2459,7 +2606,7 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("derived_resolution", visual_resolution if tiled \
 		else Vector2(_world.derived_size.x, _world.derived_size.y))
 	sm.set_shader_parameter("visual_reference_resolution",
-		Vector2(_world.hm_size.x, _world.hm_size.y))
+		visual_resolution)
 	sm.set_shader_parameter("sea_level", _world.sea_level)
 
 	sm.set_shader_parameter("season_phase", _season_phase)

@@ -229,9 +229,9 @@ moisture = clamp(large*0.65 + small*0.35, 0, 1)
 
 实现位置：base pass 的 `coastal + orographic moisture` block。
 
-沿岸湿度：当前权威路径使用 `dist_ocean` 全向距离地板，`moisture_coastal_floor` 按 `moisture_coastal_scale` 随距海指数衰减，近海陆格保底湿润，深内陆保留干燥梯度。
+沿岸湿度：当前权威路径使用 `dist_ocean` 全向距离地板，`moisture_coastal_floor` 按 `moisture_coastal_scale` 随距海指数衰减。完整地板先作为海洋输入参与副热带干带，扣湿后再保留 35% 的残余海岸保障，避免无冷洋流/离岸风依据的贴岸极旱，同时不让小大陆失去内陆沙漠；post-base 的明确背风雨影仍可在局部覆盖该保护。
 
-副热带干带：`moisture_subtropical_dry_strength / center / width` 在南北副热带纬度扣湿，并乘以距海大陆度，恢复稳定的热带/暖温带荒漠带；近海格受沿海地板保护，不会被整片抽干。
+副热带干带：`moisture_subtropical_dry_strength / center / width` 在南北副热带纬度扣湿，并乘以距海大陆度，恢复稳定的热带/暖温带荒漠带；默认 strength 为 `0.22`，与 C++ fallback 对齐，近海格受沿海地板保护。
 
 迎风/高地正雨已合入纬向水汽扫描的 rain-out 与 orographic gain，不再额外跑旧的 6 邻加湿棘轮。
 
@@ -311,7 +311,7 @@ post-base 末尾还会重新派生三轴，因为后处理会继续改写 terrai
 3. `pk_wind_belt_wind_at(row_norm, 1.0, jitter)` 得到盛行风。
 4. `pk_upwind_dir_index_from_wind()` 映射到 6 个 hex 方向。
 5. 直接探测 `lookback` 格外的上风 cell：`Q + DQ[dir]*lookback`、`R + DR[dir]*lookback`。
-6. 如果上风格海拔 `> 当前海拔 + rain_shadow_threshold`，当前湿度乘 `rain_shadow_factor`。
+6. 如果上风格海拔 `> 当前海拔 + rain_shadow_threshold`，当前湿度乘 `rain_shadow_factor`（默认 `0.65`，保留背风干化但不再一次砍半）。
 
 这里直接 cube 跳转，而不是逐步走邻接表，目的是与原 GDScript `get_cell_by_cube` 行为一致。
 
@@ -344,12 +344,13 @@ post-base 末尾还会重新派生三轴，因为后处理会继续改写 terrai
 9. 河流格如果邻接 `LAKE` 但当前下游没有进入任何水体，会把最低的相邻湖格写入 `river_downstream_arr`，避免视觉上到湖边、数据上不入湖。
 10. 对每个河流格输出：
    - `river_downstream_arr[i]`：下游河格或终端水体的 cell index。
-   - `river_flow_arr[i]`：按 `log1p(flow)` 归一化的径流/宽度权重，合流后的主流更宽，源流和支流更细。
+   - `river_flow_arr[i]`：按 `log1p(flow)` 归一化的视觉宽度权重，合流后的主流更宽，源流和支流更细。
+   - post-base 内部另保留 `river_ecology_flow`，沿用旧归一标尺供大河源、三角洲和泛滥平原阈值使用；视觉宽度调参不改变生态强度。
    - `hydro_parent_arr[i]`：全图静态下游 parent，非河流陆地也有排水方向，供运行期水文路由使用。
 
 `terrain` 不会改成 river；河流由 `has_river_arr + river_downstream_arr + river_flow_arr` 表达。
 
-运行期水文闭环不会重新生成河网拓扑。`hydro_parent_arr` 是生成期的静态排水图，`river_discharge_arr / river_discharge_30d_arr / river_storage_arr / groundwater_storage_arr` 是 daily runtime 状态：降水、积雪融水、土壤水和基流沿 parent graph 汇流，更新动态 discharge；`MapBaker` 在需要重烘河流 SDF 时优先使用 `river_discharge_30d_arr` 作为宽度权重，缺失时回退到生成期 `river_flow_arr`。
+运行期水文闭环不会重新生成河网拓扑。`hydro_parent_arr` 是生成期的静态排水图，`river_discharge_arr / river_discharge_30d_arr / river_storage_arr / groundwater_storage_arr` 是 daily runtime 状态：降水、积雪融水、土壤水和基流沿 parent graph 汇流，更新动态 discharge；同一 pass 还把河道/一环河岸 `moisture` 维持在约 `0.66/0.38` 的下限，使季节 terrain 重判不会把密集河网重新判成荒漠。`MapBaker` 在需要重烘河流 SDF 时优先使用 `river_discharge_30d_arr` 作为宽度权重，缺失时回退到生成期 `river_flow_arr`。
 
 ### 7. 河岸生态
 
@@ -357,23 +358,15 @@ post-base 末尾还会重新派生三轴，因为后处理会继续改写 terrai
 
 规则：
 
-1. 有河流的陆地格保证 `moisture >= 0.65`。
+1. 有河流的陆地格按生态流量保证 `moisture >= 0.66/0.74`；所有成形支流也作为距水场 source。
 2. 永久地貌只加湿，不改 terrain。
-3. `DESERT` 不直接改写，留给绿洲/盐滩规则。
-4. `PLAIN` 河岸按温度变成 `FOREST` 或 `GRASSLAND`。
+3. 荒漠河道按低地、生态流量和温度转为 `FLOODPLAIN/OASIS/STEPPE`。
+4. 湖河距水场完成湿度回灌后，普通陆地用同一 `gen_temp + pk_decide_terrain_ex` 做一次受保护的最终全图重判；河岸一环下限随流量约为 `0.36..0.42`，向外指数衰减；水体、河道、永久特征和 `MOUNTAIN/SNOW/TUNDRA` 不参与。
+5. `PLAIN` 河岸按温度变成 `FOREST/GRASSLAND/FLOODPLAIN`。
 
-### 8. 植被反馈
+### 8. 植被反馈（已退休）
 
-实现位置：post-base 的 donor table 与 `vegetation_feedback_touched` 循环。
-
-算法：
-
-1. 按 terrain 枚举建立 donor 表。
-2. 正反馈来自 `FOREST / SWAMP / GRASSLAND / JUNGLE / TAIGA / SAVANNA / OASIS / DELTA`。
-3. 负反馈来自 `DESERT / SALT_FLAT`。
-4. 每个 donor 按海拔衰减：`donor_eff = donor * clamp(1 - elevation * veg_feedback_elev_decay, 0.1, 1.0)`。
-5. donor 贡献累加到所有非水邻居。
-6. 应用湿度 delta 后，对非水、非 `MOUNTAIN`、非 `SNOW`、非永久地貌格再跑 `pk_decide_terrain()`。
+旧 donor table 单向加湿与其二次重判已退休。该路径会形成“植被越多越湿、越湿越容易继续判成植被”的生成期正反馈；当前最终重判只消费风输送、雨影和湖河回灌形成的静态湿度，不读取植被反馈。
 
 ### 9. 过渡生态与特殊地貌
 
@@ -393,7 +386,7 @@ post-base 末尾还会重新派生三轴，因为后处理会继续改写 terrai
 | Plateau | `plateau_touched` | 高海拔、低到中等局部起伏、连通面积达到 `plateau_min_cells`；默认 `plateau_max_relief=0.12` | `landform=PLATEAU` |
 | Mountain Slim | `mountain_demoted` / `mountain_to_plateau` | `MOUNTAIN` 必须满足 `mountain_min_land_h` 和 `mountain_min_relief`；平缓高地转 `PLATEAU`，较低缓坡转 `HILL` | `landform=PLATEAU/HILL` |
 | Peak Summit | `peak_summit` | 先把单格海拔派生出的大片 `PEAK` 退回 `MOUNTAIN`，再按局部高点、邻域落差、最小间距和数量上限筛出少量峰顶 | `landform=PEAK` |
-| Rift Valley | `rift_valley` | 两侧抬升夹住的线状洼地候选，按地形分数排序并限量，避免普通山谷大面积误判 | `landform=RIFT_VALLEY` |
+| Rift Valley | `rift_valley` | 两侧断崖夹住的洼地候选仅沿谷轴连成构造带；按最小连续长度过滤孤立洼点，不设全图数量、面积或间距配额 | `landform=RIFT_VALLEY` |
 | Reef | `reef_touched` | `COAST`、暖、邻陆、无河流入海邻居 | `terrain=REEF` |
 | Kelp | `kelp_touched` | `COAST`、凉温、邻陆 | `terrain=KELP` |
 | Pelagic Bloom | `pelagic_touched` | 深海、无陆邻、upwelling 强 | `cover=PELAGIC_BLOOM` |
@@ -601,3 +594,10 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 8. 三轴语义已取代单轴 terrain 作为新代码推荐读取方式；terrain 仍是渲染和兼容层重要 enum。
 9. reef/kelp 生成可读取 upwelling，但生成期是否已有完整 upwelling 取决于调用时序。
 10. 新增水体 terrain 时必须同步 `pk_is_water_terrain()`、GDScript `_is_water()`、shader、SoA/DataCore 消费路径。
+## Initial Vegetation Ecology (2026-07-31)
+
+After priority-flood, lake selection, river graph construction, and riparian/floodplain moisture correction, post-base performs one final whole-map vegetation classification. It uses the same coastal-adjusted generation temperature as terrain (`T=clamp(gen_temp_with_coastal_adjustment,0,1)`), VegetationProfile's 2-D Gaussian climate fit, and the bounded `pk_vegetation_terrain_weight` soft prior (`0.35..1.25`). Ordinary terrain and landform are never hard mappings; only physical substrates (water, glacier, salt flat, coral, kelp, seagrass) may reject candidates. `NONE` is selected only when every candidate is below `vegetation_min_suitability`; there are no type, patch, or whole-map quotas.
+
+The same pass initializes the existing continuous ecology arrays from `delta=clamp(moisture-base_moisture,-0.5,0.5)`: `water_balance_30d`, `soil_moisture`, and runtime-consistent `plant_available_water`, plus vitality, regen score, growth pressure, and decomposed heat/drought/cold stress. Suitability remains scratch data and adds no persistent DataCore field. `MapGenerator` validates and assembles the native arrays, then `MapData.pending_generation_ecology` applies them after the generic `init_soa_from_bake()` zero bootstrap. Native success must not be followed by the legacy `_derive_vegetation()` overwrite.
+
+Runtime native vegetation paths and the GDScript fallback use the same climate score multiplied by terrain/landform soft weight. Diagnostics include `vegetation_native_ms`, candidate/`NONE` counts, suitability min/mean/max, non-zero plant-water land count, river-adjacent desert count, coastal-highland desert count, and soft-weight min/max.

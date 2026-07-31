@@ -43,6 +43,10 @@ func _init() -> void:
 		"canyon material is masked by continuous geometry")
 	_expect(not biome_detail_source.contains("vec3 shade = col * vec3(0.68, 0.64, 0.64)"),
 		"canyon no longer darkens the entire categorical cell")
+	var renderer_source := FileAccess.get_file_as_string(
+		"res://scripts/rendering/hex_renderer.gd")
+	_expect(renderer_source.contains("sm.set_shader_parameter(\"visual_reference_resolution\",\n\t\tvisual_resolution)"),
+		"tiled DitherUV follows the active visual resolution")
 	var variants := {
 		"desktop": "",
 		"mobile_low": "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n",

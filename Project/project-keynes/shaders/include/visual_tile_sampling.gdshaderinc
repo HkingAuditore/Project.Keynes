@@ -73,6 +73,18 @@ vec4 visual_sample_horizon(vec2 uv) { return texture(terrain_horizon_tex, visual
 #endif
 #endif
 
+// [terrain-gi 2026-07-31] 遮挡源 cell id：RG=主导遮挡源低/高字节，BA=次遮挡源低/高字节，
+// 0xFFFF=无有效遮挡源。**必须 NEAREST**，对 cell id 做任何插值都会得到垃圾 cell。
+#ifdef VT_USE_GI_OCCLUDER
+#ifdef MAP_VISUAL_TILED
+uniform sampler2DArray visual_gi_occluder_tiles : filter_nearest, repeat_disable;
+vec4 visual_sample_gi_occluder(vec2 uv) { return texture(visual_gi_occluder_tiles, visual_tile_address(uv)); }
+#else
+uniform sampler2D gi_occluder_tex : filter_nearest, repeat_disable;
+vec4 visual_sample_gi_occluder(vec2 uv) { return texture(gi_occluder_tex, visual_static_wrap_uv(uv)); }
+#endif
+#endif
+
 #ifdef VT_USE_MAP_INDEX
 #ifdef MAP_VISUAL_TILED
 uniform sampler2DArray visual_map_index_tiles : filter_nearest, repeat_disable;

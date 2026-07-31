@@ -121,6 +121,44 @@ static func climate_compat_score(v: VEG, temp: float, moist: float) -> float:
 	var k: float = 0.5 * (dt * dt + dm * dm)
 	return exp(-k)
 
+# Generation and runtime share the same bounded terrain/landform prior.  These
+# are soft ecological priors; climate fit remains the dominant signal and only
+# physical substrate rules may hard-reject a vegetation type.
+static func terrain_soft_weight(terrain: int, landform: int, v: VEG, moist: float) -> float:
+	var wet: bool = v in [VEG.SAVANNA, VEG.TAIGA, VEG.TEMPERATE_STEPPE, VEG.MEDITERRANEAN_SHRUB,
+		VEG.MANGROVE, VEG.SWAMP, VEG.MARSH, VEG.CLOUD_FOREST, VEG.MONSOON_FOREST,
+		VEG.PEAT_BOG]
+	var arid: bool = v in [VEG.TEMPERATE_STEPPE, VEG.MEDITERRANEAN_SHRUB,
+		VEG.DESERT_SCRUB, VEG.XERIC_DESERT]
+	var alpine: bool = v in [VEG.ALPINE_TUNDRA, VEG.ALPINE_MEADOW, VEG.TAIGA,
+		VEG.BOREAL_SHRUB, VEG.TEMPERATE_CONIFER, VEG.PEAT_BOG]
+	var w: float = 1.0
+	match terrain:
+		25: # BADLANDS
+			w *= 1.10 if arid else 0.84
+		28: # MOOR
+			w *= 1.20 if v == VEG.PEAT_BOG else (1.08 if wet else 0.62)
+		29: # FLOODPLAIN
+			w *= 1.16 if wet else (0.68 if arid else 1.02)
+		30: # MESA
+			w *= 1.08 if arid else 0.90
+		10: # SWAMP
+			w *= 1.15 if wet else 0.65
+		16: # MANGROVE terrain
+			w *= 1.20 if v == VEG.MANGROVE else (1.05 if wet else 0.58)
+		15: # SHRUBLAND terrain
+			w *= 1.14 if v == VEG.MEDITERRANEAN_SHRUB else 0.92
+		_:
+			pass
+	if landform == 7 or landform == 8: # MOUNTAIN / PEAK
+		w *= 1.16 if alpine else (0.58 if arid and moist > 0.45 else 0.90)
+	elif landform == 6: # HILL
+		w *= 1.06 if alpine else 1.0
+	return clampf(w, 0.35, 1.25)
+
+static func suitability_score(v: VEG, temp: float, moist: float, terrain: int, landform: int) -> float:
+	return climate_compat_score(v, temp, moist) * terrain_soft_weight(terrain, landform, v, moist)
+
 # Milestone 4：演替查询。direction = +1 升级（更丰富），-1 退化（更荒凉）
 # 没有下家（next == -1）或下家等于自身（自环）时返回原 v（链尾语义）。
 static func next_in_succession(v: VEG, direction: int) -> VEG:
@@ -155,6 +193,20 @@ static func best_degrade_target(v: VEG, temp: float, moist: float) -> VEG:
 		if rs > best_score:
 			best = richer
 			best_score = rs
+	return best
+
+static func best_suitability_target(v: VEG, temp: float, moist: float, terrain: int, landform: int) -> VEG:
+	var harsher: VEG = next_in_succession(v, -1)
+	var richer: VEG = next_in_succession(v, 1)
+	var best: VEG = v
+	var best_score: float = -1.0
+	if harsher != v:
+		best = harsher
+		best_score = suitability_score(harsher, temp, moist, terrain, landform)
+	if richer != v:
+		var rs: float = suitability_score(richer, temp, moist, terrain, landform)
+		if rs > best_score:
+			best = richer
 	return best
 
 # Milestone: vegetation-survival-rebalance（方案 C）

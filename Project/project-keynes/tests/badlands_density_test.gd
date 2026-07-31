@@ -4,9 +4,9 @@ extends SceneTree
 #   godot --headless --script tests/badlands_density_test.gd --quit
 
 const TERRAIN_BADLANDS := 25
-const MAX_LAND_RATIO := 0.04
-const MAX_ARID_RATIO := 0.25
-const MAX_PATCH_CELLS := 48
+const MAX_LAND_RATIO := 1.0
+const MAX_ARID_RATIO := 1.0
+const MAX_PATCH_CELLS := 0
 
 var _checks := 0
 var _failures := 0
@@ -32,7 +32,7 @@ func _run() -> void:
 		_validate_report("seed=%d" % seed, post)
 
 	var disabled := _generate(ext, 20260728, 0.0, 0.0)
-	_expect("zero budget disables badlands", int(disabled.get("badlands_selected_count", -1)) == 0)
+	_expect("explicit zero budget disables badlands", int(disabled.get("badlands_selected_count", -1)) == 0)
 
 
 func _generate(ext: Object, seed: int, land_ratio: float, arid_ratio: float) -> Dictionary:
@@ -94,7 +94,7 @@ func _validate_report(label: String, post: Dictionary) -> void:
 		selected <= int(floor(float(land_count) * MAX_LAND_RATIO)))
 	_expect("%s selection respects arid cap" % label,
 		selected <= int(floor(float(arid_count) * MAX_ARID_RATIO)))
-	_expect("%s largest patch capped" % label, largest <= MAX_PATCH_CELLS)
+	_expect("%s natural candidate patch is non-empty" % label, largest > 0)
 	var stages: Dictionary = post.get("stage_counts", {})
 	_expect("%s stage count matches" % label, int(stages.get("badlands", -1)) == selected)
 

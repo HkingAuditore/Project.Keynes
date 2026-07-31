@@ -10,10 +10,16 @@ const DEFAULT_GUTTER_PX := 2
 const DEFAULT_LAYER_CAP := 64
 const MIN_TEXELS_PER_HEX := 1.0
 const DENSITY_DEGRADE_FACTOR := 0.90
-const BYTES_PER_PHYSICAL_TEXEL := 18
+# height 2 + terrain_normal 2 + map_index 4 + flow 1 + water_depth 1 + terrain_detail 1
+# + edge_neighbor 2 + edge_distance 1 + horizon 4 + gi_occluder 4 = 22.
+# [terrain-gi 2026-07-31] gi_occluder 使这一项由 18 升到 22；漏改会让 resolver 低估
+# 显存占用，把本该降级的大地图放行到超预算。
+const BYTES_PER_PHYSICAL_TEXEL := 22
 # Local RenderingDevice keeps a duplicate RG8 input, a float max pyramid and
 # the packed output until readback. Round up so the resolver enforces peak RAM.
-const COMPUTE_TEMP_BYTES_PER_TEXEL := 12
+# [terrain-gi 2026-07-31] compute 现在还多持有一份 RGBA8 map_index 输入与一份 RGBA8
+# occluder 输出，故由 12 升到 16。
+const COMPUTE_TEMP_BYTES_PER_TEXEL := 16
 
 var mode: String = MODE_LEGACY
 var fallback_reason: String = ""

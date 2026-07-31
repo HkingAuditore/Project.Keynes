@@ -29,11 +29,11 @@ func _run() -> void:
 		return
 
 	var profile: ClimateProfile = _make_profile()
-	var cfg: MapConfig = MapConfig.make(10, 8)
+	var cfg: MapConfig = MapConfig.make(40, 24)
 	cfg.seed = 727272
 	cfg.num_continents = 1
-	cfg.sea_level = 0.58
-	cfg.continent_size = 0.72
+	cfg.sea_level = 0.42
+	cfg.continent_size = 0.90
 	cfg.climate_profile = profile
 
 	var generator := MapGenerator.new()
@@ -72,6 +72,7 @@ func _run() -> void:
 		var expected_slots: Array = hydro_authority.get("published_slots_expected", [])
 		if expected_slots.has("cell_river_discharge") \
 				and expected_slots.has("cell_water_balance_30d") \
+				and expected_slots.has("cell_moisture") \
 				and expected_slots.has("cell_surface_runoff"):
 			hydrology_publish_slots_seen = true
 		if retained_boundaries.has("visual_uploads") and not blockers.has("visual_uploads"):
@@ -83,6 +84,7 @@ func _run() -> void:
 	_expect("hydrology publish slots are declared", hydrology_publish_slots_seen)
 	_expect("visual boundary is split from authority blockers", retained_boundary_seen)
 
+	_validate_smoothed_riparian_moisture(map, world, generator, profile)
 	var exec_ctx := SusTickContext.make(9100, CHECK_DAYS + 1, float((CHECK_DAYS + 1) % 365) / 365.0, 1.0, &"native_hydrology_exec")
 	var moisture_before: PackedFloat32Array = map.moisture_arr.duplicate()
 	var temp_before: PackedFloat32Array = map.temp_arr.duplicate()
@@ -101,6 +103,14 @@ func _run() -> void:
 	_expect("native hydrology authority is verified", str(exec_hydro_authority.get("phase", "")) == "native_active_verified")
 	_expect("native hydrology published river discharge slot", exec_published.has("cell_river_discharge"))
 	_expect("native hydrology published water balance slot", exec_published.has("cell_water_balance_30d"))
+	_expect("native hydrology published environmental moisture slot", exec_published.has("cell_moisture"))
+	var response_alpha: float = float(exec_breakdown.get("hydrology_moisture_response_alpha", -1.0))
+	_expect("native hydrology reports a bounded moisture response alpha",
+			response_alpha >= 0.0 and response_alpha < 1.0)
+	_expect("river moisture response stays within the per-round alpha bound",
+			float(exec_breakdown.get("hydrology_river_moisture_max_delta", INF)) <= response_alpha + 0.000001)
+	_expect("riparian moisture response stays within the per-round alpha bound",
+			float(exec_breakdown.get("hydrology_riparian_moisture_max_delta", INF)) <= response_alpha + 0.000001)
 	_expect("stage_b_after_hydrology executed or was legitimately skipped", exec_breakdown.has("stage_b_ms") or not exec_published.has("cell_vegetation_vitality"))
 	if exec_breakdown.has("stage_b_ms"):
 		var stage_b_call_index: int = int(exec_breakdown.get("stage_b_call_index", -1))
@@ -166,6 +176,65 @@ func _arr_max_abs_diff(a: PackedFloat32Array, b: PackedFloat32Array) -> float:
 	for i in range(a.size()):
 		out = maxf(out, absf(a[i] - b[i]))
 	return out
+
+
+func _validate_smoothed_riparian_moisture(
+		map: MapData, world: WorldData, generator: MapGenerator, profile: ClimateProfile) -> void:
+	var neighbors: PackedInt32Array = map.neighbor_indices_packed()
+	var river_idx := -1
+	var riparian_idx := -1
+	for i in range(map.cell_count()):
+		if map.has_river_arr[i] == 0 or map.is_water_arr[i] != 0:
+			continue
+		for d in range(6):
+			var ni := neighbors[i * 6 + d]
+			if ni >= 0 and map.is_water_arr[ni] == 0 and map.has_river_arr[ni] == 0:
+				river_idx = i
+				riparian_idx = int(ni)
+				break
+		if river_idx >= 0:
+			break
+	_expect("generated map contains a river/riparian pair for response validation",
+			river_idx >= 0 and riparian_idx >= 0)
+	if river_idx < 0 or riparian_idx < 0:
+		return
+
+	const PROBE_START := 0.10
+	map.moisture_arr[river_idx] = PROBE_START
+	map.moisture_arr[riparian_idx] = PROBE_START
+	var hydro_res: Dictionary = generator.run_hydrology_discharge_pass_native(map, world)
+	_expect("focused hydrology response probe published slots",
+			bool(hydro_res.get("published_to_slot", false)))
+	if not bool(hydro_res.get("published_to_slot", false)):
+		return
+
+	var dt_days: float = float(hydro_res.get("dt_days", 1.0))
+	var alpha: float = 1.0 - pow(1.0 - float(profile.hydro_moisture_response_rate), dt_days)
+	var river_target: float = clampf(
+			float(profile.hydro_river_moisture_floor)
+			+ map.river_discharge_30d_arr[river_idx] * float(profile.hydro_river_evap_gain) * 0.5,
+			0.0, 1.0)
+	var riparian_target := -1.0
+	for d in range(6):
+		var ni: int = neighbors[riparian_idx * 6 + d]
+		if ni >= 0 and map.has_river_arr[ni] != 0 \
+				and map.river_discharge_30d_arr[ni] * float(profile.hydro_bank_moisture_gain) > 0.0:
+			riparian_target = maxf(riparian_target, clampf(
+					float(profile.hydro_riparian_moisture_floor)
+					+ map.river_discharge_30d_arr[ni] * float(profile.hydro_river_evap_gain) * 0.25,
+					0.0, 1.0))
+	var expected_river: float = PROBE_START + (river_target - PROBE_START) * alpha
+	_expect("river moisture approaches its target without snapping",
+			absf(map.moisture_arr[river_idx] - expected_river) < 0.00001
+			and map.moisture_arr[river_idx] < river_target)
+	if riparian_target >= 0.0:
+		var expected_riparian: float = PROBE_START + (riparian_target - PROBE_START) * alpha
+		_expect("riparian moisture approaches its strongest adjacent target once",
+				absf(map.moisture_arr[riparian_idx] - expected_riparian) < 0.00001
+				and map.moisture_arr[riparian_idx] < riparian_target)
+	else:
+		_expect("zero-flow riparian cells do not receive a synthetic floor",
+				absf(map.moisture_arr[riparian_idx] - PROBE_START) < 0.00001)
 
 
 func _expect(label: String, ok: bool) -> void:

@@ -56,8 +56,76 @@ struct LightingContext {
 	vec3 sun_dir_px;         // = ed.sun_dir（逐像素太阳方向，单位向量）
 	float local_day;         // = ed.local_day（白昼系数，驱动方位散射淡入）
 	float direct_shadow;     // terrain horizon direct-light visibility, ambient/emission 不受影响
+	// [terrain-gi 2026-07-31] 与 direct_shadow 同一次 horizon 采样派生的全局光照量：
+	//   sky_visibility ：cosine-weighted 天空可见度，只作用于 ambient，不碰 direct
+	//   bent_normal    ：平均可见方向（纯几何量，未与表面法线混合）
+	//   bounce         ：单次弹射辐照度，已含 (1-V_sky) 与 gi_bounce_strength
+	float sky_visibility;
+	vec3 bent_normal;
+	vec3 bounce;
 	// TODO[future-IBL]: vec3 ibl_diffuse; vec3 ibl_specular;
 };
+
+// [terrain-gi 档 2] 单次弹射色彩溢出。
+// 遮挡几何与地表颜色在此处解耦：烘焙层只记录"最强的两个遮挡方向上落点属于哪个 cell"，
+// 颜色由 bounce_lut 在运行期提供，因此季节、雪盖、植被枯荣、迷雾等每日 LUT 刷新
+// 会自动反映到弹射色上，不触发任何重烘。
+//
+// 方向 id 不入库：这里从中心 tap 的原始 nibble 重新求 top-2 argmax，与烘焙期共用同一规则。
+// 必须使用 nearest_packed 而非 bilinear 结果——4 个 tap 的 argmax 方向可能互不相同，
+// 用插值后的角度求 argmax 会与烘焙期记录的 cell 对不上。
+vec3 gi_evaluate_bounce(vec2 uv, vec4 nearest_packed, float sky_visibility) {
+#ifdef VT_USE_GI_OCCLUDER
+	if (!gi_bounce_bound || gi_bounce_strength <= 0.0 || !gi_lut_bound) {
+		return vec3(0.0);
+	}
+	int nibbles[8];
+	horizon_unpack_all(nearest_packed, nibbles);
+	int best = -1;
+	int second = -1;
+	for (int d = 0; d < 8; d++) {
+		int n = nibbles[d];
+		if (n > best) {
+			second = best;
+			best = n;
+		} else if (n > second) {
+			second = n;
+		}
+	}
+	if (best <= 0) {
+		return vec3(0.0);
+	}
+	// 遮挡强度即该方向被挡掉的可见度份额 1 - cos²(h)。
+	float occ0 = 1.0 - gi_horizon_lut[best].x;
+	float occ1 = (second > 0) ? (1.0 - gi_horizon_lut[second].x) : 0.0;
+	float occ_sum = occ0 + occ1;
+	if (occ_sum <= 1e-4) {
+		return vec3(0.0);
+	}
+	float w0 = occ0 / occ_sum;
+	float w1 = occ1 / occ_sum;
+
+	vec4 occ_texel = visual_sample_gi_occluder(uv);
+	int cid0 = int(occ_texel.r * 255.0 + 0.5) + int(occ_texel.g * 255.0 + 0.5) * 256;
+	int cid1 = int(occ_texel.b * 255.0 + 0.5) + int(occ_texel.a * 255.0 + 0.5) * 256;
+	if (cid0 >= 65535) {
+		return vec3(0.0);
+	}
+	// 次源无效或与主源同 cell 时退化为单源：两边同色则加权和恒等于该 cell 的颜色。
+	if (cid1 >= 65535) {
+		cid1 = cid0;
+	}
+	vec4 e0 = texture(bounce_lut, cell_lut_uv(cid0));
+	vec4 e1 = texture(bounce_lut, cell_lut_uv(cid1));
+	vec3 bounce_albedo = e0.rgb * e0.a * w0 + e1.rgb * e1.a * w1;
+	if (USE_LINEAR_LIGHTING) {
+		bounce_albedo = srgb_to_linear(bounce_albedo);
+	}
+	return bounce_albedo * (1.0 - sky_visibility) * gi_bounce_strength;
+#else
+	return vec3(0.0);
+#endif
+}
 
 // ─── 构造：从 uniforms 与一个 ambient_floor 推导 LightingContext ────────
 // [cylindrical-earth-daylight] 逐像素经纬度日照（晨昏线）驱动昼夜：昼夜系数 / 昼晨昏色
@@ -107,8 +175,35 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 	lc.sun_palette = mix(ed.moon_col, ed.sun_col, ed.local_day);
 	lc.sun_dir_px = lc.L;
 	lc.local_day = max(ed.local_day, ed.moon_strength * 0.45);
-	lc.direct_shadow = terrain_horizon_direct_visibility(uv, lc.L);
+	// [terrain-gi 2026-07-31] 一次 horizon 采样同时拿直射遮蔽、天空可见度与 bent normal。
+	// 旧的 terrain_horizon_direct_visibility 会自己再采 4 次；这里必须走统一入口，
+	// 否则同一 uv 会付两遍 horizon 采样成本。
+	TerrainHorizonSample hs = terrain_horizon_evaluate(uv, lc.L);
+	lc.direct_shadow = hs.direct_visibility;
+	lc.sky_visibility = hs.sky_visibility;
+	lc.bent_normal = hs.bent_normal;
+	lc.bounce = hs.has_data
+		? gi_evaluate_bounce(uv, hs.nearest_packed, hs.sky_visibility)
+		: vec3(0.0);
 	return lc;
+}
+
+// [terrain-gi] 地形级环境遮蔽：sky visibility 经倾斜法线修正后的最终 ambient 乘子。
+// 与 SurfaceParams.ao 相乘而非互相替代——后者是材质自身的局部遮蔽（冰川/河流冻结
+// 等按 cover 微调），两者语义不同。
+float gi_ambient_occlusion(LightingContext lc, vec3 N) {
+	return terrain_horizon_apply_normal(lc.sky_visibility, N, lc.bent_normal);
+}
+
+// [terrain-gi] 查天光用的法线：向平均可见方向**偏转**（不是替换）。gi_bent_strength=0
+// 时精确退回几何法线；=1 时几何法线被完全丢弃，环境光只跟随量化过的 bent 方向，
+// 会在扇区边界上出现块状跳变——所以默认值远低于 1，见 uniforms 里的说明。
+vec3 gi_ambient_normal(LightingContext lc, vec3 N) {
+	if (gi_bent_strength <= 0.0) {
+		return N;
+	}
+	vec3 mixed = mix(N, lc.bent_normal, gi_bent_strength);
+	return (dot(mixed, mixed) > 1e-6) ? normalize(mixed) : N;
 }
 
 // [sky-sh-ambient] 在 BRDF 域内求方向化天光：色板域 earth_sky_sh → 按需转线性。
@@ -212,9 +307,17 @@ vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 	float hill_lift = lc.hillshade + HILLSHADE_BASE_LIFT;
 	vec3 direct = (diffuse + spec) * NdotL * lc.sun_color_linear * hill_lift * lc.direct_shadow;
 
-	// ── Ambient：方向化天光（L1 球谐）· ao（带 ambient_floor 防止死黑） ──
-	// 用本像素法线求天光（坡面/天顶/太阳方位各异）→ 弱直射时仍有体积感；DC≈原平铺值。
-	vec3 ambient = max(sky_sh_ambient_brdf(lc, N), vec3(lc.ambient_floor)) * albedo * s.ao;
+	// ── Ambient：方向化天光（L1 球谐）· 地形 AO · 材质 ao（ambient_floor 防死黑）──
+	// [terrain-gi 2026-07-31] 天光改按 bent normal 求值、按 sky visibility 遮蔽：山谷不再
+	// 只是"整体变暗"，还会朝天空开口的方向偏色——earth_sky_sh 的 EARTH_SKY_SUNWRAP 项会让
+	// 清晨朝东开口的谷偏暖、被南侧山脊挡住的北坡偏冷。这是本轮 GI 最主要的可读特征。
+	vec3 amb_N = gi_ambient_normal(lc, N);
+	float geo_ao = gi_ambient_occlusion(lc, N);
+	vec3 ambient = max(sky_sh_ambient_brdf(lc, amb_N), vec3(lc.ambient_floor))
+		* albedo * s.ao * geo_ao;
+
+	// ── 单次弹射：被遮挡方向带来的邻域反照率溢出，同样只作用于间接光 ──────
+	ambient += lc.bounce * albedo * lc.sun_color_linear;
 
 	// ── Night atten + exposure ────────────────────────────────────────
 	vec3 lit = direct + ambient;
@@ -245,8 +348,11 @@ vec3 evaluate_brdf_blinn_phong_legacy(
 
 	vec3 col = s.base_color;
 	// [sky-sh-ambient] legacy 路径同样改用方向化天光（替换平铺 ambient_color_linear）。
-	vec3 amb_dir = sky_sh_ambient_brdf(lc, N);
-	vec3 diffuse = col * (amb_dir * s.ao * ambient_factor
+	// [terrain-gi] 与主路径同源：bent normal 定向 + sky visibility 遮蔽 + 弹射溢出。
+	vec3 amb_dir = sky_sh_ambient_brdf(lc, gi_ambient_normal(lc, N));
+	float geo_ao = gi_ambient_occlusion(lc, N);
+	vec3 diffuse = col * (amb_dir * s.ao * geo_ao * ambient_factor
+						+ lc.bounce * lc.sun_color_linear
 						+ lc.sun_color_linear * NdotL * (lc.hillshade + diffuse_factor) * lc.direct_shadow);
 	vec3 specular = lc.sun_color_linear * pow(NdotH, shininess) * spec_amp * lc.direct_shadow;
 	vec3 lit = diffuse + specular + s.emission;

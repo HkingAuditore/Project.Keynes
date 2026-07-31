@@ -250,6 +250,16 @@ var _last_ecology_visual_sigs: Dictionary = {}  # HexCell -> int (packed u32)
 var _last_ecology_veg_bytes: Dictionary = {}  # HexCell -> int  (legacy, deprecated by SoA)
 var _last_ecology_vitality_bytes: Dictionary = {}  # HexCell -> int  (legacy, deprecated by SoA)
 var _ecology_transition_age_bytes: Dictionary = {}  # HexCell -> int  (legacy, deprecated by SoA)
+
+# GM-only river Atlas probe. It samples a bounded set of river/non-river cells
+# at the LUT encode boundary so source values can be compared with published bytes.
+const RIVER_ATLAS_PROBE_CELL_LIMIT := 16
+const RIVER_ATLAS_PROBE_SAMPLE_LIMIT := 64
+const RIVER_ATLAS_PROBE_SCAN_LIMIT := 8192
+var _river_atlas_probe_enabled := false
+var _river_atlas_probe_cells: PackedInt32Array = PackedInt32Array()
+var _river_atlas_probe_rows: Array[Dictionary] = []
+var _river_atlas_probe_context: Dictionary = {}
 # P1-E（dynamic_visual_atlas 长帧根治阶段二）：
 # 把 ecology pass 内部用于"上一 stride 状态保留"的 3 个 Dict[HexCell→int]
 # 改为 PackedByteArray，按 cell.index 直查。这样 cpp pass 的 prev_* 打包循环
@@ -373,10 +383,14 @@ const EROSION_RADIUS := 2
 
 # ─── 河流栅格化 ──────────────────────────────────────────────────────────
 const RIVER_CR_STEP := 12
-const RIVER_STROKE_HEX_FACTOR := 0.035
+# [river-hierarchy 2026-07-31] 0.035→0.048：拉大绝对笔宽，让干流有足够像素数承载宽度差。
+# 支流仍靠下方幂律压细；仅加大基数不会让细河变粗，因为 w≈0.1 时乘数仍接近下限。
+const RIVER_STROKE_HEX_FACTOR := 0.048
 # SDF 截断距离改小：原 64 让河流过宽（视觉上 1.5 hex 宽），
 # 5 pixels 让河保持细线但仍有 anti-alias 渐隐边
-const SDF_MAX_DIST_PX := 5.0
+# [river-hierarchy 2026-07-31] 5→3.5：固定 SDF 晕圈越宽，细河与粗河越容易被同一条
+# 阈值带（river_threshold_low..high）读成相近视觉宽度。收窄晕圈后 stamp 半径主导可见河宽。
+const SDF_MAX_DIST_PX := 3.5
 # [river-carve-bake 2026-06-25] #2a 河道下切(height 单位，× notch)。与 world_ext.cpp
 #   run_bake_geometry_fields_pass 内 PK_BAKE_RIVER_INCISE 同值。仅 legacy(fused 失败)路径用此镜像。
 const BAKE_RIVER_INCISE := 0.045
@@ -1114,8 +1128,12 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"baseline_flow_buffer": world.flow_buffer,
 		"baseline_water_depth_buffer": world.water_depth_buffer,
 		"algorithm_halo_px": 8,
+		# [normal-soften 2026-07-31] 默认 0.035→0.01：高频 residual 写进 height 后被运行期
+		# 1-texel 细节法线 × slope_gain=8 放大成全图砂砾。滤半径同步放宽，残差更平滑。
 		"residual_amp": float(ProjectSettings.get_setting(
-			"project_keynes/rendering/map_tiles/residual_amp", 0.035)),
+			"project_keynes/rendering/map_tiles/residual_amp", 0.01)),
+		"residual_filter_hex": float(ProjectSettings.get_setting(
+			"project_keynes/rendering/map_tiles/residual_filter_hex", 0.06)),
 		"river_stroke_hex_factor": RIVER_STROKE_HEX_FACTOR,
 		"sdf_max_dist_px": SDF_MAX_DIST_PX,
 		"shore_carve_amp": SHORE_CARVE_AMP,
@@ -4894,10 +4912,10 @@ func _stamp_polyline_variable(
 	for i in range(points.size() - 1):
 		var w0: float = float(widths[i]) if i < widths.size() else 0.5
 		var w1: float = float(widths[i + 1]) if i + 1 < widths.size() else w0
-		# [river-hierarchy 2026-06-19] 加大干支流宽度对比：0.70+w*2.10 → 0.60+w*2.7 → 0.40+pow(w,1.4)*3.7。
-		# 改线性为幂律：低流量支流更细(~0.6px)、高流量干流更粗(~4px)，干支流层级与径流量视觉差一眼可辨
-		# (discharge max/p50 仅~2.1，线性映射宽度差不明显，幂律放大中高流量段差异)。
-		var seg_radius_px: float = base_radius_px * (0.40 + pow(maxf(w0, w1), 1.4) * 3.7)
+		# [river-hierarchy 2026-07-31] 0.40+pow(w,1.4)*3.7 → 0.18+pow(w,1.85)*5.2。
+		# 旧曲线在 w∈[0.15,0.6]（大量支流/中流）几乎贴在一起；抬高指数、压低地板后：
+		#   w=0.15 → ~0.25×base，w=0.5 → ~1.50×base，w=1.0 → ~5.4×base。
+		var seg_radius_px: float = base_radius_px * (0.18 + pow(maxf(w0, w1), 1.85) * 5.2)
 		var pad := int(ceil(seg_radius_px)) + 1
 		var p0: Vector2 = (points[i] - origin) * inv_world
 		var p1: Vector2 = (points[i + 1] - origin) * inv_world
@@ -4917,7 +4935,7 @@ func _stamp_polyline_variable(
 				var t: float = 0.0
 				if seg_len_sq > 0.0001:
 					t = clampf((p - p0).dot(seg) / seg_len_sq, 0.0, 1.0)
-				var radius := base_radius_px * (0.40 + pow(lerpf(w0, w1, t), 1.4) * 3.7)
+				var radius := base_radius_px * (0.18 + pow(lerpf(w0, w1, t), 1.85) * 5.2)
 				var closest := p0 + seg * t
 				if p.distance_to(closest) <= radius:
 					mask[y * W + x] = 0.0
@@ -5132,6 +5150,208 @@ func _ensure_cell_lut_dims(map: MapData, world: WorldData) -> void:
 # eco=_ecology_visual_signature/pk_atlas_sig_ecology），保证间接寻址与旧 atlas
 # bit-equivalent。cache_valid=true 时 C++ 端按 prev 推进 eco transition_age；
 # 初次 bake 传 false（transition 归零）。daily 刷新走 refresh_cell_luts_daily。
+# ── [terrain-gi 2026-07-31] per-cell 弹射代表色 ────────────────────────────
+# 按 TerrainType.TERRAIN 枚举下标排列的地表代表反照率。新增地形必须在尾部追加，
+# 否则该地形会落到 _BOUNCE_FALLBACK。
+#
+# 这是**近似量**，刻意不与 land_pipeline 的 fragment albedo 做 bit-equal 镜像：
+# 弹射项在 shader 侧乘了 (1 - V_sky) 与 ≤0.3 的 gi_bounce_strength，能量占比极低，
+# 色相偏差不可见；而维护一份精确镜像意味着 biome_color / 物候 / 环境调色的每次改动
+# 都要同步改这里，代价远大于收益。参见 docs/cpp-dots-runtime/terrain-gi-bake.md。
+const _BOUNCE_ALBEDO: Array = [
+	Color(0.10, 0.16, 0.26),  # OCEAN
+	Color(0.16, 0.28, 0.36),  # COAST
+	Color(0.48, 0.50, 0.34),  # PLAIN
+	Color(0.42, 0.52, 0.28),  # GRASSLAND
+	Color(0.22, 0.34, 0.20),  # FOREST
+	Color(0.45, 0.42, 0.30),  # HILL
+	Color(0.46, 0.44, 0.42),  # MOUNTAIN
+	Color(0.76, 0.66, 0.44),  # DESERT
+	Color(0.48, 0.48, 0.44),  # TUNDRA
+	Color(0.84, 0.87, 0.92),  # SNOW
+	Color(0.30, 0.36, 0.26),  # SWAMP
+	Color(0.18, 0.32, 0.16),  # JUNGLE
+	Color(0.56, 0.52, 0.28),  # SAVANNA
+	Color(0.24, 0.32, 0.24),  # TAIGA
+	Color(0.52, 0.50, 0.32),  # STEPPE
+	Color(0.44, 0.44, 0.30),  # SHRUBLAND
+	Color(0.22, 0.34, 0.24),  # MANGROVE
+	Color(0.82, 0.88, 0.94),  # GLACIER
+	Color(0.14, 0.24, 0.34),  # LAKE
+	Color(0.24, 0.44, 0.44),  # REEF
+	Color(0.80, 0.86, 0.92),  # SEA_ICE
+	Color(0.18, 0.32, 0.30),  # KELP
+	Color(0.38, 0.44, 0.30),  # DELTA
+	Color(0.40, 0.50, 0.30),  # OASIS
+	Color(0.84, 0.82, 0.76),  # SALT_FLAT
+	Color(0.60, 0.42, 0.32),  # BADLANDS
+	Color(0.62, 0.60, 0.52),  # COLD_DESERT
+	Color(0.46, 0.44, 0.28),  # CHAPARRAL
+	Color(0.34, 0.34, 0.26),  # MOOR
+	Color(0.42, 0.48, 0.30),  # FLOODPLAIN
+	Color(0.58, 0.44, 0.34),  # MESA
+]
+const _BOUNCE_FALLBACK := Color(0.45, 0.45, 0.42)
+const _BOUNCE_SNOW := Color(0.86, 0.89, 0.95)
+const _BOUNCE_DRY := Color(0.58, 0.50, 0.32)
+# 水面漫弹射可忽略（反照率 ~0.06 且以镜面反射为主），A=0 直接排除。海冰/冰川是陆相
+# 高反照率面，保留参与——雪山邻谷的色彩溢出正是最容易看出效果的场景之一。
+const _BOUNCE_WATER_TERRAINS: Array = [0, 1, 18, 19, 21]
+
+
+# 从已编码的 enum/dyn LUT 字节直接派生弹射色，因此 C++ 与 GDScript 两条 LUT 路径
+# 自动共用同一份公式，也不需要为此 rebuild GDExtension。O(n_cells) 纯字节循环，
+# 6400 cell 下相对 enum/dyn/eco 的编码开销可忽略。
+func _publish_bounce_lut(enum_data: PackedByteArray, dyn_data: PackedByteArray,
+		world: WorldData, lw: int, lh: int) -> bool:
+	var slots: int = lw * lh
+	if enum_data.size() < slots * 4 or dyn_data.size() < slots * 4:
+		return false
+	var out := PackedByteArray()
+	out.resize(slots * 4)
+	var terrain_count: int = _BOUNCE_ALBEDO.size()
+	for i in range(slots):
+		var base: int = i * 4
+		var terrain: int = enum_data[base]
+		var col: Color = _BOUNCE_ALBEDO[terrain] if terrain < terrain_count else _BOUNCE_FALLBACK
+		var is_water: bool = terrain in _BOUNCE_WATER_TERRAINS
+		if not is_water:
+			# dyn_lut：B=snow_cover，A=陆地 vegetation_vitality。枯萎向干黄褪色，
+			# 积雪向雪白覆盖——两者都是每日刷新的，弹射色因此自动跟随季节与天气。
+			var vitality: float = float(dyn_data[base + 3]) / 255.0
+			col = col.lerp(_BOUNCE_DRY, (1.0 - vitality) * 0.25)
+			var snow: float = float(dyn_data[base + 2]) / 255.0
+			col = col.lerp(_BOUNCE_SNOW, snow)
+		out[base] = int(clampf(col.r, 0.0, 1.0) * 255.0)
+		out[base + 1] = int(clampf(col.g, 0.0, 1.0) * 255.0)
+		out[base + 2] = int(clampf(col.b, 0.0, 1.0) * 255.0)
+		out[base + 3] = 0 if is_water else 255
+	world.bounce_lut_tex = _lut_tex_from_data(
+		out, lw, lh, Image.FORMAT_RGBA8, world.bounce_lut_tex)
+	return true
+
+
+func set_river_atlas_probe_enabled(enabled: bool, map: MapData = null) -> Dictionary:
+	_river_atlas_probe_enabled = enabled
+	if enabled:
+		_river_atlas_probe_rows.clear()
+		# Cell selection is deferred to the next LUT bake so the GM click remains cheap.
+		_river_atlas_probe_cells.clear()
+	else:
+		_river_atlas_probe_context.clear()
+	return get_river_atlas_probe_state()
+
+
+func get_river_atlas_probe_state() -> Dictionary:
+	return {
+		"enabled": _river_atlas_probe_enabled,
+		"sample_count": _river_atlas_probe_rows.size(),
+		"cell_count": _river_atlas_probe_cells.size(),
+	}
+
+
+func set_river_atlas_probe_context(context: Dictionary) -> void:
+	if _river_atlas_probe_enabled:
+		_river_atlas_probe_context = context.duplicate(false)
+
+
+func dump_river_atlas_probe() -> Dictionary:
+	if _river_atlas_probe_rows.is_empty():
+		return {"ok": false, "code": "probe_empty", "message": "Atlas 河谷采样暂无记录。"}
+	var dir_path := "user://diagnostics"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir_path))
+	var stamp := Time.get_datetime_string_from_system().replace(":", "").replace("-", "")
+	var path := "%s/atlas_river_probe_%s.csv" % [dir_path, stamp]
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return {"ok": false, "code": "probe_open_failed", "message": "无法写入 Atlas 河谷采样文件。"}
+	var columns := PackedStringArray([
+		"sample_seq", "tick_idx", "sim_day", "cell_index", "q", "r", "has_river",
+		"river_flow", "river_discharge", "map_moisture", "cell_moisture",
+		"map_vitality", "cell_vitality", "map_drought_stress", "map_heat_stress",
+		"dyn_temp_byte", "dyn_moisture_byte", "dyn_snow_byte", "dyn_vitality_byte",
+		"eco_foliage_byte", "eco_stress_byte", "eco_transition_byte", "eco_growth_byte",
+		"lut_path", "lut_encode_path", "lut_catchup", "lut_dirty_cells",
+	])
+	file.store_line(",".join(columns))
+	for row in _river_atlas_probe_rows:
+		var values := PackedStringArray()
+		for column in columns:
+			values.append(_csv_escape(str(row.get(column, ""))))
+		file.store_line(",".join(values))
+	file.close()
+	return {"ok": true, "path": path, "rows": _river_atlas_probe_rows.size()}
+
+
+func _csv_escape(value: String) -> String:
+	return '"%s"' % value.replace('"', '""')
+
+
+func _ensure_river_atlas_probe_cells(map: MapData) -> void:
+	if not _river_atlas_probe_cells.is_empty() or map == null:
+		return
+	var river_cells := PackedInt32Array()
+	var control_cells := PackedInt32Array()
+	var scan_count := mini(map.cell_count(), RIVER_ATLAS_PROBE_SCAN_LIMIT)
+	for idx in range(scan_count):
+		var cell = map.cell_at(idx)
+		if cell == null:
+			continue
+		if bool(cell.has_river) and river_cells.size() < RIVER_ATLAS_PROBE_CELL_LIMIT:
+			river_cells.append(idx)
+		elif not bool(cell.has_river) and control_cells.size() < RIVER_ATLAS_PROBE_CELL_LIMIT:
+			control_cells.append(idx)
+	_river_atlas_probe_cells.append_array(river_cells)
+	_river_atlas_probe_cells.append_array(control_cells)
+
+
+func _record_river_atlas_probe(map: MapData, out: Dictionary, dyn_data: PackedByteArray,
+		eco_data: PackedByteArray) -> void:
+	if not _river_atlas_probe_enabled or map == null:
+		return
+	_ensure_river_atlas_probe_cells(map)
+	var lut_path := str(out.get("path", ""))
+	var encode_path := str(out.get("lut_encode_path", ""))
+	var dirty_cells := int(out.get("dirty_cells", out.get("dynamic_dirty_cells",
+		_river_atlas_probe_context.get("dirty_count", -1))))
+	for idx in _river_atlas_probe_cells:
+		if _river_atlas_probe_rows.size() >= RIVER_ATLAS_PROBE_SAMPLE_LIMIT:
+			break
+		var cell = map.cell_at(idx)
+		if cell == null or idx < 0:
+			continue
+		var d4 := idx * 4
+		if d4 + 3 >= dyn_data.size() or d4 + 3 >= eco_data.size():
+			continue
+		var row := {
+			"sample_seq": _river_atlas_probe_rows.size(),
+			"tick_idx": _river_atlas_probe_context.get("tick_idx", -1),
+			"sim_day": _river_atlas_probe_context.get("sim_day", -1),
+			"cell_index": idx, "q": int(cell.q), "r": int(cell.r),
+			"has_river": 1 if bool(cell.has_river) else 0,
+			"river_flow": float(cell.river_flow),
+			"river_discharge": _probe_float(map.river_discharge_arr, idx),
+			"map_moisture": _probe_float(map.moisture_arr, idx),
+			"cell_moisture": float(cell.moisture),
+			"map_vitality": _probe_float(map.vegetation_vitality_arr, idx),
+			"cell_vitality": float(cell.vegetation_vitality),
+			"map_drought_stress": _probe_float(map.vegetation_drought_stress_arr, idx),
+			"map_heat_stress": _probe_float(map.vegetation_heat_stress_arr, idx),
+			"dyn_temp_byte": int(dyn_data[d4]), "dyn_moisture_byte": int(dyn_data[d4 + 1]),
+			"dyn_snow_byte": int(dyn_data[d4 + 2]), "dyn_vitality_byte": int(dyn_data[d4 + 3]),
+			"eco_foliage_byte": int(eco_data[d4]), "eco_stress_byte": int(eco_data[d4 + 1]),
+			"eco_transition_byte": int(eco_data[d4 + 2]), "eco_growth_byte": int(eco_data[d4 + 3]),
+			"lut_path": lut_path, "lut_encode_path": encode_path,
+			"lut_catchup": _river_atlas_probe_context.get("catchup", false),
+			"lut_dirty_cells": dirty_cells,
+		}
+		_river_atlas_probe_rows.append(row)
+
+
+func _probe_float(values: PackedFloat32Array, idx: int) -> float:
+	return float(values[idx]) if idx >= 0 and idx < values.size() else NAN
+
+
 func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, publish_weather_lut: bool = true) -> Dictionary:
 	var report: Dictionary = {
 		"path": "gdscript",
@@ -5197,9 +5417,12 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 			var d = out.get("dyn_lut", null)
 			var c = out.get("eco_lut", null)
 			if e is PackedByteArray and d is PackedByteArray and c is PackedByteArray:
+				out["lut_encode_path"] = "gdext"
+				_record_river_atlas_probe(map, out, d, c)
 				world.enum_lut_tex = _lut_tex_from_data(e, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
 				world.dyn_lut_tex = _lut_tex_from_data(d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 				world.eco_lut_tex = _lut_tex_from_data(c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
+				report["bounce_lut_published"] = _publish_bounce_lut(e, d, world, lw, lh)
 				# weather LUT 发布已从动态视觉 LUT 日刷中解耦；初次 bake 或 weather_refresh commit 才更新时间戳。
 
 				var wlut = out.get("weather_lut", null)
@@ -5262,6 +5485,7 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
 	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
 	world.dyn_lut_tex = _lut_tex_from_data(dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 	world.eco_lut_tex = _lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
+	_publish_bounce_lut(enum_data, dyn_data, world, lw, lh)
 	if publish_weather_lut:
 		_publish_weather_lut_bytes(weather_data, world, lw, lh)
 

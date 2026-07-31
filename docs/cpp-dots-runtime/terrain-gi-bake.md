@@ -17,6 +17,19 @@
 - 弹射颜色不烘焙。烘焙层只记录"遮挡源是哪个 cell"，颜色由运行期 `bounce_lut` 提供。
 - 档 0/1 不新增任何纹理、buffer 或烘焙时间，是纯 shader 改动。
 
+## 实施现状（2026-07-31）
+
+阶段 A/B/C/D 已全部落地，与本文原计划的差异只有两处，均在对应小节内就地说明：
+
+- `bounce_lut` 最终**不走 C++ `encode_cell_luts`**，而是在 `map_baker` 侧从已编码的
+  enum/dyn 字节派生。这样 C++ 与 GDScript 两条 LUT 路径共用同一公式，新增地形只改一张
+  GDScript 常量表、不必 rebuild DLL。
+- 植被层只做天空可见度与 bent normal（1 tap 而非 4 tap），不做弹射：植株是每帧数万次
+  片元调用，而弹射在 billboard 上的可辨识度远低于地形。
+
+尚未完成的是**参数配平与真机验收**：`gi_bounce_strength` 等默认值是理论起点而非调校结果，
+双重压暗的最终手感、移动端截图、内存与 GPU p95 回归都需要跑一次完整地图生成后人工确认。
+
 ## 现状基线
 
 | 能力 | 现状 | 位置 |
@@ -184,13 +197,23 @@ ambient += bounce
 
 **代表色是近似量，不追求与 fragment albedo 精确一致。** 弹射项乘了 `(1-V_sky)` 和
 一个上限 0.3 的 strength，能量占比极低，公式偏差不可见。刻意不做 CPU/GPU 公式镜像，
-避免再引入一处必须永久同步维护的双份实现。CPU 侧近似：
+避免再引入一处必须永久同步维护的双份实现。
+
+**实现落点与原计划不同：不进 C++ `encode_cell_luts`。**
+`map_baker._publish_bounce_lut` 从**已编码好的 enum/dyn 字节**派生，因此 C++ 与 GDScript
+两条 LUT 路径自动共用同一公式，也不必为新增地形 rebuild DLL：
 
 ```text
-base = biome_base_color[terrain]
-base = mix(base, phenology_tint(temp, moist, vitality), phenology_weight)
-base = mix(base, SNOW_ALBEDO, snow_cover)
+base = _BOUNCE_ALBEDO[enum.R]                       # 按 TERRAIN 下标的 31 项常量表
+base = mix(base, _BOUNCE_DRY, (1 - dyn.A) * 0.25)   # dyn.A = 陆地 vegetation_vitality
+base = mix(base, _BOUNCE_SNOW, dyn.B)               # dyn.B = snow_cover
+A    = 0 if terrain in _BOUNCE_WATER_TERRAINS else 255
 ```
+
+水面漫弹射可忽略（反照率约 0.06 且以镜面反射为主），直接 `A=0` 排除；海冰与冰川是
+陆相高反照率面，保留参与——雪山邻谷的色彩溢出正是最容易看出效果的场景之一。
+新增地形必须在 `_BOUNCE_ALBEDO` **尾部追加**，`terrain_gi_test.gd` 断言表长与
+`TERRAIN` 枚举一致。
 
 ### Compute pipeline 增量
 
@@ -209,8 +232,9 @@ physical texel 估算，增量约 8 MB 传输，horizon bake 总时长预计 +40
 `encode_bake_horizon_tex_data` 增加可选 knob `emit_occluder_cells`（默认 false，
 保持现有调用点逐字节不变）。开启时额外返回 `occluder_data`（RGBA8，与 horizon 同尺寸），
 需要 `map_index` 的 R/G/B 输入或等价的 per-pixel cell id buffer。
-`run_resample_visual_horizon_layer_pass` 增加对应的 occluder 重采样输出，
-供 GPU compute 失败时的 fallback 使用；重采样必须用 NEAREST，禁止对 cell id 做插值。
+遮挡源图与 horizon 完全同构（RGBA8、同尺寸、必须 NEAREST），所以 fallback 路径直接
+**复用同一个 `run_resample_visual_horizon_layer_pass`**、只换 `source_data`，
+不需要给它新增输出通道。任一层重采样失败就整体放弃弹射，但 horizon 照常发布。
 
 ## 实施分期与文件清单
 
@@ -223,9 +247,8 @@ physical texel 估算，增量约 8 MB 传输，horizon bake 总时长预计 +40
 | `shaders/include/brdf.gdshaderinc` | `LightingContext` 增加 `sky_visibility` / `bent_normal`；ambient 项改用两者 |
 | `shaders/include/land_pipeline.gdshaderinc` | 移除法线启发式 AO；重调 `terrain_horizon_cast_floor` 与 hillshade 避免双重压暗 |
 | `shaders/include/water_pipeline.gdshaderinc` | 同步 AO 来源 |
-| `scripts/rendering/shrub_layer.gd` | 内联 shader 同步 AO / bent normal，与现有 contact AO 归一 |
-| `scripts/rendering/hex_renderer.gd` | 推送新 uniform |
-| `materials/world_map_material.tres` | 默认值 |
+| `scripts/rendering/shrub_layer.gd` | 内联 shader 同步 AO / bent normal（1 tap），谷地启发式 AO 在真 AO 可用时退让；新增 `set_terrain_gi_inputs` |
+| `scripts/rendering/hex_renderer.gd` | `build_gi_horizon_lut` 预计算 + 推送新 uniform |
 
 ### 阶段 B：档 2 GPU 路径
 
@@ -241,19 +264,17 @@ physical texel 估算，增量约 8 MB 传输，horizon bake 总时长预计 +40
 
 | 文件 | 改动 |
 | --- | --- |
-| `scripts/rendering/map_baker.gd` | `bake_cell_luts` / `refresh_cell_luts_daily` 增产 `bounce_lut` |
-| `scripts/geography/world_data.gd` | `bounce_lut_tex` 字段 |
-| `gdext/src/world_ext_atlas.cpp` | `encode_cell_luts` 增产 bounce 通道（C++ 优先路径） |
-| `shaders/include/uniforms.gdshaderinc` | `bounce_lut` sampler、`gi_bounce_strength` |
-| `shaders/include/brdf.gdshaderinc` | 弹射项合成 |
+| `scripts/rendering/map_baker.gd` | `_BOUNCE_ALBEDO` 代表色表 + `_publish_bounce_lut`，挂在 `bake_cell_luts` 的两条路径上（`refresh_cell_luts_daily` 转发过来） |
+| `scripts/geography/world_data.gd` | `bounce_lut_tex` / `gi_occluder_tex` 字段 |
+| `shaders/include/uniforms.gdshaderinc` | `bounce_lut` sampler、`gi_bounce_bound`、`gi_bounce_strength` |
+| `shaders/include/brdf.gdshaderinc` | `gi_evaluate_bounce` 与弹射项合成 |
 
 ### 阶段 D：legacy 与 fallback 对齐
 
 | 文件 | 改动 |
 | --- | --- |
-| `gdext/src/world_ext.h` / `world_ext_bake.cpp` | `encode_bake_horizon_tex_data` 的 `emit_occluder_cells`；`run_resample_visual_horizon_layer_pass` 的 occluder 输出 |
-| `scripts/rendering/bakers/atlas_encoders.gd` | 全局 occluder 纹理上传 |
-| `scripts/rendering/hex_renderer.gd` | fallback 路径同步 occluder |
+| `gdext/src/world_ext_bake.cpp` | `encode_bake_horizon_tex_data` 的 `emit_occluder_cells` + `occluder_data`（签名不变，无需改 `.h` 与 bind） |
+| `scripts/rendering/hex_renderer.gd` | fallback 路径产出/重采样 occluder，`_global_map_index_bytes` 提供 map-index 字节视图 |
 
 阶段 A 独立可交付可回滚。阶段 B/C/D 必须一起上线：只有 B 而无 C 时 occluder 图无消费者，
 只有 C 而无 D 时 legacy 与 fallback 路径会与 tiled 视觉不一致。
@@ -262,13 +283,39 @@ physical texel 估算，增量约 8 MB 传输，horizon bake 总时长预计 +40
 
 | uniform | 默认 | 作用 |
 | --- | ---: | --- |
-| `gi_ao_strength` | 1.0 | V_sky 对 ambient 的作用强度，0 = 回退到现有行为 |
-| `gi_bent_strength` | 1.0 | bent normal 相对几何法线的混合量，0 = 用几何法线 |
-| `gi_normal_floor` | 0.55 | 倾斜法线修正下限，防陡坡过暗 |
+| `gi_ao_strength` | 0.85 | V_sky 对 ambient 的作用强度，0 = 回退到接入 GI 之前 |
+| `gi_ao_floor` | 0.45 | V_sky 下限，防封闭地形死黑 |
+| `gi_ao_smoothing` | 0.75 | 0=双线性、1=2×2 箱式低通，滤掉高度残差在 AO 上的颗粒 |
+| `gi_bent_strength` | 0.35 | bent normal 相对几何法线的**偏转**量，0 = 用几何法线 |
+| `gi_normal_floor` | 0.85 | 倾斜法线修正下限，1.0 = 完全关掉该二阶项 |
 | `gi_bounce_strength` | 0.18 | 弹射项增益，建议不超过 0.30 |
 | `gi_debug_view` | 0 | 0=off 1=V_sky 2=bent normal 3=occluder cell id 4=bounce only |
 
 每一档都能通过把强度归零精确回退到当前行为，这是视觉回归定位的主要手段。
+`gi_ao_strength = 0` 时结果恒为 1.0 且**与 `gi_ao_floor` 无关**，保证这条对照是无损的
+（`terrain_gi_test.gd` 锁死了这条不变量）。
+
+### 首轮实机配平（2026-07-31）
+
+首版默认值是理论起点，实机跑下来有两个明显问题，改动如下：
+
+- **暗部过暗。** V_sky 可以一路掉到 0，而它整段乘在 ambient 上。加 `gi_ao_floor=0.45`：
+  几何遮蔽算出的 0 只说明"看不到天空"，真实峡谷底部仍被岩壁多次散射照亮。
+  同时 `gi_ao_strength` 由 1.0 降到 0.85。
+- **画面发碎。** 三个叠加原因，按贡献从大到小：
+  1. `gi_normal_floor=0.55` 让 `dot(N, bent)` 这个二阶修正单独就能造成近 45% 的亮度摆动，
+     而 `N` 含逐 texel 的细节/微噪扰动、`bent` 是 4-bit × 8 扇区的量化量，两者点乘在像素
+     频率上剧烈跳动。方向性本来就已经由 `sky_sh_ambient_brdf` 沿 bent normal 查天光完成，
+     这一项属于重复计入 → floor 抬到 0.85。
+  2. `gi_bent_strength=1.0` 使 `mix(N, bent, 1.0)` **完全丢弃几何法线**，环境光只跟随量化
+     方向，在扇区边界上块状跳变 → 降到 0.35，回到"偏转"而非"替换"的语义。
+  3. V_sky 直接继承了视觉高度场的高频残差 → 新增 `gi_ao_smoothing`，把 4 个 tap 的双线性
+     权重向等权 1/4 靠拢，等价于 2×2 箱式低通，采样次数不变。
+
+顺带把 V_sky 与 bent normal 合并进同一次 nibble 解包（`horizon_gi_from_packed`）：
+`cos²(h_d)` 既是 V_sky 的被加项也是 bent 的扇区权重，原先分开算等于把 8 次解包做两遍。
+合并后每像素 4 次解包（原先 5 次），bent normal 还顺带从"只取最近邻"升级成与 V_sky 同权
+的 4-tap 滤波，块状边界一并消失。
 
 ## 风险与缓解
 
@@ -301,17 +348,23 @@ physical texel 估算，增量约 8 MB 传输，horizon bake 总时长预计 +40
 
 ## 测试与验收
 
-新增自动测试：
+已落地的自动测试集中在 `tests/terrain_gi_test.gd`：
 
-- `terrain_gi_horizon_math_test.gd`：对若干解析构型（平地、45° 单侧墙、
-  全封闭井）校验 V_sky 闭式解与数值半球积分的偏差在 2% 内；校验全零 horizon 时
-  V_sky = 1、bent normal = 几何法线。
-- `visual_tile_gi_occluder_test.gd`：occluder 图尺寸、hash 确定性、
-  环绕 gutter 一致性、`0xFFFF` 哨兵覆盖率；同一世界坐标在不同 Tile 分辨率下
-  解析到同一 cell id。
-- `visual_tile_layout_test.gd`（扩充）：22 B/texel 下的 resident/peak 预算断言，
-  以及大地图不因新字段直接跌回 legacy。
-- `visual_tile_horizon_smoke_test.gd`（扩充）：双 buffer dispatch / readback / upload。
+- `gi_horizon_lut` 的端点（`lut[0].x = cos²0 = 1`、`lut[15].x = cos²(max_angle)`）、
+  严格单调递减、`(cos m, sin m)` 单位长度，以及 `max_angle` 改变时表跟随变化。
+- V_sky 的解析构型：平地 = 1、全封闭井 = 0、单方向全遮挡恰好损失 1/8、
+  随遮挡角单调下降。
+- bent normal：各向同性遮挡指向正上方、东侧峭壁向西偏转、南北对称不产生侧偏、
+  永不指向地表以下。
+- occluder cell id 的 RGBA8 打包往返、双槽互不污染、`0xFFFF` 哨兵高于任何可表示 cell id。
+- `_BOUNCE_ALBEDO` 覆盖全部 `TERRAIN`（新增地形不补色会直接失败）、色值在 `[0, 0.95]`
+  区间内、水体排除表只含开阔水面而保留海冰。
+- 地形 shader 8 个变体（desktop/mobile×3，legacy/tiled）与植被 shader 2 个变体的编译，
+  以及 GI uniform 与遮挡源采样器在各变体上的存在性——tiled 只能有数组采样器、
+  legacy 只能有全局采样器。
+
+`visual_tile_horizon_shader_test.gd` 覆盖 trace compute 的 SPIR-V 编译（需真实
+RenderingDevice，用 `--rendering-driver vulkan` 而非 `--headless` 运行）。
 
 诊断报告增量：horizon 报告增加 `occluder_output_bytes`、`occluder_hash`、
 `occluder_sentinel_ratio`（哨兵占比，异常偏高说明 trace 命中记录有问题）；

@@ -133,23 +133,19 @@ vec3 apply_day_night(vec3 albedo, float phase, vec2 slope_xy) {
 // [terrain-normal 分层 2026-06-25] per-biome 细节法线因子：山地/方山满量，丘陵/荒地次之，
 //   森林/草本/沙漠中低，平原/湿地系趋零（"平原真平、不密密麻麻"）。纯 ALU 查表，零额外采样。
 float terrain_detail_factor(int biome) {
-	// 裸岩碎石：最需要细节凹凸（强调山脊/岩屑）
-	if (biome == B_MOUNTAIN || biome == B_MESA) return 1.0;
-	if (biome == B_HILL || biome == B_BADLANDS) return 0.80;
-	// 苔原/寒漠/沙（沙丘有些起伏）：中低
-	if (biome == B_TUNDRA) return 0.45;
-	if (biome == B_DESERT || biome == B_SALT_FLAT || biome == B_COLD_DESERT) return 0.38;
-	// 雪/冰：少量（雪被掩盖微地形）
-	if (biome == B_SNOW || biome == B_GLACIER || biome == B_SEA_ICE) return 0.35;
-	// 林地：冠层掩盖微地形，给少量
-	if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) return 0.45;
-	// 草本/灌丛：低
+	// [micro-soften 2026-07-31] 全表约 ×0.65：保留山地相对层次，压掉干燥/有机地表的
+	// 高频凹凸。平原/湿地继续趋零。
+	if (biome == B_MOUNTAIN || biome == B_MESA) return 0.70;
+	if (biome == B_HILL || biome == B_BADLANDS) return 0.55;
+	if (biome == B_TUNDRA) return 0.28;
+	if (biome == B_DESERT || biome == B_SALT_FLAT || biome == B_COLD_DESERT) return 0.22;
+	if (biome == B_SNOW || biome == B_GLACIER || biome == B_SEA_ICE) return 0.22;
+	if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA || biome == B_MANGROVE) return 0.28;
 	if (biome == B_GRASSLAND || biome == B_SAVANNA || biome == B_STEPPE
-			|| biome == B_SHRUBLAND || biome == B_CHAPARRAL) return 0.30;
-	// 平原 / 湿地 / 冲积 / 绿洲：趋零（真平）
+			|| biome == B_SHRUBLAND || biome == B_CHAPARRAL) return 0.18;
 	if (biome == B_PLAIN || biome == B_SWAMP || biome == B_MOOR
-			|| biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_OASIS) return 0.12;
-	return 0.30;
+			|| biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_OASIS) return 0.08;
+	return 0.18;
 }
 
 // 三层法线合成（需求：① 粗法线给走向、② 细节按地形叠、③ 低端机不上细节）：
@@ -177,14 +173,18 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 		N_coarse = vec3(-(rc - lc) * g, -(dc - uc) * g, 1.0);
 	}
 
-	// ── 2. 细节量：性能分档 + biome 门控 ────────────────────────────────
+	// ── 2. 细节量：性能分档 + biome 门控 + zoom 门控 ────────────────────
 	float detail_amt = 0.0;
 #if defined(PK_MOBILE_ANY)
 	detail_amt = 0.0;                                            // 移动端全档位：仅粗法线
 #else
 	if (hillshade_detail_enabled && quality >= 1) {
-		float qf = (quality >= 2) ? 1.0 : 0.5;                  // q==1 半量、q>=2 全量
+		// [normal-soften 2026-07-31] 旧逻辑 q>=2 时 qf=1.0，高画质反而把 residual 噪声
+		// 放大到最碎。现在高画质只比中画质略强，真正的"高画质增益"转给 albedo 程序纹理。
+		float qf = (quality >= 2) ? 0.55 : 0.35;
 		detail_amt = hillshade_detail_strength * terrain_detail_factor(biome) * qf;
+		// 中远距关掉高度细节法线：鸟瞰只看烘焙粗法线走向；近距再给一点凹凸。
+		detail_amt *= smoothstep(1.35, 2.10, camera_zoom);
 		// [shore-normal 2026-06-25] 近岸滩坡：近海陆地(coast_sdf 窄带)单独解门控，让海岸读出滩坡起伏。
 		//   biome 是 TerrainType id（B_COAST=1 是水体走 water_pipeline，不入此函数）；近岸陆地多为 B_PLAIN，
 		//   其 terrain_detail_factor≈0.12 被压平 → 这里用高程贴海平面的程度补一份 detail，仅薄薄一带、不碰内陆平原。
@@ -192,7 +192,9 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 			float eh = decode_height_rg8(uv);                   // 1 fetch：本像素高程
 			if (eh > sea_level) {
 				float band = 1.0 - smoothstep(0.0, shore_band_height, eh - sea_level);  // 贴岸→1，内陆→0
-				detail_amt = max(detail_amt, band * shore_detail_strength * qf);
+				float shore_amt = band * shore_detail_strength * qf;
+				shore_amt *= smoothstep(1.20, 1.90, camera_zoom);
+				detail_amt = max(detail_amt, shore_amt);
 			}
 		}
 	}
@@ -201,13 +203,17 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 		return normalize(N_coarse);
 	}
 
-	// ── 3. 细节法线（局部凹凸）：1-texel 中心差分，作切向扰动叠到粗法线上 ──
-	float l1 = decode_height_rg8(uv - vec2(texel.x, 0.0));
-	float r1 = decode_height_rg8(uv + vec2(texel.x, 0.0));
-	float u1 = decode_height_rg8(uv - vec2(0.0, texel.y));
-	float d1 = decode_height_rg8(uv + vec2(0.0, texel.y));
-	float dx = (r1 - l1) * hillshade_slope_gain;
-	float dy = (d1 - u1) * hillshade_slope_gain;
+	// ── 3. 细节法线：宽半径中心差分（不再用 1-texel）────────────────────
+	// 1-texel 会把 height RG8 量化台阶和 residual 高频原样搬进法线。改用 2.5~3.5 texel
+	// 的差分：仍能读出河岸/崖壁局部坡，但滤掉像素级砂砾。gain 按半径归一，避免宽差分变弱。
+	float detail_r = (quality >= 2) ? 3.5 : 2.5;
+	float l1 = decode_height_rg8(uv - vec2(texel.x * detail_r, 0.0));
+	float r1 = decode_height_rg8(uv + vec2(texel.x * detail_r, 0.0));
+	float u1 = decode_height_rg8(uv - vec2(0.0, texel.y * detail_r));
+	float d1 = decode_height_rg8(uv + vec2(0.0, texel.y * detail_r));
+	float g = hillshade_slope_gain / max(detail_r, 1.0);
+	float dx = (r1 - l1) * g;
+	float dy = (d1 - u1) * g;
 	vec3 N = N_coarse + vec3(-dx, -dy, 0.0) * detail_amt;
 	return normalize(N);
 }

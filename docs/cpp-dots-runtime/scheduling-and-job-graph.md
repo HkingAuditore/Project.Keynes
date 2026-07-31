@@ -412,7 +412,7 @@ weather -> [weather_field -> weather_commit -> weather_distribute
   -> runtime_hydrology -> stage_b_after_hydrology
 ```
 
-`runtime_hydrology` 是 `system_schedule.cpp::SCHEDULE_GRAPH` 节点，只有 bundle 含 `runtime_hydrology_knobs` 时运行。它依赖当天 weather node 发布的 `weather_precip`，并且要在 stage-b 植被动态读取 `soil_moisture/water_balance_30d` 前完成。report 字段包括 `hydrology_ms`、`runtime_hydrology_ms`、`hydrology_native_ms`、`hydrology_compute_ms`、`hydrology_flush_ms`、`hydrology_water_budget_error`、`hydrology_river_discharge_p95/max`、`hydrology_flood_count`、`hydrology_published_to_slot`；legacy staged path 仍使用 `stage_name=hydrology_discharge` / `substage=route_full`。
+`runtime_hydrology` 是 `system_schedule.cpp::SCHEDULE_GRAPH` 节点，只有 bundle 含 `runtime_hydrology_knobs` 时运行。它依赖当天 weather node 发布的 `weather_precip`，并且要在 stage-b 植被动态读取 `cell_moisture/soil_moisture/water_balance_30d` 前完成。report 字段包括 `hydrology_ms`、`runtime_hydrology_ms`、`hydrology_native_ms`、`hydrology_compute_ms`、`hydrology_flush_ms`、`hydrology_water_budget_error`、`hydrology_river_discharge_p95/max`、`hydrology_river_moisture_floor_touches`、`hydrology_riparian_moisture_floor_touches`、`hydrology_flood_count`、`hydrology_published_to_slot`；published slots 包含后置写入的 `cell_moisture`。legacy staged path 仍使用 `stage_name=hydrology_discharge` / `substage=route_full`。
 
 ### `must_run`
 

@@ -263,10 +263,30 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     const double wrap_period_x_world = double(knobs.get("wrap_period_x", 0.0));
     const double period_px = (wrap_period_x_world > 1e-6) ? (wrap_period_x_world / texel_x) : double(w);
 
+    // [terrain-gi 2026-07-31] 可选的遮挡源 cell id 输出。默认关闭，现有调用点逐字节不变。
+    // map_index_data 是 legacy 全局 map_index atlas（RGBA8，G/B = cell.index 低/高字节），
+    // 与 tiled 路径的 compute 共用同一编码；这里只记录几何，颜色由运行期 bounce_lut 提供。
+    const bool emit_occluder = bool(knobs.get("emit_occluder_cells", false));
+    PackedByteArray map_index_data = knobs.get("map_index_data", PackedByteArray());
+    const bool occluder_ready = emit_occluder && map_index_data.size() >= n * 4;
+    if (emit_occluder && !occluder_ready) return fail("map_index_data too small for occluder");
+
     PackedByteArray data;
     data.resize(n * 4);
+    PackedByteArray occluder_data;
+    if (occluder_ready) occluder_data.resize(n * 4);
     const float * const __restrict SRC = src.ptr();
     uint8_t * const __restrict DST = data.ptrw();
+    const uint8_t * const __restrict MAP_INDEX = occluder_ready ? map_index_data.ptr() : nullptr;
+    uint8_t * const __restrict OCC = occluder_ready ? occluder_data.ptrw() : nullptr;
+
+    constexpr uint32_t OCCLUDER_SENTINEL = 0xFFFFu;
+    auto cell_id_at = [&](int pixel_index) -> uint32_t {
+        if (!MAP_INDEX || pixel_index < 0) return OCCLUDER_SENTINEL;
+        const int base = pixel_index * 4;
+        const uint32_t cid = uint32_t(MAP_INDEX[base + 1]) + uint32_t(MAP_INDEX[base + 2]) * 256u;
+        return (cid >= OCCLUDER_SENTINEL) ? OCCLUDER_SENTINEL : cid;
+    };
 
     constexpr double INV_SQRT2 = 0.70710678118654752440;
     const double dir_x[8] = { 1.0, INV_SQRT2, 0.0, -INV_SQRT2, -1.0, -INV_SQRT2, 0.0, INV_SQRT2 };
@@ -292,11 +312,13 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                 // the water surface, not at the authoritative bathymetric height.
                 const double h0 = std::max(double(SRC[idx]), sea_level);
                 uint8_t q[8] = {};
+                int hit_index[8] = {};
                 for (int d = 0; d < 8; ++d) {
                     // [terrain-horizon perf 2026-07-03] 逐步只维护最大 slope² = (dh·scale)²/dist²。
                     // atan2 对正 slope 单调 → argmax 不变；把每像素 8×steps 次 sqrt+atan2 降为每方向
                     // 末尾 1 次 sqrt+atan。量化到 16 级后输出与旧 atan2 路径一致。
                     double best_slope_sq = 0.0;
+                    int best_hit = -1;
                     for (int s = 1; s <= steps; ++s) {
                         const double dist_px = double(s) * step_px;
                         const double sx_f = double(x) + dir_x[d] * dist_px;
@@ -327,15 +349,36 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                         if (world_dist_sq <= 1e-12) continue;
                         const double num = dh * height_world_scale;  // dh>0 → num>0
                         const double slope_sq = (num * num) / world_dist_sq;
-                        if (slope_sq > best_slope_sq) best_slope_sq = slope_sq;
+                        if (slope_sq > best_slope_sq) {
+                            best_slope_sq = slope_sq;
+                            best_hit = sy * w + sx;
+                        }
                     }
                     q[d] = q_horizon(std::atan(std::sqrt(best_slope_sq)));
+                    hit_index[d] = best_hit;
                 }
                 const int di = idx * 4;
                 DST[di]     = uint8_t((q[0] << 4) | q[1]);
                 DST[di + 1] = uint8_t((q[2] << 4) | q[3]);
                 DST[di + 2] = uint8_t((q[4] << 4) | q[5]);
                 DST[di + 3] = uint8_t((q[6] << 4) | q[7]);
+                if (OCC) {
+                    // 取遮挡最强的两个方向作为弹射源。只挑 top-2 而非全 8 方向：主导遮挡贡献了
+                    // 绝大部分近场弹射能量，尾部方向的 cell 往往远到色彩已被距离衰减掉。
+                    int d0 = -1;
+                    int d1 = -1;
+                    for (int d = 0; d < 8; ++d) {
+                        if (q[d] == 0) continue;
+                        if (d0 < 0 || q[d] > q[d0]) { d1 = d0; d0 = d; }
+                        else if (d1 < 0 || q[d] > q[d1]) { d1 = d; }
+                    }
+                    const uint32_t cid0 = (d0 >= 0) ? cell_id_at(hit_index[d0]) : OCCLUDER_SENTINEL;
+                    const uint32_t cid1 = (d1 >= 0) ? cell_id_at(hit_index[d1]) : OCCLUDER_SENTINEL;
+                    OCC[di]     = uint8_t(cid0 & 0xFFu);
+                    OCC[di + 1] = uint8_t((cid0 >> 8) & 0xFFu);
+                    OCC[di + 2] = uint8_t(cid1 & 0xFFu);
+                    OCC[di + 3] = uint8_t((cid1 >> 8) & 0xFFu);
+                }
             }
         }
     };
@@ -354,6 +397,8 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     out["height_world_scale"] = height_world_scale;
     out["sea_level"] = sea_level;
     out["max_horizon_angle"] = max_angle;
+    out["occluder_ready"] = occluder_ready;
+    if (occluder_ready) out["occluder_data"] = occluder_data;
     return out;
 }
 
@@ -667,7 +712,8 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
     warp_hi->set_fractal_type(FastNoiseLite::FRACTAL_FBM);
     warp_hi->set_fractal_octaves(3);
 
-    // mask 初值 INF（1e9 在 float 中可精确表示），mask<=0 表示河上。
+    // mask 初值 INF。值以 chamfer 的 3-unit 基数表示到河缘的距离：保留亚像素
+    // 半径，而不是把所有落在河内的 texel 都量化成同一个 0。
     static const float MASK_INF = 1.0e9f;
     std::vector<float> mask(size_t(n), MASK_INF);
 
@@ -765,7 +811,9 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
             const double w0 = double(dwd[i]);
             const double w1 = double(dwd[i + 1]);
             const double wmax = w0 > w1 ? w0 : w1;
-            const double seg_radius_px = base_radius_px * (0.40 + std::pow(wmax, 1.4) * 3.7);
+            // [river-hierarchy 2026-07-31] 与 map_baker._stamp_polyline_variable 同步：
+            // 0.40+pow(w,1.4)*3.7 → 0.18+pow(w,1.85)*5.2，拉开干支流宽度差。
+            const double seg_radius_px = base_radius_px * (0.18 + std::pow(wmax, 1.85) * 5.2);
             const int pad = int(std::ceil(seg_radius_px)) + 1;
             const float p0x = (dpx[i] - origin_x) * inv_world_x;
             const float p0y = (dpy[i] - origin_y) * inv_world_y;
@@ -794,13 +842,19 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
                     }
                     const double wl = w0 + (w1 - w0) * t;
                     const double taper = tp0 + (tp1 - tp0) * t;  // 端点半径乘子（1=满宽→尖点淡出）
-                    const double radius = base_radius_px * (0.40 + std::pow(wl, 1.4) * 3.7) * taper;
+                    const double radius = base_radius_px * (0.18 + std::pow(wl, 1.85) * 5.2) * taper;
                     const float closx = p0x + segx * float(t);
                     const float closy = p0y + segy * float(t);
                     const float ddx = px - closx;
                     const float ddy = py - closy;
                     const float dpix = std::sqrt(ddx * ddx + ddy * ddy);
-                    if (double(dpix) <= radius) mask[size_t(y) * w + x] = 0.0f;
+                    // Keep the true local river radius in the distance seed. With a binary
+                    // inside/outside mask, low-density tiles quantize every small tributary
+                    // to the same one-pixel source before the SDF pass can see its flow.
+                    const double edge_distance = std::max(0.0, double(dpix) - radius);
+                    const float chamfer_seed = float(edge_distance * 3.0);
+                    float &seed = mask[size_t(y) * w + x];
+                    if (chamfer_seed < seed) seed = chamfer_seed;
                 }
             }
         }
@@ -946,7 +1000,7 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
         std::vector<float> shifted_x;
         const double raster_min_x = double(origin_x);
         const double raster_max_x = double(origin_x) + double(w) / double(inv_world_x);
-        const double max_radius_px = base_radius_px * 4.1 + sdf_max_dist_px + 2.0;
+        const double max_radius_px = base_radius_px * 5.4 + sdf_max_dist_px + 2.0;
         const double margin_x = max_radius_px / double(inv_world_x);
         for (size_t c = 0; c < chain_x.size(); ++c) {
             const std::vector<float> &px = chain_x[c];
@@ -2137,9 +2191,16 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     const double work_origin_y = origin_y - double(halo) * step_y;
     const double wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
     const double sea_level = double(knobs.get("sea_level", 0.64));
+    // [normal-soften 2026-07-31] 默认 0.035→0.01：过高的 residual 会进 height/法线，
+    // 运行期再做 1-texel 差分后读成全图砂砾。knobs 未传时与 project.godot 新默认对齐。
     const double residual_amp = std::max(0.0, std::min(0.08,
-            double(knobs.get("residual_amp", 0.035))));
+            double(knobs.get("residual_amp", 0.01))));
     const double hex_size = std::max(0.0001, double(knobs.get("hex_size", 1.0)));
+    // High-frequency residual must be a function of world space, not of the chosen
+    // Tile density. Sampling its zero-mean filter one texel away made lower-density
+    // layouts produce a visibly rougher height field and macro normal.
+    const double residual_filter_radius = hex_size * std::max(0.005, std::min(0.25,
+            double(knobs.get("residual_filter_hex", 0.06))));
 
     Dictionary work_knobs = knobs.duplicate(true);
     work_knobs["width"] = WW;
@@ -2257,9 +2318,11 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             double residual = 0.0;
             if (!water && residual_amp > 0.0) {
                 const double n0 = periodic_noise(wx, wy);
-                const double navg = 0.25 * (periodic_noise(wx - step_x, wy) +
-                        periodic_noise(wx + step_x, wy) + periodic_noise(wx, wy - step_y) +
-                        periodic_noise(wx, wy + step_y));
+                const double navg = 0.25 * (
+                        periodic_noise(wx - residual_filter_radius, wy) +
+                        periodic_noise(wx + residual_filter_radius, wy) +
+                        periodic_noise(wx, wy - residual_filter_radius) +
+                        periodic_noise(wx, wy + residual_filter_radius));
                 const double relief_gate = std::max(0.12, std::min(1.0,
                         std::fabs(double(PH[i]) - base) / 0.06));
                 residual = std::max(-residual_amp, std::min(residual_amp,

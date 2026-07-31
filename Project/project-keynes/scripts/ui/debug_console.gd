@@ -119,6 +119,8 @@ var _economy_record_btn: Button
 var _economy_record_checkboxes: Dictionary = {}
 var _economy_current_cell_checkbox: CheckBox
 var _economy_data_recorder: RefCounted = null
+var _atlas_river_probe_dump_btn: Button
+var _atlas_river_probe_status_label: Label
 # _show_record_toast 期间冻结 _refresh_record_btn_text，避免 timer 把绿色提示文本盖回去
 var _record_btn_toast_until_msec: int = 0
 var _tile_record_btn_toast_until_msec: int = 0
@@ -495,6 +497,8 @@ func _build_gm_recording_page(parent: Control) -> void:
 	profile_row.add_child(profile_label)
 	page.add_child(profile_row)
 
+	_add_gm_atlas_probe_recorder_row(page)
+
 
 func _add_gm_recorder_row(parent: VBoxContainer, recorder_id: String,
 		label_text: String, callback: Callable) -> void:
@@ -569,6 +573,23 @@ func _rebuild_gm_toggle_controls(toggles: Array) -> void:
 		toggle.toggled.connect(_on_gm_toggle_changed.bind(toggle_id))
 		_gm_toggle_container.add_child(toggle)
 		_gm_toggle_buttons[toggle_id] = toggle
+
+
+func _add_gm_atlas_probe_recorder_row(parent: Control) -> void:
+	var row := HBoxContainer.new()
+	var button := Button.new()
+	button.tooltip_text = "开始录制；再次点击时停止并导出 Atlas 河谷采样 CSV"
+	button.custom_minimum_size = Vector2(38.0, 34.0)
+	IconButton.apply(button, &"action.history", 15)
+	button.pressed.connect(_on_gm_atlas_river_probe_record_pressed)
+	row.add_child(button)
+	var label := Label.new()
+	label.text = "Atlas 河谷采样 · 已停止"
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	parent.add_child(row)
+	_atlas_river_probe_dump_btn = button
+	_atlas_river_probe_status_label = label
 
 
 func _on_gm_refresh_tick() -> void:
@@ -808,7 +829,45 @@ func _on_gm_render_profile_pressed() -> void:
 		_append_gm_output("render-profile：采样完成（控制台输出）", false)
 
 
+func _on_gm_atlas_river_probe_record_pressed() -> void:
+	if _main == null or not _main.has_method("execute_gm_command"):
+		_append_gm_output("运行时不支持 Atlas 河谷采样", true)
+		return
+	var state: Dictionary = _main.call("get_gm_toggle_state", "diagnostics.atlas_river_probe")
+	var recording := bool(state.get("enabled", false))
+	var next_state: Dictionary = _main.call("set_gm_toggle", "diagnostics.atlas_river_probe", not recording)
+	if not bool(next_state.get("ok", false)):
+		_append_gm_output(String(next_state.get("message", next_state.get("code", "Atlas 采样状态更新失败"))), true)
+		return
+	if not recording:
+		_append_gm_output("Atlas 河谷采样已开始；再次点击停止并导出", false)
+	else:
+		var result: Dictionary = _main.call("execute_gm_command", "diagnostics.dump_atlas_river_probe", {})
+		if bool(result.get("ok", false)):
+			_append_gm_output("Atlas 河谷采样已导出：%s（%d 行）" % [
+				String(result.get("path", "")), int(result.get("rows", 0))], false)
+		else:
+			_append_gm_output(String(result.get("message", result.get("code", "导出失败"))), true)
+	_refresh_gm_atlas_river_probe_status()
+
+
+func _refresh_gm_atlas_river_probe_status() -> void:
+	if _atlas_river_probe_status_label == null or _main == null:
+		return
+	var state: Dictionary = _main.call("get_gm_toggle_state", "diagnostics.atlas_river_probe")
+	if not bool(state.get("ok", false)):
+		_atlas_river_probe_status_label.text = "Atlas 河谷采样 · 不可用"
+		return
+	var recording := bool(state.get("enabled", false))
+	var rows := int(state.get("sample_count", 0))
+	_atlas_river_probe_status_label.text = "Atlas 河谷采样 · %s · %d/64 行" % [
+		"录制中" if recording else "已停止", rows]
+	_atlas_river_probe_status_label.add_theme_color_override("font_color",
+		UITokens.WARN if recording else UITokens.TEXT_MAIN)
+
+
 func _refresh_gm_recorders() -> void:
+	_refresh_gm_atlas_river_probe_status()
 	var recorder_map := {
 		"performance": _perf_recorder,
 		"tiles": _tile_data_recorder,

@@ -40,6 +40,10 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 		return _failure("compatibility_renderer", t0)
 	if tiles.height == null or layout.layer_count <= 0:
 		return _failure("height_tiles_unavailable", t0)
+	# [terrain-gi 2026-07-31] 遮挡源 cell id 需要 map_index 作为 trace 的第二个输入。
+	# 它属于静态 bundle，走到这里时必然已经上传完毕（compute 在 static_ready 之后启动）。
+	if tiles.map_index == null:
+		return _failure("map_index_tiles_unavailable", t0)
 
 	_rd = RenderingServer.create_local_rendering_device()
 	if _rd == null:
@@ -83,6 +87,37 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	_owned_rids.append(input_texture)
 	input_data.clear()
 
+	var map_index_data: Array[PackedByteArray] = []
+	map_index_data.resize(layout.layer_count)
+	for layer_id in range(layout.layer_count):
+		if _cancelled:
+			_cleanup()
+			return _failure("cancelled", t0)
+		var mi_image: Image = tiles.map_index.get_layer_data(layer_id)
+		if mi_image == null:
+			_cleanup()
+			return _failure("map_index_layer_readback_failed:%d" % layer_id, t0)
+		if mi_image.get_format() != Image.FORMAT_RGBA8:
+			mi_image.convert(Image.FORMAT_RGBA8)
+		map_index_data[layer_id] = mi_image.get_data()
+	var map_index_format := RDTextureFormat.new()
+	map_index_format.format = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
+	map_index_format.width = layout.layer_size.x
+	map_index_format.height = layout.layer_size.y
+	map_index_format.depth = 1
+	map_index_format.array_layers = layout.layer_count
+	map_index_format.mipmaps = 1
+	map_index_format.texture_type = RenderingDevice.TEXTURE_TYPE_2D_ARRAY
+	map_index_format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT \
+		| RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	var map_index_texture := _rd.texture_create(
+		map_index_format, RDTextureView.new(), map_index_data)
+	if not map_index_texture.is_valid():
+		_cleanup()
+		return _failure("map_index_texture_create_failed", t0)
+	_owned_rids.append(map_index_texture)
+	map_index_data.clear()
+
 	var mip_sizes: Array[Vector2i] = []
 	var mip_offsets: PackedInt32Array = PackedInt32Array()
 	# First 16 floats are an exactly representable mip-offset table consumed by trace.
@@ -106,10 +141,11 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 		_rd.buffer_update(pyramid_buffer, 0, pyramid_header.size(), pyramid_header)
 	var physical_pixels: int = layout.layer_size.x * layout.layer_size.y * layout.layer_count
 	var horizon_buffer := _rd.storage_buffer_create(physical_pixels * 4)
+	var occluder_buffer := _rd.storage_buffer_create(physical_pixels * 4)
 	var metrics_zero := PackedByteArray()
 	metrics_zero.resize(16)
 	var metrics_buffer := _rd.storage_buffer_create(16, metrics_zero)
-	for rid in [pyramid_buffer, horizon_buffer, metrics_buffer]:
+	for rid in [pyramid_buffer, horizon_buffer, occluder_buffer, metrics_buffer]:
 		if not rid.is_valid():
 			_cleanup()
 			return _failure("storage_buffer_create_failed", t0)
@@ -126,6 +162,8 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 0, pyramid_buffer),
 		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 1, horizon_buffer),
 		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 2, metrics_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_IMAGE, 3, map_index_texture),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 4, occluder_buffer),
 	])
 	for rid in [decode_set, pyramid_set, trace_set]:
 		if not rid.is_valid():
@@ -207,14 +245,19 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	_free_owned_rid(pyramid_set)
 	_free_owned_rid(decode_set)
 	_free_owned_rid(input_texture)
+	_free_owned_rid(map_index_texture)
 	_free_owned_rid(pyramid_buffer)
 	var readback_t0 := Time.get_ticks_usec()
 	var all_horizon_data: PackedByteArray = _rd.buffer_get_data(horizon_buffer)
+	var all_occluder_data: PackedByteArray = _rd.buffer_get_data(occluder_buffer)
 	var metrics_data: PackedByteArray = _rd.buffer_get_data(metrics_buffer)
 	var readback_ms := float(Time.get_ticks_usec() - readback_t0) / 1000.0
 	if all_horizon_data.size() != physical_pixels * 4:
 		_cleanup()
 		return _failure("horizon_readback_size_mismatch", t0)
+	if all_occluder_data.size() != physical_pixels * 4:
+		_cleanup()
+		return _failure("occluder_readback_size_mismatch", t0)
 
 	var layer_bytes: int = layout.layer_size.x * layout.layer_size.y * 4
 	var upload_t0 := Time.get_ticks_usec()
@@ -227,14 +270,26 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 				all_horizon_data.slice(begin, begin + layer_bytes)):
 			_cleanup()
 			return _failure("horizon_layer_upload_failed:%d" % layer_id, t0)
+		if not tiles.upload_gi_occluder_layer(layer_id,
+				all_occluder_data.slice(begin, begin + layer_bytes)):
+			_cleanup()
+			return _failure("gi_occluder_layer_upload_failed:%d" % layer_id, t0)
 	var upload_ms := float(Time.get_ticks_usec() - upload_t0) / 1000.0
 	var non_converged := metrics_data.decode_u32(0) if metrics_data.size() >= 4 else 0
 	var conservative_tail_rays := metrics_data.decode_u32(4) if metrics_data.size() >= 8 else 0
 	var global_fallback_rays := metrics_data.decode_u32(8) if metrics_data.size() >= 12 else 0
+	var occluder_sentinel := metrics_data.decode_u32(12) if metrics_data.size() >= 16 else 0
 	var total_rays: int = physical_pixels * 8
 	var report := {
 		"ok": true,
 		"path": "gpu_compute_hierarchical",
+		"gi_occluder_ok": true,
+		"occluder_output_bytes": physical_pixels * 4,
+		"occluder_hash": hash(all_occluder_data),
+		# 哨兵占比：无有效遮挡源的 texel 比例。开阔地形天然偏高，但接近 1.0 说明
+		# trace 的命中记录失效（例如全部落进 conservative tail），需要排查。
+		"occluder_sentinel_texels": occluder_sentinel,
+		"occluder_sentinel_ratio": float(occluder_sentinel) / maxf(float(physical_pixels), 1.0),
 		"mip_levels": mip_sizes.size(),
 		"compile_ms": compile_ms,
 		"resource_setup_ms": float(command_t0 - t0) / 1000.0 - compile_ms,
