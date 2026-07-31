@@ -44,9 +44,11 @@ enabled=PackedStringArray("res://addons/climate_profile_inspector/plugin.cfg")
 [project_keynes]
 
 rendering/map_tiles/mode="tiled"
+rendering/map_tiles/texels_per_hex=-1.0
 rendering/map_tiles/budget_mp=-1.0
 rendering/map_tiles/residual_amp=0.035
 rendering/map_tiles/horizon_max_iterations=2048
+rendering/map_tiles/horizon_height_scale_hex=24.0
 
 [rendering]
 

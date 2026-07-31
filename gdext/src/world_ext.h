@@ -1130,13 +1130,13 @@ public:
     //   ny = y / max(H-1,1)。输入 w/h。输出 latitude_buffer(F32 PackedFloat32Array)。
     godot::Dictionary run_bake_latitude_field_pass(godot::Dictionary knobs);
     // run_bake_river_sdf_pass：复刻 map_baker.gd::_bake_river_sdf 的**全部计算**——
-    //   河流图遍历（trace，读 post_base 暂存的 `_gen_river_*` ext 拓扑）+ seam-split +
+    //   河流图遍历（trace，读 post_base 暂存的 `_gen_river_*` ext 拓扑）+ 连续经度展开 +
     //   Catmull-Rom 致密化 + warp 噪声（FastNoiseLite 复刻 _warp_noise_lo/hi）+ 变宽 polyline
     //   stamp + chamfer 3-4 双通 SDT + 归一化 [0,1] flow。**无任何河流链/拓扑跨语言传入**：
     //   GDScript 只传 bake 几何参数，C++ 直接读自己暂存的拓扑 trace（零再传输）。
     //   前置：必须先调用 run_native_world_generate_post_base_pass（填 `_gen_river_*`）。
     //   输入 w/h/origin_x/origin_y/inv_world_x/inv_world_y/hex_size/seed/base_radius_px/
-    //   sdf_max_dist_px/seam_dx/cr_step。输出 out_buf(F32 PackedFloat32Array，= world.flow_buffer)。
+    //   sdf_max_dist_px/cr_step/wrap_period_x。输出 out_buf(F32 PackedFloat32Array，= world.flow_buffer)。
     godot::Dictionary run_bake_river_sdf_pass(godot::Dictionary knobs);
     // run_bake_coast_sdf_pass（water-bodies systemic）：海/湖统一"离岸像素距离场"。
     //   从 per-pixel terrain(biome_buffer) 的 land-water 边界做 chamfer 3-4 双通距离变换，

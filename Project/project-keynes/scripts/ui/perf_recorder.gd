@@ -97,7 +97,21 @@ const FIXED_COLUMNS: Array = [
 	"tail_label_ms",
 	"tail_label_count",
 	"tail_vegetation_ms",
+	"tail_vegetation_inflight",
+	"tail_vegetation_dedup_skips",
 	"tail_overlay_ms",
+	# 帧级渲染残差探针：frame_wall_ms = 相邻 perf 行间的平均帧墙钟（引擎帧号差分，
+	# 1 tick/帧时即逐帧墙钟）；render_residual_ms = wall - clock_full - 已知帧尾
+	# （植被/标签/overlay）≈ 渲染提交 + GPU present + 未埋点 _process 节点。
+	# engine_process/physics_ms 为引擎监视器原始值（口径与帧墙钟不严格可比，
+	# 仅作信息列）；render_*_in_frame 为绘制负载。
+	"frame_wall_ms",
+	"engine_process_ms",
+	"engine_physics_ms",
+	"render_residual_ms",
+	"render_objects_in_frame",
+	"render_primitives_in_frame",
+	"render_draw_calls_in_frame",
 ]
 
 # 软上限：避免误开后台跑爆内存。约 60000 帧 ≈ 30 分钟 30FPS。

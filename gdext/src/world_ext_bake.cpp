@@ -54,6 +54,14 @@ namespace pk {
 
 using namespace godot;
 
+namespace {
+
+// Cell transition distance is a world/hex-space field, unlike river and coast
+// SDFs whose encoded ranges are measured in raster pixels.
+constexpr double VISUAL_EDGE_DISTANCE_SATURATE_HEX = 0.90;
+
+} // namespace
+
 
 godot::Dictionary DCWorldExt::encode_bake_height_tex_data(godot::Dictionary knobs) {
     using godot::Dictionary;
@@ -241,6 +249,7 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     if (max_angle < 0.01) max_angle = 0.01;
     else if (max_angle > M_PI * 0.5) max_angle = M_PI * 0.5;
     const double height_world_scale = std::max(1e-4, double(knobs.get("height_world_scale", 176.0)));
+    const double sea_level = std::clamp(double(knobs.get("sea_level", 0.0)), 0.0, 1.0);
     double world_size_x = double(knobs.get("world_size_x", double(w)));
     double world_size_y = double(knobs.get("world_size_y", double(h)));
     if (world_size_x <= 1e-6) world_size_x = double(w);
@@ -279,7 +288,9 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
             const int row = y * w;
             for (int x = 0; x < w; ++x) {
                 const int idx = row + x;
-                const double h0 = double(SRC[idx]);
+                // Horizon is a surface-visibility field. Ocean pixels receive light at
+                // the water surface, not at the authoritative bathymetric height.
+                const double h0 = std::max(double(SRC[idx]), sea_level);
                 uint8_t q[8] = {};
                 for (int d = 0; d < 8; ++d) {
                     // [terrain-horizon perf 2026-07-03] 逐步只维护最大 slope² = (dh·scale)²/dist²。
@@ -308,7 +319,8 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                             off_x_world = std::abs(double(sx - x)) * texel_x;
                         }
                         // dh<=0 的采样（海平面/下坡）占绝大多数，前置判断可跳过 world_dist 计算。
-                        const double dh = double(SRC[sy * w + sx]) - h0 - bias;
+                        const double sample_height = std::max(double(SRC[sy * w + sx]), sea_level);
+                        const double dh = sample_height - h0 - bias;
                         if (dh <= 0.0) continue;
                         const double off_y_world = std::abs(double(sy - y)) * texel_y;
                         const double world_dist_sq = off_x_world * off_x_world + off_y_world * off_y_world;
@@ -339,6 +351,9 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     out["height"] = h;
     out["format"] = String("RGBA8");
     out["directions"] = String("E,NE,N,NW,W,SW,S,SE");
+    out["height_world_scale"] = height_world_scale;
+    out["sea_level"] = sea_level;
+    out["max_horizon_angle"] = max_angle;
     return out;
 }
 
@@ -575,7 +590,7 @@ godot::Dictionary DCWorldExt::run_bake_latitude_field_pass(godot::Dictionary kno
 
 // run_bake_river_sdf_pass — 复刻 map_baker.gd::_bake_river_sdf 的全部计算。
 // GDScript 只 trace 原始河流链（HexCell 对象图，输出极小）；本 pass 在 C++ 内完成
-// seam-split + Catmull-Rom 致密化 + warp 噪声（FastNoiseLite 复刻 _warp_noise_lo/hi）+
+// 连续经度展开 + Catmull-Rom 致密化 + warp 噪声（FastNoiseLite 复刻 _warp_noise_lo/hi）+
 // 变宽 polyline stamp + chamfer 3-4 双通 SDT + 归一化。dense polyline / mask 中间数据
 // 全部留在 C++（最小化跨语言传输）。几何用 float 复刻 Godot Vector2 real_t；scalar 用 double。
 godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
@@ -606,11 +621,11 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
     const float origin_y = float(double(knobs.get("origin_y", 0.0)));
     const float inv_world_x = float(double(knobs.get("inv_world_x", 0.0)));
     const float inv_world_y = float(double(knobs.get("inv_world_y", 0.0)));
+    if (inv_world_x <= 0.0f || inv_world_y <= 0.0f) return fail("invalid world scale");
     const float hex_size = float(double(knobs.get("hex_size", 1.0)));
     const int seed = int(knobs.get("seed", 0));
     const double base_radius_px = double(knobs.get("base_radius_px", 0.0));
     const double sdf_max_dist_px = double(knobs.get("sdf_max_dist_px", 5.0));
-    const double seam_dx = double(knobs.get("seam_dx", 0.0));
     const double wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
     const int cr_step = std::max(1, int(knobs.get("cr_step", 12)));
     // [river-endpoint-taper 2026-06-26] 端点淡出：河源(headwater)与陆地死端(未入水、非汇流)的
@@ -877,7 +892,13 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
                 if (wnb >= 0) {
                     const float rex = cube_wx(current), rey = cube_wy(current);
                     const float wcx = cube_wx(wnb), wcy = cube_wy(wnb);
-                    px.push_back(rex + (wcx - rex) * 0.78f);
+                    float water_dx = wcx - rex;
+                    if (wrap_period_x > 0.0001) {
+                        const float half_period = float(wrap_period_x * 0.5);
+                        if (water_dx > half_period) water_dx -= float(wrap_period_x);
+                        else if (water_dx < -half_period) water_dx += float(wrap_period_x);
+                    }
+                    px.push_back(rex + water_dx * 0.78f);
                     py.push_back(rey + (wcy - rey) * 0.78f);
                     pw.push_back(pw.empty() ? 0.5f : pw.back());
                     reached_water = true;
@@ -885,6 +906,16 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
             }
             const int np = int(px.size());
             if (np < 2) continue;
+            // Keep a wrapped chain continuous in one unwrapped longitude frame. The
+            // raster stage emits only the periodic copies intersecting this target.
+            if (wrap_period_x > 0.0001) {
+                const float period = float(wrap_period_x);
+                const float half_period = period * 0.5f;
+                for (int k = 1; k < np; ++k) {
+                    while (px[k] - px[k - 1] > half_period) px[k] -= period;
+                    while (px[k] - px[k - 1] < -half_period) px[k] += period;
+                }
+            }
             // ── 端点 taper：源头(链首)恒淡出成尖点；陆地死端(链尾且未入水、非汇流)也淡出。
             //    入海/入湖口、汇流接点保持满宽(taper=1)以接住水体/相邻链。──
             std::vector<float> pt(size_t(np), 1.0f);
@@ -910,9 +941,13 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
         }
     }
 
-    // ── 遍历 chains：seam-split → run → stamp（镜像 _bake_river_sdf 主循环）──
+    // ── 遍历 chains：连续经度 run + 与目标相交的周期副本 ──
     {
-        std::vector<float> rx, ry, rw, rt;
+        std::vector<float> shifted_x;
+        const double raster_min_x = double(origin_x);
+        const double raster_max_x = double(origin_x) + double(w) / double(inv_world_x);
+        const double max_radius_px = base_radius_px * 4.1 + sdf_max_dist_px + 2.0;
+        const double margin_x = max_radius_px / double(inv_world_x);
         for (size_t c = 0; c < chain_x.size(); ++c) {
             const std::vector<float> &px = chain_x[c];
             const std::vector<float> &py = chain_y[c];
@@ -920,19 +955,27 @@ godot::Dictionary DCWorldExt::run_bake_river_sdf_pass(godot::Dictionary knobs) {
             const std::vector<float> &ptp = chain_t[c];
             const int clen = int(px.size());
             if (clen < 2) continue;
-            rx.clear(); ry.clear(); rw.clear(); rt.clear();
-            rx.push_back(px[0]); ry.push_back(py[0]); rw.push_back(pw[0]); rt.push_back(ptp[0]);
-            for (int k = 1; k < clen; ++k) {
-                // seam 切断：跨接缝段（|dx| > seam_dx）→ 收尾当前 run，另起一段。
-                if (std::fabs(double(px[k]) - double(px[k - 1])) > seam_dx) {
-                    stamp_run(rx, ry, rw, rt);
-                    rx.clear(); ry.clear(); rw.clear(); rt.clear();
-                    rx.push_back(px[k]); ry.push_back(py[k]); rw.push_back(pw[k]); rt.push_back(ptp[k]);
-                } else {
-                    rx.push_back(px[k]); ry.push_back(py[k]); rw.push_back(pw[k]); rt.push_back(ptp[k]);
-                }
+            if (wrap_period_x <= 0.0001) {
+                stamp_run(px, py, pw, ptp);
+                continue;
             }
-            stamp_run(rx, ry, rw, rt);
+            const auto bounds = std::minmax_element(px.begin(), px.end());
+            const double chain_min_x = double(*bounds.first);
+            const double chain_max_x = double(*bounds.second);
+            const int copy_min = int(std::ceil(
+                    (raster_min_x - margin_x - chain_max_x) / wrap_period_x));
+            const int copy_max = int(std::floor(
+                    (raster_max_x + margin_x - chain_min_x) / wrap_period_x));
+            for (int copy = copy_min; copy <= copy_max; ++copy) {
+                if (copy == 0) {
+                    stamp_run(px, py, pw, ptp);
+                    continue;
+                }
+                shifted_x.resize(px.size());
+                const float shift = float(double(copy) * wrap_period_x);
+                for (size_t k = 0; k < px.size(); ++k) shifted_x[k] = px[k] + shift;
+                stamp_run(shifted_x, py, pw, ptp);
+            }
         }
     }
 
@@ -1724,8 +1767,6 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     // 视觉 ecotone 需要覆盖足够的 cell 内侧范围。中心距差约为实际垂直边界
     // 距离的两倍，因此 0.90 gap 对应单侧约 0.45 hex；shader 再按质量缩放。
     // 边界场本身对所有合法邻格通用；是否允许跨水陆混合由各视觉消费者决定。
-    constexpr double EDGE_DISTANCE_SATURATE_HEX = 0.90;
-
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // ── [P0] per-cell 高程梯度 + 局地起伏预计算（六邻居有限差分；O(n_cells)）──
@@ -1923,7 +1964,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
             //    和距离，让 terrain/fog/weather 各自决定能否以及如何形成 ecotone；
             //    动态状态、CSR 与交互仍不被视觉过渡改派。
             int edge_secondary = -1;
-            double edge_gap_hex = EDGE_DISTANCE_SATURATE_HEX;
+            double edge_gap_hex = VISUAL_EDGE_DISTANCE_SATURATE_HEX;
             if (self_idx >= 0) {
                 const double self_dx = wx - scx;
                 const double self_dy = wy - scy;
@@ -1960,7 +2001,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
                 ESEC[idx * 2] = uint8_t(edge_secondary & 0xFF);
                 ESEC[idx * 2 + 1] = uint8_t((edge_secondary >> 8) & 0xFF);
                 const double edge_n = std::min(1.0,
-                        edge_gap_hex / EDGE_DISTANCE_SATURATE_HEX);
+                        edge_gap_hex / VISUAL_EDGE_DISTANCE_SATURATE_HEX);
                 EDIST[idx] = uint8_t(std::round(edge_n * 255.0));
             } else {
                 ESEC[idx * 2] = 0xFF;
@@ -2011,6 +2052,8 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     out["pixel_to_cell_index"] = p2c;
     out["edge_secondary_index_buffer"] = edge_secondary_buf;
     out["edge_distance_buffer"] = edge_distance_buf;
+    out["edge_distance_units"] = String("normalized_hex_center_gap");
+    out["edge_distance_saturate_hex"] = VISUAL_EDGE_DISTANCE_SATURATE_HEX;
     out["cell_first_px"] = first_px;
     out["cell_px_count"] = px_count;
     out["flat_px_indices"] = flat_px;
@@ -2063,7 +2106,30 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
 
     const double step_x = size_x / double(W);
     const double step_y = size_y / double(H);
-    const int halo = std::max(2, std::min(32, int(knobs.get("algorithm_halo_px", 8))));
+    const double normal_reference_step_x = base_size_x / double(BW);
+    const double normal_reference_step_y = base_size_y / double(BH);
+    const double raster_scale_x = normal_reference_step_x / step_x;
+    const double raster_scale_y = normal_reference_step_y / step_y;
+    const double distance_scale = std::sqrt(std::max(1e-8, raster_scale_x * raster_scale_y));
+    const double river_sdf_max_dist_px = std::max(1.0, std::min(60.0,
+            double(knobs.get("sdf_max_dist_px", 5.0)) * distance_scale));
+    const double coast_sdf_max_dist_px = std::max(1.0, std::min(60.0,
+            double(knobs.get("coast_sdf_max_dist_px", 8.0)) * distance_scale));
+    const int shore_carve_band_px = std::max(1, std::min(60, int(std::round(
+            double(knobs.get("shore_carve_band", 6)) * distance_scale))));
+    const int normal_reference_radius = std::max(1, std::min(64,
+            int(knobs.get("normal_reference_radius_px",
+                    knobs.get("normal_radius_px", 4)))));
+    const int normal_radius_x = std::max(1, std::min(64, int(std::round(
+            double(normal_reference_radius) * normal_reference_step_x / step_x))));
+    const int normal_radius_y = std::max(1, std::min(64, int(std::round(
+            double(normal_reference_radius) * normal_reference_step_y / step_y))));
+    const int required_halo = std::max({normal_radius_x, normal_radius_y,
+            int(std::ceil(river_sdf_max_dist_px)) + 2,
+            int(std::ceil(coast_sdf_max_dist_px)) + 2,
+            shore_carve_band_px + 2});
+    const int halo = std::max(required_halo,
+            std::max(2, std::min(64, int(knobs.get("algorithm_halo_px", 8)))));
     const int WW = W + halo * 2;
     const int WH = H + halo * 2;
     const int WN = WW * WH;
@@ -2086,7 +2152,9 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     work_knobs["inv_world_y"] = 1.0 / step_y;
     work_knobs["base_radius_px"] = std::max(0.5,
             hex_size * double(knobs.get("river_stroke_hex_factor", 0.035)) / step_x);
-    work_knobs["seam_dx"] = wrap_period_x > 0.0 ? wrap_period_x * 0.5 : size_x * 0.5;
+    work_knobs["sdf_max_dist_px"] = river_sdf_max_dist_px;
+    work_knobs["coast_sdf_max_dist_px"] = coast_sdf_max_dist_px;
+    work_knobs["shore_carve_band"] = shore_carve_band_px;
     work_knobs["emit_csr"] = false;
 
     const auto t0 = std::chrono::high_resolution_clock::now();
@@ -2233,7 +2301,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         if (coast_sdf.size() == WN) {
             const float * const CD = coast_sdf.ptr();
             const double amp = double(knobs.get("shore_carve_amp", 0.06));
-            const int band = std::max(1, int(knobs.get("shore_carve_band", 6)));
+            const int band = shore_carve_band_px;
             for (int i = 0; i < WN; ++i) {
                 const double d = double(CD[i]);
                 if (d <= 0.0 || d > double(band) || double(HW[i]) <= sea_level) continue;
@@ -2271,9 +2339,12 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     const float * const CS = cell_surface.size() >= n_cells ? cell_surface.ptr() : nullptr;
     const uint8_t * const CT = cell_terrain.size() >= n_cells ? cell_terrain.ptr() : nullptr;
     const uint8_t * const BWATER = baseline_water.size() >= BN ? baseline_water.ptr() : nullptr;
-    const int normal_radius = std::max(1, std::min(halo, int(knobs.get("normal_radius_px", 2))));
-    const double normal_gain = double(knobs.get("normal_slope_gain", 8.0)) /
-            double(normal_radius * 2);
+    const double normal_slope_gain = double(knobs.get("normal_slope_gain", 8.0));
+    // 先还原世界空间导数，再校准到一个基线 texel；画质预算变化时保持 legacy 强度与平滑尺度。
+    const double normal_gain_x = normal_slope_gain * normal_reference_step_x /
+            (double(normal_radius_x * 2) * step_x);
+    const double normal_gain_y = normal_slope_gain * normal_reference_step_y /
+            (double(normal_radius_y * 2) * step_y);
 
     godot::Ref<godot::FastNoiseLite> detail_noise;
     detail_noise.instantiate();
@@ -2303,10 +2374,10 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             HD[di * 2] = uint8_t((h16 >> 8) & 0xFF);
             HD[di * 2 + 1] = uint8_t(h16 & 0xFF);
 
-            const double sx = (double(HW[wy_i * WW + wx_i + normal_radius]) -
-                    double(HW[wy_i * WW + wx_i - normal_radius])) * normal_gain;
-            const double sy = (double(HW[(wy_i + normal_radius) * WW + wx_i]) -
-                    double(HW[(wy_i - normal_radius) * WW + wx_i])) * normal_gain;
+            const double sx = (double(HW[wy_i * WW + wx_i + normal_radius_x]) -
+                    double(HW[wy_i * WW + wx_i - normal_radius_x])) * normal_gain_x;
+            const double sy = (double(HW[(wy_i + normal_radius_y) * WW + wx_i]) -
+                    double(HW[(wy_i - normal_radius_y) * WW + wx_i])) * normal_gain_y;
             const double inv_len = 1.0 / std::sqrt(sx * sx + sy * sy + 1.0);
             ND[di * 2] = uint8_t(std::max(0, std::min(255,
                     int(std::round((-sx * inv_len * 0.5 + 0.5) * 255.0)))));
@@ -2373,6 +2444,21 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     out["edge_neighbor"] = edge_data;
     out["edge_distance"] = edge_distance_data;
     out["hashes"] = hashes;
+    out["normal_reference_radius_px"] = normal_reference_radius;
+    out["normal_radius_x_px"] = normal_radius_x;
+    out["normal_radius_y_px"] = normal_radius_y;
+    out["normal_reference_step_x"] = normal_reference_step_x;
+    out["normal_reference_step_y"] = normal_reference_step_y;
+    out["raster_scale_x"] = raster_scale_x;
+    out["raster_scale_y"] = raster_scale_y;
+    out["distance_scale"] = distance_scale;
+    out["river_sdf_max_dist_px"] = river_sdf_max_dist_px;
+    out["coast_sdf_max_dist_px"] = coast_sdf_max_dist_px;
+    out["shore_carve_band_px"] = shore_carve_band_px;
+    out["edge_distance_units"] = terr.get(
+            "edge_distance_units", String("normalized_hex_center_gap"));
+    out["edge_distance_saturate_hex"] = double(terr.get(
+            "edge_distance_saturate_hex", VISUAL_EDGE_DISTANCE_SATURATE_HEX));
     out["terrain_ms"] = double(terr.get("elapsed_ms", -1.0));
     out["river_ms"] = double(river.get("elapsed_ms", -1.0));
     out["coast_ms"] = double(coast.get("elapsed_ms", -1.0));

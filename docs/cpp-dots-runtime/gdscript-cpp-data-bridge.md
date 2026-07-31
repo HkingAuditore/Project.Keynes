@@ -792,6 +792,8 @@ Visual Tile bake is a generation-time buffer bridge, not a DataCore slot bridge.
 `run_bake_visual_tile_layer_pass` call; C++ performs every O(n_pixels) loop and returns one
 layer's byte bundle/hash/timing. GDScript may create `Image` and call
 `Texture2DArray.update_layer()`, but must not decode or recompute pixels.
+The result also reports `normal_radius_x_px`, `normal_radius_y_px` and the baseline
+reference steps used to keep derived terrain normals invariant across visual resolutions.
 
 `generation_id` and `layer_id` are part of every layer result. A stale result is discarded,
 and `WorldData.visual_tiles` becomes renderer-visible only after every static layer succeeds.

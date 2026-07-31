@@ -283,10 +283,10 @@ vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
 // 只处理 terrain 表达不了的 5 种：VOLCANO / PLATEAU / CANYON / RIFT_VALLEY / PEAK；
 // 其余地貌（PLAIN/LOWLAND/HILL/MOUNTAIN/DELTA/BADLANDS/SALT_FLAT/水体）已由 terrain
 // 着色覆盖，直接返回原色（emission=0）。
-// 入参：landform id、世界坐标 wp、当前底色 col、坡度 slope_mag（=length(normal.xy)）。
+// 入参：landform id、世界坐标 wp、当前底色 col、坡度 slope_mag、河流距离场 flow。
 // 返回 vec4：rgb=调制后底色，a=自发光强度（仅火山口 > 0，caller 乘 lava 色写入 emission）。
 // 性能：仅匹配到的地貌像素才跑 voronoi/fbm；其余 early-return。mobile / q<1 走廉价纯色 tint。
-vec4 landform_visual(int landform, vec2 wp, vec3 col, float slope_mag) {
+vec4 landform_visual(int landform, vec2 wp, vec3 col, float slope_mag, float flow) {
 	if (landform == LF_VOLCANO) {
 		// [volcano-crater 2026-06-25] 环形山改由生成期高度场(中心火山口下凹 + 第一环环脊抬升)
 		// 配合 hillshade 自然成形；着色仅压暗成深玄武岩并按坡度强调火山口内壁/环脊轮廓。
@@ -309,19 +309,28 @@ vec4 landform_visual(int landform, vec2 wp, vec3 col, float slope_mag) {
 		vec3 wallc = col * vec3(0.80, 0.76, 0.70);
 		return vec4(mix(top, wallc, wall), 0.0);
 	}
-	if (landform == LF_CANYON || landform == LF_RIFT_VALLEY) {
-		// 峡谷 / 裂谷：暖褐岩壁（高坡度）+ 谷底压暗，强调线状深切地形
-		float depth = smoothstep(0.28, 0.60, slope_mag);
-		vec3 walls = col * vec3(1.10, 0.86, 0.64);
-		vec3 shade = col * vec3(0.68, 0.64, 0.64);
-		vec3 rgb = mix(shade, walls, depth);
+	if (landform == LF_CANYON) {
+		// landform id 为 nearest 字段，不能驱动整格明暗。只在连续的坡壁和河道外缘
+		// 施加克制的暖岩色；河流本体和没有几何特征的谷底保持原色。
+		float wall = smoothstep(0.24, 0.62, slope_mag);
+		float bank = smoothstep(river_threshold_low * 0.56, river_threshold_low * 0.94, flow)
+				* (1.0 - smoothstep(river_threshold_low, river_threshold_high, flow));
+		float dry_land = 1.0 - smoothstep(river_threshold_low, river_threshold_high, flow);
+		float rock_mask = clamp(wall * 0.42 + bank * 0.24, 0.0, 0.48) * dry_land;
+		vec3 warm_rock = col * vec3(1.055, 0.985, 0.925);
+		vec3 rgb = mix(col, warm_rock, rock_mask);
 #if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
 		if (visual_quality >= 1) {
 			float band = fbm(wp * 0.20, 2);
-			rgb *= mix(0.94, 1.05, band);
+			rgb *= mix(1.0, mix(0.985, 1.015, band), rock_mask);
 		}
 #endif
 		return vec4(rgb, 0.0);
+	}
+	if (landform == LF_RIFT_VALLEY) {
+		// 裂谷仅保留很弱的坡壁材质提示，体积完全由连续 normal/horizon 表达。
+		float wall = smoothstep(0.30, 0.68, slope_mag) * 0.22;
+		return vec4(mix(col, col * vec3(1.035, 0.985, 0.945), wall), 0.0);
 	}
 	if (landform == LF_PEAK) {
 		// 高峰：裸岩更冷亮（积雪由雪盖层负责，这里只轻微提冷调岩色）

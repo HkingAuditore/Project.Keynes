@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bpitcw8ywv4pp"
+path="res://.godot/imported/visual_tile_horizon_decode.glsl-1577aaa30240e923c927900303c9e7b2.res"
+
+[deps]
+
+source_file="res://shaders/compute/visual_tile_horizon_decode.glsl"
+dest_files=["res://.godot/imported/visual_tile_horizon_decode.glsl-1577aaa30240e923c927900303c9e7b2.res"]
+
+[params]
+

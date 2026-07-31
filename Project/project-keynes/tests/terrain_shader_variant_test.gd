@@ -33,6 +33,16 @@ func _init() -> void:
 		"terrain Bayer rank tails are compressed to prevent elongated teeth")
 	_expect(source.contains("land_dither_probability"),
 		"full land visual cell selection shares the close-view zoom fade")
+	var biome_detail_source := FileAccess.get_file_as_string(
+		"res://shaders/include/biome_detail.gdshaderinc")
+	_expect(biome_detail_source.contains(
+		"landform_visual(int landform, vec2 wp, vec3 col, float slope_mag, float flow)"),
+		"landform material receives continuous river geometry")
+	_expect(biome_detail_source.contains("float rock_mask")
+		and biome_detail_source.contains("vec3 rgb = mix(col, warm_rock, rock_mask)"),
+		"canyon material is masked by continuous geometry")
+	_expect(not biome_detail_source.contains("vec3 shade = col * vec3(0.68, 0.64, 0.64)"),
+		"canyon no longer darkens the entire categorical cell")
 	var variants := {
 		"desktop": "",
 		"mobile_low": "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n",

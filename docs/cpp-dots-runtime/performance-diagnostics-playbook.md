@@ -1534,10 +1534,15 @@ allocation count, cursor lag, gap/resync count, and pending effect depth.
 
 ## Visual Tile diagnostics
 
-`visual tiles:` JSON first proves the chosen path. Record renderer, requested/effective MP,
-grid/layers/interior/gutter/logical size and estimated resident/peak bytes. A lower effective
-budget with no crash is the expected response to device limits. `path=visual_tiled_static`
-requires every layer report to contain bake/upload/wall time and deterministic field hashes.
+`visual tiles:` JSON first proves the chosen path. Record renderer/profile,
+requested/effective `texels_per_hex`, requested/effective world-units-per-texel,
+requested/actual tile world span/area, degradation reason, derived MP, grid/layers,
+interior/gutter/logical size and estimated resident/peak bytes. Compare maps at equal
+`texels_per_hex`, not equal whole-map MP: a larger map should add layers while preserving
+world-space detail density. A lower effective density with no crash is the expected response
+to device limits. `budget_mp` is only an optional compatibility hard cap. A
+`path=visual_tiled_static` report requires every layer report to contain bake/upload/wall time
+and deterministic field hashes.
 
 `[visual-tiles/horizon]` then reports `gpu_compute_hierarchical`,
 `baseline_horizon_resample`, or `neutral_failed`. For compute, separate shader compile,

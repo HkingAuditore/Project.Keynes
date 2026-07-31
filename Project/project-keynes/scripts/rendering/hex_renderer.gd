@@ -229,7 +229,10 @@ var _wind_strength: float = 0.15
 @export var detail_scatter_chunked_multimesh_enabled: bool = true
 @export_range(2, 32, 1) var detail_scatter_chunk_size_cells: int = 8
 @export var detail_scatter_refresh_chunks_per_frame: int = 4
-@export_range(0.0, 20.0, 0.25) var detail_scatter_refresh_apply_budget_ms: float = 4.0
+# drain 信用预算：实测 4.0 时高倍速下 backlog 永不排空、帧均 drain 顶满预算
+# （tail_vegetation 持续 4-5ms）。配合全链路在途去重后重排队速率大幅下降，
+# 2.5ms 足以收敛 backlog，稳态帧成本直接减半。
+@export_range(0.0, 20.0, 0.25) var detail_scatter_refresh_apply_budget_ms: float = 2.5
 # 入队节流：succession 单元先并入去重累积器，按真实时间窗成批入队。高倍速下
 # 跨多天翻转的单元只重建一次，批次数不再随天数线性增长；低速下窗口 < 一日，
 # 延迟不可感知。0 表示逐次直通（旧行为）。
@@ -381,9 +384,19 @@ var _last_detail_refresh_report: Dictionary = {}
 # 入队节流/合并状态：跨日去重累积器 + 上次冲刷时刻。
 var _scatter_pending_cells: PackedInt32Array = PackedInt32Array()
 var _scatter_pending_seen: Dictionary = {}
+# 全链路在途去重：覆盖 累积器 + 待处理批次 + 当前批次 的全部 cell。
+# 气候提交以 ~6 帧节奏反复 dirty 同一批 cell；旧的 accumulator 去重在 flush 后
+# 即失效，导致仍在队列里的 cell 被重复入队、同一 chunk 被重建多次。在途集合在
+# cell 入队时加入、所属批次 drain 完成时移除；refresh 在 drain 时读取最新气候
+# 状态，跳过重复入队不损失任何状态正确性。
+var _scatter_inflight: Dictionary = {}
+var _scatter_enqueue_dedup_skips: int = 0
 var _scatter_last_enqueue_msec: int = 0
 # drain 信用制预算：每帧累积 apply_budget（上限 2×），chunk 按实测成本扣减。
 var _drain_credit_ms: float = 0.0
+# 最近一次实际推进 chunk 的引擎帧号：防饿死强制推进用（见 drain 循环）。
+var _drain_last_progress_frame: int = 0
+var _drain_cfg_logged: bool = false
 var _last_detail_budget_report: Dictionary = {}
 # C++ DCWorldExt 引用，转发给每个散布层做 native 生成。
 var _world_ext = null
@@ -694,6 +707,10 @@ func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
 		if ci < 0 or _scatter_pending_seen.has(ci):
 			continue
 		_scatter_pending_seen[ci] = true
+		if _scatter_inflight.has(ci):
+			_scatter_enqueue_dedup_skips += 1
+			continue
+		_scatter_inflight[ci] = true
 		_scatter_pending_cells.append(ci)
 	var now_msec := Time.get_ticks_msec()
 	var window_due := _scatter_last_enqueue_msec <= 0 or \
@@ -778,10 +795,18 @@ func _merge_pending_detail_refresh_batches(extra: PackedInt32Array) -> PackedInt
 	return merged
 
 
+func _release_detail_refresh_inflight(cells: PackedInt32Array) -> void:
+	if _scatter_inflight.is_empty():
+		return
+	for raw in cells:
+		_scatter_inflight.erase(int(raw))
+
+
 func _start_next_detail_refresh_batch() -> bool:
 	if not _detail_refresh_queue.is_empty():
 		return true
 	if _detail_refresh_batches.is_empty():
+		_release_detail_refresh_inflight(_detail_refresh_indices)
 		_detail_refresh_indices = PackedInt32Array()
 		return false
 	_detail_refresh_indices = _detail_refresh_batches.pop_front()
@@ -825,20 +850,31 @@ func _drain_detail_refresh_queue() -> void:
 		return
 	var chunk_budget := maxi(1, detail_scatter_refresh_chunks_per_frame)
 	var ms_budget := maxf(0.0, detail_scatter_refresh_apply_budget_ms)
-	# 信用制预算：每帧累积 ms_budget（上限 2× 防暴饮暴食），chunk 启动要求信用
-	# 为正、完成后按实测成本扣减（允许透支为负，最贵的 chunk 也能推进、不饿死）。
-	# 旧语义只拦第二个 chunk，首 chunk 不受预算约束：单 chunk 超预算时每帧都全
-	# 额超支；信用制把平均每帧 drain 成本硬封顶在 ms_budget，与单 chunk 成本无关。
+	# 信用制预算：每帧累积 ms_budget（上限 2× 防暴饮暴食）。严格闸门：信用不足
+	# 一整份预算时不启动新 chunk——单个 chunk 成本可超预算（water cache ≈4ms），
+	# 宽闸门（信用>0 即放行）会让贵 chunk 几乎每帧漏过，实测排水 3.5ms/帧远超
+	# 2.5ms 预算。防饿死：30 帧无进度则强制放行一个 chunk（兜底预算 < chunk 成本
+	# 的极端配置）。历史上该闸门曾与可视回归同时出现，事后查明回归根因是
+	# GDExt DLL 与烘焙源码版本错配，与本闸门无关。
 	if ms_budget > 0.0:
 		_drain_credit_ms = minf(_drain_credit_ms + ms_budget, ms_budget * 2.0)
+	if not _drain_cfg_logged:
+		_drain_cfg_logged = true
+		print("[detail_scatter/DRAIN_CFG] budget_ms=%.2f chunks_per_frame=%d cells_per_batch=%d chunk_size=%d" % [
+			ms_budget, chunk_budget,
+			maxi(1, detail_scatter_refresh_cells_per_batch),
+			maxi(2, detail_scatter_chunk_size_cells),
+		])
 	var done := 0
 	var t0 := Time.get_ticks_usec()
 	while done < chunk_budget and not _detail_refresh_queue.is_empty():
 		if ms_budget > 0.0:
-			if _drain_credit_ms <= 0.0:
-				break
-			if done > 0 and float(Time.get_ticks_usec() - t0) / 1000.0 >= ms_budget:
-				break
+			var force_progress := Engine.get_process_frames() - _drain_last_progress_frame > 30
+			if not force_progress:
+				if _drain_credit_ms < ms_budget:
+					break
+				if done > 0 and float(Time.get_ticks_usec() - t0) / 1000.0 >= ms_budget:
+					break
 		var task: Dictionary = _detail_refresh_queue.pop_front()
 		var task_t0 := Time.get_ticks_usec()
 		var layer = task.get("layer", null)
@@ -879,6 +915,7 @@ func _drain_detail_refresh_queue() -> void:
 					str(d.get("reason", "")),
 				])
 		done += 1
+		_drain_last_progress_frame = Engine.get_process_frames()
 		if ms_budget > 0.0:
 			_drain_credit_ms -= float(Time.get_ticks_usec() - task_t0) / 1000.0
 	var elapsed := float(Time.get_ticks_usec() - t0) / 1000.0
@@ -898,11 +935,15 @@ func _drain_detail_refresh_queue() -> void:
 				_detail_refresh_batches.size(),
 				str(_last_detail_budget_report),
 			])
+		_release_detail_refresh_inflight(_detail_refresh_indices)
 		_detail_refresh_indices = PackedInt32Array()
 
 
 func detail_scatter_refresh_report() -> Dictionary:
-	return _last_detail_refresh_report.duplicate(true)
+	var report := _last_detail_refresh_report.duplicate(true)
+	report["inflight_cells"] = _scatter_inflight.size()
+	report["enqueue_dedup_skips"] = _scatter_enqueue_dedup_skips
+	return report
 
 
 func detail_scatter_layer_reports() -> Array:
@@ -995,6 +1036,11 @@ func _log_detail_scatter_rebuild_summary(reason: String) -> void:
 			int(d.get("wrap_edge_copies", 0)),
 			str(d.get("reason", "")),
 		])
+	# 可见性现场：实例存在但屏幕无显示时，用每层 probe 区分 节点隐藏 / 可见数
+	# 归零 / mesh 缺失 / profile 关闭（只读诊断，不改变状态）。
+	for layer in _detail_layers:
+		if layer != null and layer.has_method("detail_visibility_probe"):
+			print("  [detail_scatter/VIS] %s" % str(layer.detail_visibility_probe()))
 
 
 # 默认散布层 profile 列表：优先 decoration_manifest.layers；留空时回退 grass/shrub/tree。
@@ -1026,6 +1072,16 @@ func _spawn_detail_layers() -> void:
 		if is_instance_valid(layer):
 			layer.queue_free()
 	_detail_layers.clear()
+	# 层销毁意味着旧世界的 succession 队列全部失效：任务里的 layer 引用虽有
+	# is_instance_valid 兜底，但 cell 语义已跨世界失效，必须整体重置（含全链路
+	# 在途集合，否则旧世界 cell 会永久屏蔽新世界的重排队）。
+	_detail_refresh_queue.clear()
+	_detail_refresh_batches.clear()
+	_detail_refresh_indices = PackedInt32Array()
+	_scatter_pending_cells = PackedInt32Array()
+	_scatter_pending_seen.clear()
+	_scatter_inflight.clear()
+	_drain_credit_ms = 0.0
 	var profiles := _detail_profiles()
 	var veg_tier := _mobile_quality_tier_from_define(_mobile_quality_tier_define)
 	for i in range(profiles.size()):
@@ -1131,6 +1187,11 @@ func set_map(map: MapData, world: WorldData = null) -> void:
 		_visual_tile_horizon_baker.cancel()
 	_map = map
 	_world = world
+	# _ready() loads the shader before a generated world exists, so it necessarily
+	# selects the legacy variant. Re-select after world injection; setting array
+	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
+	if is_inside_tree() and _world_quad != null:
+		_load_shader()
 	if _weather_layer != null and _weather_layer.has_method("set_world_ref"):
 		_weather_layer.set_world_ref(_world)  # 帧间插值:weather_lut_prev_tex 源
 	# [terrain-horizon-gpu 2026-07-03] map_baker 若登记了 GPU 离屏烘焙，这里在场景树内发起。
@@ -1482,6 +1543,7 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 			"max_horizon_angle": float(params.get("max_horizon_angle", 1.309)),
 			"bias": float(params.get("bias", 0.004)),
 			"height_world_scale": float(params.get("height_world_scale", 176.0)),
+			"sea_level": clampf(float(params.get("sea_level", world.sea_level)), 0.0, 1.0),
 		})
 		if bool(source_result.get("fallback", true)):
 			_record_visual_tile_horizon_failure(world,
@@ -1608,6 +1670,7 @@ func _start_terrain_horizon_bake(world: WorldData, params: Dictionary) -> void:
 	mat.set_shader_parameter("max_horizon_angle", float(params.get("max_horizon_angle", 1.309)))
 	mat.set_shader_parameter("bias", float(params.get("bias", 0.004)))
 	mat.set_shader_parameter("height_world_scale", float(params.get("height_world_scale", 176.0)))
+	mat.set_shader_parameter("sea_level", clampf(float(params.get("sea_level", world.sea_level)), 0.0, 1.0))
 	mat.set_shader_parameter("texel_x", float(params.get("texel_x", 1.0)))
 	mat.set_shader_parameter("texel_y", float(params.get("texel_y", 1.0)))
 	# 真正经度周期：柱状地图 x 环绕按此折叠，与运行期 wrap_map_uv 对齐，接缝无缝。
@@ -2395,6 +2458,8 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("hm_resolution", visual_resolution)
 	sm.set_shader_parameter("derived_resolution", visual_resolution if tiled \
 		else Vector2(_world.derived_size.x, _world.derived_size.y))
+	sm.set_shader_parameter("visual_reference_resolution",
+		Vector2(_world.hm_size.x, _world.hm_size.y))
 	sm.set_shader_parameter("sea_level", _world.sea_level)
 
 	sm.set_shader_parameter("season_phase", _season_phase)

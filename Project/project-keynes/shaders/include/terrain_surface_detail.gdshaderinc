@@ -58,13 +58,13 @@ const float TERRAIN_DITHER_THRESHOLD_MARGIN = 0.18;
 // 移动端恢复 atlas-texel 锚定的 8x8 Bayer DitherUV。它只选择视觉主/副材质，
 // 不改写 map_index_atlas.GB、CSR 或任何权威 cell 状态。
 float terrain_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
-	vec2 atlas_dims = visual_static_texture_size();
+	vec2 dither_dims = max(visual_reference_resolution, vec2(1.0));
 	vec2 wrapped_uv = wrap_map_uv(uv);
-	vec2 pixel_xy = floor(wrapped_uv * atlas_dims);
+	vec2 pixel_xy = floor(wrapped_uv * dither_dims);
 	if (wrap_period_x > 0.0001 && world_size.x > 0.0001) {
 		float period_px = max(
 				8.0,
-				round((atlas_dims.x * wrap_period_x / world_size.x) / 8.0) * 8.0);
+				round((dither_dims.x * wrap_period_x / world_size.x) / 8.0) * 8.0);
 		float phase = (wrap_world_x(wp.x) - wrap_origin_x) / wrap_period_x;
 		pixel_xy.x = floor(fract(phase) * period_px);
 	}

@@ -96,9 +96,9 @@ const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 # normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
 const TERRAIN_HORIZON_STEPS := 1024
 const TERRAIN_HORIZON_STEP_PX := 2.0
-const TERRAIN_HORIZON_MAX_ANGLE := 1.57       # 约 90°，与 shader 默认保持一致
+const TERRAIN_HORIZON_MAX_ANGLE := 1.309      # 约 75°，与运行期解码契约一致
 const TERRAIN_HORIZON_BIAS := 0.01            # height 单位，抑制同高/高频 relief 自遮蔽
-const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 100.0  # 归一高程 → world units 的视觉夸张倍率（×hex_size）
+const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 24.0   # 归一高程 → world units（×hex_size）
 
 # ─── v10.noise-pack：共享噪声包贴图（替换 shader 内海量 fbm 多 octave 采样） ──
 # 256×256 RGBA8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
@@ -942,6 +942,9 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	#   3. 移动端且 GPU 关：null，shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。
 	world.terrain_horizon_gpu_pending = false
 	world.terrain_horizon_gpu_params = {}
+	var horizon_height_scale_hex := maxf(float(ProjectSettings.get_setting(
+		"project_keynes/rendering/map_tiles/horizon_height_scale_hex",
+		TERRAIN_HORIZON_HEIGHT_SCALE_HEX)), 0.01)
 	if DCFeatureFlags.terrain_horizon_gpu_bake_active():
 		var wb: Vector2 = world.world_bounds.size
 		var tx: float = (wb.x / float(world.hm_size.x)) if world.hm_size.x > 0 else 1.0
@@ -951,7 +954,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 			"step_px": TERRAIN_HORIZON_STEP_PX,
 			"max_horizon_angle": TERRAIN_HORIZON_MAX_ANGLE,
 			"bias": TERRAIN_HORIZON_BIAS,
-			"height_world_scale": maxf(hex_size * TERRAIN_HORIZON_HEIGHT_SCALE_HEX, 1e-4),
+			"height_world_scale": maxf(hex_size * horizon_height_scale_hex, 1e-4),
+			"sea_level": world.sea_level,
 			"texel_x": tx,
 			"texel_y": ty,
 			# 真正经度周期：柱状地图东西连续，marching 须按此周期折叠（≠含 padding 的 world_bounds.x）。
@@ -965,7 +969,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		world.terrain_horizon_tex = DCAtlasEncoders.encode_horizon_tex(
 			world.height_buffer, world.hm_size, world.world_bounds.size, hex_size, world.terrain_horizon_tex,
 			_world_ext, TERRAIN_HORIZON_STEPS, TERRAIN_HORIZON_STEP_PX, TERRAIN_HORIZON_MAX_ANGLE,
-			TERRAIN_HORIZON_BIAS, hex_size * TERRAIN_HORIZON_HEIGHT_SCALE_HEX, world.wrap_period_x)
+			TERRAIN_HORIZON_BIAS, hex_size * horizon_height_scale_hex, world.wrap_period_x,
+			world.sea_level)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, null, world, map
@@ -1035,7 +1040,7 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 	var quality := _visual_tile_quality_setting()
 	var layout = VisualTileLayoutScript.resolve(
 		world.world_bounds, world.wrap_period_x, quality, OS.has_feature("mobile"),
-		{"generation_id": generation_id}
+		{"generation_id": generation_id, "hex_size": hex_size}
 	)
 	if layout.mode == VisualTileLayoutScript.MODE_LEGACY:
 		world.visual_tiles = null
@@ -1116,7 +1121,8 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"shore_carve_amp": SHORE_CARVE_AMP,
 		"shore_carve_band": SHORE_CARVE_BAND,
 		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
-		"normal_radius_px": 2,
+		# 保持 legacy 粗法线的世界空间平滑范围；native 按 Tile 的 X/Y texel 尺寸分别换算半径。
+		"normal_reference_radius_px": TERRAIN_NORMAL_COARSE_RADIUS,
 		"normal_slope_gain": TERRAIN_NORMAL_SLOPE_GAIN,
 	}
 	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
@@ -1170,6 +1176,18 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 			"bake_ms": float(bundle.get("elapsed_ms", -1.0)),
 			"upload_ms": float(Time.get_ticks_usec() - upload_t0) / 1000.0,
 			"wall_ms": float(Time.get_ticks_usec() - layer_t0) / 1000.0,
+			"normal_radius_px": Vector2i(
+				int(bundle.get("normal_radius_x_px", 0)),
+				int(bundle.get("normal_radius_y_px", 0))),
+			"raster_scale": Vector2(
+				float(bundle.get("raster_scale_x", 1.0)),
+				float(bundle.get("raster_scale_y", 1.0))),
+			"distance_scale": float(bundle.get("distance_scale", 1.0)),
+			"river_sdf_max_dist_px": float(bundle.get("river_sdf_max_dist_px", SDF_MAX_DIST_PX)),
+			"coast_sdf_max_dist_px": float(bundle.get("coast_sdf_max_dist_px", COAST_SDF_MAX_DIST_PX)),
+			"shore_carve_band_px": int(bundle.get("shore_carve_band_px", SHORE_CARVE_BAND)),
+			"edge_distance_units": String(bundle.get("edge_distance_units", "normalized_hex_center_gap")),
+			"edge_distance_saturate_hex": float(bundle.get("edge_distance_saturate_hex", 0.90)),
 			"hashes": bundle.get("hashes", {}),
 		})
 		await _yield_generation_frame()
@@ -3897,8 +3915,6 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	var size := world.world_bounds.size
 	var inv_world := Vector2(float(W) / size.x, float(H) / size.y)
 	var stroke_radius_px := maxf(hex_size * RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
-	var seam_dx := size.x * 0.5
-
 	var knobs := {
 		# 共用
 		"width": W, "height": H,
@@ -3932,7 +3948,6 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"inv_world_x": inv_world.x, "inv_world_y": inv_world.y,
 		"base_radius_px": stroke_radius_px,
 		"sdf_max_dist_px": SDF_MAX_DIST_PX,
-		"seam_dx": seam_dx,
 		"cr_step": RIVER_CR_STEP,
 		# coast SDF carve（water-bodies systemic：海/湖统一岸坡，river carve 之后作用于 height_final）
 		"shore_carve_amp": SHORE_CARVE_AMP,
@@ -4638,9 +4653,7 @@ func _bake_river_sdf(_map: MapData, hex_size: float, bounds: Rect2, res: Vector2
 	var size := bounds.size
 	var inv_world := Vector2(float(W) / size.x, float(H) / size.y)
 	var stroke_radius_px := maxf(hex_size * RIVER_STROKE_HEX_FACTOR * inv_world.x, 0.5)
-	var seam_dx := size.x * 0.5
-
-	# dots-total-cpp step1（2026-06-25）：河流图遍历(trace) + seam-split + Catmull-Rom 致密化 +
+	# dots-total-cpp step1（2026-06-25）：河流图遍历(trace) + 周期连续展开 + Catmull-Rom 致密化 +
 	# warp 噪声 + stamp + chamfer + normalize **全部在 C++ run_bake_river_sdf_pass 内完成**。
 	# 河流拓扑由 run_native_world_generate_post_base_pass 暂存到 ext 成员（_gen_river_*），本 pass
 	# 不再传任何河流链/拓扑——GDScript 只发 bake 几何参数（零河流数据跨语言传输）。
@@ -4659,7 +4672,6 @@ func _bake_river_sdf(_map: MapData, hex_size: float, bounds: Rect2, res: Vector2
 		"seed": int(_rng.seed) if _rng != null else 0,
 		"base_radius_px": stroke_radius_px,
 		"sdf_max_dist_px": SDF_MAX_DIST_PX,
-		"seam_dx": seam_dx,
 		"cr_step": RIVER_CR_STEP,
 		"wrap_period_x": HexUtils.wrap_period_x(_map.width, hex_size) if _map != null else 0.0,
 	})

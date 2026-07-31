@@ -44,6 +44,12 @@ func _init() -> void:
 		push_error("visual_tile_native_bake_test: high-resolution CSR was emitted")
 		quit(1)
 		return
+	if not _test_normal_resolution_invariance(ext):
+		quit(1)
+		return
+	if not _test_edge_distance_resolution_invariance(ext):
+		quit(1)
+		return
 	if ext.has_method("run_resample_visual_horizon_layer_pass"):
 		if not _test_horizon_resample(ext):
 			quit(1)
@@ -52,6 +58,110 @@ func _init() -> void:
 		print("visual_tile_native_bake_test: horizon resample SKIP (stale DLL)")
 	print("visual_tile_native_bake_test: PASS %s" % JSON.stringify(first.get("hashes", {})))
 	quit(0)
+
+
+func _test_normal_resolution_invariance(ext: Object) -> bool:
+	var low := _make_knobs()
+	low["wrap_period_x"] = 0.0
+	low["origin_x"] = 0.0
+	low["origin_y"] = 0.0
+	low["size_x"] = 40.0
+	low["size_y"] = 30.0
+	low["baseline_origin_x"] = 0.0
+	low["baseline_origin_y"] = 0.0
+	low["baseline_size_x"] = 40.0
+	low["baseline_size_y"] = 30.0
+	low["normal_reference_radius_px"] = 4
+	low.erase("normal_radius_px")
+	var baseline: PackedFloat32Array = low["baseline_height_buffer"]
+	var baseline_width: int = int(low["baseline_width"])
+	var baseline_height: int = int(low["baseline_height"])
+	for y in range(baseline_height):
+		for x in range(baseline_width):
+			baseline[y * baseline_width + x] = 0.66 + 0.28 * \
+				float(x) / float(baseline_width - 1)
+	low["baseline_height_buffer"] = baseline
+	var high: Dictionary = low.duplicate(true)
+	high["width"] = int(low["width"]) * 2
+	high["height"] = int(low["height"]) * 2
+
+	var low_result: Dictionary = ext.run_bake_visual_tile_layer_pass(low)
+	var high_result: Dictionary = ext.run_bake_visual_tile_layer_pass(high)
+	if bool(low_result.get("fallback", true)) or bool(high_result.get("fallback", true)):
+		push_error("visual_tile_native_bake_test: normal invariance bake failed")
+		return false
+	var low_nx := _average_normal_x(
+		low_result, int(low["width"]), int(low["height"]))
+	var high_nx := _average_normal_x(
+		high_result, int(high["width"]), int(high["height"]))
+	if absf(low_nx - high_nx) > 2.5 / 255.0:
+		push_error("visual_tile_native_bake_test: normal changed with resolution low=%.6f high=%.6f" % [
+			low_nx, high_nx])
+		return false
+	if int(high_result.get("normal_radius_x_px", 0)) \
+			<= int(low_result.get("normal_radius_x_px", 0)):
+		push_error("visual_tile_native_bake_test: normal world radius was not preserved")
+		return false
+	return true
+
+
+func _average_normal_x(result: Dictionary, width: int, height: int) -> float:
+	var data: PackedByteArray = result.get("terrain_normal", PackedByteArray())
+	var x0: int = int(width / 4)
+	var x1: int = width - x0
+	var y0: int = int(height / 4)
+	var y1: int = height - y0
+	var total := 0.0
+	var count := 0
+	for y in range(y0, y1):
+		for x in range(x0, x1):
+			total += float(data[(y * width + x) * 2]) / 255.0 * 2.0 - 1.0
+			count += 1
+	return total / float(maxi(count, 1))
+
+
+func _test_edge_distance_resolution_invariance(ext: Object) -> bool:
+	var low := _make_knobs()
+	low["wrap_period_x"] = 0.0
+	low["origin_x"] = 0.0
+	low["origin_y"] = 0.0
+	low["size_x"] = 40.0
+	low["size_y"] = 30.0
+	var high: Dictionary = low.duplicate(true)
+	# An odd scale factor makes every low-resolution texel center coincide with
+	# one high-resolution texel center, so this compares identical world points.
+	high["width"] = int(low["width"]) * 3
+	high["height"] = int(low["height"]) * 3
+
+	var low_result: Dictionary = ext.run_bake_visual_tile_layer_pass(low)
+	var high_result: Dictionary = ext.run_bake_visual_tile_layer_pass(high)
+	if bool(low_result.get("fallback", true)) or bool(high_result.get("fallback", true)):
+		push_error("visual_tile_native_bake_test: edge-distance invariance bake failed")
+		return false
+	if String(low_result.get("edge_distance_units", "")) != "normalized_hex_center_gap" \
+			or absf(float(low_result.get("edge_distance_saturate_hex", 0.0)) - 0.90) > 1e-6:
+		push_error("visual_tile_native_bake_test: edge-distance world-unit contract missing")
+		return false
+
+	var low_distance: PackedByteArray = low_result.get("edge_distance", PackedByteArray())
+	var high_distance: PackedByteArray = high_result.get("edge_distance", PackedByteArray())
+	var low_neighbor: PackedByteArray = low_result.get("edge_neighbor", PackedByteArray())
+	var high_neighbor: PackedByteArray = high_result.get("edge_neighbor", PackedByteArray())
+	var low_width: int = int(low["width"])
+	var low_height: int = int(low["height"])
+	var high_width: int = int(high["width"])
+	for y in range(low_height):
+		for x in range(low_width):
+			var low_index := y * low_width + x
+			var high_index := (y * 3 + 1) * high_width + (x * 3 + 1)
+			if absi(int(low_distance[low_index]) - int(high_distance[high_index])) > 1:
+				push_error("visual_tile_native_bake_test: edge distance changed with resolution")
+				return false
+			for channel in range(2):
+				if low_neighbor[low_index * 2 + channel] != high_neighbor[high_index * 2 + channel]:
+					push_error("visual_tile_native_bake_test: edge neighbor changed with resolution")
+					return false
+	return true
 
 
 func _test_horizon_resample(ext: Object) -> bool:

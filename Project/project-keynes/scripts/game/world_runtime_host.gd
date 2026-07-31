@@ -82,6 +82,11 @@ var _map_overlay_merged_dirty_count: int = 0
 var _map_overlay_last_result: Dictionary = {}
 # 帧尾诊断累加器：自上一 perf 行以来的 overlay 重烘焙总毫秒（发布时清零）。
 var _overlay_bake_ms_accum: float = 0.0
+# 帧墙钟：在 fast-tick 发布点用 Engine.get_process_frames() 差分测量（本节点
+# 不一定挂在场景树里，不能依赖 _process 回调）。多 tick 帧取区间平均。
+var _last_perf_publish_usec: int = 0
+var _last_perf_publish_frame: int = 0
+var _last_frame_wall_ms: float = 0.0
 var _fog_of_war_enabled: bool = false
 var _player_country_slot: int = -1
 var _player_country_handle: int = 0
@@ -1238,6 +1243,17 @@ func _publish_fast_tick_perf_sample(
 		fast_ms: float,
 		was_skipped_day: bool
 ) -> Dictionary:
+	# 帧墙钟差分：发布点间墙钟 / 期间引擎帧数。1 tick/帧时即上一帧墙钟；
+	# 高速多 tick 帧取区间平均，不产生 0 除（frame_delta=0 时保留上一值）。
+	var publish_now_usec := Time.get_ticks_usec()
+	var publish_now_frame := Engine.get_process_frames()
+	if _last_perf_publish_usec > 0:
+		var frame_delta := publish_now_frame - _last_perf_publish_frame
+		if frame_delta > 0:
+			_last_frame_wall_ms = float(publish_now_usec - _last_perf_publish_usec) \
+				/ 1000.0 / float(frame_delta)
+	_last_perf_publish_usec = publish_now_usec
+	_last_perf_publish_frame = publish_now_frame
 	var perf_ready := _recorder_ready(_perf_recorder)
 	var tile_ready := _recorder_ready(_tile_data_recorder)
 	var economy_ready := _recorder_ready(_economy_data_recorder)
@@ -1313,7 +1329,30 @@ func _publish_fast_tick_perf_sample(
 			if _settlement_label_layer != null else 0,
 		"tail_vegetation_ms": _renderer.get_last_detail_drain_ms() \
 			if _renderer != null and _renderer.has_method("get_last_detail_drain_ms") else 0.0,
+		# succession 队列健康度：全链路在途 cell 数与累计入队去重跳过数。稳态下
+		# inflight 应有界（≤ 单批气候 dirty 规模），dedup_skips 应随气候提交增长。
+		"tail_vegetation_inflight": int(_renderer.detail_scatter_refresh_report().get("inflight_cells", 0)) \
+			if _renderer != null and _renderer.has_method("detail_scatter_refresh_report") else 0,
+		"tail_vegetation_dedup_skips": int(_renderer.detail_scatter_refresh_report().get("enqueue_dedup_skips", 0)) \
+			if _renderer != null and _renderer.has_method("detail_scatter_refresh_report") else 0,
 		"tail_overlay_ms": _overlay_bake_ms_accum,
+		# 帧级渲染残差探针：frame_wall = 相邻两次发布点间的平均帧墙钟（process
+		# frames 差分，多 tick 帧取平均）；engine_process/physics 为引擎监视器原始
+		# 值（信息列，其口径与帧墙钟不严格可比）；residual = wall - clock_full -
+		# 已知帧尾探针 ≈ 渲染提交 + GPU present + 未埋点 _process 节点。
+		"frame_wall_ms": _last_frame_wall_ms,
+		"engine_process_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+		"engine_physics_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		"render_objects_in_frame": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+		"render_primitives_in_frame": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
+		"render_draw_calls_in_frame": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		"render_residual_ms": maxf(0.0, _last_frame_wall_ms
+			- (_world_clock.get_last_full_proc_ms() if _world_clock != null else 0.0)
+			- (_renderer.get_last_detail_drain_ms() \
+				if _renderer != null and _renderer.has_method("get_last_detail_drain_ms") else 0.0)
+			- (_settlement_label_layer.get_last_rebuild_ms() \
+				if _settlement_label_layer != null else 0.0)
+			- _overlay_bake_ms_accum),
 	}
 	_overlay_bake_ms_accum = 0.0
 	if _generator != null and _generator.has_method("sus_climate_breakdown"):

@@ -32,39 +32,56 @@ flowchart LR
   luts["全局 per-cell LUT"] --> consumers
 ```
 
-## 画质预算与布局
+## 画质密度与布局
 
-`VisualTileLayout.resolve()` 从 `auto/low/medium/high`、平台和设备限制推导布局。
-玩家不直接指定 `N`；`N = grid_x * grid_y` 是预算解析结果。
+`VisualTileLayout.resolve()` 从 `auto/low/medium/high`、平台和设备限制推导单位世界面积的
+采样密度。玩家不指定 `N`，也不先为整张地图指定固定 MP；设备档位选择
+`texels_per_hex`，默认 `512x512` interior 由此得到一层合理覆盖的世界范围，地图实际面积再
+决定 `grid` 和 `N = grid_x * grid_y`。
 
 | 平台 | Low | Medium | High | Auto |
 | --- | ---: | ---: | ---: | ---: |
-| Mobile | 0.25 MP | 1 MP | 2 MP | Low |
-| Desktop | 1 MP | 4 MP | 8 MP | High |
+| Mobile | 6 texels/hex | 8 texels/hex | 10 texels/hex | 6 texels/hex |
+| Desktop | 8 texels/hex | 12 texels/hex | 16 texels/hex | 14 texels/hex |
 
-默认 interior 上限为 `512x512`，每边 gutter 为 2 px，interior 轴向上取整到 8。
-水平环绕地图的 `visual_domain.x=[0, wrap_period_x)`，不把 `world_bounds` 的水平 padding
-计入预算；非环绕地图使用完整 `world_bounds`。推导公式为：
+这里的 `hex` 是一个 `hex_size`（六边格半径）的世界长度。例如 Desktop Auto 的目标单层
+边长为 `512 / 14 = 36.57 hex`；High 为 `32 hex`。地图扩大时每层世界覆盖基本不变，层数
+随地图面积增长；小地图不会为了凑固定 MP 被无谓放大。每边 gutter 为 2 px，interior 轴向
+上取整到 8。水平环绕地图的 `visual_domain.x=[0, wrap_period_x)`，不把 `world_bounds` 的
+水平 padding 计入布局；非环绕地图使用完整 `world_bounds`。推导公式为：
 
 ```text
-target_w = ceil(sqrt(pixel_budget * aspect))
-target_h = ceil(pixel_budget / target_w)
-grid_x = ceil(target_w / 512)
-grid_y = ceil(target_h / 512)
+density = profile_texels_per_hex
+target_w = ceil(visual_domain.width  / hex_size * density)
+target_h = ceil(visual_domain.height / hex_size * density)
+
+target_tile_world_span = 512 * hex_size / density
+grid_x = ceil(visual_domain.width  / target_tile_world_span)
+grid_y = ceil(visual_domain.height / target_tile_world_span)
 interior = align_up(ceil(target / grid), 8)
 logical = grid * interior
 ```
 
-layer 数同时受 64、`LIMIT_MAX_TEXTURE_ARRAY_LAYERS` 和
-`LIMIT_MAX_TEXTURE_SIZE_2D` 限制。预算 resolver 以 0.85 逐级下降，直到 layer、纹理尺寸、
-稳态和峰值内存全部满足；无法求解时回退 legacy。
+所有 Tile 等分 `visual_domain`，因此实际 `tile_world_span = visual_domain / grid`；未降级时不
+超过档位目标跨度，设备约束触发密度降级后会相应增大。layer 数同时受 64、
+`LIMIT_MAX_TEXTURE_ARRAY_LAYERS` 和
+`LIMIT_MAX_TEXTURE_SIZE_2D` 限制。resolver 以 0.90 逐级降低 `texels_per_hex`，直到 layer、
+纹理尺寸、稳态和峰值内存全部满足；无法在最低密度求解时回退 legacy。`budget_mp` 仅作为旧
+配置和 QA 的可选整图硬上限，不再决定初始布局。
+
+当前 `100x64`、`hex_size=22` 大地图的 Desktop Auto 解析为约 `2440x1416`、15 layers、
+3.46 MP；High 解析为约 `2784x1632`、24 layers、4.54 MP。它们是地图面积和密度的结果，
+不是固定目标值。
 
 默认内存硬上限：Mobile 64/96 MB，Desktop 192/256 MB（稳态/峰值）。稳态按每物理
 texel 18 bytes 估算；compute 临时工作集额外按 12 bytes 估算。可通过以下设置或命令行覆盖：
 
 - `project_keynes/rendering/map_tiles/mode`
+- `project_keynes/rendering/map_tiles/texels_per_hex`
 - `project_keynes/rendering/map_tiles/budget_mp`
+- `project_keynes/rendering/map_tiles/horizon_height_scale_hex`
 - `--map-visual-mode=` / `--map-tile-mode=`
+- `--map-tile-texels-per-hex=`
 - `--map-tile-budget-mp=`
 - `--map-tile-resident-cap-mb=` / `--map-tile-peak-cap-mb=`
 
@@ -107,8 +124,16 @@ O(n_pixels) 循环。每个 layer 返回后立即 `update_layer()` 并让出一�
 
 视觉高度为 bicubic 全局侵蚀高度加世界坐标驱动的有界高频 residual。residual 与 tile id
 无关，按 seed 确定，并保持权威海陆侧不变。河流 SDF、海岸 carve、水深和法线在目标
-分辨率重新计算，不从 R8 基线放大。算法所需 halo 在 native pass 内按世界坐标采样，
-运行时 2 px gutter 只服务滤波和接缝。
+分辨率重新计算，不从 R8 基线放大。河流/海岸 SDF 截断距离与岸坡带宽以全局基线 texel
+为参考，按 Tile 相对基线的 X/Y 几何平均像素倍率换算；算法 halo 同步覆盖换算后的范围，
+所以提高视觉 MP 不会让河岸、海岸或 carve 带在世界空间变窄。cell 边界距离不是像素距离，
+而是主/副 cell 中心距离差除以 `hex_size` 后在 `0.90 hex` 饱和；任意 Tile 分辨率都保持
+相同世界范围，高分辨率只提高量化精度。8x8 Bayer DitherUV 锚定全局基线 texel 的世界尺寸，
+不会因 Tile MP 增加而缩成更密的图案。宏观法线先用 X/Y 各自的 texel 世界尺寸把中心差分
+还原为世界导数，再按一个全局基线 texel 校准到 legacy 的坡度强度；
+`normal_reference_radius_px` 同样从基线 texel 半径换算为每轴 Tile 半径。因此改变像素预算或
+Tile 数量不会压平坡度，也不会改变宏观法线的世界空间平滑范围。算法所需 halo 在 native
+pass 内扩展到足以覆盖换算后的法线半径；运行时 2 px gutter 只服务滤波和接缝。
 
 当前 API 是无状态的逐层 pass，而不是持久 C++ session 对象；共享 PackedArray 依靠 Godot
 Copy-on-Write 复用，且热循环仍完全位于 C++。若后续 profiling 证明每层参数解析或重复预处理
@@ -118,14 +143,23 @@ Copy-on-Write 复用，且热循环仍完全位于 C++。若后续 profiling 证
 
 `VisualTileHorizonBaker` 使用 local `RenderingDevice`：
 
-1. decode shader 把 RG8 array 解码到 logical level-0 float buffer。
+1. decode shader 把 RG8 array 解码到 logical level-0 float buffer，并仅在 horizon 派生场中以
+   `max(height, sea_level)` 把海底接收面抬到水面；原始高度、bathymetry 与水深纹理不变。
 2. pyramid shader 构建跨 layer 的 max-height 金字塔。
 3. trace shader 对物理 layer（含 gutter）的 8 个方向执行分层 branch-and-bound。
 4. 输出直接写 nibble-packed RGBA8 buffer，回读后逐层上传。
 
 X 坐标先按周期环绕再解析 logical texel，Y clamp。水平射线最多一个经度周期；其他方向
-到 Y 边界停止。达到 iteration cap 时用未解析区间的上界保守量化，并累计
-`non_converged_rays`，因此失败模式是略多遮挡而不是漏遮挡。
+到 Y 边界停止。达到主 traversal iteration cap 时，使用沿当前射线走廊的分层 max-height
+span 完成保守 tail；每个 span 以最近距离计算斜率上界，因此只会略多遮挡，不会漏遮挡，
+也不会把全图无关山峰投成三角长影。只有 512 次 tail 仍无法覆盖的病理尺寸才使用全局最大值，
+并单独累计 `global_fallback_rays`。
+
+周期 mip 的寻址契约是“先按 level-0 `logical_size.x` 环绕，再除以 `2^level` 解析 mip cell”，
+不能把已经缩小的 cell index 按 `mip_size.x` 取模。逻辑宽度不整除 `2^level` 时，最右 mip cell
+是非完整尾块，两种取模并不等价，会让东西接缝一侧查询到错误的远处高度。单个 span 跨越接缝时
+还必须同时查询 level-0 的 `x=0` 与 `x=logical_size.x-1`；这是因为非完整尾块可能令一个不超过
+一块宽度的周期 span 实际接触三个 mip cell。该规则同时用于主 traversal 和 conservative tail。
 
 compute 在静态 Tile 发布后异步启动；完成前 shader 关闭 tiled horizon direct-light
 遮蔽。shader 编译、资源创建、dispatch、sync 或 readback 失败时，renderer 调
@@ -167,17 +201,25 @@ fallback 尚有验证缺口时提前删除。
 
 ## 诊断与验收
 
-静态报告记录 mode/fallback、renderer、requested/effective budget、domain、grid、layer、
-interior/gutter/logical size、估算 resident/peak bytes，以及每层 bake/upload/wall time 和字段 hash。
+静态报告记录 mode/fallback/degradation、renderer、设备 profile、requested/effective
+`texels_per_hex`、world-units-per-texel、requested/actual tile world span/area、由此产生的
+requested/effective pixels、domain、grid/layer、interior/gutter/logical size、估算
+resident/peak bytes，以及每层 bake/upload/wall time 和字段 hash。
 Horizon 报告记录 path、mip levels、compile/resource setup/command record/submit/GPU wait/readback/
-upload time、buffer bytes、hash 与 non-converged ray 数；fallback 另记 source path、每层时间/hash
-和 compute failure。
+upload time、buffer bytes、hash、`non_converged_rays`、`conservative_tail_rays/ratio`、
+`global_fallback_rays`、`height_world_scale` 与 `sea_level`。静态层另记 raster/distance scale、
+换算后的 river/coast SDF 与岸坡像素范围，以及 cell edge distance 的 world/hex 单位；fallback
+另记 source path、每层时间/hash 和 compute failure。
 
 自动测试入口：
 
-- `visual_tile_layout_test.gd`：预算、极端比例、设备降级、wrap/边界地址。
-- `visual_tile_native_bake_test.gd`：八字段尺寸、hash 确定性、无高分 CSR、horizon fallback
-  尺寸/hash/环绕 gutter。
+- `visual_tile_layout_test.gd`：世界面积缩放、档位密度、设备降级、极端比例、wrap/边界地址。
+- `visual_tile_native_bake_test.gd`：八字段尺寸、hash 确定性、无高分 CSR、不同 Tile
+  分辨率的世界坡度法线一致性、同世界采样点的 cell edge distance/secondary cell 一致性，
+  以及 horizon fallback 尺寸/hash/环绕 gutter。
+- `visual_tile_renderer_variant_lifecycle_test.gd`：renderer 在 `_ready()` 的无世界 legacy
+  状态之后注入/移除 tiled world 时，必须重新选择 `MAP_VISUAL_TILED`/legacy shader
+  变体；仅重绑 uniform 不能替代变体重编译。
 - `visual_tile_horizon_shader_test.gd`：compute source 契约。
 - `visual_tile_horizon_smoke_test.gd`：真实 RenderingDevice dispatch/readback/upload 和 gutter。
 - `terrain_shader_variant_test.gd`、`overlay_edge_transition_shader_test.gd`：legacy/tiled shader 变体。

@@ -8,6 +8,8 @@ const MODE_TILED := "tiled"
 const DEFAULT_TILE_EDGE := 512
 const DEFAULT_GUTTER_PX := 2
 const DEFAULT_LAYER_CAP := 64
+const MIN_TEXELS_PER_HEX := 1.0
+const DENSITY_DEGRADE_FACTOR := 0.90
 const BYTES_PER_PHYSICAL_TEXEL := 18
 # Local RenderingDevice keeps a duplicate RG8 input, a float max pyramid and
 # the packed output until readback. Round up so the resolver enforces peak RAM.
@@ -15,6 +17,8 @@ const COMPUTE_TEMP_BYTES_PER_TEXEL := 12
 
 var mode: String = MODE_LEGACY
 var fallback_reason: String = ""
+var degradation_reason: String = ""
+var profile: String = ""
 var visual_domain: Rect2 = Rect2()
 var wrap_x: bool = false
 var wrap_period_x: float = 0.0
@@ -24,6 +28,14 @@ var interior_size: Vector2i = Vector2i.ZERO
 var gutter_px: int = DEFAULT_GUTTER_PX
 var layer_size: Vector2i = Vector2i.ZERO
 var logical_size: Vector2i = Vector2i.ZERO
+var hex_size: float = 1.0
+var requested_texels_per_hex: float = 0.0
+var effective_texels_per_hex: float = 0.0
+var requested_world_units_per_texel: float = 0.0
+var effective_world_units_per_texel: Vector2 = Vector2.ZERO
+var requested_tile_world_span: Vector2 = Vector2.ZERO
+var tile_world_span: Vector2 = Vector2.ZERO
+var tile_world_area: float = 0.0
 var requested_budget_px: int = 0
 var effective_budget_px: int = 0
 var estimated_resident_bytes: int = 0
@@ -55,9 +67,15 @@ static func resolve(
 	else:
 		layout.visual_domain = world_bounds
 
-	layout.requested_budget_px = maxi(1, int(round(
-		float(options.get("budget_mp", _configured_budget_mp(quality, mobile))) * 1_000_000.0
-	)))
+	var normalized_quality := quality if quality in ["low", "medium", "high"] else "auto"
+	layout.profile = "%s_%s" % ["mobile" if mobile else "desktop", normalized_quality]
+	layout.hex_size = maxf(float(options.get("hex_size", 1.0)), 0.0001)
+	layout.requested_texels_per_hex = maxf(float(options.get(
+		"texels_per_hex", _configured_texels_per_hex(normalized_quality, mobile))),
+		MIN_TEXELS_PER_HEX)
+	layout.requested_world_units_per_texel = (
+		layout.hex_size / layout.requested_texels_per_hex)
+
 	layout.gutter_px = maxi(1, int(options.get("gutter_px", DEFAULT_GUTTER_PX)))
 	var tile_edge := clampi(int(options.get("tile_edge", DEFAULT_TILE_EDGE)), 64, 2048)
 	var max_layers := mini(DEFAULT_LAYER_CAP, maxi(1, int(options.get(
@@ -66,7 +84,10 @@ static func resolve(
 	var max_texture_size := maxi(64, int(options.get(
 		"max_texture_size", _device_limit(RenderingDevice.LIMIT_MAX_TEXTURE_SIZE_2D, 4096)
 	)))
-	tile_edge = mini(tile_edge, max_texture_size - layout.gutter_px * 2)
+	tile_edge = _align_down(mini(tile_edge,
+		max_texture_size - layout.gutter_px * 2), 8)
+	layout.requested_tile_world_span = Vector2.ONE * (
+		float(tile_edge) * layout.requested_world_units_per_texel)
 
 	var resident_cap_mb := float(options.get("resident_cap_mb",
 		_configured_cap_mb("resident_cap_mb", 64.0 if mobile else 192.0)))
@@ -75,44 +96,89 @@ static func resolve(
 	var resident_cap := maxi(1, int(round(resident_cap_mb * 1024.0 * 1024.0)))
 	var peak_cap := maxi(1, int(round(peak_cap_mb * 1024.0 * 1024.0)))
 
-	var budget: int = int(layout.requested_budget_px)
+	var requested_target: Vector2i = layout._target_size_for_density(
+		layout.requested_texels_per_hex)
+	layout.requested_budget_px = requested_target.x * requested_target.y
+	var density: float = layout.requested_texels_per_hex
+	var degrade_reasons: Array[String] = []
+	# Kept as a compatibility/QA override. It may cap a density-derived layout,
+	# but it is no longer the source from which the grid is chosen.
+	var budget_cap_mp := float(options.get("budget_mp", _configured_budget_mp_cap()))
+	if budget_cap_mp > 0.0:
+		var cap_px := maxi(1, int(round(budget_cap_mp * 1_000_000.0)))
+		if layout.requested_budget_px > cap_px:
+			density *= sqrt(float(cap_px) / float(layout.requested_budget_px))
+			degrade_reasons.append("whole_map_budget_cap")
+
 	var solved: bool = false
-	for _attempt in range(48):
-		layout._derive_grid(budget, tile_edge)
+	for _attempt in range(64):
+		layout._derive_grid_from_density(density, tile_edge)
 		layout._estimate_memory()
-		if layout.layer_count <= max_layers \
-				and layout.layer_size.x <= max_texture_size \
-				and layout.layer_size.y <= max_texture_size \
-				and layout.estimated_resident_bytes <= resident_cap \
-				and layout.estimated_peak_bytes <= peak_cap:
+		var failure: String = layout._constraint_failure(
+			max_layers, max_texture_size, resident_cap, peak_cap)
+		if failure.is_empty():
 			solved = true
 			break
-		budget = maxi(64 * 64, int(floor(float(budget) * 0.85)))
+		if failure not in degrade_reasons:
+			degrade_reasons.append(failure)
+		density *= DENSITY_DEGRADE_FACTOR
+		if density < MIN_TEXELS_PER_HEX:
+			break
 
+	layout.degradation_reason = ",".join(degrade_reasons)
 	if not solved or tile_edge < 64 or layout.visual_domain.size.x <= 0.0 \
 			or layout.visual_domain.size.y <= 0.0:
 		layout.mode = MODE_LEGACY
 		if layout.fallback_reason.is_empty():
-			layout.fallback_reason = "tile_budget_or_device_limit"
+			layout.fallback_reason = "tile_density_or_device_limit"
 	return layout
 
 
-func _derive_grid(budget_px: int, tile_edge: int) -> void:
-	var aspect := maxf(visual_domain.size.x / maxf(visual_domain.size.y, 0.0001), 0.0001)
-	var target_w := maxi(8, int(ceil(sqrt(float(budget_px) * aspect))))
-	var target_h := maxi(8, int(ceil(float(budget_px) / float(target_w))))
+func _target_size_for_density(texels_per_hex: float) -> Vector2i:
+	if visual_domain.size.x <= 0.0 or visual_domain.size.y <= 0.0:
+		return Vector2i.ZERO
+	return Vector2i(
+		maxi(8, int(ceil(visual_domain.size.x / hex_size * texels_per_hex))),
+		maxi(8, int(ceil(visual_domain.size.y / hex_size * texels_per_hex)))
+	)
+
+
+func _derive_grid_from_density(texels_per_hex: float, tile_edge: int) -> void:
+	var target := _target_size_for_density(texels_per_hex)
 	grid_size = Vector2i(
-		maxi(1, int(ceil(float(target_w) / float(tile_edge)))),
-		maxi(1, int(ceil(float(target_h) / float(tile_edge))))
+		maxi(1, int(ceil(float(target.x) / float(tile_edge)))),
+		maxi(1, int(ceil(float(target.y) / float(tile_edge))))
 	)
 	interior_size = Vector2i(
-		_align_up(maxi(8, int(ceil(float(target_w) / float(grid_size.x)))), 8),
-		_align_up(maxi(8, int(ceil(float(target_h) / float(grid_size.y)))), 8)
+		_align_up(maxi(8, int(ceil(float(target.x) / float(grid_size.x)))), 8),
+		_align_up(maxi(8, int(ceil(float(target.y) / float(grid_size.y)))), 8)
 	)
 	layer_count = grid_size.x * grid_size.y
 	layer_size = interior_size + Vector2i.ONE * gutter_px * 2
 	logical_size = Vector2i(interior_size.x * grid_size.x, interior_size.y * grid_size.y)
 	effective_budget_px = logical_size.x * logical_size.y
+	effective_world_units_per_texel = Vector2(
+		visual_domain.size.x / float(logical_size.x),
+		visual_domain.size.y / float(logical_size.y))
+	var density_xy := Vector2(
+		hex_size / effective_world_units_per_texel.x,
+		hex_size / effective_world_units_per_texel.y)
+	effective_texels_per_hex = sqrt(density_xy.x * density_xy.y)
+	tile_world_span = visual_domain.size / Vector2(grid_size)
+	tile_world_area = tile_world_span.x * tile_world_span.y
+
+
+func _constraint_failure(max_layers: int, max_texture_size: int,
+		resident_cap: int, peak_cap: int) -> String:
+	if layer_count > max_layers:
+		return "array_layer_limit"
+	if layer_size.x > max_texture_size or layer_size.y > max_texture_size:
+		return "texture_size_limit"
+	if estimated_resident_bytes > resident_cap:
+		return "resident_memory_limit"
+	if estimated_peak_bytes > peak_cap:
+		return "peak_memory_limit"
+	return ""
 
 
 func _estimate_memory() -> void:
@@ -151,6 +217,8 @@ func diagnostic_report() -> Dictionary:
 	return {
 		"mode": mode,
 		"fallback_reason": fallback_reason,
+		"degradation_reason": degradation_reason,
+		"profile": profile,
 		"visual_domain": visual_domain,
 		"wrap_x": wrap_x,
 		"wrap_period_x": wrap_period_x,
@@ -160,6 +228,14 @@ func diagnostic_report() -> Dictionary:
 		"gutter_px": gutter_px,
 		"layer_size": layer_size,
 		"logical_size": logical_size,
+		"hex_size": hex_size,
+		"requested_texels_per_hex": requested_texels_per_hex,
+		"effective_texels_per_hex": effective_texels_per_hex,
+		"requested_world_units_per_texel": requested_world_units_per_texel,
+		"effective_world_units_per_texel": effective_world_units_per_texel,
+		"requested_tile_world_span": requested_tile_world_span,
+		"tile_world_span": tile_world_span,
+		"tile_world_area": tile_world_area,
 		"requested_budget_px": requested_budget_px,
 		"effective_budget_px": effective_budget_px,
 		"estimated_resident_bytes": estimated_resident_bytes,
@@ -179,24 +255,44 @@ static func _configured_mode() -> String:
 	return value
 
 
-static func _configured_budget_mp(quality: String, mobile: bool) -> float:
+static func _configured_texels_per_hex(quality: String, mobile: bool) -> float:
 	var override := float(ProjectSettings.get_setting(
+		"project_keynes/rendering/map_tiles/texels_per_hex", -1.0
+	))
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--map-tile-texels-per-hex="):
+			override = float(arg.trim_prefix("--map-tile-texels-per-hex="))
+	if override > 0.0:
+		return override
+	if mobile:
+		match quality:
+			"low":
+				return 6.0
+			"medium":
+				return 8.0
+			"high":
+				return 10.0
+			_:
+				return 6.0
+	match quality:
+		"low":
+			return 8.0
+		"medium":
+			return 12.0
+		"high":
+			return 16.0
+		_:
+			return 14.0
+
+
+static func _configured_budget_mp_cap() -> float:
+	var value := float(ProjectSettings.get_setting(
 		"project_keynes/rendering/map_tiles/budget_mp", -1.0
 	))
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--map-tile-budget-mp="):
-			override = float(arg.trim_prefix("--map-tile-budget-mp="))
-	if override > 0.0:
-		return override
-	match quality:
-		"low":
-			return 0.25 if mobile else 1.0
-		"medium":
-			return 1.0 if mobile else 4.0
-		"high":
-			return 2.0 if mobile else 8.0
-		_:
-			return 0.25 if mobile else 8.0
+			value = float(arg.trim_prefix("--map-tile-budget-mp="))
+	return value
 
 
 static func _configured_cap_mb(setting_name: String, fallback: float) -> float:
@@ -226,3 +322,7 @@ static func _device_limit(limit: RenderingDevice.Limit, fallback: int) -> int:
 
 static func _align_up(value: int, alignment: int) -> int:
 	return ((value + alignment - 1) / alignment) * alignment
+
+
+static func _align_down(value: int, alignment: int) -> int:
+	return (value / alignment) * alignment
