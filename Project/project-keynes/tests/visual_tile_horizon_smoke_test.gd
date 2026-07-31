@@ -15,15 +15,16 @@ func _init() -> void:
 func _run() -> void:
 	var layout = VisualTileLayout.new()
 	layout.mode = VisualTileLayout.MODE_TILED
-	layout.visual_domain = Rect2(0.0, 0.0, 64.0, 32.0)
+	# Non-power-of-two width exercises the partial X cell at coarse mip levels.
+	layout.visual_domain = Rect2(0.0, 0.0, 70.0, 32.0)
 	layout.wrap_x = true
-	layout.wrap_period_x = 64.0
+	layout.wrap_period_x = 70.0
 	layout.grid_size = Vector2i(2, 1)
 	layout.layer_count = 2
-	layout.interior_size = Vector2i(32, 32)
+	layout.interior_size = Vector2i(35, 32)
 	layout.gutter_px = 2
-	layout.layer_size = Vector2i(36, 36)
-	layout.logical_size = Vector2i(64, 32)
+	layout.layer_size = Vector2i(39, 36)
+	layout.logical_size = Vector2i(70, 32)
 	layout.generation_id = 7
 
 	var tiles = VisualTileSet.new()

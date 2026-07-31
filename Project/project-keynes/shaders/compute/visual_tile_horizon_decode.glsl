@@ -15,7 +15,7 @@ layout(push_constant, std430) uniform Params {
 	ivec2 layer_size;
 	int gutter_px;
 	int base_offset;
-	int _pad0;
+	float sea_level;
 	int _pad1;
 } params;
 
@@ -30,6 +30,9 @@ void main() {
 	vec4 encoded = imageLoad(source_height, ivec3(local_p, layer));
 	float high_byte = floor(encoded.r * 255.0 + 0.5);
 	float low_byte = floor(encoded.g * 255.0 + 0.5);
+	float decoded_height = (high_byte * 256.0 + low_byte) / 65535.0;
+	// Horizon receivers over water live at the surface. Keep bathymetry in the
+	// source Tile unchanged; only this derived visibility field is flattened.
 	pyramid.values[params.base_offset + p.y * params.logical_size.x + p.x] =
-		(high_byte * 256.0 + low_byte) / 65535.0;
+		max(decoded_height, params.sea_level);
 }

@@ -27,6 +27,7 @@ uniform float step_px = 8.0;                    // 每步像素距离
 uniform float max_horizon_angle = 1.309;        // 量化上限（rad），与运行期 shader 一致
 uniform float bias = 0.004;                     // 归一高程 bias，抑制自遮蔽
 uniform float height_world_scale = 176.0;       // 归一高程 → world units 的夸张倍率
+uniform float sea_level = 0.42;                 // horizon-only 水面接收高度
 uniform float texel_x = 1.0;                    // world units / texel（x）
 uniform float texel_y = 1.0;                    // world units / texel（y）
 // [terrain-horizon-wrap 2026-07-03] 真正经度环绕周期（world units）。柱状地图东西连续，
@@ -51,7 +52,7 @@ float decode_height_at(int sx, int sy) {
 	// 采样 texel 中心；filter_nearest 保证取值等价于 CPU 逐 texel 读 height_buffer。
 	vec2 uv = (vec2(float(sx), float(sy)) + vec2(0.5)) / tex_dims;
 	vec4 s = texture(height_tex, uv);
-	return (s.r * 256.0 + s.g) / 257.0;
+	return max((s.r * 256.0 + s.g) / 257.0, sea_level);
 }
 
 float quant_angle(float angle) {

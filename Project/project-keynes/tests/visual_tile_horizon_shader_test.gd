@@ -8,12 +8,21 @@ const SHADERS := [
 
 
 func _init() -> void:
+	var failures := 0
+	var trace_code := FileAccess.get_file_as_string(SHADERS[2])
+	var wraps_before_mip := trace_code.contains(
+		"wrap_column(p.x, params.logical_size.x) / scale")
+	var splits_periodic_span := trace_code.contains("bool crosses_seam") \
+		and trace_code.contains("params.logical_size.x - 1")
+	if not wraps_before_mip or not splits_periodic_span:
+		push_error("trace shader must wrap level-0 X before mip reduction and split seam spans")
+		failures += 1
 	var rd := RenderingServer.create_local_rendering_device()
 	if rd == null:
-		print("visual_tile_horizon_shader_test: SKIP (RenderingDevice unavailable)")
-		quit(0)
+		print("visual_tile_horizon_shader_test: %s (GPU compile skipped; RenderingDevice unavailable)" % [
+			"PASS" if failures == 0 else "FAIL"])
+		quit(0 if failures == 0 else 1)
 		return
-	var failures := 0
 	for path in SHADERS:
 		var code := FileAccess.get_file_as_string(path)
 		if code.is_empty():

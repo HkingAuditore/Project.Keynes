@@ -107,8 +107,8 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	var physical_pixels: int = layout.layer_size.x * layout.layer_size.y * layout.layer_count
 	var horizon_buffer := _rd.storage_buffer_create(physical_pixels * 4)
 	var metrics_zero := PackedByteArray()
-	metrics_zero.resize(4)
-	var metrics_buffer := _rd.storage_buffer_create(4, metrics_zero)
+	metrics_zero.resize(16)
+	var metrics_buffer := _rd.storage_buffer_create(16, metrics_zero)
 	for rid in [pyramid_buffer, horizon_buffer, metrics_buffer]:
 		if not rid.is_valid():
 			_cleanup()
@@ -145,6 +145,7 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	_encode_vec2i(decode_push, 24, layout.layer_size)
 	decode_push.encode_s32(32, layout.gutter_px)
 	decode_push.encode_s32(36, mip_offsets[0])
+	decode_push.encode_float(40, clampf(float(params.get("sea_level", 0.0)), 0.0, 1.0))
 	_rd.compute_list_set_push_constant(compute_list, decode_push, decode_push.size())
 	_rd.compute_list_dispatch(compute_list,
 		_groups(layout.logical_size.x), _groups(layout.logical_size.y), 1)
@@ -228,6 +229,9 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 			return _failure("horizon_layer_upload_failed:%d" % layer_id, t0)
 	var upload_ms := float(Time.get_ticks_usec() - upload_t0) / 1000.0
 	var non_converged := metrics_data.decode_u32(0) if metrics_data.size() >= 4 else 0
+	var conservative_tail_rays := metrics_data.decode_u32(4) if metrics_data.size() >= 8 else 0
+	var global_fallback_rays := metrics_data.decode_u32(8) if metrics_data.size() >= 12 else 0
+	var total_rays: int = physical_pixels * 8
 	var report := {
 		"ok": true,
 		"path": "gpu_compute_hierarchical",
@@ -243,6 +247,13 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 		"physical_output_bytes": physical_pixels * 4,
 		"hash": hash(all_horizon_data),
 		"non_converged_rays": non_converged,
+		"conservative_tail_rays": conservative_tail_rays,
+		"conservative_tail_ratio": float(conservative_tail_rays) / maxf(float(total_rays), 1.0),
+		"global_fallback_rays": global_fallback_rays,
+		"total_rays": total_rays,
+		"height_world_scale": float(params.get("height_world_scale", 176.0)),
+		"sea_level": clampf(float(params.get("sea_level", 0.0)), 0.0, 1.0),
+		"max_horizon_angle": float(params.get("max_horizon_angle", 1.309)),
 		"total_ms": float(Time.get_ticks_usec() - t0) / 1000.0,
 	}
 	_cleanup()

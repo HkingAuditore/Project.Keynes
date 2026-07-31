@@ -163,14 +163,25 @@ GPU 上传仍在 GDScript：`Image.create_from_data`、同尺寸 `ImageTexture.u
 
 ### 高分视觉 Tile 静态链路（2026-07-30）
 
-`MapBaker._bake_visual_tiles()` 在全局几何基线完成后解析 `VisualTileLayout`，复用一次构造的
+`MapBaker._bake_visual_tiles()` 在全局几何基线完成后把真实 `hex_size` 交给
+`VisualTileLayout`。layout 由平台/画质档位的 `texels_per_hex` 先确定单个 512 interior 可覆盖的
+世界范围，再按 `visual_domain` 面积推导 grid/N；整图 MP 只是结果，设备 layer/显存超限时降低
+密度重算。随后复用一次构造的
 cell SoA 和全局 height/flow/water buffers，逐层调用
 `run_bake_visual_tile_layer_pass`。C++ 返回 height、normal、map-index、flow、water-depth、
 detail 和 edge 两字段的 byte bundle/hash；每层立即上传到 `Texture2DArray` 并释放 staging，
 不创建高分 `pixel_to_cell_lookup` 或 CSR。静态全层成功后才发布 `WorldData.visual_tiles.ready`。
+其中 normal 用 X/Y 独立的世界空间中心差分，并以全局基线 texel 校准强度和平滑半径；
+river/coast SDF 截断距离与 shore-carve band 也按 Tile/基线 texel 比例换算，halo 覆盖换算后范围。
+cell edge distance 保持 `hex_size` 归一的世界距离单位，高分辨率只提高量化精度；shader 的 8x8
+Bayer DitherUV 则锚定全局基线 texel 的世界尺寸。因此视觉预算或 Tile 数量变化不会系统性
+压平宏观坡度，也不会缩窄距离场或改变 dither 的世界尺度。
 
-随后 `VisualTileHorizonBaker` 用 RenderingDevice 构建跨 layer max-height pyramid，并以 8 方向
-hierarchical trace 生成 nibble-packed horizon。compute 失败时
+随后 `VisualTileHorizonBaker` 用 RenderingDevice 构建跨 layer max-height pyramid；decode 只在
+horizon 派生场把 bathymetry 抬到 `sea_level`，再以 8 方向 hierarchical trace 生成
+nibble-packed horizon。主 traversal 超限后用方向局部的 conservative tail 完成剩余射线，避免
+全图最高点形成无关长影。周期 X 查询必须先按 level-0 logical width 环绕再缩减到 mip cell；
+跨接缝 span 显式覆盖首尾 coarse cell，保证非 2 次幂逻辑宽度下的局部上界连续。compute 失败时
 `run_resample_visual_horizon_layer_pass` 把全局 horizon 重采样为相同布局；任一静态字段失败则
 整个世界回退 legacy。完整字段、寻址、预算、diagnostic 和验证契约见
 [Visual Tile Rendering](./visual-tile-rendering.md)。
@@ -275,7 +286,7 @@ relief（见下 “P0 relief”）。
 
 
 - **latitude field**：复刻 `_bake_latitude_buffer`。逐像素 `ny = y / max(H-1,1)` → F32。输入 `width/height`，输出 `latitude_buffer`（F32）。
-- **river SDF**：复刻 `_bake_river_sdf` 的**全部计算**——河流图遍历（trace）+ seam-split + Catmull-Rom 致密化 + warp 噪声（C++ 内构造 `FastNoiseLite` 复刻 `_warp_noise_lo/hi`：SIMPLEX_SMOOTH seed+71 freq 0.024 / SIMPLEX seed+233 freq 0.024×3.4，均 FBM oct3）+ 变宽 polyline stamp + chamfer 3-4 双通 SDT + 归一化。**河流图遍历也已迁入 C++（dots-total-cpp step1，2026-06-25）**：`run_native_world_generate_post_base_pass` 末尾把 river 拓扑（`q/r/terrain/elevation/has_river/river_flow/river_downstream(index)/neighbors[n*6]`，by cell.index）暂存到 `DCWorldExt::_gen_river_*` ext 成员；`run_bake_river_sdf_pass` 直接读这份拓扑在 C++ 内 trace（复刻 `_trace_all_rivers`/`_trace_river_chain`/`_find_river_downstream_neighbor`/`_find_river_terminal_water_neighbor`，`_is_river_terminal_water` ≡ `pk_is_water_terrain`，宽度=clamp(river_flow)）。**GDScript 不再传任何河流链/拓扑**，只发 bake 几何参数 `origin/inv_world/hex_size/seed/base_radius_px/sdf_max_dist_px/seam_dx/cr_step` → **河流数据零跨语言传输**。前置：必须先跑 post_base 填 `_gen_river_*`（换图覆盖）。输出 `out_buf`（F32，= `world.flow_buffer`）。无河流时 mask 全 INF → 归一化全 0。**端点淡出（river-endpoint-taper，2026-06-26）**：每条链额外携带 per-coarse-point 的"半径乘子"taper，随 CR 一并致密化、逐像素缩放 stamp 半径。河源（链首，恒）与陆地死端（链尾且未入海/入湖、非汇流）沿弧长在端点附近从 1 渐降到 `river_endpoint_taper_floor`（默认 0），使河首/河尾收成尖点而非钝圆头——治"断头河"观感（钝头源于 stamp 半径有 `0.40×base` 下限）；入海/入湖口与汇流接点保持满宽不淡出（避免在水边/汇流处反而断开）。淡出弧长 `river_endpoint_taper_cells`（默认 1.5，单位 hex 间距）。两参数 C++ 默认即生效、GDScript 不传也开启。
+- **river SDF**：复刻 `_bake_river_sdf` 的**全部计算**——河流图遍历（trace）+ 跨经度链连续展开 + Catmull-Rom 致密化 + warp 噪声（C++ 内构造 `FastNoiseLite` 复刻 `_warp_noise_lo/hi`：SIMPLEX_SMOOTH seed+71 freq 0.024 / SIMPLEX seed+233 freq 0.024×3.4，均 FBM oct3）+ 与目标 raster 相交的周期副本变宽 polyline stamp + chamfer 3-4 双通 SDT + 归一化。**河流图遍历也已迁入 C++（dots-total-cpp step1，2026-06-25）**：`run_native_world_generate_post_base_pass` 末尾把 river 拓扑（`q/r/terrain/elevation/has_river/river_flow/river_downstream(index)/neighbors[n*6]`，by cell.index）暂存到 `DCWorldExt::_gen_river_*` ext 成员；`run_bake_river_sdf_pass` 直接读这份拓扑在 C++ 内 trace（复刻 `_trace_all_rivers`/`_trace_river_chain`/`_find_river_downstream_neighbor`/`_find_river_terminal_water_neighbor`，`_is_river_terminal_water` ≡ `pk_is_water_terrain`，宽度=clamp(river_flow)）。**GDScript 不再传任何河流链/拓扑**，只发 bake 几何参数 `origin/inv_world/hex_size/seed/base_radius_px/sdf_max_dist_px/cr_step/wrap_period_x` → **河流数据零跨语言传输**。跨东西接缝的相邻河流点及入水延伸都按最短经度差展开到同一连续坐标系；栅格化只生成与当前全局图或 Tile（含 halo）相交的周期副本，不再切断跨接缝河段。前置：必须先跑 post_base 填 `_gen_river_*`（换图覆盖）。输出 `out_buf`（F32，= `world.flow_buffer`）。无河流时 mask 全 INF → 归一化全 0。**端点淡出（river-endpoint-taper，2026-06-26）**：每条链额外携带 per-coarse-point 的"半径乘子"taper，随 CR 一并致密化、逐像素缩放 stamp 半径。河源（链首，恒）与陆地死端（链尾且未入海/入湖、非汇流）沿弧长在端点附近从 1 渐降到 `river_endpoint_taper_floor`（默认 0），使河首/河尾收成尖点而非钝圆头——治"断头河"观感（钝头源于 stamp 半径有 `0.40×base` 下限）；入海/入湖口与汇流接点保持满宽不淡出（避免在水边/汇流处反而断开）。淡出弧长 `river_endpoint_taper_cells`（默认 1.5，单位 hex 间距）。两参数 C++ 默认即生效、GDScript 不传也开启。
 - **erosion（droplet 水力侵蚀）**：复刻 `_hydraulic_erosion`。用 `Ref<RandomNumberGenerator>`（`set_seed(bake_seed)` 复刻 baker `_rng` PCG32）逐滴随机起点/方向，brush kernel + 沉积/侵蚀 + 蒸发。in/out height buffer，**内部 clamp [0,1]**（折叠原 GDScript `_clamp_buffer`，省一次 W×H 循环）。输入 `width/height/height(buffer)/seed + num_drops/max_steps/inertia/capacity_factor/min_capacity/deposit_speed/erode_speed/evaporation/gravity/brush_radius`，输出 `height_out`（F32）。
 - **coast SDF（海/湖统一离岸距离场，water-bodies systemic）**：从 per-pixel terrain（`biome_buffer`）的 land-water 边界做 **chamfer 3-4 双通距离变换**（X 向可环绕 `coast_sdf_wrap_x`），产出每像素到最近水体的像素距离（水体=0，向内陆递增，clamp 于 `coast_sdf_max_dist_px`）。水集合与 `terrain_index` `is_water` / `pk_is_water_terrain` 一致 = `{0,1,18,19,20,21}`。`run_bake_geometry_fields_pass` 在 **river carve 之后、bundle 之前**用此距离对 `height_final` 逐像素刻"陆侧上坡、止于水线"的连续岸坡（`notch=smoothstep(1-d/band)`，`shore_carve_amp`/`shore_carve_band`）→ `terrain_normal_tex` 拿到 crisp 海岸/湖岸法线，与河岸 #2a 同法、与旧 barycentric beach carve 加性叠加（均向水线单调下压、clamp `sea_level`，无冲突）。`shore_carve_amp<=0` → 关闭回退旧法。输入 `width/height/biome_buffer/coast_sdf_max_dist_px/coast_sdf_wrap_x`，输出 `out_buf`（F32 离岸像素距离）。chamfer 两遍光栅扫描有行间依赖，单线程 O(n_pixels)（如需并行可换 jump-flood）。
 

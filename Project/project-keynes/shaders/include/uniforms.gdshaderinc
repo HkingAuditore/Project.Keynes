@@ -115,6 +115,9 @@ uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
 uniform vec2 hm_resolution = vec2(2048.0, 1536.0);
 uniform vec2 derived_resolution = vec2(1024.0, 768.0);
+// World-scale reference for atlas-anchored DitherUV. Tiled rendering keeps this
+// at the global baseline resolution so changing visual MP does not resize the pattern.
+uniform vec2 visual_reference_resolution = vec2(2048.0, 1536.0);
 
 uniform float sea_level : hint_range(0.0, 1.0) = 0.42;
 

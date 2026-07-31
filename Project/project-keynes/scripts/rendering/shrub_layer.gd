@@ -4356,6 +4356,135 @@ func get_scatter_diagnostics() -> Dictionary:
 	}
 
 
+# 可见性现场探针：实例存在但屏幕全无时用于区分 数据缺失 / 节点隐藏 / 可见数
+# 归零 / mesh 缺失 / profile 关闭 等失败模式。只读，不改变任何状态。
+func detail_visibility_probe() -> Dictionary:
+	var chunk_nodes := 0
+	var chunk_nodes_visible := 0
+	var chunk_mm_valid := 0
+	var chunk_mesh_valid := 0
+	var visible_sum := 0
+	var inst_sum := 0
+	var origin_samples: Array = []
+	for raw_id in _chunk_nodes.keys():
+		var node: MultiMeshInstance2D = _chunk_nodes[raw_id]
+		if node == null or not is_instance_valid(node):
+			continue
+		chunk_nodes += 1
+		if node.visible:
+			chunk_nodes_visible += 1
+		var mm := node.multimesh
+		if mm == null:
+			continue
+		chunk_mm_valid += 1
+		if mm.mesh != null:
+			chunk_mesh_valid += 1
+		visible_sum += mm.visible_instance_count
+		inst_sum += mm.instance_count
+		# 采样前几个实例的 origin（TRANSFORM_2D buffer: ox 在 +3、oy 在 +7），
+		# 用于区分"实例不可见"与"实例被放到屏幕外/原点"。
+		if origin_samples.size() < 3 and mm.instance_count > 0:
+			var buf := mm.buffer
+			var take: int = mini(3 - origin_samples.size(), mm.instance_count)
+			for k in range(take):
+				if buf.size() >= (k + 1) * 16:
+					origin_samples.append(Vector2(buf[k * 16 + 3], buf[k * 16 + 7]))
+	return {
+		"name": name,
+		"in_tree": is_inside_tree(),
+		"layer_visible": visible,
+		"profile_enabled": bool(_profile().enabled),
+		"camera_lod_hidden": _camera_lod_hidden,
+		"shadow_fraction": _shadow_fraction,
+		"lod_zoom_t": _lod_zoom_t,
+		"camera_zoom": _camera_zoom,
+		"instance_count": _instance_count,
+		"chunk_nodes": chunk_nodes,
+		"chunk_nodes_visible": chunk_nodes_visible,
+		"chunk_mm_valid": chunk_mm_valid,
+		"chunk_mesh_valid": chunk_mesh_valid,
+		"chunk_visible_sum": visible_sum,
+		"chunk_inst_sum": inst_sum,
+		"origin_samples": origin_samples,
+		"spawn_domain": _spawn_domain(),
+		"cid_probe": _cid_probe(origin_samples),
+	}
+
+
+# tiled 模式端到端解码探针：对实例世界坐标按 shader 的 visual_tile_address 逻辑
+# 逐步寻址，从 map_index 数组读回 G/B 解码 cid，并与期望 cell 对照。cid=-1 或
+# 与期望不符即复现"presence=0 全灭"链路；同时抽样 normal/height 验证内容。
+func _cid_probe(samples: Array) -> Array:
+	var out: Array = []
+	if not _visual_tiles_active() or _map == null or samples.is_empty():
+		return out
+	var tiles = _world.visual_tiles
+	var layout = tiles.layout
+	var take: int = mini(2, samples.size())
+	for k in range(take):
+		var world_pos: Vector2 = samples[k]
+		# 与原生编码器一致的世界坐标 → map_uv（world_ext_detail.cpp uvx/uvy 公式）。
+		var sample_x := world_pos.x
+		if _world.wrap_period_x > 0.0001:
+			sample_x = posmod(world_pos.x, _world.wrap_period_x)
+		var map_uv := Vector2(
+			(sample_x - _bounds.position.x) / maxf(_bounds.size.x, 0.0001),
+			(world_pos.y - _bounds.position.y) / maxf(_bounds.size.y, 0.0001))
+		# 与 visual_tile_sampling.gdshaderinc::visual_tile_address 一致的寻址。
+		var wp := _bounds.position + map_uv * _bounds.size
+		if _world.wrap_period_x > 0.0001:
+			wp.x = posmod(wp.x, _world.wrap_period_x)
+		var domain_uv: Vector2 = (wp - layout.visual_domain.position) / layout.visual_domain.size
+		domain_uv.x = posmod(domain_uv.x, 1.0) if _world.wrap_period_x > 0.0001 else clampf(domain_uv.x, 0.0, 1.0)
+		domain_uv.y = clampf(domain_uv.y, 0.0, 1.0)
+		var scaled: Vector2 = domain_uv * Vector2(layout.grid_size)
+		var tile_xy := Vector2i(mini(int(floor(scaled.x)), layout.grid_size.x - 1),
+			mini(int(floor(scaled.y)), layout.grid_size.y - 1))
+		var local01: Vector2 = scaled - Vector2(tile_xy)
+		var gutter := float(layout.gutter_px)
+		var physical_px := Vector2(gutter, gutter) + local01 * Vector2(layout.interior_size)
+		var layer: int = tile_xy.y * layout.grid_size.x + tile_xy.x
+		var entry: Dictionary = {"world_pos": world_pos, "tile_xy": tile_xy,
+			"layer": layer, "physical_px": physical_px}
+		if tiles.map_index != null:
+			var img := RenderingServer.texture_2d_layer_get(tiles.map_index.get_rid(), layer)
+			if img != null:
+				var px := img.get_pixelv(Vector2i(physical_px))
+				var lo := int(px.g * 255.0 + 0.5)
+				var hi := int(px.b * 255.0 + 0.5)
+				var cid := lo + hi * 256
+				entry["map_index_px"] = px
+				entry["cid"] = -1 if cid >= 65535 else cid
+				# 期望 cell：用地图最近 cell 对照（粗校验，容差一个 hex）。
+				entry["expect_cell"] = _nearest_cell_index(world_pos)
+		if tiles.terrain_normal != null:
+			var nimg := RenderingServer.texture_2d_layer_get(tiles.terrain_normal.get_rid(), layer)
+			if nimg != null:
+				entry["normal_px"] = nimg.get_pixelv(Vector2i(physical_px))
+		if tiles.height != null:
+			var himg := RenderingServer.texture_2d_layer_get(tiles.height.get_rid(), layer)
+			if himg != null:
+				entry["height_px"] = himg.get_pixelv(Vector2i(physical_px))
+		out.append(entry)
+	return out
+
+
+func _nearest_cell_index(world_pos: Vector2) -> int:
+	var best := -1
+	var best_d := INF
+	if _map == null:
+		return best
+	for cell in _map.all_cells():
+		if cell == null:
+			continue
+		var center := HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
+		var d: float = center.distance_squared_to(world_pos)
+		if d < best_d:
+			best_d = d
+			best = int(cell.index)
+	return best
+
+
 func _world_uv(world_pos: Vector2) -> Vector2:
 	var size := _bounds.size
 	if size.x <= 0.001 or size.y <= 0.001:

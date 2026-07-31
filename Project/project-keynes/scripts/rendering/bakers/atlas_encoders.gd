@@ -148,7 +148,8 @@ static func encode_horizon_tex(buf: PackedFloat32Array, size: Vector2i,
 		world_size: Vector2, hex_size: float, existing: ImageTexture = null,
 		native_ext: Object = null, steps: int = 48, step_px: float = 2.0,
 		max_horizon_angle: float = 1.309, bias: float = 0.003,
-		height_world_scale: float = 0.0, wrap_period_x: float = 0.0) -> ImageTexture:
+		height_world_scale: float = 0.0, wrap_period_x: float = 0.0,
+		sea_level: float = 0.0) -> ImageTexture:
 	var W: int = size.x
 	var H: int = size.y
 	var hscale: float = height_world_scale if height_world_scale > 0.0 else maxf(hex_size * 8.0, 1.0)
@@ -166,6 +167,7 @@ static func encode_horizon_tex(buf: PackedFloat32Array, size: Vector2i,
 		"max_horizon_angle": max_horizon_angle,
 		"bias": bias,
 		"height_world_scale": hscale,
+		"sea_level": sea_level,
 	})
 	if not bool(ret.get("fallback", true)):
 		return _upload_rgba8(ret.get("data", PackedByteArray()), W, H, existing)

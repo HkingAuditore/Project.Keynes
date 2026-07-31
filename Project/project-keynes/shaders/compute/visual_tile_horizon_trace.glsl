@@ -11,6 +11,9 @@ layout(set = 0, binding = 1, std430) writeonly restrict buffer PackedHorizon {
 } horizon;
 layout(set = 0, binding = 2, std430) restrict buffer Metrics {
 	uint non_converged;
+	uint conservative_tail_rays;
+	uint global_fallback_rays;
+	uint _pad0;
 } metrics;
 
 layout(push_constant, std430) uniform Params {
@@ -51,25 +54,42 @@ int wrap_column(int x, int width) {
 	return v < 0 ? v + width : v;
 }
 
-float height_at(ivec2 p, int level) {
+float height_at_logical(ivec2 p, int level) {
+	int scale = 1 << level;
 	ivec2 size = mip_size(level);
-	p.x = wrap_column(p.x, size.x);
-	p.y = clamp(p.y, 0, size.y - 1);
+	// The last X cell of a non-power-of-two mip can be narrower than scale.
+	// Preserve the level-0 period before reducing the coordinate to a mip cell.
+	p.x = wrap_column(p.x, params.logical_size.x) / scale;
+	p.y = clamp(p.y, 0, params.logical_size.y - 1) / scale;
 	int mip_offset = int(pyramid.values[level] + 0.5);
 	return pyramid.values[mip_offset + p.y * size.x + p.x];
 }
 
+float segment_column_upper_height(int logical_x, int y0, int y1, int level) {
+	float h = height_at_logical(ivec2(logical_x, y0), level);
+	return max(h, height_at_logical(ivec2(logical_x, y1), level));
+}
+
 float segment_upper_height(vec2 origin, vec2 direction, float distance_px,
 		float span_px, int level) {
-	float scale = float(1 << level);
 	vec2 a = origin + direction * distance_px;
 	vec2 b = origin + direction * (distance_px + max(span_px - 1.0, 0.0));
-	ivec2 ca = ivec2(floor(a / scale));
-	ivec2 cb = ivec2(floor(b / scale));
-	float h = height_at(ca, level);
-	h = max(h, height_at(ivec2(cb.x, ca.y), level));
-	h = max(h, height_at(ivec2(ca.x, cb.y), level));
-	h = max(h, height_at(cb, level));
+	ivec2 pa = ivec2(floor(a));
+	ivec2 pb = ivec2(floor(b));
+	float h = segment_column_upper_height(pa.x, pa.y, pb.y, level);
+	h = max(h, segment_column_upper_height(pb.x, pa.y, pb.y, level));
+	if (params.wrap_x != 0) {
+		float period = float(params.logical_size.x);
+		bool crosses_seam = floor(a.x / period) != floor(b.x / period);
+		if (crosses_seam) {
+			// A span is at most one mip block wide, but the periodic tail block can
+			// be shorter. Query both sides explicitly so a seam-crossing span still
+			// has a conservative max-height bound.
+			h = max(h, segment_column_upper_height(0, pa.y, pb.y, level));
+			h = max(h, segment_column_upper_height(
+				params.logical_size.x - 1, pa.y, pb.y, level));
+		}
+	}
 	return h;
 }
 
@@ -115,7 +135,7 @@ void main() {
 	global_p.x = wrap_column(global_p.x, params.logical_size.x);
 	global_p.y = clamp(global_p.y, 0, params.logical_size.y - 1);
 	vec2 origin = vec2(global_p);
-	float base_height = height_at(global_p, 0);
+	float base_height = height_at_logical(global_p, 0);
 	uint q[8];
 
 	for (int direction_id = 0; direction_id < 8; ++direction_id) {
@@ -151,7 +171,7 @@ void main() {
 				ivec2 sample_p = ivec2(floor(origin + direction * distance_px + vec2(0.5)));
 				sample_p.x = wrap_column(sample_p.x, params.logical_size.x);
 				sample_p.y = clamp(sample_p.y, 0, params.logical_size.y - 1);
-				float dh = height_at(sample_p, 0) - base_height - params.bias;
+				float dh = height_at_logical(sample_p, 0) - base_height - params.bias;
 				best_slope = max(best_slope, slope_for(dh, direction, distance_px));
 			}
 			distance_px += max(span_px, 1.0);
@@ -159,10 +179,36 @@ void main() {
 		}
 
 		if (!converged && distance_px <= max_distance) {
-			float global_upper = height_at(ivec2(0), params.mip_count - 1);
-			best_slope = max(best_slope, slope_for(
-				global_upper - base_height - params.bias, direction, max(distance_px, 1.0)));
 			atomicAdd(metrics.non_converged, 1u);
+			atomicAdd(metrics.conservative_tail_rays, 1u);
+			// Finish the unresolved ray with direction-local pyramid spans. Each span
+			// uses its nearest distance with a max-height bound, so it can overestimate
+			// occlusion but cannot import an unrelated mountain from elsewhere on the map.
+			for (int tail_iteration = 0; tail_iteration < 512; ++tail_iteration) {
+				if (distance_px > max_distance) {
+					converged = true;
+					break;
+				}
+				int level = clamp(findMSB(max(int(distance_px * 0.125), 1)),
+					0, params.mip_count - 1);
+				float span_px = min(float(1 << level), max_distance - distance_px + 1.0);
+				float upper_height = segment_upper_height(
+					origin, direction, distance_px, span_px, level);
+				best_slope = max(best_slope, slope_for(
+					upper_height - base_height - params.bias, direction, distance_px));
+				distance_px += max(span_px, 1.0);
+			}
+			if (distance_px > max_distance) {
+				converged = true;
+			}
+			if (!converged && distance_px <= max_distance) {
+				// This should only be reachable for pathological dimensions. Retain the
+				// old global bound as a last-resort conservative guarantee and report it.
+				float global_upper = height_at_logical(ivec2(0), params.mip_count - 1);
+				best_slope = max(best_slope, slope_for(
+					global_upper - base_height - params.bias, direction, max(distance_px, 1.0)));
+				atomicAdd(metrics.global_fallback_rays, 1u);
+			}
 		}
 		q[direction_id] = quantize_angle(best_slope);
 	}

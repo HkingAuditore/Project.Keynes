@@ -147,7 +147,7 @@ SurfaceParams compute_land_base_surface(
 	// 叠加专属着色。火山已改为生成期高度场环形山 + hillshade 表现，不再发光（lf_vis.a 恒 0）；
 	// emission 通道保留作为未来地貌发光的通用接口。
 	float slope_mag = clamp(length(normal.xy), 0.0, 1.0);
-	vec4 lf_vis = landform_visual(landform, wp, col, slope_mag);
+	vec4 lf_vis = landform_visual(landform, wp, col, slope_mag, flow);
 	col = lf_vis.rgb;
 	SurfaceParams sp = make_surface_params(col, normal, roughness, metallic, ao);
 	sp.emission = vec3(1.30, 0.42, 0.10) * lf_vis.a;
@@ -602,7 +602,7 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	if (cast_shadow > 0.001) {
 		float cast_floor = day_night_enabled
 			? terrain_horizon_cast_floor
-			: max(terrain_horizon_cast_floor, 0.90);
+			: max(terrain_horizon_cast_floor, 0.56);
 		lit *= mix(1.0, cast_floor, cast_shadow);
 	}
 	return lit;
