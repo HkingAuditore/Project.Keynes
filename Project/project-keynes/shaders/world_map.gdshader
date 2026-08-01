@@ -27,6 +27,7 @@ render_mode blend_mix;
 //   三处 include 接入）；touch 触发重编，否则 include 改动命中旧编译缓存、贴图路径静默走程序化回退。
 // [terrain-material-tiles 2026-08-01b] debug_view=7 材质门禁可视化（GM 面板可切）；touch。
 // [terrain-material-tiles 2026-08-01c] 材质强度默认值提升（albedo 0.6 / normal 0.15）；touch。
+// [terrain-material-tiles 2026-08-01d] world_size 128→384 修 mipmap 预滤波；GPT-image-2 风格化贴图换源；touch。
 // ═══════════════════════════════════════════════════════════════════════════
 // 本文件 2026-05-19 由 2299 行单文件拆分为 1 个主 shader + 多个 .gdshaderinc：
 //   uniforms / common_noise / height / climate_season / biome_color / vegetation /
