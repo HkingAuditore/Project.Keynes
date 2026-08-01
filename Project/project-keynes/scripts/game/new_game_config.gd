@@ -122,6 +122,11 @@ static func derive_climate(controls: Dictionary) -> Dictionary:
 		"moisture_land_base": lerpf(0.08, 0.30, wetness),
 		"moisture_precip_gain": lerpf(2.0, 4.8, wetness),
 		"moisture_continental_dry": lerpf(0.045, 0.012, wetness),
+		# [zonal-envelope] 越湿→ITCZ/风暴路径增雨越强、极地抑雨越弱（保持单调）
+		"moisture_itcz_wet_strength": lerpf(0.6, 1.2, wetness),
+		"moisture_stormtrack_wet_strength": lerpf(0.3, 0.7, wetness),
+		"moisture_polar_dry_strength": lerpf(0.5, 0.25, wetness),
+		"moisture_tropical_evap_boost": lerpf(0.6, 1.4, wetness),
 		"hydro_lake_min_cells": int(round(lerpf(16.0, 4.0, lake_density))),
 		"hydro_lake_min_depth": lerpf(0.030, 0.010, lake_density),
 		"hydro_lake_min_volume": lerpf(0.50, 0.10, lake_density),

@@ -595,6 +595,11 @@ func _build_climate_overrides(controls: Dictionary) -> Dictionary:
 		"moisture_land_base": _mix(0.08, 0.30, wetness),
 		"moisture_precip_gain": _mix(2.0, 4.8, wetness),
 		"moisture_continental_dry": _mix(0.045, 0.012, wetness),
+		# [zonal-envelope] 越湿→ITCZ/风暴路径增雨越强、极地抑雨越弱（保持单调）
+		"moisture_itcz_wet_strength": _mix(0.6, 1.2, wetness),
+		"moisture_stormtrack_wet_strength": _mix(0.3, 0.7, wetness),
+		"moisture_polar_dry_strength": _mix(0.5, 0.25, wetness),
+		"moisture_tropical_evap_boost": _mix(0.6, 1.4, wetness),
 		"moisture_coastal_floor": _mix(0.25, 0.62, coastal_wetness),
 		"coastal_moisture_boost": _mix(0.05, 0.38, coastal_wetness),
 		"orographic_boost": _mix(0.35, 2.2, mountain_amount),

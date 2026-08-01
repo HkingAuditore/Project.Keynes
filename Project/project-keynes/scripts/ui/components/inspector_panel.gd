@@ -132,7 +132,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 		_tabs.select_tab(_current_tab)
 	if not tabs.is_empty():
 		_request_tab_data_if_missing(_current_tab)
-	_render_content()
+	_render_content(false)
 
 
 func apply_live_patch(patch: Dictionary) -> void:
@@ -324,7 +324,7 @@ func _apply_score(score: Dictionary, live_patch: bool) -> void:
 	)
 
 
-func _render_content() -> void:
+func _render_content(reset_scroll: bool) -> void:
 	for child in _content_box.get_children():
 		child.queue_free()
 	_insight_list = null
@@ -338,7 +338,7 @@ func _render_content() -> void:
 	var categories: Dictionary = _model.get("categories", {})
 	var data: Dictionary = categories.get(_current_tab, categories.get("geography", {}))
 	_build_category_content(data)
-	if _scroll != null:
+	if reset_scroll and _scroll != null:
 		_scroll.scroll_vertical = 0
 
 
@@ -568,7 +568,7 @@ func _add_group_separator() -> void:
 func _on_tab_selected(tab_id: String) -> void:
 	_current_tab = tab_id
 	tab_data_requested.emit(tab_id)
-	_render_content()
+	_render_content(true)
 	UIAnimation.crossfade(_content_box, UITokens.ANIM_FAST)
 
 

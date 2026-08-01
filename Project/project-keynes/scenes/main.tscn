@@ -167,7 +167,7 @@ autowrap_mode = 2
 
 [node name="ClimateZoneLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=684809780]
 layout_mode = 2
-text = "气候带：—"
+text = "纬度气候带：—"
 autowrap_mode = 2
 
 [node name="TempLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=803768264]
@@ -187,12 +187,12 @@ autowrap_mode = 2
 
 [node name="LandformLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=973485122]
 layout_mode = 2
-text = "地形：—"
+text = "地貌：—"
 autowrap_mode = 2
 
 [node name="VegetationLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=764785917]
 layout_mode = 2
-text = "植被：—"
+text = "当前植被：—"
 autowrap_mode = 2
 
 [node name="VitalityLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=1765494938]

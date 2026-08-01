@@ -103,6 +103,11 @@ func _initialize() -> void:
 		failures.append("player header still exposes debug cube text")
 	if String(model.get("header", {}).get("subtitle", "")).contains("档案 #"):
 		failures.append("player header still exposes a redundant dossier number")
+	var header_title := String(model.get("header", {}).get("title", ""))
+	if header_title.contains("气候区"):
+		failures.append("player header still exposes a redundant climate-zone label")
+	if not header_title.contains(TerrainType.terrain_name_cn(int(cell.terrain))):
+		failures.append("player header does not show the biome name")
 	var tabs: Array = model.get("tabs", [])
 	if tabs.size() != 5:
 		failures.append("expected five dossier tabs")
@@ -146,9 +151,14 @@ func _initialize() -> void:
 	var ecology: Dictionary = _find_section(geography.get("sections", []), "vegetation_ecology")
 	if physical.is_empty() or climate.is_empty() or ecology.is_empty():
 		failures.append("geography tab is missing grouped sections")
-	if _find_by_id(physical.get("metrics", []), "geography_terrain").is_empty() \
-			or _find_by_id(physical.get("metrics", []), "geography_landform").is_empty():
-		failures.append("geography tab is missing terrain or landform")
+	var climate_zone_metric := _find_by_id(climate.get("metrics", []), "geography_terrain")
+	var vegetation_metric := _find_by_id(ecology.get("metrics", []), "ecology_vegetation")
+	if _find_by_id(physical.get("metrics", []), "geography_landform").is_empty():
+		failures.append("geography tab is missing landform")
+	if String(climate_zone_metric.get("title", "")) != "气候区":
+		failures.append("terrain/biome axis is not explicitly presented as climate zone")
+	if String(vegetation_metric.get("title", "")) != "当前植被":
+		failures.append("vegetation axis is not explicitly presented as current vegetation")
 	if (climate.get("gauges", []) as Array).size() != 2:
 		# Climate and hydrology are intentionally merged; require at least temp/moisture.
 		if _find_by_id(climate.get("gauges", []), "climate_temp_gauge").is_empty() \

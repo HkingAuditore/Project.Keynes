@@ -4706,7 +4706,9 @@ static const char *required_scalars[] = {
             best_transition_score);
         const bool degrade_candidate = best_transition != v_id &&
             best_transition_score >= compat + succession_min_compat_gain;
-        if (degrade_candidate && target < low_thresh) {
+        const bool severe_biome_mismatch = pk_vegetation_needs_biome_reconcile(TERR[i], v_id);
+        if (degrade_candidate && (target < low_thresh ||
+                                  (severe_biome_mismatch && target < high_thresh))) {
             ls += streak_days;
             hs = 0;
         } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
@@ -5040,7 +5042,9 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
             best_transition_score);
         const bool degrade_candidate = best_transition != v_id &&
             best_transition_score >= compat + succession_min_compat_gain;
-            if (degrade_candidate && target < low_thresh) {
+        const bool severe_biome_mismatch = pk_vegetation_needs_biome_reconcile(TERR[i], v_id);
+            if (degrade_candidate && (target < low_thresh ||
+                                      (severe_biome_mismatch && target < high_thresh))) {
                 ls += streak_days;
                 hs = 0;
         } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
@@ -5996,7 +6000,10 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                 best_transition_score);
             const bool degrade_candidate = best_transition != v_id &&
                 best_transition_score >= compat + succession_min_compat_gain;
-            if (degrade_candidate && vegetation_stress_enabled && stress_max > 0.65f && target < high_thresh) {
+            const bool severe_biome_mismatch = pk_vegetation_needs_biome_reconcile(TERR[i], v_id);
+            if (degrade_candidate &&
+                ((vegetation_stress_enabled && stress_max > 0.65f) || severe_biome_mismatch) &&
+                target < high_thresh) {
                 const int stress_days = std::max(streak_days, int(std::round(float(streak_days) * stress_max)));
                 ls += stress_days;
                 hs = 0;

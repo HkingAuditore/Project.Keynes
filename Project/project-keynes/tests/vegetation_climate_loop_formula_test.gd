@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weather_pressure_write_gate()
 	_test_succession_min_gain()
 	_test_rainforest_threshold_alignment()
+	_test_biome_envelope_alignment()
 	_test_succession_cadence_guard()
 	_test_native_cadence_day_scale()
 	_test_moisture_cadence_defaults()
@@ -34,6 +35,7 @@ func _run() -> void:
 	_test_succession_reset_and_cooldown()
 	_test_succession_candidate_publish()
 	_test_native_persistent_mismatch_succession()
+	_test_native_biome_mismatch_succession()
 	_finish()
 
 
@@ -97,11 +99,32 @@ func _test_rainforest_threshold_alignment() -> void:
 	_expect("observed warm humid rainforest remains ecologically viable",
 		observed_compat >= 0.25)
 	var generator := MapGenerator.new()
+	# [zonal-envelope] 真热带带 t>=0.80，雨林湿门 0.56（与 C++ pk_whittaker_vegetation 同步）。
 	_expect("tropical rainforest is limited to the wet tail",
-		int(generator._whittaker_vegetation(0.78, 0.57, int(LandformType.LF.PLAIN))) \
+		int(generator._whittaker_vegetation(0.85, 0.55, int(LandformType.LF.PLAIN))) \
 			!= int(VegetationType.VEG.TROPICAL_RAINFOREST) and
-		int(generator._whittaker_vegetation(0.78, 0.59, int(LandformType.LF.PLAIN))) \
+		int(generator._whittaker_vegetation(0.85, 0.57, int(LandformType.LF.PLAIN))) \
 			== int(VegetationType.VEG.TROPICAL_RAINFOREST))
+
+
+func _test_biome_envelope_alignment() -> void:
+	var generator := MapGenerator.new()
+	var cell := HexCell.new(0, 0)
+	cell.terrain = int(TerrainType.TERRAIN.SAVANNA)
+	# [zonal-envelope] SAVANNA 湿端 MONSOON 门随 JUNGLE 边界 0.54→0.56 平移。
+	cell.moisture = 0.55
+	var savanna_veg: int = int(generator._derive_vegetation(cell, int(LandformType.LF.PLAIN), 0.75))
+	cell.moisture = 0.57
+	var wet_edge_veg: int = int(generator._derive_vegetation(cell, int(LandformType.LF.PLAIN), 0.75))
+	_expect("savanna does not spawn monsoon forest below biome boundary",
+		 savanna_veg == int(VegetationType.VEG.SAVANNA))
+	_expect("savanna wet edge can spawn monsoon forest",
+		 wet_edge_veg == int(VegetationType.VEG.MONSOON_FOREST))
+	_expect("savanna strongly penalizes rainforest envelope",
+		 VegetationType.biome_envelope_weight(int(TerrainType.TERRAIN.SAVANNA), VegetationType.VEG.TROPICAL_RAINFOREST) < 0.50)
+	_expect("savanna favors its native vegetation envelope",
+		 VegetationType.biome_envelope_weight(int(TerrainType.TERRAIN.SAVANNA), VegetationType.VEG.SAVANNA) >
+		 VegetationType.biome_envelope_weight(int(TerrainType.TERRAIN.SAVANNA), VegetationType.VEG.MONSOON_FOREST))
 
 
 func _test_succession_cadence_guard() -> void:
@@ -141,11 +164,11 @@ func _test_moisture_cadence_defaults() -> void:
 	_expect("runtime moisture soil coupling preserves annual wet-dry range",
 		is_equal_approx(float(_cp.runtime_moisture_soil_weight), 1.82))
 	_expect("runtime moisture soil drought coupling deepens dry minima",
-		is_equal_approx(float(_cp.runtime_moisture_soil_dry_weight), 2.21))
+		is_equal_approx(float(_cp.runtime_moisture_soil_dry_weight), 2.71))
 	_expect("runtime moisture rolling balance remains a signed driver",
 		is_equal_approx(float(_cp.runtime_moisture_water_balance_weight), 1.04))
 	_expect("runtime moisture rolling deficit has stronger drought coupling",
-		is_equal_approx(float(_cp.runtime_moisture_water_balance_dry_weight), 1.30))
+		is_equal_approx(float(_cp.runtime_moisture_water_balance_dry_weight), 1.55))
 
 
 func _test_transpiration_transport_conservation() -> void:
@@ -236,6 +259,44 @@ func _test_native_persistent_mismatch_succession() -> void:
 		final_ms = float(ext.run_stage_b_pass(knobs))
 	var to_veg: PackedByteArray = knobs.get("succession_to_veg", PackedByteArray())
 	_expect("persistent mismatch emits climate-directed succession at the configured duration",
+		final_ms >= 0.0 and int(knobs.get("stat_succession_count", 0)) == 1 and
+		to_veg.size() == 1 and int(to_veg[0]) == int(VegetationType.VEG.TROPICAL_DRY_FOREST))
+
+
+func _test_native_biome_mismatch_succession() -> void:
+	var map := MapData.new(1, 1)
+	var cell := HexCell.new(0, 0)
+	cell.terrain = int(TerrainType.TERRAIN.SAVANNA)
+	cell.base_terrain = int(TerrainType.TERRAIN.SAVANNA)
+	cell.vegetation = int(VegetationType.VEG.MONSOON_FOREST)
+	cell.base_vegetation = int(VegetationType.VEG.MONSOON_FOREST)
+	cell.temperature = 0.75
+	cell.temp_30d_mean = 0.75
+	cell.moisture = 0.50
+	cell.base_moisture = 0.50
+	cell.vegetation_vitality = 0.70
+	map.set_cell(cell)
+	map._build_indices()
+	map.init_soa_from_bake()
+	map.temp_30d_arr[0] = 0.75
+	map.water_balance_30d_arr[0] = 0.0
+	map.soil_moisture_arr[0] = 0.0
+	var ext := DCWorldExt.new()
+	_expect("native biome mismatch fixture binds", bool(ext.bind_map_data(map)))
+	var generator := MapGenerator.new()
+	var knobs: Dictionary = generator._build_native_daily_stage_b_knobs(map, _cp, 10, 10.0)
+	var sample_days: int = int(knobs.get("streak_days", 0))
+	var first_ms: float = float(ext.run_stage_b_pass(knobs))
+	_expect("severe biome mismatch starts degradation before vitality is low",
+		first_ms >= 0.0 and int(knobs.get("stat_succession_count", 0)) == 0 and
+		int(map.vitality_low_streak_arr[0]) == sample_days)
+	var samples_needed: int = ceili(float(_cp.succession_degrade_days) / float(sample_days))
+	var final_ms: float = first_ms
+	for _sample in range(1, samples_needed):
+		knobs = generator._build_native_daily_stage_b_knobs(map, _cp, 10, 10.0)
+		final_ms = float(ext.run_stage_b_pass(knobs))
+	var to_veg: PackedByteArray = knobs.get("succession_to_veg", PackedByteArray())
+	_expect("severe biome mismatch converges to a biome-compatible forest",
 		final_ms >= 0.0 and int(knobs.get("stat_succession_count", 0)) == 1 and
 		to_veg.size() == 1 and int(to_veg[0]) == int(VegetationType.VEG.TROPICAL_DRY_FOREST))
 

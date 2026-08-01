@@ -103,6 +103,16 @@ const WORLD_SETUP_CLIMATE_FIELDS := {
 	"moisture_land_base": true,
 	"moisture_precip_gain": true,
 	"moisture_continental_dry": true,
+	"moisture_itcz_wet_strength": true,
+	"moisture_itcz_center": true,
+	"moisture_itcz_width": true,
+	"moisture_stormtrack_wet_strength": true,
+	"moisture_stormtrack_center": true,
+	"moisture_stormtrack_width": true,
+	"moisture_polar_dry_strength": true,
+	"moisture_tropical_evap_boost": true,
+	"moisture_itcz_recycle_strength": true,
+	"moisture_itcz_convergence": true,
 	"moisture_coastal_floor": true,
 	"coastal_moisture_boost": true,
 	"orographic_boost": true,
@@ -894,6 +904,33 @@ func toggle_weather_layer_visible() -> void:
 	_render_profile_weather_hidden = not _render_profile_weather_hidden
 	weather_layer_node.visible = not _render_profile_weather_hidden
 	print("[render-profile] WeatherLayer hidden=%s — 用 ΔFPS 判断 weather_overlay shader 占多少" % str(_render_profile_weather_hidden))
+
+
+# [terrain-material-tiles] GM 诊断：切换材质贴图门禁视图（terrain_surface_debug_view=7）。
+# debug 分支绕过后处理直出纯色：绿=激活 / 蓝=tex 未绑定 / 品红=enabled=false / 橙=q<2。
+# 同时把 GDScript 侧与材质侧的门禁值打到控制台，便于对照 shader 侧结果。
+func toggle_terrain_material_gate_debug() -> void:
+	if _renderer == null:
+		print("[terrain-mat-gate] renderer 不可用")
+		return
+	_renderer.terrain_surface_debug_view = 0 \
+		if _renderer.terrain_surface_debug_view == 7 else 7
+	print("[terrain-mat-gate] debug_view=%d（绿=激活 蓝=tex未绑定 品红=disabled 橙=q<2）" %
+		_renderer.terrain_surface_debug_view)
+	print("[terrain-mat-gate] gd 侧: renderer.q=%d enabled=%s" % [
+		_renderer.visual_quality, str(_renderer.terrain_materials_enabled)])
+	var world = _renderer._world
+	if world != null:
+		print("[terrain-mat-gate] world 侧: tex=%s bound=%s" % [
+			str(world.terrain_material_tex != null),
+			str(world.terrain_material_tex_bound)])
+	var mat = _renderer._shader_mat
+	if mat != null:
+		print("[terrain-mat-gate] 材质 uniform: enabled=%s bound=%s q=%s tex=%s" % [
+			str(mat.get_shader_parameter("terrain_materials_enabled")),
+			str(mat.get_shader_parameter("terrain_material_tex_bound")),
+			str(mat.get_shader_parameter("visual_quality")),
+			str(mat.get_shader_parameter("terrain_material_tex") != null)])
 
 
 # 60 FPS 调查（2026-06-14）：toggle 主地形 shader（hex_terrain + world_map）。

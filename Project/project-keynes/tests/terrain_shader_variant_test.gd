@@ -11,6 +11,8 @@ func _init() -> void:
 	_expect(not source.is_empty(), "world shader source loads")
 	var surface_source := FileAccess.get_file_as_string(
 		"res://shaders/include/terrain_surface_detail.gdshaderinc")
+	var uniforms_source := FileAccess.get_file_as_string(
+		"res://shaders/include/uniforms.gdshaderinc")
 	_expect(surface_source.contains("terrain_static_biome_is_water"),
 		"terrain edge blend contains an explicit coast-domain guard")
 	_expect(surface_source.contains("terrain_hybrid_static_weight"),
@@ -64,6 +66,10 @@ func _init() -> void:
 		_expect(names.has("terrain_ecotone_width"), "%s exposes terrain ecotone width" % label)
 		_expect(names.has("terrain_ecotone_noise"), "%s exposes terrain ecotone noise" % label)
 		_expect(names.has("terrain_micro_tex"), "%s exposes terrain micro texture" % label)
+		_expect(names.has("terrain_material_tex"), "%s exposes terrain material array" % label)
+		_expect(names.has("terrain_material_tex_bound"), "%s exposes terrain material bound flag" % label)
+		_expect(names.has("terrain_materials_enabled"), "%s exposes terrain material switch" % label)
+		_expect(names.has("terrain_material_world_size"), "%s exposes terrain material world size" % label)
 		_expect(names.has("camera_zoom"), "%s exposes camera zoom" % label)
 	for label in variants:
 		var shader := Shader.new()
@@ -79,6 +85,14 @@ func _init() -> void:
 		_expect(not names.has("height_tex"), "%s tiled omits legacy height sampler" % label)
 		_expect(not names.has("map_index_atlas"), "%s tiled omits legacy map-index sampler" % label)
 		_expect(not names.has("terrain_horizon_tex"), "%s tiled omits legacy horizon sampler" % label)
+		_expect(names.has("terrain_material_tex"), "%s tiled exposes terrain material array" % label)
+	_expect(uniforms_source.contains("sampler2DArray terrain_material_tex"),
+		"terrain material path uses sampler2DArray")
+	_expect(surface_source.contains("terrain_materials_active() || !has_terrain_micro_tex"),
+		"HIGH tiled material path skips terrain_micro_tex")
+	_expect(surface_source.contains("terrain_material_layer")
+		and surface_source.contains("terrain_material_sample"),
+		"biome-to-layer material sampling is present")
 	print("=== terrain shader variants: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

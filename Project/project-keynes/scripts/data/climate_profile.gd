@@ -1293,9 +1293,34 @@ const NATIVE_MODE_ACTIVE: int = 2
 # [地貌真实性 2026-07-31] strength 回调到 0.22，并与 C++ fallback 对齐：当前 CSV/固定种子回归显示
 # 0.32 会把副热带干带扩张到陆地约 17.7%，且放大河流视觉宽度调参对生态阈值的连带影响；
 # 0.22 配合独立生态流量与最终气候重判后，仍保留稳定内陆荒漠带，同时减少假性河岸荒漠。
-@export var moisture_subtropical_dry_strength: float = 0.22
-@export_range(0.0, 1.0, 0.01) var moisture_subtropical_dry_center: float = 0.33
-@export_range(0.02, 0.5, 0.01) var moisture_subtropical_dry_width: float = 0.16
+# [zonal-envelope] strength 0.22→0.30、center 0.33→0.36：生产路径复验（730 天 soak + CSV
+# 审计）显示副热带带 51% 草、荒漠仅 2.9%，加深干带把草原压向真荒漠（Sahara 尺度）；
+# 中心极移是为避免高斯尾触达赤道带（0.30/0.20/0.33 时 seed42 赤道林率跌破草率）。
+@export var moisture_subtropical_dry_strength: float = 0.30
+@export_range(0.0, 1.0, 0.01) var moisture_subtropical_dry_center: float = 0.36
+# [zonal-envelope] 0.16→0.18：配合 ITCZ/蒸发增强后的湿信风，干带略加宽才能稳定压住
+# 副热带（seed 复验显示 0.16 时部分种子副热带均值仍高于中纬）。
+@export_range(0.02, 0.5, 0.01) var moisture_subtropical_dry_width: float = 0.18
+# 行星尺度纬带降水结构（[zonal-envelope 2026-08-01]，作用于 C++ 6b 扫描的 rainout 乘数，
+# 与 C++ fallback 默认值保持一致）：
+# 旧模型湿度只有"距海里程"结构，赤道/副热带/中纬几乎同湿 → 赤道无雨林、全图零荒漠、
+# 草原系占陆地 48%。ITCZ 赤道辐合湿带就地降空信风水汽(下游副热带自然更干)、
+# 中纬风暴路径次级增雨恢复温带森林湿线、极地干冷抑雨。副热带干带仍由上方
+# subtropical_dry_* 的大陆度门控减法负责，但在 C++ 内移到海岸 guard 之后生效。
+@export var moisture_itcz_wet_strength: float = 0.9
+@export_range(0.0, 1.0, 0.01) var moisture_itcz_center: float = 0.05
+@export_range(0.02, 0.5, 0.01) var moisture_itcz_width: float = 0.10
+@export var moisture_stormtrack_wet_strength: float = 0.6
+@export_range(0.0, 1.0, 0.01) var moisture_stormtrack_center: float = 0.55
+@export_range(0.02, 0.5, 0.01) var moisture_stormtrack_width: float = 0.15
+@export_range(0.0, 1.0, 0.01) var moisture_polar_dry_strength: float = 0.35
+# 热带海洋蒸发增强：暖海供水加倍，是 ITCZ/信风水汽的源头（没有它赤道陆地有降水因子
+# 却无水汽可降）。1.0 = 赤道洋面蒸发 ×2。
+@export var moisture_tropical_evap_boost: float = 1.0
+# 雨林水分再循环率（降水蒸散回气柱比例，亚马逊型 ~0.5）+ ITCZ 辐合注入（每格恒量供水）。
+# 二者让赤道雨林湿带深入大陆内部，否则气柱沿程枯竭、赤道内陆必然干旱。
+@export_range(0.0, 0.9, 0.01) var moisture_itcz_recycle_strength: float = 0.62
+@export var moisture_itcz_convergence: float = 0.05
 # 全向沿海湿度地板：纬向平流忽略非纬向最近海，易出现"假内陆干燥带"。用 dist_ocean(全向 BFS)
 # 给一个随距海衰减的湿度下限，保证任意方向近海格不至枯干，同时保留纬向雨影结构。
 # ⚠ 2026-06-19 再平衡：0.55→0.28。水世界下该地板把所有近海格抬得过湿，下调以恢复海岸-内陆梯度。

@@ -151,9 +151,12 @@ var _wind_strength: float = 0.15
 # 默认值与 main.gd 一致，保证 renderer 被单独调试时也有合理初值。
 @export_group("Visual Overhaul")
 @export_range(0, 2, 1) var visual_quality: int = 1
-@export_range(0, 6, 1) var terrain_surface_debug_view: int = 0:
+## A/B switch for the HIGH terrain material-array path. This is intentionally
+## not exposed as a player-facing setting; false restores the legacy path.
+var terrain_materials_enabled: bool = true
+@export_range(0, 7, 1) var terrain_surface_debug_view: int = 0:
 	set(value):
-		terrain_surface_debug_view = clampi(value, 0, 6)
+		terrain_surface_debug_view = clampi(value, 0, 7)
 		if _shader_mat != null:
 			_shader_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
@@ -1439,6 +1442,12 @@ func set_visual_quality(q: int) -> void:
 	_apply_detail_global_budget()
 
 
+func set_terrain_materials_enabled(enabled: bool) -> void:
+	terrain_materials_enabled = enabled
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("terrain_materials_enabled", enabled)
+
+
 func set_camera_zoom(value: float) -> void:
 	var next_zoom := clampf(value, 0.01, 16.0)
 	if absf(next_zoom - _camera_zoom) < 0.001:
@@ -2565,6 +2574,18 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("has_terrain_edge_data", true if tiled else edge_data_ready)
 	sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
 	sm.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
+	# [terrain-material-tiles] The array is shared by all maps and is valid for
+	# both legacy and VisualTileSet variants. Shader-side quality gating keeps
+	# MID/LOW and failed allocation on the existing detail path.
+	sm.set_shader_parameter("terrain_material_tex", _world.terrain_material_tex)
+	sm.set_shader_parameter("terrain_material_tex_bound", _world.terrain_material_tex_bound)
+	sm.set_shader_parameter("terrain_materials_enabled", terrain_materials_enabled)
+	sm.set_shader_parameter("terrain_material_world_size", 128.0)
+	# [terrain-material-tiles 2026-08-01c] 0.22/0.045 近景也几乎不可见，用户确认贴图"接入等于看不见"；
+	# 提到 0.6/0.15：近景颗粒清晰、中距可辨，远距仍由 mipmap 抹平不发碎。
+	sm.set_shader_parameter("terrain_material_albedo_strength", 0.6)
+	sm.set_shader_parameter("terrain_material_normal_strength", 0.15)
+	sm.set_shader_parameter("terrain_material_roughness_strength", 0.35)
 	sm.set_shader_parameter("terrain_micro_tex", TERRAIN_MICRO_TEXTURE)
 	sm.set_shader_parameter("has_terrain_micro_tex", TERRAIN_MICRO_TEXTURE != null)
 	sm.set_shader_parameter("camera_zoom", _camera_zoom)
