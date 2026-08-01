@@ -1,0 +1,115 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/country_action_bar.gd" id="1"]
+
+[node name="CountryActionBar" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 60)
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 64.0
+offset_top = -72.0
+offset_right = -64.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("1")
+[node name="Sections" type="HBoxContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+[node name="Technology" type="Button" parent="Sections"]
+custom_minimum_size = Vector2(52, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "科技"
+[node name="Center" type="CenterContainer" parent="Sections/Technology"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+[node name="Icon" type="TextureRect" parent="Sections/Technology/Center"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Politics" type="Button" parent="Sections"]
+custom_minimum_size = Vector2(52, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "政治"
+[node name="Center" type="CenterContainer" parent="Sections/Politics"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+[node name="Icon" type="TextureRect" parent="Sections/Politics/Center"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Economy" type="Button" parent="Sections"]
+custom_minimum_size = Vector2(52, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "经济"
+[node name="Center" type="CenterContainer" parent="Sections/Economy"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+[node name="Icon" type="TextureRect" parent="Sections/Economy/Center"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Military" type="Button" parent="Sections"]
+custom_minimum_size = Vector2(52, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "军事"
+[node name="Center" type="CenterContainer" parent="Sections/Military"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+[node name="Icon" type="TextureRect" parent="Sections/Military/Center"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Diplomacy" type="Button" parent="Sections"]
+custom_minimum_size = Vector2(52, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "外交"
+[node name="Center" type="CenterContainer" parent="Sections/Diplomacy"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+[node name="Icon" type="TextureRect" parent="Sections/Diplomacy/Center"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5

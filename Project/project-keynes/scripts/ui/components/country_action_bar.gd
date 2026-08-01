@@ -31,15 +31,21 @@ func _ready() -> void:
 	style.content_margin_right = UITokens.SPACE_SM
 	style.content_margin_bottom = 5
 	add_theme_stylebox_override("panel", style)
-	var row := HBoxContainer.new()
+	var row := $Sections as HBoxContainer
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 4)
-	add_child(row)
-	for definition in SECTIONS:
+	var scene_buttons := row.get_children()
+	for index in range(SECTIONS.size()):
+		var definition: Dictionary = SECTIONS[index]
 		var section_id := String(definition.id)
-		var button := _make_button(String(definition.label), definition.icon)
+		var button := scene_buttons[index] as Button
+		IconButton.configure(button, String(definition.label), true, false)
+		button.text = ""
+		button.focus_mode = Control.FOCUS_NONE
+		var icon := button.get_node("Center/Icon") as TextureRect
+		icon.texture = IconCatalog.texture_for_key(definition.icon)
+		icon.modulate = UITokens.BRASS_HIGHLIGHT.lerp(UITokens.TEXT_MAIN, 0.30)
 		button.pressed.connect(func() -> void: section_selected.emit(section_id))
-		row.add_child(button)
 		_buttons[section_id] = button
 
 
@@ -62,24 +68,3 @@ func set_compact(compact: bool) -> void:
 				COMPACT_BUTTON_WIDTH if compact else BUTTON_SIZE.x,
 				BUTTON_SIZE.y
 			)
-
-
-func _make_button(label_text: String, icon_key: StringName) -> Button:
-	var button := Button.new()
-	button.focus_mode = Control.FOCUS_NONE
-	IconButton.configure(button, label_text, true, false)
-	button.custom_minimum_size = BUTTON_SIZE
-	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var center := CenterContainer.new()
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	button.add_child(center)
-	var icon := TextureRect.new()
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
-	icon.texture = IconCatalog.texture_for_key(icon_key)
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.modulate = UITokens.BRASS_HIGHLIGHT.lerp(UITokens.TEXT_MAIN, 0.30)
-	center.add_child(icon)
-	return button

@@ -1,0 +1,17 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/inspector_panel.gd" id="1"]
+
+[node name="RightPanel" type="PanelContainer"]
+visible = false
+custom_minimum_size = Vector2(460, 0)
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -460.0
+offset_top = 68.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 2
+script = ExtResource("1")

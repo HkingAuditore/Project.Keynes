@@ -79,6 +79,9 @@ static func build_many(map: MapData, facade: EconomyFacade,
 	var building_types := PackedInt32Array()
 	var all_building_owners := PackedInt32Array()
 	var building_counts := PackedInt64Array()
+	var founder_family_cells := PackedInt32Array()
+	var founder_family_building_types := PackedInt32Array()
+	var founder_family_owner_signatures := PackedInt32Array()
 	var settlement_cells := PackedInt32Array()
 	var precious_resources := PackedStringArray()
 	for start in starts:
@@ -111,6 +114,12 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			building_types.append(int(settlement_building_types[index]))
 			all_building_owners.append(int(building_owners[index]))
 			building_counts.append(1)
+		# The opening capital has one explicit founder household. Its two
+		# foragers operate and own the gathering ground; the native bootstrap
+		# derives the conserved family claim and promotes one notable founder.
+		founder_family_cells.append(start_cell)
+		founder_family_building_types.append(int(settlement_building_types[0]))
+		founder_family_owner_signatures.append(int(building_owners[0]))
 		for good_id in initial_stock:
 			var good_idx := int(initial_stock_indices[good_id])
 			stock[start_cell * goods.size() + good_idx] = int(initial_stock[good_id])
@@ -134,13 +143,16 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			"building_type_ids": building_types,
 			"building_owner_signature_ids": all_building_owners,
 			"building_counts": building_counts,
+			"founder_family_cells": founder_family_cells,
+			"founder_family_building_type_ids": founder_family_building_types,
+			"founder_family_owner_signature_ids": founder_family_owner_signatures,
 		},
 		"total_population": total_population,
 		"settlement_count": starts.size(),
 		"settlement_cells": settlement_cells,
 		"precious_resources": precious_resources,
 		"precious_resource": String(precious_resources[0]),
-		"source": "starter_settlement_bootstrap_v2",
+		"source": "starter_settlement_bootstrap_v3",
 	}
 
 

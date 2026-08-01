@@ -162,6 +162,25 @@ extends Resource
 @export_range(0, 65536, 1) var bullion_monthly_issue_cap_q16: int = 655
 @export_range(0, 65536, 1) var producer_support_monthly_cap_q16: int = 3277
 
+## Notable-family overlay. Anonymous households remain implicit; family cash is
+## a conserved claim inside cohort funds and never a second wallet.
+@export_enum("OFF", "PROBE", "ACTIVE") var family_runtime_mode: String = "ACTIVE"
+@export_range(0, 7, 1) var family_min_settlement_tier: int = 2
+@export_range(1, 3650, 1) var family_review_days: int = 30
+@export_range(1, 1000000000, 1) var family_min_population_per_active: int = 100
+@export_range(1, 4096, 1) var family_max_per_cell: int = 64
+@export_range(1, 65536, 1) var family_cells_per_slice: int = 128
+@export_range(1, 32, 1) var family_decline_reviews: int = 3
+
+## Sparse important-person overlay nested inside family membership. Persons
+## attribute realized cohort cash flow and demand; they never become a second
+## population unit or an independent wallet.
+@export_enum("OFF", "PROBE", "ACTIVE") var notable_person_runtime_mode: String = "ACTIVE"
+@export_range(1, 32, 1) var notable_person_max_per_family: int = 4
+@export_range(1, 4096, 1) var notable_person_max_per_cell: int = 128
+@export_range(1, 1000000, 1) var notable_person_max_total: int = 65536
+@export_range(1, 65536, 1) var notable_person_records_per_slice: int = 4096
+
 func to_native_profile() -> Dictionary:
 	return {
 		"money_scale": money_scale,
@@ -270,4 +289,16 @@ func to_native_profile() -> Dictionary:
 		"resource_min_horizon_days": resource_min_horizon_days,
 		"bullion_monthly_issue_cap_q16": bullion_monthly_issue_cap_q16,
 		"producer_support_monthly_cap_q16": producer_support_monthly_cap_q16,
+		"family_runtime_mode": family_runtime_mode,
+		"family_min_settlement_tier": family_min_settlement_tier,
+		"family_review_days": family_review_days,
+		"family_min_population_per_active": family_min_population_per_active,
+		"family_max_per_cell": family_max_per_cell,
+		"family_cells_per_slice": family_cells_per_slice,
+		"family_decline_reviews": family_decline_reviews,
+		"notable_person_runtime_mode": notable_person_runtime_mode,
+		"notable_person_max_per_family": notable_person_max_per_family,
+		"notable_person_max_per_cell": notable_person_max_per_cell,
+		"notable_person_max_total": notable_person_max_total,
+		"notable_person_records_per_slice": notable_person_records_per_slice,
 	}

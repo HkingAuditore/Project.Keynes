@@ -138,6 +138,17 @@ uniform float contact_ao_height = 0.32;
 uniform float terrain_valley_ao_strength = 0.40;
 uniform float terrain_valley_ao_gain = 6.0;
 
+#ifdef DETAIL_FAMILY_BATCH
+uniform sampler2D detail_style_lut : filter_nearest, repeat_disable;
+uniform vec2 detail_style_lut_size = vec2(16.0, 32.0);
+varying float shrub_style_id;
+vec4 detail_style_param(float style_id, float slot) {
+	vec2 uv = vec2((slot + 0.5) / detail_style_lut_size.x,
+		(style_id + 0.5) / detail_style_lut_size.y);
+	return texture(detail_style_lut, uv);
+}
+#endif
+
 // [cylindrical-earth-daylight] 昼夜（晨昏线）核心与地形/水面同源：统一调用此 include。
 // 必须放在 season_phase / day_phase / axial_tilt_rad 三个 uniform 声明之后——其内函数
 // 引用这些全局量，GLSL 要求先声明后引用（名字须与 uniforms.gdshaderinc 一致）。
@@ -355,6 +366,13 @@ float compute_presence(vec4 dyn, vec4 eco) {
 
 void vertex() {
 	shrub_custom = INSTANCE_CUSTOM;
+#ifdef DETAIL_FAMILY_BATCH
+	float packed_style_variant = max(INSTANCE_CUSTOM.a, 0.0);
+	shrub_style_id = floor(packed_style_variant + 0.0001);
+	float family_variant = fract(packed_style_variant) * 16.0;
+	vec4 style_shape = detail_style_param(shrub_style_id, 0.0);
+	VERTEX *= max(style_shape.yz, vec2(0.05));
+#endif
 	// [veg-instance-rotation 修正] 取本实例世界正交基：MODEL_MATRIX 列向量 = 该实例 transform 后的
 	// 局部 x/y 轴（含随机旋转+缩放），去缩放归一化 → 纯旋转基。供伪法线/风摆/投影把局部帧量转到世界帧。
 	vec2 inst_ax = vec2(MODEL_MATRIX[0].x, MODEL_MATRIX[0].y);
@@ -388,6 +406,9 @@ void vertex() {
 	float top_weight = clamp(UV.y, 0.0, 1.0);
 	float seed = INSTANCE_CUSTOM.b;
 	float variant = INSTANCE_CUSTOM.a;
+#ifdef DETAIL_FAMILY_BATCH
+	variant = family_variant;
+#endif
 	float sway_amp = mix(0.045, 0.145, fract(seed * 17.13 + variant * 3.71));
 	float sway = sin(world_time * (0.75 + variant * 1.65) + seed * 6.2831853);
 	sway += 0.45 * sin(world_time * 1.7 + variant * 11.0);
@@ -833,7 +854,7 @@ void fragment() {
 		profile = value if value != null else DEFAULT_PROFILE
 		_apply_profile_uniforms()
 		if is_inside_tree() and _map != null:
-			_rebuild_instances()
+			_rebuild_or_defer()
 
 var _map: MapData = null
 var _world: WorldData = null
@@ -868,6 +889,8 @@ var _last_native_context_ms: float = 0.0
 var _last_native_knobs_ms: float = 0.0
 var _last_native_call_ms: float = 0.0
 var _last_native_apply_ms: float = 0.0
+var _last_cache_update_ms: float = 0.0
+var _last_assemble_ms: float = 0.0
 var _cell_instance_lookup: Dictionary = {}
 var _native_offset_is_water_cache: PackedByteArray = PackedByteArray()
 var _native_offset_cache_dims: Vector2i = Vector2i.ZERO
@@ -876,6 +899,20 @@ var _native_delta_common_knobs: Dictionary = {}
 var _chunked_multimesh_enabled: bool = true
 var _chunk_size_cells: int = 8
 var _chunk_nodes: Dictionary = {}
+## chunk_id -> {cell_idx: PackedFloat32Array}。生态变化只替换 dirty cell，
+## 随后按稳定 cell 顺序装配一次 chunk buffer；不重新采样其余 255 格。
+var _chunk_cell_payloads: Dictionary = {}
+## 地图几何在运行期不变。可见性查询复用 cell 列表与包围盒，避免每层每帧重新
+## cube/offset 转换并扫描整个 superchunk。
+var _chunk_cell_indices_cache: Dictionary = {}
+var _chunk_world_bounds_cache: Dictionary = {}
+var _chunk_cell_cache_builds: int = 0
+var _chunk_bounds_cache_builds: int = 0
+var _active_instance_count_cache: int = 0
+var _active_instance_count_valid: bool = false
+var _active_instance_count_scans: int = 0
+var _defer_initial_rebuild := false
+var _chunk_dormant_since_msec: Dictionary = {}
 var _chunk_wrap_nodes: Dictionary = {}
 var _chunk_instance_counts: Dictionary = {}
 var _chunk_far_instance_counts: Dictionary = {}
@@ -908,6 +945,14 @@ var _camera_lod_hidden: bool = false
 var _lod_alpha: float = 1.0
 var _lod_zoom_t: float = 1.0
 var _lod_far_visible_fraction: float = 1.0
+var _camera_view_rect: Rect2 = Rect2()
+var _camera_prefetch_rect: Rect2 = Rect2()
+var _camera_view_center: Vector2 = Vector2.ZERO
+var _camera_view_initialized: bool = false
+var _visible_chunk_count: int = 0
+var _prefetch_chunk_count: int = 0
+var _family_style_id: int = 0
+var _family_batch_suppressed: bool = false
 var _zoom_visible_fraction: float = 1.0
 
 var _instance_cell_indices: PackedInt32Array = PackedInt32Array()
@@ -932,6 +977,8 @@ func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visua
 	_world = world
 	_bounds = bounds
 	_hex_size = maxf(hex_size, 4.0)
+	_invalidate_chunk_spatial_cache()
+	_active_instance_count_valid = false
 	_visual_quality = clampi(visual_quality, 0, 2)
 	_native_offset_is_water_cache = PackedByteArray()
 	_native_offset_cache_dims = Vector2i.ZERO
@@ -939,7 +986,15 @@ func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visua
 	# _ready/_ensure_resources 在 world/tiles 就绪前会编出 legacy 变体；setup 才是
 	# 第一次拿到 visual_tiles 的入口，必须按实际 tiled 状态重建 shader，不能只 sync。
 	_ensure_shader_matches_tiles()
-	_rebuild_instances()
+	if _defer_initial_rebuild and _chunked_multimesh_enabled:
+		clear()
+		_last_rebuild_reason = "deferred_until_prefetch"
+	else:
+		_rebuild_instances()
+
+
+func set_defer_initial_rebuild(value: bool) -> void:
+	_defer_initial_rebuild = value
 
 
 func clear() -> void:
@@ -953,6 +1008,8 @@ func clear() -> void:
 	_instance_cells.clear()
 	_instance_count = 0
 	_far_instance_count = 0
+	_active_instance_count_cache = 0
+	_active_instance_count_valid = false
 	_cell_instance_lookup.clear()
 	_clear_chunk_nodes()
 	if _multimesh != null:
@@ -1130,8 +1187,10 @@ func set_chunked_multimesh_enabled(enabled: bool, chunk_size_cells: int = 8) -> 
 		return
 	_chunked_multimesh_enabled = enabled
 	_chunk_size_cells = next_size
+	_invalidate_chunk_spatial_cache()
+	_active_instance_count_valid = false
 	if _map != null:
-		_rebuild_instances()
+		_rebuild_or_defer()
 
 
 func set_visual_quality(q: int) -> void:
@@ -1141,7 +1200,7 @@ func set_visual_quality(q: int) -> void:
 	_visual_quality = next_q
 	_native_delta_common_knobs = {}
 	if _map != null:
-		_rebuild_instances()
+		_rebuild_or_defer()
 
 
 func set_camera_zoom(value: float) -> void:
@@ -1150,25 +1209,241 @@ func set_camera_zoom(value: float) -> void:
 		return
 	_camera_zoom = next_zoom
 	_camera_zoom_initialized = true
-	var thresholds := _resolved_lod_thresholds()
-	var start := thresholds.x
-	var finish := maxf(thresholds.y, start + 0.001)
-	var lod_t := smoothstep(start, finish, _camera_zoom)
-	var near_multiplier := _resolved_lod_near_density_multiplier()
-	_lod_zoom_t = lod_t
-	_lod_far_visible_fraction = 1.0 / maxf(near_multiplier, 1.0)
-	_zoom_visible_fraction = lerpf(_lod_far_visible_fraction, 1.0, lod_t)
-	# 远景是修改前的完整视觉基准，不再整体压低 alpha；缩放只增加实例数量。
+	if _family_batch_suppressed:
+		_zoom_visible_fraction = _family_lod_fraction(_camera_zoom)
+		_lod_zoom_t = _zoom_visible_fraction
+		_lod_far_visible_fraction = _family_far_fraction()
+	else:
+		var thresholds := _resolved_lod_thresholds()
+		var start := thresholds.x
+		var finish := maxf(thresholds.y, start + 0.001)
+		_lod_zoom_t = smoothstep(start, finish, _camera_zoom)
+		var near_multiplier := _resolved_lod_near_density_multiplier()
+		_lod_far_visible_fraction = 1.0 / maxf(near_multiplier, 1.0)
+		_zoom_visible_fraction = lerpf(_lod_far_visible_fraction, 1.0, _lod_zoom_t)
 	_lod_alpha = 1.0
 	if _material != null:
 		_material.set_shader_parameter("lod_alpha", _lod_alpha)
 	if _shadow_material != null:
 		_shadow_material.set_shader_parameter("lod_alpha", _lod_alpha)
 
-	# Camera LOD never hides the whole layer. The original profile count remains
-	# the far-view baseline; pre-generated surplus instances are revealed nearby.
-	_camera_lod_hidden = false
+	_camera_lod_hidden = _family_batch_suppressed and _zoom_visible_fraction <= 0.0001
+	_active_instance_count_valid = false
 	apply_visible_instance_fraction(_shadow_fraction)
+
+
+func _family_far_fraction() -> float:
+	match detail_render_family():
+		3:
+			return 0.08
+		2, 4:
+			return 0.0
+		1, 5:
+			return 0.0
+	return 0.0
+
+
+func _family_lod_fraction(zoom_value: float) -> float:
+	# 每个切换点用 0.10 zoom 交叉带；稳定前缀保证密度变化时不会整格消失。
+	match detail_render_family():
+		3: # Canopy: 8% overview -> 40% mid -> 100% near.
+			if zoom_value < 0.45:
+				return 0.08
+			if zoom_value < 0.55:
+				return lerpf(0.08, 0.40, smoothstep(0.45, 0.55, zoom_value))
+			if zoom_value < 0.85:
+				return 0.40
+			if zoom_value < 0.95:
+				return lerpf(0.40, 1.0, smoothstep(0.85, 0.95, zoom_value))
+			return 1.0
+		2, 4: # Brush / Hardscape.
+			if zoom_value < 0.65:
+				return 0.0
+			if zoom_value < 0.75:
+				return 0.35 * smoothstep(0.65, 0.75, zoom_value)
+			if zoom_value < 1.15:
+				return 0.35
+			if zoom_value < 1.25:
+				return lerpf(0.35, 1.0, smoothstep(1.15, 1.25, zoom_value))
+			return 1.0
+		1, 5: # Ground / Aquatic.
+			if zoom_value < 1.00:
+				return 0.0
+			if zoom_value < 1.10:
+				return 0.25 * smoothstep(1.00, 1.10, zoom_value)
+			if zoom_value < 1.55:
+				return 0.25
+			if zoom_value < 1.65:
+				return lerpf(0.25, 1.0, smoothstep(1.55, 1.65, zoom_value))
+			return 1.0
+	return 1.0
+
+
+func detail_render_family() -> int:
+	var cfg := _profile()
+	if cfg != null and cfg.has_method("resolved_render_family"):
+		return int(cfg.resolved_render_family())
+	return 0
+
+
+func detail_render_family_mask() -> int:
+	var family := detail_render_family()
+	return 0 if family <= 0 else (1 << (family - 1))
+
+
+func set_family_style_id(value: int) -> void:
+	_family_style_id = clampi(value, 0, 31)
+
+
+func family_style_id() -> int:
+	return _family_style_id
+
+
+func set_family_batch_suppressed(suppressed: bool) -> void:
+	if _family_batch_suppressed == suppressed:
+		return
+	_family_batch_suppressed = suppressed
+	# 两条渲染路径使用不同的 LOD 曲线。切换路径时即使 zoom 没变，也必须
+	# 重新计算实例比例；否则会把上一条路径的断崖式密度继续带到回退路径。
+	_camera_zoom_initialized = false
+	set_camera_zoom(_camera_zoom)
+	for raw_node in _chunk_nodes.values():
+		_set_family_source_node_attached(raw_node as MultiMeshInstance2D, not suppressed)
+	for raw_node in _shadow_chunk_nodes.values():
+		_set_family_source_node_attached(raw_node as MultiMeshInstance2D, not suppressed)
+	_set_family_source_node_attached(_mmi, not suppressed)
+	_set_family_source_node_attached(_shadow_mmi, not suppressed)
+	_refresh_chunk_visibility()
+	if suppressed:
+		if _mmi != null:
+			_mmi.visible = false
+		if _shadow_mmi != null:
+			_shadow_mmi.visible = false
+		for nodes in _chunk_wrap_nodes.values():
+			for raw_node in nodes:
+				var node := raw_node as MultiMeshInstance2D
+				if node != null and is_instance_valid(node):
+					node.visible = false
+		for nodes in _shadow_chunk_wrap_nodes.values():
+			for raw_node in nodes:
+				var node := raw_node as MultiMeshInstance2D
+				if node != null and is_instance_valid(node):
+					node.visible = false
+	else:
+		_refresh_chunk_visibility()
+
+
+func _set_family_source_node_attached(node: MultiMeshInstance2D, attached: bool) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	if attached:
+		if node.get_parent() == null:
+			add_child(node)
+	elif node.get_parent() == self:
+		remove_child(node)
+
+
+func detail_family_chunk_payload(chunk_id: int) -> Dictionary:
+	if _chunk_cell_payloads.has(chunk_id):
+		var assembled := _assemble_chunk_cell_payloads(_chunk_cell_payloads[chunk_id])
+		return {
+			"instance_count": int(assembled.get("instance_count", 0)),
+			"buffer": assembled.get("buffer", PackedFloat32Array()),
+			"style_id": _family_style_id,
+			"family": detail_render_family(),
+		}
+	var node: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
+	if node == null or not is_instance_valid(node) or node.multimesh == null:
+		return {"instance_count": 0, "buffer": PackedFloat32Array()}
+	return {
+		"instance_count": node.multimesh.instance_count,
+		"buffer": node.multimesh.buffer,
+		"style_id": _family_style_id,
+		"family": detail_render_family(),
+	}
+
+
+func detail_family_chunk_ids() -> Array:
+	var ids := {}
+	for raw_id in _chunk_nodes.keys():
+		ids[int(raw_id)] = true
+	for raw_id in _chunk_cell_payloads.keys():
+		ids[int(raw_id)] = true
+	return ids.keys()
+
+
+func detail_family_mesh() -> ArrayMesh:
+	return _cached_detail_mesh()
+
+
+func detail_family_quality() -> int:
+	return _active_quality_tier()
+
+
+func detail_family_mesh_for_quality(quality: int) -> ArrayMesh:
+	var previous_quality := _visual_quality
+	_visual_quality = clampi(quality, 0, 2)
+	var mesh := _build_shrub_mesh()
+	_visual_quality = previous_quality
+	return mesh
+
+
+func detail_family_material(style_lut: Texture2D) -> ShaderMaterial:
+	if _material == null:
+		_ensure_resources()
+	var out := _material.duplicate(true) as ShaderMaterial
+	var shader := Shader.new()
+	shader.code = _shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE
+	out.shader = shader
+	out.set_shader_parameter("detail_style_lut", style_lut)
+	out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
+	return out
+
+
+func detail_family_shadow_material() -> ShaderMaterial:
+	if _shadow_material == null:
+		_ensure_resources()
+	return _shadow_material.duplicate(true) as ShaderMaterial
+
+
+func detail_family_shadow_mesh() -> ArrayMesh:
+	if _shadow_blob_mesh == null:
+		_ensure_resources()
+	return _shadow_blob_mesh
+
+
+func detail_change_affects_profile(
+		axis_mask: int,
+		old_veg: int, new_veg: int,
+		old_lf: int, new_lf: int,
+		old_cover: int, new_cover: int
+) -> bool:
+	if (axis_mask & 0x80) != 0:
+		return true
+	if (axis_mask & 0x01) != 0 \
+			and (_vegetation_weight(old_veg) > 0.0 or _vegetation_weight(new_veg) > 0.0):
+		return true
+	if (axis_mask & 0x02) != 0 \
+			and (_landform_weight(old_lf) > 0.0 or _landform_weight(new_lf) > 0.0):
+		return true
+	if (axis_mask & 0x04) != 0 \
+			and (_cover_weight(old_cover) > 0.0 or _cover_weight(new_cover) > 0.0):
+		return true
+	return false
+
+
+func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> void:
+	_camera_view_rect = world_rect
+	_camera_view_center = center
+	_camera_view_initialized = world_rect.size.x > 0.0 and world_rect.size.y > 0.0
+	var chunk_margin := maxf(
+		float(_chunk_size_cells) * _hex_size * 1.75,
+		float(_chunk_size_cells) * _hex_size * 1.50
+	)
+	_camera_prefetch_rect = world_rect.grow(chunk_margin)
+	_active_instance_count_valid = false
+	set_camera_zoom(zoom_value)
+	_refresh_chunk_visibility()
 
 
 func set_lod_debug_view(enabled: bool) -> void:
@@ -1221,18 +1496,44 @@ func _effective_visible_instance_fraction() -> float:
 	return float(_lod_visible_count(_instance_count, _far_instance_count)) / float(_instance_count)
 
 
+func active_instance_count() -> int:
+	if not _camera_view_initialized:
+		return clampi(int(round(float(_instance_count) * _zoom_visible_fraction)), 0, _instance_count)
+	if _chunked_multimesh_enabled and not _chunk_nodes.is_empty():
+		if _active_instance_count_valid:
+			return _active_instance_count_cache
+		var total := 0
+		for raw_chunk_id in _chunk_nodes.keys():
+			var chunk_id := int(raw_chunk_id)
+			if not detail_chunk_is_render_visible(chunk_id):
+				continue
+			var count := int(_chunk_instance_counts.get(chunk_id, 0))
+			total += clampi(int(round(float(count) * _zoom_visible_fraction)), 0, count)
+		_active_instance_count_cache = total
+		_active_instance_count_valid = true
+		_active_instance_count_scans += 1
+		return _active_instance_count_cache
+	if _multimesh == null:
+		return 0
+	return clampi(int(round(float(_instance_count) * _zoom_visible_fraction)), 0, _instance_count)
+
+
 func _lod_visible_count(total: int, far_count: int) -> int:
 	if total <= 0:
 		return 0
-	var near_budget_count := clampi(int(floor(float(total) * _shadow_fraction)), 0, total)
-	# The renderer-wide budget remains authoritative. When it is tighter than the
-	# far baseline, the stratified prefix still degrades evenly across occupied cells.
-	var budgeted_far_count := mini(clampi(far_count, 0, total), near_budget_count)
-	return clampi(
-		int(round(lerpf(float(budgeted_far_count), float(near_budget_count), _lod_zoom_t))),
-		0,
-		total
-	)
+	if not _family_batch_suppressed:
+		var near_budget_count := clampi(int(floor(float(total) * _shadow_fraction)), 0, total)
+		var budgeted_far_count := mini(clampi(far_count, 0, total), near_budget_count)
+		return clampi(
+			int(round(lerpf(float(budgeted_far_count), float(near_budget_count), _lod_zoom_t))),
+			0,
+			total
+		)
+	var lod_count := clampi(int(round(float(total) * _zoom_visible_fraction)), 0, total)
+	if _zoom_visible_fraction > 0.0 and total > 0:
+		lod_count = maxi(1, lod_count)
+	var budget_count := clampi(int(floor(float(total) * _shadow_fraction)), 0, total)
+	return mini(lod_count, budget_count)
 
 
 func refresh_for_succession(_indices: PackedInt32Array) -> void:
@@ -1564,6 +1865,8 @@ func begin_detail_chunk_refresh() -> void:
 	_last_native_knobs_ms = 0.0
 	_last_native_call_ms = 0.0
 	_last_native_apply_ms = 0.0
+	_last_cache_update_ms = 0.0
+	_last_assemble_ms = 0.0
 	_native_delta_common_knobs = {}
 
 
@@ -1785,16 +2088,19 @@ func apply_visible_instance_fraction(fraction: float) -> void:
 			var far_count := int(_chunk_far_instance_counts.get(chunk_id, count))
 			var next_visible := _lod_visible_count(count, far_count)
 			node.multimesh.visible_instance_count = next_visible
-			node.visible = _profile().enabled and not _camera_lod_hidden and next_visible > 0
+			node.visible = not _family_batch_suppressed \
+				and detail_chunk_is_render_visible(int(chunk_id)) \
+				and _profile().enabled and not _camera_lod_hidden and next_visible > 0
 			_sync_chunk_wrap_nodes(int(chunk_id))
-			any_visible = any_visible or next_visible > 0
+			any_visible = any_visible or node.visible
 			# 逐帧 LOD 内联同步对应 shadow chunk 的可见数（仅 visible_instance_count，无 buffer 操作）
 			var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
 			if snode != null and is_instance_valid(snode) and snode.multimesh != null:
 				snode.multimesh.visible_instance_count = clampi(next_visible, 0, snode.multimesh.instance_count)
 				snode.visible = show_shadow and node.visible and next_visible > 0
 				_sync_shadow_chunk_wrap_nodes(int(chunk_id))
-		visible = _profile().enabled and not _camera_lod_hidden and any_visible
+		visible = not _family_batch_suppressed and _profile().enabled \
+			and not _camera_lod_hidden and any_visible
 		if _shadow_mmi != null:
 			_shadow_mmi.visible = false
 		return
@@ -1804,7 +2110,8 @@ func apply_visible_instance_fraction(fraction: float) -> void:
 		return
 	var next_visible := _lod_visible_count(_instance_count, _far_instance_count)
 	_multimesh.visible_instance_count = next_visible
-	visible = _profile().enabled and not _camera_lod_hidden and next_visible > 0
+	visible = not _family_batch_suppressed and _profile().enabled \
+		and not _camera_lod_hidden and next_visible > 0
 	_sync_single_wrap_nodes()
 	_sync_single_shadow()
 
@@ -1817,6 +2124,14 @@ func set_mobile_quality_tier(q: int) -> void:
 	_native_delta_common_knobs = {}
 	_refresh_shader_variants()
 	if OS.has_feature("mobile") and _map != null:
+		_rebuild_or_defer()
+
+
+func _rebuild_or_defer() -> void:
+	if _defer_initial_rebuild and _chunked_multimesh_enabled:
+		clear()
+		_last_rebuild_reason = "cache_invalidated_until_prefetch"
+	else:
 		_rebuild_instances()
 
 
@@ -1906,9 +2221,13 @@ func _clear_chunk_nodes() -> void:
 		if node != null and is_instance_valid(node):
 			node.queue_free()
 	_chunk_nodes.clear()
+	_chunk_cell_payloads.clear()
+	_chunk_dormant_since_msec.clear()
 	_clear_wrap_node_groups(_chunk_wrap_nodes)
 	_chunk_instance_counts.clear()
 	_chunk_far_instance_counts.clear()
+	_active_instance_count_cache = 0
+	_active_instance_count_valid = false
 	for snode in _shadow_chunk_nodes.values():
 		if snode != null and is_instance_valid(snode):
 			snode.queue_free()
@@ -1976,15 +2295,50 @@ func _sync_single_shadow_wrap_nodes() -> void:
 func _sync_chunk_wrap_nodes(chunk_id: int) -> void:
 	var source: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
 	var nodes: Array = _chunk_wrap_nodes.get(chunk_id, [])
-	_sync_wrap_nodes(source, nodes, "DetailChunkWrap_%d" % chunk_id)
+	_sync_chunk_wrap_group(source, nodes, "DetailChunkWrap_%d" % chunk_id, chunk_id)
 	_chunk_wrap_nodes[chunk_id] = nodes
 
 
 func _sync_shadow_chunk_wrap_nodes(chunk_id: int) -> void:
 	var source: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
 	var nodes: Array = _shadow_chunk_wrap_nodes.get(chunk_id, [])
-	_sync_wrap_nodes(source, nodes, "DetailShadowChunkWrap_%d" % chunk_id)
+	_sync_chunk_wrap_group(source, nodes, "DetailShadowChunkWrap_%d" % chunk_id, chunk_id)
 	_shadow_chunk_wrap_nodes[chunk_id] = nodes
+
+
+func _sync_chunk_wrap_group(
+		source: MultiMeshInstance2D,
+		nodes: Array,
+		name_prefix: String,
+		chunk_id: int
+) -> void:
+	var period_x := _wrap_period_x()
+	var bounds := _chunk_world_bounds(chunk_id)
+	var offsets := PackedFloat32Array([-period_x, period_x])
+	for i in range(offsets.size()):
+		var should_show := source != null and is_instance_valid(source) \
+			and source.multimesh != null and source.visible and period_x > 0.0001
+		if should_show and _camera_view_initialized:
+			var shifted := Rect2(bounds.position + Vector2(offsets[i], 0.0), bounds.size)
+			should_show = shifted.intersects(_camera_view_rect, true)
+		var node: MultiMeshInstance2D = nodes[i] as MultiMeshInstance2D if i < nodes.size() else null
+		if not should_show:
+			if node != null and is_instance_valid(node):
+				node.visible = false
+			continue
+		if node == null or not is_instance_valid(node):
+			node = MultiMeshInstance2D.new()
+			node.name = "%s_%s" % [name_prefix, "Left" if i == 0 else "Right"]
+			add_child(node)
+			if i < nodes.size():
+				nodes[i] = node
+			else:
+				nodes.append(node)
+		node.position = Vector2(offsets[i], 0.0)
+		node.z_index = source.z_index
+		node.material = source.material
+		node.multimesh = source.multimesh
+		node.visible = true
 
 
 # 为某植株 chunk 准备/复用对应的 shadow chunk 节点（blob 网格 + shadow 材质 + 低 z）。
@@ -2007,7 +2361,8 @@ func _ensure_shadow_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
 	smm.visible_instance_count = 0
 	snode.multimesh = smm
 	snode.visible = false
-	add_child(snode)
+	if not _family_batch_suppressed:
+		add_child(snode)
 	_shadow_chunk_nodes[chunk_id] = snode
 	return snode
 
@@ -2144,6 +2499,8 @@ func _shadow_resources_enabled() -> bool:
 	var cfg := _profile()
 	if not cfg.enabled:
 		return false
+	if detail_render_family() != 3:
+		return false
 	var on = cfg.get("cast_shadow_enabled")
 	if on != null and not bool(on):
 		return false
@@ -2159,6 +2516,8 @@ func _shadow_resources_enabled() -> bool:
 func _shadow_should_render() -> bool:
 	if not _shadow_resources_enabled() or _camera_lod_hidden:
 		return false
+	if detail_render_family() != 3 or _camera_zoom < 1.10:
+		return false
 	var cfg := _profile()
 	var configured_min = cfg.get("shadow_min_zoom")
 	var min_zoom := float(configured_min) if configured_min is float or configured_min is int else -1.0
@@ -2166,7 +2525,7 @@ func _shadow_should_render() -> bool:
 		if OS.has_feature("mobile"):
 			min_zoom = 2.00
 		else:
-			min_zoom = 1.40 if _active_quality_tier() >= 2 else 1.80
+			min_zoom = 1.10 if _active_quality_tier() >= 2 else 1.35
 	if _camera_zoom < min_zoom:
 		return false
 	return true
@@ -2201,6 +2560,8 @@ func _chunk_id_for_cell_idx(cell_idx: int) -> int:
 
 
 func _cell_indices_for_chunk(chunk_id: int) -> PackedInt32Array:
+	if _chunk_cell_indices_cache.has(chunk_id):
+		return _chunk_cell_indices_cache[chunk_id]
 	var out := PackedInt32Array()
 	if _map == null or chunk_id < 0:
 		return out
@@ -2216,7 +2577,157 @@ func _cell_indices_for_chunk(chunk_id: int) -> PackedInt32Array:
 			var cell = _map.get_cell(cube.x, cube.y)
 			if cell != null:
 				out.append(int(cell.index))
+	_chunk_cell_indices_cache[chunk_id] = out
+	_chunk_cell_cache_builds += 1
 	return out
+
+
+func detail_chunk_cells(chunk_id: int) -> PackedInt32Array:
+	return _cell_indices_for_chunk(chunk_id)
+
+
+func detail_chunk_id_for_cell(cell_idx: int) -> int:
+	return _chunk_id_for_cell_idx(cell_idx)
+
+
+func _chunk_world_bounds(chunk_id: int) -> Rect2:
+	if _chunk_world_bounds_cache.has(chunk_id):
+		return _chunk_world_bounds_cache[chunk_id]
+	var indices := _cell_indices_for_chunk(chunk_id)
+	if indices.is_empty() or _map == null:
+		return Rect2()
+	var min_pos := Vector2(INF, INF)
+	var max_pos := Vector2(-INF, -INF)
+	for raw_idx in indices:
+		var idx := int(raw_idx)
+		if idx < 0 or idx >= _map.cell_pos_x_arr.size() or idx >= _map.cell_pos_y_arr.size():
+			continue
+		var p := Vector2(_map.cell_pos_x_arr[idx], _map.cell_pos_y_arr[idx]) * _hex_size
+		min_pos.x = minf(min_pos.x, p.x)
+		min_pos.y = minf(min_pos.y, p.y)
+		max_pos.x = maxf(max_pos.x, p.x)
+		max_pos.y = maxf(max_pos.y, p.y)
+	if min_pos.x == INF:
+		return Rect2()
+	var pad := Vector2.ONE * _hex_size * 1.5
+	var bounds := Rect2(min_pos - pad, max_pos - min_pos + pad * 2.0)
+	_chunk_world_bounds_cache[chunk_id] = bounds
+	_chunk_bounds_cache_builds += 1
+	return bounds
+
+
+func _invalidate_chunk_spatial_cache() -> void:
+	_chunk_cell_indices_cache.clear()
+	_chunk_world_bounds_cache.clear()
+
+
+func _chunk_intersects_rect(chunk_id: int, rect: Rect2) -> bool:
+	if not _camera_view_initialized:
+		return true
+	var bounds := _chunk_world_bounds(chunk_id)
+	if bounds.size == Vector2.ZERO:
+		return false
+	if bounds.intersects(rect, true):
+		return true
+	var period := _wrap_period_x()
+	if period <= 0.0001:
+		return false
+	return Rect2(bounds.position + Vector2(-period, 0.0), bounds.size).intersects(rect, true) \
+		or Rect2(bounds.position + Vector2(period, 0.0), bounds.size).intersects(rect, true)
+
+
+func detail_chunk_is_in_prefetch(chunk_id: int) -> bool:
+	return not _camera_view_initialized or _chunk_intersects_rect(chunk_id, _camera_prefetch_rect)
+
+
+func detail_chunk_is_render_visible(chunk_id: int) -> bool:
+	return not _camera_view_initialized or _chunk_intersects_rect(chunk_id, _camera_view_rect)
+
+
+func detail_chunk_plan_for_view(world_rect: Rect2) -> Array:
+	var out: Array = []
+	if _map == null:
+		return out
+	var chunks_x := int(ceil(float(_map.width) / float(maxi(1, _chunk_size_cells))))
+	var chunks_y := int(ceil(float(_map.height) / float(maxi(1, _chunk_size_cells))))
+	for cy in range(chunks_y):
+		for cx in range(chunks_x):
+			var chunk_id := cy * 100000 + cx
+			if _chunk_intersects_rect(chunk_id, world_rect):
+				out.append({
+					"chunk_id": chunk_id,
+					"cell_indices": _cell_indices_for_chunk(chunk_id),
+				})
+	return out
+
+
+func detail_prefetch_chunk_plan() -> Array:
+	return detail_chunk_plan_for_view(_camera_prefetch_rect) if _camera_view_initialized else []
+
+
+func detail_chunk_has_resident_cache(chunk_id: int) -> bool:
+	return _chunk_cell_payloads.has(chunk_id)
+
+
+func evict_dormant_detail_chunks(now_msec: int, retention_msec: int) -> int:
+	var evicted := 0
+	for raw_chunk_id in _chunk_cell_payloads.keys():
+		var chunk_id := int(raw_chunk_id)
+		if detail_chunk_is_in_prefetch(chunk_id):
+			_chunk_dormant_since_msec.erase(chunk_id)
+			continue
+		if not _chunk_dormant_since_msec.has(chunk_id):
+			_chunk_dormant_since_msec[chunk_id] = now_msec
+			continue
+		if now_msec - int(_chunk_dormant_since_msec[chunk_id]) < retention_msec:
+			continue
+		_chunk_cell_payloads.erase(chunk_id)
+		_chunk_dormant_since_msec.erase(chunk_id)
+		_chunk_instance_counts.erase(chunk_id)
+		_chunk_far_instance_counts.erase(chunk_id)
+		var node: MultiMeshInstance2D = _chunk_nodes.get(chunk_id, null)
+		if node != null and is_instance_valid(node) and node.multimesh != null:
+			node.visible = false
+			node.multimesh.instance_count = 0
+		var shadow: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
+		if shadow != null and is_instance_valid(shadow) and shadow.multimesh != null:
+			shadow.visible = false
+			shadow.multimesh.instance_count = 0
+		evicted += 1
+	if evicted > 0:
+		_refresh_instance_totals_from_chunks()
+	return evicted
+
+
+func _refresh_chunk_visibility() -> void:
+	if not _chunked_multimesh_enabled:
+		return
+	var any_visible := false
+	_visible_chunk_count = 0
+	_prefetch_chunk_count = 0
+	for raw_chunk_id in _chunk_nodes.keys():
+		var chunk_id := int(raw_chunk_id)
+		var node: MultiMeshInstance2D = _chunk_nodes[raw_chunk_id]
+		if node == null or not is_instance_valid(node) or node.multimesh == null:
+			continue
+		var in_render := detail_chunk_is_render_visible(chunk_id)
+		var in_prefetch := detail_chunk_is_in_prefetch(chunk_id)
+		if in_prefetch:
+			_prefetch_chunk_count += 1
+		var count := node.multimesh.visible_instance_count
+		node.visible = not _family_batch_suppressed and in_render \
+			and _profile().enabled and not _camera_lod_hidden and count > 0
+		if node.visible:
+			_visible_chunk_count += 1
+			any_visible = true
+		_sync_chunk_wrap_nodes(chunk_id)
+		var snode: MultiMeshInstance2D = _shadow_chunk_nodes.get(chunk_id, null)
+		if snode != null and is_instance_valid(snode):
+			snode.visible = node.visible and _shadow_should_render() \
+				and snode.multimesh != null and snode.multimesh.visible_instance_count > 0
+			_sync_shadow_chunk_wrap_nodes(chunk_id)
+	visible = not _family_batch_suppressed and _profile().enabled \
+		and not _camera_lod_hidden and any_visible
 
 
 func _ensure_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
@@ -2226,7 +2737,8 @@ func _ensure_chunk_node(chunk_id: int) -> MultiMeshInstance2D:
 	node = MultiMeshInstance2D.new()
 	node.name = "DetailChunk_%d" % chunk_id
 	node.material = _material
-	add_child(node)
+	if not _family_batch_suppressed:
+		add_child(node)
 	_chunk_nodes[chunk_id] = node
 	return node
 
@@ -2394,8 +2906,10 @@ func _prepare_chunk_multimesh(chunk_id: int, inst: int, far_count: int = -1) -> 
 	mm.instance_count = inst
 	_chunk_instance_counts[chunk_id] = inst
 	_chunk_far_instance_counts[chunk_id] = clampi(far_count if far_count >= 0 else inst, 0, inst)
+	_active_instance_count_valid = false
 	mm.visible_instance_count = _lod_visible_count(inst, int(_chunk_far_instance_counts[chunk_id]))
-	node.visible = _profile().enabled and not _camera_lod_hidden and mm.visible_instance_count > 0
+	node.visible = not _family_batch_suppressed and detail_chunk_is_render_visible(chunk_id) \
+		and _profile().enabled and not _camera_lod_hidden and mm.visible_instance_count > 0
 	_sync_chunk_wrap_nodes(chunk_id)
 	return mm
 
@@ -2414,16 +2928,21 @@ func _apply_chunk_payload(
 	if inst > 0:
 		var chunk_buffer := PackedFloat32Array()
 		chunk_buffer.resize(inst * 16)
+		var ordered_cells := PackedInt32Array()
+		ordered_cells.resize(inst)
 		for dst in range(inst):
 			var src := int(ordered_sources[dst])
 			var src_b := src * 16
 			var dst_b := dst * 16
 			for k in range(16):
 				chunk_buffer[dst_b + k] = buffer[src_b + k]
+			ordered_cells[dst] = int(cell_indices[src])
 		mm.buffer = chunk_buffer
+		_cache_chunk_cell_payloads(chunk_id, chunk_buffer, ordered_cells, inst)
 		_mirror_shadow_chunk(chunk_id, chunk_buffer, inst)
 	else:
 		mm.buffer = PackedFloat32Array()
+		_chunk_cell_payloads[chunk_id] = {}
 		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
 
 
@@ -2432,7 +2951,8 @@ func _apply_chunk_payload_direct(
 		buffer: PackedFloat32Array,
 		cell_indices: PackedInt32Array,
 		inst: int,
-		native_far_count: int = -1) -> void:
+		native_far_count: int = -1,
+		cache_already_updated: bool = false) -> void:
 	var far_count := mini(native_far_count, inst)
 	if native_far_count < 0:
 		# 旧 DLL（无 lod_ordered）：GDScript 复刻排序兜底，与原生序同一语义契约。
@@ -2446,18 +2966,157 @@ func _apply_chunk_payload_direct(
 		if inst > 0:
 			var ordered_buffer := PackedFloat32Array()
 			ordered_buffer.resize(inst * 16)
+			var ordered_cell_indices := PackedInt32Array()
+			ordered_cell_indices.resize(inst)
 			for dst in range(inst):
 				var src := int(ordered_sources[dst])
 				for k in range(16):
 					ordered_buffer[dst * 16 + k] = buffer[src * 16 + k]
+				ordered_cell_indices[dst] = int(cell_indices[src])
 			buffer = ordered_buffer
+			cell_indices = ordered_cell_indices
+	if _family_batch_suppressed:
+		_chunk_instance_counts[chunk_id] = inst
+		_chunk_far_instance_counts[chunk_id] = clampi(far_count, 0, inst)
+		_active_instance_count_valid = false
+		if not cache_already_updated:
+			_cache_chunk_cell_payloads(chunk_id, buffer, cell_indices, inst)
+		return
 	var mm := _prepare_chunk_multimesh(chunk_id, inst, far_count)
 	if inst > 0:
 		mm.buffer = buffer
+		if not cache_already_updated:
+			_cache_chunk_cell_payloads(chunk_id, buffer, cell_indices, inst)
 		_mirror_shadow_chunk(chunk_id, buffer, inst)
 	else:
 		mm.buffer = PackedFloat32Array()
+		_chunk_cell_payloads[chunk_id] = {}
 		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
+
+
+func _cache_chunk_cell_payloads(
+		chunk_id: int,
+		buffer: PackedFloat32Array,
+		cell_indices: PackedInt32Array,
+		inst: int) -> void:
+	var by_cell: Dictionary = {}
+	var safe_count := mini(inst, mini(cell_indices.size(), int(buffer.size() / 16)))
+	for i in range(safe_count):
+		var cell_idx := int(cell_indices[i])
+		var cell_buffer: PackedFloat32Array = by_cell.get(cell_idx, PackedFloat32Array())
+		var old_size := cell_buffer.size()
+		cell_buffer.resize(old_size + 16)
+		for k in range(16):
+			cell_buffer[old_size + k] = buffer[i * 16 + k]
+		by_cell[cell_idx] = cell_buffer
+	_chunk_cell_payloads[chunk_id] = by_cell
+
+
+func _replace_chunk_cell_payloads(
+		chunk_id: int,
+		dirty_indices: PackedInt32Array,
+		buffer: PackedFloat32Array,
+		cell_indices: PackedInt32Array,
+		inst: int) -> Dictionary:
+	var cache_t0_us := Time.get_ticks_usec()
+	# 该缓存只由主线程的本 layer 持有；原地替换脏 cell 即可。旧实现 deep-copy
+	# 整个 superchunk 的所有 PackedFloat32Array，单格变化也会复制完整 chunk。
+	var by_cell: Dictionary = _chunk_cell_payloads.get(chunk_id, {})
+	for raw_idx in dirty_indices:
+		by_cell[int(raw_idx)] = PackedFloat32Array()
+	var safe_count := mini(inst, mini(cell_indices.size(), int(buffer.size() / 16)))
+	for i in range(safe_count):
+		var cell_idx := int(cell_indices[i])
+		var cell_buffer: PackedFloat32Array = by_cell.get(cell_idx, PackedFloat32Array())
+		var old_size := cell_buffer.size()
+		cell_buffer.resize(old_size + 16)
+		for k in range(16):
+			cell_buffer[old_size + k] = buffer[i * 16 + k]
+		by_cell[cell_idx] = cell_buffer
+	_chunk_cell_payloads[chunk_id] = by_cell
+	_last_cache_update_ms = float(Time.get_ticks_usec() - cache_t0_us) / 1000.0
+	return _assemble_chunk_cell_payloads(by_cell)
+
+
+func _assemble_chunk_cell_payloads(by_cell: Dictionary) -> Dictionary:
+	var assemble_t0_us := Time.get_ticks_usec()
+	var ordered_cells: Array = by_cell.keys()
+	ordered_cells.sort()
+	var clusters_by_cell: Dictionary = {}
+	var far_clusters_by_cell: Dictionary = {}
+	var max_far_clusters := 0
+	var max_near_clusters := 0
+	var total_instances := 0
+	var multiplier := maxf(_resolved_lod_near_density_multiplier(), 1.0)
+	for raw_idx in ordered_cells:
+		var cell_buffer: PackedFloat32Array = by_cell[raw_idx]
+		var cell_count := int(cell_buffer.size() / 16)
+		total_instances += cell_count
+		var clusters := PackedInt32Array()
+		var cluster_start := 0
+		while cluster_start < cell_count:
+			var seed := cell_buffer[cluster_start * 16 + 14]
+			var cluster_end := cluster_start + 1
+			while cluster_end < cell_count \
+					and absf(cell_buffer[cluster_end * 16 + 14] - seed) <= 0.000001:
+				cluster_end += 1
+			clusters.append(cluster_start)
+			clusters.append(cluster_end - cluster_start)
+			cluster_start = cluster_end
+		clusters_by_cell[raw_idx] = clusters
+		var cluster_count := int(clusters.size() / 2)
+		var far_clusters := mini(
+			cluster_count, maxi(1, int(ceil(float(cluster_count) / multiplier)))) \
+			if cluster_count > 0 else 0
+		far_clusters_by_cell[raw_idx] = far_clusters
+		max_far_clusters = maxi(max_far_clusters, far_clusters)
+		max_near_clusters = maxi(max_near_clusters, cluster_count - far_clusters)
+
+	# 一次性分配最终 buffer，并直接生成 cell-stratified LOD 前缀；避免随后再
+	# sort/copy 全 chunk，也避免每追加一株就 resize PackedArray。
+	var merged := PackedFloat32Array()
+	var merged_cell_indices := PackedInt32Array()
+	merged.resize(total_instances * 16)
+	merged_cell_indices.resize(total_instances)
+	var write_instance := 0
+	for rank in range(max_far_clusters):
+		for raw_idx in ordered_cells:
+			var cell_idx := int(raw_idx)
+			var cell_buffer: PackedFloat32Array = by_cell[raw_idx]
+			var far_clusters := int(far_clusters_by_cell.get(raw_idx, 0))
+			if rank >= far_clusters:
+				continue
+			var clusters: PackedInt32Array = clusters_by_cell[raw_idx]
+			var start := int(clusters[rank * 2])
+			var count := int(clusters[rank * 2 + 1])
+			for local_instance in range(start, start + count):
+				for k in range(16):
+					merged[write_instance * 16 + k] = cell_buffer[local_instance * 16 + k]
+				merged_cell_indices[write_instance] = cell_idx
+				write_instance += 1
+	var far_instance_count := write_instance
+	for rank in range(max_near_clusters):
+		for raw_idx in ordered_cells:
+			var cell_idx := int(raw_idx)
+			var clusters: PackedInt32Array = clusters_by_cell[raw_idx]
+			var cluster_idx := int(far_clusters_by_cell.get(raw_idx, 0)) + rank
+			if cluster_idx >= int(clusters.size() / 2):
+				continue
+			var cell_buffer: PackedFloat32Array = by_cell[raw_idx]
+			var start := int(clusters[cluster_idx * 2])
+			var count := int(clusters[cluster_idx * 2 + 1])
+			for local_instance in range(start, start + count):
+				for k in range(16):
+					merged[write_instance * 16 + k] = cell_buffer[local_instance * 16 + k]
+				merged_cell_indices[write_instance] = cell_idx
+				write_instance += 1
+	_last_assemble_ms = float(Time.get_ticks_usec() - assemble_t0_us) / 1000.0
+	return {
+		"buffer": merged,
+		"cell_indices": merged_cell_indices,
+		"instance_count": write_instance,
+		"far_count": far_instance_count,
+	}
 
 
 func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: PackedInt32Array, inst: int) -> void:
@@ -2486,6 +3145,7 @@ func _refresh_instance_totals_from_chunks() -> void:
 	for chunk_id in _chunk_instance_counts.keys():
 		_instance_count += int(_chunk_instance_counts[chunk_id])
 		_far_instance_count += int(_chunk_far_instance_counts.get(chunk_id, _chunk_instance_counts[chunk_id]))
+	_active_instance_count_valid = false
 
 
 func detail_chunk_plan_for_indices(indices: PackedInt32Array) -> Array:
@@ -2494,49 +3154,73 @@ func detail_chunk_plan_for_indices(indices: PackedInt32Array) -> Array:
 		var chunk_id := _chunk_id_for_cell_idx(int(raw_idx))
 		if chunk_id < 0:
 			continue
-		dirty_chunks[chunk_id] = int(dirty_chunks.get(chunk_id, 0)) + 1
+		var dirty_indices: PackedInt32Array = dirty_chunks.get(chunk_id, PackedInt32Array())
+		dirty_indices.append(int(raw_idx))
+		dirty_chunks[chunk_id] = dirty_indices
 	var keys: Array = dirty_chunks.keys()
 	keys.sort()
 	var out: Array = []
 	for chunk_id in keys:
+		var dirty_indices: PackedInt32Array = dirty_chunks[chunk_id]
 		out.append({
 			"chunk_id": int(chunk_id),
 			"cell_indices": _cell_indices_for_chunk(int(chunk_id)),
-			"dirty_cells": int(dirty_chunks[chunk_id]),
+			"dirty_indices": dirty_indices,
+			"dirty_cells": dirty_indices.size(),
 		})
 	return out
 
 
-func refresh_chunk_for_succession(chunk_id: int, chunk_cells: PackedInt32Array, dirty_cell_count: int = 0) -> bool:
+func refresh_chunk_for_succession(
+		chunk_id: int,
+		chunk_cells: PackedInt32Array,
+		dirty_cell_count: int = 0,
+		dirty_indices: PackedInt32Array = PackedInt32Array()) -> bool:
 	if _map == null or chunk_id < 0:
 		return false
 	if chunk_cells.is_empty():
 		chunk_cells = _cell_indices_for_chunk(chunk_id)
 	var t0_us := Time.get_ticks_usec()
-	var payload := _encode_native_payload_for_indices(chunk_cells, 0)
+	var has_resident_cache := _chunk_cell_payloads.has(chunk_id)
+	var sample_indices := dirty_indices if has_resident_cache and not dirty_indices.is_empty() else chunk_cells
+	var payload := _encode_native_payload_for_indices(sample_indices, 0)
 	if not bool(payload.get("ok", false)):
-		_last_rebuild_reason = str(payload.get("reason", "chunk_native_failed"))
-		return false
+		payload = _encode_gdscript_payload_for_indices(sample_indices)
+		if not bool(payload.get("ok", false)):
+			_last_rebuild_reason = str(payload.get("reason", "chunk_fallback_failed"))
+			return false
 	var res: Dictionary = payload.get("res", {})
 	var inst := int(res.get("instance_count", 0))
 	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
 	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
+	var cache_already_updated := false
+	var assembled_far_count := -1
 	if inst > 0 and (buffer.size() < inst * 16 or cell_indices.size() < inst):
 		_last_rebuild_reason = "chunk_native_bad_payload"
 		return false
+	if has_resident_cache and sample_indices.size() < chunk_cells.size():
+		var assembled := _replace_chunk_cell_payloads(
+			chunk_id, sample_indices, buffer, cell_indices, inst)
+		buffer = assembled.get("buffer", PackedFloat32Array())
+		cell_indices = assembled.get("cell_indices", PackedInt32Array())
+		inst = int(assembled.get("instance_count", 0))
+		assembled_far_count = int(assembled.get("far_count", -1))
+		cache_already_updated = true
 	var apply_t0_us := Time.get_ticks_usec()
-	var native_far := int(res.get("far_count", -1)) if bool(res.get("lod_ordered", false)) else -1
-	_apply_chunk_payload_direct(chunk_id, buffer, cell_indices, inst, native_far)
+	var native_far := assembled_far_count if cache_already_updated else (
+		int(res.get("far_count", -1)) if bool(res.get("lod_ordered", false)) else -1)
+	_apply_chunk_payload_direct(
+		chunk_id, buffer, cell_indices, inst, native_far, cache_already_updated)
 	_last_native_apply_ms = float(Time.get_ticks_usec() - apply_t0_us) / 1000.0
 	_refresh_instance_totals_from_chunks()
-	_last_scatter_path = "gdext_event_chunk"
+	_last_scatter_path = str(payload.get("path", "gdext_event_cells"))
 	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	_last_candidate_count = int(res.get("candidate_count", 0))
 	_last_wrap_edge_copy_count = int(res.get("wrap_edge_copy_count", 0))
-	_last_native_sampled_cells = int(res.get("sampled_cell_count", chunk_cells.size()))
+	_last_native_sampled_cells = int(res.get("sampled_cell_count", sample_indices.size()))
 	_last_native_active_cells = int(res.get("active_cell_count", 0))
 	_last_rebuild_reason = "chunked_event_update"
-	_last_incremental_cells = dirty_cell_count if dirty_cell_count > 0 else chunk_cells.size()
+	_last_incremental_cells = dirty_cell_count if dirty_cell_count > 0 else sample_indices.size()
 	_last_dirty_chunks = 1
 	visible = _profile().enabled and not _camera_lod_hidden and _instance_count > 0
 	# 分块：shadow chunk 已在 _apply_chunk_payload_direct 内镜像（O(该chunk)）
@@ -2546,8 +3230,9 @@ func refresh_chunk_for_succession(chunk_id: int, chunk_cells: PackedInt32Array, 
 func _encode_native_payload_for_indices(indices: PackedInt32Array, instance_cap: int = 0) -> Dictionary:
 	var t0_us := Time.get_ticks_usec()
 	var out := {"ok": false, "valid_indices": PackedInt32Array(), "res": {}}
-	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter_delta"):
-		out["reason"] = "missing_encode_detail_scatter_delta"
+	if _world_ext == null or (not _world_ext.has_method("encode_detail_scatter_delta") \
+			and not _world_ext.has_method("encode_detail_scatter_family_cells")):
+		out["reason"] = "missing_detail_scatter_cell_encoder"
 		return out
 	if _map == null:
 		out["reason"] = "map_null"
@@ -2560,9 +3245,23 @@ func _encode_native_payload_for_indices(indices: PackedInt32Array, instance_cap:
 	var knobs := _native_delta_common_knobs.duplicate(false)
 	knobs["sample_cell_indices"] = indices
 	knobs["instance_cap"] = instance_cap
+	knobs["family"] = detail_render_family()
+	knobs["style_id"] = _family_style_id
 	_last_native_knobs_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	var native_t0_us := Time.get_ticks_usec()
-	var res = _world_ext.call("encode_detail_scatter_delta", knobs)
+	var res
+	var native_path := "gdext_event_cells"
+	if _world_ext.has_method("encode_detail_scatter_family_cells"):
+		var family_res = _world_ext.call("encode_detail_scatter_family_cells", {
+			"requests": [knobs],
+		})
+		if family_res is Dictionary:
+			var payloads: Array = family_res.get("payloads", [])
+			if not payloads.is_empty():
+				res = payloads[0]
+				native_path = "gdext_family_cells"
+	if res == null and _world_ext.has_method("encode_detail_scatter_delta"):
+		res = _world_ext.call("encode_detail_scatter_delta", knobs)
 	_last_native_call_ms = float(Time.get_ticks_usec() - native_t0_us) / 1000.0
 	if not (res is Dictionary):
 		out["reason"] = "bad_native_result"
@@ -2572,9 +3271,53 @@ func _encode_native_payload_for_indices(indices: PackedInt32Array, instance_cap:
 		out["res"] = res
 		return out
 	out["ok"] = true
+	out["path"] = native_path
 	out["valid_indices"] = res.get("valid_indices", indices)
 	out["res"] = res
 	return out
+
+
+func _encode_gdscript_payload_for_indices(indices: PackedInt32Array) -> Dictionary:
+	var transforms: Array = []
+	var colors: Array = []
+	var customs: Array = []
+	var cell_indices := PackedInt32Array()
+	for raw_idx in indices:
+		var cell_idx := int(raw_idx)
+		var cell = _map.cell_at(cell_idx) if _map != null else null
+		if cell == null:
+			continue
+		var payload := _generate_cell_instance_payload(cell, cell_idx)
+		var cell_transforms: Array = payload.get("transforms", [])
+		var cell_colors: Array = payload.get("colors", [])
+		var cell_customs: Array = payload.get("customs", [])
+		var count := mini(cell_transforms.size(), mini(cell_colors.size(), cell_customs.size()))
+		for i in range(count):
+			transforms.append(cell_transforms[i])
+			colors.append(cell_colors[i])
+			customs.append(cell_customs[i])
+			cell_indices.append(cell_idx)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_2D
+	mm.use_colors = true
+	mm.use_custom_data = true
+	mm.instance_count = transforms.size()
+	for i in range(transforms.size()):
+		mm.set_instance_transform_2d(i, transforms[i])
+		mm.set_instance_color(i, colors[i])
+		mm.set_instance_custom_data(i, customs[i])
+	return {
+		"ok": true,
+		"path": "gdscript_event_cells",
+		"res": {
+			"fallback": false,
+			"instance_count": transforms.size(),
+			"buffer": mm.buffer,
+			"cell_indices": cell_indices,
+			"sampled_cell_count": indices.size(),
+			"active_cell_count": cell_indices.size(),
+		},
+	}
 
 
 func _refresh_chunked_for_succession(indices: PackedInt32Array) -> bool:
@@ -4546,12 +5289,23 @@ func get_scatter_diagnostics() -> Dictionary:
 		"native_knobs_ms": _last_native_knobs_ms,
 		"native_call_ms": _last_native_call_ms,
 		"native_apply_ms": _last_native_apply_ms,
+		"cache_update_ms": _last_cache_update_ms,
+		"assemble_ms": _last_assemble_ms,
+		"chunk_cell_cache_entries": _chunk_cell_indices_cache.size(),
+		"chunk_bounds_cache_entries": _chunk_world_bounds_cache.size(),
+		"chunk_cell_cache_builds": _chunk_cell_cache_builds,
+		"chunk_bounds_cache_builds": _chunk_bounds_cache_builds,
+		"active_instance_count_scans": _active_instance_count_scans,
 		"chunked": _chunked_multimesh_enabled,
 		"chunk_size_cells": _chunk_size_cells,
 		"missing_slots": _last_incremental_missing_slots,
 		"dropped_instances": _last_incremental_dropped_instances,
 		"spawn_domain": _spawn_domain(),
 		"detail_kind": _detail_kind(),
+		"render_family": detail_render_family(),
+		"camera_view_initialized": _camera_view_initialized,
+		"visible_chunks": _visible_chunk_count,
+		"prefetch_chunks": _prefetch_chunk_count,
 		"lod_near_density_multiplier": _resolved_lod_near_density_multiplier(),
 		"lod_far_visible_fraction": _lod_far_visible_fraction,
 		"lod_far_instance_count": _far_instance_count,

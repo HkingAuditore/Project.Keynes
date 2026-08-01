@@ -79,7 +79,10 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
     投资目录另以 market active-good bitset 和 output-good→building-type CSR 做保守候选闭包；
     既有/在建类型及其施工物资始终保留。默认 ACTIVE，周期完整复核发现任何遗漏时会自动退回
     全目录扫描；该缓存不改变固定五日滚动语义。
-13. `aggregate_publish`：独占一个或多个 native slice，以确定工作量子阶段推进 summaries、精确
+13. `family_commit`：在建筑结构稳定后归一化成员人口与现金 claim，更新家族职业/业主岗位归因，
+    按 cell/day 相位有界评审新家族，再复核衰退、消亡并重建稀疏 CSR。它不新建钱包或税务流水，
+    `OFF` 且无历史家族时常数时间跳过。
+14. `aggregate_publish`：独占一个或多个 native slice，以确定工作量子阶段推进 summaries、精确
     守恒审计、水位线、贸易 EMA/响应诊断和下一轮贸易计划初始化。人口/市场/在途/国家审计及
     贸易响应诊断每片
     最多 131072 条，cell 水位线及贸易工作区每片最多 4096 条；最后校验成功后才交换 committed

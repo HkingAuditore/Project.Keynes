@@ -244,6 +244,13 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     if (steps < 1) steps = 1;
     else if (steps > 256) steps = 256;
     const double step_px = std::max(0.25, double(knobs.get("step_px", 2.0)));
+    // Near blockers need dense samples, while far blockers are low-frequency silhouettes.
+    // Quadratically increasing distance removes the regular fixed-step comb without
+    // sacrificing near-field accuracy. 0 restores the legacy fixed stride.
+    const double step_growth = std::clamp(
+        double(knobs.get("step_growth", 0.35)), 0.0, 2.0);
+    const int lowpass_radius = std::clamp(
+        int(knobs.get("lowpass_radius", 1)), 0, 1);
     const double bias = std::max(0.0, double(knobs.get("bias", 0.003)));
     double max_angle = double(knobs.get("max_horizon_angle", 1.309));
     if (max_angle < 0.01) max_angle = 0.01;
@@ -275,7 +282,51 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     data.resize(n * 4);
     PackedByteArray occluder_data;
     if (occluder_ready) occluder_data.resize(n * 4);
-    const float * const __restrict SRC = src.ptr();
+    // Horizon owns a low-frequency height view. The authoritative eroded/carved height
+    // stays untouched and continues to drive normals, rivers and all simulation fields.
+    // A separable 1-2-1 kernel suppresses one-texel erosion residue before tracing.
+    PackedFloat32Array horizon_height;
+    if (lowpass_radius > 0) {
+        horizon_height.resize(n);
+        PackedFloat32Array horizontal;
+        horizontal.resize(n);
+        const float * const raw = src.ptr();
+        float * const tmp = horizontal.ptrw();
+        const int period_cols = std::clamp(int(std::round(period_px)), 1, w);
+        auto wrap_col = [&](int sx) -> int {
+            if (!wrap_x) return std::clamp(sx, 0, w - 1);
+            sx %= period_cols;
+            if (sx < 0) sx += period_cols;
+            return std::clamp(sx, 0, w - 1);
+        };
+        auto blur_rows = [&](int y0, int y1) {
+            for (int y = y0; y < y1; ++y) {
+                const int row = y * w;
+                for (int x = 0; x < w; ++x) {
+                    const double l = std::max(double(raw[row + wrap_col(x - 1)]), sea_level);
+                    const double c = std::max(double(raw[row + wrap_col(x)]), sea_level);
+                    const double r = std::max(double(raw[row + wrap_col(x + 1)]), sea_level);
+                    tmp[row + x] = float((l + 2.0 * c + r) * 0.25);
+                }
+            }
+        };
+        pk::parallel_for_range("pk_bake_horizon_blur_x", h, 0, 32, blur_rows);
+        const float * const mid = horizontal.ptr();
+        float * const dst_h = horizon_height.ptrw();
+        auto blur_columns = [&](int y0, int y1) {
+            for (int y = y0; y < y1; ++y) {
+                const int yu = std::max(y - 1, 0);
+                const int yd = std::min(y + 1, h - 1);
+                for (int x = 0; x < w; ++x) {
+                    dst_h[y * w + x] = (mid[yu * w + x]
+                        + 2.0f * mid[y * w + x] + mid[yd * w + x]) * 0.25f;
+                }
+            }
+        };
+        pk::parallel_for_range("pk_bake_horizon_blur_y", h, 0, 32, blur_columns);
+    }
+    const float * const __restrict SRC = lowpass_radius > 0
+        ? horizon_height.ptr() : src.ptr();
     uint8_t * const __restrict DST = data.ptrw();
     const uint8_t * const __restrict MAP_INDEX = occluder_ready ? map_index_data.ptr() : nullptr;
     uint8_t * const __restrict OCC = occluder_ready ? occluder_data.ptrw() : nullptr;
@@ -320,7 +371,9 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                     double best_slope_sq = 0.0;
                     int best_hit = -1;
                     for (int s = 1; s <= steps; ++s) {
-                        const double dist_px = double(s) * step_px;
+                        const double sf = double(s);
+                        const double dist_px = step_px
+                            * (sf + 0.5 * step_growth * sf * (sf - 1.0));
                         const double sx_f = double(x) + dir_x[d] * dist_px;
                         const int sy = int(std::floor(double(y) + dir_y[d] * dist_px + 0.5));
                         if (sy < 0 || sy >= h) break;
@@ -395,6 +448,8 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     out["format"] = String("RGBA8");
     out["directions"] = String("E,NE,N,NW,W,SW,S,SE");
     out["height_world_scale"] = height_world_scale;
+    out["step_growth"] = step_growth;
+    out["lowpass_radius"] = lowpass_radius;
     out["sea_level"] = sea_level;
     out["max_horizon_angle"] = max_angle;
     out["occluder_ready"] = occluder_ready;

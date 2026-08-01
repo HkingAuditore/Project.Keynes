@@ -504,6 +504,59 @@ Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
     return out;
 }
 
+Dictionary DCWorldExt::get_family_cell_snapshot(
+        int cell_idx, int offset, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->family_cell_snapshot(
+        cell_idx, offset, limit);
+}
+
+Dictionary DCWorldExt::get_family_snapshot(int64_t family_handle) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->family_snapshot(family_handle);
+}
+
+Dictionary DCWorldExt::get_family_branches(
+        int64_t family_handle, int offset, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->family_branches(
+        family_handle, offset, limit);
+}
+
+Dictionary DCWorldExt::get_family_industries(
+        int64_t family_handle, int offset, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->family_industries(
+        family_handle, offset, limit);
+}
+
+Dictionary DCWorldExt::get_family_notable_people(
+        int64_t family_handle, int offset, int limit) const {
+    if (_economy_runtime == nullptr) return Dictionary();
+    return runtime_from(_economy_runtime)->family_notable_people(
+        family_handle, offset, limit);
+}
+
+Dictionary DCWorldExt::get_notable_person_snapshot(
+        int64_t person_handle) const {
+    if (_economy_runtime == nullptr) return Dictionary();
+    return runtime_from(_economy_runtime)->notable_person_snapshot(person_handle);
+}
+
+Dictionary DCWorldExt::get_notable_person_needs(
+        int64_t person_handle, int offset, int limit) const {
+    if (_economy_runtime == nullptr) return Dictionary();
+    return runtime_from(_economy_runtime)->notable_person_needs(
+        person_handle, offset, limit);
+}
+
+Dictionary DCWorldExt::get_building_notable_people(
+        int64_t building_handle, int offset, int limit) const {
+    if (_economy_runtime == nullptr) return Dictionary();
+    return runtime_from(_economy_runtime)->building_notable_people(
+        building_handle, offset, limit);
+}
+
 Dictionary DCWorldExt::run_economy_fixed_math_probe(const Dictionary &vectors) const {
     if (_economy_runtime == nullptr) return unavailable();
     return runtime_from(_economy_runtime)->fixed_math_probe(vectors);

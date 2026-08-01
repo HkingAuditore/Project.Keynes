@@ -120,6 +120,7 @@ const SPECS := {
 	&"country.technology": {"family": FAMILY_LUCIDE,
 		"texture": preload("res://assets/icons/lucide/technology.svg")},
 	&"country.world": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf0ac"},
+	&"family.house": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf0c0"},
 	&"economy.building": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf1ad"},
 	&"economy.building.factory": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf275"},
 	&"economy.building.farm": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf722"},

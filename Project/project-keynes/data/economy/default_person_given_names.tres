@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="PersonGivenNamePackProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/person_given_name_pack_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = &"default_zh"
+given_name_ids = PackedStringArray("an", "bo", "cheng", "chun", "de", "fang", "gang", "guang", "gui", "hai", "hao", "he", "hong", "hua", "hui", "jian", "jie", "jing", "jun", "kang", "lan", "lei", "li", "lian", "lin", "long", "mei", "ming", "ning", "ping", "qi", "qiang", "qing", "quan", "rong", "shan", "sheng", "tao", "ting", "wei", "wen", "xia", "xian", "xiang", "xin", "xiu", "yan", "ying", "yong", "yu", "yuan", "yun", "zhen", "zhi", "zhong")
+given_name_text = PackedStringArray("安", "博", "成", "春", "德", "芳", "刚", "光", "贵", "海", "浩", "和", "红", "华", "辉", "建", "杰", "静", "军", "康", "兰", "磊", "丽", "莲", "林", "龙", "梅", "明", "宁", "平", "琪", "强", "青", "泉", "荣", "珊", "生", "涛", "婷", "伟", "文", "霞", "贤", "祥", "欣", "秀", "燕", "英", "勇", "玉", "远", "云", "珍", "志", "忠")
+weights = PackedInt32Array(12, 10, 20, 15, 18, 20, 24, 14, 8, 18, 18, 12, 22, 30, 22, 26, 28, 22, 32, 10, 18, 24, 28, 12, 18, 14, 26, 32, 12, 24, 10, 30, 18, 10, 18, 10, 16, 24, 22, 38, 28, 20, 10, 18, 18, 20, 24, 28, 30, 20, 12, 16, 16, 28, 18)

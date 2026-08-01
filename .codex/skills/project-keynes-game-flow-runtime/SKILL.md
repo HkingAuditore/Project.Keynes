@@ -79,6 +79,13 @@ Require one gathering ground, timber collector, merchant post, and matching
 precious-metal work site per country. Aggregate all starts through EconomyFacade
 catalog helpers and fixed-point packets, provide the 60-day bridge, and retain population/money/goods
 conservation checks.
+Require one native founder family per capital, conserving the gathering ground's two occupied
+forager owners as its membership and ownership, and immediately promote exactly one of them as the
+named notable founder with a traceable owner job and building handle. Do not lower ordinary family
+formation thresholds to satisfy this opening contract.
+Keep the explicit v3 founder columns, but require native fallback recognition from a forced-named
+capital plus its actual gathering ground when a cached v2 packet omits them. Early-session repair is
+bounded to days 0..30, requires filled matching owner posts, and must be idempotent.
 
 ## Enforce PKSV Boundaries
 

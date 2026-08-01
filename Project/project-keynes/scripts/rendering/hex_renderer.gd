@@ -6,6 +6,8 @@ extends Node2D
 const TERRAIN_MICRO_TEXTURE: Texture2D = preload("res://assets/textures/terrain_micro_data.png")
 const VisualTileHorizonBakerScript = preload(
 	"res://scripts/rendering/visual_tile_horizon_baker.gd")
+const DetailScatterChangeSetScript = preload("res://scripts/data/detail_scatter_change_set.gd")
+const VegetationFamilyLayerScript = preload("res://scripts/rendering/vegetation_family_layer.gd")
 
 @export var hex_size: float = 22.0:
 	set(v):
@@ -123,14 +125,14 @@ const VisualTileHorizonBakerScript = preload(
 # cover_axis_strength：FLOODING/PERMAFROST/GLACIER 等覆盖物在 fragment 末尾的
 # 叠加强度（SNOW 仍走原 dynamic_snow 路径，避免与 snow_factor 双叠）。
 @export_group("Axes (Milestone 2)")
-@export_range(0.0, 1.0, 0.01) var vegetation_axis_strength: float = 0.45
+@export_range(0.0, 1.0, 0.01) var vegetation_axis_strength: float = 0.40
 @export_range(0.0, 1.0, 0.01) var cover_axis_strength: float = 0.65
-@export_range(0.0, 1.0, 0.01) var ecology_visual_strength: float = 0.90
+@export_range(0.0, 1.0, 0.01) var ecology_visual_strength: float = 0.80
 @export_range(0.0, 1.0, 0.01) var snowline_visual_strength: float = 0.85
-@export_range(0.0, 1.0, 0.01) var foliage_density_strength: float = 0.85
+@export_range(0.0, 1.0, 0.01) var foliage_density_strength: float = 0.75
 @export_range(0.0, 1.5, 0.01) var temperature_visual_strength: float = 1.25
-@export_range(0.0, 1.5, 0.01) var moisture_visual_strength: float = 1.30
-@export_range(0.0, 1.5, 0.01) var vitality_visual_strength: float = 1.25
+@export_range(0.0, 1.5, 0.01) var moisture_visual_strength: float = 1.18
+@export_range(0.0, 1.5, 0.01) var vitality_visual_strength: float = 1.12
 @export_range(0, 2, 1) var ecology_visual_quality: int = 2
 
 # ─── Milestone 3：天气 overlay 总强度（0 关闭，1 全力） ─────────────────
@@ -296,11 +298,14 @@ var terrain_materials_enabled: bool = true
 			if _map != null and _world != null:
 				_rebuild()
 @export_group("Detail Refresh")
+# 新家族渲染器必须先通过图形 A/B；默认保持旧渲染器，避免未验收路径直接影响玩家。
+@export var detail_scatter_family_renderer_enabled: bool = false
 @export var detail_scatter_refresh_layers_per_frame: int = 1
 @export var detail_scatter_refresh_cells_per_batch: int = 32
 @export var detail_scatter_chunked_multimesh_enabled: bool = true
-@export_range(2, 32, 1) var detail_scatter_chunk_size_cells: int = 8
+@export_range(2, 32, 1) var detail_scatter_chunk_size_cells: int = 16
 @export var detail_scatter_refresh_chunks_per_frame: int = 4
+@export_range(0.25, 10.0, 0.25) var detail_scatter_resident_retention_seconds: float = 2.0
 # drain 信用预算：实测 4.0 时高倍速下 backlog 永不排空、帧均 drain 顶满预算
 # （tail_vegetation 持续 4-5ms）。配合全链路在途去重后重排队速率大幅下降，
 # 2.5ms 足以收敛 backlog，稳态帧成本直接减半。
@@ -319,7 +324,7 @@ var terrain_materials_enabled: bool = true
 @export_range(0.0, 100.0, 0.25) var detail_scatter_slow_layer_ms: float = 2.0
 # 21 层清单接入 + 散布配额化之后总实例数显著上升，旧的 120000 会让全局预算长期
 # 触顶、所有层被同比稀释，反过来又抹平生物群系差异。
-@export var detail_scatter_desktop_total_instance_budget: int = 200000
+@export var detail_scatter_desktop_total_instance_budget: int = 120000
 @export var detail_scatter_mobile_total_instance_budget: int = 12000
 
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
@@ -451,6 +456,8 @@ var _fog_early_out: bool = false
 # Decoration / vegetation 散布层（数据驱动）：默认回退到 grass/shrub/tree 三个
 # @export profile；配置 decoration_manifest 后按其 layers 数组生成 N 层。
 var _detail_layers: Array = []
+var _detail_family_layer = null
+var _detail_family_dirty_chunks: Dictionary = {}
 var _detail_refresh_queue: Array = []
 var _detail_refresh_indices: PackedInt32Array = PackedInt32Array()
 var _detail_refresh_batches: Array = []
@@ -458,6 +465,24 @@ var _last_detail_refresh_report: Dictionary = {}
 # 入队节流/合并状态：跨日去重累积器 + 上次冲刷时刻。
 var _scatter_pending_cells: PackedInt32Array = PackedInt32Array()
 var _scatter_pending_seen: Dictionary = {}
+var _scatter_requeue_cells: Dictionary = {}
+var _scatter_cell_family_masks: Dictionary = {}
+var _scatter_cell_profile_masks: Dictionary = {}
+var _scatter_cell_generations: Dictionary = {}
+var _detail_deferred_chunks: Dictionary = {}
+var _detail_deferred_profile_masks: Dictionary = {}
+var _detail_offscreen_deferred_cells: int = 0
+var _detail_coalesced_cells: int = 0
+var _detail_affected_family_count: int = 0
+var _detail_stale_generation_drops: int = 0
+var _camera_world_rect: Rect2 = Rect2()
+var _camera_world_center: Vector2 = Vector2.ZERO
+var _camera_view_initialized: bool = false
+var _detail_visibility_last_ms: float = 0.0
+var _detail_next_resident_sweep_msec: int = 0
+var _detail_evicted_superchunks: int = 0
+var _detail_render_chunk_count: int = 0
+var _detail_prefetch_chunk_count: int = 0
 # 全链路在途去重：覆盖 累积器 + 待处理批次 + 当前批次 的全部 cell。
 # 气候提交以 ~6 帧节奏反复 dirty 同一批 cell；旧的 accumulator 去重在 flush 后
 # 即失效，导致仍在队列里的 cell 被重复入队、同一 chunk 被重建多次。在途集合在
@@ -472,6 +497,24 @@ var _drain_credit_ms: float = 0.0
 var _drain_last_progress_frame: int = 0
 var _drain_cfg_logged: bool = false
 var _last_detail_budget_report: Dictionary = {}
+# 全局实例预算同步状态。21 层分块 MultiMesh 不能在每个 succession chunk 后全量
+# 下发 visible_instance_count；那会把名义 2.5ms 的 drain 放大到几十毫秒。
+# target 由当前总实例数计算，apply_fraction 是本轮渐进下发所用的稳定快照；
+# 每帧最多推进 detail_scatter_refresh_layers_per_frame 层。
+const DETAIL_BUDGET_FRACTION_EPSILON: float = 0.0025
+var _detail_budget_target_fraction: float = 1.0
+var _detail_budget_applied_fraction: float = -1.0
+var _detail_budget_apply_fraction: float = 1.0
+var _detail_budget_apply_cursor: int = 0
+var _detail_budget_apply_active: bool = false
+var _detail_budget_apply_count: int = 0
+var _detail_budget_apply_skip_count: int = 0
+var _detail_budget_apply_ms_total: float = 0.0
+var _detail_budget_last_apply_ms: float = 0.0
+var _detail_budget_cached_total: int = 0
+var _detail_budget_total_dirty: bool = true
+var _detail_budget_total_scan_count: int = 0
+var _detail_budget_last_scan_ms: float = 0.0
 # C++ DCWorldExt 引用，转发给每个散布层做 native 生成。
 var _world_ext = null
 var _map: MapData = null
@@ -572,6 +615,12 @@ var _perf_sampler: PerfSampler = null
 # 帧尾诊断：最近一帧 _drain_detail_refresh_queue 墙钟（毫秒）。tick 日触发的
 # 植被 succession 刷新在帧尾 drain，成本逐帧计入 perf 的 tail_vegetation_ms 列。
 var _last_detail_drain_ms: float = 0.0
+var _last_detail_task_count: int = 0
+var _last_detail_forced_task_count: int = 0
+var _last_detail_encode_ms: float = 0.0
+var _last_detail_cache_update_ms: float = 0.0
+var _last_detail_assemble_ms: float = 0.0
+var _last_detail_upload_ms: float = 0.0
 
 
 func get_last_detail_drain_ms() -> float:
@@ -624,10 +673,15 @@ func _process(delta: float) -> void:
 	_world_time += delta
 	_shader_mat.set_shader_parameter("world_time", _world_time)
 	var wind_boost := _detail_wind_boost * weather_strength
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_world_time(_world_time)
-		layer.set_wind_field(_detail_wind_dir, wind_boost)
-	)
+	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
+			and is_instance_valid(_detail_family_layer):
+		_detail_family_layer.set_frame_state(_world_time, _detail_wind_dir, wind_boost)
+	else:
+		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+			layer.set_world_time(_world_time)
+			layer.set_wind_field(_detail_wind_dir, wind_boost)
+		)
+	_sweep_dormant_detail_chunks()
 	var drain_started_usec := Time.get_ticks_usec()
 	_drain_detail_refresh_queue()
 	_last_detail_drain_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
@@ -637,6 +691,29 @@ func _process(delta: float) -> void:
 	# 任务 1：性能采样（仅当 perf_sampler_enabled 为 true 时启用）
 	if _perf_sampler != null:
 		_perf_sampler.push_frame_ms(delta * 1000.0)
+
+
+func _sweep_dormant_detail_chunks() -> void:
+	if not detail_scatter_family_renderer_enabled or not _camera_view_initialized:
+		return
+	var now_msec := Time.get_ticks_msec()
+	if now_msec < _detail_next_resident_sweep_msec:
+		return
+	_detail_next_resident_sweep_msec = now_msec + 250
+	var retention_msec := maxi(250, int(round(detail_scatter_resident_retention_seconds * 1000.0)))
+	var evicted := 0
+	for layer in _detail_layers:
+		if layer != null and is_instance_valid(layer) \
+				and layer.has_method("evict_dormant_detail_chunks"):
+			evicted += int(layer.evict_dormant_detail_chunks(now_msec, retention_msec))
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
+			and _detail_family_layer.has_method("evict_dormant_chunks"):
+		var family_evicted := int(
+			_detail_family_layer.evict_dormant_chunks(now_msec, retention_msec))
+		_detail_evicted_superchunks += family_evicted
+		evicted += family_evicted
+	if evicted > 0:
+		_mark_detail_budget_total_dirty()
 
 func _load_shader() -> void:
 	var next_mat: ShaderMaterial = null
@@ -727,6 +804,12 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_mobile_quality_tier(veg_tier)
 	)
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) and _map != null:
+		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
+		if detail_scatter_family_renderer_enabled and _camera_view_initialized:
+			_queue_missing_prefetch_detail_chunks()
+			_reactivate_deferred_detail_chunks()
+	_mark_detail_budget_total_dirty()
 	_apply_detail_global_budget()
 	if _weather_layer != null and _weather_layer.has_method("set_mobile_quality_tier"):
 		_weather_layer.set_mobile_quality_tier(tier_define)
@@ -773,19 +856,116 @@ func _for_each_vegetation_layer(callable: Callable) -> void:
 			callable.call(layer)
 
 
+func _sync_family_materials_from_sources() -> void:
+	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
+			and is_instance_valid(_detail_family_layer):
+		_detail_family_layer.sync_dynamic_materials()
+
+
 func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
-	if indices.is_empty() or _detail_layers.is_empty():
-		return
-	for raw in indices:
-		var ci := int(raw)
-		if ci < 0 or _scatter_pending_seen.has(ci):
+	var changes = DetailScatterChangeSetScript.new()
+	for raw_idx in indices:
+		changes.append_change(int(raw_idx), DetailScatterChangeSetScript.AXIS_UNKNOWN, 0, 0, 0, 0, 0, 0)
+	queue_detail_scatter_changes(changes)
+
+
+func _detail_all_family_mask() -> int:
+	var mask := 0
+	for layer in _detail_layers:
+		if layer != null and is_instance_valid(layer) and layer.has_method("detail_render_family_mask"):
+			mask |= int(layer.detail_render_family_mask())
+	return mask if mask != 0 else 0x1F
+
+
+func _detail_family_mask_for_change(changes, row: int) -> int:
+	var axis_mask := int(changes.axis_masks[row])
+	if (axis_mask & DetailScatterChangeSetScript.AXIS_UNKNOWN) != 0:
+		return _detail_all_family_mask()
+	var mask := 0
+	for layer in _detail_layers:
+		if layer == null or not is_instance_valid(layer) \
+				or not layer.has_method("detail_change_affects_profile"):
 			continue
-		_scatter_pending_seen[ci] = true
+		if bool(layer.detail_change_affects_profile(
+				axis_mask,
+				int(changes.old_vegetation[row]), int(changes.new_vegetation[row]),
+				int(changes.old_landform[row]), int(changes.new_landform[row]),
+				int(changes.old_cover[row]), int(changes.new_cover[row])
+		)):
+			mask |= int(layer.detail_render_family_mask())
+	return mask
+
+
+func _detail_profile_mask_for_change(changes, row: int) -> int:
+	var axis_mask := int(changes.axis_masks[row])
+	if (axis_mask & DetailScatterChangeSetScript.AXIS_UNKNOWN) != 0:
+		return (1 << _detail_layers.size()) - 1
+	var mask := 0
+	for layer_idx in range(_detail_layers.size()):
+		var layer = _detail_layers[layer_idx]
+		if layer == null or not is_instance_valid(layer) \
+				or not layer.has_method("detail_change_affects_profile"):
+			continue
+		if bool(layer.detail_change_affects_profile(
+				axis_mask,
+				int(changes.old_vegetation[row]), int(changes.new_vegetation[row]),
+				int(changes.old_landform[row]), int(changes.new_landform[row]),
+				int(changes.old_cover[row]), int(changes.new_cover[row])
+		)):
+			mask |= 1 << layer_idx
+	return mask
+
+
+func queue_detail_scatter_changes(changes) -> void:
+	if changes == null or _detail_layers.is_empty() \
+			or not changes.has_method("is_well_formed") \
+			or not bool(changes.is_well_formed()) or bool(changes.is_empty()):
+		return
+	var affected_families := 0
+	for row in range(changes.cell_indices.size()):
+		var ci := int(changes.cell_indices[row])
+		if ci < 0:
+			continue
+		var generation := int(changes.generation)
+		var previous_generation := int(_scatter_cell_generations.get(ci, -1))
+		if generation >= 0 and previous_generation > generation:
+			_detail_stale_generation_drops += 1
+			continue
+		_scatter_cell_generations[ci] = maxi(previous_generation, generation)
+		var family_mask := _detail_family_mask_for_change(changes, row)
+		var profile_mask := _detail_profile_mask_for_change(changes, row)
+		if family_mask == 0 or profile_mask == 0:
+			continue
+		affected_families |= family_mask
+		if _camera_view_initialized and not _detail_layers.is_empty():
+			var probe = _detail_layers[0]
+			if probe != null and is_instance_valid(probe) \
+					and probe.has_method("detail_chunk_id_for_cell") \
+					and probe.has_method("detail_chunk_is_in_prefetch"):
+				var chunk_id := int(probe.detail_chunk_id_for_cell(ci))
+				if chunk_id >= 0 and not bool(probe.detail_chunk_is_in_prefetch(chunk_id)):
+					_detail_deferred_chunks[chunk_id] = int(
+						_detail_deferred_chunks.get(chunk_id, 0)) | family_mask
+					_detail_deferred_profile_masks[chunk_id] = int(
+						_detail_deferred_profile_masks.get(chunk_id, 0)) | profile_mask
+					_detail_offscreen_deferred_cells += 1
+					continue
+		var previous_mask := int(_scatter_cell_family_masks.get(ci, 0))
+		_scatter_cell_family_masks[ci] = previous_mask | family_mask
+		var previous_profile_mask := int(_scatter_cell_profile_masks.get(ci, 0))
+		_scatter_cell_profile_masks[ci] = previous_profile_mask | profile_mask
+		if _scatter_pending_seen.has(ci):
+			_detail_coalesced_cells += 1
+			continue
 		if _scatter_inflight.has(ci):
+			# 当前 batch 已经按旧 generation 建好任务；完成后只补跑一次最新状态。
+			_scatter_requeue_cells[ci] = true
 			_scatter_enqueue_dedup_skips += 1
 			continue
+		_scatter_pending_seen[ci] = true
 		_scatter_inflight[ci] = true
 		_scatter_pending_cells.append(ci)
+	_detail_affected_family_count = _count_set_bits(affected_families)
 	var now_msec := Time.get_ticks_msec()
 	var window_due := _scatter_last_enqueue_msec <= 0 or \
 		float(now_msec - _scatter_last_enqueue_msec) >= maxf(0.0, detail_scatter_enqueue_coalesce_ms)
@@ -819,6 +999,15 @@ func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
 			maxf(0.0, detail_scatter_refresh_apply_budget_ms),
 			maxi(1, detail_scatter_refresh_cells_per_batch),
 		])
+
+
+func _count_set_bits(value: int) -> int:
+	var count := 0
+	var bits := value
+	while bits != 0:
+		count += bits & 1
+		bits >>= 1
+	return count
 
 
 func _dedup_detail_refresh_indices(indices: PackedInt32Array) -> PackedInt32Array:
@@ -872,8 +1061,19 @@ func _merge_pending_detail_refresh_batches(extra: PackedInt32Array) -> PackedInt
 func _release_detail_refresh_inflight(cells: PackedInt32Array) -> void:
 	if _scatter_inflight.is_empty():
 		return
+	var requeue := PackedInt32Array()
 	for raw in cells:
-		_scatter_inflight.erase(int(raw))
+		var ci := int(raw)
+		_scatter_inflight.erase(ci)
+		if _scatter_requeue_cells.has(ci):
+			_scatter_requeue_cells.erase(ci)
+			_scatter_inflight[ci] = true
+			requeue.append(ci)
+			continue
+		_scatter_cell_family_masks.erase(ci)
+		_scatter_cell_profile_masks.erase(ci)
+	if not requeue.is_empty():
+		_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(requeue))
 
 
 func _start_next_detail_refresh_batch() -> bool:
@@ -891,21 +1091,105 @@ func _start_next_detail_refresh_batch() -> bool:
 			if layer != null and is_instance_valid(layer) and layer.has_method("detail_chunk_plan_for_indices"):
 				chunk_plan = layer.detail_chunk_plan_for_indices(_detail_refresh_indices)
 				break
-	for layer in _detail_layers:
-		if layer == null or not is_instance_valid(layer):
+	var had_chunk_plan := not chunk_plan.is_empty()
+	var active_chunk_plan: Array = []
+	for chunk in chunk_plan:
+		var chunk_id := int(chunk.get("chunk_id", -1))
+		var dirty_indices: PackedInt32Array = chunk.get("dirty_indices", PackedInt32Array())
+		var family_mask := 0
+		var profile_mask := 0
+		for raw_idx in dirty_indices:
+			family_mask |= int(_scatter_cell_family_masks.get(int(raw_idx), _detail_all_family_mask()))
+			profile_mask |= int(_scatter_cell_profile_masks.get(
+				int(raw_idx), (1 << _detail_layers.size()) - 1))
+		if family_mask == 0:
+			family_mask = _detail_all_family_mask()
+		if profile_mask == 0:
+			profile_mask = (1 << _detail_layers.size()) - 1
+		var in_prefetch := true
+		if not _detail_layers.is_empty():
+			var probe = _detail_layers[0]
+			if probe != null and is_instance_valid(probe) \
+					and probe.has_method("detail_chunk_is_in_prefetch"):
+				in_prefetch = bool(probe.detail_chunk_is_in_prefetch(chunk_id))
+		if not in_prefetch:
+			_detail_deferred_chunks[chunk_id] = int(_detail_deferred_chunks.get(chunk_id, 0)) | family_mask
+			_detail_deferred_profile_masks[chunk_id] = int(
+				_detail_deferred_profile_masks.get(chunk_id, 0)) | profile_mask
+			_detail_offscreen_deferred_cells += dirty_indices.size()
 			continue
-		if layer.has_method("begin_detail_chunk_refresh"):
+		var active: Dictionary = chunk.duplicate(false)
+		active["family_mask"] = family_mask
+		active["profile_mask"] = profile_mask
+		active_chunk_plan.append(active)
+	if not active_chunk_plan.is_empty() and not _detail_layers.is_empty():
+		var visibility_probe = _detail_layers[0]
+		active_chunk_plan.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var a_id := int(a.get("chunk_id", -1))
+			var b_id := int(b.get("chunk_id", -1))
+			var a_visible := bool(visibility_probe.detail_chunk_is_render_visible(a_id)) \
+				if visibility_probe.has_method("detail_chunk_is_render_visible") else true
+			var b_visible := bool(visibility_probe.detail_chunk_is_render_visible(b_id)) \
+				if visibility_probe.has_method("detail_chunk_is_render_visible") else true
+			if a_visible != b_visible:
+				return a_visible
+			return _detail_chunk_center_from_cells(
+				a.get("cell_indices", PackedInt32Array())).distance_squared_to(_camera_world_center) \
+				< _detail_chunk_center_from_cells(
+					b.get("cell_indices", PackedInt32Array())).distance_squared_to(_camera_world_center)
+		)
+	chunk_plan = active_chunk_plan
+	var enqueued_msec := Time.get_ticks_msec()
+	for layer in _detail_layers:
+		if layer != null and is_instance_valid(layer) \
+				and layer.has_method("begin_detail_chunk_refresh"):
 			layer.begin_detail_chunk_refresh()
-		if not chunk_plan.is_empty() and layer.has_method("refresh_chunk_for_succession"):
-			for chunk in chunk_plan:
+	if not chunk_plan.is_empty():
+		# 同一 superchunk 的各 profile 连续排布，family 合并器可等待最后一个
+		# source 完成后只装配/上传一次。
+		for chunk in chunk_plan:
+			var profile_mask := int(chunk.get(
+				"profile_mask", (1 << _detail_layers.size()) - 1))
+			for layer_idx in range(_detail_layers.size()):
+				if (profile_mask & (1 << layer_idx)) == 0:
+					continue
+				var layer = _detail_layers[layer_idx]
+				if layer == null or not is_instance_valid(layer) \
+						or not layer.has_method("refresh_chunk_for_succession"):
+					continue
 				_detail_refresh_queue.append({
 					"layer": layer,
 					"chunk_id": int(chunk.get("chunk_id", -1)),
 					"cell_indices": chunk.get("cell_indices", PackedInt32Array()),
+					"dirty_indices": chunk.get("dirty_indices", PackedInt32Array()),
 					"dirty_cells": int(chunk.get("dirty_cells", 0)),
+					"family_mask": int(chunk.get("family_mask", _detail_all_family_mask())),
+					"family": int(layer.detail_render_family()) \
+						if layer.has_method("detail_render_family") else 0,
+					"profile_index": layer_idx,
+					"enqueued_msec": enqueued_msec,
+					"visible_priority": bool(layer.detail_chunk_is_render_visible(
+						int(chunk.get("chunk_id", -1)))) \
+						if layer.has_method("detail_chunk_is_render_visible") else true,
 				})
-		else:
-			_detail_refresh_queue.append({"layer": layer, "cell_indices": _detail_refresh_indices})
+	elif not had_chunk_plan:
+		var fallback_profile_mask := 0
+		for raw_idx in _detail_refresh_indices:
+			fallback_profile_mask |= int(_scatter_cell_profile_masks.get(
+				int(raw_idx), (1 << _detail_layers.size()) - 1))
+		if fallback_profile_mask == 0:
+			fallback_profile_mask = (1 << _detail_layers.size()) - 1
+		for layer_idx in range(_detail_layers.size()):
+			if (fallback_profile_mask & (1 << layer_idx)) == 0:
+				continue
+			var layer = _detail_layers[layer_idx]
+			if layer == null or not is_instance_valid(layer):
+				continue
+			_detail_refresh_queue.append({
+				"layer": layer,
+				"profile_index": layer_idx,
+				"cell_indices": _detail_refresh_indices,
+			})
 	_last_detail_refresh_report = {
 		"queued_chunks": _detail_refresh_queue.size(),
 		"queued_layers": _detail_layers.size(),
@@ -916,11 +1200,25 @@ func _start_next_detail_refresh_batch() -> bool:
 		"batch_chunks": chunk_plan.size(),
 		"elapsed_ms": 0.0,
 	}
-	return not _detail_refresh_queue.is_empty()
+	if _detail_refresh_queue.is_empty():
+		_release_detail_refresh_inflight(_detail_refresh_indices)
+		_detail_refresh_indices = PackedInt32Array()
+		return _start_next_detail_refresh_batch() if not _detail_refresh_batches.is_empty() else false
+	return true
 
 
 func _drain_detail_refresh_queue() -> void:
+	_last_detail_task_count = 0
+	_last_detail_forced_task_count = 0
+	_last_detail_encode_ms = 0.0
+	_last_detail_cache_update_ms = 0.0
+	_last_detail_assemble_ms = 0.0
+	_last_detail_upload_ms = 0.0
 	if _detail_refresh_queue.is_empty() and not _start_next_detail_refresh_batch():
+		# succession 队列已排空时仍要继续完成尚未结束的全局预算分层下发。
+		if _drain_one_detail_family_upload():
+			_mark_detail_budget_total_dirty()
+		_apply_detail_global_budget(false, true)
 		return
 	var chunk_budget := maxi(1, detail_scatter_refresh_chunks_per_frame)
 	var ms_budget := maxf(0.0, detail_scatter_refresh_apply_budget_ms)
@@ -940,29 +1238,63 @@ func _drain_detail_refresh_queue() -> void:
 			maxi(2, detail_scatter_chunk_size_cells),
 		])
 	var done := 0
+	var forced_one := false
 	var t0 := Time.get_ticks_usec()
 	while done < chunk_budget and not _detail_refresh_queue.is_empty():
 		if ms_budget > 0.0:
-			var force_progress := Engine.get_process_frames() - _drain_last_progress_frame > 30
+			var head: Dictionary = _detail_refresh_queue[0]
+			var head_wait_msec := Time.get_ticks_msec() - int(
+				head.get("enqueued_msec", Time.get_ticks_msec()))
+			# 超时只授权这一帧推进一个任务，不能让后续所有超时任务一起绕过预算。
+			# 旧逻辑会在 chunks_per_frame=4 时把约 15ms 的任务叠成稳定 60ms 尾耗时。
+			var force_progress := done == 0 and bool(head.get("visible_priority", true)) \
+				and head_wait_msec >= 100
 			if not force_progress:
 				if _drain_credit_ms < ms_budget:
 					break
 				if done > 0 and float(Time.get_ticks_usec() - t0) / 1000.0 >= ms_budget:
 					break
+			else:
+				forced_one = true
 		var task: Dictionary = _detail_refresh_queue.pop_front()
 		var task_t0 := Time.get_ticks_usec()
 		var layer = task.get("layer", null)
 		if layer != null and is_instance_valid(layer):
+			var task_family_mask := int(task.get("family_mask", _detail_all_family_mask()))
+			for raw_idx in task.get("dirty_indices", PackedInt32Array()):
+				task_family_mask |= int(_scatter_cell_family_masks.get(int(raw_idx), 0))
+			var layer_family_mask := int(layer.detail_render_family_mask()) \
+				if layer.has_method("detail_render_family_mask") else _detail_all_family_mask()
+			if (task_family_mask & layer_family_mask) == 0:
+				continue
 			var layer_t0 := Time.get_ticks_usec()
 			if task.has("chunk_id") and layer.has_method("refresh_chunk_for_succession"):
-				layer.refresh_chunk_for_succession(
+				var refreshed := bool(layer.refresh_chunk_for_succession(
 					int(task.get("chunk_id", -1)),
 					task.get("cell_indices", PackedInt32Array()),
-					int(task.get("dirty_cells", 0))
-				)
+					int(task.get("dirty_cells", 0)),
+					task.get("dirty_indices", PackedInt32Array())
+				))
+				if refreshed and detail_scatter_family_renderer_enabled \
+						and layer.has_method("detail_render_family"):
+					var family := int(layer.detail_render_family())
+					var chunk_id := int(task.get("chunk_id", -1))
+					_detail_family_dirty_chunks["%d:%d" % [family, chunk_id]] = {
+						"source": layer,
+						"chunk_id": chunk_id,
+					}
 			elif layer.has_method("refresh_for_succession"):
 				layer.refresh_for_succession(task.get("cell_indices", _detail_refresh_indices))
 			var layer_elapsed := float(Time.get_ticks_usec() - layer_t0) / 1000.0
+			_last_detail_task_count += 1
+			if layer.has_method("get_scatter_diagnostics"):
+				var timing: Dictionary = layer.get_scatter_diagnostics()
+				_last_detail_encode_ms += float(timing.get("native_context_ms", 0.0)) \
+					+ float(timing.get("native_knobs_ms", 0.0)) \
+					+ float(timing.get("native_call_ms", 0.0))
+				_last_detail_cache_update_ms += float(timing.get("cache_update_ms", 0.0))
+				_last_detail_assemble_ms += float(timing.get("assemble_ms", 0.0))
+				_last_detail_upload_ms += float(timing.get("native_apply_ms", 0.0))
 			if detail_scatter_refresh_log_enabled and layer.has_method("get_scatter_diagnostics"):
 				var d: Dictionary = layer.get_scatter_diagnostics()
 				if layer_elapsed >= detail_scatter_slow_layer_ms or float(d.get("rebuild_ms", 0.0)) >= detail_scatter_slow_layer_ms:
@@ -992,13 +1324,25 @@ func _drain_detail_refresh_queue() -> void:
 		_drain_last_progress_frame = Engine.get_process_frames()
 		if ms_budget > 0.0:
 			_drain_credit_ms -= float(Time.get_ticks_usec() - task_t0) / 1000.0
+		if forced_one:
+			_last_detail_forced_task_count = 1
+			break
 	var elapsed := float(Time.get_ticks_usec() - t0) / 1000.0
+	# source payload 本帧已写过一个 MultiMesh 时，把 family 合并上传留到空闲帧，
+	# 严格维持运行期每帧最多一次 MultiMesh buffer 赋值。
+	if done == 0:
+		if _drain_one_detail_family_upload():
+			_mark_detail_budget_total_dirty()
+	else:
+		_mark_detail_budget_total_dirty()
 	_last_detail_refresh_report["chunks_done"] = int(_last_detail_refresh_report.get("chunks_done", 0)) + done
 	_last_detail_refresh_report["layers_done"] = int(_last_detail_refresh_report.get("chunks_done", 0))
 	_last_detail_refresh_report["elapsed_ms"] = float(_last_detail_refresh_report.get("elapsed_ms", 0.0)) + elapsed
 	_last_detail_refresh_report["remaining_chunks"] = _detail_refresh_queue.size()
 	_last_detail_refresh_report["pending_batches"] = _detail_refresh_batches.size()
-	_apply_detail_global_budget()
+	# 一个昂贵 chunk 已经消耗本帧信用时，不再叠加全层 visible-count 同步；
+	# 无 chunk 的帧按 layers_per_frame 渐进推进，避免 20+ 层一次性尖峰。
+	_apply_detail_global_budget(false, done == 0)
 	if _detail_refresh_queue.is_empty():
 		if detail_scatter_refresh_log_enabled:
 			print("[detail_scatter/DONE] batch_cells=%d chunks=%d batch_chunks=%d elapsed=%.2fms pending_batches=%d budget=%s" % [
@@ -1013,11 +1357,80 @@ func _drain_detail_refresh_queue() -> void:
 		_detail_refresh_indices = PackedInt32Array()
 
 
+func _drain_one_detail_family_upload() -> bool:
+	if not detail_scatter_family_renderer_enabled \
+			or _detail_family_layer == null or not is_instance_valid(_detail_family_layer):
+		return false
+	if _detail_family_dirty_chunks.is_empty():
+		return bool(_detail_family_layer.drain_one_shadow_upload()) \
+			if _detail_family_layer.has_method("drain_one_shadow_upload") else false
+	var keys: Array = _detail_family_dirty_chunks.keys()
+	keys.sort()
+	var key = ""
+	for candidate in keys:
+		if not _detail_family_upload_has_pending_source(str(candidate)):
+			key = str(candidate)
+			break
+	if key.is_empty():
+		return false
+	var task: Dictionary = _detail_family_dirty_chunks[key]
+	_detail_family_dirty_chunks.erase(key)
+	var source = task.get("source", null)
+	if source != null and is_instance_valid(source):
+		_detail_family_layer.rebuild_source_chunk(source, int(task.get("chunk_id", -1)))
+		return true
+	return false
+
+
+func _detail_family_upload_has_pending_source(key: String) -> bool:
+	var parts := key.split(":")
+	if parts.size() != 2:
+		return false
+	var family := int(parts[0])
+	var chunk_id := int(parts[1])
+	for pending in _detail_refresh_queue:
+		if int(pending.get("chunk_id", -1)) == chunk_id \
+				and int(pending.get("family", 0)) == family:
+			return true
+	return false
+
+
 func detail_scatter_refresh_report() -> Dictionary:
 	var report := _last_detail_refresh_report.duplicate(true)
 	report["inflight_cells"] = _scatter_inflight.size()
 	report["enqueue_dedup_skips"] = _scatter_enqueue_dedup_skips
+	report["coalesced_cells"] = _detail_coalesced_cells
+	report["offscreen_deferred_cells"] = _detail_offscreen_deferred_cells
+	report["stale_superchunks"] = _detail_deferred_chunks.size()
+	report["render_superchunks"] = _detail_render_chunk_count
+	report["prefetch_superchunks"] = _detail_prefetch_chunk_count
+	report["affected_families"] = _detail_affected_family_count
+	report["visibility_ms"] = _detail_visibility_last_ms
+	report["queued_tasks"] = _detail_refresh_queue.size()
+	report["stale_generation_drops"] = _detail_stale_generation_drops
+	report["evicted_superchunks"] = _detail_evicted_superchunks
+	report["oldest_visible_wait_ms"] = _oldest_visible_detail_task_wait_ms()
+	report["frame_tasks"] = _last_detail_task_count
+	report["frame_forced_tasks"] = _last_detail_forced_task_count
+	report["encode_ms"] = _last_detail_encode_ms
+	report["cache_update_ms"] = _last_detail_cache_update_ms
+	report["assemble_ms"] = _last_detail_assemble_ms
+	report["upload_ms"] = _last_detail_upload_ms
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
+		var family_diag: Dictionary = _detail_family_layer.diagnostics()
+		for key in family_diag.keys():
+			report["family_%s" % str(key)] = family_diag[key]
 	return report
+
+
+func _oldest_visible_detail_task_wait_ms() -> int:
+	var oldest := 0
+	var now_msec := Time.get_ticks_msec()
+	for task in _detail_refresh_queue:
+		if not bool(task.get("visible_priority", true)):
+			continue
+		oldest = maxi(oldest, now_msec - int(task.get("enqueued_msec", now_msec)))
+	return oldest
 
 
 func detail_scatter_layer_reports() -> Array:
@@ -1030,29 +1443,136 @@ func detail_scatter_layer_reports() -> Array:
 
 func _detail_total_instance_budget() -> int:
 	if OS.has_feature("mobile"):
-		return maxi(0, detail_scatter_mobile_total_instance_budget)
-	return maxi(0, detail_scatter_desktop_total_instance_budget)
+		var mobile_high := maxi(0, detail_scatter_mobile_total_instance_budget)
+		match _mobile_quality_tier_from_define(_mobile_quality_tier_define):
+			0:
+				return mini(mobile_high, 5000)
+			1:
+				return mini(mobile_high, 8000)
+			_:
+				return mobile_high
+	var desktop_high := maxi(0, detail_scatter_desktop_total_instance_budget)
+	match visual_quality:
+		0:
+			return mini(desktop_high, 35000)
+		1:
+			return mini(desktop_high, 70000)
+		_:
+			return desktop_high
 
 
-func _apply_detail_global_budget() -> void:
+func _detail_budget_fraction_needs_apply(next_fraction: float) -> bool:
+	if _detail_budget_applied_fraction < 0.0:
+		return true
+	var next_unclamped := next_fraction >= 1.0 - 0.000001
+	var applied_unclamped := _detail_budget_applied_fraction >= 1.0 - 0.000001
+	if next_unclamped != applied_unclamped:
+		return true
+	return absf(next_fraction - _detail_budget_applied_fraction) >= DETAIL_BUDGET_FRACTION_EPSILON
+
+
+func _begin_detail_budget_apply(fraction: float) -> void:
+	_detail_budget_apply_fraction = clampf(fraction, 0.0, 1.0)
+	_detail_budget_apply_cursor = 0
+	_detail_budget_apply_active = not _detail_layers.is_empty()
+
+
+func _drain_detail_budget_apply(force_complete: bool) -> void:
+	if not _detail_budget_apply_active:
+		return
+	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
+			and is_instance_valid(_detail_family_layer):
+		var family_t0 := Time.get_ticks_usec()
+		_detail_family_layer.apply_visible_instance_fraction(_detail_budget_apply_fraction)
+		_detail_budget_last_apply_ms = float(Time.get_ticks_usec() - family_t0) / 1000.0
+		_detail_budget_apply_ms_total += _detail_budget_last_apply_ms
+		_detail_budget_apply_count += 1
+		_detail_budget_applied_fraction = _detail_budget_apply_fraction
+		_detail_budget_apply_active = false
+		_detail_budget_apply_cursor = 0
+		return
+	var layer_budget := _detail_layers.size() if force_complete else \
+		maxi(1, detail_scatter_refresh_layers_per_frame)
+	var applied_layers := 0
+	var started_usec := Time.get_ticks_usec()
+	while _detail_budget_apply_cursor < _detail_layers.size() and applied_layers < layer_budget:
+		var layer = _detail_layers[_detail_budget_apply_cursor]
+		_detail_budget_apply_cursor += 1
+		if layer == null or not is_instance_valid(layer) \
+				or not layer.has_method("apply_visible_instance_fraction"):
+			continue
+		layer.apply_visible_instance_fraction(_detail_budget_apply_fraction)
+		applied_layers += 1
+	var apply_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
+	_detail_budget_last_apply_ms = apply_ms
+	_detail_budget_apply_ms_total += apply_ms
+	_detail_budget_apply_count += applied_layers
+	if _detail_budget_apply_cursor >= _detail_layers.size():
+		_detail_budget_applied_fraction = _detail_budget_apply_fraction
+		_detail_budget_apply_active = false
+		_detail_budget_apply_cursor = 0
+
+
+func _apply_detail_global_budget(force_complete: bool = false, allow_apply: bool = true) -> void:
 	if _detail_layers.is_empty():
 		_last_detail_budget_report = {"total_instances": 0, "budget": _detail_total_instance_budget(), "visible_fraction": 1.0}
+		_detail_budget_target_fraction = 1.0
+		_detail_budget_applied_fraction = 1.0
+		_detail_budget_apply_active = false
+		_detail_budget_apply_cursor = 0
+		_detail_budget_cached_total = 0
+		_detail_budget_total_dirty = false
 		return
-	var total := 0
-	for layer in _detail_layers:
-		if layer != null and layer.has_method("instance_count"):
-			total += int(layer.instance_count())
+	if force_complete:
+		_detail_budget_total_dirty = true
+	if _detail_budget_total_dirty:
+		var scan_t0 := Time.get_ticks_usec()
+		var scanned_total := 0
+		if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
+				and is_instance_valid(_detail_family_layer):
+			scanned_total = int(_detail_family_layer.active_instance_count())
+		else:
+			for layer in _detail_layers:
+				if layer != null and layer.has_method("active_instance_count"):
+					scanned_total += int(layer.active_instance_count())
+				elif layer != null and layer.has_method("instance_count"):
+					scanned_total += int(layer.instance_count())
+		_detail_budget_cached_total = scanned_total
+		_detail_budget_total_dirty = false
+		_detail_budget_total_scan_count += 1
+		_detail_budget_last_scan_ms = float(Time.get_ticks_usec() - scan_t0) / 1000.0
+	else:
+		_detail_budget_last_scan_ms = 0.0
+	var total := _detail_budget_cached_total
 	var budget := _detail_total_instance_budget()
 	var fraction := 1.0
 	if budget > 0 and total > budget:
 		fraction = float(budget) / float(total)
-	for layer in _detail_layers:
-		if layer != null and layer.has_method("apply_visible_instance_fraction"):
-			layer.apply_visible_instance_fraction(fraction)
+	_detail_budget_target_fraction = fraction
+	if force_complete:
+		_begin_detail_budget_apply(fraction)
+		_drain_detail_budget_apply(true)
+	elif not _detail_budget_apply_active and _detail_budget_fraction_needs_apply(fraction):
+		_begin_detail_budget_apply(fraction)
+	elif not _detail_budget_apply_active:
+		_detail_budget_apply_skip_count += 1
+	if allow_apply and _detail_budget_apply_active:
+		_drain_detail_budget_apply(false)
 	_last_detail_budget_report = {
 		"total_instances": total,
 		"budget": budget,
 		"visible_fraction": fraction,
+		"applied_visible_fraction": _detail_budget_applied_fraction,
+		"budget_apply_fraction": _detail_budget_apply_fraction,
+		"budget_apply_active": _detail_budget_apply_active,
+		"budget_apply_cursor": _detail_budget_apply_cursor,
+		"budget_apply_count": _detail_budget_apply_count,
+		"budget_apply_skip_count": _detail_budget_apply_skip_count,
+		"budget_apply_last_ms": _detail_budget_last_apply_ms,
+		"budget_apply_ms_total": _detail_budget_apply_ms_total,
+		"budget_total_scan_count": _detail_budget_total_scan_count,
+		"budget_total_scan_ms": _detail_budget_last_scan_ms,
+		"budget_total_dirty": _detail_budget_total_dirty,
 		"layer_count": _detail_layers.size(),
 	}
 	if detail_scatter_rebuild_log_enabled and budget > 0 and total > budget:
@@ -1066,6 +1586,10 @@ func _apply_detail_global_budget() -> void:
 
 func detail_scatter_budget_report() -> Dictionary:
 	return _last_detail_budget_report.duplicate(true)
+
+
+func _mark_detail_budget_total_dirty() -> void:
+	_detail_budget_total_dirty = true
 
 
 func _log_detail_scatter_rebuild_summary(reason: String) -> void:
@@ -1142,6 +1666,10 @@ func _using_default_layers() -> bool:
 
 # 销毁旧散布层并按当前 profile 列表重建。
 func _spawn_detail_layers() -> void:
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
+		_detail_family_layer.queue_free()
+	_detail_family_layer = null
+	_detail_family_dirty_chunks.clear()
 	for layer in _detail_layers:
 		if is_instance_valid(layer):
 			layer.queue_free()
@@ -1154,8 +1682,32 @@ func _spawn_detail_layers() -> void:
 	_detail_refresh_indices = PackedInt32Array()
 	_scatter_pending_cells = PackedInt32Array()
 	_scatter_pending_seen.clear()
+	_scatter_requeue_cells.clear()
 	_scatter_inflight.clear()
+	_scatter_cell_family_masks.clear()
+	_scatter_cell_profile_masks.clear()
+	_scatter_cell_generations.clear()
+	_detail_deferred_chunks.clear()
+	_detail_deferred_profile_masks.clear()
+	_detail_offscreen_deferred_cells = 0
+	_detail_coalesced_cells = 0
+	_detail_stale_generation_drops = 0
+	_detail_evicted_superchunks = 0
+	_detail_next_resident_sweep_msec = 0
 	_drain_credit_ms = 0.0
+	_detail_budget_target_fraction = 1.0
+	_detail_budget_applied_fraction = -1.0
+	_detail_budget_apply_fraction = 1.0
+	_detail_budget_apply_cursor = 0
+	_detail_budget_apply_active = false
+	_detail_budget_apply_count = 0
+	_detail_budget_apply_skip_count = 0
+	_detail_budget_apply_ms_total = 0.0
+	_detail_budget_last_apply_ms = 0.0
+	_detail_budget_cached_total = 0
+	_detail_budget_total_dirty = true
+	_detail_budget_total_scan_count = 0
+	_detail_budget_last_scan_ms = 0.0
 	var profiles := _detail_profiles()
 	var veg_tier := _mobile_quality_tier_from_define(_mobile_quality_tier_define)
 	for i in range(profiles.size()):
@@ -1164,6 +1716,8 @@ func _spawn_detail_layers() -> void:
 		layer.name = _detail_layer_name(prof, i)
 		layer.profile = prof
 		layer.set_mobile_quality_tier(veg_tier)
+		if layer.has_method("set_defer_initial_rebuild"):
+			layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
 		if layer.has_method("set_chunked_multimesh_enabled"):
 			layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
 		layer.set_world_ext(_world_ext)
@@ -1183,8 +1737,13 @@ func _spawn_detail_layers() -> void:
 			if layer.has_method("set_tod_sun_dir"):
 				layer.set_tod_sun_dir(_tod_sun_dir)
 		layer.set_camera_zoom(_camera_zoom)
+		if _camera_view_initialized and layer.has_method("set_camera_view"):
+			layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
 		layer.set_lod_debug_view(terrain_surface_debug_view == 6)
 		_detail_layers.append(layer)
+	_detail_family_layer = VegetationFamilyLayerScript.new()
+	_detail_family_layer.name = "VegetationFamilyLayer"
+	add_child(_detail_family_layer)
 
 
 func _detail_layer_name(prof: Resource, i: int) -> String:
@@ -1388,6 +1947,7 @@ func set_season_phase(phase: float) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_season_phase(_season_phase)
 	)
+	_sync_family_materials_from_sources()
 
 func set_climate_anomaly(v: float) -> void:
 	_climate_anomaly = v
@@ -1421,6 +1981,7 @@ func set_day_phase(v: float) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_phase(_day_phase)
 	)
+	_sync_family_materials_from_sources()
 
 
 func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
@@ -1440,6 +2001,7 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 		if layer.has_method("set_tod_debug_sun_position"):
 			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 	)
+	_sync_family_materials_from_sources()
 
 
 func set_tod_debug_sun_height_scale(v: float) -> void:
@@ -1456,6 +2018,7 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 		if layer.has_method("set_tod_debug_sun_height_scale"):
 			layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 	)
+	_sync_family_materials_from_sources()
 
 # ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
 #   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
@@ -1471,6 +2034,13 @@ func set_visual_quality(q: int) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_visual_quality(visual_quality)
 	)
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) and _map != null:
+		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
+		if detail_scatter_family_renderer_enabled and _camera_view_initialized:
+			_queue_missing_prefetch_detail_chunks()
+			_reactivate_deferred_detail_chunks()
+	# 画质切换沿用运行期分层下发，避免设置变化再次制造全层同步尖峰。
+	_mark_detail_budget_total_dirty()
 	_apply_detail_global_budget()
 
 
@@ -1492,6 +2062,121 @@ func set_camera_zoom(value: float) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_camera_zoom(_camera_zoom)
 	)
+	_mark_detail_budget_total_dirty()
+
+
+func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> void:
+	var t0_us := Time.get_ticks_usec()
+	_camera_world_rect = world_rect
+	_camera_world_center = center
+	_camera_view_initialized = world_rect.size.x > 0.0 and world_rect.size.y > 0.0
+	_camera_zoom = clampf(zoom_value, 0.01, 16.0)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_camera_view"):
+			layer.set_camera_view(world_rect, center, _camera_zoom)
+	)
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
+		_detail_family_layer.set_camera_view(world_rect, center, _camera_zoom)
+	if detail_scatter_family_renderer_enabled:
+		_queue_missing_prefetch_detail_chunks()
+	else:
+		_detail_render_chunk_count = 0
+		_detail_prefetch_chunk_count = 0
+	if not detail_scatter_family_renderer_enabled and not _detail_layers.is_empty():
+		var probe = _detail_layers[0]
+		if probe != null and is_instance_valid(probe) and probe.has_method("get_scatter_diagnostics"):
+			var d: Dictionary = probe.get_scatter_diagnostics()
+			_detail_render_chunk_count = int(d.get("visible_chunks", 0))
+			_detail_prefetch_chunk_count = int(d.get("prefetch_chunks", 0))
+	_reactivate_deferred_detail_chunks()
+	_mark_detail_budget_total_dirty()
+	_detail_visibility_last_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+
+
+func _queue_missing_prefetch_detail_chunks() -> void:
+	if not detail_scatter_family_renderer_enabled or _detail_layers.is_empty() or _map == null:
+		return
+	var probe = _detail_layers[0]
+	if probe == null or not is_instance_valid(probe) \
+			or not probe.has_method("detail_prefetch_chunk_plan"):
+		return
+	var plan: Array = probe.detail_prefetch_chunk_plan()
+	plan.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_cells: PackedInt32Array = a.get("cell_indices", PackedInt32Array())
+		var b_cells: PackedInt32Array = b.get("cell_indices", PackedInt32Array())
+		var a_pos := _detail_chunk_center_from_cells(a_cells)
+		var b_pos := _detail_chunk_center_from_cells(b_cells)
+		return a_pos.distance_squared_to(_camera_world_center) \
+			< b_pos.distance_squared_to(_camera_world_center)
+	)
+	_detail_prefetch_chunk_count = plan.size()
+	_detail_render_chunk_count = 0
+	for chunk in plan:
+		var chunk_id := int(chunk.get("chunk_id", -1))
+		if chunk_id < 0:
+			continue
+		if probe.has_method("detail_chunk_is_render_visible") \
+				and bool(probe.detail_chunk_is_render_visible(chunk_id)):
+			_detail_render_chunk_count += 1
+		var resident := true
+		for layer in _detail_layers:
+			if layer == null or not is_instance_valid(layer) \
+					or not layer.has_method("detail_chunk_has_resident_cache") \
+					or not bool(layer.detail_chunk_has_resident_cache(chunk_id)):
+				resident = false
+				break
+		if not resident:
+			_detail_deferred_chunks[chunk_id] = _detail_all_family_mask()
+			_detail_deferred_profile_masks[chunk_id] = (1 << _detail_layers.size()) - 1
+
+
+func _detail_chunk_center_from_cells(cells: PackedInt32Array) -> Vector2:
+	if _map == null or cells.is_empty():
+		return Vector2.ZERO
+	var sum := Vector2.ZERO
+	var count := 0
+	for raw_idx in cells:
+		var idx := int(raw_idx)
+		if idx < 0 or idx >= _map.cell_pos_x_arr.size() or idx >= _map.cell_pos_y_arr.size():
+			continue
+		sum += Vector2(_map.cell_pos_x_arr[idx], _map.cell_pos_y_arr[idx]) * hex_size
+		count += 1
+	return sum / float(count) if count > 0 else Vector2.ZERO
+
+
+func _reactivate_deferred_detail_chunks() -> void:
+	if _detail_deferred_chunks.is_empty() or _detail_layers.is_empty():
+		return
+	var probe = _detail_layers[0]
+	if probe == null or not is_instance_valid(probe) \
+			or not probe.has_method("detail_chunk_is_in_prefetch") \
+			or not probe.has_method("detail_chunk_cells"):
+		return
+	var resumed := PackedInt32Array()
+	for raw_chunk_id in _detail_deferred_chunks.keys():
+		var chunk_id := int(raw_chunk_id)
+		if not bool(probe.detail_chunk_is_in_prefetch(chunk_id)):
+			continue
+		var family_mask := int(_detail_deferred_chunks[raw_chunk_id])
+		var profile_mask := int(_detail_deferred_profile_masks.get(
+			raw_chunk_id, (1 << _detail_layers.size()) - 1))
+		var cells: PackedInt32Array = probe.detail_chunk_cells(chunk_id)
+		for raw_idx in cells:
+			var ci := int(raw_idx)
+			_scatter_cell_family_masks[ci] = int(_scatter_cell_family_masks.get(ci, 0)) | family_mask
+			_scatter_cell_profile_masks[ci] = int(
+				_scatter_cell_profile_masks.get(ci, 0)) | profile_mask
+			if _scatter_inflight.has(ci):
+				continue
+			_scatter_inflight[ci] = true
+			resumed.append(ci)
+		_detail_deferred_chunks.erase(raw_chunk_id)
+		_detail_deferred_profile_masks.erase(raw_chunk_id)
+	if resumed.is_empty():
+		return
+	_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(resumed))
+	if _detail_refresh_queue.is_empty():
+		_start_next_detail_refresh_batch()
 
 
 func _push_overlay_edge_transition_data() -> void:
@@ -1536,6 +2221,7 @@ func _push_terrain_horizon_uniforms() -> void:
 		layer.set_terrain_gi_inputs(build_gi_horizon_lut(terrain_horizon_max_angle),
 			gi_ao_strength, gi_ao_floor, gi_bent_strength, gi_normal_floor)
 	)
+	_sync_family_materials_from_sources()
 
 
 # [terrain-gi 2026-07-31] 4-bit 量化角的解码查表。shader 里 h_n = n/15·max_angle 只有 16 个
@@ -1681,6 +2367,8 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 			"wrap_period_x": world.wrap_period_x,
 			"steps": int(params.get("steps", 128)),
 			"step_px": float(params.get("step_px", 8.0)),
+			"step_growth": float(params.get("step_growth", 0.35)),
+			"lowpass_radius": int(params.get("lowpass_radius", 1)),
 			"max_horizon_angle": float(params.get("max_horizon_angle", 1.309)),
 			"bias": float(params.get("bias", 0.004)),
 			"height_world_scale": float(params.get("height_world_scale", 176.0)),
@@ -1849,6 +2537,8 @@ func _start_terrain_horizon_bake(world: WorldData, params: Dictionary) -> void:
 	mat.set_shader_parameter("tex_dims", Vector2(size))
 	mat.set_shader_parameter("steps", int(params.get("steps", 128)))
 	mat.set_shader_parameter("step_px", float(params.get("step_px", 8.0)))
+	mat.set_shader_parameter("step_growth", float(params.get("step_growth", 0.35)))
+	mat.set_shader_parameter("lowpass_radius", int(params.get("lowpass_radius", 1)))
 	mat.set_shader_parameter("max_horizon_angle", float(params.get("max_horizon_angle", 1.309)))
 	mat.set_shader_parameter("bias", float(params.get("bias", 0.004)))
 	mat.set_shader_parameter("height_world_scale", float(params.get("height_world_scale", 176.0)))
@@ -2027,6 +2717,7 @@ func set_day_night_enabled(v: bool) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_night_enabled(day_night_enabled)
 	)
+	_sync_family_materials_from_sources()
 
 func set_water_effect_enabled(v: bool) -> void:
 	water_effect_enabled = v
@@ -2133,6 +2824,7 @@ func apply_tod(profile: TODProfile) -> void:
 		if layer.has_method("set_tod_sun_dir"):
 			layer.set_tod_sun_dir(_tod_sun_dir)
 	)
+	_sync_family_materials_from_sources()
 
 func set_water_sparkle_enabled(v: bool) -> void:
 	water_sparkle_enabled = v
@@ -2486,6 +3178,7 @@ func _rebuild() -> void:
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.clear()
 		)
+		_mark_detail_budget_total_dirty()
 		return
 
 	_world_quad.mesh = _build_world_quad_mesh(_world.world_bounds, _wrap_period_x())
@@ -2494,11 +3187,23 @@ func _rebuild() -> void:
 		set_world_ext(_map_baker._world_ext)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_world_ext(_world_ext)
+		if layer.has_method("set_defer_initial_rebuild"):
+			layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
 		if layer.has_method("set_chunked_multimesh_enabled"):
 			layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
 		layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
+		if _camera_view_initialized and layer.has_method("set_camera_view"):
+			layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
 	)
-	_apply_detail_global_budget()
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
+		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
+		if _camera_view_initialized:
+			_detail_family_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
+	if detail_scatter_family_renderer_enabled and _camera_view_initialized:
+		_queue_missing_prefetch_detail_chunks()
+		_reactivate_deferred_detail_chunks()
+	# 世界重建属于加载边界，可一次性完成预算同步；运行期 succession 则按层切片。
+	_apply_detail_global_budget(true)
 	_log_detail_scatter_rebuild_summary("renderer_rebuild")
 	if _shader_mat == null:
 		return
@@ -2649,6 +3354,7 @@ func _apply_uniforms() -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_world_material_inputs(_world, bounds, _indirect_ready)
 	)
+	_sync_family_materials_from_sources()
 
 	sm.set_shader_parameter("world_origin", bounds.position)
 	sm.set_shader_parameter("world_size", bounds.size)

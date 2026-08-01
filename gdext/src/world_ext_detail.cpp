@@ -1086,4 +1086,43 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
     return out;
 }
 
+godot::Dictionary DCWorldExt::encode_detail_scatter_family_cells(godot::Dictionary knobs) {
+    using godot::Array;
+    using godot::Dictionary;
+    using godot::String;
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    Dictionary out;
+    Array requests = knobs.get("requests", Array());
+    Array payloads;
+    payloads.resize(requests.size());
+    int success_count = 0;
+    int fallback_count = 0;
+    int total_instances = 0;
+    for (int i = 0; i < requests.size(); ++i) {
+        Dictionary request = requests[i];
+        Dictionary encoded = encode_detail_scatter_delta(request);
+        encoded["family"] = request.get("family", 0);
+        encoded["style_id"] = request.get("style_id", i);
+        encoded["request_index"] = i;
+        if (bool(encoded.get("fallback", true))) {
+            ++fallback_count;
+        } else {
+            ++success_count;
+            total_instances += int(encoded.get("instance_count", 0));
+        }
+        payloads[i] = encoded;
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+    out["fallback"] = requests.size() > 0 && success_count == 0;
+    out["path"] = String("gdext_family_cells");
+    out["payloads"] = payloads;
+    out["request_count"] = requests.size();
+    out["success_count"] = success_count;
+    out["fallback_count"] = fallback_count;
+    out["instance_count"] = total_instances;
+    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    return out;
+}
+
 } // namespace pk

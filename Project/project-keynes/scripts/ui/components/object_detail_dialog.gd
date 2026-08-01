@@ -57,6 +57,8 @@ func show_details(payload: Dictionary) -> void:
 			_build_good_details(row)
 		"resource":
 			_build_resource_details(row)
+		"family":
+			_build_family_details(row)
 	var tax: Dictionary = payload.get("tax", {})
 	if bool(tax.get("available", false)):
 		_build_tax_section(tax)
@@ -263,6 +265,24 @@ func _build_resource_details(row: Dictionary) -> void:
 			else "本地无可开采建筑", "accent": UITokens.GOOD if bool(row.get("extractable", false)) \
 			else UITokens.TEXT_MUTED},
 	])
+
+
+func _build_family_details(row: Dictionary) -> void:
+	_add_fact_grid([
+		{"label": "家族人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
+		{"label": "重要人物", "value": "%d 位" % int(row.get("notable_people", 0)), "accent": UITokens.ACCENT},
+		{"label": "家族产业", "value": "%s 栋" % String(row.get("owned_buildings", "0")), "accent": UITokens.CLIMATE},
+		{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.RESOURCE},
+		{"label": "生产资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.RESOURCE},
+		{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.GOOD},
+		{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.TEXT_MAIN},
+		{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.TEXT_MUTED},
+	])
+	var people: Array = row.get("notable_person_rows", [])
+	if people.is_empty():
+		_add_muted_note("该家族目前没有重要人物。")
+	else:
+		_add_rows_card("主要人物", "family.house", UITokens.ACCENT, people)
 
 
 func _delta_accent(delta: String) -> Color:

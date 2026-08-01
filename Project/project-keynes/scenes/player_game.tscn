@@ -1,60 +1,97 @@
-[gd_scene format=3 uid="uid://c6x8q3wvfm8sh"]
+[gd_scene load_steps=23 format=3 uid="uid://c6x8q3wvfm8sh"]
 
-[ext_resource type="Script" path="res://scripts/game/player_game.gd" id="1_player"]
-[ext_resource type="Script" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
-[ext_resource type="Script" path="res://scripts/rendering/map_camera.gd" id="3_camera"]
-[ext_resource type="Script" path="res://scripts/geography/world_clock.gd" id="4_clock"]
-[ext_resource type="Script" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
-[ext_resource type="Script" path="res://scripts/game/world_runtime_host.gd" id="6_runtime"]
-[ext_resource type="Script" path="res://scripts/ui/game_ui_manager.gd" id="7_ui"]
-[ext_resource type="Script" path="res://scripts/game/map_interaction_controller.gd" id="8_map_input"]
-[ext_resource type="Script" path="res://scripts/game/selection_controller.gd" id="9_selection"]
-[ext_resource type="Script" path="res://scripts/game/time_controls_controller.gd" id="10_time"]
-[ext_resource type="Script" path="res://scripts/rendering/data_overlay_layer.gd" id="11_overlay"]
+[ext_resource type="Script" uid="uid://d2jlthr1nqltt" path="res://scripts/game/player_game.gd" id="1_player"]
+[ext_resource type="Script" uid="uid://cr8rfj8egdakv" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
+[ext_resource type="Script" uid="uid://cv6opgqbl5anq" path="res://scripts/rendering/map_camera.gd" id="3_camera"]
+[ext_resource type="Script" uid="uid://6x4pu0j1xdr2" path="res://scripts/geography/world_clock.gd" id="4_clock"]
+[ext_resource type="Script" uid="uid://cdia5pxf0v0uh" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
+[ext_resource type="Script" uid="uid://byvlm8cpk3u5i" path="res://scripts/game/world_runtime_host.gd" id="6_runtime"]
+[ext_resource type="Script" uid="uid://chdm47b1d80b0" path="res://scripts/ui/game_ui_manager.gd" id="7_ui"]
+[ext_resource type="Script" uid="uid://b4gxsp78rol7i" path="res://scripts/game/map_interaction_controller.gd" id="8_map_input"]
+[ext_resource type="Script" uid="uid://d0oc6ub36db5q" path="res://scripts/game/selection_controller.gd" id="9_selection"]
+[ext_resource type="Script" uid="uid://bq0d7id8sawbm" path="res://scripts/game/time_controls_controller.gd" id="10_time"]
+[ext_resource type="Script" uid="uid://doewiqfv0iv3t" path="res://scripts/rendering/data_overlay_layer.gd" id="11_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/ui/player_top_bar.tscn" id="12_top_bar"]
+[ext_resource type="PackedScene" path="res://scenes/ui/inspector_panel.tscn" id="13_inspector"]
+[ext_resource type="PackedScene" path="res://scenes/ui/demand_detail_dialog.tscn" id="14_demand_dialog"]
+[ext_resource type="PackedScene" path="res://scenes/ui/object_detail_dialog.tscn" id="15_object_dialog"]
+[ext_resource type="PackedScene" path="res://scenes/ui/perf_mini_hud.tscn" id="16_perf"]
+[ext_resource type="PackedScene" path="res://scenes/ui/map_overlay_toolbar.tscn" id="17_overlay_toolbar"]
+[ext_resource type="PackedScene" path="res://scenes/ui/country_action_bar.tscn" id="18_country_bar"]
+[ext_resource type="PackedScene" path="res://scenes/ui/map_overlay_legend.tscn" id="19_legend"]
+[ext_resource type="PackedScene" path="res://scenes/ui/country_panel.tscn" id="20_country_panel"]
+[ext_resource type="PackedScene" path="res://scenes/ui/world_loading_overlay.tscn" id="21_loading"]
+[ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="22_pause"]
 
-[node name="PlayerGame" type="Node2D"]
+[node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
 
-[node name="WorldRoot" type="Node2D" parent="."]
+[node name="WorldRoot" type="Node2D" parent="." unique_id=1950342253]
 
-[node name="HexRenderer" type="Node2D" parent="WorldRoot"]
+[node name="HexRenderer" type="Node2D" parent="WorldRoot" unique_id=1885530707]
 show_behind_parent = true
 top_level = true
 script = ExtResource("2_renderer")
 weather_strength = 0.5
+terrain_material_albedo_strength = 0.62
+terrain_material_normal_strength = 0.425
+terrain_material_roughness_strength = 0.69
+terrain_material_world_size = 256.0
 terrain_horizon_strength = 0.8
-terrain_horizon_softness = 0.52
+terrain_horizon_softness = 0.75
 terrain_horizon_max_angle = 1.5708
 terrain_horizon_cast_floor = 0.41
 
-[node name="CellHighlight" type="Node2D" parent="WorldRoot"]
+[node name="CellHighlight" type="Node2D" parent="WorldRoot" unique_id=2013937119]
 top_level = true
 z_index = 10
 script = ExtResource("5_highlight")
 
-[node name="DataOverlayLayer" type="Node2D" parent="WorldRoot"]
+[node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=2064388670]
 script = ExtResource("11_overlay")
 
-[node name="MapCamera" type="Camera2D" parent="."]
+[node name="MapCamera" type="Camera2D" parent="." unique_id=372859515]
 script = ExtResource("3_camera")
 
-[node name="WorldClock" type="Node" parent="."]
+[node name="WorldClock" type="Node" parent="." unique_id=1779671533]
 script = ExtResource("4_clock")
 debug_step_log = false
 
-[node name="RuntimeHost" type="Node" parent="."]
+[node name="RuntimeHost" type="Node" parent="." unique_id=1075796029]
 script = ExtResource("6_runtime")
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1030090401]
 script = ExtResource("7_ui")
 
-[node name="Controllers" type="Node" parent="."]
+[node name="PlayerTopBar" parent="UI" instance=ExtResource("12_top_bar")]
 
-[node name="MapInteractionController" type="Node" parent="Controllers"]
+[node name="RightPanel" parent="UI" instance=ExtResource("13_inspector")]
+
+[node name="DemandDetailDialog" parent="UI" instance=ExtResource("14_demand_dialog")]
+
+[node name="ObjectDetailDialog" parent="UI" instance=ExtResource("15_object_dialog")]
+
+[node name="PerfMiniHUD" parent="UI" instance=ExtResource("16_perf")]
+
+[node name="MapOverlayToolbar" parent="UI" instance=ExtResource("17_overlay_toolbar")]
+
+[node name="CountryActionBar" parent="UI" instance=ExtResource("18_country_bar")]
+
+[node name="MapOverlayLegend" parent="UI" instance=ExtResource("19_legend")]
+
+[node name="CountryPanel" parent="UI" instance=ExtResource("20_country_panel")]
+
+[node name="WorldLoadingOverlay" parent="UI" instance=ExtResource("21_loading")]
+
+[node name="PauseMenu" parent="UI" instance=ExtResource("22_pause")]
+
+[node name="Controllers" type="Node" parent="." unique_id=1023979025]
+
+[node name="MapInteractionController" type="Node" parent="Controllers" unique_id=1963814996]
 script = ExtResource("8_map_input")
 
-[node name="SelectionController" type="Node" parent="Controllers"]
+[node name="SelectionController" type="Node" parent="Controllers" unique_id=340411434]
 script = ExtResource("9_selection")
 
-[node name="TimeControlsController" type="Node" parent="Controllers"]
+[node name="TimeControlsController" type="Node" parent="Controllers" unique_id=2023488763]
 script = ExtResource("10_time")

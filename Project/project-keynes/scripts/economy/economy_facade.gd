@@ -31,6 +31,7 @@ var _configured: bool = false
 var _profession_display_names: Dictionary = {}
 var _ethnicity_display_names: Dictionary = {}
 var _building_display_names: Dictionary = {}
+var _need_display_names: Dictionary = {}
 
 func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
 	_world_ext = world_ext
@@ -49,6 +50,7 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 	_profession_display_names = _load_display_names(EconomyCatalogScript.PROFESSION_DIR)
 	_ethnicity_display_names = _load_display_names(EconomyCatalogScript.ETHNICITY_DIR)
 	_building_display_names = _load_display_names(EconomyCatalogScript.BUILDING_DIR)
+	_need_display_names = EconomyCatalogScript.need_display_names()
 	var result: Dictionary = _world_ext.configure_economy(
 		native_catalog, _profile.to_native_profile(), cell_count, seed)
 	_configured = bool(result.get("ok", false))
@@ -239,6 +241,171 @@ func building_cell_snapshot(cell_idx: int) -> Dictionary:
 	if snapshot.has("building_type_ids"):
 		_attach_building_display_metadata(snapshot)
 	return snapshot
+
+
+func family_cell_snapshot(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_cell_snapshot"):
+		return {"ok": false, "reason": "family_runtime_unavailable"}
+	return _world_ext.get_family_cell_snapshot(cell_idx, offset, limit)
+
+
+func family_snapshot(family_handle: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_snapshot"):
+		return {"ok": false, "reason": "family_runtime_unavailable"}
+	var snapshot: Dictionary = _world_ext.get_family_snapshot(family_handle)
+	if not bool(snapshot.get("ok", false)):
+		return snapshot
+	var profession_ids: PackedInt32Array = snapshot.get(
+		"profession_ids", PackedInt32Array())
+	var profession_names := PackedStringArray()
+	var catalog_professions: PackedStringArray = _catalog.get(
+		"profession_ids", PackedStringArray())
+	for profession_id in profession_ids:
+		profession_names.append(catalog_professions[profession_id]
+			if profession_id >= 0 and profession_id < catalog_professions.size()
+			else "")
+	snapshot["profession_stable_ids"] = profession_names
+	return snapshot
+
+
+func family_branches(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_branches"):
+		return {"ok": false, "reason": "family_runtime_unavailable"}
+	return _world_ext.get_family_branches(family_handle, offset, limit)
+
+
+func family_industries(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_industries"):
+		return {"ok": false, "reason": "family_runtime_unavailable"}
+	var snapshot: Dictionary = _world_ext.get_family_industries(
+		family_handle, offset, limit)
+	if not bool(snapshot.get("ok", false)):
+		return snapshot
+	var ids: PackedInt32Array = snapshot.get("building_type_ids", PackedInt32Array())
+	var names := PackedStringArray()
+	var catalog_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
+	for type_id in ids:
+		names.append(catalog_ids[type_id]
+			if type_id >= 0 and type_id < catalog_ids.size() else "")
+	snapshot["building_type_stable_ids"] = names
+	return snapshot
+
+
+func family_notable_people(family_handle: int, offset: int = 0,
+		limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_notable_people"):
+		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
+	var page: Dictionary = _world_ext.get_family_notable_people(
+		family_handle, offset, limit)
+	if not bool(page.get("ok", false)):
+		return page
+	var family: Dictionary = family_snapshot(family_handle)
+	_attach_notable_person_page_names(page, String(family.get("surname", "")))
+	return page
+
+
+func notable_person_snapshot(person_handle: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_notable_person_snapshot"):
+		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
+	var snapshot: Dictionary = _world_ext.get_notable_person_snapshot(person_handle)
+	if not bool(snapshot.get("ok", false)):
+		return snapshot
+	snapshot["full_name"] = _format_person_name(
+		String(snapshot.get("surname", "")),
+		String(snapshot.get("given_name", "")),
+		int(snapshot.get("name_disambiguator", 0)))
+	var profession_idx := int(snapshot.get("profession_id", -1))
+	var professions: PackedStringArray = _catalog.get(
+		"profession_ids", PackedStringArray())
+	var profession_id := professions[profession_idx] \
+		if profession_idx >= 0 and profession_idx < professions.size() else ""
+	snapshot["profession_stable_id"] = profession_id
+	snapshot["profession_display_name"] = String(
+		_profession_display_names.get(String(profession_id), String(profession_id)))
+	var building_idx := int(snapshot.get("building_type_id", -1))
+	var building_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
+	var building_id := building_ids[building_idx] \
+		if building_idx >= 0 and building_idx < building_ids.size() else ""
+	snapshot["building_type_stable_id"] = building_id
+	snapshot["building_type_display_name"] = String(
+		_building_display_names.get(String(building_id), String(building_id)))
+	return snapshot
+
+
+func notable_person_needs(person_handle: int, offset: int = 0,
+		limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_notable_person_needs"):
+		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
+	var page: Dictionary = _world_ext.get_notable_person_needs(
+		person_handle, offset, limit)
+	if not bool(page.get("ok", false)):
+		return page
+	var need_indices: PackedInt32Array = page.get("need_ids", PackedInt32Array())
+	var catalog_needs: PackedStringArray = _catalog.get("need_ids", PackedStringArray())
+	var stable_ids := PackedStringArray()
+	var display_names := PackedStringArray()
+	for need_idx in need_indices:
+		var stable_id := catalog_needs[need_idx] \
+			if need_idx >= 0 and need_idx < catalog_needs.size() else ""
+		stable_ids.append(stable_id)
+		display_names.append(String(_need_display_names.get(
+			String(stable_id), String(stable_id))))
+	page["need_stable_ids"] = stable_ids
+	page["need_display_names"] = display_names
+	return page
+
+
+func building_notable_people(building_handle: int, offset: int = 0,
+		limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_building_notable_people"):
+		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
+	var page: Dictionary = _world_ext.get_building_notable_people(
+		building_handle, offset, limit)
+	if not bool(page.get("ok", false)):
+		return page
+	var families: PackedInt64Array = page.get("family_handles", PackedInt64Array())
+	var surnames := {}
+	for family_handle in families:
+		if surnames.has(family_handle):
+			continue
+		var family: Dictionary = family_snapshot(family_handle)
+		surnames[family_handle] = String(family.get("surname", ""))
+	_attach_notable_person_page_names(page, "", surnames)
+	return page
+
+
+func _attach_notable_person_page_names(page: Dictionary, surname: String,
+		surnames_by_family: Dictionary = {}) -> void:
+	var given_indices: PackedInt32Array = page.get(
+		"given_name_indices", PackedInt32Array())
+	var disambiguators: PackedInt32Array = page.get(
+		"name_disambiguators", PackedInt32Array())
+	var families: PackedInt64Array = page.get("family_handles", PackedInt64Array())
+	var given_catalog: PackedStringArray = _catalog.get(
+		"person_given_name_text", PackedStringArray())
+	var given_names := PackedStringArray()
+	var full_names := PackedStringArray()
+	for i in given_indices.size():
+		var given_idx := int(given_indices[i])
+		var given := given_catalog[given_idx] \
+			if given_idx >= 0 and given_idx < given_catalog.size() else ""
+		var row_surname := surname
+		if not surnames_by_family.is_empty() and i < families.size():
+			row_surname = String(surnames_by_family.get(families[i], ""))
+		var disambiguator := int(disambiguators[i]) \
+			if i < disambiguators.size() else 0
+		given_names.append(given)
+		full_names.append(_format_person_name(row_surname, given, disambiguator))
+	page["given_names"] = given_names
+	page["full_names"] = full_names
+
+
+func _format_person_name(surname: String, given_name: String,
+		disambiguator: int) -> String:
+	var base := surname + given_name
+	return base if disambiguator <= 0 else "%s·%d" % [base, disambiguator + 1]
 
 func _attach_building_display_metadata(snapshot: Dictionary) -> void:
 	var type_ids: PackedStringArray = snapshot.get("building_type_ids", PackedStringArray())

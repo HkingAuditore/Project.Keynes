@@ -58,6 +58,16 @@ func _run() -> void:
 		return
 	_expect("starter population begins at exactly 20",
 		int(economy.population_cell_snapshot(start_cell).get("population", 0)) == 20)
+	var opening_families: Dictionary = economy.family_cell_snapshot(start_cell, 0, 64)
+	var opening_family_handles: PackedInt64Array = opening_families.get(
+		"family_handles", PackedInt64Array())
+	_expect("starter capital begins with one founder family",
+		opening_family_handles.size() == 1)
+	if opening_family_handles.size() == 1:
+		var opening_people: Dictionary = economy.family_notable_people(
+			int(opening_family_handles[0]), 0, 64)
+		_expect("starter capital begins with one notable founder",
+			int(opening_people.get("total", 0)) == 1)
 
 	var soak_days := _configured_soak_days()
 	var all_commits_conserved := true

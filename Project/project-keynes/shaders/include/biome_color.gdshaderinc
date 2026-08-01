@@ -156,27 +156,27 @@ vec3 hypsometric_tint(float elev, bool is_water) {
 
 vec3 biome_hue_modulate(vec3 base, int biome) {
 	// 少一点统一绿，多一点橄榄、金黄、冷青和岩灰。
-	if (biome == B_FOREST)    return base * vec3(0.70, 1.00, 0.64);
-	if (biome == B_GRASSLAND) return base * vec3(0.92, 1.08, 0.72);
+	if (biome == B_FOREST)    return base * vec3(0.74, 0.96, 0.68);
+	if (biome == B_GRASSLAND) return base * vec3(0.95, 1.02, 0.78);
 	if (biome == B_DESERT)    return base * vec3(1.30, 0.96, 0.58);
 	if (biome == B_TUNDRA)    return base * vec3(0.88, 0.96, 1.05);
 	if (biome == B_SNOW)      return base * vec3(0.88, 0.92, 0.98);
 	if (biome == B_MOUNTAIN)  return base * vec3(1.00, 0.96, 0.96);
 	if (biome == B_HILL)      return base * vec3(1.06, 1.00, 0.92);
-	if (biome == B_SWAMP)     return base * vec3(0.60, 0.88, 0.70);
+	if (biome == B_SWAMP)     return base * vec3(0.64, 0.86, 0.72);
 	// Phase 10：Whittaker 4
 	// JUNGLE：极深饱和绿（雨林郁闭）
-	if (biome == B_JUNGLE)    return base * vec3(0.48, 0.98, 0.58);
+	if (biome == B_JUNGLE)    return base * vec3(0.55, 0.93, 0.64);
 	if (biome == B_SAVANNA)   return base * vec3(1.12, 1.04, 0.60);
-	if (biome == B_TAIGA)     return base * vec3(0.60, 0.94, 0.80);
+	if (biome == B_TAIGA)     return base * vec3(0.64, 0.91, 0.81);
 	if (biome == B_STEPPE)    return base * vec3(1.00, 1.06, 0.76);
 	// Phase 11
 	// SHRUBLAND：灰绿带土黄（地中海干性灌丛）
 	if (biome == B_SHRUBLAND) return base * vec3(1.04, 0.98, 0.82);
-	if (biome == B_MANGROVE)  return base * vec3(0.58, 0.92, 0.76);
+	if (biome == B_MANGROVE)  return base * vec3(0.63, 0.89, 0.77);
 	if (biome == B_GLACIER)   return base * vec3(0.94, 0.99, 1.04);
-	if (biome == B_DELTA)     return base * vec3(0.82, 1.02, 0.72);
-	if (biome == B_OASIS)     return base * vec3(0.62, 1.08, 0.62);
+	if (biome == B_DELTA)     return base * vec3(0.85, 0.98, 0.76);
+	if (biome == B_OASIS)     return base * vec3(0.69, 1.01, 0.69);
 	if (biome == B_SALT_FLAT) return base * vec3(1.16, 1.14, 0.94);
 	if (biome == B_BADLANDS)  return base * vec3(1.26, 0.84, 0.58);
 	// terrain-overhaul 新增地形配色
@@ -184,7 +184,7 @@ vec3 biome_hue_modulate(vec3 base, int biome) {
 	if (biome == B_COLD_DESERT) return base * vec3(1.10, 1.00, 0.84);
 	if (biome == B_CHAPARRAL)   return base * vec3(1.04, 1.02, 0.76);
 	if (biome == B_MOOR)        return base * vec3(0.84, 0.94, 0.72);
-	if (biome == B_FLOODPLAIN)  return base * vec3(0.80, 1.03, 0.70);
+	if (biome == B_FLOODPLAIN)  return base * vec3(0.84, 0.99, 0.75);
 	if (biome == B_MESA)        return base * vec3(1.28, 0.90, 0.62);
 	return base;
 }

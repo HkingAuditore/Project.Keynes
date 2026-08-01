@@ -295,6 +295,24 @@ public:
         const godot::PackedInt32Array &trade_move_cost_lut,
         int64_t generation = 0);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_family_cell_snapshot(int cell_idx, int offset = 0,
+                                                int limit = 64) const;
+    godot::Dictionary get_family_snapshot(int64_t family_handle) const;
+    godot::Dictionary get_family_branches(int64_t family_handle, int offset = 0,
+                                          int limit = 64) const;
+    godot::Dictionary get_family_industries(int64_t family_handle,
+                                            int offset = 0,
+                                            int limit = 64) const;
+    godot::Dictionary get_family_notable_people(int64_t family_handle,
+                                                int offset = 0,
+                                                int limit = 64) const;
+    godot::Dictionary get_notable_person_snapshot(int64_t person_handle) const;
+    godot::Dictionary get_notable_person_needs(int64_t person_handle,
+                                               int offset = 0,
+                                               int limit = 32) const;
+    godot::Dictionary get_building_notable_people(int64_t building_handle,
+                                                  int offset = 0,
+                                                  int limit = 64) const;
     godot::Dictionary run_economy_fixed_math_probe(const godot::Dictionary &vectors) const;
     godot::Dictionary run_economy_production_climate_math_probe(
         const godot::Dictionary &vectors) const;
@@ -1341,6 +1359,10 @@ public:
     // Dirty-cell variant for succession events. It consumes the same flat per-cell
     // arrays as encode_detail_scatter, but callers pass only the current event batch.
     godot::Dictionary encode_detail_scatter_delta(godot::Dictionary knobs);
+    // Multi-profile/family bridge: one Godot→native call accepts an Array of delta
+    // requests and returns tagged payloads. Requests share PackedArray references;
+    // no per-instance Variant marshalling is introduced.
+    godot::Dictionary encode_detail_scatter_family_cells(godot::Dictionary knobs);
 
     // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
     // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。

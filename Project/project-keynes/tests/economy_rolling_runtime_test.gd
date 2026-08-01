@@ -101,8 +101,8 @@ func _run() -> void:
 		not bool(fiscal.get("tariffs_active", true)))
 	var saved := _save(runtime)
 	var saved_country := _save_country(runtime)
-	_expect("PKEC v24 saves at a daily committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 24)
+	_expect("PKEC v27 saves at a daily committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 27)
 	var restored := _new_ext(compiled)
 	_expect("restore country matches", CountryTestHelper.configure_all_technologies(
 		restored, catalog, CELL_COUNT, 92015))

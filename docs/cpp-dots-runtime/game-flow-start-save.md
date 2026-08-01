@@ -32,7 +32,8 @@ The formal path has one fixed order:
    `country.foreign.001` etc.; every country owns exactly its start cell and all
    remaining land stays unowned.
 5. Build one aggregated production settlement packet with
-   `StarterSettlementBootstrap`.
+   `StarterSettlementBootstrap`, including each capital's founder family and
+   notable founder declarations.
 6. Bootstrap PKEC and run its initial conservation checks.
 7. Register `country_daily` before `economy_daily`, then register the remaining
    daily systems and build scheduler topology.
@@ -73,6 +74,19 @@ merchant post, and one matching gold/silver work site. Market stocks and cohort
 funds cover the configured 60-day survival bridge. All settlements are compiled
 into one PKEC bootstrap packet. PKCN/PKEC and the economy
 ledger remain the authorities; UI code does not own this state.
+Each capital also starts with exactly one founder family: the two foragers who
+operate its gathering ground become conserved family members, that building unit
+becomes the family's first industry, and one of those occupied owner jobs becomes
+the family's named notable founder. This explicit opening exception is created
+inside native bootstrap, preserves total population, money, goods, and building
+count, and is immediately queryable before the first daily settlement.
+The v3 `founder_family_*` columns remain the preferred explicit contract. Native
+bootstrap also derives the same declaration from `forced_named_cells` plus an
+actual `gathering_ground` when those columns are absent, so a long-lived editor
+emitting the older v2 packet cannot silently create a capital without founders.
+For already-running early sessions, `FAMILY_COMMIT` repairs a still-empty forced
+capital during days 0..30 once its occupied gathering-ground owner posts exist;
+the normal `PERSON_COMMIT` then promotes and binds the representative.
 The packet marks every opening-country start cell as `forced_named_cells`.
 Native `SettlementStore` therefore assigns each capital a deterministic name
 even though 20 people remain below the ordinary rural naming threshold. This is
@@ -108,8 +122,8 @@ provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
 PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, then player session/view/preview.
-PKCM v1 saves Climate modifiers. PKCN v4 embeds Country modifiers, research and tax policy; PKEC v24
-embeds Economy modifiers, BuildingIdentityStore, and production-climate state; PKGP v1 saves Gameplay
+PKCM v1 saves Climate modifiers. PKCN v4 embeds Country modifiers, research and tax policy; PKEC v27
+embeds Economy modifiers, BuildingIdentityStore, notable-family authority, and production-climate state; PKGP v1 saves Gameplay
 identity/base SoA and modifiers. Legacy PKCN/PKEC technology-tree saves are
 rejected with `legacy_technology_tree_save_unsupported`.
 
@@ -142,8 +156,8 @@ Restore order is strict:
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
 5. Restore PKCN v4, including Country modifiers, research state and tax policy.
-6. Restore PKEC v24 after trade topology has been configured, including Economy
-   modifiers, building identities, and production-climate state.
+6. Restore PKEC v27 after trade topology has been configured, including Economy
+   modifiers, building identities, notable families, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
 8. Restore journal and player/session context.

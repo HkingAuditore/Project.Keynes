@@ -111,13 +111,17 @@ func configure(
 ) -> void:
 	if _camera != null and _camera.zoom_changed.is_connected(_on_camera_zoom_changed):
 		_camera.zoom_changed.disconnect(_on_camera_zoom_changed)
+	if _camera != null and _camera.view_changed.is_connected(_on_camera_view_changed):
+		_camera.view_changed.disconnect(_on_camera_view_changed)
 	_renderer = renderer
 	_camera = camera
 	_world_clock = world_clock
 	_map_overlay_layer = map_overlay_layer
 	if _camera != null:
 		_camera.zoom_changed.connect(_on_camera_zoom_changed)
+		_camera.view_changed.connect(_on_camera_view_changed)
 		_on_camera_zoom_changed(_camera.zoom.x)
+		_on_camera_view_changed(_camera.current_world_view_rect(), _camera.position, _camera.zoom.x)
 	set_process(false)
 	_init_tod_profile()
 
@@ -125,6 +129,11 @@ func configure(
 func _on_camera_zoom_changed(value: float) -> void:
 	if _renderer != null:
 		_renderer.set_camera_zoom(value)
+
+
+func _on_camera_view_changed(world_rect: Rect2, center: Vector2, zoom_value: float) -> void:
+	if _renderer != null and _renderer.has_method("set_camera_view"):
+		_renderer.set_camera_view(world_rect, center, zoom_value)
 
 
 func configure_session(request: Dictionary) -> Dictionary:
@@ -309,7 +318,11 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	if _renderer != null and _generator.has_method("has_pending_detail_scatter_refresh") \
 			and bool(_generator.has_pending_detail_scatter_refresh()) \
 			and _renderer.has_method("queue_detail_scatter_refresh"):
-		_renderer.queue_detail_scatter_refresh(_generator.consume_pending_detail_scatter_refresh_indices())
+		if _generator.has_method("consume_pending_detail_scatter_changes") \
+				and _renderer.has_method("queue_detail_scatter_changes"):
+			_renderer.queue_detail_scatter_changes(_generator.consume_pending_detail_scatter_changes())
+		else:
+			_renderer.queue_detail_scatter_refresh(_generator.consume_pending_detail_scatter_refresh_indices())
 	var t_render_usec := Time.get_ticks_usec()
 	if _renderer != null:
 		if _renderer.has_method("set_weather_field_texture") and _world_data != null:
@@ -988,6 +1001,7 @@ func _gm_selected_snapshot(cell_idx: int) -> Dictionary:
 	var population := {}
 	var market := {}
 	var buildings := {}
+	var families := {}
 	if _generator != null:
 		var country = _generator.get_country_facade() if _generator.has_method("get_country_facade") else null
 		if country != null:
@@ -1001,6 +1015,7 @@ func _gm_selected_snapshot(cell_idx: int) -> Dictionary:
 			population = economy.population_cell_snapshot(cell_idx)
 			market = economy.market_cell_snapshot(cell_idx)
 			buildings = economy.building_cell_snapshot(cell_idx)
+			families = economy.family_cell_snapshot(cell_idx, 0, 64)
 	return {
 		"cell": {"index": cell_idx, "q": int(cell.q), "r": int(cell.r),
 			"terrain": _view_adapter.get_terrain(cell_idx) if _view_adapter != null else int(cell.terrain),
@@ -1014,6 +1029,7 @@ func _gm_selected_snapshot(cell_idx: int) -> Dictionary:
 		"population": population,
 		"market": market,
 		"buildings": buildings,
+		"families": families,
 		"resources": _gm_resource_snapshot(cell_idx),
 	}
 
@@ -1340,6 +1356,8 @@ func _publish_fast_tick_perf_sample(
 	if not perf_ready and not tile_ready and not economy_ready:
 		return {}
 	var started_usec := Time.get_ticks_usec()
+	var detail_report: Dictionary = _renderer.detail_scatter_refresh_report() \
+		if _renderer != null and _renderer.has_method("detail_scatter_refresh_report") else {}
 	var out: Dictionary = {
 		"total_ms": 0.0,
 		"perf_ms": 0.0,
@@ -1408,10 +1426,14 @@ func _publish_fast_tick_perf_sample(
 			if _renderer != null and _renderer.has_method("get_last_detail_drain_ms") else 0.0,
 		# succession 队列健康度：全链路在途 cell 数与累计入队去重跳过数。稳态下
 		# inflight 应有界（≤ 单批气候 dirty 规模），dedup_skips 应随气候提交增长。
-		"tail_vegetation_inflight": int(_renderer.detail_scatter_refresh_report().get("inflight_cells", 0)) \
-			if _renderer != null and _renderer.has_method("detail_scatter_refresh_report") else 0,
-		"tail_vegetation_dedup_skips": int(_renderer.detail_scatter_refresh_report().get("enqueue_dedup_skips", 0)) \
-			if _renderer != null and _renderer.has_method("detail_scatter_refresh_report") else 0,
+		"tail_vegetation_inflight": int(detail_report.get("inflight_cells", 0)),
+		"tail_vegetation_dedup_skips": int(detail_report.get("enqueue_dedup_skips", 0)),
+		"tail_vegetation_tasks": int(detail_report.get("frame_tasks", 0)),
+		"tail_vegetation_forced_tasks": int(detail_report.get("frame_forced_tasks", 0)),
+		"tail_vegetation_encode_ms": float(detail_report.get("encode_ms", 0.0)),
+		"tail_vegetation_cache_update_ms": float(detail_report.get("cache_update_ms", 0.0)),
+		"tail_vegetation_assemble_ms": float(detail_report.get("assemble_ms", 0.0)),
+		"tail_vegetation_upload_ms": float(detail_report.get("upload_ms", 0.0)),
 		"tail_overlay_ms": _overlay_bake_ms_accum,
 		# 帧级渲染残差探针：frame_wall = 相邻两次发布点间的平均帧墙钟（process
 		# frames 差分，多 tick 帧取平均）；engine_process/physics 为引擎监视器原始

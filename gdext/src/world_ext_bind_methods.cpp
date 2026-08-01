@@ -230,6 +230,33 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::capture_economy_trade_topology, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("get_building_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_building_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("get_family_cell_snapshot", "cell_idx",
+                                  "offset", "limit"),
+                         &DCWorldExt::get_family_cell_snapshot, DEFVAL(0),
+                         DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_family_snapshot", "family_handle"),
+                         &DCWorldExt::get_family_snapshot);
+    ClassDB::bind_method(D_METHOD("get_family_branches", "family_handle",
+                                  "offset", "limit"),
+                         &DCWorldExt::get_family_branches, DEFVAL(0), DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_family_industries", "family_handle",
+                                 "offset", "limit"),
+                         &DCWorldExt::get_family_industries, DEFVAL(0),
+                         DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_family_notable_people", "family_handle",
+                                 "offset", "limit"),
+                         &DCWorldExt::get_family_notable_people, DEFVAL(0),
+                         DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_notable_person_snapshot", "person_handle"),
+                         &DCWorldExt::get_notable_person_snapshot);
+    ClassDB::bind_method(D_METHOD("get_notable_person_needs", "person_handle",
+                                 "offset", "limit"),
+                         &DCWorldExt::get_notable_person_needs, DEFVAL(0),
+                         DEFVAL(32));
+    ClassDB::bind_method(D_METHOD("get_building_notable_people", "building_handle",
+                                 "offset", "limit"),
+                         &DCWorldExt::get_building_notable_people, DEFVAL(0),
+                         DEFVAL(64));
     ClassDB::bind_method(D_METHOD("run_economy_fixed_math_probe", "vectors"),
                          &DCWorldExt::run_economy_fixed_math_probe);
     ClassDB::bind_method(D_METHOD(
@@ -617,6 +644,9 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("encode_detail_scatter_delta", "knobs"),
         &DCWorldExt::encode_detail_scatter_delta);
+    ClassDB::bind_method(
+        D_METHOD("encode_detail_scatter_family_cells", "knobs"),
+        &DCWorldExt::encode_detail_scatter_family_cells);
     // DOTS-Total-CPP（plan/dots-total-cpp 任务 4）：ocean rasterize 一次性 hex→pixel
     ClassDB::bind_method(
         D_METHOD("run_ocean_field_rasterize", "knobs"),

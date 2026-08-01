@@ -27,6 +27,15 @@ enum SpawnDomain {
 	ANY,
 }
 
+enum RenderFamily {
+	AUTO,
+	GROUND,
+	BRUSH,
+	CANOPY,
+	HARDSCAPE,
+	AQUATIC,
+}
+
 @export var enabled: bool = true
 
 @export_group("Global Defaults")
@@ -34,6 +43,36 @@ enum SpawnDomain {
 @export_range(-16, 16, 1) var render_z_index: int = 1
 @export_range(0.0, 300.0, 0.05) var density_scale: float = 1.55
 @export_range(0.0, 3.0, 0.05) var wind_strength: float = 1.0
+
+@export_group("Render Family")
+@export_enum("Auto", "Ground", "Brush", "Canopy", "Hardscape", "Aquatic") var render_family: int = RenderFamily.AUTO
+# 0..31 由 manifest 顺序稳定分配；-1 表示使用 manifest 索引。
+@export_range(-1, 31, 1) var family_style_id: int = -1
+
+
+func resolved_render_family() -> int:
+	if render_family != RenderFamily.AUTO:
+		return render_family
+	if spawn_domain == SpawnDomain.WATER:
+		return RenderFamily.AQUATIC
+	var file_name := resource_path.get_file().to_lower()
+	if file_name.contains("peat_bog") or file_name.contains("tundra_lichen") \
+			or file_name.contains("alpine_flower"):
+		return RenderFamily.GROUND
+	if file_name.contains("fallen_log"):
+		return RenderFamily.HARDSCAPE
+	if file_name.contains("mangrove_root"):
+		return RenderFamily.BRUSH
+	match detail_kind:
+		DetailKind.GRASS, DetailKind.ALPINE_FLOWER:
+			return RenderFamily.GROUND
+		DetailKind.SHRUB, DetailKind.CACTUS, DetailKind.REED:
+			return RenderFamily.BRUSH
+		DetailKind.TREE, DetailKind.CONIFER, DetailKind.PALM, DetailKind.DEAD_SNAG:
+			return RenderFamily.CANOPY
+		DetailKind.ROCK, DetailKind.SNOW_MOUND:
+			return RenderFamily.HARDSCAPE
+	return RenderFamily.BRUSH
 
 @export_group("Camera Zoom LOD")
 # Negative values use the archetype defaults resolved by ShrubLayer.

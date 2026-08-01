@@ -12,6 +12,12 @@
 当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见
 [运行时性能优化契约（2026-07）](runtime-performance-optimization-2026-07.md)。
 
+显赫家族的原生 SoA、成员/建筑稀疏边、业主岗位约束、守恒财产归属、冷查询与 PKEC v27
+契约见[显赫家族原生运行时](./notable-family-runtime.md)。
+
+家族重要人物的稀疏 SoA、姓名、岗位/建筑追溯、已实现收入与消费需求归因、生命周期及 PKEC v27
+契约见[家族重要人物原生运行时](./notable-person-runtime.md)。
+
 本目录记录 Project.Keynes 当前运行期 C++/DOTS 架构的真实状态，面向后续开发、排障和继续迁移。这里不是历史路线图，也不是一次性验收记录；历史文档仍保留原状，本目录负责把已经落到代码里的调度、数据通信、计算链路和性能诊断规则整理成可执行参考。
 
 ## Native Modifier Runtime
@@ -92,13 +98,19 @@
     - 全局权威基线与视觉 `Texture2DArray` 的边界、预算 resolver、C++ 静态 bake、
       GPU hierarchical horizon、统一 shader 寻址、legacy/probe/tiled 回退与验收。
 
-## 可复用 Economy Skill
+## 可复用 Economy / Family Skills
 
 仓库内 Skill 位于
 [`project-keynes-economy-runtime`](../../.codex/skills/project-keynes-economy-runtime/SKILL.md)，
 将上述经济架构、数据结构、算法、调度、性能/误差契约和扩展验证流程组织为渐进披露的
 Codex 工作流。修改经济运行时文档或默认机制时，必须同步更新该 Skill 的对应 reference，
 再重新安装到 `$CODEX_HOME/skills/project-keynes-economy-runtime`。
+
+显赫家族专项 Skill 位于
+[`project-keynes-family-runtime`](../../.codex/skills/project-keynes-family-runtime/SKILL.md)，
+约束 FamilyStore、NotablePersonStore、成员/产业稀疏边、业主岗位、守恒财产、人物经济归因、
+生命周期、查询、PKEC v27 和性能验收。修改显赫家族/人物机制、姓名目录、UI 或存档时必须同时使用
+并同步该 Skill。
 
 ## 与现有文档的关系
 

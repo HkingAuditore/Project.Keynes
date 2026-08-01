@@ -24,6 +24,7 @@ extends Camera2D
 # 当用户"点按"（而非拖拽/捏合）地图时发出，参数为世界坐标。由 main.gd 连接做选格。
 signal tile_tapped(world_pos: Vector2)
 signal zoom_changed(value: float)
+signal view_changed(world_rect: Rect2, center: Vector2, zoom_value: float)
 
 @export var zoom_min: float = 0.25
 @export var zoom_max: float = 3.0
@@ -43,6 +44,8 @@ signal zoom_changed(value: float)
 @export var double_tap_zoom_factor: float = 1.8
 # 键盘缩放每次的倍率
 @export var key_zoom_step: float = 1.25
+@export_range(8.0, 512.0, 8.0) var view_change_world_threshold: float = 96.0
+@export_range(0.001, 0.10, 0.001) var view_change_zoom_ratio: float = 0.01
 
 var _world_bounds: Rect2 = Rect2()
 var _fit_floor_zoom: float = 0.0
@@ -53,6 +56,9 @@ var _horizontal_wrap_period_x: float = 0.0
 var _target_zoom: Vector2 = Vector2.ONE
 var _zoom_anchor_screen: Vector2 = Vector2.ZERO
 var _last_emitted_zoom: float = -1.0
+var _last_emitted_view_center: Vector2 = Vector2(INF, INF)
+var _last_emitted_view_size: Vector2 = Vector2.ZERO
+var _last_emitted_view_zoom: float = -1.0
 
 # ── 鼠标/单指平移与点按状态 ──
 var _pan_active: bool = false          # 是否正在用鼠标按键拖拽平移
@@ -88,6 +94,9 @@ func _ready() -> void:
 	_prev_position = position
 	set_process(true)
 	_emit_zoom_changed_if_needed()
+	if not get_viewport().size_changed.is_connected(_on_viewport_size_changed):
+		get_viewport().size_changed.connect(_on_viewport_size_changed)
+	_emit_view_changed_if_needed(true)
 
 func set_world_bounds(bounds: Rect2) -> void:
 	_world_bounds = bounds
@@ -159,6 +168,11 @@ func _process(delta: float) -> void:
 	_update_zoom(delta)
 	_update_pan_anim(delta)
 	_update_inertia(delta)
+	_emit_view_changed_if_needed()
+
+
+func _on_viewport_size_changed() -> void:
+	_emit_view_changed_if_needed(true)
 
 func _update_zoom(delta: float) -> void:
 	if zoom.is_equal_approx(_target_zoom):
@@ -397,6 +411,30 @@ func _emit_zoom_changed_if_needed() -> void:
 		return
 	_last_emitted_zoom = value
 	zoom_changed.emit(value)
+
+
+func current_world_view_rect() -> Rect2:
+	var safe_zoom := maxf(zoom.x, 0.0001)
+	var world_size := get_viewport_rect().size / safe_zoom
+	return Rect2(position - world_size * 0.5, world_size)
+
+
+func _emit_view_changed_if_needed(force: bool = false) -> void:
+	var rect := current_world_view_rect()
+	var zoom_value := zoom.x
+	var center_changed := _last_emitted_view_center.x == INF \
+		or position.distance_to(_last_emitted_view_center) >= view_change_world_threshold
+	var size_changed := _last_emitted_view_size == Vector2.ZERO \
+		or not rect.size.is_equal_approx(_last_emitted_view_size)
+	var zoom_changed_enough := _last_emitted_view_zoom < 0.0 \
+		or absf(zoom_value - _last_emitted_view_zoom) \
+			>= maxf(_last_emitted_view_zoom, 0.01) * view_change_zoom_ratio
+	if not force and not center_changed and not size_changed and not zoom_changed_enough:
+		return
+	_last_emitted_view_center = position
+	_last_emitted_view_size = rect.size
+	_last_emitted_view_zoom = zoom_value
+	view_changed.emit(rect, position, zoom_value)
 
 # ───────────────────────────── 坐标 / 工具 ─────────────────────────────
 

@@ -12,6 +12,9 @@ drift.
 
 Also load `project-keynes-tax-runtime` for tax policy, fiscal escrow, tax bases, subsidies,
 tax-aware purchase/employment/investment behavior, tariff placeholders, or PKCN/PKEC tax migration.
+Load `project-keynes-family-runtime` for notable-family identity, membership, family-owned buildings,
+owner-job constraints, profession attribution, family formation/lifecycle, surname catalogs, family
+queries/UI, or PKEC family sections.
 
 ## Ground the task
 
