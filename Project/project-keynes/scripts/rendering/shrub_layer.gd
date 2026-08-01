@@ -1310,12 +1310,14 @@ func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
 	var cy := PackedFloat32Array()
 	var suit := PackedFloat32Array()
 	var att := PackedInt32Array()
+	var accp := PackedFloat32Array()
 	var vit := PackedFloat32Array()
 	var sized := PackedFloat32Array()
 	var col_r := PackedFloat32Array()
 	var col_g := PackedFloat32Array()
 	var col_b := PackedFloat32Array()
 	var col_a := PackedFloat32Array()
+	var delta_max_per_cell: int = maxi(1, _max_per_cell())
 
 	for raw_idx in indices:
 		var idx := int(raw_idx)
@@ -1339,8 +1341,10 @@ func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
 		native_cell_indices.append(idx)
 		cx.append(center.x)
 		cy.append(center.y)
+		var quota := _cell_quota(suitability, delta_max_per_cell)
 		suit.append(suitability)
-		att.append(maxi(1, int(ceil(float(_max_per_cell()) * clampf(suitability, 0.0, 1.0)))))
+		att.append(int(quota.x))
+		accp.append(quota.y)
 		vit.append(clampf(float(state.get("vitality", 0.7)), 0.0, 1.0))
 		sized.append(_vegetation_weight(veg) * _landform_weight(lf) * _cover_weight(cover))
 		col_r.append(base.r)
@@ -1395,6 +1399,7 @@ func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
 		"center_y": cy,
 		"suitability": suit,
 		"attempts": att,
+		"accept_p": accp,
 		"vitality": vit,
 		"size_density": sized,
 		"color_r": col_r,
@@ -1600,6 +1605,7 @@ func _build_native_delta_common_knobs() -> Dictionary:
 		"veg_ideal_moist": veg_tables.get("ideal_moist", PackedFloat32Array()),
 		"veg_temp_tol": veg_tables.get("temp_tol", PackedFloat32Array()),
 		"veg_moist_tol": veg_tables.get("moist_tol", PackedFloat32Array()),
+		"veg_biomass": VegetationType.foliage_biomass_table(),
 		"hex_size": _hex_size,
 		"origin_x": _bounds.position.x,
 		"origin_y": _bounds.position.y,
@@ -1618,6 +1624,10 @@ func _build_native_delta_common_knobs() -> Dictionary:
 		"quality_density_scale": _quality_density_scale(),
 		"river_clear_threshold": cfg.river_clear_threshold,
 		"river_edge_density": cfg.river_edge_density,
+		"river_valley_boost": cfg.river_valley_boost,
+		"biomass_floor": cfg.biomass_floor,
+		"biomass_ceil": cfg.biomass_ceil,
+		"biomass_exponent": cfg.biomass_exponent,
 		"spawn_domain": _spawn_domain(),
 		"rotation_mode": _rotation_mode(),
 		"random_rotation_strength": _random_rotation_strength(),
@@ -1713,7 +1723,9 @@ func _generate_cell_instance_payload(cell, idx: int) -> Dictionary:
 	var customs: Array = []
 	if suitability <= 0.0:
 		return {"transforms": transforms, "colors": colors, "customs": customs}
-	var attempts := maxi(1, int(ceil(float(_max_per_cell()) * clampf(suitability, 0.0, 1.0))))
+	var quota := _cell_quota(suitability, maxi(1, _max_per_cell()))
+	var attempts := int(quota.x)
+	var accept_p := quota.y
 
 	var saved_cell_indices := _instance_cell_indices
 	var saved_positions := _instance_positions
@@ -1734,7 +1746,7 @@ func _generate_cell_instance_payload(cell, idx: int) -> Dictionary:
 	_instance_cells = []
 
 	for attempt in range(attempts):
-		_try_append_instance(cell, idx, key, attempt, suitability, state)
+		_try_append_instance(cell, idx, key, attempt, suitability, accept_p, state)
 	for i in range(_instance_cell_indices.size()):
 		var inst_idx := int(_instance_cell_indices[i])
 		var inst_cell = _instance_cells[i]
@@ -2832,11 +2844,14 @@ func _rebuild_instances() -> void:
 
 	var cell_attempts := PackedInt32Array()
 	cell_attempts.resize(cells.size())
+	var cell_accepts := PackedFloat32Array()
+	cell_accepts.resize(cells.size())
 	var cell_states: Array = []
 	cell_states.resize(cells.size())
 	var cell_suitabilities := PackedFloat32Array()
 	cell_suitabilities.resize(cells.size())
 	var total_attempts: int = 0
+	var max_per_cell: int = maxi(1, _max_per_cell())
 	for order in range(cells.size()):
 		var cell = cells[order]
 		if cell == null:
@@ -2849,8 +2864,10 @@ func _rebuild_instances() -> void:
 			continue
 		cell_states[order] = state
 		cell_suitabilities[order] = suitability
-		var attempts := maxi(1, int(ceil(float(_max_per_cell()) * clampf(suitability, 0.0, 1.0))))
+		var quota := _cell_quota(suitability, max_per_cell)
+		var attempts: int = int(quota.x)
 		cell_attempts[order] = attempts
+		cell_accepts[order] = quota.y
 		total_attempts += attempts
 
 	if total_attempts <= 0:
@@ -2861,7 +2878,7 @@ func _rebuild_instances() -> void:
 	# C++ 优先：把"每实例候选生成 + 噪声门 + 接受 + cap + MultiMesh buffer 组装"
 	# 整段热循环下沉 DCWorldExt.encode_detail_scatter，GDScript 仅做上面这段
 	# per-cell（N≤2400）廉价预计算。失败 / 旧 DLL 无该方法时回退到下方 GDScript 路径。
-	if _rebuild_via_native(cells, cell_states, cell_suitabilities, cell_attempts):
+	if _rebuild_via_native(cells, cell_states, cell_suitabilities, cell_attempts, cell_accepts):
 		if _last_scatter_path.is_empty():
 			_last_scatter_path = "gdext"
 		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
@@ -2879,8 +2896,9 @@ func _rebuild_instances() -> void:
 		if suitability <= 0.0:
 			continue
 		var state: Dictionary = cell_states[order]
+		var accept_p := cell_accepts[order]
 		for attempt in range(cell_attempts[order]):
-			_try_append_instance(cell, idx, key, attempt, suitability, state)
+			_try_append_instance(cell, idx, key, attempt, suitability, accept_p, state)
 
 	_apply_instance_cap()
 	_reorder_generated_instances_for_lod()
@@ -2924,7 +2942,8 @@ func _rebuild_via_native(
 		cells: Array,
 		cell_states: Array,
 		cell_suitabilities: PackedFloat32Array,
-		cell_attempts: PackedInt32Array) -> bool:
+		cell_attempts: PackedInt32Array,
+		cell_accepts: PackedFloat32Array) -> bool:
 	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter"):
 		return false
 	if _map == null:
@@ -2948,6 +2967,7 @@ func _rebuild_via_native(
 	var cy := PackedFloat32Array()
 	var suit := PackedFloat32Array()
 	var att := PackedInt32Array()
+	var accp := PackedFloat32Array()
 	var vit := PackedFloat32Array()
 	var sized := PackedFloat32Array()
 	var col_r := PackedFloat32Array()
@@ -2983,6 +3003,7 @@ func _rebuild_via_native(
 		cy.append(center.y)
 		suit.append(suitability)
 		att.append(cell_attempts[order])
+		accp.append(cell_accepts[order])
 		vit.append(clampf(float(state.get("vitality", 0.7)), 0.0, 1.0))
 		sized.append(_vegetation_weight(veg) * _landform_weight(lf) * _cover_weight(cover))
 		col_r.append(base.r)
@@ -3033,6 +3054,7 @@ func _rebuild_via_native(
 		"center_y": cy,
 		"suitability": suit,
 		"attempts": att,
+		"accept_p": accp,
 		"vitality": vit,
 		"size_density": sized,
 		"color_r": col_r,
@@ -3092,6 +3114,19 @@ func _rebuild_via_native(
 	return true
 
 
+# 每格散布配额：x = 投放次数，y = 每次的接受概率基数。
+# 期望株数 = x * y = max_per_cell * suitability，对 suitability 线性。
+#
+# 旧实现是 attempts = ceil(max_per_cell * suit) 再对每次投放以 suit 为概率接受，
+# 期望株数正比于 suitability² 而且丢掉了 max_per_cell 这一档，中低适宜度的格子
+# 因此变成纯抽签（河边季雨林的单格期望株数只有 0.05）。
+func _cell_quota(suitability: float, max_per_cell: int) -> Vector2:
+	var cap: int = maxi(1, max_per_cell)
+	var target: float = float(cap) * clampf(suitability, 0.0, 1.0)
+	var attempts: int = clampi(int(ceil(target)), 1, cap)
+	return Vector2(float(attempts), target / float(attempts))
+
+
 func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
 	var cell_is_water := _is_water_cell(cell, idx)
 	var domain := _spawn_domain()
@@ -3130,6 +3165,10 @@ func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
 	var vitality_factor := _vitality_density_factor(state)
 
 	var suitability := _vegetation_weight(veg) * landform_weight * cover_weight
+	# 绝对生物量：_vegetation_weight 只表达"这一层的形态占该植被的多少比例"
+	# （沙漠灌木 100% 是灌木形态，雨林林下只有一部分），量级必须由 biomass 承担，
+	# 否则整条链全是相对适应度，沙漠会和雨林一样密。
+	suitability *= _biomass_factor(veg)
 	suitability *= vitality_factor
 	suitability *= lerpf(0.58, 1.0, clampf(compat, 0.0, 1.0))
 	suitability *= 1.0 - clampf(stress, 0.0, 1.0) * 0.38
@@ -3140,11 +3179,33 @@ func _cell_suitability(cell, idx: int, _key: int, state: Dictionary) -> float:
 	# 阶段 C：海拔林线 + 强风折损。
 	suitability *= _elevation_modifier(arch, float(state.get("elevation", 0.4)))
 	suitability *= _wind_exposure_modifier(arch, float(state.get("wind_speed", 0.0)))
-	var cfg := _profile()
 	if river:
-		suitability *= cfg.river_edge_density
+		suitability *= _river_density_factor(state)
 	suitability *= _quality_density_scale()
 	return clampf(suitability, 0.0, 1.25)
+
+
+# 绝对生物量 → 密度乘子。曲线由 profile 的 biomass_floor / ceil / exponent 控制，
+# 让每层自己决定对生物量的敏感度：乔木层强正相关，草层几乎不敏感（草原恰恰长在
+# 树少的地方，它的选择性已经由 _grass_vegetation_weight 表达）。
+func _biomass_factor(veg: int) -> float:
+	var cfg := _profile()
+	var biomass := clampf(VegetationType.foliage_biomass(veg), 0.0, 1.0)
+	var shaped := pow(biomass, maxf(float(cfg.biomass_exponent), 0.01))
+	return lerpf(float(cfg.biomass_floor), float(cfg.biomass_ceil), shaped)
+
+
+# 河流格的密度系数。河道本体的像素已在候选点阶段被 _is_river_body_position 剔除，
+# 所以这里不该再对整格做一刀切惩罚：暖湿带的河谷是全图植被最密的地方，只有冷/旱带
+# 的河床才是负面地形。
+func _river_density_factor(state: Dictionary) -> float:
+	var cfg := _profile()
+	var temp := float(state.get("temp", 0.5))
+	var wet: float = maxf(float(state.get("moisture", 0.5)), float(state.get("soil_moisture", 0.4)))
+	var warm_wet: float = smoothstep(0.35, 0.72, temp) * smoothstep(0.28, 0.62, wet)
+	var dry_factor := float(cfg.river_edge_density)
+	var lush_factor: float = maxf(dry_factor, float(cfg.river_valley_boost))
+	return lerpf(dry_factor, lush_factor, warm_wet)
 
 
 # 海拔林线：高海拔抑制乔木/棕榈，偏好高山花/针叶中带；低海拔归一。elevation∈[0,1]。
@@ -3332,8 +3393,29 @@ func _decoration_suitability(arch: int, lf: int, cover: int, river: bool, state:
 				_:
 					s *= 0.55
 	s *= lerpf(0.18, 1.0, _climate_presence(state))
+	# 点缀层的形态由 archetype 决定，但配置了 vegetation_weight_overrides 的层
+	# （红树气生根、倒木、碎石坡）要靠它把自己收束到目标生物群系；不接进来的话
+	# 那几张表是死配置，红树根会按"枯立木"规则长满所有低活力旱地。
+	s *= _decoration_vegetation_filter(int(state.get("vegetation", VegetationType.VEG.NONE)))
 	s *= _quality_density_scale()
 	return clampf(s, 0.0, 1.25)
+
+
+# 点缀层没有 _vegetation_weight 那样的基准表，所以这里把非空 overrides 当白名单：
+# 列出的植被取表中权重，未列出的只留一点残量。倒木只该出现在林地、红树气生根只该
+# 出现在红树林——列表本身就是"该出现在哪"的完整表达。
+const DECORATION_VEG_RESIDUAL := 0.12
+
+func _decoration_vegetation_filter(veg: int) -> float:
+	var overrides: Dictionary = _profile().vegetation_weight_overrides
+	if overrides.is_empty():
+		return 1.0
+	if overrides.has(veg):
+		return maxf(float(overrides[veg]), 0.0)
+	var key := str(veg)
+	if overrides.has(key):
+		return maxf(float(overrides[key]), 0.0)
+	return DECORATION_VEG_RESIDUAL
 
 
 func _try_append_instance(
@@ -3342,6 +3424,7 @@ func _try_append_instance(
 		key: int,
 		attempt: int,
 		cell_suitability: float,
+		accept_p: float,
 		state: Dictionary) -> void:
 	var cfg := _profile()
 	var climate_presence := _scatter_presence(state)
@@ -3368,9 +3451,13 @@ func _try_append_instance(
 	var micro_noise := _world_micro_gap(pos, key, attempt)
 	if micro_noise < cfg.micro_gap_threshold:
 		return
+	# world_noise_acceptance 现在只作用在斑块门上（决定噪声多快饱和到"满密度"），
+	# 不再乘进密度量级。它原本是用来补偿 suitability² 压缩的，配额化之后如果继续
+	# 乘在量级上，accept_p 只要超过 1/acceptance 就会被 clamp 到 1，顶端差异又被抹平。
 	var noise_gate := pow(clampf(world_noise, 0.0, 1.0), 1.35)
-	var local_acceptance := clampf(cell_suitability * cfg.world_noise_acceptance * noise_gate, 0.0, 1.0)
-	if _hash01(key, 9300 + attempt) > clampf(local_acceptance, 0.0, 1.0):
+	var patch_gate := clampf(noise_gate * cfg.world_noise_acceptance, 0.0, 1.0)
+	var local_acceptance := clampf(accept_p * patch_gate, 0.0, 1.0)
+	if _hash01(key, 9300 + attempt) > local_acceptance:
 		return
 	var variant := _hash01(key, 300 + attempt)
 	var min_size: float = minf(cfg.min_size_factor, cfg.max_size_factor)

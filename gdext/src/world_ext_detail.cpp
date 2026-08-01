@@ -116,6 +116,9 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
     PackedFloat32Array cy = knobs.get("center_y", PackedFloat32Array());
     PackedFloat32Array suit = knobs.get("suitability", PackedFloat32Array());
     PackedInt32Array att = knobs.get("attempts", PackedInt32Array());
+    // 配额化散布的每次投放接受概率基数（= max_per_cell * suitability / attempts）。
+    // 缺省时退回 suitability，保持与旧 GDScript 调用方的行为一致。
+    PackedFloat32Array accp = knobs.get("accept_p", PackedFloat32Array());
     PackedFloat32Array vit = knobs.get("vitality", PackedFloat32Array());
     PackedFloat32Array sized = knobs.get("size_density", PackedFloat32Array());
     PackedFloat32Array cr = knobs.get("color_r", PackedFloat32Array());
@@ -140,6 +143,8 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
     const float *CY = cy.ptr();
     const float *SU = suit.ptr();
     const int32_t *AT = att.ptr();
+    const float *ACC = accp.ptr();
+    const int accp_n = accp.size();
     const float *VI = vit.ptr();
     const float *SD = sized.ptr();
     const float *CR = cr.ptr();
@@ -298,6 +303,7 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
         const double center_x = (double)CX[c];
         const double center_y = (double)CY[c];
         const double cell_suit = (double)SU[c];
+        const double accept_p = (c < accp_n) ? (double)ACC[c] : cell_suit;
         const int attempts = AT[c];
         const double vitality = (double)VI[c];
         const double size_density = clampd((double)SD[c], 0.0, 1.0);
@@ -342,8 +348,10 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
             if (micro < (double)micro_gap) {
                 continue;
             }
+            // wn_acceptance 只塑造斑块门，不放大密度量级（镜像 shrub_layer.gd）。
             double noise_gate = std::pow(clampd(wn, 0.0, 1.0), 1.35);
-            double local_acc = clampd(cell_suit * (double)wn_acceptance * noise_gate, 0.0, 1.0);
+            double patch_gate = clampd(noise_gate * (double)wn_acceptance, 0.0, 1.0);
+            double local_acc = clampd(accept_p * patch_gate, 0.0, 1.0);
             if (hash01(key, 9300 + attempt) > local_acc) {
                 continue;
             }
@@ -616,6 +624,7 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
         PackedFloat32Array ideal_m = knobs.get("veg_ideal_moist", PackedFloat32Array());
         PackedFloat32Array tol_t = knobs.get("veg_temp_tol", PackedFloat32Array());
         PackedFloat32Array tol_m = knobs.get("veg_moist_tol", PackedFloat32Array());
+        PackedFloat32Array veg_biomass = knobs.get("veg_biomass", PackedFloat32Array());
 
         const int n_pos = std::min(pos_x.size(), pos_y.size());
         if (n_pos <= 0) return fail("missing_native_sampling_positions");
@@ -626,7 +635,11 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
         const int spawn_domain = int(knobs.get("spawn_domain", 0));
         const int max_per_cell = std::max(0, int(knobs.get("max_per_cell", 1)));
         const double quality_density = std::max(0.0, double(knobs.get("quality_density_scale", 1.0)));
-        const double river_edge_density = double(knobs.get("river_edge_density", 0.42));
+        const double river_edge_density = double(knobs.get("river_edge_density", 0.85));
+        const double river_valley_boost = double(knobs.get("river_valley_boost", 1.25));
+        const double biomass_floor = double(knobs.get("biomass_floor", 0.30));
+        const double biomass_ceil = double(knobs.get("biomass_ceil", 1.30));
+        const double biomass_exponent = std::max(0.01, double(knobs.get("biomass_exponent", 1.0)));
         const double moisture_corridor_boost = double(knobs.get("moisture_corridor_boost", 0.65));
         const double vitality_patch_boost = double(knobs.get("vitality_patch_boost", 0.55));
         const double stress_hide_strength = double(knobs.get("stress_hide_strength", 0.78));
@@ -676,6 +689,20 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
             const double dead = std::min(vitality_dead, vitality_healthy - 0.001);
             const double healthy = std::max(vitality_healthy, dead + 0.001);
             return clampd((clampd(vitality, 0.0, 1.0) - dead) / (healthy - dead), 0.0, 1.0);
+        };
+        // 绝对生物量 → 密度乘子（镜像 shrub_layer.gd::_biomass_factor）。
+        auto biomass_factor = [&](int veg) -> double {
+            const double b = (veg >= 0 && veg < veg_biomass.size())
+                ? clampd(double(veg_biomass[veg]), 0.0, 1.0)
+                : 1.0;
+            return lerpd(biomass_floor, biomass_ceil, std::pow(b, biomass_exponent));
+        };
+        // 河流格密度系数（镜像 shrub_layer.gd::_river_density_factor）。
+        auto river_density_factor = [&](double temp, double moist, double soil) -> double {
+            const double wet = std::max(moist, soil);
+            const double warm_wet = smoothstep(0.35, 0.72, temp) * smoothstep(0.28, 0.62, wet);
+            const double lush = std::max(river_edge_density, river_valley_boost);
+            return lerpd(river_edge_density, lush, warm_wet);
         };
         auto climate_presence = [&](double moisture, double snow, double vitality, double heat, double drought, double cold, int wt, double wi) -> double {
             if (wt == 4 || wt == 6) {
@@ -858,7 +885,7 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
             if (arch == 10) return lerpd(1.0, 0.6, w);
             return 1.0;
         };
-        auto decoration_suit = [&](int arch, int lf, int cover, bool river, double temp, double snow, double vitality, double drought, double cold, double elev,
+        auto decoration_suit = [&](int arch, int veg, int lf, int cover, bool river, double temp, double snow, double vitality, double drought, double cold, double elev,
                                    double moisture, double heat, int wt, double wi) -> double {
             if (is_water_lf(lf)) return 0.0;
             double s = 0.0;
@@ -879,6 +906,11 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
                 if (lf == 4 || lf == 5 || lf == 6) s *= 1.3; else if (lf == 10) s *= 0.95; else s *= 0.55;
             }
             s *= lerpd(0.18, 1.0, climate_presence(moisture, snow, vitality, heat, drought, cold, wt, wi));
+            // 点缀层的 vegetation_weight_overrides 当白名单用（镜像
+            // shrub_layer.gd::_decoration_vegetation_filter）：未列出的植被只留残量。
+            if (!veg_over.is_empty()) {
+                s *= std::max(0.0, override_weight(veg_over, veg, 0.12));
+            }
             s *= quality_density;
             return clampd(s, 0.0, 1.25);
         };
@@ -923,8 +955,10 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
         PackedInt32Array keys;
         PackedInt32Array native_cell_indices;
         PackedFloat32Array cx, cy, suit, vit, sized, cr, cg, cb, ca;
+        PackedFloat32Array accp;
         PackedInt32Array att;
         const int sample_n = sample_indices.size();
+        const int quota_cap = std::max(1, max_per_cell);
 
         for (int i = 0; i < sample_n; ++i) {
             const int idx = int(sample_indices[i]);
@@ -962,12 +996,13 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
                 suitability *= lerpd(0.70, 1.05, climate_compat(veg, temp, moist));
                 suitability *= quality_density;
             } else if (detail_kind == 8 || detail_kind == 9 || detail_kind == 10) {
-                suitability = decoration_suit(detail_kind, lf, cover, river, temp, snow, vitality, drought, cold, elev, moist, heat, wt, wi);
+                suitability = decoration_suit(detail_kind, veg, lf, cover, river, temp, snow, vitality, drought, cold, elev, moist, heat, wt, wi);
             } else {
                 const double lw = land_weight(lf), cw = cover_weight(cover);
                 if (lw <= 0.0 || cw <= 0.0 || sp <= 0.02) continue;
                 const double stress = std::max(heat, std::max(drought, cold));
                 suitability = vegetation_weight(veg) * lw * cw;
+                suitability *= biomass_factor(veg);
                 suitability *= vitality_density(vitality);
                 suitability *= lerpd(0.58, 1.0, clampd(climate_compat(veg, temp, moist), 0.0, 1.0));
                 suitability *= 1.0 - clampd(stress, 0.0, 1.0) * 0.38;
@@ -976,7 +1011,7 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
                 suitability *= archetype_affinity(detail_kind, veg, lf, river, temp, moist, soil, discharge);
                 suitability *= elevation_mod(detail_kind, elev);
                 suitability *= wind_mod(detail_kind, wind_speed);
-                if (river) suitability *= river_edge_density;
+                if (river) suitability *= river_density_factor(temp, moist, soil);
                 suitability *= quality_density;
             }
             suitability = clampd(suitability, 0.0, 1.25);
@@ -989,8 +1024,14 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
             native_cell_indices.append(idx);
             cx.append(float(f32_at(pos_x, idx, 0.0) * hex_size));
             cy.append(float(f32_at(pos_y, idx, 0.0) * hex_size));
+            // 配额化（镜像 shrub_layer.gd::_cell_quota）：期望株数对 suitability 线性。
+            const double quota_target = double(quota_cap) * clampd(suitability, 0.0, 1.0);
+            int quota_attempts = int(std::ceil(quota_target));
+            if (quota_attempts < 1) quota_attempts = 1;
+            if (quota_attempts > quota_cap) quota_attempts = quota_cap;
             suit.append(float(suitability));
-            att.append(std::max(1, int(std::ceil(double(max_per_cell) * clampd(suitability, 0.0, 1.0)))));
+            att.append(quota_attempts);
+            accp.append(float(quota_target / double(quota_attempts)));
             vit.append(float(clampd(vitality, 0.0, 1.0)));
             sized.append(float(size_density));
             cr.append(float(rr)); cg.append(float(gg)); cb.append(float(bb)); ca.append(float(aa));
@@ -1016,6 +1057,7 @@ godot::Dictionary DCWorldExt::encode_detail_scatter_delta(godot::Dictionary knob
         next["center_y"] = cy;
         next["suitability"] = suit;
         next["attempts"] = att;
+        next["accept_p"] = accp;
         next["vitality"] = vit;
         next["size_density"] = sized;
         next["color_r"] = cr;
