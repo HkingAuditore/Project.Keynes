@@ -105,6 +105,27 @@ static func name_cn(v: VEG) -> String:
 static func transpiration(v: VEG) -> float:
 	return VegetationProfileRegistry.get_profile(int(v)).transpiration
 
+static var _foliage_biomass_table_cache: PackedFloat32Array = PackedFloat32Array()
+
+# 绝对生物量 [0, 1]：表达"这种植被本身有多茂密"，与 climate_compat_score /
+# vegetation_vitality 这类"相对自身类型的适应度"正交——健康的沙漠灌木和健康的雨林
+# compat / vitality 都接近 1，只有本量能区分两者。雨林 1.0 → 极旱沙漠 0.02。
+# 用 transpiration 作代理：蒸腾通量与叶面积指数高度相关，不额外维护第二张表。
+static func foliage_biomass(v: VEG) -> float:
+	return clampf(VegetationProfileRegistry.get_profile(int(v)).transpiration, 0.0, 1.0)
+
+# 按 VEG enum 顺序的 foliage_biomass 表，供 C++ hot loop / 散布层一次性取用。
+static func foliage_biomass_table() -> PackedFloat32Array:
+	var n_veg: int = VEG.size()
+	if _foliage_biomass_table_cache.size() == n_veg:
+		return _foliage_biomass_table_cache
+	var table := PackedFloat32Array()
+	table.resize(n_veg)
+	for v in range(n_veg):
+		table[v] = clampf(VegetationProfileRegistry.get_profile(v).transpiration, 0.0, 1.0)
+	_foliage_biomass_table_cache = table
+	return _foliage_biomass_table_cache
+
 static func albedo(v: VEG) -> float:
 	return VegetationProfileRegistry.get_profile(int(v)).albedo
 

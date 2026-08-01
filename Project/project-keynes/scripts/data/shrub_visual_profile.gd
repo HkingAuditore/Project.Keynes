@@ -92,9 +92,25 @@ enum SpawnDomain {
 @export_range(0.1, 1.5, 0.01) var mobile_size_scale_quality1: float = 0.92
 @export_range(0.1, 1.5, 0.01) var mobile_size_scale_quality2: float = 0.98
 
+@export_group("Vegetation Biomass")
+# 绝对生物量响应。VegetationType.foliage_biomass 表达"这种植被本身有多茂密"
+# （雨林 1.0 → 沙漠灌木 0.1 → 极旱沙漠 0.02），与 climate_compat / vitality 这类
+# "相对自身类型的适应度"正交——没有它，健康的沙漠灌木和健康的雨林在散布链里
+# 完全等价，唯一的区分只剩各层的 form-factor 权重表。
+#   floor    : 生物量为 0 的植被还能保留多少密度（保证草原/苔原不至于清空）
+#   ceil     : 生物量为 1 的植被的密度上限
+#   exponent : < 1 压缩生物量差距，> 1 放大
+@export_range(0.0, 1.0, 0.01) var biomass_floor: float = 0.30
+@export_range(0.2, 2.5, 0.05) var biomass_ceil: float = 1.30
+@export_range(0.2, 4.0, 0.05) var biomass_exponent: float = 1.0
+
 @export_group("River Avoidance")
 @export_range(0.0, 1.0, 0.01) var river_clear_threshold: float = 0.50
-@export_range(0.0, 1.0, 0.01) var river_edge_density: float = 0.42
+# 冷 / 干河道格的密度系数。河道本体的像素已经由 river_clear_threshold 在候选点
+# 阶段剔除，这里只表达"河岸相对整格的生态影响"。
+@export_range(0.0, 2.0, 0.01) var river_edge_density: float = 0.85
+# 暖湿河谷的密度系数：现实中河谷是植被最密的地方，不该和干旱河床共用一个惩罚。
+@export_range(0.0, 2.5, 0.01) var river_valley_boost: float = 1.25
 
 @export_group("Shape")
 @export_range(0.0, 1.0, 0.01) var spawn_radius_factor: float = 0.78

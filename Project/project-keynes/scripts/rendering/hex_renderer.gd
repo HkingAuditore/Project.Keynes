@@ -159,6 +159,32 @@ var terrain_materials_enabled: bool = true
 		terrain_surface_debug_view = clampi(value, 0, 7)
 		if _shader_mat != null:
 			_shader_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
+
+# [terrain-material-tiles 2026-08-01e] 材质族四参数提为 @export：编辑器检查器可见，
+# 运行时经远程场景树拖动 setter 直推 _shader_mat 即时生效；_rebuild 全量推送也读这组值。
+@export_range(0.0, 1.0, 0.01) var terrain_material_albedo_strength: float = 0.6:
+	set(value):
+		terrain_material_albedo_strength = clampf(value, 0.0, 1.0)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("terrain_material_albedo_strength", terrain_material_albedo_strength)
+
+@export_range(0.0, 0.5, 0.005) var terrain_material_normal_strength: float = 0.15:
+	set(value):
+		terrain_material_normal_strength = clampf(value, 0.0, 0.5)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("terrain_material_normal_strength", terrain_material_normal_strength)
+
+@export_range(0.0, 1.0, 0.01) var terrain_material_roughness_strength: float = 0.35:
+	set(value):
+		terrain_material_roughness_strength = clampf(value, 0.0, 1.0)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("terrain_material_roughness_strength", terrain_material_roughness_strength)
+
+@export_range(64.0, 1024.0, 1.0) var terrain_material_world_size: float = 384.0:
+	set(value):
+		terrain_material_world_size = clampf(value, 64.0, 1024.0)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("terrain_material_world_size", terrain_material_world_size)
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.set_lod_debug_view(terrain_surface_debug_view == 6)
 		)
@@ -258,7 +284,11 @@ var terrain_materials_enabled: bool = true
 		_rebuild_detail_layers_if_default()
 # 数据驱动点缀清单。留空时回退到上面 grass/shrub/tree 三个 profile（行为 1:1）。
 # 配置后，hex_renderer 在 _ready 按 manifest.layers 生成对应数量的散布层。
-@export var decoration_manifest: Resource = null:
+#
+# 此前默认是 null 而且没有任何场景 / 脚本给它赋值，所以 21 层清单（针叶、棕榈、
+# 季风林、云雾林、红树、芦苇、仙人掌、苔原地衣、海草……）从未被实例化，全图植被
+# 实际上只由 grass/shrub/tree 三层表达，专属生物群系自然长不出对味的植被。
+@export var decoration_manifest: Resource = preload("res://data/visual/world_decoration_manifest.tres"):
 	set(value):
 		decoration_manifest = value
 		if is_inside_tree():
@@ -287,8 +317,10 @@ var terrain_materials_enabled: bool = true
 @export var detail_scatter_refresh_log_enabled: bool = true
 @export var detail_scatter_rebuild_log_enabled: bool = true
 @export_range(0.0, 100.0, 0.25) var detail_scatter_slow_layer_ms: float = 2.0
-@export var detail_scatter_desktop_total_instance_budget: int = 120000
-@export var detail_scatter_mobile_total_instance_budget: int = 9000
+# 21 层清单接入 + 散布配额化之后总实例数显著上升，旧的 120000 会让全局预算长期
+# 触顶、所有层被同比稀释，反过来又抹平生物群系差异。
+@export var detail_scatter_desktop_total_instance_budget: int = 200000
+@export var detail_scatter_mobile_total_instance_budget: int = 12000
 
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
 # 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
@@ -2582,12 +2614,11 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("terrain_materials_enabled", terrain_materials_enabled)
 	# [terrain-material-tiles 2026-08-01d] 128 世界单位/张（5.8 hex）下特征尺度为亚 hex 级，
 	# 常用 zoom 1-2 全部命中 mip 2-3、颗粒被预滤波抹平；384（17.5 hex/张）让 z=2 命中 mip≈0。
-	sm.set_shader_parameter("terrain_material_world_size", 384.0)
-	# [terrain-material-tiles 2026-08-01c] 0.22/0.045 近景也几乎不可见，用户确认贴图"接入等于看不见"；
-	# 提到 0.6/0.15：近景颗粒清晰、中距可辨，远距仍由 mipmap 抹平不发碎。
-	sm.set_shader_parameter("terrain_material_albedo_strength", 0.6)
-	sm.set_shader_parameter("terrain_material_normal_strength", 0.15)
-	sm.set_shader_parameter("terrain_material_roughness_strength", 0.35)
+	# [terrain-material-tiles 2026-08-01e] 四参数已提为 @export（见文件头），此处读属性值。
+	sm.set_shader_parameter("terrain_material_world_size", terrain_material_world_size)
+	sm.set_shader_parameter("terrain_material_albedo_strength", terrain_material_albedo_strength)
+	sm.set_shader_parameter("terrain_material_normal_strength", terrain_material_normal_strength)
+	sm.set_shader_parameter("terrain_material_roughness_strength", terrain_material_roughness_strength)
 	sm.set_shader_parameter("terrain_micro_tex", TERRAIN_MICRO_TEXTURE)
 	sm.set_shader_parameter("has_terrain_micro_tex", TERRAIN_MICRO_TEXTURE != null)
 	sm.set_shader_parameter("camera_zoom", _camera_zoom)

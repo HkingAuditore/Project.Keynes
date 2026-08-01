@@ -836,7 +836,7 @@ var _gdext_climate_b_first_attempt_logged: bool = false
 var _gdext_climate_b_signature_checked: bool = false
 var _gdext_climate_b_signature_ok: bool = false
 # Foliage table cache（按 VegetationType.VEG enum 顺序）：
-# foliage[v] = clamp(VegetationType.transpiration(v) / 0.06, 0, 1)
+# foliage[v] = VegetationType.foliage_biomass(v)
 # 与 _vegetation_foliage_density(veg) 等价。F.3 hot loop 内 albedo 项要查 foliage，
 # 一次性 cache 避免重复查 VegetationProfileRegistry。
 var _gdext_climate_b_foliage_table_cached: PackedFloat32Array = PackedFloat32Array()
@@ -10791,10 +10791,13 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 # 直接使用 VegetationType.transpiration() 作为代理：森林/雨林蒸腾高 → 茂密；
 # 草原/灌木中等；裸地/沙漠/苔原接近 0。这样不依赖任何特定枚举名，
 # 即使日后扩充 VEG 枚举也无需改这里。
+#
+# 这里曾经写成 clampf(trans / 0.06, 0, 1)，注释声称 transpiration 的量程是
+# [0, ~0.06]。实际 VegetationProfile.transpiration 声明并存储的是 [0, 1]
+# （雨林 1.0 / 沼泽 0.95 / 沙漠灌木 0.1 / 极旱沙漠 0.02），除极旱沙漠外全部
+# 除完就饱和成 1.0——等于沙漠和雨林对气候施加了完全相同的植被反照率冷却。
 func _vegetation_foliage_density(veg: int) -> float:
-	var trans: float = VegetationType.transpiration(veg)
-	# transpiration 的常见取值范围 [0, ~0.06]，归一到 [0, 1]
-	return clampf(trans / 0.06, 0.0, 1.0)
+	return VegetationType.foliage_biomass(veg)
 
 # ─── Emergent Climate Coupling：海冰逐日推进 pass ────────────────────────
 # 替代旧 _apply_sea_ice_pass 的"统一切换"语义。每日运行一次，对每个水体 cell
@@ -12817,22 +12820,11 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		_dm_global_yesterday = lerpf(_dm_global_yesterday, dm_today, _DRIFT_EMA_ALPHA)
 
 # F.3 helper：按 VegetationType.VEG enum 顺序构建 foliage density table。
-# 与 _vegetation_foliage_density() 等价（clamp(transp/0.06, 0, 1)）。第一次调用
-# 时填好 cache，后续 zero-cost。
+# 与 _vegetation_foliage_density() 等价。第一次调用时填好 cache，后续 zero-cost。
 func _build_climate_b_foliage_table() -> PackedFloat32Array:
 	if _gdext_climate_b_foliage_table_cached.size() > 0:
 		return _gdext_climate_b_foliage_table_cached
-	var n_veg: int = VegetationType.VEG.size()
-	var table: PackedFloat32Array = PackedFloat32Array()
-	table.resize(n_veg)
-	for v in range(n_veg):
-		var f: float = VegetationType.transpiration(v) / 0.06
-		if f < 0.0:
-			f = 0.0
-		elif f > 1.0:
-			f = 1.0
-		table[v] = f
-	_gdext_climate_b_foliage_table_cached = table
+	_gdext_climate_b_foliage_table_cached = VegetationType.foliage_biomass_table()
 	return _gdext_climate_b_foliage_table_cached
 
 func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) -> void:
