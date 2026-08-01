@@ -18,10 +18,6 @@ const RIGHT_PANEL_WIDTH := 460.0
 const OVERLAY_LEGEND_WIDTH := 198.0
 const GM_PANEL_TARGET_WIDTH := 560.0
 const GM_PANEL_MIN_WIDTH := 300.0
-const DemandDetailDialogScript = preload("res://scripts/ui/components/demand_detail_dialog.gd")
-const ObjectDetailDialogScript = preload("res://scripts/ui/components/object_detail_dialog.gd")
-const PauseMenuScript = preload("res://scripts/ui/components/pause_menu.gd")
-
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
@@ -55,7 +51,7 @@ var _gm_available := false
 func _ready() -> void:
 	layer = 20
 	_gm_available = gm_available_for_build(OS.is_debug_build(), Engine.is_editor_hint())
-	_build_ui()
+	_bind_ui()
 	show_loading("正在生成世界")
 
 
@@ -440,42 +436,27 @@ func set_resource_discovery_context(
 			technology_ids, enforce_discovery)
 
 
-func _build_ui() -> void:
+func _bind_ui() -> void:
 	var player_theme := UITokens.make_player_theme()
 
-	_top_bar = PlayerTopBar.new()
-	_top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_top_bar.offset_bottom = PlayerTopBar.BAR_HEIGHT
+	_top_bar = get_node("PlayerTopBar") as PlayerTopBar
 	_top_bar.pause_toggled.connect(func(paused: bool) -> void: pause_toggled.emit(paused))
 	_top_bar.speed_selected.connect(func(speed: float) -> void: speed_selected.emit(speed))
 	_top_bar.day_night_toggled.connect(
 		func(enabled: bool) -> void: day_night_toggled.emit(enabled))
 	_top_bar.setup_requested.connect(func() -> void: setup_requested.emit())
 	_top_bar.gm_requested.connect(toggle_gm_panel)
-	add_child(_top_bar)
 	_top_bar.set_gm_available(_gm_available)
 
-	_right_panel = InspectorPanel.new()
-	_right_panel.name = "RightPanel"
-	_right_panel.visible = false
-	_right_panel.custom_minimum_size = Vector2(RIGHT_PANEL_WIDTH, 0.0)
-	_right_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	_right_panel.offset_left = -RIGHT_PANEL_WIDTH
-	_right_panel.offset_top = PlayerTopBar.BAR_HEIGHT + 4.0
-	_right_panel.offset_bottom = -UITokens.SPACE_MD
+	_right_panel = get_node("RightPanel") as InspectorPanel
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
 	_right_panel.visibility_changed.connect(_layout_overlay_legend)
 	_right_panel.demand_details_requested.connect(_on_demand_details_requested)
 	_right_panel.object_details_requested.connect(_on_object_details_requested)
-	add_child(_right_panel)
 
-	_demand_detail_dialog = DemandDetailDialogScript.new()
-	_demand_detail_dialog.name = "DemandDetailDialog"
-	add_child(_demand_detail_dialog)
-	_object_detail_dialog = ObjectDetailDialogScript.new()
-	_object_detail_dialog.name = "ObjectDetailDialog"
-	add_child(_object_detail_dialog)
+	_demand_detail_dialog = get_node("DemandDetailDialog")
+	_object_detail_dialog = get_node("ObjectDetailDialog")
 
 	if _gm_available:
 		_gm_console = DebugConsole.new()
@@ -489,34 +470,22 @@ func _build_ui() -> void:
 			Callable(self, "_set_local_gm_toggle"))
 		_layout_gm_panel()
 
-	_perf_hud = PerfMiniHUD.new()
-	_perf_hud.name = "PerfMiniHUD"
-	_perf_hud.start_visible = false
-	_perf_hud.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_perf_hud.offset_left = -180.0
-	_perf_hud.offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM
-	_perf_hud.offset_right = 180.0
-	add_child(_perf_hud)
+	_perf_hud = get_node("PerfMiniHUD") as PerfMiniHUD
 
-	_map_overlay_toolbar = MapOverlayToolbar.new()
-	_map_overlay_toolbar.name = "MapOverlayToolbar"
+	_map_overlay_toolbar = get_node("MapOverlayToolbar") as MapOverlayToolbar
 	_map_overlay_toolbar.overlay_requested.connect(_on_map_overlay_requested)
 	_map_overlay_toolbar.overlay_cleared.connect(_on_map_overlay_cleared)
-	add_child(_map_overlay_toolbar)
 
-	_country_action_bar = CountryActionBar.new()
+	_country_action_bar = get_node("CountryActionBar") as CountryActionBar
 	_country_action_bar.section_selected.connect(open_country_section)
-	add_child(_country_action_bar)
 	_layout_country_action_bar()
 
-	_map_overlay_legend = OverlayLegend.new()
-	_map_overlay_legend.name = "MapOverlayLegend"
+	_map_overlay_legend = get_node("MapOverlayLegend") as OverlayLegend
 	# Bottom-right is outside the map's main reading line and the left tool
 	# palette. The layout helper shifts it left whenever Inspector is visible.
 	_map_overlay_legend.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_map_overlay_legend.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_map_overlay_legend.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	add_child(_map_overlay_legend)
 	get_viewport().size_changed.connect(_layout_overlay_legend)
 	get_viewport().size_changed.connect(_layout_gm_panel)
 	get_viewport().size_changed.connect(_layout_country_action_bar)
@@ -525,7 +494,7 @@ func _build_ui() -> void:
 	if _diagnostics_source != null:
 		set_diagnostics_source(_diagnostics_source)
 
-	_country_panel = CountryPanel.new()
+	_country_panel = get_node("CountryPanel") as CountryPanel
 	_country_panel.close_requested.connect(func() -> void:
 		if _country_action_bar != null:
 			_country_action_bar.set_active("")
@@ -534,19 +503,14 @@ func _build_ui() -> void:
 		if _country_action_bar != null:
 			_country_action_bar.set_active(section_id)
 	)
-	add_child(_country_panel)
 
-	_loading_overlay = WorldLoadingOverlay.new()
-	_loading_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_loading_overlay)
+	_loading_overlay = get_node("WorldLoadingOverlay") as WorldLoadingOverlay
 
-	_pause_menu = PauseMenuScript.new()
-	_pause_menu.name = "PauseMenu"
+	_pause_menu = get_node("PauseMenu") as PauseMenu
 	_pause_menu.visibility_requested.connect(
 		func(open: bool) -> void: pause_menu_visibility_changed.emit(open))
 	_pause_menu.return_menu_requested.connect(func() -> void: return_main_menu_requested.emit())
 	_pause_menu.exit_requested.connect(func() -> void: exit_game_requested.emit())
-	add_child(_pause_menu)
 
 	for child in get_children():
 		if child is Control:

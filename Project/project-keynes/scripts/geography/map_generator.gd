@@ -148,6 +148,7 @@ const DCClimateMath = preload("res://scripts/simulation/climate/climate_math.gd"
 # 尚未拾取，这里显式 preload 迫使先加载该脚本，避免
 # "Parser Error: Could not parse global class MapGenerator" 的启动报错。
 const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
+const DetailScatterChangeSetScript = preload("res://scripts/data/detail_scatter_change_set.gd")
 const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
@@ -418,6 +419,8 @@ var _enum_atlas_cover_dirty: bool = false
 var _enum_atlas_vegetation_dirty: bool = false
 var _last_enum_atlas_upload_breakdown: Dictionary = {}
 var _pending_detail_scatter_refresh_indices: PackedInt32Array = PackedInt32Array()
+var _pending_detail_scatter_change_sets: Array = []
+var _detail_scatter_change_generation: int = 0
 var _season_stage4_deltas: Dictionary = {}
 # 旧 sea_ice_atlas_upload 已退役；该 report 固定返回 disabled，用于旧 UI/日志字段兼容。
 var _last_sea_ice_atlas_upload_breakdown: Dictionary = {}
@@ -434,10 +437,10 @@ var _pending_season_idx: int = 0
 var _season_refresh_in_progress: bool = false
 var _last_season_refresh_breakdown: Dictionary = {}
 # 逐 tick 散布刷新滚动快照（2026-08-01）：日级原生 pass（海冰翻转、veg_dyn、季节 redecide 等）
-# 会改写 terrain/landform/vegetation/cover，但这些写入路径都不调 queue_detail_scatter_refresh，
+# 会改写 landform/vegetation/cover，但这些写入路径都不调 queue_detail_scatter_refresh，
 # 导致 MultiMesh 散布实例滞留旧植被（沙漠灌木格挂大树、雨林格光秃）。
-# 每个完成的日 tick 末 diff 四轴滚动快照，变化格补发增量刷新，与具体写入路径解耦。
-var _scatter_sync_snap_terrain := PackedByteArray()
+# 每个完成的日 tick 末 diff 三轴滚动快照，变化格补发增量刷新，与具体写入路径解耦。
+# terrain 不参与散布适配度；温湿、天气、积雪、vitality 由 GPU LUT 响应。
 var _scatter_sync_snap_landform := PackedByteArray()
 var _scatter_sync_snap_vegetation := PackedByteArray()
 var _scatter_sync_snap_cover := PackedByteArray()
@@ -1212,10 +1215,11 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_pending_season_refresh = false
 	_season_refresh_in_progress = false
 	_last_season_refresh_breakdown = {}
-	_scatter_sync_snap_terrain = PackedByteArray()
 	_scatter_sync_snap_landform = PackedByteArray()
 	_scatter_sync_snap_vegetation = PackedByteArray()
 	_scatter_sync_snap_cover = PackedByteArray()
+	_pending_detail_scatter_change_sets.clear()
+	_detail_scatter_change_generation = 0
 	_last_detail_scatter_sync = {}
 	# X2-精简版：reset 时清掉 SoA-slots 缓存标志，避免新世界生成跨用上个世界的 stale fresh。
 	_season_round_slots_fresh = false
@@ -1582,7 +1586,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		return
 	var economy_report: Dictionary = _economy_facade.report()
 	print(("[economy] %s native graph cells=%d goods=%d cohorts=%d epoch_days=%d "
-			+ "trade=%s topology_ready=%s topology_generation=%d") % [
+			+ "trade=%s topology_ready=%s topology_generation=%d "
+			+ "bootstrap=%s founder_families=%d founder_people=%d") % [
 		String(economy_report.get("market_runtime_mode", "OFF")),
 		map.cell_count(),
 		int(bootstrapped.get("good_count", 0)),
@@ -1591,6 +1596,9 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		String(economy_report.get("trade_runtime_mode", "OFF")),
 		str(bool(economy_report.get("trade_topology_ready", false))),
 		int(economy_report.get("trade_topology_generation", 0)),
+		String(starter_bootstrap_report.get("source", "none")),
+		int(bootstrapped.get("founder_family_count", 0)),
+		int(bootstrapped.get("founder_person_count", 0)),
 	])
 	print("[country] %s native authority countries=%d cells=%d generation=%d" % [
 		String(country_bootstrapped.get("runtime_mode", "OFF")),
@@ -1603,6 +1611,10 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		_gameplay_start_report["settlement_count"] = int(
 			starter_bootstrap_report.get("settlement_count", 0))
 		_gameplay_start_report["settlement_source"] = String(starter_bootstrap_report.get("source", ""))
+		_gameplay_start_report["founder_family_count"] = int(
+			bootstrapped.get("founder_family_count", 0))
+		_gameplay_start_report["founder_person_count"] = int(
+			bootstrapped.get("founder_person_count", 0))
 	if _test_economy_bootstrap_enabled:
 		print(("[economy/test-bootstrap] scale_mode=%s populated_cells=%d population=%d cohorts=%d "
 			+ "professions=%d/%d building_groups=%d building_types=%d/%d "
@@ -5871,8 +5883,15 @@ func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
 		_pending_detail_scatter_refresh_indices.append(ci)
 
 
+func queue_detail_scatter_changes(changes) -> void:
+	if changes == null or not changes.has_method("is_empty") or bool(changes.is_empty()):
+		return
+	_pending_detail_scatter_change_sets.append(changes.duplicate_set())
+
+
 func has_pending_detail_scatter_refresh() -> bool:
-	if not _pending_detail_scatter_refresh_indices.is_empty():
+	if not _pending_detail_scatter_refresh_indices.is_empty() \
+			or not _pending_detail_scatter_change_sets.is_empty():
 		return true
 	if _gameplay_event_bus != null and _gameplay_event_bus.is_available():
 		var probe: Dictionary = _gameplay_event_bus.poll_events(
@@ -5903,6 +5922,54 @@ func consume_pending_detail_scatter_refresh_indices() -> PackedInt32Array:
 		seen[ci] = true
 		out.append(ci)
 	_pending_detail_scatter_refresh_indices = PackedInt32Array()
+	_pending_detail_scatter_change_sets.clear()
+	return out
+
+
+func consume_pending_detail_scatter_changes():
+	_detail_scatter_change_generation += 1
+	var merged := {}
+	# 无 old/new 状态的旧事件保持兼容；精确 tick diff 在后面覆盖同格 unknown。
+	if _gameplay_event_bus != null and _gameplay_event_bus.is_available():
+		var event_cells: PackedInt32Array = _gameplay_event_bus.poll_succession_cells(&"detail_renderer", 512, true)
+		for raw_idx in event_cells:
+			var ci := int(raw_idx)
+			if ci >= 0:
+				merged[ci] = {"axis": DetailScatterChangeSetScript.AXIS_UNKNOWN}
+	for raw_idx in _pending_detail_scatter_refresh_indices:
+		var ci := int(raw_idx)
+		if ci >= 0 and not merged.has(ci):
+			merged[ci] = {"axis": DetailScatterChangeSetScript.AXIS_UNKNOWN}
+	for raw_set in _pending_detail_scatter_change_sets:
+		if raw_set == null or not raw_set.has_method("is_well_formed") \
+				or not bool(raw_set.is_well_formed()):
+			continue
+		for i in range(raw_set.cell_indices.size()):
+			var ci := int(raw_set.cell_indices[i])
+			if ci < 0:
+				continue
+			merged[ci] = {
+				"axis": int(raw_set.axis_masks[i]),
+				"ov": int(raw_set.old_vegetation[i]), "nv": int(raw_set.new_vegetation[i]),
+				"ol": int(raw_set.old_landform[i]), "nl": int(raw_set.new_landform[i]),
+				"oc": int(raw_set.old_cover[i]), "nc": int(raw_set.new_cover[i]),
+			}
+	_pending_detail_scatter_refresh_indices = PackedInt32Array()
+	_pending_detail_scatter_change_sets.clear()
+	var out = DetailScatterChangeSetScript.new()
+	out.generation = _detail_scatter_change_generation
+	var keys: Array = merged.keys()
+	keys.sort()
+	for raw_idx in keys:
+		var ci := int(raw_idx)
+		var row: Dictionary = merged[raw_idx]
+		out.append_change(
+			ci,
+			int(row.get("axis", DetailScatterChangeSetScript.AXIS_UNKNOWN)),
+			int(row.get("ov", 0)), int(row.get("nv", 0)),
+			int(row.get("ol", 0)), int(row.get("nl", 0)),
+			int(row.get("oc", 0)), int(row.get("nc", 0))
+		)
 	return out
 
 
@@ -6489,18 +6556,16 @@ func sus_season_refresh_breakdown() -> Dictionary:
 	return _last_season_refresh_breakdown.duplicate()
 
 
-# 日 tick 末同步入口：diff 四轴（terrain/landform/vegetation/cover）滚动快照 vs 当前 SoA，
+# 日 tick 末同步入口：diff 三轴（landform/vegetation/cover）滚动快照 vs 当前 SoA，
 # 变化格补发 queue_detail_scatter_refresh。无论写入来自哪个日级 pass（海冰翻转、veg_dyn、
 # 季节 redecide round、GDScript fallback），都会在 tick 收尾被统一捕获。
 # 首调 / 世界重建后以当前态为基准不补发（生成期已整体 bake）。
 func _prime_scatter_sync_snapshot(map: MapData) -> void:
 	if map == null or not map.has_soa():
-		_scatter_sync_snap_terrain = PackedByteArray()
 		_scatter_sync_snap_landform = PackedByteArray()
 		_scatter_sync_snap_vegetation = PackedByteArray()
 		_scatter_sync_snap_cover = PackedByteArray()
 		return
-	_scatter_sync_snap_terrain = map.terrain_arr.duplicate()
 	_scatter_sync_snap_landform = map.landform_arr.duplicate()
 	_scatter_sync_snap_vegetation = map.vegetation_arr.duplicate()
 	_scatter_sync_snap_cover = map.cover_arr.duplicate()
@@ -6510,51 +6575,52 @@ func sync_detail_scatter_after_tick(map: MapData) -> void:
 	if map == null or not map.has_soa():
 		return
 	var n: int = map.cell_count()
-	var terrain_a: PackedByteArray = map.terrain_arr
 	var landform_a: PackedByteArray = map.landform_arr
 	var vegetation_a: PackedByteArray = map.vegetation_arr
 	var cover_a: PackedByteArray = map.cover_arr
 	if _scatter_sync_snap_vegetation.size() != n \
-			or _scatter_sync_snap_terrain.size() != n \
 			or _scatter_sync_snap_landform.size() != n \
 			or _scatter_sync_snap_cover.size() != n \
 			or vegetation_a.size() != n or landform_a.size() != n \
-			or cover_a.size() != n or terrain_a.size() != n:
+			or cover_a.size() != n:
 		_prime_scatter_sync_snapshot(map)
 		return
-	# 快路径：PackedByteArray == 是原生 memcmp（2400 格 4 轴合计 <1μs），
+	# 快路径：PackedByteArray == 是原生 memcmp；绝大多数无写入 tick 直接返回。
 	# 绝大多数无写入 tick 在此直接返回；只有真发生改写的 tick 才进逐格 diff。
-	var t_same: bool = _scatter_sync_snap_terrain == terrain_a
 	var l_same: bool = _scatter_sync_snap_landform == landform_a
 	var c_same: bool = _scatter_sync_snap_cover == cover_a
 	var v_same: bool = _scatter_sync_snap_vegetation == vegetation_a
-	if t_same and l_same and c_same and v_same:
+	if l_same and c_same and v_same:
 		return
-	var changed := PackedInt32Array()
+	var changes = DetailScatterChangeSetScript.new()
+	_detail_scatter_change_generation += 1
+	changes.generation = _detail_scatter_change_generation
 	var veg_changed := 0
 	for i in range(n):
-		var dirty := false
+		var axis_mask := 0
 		if not v_same and _scatter_sync_snap_vegetation[i] != vegetation_a[i]:
-			dirty = true
+			axis_mask |= DetailScatterChangeSetScript.AXIS_VEGETATION
 			veg_changed += 1
-		elif not l_same and _scatter_sync_snap_landform[i] != landform_a[i]:
-			dirty = true
-		elif not c_same and _scatter_sync_snap_cover[i] != cover_a[i]:
-			dirty = true
-		elif not t_same and _scatter_sync_snap_terrain[i] != terrain_a[i]:
-			dirty = true
-		if dirty:
-			changed.append(i)
-	if changed.is_empty():
+		if not l_same and _scatter_sync_snap_landform[i] != landform_a[i]:
+			axis_mask |= DetailScatterChangeSetScript.AXIS_LANDFORM
+		if not c_same and _scatter_sync_snap_cover[i] != cover_a[i]:
+			axis_mask |= DetailScatterChangeSetScript.AXIS_COVER
+		if axis_mask != 0:
+			changes.append_change(
+				i, axis_mask,
+				int(_scatter_sync_snap_vegetation[i]), int(vegetation_a[i]),
+				int(_scatter_sync_snap_landform[i]), int(landform_a[i]),
+				int(_scatter_sync_snap_cover[i]), int(cover_a[i])
+			)
+	if changes.is_empty():
 		return
-	_scatter_sync_snap_terrain = terrain_a.duplicate()
 	_scatter_sync_snap_landform = landform_a.duplicate()
 	_scatter_sync_snap_vegetation = vegetation_a.duplicate()
 	_scatter_sync_snap_cover = cover_a.duplicate()
-	_last_detail_scatter_sync["cells"] = changed.size()
+	_last_detail_scatter_sync["cells"] = changes.size()
 	_last_detail_scatter_sync["vegetation_cells"] = veg_changed
-	queue_detail_scatter_refresh(changed)
-	print("[detail_scatter] tick-sync queued=%d (vegetation=%d)" % [changed.size(), veg_changed])
+	queue_detail_scatter_changes(changes)
+	print("[detail_scatter] tick-sync queued=%d (vegetation=%d)" % [changes.size(), veg_changed])
 
 
 # DOTS-Total-CPP 真·收尾（2026-05-21）：per-stage path once-log。

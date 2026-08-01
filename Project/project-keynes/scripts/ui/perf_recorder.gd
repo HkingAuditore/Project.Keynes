@@ -99,6 +99,12 @@ const FIXED_COLUMNS: Array = [
 	"tail_vegetation_ms",
 	"tail_vegetation_inflight",
 	"tail_vegetation_dedup_skips",
+	"tail_vegetation_tasks",
+	"tail_vegetation_forced_tasks",
+	"tail_vegetation_encode_ms",
+	"tail_vegetation_cache_update_ms",
+	"tail_vegetation_assemble_ms",
+	"tail_vegetation_upload_ms",
 	"tail_overlay_ms",
 	# 帧级渲染残差探针：frame_wall_ms = 相邻 perf 行间的平均帧墙钟（引擎帧号差分，
 	# 1 tick/帧时即逐帧墙钟）；render_residual_ms = wall - clock_full - 已知帧尾
@@ -394,7 +400,36 @@ func _merge_breakdowns(row: Dictionary, bds: Dictionary) -> void:
 			if ks == "_tick_idx":
 				continue
 			var col: String = BD_COL_PREFIX + str(group) + "_" + ks
-			row[col] = sub_dict[k]
+			var value = sub_dict[k]
+			# 原生 atlas 报告会携带完整 LUT。把数千/数万项数组逐 tick 写入 CSV
+			# 既放大文件，也会把 Variant -> String 序列化成本记到性能样本本身。
+			# 路径、尺寸、刷新耗时等 LUT 标量仍按原名保留；仅摘要容器 payload。
+			if _is_lut_payload(ks, value):
+				row[col + "_size"] = _collection_size(value)
+				row[col + "_hash"] = hash(value)
+				row[col + "_summary_version"] = 1
+			else:
+				row[col] = value
+
+
+static func _is_lut_payload(key: String, value) -> bool:
+	if key.to_lower().find("lut") == -1:
+		return false
+	var value_type: int = typeof(value)
+	return value_type == TYPE_ARRAY \
+		or value_type == TYPE_PACKED_BYTE_ARRAY \
+		or value_type == TYPE_PACKED_INT32_ARRAY \
+		or value_type == TYPE_PACKED_INT64_ARRAY \
+		or value_type == TYPE_PACKED_FLOAT32_ARRAY \
+		or value_type == TYPE_PACKED_FLOAT64_ARRAY \
+		or value_type == TYPE_PACKED_COLOR_ARRAY \
+		or value_type == TYPE_PACKED_VECTOR2_ARRAY \
+		or value_type == TYPE_PACKED_VECTOR3_ARRAY \
+		or value_type == TYPE_PACKED_VECTOR4_ARRAY
+
+
+static func _collection_size(value) -> int:
+	return int(value.size())
 
 
 # ---------- 静态：列并集 / CSV 拼装 ----------

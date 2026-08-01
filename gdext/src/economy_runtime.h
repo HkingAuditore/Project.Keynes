@@ -25,8 +25,9 @@ class ModifierRuntime;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    // 25: building_plan_days policy knob (semantic; plan cadence per cell).
-    static constexpr int32_t SCHEMA_VERSION = 25;
+    // 27: sparse notable-person authority nested inside notable-family
+    // membership, with conserved post-settlement economic attribution.
+    static constexpr int32_t SCHEMA_VERSION = 27;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -112,6 +113,23 @@ public:
     godot::Dictionary trade_orders_for_cell(int32_t cell_idx, int32_t offset,
                                              int32_t limit) const;
     godot::Dictionary building_cell_snapshot(int32_t cell_idx) const;
+    godot::Dictionary family_cell_snapshot(int32_t cell_idx, int32_t offset,
+                                            int32_t limit) const;
+    godot::Dictionary family_snapshot(int64_t family_handle) const;
+    godot::Dictionary family_branches(int64_t family_handle, int32_t offset,
+                                      int32_t limit) const;
+    godot::Dictionary family_industries(int64_t family_handle, int32_t offset,
+                                        int32_t limit) const;
+    godot::Dictionary family_notable_people(int64_t family_handle,
+                                            int32_t offset,
+                                            int32_t limit) const;
+    godot::Dictionary notable_person_snapshot(int64_t person_handle) const;
+    godot::Dictionary notable_person_needs(int64_t person_handle,
+                                           int32_t offset,
+                                           int32_t limit) const;
+    godot::Dictionary building_notable_people(int64_t building_handle,
+                                              int32_t offset,
+                                              int32_t limit) const;
     godot::Dictionary fiscal_snapshot(int64_t country_handle) const;
     godot::Dictionary fixed_math_probe(const godot::Dictionary &vectors) const;
     godot::Dictionary production_climate_math_probe(
@@ -191,6 +209,8 @@ private:
         TRADE_PLANNING = 13,
         BUILDING_PLAN = 14,
         GOVERNMENT_RESEARCH_PROCUREMENT = 15,
+        FAMILY_COMMIT = 16,
+        PERSON_COMMIT = 17,
     };
 
     enum class PublishPhase : uint8_t {
@@ -461,6 +481,101 @@ private:
         int64_t merchant_debt_principal = 0;
         int64_t merchant_debt_premium = 0;
         uint16_t merchant_debt_term_cycles_left = 0;
+        uint64_t sponsor_family_handle = 0;
+    };
+
+    struct FamilyStore {
+        std::vector<uint8_t> active;
+        std::vector<uint32_t> generation;
+        std::vector<int64_t> stable_id;
+        std::vector<int32_t> surname_id;
+        std::vector<uint32_t> surname_disambiguator;
+        std::vector<int64_t> founded_day;
+        std::vector<int32_t> home_cell;
+        std::vector<int32_t> origin_ethnicity;
+        std::vector<uint16_t> decline_reviews;
+        std::vector<uint16_t> flags;
+        std::vector<int32_t> free_indices;
+        int64_t active_count = 0;
+
+        void clear();
+        int32_t allocate();
+        void release(int32_t index);
+        uint64_t handle_for_index(int32_t index) const;
+        bool valid_handle(uint64_t handle, int32_t &index_out) const;
+    };
+
+    struct NotablePersonStore {
+        std::vector<uint8_t> active;
+        std::vector<uint32_t> generation;
+        std::vector<int64_t> stable_id;
+        std::vector<uint64_t> family_handle;
+        std::vector<uint64_t> cohort_handle;
+        std::vector<int32_t> given_name_id;
+        std::vector<uint32_t> name_disambiguator;
+        std::vector<int64_t> notable_since_day;
+        std::vector<uint16_t> flags;
+        std::vector<int64_t> cash_claim;
+        std::vector<int64_t> family_equity_share_q32;
+        std::vector<int64_t> epoch_job_income;
+        std::vector<int64_t> epoch_business_result;
+        std::vector<int64_t> epoch_consumption_expense;
+        std::vector<int64_t> epoch_tax;
+        std::vector<int64_t> income_ema;
+        std::vector<uint16_t> needs_satisfaction;
+        std::vector<uint16_t> worst_need_id;
+        std::vector<uint64_t> building_handle;
+        std::vector<uint8_t> job_kind; // 0=none, 1=owner, 2=employee.
+        std::vector<int32_t> employee_role_index;
+        std::vector<int64_t> job_since_day;
+        std::vector<int32_t> free_indices;
+        int64_t active_count = 0;
+
+        void clear();
+        int32_t allocate();
+        void release(int32_t index);
+        uint64_t handle_for_index(int32_t index) const;
+        bool valid_handle(uint64_t handle, int32_t &index_out) const;
+    };
+
+    struct PersonNeedState {
+        uint64_t person_handle = 0;
+        int32_t stable_need_id = -1;
+        int64_t desired_period_units = 0;
+        uint16_t satisfaction_q16 = 0;
+        int64_t attributed_spend = 0;
+    };
+
+    struct PersonMarketAttribution {
+        uint64_t person_handle = 0;
+        int64_t consumption_expense = 0;
+        int64_t consumption_tax = 0;
+        uint16_t satisfaction_q16 = 0;
+        uint16_t worst_need_id = std::numeric_limits<uint16_t>::max();
+    };
+
+    struct PersonDemographyEvent {
+        uint64_t cohort_handle = 0;
+        int64_t population_before = 0;
+        int64_t deaths = 0;
+    };
+
+    struct FamilyMembershipEdge {
+        uint64_t family_handle = 0;
+        uint64_t cohort_handle = 0;
+        int64_t people = 0;
+        int64_t cash_claim = 0;
+        int64_t population_basis = 0;
+        int64_t funds_basis = 0;
+        int64_t owner_employed = 0;
+        int64_t employee_employed = 0;
+    };
+
+    struct FamilyBuildingOwnership {
+        uint64_t family_handle = 0;
+        uint64_t building_handle = 0;
+        int64_t owned_count = 0;
+        int64_t filled_owner = 0;
     };
 
     struct BuildingRoleSpan {
@@ -1020,6 +1135,9 @@ private:
         int64_t births = 0;
         int64_t deaths = 0;
         std::vector<int32_t> population_changed_cells;
+        std::vector<PersonNeedState> person_needs;
+        std::vector<PersonMarketAttribution> person_attributions;
+        std::vector<PersonDemographyEvent> person_demography;
         int64_t closing_population = 0;
         int64_t closing_cohort_funds = 0;
         int64_t closing_goods_stock = 0;
@@ -1465,6 +1583,11 @@ private:
         int32_t trade_flow_cursor = 0;
         int32_t fiscal_cursor = 0;
         int32_t settlement_cursor = 0;
+        int32_t family_cursor = 0;
+        int32_t family_membership_cursor = 0;
+        int32_t family_ownership_cursor = 0;
+        int32_t person_cursor = 0;
+        int32_t person_need_cursor = 0;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
         bool end_emitted = false;
@@ -1497,6 +1620,8 @@ private:
         int32_t restored_trade_orders = 0;
         int32_t expected_trade_flows = 0;
         int32_t restored_trade_flows = 0;
+        int32_t expected_persons = 0;
+        int32_t expected_person_needs = 0;
         int32_t restored_fiscal = 0;
         int32_t last_signal_cell = -1;
         int32_t last_signal_good = -1;
@@ -1506,6 +1631,16 @@ private:
         bool modifier_seen = false;
         bool fiscal_seen = false;
         bool settlement_names_seen = false;
+        int32_t restored_families = 0;
+        int32_t restored_family_memberships = 0;
+        int32_t restored_family_ownerships = 0;
+        bool family_records_seen = false;
+        bool family_membership_seen = false;
+        bool family_ownership_seen = false;
+        int32_t restored_persons = 0;
+        int32_t restored_person_needs = 0;
+        bool person_records_seen = false;
+        bool person_needs_seen = false;
     };
 
     struct EventArchiveState {
@@ -1699,6 +1834,10 @@ private:
     int32_t _building_commit_phase = 0;
     int32_t _building_commit_cursor = 0;
     int32_t _building_finalize_phase = 0;
+    int32_t _family_commit_cursor = 0;
+    int32_t _family_commit_phase = 0;
+    int32_t _person_commit_cursor = 0;
+    int32_t _person_commit_phase = 0;
     int32_t _processed_cells = 0;
     int64_t _processed_cohorts = 0;
     int64_t _processed_rules = 0;
@@ -1719,6 +1858,17 @@ private:
     int64_t _filled_owner_jobs = 0;
     int64_t _filled_employee_jobs = 0;
     int64_t _unemployed_population = 0;
+    int64_t _families_formed = 0;
+    int64_t _families_dissolved = 0;
+    int64_t _family_membership_edges_processed = 0;
+    int64_t _family_ownership_edges_processed = 0;
+    int64_t _family_owner_jobs_filled = 0;
+    int64_t _family_owner_jobs_vacant = 0;
+    int64_t _persons_promoted = 0;
+    int64_t _persons_died = 0;
+    int64_t _persons_migrated = 0;
+    int64_t _person_jobs_bound = 0;
+    int64_t _person_need_edges_processed = 0;
     int64_t _construction_goods_consumed = 0;
     int64_t _building_structure_count_only_updates = 0;
     int64_t _building_structure_new_groups = 0;
@@ -2069,6 +2219,41 @@ private:
     AuditTotals _closing_totals;
     AuditTotals _publish_accum;
     PopulationStore _population;
+    FamilyStore _families;
+    NotablePersonStore _persons;
+    std::vector<FamilyMembershipEdge> _family_memberships;
+    std::vector<FamilyBuildingOwnership> _family_ownerships;
+    std::vector<PersonNeedState> _person_needs;
+    // Derived, transient CSR. Authoritative edges above remain sparse and are
+    // rebuilt only at FAMILY_COMMIT or after structural restore.
+    std::vector<int32_t> _family_member_offsets;
+    std::vector<int32_t> _family_member_edge_indices;
+    std::vector<int32_t> _family_owned_offsets;
+    std::vector<int32_t> _family_owned_edge_indices;
+    std::vector<int32_t> _family_cohort_offsets;
+    std::vector<int32_t> _family_cohort_edge_indices;
+    std::vector<int32_t> _family_building_offsets;
+    std::vector<int32_t> _family_building_edge_indices;
+    std::vector<int32_t> _family_cell_offsets;
+    std::vector<int32_t> _family_cell_indices;
+    bool _family_indices_dirty = true;
+    // Derived notable-person CSR; rebuilt at PERSON_COMMIT and restore.
+    std::vector<int32_t> _person_family_offsets;
+    std::vector<int32_t> _person_family_indices;
+    std::vector<int32_t> _person_cohort_offsets;
+    std::vector<int32_t> _person_cohort_indices;
+    std::vector<int32_t> _person_cell_offsets;
+    std::vector<int32_t> _person_cell_indices;
+    std::vector<int32_t> _person_building_offsets;
+    std::vector<int32_t> _person_building_indices;
+    std::vector<int32_t> _person_need_offsets;
+    bool _person_indices_dirty = true;
+    // Frozen claim and epoch attribution scratch. Excluded from PKEC/hash.
+    std::vector<int64_t> _person_opening_cash_claim;
+    std::vector<PersonNeedState> _person_epoch_needs;
+    std::vector<uint64_t> _person_previous_building_handle;
+    std::vector<uint8_t> _person_previous_job_kind;
+    std::vector<int32_t> _person_previous_employee_role_index;
     SettlementStore _settlements;
     MarketStore _market;
     MarketSignalStore _market_signals;
@@ -2534,6 +2719,30 @@ private:
     int64_t _catalog_compat_hash_v8 = 0;
     int64_t _catalog_compat_hash_v10 = 0;
     int64_t _catalog_compat_hash_v13 = 0;
+    int64_t _family_catalog_hash = 0;
+    std::string _family_surname_pack_id = "default_zh";
+    std::vector<std::string> _family_surname_ids;
+    std::vector<std::string> _family_surname_text;
+    std::vector<int32_t> _family_surname_weights;
+    int64_t _person_catalog_hash = 0;
+    std::string _person_given_name_pack_id = "default_zh";
+    std::vector<std::string> _person_given_name_ids;
+    std::vector<std::string> _person_given_name_text;
+    std::vector<int32_t> _person_given_name_weights;
+
+    // Notable-family policy. The anonymous majority remains implicit.
+    int32_t _family_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    int32_t _family_min_settlement_tier = 2;
+    int32_t _family_review_days = 30;
+    int64_t _family_min_population_per_active = 100;
+    int32_t _family_max_per_cell = 64;
+    int32_t _family_cells_per_slice = 128;
+    int32_t _family_decline_reviews = 3;
+    int32_t _person_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    int32_t _person_max_per_family = 4;
+    int32_t _person_max_per_cell = 128;
+    int32_t _person_max_total = 65536;
+    int32_t _person_records_per_slice = 4096;
 
     SaveState _save;
     RestoreState _restore;
@@ -2807,6 +3016,57 @@ private:
                                    std::string &error);
     bool rebuild_merchant_ranges(std::string &error);
     bool run_government_research_procurement(std::string &error);
+    bool compile_family_catalog(const godot::Dictionary &catalog,
+                                std::string &error);
+    bool run_family_commit_slice(int64_t &work_done, std::string &error);
+    void rebuild_family_indices();
+    void normalize_family_memberships();
+    void update_family_employment_attribution();
+    void clamp_family_owner_employment_for_cell(int32_t cell);
+    int32_t create_family_for_building(int32_t cell, int32_t building_index,
+                                       int64_t founders,
+                                       int64_t filled_owner);
+    bool repair_forced_capital_founder(int32_t cell);
+    bool form_family_for_cell(int32_t cell);
+    void review_family_lifecycle();
+    void dissolve_family(uint64_t family_handle);
+    void move_family_membership(uint64_t source_handle,
+                                uint64_t destination_handle,
+                                int64_t source_population_before,
+                                int64_t moved_population,
+                                int64_t source_funds_before,
+                                int64_t moved_funds);
+    uint64_t sponsor_family_for_cohort(uint64_t cohort_handle,
+                                       int32_t cell) const;
+    int32_t building_index_for_handle(uint64_t building_handle) const;
+    int64_t family_population(uint64_t family_handle) const;
+    int64_t family_cash_claim(uint64_t family_handle) const;
+    int64_t family_owned_buildings(uint64_t family_handle) const;
+    bool compile_person_catalog(const godot::Dictionary &catalog,
+                                std::string &error);
+    bool run_person_commit_slice(int64_t &work_done, std::string &error);
+    void rebuild_person_indices();
+    void bind_notable_person_jobs();
+    void reconcile_person_claims();
+    void update_person_equity_shares();
+    void review_person_promotions();
+    void promote_person_for_family(int32_t family_index);
+    void retire_person(int32_t person_index);
+    void record_person_demography(int32_t cohort_slot,
+                                  int64_t population_before,
+                                  int64_t deaths);
+    void move_notable_people(uint64_t source_cohort_handle,
+                             uint64_t destination_cohort_handle,
+                             uint64_t family_handle,
+                             int64_t family_people_before,
+                             int64_t moved_family_people);
+    int32_t family_membership_index(uint64_t family_handle,
+                                    uint64_t cohort_handle) const;
+    int64_t desired_need_units_for_actor(
+        int32_t slot, int32_t need_index, int32_t dt_days,
+        int64_t environment_factor_q16, int64_t composite_factor_q16,
+        int64_t actor_population, int64_t actor_funds,
+        int64_t &saturation_count) const;
     bool is_merchant_slot(int32_t slot) const;
     void touch_accounting_slot(int32_t slot);
     void rebuild_incremental_audit_shadow();

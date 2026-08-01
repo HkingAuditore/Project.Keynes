@@ -114,11 +114,14 @@ func _run() -> void:
 	if String((cohort_refs.get("name") as Label).text) != "工人" \
 			or (cohort_refs.get("icon") as IconBadge).icon_key != "profession.worker" \
 			or (cohort_refs.get("living_icon") as IconBadge).icon_key \
-					!= "population.living.comfortable":
+					!= "population.living.comfortable" \
+			or cohort_refs.has("living_label"):
 		failures.append("population header did not separate profession and living-standard icons")
-	if not String((cohort_refs.get("income") as Label).text).begins_with("收入 ") \
-			or not String((cohort_refs.get("expense") as Label).text).begins_with("支出 "):
-		failures.append("population header does not identify income and expense as ledger entries")
+	if cohort_refs.has("income") or cohort_refs.has("expense"):
+		failures.append("population header still exposes income or expense")
+	if String((cohort_refs.get("wealth") as Label).text).contains("人均") \
+			or String((cohort_refs.get("net") as Label).text) != "+4":
+		failures.append("population header does not present compact wealth and net values")
 	var demand_requests := []
 	panel.demand_details_requested.connect(
 		func(details: Dictionary) -> void: demand_requests.append(details))

@@ -31,24 +31,61 @@ func _ready() -> void:
 	)
 	_zero_style_margins(bar_style)
 	add_theme_stylebox_override("panel", bar_style)
+	if not has_node("Margin/Row/DateBlock/DateLabel"):
+		_build_compatibility_tree()
+		return
 
+	_date_label = %DateLabel
+	_pause_button = %PauseButton
+	_day_night_button = %DayNightButton
+	_gm_button = %GMButton
+	var date_style := UITokens.inset_panel_style(
+		Color(0.055, 0.048, 0.039, 0.94), UITokens.PANEL_BORDER_SOFT)
+	_zero_style_margins(date_style)
+	date_style.content_margin_left = UITokens.SPACE_MD
+	date_style.content_margin_right = UITokens.SPACE_MD
+	date_style.content_margin_top = 2
+	date_style.content_margin_bottom = 2
+	$Margin/Row/DateBlock.add_theme_stylebox_override("panel", date_style)
+	_date_label.add_theme_font_override("font", UITokens.font_with_weight(650))
+	_date_label.add_theme_font_size_override("font_size", UITokens.FONT_HUD_TIME)
+	_date_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
+	IconButton.apply(%SetupButton, &"settings", 15, "设置")
+	IconButton.apply(_gm_button, &"overview", 15, "GM 面板（F1 / `）")
+	IconButton.apply(_day_night_button, &"moon", 15, "昼夜循环：开启", true, true)
+	IconButton.apply(_pause_button, &"pause", 15, "暂停", true, false)
+	%SetupButton.pressed.connect(func() -> void: setup_requested.emit())
+	_gm_button.pressed.connect(func() -> void: gm_requested.emit())
+	_day_night_button.toggled.connect(func(enabled: bool) -> void: day_night_toggled.emit(enabled))
+	_pause_button.toggled.connect(func(pressed: bool) -> void: pause_toggled.emit(pressed))
+	var speed_nodes := [%Speed1, %Speed2, %Speed5, %Speed10, %Speed20, %Speed50]
+	for index in range(SPEED_PRESETS.size()):
+		var speed := SPEED_PRESETS[index]
+		var button := speed_nodes[index] as Button
+		button.tooltip_text = "%d 倍速" % int(speed)
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+		button.pressed.connect(_on_speed_pressed.bind(speed))
+		_speed_buttons[speed] = button
+	set_gm_available(_gm_available)
+
+
+func _build_compatibility_tree() -> void:
+	# The product scene uses the authored tree. Keep direct `new()` usable by
+	# isolated component tests and external tools that do not load the scene.
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", UITokens.SPACE_MD)
 	margin.add_theme_constant_override("margin_top", 6)
 	margin.add_theme_constant_override("margin_right", UITokens.SPACE_MD)
 	margin.add_theme_constant_override("margin_bottom", 6)
 	add_child(margin)
-
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", UITokens.SPACE_SM)
 	margin.add_child(row)
-
 	row.add_child(_build_date_block())
-
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(spacer)
-
 	row.add_child(_build_control_block())
 
 

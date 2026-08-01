@@ -5,17 +5,34 @@ const SHADERS := [
 	"res://shaders/compute/visual_tile_horizon_pyramid.glsl",
 	"res://shaders/compute/visual_tile_horizon_trace.glsl",
 ]
+const LEGACY_SHADER := "res://shaders/bake/terrain_horizon_bake.gdshader"
 
 
 func _init() -> void:
 	var failures := 0
 	var trace_code := FileAccess.get_file_as_string(SHADERS[2])
+	var decode_code := FileAccess.get_file_as_string(SHADERS[0])
+	var legacy_code := FileAccess.get_file_as_string(LEGACY_SHADER)
 	var wraps_before_mip := trace_code.contains(
 		"wrap_column(p.x, params.logical_size.x) / scale")
 	var splits_periodic_span := trace_code.contains("bool crosses_seam") \
 		and trace_code.contains("params.logical_size.x - 1")
 	if not wraps_before_mip or not splits_periodic_span:
 		push_error("trace shader must wrap level-0 X before mip reduction and split seam spans")
+		failures += 1
+	var decode_wrap_safe := decode_code.contains(
+		"wrap_column(logical_p.x, params.logical_size.x)") \
+		and decode_code.contains("int r = (-x) % width;") \
+		and not decode_code.contains("logical_p.x %=")
+	var legacy_wrap_safe := legacy_code.contains("sx = wrap_column(sx, period_cols)") \
+		and legacy_code.contains("int r = (-x) % width;") \
+		and not legacy_code.contains("sx = sx % period_cols")
+	if not decode_wrap_safe or not legacy_wrap_safe:
+		push_error("horizon lowpass must not use negative GLSL remainder for X wrapping")
+		failures += 1
+	var legacy_shader := ResourceLoader.load(LEGACY_SHADER, "Shader") as Shader
+	if legacy_shader == null:
+		push_error("legacy horizon shader failed to load: %s" % LEGACY_SHADER)
 		failures += 1
 	var rd := RenderingServer.create_local_rendering_device()
 	if rd == null:

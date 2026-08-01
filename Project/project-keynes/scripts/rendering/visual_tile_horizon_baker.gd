@@ -184,6 +184,7 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	decode_push.encode_s32(32, layout.gutter_px)
 	decode_push.encode_s32(36, mip_offsets[0])
 	decode_push.encode_float(40, clampf(float(params.get("sea_level", 0.0)), 0.0, 1.0))
+	decode_push.encode_s32(44, clampi(int(params.get("lowpass_radius", 1)), 0, 1))
 	_rd.compute_list_set_push_constant(compute_list, decode_push, decode_push.size())
 	_rd.compute_list_dispatch(compute_list,
 		_groups(layout.logical_size.x), _groups(layout.logical_size.y), 1)

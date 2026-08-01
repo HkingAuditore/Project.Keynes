@@ -81,6 +81,24 @@ func _run() -> void:
 			break
 	_expect("wrap clusters never straddle the far/near boundary", atomic)
 
+	# 精确脏格缓存重组必须直接产出同一 LOD 前缀，不能再依赖一次全 chunk
+	# GDScript 排序/复制；这是 succession 单格刷新热路径的性能契约。
+	layer._cache_chunk_cell_payloads(7, buf_b, cells_b, inst_b)
+	var assembled: Dictionary = layer._assemble_chunk_cell_payloads(
+		layer._chunk_cell_payloads.get(7, {}))
+	var assembled_buffer: PackedFloat32Array = assembled.get("buffer", PackedFloat32Array())
+	var assembled_cells: PackedInt32Array = assembled.get("cell_indices", PackedInt32Array())
+	var assembled_count := int(assembled.get("instance_count", 0))
+	var assembled_far := int(assembled.get("far_count", -1))
+	_expect("cache assembly preserves every instance", assembled_count == inst_b)
+	_expect("cache assembly preserves the full multiset",
+		_multiset(assembled_buffer, assembled_cells, 0, assembled_count) ==
+		_multiset(buf_b, cells_b, 0, inst_b))
+	_expect("cache assembly directly preserves the native far prefix",
+		assembled_far == native_far and
+		_multiset(assembled_buffer, assembled_cells, 0, assembled_far) ==
+		_multiset(buf_b, cells_b, 0, native_far))
+
 	layer.free()
 	print("=== detail scatter lod order: %d checks, %d failures ===" % [_checks, _failures])
 

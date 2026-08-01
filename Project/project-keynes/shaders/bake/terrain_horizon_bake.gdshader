@@ -24,6 +24,8 @@ uniform sampler2D height_tex : filter_nearest, repeat_disable;
 uniform vec2 tex_dims = vec2(1024.0, 512.0);   // (W, H) 像素
 uniform int steps = 128;                        // marching 步数
 uniform float step_px = 8.0;                    // 每步像素距离
+uniform float step_growth = 0.35;               // 二次增长率；近密远疏，0=固定步长
+uniform int lowpass_radius = 1;                  // 1=Horizon 专用 3x3 高斯低通
 uniform float max_horizon_angle = 1.309;        // 量化上限（rad），与运行期 shader 一致
 uniform float bias = 0.004;                     // 归一高程 bias，抑制自遮蔽
 uniform float height_world_scale = 176.0;       // 归一高程 → world units 的夸张倍率
@@ -48,11 +50,43 @@ vec2 horizon_dir(int d) {
 	return vec2(0.70710678118654752, -0.70710678118654752);
 }
 
-float decode_height_at(int sx, int sy) {
-	// 采样 texel 中心；filter_nearest 保证取值等价于 CPU 逐 texel 读 height_buffer。
+int wrap_column(int x, int width) {
+	if (x >= 0) {
+		return x % width;
+	}
+	int r = (-x) % width;
+	return (r == 0) ? 0 : (width - r);
+}
+
+float decode_height_raw(int sx, int sy) {
+	int W = int(tex_dims.x + 0.5);
+	int H = int(tex_dims.y + 0.5);
+	int period_cols = (wrap_period_x > 1e-6)
+		? clamp(int(floor(wrap_period_x / max(texel_x, 1e-6) + 0.5)), 1, W)
+		: W;
+	sx = wrap_column(sx, period_cols);
+	sx = clamp(sx, 0, W - 1);
+	sy = clamp(sy, 0, H - 1);
 	vec2 uv = (vec2(float(sx), float(sy)) + vec2(0.5)) / tex_dims;
 	vec4 s = texture(height_tex, uv);
 	return max((s.r * 256.0 + s.g) / 257.0, sea_level);
+}
+
+float decode_height_at(int sx, int sy) {
+	if (lowpass_radius <= 0) {
+		return decode_height_raw(sx, sy);
+	}
+	// 1-2-1 separable Gaussian, evaluated only in this derived visibility pass.
+	// The authoritative eroded height texture remains unchanged for normals/rivers.
+	float sum = 0.0;
+	for (int oy = -1; oy <= 1; oy++) {
+		float wy = (oy == 0) ? 2.0 : 1.0;
+		for (int ox = -1; ox <= 1; ox++) {
+			float wx = (ox == 0) ? 2.0 : 1.0;
+			sum += decode_height_raw(sx + ox, sy + oy) * wx * wy;
+		}
+	}
+	return sum * 0.0625;
 }
 
 float quant_angle(float angle) {
@@ -81,7 +115,8 @@ void fragment() {
 		vec2 dir = horizon_dir(d);
 		float best_slope_sq = 0.0;
 		for (int s = 1; s <= steps; s++) {
-			float dist_px = float(s) * step_px;
+			float sf = float(s);
+			float dist_px = step_px * (sf + 0.5 * step_growth * sf * (sf - 1.0));
 			float sx_f = float(x) + dir.x * dist_px;
 			int sy = int(floor(float(y) + dir.y * dist_px + 0.5));
 			if (sy < 0 || sy >= H) {

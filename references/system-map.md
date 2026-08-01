@@ -43,7 +43,7 @@ order.
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
 - 视野迷雾与国界：读 `docs/cpp-dots-runtime/vision-fog-and-borders.md`、`Project/project-keynes/scripts/geography/vision_solver.gd`、`Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`、`Project/project-keynes/scripts/rendering/country_border_layer.gd`。
 - 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/cpp-dots-runtime/performance-diagnostics-playbook.md`、`Project/project-keynes/tests/*.gd`。
-- 阶层与市场：读 `gdext/src/economy_runtime.{h,cpp}`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd` 和 `docs/cpp-dots-runtime/native-economy-runtime.md`。
+- 阶层、市场、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/cpp-dots-runtime/native-economy-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。
 
 ## 运行入口
 
@@ -354,16 +354,32 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 启用仅供开发的确定性测试经济 fixture；默认关闭。fixture 先生成当前科技最高可用档的资源适配
 建筑 owner-lot，再从 catalog owner/employee 岗位容量派生 cohort，初始库存与就业保持为零。状态实现位于
 `DCWorldExt` 组合持有的 `NativeEconomyRuntime`：PopulationCohort pages、商人共同
-所有的 MarketStore、企业停产/采购意图/实际出库、need/bundle 清算、国内贸易拓扑/订单/托管、
-账本、滚动五相 continuation、closing audit 和 PKEC v19 存档全部在 C++。生产 cadence
+所有的 MarketStore、FamilyStore、NotablePersonStore 与成员/建筑所有权/人物需求稀疏边、企业停产/采购意图/实际出库、
+need/bundle 清算、国内贸易拓扑/订单/托管、账本、滚动五相 continuation、closing audit 和
+PKEC v27 存档全部在 C++。生产 cadence
 固定为 `cell_id % 5 == day % 5`；每个到期 bucket 通过有界 same-day continuation 完整提交，
 贸易规划仍是不会阻塞本地结算的软工作。closing audit 默认 INCREMENTAL：首触 shadow delta
 每日权威提交，并在首日、restore/异常边界及每 25 日完整复核；mismatch 在发布前阻断并关闭
 本 session fast path，FULL/PROBE 保留为回滚与验证路径。投资 review prepare
 只生成当前 rolling/review phase 的升序正人口 cell 列表，相关 scratch 不进存档/hash。
-Inspector 的人口/市场页只查询选中 cell 的 committed snapshot；
+Inspector 的人口/市场/家族/人物页只查询选中 cell 的 committed 或切片间完整 snapshot；
 人口页的预计单位/人/日由 C++ 复用正式需求内核生成 cohort-major CSR，不保存全局
 cohort×good 矩阵。
+
+显赫家族只表示具有可见经济影响的少数人口，匿名多数仍是 cohort 的隐含子集。`cash_claim` 是
+cohort funds 内的守恒归属，建筑估值不进入货币账本；建筑组继续按
+`(cell,type,owner_signature)` 聚合，家族用稳定 building handle 上的 `owned_count` 表示产业。
+家族产业的 owner 岗只允许本地、同 owner signature 的成员填充，职业人口/业主/雇员统计由
+`FAMILY_COMMIT` 派生。GDScript 只编译姓氏与策略并提供分页查询，不拥有家族写路径。
+正式开局的 `StarterSettlementBootstrap v3` 仅声明每个首都的创始建筑目标；原生 economy
+bootstrap 守恒创建一个两人采集者家族、归属一栋采集营地并晋升一名具名业主代表，随后重建同一套
+家族/人物 CSR。该开局例外不修改普通地块的乡村/100 人内生形成门槛。
+原生层还以“强制命名首都 + 真实采集营地”为 v2 packet 兼容识别，并在第 0..30 天的
+`FAMILY_COMMIT` 对仍为空的正式首都作一次幂等修复；这使正式数据保证不依赖脚本热重载状态。
+
+重要人物是 family membership 内的稀疏 overlay，不增加人口、钱包或市场订单。姓名、职业、岗位和
+聚合建筑可双向追溯；人物财产、消费需求、满足度和税款来自 cohort 已实现结算的守恒归因，并在
+`PERSON_COMMIT` 统一提交。GDScript 只补显示名和稳定目录 ID。
 
 国内贸易软规划以 neighbor、terrain LUT 映射后的 passable/enter-cost 和冻结国界作为唯一失效语义；
 原始 terrain ID 的季节性重分类不重置 scan。CSV v8 summary 发布 scan/route cursor、规范化拓扑哈希、
@@ -456,8 +472,9 @@ debug recording is Economy CSV v22.
   freezes due-cell 30-day temperature/plant water, applies the Q16 capacity
   after labor/input/capital/resource limits, and publishes building diagnostics.
   No new scheduler stage or GDScript economy authority is introduced.
-- Persistence/debug are PKEC v23 and Economy CSV v22. PKEC v23 explicitly
-  migrates v22 to empty fiscal history; older schemas remain unsupported.
+- Current persistence/debug are PKEC v27 and Economy CSV v22. PKEC v27 retains
+  production-climate/fiscal/notable-family authority and adds important-person records and needs;
+  its reader supports explicit v26 empty-person and v25 empty-family migrations plus v23/v22 paths.
 
 ## Climate moisture round visibility
 
@@ -486,7 +503,8 @@ debug recording is Economy CSV v22.
   input.
 - Commit: `aggregate_publish/COMMIT` consumes deduplicated changed cells.
 - Bridge: selected-cell summary plus full settlement snapshot / bounded deltas.
-- Persistence: PKEC v24 fixed generations plus sparse stable-ID names.
+- Persistence: current PKEC v27 retains the fixed generations and sparse stable-ID names introduced
+  by PKEC v24.
 - Formal opening-country cells carry a native forced-name bit, so every
   20-person capital is named while its prosperity tier remains population-only.
 - Visible boundary: Godot pooled label layer; no economic mirror or fallback.

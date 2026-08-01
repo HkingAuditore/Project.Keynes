@@ -11,6 +11,8 @@ const PRODUCTION_CLIMATE_DIR := "res://data/economy/production_climates"
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const DEFAULT_SETTLEMENT_PROFILE_PATH := "res://data/economy/default_settlement.tres"
+const DEFAULT_FAMILY_SURNAME_PACK_PATH := "res://data/economy/default_family_surnames.tres"
+const DEFAULT_PERSON_GIVEN_NAME_PACK_PATH := "res://data/economy/default_person_given_names.tres"
 const Q16_ONE := 65536
 ## Reserved profession that represents unemployed population buckets. It is a
 ## legal signature profession (one signature per ethnicity is auto-generated),
@@ -388,6 +390,24 @@ static func compile_native_catalog() -> Dictionary:
 	for key in settlement_columns:
 		if key != "ok":
 			catalog[key] = settlement_columns[key]
+	var family_pack = load(DEFAULT_FAMILY_SURNAME_PACK_PATH)
+	if family_pack == null or not family_pack.has_method("compile_native_columns"):
+		return {"ok": false, "reason": "default family surname pack is unavailable"}
+	var family_columns: Dictionary = family_pack.compile_native_columns()
+	if not bool(family_columns.get("ok", false)):
+		return family_columns
+	for key in family_columns:
+		if key != "ok":
+			catalog[key] = family_columns[key]
+	var person_pack = load(DEFAULT_PERSON_GIVEN_NAME_PACK_PATH)
+	if person_pack == null or not person_pack.has_method("compile_native_columns"):
+		return {"ok": false, "reason": "default person given-name pack is unavailable"}
+	var person_columns: Dictionary = person_pack.compile_native_columns()
+	if not bool(person_columns.get("ok", false)):
+		return person_columns
+	for key in person_columns:
+		if key != "ok":
+			catalog[key] = person_columns[key]
 	catalog["ok"] = true
 	return catalog
 

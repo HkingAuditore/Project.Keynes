@@ -10,18 +10,21 @@ const OBJECT_DETAIL_TAB := {
 	"building": "buildings",
 	"good": "market",
 	"resource": "natural_resources",
+	"family": "families",
 }
 const OBJECT_DETAIL_ROWS := {
 	"cohort": "cohort_rows",
 	"building": "building_rows",
 	"good": "market_rows",
 	"resource": "resource_rows",
+	"family": "family_rows",
 }
 const OBJECT_TYPE_LABELS := {
 	"cohort": "阶层",
 	"building": "建筑",
 	"good": "物资",
 	"resource": "自然资源",
+	"family": "家族",
 }
 # 对象类型 → 关联税种（税收契约：所得税按职业、营业税按建筑类型、
 # 消费税与进出口关税按物资；自然资源没有适用税种）。
@@ -119,8 +122,9 @@ func build(cell: HexCell) -> Dictionary:
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
 	var tabs := [{"id": "geography", "label": "地理信息", "icon": "geo"}]
 	if intel_visible:
-		tabs.append_array([
+			tabs.append_array([
 			{"id": "population", "label": "人口信息", "icon": "growth"},
+			{"id": "families", "label": "家族", "icon": "family.house"},
 			{"id": "market", "label": "市场信息", "icon": "resource"},
 			{"id": "buildings", "label": "建筑", "icon": "building"},
 			{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
@@ -316,6 +320,8 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 	match tab_id:
 		"population":
 			return _population_category(_population_snapshot(idx), _market_snapshot(idx))
+		"families":
+			return _family_category(_family_cell_snapshot(idx))
 		"market":
 			return _market_category(_market_snapshot(idx))
 		"buildings":
@@ -375,6 +381,15 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 					break
 	if row.is_empty():
 		return {}
+	if kind == "family":
+		var facade = _generator.get_economy_facade() if _generator != null \
+			and _generator.has_method("get_economy_facade") else null
+		if facade != null and facade.has_method("family_snapshot"):
+			var family_snapshot: Dictionary = facade.family_snapshot(int(row.get("family_handle", 0)))
+			if bool(family_snapshot.get("ok", false)):
+				row.merge(_family_detail_fields(family_snapshot), true)
+			row["notable_person_rows"] = _family_notable_person_rows(
+				facade, int(row.get("family_handle", 0)))
 	var item_id := _object_tax_item_id(kind, row)
 	var country := _country_summary(idx)
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
@@ -870,6 +885,99 @@ func _building_snapshot(cell_idx: int) -> Dictionary:
 	return facade.building_cell_snapshot(cell_idx)
 
 
+func _family_cell_snapshot(cell_idx: int) -> Dictionary:
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return {}
+	var facade = _generator.get_economy_facade()
+	if facade == null or not facade.has_method("family_cell_snapshot"):
+		return {}
+	return facade.family_cell_snapshot(cell_idx, 0, 64)
+
+
+func _family_category(snapshot: Dictionary) -> Dictionary:
+	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
+		return {"insights": [{"id": "families_unavailable", "text":
+			"家族运行时尚未就绪。", "accent": UITokens.TEXT_MUTED,
+			"icon": "family.house"}]}
+	var handles: PackedInt64Array = snapshot.get("family_handles", PackedInt64Array())
+	var surnames: PackedStringArray = snapshot.get("surnames", PackedStringArray())
+	var disambiguators: PackedInt32Array = snapshot.get(
+		"surname_disambiguators", PackedInt32Array())
+	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
+	var cash_claims: PackedInt64Array = snapshot.get("cash_claims", PackedInt64Array())
+	var owned: PackedInt64Array = snapshot.get("owned_buildings", PackedInt64Array())
+	var notable_people: PackedInt32Array = snapshot.get(
+		"notable_person_counts", PackedInt32Array())
+	var rows: Array = []
+	for i in range(surnames.size()):
+		var suffix := "" if i >= disambiguators.size() or disambiguators[i] == 0 \
+			else "（%d）" % (int(disambiguators[i]) + 1)
+		var family_handle := int(handles[i]) if i < handles.size() else 0
+		rows.append({
+			"id": "family_%d" % family_handle,
+			"family_handle": family_handle,
+			"name": "%s氏%s" % [String(surnames[i]), suffix],
+			"population": UITokens.format_compact_number_cn(float(populations[i]), 1) if i < populations.size() else "0",
+			"notable_people": int(notable_people[i]) if i < notable_people.size() else 0,
+			"owned_buildings": UITokens.format_compact_number_cn(float(owned[i]), 1) if i < owned.size() else "0",
+			"cash_claim": _money_text(int(cash_claims[i])) if i < cash_claims.size() else _money_text(0),
+			"accent": UITokens.ACCENT,
+			"icon": "family.house",
+		})
+	if rows.is_empty():
+		return {"insights": [{"id": "families_empty", "text":
+			"此地块尚未形成显赫家族；普通家庭仍以匿名人口统计。",
+			"accent": UITokens.TEXT_MUTED, "icon": "family.house"}]}
+	return {"family_rows": rows}
+
+
+func _family_detail_fields(snapshot: Dictionary) -> Dictionary:
+	return {
+		"population": UITokens.format_compact_number_cn(float(snapshot.get("population", 0)), 1),
+		"cash_claim": _money_text(int(snapshot.get("cash_claim", 0))),
+		"productive_asset_value": _money_text(int(snapshot.get("productive_asset_value", 0))),
+		"net_worth": _money_text(int(snapshot.get("net_worth", 0))),
+		"owned_buildings": UITokens.format_compact_number_cn(float(snapshot.get("owned_buildings", 0)), 1),
+		"notable_people": int(snapshot.get("notable_person_count", 0)),
+		"founded_day": int(snapshot.get("founded_day", 0)),
+		"decline_reviews": int(snapshot.get("decline_reviews", 0)),
+	}
+
+
+func _family_notable_person_rows(facade, family_handle: int) -> Array:
+	var rows: Array = []
+	if facade == null or not facade.has_method("family_notable_people") \
+			or not facade.has_method("notable_person_snapshot"):
+		return rows
+	var page: Dictionary = facade.family_notable_people(family_handle, 0, 16)
+	if not bool(page.get("ok", false)):
+		return rows
+	var handles: PackedInt64Array = page.get("person_handles", PackedInt64Array())
+	for person_handle in handles:
+		var person: Dictionary = facade.notable_person_snapshot(int(person_handle))
+		if not bool(person.get("ok", false)):
+			continue
+		var job_kind := int(person.get("job_kind", 0))
+		var job_text := "家族成员"
+		if job_kind == 1:
+			job_text = "产业所有者"
+		elif job_kind == 2:
+			job_text = "产业雇员"
+		var profession := String(person.get("profession_display_name", ""))
+		var building := String(person.get("building_type_display_name", ""))
+		var detail_parts: Array[String] = []
+		if not profession.is_empty():
+			detail_parts.append(profession)
+		detail_parts.append(job_text)
+		if not building.is_empty():
+			detail_parts.append(building)
+		rows.append({
+			"name": String(person.get("full_name", "未命名人物")),
+			"value": " · ".join(detail_parts),
+		})
+	return rows
+
+
 func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "population_unavailable", "text": "阶层运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
@@ -1062,7 +1170,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"profession_id": profession_id,
 			"cohort_handle": int(handles[i]) if i < handles.size() else -1,
 			"population": "%s 人" % UITokens.format_compact_number_cn(float(population), 1),
-			"wealth": "人均 %s" % _money_text(wealth_pc),
+			"wealth": _money_text(wealth_pc),
 			"income": "+%s" % _money_text(income_pc) if settlement_available else "+—",
 			"expense": "−%s" % _money_text(expense_pc) if settlement_available else "−—",
 			"net": "%s%s" % ["+" if net_pc > 0 else ("−" if net_pc < 0 else ""), _money_text(absi(net_pc))] if settlement_available else "—",

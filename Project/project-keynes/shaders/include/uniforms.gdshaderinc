@@ -395,14 +395,14 @@ uniform sampler2D ocean_upwelling_tex : source_color, filter_linear, repeat_disa
 // =========================================================================
 // 【植被轴 / 覆盖物轴 / 生态可视化组】
 // =========================================================================
-uniform float vegetation_axis_strength : hint_range(0.0, 1.0) = 0.45;
+uniform float vegetation_axis_strength : hint_range(0.0, 1.0) = 0.40;
 uniform float cover_axis_strength : hint_range(0.0, 1.0) = 0.65;
-uniform float ecology_visual_strength : hint_range(0.0, 1.0) = 0.90;
+uniform float ecology_visual_strength : hint_range(0.0, 1.0) = 0.80;
 uniform float snowline_visual_strength : hint_range(0.0, 1.0) = 0.85;
-uniform float foliage_density_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float foliage_density_strength : hint_range(0.0, 1.0) = 0.75;
 uniform float temperature_visual_strength : hint_range(0.0, 1.5) = 1.25;
-uniform float moisture_visual_strength : hint_range(0.0, 1.5) = 1.30;
-uniform float vitality_visual_strength : hint_range(0.0, 1.5) = 1.25;
+uniform float moisture_visual_strength : hint_range(0.0, 1.5) = 1.18;
+uniform float vitality_visual_strength : hint_range(0.0, 1.5) = 1.12;
 uniform int ecology_visual_quality : hint_range(0, 2) = 2;
 
 

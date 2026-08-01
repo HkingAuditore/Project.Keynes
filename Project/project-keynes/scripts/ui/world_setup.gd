@@ -4,6 +4,7 @@ const MAIN_SCENE_PATH := "res://scenes/player_game.tscn"
 const DEBUG_SCENE_PATH := "res://scenes/main.tscn"
 const SETTINGS_PATH := "user://world_setup_settings.json"
 const WORLD_SETUP_META := &"world_setup_config"
+const SetupFieldRowScene := preload("res://scenes/ui/setup_field_row.tscn")
 const MOBILE_LAYOUT_MAX_WIDTH := 900.0
 const TOUCH_CONTROL_HEIGHT := 56.0
 const TOUCH_BUTTON_HEIGHT := 60.0
@@ -124,6 +125,8 @@ func _ready() -> void:
 	_apply_default_values()
 	_load_settings()
 	_update_cell_count()
+	resized.connect(_apply_responsive_layout)
+	_apply_responsive_layout()
 
 
 func _is_mobile_layout() -> bool:
@@ -150,8 +153,7 @@ func _control_min_size(base_width: float, desktop_height: float) -> Vector2:
 
 func _build_ui() -> void:
 	_mobile_layout = _is_mobile_layout()
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var margin := %Margin as MarginContainer
 	var outer_margin: int = 18
 	if _mobile_layout:
 		outer_margin = 10
@@ -159,92 +161,51 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_top", outer_margin)
 	margin.add_theme_constant_override("margin_right", outer_margin)
 	margin.add_theme_constant_override("margin_bottom", outer_margin)
-	add_child(margin)
-
-	var root := VBoxContainer.new()
+	var root := %Root as VBoxContainer
 	root.add_theme_constant_override("separation", 12 if _mobile_layout else 10)
-	margin.add_child(root)
-
-	var header: BoxContainer = VBoxContainer.new()
-	if not _mobile_layout:
-		header = HBoxContainer.new()
+	var header := %Header as BoxContainer
+	header.vertical = _mobile_layout
 	header.add_theme_constant_override("separation", 12)
-	root.add_child(header)
-
-	var title := Label.new()
-	title.text = "World Setup"
+	var title := %Title as Label
 	title.add_theme_font_size_override("font_size", 30 if _mobile_layout else 28)
-	header.add_child(title)
-
-	var actions := HBoxContainer.new()
+	var actions := %Actions as HBoxContainer
 	actions.add_theme_constant_override("separation", 10)
-	if _mobile_layout:
-		header.add_child(actions)
-	else:
-		var spacer := Control.new()
-		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		header.add_child(spacer)
-		header.add_child(actions)
-
-	var reset_btn := Button.new()
-	reset_btn.text = "恢复默认"
+	%HeaderSpacer.visible = not _mobile_layout
+	var reset_btn := %ResetButton as Button
 	reset_btn.custom_minimum_size = _button_min_size(96.0)
 	reset_btn.size_flags_horizontal = _button_h_size_flags()
 	reset_btn.pressed.connect(_on_reset_pressed)
-	actions.add_child(reset_btn)
-
-	var start_btn := Button.new()
-	start_btn.text = "生成世界"
+	var start_btn := %StartButton as Button
 	start_btn.custom_minimum_size = _button_min_size(120.0)
 	start_btn.size_flags_horizontal = _button_h_size_flags()
 	start_btn.pressed.connect(_on_start_pressed)
-	actions.add_child(start_btn)
-
-	var debug_btn := Button.new()
-	debug_btn.text = "调试场景"
+	var debug_btn := %DebugButton as Button
 	debug_btn.custom_minimum_size = _button_min_size(120.0)
 	debug_btn.size_flags_horizontal = _button_h_size_flags()
 	debug_btn.pressed.connect(_on_debug_pressed)
-	actions.add_child(debug_btn)
+	var body := %ResponsiveBody as BoxContainer
+	body.vertical = _mobile_layout
+	_build_base_panel(%BaseSettings)
+	_build_render_panel(%BaseSettings)
+	_build_climate_panel(%ClimateSettings)
 
-	if _mobile_layout:
-		var scroll := ScrollContainer.new()
-		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		root.add_child(scroll)
 
-		var content := VBoxContainer.new()
-		content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		content.add_theme_constant_override("separation", 14)
-		scroll.add_child(content)
-
-		_build_base_panel(content)
-		_build_render_panel(content)
-		_build_climate_panel(content)
-	else:
-		var body := HSplitContainer.new()
-		body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		root.add_child(body)
-
-		var left_panel := VBoxContainer.new()
-		left_panel.custom_minimum_size = Vector2(360, 0)
-		left_panel.add_theme_constant_override("separation", 8)
-		body.add_child(left_panel)
-
-		var advanced_scroll := ScrollContainer.new()
-		advanced_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		advanced_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		advanced_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		body.add_child(advanced_scroll)
-
-		var advanced := VBoxContainer.new()
-		advanced.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		advanced.add_theme_constant_override("separation", 8)
-		advanced_scroll.add_child(advanced)
-
-		_build_base_panel(left_panel)
-		_build_render_panel(left_panel)
-		_build_climate_panel(advanced)
+func _apply_responsive_layout() -> void:
+	var mobile := _is_mobile_layout()
+	_mobile_layout = mobile
+	(%Header as BoxContainer).vertical = mobile
+	(%ResponsiveBody as BoxContainer).vertical = mobile
+	%HeaderSpacer.visible = not mobile
+	var outer_margin := 10 if mobile else 18
+	for side in ["left", "top", "right", "bottom"]:
+		(%Margin as MarginContainer).add_theme_constant_override(
+			"margin_%s" % side, outer_margin)
+	for button in [%ResetButton, %StartButton, %DebugButton]:
+		button.custom_minimum_size.y = TOUCH_BUTTON_HEIGHT if mobile else DESKTOP_CONTROL_HEIGHT
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL if mobile else Control.SIZE_SHRINK_CENTER
+	for row in get_tree().get_nodes_in_group("world_setup_field_rows"):
+		if row is SetupFieldRow and is_ancestor_of(row):
+			row.set_mobile_layout(mobile)
 
 
 func _build_base_panel(parent: VBoxContainer) -> void:
@@ -330,43 +291,8 @@ func _create_foldout(title: String) -> Dictionary:
 
 
 func _row_with_label(label_text: String, control: Control, hint_text: String = "") -> BoxContainer:
-	var row: BoxContainer = VBoxContainer.new()
-	if not _mobile_layout:
-		row = HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", 14 if not _mobile_layout else 6)
-
-	var label_box := VBoxContainer.new()
-	label_box.add_theme_constant_override("separation", 2)
-	label_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	if not _mobile_layout:
-		label_box.custom_minimum_size = Vector2(320.0, 0.0)
-		label_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var title_label := Label.new()
-	title_label.text = label_text
-	title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	if _mobile_layout:
-		title_label.add_theme_font_size_override("font_size", 18)
-	label_box.add_child(title_label)
-
-	if not hint_text.is_empty():
-		var hint_label := Label.new()
-		hint_label.text = hint_text
-		hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		hint_label.modulate = Color(0.78, 0.78, 0.78, 1.0)
-		if _mobile_layout:
-			hint_label.add_theme_font_size_override("font_size", 14)
-		else:
-			hint_label.add_theme_font_size_override("font_size", 12)
-		label_box.add_child(hint_label)
-		label_box.tooltip_text = hint_text
-		control.tooltip_text = hint_text
-
-	row.add_child(label_box)
-	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(control)
+	var row := SetupFieldRowScene.instantiate() as SetupFieldRow
+	row.configure(label_text, hint_text, control, _mobile_layout)
 	return row
 
 

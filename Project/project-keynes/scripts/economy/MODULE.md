@@ -2,9 +2,9 @@
 
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
-> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、冻结国家科技、国内 Trade V1、税收财政、
-> PKEC v24 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
-> NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄与家庭结构尚未接入；
+> 替代品/互补 bundle、Inspector、BUILDING_GRAPH、显赫家族、冻结国家科技、国内 Trade V1、
+> 税收财政、PKEC v27 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
+> NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄、微观家庭与谱系尚未接入；
 > 自然出生和死亡由原生 household/structural 路径处理。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
@@ -43,6 +43,17 @@
   `docs/cpp-dots-runtime/tax-fiscal-runtime.md`。
 - `owner_slots_per_building` 是正整数物理容量；普通企业通常为 1，家庭式采集/狩猎单位可用多个
   同职业共同经营岗位。活跃 owner-lot 的 owner required 等于物理容量，计划利用率只缩放 employee required 与产量；所有填充仍受对应 cohort 人口约束。
+- `FamilyStore` 只表示对城市经济可见的显赫家族；匿名多数仍留在 cohort。成员和建筑所有权使用
+  稀疏边与 generation-safe handle，建筑组 key 不含 family ID。家族 `cash_claim` 只是 cohort
+  资金内的守恒归属，建筑估值只用于展示，不增加第二个钱包。
+- 家族所属建筑的 owner 岗只能由本地、完全匹配 owner signature 的家族成员占据；匿名建筑只能
+  使用匿名 cohort 容量。`FAMILY_COMMIT` 在 `BUILDING_COMMIT` 后归一化成员 claim，并派生各职业的
+  人口、owner-employed 与 employee-employed；不存在独立家族劳动力账本或经理代理路径。
+- 正式 `StarterSettlementBootstrap v3` 为每个首都声明一个采集营地创始家族；原生 bootstrap
+  守恒归属两名实际业主并立即晋升一名可追溯代表。未声明的普通 bootstrap 仍从空家族状态开始。
+  为兼容长驻编辑器发出的 v2 packet，原生层也从“强制命名首都 + 真实采集营地”派生声明，并在
+  开局第 0..30 天的 `FAMILY_COMMIT` 对缺失家族的正式首都作幂等修复；没有采集营地的普通夹具
+  不触发该路径。
 - 六邻贸易拓扑、稀疏规划、路线缓存、在途订单和托管由 NativeEconomyRuntime 持有；MapData
   只在经济初始化边界提供邻接与 terrain LUT。`MapGenerator` 在 economy configure 后、
   bootstrap 前捕获一次拓扑；非 OFF 模式捕获失败即中止本次经济初始化。UI 只允许分页
@@ -348,13 +359,13 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v24. Cell records persist six frozen environment columns,
-including 30-day temperature and plant-available water. Building records persist
-temperature fit, water fit, climate capacity, and climate-lost output; all four
-enter the state hash. PKEC v24 additionally persists generation-safe subsidy
-history and fiscal cumulative values. Restore accepts v23 and explicitly migrates
-v22 to empty fiscal history; older schemas, truncated, out-of-range, or
-environment-hash-mismatched records fail before the runtime becomes bootstrapped.
+Current saves are PKEC v27. It retains the frozen environment, production-climate,
+settlement, subsidy, fiscal, and notable-family authority from earlier schemas, and adds the
+given-name catalog/policy header plus NotablePersonStore and person-need sections. Restore accepts
+v26 through an explicit empty-person migration, v25 through an empty-family migration, and retains
+the supported v23/v22 paths. Invalid family/person/cohort/building handles, overclaimed people or
+cash, invalid person jobs/needs, excessive owned counts, catalog/policy mismatch, truncation, range errors, and
+environment-hash mismatch all fail before the runtime becomes bootstrapped.
 
 The native hot path caches the frozen demand basis once per due cell and shares
 it between building retention and household clearing. Building-cell cache rows
@@ -528,8 +539,10 @@ the three new deterministic policy controls and explicitly rejects v17.
 - No prosperity/name fields enter MapData, HexCell, or DataCore.
 - Inspector consumes selected-cell summaries; `SettlementLabelLayer` consumes
   full snapshot plus bounded deltas with fog, LOD, collision and pool limits.
-- PKEC v24 persists the state; v22/v23 rebuild it deterministically.
+- Current PKEC v27 preserves the settlement state introduced by v24; v22/v23 rebuild it
+  deterministically.
 - Production bootstrap marks opening-country cells as forced-name capitals:
   they retain the exact 20-person contract and population-derived tier, but
   always receive a deterministic settlement name. The bit round-trips in PKEC
-  v24 and is exposed as `settlement_name_forced`.
+  current PKEC v27 (the field was introduced in v24) and is exposed as
+  `settlement_name_forced`.

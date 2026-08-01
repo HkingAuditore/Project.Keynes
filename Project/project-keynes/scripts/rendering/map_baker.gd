@@ -96,9 +96,11 @@ const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 # normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
 const TERRAIN_HORIZON_STEPS := 1024
 const TERRAIN_HORIZON_STEP_PX := 2.0
+const TERRAIN_HORIZON_STEP_GROWTH := 0.35  # 近密远疏；0 退回固定步长
+const TERRAIN_HORIZON_LOWPASS_RADIUS := 1  # Horizon 专用 3x3 低通，不改权威高度场
 const TERRAIN_HORIZON_MAX_ANGLE := 1.309      # 约 75°，与运行期解码契约一致
 const TERRAIN_HORIZON_BIAS := 0.01            # height 单位，抑制同高/高频 relief 自遮蔽
-const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 24.0   # 归一高程 → world units（×hex_size）
+const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 16.0   # 归一高程 → world units（×hex_size）
 
 # ─── v10.noise-pack：共享噪声包贴图（替换 shader 内海量 fbm 多 octave 采样） ──
 # 256×256 RGBA8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
@@ -1035,6 +1037,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		world.terrain_horizon_gpu_params = {
 			"steps": TERRAIN_HORIZON_STEPS,
 			"step_px": TERRAIN_HORIZON_STEP_PX,
+			"step_growth": TERRAIN_HORIZON_STEP_GROWTH,
+			"lowpass_radius": TERRAIN_HORIZON_LOWPASS_RADIUS,
 			"max_horizon_angle": TERRAIN_HORIZON_MAX_ANGLE,
 			"bias": TERRAIN_HORIZON_BIAS,
 			"height_world_scale": maxf(hex_size * horizon_height_scale_hex, 1e-4),
@@ -1053,7 +1057,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 			world.height_buffer, world.hm_size, world.world_bounds.size, hex_size, world.terrain_horizon_tex,
 			_world_ext, TERRAIN_HORIZON_STEPS, TERRAIN_HORIZON_STEP_PX, TERRAIN_HORIZON_MAX_ANGLE,
 			TERRAIN_HORIZON_BIAS, hex_size * horizon_height_scale_hex, world.wrap_period_x,
-			world.sea_level)
+			world.sea_level, TERRAIN_HORIZON_STEP_GROWTH, TERRAIN_HORIZON_LOWPASS_RADIUS)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, null, world, map

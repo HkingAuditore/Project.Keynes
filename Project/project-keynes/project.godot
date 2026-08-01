@@ -49,7 +49,7 @@ rendering/map_tiles/budget_mp=-1.0
 rendering/map_tiles/residual_amp=0.01
 rendering/map_tiles/residual_filter_hex=0.06
 rendering/map_tiles/horizon_max_iterations=2048
-rendering/map_tiles/horizon_height_scale_hex=24.0
+rendering/map_tiles/horizon_height_scale_hex=16.0
 
 [rendering]
 

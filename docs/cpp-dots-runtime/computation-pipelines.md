@@ -155,7 +155,7 @@ C++ 入口：
 
 - `encode_bake_height_tex_data`：`height_buffer` F32 `[0,1]` → RG8 16-bit，高字节/低字节与旧 GDScript `round(v*65535)` bit-equivalent。
 - `encode_bake_terrain_normal_tex_data`：**生成期烘焙"总体地形法线"**（2026-06-25）。`height_buffer` → 宽半径（`coarse_radius` texel）中心差分得平滑梯度，按参考增益 `slope_gain` 构 `N=normalize(-sx,-sy,1)`，存 `nx,ny`→RG8（`nz` shader 重建）；X 圆柱环绕、Y clamp；按行 `pk::parallel_for_range` 并行。地形是静态的，这张图烘一次、之后不变；运行期 shader 1 次采样即得宏观山脉走向，替代每帧宽半径 4-tap。GDScript 侧 `DCAtlasEncoders.encode_terrain_normal_tex` 提供等价 debug fallback。
-- `encode_bake_horizon_tex_data`：**生成期烘焙 8 方向地形遮蔽角**（2026-07-03）。`height_buffer` → 沿 E/NE/N/NW/W/SW/S/SE 做 horizon trace，取最大 `atan2(dh*height_world_scale, dist_world)`，按 `max_horizon_angle` 量化为 4-bit；RGBA8 每通道 high/low nibble 存两个方向（R=E/NE, G=N/NW, B=W/SW, A=S/SE）。采样坐标 X 圆柱环绕、Y clamp；遮挡距离按射线实际行进距离计算，不取圆柱最短经度距离，避免正东/正西扫线绕一圈时 `dist≈0` 导致 horizon angle 饱和。按行 `pk::parallel_for_range` 并行。因 nibble-packed byte 不能硬件线性过滤，运行期 shader 用 NEAREST 采样并在解码后手动双线性插值，再按 TOD 太阳方位插值，只遮蔽 direct lighting。GDScript 侧无热循环 fallback；ext 缺失时返回 null/旧纹理，shader 自动关闭。**可选 `emit_occluder_cells=true` + `map_index_data`（全局 map-index RGBA8）时顺带产出 `occluder_data`**（terrain-gi 2026-07-31）：同一次 trace 记录每个方向的最强遮挡落点，取量化角最大的两个方向，把落点的 `cell.index`（map-index 的 G/B 通道）打包成 RGBA8（RG=主源、BA=次源，低字节在前，`0xFFFF` 为无效哨兵）。它是 tiled compute 路径 `gi_occluder` 的 legacy 等价物，独立降级——不传 map_index 就只出 horizon，AO/bent normal 不受影响、只关闭弹射。
+- `encode_bake_horizon_tex_data`：**生成期烘焙 8 方向地形遮蔽角**（2026-07-03，2026-08-02 低频化）。`height_buffer` 先在 Horizon 派生路径内做独立 3×3 `1-2-1` 高斯低通（不回写侵蚀/河流/法线使用的权威高度），再沿 E/NE/N/NW/W/SW/S/SE trace；marching 距离为 `step_px·(s + 0.5·step_growth·s·(s-1))`，近处密采样、远处渐增，避免固定步长形成规则梳状阴影。取最大 `atan2(dh*height_world_scale, dist_world)`，按 `max_horizon_angle` 量化为 4-bit；RGBA8 每通道 high/low nibble 存两个方向（R=E/NE, G=N/NW, B=W/SW, A=S/SE）。默认 `height_scale_hex=16`、`step_growth=0.35`、`lowpass_radius=1`。采样坐标 X 圆柱环绕、Y clamp；遮挡距离按射线实际行进距离计算，不取圆柱最短经度距离。低通与 trace 均按行 `pk::parallel_for_range` 并行。因 nibble-packed byte 不能硬件线性过滤，运行期 shader 用 NEAREST 采样并在解码后手动双线性插值，再按 TOD 太阳方位插值。GDScript 侧无热循环 fallback；ext 缺失时返回 null/旧纹理，shader 自动关闭。**可选 `emit_occluder_cells=true` + `map_index_data`（全局 map-index RGBA8）时顺带产出 `occluder_data`**（terrain-gi 2026-07-31）：同一次 trace 记录每个方向的最强遮挡落点，取量化角最大的两个方向，把落点的 `cell.index`（map-index 的 G/B 通道）打包成 RGBA8（RG=主源、BA=次源，低字节在前，`0xFFFF` 为无效哨兵）。它是 tiled compute 路径 `gi_occluder` 的 legacy 等价物，独立降级——不传 map_index 就只出 horizon，AO/bent normal 不受影响、只关闭弹射。
 - `encode_bake_enum_atlas_payload`：map-index atlas RGBA8，`R=biome`、`G/B=cell.index low/high`、`A=landform`；输入使用 `WorldData` 的 CSR 像素反向索引与按 `cell.index` 排列的 landform byte。
 - `encode_bake_flow_tex_data`：river SDF/flow F32 `[0,1]` → L8。
 - `encode_bake_r8_tex_data`：通用 U8 → L8，支持缺失输入时按 `default_byte` 填充（火山场默认 0、upwelling buffer 默认 128）。
@@ -180,9 +180,11 @@ Bayer DitherUV 则锚定全局基线 texel 的世界尺寸。因此视觉预算�
 压平宏观坡度，也不会缩窄距离场或改变 dither 的世界尺度。
 
 随后 `VisualTileHorizonBaker` 用 RenderingDevice 构建跨 layer max-height pyramid；decode 只在
-horizon 派生场把 bathymetry 抬到 `sea_level`，再以 8 方向 hierarchical trace 生成
+horizon 派生场把 bathymetry 抬到 `sea_level`，并做同样的 3×3 高斯低通，再以 8 方向 hierarchical trace 生成
 nibble-packed horizon。主 traversal 超限后用方向局部的 conservative tail 完成剩余射线，避免
 全图最高点形成无关长影。周期 X 查询必须先按 level-0 logical width 环绕再缩减到 mip cell；
+shader 中包括低通邻域在内的负向 X 采样必须使用非负操作数的 `wrap_column`，不能直接对负数
+使用 GLSL `%`，否则不同驱动会把接缝左邻列映射到错误位置并经 pyramid 放大为纵向阴影带。
 跨接缝 span 显式覆盖首尾 coarse cell，保证非 2 次幂逻辑宽度下的局部上界连续。compute 失败时
 `run_resample_visual_horizon_layer_pass` 把全局 horizon 重采样为相同布局；任一静态字段失败则
 整个世界回退 legacy。完整字段、寻址、预算、diagnostic 和验证契约见
@@ -945,8 +947,8 @@ EconomyDailySystem (SUS shell)
 ```
 
 生成期的 `MapGenerator._setup_economy_runtime()` 先把玩家与配置数量的外国编译为单个多国
-CSR 包并 bootstrap country authority，再配置 economy；随后把每国 20 人聚落聚合为一次
-人口/市场/建筑 bootstrap，并在此之前一次性调用
+CSR 包并 bootstrap country authority，再配置 economy；随后把每国 20 人聚落、首都创始家族及
+具名业主代表声明聚合为一次人口/市场/建筑 bootstrap，并在此之前一次性调用
 `capture_economy_trade_topology(neighbors, terrain, passable_lut, move_cost_lut, generation)`。
 默认 ACTIVE 模式只有在 `trade_topology_ready=true` 后才继续注册 `economy_daily`。
 显式测试经济夹具会先按可见资源生成候选建筑；collector 的 24 仅是资源支持上限，随后

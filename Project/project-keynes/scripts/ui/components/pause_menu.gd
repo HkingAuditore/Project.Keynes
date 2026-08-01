@@ -15,7 +15,10 @@ func _ready() -> void:
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_build()
+	_panel = %Panel
+	for child in _panel.get_children():
+		child.queue_free()
+	_make_status_label()
 
 
 func open() -> void:
@@ -47,27 +50,6 @@ func show_save_failure(action: String, result: Dictionary) -> void:
 	_add_button("取消", "close", _show_main)
 
 
-func _build() -> void:
-	var shade := ColorRect.new()
-	shade.color = Color(0.015, 0.025, 0.024, 0.86)
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(shade)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-	var frame := PanelContainer.new()
-	frame.custom_minimum_size = Vector2(390, 540)
-	center.add_child(frame)
-	var margin := MarginContainer.new()
-	for side in ["left", "top", "right", "bottom"]:
-		margin.add_theme_constant_override("margin_%s" % side, 24)
-	frame.add_child(margin)
-	_panel = VBoxContainer.new()
-	_panel.add_theme_constant_override("separation", 10)
-	margin.add_child(_panel)
-	_make_status_label()
-
-
 func _show_main() -> void:
 	_pending_destructive_action = ""
 	_clear_panel()
@@ -96,10 +78,15 @@ func _show_save() -> void:
 func _show_load() -> void:
 	_clear_panel()
 	_title("加载游戏")
-	for slot in GameSave.list_slots():
+	var save_service := get_node_or_null("/root/GameSave")
+	var flow_service := get_node_or_null("/root/GameFlow")
+	var slots: Array = save_service.list_slots() if save_service != null else []
+	for slot in slots:
 		var slot_id := String(slot.slot_id)
 		var label := "自动存档" if slot_id == "autosave" else "手动存档 %s" % slot_id.trim_prefix("manual_")
-		var button := _add_button(label, "history", func() -> void: GameFlow.begin_load_game(slot_id))
+		var button := _add_button(label, "history", func() -> void:
+			if flow_service != null:
+				flow_service.begin_load_game(slot_id))
 		button.disabled = not bool(slot.loadable)
 		button.tooltip_text = String(slot.reason)
 	_add_button("返回", "back", _show_main)
@@ -108,7 +95,10 @@ func _show_load() -> void:
 func _show_settings() -> void:
 	_clear_panel()
 	_title("设置")
-	var current := GameSettings.values()
+	var settings_service := get_node_or_null("/root/GameSettings")
+	var current: Dictionary = settings_service.values() if settings_service != null else {
+		"render_quality": "auto", "ui_scale_percent": 100,
+		"master_volume": 1.0, "master_muted": false}
 	var quality := OptionButton.new()
 	for entry in [{"label": "自动画质", "id": "auto"}, {"label": "低画质", "id": "low"},
 			{"label": "中画质", "id": "medium"}, {"label": "高画质", "id": "high"}]:
@@ -134,15 +124,18 @@ func _show_settings() -> void:
 	mute.button_pressed = bool(current.master_muted)
 	_panel.add_child(mute)
 	_add_button("应用", "confirm", func() -> void:
-		GameSettings.update({"render_quality": quality.get_selected_metadata(),
-			"ui_scale_percent": scale.get_selected_metadata(), "master_volume": volume.value,
-			"master_muted": mute.button_pressed})
+		if settings_service != null:
+			settings_service.update({"render_quality": quality.get_selected_metadata(),
+				"ui_scale_percent": scale.get_selected_metadata(), "master_volume": volume.value,
+				"master_muted": mute.button_pressed})
 		_show_main())
 	_add_button("返回", "back", _show_main)
 
 
 func _save_slot(slot_id: String) -> void:
-	var result: Dictionary = await GameSave.request_manual_save(slot_id)
+	var save_service := get_node_or_null("/root/GameSave")
+	var result: Dictionary = await save_service.request_manual_save(slot_id) \
+		if save_service != null else {"ok": false, "message": "存档服务不可用。"}
 	_status.text = "存档完成。" if bool(result.ok) else String(result.message)
 	_status.visible = true
 
@@ -153,8 +146,11 @@ func _retry_pending_action() -> void:
 
 
 func _finish_pending_action() -> void:
-	if _pending_destructive_action == "menu": GameFlow.return_to_main_menu()
-	elif _pending_destructive_action == "exit": GameFlow.quit_game()
+	var flow_service := get_node_or_null("/root/GameFlow")
+	if flow_service == null:
+		return
+	if _pending_destructive_action == "menu": flow_service.return_to_main_menu()
+	elif _pending_destructive_action == "exit": flow_service.quit_game()
 
 
 func _clear_panel() -> void:

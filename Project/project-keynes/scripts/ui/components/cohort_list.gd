@@ -83,7 +83,8 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	button.add_child(header)
 	var chevron := Button.new()
 	chevron.toggle_mode = true
-	chevron.custom_minimum_size = Vector2(22.0, 22.0)
+	chevron.flat = true
+	chevron.custom_minimum_size = Vector2(28.0, 34.0)
 	chevron.focus_mode = Control.FOCUS_NONE
 	chevron.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	chevron.tooltip_text = "展开 / 折叠"
@@ -95,19 +96,18 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	var identity := VBoxContainer.new()
 	identity.custom_minimum_size.x = 0.0
 	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	identity.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	identity.add_theme_constant_override("separation", 0)
 	header.add_child(identity)
 	var name_label := Label.new()
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.add_theme_font_override("font", UITokens.font_with_weight(650))
 	name_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
 	identity.add_child(name_label)
-	var status_label := Label.new()
-	status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	status_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	status_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	identity.add_child(status_label)
 	var living_icon := IconBadge.new()
-	living_icon.custom_minimum_size = Vector2(22.0, 22.0)
+	living_icon.custom_minimum_size = Vector2(26.0, 26.0)
+	living_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header.add_child(living_icon)
 	living_icon.mouse_filter = Control.MOUSE_FILTER_STOP
 	var population_label := Label.new()
@@ -121,21 +121,15 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	wealth_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	wealth_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	wealth_label.add_theme_color_override("font_color", UITokens.RESOURCE)
-	header.add_child(wealth_label)
-	var ledger := VBoxContainer.new()
-	ledger.custom_minimum_size = Vector2(102.0, 0.0)
-	ledger.add_theme_constant_override("separation", 0)
-	header.add_child(ledger)
-	var income_label := Label.new()
-	income_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	income_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	income_label.add_theme_color_override("font_color", UITokens.GOOD)
-	ledger.add_child(income_label)
-	var expense_label := Label.new()
-	expense_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	expense_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	expense_label.add_theme_color_override("font_color", UITokens.RISK)
-	ledger.add_child(expense_label)
+	var balance := VBoxContainer.new()
+	balance.custom_minimum_size = Vector2(72.0, 0.0)
+	balance.add_theme_constant_override("separation", 0)
+	header.add_child(balance)
+	balance.add_child(wealth_label)
+	var net_label := Label.new()
+	net_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	net_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	balance.add_child(net_label)
 
 	var details := VBoxContainer.new()
 	details.visible = false
@@ -148,8 +142,8 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 
 	var refs := {"panel": panel, "button": button, "chevron": chevron, "icon": icon,
 		"living_icon": living_icon, "name": name_label,
-		"status": status_label, "population": population_label, "wealth": wealth_label,
-		"income": income_label, "expense": expense_label, "details": details,
+		"population": population_label, "wealth": wealth_label, "net": net_label,
+		"details": details,
 		"finance": finance, "income_group": income_group,
 		"expense_group": expense_group, "demand": demand}
 	_apply_row(row_id, refs, data)
@@ -326,15 +320,19 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	var living_badge := refs.get("living_icon") as IconBadge
 	living_badge.set_semantic(
 		StringName(data.get("living_icon", &"action.history")), living_accent)
+	var living_text := String(data.get("living_standard", "待评估"))
 	living_badge.tooltip_text = "%s · 满意度 %s" % [
-		String(data.get("living_standard", "待评估")),
+		living_text,
 		String(data.get("satisfaction", "—"))]
-	(refs.get("name") as Label).text = String(data.get("name", "阶层"))
-	(refs.get("status") as Label).text = String(data.get("status", ""))
+	var name_label := refs.get("name") as Label
+	name_label.text = String(data.get("name", "阶层"))
+	name_label.tooltip_text = String(data.get("status", ""))
 	(refs.get("population") as Label).text = String(data.get("population", ""))
-	(refs.get("wealth") as Label).text = String(data.get("wealth", ""))
-	(refs.get("income") as Label).text = "收入 %s" % String(data.get("income", "+—"))
-	(refs.get("expense") as Label).text = "支出 %s" % String(data.get("expense", "−—"))
+	(refs.get("wealth") as Label).text = String(data.get("wealth", "")).trim_prefix("人均 ")
+	var card_net_label := refs.get("net") as Label
+	card_net_label.text = String(data.get("net", "—"))
+	card_net_label.add_theme_color_override(
+		"font_color", UITokens.GOOD if bool(data.get("net_positive", true)) else UITokens.RISK)
 	var finance: Dictionary = refs.get("finance", {})
 	(finance.get("income") as Label).text = String(data.get("income", "+—"))
 	(finance.get("expense") as Label).text = String(data.get("expense", "−—"))

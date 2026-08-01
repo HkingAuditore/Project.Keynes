@@ -4,6 +4,7 @@ class_name InspectorPanel
 const CohortListScript = preload("res://scripts/ui/components/cohort_list.gd")
 const BuildingListScript = preload("res://scripts/ui/components/building_list.gd")
 const MarketListScript = preload("res://scripts/ui/components/market_list.gd")
+const FamilyListScript = preload("res://scripts/ui/components/family_list.gd")
 
 signal close_requested()
 signal tab_data_requested(tab_id: String)
@@ -28,6 +29,7 @@ var _resource_list: ResourceList
 var _cohort_list
 var _building_list
 var _market_list
+var _family_list
 var _metric_controls: Dictionary = {}
 var _gauge_controls: Dictionary = {}
 var _chart_controls: Dictionary = {}
@@ -372,6 +374,13 @@ func _build_category_block(data: Dictionary) -> void:
 		insight_shell.add_child(_insight_list)
 
 	var cohort_rows: Array = data.get("cohort_rows", [])
+	if data.has("family_rows"):
+		_family_list = FamilyListScript.new()
+		_family_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_family_list.details_requested.connect(
+			func(request: Dictionary) -> void: object_details_requested.emit(request))
+		_family_list.set_rows(data.get("family_rows", []))
+		_content_box.add_child(_family_list)
 	if data.has("cohort_rows"):
 		_add_group_separator()
 		_cohort_list = CohortListScript.new()
@@ -479,6 +488,8 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 		_insight_list.update_items(data.get("insights", []))
 	if _cohort_list != null and data.has("cohort_rows"):
 		_cohort_list.update_rows(data.get("cohort_rows", []))
+	if _family_list != null and data.has("family_rows"):
+		_family_list.update_rows(data.get("family_rows", []))
 	if _resource_list != null:
 		_resource_list.update_rows(data.get("resource_rows", []))
 	if _building_list != null and data.has("building_rows"):

@@ -121,10 +121,47 @@ func _run() -> void:
 					else "surface_silver_working"]:
 				_expect("starter building %s exists" % building_id,
 					_building_count(buildings, building_id) == 1)
+			var families: Dictionary = economy.family_cell_snapshot(
+				settlement_cell, 0, 64)
+			var family_handles: PackedInt64Array = families.get(
+				"family_handles", PackedInt64Array())
+			_expect("starter capital has exactly one founder family",
+				bool(families.get("ok", false)) and family_handles.size() == 1)
+			if family_handles.size() == 1:
+				var family_handle := int(family_handles[0])
+				var family: Dictionary = economy.family_snapshot(family_handle)
+				var industries: Dictionary = economy.family_industries(
+					family_handle, 0, 64)
+				_expect("founder family conserves two gathering-ground owners",
+					int(family.get("population", 0)) == 2
+					and int(family.get("owned_buildings", 0)) == 1
+					and (industries.get("building_type_stable_ids",
+						PackedStringArray()) as PackedStringArray).has(
+						"gathering_ground"))
+				var people: Dictionary = economy.family_notable_people(
+					family_handle, 0, 64)
+				var person_handles: PackedInt64Array = people.get(
+					"person_handles", PackedInt64Array())
+				_expect("founder family has exactly one notable founder",
+					person_handles.size() == 1)
+				if person_handles.size() == 1:
+					var person: Dictionary = economy.notable_person_snapshot(
+						int(person_handles[0]))
+					_expect("notable founder traces to the gathering-ground owner job",
+						bool(person.get("ok", false))
+						and not String(person.get("full_name", "")).is_empty()
+						and String(person.get("profession_stable_id", "")) == "forager"
+						and String(person.get("building_type_stable_id", "")) ==
+							"gathering_ground"
+						and int(person.get("job_kind", 0)) == 1
+						and int(person.get("building_handle", 0)) != 0)
 	_expect("all settlements contribute population",
 		int(start.get("total_population", 0)) == country_starts.size() * 20)
+	_expect("all capitals receive one founder family and notable person",
+		int(start.get("founder_family_count", 0)) == country_starts.size()
+		and int(start.get("founder_person_count", 0)) == country_starts.size())
 	_expect("production bootstrap source is used",
-		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v2")
+		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v3")
 	_finish()
 
 
