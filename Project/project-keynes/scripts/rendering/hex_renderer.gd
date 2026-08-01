@@ -2580,7 +2580,9 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("terrain_material_tex", _world.terrain_material_tex)
 	sm.set_shader_parameter("terrain_material_tex_bound", _world.terrain_material_tex_bound)
 	sm.set_shader_parameter("terrain_materials_enabled", terrain_materials_enabled)
-	sm.set_shader_parameter("terrain_material_world_size", 128.0)
+	# [terrain-material-tiles 2026-08-01d] 128 世界单位/张（5.8 hex）下特征尺度为亚 hex 级，
+	# 常用 zoom 1-2 全部命中 mip 2-3、颗粒被预滤波抹平；384（17.5 hex/张）让 z=2 命中 mip≈0。
+	sm.set_shader_parameter("terrain_material_world_size", 384.0)
 	# [terrain-material-tiles 2026-08-01c] 0.22/0.045 近景也几乎不可见，用户确认贴图"接入等于看不见"；
 	# 提到 0.6/0.15：近景颗粒清晰、中距可辨，远距仍由 mipmap 抹平不发碎。
 	sm.set_shader_parameter("terrain_material_albedo_strength", 0.6)

@@ -1,0 +1,308 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+D3D12 12_0 - Forward Mobile - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4080
+
+[REPRO] ==== live vegetation-visibility repro ====
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=7.883 water=1221 land=1179
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.601 lakes=0 rivers=214 volcanoes=2
+[native_generation/vegetation] native_ms=0.590 candidates=1176 none=913 score=[0.219,1.034,1.147] plant_water_land=1179 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1221 | land_below_sea=0.0% | terr_distinct=24 entropy=3.462bit | river_ratio=8.917%
+MapGenerator v7: per-cell 63ms (2400 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 606) seed=1
+    [fused] terrain=598.2ms erosion=1.9ms(ok=true) river=14.3ms(ok=true) latitude=0.1ms coast_sdf=4.1ms(ok=true)
+  geometry fields (fused C++): 684ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1717248,"effective_texels_per_hex":16.0059221751742,"effective_world_units_per_texel":"(1.373983, 1.375)","estimated_peak_bytes":66648960,"estimated_resident_bytes":38586240,"fallback_reason":"","generation_id":1,"grid_size":"(4, 3)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(416, 344)","layer_size":"(420, 348)","layers":[{"bake_ms":200.4999,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2202762127630850072,"edge_neighbor":492206856446270328,"flow":-8698107496111076994,"height":-5973951584199527291,"map_index":6457651892470805757,"terrain_detail":-4394126283525084700,"terrain_normal":6456301031738259878,"water_depth":-3394062381438554956},"layer":0,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.884,"wall_ms":202.508},{"bake_ms":250.298,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2089047903861972044,"edge_neighbor":-4625345835725055914,"flow":-4622721685037037332,"height":-3077408851279817095,"map_index":-5030835706788170676,"terrain_detail":-8736166985505505898,"terrain_normal":-2582951122535992917,"water_depth":1327718463737553213},"layer":1,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.453,"wall_ms":250.902},{"bake_ms":274.458,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4054646230344076059,"edge_neighbor":-6388428329118776371,"flow":-8922262052363519540,"height":3243704893401055040,"map_index":7177566352122126807,"terrain_detail":-8381955705518892358,"terrain_normal":-3910723352446243688,"water_depth":-5279097785446872931},"layer":2,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.215,"wall_ms":274.79},{"bake_ms":246.7467,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1379425279904812414,"edge_neighbor":9199756218663806122,"flow":3632099116188999353,"height":2899891625946072854,"map_index":2950871852628185072,"terrain_detail":-6777969816576003812,"terrain_normal":-9069651613898995695,"water_depth":-5434838676456853409},"layer":3,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.253,"wall_ms":247.153},{"bake_ms":310.6824,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":7591585975766363399,"edge_neighbor":7743096263664081901,"flow":-3299523164462330758,"height":1051652563034466382,"map_index":3174031011880056847,"terrain_detail":8931096513207800856,"terrain_normal":8785719995515812931,"water_depth":-7264087218339114374},"layer":4,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.222,"wall_ms":311.049},{"bake_ms":329.1106,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5641813964509023588,"edge_neighbor":2080672453820372975,"flow":1793276272211518267,"height":-1186882962734215085,"map_index":-9128166887275132941,"terrain_detail":-3316432781501461407,"terrain_normal":7053386046600725753,"water_depth":8955703116776722115},"layer":5,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.195,"wall_ms":329.471},{"bake_ms":286.4812,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":3570825804259318861,"edge_neighbor":-2128721409560965982,"flow":4463886428273771795,"height":5009973147631919029,"map_index":-794088728175321693,"terrain_detail":-339449831468258120,"terrain_normal":3949634435231258215,"water_depth":6240639492515064462},"layer":6,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.212,"wall_ms":286.831},{"bake_ms":223.1271,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3570096787873898171,"edge_neighbor":-2177494866818568653,"flow":6204280046220571347,"height":-626651690752248042,"map_index":-1319804414723708114,"terrain_detail":-2048511104758305483,"terrain_normal":7146712155842838545,"water_depth":-2734284896316718369},"layer":7,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.202,"wall_ms":223.473},{"bake_ms":190.9934,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3882385542238092927,"edge_neighbor":3895743086389213614,"flow":-1963140582659900084,"height":3507769208013741813,"map_index":8425107737313555729,"terrain_detail":4869224973117030168,"terrain_normal":-3325563745201797485,"water_depth":3754719737251673850},"layer":8,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.228,"wall_ms":191.356},{"bake_ms":256.2625,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4432544821347391571,"edge_neighbor":-4133350067686095454,"flow":4125713354245358136,"height":-9118017572394684607,"map_index":1388632940214912346,"terrain_detail":-1653952232578558255,"terrain_normal":2909961808927668413,"water_depth":-8036520660618227071},"layer":9,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.189,"wall_ms":256.583},{"bake_ms":183.731,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4667649325668900918,"edge_neighbor":8617582474944634735,"flow":3821217163569797329,"height":1103823294145509675,"map_index":281634262077614849,"terrain_detail":2412547043456451435,"terrain_normal":-331822661001815728,"water_depth":4174917020104723297},"layer":10,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.18,"wall_ms":184.037},{"bake_ms":184.5883,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2426324739022571165,"edge_neighbor":5059199194728770629,"flow":6669863201682355958,"height":-5464669223970511347,"map_index":5974501547481629577,"terrain_detail":-400151340758634782,"terrain_normal":-1155909714770924398,"water_depth":-461259722739457747},"layer":11,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.188,"wall_ms":184.907}],"logical_size":"(1664, 1032)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":1716216,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":270355.817993164,"tile_world_span":"(571.5768, 473.0)","total_ms":2955.557,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:346)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:329)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1092)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1130)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:346)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:329)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1092)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1130)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:346)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:329)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1092)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1130)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:346)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:329)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1092)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1130)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 5058ms
+MapBaker v6: total 5748ms
+MapGenerator v7: bake 5770ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 143 components bound (auto-registered=143; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400
+[native_generation] path=gdext n=2400 published=9 native_ms=0.123 compute_ms=0.096 flush_ms=0.027
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.82ms wind=0.29ms psi=0.25ms(ran=true) upwelling=0.06ms total=1.76ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 1ms path=gdext
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=121 cohorts=0 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1
+[country] ACTIVE native authority countries=1 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "modifier_daily", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[hex_renderer/variant] tiled=true quality= shader=res://shaders/world_map.gdshader
+[visual-tiles/horizon] compute start generation=1 layers=12
+[detail_scatter/REBUILD] reason=renderer_rebuild layers=3 total_rebuild_ms=278.91 total_inst=13728 total_cand=13728 budget={ "total_instances": 13728, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+  [detail_scatter/TOP1] name=ShrubLayer1 rebuild=114.61ms path=gdext_chunked inst=8134 cand=8134 wrap=0 reason=
+  [detail_scatter/TOP2] name=GrassLayer rebuild=98.81ms path=gdext_chunked inst=5086 cand=5086 wrap=0 reason=
+  [detail_scatter/TOP3] name=TreeLayer2 rebuild=65.50ms path=gdext_chunked inst=508 cand=508 wrap=0 reason=
+  [detail_scatter/VIS] { "name": &"GrassLayer", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 5086, "chunk_nodes": 33, "chunk_nodes_visible": 33, "chunk_mm_valid": 33, "chunk_mesh_valid": 33, "chunk_visible_sum": 4130, "chunk_inst_sum": 5086, "origin_samples": [{ "pos": (1384.611, 110.1461), "uv": (0.596906, 0.10863) }, { "pos": (1438.691, 93.23308), "uv": (0.619502, 0.096711) }, { "pos": (1476.104, 94.80867), "uv": (0.635134, 0.097821) }], "spawn_domain": 0, "cid_probe": [{ "world_pos": (1384.611, 110.1461), "tile_xy": (2, 0), "layer": 2, "physical_px": (177.7353, 114.1062), "in_bounds": "[P: (-44.0, -44.0), S: (2393.36, 1419.0)]", "in_wrap": 2286.30706599092, "in_grid": "(4, 3)", "in_interior": "(416, 344)", "in_domain": "[P: (0.0, -44.0), S: (2286.307, 1419.0)]", "wp": (1384.611, 110.1461), "domain_uv": (0.60561, 0.10863), "scaled": (2.422441, 0.32589), "local01": (0.422441, 0.32589), "stored_uv": (0.596906, 0.10863), "map_index_px": (0.0314, 0.8471, 0.0, 0.0157), "cid": 216, "expect_cell": 216, "ref_tile_px": [(2, 0), (177.7353, 114.1062)], "cid_ref": 216, "shader_tile_px": [(2, 0), (177.7353, 114.1062)], "cid_shader": 216, "normal_px": (0.4863, 0.502, 0.0, 1.0), "height_px": (0.4196, 0.5216, 0.0, 1.0) }, { "world_pos": (1438.691, 93.23308), "tile_xy": (2, 0), "layer": 2, "physical_px": (217.0957, 101.8059), "in_bounds": "[P: (-44.0, -44.0), S: (2393.36, 1419.0)]", "in_wrap": 2286.30706599092, "in_grid": "(4, 3)", "in_interior": "(416, 344)", "in_domain": "[P: (0.0, -44.0), S: (2286.307, 1419.0)]", "wp": (1438.691, 93.23308), "domain_uv": (0.629264, 0.096711), "scaled": (2.517057, 0.290133), "local01": (0.517057, 0.290133), "stored_uv": (0.619502, 0.096711), "map_index_px": (0.0314, 0.851, 0.0, 0.0157), "cid": 217, "expect_cell": 217, "ref_tile_px": [(2, 0), (217.0956, 101.8059)], "cid_ref": 217, "shader_tile_px": [(2, 0), (217.0957, 101.8059)], "cid_shader": 217, "normal_px": (0.502, 0.498, 0.0, 1.0), "height_px": (0.4196, 0.5216, 0.0, 1.0) }], "chunk_material_probe": { "tiled_active": true, "base_shader_tiled": true, "map_index_param": true, "grid_size_param": "(4.0, 3.0)", "interior_param": "(416.0, 344.0)", "domain_origin_param": "(0.0, -44.0)", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 33, "chunk_material_shared": 33, "chunk_material_other": 0, "map_index_layers": 12 } }
+  [detail_scatter/VIS] { "name": &"ShrubLayer1", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.6835938023869, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 8134, "chunk_nodes": 33, "chunk_nodes_visible": 33, "chunk_mm_valid": 33, "chunk_mesh_valid": 33, "chunk_visible_sum": 7288, "chunk_inst_sum": 8134, "origin_samples": [{ "pos": (1384.957, 110.0057), "uv": (0.597051, 0.108531) }, { "pos": (1439.057, 93.45795), "uv": (0.619655, 0.09687) }, { "pos": (1454.524, 101.4163), "uv": (0.626117, 0.102478) }], "spawn_domain": 0, "cid_probe": [{ "world_pos": (1384.957, 110.0057), "tile_xy": (2, 0), "layer": 2, "physical_px": (177.9871, 114.0041), "in_bounds": "[P: (-44.0, -44.0), S: (2393.36, 1419.0)]", "in_wrap": 2286.30706599092, "in_grid": "(4, 3)", "in_interior": "(416, 344)", "in_domain": "[P: (0.0, -44.0), S: (2286.307, 1419.0)]", "wp": (1384.957, 110.0057), "domain_uv": (0.605761, 0.108531), "scaled": (2.423046, 0.325593), "local01": (0.423046, 0.325593), "stored_uv": (0.597051, 0.108531), "map_index_px": (0.0314, 0.8471, 0.0, 0.0157), "cid": 216, "expect_cell": 216, "ref_tile_px": [(2, 0), (177.9871, 114.0041)], "cid_ref": 216, "shader_tile_px": [(2, 0), (177.9871, 114.0041)], "cid_shader": 216, "normal_px": (0.4863, 0.502, 0.0, 1.0), "height_px": (0.4196, 0.5216, 0.0, 1.0) }, { "world_pos": (1439.057, 93.45795), "tile_xy": (2, 0), "layer": 2, "physical_px": (217.362, 101.9694), "in_bounds": "[P: (-44.0, -44.0), S: (2393.36, 1419.0)]", "in_wrap": 2286.30706599092, "in_grid": "(4, 3)", "in_interior": "(416, 344)", "in_domain": "[P: (0.0, -44.0), S: (2286.307, 1419.0)]", "wp": (1439.057, 93.45795), "domain_uv": (0.629424, 0.09687), "scaled": (2.517697, 0.290609), "local01": (0.517697, 0.290609), "stored_uv": (0.619655, 0.09687), "map_index_px": (0.0314, 0.851, 0.0, 0.0157), "cid": 217, "expect_cell": 217, "ref_tile_px": [(2, 0), (217.362, 101.9694)], "cid_ref": 217, "shader_tile_px": [(2, 0), (217.362, 101.9694)], "cid_shader": 217, "normal_px": (0.502, 0.498, 0.0, 1.0), "height_px": (0.4196, 0.5216, 0.0, 1.0) }], "chunk_material_probe": { "tiled_active": true, "base_shader_tiled": true, "map_index_param": true, "grid_size_param": "(4.0, 3.0)", "interior_param": "(416.0, 344.0)", "domain_origin_param": "(0.0, -44.0)", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 33, "chunk_material_shared": 33, "chunk_material_other": 0, "map_index_layers": 12 } }
+  [detail_scatter/VIS] { "name": &"TreeLayer2", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 508, "chunk_nodes": 29, "chunk_nodes_visible": 29, "chunk_mm_valid": 29, "chunk_mesh_valid": 29, "chunk_visible_sum": 508, "chunk_inst_sum": 508, "origin_samples": [{ "pos": (809.7349, 153.0996), "uv": (0.35671, 0.1389) }, { "pos": (860.0991, 145.6187), "uv": (0.377753, 0.133628) }, { "pos": (878.8458, 160.5354), "uv": (0.385586, 0.144141) }], "spawn_domain": 0, "cid_probe": [{ "world_pos": (809.7349, 153.0996), "tile_xy": (1, 0), "layer": 1, "physical_px": (175.3342, 145.3452), "in_bounds": "[P: (-44.0, -44.0), S: (2393.36, 1419.0)]", "in_wrap": 2286.30706599092, "in_grid": "(4, 3)", "in_interior": "(416, 344)", "in_domain": "[P: (0.0, -44.0), S: (2286.307, 1419.0)]", "wp": (809.7349, 153.0996), "domain_uv": (0.354167, 0.1389), "scaled": (1.416669, 0.416701), "local01": (0.416669, 0.416701), "stored_uv": (0.35671, 0.1389), "map_index_px": (0.051, 0.2549, 0.0039, 0.0157), "cid": 321, "expect_cell": 321, "ref_tile_px": [(1, 0), (175.3342, 145.3452)], "cid_ref": 321, "shader_tile_px": [(1, 0), (175.3342, 145.3452)], "cid_shader": 321, "normal_px": (0.4863, 0.4941, 0.0, 1.0), "height_px": (0.4196, 0.5216, 0.0, 1.0) }, { "world_pos": (860.0991, 145.6187), "tile_xy": (1, 0), "layer": 1, "physical_px": (211.9898, 139.9045), "in_bounds": "[P: (-44.0, -44.0), S: (2393.36, 1419.0)]", "in_wrap": 2286.30706599092, "in_grid": "(4, 3)", "in_interior": "(416, 344)", "in_domain": "[P: (0.0, -44.0), S: (2286.307, 1419.0)]", "wp": (860.0991, 145.6187), "domain_uv": (0.376196, 0.133628), "scaled": (1.504783, 0.400885), "local01": (0.504783, 0.400885), "stored_uv": (0.377753, 0.133628), "map_index_px": (0.0039, 0.0235, 0.0039, 0.0078), "cid": 262, "expect_cell": 322, "ref_tile_px": [(1, 0), (211.9898, 139.9045)], "cid_ref": 262, "shader_tile_px": [(1, 0), (211.9898, 139.9045)], "cid_shader": 262, "normal_px": (0.502, 0.4863, 0.0, 1.0), "height_px": (0.4039, 0.1333, 0.0, 1.0) }], "chunk_material_probe": { "tiled_active": true, "base_shader_tiled": true, "map_index_param": true, "grid_size_param": "(4.0, 3.0)", "interior_param": "(416.0, 344.0)", "domain_origin_param": "(0.0, -44.0)", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 29, "chunk_material_shared": 29, "chunk_material_other": 0, "map_index_layers": 12 } }
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[vision] fog=OFF player_slot=-1 early_out=OFF visible=2400 explored=2400/2400 solve_ms=0.000 border_edges=690
+[DIAG pass_a_entry] day=0 phase=0.000 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=2400
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=14400, got nb_size=14400)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15133
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.1310 n_cells=2400 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.13ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=2400 nb=14400)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15124
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.1006 n=2400 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.10ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=2400 nb=14400)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15125
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0244 n=2400 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.02ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/dt] call#1 dt_days=1.000 (last_pass_day=0.000, k x1.00)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15136
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0476 n_cells=2400 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.05ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.05ms (water=1221, flipped=0, phase=0.000)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.981 avg=0.500 | water n=1221 t_min_w=0.000 below_form=316 (25.9%) | SIF pos=331 max=0.399 avg_w=0.0664 near_thr=120 | climate_anom=0.000
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15138
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.0289 donor_table.size()=28 n_cells=2400 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.03ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 88ms (cells=2400, phase=0.000) | A=2.0 B=2.7 ocean=4.5 wind=74.0 sea_ice=2.9 ice_bake=0.0 transp=1.9 path=data_core_cells_only
+[weather-layer][lut] #1 update_usec=10291630 last_usec=10291630 lerp=0.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #2 update_usec=10291630 last_usec=10291630 lerp=0.354 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #3 update_usec=10291630 last_usec=10291630 lerp=0.361 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[visual-tiles/horizon] published {"command_record_ms":0.049,"compile_ms":141.445,"conservative_tail_ratio":0.0000000712689290275497,"conservative_tail_rays":1,"gi_occluder_ok":true,"global_fallback_rays":0,"gpu_wait_ms":87.77,"hash":2964305274,"height_pyramid_bytes":9159292,"height_world_scale":528.0,"max_horizon_angle":1.309,"mip_levels":12,"non_converged_rays":1,"occluder_hash":1189081645,"occluder_output_bytes":7015680,"occluder_sentinel_ratio":0.0000878033205619412,"occluder_sentinel_texels":154,"ok":true,"path":"gpu_compute_hierarchical","physical_output_bytes":7015680,"readback_ms":4.627,"resource_setup_ms":22.783,"sea_level":0.42,"submit_ms":1.334,"total_ms":550.155,"total_rays":14031360,"upload_ms":2.553}
+[weather-layer][lut] #4 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #5 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #6 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #7 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #8 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #9 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #10 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #11 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #12 update_usec=10291630 last_usec=10291630 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[REPRO] day0 GrassLayer visible=true inst=5086 chunk_vis_sum=4130 chunks=33/33 lod_t=0.00 zoom=0.50 far_frac=?
+[REPRO] day0 ShrubLayer1 visible=true inst=8134 chunk_vis_sum=5457 chunks=33/33 lod_t=0.00 zoom=0.50 far_frac=?
+[REPRO] day0 TreeLayer2 visible=true inst=508 chunk_vis_sum=398 chunks=29/29 lod_t=0.06 zoom=0.50 far_frac=?
+[REPRO] screenshot -> D:/Godot/ProjectKeynes/Project.Keynes/tmp/_live_repro_day0.png
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400
+[ocean_currents][RT] skip#1 tick=1 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter] tick-sync queued=324 (vegetation=110)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=207 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][RT] skip#2 tick=2 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=2
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter/QUEUE] succession active_cells=32 pending_batches=10 queued_chunks=18 chunks_per_frame=4 chunk_ms_budget=2.50 cells_per_batch=32
+[detail_scatter/DRAIN_CFG] budget_ms=2.50 chunks_per_frame=4 cells_per_batch=32 chunk_size=8
+[detail_scatter/SLOW_CHUNK] name=GrassLayer wall=3.07ms update=3.06ms path=gdext_event_chunk inst=5085 cand=9 wrap=0 cells=1 chunks=1 sampled=64 active=5 water=2.74ms ctx=2.82ms knobs=2.84ms native=0.09ms apply=0.12ms remaining=17 missing=0 dropped=0 reason=chunked_event_update
+[ocean_currents][RT] skip#3 tick=3 reason=physical_policy_gated phys_round=false visual_round=false phys_done=false pending_commit=false cursor=0/0 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] phys_round_start#1 tick=4 phase=0.0438 physical=true wind_period=6 ocean_period=60 slice_count=16 tps=4 max_slices=1 run_ocean=true need_visual=false phase_int=0 phase_seen=0 total_pixels=620544 visual_active=false
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.051 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.051 slp_out=2400 n=2400 published=false -> commit_ok
+[ocean_currents][RT] phys_slice#1 tick=4 round=1 stage=phys_none->phys_slp done=false run_ocean=true need_visual=false elapsed=0.425 ocean_delta_p95=0.000000 wind_delta_p95=0.000000 slp_delta_p95=0.000000 psi_path=gdscript
+[ocean_currents][RT] skip#4 tick=5 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=1
+[sea_ice/dt] call#2 dt_days=5.000 (last_pass_day=5.000, k x5.00)
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][daily_wind] #1 tick=6 stage=both ran=true path=gdext_daily_wind elapsed=1.024 slp=0.301 wind=0.369 passA=0.152 passB=0.045 norm=0.087 marshall=0.017 dominant=daily_wind_wind/0.369 delta=0.588140 reason=
+[ocean_currents][RT] skip#5 tick=7 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.057 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.057 slp_out=2400 n=2400 published=false -> commit_ok
+[ocean_currents/STAGE-DIAG] init tick=8 round=1 stage=1/phys_slp path=gdext next=phys_slp elapsed_ms=0.41 slp_native=0.30 psi_native=-1.00 wind_dp95=0.588140 ocean_dp95=0.000000 slp_dp95=0.000000 phys_done=false need_visual=false
+[ocean_currents][RT] phys_slice#2 tick=8 round=1 stage=phys_slp->phys_slp done=false run_ocean=true need_visual=false elapsed=0.415 ocean_delta_p95=0.000000 wind_delta_p95=0.588140 slp_delta_p95=0.000000 psi_path=gdscript
+[detail_scatter/DONE] batch_cells=32 chunks=18 batch_chunks=6 elapsed=7.43ms pending_batches=10 budget={ "total_instances": 13460, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[ocean_currents][RT] skip#6 tick=9 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] skip#7 tick=10 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=2
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] skip#8 tick=11 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#8 tick=11 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][daily_wind] #2 tick=12 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.456 slp=-1.000 wind=0.359 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.359 delta=0.552339 reason=
+[slp_field] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#3: rc=0.057 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#3 phase=0.0438 rc=0.057 slp_out=2400 n=2400 published=false -> commit_ok
+[ocean_currents/STAGE-DIAG] init tick=12 round=1 stage=1/phys_slp path=gdext next=phys_slp elapsed_ms=0.28 slp_native=0.30 psi_native=-1.00 wind_dp95=0.552339 ocean_dp95=0.000000 slp_dp95=0.000000 phys_done=false need_visual=false
+[ocean_currents][RT] phys_slice#3 tick=12 round=1 stage=phys_slp->phys_slp done=false run_ocean=true need_visual=false elapsed=0.277 ocean_delta_p95=0.000000 wind_delta_p95=0.552339 slp_delta_p95=0.000000 psi_path=gdscript
+[ocean_currents][RT] skip#9 tick=13 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=1
+[sea_ice/dt] call#2 dt_days=8.000 (last_pass_day=13.000, k x8.00)
+[DCSystemScheduler][RT] ocean_skip#9 tick=13 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter] tick-sync queued=248 (vegetation=0)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=248 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][RT] skip#10 tick=14 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=2
+[DCSystemScheduler][RT] ocean_skip#10 tick=14 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter/QUEUE] succession active_cells=32 pending_batches=16 queued_chunks=4 chunks_per_frame=4 chunk_ms_budget=2.50 cells_per_batch=32
+[detail_scatter/DONE] batch_cells=32 chunks=4 batch_chunks=8 elapsed=0.98ms pending_batches=16 budget={ "total_instances": 13281, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[ocean_currents][RT] skip#11 tick=15 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#11 tick=15 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter] tick-sync queued=48 (vegetation=0)
+[slp_field][RT-DIAG] call#4 phase=0.0438 rc=0.059 slp_out=2400 n=2400 published=false -> commit_ok
+[ocean_currents/STAGE-DIAG] init tick=16 round=1 stage=1/phys_slp path=gdext next=phys_slp elapsed_ms=0.26 slp_native=0.30 psi_native=-1.00 wind_dp95=0.552339 ocean_dp95=0.000000 slp_dp95=0.000000 phys_done=false need_visual=false
+[ocean_currents][RT] phys_slice#4 tick=16 round=1 stage=phys_slp->phys_slp done=false run_ocean=true need_visual=false elapsed=0.260 ocean_delta_p95=0.000000 wind_delta_p95=0.552339 slp_delta_p95=0.000000 psi_path=gdscript
+[ocean_currents][RT] skip#12 tick=17 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#12 tick=17 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][daily_wind] #3 tick=18 stage=slp ran=true path=gdext_daily_wind_slp elapsed=0.591 slp=0.291 wind=-1.000 passA=0.147 passB=0.051 norm=0.079 marshall=0.015 dominant=daily_wind_slp/0.291 delta=0.000000 reason=
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[ocean_currents][RT] skip#13 tick=19 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#13 tick=19 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field][RT-DIAG] call#5 phase=0.0438 rc=0.056 slp_out=2400 n=2400 published=false -> commit_ok
+[ocean_currents][RT] phys_slice#5 tick=20 round=1 stage=phys_slp->phys_slp done=false run_ocean=true need_visual=false elapsed=0.233 ocean_delta_p95=0.000000 wind_delta_p95=0.552339 slp_delta_p95=0.000000 psi_path=gdscript
+[detail_scatter/DONE] batch_cells=32 chunks=24 batch_chunks=8 elapsed=8.28ms pending_batches=15 budget={ "total_instances": 12767, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[ocean_currents][RT] skip#14 tick=21 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#14 tick=21 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] skip#15 tick=22 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=2
+[DCSystemScheduler][RT] ocean_skip#15 tick=22 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] skip#16 tick=23 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=3
+[sea_ice/dt] call#2 dt_days=10.000 (last_pass_day=23.000, k x10.00)
+[DCSystemScheduler][RT] ocean_skip#16 tick=23 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter] tick-sync queued=27 (vegetation=0)
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=27 isw_mis=0 terrain_written=true isw_written=false
+[ocean_currents][daily_wind] #4 tick=24 stage=wind ran=true path=gdext_daily_wind_wind elapsed=0.467 slp=-1.000 wind=0.377 passA=-1.000 passB=-1.000 norm=-1.000 marshall=-1.000 dominant=daily_wind_wind/0.377 delta=0.580775 reason=
+[ocean_currents][RT] phys_slice#6 tick=24 round=1 stage=phys_slp->phys_slp done=false run_ocean=true need_visual=false elapsed=0.125 ocean_delta_p95=0.000000 wind_delta_p95=0.580775 slp_delta_p95=0.000000 psi_path=gdscript
+[detail_scatter/QUEUE] succession active_cells=32 pending_batches=17 queued_chunks=9 chunks_per_frame=4 chunk_ms_budget=2.50 cells_per_batch=32
+[ocean_currents][RT] skip#17 tick=25 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#17 tick=25 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] skip#18 tick=26 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=2
+[DCSystemScheduler][RT] ocean_skip#18 tick=26 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter/DONE] batch_cells=32 chunks=9 batch_chunks=7 elapsed=2.40ms pending_batches=17 budget={ "total_instances": 12687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[ocean_currents][RT] skip#19 tick=27 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=3
+[DCSystemScheduler][RT] ocean_skip#19 tick=27 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][RT] phys_slice#7 tick=28 round=1 stage=phys_slp->phys_slp done=false run_ocean=true need_visual=false elapsed=0.118 ocean_delta_p95=0.000000 wind_delta_p95=0.580775 slp_delta_p95=0.000000 psi_path=gdscript
+[hex-renderer] set_weather_fronts(n=9) layer=WeatherLayer
+[ocean_currents][RT] skip#20 tick=29 reason=physical_policy_gated phys_round=true visual_round=false phys_done=false pending_commit=false cursor=0/620544 tps=4 streak=0 tick_mod=1
+[DCSystemScheduler][RT] ocean_skip#20 tick=29 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ocean_currents][daily_wind] #5 tick=30 stage=slp ran=true path=gdext_daily_wind_slp elapsed=0.716 slp=0.367 wind=-1.000 passA=0.171 passB=0.061 norm=0.074 marshall=0.061 dominant=daily_wind_slp/0.367 delta=0.000000 reason=
+[SUS-cpp] last 30 ticks: season_refresh ran=30 avg=0.07ms p95=0.1ms max=0.81ms slices=30
+[SUS-cpp] last 30 ticks: trigger_runtime ran=30 avg=0.09ms p95=0.12ms max=0.12ms slices=30
+[SUS-cpp] last 30 ticks: modifier_daily ran=30 avg=0.05ms p95=0.07ms max=0.07ms slices=30
+[SUS-cpp] last 30 ticks: natural_resource_daily ran=6 avg=0.66ms p95=1.15ms max=1.15ms slices=6 skipped[policy_gated=24]
+[SUS-cpp] last 30 ticks: enum_atlas_upload ran=4 avg=0.33ms p95=0.65ms max=0.65ms slices=4 skipped[policy_gated=26]
+[SUS-cpp] last 30 ticks: ocean_currents ran=10 avg=0.92ms p95=1.38ms max=1.38ms slices=10 skipped[policy_gated=20]
+[SUS-cpp] last 30 ticks: native_daily_sim ran=29 avg=0.75ms p95=1.53ms max=1.58ms slices=29 skipped[policy_gated=1]
+[SUS-cpp] last 30 ticks: dynamic_visual_atlas_upload ran=8 avg=1.03ms p95=1.11ms max=1.11ms slices=8 skipped[policy_gated=22]
+[SUS-cpp] last 30 ticks: country_daily ran=0 avg=0.0ms p95=0.0ms max=0.0ms slices=0 skipped[policy_gated=30]
+[SUS-cpp] last 30 ticks: economy_daily ran=30 avg=0.68ms p95=1.59ms max=2.1ms slices=30
+[SUS-cpp] budget last 30 ticks: total_p95=4.37ms max=4.97ms over_1ms=18 largest=economy_daily/ledger_apply/ path=ECONOMY_GRAPH 2.09ms
+[SUS-cpp] world: bound=true entities=2400 components=142 pools=1
+[detail_scatter/DONE] batch_cells=32 chunks=30 batch_chunks=10 elapsed=10.65ms pending_batches=16 budget={ "total_instances": 12507, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=18 batch_chunks=6 elapsed=6.78ms pending_batches=15 budget={ "total_instances": 12297, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=21 batch_chunks=7 elapsed=8.25ms pending_batches=14 budget={ "total_instances": 12001, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=24 batch_chunks=8 elapsed=7.80ms pending_batches=13 budget={ "total_instances": 11999, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[weather-layer][lut] #13 update_usec=13737798 last_usec=13737798 lerp=0.811 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[detail_scatter/DONE] batch_cells=32 chunks=33 batch_chunks=11 elapsed=9.70ms pending_batches=12 budget={ "total_instances": 11856, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=21 batch_chunks=7 elapsed=4.45ms pending_batches=11 budget={ "total_instances": 11856, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=18 batch_chunks=6 elapsed=4.11ms pending_batches=10 budget={ "total_instances": 11728, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=15 batch_chunks=5 elapsed=3.65ms pending_batches=9 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=12 batch_chunks=4 elapsed=2.33ms pending_batches=8 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=15 batch_chunks=5 elapsed=3.25ms pending_batches=7 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=15 batch_chunks=5 elapsed=3.09ms pending_batches=6 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=12 batch_chunks=4 elapsed=2.58ms pending_batches=5 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=12 batch_chunks=4 elapsed=2.79ms pending_batches=4 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=15 batch_chunks=5 elapsed=2.72ms pending_batches=3 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=18 batch_chunks=6 elapsed=3.97ms pending_batches=2 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=32 chunks=30 batch_chunks=10 elapsed=7.08ms pending_batches=1 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[detail_scatter/DONE] batch_cells=6 chunks=12 batch_chunks=4 elapsed=2.52ms pending_batches=0 budget={ "total_instances": 11687, "budget": 120000, "visible_fraction": 1.0, "layer_count": 3 }
+[weather-layer][lut] #14 update_usec=13737798 last_usec=13737798 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[REPRO] day30_settled_far GrassLayer visible=true inst=4488 chunk_vis_sum=3651 chunks=33/39 lod_t=0.00 zoom=0.50 far_frac=?
+[REPRO] day30_settled_far ShrubLayer1 visible=true inst=6821 chunk_vis_sum=4603 chunks=31/38 lod_t=0.00 zoom=0.50 far_frac=?
+[REPRO] day30_settled_far TreeLayer2 visible=true inst=378 chunk_vis_sum=304 chunks=27/39 lod_t=0.06 zoom=0.50 far_frac=?
+[REPRO] screenshot -> D:/Godot/ProjectKeynes/Project.Keynes/tmp/_live_repro_day30_far.png
+[REPRO] day30_near GrassLayer visible=true inst=4488 chunk_vis_sum=3651 chunks=33/39 lod_t=0.00 zoom=1.20 far_frac=?
+[REPRO] day30_near ShrubLayer1 visible=true inst=6821 chunk_vis_sum=6821 chunks=31/38 lod_t=1.00 zoom=1.20 far_frac=?
+[REPRO] day30_near TreeLayer2 visible=true inst=378 chunk_vis_sum=378 chunks=27/39 lod_t=1.00 zoom=1.20 far_frac=?
+[REPRO] screenshot -> D:/Godot/ProjectKeynes/Project.Keynes/tmp/_live_repro_day30_near.png
+[REPRO] ==== repro done ====
+ERROR: 26 RID allocations of type 'N10RendererRD14TextureStorage7TextureE' were leaked at exit.
+WARNING: 38 RIDs of type "Texture" were leaked.
+   at: finalize (servers/rendering/rendering_device.cpp:7505)
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 65 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

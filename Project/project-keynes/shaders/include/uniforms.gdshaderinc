@@ -91,7 +91,7 @@ uniform float terrain_ecotone_noise = 0.22;
 uniform sampler2DArray terrain_material_tex : filter_linear_mipmap, repeat_enable;
 uniform bool terrain_material_tex_bound = false;
 uniform bool terrain_materials_enabled = true;
-uniform float terrain_material_world_size = 128.0;
+uniform float terrain_material_world_size = 384.0;
 uniform float terrain_material_albedo_strength = 0.6;
 uniform float terrain_material_normal_strength = 0.15;
 uniform float terrain_material_roughness_strength = 0.35;
