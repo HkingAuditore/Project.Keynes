@@ -164,6 +164,11 @@ var upwelling_tex: ImageTexture
 # 全局降为 1 次 texture fetch，由 MapBaker lazy 生成，跨 world 实例共享同一张 ImageTexture。
 var noise_tex: ImageTexture
 
+# [terrain-material-tiles] Transient shared Texture2DArray for HIGH terrain
+# material sampling. It is deliberately not part of map/save state.
+var terrain_material_tex: Texture2DArray
+var terrain_material_tex_bound: bool = false
+
 # ─── Cell-index indirection（province-ID 间接寻址，feature-flag 可回退）───────
 # 把"hex 内恒定"的视觉 atlas 改为"静态 cell 索引图 + per-cell LUT"间接寻址，
 # 让 shader 自己做 pixel→cell 解析，把 fan-out 目标从 n_pix 压到 n_cells。

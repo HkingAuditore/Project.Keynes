@@ -1164,19 +1164,24 @@ static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture,
         return is_alpine ? 3 : 10; // ALPINE_TUNDRA / TEMPERATE_STEPPE
     }
     if (temperature < 0.55f) {
-        if (moisture > 0.55f) return is_alpine ? 8 : (is_hilly ? 7 : 7);
-        if (moisture > 0.30f) return is_alpine ? 4 : 9; // ALPINE_MEADOW / TEMPERATE_GRASSLAND
+        // [zonal-envelope] 温带湿门 0.55→0.48 / 草门 0.30→0.26，与 pk_decide_terrain_ex 温带段对齐
+        if (moisture > 0.48f) return is_alpine ? 8 : (is_hilly ? 7 : 7);
+        if (moisture > 0.26f) return is_alpine ? 4 : 9; // ALPINE_MEADOW / TEMPERATE_GRASSLAND
         return is_alpine ? 6 : 10; // BOREAL_SHRUB / TEMPERATE_STEPPE
     }
-    // [climate-zone-fix P1] 亚热带(0.55–0.66)拆出 SUBTROPICAL_FOREST；真热带湿端阈值下移适配天花板。
-    if (temperature < 0.66f) {       // 亚热带
-        if (moisture > 0.36f) return 12; // SUBTROPICAL_FOREST
+    // [climate-zone-fix P1] 亚热带拆出 SUBTROPICAL_FOREST；真热带湿端阈值下移适配天花板。
+    // [zonal-envelope] 亚热带上缘 0.66→0.80（≈33°），SUBTROP 湿门 0.36→0.40，与 pk_decide_terrain_ex 同步。
+    if (temperature < 0.80f) {       // 亚热带（33–51°）
+        if (moisture > 0.40f) return 12; // SUBTROPICAL_FOREST
         if (moisture > 0.22f) return 9;  // TEMPERATE_GRASSLAND
+        if (moisture < 0.12f) return 16; // DESERT_SCRUB（副热带旱坡）
         return 10;                       // TEMPERATE_STEPPE
     }
-    if (moisture > 0.58f) return 14; // TROPICAL_RAINFOREST
+    // [zonal-envelope] 真热带（0–33°）：雨林湿门 0.58→0.56，与 JUNGLE 地形边界对齐。
+    if (moisture > 0.56f) return 14; // TROPICAL_RAINFOREST
     if (moisture > 0.38f) return 15; // TROPICAL_DRY_FOREST
-    if (moisture > 0.20f) return 13; // SAVANNA
+    // [zonal-envelope 二轮] SAVANNA 下限 0.20→0.24，与 pk_decide_terrain_ex 热带 STEPPE 下限同步。
+    if (moisture > 0.24f) return 13; // SAVANNA
     if (moisture < 0.10f) return 17; // XERIC_DESERT
     return 16; // DESERT_SCRUB
 }
@@ -1184,7 +1189,8 @@ static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture,
 static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, float temperature, float moisture) {
     if (terrain == 0 || terrain == 18 || terrain == 20) return 0; // NONE（开阔海/湖/海冰）
     // COAST：暖凉浅海软底育海草床(SEAGRASS)，过冷/过热裸沙底为 NONE。
-    if (terrain == 1) return (temperature > 0.42f && temperature < 0.74f) ? 26 : 0; // SEAGRASS
+    // [zonal-envelope] 上缘 0.74→0.82：真热带边界收窄到 0.80 后热带浅海也允许海草床。
+    if (terrain == 1) return (temperature > 0.42f && temperature < 0.82f) ? 26 : 0; // SEAGRASS
     if (terrain == 19) return 23; // CORAL_REEF
     if (terrain == 21) return 22; // KELP_FOREST
     if (terrain == 17) return 0;  // GLACIER
@@ -1231,8 +1237,9 @@ static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, fl
             return 15; // TROPICAL_DRY_FOREST
         case 12: // SAVANNA
             if (is_alpine) return moisture > 0.45f ? 4 : 6; // 高地稀树草原 → 高山草甸/山地灌丛
-            // [climate-zone-fix P1] MONSOON 门 0.45→0.42 与 JUNGLE case 对齐
-            return moisture > 0.48f ? 25 : 13; // 湿端季风林 / 否则稀树草原
+            // Keep SAVANNA's wet edge aligned with pk_decide_terrain_ex's JUNGLE boundary.
+            // [zonal-envelope] JUNGLE 边界 0.54→0.56，本湿门同步平移保持对齐。
+            return moisture > 0.56f ? 25 : 13; // 湿端季风林 / 否则稀树草原
         case 3:  return is_alpine ? 4 : 9; // GRASSLAND
         case 14: // STEPPE
             if (is_alpine) return temperature < 0.28f ? 3 : (moisture > 0.32f ? 4 : 6);
@@ -1265,6 +1272,215 @@ static inline bool pk_vegetation_is_alpine_type(uint8_t veg) {
 
 static inline bool pk_vegetation_is_arid_type(uint8_t veg) {
     return veg == 10 || veg == 11 || veg == 16 || veg == 17;
+}
+
+// Climate biome envelope shared with VegetationType.biome_envelope_weight.
+// Biome is the slow climate identity; vegetation may lag it, but a severe
+// cross-biome mismatch must be a poor suitability candidate.
+static inline float pk_vegetation_biome_weight(uint8_t terrain, uint8_t veg) {
+    switch (terrain) {
+        case 0: // OCEAN
+            if (veg == 0) return 1.00f;
+            if (veg == 22 || veg == 23 || veg == 26) return 0.30f;
+            return 0.18f;
+        case 1: // COAST
+            if (veg == 26) return 1.00f;
+            if (veg == 0) return 0.90f;
+            if (veg == 22) return 0.70f;
+            if (veg == 23) return 0.65f;
+            if (veg == 19) return 0.45f;
+            return 0.18f;
+        case 2: // PLAIN
+        case 5: // HILL
+        case 6: // MOUNTAIN
+            return 1.00f; // climate-agnostic substrates
+        case 4: // FOREST
+            if (veg == 7 || veg == 12) return 1.00f; // temperate deciduous / subtropical
+            if (veg == 8) return 0.90f;               // temperate conifer
+            if (veg == 24) return 0.88f;              // cloud forest
+            if (veg == 15) return 0.72f;              // tropical dry forest
+            if (veg == 25) return 0.55f;              // monsoon forest
+            if (veg == 14) return 0.28f;              // tropical rainforest
+            if (veg == 13) return 0.65f;              // savanna
+            if (veg == 9) return 0.76f;               // temperate grassland
+            return 0.70f;
+        case 11: // JUNGLE
+            if (veg == 14) return 1.00f;              // tropical rainforest
+            if (veg == 24) return 0.95f;              // cloud forest
+            if (veg == 25) return 0.90f;              // monsoon forest
+            if (veg == 15) return 0.82f;              // tropical dry forest
+            if (veg == 12) return 0.72f;              // subtropical forest
+            if (veg == 13) return 0.58f;              // savanna
+            if (veg == 9) return 0.50f;               // temperate grassland
+            return 0.28f;
+        case 12: // SAVANNA
+            if (veg == 13) return 1.00f;              // savanna
+            if (veg == 15) return 0.82f;              // tropical dry forest
+            if (veg == 9) return 0.72f;               // temperate grassland
+            if (veg == 10) return 0.64f;              // temperate steppe
+            if (veg == 16) return 0.55f;              // desert scrub
+            if (veg == 25) return 0.45f;              // monsoon forest
+            if (veg == 14) return 0.25f;              // tropical rainforest
+            return 0.55f;
+        case 3: // GRASSLAND
+            if (veg == 9) return 1.00f;               // temperate grassland
+            if (veg == 10) return 0.88f;              // temperate steppe
+            if (veg == 13) return 0.72f;              // savanna
+            if (veg == 4 || veg == 6) return 0.75f;   // alpine meadow / boreal shrub
+            if (veg == 15) return 0.55f;              // tropical dry forest
+            if (veg == 25) return 0.38f;              // monsoon forest
+            if (veg == 14) return 0.25f;              // tropical rainforest
+            return 0.65f;
+        case 14: // STEPPE
+            if (veg == 10) return 1.00f;              // temperate steppe
+            if (veg == 9) return 0.82f;               // temperate grassland
+            if (veg == 16 || veg == 11 || veg == 13) return 0.72f;
+            if (veg == 15) return 0.52f;              // tropical dry forest
+            if (veg == 25) return 0.25f;              // monsoon forest
+            if (veg == 14) return 0.18f;              // tropical rainforest
+            return 0.65f;
+        case 7: // DESERT
+            if (veg == 16 || veg == 17) return 1.00f; // desert scrub / xeric desert
+            if (veg == 10 || veg == 13) return 0.68f;
+            if (veg == 11) return 0.62f;              // mediterranean shrub
+            if (veg == 15) return 0.35f;              // tropical dry forest
+            if (veg == 25 || veg == 14) return 0.18f;
+            return 0.55f;
+        case 8: // TUNDRA
+            if (veg == 2 || veg == 1 || veg == 3) return 1.00f;
+            if (veg == 6 || veg == 5) return 0.78f;
+            if (veg == 4) return 0.70f;
+            return 0.18f;
+        case 13: // TAIGA
+            if (veg == 5 || veg == 8) return 1.00f;
+            if (veg == 6) return 0.90f;
+            if (veg == 2 || veg == 3) return 0.72f;
+            if (veg == 7) return 0.65f;
+            return 0.18f;
+        case 26: // COLD_DESERT
+            if (veg == 17 || veg == 16) return 0.95f;
+            if (veg == 1 || veg == 10) return 0.78f;
+            if (veg == 2) return 0.68f;
+            return 0.18f;
+        case 27: // CHAPARRAL
+            if (veg == 11) return 1.00f;
+            if (veg == 16 || veg == 10) return 0.74f;
+            if (veg == 13) return 0.60f;
+            if (veg == 25 || veg == 14) return 0.30f;
+            return 0.65f;
+        case 15: // SHRUBLAND
+            if (veg == 11) return 0.95f;
+            if (veg == 16 || veg == 10) return 0.78f;
+            if (veg == 13) return 0.62f;
+            if (veg == 25 || veg == 14) return 0.25f;
+            return 0.65f;
+        case 9: // SNOW
+            if (veg == 1) return 1.00f;                // polar desert
+            if (veg == 3) return 0.95f;                // alpine tundra
+            if (veg == 2) return 0.90f;                // tundra
+            if (veg == 4) return 0.70f;                // alpine meadow
+            if (veg == 5 || veg == 8) return 0.45f;    // taiga / conifer under snow
+            if (veg == 0) return 0.80f;
+            return 0.18f;
+        case 10: // SWAMP
+            if (veg == 20) return 1.00f;
+            if (veg == 27) return 0.95f;
+            if (veg == 21) return 0.90f;
+            if (veg == 14 || veg == 25) return 0.65f;
+            if (veg == 19) return 0.45f;
+            if (veg == 0) return 0.75f;
+            return 0.18f;
+        case 16: // MANGROVE terrain
+            if (veg == 19) return 1.00f;
+            if (veg == 21 || veg == 20) return 0.80f;
+            if (veg == 14 || veg == 25) return 0.55f;
+            if (veg == 0) return 0.70f;
+            return 0.18f;
+        case 17: // GLACIER
+            if (veg == 0) return 1.00f;
+            if (veg == 1) return 0.80f;
+            if (veg == 3) return 0.75f;
+            return 0.18f;
+        case 18: // LAKE
+            return veg == 0 ? 1.00f : 0.18f;
+        case 19: // REEF
+            if (veg == 23) return 1.00f;
+            if (veg == 0) return 0.80f;
+            if (veg == 26) return 0.65f;
+            return 0.18f;
+        case 20: // SEA_ICE
+            if (veg == 0) return 1.00f;
+            if (veg == 1) return 0.55f;
+            return 0.18f;
+        case 21: // KELP
+            if (veg == 22) return 1.00f;
+            if (veg == 0) return 0.80f;
+            if (veg == 26) return 0.65f;
+            return 0.18f;
+        case 22: // DELTA
+            if (veg == 21) return 0.98f;
+            if (veg == 19) return 0.90f;
+            if (veg == 20) return 0.85f;
+            if (veg == 0) return 0.85f;
+            if (veg == 25 || veg == 13) return 0.80f;
+            if (veg == 14) return 0.72f;
+            if (veg == 15) return 0.65f;
+            if (veg == 9 || veg == 7) return 0.78f;
+            if (veg == 5 || veg == 6 || veg == 8) return 0.50f;
+            return 0.18f;
+        case 23: // OASIS
+            if (veg == 18) return 1.00f;
+            if (veg == 0) return 0.80f;
+            if (veg == 16 || veg == 17 || veg == 13) return 0.60f;
+            if (veg == 9) return 0.55f;
+            return 0.18f;
+        case 24: // SALT_FLAT
+            if (veg == 0) return 1.00f;
+            if (veg == 17 || veg == 16) return 0.45f;
+            return 0.18f;
+        case 25: // BADLANDS
+            if (veg == 16) return 1.00f;
+            if (veg == 17) return 0.85f;
+            if (veg == 10 || veg == 11) return 0.70f;
+            if (veg == 13) return 0.50f;
+            if (veg == 0) return 0.80f;
+            return 0.18f;
+        case 28: // MOOR
+            if (veg == 27) return 1.00f;
+            if (veg == 21 || veg == 20) return 0.90f;
+            if (veg == 5 || veg == 6) return 0.65f;
+            if (veg == 4) return 0.55f;
+            if (veg == 9) return 0.75f;
+            return 0.18f;
+        case 29: // FLOODPLAIN
+            if (veg == 21) return 0.98f;
+            if (veg == 20) return 0.90f;
+            if (veg == 19) return 0.80f;
+            if (veg == 25 || veg == 13) return 0.80f;
+            if (veg == 14) return 0.72f;
+            if (veg == 15) return 0.65f;
+            if (veg == 9 || veg == 7) return 0.90f;
+            if (veg == 5 || veg == 6 || veg == 8) return 0.60f;
+            if (veg == 0) return 0.85f;
+            return 0.45f;
+        case 30: // MESA
+            if (veg == 16) return 1.00f;
+            if (veg == 17) return 0.85f;
+            if (veg == 10) return 0.65f;
+            if (veg == 11) return 0.60f;
+            if (veg == 13) return 0.55f;
+            if (veg == 0) return 0.80f;
+            return 0.18f;
+        default:
+            return 1.00f;
+    }
+}
+
+static constexpr float PK_BIOME_RECONCILE_WEIGHT_THRESHOLD = 0.58f;
+
+static inline bool pk_vegetation_needs_biome_reconcile(uint8_t terrain, uint8_t veg) {
+    return veg != 0 &&
+           pk_vegetation_biome_weight(terrain, veg) <= PK_BIOME_RECONCILE_WEIGHT_THRESHOLD;
 }
 
 // Returns a bounded soft multiplier.  A value of zero is reserved for a
@@ -1307,7 +1523,8 @@ static inline float pk_vegetation_terrain_weight(uint8_t terrain, uint8_t landfo
     } else if (landform == 6) { // HILL.
         w *= alpine ? 1.06f : 1.0f;
     }
-    return std::clamp(w, 0.35f, 1.25f);
+    w *= pk_vegetation_biome_weight(terrain, veg);
+    return std::clamp(w, 0.18f, 1.25f);
 }
 
 static inline uint8_t pk_derive_cover(uint8_t terrain, float snow_cover) {
@@ -1533,23 +1750,31 @@ static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
     // 并把旧单一"热带(>0.55)"拆成真热带(>0.66 赤道暖湿)与亚热带/暖温带(0.55–0.66)，
     // 让 FOREST 地形在亚热带可达，修复 pk_derive_vegetation case FOREST 的 temp>0.55
     // 亚热带林死分支(原 FOREST 仅 0.38–0.55 存在→SUBTROPICAL_FOREST 永不可达)。
-    if (temperature > 0.66) {              // 真热带（赤道暖湿）
-        if (moisture > 0.54) return 11;    // JUNGLE → 雨林/季风林
+    // [zonal-envelope 2026-08-01] 温度带边界按 lat_temp_bell(exp=1.3) 重新标定到地理纬度：
+    //   旧"真热带 >0.66"≈距赤道 43°，把温带漏斗进热带干端分类；新 0.80≈33°（回归线外缘）。
+    //   亚热带 0.55–0.80≈33–51°、温带 0.38–0.55≈51–62°、寒带 0.20–0.38≈62–77°。
+    // 湿度门槛配合新 base_moisture 纬带分布（赤道 mean≈0.45、副热带≈0.22-0.29、
+    // 中纬≈0.31、风暴路径海岸 0.45+）校准：温带 FOREST 0.55→0.46 让温带森林回归，
+    // 温带 GRASSLAND/STEPPE 下移收窄草原漏斗；JUNGLE 0.54 边界对齐规则保持不变。
+    if (temperature > 0.80) {              // 真热带（赤道带，0–33°）
+        if (moisture > 0.56) return 11;    // JUNGLE → 雨林/季风林（0.54→0.56：稀树草原两翼回归）
         if (moisture > 0.32) return 12;    // SAVANNA
-        if (moisture > 0.20) return 14;    // STEPPE（干热草）
+        // [zonal-envelope 二轮] 热带草系干端 0.20→0.24：游戏内实测草原系 39.9% 仍偏高，
+        // 干端 0.20-0.24 带转真荒漠（萨赫勒干缘收紧），与 whittaker SAVANNA 下限同步。
+        if (moisture > 0.24) return 14;    // STEPPE（干热草）
         return 7;                          // DESERT
     }
-    if (temperature > 0.55) {              // 亚热带 / 暖温带（湿端→亚热带常绿林）
-        if (moisture > 0.36) return 4;     // FOREST → pk_derive_vegetation 派生 SUBTROPICAL_FOREST
+    if (temperature > 0.55) {              // 亚热带 / 暖温带（33–51°，湿端→亚热带常绿林）
+        if (moisture > 0.40) return 4;     // FOREST → 派生 SUBTROPICAL_FOREST（0.36→0.40 防森林超带）
         if (moisture > 0.24) return 3;     // GRASSLAND
         if (moisture > 0.16) return 14;    // STEPPE
         return 7;                          // DESERT（副热带荒漠）
     }
-    if (temperature > 0.38) {              // 暖温带
-        if (moisture > 0.55) return 4;     // FOREST
-        if (moisture > 0.32) return 3;     // GRASSLAND
-        if (moisture > 0.20) return 14;    // STEPPE
-        return 7;                          // DESERT（副热带荒漠）
+    if (temperature > 0.38) {              // 温带（51–62°）
+        if (moisture > 0.48) return 4;     // FOREST（0.55→0.48：风暴路径湿带可达）
+        if (moisture > 0.28) return 3;     // GRASSLAND（0.32→0.28：收窄草原漏斗）
+        if (moisture > 0.16) return 14;    // STEPPE
+        return 7;                          // DESERT（温带内陆荒漠）
     }
     // 凉温带 / 北方带（0.20–0.38）
     if (moisture > 0.45) return 13;        // TAIGA

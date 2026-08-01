@@ -114,6 +114,37 @@ static var _shared_noise_tex: ImageTexture = null
 const TERRAIN_DETAIL_BAKE_MIN := 0.70
 const TERRAIN_DETAIL_BAKE_MAX := 1.30
 
+# [terrain-material-tiles] The four authored families are independent of map
+# dimensions and are therefore cached once per device target size. Mobile gets
+# one 512² downscale; desktop keeps the authored 1024² images.
+const TERRAIN_MATERIAL_SIZE_DESKTOP := 1024
+const TERRAIN_MATERIAL_SIZE_MOBILE := 512
+const TERRAIN_MATERIAL_TEXTURE_PATHS := [
+	"res://assets/textures/terrain_materials/organic.png",
+	"res://assets/textures/terrain_materials/dry_sand.png",
+	"res://assets/textures/terrain_materials/rock.png",
+	"res://assets/textures/terrain_materials/snow_wet.png",
+]
+static var _shared_terrain_material_tex_by_size: Dictionary = {}
+static var _shared_terrain_material_error_by_size: Dictionary = {}
+
+
+static func _terrain_materials_supported_for_renderer(rendering_method: String) -> bool:
+	# Compatibility keeps the legacy shader/tile path. Do not allocate the
+	# standalone array there even when the backend happens to expose an array
+	# texture API, because the material variant is not part of that contract.
+	return rendering_method != "gl_compatibility"
+
+
+static func _terrain_materials_supported() -> bool:
+	var rendering_method := ""
+	if RenderingServer.has_method("get_current_rendering_method"):
+		rendering_method = String(RenderingServer.get_current_rendering_method())
+	else:
+		rendering_method = String(ProjectSettings.get_setting(
+			"rendering/renderer/rendering_method", "mobile"))
+	return _terrain_materials_supported_for_renderer(rendering_method)
+
 # Daily Sim SoA Refactor 阶段 1：海冰 GPU 上传从 scalar_atlas.a 拆出到独立 sea_ice_tex（R8）。
 # 拆分前每日要传整张 RGBA8（2400×?，~7MB），其中 RGB 三通道是地形烘焙后的恒定值，
 # 仅 A 通道每日变化，纯属冗余带宽。拆分后：
@@ -290,6 +321,44 @@ static func get_or_build_shared_noise_tex() -> ImageTexture:
 	if _shared_noise_tex == null:
 		_shared_noise_tex = _build_noise_tex(NOISE_TEX_SIZE, NOISE_TEX_SEED)
 	return _shared_noise_tex
+
+
+static func get_or_build_shared_terrain_material_tex(target_size: int) -> Texture2DArray:
+	if _shared_terrain_material_tex_by_size.has(target_size):
+		return _shared_terrain_material_tex_by_size[target_size]
+	var result := _build_terrain_material_tex(target_size)
+	var texture: Texture2DArray = result.get("texture", null)
+	_shared_terrain_material_tex_by_size[target_size] = texture
+	_shared_terrain_material_error_by_size[target_size] = String(result.get("reason", ""))
+	return texture
+
+
+static func shared_terrain_material_error(target_size: int) -> String:
+	return String(_shared_terrain_material_error_by_size.get(target_size, ""))
+
+
+static func _build_terrain_material_tex(target_size: int) -> Dictionary:
+	if target_size <= 0:
+		return {"texture": null, "reason": "invalid_target_size"}
+	var images: Array[Image] = []
+	for path in TERRAIN_MATERIAL_TEXTURE_PATHS:
+		var image := Image.new()
+		var load_error := image.load(String(path))
+		if load_error != OK or image.is_empty():
+			return {"texture": null, "reason": "load_failed:%s:%s" % [path, load_error]}
+		if image.get_format() != Image.FORMAT_RGBA8:
+			image.convert(Image.FORMAT_RGBA8)
+		if image.get_width() != target_size or image.get_height() != target_size:
+			image.resize(target_size, target_size, Image.INTERPOLATE_LANCZOS)
+		var mip_error := image.generate_mipmaps()
+		if mip_error != OK:
+			return {"texture": null, "reason": "mipmap_failed:%s:%s" % [path, mip_error]}
+		images.append(image)
+	var texture := Texture2DArray.new()
+	var create_error := texture.create_from_images(images)
+	if create_error != OK:
+		return {"texture": null, "reason": "array_create_failed:%s" % create_error}
+	return {"texture": texture, "reason": ""}
 
 static func _build_noise_tex(size: int, seed_val: int) -> ImageTexture:
 	var rng := RandomNumberGenerator.new()
@@ -1014,6 +1083,20 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	world.upwelling_tex = null
 	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
 	world.noise_tex = get_or_build_shared_noise_tex()
+	# [terrain-material-tiles] Shared four-layer material array. A missing
+	# import, unsupported array allocation or mipmap failure is non-fatal: the
+	# renderer keeps terrain_material_tex_bound=false and uses the old path.
+	var terrain_material_size := TERRAIN_MATERIAL_SIZE_MOBILE if OS.has_feature("mobile") \
+			else TERRAIN_MATERIAL_SIZE_DESKTOP
+	if _terrain_materials_supported():
+		world.terrain_material_tex = get_or_build_shared_terrain_material_tex(terrain_material_size)
+	else:
+		world.terrain_material_tex = null
+		_shared_terrain_material_error_by_size[terrain_material_size] = "compatibility_renderer"
+	world.terrain_material_tex_bound = world.terrain_material_tex != null
+	if not world.terrain_material_tex_bound:
+		push_warning("[terrain-material-tiles] disabled (%s)" %
+			shared_terrain_material_error(terrain_material_size))
 	stage_progress.emit("encode", 0.98)
 	await _yield_generation_frame()
 	# 视野静态场（view_height / view_block）：地形一旦定型就不再变，烘一次即可。

@@ -119,6 +119,11 @@ SurfaceParams compute_land_base_surface(
 	}
 	// LAND 1.5：Normal / roughness / AO / metallic
 	vec3 normal = compute_terrain_normal(uv, visual_quality, biome);
+	if (terrain_materials_active()) {
+		normal = normalize(vec3(
+				normal.xy + static_mat.material_normal_xy,
+				max(normal.z, 0.12)));
+	}
 	float roughness = static_mat.roughness;
 	// [terrain-gi 2026-07-31] 地形级环境遮蔽已由 horizon 派生的 sky visibility 接管
 	//（brdf.gi_ambient_occlusion）。这条法线 z 启发式与遮挡几何无关，继续保留会与真 AO

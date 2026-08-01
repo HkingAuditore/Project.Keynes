@@ -193,7 +193,7 @@ WorldClock.day_changed(day_idx)
 - `season_refresh`：慢变量批量刷新，植被/生态/terrain/cover/雪盖等低频重判。
 - `refresh_climate_daily`：日气候 round，推进温度、湿度、雪包、海冰、风温、蒸腾等。
 - `natural_resource_daily`：31 种自然资源/农业容量按 habitat mask（陆地/海洋水格/淡水水格或河流）门控，并结合 temp/moisture 演化；`cell_temp` 与所有 `ResourceProfile.temp_lo/temp_hi` 统一为 `[0,1]`，禁止混用摄氏范围。所有数量型储量/自然增减统一乘省级地块面积倍率 `100×`，分布形状和无量纲增长/衰减率不变。普通资源使用线性 IMEX，野生动物/林木/鱼群使用适生度承载量、密度增长、迁入恢复和仅作用于原始适生度最低 25% 的急性压力死亡模型。海鱼可分布在沿海陆格和海洋水格，初始化在物理环流 flush 后读取温度、海域类型、洋流、上升流、河口营养和连续噪声，按适生度形成非均匀斑块；每格只保存本格储量。淡水鱼储量属于湖泊水格及湖岸陆格。external delta 一次性应用，`dt_days` 仅推进自然项。所有建筑资源边仍严格为 `local`，只读取并扣减建筑本格储量，不存在邻域采集。初始矿产由资源局部斑块、同族地质省和矿带共同生成；关键资源可按原始适宜度排名配置最低全球矿点覆盖。
-- 植被演替：C++ stage-b 计算 vitality/streak 并返回 succession candidates；GDScript 边界负责把 candidate 写回 `HexCell + MapData + cell_vegetation/cell_base_vegetation` 权威槽位并触发 atlas/scatter dirty。native cadence 的演替日数按 stage-b stride 与 native daily stride 的乘积累计。
+- 植被演替：C++ stage-b 计算 vitality/streak 并返回 succession candidates；GDScript 边界负责把 candidate 写回 `HexCell + MapData + cell_vegetation/cell_base_vegetation` 权威槽位并触发 atlas/scatter dirty。generation 与 runtime 共用 biome envelope soft prior；严重跨 biome 错配会在 high-threshold 适配区间开始累计 degradation streak。native cadence 的演替日数按 stage-b stride 与 native daily stride 的乘积累计。
 - 物资与阶层已进入独立原生经济域：`GoodProfileRegistry` 编译 stable goods，
   `PopulationStore`/`MarketStore` 保存状态，`economy_daily` 推进 `ECONOMY_GRAPH`。
   它们不属于 cell schema；自然资源仍由 `natural_resource_daily` 推进，生产供货走命令账本。

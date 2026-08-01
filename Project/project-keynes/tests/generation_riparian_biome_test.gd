@@ -22,8 +22,9 @@ func _init() -> void:
 
 func _run() -> void:
 	var defaults := ClimateProfile.new()
-	_expect("ClimateProfile dry strength defaults to 0.22",
-		is_equal_approx(defaults.moisture_subtropical_dry_strength, 0.22))
+	# [zonal-envelope] 默认值 0.22→0.30（加深副热带干带，见 climate_profile.gd 注释）。
+	_expect("ClimateProfile dry strength defaults to 0.30",
+		is_equal_approx(defaults.moisture_subtropical_dry_strength, 0.30))
 	_expect("ClimateProfile rain shadow default stays locally dry without dominating coasts",
 		is_equal_approx(defaults.rain_shadow_factor, 0.65))
 	_expect("ClimateProfile badlands land safety cap is disabled by default",

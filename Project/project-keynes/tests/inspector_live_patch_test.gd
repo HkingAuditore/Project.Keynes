@@ -70,9 +70,17 @@ func _run() -> void:
 		failures.append("resource live patch changed current tab")
 	if panel._scroll.scroll_vertical != resource_scroll:
 		failures.append("resource live patch changed scroll position")
+	panel.set_model_for_selection(_make_model())
+	await process_frame
+	if panel.current_tab() != "natural_resources":
+		failures.append("selection refresh changed current tab")
+	if panel._scroll.scroll_vertical != resource_scroll:
+		failures.append("selection refresh changed scroll position")
 
 	panel.select_tab("market")
 	await process_frame
+	if panel._scroll.scroll_vertical != 0:
+		failures.append("tab switch did not reset scroll position")
 	var market_list = panel._market_list
 	market_list.set_expanded("market_0", true)
 	var market_count := panel.visible_node_count()

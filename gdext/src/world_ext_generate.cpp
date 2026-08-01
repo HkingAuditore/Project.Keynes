@@ -87,6 +87,21 @@ Dictionary DCWorldExt::run_native_world_generate_full_pass(int seed,
     post_res["base_land_count"] = base_res.get("land_count", 0);
     post_res["base_native_ms"] = base_res.get("native_ms", base_res.get("elapsed_ms", 0.0));
     post_res["base_n_cells"] = base_res.get("n_cells", 0);
+    // [zonal-envelope 2026-08-01] 透传 base 期纬带湿度统计，供 headless 回归/审计断言。
+    {
+        static const char *kZonalKeys[] = {
+            "zonal_moist_mean_eq", "zonal_moist_mean_subtrop",
+            "zonal_moist_mean_midlat", "zonal_moist_mean_polar",
+            "zonal_moist_min_subtrop",
+            "zonal_land_cells_eq", "zonal_land_cells_subtrop",
+            "zonal_land_cells_midlat", "zonal_land_cells_polar",
+        };
+        for (const char *key : kZonalKeys) {
+            if (base_res.has(key) && !post_res.has(key)) {
+                post_res[key] = base_res.get(key, Variant());
+            }
+        }
+    }
     post_res["fused_base_post"] = true;
     return post_res;
 }
@@ -326,9 +341,34 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     const double moisture_humidity_cap = getd(profile, "moisture_humidity_cap", 1.2);   // 空气含水上限
     const double moisture_smooth = getd(profile, "moisture_smooth", 0.35);              // 纬向扫描后各向同性平滑权重
     const double moisture_noise_amp = getd(profile, "moisture_noise_amp", 0.08);        // 陆地湿度细节噪声
-    const double subtropical_dry_strength = std::max(0.0, getd(profile, "moisture_subtropical_dry_strength", 0.22));
-    const double subtropical_dry_center = std::clamp(getd(profile, "moisture_subtropical_dry_center", 0.33), 0.0, 1.0);
-    const double subtropical_dry_width = std::max(0.02, getd(profile, "moisture_subtropical_dry_width", 0.16));
+    // [zonal-envelope] 0.22→0.30 / 0.33→0.36：生产路径副热带 51% 草、荒漠 2.9%，加深并
+    // 极移干带使草原落为真荒漠；center 极移避免高斯尾触赤道带（见 climate_profile.gd 注释）。
+    const double subtropical_dry_strength = std::max(0.0, getd(profile, "moisture_subtropical_dry_strength", 0.30));
+    const double subtropical_dry_center = std::clamp(getd(profile, "moisture_subtropical_dry_center", 0.36), 0.0, 1.0);
+    const double subtropical_dry_width = std::max(0.02, getd(profile, "moisture_subtropical_dry_width", 0.18));
+    // ── 行星尺度纬带降水结构（[zonal-envelope 2026-08-01]）──────────────────────────
+    // 旧模型湿度只反映"距海里程"：海岸湿、内陆干，赤道/副热带/中纬几乎同湿 → 赤道核心
+    // 无雨林(实测赤道陆地湿度 p50=0.29)、全图零荒漠(base_moisture<0.2 为 0 格)、草原系
+    // 占陆地 48%。新增 ITCZ 赤道辐合湿带 / 中纬风暴路径湿带 / 极地干冷三条纬带包络，
+    // 作用于 6b 纬向扫描的 rainout 乘数：辐合带就地降落水汽，并让信风下游(副热带)空气
+    // 更干，与 Hadley/Ferrel 环流定性自洽。副热带干带仍走大陆度门控减法(原 6c+)，
+    // 但移到海岸 guard 之后才能真实跌破 0.2(见下方顺序调整)。
+    const double itcz_wet_strength = std::max(0.0, getd(profile, "moisture_itcz_wet_strength", 0.90));
+    const double itcz_center = std::clamp(getd(profile, "moisture_itcz_center", 0.05), 0.0, 1.0);
+    const double itcz_width = std::max(0.02, getd(profile, "moisture_itcz_width", 0.10));
+    const double stormtrack_wet_strength = std::max(0.0, getd(profile, "moisture_stormtrack_wet_strength", 0.60));
+    const double stormtrack_center = std::clamp(getd(profile, "moisture_stormtrack_center", 0.55), 0.0, 1.0);
+    const double stormtrack_width = std::max(0.02, getd(profile, "moisture_stormtrack_width", 0.15));
+    const double polar_dry_strength = std::clamp(getd(profile, "moisture_polar_dry_strength", 0.35), 0.0, 1.0);
+    // 热带海洋蒸发增强：暖海蒸发更强，把信风水汽源加湿——ITCZ 的"辐合供水"在本模型
+    // 里以源头增蒸表达（否则赤道陆格 rainout 因子再高，空气湿度本身枯竭也无雨可降）。
+    const double tropical_evap_boost = std::max(0.0, getd(profile, "moisture_tropical_evap_boost", 1.0));
+    // 雨林水分再循环 + ITCZ 辐合注入：实测探针显示仅靠海洋平流，赤道大陆内部空气湿度
+    // 沿程枯竭（humidity→0），evap boost 因 humidity cap 饱和无效。地球亚马逊/刚果靠
+    // ~50% 降水蒸散再循环 + 双半球信风辐合持续供水维持内陆雨林。recycle 截留部分降水
+    // 回到气柱，convergence 每格恒量注入（辐合流），二者共同让雨林湿带深入内陆。
+    const double itcz_recycle_strength = std::clamp(getd(profile, "moisture_itcz_recycle_strength", 0.62), 0.0, 0.9);
+    const double itcz_convergence = std::max(0.0, getd(profile, "moisture_itcz_convergence", 0.05));
     const double coastal_temp_moderation = getd(profile, "coastal_temp_moderation", 0.18); // 海洋温度调节强度(拉向温带)
     const double coastal_temp_scale = getd(profile, "coastal_temp_scale", 6.0);         // 海洋影响随距海(格)的衰减尺度
 
@@ -1296,10 +1336,41 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         return pk_clamp01(base + infl * coastal_temp_moderation * (0.5 - base));
     };
 
+    // [zonal-envelope] 行星尺度纬带降水因子：eq_dist=|ny*2-1|（0=赤道、1=极）。
+    // ITCZ 辐合增雨（赤道核心 rainout 最高 ×(1+strength)）+ 中纬风暴路径次级增雨
+    // + 极地干冷抑雨（冷空气含水量低）。clamp 下限保留基础降水，上限防噪声放大失控。
+    // 乘在 rainout 上而非直接加减 M：辐合带快速降空水汽 → 信风带下游(副热带)自然更干。
+    auto zgauss = [](double x, double c, double w) {
+        const double z = (x - c) / w;
+        return std::exp(-0.5 * z * z);
+    };
+    auto zonal_precip_factor = [&](double ny) -> double {
+        const double eq_dist = std::abs(ny * 2.0 - 1.0);
+        const double f = 1.0
+            + itcz_wet_strength       * zgauss(eq_dist, itcz_center, itcz_width)
+            + stormtrack_wet_strength * zgauss(eq_dist, stormtrack_center, stormtrack_width)
+            - polar_dry_strength      * zgauss(eq_dist, 0.95, 0.15);
+        return std::clamp(f, 0.20, 3.0);
+    };
+    // 热带海洋蒸发乘数：eq_dist≈0.08、宽 0.28 的宽热带峰（覆盖整个信风带供水区）。
+    auto tropical_evap_mult = [&](double ny) -> double {
+        const double eq_dist = std::abs(ny * 2.0 - 1.0);
+        return 1.0 + tropical_evap_boost * zgauss(eq_dist, 0.08, 0.28);
+    };
+    // ITCZ 再循环/辐合的纬度包络：比 rainout 峰更宽（±约 16°），覆盖整个赤道雨林带。
+    auto itcz_recycle_env = [&](double ny) -> double {
+        const double eq_dist = std::abs(ny * 2.0 - 1.0);
+        return zgauss(eq_dist, itcz_center, itcz_width * 1.8);
+    };
+
     // 6b. 盛行风纬向扫描湿度场（沿 wind.x 方向 upwind→downwind 推进携带的空气湿度）。
     for (int row = 0; row < height; ++row) {
         const double ny = double(row) * inv_h;
         const PkWind2 wind = pk_wind_belt_wind_at(ny, 0.0, 0.0);
+        const double zpf = zonal_precip_factor(ny);   // [zonal-envelope] 行星尺度纬带降水因子
+        const double zevap = tropical_evap_mult(ny);  // [zonal-envelope] 热带海洋蒸发乘数
+        const double zrecycle = itcz_recycle_strength * itcz_recycle_env(ny); // [zonal-envelope] 雨林水分再循环率
+        const double zconv = itcz_convergence * itcz_recycle_env(ny);         // [zonal-envelope] ITCZ 辐合注入
         const int dir = (wind.x >= 0.0) ? 1 : -1;   // +1：风自西吹向东 → 从西向东扫
         // [cylindrical-earth-daylight] 环向(经度环绕)扫描：绕两整圈，第一圈预热让 humidity
         // 沿盛行风环流平衡，第二圈才写 M。消除旧"每行从边界 humidity=0"导致的西岸假干旱
@@ -1313,12 +1384,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             const bool record = (step >= width);    // 第一圈预热不写、第二圈记录
             const bool is_water = double(E[idx]) < sea_level;
             if (is_water) {
-                humidity = std::min(moisture_humidity_cap, humidity + moisture_wind_evap_eff);  // [scale-fix] ÷s
+                // [zonal-envelope] 热带洋面蒸发增强（暖海供水，ITCZ/信风水汽源）
+                humidity = std::min(moisture_humidity_cap, humidity + moisture_wind_evap_eff * zevap);  // [scale-fix] ÷s
                 if (record) M[idx] = float(pk_clamp01(0.85 + 0.15 * humidity)); // 开放水域恒湿
             } else {
                 const double upslope = (prev_idx >= 0) ? std::max(0.0, double(E[idx]) - double(E[prev_idx])) : 0.0;
                 // [scale-fix] 基础降水率换每物理距离保留率；upslope 项 ΔE 自带 1/s 不缩放。
-                double rainout = moisture_rainout_base_eff + upslope * moisture_orographic_gain;
+                // [zonal-envelope] 乘纬带降水因子：ITCZ/风暴路径增雨、极地抑雨。
+                double rainout = (moisture_rainout_base_eff + upslope * moisture_orographic_gain) * zpf;
                 if (rainout > 0.95) rainout = 0.95;
                 const double precip = humidity * rainout;
                 // [cylindrical-earth-daylight] 湿度抖动噪声圆柱采样 → 东西无缝；经度 period=width（col/width）
@@ -1326,8 +1399,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 const double jitter = cyl_noise(moisture_noise.ptr(), std::cos(mth), std::sin(mth), ny, 100.0, 0.0, 0.0, 0.0) * moisture_noise_amp;
                 double m = moisture_land_base + precip * moisture_precip_gain + jitter;
                 if (record) M[idx] = float(pk_clamp01(m));
-                humidity -= precip;
+                // [zonal-envelope] ITCZ：降水一部分蒸散回气柱(再循环)，另有辐合流恒量注入——
+                // 二者只改变气柱水量，不改变已落地的 m（m 始终按落地 precip 记账）。
+                humidity -= precip * (1.0 - zrecycle);
+                humidity += zconv;
                 if (humidity < 0.0) humidity = 0.0;
+                if (humidity > moisture_humidity_cap) humidity = moisture_humidity_cap;
                 humidity *= (1.0 - moisture_continental_dry_eff); // 大陆度：内陆持续干燥化 [scale-fix] 每物理距离保留率
             }
             prev_idx = idx;
@@ -1362,8 +1439,27 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (double(M[i]) < floor_m) M[i] = float(floor_m);
     }
 
+    // 6c++. 海岸残余保障（35%）：阻止无物理依据的贴岸极旱，
+    // 但不会让海岸尺度覆盖小大陆并消灭内陆沙漠。明确雨影仍在 post-base 后置生效。
+    // [zonal-envelope 2026-08-01] 顺序调整：本 guard 移到副热带干带【之前】——旧顺序
+    // "floor→dry→guard" 里 guard 会把干带扣出的近岸格重新抬回 ~0.22+，全图 0 格跌破
+    // 荒漠线(实测 base_moisture p10=0.234)。现在干带最后生效，guard 只挡"干带之外"
+    // 的无依据贴岸极旱；干带纬度内的近岸荒漠(纳米布/阿塔卡马型)允许出现。
+    constexpr double PK_COASTAL_MOIST_GUARD = 0.35;
+    for (int i = 0; i < n; ++i) {
+        if (double(E[i]) < sea_level) continue;
+        const int dd = dist_ocean[size_t(i)];
+        if (dd <= 0) continue;
+        const double prox = std::exp(-double(dd) / coastal_moist_scale_eff);
+        const double guard_m = moisture_land_base
+            + coastal_moist_floor * PK_COASTAL_MOIST_GUARD * prox;
+        if (double(M[i]) < guard_m) M[i] = float(guard_m);
+    }
+
     // 6c+. 副热带干旱带：在南北约 20-35 度、且离海较远的陆地扣湿。
     // 这不是噪声硬塞沙漠，而是用纬度环流 + 大陆度恢复自然荒漠带。
+    // [zonal-envelope] 移到海岸 guard 之后执行，使干带核心能真实跌破 0.2 荒漠线；
+    // 同时 6b 的 ITCZ 辐合已抽干信风水汽，干带不再孤军奋战。
     if (subtropical_dry_strength > 0.0) {
         for (int i = 0; i < n; ++i) {
             if (double(E[i]) < sea_level) continue;
@@ -1379,17 +1475,30 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         }
     }
 
-    // 6c++. 干带之后仅保留 35% 的残余海岸保障：阻止无物理依据的贴岸极旱，
-    // 但不会让海岸尺度覆盖小大陆并消灭内陆沙漠。明确雨影仍在 post-base 后置生效。
-    constexpr double PK_COASTAL_MOIST_GUARD = 0.35;
-    for (int i = 0; i < n; ++i) {
-        if (double(E[i]) < sea_level) continue;
-        const int dd = dist_ocean[size_t(i)];
-        if (dd <= 0) continue;
-        const double prox = std::exp(-double(dd) / coastal_moist_scale_eff);
-        const double guard_m = moisture_land_base
-            + coastal_moist_floor * PK_COASTAL_MOIST_GUARD * prox;
-        if (double(M[i]) < guard_m) M[i] = float(guard_m);
+    // [zonal-envelope] 纬带湿度统计：赤道(eq_dist<0.2)/副热带(0.2-0.45)/中纬(0.45-0.7)/
+    // 极地(>0.7) 四带陆地均值 + 副热带最低值。供 headless 回归与 CSV 审计断言"赤道湿于
+    // 副热带、荒漠真实可达"，不再靠目视抽查。统计在 6d 分类之前、全部湿度 pass 之后。
+    {
+        double zsum[4] = {0.0, 0.0, 0.0, 0.0};
+        int zcnt[4] = {0, 0, 0, 0};
+        double zmin_sub = 1.0;
+        for (int i = 0; i < n; ++i) {
+            if (double(E[i]) < sea_level) continue;
+            const double eqd = std::abs(double(R[i]) * inv_h * 2.0 - 1.0);
+            const int zb = (eqd < 0.20) ? 0 : ((eqd < 0.45) ? 1 : ((eqd < 0.70) ? 2 : 3));
+            zsum[zb] += double(M[i]);
+            zcnt[zb] += 1;
+            if (zb == 1 && double(M[i]) < zmin_sub) zmin_sub = double(M[i]);
+        }
+        out["zonal_moist_mean_eq"]      = (zcnt[0] > 0) ? zsum[0] / zcnt[0] : 0.0;
+        out["zonal_moist_mean_subtrop"] = (zcnt[1] > 0) ? zsum[1] / zcnt[1] : 0.0;
+        out["zonal_moist_mean_midlat"]  = (zcnt[2] > 0) ? zsum[2] / zcnt[2] : 0.0;
+        out["zonal_moist_mean_polar"]   = (zcnt[3] > 0) ? zsum[3] / zcnt[3] : 0.0;
+        out["zonal_moist_min_subtrop"]  = (zcnt[1] > 0) ? zmin_sub : 0.0;
+        out["zonal_land_cells_eq"]      = zcnt[0];
+        out["zonal_land_cells_subtrop"] = zcnt[1];
+        out["zonal_land_cells_midlat"]  = zcnt[2];
+        out["zonal_land_cells_polar"]   = zcnt[3];
     }
 
     // 6d. 初判地形（permanent_only=true）：用统一气候场（海洋调节温度 + 风输送湿度）。
@@ -3597,6 +3706,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const float drought_penalty = float(std::max(0.01, getd(profile, "plant_drought_penalty", 0.25)));
     int vegetation_candidate_count = 0;
     int vegetation_none_count = 0;
+    int vegetation_biome_reconciled_count = 0;
     int plant_water_nonzero_land_count = 0;
     int river_adjacent_desert_count = 0;
     int coastal_highland_desert_count = 0;
@@ -3657,6 +3767,16 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         } else if (IW[i] == 0) {
             selected = pk_derive_vegetation(TERR[i], LF[i], TEMP[i], M[i]);
             best_score = selected == 0 ? 0.0f : 0.5f;
+        }
+
+        // Keep ecological lag for compatible transitions, but repair an
+        // obviously cross-biome winner before publishing the initial state.
+        if (selected != 0 && pk_vegetation_needs_biome_reconcile(TERR[i], selected)) {
+            const uint8_t repaired = pk_derive_vegetation(TERR[i], LF[i], TEMP[i], M[i]);
+            if (repaired != selected) {
+                selected = repaired;
+                ++vegetation_biome_reconciled_count;
+            }
         }
 
         if (have_veg_profiles && selected > 0 && selected < 28) {
@@ -3945,6 +4065,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["mangrove_count"] = mangrove_count;
     out["moor_count"] = moor_count;
     out["vegetation_candidate_count"] = vegetation_candidate_count;
+    out["vegetation_biome_reconciled_count"] = vegetation_biome_reconciled_count;
     out["vegetation_native_ms"] = vegetation_native_ms;
     out["vegetation_none_count"] = vegetation_none_count;
     out["vegetation_score_min"] = vegetation_candidate_count > vegetation_none_count ? vegetation_score_min : 0.0f;
@@ -4091,6 +4212,8 @@ Dictionary DCWorldExt::_run_native_generation_publish_pass(
         {"cell_temp_baseline", SlotDType::F32, -1},
         {"cell_temp_30d", SlotDType::F32, -1},
         {"cell_temp_365d", SlotDType::F32, -1},
+        {"cell_base_moisture", SlotDType::F32, -1},
+        {"cell_water_balance_30d", SlotDType::F32, -1},
         {"cell_temp_anomaly", SlotDType::F32, -1},
         {"cell_thermal_energy", SlotDType::F32, -1},
         {"cell_terrain", SlotDType::U8, -1},
@@ -4496,8 +4619,9 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
 
     // ─── stage 2：seasonal_redecide_terrain ───────────────────────────────
     // SAME_SOURCE: map_generator.gd::_seasonal_redecide_terrain (line 2474).
-    // 流程：非永久气候 / 非永久地标 → 用 lat_tab + off_tab 算 temp_now
-    //       → _decide_terrain → apply_terrain（写 terrain + 派生 landform/veg/cover）。
+    // 流程：非永久气候 / 非永久地标 → 用 temp_365d + base_moisture/water_balance_30d
+    //       算慢时间尺度 biome 气候 → _decide_terrain → apply_terrain（写 terrain + 派生 landform）。
+    //       瞬时 moisture 只供实时气候；vegetation/cover 由后续慢速演替阶段维护。
     if (stage == 2) {
         if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
             !knobs.has("lat_temp_rows") || !knobs.has("season_offset_rows") ||
@@ -4519,12 +4643,15 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         const int sid_base_t    = component_id(StringName("cell_base_terrain"));
         const int sid_elev      = component_id(StringName("cell_elevation"));
         const int sid_moist     = component_id(StringName("cell_moisture"));
+        const int sid_base_m    = component_id(StringName("cell_base_moisture"));
+        const int sid_wb30      = component_id(StringName("cell_water_balance_30d"));
         const int sid_landform  = component_id(StringName("cell_landform"));
         const int sid_vegetation= component_id(StringName("cell_vegetation"));
         const int sid_cover     = component_id(StringName("cell_cover"));
         const int sid_snow      = component_id(StringName("cell_snow_cover"));
         const int sid_is_water  = component_id(StringName("cell_is_water"));
         if (sid_terrain < 0 || sid_base_t < 0 || sid_elev < 0 || sid_moist < 0 ||
+            sid_base_m < 0 || sid_wb30 < 0 ||
             sid_landform < 0 || sid_vegetation < 0 || sid_cover < 0 || sid_snow < 0 ||
             sid_is_water < 0) {
             return fail("stage_2 missing slot id");
@@ -4533,6 +4660,8 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         Slot &s_bt = _slots.write[sid_base_t];
         Slot &s_e  = _slots.write[sid_elev];
         Slot &s_m  = _slots.write[sid_moist];
+        Slot &s_bm = _slots.write[sid_base_m];
+        Slot &s_wb = _slots.write[sid_wb30];
         Slot &s_lf = _slots.write[sid_landform];
         Slot &s_vg = _slots.write[sid_vegetation];
         Slot &s_cv = _slots.write[sid_cover];
@@ -4540,6 +4669,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         Slot &s_iw = _slots.write[sid_is_water];
         if (s_t.arr_u8.size() != n_cells || s_bt.arr_u8.size() != n_cells ||
             s_e.arr_f32.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_bm.arr_f32.size() != n_cells || s_wb.arr_f32.size() != n_cells ||
             s_lf.arr_u8.size() != n_cells || s_vg.arr_u8.size() != n_cells ||
             s_cv.arr_u8.size() != n_cells || s_sn.arr_f32.size() != n_cells ||
             s_iw.arr_u8.size() != n_cells) {
@@ -4550,6 +4680,13 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         const uint8_t * const __restrict BTERR = s_bt.arr_u8.ptr();
         const float   * const __restrict ELEV  = s_e.arr_f32.ptr();
         const float   * const __restrict MOIST = s_m.arr_f32.ptr();
+        const float   * const __restrict BASE_MOIST = s_bm.arr_f32.ptr();
+        const float   * const __restrict WB30 = s_wb.arr_f32.ptr();
+        const int sid_temp_365d = component_id(StringName("cell_temp_365d"));
+        if (sid_temp_365d < 0 || _slots.write[sid_temp_365d].arr_f32.size() != n_cells) {
+            return fail("stage_2 temp_365d slot size mismatch");
+        }
+        const float * const __restrict TEMP365 = _slots.write[sid_temp_365d].arr_f32.ptr();
         uint8_t       * const __restrict LF    = s_lf.arr_u8.ptrw();
         uint8_t       * const __restrict VG    = s_vg.arr_u8.ptrw();
         uint8_t       * const __restrict CV    = s_cv.arr_u8.ptrw();
@@ -4559,6 +4696,8 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         const float   * const __restrict LATT  = lat_tab.ptr();
         const float   * const __restrict OFFT  = off_tab.ptr();
         const int32_t * const __restrict ROWI  = row_idx.ptr();
+        const float biome_wet_weight = std::max(0.0f, float(knobs.get("biome_water_balance_weight", 0.35)));
+        const float biome_dry_penalty = std::max(0.0f, float(knobs.get("biome_drought_penalty", 0.25)));
 
         auto t0 = std::chrono::high_resolution_clock::now();
         int touched = 0;
@@ -4586,11 +4725,13 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
                 int row = ROWI[i];
                 if (row < 0) row = 0;
                 else if (row > max_row) row = max_row;
-                const double lat_temp = double(LATT[row]);
                 const double e = double(ELEV[i]);
-                const double temp_year = pk_clamp01(lat_temp - pk_alt_penalty(e, double(sea_level)));
-                const double temp_now = pk_clamp01(temp_year + double(OFFT[row]));
-                new_t = pk_decide_terrain(e, temp_now, double(MOIST[i]),
+                const double temp_year = pk_clamp01(double(TEMP365[i]));
+                const double biome_moisture = pk_clamp01(
+                    double(BASE_MOIST[i])
+                    + std::max(double(WB30[i]), 0.0) * double(biome_wet_weight)
+                    + std::min(double(WB30[i]), 0.0) * double(biome_dry_penalty));
+                new_t = pk_decide_terrain(e, temp_year, biome_moisture,
                                           double(sea_level));
                 // 生成期已排干/回填的内陆低洼陆地仍保留原始 below-sea elevation；
                 // runtime 季节重判不得把非水地块重新判回 COAST/OCEAN。
@@ -4625,6 +4766,11 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         _flush_slot_to_map(sid_terrain);
         _flush_slot_to_map(sid_landform);
         _flush_slot_to_map(sid_is_water);
+
+        (void)MOIST;
+        (void)LATT;
+        (void)OFFT;
+        (void)ROWI;
 
         auto t1 = std::chrono::high_resolution_clock::now();
         out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -4738,9 +4884,9 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
     // ─── stage 4：vegetation_feedback ─────────────────────────────────────
     // SAME_SOURCE: map_generator.gd::_apply_vegetation_feedback (line 3269).
     // 流程：1) 累加 donor 邻居 delta（陆地，elev_factor=clamp(1-elev*decay,0.1,1)）
-    //       2) 应用 delta 到 moisture（限幅）
+    //       2) 应用 delta 到瞬时 moisture（限幅，供实时气候/vegetation）
     //       3) 重决策非永久 biome（不动 MOUNTAIN/SNOW/permanent_landform），
-    //          仅用 lat_tab 不叠 off_tab（与 GDScript line 3304 注释一致）。
+    //          仍使用 temp_365d + base_moisture/water_balance_30d，避免 donor 短期写入抖动 biome。
     if (stage == 4) {
         if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
             !knobs.has("lat_temp_rows") || !knobs.has("row_indices") ||
@@ -4766,29 +4912,40 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
 
         const int sid_terrain  = component_id(StringName("cell_terrain"));
         const int sid_moist    = component_id(StringName("cell_moisture"));
+        const int sid_base_m   = component_id(StringName("cell_base_moisture"));
+        const int sid_wb30     = component_id(StringName("cell_water_balance_30d"));
+        const int sid_temp365  = component_id(StringName("cell_temp_365d"));
         const int sid_elev     = component_id(StringName("cell_elevation"));
         const int sid_landform = component_id(StringName("cell_landform"));
-        if (sid_terrain < 0 || sid_moist < 0 || sid_elev < 0 || sid_landform < 0) {
+        if (sid_terrain < 0 || sid_moist < 0 || sid_base_m < 0 || sid_wb30 < 0 ||
+            sid_temp365 < 0 || sid_elev < 0 || sid_landform < 0) {
             return fail("stage_4 missing slot id");
         }
         Slot &s_t = _slots.write[sid_terrain];
         Slot &s_m = _slots.write[sid_moist];
+        Slot &s_bm = _slots.write[sid_base_m];
+        Slot &s_wb = _slots.write[sid_wb30];
+        Slot &s_t365 = _slots.write[sid_temp365];
         Slot &s_e = _slots.write[sid_elev];
         Slot &s_lf= _slots.write[sid_landform];
         if (s_t.arr_u8.size() != n_cells || s_m.arr_f32.size() != n_cells ||
+            s_bm.arr_f32.size() != n_cells || s_wb.arr_f32.size() != n_cells ||
+            s_t365.arr_f32.size() != n_cells ||
             s_e.arr_f32.size() != n_cells || s_lf.arr_u8.size() != n_cells) {
             return fail("stage_4 slot size mismatch");
         }
 
         uint8_t       * const __restrict TERR = s_t.arr_u8.ptrw();
         float         * const __restrict M    = s_m.arr_f32.ptrw();
+        const float   * const __restrict BASE_MOIST = s_bm.arr_f32.ptr();
+        const float   * const __restrict WB30 = s_wb.arr_f32.ptr();
+        const float   * const __restrict TEMP365 = s_t365.arr_f32.ptr();
         const float   * const __restrict ELEV = s_e.arr_f32.ptr();
         uint8_t       * const __restrict LF   = s_lf.arr_u8.ptrw();
         const int32_t * const __restrict NB   = nb_arr.ptr();
-        const float   * const __restrict LATT = lat_tab.ptr();
-        const int32_t * const __restrict ROWI = row_idx.ptr();
         const float   * const __restrict DTAB = donor_tab.ptr();
-        const int max_row = height - 1;
+        const float biome_wet_weight = std::max(0.0f, float(knobs.get("biome_water_balance_weight", 0.35)));
+        const float biome_dry_penalty = std::max(0.0f, float(knobs.get("biome_drought_penalty", 0.25)));
 
         auto t0 = std::chrono::high_resolution_clock::now();
         // pass 1：累加 delta（per-target sum）
@@ -4818,20 +4975,20 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
             else if (m > 1.0) m = 1.0;
             M[i] = float(m);
         }
-        // pass 3：redecide（仅 lat_tab，不叠 off_tab；不动 MOUNTAIN/SNOW/permanent_landform）
+        // pass 3：redecide（慢气候输入；不动 MOUNTAIN/SNOW/permanent_landform）
         int touched = 0;
         for (int i = 0; i < n_cells; ++i) {
             const uint8_t cur = TERR[i];
             if (pk_is_water_terrain(cur)) continue;
             if (cur == 6 || cur == 9) continue;            // MOUNTAIN/SNOW
             if (pk_is_permanent_landform(cur)) continue;
-            int row = ROWI[i];
-            if (row < 0) row = 0;
-            else if (row > max_row) row = max_row;
-            const double lat_temp = double(LATT[row]);
             const double e = double(ELEV[i]);
-            const double temp = pk_clamp01(lat_temp - pk_alt_penalty(e, double(sea_level)));
-            uint8_t new_t = pk_decide_terrain(e, temp, double(M[i]),
+            const double temp = pk_clamp01(double(TEMP365[i]));
+            const double biome_moisture = pk_clamp01(
+                double(BASE_MOIST[i])
+                + std::max(double(WB30[i]), 0.0) * double(biome_wet_weight)
+                + std::min(double(WB30[i]), 0.0) * double(biome_dry_penalty));
+            uint8_t new_t = pk_decide_terrain(e, temp, biome_moisture,
                                               double(sea_level));
             if (pk_is_water_terrain(new_t) && !pk_is_water_terrain(cur)) {
                 new_t = cur;
@@ -5309,9 +5466,10 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         TEMP[i] = temp_now;
         SNOW[i] = snow;
         LAND[i] = lf;
-        // Land vegetation is advanced by vegetation_dynamics/succession; season
-        // sync only derives water vegetation or initializes bare cells.
-        if (pk_is_water_terrain(TERR[i]) || VEG[i] == 0) {
+        // Keep vegetation succession lag where the pair is plausible, but
+        // reconcile a clearly cross-biome residue after terrain reclassification.
+        if (pk_is_water_terrain(TERR[i]) || VEG[i] == 0 ||
+            pk_vegetation_needs_biome_reconcile(TERR[i], VEG[i])) {
             VEG[i] = pk_derive_vegetation(TERR[i], lf, temp_now, MOIST[i]);
         }
         COV[i] = pk_derive_cover(TERR[i], snow);

@@ -530,6 +530,8 @@ func _build_header(
 	population_summary: Dictionary = {}
 ) -> Dictionary:
 	var country_name := String(country_summary.get("country_name", "无主之地"))
+	# terrain_v is the legacy-stable bioclimatic/biome axis. Keep its value in
+	# the compact header; the detailed climate-zone label lives in the geography tab.
 	var title := "%s · %s" % [
 		LandformType.name_cn(landform_v), TerrainType.terrain_name_cn(terrain_v)]
 	if bool(population_summary.get("settlement_name_active", false)):
@@ -626,12 +628,16 @@ func _geography_information_category(
 	var hydrology := _hydrology_category(cell, idx, wf, snow, is_water)
 	var ecology := _ecology_category(cell, idx, vegetation_v, vitality)
 	var physical_metrics := [
-		{"id": "geography_terrain", "title": "地形", "value": TerrainType.terrain_name_cn(terrain_v), "subtitle": "移动成本 %d" % TerrainType.get_move_cost(terrain_v), "accent": UITokens.GEO, "icon": "surface"},
 		{"id": "geography_landform", "title": "地貌", "value": LandformType.name_cn(landform_v), "subtitle": "陆路%s" % ("可通" if passable_land else "阻断"), "accent": UITokens.GEO, "icon": "geo"},
 		{"id": "geography_cover", "title": "地表覆盖", "value": CoverType.name_cn(cover_v), "subtitle": "", "accent": UITokens.WATER, "icon": "surface"},
 	]
 	physical_metrics.append_array(geography.get("metrics", []))
-	var climate_metrics: Array = climate.get("metrics", []).duplicate()
+	# Keep the legacy metric id for live-patch compatibility, but render the
+	# value in the climate section under its actual biome/climate-zone meaning.
+	var climate_metrics: Array = [
+		{"id": "geography_terrain", "title": "气候区", "value": TerrainType.terrain_name_cn(terrain_v), "subtitle": "地表通行成本 %d" % TerrainType.get_move_cost(terrain_v), "accent": UITokens.CLIMATE, "icon": "climate"},
+	]
+	climate_metrics.append_array(climate.get("metrics", []))
 	climate_metrics.append_array(hydrology.get("metrics", []))
 	climate_metrics.append({"id": "climate_weather", "title": "当前天气", "value": _weather_name(cell, idx), "subtitle": _intensity_text(_weather_intensity(cell, idx)), "accent": UITokens.WATER, "icon": "weather"})
 	var climate_gauges: Array = climate.get("gauges", []).duplicate()
@@ -640,7 +646,7 @@ func _geography_information_category(
 		"sections": [
 			{
 				"id": "physical_geography",
-				"title": "地形与地貌",
+				"title": "地貌与地表",
 				"icon": "geo",
 				"accent": UITokens.GEO,
 				"metrics": physical_metrics,
@@ -648,7 +654,7 @@ func _geography_information_category(
 			},
 			{
 				"id": "climate_hydrology",
-				"title": "气候与水文",
+				"title": "气候区与水文",
 				"icon": "water",
 				"accent": UITokens.WATER,
 				"metrics": climate_metrics,
@@ -745,7 +751,7 @@ func _ecology_category(cell: HexCell, idx: int, vegetation_v: int, vitality: flo
 	return {
 		"insights": insights,
 		"metrics": [
-			{"id": "ecology_vegetation", "title": "植被", "value": VegetationType.name_cn(vegetation_v), "subtitle": "基线 %s" % VegetationType.name_cn(cell.base_vegetation), "accent": UITokens.ECO, "icon": "eco"},
+			{"id": "ecology_vegetation", "title": "当前植被", "value": VegetationType.name_cn(vegetation_v), "subtitle": "生态基线 %s" % VegetationType.name_cn(cell.base_vegetation), "accent": UITokens.ECO, "icon": "eco"},
 		],
 		"gauges": [
 			{"id": "ecology_regen_gauge", "label": "恢复潜力", "value": regen, "accent": UITokens.ECO, "status_label": _vitality_band(regen), "value_text": "%.2f" % regen},

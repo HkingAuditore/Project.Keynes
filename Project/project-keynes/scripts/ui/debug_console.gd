@@ -1038,6 +1038,7 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	_add_action_button(parent, "打印 DataCore 标志（F11）", &"print_data_core_flags_debug")
 	_add_action_button(parent, "打印 validate-weather 快照（F12）", &"print_validate_weather_snapshot_debug")
 	_add_action_button(parent, "打印性能 Verdict", &"print_perf_verdict_debug")
+	_add_action_button(parent, "切换材质贴图门禁视图（绿=激活）", &"toggle_terrain_material_gate_debug")
 
 	parent.add_child(_make_section_header("DataCore / Soak"))
 	_add_action_button(parent, "切换 DataCore Weather（F9）", &"toggle_data_core_weather_debug")

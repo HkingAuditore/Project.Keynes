@@ -81,7 +81,7 @@ func _build_ui() -> void:
 	_primary_box = VBoxContainer.new()
 	_primary_box.add_theme_constant_override("separation", UITokens.SPACE_XS)
 	primary_margin.add_child(_primary_box)
-	_add_category_button(Category.GEOGRAPHY, &"geography.terrain", "地理信息", "显示海拔、地形与植被类型")
+	_add_category_button(Category.GEOGRAPHY, &"geography.terrain", "地理信息", "显示海拔、地貌、气候区与当前植被")
 	_add_category_button(Category.CLIMATE, &"climate.weather", "气候信息", "显示实时温度、湿度、风向与洋流")
 	_add_category_button(Category.RESOURCES, &"economy.resource", "资源信息", "显示当前所有自然资源储量")
 
@@ -177,9 +177,11 @@ func _rebuild_secondary() -> void:
 		Category.GEOGRAPHY:
 			_add_mode_button(OverlayMode.MODE.ELEVATION, &"geography.elevation", "海拔",
 				"显示各地区当前权威海拔")
-			_add_mode_button(OverlayMode.MODE.LANDFORM, &"geography.surface", "地形",
+			_add_mode_button(OverlayMode.MODE.LANDFORM, &"geography.surface", "地貌",
 				"显示各地区当前地貌类型")
-			_add_mode_button(OverlayMode.MODE.VEGETATION_TYPE, &"ecology.vegetation", "植被",
+			_add_mode_button(OverlayMode.MODE.BIOME_GROUP, &"geography.terrain", "生物群系组",
+				"显示各地区当前生物群系分组，不代表具体植被")
+			_add_mode_button(OverlayMode.MODE.VEGETATION_TYPE, &"ecology.vegetation", "当前植被",
 				"显示各地区当前植被类型")
 		Category.CLIMATE:
 			_add_mode_button(OverlayMode.MODE.TEMPERATURE, &"climate.temperature", "温度",

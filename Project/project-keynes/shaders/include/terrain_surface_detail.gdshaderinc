@@ -6,6 +6,7 @@ struct TerrainStaticMaterial {
 	vec3 color;
 	float roughness;
 	float micro_strength;
+	vec2 material_normal_xy;
 	float edge_factor;
 	int secondary_biome;
 };
@@ -40,6 +41,57 @@ vec2 terrain_periodic_world_uv(vec2 wp, float tile_world_size) {
 	float repeat_count = max(1.0, floor(period / max(tile_world_size, 1.0) + 0.5));
 	float wrapped_phase = (wrap_world_x(wp.x) - wrap_origin_x) / max(period, 0.0001);
 	return vec2(wrapped_phase * repeat_count, wp.y / max(tile_world_size, 1.0));
+}
+
+// Mobile LOW/MID variants compile out the array path. Desktop and mobile HIGH
+// still use the runtime switch so an allocation/import failure can fall back
+// without selecting a different shader resource.
+bool terrain_materials_active() {
+#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID)
+	return false;
+#else
+	return terrain_materials_enabled && terrain_material_tex_bound && visual_quality >= 2;
+#endif
+}
+
+int terrain_material_layer(int biome) {
+	if (biome == B_DESERT || biome == B_COLD_DESERT || biome == B_SALT_FLAT) {
+		return 1;
+	}
+	if (biome == B_HILL || biome == B_MOUNTAIN || biome == B_BADLANDS || biome == B_MESA) {
+		return 2;
+	}
+	if (biome == B_TUNDRA || biome == B_SNOW || biome == B_GLACIER
+			|| biome == B_SWAMP || biome == B_MOOR) {
+		return 3;
+	}
+	if (terrain_static_biome_is_water(biome)) {
+		return -1;
+	}
+	// FOREST, GRASSLAND, PLAIN, JUNGLE, SAVANNA, TAIGA, STEPPE,
+	// SHRUBLAND, OASIS, FLOODPLAIN, DELTA, MANGROVE and CHAPARRAL.
+	return 0;
+}
+
+vec4 terrain_material_sample(int biome, vec2 wp) {
+	int layer = terrain_material_layer(biome);
+	if (layer < 0) {
+		return vec4(1.0, 0.5, 0.5, 0.5);
+	}
+	vec2 material_uv = terrain_periodic_world_uv(wp, terrain_material_world_size);
+	return texture(terrain_material_tex, vec3(material_uv, float(layer)));
+}
+
+vec3 terrain_material_albedo_detail(vec4 material) {
+	return vec3(1.0 + (material.r - 0.5) * 2.0 * terrain_material_albedo_strength);
+}
+
+vec2 terrain_material_normal_detail(vec4 material) {
+	return (material.gb * 2.0 - 1.0) * terrain_material_normal_strength;
+}
+
+float terrain_material_roughness(float base_roughness, vec4 material) {
+	return mix(base_roughness, material.a, terrain_material_roughness_strength);
 }
 
 float terrain_bayer2_digit(vec2 bit_xy) {
@@ -171,10 +223,21 @@ TerrainStaticMaterial compute_terrain_static_material(
 		vec2 uv) {
 	TerrainStaticMaterial out_mat;
 	vec3 hyps = hypsometric_tint(elev, false);
-	vec3 detail = procedural_biome_detail(primary_biome, wp, uv);
+	bool use_material_tiles = terrain_materials_active();
+	vec4 primary_material = use_material_tiles
+			? terrain_material_sample(primary_biome, wp)
+			: vec4(1.0, 0.5, 0.5, 0.5);
+	vec3 detail = use_material_tiles
+			? terrain_material_albedo_detail(primary_material)
+			: procedural_biome_detail(primary_biome, wp, uv);
 	out_mat.color = biome_hue_modulate(hyps, primary_biome) * detail;
-	out_mat.roughness = biome_roughness(primary_biome);
+	out_mat.roughness = use_material_tiles
+			? terrain_material_roughness(biome_roughness(primary_biome), primary_material)
+			: biome_roughness(primary_biome);
 	out_mat.micro_strength = terrain_biome_micro_strength(primary_biome);
+	out_mat.material_normal_xy = use_material_tiles
+			? terrain_material_normal_detail(primary_material)
+			: vec2(0.0);
 	out_mat.edge_factor = 0.0;
 	out_mat.secondary_biome = -1;
 
@@ -200,10 +263,23 @@ TerrainStaticMaterial compute_terrain_static_material(
 	out_mat.secondary_biome = secondary_biome;
 
 	float static_w = terrain_hybrid_static_weight(edge_w, uv, wp);
-	vec3 secondary_detail = procedural_biome_detail(secondary_biome, wp, uv);
+	vec4 secondary_material = use_material_tiles
+			? terrain_material_sample(secondary_biome, wp)
+			: vec4(1.0, 0.5, 0.5, 0.5);
+	vec3 secondary_detail = use_material_tiles
+			? terrain_material_albedo_detail(secondary_material)
+			: procedural_biome_detail(secondary_biome, wp, uv);
 	vec3 secondary_color = biome_hue_modulate(hyps, secondary_biome) * secondary_detail;
 	out_mat.color = mix(out_mat.color, secondary_color, static_w);
-	out_mat.roughness = mix(out_mat.roughness, biome_roughness(secondary_biome), static_w);
+	float secondary_roughness = use_material_tiles
+			? terrain_material_roughness(biome_roughness(secondary_biome), secondary_material)
+			: biome_roughness(secondary_biome);
+	out_mat.roughness = mix(out_mat.roughness, secondary_roughness, static_w);
+	vec2 secondary_normal_xy = use_material_tiles
+			? terrain_material_normal_detail(secondary_material)
+			: vec2(0.0);
+	out_mat.material_normal_xy = mix(
+			out_mat.material_normal_xy, secondary_normal_xy, static_w);
 	out_mat.micro_strength = mix(
 			out_mat.micro_strength,
 			terrain_biome_micro_strength(secondary_biome),
@@ -266,7 +342,9 @@ SurfaceParams apply_terrain_micro_surface(
 		float moist,
 		float vitality,
 		float snow_amount) {
-	if (!has_terrain_micro_tex) {
+	// HIGH tiled materials already provide albedo, tangent normal and roughness;
+	// keep the old micro texture completely out of that path.
+	if (terrain_materials_active() || !has_terrain_micro_tex) {
 		return surface;
 	}
 	float zoom_alpha = terrain_micro_zoom_alpha();
@@ -328,10 +406,19 @@ vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
 		return vec3(terrain_edge_secondary_weight(uv, wp) * 2.0);
 	}
 	if (terrain_surface_debug_view == 5) {
-		vec2 n = has_terrain_micro_tex
+		vec2 n = !terrain_materials_active() && has_terrain_micro_tex
 				? texture(terrain_micro_tex, terrain_micro_uv(wp)).rg
 				: vec2(0.5);
 		return vec3(n, terrain_micro_zoom_alpha());
+	}
+	// [terrain-material-tiles 诊断] 7 = 材质路径门禁可视化：
+	// 绿=ACTIVE；蓝=tex 未绑定；品红=enabled=false；橙=其余情况（quality<2 / 编译裁剪）。
+	// （6 已分配给植被层 LOD 调试，见 hex_renderer.terrain_surface_debug_view setter。）
+	if (terrain_surface_debug_view == 7) {
+		if (!terrain_materials_enabled) { return vec3(1.0, 0.0, 1.0); }
+		if (!terrain_material_tex_bound) { return vec3(0.0, 0.0, 1.0); }
+		if (!terrain_materials_active()) { return vec3(1.0, 0.5, 0.0); }
+		return vec3(0.0, 1.0, 0.0);
 	}
 	return vec3(terrain_micro_zoom_alpha());
 }

@@ -149,10 +149,10 @@ func refresh_info_panel() -> void:
 		elev, _elevation_band(elev, sea), land_h
 	]
 
-	# ── 气候带（按纬度 |ny - 0.5| 推导）
+	# ── 纬度气候带（按纬度 |ny - 0.5| 推导；不是生物群系或植被类型）
 	var ny: float = float(off.y) / float(cfg_h - 1) if cfg_h > 1 else 0.5
 	var anomaly: float = _world_clock.climate_anomaly if _world_clock != null else 0.0
-	_climate_zone_label.text = "气候带：%s（纬度 %.2f）   气候异常：%+.2f" % [
+	_climate_zone_label.text = "纬度气候带：%s（纬度 %.2f）   气候异常：%+.2f" % [
 		_climate_zone_name(ny), ny, anomaly
 	]
 
@@ -176,18 +176,18 @@ func refresh_info_panel() -> void:
 		float(wf["precip"]), float(wf["vapor"]), float(wf["cloud"])
 	]
 
-	# ── Milestone 1：三轴分栏（地形 / 植被 / 覆盖）
+	# ── 三条独立轴（地貌 / 当前植被 / 地表覆盖）
 	# B.1：landform / vegetation / cover / snow_cover 走 ViewAdapter（schema-mirrored）；
 	# base_vegetation / vegetation_history 仍直读 cell（HexCell-only 无 SoA 对位）。
 	var landform_v: int = ad.get_landform(idx) if ad != null else int(cell.landform)
-	_landform_label.text = "地形：%s" % LandformType.name_cn(landform_v)
+	_landform_label.text = "地貌：%s" % LandformType.name_cn(landform_v)
 	var vegetation_v: int = ad.get_vegetation(idx) if ad != null else int(cell.vegetation)
 	var veg_now := VegetationType.name_cn(vegetation_v)
 	if vegetation_v != cell.base_vegetation:
 		var veg_base := VegetationType.name_cn(cell.base_vegetation)
-		_vegetation_label.text = "植被：%s   ⚠ 当季已演替（基线：%s）" % [veg_now, veg_base]
+		_vegetation_label.text = "当前植被：%s   ⚠ 当季已演替（生态基线：%s）" % [veg_now, veg_base]
 	else:
-		_vegetation_label.text = "植被：%s" % veg_now
+		_vegetation_label.text = "当前植被：%s" % veg_now
 	# Milestone 4：植被生命值 + 演替倒计时
 	refresh_vitality_line()
 	var snow_v: float = ad.get_snow_cover(idx) if ad != null else float(cell.snow_cover)
@@ -237,7 +237,7 @@ func refresh_info_panel() -> void:
 			var names2 := PackedStringArray()
 			for i in range(bio_history.size()):
 				names2.append(TerrainType.terrain_name_cn(int(bio_history[i])))
-			_history_label.text = "近期植被：%s（兼容轴）" % " → ".join(names2)
+			_history_label.text = "近期气候区：%s（旧兼容记录）" % " → ".join(names2)
 
 	# Emergent Climate Coupling：三行涌现耦合信息（温度分解 / 海冰覆盖度 / 反馈缓冲）
 	refresh_physical_lines()

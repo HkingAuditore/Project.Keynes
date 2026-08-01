@@ -452,6 +452,8 @@ func finish_daily_tick(ui_ms: float, ui_breakdown: Dictionary = {}) -> void:
 		recorder_diag["fast_ms_before_recorders"] = fast_ms_before_recorders
 		recorder_diag["fast_ms_after_recorders"] = fast_ms_after_recorders
 		_last_recorder_perf_summary = recorder_diag
+	if _generator != null and _current_map != null:
+		_generator.sync_detail_scatter_after_tick(_current_map)
 	_pending_tick_start_usec = 0
 
 
@@ -755,6 +757,8 @@ func get_gm_capabilities() -> Dictionary:
 			{"id": "visual.extreme_weather", "label": "极端天气地表效果", "group": "视觉"},
 			{"id": "diagnostics.perf_sampler", "label": "渲染性能采样", "group": "诊断"},
 			{"id": "diagnostics.pk_log", "label": "PKLog 诊断日志", "group": "诊断"},
+			{"id": "diagnostics.terrain_material_gate", "label": "材质贴图门禁视图（绿=激活）", "group": "诊断"},
+			{"id": "diagnostics.terrain_materials", "label": "地形材质贴图（A/B，近景看颗粒）", "group": "诊断"},
 		],
 	}
 	capabilities["toggles"].append({
@@ -856,6 +860,12 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 			return _gm_renderer_toggle_state("perf_sampler_enabled")
 		"diagnostics.pk_log":
 			return {"ok": true, "enabled": PKLog.enabled}
+		"diagnostics.terrain_material_gate":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 7}
+		"diagnostics.terrain_materials":
+			return _gm_renderer_toggle_state("terrain_materials_enabled")
 	return _gm_error("unknown_toggle", "未知 GM 开关。")
 
 
@@ -896,6 +906,14 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
 		"diagnostics.pk_log":
 			PKLog.enabled = enabled
+		"diagnostics.terrain_material_gate":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 7 if enabled else 0
+			_print_terrain_material_gate_state()
+		"diagnostics.terrain_materials":
+			if not _gm_call_renderer_toggle("set_terrain_materials_enabled", enabled):
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
 		_:
 			return _gm_error("unknown_toggle", "未知 GM 开关。")
 	var actual_enabled := bool(get_gm_toggle_state(toggle_id).get("enabled", enabled))
@@ -1238,6 +1256,28 @@ func _gm_renderer_toggle_state(property_name: String) -> Dictionary:
 	if _renderer == null:
 		return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
 	return {"ok": true, "enabled": bool(_renderer.get(property_name))}
+
+
+# [terrain-material-tiles] GM 开关「材质贴图门禁视图」切换时打印门禁四值（renderer 侧 /
+# world 侧 / 材质 uniform），供对照 shader dv7 纯色：绿=激活 蓝=tex未绑定 品红=enabled=false 橙=q<2。
+func _print_terrain_material_gate_state() -> void:
+	if _renderer == null:
+		return
+	print("[terrain-mat-gate] debug_view=%d（绿=激活 蓝=tex未绑定 品红=enabled=false 橙=q<2）" % \
+		_renderer.terrain_surface_debug_view)
+	print("[terrain-mat-gate] renderer 侧: q=%d enabled=%s" % [
+		_renderer.visual_quality, str(_renderer.terrain_materials_enabled)])
+	if _renderer._world != null:
+		print("[terrain-mat-gate] world 侧: tex=%s bound=%s" % [
+			str(_renderer._world.terrain_material_tex != null),
+			str(_renderer._world.terrain_material_tex_bound)])
+	if _renderer._shader_mat != null:
+		var mat: ShaderMaterial = _renderer._shader_mat
+		print("[terrain-mat-gate] 材质 uniform: enabled=%s bound=%s q=%s tex=%s" % [
+			str(mat.get_shader_parameter("terrain_materials_enabled")),
+			str(mat.get_shader_parameter("terrain_material_tex_bound")),
+			str(mat.get_shader_parameter("visual_quality")),
+			str(mat.get_shader_parameter("terrain_material_tex") != null)])
 
 
 func _gm_call_renderer_toggle(method: String, enabled: bool) -> bool:

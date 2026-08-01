@@ -121,6 +121,212 @@ static func climate_compat_score(v: VEG, temp: float, moist: float) -> float:
 	var k: float = 0.5 * (dt * dt + dm * dm)
 	return exp(-k)
 
+# Climate biomes are long-lived envelopes, while vegetation is the faster
+# ecological response.  Keep the distinction, but make a vegetation type that
+# is far outside its biome a poor candidate instead of an equally valid one.
+static func biome_envelope_weight(terrain: int, v: VEG) -> float:
+	match terrain:
+		TerrainType.TERRAIN.OCEAN:
+			if v == VEG.NONE: return 1.0
+			if v in [VEG.KELP_FOREST, VEG.CORAL_REEF, VEG.SEAGRASS]: return 0.30
+			return 0.18
+		TerrainType.TERRAIN.COAST:
+			if v == VEG.SEAGRASS: return 1.0
+			if v == VEG.NONE: return 0.90
+			if v == VEG.KELP_FOREST: return 0.70
+			if v == VEG.CORAL_REEF: return 0.65
+			if v == VEG.MANGROVE: return 0.45
+			return 0.18
+		TerrainType.TERRAIN.PLAIN, TerrainType.TERRAIN.HILL, TerrainType.TERRAIN.MOUNTAIN:
+			# These are climate-agnostic substrates; temperature/moisture chooses
+			# the vegetation, while landform_soft_weight handles elevation.
+			return 1.0
+		TerrainType.TERRAIN.FOREST:
+			if v in [VEG.TEMPERATE_DECIDUOUS, VEG.SUBTROPICAL_FOREST]: return 1.0
+			if v == VEG.TEMPERATE_CONIFER: return 0.90
+			if v == VEG.CLOUD_FOREST: return 0.88
+			if v == VEG.TROPICAL_DRY_FOREST: return 0.72
+			if v == VEG.MONSOON_FOREST: return 0.55
+			if v == VEG.TROPICAL_RAINFOREST: return 0.28
+			if v == VEG.SAVANNA: return 0.65
+			if v == VEG.TEMPERATE_GRASSLAND: return 0.76
+			return 0.70
+		TerrainType.TERRAIN.JUNGLE:
+			if v == VEG.TROPICAL_RAINFOREST: return 1.0
+			if v == VEG.CLOUD_FOREST: return 0.95
+			if v == VEG.MONSOON_FOREST: return 0.90
+			if v == VEG.TROPICAL_DRY_FOREST: return 0.82
+			if v == VEG.SUBTROPICAL_FOREST: return 0.72
+			if v == VEG.SAVANNA: return 0.58
+			if v == VEG.TEMPERATE_GRASSLAND: return 0.50
+			return 0.28
+		TerrainType.TERRAIN.SAVANNA:
+			if v == VEG.SAVANNA: return 1.0
+			if v == VEG.TROPICAL_DRY_FOREST: return 0.82
+			if v == VEG.TEMPERATE_GRASSLAND: return 0.72
+			if v == VEG.TEMPERATE_STEPPE: return 0.64
+			if v == VEG.DESERT_SCRUB: return 0.55
+			if v == VEG.MONSOON_FOREST: return 0.45
+			if v == VEG.TROPICAL_RAINFOREST: return 0.25
+			return 0.55
+		TerrainType.TERRAIN.GRASSLAND:
+			if v == VEG.TEMPERATE_GRASSLAND: return 1.0
+			if v == VEG.TEMPERATE_STEPPE: return 0.88
+			if v == VEG.SAVANNA: return 0.72
+			if v in [VEG.ALPINE_MEADOW, VEG.BOREAL_SHRUB]: return 0.75
+			if v == VEG.TROPICAL_DRY_FOREST: return 0.55
+			if v == VEG.MONSOON_FOREST: return 0.38
+			if v == VEG.TROPICAL_RAINFOREST: return 0.25
+			return 0.65
+		TerrainType.TERRAIN.STEPPE:
+			if v == VEG.TEMPERATE_STEPPE: return 1.0
+			if v == VEG.TEMPERATE_GRASSLAND: return 0.82
+			if v in [VEG.DESERT_SCRUB, VEG.MEDITERRANEAN_SHRUB, VEG.SAVANNA]: return 0.72
+			if v == VEG.TROPICAL_DRY_FOREST: return 0.52
+			if v == VEG.MONSOON_FOREST: return 0.25
+			if v == VEG.TROPICAL_RAINFOREST: return 0.18
+			return 0.65
+		TerrainType.TERRAIN.DESERT:
+			if v in [VEG.XERIC_DESERT, VEG.DESERT_SCRUB]: return 1.0
+			if v in [VEG.TEMPERATE_STEPPE, VEG.SAVANNA]: return 0.68
+			if v == VEG.MEDITERRANEAN_SHRUB: return 0.62
+			if v == VEG.TROPICAL_DRY_FOREST: return 0.35
+			if v in [VEG.MONSOON_FOREST, VEG.TROPICAL_RAINFOREST]: return 0.18
+			return 0.55
+		TerrainType.TERRAIN.TUNDRA:
+			if v in [VEG.TUNDRA, VEG.POLAR_DESERT, VEG.ALPINE_TUNDRA]: return 1.0
+			if v in [VEG.BOREAL_SHRUB, VEG.TAIGA]: return 0.78
+			if v == VEG.ALPINE_MEADOW: return 0.70
+			return 0.18
+		TerrainType.TERRAIN.TAIGA:
+			if v in [VEG.TAIGA, VEG.TEMPERATE_CONIFER]: return 1.0
+			if v == VEG.BOREAL_SHRUB: return 0.90
+			if v in [VEG.TUNDRA, VEG.ALPINE_TUNDRA]: return 0.72
+			if v == VEG.TEMPERATE_DECIDUOUS: return 0.65
+			return 0.18
+		TerrainType.TERRAIN.COLD_DESERT:
+			if v in [VEG.XERIC_DESERT, VEG.DESERT_SCRUB]: return 0.95
+			if v in [VEG.POLAR_DESERT, VEG.TEMPERATE_STEPPE]: return 0.78
+			if v == VEG.TUNDRA: return 0.68
+			return 0.18
+		TerrainType.TERRAIN.CHAPARRAL:
+			if v == VEG.MEDITERRANEAN_SHRUB: return 1.0
+			if v in [VEG.DESERT_SCRUB, VEG.TEMPERATE_STEPPE]: return 0.74
+			if v == VEG.SAVANNA: return 0.60
+			if v in [VEG.MONSOON_FOREST, VEG.TROPICAL_RAINFOREST]: return 0.30
+			return 0.65
+		TerrainType.TERRAIN.SHRUBLAND:
+			if v == VEG.MEDITERRANEAN_SHRUB: return 0.95
+			if v in [VEG.DESERT_SCRUB, VEG.TEMPERATE_STEPPE]: return 0.78
+			if v == VEG.SAVANNA: return 0.62
+			if v in [VEG.MONSOON_FOREST, VEG.TROPICAL_RAINFOREST]: return 0.25
+			return 0.65
+		TerrainType.TERRAIN.SNOW:
+			if v == VEG.POLAR_DESERT: return 1.0
+			if v == VEG.ALPINE_TUNDRA: return 0.95
+			if v == VEG.TUNDRA: return 0.90
+			if v == VEG.ALPINE_MEADOW: return 0.70
+			if v in [VEG.TAIGA, VEG.TEMPERATE_CONIFER]: return 0.45
+			if v == VEG.NONE: return 0.80
+			return 0.18
+		TerrainType.TERRAIN.SWAMP:
+			if v == VEG.SWAMP: return 1.0
+			if v == VEG.PEAT_BOG: return 0.95
+			if v == VEG.MARSH: return 0.90
+			if v in [VEG.TROPICAL_RAINFOREST, VEG.MONSOON_FOREST]: return 0.65
+			if v == VEG.MANGROVE: return 0.45
+			if v == VEG.NONE: return 0.75
+			return 0.18
+		TerrainType.TERRAIN.MANGROVE:
+			if v == VEG.MANGROVE: return 1.0
+			if v in [VEG.MARSH, VEG.SWAMP]: return 0.80
+			if v in [VEG.TROPICAL_RAINFOREST, VEG.MONSOON_FOREST]: return 0.55
+			if v == VEG.NONE: return 0.70
+			return 0.18
+		TerrainType.TERRAIN.GLACIER:
+			if v == VEG.NONE: return 1.0
+			if v == VEG.POLAR_DESERT: return 0.80
+			if v == VEG.ALPINE_TUNDRA: return 0.75
+			return 0.18
+		TerrainType.TERRAIN.LAKE:
+			return 1.0 if v == VEG.NONE else 0.18
+		TerrainType.TERRAIN.REEF:
+			if v == VEG.CORAL_REEF: return 1.0
+			if v == VEG.NONE: return 0.80
+			if v == VEG.SEAGRASS: return 0.65
+			return 0.18
+		TerrainType.TERRAIN.SEA_ICE:
+			if v == VEG.NONE: return 1.0
+			if v == VEG.POLAR_DESERT: return 0.55
+			return 0.18
+		TerrainType.TERRAIN.KELP:
+			if v == VEG.KELP_FOREST: return 1.0
+			if v == VEG.NONE: return 0.80
+			if v == VEG.SEAGRASS: return 0.65
+			return 0.18
+		TerrainType.TERRAIN.DELTA:
+			if v == VEG.MARSH: return 0.98
+			if v == VEG.MANGROVE: return 0.90
+			if v == VEG.SWAMP: return 0.85
+			if v == VEG.NONE: return 0.85
+			if v in [VEG.MONSOON_FOREST, VEG.SAVANNA]: return 0.80
+			if v == VEG.TROPICAL_RAINFOREST: return 0.72
+			if v == VEG.TROPICAL_DRY_FOREST: return 0.65
+			if v in [VEG.TEMPERATE_GRASSLAND, VEG.TEMPERATE_DECIDUOUS]: return 0.78
+			if v in [VEG.TAIGA, VEG.BOREAL_SHRUB, VEG.TEMPERATE_CONIFER]: return 0.50
+			return 0.18
+		TerrainType.TERRAIN.OASIS:
+			if v == VEG.OASIS_VEG: return 1.0
+			if v == VEG.NONE: return 0.80
+			if v in [VEG.DESERT_SCRUB, VEG.XERIC_DESERT, VEG.SAVANNA]: return 0.60
+			if v == VEG.TEMPERATE_GRASSLAND: return 0.55
+			return 0.18
+		TerrainType.TERRAIN.SALT_FLAT:
+			if v == VEG.NONE: return 1.0
+			if v in [VEG.XERIC_DESERT, VEG.DESERT_SCRUB]: return 0.45
+			return 0.18
+		TerrainType.TERRAIN.BADLANDS:
+			if v == VEG.DESERT_SCRUB: return 1.0
+			if v == VEG.XERIC_DESERT: return 0.85
+			if v in [VEG.TEMPERATE_STEPPE, VEG.MEDITERRANEAN_SHRUB]: return 0.70
+			if v == VEG.SAVANNA: return 0.50
+			if v == VEG.NONE: return 0.80
+			return 0.18
+		TerrainType.TERRAIN.MOOR:
+			if v == VEG.PEAT_BOG: return 1.0
+			if v in [VEG.MARSH, VEG.SWAMP]: return 0.90
+			if v in [VEG.TAIGA, VEG.BOREAL_SHRUB]: return 0.65
+			if v == VEG.ALPINE_MEADOW: return 0.55
+			if v == VEG.TEMPERATE_GRASSLAND: return 0.75
+			return 0.18
+		TerrainType.TERRAIN.FLOODPLAIN:
+			if v == VEG.MARSH: return 0.98
+			if v == VEG.SWAMP: return 0.90
+			if v == VEG.MANGROVE: return 0.80
+			if v in [VEG.MONSOON_FOREST, VEG.SAVANNA]: return 0.80
+			if v == VEG.TROPICAL_RAINFOREST: return 0.72
+			if v == VEG.TROPICAL_DRY_FOREST: return 0.65
+			if v in [VEG.TEMPERATE_GRASSLAND, VEG.TEMPERATE_DECIDUOUS]: return 0.90
+			if v in [VEG.TAIGA, VEG.BOREAL_SHRUB, VEG.TEMPERATE_CONIFER]: return 0.60
+			if v == VEG.NONE: return 0.85
+			return 0.45
+		TerrainType.TERRAIN.MESA:
+			if v == VEG.DESERT_SCRUB: return 1.0
+			if v == VEG.XERIC_DESERT: return 0.85
+			if v == VEG.TEMPERATE_STEPPE: return 0.65
+			if v == VEG.MEDITERRANEAN_SHRUB: return 0.60
+			if v == VEG.SAVANNA: return 0.55
+			if v == VEG.NONE: return 0.80
+			return 0.18
+		_:
+			return 1.0
+
+const BIOME_RECONCILE_WEIGHT_THRESHOLD: float = 0.58
+
+static func needs_biome_reconciliation(terrain: int, v: VEG) -> bool:
+	return int(v) != int(VEG.NONE) \
+			and biome_envelope_weight(terrain, v) <= BIOME_RECONCILE_WEIGHT_THRESHOLD
+
 # Generation and runtime share the same bounded terrain/landform prior.  These
 # are soft ecological priors; climate fit remains the dominant signal and only
 # physical substrate rules may hard-reject a vegetation type.
@@ -154,7 +360,7 @@ static func terrain_soft_weight(terrain: int, landform: int, v: VEG, moist: floa
 		w *= 1.16 if alpine else (0.58 if arid and moist > 0.45 else 0.90)
 	elif landform == 6: # HILL
 		w *= 1.06 if alpine else 1.0
-	return clampf(w, 0.35, 1.25)
+	return clampf(w * biome_envelope_weight(terrain, v), 0.18, 1.25)
 
 static func suitability_score(v: VEG, temp: float, moist: float, terrain: int, landform: int) -> float:
 	return climate_compat_score(v, temp, moist) * terrain_soft_weight(terrain, landform, v, moist)

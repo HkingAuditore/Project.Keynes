@@ -433,6 +433,15 @@ var _pending_season_refresh: bool = false
 var _pending_season_idx: int = 0
 var _season_refresh_in_progress: bool = false
 var _last_season_refresh_breakdown: Dictionary = {}
+# 逐 tick 散布刷新滚动快照（2026-08-01）：日级原生 pass（海冰翻转、veg_dyn、季节 redecide 等）
+# 会改写 terrain/landform/vegetation/cover，但这些写入路径都不调 queue_detail_scatter_refresh，
+# 导致 MultiMesh 散布实例滞留旧植被（沙漠灌木格挂大树、雨林格光秃）。
+# 每个完成的日 tick 末 diff 四轴滚动快照，变化格补发增量刷新，与具体写入路径解耦。
+var _scatter_sync_snap_terrain := PackedByteArray()
+var _scatter_sync_snap_landform := PackedByteArray()
+var _scatter_sync_snap_vegetation := PackedByteArray()
+var _scatter_sync_snap_cover := PackedByteArray()
+var _last_detail_scatter_sync: Dictionary = {}
 # X2-精简版（2026-05-21）：season_refresh round 内 SoA-slots 缓存标志。
 # round 启动时 refresh_slots_from_map 调一次后置 true；
 # 之后每个 stage helper 进入时若仍为 true → 跳过 refresh_slots（省 ~14μs × 11 = ~0.15ms/round）；
@@ -1203,6 +1212,11 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_pending_season_refresh = false
 	_season_refresh_in_progress = false
 	_last_season_refresh_breakdown = {}
+	_scatter_sync_snap_terrain = PackedByteArray()
+	_scatter_sync_snap_landform = PackedByteArray()
+	_scatter_sync_snap_vegetation = PackedByteArray()
+	_scatter_sync_snap_cover = PackedByteArray()
+	_last_detail_scatter_sync = {}
 	# X2-精简版：reset 时清掉 SoA-slots 缓存标志，避免新世界生成跨用上个世界的 stale fresh。
 	_season_round_slots_fresh = false
 	_season_round_slots_skip_count = 0
@@ -2064,6 +2078,9 @@ func _disabled_sea_ice_atlas_report(reason: String) -> Dictionary:
 func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
 	_sus_map = map
 	_sus_world = world
+	# 生成收尾即刻建立散布同步基线：此后任何 tick 级写入（含 season-0 reconcile、
+	# 海冰、veg_dyn）都会在 finish_daily_tick 被 diff 捕获并补发散布刷新。
+	_prime_scatter_sync_snapshot(map)
 	# 创建一个全新 DCSystemScheduler 实例（regenerate 路径会让旧实例随
 	# MapGenerator 一起被替换，不需要手动 reset_all_progress）。
 	var cp_sched := _c()
@@ -6199,8 +6216,8 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 					_set_cell_runtime_terrain(map, cell, cell.base_terrain, true)
 			else:
 				# 2026-05-18 季节性高山雪：lock-in 仅锁 base_terrain==SNOW（极地/最高峰），
-				# MOUNTAIN 解放给 _decide_terrain 决策，让中纬高山冬天 temp_now<0.08 翻
-				# COLD_SNOW、夏天回 MOUNTAIN。注意 apply_terrain 不写 base_terrain，
+				# MOUNTAIN 解放给 _decide_terrain 决策；biome 分类使用 temp_365d 与长期湿度，
+				# 不再因瞬时 temp/moisture 在季节刷新时抖动。注意 apply_terrain 不写 base_terrain，
 				# 所以 base 永远是 MOUNTAIN，不会被翻雪后污染（见 hex_cell.gd:812）。
 				var is_permanent_climate := cell.base_terrain == TerrainType.TERRAIN.SNOW
 				if is_permanent_climate or _is_permanent_landform(cell.base_terrain):
@@ -6210,7 +6227,7 @@ func _run_season_stage2_micro(map: MapData, season_idx: int, cursor: int, max_us
 					var lat_temp: float = lat_tab[r_idx]
 					var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation, cfg_local.sea_level), 0.0, 1.0)
 					var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
-					var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
+					var new_terrain := _decide_terrain(cell.elevation, _biome_temperature(map, cell, temp_year), _biome_moisture(map, cell), cfg_local)
 					# 生成期排干/回填的内陆低洼地原始 elevation 仍可能低于 sea_level；
 					# 季节重判不得把这类陆地重新灌回 COAST/OCEAN。
 					if _is_water(new_terrain) and not _is_water(cell.terrain):
@@ -6416,7 +6433,7 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 					var r_idx: int = _cube_to_row(cell_re, _last_cfg)
 					var lat_temp: float = _row_lat_temp[r_idx]
 					var temp: float = clampf(lat_temp - _alt_penalty(cell_re.elevation, _last_cfg.sea_level), 0.0, 1.0)
-					var new_terrain := _decide_terrain(cell_re.elevation, temp, cell_re.moisture, _last_cfg)
+					var new_terrain := _decide_terrain(cell_re.elevation, _biome_temperature(map, cell_re, temp), _biome_moisture(map, cell_re), _last_cfg)
 					if _is_water(new_terrain) and not _is_water(cell_re.terrain):
 						new_terrain = cell_re.base_terrain if not _is_water(cell_re.base_terrain) else cell_re.terrain
 					_set_cell_runtime_terrain(map, cell_re, new_terrain, true, temp, cell_re.snow_cover)
@@ -6470,6 +6487,74 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 
 func sus_season_refresh_breakdown() -> Dictionary:
 	return _last_season_refresh_breakdown.duplicate()
+
+
+# 日 tick 末同步入口：diff 四轴（terrain/landform/vegetation/cover）滚动快照 vs 当前 SoA，
+# 变化格补发 queue_detail_scatter_refresh。无论写入来自哪个日级 pass（海冰翻转、veg_dyn、
+# 季节 redecide round、GDScript fallback），都会在 tick 收尾被统一捕获。
+# 首调 / 世界重建后以当前态为基准不补发（生成期已整体 bake）。
+func _prime_scatter_sync_snapshot(map: MapData) -> void:
+	if map == null or not map.has_soa():
+		_scatter_sync_snap_terrain = PackedByteArray()
+		_scatter_sync_snap_landform = PackedByteArray()
+		_scatter_sync_snap_vegetation = PackedByteArray()
+		_scatter_sync_snap_cover = PackedByteArray()
+		return
+	_scatter_sync_snap_terrain = map.terrain_arr.duplicate()
+	_scatter_sync_snap_landform = map.landform_arr.duplicate()
+	_scatter_sync_snap_vegetation = map.vegetation_arr.duplicate()
+	_scatter_sync_snap_cover = map.cover_arr.duplicate()
+
+
+func sync_detail_scatter_after_tick(map: MapData) -> void:
+	if map == null or not map.has_soa():
+		return
+	var n: int = map.cell_count()
+	var terrain_a: PackedByteArray = map.terrain_arr
+	var landform_a: PackedByteArray = map.landform_arr
+	var vegetation_a: PackedByteArray = map.vegetation_arr
+	var cover_a: PackedByteArray = map.cover_arr
+	if _scatter_sync_snap_vegetation.size() != n \
+			or _scatter_sync_snap_terrain.size() != n \
+			or _scatter_sync_snap_landform.size() != n \
+			or _scatter_sync_snap_cover.size() != n \
+			or vegetation_a.size() != n or landform_a.size() != n \
+			or cover_a.size() != n or terrain_a.size() != n:
+		_prime_scatter_sync_snapshot(map)
+		return
+	# 快路径：PackedByteArray == 是原生 memcmp（2400 格 4 轴合计 <1μs），
+	# 绝大多数无写入 tick 在此直接返回；只有真发生改写的 tick 才进逐格 diff。
+	var t_same: bool = _scatter_sync_snap_terrain == terrain_a
+	var l_same: bool = _scatter_sync_snap_landform == landform_a
+	var c_same: bool = _scatter_sync_snap_cover == cover_a
+	var v_same: bool = _scatter_sync_snap_vegetation == vegetation_a
+	if t_same and l_same and c_same and v_same:
+		return
+	var changed := PackedInt32Array()
+	var veg_changed := 0
+	for i in range(n):
+		var dirty := false
+		if not v_same and _scatter_sync_snap_vegetation[i] != vegetation_a[i]:
+			dirty = true
+			veg_changed += 1
+		elif not l_same and _scatter_sync_snap_landform[i] != landform_a[i]:
+			dirty = true
+		elif not c_same and _scatter_sync_snap_cover[i] != cover_a[i]:
+			dirty = true
+		elif not t_same and _scatter_sync_snap_terrain[i] != terrain_a[i]:
+			dirty = true
+		if dirty:
+			changed.append(i)
+	if changed.is_empty():
+		return
+	_scatter_sync_snap_terrain = terrain_a.duplicate()
+	_scatter_sync_snap_landform = landform_a.duplicate()
+	_scatter_sync_snap_vegetation = vegetation_a.duplicate()
+	_scatter_sync_snap_cover = cover_a.duplicate()
+	_last_detail_scatter_sync["cells"] = changed.size()
+	_last_detail_scatter_sync["vegetation_cells"] = veg_changed
+	queue_detail_scatter_refresh(changed)
+	print("[detail_scatter] tick-sync queued=%d (vegetation=%d)" % [changed.size(), veg_changed])
 
 
 # DOTS-Total-CPP 真·收尾（2026-05-21）：per-stage path once-log。
@@ -7667,6 +7752,8 @@ func _run_season_refresh_stage2_gdext(map: MapData, _world: WorldData, season: i
 		"lat_temp_rows": _row_lat_temp,
 		"season_offset_rows": _row_season_off,
 		"row_indices": row_idx,
+		"biome_water_balance_weight": float(cp.plant_water_balance_weight),
+		"biome_drought_penalty": float(cp.plant_drought_penalty),
 	}
 	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
 	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
@@ -7754,6 +7841,8 @@ func _run_season_refresh_stage4_gdext(map: MapData, _world: WorldData, season: i
 		"sea_level": float(_last_cfg.sea_level),
 		"lat_temp_rows": _row_lat_temp,
 		"row_indices": row_idx,
+		"biome_water_balance_weight": float(cp.plant_water_balance_weight),
+		"biome_drought_penalty": float(cp.plant_drought_penalty),
 		"neighbor_indices": map.neighbor_indices_packed(),
 		"donor_table": donor_table,
 		"elev_decay": float(cp.veg_feedback_elev_decay),
@@ -8060,6 +8149,8 @@ func _build_season_round_knobs(map: MapData, season: int) -> Dictionary:
 		"lat_temp_rows": _row_lat_temp,
 		"season_offset_rows": _row_season_off,
 		"row_indices": row_idx,
+		"biome_water_balance_weight": float(cp.plant_water_balance_weight),
+		"biome_drought_penalty": float(cp.plant_drought_penalty),
 		"neighbor_indices": map.neighbor_indices_packed(),
 		# stage 4
 		"donor_table": donor_table,
@@ -8317,6 +8408,13 @@ func _sync_stage8_facade_fields_from_soa(map: MapData) -> void:
 			cell.vegetation = int(vegetation_a[i])
 		if i < cover_a.size():
 			cell.cover = int(cover_a[i])
+		if cell.current_state != null and not cell.current_state.is_empty():
+			# Keep inspector/UI snapshots on the same SoA publish boundary as the
+			# HexCell facade; otherwise labels can show the previous vegetation.
+			cell.current_state["biome"] = int(cell.terrain)
+			cell.current_state["landform"] = int(cell.landform)
+			cell.current_state["vegetation"] = int(cell.vegetation)
+			cell.current_state["cover"] = int(cell.cover)
 		cell.push_biome_history(int(cell.terrain))
 		cell.push_vegetation_history(int(cell.vegetation))
 
@@ -8367,10 +8465,33 @@ func _seasonal_redecide_terrain(map: MapData, season: int) -> void:
 		var lat_temp: float = lat_tab[r_idx]
 		var temp_year: float = clampf(lat_temp - _alt_penalty(cell.elevation, cfg_local.sea_level), 0.0, 1.0)
 		var temp_now: float = clampf(temp_year + off_tab[r_idx], 0.0, 1.0)
-		var new_terrain := _decide_terrain(cell.elevation, temp_now, cell.moisture, cfg_local)
+		var new_terrain := _decide_terrain(cell.elevation, _biome_temperature(map, cell, temp_year), _biome_moisture(map, cell), cfg_local)
 		if _is_water(new_terrain) and not _is_water(cell.terrain):
 			new_terrain = cell.base_terrain if not _is_water(cell.base_terrain) else cell.terrain
 		_set_cell_runtime_terrain(map, cell, new_terrain, true, temp_now, cell.snow_cover)
+
+
+func _biome_temperature(map: MapData, cell: HexCell, fallback: float) -> float:
+	var idx: int = int(cell.index)
+	if map != null and idx >= 0 and idx < map.temp_365d_arr.size():
+		return clampf(float(map.temp_365d_arr[idx]), 0.0, 1.0)
+	return clampf(fallback, 0.0, 1.0)
+
+
+# Biome classification is slow climate; keep short-lived rainfall in vegetation/runtime moisture.
+func _biome_moisture(map: MapData, cell: HexCell) -> float:
+	var idx: int = int(cell.index)
+	var base_m: float = float(cell.base_moisture)
+	var wb30: float = 0.0
+	if map != null and idx >= 0:
+		if idx < map.base_moisture_arr.size():
+			base_m = float(map.base_moisture_arr[idx])
+		if idx < map.water_balance_30d_arr.size():
+			wb30 = float(map.water_balance_30d_arr[idx])
+	var cp := _c()
+	var wet_weight: float = float(cp.plant_water_balance_weight) if cp != null else 0.35
+	var dry_penalty: float = float(cp.plant_drought_penalty) if cp != null else 0.25
+	return clampf(base_m + maxf(wb30, 0.0) * maxf(wet_weight, 0.0) + minf(wb30, 0.0) * maxf(dry_penalty, 0.0), 0.0, 1.0)
 
 
 func _seasonal_sync_current_state(map: MapData, season: int) -> void:
@@ -8590,6 +8711,17 @@ func _native_generation_profile_dict() -> Dictionary:
 		"moisture_subtropical_dry_strength",
 		"moisture_subtropical_dry_center",
 		"moisture_subtropical_dry_width",
+		# [zonal-envelope 2026-08-01] 行星尺度纬带降水包络
+		"moisture_itcz_wet_strength",
+		"moisture_itcz_center",
+		"moisture_itcz_width",
+		"moisture_stormtrack_wet_strength",
+		"moisture_stormtrack_center",
+		"moisture_stormtrack_width",
+		"moisture_polar_dry_strength",
+		"moisture_tropical_evap_boost",
+		"moisture_itcz_recycle_strength",
+		"moisture_itcz_convergence",
 		"moisture_coastal_floor",
 		"moisture_coastal_scale",
 		"coastal_temp_moderation",
@@ -9176,37 +9308,50 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 	# [climate-zone-fix P1] 与 C++ pk_decide_terrain_ex 同源：湿端阈值按世界湿度天花板
 	# (land moist p90≈0.56)下移；旧单一"热带(>0.55)"拆成真热带(>0.66)与亚热带/暖温带
 	# (0.55–0.66)，让 FOREST 地形在亚热带可达，修复 SUBTROPICAL_FOREST 死分支。
-	if temperature > 0.66:                         # 真热带（赤道暖湿）
-		if moisture > 0.54:
-			return TerrainType.TERRAIN.JUNGLE     # 热带雨林/季风林
+	# [zonal-envelope 2026-08-01] 与 C++ 完全重新同步（此前 GDScript 已漂移：温带 FOREST
+	# 0.48 vs C++ 0.55、缺凉带 t>0.30 STEPPE 限制与 TUNDRA 分支）：真热带 0.66→0.80
+	# (≈33°回归线外缘)、温带 FOREST 0.46、温带 GRASSLAND 0.28、凉带逻辑补齐。
+	if temperature > 0.80:                         # 真热带（赤道带，0–33°）
+		if moisture > 0.56:
+			return TerrainType.TERRAIN.JUNGLE     # 热带雨林/季风林（0.54→0.56，C++ 同步）
 		if moisture > 0.32:
 			return TerrainType.TERRAIN.SAVANNA    # 稀树草原
-		if moisture > 0.20:
+		# [zonal-envelope 二轮] 热带草系干端 0.20→0.24，干端转真荒漠（C++ 同步）。
+		if moisture > 0.24:
 			return TerrainType.TERRAIN.STEPPE
 		return TerrainType.TERRAIN.DESERT         # 热带沙漠
 
-	if temperature > 0.55:                         # 亚热带 / 暖温带（湿端→亚热带常绿林）
-		if moisture > 0.36:
-			return TerrainType.TERRAIN.FOREST     # → _derive_vegetation 派生 SUBTROPICAL_FOREST
+	if temperature > 0.55:                         # 亚热带 / 暖温带（33–51°，湿端→亚热带常绿林）
+		if moisture > 0.40:
+			return TerrainType.TERRAIN.FOREST     # → _derive_vegetation 派生 SUBTROPICAL_FOREST（0.36→0.40）
 		if moisture > 0.24:
 			return TerrainType.TERRAIN.GRASSLAND
 		if moisture > 0.16:
 			return TerrainType.TERRAIN.STEPPE
 		return TerrainType.TERRAIN.DESERT
 
-	if temperature > 0.38:
+	if temperature > 0.38:                         # 温带（51–62°）
 		if moisture > 0.48:
-			return TerrainType.TERRAIN.FOREST     # 温带阔叶林（门槛 0.55→0.48 贴合湿度天花板 p90≈0.56）
-		if moisture > 0.32:
-			return TerrainType.TERRAIN.GRASSLAND  # 温带草地
-		if moisture > 0.20:
+			return TerrainType.TERRAIN.FOREST     # 温带阔叶林（0.55→0.48 配合风暴路径湿带）
+		if moisture > 0.28:
+			return TerrainType.TERRAIN.GRASSLAND  # 温带草地（0.32→0.28 收窄草原漏斗）
+		if moisture > 0.16:
 			return TerrainType.TERRAIN.STEPPE
 		return TerrainType.TERRAIN.DESERT
 
+	# 凉温带 / 北方带（0.20–0.38，62–77°）
 	if moisture > 0.45:
 		return TerrainType.TERRAIN.TAIGA
-	if moisture > 0.22:
-		return TerrainType.TERRAIN.STEPPE
+	# [water-tuning 2026-06-26] STEPPE 限暖凉温带（t>0.30），更冷回落针叶林/苔原/寒漠
+	if temperature > 0.30:
+		if moisture > 0.22:
+			return TerrainType.TERRAIN.STEPPE
+		return TerrainType.TERRAIN.COLD_DESERT
+	# 冷凉温带 / 亚极地（0.20–0.30）
+	if moisture > 0.28:
+		return TerrainType.TERRAIN.TAIGA
+	if moisture > 0.16:
+		return TerrainType.TERRAIN.TUNDRA
 	return TerrainType.TERRAIN.COLD_DESERT
 
 # ─── Milestone 1：三轴派生（landform / vegetation / cover） ──────────────────
@@ -9282,8 +9427,9 @@ func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int
 			or t == TerrainType.TERRAIN.LAKE or t == TerrainType.TERRAIN.SEA_ICE:
 		return VegetationType.VEG.NONE
 	# COAST：暖凉浅海软底育海草床(SEAGRASS)，过冷/过热裸沙底为 NONE。
+	# [zonal-envelope] 上缘 0.74→0.82：真热带边界收窄到 0.80 后热带浅海也允许海草床。
 	if t == TerrainType.TERRAIN.COAST:
-		if temperature > 0.42 and temperature < 0.74:
+		if temperature > 0.42 and temperature < 0.82:
 			return VegetationType.VEG.SEAGRASS
 		return VegetationType.VEG.NONE
 	# 海洋特殊植被
@@ -9375,8 +9521,9 @@ func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int
 		TerrainType.TERRAIN.SAVANNA:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW if cell.moisture > 0.45 else VegetationType.VEG.BOREAL_SHRUB
-			# [climate-zone-fix P1] MONSOON 门 0.45→0.42 与 JUNGLE case 对齐
-			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.48 else VegetationType.VEG.SAVANNA
+			# Keep SAVANNA's wet edge aligned with _decide_terrain's JUNGLE boundary.
+			# [zonal-envelope] JUNGLE 边界 0.54→0.56，本湿门同步平移保持对齐（C++ 同步）。
+			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.56 else VegetationType.VEG.SAVANNA
 		TerrainType.TERRAIN.GRASSLAND:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW
@@ -9419,30 +9566,36 @@ func _whittaker_vegetation(temperature: float, moisture: float, landform: int) -
 		return VegetationType.VEG.ALPINE_TUNDRA if is_alpine else VegetationType.VEG.TEMPERATE_STEPPE
 	# 暖温带
 	if temperature < 0.55:
-		if moisture > 0.48:                          # 门槛 0.55→0.48，与 _decide_terrain 同步，贴合湿度天花板 p90≈0.56
+		# [zonal-envelope] 0.48 保持 / 草门 0.30→0.26，与 C++ pk_whittaker_vegetation 同步
+		if moisture > 0.48:
 			if is_alpine:
 				return VegetationType.VEG.TEMPERATE_CONIFER
 			if is_hilly:
 				return VegetationType.VEG.TEMPERATE_DECIDUOUS
 			return VegetationType.VEG.TEMPERATE_DECIDUOUS
-		if moisture > 0.30:
+		if moisture > 0.26:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW
 			return VegetationType.VEG.TEMPERATE_GRASSLAND
 		return VegetationType.VEG.BOREAL_SHRUB if is_alpine else VegetationType.VEG.TEMPERATE_STEPPE
-	# [climate-zone-fix P1] 亚热带(0.55–0.66)拆出 SUBTROPICAL_FOREST；真热带湿端阈值下移适配天花板。
-	if temperature < 0.66:           # 亚热带
-		if moisture > 0.36:
+	# [climate-zone-fix P1] 亚热带拆出 SUBTROPICAL_FOREST；真热带湿端阈值下移适配天花板。
+	# [zonal-envelope] 亚热带上缘 0.66→0.80（≈33°），SUBTROP 湿门 0.36→0.40，与 C++ 同步。
+	if temperature < 0.80:           # 亚热带（33–51°）
+		if moisture > 0.40:
 			return VegetationType.VEG.SUBTROPICAL_FOREST
 		if moisture > 0.22:
 			return VegetationType.VEG.TEMPERATE_GRASSLAND
+		if moisture < 0.12:
+			return VegetationType.VEG.DESERT_SCRUB   # 副热带旱坡
 		return VegetationType.VEG.TEMPERATE_STEPPE
-	# 真热带
-	if moisture > 0.58:
+	# 真热带（0–33°）
+	# [zonal-envelope] 雨林湿门 0.58→0.56，与 JUNGLE 地形边界对齐（C++ 同步）
+	if moisture > 0.56:
 		return VegetationType.VEG.TROPICAL_RAINFOREST
 	if moisture > 0.38:
 		return VegetationType.VEG.TROPICAL_DRY_FOREST
-	if moisture > 0.20:
+	# [zonal-envelope 二轮] SAVANNA 下限 0.20→0.24（C++ 同步）。
+	if moisture > 0.24:
 		return VegetationType.VEG.SAVANNA
 	if moisture < 0.10:
 		return VegetationType.VEG.XERIC_DESERT
@@ -9480,8 +9633,12 @@ func _sync_axes_for_cell(cell: HexCell, cfg: MapConfig, snow_cover: float) -> vo
 	var ny: float = _cube_row_norm(cell, cfg)
 	var temp: float = _compute_temperature(ny, cell.elevation)
 	cell.landform = landform
-	# 陆地植被类型由 vegetation_dynamics/succession 推进；季节同步只兜底水域或裸地。
-	if _is_water(cell.terrain) or int(cell.vegetation) == int(VegetationType.VEG.NONE):
+	# 保留合理的演替滞后；明显跨生态带的残留则在 terrain 重分类后立即纠正。
+	var needs_reconcile := VegetationType.needs_biome_reconciliation(
+		int(cell.terrain), int(cell.vegetation))
+	if _is_water(cell.terrain) \
+			or int(cell.vegetation) == int(VegetationType.VEG.NONE) \
+			or needs_reconcile:
 		cell.vegetation = _derive_vegetation(cell, landform, temp)
 	cell.cover = _derive_cover(cell, snow_cover)
 
@@ -15879,7 +16036,9 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 
 		# Streak 只为真实、更适宜的候选累计；目标适配持续偏低即可推进，
 		# 不再要求当前植被先跌到濒死值才开始计时。
-		if degrade_candidate and stress_max > 0.65 and target < _c().vitality_high_threshold:
+		var severe_biome_mismatch: bool = VegetationType.needs_biome_reconciliation(
+			int(cell.terrain), int(cell.vegetation))
+		if degrade_candidate and (stress_max > 0.65 or severe_biome_mismatch) and target < _c().vitality_high_threshold:
 			cell._vitality_low_streak += maxi(streak_days, int(round(float(streak_days) * stress_max)))
 			cell._vitality_high_streak = 0
 		elif degrade_candidate and target < _c().vitality_low_threshold:

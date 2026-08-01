@@ -1,7 +1,7 @@
 # overlay_mode.gd
 # Data Overlay 模式枚举与显示名/分类辅助常量。
 #
-# Overlay 系统让开发者在运行时把 HexCell 的底层数值场（温度/降水/气候带/
+# Overlay 系统让开发者在运行时把 HexCell 的底层数值场（温度/降水/纬度气候带/
 # 湿度/天气/植被健康度）以半透明热力图形式叠加在地图上，用于调参与可视化。
 #
 # 本文件是**纯数据**常量表，不持有任何节点/纹理引用；三方都依赖它：
@@ -29,8 +29,8 @@ enum MODE {
 	OCEAN_HEAT_TRANSPORT = 8,    # 洋流热输运异常（连续，双向，0 = 中性）
 	UPWELLING = 9,               # 上升流强度（连续，双向，0 = 中性）
 	WIND_SPEED = 10,             # 当前物理风速（连续，全图）
-	BIOME_GROUP = 11,            # 植被/Biome 分组（离散 10 档）
-	LANDFORM = 12,               # 地形大类（离散 6 档）
+	BIOME_GROUP = 11,            # 生物群系分组（离散 10 档）
+	LANDFORM = 12,               # 地貌大类（离散 6 档）
 	WIND_DIR = 13,               # 风向（地形扰动后；色相=方向，亮度=强度）
 	OCEAN_CURRENT_DIR = 14,      # 洋流方向（色相=方向，亮度=强度；仅水域）
 	# Physical Wind & Ocean Circulation 调试通道：仅在 ClimateProfile.physical_circulation_enabled
@@ -66,7 +66,7 @@ const DISPLAY_NAME: Dictionary = {
 	MODE.NONE: "关闭",
 	MODE.TEMPERATURE: "温度",
 	MODE.PRECIPITATION: "实时降水",
-	MODE.CLIMATE_ZONE: "气候带",
+	MODE.CLIMATE_ZONE: "纬度气候带",
 	MODE.HUMIDITY: "湿度",
 	MODE.WEATHER: "天气",
 	MODE.VEGETATION_VITALITY: "植被健康度",
@@ -74,8 +74,8 @@ const DISPLAY_NAME: Dictionary = {
 	MODE.OCEAN_HEAT_TRANSPORT: "洋流热输运",
 	MODE.UPWELLING: "上升流",
 	MODE.WIND_SPEED: "风速",
-	MODE.BIOME_GROUP: "植被类型",
-	MODE.LANDFORM: "地形大类",
+	MODE.BIOME_GROUP: "生物群系组",
+	MODE.LANDFORM: "地貌大类",
 	MODE.WIND_DIR: "风向",
 	MODE.OCEAN_CURRENT_DIR: "洋流方向",
 	MODE.SLP: "海平压力",
@@ -83,7 +83,7 @@ const DISPLAY_NAME: Dictionary = {
 	MODE.OCEAN_PSI: "流函数 ψ",
 	MODE.DEMO_THERMAL_GRADIENT: "热梯度（demo）",
 	MODE.ELEVATION: "海拔",
-	MODE.VEGETATION_TYPE: "植被",
+	MODE.VEGETATION_TYPE: "当前植被",
 	MODE.RESOURCE_RESERVE: "自然资源",
 }
 
@@ -151,7 +151,7 @@ const CATEGORY: Dictionary = {
 	MODE.RESOURCE_RESERVE: CATEGORY_KIND.CONTINUOUS,
 }
 
-# 气候带离散档位（与 main.gd 的 _climate_zone_name 同口径：按 |ny-0.5| 分 5 档）。
+# 纬度气候带离散档位（与 InfoPanelController 的 _climate_zone_name 同口径：按 |ny-0.5| 分 5 档）。
 # 阈值对应 |ny - 0.5|：0.0 开始 → 热带；0.5 末端 → 极地。
 const CLIMATE_ZONE_NAMES: Array = [
 	"热带", "副热带", "温带", "副极地", "极地",

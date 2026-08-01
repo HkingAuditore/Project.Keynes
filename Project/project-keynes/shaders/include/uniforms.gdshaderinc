@@ -86,9 +86,21 @@ uniform bool has_terrain_edge_data = false;
 // 归一化到 bake 的 0.90 hex 中心距差范围；只混合视觉量，不改变权威状态。
 uniform float terrain_ecotone_width = 0.84;
 uniform float terrain_ecotone_noise = 0.22;
+// [terrain-material-tiles] 四方连续材质族数组。只在 HIGH 且运行时成功绑定时
+// 采样；其它画质继续使用 terrain_detail_tex / 程序化旧路径。
+uniform sampler2DArray terrain_material_tex : filter_linear_mipmap, repeat_enable;
+uniform bool terrain_material_tex_bound = false;
+uniform bool terrain_materials_enabled = true;
+uniform float terrain_material_world_size = 128.0;
+uniform float terrain_material_albedo_strength = 0.6;
+uniform float terrain_material_normal_strength = 0.15;
+uniform float terrain_material_roughness_strength = 0.35;
 uniform sampler2D terrain_micro_tex : filter_linear_mipmap, repeat_enable;
 uniform bool has_terrain_micro_tex = false;
 uniform float camera_zoom = 1.0;
+// 表面调试视图：0 关 / 1 主导下标 / 2 次级下标 / 3 边缘距离 / 4 次级权重 / 5 微样本UVα /
+// 6 保留给植被层 LOD 调试（renderer 侧消费）/ 7 材质贴图门禁
+//   （绿=active 蓝=tex未绑定 品红=enabled=false 橙=quality<2或编译裁剪）。
 uniform int terrain_surface_debug_view = 0;
 // map-visual-overhaul-v1：weather_field_tex 已从主地图 shader 完全移除。
 // 海面天气视觉（storm/rain/cloud_field）现在全部由 weather_overlay.gdshader 的

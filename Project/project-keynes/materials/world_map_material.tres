@@ -6,6 +6,12 @@
 resource_local_to_scene = true
 shader = ExtResource("1_world_map")
 shader_parameter/terrain_normal_tex_bound = false
+shader_parameter/terrain_material_tex_bound = false
+shader_parameter/terrain_materials_enabled = false
+shader_parameter/terrain_material_world_size = 128.0
+shader_parameter/terrain_material_albedo_strength = 0.22
+shader_parameter/terrain_material_normal_strength = 0.045
+shader_parameter/terrain_material_roughness_strength = 0.35
 shader_parameter/terrain_horizon_tex_bound = false
 shader_parameter/terrain_horizon_max_angle = 1.31
 shader_parameter/terrain_horizon_softness = 0.16
