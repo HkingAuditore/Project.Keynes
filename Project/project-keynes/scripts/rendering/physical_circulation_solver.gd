@@ -43,6 +43,23 @@ const NEIGHBOR_DIRS: Array[Vector2] = [
 	Vector2( SQRT3_HALF,        1.5),    # 5 SE
 ]
 
+
+static func _neighbor_for_dir(map: MapData, cell: HexCell, dir_idx: int) -> HexCell:
+	if map == null or cell == null or map.width <= 0 or dir_idx < 0 or dir_idx >= 6:
+		return null
+	var d: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[dir_idx]
+	var off := HexUtilsScript.cube_to_offset(cell.q + d.x, cell.r + d.y)
+	if off.y < 0 or off.y >= map.height:
+		return null
+	return map.get_cell_by_cube(HexUtilsScript.offset_to_cube(posmod(off.x, map.width), off.y))
+
+
+static func _neighbor_dir_index(map: MapData, cell: HexCell, neighbor: HexCell) -> int:
+	for dir_idx in range(6):
+		if _neighbor_for_dir(map, cell, dir_idx) == neighbor:
+			return dir_idx
+	return -1
+
 # ─── ny / lat_signed 推导 ─────────────────────────────────────────────────
 #
 # 与现有 MapBaker 中各处计算保持一致：ny = (cell_world_y - bounds.y) / bounds.h
@@ -366,13 +383,9 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 				continue
 			if not _is_water_terrain(int(nb0.terrain)):
 				continue
-			var dq0: int = nb0.q - cell0.q
-			var dr0: int = nb0.r - cell0.r
-			for i0 in range(6):
-				var d0: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[i0]
-				if d0.x == dq0 and d0.y == dr0:
-					sea_v0 += NEIGHBOR_DIRS[i0]
-					break
+			var i0 := _neighbor_dir_index(map, cell0, nb0)
+			if i0 >= 0:
+				sea_v0 += NEIGHBOR_DIRS[i0]
 		if sea_v0.length_squared() > 0.0001:
 			coast_dist[cell0] = 0
 			coast_sea[cell0] = sea_v0.normalized()
@@ -414,13 +427,9 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 				continue
 			if _is_water_terrain(int(nbS.terrain)):
 				continue
-			var dqS: int = nbS.q - cellS.q
-			var drS: int = nbS.r - cellS.r
-			for iS in range(6):
-				var dS: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[iS]
-				if dS.x == dqS and dS.y == drS:
-					land_vS += NEIGHBOR_DIRS[iS]
-					break
+			var iS := _neighbor_dir_index(map, cellS, nbS)
+			if iS >= 0:
+				land_vS += NEIGHBOR_DIRS[iS]
 		if land_vS.length_squared() > 0.0001:
 			sea_dist[cellS] = 0
 			sea_land[cellS] = land_vS.normalized()
@@ -464,14 +473,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 		for nb: HexCell in nbs:
 			if nb == null:
 				continue
-			var dq: int = nb.q - cell.q
-			var dr: int = nb.r - cell.r
-			var dir_idx: int = -1
-			for i in range(6):
-				var d: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[i]
-				if d.x == dq and d.y == dr:
-					dir_idx = i
-					break
+			var dir_idx := _neighbor_dir_index(map, cell, nb)
 			if dir_idx < 0:
 				continue
 			var d_unit: Vector2 = NEIGHBOR_DIRS[dir_idx]
@@ -576,13 +578,9 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 						continue
 					var lf_m: int = int(nb_m.landform)
 					if lf_m == LandformType.LF.MOUNTAIN or lf_m == LandformType.LF.PEAK:
-						var dqm: int = nb_m.q - cell.q
-						var drm: int = nb_m.r - cell.r
-						for im in range(6):
-							var dm: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[im]
-							if dm.x == dqm and dm.y == drm:
-								mtn_dir_sum += NEIGHBOR_DIRS[im]
-								break
+						var im := _neighbor_dir_index(map, cell, nb_m)
+						if im >= 0:
+							mtn_dir_sum += NEIGHBOR_DIRS[im]
 						has_mtn_nb = true
 			if has_mtn_nb and mtn_dir_sum.length_squared() > 0.0001:
 				var mtn_n: Vector2 = mtn_dir_sum.normalized()
@@ -739,9 +737,7 @@ static func init_psi_solver(map: MapData, hex_size: float, world_bounds: Rect2) 
 		var curl_sum: float = 0.0
 		var base_idx: int = k * 6
 		for d in range(6):
-			var dv: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[d]
-			var nb_cube := Vector3i(c.q + dv.x, c.r + dv.y, c.s + dv.z)
-			var nb: HexCell = map.get_cell_by_cube(nb_cube)
+			var nb: HexCell = _neighbor_for_dir(map, c, d)
 			var nb_idx_val: int = -1
 			var tau_nb: Vector2 = Vector2.ZERO
 			if nb != null and _is_water_terrain(int(nb.terrain)):
@@ -928,8 +924,7 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 		var density_self: float = _density_proxy(map, c, density_cold_weight, density_ice_weight)
 		var grad_density: Vector2 = Vector2.ZERO
 		for d_den in range(6):
-			var dv_den: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[d_den]
-			var nb_den: HexCell = map.get_cell_by_cube(Vector3i(c.q + dv_den.x, c.r + dv_den.y, c.s + dv_den.z))
+			var nb_den: HexCell = _neighbor_for_dir(map, c, d_den)
 			if nb_den == null or not _is_water_terrain(int(nb_den.terrain)):
 				continue
 			var density_nb: float = _density_proxy(map, nb_den, density_cold_weight, density_ice_weight)
@@ -1063,13 +1058,9 @@ static func solve_upwelling(map: MapData, hex_size: float, world_bounds: Rect2, 
 			if nb == null:
 				continue
 			if not _is_water_terrain(int(nb.terrain)):
-				var dq: int = nb.q - cell.q
-				var dr: int = nb.r - cell.r
-				for i in range(6):
-					var d: Vector3i = HexUtilsScript.CUBE_DIRECTIONS[i]
-					if d.x == dq and d.y == dr:
-						land_dir_sum += NEIGHBOR_DIRS[i]
-						break
+				var i := _neighbor_dir_index(map, cell, nb)
+				if i >= 0:
+					land_dir_sum += NEIGHBOR_DIRS[i]
 				has_land_nb = true
 
 		var ekman_main: float = 0.0

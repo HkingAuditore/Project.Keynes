@@ -1,6 +1,15 @@
 extends Control
 class_name ObjectDetailDialog
 
+const FactGridScene := preload("res://scenes/ui/object_fact_grid.tscn")
+const FactCellScene := preload("res://scenes/ui/object_fact_cell.tscn")
+const RowsCardScene := preload("res://scenes/ui/object_rows_card.tscn")
+const DetailLineScene := preload("res://scenes/ui/object_detail_line.tscn")
+const StateCardScene := preload("res://scenes/ui/object_state_card.tscn")
+const NoteScene := preload("res://scenes/ui/object_note.tscn")
+const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
+const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
+
 signal closed()
 
 const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
@@ -27,10 +36,21 @@ var _fact_columns: Array[int] = []
 func _ready() -> void:
 	if _content != null:
 		return
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	visible = false
-	_build_dialog()
+	_header_icon = get_node_or_null("Center/Dialog/Body/TitleRow/HeaderIcon") as IconBadge
+	_title_label = get_node_or_null("Center/Dialog/Body/TitleRow/Titles/Title") as Label
+	_subtitle_label = get_node_or_null("Center/Dialog/Body/TitleRow/Titles/Subtitle") as Label
+	_content = get_node_or_null("Center/Dialog/Body/Scroll/Content") as VBoxContainer
+	_status_label = get_node_or_null("Center/Dialog/Body/Status") as Label
+	var close_button := get_node_or_null("Center/Dialog/Body/TitleRow/CloseButton") as Button
+	var backdrop_close := get_node_or_null("BackdropClose") as Button
+	if _header_icon == null or _title_label == null or _subtitle_label == null \
+			or _content == null or _status_label == null or close_button == null \
+			or backdrop_close == null:
+		push_error("ObjectDetailDialog 必须通过 object_detail_dialog.tscn 实例化。")
+		return
+	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
+	close_button.pressed.connect(close_dialog)
+	backdrop_close.pressed.connect(close_dialog)
 
 
 func show_details(payload: Dictionary) -> void:
@@ -104,90 +124,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			and event.keycode == KEY_ESCAPE:
 		close_dialog()
 		get_viewport().set_input_as_handled()
-
-
-func _build_dialog() -> void:
-	var backdrop := Button.new()
-	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	backdrop.focus_mode = Control.FOCUS_NONE
-	backdrop.mouse_default_cursor_shape = Control.CURSOR_ARROW
-	var backdrop_style := StyleBoxFlat.new()
-	backdrop_style.bg_color = Color(0.012, 0.010, 0.008, 0.76)
-	for state in ["normal", "hover", "pressed", "focus"]:
-		backdrop.add_theme_stylebox_override(state, backdrop_style)
-	backdrop.pressed.connect(close_dialog)
-	add_child(backdrop)
-
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(center)
-
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = PANEL_MIN_SIZE
-	panel.add_theme_stylebox_override("panel", UITokens.panel_style(
-		Color(0.038, 0.034, 0.029, 0.99), UITokens.RADIUS_MD,
-		Color(UITokens.BRASS_HIGHLIGHT.r, UITokens.BRASS_HIGHLIGHT.g,
-			UITokens.BRASS_HIGHLIGHT.b, 0.60)))
-	center.add_child(panel)
-
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", UITokens.SPACE_LG)
-	margin.add_theme_constant_override("margin_top", UITokens.SPACE_MD)
-	margin.add_theme_constant_override("margin_right", UITokens.SPACE_LG)
-	margin.add_theme_constant_override("margin_bottom", UITokens.SPACE_LG)
-	panel.add_child(margin)
-
-	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", UITokens.SPACE_MD)
-	margin.add_child(body)
-
-	var title_row := HBoxContainer.new()
-	title_row.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	body.add_child(title_row)
-	_header_icon = IconBadge.new()
-	_header_icon.custom_minimum_size = Vector2(32.0, 32.0)
-	title_row.add_child(_header_icon)
-	var titles := VBoxContainer.new()
-	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_theme_constant_override("separation", 0)
-	title_row.add_child(titles)
-	_title_label = Label.new()
-	_title_label.add_theme_font_override("font", UITokens.font_with_weight(700))
-	_title_label.add_theme_font_size_override("font_size", UITokens.FONT_TITLE)
-	_title_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	titles.add_child(_title_label)
-	_subtitle_label = Label.new()
-	_subtitle_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_subtitle_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	titles.add_child(_subtitle_label)
-	var close_button := Button.new()
-	close_button.custom_minimum_size = Vector2(34.0, 34.0)
-	close_button.focus_mode = Control.FOCUS_NONE
-	close_button.tooltip_text = "关闭"
-	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
-	close_button.pressed.connect(close_dialog)
-	title_row.add_child(close_button)
-
-	body.add_child(HSeparator.new())
-
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	body.add_child(scroll)
-	_content = VBoxContainer.new()
-	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_content.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	scroll.add_child(_content)
-
-	body.add_child(HSeparator.new())
-	_status_label = Label.new()
-	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_status_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	_status_label.visible = false
-	body.add_child(_status_label)
 
 
 func _clear_content() -> void:
@@ -294,42 +230,22 @@ func _delta_accent(delta: String) -> Color:
 
 
 func _add_fact_grid(facts: Array) -> void:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
-		Color(0.045, 0.039, 0.032, 0.98), UITokens.PANEL_BORDER_SOFT))
+	var panel := FactGridScene.instantiate() as PanelContainer
 	_content.add_child(panel)
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
-	margin.add_theme_constant_override("margin_top", 7)
-	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
-	margin.add_theme_constant_override("margin_bottom", 7)
-	panel.add_child(margin)
-	var grid := GridContainer.new()
+	var grid := panel.get_node("Grid") as GridContainer
 	grid.columns = _balanced_fact_columns(facts.size())
 	_fact_columns.append(grid.columns)
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", UITokens.SPACE_SM)
-	grid.add_theme_constant_override("v_separation", UITokens.SPACE_XS)
-	margin.add_child(grid)
 	for raw in facts:
 		var fact: Dictionary = raw
-		var cell := VBoxContainer.new()
-		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cell.add_theme_constant_override("separation", 0)
+		var cell := FactCellScene.instantiate() as VBoxContainer
 		grid.add_child(cell)
-		var label := Label.new()
+		var label := cell.get_node("Label") as Label
 		label.text = String(fact.get("label", ""))
-		label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-		cell.add_child(label)
-		var value := Label.new()
+		var value := cell.get_node("Value") as Label
 		value.text = String(fact.get("value", "—"))
-		value.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		value.add_theme_font_override("font", UITokens.font_with_weight(650))
-		value.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 		value.add_theme_color_override("font_color",
 			fact.get("accent", UITokens.TEXT_MAIN))
-		cell.add_child(value)
 
 
 # 事实网格按数量选列，保证最后一行不留孤格：4 项用 2×2，8 项用 4×2，
@@ -349,89 +265,39 @@ static func _balanced_fact_columns(fact_count: int) -> int:
 func _add_rows_card(title_text: String, icon_key: String, accent: Color, rows: Array) -> void:
 	if rows.is_empty():
 		return
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
-		Color(0.040, 0.035, 0.029, 0.98), Color(accent.r, accent.g, accent.b, 0.34)))
+	var panel := RowsCardScene.instantiate() as PanelContainer
 	_content.add_child(panel)
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
-	margin.add_theme_constant_override("margin_top", 7)
-	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
-	margin.add_theme_constant_override("margin_bottom", 7)
-	panel.add_child(margin)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 4)
-	margin.add_child(box)
-	var title_row := HBoxContainer.new()
-	title_row.add_theme_constant_override("separation", UITokens.SPACE_XS)
-	box.add_child(title_row)
-	var icon := IconBadge.new()
-	icon.custom_minimum_size = Vector2(18.0, 18.0)
+	var icon := panel.get_node("Box/TitleRow/Icon") as IconBadge
 	icon.set_semantic(StringName(icon_key), accent)
-	title_row.add_child(icon)
-	var title := Label.new()
+	var title := panel.get_node("Box/TitleRow/Title") as Label
 	title.text = title_text
-	title.add_theme_font_override("font", UITokens.font_with_weight(650))
-	title.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	title.add_theme_color_override("font_color", accent)
-	title_row.add_child(title)
+	var row_box := panel.get_node("Box/Rows") as VBoxContainer
 	for raw in rows:
 		var data: Dictionary = raw
 		if not bool(data.get("visible", true)):
 			continue
-		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", UITokens.SPACE_SM)
-		box.add_child(line)
-		var name_label := Label.new()
+		var line := DetailLineScene.instantiate() as HBoxContainer
+		row_box.add_child(line)
+		var name_label := line.get_node("Name") as Label
 		name_label.text = String(data.get("name", ""))
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		name_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		name_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-		line.add_child(name_label)
-		var value_label := Label.new()
+		var value_label := line.get_node("Value") as Label
 		value_label.text = String(data.get("value", ""))
-		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		value_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		value_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-		line.add_child(value_label)
 
 
 func _add_state_card(state: Dictionary) -> void:
 	var accent: Color = state.get("accent", UITokens.WARN)
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
-		Color(0.045, 0.039, 0.032, 0.98), Color(accent.r, accent.g, accent.b, 0.46)))
+	var panel := StateCardScene.instantiate() as PanelContainer
 	_content.add_child(panel)
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
-	margin.add_theme_constant_override("margin_top", 7)
-	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
-	margin.add_theme_constant_override("margin_bottom", 7)
-	panel.add_child(margin)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 3)
-	margin.add_child(box)
-	var label := Label.new()
+	var label := panel.get_node("Box/Label") as Label
 	label.text = String(state.get("label", "经营状态"))
-	label.add_theme_font_override("font", UITokens.font_with_weight(650))
-	label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	label.add_theme_color_override("font_color", accent)
-	box.add_child(label)
-	var detail := Label.new()
+	var detail := panel.get_node("Box/Detail") as Label
 	detail.text = String(state.get("detail", ""))
-	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	detail.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	box.add_child(detail)
 	var meta_text := String(state.get("meta", ""))
-	if not meta_text.is_empty():
-		var meta := Label.new()
-		meta.text = meta_text
-		meta.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		meta.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		meta.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-		box.add_child(meta)
+	var meta := panel.get_node("Box/Meta") as Label
+	meta.text = meta_text
+	meta.visible = not meta_text.is_empty()
 
 
 func _add_finance_card(finance: Dictionary) -> void:
@@ -450,10 +316,8 @@ func _add_finance_card(finance: Dictionary) -> void:
 
 
 func _add_muted_note(text: String, color: Color = UITokens.TEXT_MUTED) -> void:
-	var note := Label.new()
+	var note := NoteScene.instantiate() as Label
 	note.text = text
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	note.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	note.add_theme_color_override("font_color", color)
 	_content.add_child(note)
 
@@ -465,38 +329,17 @@ func _build_tax_section(tax: Dictionary) -> void:
 	_policy_version = int(tax.get("policy_version", -1))
 	_country_handle = int(tax.get("country_handle", 0))
 	_editable = bool(tax.get("editable", false))
-	var section := VBoxContainer.new()
-	section.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	var section := TaxSectionScene.instantiate() as VBoxContainer
 	_content.add_child(section)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	section.add_child(head)
-	var icon := IconBadge.new()
-	icon.custom_minimum_size = Vector2(20.0, 20.0)
+	var icon := section.get_node("Head/Icon") as IconBadge
 	icon.set_semantic(&"tax.section", UITokens.BRASS_HIGHLIGHT)
-	head.add_child(icon)
-	var title := Label.new()
+	var title := section.get_node("Head/Title") as Label
 	title.text = "税收政策 · %s" % String(tax.get("country_name", ""))
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_override("font", UITokens.font_with_weight(650))
-	title.add_theme_font_size_override("font_size", UITokens.FONT_SECTION)
-	title.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	head.add_child(title)
-	if not _editable:
-		var readonly := Label.new()
-		readonly.text = "只读"
-		readonly.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		readonly.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		readonly.add_theme_color_override("font_color", UITokens.TEXT_FAINT)
-		head.add_child(readonly)
-		var hint := Label.new()
-		hint.text = "仅可调整本国税率；上方为该国当前政策。"
-		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		hint.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-		section.add_child(hint)
+	(section.get_node("Head/Readonly") as Control).visible = not _editable
+	(section.get_node("Hint") as Control).visible = not _editable
+	var lanes := section.get_node("Lanes") as VBoxContainer
 	for raw in tax.get("items", []):
-		section.add_child(_make_tax_lane(raw))
+		lanes.add_child(_make_tax_lane(raw))
 
 
 func _make_tax_lane(item: Dictionary) -> Control:
@@ -504,60 +347,25 @@ func _make_tax_lane(item: Dictionary) -> Control:
 	var accent: Color = item.get("accent", UITokens.ACCENT)
 	var has_override := bool(item.get("has_override", false))
 	var base := int(item.get("base", 0))
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
-		Color(0.045, 0.039, 0.032, 0.98), Color(accent.r, accent.g, accent.b, 0.34)))
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
-	margin.add_theme_constant_override("margin_top", 6)
-	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
-	margin.add_theme_constant_override("margin_bottom", 6)
-	panel.add_child(margin)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 3)
-	margin.add_child(box)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", UITokens.SPACE_XS)
-	box.add_child(row)
-	var label := Label.new()
+	var panel := TaxLaneScene.instantiate() as PanelContainer
+	var label := panel.get_node("Box/Row/Label") as Label
 	label.text = String(item.get("kind_label", kind))
-	label.custom_minimum_size.x = 64.0
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	label.add_theme_color_override("font_color", accent)
-	row.add_child(label)
-	var spin := SpinBox.new()
-	spin.min_value = -100
-	spin.max_value = 100
-	spin.step = 1
-	spin.suffix = "%"
+	var spin := panel.get_node("Box/Row/Spin") as SpinBox
 	spin.editable = _editable
-	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spin.custom_minimum_size = Vector2(88.0, 30.0)
 	spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	spin.set_value_no_signal(base)
 	spin.get_line_edit().add_theme_color_override("font_color",
 		UITokens.BRASS_HIGHLIGHT if has_override else UITokens.TEXT_MUTED)
 	spin.get_line_edit().text_submitted.connect(_on_lane_text_submitted.bind(kind))
 	spin.get_line_edit().focus_exited.connect(_on_lane_focus_exited.bind(kind))
-	row.add_child(spin)
-	var reset := Button.new()
-	reset.focus_mode = Control.FOCUS_NONE
+	var reset := panel.get_node("Box/Row/Reset") as Button
 	reset.visible = _editable and has_override
-	reset.custom_minimum_size = Vector2(24.0, 26.0)
 	IconButton.apply(reset, &"action.reset", IconButton.SMALL, "重置为默认税率")
 	reset.pressed.connect(_on_lane_reset_pressed.bind(kind))
-	row.add_child(reset)
-	var clock := IconBadge.new()
-	clock.custom_minimum_size = Vector2(18.0, 20.0)
-	clock.visible = false
-	clock.tooltip_text = "命令已确认，将于下一日生效"
+	var clock := panel.get_node("Box/Row/Clock") as IconBadge
 	clock.set_semantic(&"system.clock", UITokens.BRASS_HIGHLIGHT)
-	row.add_child(clock)
-	var note := Label.new()
-	note.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	note.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	box.add_child(note)
+	var note := panel.get_node("Box/Note") as Label
 	_lanes[kind] = {"panel": panel, "spin": spin, "reset": reset, "clock": clock,
 		"note": note, "data": item.duplicate(true)}
 	_refresh_lane_note(kind)

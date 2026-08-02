@@ -140,5 +140,5 @@ PKEC v27 保留 v26 家族 section，并在 header 追加人物目录 hash、语
 ## 验证入口
 
 `Project/project-keynes/tests/family_runtime_test.gd` 覆盖人物晋升、姓名、业主岗位与建筑反查、需求/消费
-归因、三账本守恒、PKEC v27 完整恢复和 state-hash round trip。修改市场/税/迁移/存档时还必须运行
+归因、三账本守恒、PKEC v28 完整恢复和 state-hash round trip。修改市场/税/迁移/存档时还必须运行
 受影响的 economy、tax、settlement 与 trade 回归，并按需运行 50 日 headless 性能记录。

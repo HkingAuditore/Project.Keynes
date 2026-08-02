@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/category_tabs.gd" id="1_script"]
+
+[node name="CategoryTabs" type="HBoxContainer"]
+custom_minimum_size = Vector2(0, 36)
+theme_override_constants/separation = 2
+script = ExtResource("1_script")

@@ -6,20 +6,24 @@ func _initialize() -> void:
 
 
 func _capture() -> void:
-	var error := change_scene_to_file("res://scenes/main_menu.tscn")
+	var scene_path := OS.get_environment("PK_UI_CAPTURE_SCENE") \
+		if OS.has_environment("PK_UI_CAPTURE_SCENE") else "res://scenes/main_menu.tscn"
+	if OS.has_environment("PK_UI_CAPTURE_WIDTH") and OS.has_environment("PK_UI_CAPTURE_HEIGHT"):
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		DisplayServer.window_set_size(Vector2i(
+			int(OS.get_environment("PK_UI_CAPTURE_WIDTH")),
+			int(OS.get_environment("PK_UI_CAPTURE_HEIGHT"))))
+		await process_frame
+	var error := change_scene_to_file(scene_path)
 	if error != OK:
 		push_error("main menu capture: scene change failed (%s)" % error)
 		quit(1)
 		return
 	for _frame in range(3):
 		await process_frame
-	if OS.has_environment("PK_UI_CAPTURE_WIDTH") and OS.has_environment("PK_UI_CAPTURE_HEIGHT"):
-		DisplayServer.window_set_size(Vector2i(
-			int(OS.get_environment("PK_UI_CAPTURE_WIDTH")),
-			int(OS.get_environment("PK_UI_CAPTURE_HEIGHT"))))
 	var page := OS.get_environment("PK_UI_CAPTURE_PAGE") \
 		if OS.has_environment("PK_UI_CAPTURE_PAGE") else "home"
-	if current_scene != null:
+	if current_scene != null and scene_path == "res://scenes/main_menu.tscn":
 		match page:
 			"new": current_scene.call("_show_new_game")
 			"load": current_scene.call("_show_load_game")

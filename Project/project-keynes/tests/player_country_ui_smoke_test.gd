@@ -20,8 +20,8 @@ func _run() -> void:
 
 	var ui := game.get_node("UI") as GameUIManager
 	var clock := game.get_node("WorldClock") as WorldClock
-	var bar := game.get_node_or_null("UI/CountryActionBar") as CountryActionBar
-	var panel := game.get_node_or_null("UI/CountryPanel") as CountryPanel
+	var bar := game.get_node_or_null("UI/UIRoot/HUDLayer/CountryActionBar") as CountryActionBar
+	var panel := game.get_node_or_null("UI/UIRoot/PanelLayer/CountryPanel") as CountryPanel
 	_expect("country action bar exists", bar != null)
 	_expect("country panel exists", panel != null)
 	if bar == null or panel == null:
@@ -46,14 +46,20 @@ func _run() -> void:
 			action != null and action.find_children("*", "IconBadge", true, false).is_empty())
 	_expect("country action bar is compact", bar.size.x <= 322.0)
 	var paused_before := clock.paused
-	for section_id in ["technology", "politics", "economy", "military", "diplomacy"]:
+	for section_id in ["technology", "economy"]:
 		var button := buttons.get(section_id) as Button
 		_expect("%s action exists" % section_id, button != null)
 		if button != null:
+			_expect("%s action enabled" % section_id, not button.disabled)
 			button.pressed.emit()
 			await process_frame
 			_expect("%s panel opens" % section_id,
 				panel.is_panel_open() and panel.current_section() == section_id)
+	for section_id in ["politics", "military", "diplomacy"]:
+		var button := buttons.get(section_id) as Button
+		_expect("%s action exists" % section_id, button != null)
+		_expect("%s action is disabled" % section_id,
+			button != null and button.disabled and button.tooltip_text.contains("尚未开放"))
 	_expect("opening country affairs does not pause", clock.paused == paused_before)
 
 	ui.open_country_section("economy")
@@ -416,7 +422,7 @@ func _run() -> void:
 				String(import_data.get("placeholder_note", "")).contains("待跨国贸易接入"))
 			detail_dialog.close_dialog()
 
-		right_panel.select_tab("natural_resources")
+		right_panel.select_tab("geography")
 		await process_frame
 		var resource_list = right_panel.get("_resource_list")
 		var resource_rows: Dictionary = resource_list.get("_row_refs") \
@@ -467,6 +473,52 @@ func _run() -> void:
 					and player_handle == int(owned_slice.get("country_handle", -2)))
 	right_panel.select_tab("geography")
 	await process_frame
+
+	# 50x soak: daily refreshes may patch values, but the player-facing controls,
+	# keyed rows and navigation state must survive at least 30 committed days.
+	ui.open_country_section("economy")
+	await process_frame
+	var inspector_id := right_panel.get_instance_id()
+	var inspector_scroll := right_panel.get("_scroll") as ScrollContainer
+	var inspector_scroll_id := inspector_scroll.get_instance_id()
+	inspector_scroll.scroll_vertical = mini(48, int(inspector_scroll.get_v_scroll_bar().max_value))
+	var inspector_scroll_before := inspector_scroll.scroll_vertical
+	var economy_workspace_id := economy.get_instance_id()
+	var economy_scroll := economy.get("_scroll") as ScrollContainer
+	var economy_scroll_id := economy_scroll.get_instance_id()
+	economy_scroll.scroll_vertical = mini(32, int(economy_scroll.get_v_scroll_bar().max_value))
+	var economy_scroll_before := economy_scroll.scroll_vertical
+	var soak_tax_row_id := int(economy.call(
+		"tax_row_instance_id", "income", first_profession))
+	var speed_before := clock.speed_multiplier
+	var soak_start_day := clock.day_index()
+	clock.pause(false)
+	clock.set_speed(50.0)
+	var soak_deadline := Time.get_ticks_msec() + 30000
+	while clock.day_index() < soak_start_day + 30 \
+			and Time.get_ticks_msec() < soak_deadline:
+		await process_frame
+	clock.set_speed(speed_before)
+	_expect("50x soak advances at least 30 simulation days",
+		clock.day_index() >= soak_start_day + 30)
+	_expect("50x soak preserves Inspector and scroll node identities",
+		right_panel.get_instance_id() == inspector_id \
+			and inspector_scroll.get_instance_id() == inspector_scroll_id)
+	_expect("50x soak preserves Inspector tab and scroll position",
+		right_panel.current_tab() == "geography" \
+			and inspector_scroll.scroll_vertical == inspector_scroll_before)
+	_expect("50x soak preserves economy workspace and scroll identity",
+		economy.get_instance_id() == economy_workspace_id \
+			and economy_scroll.get_instance_id() == economy_scroll_id \
+			and economy_scroll.scroll_vertical == economy_scroll_before)
+	_expect("50x soak reuses stable economy tax rows",
+		soak_tax_row_id != 0 and int(economy.call(
+			"tax_row_instance_id", "income", first_profession)) == soak_tax_row_id)
+	_expect("50x soak preserves the technology tree node",
+		tree != null and tree.get_instance_id() == tree_id and tree.get_child_count() == 0)
+	_expect("50x soak leaves core country actions clickable",
+		not (buttons.get("technology") as Button).disabled \
+			and not (buttons.get("economy") as Button).disabled)
 
 	var unavailable := CountryViewModel.new().build()
 	_expect("missing country context returns recoverable unavailable state",

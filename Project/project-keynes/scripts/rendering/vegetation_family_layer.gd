@@ -3,7 +3,7 @@ extends Node2D
 
 ## 将已有 ShrubLayer 的确定性 PCG payload 合并成五个逻辑渲染家族。
 ## source layer 仍负责生态适配度与原生编码；本节点只做 buffer 合并、LOD、
-## 可见性、环绕副本和单一 Canopy shadow pass。
+## 可见性、环绕副本和按 style 筛选的直立植被 shadow pass。
 
 const FAMILY_GROUND := 1
 const FAMILY_BRUSH := 2
@@ -17,6 +17,7 @@ const STYLE_LUT_HEIGHT := 32
 var _sources: Array = []
 var _sources_by_family: Dictionary = {}
 var _representatives: Dictionary = {}
+var _shadow_representatives: Dictionary = {}
 var _materials: Dictionary = {}
 var _shadow_materials: Dictionary = {}
 var _near_meshes: Dictionary = {}
@@ -59,6 +60,7 @@ func configure(sources: Array, enabled: bool) -> void:
 	_active_instance_count_valid = false
 	_sources_by_family.clear()
 	_representatives.clear()
+	_shadow_representatives.clear()
 	_materials.clear()
 	_shadow_materials.clear()
 	_near_meshes.clear()
@@ -90,8 +92,10 @@ func configure(sources: Array, enabled: bool) -> void:
 			if representative.has_method("detail_family_quality") else 1
 		_mid_meshes[family] = representative.detail_family_mesh_for_quality(mini(source_quality, 1))
 		_far_meshes[family] = representative.detail_family_mesh_for_quality(0)
-		if family == FAMILY_CANOPY:
-			_shadow_materials[family] = representative.detail_family_shadow_material()
+		var shadow_representative = _choose_shadow_representative(_sources_by_family[raw_family])
+		if shadow_representative != null:
+			_shadow_representatives[family] = shadow_representative
+			_shadow_materials[family] = shadow_representative.detail_family_shadow_material(_style_lut)
 	for layer in _sources:
 		if layer != null and is_instance_valid(layer) and layer.has_method("set_family_batch_suppressed"):
 			layer.set_family_batch_suppressed(_enabled)
@@ -189,7 +193,7 @@ func rebuild_family_chunk(family: int, chunk_id: int) -> void:
 	_active_instance_count_valid = false
 	_last_upload_ms = float(Time.get_ticks_usec() - upload_t0) / 1000.0
 	_update_entry_lod_and_visibility(key)
-	if family == FAMILY_CANOPY:
+	if _shadow_materials.has(family):
 		_pending_shadow_uploads[key] = {"family": family, "chunk_id": chunk_id}
 	_sync_wrap_for_entry(key, false)
 
@@ -203,10 +207,11 @@ func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> v
 	if _camera_zoom >= 1.10:
 		for key in _entries.keys():
 			var entry: Dictionary = _entries[key]
-			if int(entry.get("family", 0)) == FAMILY_CANOPY \
+			var family := int(entry.get("family", 0))
+			if _shadow_materials.has(family) \
 					and not _shadow_entries.has(key):
 				_pending_shadow_uploads[key] = {
-					"family": FAMILY_CANOPY,
+					"family": family,
 					"chunk_id": int(entry.get("chunk_id", -1)),
 				}
 	_update_visibility()
@@ -404,6 +409,9 @@ func _build_style_lut() -> ImageTexture:
 		if profile != null and bool(profile.get("base_color_override_enabled")):
 			base = profile.get("base_color_override")
 		image.set_pixel(1, style_id, base)
+		var casts_shadow: bool = layer.has_method("detail_family_casts_shadow") \
+			and bool(layer.detail_family_casts_shadow())
+		image.set_pixel(2, style_id, Color(1.0 if casts_shadow else 0.0, 0.0, 0.0, 0.0))
 	return ImageTexture.create_from_image(image)
 
 
@@ -428,6 +436,15 @@ func _choose_representative(family: int, sources: Array):
 				and int(layer.profile.get("detail_kind")) == preferred_kind:
 			return layer
 	return sources[0] if not sources.is_empty() else null
+
+
+func _choose_shadow_representative(sources: Array):
+	for layer in sources:
+		if layer != null and is_instance_valid(layer) \
+				and layer.has_method("detail_family_casts_shadow") \
+				and bool(layer.detail_family_casts_shadow()):
+			return layer
+	return null
 
 
 func _ensure_entry(key: String, family: int, chunk_id: int) -> MultiMeshInstance2D:
@@ -495,20 +512,20 @@ func _update_entry_lod_and_visibility(key: String) -> void:
 
 
 func _update_shadow_entry(family: int, chunk_id: int, source_mm: MultiMesh) -> void:
-	if family != FAMILY_CANOPY or not _representatives.has(family):
+	if not _shadow_representatives.has(family) or not _shadow_materials.has(family):
 		return
 	var key := _entry_key(family, chunk_id)
 	var shadow: MultiMeshInstance2D = _shadow_entries.get(key, null)
 	if shadow == null or not is_instance_valid(shadow):
 		shadow = MultiMeshInstance2D.new()
 		shadow.name = "VegetationFamilyShadow_%d" % chunk_id
-		shadow.z_index = 1
+		shadow.z_index = _family_z(family) - 1
 		shadow.material = _shadow_materials.get(family, null)
 		var smm := MultiMesh.new()
 		smm.transform_format = MultiMesh.TRANSFORM_2D
 		smm.use_colors = true
 		smm.use_custom_data = true
-		smm.mesh = _representatives[family].detail_family_shadow_mesh()
+		smm.mesh = _shadow_representatives[family].detail_family_shadow_mesh()
 		shadow.multimesh = smm
 		add_child(shadow)
 		_shadow_entries[key] = shadow

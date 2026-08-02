@@ -8509,9 +8509,18 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         thread_local std::vector<int32_t> owner_job_targets;
         thread_local std::vector<int32_t> owner_job_sources;
         thread_local std::vector<uint8_t> owner_job_group_used;
+        struct EmployeeOwnerSource {
+            int32_t group = -1;
+            int32_t role = -1;
+            int32_t fill_index = -1;
+            int32_t profession = -1;
+            int64_t income = 0;
+        };
+        thread_local std::vector<EmployeeOwnerSource> employee_owner_sources;
         projected_owner_income.assign(static_cast<size_t>(last - first), 0);
         owner_job_targets.clear();
         owner_job_sources.clear();
+        employee_owner_sources.clear();
         owner_job_group_used.assign(static_cast<size_t>(last - first), uint8_t{0});
         int64_t local_merchant_population = 0;
         _population.for_each_in_cell(cell, [&](int32_t slot) {
@@ -8547,6 +8556,18 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     owner_job_sources.push_back(g);
                 }
             }
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const int32_t fill_index = group.employee_fill_begin + r;
+                if (_building_employee_filled[fill_index] <= 0) continue;
+                const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                const int64_t gross_income = fill_index >= 0 && fill_index <
+                        static_cast<int32_t>(_building_role_contract_wage.size())
+                    ? _building_role_contract_wage[fill_index]
+                    : role.reference_wage_per_day;
+                employee_owner_sources.push_back({g, r, fill_index,
+                    role.profession_id, expected_after_tax_income(cell,
+                        role.profession_id, gross_income, _saturation_count)});
+            }
         }
         std::stable_sort(owner_job_targets.begin(), owner_job_targets.end(),
                          [&](int32_t a, int32_t b) {
@@ -8560,9 +8581,18 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int64_t income_b = projected_owner_income[b - first];
             return income_a != income_b ? income_a < income_b : a < b;
         });
+        std::stable_sort(employee_owner_sources.begin(), employee_owner_sources.end(),
+                         [](const EmployeeOwnerSource &a,
+                            const EmployeeOwnerSource &b) {
+            if (a.income != b.income) return a.income < b.income;
+            if (a.group != b.group) return a.group < b.group;
+            return a.role < b.role;
+        });
         for (int32_t target_group_index : owner_job_targets) {
             if (owner_job_group_used[target_group_index - first] != 0) continue;
             BuildingGroup &target_group = _buildings[target_group_index];
+            if (target_group.filled_owner >=
+                    group_owner_target[target_group_index - first]) continue;
             const Signature &target_signature =
                 _signatures[target_group.owner_signature_id];
             const int64_t target_income =
@@ -8591,62 +8621,106 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 source_slot = slot;
                 break;
             }
-            if (source_group_index < 0) continue;
-            const int64_t source_income =
-                projected_owner_income[source_group_index - first];
-            const int64_t income_gain = target_income - source_income;
-            const int64_t chance_q16 = std::clamp<int64_t>(mul_div_sat(
-                income_gain, Q16_ONE, target_income, _saturation_count), 1, Q16_ONE);
-            uint64_t roll_hash = 1469598103934665603ULL;
-            roll_hash = trace_hash_mix(roll_hash, static_cast<uint64_t>(_seed));
-            roll_hash = trace_hash_mix(roll_hash, static_cast<uint64_t>(_current_day));
-            roll_hash = trace_hash_mix(roll_hash, static_cast<uint32_t>(cell));
-            roll_hash = trace_hash_mix(
-                roll_hash, static_cast<uint32_t>(target_group_index));
-            roll_hash = trace_hash_mix(
-                roll_hash, static_cast<uint32_t>(source_group_index));
-            const int64_t roll_q16 = static_cast<int64_t>(
-                (roll_hash >> 32) & 0xffffULL);
-            if (roll_q16 >= chance_q16) {
-                ++_building_owner_job_probability_skips;
+            if (source_group_index >= 0) {
+                BuildingGroup &source_group = _buildings[source_group_index];
+                const Signature &source_signature =
+                    _signatures[source_group.owner_signature_id];
+                if (source_signature.profession_id != target_signature.profession_id) {
+                    bool source_drained = false;
+                    if (!move_cohort_population(source_slot, cell,
+                            target_group.owner_signature_id, 1, error,
+                            &source_drained)) {
+                        return false;
+                    }
+                    if (!source_drained) {
+                        _population.owner_employed[source_slot] = std::max<int64_t>(
+                            0, _population.owner_employed[source_slot] - 1);
+                    }
+                    const int32_t destination = _population.find_signature(
+                        cell, static_cast<uint32_t>(target_group.owner_signature_id));
+                    if (destination < 0) {
+                        error = "owner_job_reallocation_destination_missing";
+                        return false;
+                    }
+                    _population.owner_employed[destination] = saturating_add(
+                        _population.owner_employed[destination], 1,
+                        _saturation_count);
+                    if (source_signature.profession_id == _merchant_profession_id) {
+                        local_merchant_population = std::max<int64_t>(
+                            0, local_merchant_population - 1);
+                    }
+                    ++_building_owner_job_profession_changes;
+                }
+                source_group.filled_owner -= 1;
+                target_group.filled_owner = saturating_add(
+                    target_group.filled_owner, 1, _saturation_count);
+                owner_job_group_used[source_group_index - first] = 1;
+                owner_job_group_used[target_group_index - first] = 1;
+                ++_building_owner_job_reallocations;
                 continue;
             }
 
-            BuildingGroup &source_group = _buildings[source_group_index];
-            const Signature &source_signature =
-                _signatures[source_group.owner_signature_id];
-            if (source_signature.profession_id != target_signature.profession_id) {
-                bool source_drained = false;
-                if (!move_cohort_population(source_slot, cell,
-                        target_group.owner_signature_id, 1, error,
-                        &source_drained)) {
-                    return false;
+            // If no lower-income owner is available, an incumbent employee may
+            // take the materially better owner opening. This closes the price-to-
+            // labor path when unemployment is zero: high realizable output prices
+            // raise projected owner income and can attract labor out of a lower-
+            // wage industry. Preserve ethnicity and move at most one person per
+            // source/target group in an employment period.
+            for (const EmployeeOwnerSource &candidate : employee_owner_sources) {
+                if (owner_job_group_used[candidate.group - first] != 0 ||
+                    _building_employee_filled[candidate.fill_index] <= 0) continue;
+                const int64_t required_target = saturating_add(candidate.income,
+                    mul_div_sat(candidate.income, Q16_ONE / 8, Q16_ONE,
+                                _saturation_count), _saturation_count);
+                if (target_income < required_target) continue;
+                const int32_t source_signature_id =
+                    signature_for_profession_ethnicity(candidate.profession,
+                        target_signature.ethnicity_id);
+                if (source_signature_id < 0) continue;
+                const int32_t employee_slot = _population.find_signature(
+                    cell, static_cast<uint32_t>(source_signature_id));
+                if (employee_slot < 0 ||
+                    _population.employee_employed[employee_slot] <= 0) continue;
+
+                const bool profession_change =
+                    candidate.profession != target_signature.profession_id;
+                if (profession_change) {
+                    bool source_drained = false;
+                    if (!move_cohort_population(employee_slot, cell,
+                            target_group.owner_signature_id, 1, error,
+                            &source_drained)) {
+                        return false;
+                    }
+                    if (!source_drained) {
+                        _population.employee_employed[employee_slot] =
+                            std::max<int64_t>(0,
+                                _population.employee_employed[employee_slot] - 1);
+                    }
+                    const int32_t destination = _population.find_signature(
+                        cell, static_cast<uint32_t>(target_group.owner_signature_id));
+                    if (destination < 0) {
+                        error = "employee_owner_reallocation_destination_missing";
+                        return false;
+                    }
+                    _population.owner_employed[destination] = saturating_add(
+                        _population.owner_employed[destination], 1,
+                        _saturation_count);
+                    ++_building_owner_job_profession_changes;
+                } else {
+                    _population.employee_employed[employee_slot] -= 1;
+                    _population.owner_employed[employee_slot] = saturating_add(
+                        _population.owner_employed[employee_slot], 1,
+                        _saturation_count);
                 }
-                if (!source_drained) {
-                    _population.owner_employed[source_slot] = std::max<int64_t>(
-                        0, _population.owner_employed[source_slot] - 1);
-                }
-                const int32_t destination = _population.find_signature(
-                    cell, static_cast<uint32_t>(target_group.owner_signature_id));
-                if (destination < 0) {
-                    error = "owner_job_reallocation_destination_missing";
-                    return false;
-                }
-                _population.owner_employed[destination] = saturating_add(
-                    _population.owner_employed[destination], 1,
-                    _saturation_count);
-                if (source_signature.profession_id == _merchant_profession_id) {
-                    local_merchant_population = std::max<int64_t>(
-                        0, local_merchant_population - 1);
-                }
-                ++_building_owner_job_profession_changes;
+                _building_employee_filled[candidate.fill_index] -= 1;
+                target_group.filled_owner = saturating_add(
+                    target_group.filled_owner, 1, _saturation_count);
+                owner_job_group_used[candidate.group - first] = 1;
+                owner_job_group_used[target_group_index - first] = 1;
+                ++_building_employee_to_owner_reallocations;
+                ++_building_owner_job_reallocations;
+                break;
             }
-            source_group.filled_owner -= 1;
-            target_group.filled_owner = saturating_add(
-                target_group.filled_owner, 1, _saturation_count);
-            owner_job_group_used[source_group_index - first] = 1;
-            owner_job_group_used[target_group_index - first] = 1;
-            ++_building_owner_job_reallocations;
         }
         }
     }
@@ -13646,6 +13720,8 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _building_cell_offsets.clear();
     _building_active_cells.clear();
     _cell_last_settlement_day.clear();
+    _birth_residual_q32.assign(
+        static_cast<size_t>(cell_count) * _ethnicity_ids.size(), 0);
     _cell_settlement_generation.clear();
     _cell_price_stock_gen.clear();
     _cell_owner_cash_gen.clear();
@@ -13747,6 +13823,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     }
     _bootstrapped = false;
     _population.clear(_cell_count);
+    _birth_residual_q32.assign(
+        static_cast<size_t>(_cell_count) * _ethnicity_ids.size(), 0);
     _settlements.clear(_cell_count);
     _market.clear();
     _market_signals.clear(_cell_count);
@@ -16634,6 +16712,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_owner_job_reallocations = 0;
     _building_owner_job_profession_changes = 0;
     _building_owner_job_probability_skips = 0;
+    _building_employee_to_owner_reallocations = 0;
     _building_investments_started = 0;
     _building_investment_blocked_funds = 0;
     _building_investment_blocked_materials = 0;
@@ -17719,6 +17798,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     }
     if (_market_cell_offsets.size() != static_cast<size_t>(_market.market_count + 1)) {
         error = "market_cell_range_missing";
+        return false;
+    }
+    const size_t expected_birth_residuals =
+        static_cast<size_t>(_cell_count) * _ethnicity_ids.size();
+    if (_birth_residual_q32.size() != expected_birth_residuals) {
+        error = "birth_residual_shape_mismatch";
         return false;
     }
     slots.clear();
@@ -19018,18 +19103,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             static_cast<int32_t>(expected_births_q32_by_ethnicity.size()); ++ethnicity) {
         const int64_t expected_q32 = expected_births_q32_by_ethnicity[ethnicity];
         if (expected_q32 <= 0) continue;
-        int64_t births = expected_q32 / Q32_ONE;
-        const uint64_t fraction_q32 = static_cast<uint64_t>(expected_q32 % Q32_ONE);
-        if (fraction_q32 > 0) {
-            uint64_t roll_hash = 1469598103934665603ULL;
-            roll_hash = trace_hash_mix(roll_hash, 0x4249525448ULL); // "BIRTH"
-            roll_hash = trace_hash_mix(roll_hash, static_cast<uint64_t>(_seed));
-            roll_hash = trace_hash_mix(roll_hash, static_cast<uint64_t>(_sample_day));
-            roll_hash = trace_hash_mix(roll_hash, static_cast<uint32_t>(birth_cell));
-            roll_hash = trace_hash_mix(roll_hash, static_cast<uint32_t>(ethnicity));
-            const uint64_t roll_q32 = roll_hash & 0xffffffffULL;
-            if (roll_q32 < fraction_q32) ++births;
-        }
+        const size_t residual_lane = static_cast<size_t>(birth_cell) *
+            _ethnicity_ids.size() + static_cast<size_t>(ethnicity);
+        const int64_t accumulated_q32 = saturating_add(
+            _birth_residual_q32[residual_lane], expected_q32, sat);
+        const int64_t births = accumulated_q32 / Q32_ONE;
+        _birth_residual_q32[residual_lane] = accumulated_q32 % Q32_ONE;
         if (births <= 0) continue;
         const int32_t unemployed_signature = unemployed_signature_for_ethnicity(ethnicity);
         if (unemployed_signature < 0) {
@@ -19325,6 +19404,7 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
     const int64_t destination_ema_before = _population.income_ema[destination];
     const int64_t destination_residual_before = _population.demography_residual[destination];
     touch_accounting_slot(destination);
+    audit_touch_population_lane(destination);
     const int64_t destination_handle = static_cast<int64_t>(
         _population.handle_for_slot(destination));
     _population.population[destination] = saturating_add(destination_pop_before, move_pop,
@@ -23442,6 +23522,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_population.epoch_in_kind_income); cap(_population.income_ema);
     cap(_population.needs_satisfaction); cap(_population.worst_need_id);
     cap(_population.flags); cap(_population.demography_residual);
+    cap(_birth_residual_q32);
     cap(_population.owner_employed); cap(_population.employee_employed);
     cap(_families.active); cap(_families.generation); cap(_families.stable_id);
     cap(_families.surname_id); cap(_families.surname_disambiguator);
@@ -24616,6 +24697,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _building_owner_job_profession_changes;
     out["building_owner_job_probability_skips"] =
         _building_owner_job_probability_skips;
+    out["building_employee_to_owner_reallocations"] =
+        _building_employee_to_owner_reallocations;
     out["building_investments_started"] = _building_investments_started;
     out["building_investment_blocked_funds"] =
         _building_investment_blocked_funds;
@@ -27400,6 +27483,9 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(_population.owner_employed[slot]));
         mix_u64(static_cast<uint64_t>(_population.employee_employed[slot]));
     }
+    mix_u64(0x4249525448524553ULL); // "BIRTHRES"
+    for (int64_t residual_q32 : _birth_residual_q32)
+        mix_u64(static_cast<uint64_t>(residual_q32));
     for (int32_t i = 0; i < static_cast<int32_t>(_families.active.size()); ++i) {
         if (_families.active[i] == 0) continue;
         mix_u64(0x46414d494c59ULL);
@@ -27647,6 +27733,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _closing_audit_mismatch_lane = -1;
     clear_epoch_metrics();
     _population.clear(0);
+    _birth_residual_q32.clear();
     _families.clear();
     _persons.clear();
     _family_memberships.clear();
@@ -27867,6 +27954,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         _environment_snow_q16.size() != cells ||
         _environment_weather_q16.size() != cells ||
         _cell_last_settlement_day.size() != cells ||
+        _birth_residual_q32.size() != cells * _ethnicity_ids.size() ||
         _cell_settlement_generation.size() != cells ||
         _cell_price_stock_gen.size() != cells ||
         _cell_owner_cash_gen.size() != cells ||
@@ -28073,7 +28161,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_CELLS) {
-        const int32_t record_bytes = 117;
+        const int32_t record_bytes = 117 +
+            static_cast<int32_t>(_ethnicity_ids.size()) * 8;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min(_cell_count, _save.cell_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.cell_cursor)) * record_bytes);
@@ -28116,6 +28205,11 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 _settlements.prosperity_generation[_save.cell_cursor]);
             append_le<uint32_t>(payload,
                 _settlements.name_roll_generation[_save.cell_cursor]);
+            const size_t birth_lane_begin =
+                static_cast<size_t>(_save.cell_cursor) * _ethnicity_ids.size();
+            for (size_t ethnicity = 0; ethnicity < _ethnicity_ids.size(); ++ethnicity)
+                append_le<int64_t>(payload,
+                    _birth_residual_q32[birth_lane_begin + ethnicity]);
         }
         if (_save.cell_cursor >= _cell_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_CELLS,
@@ -28614,6 +28708,8 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _restore.active = true;
     _bootstrapped = false;
     _population.clear(_cell_count);
+    _birth_residual_q32.assign(
+        static_cast<size_t>(_cell_count) * _ethnicity_ids.size(), 0);
     _settlements.clear(_cell_count);
     _market.clear();
     _market_signals.clear(_cell_count);
@@ -28688,7 +28784,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 26 && schema != 25 &&
+    if (schema != SCHEMA_VERSION && schema != 27 && schema != 26 && schema != 25 &&
         schema != 23 && schema != 22) {
         error = "legacy_climate_production_save_unsupported";
         return false;
@@ -29318,6 +29414,19 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     static_cast<uint8_t>(tier_flags & 0x7fU);
                 _settlements.name_forced[cell] =
                     (tier_flags & 0x80U) != 0 ? 1 : 0;
+            }
+            if (schema >= 28) {
+                const size_t birth_lane_begin =
+                    static_cast<size_t>(cell) * _ethnicity_ids.size();
+                for (size_t ethnicity = 0; ethnicity < _ethnicity_ids.size(); ++ethnicity) {
+                    int64_t &residual_q32 =
+                        _birth_residual_q32[birth_lane_begin + ethnicity];
+                    if (!read_le(bytes, cursor, residual_q32) ||
+                        residual_q32 < 0 || residual_q32 >= Q32_ONE) {
+                        error = "save_cell_birth_residual_invalid";
+                        return false;
+                    }
+                }
             }
             _market.cell_to_market[cell] = market;
             ++_restore.restored_cells;
@@ -30656,14 +30765,16 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_families"] = _families.active_count;
     out["restored_persons"] = _persons.active_count;
     out["restored_person_needs"] = static_cast<int64_t>(_person_needs.size());
-    out["migration"] = restored_schema == 25
+    out["migration"] = restored_schema == 27
+        ? "v27_empty_birth_residual_bootstrap"
+        : (restored_schema == 25
         ? "v25_empty_family_bootstrap"
         : (restored_schema == 26
         ? "v26_empty_notable_person_bootstrap"
         : (restored_schema == 22 || restored_schema == 23
         ? "legacy_settlement_bootstrap"
         : (restored_schema == 14
-            ? "v14_rolling_phase_bootstrap" : "none")));
+            ? "v14_rolling_phase_bootstrap" : "none"))));
     return out;
 }
 

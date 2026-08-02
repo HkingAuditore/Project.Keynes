@@ -1164,8 +1164,8 @@ static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture,
         return is_alpine ? 3 : 10; // ALPINE_TUNDRA / TEMPERATE_STEPPE
     }
     if (temperature < 0.55f) {
-        // [zonal-envelope] 温带湿门 0.55→0.48 / 草门 0.30→0.26，与 pk_decide_terrain_ex 温带段对齐
-        if (moisture > 0.48f) return is_alpine ? 8 : (is_hilly ? 7 : 7);
+        // Temperate storm tracks support forest below the former 0.48 cutoff.
+        if (moisture > 0.42f) return is_alpine ? 8 : (is_hilly ? 7 : 7);
         if (moisture > 0.26f) return is_alpine ? 4 : 9; // ALPINE_MEADOW / TEMPERATE_GRASSLAND
         return is_alpine ? 6 : 10; // BOREAL_SHRUB / TEMPERATE_STEPPE
     }
@@ -1177,9 +1177,10 @@ static inline uint8_t pk_whittaker_vegetation(float temperature, float moisture,
         if (moisture < 0.12f) return 16; // DESERT_SCRUB（副热带旱坡）
         return 10;                       // TEMPERATE_STEPPE
     }
-    // [zonal-envelope] 真热带（0–33°）：雨林湿门 0.58→0.56，与 JUNGLE 地形边界对齐。
-    if (moisture > 0.56f) return 14; // TROPICAL_RAINFOREST
-    if (moisture > 0.38f) return 15; // TROPICAL_DRY_FOREST
+    // Continuous rainforest is the humid tail; seasonal forests own the shoulder.
+    if (moisture > 0.64f) return 14; // TROPICAL_RAINFOREST
+    if (moisture > 0.42f) return 25; // MONSOON_FOREST
+    if (moisture > 0.34f) return 15; // TROPICAL_DRY_FOREST
     // [zonal-envelope 二轮] SAVANNA 下限 0.20→0.24，与 pk_decide_terrain_ex 热带 STEPPE 下限同步。
     if (moisture > 0.24f) return 13; // SAVANNA
     if (moisture < 0.10f) return 17; // XERIC_DESERT
@@ -1230,16 +1231,16 @@ static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, fl
             if (is_hilly && temperature > 0.50f && moisture > 0.52f) return 24; // CLOUD_FOREST
             return temperature > 0.55f ? 12 : 7; // SUBTROPICAL_FOREST / TEMPERATE_DECIDUOUS
         case 11: // JUNGLE
-            // [climate-zone-fix P1] 阈值随湿度天花板(p90≈0.56)下移，雨林/季风林重新可达。
+            // 连续雨林只占湿尾，季风林承接中间湿度带。
             if ((is_alpine || is_hilly) && moisture > 0.60f) return 24; // CLOUD_FOREST（热带高地云雾林）
-            if (moisture > 0.58f) return 14; // TROPICAL_RAINFOREST
-            if (moisture > 0.48f) return 25; // MONSOON_FOREST（季风半落叶）
+            if (moisture > 0.66f) return 14; // TROPICAL_RAINFOREST
+            if (moisture > 0.50f) return 25; // MONSOON_FOREST（季风半落叶）
             return 15; // TROPICAL_DRY_FOREST
         case 12: // SAVANNA
             if (is_alpine) return moisture > 0.45f ? 4 : 6; // 高地稀树草原 → 高山草甸/山地灌丛
             // Keep SAVANNA's wet edge aligned with pk_decide_terrain_ex's JUNGLE boundary.
-            // [zonal-envelope] JUNGLE 边界 0.54→0.56，本湿门同步平移保持对齐。
-            return moisture > 0.56f ? 25 : 13; // 湿端季风林 / 否则稀树草原
+            // SAVANNA 湿端季风林门与 JUNGLE 0.64 边界同步。
+            return moisture > 0.64f ? 25 : 13; // 湿端季风林 / 否则稀树草原
         case 3:  return is_alpine ? 4 : 9; // GRASSLAND
         case 14: // STEPPE
             if (is_alpine) return temperature < 0.28f ? 3 : (moisture > 0.32f ? 4 : 6);
@@ -1249,21 +1250,10 @@ static inline uint8_t pk_derive_vegetation(uint8_t terrain, uint8_t landform, fl
     }
 }
 
-// Generation/runtime shared ecological scorer.  Terrain and landform are only
-// soft priors here; the Gaussian climate fit remains the dominant signal.
-static inline float pk_vegetation_climate_score(float temperature, float moisture,
-                                                float ideal_temp, float ideal_moist,
-                                                float temp_tolerance, float moist_tolerance) {
-    const float st = std::max(temp_tolerance, 0.05f);
-    const float sm = std::max(moist_tolerance, 0.05f);
-    const float dt = (temperature - ideal_temp) / st;
-    const float dm = (moisture - ideal_moist) / sm;
-    return float(std::exp(-0.5 * double(dt * dt + dm * dm)));
-}
-
 static inline bool pk_vegetation_is_wet_type(uint8_t veg) {
-    return veg == 12 || veg == 13 || veg == 14 || veg == 15 || veg == 19 ||
-           veg == 20 || veg == 21 || veg == 24 || veg == 25 || veg == 27;
+    return veg == 5 || veg == 7 || veg == 8 || veg == 12 || veg == 14 ||
+           veg == 15 || veg == 19 || veg == 20 || veg == 21 || veg == 24 ||
+           veg == 25 || veg == 27;
 }
 
 static inline bool pk_vegetation_is_alpine_type(uint8_t veg) {
@@ -1272,6 +1262,29 @@ static inline bool pk_vegetation_is_alpine_type(uint8_t veg) {
 
 static inline bool pk_vegetation_is_arid_type(uint8_t veg) {
     return veg == 10 || veg == 11 || veg == 16 || veg == 17;
+}
+
+// Wet forests and wetlands are constrained primarily by water deficit.
+// Surplus water retains a small waterlogging cost, but is not symmetric with drought.
+static inline float pk_vegetation_climate_score_for_type(
+        uint8_t veg, float temperature, float moisture,
+        float ideal_temp, float ideal_moist,
+        float temp_tolerance, float moist_tolerance) {
+    const float st = std::max(temp_tolerance, 0.05f);
+    const float sm = std::max(moist_tolerance, 0.05f);
+    const float dt = (temperature - ideal_temp) / st;
+    float dm = (moisture - ideal_moist) / sm;
+    if (dm > 0.0f && pk_vegetation_is_wet_type(veg)) dm *= 0.25f;
+    return float(std::exp(-0.5 * double(dt * dt + dm * dm)));
+}
+
+static inline bool pk_vegetation_candidate_allowed(uint8_t terrain, uint8_t veg) {
+    if (veg == 22 || veg == 23 || veg == 26) return false; // aquatic only
+    // Saturated substrates resolve to marsh/swamp/mangrove/monsoon communities.
+    if (veg == 14 && (terrain == 10 || terrain == 16 || terrain == 22 || terrain == 29)) {
+        return false;
+    }
+    return true;
 }
 
 // Climate biome envelope shared with VegetationType.biome_envelope_weight.
@@ -1745,7 +1758,7 @@ static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
     if (temperature < 0.20) return 8;      // TUNDRA（寒冷无林）
 
     // Whittaker：温度×湿度联立气候 biome，覆盖全部中/低海拔（起伏交给 landform）。
-    // [climate-zone-fix P1] 旧热带门 JUNGLE>0.65 高于世界湿度天花板(land moist p90≈0.56)，
+    // 旧热带门 JUNGLE 过宽会吞掉季风林；连续雨林现在只占湿尾，
     // 赤道带几乎拿不到 JUNGLE→雨林，被压成 SAVANNA→MONSOON。湿端阈值整体下移贴合实际分布；
     // 并把旧单一"热带(>0.55)"拆成真热带(>0.66 赤道暖湿)与亚热带/暖温带(0.55–0.66)，
     // 让 FOREST 地形在亚热带可达，修复 pk_derive_vegetation case FOREST 的 temp>0.55
@@ -1757,7 +1770,7 @@ static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
     // 中纬≈0.31、风暴路径海岸 0.45+）校准：温带 FOREST 0.55→0.46 让温带森林回归，
     // 温带 GRASSLAND/STEPPE 下移收窄草原漏斗；JUNGLE 0.54 边界对齐规则保持不变。
     if (temperature > 0.80) {              // 真热带（赤道带，0–33°）
-        if (moisture > 0.56) return 11;    // JUNGLE → 雨林/季风林（0.54→0.56：稀树草原两翼回归）
+        if (moisture > 0.64) return 11;    // JUNGLE → 连续湿润热带森林
         if (moisture > 0.32) return 12;    // SAVANNA
         // [zonal-envelope 二轮] 热带草系干端 0.20→0.24：游戏内实测草原系 39.9% 仍偏高，
         // 干端 0.20-0.24 带转真荒漠（萨赫勒干缘收紧），与 whittaker SAVANNA 下限同步。
@@ -1771,7 +1784,7 @@ static inline uint8_t pk_decide_terrain_ex(double elevation, double temperature,
         return 7;                          // DESERT（副热带荒漠）
     }
     if (temperature > 0.38) {              // 温带（51–62°）
-        if (moisture > 0.48) return 4;     // FOREST（0.55→0.48：风暴路径湿带可达）
+        if (moisture > 0.42) return 4;     // FOREST（扩大中纬湿润森林带）
         if (moisture > 0.28) return 3;     // GRASSLAND（0.32→0.28：收窄草原漏斗）
         if (moisture > 0.16) return 14;    // STEPPE
         return 7;                          // DESERT（温带内陆荒漠）

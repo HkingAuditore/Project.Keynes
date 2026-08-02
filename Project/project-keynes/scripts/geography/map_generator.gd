@@ -4542,8 +4542,11 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 		_data_core_world_ext.flush_slots_to_map_keys(PackedStringArray(["cell_moisture"]))
 		moisture_committed = true
 		moisture_commit_path = "bound_map_flush_fallback"
-	# Release the native transaction only after the completed value is visible.
+	# Release the visual snapshot transaction only after the completed values are visible.
 	if _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("complete_native_daily_visual_commit"):
+		_data_core_world_ext.complete_native_daily_visual_commit()
+	elif _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("complete_native_daily_moisture_commit"):
 		_data_core_world_ext.complete_native_daily_moisture_commit()
 	diag["moisture_committed"] = moisture_committed
@@ -9372,14 +9375,14 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 		return TerrainType.TERRAIN.TUNDRA
 
 	# [climate-zone-fix P1] 与 C++ pk_decide_terrain_ex 同源：湿端阈值按世界湿度天花板
-	# (land moist p90≈0.56)下移；旧单一"热带(>0.55)"拆成真热带(>0.66)与亚热带/暖温带
+	# 旧单一"热带(>0.55)"拆成真热带与亚热带/暖温带；连续雨林只占湿尾。
 	# (0.55–0.66)，让 FOREST 地形在亚热带可达，修复 SUBTROPICAL_FOREST 死分支。
 	# [zonal-envelope 2026-08-01] 与 C++ 完全重新同步（此前 GDScript 已漂移：温带 FOREST
-	# 0.48 vs C++ 0.55、缺凉带 t>0.30 STEPPE 限制与 TUNDRA 分支）：真热带 0.66→0.80
-	# (≈33°回归线外缘)、温带 FOREST 0.46、温带 GRASSLAND 0.28、凉带逻辑补齐。
+	# 真热带门为 0.80（≈33°回归线外缘），温带 FOREST 湿门 0.42、
+	# 温带 GRASSLAND 0.28，并保留凉带 STEPPE/TUNDRA 限制。
 	if temperature > 0.80:                         # 真热带（赤道带，0–33°）
-		if moisture > 0.56:
-			return TerrainType.TERRAIN.JUNGLE     # 热带雨林/季风林（0.54→0.56，C++ 同步）
+		if moisture > 0.64:
+			return TerrainType.TERRAIN.JUNGLE     # 连续湿润热带森林（C++ 同步）
 		if moisture > 0.32:
 			return TerrainType.TERRAIN.SAVANNA    # 稀树草原
 		# [zonal-envelope 二轮] 热带草系干端 0.20→0.24，干端转真荒漠（C++ 同步）。
@@ -9397,8 +9400,8 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 		return TerrainType.TERRAIN.DESERT
 
 	if temperature > 0.38:                         # 温带（51–62°）
-		if moisture > 0.48:
-			return TerrainType.TERRAIN.FOREST     # 温带阔叶林（0.55→0.48 配合风暴路径湿带）
+		if moisture > 0.42:
+			return TerrainType.TERRAIN.FOREST     # 温带阔叶林（配合风暴路径湿带）
 		if moisture > 0.28:
 			return TerrainType.TERRAIN.GRASSLAND  # 温带草地（0.32→0.28 收窄草原漏斗）
 		if moisture > 0.16:
@@ -9576,20 +9579,20 @@ func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int
 			return VegetationType.VEG.TEMPERATE_DECIDUOUS
 		TerrainType.TERRAIN.JUNGLE:
 			# 热带高地云雾林 → 极湿雨林 → 季风半落叶 → 季雨林
-			# [climate-zone-fix P1] 阈值随湿度天花板(p90≈0.56)下移，雨林/季风林重新可达。
+			# 连续雨林只占湿尾，季风林承接中间湿度带。
 			if (is_alpine or is_hilly) and cell.moisture > 0.60:
 				return VegetationType.VEG.CLOUD_FOREST
-			if cell.moisture > 0.58:
+			if cell.moisture > 0.66:
 				return VegetationType.VEG.TROPICAL_RAINFOREST
-			if cell.moisture > 0.48:
+			if cell.moisture > 0.50:
 				return VegetationType.VEG.MONSOON_FOREST
 			return VegetationType.VEG.TROPICAL_DRY_FOREST
 		TerrainType.TERRAIN.SAVANNA:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW if cell.moisture > 0.45 else VegetationType.VEG.BOREAL_SHRUB
 			# Keep SAVANNA's wet edge aligned with _decide_terrain's JUNGLE boundary.
-			# [zonal-envelope] JUNGLE 边界 0.54→0.56，本湿门同步平移保持对齐（C++ 同步）。
-			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.56 else VegetationType.VEG.SAVANNA
+			# SAVANNA 湿端季风林门与 JUNGLE 0.64 边界同步（C++ 同步）。
+			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.64 else VegetationType.VEG.SAVANNA
 		TerrainType.TERRAIN.GRASSLAND:
 			if is_alpine:
 				return VegetationType.VEG.ALPINE_MEADOW
@@ -9632,8 +9635,8 @@ func _whittaker_vegetation(temperature: float, moisture: float, landform: int) -
 		return VegetationType.VEG.ALPINE_TUNDRA if is_alpine else VegetationType.VEG.TEMPERATE_STEPPE
 	# 暖温带
 	if temperature < 0.55:
-		# [zonal-envelope] 0.48 保持 / 草门 0.30→0.26，与 C++ pk_whittaker_vegetation 同步
-		if moisture > 0.48:
+		# 温带森林湿门 0.42 / 草门 0.26，与 C++ pk_whittaker_vegetation 同步。
+		if moisture > 0.42:
 			if is_alpine:
 				return VegetationType.VEG.TEMPERATE_CONIFER
 			if is_hilly:
@@ -9655,10 +9658,12 @@ func _whittaker_vegetation(temperature: float, moisture: float, landform: int) -
 			return VegetationType.VEG.DESERT_SCRUB   # 副热带旱坡
 		return VegetationType.VEG.TEMPERATE_STEPPE
 	# 真热带（0–33°）
-	# [zonal-envelope] 雨林湿门 0.58→0.56，与 JUNGLE 地形边界对齐（C++ 同步）
-	if moisture > 0.56:
+	# 连续雨林湿门 0.64，与 JUNGLE 地形边界对齐（C++ 同步）。
+	if moisture > 0.64:
 		return VegetationType.VEG.TROPICAL_RAINFOREST
-	if moisture > 0.38:
+	if moisture > 0.42:
+		return VegetationType.VEG.MONSOON_FOREST
+	if moisture > 0.34:
 		return VegetationType.VEG.TROPICAL_DRY_FOREST
 	# [zonal-envelope 二轮] SAVANNA 下限 0.20→0.24（C++ 同步）。
 	if moisture > 0.24:
@@ -16080,10 +16085,13 @@ func _apply_vegetation_dynamics(map: MapData, day_scale: float = 1.0) -> bool:
 
 		var next_r_for_streak: int = VegetationType.next_in_succession(cell.vegetation, 1)
 		var next_r_score_for_streak: float = -1.0
-		if next_r_for_streak >= 0 and next_r_for_streak != int(cell.vegetation):
+		if next_r_for_streak >= 0 \
+				and next_r_for_streak != int(cell.vegetation) \
+				and VegetationType._candidate_allowed(int(cell.terrain), next_r_for_streak):
 			next_r_score_for_streak = VegetationType.suitability_score(next_r_for_streak, temp, plant_water, int(cell.terrain), int(cell.landform))
 		var upgrade_candidate: bool = next_r_for_streak >= 0 \
 				and next_r_for_streak != int(cell.vegetation) \
+				and VegetationType._candidate_allowed(int(cell.terrain), next_r_for_streak) \
 				and next_r_score_for_streak >= compat + float(cp_vd.succession_min_compat_gain) \
 				and next_r_score_for_streak >= float(cp_vd.vitality_high_threshold)
 		var best_transition: int = VegetationType.best_suitability_target(cell.vegetation, temp, plant_water, int(cell.terrain), int(cell.landform))
@@ -16167,8 +16175,10 @@ func _trigger_succession(cell: HexCell, temp: float = 0.5, moist: float = 0.5, c
 		return false
 	if cell._vitality_high_streak >= _c().succession_upgrade_days:
 		var next_r: int = VegetationType.next_in_succession(cell.vegetation, 1)
-		var next_r_score: float = VegetationType.suitability_score(next_r, temp, moist, int(cell.terrain), int(cell.landform)) if next_r != cell.vegetation else -1.0
-		if next_r != cell.vegetation and next_r_score >= current_score + min_gain:
+		var next_r_allowed: bool = next_r != cell.vegetation \
+				and VegetationType._candidate_allowed(int(cell.terrain), next_r)
+		var next_r_score: float = VegetationType.suitability_score(next_r, temp, moist, int(cell.terrain), int(cell.landform)) if next_r_allowed else -1.0
+		if next_r_allowed and next_r_score >= current_score + min_gain:
 			cell.vegetation = next_r
 			cell.base_vegetation = next_r
 			# vegetation-survival-rebalance v2：软重置（详见退化分支同段注释）

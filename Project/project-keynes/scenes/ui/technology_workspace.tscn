@@ -1,0 +1,223 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/technology_workspace.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/research_weight_dial.tscn" id="3_dial"]
+[ext_resource type="PackedScene" path="res://scenes/ui/procurement_budget_slider.tscn" id="4_budget"]
+[ext_resource type="PackedScene" path="res://scenes/ui/technology_queue_drop_zone.tscn" id="5_zone"]
+[ext_resource type="PackedScene" path="res://scenes/ui/technology_tree_view.tscn" id="6_tree"]
+[ext_resource type="PackedScene" path="res://scenes/ui/technology_detail_card.tscn" id="7_detail"]
+
+[node name="TechnologyWorkspace" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="StatusStrip" type="PanelContainer" parent="Root"]
+layout_mode = 2
+theme_type_variation = &"PKInsetPanel"
+
+[node name="Row" type="HBoxContainer" parent="Root/StatusStrip"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Era" type="HBoxContainer" parent="Root/StatusStrip/Row"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/StatusStrip/Row/Era" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+[node name="Value" type="Label" parent="Root/StatusStrip/Row/Era"]
+layout_mode = 2
+text = "—"
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Points" type="HBoxContainer" parent="Root/StatusStrip/Row"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/StatusStrip/Row/Points" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+[node name="Value" type="Label" parent="Root/StatusStrip/Row/Points"]
+layout_mode = 2
+text = "—"
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Treasury" type="HBoxContainer" parent="Root/StatusStrip/Row"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/StatusStrip/Row/Treasury" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+[node name="Value" type="Label" parent="Root/StatusStrip/Row/Treasury"]
+layout_mode = 2
+text = "—"
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Queued" type="HBoxContainer" parent="Root/StatusStrip/Row"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/StatusStrip/Row/Queued" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+[node name="Value" type="Label" parent="Root/StatusStrip/Row/Queued"]
+layout_mode = 2
+text = "—"
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Completed" type="HBoxContainer" parent="Root/StatusStrip/Row"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/StatusStrip/Row/Completed" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+[node name="Value" type="Label" parent="Root/StatusStrip/Row/Completed"]
+layout_mode = 2
+text = "—"
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Purchased" type="HBoxContainer" parent="Root/StatusStrip/Row"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/StatusStrip/Row/Purchased" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+[node name="Value" type="Label" parent="Root/StatusStrip/Row/Purchased"]
+layout_mode = 2
+text = "—"
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Main" type="HBoxContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="PolicyPanel" type="PanelContainer" parent="Root/Main"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(234, 0)
+layout_mode = 2
+theme_type_variation = &"PKPanel"
+
+[node name="Scroll" type="ScrollContainer" parent="Root/Main/PolicyPanel"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Body" type="VBoxContainer" parent="Root/Main/PolicyPanel/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ResearchTitle" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+text = "研究方针"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Dial" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("3_dial")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Budget" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("4_budget")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Rule" type="HSeparator" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+
+[node name="QueueTitle" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+text = "研究队列"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Domain0" type="HBoxContainer" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/Main/PolicyPanel/Scroll/Body/Domain0" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+[node name="Name" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain0"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKMutedLabel"
+[node name="Share" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain0"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+[node name="Zone0" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("5_zone")]
+layout_mode = 2
+
+[node name="Domain1" type="HBoxContainer" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/Main/PolicyPanel/Scroll/Body/Domain1" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+[node name="Name" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain1"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKMutedLabel"
+[node name="Share" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain1"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+[node name="Zone1" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("5_zone")]
+layout_mode = 2
+
+[node name="Domain2" type="HBoxContainer" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/Main/PolicyPanel/Scroll/Body/Domain2" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+[node name="Name" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain2"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKMutedLabel"
+[node name="Share" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain2"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+[node name="Zone2" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("5_zone")]
+layout_mode = 2
+
+[node name="Domain3" type="HBoxContainer" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Icon" parent="Root/Main/PolicyPanel/Scroll/Body/Domain3" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+[node name="Name" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain3"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKMutedLabel"
+[node name="Share" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain3"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+[node name="Zone3" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("5_zone")]
+layout_mode = 2
+
+[node name="Tree" parent="Root/Main" instance=ExtResource("6_tree")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Detail" parent="Root/Main" instance=ExtResource("7_detail")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(292, 0)
+layout_mode = 2
+size_flags_vertical = 3

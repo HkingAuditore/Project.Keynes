@@ -19,7 +19,7 @@ func _run() -> void:
 	var family = FamilyLayerScript.new()
 	root.add_child(family)
 	family.configure([tree, conifer], true)
-	# 主 family buffer 与 Canopy shadow buffer 分帧上传。
+	# 主 family buffer 与直立植被 shadow buffer 分帧上传。
 	family.drain_one_shadow_upload()
 
 	_expect("same-family profiles collapse into one superchunk batch", family._entries.size() == 1)
@@ -44,6 +44,29 @@ func _run() -> void:
 	family.set_camera_view(Rect2(Vector2(-100, -100), Vector2(200, 200)), Vector2.ZERO, 1.20)
 	_expect("consolidated canopy shadow enables at zoom 1.10+",
 		family._shadow_entries.values()[0].visible)
+
+	var shrub = _make_source(ProfileScript.DetailKind.SHRUB, 2, 0.20)
+	var grass = _make_source(ProfileScript.DetailKind.GRASS, 2, 0.30)
+	var flower = _make_source(ProfileScript.DetailKind.ALPINE_FLOWER, 1, 0.40)
+	var upright_family = FamilyLayerScript.new()
+	root.add_child(upright_family)
+	upright_family.configure([shrub, grass, flower], true)
+	while upright_family.drain_one_shadow_upload():
+		pass
+	upright_family.set_camera_view(
+		Rect2(Vector2(-100, -100), Vector2(200, 200)), Vector2.ZERO, 1.20)
+	_expect("upright brush and mixed ground families receive shadow batches",
+		upright_family._shadow_entries.size() == 2)
+	var shadows_below_sources := true
+	for key in upright_family._shadow_entries.keys():
+		shadows_below_sources = shadows_below_sources \
+			and upright_family._shadow_entries[key].z_index < upright_family._entries[key].node.z_index
+	_expect("each family shadow pass stays below its vegetation batch", shadows_below_sources)
+	var style_image: Image = upright_family._style_lut.get_image()
+	_expect("family shadow LUT keeps grass shadow-free while upright styles cast",
+		style_image.get_pixel(2, 0).r > 0.5
+		and style_image.get_pixel(2, 1).r < 0.5
+		and style_image.get_pixel(2, 2).r > 0.5)
 
 	var cache_source = ShrubLayerScript.new()
 	cache_source.profile = ProfileScript.new()
@@ -72,6 +95,11 @@ func _run() -> void:
 	tree.free()
 	conifer.free()
 	cache_source.free()
+	upright_family._sources.clear()
+	upright_family.free()
+	shrub.free()
+	grass.free()
+	flower.free()
 	print("=== vegetation family layer: %d checks, %d failures ===" % [_checks, _failures])
 
 

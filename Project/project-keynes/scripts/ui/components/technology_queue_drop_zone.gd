@@ -11,16 +11,11 @@ var _hint: Label
 
 func configure(domain: int) -> void:
 	domain_index = domain
-	custom_minimum_size.y = 22
-	mouse_filter = Control.MOUSE_FILTER_STOP
 	if _hint != null:
 		return
-	_hint = Label.new()
-	_hint.text = "空闲 · 双击科技加入"
-	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_hint.add_theme_color_override("font_color", UITokens.TEXT_FAINT)
-	add_child(_hint)
+	_hint = get_node_or_null("Hint") as Label
+	if _hint == null:
+		push_error("TechnologyQueueDropZone 必须通过 technology_queue_drop_zone.tscn 实例化。")
 
 
 # Only queue rows are recycled; the empty hint stays alive so the drop target

@@ -1,6 +1,8 @@
 extends VBoxContainer
 class_name InsightList
 
+const InsightRowScene := preload("res://scenes/ui/insight_row.tscn")
+
 const ROW_CAPACITY := 4
 
 var _rows: Array[HBoxContainer] = []
@@ -17,16 +19,9 @@ func set_items(items: Array) -> void:
 	add_theme_constant_override("separation", UITokens.SPACE_SM)
 	var capacity := maxi(ROW_CAPACITY, items.size())
 	for i in range(capacity):
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", UITokens.SPACE_SM)
-		var icon := IconBadge.new()
-		icon.custom_minimum_size = Vector2(24.0, 24.0)
-		row.add_child(icon)
-		var label := Label.new()
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-		row.add_child(label)
+		var row := InsightRowScene.instantiate() as HBoxContainer
+		var icon := row.get_node("Icon") as IconBadge
+		var label := row.get_node("Label") as Label
 		add_child(row)
 		_rows.append(row)
 		_icons.append(icon)

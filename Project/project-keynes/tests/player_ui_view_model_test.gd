@@ -111,8 +111,8 @@ func _initialize() -> void:
 	var tabs: Array = model.get("tabs", [])
 	if tabs.size() != 5:
 		failures.append("expected five dossier tabs")
-	var expected_tabs := ["geography", "population", "market", "buildings", "natural_resources"]
-	var expected_labels := ["地理信息", "人口信息", "市场信息", "建筑", "自然资源"]
+	var expected_tabs := ["geography", "population", "families", "market", "buildings"]
+	var expected_labels := ["地理信息", "人口信息", "家族", "市场信息", "建筑"]
 	for i in range(expected_tabs.size()):
 		if i >= tabs.size() or String(tabs[i].get("id", "")) != expected_tabs[i] \
 				or String(tabs[i].get("label", "")) != expected_labels[i]:
@@ -143,7 +143,7 @@ func _initialize() -> void:
 	var categories: Dictionary = model.get("categories", {})
 	if categories.size() != 1 or not categories.has("geography"):
 		failures.append("initial dossier model eagerly built hidden tab data")
-	for lazy_tab in ["population", "market", "buildings", "natural_resources"]:
+	for lazy_tab in ["population", "families", "market", "buildings"]:
 		categories[lazy_tab] = view_model.build_tab_category(cell, lazy_tab)
 	var geography: Dictionary = categories.get("geography", {})
 	var physical: Dictionary = _find_section(geography.get("sections", []), "physical_geography")
@@ -188,7 +188,8 @@ func _initialize() -> void:
 			if String((raw as Dictionary).get("id", "")).is_empty():
 				failures.append("%s chart missing stable id" % tab_id)
 
-	var resource_rows: Array = (categories.get("natural_resources", {}) as Dictionary).get("resource_rows", [])
+	var resource_rows: Array = _find_section(
+		geography.get("sections", []), "natural_resources").get("resource_rows", [])
 	var expected_land_rows := ResourceProfileRegistry.ordered().filter(
 		func(p): return ResourceProfileRegistry.habitat_available(p, 1)).size()
 	if resource_rows.size() != expected_land_rows:
@@ -202,11 +203,12 @@ func _initialize() -> void:
 	var timber_row := _find_by_id(resource_rows, "timber")
 	var iron_row := _find_by_id(resource_rows, "iron_ore")
 	var pasture_row := _find_by_id(resource_rows, "pasture")
-	if String(timber_row.get("density", "")) != "丰饶":
+	if String(timber_row.get("density", "")) != _expected_density("timber", 12500.0):
 		failures.append("timber density did not use its resource-specific reference scale")
-	if String(iron_row.get("density", "")) != "贫乏":
+	if String(iron_row.get("density", "")) != _expected_density("iron_ore", 10000.0):
 		failures.append("iron density still behaves like a raw absolute threshold")
-	if pasture_row.is_empty() or String(pasture_row.get("icon", "")) != "livestock":
+	if pasture_row.is_empty() or String(pasture_row.get("icon", "")) \
+			!= String(_resource_icon("pasture")):
 		failures.append("pasture capacity did not replace species livestock resource rows")
 	var gated_resources: Array = view_model._resource_state(0, false, {
 		"enforce_discovery": true,
@@ -214,9 +216,11 @@ func _initialize() -> void:
 		"enforce_extraction": true,
 		"extractable_resource_ids": {&"timber": true, &"rare_earth": true},
 	})
-	if _find_by_id(gated_resources, "timber").is_empty() \
+	var gated_timber := _find_by_id(gated_resources, "timber")
+	var gated_iron := _find_by_id(gated_resources, "iron_ore")
+	if gated_timber.is_empty() or not bool(gated_timber.get("extractable", false)) \
 			or not _find_by_id(gated_resources, "rare_earth").is_empty() \
-			or not _find_by_id(gated_resources, "iron_ore").is_empty():
+			or gated_iron.is_empty() or bool(gated_iron.get("extractable", true)):
 		failures.append("resource dossier did not enforce discovery and extraction technology")
 
 	var population_category: Dictionary = view_model._population_category({
@@ -496,7 +500,7 @@ func _initialize() -> void:
 			failures.append("suspended finance card still presents zero cashflow without context")
 
 	map.res_timber_reserve_arr[0] = 12600.0
-	view_model.build_live_patch(cell, "natural_resources")
+	view_model.build_live_patch(cell, "geography")
 
 	cell.temperature = 0.64
 	view_model.observe_temperature(cell, 1)
@@ -516,7 +520,7 @@ func _initialize() -> void:
 		failures.append("temperature chart rewrote its history instead of appending the new day")
 
 	view_model.set_context(map, null, null, null, 0.42, 22.0)
-	view_model.build_live_patch(cell, "natural_resources")
+	view_model.build_live_patch(cell, "geography")
 	if not is_equal_approx(float(map.res_timber_reserve_arr[0]), 12600.0):
 		failures.append("UI view model mutated simulation reserve data")
 	if not is_equal_approx(before_reserve, 12500.0):
@@ -541,6 +545,27 @@ func _find_by_id(items: Array, target_id: String) -> Dictionary:
 
 func _find_section(items: Array, target_id: String) -> Dictionary:
 	return _find_by_id(items, target_id)
+
+
+func _resource_profile(resource_id: String):
+	for profile in ResourceProfileRegistry.ordered():
+		if String(profile.id) == resource_id:
+			return profile
+	return null
+
+
+func _resource_icon(resource_id: String) -> StringName:
+	return ResourceProfileRegistry.icon_key(_resource_profile(resource_id))
+
+
+func _expected_density(resource_id: String, reserve: float) -> String:
+	var ratio := reserve / ResourceProfileRegistry.reference_reserve(
+		_resource_profile(resource_id))
+	if ratio < 0.05: return "贫乏"
+	if ratio < 0.25: return "稀少"
+	if ratio < 0.55: return "可采"
+	if ratio < 0.80: return "富集"
+	return "丰饶"
 
 
 func _is_legacy_icon(icon: String) -> bool:

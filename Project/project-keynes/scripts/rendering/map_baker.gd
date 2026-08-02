@@ -6726,6 +6726,7 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 	out["refresh_ms"] = float(Time.get_ticks_usec() - t_refresh_us) / 1000.0
 
 	var bounds: Rect2 = world.world_bounds
+	var wrap_period_x: float = world.wrap_period_x
 	var days_per_year_phys: int = _calendar_days_per_year(profile)
 	var sim_day_phys: int = sim_day_override if sim_day_override >= 0 \
 			else _season_phase_to_day_of_year(season_phase, days_per_year_phys)
@@ -6749,6 +6750,8 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			"smooth_passes": 1,
 			"world_bounds_pos_y": bounds.position.y,
 			"world_bounds_size_y": bounds.size.y,
+			"wrap_origin_x": 0.0,
+			"wrap_period_x": wrap_period_x,
 			"neighbor_indices": nb_idx,
 			"water_terrain_ids": water_ids,
 			"prev_slp_arr": map.slp_arr,
@@ -6817,6 +6820,8 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			"terrain_aware": (1 if terrain_aware else 0),
 			"world_bounds_pos_y": bounds.position.y,
 			"world_bounds_size_y": bounds.size.y,
+			"wrap_origin_x": 0.0,
+			"wrap_period_x": wrap_period_x,
 			"neighbor_indices": nb_idx,
 			"slp_arr": slp_for_wind,
 			"water_terrain_ids": water_ids,
@@ -6951,6 +6956,7 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 	_phys_water_ids_cache.append(int(TerrainType.TERRAIN.KELP))
 	var nb: PackedInt32Array = map.neighbor_indices_packed()
 	var n_cells: int = map.soa_size()
+	var wrap_period_x: float = HexUtils.wrap_period_x(map.width, hex_size)
 	var days_per_year: int = _calendar_days_per_year(profile)
 	var axial_tilt: float = profile.axial_tilt_deg if profile != null else 23.5
 	var insolation_amp: float = profile.insolation_daylen_amp if profile != null else 0.35
@@ -6965,6 +6971,8 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		"smooth_passes": 1,  # mirrors PhysCircSolverScript._SLP_SMOOTH_PASSES
 		"world_bounds_pos_y": bounds.position.y,
 		"world_bounds_size_y": bounds.size.y,
+		"wrap_origin_x": 0.0,
+		"wrap_period_x": wrap_period_x,
 		"neighbor_indices": nb,
 		"water_terrain_ids": _phys_water_ids_cache,
 		"slp_lat_amp": 0.16,
@@ -6992,6 +7000,8 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		"terrain_aware": terrain_aware_i,
 		"world_bounds_pos_y": bounds.position.y,
 		"world_bounds_size_y": bounds.size.y,
+		"wrap_origin_x": 0.0,
+		"wrap_period_x": wrap_period_x,
 		"neighbor_indices": nb,
 		"water_terrain_ids": _phys_water_ids_cache,
 		"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
@@ -7905,6 +7915,8 @@ func _physical_solve_native_oneshot(map: MapData, world: WorldData, hex_size: fl
 		"season_phase": season_phase,
 		"world_bounds_pos_y": bounds.position.y,
 		"world_bounds_size_y": bounds.size.y,
+		"wrap_origin_x": 0.0,
+		"wrap_period_x": world.wrap_period_x,
 		"neighbor_indices": nb_idx,
 		"water_terrain_ids": water_ids,
 		"days_per_year": days_per_year_phys,

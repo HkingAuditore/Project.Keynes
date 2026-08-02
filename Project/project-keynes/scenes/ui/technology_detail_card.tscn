@@ -1,0 +1,102 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/technology_detail_card.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/badge_row.tscn" id="3_badges"]
+[ext_resource type="PackedScene" path="res://scenes/ui/radial_gauge.tscn" id="4_gauge"]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="5_insights"]
+
+[node name="TechnologyDetailCard" type="PanelContainer"]
+theme_type_variation = &"PKPanel"
+script = ExtResource("1_script")
+
+[node name="Scroll" type="ScrollContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Body" type="VBoxContainer" parent="Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Scroll/Body"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HeaderIcon" parent="Scroll/Body/Header" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 30)
+layout_mode = 2
+
+[node name="Titles" type="VBoxContainer" parent="Scroll/Body/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="NameLabel" type="Label" parent="Scroll/Body/Header/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+theme_type_variation = &"PKTitle"
+
+[node name="StateLabel" type="Label" parent="Scroll/Body/Header/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Placeholder" type="Label" parent="Scroll/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="DetailBlock" type="VBoxContainer" parent="Scroll/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Chips" parent="Scroll/Body/DetailBlock" instance=ExtResource("3_badges")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Gauge" parent="Scroll/Body/DetailBlock" instance=ExtResource("4_gauge")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(118, 122)
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="Effects" parent="Scroll/Body/DetailBlock" instance=ExtResource("5_insights")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PrerequisiteTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "前置条件"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Prerequisites" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="SuccessorTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "将解锁"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Successors" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Action" type="Button" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKPrimaryButton"

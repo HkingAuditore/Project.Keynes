@@ -1,24 +1,28 @@
 class_name PauseMenu
 extends Control
 
+const MenuButtonScene := preload("res://scenes/ui/pause_menu_button.tscn")
+const SettingsFormScene := preload("res://scenes/ui/pause_settings_form.tscn")
+
 signal continue_requested()
 signal return_menu_requested()
 signal exit_requested()
 signal visibility_requested(open: bool)
 
 var _panel: VBoxContainer
+var _rows: VBoxContainer
+var _title_label: Label
 var _status: Label
 var _pending_destructive_action: String = ""
 
 
 func _ready() -> void:
-	visible = false
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_panel = %Panel
-	for child in _panel.get_children():
-		child.queue_free()
-	_make_status_label()
+	_panel = get_node_or_null("Center/Frame/Panel") as VBoxContainer
+	_title_label = get_node_or_null("Center/Frame/Panel/Title") as Label
+	_rows = get_node_or_null("Center/Frame/Panel/Rows") as VBoxContainer
+	_status = get_node_or_null("Center/Frame/Panel/Status") as Label
+	if _panel == null or _title_label == null or _rows == null or _status == null:
+		push_error("PauseMenu 必须通过 pause_menu.tscn 实例化。")
 
 
 func open() -> void:
@@ -60,7 +64,6 @@ func _show_main() -> void:
 	_add_button("设置", "settings", _show_settings)
 	_add_button("返回主菜单", "back", func() -> void: return_menu_requested.emit())
 	_add_button("退出", "close", func() -> void: exit_requested.emit())
-	_panel.add_child(_status)
 	_status.visible = false
 
 
@@ -71,7 +74,6 @@ func _show_save() -> void:
 		_add_button("手动存档 %s" % slot_id.trim_prefix("manual_"), "confirm",
 			func() -> void: _save_slot(slot_id))
 	_add_button("返回", "back", _show_main)
-	_panel.add_child(_status)
 	_status.visible = false
 
 
@@ -99,30 +101,23 @@ func _show_settings() -> void:
 	var current: Dictionary = settings_service.values() if settings_service != null else {
 		"render_quality": "auto", "ui_scale_percent": 100,
 		"master_volume": 1.0, "master_muted": false}
-	var quality := OptionButton.new()
+	var form := SettingsFormScene.instantiate() as VBoxContainer
+	_rows.add_child(form)
+	var quality := form.get_node("Quality") as OptionButton
 	for entry in [{"label": "自动画质", "id": "auto"}, {"label": "低画质", "id": "low"},
 			{"label": "中画质", "id": "medium"}, {"label": "高画质", "id": "high"}]:
 		quality.add_item(entry.label)
 		quality.set_item_metadata(quality.item_count - 1, entry.id)
 		if entry.id == current.render_quality: quality.select(quality.item_count - 1)
-	_panel.add_child(quality)
-	var scale := OptionButton.new()
+	var scale := form.get_node("Scale") as OptionButton
 	for value in [80, 100, 125, 150]:
 		scale.add_item("界面缩放 %d%%" % value)
 		scale.set_item_metadata(scale.item_count - 1, value)
 		if value == int(current.ui_scale_percent): scale.select(scale.item_count - 1)
-	_panel.add_child(scale)
-	var volume := HSlider.new()
-	volume.min_value = 0
-	volume.max_value = 1
-	volume.step = 0.01
+	var volume := form.get_node("Volume") as HSlider
 	volume.value = float(current.master_volume)
-	volume.tooltip_text = "主音量"
-	_panel.add_child(volume)
-	var mute := CheckBox.new()
-	mute.text = "静音"
+	var mute := form.get_node("Mute") as CheckBox
 	mute.button_pressed = bool(current.master_muted)
-	_panel.add_child(mute)
 	_add_button("应用", "confirm", func() -> void:
 		if settings_service != null:
 			settings_service.update({"render_quality": quality.get_selected_metadata(),
@@ -154,46 +149,22 @@ func _finish_pending_action() -> void:
 
 
 func _clear_panel() -> void:
-	for child in _panel.get_children(): child.queue_free()
-	_make_status_label()
-
-
-func _make_status_label() -> void:
-	_status = Label.new()
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status.add_theme_color_override("font_color", UITokens.WARN)
+	for child in _rows.get_children():
+		child.queue_free()
+	_status.visible = false
 
 
 func _title(text_value: String) -> void:
-	var title := Label.new()
-	title.text = text_value
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 26)
-	title.add_theme_color_override("font_color", Color("d9c58c"))
-	_panel.add_child(title)
+	_title_label.text = text_value
 
 
 func _add_button(text_value: String, icon: String, callback: Callable) -> Button:
-	var button := Button.new()
-	button.custom_minimum_size.y = 44.0
-	button.text = ""
+	var button := MenuButtonScene.instantiate() as Button
 	button.tooltip_text = text_value
-	var row := HBoxContainer.new()
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 10)
-	var icon_label := Label.new()
-	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var icon_label := button.get_node("Row/Icon") as Label
 	IconButton.apply_to_label(icon_label, StringName(icon), 15)
-	icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(icon_label)
-	var text_label := Label.new()
-	text_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var text_label := button.get_node("Row/Label") as Label
 	text_label.text = text_value
-	text_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(text_label)
-	button.add_child(row)
 	button.pressed.connect(callback)
-	_panel.add_child(button)
+	_rows.add_child(button)
 	return button

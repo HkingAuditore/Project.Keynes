@@ -28,6 +28,7 @@ render_mode blend_mix;
 // [terrain-material-tiles 2026-08-01b] debug_view=7 材质门禁可视化（GM 面板可切）；touch。
 // [terrain-material-tiles 2026-08-01c] 材质强度默认值提升（albedo 0.6 / normal 0.15）；touch。
 // [terrain-material-tiles 2026-08-01d] world_size 128→384 修 mipmap 预滤波；GPT-image-2 风格化贴图换源；touch。
+// [water-edge-continuous 2026-08-02] 水体静态类别/水深改用距离场连续混合；LOW 编译期旁路。
 // ═══════════════════════════════════════════════════════════════════════════
 // 本文件 2026-05-19 由 2299 行单文件拆分为 1 个主 shader + 多个 .gdshaderinc：
 //   uniforms / common_noise / height / climate_season / biome_color / vegetation /
@@ -257,27 +258,30 @@ void fragment() {
 			}
 		}
 	}
-	// Ocean visual ownership deliberately combines the broad distance field with
-	// DitherUV on every platform. It only selects between two water cells; the
-	// primary cell still owns topology, interaction, simulation and the branch.
-	int visual_water_biome = biome;
-	int visual_water_cover = cover;
+	// Water keeps hard primary ownership, but MID/HIGH pass the secondary static
+	// material and a continuous distance-field weight into one water evaluation.
+	// LOW compiles this lookup out entirely. Dynamic state remains primary-owned.
+	int water_secondary_biome = biome;
+	int water_secondary_cover = cover;
+	float water_static_edge_mix = 0.0;
 	float visual_water_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
+#if !defined(PK_QUALITY_LOW)
 	if (is_water && _cell_id >= 0 && has_terrain_edge_data) {
 		float water_edge_w = terrain_edge_secondary_weight(uv, wp);
-		if (water_edge_w > 0.0001
-				&& terrain_mobile_dither_uv_threshold(uv, wp) < water_edge_w) {
+		if (water_edge_w > 0.0001) {
 			int water_secondary_id = decode_edge_secondary_index(uv);
 			if (water_secondary_id >= 0) {
 				vec4 water_secondary_enum = texture(enum_lut, cell_lut_uv(water_secondary_id));
-				int water_secondary_biome = int(water_secondary_enum.r * 255.0 + 0.5);
-				if (terrain_static_biome_is_water(water_secondary_biome)) {
-					visual_water_biome = water_secondary_biome;
-					visual_water_cover = int(water_secondary_enum.b * 255.0 + 0.5);
+				int candidate_biome = int(water_secondary_enum.r * 255.0 + 0.5);
+				if (terrain_static_biome_is_water(candidate_biome)) {
+					water_secondary_biome = candidate_biome;
+					water_secondary_cover = int(water_secondary_enum.b * 255.0 + 0.5);
+					water_static_edge_mix = water_edge_w;
 				}
 			}
 		}
 	}
+#endif
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 1：季节相位 + 当前温度（每帧由 WorldClock 驱动）
@@ -319,11 +323,12 @@ void fragment() {
 				eco_transition, eco_growth, eco_valid, pixel_noise);
 		} else {
 			col = render_water_pipeline(
-				visual_water_biome, visual_water_cover, elev, wp, uv, scals,
+				biome, cover, water_secondary_biome, water_secondary_cover,
+				water_static_edge_mix, elev, wp, uv, scals,
 				lat_signed, current_temp, ocean_current_v, wind_v,
 				visual_water_ice_fraction);
 		}
-		int visual_surface_cover = is_water ? visual_water_cover : visual_land_cover;
+		int visual_surface_cover = is_water ? cover : visual_land_cover;
 		int visual_surface_veg = is_water ? veg : visual_land_veg;
 
 		// 已探索但当前不可见 → 去饱和 + 压暗。k=0.5 处最灰，k=1 归零。

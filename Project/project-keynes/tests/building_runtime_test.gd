@@ -62,6 +62,7 @@ func _run() -> void:
 	_test_last_building_demolition_releases_profession_cohorts(catalog, profile)
 	_test_non_due_construction_employment_metrics(catalog, profile)
 	_test_active_owner_income_reallocation(catalog, profile)
+	_test_employee_income_reallocation_to_owner(catalog, profile)
 	_test_surplus_merchant_can_change_owner_job(catalog, profile)
 	_test_same_profession_owner_income_reallocation(catalog, profile)
 	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
@@ -418,7 +419,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v27 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 27)
+	_expect("building v28 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 28)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -1080,6 +1081,87 @@ func _test_active_owner_income_reallocation(source_catalog: Dictionary,
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
+
+
+func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var merchant_sig := signatures.find("merchant|default")
+	var miner_sig := signatures.find("miner|default")
+	var forager_sig := signatures.find("forager|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var silver_id := building_ids.find("surface_silver_working")
+	var gathering_id := building_ids.find("gathering_ground")
+	var timber_id := building_ids.find("timber_collector")
+	var goods: PackedStringArray = catalog.good_ids
+	var plants_good := goods.find("gathered_plants")
+	var logs_good := goods.find("logs")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	# Keep silver first in ordinary unemployed hiring while making the food owner
+	# opening materially better than the miner's tax-adjusted contract wage.
+	prices[plants_good] = 12000
+	max_prices[plants_good] = 12000
+	prices[logs_good] = 100000
+	max_prices[logs_good] = 100000
+	catalog.good_default_price = prices
+	catalog.good_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("employee-owner mobility country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 440))
+	_expect("employee-owner mobility runtime configures", bool(ext.configure_economy(
+		catalog, profile, 1, 440).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([merchant_sig, miner_sig, forager_sig]),
+		"population": PackedInt64Array([2, 1, 1]),
+		"funds": PackedInt64Array([2000000, 1000000, 1000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0, 0]),
+		"building_type_ids": PackedInt32Array([silver_id, gathering_id, timber_id]),
+		"building_owner_signature_ids": PackedInt32Array([
+			merchant_sig, forager_sig, forager_sig]),
+		"building_counts": PackedInt64Array([1, 1, 1]),
+	})
+	_expect("employee-owner mobility fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		print("  employee-owner bootstrap error=", boot)
+		return
+	_run_day(ext, 0)
+	var report := _run_day(ext, 1)
+	var final_report := _run_day(ext, 2)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var silver_group := (buildings.group_type_ids as PackedInt32Array).find(silver_id)
+	var gathering_group := (buildings.group_type_ids as PackedInt32Array).find(gathering_id)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var merchant_row := _row_for_signature(population, merchant_sig)
+	_expect("higher food owner income attracts an incumbent mining employee",
+		silver_group >= 0 and gathering_group >= 0 and
+		int((buildings.projected_owner_income_per_day as PackedInt64Array)[gathering_group]) >
+			40000 * 9 / 8 and
+		int((buildings.filled_owner as PackedInt64Array)[gathering_group]) == 1 and
+		int(report.get("building_employee_to_owner_reallocations", 0)) == 1 and
+		int(report.get("building_owner_job_profession_changes", 0)) >= 1)
+	_expect("employee-owner mobility retains the final merchant and produces food",
+		merchant_row >= 0 and
+		int((population.populations as PackedInt64Array)[merchant_row]) >= 1 and
+		int((buildings.last_output as PackedInt64Array)[gathering_group]) > 0)
+	_expect("employee-owner mobility conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0 and
+		int(final_report.get("population_error", 1)) == 0 and
+		int(final_report.get("money_error", 1)) == 0 and
+		int(final_report.get("goods_error", 1)) == 0)
 
 
 func _test_surplus_merchant_can_change_owner_job(source_catalog: Dictionary,

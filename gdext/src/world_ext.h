@@ -164,6 +164,9 @@ public:
     godot::Dictionary configure_native_world(const godot::Dictionary &knobs);
     godot::Dictionary run_native_daily_tick(const godot::Dictionary &tick_knobs);
     godot::Dictionary run_native_daily_slice(const godot::Dictionary &tick_knobs);
+    bool is_native_daily_visual_commit_pending() const;
+    void complete_native_daily_visual_commit();
+    // Compatibility alias for callers predating the full visual-snapshot barrier.
     void complete_native_daily_moisture_commit();
     // ② Native finalizer kernel for the round-complete delta-cap + thermal-init loops.
     godot::Dictionary run_native_daily_finalizer(godot::Dictionary knobs);
@@ -2190,7 +2193,7 @@ private:
     godot::Dictionary                        _native_daily_report;
     godot::Dictionary                        _native_shadow_diff_report;
     bool                                      _native_daily_slice_active = false;
-    bool                                      _native_daily_moisture_commit_pending = false;
+    bool                                      _native_daily_visual_commit_pending = false;
     int                                       _native_daily_slice_node_index = 0;
     int                                       _native_daily_slice_cell_cursor = 0;
     int                                       _native_daily_slice_range_node_index = -1;

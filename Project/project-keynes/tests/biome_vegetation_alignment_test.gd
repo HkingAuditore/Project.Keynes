@@ -120,10 +120,10 @@ func _test_derive_representatives() -> void:
 	var generator := MapGenerator.new()
 	var cases: Array = [
 		[TerrainType.TERRAIN.FOREST, 0.60, 0.60, 0.60, VegetationType.VEG.SUBTROPICAL_FOREST],
-		[TerrainType.TERRAIN.JUNGLE, 0.50, 0.78, 0.50, VegetationType.VEG.MONSOON_FOREST],
+		[TerrainType.TERRAIN.JUNGLE, 0.51, 0.78, 0.50, VegetationType.VEG.MONSOON_FOREST],
 		[TerrainType.TERRAIN.JUNGLE, 0.70, 0.82, 0.60, VegetationType.VEG.TROPICAL_RAINFOREST],
 		[TerrainType.TERRAIN.SAVANNA, 0.50, 0.75, 0.53, VegetationType.VEG.SAVANNA],
-		[TerrainType.TERRAIN.SAVANNA, 0.60, 0.75, 0.56, VegetationType.VEG.MONSOON_FOREST],
+		[TerrainType.TERRAIN.SAVANNA, 0.65, 0.75, 0.64, VegetationType.VEG.MONSOON_FOREST],
 		[TerrainType.TERRAIN.GRASSLAND, 0.45, 0.50, 0.40, VegetationType.VEG.TEMPERATE_GRASSLAND],
 		[TerrainType.TERRAIN.STEPPE, 0.35, 0.45, 0.25, VegetationType.VEG.TEMPERATE_STEPPE],
 		[TerrainType.TERRAIN.DESERT, 0.08, 0.80, 0.08, VegetationType.VEG.XERIC_DESERT],

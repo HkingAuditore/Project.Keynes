@@ -11,6 +11,7 @@ func _init() -> void:
 
 
 func _run() -> void:
+	root.size = Vector2i(1280, 720)
 	var packed := load("res://scenes/player_game.tscn") as PackedScene
 	var game := packed.instantiate()
 	var runtime: WorldRuntimeHost = game.get_node("RuntimeHost")
@@ -32,7 +33,7 @@ func _run() -> void:
 	_expect("encode and upload stay below legacy warning threshold",
 		float(result.get("encode_upload_ms", 999.0)) < 5.0)
 	_expect("overlay quad visible", game.get_node("WorldRoot/DataOverlayLayer").visible)
-	var toolbar := game.get_node_or_null("UI/MapOverlayToolbar") as MapOverlayToolbar
+	var toolbar := game.get_node_or_null("UI/UIRoot/HUDLayer/MapOverlayToolbar") as MapOverlayToolbar
 	_expect("toolbar exists", toolbar != null)
 	if toolbar != null:
 		toolbar.call("_set_category", MapOverlayToolbar.Category.RESOURCES)
@@ -44,7 +45,7 @@ func _run() -> void:
 		_expect("resource submenu is actually scrollable",
 			float(layout.get("scroll_max", 0.0)) > float(layout.get("scroll_page", 0.0)))
 		_expect("close layer action stays visible", bool(layout.get("close_visible", false)))
-		var legend := game.get_node_or_null("UI/MapOverlayLegend") as Control
+		var legend := game.get_node_or_null("UI/UIRoot/HUDLayer/MapOverlayLegend") as Control
 		if legend != null:
 			var legend_rect := Rect2(legend.global_position, legend.size)
 			var secondary_rect: Rect2 = layout.get("secondary_rect", Rect2())
@@ -52,7 +53,7 @@ func _run() -> void:
 				not legend_rect.intersects(secondary_rect))
 			_expect("legend is docked below the map reading line",
 				legend_rect.get_center().y > root.get_viewport().get_visible_rect().size.y * 0.5)
-			var right_panel := game.get_node_or_null("UI/RightPanel") as Control
+			var right_panel := game.get_node_or_null("UI/UIRoot/PanelLayer/RightPanel") as Control
 			if right_panel != null:
 				right_panel.visible = true
 				await process_frame

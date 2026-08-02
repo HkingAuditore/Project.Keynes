@@ -22,7 +22,7 @@ computes Q16 temperature fit, water fit, and floor/exposure capacity. Employment
 uses the pre-climate plan, while expected revenue, investment, retained offers,
 input/resource withdrawals, and actual output use the climate-capped plan.
 Production applies the cap after labor, input, capital, and resource abilities.
-CSV v22 and selected-cell snapshots expose the decomposition; no new scheduler
+CSV v23 and selected-cell snapshots expose the decomposition; no new scheduler
 stage or GDScript economy authority exists.
 
 ## PKEC v19 就业稳定、企业重整与商人信用（historical）
@@ -126,10 +126,11 @@ state is introduced.
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v27 是当前 writer：保留 v26 的 FamilyStore、cohort membership、building ownership 与
+- PKEC v28 是当前 writer：保留 v27 的 FamilyStore、人物、cohort membership、building ownership 与
   family catalog hash，并追加 NotablePersonStore、人物需求归因和 person catalog hash。保存
   BuildingIdentityStore、Economy Modifier domain、逐 cell 六列冻结环境、建筑气候诊断、补贴权重与
-  财政累计。v26 显式迁移为空人物，v25 显式迁移为空家族；其余 reader 白名单见存档 SOP。
+  财政累计，并保存逐 cell、逐民族 Q32 出生余数。v27 显式迁移为空出生余数，v26 显式迁移为空人物，
+  v25 显式迁移为空家族；其余 reader 白名单见存档 SOP。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
   成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 - 重要人物不创建第二人口、钱包或订单；姓名、岗位、建筑、财产与需求均为家族/cohort 已实现结果的
@@ -410,12 +411,16 @@ ACTIVE 自营业建筑的 planned owner demand 始终等于完整物理业主席
 实物生活收入，但不铸币。
 之后、publish 之前另执行一次只裁不招的就业对账，使 committed `filled_owner`、role fill 与 cohort
 `owner_employed/employee_employed` 始终一致；新空缺留到下一周期正常招聘，不追溯改变本期生产或工资。
-失业池招聘完成后，仍有业主空缺的 ACTIVE 非服务建筑可从同民族、至少有一名业主的 ACTIVE 非服务建筑
-吸引一名业主。目标按冻结预期业主日收入降序，来源按该收入升序；只有目标收入严格更高时，才按
-`(target_income-source_income)/target_income` 做无状态确定性概率判定。每个目标和来源建筑组每周期
-最多参与一次成功流动，来源可失去最后一名业主，但最后一名本地商人不可流出。同职业只重配两个组的
-`filled_owner`；跨职业才通过 `move_cohort_population()` 按人口比例携带资金和当期 cohort 账目，
-不发生出资、建设或额外现金转移。SUSPENDED、service、不可用建筑与不同民族不参与。
+失业池招聘完成后，仍有业主空缺的 ACTIVE 非服务建筑可从同民族、至少有一名业主的 ACTIVE 建筑
+吸引一名业主；若没有合格业主来源，还可从任一 ACTIVE 建筑吸引同民族在岗 employee 晋升或转行为
+owner。目标按冻结预期税后业主日收入降序，owner 来源按该收入升序，employee 来源按合同工资的
+预计税后收入升序；目标收入必须至少高出来源 12.5%，达到门槛后确定性转岗，不再用随机抽签截断
+已经形成的价格信号。每个目标和来源建筑组每周期最多参与一次成功流动，来源可失去最后一名普通
+业主或 employee，但最后一名本地商人不可流出。同职业只调整岗位归属；跨职业通过
+`move_cohort_population()` 按人口比例携带资金和当期 cohort 账目，不发生出资、建设或额外现金
+转移。SUSPENDED、不可用建筑与不同民族不参与。report 以
+`building_employee_to_owner_reallocations` 单独统计 employee 来源，兼容字段
+`building_owner_job_probability_skips` 保留但当前确定性路径不再递增。
 利用率坍缩时失业者获跨周期缓冲、可长期失业，不再每周期从零重摊。商人全程排除（`ensure_merchant_invariant`
 保持），其失业/商业萧条为独立后续设计。随后业主按本地价购买输入并生产。每个 owner 从统一
 `survival_household` 基础量、冻结人口/环境和民族修正计算无财富/价格弹性的生存量，只对主食、蛋白质、蔬果保留饥饿阈值比例，并按寒冷
@@ -593,8 +598,9 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 的替代品仍显示；数量和支出仍只来自 `demand_good_*` 聚合列。`needs_satisfaction` 的权威语义改为
 食品总满足与气候衣着满足的较小值。周期开始时仍存活人口先就业和生产；默认 50% 是消费后的
 饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death 审计和结构
-回收路径。默认职业年出生/自然死亡率为 3.0%/2.5%；出生按生存满足率线性缩放并使用
-`seed/sample_day/cell/ethnicity` 无状态 Q32 舍入，不新增额外 PKEC 字段或调度阶段。
+回收路径。默认职业年出生/自然死亡率为 4.0%/2.5%，完全满足时净增长目标约 1.5%；
+生存满足率仅以 50% 权重削减出生率。出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，
+并由 PKEC v28 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -897,7 +903,8 @@ only profession changes attached to a construction start.
 CSV v14 historically added
 `building_owner_job_reallocations`, `building_owner_job_profession_changes`,
 `building_owner_job_probability_skips`, and building-row
-`projected_owner_income_per_day`. CSV v16 additionally publishes aggregate debt,
+`projected_owner_income_per_day`. CSV v23 adds summary
+`building_employee_to_owner_reallocations`; CSV v16 additionally publishes aggregate debt,
 recovery, in-kind income, trade episode, generation, and arbitration diagnostics.
 Suspended groups retain one owner only when no active non-service owner vacancy
 exists. Otherwise active-first employment moves that owner through the ordinary

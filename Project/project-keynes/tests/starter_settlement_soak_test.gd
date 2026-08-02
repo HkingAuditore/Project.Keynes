@@ -102,6 +102,8 @@ func _run() -> void:
 				_variant_is_finite(population_snapshot) \
 				and _variant_is_finite(market_snapshot) \
 				and _variant_is_finite(building_snapshot))
+			_expect("%d-day checkpoint starter population does not decline" % completed_days,
+				int(population_snapshot.get("population", 0)) >= 20)
 	_expect("every completed starter settlement day conserves all ledgers",
 		completed_days == soak_days and all_commits_conserved)
 	_expect("every completed starter settlement day contains only finite values",

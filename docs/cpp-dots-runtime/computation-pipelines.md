@@ -29,7 +29,7 @@ Gameplay 使用独立 identity/base SoA，查询时组合 Gameplay store；对�
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
 `building_production` 原子提款并采购投入且按工资后债务前奖金结算，household 将实际自产消费
 价值归属建筑，`building_commit` 完成复产/清算/建设债务转移。贸易派单使用代际复核和批次共享
-库存/缺口仲裁。CSV v22 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段、分层采购字段、投资组合及气候诊断。
+库存/缺口仲裁。CSV v23 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段、分层采购字段、投资组合、employee-to-owner 转岗及气候诊断。
 
 恢复探针只有在实际发生投入、产出、资源消耗或资源生成且现金/经济利润条件同时通过时才计为成功；
 空执行探针写入 pending suspension，并在下一 due-cell frozen boundary 提交。提交周期及其后一个完整
@@ -38,7 +38,7 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 `building_commit` 的内生投资复核现在维护固定四项 portfolio：候选扫描与最终建筑数量解耦，
 共享人口/资本/信用/建材/缺口预算后，每种类型只提交一条聚合 BUILD 命令。收入改善率一次计算
 愿意转职的人口，最多填补 25% 的持续缺口；多类型组合把单类型新增业主岗位占比限制在 50%。
-清算沿用既有恢复资格，但每次最多退出 group 的 25%，债务按退出比例转坏账。CSV v22 包含
+清算沿用既有恢复资格，但每次最多退出 group 的 25%，债务按退出比例转坏账。CSV v23 包含
 组合开工、迁移人口、集中度、约束来源和部分/完全清算计数。
 
 `building_commit.review_prepare` 生成当前 rolling/review phase 的升序正人口 cell
@@ -358,12 +358,19 @@ ranks from surviving most of the broad ecotone as elongated one-texel teeth.
 The far view retains stronger ordered coverage, while
 the close view converges completely to the continuous distance field. The same
 fade gates the visual biome/vegetation/cover selection so later material stages
-cannot retain enlarged Dither blocks. Water uses the same distance field
-as Dither probability on every platform and may select only another water cell
-for visual biome/cover input; ice fraction, temperature, current and all other
-dynamic state stay primary-owned, and water/land branch ownership never changes.
-The desktop water pipeline's existing continuous water-biome weights remain
-active, so the ocean combines both methods without a second full water render.
+cannot retain enlarged Dither blocks. MID/HIGH water uses the same distance
+field as a continuous primary/secondary static-material weight and accepts only
+another water cell. The weight feeds lake/reef/kelp/coast material features,
+roughness, waves, foam, caustics and static cover without evaluating the water
+pipeline twice. Ordinary sea depth is derived from the already barycentrically
+interpolated height field, while lakes retain the basin-size-aware baked depth;
+this removes per-cell R8 depth plateaus with no additional texture fetch. Ice
+fraction, temperature, current, wind and all other dynamic state stay
+primary-owned, and water/land branch ownership never changes. Mobile LOW
+compiles out the secondary water lookup and retains the hard-primary path;
+mobile MID/HIGH use the continuous edge pair but keep the expensive desktop
+3x3 water-biome neighborhood disabled. Desktop keeps that neighborhood and
+anchors it to the exact distance-field pair near the boundary.
 On mobile, `world_map.gdshader` uses the shared wrap-safe 8×8 DitherUV threshold
 to select one visual land cell before the relevant LUT lookup in distant and
 medium views, then fades that selection to zero before the closest view.
@@ -420,6 +427,12 @@ Validation entry points:
 调度原因：它读取当天已提交的 `weather_precip`，所以不放在 `refresh_climate_daily`；它又会影响 stage-b 的植被动态与反馈，所以放在 `weather_summary` 之后、`refresh_daily_stage_b` 之前。默认 `ClimateProfile.runtime_hydrology_enabled=false`，关闭时保留静态生成期河流行为。
 
 返回 report：`path=gdext`、`published_to_slot=true`、`native_ms`、`compute_ms`、`flush_ms`、`refresh_ms`、`n_cells`、`water_budget_error`、`river_discharge_p95`、`river_discharge_max`、`riparian_neighbor_touches`、`river_moisture_floor_touches`、`riparian_moisture_floor_touches`、`moisture_response_alpha`、`river_moisture_max_delta`、`riparian_moisture_max_delta`、`flood_candidate_count`。若 slot 缺失或 size 不匹配，返回 `published_to_slot=false` 和 `fallback_reason`，旧静态河流仍可继续显示。
+
+Native daily continuation 内，水文仍立即写 C++ slots，但在
+`is_native_daily_visual_commit_pending()==true` 时不把 `cell_moisture` 中间值 flush 到
+`MapData`，report 标记 `visible_publish_deferred=true`。独立调用水文 pass 时默认仍立即
+flush；native round 的最终湿度由 `map_generator.gd::_native_daily_apply_finalizer()` 发布，
+随后调用 `complete_native_daily_visual_commit()` 解除视觉快照屏障。
 
 ## Temp baseline year bake（生成期 cell_temp_baseline_year）
 
@@ -964,7 +977,7 @@ variant 的 components 作为互补 bundle 清算，不同 variants 做一次替
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
-成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v22 尾部：`world_ext_economy.cpp`
+成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v23 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`
 流转；主线程不编码文本、不调用 `FileAccess`，长期 worker 用 `std::to_chars` 和标准库文件流
@@ -1733,10 +1746,14 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
 - drought stress 与 heat stress 分开：`vegetation_drought_stress` 来自长期
   `plant_water` 低于植被理想水分的程度，天气类型为 DROUGHT 时只额外抬高；HEATWAVE 只进入
   heat stress。降水不应正向提高 drought stress。
-- 热带雨林生成门槛约为 `moisture > 0.58`，其 profile 的 `ideal_moist/moist_tolerance`
-  必须让该门槛不落入急性干旱区。当前为 `0.68/0.25`，因此低于约 `0.43` 才进入 profile
-  容差外；持续偏干仍可向热带季雨林退化，但新生成的雨林不会从第一天就被当成严重旱害。
-- 退化 streak 不再等待“当前 vitality 与 target 同时低于 0.25”。现在只有在相邻演替候选的兼容度至少高出 `succession_min_compat_gain`，且当前 target 持续低于 `vitality_low_threshold=0.45` 时才累计；earth-like 的退化/升级门均为 200 游戏日，匹配每次约 100 游戏日的原生 vegetation cadence，避免单次采样立即翻转，也保证多年气候漂移能产生实际演替。
+- 热带 JUNGLE 地形门为 `moisture > 0.64`，连续热带雨林植被门为 `> 0.66`；中间湿度带由
+  季风林和热带季雨林承接。雨林 profile 当前为 `ideal_temp=0.86`、`ideal_moist=0.72`、
+  `temp_tolerance=0.20`、`moist_tolerance=0.24`，湿生植被只保留四分之一的过湿距离惩罚，
+  但缺水惩罚不变，因此新生成的高温高湿雨林不会从第一天就被判定为严重失配。
+- 退化 streak 不再等待“当前 vitality 与 target 同时低于 0.25”。现在只有在全体允许陆生候选中的
+  最佳适生类型比当前类型至少高出 `succession_min_compat_gain`，且当前 target 持续低于
+  `vitality_low_threshold=0.45` 时才累计；earth-like 的退化/升级门均为 200 游戏日，匹配每次约
+  100 游戏日的原生 vegetation cadence，避免单次采样立即翻转，也保证多年气候漂移能产生实际演替。
 - 原生 stage-b 返回的 `succession_indices/succession_to_veg` 只是候选结果。ACTIVE native daily、
   merged weather 与 legacy combined 三条边界统一调用
   `_apply_vegetation_succession_candidates()`，显式写回 `HexCell`、`MapData.vegetation_arr /
@@ -1874,6 +1891,13 @@ Stage 概览：
 | 7 | Wind/ocean raster | `gdext_raster` / pixel slices。 |
 | 8 | Pixel commit | GDScript/Godot image/atlas commit。 |
 
+圆柱周期契约（2026-08-02）：`run_slp_field_pass` 与 `run_wind_field_pass` 的天气尺度二维波
+统一读取 `wrap_origin_x` / `wrap_period_x`（当前地图域为 `0` / `HexUtils.wrap_period_x(...)`），
+用正模把 `cell_pos_x` 映射到 `[0,1)`；经向波数只允许 seed 选择的整数谐波，seed 仍控制相位、
+纬向波数和谐波阶数。这样压力场、压力梯度和风的直接 synoptic 扰动在东西接缝都连续；不得再用
+含 padding 的 `world_bounds.size.x` 或 cell-center 的 `min/max` 作为经度周期。移动低压沿用周期最短
+距离，同样消费该真实经度坐标。
+
 > **Cell-range slicing（2026-07，inert-by-default）**：四个 leaf pass（`run_slp_field_pass`
 > / `run_wind_field_pass` / `run_psi_solver_pass` / `run_physical_circulation_pass` 的 upwelling
 > 部分）现接受 `start_idx`/`end_idx` knob，主循环在 `[start_idx, end_idx)` 区间执行；省略时默认
@@ -1956,6 +1980,9 @@ enum_atlas_upload axis= path=cpp_cached_patch elapsed=0.01 patch=0.42 img=0.00 u
 
 - `frame_budget_exhausted` 可导致上传滞后，但不一定影响模拟权威。
 - `_cpp_stride_in_progress` 表示 C++/patch stride 跨 tick 推进中。
+- cell-indirection LUT 不得读取 native daily continuation 的中间 slots。系统先查询
+  `is_native_daily_visual_commit_pending()`；若事务尚未提交，保留 `_lut_refresh_pending` 并返回
+  `path=cell_indirection_lut_commit_deferred`，finalizer 解除屏障后的下一次调度立即 catch-up。
 
 ### Cell-index 间接寻址（province-ID indirection，唯一动态视觉路径）
 
@@ -2401,13 +2428,16 @@ batch 流式编码，不先构造全量 Dictionary。
 
 Chunked MultiMesh 路径：
 
-- `HexRenderer.detail_scatter_chunked_multimesh_enabled=true` 时，每个 `ShrubLayer` 以固定 offset-grid chunk（默认 `detail_scatter_chunk_size_cells=8`）维护 `chunk_id -> MultiMeshInstance2D`。
+- `HexRenderer.detail_scatter_chunked_multimesh_enabled=true` 时，每个 `ShrubLayer` 以固定 offset-grid chunk（默认 `detail_scatter_chunk_size_cells=16`）维护 `chunk_id -> MultiMeshInstance2D`。
 - 全量 rebuild 成功路径为 `gdext_chunked`：`encode_detail_scatter` 返回整层 buffer 后 GDScript 按 `cell_indices` 拆分到 chunk MultiMesh。
 - succession event refresh 路径为 `gdext_event_chunk`：dirty cells 先聚合为 dirty chunks，每个 dirty chunk 只把 `sample_cell_indices`、MapData/WorldData packed arrays 和 profile knobs 传给 `encode_detail_scatter_delta`；C++ 内部完成 per-cell state/profile suitability 采样、attempts/color 派生和 scatter buffer 生成，GDScript 只替换对应 chunk 的 `multimesh.buffer`。
 - LOD 前缀排序同样下沉 encode（knob `lod_order_enabled` + `lod_near_density_multiplier`，SAME_SOURCE: `shrub_layer.gd::_lod_order_sources`）：C++ 在 buffer 组装前按 (cell_idx, seed) 排序、链式同 seed cluster（wrap 副本原子）+ 跨 cell rank 轮转排出远场前缀，返回 `lod_ordered=true` 与 `far_count`；`_apply_chunk_payload_direct` 收到后免 GDScript 排序、免整段 buffer 重排直接上传。旧 DLL / knob 关闭时透明回退 GDScript 复刻排序，两条路径语义同一契约（`tests/detail_scatter_lod_order_test.gd` 平价验证 far_count、远场前缀多重集与 wrap cluster 原子性）。A-B 开关：`ShrubLayer.native_lod_order_enabled`。
 - `HexRenderer` 将 dirty batch 预拆成 `(layer, chunk_id)` task，按 `detail_scatter_refresh_chunks_per_frame` 与 `detail_scatter_refresh_apply_budget_ms` 分帧提交；全局实例预算通过 `apply_visible_instance_fraction()` 分摊到每个 chunk 的 `visible_instance_count`。
+- chunk 的 cell index 列表和 world bounds 属于地图期稳定几何，`ShrubLayer` 按 `chunk_id` 缓存；仅在地图、`hex_size` 或 chunk size 改变时失效。相机/LOD 变化只失效 active-instance 汇总，不再重复执行 offset/cube 转换和逐 cell bounds 扫描。
+- 全局实例预算总数采用 dirty-driven 汇总：普通帧复用 `_detail_budget_cached_total`，只在相机/LOD/画质、chunk 内容、family upload 或驻留淘汰改变可见实例集合后重扫各层。预算 fraction 仍按层切片下发，避免一次同步所有 MultiMesh 的 `visible_instance_count`。
 - 单 chunk apply 会复用既有 `MultiMesh`，并对 native delta 返回的单 chunk buffer 直接赋值（原生序直通时零重排拷贝），避免重新分配 `MultiMesh` 和再复制一遍 `buffer`。
 - 慢日志字段包含 `cells`、`chunks`、`sampled`、`active`、`water`、`ctx`、`knobs`、`native`、`apply`、`remaining`，预期 `[detail_scatter/SLOW_CHUNK]` 不再出现 dirty cells 累积到数百且单层 50ms+ 的全层 rebuild 模式；`sampled/active` 用于确认 native sampling 命中并区分“chunk 内采样 cell 数”和“真正参与散布的活跃 cell 数”。`water` 应主要由共享 offset-water cache 首次构建承担，后续 layer 应接近 0。
+- `detail_scatter_budget_report()` 暴露 `budget_total_scan_count`、`budget_total_scan_ms`、`budget_total_dirty`；层级 `get_scatter_diagnostics()` 暴露 `chunk_cell_cache_entries/builds`、`chunk_bounds_cache_entries/builds` 和 `active_instance_count_scans`。稳态无变化帧应保持 `budget_total_scan_ms=0`，scan count 只在 dirty 事件后的下一次预算应用时增长。
 
 输入 / 输出：
 
@@ -2829,4 +2859,8 @@ Standalone and fallback passes retain their existing immediate-publish behavior.
 
 The returned bundle must contain `vegetation_arr`, `vegetation_vitality_arr`, `plant_available_water_arr`, `soil_moisture_arr`, `water_balance_30d_arr`, `vegetation_growth_pressure_arr`, `vegetation_heat_stress_arr`, `vegetation_drought_stress_arr`, `vegetation_cold_stress_arr`, and `vegetation_regen_score_arr`, each exactly `n_cells`. Suitability is a transient scratch value and is not a DataCore component. GDScript only validates and assembles the arrays; `MapData.set_pending_generation_ecology()` applies them after the generic `init_soa_from_bake()` bootstrap so zero-filled initialization cannot erase native generation state. Missing arrays are a hard generation error.
 
-Runtime vegetation dynamics (`run_vegetation_dynamics_pass`, threaded path, merged `run_stage_b_pass`, and GDScript fallback) consume the same climate score multiplied by terrain/landform soft weight for vitality targets and succession candidates. Existing succession graph, streak, cooldown, and weather stress contracts remain unchanged. Generation diagnostics publish `vegetation_native_ms`, candidate/none counts, score min/mean/max, plant-water nonzero land count, river-adjacent and coastal-highland desert counts, and soft-weight min/max.
+Runtime vegetation dynamics (`run_vegetation_dynamics_pass`, threaded path, merged `run_stage_b_pass`, and GDScript fallback) consume the same climate score multiplied by terrain/landform soft weight for vitality targets and succession candidates. Streak, cooldown, and weather-stress contracts remain unchanged. Generation diagnostics publish `vegetation_native_ms`, candidate/none counts, score min/mean/max, plant-water nonzero land count, river-adjacent and coastal-highland desert counts, and soft-weight min/max.
+
+### Vegetation distribution rebalance (2026-08-02)
+
+The generation/runtime authority remains the native full pass with a GDScript mirror. The temperate forest moisture gate is `0.42` (previously `0.48`), while the tropical JUNGLE/rainforest wet-tail gate is `0.64` (previously `0.56`); monsoon and tropical dry forest occupy the intermediate shoulder. Wet forest and wetland profiles use an asymmetric moisture fit: deficit is penalized normally, while surplus moisture retains only `0.25` of the Gaussian distance as a waterlogging cost. Explicit saturated substrates (`SWAMP`, `MANGROVE`, `DELTA`, `FLOODPLAIN`) reject the continuous tropical-rainforest candidate and compete through marsh, swamp, mangrove, or monsoon profiles. Runtime low-vitality succession scans all allowed terrestrial profiles for the best climate/terrain suitability instead of only the two succession-graph neighbors, while preserving compatibility gain, streak, and cooldown gates. This prevents low-fit rainforest or grassland from becoming trapped by a locally incomplete succession chain.

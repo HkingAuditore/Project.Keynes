@@ -1,6 +1,7 @@
 extends SceneTree
 
-const WorkspaceScript = preload("res://scripts/ui/components/technology_workspace.gd")
+const WorkspaceScene := preload("res://scenes/ui/technology_workspace.tscn")
+const DialScene := preload("res://scenes/ui/research_weight_dial.tscn")
 const DialScript = preload("res://scripts/ui/components/research_weight_dial.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
@@ -24,7 +25,7 @@ func _init() -> void:
 	var host := Control.new()
 	host.size = Vector2(1240.0, 600.0)
 	get_root().add_child(host)
-	var workspace: Control = WorkspaceScript.new()
+	var workspace := WorkspaceScene.instantiate() as Control
 	host.add_child(workspace)
 	workspace.set_model(_model(definitions, eras, domains))
 	await process_frame
@@ -142,7 +143,7 @@ func _audit_fog(tree: Control, layout: Dictionary) -> void:
 
 
 func _audit_dial() -> void:
-	var dial: Control = DialScript.new()
+	var dial := DialScene.instantiate() as Control
 	get_root().add_child(dial)
 	dial.size = Vector2(200.0, 226.0)
 	var centre := dial.size * 0.5

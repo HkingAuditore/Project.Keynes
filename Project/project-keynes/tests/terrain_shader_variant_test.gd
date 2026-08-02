@@ -13,14 +13,25 @@ func _init() -> void:
 		"res://shaders/include/terrain_surface_detail.gdshaderinc")
 	var uniforms_source := FileAccess.get_file_as_string(
 		"res://shaders/include/uniforms.gdshaderinc")
+	var water_source := FileAccess.get_file_as_string(
+		"res://shaders/include/water_pipeline.gdshaderinc")
 	_expect(surface_source.contains("terrain_static_biome_is_water"),
 		"terrain edge blend contains an explicit coast-domain guard")
 	_expect(surface_source.contains("terrain_hybrid_static_weight"),
 		"desktop terrain combines distance-field blending with zoom-aware DitherUV")
-	_expect(source.contains("visual_water_biome"),
-		"ocean selects a visual-only water cell from the shared edge field")
-	_expect(source.contains("terrain_static_biome_is_water(water_secondary_biome)"),
-		"ocean DitherUV cannot cross the land/water domain")
+	_expect(source.contains("water_static_edge_mix = water_edge_w"),
+		"MID/HIGH ocean forwards a continuous distance-field weight")
+	_expect(source.contains("#if !defined(PK_QUALITY_LOW)"),
+		"LOW compiles out secondary water-cell lookup")
+	_expect(source.contains("terrain_static_biome_is_water(candidate_biome)"),
+		"continuous ocean blending cannot cross the land/water domain")
+	_expect(not source.contains(
+		"terrain_mobile_dither_uv_threshold(uv, wp) < water_edge_w"),
+		"ocean no longer converts its distance field to binary DitherUV")
+	_expect(water_source.contains("water_ctx_special_weights"),
+		"water categories consume continuous primary/secondary weights")
+	_expect(water_source.contains("continuous_sea_depth"),
+		"MID/HIGH ocean depth uses the continuous interpolated height field")
 	_expect(source.contains("visual_land_biome"),
 		"full land material pipeline consumes a DitherUV-selected visual biome")
 	_expect(source.contains("visual_land_veg") and source.contains("visual_land_cover"),

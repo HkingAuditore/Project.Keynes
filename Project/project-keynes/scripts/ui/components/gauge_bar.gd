@@ -17,25 +17,14 @@ var _value_tween: Tween
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(160.0, 54.0)
 	if _title_label != null:
 		return
-	var top := HBoxContainer.new()
-	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	top.offset_bottom = 22.0
-	add_child(top)
-	_title_label = Label.new()
-	_title_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_title_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	top.add_child(_title_label)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(spacer)
-	_value_label = Label.new()
+	_title_label = get_node_or_null("Top/TitleLabel") as Label
+	_value_label = get_node_or_null("Top/ValueLabel") as Label
+	if _title_label == null or _value_label == null:
+		push_error("GaugeBar 必须通过 gauge_bar.tscn 实例化。")
+		return
 	_value_label.add_theme_font_override("font", UITokens.font_with_weight(650))
-	_value_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_value_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	top.add_child(_value_label)
 	_refresh_labels()
 
 

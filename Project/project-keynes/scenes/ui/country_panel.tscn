@@ -1,12 +1,91 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=6 format=3]
 
-[ext_resource type="Script" path="res://scripts/ui/components/country_panel.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/components/country_panel.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/technology_workspace.tscn" id="3_technology"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_workspace.tscn" id="4_economy"]
 
 [node name="CountryPanel" type="Control"]
+visible = false
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("1")
+mouse_filter = 0
+script = ExtResource("1_script")
+
+[node name="Scrim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.008, 0.007, 0.006, 0.64)
+
+[node name="Center" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 56.0
+offset_right = -8.0
+offset_bottom = -68.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Dialog" type="PanelContainer" parent="Center"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"PKDialog"
+
+[node name="Content" type="VBoxContainer" parent="Center/Dialog"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Center/Dialog/Content"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SectionIcon" parent="Center/Dialog/Content/Header" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+
+[node name="SectionTitle" type="Label" parent="Center/Dialog/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+vertical_alignment = 1
+theme_type_variation = &"PKTitle"
+
+[node name="CloseButton" type="Button" parent="Center/Dialog/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 26)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="SectionHost" type="MarginContainer" parent="Center/Dialog/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TechnologyWorkspace" parent="Center/Dialog/Content/SectionHost" instance=ExtResource("3_technology")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="EconomyWorkspace" parent="Center/Dialog/Content/SectionHost" instance=ExtResource("4_economy")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2

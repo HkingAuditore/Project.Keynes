@@ -109,6 +109,11 @@ func _run() -> void:
 			var population: Dictionary = economy.population_cell_snapshot(settlement_cell)
 			_expect("starter population is exactly 20",
 				int(population.get("population", 0)) == 20)
+			var market: Dictionary = economy.market_cell_snapshot(settlement_cell)
+			_expect("starter receives a sixty-day food inventory bridge",
+				_market_stock(market, "gathered_plants") >= 20 * 60 * 1000 and
+				_market_stock(market, "game_meat") >= 10 * 60 * 1000 and
+				_market_stock(market, "processed_food") >= 20 * 60 * 240)
 			_expect("starter capital has a deterministic settlement name",
 				bool(population.get("settlement_name_active", false)) and
 				bool(population.get("settlement_name_forced", false)) and
@@ -220,6 +225,13 @@ func _building_count(snapshot: Dictionary, building_id: String) -> int:
 	var counts: PackedInt64Array = snapshot.get("building_counts_by_type", PackedInt64Array())
 	var index := ids.find(building_id)
 	return int(counts[index]) if index >= 0 and index < counts.size() else 0
+
+
+func _market_stock(snapshot: Dictionary, good_id: String) -> int:
+	var ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
+	var index := ids.find(good_id)
+	return int(stock[index]) if index >= 0 and index < stock.size() else 0
 
 
 func _sum_i64(values: PackedInt64Array) -> int:

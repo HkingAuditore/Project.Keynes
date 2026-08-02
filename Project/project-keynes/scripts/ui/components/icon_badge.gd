@@ -13,7 +13,6 @@ var accent: Color = UITokens.ACCENT
 
 
 func _ready() -> void:
-	custom_minimum_size = custom_minimum_size.max(Vector2(26.0, 28.0))
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 

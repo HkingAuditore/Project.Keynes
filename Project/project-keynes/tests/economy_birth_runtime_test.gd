@@ -19,14 +19,17 @@ func _run() -> void:
 		return
 	_test_worker_scalar_birth_equivalence(compiled)
 	_test_birth_waits_for_next_employment(compiled)
+	_test_small_population_birth_residual_save_restore(compiled)
 	_test_two_and_ten_year_attractor(compiled)
 
 func _test_worker_scalar_birth_equivalence(compiled: Dictionary) -> void:
 	const CELL_COUNT := 96
 	var scalar := _configured_population_world(compiled, false, CELL_COUNT, 1000, 2301)
 	var worker := _configured_population_world(compiled, true, CELL_COUNT, 1000, 2301)
-	var scalar_report := _run_cycle(scalar, 0)
-	var worker_report := _run_cycle(worker, 0)
+	_run_cycle(scalar, 0)
+	_run_cycle(worker, 0)
+	var scalar_report := _run_cycle(scalar, 1)
+	var worker_report := _run_cycle(worker, 1)
 	_expect("birth worker path dispatches multiple tasks",
 		int(worker_report.get("worker_tasks", 1)) > 1)
 	_expect("birth worker and scalar counts match",
@@ -63,10 +66,10 @@ func _test_two_and_ten_year_attractor(compiled: Dictionary) -> void:
 	var ten_year_population := int(runtime.get_population_cell_summary(0).population)
 	var two_year_growth := float(two_year_population - OPENING_POPULATION) / OPENING_POPULATION
 	var ten_year_growth := float(ten_year_population - OPENING_POPULATION) / OPENING_POPULATION
-	_expect("two-year healthy-rate attractor stays near one percent growth",
-		two_year_growth >= 0.008 and two_year_growth <= 0.013)
-	_expect("ten-year healthy-rate attractor stays near five percent growth",
-		ten_year_growth >= 0.045 and ten_year_growth <= 0.058)
+	_expect("two-year healthy-rate attractor stays near three percent growth",
+		two_year_growth >= 0.028 and two_year_growth <= 0.033)
+	_expect("ten-year healthy-rate attractor stays near sixteen percent growth",
+		ten_year_growth >= 0.150 and ten_year_growth <= 0.175)
 	cycle_times_ms.sort()
 	var average_cycle_ms := float(Time.get_ticks_usec() - started) / 1000.0 / TEN_YEAR_CYCLES
 	var p95_cycle_ms := cycle_times_ms[int(floor(0.95 * (cycle_times_ms.size() - 1)))]
@@ -129,6 +132,66 @@ func _test_birth_waits_for_next_employment(compiled: Dictionary) -> void:
 		int((population.owner_employed_by_cohort as PackedInt64Array)[unemployed_row]) == 0 and
 		int(report.get("population_error", 1)) == 0)
 
+func _test_small_population_birth_residual_save_restore(compiled: Dictionary) -> void:
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	var worker_signature := (catalog.signature_keys as PackedStringArray).find(
+		"worker|default")
+	var births: PackedInt64Array = catalog.signature_birth_rate_q32
+	var deaths: PackedInt64Array = catalog.signature_death_rate_q32
+	var weights: PackedInt64Array = catalog.signature_satisfaction_birth_weight_q16
+	births.fill(429496730)
+	deaths.fill(0)
+	weights.fill(0)
+	# One person accumulates just over half a Q32 birth per five-day cycle.
+	catalog.signature_birth_rate_q32 = births
+	catalog.signature_death_rate_q32 = deaths
+	catalog.signature_satisfaction_birth_weight_q16 = weights
+	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_runtime_mode = "ACTIVE"
+	profile.market_cycle_days = 5
+	profile.starvation_death_rate_q32 = 0
+	profile.worker_enabled = false
+	var source := _new_ext(1)
+	_expect("small-population source country configures",
+		CountryTestHelper.configure_all_technologies(source, catalog, 1, 2304))
+	_expect("small-population source economy configures",
+		bool(source.configure_economy(catalog, profile, 1, 2304).get("ok", false)))
+	_expect("small-population source bootstraps", bool(source.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([worker_signature]),
+		"population": PackedInt64Array([1]),
+		"funds": PackedInt64Array([0]),
+	}, {}).get("ok", false)))
+	var first_report := _run_cycle(source, 0)
+	_expect("fractional birth remains pending after first cycle",
+		int(first_report.get("births", -1)) == 0 and
+		int(source.get_population_cell_summary(0).population) == 1)
+	var saved := _save(source)
+	_expect("PKEC v28 saves accumulated birth residual",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 28)
+	var restored := _new_ext(1)
+	_expect("small-population restored country configures",
+		CountryTestHelper.configure_all_technologies(restored, catalog, 1, 2304))
+	_expect("small-population restored economy configures",
+		bool(restored.configure_economy(catalog, profile, 1, 2304).get("ok", false)))
+	var restore_result := _restore(restored, saved.get("chunks", []))
+	_expect("PKEC v28 restores accumulated birth residual",
+		bool(restore_result.get("ok", false)) and
+		source.get_economy_state_hash() == restored.get_economy_state_hash())
+	var source_second := _run_cycle(source, 1)
+	var restored_second := _run_cycle(restored, 1)
+	print("  small-pop residual source_births=%d restored_births=%d source_pop=%d restored_pop=%d source_hash=%d restored_hash=%d" % [
+		int(source_second.get("births", 0)), int(restored_second.get("births", 0)),
+		int(source.get_population_cell_summary(0).population),
+		int(restored.get_population_cell_summary(0).population),
+		int(source.get_economy_state_hash()), int(restored.get_economy_state_hash())])
+	_expect("small population deterministically births on the next cycle",
+		int(source_second.get("births", 0)) == 1 and
+		int(restored_second.get("births", 0)) == 1 and
+		int(source.get_population_cell_summary(0).population) == 2 and
+		source.get_economy_state_hash() == restored.get_economy_state_hash())
+
 func _configured_population_world(compiled: Dictionary, workers: bool,
 		cells: int, population_per_cell: int, seed: int) -> Object:
 	var ext := _new_ext(cells)
@@ -189,6 +252,30 @@ func _run_cycle(ext: Object, cycle: int) -> Dictionary:
 		if bool(report.get("done", false)):
 			return report
 	return report
+
+func _save(ext: Object) -> Dictionary:
+	var begin: Dictionary = ext.begin_economy_save(65536)
+	if not bool(begin.get("ok", false)):
+		return begin
+	var chunks: Array[PackedByteArray] = []
+	while true:
+		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
+		if chunk.is_empty():
+			break
+		chunks.append(chunk)
+	var ended: Dictionary = ext.end_economy_save()
+	return {"ok": bool(ended.get("ok", false)),
+		"schema": int(begin.get("schema_version", 0)), "chunks": chunks}
+
+func _restore(ext: Object, chunks: Array) -> Dictionary:
+	var begin: Dictionary = ext.begin_economy_restore()
+	if not bool(begin.get("ok", false)):
+		return begin
+	for value in chunks:
+		var fed: Dictionary = ext.feed_economy_restore_chunk(value as PackedByteArray)
+		if not bool(fed.get("ok", false)):
+			return fed
+	return ext.end_economy_restore()
 
 func _expect(label: String, condition: bool) -> void:
 	_checks += 1

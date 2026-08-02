@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://scripts/ui/components/map_overlay_toolbar.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/components/map_overlay_toolbar.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/map_overlay_icon_button.tscn" id="2_button"]
 
 [node name="MapOverlayToolbar" type="Control"]
 anchors_preset = 13
@@ -13,4 +14,60 @@ offset_bottom = -12.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-script = ExtResource("1")
+script = ExtResource("1_script")
+
+[node name="PrimaryPanel" type="PanelContainer" parent="."]
+offset_right = 56.0
+offset_bottom = 156.0
+mouse_filter = 0
+theme_type_variation = &"PKPanel"
+
+[node name="Margin" type="MarginContainer" parent="PrimaryPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="PrimaryBox" type="VBoxContainer" parent="PrimaryPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Geography" parent="PrimaryPanel/Margin/PrimaryBox" instance=ExtResource("2_button")]
+layout_mode = 2
+[node name="Climate" parent="PrimaryPanel/Margin/PrimaryBox" instance=ExtResource("2_button")]
+layout_mode = 2
+[node name="Resources" parent="PrimaryPanel/Margin/PrimaryBox" instance=ExtResource("2_button")]
+layout_mode = 2
+
+[node name="SecondaryPanel" type="PanelContainer" parent="."]
+visible = false
+clip_contents = true
+offset_left = 60.0
+offset_right = 122.0
+mouse_filter = 0
+theme_type_variation = &"PKPanel"
+
+[node name="Margin" type="MarginContainer" parent="SecondaryPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="Root" type="VBoxContainer" parent="SecondaryPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ResourceScroll" type="ScrollContainer" parent="SecondaryPanel/Margin/Root"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="SecondaryBox" type="VBoxContainer" parent="SecondaryPanel/Margin/Root/ResourceScroll"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="CloseButton" parent="SecondaryPanel/Margin/Root" instance=ExtResource("2_button")]
+layout_mode = 2
+toggle_mode = false

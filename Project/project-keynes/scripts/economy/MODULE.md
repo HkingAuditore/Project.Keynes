@@ -3,7 +3,7 @@
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、显赫家族、冻结国家科技、国内 Trade V1、
-> 税收财政、PKEC v27 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
+> 税收财政、PKEC v28 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
 > NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄、微观家庭与谱系尚未接入；
 > 自然出生和死亡由原生 household/structural 路径处理。
 
@@ -84,9 +84,10 @@
 - 生存满足取“食品总满足”和“气候修正衣着满足”的较小值；高温可把衣着需求降到零。
   周期开始时仍存活人口先参与就业和生产，profile 的 50% 阈值只用于消费后的确定性饥饿死亡，
   不再前置削减劳动力并锁死自给生产。
-- cohort 出生量按人数、`birth_rate_q32` 和当前生存满足率计算；默认年出生率 3.0%、自然死亡率
-  2.5%，健康人口长期净增长目标约 0.5%。同地块同民族的出生贡献在 worker 内聚合，经 Q32
-  确定性哈希舍入后于 `STRUCTURAL_COMMIT` 加入 `unemployed|eth`，不携带资金且不在同周期招聘。
+- cohort 出生量按人数、`birth_rate_q32` 和当前生存满足率计算；默认年出生率 4.0%、自然死亡率
+  2.5%，完全满足时长期净增长目标约 1.5%，满足率只以 50% 权重削减出生率。同地块同民族的出生
+  贡献在 worker 内聚合，Q32 小数余数跨周期累计，并于 `STRUCTURAL_COMMIT` 加入
+  `unemployed|eth`；新生不携带资金且不在同周期招聘。
 - 九套在业职业原型加一套失业者生存原型；在业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。猎人使用独立的
   `hunter_household`，保留职业装备但移除农业型家庭的交通和娱乐需求，并降低基础/舒适消费尺度。
   同一 good 跨 need 只允许 refined_fuel、computers、beverages、fur 四种明确多用途；展示层聚合
@@ -99,7 +100,7 @@
   营运资金；市场库存只按整套互补配方可执行的共同容量预留下周期物理投入，非生存加工不得提前锁住生存食物；居民消费和国内出口只能使用预留以上库存。
   商人采购目标以 `max(可行日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；生存品供给下限为平滑日产量的 1/2，其他耐储品为 1/4，配置库存天数和目标量级不缩小。现金不足时按生存品、居民短缺、生产投入 reserve 缺口提高预算权重；权重只改变购买顺序，总预算仍以真实采购价值为上限。仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
   国内贸易对每个目的地冻结同一笔现金预算：`商人正现金 - 既有订单预留 - 12.5% 营运底线`。候选裁量、利润裁剪和最终扣款共享这笔余额，生存品与关键投入也不得突破底线。
-  运行时报告、市场快照和 Economy CSV v22 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v22 或确定性哈希。
+  运行时报告、市场快照和 Economy CSV v23 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v28 或确定性哈希。v23 summary 另增加 `building_employee_to_owner_reallocations`。
 - 默认 `building_output_efficiency_q16=131072`（2 倍）统一提高所有建筑的物资产出；建设材料、生产投入、自然资源消耗、岗位与工资保持目录原值。倍率在 native 冷路径载入输出列时应用，不改变 building catalog hash 或 PKEC 字节结构。
 - `ProductionClimateProfile` 按 stable ID 排序编译为 Q16 定长列。到期 cell 冻结 30 日温度与
   `cell.plant_available_water`，计算温度/水分 fit，取较小值并应用 floor/exposure；无 Profile
@@ -167,7 +168,10 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 供下一周期 Price V4 使用。
 `building_cell_snapshot` 用 `owner_capacity` 表示完整物理槽位；活跃企业的 `owner_required`
 等于该容量，只有亏损停产或不可用建筑才为 0。`filled_owner` 表示实际到岗，`owner_openings`
-表示可从失业池补充的真实空缺。employee required 仍按本期计划利用率缩放。
+表示真实空缺。就业先从失业池补员；剩余 ACTIVE 非服务 owner 空缺按预计税后日收入吸引同民族
+在岗 owner，若没有合格 owner 来源，还可吸引同民族 employee 晋升/转行。目标收入须至少高出
+来源 owner 收入或 employee 税后合同工资 12.5%，过线后确定性转岗；每个来源/目标建筑组每周期
+最多一次，最后一个本地 merchant 永不流出。employee required 仍按本期计划利用率缩放。
 UI 不得使用 `building count - filled_owner` 作为招聘空缺。
 `building_commit` 每跨过 30 日边界运行一次内生资本评估。就业先填已有岗位；只有 owner 已满、
 达到建筑目标利润率、利用率至少 75%、需求压力至少 12.5% 且缺口足以吸收半座日产能的 industrial
@@ -359,10 +363,11 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v27. It retains the frozen environment, production-climate,
+Current saves are PKEC v28. It retains the frozen environment, production-climate,
 settlement, subsidy, fiscal, and notable-family authority from earlier schemas, and adds the
-given-name catalog/policy header plus NotablePersonStore and person-need sections. Restore accepts
-v26 through an explicit empty-person migration, v25 through an empty-family migration, and retains
+given-name catalog/policy header plus NotablePersonStore and person-need sections, and persists
+per-cell/per-ethnicity Q32 birth residuals. Restore accepts v27 through an empty-birth-residual
+migration, v26 through an explicit empty-person migration, v25 through an empty-family migration, and retains
 the supported v23/v22 paths. Invalid family/person/cohort/building handles, overclaimed people or
 cash, invalid person jobs/needs, excessive owned counts, catalog/policy mismatch, truncation, range errors, and
 environment-hash mismatch all fail before the runtime becomes bootstrapped.
@@ -539,10 +544,10 @@ the three new deterministic policy controls and explicitly rejects v17.
 - No prosperity/name fields enter MapData, HexCell, or DataCore.
 - Inspector consumes selected-cell summaries; `SettlementLabelLayer` consumes
   full snapshot plus bounded deltas with fog, LOD, collision and pool limits.
-- Current PKEC v27 preserves the settlement state introduced by v24; v22/v23 rebuild it
+- Current PKEC v28 preserves the settlement state introduced by v24; v22/v23 rebuild it
   deterministically.
 - Production bootstrap marks opening-country cells as forced-name capitals:
   they retain the exact 20-person contract and population-derived tier, but
   always receive a deterministic settlement name. The bit round-trips in PKEC
-  current PKEC v27 (the field was introduced in v24) and is exposed as
+  current PKEC v28 (the field was introduced in v24) and is exposed as
   `settlement_name_forced`.

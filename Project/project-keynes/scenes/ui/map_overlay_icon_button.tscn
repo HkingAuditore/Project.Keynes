@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[node name="OverlayButton" type="Button"]
+custom_minimum_size = Vector2(44, 44)
+toggle_mode = true
+focus_mode = 2
+mouse_filter = 0
+theme_type_variation = &"PKIconButton"

@@ -1,0 +1,3 @@
+[gd_scene format=3]
+[node name="DragPreview" type="Label"]
+theme_type_variation = &"PKBadgeLabel"

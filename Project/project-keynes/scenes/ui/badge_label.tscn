@@ -1,0 +1,4 @@
+[gd_scene format=3]
+[node name="BadgeLabel" type="Label"]
+text_overrun_behavior = 3
+theme_type_variation = &"PKBadgeLabel"

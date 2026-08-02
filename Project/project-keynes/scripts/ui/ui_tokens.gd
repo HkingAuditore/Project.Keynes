@@ -55,24 +55,15 @@ const WARN := Color(0.76, 0.52, 0.25, 1.0)
 
 static func accent_for_key(key: String) -> Color:
 	match key:
-		"geo", "elevation", "land":
-			return GEO
-		"climate", "temp", "sun":
-			return CLIMATE
-		"water", "hydrology", "weather":
-			return WATER
-		"eco", "vegetation", "vitality":
-			return ECO
-		"resource":
-			return RESOURCE
-		"risk":
-			return RISK
-		"good":
-			return GOOD
-		"warn":
-			return WARN
-		_:
-			return ACCENT
+		"geo", "elevation", "land": return GEO
+		"climate", "temp", "sun": return CLIMATE
+		"water", "hydrology", "weather": return WATER
+		"eco", "vegetation", "vitality": return ECO
+		"resource": return RESOURCE
+		"risk": return RISK
+		"good": return GOOD
+		"warn": return WARN
+		_: return ACCENT
 
 
 static func format_compact_number_cn(value: float, decimals: int = 2) -> String:
@@ -96,158 +87,8 @@ static func _trim_number(value: float, decimals: int) -> String:
 	return text
 
 
-static func panel_style(bg: Color = PANEL_BG, radius: int = RADIUS_MD, border: Color = PANEL_BORDER) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg
-	style.border_color = border
-	style.border_width_left = 1
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	style.content_margin_left = SPACE_MD
-	style.content_margin_top = SPACE_SM
-	style.content_margin_right = SPACE_MD
-	style.content_margin_bottom = SPACE_SM
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.52)
-	style.shadow_size = 12
-	style.shadow_offset = Vector2(0.0, 4.0)
-	style.anti_aliasing = true
-	return style
-
-
-static func inset_panel_style(bg: Color = CARD_BG, accent: Color = PANEL_BORDER_SOFT, radius: int = RADIUS_SM) -> StyleBoxFlat:
-	var style := panel_style(bg, radius, accent)
-	style.border_width_left = 2
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.32)
-	style.shadow_size = 4
-	style.shadow_offset = Vector2(0.0, 2.0)
-	return style
-
-
-static func button_style(bg: Color, border: Color, radius: int = RADIUS_SM, pressed: bool = false) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg
-	style.border_color = border
-	style.border_width_left = 1
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
-	style.corner_radius_top_left = radius
-	style.corner_radius_top_right = radius
-	style.corner_radius_bottom_left = radius
-	style.corner_radius_bottom_right = radius
-	style.corner_detail = 10
-	style.content_margin_left = SPACE_MD
-	style.content_margin_right = SPACE_MD
-	style.content_margin_top = SPACE_SM
-	style.content_margin_bottom = SPACE_SM
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.42)
-	style.shadow_size = 3 if pressed else 6
-	style.shadow_offset = Vector2(0.0, 1.0 if pressed else 2.0)
-	style.anti_aliasing = true
-	style.anti_aliasing_size = 0.9
-	return style
-
-
 static func font_with_weight(weight: int) -> FontVariation:
 	var font := FontVariation.new()
 	font.base_font = UI_FONT
 	font.variation_opentype = {&"wght": float(clampi(weight, 200, 900))}
 	return font
-
-
-static func make_player_theme() -> Theme:
-	var theme := Theme.new()
-	theme.default_font = UI_FONT
-	theme.default_font_size = FONT_BODY
-	theme.set_font("font", "Label", UI_FONT)
-	theme.set_font("font", "Button", UI_FONT)
-	theme.set_font("font", "LineEdit", UI_FONT)
-	theme.set_color("font_color", "Label", TEXT_MAIN)
-	theme.set_color("font_shadow_color", "Label", Color(0, 0, 0, 0.36))
-	theme.set_constant("shadow_offset_x", "Label", 1)
-	theme.set_constant("shadow_offset_y", "Label", 1)
-	theme.set_font_size("font_size", "Label", FONT_BODY)
-	theme.set_font_size("font_size", "Button", FONT_BODY)
-	theme.set_stylebox("panel", "PanelContainer", panel_style())
-	theme.set_stylebox("normal", "Button", button_style(WALNUT, Color(0.52, 0.39, 0.22, 0.80)))
-	theme.set_stylebox("hover", "Button", button_style(WALNUT_SOFT, BRASS_HIGHLIGHT))
-	theme.set_stylebox("pressed", "Button", button_style(Color(0.30, 0.205, 0.105, 0.99), BRASS_HIGHLIGHT, RADIUS_SM, true))
-	theme.set_stylebox("disabled", "Button", button_style(Color(0.050, 0.046, 0.039, 0.72), Color(0.25, 0.21, 0.15, 0.55)))
-	var focus := button_style(Color(0.0, 0.0, 0.0, 0.0), BRASS_HIGHLIGHT)
-	focus.border_width_left = 2
-	focus.border_width_top = 2
-	focus.border_width_right = 2
-	focus.border_width_bottom = 2
-	focus.shadow_size = 0
-	theme.set_stylebox("focus", "Button", focus)
-	theme.set_color("font_color", "Button", TEXT_MAIN)
-	theme.set_color("font_hover_color", "Button", Color(1.0, 0.94, 0.72, 1.0))
-	theme.set_color("font_pressed_color", "Button", TEXT_MAIN)
-	theme.set_color("font_disabled_color", "Button", TEXT_FAINT)
-
-	var line_edit := inset_panel_style(Color(0.055, 0.050, 0.043, 0.96), PANEL_BORDER_SOFT)
-	line_edit.content_margin_left = SPACE_SM
-	line_edit.content_margin_right = SPACE_SM
-	theme.set_stylebox("normal", "LineEdit", line_edit)
-	theme.set_stylebox("focus", "LineEdit", inset_panel_style(Color(0.070, 0.058, 0.044, 0.98), BRASS_HIGHLIGHT))
-	theme.set_color("font_color", "LineEdit", TEXT_MAIN)
-	theme.set_color("font_placeholder_color", "LineEdit", TEXT_FAINT)
-	theme.set_color("caret_color", "LineEdit", BRASS_HIGHLIGHT)
-
-	var progress_bg := inset_panel_style(Color(0.035, 0.032, 0.028, 0.96), PANEL_BORDER_SOFT, RADIUS_SM)
-	progress_bg.content_margin_left = 0
-	progress_bg.content_margin_top = 0
-	progress_bg.content_margin_right = 0
-	progress_bg.content_margin_bottom = 0
-	var progress_fill := inset_panel_style(Color(0.55, 0.39, 0.18, 1.0), BRASS_HIGHLIGHT, RADIUS_SM)
-	progress_fill.content_margin_left = 0
-	progress_fill.content_margin_top = 0
-	progress_fill.content_margin_right = 0
-	progress_fill.content_margin_bottom = 0
-	progress_fill.shadow_size = 0
-	theme.set_stylebox("background", "ProgressBar", progress_bg)
-	theme.set_stylebox("fill", "ProgressBar", progress_fill)
-	theme.set_color("font_color", "ProgressBar", TEXT_MAIN)
-
-	var scroll_bg := StyleBoxFlat.new()
-	scroll_bg.bg_color = Color(0.025, 0.023, 0.020, 0.44)
-	scroll_bg.corner_radius_top_left = 3
-	scroll_bg.corner_radius_top_right = 3
-	scroll_bg.corner_radius_bottom_left = 3
-	scroll_bg.corner_radius_bottom_right = 3
-	var scroll_grabber := StyleBoxFlat.new()
-	scroll_grabber.bg_color = Color(0.48, 0.36, 0.21, 0.78)
-	scroll_grabber.corner_radius_top_left = 3
-	scroll_grabber.corner_radius_top_right = 3
-	scroll_grabber.corner_radius_bottom_left = 3
-	scroll_grabber.corner_radius_bottom_right = 3
-	theme.set_stylebox("scroll", "VScrollBar", scroll_bg)
-	theme.set_stylebox("grabber", "VScrollBar", scroll_grabber)
-	theme.set_stylebox("grabber_highlight", "VScrollBar", inset_panel_style(WALNUT_SOFT, BRASS_HIGHLIGHT, 3))
-	theme.set_stylebox("grabber_pressed", "VScrollBar", inset_panel_style(Color(0.30, 0.20, 0.10, 1.0), BRASS_HIGHLIGHT, 3))
-	theme.set_constant("minimum_grab_thickness", "VScrollBar", 7)
-
-	theme.set_stylebox("panel", "TooltipPanel", panel_style(Color(0.035, 0.032, 0.028, 0.985), RADIUS_SM, BRASS_HIGHLIGHT))
-	theme.set_color("font_color", "TooltipLabel", TEXT_MAIN)
-	theme.set_font("font", "TooltipLabel", UI_FONT)
-	theme.set_font_size("font_size", "TooltipLabel", FONT_SMALL)
-
-	var horizontal_rule := StyleBoxLine.new()
-	horizontal_rule.color = PANEL_BORDER_SOFT
-	horizontal_rule.thickness = 1
-	horizontal_rule.vertical = false
-	theme.set_stylebox("separator", "HSeparator", horizontal_rule)
-	var vertical_rule := StyleBoxLine.new()
-	vertical_rule.color = PANEL_BORDER_SOFT
-	vertical_rule.thickness = 1
-	vertical_rule.vertical = true
-	theme.set_stylebox("separator", "VSeparator", vertical_rule)
-	return theme

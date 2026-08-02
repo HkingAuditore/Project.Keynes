@@ -4110,7 +4110,11 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     _flush_slot_to_map(sid_storage);
     _flush_slot_to_map(sid_gw);
     _flush_slot_to_map(sid_runoff);
-    _flush_slot_to_map(sid_moist);
+    const bool defer_visual_publish =
+        _native_daily_visual_commit_pending || bool(knobs.get("defer_visible_publish", false));
+    if (!defer_visual_publish) {
+        _flush_slot_to_map(sid_moist);
+    }
     _flush_slot_to_map(sid_soil);
     _flush_slot_to_map(sid_wb30);
     _flush_slot_to_map(sid_plant_water);
@@ -4124,6 +4128,7 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     out["path"] = "gdext";
     out["fallback_reason"] = "";
     out["published_to_slot"] = true;
+    out["visible_publish_deferred"] = defer_visual_publish;
     out["native_ms"] = native_ms;
     out["compute_ms"] = compute_ms;
     out["kernel_ms"] = compute_ms;
@@ -4387,7 +4392,8 @@ static inline float vegdyn_compat_of(
         const float *TLT,
         const float *TLM) {
     if (vg < 0 || vg >= n_veg) return -1.0f;
-    return pk_vegetation_climate_score(temp, plant_water, IDT[vg], IDM[vg], TLT[vg], TLM[vg]);
+    return pk_vegetation_climate_score_for_type(
+        uint8_t(vg), temp, plant_water, IDT[vg], IDM[vg], TLT[vg], TLM[vg]);
 }
 
 static inline float vegdyn_compat_of(
@@ -4420,19 +4426,17 @@ static inline uint8_t vegdyn_best_transition(
         uint8_t terrain,
         uint8_t landform,
         float &best_score) {
+    (void)NXU;
+    (void)NXD;
     uint8_t best = current;
     best_score = -1.0f;
     if (current >= n_veg) return best;
-    const uint8_t down = NXD[current];
-    const uint8_t up = NXU[current];
-    if (down != current) {
-        best = down;
-        best_score = vegdyn_compat_of(down, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, terrain, landform);
-    }
-    if (up != current) {
-        const float score = vegdyn_compat_of(up, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, terrain, landform);
+    for (int candidate = 1; candidate < n_veg; ++candidate) {
+        if (candidate == current || !pk_vegetation_candidate_allowed(terrain, uint8_t(candidate))) continue;
+        const float score = vegdyn_compat_of(
+            candidate, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, terrain, landform);
         if (score > best_score) {
-            best = up;
+            best = uint8_t(candidate);
             best_score = score;
         }
     }
@@ -4693,7 +4697,8 @@ static const char *required_scalars[] = {
             continue;
         }
         const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
-        const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id)
+        const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id &&
+                                                pk_vegetation_candidate_allowed(TERR[i], nxt_up_for_streak))
             ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i])
             : -1.0f;
         const bool upgrade_candidate =
@@ -4738,7 +4743,8 @@ static const char *required_scalars[] = {
         }
         if (!fired && hs >= upgrade_days) {
             uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-            const float nxt_sc = (nxt != v_id) ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
+            const float nxt_sc = (nxt != v_id && pk_vegetation_candidate_allowed(TERR[i], nxt))
+                ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
             if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
                 succ_indices.push_back(i);
                 succ_to_veg.push_back(nxt);
@@ -5029,7 +5035,8 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
                 continue;
             }
         const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
-        const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id)
+        const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id &&
+                                                pk_vegetation_candidate_allowed(TERR[i], nxt_up_for_streak))
             ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i])
             : -1.0f;
         const bool upgrade_candidate =
@@ -5070,7 +5077,8 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
             }
             if (!fired && hs >= upgrade_days) {
                 uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-                const float nxt_sc = (nxt != v_id) ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
+                const float nxt_sc = (nxt != v_id && pk_vegetation_candidate_allowed(TERR[i], nxt))
+                    ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
                 if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
                     local.indices.push_back(i);
                     local.to_veg.push_back(nxt);
@@ -5987,7 +5995,8 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
                 continue;
             }
             const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
-            const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id)
+            const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id &&
+                                                    pk_vegetation_candidate_allowed(TERR[i], nxt_up_for_streak))
                 ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i])
                 : -1.0f;
             const bool upgrade_candidate =
@@ -6033,7 +6042,8 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
             }
             if (!fired && hs >= upgrade_days) {
                 uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-                const float nxt_sc = (nxt != v_id) ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
+                const float nxt_sc = (nxt != v_id && pk_vegetation_candidate_allowed(TERR[i], nxt))
+                    ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
                 if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
                     succ_indices.push_back(i);
                     succ_to_veg.push_back(nxt);

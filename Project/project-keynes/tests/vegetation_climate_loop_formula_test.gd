@@ -93,28 +93,31 @@ func _test_rainforest_threshold_alignment() -> void:
 		int(VegetationType.VEG.TROPICAL_RAINFOREST))
 	var lower_non_drought_bound: float = float(profile.ideal_moist) - float(profile.moist_tolerance)
 	var observed_compat: float = VegetationType.climate_compat_score(
-		int(VegetationType.VEG.TROPICAL_RAINFOREST), 0.78, 0.58)
+		int(VegetationType.VEG.TROPICAL_RAINFOREST), 0.88, 0.90)
 	_expect("generated rainforest threshold is not born in acute drought",
-		lower_non_drought_bound <= 0.58)
-	_expect("observed warm humid rainforest remains ecologically viable",
-		observed_compat >= 0.25)
+		lower_non_drought_bound <= 0.64)
+	_expect("warm saturated rainforest remains ecologically viable",
+		observed_compat >= 0.85)
 	var generator := MapGenerator.new()
-	# [zonal-envelope] 真热带带 t>=0.80，雨林湿门 0.56（与 C++ pk_whittaker_vegetation 同步）。
+	# Rainforest owns only the humid tropical tail; the shoulder is monsoon forest.
 	_expect("tropical rainforest is limited to the wet tail",
-		int(generator._whittaker_vegetation(0.85, 0.55, int(LandformType.LF.PLAIN))) \
+		int(generator._whittaker_vegetation(0.85, 0.63, int(LandformType.LF.PLAIN))) \
 			!= int(VegetationType.VEG.TROPICAL_RAINFOREST) and
-		int(generator._whittaker_vegetation(0.85, 0.57, int(LandformType.LF.PLAIN))) \
+		int(generator._whittaker_vegetation(0.85, 0.65, int(LandformType.LF.PLAIN))) \
 			== int(VegetationType.VEG.TROPICAL_RAINFOREST))
+	_expect("temperate storm-track moisture resolves to forest",
+		int(generator._whittaker_vegetation(0.50, 0.43, int(LandformType.LF.PLAIN))) \
+			== int(VegetationType.VEG.TEMPERATE_DECIDUOUS))
 
 
 func _test_biome_envelope_alignment() -> void:
 	var generator := MapGenerator.new()
 	var cell := HexCell.new(0, 0)
 	cell.terrain = int(TerrainType.TERRAIN.SAVANNA)
-	# [zonal-envelope] SAVANNA 湿端 MONSOON 门随 JUNGLE 边界 0.54→0.56 平移。
-	cell.moisture = 0.55
+	# SAVANNA's monsoon shoulder stays aligned with the JUNGLE boundary.
+	cell.moisture = 0.63
 	var savanna_veg: int = int(generator._derive_vegetation(cell, int(LandformType.LF.PLAIN), 0.75))
-	cell.moisture = 0.57
+	cell.moisture = 0.65
 	var wet_edge_veg: int = int(generator._derive_vegetation(cell, int(LandformType.LF.PLAIN), 0.75))
 	_expect("savanna does not spawn monsoon forest below biome boundary",
 		 savanna_veg == int(VegetationType.VEG.SAVANNA))

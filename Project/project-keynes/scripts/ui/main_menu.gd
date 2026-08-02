@@ -1,5 +1,11 @@
 extends Control
 
+const ButtonContentScene := preload("res://scenes/ui/main_menu_button_content.tscn")
+const MenuButtonScene := preload("res://scenes/ui/main_menu_button.tscn")
+const SaveSlotRowScene := preload("res://scenes/ui/save_slot_row.tscn")
+const AdvancedLabelScene := preload("res://scenes/ui/advanced_field_label.tscn")
+const AdvancedSpinScene := preload("res://scenes/ui/advanced_field_spin.tscn")
+
 const PANEL_WIDTH := 520.0
 const COMMAND_WIDTH := 300.0
 const MAP_PRESETS := [
@@ -26,7 +32,6 @@ var _settings_controls: Dictionary = {}
 
 
 func _ready() -> void:
-	theme = UITokens.make_player_theme()
 	set_process(true)
 	_configure_new_game_form()
 	_bind_settings_controls()
@@ -170,15 +175,9 @@ func _show_load_game() -> void:
 
 
 func _add_save_slot(slot: Dictionary, save_service) -> void:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = 72.0
-	var preview := TextureRect.new()
-	preview.custom_minimum_size = Vector2(112, 63)
-	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	var description := Label.new()
-	description.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var row := SaveSlotRowScene.instantiate() as HBoxContainer
+	var preview := row.get_node("Preview") as TextureRect
+	var description := row.get_node("Description") as Label
 	var slot_id := String(slot.get("slot_id", ""))
 	var label := "自动存档" if slot_id == "autosave" else "手动存档 %s" % slot_id.trim_prefix("manual_")
 	if bool(slot.get("exists", false)):
@@ -194,13 +193,11 @@ func _add_save_slot(slot: Dictionary, save_service) -> void:
 					preview.texture = ImageTexture.create_from_image(image)
 	else:
 		description.text = "%s\n空槽位" % label
-	row.add_child(preview)
-	row.add_child(description)
-	var load_button := _make_button("加载", "history", func() -> void: _load_slot(slot_id))
+	var load_button := row.get_node("LoadButton") as Button
+	_configure_button(load_button, "加载", "history", func() -> void: _load_slot(slot_id), 15)
 	load_button.disabled = not bool(slot.get("loadable", false))
 	if bool(slot.get("exists", false)) and load_button.disabled:
 		load_button.tooltip_text = String(slot.get("reason", "存档损坏或版本不兼容"))
-	row.add_child(load_button)
 	_load_slots.add_child(row)
 
 
@@ -241,10 +238,10 @@ func _configure_dimension_box(box: SpinBox, minimum: int, maximum: int, value: i
 
 func _add_advanced_spin(label_text: String, key: String, minimum: float,
 		maximum: float, value: float, step: float = 1.0) -> void:
-	var label := Label.new()
+	var label := AdvancedLabelScene.instantiate() as Label
 	label.text = label_text
 	_advanced_grid.add_child(label)
-	var box := SpinBox.new()
+	var box := AdvancedSpinScene.instantiate() as SpinBox
 	box.min_value = minimum
 	box.max_value = maximum
 	box.value = value
@@ -255,35 +252,29 @@ func _add_advanced_spin(label_text: String, key: String, minimum: float,
 
 
 func _make_button(text_value: String, icon: String, callback: Callable) -> Button:
-	var button := Button.new()
-	button.custom_minimum_size = Vector2(112, 42)
-	_decorate_text_button(button, text_value, icon, 15)
-	button.pressed.connect(callback)
+	var button := MenuButtonScene.instantiate() as Button
+	_configure_button(button, text_value, icon, callback, 15)
 	return button
 
 
 func _decorate_text_button(button: Button, text_value: String, icon: String, font_size: int) -> void:
 	button.text = ""
 	button.tooltip_text = text_value
-	var margin := MarginContainer.new()
-	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 14)
-	margin.add_theme_constant_override("margin_right", 14)
-	var row := HBoxContainer.new()
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_theme_constant_override("separation", 12)
-	margin.add_child(row)
-	var icon_label := Label.new()
-	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var content := button.get_node_or_null("Content") as MarginContainer
+	if content == null:
+		content = ButtonContentScene.instantiate() as MarginContainer
+		button.add_child(content)
+	var icon_label := content.get_node("Row/Icon") as Label
 	IconButton.apply_to_label(icon_label, StringName(icon), font_size)
-	row.add_child(icon_label)
-	var text_label := Label.new()
-	text_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var text_label := content.get_node("Row/Label") as Label
 	text_label.text = text_value
 	text_label.add_theme_font_size_override("font_size", font_size)
-	row.add_child(text_label)
-	button.add_child(margin)
+
+
+func _configure_button(button: Button, text_value: String, icon: String,
+		callback: Callable, font_size: int) -> void:
+	_decorate_text_button(button, text_value, icon, font_size)
+	button.pressed.connect(callback)
 
 
 func _on_size_preset_selected(index: int) -> void:
