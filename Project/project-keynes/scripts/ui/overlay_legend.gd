@@ -12,6 +12,8 @@
 class_name OverlayLegend
 extends PanelContainer
 
+const LegendRowScene := preload("res://scenes/ui/overlay_legend_row.tscn")
+
 # Ramp 纹理宽度；高度固定 12px
 const RAMP_WIDTH: int = 168
 const RAMP_HEIGHT: int = 12
@@ -86,133 +88,33 @@ var _current_mode: int = 0
 var _last_pointer_value: float = -1.0   # NaN/未选中时隐藏指针
 
 func _ready() -> void:
-	mouse_filter = Control.MouseFilter.MOUSE_FILTER_IGNORE
-	visible = false
-	custom_minimum_size = Vector2(198, 0)
-	var style := UITokens.panel_style(
-		Color(0.055, 0.050, 0.043, 0.84), UITokens.RADIUS_SM)
-	# `_build_ui()` supplies the compact 8×6 margin. Avoid stacking the generic
-	# panel content margin on top of it, which needlessly enlarges the legend.
-	style.content_margin_left = 0.0
-	style.content_margin_top = 0.0
-	style.content_margin_right = 0.0
-	style.content_margin_bottom = 0.0
-	add_theme_stylebox_override("panel", style)
-	_build_ui()
-
-func _build_ui() -> void:
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_top", 6)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_bottom", 6)
-	add_child(margin)
-
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
-	margin.add_child(vbox)
-
-	var title_row := HBoxContainer.new()
-	title_row.add_theme_constant_override("separation", 6)
-	vbox.add_child(title_row)
-	_icon_label = Label.new()
+	_icon_label = get_node_or_null("Margin/Root/TitleRow/Icon") as Label
+	_title_label = get_node_or_null("Margin/Root/TitleRow/Title") as Label
+	_hint_label = get_node_or_null("Margin/Root/Hint") as Label
+	_continuous_box = get_node_or_null("Margin/Root/Continuous") as VBoxContainer
+	_ramp_rect = get_node_or_null("Margin/Root/Continuous/Ramp") as TextureRect
+	_pointer = get_node_or_null("Margin/Root/Continuous/Ramp/Pointer") as ColorRect
+	_low_label = get_node_or_null("Margin/Root/Continuous/Range/Low") as Label
+	_high_label = get_node_or_null("Margin/Root/Continuous/Range/High") as Label
+	_discrete_scroll = get_node_or_null("Margin/Root/DiscreteScroll") as ScrollContainer
+	_discrete_list = get_node_or_null("Margin/Root/DiscreteScroll/DiscreteList") as VBoxContainer
+	_vector_box = get_node_or_null("Margin/Root/Vector") as VBoxContainer
+	_vector_wheel = get_node_or_null("Margin/Root/Vector/Wheel") as TextureRect
+	_vector_arrow = get_node_or_null("Margin/Root/Vector/Wheel/Arrow") as ColorRect
+	_vector_intensity_ramp = get_node_or_null("Margin/Root/Vector/IntensityRamp") as TextureRect
+	_vector_low_label = get_node_or_null("Margin/Root/Vector/Range/Low") as Label
+	_vector_high_label = get_node_or_null("Margin/Root/Vector/Range/High") as Label
+	if _icon_label == null or _title_label == null or _hint_label == null \
+			or _continuous_box == null or _ramp_rect == null or _pointer == null \
+			or _low_label == null or _high_label == null or _discrete_scroll == null \
+			or _discrete_list == null or _vector_box == null or _vector_wheel == null \
+			or _vector_arrow == null or _vector_intensity_ramp == null \
+			or _vector_low_label == null or _vector_high_label == null:
+		push_error("OverlayLegend 必须通过 map_overlay_legend.tscn 实例化。")
+		return
 	_icon_label.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
 	_icon_label.add_theme_font_size_override("font_size", 15)
 	_icon_label.add_theme_color_override("font_color", UITokens.ACCENT)
-	title_row.add_child(_icon_label)
-	_title_label = Label.new()
-	_title_label.text = "—"
-	_title_label.add_theme_font_size_override("font_size", 14)
-	title_row.add_child(_title_label)
-
-	_hint_label = Label.new()
-	_hint_label.text = ""
-	_hint_label.visible = false
-	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint_label.add_theme_font_size_override("font_size", 11)
-	_hint_label.add_theme_color_override("font_color", Color(0.78, 0.82, 0.88))
-	vbox.add_child(_hint_label)
-
-	# 连续容器
-
-	_continuous_box = VBoxContainer.new()
-	_continuous_box.add_theme_constant_override("separation", 2)
-	vbox.add_child(_continuous_box)
-
-	_ramp_rect = TextureRect.new()
-	_ramp_rect.custom_minimum_size = Vector2(RAMP_WIDTH, RAMP_HEIGHT)
-	_ramp_rect.stretch_mode = TextureRect.STRETCH_SCALE
-	_continuous_box.add_child(_ramp_rect)
-
-	var range_row := HBoxContainer.new()
-	_low_label = Label.new()
-	_low_label.text = "0.00"
-	_low_label.add_theme_font_size_override("font_size", 11)
-	range_row.add_child(_low_label)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	range_row.add_child(spacer)
-	_high_label = Label.new()
-	_high_label.text = "1.00"
-	_high_label.add_theme_font_size_override("font_size", 11)
-	range_row.add_child(_high_label)
-	_continuous_box.add_child(range_row)
-
-	# 指针（一个小三角形 ColorRect，叠在 ramp 上）
-	_pointer = ColorRect.new()
-	_pointer.color = Color(0.98, 0.98, 0.98, 0.95)
-	_pointer.size = Vector2(3, RAMP_HEIGHT + 4)
-	_pointer.visible = false
-	# 父容器必须允许子节点自由定位，所以不把 pointer 放 HBox，改为放 _ramp_rect 的兄弟 Control
-	_ramp_rect.add_child(_pointer)
-
-	# 离散容器
-	_discrete_scroll = ScrollContainer.new()
-	_discrete_scroll.custom_minimum_size = Vector2(0.0, 0.0)
-	_discrete_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_discrete_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	_discrete_scroll.visible = false
-	vbox.add_child(_discrete_scroll)
-	_discrete_list = VBoxContainer.new()
-	_discrete_list.add_theme_constant_override("separation", 2)
-	_discrete_scroll.add_child(_discrete_list)
-
-	# 方向型容器（hue 色环 + 强度色带）
-	_vector_box = VBoxContainer.new()
-	_vector_box.add_theme_constant_override("separation", 4)
-	_vector_box.visible = false
-	vbox.add_child(_vector_box)
-
-	_vector_wheel = TextureRect.new()
-	_vector_wheel.custom_minimum_size = Vector2(VECTOR_WHEEL_SIZE, VECTOR_WHEEL_SIZE)
-	_vector_wheel.stretch_mode = TextureRect.STRETCH_SCALE
-	_vector_box.add_child(_vector_wheel)
-
-	# 选中 cell 的方向指针（一个小亮点）
-	_vector_arrow = ColorRect.new()
-	_vector_arrow.color = Color(1.0, 1.0, 1.0, 0.95)
-	_vector_arrow.size = Vector2(6, 6)
-	_vector_arrow.visible = false
-	_vector_wheel.add_child(_vector_arrow)
-
-	_vector_intensity_ramp = TextureRect.new()
-	_vector_intensity_ramp.custom_minimum_size = Vector2(RAMP_WIDTH, RAMP_HEIGHT)
-	_vector_intensity_ramp.stretch_mode = TextureRect.STRETCH_SCALE
-	_vector_box.add_child(_vector_intensity_ramp)
-
-	var v_range_row := HBoxContainer.new()
-	_vector_low_label = Label.new()
-	_vector_low_label.text = "弱"
-	_vector_low_label.add_theme_font_size_override("font_size", 11)
-	v_range_row.add_child(_vector_low_label)
-	var v_spacer := Control.new()
-	v_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	v_range_row.add_child(v_spacer)
-	_vector_high_label = Label.new()
-	_vector_high_label.text = "强"
-	_vector_high_label.add_theme_font_size_override("font_size", 11)
-	v_range_row.add_child(_vector_high_label)
-	_vector_box.add_child(v_range_row)
 
 # 主入口：切换通道（含 NONE 隐藏）。
 func update_for_mode(
@@ -521,16 +423,11 @@ func _rebuild_discrete_list(mode: int) -> void:
 			colors.append(_categorical_color(i, 0.12))
 	_discrete_scroll.custom_minimum_size.y = minf(220.0, float(names.size()) * 22.0)
 	for i in range(names.size()):
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		var swatch := ColorRect.new()
+		var row := LegendRowScene.instantiate() as HBoxContainer
+		var swatch := row.get_node("Swatch") as ColorRect
 		swatch.color = colors[i] if i < colors.size() else Color(0.5, 0.5, 0.5)
-		swatch.custom_minimum_size = Vector2(14, 14)
-		row.add_child(swatch)
-		var lb := Label.new()
+		var lb := row.get_node("Label") as Label
 		lb.text = str(names[i])
-		lb.add_theme_font_size_override("font_size", 12)
-		row.add_child(lb)
 		_discrete_list.add_child(row)
 
 

@@ -56,6 +56,7 @@ uniform float world_time = 0.0;
 uniform float season_phase = 1.0;
 uniform float day_phase = 0.25;
 uniform float wind_strength = 1.0;
+uniform float canopy_topdown = 0.0;
 uniform float dry_yellow_strength = 0.82;
 uniform float wet_green_strength = 0.48;
 uniform float lush_green_strength = 0.72;
@@ -403,7 +404,10 @@ void vertex() {
 	float snow_size_restore = smoothstep(0.12, 0.72, shrub_snow_v);
 	live_scale = max(live_scale, mix(live_scale, snow_size_floor, snow_size_restore));
 	VERTEX *= live_scale;
-	float top_weight = clamp(UV.y, 0.0, 1.0);
+	float side_weight = clamp(UV.y, 0.0, 1.0);
+	float crown_radius = length((UV - vec2(0.5)) * 2.0);
+	float crown_edge_weight = mix(0.30, 1.0, smoothstep(0.10, 0.82, crown_radius));
+	float flex_weight = mix(side_weight, crown_edge_weight, canopy_topdown);
 	float seed = INSTANCE_CUSTOM.b;
 	float variant = INSTANCE_CUSTOM.a;
 #ifdef DETAIL_FAMILY_BATCH
@@ -415,7 +419,7 @@ void vertex() {
 	// 实时天气阵风：风暴/季风时附加更高频更大幅的摆动。
 	sway += weather_wind_boost * (0.9 * sin(world_time * 3.4 + seed * 5.13) + 0.5);
 	float amp = sway * sway_amp * (wind_strength + weather_wind_boost)
-		* top_weight * smoothstep(0.10, 0.75, shrub_presence_v);
+		* flex_weight * smoothstep(0.10, 0.75, shrub_presence_v);
 	// 方向风：沿全局盛行风方向摆动（而非固定 +x）。把世界风向转到本实例局部帧，
 	// 否则随机自旋转的植株会朝各自局部 +x 乱摆，而非统一盛行风方向。
 	vec2 wdir = normalize(wind_dir + vec2(0.0001, 0.0));
@@ -423,8 +427,8 @@ void vertex() {
 	VERTEX += wdir_local * amp;
 	// 雪埋：积雪越深，植株下沉（y 正为下）并缩矮，顶部更明显。
 	float bury = clamp(shrub_snow_v * snow_burial, 0.0, 0.85);
-	VERTEX.y += bury * 0.34 * top_weight;
-	VERTEX *= 1.0 - bury * 0.42 * top_weight;
+	VERTEX.y += bury * 0.34 * flex_weight;
+	VERTEX *= 1.0 - bury * 0.42 * flex_weight;
 
 	// [veg-normal-shading] 地形宏观法线（整株站立坡面）：与地形 brdf 同源烘焙法线，1 次采样。
 	shrub_terrain_n = vec2(0.0);
@@ -502,18 +506,18 @@ void fragment() {
 			+ dry_pressure * (0.08 + heat_visual * 0.14),
 		withered * climate_wither_support + low_vitality * 0.92
 			+ dry_pressure * (0.18 + dry_hot * 0.30));
-	// 收紧物候重叠，并把绿→黄的过渡拆成实例级斑块。过渡期是一部分树仍绿、
-	// 一部分树已金黄，而不是所有树都线性混成同一种橄榄黄绿。
-	stage_w = pow(max(stage_w, vec4(0.001)), vec4(1.65));
+	// 保留实例级绿/黄斑块，但让两相在更宽的气候区间内交叠，避免跨日更新时
+	// 大批实例同时从绿色提交到金黄。
+	stage_w = pow(max(stage_w, vec4(0.001)), vec4(1.35));
 	stage_w /= dot(stage_w, vec4(1.0));
 	float green_gold_sum = max(stage_w.y + stage_w.z, 0.001);
 	float green_gold_balance = (stage_w.z - stage_w.y) / green_gold_sum;
 	float green_gold_seed = (fract(shrub_custom.b * 71.37 + 0.19) - 0.5) * 0.20;
-	float gold_side = smoothstep(0.04, 0.20, green_gold_balance + green_gold_seed);
-	stage_w.y *= mix(1.0, 0.12, gold_side);
-	stage_w.z *= mix(0.12, 1.0, gold_side);
+	float gold_side = smoothstep(-0.04, 0.28, green_gold_balance + green_gold_seed);
+	stage_w.y *= mix(1.0, 0.28, gold_side);
+	stage_w.z *= mix(0.28, 1.0, gold_side);
 	stage_w /= dot(stage_w, vec4(1.0));
-	float golden_commit = smoothstep(0.56, 0.76, stage_w.z);
+	float golden_commit = smoothstep(0.48, 0.82, stage_w.z);
 	float snow_amount = clamp(snow * snow_white_strength, 0.0, 1.0);
 
 	vec3 rgb = COLOR.rgb;
@@ -754,6 +758,11 @@ uniform float vitality_alpha_power = 1.10;
 uniform float snow_hide_strength = 0.62;
 uniform float aquatic_response = 0.0;
 
+#ifdef DETAIL_FAMILY_BATCH
+uniform sampler2D detail_style_lut : filter_nearest, repeat_disable;
+uniform vec2 detail_style_lut_size = vec2(16.0, 32.0);
+#endif
+
 uniform vec4 shadow_color = vec4(0.05, 0.06, 0.08, 1.0);
 uniform float shadow_strength = 0.28;
 uniform float shadow_length_scale = 1.0;
@@ -787,6 +796,17 @@ float sh_vitality_norm(float vitality) {
 	float dead_t = min(vitality_dead_threshold, vitality_healthy_threshold - 0.001);
 	float healthy_t = max(vitality_healthy_threshold, dead_t + 0.001);
 	return clamp((clamp(vitality, 0.0, 1.0) - dead_t) / (healthy_t - dead_t), 0.0, 1.0);
+}
+
+float sh_style_casts_shadow(float packed_style) {
+#ifdef DETAIL_FAMILY_BATCH
+	int style_id = int(floor(packed_style));
+	vec2 style_uv = (vec2(2.5, float(style_id) + 0.5)
+		/ max(detail_style_lut_size, vec2(1.0)));
+	return step(0.5, texture(detail_style_lut, style_uv).r);
+#else
+	return 1.0;
+#endif
 }
 
 void vertex() {
@@ -836,7 +856,8 @@ void vertex() {
 
 	shadow_r = length(p);   // 网格本身 |p|<=1，传给片元做径向柔边
 	// 永昼低角度光会令密集实例阴影大面积重叠；减弱 alpha，但保留方向与移动感。
-	shadow_alpha_v = shadow_strength * lod_alpha * ed.local_day * clamp(presence, 0.0, 1.0);
+	shadow_alpha_v = shadow_strength * lod_alpha * ed.local_day
+		* clamp(presence, 0.0, 1.0) * sh_style_casts_shadow(INSTANCE_CUSTOM.a);
 #endif
 }
 
@@ -1400,16 +1421,27 @@ func detail_family_material(style_lut: Texture2D) -> ShaderMaterial:
 	return out
 
 
-func detail_family_shadow_material() -> ShaderMaterial:
+func detail_family_shadow_material(style_lut: Texture2D = null) -> ShaderMaterial:
 	if _shadow_material == null:
 		_ensure_resources()
-	return _shadow_material.duplicate(true) as ShaderMaterial
+	var out := _shadow_material.duplicate(true) as ShaderMaterial
+	if style_lut != null:
+		var shader := Shader.new()
+		shader.code = _shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADOW_SHADER_CODE
+		out.shader = shader
+		out.set_shader_parameter("detail_style_lut", style_lut)
+		out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
+	return out
 
 
 func detail_family_shadow_mesh() -> ArrayMesh:
 	if _shadow_blob_mesh == null:
 		_ensure_resources()
 	return _shadow_blob_mesh
+
+
+func detail_family_casts_shadow() -> bool:
+	return _shadow_resources_enabled()
 
 
 func detail_change_affects_profile(
@@ -2499,8 +2531,6 @@ func _shadow_resources_enabled() -> bool:
 	var cfg := _profile()
 	if not cfg.enabled:
 		return false
-	if detail_render_family() != 3:
-		return false
 	var on = cfg.get("cast_shadow_enabled")
 	if on != null and not bool(on):
 		return false
@@ -2516,7 +2546,7 @@ func _shadow_resources_enabled() -> bool:
 func _shadow_should_render() -> bool:
 	if not _shadow_resources_enabled() or _camera_lod_hidden:
 		return false
-	if detail_render_family() != 3 or _camera_zoom < 1.10:
+	if _camera_zoom < 1.10:
 		return false
 	var cfg := _profile()
 	var configured_min = cfg.get("shadow_min_zoom")
@@ -3379,6 +3409,7 @@ func _apply_profile_uniforms() -> void:
 	var cfg := _profile()
 	z_index = int(cfg.render_z_index)
 	_material.set_shader_parameter("wind_strength", cfg.wind_strength)
+	_material.set_shader_parameter("canopy_topdown", 1.0 if detail_render_family() == 3 else 0.0)
 	_material.set_shader_parameter("dry_yellow_strength", cfg.dry_yellow_strength)
 	_material.set_shader_parameter("wet_green_strength", cfg.wet_green_strength)
 	_material.set_shader_parameter("lush_green_strength", cfg.lush_green_strength)
@@ -3412,7 +3443,7 @@ func _apply_profile_uniforms() -> void:
 	var albedo_light_floor := 0.44
 	match arch:
 		DETAIL_TREE:
-			phenology_color_dominance = 0.90
+			phenology_color_dominance = 0.84
 			albedo_light_floor = 0.66
 			# 专用底色乔木（云雾林、季风林）按常绿树处理，不套用完整落叶物候。
 			if bool(cfg.base_color_override_enabled):
@@ -4325,7 +4356,8 @@ func _instance_rotation(key: int, attempt: int) -> float:
 
 
 func _cached_detail_mesh() -> ArrayMesh:
-	var key := "%d:%d" % [_detail_kind(), _quality_lobe_count()]
+	var profile_name := _profile().resource_path.get_file().get_basename()
+	var key := "%d:%d:%s" % [_detail_kind(), _quality_lobe_count(), profile_name]
 	if _mesh_cache.has(key):
 		return _mesh_cache[key]
 	var mesh := _build_shrub_mesh()
@@ -4354,6 +4386,11 @@ func _build_shrub_mesh() -> ArrayMesh:
 		DETAIL_SNOW_MOUND:
 			return _build_snow_mound_mesh()
 		DETAIL_DEAD_SNAG:
+			var profile_name := _profile().resource_path.get_file().get_basename().to_lower()
+			if profile_name.contains("fallen_log"):
+				return _build_fallen_log_mesh()
+			if profile_name.contains("mangrove_root"):
+				return _build_mangrove_root_mesh()
 			return _build_dead_snag_mesh()
 	var verts := PackedVector2Array()
 	var uvs := PackedVector2Array()
@@ -4391,16 +4428,17 @@ func _build_tree_mesh() -> ArrayMesh:
 	var uvs := PackedVector2Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
-	_add_lobe(verts, uvs, colors, indices, Vector2(0.0, 0.22), 0.62, 0.18, Color(0.18, 0.30, 0.16, 0.62))
+	# 固定俯视镜头只需要冠层：暗色底冠负责体积，外围瓣片负责树种轮廓。
+	_add_lobe(verts, uvs, colors, indices, Vector2.ZERO, 0.54, 0.50, Color(0.18, 0.30, 0.16, 0.78))
 	var lobes := [
-		[Vector2(-0.36, -0.04), 0.34, 0.30, Color(0.38, 0.62, 0.34, 0.96)],
-		[Vector2(0.00, -0.18), 0.40, 0.34, Color(0.52, 0.76, 0.42, 1.0)],
-		[Vector2(0.38, -0.04), 0.34, 0.30, Color(0.32, 0.55, 0.30, 0.96)],
-		[Vector2(-0.10, 0.12), 0.38, 0.24, Color(0.24, 0.44, 0.24, 0.92)],
-		[Vector2(-0.52, -0.22), 0.24, 0.22, Color(0.56, 0.78, 0.44, 0.94)],
-		[Vector2(0.52, -0.22), 0.24, 0.22, Color(0.46, 0.70, 0.38, 0.94)],
-		[Vector2(0.18, 0.14), 0.28, 0.20, Color(0.20, 0.38, 0.22, 0.88)],
-		[Vector2(0.00, -0.42), 0.26, 0.20, Color(0.66, 0.84, 0.50, 0.92)],
+		[Vector2(-0.28, -0.18), 0.34, 0.30, Color(0.38, 0.62, 0.34, 0.96)],
+		[Vector2(0.10, -0.28), 0.38, 0.32, Color(0.52, 0.76, 0.42, 1.0)],
+		[Vector2(0.34, 0.02), 0.32, 0.30, Color(0.32, 0.55, 0.30, 0.96)],
+		[Vector2(0.10, 0.30), 0.34, 0.26, Color(0.24, 0.44, 0.24, 0.92)],
+		[Vector2(-0.30, 0.24), 0.30, 0.26, Color(0.56, 0.78, 0.44, 0.94)],
+		[Vector2(-0.48, 0.02), 0.24, 0.22, Color(0.46, 0.70, 0.38, 0.94)],
+		[Vector2(0.42, -0.28), 0.24, 0.20, Color(0.20, 0.38, 0.22, 0.88)],
+		[Vector2(-0.08, -0.48), 0.24, 0.20, Color(0.66, 0.84, 0.50, 0.92)],
 	]
 	var lobe_count := mini(_quality_lobe_count(), lobes.size())
 	for i in range(lobe_count):
@@ -4496,53 +4534,41 @@ func _add_poly(
 func _build_conifer_mesh() -> ArrayMesh:
 	var v := PackedVector2Array(); var u := PackedVector2Array()
 	var c := PackedColorArray(); var idx := PackedInt32Array()
-	_add_lobe(v, u, c, idx, Vector2(0.0, 0.28), 0.56, 0.14, Color(0.12, 0.24, 0.18, 0.60))
-	var trees := [
-		[Vector2(-0.34, 0.24), 0.34, 0.44, Color(0.56, 0.78, 0.58, 0.96)],
-		[Vector2(0.00, 0.18), 0.42, 0.58, Color(0.72, 0.90, 0.70, 1.0)],
-		[Vector2(0.34, 0.26), 0.32, 0.42, Color(0.44, 0.66, 0.48, 0.94)],
-		[Vector2(-0.16, -0.06), 0.28, 0.40, Color(0.82, 0.96, 0.78, 0.96)],
-		[Vector2(0.22, -0.08), 0.26, 0.36, Color(0.64, 0.84, 0.62, 0.94)],
-	]
-	var tree_count := mini(_quality_lobe_count(), trees.size())
-	for i in range(tree_count):
-		var tree: Array = trees[i]
-		var base: Vector2 = tree[0]
-		var half_w := float(tree[1])
-		var height := float(tree[2])
-		var tint: Color = tree[3]
-		_add_tri(v, u, c, idx, base + Vector2(0.0, -height), base + Vector2(-half_w, 0.0), base + Vector2(half_w, 0.0), tint)
-		_add_tri(v, u, c, idx, base + Vector2(0.0, -height * 0.70), base + Vector2(-half_w * 0.72, height * 0.18), base + Vector2(half_w * 0.72, height * 0.18), tint.lightened(0.08))
+	var branch_count := clampi(_quality_lobe_count(), 3, 8)
+	var crown: Array = []
+	for i in range(branch_count * 2):
+		var angle := float(i) * PI / float(branch_count) - PI * 0.5
+		var radius := 0.62 if i % 2 == 0 else 0.34
+		crown.append(Vector2(cos(angle), sin(angle)) * radius)
+	_add_poly(v, u, c, idx, crown, Color(0.38, 0.62, 0.42, 0.96))
+	_add_lobe(v, u, c, idx, Vector2.ZERO, 0.34, 0.32, Color(0.68, 0.86, 0.64, 1.0))
+	if branch_count >= 5:
+		_add_lobe(v, u, c, idx, Vector2(-0.08, -0.10), 0.20, 0.18, Color(0.82, 0.94, 0.76, 0.88))
 	return _finish_mesh(v, u, c, idx)
 
 
 func _build_palm_mesh() -> ArrayMesh:
 	var v := PackedVector2Array(); var u := PackedVector2Array()
 	var c := PackedColorArray(); var idx := PackedInt32Array()
-	_add_lobe(v, u, c, idx, Vector2(0.0, 0.24), 0.58, 0.14, Color(0.18, 0.30, 0.14, 0.54))
-	var palms := [
-		[Vector2(-0.32, 0.20), 0.44, Color(0.74, 0.90, 0.56, 0.96)],
-		[Vector2(0.04, 0.12), 0.52, Color(0.88, 0.98, 0.66, 1.0)],
-		[Vector2(0.34, 0.24), 0.40, Color(0.64, 0.82, 0.50, 0.94)],
-	]
-	for palm in palms:
-		var palm_data: Array = palm
-		var base: Vector2 = palm_data[0]
-		var height := float(palm_data[1])
-		var tint: Color = palm_data[2]
-		var top := base + Vector2(0.0, -height)
-		_add_lobe(v, u, c, idx, base + Vector2(0.02, -height * 0.35), 0.045, height * 0.42, Color(0.46, 0.34, 0.22, 0.92))
-		var fronds := [
-			Vector2(-0.24, -0.02),
-			Vector2(-0.12, -0.20),
-			Vector2(0.10, -0.22),
-			Vector2(0.26, -0.04),
+	var frond_count := clampi(_quality_lobe_count() + 2, 5, 10)
+	for i in range(frond_count):
+		var angle := float(i) * TAU / float(frond_count) - PI * 0.5
+		var direction := Vector2(cos(angle), sin(angle))
+		var tangent := Vector2(-direction.y, direction.x)
+		var length := 0.62 if i % 2 == 0 else 0.52
+		var width := 0.10 if i % 3 == 0 else 0.08
+		var tip := direction * length
+		var frond := [
+			direction * 0.04 - tangent * width * 0.45,
+			direction * 0.04 + tangent * width * 0.45,
+			direction * (length * 0.70) + tangent * width,
+			tip,
+			direction * (length * 0.70) - tangent * width,
 		]
-		for tip_offset in fronds:
-			var tip_offset_vec: Vector2 = tip_offset
-			var tip := top + tip_offset_vec
-			var perp := Vector2(-(tip.y - top.y), tip.x - top.x).normalized() * 0.045
-			_add_tri(v, u, c, idx, top + perp, top - perp, tip, tint)
+		var tint := Color(0.74, 0.90, 0.56, 0.96) if i % 2 == 0 else Color(0.58, 0.78, 0.44, 0.94)
+		_add_poly(v, u, c, idx, frond, tint)
+	_add_lobe(v, u, c, idx, Vector2.ZERO, 0.14, 0.13, Color(0.88, 0.96, 0.64, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(0.0, 0.01), 0.055, 0.05, Color(0.42, 0.30, 0.18, 0.94))
 	return _finish_mesh(v, u, c, idx)
 
 
@@ -4619,10 +4645,61 @@ func _build_snow_mound_mesh() -> ArrayMesh:
 func _build_dead_snag_mesh() -> ArrayMesh:
 	var v := PackedVector2Array(); var u := PackedVector2Array()
 	var c := PackedColorArray(); var idx := PackedInt32Array()
-	_add_lobe(v, u, c, idx, Vector2(0.0, 0.20), 0.07, 0.56, Color(0.80, 0.74, 0.66, 1.0))
-	_add_tri(v, u, c, idx, Vector2(0.0, -0.10), Vector2(-0.04, -0.06), Vector2(-0.40, -0.42), Color(0.86, 0.80, 0.72, 1.0))
-	_add_tri(v, u, c, idx, Vector2(0.02, -0.24), Vector2(-0.02, -0.20), Vector2(0.34, -0.40), Color(0.84, 0.78, 0.70, 1.0))
-	_add_tri(v, u, c, idx, Vector2(0.0, -0.36), Vector2(-0.03, -0.32), Vector2(-0.18, -0.66), Color(0.88, 0.82, 0.74, 1.0))
+	var branch_count := clampi(_quality_lobe_count(), 3, 8)
+	for i in range(branch_count):
+		var angle := float(i) * TAU / float(branch_count) - PI * 0.5
+		var direction := Vector2(cos(angle), sin(angle))
+		var tangent := Vector2(-direction.y, direction.x)
+		var length := 0.58 if i % 2 == 0 else 0.44
+		var width := 0.045
+		_add_poly(v, u, c, idx, [
+			direction * 0.06 - tangent * width,
+			direction * 0.06 + tangent * width,
+			direction * length + tangent * width * 0.24,
+			direction * (length + 0.05),
+			direction * length - tangent * width * 0.24,
+		], Color(0.84, 0.78, 0.70, 0.98))
+		if branch_count >= 5 and i % 2 == 0:
+			var fork_root := direction * length * 0.62
+			_add_tri(v, u, c, idx,
+				fork_root - tangent * 0.025,
+				fork_root + tangent * 0.025,
+				fork_root + (direction + tangent * 0.72).normalized() * 0.20,
+				Color(0.88, 0.82, 0.74, 0.96))
+	_add_lobe(v, u, c, idx, Vector2.ZERO, 0.13, 0.12, Color(0.70, 0.62, 0.54, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(-0.02, -0.02), 0.065, 0.055, Color(0.92, 0.86, 0.76, 0.96))
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_fallen_log_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	_add_poly(v, u, c, idx, [
+		Vector2(-0.62, -0.13), Vector2(0.52, -0.13), Vector2(0.62, -0.05),
+		Vector2(0.62, 0.08), Vector2(0.52, 0.15), Vector2(-0.62, 0.14),
+	], Color(0.78, 0.68, 0.56, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(0.56, 0.01), 0.12, 0.14, Color(0.90, 0.80, 0.66, 1.0))
+	_add_lobe(v, u, c, idx, Vector2(0.56, 0.01), 0.055, 0.065, Color(0.54, 0.42, 0.32, 1.0))
+	return _finish_mesh(v, u, c, idx)
+
+
+func _build_mangrove_root_mesh() -> ArrayMesh:
+	var v := PackedVector2Array(); var u := PackedVector2Array()
+	var c := PackedColorArray(); var idx := PackedInt32Array()
+	var root_count := clampi(_quality_lobe_count(), 3, 8)
+	for i in range(root_count):
+		var angle := float(i) * TAU / float(root_count)
+		var direction := Vector2(cos(angle), sin(angle))
+		var tangent := Vector2(-direction.y, direction.x)
+		var length := 0.56 if i % 2 == 0 else 0.42
+		_add_poly(v, u, c, idx, [
+			-tangent * 0.07,
+			tangent * 0.07,
+			direction * length + tangent * 0.025,
+			direction * (length + 0.06),
+			direction * length - tangent * 0.025,
+		], Color(0.76, 0.66, 0.52, 0.96))
+	_add_lobe(v, u, c, idx, Vector2.ZERO, 0.17, 0.15, Color(0.56, 0.44, 0.32, 1.0))
 	return _finish_mesh(v, u, c, idx)
 
 

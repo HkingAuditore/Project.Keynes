@@ -1,5 +1,14 @@
 extends Control
 
+const SectionTitleScene := preload("res://scenes/ui/setup_section_title.tscn")
+const SetupOptionScene := preload("res://scenes/ui/setup_option.tscn")
+const SetupBoolScene := preload("res://scenes/ui/setup_bool.tscn")
+const SetupSpinScene := preload("res://scenes/ui/setup_spin.tscn")
+const SetupSliderSpinScene := preload("res://scenes/ui/setup_slider_spin.tscn")
+const SetupFoldoutScene := preload("res://scenes/ui/setup_foldout.tscn")
+const SetupSeedActionsScene := preload("res://scenes/ui/setup_seed_actions.tscn")
+const SetupCellCountScene := preload("res://scenes/ui/setup_cell_count.tscn")
+
 const MAIN_SCENE_PATH := "res://scenes/player_game.tscn"
 const DEBUG_SCENE_PATH := "res://scenes/main.tscn"
 const SETTINGS_PATH := "user://world_setup_settings.json"
@@ -209,12 +218,12 @@ func _apply_responsive_layout() -> void:
 
 
 func _build_base_panel(parent: VBoxContainer) -> void:
-	var base_title := Label.new()
+	var base_title := SectionTitleScene.instantiate() as Label
 	base_title.text = "基础参数"
 	base_title.add_theme_font_size_override("font_size", 24 if _mobile_layout else 20)
 	parent.add_child(base_title)
 
-	_preset_option = OptionButton.new()
+	_preset_option = SetupOptionScene.instantiate() as OptionButton
 	_preset_option.custom_minimum_size = _control_min_size(0.0, DESKTOP_CONTROL_HEIGHT)
 	for preset in PRESETS:
 		_preset_option.add_item(String(preset["label"]))
@@ -226,23 +235,19 @@ func _build_base_panel(parent: VBoxContainer) -> void:
 		_base_controls[String(field["name"])] = control
 		parent.add_child(_row_with_label(String(field["label"]), control, String(field.get("hint", ""))))
 
-	var seed_row := HBoxContainer.new()
-	seed_row.add_theme_constant_override("separation", 8)
-	var random_seed_btn := Button.new()
-	random_seed_btn.text = "随机 seed"
+	var seed_row := SetupSeedActionsScene.instantiate() as HBoxContainer
+	var random_seed_btn := seed_row.get_node("RandomSeedButton") as Button
 	random_seed_btn.custom_minimum_size = _button_min_size(96.0)
 	random_seed_btn.size_flags_horizontal = _button_h_size_flags()
 	random_seed_btn.pressed.connect(_on_random_seed_pressed)
-	seed_row.add_child(random_seed_btn)
 	parent.add_child(seed_row)
 
-	_cell_count_label = Label.new()
-	_cell_count_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_cell_count_label = SetupCellCountScene.instantiate() as Label
 	parent.add_child(_cell_count_label)
 
 
 func _build_render_panel(parent: VBoxContainer) -> void:
-	var render_title := Label.new()
+	var render_title := SectionTitleScene.instantiate() as Label
 	render_title.text = "渲染选项"
 	render_title.add_theme_font_size_override("font_size", 24 if _mobile_layout else 20)
 	parent.add_child(render_title)
@@ -254,7 +259,7 @@ func _build_render_panel(parent: VBoxContainer) -> void:
 
 
 func _build_climate_panel(parent: VBoxContainer) -> void:
-	var advanced_title := Label.new()
+	var advanced_title := SectionTitleScene.instantiate() as Label
 	advanced_title.text = "世界风格（简单调节）"
 	advanced_title.add_theme_font_size_override("font_size", 24 if _mobile_layout else 20)
 	parent.add_child(advanced_title)
@@ -270,19 +275,11 @@ func _build_climate_panel(parent: VBoxContainer) -> void:
 
 
 func _create_foldout(title: String) -> Dictionary:
-	var root := VBoxContainer.new()
-	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var header := Button.new()
+	var root := SetupFoldoutScene.instantiate() as VBoxContainer
+	var header := root.get_node("Header") as Button
 	header.text = "v  " + title
-	header.toggle_mode = true
-	header.button_pressed = true
 	header.custom_minimum_size = _button_min_size(0.0)
-	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	root.add_child(header)
-	var body := VBoxContainer.new()
-	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 6)
-	root.add_child(body)
+	var body := root.get_node("Body") as VBoxContainer
 	header.toggled.connect(func(pressed: bool) -> void:
 		body.visible = pressed
 		header.text = ("v  " if pressed else ">  ") + title
@@ -299,7 +296,7 @@ func _row_with_label(label_text: String, control: Control, hint_text: String = "
 func _create_field_control(field: Dictionary) -> Control:
 	var field_type := String(field["type"])
 	if field_type == "option":
-		var option := OptionButton.new()
+		var option := SetupOptionScene.instantiate() as OptionButton
 		option.custom_minimum_size = _control_min_size(0.0, DESKTOP_CONTROL_HEIGHT)
 		var selected_id := int(field.get("default", 0))
 		var selected_index := 0
@@ -314,8 +311,7 @@ func _create_field_control(field: Dictionary) -> Control:
 		option.item_selected.connect(func(_index: int) -> void: _on_field_changed())
 		return option
 	if field_type == "bool":
-		var check := CheckBox.new()
-		check.text = "启用"
+		var check := SetupBoolScene.instantiate() as CheckBox
 		check.button_pressed = bool(field.get("default", false))
 		check.custom_minimum_size = _control_min_size(0.0, DESKTOP_CONTROL_HEIGHT)
 		check.toggled.connect(func(_pressed: bool) -> void: _on_field_changed())
@@ -326,15 +322,12 @@ func _create_field_control(field: Dictionary) -> Control:
 	if field_type == "int" and is_equal_approx(min_value, 0.0) and is_equal_approx(max_value, 100.0):
 		return _create_slider_spin_control(field)
 
-	var spin := SpinBox.new()
+	var spin := SetupSpinScene.instantiate() as SpinBox
 	spin.min_value = min_value
 	spin.max_value = max_value
 	spin.step = float(field.get("step", 0.01))
 	spin.value = float(field.get("default", 0.0))
 	spin.rounded = field_type == "int"
-	spin.allow_greater = false
-	spin.allow_lesser = false
-	spin.select_all_on_focus = true
 	spin.custom_minimum_size = _control_min_size(120.0, 32.0)
 	spin.size_flags_horizontal = Control.SIZE_SHRINK_END
 	spin.value_changed.connect(func(_value: float) -> void: _on_number_field_changed())
@@ -342,31 +335,22 @@ func _create_field_control(field: Dictionary) -> Control:
 
 
 func _create_slider_spin_control(field: Dictionary) -> Control:
-	var wrap := HBoxContainer.new()
-	wrap.add_theme_constant_override("separation", 8)
-	wrap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var wrap := SetupSliderSpinScene.instantiate() as HBoxContainer
 	wrap.custom_minimum_size = _control_min_size(220.0, 32.0)
 
-	var slider := HSlider.new()
+	var slider := wrap.get_node("Slider") as HSlider
 	slider.min_value = float(field.get("min", 0.0))
 	slider.max_value = float(field.get("max", 100.0))
 	slider.step = float(field.get("step", 1.0))
 	slider.value = float(field.get("default", 0.0))
-	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	wrap.add_child(slider)
 
-	var spin := SpinBox.new()
+	var spin := wrap.get_node("Spin") as SpinBox
 	spin.min_value = slider.min_value
 	spin.max_value = slider.max_value
 	spin.step = slider.step
 	spin.value = slider.value
 	spin.rounded = true
-	spin.allow_greater = false
-	spin.allow_lesser = false
-	spin.select_all_on_focus = true
 	spin.custom_minimum_size = _control_min_size(72.0, 32.0)
-	spin.size_flags_horizontal = Control.SIZE_SHRINK_END
-	wrap.add_child(spin)
 
 	slider.value_changed.connect(func(value: float) -> void:
 		if not is_equal_approx(spin.value, value):

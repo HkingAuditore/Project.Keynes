@@ -91,7 +91,7 @@ func _run() -> void:
 	inspector_label.text = "地块档案"
 	inspector_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	inspector.add_child(inspector_label)
-	inspector.theme = UITokens.make_player_theme()
+	inspector.theme = load("res://assets/themes/player_ui_theme.tres") as Theme
 	scene_root.add_child(inspector)
 	var panel := DebugConsole.new()
 	panel.console_mode = DebugConsole.ConsoleMode.PLAYER_GM
@@ -102,7 +102,7 @@ func _run() -> void:
 	panel.offset_right = UITokens.SPACE_SM + panel_width
 	panel.offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM
 	panel.offset_bottom = -UITokens.SPACE_SM
-	panel.theme = UITokens.make_player_theme()
+	panel.theme = load("res://assets/themes/player_ui_theme.tres") as Theme
 	scene_root.add_child(panel)
 	panel.set_main(runtime)
 	panel.open_panel()

@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="PackedScene" path="res://scenes/ui/setup_spin.tscn" id="1_spin"]
+[node name="SliderSpin" type="HBoxContainer"]
+custom_minimum_size = Vector2(220, 32)
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+[node name="Slider" type="HSlider" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="Spin" parent="." instance=ExtResource("1_spin")]
+custom_minimum_size = Vector2(72, 32)
+layout_mode = 2
+size_flags_horizontal = 8
+rounded = true

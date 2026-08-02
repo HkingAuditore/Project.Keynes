@@ -25,9 +25,8 @@ class ModifierRuntime;
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    // 27: sparse notable-person authority nested inside notable-family
-    // membership, with conserved post-settlement economic attribution.
-    static constexpr int32_t SCHEMA_VERSION = 27;
+    // 28: persistent per-cell/per-ethnicity Q32 birth residuals.
+    static constexpr int32_t SCHEMA_VERSION = 28;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -1881,6 +1880,7 @@ private:
     int64_t _building_owner_job_reallocations = 0;
     int64_t _building_owner_job_profession_changes = 0;
     int64_t _building_owner_job_probability_skips = 0;
+    int64_t _building_employee_to_owner_reallocations = 0;
     int64_t _building_investments_started = 0;
     int64_t _building_investment_blocked_funds = 0;
     int64_t _building_investment_blocked_materials = 0;
@@ -2282,6 +2282,8 @@ private:
     // Persistent per-cell rolling settlement state. Phase is derived from the
     // Stable cell id; last day and generation are PKEC v16 authority.
     std::vector<int64_t> _cell_last_settlement_day;
+    // Q32 fractional births accumulated per cell and ethnicity.
+    std::vector<int64_t> _birth_residual_q32;
     std::vector<uint32_t> _cell_settlement_generation;
     std::vector<uint32_t> _cell_price_stock_gen;
     std::vector<uint32_t> _cell_owner_cash_gen;

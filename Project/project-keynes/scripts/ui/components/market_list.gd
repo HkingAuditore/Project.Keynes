@@ -1,6 +1,9 @@
 extends VBoxContainer
 class_name MarketList
 
+const MarketRowScene := preload("res://scenes/ui/market_row.tscn")
+const MarketDetailRowScene := preload("res://scenes/ui/market_detail_row.tscn")
+
 signal details_requested(request: Dictionary)
 
 var _row_refs: Dictionary = {}
@@ -12,7 +15,6 @@ func set_rows(rows: Array) -> void:
 		child.queue_free()
 	_row_refs.clear()
 	_expanded.clear()
-	add_theme_constant_override("separation", UITokens.SPACE_XS)
 	update_rows(rows)
 
 
@@ -58,76 +60,21 @@ func is_expanded(row_id: String) -> bool:
 
 
 func _create_row(row_id: String) -> Dictionary:
-	var panel := PanelContainer.new()
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var panel := MarketRowScene.instantiate() as PanelContainer
 	add_child(panel)
-	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", UITokens.SPACE_XS)
-	panel.add_child(body)
-	var button := Button.new()
-	button.focus_mode = Control.FOCUS_NONE
-	button.custom_minimum_size = Vector2(0.0, 54.0)
-	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	button.text = ""
-	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var button := panel.get_node("Body/Button") as Button
 	button.pressed.connect(func() -> void: details_requested.emit(
 		{"kind": "good", "row_id": row_id}))
-	body.add_child(button)
-	var header := HBoxContainer.new()
-	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	header.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 7)
-	header.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	button.add_child(header)
-	var chevron := Button.new()
-	chevron.toggle_mode = true
-	chevron.custom_minimum_size = Vector2(22.0, 22.0)
-	chevron.focus_mode = Control.FOCUS_NONE
-	chevron.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	chevron.tooltip_text = "展开 / 折叠"
+	var chevron := panel.get_node("Body/Button/Header/Chevron") as Button
 	chevron.toggled.connect(func(expanded: bool) -> void: set_expanded(row_id, expanded))
-	header.add_child(chevron)
-	var icon := IconBadge.new()
-	icon.custom_minimum_size = Vector2(26.0, 26.0)
-	header.add_child(icon)
-	var identity := VBoxContainer.new()
-	identity.custom_minimum_size.x = 0.0
-	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	identity.add_theme_constant_override("separation", 0)
-	header.add_child(identity)
-	var name_label := Label.new()
-	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	name_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	identity.add_child(name_label)
-	var stock_label := Label.new()
-	stock_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	stock_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	stock_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	identity.add_child(stock_label)
-	var price_box := VBoxContainer.new()
-	price_box.custom_minimum_size = Vector2(92.0, 0.0)
-	price_box.add_theme_constant_override("separation", 0)
-	header.add_child(price_box)
-	var price_label := Label.new()
-	price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	price_label.add_theme_color_override("font_color", UITokens.RESOURCE)
-	price_box.add_child(price_label)
-	var delta_label := Label.new()
-	delta_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	delta_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	price_box.add_child(delta_label)
-	var risk_label := Label.new()
-	risk_label.custom_minimum_size = Vector2(46.0, 0.0)
-	risk_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	risk_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	risk_label.add_theme_color_override("font_color", UITokens.RISK)
-	header.add_child(risk_label)
-	var details := VBoxContainer.new()
-	details.visible = false
-	details.add_theme_constant_override("separation", 2)
-	body.add_child(details)
-	var refs := {"panel": panel, "button": button, "chevron": chevron, "icon": icon, "name": name_label,
-		"stock": stock_label, "price": price_label, "delta": delta_label,
-		"risk": risk_label, "details": details, "detail_refs": {},
+	var refs := {"panel": panel, "button": button, "chevron": chevron,
+		"icon": panel.get_node("Body/Button/Header/Icon"),
+		"name": panel.get_node("Body/Button/Header/Identity/Name"),
+		"stock": panel.get_node("Body/Button/Header/Identity/Stock"),
+		"price": panel.get_node("Body/Button/Header/PriceBox/Price"),
+		"delta": panel.get_node("Body/Button/Header/PriceBox/Delta"),
+		"risk": panel.get_node("Body/Button/Header/Risk"),
+		"details": panel.get_node("Body/Details"), "detail_refs": {},
 		"detail_rows": [], "applied": {}}
 	return refs
 
@@ -154,25 +101,10 @@ func _sync_details(refs: Dictionary, rows: Array) -> void:
 
 
 func _create_detail(parent: VBoxContainer) -> Dictionary:
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 36)
-	margin.add_theme_constant_override("margin_right", UITokens.SPACE_SM)
+	var margin := MarketDetailRowScene.instantiate() as MarginContainer
 	parent.add_child(margin)
-	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	margin.add_child(line)
-	var name_label := Label.new()
-	name_label.custom_minimum_size.x = 0.0
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	name_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	line.add_child(name_label)
-	var value_label := Label.new()
-	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	value_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	value_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	line.add_child(value_label)
-	return {"root": margin, "name": name_label, "value": value_label}
+	return {"root": margin, "name": margin.get_node("Line/Name"),
+		"value": margin.get_node("Line/Value")}
 
 
 func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
@@ -182,9 +114,6 @@ func _apply_row(row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	var row_visible := bool(data.get("visible", true))
 	if panel.visible != row_visible:
 		panel.visible = row_visible
-	if not applied.has("accent") or applied["accent"] != accent:
-		panel.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
-			Color(0.052, 0.046, 0.038, 0.96), Color(accent.r, accent.g, accent.b, 0.38)))
 	var icon_key := String(data.get("icon", "resource"))
 	if not applied.has("icon") or applied["icon"] != icon_key \
 			or not applied.has("accent") or applied["accent"] != accent:

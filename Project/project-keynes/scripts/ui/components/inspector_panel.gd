@@ -1,10 +1,18 @@
 extends PanelContainer
 class_name InspectorPanel
 
-const CohortListScript = preload("res://scripts/ui/components/cohort_list.gd")
-const BuildingListScript = preload("res://scripts/ui/components/building_list.gd")
-const MarketListScript = preload("res://scripts/ui/components/market_list.gd")
-const FamilyListScript = preload("res://scripts/ui/components/family_list.gd")
+const MetricCardScene := preload("res://scenes/ui/metric_card.tscn")
+const InsightShellScene := preload("res://scenes/ui/insight_shell.tscn")
+const ResourceListScene := preload("res://scenes/ui/resource_list.tscn")
+const FamilyListScene := preload("res://scenes/ui/family_list.tscn")
+const MarketListScene := preload("res://scenes/ui/market_list.tscn")
+const CohortListScene := preload("res://scenes/ui/cohort_list.tscn")
+const BuildingListScene := preload("res://scenes/ui/building_list.tscn")
+const GaugeBarScene := preload("res://scenes/ui/gauge_bar.tscn")
+const BadgeRowScene := preload("res://scenes/ui/badge_row.tscn")
+const MetricGridScene := preload("res://scenes/ui/metric_grid.tscn")
+const SectionHeaderScene := preload("res://scenes/ui/section_header.tscn")
+const GroupSeparatorScene := preload("res://scenes/ui/group_separator.tscn")
 
 signal close_requested()
 signal tab_data_requested(tab_id: String)
@@ -40,73 +48,22 @@ var _last_score_band := -1
 func _ready() -> void:
 	if _content_box != null:
 		return
-	var shell_style := UITokens.panel_style(
-		Color(0.038, 0.035, 0.030, 0.975),
-		UITokens.RADIUS_MD,
-		Color(0.43, 0.32, 0.18, 0.76)
-	)
-	shell_style.content_margin_left = 0
-	shell_style.content_margin_top = 0
-	shell_style.content_margin_right = 0
-	shell_style.content_margin_bottom = 0
-	add_theme_stylebox_override("panel", shell_style)
-
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", UITokens.SPACE_LG)
-	margin.add_theme_constant_override("margin_top", UITokens.SPACE_MD)
-	margin.add_theme_constant_override("margin_right", UITokens.SPACE_LG)
-	margin.add_theme_constant_override("margin_bottom", UITokens.SPACE_LG)
-	add_child(margin)
-
-	var root := VBoxContainer.new()
-	root.name = "InspectorRoot"
-	root.add_theme_constant_override("separation", 10)
-	margin.add_child(root)
-
-	var cap := ColorRect.new()
-	cap.custom_minimum_size = Vector2(0.0, 2.0)
-	cap.color = Color(UITokens.BRASS_HIGHLIGHT.r, UITokens.BRASS_HIGHLIGHT.g, UITokens.BRASS_HIGHLIGHT.b, 0.72)
-	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(cap)
-
-	root.add_child(_build_header())
-	root.add_child(_build_summary())
-
-	var rule := HSeparator.new()
-	rule.add_theme_color_override("separator", UITokens.PANEL_BORDER_SOFT)
-	root.add_child(rule)
-
-	_tabs = CategoryTabs.new()
+	_title_label = get_node_or_null("Margin/InspectorRoot/Header/Row/Titles/TitleLabel") as Label
+	_subtitle_label = get_node_or_null("Margin/InspectorRoot/Header/Row/Titles/SubtitleLabel") as Label
+	_score_gauge = get_node_or_null("Margin/InspectorRoot/Summary/Row/ScoreGauge") as RadialGauge
+	_summary_grid = get_node_or_null("Margin/InspectorRoot/Summary/Row/SummaryGrid") as GridContainer
+	_tabs = get_node_or_null("Margin/InspectorRoot/CategoryTabs") as CategoryTabs
+	_scroll = get_node_or_null("Margin/InspectorRoot/ContentShell/ContentMargin/Scroll") as ScrollContainer
+	_content_box = get_node_or_null("Margin/InspectorRoot/ContentShell/ContentMargin/Scroll/ContentBox") as VBoxContainer
+	var close_button := get_node_or_null("Margin/InspectorRoot/Header/Row/CloseButton") as Button
+	if _title_label == null or _subtitle_label == null or _score_gauge == null \
+			or _summary_grid == null or _tabs == null or _scroll == null \
+			or _content_box == null or close_button == null:
+		push_error("InspectorPanel 必须通过 inspector_panel.tscn 实例化。")
+		return
+	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭地块档案")
+	close_button.pressed.connect(func() -> void: close_requested.emit())
 	_tabs.tab_selected.connect(_on_tab_selected)
-	root.add_child(_tabs)
-
-	var content_shell := PanelContainer.new()
-	content_shell.name = "ContentShell"
-	content_shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content_shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content_shell.add_theme_stylebox_override(
-		"panel",
-		UITokens.inset_panel_style(Color(0.026, 0.025, 0.023, 0.86), UITokens.PANEL_BORDER_SOFT)
-	)
-	root.add_child(content_shell)
-
-	var content_margin := MarginContainer.new()
-	content_margin.add_theme_constant_override("margin_left", UITokens.SPACE_SM)
-	content_margin.add_theme_constant_override("margin_top", UITokens.SPACE_SM)
-	content_margin.add_theme_constant_override("margin_right", UITokens.SPACE_XS)
-	content_margin.add_theme_constant_override("margin_bottom", UITokens.SPACE_SM)
-	content_shell.add_child(content_margin)
-
-	_scroll = ScrollContainer.new()
-	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content_margin.add_child(_scroll)
-
-	_content_box = VBoxContainer.new()
-	_content_box.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	_content_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_scroll.add_child(_content_box)
 
 
 func set_model(model: Dictionary, _rebuild_visible: bool = true) -> void:
@@ -200,87 +157,6 @@ func visible_node_count() -> int:
 	return _count_nodes(self)
 
 
-func _build_header() -> Control:
-	var shell := PanelContainer.new()
-	var shell_style := UITokens.inset_panel_style(
-		Color(0.072, 0.058, 0.043, 0.96),
-		Color(0.48, 0.35, 0.18, 0.70),
-		UITokens.RADIUS_SM
-	)
-	shell_style.content_margin_left = UITokens.SPACE_SM
-	shell_style.content_margin_top = 6
-	shell_style.content_margin_right = UITokens.SPACE_SM
-	shell_style.content_margin_bottom = 6
-	shell.add_theme_stylebox_override("panel", shell_style)
-
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	shell.add_child(header)
-
-	var accent_bar := ColorRect.new()
-	accent_bar.custom_minimum_size = Vector2(3.0, 0.0)
-	accent_bar.color = UITokens.ACCENT
-	accent_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	header.add_child(accent_bar)
-
-	var title_box := VBoxContainer.new()
-	title_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_box.add_theme_constant_override("separation", 1)
-	header.add_child(title_box)
-
-	_title_label = Label.new()
-	_title_label.text = "地块档案"
-	_title_label.add_theme_font_override("font", UITokens.font_with_weight(700))
-	_title_label.add_theme_font_size_override("font_size", UITokens.FONT_TITLE)
-	_title_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	title_box.add_child(_title_label)
-
-	_subtitle_label = Label.new()
-	_subtitle_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_subtitle_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	title_box.add_child(_subtitle_label)
-
-	var close_button := Button.new()
-	close_button.tooltip_text = "关闭地块档案"
-	close_button.focus_mode = Control.FOCUS_NONE
-	close_button.custom_minimum_size = Vector2(34.0, 32.0)
-	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭地块档案")
-	close_button.pressed.connect(func() -> void: close_requested.emit())
-	header.add_child(close_button)
-	return shell
-
-
-func _build_summary() -> Control:
-	var shell := PanelContainer.new()
-	var shell_style := UITokens.inset_panel_style(
-		Color(0.030, 0.029, 0.026, 0.94),
-		Color(0.36, 0.28, 0.17, 0.72),
-		UITokens.RADIUS_MD
-	)
-	shell_style.content_margin_left = UITokens.SPACE_SM
-	shell_style.content_margin_top = UITokens.SPACE_SM
-	shell_style.content_margin_right = UITokens.SPACE_SM
-	shell_style.content_margin_bottom = UITokens.SPACE_SM
-	shell.add_theme_stylebox_override("panel", shell_style)
-
-	var summary := HBoxContainer.new()
-	summary.add_theme_constant_override("separation", 10)
-	shell.add_child(summary)
-
-	_score_gauge = RadialGauge.new()
-	_score_gauge.custom_minimum_size = Vector2(104.0, 112.0)
-	_score_gauge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	summary.add_child(_score_gauge)
-
-	_summary_grid = GridContainer.new()
-	_summary_grid.columns = 1
-	_summary_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_summary_grid.add_theme_constant_override("h_separation", UITokens.SPACE_SM)
-	_summary_grid.add_theme_constant_override("v_separation", UITokens.SPACE_XS)
-	summary.add_child(_summary_grid)
-	return shell
-
-
 func _apply_header(header: Dictionary, _live_patch: bool) -> void:
 	_title_label.text = String(header.get("title", "地块档案"))
 	_subtitle_label.text = String(header.get("subtitle", ""))
@@ -293,7 +169,7 @@ func _render_summary(score: Dictionary, cards: Array) -> void:
 	_summary_cards.clear()
 	for raw in cards:
 		var data: Dictionary = raw
-		var card := MetricCard.new()
+		var card := MetricCardScene.instantiate() as MetricCard
 		card.custom_minimum_size = Vector2(0.0, 42.0)
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_summary_grid.add_child(card)
@@ -357,25 +233,14 @@ func _build_category_content(data: Dictionary) -> void:
 func _build_category_block(data: Dictionary) -> void:
 	var insights: Array = data.get("insights", [])
 	if not insights.is_empty():
-		var insight_shell := PanelContainer.new()
-		var insight_style := UITokens.inset_panel_style(
-			Color(0.060, 0.050, 0.038, 0.74),
-			Color(0.38, 0.29, 0.18, 0.62),
-			UITokens.RADIUS_SM
-		)
-		insight_style.content_margin_left = UITokens.SPACE_SM
-		insight_style.content_margin_top = 6
-		insight_style.content_margin_right = UITokens.SPACE_SM
-		insight_style.content_margin_bottom = 6
-		insight_shell.add_theme_stylebox_override("panel", insight_style)
+		var insight_shell := InsightShellScene.instantiate() as PanelContainer
 		_content_box.add_child(insight_shell)
-		_insight_list = InsightList.new()
+		_insight_list = insight_shell.get_node("InsightList") as InsightList
 		_insight_list.set_items(insights)
-		insight_shell.add_child(_insight_list)
 
 	var cohort_rows: Array = data.get("cohort_rows", [])
 	if data.has("family_rows"):
-		_family_list = FamilyListScript.new()
+		_family_list = FamilyListScene.instantiate()
 		_family_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_family_list.details_requested.connect(
 			func(request: Dictionary) -> void: object_details_requested.emit(request))
@@ -383,7 +248,7 @@ func _build_category_block(data: Dictionary) -> void:
 		_content_box.add_child(_family_list)
 	if data.has("cohort_rows"):
 		_add_group_separator()
-		_cohort_list = CohortListScript.new()
+		_cohort_list = CohortListScene.instantiate() as CohortList
 		_cohort_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_cohort_list.demand_details_requested.connect(
 			func(details: Dictionary) -> void: demand_details_requested.emit(details))
@@ -395,7 +260,7 @@ func _build_category_block(data: Dictionary) -> void:
 	var resource_rows: Array = data.get("resource_rows", [])
 	if data.has("resource_rows"):
 		_add_group_separator()
-		_resource_list = ResourceList.new()
+		_resource_list = ResourceListScene.instantiate() as ResourceList
 		_resource_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_resource_list.details_requested.connect(
 			func(request: Dictionary) -> void: object_details_requested.emit(request))
@@ -405,7 +270,7 @@ func _build_category_block(data: Dictionary) -> void:
 	var market_rows: Array = data.get("market_rows", [])
 	if data.has("market_rows"):
 		_add_group_separator()
-		_market_list = MarketListScript.new()
+		_market_list = MarketListScene.instantiate()
 		_market_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_market_list.details_requested.connect(
 			func(request: Dictionary) -> void: object_details_requested.emit(request))
@@ -415,7 +280,7 @@ func _build_category_block(data: Dictionary) -> void:
 	var building_rows: Array = data.get("building_rows", [])
 	if data.has("building_rows"):
 		_add_group_separator()
-		_building_list = BuildingListScript.new()
+		_building_list = BuildingListScene.instantiate() as BuildingList
 		_building_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_building_list.details_requested.connect(
 			func(request: Dictionary) -> void: object_details_requested.emit(request))
@@ -425,15 +290,11 @@ func _build_category_block(data: Dictionary) -> void:
 	var metrics: Array = data.get("metrics", [])
 	if not metrics.is_empty():
 		_add_group_separator()
-		var grid := GridContainer.new()
-		grid.columns = 2
-		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		grid.add_theme_constant_override("h_separation", UITokens.SPACE_SM)
-		grid.add_theme_constant_override("v_separation", UITokens.SPACE_SM)
+		var grid := MetricGridScene.instantiate() as GridContainer
 		_content_box.add_child(grid)
 		for raw in metrics:
 			var metric: Dictionary = raw
-			var card := MetricCard.new()
+			var card := MetricCardScene.instantiate() as MetricCard
 			card.custom_minimum_size = Vector2(184.0, 56.0)
 			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			grid.add_child(card)
@@ -445,7 +306,7 @@ func _build_category_block(data: Dictionary) -> void:
 		_add_group_separator()
 		for raw in gauges:
 			var gauge: Dictionary = raw
-			var bar := GaugeBar.new()
+			var bar := GaugeBarScene.instantiate() as GaugeBar
 			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			_content_box.add_child(bar)
 			_apply_gauge(bar, gauge)
@@ -472,7 +333,7 @@ func _build_category_block(data: Dictionary) -> void:
 	var badges: Array = data.get("badges", [])
 	if not badges.is_empty():
 		_add_group_separator()
-		var row := BadgeRow.new()
+		var row := BadgeRowScene.instantiate() as BadgeRow
 		row.set_badges(badges)
 		_content_box.add_child(row)
 
@@ -524,22 +385,14 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 func _add_section_header(section: Dictionary) -> void:
 	if _content_box.get_child_count() > 0:
 		_add_group_separator()
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var icon := IconBadge.new()
-	icon.custom_minimum_size = Vector2(20.0, 20.0)
+	var row := SectionHeaderScene.instantiate() as HBoxContainer
+	var icon := row.get_node("Icon") as IconBadge
 	icon.set_semantic(
 		StringName(section.get("icon", &"summary.overview")),
 		section.get("accent", UITokens.ACCENT)
 	)
-	row.add_child(icon)
-	var label := Label.new()
+	var label := row.get_node("Label") as Label
 	label.text = String(section.get("title", "资料"))
-	label.add_theme_font_override("font", UITokens.font_with_weight(650))
-	label.add_theme_font_size_override("font_size", UITokens.FONT_SECTION)
-	label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	row.add_child(label)
 	_content_box.add_child(row)
 
 
@@ -570,9 +423,7 @@ func _apply_gauge(bar: GaugeBar, gauge: Dictionary) -> void:
 func _add_group_separator() -> void:
 	if _content_box.get_child_count() == 0:
 		return
-	var line := HSeparator.new()
-	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_theme_color_override("separator", UITokens.PANEL_BORDER_SOFT)
+	var line := GroupSeparatorScene.instantiate() as HSeparator
 	_content_box.add_child(line)
 
 

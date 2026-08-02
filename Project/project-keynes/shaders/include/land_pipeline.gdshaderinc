@@ -211,7 +211,7 @@ SurfaceParams apply_climate_vegetation_tint(SurfaceParams surface, LandModInputs
 			+ low_vitality * 0.82, 0.0, 1.0);
 	vec4 climate_weights = pow(
 			max(vec4(sprout_w, lush_w, gold_w, dormant_w), vec4(0.001)),
-			vec4(1.55));
+			vec4(1.35));
 	climate_weights /= max(dot(climate_weights, vec4(1.0)), 0.001);
 	vec3 veg_tint = vegetation_season_lut[v * 4].rgb * climate_weights.x
 			+ vegetation_season_lut[v * 4 + 1].rgb * climate_weights.y

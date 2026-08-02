@@ -14,27 +14,15 @@ var _value_label: Label
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(180.0, 96.0)
 	if _title_label != null:
 		return
-	_title_label = Label.new()
-	_title_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_title_label.offset_right = -112.0
-	_title_label.offset_bottom = 24.0
+	_title_label = get_node_or_null("TitleLabel") as Label
+	_value_label = get_node_or_null("ValueLabel") as Label
+	if _title_label == null or _value_label == null:
+		push_error("SparklineChart 必须通过 sparkline_chart.tscn 实例化。")
+		return
 	_title_label.add_theme_font_override("font", UITokens.font_with_weight(650))
-	_title_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_title_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	add_child(_title_label)
-	_value_label = Label.new()
-	_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_value_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_value_label.anchor_left = 1.0
-	_value_label.offset_left = -108.0
-	_value_label.offset_bottom = 24.0
 	_value_label.add_theme_font_override("font", UITokens.font_with_weight(650))
-	_value_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_value_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	add_child(_value_label)
 
 
 func set_data(

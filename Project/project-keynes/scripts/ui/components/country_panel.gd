@@ -3,20 +3,15 @@ class_name CountryPanel
 
 # Each country affair is a standalone full-bleed screen. The shell owns nothing
 # but framing, so no screen inherits another domain's dossier chrome or tabs.
-const TechnologyWorkspaceScript = preload("res://scripts/ui/components/technology_workspace.gd")
-const EconomyWorkspaceScript = preload("res://scripts/ui/components/economy_workspace.gd")
-const SectionPlaceholderScreenScript = preload(
-	"res://scripts/ui/components/section_placeholder_screen.gd")
-
 signal close_requested()
 signal section_selected(section_id: String)
 
 const SECTION_DEFINITIONS := [
-	{"id": "technology", "label": "科技", "icon": &"country.technology", "accent": UITokens.CLIMATE},
-	{"id": "politics", "label": "政治", "icon": &"country.politics", "accent": UITokens.ACCENT},
-	{"id": "economy", "label": "经济", "icon": &"country.economy", "accent": UITokens.RESOURCE},
-	{"id": "military", "label": "军事", "icon": &"country.military", "accent": UITokens.RISK},
-	{"id": "diplomacy", "label": "外交", "icon": &"country.diplomacy", "accent": UITokens.WATER},
+	{"id": "technology", "label": "科技", "icon": &"country.technology", "accent": UITokens.CLIMATE, "available": true},
+	{"id": "politics", "label": "政治", "icon": &"country.politics", "accent": UITokens.ACCENT, "available": false},
+	{"id": "economy", "label": "经济", "icon": &"country.economy", "accent": UITokens.RESOURCE, "available": true},
+	{"id": "military", "label": "军事", "icon": &"country.military", "accent": UITokens.RISK, "available": false},
+	{"id": "diplomacy", "label": "外交", "icon": &"country.diplomacy", "accent": UITokens.WATER, "available": false},
 ]
 const HEADER_HEIGHT := 30.0
 
@@ -27,7 +22,6 @@ var _section_icon: IconBadge
 var _section_title: Label
 var _technology_workspace: Control
 var _economy_workspace: Control
-var _placeholder: Control
 var _model: Dictionary = {}
 var _section_id := ""
 var _compact := false
@@ -37,51 +31,22 @@ func _ready() -> void:
 	if _dialog != null:
 		return
 	name = "CountryPanel"
-	visible = false
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var scrim := ColorRect.new()
-	scrim.color = Color(0.008, 0.007, 0.006, 0.64)
-	scrim.mouse_filter = Control.MOUSE_FILTER_STOP
-	scrim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(scrim)
-	_center = MarginContainer.new()
-	_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_center.offset_left = UITokens.SPACE_SM
-	_center.offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM
-	_center.offset_right = -UITokens.SPACE_SM
-	_center.offset_bottom = -CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM
-	_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_center)
-	_dialog = PanelContainer.new()
-	_dialog.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_dialog.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var dialog_style := UITokens.panel_style(
-		Color(0.048, 0.040, 0.032, 0.99), UITokens.RADIUS_MD, UITokens.BRASS_HIGHLIGHT)
-	dialog_style.content_margin_left = UITokens.SPACE_MD
-	dialog_style.content_margin_top = UITokens.SPACE_SM
-	dialog_style.content_margin_right = UITokens.SPACE_MD
-	dialog_style.content_margin_bottom = UITokens.SPACE_MD
-	_dialog.add_theme_stylebox_override("panel", dialog_style)
-	_center.add_child(_dialog)
-	var content := VBoxContainer.new()
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	_dialog.add_child(content)
-	content.add_child(_build_header())
-	_section_host = MarginContainer.new()
-	_section_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_child(_section_host)
-	_technology_workspace = TechnologyWorkspaceScript.new()
-	_technology_workspace.visible = false
-	_section_host.add_child(_technology_workspace)
-	_economy_workspace = EconomyWorkspaceScript.new()
-	_economy_workspace.visible = false
-	_section_host.add_child(_economy_workspace)
-	_placeholder = SectionPlaceholderScreenScript.new()
-	_placeholder.visible = false
-	_section_host.add_child(_placeholder)
+	_center = get_node_or_null("Center") as MarginContainer
+	_dialog = get_node_or_null("Center/Dialog") as PanelContainer
+	_section_host = get_node_or_null("Center/Dialog/Content/SectionHost") as MarginContainer
+	_section_icon = get_node_or_null("Center/Dialog/Content/Header/SectionIcon") as IconBadge
+	_section_title = get_node_or_null("Center/Dialog/Content/Header/SectionTitle") as Label
+	_technology_workspace = get_node_or_null("Center/Dialog/Content/SectionHost/TechnologyWorkspace") as Control
+	_economy_workspace = get_node_or_null("Center/Dialog/Content/SectionHost/EconomyWorkspace") as Control
+	var close_button := get_node_or_null("Center/Dialog/Content/Header/CloseButton") as Button
+	if _center == null or _dialog == null or _section_host == null \
+			or _section_icon == null or _section_title == null \
+			or _technology_workspace == null or _economy_workspace == null \
+			or close_button == null:
+		push_error("CountryPanel 必须通过 country_panel.tscn 实例化。")
+		return
+	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭国家事务")
+	close_button.pressed.connect(close_panel)
 	call_deferred("_update_responsive_layout")
 
 
@@ -139,29 +104,6 @@ func layout_diagnostics() -> Dictionary:
 	}
 
 
-func _build_header() -> Control:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = HEADER_HEIGHT
-	row.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	_section_icon = IconBadge.new()
-	_section_icon.custom_minimum_size = Vector2(26.0, 26.0)
-	_section_icon.set_semantic(&"country.technology", UITokens.CLIMATE)
-	row.add_child(_section_icon)
-	_section_title = Label.new()
-	_section_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_section_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_section_title.add_theme_font_override("font", UITokens.font_with_weight(700))
-	_section_title.add_theme_font_size_override("font_size", UITokens.FONT_VALUE)
-	row.add_child(_section_title)
-	var close_button := Button.new()
-	close_button.focus_mode = Control.FOCUS_NONE
-	close_button.custom_minimum_size = Vector2(30.0, 26.0)
-	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭国家事务")
-	close_button.pressed.connect(close_panel)
-	row.add_child(close_button)
-	return row
-
-
 func _apply_section() -> void:
 	var definition := _definition_for(_section_id)
 	var accent: Color = definition.get("accent", UITokens.ACCENT)
@@ -172,7 +114,6 @@ func _apply_section() -> void:
 	var economy_open := _section_id == "economy"
 	_technology_workspace.visible = technology_open
 	_economy_workspace.visible = economy_open
-	_placeholder.visible = not technology_open and not economy_open
 	if technology_open:
 		_technology_workspace.set_model(_model)
 		_technology_workspace.set_compact(_compact)
@@ -180,12 +121,11 @@ func _apply_section() -> void:
 	if economy_open:
 		_economy_workspace.set_model(_model)
 		return
-	_placeholder.set_section(String(definition.get("label", "国家")),
-		definition.get("icon", &"country.affairs"), accent)
 
 
 func _normalized_section(section_id: String) -> String:
-	return section_id if not _definition_for(section_id).is_empty() else "technology"
+	var definition := _definition_for(section_id)
+	return section_id if bool(definition.get("available", false)) else "technology"
 
 
 func _definition_for(section_id: String) -> Dictionary:

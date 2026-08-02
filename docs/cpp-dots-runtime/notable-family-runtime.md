@@ -126,7 +126,7 @@ cohort→membership、family→building、building→ownership、cell→family�
 
 ## PKEC v26 / v27
 
-PKEC v26 首次加入家族权威状态；当前 writer 为 PKEC v27。家族 header 继续记录独立
+PKEC v26 首次加入家族权威状态；当前 writer 为 PKEC v28。家族 header 继续记录独立
 `family_catalog_hash` 以及会改变模拟语义的 mode、形成门槛、评审周期、
 每格上限与衰退次数；纯 continuation slice budget 不保存。历史 section 0–14 后追加：
 
@@ -150,7 +150,7 @@ v27 hash round-trip、v26 空人物迁移、v25 空家族迁移、generation 旧
 
 - 后续开发先加载仓库 Skill：
   [project-keynes-family-runtime](../../.codex/skills/project-keynes-family-runtime/SKILL.md)。
-- 家族行为、重要人物、守恒、职业统计、所有权 CSR 与 PKEC v27 的最小回归入口是
+- 家族行为、重要人物、守恒、职业统计、所有权 CSR 与当前 PKEC 的最小回归入口是
   `Project/project-keynes/tests/family_runtime_test.gd`。
 - 影响通用经济、税务、国家或调度时，同时加载相应 Economy、Tax、Country 与 Runtime
   Architecture Skill；本页仍是家族模型的项目文档单一事实源。

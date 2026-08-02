@@ -45,7 +45,6 @@ var _name_font: Font = UITokens.font_with_weight(640)
 
 
 func _ready() -> void:
-	name = "TechnologyTreeView"
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_CLICK

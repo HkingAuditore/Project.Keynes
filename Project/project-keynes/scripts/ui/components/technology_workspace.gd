@@ -7,18 +7,7 @@ class_name TechnologyWorkspace
 
 signal policy_submitted()
 
-const TechnologyQueueRowScript = preload(
-	"res://scripts/ui/components/technology_queue_row.gd")
-const TechnologyQueueDropZoneScript = preload(
-	"res://scripts/ui/components/technology_queue_drop_zone.gd")
-const TechnologyTreeViewScript = preload(
-	"res://scripts/ui/components/technology_tree_view.gd")
-const ResearchWeightDialScript = preload(
-	"res://scripts/ui/components/research_weight_dial.gd")
-const ProcurementBudgetSliderScript = preload(
-	"res://scripts/ui/components/procurement_budget_slider.gd")
-const TechnologyDetailCardScript = preload(
-	"res://scripts/ui/components/technology_detail_card.gd")
+const TechnologyQueueRowScene := preload("res://scenes/ui/technology_queue_row.tscn")
 
 const CASH_SCALE := 10000.0
 const POINT_SCALE := 1000.0
@@ -53,29 +42,58 @@ var _queue_rows: Array = []
 func _ready() -> void:
 	if _tree != null:
 		return
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var root := VBoxContainer.new()
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	add_child(root)
-	root.add_child(_build_status_strip())
-	var main := HBoxContainer.new()
-	main.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	main.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	root.add_child(main)
-	main.add_child(_build_policy_column())
-	_tree = TechnologyTreeViewScript.new()
-	_tree.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var required_paths := {
+		"policy_panel": "Root/Main/PolicyPanel",
+		"dial": "Root/Main/PolicyPanel/Scroll/Body/Dial",
+		"budget": "Root/Main/PolicyPanel/Scroll/Body/Budget",
+		"tree": "Root/Main/Tree",
+		"detail": "Root/Main/Detail",
+	}
+	_policy_panel = get_node_or_null(required_paths.policy_panel) as PanelContainer
+	_dial = get_node_or_null(required_paths.dial) as Control
+	_budget = get_node_or_null(required_paths.budget) as Control
+	_tree = get_node_or_null(required_paths.tree) as Control
+	_detail = get_node_or_null(required_paths.detail) as Control
+	if _policy_panel == null or _dial == null or _budget == null \
+			or _tree == null or _detail == null:
+		var missing := PackedStringArray()
+		for key in required_paths:
+			if get_node_or_null(required_paths[key]) == null:
+				missing.append(String(required_paths[key]))
+		push_error("TechnologyWorkspace 必须通过 technology_workspace.tscn 实例化；缺失节点：%s" \
+			% ", ".join(missing))
+		return
+	var status_defs := [
+		{"id": "era", "node": "Era", "icon": &"technology.milestone", "accent": UITokens.BRASS_HIGHLIGHT},
+		{"id": "points", "node": "Points", "icon": IconCatalog.good_semantic("technology_points"), "accent": UITokens.CLIMATE},
+		{"id": "treasury", "node": "Treasury", "icon": &"metric.treasury", "accent": UITokens.RESOURCE},
+		{"id": "queued", "node": "Queued", "icon": &"technology.state.queued", "accent": UITokens.WATER},
+		{"id": "completed", "node": "Completed", "icon": &"technology.state.completed", "accent": UITokens.GOOD},
+		{"id": "purchased", "node": "Purchased", "icon": &"metric.technology", "accent": UITokens.ACCENT},
+	]
+	for item in status_defs:
+		var chip := get_node("Root/StatusStrip/Row/%s" % String(item.node)) as HBoxContainer
+		var icon := chip.get_node("Icon") as IconBadge
+		var value := chip.get_node("Value") as Label
+		icon.set_semantic(item.icon, item.accent)
+		value.add_theme_color_override("font_color", (item.accent as Color).lerp(UITokens.TEXT_MAIN, 0.60))
+		_status_chips[String(item.id)] = chip
+		_status_chips["%s_value" % String(item.id)] = value
+	for domain in range(DOMAIN_COUNT):
+		var header := get_node("Root/Main/PolicyPanel/Scroll/Body/Domain%d" % domain) as HBoxContainer
+		var zone := get_node("Root/Main/PolicyPanel/Scroll/Body/Zone%d" % domain)
+		_queue_headers.append({"icon": header.get_node("Icon"), "name": header.get_node("Name"), "share": header.get_node("Share")})
+		zone.configure(domain)
+		zone.move_requested.connect(_move_in_queue)
+		_queue_zones.append(zone)
+		_queue_rows.append([])
+	_dial.weights_previewed.connect(_on_weights_previewed)
+	_dial.weights_committed.connect(_on_weights_committed)
+	_budget.budget_committed.connect(_on_budget_committed)
 	_tree.technology_selected.connect(_on_tree_selected)
 	_tree.technology_activated.connect(_on_tree_activated)
-	main.add_child(_tree)
-	_detail = TechnologyDetailCardScript.new()
-	_detail.custom_minimum_size = Vector2(DETAIL_WIDTH, 0.0)
-	_detail.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_detail.enqueue_requested.connect(_enqueue)
 	_detail.remove_requested.connect(_remove_from_queue)
-	main.add_child(_detail)
 
 
 func set_model(model: Dictionary) -> void:
@@ -121,92 +139,6 @@ func set_compact(compact: bool) -> void:
 
 func tree_view() -> Control:
 	return _tree
-
-
-func _build_status_strip() -> Control:
-	var strip := PanelContainer.new()
-	strip.add_theme_stylebox_override("panel", UITokens.inset_panel_style(
-		Color(0.065, 0.052, 0.038, 0.98), UITokens.BRASS_HIGHLIGHT))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", UITokens.SPACE_LG)
-	strip.add_child(row)
-	for item in [
-		{"id": "era", "icon": &"technology.milestone", "accent": UITokens.BRASS_HIGHLIGHT},
-		{"id": "points", "icon": IconCatalog.good_semantic("technology_points"),
-			"accent": UITokens.CLIMATE},
-		{"id": "treasury", "icon": &"metric.treasury", "accent": UITokens.RESOURCE},
-		{"id": "queued", "icon": &"technology.state.queued", "accent": UITokens.WATER},
-		{"id": "completed", "icon": &"technology.state.completed", "accent": UITokens.GOOD},
-		{"id": "purchased", "icon": &"metric.technology", "accent": UITokens.ACCENT},
-	]:
-		var chip := HBoxContainer.new()
-		chip.add_theme_constant_override("separation", UITokens.SPACE_XS)
-		var icon := IconBadge.new()
-		icon.custom_minimum_size = Vector2(22.0, 22.0)
-		icon.set_semantic(item.icon, item.accent)
-		chip.add_child(icon)
-		var value := Label.new()
-		value.text = "—"
-		value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		value.add_theme_font_override("font", UITokens.font_with_weight(640))
-		value.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		value.add_theme_color_override("font_color",
-			(item.accent as Color).lerp(UITokens.TEXT_MAIN, 0.60))
-		value.tooltip_text = ""
-		chip.add_child(value)
-		row.add_child(chip)
-		_status_chips[String(item.id)] = chip
-		_status_chips["%s_value" % String(item.id)] = value
-	return strip
-
-
-func _build_policy_column() -> Control:
-	_policy_panel = PanelContainer.new()
-	_policy_panel.custom_minimum_size = Vector2(POLICY_WIDTH, 0.0)
-	_policy_panel.add_theme_stylebox_override("panel", UITokens.panel_style(
-		Color(0.044, 0.037, 0.030, 0.98), UITokens.RADIUS_SM, UITokens.PANEL_BORDER))
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_policy_panel.add_child(scroll)
-	var body := VBoxContainer.new()
-	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	scroll.add_child(body)
-	body.add_child(_make_section_title("研究方针"))
-	_dial = ResearchWeightDialScript.new()
-	_dial.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_dial.weights_previewed.connect(_on_weights_previewed)
-	_dial.weights_committed.connect(_on_weights_committed)
-	body.add_child(_dial)
-	_budget = ProcurementBudgetSliderScript.new()
-	_budget.budget_committed.connect(_on_budget_committed)
-	body.add_child(_budget)
-	body.add_child(HSeparator.new())
-	body.add_child(_make_section_title("研究队列"))
-	for domain in range(DOMAIN_COUNT):
-		var header := HBoxContainer.new()
-		header.add_theme_constant_override("separation", UITokens.SPACE_XS)
-		var icon := IconBadge.new()
-		icon.custom_minimum_size = Vector2(18.0, 18.0)
-		header.add_child(icon)
-		var name_label := Label.new()
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		header.add_child(name_label)
-		var share := Label.new()
-		share.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		share.add_theme_color_override("font_color", UITokens.TEXT_FAINT)
-		header.add_child(share)
-		body.add_child(header)
-		_queue_headers.append({"icon": icon, "name": name_label, "share": share})
-		var zone = TechnologyQueueDropZoneScript.new()
-		zone.configure(domain)
-		zone.move_requested.connect(_move_in_queue)
-		zone.add_theme_constant_override("separation", 2)
-		body.add_child(zone)
-		_queue_zones.append(zone)
-		_queue_rows.append([])
-	return _policy_panel
 
 
 func _configure_queues() -> void:
@@ -330,7 +262,7 @@ func _rebuild_queue_rows(offsets: PackedInt32Array,
 			var technology := int(technologies[position])
 			if technology < 0 or technology >= _definitions.size():
 				continue
-			var row = TechnologyQueueRowScript.new()
+			var row = TechnologyQueueRowScene.instantiate()
 			zone.add_child(row)
 			row.setup(technology, domain, position - offsets[domain],
 				String((_definitions[technology] as Dictionary).get("display_name", "")),
@@ -506,15 +438,6 @@ func _domain_accent(domain: int) -> Color:
 	if domain < _domains.size():
 		return (_domains[domain] as Dictionary).get("accent", UITokens.ACCENT)
 	return UITokens.ACCENT
-
-
-func _make_section_title(text: String) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_override("font", UITokens.font_with_weight(700))
-	label.add_theme_font_size_override("font_size", UITokens.FONT_SECTION)
-	label.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
-	return label
 
 
 func _effective_day() -> int:

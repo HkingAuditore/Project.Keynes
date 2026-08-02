@@ -66,9 +66,9 @@ func _run() -> void:
 	var death_rates: PackedInt64Array = catalog.signature_death_rate_q32
 	var birth_weights: PackedInt64Array = catalog.signature_satisfaction_birth_weight_q16
 	_expect("profession defaults compile calibrated natural demography",
-		birth_rates.size() > 0 and birth_rates[0] == 353011 and
+		birth_rates.size() > 0 and birth_rates[0] == 470681 and
 		death_rates.size() == birth_rates.size() and death_rates[0] == 294176 and
-		birth_weights.size() == birth_rates.size() and birth_weights[0] == 65536)
+		birth_weights.size() == birth_rates.size() and birth_weights[0] == 32768)
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("  [SKIP] DCWorldExt unavailable")
 		_finish()
@@ -134,9 +134,9 @@ func _test_satisfaction_driven_births(compiled: Dictionary) -> void:
 	_expect("healthy satisfaction produces births above natural deaths",
 		int(healthy_report.get("births", 0)) > int(healthy_report.get("deaths", 0)) and
 		int(healthy_report.get("population_error", 1)) == 0)
-	_expect("zero survival satisfaction suppresses births but keeps natural deaths",
-		int(deprived_report.get("births", -1)) == 0 and
-		int(deprived_report.get("deaths", 0)) > 0 and
+	_expect("zero survival satisfaction halves births below natural deaths",
+		int(deprived_report.get("births", 0)) > 0 and
+		int(deprived_report.get("births", 0)) < int(deprived_report.get("deaths", 0)) and
 		int(deprived_report.get("population_error", 1)) == 0)
 	var healthy_pop: Dictionary = healthy.get_population_cell_snapshot(0)
 	var signatures: PackedInt32Array = healthy_pop.signature_ids
@@ -358,15 +358,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v27 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 27)
+	_expect("v28 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 28)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v27 save emits chunks", chunks.size() >= 12)
-	_expect("v27 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v28 save emits chunks", chunks.size() >= 12)
+	_expect("v28 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()

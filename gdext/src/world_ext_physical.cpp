@@ -122,6 +122,12 @@ inline double wind_clamp(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+inline double physical_wrap01(double world_x, double wrap_origin_x, double wrap_period_x) {
+    double phase = std::fmod((world_x - wrap_origin_x) / wrap_period_x, 1.0);
+    if (phase < 0.0) phase += 1.0;
+    return phase;
+}
+
 inline float wind_speed_norm(float dir_x, float dir_y, float speed) {
     if (speed > 0.0001f) return speed;
     const float len2 = dir_x * dir_x + dir_y * dir_y;
@@ -277,6 +283,8 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     if (year_phase < 0.0) year_phase += 4.0;
     const int sim_day = int(knobs.has("sim_day") ? int(knobs["sim_day"]) : int(std::floor((year_phase / 4.0) * double(days_per_year))));
     const int world_seed = int(knobs.has("world_seed") ? int(knobs["world_seed"]) : 0);
+    const double wrap_origin_x = double(knobs.has("wrap_origin_x") ? double(knobs["wrap_origin_x"]) : 0.0);
+    const double wrap_period_x = double(knobs.has("wrap_period_x") ? double(knobs["wrap_period_x"]) : 0.0);
     if (n_cells <= 0)         { diag("n_cells <= 0"); return -1.0; }
     if (bounds_size_y <= 0.001) { diag("world_bounds_size_y <= 0.001"); return -1.0; }
 
@@ -382,6 +390,7 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         else if (px_i > bounds_max_x) bounds_max_x = px_i;
     }
     const double inv_bounds_w = 1.0 / std::max(0.001, bounds_max_x - bounds_pos_x);
+    const bool has_wrap_domain = wrap_period_x > 0.001;
     const uint32_t seed_bits = static_cast<uint32_t>(world_seed);
 
     pk::parallel_for_range_with_emit<WindFlipEmit>(
@@ -487,7 +496,9 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
             v_sum_y += breeze * double(sea_land_y[i]);
         }
         if (synoptic_amp > 0.0) {
-            const double px = wind_clamp((double(POSX[i]) - bounds_pos_x) * inv_bounds_w, 0.0, 1.0);
+            const double px = has_wrap_domain
+                ? physical_wrap01(double(POSX[i]), wrap_origin_x, wrap_period_x)
+                : wind_clamp((double(POSX[i]) - bounds_pos_x) * inv_bounds_w, 0.0, 1.0);
             const double py = ny;
             // 天气尺度修复(2026-06-19)：synoptic 波平移项原先挂在 day_t(=sim_day/days_per_year)→约 1.3
             // 年才平移一个波长，日/月尺度上风型实质冻结 → 水汽永远送往同一辐合带 → 固定雨带/干区、
@@ -496,9 +507,11 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
             const double syn_cycles = double(sim_day) / synoptic_period_days;
             const double seed_a = double(seed_bits & 1023u) * 0.006135923151542565;
             const double seed_b = double((seed_bits >> 10) & 1023u) * 0.006135923151542565;
-            const double k1x = std::sin(seed_a) * 0.80 + 0.35;
+            // 圆柱周期契约：经向波数必须是整数谐波，否则 px=0/1 不同相，
+            // SLP 梯度与风自身扰动都会在东西接缝形成一堵“墙”。seed 只选择谐波与相位。
+            const double k1x = 1.0 + double(seed_bits & 1u);
             const double k1y = std::cos(seed_a) * 0.65 + 0.45;
-            const double k2x = std::cos(seed_b) * 1.15 - 0.20;
+            const double k2x = 1.0 + double((seed_bits >> 1) & 1u);
             const double k2y = std::sin(seed_b) * 0.90 + 0.25;
             const double p1 = 6.283185307179586 * (k1x * px + k1y * py + syn_cycles) + seed_a;
             const double p2 = 6.283185307179586 * (k2x * px - k2y * py - syn_cycles * 0.56) + seed_b;
@@ -1678,6 +1691,8 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     if (year_phase < 0.0) year_phase += 4.0;
     const int sim_day = int(knobs.has("sim_day") ? int(knobs["sim_day"]) : int(std::floor((year_phase / 4.0) * double(days_per_year))));
     const int world_seed = int(knobs.has("world_seed") ? int(knobs["world_seed"]) : 0);
+    const double wrap_origin_x = double(knobs.has("wrap_origin_x") ? double(knobs["wrap_origin_x"]) : 0.0);
+    const double wrap_period_x = double(knobs.has("wrap_period_x") ? double(knobs["wrap_period_x"]) : 0.0);
     // 天气尺度修复(2026-06-19)：SLP synoptic 时间项原先 sim_day*0.071(≈88 天/周期)，在日/月尺度上
     // 准静止。改用 synoptic 角速率 2π/period(~6 天/周期)，让压力距平逐日漂移，与风场 synoptic 协同
     // 推动天气系统移动。共用 wind_synoptic_period_days knob。在循环外提升为常量。镜像见 run_wind_field_pass。
@@ -1859,6 +1874,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         slp_bounds_pos_x = bx_min;
         slp_inv_bounds_w = 1.0 / std::max(0.001, bx_max - bx_min);
     }
+    const bool slp_has_wrap_domain = wrap_period_x > 0.001;
 
     // 让天气流动(2026-06-21 阶段1)：移动低压中心（循环外预计算；hot loop 仅做 exp 距离衰减）。
     // 每个低压由 (world_seed, j) 哈希出确定性初始相位/纬度，随 sim_day 自西向东平移（中纬西风带
@@ -1890,9 +1906,11 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     // (逐 cell 值不变，只是不再重复 6400 次三角)。
     const double slp_syn_sa  = double(world_seed) * 0.00011;
     const double slp_syn_sb  = double(world_seed) * 0.00017;
-    const double slp_syn_k1x = 0.90 + 0.40 * std::sin(slp_syn_sa);
+    // 经向必须采用整数谐波，才能同时保证场值与经向导数在圆柱接缝连续。
+    const uint32_t slp_seed_bits = static_cast<uint32_t>(world_seed);
+    const double slp_syn_k1x = 1.0 + double(slp_seed_bits & 1u);
     const double slp_syn_k1y = 0.70 + 0.40 * std::cos(slp_syn_sa);
-    const double slp_syn_k2x = 1.10 - 0.35 * std::cos(slp_syn_sb);
+    const double slp_syn_k2x = 1.0 + double((slp_seed_bits >> 1) & 1u);
     const double slp_syn_k2y = 0.85 + 0.35 * std::sin(slp_syn_sb);
     auto slp_passA_range = [&](int rb, int re) {
     for (int ii = rb; ii < re; ++ii) {
@@ -1942,9 +1960,11 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         const float moist_low = -MOIST_LOW_WEIGHT * (vapor_low * 0.65f + cloud_low * 0.35f) * (0.45f + 0.55f * (1.0f - ls_abs));
         float synoptic;
         if (POSX != nullptr) {
-            // 大尺度二维空间波：px,py∈[0,1]，波数 k≈0.6–1.5 → 约 1 个波长/图宽(高低压系统尺度)。
+            // 大尺度二维空间波：px∈[0,1)，经向为整数谐波，严格满足圆柱周期契约。
             // 时间项 slp_syn_phase(2π/period_days) 让波整体漂移；纬向调制弱化(避免纬度高频)。
-            const double px = std::clamp((double(POSX[i]) - slp_bounds_pos_x) * slp_inv_bounds_w, 0.0, 1.0);
+            const double px = slp_has_wrap_domain
+                ? physical_wrap01(double(POSX[i]), wrap_origin_x, wrap_period_x)
+                : std::clamp((double(POSX[i]) - slp_bounds_pos_x) * slp_inv_bounds_w, 0.0, 1.0);
             const double py = double(ny);
             const double sa = slp_syn_sa;
             const double sb = slp_syn_sb;
@@ -1954,8 +1974,8 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
             const double k2y = slp_syn_k2y;
             const double TWO_PI = 6.283185307179586;
             synoptic = SLP_SYNOPTIC_AMP * float(
-                0.65 * std::sin(TWO_PI * (k1x * px + k1y * py) + slp_syn_phase + double(ls) * 0.6) +
-                0.35 * std::cos(TWO_PI * (k2x * px - k2y * py) - slp_syn_phase2 + double(ls_abs) * 0.9));
+                0.65 * std::sin(TWO_PI * (k1x * px + k1y * py) + slp_syn_phase + double(ls) * 0.6 + sa) +
+                0.35 * std::cos(TWO_PI * (k2x * px - k2y * py) - slp_syn_phase2 + double(ls_abs) * 0.9 + sb));
         } else {
             // 退化(无 cell_pos_x slot)：沿用原 cell 索引波，保证向后兼容。
             synoptic = SLP_SYNOPTIC_AMP * float(
@@ -1967,7 +1987,9 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         // convergence→cloud_source/frontogenesis 链让雨带随之整团漂移。px 在此重算(不动 synoptic 块)。
         float mobile_low = 0.0f;
         if (n_mlow > 0) {
-            const float px_m = float(std::clamp((double(POSX[i]) - slp_bounds_pos_x) * slp_inv_bounds_w, 0.0, 1.0));
+            const float px_m = float(slp_has_wrap_domain
+                ? physical_wrap01(double(POSX[i]), wrap_origin_x, wrap_period_x)
+                : std::clamp((double(POSX[i]) - slp_bounds_pos_x) * slp_inv_bounds_w, 0.0, 1.0));
             for (int j = 0; j < n_mlow; ++j) {
                 float dx = px_m - mlows[j].cx;
                 if (dx > 0.5f) dx -= 1.0f; else if (dx < -0.5f) dx += 1.0f;

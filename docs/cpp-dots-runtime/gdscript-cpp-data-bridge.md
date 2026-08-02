@@ -114,7 +114,7 @@ They share the environment hash, shape validation, reset, memory accounting, and
 PKEC v22 cell record. The frozen values remain private until that cell's rolling
 settlement commits.
 
-Economy CSV v22 supersedes the historical v14 recorder paragraph above. Its
+Economy CSV v23 supersedes the historical v14 recorder paragraph above. Its
 building rows append temperature fit, water fit, climate capacity, and
 climate-lost output; summary rows append profiled/limited group counts and the
 average climate capacity. These are committed read-only diagnostics, not a
@@ -284,6 +284,11 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
   - LUT/map-index 不写 slot（`published_to_slot=false`）——它们是 GPU 纹理，不是 DataCore 数据，
     无 `flush`/`snapshot` 需求；C++ 直接把字节缓冲塞进返回 Dict，GDScript 端零额外 marshalling 拷贝
     （CoW 引用传递）。
+  - `encode_cell_luts()` 虽然直接读取 C++ slots，但只能消费 round-complete 快照。
+    `run_native_daily_slice()` 从首个切片到 GDScript finalizer 发布完成期间维持
+    `is_native_daily_visual_commit_pending()==true`；`dynamic_visual_atlas_upload` 在此期间只记录
+    pending，不编码或上传 LUT。finalizer 发布 `MapData` 后调用
+    `complete_native_daily_visual_commit()`，下一次 scheduler 机会执行 catch-up 上传。
   - eco `transition_age` 的 per-cell prev 状态由 C++ 端 `AtlasPipelineState::lut_prev_veg/
     lut_prev_vit/lut_transition_age` 持久维护（`invalidate_atlas_csr_cache` 同步失效），
     **不经 GDScript 来回传**——`map_baker` 不再持有该状态。
@@ -454,6 +459,11 @@ slot 写入本身只保证 C++ 后续 pass 可见。
 3. 看 MapData/renderer/CSV 是否需要 visible flush 或 Godot upload。
 
 不要因为 graph-level `published_to_slot=true` 就删除某个 pass 的 visible publish、CSV/debug flush 或 GDScript repair path；删除前必须有对应 pass-level 证据和可见层验证。
+
+`published_to_slot=true` 也不表示跨 tick native round 已对渲染层提交。视觉消费者必须以
+`is_native_daily_visual_commit_pending()` 为提交屏障；该值在 C++ graph 计算完成但 GDScript
+finalizer 尚未发布时仍为 true。`complete_native_daily_moisture_commit()` 仅作为旧调用方兼容别名，
+新代码使用 `complete_native_daily_visual_commit()`。
 
 ### Atlas buffer 直写发布（CSR fan-out 家族）
 

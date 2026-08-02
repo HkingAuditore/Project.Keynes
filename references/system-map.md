@@ -356,7 +356,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 `DCWorldExt` 组合持有的 `NativeEconomyRuntime`：PopulationCohort pages、商人共同
 所有的 MarketStore、FamilyStore、NotablePersonStore 与成员/建筑所有权/人物需求稀疏边、企业停产/采购意图/实际出库、
 need/bundle 清算、国内贸易拓扑/订单/托管、账本、滚动五相 continuation、closing audit 和
-PKEC v27 存档全部在 C++。生产 cadence
+PKEC v28 存档全部在 C++。生产 cadence
 固定为 `cell_id % 5 == day % 5`；每个到期 bucket 通过有界 same-day continuation 完整提交，
 贸易规划仍是不会阻塞本地结算的软工作。closing audit 默认 INCREMENTAL：首触 shadow delta
 每日权威提交，并在首日、restore/异常边界及每 25 日完整复核；mismatch 在发布前阻断并关闭
@@ -472,7 +472,7 @@ debug recording is Economy CSV v22.
   freezes due-cell 30-day temperature/plant water, applies the Q16 capacity
   after labor/input/capital/resource limits, and publishes building diagnostics.
   No new scheduler stage or GDScript economy authority is introduced.
-- Current persistence/debug are PKEC v27 and Economy CSV v22. PKEC v27 retains
+- Current persistence/debug are PKEC v28 and Economy CSV v22. PKEC v28 retains
   production-climate/fiscal/notable-family authority and adds important-person records and needs;
   its reader supports explicit v26 empty-person and v25 empty-family migrations plus v23/v22 paths.
 
@@ -503,7 +503,7 @@ debug recording is Economy CSV v22.
   input.
 - Commit: `aggregate_publish/COMMIT` consumes deduplicated changed cells.
 - Bridge: selected-cell summary plus full settlement snapshot / bounded deltas.
-- Persistence: current PKEC v27 retains the fixed generations and sparse stable-ID names introduced
+- Persistence: current PKEC v28 retains the fixed generations and sparse stable-ID names introduced
   by PKEC v24.
 - Formal opening-country cells carry a native forced-name bit, so every
   20-person capital is named while its prosperity tier remains population-only.

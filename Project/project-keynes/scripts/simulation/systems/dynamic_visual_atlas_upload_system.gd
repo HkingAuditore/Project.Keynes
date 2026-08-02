@@ -372,6 +372,45 @@ func _lut_active_decay_pending() -> bool:
 			and not baker._eco_active_decay_set.is_empty()
 
 
+func _native_visual_commit_pending() -> bool:
+	var ext = _get_world_ext()
+	return ext != null \
+			and ext.has_method(&"is_native_daily_visual_commit_pending") \
+			and bool(ext.call(&"is_native_daily_visual_commit_pending"))
+
+
+func _build_lut_commit_deferred_report(t_start_us: int, tick_index: int,
+		pending_before: bool, due_this_tick: bool, due_tick: int) -> Dictionary:
+	_lut_refresh_pending = true
+	_lut_pending_before_tick = pending_before
+	_lut_catchup_tick = false
+	var report: Dictionary = {
+		"done": true,
+		"work_done": 0,
+		"processed_cells": 0,
+		"elapsed_ms": float(Time.get_ticks_usec() - t_start_us) / 1000.0,
+		"progress_ratio": 1.0,
+		"path": "cell_indirection_lut_commit_deferred",
+		"lut_path": "deferred_native_daily_commit",
+		"lut_refresh_ms": 0.0,
+		"lut_refresh_due": due_this_tick,
+		"lut_refresh_pending_before": pending_before,
+		"lut_refresh_pending_after": true,
+		"lut_last_refresh_tick": _lut_last_refresh_tick,
+		"lut_last_due_tick": due_tick,
+		"lut_stride": _lut_stride,
+		"lut_phase": _lut_phase,
+		"lut_catchup": false,
+		"lut_skip_no_dirty": false,
+		"native_visual_commit_pending": true,
+		"dirty_reason": "native_daily_commit_pending",
+		"dirty_noop": true,
+	}
+	_last_breakdown = report.duplicate(true)
+	_last_breakdown["_tick_idx"] = current_fast_tick_idx
+	return report
+
+
 func _build_lut_skip_report(t_start_us: int, tick_index: int, pending_before: bool,
 		due_this_tick: bool, due_tick: int, dirty_count: int) -> Dictionary:
 	var elapsed_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
@@ -439,6 +478,9 @@ func tick(ctx) -> Dictionary:
 		var tick_index: int = _ctx_tick_index(ctx)
 		var due_this_tick: bool = _lut_due_for_tick(tick_index)
 		var due_tick: int = _lut_last_due_tick
+		if _native_visual_commit_pending():
+			return _build_lut_commit_deferred_report(t_start_us, tick_index,
+					pending_before, due_this_tick, due_tick)
 		var catchup: bool = pending_before and not due_this_tick
 		var dirty_count: int = _lut_peek_dirty_count()
 		if dirty_count == 0 and not catchup and _lut_textures_ready() and not _lut_active_decay_pending():

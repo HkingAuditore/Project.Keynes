@@ -309,8 +309,7 @@ func _build_ui() -> void:
 
 
 func _build_player_gm_ui() -> void:
-	add_theme_stylebox_override("panel", UITokens.panel_style(
-		Color(0.035, 0.032, 0.027, 0.985), UITokens.RADIUS_SM, UITokens.PANEL_BORDER))
+	theme_type_variation = &"PKPanel"
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", UITokens.SPACE_MD)

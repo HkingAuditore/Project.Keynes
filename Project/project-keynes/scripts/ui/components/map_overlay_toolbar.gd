@@ -1,6 +1,8 @@
 extends Control
 class_name MapOverlayToolbar
 
+const OverlayButtonScene := preload("res://scenes/ui/map_overlay_icon_button.tscn")
+
 signal overlay_requested(request: Dictionary)
 signal overlay_cleared()
 
@@ -9,6 +11,7 @@ const SECONDARY_WIDTH := 62.0
 const BUTTON_SIZE := Vector2(44.0, 44.0)
 const MAX_RESOURCE_PANEL_HEIGHT := 430.0
 const PANEL_MARGIN_TOTAL := 12.0
+const PANEL_THEME_MARGIN_TOTAL := 16.0
 
 enum Category { NONE, GEOGRAPHY, CLIMATE, RESOURCES }
 
@@ -28,13 +31,29 @@ var _warned_missing_icons: Dictionary = {}
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_LEFT_WIDE)
-	offset_left = UITokens.SPACE_SM
-	offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_MD
-	offset_right = offset_left + COLUMN_WIDTH + UITokens.SPACE_XS + SECONDARY_WIDTH
-	offset_bottom = -UITokens.SPACE_MD
-	_build_ui()
+	_primary_panel = get_node_or_null("PrimaryPanel") as PanelContainer
+	_secondary_panel = get_node_or_null("SecondaryPanel") as PanelContainer
+	_primary_box = get_node_or_null("PrimaryPanel/Margin/PrimaryBox") as VBoxContainer
+	_resource_scroll = get_node_or_null("SecondaryPanel/Margin/Root/ResourceScroll") as ScrollContainer
+	_secondary_box = get_node_or_null("SecondaryPanel/Margin/Root/ResourceScroll/SecondaryBox") as VBoxContainer
+	_close_button = get_node_or_null("SecondaryPanel/Margin/Root/CloseButton") as Button
+	if _primary_panel == null or _secondary_panel == null or _primary_box == null \
+			or _resource_scroll == null or _secondary_box == null or _close_button == null:
+		push_error("MapOverlayToolbar 必须通过 map_overlay_toolbar.tscn 实例化。")
+		return
+	_configure_category_button(Category.GEOGRAPHY,
+		_primary_box.get_node("Geography") as Button, &"geography.terrain",
+		"地理信息", "显示海拔、地貌、气候区与当前植被")
+	_configure_category_button(Category.CLIMATE,
+		_primary_box.get_node("Climate") as Button, &"climate.weather",
+		"气候信息", "显示实时温度、湿度、风向与洋流")
+	_configure_category_button(Category.RESOURCES,
+		_primary_box.get_node("Resources") as Button, &"economy.resource",
+		"资源信息", "显示当前所有自然资源储量")
+	IconButton.apply(_close_button, &"status.hidden", IconButton.LARGE,
+		"关闭图层\n关闭当前地图信息遮罩")
+	_close_button.pressed.connect(_on_clear_pressed)
+	_resource_scroll.gui_input.connect(_on_resource_scroll_gui_input)
 
 
 func set_resource_discovery_context(
@@ -67,71 +86,13 @@ func primary_safe_width() -> float:
 	return COLUMN_WIDTH + UITokens.SPACE_MD
 
 
-func _build_ui() -> void:
-	_primary_panel = _make_panel()
-	_primary_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_primary_panel.size = Vector2(
-		COLUMN_WIDTH,
-		BUTTON_SIZE.y * 3.0 + UITokens.SPACE_XS * 2.0 + 12.0
-	)
-	add_child(_primary_panel)
-
-	var primary_margin := _make_margin()
-	_primary_panel.add_child(primary_margin)
-	_primary_box = VBoxContainer.new()
-	_primary_box.add_theme_constant_override("separation", UITokens.SPACE_XS)
-	primary_margin.add_child(_primary_box)
-	_add_category_button(Category.GEOGRAPHY, &"geography.terrain", "地理信息", "显示海拔、地貌、气候区与当前植被")
-	_add_category_button(Category.CLIMATE, &"climate.weather", "气候信息", "显示实时温度、湿度、风向与洋流")
-	_add_category_button(Category.RESOURCES, &"economy.resource", "资源信息", "显示当前所有自然资源储量")
-
-	_secondary_panel = _make_panel()
-	_secondary_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_secondary_panel.offset_left = COLUMN_WIDTH + UITokens.SPACE_XS
-	_secondary_panel.offset_top = 0.0
-	_secondary_panel.offset_right = COLUMN_WIDTH + UITokens.SPACE_XS + SECONDARY_WIDTH
-	_secondary_panel.offset_bottom = 0.0
-	_secondary_panel.visible = false
-	_secondary_panel.clip_contents = true
-	add_child(_secondary_panel)
-
-
-func _make_panel() -> PanelContainer:
-	var panel := PanelContainer.new()
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var style := UITokens.panel_style(
-		Color(0.055, 0.050, 0.043, 0.90), UITokens.RADIUS_SM)
-	# This component owns a precise 6 px inner margin. UITokens.panel_style also
-	# carries general-purpose content margins; keeping both silently grows a
-	# declared 56 px column to 80 px and makes the two columns overlap.
-	style.content_margin_left = 0.0
-	style.content_margin_top = 0.0
-	style.content_margin_right = 0.0
-	style.content_margin_bottom = 0.0
-	panel.add_theme_stylebox_override("panel", style)
-	return panel
-
-
-func _make_margin() -> MarginContainer:
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 6)
-	margin.add_theme_constant_override("margin_top", 6)
-	margin.add_theme_constant_override("margin_right", 6)
-	margin.add_theme_constant_override("margin_bottom", 6)
-	return margin
-
-
-func _add_category_button(
-		category: int,
-		icon_key: StringName,
-		title: String,
-		description: String
-) -> void:
-	var button := _make_icon_button(icon_key, title, description)
+func _configure_category_button(category: int, button: Button,
+		icon_key: StringName, title: String, description: String) -> void:
+	IconButton.apply(button, icon_key, IconButton.LARGE,
+		"%s\n%s" % [tr(title), tr(description)])
 	button.pressed.connect(func() -> void:
 		_set_category(Category.NONE if _category == category else category)
 	)
-	_primary_box.add_child(button)
 	_category_buttons[category] = button
 
 
@@ -152,26 +113,10 @@ func _set_category(category: int) -> void:
 
 
 func _rebuild_secondary() -> void:
-	for child in _secondary_panel.get_children():
-		_secondary_panel.remove_child(child)
+	for child in _secondary_box.get_children():
+		_secondary_box.remove_child(child)
 		child.queue_free()
 	_mode_buttons.clear()
-	var margin := _make_margin()
-	_secondary_panel.add_child(margin)
-	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", UITokens.SPACE_XS)
-	margin.add_child(root)
-
-	_resource_scroll = ScrollContainer.new()
-	_resource_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_resource_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	_resource_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_resource_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
-	_resource_scroll.gui_input.connect(_on_resource_scroll_gui_input)
-	root.add_child(_resource_scroll)
-	_secondary_box = VBoxContainer.new()
-	_secondary_box.add_theme_constant_override("separation", UITokens.SPACE_XS)
-	_resource_scroll.add_child(_secondary_box)
 
 	match _category:
 		Category.GEOGRAPHY:
@@ -195,11 +140,6 @@ func _rebuild_secondary() -> void:
 		Category.RESOURCES:
 			_add_resource_buttons()
 
-	_close_button = _make_icon_button(
-		&"status.hidden", "关闭图层", "关闭当前地图信息遮罩")
-	_close_button.toggle_mode = false
-	_close_button.pressed.connect(_on_clear_pressed)
-	root.add_child(_close_button)
 	_apply_secondary_geometry()
 	call_deferred("_wire_focus_neighbors")
 	call_deferred("_configure_scrollbar")
@@ -211,7 +151,8 @@ func _apply_secondary_geometry() -> void:
 	var count := _mode_buttons.size()
 	var list_height := float(count) * BUTTON_SIZE.y + \
 		float(maxi(count - 1, 0)) * UITokens.SPACE_XS
-	var fixed_height := PANEL_MARGIN_TOTAL + BUTTON_SIZE.y + UITokens.SPACE_XS
+	var fixed_height := PANEL_THEME_MARGIN_TOTAL + PANEL_MARGIN_TOTAL \
+		+ BUTTON_SIZE.y + UITokens.SPACE_XS
 	var desired_height := fixed_height + list_height
 	var available_height := maxf(
 		BUTTON_SIZE.y * 2.0 + fixed_height,
@@ -315,11 +256,7 @@ func _add_resource_buttons() -> void:
 
 
 func _make_icon_button(icon_key: StringName, title: String, description: String) -> Button:
-	var button := Button.new()
-	button.custom_minimum_size = BUTTON_SIZE
-	button.toggle_mode = true
-	button.focus_mode = Control.FOCUS_ALL
-	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	var button := OverlayButtonScene.instantiate() as Button
 	button.tooltip_text = "%s\n%s" % [tr(title), tr(description)]
 	IconButton.apply(button, icon_key, IconButton.LARGE)
 	return button

@@ -1,6 +1,8 @@
 extends PanelContainer
 class_name TechnologyDetailCard
 
+const RelationRowScene := preload("res://scenes/ui/technology_relation_row.tscn")
+
 signal enqueue_requested(index: int)
 signal remove_requested(index: int)
 
@@ -29,68 +31,30 @@ var _placeholder: Label
 func _ready() -> void:
 	if _body != null:
 		return
-	add_theme_stylebox_override("panel", UITokens.panel_style(
-		Color(0.044, 0.037, 0.030, 0.98), UITokens.RADIUS_SM, UITokens.PANEL_BORDER))
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_child(scroll)
-	_body = VBoxContainer.new()
-	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_body.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	scroll.add_child(_body)
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	_header_icon = IconBadge.new()
-	_header_icon.custom_minimum_size = Vector2(30.0, 30.0)
+	_body = get_node_or_null("Scroll/Body") as VBoxContainer
+	_header_icon = get_node_or_null("Scroll/Body/Header/HeaderIcon") as IconBadge
+	_name = get_node_or_null("Scroll/Body/Header/Titles/NameLabel") as Label
+	_state_label = get_node_or_null("Scroll/Body/Header/Titles/StateLabel") as Label
+	_placeholder = get_node_or_null("Scroll/Body/Placeholder") as Label
+	_detail_block = get_node_or_null("Scroll/Body/DetailBlock") as VBoxContainer
+	_chips = get_node_or_null("Scroll/Body/DetailBlock/Chips") as BadgeRow
+	_gauge = get_node_or_null("Scroll/Body/DetailBlock/Gauge") as RadialGauge
+	_effects = get_node_or_null("Scroll/Body/DetailBlock/Effects") as InsightList
+	_prerequisite_title = get_node_or_null("Scroll/Body/DetailBlock/PrerequisiteTitle") as Label
+	_prerequisites = get_node_or_null("Scroll/Body/DetailBlock/Prerequisites") as VBoxContainer
+	_successor_title = get_node_or_null("Scroll/Body/DetailBlock/SuccessorTitle") as Label
+	_successors = get_node_or_null("Scroll/Body/DetailBlock/Successors") as VBoxContainer
+	_action = get_node_or_null("Scroll/Body/DetailBlock/Action") as Button
+	if _body == null or _header_icon == null or _name == null \
+			or _state_label == null or _placeholder == null \
+			or _detail_block == null or _chips == null or _gauge == null \
+			or _effects == null or _prerequisite_title == null \
+			or _prerequisites == null or _successor_title == null \
+			or _successors == null or _action == null:
+		push_error("TechnologyDetailCard 必须通过 technology_detail_card.tscn 实例化。")
+		return
 	_header_icon.set_semantic(&"country.technology", UITokens.CLIMATE)
-	header.add_child(_header_icon)
-	var titles := VBoxContainer.new()
-	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_theme_constant_override("separation", 1)
-	_name = Label.new()
-	_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_name.add_theme_font_override("font", UITokens.font_with_weight(700))
-	_name.add_theme_font_size_override("font_size", UITokens.FONT_VALUE)
-	titles.add_child(_name)
-	_state_label = Label.new()
-	_state_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_state_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	titles.add_child(_state_label)
-	header.add_child(titles)
-	_body.add_child(header)
-	_placeholder = Label.new()
-	_placeholder.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_placeholder.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_placeholder.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	_body.add_child(_placeholder)
-	_detail_block = VBoxContainer.new()
-	_detail_block.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	_body.add_child(_detail_block)
-	_chips = BadgeRow.new()
-	_detail_block.add_child(_chips)
-	_gauge = RadialGauge.new()
-	_gauge.custom_minimum_size = Vector2(118.0, 122.0)
-	_gauge.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_detail_block.add_child(_gauge)
-	_effects = InsightList.new()
-	_effects.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail_block.add_child(_effects)
-	_prerequisite_title = _make_section_title("前置条件")
-	_detail_block.add_child(_prerequisite_title)
-	_prerequisites = VBoxContainer.new()
-	_prerequisites.add_theme_constant_override("separation", 2)
-	_detail_block.add_child(_prerequisites)
-	_successor_title = _make_section_title("将解锁")
-	_detail_block.add_child(_successor_title)
-	_successors = VBoxContainer.new()
-	_successors.add_theme_constant_override("separation", 2)
-	_detail_block.add_child(_successors)
-	_action = Button.new()
-	_action.focus_mode = Control.FOCUS_NONE
-	_action.custom_minimum_size.y = 30.0
 	_action.pressed.connect(_on_action_pressed)
-	_detail_block.add_child(_action)
 	show_empty()
 
 
@@ -211,22 +175,15 @@ func _fill_relation_rows(host: VBoxContainer, entries: Array) -> void:
 		child.queue_free()
 	for entry in entries:
 		var data: Dictionary = entry
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", UITokens.SPACE_XS)
-		var marker := Label.new()
-		marker.custom_minimum_size.x = 15.0
+		var row := RelationRowScene.instantiate() as HBoxContainer
+		var marker := row.get_node("Marker") as Label
 		var state := int(data.get("state", 0))
 		IconButton.apply_to_label(marker, IconCatalog.technology_state_semantic(state), 11)
 		marker.add_theme_color_override("font_color", _state_colour(state))
-		row.add_child(marker)
-		var label := Label.new()
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+		var label := row.get_node("Label") as Label
 		label.text = String(data.get("name", "未知科技"))
 		label.add_theme_color_override("font_color",
 			UITokens.TEXT_MAIN if state >= 1 else UITokens.TEXT_FAINT)
-		row.add_child(label)
 		host.add_child(row)
 
 
@@ -270,13 +227,6 @@ func _on_action_pressed() -> void:
 		enqueue_requested.emit(_index)
 
 
-func _make_section_title(text: String) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_override("font", UITokens.font_with_weight(680))
-	label.add_theme_font_size_override("font_size", UITokens.FONT_SECTION)
-	label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	return label
 
 
 func _state_colour(state: int) -> Color:

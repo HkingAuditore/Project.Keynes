@@ -139,8 +139,23 @@ static func climate_compat_score(v: VEG, temp: float, moist: float) -> float:
 	var p := VegetationProfileRegistry.get_profile(int(v))
 	var dt: float = (temp - p.ideal_temp) / maxf(p.temp_tolerance, 0.01)
 	var dm: float = (moist - p.ideal_moist) / maxf(p.moist_tolerance, 0.01)
+	if dm > 0.0 and _is_wet_type(v):
+		dm *= 0.25
 	var k: float = 0.5 * (dt * dt + dm * dm)
 	return exp(-k)
+
+static func _is_wet_type(v: VEG) -> bool:
+	return v in [VEG.TAIGA, VEG.TEMPERATE_DECIDUOUS, VEG.TEMPERATE_CONIFER,
+		VEG.SUBTROPICAL_FOREST, VEG.TROPICAL_RAINFOREST, VEG.TROPICAL_DRY_FOREST,
+		VEG.MANGROVE, VEG.SWAMP, VEG.MARSH, VEG.CLOUD_FOREST,
+		VEG.MONSOON_FOREST, VEG.PEAT_BOG]
+
+static func _candidate_allowed(terrain: int, v: VEG) -> bool:
+	if v in [VEG.KELP_FOREST, VEG.CORAL_REEF, VEG.SEAGRASS]:
+		return false
+	return not (v == VEG.TROPICAL_RAINFOREST and terrain in [
+		TerrainType.TERRAIN.SWAMP, TerrainType.TERRAIN.MANGROVE,
+		TerrainType.TERRAIN.DELTA, TerrainType.TERRAIN.FLOODPLAIN])
 
 # Climate biomes are long-lived envelopes, while vegetation is the faster
 # ecological response.  Keep the distinction, but make a vegetation type that
@@ -352,9 +367,7 @@ static func needs_biome_reconciliation(terrain: int, v: VEG) -> bool:
 # are soft ecological priors; climate fit remains the dominant signal and only
 # physical substrate rules may hard-reject a vegetation type.
 static func terrain_soft_weight(terrain: int, landform: int, v: VEG, moist: float) -> float:
-	var wet: bool = v in [VEG.SAVANNA, VEG.TAIGA, VEG.TEMPERATE_STEPPE, VEG.MEDITERRANEAN_SHRUB,
-		VEG.MANGROVE, VEG.SWAMP, VEG.MARSH, VEG.CLOUD_FOREST, VEG.MONSOON_FOREST,
-		VEG.PEAT_BOG]
+	var wet: bool = _is_wet_type(v)
 	var arid: bool = v in [VEG.TEMPERATE_STEPPE, VEG.MEDITERRANEAN_SHRUB,
 		VEG.DESERT_SCRUB, VEG.XERIC_DESERT]
 	var alpine: bool = v in [VEG.ALPINE_TUNDRA, VEG.ALPINE_MEADOW, VEG.TAIGA,
@@ -423,17 +436,16 @@ static func best_degrade_target(v: VEG, temp: float, moist: float) -> VEG:
 	return best
 
 static func best_suitability_target(v: VEG, temp: float, moist: float, terrain: int, landform: int) -> VEG:
-	var harsher: VEG = next_in_succession(v, -1)
-	var richer: VEG = next_in_succession(v, 1)
 	var best: VEG = v
 	var best_score: float = -1.0
-	if harsher != v:
-		best = harsher
-		best_score = suitability_score(harsher, temp, moist, terrain, landform)
-	if richer != v:
-		var rs: float = suitability_score(richer, temp, moist, terrain, landform)
-		if rs > best_score:
-			best = richer
+	for candidate in range(VEG.size()):
+		var candidate_v: VEG = candidate as VEG
+		if candidate_v == v or candidate_v == VEG.NONE or not _candidate_allowed(terrain, candidate_v):
+			continue
+		var score: float = suitability_score(candidate_v, temp, moist, terrain, landform)
+		if score > best_score:
+			best = candidate_v
+			best_score = score
 	return best
 
 # Milestone: vegetation-survival-rebalance（方案 C）

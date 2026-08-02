@@ -9,26 +9,24 @@ func _run() -> void:
 	var failures := PackedStringArray()
 	var root := Control.new()
 	root.size = Vector2(1280.0, 720.0)
-	root.theme = UITokens.make_player_theme()
+	root.theme = load("res://assets/themes/player_ui_theme.tres") as Theme
 	get_root().add_child(root)
 
-	var top_bar := PlayerTopBar.new()
-	top_bar.position = Vector2.ZERO
-	top_bar.size = Vector2(1280.0, PlayerTopBar.BAR_HEIGHT)
+	var top_bar := (load("res://scenes/ui/player_top_bar.tscn") as PackedScene).instantiate() as PlayerTopBar
 	root.add_child(top_bar)
 	top_bar.set_world_summary(60, 40, 2400, 123456)
 	top_bar.update_time_state(9, 6, 18, false, 20.0)
 	if top_bar._date_label.text != "第10年 · 6月18日":
 		failures.append("top bar did not display the current year and calendar date")
 
-	var panel := InspectorPanel.new()
-	panel.position = Vector2(820.0, 60.0)
-	panel.size = Vector2(460.0, 648.0)
+	var panel := (load("res://scenes/ui/inspector_panel.tscn") as PackedScene).instantiate() as InspectorPanel
 	root.add_child(panel)
+	panel.visible = true
 	await process_frame
 
 	var model := _make_model()
 	panel.set_model_for_selection(model)
+	await process_frame
 	await process_frame
 	for button in panel._tabs._buttons.values():
 		if not String((button as Button).text).is_empty():
@@ -36,11 +34,14 @@ func _run() -> void:
 		var icons := (button as Button).find_children("", "IconBadge", true, false)
 		if icons.size() != 1 or (icons[0] as Control).get_global_rect().get_center().distance_to(
 			(button as Control).get_global_rect().get_center()) > 1.0:
-			failures.append("dossier tab icon is not geometrically centered")
+			failures.append("dossier tab icon is not geometrically centered: button=%s icon=%s" % [
+				(button as Control).get_global_rect(),
+				(icons[0] as Control).get_global_rect() if icons.size() == 1 else Rect2()])
 	for raw_card in panel._summary_cards.values():
 		var summary_card := raw_card as MetricCard
 		if summary_card != null and summary_card.size.x < 220.0:
-			failures.append("summary cards did not expand into full-width dossier rows")
+			failures.append("summary cards did not expand into full-width dossier rows: card=%s grid=%s" % [
+				summary_card.size, panel._summary_grid.size])
 	var overview_count := panel.visible_node_count()
 	var overview_patch := _make_patch("geography")
 	panel.apply_live_patch(overview_patch)
@@ -55,24 +56,24 @@ func _run() -> void:
 			or not is_equal_approx(overview_chart.max_value, 1.0):
 		failures.append("live patch did not preserve the chart's fixed plotting window")
 
-	panel.select_tab("natural_resources")
+	panel.select_tab("geography")
 	await process_frame
 	panel._scroll.scroll_vertical = 96
 	var resource_scroll := panel._scroll.scroll_vertical
 	var resource_count := panel.visible_node_count()
 	for i in range(120):
-		panel.apply_live_patch(_make_patch("natural_resources", float(i)))
+		panel.apply_live_patch(_make_patch("geography", float(i)))
 		if i % 20 == 0:
 			await process_frame
 	if panel.visible_node_count() != resource_count:
 		failures.append("120 high-speed resource patches changed inspector node count")
-	if panel.current_tab() != "natural_resources":
+	if panel.current_tab() != "geography":
 		failures.append("resource live patch changed current tab")
 	if panel._scroll.scroll_vertical != resource_scroll:
 		failures.append("resource live patch changed scroll position")
 	panel.set_model_for_selection(_make_model())
 	await process_frame
-	if panel.current_tab() != "natural_resources":
+	if panel.current_tab() != "geography":
 		failures.append("selection refresh changed current tab")
 	if panel._scroll.scroll_vertical != resource_scroll:
 		failures.append("selection refresh changed scroll position")
@@ -93,7 +94,8 @@ func _run() -> void:
 	if not market_list.is_expanded("market_0"):
 		failures.append("market live patch lost row expansion state")
 	if market_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
-		failures.append("expanded market list exceeds the inspector scroll width")
+		failures.append("expanded market list exceeds the inspector scroll width: list=%s scroll=%s" % [
+			market_list.get_combined_minimum_size(), panel._scroll.size])
 
 	panel.select_tab("population")
 	await process_frame
@@ -109,7 +111,8 @@ func _run() -> void:
 	if not cohort_list.is_expanded("cohort_1"):
 		failures.append("population live patch lost cohort expansion state")
 	if cohort_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
-		failures.append("expanded population list exceeds the inspector scroll width")
+		failures.append("expanded population list exceeds the inspector scroll width: list=%s scroll=%s" % [
+			cohort_list.get_combined_minimum_size(), panel._scroll.size])
 	var cohort_refs: Dictionary = cohort_list._row_refs.get("cohort_1", {})
 	if String((cohort_refs.get("name") as Label).text) != "工人" \
 			or (cohort_refs.get("icon") as IconBadge).icon_key != "profession.worker" \
@@ -133,7 +136,7 @@ func _run() -> void:
 			or ((demand_requests[0] as Dictionary).get("groups", []) as Array).size() != 1:
 		failures.append("population demand detail action did not forward the selected cohort payload")
 	else:
-		var dialog = load("res://scripts/ui/components/demand_detail_dialog.gd").new()
+		var dialog = (load("res://scenes/ui/demand_detail_dialog.tscn") as PackedScene).instantiate()
 		root.add_child(dialog)
 		dialog.show_details(demand_requests[0])
 		await process_frame
@@ -181,7 +184,8 @@ func _run() -> void:
 	if not building_list.is_expanded("building_1"):
 		failures.append("building live patch lost expansion state")
 	if building_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
-		failures.append("expanded building list exceeds the inspector scroll width")
+		failures.append("expanded building list exceeds the inspector scroll width: list=%s scroll=%s" % [
+			building_list.get_combined_minimum_size(), panel._scroll.size])
 	var building_refs: Dictionary = building_list._row_refs.get("building_1", {})
 	if String((building_refs.get("name") as Label).text) != "纺织工坊" \
 			or not (building_refs.get("state_icon") as Control).visible:
@@ -189,7 +193,8 @@ func _run() -> void:
 	for group_id in ["state_summary", "jobs", "production", "finance"]:
 		var group_panel := ((building_refs.get(group_id, {}) as Dictionary).get("panel") as Control)
 		if group_panel != null and group_panel.size.x > building_list.size.x + 0.5:
-			failures.append("expanded building %s card exceeds the building list width" % group_id)
+			failures.append("expanded building %s card exceeds the building list width: card=%s list=%s" % [
+				group_id, group_panel.size, building_list.size])
 			break
 	var state_refs: Dictionary = building_refs.get("state_summary", {})
 	if not (state_refs.get("panel") as Control).visible \
@@ -197,13 +202,13 @@ func _run() -> void:
 			or not String((state_refs.get("detail") as Label).text).contains("岗位已释放"):
 		failures.append("building operating-state summary was not rendered in the expanded row")
 
-	var deferred_cohorts := CohortList.new()
+	var deferred_cohorts := (load("res://scenes/ui/cohort_list.tscn") as PackedScene).instantiate() as CohortList
 	root.add_child(deferred_cohorts)
 	deferred_cohorts.set_rows([])
 	deferred_cohorts.update_rows(_population_category(0.0).get("cohort_rows", []))
 	if deferred_cohorts._row_refs.size() != 2:
 		failures.append("committed cohort rows were not created after an initially partial snapshot")
-	var deferred_resources := ResourceList.new()
+	var deferred_resources := (load("res://scenes/ui/resource_list.tscn") as PackedScene).instantiate() as ResourceList
 	root.add_child(deferred_resources)
 	deferred_resources.set_rows([])
 	deferred_resources.update_rows(_resource_category(0.0).get("resource_rows", []))
@@ -217,9 +222,9 @@ func _run() -> void:
 	if panel.get_combined_minimum_size().x > 460.0:
 		failures.append("inspector minimum width exceeds 460px")
 
-	var loading := WorldLoadingOverlay.new()
-	loading.size = Vector2(1280.0, 720.0)
+	var loading := (load("res://scenes/ui/world_loading_overlay.tscn") as PackedScene).instantiate() as WorldLoadingOverlay
 	root.add_child(loading)
+	await process_frame
 	await process_frame
 	if not loading.size.is_equal_approx(root.size):
 		failures.append("loading overlay does not cover the full viewport")
@@ -260,25 +265,24 @@ func _make_model() -> Dictionary:
 		"tabs": [
 			{"id": "geography", "label": "地理信息", "icon": "geo"},
 			{"id": "population", "label": "人口信息", "icon": "growth"},
+			{"id": "families", "label": "家族", "icon": "family.house"},
 			{"id": "market", "label": "市场信息", "icon": "resource"},
 			{"id": "buildings", "label": "建筑", "icon": "building"},
-			{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
 		],
 		"categories": {
-			"geography": _overview_category(0.72),
+			"geography": _geography_category(0.72),
 			"population": _population_category(0.0),
+			"families": {},
 			"market": _market_category(0.0),
 			"buildings": _building_category(0.0),
-			"natural_resources": _resource_category(0.0),
 		},
 	}
 
 
 func _make_patch(tab_id: String, step: float = 1.0) -> Dictionary:
-	var category := _overview_category(0.76)
+	var category := _geography_category(step)
 	match tab_id:
 		"market": category = _market_category(step)
-		"natural_resources": category = _resource_category(step)
 		"population": category = _population_category(step)
 		"buildings": category = _building_category(step)
 	return {
@@ -337,6 +341,17 @@ func _overview_category(value: float) -> Dictionary:
 			},
 		],
 	}
+
+
+func _geography_category(value: float) -> Dictionary:
+	var category := _overview_category(value)
+	var resource_section := _resource_category(value)
+	resource_section["id"] = "natural_resources"
+	resource_section["title"] = "自然资源"
+	resource_section["icon"] = "eco"
+	resource_section["accent"] = UITokens.RESOURCE
+	category["sections"] = [resource_section]
+	return category
 
 
 func _resource_category(step: float) -> Dictionary:

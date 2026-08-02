@@ -724,7 +724,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         out["tick_count"] = _native_daily_tick_count;
         _native_daily_report = out.duplicate(true);
         _native_daily_slice_active = false;
-        _native_daily_moisture_commit_pending = false;
+        _native_daily_visual_commit_pending = false;
         _native_daily_slice_cell_cursor = 0;
         _native_daily_slice_range_node_index = -1;
         _native_daily_slice_range_node_bits = 0u;
@@ -823,9 +823,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             refresh_slots_from_map();
         }
         // The initial refresh imports the last committed MapData state. Protect
-        // moisture from unrelated bulk refreshes until the deferred finalizer.
+        // moisture from unrelated bulk refreshes and prevent visual consumers from
+        // observing any in-flight climate/ecology slot until the deferred finalizer.
         _native_daily_slice_active = true;
-        _native_daily_moisture_commit_pending = true;
+        _native_daily_visual_commit_pending = true;
         const auto t_context1 = std::chrono::high_resolution_clock::now();
         _native_daily_slice_breakdown["native_context_ms"] =
             std::chrono::duration<double, std::milli>(t_context1 - t_context0).count();
@@ -1258,6 +1259,8 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             breakdown["hydrology_native_ms"] = native_ms;
             breakdown["hydrology_compute_ms"] = double(hydro.get("compute_ms", 0.0));
             breakdown["hydrology_flush_ms"] = double(hydro.get("flush_ms", 0.0));
+            breakdown["hydrology_visible_publish_deferred"] =
+                bool(hydro.get("visible_publish_deferred", false));
             breakdown["hydrology_dt_days"] = double(hydro.get("dt_days", 1.0));
             breakdown["hydrology_water_budget_error"] = double(hydro.get("water_budget_error", 0.0));
             breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));
@@ -2613,6 +2616,8 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         breakdown["hydrology_native_ms"] = native_ms;
         breakdown["hydrology_compute_ms"] = double(hydro.get("compute_ms", 0.0));
         breakdown["hydrology_flush_ms"] = double(hydro.get("flush_ms", 0.0));
+        breakdown["hydrology_visible_publish_deferred"] =
+            bool(hydro.get("visible_publish_deferred", false));
         breakdown["hydrology_dt_days"] = double(hydro.get("dt_days", 1.0));
         breakdown["hydrology_water_budget_error"] = double(hydro.get("water_budget_error", 0.0));
         breakdown["hydrology_river_discharge_p95"] = double(hydro.get("river_discharge_p95", 0.0));

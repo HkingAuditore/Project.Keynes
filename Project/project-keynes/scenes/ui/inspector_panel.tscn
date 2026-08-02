@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
 
-[ext_resource type="Script" path="res://scripts/ui/components/inspector_panel.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/components/inspector_panel.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/radial_gauge.tscn" id="2_gauge"]
+[ext_resource type="PackedScene" path="res://scenes/ui/category_tabs.tscn" id="3_tabs"]
 
 [node name="RightPanel" type="PanelContainer"]
 visible = false
@@ -14,4 +16,114 @@ offset_top = 68.0
 offset_bottom = -12.0
 grow_horizontal = 0
 grow_vertical = 2
-script = ExtResource("1")
+theme_type_variation = &"PKPanel"
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="InspectorRoot" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Cap" type="ColorRect" parent="Margin/InspectorRoot"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.92, 0.72, 0.38, 0.72)
+
+[node name="Header" type="PanelContainer" parent="Margin/InspectorRoot"]
+layout_mode = 2
+theme_type_variation = &"PKInsetPanel"
+
+[node name="Row" type="HBoxContainer" parent="Margin/InspectorRoot/Header"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Accent" type="ColorRect" parent="Margin/InspectorRoot/Header/Row"]
+custom_minimum_size = Vector2(3, 0)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.78, 0.57, 0.28, 1)
+
+[node name="Titles" type="VBoxContainer" parent="Margin/InspectorRoot/Header/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="TitleLabel" type="Label" parent="Margin/InspectorRoot/Header/Row/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "地块档案"
+theme_type_variation = &"PKTitle"
+
+[node name="SubtitleLabel" type="Label" parent="Margin/InspectorRoot/Header/Row/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="CloseButton" type="Button" parent="Margin/InspectorRoot/Header/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(34, 32)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Summary" type="PanelContainer" parent="Margin/InspectorRoot"]
+layout_mode = 2
+theme_type_variation = &"PKInsetPanel"
+
+[node name="Row" type="HBoxContainer" parent="Margin/InspectorRoot/Summary"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ScoreGauge" parent="Margin/InspectorRoot/Summary/Row" instance=ExtResource("2_gauge")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 112)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="SummaryGrid" type="GridContainer" parent="Margin/InspectorRoot/Summary/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 1
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 4
+
+[node name="Rule" type="HSeparator" parent="Margin/InspectorRoot"]
+layout_mode = 2
+
+[node name="CategoryTabs" parent="Margin/InspectorRoot" instance=ExtResource("3_tabs")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ContentShell" type="PanelContainer" parent="Margin/InspectorRoot"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"PKInsetPanel"
+
+[node name="ContentMargin" type="MarginContainer" parent="Margin/InspectorRoot/ContentShell"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 8
+
+[node name="Scroll" type="ScrollContainer" parent="Margin/InspectorRoot/ContentShell/ContentMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ContentBox" type="VBoxContainer" parent="Margin/InspectorRoot/ContentShell/ContentMargin/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8

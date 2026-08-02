@@ -1,8 +1,9 @@
 extends Control
 class_name EconomyWorkspace
 
-const MetricCardScript = preload("res://scripts/ui/components/metric_card.gd")
-const CategoryTabsScript = preload("res://scripts/ui/components/category_tabs.gd")
+const TaxCardScene := preload("res://scenes/ui/economy_tax_card.tscn")
+const TaxLaneScene := preload("res://scenes/ui/economy_tax_lane.tscn")
+const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
 
 const PAGE_IDS := ["treasury", "income", "consumption", "business", "tariff"]
 const PAGE_DEFINITIONS := {
@@ -52,116 +53,33 @@ func _ready() -> void:
 	if _cash_card != null:
 		return
 	set_process(false)
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var column := VBoxContainer.new()
-	column.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	column.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	add_child(column)
-
-	var header := HBoxContainer.new()
-	header.custom_minimum_size.y = 28.0
-	header.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	column.add_child(header)
-	var section_badge := IconBadge.new()
-	section_badge.custom_minimum_size = Vector2(24.0, 26.0)
+	_cash_card = get_node_or_null("Column/Cards/CashCard") as MetricCard
+	_tax_card = get_node_or_null("Column/Cards/TaxCard") as MetricCard
+	_subsidy_card = get_node_or_null("Column/Cards/SubsidyCard") as MetricCard
+	_fulfillment_card = get_node_or_null("Column/Cards/FulfillmentCard") as MetricCard
+	_country_label = get_node_or_null("Column/Header/CountryLabel") as Label
+	_day_label = get_node_or_null("Column/Header/DayLabel") as Label
+	_tabs = get_node_or_null("Column/Tabs") as CategoryTabs
+	_search = get_node_or_null("Column/Tools/Search") as LineEdit
+	_overrides_only = get_node_or_null("Column/Tools/OverridesOnly") as Button
+	_status_label = get_node_or_null("Column/StatusLabel") as Label
+	_scroll = get_node_or_null("Column/Scroll") as ScrollContainer
+	_flow = get_node_or_null("Column/Scroll/Flow") as HFlowContainer
+	_empty_label = get_node_or_null("Column/Scroll/Flow/EmptyLabel") as Label
+	var section_badge := get_node_or_null("Column/Header/SectionIcon") as IconBadge
+	if _cash_card == null or _tax_card == null or _subsidy_card == null \
+			or _fulfillment_card == null or _country_label == null \
+			or _day_label == null or _tabs == null or _search == null \
+			or _overrides_only == null or _status_label == null \
+			or _scroll == null or _flow == null or _empty_label == null \
+			or section_badge == null:
+		push_error("EconomyWorkspace 必须通过 economy_workspace.tscn 实例化。")
+		return
 	section_badge.set_semantic(&"tax.section", UITokens.BRASS_HIGHLIGHT)
-	header.add_child(section_badge)
-	var title := Label.new()
-	title.text = "国家财政"
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.add_theme_font_override("font", UITokens.font_with_weight(700))
-	title.add_theme_font_size_override("font_size", UITokens.FONT_SECTION)
-	header.add_child(title)
-	_country_label = Label.new()
-	_country_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_country_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_country_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	header.add_child(_country_label)
-	var header_spacer := Control.new()
-	header_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(header_spacer)
-	_day_label = Label.new()
-	_day_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_day_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_day_label.add_theme_color_override("font_color", UITokens.TEXT_FAINT)
-	header.add_child(_day_label)
-
-	var cards := HBoxContainer.new()
-	cards.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	column.add_child(cards)
-	_cash_card = _make_card(cards)
-	_tax_card = _make_card(cards)
-	_subsidy_card = _make_card(cards)
-	_fulfillment_card = _make_card(cards)
-
-	_tabs = CategoryTabsScript.new()
 	_tabs.tab_selected.connect(_select_page)
-	column.add_child(_tabs)
-
-	var tools := HBoxContainer.new()
-	tools.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	column.add_child(tools)
-	_search = LineEdit.new()
-	_search.placeholder_text = "搜索职业、物资或建筑"
-	_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_search.text_changed.connect(_apply_filter.unbind(1))
-	tools.add_child(_search)
-	_overrides_only = _make_chip("仅看覆盖项")
 	_overrides_only.toggled.connect(_apply_filter.unbind(1))
-	tools.add_child(_overrides_only)
-
-	_status_label = Label.new()
-	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_status_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	column.add_child(_status_label)
-
-	_scroll = ScrollContainer.new()
-	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	column.add_child(_scroll)
-	_flow = HFlowContainer.new()
-	_flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_flow.add_theme_constant_override("h_separation", UITokens.SPACE_SM)
-	_flow.add_theme_constant_override("v_separation", UITokens.SPACE_SM)
-	_scroll.add_child(_flow)
-	_empty_label = Label.new()
-	_empty_label.text = "没有符合条件的项目"
-	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_empty_label.custom_minimum_size.x = 560.0
-	_empty_label.add_theme_color_override("font_color", UITokens.TEXT_FAINT)
-	_flow.add_child(_empty_label)
 	_select_page("treasury")
-
-
-func _make_card(parent: Control) -> MetricCard:
-	var card: MetricCard = MetricCardScript.new()
-	card.custom_minimum_size = Vector2(150.0, 72.0)
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	parent.add_child(card)
-	return card
-
-
-func _make_chip(label: String) -> Button:
-	var chip := Button.new()
-	chip.text = label
-	chip.toggle_mode = true
-	chip.focus_mode = Control.FOCUS_NONE
-	chip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	chip.custom_minimum_size = Vector2(0.0, 28.0)
-	chip.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	chip.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	chip.add_theme_color_override("font_hover_color", UITokens.TEXT_MAIN)
-	chip.add_theme_color_override("font_pressed_color", UITokens.BRASS_HIGHLIGHT)
-	chip.add_theme_stylebox_override("normal", UITokens.button_style(
-		Color(0.075, 0.066, 0.052, 0.94), UITokens.PANEL_BORDER_SOFT))
-	chip.add_theme_stylebox_override("hover", UITokens.button_style(
-		UITokens.WALNUT_SOFT, UITokens.PANEL_BORDER))
-	chip.add_theme_stylebox_override("pressed", UITokens.button_style(
-		UITokens.ACCENT_SOFT, UITokens.BRASS_HIGHLIGHT, UITokens.RADIUS_SM, true))
-	chip.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	return chip
 
 
 func set_model(model: Dictionary) -> void:
@@ -380,81 +298,43 @@ func _ensure_card(page: String, item_id: String, label: String,
 	if _rows.has(key):
 		return _rows[key]
 	var accent: Color = (PAGE_DEFINITIONS[page] as Dictionary).get("accent", UITokens.ACCENT)
-	var panel := PanelContainer.new()
+	var panel := TaxCardScene.instantiate() as PanelContainer
 	panel.name = "Tax_%s_%s" % [page, item_id]
 	panel.custom_minimum_size = CARD_SIZE
-	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var kinds := _page_kinds(page)
-	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", UITokens.SPACE_XS)
-	panel.add_child(body)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	body.add_child(head)
-	var badge := IconBadge.new()
-	badge.custom_minimum_size = Vector2(26.0, 28.0)
+	var badge := panel.get_node("Body/Head/Icon") as IconBadge
 	badge.set_semantic(StringName(icon_key), accent)
-	head.add_child(badge)
-	var name_label := Label.new()
+	var name_label := panel.get_node("Body/Head/Name") as Label
 	name_label.text = label
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_label.add_theme_font_override("font", UITokens.font_with_weight(600))
-	name_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	head.add_child(name_label)
-	var sub_label := Label.new()
-	sub_label.visible = false
-	sub_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	sub_label.add_theme_color_override("font_color", UITokens.TEXT_FAINT)
-	body.add_child(sub_label)
+	var sub_label := panel.get_node("Body/Sub") as Label
 	if is_default:
 		sub_label.text = "适用于所有未单独设置的项目"
 		sub_label.visible = true
 	var spins := {}
 	var resets := {}
 	var pendings := {}
+	var lane_host := panel.get_node("Body/Lanes") as VBoxContainer
 	for kind in kinds:
-		var kind_row := HBoxContainer.new()
-		kind_row.add_theme_constant_override("separation", UITokens.SPACE_XS)
-		body.add_child(kind_row)
-		if kinds.size() > 1:
-			var kind_label := Label.new()
-			kind_label.text = String(KIND_LABELS.get(kind, kind))
-			kind_label.custom_minimum_size.x = 30.0
-			kind_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			kind_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-			kind_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-			kind_row.add_child(kind_label)
-		var spin := SpinBox.new()
-		spin.min_value = -100
-		spin.max_value = 100
-		spin.step = 1
-		spin.suffix = "%"
-		spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		spin.custom_minimum_size = Vector2(88.0, 30.0)
+		var kind_row := TaxLaneScene.instantiate() as HBoxContainer
+		lane_host.add_child(kind_row)
+		var kind_label := kind_row.get_node("Kind") as Label
+		kind_label.text = String(KIND_LABELS.get(kind, kind))
+		kind_label.visible = kinds.size() > 1
+		var spin := kind_row.get_node("Spin") as SpinBox
 		spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		spin.get_line_edit().text_submitted.connect(
 			_on_rate_confirmed.bind(key, kind))
 		spin.get_line_edit().focus_exited.connect(
 			_on_rate_focus_exited.bind(key, kind))
 		spin.value_changed.connect(_on_rate_preview.bind(key, kind))
-		kind_row.add_child(spin)
 		spins[kind] = spin
-		var reset := Button.new()
-		reset.focus_mode = Control.FOCUS_NONE
-		reset.visible = false
-		reset.custom_minimum_size = Vector2(24.0, 26.0)
+		var reset := kind_row.get_node("Reset") as Button
 		IconButton.apply(reset, &"action.reset", IconButton.SMALL, "重置为默认税率")
 		reset.pressed.connect(_on_reset_pressed.bind(key, kind))
-		kind_row.add_child(reset)
 		resets[kind] = reset
-		var clock_badge := IconBadge.new()
-		clock_badge.custom_minimum_size = Vector2(18.0, 20.0)
-		clock_badge.visible = false
-		clock_badge.tooltip_text = "命令已确认，将于下一日生效"
+		var clock_badge := kind_row.get_node("Pending") as IconBadge
 		clock_badge.set_semantic(&"system.clock", UITokens.BRASS_HIGHLIGHT)
-		kind_row.add_child(clock_badge)
 		pendings[kind] = clock_badge
 	_flow.add_child(panel)
 	var result := {"control": panel, "name": name_label, "sub": sub_label,
@@ -531,37 +411,9 @@ func _visual_rate(card: Dictionary, kind: String, authoritative_rate: int,
 
 
 func _apply_card_frame(card: Dictionary, highlighted: bool) -> void:
-	var accent: Color = card.accent
 	var panel := card.control as PanelContainer
-	var style := StyleBoxFlat.new()
-	if bool(card.is_default):
-		style.bg_color = Color(0.16, 0.12, 0.07, 0.96)
-		style.border_color = Color(UITokens.BRASS_HIGHLIGHT.r,
-			UITokens.BRASS_HIGHLIGHT.g, UITokens.BRASS_HIGHLIGHT.b, 0.55)
-	elif highlighted:
-		style.bg_color = Color(0.135, 0.104, 0.064, 0.98)
-		style.border_color = Color(UITokens.BRASS_HIGHLIGHT.r,
-			UITokens.BRASS_HIGHLIGHT.g, UITokens.BRASS_HIGHLIGHT.b, 0.85)
-	else:
-		style.bg_color = UITokens.CARD_BG
-		style.border_color = Color(accent.r, accent.g, accent.b, 0.38)
-	style.border_width_left = 3
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
-	style.corner_radius_top_left = UITokens.RADIUS_MD
-	style.corner_radius_top_right = UITokens.RADIUS_MD
-	style.corner_radius_bottom_left = UITokens.RADIUS_MD
-	style.corner_radius_bottom_right = UITokens.RADIUS_MD
-	style.content_margin_left = UITokens.SPACE_MD
-	style.content_margin_top = UITokens.SPACE_SM
-	style.content_margin_right = UITokens.SPACE_MD
-	style.content_margin_bottom = UITokens.SPACE_SM
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.40)
-	style.shadow_size = 7
-	style.shadow_offset = Vector2(0.0, 3.0)
-	style.anti_aliasing = true
-	panel.add_theme_stylebox_override("panel", style)
+	panel.theme_type_variation = &"PKDialog" \
+		if bool(card.is_default) or highlighted else &"PKMetricCard"
 
 
 func _watch_card_hover(panel: PanelContainer) -> void:
@@ -809,52 +661,12 @@ func _apply_goods(goods: Array, wanted: Dictionary) -> void:
 
 
 func _make_good_card(stable_id: String, icon_key: String) -> Dictionary:
-	var panel := PanelContainer.new()
+	var panel := TreasuryGoodScene.instantiate() as PanelContainer
 	panel.name = "TreasuryGood_%s" % stable_id
-	panel.custom_minimum_size = Vector2(210.0, 0.0)
-	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var style := StyleBoxFlat.new()
-	style.bg_color = UITokens.CARD_BG
-	style.border_color = Color(UITokens.GOOD.r, UITokens.GOOD.g, UITokens.GOOD.b, 0.34)
-	style.border_width_left = 3
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
-	style.corner_radius_top_left = UITokens.RADIUS_MD
-	style.corner_radius_top_right = UITokens.RADIUS_MD
-	style.corner_radius_bottom_left = UITokens.RADIUS_MD
-	style.corner_radius_bottom_right = UITokens.RADIUS_MD
-	style.content_margin_left = UITokens.SPACE_MD
-	style.content_margin_top = UITokens.SPACE_SM
-	style.content_margin_right = UITokens.SPACE_MD
-	style.content_margin_bottom = UITokens.SPACE_SM
-	style.shadow_color = Color(0.0, 0.0, 0.0, 0.40)
-	style.shadow_size = 7
-	style.shadow_offset = Vector2(0.0, 3.0)
-	style.anti_aliasing = true
-	panel.add_theme_stylebox_override("panel", style)
-	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", 2)
-	panel.add_child(body)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	body.add_child(head)
-	var badge := IconBadge.new()
-	badge.custom_minimum_size = Vector2(24.0, 26.0)
+	var badge := panel.get_node("Body/Head/Icon") as IconBadge
 	badge.set_semantic(StringName(icon_key), UITokens.GOOD)
-	head.add_child(badge)
-	var name_label := Label.new()
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	name_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	name_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	head.add_child(name_label)
-	var value_label := Label.new()
-	value_label.add_theme_font_override("font", UITokens.font_with_weight(650))
-	value_label.add_theme_font_size_override("font_size", 15)
-	value_label.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
-	body.add_child(value_label)
+	var name_label := panel.get_node("Body/Head/Name") as Label
+	var value_label := panel.get_node("Body/Value") as Label
 	_flow.add_child(panel)
 	_watch_card_hover(panel)
 	return {"control": panel, "name": name_label, "value": value_label,

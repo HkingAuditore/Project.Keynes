@@ -69,6 +69,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_native_daily_tick);
     ClassDB::bind_method(D_METHOD("run_native_daily_slice", "tick_knobs"),
                          &DCWorldExt::run_native_daily_slice);
+    ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),
+                         &DCWorldExt::is_native_daily_visual_commit_pending);
+    ClassDB::bind_method(D_METHOD("complete_native_daily_visual_commit"),
+                         &DCWorldExt::complete_native_daily_visual_commit);
     ClassDB::bind_method(D_METHOD("complete_native_daily_moisture_commit"),
                          &DCWorldExt::complete_native_daily_moisture_commit);
     ClassDB::bind_method(D_METHOD("run_native_daily_finalizer", "knobs"),

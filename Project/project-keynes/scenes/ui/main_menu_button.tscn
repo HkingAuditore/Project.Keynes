@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="PackedScene" path="res://scenes/ui/main_menu_button_content.tscn" id="1_content"]
+[node name="MenuButton" type="Button"]
+custom_minimum_size = Vector2(112, 42)
+theme_type_variation = &"PKTabButton"
+[node name="Content" parent="." instance=ExtResource("1_content")]

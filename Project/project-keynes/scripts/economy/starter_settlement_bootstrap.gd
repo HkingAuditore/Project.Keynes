@@ -3,7 +3,9 @@ extends RefCounted
 
 const MONEY_SCALE := 10000
 const GOODS_SCALE := 1000
+const STARTER_POPULATION := 20
 const SURVIVAL_DAYS := 60
+const SURVIVAL_PRODUCE_PER_PERSON_DAY := 240
 
 
 static func build(map: MapData, facade: EconomyFacade, start_cell: int,
@@ -62,8 +64,10 @@ static func build_many(map: MapData, facade: EconomyFacade,
 	var stock := PackedInt64Array()
 	stock.resize(map.cell_count() * goods.size())
 	var initial_stock := {
-		"gathered_plants": 20 * SURVIVAL_DAYS * GOODS_SCALE,
+		"gathered_plants": STARTER_POPULATION * SURVIVAL_DAYS * GOODS_SCALE,
 		"game_meat": 10 * SURVIVAL_DAYS * GOODS_SCALE,
+		"processed_food": STARTER_POPULATION * SURVIVAL_DAYS * \
+			SURVIVAL_PRODUCE_PER_PERSON_DAY,
 		"logs": 7000 * GOODS_SCALE,
 		"flint": 500 * GOODS_SCALE,
 		"chipped_stone_tools": 240 * GOODS_SCALE,
@@ -103,7 +107,7 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			populations.append(population)
 			funds.append(population * SURVIVAL_DAYS * 8 * MONEY_SCALE)
 			settlement_population += population
-		if settlement_population != 20:
+		if settlement_population != STARTER_POPULATION:
 			return _error("starter_population_mismatch",
 				"每个初始聚落人口必须严格等于 20。")
 		total_population += settlement_population

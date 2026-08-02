@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
-[ext_resource type="Script" path="res://scripts/ui/components/world_loading_overlay.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/components/world_loading_overlay.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/components/loading_atlas_backdrop.gd" id="2_backdrop"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_icon"]
 
 [node name="WorldLoadingOverlay" type="ColorRect"]
 layout_mode = 3
@@ -10,4 +12,76 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
-script = ExtResource("1")
+color = Color(0.018, 0.022, 0.021, 1)
+script = ExtResource("1_script")
+
+[node name="AtlasBackdrop" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_backdrop")
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Card" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(520, 220)
+layout_mode = 2
+theme_type_variation = &"PKDialog"
+
+[node name="Content" type="VBoxContainer" parent="Center/Card"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Kicker" type="Label" parent="Center/Card/Content"]
+layout_mode = 2
+text = "PROJECT KEYNES · WORLD SURVEY"
+horizontal_alignment = 1
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Title" type="Label" parent="Center/Card/Content"]
+layout_mode = 2
+text = "正在生成世界"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 26
+
+[node name="Rule" type="HSeparator" parent="Center/Card/Content"]
+layout_mode = 2
+
+[node name="StageRow" type="HBoxContainer" parent="Center/Card/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Icon" parent="Center/Card/Content/StageRow" instance=ExtResource("3_icon")]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+
+[node name="Stage" type="Label" parent="Center/Card/Content/StageRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "正在准备地图运行时"
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Percent" type="Label" parent="Center/Card/Content/StageRow"]
+layout_mode = 2
+text = "0%"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Progress" type="ProgressBar" parent="Center/Card/Content"]
+custom_minimum_size = Vector2(440, 10)
+layout_mode = 2
+show_percentage = false
+
+[node name="Note" type="Label" parent="Center/Card/Content"]
+layout_mode = 2
+text = "正在校准地形、水文、气候与生态资料"
+horizontal_alignment = 1
+theme_type_variation = &"PKMutedLabel"

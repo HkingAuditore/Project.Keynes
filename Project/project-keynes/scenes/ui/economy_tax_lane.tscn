@@ -1,0 +1,27 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+[node name="TaxLane" type="HBoxContainer"]
+theme_override_constants/separation = 4
+[node name="Kind" type="Label" parent="."]
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+[node name="Spin" type="SpinBox" parent="."]
+custom_minimum_size = Vector2(88, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -100.0
+max_value = 100.0
+suffix = "%"
+[node name="Reset" type="Button" parent="."]
+visible = false
+custom_minimum_size = Vector2(24, 26)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+[node name="Pending" parent="." instance=ExtResource("1_icon")]
+visible = false
+custom_minimum_size = Vector2(18, 20)
+layout_mode = 2
+tooltip_text = "命令已确认，将于下一日生效"

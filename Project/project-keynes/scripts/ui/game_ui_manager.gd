@@ -46,6 +46,7 @@ var _map_overlay_toolbar: MapOverlayToolbar
 var _map_overlay_legend: OverlayLegend
 var _pause_menu
 var _gm_available := false
+var _debug_layer: Control
 
 
 func _ready() -> void:
@@ -437,9 +438,7 @@ func set_resource_discovery_context(
 
 
 func _bind_ui() -> void:
-	var player_theme := UITokens.make_player_theme()
-
-	_top_bar = get_node("PlayerTopBar") as PlayerTopBar
+	_top_bar = get_node("UIRoot/HUDLayer/PlayerTopBar") as PlayerTopBar
 	_top_bar.pause_toggled.connect(func(paused: bool) -> void: pause_toggled.emit(paused))
 	_top_bar.speed_selected.connect(func(speed: float) -> void: speed_selected.emit(speed))
 	_top_bar.day_night_toggled.connect(
@@ -448,15 +447,16 @@ func _bind_ui() -> void:
 	_top_bar.gm_requested.connect(toggle_gm_panel)
 	_top_bar.set_gm_available(_gm_available)
 
-	_right_panel = get_node("RightPanel") as InspectorPanel
+	_right_panel = get_node("UIRoot/PanelLayer/RightPanel") as InspectorPanel
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
 	_right_panel.visibility_changed.connect(_layout_overlay_legend)
 	_right_panel.demand_details_requested.connect(_on_demand_details_requested)
 	_right_panel.object_details_requested.connect(_on_object_details_requested)
 
-	_demand_detail_dialog = get_node("DemandDetailDialog")
-	_object_detail_dialog = get_node("ObjectDetailDialog")
+	_demand_detail_dialog = get_node("UIRoot/ModalLayer/DemandDetailDialog")
+	_object_detail_dialog = get_node("UIRoot/ModalLayer/ObjectDetailDialog")
+	_debug_layer = get_node("UIRoot/DebugLayer") as Control
 
 	if _gm_available:
 		_gm_console = DebugConsole.new()
@@ -464,23 +464,23 @@ func _bind_ui() -> void:
 		_gm_console.console_mode = DebugConsole.ConsoleMode.PLAYER_GM
 		_gm_console.set_anchors_preset(Control.PRESET_LEFT_WIDE)
 		_gm_console.custom_minimum_size = Vector2.ZERO
-		add_child(_gm_console)
+		_debug_layer.add_child(_gm_console)
 		_gm_console.set_gm_local_toggle_provider(
 			Callable(self, "_get_local_gm_toggle_state"),
 			Callable(self, "_set_local_gm_toggle"))
 		_layout_gm_panel()
 
-	_perf_hud = get_node("PerfMiniHUD") as PerfMiniHUD
+	_perf_hud = get_node("UIRoot/HUDLayer/PerfMiniHUD") as PerfMiniHUD
 
-	_map_overlay_toolbar = get_node("MapOverlayToolbar") as MapOverlayToolbar
+	_map_overlay_toolbar = get_node("UIRoot/HUDLayer/MapOverlayToolbar") as MapOverlayToolbar
 	_map_overlay_toolbar.overlay_requested.connect(_on_map_overlay_requested)
 	_map_overlay_toolbar.overlay_cleared.connect(_on_map_overlay_cleared)
 
-	_country_action_bar = get_node("CountryActionBar") as CountryActionBar
+	_country_action_bar = get_node("UIRoot/HUDLayer/CountryActionBar") as CountryActionBar
 	_country_action_bar.section_selected.connect(open_country_section)
 	_layout_country_action_bar()
 
-	_map_overlay_legend = get_node("MapOverlayLegend") as OverlayLegend
+	_map_overlay_legend = get_node("UIRoot/HUDLayer/MapOverlayLegend") as OverlayLegend
 	# Bottom-right is outside the map's main reading line and the left tool
 	# palette. The layout helper shifts it left whenever Inspector is visible.
 	_map_overlay_legend.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -494,7 +494,7 @@ func _bind_ui() -> void:
 	if _diagnostics_source != null:
 		set_diagnostics_source(_diagnostics_source)
 
-	_country_panel = get_node("CountryPanel") as CountryPanel
+	_country_panel = get_node("UIRoot/PanelLayer/CountryPanel") as CountryPanel
 	_country_panel.close_requested.connect(func() -> void:
 		if _country_action_bar != null:
 			_country_action_bar.set_active("")
@@ -504,18 +504,13 @@ func _bind_ui() -> void:
 			_country_action_bar.set_active(section_id)
 	)
 
-	_loading_overlay = get_node("WorldLoadingOverlay") as WorldLoadingOverlay
+	_loading_overlay = get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 
-	_pause_menu = get_node("PauseMenu") as PauseMenu
+	_pause_menu = get_node("UIRoot/ModalLayer/PauseMenu") as PauseMenu
 	_pause_menu.visibility_requested.connect(
 		func(open: bool) -> void: pause_menu_visibility_changed.emit(open))
 	_pause_menu.return_menu_requested.connect(func() -> void: return_main_menu_requested.emit())
 	_pause_menu.exit_requested.connect(func() -> void: exit_game_requested.emit())
-
-	for child in get_children():
-		if child is Control:
-			(child as Control).theme = player_theme
-
 
 func _on_map_overlay_requested(request: Dictionary) -> void:
 	var mode := int(request.get("mode", OverlayMode.MODE.NONE))

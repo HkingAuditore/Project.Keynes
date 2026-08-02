@@ -9,7 +9,7 @@ const OBJECT_DETAIL_TAB := {
 	"cohort": "population",
 	"building": "buildings",
 	"good": "market",
-	"resource": "natural_resources",
+	"resource": "geography",
 	"family": "families",
 }
 const OBJECT_DETAIL_ROWS := {
@@ -122,15 +122,19 @@ func build(cell: HexCell) -> Dictionary:
 	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
 	var tabs := [{"id": "geography", "label": "地理信息", "icon": "geo"}]
 	if intel_visible:
-			tabs.append_array([
+		tabs.append_array([
 			{"id": "population", "label": "人口信息", "icon": "growth"},
 			{"id": "families", "label": "家族", "icon": "family.house"},
 			{"id": "market", "label": "市场信息", "icon": "resource"},
 			{"id": "buildings", "label": "建筑", "icon": "building"},
-			{"id": "natural_resources", "label": "自然资源", "icon": "eco"},
 		])
 	var cards: Array = _summary_cards(temp, moist, population_summary, country_summary) \
 		if intel_visible else _out_of_sight_summary_cards(temp, moist)
+	var geography_category := _geography_information_category(cell, idx, terrain_v,
+		landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
+		wf, snow, vitality, passable_land, is_water)
+	if intel_visible:
+		_append_resources_to_geography(geography_category, idx, is_water)
 	return {
 		"header": _build_header(off, terrain_v, landform_v, country_summary,
 			population_summary),
@@ -144,9 +148,7 @@ func build(cell: HexCell) -> Dictionary:
 		"summary_cards": cards,
 		"tabs": tabs,
 		"categories": {
-			"geography": _geography_information_category(cell, idx, terrain_v,
-				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
-				wf, snow, vitality, passable_land, is_water),
+			"geography": geography_category,
 		},
 	}
 
@@ -286,11 +288,15 @@ func build_live_patch(
 				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
 				wf, snow, vitality, passable_land, is_water) if tab_id == "geography" \
 				else build_tab_category(cell, tab_id)
+			if tab_id == "geography":
+				_append_resources_to_geography(category, idx, is_water)
 	if include_category and category.is_empty():
 		tab_id = "geography"
 		category = _geography_information_category(cell, idx, terrain_v,
 			landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
 			wf, snow, vitality, passable_land, is_water)
+		if intel_visible:
+			_append_resources_to_geography(category, idx, is_water)
 	var patch := {
 		"header": _build_header(off, terrain_v, landform_v, country_summary,
 			population_summary),
@@ -340,11 +346,14 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 			var base_moist := _base_moisture(cell, idx)
 			var elev := _elevation(cell, idx)
 			var is_water := LandformType.is_water(landform_v)
-			return _geography_information_category(
+			var category := _geography_information_category(
 				cell, idx, terrain_v, landform_v, vegetation_v, cover_v, elev,
 				temp, moist, base_moist, _weather_field(cell, idx),
 				_snow_cover(cell, idx), _vitality(cell, landform_v),
 				TerrainType.is_passable_land(terrain_v), is_water)
+			if VisionSolver.fog_state(_map, idx) == VisionSolver.FOG_VISIBLE:
+				_append_resources_to_geography(category, idx, is_water)
+			return category
 	return {}
 
 
@@ -363,7 +372,8 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 		return {}
 	var category := build_tab_category(cell, String(OBJECT_DETAIL_TAB[kind]))
 	var row := {}
-	for raw in category.get(String(OBJECT_DETAIL_ROWS[kind]), []):
+	var category_rows := _rows_from_category(category, String(OBJECT_DETAIL_ROWS[kind]))
+	for raw in category_rows:
 		var candidate: Dictionary = raw
 		if String(candidate.get("id", "")) == row_id:
 			row = candidate
@@ -374,7 +384,7 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 	if row.is_empty() and kind == "cohort":
 		var fallback_profession := String(request.get("profession_id", ""))
 		if not fallback_profession.is_empty():
-			for raw in category.get(String(OBJECT_DETAIL_ROWS[kind]), []):
+			for raw in category_rows:
 				var candidate: Dictionary = raw
 				if String(candidate.get("profession_id", "")) == fallback_profession:
 					row = candidate
@@ -687,6 +697,31 @@ func _geography_information_category(
 			},
 		],
 	}
+
+
+func _append_resources_to_geography(category: Dictionary, idx: int,
+		is_water: bool) -> void:
+	var resource_section := _resources_category(_resource_state(
+		idx, is_water, _resource_visibility_context(idx)))
+	resource_section["id"] = "natural_resources"
+	resource_section["title"] = "自然资源"
+	resource_section["icon"] = "eco"
+	resource_section["accent"] = UITokens.RESOURCE
+	var sections: Array = category.get("sections", [])
+	sections.append(resource_section)
+	category["sections"] = sections
+
+
+func _rows_from_category(category: Dictionary, rows_key: String) -> Array:
+	var rows: Array = category.get(rows_key, [])
+	if not rows.is_empty():
+		return rows
+	for raw_section in category.get("sections", []):
+		var section: Dictionary = raw_section
+		rows = section.get(rows_key, [])
+		if not rows.is_empty():
+			return rows
+	return []
 
 
 func _geography_category(cell: HexCell, idx: int, terrain_v: int, elev: float, passable_land: bool) -> Dictionary:

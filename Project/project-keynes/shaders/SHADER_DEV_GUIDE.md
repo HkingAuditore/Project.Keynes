@@ -379,10 +379,15 @@ return evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
 
 ```glsl
 vec3 render_water_pipeline(
-    int biome, float elev, vec2 wp, vec2 uv,
+    int biome, int cover,
+    int secondary_biome, int secondary_cover, float edge_mix,
+    float elev, vec2 wp, vec2 uv,
     vec4 scals, float lat_signed, float current_temp,
-    vec2 ocean_current_v, vec2 wind_v);
+    vec2 ocean_current_v, vec2 wind_v, float dyn_ice_frac);
 ```
+
+`secondary_*` 与 `edge_mix` 只是距离场驱动的静态视觉输入。水陆分支、交互、温度、
+海冰浓度、洋流与风仍由主格权威所有；水面管线不会计算两遍。
 
 ### 9.2 SEA 1.x — `compute_water_base_surface`
 
@@ -390,7 +395,7 @@ vec3 render_water_pipeline(
 
 | Stage | Helper | 作用 |
 |---|---|---|
-| 1.1 | `compute_offshore_depth` | 由邻居判定离岸深度 |
+| 1.1 | `compute_offshore_depth` | LOW 读烘焙 R8；MID/HIGH 普通海水由连续高度场派生深度，湖泊保留烘焙盆地深度 |
 | 1.2 | `apply_water_depth_gradient` | 深度色带 |
 | 1.3 | `apply_global_water_ripple` | 全局波纹 |
 | 1.4 | `compute_water_biome_weights` | 计算 LAKE/REEF/KELP/OCEAN 权重，**LAKE 不再 max(gloss,72) 绕过**，直接写正确 roughness |
@@ -408,7 +413,10 @@ vec3 render_water_pipeline(
 ### 9.3 SEA 2 — `apply_water_specials`
 
 ```glsl
-vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, int quality);
+vec3 apply_water_specials(
+    vec3 col, SurfaceParams surface,
+    int biome, int secondary_biome, float edge_mix,
+    vec2 wp, int quality, float pixel_night, vec3 sun_dir_px);
 ```
 
 负责 `caustics_enabled` / `water_sparkle_enabled` / `water_fresnel_enabled` 的视觉乘子。这些是 **stylized** 而非 PBR，故从 BRDF 中分离。
@@ -418,7 +426,9 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, vec2 wp, i
 ```glsl
 LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER);
 vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_WATER_LEGACY, SPEC_MIN_WATER_LEGACY);
-return apply_water_specials(lit, surface, biome, wp, visual_quality);
+return apply_water_specials(
+    lit, surface, biome, secondary_biome, edge_mix,
+    wp, visual_quality, pixel_night, sun_dir_px);
 ```
 
 ---
@@ -671,7 +681,7 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 | `biome_detail.gdshaderinc` | 不采样，不跑内部纹理 | 读 `terrain_detail_tex` 单次采样，替代每像素 `fbm/voronoi` |
 | `snow_cover.gdshaderinc` | 跳过 cosmetic fbm 与暴雪新雪增强 | 保留 |
 | `land_pipeline.gdshaderinc` | 跳过河流 pulse、顺坡流动、cover fbm、水面法线细节 | 同 Low 的水/河流高频裁剪 |
-| `water.gdshaderinc` / `water_pipeline.gdshaderinc` | 跳过 domain warp、额外水噪声、kelp/ice fbm、coast foam、暴雪薄冰、caustics、波坡明暗、SSS、sparkle | 取消高细节法线与额外 domain warp，保留主波形 |
+| `water.gdshaderinc` / `water_pipeline.gdshaderinc` | 编译期跳过水体副格查找，并跳过 domain warp、额外水噪声、kelp/ice fbm、coast foam、暴雪薄冰、caustics、波坡明暗、SSS、sparkle | 复用距离场连续混合静态水体，不跑 3×3 biome 邻域；取消高细节法线与额外 domain warp，保留主波形 |
 | `weather_overlay.gdshader` | 云层使用廉价密度，不采 biome atlas | overlay quality 钳到 1 |
 | `weather_cell_curtain.gdshader` | 雨雪帘跳过 broad/fine noise、fog veil、lightning | curtain quality 钳到 1 |
 | `fog_of_war.gdshader` | fog quality 钳到 0：1 octave、无光照，只出纯色 + 起伏 | fog quality 钳到 1（3 频段分层密度 + 平滑法线，无域扭曲/质量探针）；High tier 钳到 2（4 频段 + 1 层扭曲 + 2 个质量探针） |

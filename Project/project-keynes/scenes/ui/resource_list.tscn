@@ -1,0 +1,5 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/ui/components/resource_list.gd" id="1_script"]
+[node name="ResourceList" type="VBoxContainer"]
+theme_override_constants/separation = 4
+script = ExtResource("1_script")

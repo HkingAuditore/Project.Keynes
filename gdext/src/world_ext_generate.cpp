@@ -3750,9 +3750,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
             else if (TERR[i] == 21) selected = 22; // kelp forest
         } else if (TERR[i] != 17 && TERR[i] != 24 && have_veg_profiles) {
             for (uint8_t v = 1; v < 28; ++v) {
-                if (v == 22 || v == 23 || v == 26) continue; // water-only profiles
-                const float climate = pk_vegetation_climate_score(
-                    TEMP[i], plant_water, ideal_t_arr[v], ideal_m_arr[v], tol_t_arr[v], tol_m_arr[v]);
+                if (!pk_vegetation_candidate_allowed(TERR[i], v)) continue;
+                const float climate = pk_vegetation_climate_score_for_type(
+                    v, TEMP[i], plant_water, ideal_t_arr[v], ideal_m_arr[v], tol_t_arr[v], tol_m_arr[v]);
                 const float terrain_weight = pk_vegetation_terrain_weight(TERR[i], LF[i], v, plant_water);
                 terrain_soft_weight_min = std::min(terrain_soft_weight_min, terrain_weight);
                 terrain_soft_weight_max = std::max(terrain_soft_weight_max, terrain_weight);
@@ -3780,14 +3780,14 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         }
 
         if (have_veg_profiles && selected > 0 && selected < 28) {
-            best_score = pk_vegetation_climate_score(
-                TEMP[i], plant_water, ideal_t_arr[selected], ideal_m_arr[selected],
+            best_score = pk_vegetation_climate_score_for_type(
+                selected, TEMP[i], plant_water, ideal_t_arr[selected], ideal_m_arr[selected],
                 tol_t_arr[selected], tol_m_arr[selected]) *
                 pk_vegetation_terrain_weight(TERR[i], LF[i], selected, plant_water);
             const uint8_t previous = BVEG[i];
             if (previous > 0 && previous < 28 && previous != 22 && previous != 23 && previous != 26) {
-                current_score = pk_vegetation_climate_score(
-                    TEMP[i], plant_water, ideal_t_arr[previous], ideal_m_arr[previous],
+                current_score = pk_vegetation_climate_score_for_type(
+                    previous, TEMP[i], plant_water, ideal_t_arr[previous], ideal_m_arr[previous],
                     tol_t_arr[previous], tol_m_arr[previous]) *
                     pk_vegetation_terrain_weight(TERR[i], LF[i], previous, plant_water);
             }

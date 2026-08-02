@@ -6,7 +6,7 @@ var _failures: int = 0
 func _init() -> void:
 	var host := Control.new()
 	root.add_child(host)
-	var market_list := MarketList.new()
+	var market_list := (load("res://scenes/ui/market_list.tscn") as PackedScene).instantiate() as MarketList
 	host.add_child(market_list)
 
 	var rows := _rows("10", "3")

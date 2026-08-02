@@ -14,25 +14,14 @@ var _value_font: Font = UITokens.font_with_weight(700)
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(112.0, 118.0)
 	if _title_label != null:
 		return
-	_title_label = Label.new()
-	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_title_label.offset_top = 82.0
-	_title_label.offset_bottom = 102.0
+	_title_label = get_node_or_null("TitleLabel") as Label
+	_caption_label = get_node_or_null("CaptionLabel") as Label
+	if _title_label == null or _caption_label == null:
+		push_error("RadialGauge 必须通过 radial_gauge.tscn 实例化。")
+		return
 	_title_label.add_theme_font_override("font", UITokens.font_with_weight(650))
-	_title_label.add_theme_font_size_override("font_size", UITokens.FONT_SECTION)
-	_title_label.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
-	add_child(_title_label)
-	_caption_label = Label.new()
-	_caption_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_caption_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	_caption_label.offset_top = -22.0
-	_caption_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	_caption_label.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	add_child(_caption_label)
 
 
 func set_data(p_title: String, p_value: float, p_caption: String = "", p_accent: Color = UITokens.ACCENT) -> void:

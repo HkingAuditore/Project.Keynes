@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://c6x8q3wvfm8sh"]
+[gd_scene load_steps=24 format=3 uid="uid://c6x8q3wvfm8sh"]
 
 [ext_resource type="Script" uid="uid://d2jlthr1nqltt" path="res://scripts/game/player_game.gd" id="1_player"]
 [ext_resource type="Script" uid="uid://cr8rfj8egdakv" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
@@ -22,6 +22,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/country_panel.tscn" id="20_country_panel"]
 [ext_resource type="PackedScene" path="res://scenes/ui/world_loading_overlay.tscn" id="21_loading"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="22_pause"]
+[ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="23_theme"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -63,27 +64,84 @@ script = ExtResource("6_runtime")
 [node name="UI" type="CanvasLayer" parent="." unique_id=1030090401]
 script = ExtResource("7_ui")
 
-[node name="PlayerTopBar" parent="UI" instance=ExtResource("12_top_bar")]
+[node name="UIRoot" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme = ExtResource("23_theme")
 
-[node name="RightPanel" parent="UI" instance=ExtResource("13_inspector")]
+[node name="HUDLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="DemandDetailDialog" parent="UI" instance=ExtResource("14_demand_dialog")]
+[node name="PlayerTopBar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("12_top_bar")]
+unique_name_in_owner = true
 
-[node name="ObjectDetailDialog" parent="UI" instance=ExtResource("15_object_dialog")]
+[node name="PerfMiniHUD" parent="UI/UIRoot/HUDLayer" instance=ExtResource("16_perf")]
+unique_name_in_owner = true
 
-[node name="PerfMiniHUD" parent="UI" instance=ExtResource("16_perf")]
+[node name="MapOverlayToolbar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("17_overlay_toolbar")]
+unique_name_in_owner = true
 
-[node name="MapOverlayToolbar" parent="UI" instance=ExtResource("17_overlay_toolbar")]
+[node name="CountryActionBar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("18_country_bar")]
+unique_name_in_owner = true
 
-[node name="CountryActionBar" parent="UI" instance=ExtResource("18_country_bar")]
+[node name="MapOverlayLegend" parent="UI/UIRoot/HUDLayer" instance=ExtResource("19_legend")]
+unique_name_in_owner = true
 
-[node name="MapOverlayLegend" parent="UI" instance=ExtResource("19_legend")]
+[node name="PanelLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="CountryPanel" parent="UI" instance=ExtResource("20_country_panel")]
+[node name="RightPanel" parent="UI/UIRoot/PanelLayer" instance=ExtResource("13_inspector")]
+unique_name_in_owner = true
 
-[node name="WorldLoadingOverlay" parent="UI" instance=ExtResource("21_loading")]
+[node name="CountryPanel" parent="UI/UIRoot/PanelLayer" instance=ExtResource("20_country_panel")]
+unique_name_in_owner = true
 
-[node name="PauseMenu" parent="UI" instance=ExtResource("22_pause")]
+[node name="ModalLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="DemandDetailDialog" parent="UI/UIRoot/ModalLayer" instance=ExtResource("14_demand_dialog")]
+unique_name_in_owner = true
+
+[node name="ObjectDetailDialog" parent="UI/UIRoot/ModalLayer" instance=ExtResource("15_object_dialog")]
+unique_name_in_owner = true
+
+[node name="WorldLoadingOverlay" parent="UI/UIRoot/ModalLayer" instance=ExtResource("21_loading")]
+unique_name_in_owner = true
+
+[node name="PauseMenu" parent="UI/UIRoot/ModalLayer" instance=ExtResource("22_pause")]
+unique_name_in_owner = true
+
+[node name="DebugLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
 [node name="Controllers" type="Node" parent="." unique_id=1023979025]
 
