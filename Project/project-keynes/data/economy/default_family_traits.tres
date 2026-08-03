@@ -1,0 +1,160 @@
+[gd_resource type="Resource" script_class="FamilyTraitCatalog" load_steps=26 format=3]
+
+[ext_resource type="Script" path="res://scripts/family/family_trait_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://scripts/family/family_trait_definition.gd" id="2_trait"]
+[ext_resource type="Script" path="res://scripts/family/family_behavior_preference.gd" id="3_behavior"]
+[ext_resource type="Script" path="res://scripts/family/family_modifier_effect.gd" id="4_modifier"]
+[ext_resource type="Script" path="res://scripts/family/family_trigger_binding.gd" id="5_trigger"]
+
+[sub_resource type="Resource" id="BehaviorGathering"]
+script = ExtResource("3_behavior")
+axis = 0
+selector_kind = 1
+selector_id = &"1"
+factor_q16 = 88474
+
+[sub_resource type="Resource" id="ModifierGathering"]
+script = ExtResource("4_modifier")
+definition_key = &"family.city.production_boost"
+tier_magnitude_q16 = PackedInt32Array(0, 16384, 32768, 49152, 65536, 81920)
+
+[sub_resource type="Resource" id="TraitGathering"]
+script = ExtResource("2_trait")
+key = &"gathering_affinity"
+display_name = "采集传统"
+weight = 120
+strength_min_q16 = 49152
+strength_max_q16 = 81920
+strength_step_q16 = 4096
+behaviors = Array[Resource]([SubResource("BehaviorGathering")])
+modifiers = Array[Resource]([SubResource("ModifierGathering")])
+
+[sub_resource type="Resource" id="BehaviorHuntingBuilding"]
+script = ExtResource("3_behavior")
+axis = 0
+selector_id = &"stone_age_hunting_camp"
+factor_q16 = 98304
+
+[sub_resource type="Resource" id="BehaviorHuntingCareer"]
+script = ExtResource("3_behavior")
+axis = 1
+selector_id = &"hunter"
+factor_q16 = 81920
+
+[sub_resource type="Resource" id="ModifierHunting"]
+script = ExtResource("4_modifier")
+definition_key = &"family.city.hunting_output_boost"
+tier_magnitude_q16 = PackedInt32Array(0, 0, 16384, 32768, 49152, 65536)
+
+[sub_resource type="Resource" id="TriggerHunting"]
+script = ExtResource("5_trigger")
+definition_keys_by_tier = PackedStringArray("", "", "", "", "family.build_hunting_bonus", "family.build_hunting_bonus")
+reward_target = 0
+
+[sub_resource type="Resource" id="TraitHunting"]
+script = ExtResource("2_trait")
+key = &"hunting_tradition"
+display_name = "狩猎传统"
+weight = 90
+strength_min_q16 = 49152
+strength_max_q16 = 90112
+strength_step_q16 = 4096
+behaviors = Array[Resource]([SubResource("BehaviorHuntingBuilding"), SubResource("BehaviorHuntingCareer")])
+modifiers = Array[Resource]([SubResource("ModifierHunting")])
+triggers = Array[Resource]([SubResource("TriggerHunting")])
+
+[sub_resource type="Resource" id="BehaviorMiningIron"]
+script = ExtResource("3_behavior")
+axis = 0
+selector_id = &"early_iron_mine"
+factor_q16 = 91750
+
+[sub_resource type="Resource" id="BehaviorMiningCoal"]
+script = ExtResource("3_behavior")
+axis = 0
+selector_id = &"coal_mine"
+factor_q16 = 85197
+
+[sub_resource type="Resource" id="BehaviorMiningCareer"]
+script = ExtResource("3_behavior")
+axis = 1
+selector_id = &"miner"
+factor_q16 = 81920
+
+[sub_resource type="Resource" id="ModifierMining"]
+script = ExtResource("4_modifier")
+definition_key = &"family.city.extractive_output_boost"
+tier_magnitude_q16 = PackedInt32Array(0, 8192, 16384, 32768, 49152, 65536)
+
+[sub_resource type="Resource" id="TraitMining"]
+script = ExtResource("2_trait")
+key = &"mining_enterprise"
+display_name = "矿业经营"
+weight = 100
+strength_min_q16 = 49152
+strength_max_q16 = 81920
+strength_step_q16 = 4096
+behaviors = Array[Resource]([SubResource("BehaviorMiningIron"), SubResource("BehaviorMiningCoal"), SubResource("BehaviorMiningCareer")])
+modifiers = Array[Resource]([SubResource("ModifierMining")])
+
+[sub_resource type="Resource" id="BehaviorStaple"]
+script = ExtResource("3_behavior")
+axis = 2
+selector_id = &"staple_food"
+factor_q16 = 73728
+
+[sub_resource type="Resource" id="BehaviorProtein"]
+script = ExtResource("3_behavior")
+axis = 2
+selector_id = &"protein"
+factor_q16 = 77824
+
+[sub_resource type="Resource" id="BehaviorProduce"]
+script = ExtResource("3_behavior")
+axis = 2
+selector_id = &"produce"
+factor_q16 = 73728
+
+[sub_resource type="Resource" id="ModifierFood"]
+script = ExtResource("4_modifier")
+definition_key = &"family.city.birth_boost"
+tier_magnitude_q16 = PackedInt32Array(0, 0, 8192, 16384, 32768, 49152)
+
+[sub_resource type="Resource" id="TraitFood"]
+script = ExtResource("2_trait")
+key = &"abundant_table"
+display_name = "丰盛餐桌"
+weight = 110
+strength_min_q16 = 49152
+strength_max_q16 = 81920
+strength_step_q16 = 4096
+behaviors = Array[Resource]([SubResource("BehaviorStaple"), SubResource("BehaviorProtein"), SubResource("BehaviorProduce")])
+modifiers = Array[Resource]([SubResource("ModifierFood")])
+
+[sub_resource type="Resource" id="ModifierTrade"]
+script = ExtResource("4_modifier")
+definition_key = &"family.city.trade_output_boost"
+tier_magnitude_q16 = PackedInt32Array(0, 0, 16384, 24576, 32768, 49152)
+
+[sub_resource type="Resource" id="TriggerTrade"]
+script = ExtResource("5_trigger")
+definition_keys_by_tier = PackedStringArray("", "", "", "family.trade_population_bonus", "family.trade_population_bonus", "family.trade_population_bonus")
+reward_target = 1
+
+[sub_resource type="Resource" id="TraitTrade"]
+script = ExtResource("2_trait")
+key = &"trade_network"
+display_name = "商路人脉"
+weight = 80
+strength_min_q16 = 49152
+strength_max_q16 = 81920
+strength_step_q16 = 4096
+modifiers = Array[Resource]([SubResource("ModifierTrade")])
+triggers = Array[Resource]([SubResource("TriggerTrade")])
+
+[resource]
+script = ExtResource("1_catalog")
+version = 1
+core_trait_min = 2
+core_trait_max = 4
+traits = Array[Resource]([SubResource("TraitFood"), SubResource("TraitGathering"), SubResource("TraitHunting"), SubResource("TraitMining"), SubResource("TraitTrade")])

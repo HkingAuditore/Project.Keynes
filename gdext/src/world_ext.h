@@ -267,7 +267,7 @@ public:
     int64_t ensure_modifier_building_handle(int cell, int type_id,
                                             int owner_signature_id);
     double modifier_building_output_factor(int64_t building_handle,
-                                           int64_t country_handle) const;
+                                           int64_t settlement_cell) const;
 
     // ─── Native economy runtime / ECONOMY_GRAPH ────────────────────────
     // Economy owns dynamic PopulationCohort pages, local-market matrices,
@@ -301,8 +301,13 @@ public:
     godot::Dictionary get_family_cell_snapshot(int cell_idx, int offset = 0,
                                                 int limit = 64) const;
     godot::Dictionary get_family_snapshot(int64_t family_handle) const;
+    godot::Dictionary get_family_traits(int64_t family_handle) const;
     godot::Dictionary get_family_branches(int64_t family_handle, int offset = 0,
                                           int limit = 64) const;
+    godot::Dictionary get_family_branch_effects(int64_t family_handle,
+                                                int cell_idx) const;
+    godot::Dictionary submit_family_trait_commands(
+        const godot::Dictionary &packed_batch);
     godot::Dictionary get_family_industries(int64_t family_handle,
                                             int offset = 0,
                                             int limit = 64) const;

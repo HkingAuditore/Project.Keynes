@@ -516,11 +516,30 @@ Dictionary DCWorldExt::get_family_snapshot(int64_t family_handle) const {
     return runtime_from(_economy_runtime)->family_snapshot(family_handle);
 }
 
+Dictionary DCWorldExt::get_family_traits(int64_t family_handle) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->family_traits(family_handle);
+}
+
 Dictionary DCWorldExt::get_family_branches(
         int64_t family_handle, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
     return runtime_from(_economy_runtime)->family_branches(
         family_handle, offset, limit);
+}
+
+Dictionary DCWorldExt::get_family_branch_effects(
+        int64_t family_handle, int cell_idx) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->family_branch_effects(
+        family_handle, cell_idx);
+}
+
+Dictionary DCWorldExt::submit_family_trait_commands(
+        const Dictionary &packed_batch) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->submit_family_trait_commands(
+        packed_batch);
 }
 
 Dictionary DCWorldExt::get_family_industries(

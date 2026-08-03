@@ -26,7 +26,7 @@ class ModifierRuntime;
 class NativeEconomyRuntime {
 public:
     // 28: persistent per-cell/per-ethnicity Q32 birth residuals.
-    static constexpr int32_t SCHEMA_VERSION = 28;
+    static constexpr int32_t SCHEMA_VERSION = 29;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -117,6 +117,11 @@ public:
     godot::Dictionary family_snapshot(int64_t family_handle) const;
     godot::Dictionary family_branches(int64_t family_handle, int32_t offset,
                                       int32_t limit) const;
+    godot::Dictionary family_traits(int64_t family_handle) const;
+    godot::Dictionary family_branch_effects(int64_t family_handle,
+                                            int32_t cell) const;
+    godot::Dictionary submit_family_trait_commands(
+        const godot::Dictionary &packed_batch);
     godot::Dictionary family_industries(int64_t family_handle, int32_t offset,
                                         int32_t limit) const;
     godot::Dictionary family_notable_people(int64_t family_handle,
@@ -575,6 +580,56 @@ private:
         uint64_t building_handle = 0;
         int64_t owned_count = 0;
         int64_t filled_owner = 0;
+    };
+
+    struct FamilyTraitRoll {
+        uint64_t family_handle = 0;
+        int32_t trait_id = -1;
+        int32_t strength_q16 = Q16_ONE;
+        uint8_t core = 0;
+    };
+
+    struct FamilyCellInfluenceStore {
+        std::vector<uint8_t> active;
+        std::vector<uint32_t> generation;
+        std::vector<uint64_t> family_handle;
+        std::vector<int32_t> cell;
+        std::vector<int64_t> stable_id;
+        std::vector<int64_t> population;
+        std::vector<int64_t> cash;
+        std::vector<int64_t> building_asset;
+        std::vector<int32_t> population_share_q16;
+        std::vector<int32_t> cash_share_q16;
+        std::vector<int32_t> building_share_q16;
+        std::vector<int32_t> score_q16;
+        std::vector<uint8_t> prestige_level;
+        std::vector<uint8_t> pending_target_level;
+        std::vector<uint8_t> review_streak;
+        std::vector<int64_t> last_review_day;
+        std::vector<uint32_t> free_indices;
+
+        void clear();
+        int32_t allocate();
+        void release(int32_t index);
+        uint64_t handle_for_index(int32_t index) const;
+        bool valid_handle(uint64_t handle, int32_t &index_out) const;
+    };
+
+    struct FamilyTraitCommand {
+        int32_t operation = 0; // 1=grant, 2=remove, 3=set-strength.
+        uint64_t family_handle = 0;
+        int32_t trait_id = -1;
+        int32_t strength_q16 = Q16_ONE;
+        int64_t effective_day = 0;
+        int32_t priority = 0;
+        int64_t sequence = 0;
+        uint64_t submit_order = 0;
+    };
+
+    struct FamilyModifierBinding {
+        uint64_t branch_handle = 0;
+        std::string definition_key;
+        int32_t magnitude_q16 = 0;
     };
 
     struct BuildingRoleSpan {
@@ -1587,6 +1642,9 @@ private:
         int32_t family_ownership_cursor = 0;
         int32_t person_cursor = 0;
         int32_t person_need_cursor = 0;
+        int32_t family_trait_cursor = 0;
+        int32_t family_influence_cursor = 0;
+        int32_t family_trait_command_cursor = 0;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
         bool end_emitted = false;
@@ -1640,6 +1698,15 @@ private:
         int32_t restored_person_needs = 0;
         bool person_records_seen = false;
         bool person_needs_seen = false;
+        int32_t restored_family_traits = 0;
+        int32_t restored_family_influences = 0;
+        int32_t restored_family_trait_commands = 0;
+        int32_t expected_family_traits = 0;
+        int32_t expected_family_influences = 0;
+        int32_t expected_family_trait_commands = 0;
+        bool family_traits_seen = false;
+        bool family_influences_seen = false;
+        bool family_trait_commands_seen = false;
     };
 
     struct EventArchiveState {
@@ -2220,9 +2287,13 @@ private:
     AuditTotals _publish_accum;
     PopulationStore _population;
     FamilyStore _families;
+    FamilyCellInfluenceStore _family_influences;
     NotablePersonStore _persons;
     std::vector<FamilyMembershipEdge> _family_memberships;
     std::vector<FamilyBuildingOwnership> _family_ownerships;
+    std::vector<FamilyTraitRoll> _family_traits;
+    std::vector<FamilyTraitCommand> _family_trait_commands;
+    std::vector<FamilyModifierBinding> _family_modifier_bindings;
     std::vector<PersonNeedState> _person_needs;
     // Derived, transient CSR. Authoritative edges above remain sparse and are
     // rebuilt only at FAMILY_COMMIT or after structural restore.
@@ -2722,6 +2793,30 @@ private:
     int64_t _catalog_compat_hash_v10 = 0;
     int64_t _catalog_compat_hash_v13 = 0;
     int64_t _family_catalog_hash = 0;
+    int32_t _family_trait_catalog_version = 0;
+    int64_t _family_trait_catalog_hash = 0;
+    int32_t _family_core_trait_min = 0;
+    int32_t _family_core_trait_max = 0;
+    std::vector<std::string> _family_trait_ids;
+    std::vector<std::string> _family_trait_display_names;
+    std::vector<int32_t> _family_trait_weights;
+    std::vector<uint8_t> _family_trait_core_eligible;
+    std::vector<int32_t> _family_trait_strength_min_q16;
+    std::vector<int32_t> _family_trait_strength_max_q16;
+    std::vector<int32_t> _family_trait_strength_step_q16;
+    std::vector<int32_t> _family_trait_prerequisite_offsets;
+    std::vector<int32_t> _family_trait_prerequisites;
+    std::vector<int32_t> _family_trait_exclusion_offsets;
+    std::vector<int32_t> _family_trait_exclusions;
+    std::vector<int32_t> _family_trait_behavior_offsets;
+    std::vector<int32_t> _family_trait_behavior_axes;
+    std::vector<int32_t> _family_trait_behavior_selector_kinds;
+    std::vector<int32_t> _family_trait_behavior_selector_ids;
+    std::vector<int32_t> _family_trait_behavior_factors_q16;
+    std::vector<int32_t> _family_trait_modifier_offsets;
+    std::vector<std::string> _family_trait_modifier_definition_keys;
+    std::vector<int32_t> _family_trait_modifier_targets;
+    std::vector<int32_t> _family_trait_modifier_tier_magnitudes_q16;
     std::string _family_surname_pack_id = "default_zh";
     std::vector<std::string> _family_surname_ids;
     std::vector<std::string> _family_surname_text;
@@ -3020,6 +3115,8 @@ private:
     bool run_government_research_procurement(std::string &error);
     bool compile_family_catalog(const godot::Dictionary &catalog,
                                 std::string &error);
+    bool compile_family_trait_catalog(const godot::Dictionary &catalog,
+                                      std::string &error);
     bool run_family_commit_slice(int64_t &work_done, std::string &error);
     void rebuild_family_indices();
     void normalize_family_memberships();
@@ -3031,6 +3128,17 @@ private:
     bool repair_forced_capital_founder(int32_t cell);
     bool form_family_for_cell(int32_t cell);
     void review_family_lifecycle();
+    void assign_core_family_traits(int32_t family_index);
+    void apply_due_family_trait_commands();
+    void rebuild_family_influences();
+    void reconcile_family_branch_effects(uint64_t branch_handle,
+                                         bool submit_changes);
+    void clear_family_branch_effects(uint64_t branch_handle);
+    int32_t family_trait_behavior_factor_q16(uint64_t family_handle,
+                                             int32_t axis,
+                                             int32_t selector_kind,
+                                             int32_t selector_id) const;
+    int64_t building_reset_capital_value(const BuildingGroup &group) const;
     void dissolve_family(uint64_t family_handle);
     void move_family_membership(uint64_t source_handle,
                                 uint64_t destination_handle,

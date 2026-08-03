@@ -10,9 +10,11 @@ const BUILDING_DIR := "res://data/economy/buildings"
 const PRODUCTION_CLIMATE_DIR := "res://data/economy/production_climates"
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
 const DEFAULT_SETTLEMENT_PROFILE_PATH := "res://data/economy/default_settlement.tres"
 const DEFAULT_FAMILY_SURNAME_PACK_PATH := "res://data/economy/default_family_surnames.tres"
 const DEFAULT_PERSON_GIVEN_NAME_PACK_PATH := "res://data/economy/default_person_given_names.tres"
+const DEFAULT_FAMILY_TRAIT_CATALOG_PATH := "res://data/economy/default_family_traits.tres"
 const Q16_ONE := 65536
 ## Reserved profession that represents unemployed population buckets. It is a
 ## legal signature profession (one signature per ethnicity is auto-generated),
@@ -408,6 +410,18 @@ static func compile_native_catalog() -> Dictionary:
 	for key in person_columns:
 		if key != "ok":
 			catalog[key] = person_columns[key]
+	var trait_catalog = load(DEFAULT_FAMILY_TRAIT_CATALOG_PATH)
+	if trait_catalog == null or not trait_catalog is FamilyTraitCatalogScript:
+		return {"ok": false, "reason": "default family trait catalog is unavailable"}
+	var trait_columns: Dictionary = trait_catalog.compile_native_columns(catalog)
+	if not bool(trait_columns.get("ok", false)):
+		return trait_columns
+	for key in trait_columns:
+		if key != "ok":
+			catalog[key] = trait_columns[key]
+	# Family trait semantics participate in the final economy identity. The
+	# earlier hash remains useful only for explicit legacy readers.
+	catalog["catalog_hash"] = _catalog_hash(catalog)
 	catalog["ok"] = true
 	return catalog
 

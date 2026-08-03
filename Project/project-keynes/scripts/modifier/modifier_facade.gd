@@ -5,9 +5,10 @@ signal modifier_events_available(batch: Dictionary)
 
 enum Domain { CLIMATE, COUNTRY, ECONOMY, GAMEPLAY }
 enum Scope { GLOBAL, GROUP, ENTITY }
-enum Opcode { APPLY = 1, REMOVE = 2, REFRESH = 3, SET_STACKS = 4 }
+enum Opcode { APPLY = 1, REMOVE = 2, REFRESH = 3, SET_STACKS = 4, SET_MAGNITUDE = 5 }
 
-const PROTOCOL_VERSION := 1
+const PROTOCOL_VERSION := 2
+const Q16_ONE := 65536
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
 var _world_ext: Object
@@ -38,32 +39,39 @@ func configure(world_ext: Object, cell_count: int, clock: WorldClock = null,
 
 func queue_apply(definition_key: StringName, target: Dictionary, source: Dictionary,
 		duration_days: int = -2, initial_stacks: int = 1,
-		effective_day: int = -1, producer_id: int = 100) -> int:
+		effective_day: int = -1, producer_id: int = 100,
+		magnitude_q16: int = Q16_ONE) -> int:
 	return _queue(Opcode.APPLY, definition_key, target, source, duration_days,
-		initial_stacks, 0, effective_day, producer_id)
+		initial_stacks, magnitude_q16, 0, effective_day, producer_id)
 
 
 func queue_remove(modifier_handle: int, domain: int, effective_day: int = -1,
 		producer_id: int = 100) -> int:
 	return _queue(Opcode.REMOVE, &"", {"domain": domain}, {}, -1, 1,
-		modifier_handle, effective_day, producer_id)
+		Q16_ONE, modifier_handle, effective_day, producer_id)
 
 
 func queue_refresh(modifier_handle: int, domain: int, duration_days: int,
 		effective_day: int = -1, producer_id: int = 100) -> int:
 	return _queue(Opcode.REFRESH, &"", {"domain": domain}, {}, duration_days, 1,
-		modifier_handle, effective_day, producer_id)
+		Q16_ONE, modifier_handle, effective_day, producer_id)
 
 
 func queue_set_stacks(modifier_handle: int, domain: int, stacks: int,
 		effective_day: int = -1, producer_id: int = 100) -> int:
 	return _queue(Opcode.SET_STACKS, &"", {"domain": domain}, {}, -1, stacks,
-		modifier_handle, effective_day, producer_id)
+		Q16_ONE, modifier_handle, effective_day, producer_id)
+
+
+func queue_set_magnitude(modifier_handle: int, domain: int, magnitude_q16: int,
+		effective_day: int = -1, producer_id: int = 100) -> int:
+	return _queue(Opcode.SET_MAGNITUDE, &"", {"domain": domain}, {}, -1, 1,
+		magnitude_q16, modifier_handle, effective_day, producer_id)
 
 
 func _queue(opcode: int, definition_key: StringName, target: Dictionary,
-		source: Dictionary, duration_days: int, stacks: int, modifier_handle: int,
-		effective_day: int, producer_id: int) -> int:
+		source: Dictionary, duration_days: int, stacks: int, magnitude_q16: int,
+		modifier_handle: int, effective_day: int, producer_id: int) -> int:
 	if not _configured:
 		return 0
 	_producer_sequence += 1
@@ -85,6 +93,7 @@ func _queue(opcode: int, definition_key: StringName, target: Dictionary,
 		"source_ids": PackedInt64Array([int(source.get("id", 0))]),
 		"duration_days": PackedInt32Array([duration_days]),
 		"stacks": PackedInt32Array([stacks]),
+		"magnitude_q16": PackedInt32Array([magnitude_q16]),
 		"modifier_handles": PackedInt64Array([modifier_handle]),
 	}
 	var result: Dictionary = _world_ext.submit_modifier_commands(batch)
