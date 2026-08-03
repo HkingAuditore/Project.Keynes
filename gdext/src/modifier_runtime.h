@@ -64,6 +64,19 @@ public:
                           int8_t *out_values, size_t count) const;
     double effective_value(int32_t domain, const char *stat_key, uint64_t entity_handle,
                            uint64_t group_handle, double base_value) const;
+    // Ascending, de-duplicated scope ids that currently hold a bucket in
+    // `domain` for `scope` and any of `stat_ids`. Any scope id absent from the
+    // result provably contributes nothing, so callers building dense per-entity
+    // tables can fill the rest with one precomputed default instead of probing
+    // every entity.
+    void collect_scope_ids(int32_t domain, int32_t scope, const int32_t *stat_ids,
+                           size_t stat_count,
+                           std::vector<uint64_t> &out_scope_ids) const;
+    // Combined bucket revision of the given stats. Unlike domain_snapshot_version
+    // this ignores mutations to unrelated stats, so a cache over a stat subset is
+    // not invalidated by every modifier applied elsewhere in the domain.
+    uint64_t stat_bucket_version(int32_t domain, const int32_t *stat_ids,
+                                 size_t stat_count) const;
     float climate_radiative_target(int32_t cell, float base_value) const;
     void climate_radiative_terms(int32_t cell, double &add,
                                  double &factor) const;
@@ -78,6 +91,9 @@ public:
     double economy_building_output_factor(uint64_t building_handle,
                                            uint64_t settlement_cell,
                                            int32_t economic_sector) const;
+    // Combined bucket revision of every stat economy_building_output_factor
+    // reads, for callers caching one factor per building.
+    uint64_t building_output_stat_version() const;
     bool apply_technology_effect(uint64_t country_handle,
                                  const std::string &definition_key,
                                  int32_t technology_id, int64_t day_index,
@@ -194,6 +210,13 @@ private:
         std::unordered_map<BucketKey, Bucket, BucketKeyHash> buckets;
         std::unordered_map<UniqueKey, uint32_t, UniqueKeyHash> unique_instances;
         std::priority_queue<ExpiryNode, std::vector<ExpiryNode>, std::greater<ExpiryNode>> expiry_heap;
+        // Per-stat bucket revisions, indexed by stat id. Grown lazily because a
+        // cleared store outlives the catalog it was sized for. structure_epoch
+        // covers wholesale replacements (clear/restore) that per-stat counters
+        // cannot express, so a stat with no buckets before and after still
+        // invalidates caches.
+        std::vector<uint64_t> stat_versions;
+        uint64_t structure_epoch = 0;
         uint64_t snapshot_version = 0;
         uint64_t peak_instances = 0;
         uint64_t active_instances = 0;
@@ -274,6 +297,7 @@ private:
     bool refresh_handle(const Command &command, int64_t day, Result &result);
     bool set_stacks(const Command &command, int64_t day, Result &result);
     bool set_magnitude(const Command &command, int64_t day, Result &result);
+    static void bump_stat_version(Store &store, int32_t stat_id);
     void add_instance_to_buckets(int32_t domain, uint32_t index);
     void remove_instance_from_buckets(int32_t domain, uint32_t index);
     void rebuild_bucket(int32_t domain, const BucketKey &key, Bucket &bucket);
@@ -299,6 +323,8 @@ private:
     int32_t _cell_count = 0;
     uint64_t _catalog_hash = 0;
     uint64_t _legacy_catalog_hash_without_tax = 0;
+    static constexpr size_t BUILDING_OUTPUT_STAT_COUNT = 4;
+    int32_t _building_output_stat_ids[BUILDING_OUTPUT_STAT_COUNT] = {-1, -1, -1, -1};
     int64_t _current_day = -1;
     int64_t _next_request_id = 1;
     int64_t _next_event_id = 1;

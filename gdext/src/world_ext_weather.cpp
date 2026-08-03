@@ -1926,6 +1926,9 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
     const float heat_mix     = float(knobs["heat_mix"]);
+    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
+    const float wrap_period_x = knobs.has("wrap_period_x")
+        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
     if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
     const int start_idx = knobs.has("start_idx") ? int(knobs["start_idx"]) : 0;
     const int end_idx_raw = knobs.has("end_idx") ? int(knobs["end_idx"]) : n_cells;
@@ -1998,7 +2001,7 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
             for (int d = 0; d < 6; ++d) {
                 const int32_t ni = NB[ub + d];
                 if (ni < 0) continue;
-                const float dx = POSX[ni] - swx;
+                const float dx = pk_wrap_min_image_dx(POSX[ni] - swx, wrap_period_x);
                 const float dy = POSY[ni] - swy;
                 const float len2 = dx * dx + dy * dy;
                 if (len2 < 1e-6f) continue;
@@ -2078,6 +2081,9 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
 
     const int n_cells = int(knobs["n_cells"]);
     const float air_leak = float(knobs["air_leak"]);
+    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
+    const float wrap_period_x = knobs.has("wrap_period_x")
+        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
     const float cold_transport_form = knobs.has("cold_transport_form_threshold")
         ? float(knobs["cold_transport_form_threshold"]) : 0.06f;
     const float cold_transport_melt = knobs.has("cold_transport_melt_threshold")
@@ -2149,7 +2155,7 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
             const float wind_x = WX[ni];
             const float wind_y = WY[ni];
             if (wind_x * wind_x + wind_y * wind_y < 1e-6f) continue;
-            const float dx = swx - POSX[ni];
+            const float dx = pk_wrap_min_image_dx(swx - POSX[ni], wrap_period_x);
             const float dy = swy - POSY[ni];
             const float len2 = dx * dx + dy * dy;
             if (len2 < 1e-6f) continue;

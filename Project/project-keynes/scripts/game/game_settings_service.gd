@@ -12,6 +12,7 @@ const DEFAULTS := {
 	"ui_scale_percent": 100,
 	"master_volume": 0.8,
 	"master_muted": false,
+	"autosave_enabled": true,
 }
 
 var _settings: Dictionary = DEFAULTS.duplicate(true)
@@ -91,3 +92,4 @@ func _validate() -> void:
 	if int(_settings.ui_scale_percent) not in [80, 100, 125, 150]:
 		_settings.ui_scale_percent = 100
 	_settings.master_volume = clampf(float(_settings.master_volume), 0.0, 1.0)
+	_settings.autosave_enabled = bool(_settings.autosave_enabled)

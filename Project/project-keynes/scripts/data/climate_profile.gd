@@ -953,19 +953,39 @@ const NATIVE_MODE_ACTIVE: int = 2
 # 天气尺度修复(2026-06-19)：synoptic(天气尺度)风/压扰动原先时间项挂在 day_t=sim_day/days_per_year
 # 上 → 平移一个波长约需 1.3 年 → 在日/月尺度上风型实质冻结 → 水汽永远被送到同一批辐合带 →
 # 固定雨带/干区、整图天气高度静止。wind_synoptic_period_days 控制 synoptic 波平移/振荡的真实周期
-# （天），~6 天对应中纬度天气系统过境节奏；越小天气系统移动越快（过小会偏躁动），越大越接近静止。
+# （天），越小天气系统移动越快（过小会偏躁动），越大越接近静止。
 # wind/SLP 两个 pass 共用本周期。amp 同步 0.075→0.10 以让移动的辐合带足以打破固定雨/干区。
+#
+# 抗频闪混叠（wind-variability 2026-08-03）：本 knob 必须与物理 pass 的**实际调用节奏**
+# 不成整数比，否则时变项被采样成常量。旧值 6.0 正是灾难性取值：earth_like 下
+# ocean_daily_wind_period_ticks=6 + daily_wind_split_passes → SLP pass 每 6 个游戏日跑、
+# wind pass 每 12 个游戏日跑，而 slp_syn_phase = sim_day·2π/6 每次采样恰好推进整数个 2π
+# → 权重 0.65 的 SLP synoptic 主项与整个 wind synoptic 项**精确冻结成静态场**
+# （实测：每 cell 全程只有 8 个不同风向、方向恒定度中位 0.998、73% 的 cell >0.99）。
+# 改 29.0（质数）：与 6/12 都不成整数比，且对两个节奏都在 Nyquist 之上
+# （4.8 / 2.4 样本每周期），场真的按设计演化而非产生虚假拍频；与
+# slp_mobile_low_period_days=16 互质，合成天气 464 天才重复。
+# 若将来改动 ocean_daily_wind_period_ticks / daily_wind_split_passes，必须重新核对
+# 本值不被新节奏整除。
 @export_range(0.0, 0.30, 0.005) var wind_synoptic_amp: float = 0.24
-@export_range(2.0, 60.0, 0.5) var wind_synoptic_period_days: float = 6.0
+@export_range(2.0, 60.0, 0.5) var wind_synoptic_period_days: float = 29.0
 # 让天气流动(2026-06-21 阶段1)：移动低压系统。在 SLP 场上叠加 N 个随引导气流（自西向东、
 # 中纬西风带主导，到达东缘后从西缘环绕）平移的高斯低压中心 −amp·exp(−r²/2σ²)。这制造出
 # "会移动的辐合源"——下游 wind 读含本项的 slp 算压力梯度 → 移动辐合带 → cloud_source/
 # frontogenesis → 雨带整团随系统漂移（field_solver 已有"雨带成团随风系移动"链，无需改 vapor
 # 镜像）。诊断与结构性评估见 canvas weather-flow-structural-eval。仅 C++ 路径实现（SLP fallback
 # 已与 C++ 分叉，生产恒走 gdext）。count=0 或 amp=0 关闭；默认保守开启以打破永雨永旱固定带。
-@export_range(0, 8, 1) var slp_mobile_low_count: int = 5
+#
+# σ 的标定（wind-variability 2026-08-03）：σ 以归一化 px/ny 为单位，100×64 图上
+# σ=0.16 意味着低压半径约 16 格 —— 那是行星尺度而非天气尺度（真实气旋约
+# 1000~1500km，在 100 格周长的世界图上只有 2~4 格），且高斯梯度峰值
+# amp/(σ·√e) 摊到每格只有 0.16/(0.16·1.649·100) ≈ 0.006/格，而静态纬向 SLP
+# 基线是 ≈0.030/格 → 移动低压压根扭不动风向。σ=0.06（约 6 格 × 3.8 行）把每格
+# 梯度提到 ≈0.016，达到静态基线的一半，才真正参与定向；同时 count 提到上限 8
+# 以扩大受影响图面（σ 收紧会缩小单个低压的覆盖面积）。
+@export_range(0, 8, 1) var slp_mobile_low_count: int = 8
 @export_range(0.0, 0.30, 0.01) var slp_mobile_low_amp: float = 0.16
-@export_range(0.05, 0.40, 0.01) var slp_mobile_low_sigma: float = 0.16
+@export_range(0.05, 0.40, 0.01) var slp_mobile_low_sigma: float = 0.06
 @export_range(5.0, 120.0, 1.0) var slp_mobile_low_period_days: float = 16.0
 # Debug isolation: true forces physical wind solve to output WindBelt only,
 # bypassing pressure-gradient/coastal-thermal/synoptic/old-wind inertia.

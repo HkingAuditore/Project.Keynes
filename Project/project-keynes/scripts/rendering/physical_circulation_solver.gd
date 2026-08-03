@@ -65,7 +65,15 @@ static func _neighbor_dir_index(map: MapData, cell: HexCell, neighbor: HexCell) 
 # 与现有 MapBaker 中各处计算保持一致：ny = (cell_world_y - bounds.y) / bounds.h
 # clampf 到 [0,1]。lat_signed = (ny - 0.5) * 2 ∈ [-1, +1]，正南半球、负北半球。
 # lat_temp = DCClimateMath.lat_temp_bell(|lat_signed|) 是温度钟形曲线代理（全工程单一来源）。
-static func _ny_for_cell(cell: HexCell, hex_size: float, world_bounds: Rect2) -> float:
+## `map_height > 1` 时精确复现权威定义 `cell_lat_norm = row/(height-1)`
+## （= MapGenerator._cube_row_norm，也是 world_ext_climate.cpp / world_ext_physical.cpp
+## 消费的同一个量）。缺 height 时退回历史的 world_bounds 归一化 —— 那条路单位自洽但带
+## ~2% bounds padding 偏移（赤道落在 r≈32.2 而非 31.5），只作兜底不作权威，避免
+## fallback 与 native 路径在纬度上静默漂移。
+static func _ny_for_cell(cell: HexCell, hex_size: float, world_bounds: Rect2,
+		map_height: int = 0) -> float:
+	if map_height > 1:
+		return clampf(float(cell.r) / float(map_height - 1), 0.0, 1.0)
 	if world_bounds.size.y <= 0.001:
 		return 0.5
 	var wp: Vector2 = HexUtilsScript.cube_to_world(cell.q, cell.r, hex_size)
@@ -196,7 +204,7 @@ static func solve_slp_field(map: MapData, hex_size: float, world_bounds: Rect2, 
 	for cell: HexCell in cells:
 		if cell == null:
 			continue
-		var ny: float = _ny_for_cell(cell, hex_size, world_bounds)
+		var ny: float = _ny_for_cell(cell, hex_size, world_bounds, map.height if map != null else 0)
 		var ls: float = _lat_signed_for(ny)
 		var ls_abs: float = absf(ls)
 		# 纬度基线：赤道低压、副热带高压、副极地低压、极地高压。
@@ -456,7 +464,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 	for cell: HexCell in cells:
 		if cell == null:
 			continue
-		var ny: float = _ny_for_cell(cell, hex_size, world_bounds)
+		var ny: float = _ny_for_cell(cell, hex_size, world_bounds, map.height if map != null else 0)
 		var ls: float = _lat_signed_for(ny)
 		var ls_abs: float = absf(ls)
 
@@ -499,16 +507,15 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 		# 已经体现了科氏偏转），如果对 v_sum 整体再次旋转 30°+，等于二次偏转，会把
 		# 中纬西风带（向东）拗成偏南风，导致 overlay 出现错误的绿/蓝条带。
 		# 因此这里只对刚算出来的 v_grad 做科氏偏转，再与 baseline 加权合成。
-		# rot：有符号顺时针弧度。北半球（ls < 0）取 +|θ|（右偏 = 顺时针）；
-		# 南半球取 -|θ|（左偏 = 逆时针）。
+		# 屏幕坐标 x=东、y=南（北在 y<0），故 R(+θ) 把东转向南 = 地图上顺时针 = 右偏。
+		# 北半球（ls < 0）右偏取 +|θ|；南半球左偏取 -|θ|。
 		var coriolis_angle: float = _WIND_CORIOLIS_MAX_RAD * pow(ls_abs, 0.55)
 		var rot: float = coriolis_angle * (1.0 if ls < 0.0 else -1.0)
 		var cos_r: float = cos(rot)
 		var sin_r: float = sin(rot)
-		# 屏幕坐标系下顺时针 θ：x' = x cos θ + y sin θ, y' = -x sin θ + y cos θ
 		var v_grad: Vector2 = Vector2(
-			v_grad_raw.x * cos_r + v_grad_raw.y * sin_r,
-			-v_grad_raw.x * sin_r + v_grad_raw.y * cos_r
+			v_grad_raw.x * cos_r - v_grad_raw.y * sin_r,
+			v_grad_raw.x * sin_r + v_grad_raw.y * cos_r
 		)
 		var ageo_w: float = 1.0 - smoothstep(0.10, 0.55, ls_abs)
 		v_grad = v_grad_raw * ageo_w + v_grad * (1.0 - ageo_w)
@@ -753,7 +760,7 @@ static func init_psi_solver(map: MapData, hex_size: float, world_bounds: Rect2) 
 		c.wind_stress_curl = curl_val
 
 		# β 与 R：依赖 lat_signed
-		var ny: float = _ny_for_cell(c, hex_size, world_bounds)
+		var ny: float = _ny_for_cell(c, hex_size, world_bounds, map.height if map != null else 0)
 		var ls: float = _lat_signed_for(ny)
 		var ls_abs: float = absf(ls)
 		# β-plane 简化：|β| ≈ cos(lat)，赤道最大、极地最小。底数防除零。
@@ -934,7 +941,7 @@ static func psi_to_ocean_current(state: PsiSolverState, map: MapData, hex_size: 
 		target_cur += thermal_cur
 
 		# 副极地 / 高纬热盐叠加（保留旧"高纬向极冷流"语义）
-		var ny: float = _ny_for_cell(c, hex_size, world_bounds)
+		var ny: float = _ny_for_cell(c, hex_size, world_bounds, map.height if map != null else 0)
 		var ls: float = _lat_signed_for(ny)
 		var ls_abs: float = absf(ls)
 		var lat_temp: float = _lat_temp_for(ls_abs)
@@ -977,10 +984,11 @@ static func solve_ocean_current_fallback(map: MapData, hex_size: float, \
 			cell.wind_stress_curl = 0.0
 			cell.ocean_psi = 0.0
 			continue
-		var ny: float = _ny_for_cell(cell, hex_size, world_bounds)
+		var ny: float = _ny_for_cell(cell, hex_size, world_bounds, map.height if map != null else 0)
 		var ls: float = _lat_signed_for(ny)
 		var ls_abs: float = absf(ls)
-		var ekman_sign: float = -1.0 if ls < 0.0 else 1.0  # 北半球 -45°，南半球 +45°
+		# 表层风海流在北半球偏于风向右侧 45°。屏幕坐标 x=东、y=南，R(+θ) 即右偏。
+		var ekman_sign: float = 1.0 if ls < 0.0 else -1.0
 		var rot: float = ekman_sign * _EKMAN_DEFLECTION_RAD
 		var w: Vector2 = cell.wind_vector * cell.wind_speed
 		var cos_r: float = cos(rot)
@@ -1044,7 +1052,7 @@ static func solve_upwelling(map: MapData, hex_size: float, world_bounds: Rect2, 
 		if not _is_water_terrain(int(cell.terrain)):
 			cell.upwelling_strength = 0.0
 			continue
-		var ny: float = _ny_for_cell(cell, hex_size, world_bounds)
+		var ny: float = _ny_for_cell(cell, hex_size, world_bounds, map.height if map != null else 0)
 		var ls: float = _lat_signed_for(ny)
 		var ls_abs: float = absf(ls)
 		var lat_temp: float = _lat_temp_for(ls_abs)
@@ -1065,14 +1073,15 @@ static func solve_upwelling(map: MapData, hex_size: float, world_bounds: Rect2, 
 
 		var ekman_main: float = 0.0
 		if has_land_nb and land_dir_sum.length_squared() > 0.0001:
-			# coast_tangent = rotate90_ccw(-land_dir_sum)
-			# 屏幕坐标系下 90° 逆时针：(x, y) → (-y, x)
 			# -land_dir_sum 指向"远离陆地"（即指向开放海洋）
-			# 取它的 90°ccw 作为切向（沿海岸"右手在陆"方向）
+			# 屏幕坐标 x=东、y=南，故 (x, y) → (-y, x) 是右转 90°（东→南）：
+			# coast_tan = 离岸方向右转 90°
 			var off_shore: Vector2 = -land_dir_sum.normalized()
 			var coast_tan: Vector2 = Vector2(-off_shore.y, off_shore.x)
-			# 北半球 (ls<0) hemi_sign = +1：上升流出现在风沿 +coast_tan 方向时
-			var hemi_sign: float = 1.0 if ls < 0.0 else -1.0
+			# 北半球 Ekman 输运在风向右侧 90°，离岸输运（=上升流）要求
+			# R(+90°)(wind) = off_shore，即 wind = -coast_tan → dot_v < 0 时上升。
+			# 故北半球取 -1、南半球取 +1，使 up > 0 表示上升流。
+			var hemi_sign: float = -1.0 if ls < 0.0 else 1.0
 			var dot_v: float = cell.wind_vector.dot(coast_tan)
 			ekman_main = dot_v * hemi_sign * cell.wind_speed * _UPWELLING_EKMAN_GAIN
 

@@ -609,6 +609,17 @@ var _ocean_current_max_magnitude_last: float = 0.0
 var _phys_solve_rt_diag_count: int = 0
 var _phys_last_season_phase: float = NAN
 var _phys_last_sim_day: int = -1
+# synoptic 相位的绝对日权威。C++ 物理 pass 里 sim_day 只服务天气相位（SLP/wind synoptic
+# 行星波、移动低压的平移与纬度摆动），必须单调递增；季节效应另走 season_phase +
+# axial_tilt_deg，与 sim_day 无关。
+# 历史 bug（2026-08-03）：daily 路径由 ocean_currents_job 传 ctx.day_index（绝对日，6174…），
+# 而 _physical_solve_step_one / _physical_solve_native_oneshot 传
+# _season_phase_to_day_of_year()（年内日 0..364）。两套单位喂同一个 synoptic 相位，
+# 使 SLP 波与 wind 扰动处于互不相关的相位，且每逢新年归零倒退。
+var _phys_abs_sim_day: int = -1
+# 上一次真正跑过 wind 段的绝对日，用于把 wind_max_turn_deg_per_day 从「每次调用」
+# 还原成「每游戏日」（wind 段每 24 tick 才跑一次，见 C++ wind_elapsed_days 注释）。
+var _phys_last_wind_sim_day: int = -1
 var _phys_last_slp_rc_ms: float = -1.0
 var _phys_last_slp_out_size: int = -1
 var _phys_last_slp_published_to_slot: bool = false
@@ -6440,6 +6451,32 @@ func _season_phase_to_day_of_year(season_phase: float, days_per_year: int = 0) -
 	var p: float = fposmod(season_phase, 4.0)
 	return clampi(int(floor((p / 4.0) * float(dpy))), 0, dpy - 1)
 
+
+## 物理 pass 的 `sim_day` knob 唯一来源：单调递增的绝对仿真日。
+##
+## 三个入口（daily wind、solve step、native oneshot）都要用它，否则同一个 synoptic
+## 相位会被喂进两套不同单位 —— 详见 `_phys_abs_sim_day` 注释。`override_day` 由
+## OceanCurrentsJob 的 `ctx.day_index` 提供，是权威值；一旦见过就锁定给其它入口复用。
+## 冷启动（daily 路径尚未跑过）才退化到年内日，仅保证同一 tick 内 SLP/wind 相位一致。
+func _phys_resolve_abs_sim_day(season_phase: float, days_per_year: int,
+		override_day: int = -1) -> int:
+	if override_day >= 0:
+		_phys_abs_sim_day = override_day
+		return override_day
+	if _phys_abs_sim_day >= 0:
+		return _phys_abs_sim_day
+	return _season_phase_to_day_of_year(season_phase, days_per_year)
+
+
+## wind 段自上次实际运行以来经过的游戏日（>=1）。C++ 用它把
+## `wind_max_turn_deg_per_day` 从「每次调用」还原成「每游戏日」。
+func _phys_take_wind_elapsed_days(sim_day: int) -> float:
+	var elapsed: float = 1.0
+	if _phys_last_wind_sim_day >= 0 and sim_day > _phys_last_wind_sim_day:
+		elapsed = float(sim_day - _phys_last_wind_sim_day)
+	_phys_last_wind_sim_day = sim_day
+	return clampf(elapsed, 1.0, 30.0)
+
 # 强制下一次 _physical_solve_step_one 从 SLP 阶段重新开始。OceanCurrentsJob
 # 在新一轮（_round_active=false → true）转换时调一次，确保季节相位变更被
 # 重新求解；一次性入口 _physical_solve_for_phase 也调一次，避免和切片路径
@@ -6512,6 +6549,8 @@ func reset_physical_solve_state() -> void:
 	_ocean_current_max_magnitude_last = 0.0
 	_phys_last_season_phase = NAN
 	_phys_last_sim_day = -1
+	_phys_abs_sim_day = -1
+	_phys_last_wind_sim_day = -1
 	_phys_last_slp_rc_ms = -1.0
 	_phys_last_slp_out_size = -1
 	_phys_last_slp_published_to_slot = false
@@ -6725,11 +6764,20 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		_world_ext.refresh_slots_from_map()
 	out["refresh_ms"] = float(Time.get_ticks_usec() - t_refresh_us) / 1000.0
 
+	# 环绕周期与 bounds 以地图几何为唯一权威（与 _phys_ensure_knob_cache 的 round 路径
+	# 一致），不再信任 world 上的缓存值：WorldData.world_bounds / wrap_period_x 只在
+	# bake_world 时赋值，任何绕过 bake 的会话路径（或未来新增入口）都会把 0 值带进
+	# C++ pass —— wrap_period_x=0 会让 synoptic/移动低压退回 clamp 域，在东西接缝
+	# 产生不连续的“撞墙”阶跃。
 	var bounds: Rect2 = world.world_bounds
-	var wrap_period_x: float = world.wrap_period_x
+	if bounds.size.x <= 0.001 or bounds.size.y <= 0.001:
+		bounds = compute_world_bounds(map.width, map.height, hex_size)
+	# 单位必须是 cell_pos_x SoA 空间（size=1.0），不是世界单位：SLP/wind pass 拿它去
+	# 归一化 cell_pos_x_arr。传世界单位会让归一化经度只走完 1/hex_size 个周期，
+	# 接缝处 synoptic 相位硬跳 → 伪 ∇SLP → 风与洋流被锁死成一条经线。
+	var wrap_period_x: float = HexUtils.wrap_period_cell_pos_x(map.width)
 	var days_per_year_phys: int = _calendar_days_per_year(profile)
-	var sim_day_phys: int = sim_day_override if sim_day_override >= 0 \
-			else _season_phase_to_day_of_year(season_phase, days_per_year_phys)
+	var sim_day_phys: int = _phys_resolve_abs_sim_day(season_phase, days_per_year_phys, sim_day_override)
 	var world_seed_phys: int = int(world.bake_seed) if world != null else (int(cfg.seed) if cfg != null else 0)
 	_phys_last_season_phase = season_phase
 	_phys_last_sim_day = sim_day_phys
@@ -6834,6 +6882,7 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			"axial_tilt_deg": profile.axial_tilt_deg,
 			"wind_response_rate": profile.wind_response_rate,
 			"wind_max_turn_deg_per_day": profile.wind_max_turn_deg_per_day,
+			"wind_elapsed_days": _phys_take_wind_elapsed_days(sim_day_phys),
 			"wind_min_flux_for_dir_update": profile.wind_min_flux_for_dir_update,
 			"wind_synoptic_amp": profile.wind_synoptic_amp,
 			"wind_synoptic_period_days": profile.wind_synoptic_period_days,
@@ -6956,7 +7005,8 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 	_phys_water_ids_cache.append(int(TerrainType.TERRAIN.KELP))
 	var nb: PackedInt32Array = map.neighbor_indices_packed()
 	var n_cells: int = map.soa_size()
-	var wrap_period_x: float = HexUtils.wrap_period_x(map.width, hex_size)
+	# 见 _phys_run_pass 同名变量：物理 pass 的 wrap_period_x 是 cell_pos_x 空间单位。
+	var wrap_period_x: float = HexUtils.wrap_period_cell_pos_x(map.width)
 	var days_per_year: int = _calendar_days_per_year(profile)
 	var axial_tilt: float = profile.axial_tilt_deg if profile != null else 23.5
 	var insolation_amp: float = profile.insolation_daylen_amp if profile != null else 0.35
@@ -7105,7 +7155,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 			or absf(profile.ocean_density_ice_weight) > 0.0001)
 	var bounds: Rect2 = world.world_bounds
 	var days_per_year_phys: int = _calendar_days_per_year(profile)
-	var sim_day_phys: int = _season_phase_to_day_of_year(season_phase, days_per_year_phys)
+	var sim_day_phys: int = _phys_resolve_abs_sim_day(season_phase, days_per_year_phys)
 	var world_seed_phys: int = int(world.bake_seed) if world != null else (int(cfg.seed) if cfg != null else 0)
 	_phys_last_season_phase = season_phase
 	_phys_last_sim_day = sim_day_phys
@@ -7305,6 +7355,7 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 					var knobs_wind: Dictionary = _phys_knobs_base_wind.duplicate()
 					knobs_wind["season_phase"] = season_phase
 					knobs_wind["sim_day"] = sim_day_phys
+					knobs_wind["wind_elapsed_days"] = _phys_take_wind_elapsed_days(sim_day_phys)
 					knobs_wind["world_seed"] = world_seed_phys
 					knobs_wind["slp_arr"] = slp_arr
 					# Item 2b: cell-range 切片
@@ -7891,7 +7942,7 @@ func _physical_solve_native_oneshot(map: MapData, world: WorldData, hex_size: fl
 		return false
 	var terrain_aware: bool = profile.enable_terrain_aware_wind if profile != null else true
 	var days_per_year_phys: int = _calendar_days_per_year(profile)
-	var sim_day_phys: int = _season_phase_to_day_of_year(season_phase, days_per_year_phys)
+	var sim_day_phys: int = _phys_resolve_abs_sim_day(season_phase, days_per_year_phys)
 	var world_seed_phys: int = int(world.bake_seed)
 	var cold_sink_temp: float = -0.05
 	if cfg != null and "COLD_SINK_TEMP" in cfg:
@@ -7916,7 +7967,7 @@ func _physical_solve_native_oneshot(map: MapData, world: WorldData, hex_size: fl
 		"world_bounds_pos_y": bounds.position.y,
 		"world_bounds_size_y": bounds.size.y,
 		"wrap_origin_x": 0.0,
-		"wrap_period_x": world.wrap_period_x,
+		"wrap_period_x": HexUtils.wrap_period_cell_pos_x(map.width),
 		"neighbor_indices": nb_idx,
 		"water_terrain_ids": water_ids,
 		"days_per_year": days_per_year_phys,
@@ -7941,6 +7992,7 @@ func _physical_solve_native_oneshot(map: MapData, world: WorldData, hex_size: fl
 		"land_lf_mountain": int(LandformType.LF.MOUNTAIN),
 		"land_lf_peak": int(LandformType.LF.PEAK),
 		"land_lf_hill": int(LandformType.LF.HILL),
+		"wind_elapsed_days": _phys_take_wind_elapsed_days(sim_day_phys),
 		# PSI
 		"psi_total_iters": _PHYS_PSI_TOTAL_ITERS,
 		"psi_warm_start": bool(profile.psi_warm_start) if profile != null and profile.get("psi_warm_start") != null else true,

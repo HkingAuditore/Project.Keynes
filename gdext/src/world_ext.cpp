@@ -633,6 +633,20 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
         _native_world_cell_count = _entity_count;
     }
     _native_daily_perf_target_ms = double(knobs.get("native_daily_perf_target_ms", 1.0));
+    // seam-advection-fix：环绕周期常驻。GDScript 直接给 wrap_period_x；缺省时用
+    // map_width·√3 重算；都拿不到则留 0 → 平流内核退化为裸差分（旧行为，接缝伪影
+    // 仍在，但不改变既有调用方语义）。
+    //
+    // 单位是 size=1.0 的单位六边形空间，**不含 hex_size**：内核比较的是 cell_pos_x
+    // slot，而它由 map_data.gd 用 cube_to_world(q, r, 1.0) 填充，列距恰为 √3/2。
+    double cfg_wrap_period_x = double(knobs.get("wrap_period_x", 0.0));
+    if (!(cfg_wrap_period_x > 0.0)) {
+        const int cfg_map_width = int(knobs.get("map_width", 0));
+        if (cfg_map_width > 0) {
+            cfg_wrap_period_x = double(cfg_map_width) * 1.7320508075688772;
+        }
+    }
+    _native_wrap_period_x = (cfg_wrap_period_x > 0.0) ? cfg_wrap_period_x : 0.0;
     _native_world_configured = true;
     _native_runtime_config = knobs.duplicate(true);
     Array resident_keys;
@@ -656,6 +670,7 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
     out["component_count"] = component_count();
     out["entity_count"] = entity_count();
     out["native_daily_perf_target_ms"] = _native_daily_perf_target_ms;
+    out["wrap_period_x"] = _native_wrap_period_x;
     out["resident_config_keys"] = resident_keys;
     out["resident_config_key_count"] = resident_keys.size();
     return out;

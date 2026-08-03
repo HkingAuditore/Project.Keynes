@@ -1702,6 +1702,9 @@ public:
     // 与 256 字节 LUT 重建。邻居索引仍由 knob 传入（保留 fallback）。
     // 仅在指纹失配时重算（地图 regen / 水掩膜变化），主线程同步调用。
     void _phys_resolve_static(int n_cells, const godot::PackedByteArray &water_ids);
+    // cell_lat_norm slot 的只读指针；slot 缺失或尺寸不符返回 nullptr（调用方退化为
+    // 用 cell_pos_y 自归一化）。需先调用 _phys_resolve_static()。
+    const float *_phys_lat_norm_ptr(int n_cells);
     // 缓存 WIND coast/sea BFS 结果（coast_dist/sea_dist 等）到成员；指纹失配才重建。
     // TR/NB/water_ids 来自当前 pass 已解析的 slot/knob（调用方传入）。
     void _phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const int32_t *NB,
@@ -2133,6 +2136,10 @@ private:
     // 命中后四个 pass 直接用成员，省掉重复 StringName 解析与 LUT 重建。
     // 注意：neighbor_indices 仍由 knob 传入（保留 fallback 路径），此处只缓存 slot id + LUT。
     int _phys_sid_pos_x = -1, _phys_sid_pos_y = -1, _phys_sid_terrain = -1;
+    // 纬度归一化权威（与 world_ext_climate.cpp 同源）。物理 pass 曾用
+    // (cell_pos_y - world_bounds_pos_y)/world_bounds_size_y 自行重算 ny，两者单位不同
+    // 导致全图恒为极地；详见 world_ext_physical.cpp::phys_make_lat_norm 注释。
+    int _phys_sid_lat_norm = -1;
     int _phys_sid_landform = -1;
     int _phys_sid_wind_x = -1, _phys_sid_wind_y = -1, _phys_sid_wind_spd = -1;
     int _phys_sid_slp = -1;
@@ -2198,6 +2205,14 @@ private:
     int                                       _native_world_cell_count = 0;
     int                                       _native_daily_tick_count = 0;
     double                                    _native_daily_perf_target_ms = 1.0;
+    // seam-advection-fix 2026-08-03：经度环绕周期 = map.width·√3，单位是 size=1.0 的单位
+    // 六边形空间（**不含 hex_size**，因为 cell_pos_x slot 由 map_data.gd 以
+    // cube_to_world(q, r, 1.0) 填充，列距恰为 √3/2）。
+    // 由 configure_native_world 一次性常驻，供 climate/weather 平流与上风探测内核做
+    // cell_pos_x 差分的最小映像折叠（pk_wrap_min_image_dx）。
+    // 0 = 未配置环绕域 → 内核退化为裸差分（旧行为）。
+    // 各 pass 的 knobs["wrap_period_x"] 仍可逐次覆盖，供单测与显式调用方使用。
+    double                                    _native_wrap_period_x = 0.0;
     godot::Array                              _native_fronts_snapshot;
     godot::Dictionary                        _native_dirty_report;
     godot::Dictionary                        _native_daily_report;

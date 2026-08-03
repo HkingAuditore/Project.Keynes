@@ -354,6 +354,160 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
   常驻在 `DCWorldExt`，daily report 提升 `resident_config_keys`、`bundle_key_count`
   和 `tick_delta_key_count`。评估 marshal 收敛时先看这些 counters，而不是只看
   单个 pass 的 native compute time。
+- **常驻 knob `wrap_period_x` / `map_width`（seam-advection-fix 2026-08-03）**：`configure_native_world()`
+  把经度环绕周期常驻为 `DCWorldExt::_native_wrap_period_x`，供 climate/weather 的平流与上风探测
+  内核对 `cell_pos_x` 差分做最小映像折叠（`pk_wrap_min_image_dx`，见 `world_ext_internal.h`）。
+  **单位是 size=1.0 的单位六边形空间，不含 `hex_size`**：`map_data.gd` 用
+  `HexUtils.cube_to_world(q, r, 1.0)` 填 `cell_pos_x_arr`，故周期 = `map_width · √3`，列距 `√3/2`。
+  `hex_size` 同在 knobs 里但属于别的消费者，切勿相乘。缺 `wrap_period_x` 时 C++ 按 `map_width · √3`
+  回算；两者都缺则留 0 → 内核退化为裸差分（旧行为）。debug build 的
+  `[native_world] configure ... wrap_period_x=` 回显 0 即代表接缝伪影会复现。
+  背景：六邻居表东西向用 `posmod` 环绕，最左/最右列互为邻居，而 `cell_pos_x` 不环绕，
+  接缝邻居裸差分 = ±(period − 列距)，符号与真实位移相反、量级放大约 `map_width` 倍。
+  实测 col 0 的 NW/W/SW 三个邻居方向角全部塌成 ≈0°（正东），使 `best_dot` 上下游选择退化为
+  纯东西向 → 接缝出现方向恒定、不随纬度与时间变化的风场/洋流经线（`slp` 接缝跳变 7×、
+  `ocean_psi` 12×）。受影响的 13 个 C++ 站点（ocean_water / ocean_land / wind_air /
+  wind_surface / pass_b 雨影，各含 sync + simd + thread + async 镜像）与 3 个 GDScript fallback
+  镜像（`_climate_pass_b_soa` / `_ocean_water_pass_soa` / `_ocean_land_pass_soa`）已统一折叠；
+  GDScript 侧用 `HexUtils.wrap_min_image_dx`，与 C++ helper 逐行同语义，**改一侧须同步另一侧**。
+  天气场求解器（`field_solver.gd::_wrapped_delta` + C++ `weather_wrap_width_x`）早已正确，不在本次改动内。
+  修复后接缝台阶不会立刻消失：SLP 带 EMA、ψ 用 `cell_ocean_psi` 作迭代初值，都有记忆，
+  验收需跑 30+ committed tick 再出 tile CSV，看 `slp` / `ocean_psi` / `wind_stress_curl`
+  的接缝比值是否回落到 1.x。
+- **物理 pass knob `wrap_period_x` 同单位契约（seam-slp-fix 2026-08-03，上一条的第二处独立错配）**：
+  `run_slp_field_pass` / `run_wind_field_pass` 的 `wrap_period_x`（与 `wrap_origin_x: 0.0` 成对出现）
+  被 `physical_wrap01()` 用来把 `cell_pos_x_arr` 归一化成经度 `px ∈ [0,1)`，驱动 synoptic 行星波与
+  移动低压中心的经向环绕。**它和上一条是同一个单位（`map_width · √3`，不含 `hex_size`）**，
+  必须用 `HexUtils.wrap_period_cell_pos_x(map_width)`。
+  历史 bug：`map_baker.gd` 5 处（`run_daily_wind_field_update` 的 slp/wind 两个 dict、
+  `_phys_ensure_knob_cache` 的 `_phys_knobs_base_slp` / `_phys_knobs_base_wind`、
+  `_physical_solve_native_oneshot` 的 fused dict）传的是世界单位
+  `wrap_period_x(map.width, hex_size)`，比 `cell_pos_x` 跨度大 `hex_size` 倍 →
+  归一化经度只覆盖整周期的 `1/hex_size`（实测 100×64 图 / hex_size=22 时仅 4.52%，
+  `px` 值域塌成 `[0, 0.0452]`）→ 永远走不完一个周期，接缝处 `px` 由 0.0452 硬跳回 0。
+  synoptic 是 SLP 求和式里唯一依赖 `px` 的项（其余 base_lat / landsea / thermal / ice / snow / moist
+  都是局地场、跨接缝连续），故台阶量可直接反推：`Δarg = 2π·k1x·0.0452`，
+  预测 `|Δsynoptic|` 上限 0.021（k1x=1）～0.043（k1x=2），实测接缝 `Δslp` 均值 −0.0350、
+  64 行**全部同号**，内部列 |Δslp| 仅 0.0029（即台阶 = 正常梯度的 12 倍且方向恒定）—— 完全吻合。
+  该伪 ∇SLP 经 6 邻域梯度把风向钉死，再经风应力涡度锁死 ψ/洋流，即用户所述"东西边界有一堵墙"。
+  注意波数侧本来就是对的：`slp_syn_k1x/k2x` 与 wind 侧 `k1x/k2x` 均取 `1 + (seed_bits & 1)` 整数谐波
+  （见两处源码注释），移动低压也已在归一化 x 上做 ±0.5 最小映像折叠 —— 唯一坏的就是周期单位。
+  **区分消费者**：`world.wrap_period_x` 与 `_cyl_noise` / horizon marching / visual tiles /
+  `_bake_geometry_fields_native` / `_bake_terrain_index_native` / `_bake_river_sdf` 是像素/世界空间，
+  继续用 `HexUtils.wrap_period_x(map_width, hex_size)`，**不要一起改**。
+  判别经验法则：knob 里同时出现 `wrap_origin_x: 0.0` 的是 `cell_pos_x` 空间（POSX 最小值恰为 0）；
+  出现 `width/height/origin_x/size_x` 等像素字段的是世界空间。
+  护栏：`physical_warn_wrap_units()`（`world_ext_physical.cpp`）在两个 pass 内用已算好的 POSX 跨度
+  校验来值，比值落在 `[1.0, 1.5]` 之外即 `push_warning` 一次（正确时 ≈1.005，世界单位错配时 ≈`hex_size`），
+  避免这类错配第三次静默逃逸。
+- **物理 pass 的纬度 `ny` 必须来自 `cell_lat_norm` slot，不得由 `cell_pos_y` ÷ `world_bounds` 重算
+  （wind-belt-lat-fix 2026-08-03，同一单位错配家族的第三处，也是危害最大的一处）**：
+  `ny ∈ [0,1]`（0 = 第 0 行，0.5 = 赤道，1 = 末行），权威定义是
+  `MapGenerator._cube_row_norm = row/(height-1)`，落在 `cell_lat_norm` slot 上；
+  `world_ext_climate.cpp` 一直直接读该 slot，所以温度/湿度场的纬度是对的。
+  历史 bug：`world_ext_physical.cpp` 4 处（`run_wind_field_pass`、upwelling stage、
+  `run_slp_field_pass` Pass A、ocean/PSI pass）自行重算
+  `ny = (POSY[i] − world_bounds_pos_y) / world_bounds_size_y`。
+  分子 `POSY` = `cell_pos_y`，**单位六边形空间**（`cube_to_world(q, r, 1.0)`，行距 1.5，
+  100×64 图值域 0..94.5）；分母来自 `map_baker.gd::compute_world_bounds()` 的**世界单位**
+  （`hex_size=22` 时 `pos_y = −44`、`size_y ≈ 2211`）。两者相差 `hex_size` 倍 →
+  `ny` 恒被压缩到 0.02~0.06、`abs_lat` 恒为 0.87~0.96 → `w_polar` 恒为 1，
+  **全图每个 cell 都被当成极地**：
+  ① `wind_belt_at` 处处输出极地东风，信风带 / 西风带 / ITCZ 完全不存在；
+  ② `wind_belt_speed_at` 恒为 `SPEED_POLAR = 0.65`；
+  ③ 科氏角恒 ≈65°、`ageo_w` 恒为 0（赤道也全地转），且 `ls < 0` 恒成立 →
+  **偏转符号永不翻转，南半球整体镜像错误**；
+  ④ `wind_shifted_lat_signed` 的 ITCZ 季节迁移上限只有 ±0.18，动不出极地带 → 季节通路失效；
+  ⑤ ocean/PSI 的 `beta_a = max(floor, cos(|ls|·π/2))` 塌到 floor 附近，β-plane 退化。
+  外部表现：风带不沿纬线而沿大陆经度成条带（纬度带项退化成常量后，唯一塑形者只剩
+  ∇SLP + 海岸几何，两者都按大陆经度组织），且风向常年不变。
+  实测证据（`tile_data_record_20260803_212031.csv`，100×64、6400 cell、69 tick）：
+  水体风速**下限恰为 0.649**，与"退化 ny"预测的恒定 `SPEED_POLAR = 0.650` 三位小数吻合，
+  而正确 ny 要求赤道 0.150 / 中纬 1.100（实测赤道 0.838）；实测风速与正确-ny 预期的相关系数
+  为 **−0.233**（符号都反）。纬向风 `u` 的方差里经度解释 28.5% > 纬度 21.9%，
+  经向风 `v` 更是经度 50.3% : 纬度 8.5%（6:1）。方向恒定度 `|mean(单位风矢量)|` 中位 **0.958**、
+  19.2% 的 cell > 0.99，且中纬度反而是最稳的一档（0.980）—— 与地球（信风≈0.9、中纬 0.3~0.5）正好相反。
+  32 个抽样行里 19 行纬向风符号与三圈环流模型相反，整个信风带（`|lat|` 0.05~0.40，约 40% 图面）
+  被翻成西风。
+  修法：新增 `PhysLatNorm` / `phys_make_lat_norm()`（`world_ext_physical.cpp`）+
+  `_phys_sid_lat_norm` / `_phys_lat_norm_ptr()`，**优先读 `cell_lat_norm` slot**；
+  slot 缺失时退化为「用 POSY 自身值域自归一化」（`origin = min(POSY)`、`span = max−min`），
+  与本文件 `slp_bounds_pos_x` 对 POSX 的做法同款 —— 不依赖任何外部单位，无法再次错配。
+  该退化路径对全图 pass 恰好精确等于 `row/(height-1)`（`1.5r / 94.5 = r/63`）。
+  `world_bounds_pos_y` / `world_bounds_size_y` 从此不再参与物理 pass 的纬度归一化（仅保留 knob
+  契约校验）；`world_ext_weather.cpp` 早已 `(void)` 掉这两个 knob，不受影响。
+  GDScript 镜像 `physical_circulation_solver.gd::_ny_for_cell` 原本是**单位自洽的**
+  （分子用 `cube_to_world(q, r, hex_size).y`，与世界单位分母配套）—— 这正是 bug 来源：
+  C++ 移植时把分子换成 SoA 的 `cell_pos_y`，却保留了世界单位的分母。该镜像已加可选
+  `map_height` 参数精确对齐 `row/(height-1)`（6 个调用点全部传入），消除 fallback 与 native
+  之间约 2% 的 bounds padding 漂移（旧式下赤道落在 `r ≈ 32.2` 而非 31.5）。
+- **`sim_day` knob 必须是单调递增的绝对仿真日（wind-belt-lat-fix 2026-08-03 同批）**：
+  在 `world_ext_physical.cpp` 里 `sim_day` **只**服务天气相位 —— wind `syn_cycles = sim_day/period`、
+  SLP `slp_syn_phase = sim_day·2π/period`、移动低压中心 `cx = hx + sim_day/period` 与纬度摆动
+  `sin(sim_day·0.045 + …)`。季节效应另走 `season_phase` + `axial_tilt_deg`，与 `sim_day` 无关，
+  因此这里绝不能传年内日。历史 bug：daily 路径由 `ocean_currents_job.gd` 传 `ctx.day_index`
+  （绝对日，实测 6174…），而 `_physical_solve_step_one` / `_physical_solve_native_oneshot` 传
+  `_season_phase_to_day_of_year()`（0..364，实测 283 / 355）。两套单位喂同一个 synoptic 相位 →
+  SLP 波与 wind 扰动处于互不相关的相位，且每逢新年归零倒退。
+  修法：`map_baker.gd` 新增 `_phys_abs_sim_day` + `_phys_resolve_abs_sim_day()`，三个入口统一走它；
+  `ctx.day_index` 一旦出现即锁定为权威并供其它入口复用，冷启动才退化到年内日。
+- **wind 段的 `wind_max_turn_deg_per_day` 需要 `wind_elapsed_days` 配套（同批）**：
+  该 knob 语义是「每游戏日」，但 wind pass 不是每日调用 —— `earth_like.tres` 把
+  `ocean_daily_wind_period_ticks` 覆盖为 6，配合 `daily_wind_split_passes = true` 交替 slp/wind，
+  **wind 段每 24 tick 才跑一次**。C++ 旧代码直接把度数转弧度当作单次调用的限幅，
+  于是名义 32°/日退化成 32°/24 日 ≈ **1.33°/日**，风向被硬性钉死（是上面方向恒定度 0.958 的
+  第二个成因）。修法：C++ 读新 knob `wind_elapsed_days`（缺省 1.0 = 旧行为，clamp[0,60]）并与限幅相乘；
+  GDScript 侧 `_phys_take_wind_elapsed_days()` 用 `_phys_last_wind_sim_day` 算真实间隔（clamp[1,30]），
+  三个跑 wind 的入口都传。
+- **屏幕坐标下的半球偏转符号：`R(+θ)` 才是右偏（wind-belt-coriolis-fix 2026-08-03）**：
+  物理 pass 一律用屏幕坐标 `x = 东`、`y = 南`（北在 `y < 0`，见 `world_ext_physical.cpp` 洋流
+  方向表注释 `screen +y = south, so north has y<0`），且 `ls = (ny−0.5)·2 < 0` 即北半球
+  （`row 0` = `ny 0` = 图面上边 = 北；`wind_belt_at` 的 y 分量独立佐证：北半球 `sl = −1` 时
+  信风 `by = +0.20` 向南=向赤道、西风 `by = −0.10` 向北=向极，均正确）。
+  在该坐标系里 `R(+θ):(x,y) → (x cosθ − y sinθ, x sinθ + y cosθ)` 把「东」转向「南」，
+  即地图上顺时针 = **右偏**；`R(−θ)` 才是左偏。
+  历史 bug：`run_wind_field_pass` 与镜像 `physical_circulation_solver.gd` 都写成
+  `(x cosθ + y sinθ, −x sinθ + y cosθ)`（实为 `R(−θ)`）却配 `rot = +θ`(北半球)，
+  于是**南北半球偏转方向整体反了**。表征极具辨识度：`ageo_w = 1 − smoothstep(0.10, 0.55, ls_abs)`
+  在信风带（`ls_abs` 0.05~0.40）≈0.77，风主要是沿梯度的经向流（`u ≈ 0`）、那点东风来自权重
+  0.45 的风带项，所以信风带看着正常；而 `|lat| > 0.40` 时 `ageo_w → 0` 完全地转，被错号地转风
+  独占 → **只有极地东风带与中纬西风带整体翻转**（实测极地 `u = +0.84/+0.93` 近 100% 一致、
+  中纬西风 `u = −0.66/−0.41`，验收脚本第 2 项 43/64 行符号相反）。
+  修法：两处矩阵改为 `R(+rot)` 标准形，`rot` 保持北半球 `+|θ|`；同时 `solve_ocean_current_fallback`
+  的 `ekman_sign` 由「北半球 −45°」改为 `+45°`（表层风海流在北半球偏于风向右侧）。
+  同批另一处独立反号：沿岸上升流的 `hemi_sign`（C++ upwelling range + GDScript `solve_upwelling`）。
+  `upwelling_strength` 语义是 **正 = 上升流、负 = 下沉**（由 `cold_sink_neg = −t_cold·GAIN`
+  表示高纬冷水下沉可反推）。`coast_tan = (−off_y, off_x)` 的注释写作「90° 逆时针」，
+  但在 `x=东/y=南` 下 `(1,0) → (0,1)` 是东→南，实为**右转 90°**。北半球 Ekman 输运在风向
+  右侧 90°，离岸输运（=上升流）要求 `R(+90°)(wind) = off_shore`，即 `wind = −coast_tan`
+  → `dot(W, coast_tan) < 0` 时上升；南半球输运在左侧，需 `dot > 0`。故 `hemi_sign` 应为
+  北半球 `−1`、南半球 `+1`，原代码恰好写反 → **全球沿岸上升流/下沉区整体互换**。
+  注意这与上面 `ekman_sign`（表层风海流旋转，北半球 `+45°` 右偏）**不矛盾**：
+  一个是旋转角符号、一个是点积符号，两个不同公式。
+- **以「天」为单位的周期类 knob 必须与物理 pass 的实际调用节奏不成整数比（wind-variability
+  2026-08-03）**：这是 `wind_elapsed_days` 那条的同族陷阱 —— 不是幅度被缩放，而是**时变项
+  被频闪采样成常量**。`wind_synoptic_period_days` 旧值 `6.0` 恰好是灾难取值：`earth_like`
+  下 `ocean_daily_wind_period_ticks = 6` + `daily_wind_split_passes` → SLP pass 每 **6** 个
+  游戏日跑、wind pass 每 **12** 个游戏日跑，而 `slp_syn_phase = sim_day·2π/6`、
+  `syn_cycles = sim_day/6` 每次采样恰好推进整数个 `2π` → 权重 0.65 的 SLP synoptic 主项与
+  整个 wind synoptic 项**精确冻结成静态场**（`slp_syn_phase2 = 0.66·phase` 副项因系数非整数
+  才幸存，是当时仅存的时变来源）。
+  实测指纹：每 cell 全程只有 **8** 个不同风向、方向恒定度中位 **0.998**、73% 的 cell > 0.99，
+  同时 `wind_dir_delta_p95` 却高达 0.67 rad —— 「95% 几乎不动 + 5% 大转」，大转的那部分来自
+  未被混叠的 `slp_mobile_low_period_days = 16`（与 12 不成整数比）。
+  另一个容易误判的地方：SLP 的**时间标准差**（0.0226）看着比相邻格空间差（0.0139）还大，
+  显得「时变很充分」；但风向由**梯度**决定，而当时时变部分全来自波长 50~100 格的行星波，
+  梯度只有 0.007/格 vs 静态纬向基线 0.030/格。诊断这类问题必须比梯度，不能比数值。
+  修法：周期改 `29.0`（质数，与 6/12 都不成整数比，对两个节奏都在 Nyquist 之上 4.8/2.4
+  样本每周期，与 16 互质 → 合成天气 464 天才重复）。**改动 `ocean_daily_wind_period_ticks`
+  或 `daily_wind_split_passes` 时必须重新核对本值不被新节奏整除。**
+  同批把 synoptic 经向波数从 `{1,2}`（波长 50~100 格的行星波）提到 `{3..6}`（17~33 格，
+  对应真实中纬 Rossby 波数 4~8），wind/SLP 两处都改，**整数谐波约束不变**（否则东西接缝
+  重新裂墙）。y 波数须同步提高，否则风场流函数 `syn_y = −k1x·psi1 + k2x·psi2` 会在
+  `k1x >> k1y` 时把扰动退化成几乎纯经向；SLP 的 `k1y` 只温和提到 `[0.9,1.7]`，因为纬向
+  SLP 梯度正是三圈环流风带的定义者，经向涟漪过强会把风带打碎成涡群而非「会蜿蜒的带」。
+  注意提波数**必须与去混叠同批做**：synoptic 静止时提波数只是给图面加一层静态经向涟漪，
+  会直接推高「风带沿纬线」检查里的经度方差占比，且丝毫不增加时变性（时间项是加性相位）。
 - **tick-delta knob `weather_transition_dt_days`（2026-06-28）**：与 climate `thermal_dt_days`、
   sea_ice `dt_days` 同类的"上次到本次 pass 真实游戏天数差"补偿 knob，缺省 1.0。来源
   `MapGenerator._consume_weather_dt_days()`（独立游标 `_last_weather_pass_day`、同-tick 缓存、

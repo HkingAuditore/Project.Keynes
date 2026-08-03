@@ -80,6 +80,37 @@ static func world_to_cube(pos: Vector2, size: float) -> Vector3i:
 static func wrap_period_x(map_width: int, size: float) -> float:
 	return maxf(0.0, float(map_width) * sqrt(3.0) * size)
 
+## cell_pos_x / cell_pos_y SoA 空间（size=1.0 单位六边形）的经度环绕周期。
+##
+## 凡是要和 `cell_pos_x_arr` 做比较/取模的 C++ pass knob（物理 SLP/wind 的
+## `wrap_period_x`、climate/weather 平流内核的最小映像折叠）**必须**用这个，
+## 不能用世界单位的 `wrap_period_x(map_width, hex_size)`：`map_data.gd` 是用
+## `cube_to_world(q, r, 1.0)` 填 `cell_pos_x_arr` 的，列距恒为 √3/2 与 hex_size 无关。
+## 传成世界单位会让归一化经度只覆盖整周期的 `1/hex_size`，永远不环绕 —— 接缝退化成
+## 一堵"墙"（synoptic 波硬跳 → 伪 ∇SLP → 风/洋流被钉死在一条经线上）。
+##
+## 反之，像素/世界空间的消费者（horizon marching、visual tiles、_cyl_noise、
+## river SDF）要继续用 `wrap_period_x(map_width, hex_size)`。
+static func wrap_period_cell_pos_x(map_width: int) -> float:
+	return wrap_period_x(map_width, 1.0)
+
+## 圆柱地球最小映像修正（seam-advection-fix 2026-08-03）。
+## 六邻居表东西方向用 posmod 环绕，最左列与最右列互为邻居，但 cell_pos_x 是不环绕的
+## 规范坐标 —— 接缝邻居的裸差分等于 ±(period − 列距)：符号与真实位移相反、量级放大约
+## map_width 倍。凡是拿裸差分当方向向量的平流/上风探测都会在接缝两列判反上下游，并因
+## |dx| >> |dy| 退化成纯东西向，形成方向恒定的经线伪影。这里折回半周期取最近映像。
+## y 方向是两极硬边界、不环绕，故只处理 x。period <= 0 时退化为原始差分。
+## 与 C++ `pk_wrap_min_image_dx`（world_ext_internal.h）逐行同语义，改一侧须同步另一侧。
+static func wrap_min_image_dx(dx: float, period: float) -> float:
+	if period <= 0.0:
+		return dx
+	var half: float = period * 0.5
+	if dx > half:
+		return dx - period
+	if dx < -half:
+		return dx + period
+	return dx
+
 ## 将任意世界坐标折回圆柱地图的 offset 列域；南北越界仍保持硬边界。
 static func world_to_wrapped_cube(pos: Vector2, size: float, map_width: int, map_height: int) -> Vector3i:
 	if map_width <= 0 or map_height <= 0:

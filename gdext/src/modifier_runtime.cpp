@@ -275,6 +275,12 @@ bool ModifierRuntime::compile_catalog(const Dictionary &catalog,
     _definition_ids = std::move(definition_ids);
     _catalog_hash = hash;
     _legacy_catalog_hash_without_tax = legacy_hash;
+    _building_output_stat_ids[0] = stat_id("economy.building.output_factor");
+    _building_output_stat_ids[1] = stat_id("economy.city.output_factor");
+    _building_output_stat_ids[2] =
+        stat_id("economy.city.building.agriculture_output_factor");
+    _building_output_stat_ids[3] =
+        stat_id("economy.city.building.extractive_output_factor");
     return true;
 }
 
@@ -501,6 +507,13 @@ void ModifierRuntime::rebuild_bucket(int32_t domain, const BucketKey &key,
     _bucket_rebuild_ms_total += duration_ms;
 }
 
+void ModifierRuntime::bump_stat_version(Store &store, int32_t stat_id) {
+    if (stat_id < 0) return;
+    if (static_cast<size_t>(stat_id) >= store.stat_versions.size())
+        store.stat_versions.resize(static_cast<size_t>(stat_id) + 1, 0);
+    ++store.stat_versions[static_cast<size_t>(stat_id)];
+}
+
 void ModifierRuntime::add_instance_to_buckets(int32_t domain, uint32_t index) {
     const auto start = std::chrono::steady_clock::now();
     Store &store = _stores[domain];
@@ -510,6 +523,7 @@ void ModifierRuntime::add_instance_to_buckets(int32_t domain, uint32_t index) {
     for (uint32_t term_offset = 0; term_offset < definition.term_count; ++term_offset) {
         const TermDefinition &term = _terms[definition.term_begin + term_offset];
         const BucketKey key{term.stat_id, store.scope[index], scope_id};
+        bump_stat_version(store, term.stat_id);
         Bucket &bucket = store.buckets[key];
         bucket.members.push_back({index, static_cast<uint16_t>(term_offset)});
         bucket.sum_add += scaled_add(term, store.stacks[index], store.magnitude_q16[index]);
@@ -538,6 +552,7 @@ void ModifierRuntime::remove_instance_from_buckets(int32_t domain, uint32_t inde
         const BucketKey key{term.stat_id, store.scope[index], scope_id};
         auto it = store.buckets.find(key);
         if (it == store.buckets.end()) continue;
+        bump_stat_version(store, term.stat_id);
         Bucket &bucket = it->second;
         bucket.sum_add -= scaled_add(term, store.stacks[index], store.magnitude_q16[index]);
         const double factor = scaled_factor(term, store.stacks[index],
@@ -988,6 +1003,48 @@ void ModifierRuntime::effective_values(int32_t domain, const int32_t *stat_ids,
     }
 }
 
+void ModifierRuntime::collect_scope_ids(int32_t domain, int32_t scope,
+                                        const int32_t *stat_ids,
+                                        size_t stat_count,
+                                        std::vector<uint64_t> &out_scope_ids) const {
+    out_scope_ids.clear();
+    if (!_configured || domain < 0 || domain >= DOMAIN_COUNT ||
+        stat_ids == nullptr || stat_count == 0) return;
+    // The bucket map is keyed by stat id, so the wanted set stays tiny relative
+    // to a full probe of every candidate scope id.
+    std::vector<int32_t> wanted(stat_ids, stat_ids + stat_count);
+    std::sort(wanted.begin(), wanted.end());
+    wanted.erase(std::unique(wanted.begin(), wanted.end()), wanted.end());
+    const Store &store = _stores[domain];
+    for (const auto &entry : store.buckets) {
+        if (entry.first.scope != scope) continue;
+        if (!std::binary_search(wanted.begin(), wanted.end(), entry.first.stat_id))
+            continue;
+        out_scope_ids.push_back(entry.first.scope_id);
+    }
+    std::sort(out_scope_ids.begin(), out_scope_ids.end());
+    out_scope_ids.erase(std::unique(out_scope_ids.begin(), out_scope_ids.end()),
+                        out_scope_ids.end());
+}
+
+uint64_t ModifierRuntime::stat_bucket_version(int32_t domain, const int32_t *stat_ids,
+                                              size_t stat_count) const {
+    if (domain < 0 || domain >= DOMAIN_COUNT || stat_ids == nullptr) return 0;
+    const Store &store = _stores[domain];
+    uint64_t hash = (1469598103934665603ULL ^ store.structure_epoch) *
+        1099511628211ULL;
+    for (size_t i = 0; i < stat_count; ++i) {
+        const int32_t sid = stat_ids[i];
+        const uint64_t version = sid >= 0 &&
+                static_cast<size_t>(sid) < store.stat_versions.size()
+            ? store.stat_versions[static_cast<size_t>(sid)] : 0;
+        hash = (hash ^ version) * 1099511628211ULL;
+        hash = (hash ^ static_cast<uint64_t>(static_cast<uint32_t>(sid))) *
+            1099511628211ULL;
+    }
+    return hash;
+}
+
 float ModifierRuntime::climate_radiative_target(int32_t cell, float base_value) const {
     return static_cast<float>(effective_value(CLIMATE, "climate.cell.radiative_target",
         static_cast<uint64_t>(std::max(0, cell)), 0, base_value));
@@ -1152,18 +1209,21 @@ int32_t ModifierRuntime::family_group_effect_magnitude(
 double ModifierRuntime::economy_building_output_factor(uint64_t building_handle,
                                                         uint64_t settlement_cell,
                                                         int32_t economic_sector) const {
-    double factor = effective_value(ECONOMY, "economy.building.output_factor",
+    double factor = effective_value(ECONOMY, _building_output_stat_ids[0],
                                     building_handle, settlement_cell, 1.0);
-    factor *= effective_value(ECONOMY, "economy.city.output_factor", 0,
+    factor *= effective_value(ECONOMY, _building_output_stat_ids[1], 0,
                               settlement_cell, 1.0);
-    const char *sector_stat = nullptr;
-    if (economic_sector == 0)
-        sector_stat = "economy.city.building.agriculture_output_factor";
-    else if (economic_sector == 1)
-        sector_stat = "economy.city.building.extractive_output_factor";
-    if (sector_stat != nullptr)
+    const int32_t sector_stat = economic_sector == 0
+        ? _building_output_stat_ids[2]
+        : (economic_sector == 1 ? _building_output_stat_ids[3] : -1);
+    if (sector_stat >= 0)
         factor *= effective_value(ECONOMY, sector_stat, 0, settlement_cell, 1.0);
     return factor;
+}
+
+uint64_t ModifierRuntime::building_output_stat_version() const {
+    return stat_bucket_version(ECONOMY, _building_output_stat_ids,
+                               BUILDING_OUTPUT_STAT_COUNT);
 }
 
 Dictionary ModifierRuntime::command_result(int64_t request_id) const {
@@ -1577,7 +1637,13 @@ bool ModifierRuntime::retire_building_identity(int32_t cell, int32_t type_id,
 
 void ModifierRuntime::clear_domain(int32_t domain) {
     if (domain < 0 || domain >= DOMAIN_COUNT) return;
+    // Caches keyed on the snapshot version treat equality as "nothing changed",
+    // so a cleared store continues the previous sequence instead of restarting.
+    const uint64_t previous_version = _stores[domain].snapshot_version;
+    const uint64_t previous_epoch = _stores[domain].structure_epoch;
     _stores[domain] = Store{};
+    _stores[domain].snapshot_version = previous_version + 1;
+    _stores[domain].structure_epoch = previous_epoch + 1;
     if (domain == ECONOMY) {
         _building_identities = IdentityStore{};
         _building_handles.clear();
@@ -1826,7 +1892,7 @@ bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> 
         if (store.active[index] == 0) store.free_list.push_back(index);
     store.active_instances = saved.size();
     store.peak_instances = saved.size();
-    store.snapshot_version = snapshot_version + 1;
+    store.snapshot_version = std::max(store.snapshot_version, snapshot_version + 1);
     if (domain == ECONOMY) {
         _building_identities = std::move(identities);
         _building_handles.clear();

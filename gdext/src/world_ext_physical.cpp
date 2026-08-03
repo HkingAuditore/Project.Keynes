@@ -128,6 +128,80 @@ inline double physical_wrap01(double world_x, double wrap_origin_x, double wrap_
     return phase;
 }
 
+// 单位护栏：wrap_period_x 必须与 POSX(cell_pos_x) 同单位 —— 即 size=1.0 单位六边形空间，
+// 周期 = map_width * sqrt(3)，与 hex_size 无关（map_data.gd 用 cube_to_world(q, r, 1.0) 填该 slot）。
+//
+// 历史 bug（2026-08-03）：map_baker.gd 传的是世界单位 wrap_period_x(map_width, hex_size)，
+// 比 POSX 跨度大 hex_size 倍 → physical_wrap01 归一化经度只走完 1/hex_size 个周期，永不环绕
+// → 东西接缝处 synoptic 波与移动低压相位硬跳 → 伪 ∇SLP 把风向钉死 → 风应力涡度再把洋流锁死，
+// 表现为"东西边界有一堵墙"。该错配连续两轮静默逃逸，故在此出声而不是默默算错。
+inline void physical_warn_wrap_units(const char *pass_name, double wrap_period_x, double posx_span, bool &warned) {
+    if (warned || wrap_period_x <= 0.001 || posx_span <= 0.001) return;
+    // 正确时 period 只比跨度多一个列距(√3/2)，比值≈1.005；世界单位错配下比值≈hex_size。
+    if (wrap_period_x < posx_span || wrap_period_x > posx_span * 1.5) {
+        warned = true;
+        godot::UtilityFunctions::push_warning(
+            godot::String("[physical] {0}: wrap_period_x={1} 与 cell_pos_x 跨度={2} 单位不符"
+                          "(比值={3})。物理 pass 的 wrap_period_x 应为 map_width*sqrt(3)"
+                          "(HexUtils.wrap_period_cell_pos_x)，不是世界单位。东西接缝将出现不连续阶跃。")
+                    .format(godot::Array::make(pass_name, wrap_period_x, posx_span,
+                                               wrap_period_x / posx_span)));
+    }
+}
+
+// ─── 纬度归一化的单一权威 ────────────────────────────────────────────────
+// ny ∈ [0,1]：0 = 第 0 行, 1 = 最后一行, 0.5 = 赤道。lat_signed = (ny-0.5)*2。
+//
+// 历史 bug（2026-08-03）：本文件 4 处曾这样重算纬度
+//     ny = (POSY[i] - world_bounds_pos_y) / world_bounds_size_y
+// 但 POSY 是 `cell_pos_y`（size=1.0 单位六边形空间，行距 1.5，100x64 图值域 0..94.5），
+// 而 `world_bounds_*` 来自 map_baker.gd::compute_world_bounds() 的世界单位
+// （含 hex_size；hex_size=22 时 pos_y=-44、size_y≈2211）。两者相差 hex_size 倍，
+// 于是 ny 被压缩到 0.02~0.06、abs_lat 恒为 0.87~0.96，全图每个 cell 都被当成极地：
+//   · wind_belt_at → 处处极地东风，信风带/西风带/ITCZ 完全不存在
+//   · wind_belt_speed_at → 恒为 SPEED_POLAR(0.65)（实测风速下限 0.649 即由此而来）
+//   · 科氏角恒 ~65°、ageo_w 恒为 0（赤道也全地转），且 ls<0 恒成立 → 偏转符号永不翻转
+//   · wind_shifted_lat_signed 的 ITCZ 季节迁移上限 ±0.18，动不出极地带 → 季节通路失效
+// 表现为：风带不沿纬线而沿大陆经度成条带（唯一塑形者退化为 ∇SLP + 海岸几何），
+// 且风向常年不变。`world_ext_climate.cpp` 一直直接读 `cell_lat_norm` slot，所以温度场是对的，
+// 两个域因此长期静默分歧。
+//
+// 现在以 `cell_lat_norm` slot 为唯一权威（与 climate 同源，等于 map_generator.gd
+// `_cube_row_norm` = row/(height-1)）。slot 缺失时退化为「用 POSY 自身值域自归一化」，
+// 与本文件 slp_bounds_pos_x 对 POSX 的做法一致 —— 不依赖任何外部单位，无法再次错配。
+struct PhysLatNorm {
+    const float *lat = nullptr;   // cell_lat_norm slot（首选）
+    const float *posy = nullptr;  // 退化路径：cell_pos_y 自归一化
+    double origin = 0.0;
+    double inv_span = 1.0;
+
+    inline double at(int i) const {
+        double ny = (lat != nullptr)
+            ? double(lat[i])
+            : ((double(posy[i]) - origin) * inv_span);
+        return (ny < 0.0) ? 0.0 : ((ny > 1.0) ? 1.0 : ny);
+    }
+};
+
+inline PhysLatNorm phys_make_lat_norm(const float *lat, const float *posy, int n_cells) {
+    PhysLatNorm o;
+    if (lat != nullptr) {
+        o.lat = lat;
+        return o;
+    }
+    o.posy = posy;
+    if (posy == nullptr || n_cells <= 0) return o;
+    double lo = double(posy[0]), hi = lo;
+    for (int i = 1; i < n_cells; ++i) {
+        const double v = double(posy[i]);
+        if (v < lo) lo = v;
+        else if (v > hi) hi = v;
+    }
+    o.origin = lo;
+    o.inv_span = 1.0 / std::max(0.001, hi - lo);
+    return o;
+}
+
 inline float wind_speed_norm(float dir_x, float dir_y, float speed) {
     if (speed > 0.0001f) return speed;
     const float len2 = dir_x * dir_x + dir_y * dir_y;
@@ -269,8 +343,16 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     double synoptic_period_days = double(knobs.has("wind_synoptic_period_days") ? double(knobs["wind_synoptic_period_days"]) : 6.0);
     if (synoptic_period_days < 0.5) synoptic_period_days = 0.5;
     const double axial_tilt_deg = double(knobs.has("axial_tilt_deg") ? double(knobs["axial_tilt_deg"]) : 23.5);
+    // 转向速率限幅。knob 语义是「每游戏日」，但本 pass 不是每日调用：
+    // earth_like.tres 的 ocean_daily_wind_period_ticks=6 配合 daily_wind_split_passes 交替
+    // slp/wind → wind 段每 24 tick 才跑一次。若不按经过天数缩放，名义 32°/日会退化成
+    // 32°/24日 ≈ 1.33°/日，风向被硬性钉死（实测方向恒定度中位 0.958、中纬度反而最稳）。
+    // caller 传 wind_elapsed_days（缺省 1.0 = 旧行为）。
+    double wind_elapsed_days = double(knobs.has("wind_elapsed_days") ? double(knobs["wind_elapsed_days"]) : 1.0);
+    if (wind_elapsed_days < 0.0) wind_elapsed_days = 0.0;
+    else if (wind_elapsed_days > 60.0) wind_elapsed_days = 60.0;
     double max_turn_rad = double(knobs.has("wind_max_turn_deg_per_day") ? double(knobs["wind_max_turn_deg_per_day"]) : 32.0)
-        * (3.14159265358979323846 / 180.0);
+        * (3.14159265358979323846 / 180.0) * wind_elapsed_days;
     if (max_turn_rad < 0.0) max_turn_rad = 0.0;
     else if (max_turn_rad > 3.14159265358979323846) max_turn_rad = 3.14159265358979323846;
     double min_flux_for_dir_update = double(knobs.has("wind_min_flux_for_dir_update") ? double(knobs["wind_min_flux_for_dir_update"]) : 0.035);
@@ -380,7 +462,11 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     };
     WindFlipEmit wind_flip_emit;
 
-    const double inv_bounds_h = 1.0 / bounds_size_y;
+    // 纬度权威：cell_lat_norm slot（见 phys_make_lat_norm 注释）。world_bounds_* 不再参与
+    // 纬度归一化，仅保留 knob 契约校验。
+    const PhysLatNorm LATN = phys_make_lat_norm(_phys_lat_norm_ptr(n_cells), POSY, n_cells);
+    (void)bounds_pos_y;
+    (void)bounds_size_y;
     const bool   ta = terrain_aware;
     double bounds_pos_x = double(POSX[0]);
     double bounds_max_x = bounds_pos_x;
@@ -391,6 +477,11 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     }
     const double inv_bounds_w = 1.0 / std::max(0.001, bounds_max_x - bounds_pos_x);
     const bool has_wrap_domain = wrap_period_x > 0.001;
+    {
+        static bool s_warned_wind_wrap = false;
+        physical_warn_wrap_units("wind_field", wrap_period_x, bounds_max_x - bounds_pos_x,
+                                 s_warned_wind_wrap);
+    }
     const uint32_t seed_bits = static_cast<uint32_t>(world_seed);
 
     pk::parallel_for_range_with_emit<WindFlipEmit>(
@@ -398,9 +489,8 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         [&](int __wrb, int __wre, WindFlipEmit &__we) {
     for (int ii = __wrb; ii < __wre; ++ii) {
         const int i = start_idx + ii;
-        // ny / ls / ls_abs（与 _ny_for_cell 等价：bounds.y → 0..1 clamp）
-        double ny = (double(POSY[i]) - bounds_pos_y) * inv_bounds_h;
-        if (ny < 0.0) ny = 0.0; else if (ny > 1.0) ny = 1.0;
+        // ny / ls / ls_abs（cell_lat_norm 权威，0=第0行 0.5=赤道 1=末行）
+        const double ny = LATN.at(i);
         const double ls = (ny - 0.5) * 2.0;
         const double ls_abs = (ls < 0.0) ? -ls : ls;
 
@@ -443,14 +533,14 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         }
 
         // (d) 科氏偏转：离赤道越远越接近沿等压线流，赤道附近保留直接压差流。
-        // 北半球 ls<0 → +θ（屏幕坐标顺时针 = 右偏）；南半球 → -θ
+        // 屏幕坐标 x=东、y=南（北在 y<0），故 R(+θ):(x,y)->(x cosθ - y sinθ, x sinθ + y cosθ)
+        // 把东转向南 = 地图上顺时针 = 右偏。北半球右偏取 +θ，南半球左偏取 -θ。
         const double coriolis_angle = WIND_CORIOLIS_MAX_RAD * std::pow(ls_abs, 0.55);
         const double rot = (ls < 0.0) ? coriolis_angle : -coriolis_angle;
         const double cos_r = std::cos(rot);
         const double sin_r = std::sin(rot);
-        // 屏幕坐标系下顺时针 θ：x' = x*cos + y*sin, y' = -x*sin + y*cos
-        const double v_geo_x = v_grad_raw_x * cos_r + v_grad_raw_y * sin_r;
-        const double v_geo_y = -v_grad_raw_x * sin_r + v_grad_raw_y * cos_r;
+        const double v_geo_x = v_grad_raw_x * cos_r - v_grad_raw_y * sin_r;
+        const double v_geo_y = v_grad_raw_x * sin_r + v_grad_raw_y * cos_r;
         const double ageo_w = 1.0 - wind_smoothstep(0.10, 0.55, ls_abs);
         const double geo_w = 1.0 - ageo_w;
         double v_grad_x = v_grad_raw_x * ageo_w + v_geo_x * geo_w;
@@ -509,10 +599,16 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
             const double seed_b = double((seed_bits >> 10) & 1023u) * 0.006135923151542565;
             // 圆柱周期契约：经向波数必须是整数谐波，否则 px=0/1 不同相，
             // SLP 梯度与风自身扰动都会在东西接缝形成一堵“墙”。seed 只选择谐波与相位。
-            const double k1x = 1.0 + double(seed_bits & 1u);
-            const double k1y = std::cos(seed_a) * 0.65 + 0.45;
-            const double k2x = 1.0 + double((seed_bits >> 1) & 1u);
-            const double k2y = std::sin(seed_b) * 0.90 + 0.25;
+            // 波数标定(wind-variability 2026-08-03)：原 k1x∈{1,2} 在 100 列图上是
+            // 波长 50~100 格的行星波，扰动方向几乎整片同相 → 天气无空间结构。真实中纬
+            // Rossby 波是经向波数 4~8，故改 {3..6}（波长 17~33 格）。y 波数必须同步提高：
+            // 流函数 syn_y = -k1x·psi1 + k2x·psi2、syn_x = k1y·psi1 + k2y·psi2，若 k1x≈4.5
+            // 而 k1y≈0.75 则归一化后扰动退化成几乎纯经向；k1y≈2.3（64 行上波长 28 行）
+            // 与 k1x 大致各向同性。
+            const double k1x = 3.0 + double(seed_bits & 3u);
+            const double k1y = std::cos(seed_a) * 0.90 + 2.30;
+            const double k2x = 3.0 + double((seed_bits >> 2) & 3u);
+            const double k2y = std::sin(seed_b) * 1.00 + 2.40;
             const double p1 = 6.283185307179586 * (k1x * px + k1y * py + syn_cycles) + seed_a;
             const double p2 = 6.283185307179586 * (k2x * px - k2y * py - syn_cycles * 0.56) + seed_b;
             const double psi1 = std::sin(p1);
@@ -1355,7 +1451,9 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
     constexpr double UPWELLING_EKMAN_GAIN = 0.6;
     constexpr double UPWELLING_COLD_SINK_GAIN = 0.15;
     constexpr double UPWELLING_HIGHLAT_ABS_SOLVER = 0.75;
-    const double inv_bounds_h = 1.0 / bounds_size_y;
+    const PhysLatNorm LATN = phys_make_lat_norm(_phys_lat_norm_ptr(n_cells), POSY, n_cells);
+    (void)bounds_pos_y;
+    (void)bounds_size_y;
 
     // perf (2A): upwelling 逐 cell 独立（只读 POSY/TERR/WX/WY/WSPD/NB + 常量方向表，
     // 写 UP[i]，无标量累加器）→ 按 cell 区间并行、bit-equal、无需 reduce。
@@ -1366,9 +1464,7 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
             continue;
         }
 
-        double ny = (double(POSY[i]) - bounds_pos_y) * inv_bounds_h;
-        if (ny < 0.0) ny = 0.0;
-        else if (ny > 1.0) ny = 1.0;
+        const double ny = LATN.at(i);
         const double ls = (ny - 0.5) * 2.0;
         const double ls_abs = (ls < 0.0) ? -ls : ls;
         double lat_temp = pk_lat_temp_bell(ls_abs);  // 纬度温度钟形单一来源
@@ -1394,9 +1490,12 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
             const double inv_land = 1.0 / std::sqrt(land_len2);
             const double off_x = -land_dx * inv_land;
             const double off_y = -land_dy * inv_land;
+            // 屏幕坐标 x=东、y=南，故 (x,y)->(-y,x) 是右转 90°：coast_tan = 离岸方向右转 90°。
+            // 北半球 Ekman 输运在风向右侧 90°，离岸输运(=上升流)要求 R(+90°)(wind)=off，
+            // 即 wind = -coast_tan → dot_v < 0 时上升。故北半球取 -1、南半球取 +1（up>0 = 上升流）。
             const double coast_tan_x = -off_y;
             const double coast_tan_y = off_x;
-            const double hemi_sign = (ls < 0.0) ? 1.0 : -1.0;
+            const double hemi_sign = (ls < 0.0) ? -1.0 : 1.0;
             const double dot_v = double(WX[i]) * coast_tan_x + double(WY[i]) * coast_tan_y;
             ekman_main = dot_v * hemi_sign * double(WSPD[i]) * UPWELLING_EKMAN_GAIN;
         }
@@ -1446,6 +1545,13 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
 // 不挂 _bound 钩子，仿 PSI 拓扑缓存 line 2228）。命中后各 pass 直接读成员，
 // 省掉重复 component_id(StringName) 与 256 字节 LUT 重建。邻居索引仍由 knob
 // 传入（保留 fallback）。slot 缺失时 _phys_sid_* 为 -1，pass 内 sid<0 守卫仍触发。
+const float *DCWorldExt::_phys_lat_norm_ptr(int n_cells) {
+    if (_phys_sid_lat_norm < 0 || _phys_sid_lat_norm >= _slots.size()) return nullptr;
+    Slot &s = _slots.write[_phys_sid_lat_norm];
+    if (s.arr_f32.size() != n_cells) return nullptr;
+    return s.arr_f32.ptr();
+}
+
 void DCWorldExt::_phys_resolve_static(int n_cells, const godot::PackedByteArray &water_ids) {
     uint64_t fp = 1469598103934665603ull; // FNV-1a offset basis
     auto mix = [&fp](uint32_t bits) {
@@ -1460,6 +1566,7 @@ void DCWorldExt::_phys_resolve_static(int n_cells, const godot::PackedByteArray 
 
     _phys_sid_pos_x     = component_id(StringName("cell_pos_x"));
     _phys_sid_pos_y     = component_id(StringName("cell_pos_y"));
+    _phys_sid_lat_norm  = component_id(StringName("cell_lat_norm"));
     _phys_sid_terrain   = component_id(StringName("cell_terrain"));
     _phys_sid_landform  = component_id(StringName("cell_landform"));
     _phys_sid_wind_x    = component_id(StringName("cell_wind_x"));
@@ -1873,8 +1980,14 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         }
         slp_bounds_pos_x = bx_min;
         slp_inv_bounds_w = 1.0 / std::max(0.001, bx_max - bx_min);
+        static bool s_warned_slp_wrap = false;
+        physical_warn_wrap_units("slp_field", wrap_period_x, bx_max - bx_min, s_warned_slp_wrap);
     }
     const bool slp_has_wrap_domain = wrap_period_x > 0.001;
+    // 纬度权威：cell_lat_norm slot（见 phys_make_lat_norm）。world_bounds_* 不再参与纬度归一化。
+    const PhysLatNorm LATN = phys_make_lat_norm(_phys_lat_norm_ptr(n_cells), POSY, n_cells);
+    (void)bounds_pos_y;
+    (void)bounds_size_y;
 
     // 让天气流动(2026-06-21 阶段1)：移动低压中心（循环外预计算；hot loop 仅做 exp 距离衰减）。
     // 每个低压由 (world_seed, j) 哈希出确定性初始相位/纬度，随 sim_day 自西向东平移（中纬西风带
@@ -1907,18 +2020,21 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const double slp_syn_sa  = double(world_seed) * 0.00011;
     const double slp_syn_sb  = double(world_seed) * 0.00017;
     // 经向必须采用整数谐波，才能同时保证场值与经向导数在圆柱接缝连续。
+    // 波数标定(wind-variability 2026-08-03)：k1x∈{1,2} 时本项经向梯度只有
+    // AMP·0.65·2π·k1x/100 ≈ 0.011/格，而静态纬向基线约 0.030/格 → 天气扭不动风向。
+    // 改 {3..6}（均值 4.5）后约 0.033/格，与静态基线同量级：竞争得起但不压倒。
+    // k1y 只温和提高（[0.9,1.7]，约 0.015/行 = 静态基线一半）—— 纬向 SLP 梯度正是
+    // 三圈环流风带的定义者，经向涟漪过强会把风带打碎成涡群而非「会蜿蜒的带」。
     const uint32_t slp_seed_bits = static_cast<uint32_t>(world_seed);
-    const double slp_syn_k1x = 1.0 + double(slp_seed_bits & 1u);
-    const double slp_syn_k1y = 0.70 + 0.40 * std::cos(slp_syn_sa);
-    const double slp_syn_k2x = 1.0 + double((slp_seed_bits >> 1) & 1u);
-    const double slp_syn_k2y = 0.85 + 0.35 * std::sin(slp_syn_sb);
+    const double slp_syn_k1x = 3.0 + double(slp_seed_bits & 3u);
+    const double slp_syn_k1y = 1.30 + 0.40 * std::cos(slp_syn_sa);
+    const double slp_syn_k2x = 3.0 + double((slp_seed_bits >> 2) & 3u);
+    const double slp_syn_k2y = 1.45 + 0.35 * std::sin(slp_syn_sb);
     auto slp_passA_range = [&](int rb, int re) {
     for (int ii = rb; ii < re; ++ii) {
         const int i = start_idx + ii;
-        // ny / lat_signed / lat_abs
-        float ny = float((double(POSY[i]) - bounds_pos_y) / bounds_size_y);
-        if (ny < 0.0f) ny = 0.0f;
-        else if (ny > 1.0f) ny = 1.0f;
+        // ny / lat_signed / lat_abs（cell_lat_norm 权威）
+        const float ny     = float(LATN.at(i));
         const float ls     = (ny - 0.5f) * 2.0f;
         const float ls_abs = std::fabs(ls);
 
@@ -2478,15 +2594,17 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     // Build tau (= wind_stress = wind_vector * wind_speed; here wind_x_arr /
     // wind_y_arr already encode wind_vector, so multiply by speed to get
     // wind_stress 1:1 with GDScript) + per-tick ny/ls. nb_w 已在拓扑缓存块建好。
+    // 纬度权威：cell_lat_norm slot（见 phys_make_lat_norm）。
+    const PhysLatNorm LATN = phys_make_lat_norm(_phys_lat_norm_ptr(n_cells), POSY, n_cells);
+    (void)bounds_pos_y;
+    (void)bounds_size_y;
     for (int k = 0; k < n_water; ++k) {
         const int i = water_to_cell[k];
         tau_x[k] = WX[i] * WSP[i];
         tau_y[k] = WY[i] * WSP[i];
 
-        // ny / ls
-        float ny = float((double(POSY[i]) - bounds_pos_y) / bounds_size_y);
-        if (ny < 0.0f) ny = 0.0f;
-        else if (ny > 1.0f) ny = 1.0f;
+        // ny / ls（cell_lat_norm 权威）
+        const float ny = float(LATN.at(i));
         ny_w[k] = ny;
         ls_w[k] = (ny - 0.5f) * 2.0f;
     }
