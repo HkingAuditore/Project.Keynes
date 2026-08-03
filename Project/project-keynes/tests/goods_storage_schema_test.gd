@@ -53,9 +53,9 @@ func _run() -> void:
 		int(inventory_ratios[good_ids.find("electricity")]) == 0)
 	_expect("stone food keeps explicit merchant inventory horizons",
 		int(inventory_ratios[good_ids.find("gathered_plants")]) == 65536 and
-		int(inventory_ratios[good_ids.find("game_meat")]) == 65536 and
+		int(inventory_ratios[good_ids.find("game_meat")]) == 98304 and
 		int(inventory_ratios[good_ids.find("processed_food")]) == 43691 and
-		int(inventory_ratios[good_ids.find("fish")]) == 65536)
+		int(inventory_ratios[good_ids.find("fish")]) == 98304)
 	_expect("need catalog compiles total quantity price response",
 		(catalog.need_price_quantity_elasticity_q16 as PackedInt32Array).size() ==
 		(catalog.need_stable_ids as PackedInt32Array).size() and
@@ -296,9 +296,9 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 		int(report.get("processed_components", -1))])
 	# The extra component visits are the bounded same-period shortage fallback.
 	_expect("worker and merchant process the bounded catalog shape",
-		int(report.get("processed_needs", -1)) == 28 \
-		and int(report.get("processed_variants", -1)) == 79 \
-		and int(report.get("processed_components", -1)) == 92)
+		int(report.get("processed_needs", -1)) == 27 \
+		and int(report.get("processed_variants", -1)) == 75 \
+		and int(report.get("processed_components", -1)) == 86)
 	_expect("market population conservation exact", int(report.get("population_error", 1)) == 0)
 	_expect("market money conservation exact", int(report.get("money_error", 1)) == 0)
 	_expect("market goods conservation exact", int(report.get("goods_error", 1)) == 0)
@@ -358,25 +358,25 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v28 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 28)
+	_expect("v29 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 29)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v28 save emits chunks", chunks.size() >= 12)
-	_expect("v28 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v29 save emits chunks", chunks.size() >= 12)
+	_expect("v29 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
 	var legacy_header: PackedByteArray = chunks[0].duplicate()
-	legacy_header[4] = 21
+	legacy_header[4] = 28
 	legacy_header[5] = 0
 	var legacy_result: Dictionary = legacy_target.feed_economy_restore_chunk(legacy_header)
-	_expect("PKEC v21 is rejected precisely",
+	_expect("PKEC v28 is rejected precisely",
 		not bool(legacy_result.get("ok", true)) and
-		String(legacy_result.get("reason", "")) == "legacy_climate_production_save_unsupported")
+		String(legacy_result.get("reason", "")) == "economy_save_v28_or_earlier_unsupported")
 	var mismatch_target: Object = _new_ext(1, 0.1)
 	var mismatch_catalog := catalog.duplicate(true)
 	mismatch_catalog["catalog_hash"] = int(catalog.catalog_hash) + 1
@@ -399,7 +399,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
 	var source_hash: int = ext.get_economy_state_hash()
 	var restored_hash: int = restored.get_economy_state_hash()
-	_expect("v23 stream restore hash exact", source_hash == restored_hash)
+	_expect("v29 stream restore hash exact", source_hash == restored_hash)
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)
@@ -422,9 +422,10 @@ func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var kinds: Dictionary = schema.get("kinds", {})
 	var cashflow_sources: Dictionary = schema.get("cashflow_sources", {})
 	_expect("economy event schema exposes support issuance and settlement kinds",
-		int(schema.get("version", 0)) == 4 and
+		int(schema.get("version", 0)) == 5 and
 		int(kinds.get("MARKET_SETTLED", 0)) > 0 and
 		int(kinds.get("EPOCH_COMMITTED", 0)) > 0 and
+		int(kinds.get("POPULATION_SOURCE", 0)) > 0 and
 		int(cashflow_sources.get("PRODUCER_SUPPORT_ISSUANCE", 0)) > 0)
 	var goods: PackedStringArray = compiled.good_ids
 	ext.submit_economy_commands(_stock_commands(0, goods, {
@@ -539,7 +540,7 @@ func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 
 	var shortage := _configured_price_worker(compiled, 1811)
 	var shortage_report: Dictionary = {}
-	for day in range(16):
+	for day in range(64):
 		shortage_report = _run_day(shortage, day)
 	var shortage_market: Dictionary = shortage.get_market_cell_snapshot(0)
 	var game_meat := goods.find("game_meat")

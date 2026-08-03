@@ -8,6 +8,8 @@ extends Resource
 @export var default_consumption_plan_id: StringName = &""
 ## UI/content taxonomy only; employment identity remains the stable profession id.
 @export var profession_class_id: StringName = &"general"
+## Optional cold-path labels for family/job selectors.
+@export var semantic_tags: PackedStringArray = PackedStringArray()
 ## Executable availability requirements. Only `tech.*` tags are interpreted by
 ## the economy runtime; other namespaces remain descriptive metadata.
 @export var technology_tags: PackedStringArray = PackedStringArray()

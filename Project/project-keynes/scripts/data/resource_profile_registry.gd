@@ -271,6 +271,7 @@ static func extra_change_map_field(p: ResourceProfile) -> String:
 static func build_pass_knobs() -> Dictionary:
 	ensure_loaded()
 	var quantity_scale := CELL_AREA_RESOURCE_SCALE
+	var resource_ids := PackedStringArray()
 	var reserve_slots := PackedStringArray()
 	var extra_change_slots := PackedStringArray()
 	var habitat_modes := PackedInt32Array()
@@ -303,6 +304,7 @@ static func build_pass_knobs() -> Dictionary:
 			push_warning("ResourceProfileRegistry: resource '%s' has incomplete schema entry for %s; skipped" % [
 				String(p.id), String(p.reserve_component)])
 			continue
+		resource_ids.append(String(p.id))
 		reserve_slots.append(cpp_name)
 		extra_change_slots.append(extra_cpp_name)
 		habitat_modes.append(habitat_code(p))
@@ -330,6 +332,7 @@ static func build_pass_knobs() -> Dictionary:
 		ecology_stress_mortality_rate.append(p.ecology_stress_mortality_rate)
 	return {
 		"resource_count": reserve_slots.size(),
+		"resource_ids": resource_ids,
 		"reserve_slots": reserve_slots,
 		"extra_change_slots": extra_change_slots,
 		"habitat_modes": habitat_modes,

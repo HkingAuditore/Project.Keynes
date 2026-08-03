@@ -213,7 +213,20 @@ func _build_family_details(row: Dictionary) -> void:
 		{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.GOOD},
 		{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.TEXT_MAIN},
 		{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.TEXT_MUTED},
+		{"label": "本地威望", "value": "%s · %s" % [
+			["0", "I", "II", "III", "IV", "V"][clampi(int(row.get("prestige_level", 0)), 0, 5)],
+			String(row.get("prestige_score", "0.0%"))], "accent": UITokens.ACCENT},
 	])
+	_add_rows_card("家族特性", "family.house", UITokens.ACCENT,
+		row.get("trait_rows", []))
+	_add_rows_card("行为偏好", "growth", UITokens.GOOD,
+		row.get("behavior_rows", []))
+	_add_rows_card("地块威望", "family.house", UITokens.ACCENT,
+		row.get("branch_rows", []))
+	_add_rows_card("已激活加成", "growth", UITokens.CLIMATE,
+		row.get("modifier_rows", []))
+	_add_rows_card("累计触发", "resource", UITokens.RESOURCE,
+		row.get("trigger_rows", []))
 	var people: Array = row.get("notable_person_rows", [])
 	if people.is_empty():
 		_add_muted_note("该家族目前没有重要人物。")

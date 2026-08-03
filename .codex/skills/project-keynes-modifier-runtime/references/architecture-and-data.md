@@ -2,7 +2,7 @@
 
 ## Formula And Catalog
 
-The only formula is:
+The effective-stat formula is:
 
 ```text
 clamp((base + sum(add)) * product(factor), stat_min, stat_max)
@@ -12,10 +12,14 @@ Catalog resources compile stable stat/definition keys to dense IDs. Validate dup
 domain alignment, allowed operations, finite values, ranges, duration, stack limits, and zero
 divide. One definition cannot span domains.
 
+Each instance has `magnitude_q16`. Scale add terms linearly. Scale factor terms from the neutral
+value before applying stacks: `scaled_factor = 1 + (factor - 1) * magnitude`; a magnitude of one
+preserves legacy behavior and zero is neutral.
+
 ## Store
 
 Each domain owns an independent SoA Store. Instance columns include active, generation,
-definition, entity/group, source, scope, stacks, applied/expiry day, and expiry revision.
+definition, entity/group, source, scope, stacks, magnitude, applied/expiry day, and expiry revision.
 `generation << 32 | index` is the public handle.
 
 Bucket key is `(stat_id, scope, scope_id)`. Cache sum add, nonzero factor product, zero factor
@@ -41,5 +45,6 @@ store and explicit base SoA. Target retirement removes entity-scope instances on
 ## Persistence
 
 Save stable definition/stat keys, definition version, target/source/scope, stacks, dates, and
-normalized term payload. On restore validate the entire payload before swapping the store,
+Q16 magnitude plus normalized term payload. Modifier save schema v2 is strict. On restore validate
+the entire payload before swapping the store,
 rebuild buckets/unique maps/heap, and increment snapshot version. Never replay apply events.

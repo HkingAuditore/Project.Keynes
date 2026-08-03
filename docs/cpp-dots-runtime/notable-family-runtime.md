@@ -6,7 +6,7 @@
 留在原有 `PopulationCohort` 中，称为匿名人口。`NativeEconomyRuntime` 是家族、成员关系和
 建筑所有权的唯一可变权威；GDScript 只编译姓氏目录与策略、提交经济 bootstrap，并执行只读查询。
 
-家族层包含形成、分支迁移、产业扩张、衰退和消亡；家族内部的重要人物稀疏层见
+家族层包含形成、分支迁移、产业扩张、特性与行为偏好、地块威望、城市效果、衰退和消亡；家族内部的重要人物稀疏层见
 [家族重要人物原生运行时](./notable-person-runtime.md)。系统仍不包含谱系树、婚姻、继承份额、家族合并、
 经理代理或跨国汇款。跨国影响只能通过现有人口迁移和本地投资产生；收入、消费和企业税仍按交易
 发生地与 cohort/building 所属地的冻结国家映射结算。
@@ -38,6 +38,36 @@ sum(family.cash_claim) <= cohort.funds
 建筑组仍按 `(cell, building_type, owner_signature)` 聚合。家族所有权是附着于稳定
 `BuildingIdentityStore` handle 的 `owned_count`，不会把 `family_id` 放入建筑组 key，从而避免
 家族数量放大生产热循环、市场信号和建筑 CSR。
+
+## 特性、偏好与地块威望
+
+`FamilyTraitCatalog` 在冷启动将 stable ID、产业部门、类别、替代类别和语义标签选择器展开为
+dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提供 `semantic_tags`；native 热循环
+只读取 exact dense edge。家族成立时按 `world_seed + family_stable_id + trait_catalog_version`
+确定性无放回抽取 2–4 个核心特性及 Q16 强度；核心特性不可删除。附加特性只通过按
+`effective_day/priority/sequence/submit_order` 排序的命令授予、移除或调强度。
+
+`FamilyCellInfluenceStore` 为 `(family, settlement cell)` 保存 generation-safe 分支。只要本地仍有
+成员、现金 claim 或建筑所有权，分支就存在。威望分固定为：
+
+```text
+25% * population_share + 35% * cash_share + 40% * building_asset_share
+```
+
+三个分母分别包含地块全部人口、资金和已建建筑重置资本估值；零分母维度贡献 0，不重新归一化。
+建筑估值使用冻结本地价格的建材成本加标准运营资本，包含暂停建筑，不含待建队列。每 30 日按
+稳定分支相位错峰评审，I–V 升级阈值为 2/5/10/20/40%，降级阈值为对应 80%；连续两次同向后
+直接切换到计算出的目标等级。
+
+行为偏好不随威望缩放，只在合法投资、职业迁移和 cohort 消费候选中调整 Q16 分数，不能绕过
+科技、资本、建材、资源、岗位或盈利门槛。商品偏好按家族人口占 cohort 的份额合成，并同时影响
+variant 份额和普通需求量；生存需求下限不下降。投资建设持久保存 sponsor family。
+
+威望分档效果在 `FAMILY_COMMIT` 协调到 settlement-cell Economy Modifier bucket 和动态 Trigger
+binding。分支/特性/等级无变化时不更新；降级、特性移除或分支消失立即解绑并清 Trigger 累计。
+建筑完工与跨 cell 国内贸易事实只发布一次，按 `(event_type, cell)` 扇出。免费建筑不扣资金或
+材料但遵守工期、科技、地块和资源预算；人口奖励写显式 `POPULATION_SOURCE` 账本事件。奖励建筑
+使用负 sequence，不能递归计入自己的完成触发。
 
 ## 形成与消亡
 
@@ -118,32 +148,26 @@ cohort→membership、family→building、building→ownership、cell→family�
 
 - `get_family_cell_snapshot(cell, offset, limit)`：地块家族分页摘要；
 - `get_family_snapshot(handle)`：身份、人口、财产和职业统计；
+- `get_family_traits(handle)`：核心/附加特性、强度和已编译行为偏好；
 - `get_family_branches(handle, offset, limit)`：地理分支；
+- `get_family_branch_effects(handle, cell)`：威望拆分、Modifier 贡献和 Trigger 进度；
 - `get_family_industries(handle, offset, limit)`：产业与业主占岗；
 - `get_building_cell_snapshot(cell)`：附带所有权 CSR。
 
 查询只允许在 native slice 间读取，不复制全图、不产生命令、不进入 state hash。
 
-## PKEC v26 / v27
+## PKEC v29
 
-PKEC v26 首次加入家族权威状态；当前 writer 为 PKEC v28。家族 header 继续记录独立
-`family_catalog_hash` 以及会改变模拟语义的 mode、形成门槛、评审周期、
-每格上限与衰退次数；纯 continuation slice budget 不保存。历史 section 0–14 后追加：
-
-- section 15：FamilyStore records（包含 inactive tombstone generation）；
-- section 16：membership edges；
-- section 17：building ownership edges；
-- PKEC v26 section 18：end；PKEC v27 section 18–19 为人物 records/needs，section 20 为 end。
-
-恢复校验 generation handle、cohort/building 引用、非负数量、每 cohort 人口/资金子集约束和每建筑
-家族 `owned_count <= group.count`，随后重建全部 CSR。PKEC v25 显式迁移为“空家族权威状态”；
-PKEC v26 恢复为“空重要人物状态”，更早版本沿用既有兼容策略。姓氏稳定 ID 或权重改变会改变
-family catalog hash，不能静默重映射。
+当前 writer/reader 均为 PKEC v29。section 15–17 保存 FamilyStore、membership 与 ownership，
+section 18–19 保存人物与人物需求，section 20–22 保存 trait rolls、cell influences 和 pending trait
+commands，section 23 为 END。恢复校验 generation handle、目录 hash、强度步长、核心数量、唯一
+分支 stable ID、威望范围、连续评审状态和全部引用，再重建 CSR、selector cache、Modifier/Trigger
+binding 与冻结消费/资源因子。派生缓存不进入 PKEC 或 state hash。v28 及更早版本明确拒绝。
 
 ## 验证要求
 
 最低验收包括：家族形成门槛、实际业主占岗、职业统计、所有权 CSR、人口/货币/商品守恒、PKEC
-v27 hash round-trip、v26 空人物迁移、v25 空家族迁移、generation 旧句柄拒绝，以及家族/人物关闭与
+v29 hash round-trip、v28 明确拒绝、特性抽取/命令排序、分支威望滞回、动态效果、奖励防递归、generation 旧句柄拒绝，以及家族/人物关闭与
 开启的目标规模性能对比。
 
 ## 维护入口

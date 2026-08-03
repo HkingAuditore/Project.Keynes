@@ -27,6 +27,7 @@
 #include "world_ext.h"
 #include "world_ext_internal.h"  // dc_clampf + Slot + 通用 includes（namespace pk 内）
 #include "parallel_dispatcher.h" // Phase C.3 — parallel_for_range(_with_emit)
+#include "modifier_runtime.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -90,6 +91,8 @@ struct NatResRuntime {
     float ecology_stress_mortality_rate = 0.0f;
     bool use_ecology = false;
     bool has_natural_dynamics = false;
+    const float *regen_factors = nullptr;
+    bool has_regen_modifier = false;
 };
 
 // 单 cell 半隐式更新（化简形式）。SIMD 尾段 + 非 AVX2 构建共用，保证三路一致。
@@ -261,6 +264,106 @@ inline void natres_simd_block(float *__restrict R, const float *__restrict T,
 
 } // namespace
 
+Dictionary DCWorldExt::get_natural_resource_regen_factors(
+        const PackedStringArray &resource_ids, int32_t n_cells) {
+    Dictionary out;
+    auto fail = [&](const char *reason) -> Dictionary {
+        out["ok"] = false;
+        out["reason"] = reason;
+        out["factors"] = PackedFloat32Array();
+        out["snapshot_version"] = int64_t{0};
+        out["resource_count"] = resource_ids.size();
+        out["n_cells"] = n_cells;
+        out["active_factor_count"] = 0;
+        out["cache_rebuilt"] = false;
+        return out;
+    };
+
+    if (n_cells <= 0) return fail("natural_resource_modifier_cell_count_invalid");
+    if (resource_ids.is_empty()) return fail("natural_resource_modifier_ids_empty");
+    const int64_t factor_count = int64_t(resource_ids.size()) * int64_t(n_cells);
+    if (factor_count <= 0 || factor_count > std::numeric_limits<int32_t>::max())
+        return fail("natural_resource_modifier_factor_count_invalid");
+
+    constexpr uint64_t FNV_OFFSET = 1469598103934665603ULL;
+    constexpr uint64_t FNV_PRIME = 1099511628211ULL;
+    uint64_t ids_hash = FNV_OFFSET;
+    std::vector<std::string> stable_ids;
+    stable_ids.reserve(static_cast<size_t>(resource_ids.size()));
+    for (int32_t index = 0; index < resource_ids.size(); ++index) {
+        const std::string stable_id = String(resource_ids[index]).utf8().get_data();
+        if (stable_id.empty()) return fail("natural_resource_modifier_id_empty");
+        if (std::find(stable_ids.begin(), stable_ids.end(), stable_id) != stable_ids.end())
+            return fail("natural_resource_modifier_id_duplicate");
+        stable_ids.push_back(stable_id);
+        for (const unsigned char byte : stable_id) {
+            ids_hash ^= uint64_t(byte);
+            ids_hash *= FNV_PRIME;
+        }
+        ids_hash ^= 0;
+        ids_hash *= FNV_PRIME;
+    }
+
+    const ModifierRuntime *modifier =
+        static_cast<const ModifierRuntime *>(_modifier_runtime);
+    const bool modifier_ready = modifier != nullptr && modifier->configured();
+    const uint64_t snapshot_version = modifier_ready
+        ? modifier->domain_snapshot_version(ModifierRuntime::ECONOMY) : 0;
+    const uint64_t catalog_hash = modifier_ready ? modifier->catalog_hash() : 0;
+    const bool rebuild =
+        _natural_resource_modifier_version != snapshot_version ||
+        _natural_resource_modifier_catalog_hash != catalog_hash ||
+        _natural_resource_modifier_ids_hash != ids_hash ||
+        _natural_resource_modifier_cells != n_cells ||
+        _natural_resource_regen_factors.size() != factor_count;
+
+    if (rebuild) {
+        _natural_resource_regen_factors.resize(factor_count);
+        float * const factors = _natural_resource_regen_factors.ptrw();
+        _natural_resource_modifier_active_factor_count = 0;
+        const int32_t generic_stat = modifier_ready
+            ? modifier->stat_id_for_key("economy.city.resource.regen_factor") : -1;
+        for (int32_t resource = 0; resource < resource_ids.size(); ++resource) {
+            const int32_t resource_stat = modifier_ready
+                ? modifier->stat_id_for_key("economy.city.resource." +
+                    stable_ids[resource] + ".regen_factor") : -1;
+            const int64_t row = int64_t(resource) * int64_t(n_cells);
+            for (int32_t cell = 0; cell < n_cells; ++cell) {
+                double factor = 1.0;
+                if (modifier_ready && generic_stat >= 0) {
+                    factor = modifier->effective_value(
+                        ModifierRuntime::ECONOMY, generic_stat, 0,
+                        static_cast<uint64_t>(cell), 1.0);
+                }
+                if (modifier_ready && resource_stat >= 0) {
+                    factor = modifier->effective_value(
+                        ModifierRuntime::ECONOMY, resource_stat, 0,
+                        static_cast<uint64_t>(cell), factor);
+                }
+                if (!std::isfinite(factor)) factor = 1.0;
+                factors[row + cell] = static_cast<float>(factor);
+                if (std::fabs(factor - 1.0) > 1e-7)
+                    ++_natural_resource_modifier_active_factor_count;
+            }
+        }
+        _natural_resource_modifier_version = snapshot_version;
+        _natural_resource_modifier_catalog_hash = catalog_hash;
+        _natural_resource_modifier_ids_hash = ids_hash;
+        _natural_resource_modifier_cells = n_cells;
+    }
+
+    out["ok"] = true;
+    out["reason"] = "";
+    out["factors"] = _natural_resource_regen_factors;
+    out["snapshot_version"] = static_cast<int64_t>(snapshot_version);
+    out["catalog_hash"] = static_cast<int64_t>(catalog_hash);
+    out["resource_count"] = resource_ids.size();
+    out["n_cells"] = n_cells;
+    out["active_factor_count"] = _natural_resource_modifier_active_factor_count;
+    out["cache_rebuilt"] = rebuild;
+    return out;
+}
+
 Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     using godot::PackedFloat32Array;
     using godot::PackedStringArray;
@@ -307,6 +410,20 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     const int resource_count = knobs.has("resource_count") ? int(knobs["resource_count"]) : 0;
     if (resource_count <= 0) return fail("no_resources");
     const int dt_days = std::max(1, std::min(30, knobs.has("dt_days") ? int(knobs["dt_days"]) : 1));
+    PackedFloat32Array regen_factors = knobs.has("regen_factors")
+        ? PackedFloat32Array(knobs["regen_factors"]) : PackedFloat32Array();
+    const int64_t expected_regen_factor_count = int64_t(resource_count) * int64_t(n_cells);
+    if (!regen_factors.is_empty() && regen_factors.size() != expected_regen_factor_count)
+        return fail("regen_factor_array_size_mismatch");
+    const float * const regen_factor_data = regen_factors.is_empty()
+        ? nullptr : regen_factors.ptr();
+    int32_t active_regen_factor_count = 0;
+    for (int64_t index = 0; index < regen_factors.size(); ++index) {
+        const float factor = regen_factor_data[index];
+        if (!std::isfinite(factor) || factor < 0.0f)
+            return fail("regen_factor_array_value_invalid");
+        if (std::fabs(factor - 1.0f) > 1e-7f) ++active_regen_factor_count;
+    }
 
     if (!knobs.has("reserve_slots") || !knobs.has("extra_change_slots") || !knobs.has("habitat_modes") ||
         !knobs.has("temp_lo") || !knobs.has("temp_hi") ||
@@ -479,6 +596,16 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         rr.ecology_stress_mortality_rate = ecology_stress_mortality_rate[r];
         rr.use_ecology = use_ecology;
         rr.has_natural_dynamics = has_natural_dynamics;
+        rr.regen_factors = regen_factor_data == nullptr
+            ? nullptr : regen_factor_data + int64_t(r) * int64_t(n_cells);
+        if (rr.regen_factors != nullptr) {
+            for (int32_t cell = 0; cell < n_cells; ++cell) {
+                if (std::fabs(rr.regen_factors[cell] - 1.0f) > 1e-7f) {
+                    rr.has_regen_modifier = true;
+                    break;
+                }
+            }
+        }
         dynamic_resources.push_back(rr);
     }
 
@@ -496,7 +623,7 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                 int i = begin;
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
                 if (!force_scalar && dt_days <= 1 && !rr.use_climate_fit &&
-                    !rr.use_extra && rr.habitat_bit == 0) {
+                    !rr.use_extra && rr.habitat_bit == 0 && !rr.has_regen_modifier) {
                     const __m256 vlo = _mm256_set1_ps(rr.lo);
                     const __m256 vinv_span = _mm256_set1_ps(rr.inv_span);
                     const __m256 vc0 = _mm256_set1_ps(rr.c0);
@@ -548,6 +675,8 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                             ? static_cast<float>(exact - static_cast<double>(v))
                             : 0.0f;
                     } else {
+                        const float reserve_after_external =
+                            std::max(0.0f, reserve + extra_change);
                         v = rr.use_ecology
                                 ? natres_step_scalar_ecology_dt(
                                     rr.temperature[i], rr.moisture[i], reserve, extra_change, rr, dt_days)
@@ -559,6 +688,10 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                                                            rr.c0, rr.c1, rr.c2,
                                                            rr.inv_denom, extra_change,
                                                            dt_days));
+                        if (rr.has_regen_modifier && v > reserve_after_external) {
+                            v = reserve_after_external +
+                                (v - reserve_after_external) * rr.regen_factors[i];
+                        }
                         if (rr.use_extra) rr.X[i] = 0.0f;
                     }
                     seg += double(v - reserve);
@@ -610,6 +743,9 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     out["loop_layout"] = mt_candidate ? "cell_range_fused_mt" : (dt_days > 1 ? "cell_range_fused_seq_dt" : "cell_range_fused_seq");
     out["loop_dispatches"] = mt_candidate ? 1 : 0;
     out["skipped_static_resources"] = skipped_static_resources;
+    out["regen_modifier_snapshot_version"] = knobs.has("regen_modifier_snapshot_version")
+        ? int64_t(knobs["regen_modifier_snapshot_version"]) : int64_t{0};
+    out["active_regen_factor_count"] = active_regen_factor_count;
     if (published_count == 0 && !all_static) out["fallback_reason"] = "no_publishable_resource";
     return out;
 }

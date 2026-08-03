@@ -8,6 +8,8 @@ const EVENT_TERRAIN_FLIP: int = 2
 const EVENT_WEATHER_FRONT_CHANGED: int = 3
 const EVENT_VISUAL_DIRTY_INTENT: int = 4
 const EVENT_ECONOMY_EPOCH_COMMITTED: int = 5
+const EVENT_ECONOMY_CONSTRUCTION_COMPLETED: int = 6
+const EVENT_ECONOMY_TRADE_ARRIVED: int = 7
 
 const SOURCE_NATIVE: int = 1
 const SOURCE_GDSCRIPT: int = 2
@@ -16,6 +18,8 @@ const SOURCE_DEBUG: int = 3
 const PAYLOAD_NONE: int = 0
 const PAYLOAD_SUCCESSION_V1: int = 1
 const PAYLOAD_ECONOMY_EPOCH_V1: int = 2
+const PAYLOAD_ECONOMY_CONSTRUCTION_V1: int = 3
+const PAYLOAD_ECONOMY_TRADE_V1: int = 4
 
 var _world_ext = null
 var _schema: Dictionary = {}
@@ -53,7 +57,9 @@ func publish_event(
 		payload_i0: int = 0,
 		payload_i1: int = 0,
 		payload_i2: int = 0,
-		payload_i3: int = 0) -> Dictionary:
+		payload_i3: int = 0,
+		entity_handle: int = 0,
+		value_i64: int = 1) -> Dictionary:
 	var batch := {
 		"count": 1,
 		"tick_scalar": tick,
@@ -64,6 +70,8 @@ func publish_event(
 		"payload_schema_scalar": payload_schema,
 		"cell_idx": PackedInt32Array([cell_idx]),
 		"entity_id": PackedInt32Array([cell_idx]),
+		"entity_handle": PackedInt64Array([entity_handle if entity_handle != 0 else cell_idx]),
+		"value_i64": PackedInt64Array([value_i64]),
 		"payload_i0": PackedInt32Array([payload_i0]),
 		"payload_i1": PackedInt32Array([payload_i1]),
 		"payload_i2": PackedInt32Array([payload_i2]),

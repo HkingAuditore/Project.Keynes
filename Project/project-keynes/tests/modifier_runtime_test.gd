@@ -99,6 +99,28 @@ func _run() -> void:
 	_expect("stale handle rejected", not bool(facade.get_command_result(
 		stale_remove).get("ok", true)))
 
+	var resource_ids := PackedStringArray(["wild_game", "timber"])
+	var neutral_regen: Dictionary = ext.get_natural_resource_regen_factors(resource_ids, 16)
+	var neutral_factors: PackedFloat32Array = neutral_regen.get(
+		"factors", PackedFloat32Array())
+	_expect("resource regen cache starts neutral", bool(neutral_regen.get("ok", false)) and
+		neutral_factors.size() == 32 and int(neutral_regen.get(
+			"active_factor_count", -1)) == 0)
+	var regen_request: int = facade.queue_apply(&"family.city.wild_game_regen_boost",
+		{"domain": 2, "scope": 1, "group_handle": 3},
+		{"type": 77, "id": 1001}, -1, 1, 8)
+	ext.run_modifier_daily(8)
+	var boosted_regen: Dictionary = ext.get_natural_resource_regen_factors(resource_ids, 16)
+	var boosted_factors: PackedFloat32Array = boosted_regen.get(
+		"factors", PackedFloat32Array())
+	_expect("resource regen cache follows economy snapshot", bool(
+		facade.get_command_result(regen_request).get("ok", false)) and
+		bool(boosted_regen.get("cache_rebuilt", false)) and
+		_near(boosted_factors[3], 1.1) and _near(boosted_factors[16 + 3], 1.0))
+	var cached_regen: Dictionary = ext.get_natural_resource_regen_factors(resource_ids, 16)
+	_expect("resource regen cache reuses unchanged snapshot",
+		not bool(cached_regen.get("cache_rebuilt", true)))
+
 	var unique_target := {"domain": 1, "scope": 2, "entity_handle": 77}
 	var unique_source := {"type": 30, "id": 9}
 	var unique_a := facade.queue_apply(&"country.economic_mobilization",

@@ -1689,6 +1689,12 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 		_modifier_daily_job, scheduler_profile, false, &"modifier_daily", 1)
 	_runtime_register_system(_modifier_daily_job)
 	if _trigger_facade != null:
+		_trigger_facade.register_domain_effect_adapter(11, 2,
+			&"family.free_building",
+			Callable(_economy_facade, "queue_family_trigger_reward"))
+		_trigger_facade.register_domain_effect_adapter(11, 2,
+			&"family.population_reward",
+			Callable(_economy_facade, "queue_family_trigger_reward"))
 		_trigger_daily_job = TriggerDailySystemScript.new(_trigger_facade)
 		_sus.configure_job_from_profile(
 			_trigger_daily_job, scheduler_profile, false, &"trigger_runtime", 1)
@@ -7136,6 +7142,20 @@ func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
 	_ensure_natural_resource_knobs()
 	if int(_natural_resource_pass_knobs.get("resource_count", 0)) <= 0:
 		return _remember_natural_resource_report({"done": true, "path": "no_resources", "published_to_slot": false})
+	_natural_resource_pass_knobs.erase("regen_factors")
+	_natural_resource_pass_knobs["regen_modifier_snapshot_version"] = 0
+	_natural_resource_pass_knobs["active_regen_factor_count"] = 0
+	if _data_core_world_ext != null and \
+			_data_core_world_ext.has_method("get_natural_resource_regen_factors"):
+		var factor_result: Dictionary = _data_core_world_ext.get_natural_resource_regen_factors(
+			_natural_resource_pass_knobs.get("resource_ids", PackedStringArray()), n_cells)
+		if bool(factor_result.get("ok", false)):
+			_natural_resource_pass_knobs["regen_factors"] = factor_result.get(
+				"factors", PackedFloat32Array())
+			_natural_resource_pass_knobs["regen_modifier_snapshot_version"] = int(
+				factor_result.get("snapshot_version", 0))
+			_natural_resource_pass_knobs["active_regen_factor_count"] = int(
+				factor_result.get("active_factor_count", 0))
 
 	if _data_core_world_ext != null and _data_core_world_ext.has_method("run_natural_resource_pass"):
 		if _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
@@ -7167,6 +7187,13 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 	var published: PackedStringArray = PackedStringArray()
 	var published_resources: int = 0
 	var quantity_scale := ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+	var regen_factors: PackedFloat32Array = _natural_resource_pass_knobs.get(
+		"regen_factors", PackedFloat32Array())
+	var resource_ids: PackedStringArray = _natural_resource_pass_knobs.get(
+		"resource_ids", PackedStringArray())
+	var regen_rows: Dictionary = {}
+	for resource_index in range(resource_ids.size()):
+		regen_rows[String(resource_ids[resource_index])] = resource_index
 	for p in ResourceProfileRegistry.ordered():
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		if field == "":
@@ -7189,6 +7216,8 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 			p.gen_moisture != 0.0 or p.gen_self != 0.0 or p.decay_base != 0.0 or \
 			p.decay_temp != 0.0 or p.decay_moisture != 0.0 or p.decay_self != 0.0 or \
 			p.decay_stress != 0.0 or p.ecology_capacity > 0.0
+		var regen_row: int = int(regen_rows.get(String(p.id), -1))
+		var regen_offset: int = regen_row * n_cells
 		for i in range(n_cells):
 			if habitat_code > 0 and (i >= habitat_arr.size() or not
 					ResourceProfileRegistry.habitat_available(p, int(habitat_arr[i]))):
@@ -7254,6 +7283,10 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 					v = a_pow * reserve_after_external + b * (1.0 - a_pow) / (1.0 - inv_denom)
 			if v < 0.0:
 				v = 0.0
+			if has_natural_dynamics and v > reserve_after_external and regen_row >= 0 and \
+					regen_offset + i < regen_factors.size():
+				v = reserve_after_external + (v - reserve_after_external) * \
+					float(regen_factors[regen_offset + i])
 			arr[i] = v
 			if have_extra and has_natural_dynamics:
 				extra_arr[i] = 0.0
@@ -7277,6 +7310,10 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 		"dt_days": dt_days,
 		"total_delta": total_delta,
 		"native_ms": (Time.get_ticks_usec() - t_wall) / 1000.0,
+		"regen_modifier_snapshot_version": int(_natural_resource_pass_knobs.get(
+			"regen_modifier_snapshot_version", 0)),
+		"active_regen_factor_count": int(_natural_resource_pass_knobs.get(
+			"active_regen_factor_count", 0)),
 	}
 
 

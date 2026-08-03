@@ -19,6 +19,7 @@ namespace pk {
 class NativeCountryRuntime;
 class EconomyCsvRecorder;
 class ModifierRuntime;
+class TriggerRuntime;
 
 // NativeEconomyRuntime is the sole mutable authority for population cohorts
 // and markets. Godot containers are accepted/emitted only at coarse API
@@ -65,12 +66,15 @@ public:
         COMMAND_DEMOLISH = 11,
         COMMAND_COUNTRY_GOOD_TO_MARKET = 12,
         COMMAND_MARKET_GOOD_TO_COUNTRY = 13,
+        COMMAND_FAMILY_FREE_BUILDING = 14,
+        COMMAND_FAMILY_POPULATION_REWARD = 15,
     };
 
     NativeEconomyRuntime();
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
+    void attach_trigger_runtime(TriggerRuntime *runtime) { _trigger_runtime = runtime; }
     bool country_restore_allowed() const {
         return !_bootstrapped && !_save.active && !_restore.active;
     }
@@ -181,6 +185,21 @@ public:
         return _resource_extra_slots;
     }
     bool drain_building_resource_deltas(std::vector<int64_t> &out);
+    struct CommittedGameplayFact {
+        int32_t kind = 0;
+        int32_t cell = -1;
+        uint64_t entity_handle = 0;
+        int32_t entity_id = -1;
+        int64_t value = 0;
+        std::array<int32_t, 4> payload{};
+        int32_t flags = 0;
+    };
+    enum GameplayFactKind : int32_t {
+        GAMEPLAY_FACT_CONSTRUCTION_COMPLETED = 1,
+        GAMEPLAY_FACT_TRADE_ARRIVED = 2,
+    };
+    bool drain_committed_gameplay_facts(
+        std::vector<CommittedGameplayFact> &out);
     int32_t building_resource_access_cells(int32_t cell, int32_t resource_id,
                                            int32_t *out_cells, int32_t capacity) const;
     bool capture_trade_topology(const int32_t *neighbor_indices,
@@ -630,6 +649,12 @@ private:
         uint64_t branch_handle = 0;
         std::string definition_key;
         int32_t magnitude_q16 = 0;
+    };
+
+    struct FamilyTriggerBinding {
+        uint64_t branch_handle = 0;
+        std::string definition_key;
+        int32_t reward_target = 0;
     };
 
     struct BuildingRoleSpan {
@@ -1274,6 +1299,7 @@ private:
         EVENT_RESTORE_BOUNDARY = 11,
         EVENT_TRADE_DISPATCHED = 12,
         EVENT_TRADE_ARRIVED = 13,
+        EVENT_POPULATION_SOURCE = 14,
     };
 
     enum EventField : int32_t {
@@ -1328,6 +1354,7 @@ private:
         SUBJECT_TREASURY = 5,
         SUBJECT_RESOURCE = 6,
         SUBJECT_TRADE_ORDER = 7,
+        SUBJECT_FAMILY_BRANCH = 8,
     };
 
     struct EventLeg {
@@ -2195,6 +2222,8 @@ private:
     bool _inspector_trace_pending = false;
     EventBatch _staging_events;
     std::deque<EventBatch> _committed_event_batches;
+    std::vector<CommittedGameplayFact> _staging_gameplay_facts;
+    std::vector<CommittedGameplayFact> _committed_gameplay_facts;
     std::deque<AuditFrame> _audit_history;
     std::unordered_map<std::string, int64_t> _event_consumer_ack;
     int64_t _next_event_id = 1;
@@ -2294,6 +2323,7 @@ private:
     std::vector<FamilyTraitRoll> _family_traits;
     std::vector<FamilyTraitCommand> _family_trait_commands;
     std::vector<FamilyModifierBinding> _family_modifier_bindings;
+    std::vector<FamilyTriggerBinding> _family_trigger_bindings;
     std::vector<PersonNeedState> _person_needs;
     // Derived, transient CSR. Authoritative edges above remain sparse and are
     // rebuilt only at FAMILY_COMMIT or after structural restore.
@@ -2662,6 +2692,7 @@ private:
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
     ModifierRuntime *_modifier_runtime = nullptr;
+    TriggerRuntime *_trigger_runtime = nullptr;
     std::vector<int32_t> _epoch_cell_country;
     std::vector<uint64_t> _epoch_country_technologies;
     std::vector<uint64_t> _epoch_country_handles;
@@ -2672,6 +2703,10 @@ private:
     std::vector<int32_t> _business_tax_stat_ids;
     std::vector<int32_t> _import_tax_stat_ids;
     std::vector<int32_t> _export_tax_stat_ids;
+    int32_t _city_birth_stat_id = -1;
+    int32_t _city_consumption_stat_id = -1;
+    std::vector<int32_t> _city_need_consumption_stat_ids;
+    std::vector<int32_t> _city_good_consumption_stat_ids;
     std::vector<int8_t> _epoch_income_tax_rates;
     std::vector<int8_t> _epoch_consumption_tax_rates;
     std::vector<int8_t> _epoch_business_tax_rates;
@@ -2715,6 +2750,9 @@ private:
     std::vector<int32_t> _epoch_country_trade_speed_factor_q16;
     std::vector<int32_t> _epoch_country_construction_cost_factor_q16;
     std::vector<int32_t> _epoch_country_construction_time_factor_q16;
+    std::vector<int32_t> _epoch_cell_birth_factor_q16;
+    std::vector<int32_t> _epoch_cell_need_consumption_factor_q16;
+    std::vector<int32_t> _epoch_cell_good_consumption_factor_q16;
     // Epoch-transient country/type availability cache. Technology authority is
     // frozen once per daily transaction, so every cell in a country shares the
     // same result and hot loops can consume the ascending CSR directly.
@@ -2817,6 +2855,9 @@ private:
     std::vector<std::string> _family_trait_modifier_definition_keys;
     std::vector<int32_t> _family_trait_modifier_targets;
     std::vector<int32_t> _family_trait_modifier_tier_magnitudes_q16;
+    std::vector<int32_t> _family_trait_trigger_offsets;
+    std::vector<std::string> _family_trait_trigger_definition_keys_by_tier;
+    std::vector<int32_t> _family_trait_trigger_reward_targets;
     std::string _family_surname_pack_id = "default_zh";
     std::vector<std::string> _family_surname_ids;
     std::vector<std::string> _family_surname_text;
@@ -2907,6 +2948,10 @@ private:
     int64_t trade_transit_goods() const;
     int64_t trade_escrow_cash() const;
     bool apply_command(const Command &cmd, std::string &error);
+    bool apply_family_free_building_reward(const Command &cmd,
+                                           std::string &error);
+    bool apply_family_population_reward(const Command &cmd,
+                                        std::string &error);
     bool process_market_cell(int32_t market, MarketResult &result, std::string &error);
     bool commit_structural(const StructuralCommand &cmd, std::string &error);
     // Core cohort migration primitive extracted from commit_structural. Moves up
@@ -2928,7 +2973,8 @@ private:
     bool move_cohort_population(int32_t source, int32_t dest_cell,
                                 int32_t dest_signature, int64_t requested_pop,
                                 std::string &error,
-                                bool *source_drained_out = nullptr);
+                                bool *source_drained_out = nullptr,
+                                uint64_t preferred_family_handle = 0);
     bool publish_epoch_slice(int64_t &work_done, std::string &error);
     void reset_publish_state();
     bool compile_building_catalog(const godot::Dictionary &catalog, std::string &error);
@@ -3012,7 +3058,8 @@ private:
                                      bool &had_eligible_sponsor,
                                      int64_t &willing_population,
                                      int64_t &transferable_capital,
-                                     int64_t &income_improvement_q16) const;
+                                     int64_t &income_improvement_q16,
+                                     uint64_t &sponsor_family_handle) const;
     int64_t projected_owner_income_per_day(const BuildingGroup &group,
                                            int64_t &sat) const;
     int64_t projected_employee_tax_retention_q16(
@@ -3138,14 +3185,28 @@ private:
                                              int32_t axis,
                                              int32_t selector_kind,
                                              int32_t selector_id) const;
+    int32_t family_consumption_factor_q16(int32_t cohort_slot,
+                                          int32_t need_id) const;
+    int32_t family_good_consumption_factor_q16(int32_t cohort_slot,
+                                               int32_t good_id) const;
+    int32_t family_variant_preference_factor_q16(int32_t cohort_slot,
+                                                 int32_t variant_id,
+                                                 int64_t &sat) const;
+    uint64_t preferred_family_for_cohort(int32_t cohort_slot,
+                                         int32_t axis,
+                                         int32_t selector_kind,
+                                         int32_t selector_id) const;
     int64_t building_reset_capital_value(const BuildingGroup &group) const;
+    bool family_free_building_resources_legal(int32_t cell, int32_t type_id,
+                                              int64_t count) const;
     void dissolve_family(uint64_t family_handle);
     void move_family_membership(uint64_t source_handle,
                                 uint64_t destination_handle,
                                 int64_t source_population_before,
                                 int64_t moved_population,
                                 int64_t source_funds_before,
-                                int64_t moved_funds);
+                                int64_t moved_funds,
+                                uint64_t preferred_family_handle = 0);
     uint64_t sponsor_family_for_cohort(uint64_t cohort_handle,
                                        int32_t cell) const;
     int32_t building_index_for_handle(uint64_t building_handle) const;

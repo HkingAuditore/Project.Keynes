@@ -569,6 +569,49 @@ func _test_native_pass() -> void:
 		_expect("fertile_soil recovers gradually below its long-run floor",
 			fertile[0] > 1.0 and fertile[0] < minimum_equilibrium)
 
+	if wild_i >= 0:
+		var modifier_profile = profiles[wild_i]
+		var modifier_reserve: PackedFloat32Array = map.get(fields[wild_i])
+		var modifier_extra: PackedFloat32Array = map.get(extra_fields[wild_i])
+		modifier_reserve[0] = 0.0
+		modifier_extra[0] = 100.0
+		var modifier_temp := float(modifier_profile.temp_lo) + \
+			float(modifier_profile.climate_temp_opt) * (
+				float(modifier_profile.temp_hi) - float(modifier_profile.temp_lo))
+		temp[0] = modifier_temp
+		moist[0] = float(modifier_profile.climate_moisture_opt)
+		map.set(fields[wild_i], modifier_reserve)
+		map.set(extra_fields[wild_i], modifier_extra)
+		map.temp_arr = temp
+		map.moisture_arr = moist
+		map.temp_30d_arr = temp.duplicate()
+		map.plant_available_water_arr = moist.duplicate()
+		var modifier_expected: PackedFloat32Array = _reference_step(
+			wild_i, modifier_reserve, modifier_extra, temp, moist, water, habitat, n, 1)
+		var modifier_factors := PackedFloat32Array()
+		modifier_factors.resize(profiles.size() * n)
+		modifier_factors.fill(1.0)
+		modifier_factors[wild_i * n] = 2.0
+		knobs["regen_factors"] = modifier_factors
+		knobs["regen_modifier_snapshot_version"] = 42
+		knobs["dt_days"] = 1
+		ext.refresh_slots_from_map()
+		var modifier_result: Dictionary = ext.run_natural_resource_pass(knobs)
+		modifier_reserve = map.get(fields[wild_i])
+		var reserve_after_external := 100.0
+		var scaled_expected := reserve_after_external + maxf(
+			0.0, modifier_expected[0] - reserve_after_external) * 2.0
+		if absf(modifier_reserve[0] - scaled_expected) >= maxf(
+				0.0001, absf(scaled_expected) * 0.000001):
+			printerr("  [detail] regen modifier native=%s ref=%s raw=%s" % [
+				str(modifier_reserve[0]), str(scaled_expected), str(modifier_expected[0])])
+		_expect("regen factor scales only natural positive growth",
+			absf(modifier_reserve[0] - scaled_expected) < maxf(
+				0.0001, absf(scaled_expected) * 0.000001))
+		_expect("regen factor report publishes frozen snapshot",
+			int(modifier_result.get("regen_modifier_snapshot_version", 0)) == 42 and
+			int(modifier_result.get("active_regen_factor_count", 0)) == 1)
+
 
 func _profile_index(profiles: Array, id_name: String) -> int:
 	for i in range(profiles.size()):

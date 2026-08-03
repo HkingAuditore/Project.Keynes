@@ -5,6 +5,7 @@ script = ExtResource("1")
 id = &"stone_age_hunting_camp"
 display_name = "狩猎营地"
 building_kind = "collector"
+semantic_tags = PackedStringArray("activity.hunting", "industry.food")
 technology_tags = PackedStringArray("tech.hunting")
 upgrade_family_id = &"hunting"
 upgrade_tier = 1

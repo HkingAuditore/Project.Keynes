@@ -93,6 +93,8 @@ static func compile_native_columns() -> Dictionary:
 	var monetary_issue_values := PackedInt64Array()
 	var technology_tag_offsets := PackedInt32Array([0])
 	var technology_tags := PackedStringArray()
+	var semantic_tag_offsets := PackedInt32Array([0])
+	var semantic_tags := PackedStringArray()
 	for p in _ordered:
 		var stable_id := String(p.get("id"))
 		var category_id := String(p.get("category_id"))
@@ -138,6 +140,15 @@ static func compile_native_columns() -> Dictionary:
 				return {"ok": false, "reason": "empty good technology tag: %s" % stable_id}
 			technology_tags.append(String(tag))
 		technology_tag_offsets.append(technology_tags.size())
+		var normalized_semantic_tags := PackedStringArray()
+		for tag in p.get("semantic_tags") as PackedStringArray:
+			var normalized := String(tag).strip_edges()
+			if normalized.is_empty() or normalized_semantic_tags.has(normalized):
+				return {"ok": false, "reason": "invalid good semantic tag: %s" % stable_id}
+			normalized_semantic_tags.append(normalized)
+		normalized_semantic_tags.sort()
+		semantic_tags.append_array(normalized_semantic_tags)
+		semantic_tag_offsets.append(semantic_tags.size())
 		default_prices.append(int(p.get("default_price")))
 		initial_stock.append(int(p.get("initial_stock")))
 		min_prices.append(int(p.get("min_price")))
@@ -184,6 +195,8 @@ static func compile_native_columns() -> Dictionary:
 		"good_monetary_issue_values": monetary_issue_values,
 		"good_technology_tag_offsets": technology_tag_offsets,
 		"good_technology_tags": technology_tags,
+		"good_semantic_tag_offsets": semantic_tag_offsets,
+		"good_semantic_tags": semantic_tags,
 		"good_default_price": default_prices,
 		"good_initial_stock": initial_stock,
 		"good_min_price": min_prices,

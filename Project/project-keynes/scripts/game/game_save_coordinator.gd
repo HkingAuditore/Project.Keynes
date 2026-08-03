@@ -96,6 +96,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 	decoded["pkec"] = bytes_by_id.pkec
 	decoded["pkcm"] = bytes_by_id.pkcm
 	decoded["pkgp"] = bytes_by_id.pkgp
+	decoded["pktr"] = bytes_by_id.pktr
 	decoded["preview"] = bytes_by_id.preview
 	_pending_load = {
 		"slot_id": slot_id,
@@ -271,9 +272,9 @@ func _register_providers() -> void:
 			"_restore_climate_modifier_provider"),
 		_make_provider(&"world_clock", 1, PackedStringArray(["world_clock"]),
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
-		_make_provider(&"pkcn", 2, PackedStringArray(["pkcn"]),
+		_make_provider(&"pkcn", 4, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		_make_provider(&"pkec", 20, PackedStringArray(["pkec"]),
+		_make_provider(&"pkec", 29, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 1, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -283,7 +284,7 @@ func _register_providers() -> void:
 			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
 		_make_provider(&"journal", 1, PackedStringArray(["journal"]),
 			"_can_journal_provider", "_write_journal_provider", "_restore_journal_provider"),
-		_make_provider(&"pktr", 1, PackedStringArray(["pktr"]),
+		_make_provider(&"pktr", 2, PackedStringArray(["pktr"]),
 			"_can_trigger_provider", "_write_trigger_provider",
 			"_restore_trigger_provider"),
 		_make_provider(&"player_session", 1,
@@ -323,18 +324,18 @@ func _manifest_compatible(raw_manifest) -> bool:
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
 		if not by_id.has(provider_id):
-			if provider_id in ["pkcm", "pkgp", "pktr"]:
+			if provider_id in ["pkcm", "pkgp"]:
 				continue
 			return false
 		var entry: Dictionary = by_id[provider_id]
 		var saved_schema := int(entry.get("schema_version", -1))
 		var schema_compatible: bool = saved_schema == provider.schema_version()
 		if provider_id == "pkcn":
-			schema_compatible = saved_schema in [1, 2]
+			schema_compatible = saved_schema in [3, 4]
 		elif provider_id == "pkec":
-			schema_compatible = saved_schema in [18, 19, 20]
+			schema_compatible = saved_schema == 29
 		elif provider_id == "pktr":
-			schema_compatible = saved_schema == 1
+			schema_compatible = saved_schema == 2
 		if not schema_compatible:
 			return false
 		var actual := PackedStringArray(entry.get("sections", []))

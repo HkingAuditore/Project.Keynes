@@ -9,8 +9,8 @@
 
 ## 状态
 
-截至 2026-07-28，原生 catalog、四域 store、命令、调度、气候双路径、国家到经济
-桥、建筑产量、Gameplay identity、PKCN v2、PKEC v20、PKCM v1、PKGP v1、focused
+截至 2026-08-03，原生 catalog、四域 store、命令、调度、气候双路径、国家到经济
+桥、建筑产量、Gameplay identity、家族城市效果、protocol/save schema v2、PKEC v29、focused
 test 已落地。两个隔离 agent forward-test 已完成，并据此补上 Modifier deadline-critical
 边界、Economy parent generation 校验及 Skill 路由。60x40 目标规模的 50 日 after 记录已完成；
 no-Modifier 同机 baseline 尚未取得，因此性能回归门槛仍是未验收项。
@@ -45,6 +45,12 @@ dense ID。运行时查询只使用 dense ID；存档、journal 和 explain 使�
 | `climate.cell.radiative_target` | Climate | `[0, 1]` | climate Pass-A |
 | `country.economy_output_factor` | Country | `[0, 16]` | country epoch snapshot |
 | `economy.building.output_factor` | Economy | `[0, 16]` | building output helper |
+| `economy.city.output_factor` | Economy | `[0, 8]` | settlement epoch output cache |
+| `economy.city.birth_factor` | Economy | `[0, 4]` | household demography |
+| `economy.city.consumption_factor` | Economy | `[0, 4]` | cohort demand helper |
+| `economy.city.need.<id>.consumption_factor` | Economy | `[0, 4]` | selected need demand |
+| `economy.city.good.<id>.consumption_factor` | Economy | `[0, 4]` | selected good/variant demand |
+| `economy.city.resource.<id>.regen_factor` | Economy | `[0, 4]` | frozen native/fallback resource pass |
 | `gameplay.generic.value` | Gameplay | `[-1e9, 1e9]` | NativeGameplayRuntime API |
 
 一个 definition 的 term 必须全在同一 domain。跨域影响只能通过冻结发布值传递；例如
@@ -58,7 +64,11 @@ catalog，Economy 仍由 consumer helper 显式做 Q16 转换。`persistable=fal
 
 `ModifierRuntime` 是 `DCWorldExt` 的内部 peer runtime。四个 domain 共享实现但各有独立
 `Store`。实例列采用 SoA：active、generation、definition、entity/group、source、scope、
-stack、applied/expiry day 和 expiry revision 分列存储。
+stack、`magnitude_q16`、applied/expiry day 和 expiry revision 分列存储。
+
+term 先按 magnitude 从中性值缩放：ADD 使用 `value * magnitude`；MULTIPLY 使用
+`1 + (factor - 1) * magnitude`，随后再应用 stacks。bucket 和 explain 保留 clamp 前值，并按
+source 返回每个家族分支贡献；多个家族没有额外总上限，只有 stat 自身合法区间钳制。
 
 `ModifierHandle` 编码为 `generation << 32 | index`。slot 复用时 generation 增长；stale
 handle、重复移除和失效 identity 只拒绝当前命令。
@@ -85,9 +95,9 @@ Gameplay object 和 Economy building 都使用 generation-safe identity。buildi
 
 ## 命令与冷查询
 
-`ModifierFacade` 只提交 version 1 PackedArray batch：opcode、producer、sequence、day、
+`ModifierFacade` 只提交 version 2 PackedArray batch：opcode、producer、sequence、day、
 definition、domain、scope、entity/group handle、source、duration、stack 和 handle 都是平行
-列。`ModifierDailySystem` 按 effective day、producer、sequence、submit order 稳定排序。
+列，并包含 `magnitude_q16`。`ModifierDailySystem` 按 effective day、producer、sequence、submit order 稳定排序。
 
 Facade API：
 
@@ -95,6 +105,7 @@ Facade API：
 - `queue_remove`
 - `queue_refresh`
 - `queue_set_stacks`
+- `queue_set_magnitude`
 - `get_command_result`
 - `list_for_target`
 - `explain_stat`
@@ -140,6 +151,10 @@ utilization，再乘冻结的 country/building 组合因子。实际生产、工
 工作资本、恢复/清算和投资收益/发行量/缺口估算都复用该 helper。结果进入现有商品结算，
 Modifier 从不直接写 market stock、country treasury 或 cohort funds。
 
+家族以 settlement cell 作为 Economy group。城市总产出、建筑 selector 效率、出生率、need/good
+消费量和资源再生率在 epoch/snapshot 边界冻结为连续 Q16 POD；资源原生 pass 与 GDScript fallback
+读取同一冻结因子，不在逐资源热循环查询 ModifierStore。
+
 ### Gameplay
 
 `NativeGameplayRuntime` 当前由 `ModifierRuntime` 的 gameplay identity/base SoA 实现，通过
@@ -165,7 +180,7 @@ active/peak/bucket/query/bucket read/rebuild/snapshot version、事件计数和�
 | section/schema | 内容 |
 | --- | --- |
 | PKCN v4 | Country authority, tax policy + Country Modifier domain blob |
-| PKEC v23 | Economy authority, fiscal history + BuildingIdentityStore + Economy Modifier section |
+| PKEC v29 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section |
 | PKCM v1 | Climate Modifier domain |
 | PKGP v1 | Gameplay identity/base SoA + Gameplay Modifier domain |
 
@@ -173,12 +188,10 @@ active/peak/bucket/query/bucket read/rebuild/snapshot version、事件计数和�
 term payload。恢复会校验 catalog hash、definition version、term payload、handle 和 identity；
 不兼容时失败，不重放 apply event。
 
-当前恢复默认采用严格 catalog hash。唯一例外是 PKCN v3/PKEC v22 到税务 schema 的显式迁移：
-允许 catalog 追加由 economy stable IDs 生成的 `country.tax.*.rate_pct` stats，但仍逐项验证旧
-stat key、definition version 与 term payload。其他 append-only 差异继续拒绝。
-
-PKCN v1、PKEC v18/v19 以及缺少 PKCM/PKGP 的旧 PKSV 迁移为空 store。focused runtime 未配置
-Modifier 时，PKCN/PKEC 写入显式空 domain marker。生产恢复顺序是 dynamic world、
+当前恢复采用严格 catalog hash、definition version 和 term payload 校验。
+PKEC reader 只接受 v29，v28 及更早版本不再通过税务或空 store 迁移；append-only
+catalog 差异也继续拒绝。focused runtime 未配置 Modifier 时，PKCN/PKEC 写入显式空
+domain marker。生产恢复顺序是 dynamic world、
 environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/player；PKCN 后先
 准备 Economy topology。
 
@@ -186,8 +199,8 @@ environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/
 
 `tests/modifier_runtime_test.gd` 覆盖 apply/remove/expiry、stack refresh、global/group/entity、
 UNIQUE_SOURCE、stale handle、零 factor、Gameplay base/effective、journal v2、report 诊断和四域 round-trip。
-`country_runtime_test.gd` 验证 PKCN v4；`goods_storage_schema_test.gd` 与
-`building_runtime_test.gd` 的 PKEC v23 save/restore 断言通过。
+`country_runtime_test.gd` 验证 PKCN v4；`family_runtime_test.gd` 与
+`building_runtime_test.gd` 验证 PKEC v29 save/restore 与状态哈希。
 正式 `PK_GAME_SAVE_ROUNDTRIP_TEST=1` 也已通过新建世界、PKSV 保存/恢复、authority hash
 对齐和恢复后首个经济周期。两套大型 economy suite 的 v20 存档断言虽通过，但各仍有 4 个
 既有 catalog/平衡断言失败，整体退出码为 1，不能把它们列为全绿门禁。

@@ -15,7 +15,7 @@ func _run() -> void:
 	if not ext.has_method("configure_triggers"):
 		print("[trigger-runtime] SKIP: Trigger API unavailable"); quit(0); return
 	var catalog := {
-		"protocol_version": 1, "source_count": 4, "event_type_span": 32,
+		"protocol_version": 2, "source_count": 4, "event_type_span": 32,
 		"max_state_instances": 64, "max_pending_events": 64, "distinct_capacity": 8,
 		"trigger_keys": PackedStringArray(["test.count"]), "versions": PackedInt32Array([1]),
 		"source_ids": PackedInt32Array([1]), "event_types": PackedInt32Array([7]),
@@ -25,6 +25,10 @@ func _run() -> void:
 		"static_targets": PackedInt64Array([0]), "thresholds": PackedInt64Array([2]),
 		"modes": PackedInt32Array([1]), "cooldown_days": PackedInt32Array([0]),
 		"window_days": PackedInt32Array([0]), "enabled": PackedByteArray([1]),
+		"dynamic_bindings": PackedByteArray([0]),
+		"selector_fields": PackedInt32Array([-1]),
+		"selector_values": PackedInt64Array([0]),
+		"selector_negated": PackedByteArray([0]),
 		"condition_offsets": PackedInt32Array([0, 1]), "condition_ops": PackedInt32Array([2]),
 		"effect_offsets": PackedInt32Array([0, 1]), "effect_actions": PackedInt32Array([13]),
 		"effect_domains": PackedInt32Array([3]), "effect_source_priorities": PackedInt32Array([0]),

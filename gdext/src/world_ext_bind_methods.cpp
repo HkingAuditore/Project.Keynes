@@ -189,6 +189,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::ack_trigger_effects);
     ClassDB::bind_method(D_METHOD("set_trigger_enabled", "batch"),
                          &DCWorldExt::set_trigger_enabled);
+    ClassDB::bind_method(D_METHOD("reconcile_trigger_branch_bindings", "batch"),
+                         &DCWorldExt::reconcile_trigger_branch_bindings);
+    ClassDB::bind_method(D_METHOD("get_trigger_branch_progress", "branch_handle"),
+                         &DCWorldExt::get_trigger_branch_progress);
     ClassDB::bind_method(D_METHOD("resync_trigger_source", "snapshot"),
                          &DCWorldExt::resync_trigger_source);
     ClassDB::bind_method(D_METHOD("get_trigger_report"),
@@ -451,6 +455,9 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_natural_resource_pass", "knobs"),
         &DCWorldExt::run_natural_resource_pass);
+    ClassDB::bind_method(
+        D_METHOD("get_natural_resource_regen_factors", "resource_ids", "n_cells"),
+        &DCWorldExt::get_natural_resource_regen_factors);
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）─────────────────
     ClassDB::bind_method(
         D_METHOD("run_albedo_pass", "knobs"),

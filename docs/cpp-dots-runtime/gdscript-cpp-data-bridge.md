@@ -2,7 +2,7 @@
 
 ## Modifier PackedArray bridge
 
-`ModifierFacade` 通过 protocol v1 平行 PackedArray 提交 apply/remove/refresh/set-stacks；
+`ModifierFacade` 通过 protocol v2 平行 PackedArray 提交 apply/remove/refresh/set-stacks/set-magnitude；
 `DCWorldExt` 在 C++ 中稳定排序后写四域 store。GDScript 不持有 bucket 或实例镜像，也不能直接
 修改 native store。command result、list、explain、journal 和 report 是冷查询；气候 fallback
 只能调用 `evaluate_modifier_stat`，生产 hot loop 使用 native helper/冻结 POD。PKCM/PKGP 直接
@@ -13,7 +13,7 @@
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v2, PKEC v22, PKCM v1, PKGP v1, and `PKEnvironmentRuntime v1`. Environment export includes the
+PKCN v4, PKEC v29, PKCM v1, PKGP v1, and `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
 and dimensions before swapping any arrays. See
@@ -793,8 +793,17 @@ rendering binds through `get_named_settlement_snapshot()` and then consumes
 eight revisions and `2 * cell_count` entries; an expired cursor returns
 `full_snapshot=true`.
 
-Trigger catalogs cross the bridge once as packed columns. GDScript owns resource
-configuration and domain adapters; C++ owns dense trigger state and PKTR bytes.
+Trigger catalogs cross the bridge once as protocol v2 packed columns. GDScript owns resource
+configuration and domain adapters; C++ owns dense trigger state, dynamic family branch bindings and
+PKTR v2 bytes. Gameplay facts carry both legacy `entity_id` and generation-safe 64-bit
+`entity_handle`; economy publishes construction/trade facts once and TriggerRuntime fans them out by
+`(event_type, cell)`.
+
+Family trait selectors cross only during configuration. GDScript expands stable ID/sector/category/
+substitution/tag selectors to exact dense CSR edges; C++ owns trait rolls, family-cell influence,
+pending mutations and all Modifier/Trigger reconciliation. Inspector facade calls are bounded,
+read-only selected-family queries. Selector CSR, reverse indexes and frozen city/resource Q16 factors
+are derived bridge/runtime caches rebuilt after restore, never PKEC or state-hash authority.
 
 ## Visual tile byte bridge
 

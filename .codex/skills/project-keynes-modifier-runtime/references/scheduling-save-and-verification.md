@@ -19,19 +19,20 @@ Do not mutate a store from a worker or domain pass. SHADOW compares output only.
 ## Save Order
 
 - PKCM v1: Climate store.
-- PKCN v2: Country state plus Country store.
-- PKEC v20: Economy state, BuildingIdentityStore, Economy store.
+- PKCN v4: Country state plus Country store.
+- PKEC v29: Economy state, family-cell effects, BuildingIdentityStore, Economy store.
 - PKGP v1: Gameplay identities/base plus Gameplay store.
 
 Restore dynamic world -> environment -> PKCM -> clock -> PKCN -> prepare economy -> PKEC ->
-PKGP -> vision/journal/player. PKCN v1, PKEC v18/v19, and missing PKCM/PKGP migrate to empty
-stores. Unknown keys, invalid numeric data, bad handles, and incompatible normalized terms fail.
-The current domain restore also requires an exact catalog hash; append-only compatibility needs an
-explicit migration path. `persistable=false` is not yet enforced by native serialization.
+PKGP -> vision/journal/player. PKEC v28 and earlier are rejected. Unknown keys, invalid numeric data,
+bad handles, invalid magnitude, and incompatible normalized terms fail. The current domain restore
+also requires an exact catalog hash; append-only compatibility needs an explicit migration path.
+`persistable=false` is not yet enforced by native serialization.
 
 ## Tests
 
-Cover math, zero factor, non-finite rejection, stack power, expiry boundary, stale heap node,
+Cover math, magnitude add/factor interpolation, zero factor, non-finite rejection, stack power,
+`SET_MAGNITUDE`, expiry boundary, stale heap node,
 generation reuse, exact removal, target cleanup, global/group/entity, deterministic producer
 ordering, explain recomputation, journal events, domain isolation, climate insertion, economy
 actual/forecast parity, Gameplay base/effective separation, and all four save round-trips.

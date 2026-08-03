@@ -17,6 +17,8 @@ constexpr int PK_EVENT_TERRAIN_FLIP = 2;
 constexpr int PK_EVENT_WEATHER_FRONT_CHANGED = 3;
 constexpr int PK_EVENT_VISUAL_DIRTY_INTENT = 4;
 constexpr int PK_EVENT_ECONOMY_EPOCH_COMMITTED = 5;
+constexpr int PK_EVENT_ECONOMY_CONSTRUCTION_COMPLETED = 6;
+constexpr int PK_EVENT_ECONOMY_TRADE_ARRIVED = 7;
 
 constexpr int PK_EVENT_SOURCE_NATIVE = 1;
 constexpr int PK_EVENT_SOURCE_GDSCRIPT = 2;
@@ -25,6 +27,8 @@ constexpr int PK_EVENT_SOURCE_DEBUG = 3;
 constexpr int PK_PAYLOAD_NONE = 0;
 constexpr int PK_PAYLOAD_SUCCESSION_V1 = 1; // i0=old_veg, i1=new_veg
 constexpr int PK_PAYLOAD_ECONOMY_EPOCH_V1 = 2; // i0=epoch, i1=newest id, i2=count
+constexpr int PK_PAYLOAD_ECONOMY_CONSTRUCTION_V1 = 3; // i0=type hash, i1=type id, i2=owner signature, i3=sponsor family index
+constexpr int PK_PAYLOAD_ECONOMY_TRADE_V1 = 4; // i0=source, i1=destination, i2=good, i3=inter-country
 
 static int64_t event_i64_at(const PackedInt64Array &arr, int idx, int64_t fallback) {
     return (idx >= 0 && idx < arr.size()) ? arr[idx] : fallback;
@@ -63,9 +67,11 @@ int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
                                          int32_t type,
                                          int32_t source,
                                          int32_t flags,
+                                         uint64_t entity_handle,
                                          int32_t entity_id,
                                          int32_t cell_idx,
                                          int32_t payload_schema,
+                                         int64_t value_i64,
                                          int32_t payload_i0,
                                          int32_t payload_i1,
                                          int32_t payload_i2,
@@ -84,9 +90,11 @@ int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
     ev.type = type;
     ev.source = source;
     ev.flags = flags;
+    ev.entity_handle = entity_handle;
     ev.entity_id = entity_id;
     ev.cell_idx = cell_idx;
     ev.payload_schema = payload_schema;
+    ev.value_i64 = value_i64;
     ev.payload_i0 = payload_i0;
     ev.payload_i1 = payload_i1;
     ev.payload_i2 = payload_i2;
@@ -121,9 +129,11 @@ void DCWorldExt::_emit_succession_events(const PackedInt32Array &indices,
                              PK_EVENT_VEGETATION_SUCCESSION,
                              source,
                              0,
+                             0,
                              cell_idx,
                              cell_idx,
                              PK_PAYLOAD_SUCCESSION_V1,
+                             1,
                              old_id,
                              new_id,
                              0,
@@ -133,7 +143,7 @@ void DCWorldExt::_emit_succession_events(const PackedInt32Array &indices,
 
 Dictionary DCWorldExt::get_gameplay_event_schema() const {
     Dictionary schema;
-    schema["version"] = 1;
+    schema["version"] = 2;
     schema["format"] = String("columnar_packed_arrays");
 
     Dictionary types;
@@ -142,6 +152,8 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     types["WEATHER_FRONT_CHANGED"] = PK_EVENT_WEATHER_FRONT_CHANGED;
     types["VISUAL_DIRTY_INTENT"] = PK_EVENT_VISUAL_DIRTY_INTENT;
     types["ECONOMY_EPOCH_COMMITTED"] = PK_EVENT_ECONOMY_EPOCH_COMMITTED;
+    types["ECONOMY_CONSTRUCTION_COMPLETED"] = PK_EVENT_ECONOMY_CONSTRUCTION_COMPLETED;
+    types["ECONOMY_TRADE_ARRIVED"] = PK_EVENT_ECONOMY_TRADE_ARRIVED;
     schema["types"] = types;
 
     Dictionary sources;
@@ -154,10 +166,13 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     payloads["NONE"] = PK_PAYLOAD_NONE;
     payloads["SUCCESSION_V1"] = PK_PAYLOAD_SUCCESSION_V1;
     payloads["ECONOMY_EPOCH_V1"] = PK_PAYLOAD_ECONOMY_EPOCH_V1;
+    payloads["ECONOMY_CONSTRUCTION_V1"] = PK_PAYLOAD_ECONOMY_CONSTRUCTION_V1;
+    payloads["ECONOMY_TRADE_V1"] = PK_PAYLOAD_ECONOMY_TRADE_V1;
     schema["payload_schemas"] = payloads;
     schema["fields"] = Array::make(
-        "event_id", "tick", "phase", "type", "source", "flags", "entity_id",
-        "cell_idx", "payload_schema", "payload_i0", "payload_i1", "payload_i2", "payload_i3");
+        "event_id", "tick", "phase", "type", "source", "flags", "entity_handle",
+        "entity_id", "cell_idx", "payload_schema", "value_i64", "payload_i0",
+        "payload_i1", "payload_i2", "payload_i3");
     return schema;
 }
 
@@ -174,9 +189,11 @@ Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
     PackedInt32Array type_arr = dictionary_i32_array(batch, "type");
     PackedInt32Array source_arr = dictionary_i32_array(batch, "source");
     PackedInt32Array flags_arr = dictionary_i32_array(batch, "flags");
+    PackedInt64Array entity_handle_arr = dictionary_i64_array(batch, "entity_handle");
     PackedInt32Array entity_arr = dictionary_i32_array(batch, "entity_id");
     PackedInt32Array cell_arr = dictionary_i32_array(batch, "cell_idx");
     PackedInt32Array schema_arr = dictionary_i32_array(batch, "payload_schema");
+    PackedInt64Array value_arr = dictionary_i64_array(batch, "value_i64");
     PackedInt32Array p0_arr = dictionary_i32_array(batch, "payload_i0");
     PackedInt32Array p1_arr = dictionary_i32_array(batch, "payload_i1");
     PackedInt32Array p2_arr = dictionary_i32_array(batch, "payload_i2");
@@ -210,15 +227,19 @@ Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
         }
         const int cell_idx = event_i32_at(cell_arr, i, -1);
         const int entity_id = event_i32_at(entity_arr, i, cell_idx);
+        const uint64_t entity_handle = static_cast<uint64_t>(event_i64_at(
+            entity_handle_arr, i, entity_id >= 0 ? int64_t(entity_id) : int64_t{0}));
         const int64_t id = _emit_gameplay_event(
             event_i64_at(tick_arr, i, tick_scalar),
             event_i32_at(phase_arr, i, phase_scalar),
             event_type,
             event_i32_at(source_arr, i, source_scalar),
             event_i32_at(flags_arr, i, flags_scalar),
+            entity_handle,
             entity_id,
             cell_idx,
             event_i32_at(schema_arr, i, schema_scalar),
+            event_i64_at(value_arr, i, 1),
             event_i32_at(p0_arr, i, 0),
             event_i32_at(p1_arr, i, 0),
             event_i32_at(p2_arr, i, 0),
@@ -251,9 +272,11 @@ void DCWorldExt::_append_gameplay_event_to_arrays(const GameplayEventRecord &ev,
                                                   PackedInt32Array &type,
                                                   PackedInt32Array &source,
                                                   PackedInt32Array &flags,
+                                                  PackedInt64Array &entity_handle,
                                                   PackedInt32Array &entity,
                                                   PackedInt32Array &cell,
                                                   PackedInt32Array &schema,
+                                                  PackedInt64Array &value,
                                                   PackedInt32Array &p0,
                                                   PackedInt32Array &p1,
                                                   PackedInt32Array &p2,
@@ -264,9 +287,11 @@ void DCWorldExt::_append_gameplay_event_to_arrays(const GameplayEventRecord &ev,
     type.append(ev.type);
     source.append(ev.source);
     flags.append(ev.flags);
+    entity_handle.append(static_cast<int64_t>(ev.entity_handle));
     entity.append(ev.entity_id);
     cell.append(ev.cell_idx);
     schema.append(ev.payload_schema);
+    value.append(ev.value_i64);
     p0.append(ev.payload_i0);
     p1.append(ev.payload_i1);
     p2.append(ev.payload_i2);
@@ -288,9 +313,11 @@ Dictionary DCWorldExt::poll_gameplay_events(Dictionary opts) {
     PackedInt32Array type;
     PackedInt32Array source;
     PackedInt32Array flags;
+    PackedInt64Array entity_handle;
     PackedInt32Array entity;
     PackedInt32Array cell;
     PackedInt32Array schema;
+    PackedInt64Array value;
     PackedInt32Array p0;
     PackedInt32Array p1;
     PackedInt32Array p2;
@@ -304,7 +331,8 @@ Dictionary DCWorldExt::poll_gameplay_events(Dictionary opts) {
         if (type_filter > 0 && ev.type != type_filter) {
             continue;
         }
-        _append_gameplay_event_to_arrays(ev, ids, ticks, phase, type, source, flags, entity, cell, schema, p0, p1, p2, p3);
+        _append_gameplay_event_to_arrays(ev, ids, ticks, phase, type, source, flags,
+            entity_handle, entity, cell, schema, value, p0, p1, p2, p3);
         last_id = ev.event_id;
         if (max_events > 0 && ids.size() >= max_events) {
             break;
@@ -321,9 +349,11 @@ Dictionary DCWorldExt::poll_gameplay_events(Dictionary opts) {
     out["type"] = type;
     out["source"] = source;
     out["flags"] = flags;
+    out["entity_handle"] = entity_handle;
     out["entity_id"] = entity;
     out["cell_idx"] = cell;
     out["payload_schema"] = schema;
+    out["value_i64"] = value;
     out["payload_i0"] = p0;
     out["payload_i1"] = p1;
     out["payload_i2"] = p2;
@@ -363,9 +393,11 @@ Dictionary DCWorldExt::replay_gameplay_events(Dictionary opts) const {
     PackedInt32Array type;
     PackedInt32Array source;
     PackedInt32Array flags;
+    PackedInt64Array entity_handle;
     PackedInt32Array entity;
     PackedInt32Array cell;
     PackedInt32Array schema;
+    PackedInt64Array value;
     PackedInt32Array p0;
     PackedInt32Array p1;
     PackedInt32Array p2;
@@ -377,7 +409,8 @@ Dictionary DCWorldExt::replay_gameplay_events(Dictionary opts) const {
         if (type_filter > 0 && ev.type != type_filter) {
             continue;
         }
-        _append_gameplay_event_to_arrays(ev, ids, ticks, phase, type, source, flags, entity, cell, schema, p0, p1, p2, p3);
+        _append_gameplay_event_to_arrays(ev, ids, ticks, phase, type, source, flags,
+            entity_handle, entity, cell, schema, value, p0, p1, p2, p3);
         if (max_events > 0 && ids.size() >= max_events) {
             break;
         }
@@ -389,9 +422,11 @@ Dictionary DCWorldExt::replay_gameplay_events(Dictionary opts) const {
     out["type"] = type;
     out["source"] = source;
     out["flags"] = flags;
+    out["entity_handle"] = entity_handle;
     out["entity_id"] = entity;
     out["cell_idx"] = cell;
     out["payload_schema"] = schema;
+    out["value_i64"] = value;
     out["payload_i0"] = p0;
     out["payload_i1"] = p1;
     out["payload_i2"] = p2;
@@ -404,7 +439,7 @@ Dictionary DCWorldExt::replay_gameplay_events(Dictionary opts) const {
 Dictionary DCWorldExt::snapshot_gameplay_event_journal(Dictionary opts) const {
     Dictionary replay_opts = opts;
     Dictionary out = replay_gameplay_events(replay_opts);
-    out["version"] = 1;
+    out["version"] = 2;
     out["next_event_id"] = _gameplay_next_event_id;
     out["dropped_event_count"] = _gameplay_dropped_event_count;
     out["first_dropped_event_id"] = _gameplay_first_dropped_event_id;
@@ -426,9 +461,11 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
     PackedInt32Array type = dictionary_i32_array(snapshot, "type");
     PackedInt32Array source = dictionary_i32_array(snapshot, "source");
     PackedInt32Array flags = dictionary_i32_array(snapshot, "flags");
+    PackedInt64Array entity_handle = dictionary_i64_array(snapshot, "entity_handle");
     PackedInt32Array entity = dictionary_i32_array(snapshot, "entity_id");
     PackedInt32Array cell = dictionary_i32_array(snapshot, "cell_idx");
     PackedInt32Array schema = dictionary_i32_array(snapshot, "payload_schema");
+    PackedInt64Array value = dictionary_i64_array(snapshot, "value_i64");
     PackedInt32Array p0 = dictionary_i32_array(snapshot, "payload_i0");
     PackedInt32Array p1 = dictionary_i32_array(snapshot, "payload_i1");
     PackedInt32Array p2 = dictionary_i32_array(snapshot, "payload_i2");
@@ -444,8 +481,11 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
         ev.source = event_i32_at(source, i, 0);
         ev.flags = event_i32_at(flags, i, 0);
         ev.entity_id = event_i32_at(entity, i, -1);
+        ev.entity_handle = static_cast<uint64_t>(event_i64_at(
+            entity_handle, i, ev.entity_id >= 0 ? int64_t(ev.entity_id) : int64_t{0}));
         ev.cell_idx = event_i32_at(cell, i, ev.entity_id);
         ev.payload_schema = event_i32_at(schema, i, 0);
+        ev.value_i64 = event_i64_at(value, i, 1);
         ev.payload_i0 = event_i32_at(p0, i, 0);
         ev.payload_i1 = event_i32_at(p1, i, 0);
         ev.payload_i2 = event_i32_at(p2, i, 0);

@@ -4,6 +4,7 @@
 #include "economy_csv_recorder.h"
 #include "country_runtime.h"
 #include "modifier_runtime.h"
+#include "trigger_runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -62,6 +63,8 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
         static_cast<NativeCountryRuntime *>(_country_runtime));
     runtime_from(_economy_runtime)->attach_modifier_runtime(
         static_cast<ModifierRuntime *>(_modifier_runtime));
+    runtime_from(_economy_runtime)->attach_trigger_runtime(
+        static_cast<TriggerRuntime *>(_trigger_runtime));
     _economy_last_notified_event_id = 0;
     return runtime_from(_economy_runtime)->configure(catalog, profile, cell_count, seed);
 }
@@ -310,6 +313,34 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
     }
     const int64_t newest_event_id = static_cast<int64_t>(
         result.get("economy_event_newest_id", int64_t{0}));
+    std::vector<NativeEconomyRuntime::CommittedGameplayFact> gameplay_facts;
+    if (runtime->drain_committed_gameplay_facts(gameplay_facts)) {
+        int32_t published_facts = 0;
+        for (NativeEconomyRuntime::CommittedGameplayFact &fact : gameplay_facts) {
+            int32_t event_type = 0;
+            int32_t payload_schema = 0;
+            if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_CONSTRUCTION_COMPLETED) {
+                event_type = 6;
+                payload_schema = 3;
+                if (_modifier_runtime != nullptr) {
+                    fact.entity_handle = static_cast<ModifierRuntime *>(
+                        _modifier_runtime)->ensure_building_identity(
+                            fact.cell, fact.payload[1], fact.payload[2]);
+                }
+            } else if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_TRADE_ARRIVED) {
+                event_type = 7;
+                payload_schema = 4;
+            }
+            if (event_type == 0) continue;
+            if (_emit_gameplay_event(day_index, 9, event_type, 1, fact.flags,
+                    fact.entity_handle, fact.entity_id, fact.cell, payload_schema,
+                    fact.value, fact.payload[0], fact.payload[1], fact.payload[2],
+                    fact.payload[3]) > 0) {
+                ++published_facts;
+            }
+        }
+        result["economy_gameplay_facts_published"] = published_facts;
+    }
     if (static_cast<bool>(result.get("done", false)) &&
         newest_event_id > _economy_last_notified_event_id) {
         const int32_t epoch = static_cast<int32_t>(std::clamp<int64_t>(
@@ -320,8 +351,8 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         const int32_t count = static_cast<int32_t>(std::clamp<int64_t>(
             static_cast<int64_t>(result.get("economy_event_last_batch_count", int64_t{0})),
             0, std::numeric_limits<int32_t>::max()));
-        _emit_gameplay_event(day_index, 9, 5, 1, 0, -1, -1, 2,
-                             epoch, newest, count, 0);
+        _emit_gameplay_event(day_index, 9, 5, 1, 0, 0, -1, -1, 2,
+                             count, epoch, newest, count, 0);
         _economy_last_notified_event_id = newest_event_id;
         result["economy_event_batch_published"] = true;
     }

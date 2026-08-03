@@ -1,6 +1,6 @@
 ---
 name: project-keynes-family-runtime
-description: Guide Project.Keynes notable-family and important-person runtime development and review, covering FamilyStore/NotablePersonStore, membership and building-ownership edges, surname/given-name catalogs, family and person lifecycle/migration, exact owner/employee job attribution, conserved wealth and realized consumption attribution, read-only queries/UI, FAMILY_COMMIT/PERSON_COMMIT scheduling, PKEC v27, deterministic handles/hash, and sparse performance. Use when changing family or important-person data/behavior, family-owned buildings, person jobs/profession/needs/wealth, family economy policy/names, Inspector/facade APIs, save/restore/migration/tests, or diagnosing family/person conservation, determinism, and performance.
+description: Guide Project.Keynes notable-family runtime development and review, covering deterministic family traits, behavior preferences, per-cell prestige/influence, Modifier and Trigger effects, FamilyStore/NotablePersonStore, sparse membership/building ownership, conserved wealth and attribution, FAMILY_COMMIT/PERSON_COMMIT, PKEC v29, deterministic handles/hash, queries/UI, and sparse performance. Use when changing family traits/effects/prestige, family or important-person behavior, family-owned buildings, jobs/needs/wealth, Inspector/facade APIs, save/restore/tests, or family determinism and performance.
 ---
 
 # Project.Keynes Notable-Family Runtime
@@ -16,12 +16,13 @@ Read the current source before editing:
 
 - Read `docs/cpp-dots-runtime/notable-family-runtime.md` completely for the authoritative model.
 - Read `docs/cpp-dots-runtime/notable-person-runtime.md` completely when important people, names,
-  jobs, wealth, demand, lifecycle, queries, or PKEC v27 are in scope.
-- Read `gdext/src/economy_runtime.{h,cpp}` for `FamilyStore`, relationship edges, employment,
-  lifecycle, queries, hashing, and PKEC.
+  jobs, wealth, demand, lifecycle, queries, or PKEC v29 are in scope.
+- Read `gdext/src/economy_runtime.{h,cpp}` for `FamilyStore`, trait rolls, cell influence,
+  relationship edges, employment, lifecycle, queries, hashing, and PKEC.
 - Read `gdext/src/world_ext_economy.cpp`, `world_ext.h`, and `world_ext_bind_methods.cpp` for the
   public bridge.
 - Read `Project/project-keynes/scripts/economy/economy_catalog.gd`, `economy_facade.gd`,
+  `scripts/family/family_trait_catalog.gd`, trait definition/effect resources,
   `scripts/data/economy_profile.gd`, `family_surname_pack_profile.gd`,
   `person_given_name_pack_profile.gd`, and both default name packs for catalog, policy, and display
   boundaries.
@@ -35,9 +36,9 @@ contract from roadmap text or a previous chat.
 
 ## Preserve authority and identity
 
-- Keep `NativeEconomyRuntime` as the sole mutable owner of families, important people, membership,
-  and building ownership. Keep GDScript limited to catalog compilation, policy packing, read-only
-  queries, UI, and save orchestration.
+- Keep `NativeEconomyRuntime` as the sole mutable owner of families, trait rolls, cell influence,
+  important people, membership, and building ownership. Keep GDScript limited to catalog/selector
+  compilation, command packing, read-only queries, UI, and save orchestration.
 - Model only notable families. Keep the anonymous majority implicit in `PopulationCohort`.
 - Use generation-safe runtime handles and stable family IDs. Reuse the lowest free index and
   increment generation; never let an old handle resolve to a new family.
@@ -51,6 +52,8 @@ contract from roadmap text or a previous chat.
 ## Preserve the sparse data model
 
 - Store family scalars in `FamilyStore` SoA.
+- Store immutable core and mutable additional traits as sparse `FamilyTraitRoll` rows. Store local
+  prestige and binding state as generation-safe sparse `FamilyCellInfluence` rows.
 - Store important-person scalars in `NotablePersonStore` SoA. A person must reference a valid family,
   cohort, and membership; never duplicate the represented population unit.
 - Represent membership as sparse `FamilyMembershipEdge` rows and industry as sparse
@@ -58,12 +61,16 @@ contract from roadmap text or a previous chat.
 - Rebuild family→cohort, cohort→membership, family→building, building→ownership, and cell→family CSR
   deterministically at structural commit/restore boundaries. Keep CSR transient and out of PKEC and
   state hash.
+- Compile stable-ID/category/sector/substitution/tag selectors to dense IDs and CSR/bitsets at catalog
+  bootstrap. Rebuild reverse `(event_type, cell)` Trigger indexes and frozen consumption/resource
+  factor caches after restore; never persist these derived caches.
 - Rebuild family/cohort/cell/building→person and person→need CSR at person commit/restore. Keep these
   caches transient too.
 - Keep building aggregation keyed by `(cell, building_type, owner_signature)`. Attach family
   `owned_count` to the stable building handle; never add family ID to the building-group key.
 - Keep hot loops free of Godot objects, Dictionaries, strings, allocations, and all-family scans.
-  Iterate active building cells and their local sparse ownership/membership edges.
+  Iterate the current cell's sparse family edges, active trait edges, selector hits, and event bindings;
+  never scan `cell × family catalog` or `building × family`.
 
 ## Preserve people, wealth, and employment semantics
 
@@ -116,6 +123,30 @@ population families immediately and apply configured consecutive decline reviews
 Keep genealogy, marriage, inheritance shares, family mergers, foreign remittance, and politics out of
 scope unless their authority and save contracts are designed first.
 
+## Preserve traits, prestige, and effects
+
+- Roll 2–4 core traits without replacement from `world_seed + family_stable_id + catalog_version`.
+  Validate weights, prerequisites, exclusions, and stepped Q16 strength. Core traits are immutable;
+  grant/remove/set-strength for additional traits only through safely ordered commands.
+- Behavior preference is intrinsic and does not scale with prestige. It may reweight legal building,
+  profession, need, or good candidates, but must never bypass technology, capital, materials, resource,
+  job, profitability, or conservation gates.
+- A `(family, settlement cell)` branch exists only while local membership, attributed cash, or building
+  ownership exists. Prestige score is `25% population share + 35% cash share + 40% building-asset share`;
+  missing denominators contribute zero and are not renormalized.
+- Revalue buildings with the same local replacement-capital basis as investment: frozen material prices
+  plus standard operating reserve; include suspended buildings and exclude unfinished construction.
+- Review every 30 days, staggered by stable branch ID. Promotion thresholds are 2/5/10/20/40 percent;
+  demotion thresholds are 80 percent of each promotion threshold. Require two consecutive reviews in
+  one direction, then jump directly to the computed target level.
+- Coordinate branch Modifier/Trigger bindings only when traits, prestige, or branch existence changes.
+  Multiple families stack without a family cap; stat bounds remain authoritative. Disable/remove clears
+  Trigger accumulation immediately, and reward-origin facts must not recursively count.
+- Investment persists sponsor family and uses local attributed capital. Family population rewards add
+  local membership; city rewards add the selected/default anonymous cohort. Both use explicit
+  population-source ledger events. Free construction skips cash/material withdrawal but retains normal
+  time, technology, cell, and resource legality.
+
 ## Keep scheduling and queries bounded
 
 - Keep `FAMILY_COMMIT` after `BUILDING_COMMIT` and before `AGGREGATE_PUBLISH`.
@@ -128,8 +159,11 @@ scope unless their authority and save contracts are designed first.
   constant-time skip.
 - Bound the overlay with max-per-family, max-per-cell, max-total, and plan need-count caps. Complexity
   must scale with sparse people/local buildings/need edges, not total population.
-- Keep `get_family_cell_snapshot`, `get_family_snapshot`, `get_family_branches`, and
-  `get_family_industries` read-only, paginated, and safe only between native slices.
+- Keep `get_family_cell_snapshot`, `get_family_snapshot`, `get_family_traits`,
+  `get_family_branches`, `get_family_branch_effects`, and `get_family_industries` read-only,
+  paginated where applicable, and safe only between native slices.
+- Route additional-trait mutations through `queue_family_trait_mutation`; order by effective day,
+  priority, sequence, and submission order at the normal safe boundary.
 - Keep family-person, person snapshot, person needs, and building-person reverse queries read-only and
   paginated. Attach display names and stable catalog IDs in `EconomyFacade`.
 - Add display IDs/text in `EconomyFacade`; never copy a global family/cohort/building matrix into
@@ -137,17 +171,19 @@ scope unless their authority and save contracts are designed first.
 
 ## Evolve PKEC deliberately
 
-Current PKEC v27 uses sections 15–17 for family records, memberships, and ownership, sections 18–19
-for important-person records and need attribution, and section 20 as END. Persist inactive tombstone
-generations, semantic family/person policy, both name catalog hashes, person job/wealth/welfare state,
-and construction sponsor handles. Do not persist continuation budgets, CSR caches, worker results, or
-other reconstructed scratch.
+Current writer/reader is PKEC v29. Sections 15–17 store family records, memberships, and ownership;
+18–19 store important people and need attribution; 20 stores trait rolls; 21 stores family-cell
+influence; 22 stores ordered future trait mutations; 23 is END. Persist tombstone generations,
+semantic family/person/trait catalog identity, person state, construction sponsor handles, prestige
+review state, and stable branch IDs. PKTR v2 persists dynamic branch Trigger accumulation and Modifier
+schema v2 persists magnitude. Do not persist continuation budgets, selector/CSR/reverse indexes,
+frozen factor caches, worker results, or other reconstructed scratch.
 
 On restore, validate handles, unique stable identities/names, nonnegative rows, membership/person
 claim subset constraints, owned count against building count, exact person building/role references,
 sorted unique person needs, sponsor handles, and exact section completion before bootstrapping. Rebuild
-CSR only after validation. Preserve v26 as `v26_empty_notable_person_bootstrap` and v25 as
-`v25_empty_family_bootstrap`.
+CSR and derived bindings only after validation. PKEC v28 and earlier are explicitly incompatible;
+there is no empty-family/person migration path in the v29 reader.
 
 Include every authoritative family/person scalar and stable edge in state hash. Exclude display text,
 pagination, reports, CSR offsets, and other reconstructed caches. Test cold-bootstrap and committed
@@ -159,7 +195,7 @@ equivalent.
 From the repository root, run static checks first:
 
 ```powershell
-rg -n "FamilyStore|NotablePersonStore|FamilyMembershipEdge|PersonNeedState|FAMILY_COMMIT|PERSON_COMMIT|person_catalog_hash|get_notable_person" gdext\src Project\project-keynes docs\cpp-dots-runtime
+rg -n "FamilyStore|FamilyTraitRoll|FamilyCellInfluence|NotablePersonStore|FAMILY_COMMIT|PERSON_COMMIT|get_family_branch_effects|family_trait_catalog_hash" gdext\src Project\project-keynes docs\cpp-dots-runtime
 git diff --check
 ```
 
@@ -172,7 +208,8 @@ python -m SCons platform=windows target=template_release dev_build=no -j6
 Pop-Location
 ```
 
-Run `family_runtime_test.gd`, `settlement_runtime_test.gd`, and the affected economy/tax/save tests.
+Run `family_runtime_test.gd`, `trigger_family_branch_test.gd`, `modifier_runtime_test.gd`,
+`natural_resource_pass_test.gd`, `settlement_runtime_test.gd`, and affected economy/tax/save tests.
 Run the existing economy verifier for broad changes:
 
 ```powershell
@@ -180,11 +217,12 @@ Run the existing economy verifier for broad changes:
 ```
 
 For performance-sensitive changes, run at least 50 production-path days with
-`project-keynes-headless-perf`. Report family/edge counts, economy avg/p95/max, ledger failures,
+`project-keynes-headless-perf`. Report family/branch/trait/binding and edge counts,
+economy avg/p95/max, ledger failures,
 fatal state, and the largest changed stage. Require population, money, and goods errors to remain zero.
 
 ## Report completion
 
-Report native/GDScript authority, changed family/person ownership/employment/attribution semantics,
-PKEC compatibility, conservation and deterministic-hash evidence, query/UI changes, family/person/edge
-scale, avg/p95/max, and intentional non-goals.
+Report native/GDScript authority, trait/prestige/effect and family/person semantics,
+PKEC/PKTR/Modifier compatibility, conservation and deterministic-hash evidence, query/UI changes,
+sparse work counts, avg/p95/max, and intentional non-goals.

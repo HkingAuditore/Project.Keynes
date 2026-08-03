@@ -19,8 +19,9 @@ generation, bootstrap, PKSV, and restore contract is documented in
 Saving does not introduce a second simulation authority. It freezes new clock
 advancement, drains existing country/economy continuations across render frames,
 then snapshots `DCWorld`, native environment state, PKCM, WorldClock, PKCN, PKEC, PKGP,
-PKFG, journal, and player view. Restore regenerates static geography and applies
-PKCM after environment, PKCN before PKEC, and PKGP after PKEC. PKFG carries only the monotonic `cell_explored` progress;
+PKFG, journal, PKTR v2, and player view. Restore regenerates static geography and applies
+PKCM after environment, PKCN before PKEC, PKGP after PKEC, and PKTR after Economy/domain state.
+PKFG carries only the monotonic `cell_explored` progress;
 current visibility and fog knowledge are derived and are recomputed on restore.
 
 本文说明当前运行期架构如何分层，以及每层负责什么。核心原则是：复杂 cell/pixel hot-loop 尽量在 C++ `DCWorldExt` 内以 SoA slot 跑完；GDScript 保留 orchestration、feature gate、调度状态机、UI/debug、fallback 和少量低频业务逻辑。
@@ -212,7 +213,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 经济运行时通过窄 C++ 指针桥在 sample day 冻结归属、国家科技、generation/hash，并在整个结算
 周期使用该快照。国内贸易拓扑也以该冻结归属生成国家连通分量；新订单只走同一非中立国家，
 已发运订单不因后续边界变化取消。当前 PKCN v4 保存国家状态、研究状态、五类税务政策与
-Country Modifier domain；PKEC v28 引用匹配的 PKCN identity，并持久化经济状态、显赫家族及其
+Country Modifier domain；PKEC v29 引用匹配的 PKCN identity，并持久化经济状态、显赫家族及其
 成员/建筑所有权、家族重要人物与需求归因、补贴权重、财政累计、科研采购累计、BuildingIdentityStore、Economy Modifier
 domain 与生产气候冻结/诊断字段；
 完整恢复顺序固定为 PKCM、PKCN、PKEC、PKGP。详见

@@ -50,6 +50,8 @@ Inspect current code before editing:
   safe boundary.
 - Removal changes future calculations only; never rewind simulation history.
 - Persist stable keys and normalized terms, never process-local dense IDs.
+- Persist Q16 instance magnitude. Add terms scale linearly; factor terms interpolate from one before
+  stack power: `1 + (factor - 1) * magnitude`.
 
 ## Change Workflow
 
@@ -59,7 +61,7 @@ Inspect current code before editing:
 3. Update catalog and native compile validation before adding a consumer.
 4. Route every production and prediction calculation through one domain helper.
 5. Freeze parent/domain factors at the existing daily or epoch boundary.
-6. Update persistence and legacy empty-store migration if identity or instance state changes.
+6. Update persistence and strict schema rejection if identity or instance state changes.
 7. Add focused math/lifecycle/handle/scope/domain/save tests.
 8. Update the primary document, affected architecture docs, this skill, and relevant reference.
 9. Run `scripts/verify_modifier_runtime.ps1`; use `-Build` and `-Godot` for final validation.
