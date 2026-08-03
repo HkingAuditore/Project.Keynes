@@ -109,7 +109,7 @@ backup. Incompatible generator/catalog/schema hashes are rejected rather than
 guessed or migrated.
 
 Required sections are `new_game_config`, `world_clock`, `dynamic_world`,
-`environment`, `pkcm`, `pkcn`, `pkec`, `pkgp`, `pkfg`, `journal`, `player_context`,
+`environment`, `pkcm`, `pkcn`, `pkec`, `pkgp`, `pkfg`, `journal`, `pktr`, `player_context`,
 `player_view`, and `preview`. Missing authority fails closed. `environment` uses
 `PKEnvironmentRuntime v1` and includes native core SoA, weather ping-pong,
 topology, dirty/active sets, round flags, stage cursors, and publish versions;
@@ -121,10 +121,11 @@ Every authority is registered through `RuntimeStateProvider`, whose contract is
 provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
-PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, then player session/view/preview.
-PKCM v1 saves Climate modifiers. PKCN v4 embeds Country modifiers, research and tax policy; PKEC v28
-embeds Economy modifiers, BuildingIdentityStore, notable-family authority, and production-climate state; PKGP v1 saves Gameplay
-identity/base SoA and modifiers. Legacy PKCN/PKEC technology-tree saves are
+PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, PKTR, then player session/view/preview.
+PKCM v1 saves Climate modifiers. PKCN v4 embeds Country modifiers, research and tax policy; PKEC v29
+embeds Economy modifiers, BuildingIdentityStore, family traits/cell influence, and production-climate state;
+PKGP v1 saves Gameplay identity/base SoA and modifiers; PKTR v2 saves static and dynamic branch
+Trigger accumulation. Legacy PKCN/PKEC technology-tree saves are
 rejected with `legacy_technology_tree_save_unsupported`.
 
 `pkfg` is `PKFogOfWar v1` and persists exactly one array: the monotonic
@@ -156,11 +157,11 @@ Restore order is strict:
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
 5. Restore PKCN v4, including Country modifiers, research state and tax policy.
-6. Restore PKEC v28 after trade topology has been configured, including Economy
+6. Restore PKEC v29 after trade topology has been configured, including Economy
    modifiers, building identities, notable families, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
-8. Restore journal and player/session context.
+8. Restore journal and PKTR v2, then player/session context.
 9. Rebuild derived views/render resources and scheduler topology.
 10. Restore selected cell, camera position/zoom, pause, and speed.
 
@@ -207,5 +208,5 @@ economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtens
 desktop/narrow UI checks.
 For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
 
-Save flow includes optional `PKTR` after journal/domain state. Missing PKTR in older
-saves migrates to an empty trigger state; incompatible catalog hashes reject restore.
+Save flow requires `PKTR v2` after journal/domain state. Missing PKTR, PKTR v1, PKEC v28 or older,
+and incompatible catalog hashes reject restore; no empty-trigger migration is provided.

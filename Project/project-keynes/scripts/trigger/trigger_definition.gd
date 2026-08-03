@@ -17,5 +17,12 @@ extends Resource
 @export var cooldown_days: int = 0
 @export var window_days: int = 0
 @export var enabled: bool = true
+@export var dynamic_binding: bool = false
+## Optional exact-match selector evaluated before aggregation. -1 disables it.
+@export_range(-1, 7, 1) var selector_field: int = -1
+## Stable keys compile through String.hash() into the signed 32-bit event ABI.
+@export var selector_key: StringName = &""
+@export var selector_value: int = 0
+@export var selector_negated: bool = false
 @export var condition_ops: PackedInt32Array = PackedInt32Array([1])
 @export var effects: Array[Resource] = []

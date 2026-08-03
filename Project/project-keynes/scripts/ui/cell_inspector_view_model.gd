@@ -394,12 +394,45 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 	if kind == "family":
 		var facade = _generator.get_economy_facade() if _generator != null \
 			and _generator.has_method("get_economy_facade") else null
+		var family_handle := int(row.get("family_handle", 0))
 		if facade != null and facade.has_method("family_snapshot"):
-			var family_snapshot: Dictionary = facade.family_snapshot(int(row.get("family_handle", 0)))
+			var family_snapshot: Dictionary = facade.family_snapshot(family_handle)
 			if bool(family_snapshot.get("ok", false)):
 				row.merge(_family_detail_fields(family_snapshot), true)
 			row["notable_person_rows"] = _family_notable_person_rows(
-				facade, int(row.get("family_handle", 0)))
+				facade, family_handle)
+			if facade.has_method("get_family_traits"):
+				var traits: Dictionary = facade.get_family_traits(family_handle)
+				if bool(traits.get("ok", false)):
+					row["trait_rows"] = _family_trait_rows(traits)
+					row["behavior_rows"] = _family_behavior_rows(traits)
+			if facade.has_method("family_branches"):
+				var branches: Dictionary = facade.family_branches(
+					family_handle, 0, 64)
+				if bool(branches.get("ok", false)):
+					row["branch_rows"] = _family_branch_rows(branches)
+					var modifier_rows: Array = []
+					var trigger_rows: Array = []
+					var branch_cells: PackedInt32Array = branches.get(
+						"cell_indices", PackedInt32Array())
+					for branch_cell in branch_cells:
+						if not facade.has_method("get_family_branch_effects"):
+							break
+						var effects: Dictionary = facade.get_family_branch_effects(
+							family_handle, int(branch_cell))
+						if not bool(effects.get("ok", false)):
+							continue
+						modifier_rows.append_array(
+							_family_modifier_rows(effects))
+						trigger_rows.append_array(
+							_family_trigger_rows(effects))
+						if int(branch_cell) == idx:
+							row["prestige_level"] = int(
+								effects.get("prestige_level", 0))
+							row["prestige_score"] = _q16_percent_text(int(
+								effects.get("prestige_score_q16", 0)))
+					row["modifier_rows"] = modifier_rows
+					row["trigger_rows"] = trigger_rows
 	var item_id := _object_tax_item_id(kind, row)
 	var country := _country_summary(idx)
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
@@ -943,6 +976,8 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 	var owned: PackedInt64Array = snapshot.get("owned_buildings", PackedInt64Array())
 	var notable_people: PackedInt32Array = snapshot.get(
 		"notable_person_counts", PackedInt32Array())
+	var prestige_levels: PackedInt32Array = snapshot.get(
+		"prestige_levels", PackedInt32Array())
 	var rows: Array = []
 	for i in range(surnames.size()):
 		var suffix := "" if i >= disambiguators.size() or disambiguators[i] == 0 \
@@ -956,6 +991,8 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 			"notable_people": int(notable_people[i]) if i < notable_people.size() else 0,
 			"owned_buildings": UITokens.format_compact_number_cn(float(owned[i]), 1) if i < owned.size() else "0",
 			"cash_claim": _money_text(int(cash_claims[i])) if i < cash_claims.size() else _money_text(0),
+			"prestige": _prestige_text(int(prestige_levels[i])) \
+				if i < prestige_levels.size() else "0",
 			"accent": UITokens.ACCENT,
 			"icon": "family.house",
 		})
@@ -977,6 +1014,115 @@ func _family_detail_fields(snapshot: Dictionary) -> Dictionary:
 		"founded_day": int(snapshot.get("founded_day", 0)),
 		"decline_reviews": int(snapshot.get("decline_reviews", 0)),
 	}
+
+
+func _family_trait_rows(snapshot: Dictionary) -> Array:
+	var rows: Array = []
+	var names: PackedStringArray = snapshot.get("display_names", PackedStringArray())
+	var keys: PackedStringArray = snapshot.get("trait_keys", PackedStringArray())
+	var strengths: PackedInt32Array = snapshot.get("strength_q16", PackedInt32Array())
+	var core: PackedByteArray = snapshot.get("core", PackedByteArray())
+	for index in range(keys.size()):
+		rows.append({
+			"name": String(names[index]) if index < names.size() else String(keys[index]),
+			"value": "%s · 强度 %s" % ["核心特性" if index < core.size() \
+				and int(core[index]) != 0 else "附加特性",
+				_q16_percent_text(int(strengths[index]) if index < strengths.size() else 65536)],
+		})
+	return rows
+
+
+func _family_behavior_rows(snapshot: Dictionary) -> Array:
+	var rows: Array = []
+	var axes: PackedInt32Array = snapshot.get("behavior_axes", PackedInt32Array())
+	var names: PackedStringArray = snapshot.get(
+		"behavior_selector_display_names", PackedStringArray())
+	var factors: PackedInt32Array = snapshot.get(
+		"behavior_factors_q16", PackedInt32Array())
+	var axis_names := ["投资", "职业", "需求", "商品消费"]
+	for index in range(axes.size()):
+		var axis := int(axes[index])
+		rows.append({
+			"name": String(names[index]) if index < names.size() else "目标 %d" % index,
+			"value": "%s偏好 · %s" % [axis_names[axis] if axis >= 0 \
+				and axis < axis_names.size() else "行为",
+				_q16_percent_text(int(factors[index]) if index < factors.size() else 65536)],
+		})
+	return rows
+
+
+func _family_branch_rows(snapshot: Dictionary) -> Array:
+	var rows: Array = []
+	var cells: PackedInt32Array = snapshot.get("cell_indices", PackedInt32Array())
+	var levels: PackedInt32Array = snapshot.get("prestige_levels", PackedInt32Array())
+	var population_shares: PackedInt32Array = snapshot.get(
+		"population_shares_q16", PackedInt32Array())
+	var cash_shares: PackedInt32Array = snapshot.get(
+		"cash_shares_q16", PackedInt32Array())
+	var building_shares: PackedInt32Array = snapshot.get(
+		"building_shares_q16", PackedInt32Array())
+	var scores: PackedInt32Array = snapshot.get("prestige_scores_q16", PackedInt32Array())
+	var targets: PackedInt32Array = snapshot.get(
+		"pending_target_levels", PackedInt32Array())
+	var streaks: PackedInt32Array = snapshot.get("review_streaks", PackedInt32Array())
+	for index in range(cells.size()):
+		var level := int(levels[index]) if index < levels.size() else 0
+		var target := int(targets[index]) if index < targets.size() else level
+		rows.append({
+			"name": "地块 %d · 威望 %s" % [int(cells[index]), _prestige_text(level)],
+			"value": "总分 %s · 人口 %s / 现金 %s / 建筑 %s · 目标 %s（%d/2）" % [
+				_q16_percent_text(int(scores[index]) if index < scores.size() else 0),
+				_q16_percent_text(int(population_shares[index]) if index < population_shares.size() else 0),
+				_q16_percent_text(int(cash_shares[index]) if index < cash_shares.size() else 0),
+				_q16_percent_text(int(building_shares[index]) if index < building_shares.size() else 0),
+				_prestige_text(target), int(streaks[index]) if index < streaks.size() else 0],
+		})
+	return rows
+
+
+func _family_modifier_rows(snapshot: Dictionary) -> Array:
+	var rows: Array = []
+	var cell := int(snapshot.get("cell_idx", -1))
+	var keys: PackedStringArray = snapshot.get(
+		"modifier_definition_keys", PackedStringArray())
+	var magnitudes: PackedInt32Array = snapshot.get(
+		"modifier_magnitude_q16", PackedInt32Array())
+	for index in range(keys.size()):
+		rows.append({"name": "地块 %d · %s" % [cell, String(keys[index])],
+			"value": "效果幅度 %s" % _q16_percent_text(
+				int(magnitudes[index]) if index < magnitudes.size() else 0)})
+	return rows
+
+
+func _family_trigger_rows(snapshot: Dictionary) -> Array:
+	var rows: Array = []
+	var cell := int(snapshot.get("cell_idx", -1))
+	var keys: PackedStringArray = snapshot.get(
+		"trigger_definition_keys", PackedStringArray())
+	var progress: PackedInt64Array = snapshot.get("trigger_progress", PackedInt64Array())
+	var thresholds: PackedInt64Array = snapshot.get("trigger_thresholds", PackedInt64Array())
+	var completed: PackedInt32Array = snapshot.get("trigger_completed", PackedInt32Array())
+	var targets: PackedInt32Array = snapshot.get(
+		"trigger_reward_targets", PackedInt32Array())
+	for index in range(keys.size()):
+		rows.append({
+			"name": "地块 %d · %s" % [cell, String(keys[index])],
+			"value": "%d / %d · 已触发 %d 次 · 奖励归属 %s" % [
+				int(progress[index]) if index < progress.size() else 0,
+				int(thresholds[index]) if index < thresholds.size() else 0,
+				int(completed[index]) if index < completed.size() else 0,
+				"家族分支" if index >= targets.size() or int(targets[index]) == 0 \
+				else "城市公共"],
+		})
+	return rows
+
+
+static func _prestige_text(level: int) -> String:
+	return ["0", "I", "II", "III", "IV", "V"][clampi(level, 0, 5)]
+
+
+static func _q16_percent_text(value: int) -> String:
+	return "%.1f%%" % (float(value) * 100.0 / 65536.0)
 
 
 func _family_notable_person_rows(facade, family_handle: int) -> Array:

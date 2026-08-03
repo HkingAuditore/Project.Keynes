@@ -6,6 +6,9 @@ extends Resource
 @export var display_name: String = ""
 @export var icon: Texture2D = null
 @export_enum("collector", "industrial", "service") var building_kind: String = "industrial"
+## Cold-path taxonomy used by data-driven selectors. Runtime compilation
+## expands tags to dense building IDs; simulation loops never compare strings.
+@export var semantic_tags: PackedStringArray = PackedStringArray()
 @export var technology_tags: PackedStringArray = PackedStringArray()
 ## Optional construction-upgrade family. Existing lower-tier buildings keep
 ## operating, but only the highest technology-available tier may be built.

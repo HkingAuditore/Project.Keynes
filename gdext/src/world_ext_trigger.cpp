@@ -1,6 +1,7 @@
 #include "world_ext.h"
 
 #include "trigger_runtime.h"
+#include "economy_runtime.h"
 
 #include <cstring>
 #include <vector>
@@ -26,7 +27,12 @@ Dictionary unavailable() {
 
 Dictionary DCWorldExt::configure_triggers(const Dictionary &catalog) {
     if (_trigger_runtime == nullptr) _trigger_runtime = new TriggerRuntime();
-    return runtime_from(_trigger_runtime)->configure(catalog);
+    Dictionary out = runtime_from(_trigger_runtime)->configure(catalog);
+    if (static_cast<bool>(out.get("ok", false)) && _economy_runtime != nullptr) {
+        static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_trigger_runtime(
+            runtime_from(_trigger_runtime));
+    }
+    return out;
 }
 
 Dictionary DCWorldExt::submit_trigger_events(const Dictionary &batch) {
@@ -63,6 +69,17 @@ Dictionary DCWorldExt::ack_trigger_effects(int64_t up_to_effect_id) {
 Dictionary DCWorldExt::set_trigger_enabled(const Dictionary &batch) {
     return _trigger_runtime == nullptr ? unavailable()
         : runtime_from(_trigger_runtime)->set_enabled(batch);
+}
+
+Dictionary DCWorldExt::reconcile_trigger_branch_bindings(const Dictionary &batch) {
+    return _trigger_runtime == nullptr ? unavailable()
+        : runtime_from(_trigger_runtime)->reconcile_branch_bindings(batch);
+}
+
+Dictionary DCWorldExt::get_trigger_branch_progress(int64_t branch_handle) const {
+    return _trigger_runtime == nullptr ? unavailable()
+        : runtime_from(_trigger_runtime)->branch_progress(
+            static_cast<uint64_t>(branch_handle));
 }
 
 Dictionary DCWorldExt::resync_trigger_source(const Dictionary &snapshot) {

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=27 format=3]
+[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=37 format=3]
 
 [ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
@@ -73,6 +73,22 @@ key = &"economy.city.trade_output_factor"
 domain = 2
 min_value = 0.0
 max_value = 8.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityConsumption"]
+script = ExtResource("2_stat")
+key = &"economy.city.consumption_factor"
+domain = 2
+min_value = 0.0
+max_value = 4.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityResourceRegen"]
+script = ExtResource("2_stat")
+key = &"economy.city.resource.regen_factor"
+domain = 2
+min_value = 0.0
+max_value = 4.0
 value_conversion = 1
 
 [sub_resource type="Resource" id="TermClimate"]
@@ -200,7 +216,45 @@ domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyTradeOutput")])
 
+[sub_resource type="Resource" id="TermFamilyStapleConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.staple_food.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermFamilyProteinConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.protein.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermFamilyProduceConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.produce.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyFoodConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.food_consumption_boost"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyStapleConsumption"), SubResource("TermFamilyProteinConsumption"), SubResource("TermFamilyProduceConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyWildGameRegen"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.resource.wild_game.regen_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefFamilyWildGameRegen"]
+script = ExtResource("3_definition")
+key = &"family.city.wild_game_regen_boost"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyWildGameRegen")])
+
 [resource]
 script = ExtResource("1_catalog")
-stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput")])
-definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput")])
+stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput"), SubResource("StatCityConsumption"), SubResource("StatCityResourceRegen")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyWildGameRegen")])

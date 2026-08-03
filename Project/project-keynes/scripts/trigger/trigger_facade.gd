@@ -65,7 +65,9 @@ func ingest_committed_events(day_index: int, max_events: int = 512) -> Dictionar
 	var type_arr: PackedInt32Array = raw.get("type", PackedInt32Array())
 	var schema_arr: PackedInt32Array = raw.get("payload_schema", PackedInt32Array())
 	var entity_arr: PackedInt32Array = raw.get("entity_id", PackedInt32Array())
+	var entity_handle_arr: PackedInt64Array = raw.get("entity_handle", PackedInt64Array())
 	var cell_arr: PackedInt32Array = raw.get("cell_idx", PackedInt32Array())
+	var value_arr: PackedInt64Array = raw.get("value_i64", PackedInt64Array())
 	var raw_p0: PackedInt32Array = raw.get("payload_i0", PackedInt32Array())
 	var raw_p1: PackedInt32Array = raw.get("payload_i1", PackedInt32Array())
 	var raw_p2: PackedInt32Array = raw.get("payload_i2", PackedInt32Array())
@@ -74,8 +76,11 @@ func ingest_committed_events(day_index: int, max_events: int = 512) -> Dictionar
 		sources.append(int(source_arr[i]) if i < source_arr.size() else 0)
 		days.append(day_index); types.append(int(type_arr[i]) if i < type_arr.size() else 0)
 		schemas.append(int(schema_arr[i]) if i < schema_arr.size() else 0)
-		var entity := int(entity_arr[i]) if i < entity_arr.size() else (int(cell_arr[i]) if i < cell_arr.size() else 0)
-		entities.append(entity); groups.append(0); values.append(1)
+		var entity := int(entity_handle_arr[i]) if i < entity_handle_arr.size() else \
+			(int(entity_arr[i]) if i < entity_arr.size() else 0)
+		var cell := int(cell_arr[i]) if i < cell_arr.size() else 0
+		entities.append(entity); groups.append(cell)
+		values.append(int(value_arr[i]) if i < value_arr.size() else 1)
 		p0.append(int(raw_p0[i]) if i < raw_p0.size() else 0); p1.append(int(raw_p1[i]) if i < raw_p1.size() else 0)
 		p2.append(int(raw_p2[i]) if i < raw_p2.size() else 0); p3.append(int(raw_p3[i]) if i < raw_p3.size() else 0)
 	var result: Dictionary = _world_ext.submit_trigger_events({

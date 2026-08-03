@@ -4,7 +4,7 @@ extends Resource
 const DEFAULT_PATH := "res://data/triggers/default_trigger_catalog.tres"
 const TriggerDefinitionScript = preload("res://scripts/trigger/trigger_definition.gd")
 
-const PROTOCOL_VERSION := 1
+const PROTOCOL_VERSION := 2
 const AGG_COUNT := 1
 const AGG_SUM := 2
 const AGG_MIN := 3
@@ -51,6 +51,9 @@ func compile_native_catalog() -> Dictionary:
 		"static_targets": PackedInt64Array(), "thresholds": PackedInt64Array(),
 		"modes": PackedInt32Array(), "cooldown_days": PackedInt32Array(),
 		"window_days": PackedInt32Array(), "enabled": PackedByteArray(),
+		"dynamic_bindings": PackedByteArray(),
+		"selector_fields": PackedInt32Array(), "selector_values": PackedInt64Array(),
+		"selector_negated": PackedByteArray(),
 		"condition_offsets": PackedInt32Array([0]), "condition_ops": PackedInt32Array(),
 		"effect_offsets": PackedInt32Array([0]), "effect_actions": PackedInt32Array(),
 		"effect_domains": PackedInt32Array(), "effect_source_priorities": PackedInt32Array(),
@@ -66,7 +69,8 @@ func compile_native_catalog() -> Dictionary:
 	for definition in definitions:
 		if definition == null or not definition is TriggerDefinitionScript:
 			return {"ok": false, "reason": "trigger_definition_resource_invalid"}
-		if definition.key == &"" or seen.has(definition.key) or definition.threshold <= 0:
+		if definition.key == &"" or seen.has(definition.key) or definition.threshold <= 0 \
+				or definition.selector_field < -1 or definition.selector_field > 7:
 			return {"ok": false, "reason": "trigger_definition_key_invalid_or_duplicate"}
 		if definition.source_id < 0 or definition.source_id >= source_count \
 				or definition.event_type < 0 or definition.event_type >= event_type_span:
@@ -80,6 +84,13 @@ func compile_native_catalog() -> Dictionary:
 		out.static_targets.append(definition.static_target); out.thresholds.append(definition.threshold)
 		out.modes.append(definition.mode); out.cooldown_days.append(definition.cooldown_days)
 		out.window_days.append(definition.window_days); out.enabled.append(1 if definition.enabled else 0)
+		out.dynamic_bindings.append(1 if definition.dynamic_binding else 0)
+		out.selector_fields.append(definition.selector_field)
+		var selector_value := int(definition.selector_value)
+		if definition.selector_key != &"":
+			selector_value = _signed_hash32(String(definition.selector_key))
+		out.selector_values.append(selector_value)
+		out.selector_negated.append(1 if definition.selector_negated else 0)
 		for op in definition.condition_ops: out.condition_ops.append(int(op))
 		out.condition_offsets.append(out.condition_ops.size())
 		for effect in definition.effects:
@@ -96,3 +107,8 @@ func compile_native_catalog() -> Dictionary:
 		out.effect_offsets.append(out.effect_actions.size())
 	out.ok = true
 	return out
+
+
+static func _signed_hash32(value: String) -> int:
+	var hashed := int(value.hash())
+	return hashed - 0x100000000 if hashed > 0x7fffffff else hashed

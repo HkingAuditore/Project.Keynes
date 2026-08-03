@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="FamilyTraitCatalog" load_steps=26 format=3]
+[gd_resource type="Resource" script_class="FamilyTraitCatalog" load_steps=30 format=3]
 
 [ext_resource type="Script" path="res://scripts/family/family_trait_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/family/family_trait_definition.gd" id="2_trait"]
@@ -32,18 +32,25 @@ modifiers = Array[Resource]([SubResource("ModifierGathering")])
 [sub_resource type="Resource" id="BehaviorHuntingBuilding"]
 script = ExtResource("3_behavior")
 axis = 0
-selector_id = &"stone_age_hunting_camp"
+selector_kind = 4
+selector_id = &"activity.hunting"
 factor_q16 = 98304
 
 [sub_resource type="Resource" id="BehaviorHuntingCareer"]
 script = ExtResource("3_behavior")
 axis = 1
-selector_id = &"hunter"
+selector_kind = 4
+selector_id = &"activity.hunting"
 factor_q16 = 81920
 
 [sub_resource type="Resource" id="ModifierHunting"]
 script = ExtResource("4_modifier")
 definition_key = &"family.city.hunting_output_boost"
+tier_magnitude_q16 = PackedInt32Array(0, 0, 16384, 32768, 49152, 65536)
+
+[sub_resource type="Resource" id="ModifierWildGameRegen"]
+script = ExtResource("4_modifier")
+definition_key = &"family.city.wild_game_regen_boost"
 tier_magnitude_q16 = PackedInt32Array(0, 0, 16384, 32768, 49152, 65536)
 
 [sub_resource type="Resource" id="TriggerHunting"]
@@ -60,7 +67,7 @@ strength_min_q16 = 49152
 strength_max_q16 = 90112
 strength_step_q16 = 4096
 behaviors = Array[Resource]([SubResource("BehaviorHuntingBuilding"), SubResource("BehaviorHuntingCareer")])
-modifiers = Array[Resource]([SubResource("ModifierHunting")])
+modifiers = Array[Resource]([SubResource("ModifierHunting"), SubResource("ModifierWildGameRegen")])
 triggers = Array[Resource]([SubResource("TriggerHunting")])
 
 [sub_resource type="Resource" id="BehaviorMiningIron"]
@@ -115,10 +122,29 @@ axis = 2
 selector_id = &"produce"
 factor_q16 = 73728
 
+[sub_resource type="Resource" id="BehaviorStarchyGoods"]
+script = ExtResource("3_behavior")
+axis = 3
+selector_kind = 2
+selector_id = &"starchy_staple"
+factor_q16 = 73728
+
+[sub_resource type="Resource" id="BehaviorCerealGoods"]
+script = ExtResource("3_behavior")
+axis = 3
+selector_kind = 3
+selector_id = &"cereal_grain"
+factor_q16 = 69632
+
 [sub_resource type="Resource" id="ModifierFood"]
 script = ExtResource("4_modifier")
 definition_key = &"family.city.birth_boost"
 tier_magnitude_q16 = PackedInt32Array(0, 0, 8192, 16384, 32768, 49152)
+
+[sub_resource type="Resource" id="ModifierFoodConsumption"]
+script = ExtResource("4_modifier")
+definition_key = &"family.city.food_consumption_boost"
+tier_magnitude_q16 = PackedInt32Array(0, 8192, 16384, 32768, 49152, 65536)
 
 [sub_resource type="Resource" id="TraitFood"]
 script = ExtResource("2_trait")
@@ -128,8 +154,8 @@ weight = 110
 strength_min_q16 = 49152
 strength_max_q16 = 81920
 strength_step_q16 = 4096
-behaviors = Array[Resource]([SubResource("BehaviorStaple"), SubResource("BehaviorProtein"), SubResource("BehaviorProduce")])
-modifiers = Array[Resource]([SubResource("ModifierFood")])
+behaviors = Array[Resource]([SubResource("BehaviorStaple"), SubResource("BehaviorProtein"), SubResource("BehaviorProduce"), SubResource("BehaviorStarchyGoods"), SubResource("BehaviorCerealGoods")])
+modifiers = Array[Resource]([SubResource("ModifierFood"), SubResource("ModifierFoodConsumption")])
 
 [sub_resource type="Resource" id="ModifierTrade"]
 script = ExtResource("4_modifier")

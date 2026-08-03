@@ -11,6 +11,8 @@
 #include <chrono>
 #include <cstring>
 #include <limits>
+#include <tuple>
+#include <unordered_set>
 
 namespace pk {
 
@@ -142,6 +144,14 @@ uint32_t generation_from_handle(uint64_t handle) {
     return static_cast<uint32_t>(handle >> 32U);
 }
 
+uint64_t branch_event_cell_key(int32_t source_id, int32_t event_type,
+                               int32_t cell) {
+    uint64_t key = static_cast<uint32_t>(source_id);
+    key = (key << 16U) | static_cast<uint16_t>(event_type);
+    key = (key << 32U) | static_cast<uint32_t>(cell);
+    return key;
+}
+
 } // namespace
 
 Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
@@ -168,6 +178,10 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
     const PackedInt32Array cooldown_days = get_i32(catalog, "cooldown_days");
     const PackedInt32Array window_days = get_i32(catalog, "window_days");
     const PackedByteArray enabled = get_u8(catalog, "enabled");
+    const PackedByteArray dynamic_bindings = get_u8(catalog, "dynamic_bindings");
+    const PackedInt32Array selector_fields = get_i32(catalog, "selector_fields");
+    const PackedInt64Array selector_values = get_i64(catalog, "selector_values");
+    const PackedByteArray selector_negated = get_u8(catalog, "selector_negated");
     const PackedInt32Array condition_offsets = get_i32(catalog, "condition_offsets");
     const PackedInt32Array condition_ops = get_i32(catalog, "condition_ops");
     const PackedInt32Array effect_offsets = get_i32(catalog, "effect_offsets");
@@ -219,6 +233,10 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
         definition.cooldown_days = std::max(0, i32_at(cooldown_days, i, 0));
         definition.window_days = std::max(0, i32_at(window_days, i, 0));
         definition.enabled = u8_at(enabled, i, 1) != 0 ? 1 : 0;
+        definition.dynamic_binding = u8_at(dynamic_bindings, i, 0) != 0 ? 1 : 0;
+        definition.selector_field = i32_at(selector_fields, i, -1);
+        definition.selector_value = i64_at(selector_values, i, 0);
+        definition.selector_negated = u8_at(selector_negated, i, 0) != 0 ? 1 : 0;
         definition.condition_begin = condition_offsets[i];
         definition.condition_count = condition_offsets[i + 1] - condition_offsets[i];
         definition.effect_begin = effect_offsets[i];
@@ -238,7 +256,9 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
             definition.condition_begin < 0 || definition.condition_count < 0 ||
             definition.condition_count > MAX_CONDITION_OPS ||
             definition.condition_begin + definition.condition_count > condition_ops.size() ||
-            definition.effect_begin < 0 || definition.effect_count < 0) {
+            definition.effect_begin < 0 || definition.effect_count < 0 ||
+            definition.selector_field < -1 ||
+            definition.selector_field > GROUP_HANDLE) {
             return failure("trigger_definition_invalid");
         }
         catalog_hash = fnv_string(catalog_hash, definition.key);
@@ -257,6 +277,14 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
         catalog_hash = fnv_mix(catalog_hash, &definition.cooldown_days, sizeof(definition.cooldown_days));
         catalog_hash = fnv_mix(catalog_hash, &definition.window_days, sizeof(definition.window_days));
         catalog_hash = fnv_mix(catalog_hash, &definition.enabled, sizeof(definition.enabled));
+        catalog_hash = fnv_mix(catalog_hash, &definition.dynamic_binding,
+                               sizeof(definition.dynamic_binding));
+        catalog_hash = fnv_mix(catalog_hash, &definition.selector_field,
+                               sizeof(definition.selector_field));
+        catalog_hash = fnv_mix(catalog_hash, &definition.selector_value,
+                               sizeof(definition.selector_value));
+        catalog_hash = fnv_mix(catalog_hash, &definition.selector_negated,
+                               sizeof(definition.selector_negated));
         for (int32_t op_index = definition.condition_begin;
              op_index < definition.condition_begin + definition.condition_count; ++op_index)
             catalog_hash = fnv_mix(catalog_hash, &_condition_ops[op_index], sizeof(int32_t));
@@ -328,6 +356,8 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
     }
 
     _catalog_hash = catalog_hash;
+    _branch_bindings.clear();
+    _branch_index_by_event_cell.clear();
     _index_by_source_event.assign(
         static_cast<size_t>(_source_count) * _event_type_span, {});
     for (int32_t i = 0; i < count; ++i) {
@@ -401,12 +431,85 @@ int32_t TriggerRuntime::find_or_create_state(int32_t trigger_id,
             _state.trigger_id[index] = trigger_id;
             _state.target_handle[index] = target_handle;
             _state.target_generation[index] = target_generation;
+            _state.accumulator[index] = 0;
+            _state.remainder[index] = 0;
+            _state.last_event_id[index] = 0;
+            _state.fire_sequence[index] = 0;
+            _state.cooldown_until[index] = 0;
+            _state.window_start_day[index] = -1;
+            _state.last_observed[index] = 0;
+            _state.completed[index] = 0;
+            _state.initialized[index] = 0;
+            _state.needs_resync[index] = 0;
+            const size_t distinct_begin =
+                static_cast<size_t>(index) * _distinct_capacity;
+            std::fill_n(_distinct_keys.begin() + distinct_begin,
+                        _distinct_capacity, EMPTY_DISTINCT_KEY);
             return index;
         }
         slot = (slot + 1U) & mask;
     }
     _last_error = "trigger_state_lookup_full";
     return -1;
+}
+
+int32_t TriggerRuntime::trigger_id_for_key(const std::string &key) const {
+    for (int32_t trigger = 0;
+         trigger < static_cast<int32_t>(_definitions.size()); ++trigger) {
+        if (_definitions[trigger].key == key) return trigger;
+    }
+    return -1;
+}
+
+void TriggerRuntime::erase_state(int32_t trigger_id, uint64_t target_handle) {
+    int32_t state_index = -1;
+    for (int32_t index = 0; index < _state_count; ++index) {
+        if (_state.trigger_id[index] == trigger_id &&
+            _state.target_handle[index] == target_handle) {
+            state_index = index;
+            break;
+        }
+    }
+    if (state_index < 0) return;
+    const int32_t last = _state_count - 1;
+    auto move = [&](auto &values) { values[state_index] = values[last]; };
+    move(_state.trigger_id); move(_state.target_handle);
+    move(_state.target_generation); move(_state.accumulator);
+    move(_state.remainder); move(_state.last_event_id);
+    move(_state.fire_sequence); move(_state.cooldown_until);
+    move(_state.window_start_day); move(_state.last_observed);
+    move(_state.completed); move(_state.initialized); move(_state.needs_resync);
+    const size_t dst = static_cast<size_t>(state_index) * _distinct_capacity;
+    const size_t src = static_cast<size_t>(last) * _distinct_capacity;
+    std::copy_n(_distinct_keys.begin() + src, _distinct_capacity,
+                _distinct_keys.begin() + dst);
+    std::fill_n(_distinct_keys.begin() + src, _distinct_capacity,
+                EMPTY_DISTINCT_KEY);
+    --_state_count;
+    size_t lookup_size = 1;
+    while (lookup_size < static_cast<size_t>(_max_states) * 2U) lookup_size <<= 1U;
+    _lookup.assign(lookup_size, {});
+    for (LookupSlot &entry : _lookup) entry.trigger_id = -1;
+    for (int32_t index = 0; index < _state_count; ++index) {
+        const size_t mask = _lookup.size() - 1U;
+        size_t slot = static_cast<size_t>(state_hash(
+            _state.trigger_id[index], _state.target_handle[index])) & mask;
+        while (_lookup[slot].trigger_id >= 0) slot = (slot + 1U) & mask;
+        _lookup[slot] = {_state.trigger_id[index], _state.target_handle[index], index};
+    }
+}
+
+void TriggerRuntime::rebuild_branch_index() {
+    _branch_index_by_event_cell.clear();
+    for (int32_t binding = 0;
+         binding < static_cast<int32_t>(_branch_bindings.size()); ++binding) {
+        const BranchBinding &row = _branch_bindings[binding];
+        if (row.trigger_id < 0 || row.trigger_id >= static_cast<int32_t>(
+                _definitions.size()) || row.cell < 0) continue;
+        const Definition &definition = _definitions[row.trigger_id];
+        _branch_index_by_event_cell[branch_event_cell_key(
+            definition.source_id, definition.event_type, row.cell)].push_back(binding);
+    }
 }
 
 uint64_t TriggerRuntime::resolve_target(const Definition &definition,
@@ -445,6 +548,14 @@ int64_t TriggerRuntime::event_field(const Event &event, int32_t field) const {
         case GROUP_HANDLE: return static_cast<int64_t>(event.group_handle);
         default: return 0;
     }
+}
+
+bool TriggerRuntime::event_matches(const Definition &definition,
+                                   const Event &event) const {
+    if (definition.selector_field < 0) return true;
+    const bool equal = event_field(event, definition.selector_field) ==
+        definition.selector_value;
+    return definition.selector_negated != 0 ? !equal : equal;
 }
 
 void TriggerRuntime::mark_source_gap(int32_t source_id, int64_t expected,
@@ -717,6 +828,13 @@ void TriggerRuntime::emit_effects(int32_t trigger_id, int32_t state_index,
         effect.command_key = source.command_key;
         effect.definition_key = source.definition_key;
         effect.payload = source.payload;
+        for (const BranchBinding &binding : _branch_bindings) {
+            if (binding.trigger_id == trigger_id &&
+                binding.branch_handle == state_target) {
+                effect.payload[0] = binding.reward_target;
+                break;
+            }
+        }
         switch (source.value_mode) {
             case EFFECT_FIRE_COUNT: effect.resolved_value = fire_count; break;
             case EFFECT_LEVEL: effect.resolved_value = level; break;
@@ -756,21 +874,19 @@ Dictionary TriggerRuntime::run_daily(int64_t day_index) {
         if (event.source_id < 0 || event.source_id >= _source_count ||
             event.event_type < 0 || event.event_type >= _event_type_span ||
             _source_needs_resync[event.source_id] != 0) continue;
-        const auto &rules = _index_by_source_event[
-            static_cast<size_t>(event.source_id) * _event_type_span + event.event_type];
-        for (int32_t trigger_id : rules) {
+        auto process_rule = [&](int32_t trigger_id, uint64_t target) {
             Definition &definition = _definitions[trigger_id];
             if (definition.enabled == 0 ||
                 (definition.payload_schema > 0 &&
-                 definition.payload_schema != event.payload_schema)) continue;
-            const uint64_t target = resolve_target(definition, event);
+                 definition.payload_schema != event.payload_schema) ||
+                !event_matches(definition, event)) return;
             const int32_t state_index = find_or_create_state(
                 trigger_id, target, generation_from_handle(target));
-            if (state_index < 0 || _state.needs_resync[state_index] != 0) continue;
-            if (_state.last_event_id[state_index] >= event.event_id) continue;
+            if (state_index < 0 || _state.needs_resync[state_index] != 0) return;
+            if (_state.last_event_id[state_index] >= event.event_id) return;
             int64_t old_value = 0, new_value = 0, event_value = 0;
             if (!update_aggregate(state_index, definition, event,
-                                  old_value, new_value, event_value)) continue;
+                                  old_value, new_value, event_value)) return;
             _state.last_event_id[state_index] = event.event_id;
             const int64_t old_level = old_value >= 0 ? old_value / definition.threshold : 0;
             const int64_t new_level = new_value >= 0 ? new_value / definition.threshold : 0;
@@ -778,16 +894,33 @@ Dictionary TriggerRuntime::run_daily(int64_t day_index) {
                 ? new_value % definition.threshold : 0;
             ++_rules_evaluated;
             if (!evaluate_conditions(definition, state_index, old_value,
-                                     new_value, old_level, new_level)) continue;
+                                     new_value, old_level, new_level)) return;
             const int64_t fire_count = fire_count_for(definition, state_index,
                 old_value, new_value, old_level, new_level);
-            if (fire_count <= 0) continue;
+            if (fire_count <= 0) return;
             emit_effects(trigger_id, state_index, event, fire_count,
                          new_level, event_value);
             fired += fire_count;
             if (definition.mode == ONE_SHOT) _state.completed[state_index] = 1;
             if (definition.cooldown_days > 0)
                 _state.cooldown_until[state_index] = day_index + definition.cooldown_days;
+        };
+        const auto &rules = _index_by_source_event[
+            static_cast<size_t>(event.source_id) * _event_type_span + event.event_type];
+        for (int32_t trigger_id : rules) {
+            if (_definitions[trigger_id].dynamic_binding != 0) continue;
+            process_rule(trigger_id, resolve_target(_definitions[trigger_id], event));
+        }
+        const auto branch_it = _branch_index_by_event_cell.find(
+            branch_event_cell_key(event.source_id, event.event_type,
+                                  static_cast<int32_t>(event.group_handle)));
+        if (branch_it != _branch_index_by_event_cell.end()) {
+            for (const int32_t binding_index : branch_it->second) {
+                if (binding_index < 0 || binding_index >= static_cast<int32_t>(
+                        _branch_bindings.size())) continue;
+                const BranchBinding &binding = _branch_bindings[binding_index];
+                process_rule(binding.trigger_id, binding.branch_handle);
+            }
         }
     }
     _pending_events.resize(retained);
@@ -901,6 +1034,101 @@ Dictionary TriggerRuntime::set_enabled(const Dictionary &batch) {
     return out;
 }
 
+Dictionary TriggerRuntime::reconcile_branch_bindings(const Dictionary &batch) {
+    if (!_configured) return failure("trigger_runtime_not_configured");
+    const PackedStringArray keys = get_strings(batch, "trigger_keys");
+    const PackedInt64Array branches = get_i64(batch, "branch_handles");
+    const PackedInt32Array cells = get_i32(batch, "cells");
+    const PackedInt32Array rewards = get_i32(batch, "reward_targets");
+    const PackedByteArray enabled = get_u8(batch, "enabled");
+    const int32_t count = keys.size();
+    if (branches.size() != count || cells.size() != count ||
+        rewards.size() != count || enabled.size() != count)
+        return failure("trigger_branch_binding_columns_invalid");
+    int32_t changed = 0;
+    for (int32_t row = 0; row < count; ++row) {
+        const int32_t trigger_id = trigger_id_for_key(string_at(keys, row));
+        const uint64_t branch = static_cast<uint64_t>(branches[row]);
+        const int32_t cell = cells[row];
+        const int32_t reward = rewards[row];
+        if (trigger_id < 0 || _definitions[trigger_id].dynamic_binding == 0 ||
+            branch == 0 || cell < 0 || reward < 0 || reward > 1)
+            continue;
+        auto found = std::find_if(_branch_bindings.begin(), _branch_bindings.end(),
+            [&](const BranchBinding &binding) {
+                return binding.trigger_id == trigger_id &&
+                    binding.branch_handle == branch && binding.cell == cell;
+            });
+        if (enabled[row] == 0) {
+            if (found != _branch_bindings.end()) {
+                erase_state(trigger_id, branch);
+                _effects.erase(std::remove_if(_effects.begin(), _effects.end(),
+                    [&](const Effect &effect) {
+                        return effect.trigger_id == trigger_id &&
+                            effect.target_handle == branch;
+                    }), _effects.end());
+                _branch_bindings.erase(found);
+                ++changed;
+            }
+            continue;
+        }
+        if (found == _branch_bindings.end()) {
+            _branch_bindings.push_back({trigger_id, branch, cell, reward});
+            ++changed;
+        } else if (found->reward_target != reward) {
+            found->reward_target = reward;
+            ++changed;
+        }
+    }
+    std::sort(_branch_bindings.begin(), _branch_bindings.end(),
+        [](const BranchBinding &a, const BranchBinding &b) {
+            return std::tie(a.trigger_id, a.cell, a.branch_handle) <
+                std::tie(b.trigger_id, b.cell, b.branch_handle);
+        });
+    rebuild_branch_index();
+    Dictionary out;
+    out["ok"] = true;
+    out["changed"] = changed;
+    out["binding_count"] = static_cast<int64_t>(_branch_bindings.size());
+    return out;
+}
+
+Dictionary TriggerRuntime::branch_progress(uint64_t branch_handle) const {
+    Dictionary out;
+    PackedStringArray keys;
+    PackedInt64Array progress, remainders, thresholds;
+    PackedInt32Array cells, completed, rewards;
+    for (const BranchBinding &binding : _branch_bindings) {
+        if (binding.branch_handle != branch_handle || binding.trigger_id < 0 ||
+            binding.trigger_id >= static_cast<int32_t>(_definitions.size())) continue;
+        keys.push_back(_definitions[binding.trigger_id].key.c_str());
+        cells.push_back(binding.cell);
+        rewards.push_back(binding.reward_target);
+        thresholds.push_back(_definitions[binding.trigger_id].threshold);
+        int32_t state_index = -1;
+        for (int32_t index = 0; index < _state_count; ++index) {
+            if (_state.trigger_id[index] == binding.trigger_id &&
+                _state.target_handle[index] == branch_handle) {
+                state_index = index;
+                break;
+            }
+        }
+        progress.push_back(state_index >= 0 ? _state.accumulator[state_index] : 0);
+        remainders.push_back(state_index >= 0 ? _state.remainder[state_index] : 0);
+        completed.push_back(state_index >= 0 ? _state.completed[state_index] : 0);
+    }
+    out["ok"] = true;
+    out["branch_handle"] = static_cast<int64_t>(branch_handle);
+    out["trigger_definition_keys"] = keys;
+    out["trigger_cells"] = cells;
+    out["trigger_reward_targets"] = rewards;
+    out["trigger_thresholds"] = thresholds;
+    out["trigger_progress"] = progress;
+    out["trigger_remainders"] = remainders;
+    out["trigger_completed"] = completed;
+    return out;
+}
+
 Dictionary TriggerRuntime::resync_source(const Dictionary &snapshot) {
     if (!_configured) return failure("trigger_runtime_not_configured");
     const int32_t source = int32_t(snapshot.get("source_id", -1));
@@ -955,6 +1183,7 @@ Dictionary TriggerRuntime::report() const {
     out["current_day"] = _current_day;
     out["definition_count"] = static_cast<int64_t>(_definitions.size());
     out["effect_definition_count"] = static_cast<int64_t>(_effect_definitions.size());
+    out["branch_binding_count"] = static_cast<int64_t>(_branch_bindings.size());
     out["state_count"] = _state_count;
     out["state_capacity"] = _max_states;
     out["pending_events"] = static_cast<int64_t>(_pending_events.size());

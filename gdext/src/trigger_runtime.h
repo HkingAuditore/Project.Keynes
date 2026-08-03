@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <godot_cpp/variant/dictionary.hpp>
@@ -14,8 +15,8 @@ namespace pk {
 // aggregation, condition evaluation, and effect generation use dense POD data.
 class TriggerRuntime {
 public:
-    static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 1;
+    static constexpr int32_t PROTOCOL_VERSION = 2;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 2;
 
     enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
     enum Aggregator : int32_t {
@@ -84,6 +85,8 @@ public:
     godot::Dictionary poll_effects(int64_t after_effect_id, int32_t limit) const;
     godot::Dictionary ack_effects(int64_t up_to_effect_id);
     godot::Dictionary set_enabled(const godot::Dictionary &batch);
+    godot::Dictionary reconcile_branch_bindings(const godot::Dictionary &batch);
+    godot::Dictionary branch_progress(uint64_t branch_handle) const;
     godot::Dictionary resync_source(const godot::Dictionary &snapshot);
     godot::Dictionary report() const;
     bool should_run(int64_t day_index) const;
@@ -113,7 +116,11 @@ private:
         int32_t condition_count = 0;
         int32_t effect_begin = 0;
         int32_t effect_count = 0;
+        int32_t selector_field = -1;
+        int64_t selector_value = 0;
         uint8_t enabled = 1;
+        uint8_t dynamic_binding = 0;
+        uint8_t selector_negated = 0;
     };
     struct EffectDefinition {
         int32_t action = CUSTOM_DOMAIN_COMMAND;
@@ -182,6 +189,12 @@ private:
         uint64_t target_handle = 0;
         int32_t state_index = -1;
     };
+    struct BranchBinding {
+        int32_t trigger_id = -1;
+        uint64_t branch_handle = 0;
+        int32_t cell = -1;
+        int32_t reward_target = 0;
+    };
 
     bool _configured = false;
     uint64_t _catalog_hash = 0;
@@ -200,6 +213,8 @@ private:
     std::vector<EffectDefinition> _effect_definitions;
     std::vector<int32_t> _condition_ops;
     std::vector<std::vector<int32_t>> _index_by_source_event;
+    std::vector<BranchBinding> _branch_bindings;
+    std::unordered_map<uint64_t, std::vector<int32_t>> _branch_index_by_event_cell;
     std::vector<int64_t> _source_cursor;
     std::vector<uint8_t> _source_needs_resync;
     std::vector<int64_t> _source_gap_begin;
@@ -223,11 +238,15 @@ private:
 
     int32_t find_or_create_state(int32_t trigger_id, uint64_t target_handle,
                                  uint32_t target_generation);
+    int32_t trigger_id_for_key(const std::string &key) const;
+    void erase_state(int32_t trigger_id, uint64_t target_handle);
+    void rebuild_branch_index();
     uint64_t resolve_target(const Definition &definition, const Event &event) const;
     uint64_t resolve_effect_target(const EffectDefinition &effect,
                                    uint64_t state_target,
                                    const Event &event) const;
     int64_t event_field(const Event &event, int32_t field) const;
+    bool event_matches(const Definition &definition, const Event &event) const;
     bool update_aggregate(int32_t state_index, const Definition &definition,
                           const Event &event, int64_t &old_value,
                           int64_t &new_value, int64_t &event_value);

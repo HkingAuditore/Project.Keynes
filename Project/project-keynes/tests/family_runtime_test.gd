@@ -27,9 +27,54 @@ func _run() -> void:
 		and not (compiled.get("person_given_name_ids", PackedStringArray()) as PackedStringArray).is_empty())
 	if not bool(compiled.get("ok", false)):
 		return
+	var behavior_kinds: PackedInt32Array = compiled.get(
+		"family_trait_behavior_selector_kinds", PackedInt32Array())
+	var behavior_axes: PackedInt32Array = compiled.get(
+		"family_trait_behavior_axes", PackedInt32Array())
+	var behavior_ids: PackedInt32Array = compiled.get(
+		"family_trait_behavior_selector_ids", PackedInt32Array())
+	var exact_selector_compile := not behavior_kinds.is_empty()
+	for selector_kind in behavior_kinds:
+		exact_selector_compile = exact_selector_compile and int(selector_kind) == 0
+	var hunting_building := (compiled.building_type_ids as PackedStringArray).find(
+		"stone_age_hunting_camp")
+	var hunter_profession := (compiled.profession_ids as PackedStringArray).find("hunter")
+	var hunting_building_resolved := false
+	var hunting_profession_resolved := false
+	for selector_index in range(behavior_ids.size()):
+		hunting_building_resolved = hunting_building_resolved or (
+			int(behavior_axes[selector_index]) == 0
+			and int(behavior_ids[selector_index]) == hunting_building)
+		hunting_profession_resolved = hunting_profession_resolved or (
+			int(behavior_axes[selector_index]) == 1
+			and int(behavior_ids[selector_index]) == hunter_profession)
+	_expect("family selectors compile tags and categories to exact dense CSR edges",
+		exact_selector_compile and hunting_building_resolved
+		and hunting_profession_resolved)
+	var bad_trait_catalog: Resource = load(
+		"res://data/economy/default_family_traits.tres").duplicate(true)
+	var bad_traits: Array = bad_trait_catalog.get("traits")
+	var bad_trait: Resource = bad_traits[0].duplicate(true)
+	var bad_behaviors: Array = bad_trait.get("behaviors")
+	var bad_behavior: Resource = bad_behaviors[0].duplicate(true)
+	bad_behavior.set("selector_id", &"family.selector.does_not_exist")
+	bad_behaviors[0] = bad_behavior
+	bad_trait.set("behaviors", bad_behaviors)
+	bad_traits[0] = bad_trait
+	bad_trait_catalog.set("traits", bad_traits)
+	var bad_selector_result: Dictionary = bad_trait_catalog.call(
+		"compile_native_columns", compiled)
+	_expect("unknown family selector is rejected at the cold catalog boundary",
+		not bool(bad_selector_result.get("ok", true))
+		and String(bad_selector_result.get("reason", ""))
+			== "family_trait_behavior_selector_unknown")
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
 	_test_formal_capital_v2_packet_fallback(catalog)
+	# Keep one catalog trait outside the deterministic core roll so mutation
+	# ordering and core-removal protection can be exercised in this fixture.
+	catalog.family_core_trait_min = 2
+	catalog.family_core_trait_max = 2
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.family_runtime_mode = "ACTIVE"
@@ -43,6 +88,7 @@ func _run() -> void:
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	var signatures: PackedStringArray = catalog.signature_keys
 	var building_id := building_ids.find("gathering_ground")
+	var reward_building_id := building_ids.find("method_gathering_ground_r1")
 	var owner_sig := signatures.find("forager|default")
 	var merchant_sig := signatures.find("merchant|default")
 	var target_margins: PackedInt32Array = catalog.building_target_operating_margin_q16
@@ -52,6 +98,12 @@ func _run() -> void:
 	var output_quantities: PackedInt64Array = catalog.building_output_quantities
 	output_quantities[int(output_offsets[building_id])] = 7000000000
 	catalog.building_output_quantities = output_quantities
+	var construction_days: PackedInt32Array = catalog.building_construction_days
+	construction_days[reward_building_id] = 5
+	catalog.building_construction_days = construction_days
+	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
+	birth_rates.fill(0)
+	catalog.signature_birth_rate_q32 = birth_rates
 	var ext := _new_ext(catalog)
 	_expect("country bootstraps", _configure_country(ext, catalog, 260801))
 	_expect("economy configures", bool(ext.configure_economy(
@@ -161,6 +213,146 @@ func _run() -> void:
 	var person_count_before := int(ext.get_family_notable_people(
 		family_handle, 0, 64).get("total", 0))
 
+	var initial_traits: Dictionary = ext.get_family_traits(family_handle)
+	var initial_trait_keys: PackedStringArray = initial_traits.get(
+		"trait_keys", PackedStringArray())
+	var initial_core: PackedByteArray = initial_traits.get("core", PackedByteArray())
+	_expect("family deterministically rolls exactly two immutable core traits",
+		bool(initial_traits.get("ok", false)) and initial_trait_keys.size() == 2
+		and initial_core.size() == 2 and int(initial_core[0]) == 1
+		and int(initial_core[1]) == 1)
+	var all_trait_keys: PackedStringArray = catalog.family_trait_ids
+	var additional_trait := ""
+	for trait_key in all_trait_keys:
+		if not initial_trait_keys.has(trait_key):
+			additional_trait = String(trait_key)
+			break
+	_expect("catalog leaves an additional trait available", not additional_trait.is_empty())
+	var additional_id := all_trait_keys.find(additional_trait)
+	var strength_min: PackedInt32Array = catalog.family_trait_strength_min_q16
+	var strength_max: PackedInt32Array = catalog.family_trait_strength_max_q16
+	var target_strength := int(strength_max[additional_id]) if additional_id >= 0 else 65536
+	var trait_commands: Dictionary = ext.submit_family_trait_commands({
+		"protocol_version": 1,
+		# Submitted in reverse semantic order; priority/sequence must grant before set.
+		"operations": PackedInt32Array([3, 1, 2]),
+		"family_handles": PackedInt64Array([family_handle, family_handle, family_handle]),
+		"trait_keys": PackedStringArray([additional_trait, additional_trait,
+			String(initial_trait_keys[0])]),
+		"strength_q16": PackedInt32Array([target_strength,
+			int(strength_min[additional_id]) if additional_id >= 0 else 65536, 0]),
+		"effective_days": PackedInt64Array([10, 10, 10]),
+		"priorities": PackedInt32Array([200, 100, 50]),
+		"sequences": PackedInt64Array([2, 1, 0]),
+	})
+	_expect("ordered family trait mutation batch is accepted",
+		bool(trait_commands.get("ok", false)))
+
+	var branches: Dictionary = ext.get_family_branches(family_handle, 0, 64)
+	var branch_handles: PackedInt64Array = branches.get(
+		"branch_handles", PackedInt64Array())
+	_expect("family exposes a generation-safe local influence branch",
+		bool(branches.get("ok", false)) and not branch_handles.is_empty()
+		and int(branch_handles[0]) != 0)
+	if branch_handles.is_empty():
+		return
+	var branch_handle := int(branch_handles[0])
+	var population_before_reward := int(ext.get_population_cell_snapshot(0).population)
+	var family_population_before_reward := int(
+		ext.get_family_snapshot(family_handle).population)
+	var building_before_reward: Dictionary = ext.get_building_cell_snapshot(0)
+	var counts_before: PackedInt64Array = building_before_reward.get(
+		"building_counts_by_type", PackedInt64Array())
+	var reward_submit: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([14, 15]),
+		"effective_days": PackedInt64Array([10, 10]),
+		"sequences": PackedInt64Array([100, 101]),
+		"target_handles": PackedInt64Array([branch_handle, branch_handle]),
+		"i32_0": PackedInt32Array([0, 0]),
+		"i32_1": PackedInt32Array([reward_building_id, -1]),
+		"i64_0": PackedInt64Array([1, 3]),
+		"i64_1": PackedInt64Array([9001, 9002]),
+	})
+	_expect("family building and population rewards are accepted",
+		bool(reward_submit.get("ok", false)))
+	ext.set_economy_trace_filter({"cells": PackedInt32Array([0])})
+	var reward_day := _run_day(ext, 2)
+	_expect("family reward commit conserves population money and goods",
+		bool(reward_day.get("done", false)) and not bool(reward_day.get("fatal", false))
+		and int(reward_day.get("population_error", 1)) == 0
+		and int(reward_day.get("money_error", 1)) == 0
+		and int(reward_day.get("goods_error", 1)) == 0)
+	_expect("family work counters remain bounded by sparse active edges",
+		int(reward_day.get("family_count", 0)) == 1
+		and int(reward_day.get("family_branch_count", 0)) == 1
+		and int(reward_day.get("family_trait_roll_count", 0)) == 3
+		and int(reward_day.get("family_membership_edges_processed", 0)) <= 4
+		and int(reward_day.get("family_ownership_edges_processed", 0)) <= 4)
+	_expect("family population reward adds exact local membership",
+		int(ext.get_population_cell_snapshot(0).population) == population_before_reward + 3
+		and int(ext.get_family_snapshot(family_handle).population)
+			== family_population_before_reward + 3)
+	var mutated_traits: Dictionary = ext.get_family_traits(family_handle)
+	var mutated_keys: PackedStringArray = mutated_traits.get(
+		"trait_keys", PackedStringArray())
+	var mutated_strengths: PackedInt32Array = mutated_traits.get(
+		"strength_q16", PackedInt32Array())
+	var additional_row := mutated_keys.find(additional_trait)
+	_expect("core removal is rejected and ordered grant/set reaches target strength",
+		mutated_keys.has(initial_trait_keys[0]) and additional_row >= 0
+		and int(mutated_strengths[additional_row]) == target_strength)
+	var pending_reward: Dictionary = ext.get_building_cell_snapshot(0)
+	var pending_types: PackedInt32Array = pending_reward.get(
+		"construction_type_ids", PackedInt32Array())
+	if not pending_types.has(reward_building_id) or int(
+			reward_day.get("construction_goods_consumed", -1)) != 0:
+		print("reward pending diagnostic=", pending_types,
+			" consumed=", reward_day.get("construction_goods_consumed", -1),
+			" rejected=", reward_day.get("rejected_commands", -1),
+			" reason=", reward_day.get("last_building_rejection_reason", ""))
+	_expect("free building waits its normal construction duration without materials",
+		pending_types.has(reward_building_id)
+		and int(reward_day.get("construction_goods_consumed", -1)) == 0)
+	var economy_events: Dictionary = ext.poll_economy_events({
+		"consumer_id": &"family_reward_test", "max_events": 256})
+	var event_schema: Dictionary = ext.get_economy_event_schema()
+	var event_kinds: Dictionary = event_schema.get("kinds", {})
+	_expect("population reward writes an explicit population-source ledger event",
+		(economy_events.get("kind", PackedInt32Array()) as PackedInt32Array).has(
+			int(event_kinds.get("POPULATION_SOURCE", -1))))
+
+	var completion_day := _run_day(ext, 3)
+	var completed_reward: Dictionary = ext.get_building_cell_snapshot(0)
+	var counts_after: PackedInt64Array = completed_reward.get(
+		"building_counts_by_type", PackedInt64Array())
+	var industries_after: Dictionary = ext.get_family_industries(
+		family_handle, 0, 64)
+	var owned_after: PackedInt64Array = industries_after.get(
+		"owned_counts", PackedInt64Array())
+	var total_owned := 0
+	for owned_count in owned_after:
+		total_owned += int(owned_count)
+	if int(counts_after[reward_building_id]) != int(
+			counts_before[reward_building_id]) + 1 \
+			or total_owned != 2:
+		print("reward completion diagnostic before=", counts_before[reward_building_id],
+			" after=", counts_after[reward_building_id], " total_owned=", total_owned,
+			" industries=", industries_after)
+	_expect("free building completes into the sponsoring family branch",
+		bool(completion_day.get("done", false))
+		and int(completion_day.get("population_error", 1)) == 0
+		and int(completion_day.get("money_error", 1)) == 0
+		and int(completion_day.get("goods_error", 1)) == 0
+		and int(counts_after[reward_building_id])
+			== int(counts_before[reward_building_id]) + 1
+		and total_owned == 2)
+	var gameplay_events: Dictionary = ext.poll_gameplay_events({
+		"consumer_id": &"family_reward_test", "max_events": 256})
+	_expect("reward building completion is excluded from recursive gameplay facts",
+		not (gameplay_events.get("type", PackedInt32Array()) as PackedInt32Array).has(6))
+
+	person_count_before = int(ext.get_family_notable_people(
+		family_handle, 0, 64).get("total", 0))
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	_expect("PKEC v29 save begins", bool(save_begin.get("ok", false))
@@ -173,6 +365,20 @@ func _run() -> void:
 		chunks.append(chunk)
 	_expect("PKEC v29 save completes", not chunks.is_empty()
 		and bool(ext.end_economy_save().get("ok", false)))
+	var legacy_chunk := chunks[0].duplicate()
+	legacy_chunk[4] = 28
+	legacy_chunk[5] = 0
+	var legacy := _new_ext(catalog)
+	_expect("legacy restore country bootstraps", _configure_country(
+		legacy, catalog, 260801))
+	_expect("legacy restore economy configures", bool(legacy.configure_economy(
+		catalog, profile, 1, 260801).get("ok", false)))
+	legacy.begin_economy_restore()
+	var legacy_result: Dictionary = legacy.feed_economy_restore_chunk(legacy_chunk)
+	_expect("PKEC v28 and earlier return an explicit incompatibility error",
+		not bool(legacy_result.get("ok", true))
+		and String(legacy_result.get("reason", ""))
+			== "economy_save_v28_or_earlier_unsupported")
 	var restored := _new_ext(catalog)
 	_expect("restore country bootstraps", _configure_country(
 		restored, catalog, 260801))
@@ -197,7 +403,7 @@ func _run() -> void:
 	var restored_family: Dictionary = restored.get_family_snapshot(family_handle)
 	_expect("generation-safe family handle survives restore",
 		bool(restored_family.get("ok", false))
-		and int(restored_family.get("owned_buildings", 0)) == 1)
+		and int(restored_family.get("owned_buildings", 0)) == 2)
 	var restored_person: Dictionary = restored.get_notable_person_snapshot(person_handle)
 	_expect("generation-safe important-person handle and job survive restore",
 		bool(restored_person.get("ok", false))

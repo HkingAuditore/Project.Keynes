@@ -1,6 +1,52 @@
-[gd_resource type="Resource" script_class="TriggerCatalog" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="TriggerCatalog" load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/trigger/trigger_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://scripts/trigger/trigger_definition.gd" id="2_definition"]
+[ext_resource type="Script" path="res://scripts/trigger/trigger_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="EffectHuntingBuilding"]
+script = ExtResource("3_effect")
+action = 11
+source_priority = 100
+domain = 2
+value_mode = 1
+command_key = &"family.free_building"
+definition_key = &"stone_age_hunting_camp"
+
+[sub_resource type="Resource" id="TriggerHuntingBuilding"]
+script = ExtResource("2_definition")
+key = &"family.build_hunting_bonus"
+source_id = 1
+event_type = 6
+payload_schema = 3
+aggregator = 2
+value_field = 1
+threshold = 5
+dynamic_binding = true
+selector_field = 2
+selector_key = &"stone_age_hunting_camp"
+effects = Array[Resource]([SubResource("EffectHuntingBuilding")])
+
+[sub_resource type="Resource" id="EffectTradePopulation"]
+script = ExtResource("3_effect")
+action = 11
+source_priority = 100
+domain = 2
+value_mode = 1
+command_key = &"family.population_reward"
+
+[sub_resource type="Resource" id="TriggerTradePopulation"]
+script = ExtResource("2_definition")
+key = &"family.trade_population_bonus"
+source_id = 1
+event_type = 7
+payload_schema = 4
+aggregator = 1
+threshold = 20
+dynamic_binding = true
+selector_field = 5
+effects = Array[Resource]([SubResource("EffectTradePopulation")])
 
 [resource]
 script = ExtResource("1_catalog")
+definitions = Array[Resource]([SubResource("TriggerHuntingBuilding"), SubResource("TriggerTradePopulation")])

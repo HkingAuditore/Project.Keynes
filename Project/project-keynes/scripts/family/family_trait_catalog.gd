@@ -7,6 +7,7 @@ const ModifierEffectScript = preload("res://scripts/family/family_modifier_effec
 const TriggerBindingScript = preload("res://scripts/family/family_trigger_binding.gd")
 const TraitDefinitionScript = preload("res://scripts/family/family_trait_definition.gd")
 const Q16_ONE := 65536
+const DEFAULT_TRIGGER_CATALOG_PATH := "res://data/triggers/default_trigger_catalog.tres"
 
 @export var version: int = 1
 @export_range(0, 16, 1) var core_trait_min: int = 2
@@ -73,10 +74,18 @@ func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
 	var trigger_offsets := PackedInt32Array([0])
 	var trigger_definition_keys := PackedStringArray()
 	var trigger_reward_targets := PackedInt32Array()
+	var dynamic_trigger_keys := {}
+	var trigger_reward_by_key := {}
+	var trigger_catalog = ResourceLoader.load(DEFAULT_TRIGGER_CATALOG_PATH, "Resource")
+	if trigger_catalog == null:
+		return {"ok": false, "reason": "family_trait_trigger_catalog_unavailable"}
+	var trigger_definitions: Variant = trigger_catalog.get("definitions")
+	if not trigger_definitions is Array:
+		return {"ok": false, "reason": "family_trait_trigger_catalog_unavailable"}
+	for trigger_definition in trigger_definitions:
+		if trigger_definition != null and bool(trigger_definition.dynamic_binding):
+			dynamic_trigger_keys[String(trigger_definition.key)] = true
 
-	var building_ids: PackedStringArray = economy_columns.get("building_type_ids", PackedStringArray())
-	var profession_ids: PackedStringArray = economy_columns.get("profession_ids", PackedStringArray())
-	var need_ids: PackedStringArray = economy_columns.get("need_ids", PackedStringArray())
 	for definition in ordered:
 		var trait_idx := int(index[String(definition.key)])
 		for prerequisite in definition.prerequisite_keys:
@@ -95,13 +104,16 @@ func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
 			if behavior == null or not behavior is BehaviorScript \
 					or behavior.factor_q16 < 0 or behavior.factor_q16 > Q16_ONE * 4:
 				return {"ok": false, "reason": "family_trait_behavior_invalid"}
-			var selector := _resolve_selector(behavior, building_ids, profession_ids, need_ids)
-			if selector < 0:
+			var selectors := _resolve_selectors(behavior, economy_columns)
+			if selectors.is_empty():
 				return {"ok": false, "reason": "family_trait_behavior_selector_unknown"}
-			behavior_axes.append(behavior.axis)
-			behavior_selector_kinds.append(behavior.selector_kind)
-			behavior_selector_ids.append(selector)
-			behavior_factors.append(behavior.factor_q16)
+			for selector in selectors:
+				behavior_axes.append(behavior.axis)
+				# Every cold selector is expanded to exact dense IDs. The native
+				# runtime therefore has one branch-local CSR lookup shape.
+				behavior_selector_kinds.append(BehaviorScript.SelectorKind.STABLE_ID)
+				behavior_selector_ids.append(selector)
+				behavior_factors.append(behavior.factor_q16)
 		behavior_offsets.append(behavior_axes.size())
 		for effect in definition.modifiers:
 			if effect == null or not effect is ModifierEffectScript \
@@ -119,7 +131,15 @@ func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
 					or binding.definition_keys_by_tier.size() != 6:
 				return {"ok": false, "reason": "family_trait_trigger_invalid"}
 			for definition_key in binding.definition_keys_by_tier:
-				trigger_definition_keys.append(String(definition_key))
+				var trigger_key := String(definition_key)
+				if not trigger_key.is_empty() and not dynamic_trigger_keys.has(trigger_key):
+					return {"ok": false, "reason": "family_trait_trigger_definition_unknown"}
+				if not trigger_key.is_empty() and trigger_reward_by_key.has(trigger_key) \
+						and int(trigger_reward_by_key[trigger_key]) != int(binding.reward_target):
+					return {"ok": false, "reason": "family_trait_trigger_reward_conflict"}
+				if not trigger_key.is_empty():
+					trigger_reward_by_key[trigger_key] = int(binding.reward_target)
+				trigger_definition_keys.append(trigger_key)
 			trigger_reward_targets.append(binding.reward_target)
 		trigger_offsets.append(trigger_reward_targets.size())
 
@@ -166,19 +186,104 @@ func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
 	}
 
 
-func _resolve_selector(behavior: Resource, building_ids: PackedStringArray,
-		profession_ids: PackedStringArray, need_ids: PackedStringArray) -> int:
+func _resolve_selectors(behavior: Resource,
+		economy_columns: Dictionary) -> PackedInt32Array:
+	var selector_id := String(behavior.selector_id).strip_edges()
+	if selector_id.is_empty():
+		return PackedInt32Array()
+	var stable_ids := PackedStringArray()
+	match behavior.axis:
+		BehaviorScript.Axis.INVESTMENT_BUILDING:
+			stable_ids = economy_columns.get("building_type_ids", PackedStringArray())
+		BehaviorScript.Axis.CAREER_PROFESSION:
+			stable_ids = economy_columns.get("profession_ids", PackedStringArray())
+		BehaviorScript.Axis.CONSUMPTION_NEED:
+			stable_ids = economy_columns.get("need_ids", PackedStringArray())
+		BehaviorScript.Axis.CONSUMPTION_GOOD:
+			stable_ids = economy_columns.get("good_ids", PackedStringArray())
+		_:
+			return PackedInt32Array()
+	if behavior.selector_kind == BehaviorScript.SelectorKind.STABLE_ID:
+		var dense_id := stable_ids.find(selector_id)
+		return PackedInt32Array([dense_id]) if dense_id >= 0 else PackedInt32Array()
 	if behavior.selector_kind == BehaviorScript.SelectorKind.BUILDING_SECTOR:
-		var sector_id := String(behavior.selector_id)
-		if not sector_id.is_valid_int():
-			return -1
-		var sector := sector_id.to_int()
-		return sector if sector >= 0 and sector <= 4 else -1
-	var stable_id := String(behavior.selector_id)
-	if behavior.axis == BehaviorScript.Axis.INVESTMENT_BUILDING:
-		return building_ids.find(stable_id)
-	if behavior.axis == BehaviorScript.Axis.CAREER_PROFESSION:
-		return profession_ids.find(stable_id)
-	if behavior.axis == BehaviorScript.Axis.CONSUMPTION_NEED:
-		return need_ids.find(stable_id)
-	return -1
+		if behavior.axis != BehaviorScript.Axis.INVESTMENT_BUILDING:
+			return PackedInt32Array()
+		var sector_map := {"agriculture": 0, "extractive": 1,
+			"manufacturing": 2, "energy": 3, "knowledge": 4}
+		var sector := int(sector_map.get(selector_id, selector_id.to_int() \
+			if selector_id.is_valid_int() else -1))
+		return _matching_scalar_ids(economy_columns.get(
+			"building_economic_sectors", PackedInt32Array()), sector)
+	if behavior.selector_kind == BehaviorScript.SelectorKind.CATEGORY:
+		match behavior.axis:
+			BehaviorScript.Axis.INVESTMENT_BUILDING:
+				var kind_map := {"collector": 0, "industrial": 1, "service": 2}
+				var kind := int(kind_map.get(selector_id, selector_id.to_int() \
+					if selector_id.is_valid_int() else -1))
+				return _matching_scalar_ids(economy_columns.get(
+					"building_kinds", PackedInt32Array()), kind)
+			BehaviorScript.Axis.CAREER_PROFESSION:
+				return _matching_string_ids(economy_columns.get(
+					"profession_class_ids", PackedStringArray()), selector_id)
+			BehaviorScript.Axis.CONSUMPTION_GOOD:
+				return _matching_string_ids(economy_columns.get(
+					"good_category_ids", PackedStringArray()), selector_id)
+		return PackedInt32Array()
+	if behavior.selector_kind == BehaviorScript.SelectorKind.SUBSTITUTION_CATEGORY:
+		if behavior.axis != BehaviorScript.Axis.CONSUMPTION_GOOD:
+			return PackedInt32Array()
+		return _matching_csr_ids(economy_columns.get(
+			"good_substitution_category_offsets", PackedInt32Array()),
+			economy_columns.get("good_substitution_category_ids", PackedStringArray()),
+			selector_id, stable_ids.size())
+	if behavior.selector_kind == BehaviorScript.SelectorKind.SEMANTIC_TAG:
+		var prefix: String = {BehaviorScript.Axis.INVESTMENT_BUILDING: "building",
+			BehaviorScript.Axis.CAREER_PROFESSION: "profession",
+			BehaviorScript.Axis.CONSUMPTION_NEED: "need",
+			BehaviorScript.Axis.CONSUMPTION_GOOD: "good"}.get(behavior.axis, "")
+		if prefix.is_empty():
+			return PackedInt32Array()
+		return _matching_csr_ids(economy_columns.get(
+			"%s_semantic_tag_offsets" % prefix, PackedInt32Array()),
+			economy_columns.get("%s_semantic_tags" % prefix, PackedStringArray()),
+			selector_id, stable_ids.size())
+	return PackedInt32Array()
+
+
+static func _matching_scalar_ids(values: PackedInt32Array,
+		target: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if target < 0:
+		return out
+	for index in range(values.size()):
+		if int(values[index]) == target:
+			out.append(index)
+	return out
+
+
+static func _matching_string_ids(values: PackedStringArray,
+		target: String) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for index in range(values.size()):
+		if String(values[index]) == target:
+			out.append(index)
+	return out
+
+
+static func _matching_csr_ids(offsets: PackedInt32Array,
+		values: PackedStringArray, target: String, row_count: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if offsets.size() != row_count + 1 or offsets.is_empty() \
+			or offsets[0] != 0 or offsets[-1] != values.size():
+		return out
+	for row in range(row_count):
+		var begin := int(offsets[row])
+		var end := int(offsets[row + 1])
+		if begin < 0 or end < begin or end > values.size():
+			return PackedInt32Array()
+		for edge in range(begin, end):
+			if String(values[edge]) == target:
+				out.append(row)
+				break
+	return out

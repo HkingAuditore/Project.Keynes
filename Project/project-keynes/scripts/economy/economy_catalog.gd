@@ -49,12 +49,25 @@ static func compile_native_catalog() -> Dictionary:
 
 	var need_ids := PackedStringArray()
 	var need_living_cost_weights := PackedInt32Array()
+	var need_semantic_tag_offsets := PackedInt32Array([0])
+	var need_semantic_tags := PackedStringArray()
 	for need in needs:
 		var living_weight := int(need.living_cost_weight_q16)
 		if living_weight < 0 or living_weight > Q16_ONE:
 			return {"ok": false, "reason": "invalid living cost weight: %s" % String(need.id)}
 		need_ids.append(String(need.id))
 		need_living_cost_weights.append(living_weight)
+		var normalized_tags := PackedStringArray()
+		for source_tags in [need.use_tags as PackedStringArray,
+				need.semantic_tags as PackedStringArray]:
+			for tag in source_tags:
+				var normalized := String(tag).strip_edges()
+				if normalized.is_empty() or normalized_tags.has(normalized):
+					return {"ok": false, "reason": "invalid need semantic tag: %s" % String(need.id)}
+				normalized_tags.append(normalized)
+		normalized_tags.sort()
+		need_semantic_tags.append_array(normalized_tags)
+		need_semantic_tag_offsets.append(need_semantic_tags.size())
 	if need_ids.size() > 32:
 		return {"ok": false, "reason": "global need count exceeds 32"}
 	var need_index := _index_ids(need_ids)
@@ -171,6 +184,8 @@ static func compile_native_catalog() -> Dictionary:
 	var profession_class_ids := PackedStringArray()
 	var profession_technology_tag_offsets := PackedInt32Array([0])
 	var profession_technology_tags := PackedStringArray()
+	var profession_semantic_tag_offsets := PackedInt32Array([0])
+	var profession_semantic_tags := PackedStringArray()
 	var profession_index := {}
 	for i in range(professions.size()):
 		var stable_id := String(professions[i].id)
@@ -186,6 +201,15 @@ static func compile_native_catalog() -> Dictionary:
 				return {"ok": false, "reason": "empty profession technology tag: %s" % stable_id}
 			profession_technology_tags.append(normalized)
 		profession_technology_tag_offsets.append(profession_technology_tags.size())
+		var normalized_semantic_tags := PackedStringArray()
+		for tag in professions[i].semantic_tags:
+			var normalized := String(tag).strip_edges()
+			if normalized.is_empty() or normalized_semantic_tags.has(normalized):
+				return {"ok": false, "reason": "invalid profession semantic tag: %s" % stable_id}
+			normalized_semantic_tags.append(normalized)
+		normalized_semantic_tags.sort()
+		profession_semantic_tags.append_array(normalized_semantic_tags)
+		profession_semantic_tag_offsets.append(profession_semantic_tags.size())
 
 	var ethnicity_ids := PackedStringArray()
 	var ethnicity_need_factor := PackedInt32Array()
@@ -229,9 +253,13 @@ static func compile_native_catalog() -> Dictionary:
 		"profession_class_ids": profession_class_ids,
 		"profession_technology_tag_offsets": profession_technology_tag_offsets,
 		"profession_technology_tags": profession_technology_tags,
+		"profession_semantic_tag_offsets": profession_semantic_tag_offsets,
+		"profession_semantic_tags": profession_semantic_tags,
 		"ethnicity_ids": ethnicity_ids,
 		"need_ids": need_ids,
 		"need_living_cost_weights_q16": need_living_cost_weights,
+		"need_semantic_tag_offsets": need_semantic_tag_offsets,
+		"need_semantic_tags": need_semantic_tags,
 		"plan_ids": plan_ids,
 		"environment_curve_ids": curve_ids,
 		"environment_curve_signal_ids": curve_signal_ids,
@@ -520,6 +548,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var resource_ecology_growth_q16 := PackedInt32Array()
 	var resource_temp_lo_q16 := PackedInt32Array()
 	var resource_temp_hi_q16 := PackedInt32Array()
+	var resource_semantic_tag_offsets := PackedInt32Array([0])
+	var resource_semantic_tags := PackedStringArray()
 	for resource in resources:
 		var stable_id := String(resource.id)
 		if not used_resource_ids.has(stable_id):
@@ -545,6 +575,15 @@ static func _compile_building_columns(profession_index: Dictionary,
 		resource_ecology_growth_q16.append(roundi(float(resource.ecology_growth_rate) * Q16_ONE))
 		resource_temp_lo_q16.append(roundi(float(resource.temp_lo) * Q16_ONE))
 		resource_temp_hi_q16.append(roundi(float(resource.temp_hi) * Q16_ONE))
+		var normalized_resource_tags := PackedStringArray()
+		for tag in resource.semantic_tags:
+			var normalized := String(tag).strip_edges()
+			if normalized.is_empty() or normalized_resource_tags.has(normalized):
+				return {"ok": false, "reason": "invalid resource semantic tag: %s" % stable_id}
+			normalized_resource_tags.append(normalized)
+		normalized_resource_tags.sort()
+		resource_semantic_tags.append_array(normalized_resource_tags)
+		resource_semantic_tag_offsets.append(resource_semantic_tags.size())
 
 	var type_ids := PackedStringArray()
 	var owner_professions := PackedInt32Array()
@@ -560,6 +599,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var building_climate_profile_indices := PackedInt32Array()
 	var technology_tag_offsets := PackedInt32Array([0])
 	var technology_tags := PackedStringArray()
+	var semantic_tag_offsets := PackedInt32Array([0])
+	var semantic_tags := PackedStringArray()
 	var upgrade_family_set := {}
 	for profile in profiles:
 		var family_id := String(profile.upgrade_family_id).strip_edges()
@@ -659,6 +700,15 @@ static func _compile_building_columns(profession_index: Dictionary,
 				return {"ok": false, "reason": "empty building technology tag: %s" % stable_id}
 			technology_tags.append(String(tag))
 		technology_tag_offsets.append(technology_tags.size())
+		var normalized_building_tags := PackedStringArray()
+		for tag in profile.semantic_tags:
+			var normalized := String(tag).strip_edges()
+			if normalized.is_empty() or normalized_building_tags.has(normalized):
+				return {"ok": false, "reason": "invalid building semantic tag: %s" % stable_id}
+			normalized_building_tags.append(normalized)
+		normalized_building_tags.sort()
+		semantic_tags.append_array(normalized_building_tags)
+		semantic_tag_offsets.append(semantic_tags.size())
 		var wage_policy := String(profile.wage_policy_id)
 		var wage_per_employee := int(profile.wage_per_employee_per_day)
 		if wage_policy not in ["none", "fixed", "adaptive"]:
@@ -928,6 +978,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"production_climate_floor_q16": climate_floor_q16,
 		"building_technology_tag_offsets": technology_tag_offsets,
 		"building_technology_tags": technology_tags,
+		"building_semantic_tag_offsets": semantic_tag_offsets,
+		"building_semantic_tags": semantic_tags,
 		"building_upgrade_family_ids": upgrade_family_ids,
 		"building_upgrade_family_indices": upgrade_family_indices,
 		"building_upgrade_tiers": upgrade_tiers,
@@ -976,6 +1028,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_resource_ecology_growth_q16": resource_ecology_growth_q16,
 		"building_resource_temp_lo_q16": resource_temp_lo_q16,
 		"building_resource_temp_hi_q16": resource_temp_hi_q16,
+		"building_resource_semantic_tag_offsets": resource_semantic_tag_offsets,
+		"building_resource_semantic_tags": resource_semantic_tags,
 		"building_resource_offsets": production_resource_offsets,
 		"building_production_resource_ids": production_resources,
 		"building_production_resource_quantities": production_resource_quantities,

@@ -262,7 +262,7 @@ after finalization. Candidate evaluation may later move to read-only worker
 ranges, but sponsor funds, materials, population movement, and construction
 creation must be revalidated and committed in stable cell order.
 
-## Rolling five-phase graph (PKEC v22, current)
+## Rolling five-phase graph (introduced in PKEC v22, retained by PKEC v29)
 
 The former global epoch and workload-selected cadence are superseded. Every day
 the native graph builds the sorted workset for `cell_id % 5 == day % 5` and

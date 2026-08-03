@@ -23,7 +23,7 @@ Gameplay 使用独立 identity/base SoA，查询时组合 Gameplay store；对�
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy PKEC v24 pipeline（当前）
+## Economy pipeline（PKEC v29 当前，v24 历史基础）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
@@ -48,7 +48,7 @@ due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch �
 generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量复核且以全量结果权威；
 200 日每日双审计零 mismatch 后，生产默认已切到 INCREMENTAL，每 25 日及 restore/异常边界
 仍执行完整复核。除 v23 明确保存的生产气候冻结值、建筑气候诊断、补贴权重与财政累计外，
-列表、shadow、stamp 和运行期诊断均为 transient，不进入 PKEC v24/hash。
+列表、shadow、stamp 和运行期诊断均为 transient，不进入 PKEC v29/hash。
 
 ## 状态总览
 
@@ -67,7 +67,7 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
 | CountryStore / territory / technology / treasury / tax policy | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、领土 CSR、国家科技、国库与五类税表；仅 `cell.country_slot` 发布到 DataCore，PKCN v4 持久化。 |
 | ModifierStore | C++ ACTIVE authority | `modifier_daily` | 四域隔离 SoA/bucket；不写 base，发布冻结 effective 聚合与 journal。 |
-| PopulationCohort / MarketStore / fiscal escrow | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家税率、N 日 need/bundle 清算、源头扣缴与补贴托管；worker 写独占 cell lane，财政提交统一更新国库并发布 PKEC v24。 |
+| PopulationCohort / MarketStore / fiscal escrow | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家税率、N 日 need/bundle 清算、源头扣缴与补贴托管；worker 写独占 cell lane，财政提交统一更新国库并发布 PKEC v29。 |
 | Weather fronts | 部分 DOTS/packed | native snapshots / packed fronts | object layer、UI/debug、spawn/advect orchestration 部分保留。 |
 | Ocean currents physical | C++ kernels + **生成期一次性 C++ orchestrator** + 运行期 GDScript stage machine | `run_physical_solve_pass`（生成期）, `run_slp_field_pass`, `run_wind_field_pass`, `run_psi_solver_pass`, upwelling/raster helpers | 生成期 `_physical_solve_for_phase` 优先走 `run_physical_solve_pass`（SLP→wind→PSI→upwelling 全 C++ 串完）；运行期 `_phys_stage` 逐帧状态机不变；NaN 守门 + 风场 raster + fallback 保留。 |
 | Enum atlas upload | C++ cached patch + GDScript GPU upload | cached patch/raster helpers | Image/ImageTexture/RID upload。 |
@@ -2631,6 +2631,20 @@ work landed from `docs/plans/climate-weather-ocean-stability-plan.md`.
   temperature is NaN or infinite; using `temp > 0.0` as a validity check creates
   discontinuous jumps near the lower clamp.
 ## 建筑生产管线
+
+### 家族分支影响管线
+
+`FamilyTraitCatalog selector compile → deterministic FamilyTraitRoll → local sparse branch context →
+FAMILY_COMMIT prestige review → Economy Modifier bucket / Trigger branch binding`。核心特性在成立时按
+seed 与 stable family ID 无放回抽取；行为偏好直接参与合法投资、职业和 cohort variant 评分，
+但不跳过硬门槛。威望只缩放分档效果，不缩放行为偏好。每个分支以人口/现金/本地建筑资产
+25/35/40 加权，并使用 30 日错峰、80% 降级线和双评审滞回。
+
+消费路径先计算 market-invariant base variant score，再用 family membership 人口权重和冻结 city
+good factor 形成 cohort-local 最多 8 项栈上分数；普通需求量乘调整/基础分数比，生存下限不下降。
+自然资源再生在 Modifier snapshot 变化时冻结为连续 POD，由 native pass 与 fallback 共同消费。
+完成建筑和跨 cell 贸易事实只发布一次；TriggerRuntime 通过本地稀疏索引扇出，奖励回到下一次
+Economy 安全边界。
 
 `BuildingProfile → EconomyCatalog CSR → NativeEconomyRuntime BUILDING_GRAPH → committed building/
 population/market snapshots`。岗位按本地 profession 匹配，owner lot 先占 owner job，employee

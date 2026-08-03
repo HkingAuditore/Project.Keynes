@@ -9,7 +9,7 @@ closing audit 契约见
 `NativeEconomyRuntime`；动态人口和商品状态不进入 DataCore `_slots`，也不回填
 `MapData.goods_*`。
 
-## PKEC v22 production climate（当前）
+## PKEC v22 production climate（历史基础，当前由 PKEC v29 持久化）
 
 PKEC v22 adds frozen 30-day temperature and plant-available water to every cell
 record and four climate diagnostics to every building record. Restore accepts
@@ -126,11 +126,9 @@ state is introduced.
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v28 是当前 writer：保留 v27 的 FamilyStore、人物、cohort membership、building ownership 与
-  family catalog hash，并追加 NotablePersonStore、人物需求归因和 person catalog hash。保存
-  BuildingIdentityStore、Economy Modifier domain、逐 cell 六列冻结环境、建筑气候诊断、补贴权重与
-  财政累计，并保存逐 cell、逐民族 Q32 出生余数。v27 显式迁移为空出生余数，v26 显式迁移为空人物，
-  v25 显式迁移为空家族；其余 reader 白名单见存档 SOP。
+- PKEC v29 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
+  building ownership、Economy Modifier domain、冻结环境、财政与出生余数，并追加家族特性 roll、
+  per-cell influence branch 与有序特性命令 sections。reader 只接受 v29，v28 及更早版本明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
   成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 - 重要人物不创建第二人口、钱包或订单；姓名、岗位、建筑、财产与需求均为家族/cohort 已实现结果的
@@ -600,7 +598,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death 审计和结构
 回收路径。默认职业年出生/自然死亡率为 4.0%/2.5%，完全满足时净增长目标约 1.5%；
 生存满足率仅以 50% 权重削减出生率。出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，
-并由 PKEC v28 持久化；不新增调度阶段。
+并由 PKEC v29 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -790,7 +788,7 @@ transient. They do not enter PKEC v20 or the state hash. CSV v19 adds the driver
 good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
 columns.
 
-## PKEC v22 rolling settlement (current)
+## PKEC v22 rolling settlement (historical foundation, retained by PKEC v29)
 
 The production runtime no longer waits for a global epoch. Stable cell phase is
 `cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded

@@ -13,20 +13,19 @@ u32 payload_bytes
 payload
 ```
 
-## PKEC v28（当前 writer）
+## PKEC v29（当前 writer）
 
-PKEC v26 在 v25 的完整经济 payload 后增加显赫家族权威状态。PKEC v27 继续保留 section 15–17
-的 FamilyStore、cohort membership 与 building ownership，并在 header 追加人物目录 hash、语义策略、
-人物槽位数和需求边数；section 18 保存 NotablePersonStore（含 inactive tombstone generation），
-section 19 保存人物需求归因，section 20 为 end。PKEC v28 在每个 cell record 尾部追加按稳定
-民族顺序排列的 Q32 出生余数，使小人口的分数出生可跨周期和存档继续累计。
+PKEC v29 保留 v28 的出生余数、人物、家族成员和建筑所有权，并新增家族特性运行时权威：
 
-reader 接受 v28、v27、v26、v25、v23 与 v22。v27 通过
-`v27_empty_birth_residual_bootstrap` 显式迁移为全零出生余数；v26 通过
-`v26_empty_notable_person_bootstrap` 显式迁移为空人物，v25 再通过
-`v25_empty_family_bootstrap` 迁移为空家族。v27 额外验证人物 identity/name、family/cohort/membership、
-building/role、cash claim 与需求边，并在 end 后重建人物 CSR。完整联合存档仍必须先恢复 PKCN，
-再恢复 PKEC。
+- section 20：`FamilyTraitRoll`，含 family handle、trait stable ID、Q16 强度及核心标志；
+- section 21：generation-safe `FamilyCellInfluence`，含稳定分支 ID、三项份额、威望分/等级和评审状态；
+- section 22：尚未到期的有序家族特性命令；
+- section 23：END。
+
+header 同时保存特性目录 version/hash、核心抽取范围和权威记录数。PKTR v2 单独保存动态分支
+Trigger 累计，Modifier state v2 保存实例 `magnitude_q16`。当前 reader **只接受 v29**；v28
+及更早版本统一返回 `economy_save_v28_or_earlier_unsupported`，不提供隐式空状态迁移。完整联合
+存档仍必须先恢复 PKCN，再恢复 PKEC 和 PKTR/Modifier provider。
 
 ## PKEC v23（历史 writer）
 
@@ -105,9 +104,8 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v28，并与 PKCN v4 交叉绑定。PKEC v27、v26、v25、v23、v22 通过显式迁移；
-不在 reader 白名单中的版本返回相应 legacy unsupported 错误，不执行隐式迁移。后文旧版本迁移章节只记录历史
-格式演进，不代表当前 reader 仍接受这些版本。拓扑和未完成规划从不存档，加载后重建；联合存档
+当前写出 schema 为 PKEC v29，并与 PKCN v4 交叉绑定。v28 及更早版本明确拒绝；后文旧版本章节
+只记录历史格式演进，不代表当前 reader 仍接受这些版本。拓扑和未完成规划从不存档，加载后重建；联合存档
 只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
 
 ## catalog 身份
@@ -116,9 +114,9 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v28 与 PKCN v4 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致；
-v27+ 还要求姓氏 `family_catalog_hash` 与名字 `person_catalog_hash` 一致；
-仅 v22→v23 的 tax stat 追加走上述逐项验证迁移。
+当前 PKEC v29 与 PKCN v4 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
+并要求姓氏 `family_catalog_hash`、人物 `person_catalog_hash` 和特性
+`family_trait_catalog_hash` 一致。不存在当前 reader 可用的 append-only 迁移例外。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。
 未来新增/删除/改 ID 若要兼容，必须提供显式迁移器；不能静默把缺失 profession/good 映射到第 0 项。未来 alias
 迁移器应：

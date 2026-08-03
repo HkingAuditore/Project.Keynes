@@ -15,6 +15,9 @@ Effects are commands applied by domain adapters at their next safe boundary.
 
 ## Packed contract
 
+当前 packed protocol 与 PKTR save schema 均为 v2。Gameplay event 同时携带兼容
+`entity_id` 和 64 位 generation-safe `entity_handle`。
+
 `TriggerCatalog.compile_native_catalog()` emits dense IDs and packed columns for
 `EventSelector`, `AggregatorSpec`, condition RPN opcodes, `TargetResolver`, and
 typed `EffectSpec`. Hot loops use POD/SoA and integer values; no String, Dictionary,
@@ -37,13 +40,19 @@ Effects are sorted by `(effective_day, source_priority, trigger_id, target_handl
 fire_sequence)` and carry idempotency `(trigger_id, target_generation, fire_sequence)`.
 Adapters ACK only the contiguous prefix they applied successfully.
 
+动态家族分支 binding 以 `(definition, branch_handle, cell)` 标识，并建立
+`(source,event_type,cell)` 稀疏索引。建筑完工和跨 settlement-cell 贸易只向 GameplayEventBus
+发布一次，再扇出到本地合资格分支；无需为每个家族重复发布事实。解绑会立即删除对应 state 和
+未派发 effect，威望降级不会保留旧累计。
+
 ## Persistence and recovery
 
-`PKTR` stores catalog hash/version, source cursors, trigger SoA (accumulator,
+`PKTR v2` stores catalog hash/version, source cursors, dynamic branch bindings, trigger SoA (accumulator,
 remainder, last event, fire sequence, cooldown/reset, observed snapshot, target
 generation, resync flags), and pending effects. Restore rejects catalog mismatch,
 truncated payloads, stale definitions, or invalid handles. Old saves may omit PKTR
-and are treated as an empty trigger state.
+and are treated as an empty trigger state. Family reward adapters queue native free-building or
+population commands at the next Economy safe boundary; they never mutate economy authority directly.
 
 ## Diagnostics and validation
 

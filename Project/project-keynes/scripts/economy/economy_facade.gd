@@ -5,6 +5,7 @@ signal economy_event_batch_available(meta: Dictionary)
 signal economy_event_batch(batch: Dictionary)
 
 const DEFAULT_PROFILE_PATH := "res://data/economy/default_economy.tres"
+const GOOD_PROFILE_DIR := "res://data/goods"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EconomyProfileScript = preload("res://scripts/data/economy_profile.gd")
 
@@ -22,6 +23,8 @@ enum Opcode {
 	DEMOLISH = 11,
 	COUNTRY_GOOD_TO_MARKET = 12,
 	MARKET_GOOD_TO_COUNTRY = 13,
+	FAMILY_FREE_BUILDING = 14,
+	FAMILY_POPULATION_REWARD = 15,
 }
 
 var _world_ext: Object = null
@@ -32,6 +35,7 @@ var _profession_display_names: Dictionary = {}
 var _ethnicity_display_names: Dictionary = {}
 var _building_display_names: Dictionary = {}
 var _need_display_names: Dictionary = {}
+var _good_display_names: Dictionary = {}
 var _family_trait_sequence: int = 0
 
 func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
@@ -52,6 +56,7 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 	_ethnicity_display_names = _load_display_names(EconomyCatalogScript.ETHNICITY_DIR)
 	_building_display_names = _load_display_names(EconomyCatalogScript.BUILDING_DIR)
 	_need_display_names = EconomyCatalogScript.need_display_names()
+	_good_display_names = _load_display_names(GOOD_PROFILE_DIR)
 	var result: Dictionary = _world_ext.configure_economy(
 		native_catalog, _profile.to_native_profile(), cell_count, seed)
 	_configured = bool(result.get("ok", false))
@@ -272,7 +277,39 @@ func family_snapshot(family_handle: int) -> Dictionary:
 func get_family_traits(family_handle: int) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_family_traits"):
 		return {"ok": false, "reason": "family_trait_runtime_unavailable"}
-	return _world_ext.get_family_traits(family_handle)
+	var snapshot: Dictionary = _world_ext.get_family_traits(family_handle)
+	if not bool(snapshot.get("ok", false)):
+		return snapshot
+	var axes: PackedInt32Array = snapshot.get(
+		"behavior_axes", PackedInt32Array())
+	var selector_ids: PackedInt32Array = snapshot.get(
+		"behavior_selector_ids", PackedInt32Array())
+	var stable_ids := PackedStringArray()
+	var display_names := PackedStringArray()
+	for index in range(mini(axes.size(), selector_ids.size())):
+		var source_ids := PackedStringArray()
+		var names: Dictionary = {}
+		match int(axes[index]):
+			0:
+				source_ids = _catalog.get("building_type_ids", PackedStringArray())
+				names = _building_display_names
+			1:
+				source_ids = _catalog.get("profession_ids", PackedStringArray())
+				names = _profession_display_names
+			2:
+				source_ids = _catalog.get("need_ids", PackedStringArray())
+				names = _need_display_names
+			3:
+				source_ids = _catalog.get("good_ids", PackedStringArray())
+				names = _good_display_names
+		var selector_id := int(selector_ids[index])
+		var stable_id := String(source_ids[selector_id]) \
+			if selector_id >= 0 and selector_id < source_ids.size() else ""
+		stable_ids.append(stable_id)
+		display_names.append(String(names.get(stable_id, stable_id)))
+	snapshot["behavior_selector_stable_ids"] = stable_ids
+	snapshot["behavior_selector_display_names"] = display_names
+	return snapshot
 
 
 func family_branches(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
@@ -311,6 +348,35 @@ func queue_family_trait_mutation(family_handle: int, operation: Variant,
 	})
 	var orders: PackedInt64Array = result.get("request_orders", PackedInt64Array())
 	return int(orders[0]) if bool(result.get("ok", false)) and not orders.is_empty() else 0
+
+
+func queue_family_trigger_reward(effect: Dictionary) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "economy facade is not configured"}
+	var command_key := String(effect.get("command_key", ""))
+	var opcode := 0
+	var building_type := -1
+	if command_key == "family.free_building":
+		opcode = Opcode.FAMILY_FREE_BUILDING
+		var building_ids: PackedStringArray = _catalog.get(
+			"building_type_ids", PackedStringArray())
+		building_type = building_ids.find(String(effect.get("definition_key", "")))
+		if building_type < 0:
+			return {"ok": false, "reason": "family_reward_building_unknown"}
+	elif command_key == "family.population_reward":
+		opcode = Opcode.FAMILY_POPULATION_REWARD
+	else:
+		return {"ok": false, "reason": "family_reward_command_unknown"}
+	return submit([{
+		"opcode": opcode,
+		"effective_day": int(effect.get("effective_day", 0)),
+		"sequence": maxi(0, int(effect.get("effect_id", 0))),
+		"target_handle": int(effect.get("target_handle", 0)),
+		"i32_0": int(effect.get("payload_i0", 0)),
+		"i32_1": building_type,
+		"i64_0": maxi(1, int(effect.get("resolved_value", 1))),
+		"i64_1": int(effect.get("effect_id", 0)),
+	}])
 
 
 func family_industries(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:

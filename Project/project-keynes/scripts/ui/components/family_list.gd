@@ -41,7 +41,8 @@ func _create_row(row_id: String) -> Dictionary:
 		{"kind": "family", "row_id": row_id}))
 	add_child(button)
 	return {"button": button, "icon": button.get_node("Margin/Line/Icon"),
-		"name": button.get_node("Margin/Line/Name")}
+		"name": button.get_node("Margin/Line/Name"),
+		"prestige": button.get_node("Margin/Line/Prestige")}
 
 
 func _apply_row(refs: Dictionary, data: Dictionary) -> void:
@@ -50,3 +51,6 @@ func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 	button.visible = true
 	(refs.get("icon") as IconBadge).set_semantic(&"family.house", accent)
 	(refs.get("name") as Label).text = String(data.get("name", "家族"))
+	var prestige := refs.get("prestige") as Label
+	prestige.text = "威望 %s" % String(data.get("prestige", "0"))
+	prestige.add_theme_color_override("font_color", accent)

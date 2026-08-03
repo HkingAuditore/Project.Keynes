@@ -5,4 +5,5 @@ script = ExtResource("1")
 id = &"hunter"
 display_name = "猎人"
 default_consumption_plan_id = &"hunter_household"
+semantic_tags = PackedStringArray("activity.hunting")
 technology_tags = PackedStringArray("tech.hunting")

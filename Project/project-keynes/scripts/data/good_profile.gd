@@ -10,6 +10,8 @@ extends Resource
 @export var id: StringName = &""
 @export var display_name: String = ""
 @export var icon: Texture2D = null
+## Optional cold-path labels for configurable demand selectors.
+@export var semantic_tags: PackedStringArray = PackedStringArray()
 ## Backward-compatible primary production-substitution role. This is not an
 ## industry or UI taxonomy; new content should also populate the multi-role
 ## substitution_category_ids below.

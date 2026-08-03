@@ -83,6 +83,28 @@ func compile_native_catalog() -> Dictionary:
 	var economy: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	if not bool(economy.get("ok", false)):
 		return economy
+	# Selector-addressable city stats are generated from stable economy IDs at
+	# the cold catalog boundary. Runtime consumers resolve them to dense IDs and
+	# only read frozen POD factors in hot loops.
+	var economy_factor_groups := [
+		["economy.city.need.%s.consumption_factor", economy.need_ids],
+		["economy.city.good.%s.consumption_factor", economy.good_ids],
+		["economy.city.resource.%s.regen_factor",
+			economy.get("building_resource_ids", PackedStringArray())],
+	]
+	for group in economy_factor_groups:
+		for item_id in group[1]:
+			var factor_key := StringName(String(group[0]) % String(item_id))
+			if stat_ids.has(factor_key):
+				return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+			stat_ids[factor_key] = out.stat_keys.size()
+			out.stat_keys.append(String(factor_key))
+			out.stat_domains.append(2)
+			out.stat_min_values.append(0.0)
+			out.stat_max_values.append(4.0)
+			out.stat_persistable.append(1)
+			stat_domains_by_id.append(2)
+			stat_allowed_operations_by_id.append(15)
 	var tax_stat_groups := [
 		["income", economy.profession_ids],
 		["consumption", economy.good_ids],

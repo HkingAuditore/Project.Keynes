@@ -19,6 +19,7 @@
 // implementation behind `use_gdext_climate`.
 
 #include <cstdint>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -255,6 +256,8 @@ public:
                                             int limit = 128) const;
     godot::Dictionary ack_trigger_effects(int64_t up_to_effect_id);
     godot::Dictionary set_trigger_enabled(const godot::Dictionary &batch);
+    godot::Dictionary reconcile_trigger_branch_bindings(const godot::Dictionary &batch);
+    godot::Dictionary get_trigger_branch_progress(int64_t branch_handle) const;
     godot::Dictionary resync_trigger_source(const godot::Dictionary &snapshot);
     godot::Dictionary get_trigger_report() const;
     godot::PackedByteArray capture_trigger_state() const;
@@ -768,6 +771,8 @@ public:
     //     resource_count, n_cells, total_delta, native_ms, compute_ms,
     //     fallback_reason（失败时）}。
     godot::Dictionary run_natural_resource_pass(const godot::Dictionary &knobs);
+    godot::Dictionary get_natural_resource_regen_factors(
+        const godot::PackedStringArray &resource_ids, int32_t n_cells);
 
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）：albedo pass ─────
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_albedo_pass
@@ -2269,6 +2274,13 @@ private:
     void                                     *_country_runtime        = nullptr;
     void                                     *_modifier_runtime       = nullptr;
     void                                     *_trigger_runtime         = nullptr;
+    uint64_t                                  _natural_resource_modifier_version =
+        std::numeric_limits<uint64_t>::max();
+    uint64_t                                  _natural_resource_modifier_catalog_hash = 0;
+    uint64_t                                  _natural_resource_modifier_ids_hash = 0;
+    int32_t                                   _natural_resource_modifier_cells = -1;
+    int32_t                                   _natural_resource_modifier_active_factor_count = 0;
+    godot::PackedFloat32Array                 _natural_resource_regen_factors;
 
     // ─── Phase B+（2026-05-21）：season refresh round 切片调度 opaque state ─
     // 实际类型 pk::SeasonRoundState 在 world_ext.cpp 顶部定义（含 generation
@@ -2343,9 +2355,11 @@ private:
         int32_t type = 0;
         int32_t source = 0;
         int32_t flags = 0;
+        uint64_t entity_handle = 0;
         int32_t entity_id = -1;
         int32_t cell_idx = -1;
         int32_t payload_schema = 0;
+        int64_t value_i64 = 0;
         int32_t payload_i0 = 0;
         int32_t payload_i1 = 0;
         int32_t payload_i2 = 0;
@@ -2385,9 +2399,11 @@ private:
                                  int32_t type,
                                  int32_t source,
                                  int32_t flags,
+                                 uint64_t entity_handle,
                                  int32_t entity_id,
                                  int32_t cell_idx,
                                  int32_t payload_schema,
+                                 int64_t value_i64,
                                  int32_t payload_i0,
                                  int32_t payload_i1,
                                  int32_t payload_i2,
@@ -2406,9 +2422,11 @@ private:
                                           godot::PackedInt32Array &type,
                                           godot::PackedInt32Array &source,
                                           godot::PackedInt32Array &flags,
+                                          godot::PackedInt64Array &entity_handle,
                                           godot::PackedInt32Array &entity,
                                           godot::PackedInt32Array &cell,
                                           godot::PackedInt32Array &schema,
+                                          godot::PackedInt64Array &value,
                                           godot::PackedInt32Array &p0,
                                           godot::PackedInt32Array &p1,
                                           godot::PackedInt32Array &p2,
