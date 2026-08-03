@@ -73,7 +73,7 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] business-demand recovery runtime configures
   [PASS] business-demand recovery fixture bootstraps
   [PASS] business-only tool demand remains visible to production planning
-  [FAIL] business shortage keeps knapping above the industrial probe floor
+  [PASS] business shortage keeps knapping above the industrial probe floor
   [PASS] business-demand recovery cycles conserve every ledger
   [PASS] input-reserve country bootstraps
   [PASS] input-reserve runtime configures
@@ -142,6 +142,12 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] cross-profession owner movement transfers population and funds proportionally
   [PASS] income-driven owner movement restores target production
   [PASS] owner-job mobility conserves every ledger
+  [PASS] employee-owner mobility country bootstraps
+  [PASS] employee-owner mobility runtime configures
+  [PASS] employee-owner mobility fixture bootstraps
+  [PASS] higher food owner income attracts an incumbent mining employee
+  [PASS] employee-owner mobility retains the final merchant and produces food
+  [PASS] employee-owner mobility conserves every ledger
   [PASS] merchant mobility country bootstraps
   [PASS] merchant mobility runtime configures
   [PASS] merchant mobility fixture bootstraps
@@ -198,16 +204,16 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] owner-only loss country bootstraps
   [PASS] owner-only loss runtime configures
   [PASS] owner-only loss fixture bootstraps
-  [PASS] owner livelihood loss counts without input or payroll cost
-  [PASS] third owner-only livelihood loss suspends the workshop
+  [FAIL] owner livelihood loss counts without input or payroll cost
+  [FAIL] third owner-only livelihood loss suspends the workshop
   [PASS] recovery-pending country bootstraps
   [PASS] recovery-pending runtime configures
   [PASS] recovery-pending fixture bootstraps
-  [PASS] recovery-pending fixture reaches suspension with released owner
-  [PASS] recovery-pending owner removal queues
-  [PASS] failed probe remains recovery until the next frozen boundary
-  [PASS] next due cycle commits suspension without rehiring
-  [PASS] recovery cooldown skips two complete due-cell cycles
+  [FAIL] recovery-pending fixture reaches suspension with released owner
+  [FAIL] recovery-pending owner removal queues
+  [FAIL] failed probe remains recovery until the next frozen boundary
+  [FAIL] next due cycle commits suspension without rehiring
+  [FAIL] recovery cooldown skips two complete due-cell cycles
   [PASS] recovery-pending cycles conserve every ledger
   [PASS] service lifecycle country bootstraps
   [PASS] service lifecycle runtime configures
@@ -238,7 +244,7 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] production worker fixture bootstraps
   [PASS] building production dispatches multiple worker tasks
   [PASS] sub-threshold production uses weighted parallel dispatch
-  [PASS] building plan uses weighted parallel dispatch
+  [FAIL] building plan uses weighted parallel dispatch
   [PASS] building production worker and scalar hashes match
   [PASS] building production worker and scalar event hashes match
   [PASS] building production worker conserves all ledgers
@@ -274,19 +280,19 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] building snapshot reports five-day production period
   [PASS] owner job filled
   [PASS] active utilization remains bounded and keeps jobs
-  [PASS] mine produces output
-  [PASS] merchant buys at least part of output
+  [FAIL] mine produces output
+  [FAIL] merchant buys at least part of output
   [PASS] merchant procurement freezes a 12.5 percent reserve and stays in budget
-  [PASS] shortage cannot lift merchant producer settlement above configured factor
-  [PASS] merchant liquidity report reconciles assets and operating outflow
-  [PASS] selected market exposes merchant economic assets instead of cohort funds only
+  [FAIL] shortage cannot lift merchant producer settlement above configured factor
+  [FAIL] merchant liquidity report reconciles assets and operating outflow
+  [FAIL] selected market exposes merchant economic assets instead of cohort funds only
   [PASS] ordinary non-survival coal enters the market instead of owner retention
   [PASS] building output reconciles sale, owner retention, and discard
   [PASS] adaptive contract wages respect each role living floor
-  [PASS] building snapshot separates base wage and bonus
+  [FAIL] building snapshot separates base wage and bonus
   [PASS] zero filled employee roles cannot carry paid base wages
   [PASS] owner-lot bonus is exact after fully funded base payroll
-  [PASS] building snapshot reports priced tool input cost
+  [FAIL] building snapshot reports priced tool input cost
   [PASS] worker cohort has real employee count
   [PASS] adaptive wages reach worker and manager cohorts
   [PASS] owner expense includes base payroll and bonus
@@ -294,26 +300,26 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] worker cashflow sources reconcile to epoch ledger
   [PASS] manager cashflow sources reconcile to epoch ledger
   [PASS] owner cashflow sources reconcile to epoch ledger
-  [PASS] settlement classifies wages and owner operations
-  [PASS] settlement classifies merchant household and procurement flows
-  [PASS] wage report is exact and fully funded
-  [PASS] sold coal enters local stock
-  [PASS] price v3 publishes sparse coal supply and cost anchor
+  [FAIL] settlement classifies wages and owner operations
+  [FAIL] settlement classifies merchant household and procurement flows
+  [FAIL] wage report is exact and fully funded
+  [FAIL] sold coal enters local stock
+  [FAIL] price v3 publishes sparse coal supply and cost anchor
   [PASS] market publishes realized withdrawals and merchant inventory targets
-  [PASS] building snapshot publishes economic cost diagnostics
-  [PASS] resource extraction publishes negative extra delta
+  [FAIL] building snapshot publishes economic cost diagnostics
+  [FAIL] resource extraction publishes negative extra delta
   [PASS] extractive building reports no generated resource
   [PASS] building snapshot exposes current and effective resource reserves
   [PASS] building snapshot stays committed
-  [PASS] merchant cash purchase and bounded support stop at the inventory target
+  [FAIL] merchant cash purchase and bounded support stop at the inventory target
   [PASS] owner cash drain command accepted
   [PASS] unfunded active employment keeps its payroll commitment
   [PASS] producer-income inventory floor preserves the next active production plan
-  [PASS] zero owner input funds preserve intent but suppress funded production
+  [FAIL] zero owner input funds preserve intent but suppress funded production
   [PASS] unfunded active contract remains explicitly wage-suspended
   [PASS] insolvent wage cycle conserves money and goods
   [PASS] cash-drained cycle preserves the prior profitable settlement once
-  [PASS] treasury transfer is exposed as a settlement source
+  [FAIL] treasury transfer is exposed as a settlement source
   [PASS] first execution-blocked cycle is not classified as a loss
   [PASS] repeated execution blockage remains active without loss accumulation
   [PASS] recovery fixture schedules cash drain and merchant input replenishment
@@ -322,7 +328,7 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] blocked producer keeps explicit unfunded upstream demand
   [PASS] building PKCN save begins
   [PASS] building PKCN save completes
-  [PASS] building v24 save begins
+  [PASS] building v29 save begins
   [PASS] building save completes
   [PASS] building restore country configures first
   [PASS] building PKCN restore begins
@@ -333,6 +339,14 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] building PKCN restore completes
   [PASS] building restore target configures
   [PASS] building restore begins
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
   [PASS] building restore chunk accepted
   [PASS] building restore chunk accepted
   [PASS] building restore chunk accepted

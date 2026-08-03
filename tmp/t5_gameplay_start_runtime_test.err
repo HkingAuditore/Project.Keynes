@@ -1,0 +1,34 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:348)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:331)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1096)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1134)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:348)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:331)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1096)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1134)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:348)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:331)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1096)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1134)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:348)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:331)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1096)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1134)
+ERROR: 38 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 381 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

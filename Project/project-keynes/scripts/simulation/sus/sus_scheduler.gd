@@ -150,6 +150,9 @@ func _ensure_ext() -> void:
 	_ext.set_log_interval_ticks(effective_log_interval)
 	_ext.set_sim_budget_window_size(sim_budget_window_size)
 	_ext.set_sim_budget_warn_ms(sim_budget_warn_ms)
+	# C++ _diag_logs_enabled 默认 true；ext 懒创建时同步一次 PKLog 状态，
+	# 否则 PKLog 默认关闭下原生周期日志（每 log_interval 8-9 行）仍会刷屏。
+	_ext.set_diag_logs_enabled(PKLog.enabled)
 	if world != null:
 		_ext.bind_world(world)
 	# Re-register any jobs that were already registered before the ext was

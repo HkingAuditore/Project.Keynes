@@ -1,0 +1,28 @@
+﻿[FAIL] renewable extractors share the five-day safe-harvest budget
+[FAIL] soft hunting input keeps partial output without tools
+[FAIL] legacy signal thresholds and sales ratios do not veto positive marginal demand
+[FAIL] owner livelihood loss counts without input or payroll cost
+[FAIL] third owner-only livelihood loss suspends the workshop
+[FAIL] recovery-pending fixture reaches suspension with released owner
+[FAIL] recovery-pending owner removal queues
+[FAIL] failed probe remains recovery until the next frozen boundary
+[FAIL] next due cycle commits suspension without rehiring
+[FAIL] recovery cooldown skips two complete due-cell cycles
+[FAIL] building plan uses weighted parallel dispatch
+[FAIL] mine produces output
+[FAIL] merchant buys at least part of output
+[FAIL] shortage cannot lift merchant producer settlement above configured factor
+[FAIL] merchant liquidity report reconciles assets and operating outflow
+[FAIL] selected market exposes merchant economic assets instead of cohort funds only
+[FAIL] building snapshot separates base wage and bonus
+[FAIL] building snapshot reports priced tool input cost
+[FAIL] settlement classifies wages and owner operations
+[FAIL] settlement classifies merchant household and procurement flows
+[FAIL] wage report is exact and fully funded
+[FAIL] sold coal enters local stock
+[FAIL] price v3 publishes sparse coal supply and cost anchor
+[FAIL] building snapshot publishes economic cost diagnostics
+[FAIL] resource extraction publishes negative extra delta
+[FAIL] merchant cash purchase and bounded support stop at the inventory target
+[FAIL] zero owner input funds preserve intent but suppress funded production
+[FAIL] treasury transfer is exposed as a settlement source

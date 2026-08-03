@@ -7,6 +7,7 @@
 #include <numeric>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <godot_cpp/variant/dictionary.hpp>
@@ -760,6 +761,7 @@ private:
 
         void clear(int32_t cells);
         int32_t allocate_page(int32_t cell);
+        mutable int64_t scan_steps = 0;  // Diagnostics only.
         int32_t find_signature(int32_t cell, uint32_t signature) const;
         int32_t allocate_slot(int32_t cell, uint32_t signature);
         bool valid_handle(uint64_t handle, int32_t &slot_out) const;
@@ -1586,6 +1588,22 @@ private:
         double household_market_merge_aggregate_ms = 0.0;
         double household_market_merge_trade_ms = 0.0;
         double building_investment_ms = 0.0;
+        double investment_evaluate_ms = 0.0;
+        double investment_allocate_ms = 0.0;
+        double investment_prepare_lanes_ms = 0.0;
+        double investment_prepare_pending_ms = 0.0;
+        double investment_prepare_groups_ms = 0.0;
+        double finalize_construction_ms = 0.0;
+        double finalize_reconcile_ms = 0.0;
+        double building_factor_refresh_ms = 0.0;
+        double building_role_storage_ms = 0.0;
+        int64_t building_factor_cache_hits = 0;
+        int64_t building_factor_cache_misses = 0;
+        int64_t building_factor_miss_modver = 0;
+        int64_t building_factor_miss_country = 0;
+        int64_t building_factor_miss_sector = 0;
+        int64_t building_factor_miss_research = 0;
+        int64_t building_factor_miss_identity = 0;
         double aggregate_publish_ms = 0.0;
         double aggregate_audit_ms = 0.0;
         int64_t market_result_allocation_growth_count = 0;
@@ -2279,6 +2297,66 @@ private:
     // hashed). Sum of parts <= _epoch_begin_ms.
     double _epoch_begin_reset_ms = 0.0;
     double _epoch_begin_country_ms = 0.0;
+    double _epoch_begin_city_factor_ms = 0.0;
+    double _epoch_begin_building_factor_ms = 0.0;
+    // Lookup-scan accounting (diagnostics only; never saved or hashed). Counts
+    // elements visited by the remaining linear-scan lookups so the cost of
+    // finding data can be separated from the cost of computing it. Attribution
+    // uses _executed_stage, which the slice dispatcher sets before doing work.
+    static constexpr size_t SCAN_STAGE_SLOTS = 18;
+    mutable int64_t _scan_steps_by_stage[SCAN_STAGE_SLOTS] = {};
+    mutable int64_t _scan_steps_find_building_group = 0;
+    mutable int64_t _scan_steps_find_signature = 0;
+    mutable int64_t _scan_steps_membership_fallback = 0;
+    mutable int64_t _scan_steps_person_linear = 0;
+    mutable int64_t _scan_steps_family_linear = 0;
+    mutable int64_t _scan_calls_find_building_group = 0;
+    mutable int64_t _scan_calls_find_signature = 0;
+    mutable int64_t _scan_calls_membership_fallback = 0;
+    void note_scan_steps(int64_t steps) const {
+        const size_t slot = static_cast<size_t>(_executed_stage);
+        if (slot < SCAN_STAGE_SLOTS) _scan_steps_by_stage[slot] += steps;
+    }
+    // Person-commit substage timings (diagnostics only; never saved or hashed).
+    double _person_commit_retire_ms = 0.0;
+    double _person_commit_index_ms = 0.0;
+    double _person_commit_bind_jobs_ms = 0.0;
+    double _person_commit_claims_ms = 0.0;
+    double _person_commit_equity_ms = 0.0;
+    double _person_commit_promote_ms = 0.0;
+    double _family_commit_normalize_ms = 0.0;
+    double _family_commit_attribution_ms = 0.0;
+    double _family_commit_form_ms = 0.0;
+    double _family_commit_index_ms = 0.0;
+    double _family_commit_lifecycle_ms = 0.0;
+    double _family_commit_influence_ms = 0.0;
+    double _person_retire_call_ms = 0.0;
+    int64_t _person_retire_calls = 0;
+    double _rebuild_person_needs_ms = 0.0;
+    double _rebuild_person_count_ms = 0.0;
+    double _rebuild_person_fill_ms = 0.0;
+    double _rebuild_person_sort_ms = 0.0;
+    double _rebuild_person_needoffsets_ms = 0.0;
+    double _rebuild_family_membership_ms = 0.0;
+    double _rebuild_family_ownership_ms = 0.0;
+    double _rebuild_family_csr_ms = 0.0;
+    double _rebuild_family_cellindex_ms = 0.0;
+    double _investment_evaluate_ms = 0.0;
+    double _investment_allocate_ms = 0.0;
+    double _investment_prepare_lanes_ms = 0.0;
+    double _investment_prepare_pending_ms = 0.0;
+    double _investment_prepare_groups_ms = 0.0;
+    double _finalize_construction_ms = 0.0;
+    double _finalize_reconcile_ms = 0.0;
+    double _building_factor_refresh_ms = 0.0;
+    double _building_role_storage_ms = 0.0;
+    int64_t _building_factor_cache_hits_epoch = 0;
+    int64_t _building_factor_cache_misses_epoch = 0;
+    int64_t _building_factor_miss_modver_epoch = 0;
+    int64_t _building_factor_miss_country_epoch = 0;
+    int64_t _building_factor_miss_sector_epoch = 0;
+    int64_t _building_factor_miss_research_epoch = 0;
+    int64_t _building_factor_miss_identity_epoch = 0;
     double _epoch_begin_workset_ms = 0.0;
     double _epoch_begin_resource_lane_ms = 0.0;
     double _epoch_begin_fiscal_ms = 0.0;
@@ -2325,6 +2403,21 @@ private:
     std::vector<FamilyModifierBinding> _family_modifier_bindings;
     std::vector<FamilyTriggerBinding> _family_trigger_bindings;
     std::vector<PersonNeedState> _person_needs;
+    // Set when a retirement leaves need rows behind. Compaction is deferred to
+    // one pass so retiring N people costs O(rows) instead of O(N * rows).
+    bool _person_needs_orphaned = false;
+    // Cleared whenever the row set is replaced. While set, the rows are already
+    // pruned, sorted and deduped, so a second rebuild in the same commit can
+    // skip straight to the CSR construction.
+    bool _person_needs_normalized = false;
+    std::vector<PersonNeedState> _person_need_scratch;
+    std::vector<int32_t> _person_need_owner_scratch;
+    std::vector<int32_t> _person_need_cursor_scratch;
+    // Influence shares move slowly and are only consumed by the per-branch
+    // prestige review, which is itself on a 30-day phased cadence. Refresh runs
+    // on this epoch stride, and always on a commit that changed the edge set so
+    // branch creation and release are never deferred.
+    static constexpr int64_t FAMILY_INFLUENCE_REFRESH_EPOCHS = 4;
     // Derived, transient CSR. Authoritative edges above remain sparse and are
     // rebuilt only at FAMILY_COMMIT or after structural restore.
     std::vector<int32_t> _family_member_offsets;
@@ -2442,10 +2535,28 @@ private:
         int64_t research_factor_q16 = 0;
         uint64_t country_handle = 0;
         uint64_t mod_version = 0;
+        int32_t cell = -1;
         int32_t type_id = -1;
         int32_t owner_signature_id = -1;
     };
     std::vector<BuildingFactorCacheEntry> _building_factor_cache;
+    std::vector<BuildingFactorCacheEntry> _building_factor_cache_rebuild_scratch;
+    // Persons whose cohort changed since the last CSR rebuild, keyed by the
+    // cohort they landed in. Lets move_notable_people read the cohort CSR
+    // instead of the whole person table without losing candidates the stale
+    // CSR no longer lists.
+    std::unordered_map<uint64_t, std::vector<int32_t>> _person_cohort_migrations;
+    // Same idea for the person-family CSR, which promotion reads before the
+    // next PERSON_COMMIT rebuild.
+    std::unordered_map<uint64_t, std::vector<int32_t>> _person_family_migrations;
+    // Live notable-person stable ids, so identity assignment can test for a
+    // collision without walking the person table once per hash probe.
+    std::unordered_set<int64_t> _person_stable_ids;
+    std::unordered_set<int64_t> _family_stable_ids;
+    // Live family indices grouped by surname, compacted lazily on read.
+    std::vector<std::vector<int32_t>> _family_surname_members;
+    std::vector<uint32_t> _person_candidate_stamp;
+    uint32_t _person_candidate_generation = 0;
     int64_t _building_factor_cache_hits = 0;
     int64_t _building_factor_cache_misses = 0;
     std::vector<int64_t> _building_investment_score_q16;
@@ -2753,6 +2864,19 @@ private:
     std::vector<int32_t> _epoch_cell_birth_factor_q16;
     std::vector<int32_t> _epoch_cell_need_consumption_factor_q16;
     std::vector<int32_t> _epoch_cell_good_consumption_factor_q16;
+    // The city factor tables are pure functions of the city stat buckets in the
+    // ECONOMY modifier store, so they survive across epochs and are rebuilt only
+    // when those buckets (or the catalog shape behind the tables) change. The
+    // cached shared row is what every cell without a group bucket holds, so a
+    // rebuild only has to repaint the cells listed in _city_factor_dirty_cells.
+    uint64_t _epoch_city_factor_stat_version = 0;
+    bool _epoch_city_factor_valid = false;
+    int32_t _city_factor_shared_birth_q16 = Q16_ONE;
+    std::vector<int32_t> _city_factor_shared_needs_q16;
+    std::vector<int32_t> _city_factor_shared_goods_q16;
+    std::vector<int32_t> _city_factor_dirty_cells;
+    std::vector<uint64_t> _city_factor_group_cells_scratch;
+    std::vector<int32_t> _city_factor_stat_ids_scratch;
     // Epoch-transient country/type availability cache. Technology authority is
     // frozen once per daily transaction, so every cell in a country shares the
     // same result and hot loops can consume the ascending CSR directly.
@@ -2784,6 +2908,12 @@ private:
     std::vector<ResourceAmount> _building_resource_generation;
     std::vector<ConditionToken> _building_conditions;
     std::vector<BuildingGroup> _buildings;
+    // Handle -> compact group index acceleration for `_buildings`. Rebuilt
+    // lazily whenever the group lane changes size and verified on every hit,
+    // so a stale entry degrades into a rebuild instead of a wrong index.
+    mutable std::unordered_map<uint64_t, int32_t> _building_handle_index;
+    mutable size_t _building_handle_index_stamp = static_cast<size_t>(-1);
+    mutable bool _building_handle_index_clean = false;
     // Transient topology scratch and reusable role/input spans. Structural
     // commits swap the compact group lane but keep authoritative role arrays
     // in place; these caches are reconstructed after configure/restore.
@@ -3073,6 +3203,7 @@ private:
         int64_t base_quantity, int64_t utilization_q16,
         int64_t building_days, int64_t &sat);
     void refresh_building_modifier_factors();
+    void refresh_city_modifier_factors();
     int64_t planned_owner_demand(const BuildingGroup &group,
                                  int64_t &sat) const;
     int64_t building_debt_due(const BuildingGroup &group, int64_t &sat) const;
@@ -3210,6 +3341,8 @@ private:
     uint64_t sponsor_family_for_cohort(uint64_t cohort_handle,
                                        int32_t cell) const;
     int32_t building_index_for_handle(uint64_t building_handle) const;
+    void rebuild_building_handle_index() const;
+    const std::unordered_map<uint64_t, int32_t> &building_handle_index() const;
     int64_t family_population(uint64_t family_handle) const;
     int64_t family_cash_claim(uint64_t family_handle) const;
     int64_t family_owned_buildings(uint64_t family_handle) const;
@@ -3217,6 +3350,8 @@ private:
                                 std::string &error);
     bool run_person_commit_slice(int64_t &work_done, std::string &error);
     void rebuild_person_indices();
+    void compact_person_needs();
+    void normalize_person_needs();
     void bind_notable_person_jobs();
     void reconcile_person_claims();
     void update_person_equity_shares();

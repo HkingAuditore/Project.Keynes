@@ -442,8 +442,11 @@ func _ready() -> void:
 	# 根因：PKLog.enabled 静态默认 true，且启动时未按 mobile 置关；同时
 	# slp_field/wind_field STAGE-TOTAL 的 `>=5ms` warn 分支未走 PKLog 守门，
 	# 慢帧下每 tick 触发 → logcat 每行 ~0.1-1ms、call#1 pollution ~15ms/print，
-	# 直接吃掉 mobile frame budget。桌面保持默认开（true）不变。
-	# 需要调试时按 F10 / mobile BtnLog 打开（C++ 镜像也会在切换时同步）。
+	# 直接吃掉 mobile frame budget。
+	# 2026-08-03：PKLog 静态默认已改为 false（desktop 稳态 WARN 刷屏触发编辑器
+	# output overflow）。本行保留作进程内兜底（前一场景按过 L 时强制回关）。
+	# 需要调试时按 L / GM 面板 Log 按钮打开（C++ 镜像在切换时同步；ext 创建时
+	# 也会按 PKLog.enabled 初始化）。
 	if OS.has_feature("mobile"):
 		PKLog.enabled = false
 	_apply_world_setup_base_config()
@@ -685,12 +688,27 @@ func run_async_climate_bench_debug(kind: String = "transp") -> void:
 		push_warning("[async/bench] generator 缺 run_async_climate_round_bench()")
 
 
+# 取 SusSchedulerExt（C++）引用。真实链路：MapGenerator._sus（DCSystemScheduler
+# facade）→ ._sus（SusScheduler GDScript）→ ._ext（native，懒创建，未 tick 过
+# 可能为 null）。任一层缺失返回 null。
+func _sus_ext_ref():
+	if _generator == null or not ("_sus" in _generator) or _generator._sus == null:
+		return null
+	var facade = _generator._sus
+	if not ("_sus" in facade) or facade._sus == null:
+		return null
+	var sus = facade._sus
+	if not ("_ext" in sus):
+		return null
+	return sus._ext
+
+
 # 全局诊断日志（PKLog）开关（GM 面板按钮 / L 热键）。镜像到 C++ 端
 # DCWorldExt / SusSchedulerExt，让原生 print 也响应。返回切换后的状态。
 func toggle_diagnostic_logging_debug() -> void:
 	PKLog.set_enabled(not PKLog.enabled,
 		_generator._data_core_world_ext if _generator != null and "_data_core_world_ext" in _generator else null,
-		_generator._sus_scheduler._ext if _generator != null and "_sus_scheduler" in _generator and _generator._sus_scheduler != null and "_ext" in _generator._sus_scheduler else null
+		_sus_ext_ref()
 	)
 
 func cycle_weather_debug_view() -> void:
@@ -1621,7 +1639,7 @@ func _on_day_changed(_day_idx: int) -> void:
 	# best-effort 诊断（临时）：整个 _on_day_changed 的分段墙钟。和 [clock/step] 的
 	# loop(~40ms) 对比定位那 ~35ms 落在哪段：label / season_phase(含 vegetation 层)
 	# / fast(sus+render+ui) / post(overlay+recorders)。每 ~120 帧打一行。
-	if Engine.get_process_frames() % 120 == 0:
+	if PKLog.enabled and Engine.get_process_frames() % 120 == 0:
 		var _ocd_full_ms: float = float(Time.get_ticks_usec() - _ocd_t0) / 1000.0
 		var _ocd_post_ms: float = _ocd_full_ms - _ocd_label_ms - _ocd_seasonphase_ms - float(fast_ms)
 		print("[day/seg] full=%.2fms label=%.2f season_phase=%.2f fast=%d post=%.2f skipped=%s"
@@ -4126,9 +4144,7 @@ func _on_mobile_log_btn_pressed() -> void:
 	if _generator != null:
 		if "_data_core_world_ext" in _generator:
 			world_ext_ref = _generator._data_core_world_ext
-		if "_sus_scheduler" in _generator and _generator._sus_scheduler != null \
-				and "_ext" in _generator._sus_scheduler:
-			sus_ext_ref = _generator._sus_scheduler._ext
+		sus_ext_ref = _sus_ext_ref()
 	PKLog.set_enabled(new_enabled, world_ext_ref, sus_ext_ref)
 	var btn: Button = _mobile_debug_button("BtnLog")
 	if btn != null:

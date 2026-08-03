@@ -2143,6 +2143,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			var ext_obj: Object = _data_core_world_ext if _data_core_world_ext != null else ClassDB.instantiate("DCWorldExt")
 			if ext_obj != null and ext_obj is RefCounted:
 				_data_core_world_ext = ext_obj
+				# C++ _diag_logs_enabled 默认 true；创建/复用时同步 PKLog 状态，
+				# 避免 PKLog 默认关闭下原生 diag print 仍然刷屏。
+				if _data_core_world_ext.has_method("set_diag_logs_enabled"):
+					_data_core_world_ext.set_diag_logs_enabled(PKLog.enabled)
 				var ext_bound: bool = bool(_data_core_world_ext.bind_map_data(map))
 				print("[DataCore] _data_core_world_ext bound=%s (climate co-processor; class=DCWorldExt)" % str(ext_bound))
 				if not ext_bound:
@@ -4634,6 +4638,16 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 	var knobs: Dictionary = {
 		"cell_count": map.cell_count() if map != null else 0,
 		"hex_size": hex_size,
+		# seam-advection-fix（2026-08-03）：经度环绕周期常驻到 DCWorldExt。climate/weather 的
+		# 平流内核用 cell_pos_x 裸差分求方向，接缝邻居会拿到 ±(period − 列距) 的错向位移，
+		# 在 col 0 / col width-1 形成一条方向恒定的风场/洋流经线伪影。C++ 侧用它做最小映像
+		# 折叠。map_width 一并传，供 C++ 在 wrap_period_x 缺失时按同式回算。
+		#
+		# 单位必须是 size=1.0 的单位六边形空间，**不能乘 hex_size**：内核读的是
+		# cell_pos_x slot，而 map_data.gd::_publish 用 cube_to_world(q, r, 1.0) 填它
+		# （field_solver 的 _field_slice_cell_pos_scale 走 SoA 时同样取 1.0）。
+		"map_width": int(map.width) if map != null else 0,
+		"wrap_period_x": HexUtils.wrap_period_cell_pos_x(int(map.width)) if map != null else 0.0,
 		"native_generation_mode": int(cp.get("native_generation_mode")) if cp != null and cp.get("native_generation_mode") != null else 0,
 		"native_daily_sim_mode": int(cp.get("native_daily_sim_mode")) if cp != null and cp.get("native_daily_sim_mode") != null else 0,
 		"native_render_prepare_mode": int(cp.get("native_render_prepare_mode")) if cp != null and cp.get("native_render_prepare_mode") != null else 0,
@@ -4656,8 +4670,11 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 	var res: Dictionary = _data_core_world_ext.configure_native_world(knobs)
 	_native_daily_configured = int(res.get("rc", -1)) == 0
 	if OS.is_debug_build():
-		print("[native_world] configure rc=%s reason=%s cells=%d"
-			% [str(res.get("rc", -1)), str(res.get("reason", "")), int(knobs["cell_count"])])
+		# wrap_period_x 回显：0 表示 climate/weather 平流内核退化为裸 cell_pos_x 差分，
+		# 东西接缝会重新出现方向恒定的风场/洋流经线伪影。
+		print("[native_world] configure rc=%s reason=%s cells=%d wrap_period_x=%.3f"
+			% [str(res.get("rc", -1)), str(res.get("reason", "")), int(knobs["cell_count"]),
+				float(res.get("wrap_period_x", 0.0))])
 
 
 func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
@@ -8686,6 +8703,8 @@ func _ensure_generation_world_ext() -> RefCounted:
 	if ext_obj == null or not (ext_obj is RefCounted):
 		return null
 	_data_core_world_ext = ext_obj
+	if _data_core_world_ext.has_method("set_diag_logs_enabled"):
+		_data_core_world_ext.set_diag_logs_enabled(PKLog.enabled)
 	return _data_core_world_ext
 
 
@@ -13086,6 +13105,9 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	var is_water_a: PackedByteArray = _dc_views["is_water"] if _use_dc else map.is_water_arr
 	var pos_x_a: PackedFloat32Array = _dc_views["pos_x"] if _use_dc else map.cell_pos_x_arr
 	var pos_y_a: PackedFloat32Array = _dc_views["pos_y"] if _use_dc else map.cell_pos_y_arr
+	# seam-advection-fix：pos_x 是 size=1.0 单位空间的不环绕规范坐标，接缝邻居差分需折叠。
+	# 与 C++ 内核（wrap_period_x knob / DCWorldExt 常驻值）取同一个周期。
+	var wrap_px: float = HexUtils.wrap_period_cell_pos_x(int(map.width)) if map != null else 0.0
 	var elev_a: PackedFloat32Array = _dc_views["elevation"] if _use_dc else map.elevation_arr
 	var lat_a: PackedFloat32Array = _dc_views["lat_norm"] if _use_dc else map.cell_lat_norm_arr
 	var temp_baseline_a: PackedFloat32Array = _dc_views["temp_baseline"] if _use_dc else map.temp_baseline_arr
@@ -13263,7 +13285,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 						var ni3: int = nb_idx[pbase + d3]
 						if ni3 < 0:
 							continue
-						var dx: float = pwx - pos_x_a[ni3]
+						var dx: float = HexUtils.wrap_min_image_dx(pwx - pos_x_a[ni3], wrap_px)
 						var dy: float = pwy - pos_y_a[ni3]
 						var len2: float = dx * dx + dy * dy
 						if len2 < 1e-6:
@@ -13380,6 +13402,9 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 	var is_water_a: PackedByteArray = _dc_views["is_water"] if _use_dc else map.is_water_arr
 	var pos_x_a: PackedFloat32Array = _dc_views["pos_x"] if _use_dc else map.cell_pos_x_arr
 	var pos_y_a: PackedFloat32Array = _dc_views["pos_y"] if _use_dc else map.cell_pos_y_arr
+	# seam-advection-fix：pos_x 是 size=1.0 单位空间的不环绕规范坐标，接缝邻居差分需折叠。
+	# 与 C++ 内核（wrap_period_x knob / DCWorldExt 常驻值）取同一个周期。
+	var wrap_px: float = HexUtils.wrap_period_cell_pos_x(int(map.width)) if map != null else 0.0
 	var ocx_a: PackedFloat32Array = _dc_views["ocean_current_x"] if _use_dc else map.ocean_current_x_arr
 	var ocy_a: PackedFloat32Array = _dc_views["ocean_current_y"] if _use_dc else map.ocean_current_y_arr
 	var lat_a: PackedFloat32Array = _dc_views["lat_norm"] if _use_dc else map.cell_lat_norm_arr
@@ -13529,7 +13554,7 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 					continue
 				if is_water_a[ni] == 0:
 					continue
-				var dx: float = pos_x_a[ni] - swx
+				var dx: float = HexUtils.wrap_min_image_dx(pos_x_a[ni] - swx, wrap_px)
 				var dy: float = pos_y_a[ni] - swy
 				var len2: float = dx * dx + dy * dy
 				if len2 < 1e-6:
@@ -13759,6 +13784,9 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 	var is_water_a: PackedByteArray = _dc_views["is_water"] if _use_dc else map.is_water_arr
 	var pos_x_a: PackedFloat32Array = _dc_views["pos_x"] if _use_dc else map.cell_pos_x_arr
 	var pos_y_a: PackedFloat32Array = _dc_views["pos_y"] if _use_dc else map.cell_pos_y_arr
+	# seam-advection-fix：pos_x 是 size=1.0 单位空间的不环绕规范坐标，接缝邻居差分需折叠。
+	# 与 C++ 内核（wrap_period_x knob / DCWorldExt 常驻值）取同一个周期。
+	var wrap_px: float = HexUtils.wrap_period_cell_pos_x(int(map.width)) if map != null else 0.0
 	var ocx_a: PackedFloat32Array = _dc_views["ocean_current_x"] if _use_dc else map.ocean_current_x_arr
 	var ocy_a: PackedFloat32Array = _dc_views["ocean_current_y"] if _use_dc else map.ocean_current_y_arr
 	# Phase 3a Step 2.1.a：ema_initialized SoA 别名
@@ -13788,7 +13816,7 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 			var cy: float = ocy_a[ni]
 			if cx * cx + cy * cy < 1e-6:
 				continue
-			var dx: float = swx - pos_x_a[ni]
+			var dx: float = HexUtils.wrap_min_image_dx(swx - pos_x_a[ni], wrap_px)
 			var dy: float = swy - pos_y_a[ni]
 			var dlen2: float = dx * dx + dy * dy
 			if dlen2 < 1e-6:

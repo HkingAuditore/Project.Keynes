@@ -763,6 +763,7 @@ func get_gm_capabilities() -> Dictionary:
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
+			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
 			{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
 			{"id": "visual.fog_of_war", "label": "战争迷雾", "group": "视觉"},
 			{"id": "visual.water_effect", "label": "水面效果", "group": "视觉"},
@@ -850,6 +851,11 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 			return {"ok": true, "enabled": _world_clock.paused}
 		"simulation.click_claim_territory":
 			return {"ok": true, "enabled": _gm_click_claim_territory_enabled}
+		"system.autosave":
+			var save_service := _game_save_service()
+			if save_service == null:
+				return _gm_error("save_service_unavailable", "存档服务尚未就绪。")
+			return {"ok": true, "enabled": bool(save_service.call("is_autosave_enabled"))}
 		"visual.day_night":
 			return {"ok": true, "enabled": day_night_enabled}
 		"visual.fog_of_war":
@@ -891,6 +897,14 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 			on_clock_running_changed(not enabled)
 		"simulation.click_claim_territory":
 			return _gm_set_click_claim_territory_enabled(enabled)
+		"system.autosave":
+			var save_service := _game_save_service()
+			if save_service == null:
+				return _gm_error("save_service_unavailable", "存档服务尚未就绪。")
+			var autosave_result: Dictionary = save_service.call("set_autosave_enabled", enabled)
+			if not bool(autosave_result.get("ok", false)):
+				return _gm_error(String(autosave_result.get("code", "autosave_toggle_failed")),
+					String(autosave_result.get("message", "自动存档开关保存失败。")))
 		"visual.day_night":
 			set_day_night_enabled(enabled)
 		"visual.fog_of_war":

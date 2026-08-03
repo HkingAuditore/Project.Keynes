@@ -1,0 +1,42 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] 聚居地目录可编译
+  [PASS] 繁荣度配置保持 UTF-8
+  [PASS] 边界等级 0
+  [PASS] 边界等级 1
+  [PASS] 边界等级 2
+  [PASS] 乡村以上有名 2
+  [PASS] 活跃地名世界唯一 2
+  [PASS] 边界等级 3
+  [PASS] 乡村以上有名 3
+  [PASS] 活跃地名世界唯一 3
+  [PASS] 边界等级 4
+  [PASS] 乡村以上有名 4
+  [PASS] 活跃地名世界唯一 4
+  [PASS] 边界等级 5
+  [PASS] 乡村以上有名 5
+  [PASS] 活跃地名世界唯一 5
+  [PASS] 边界等级 6
+  [PASS] 乡村以上有名 6
+  [PASS] 活跃地名世界唯一 6
+  [PASS] 边界等级 7
+  [PASS] 乡村以上有名 7
+  [PASS] 活跃地名世界唯一 7
+  [PASS] 繁荣度中文通过 UTF-8 桥接
+  [PASS] 完整快照只含有名聚居地
+  [PASS] 史实名与虚构组合可同时存在
+  [PASS] 20 人首都在乡村阈值以下仍保证命名
+  [PASS] 首都强制命名状态可随 PKEC v29 恢复
+  [PASS] 首都强制命名 PKEC v29 状态哈希一致
+  [PASS] 同种子重放状态哈希一致
+  [PASS] 组合耗尽后仍保持世界唯一并追加序号
+  [PASS] 人口变更命令已接收
+  [PASS] 90 人保留乡村滞回
+  [PASS] 人口变更命令已接收
+  [PASS] 89 人降为聚落并释放地名
+  [PASS] 人口变更命令已接收
+  [PASS] 再次达到 100 人按新代次命名
+  [PASS] PKEC v29 可导出
+  [PASS] PKEC v29 可往返恢复
+  [PASS] PKEC v29 状态哈希一致
+=== settlement runtime PASS: checks=39 failures=0 ===

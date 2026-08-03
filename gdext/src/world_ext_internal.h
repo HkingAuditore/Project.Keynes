@@ -252,6 +252,32 @@ static inline float dc_clampf(float v, float lo, float hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+// 圆柱地球最小映像修正（seam-advection-fix 2026-08-03）。
+// 六邻居表在东西方向用 posmod 环绕（map_data.gd::_build_indices），最左列与最右列互为
+// 邻居；但 cell_pos_x 存的是不环绕的规范坐标，所以接缝邻居的裸差分等于 ±(period − 一格
+// 列距)：符号与真实位移相反、量级放大约 map.width 倍。任何把裸差分当方向向量的平流内核
+// 都会在接缝两列把上/下游判反，且因 |dx| >> |dy| 退化成纯东西向 —— 表现为一条方向恒定、
+// 不随纬度和时间变化的经线伪影（实测 slp 接缝跳变 7×、ocean_psi 12×）。
+// 这里把 dx 折回半周期内取最近映像；y 方向是两极硬边界、不环绕，故不做处理。
+// wrap_period_x <= 0（未配置环绕域）时退化为原始差分，保持向后兼容。
+// 语义与 world_ext_bake.cpp 的 water_dx half-period 折叠一致。
+static inline float pk_wrap_min_image_dx(float dx, float wrap_period_x) {
+    if (!(wrap_period_x > 0.0f)) return dx;
+    const float half = wrap_period_x * 0.5f;
+    if (dx > half) return dx - wrap_period_x;
+    if (dx < -half) return dx + wrap_period_x;
+    return dx;
+}
+
+// double 版本：pass_b 雨影上风探测用 double 累加方向点积，保持原精度。
+static inline double pk_wrap_min_image_dx(double dx, double wrap_period_x) {
+    if (!(wrap_period_x > 0.0)) return dx;
+    const double half = wrap_period_x * 0.5;
+    if (dx > half) return dx - wrap_period_x;
+    if (dx < -half) return dx + wrap_period_x;
+    return dx;
+}
+
 static inline float dc_stabilize_tta(float prev, float source,
                                      float source_cap, float blend_rate) {
     const float cap = std::fabs(source_cap);

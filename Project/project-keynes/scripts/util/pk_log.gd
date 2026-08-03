@@ -25,7 +25,10 @@ class_name PKLog
 ##   main.gd KEY_L 切换 PKLog.enabled + 镜像到 C++ 端。
 
 # 全局开关。true = 允许 print，false = 守门站点跳过 print 和 % 构造。
-static var enabled: bool = true
+# 默认 false：desktop 稳态下 fast-tick WARN（sus>1ms 每 30 帧 ~25-40 行）会持续
+# 刷屏触发编辑器 "output overflow"（每帧 100 行硬上限）。需要诊断时按 L /
+# GM 面板 Log 按钮临时打开。
+static var enabled: bool = false
 
 
 ## 切换开关，可选 push 到 C++ 端（避免 main.gd 重复 if 检查 has_method）。

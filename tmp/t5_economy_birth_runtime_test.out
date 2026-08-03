@@ -1,0 +1,35 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] birth catalog compiles
+  [PASS] birth test country configures
+  [PASS] birth test economy configures
+  [PASS] birth test population bootstraps
+  [PASS] birth test country configures
+  [PASS] birth test economy configures
+  [PASS] birth test population bootstraps
+  [PASS] birth worker path dispatches multiple tasks
+  [PASS] birth worker and scalar counts match
+  [PASS] birth worker and scalar state hashes match
+  [PASS] birth worker and scalar conserve population
+  [PASS] birth employment country configures
+  [PASS] birth employment economy configures
+  [PASS] birth employment population bootstraps
+  [PASS] birth enters zero-fund unemployed cohort
+  [PASS] birth does not recruit into an owner vacancy in the same cycle
+  [PASS] small-population source country configures
+  [PASS] small-population source economy configures
+  [PASS] small-population source bootstraps
+  [PASS] fractional birth remains pending after first cycle
+  [PASS] PKEC v29 saves accumulated birth residual
+  [PASS] small-population restored country configures
+  [PASS] small-population restored economy configures
+  [PASS] PKEC v29 restores accumulated birth residual
+  small-pop residual source_births=1 restored_births=1 source_pop=2 restored_pop=2 source_hash=666423886668398877 restored_hash=666423886668398877
+  [PASS] small population deterministically births on the next cycle
+  [PASS] birth test country configures
+  [PASS] birth test economy configures
+  [PASS] birth test population bootstraps
+  [PASS] two-year healthy-rate attractor stays near three percent growth
+  [PASS] ten-year healthy-rate attractor stays near sixteen percent growth
+  birth-attractor two_year=0.0305 ten_year=0.1618 avg_ms=2.858 p95_ms=3.589 max_ms=16.537
+=== economy birth runtime PASS: checks=30 failures=0 ===

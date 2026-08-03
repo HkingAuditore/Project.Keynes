@@ -19,12 +19,17 @@ var _selection: SelectionController
 var _pending_load: Dictionary = {}
 var _pending_view: Dictionary = {}
 var _last_autosave_year := -1
+var _autosave_enabled := true
 var _busy := false
 var _providers: Array = []
 
 
 func _ready() -> void:
 	_register_providers()
+	_autosave_enabled = bool(GameSettings.values().get("autosave_enabled", true))
+	var settings_callback := Callable(self, "_on_settings_changed")
+	if not GameSettings.settings_changed.is_connected(settings_callback):
+		GameSettings.settings_changed.connect(settings_callback)
 
 
 func list_slots() -> Array:
@@ -61,6 +66,26 @@ func request_manual_save(slot_id: String) -> Dictionary:
 
 func request_autosave(reason: String) -> Dictionary:
 	return await _save("autosave", reason)
+
+
+func is_autosave_enabled() -> bool:
+	return _autosave_enabled
+
+
+## 开关经 GameSettings 持久化；settings_changed 信号会回同步 _autosave_enabled，
+## 这里直接赋值只是让读写路径不依赖信号时序。
+func set_autosave_enabled(enabled: bool) -> Dictionary:
+	if enabled == _autosave_enabled:
+		return _result(true, "ok", "")
+	var updated: Dictionary = GameSettings.update({"autosave_enabled": enabled})
+	if not bool(updated.get("ok", false)):
+		return updated
+	_autosave_enabled = enabled
+	return _result(true, "ok", "")
+
+
+func _on_settings_changed(settings: Dictionary) -> void:
+	_autosave_enabled = bool(settings.get("autosave_enabled", true))
 
 
 func load_slot(slot_id: String) -> Dictionary:
@@ -662,6 +687,10 @@ func _on_year_changed(year: int) -> void:
 	if year <= 0 or year <= _last_autosave_year:
 		return
 	_last_autosave_year = year
+	if not _autosave_enabled:
+		# 禁用期间仍推进年份标记：重新启用后从下一个完整年份开始存档，
+		# 而不是在开关切回的那一刻立刻补写一次。
+		return
 	call_deferred("_autosave_year", year)
 
 

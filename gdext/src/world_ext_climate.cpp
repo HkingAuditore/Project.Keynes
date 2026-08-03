@@ -1056,6 +1056,9 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     }
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
+    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
+    const float wrap_period_x = knobs.has("wrap_period_x")
+        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
     const float heat_mix     = float(knobs["heat_mix"]);
     float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
     float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
@@ -1150,7 +1153,7 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
                 const int32_t ni = NB[ub + d];
                 if (ni < 0) continue;
                 if (IW[ni] == 0) continue;
-                const float dx = POSX[ni] - swx;
+                const float dx = pk_wrap_min_image_dx(POSX[ni] - swx, wrap_period_x);
                 const float dy = POSY[ni] - swy;
                 const float len2 = dx * dx + dy * dy;
                 if (len2 < 1e-6f) continue;
@@ -1247,6 +1250,9 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
+    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
+    const float wrap_period_x = knobs.has("wrap_period_x")
+        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
     float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
     float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
     float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.04f;
@@ -1322,7 +1328,7 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
             const float cx = OCX[ni];
             const float cy = OCY[ni];
             if (cx * cx + cy * cy < 1e-6f) continue;
-            const float dx = swx - POSX[ni];
+            const float dx = pk_wrap_min_image_dx(swx - POSX[ni], wrap_period_x);
             const float dy = swy - POSY[ni];
             const float dlen2 = dx * dx + dy * dy;
             if (dlen2 < 1e-6f) continue;
@@ -1454,6 +1460,9 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     const float rs_threshold          = float(knobs["rs_threshold"]);
     const float rs_factor             = float(knobs["rs_factor"]);
     const int   rs_lookback           = int(knobs["rs_lookback"]);
+    // seam-advection-fix：雨影上风探测的经度环绕周期，缺省取常驻值。
+    const double wrap_period_x        = knobs.has("wrap_period_x")
+        ? double(knobs["wrap_period_x"]) : _native_wrap_period_x;
     const float t_freeze              = float(knobs["t_freeze"]);
     const float coupling_gain         = float(knobs["coupling_gain"]);
     const float coast_leak            = float(knobs["coast_leak"]);
@@ -1656,7 +1665,8 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
                     for (int d3 = 0; d3 < 6; ++d3) {
                         const int32_t ni3 = NB[pbase + d3];
                         if (ni3 < 0) continue;
-                        const double dx = double(pwx) - double(POSX[ni3]);
+                        const double dx = pk_wrap_min_image_dx(
+                            double(pwx) - double(POSX[ni3]), wrap_period_x);
                         const double dy = double(pwy) - double(POSY[ni3]);
                         const double len2 = dx * dx + dy * dy;
                         if (len2 < 1e-6) continue;
@@ -1779,6 +1789,8 @@ struct PassBCtx {
     float snowpack_cover_low, snowpack_cover_full;
     double season_phase;
     int rs_lookback;
+    // seam-advection-fix：雨影上风探测的经度环绕周期，0 = 无环绕域。
+    double wrap_period_x;
 };
 
 // 对单个 land cell i 跑 pass_b 的 albedo + coastal + landform + write 段。
@@ -1898,7 +1910,8 @@ inline float pass_b_land_compute_rain_shadow(const PassBCtx &c, int i) {
         for (int d3 = 0; d3 < 6; ++d3) {
             const int32_t ni3 = c.NB[pbase + d3];
             if (ni3 < 0) continue;
-            const double dx = double(pwx) - double(c.POSX[ni3]);
+            const double dx = pk_wrap_min_image_dx(
+                double(pwx) - double(c.POSX[ni3]), c.wrap_period_x);
             const double dy = double(pwy) - double(c.POSY[ni3]);
             const double len2 = dx * dx + dy * dy;
             if (len2 < 1e-6) continue;
@@ -2010,6 +2023,8 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
     ctx.rs_threshold          = float(knobs["rs_threshold"]);
     ctx.rs_factor             = float(knobs["rs_factor"]);
     ctx.rs_lookback           = int(knobs["rs_lookback"]);
+    ctx.wrap_period_x         = knobs.has("wrap_period_x")
+        ? double(knobs["wrap_period_x"]) : _native_wrap_period_x;  // seam-advection-fix
     ctx.t_freeze              = float(knobs["t_freeze"]);
     ctx.coupling_gain         = float(knobs["coupling_gain"]);
     ctx.coast_leak            = float(knobs["coast_leak"]);
@@ -2171,6 +2186,8 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     ctx.rs_threshold          = float(knobs["rs_threshold"]);
     ctx.rs_factor             = float(knobs["rs_factor"]);
     ctx.rs_lookback           = int(knobs["rs_lookback"]);
+    ctx.wrap_period_x         = knobs.has("wrap_period_x")
+        ? double(knobs["wrap_period_x"]) : _native_wrap_period_x;  // seam-advection-fix
     ctx.t_freeze              = float(knobs["t_freeze"]);
     ctx.coupling_gain         = float(knobs["coupling_gain"]);
     ctx.coast_leak            = float(knobs["coast_leak"]);
@@ -2314,6 +2331,8 @@ struct OceanWaterCtx {
     int             n_cells;
     int             advect_steps;
     float           heat_mix;
+    // seam-advection-fix：经度环绕周期，0 = 无环绕域（退化为裸差分）。
+    float           wrap_period_x;
     float           tta_source_cap;
     float           tta_blend_rate;
     float           tta_zero_current_decay;
@@ -2361,7 +2380,7 @@ inline void ocean_water_compute_one(const OceanWaterCtx &c, int i) {
             const int32_t ni = c.NB[ub + d];
             if (ni < 0) continue;
             if (c.IW[ni] == 0) continue;
-            const float dx = c.POSX[ni] - swx;
+            const float dx = pk_wrap_min_image_dx(c.POSX[ni] - swx, c.wrap_period_x);
             const float dy = c.POSY[ni] - swy;
             const float len2 = dx * dx + dy * dy;
             if (len2 < 1e-6f) continue;
@@ -2442,6 +2461,9 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     }
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
+    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
+    const float wrap_period_x = knobs.has("wrap_period_x")
+        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
     const float heat_mix     = float(knobs["heat_mix"]);
     float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
     float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
@@ -2492,6 +2514,7 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     ctx.n_cells      = n_cells;
     ctx.advect_steps = advect_steps;
     ctx.heat_mix     = heat_mix;
+    ctx.wrap_period_x = wrap_period_x;
     ctx.tta_source_cap = tta_source_cap;
     ctx.tta_blend_rate = tta_blend_rate;
     ctx.tta_zero_current_decay = tta_zero_current_decay;
@@ -2564,6 +2587,9 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     }
     const int   n_cells      = int(knobs["n_cells"]);
     const int   advect_steps = int(knobs["advect_steps"]);
+    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
+    const float wrap_period_x = knobs.has("wrap_period_x")
+        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
     const float heat_mix     = float(knobs["heat_mix"]);
     float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
     float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
@@ -2612,6 +2638,7 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     ctx.n_cells      = n_cells;
     ctx.advect_steps = advect_steps;
     ctx.heat_mix     = heat_mix;
+    ctx.wrap_period_x = wrap_period_x;
     ctx.tta_source_cap = tta_source_cap;
     ctx.tta_blend_rate = tta_blend_rate;
     ctx.tta_zero_current_decay = tta_zero_current_decay;
@@ -2675,6 +2702,8 @@ namespace {
 struct OceanLandCtx {
     int             n_cells;
     float           effective_leak;
+    // seam-advection-fix：经度环绕周期，0 = 无环绕域（退化为裸差分）。
+    float           wrap_period_x;
     float           tta_source_cap;
     float           tta_blend_rate;
     float           tta_decay_rate;
@@ -2706,7 +2735,7 @@ inline void ocean_land_compute_one(const OceanLandCtx &c, int i) {
         const float cx = c.OCX[ni];
         const float cy = c.OCY[ni];
         if (cx * cx + cy * cy < 1e-6f) continue;
-        const float dx = swx - c.POSX[ni];
+        const float dx = pk_wrap_min_image_dx(swx - c.POSX[ni], c.wrap_period_x);
         const float dy = swy - c.POSY[ni];
         const float dlen2 = dx * dx + dy * dy;
         if (dlen2 < 1e-6f) continue;
@@ -2778,6 +2807,9 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
+    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
+    const float wrap_period_x = knobs.has("wrap_period_x")
+        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
     float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
     float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
     float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.04f;
@@ -2814,6 +2846,7 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     OceanLandCtx ctx{};
     ctx.n_cells        = n_cells;
     ctx.effective_leak = effective_leak;
+    ctx.wrap_period_x  = wrap_period_x;
     ctx.tta_source_cap = tta_source_cap;
     ctx.tta_blend_rate = tta_blend_rate;
     ctx.tta_decay_rate = tta_decay_rate;
@@ -2878,6 +2911,9 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     }
     const int   n_cells        = int(knobs["n_cells"]);
     const float effective_leak = float(knobs["effective_leak"]);
+    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
+    const float wrap_period_x = knobs.has("wrap_period_x")
+        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
     float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
     float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
     float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.04f;
@@ -2913,6 +2949,7 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     OceanLandCtx ctx{};
     ctx.n_cells        = n_cells;
     ctx.effective_leak = effective_leak;
+    ctx.wrap_period_x  = wrap_period_x;
     ctx.tta_source_cap = tta_source_cap;
     ctx.tta_blend_rate = tta_blend_rate;
     ctx.tta_decay_rate = tta_decay_rate;
@@ -6875,6 +6912,13 @@ struct ClimateRoundScalars {
     float  ol_tta_blend_rate = 0.70f;
     float  ol_tta_decay_rate = 0.04f;
 
+    // seam-advection-fix 2026-08-03：经度环绕周期（= map.width·√3，单位六边形空间，
+    // 不含 hex_size）。pass_b 雨影 / ocean_water / ocean_land / wind_air / wind_surface
+    // 五个 async 内核都用 cell_pos_x 差分求邻居方向，接缝需最小映像折叠。
+    // kick 时从 DCWorldExt::_native_wrap_period_x 常驻值取（input 可显式覆盖）。
+    // 0 = 无环绕域 → 内核退化为裸差分（旧行为）。
+    float  wrap_period_x = 0.0f;
+
     // wind_air / wind_surface knobs（Stage 2）
     int    wa_advect_steps = 3;
     float  wa_heat_mix     = 0.25f;
@@ -7521,6 +7565,7 @@ static bool _async_pass_b_kernel_pure(const ClimateInputBuf &in,
     const float rs_threshold  = in.scalars.pb_rs_threshold;
     const float rs_factor     = in.scalars.pb_rs_factor;
     const int   rs_lookback   = in.scalars.pb_rs_lookback;
+    const double wrap_period_x = double(in.scalars.wrap_period_x);  // seam-advection-fix
     const float t_freeze      = in.scalars.pb_t_freeze;
     const float coupling_gain = in.scalars.pb_coupling_gain;
     const float coast_leak    = in.scalars.pb_coast_leak;
@@ -7688,7 +7733,8 @@ static bool _async_pass_b_kernel_pure(const ClimateInputBuf &in,
                     for (int d3 = 0; d3 < 6; ++d3) {
                         const int32_t ni3 = NB[pbase + d3];
                         if (ni3 < 0) continue;
-                        const double dx = double(pwx) - double(POSX[ni3]);
+                        const double dx = pk_wrap_min_image_dx(
+                            double(pwx) - double(POSX[ni3]), wrap_period_x);
                         const double dy = double(pwy) - double(POSY[ni3]);
                         const double len2 = dx * dx + dy * dy;
                         if (len2 < 1e-6) continue;
@@ -7768,6 +7814,7 @@ static bool _async_ocean_water_kernel_pure(const ClimateInputBuf &in,
 
     const int advect_steps = in.scalars.ow_advect_steps;
     const float heat_mix   = in.scalars.ow_heat_mix;
+    const float wrap_period_x = in.scalars.wrap_period_x;  // seam-advection-fix
     const float tta_source_cap = dc_clampf(in.scalars.ow_tta_source_cap, 0.0f, 0.5f);
     const float tta_blend_rate = dc_clampf(in.scalars.ow_tta_blend_rate, 0.0f, 1.0f);
     const float tta_zero_current_decay = dc_clampf(in.scalars.ow_tta_zero_current_decay, 0.0f, 1.0f);
@@ -7825,7 +7872,7 @@ static bool _async_ocean_water_kernel_pure(const ClimateInputBuf &in,
                 const int32_t ni = NB[ub + d];
                 if (ni < 0) continue;
                 if (IW[ni] == 0) continue;
-                const float dx = POSX[ni] - swx;
+                const float dx = pk_wrap_min_image_dx(POSX[ni] - swx, wrap_period_x);
                 const float dy = POSY[ni] - swy;
                 const float len2 = dx * dx + dy * dy;
                 if (len2 < 1e-6f) continue;
@@ -7881,6 +7928,7 @@ static bool _async_ocean_land_kernel_pure(const ClimateInputBuf &in,
     if ((int)work.ocean_tta_inout.size() != n) return false;
 
     const float effective_leak = in.scalars.ol_effective_leak;
+    const float wrap_period_x = in.scalars.wrap_period_x;  // seam-advection-fix
     const float tta_source_cap = dc_clampf(in.scalars.ol_tta_source_cap, 0.0f, 0.5f);
     const float tta_blend_rate = dc_clampf(in.scalars.ol_tta_blend_rate, 0.0f, 1.0f);
     const float tta_decay_rate = dc_clampf(in.scalars.ol_tta_decay_rate, 0.0f, 1.0f);
@@ -7916,7 +7964,7 @@ static bool _async_ocean_land_kernel_pure(const ClimateInputBuf &in,
             const float cx = OCX[ni];
             const float cy = OCY[ni];
             if (cx * cx + cy * cy < 1e-6f) continue;
-            const float dx = swx - POSX[ni];
+            const float dx = pk_wrap_min_image_dx(swx - POSX[ni], wrap_period_x);
             const float dy = swy - POSY[ni];
             const float dlen2 = dx * dx + dy * dy;
             if (dlen2 < 1e-6f) continue;
@@ -7973,6 +8021,7 @@ static bool _async_wind_air_kernel_pure(const ClimateInputBuf &in,
 
     const int advect_steps = in.scalars.wa_advect_steps;
     const float heat_mix   = in.scalars.wa_heat_mix;
+    const float wrap_period_x = in.scalars.wrap_period_x;  // seam-advection-fix
 
     if ((int)out.air_mass_temp_anomaly.size() != n) out.air_mass_temp_anomaly.resize(n);
 
@@ -8008,7 +8057,7 @@ static bool _async_wind_air_kernel_pure(const ClimateInputBuf &in,
             for (int d = 0; d < 6; ++d) {
                 const int32_t ni = NB[ub + d];
                 if (ni < 0) continue;
-                const float dx = POSX[ni] - swx;
+                const float dx = pk_wrap_min_image_dx(POSX[ni] - swx, wrap_period_x);
                 const float dy = POSY[ni] - swy;
                 const float len2 = dx * dx + dy * dy;
                 if (len2 < 1e-6f) continue;
@@ -8073,6 +8122,7 @@ static bool _async_wind_surface_kernel_pure(const ClimateInputBuf &in,
     const float air_leak = in.scalars.ws_air_leak;
     const float cold_transport_form = in.scalars.ws_cold_transport_form;
     const float cold_transport_melt = in.scalars.ws_cold_transport_melt;
+    const float wrap_period_x = in.scalars.wrap_period_x;  // seam-advection-fix
 
     // 准备 input snapshot：sync 路径用 anomaly_src.duplicate()（air_anom 旧值）
     // 作为读取来源，AOUT 作为新输出。但 wind_air 已写 out.air_mass_temp_anomaly。
@@ -8146,7 +8196,7 @@ static bool _async_wind_surface_kernel_pure(const ClimateInputBuf &in,
             const float wind_x = WX[ni];
             const float wind_y = WY[ni];
             if (wind_x * wind_x + wind_y * wind_y < 1e-6f) continue;
-            const float dx = swx - POSX[ni];
+            const float dx = pk_wrap_min_image_dx(swx - POSX[ni], wrap_period_x);
             const float dy = swy - POSY[ni];
             const float len2 = dx * dx + dy * dy;
             if (len2 < 1e-6f) continue;
@@ -9295,6 +9345,9 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
         t->in_buf.scalars.pb_coupling_gain = float(input.get("pb_coupling_gain", 0.0));
         t->in_buf.scalars.pb_coast_leak    = float(input.get("pb_coast_leak", 0.0));
         t->in_buf.scalars.pb_sea_ice_albedo_cooling = float(input.get("pb_sea_ice_albedo_cooling", 0.01));
+
+        // seam-advection-fix：环绕周期。常驻值优先，input 显式给了才覆盖（单测用）。
+        t->in_buf.scalars.wrap_period_x = float(input.get("wrap_period_x", _native_wrap_period_x));
 
         // ocean_water / ocean_land scalars（Stage 2）
         t->in_buf.scalars.ow_advect_steps  = int(input.get("ow_advect_steps", 3));

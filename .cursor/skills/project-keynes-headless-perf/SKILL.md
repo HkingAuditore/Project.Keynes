@@ -69,3 +69,8 @@ For performance diagnosis, inspect avg/p95/max, `largest_slice_*`, skipped reaso
 `continuation_*`, job stage/substage/path, fallback counts, and native compute/apply/flush/sync
 breakdowns. Read `docs/cpp-dots-runtime/performance-diagnostics-playbook.md` before drawing a root
 cause conclusion.
+
+Once a specific native stage is implicated, load `project-keynes-runtime-hotloop-optimization`.
+It covers probe wiring, the ±15% wall-clock noise floor and the deterministic `scan_steps_*`
+counters to use instead, the known cache-invalidation traps in `gdext/src`, and the
+stashed-baseline regression protocol.

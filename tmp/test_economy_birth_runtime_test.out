@@ -16,10 +16,20 @@ Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
   [PASS] birth employment population bootstraps
   [PASS] birth enters zero-fund unemployed cohort
   [PASS] birth does not recruit into an owner vacancy in the same cycle
+  [PASS] small-population source country configures
+  [PASS] small-population source economy configures
+  [PASS] small-population source bootstraps
+  [PASS] fractional birth remains pending after first cycle
+  [PASS] PKEC v29 saves accumulated birth residual
+  [PASS] small-population restored country configures
+  [PASS] small-population restored economy configures
+  [PASS] PKEC v29 restores accumulated birth residual
+  small-pop residual source_births=1 restored_births=1 source_pop=2 restored_pop=2 source_hash=666423886668398877 restored_hash=666423886668398877
+  [PASS] small population deterministically births on the next cycle
   [PASS] birth test country configures
   [PASS] birth test economy configures
   [PASS] birth test population bootstraps
-  [PASS] two-year healthy-rate attractor stays near one percent growth
-  [PASS] ten-year healthy-rate attractor stays near five percent growth
-  birth-attractor two_year=0.0101 ten_year=0.0513 avg_ms=0.911 p95_ms=1.449 max_ms=3.920
-=== economy birth runtime PASS: checks=21 failures=0 ===
+  [PASS] two-year healthy-rate attractor stays near three percent growth
+  [PASS] ten-year healthy-rate attractor stays near sixteen percent growth
+  birth-attractor two_year=0.0305 ten_year=0.1618 avg_ms=2.666 p95_ms=3.764 max_ms=9.604
+=== economy birth runtime PASS: checks=30 failures=0 ===
