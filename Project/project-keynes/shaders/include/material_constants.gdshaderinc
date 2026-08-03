@@ -130,3 +130,13 @@ const vec3  DEFAULT_EMISSION           = vec3(0.0);
 // ═══════════════════════════════════════════════════════════════════════
 const float SHORE_HALO_WEIGHT_MAX  = 0.72;   // 旧 shore_w * 0.72
 const float SNOW_OVERLAY_MAX       = 1.00;
+
+// ═══════════════════════════════════════════════════════════════════════
+// 九、河流水面法线
+// ═══════════════════════════════════════════════════════════════════════
+// 河心必须使用以水平面为基准的独立水面法线，不能继续继承地形/材质法线。
+// RIVER_NORMAL_WAVE_WEIGHT 控制河面水波相对水平面的起伏；河岸混合窗口只负责
+// 把独立水面法线平滑接回地形，避免窄河边缘出现法线硬切。
+const float RIVER_NORMAL_WAVE_WEIGHT = 0.46;
+const float RIVER_NORMAL_BLEND_START = 0.08;
+const float RIVER_NORMAL_BLEND_END   = 0.68;

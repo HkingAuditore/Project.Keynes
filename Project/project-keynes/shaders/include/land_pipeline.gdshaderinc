@@ -134,21 +134,27 @@ SurfaceParams compute_land_base_surface(
 		: mix(0.92, DEFAULT_AO_LAND, clamp(normal.z, 0.0, 1.0));
 	float metallic = DEFAULT_METALLIC_LAND;
 
-	// LAND 1.5b：[河流高光 2026-06-25] 把河道当作水面而非平面蓝覆盖：降低 roughness、混入轻微
-	// 水波法线、给一点非金属菲涅尔，让河流经统一 BRDF 得到顺光高光与反射。高光强度绑定 river_t
-	// （细河道权重小但仍可读），不会让所有 flow 边缘发白。桌面走水波法线，低画质退化为平滑水面。
+	// LAND 1.5b：[河流独立法线 2026-08-03] 河心法线必须从水平水面构造，不能把 terrain normal
+	// 当作基底，否则河流只是带水色/高光的地表。river_normal_w 在河岸窄带平滑接回地形；进入
+	// 河心后完全采用独立水面法线。river_strength 只作为河流总开关，不再让默认 0.85 永久残留
+	// 15% 地形法线。桌面保留较缓的水波，移动端退化为水平水面，不增加任何采样。
 	if (river_t > 0.001) {
 		float river_w = clamp(river_t * river_strength, 0.0, 1.0);
+		float river_enabled_w = smoothstep(0.001, 0.20, river_strength);
+		float river_normal_w = smoothstep(
+				RIVER_NORMAL_BLEND_START, RIVER_NORMAL_BLEND_END, river_t_raw)
+				* river_enabled_w;
 #if defined(PK_MOBILE_ANY)
-		normal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), river_w * 0.60));
+		vec3 river_surface_normal = vec3(0.0, 0.0, 1.0);
 #else
+		vec3 river_surface_normal = vec3(0.0, 0.0, 1.0);
 		if (visual_quality >= 1 && water_waves_enabled) {
 			vec3 river_wn = sample_water_normal(wp, world_time, 0.40, 1.15, 1, true);
-			normal = normalize(mix(normal, river_wn, river_w * 0.70));
-		} else {
-			normal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), river_w * 0.60));
+			river_surface_normal = normalize(mix(
+					vec3(0.0, 0.0, 1.0), river_wn, RIVER_NORMAL_WAVE_WEIGHT));
 		}
 #endif
+		normal = normalize(mix(normal, river_surface_normal, river_normal_w));
 		roughness = mix(roughness, 0.16, river_w);
 		metallic = mix(metallic, DEFAULT_METALLIC_WATER, river_w);
 		ao = mix(ao, 0.98, river_w * 0.5);
