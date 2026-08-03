@@ -117,6 +117,8 @@ func _test_continuation_columns_fixed() -> void:
 	_expect(cols.find("continuation_substage_work") != -1,
 		"continuation substage work column present")
 	_expect(cols.find("speed_multiplier") != -1, "speed multiplier column present")
+	_expect(cols.find("tail_vegetation_plan_ms") != -1,
+		"vegetation planning probe column present")
 
 
 func _test_collect_columns_job_triplet_grouped() -> void:

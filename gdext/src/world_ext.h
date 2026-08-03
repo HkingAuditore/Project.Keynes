@@ -153,9 +153,8 @@ public:
     bool bind_map_data(godot::Object *map_data);
     bool is_bound() const { return _bound; }
 
-    // sea-ice-snow-visual-fix-2026-06：GDScript 在 bind_map_data 后注入 DCWorld
-    // 句柄。`_flush_slot_to_map` 末尾会 call("mark_dirty_all")，让 atlas pipeline
-    // 能感知 C++ pass 写过的 cell。`nullptr` 关闭自动 mark（退化）。
+    // GDScript 在 bind_map_data 后注入 DCWorld 句柄。native flush 会对比提交前后
+    // 的视觉槽，只把真实变化的 cell 传给 dirty mask；`nullptr` 关闭自动 mark。
     void bind_dirty_world(godot::Object *dirty_world);
 
     // Top-level native orchestration scaffold. These APIs are intentionally
@@ -404,9 +403,8 @@ public:
     void flush_slots_to_map_keys(const godot::PackedStringArray &slot_names);
     void refresh_slots_from_map();
     void refresh_slots_from_map_keys(const godot::PackedStringArray &slot_names);
-    // dirty-mark-batch-2026-06：把所有 pending 的 mark_dirty_all 信号一次性 emit
-    // 到 _dirty_world。调用方（climate_daily_system 在 round 末尾）持锁主线程
-    // 时调用即可。多次重复调用是幂等的（pending 清零）。
+    // 把 native flush 累积的精确 dirty indices 一次性 emit 到 _dirty_world。
+    // 保留旧方法名以兼容 GDScript 调用点；多次调用幂等。
     void flush_pending_mark_dirty_all();
 
     // ─── Archetype system (mirrors I2.B in GDScript) ─────────────────────
@@ -2189,17 +2187,14 @@ private:
 
     // ---- bind state ----
     godot::Object                            *_map_data = nullptr; // weak (GDScript holds strong ref)
-    // sea-ice-snow-visual-fix-2026-06：DCWorld 句柄。C++ pass 通过
-    // `_flush_slot_to_map` 直写 MapData，原本绕过 DCWorld dirty mask。
-    // 持有此句柄后每次 flush 末尾自动 `mark_dirty_all`，确保 atlas pipeline
-    // 能在下个 stride 看到 dirty 信号。`bind_dirty_world` 在 GDScript setup
-    // 完成后由 world.gd::bind_map_data 注入；nullptr 时退化为旧行为。
+    // DCWorld 句柄。C++ pass 通过 `_flush_slot_to_map` 直写 MapData，原本绕过
+    // DCWorld dirty mask；flush 现在按值差异累积精确 cell indices。
     godot::Object                            *_dirty_world = nullptr; // weak
-    // dirty-mark-batch-2026-06：_flush_slot_to_map 末尾不再立即 call
-    // mark_dirty_all，而是把 pending 标志置 true。climate_daily_system 在 round
-    // 末尾调 flush_pending_mark_dirty_all() 一次性发布。pass_a 16 slot flush
-    // 原本触发 16 次 GD 跨边界 call，现合并为 1 次，每 round 省 1.5-5ms。
+    // 多个视觉槽共享一份 per-cell union mask，round 末尾只跨边界发布一次。
     bool                                      _pending_mark_dirty_all = false;
+    godot::PackedByteArray                    _pending_visual_dirty_mask;
+    int                                       _pending_visual_dirty_count = 0;
+    bool                                      _pending_visual_dirty_dense = false;
     bool                                      _bound    = false;
     bool                                      _native_world_configured = false;
     int                                       _native_world_cell_count = 0;

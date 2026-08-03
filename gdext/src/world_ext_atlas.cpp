@@ -1333,6 +1333,11 @@ void DCWorldExt::invalidate_atlas_csr_cache() {
     st->lut_prev_veg = PackedByteArray();
     st->lut_prev_vit = PackedByteArray();
     st->lut_transition_age = PackedByteArray();
+    st->lut_enum_data = PackedByteArray();
+    st->lut_dyn_data = PackedByteArray();
+    st->lut_eco_data = PackedByteArray();
+    st->lut_weather_data = PackedByteArray();
+    st->lut_active_transition_indices = PackedInt32Array();
     st->phase = AtlasPipelineState::IDLE;
     st->cursor = 0;
 }
@@ -1533,44 +1538,88 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
     const int terrain_sea_ice = int(opts.get("terrain_sea_ice", -1));
     const int veg_none = int(opts.get("veg_none", -1));
     const bool cache_valid_opt = bool(opts.get("cache_valid", false));
+    const bool force_full_encode = bool(opts.get("force_full_encode", true));
+    const bool include_weather_lut = bool(opts.get("include_weather_lut", true));
+    const PackedInt32Array requested_dirty =
+        opts.get("dirty_indices", PackedInt32Array());
 
-    // 持久 prev 状态（transition_age tracking）。首帧 / 尺寸变化时重置为冷启。
+    // 持久 prev 状态与 full byte buffers。日常只 patch dirty ∪ active-transition；
+    // 冷启、尺寸变化或显式 force 时走全集。
     auto *st = get_or_create_atlas_state(_atlas_state);
     const bool lut_state_ok = st->lut_initialized &&
         st->lut_prev_veg.size() == n_cells &&
         st->lut_prev_vit.size() == n_cells &&
         st->lut_transition_age.size() == n_cells;
+    const int total_bytes = slots_total * 4;
+    const bool lut_buffers_ok =
+        st->lut_enum_data.size() == total_bytes &&
+        st->lut_dyn_data.size() == total_bytes &&
+        st->lut_eco_data.size() == total_bytes &&
+        st->lut_weather_data.size() == total_bytes;
     if (!lut_state_ok) {
         st->lut_prev_veg.resize(n_cells);
         st->lut_prev_vit.resize(n_cells);
         st->lut_transition_age.resize(n_cells);
+    }
+    if (!lut_buffers_ok) {
+        st->lut_enum_data.resize(total_bytes);
+        st->lut_dyn_data.resize(total_bytes);
+        st->lut_eco_data.resize(total_bytes);
+        st->lut_weather_data.resize(total_bytes);
     }
     uint8_t * const __restrict PV_VEG = st->lut_prev_veg.ptrw();
     uint8_t * const __restrict PV_VIT = st->lut_prev_vit.ptrw();
     uint8_t * const __restrict TR = st->lut_transition_age.ptrw();
     const bool eff_cache_valid = cache_valid_opt && lut_state_ok;
 
-    PackedByteArray enum_data; enum_data.resize(slots_total * 4);
-    PackedByteArray dyn_data;  dyn_data.resize(slots_total * 4);
-    PackedByteArray eco_data;  eco_data.resize(slots_total * 4);
-    PackedByteArray weather_data; weather_data.resize(slots_total * 4);
-    uint8_t * const __restrict ENUM = enum_data.ptrw();
-    uint8_t * const __restrict DYN = dyn_data.ptrw();
-    uint8_t * const __restrict ECO = eco_data.ptrw();
-    uint8_t * const __restrict WX = weather_data.ptrw();
-    for (int i = 0; i < slots_total * 4; ++i) { ENUM[i] = 0; DYN[i] = 0; ECO[i] = 0; WX[i] = 0; }
+    uint8_t * const __restrict ENUM = st->lut_enum_data.ptrw();
+    uint8_t * const __restrict DYN = st->lut_dyn_data.ptrw();
+    uint8_t * const __restrict ECO = st->lut_eco_data.ptrw();
+    uint8_t * const __restrict WX = st->lut_weather_data.ptrw();
+
+    const bool full_encode = force_full_encode || !lut_state_ok || !lut_buffers_ok;
+    PackedByteArray seen;
+    PackedInt32Array work_indices;
+    auto append_work = [&](int ci) {
+        if (ci < 0 || ci >= n_cells || seen[ci] != 0) return;
+        seen.set(ci, uint8_t(1));
+        work_indices.append(ci);
+    };
+    if (!full_encode) {
+        seen.resize(n_cells);
+        for (int i = 0; i < requested_dirty.size(); ++i) {
+            append_work(requested_dirty[i]);
+        }
+        for (int i = 0; i < st->lut_active_transition_indices.size(); ++i) {
+            append_work(st->lut_active_transition_indices[i]);
+        }
+    }
 
     auto t0 = std::chrono::high_resolution_clock::now();
-    for (int ci = 0; ci < n_cells; ++ci) {
+    int enum_changed_cells = 0;
+    int dyn_changed_cells = 0;
+    int eco_changed_cells = 0;
+    int weather_changed_cells = 0;
+    const int processed_cells = full_encode ? n_cells : work_indices.size();
+    for (int wi = 0; wi < processed_cells; ++wi) {
+        const int ci = full_encode ? wi : work_indices[wi];
         const uint8_t terrain = TERR[ci];
         const bool is_water = IWLUT[terrain] != 0;
 
         // enum LUT：R=terrain G=vegetation B=cover A=迷雾知识度 k
         const int e4 = ci * 4;
-        ENUM[e4] = terrain;
-        ENUM[e4 + 1] = VEG[ci];
-        ENUM[e4 + 2] = COVER[ci];
-        ENUM[e4 + 3] = FOGK != nullptr ? FOGK[ci] : uint8_t(255);
+        const uint8_t enum_0 = terrain;
+        const uint8_t enum_1 = VEG[ci];
+        const uint8_t enum_2 = COVER[ci];
+        const uint8_t enum_3 = FOGK != nullptr ? FOGK[ci] : uint8_t(255);
+        if (ENUM[e4] != enum_0 || ENUM[e4 + 1] != enum_1 ||
+                ENUM[e4 + 2] != enum_2 || ENUM[e4 + 3] != enum_3) {
+            ++enum_changed_cells;
+        }
+        ENUM[e4] = enum_0;
+        ENUM[e4 + 1] = enum_1;
+        ENUM[e4 + 2] = enum_2;
+        ENUM[e4 + 3] = enum_3;
 
         // dyn LUT
         const float snow_vis = SNOW_VIS[ci];
@@ -1585,10 +1634,18 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
             double(TEMP[ci]), double(MOIST[ci]), double(snow_vis),
             double(VIT[ci]), double(ICE[ci]), is_water);
         const int d4 = ci * 4;
-        DYN[d4]     = uint8_t(dsig & 0xFFu);
-        DYN[d4 + 1] = uint8_t((dsig >> 8) & 0xFFu);
-        DYN[d4 + 2] = uint8_t((dsig >> 16) & 0xFFu);
-        DYN[d4 + 3] = uint8_t((dsig >> 24) & 0xFFu);
+        const uint8_t dyn_0 = uint8_t(dsig & 0xFFu);
+        const uint8_t dyn_1 = uint8_t((dsig >> 8) & 0xFFu);
+        const uint8_t dyn_2 = uint8_t((dsig >> 16) & 0xFFu);
+        const uint8_t dyn_3 = uint8_t((dsig >> 24) & 0xFFu);
+        if (DYN[d4] != dyn_0 || DYN[d4 + 1] != dyn_1 ||
+                DYN[d4 + 2] != dyn_2 || DYN[d4 + 3] != dyn_3) {
+            ++dyn_changed_cells;
+        }
+        DYN[d4] = dyn_0;
+        DYN[d4 + 1] = dyn_1;
+        DYN[d4 + 2] = dyn_2;
+        DYN[d4 + 3] = dyn_3;
 
         // eco LUT：transition_age tracking（镜像 encode_ecology_visual_atlas）
         const int cur_veg = int(VEG[ci]) & 0xFF;
@@ -1614,19 +1671,35 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
             double(TEMP[ci]), double(MOIST[ci]), double(snow_vis), double(VIT[ci]),
             cur_veg, eco_is_water, transition_age, prev_vit_byte, veg_none);
         const int c4 = ci * 4;
-        ECO[c4]     = uint8_t(esig & 0xFFu);
-        ECO[c4 + 1] = uint8_t((esig >> 8) & 0xFFu);
-        ECO[c4 + 2] = uint8_t((esig >> 16) & 0xFFu);
-        ECO[c4 + 3] = uint8_t((esig >> 24) & 0xFFu);
+        const uint8_t eco_0 = uint8_t(esig & 0xFFu);
+        const uint8_t eco_1 = uint8_t((esig >> 8) & 0xFFu);
+        const uint8_t eco_2 = uint8_t((esig >> 16) & 0xFFu);
+        const uint8_t eco_3 = uint8_t((esig >> 24) & 0xFFu);
+        if (ECO[c4] != eco_0 || ECO[c4 + 1] != eco_1 ||
+                ECO[c4 + 2] != eco_2 || ECO[c4 + 3] != eco_3) {
+            ++eco_changed_cells;
+        }
+        ECO[c4] = eco_0;
+        ECO[c4 + 1] = eco_1;
+        ECO[c4 + 2] = eco_2;
+        ECO[c4 + 3] = eco_3;
 
         // weather LUT：R=type(枚举), G=intensity, B=cloud, A=vapor（[0,1]→byte）。
         // WTYPE==nullptr（weather 未就绪）时保持初始化的 0。
-        if (WTYPE != nullptr) {
+        if (include_weather_lut && WTYPE != nullptr) {
             const int w4 = ci * 4;
-            WX[w4]     = WTYPE[ci];
-            WX[w4 + 1] = uint8_t(pk_q01_byte(double(WINT[ci])));
-            WX[w4 + 2] = uint8_t(pk_q01_byte(double(WCLOUD[ci])));
-            WX[w4 + 3] = uint8_t(pk_q01_byte(double(WVAPOR[ci])));
+            const uint8_t weather_0 = WTYPE[ci];
+            const uint8_t weather_1 = uint8_t(pk_q01_byte(double(WINT[ci])));
+            const uint8_t weather_2 = uint8_t(pk_q01_byte(double(WCLOUD[ci])));
+            const uint8_t weather_3 = uint8_t(pk_q01_byte(double(WVAPOR[ci])));
+            if (WX[w4] != weather_0 || WX[w4 + 1] != weather_1 ||
+                    WX[w4 + 2] != weather_2 || WX[w4 + 3] != weather_3) {
+                ++weather_changed_cells;
+            }
+            WX[w4] = weather_0;
+            WX[w4 + 1] = weather_1;
+            WX[w4 + 2] = weather_2;
+            WX[w4 + 3] = weather_3;
         }
 
         // 写回 prev 状态
@@ -1638,22 +1711,35 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
         TR[ci] = uint8_t(tr_store);
     }
     st->lut_initialized = true;
+    PackedInt32Array active_transitions;
+    for (int ci = 0; ci < n_cells; ++ci) {
+        if (TR[ci] > 0) active_transitions.append(ci);
+    }
+    st->lut_active_transition_indices = active_transitions;
     auto t1 = std::chrono::high_resolution_clock::now();
     const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-    out["enum_lut"] = enum_data;
-    out["dyn_lut"] = dyn_data;
-    out["eco_lut"] = eco_data;
-    out["weather_lut"] = weather_data;
+    out["enum_lut"] = st->lut_enum_data;
+    out["dyn_lut"] = st->lut_dyn_data;
+    out["eco_lut"] = st->lut_eco_data;
+    if (include_weather_lut) out["weather_lut"] = st->lut_weather_data;
     out["lut_w"] = lut_w;
     out["lut_h"] = lut_h;
     out["n_cells"] = n_cells;
     out["elapsed_ms"] = ms;
+    out["full_encode"] = full_encode;
+    out["requested_dirty_cells"] = requested_dirty.size();
+    out["processed_cells"] = processed_cells;
+    out["enum_changed_cells"] = enum_changed_cells;
+    out["dynamic_changed_cells"] = dyn_changed_cells;
+    out["ecology_changed_cells"] = eco_changed_cells;
+    out["weather_changed_cells"] = weather_changed_cells;
+    out["active_transition_count"] = active_transitions.size();
     out["snow_override_used"] = snow_override_valid;
     out["snow_source"] = String(snow_override_valid ? "map_snow_cover_arr" : "slot");
     out["snow_slot_diff_count"] = snow_slot_diff_count;
-    out["snow_slot_diff_mean"] = snow_override_valid && n_cells > 0
-        ? (snow_slot_diff_sum / double(n_cells)) : 0.0;
+    out["snow_slot_diff_mean"] = snow_override_valid && processed_cells > 0
+        ? (snow_slot_diff_sum / double(processed_cells)) : 0.0;
     out["snow_slot_diff_max"] = snow_slot_diff_max;
     out["fallback"] = false;
     out["reason"] = String();

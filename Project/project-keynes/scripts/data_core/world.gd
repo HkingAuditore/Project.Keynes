@@ -717,8 +717,15 @@ func mark_dirty_indexed(indices: PackedInt32Array) -> void:
 func mark_dirty_all() -> void:
 	if not dirty_mask_enabled or _dirty_cell_mask_size <= 0:
 		return
-	for i in range(_dirty_cell_mask_size):
-		_dirty_cell_mask[i] = 1
+	_dirty_cell_mask.fill(1)
+
+
+## 清空 dirty mask 但不构造 index 数组。稠密 dirty 消费端会直接走 full encode，
+## 这里用 PackedByteArray 的 native fill，避免 GDScript 双遍扫描 6400 个 cell。
+func clear_dirty_mask() -> void:
+	if _dirty_cell_mask_size <= 0:
+		return
+	_dirty_cell_mask.fill(0)
 
 
 ## 公开 API：原子地"读出当前所有 dirty cell 的 index 列表 + 把 mask 清零"。
