@@ -163,15 +163,15 @@ func _run() -> void:
 
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v28 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 28)
+	_expect("PKEC v29 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 29)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("PKEC v28 save completes", not chunks.is_empty()
+	_expect("PKEC v29 save completes", not chunks.is_empty()
 		and bool(ext.end_economy_save().get("ok", false)))
 	var restored := _new_ext(catalog)
 	_expect("restore country bootstraps", _configure_country(
@@ -183,7 +183,7 @@ func _run() -> void:
 		_expect("restore chunk accepted", bool(
 			restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	var restore_end: Dictionary = restored.end_economy_restore()
-	_expect("PKEC v28 restores family and important-person authority",
+	_expect("PKEC v29 restores family and important-person authority",
 		bool(restore_end.get("ok", false))
 		and int(restore_end.get("restored_families", 0)) == 1
 		and int(restore_end.get("restored_persons", 0)) == person_count_before

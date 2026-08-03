@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=12 format=3]
+[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=27 format=3]
 
 [ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
@@ -34,6 +34,46 @@ key = &"gameplay.generic.value"
 domain = 3
 min_value = -1000000000.0
 max_value = 1000000000.0
+
+[sub_resource type="Resource" id="StatCityOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityAgricultureOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.agriculture_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityExtractiveOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.extractive_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityBirth"]
+script = ExtResource("2_stat")
+key = &"economy.city.birth_factor"
+domain = 2
+min_value = 0.0
+max_value = 4.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityTradeOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.trade_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 8.0
+value_conversion = 1
 
 [sub_resource type="Resource" id="TermClimate"]
 script = ExtResource("4_term")
@@ -95,7 +135,72 @@ max_stacks = 100
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermGameplay")])
 
+[sub_resource type="Resource" id="TermFamilyCityOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.output_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefFamilyCityOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.production_boost"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyCityOutput")])
+
+[sub_resource type="Resource" id="TermFamilyHuntingOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.agriculture_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyHuntingOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.hunting_output_boost"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyHuntingOutput")])
+
+[sub_resource type="Resource" id="TermFamilyExtractiveOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.extractive_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyExtractiveOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.extractive_output_boost"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyExtractiveOutput")])
+
+[sub_resource type="Resource" id="TermFamilyBirth"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.birth_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefFamilyBirth"]
+script = ExtResource("3_definition")
+key = &"family.city.birth_boost"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyBirth")])
+
+[sub_resource type="Resource" id="TermFamilyTradeOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.trade_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyTradeOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.trade_output_boost"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyTradeOutput")])
+
 [resource]
 script = ExtResource("1_catalog")
-stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay")])
-definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay")])
+stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput")])

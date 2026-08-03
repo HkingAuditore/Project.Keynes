@@ -240,9 +240,16 @@ void DCWorldExt::_bind_methods() {
                          DEFVAL(64));
     ClassDB::bind_method(D_METHOD("get_family_snapshot", "family_handle"),
                          &DCWorldExt::get_family_snapshot);
+    ClassDB::bind_method(D_METHOD("get_family_traits", "family_handle"),
+                         &DCWorldExt::get_family_traits);
     ClassDB::bind_method(D_METHOD("get_family_branches", "family_handle",
                                   "offset", "limit"),
                          &DCWorldExt::get_family_branches, DEFVAL(0), DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_family_branch_effects", "family_handle",
+                                  "cell_idx"),
+                         &DCWorldExt::get_family_branch_effects);
+    ClassDB::bind_method(D_METHOD("submit_family_trait_commands", "packed_batch"),
+                         &DCWorldExt::submit_family_trait_commands);
     ClassDB::bind_method(D_METHOD("get_family_industries", "family_handle",
                                  "offset", "limit"),
                          &DCWorldExt::get_family_industries, DEFVAL(0),

@@ -32,6 +32,7 @@ var _profession_display_names: Dictionary = {}
 var _ethnicity_display_names: Dictionary = {}
 var _building_display_names: Dictionary = {}
 var _need_display_names: Dictionary = {}
+var _family_trait_sequence: int = 0
 
 func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
 	_world_ext = world_ext
@@ -268,10 +269,48 @@ func family_snapshot(family_handle: int) -> Dictionary:
 	return snapshot
 
 
+func get_family_traits(family_handle: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_traits"):
+		return {"ok": false, "reason": "family_trait_runtime_unavailable"}
+	return _world_ext.get_family_traits(family_handle)
+
+
 func family_branches(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_family_branches"):
 		return {"ok": false, "reason": "family_runtime_unavailable"}
 	return _world_ext.get_family_branches(family_handle, offset, limit)
+
+
+func get_family_branch_effects(family_handle: int, cell_idx: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_branch_effects"):
+		return {"ok": false, "reason": "family_trait_runtime_unavailable"}
+	return _world_ext.get_family_branch_effects(family_handle, cell_idx)
+
+
+func queue_family_trait_mutation(family_handle: int, operation: Variant,
+		trait_key: StringName, strength_q16: int = 65536,
+		effective_day: int = 0, priority: int = 100,
+		sequence: int = -1) -> int:
+	if not _configured or not _world_ext.has_method("submit_family_trait_commands"):
+		return 0
+	var opcode: int = int(operation) if typeof(operation) == TYPE_INT else {
+		"grant": 1, "remove": 2, "set_strength": 3,
+	}.get(String(operation), 0)
+	if sequence < 0:
+		_family_trait_sequence += 1
+		sequence = _family_trait_sequence
+	var result: Dictionary = _world_ext.submit_family_trait_commands({
+		"protocol_version": 1,
+		"operations": PackedInt32Array([opcode]),
+		"family_handles": PackedInt64Array([family_handle]),
+		"trait_keys": PackedStringArray([String(trait_key)]),
+		"strength_q16": PackedInt32Array([strength_q16]),
+		"effective_days": PackedInt64Array([effective_day]),
+		"priorities": PackedInt32Array([priority]),
+		"sequences": PackedInt64Array([sequence]),
+	})
+	var orders: PackedInt64Array = result.get("request_orders", PackedInt64Array())
+	return int(orders[0]) if bool(result.get("ok", false)) and not orders.is_empty() else 0
 
 
 func family_industries(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:

@@ -346,7 +346,10 @@ constexpr uint16_t SAVE_SECTION_FAMILY_MEMBERSHIP = 16;
 constexpr uint16_t SAVE_SECTION_FAMILY_OWNERSHIP = 17;
 constexpr uint16_t SAVE_SECTION_PERSON_RECORDS = 18;
 constexpr uint16_t SAVE_SECTION_PERSON_NEEDS = 19;
-constexpr uint16_t SAVE_SECTION_END = 20;
+constexpr uint16_t SAVE_SECTION_FAMILY_TRAITS = 20;
+constexpr uint16_t SAVE_SECTION_FAMILY_INFLUENCES = 21;
+constexpr uint16_t SAVE_SECTION_FAMILY_TRAIT_COMMANDS = 22;
+constexpr uint16_t SAVE_SECTION_END = 23;
 constexpr uint16_t SAVE_SECTION_END_V26 = 18;
 constexpr uint16_t SAVE_SECTION_END_V24_TO_V25 = 15;
 constexpr uint16_t SAVE_SECTION_END_V23 = 14;
@@ -604,6 +607,16 @@ void NativeEconomyRuntime::PopulationStore::release_slot(int32_t slot) {
     --active_count;
 }
 
+std::vector<uint8_t> economy_packed_u8(const Dictionary &d, const char *key) {
+    std::vector<uint8_t> out;
+    const StringName k(key);
+    if (!d.has(k) || d[k].get_type() != Variant::PACKED_BYTE_ARRAY) return out;
+    const PackedByteArray src = d[k];
+    out.resize(src.size());
+    if (!out.empty()) std::memcpy(out.data(), src.ptr(), out.size());
+    return out;
+}
+
 void NativeEconomyRuntime::FamilyStore::clear() {
     active.clear(); generation.clear(); stable_id.clear(); surname_id.clear();
     surname_disambiguator.clear(); founded_day.clear(); home_cell.clear();
@@ -660,6 +673,201 @@ bool NativeEconomyRuntime::FamilyStore::valid_handle(uint64_t handle,
     const uint32_t gen = static_cast<uint32_t>(handle >> 32);
     if (index >= active.size() || active[index] == 0 || generation[index] != gen)
         return false;
+    index_out = static_cast<int32_t>(index);
+    return true;
+}
+
+bool NativeEconomyRuntime::compile_family_trait_catalog(
+        const Dictionary &catalog, std::string &error) {
+    _family_trait_catalog_version = dict_num<int32_t>(
+        catalog, "family_trait_catalog_version", 0);
+    _family_trait_catalog_hash = dict_num<int64_t>(
+        catalog, "family_trait_catalog_hash", 0);
+    _family_core_trait_min = dict_num<int32_t>(
+        catalog, "family_core_trait_min", 0);
+    _family_core_trait_max = dict_num<int32_t>(
+        catalog, "family_core_trait_max", 0);
+    _family_trait_ids = packed_strings(catalog, "family_trait_ids");
+    _family_trait_display_names = packed_strings(
+        catalog, "family_trait_display_names");
+    _family_trait_weights = packed_i32(catalog, "family_trait_weights");
+    _family_trait_core_eligible = economy_packed_u8(
+        catalog, "family_trait_core_eligible");
+    _family_trait_strength_min_q16 = packed_i32(
+        catalog, "family_trait_strength_min_q16");
+    _family_trait_strength_max_q16 = packed_i32(
+        catalog, "family_trait_strength_max_q16");
+    _family_trait_strength_step_q16 = packed_i32(
+        catalog, "family_trait_strength_step_q16");
+    _family_trait_prerequisite_offsets = packed_i32(
+        catalog, "family_trait_prerequisite_offsets");
+    _family_trait_prerequisites = packed_i32(
+        catalog, "family_trait_prerequisites");
+    _family_trait_exclusion_offsets = packed_i32(
+        catalog, "family_trait_exclusion_offsets");
+    _family_trait_exclusions = packed_i32(
+        catalog, "family_trait_exclusions");
+    _family_trait_behavior_offsets = packed_i32(
+        catalog, "family_trait_behavior_offsets");
+    _family_trait_behavior_axes = packed_i32(
+        catalog, "family_trait_behavior_axes");
+    _family_trait_behavior_selector_kinds = packed_i32(
+        catalog, "family_trait_behavior_selector_kinds");
+    _family_trait_behavior_selector_ids = packed_i32(
+        catalog, "family_trait_behavior_selector_ids");
+    _family_trait_behavior_factors_q16 = packed_i32(
+        catalog, "family_trait_behavior_factors_q16");
+    _family_trait_modifier_offsets = packed_i32(
+        catalog, "family_trait_modifier_offsets");
+    _family_trait_modifier_definition_keys = packed_strings(
+        catalog, "family_trait_modifier_definition_keys");
+    _family_trait_modifier_targets = packed_i32(
+        catalog, "family_trait_modifier_targets");
+    _family_trait_modifier_tier_magnitudes_q16 = packed_i32(
+        catalog, "family_trait_modifier_tier_magnitudes_q16");
+
+    const size_t count = _family_trait_ids.size();
+    const bool primary_shape = count > 0 &&
+        _family_trait_display_names.size() == count &&
+        _family_trait_weights.size() == count &&
+        _family_trait_core_eligible.size() == count &&
+        _family_trait_strength_min_q16.size() == count &&
+        _family_trait_strength_max_q16.size() == count &&
+        _family_trait_strength_step_q16.size() == count;
+    const bool csr_shape =
+        _family_trait_prerequisite_offsets.size() == count + 1 &&
+        _family_trait_exclusion_offsets.size() == count + 1 &&
+        _family_trait_behavior_offsets.size() == count + 1 &&
+        _family_trait_modifier_offsets.size() == count + 1 &&
+        !_family_trait_prerequisite_offsets.empty() &&
+        _family_trait_prerequisite_offsets.front() == 0 &&
+        _family_trait_prerequisite_offsets.back() ==
+            static_cast<int32_t>(_family_trait_prerequisites.size()) &&
+        _family_trait_exclusion_offsets.front() == 0 &&
+        _family_trait_exclusion_offsets.back() ==
+            static_cast<int32_t>(_family_trait_exclusions.size()) &&
+        _family_trait_behavior_offsets.front() == 0 &&
+        _family_trait_behavior_offsets.back() ==
+            static_cast<int32_t>(_family_trait_behavior_axes.size()) &&
+        _family_trait_modifier_offsets.front() == 0 &&
+        _family_trait_modifier_offsets.back() == static_cast<int32_t>(
+            _family_trait_modifier_definition_keys.size());
+    const bool edge_shape =
+        _family_trait_behavior_axes.size() ==
+            _family_trait_behavior_selector_kinds.size() &&
+        _family_trait_behavior_axes.size() ==
+            _family_trait_behavior_selector_ids.size() &&
+        _family_trait_behavior_axes.size() ==
+            _family_trait_behavior_factors_q16.size() &&
+        _family_trait_modifier_definition_keys.size() ==
+            _family_trait_modifier_targets.size() &&
+        _family_trait_modifier_tier_magnitudes_q16.size() ==
+            _family_trait_modifier_definition_keys.size() * 6;
+    if (_family_trait_catalog_version <= 0 || _family_trait_catalog_hash == 0 ||
+        _family_core_trait_min < 0 ||
+        _family_core_trait_max < _family_core_trait_min || !primary_shape ||
+        !csr_shape || !edge_shape) {
+        error = "family_trait_catalog_shape_invalid";
+        return false;
+    }
+    int32_t eligible = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (_family_trait_ids[i].empty() || _family_trait_weights[i] <= 0 ||
+            (i > 0 && _family_trait_ids[i - 1] >= _family_trait_ids[i]) ||
+            _family_trait_strength_min_q16[i] < 0 ||
+            _family_trait_strength_max_q16[i] <
+                _family_trait_strength_min_q16[i] ||
+            _family_trait_strength_step_q16[i] <= 0) {
+            error = "family_trait_catalog_entry_invalid";
+            return false;
+        }
+        eligible += _family_trait_core_eligible[i] != 0 ? 1 : 0;
+    }
+    if (_family_core_trait_max > eligible) {
+        error = "family_trait_core_count_exceeds_eligible";
+        return false;
+    }
+    for (int32_t id : _family_trait_prerequisites)
+        if (id < 0 || id >= static_cast<int32_t>(count)) {
+            error = "family_trait_prerequisite_invalid";
+            return false;
+        }
+    for (int32_t id : _family_trait_exclusions)
+        if (id < 0 || id >= static_cast<int32_t>(count)) {
+            error = "family_trait_exclusion_invalid";
+            return false;
+        }
+    for (int32_t factor : _family_trait_behavior_factors_q16)
+        if (factor < 0 || factor > 4 * Q16_ONE) {
+            error = "family_trait_behavior_factor_invalid";
+            return false;
+        }
+    for (int32_t magnitude : _family_trait_modifier_tier_magnitudes_q16)
+        if (magnitude < 0 || magnitude > 4 * Q16_ONE) {
+            error = "family_trait_modifier_magnitude_invalid";
+            return false;
+        }
+    return true;
+}
+
+void NativeEconomyRuntime::FamilyCellInfluenceStore::clear() {
+    active.clear(); generation.clear(); family_handle.clear(); cell.clear();
+    stable_id.clear(); population.clear(); cash.clear(); building_asset.clear();
+    population_share_q16.clear(); cash_share_q16.clear();
+    building_share_q16.clear(); score_q16.clear(); prestige_level.clear();
+    pending_target_level.clear(); review_streak.clear(); last_review_day.clear();
+    free_indices.clear();
+}
+
+int32_t NativeEconomyRuntime::FamilyCellInfluenceStore::allocate() {
+    int32_t index = -1;
+    if (!free_indices.empty()) {
+        const auto reusable = std::min_element(free_indices.begin(),
+                                               free_indices.end());
+        index = *reusable;
+        free_indices.erase(reusable);
+    } else {
+        index = static_cast<int32_t>(active.size());
+        active.push_back(0); generation.push_back(1); family_handle.push_back(0);
+        cell.push_back(-1); stable_id.push_back(0); population.push_back(0);
+        cash.push_back(0); building_asset.push_back(0);
+        population_share_q16.push_back(0); cash_share_q16.push_back(0);
+        building_share_q16.push_back(0); score_q16.push_back(0);
+        prestige_level.push_back(0); pending_target_level.push_back(0);
+        review_streak.push_back(0); last_review_day.push_back(-1);
+    }
+    active[index] = 1; family_handle[index] = 0; cell[index] = -1;
+    stable_id[index] = 0; population[index] = 0; cash[index] = 0;
+    building_asset[index] = 0; population_share_q16[index] = 0;
+    cash_share_q16[index] = 0; building_share_q16[index] = 0;
+    score_q16[index] = 0; prestige_level[index] = 0;
+    pending_target_level[index] = 0; review_streak[index] = 0;
+    last_review_day[index] = -1;
+    return index;
+}
+
+void NativeEconomyRuntime::FamilyCellInfluenceStore::release(int32_t index) {
+    if (index < 0 || index >= static_cast<int32_t>(active.size()) ||
+        active[index] == 0) return;
+    active[index] = 0;
+    generation[index] = generation[index] == UINT32_MAX ? 1 : generation[index] + 1;
+    free_indices.push_back(index);
+}
+
+uint64_t NativeEconomyRuntime::FamilyCellInfluenceStore::handle_for_index(
+        int32_t index) const {
+    if (index < 0 || index >= static_cast<int32_t>(active.size()) ||
+        active[index] == 0) return 0;
+    return (static_cast<uint64_t>(generation[index]) << 32) |
+        static_cast<uint32_t>(index);
+}
+
+bool NativeEconomyRuntime::FamilyCellInfluenceStore::valid_handle(
+        uint64_t handle, int32_t &index_out) const {
+    const uint32_t index = static_cast<uint32_t>(handle & 0xffffffffULL);
+    const uint32_t gen = static_cast<uint32_t>(handle >> 32);
+    if (index >= active.size() || active[index] == 0 ||
+        generation[index] != gen) return false;
     index_out = static_cast<int32_t>(index);
     return true;
 }
@@ -4395,7 +4603,7 @@ bool NativeEconomyRuntime::compile_family_catalog(
         error = "family_surname_weight_sum_invalid";
         return false;
     }
-    return true;
+    return compile_family_trait_catalog(catalog, error);
 }
 
 bool NativeEconomyRuntime::compile_person_catalog(
@@ -11426,7 +11634,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 group.cell, group.type_id, group.owner_signature_id);
             const double building_factor =
                 _modifier_runtime->economy_building_output_factor(
-                    group.modifier_handle, country_handle);
+                    group.modifier_handle, static_cast<uint64_t>(group.cell), sector);
             group.output_factor_q16 = modifier_factor_q16(
                 (static_cast<double>(country_factor_q16) / Q16_ONE) *
                 (static_cast<double>(sector_factor_q16) / Q16_ONE) *
@@ -11510,7 +11718,7 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
         target.output_factor_q16 = modifier_factor_q16(
             country_factor * sector_factor * research_factor *
             _modifier_runtime->economy_building_output_factor(
-                target.modifier_handle, country_handle));
+                target.modifier_handle, static_cast<uint64_t>(cell), sector));
     }
     return effective_building_output_quantity(target, base_quantity,
         utilization_q16, building_days, sat);
@@ -13681,9 +13889,13 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_diagnostics.clear();
     _population.clear(cell_count);
     _families.clear();
+    _family_influences.clear();
     _persons.clear();
     _family_memberships.clear();
     _family_ownerships.clear();
+    _family_traits.clear();
+    _family_trait_commands.clear();
+    _family_modifier_bindings.clear();
     _person_needs.clear();
     _family_member_offsets.clear();
     _family_member_edge_indices.clear();
@@ -22075,6 +22287,208 @@ int64_t NativeEconomyRuntime::family_owned_buildings(uint64_t family_handle) con
     return total;
 }
 
+void NativeEconomyRuntime::assign_core_family_traits(int32_t family_index) {
+    if (family_index < 0 || family_index >= static_cast<int32_t>(
+            _families.active.size()) || _families.active[family_index] == 0 ||
+        _family_trait_ids.empty()) return;
+    const uint64_t family_handle = _families.handle_for_index(family_index);
+    uint64_t rng = 1469598103934665603ULL;
+    rng = trace_hash_mix(rng, static_cast<uint64_t>(_seed));
+    rng = trace_hash_mix(rng, static_cast<uint64_t>(
+        _families.stable_id[family_index]));
+    rng = trace_hash_mix(rng, static_cast<uint32_t>(
+        _family_trait_catalog_version));
+    const int32_t span = _family_core_trait_max - _family_core_trait_min + 1;
+    const int32_t desired = _family_core_trait_min + static_cast<int32_t>(
+        trace_hash_mix(rng, 0x434f554e54ULL) %
+        static_cast<uint64_t>(std::max(1, span)));
+    std::vector<int32_t> selected;
+    selected.reserve(desired);
+    for (int32_t pick = 0; pick < desired; ++pick) {
+        std::vector<int32_t> candidates;
+        int64_t total_weight = 0;
+        for (int32_t trait_id = 0; trait_id < static_cast<int32_t>(
+                _family_trait_ids.size()); ++trait_id) {
+            if (_family_trait_core_eligible[trait_id] == 0 ||
+                std::find(selected.begin(), selected.end(), trait_id) !=
+                    selected.end()) continue;
+            bool allowed = true;
+            for (int32_t p = _family_trait_prerequisite_offsets[trait_id];
+                 p < _family_trait_prerequisite_offsets[trait_id + 1]; ++p)
+                allowed = allowed && std::find(selected.begin(), selected.end(),
+                    _family_trait_prerequisites[p]) != selected.end();
+            for (int32_t p = _family_trait_exclusion_offsets[trait_id];
+                 allowed && p < _family_trait_exclusion_offsets[trait_id + 1]; ++p)
+                allowed = std::find(selected.begin(), selected.end(),
+                    _family_trait_exclusions[p]) == selected.end();
+            for (int32_t chosen : selected) {
+                for (int32_t p = _family_trait_exclusion_offsets[chosen];
+                     allowed && p < _family_trait_exclusion_offsets[chosen + 1]; ++p)
+                    allowed = _family_trait_exclusions[p] != trait_id;
+            }
+            if (!allowed) continue;
+            candidates.push_back(trait_id);
+            total_weight += _family_trait_weights[trait_id];
+        }
+        if (candidates.empty() || total_weight <= 0) break;
+        int64_t roll = static_cast<int64_t>(trace_hash_mix(
+            rng, 0x5049434bULL + static_cast<uint64_t>(pick)) %
+            static_cast<uint64_t>(total_weight));
+        int32_t chosen = candidates.back();
+        for (int32_t candidate : candidates) {
+            if (roll < _family_trait_weights[candidate]) {
+                chosen = candidate;
+                break;
+            }
+            roll -= _family_trait_weights[candidate];
+        }
+        selected.push_back(chosen);
+        const int32_t lo = _family_trait_strength_min_q16[chosen];
+        const int32_t hi = _family_trait_strength_max_q16[chosen];
+        const int32_t step = _family_trait_strength_step_q16[chosen];
+        const int32_t steps = std::max(0, (hi - lo) / step);
+        const int32_t strength = lo + step * static_cast<int32_t>(
+            trace_hash_mix(rng, 0x535452454e475448ULL +
+                static_cast<uint64_t>(pick)) %
+            static_cast<uint64_t>(steps + 1));
+        _family_traits.push_back({family_handle, chosen, strength, 1});
+    }
+    std::sort(_family_traits.begin(), _family_traits.end(),
+        [](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
+            return std::tie(a.family_handle, a.trait_id) <
+                std::tie(b.family_handle, b.trait_id);
+        });
+}
+
+int32_t NativeEconomyRuntime::family_trait_behavior_factor_q16(
+        uint64_t family_handle, int32_t axis, int32_t selector_kind,
+        int32_t selector_id) const {
+    int64_t factor = Q16_ONE;
+    for (const FamilyTraitRoll &roll : _family_traits) {
+        if (roll.family_handle != family_handle || roll.trait_id < 0 ||
+            roll.trait_id >= static_cast<int32_t>(
+                _family_trait_behavior_offsets.size()) - 1) continue;
+        for (int32_t edge = _family_trait_behavior_offsets[roll.trait_id];
+             edge < _family_trait_behavior_offsets[roll.trait_id + 1]; ++edge) {
+            if (_family_trait_behavior_axes[edge] != axis ||
+                _family_trait_behavior_selector_kinds[edge] != selector_kind ||
+                _family_trait_behavior_selector_ids[edge] != selector_id) continue;
+            const int64_t preferred = _family_trait_behavior_factors_q16[edge];
+            const int64_t scaled = Q16_ONE + (preferred - Q16_ONE) *
+                static_cast<int64_t>(roll.strength_q16) / Q16_ONE;
+            factor = std::clamp<int64_t>(factor * scaled / Q16_ONE,
+                                        0, 4 * Q16_ONE);
+        }
+    }
+    return static_cast<int32_t>(factor);
+}
+
+int64_t NativeEconomyRuntime::building_reset_capital_value(
+        const BuildingGroup &group) const {
+    if (group.cell < 0 || group.cell >= _cell_count || group.type_id < 0 ||
+        group.type_id >= static_cast<int32_t>(_building_types.size()) ||
+        group.count <= 0) return 0;
+    const int32_t market = _market.cell_to_market[group.cell];
+    if (market < 0 || market >= _market.market_count) return 0;
+    const BuildingType &type = _building_types[group.type_id];
+    int64_t sat = 0;
+    int64_t construction = 0;
+    for (int32_t i = 0; i < type.construction_count; ++i) {
+        const GoodAmount &item = _building_construction_goods[
+            type.construction_begin + i];
+        construction = saturating_add(construction, mul_div_sat(
+            item.quantity, _market.price[_market.index(market, item.good_id)],
+            GOODS_SCALE, sat), sat);
+    }
+    const int64_t operating_per_building = std::max<int64_t>(0,
+        group.last_operating_cost) / std::max<int64_t>(1, group.count);
+    const int64_t reserve = saturating_mul(operating_per_building,
+        std::max(1, _investment_operating_cycles), sat);
+    return saturating_add(construction, reserve, sat);
+}
+
+void NativeEconomyRuntime::clear_family_branch_effects(uint64_t branch_handle) {
+    int32_t branch = -1;
+    if (!_family_influences.valid_handle(branch_handle, branch)) return;
+    if (_modifier_runtime != nullptr) {
+        for (FamilyModifierBinding &binding : _family_modifier_bindings) {
+            if (binding.branch_handle != branch_handle ||
+                binding.magnitude_q16 == 0) continue;
+            std::string error;
+            _modifier_runtime->queue_family_group_effect(binding.definition_key,
+                _family_influences.cell[branch], static_cast<uint64_t>(
+                    _family_influences.stable_id[branch]), 0,
+                _current_day, error);
+            binding.magnitude_q16 = 0;
+        }
+    }
+    _family_modifier_bindings.erase(std::remove_if(
+        _family_modifier_bindings.begin(), _family_modifier_bindings.end(),
+        [&](const FamilyModifierBinding &binding) {
+            return binding.branch_handle == branch_handle;
+        }), _family_modifier_bindings.end());
+}
+
+void NativeEconomyRuntime::reconcile_family_branch_effects(
+        uint64_t branch_handle, bool submit_changes) {
+    int32_t branch = -1, family = -1;
+    if (!_family_influences.valid_handle(branch_handle, branch) ||
+        !_families.valid_handle(_family_influences.family_handle[branch], family))
+        return;
+    const int32_t level = _family_influences.prestige_level[branch];
+    std::unordered_map<std::string, int32_t> desired;
+    for (const FamilyTraitRoll &roll : _family_traits) {
+        if (roll.family_handle != _family_influences.family_handle[branch] ||
+            roll.trait_id < 0 || roll.trait_id >= static_cast<int32_t>(
+                _family_trait_modifier_offsets.size()) - 1) continue;
+        for (int32_t edge = _family_trait_modifier_offsets[roll.trait_id];
+             edge < _family_trait_modifier_offsets[roll.trait_id + 1]; ++edge) {
+            if (_family_trait_modifier_targets[edge] != 0) continue;
+            const int32_t tier_magnitude =
+                _family_trait_modifier_tier_magnitudes_q16[edge * 6 + level];
+            const int64_t scaled = static_cast<int64_t>(tier_magnitude) *
+                roll.strength_q16 / Q16_ONE;
+            int32_t &value = desired[
+                _family_trait_modifier_definition_keys[edge]];
+            value = std::clamp<int64_t>(static_cast<int64_t>(value) + scaled,
+                                        0, 4 * Q16_ONE);
+        }
+    }
+    for (FamilyModifierBinding &binding : _family_modifier_bindings) {
+        if (binding.branch_handle != branch_handle) continue;
+        const auto found = desired.find(binding.definition_key);
+        const int32_t magnitude = found == desired.end() ? 0 : found->second;
+        if (submit_changes && _modifier_runtime != nullptr &&
+            magnitude != binding.magnitude_q16) {
+            std::string error;
+            _modifier_runtime->queue_family_group_effect(binding.definition_key,
+                _family_influences.cell[branch], static_cast<uint64_t>(
+                    _family_influences.stable_id[branch]), magnitude,
+                _current_day, error);
+        }
+        binding.magnitude_q16 = magnitude;
+        if (found != desired.end()) desired.erase(found);
+    }
+    for (const auto &item : desired) {
+        if (item.second == 0) continue;
+        int32_t magnitude = item.second;
+        if (!submit_changes && _modifier_runtime != nullptr) {
+            const int32_t restored = _modifier_runtime->family_group_effect_magnitude(
+                item.first, _family_influences.cell[branch], static_cast<uint64_t>(
+                    _family_influences.stable_id[branch]));
+            if (restored >= 0) magnitude = restored;
+        } else if (_modifier_runtime != nullptr) {
+            std::string error;
+            _modifier_runtime->queue_family_group_effect(item.first,
+                _family_influences.cell[branch], static_cast<uint64_t>(
+                    _family_influences.stable_id[branch]), magnitude,
+                _current_day, error);
+        }
+        _family_modifier_bindings.push_back(
+            {branch_handle, item.first, magnitude});
+    }
+}
+
 void NativeEconomyRuntime::rebuild_family_indices() {
     _family_memberships.erase(std::remove_if(
         _family_memberships.begin(), _family_memberships.end(),
@@ -22217,6 +22631,14 @@ void NativeEconomyRuntime::rebuild_family_indices() {
         if (!_population.valid_handle(edge.cohort_handle, slot) ||
             !_families.valid_handle(edge.family_handle, family)) continue;
         const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+        if (cell >= 0) cell_family.emplace_back(cell, family);
+    }
+    for (const FamilyBuildingOwnership &edge : _family_ownerships) {
+        int32_t family = -1;
+        const auto building = building_by_handle.find(edge.building_handle);
+        if (!_families.valid_handle(edge.family_handle, family) ||
+            building == building_by_handle.end()) continue;
+        const int32_t cell = _buildings[building->second].cell;
         if (cell >= 0) cell_family.emplace_back(cell, family);
     }
     std::sort(cell_family.begin(), cell_family.end());
@@ -22505,6 +22927,7 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     _family_memberships.push_back(membership);
     _family_ownerships.push_back({family_handle, group.modifier_handle, 1,
         membership.owner_employed});
+    assign_core_family_traits(family_index);
     ++_families_formed;
     _family_indices_dirty = true;
     return family_index;
@@ -22627,9 +23050,289 @@ void NativeEconomyRuntime::dissolve_family(uint64_t family_handle) {
         _family_ownerships.end(), [&](const FamilyBuildingOwnership &edge) {
             return edge.family_handle == family_handle;
         }), _family_ownerships.end());
+    _family_traits.erase(std::remove_if(_family_traits.begin(),
+        _family_traits.end(), [&](const FamilyTraitRoll &roll) {
+            return roll.family_handle == family_handle;
+        }), _family_traits.end());
+    for (int32_t branch = 0; branch < static_cast<int32_t>(
+            _family_influences.active.size()); ++branch) {
+        if (_family_influences.active[branch] == 0 ||
+            _family_influences.family_handle[branch] != family_handle) continue;
+        const uint64_t branch_handle =
+            _family_influences.handle_for_index(branch);
+        clear_family_branch_effects(branch_handle);
+        _family_influences.release(branch);
+    }
     _families.release(index);
     ++_families_dissolved;
     _family_indices_dirty = true;
+}
+
+void NativeEconomyRuntime::rebuild_family_influences() {
+    struct Key {
+        uint64_t family = 0;
+        int32_t cell = -1;
+        bool operator==(const Key &other) const {
+            return family == other.family && cell == other.cell;
+        }
+    };
+    struct KeyHash {
+        size_t operator()(const Key &key) const noexcept {
+            uint64_t value = key.family;
+            value ^= static_cast<uint64_t>(static_cast<uint32_t>(key.cell)) +
+                0x9e3779b97f4a7c15ULL + (value << 6U) + (value >> 2U);
+            return static_cast<size_t>(value);
+        }
+    };
+    struct Aggregate { int64_t population = 0, cash = 0, asset = 0; };
+    std::unordered_map<Key, Aggregate, KeyHash> aggregates;
+    aggregates.reserve(_family_memberships.size() + _family_ownerships.size());
+    for (const FamilyMembershipEdge &edge : _family_memberships) {
+        int32_t family = -1, slot = -1;
+        if (!_families.valid_handle(edge.family_handle, family) ||
+            !_population.valid_handle(edge.cohort_handle, slot)) continue;
+        const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+        if (cell < 0 || cell >= _cell_count) continue;
+        Aggregate &aggregate = aggregates[{edge.family_handle, cell}];
+        aggregate.population = saturating_add(aggregate.population,
+            std::max<int64_t>(0, edge.people), _saturation_count);
+        aggregate.cash = saturating_add(aggregate.cash,
+            std::max<int64_t>(0, edge.cash_claim), _saturation_count);
+    }
+    std::unordered_map<uint64_t, int32_t> building_by_handle;
+    building_by_handle.reserve(_buildings.size());
+    for (int32_t group = 0; group < static_cast<int32_t>(_buildings.size()); ++group)
+        if (_buildings[group].count > 0 && _buildings[group].modifier_handle != 0)
+            building_by_handle[_buildings[group].modifier_handle] = group;
+    for (const FamilyBuildingOwnership &edge : _family_ownerships) {
+        int32_t family = -1;
+        const auto found = building_by_handle.find(edge.building_handle);
+        if (!_families.valid_handle(edge.family_handle, family) ||
+            found == building_by_handle.end()) continue;
+        const BuildingGroup &group = _buildings[found->second];
+        const int64_t unit_value = building_reset_capital_value(group);
+        Aggregate &aggregate = aggregates[{edge.family_handle, group.cell}];
+        aggregate.asset = saturating_add(aggregate.asset, saturating_mul(
+            unit_value, std::max<int64_t>(0, edge.owned_count),
+            _saturation_count), _saturation_count);
+    }
+
+    std::vector<uint8_t> relevant_cells(static_cast<size_t>(_cell_count), 0);
+    for (const auto &item : aggregates)
+        if (item.first.cell >= 0 && item.first.cell < _cell_count)
+            relevant_cells[item.first.cell] = 1;
+    std::vector<int64_t> total_population(static_cast<size_t>(_cell_count), 0);
+    std::vector<int64_t> total_cash(static_cast<size_t>(_cell_count), 0);
+    std::vector<int64_t> total_asset(static_cast<size_t>(_cell_count), 0);
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        if (relevant_cells[cell] == 0) continue;
+        total_population[cell] = std::max<int64_t>(
+            0, _committed_cells[cell].population);
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            total_cash[cell] = saturating_add(total_cash[cell],
+                std::max<int64_t>(0, _population.funds[slot]),
+                _saturation_count);
+        });
+    }
+    for (const BuildingGroup &group : _buildings) {
+        if (group.cell < 0 || group.cell >= _cell_count || group.count <= 0 ||
+            relevant_cells[group.cell] == 0) continue;
+        total_asset[group.cell] = saturating_add(total_asset[group.cell],
+            saturating_mul(building_reset_capital_value(group), group.count,
+                _saturation_count), _saturation_count);
+    }
+
+    std::unordered_map<Key, int32_t, KeyHash> existing;
+    existing.reserve(_family_influences.active.size());
+    for (int32_t branch = 0; branch < static_cast<int32_t>(
+            _family_influences.active.size()); ++branch)
+        if (_family_influences.active[branch] != 0)
+            existing[{_family_influences.family_handle[branch],
+                      _family_influences.cell[branch]}] = branch;
+    std::vector<uint8_t> seen(_family_influences.active.size(), 0);
+    const int32_t thresholds[6] = {0,
+        Q16_ONE * 2 / 100, Q16_ONE * 5 / 100, Q16_ONE * 10 / 100,
+        Q16_ONE * 20 / 100, Q16_ONE * 40 / 100};
+    for (const auto &item : aggregates) {
+        if (item.second.population <= 0 && item.second.cash <= 0 &&
+            item.second.asset <= 0) continue;
+        const Key key = item.first;
+        int32_t branch = -1;
+        bool changed = false;
+        const auto found = existing.find(key);
+        if (found == existing.end()) {
+            branch = _family_influences.allocate();
+            if (seen.size() < _family_influences.active.size())
+                seen.resize(_family_influences.active.size(), 0);
+            _family_influences.family_handle[branch] = key.family;
+            _family_influences.cell[branch] = key.cell;
+            int32_t family = -1;
+            uint64_t hash = 1469598103934665603ULL;
+            if (_families.valid_handle(key.family, family))
+                hash = trace_hash_mix(hash, static_cast<uint64_t>(
+                    _families.stable_id[family]));
+            hash = trace_hash_mix(hash, static_cast<uint32_t>(key.cell));
+            _family_influences.stable_id[branch] = static_cast<int64_t>(
+                (hash & 0x7fffffffffffffffULL) | 1ULL);
+            changed = true;
+        } else {
+            branch = found->second;
+        }
+        seen[branch] = 1;
+        _family_influences.population[branch] = item.second.population;
+        _family_influences.cash[branch] = item.second.cash;
+        _family_influences.building_asset[branch] = item.second.asset;
+        const auto share = [&](int64_t value, int64_t total) -> int32_t {
+            return total > 0 ? static_cast<int32_t>(std::clamp<int64_t>(
+                mul_div_sat(value, Q16_ONE, total, _saturation_count),
+                0, Q16_ONE)) : 0;
+        };
+        _family_influences.population_share_q16[branch] = share(
+            item.second.population, total_population[key.cell]);
+        _family_influences.cash_share_q16[branch] = share(
+            item.second.cash, total_cash[key.cell]);
+        _family_influences.building_share_q16[branch] = share(
+            item.second.asset, total_asset[key.cell]);
+        _family_influences.score_q16[branch] = static_cast<int32_t>(
+            (static_cast<int64_t>(_family_influences.population_share_q16[branch]) * 25 +
+             static_cast<int64_t>(_family_influences.cash_share_q16[branch]) * 35 +
+             static_cast<int64_t>(_family_influences.building_share_q16[branch]) * 40) / 100);
+        const int64_t phase = _family_influences.stable_id[branch] % 30;
+        const bool review_due = _current_day >= 0 &&
+            ((_current_day % 30 + 30) % 30) == phase;
+        if (review_due && _family_influences.last_review_day[branch] != _current_day) {
+            _family_influences.last_review_day[branch] = _current_day;
+            const int32_t current = _family_influences.prestige_level[branch];
+            int32_t upgrade_target = 0, downgrade_target = 0;
+            for (int32_t level = 1; level <= 5; ++level) {
+                if (_family_influences.score_q16[branch] >= thresholds[level])
+                    upgrade_target = level;
+                if (_family_influences.score_q16[branch] >=
+                        thresholds[level] * 80 / 100)
+                    downgrade_target = level;
+            }
+            int32_t target = current;
+            if (upgrade_target > current) target = upgrade_target;
+            else if (downgrade_target < current) target = downgrade_target;
+            if (target == current) {
+                _family_influences.pending_target_level[branch] =
+                    static_cast<uint8_t>(current);
+                _family_influences.review_streak[branch] = 0;
+            } else {
+                const int32_t previous =
+                    _family_influences.pending_target_level[branch];
+                const bool same_direction =
+                    (target > current && previous > current) ||
+                    (target < current && previous < current);
+                _family_influences.pending_target_level[branch] =
+                    static_cast<uint8_t>(target);
+                _family_influences.review_streak[branch] = static_cast<uint8_t>(
+                    same_direction ? std::min<int32_t>(255,
+                        _family_influences.review_streak[branch] + 1) : 1);
+                if (_family_influences.review_streak[branch] >= 2) {
+                    _family_influences.prestige_level[branch] =
+                        static_cast<uint8_t>(target);
+                    _family_influences.review_streak[branch] = 0;
+                    changed = true;
+                }
+            }
+        }
+        if (changed) reconcile_family_branch_effects(
+            _family_influences.handle_for_index(branch), true);
+    }
+    for (int32_t branch = 0; branch < static_cast<int32_t>(seen.size()); ++branch) {
+        if (_family_influences.active[branch] == 0 || seen[branch] != 0) continue;
+        const uint64_t handle = _family_influences.handle_for_index(branch);
+        clear_family_branch_effects(handle);
+        _family_influences.release(branch);
+    }
+}
+
+void NativeEconomyRuntime::apply_due_family_trait_commands() {
+    std::stable_sort(_family_trait_commands.begin(), _family_trait_commands.end(),
+        [](const FamilyTraitCommand &a, const FamilyTraitCommand &b) {
+            if (a.effective_day != b.effective_day)
+                return a.effective_day < b.effective_day;
+            if (a.priority != b.priority) return a.priority < b.priority;
+            if (a.sequence != b.sequence) return a.sequence < b.sequence;
+            return a.submit_order < b.submit_order;
+        });
+    std::vector<FamilyTraitCommand> retained;
+    std::unordered_set<uint64_t> changed_families;
+    for (const FamilyTraitCommand &command : _family_trait_commands) {
+        if (command.effective_day > _current_day) {
+            retained.push_back(command);
+            continue;
+        }
+        int32_t family = -1;
+        if (!_families.valid_handle(command.family_handle, family) ||
+            command.trait_id < 0 || command.trait_id >= static_cast<int32_t>(
+                _family_trait_ids.size())) continue;
+        auto found = std::find_if(_family_traits.begin(), _family_traits.end(),
+            [&](const FamilyTraitRoll &roll) {
+                return roll.family_handle == command.family_handle &&
+                    roll.trait_id == command.trait_id;
+            });
+        if (command.operation == 2) {
+            if (found == _family_traits.end() || found->core != 0) continue;
+            _family_traits.erase(found);
+            changed_families.insert(command.family_handle);
+            continue;
+        }
+        if (command.operation == 3) {
+            if (found == _family_traits.end()) continue;
+            if (found->strength_q16 != command.strength_q16) {
+                found->strength_q16 = command.strength_q16;
+                changed_families.insert(command.family_handle);
+            }
+            continue;
+        }
+        if (command.operation != 1) continue;
+        if (found != _family_traits.end()) {
+            if (found->core == 0 && found->strength_q16 != command.strength_q16) {
+                found->strength_q16 = command.strength_q16;
+                changed_families.insert(command.family_handle);
+            }
+            continue;
+        }
+        bool allowed = true;
+        for (int32_t p = _family_trait_prerequisite_offsets[command.trait_id];
+             p < _family_trait_prerequisite_offsets[command.trait_id + 1]; ++p) {
+            const int32_t required = _family_trait_prerequisites[p];
+            allowed = allowed && std::any_of(_family_traits.begin(),
+                _family_traits.end(), [&](const FamilyTraitRoll &roll) {
+                    return roll.family_handle == command.family_handle &&
+                        roll.trait_id == required;
+                });
+        }
+        for (int32_t p = _family_trait_exclusion_offsets[command.trait_id];
+             allowed && p < _family_trait_exclusion_offsets[command.trait_id + 1]; ++p) {
+            const int32_t excluded = _family_trait_exclusions[p];
+            allowed = !std::any_of(_family_traits.begin(), _family_traits.end(),
+                [&](const FamilyTraitRoll &roll) {
+                    return roll.family_handle == command.family_handle &&
+                        roll.trait_id == excluded;
+                });
+        }
+        if (!allowed) continue;
+        _family_traits.push_back({command.family_handle, command.trait_id,
+                                  command.strength_q16, 0});
+        changed_families.insert(command.family_handle);
+    }
+    _family_trait_commands.swap(retained);
+    std::sort(_family_traits.begin(), _family_traits.end(),
+        [](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
+            return std::tie(a.family_handle, a.trait_id) <
+                std::tie(b.family_handle, b.trait_id);
+        });
+    for (int32_t branch = 0; branch < static_cast<int32_t>(
+            _family_influences.active.size()); ++branch) {
+        if (_family_influences.active[branch] == 0 ||
+            changed_families.find(_family_influences.family_handle[branch]) ==
+                changed_families.end()) continue;
+        reconcile_family_branch_effects(
+            _family_influences.handle_for_index(branch), true);
+    }
 }
 
 void NativeEconomyRuntime::review_family_lifecycle() {
@@ -22692,6 +23395,7 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
             ++work_done;
             return true;
         }
+        apply_due_family_trait_commands();
         normalize_family_memberships();
         update_family_employment_attribution();
         _family_commit_cursor = 0;
@@ -22723,6 +23427,7 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
     rebuild_family_indices();
     review_family_lifecycle();
     rebuild_family_indices();
+    rebuild_family_influences();
     _family_membership_edges_processed +=
         static_cast<int64_t>(_family_memberships.size());
     _family_ownership_edges_processed +=
@@ -26769,7 +27474,7 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
     });
     PackedInt64Array handles, stable_ids, populations, cash_claims,
         owned_buildings;
-    PackedInt32Array notable_person_counts;
+    PackedInt32Array notable_person_counts, prestige_levels, prestige_scores;
     PackedStringArray surnames;
     PackedInt32Array disambiguators, home_cells, origin_ethnicities;
     const int32_t end = std::min<int32_t>(indices.size(), offset + limit);
@@ -26793,6 +27498,19 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
                 _families.active.size() + 1
             ? _person_family_offsets[index + 1] - _person_family_offsets[index]
             : 0);
+        int32_t prestige = 0, score = 0;
+        for (int32_t branch = 0; branch < static_cast<int32_t>(
+                _family_influences.active.size()); ++branch) {
+            if (_family_influences.active[branch] != 0 &&
+                _family_influences.family_handle[branch] == handle &&
+                _family_influences.cell[branch] == cell_idx) {
+                prestige = _family_influences.prestige_level[branch];
+                score = _family_influences.score_q16[branch];
+                break;
+            }
+        }
+        prestige_levels.push_back(prestige);
+        prestige_scores.push_back(score);
     }
     out["ok"] = true;
     out["offset"] = offset;
@@ -26809,6 +27527,76 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
     out["home_cells"] = home_cells;
     out["origin_ethnicity_ids"] = origin_ethnicities;
     out["notable_person_counts"] = notable_person_counts;
+    out["prestige_levels"] = prestige_levels;
+    out["prestige_scores_q16"] = prestige_scores;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::submit_family_trait_commands(
+        const Dictionary &batch) {
+    Dictionary out;
+    if (!_configured) {
+        out["ok"] = false;
+        out["reason"] = "economy_not_configured";
+        return out;
+    }
+    if (dict_num<int32_t>(batch, "protocol_version", 0) != 1) {
+        out["ok"] = false;
+        out["reason"] = "family_trait_protocol_unsupported";
+        return out;
+    }
+    const std::vector<int32_t> operations = packed_i32(batch, "operations");
+    const std::vector<int64_t> handles = packed_i64(batch, "family_handles");
+    const std::vector<std::string> keys = packed_strings(batch, "trait_keys");
+    const std::vector<int32_t> strengths = packed_i32(batch, "strength_q16");
+    const std::vector<int64_t> days = packed_i64(batch, "effective_days");
+    const std::vector<int32_t> priorities = packed_i32(batch, "priorities");
+    const std::vector<int64_t> sequences = packed_i64(batch, "sequences");
+    const size_t count = operations.size();
+    if (count == 0 || handles.size() != count || keys.size() != count ||
+        strengths.size() != count || days.size() != count ||
+        priorities.size() != count || sequences.size() != count) {
+        out["ok"] = false;
+        out["reason"] = "family_trait_command_shape_invalid";
+        return out;
+    }
+    std::vector<FamilyTraitCommand> commands;
+    commands.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const auto trait_it = std::lower_bound(_family_trait_ids.begin(),
+            _family_trait_ids.end(), keys[i]);
+        int32_t family = -1;
+        if (operations[i] < 1 || operations[i] > 3 ||
+            trait_it == _family_trait_ids.end() || *trait_it != keys[i] ||
+            !_families.valid_handle(static_cast<uint64_t>(handles[i]), family) ||
+            days[i] < 0) {
+            out["ok"] = false;
+            out["reason"] = "family_trait_command_entry_invalid";
+            return out;
+        }
+        const int32_t trait_id = static_cast<int32_t>(
+            trait_it - _family_trait_ids.begin());
+        if (operations[i] != 2 &&
+            (strengths[i] < _family_trait_strength_min_q16[trait_id] ||
+             strengths[i] > _family_trait_strength_max_q16[trait_id] ||
+             (strengths[i] - _family_trait_strength_min_q16[trait_id]) %
+                 _family_trait_strength_step_q16[trait_id] != 0)) {
+            out["ok"] = false;
+            out["reason"] = "family_trait_command_strength_invalid";
+            return out;
+        }
+        commands.push_back({operations[i], static_cast<uint64_t>(handles[i]),
+            trait_id, strengths[i], days[i], priorities[i], sequences[i],
+            ++_next_submit_order});
+    }
+    _family_trait_commands.insert(_family_trait_commands.end(),
+        commands.begin(), commands.end());
+    PackedInt64Array request_orders;
+    for (const FamilyTraitCommand &command : commands)
+        request_orders.push_back(static_cast<int64_t>(command.submit_order));
+    out["ok"] = true;
+    out["request_orders"] = request_orders;
+    out["pending_count"] = static_cast<int64_t>(_family_trait_commands.size());
     return out;
 }
 
@@ -26902,6 +27690,123 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
     out["notable_person_count"] = _person_family_offsets.size() ==
             _families.active.size() + 1
         ? _person_family_offsets[index + 1] - _person_family_offsets[index] : 0;
+    out["trait_count"] = static_cast<int32_t>(std::count_if(
+        _family_traits.begin(), _family_traits.end(),
+        [&](const FamilyTraitRoll &roll) {
+            return roll.family_handle == handle;
+        }));
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::family_traits(
+        int64_t family_handle_value) const {
+    Dictionary out;
+    const uint64_t handle = static_cast<uint64_t>(family_handle_value);
+    int32_t family = -1;
+    if (!_families.valid_handle(handle, family)) {
+        out["ok"] = false;
+        out["reason"] = "family_handle_invalid";
+        return out;
+    }
+    PackedStringArray keys, names;
+    PackedInt32Array strengths, behavior_offsets, behavior_axes,
+        behavior_selector_kinds, behavior_selector_ids, behavior_factors;
+    PackedByteArray core;
+    behavior_offsets.push_back(0);
+    for (const FamilyTraitRoll &roll : _family_traits) {
+        if (roll.family_handle != handle || roll.trait_id < 0 ||
+            roll.trait_id >= static_cast<int32_t>(_family_trait_ids.size()))
+            continue;
+        keys.push_back(_family_trait_ids[roll.trait_id].c_str());
+        names.push_back(from_utf8(_family_trait_display_names[roll.trait_id]));
+        strengths.push_back(roll.strength_q16);
+        core.push_back(roll.core);
+        for (int32_t edge = _family_trait_behavior_offsets[roll.trait_id];
+             edge < _family_trait_behavior_offsets[roll.trait_id + 1]; ++edge) {
+            behavior_axes.push_back(_family_trait_behavior_axes[edge]);
+            behavior_selector_kinds.push_back(
+                _family_trait_behavior_selector_kinds[edge]);
+            behavior_selector_ids.push_back(
+                _family_trait_behavior_selector_ids[edge]);
+            const int64_t preferred = _family_trait_behavior_factors_q16[edge];
+            behavior_factors.push_back(static_cast<int32_t>(Q16_ONE +
+                (preferred - Q16_ONE) * roll.strength_q16 / Q16_ONE));
+        }
+        behavior_offsets.push_back(behavior_axes.size());
+    }
+    out["ok"] = true;
+    out["family_handle"] = family_handle_value;
+    out["trait_catalog_version"] = _family_trait_catalog_version;
+    out["trait_catalog_hash"] = _family_trait_catalog_hash;
+    out["trait_keys"] = keys;
+    out["display_names"] = names;
+    out["strength_q16"] = strengths;
+    out["core"] = core;
+    out["behavior_offsets"] = behavior_offsets;
+    out["behavior_axes"] = behavior_axes;
+    out["behavior_selector_kinds"] = behavior_selector_kinds;
+    out["behavior_selector_ids"] = behavior_selector_ids;
+    out["behavior_factors_q16"] = behavior_factors;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::family_branch_effects(
+        int64_t family_handle_value, int32_t cell) const {
+    Dictionary out;
+    const uint64_t family_handle = static_cast<uint64_t>(family_handle_value);
+    int32_t family = -1, branch = -1;
+    if (!_families.valid_handle(family_handle, family)) {
+        out["ok"] = false;
+        out["reason"] = "family_handle_invalid";
+        return out;
+    }
+    for (int32_t i = 0; i < static_cast<int32_t>(
+            _family_influences.active.size()); ++i) {
+        if (_family_influences.active[i] != 0 &&
+            _family_influences.family_handle[i] == family_handle &&
+            _family_influences.cell[i] == cell) {
+            branch = i;
+            break;
+        }
+    }
+    if (branch < 0) {
+        out["ok"] = false;
+        out["reason"] = "family_branch_missing";
+        return out;
+    }
+    const uint64_t branch_handle =
+        _family_influences.handle_for_index(branch);
+    PackedStringArray definition_keys;
+    PackedInt32Array magnitudes;
+    for (const FamilyModifierBinding &binding : _family_modifier_bindings) {
+        if (binding.branch_handle != branch_handle ||
+            binding.magnitude_q16 <= 0) continue;
+        definition_keys.push_back(binding.definition_key.c_str());
+        magnitudes.push_back(binding.magnitude_q16);
+    }
+    out["ok"] = true;
+    out["family_handle"] = family_handle_value;
+    out["branch_handle"] = static_cast<int64_t>(branch_handle);
+    out["branch_stable_id"] = _family_influences.stable_id[branch];
+    out["cell_idx"] = cell;
+    out["population"] = _family_influences.population[branch];
+    out["cash_claim"] = _family_influences.cash[branch];
+    out["building_asset_value"] = _family_influences.building_asset[branch];
+    out["population_share_q16"] =
+        _family_influences.population_share_q16[branch];
+    out["cash_share_q16"] = _family_influences.cash_share_q16[branch];
+    out["building_share_q16"] =
+        _family_influences.building_share_q16[branch];
+    out["prestige_score_q16"] = _family_influences.score_q16[branch];
+    out["prestige_level"] = _family_influences.prestige_level[branch];
+    out["pending_target_level"] =
+        _family_influences.pending_target_level[branch];
+    out["review_streak"] = _family_influences.review_streak[branch];
+    out["last_review_day"] = _family_influences.last_review_day[branch];
+    out["modifier_definition_keys"] = definition_keys;
+    out["modifier_magnitude_q16"] = magnitudes;
+    out["trigger_definition_keys"] = PackedStringArray();
+    out["trigger_progress"] = PackedInt64Array();
     return out;
 }
 
@@ -26915,7 +27820,7 @@ Dictionary NativeEconomyRuntime::family_branches(
         out["reason"] = "family_handle_invalid";
         return out;
     }
-    struct Branch { int32_t cell; int64_t people; int64_t cash; };
+    struct Branch { int32_t cell; int64_t people; int64_t cash; int64_t asset; };
     std::unordered_map<int32_t, Branch> by_cell;
     const bool member_csr_ready = _family_member_offsets.size() ==
         _families.active.size() + 1;
@@ -26935,6 +27840,27 @@ Dictionary NativeEconomyRuntime::family_branches(
         branch.cell = cell; branch.people += edge.people;
         branch.cash += edge.cash_claim;
     }
+    const bool owned_csr_ready = _family_owned_offsets.size() ==
+        _families.active.size() + 1;
+    const int32_t owned_begin = owned_csr_ready
+        ? _family_owned_offsets[index] : 0;
+    const int32_t owned_end = owned_csr_ready
+        ? _family_owned_offsets[index + 1]
+        : static_cast<int32_t>(_family_ownerships.size());
+    for (int32_t p = owned_begin; p < owned_end; ++p) {
+        const FamilyBuildingOwnership &edge = _family_ownerships[
+            owned_csr_ready ? _family_owned_edge_indices[p] : p];
+        if (edge.family_handle != handle) continue;
+        const int32_t group = building_index_for_handle(edge.building_handle);
+        if (group < 0) continue;
+        const int32_t cell = _buildings[group].cell;
+        Branch &branch = by_cell[cell];
+        branch.cell = cell;
+        int64_t sat = 0;
+        branch.asset = saturating_add(branch.asset, saturating_mul(
+            building_reset_capital_value(_buildings[group]),
+            std::max<int64_t>(0, edge.owned_count), sat), sat);
+    }
     std::vector<Branch> rows;
     for (const auto &item : by_cell) rows.push_back(item.second);
     std::sort(rows.begin(), rows.end(), [](const Branch &a, const Branch &b) {
@@ -26942,18 +27868,62 @@ Dictionary NativeEconomyRuntime::family_branches(
     });
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min<int32_t>(rows.size(), offset + limit);
-    PackedInt32Array cells;
-    PackedInt64Array populations, cash_claims;
+    PackedInt32Array cells, prestige_levels, population_shares, cash_shares,
+        building_shares, scores, pending_targets, review_streaks;
+    PackedInt64Array branch_handles, branch_stable_ids, populations, cash_claims,
+        building_assets, last_review_days;
     for (int32_t i = offset; i < end; ++i) {
         cells.push_back(rows[i].cell);
         populations.push_back(rows[i].people);
         cash_claims.push_back(rows[i].cash);
+        building_assets.push_back(rows[i].asset);
+        int32_t influence = -1;
+        for (int32_t branch = 0; branch < static_cast<int32_t>(
+                _family_influences.active.size()); ++branch) {
+            if (_family_influences.active[branch] != 0 &&
+                _family_influences.family_handle[branch] == handle &&
+                _family_influences.cell[branch] == rows[i].cell) {
+                influence = branch;
+                break;
+            }
+        }
+        branch_handles.push_back(influence >= 0 ? static_cast<int64_t>(
+            _family_influences.handle_for_index(influence)) : 0);
+        branch_stable_ids.push_back(influence >= 0
+            ? _family_influences.stable_id[influence] : 0);
+        prestige_levels.push_back(influence >= 0
+            ? _family_influences.prestige_level[influence] : 0);
+        population_shares.push_back(influence >= 0
+            ? _family_influences.population_share_q16[influence] : 0);
+        cash_shares.push_back(influence >= 0
+            ? _family_influences.cash_share_q16[influence] : 0);
+        building_shares.push_back(influence >= 0
+            ? _family_influences.building_share_q16[influence] : 0);
+        scores.push_back(influence >= 0
+            ? _family_influences.score_q16[influence] : 0);
+        pending_targets.push_back(influence >= 0
+            ? _family_influences.pending_target_level[influence] : 0);
+        review_streaks.push_back(influence >= 0
+            ? _family_influences.review_streak[influence] : 0);
+        last_review_days.push_back(influence >= 0
+            ? _family_influences.last_review_day[influence] : -1);
     }
     out["ok"] = true; out["total"] = static_cast<int32_t>(rows.size());
     out["offset"] = offset; out["limit"] = limit;
     out["has_more"] = end < static_cast<int32_t>(rows.size());
     out["cell_indices"] = cells; out["populations"] = populations;
     out["cash_claims"] = cash_claims;
+    out["building_asset_values"] = building_assets;
+    out["branch_handles"] = branch_handles;
+    out["branch_stable_ids"] = branch_stable_ids;
+    out["prestige_levels"] = prestige_levels;
+    out["population_shares_q16"] = population_shares;
+    out["cash_shares_q16"] = cash_shares;
+    out["building_shares_q16"] = building_shares;
+    out["prestige_scores_q16"] = scores;
+    out["pending_target_levels"] = pending_targets;
+    out["review_streaks"] = review_streaks;
+    out["last_review_days"] = last_review_days;
     return out;
 }
 
@@ -27514,6 +28484,48 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(edge.owned_count));
         mix_u64(static_cast<uint64_t>(edge.filled_owner));
     }
+    mix_u64(0x46414d5452414954ULL); // "FAMTRAIT"
+    mix_u64(static_cast<uint32_t>(_family_trait_catalog_version));
+    mix_u64(static_cast<uint64_t>(_family_trait_catalog_hash));
+    for (const FamilyTraitRoll &roll : _family_traits) {
+        mix_u64(roll.family_handle);
+        mix_u64(static_cast<uint32_t>(roll.trait_id));
+        mix_u64(static_cast<uint32_t>(roll.strength_q16));
+        mix_u64(roll.core);
+    }
+    mix_u64(0x46414d4252414e43ULL); // "FAMBRANC"
+    for (size_t i = 0; i < _family_influences.active.size(); ++i) {
+        mix_u64(i);
+        mix_u64(_family_influences.active[i]);
+        mix_u64(_family_influences.generation[i]);
+        mix_u64(_family_influences.family_handle[i]);
+        mix_u64(static_cast<uint32_t>(_family_influences.cell[i]));
+        mix_u64(static_cast<uint64_t>(_family_influences.stable_id[i]));
+        mix_u64(static_cast<uint64_t>(_family_influences.population[i]));
+        mix_u64(static_cast<uint64_t>(_family_influences.cash[i]));
+        mix_u64(static_cast<uint64_t>(_family_influences.building_asset[i]));
+        mix_u64(static_cast<uint32_t>(
+            _family_influences.population_share_q16[i]));
+        mix_u64(static_cast<uint32_t>(_family_influences.cash_share_q16[i]));
+        mix_u64(static_cast<uint32_t>(
+            _family_influences.building_share_q16[i]));
+        mix_u64(static_cast<uint32_t>(_family_influences.score_q16[i]));
+        mix_u64(_family_influences.prestige_level[i]);
+        mix_u64(_family_influences.pending_target_level[i]);
+        mix_u64(_family_influences.review_streak[i]);
+        mix_u64(static_cast<uint64_t>(_family_influences.last_review_day[i]));
+    }
+    mix_u64(0x46414d434f4d4d44ULL); // "FAMCOMMD"
+    for (const FamilyTraitCommand &command : _family_trait_commands) {
+        mix_u64(static_cast<uint32_t>(command.operation));
+        mix_u64(command.family_handle);
+        mix_u64(static_cast<uint32_t>(command.trait_id));
+        mix_u64(static_cast<uint32_t>(command.strength_q16));
+        mix_u64(static_cast<uint64_t>(command.effective_day));
+        mix_u64(static_cast<uint32_t>(command.priority));
+        mix_u64(static_cast<uint64_t>(command.sequence));
+        mix_u64(command.submit_order);
+    }
     for (int32_t i = 0; i < static_cast<int32_t>(_persons.active.size()); ++i) {
         mix_u64(0x504552534f4eULL);
         mix_u64(static_cast<uint32_t>(i));
@@ -27687,6 +28699,31 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(_trade_flows.export_ema[i]));
     }
     }
+    mix_u64(0x4d4f444946494552ULL); // "MODIFIER"
+    if (_modifier_runtime != nullptr) {
+        std::vector<uint8_t> modifier_bytes;
+        std::string modifier_error;
+        if (_modifier_runtime->serialize_domain(ModifierRuntime::ECONOMY,
+                                                modifier_bytes,
+                                                modifier_error)) {
+            // Modifier snapshot_version is a cache invalidation counter and
+            // intentionally advances during restore; exclude that header lane
+            // while retaining every persistent instance and identity byte.
+            mix_u64(modifier_bytes.size());
+            for (size_t byte_index = 0; byte_index < modifier_bytes.size();
+                 ++byte_index) {
+                if (byte_index >= 24 && byte_index < 32) continue;
+                const uint8_t byte = modifier_bytes[byte_index];
+                hash ^= byte;
+                hash *= 1099511628211ULL;
+            }
+        } else {
+            mix_u64(0xffffffffffffffffULL);
+            mix_string(modifier_error);
+        }
+    } else {
+        mix_u64(0);
+    }
     return static_cast<int64_t>((hash & 0x7fffffffffffffffULL) | 1ULL);
 }
 
@@ -27704,6 +28741,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _catalog_compat_hash_v8 = 0;
     _catalog_compat_hash_v10 = 0;
     _family_catalog_hash = 0;
+    _family_trait_catalog_version = 0;
+    _family_trait_catalog_hash = 0;
     _building_catalog_hash = 0;
     _building_catalog_compat_hash_v6 = 0;
     _epoch_id = 0;
@@ -27735,9 +28774,13 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _population.clear(0);
     _birth_residual_q32.clear();
     _families.clear();
+    _family_influences.clear();
     _persons.clear();
     _family_memberships.clear();
     _family_ownerships.clear();
+    _family_traits.clear();
+    _family_trait_commands.clear();
+    _family_modifier_bindings.clear();
     _person_needs.clear();
     _family_member_offsets.clear();
     _family_member_edge_indices.clear();
@@ -28097,6 +29140,14 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             static_cast<int32_t>(_persons.active.size()));
         append_le<int32_t>(payload,
             static_cast<int32_t>(_person_needs.size()));
+        append_le<int32_t>(payload, _family_trait_catalog_version);
+        append_le<int64_t>(payload, _family_trait_catalog_hash);
+        append_le<int32_t>(payload,
+            static_cast<int32_t>(_family_traits.size()));
+        append_le<int32_t>(payload,
+            static_cast<int32_t>(_family_influences.active.size()));
+        append_le<int32_t>(payload,
+            static_cast<int32_t>(_family_trait_commands.size()));
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);
@@ -28674,6 +29725,85 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         return make_save_chunk(SAVE_SECTION_PERSON_NEEDS,
             static_cast<uint32_t>(_save.person_need_cursor - begin), payload);
     }
+    if (_save.section == SAVE_SECTION_FAMILY_TRAITS) {
+        constexpr int32_t record_bytes = 17;
+        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        const int32_t end = std::min<int32_t>(_family_traits.size(),
+            _save.family_trait_cursor + max_records);
+        const int32_t begin = _save.family_trait_cursor;
+        for (; _save.family_trait_cursor < end; ++_save.family_trait_cursor) {
+            const FamilyTraitRoll &roll =
+                _family_traits[_save.family_trait_cursor];
+            append_le<uint64_t>(payload, roll.family_handle);
+            append_le<int32_t>(payload, roll.trait_id);
+            append_le<int32_t>(payload, roll.strength_q16);
+            append_le<uint8_t>(payload, roll.core);
+        }
+        if (_save.family_trait_cursor >= static_cast<int32_t>(
+                _family_traits.size())) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_FAMILY_TRAITS,
+            static_cast<uint32_t>(_save.family_trait_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_FAMILY_INFLUENCES) {
+        constexpr int32_t record_bytes = 80;
+        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        const int32_t end = std::min<int32_t>(_family_influences.active.size(),
+            _save.family_influence_cursor + max_records);
+        const int32_t begin = _save.family_influence_cursor;
+        for (; _save.family_influence_cursor < end;
+             ++_save.family_influence_cursor) {
+            const int32_t i = _save.family_influence_cursor;
+            append_le<int32_t>(payload, i);
+            append_le<uint8_t>(payload, _family_influences.active[i]);
+            append_le<uint32_t>(payload, _family_influences.generation[i]);
+            append_le<uint64_t>(payload, _family_influences.family_handle[i]);
+            append_le<int32_t>(payload, _family_influences.cell[i]);
+            append_le<int64_t>(payload, _family_influences.stable_id[i]);
+            append_le<int64_t>(payload, _family_influences.population[i]);
+            append_le<int64_t>(payload, _family_influences.cash[i]);
+            append_le<int64_t>(payload, _family_influences.building_asset[i]);
+            append_le<int32_t>(payload,
+                _family_influences.population_share_q16[i]);
+            append_le<int32_t>(payload,
+                _family_influences.cash_share_q16[i]);
+            append_le<int32_t>(payload,
+                _family_influences.building_share_q16[i]);
+            append_le<int32_t>(payload, _family_influences.score_q16[i]);
+            append_le<uint8_t>(payload, _family_influences.prestige_level[i]);
+            append_le<uint8_t>(payload,
+                _family_influences.pending_target_level[i]);
+            append_le<uint8_t>(payload, _family_influences.review_streak[i]);
+            append_le<int64_t>(payload, _family_influences.last_review_day[i]);
+        }
+        if (_save.family_influence_cursor >= static_cast<int32_t>(
+                _family_influences.active.size())) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_FAMILY_INFLUENCES,
+            static_cast<uint32_t>(_save.family_influence_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_FAMILY_TRAIT_COMMANDS) {
+        constexpr int32_t record_bytes = 48;
+        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        const int32_t end = std::min<int32_t>(_family_trait_commands.size(),
+            _save.family_trait_command_cursor + max_records);
+        const int32_t begin = _save.family_trait_command_cursor;
+        for (; _save.family_trait_command_cursor < end;
+             ++_save.family_trait_command_cursor) {
+            const FamilyTraitCommand &command =
+                _family_trait_commands[_save.family_trait_command_cursor];
+            append_le<int32_t>(payload, command.operation);
+            append_le<uint64_t>(payload, command.family_handle);
+            append_le<int32_t>(payload, command.trait_id);
+            append_le<int32_t>(payload, command.strength_q16);
+            append_le<int64_t>(payload, command.effective_day);
+            append_le<int32_t>(payload, command.priority);
+            append_le<int64_t>(payload, command.sequence);
+            append_le<uint64_t>(payload, command.submit_order);
+        }
+        if (_save.family_trait_command_cursor >= static_cast<int32_t>(
+                _family_trait_commands.size())) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_FAMILY_TRAIT_COMMANDS,
+            static_cast<uint32_t>(_save.family_trait_command_cursor - begin), payload);
+    }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);
 }
@@ -28784,9 +29914,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 27 && schema != 26 && schema != 25 &&
-        schema != 23 && schema != 22) {
-        error = "legacy_climate_production_save_unsupported";
+    if (schema != SCHEMA_VERSION) {
+        error = schema <= 28 ? "economy_save_v28_or_earlier_unsupported" :
+            "economy_save_schema_unsupported";
         return false;
     }
     if (!_restore.header_seen && section != SAVE_SECTION_HEADER) {
@@ -28823,6 +29953,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         int32_t saved_person_max_total = _person_max_total;
         int32_t saved_person_records_per_slice = _person_records_per_slice;
         int32_t person_count = 0, person_need_count = 0;
+        int32_t saved_trait_catalog_version = 0;
+        int64_t saved_trait_catalog_hash = 0;
+        int32_t family_trait_count = 0, family_influence_count = 0,
+            family_trait_command_count = 0;
         int32_t country_schema = 0;
         uint64_t country_generation = 0, country_hash = 0;
         uint64_t next_submit = 0;
@@ -29029,6 +30163,20 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 return false;
             }
         }
+        if (!read_le(bytes, cursor, saved_trait_catalog_version) ||
+            !read_le(bytes, cursor, saved_trait_catalog_hash) ||
+            !read_le(bytes, cursor, family_trait_count) ||
+            !read_le(bytes, cursor, family_influence_count) ||
+            !read_le(bytes, cursor, family_trait_command_count) ||
+            saved_trait_catalog_version != _family_trait_catalog_version ||
+            saved_trait_catalog_hash != _family_trait_catalog_hash ||
+            family_trait_count < 0 || family_trait_count > 1000000 ||
+            family_influence_count < 0 || family_influence_count > 10000000 ||
+            family_trait_command_count < 0 ||
+            family_trait_command_count > 1000000) {
+            error = "save_family_trait_header_invalid";
+            return false;
+        }
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
             cursor != bytes.size()) {
@@ -29167,6 +30315,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _restore.expected_trade_orders = trade_order_count;
         _restore.expected_trade_flows = trade_flow_count;
         _restore.expected_persons = person_count;
+        _restore.expected_family_traits = family_trait_count;
+        _restore.expected_family_influences = family_influence_count;
+        _restore.expected_family_trait_commands = family_trait_command_count;
         _restore.expected_person_needs = person_need_count;
         _next_event_id = next_event_id;
         _event_stream_hash = event_stream_hash;
@@ -29270,9 +30421,13 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _pending_construction.clear();
         _pending_construction.reserve(construction_count);
         _families.clear();
+        _family_influences.clear();
         _persons.clear();
         _family_memberships.clear();
         _family_ownerships.clear();
+        _family_traits.clear();
+        _family_trait_commands.clear();
+        _family_modifier_bindings.clear();
         _person_needs.clear();
         _family_member_offsets.clear();
         _family_member_edge_indices.clear();
@@ -30130,16 +31285,116 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_person_needs;
         }
         _restore.person_needs_seen = true;
-    } else if ((schema >= 27 && section == SAVE_SECTION_END) ||
-               (schema == 26 && section == SAVE_SECTION_END_V26) ||
-               (schema >= 24 && schema <= 25 &&
-                section == SAVE_SECTION_END_V24_TO_V25) ||
-               (schema == 23 && section == SAVE_SECTION_END_V23) ||
-               (schema >= 20 && schema <= 22 &&
-                section == SAVE_SECTION_END_V20_TO_V22) ||
-               (schema >= 11 && schema <= 19 &&
-                section == SAVE_SECTION_END_V11_TO_V19) ||
-               (schema == 10 && section == SAVE_SECTION_END_V10)) {
+    } else if (section == SAVE_SECTION_FAMILY_TRAITS) {
+        for (uint32_t record = 0; record < records; ++record) {
+            FamilyTraitRoll roll;
+            int32_t family = -1;
+            if (!read_le(bytes, cursor, roll.family_handle) ||
+                !read_le(bytes, cursor, roll.trait_id) ||
+                !read_le(bytes, cursor, roll.strength_q16) ||
+                !read_le(bytes, cursor, roll.core) || roll.core > 1 ||
+                !_families.valid_handle(roll.family_handle, family) ||
+                roll.trait_id < 0 || roll.trait_id >= static_cast<int32_t>(
+                    _family_trait_ids.size()) ||
+                roll.strength_q16 < _family_trait_strength_min_q16[roll.trait_id] ||
+                roll.strength_q16 > _family_trait_strength_max_q16[roll.trait_id] ||
+                (roll.strength_q16 -
+                    _family_trait_strength_min_q16[roll.trait_id]) %
+                    _family_trait_strength_step_q16[roll.trait_id] != 0) {
+                error = "save_family_trait_roll_invalid";
+                return false;
+            }
+            _family_traits.push_back(roll);
+            ++_restore.restored_family_traits;
+        }
+        _restore.family_traits_seen = true;
+    } else if (section == SAVE_SECTION_FAMILY_INFLUENCES) {
+        for (uint32_t record = 0; record < records; ++record) {
+            int32_t index = -1, cell = -1;
+            uint8_t active = 0, level = 0, pending = 0, streak = 0;
+            uint32_t generation = 0;
+            uint64_t family_handle = 0;
+            int64_t stable_id = 0, population = 0, cash = 0, asset = 0,
+                last_review = -1;
+            int32_t population_share = 0, cash_share = 0,
+                building_share = 0, score = 0;
+            int32_t family = -1;
+            if (!read_le(bytes, cursor, index) ||
+                !read_le(bytes, cursor, active) ||
+                !read_le(bytes, cursor, generation) ||
+                !read_le(bytes, cursor, family_handle) ||
+                !read_le(bytes, cursor, cell) ||
+                !read_le(bytes, cursor, stable_id) ||
+                !read_le(bytes, cursor, population) ||
+                !read_le(bytes, cursor, cash) ||
+                !read_le(bytes, cursor, asset) ||
+                !read_le(bytes, cursor, population_share) ||
+                !read_le(bytes, cursor, cash_share) ||
+                !read_le(bytes, cursor, building_share) ||
+                !read_le(bytes, cursor, score) ||
+                !read_le(bytes, cursor, level) ||
+                !read_le(bytes, cursor, pending) ||
+                !read_le(bytes, cursor, streak) ||
+                !read_le(bytes, cursor, last_review) ||
+                index != static_cast<int32_t>(
+                    _family_influences.active.size()) || active > 1 ||
+                generation == 0 || (active != 0 &&
+                    (!_families.valid_handle(family_handle, family) ||
+                     cell < 0 || cell >= _cell_count || stable_id <= 0 ||
+                     population < 0 || cash < 0 || asset < 0 || level > 5 ||
+                     pending > 5 || population_share < 0 ||
+                     population_share > Q16_ONE || cash_share < 0 ||
+                     cash_share > Q16_ONE || building_share < 0 ||
+                     building_share > Q16_ONE || score < 0 ||
+                     score > Q16_ONE))) {
+                error = "save_family_influence_invalid";
+                return false;
+            }
+            _family_influences.active.push_back(active);
+            _family_influences.generation.push_back(generation);
+            _family_influences.family_handle.push_back(family_handle);
+            _family_influences.cell.push_back(cell);
+            _family_influences.stable_id.push_back(stable_id);
+            _family_influences.population.push_back(population);
+            _family_influences.cash.push_back(cash);
+            _family_influences.building_asset.push_back(asset);
+            _family_influences.population_share_q16.push_back(population_share);
+            _family_influences.cash_share_q16.push_back(cash_share);
+            _family_influences.building_share_q16.push_back(building_share);
+            _family_influences.score_q16.push_back(score);
+            _family_influences.prestige_level.push_back(level);
+            _family_influences.pending_target_level.push_back(pending);
+            _family_influences.review_streak.push_back(streak);
+            _family_influences.last_review_day.push_back(last_review);
+            if (active == 0) _family_influences.free_indices.push_back(index);
+            ++_restore.restored_family_influences;
+        }
+        _restore.family_influences_seen = true;
+    } else if (section == SAVE_SECTION_FAMILY_TRAIT_COMMANDS) {
+        for (uint32_t record = 0; record < records; ++record) {
+            FamilyTraitCommand command;
+            int32_t family = -1;
+            if (!read_le(bytes, cursor, command.operation) ||
+                !read_le(bytes, cursor, command.family_handle) ||
+                !read_le(bytes, cursor, command.trait_id) ||
+                !read_le(bytes, cursor, command.strength_q16) ||
+                !read_le(bytes, cursor, command.effective_day) ||
+                !read_le(bytes, cursor, command.priority) ||
+                !read_le(bytes, cursor, command.sequence) ||
+                !read_le(bytes, cursor, command.submit_order) ||
+                command.operation < 1 || command.operation > 3 ||
+                !_families.valid_handle(command.family_handle, family) ||
+                command.trait_id < 0 || command.trait_id >= static_cast<int32_t>(
+                    _family_trait_ids.size()) || command.effective_day < 0 ||
+                command.submit_order == 0) {
+                error = "save_family_trait_command_invalid";
+                return false;
+            }
+            _family_trait_commands.push_back(command);
+            ++_restore.restored_family_trait_commands;
+        }
+        _restore.family_trait_commands_seen = true;
+    } else if (section == SAVE_SECTION_END) {
         if (records != 0 || payload_bytes != 0) {
             error = "save_end_chunk_invalid";
             return false;
@@ -30222,9 +31477,18 @@ Dictionary NativeEconomyRuntime::end_restore() {
           !_restore.family_ownership_seen)) ||
         (_restore.schema_version >= 27 &&
          (!_restore.person_records_seen || !_restore.person_needs_seen ||
-          _restore.restored_persons != _restore.expected_persons ||
-          _restore.restored_person_needs !=
-              _restore.expected_person_needs))) {
+           _restore.restored_persons != _restore.expected_persons ||
+           _restore.restored_person_needs !=
+               _restore.expected_person_needs)) ||
+        (_restore.schema_version >= 29 &&
+         (!_restore.family_traits_seen || !_restore.family_influences_seen ||
+          !_restore.family_trait_commands_seen ||
+          _restore.restored_family_traits !=
+              _restore.expected_family_traits ||
+          _restore.restored_family_influences !=
+              _restore.expected_family_influences ||
+          _restore.restored_family_trait_commands !=
+              _restore.expected_family_trait_commands))) {
         out["ok"] = false;
         out["reason"] = "restore_section_incomplete";
         return out;
@@ -30618,6 +31882,102 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 return out;
             }
         }
+        std::unordered_map<uint64_t, std::unordered_set<int32_t>> traits_by_family;
+        std::unordered_map<uint64_t, int32_t> core_traits_by_family;
+        uint64_t previous_trait_family = 0;
+        int32_t previous_trait = -1;
+        bool first_trait = true;
+        for (const FamilyTraitRoll &roll : _family_traits) {
+            if (!first_trait &&
+                (roll.family_handle < previous_trait_family ||
+                 (roll.family_handle == previous_trait_family &&
+                  roll.trait_id <= previous_trait))) {
+                out["ok"] = false;
+                out["reason"] = "restore_family_trait_order_or_duplicate_invalid";
+                return out;
+            }
+            first_trait = false;
+            previous_trait_family = roll.family_handle;
+            previous_trait = roll.trait_id;
+            traits_by_family[roll.family_handle].insert(roll.trait_id);
+            if (roll.core != 0) {
+                if (_family_trait_core_eligible[roll.trait_id] == 0) {
+                    out["ok"] = false;
+                    out["reason"] = "restore_family_core_trait_ineligible";
+                    return out;
+                }
+                ++core_traits_by_family[roll.family_handle];
+            }
+        }
+        for (int32_t family = 0; family < static_cast<int32_t>(
+                 _families.active.size()); ++family) {
+            if (_families.active[family] == 0) continue;
+            const uint64_t family_handle = _families.handle_for_index(family);
+            const int32_t core_count = core_traits_by_family[family_handle];
+            if (core_count < _family_core_trait_min ||
+                core_count > _family_core_trait_max) {
+                out["ok"] = false;
+                out["reason"] = "restore_family_core_trait_count_invalid";
+                return out;
+            }
+            const auto found_traits = traits_by_family.find(family_handle);
+            if (found_traits == traits_by_family.end()) continue;
+            const std::unordered_set<int32_t> &family_traits =
+                found_traits->second;
+            for (int32_t trait_id : family_traits) {
+                for (int32_t p = _family_trait_prerequisite_offsets[trait_id];
+                     p < _family_trait_prerequisite_offsets[trait_id + 1]; ++p) {
+                    if (family_traits.find(_family_trait_prerequisites[p]) ==
+                            family_traits.end()) {
+                        out["ok"] = false;
+                        out["reason"] =
+                            "restore_family_trait_prerequisite_missing";
+                        return out;
+                    }
+                }
+                for (int32_t p = _family_trait_exclusion_offsets[trait_id];
+                     p < _family_trait_exclusion_offsets[trait_id + 1]; ++p) {
+                    if (family_traits.find(_family_trait_exclusions[p]) !=
+                            family_traits.end()) {
+                        out["ok"] = false;
+                        out["reason"] = "restore_family_trait_conflict";
+                        return out;
+                    }
+                }
+            }
+        }
+        std::unordered_set<uint64_t> family_cells;
+        std::unordered_set<int64_t> branch_stable_ids;
+        for (int32_t branch = 0; branch < static_cast<int32_t>(
+                 _family_influences.active.size()); ++branch) {
+            if (_family_influences.active[branch] == 0) continue;
+            int32_t family = -1;
+            if (!_families.valid_handle(
+                    _family_influences.family_handle[branch], family)) {
+                out["ok"] = false;
+                out["reason"] = "restore_family_influence_family_invalid";
+                return out;
+            }
+            const uint64_t family_cell =
+                (static_cast<uint64_t>(static_cast<uint32_t>(family)) << 32) |
+                static_cast<uint32_t>(_family_influences.cell[branch]);
+            uint64_t expected_hash = 1469598103934665603ULL;
+            expected_hash = trace_hash_mix(expected_hash, static_cast<uint64_t>(
+                _families.stable_id[family]));
+            expected_hash = trace_hash_mix(expected_hash, static_cast<uint32_t>(
+                _family_influences.cell[branch]));
+            const int64_t expected_stable_id = static_cast<int64_t>(
+                (expected_hash & 0x7fffffffffffffffULL) | 1ULL);
+            if (!family_cells.insert(family_cell).second ||
+                !branch_stable_ids.insert(
+                    _family_influences.stable_id[branch]).second ||
+                _family_influences.stable_id[branch] != expected_stable_id) {
+                out["ok"] = false;
+                out["reason"] =
+                    "restore_family_influence_identity_duplicate_or_invalid";
+                return out;
+            }
+        }
     }
     if (_restore.schema_version >= 27) {
         std::unordered_set<int64_t> stable_person_ids;
@@ -30693,6 +32053,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
         }
     }
     rebuild_family_indices();
+    _family_modifier_bindings.clear();
+    for (int32_t branch = 0; branch < static_cast<int32_t>(
+             _family_influences.active.size()); ++branch) {
+        if (_family_influences.active[branch] == 0) continue;
+        reconcile_family_branch_effects(
+            _family_influences.handle_for_index(branch), false);
+    }
     rebuild_person_indices();
     _bootstrapped = true;
     _fatal = false;

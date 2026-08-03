@@ -76,15 +76,15 @@ func _run() -> void:
 	scope_requests.append(facade.queue_apply(&"economy.building.productivity_boost",
 		{"domain": 2, "scope": 0}, {"type": 20, "id": 1}, -1, 1, 5))
 	scope_requests.append(facade.queue_apply(&"economy.building.productivity_boost",
-		{"domain": 2, "scope": 1, "group_handle": 42},
+		{"domain": 2, "scope": 1, "group_handle": 2},
 		{"type": 20, "id": 2}, -1, 1, 5))
 	scope_requests.append(facade.queue_apply(&"economy.building.productivity_boost",
 		{"domain": 2, "scope": 2, "entity_handle": building_handle,
-			"group_handle": 42}, {"type": 20, "id": 3}, -1, 1, 5))
+			"group_handle": 2}, {"type": 20, "id": 3}, -1, 1, 5))
 	ext.run_modifier_daily(5)
 	var expected_scope_factor := 1.15 * 1.15 * 1.15
 	_expect("global group entity compose", _near(float(ext.evaluate_modifier_stat(
-		2, building_handle, 42, "economy.building.output_factor", 1.0)),
+		2, building_handle, 2, "economy.building.output_factor", 1.0)),
 		expected_scope_factor))
 	var global_handle := int(facade.get_command_result(scope_requests[0]).get(
 		"modifier_handle", 0))
@@ -92,7 +92,7 @@ func _run() -> void:
 	ext.run_modifier_daily(6)
 	_expect("scope handle removes exactly one bucket",
 		bool(facade.get_command_result(remove_global).get("ok", false)) and
-		_near(float(ext.evaluate_modifier_stat(2, building_handle, 42,
+		_near(float(ext.evaluate_modifier_stat(2, building_handle, 2,
 			"economy.building.output_factor", 1.0)), 1.15 * 1.15))
 	var stale_remove := facade.queue_remove(global_handle, 2, 7)
 	ext.run_modifier_daily(7)
@@ -126,6 +126,23 @@ func _run() -> void:
 	_expect("gameplay modifier applies", bool(facade.get_command_result(gameplay_request).get("ok", false)))
 	_expect("gameplay effective base separated", _near(float(ext.get_gameplay_modifier_effective(
 		gameplay_handle, 0, "gameplay.generic.value").get("effective_value", -1.0)), 13.0))
+
+	var half_request: int = facade.queue_apply(&"climate.radiative_warming",
+		{"domain": 0, "scope": 2, "entity_handle": 4}, {"type": 7, "id": 99},
+		-1, 1, 11, 100, 32768)
+	ext.run_modifier_daily(11)
+	var half_handle := int(facade.get_command_result(half_request).get("modifier_handle", 0))
+	_expect("half magnitude scales additive term", half_handle != 0 and _near(float(
+		facade.explain_stat(0, 4, 0, &"climate.cell.radiative_target", 0.5).get(
+			"effective_value", -1.0)), 0.525))
+	var double_request := facade.queue_set_magnitude(half_handle, 0, 131072, 12)
+	ext.run_modifier_daily(12)
+	var magnitude_explain := facade.explain_stat(0, 4, 0,
+		&"climate.cell.radiative_target", 0.5)
+	_expect("set magnitude updates in place", bool(facade.get_command_result(
+		double_request).get("ok", false)) and _near(float(magnitude_explain.get(
+			"effective_value", -1.0)), 0.6) and
+		(magnitude_explain.get("magnitude_q16", PackedInt32Array()) as PackedInt32Array)[0] == 131072)
 
 	var saved: PackedByteArray = ext.capture_modifier_domain(3)
 	_expect("gameplay save captures", not saved.is_empty())
@@ -178,7 +195,7 @@ func _run() -> void:
 		zero_catalog, 4).get("ok", false)))
 	var zero_building := int(zero_ext.ensure_modifier_building_handle(0, 0, 0))
 	var zero_submit: Dictionary = zero_ext.submit_modifier_commands({
-		"protocol_version": 1,
+		"protocol_version": 2,
 		"opcodes": PackedInt32Array([1]),
 		"producer_ids": PackedInt32Array([1]),
 		"sequences": PackedInt64Array([1]),
@@ -192,12 +209,13 @@ func _run() -> void:
 		"source_ids": PackedInt64Array([1]),
 		"duration_days": PackedInt32Array([-1]),
 		"stacks": PackedInt32Array([1]),
+		"magnitude_q16": PackedInt32Array([32768]),
 		"modifier_handles": PackedInt64Array([0]),
 	})
 	zero_ext.run_modifier_daily(0)
 	_expect("zero factor remains queryable", bool(zero_submit.get("ok", false)) and
 		_near(float(zero_ext.evaluate_modifier_stat(2, zero_building, 0,
-			"economy.building.output_factor", 1.0)), 0.0))
+			"economy.building.output_factor", 1.0)), 0.5))
 
 	var events: Dictionary = ext.poll_modifier_events(0, 128)
 	_expect("journal traces mutations", (events.get("event_ids", PackedInt64Array()) as PackedInt64Array).size() >= 6)
@@ -206,6 +224,8 @@ func _run() -> void:
 		(events.get("group_handles", PackedInt64Array()) as PackedInt64Array).size() ==
 			(events.get("event_ids", PackedInt64Array()) as PackedInt64Array).size() and
 		(events.get("scopes", PackedInt32Array()) as PackedInt32Array).size() ==
+			(events.get("event_ids", PackedInt64Array()) as PackedInt64Array).size() and
+		(events.get("new_magnitude_q16", PackedInt32Array()) as PackedInt32Array).size() ==
 			(events.get("event_ids", PackedInt64Array()) as PackedInt64Array).size())
 	var report: Dictionary = facade.report()
 	var error_reasons: PackedStringArray = report.get("error_reasons", PackedStringArray())

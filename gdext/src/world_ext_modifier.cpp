@@ -199,11 +199,11 @@ int64_t DCWorldExt::ensure_modifier_building_handle(int cell, int type_id,
 }
 
 double DCWorldExt::modifier_building_output_factor(int64_t building_handle,
-                                                   int64_t country_handle) const {
+                                                   int64_t settlement_cell) const {
     return _modifier_runtime == nullptr ? 1.0
         : runtime_from(_modifier_runtime)->economy_building_output_factor(
             static_cast<uint64_t>(building_handle),
-            static_cast<uint64_t>(country_handle));
+            static_cast<uint64_t>(settlement_cell), 2);
 }
 
 } // namespace pk

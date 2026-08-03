@@ -332,13 +332,15 @@ Dictionary ModifierRuntime::submit_commands(const Dictionary &batch) {
     const PackedInt64Array source_ids = batch.get("source_ids", PackedInt64Array());
     const PackedInt32Array durations = batch.get("duration_days", PackedInt32Array());
     const PackedInt32Array stacks = batch.get("stacks", PackedInt32Array());
+    const PackedInt32Array magnitudes = batch.get("magnitude_q16", PackedInt32Array());
     const PackedInt64Array handles = batch.get("modifier_handles", PackedInt64Array());
     const int32_t count = opcodes.size();
     if (count <= 0 || producers.size() != count || sequences.size() != count ||
         days.size() != count || definition_keys.size() != count || domains.size() != count ||
         scopes.size() != count || entities.size() != count || groups.size() != count ||
         source_types.size() != count || source_ids.size() != count ||
-        durations.size() != count || stacks.size() != count || handles.size() != count) {
+        durations.size() != count || stacks.size() != count || magnitudes.size() != count ||
+        handles.size() != count) {
         return fail_dict("modifier_command_shape_invalid");
     }
     PackedInt64Array request_ids;
@@ -359,6 +361,7 @@ Dictionary ModifierRuntime::submit_commands(const Dictionary &batch) {
         command.source_id = static_cast<uint64_t>(source_ids[i]);
         command.duration_days = durations[i];
         command.stacks = stacks[i];
+        command.magnitude_q16 = magnitudes[i];
         command.modifier_handle = static_cast<uint64_t>(handles[i]);
         command.submit_order = ++_submit_order;
         request_ids.set(i, command.request_id);
@@ -394,14 +397,14 @@ bool ModifierRuntime::validate_target(const Command &command, std::string &error
         error = "modifier_target_shape_invalid";
         return false;
     }
-    if (command.scope == GROUP && command.group_handle == 0) {
+    if (command.scope == GROUP && command.group_handle == 0 &&
+        command.domain != ECONOMY) {
         error = "modifier_group_target_missing";
         return false;
     }
     if (command.domain == ECONOMY && command.group_handle != 0 &&
-        _country_runtime != nullptr &&
-        !_country_runtime->valid_handle(static_cast<int64_t>(command.group_handle))) {
-        error = "modifier_country_group_handle_stale";
+        command.group_handle >= static_cast<uint64_t>(_cell_count)) {
+        error = "modifier_settlement_group_invalid";
         return false;
     }
     if (command.scope == ENTITY && command.entity_handle == 0 && command.domain != CLIMATE) {
@@ -447,12 +450,19 @@ uint64_t ModifierRuntime::scope_id_for(const Command &command) const {
     return command.scope == GROUP ? command.group_handle : command.entity_handle;
 }
 
-double ModifierRuntime::scaled_add(const TermDefinition &term, int32_t stacks) const {
-    return term.add * static_cast<double>(stacks);
+double ModifierRuntime::scaled_add(const TermDefinition &term, int32_t stacks,
+                                   int32_t magnitude_q16) const {
+    const double magnitude = static_cast<double>(magnitude_q16) /
+        static_cast<double>(Q16_ONE);
+    return term.add * static_cast<double>(stacks) * magnitude;
 }
 
-double ModifierRuntime::scaled_factor(const TermDefinition &term, int32_t stacks) const {
-    return std::pow(term.factor, static_cast<double>(stacks));
+double ModifierRuntime::scaled_factor(const TermDefinition &term, int32_t stacks,
+                                      int32_t magnitude_q16) const {
+    const double magnitude = static_cast<double>(magnitude_q16) /
+        static_cast<double>(Q16_ONE);
+    const double interpolated = 1.0 + (term.factor - 1.0) * magnitude;
+    return std::pow(interpolated, static_cast<double>(stacks));
 }
 
 double ModifierRuntime::bucket_factor(const Bucket &bucket) const {
@@ -476,8 +486,9 @@ void ModifierRuntime::rebuild_bucket(int32_t domain, const BucketKey &key,
         const TermDefinition &term = _terms[definition.term_begin + contribution.term];
         if (term.stat_id != key.stat_id) continue;
         const int32_t stacks = store.stacks[contribution.instance];
-        bucket.sum_add += scaled_add(term, stacks);
-        const double factor = scaled_factor(term, stacks);
+        const int32_t magnitude = store.magnitude_q16[contribution.instance];
+        bucket.sum_add += scaled_add(term, stacks, magnitude);
+        const double factor = scaled_factor(term, stacks, magnitude);
         if (factor == 0.0) ++bucket.zero_factor_count;
         else bucket.product_nonzero *= factor;
         live.push_back(contribution);
@@ -501,8 +512,9 @@ void ModifierRuntime::add_instance_to_buckets(int32_t domain, uint32_t index) {
         const BucketKey key{term.stat_id, store.scope[index], scope_id};
         Bucket &bucket = store.buckets[key];
         bucket.members.push_back({index, static_cast<uint16_t>(term_offset)});
-        bucket.sum_add += scaled_add(term, store.stacks[index]);
-        const double factor = scaled_factor(term, store.stacks[index]);
+        bucket.sum_add += scaled_add(term, store.stacks[index], store.magnitude_q16[index]);
+        const double factor = scaled_factor(term, store.stacks[index],
+                                            store.magnitude_q16[index]);
         if (factor == 0.0) ++bucket.zero_factor_count;
         else bucket.product_nonzero *= factor;
         if (++bucket.mutations_since_rebuild >= BUCKET_REBUILD_INTERVAL ||
@@ -527,8 +539,9 @@ void ModifierRuntime::remove_instance_from_buckets(int32_t domain, uint32_t inde
         auto it = store.buckets.find(key);
         if (it == store.buckets.end()) continue;
         Bucket &bucket = it->second;
-        bucket.sum_add -= scaled_add(term, store.stacks[index]);
-        const double factor = scaled_factor(term, store.stacks[index]);
+        bucket.sum_add -= scaled_add(term, store.stacks[index], store.magnitude_q16[index]);
+        const double factor = scaled_factor(term, store.stacks[index],
+                                            store.magnitude_q16[index]);
         if (factor == 0.0) --bucket.zero_factor_count;
         else bucket.product_nonzero /= factor;
         bucket.members.erase(std::remove_if(bucket.members.begin(), bucket.members.end(),
@@ -549,7 +562,8 @@ void ModifierRuntime::push_event(Event event) {
     if (event.domain >= 0 && event.domain < DOMAIN_COUNT) {
         Store &store = _stores[event.domain];
         if (event.kind == EVENT_APPLY || event.kind == EVENT_REPLACE ||
-            event.kind == EVENT_STACK || event.kind == EVENT_REFRESH) {
+            event.kind == EVENT_STACK || event.kind == EVENT_REFRESH ||
+            event.kind == EVENT_MAGNITUDE) {
             ++store.apply_events;
         } else if (event.kind == EVENT_REMOVE) {
             ++store.remove_events;
@@ -592,6 +606,10 @@ uint64_t ModifierRuntime::apply_command(const Command &command, int64_t day,
         result = {false, "modifier_definition_domain_mismatch", 0, day};
         return 0;
     }
+    if (command.magnitude_q16 < 0 || command.magnitude_q16 > MAX_MAGNITUDE_Q16) {
+        result = {false, "modifier_magnitude_invalid", 0, day};
+        return 0;
+    }
     std::string target_error;
     if (!validate_target(command, target_error)) {
         result = {false, target_error, 0, day};
@@ -614,9 +632,11 @@ uint64_t ModifierRuntime::apply_command(const Command &command, int64_t day,
             const uint32_t index = existing->second;
             remove_instance_from_buckets(command.domain, index);
             const int32_t old_stacks = store.stacks[index];
+            const int32_t old_magnitude = store.magnitude_q16[index];
             store.stacks[index] = definition.policy == STACK_REFRESH
                 ? std::min(definition.max_stacks, old_stacks + requested_stacks)
                 : requested_stacks;
+            store.magnitude_q16[index] = command.magnitude_q16;
             store.applied_day[index] = day;
             store.expiry_day[index] = duration < 0 ? PERMANENT_EXPIRY : day + duration;
             ++store.expiry_revision[index];
@@ -627,12 +647,15 @@ uint64_t ModifierRuntime::apply_command(const Command &command, int64_t day,
             ++store.snapshot_version;
             const uint64_t handle = make_handle(store, index);
             result = {true, "", handle, day};
-            push_event({0, day,
+            Event event{0, day,
                 definition.policy == STACK_REFRESH ? EVENT_STACK : EVENT_REPLACE,
                 command.domain, handle, command.definition_id, command.entity_handle,
                 command.group_handle, command.scope, command.source_type,
                 command.source_id, old_stacks,
-                store.stacks[index], command.request_id, ""});
+                store.stacks[index], command.request_id, ""};
+            event.old_magnitude_q16 = old_magnitude;
+            event.new_magnitude_q16 = command.magnitude_q16;
+            push_event(std::move(event));
             return handle;
         }
     }
@@ -653,6 +676,7 @@ uint64_t ModifierRuntime::apply_command(const Command &command, int64_t day,
         store.source_id.push_back(0);
         store.scope.push_back(GLOBAL);
         store.stacks.push_back(1);
+        store.magnitude_q16.push_back(Q16_ONE);
         store.applied_day.push_back(-1);
         store.expiry_day.push_back(PERMANENT_EXPIRY);
         store.expiry_revision.push_back(0);
@@ -665,6 +689,7 @@ uint64_t ModifierRuntime::apply_command(const Command &command, int64_t day,
     store.source_id[index] = command.source_id;
     store.scope[index] = command.scope;
     store.stacks[index] = requested_stacks;
+    store.magnitude_q16[index] = command.magnitude_q16;
     store.applied_day[index] = day;
     store.expiry_day[index] = duration < 0 ? PERMANENT_EXPIRY : day + duration;
     ++store.expiry_revision[index];
@@ -677,10 +702,13 @@ uint64_t ModifierRuntime::apply_command(const Command &command, int64_t day,
     ++store.snapshot_version;
     const uint64_t handle = make_handle(store, index);
     result = {true, "", handle, day};
-    push_event({0, day, EVENT_APPLY, command.domain, handle,
+    Event event{0, day, EVENT_APPLY, command.domain, handle,
         command.definition_id, command.entity_handle, command.group_handle,
         command.scope, command.source_type, command.source_id, 0,
-        requested_stacks, command.request_id, ""});
+        requested_stacks, command.request_id, ""};
+    event.old_magnitude_q16 = 0;
+    event.new_magnitude_q16 = command.magnitude_q16;
+    push_event(std::move(event));
     return handle;
 }
 
@@ -700,6 +728,7 @@ bool ModifierRuntime::remove_handle(int32_t domain, uint64_t handle, int64_t day
     const int32_t definition_id_value = store.definition_id[index];
     const Definition &definition = _definitions[definition_id_value];
     const int32_t old_stacks = store.stacks[index];
+    const int32_t old_magnitude = store.magnitude_q16[index];
     if (definition.policy != INDEPENDENT) {
         const uint64_t sid = store.scope[index] == GLOBAL ? 0 :
             (store.scope[index] == GROUP ? store.group_handle[index] : store.entity_handle[index]);
@@ -717,8 +746,11 @@ bool ModifierRuntime::remove_handle(int32_t domain, uint64_t handle, int64_t day
     --store.active_instances;
     ++store.snapshot_version;
     if (result) *result = {true, "", handle, day};
-    push_event({0, day, event_kind, domain, handle, definition_id_value, entity,
-        group, scope, source_type, source_id, old_stacks, 0, request_id, reason});
+    Event event{0, day, event_kind, domain, handle, definition_id_value, entity,
+        group, scope, source_type, source_id, old_stacks, 0, request_id, reason};
+    event.old_magnitude_q16 = old_magnitude;
+    event.new_magnitude_q16 = 0;
+    push_event(std::move(event));
     return true;
 }
 
@@ -746,10 +778,13 @@ bool ModifierRuntime::refresh_handle(const Command &command, int64_t day,
         index, store.generation[index], store.expiry_revision[index]});
     ++store.snapshot_version;
     result = {true, "", command.modifier_handle, day};
-    push_event({0, day, EVENT_REFRESH, command.domain, command.modifier_handle,
+    Event event{0, day, EVENT_REFRESH, command.domain, command.modifier_handle,
         store.definition_id[index], store.entity_handle[index], store.group_handle[index],
         store.scope[index], store.source_type[index], store.source_id[index],
-        store.stacks[index], store.stacks[index], command.request_id, ""});
+        store.stacks[index], store.stacks[index], command.request_id, ""};
+    event.old_magnitude_q16 = store.magnitude_q16[index];
+    event.new_magnitude_q16 = store.magnitude_q16[index];
+    push_event(std::move(event));
     return true;
 }
 
@@ -776,10 +811,47 @@ bool ModifierRuntime::set_stacks(const Command &command, int64_t day,
     add_instance_to_buckets(command.domain, index);
     ++store.snapshot_version;
     result = {true, "", command.modifier_handle, day};
-    push_event({0, day, EVENT_STACK, command.domain, command.modifier_handle,
+    Event event{0, day, EVENT_STACK, command.domain, command.modifier_handle,
         store.definition_id[index], store.entity_handle[index], store.group_handle[index],
         store.scope[index], store.source_type[index], store.source_id[index],
-        old_stacks, command.stacks, command.request_id, ""});
+        old_stacks, command.stacks, command.request_id, ""};
+    event.old_magnitude_q16 = store.magnitude_q16[index];
+    event.new_magnitude_q16 = store.magnitude_q16[index];
+    push_event(std::move(event));
+    return true;
+}
+
+bool ModifierRuntime::set_magnitude(const Command &command, int64_t day,
+                                    Result &result) {
+    if (command.domain < 0 || command.domain >= DOMAIN_COUNT) {
+        result = {false, "modifier_domain_invalid", 0, day};
+        return false;
+    }
+    if (command.magnitude_q16 < 0 || command.magnitude_q16 > MAX_MAGNITUDE_Q16) {
+        result = {false, "modifier_magnitude_invalid", 0, day};
+        return false;
+    }
+    Store &store = _stores[command.domain];
+    uint32_t index = 0;
+    if (!resolve_handle(store, command.modifier_handle, index)) {
+        result = {false, "modifier_handle_stale", 0, day};
+        return false;
+    }
+    const int32_t old_magnitude = store.magnitude_q16[index];
+    if (old_magnitude != command.magnitude_q16) {
+        remove_instance_from_buckets(command.domain, index);
+        store.magnitude_q16[index] = command.magnitude_q16;
+        add_instance_to_buckets(command.domain, index);
+        ++store.snapshot_version;
+    }
+    result = {true, "", command.modifier_handle, day};
+    Event event{0, day, EVENT_MAGNITUDE, command.domain, command.modifier_handle,
+        store.definition_id[index], store.entity_handle[index], store.group_handle[index],
+        store.scope[index], store.source_type[index], store.source_id[index],
+        store.stacks[index], store.stacks[index], command.request_id, ""};
+    event.old_magnitude_q16 = old_magnitude;
+    event.new_magnitude_q16 = command.magnitude_q16;
+    push_event(std::move(event));
     return true;
 }
 
@@ -835,6 +907,8 @@ Dictionary ModifierRuntime::run_daily(int64_t day_index) {
             ok = refresh_handle(command, day_index, result);
         } else if (command.opcode == COMMAND_SET_STACKS) {
             ok = set_stacks(command, day_index, result);
+        } else if (command.opcode == COMMAND_SET_MAGNITUDE) {
+            ok = set_magnitude(command, day_index, result);
         } else {
             result = {false, "modifier_command_opcode_invalid", 0, day_index};
         }
@@ -1023,10 +1097,73 @@ bool ModifierRuntime::apply_technology_effect(uint64_t country_handle,
     return true;
 }
 
+bool ModifierRuntime::queue_family_group_effect(
+        const std::string &definition_key, int32_t settlement_cell,
+        uint64_t branch_stable_id, int32_t magnitude_q16,
+        int64_t day_index, std::string &error) {
+    const int32_t did = definition_id(definition_key);
+    if (!_configured || did < 0 || _definitions[did].domain != ECONOMY ||
+        _definitions[did].policy == INDEPENDENT) {
+        error = "family_modifier_definition_invalid";
+        return false;
+    }
+    if (settlement_cell < 0 || settlement_cell >= _cell_count ||
+        branch_stable_id == 0 || magnitude_q16 < 0 ||
+        magnitude_q16 > MAX_MAGNITUDE_Q16) {
+        error = "family_modifier_target_invalid";
+        return false;
+    }
+    Command command;
+    command.opcode = COMMAND_APPLY;
+    command.producer = 160;
+    command.sequence = static_cast<int64_t>(++_submit_order);
+    command.effective_day = std::max<int64_t>(day_index, _current_day);
+    command.request_id = _next_request_id++;
+    command.definition_id = did;
+    command.domain = ECONOMY;
+    command.scope = GROUP;
+    command.group_handle = static_cast<uint64_t>(settlement_cell);
+    command.source_type = 0x46414d494c59ULL; // FAMILY
+    command.source_id = branch_stable_id;
+    command.duration_days = -1;
+    command.stacks = 1;
+    command.magnitude_q16 = magnitude_q16;
+    command.submit_order = _submit_order;
+    _pending_commands.push_back(command);
+    _results[command.request_id] = {false, "pending", 0, -1};
+    return true;
+}
+
+int32_t ModifierRuntime::family_group_effect_magnitude(
+        const std::string &definition_key, int32_t settlement_cell,
+        uint64_t branch_stable_id) const {
+    const int32_t did = definition_id(definition_key);
+    if (did < 0 || _definitions[did].domain != ECONOMY) return -1;
+    const Store &store = _stores[ECONOMY];
+    const UniqueKey key{did, GROUP, static_cast<uint64_t>(settlement_cell),
+        0x46414d494c59ULL, branch_stable_id};
+    const auto it = store.unique_instances.find(key);
+    if (it == store.unique_instances.end() ||
+        it->second >= store.active.size() || store.active[it->second] == 0)
+        return -1;
+    return store.magnitude_q16[it->second];
+}
+
 double ModifierRuntime::economy_building_output_factor(uint64_t building_handle,
-                                                        uint64_t country_handle) const {
-    return effective_value(ECONOMY, "economy.building.output_factor",
-                           building_handle, country_handle, 1.0);
+                                                        uint64_t settlement_cell,
+                                                        int32_t economic_sector) const {
+    double factor = effective_value(ECONOMY, "economy.building.output_factor",
+                                    building_handle, settlement_cell, 1.0);
+    factor *= effective_value(ECONOMY, "economy.city.output_factor", 0,
+                              settlement_cell, 1.0);
+    const char *sector_stat = nullptr;
+    if (economic_sector == 0)
+        sector_stat = "economy.city.building.agriculture_output_factor";
+    else if (economic_sector == 1)
+        sector_stat = "economy.city.building.extractive_output_factor";
+    if (sector_stat != nullptr)
+        factor *= effective_value(ECONOMY, sector_stat, 0, settlement_cell, 1.0);
+    return factor;
 }
 
 Dictionary ModifierRuntime::command_result(int64_t request_id) const {
@@ -1049,7 +1186,7 @@ Dictionary ModifierRuntime::list_modifiers(int32_t domain, uint64_t entity_handl
     if (!stat_key_value.is_empty() && filter_stat < 0)
         return fail_dict("modifier_stat_unknown");
     PackedInt64Array handles, entities, groups, source_types, source_ids, applied, expiry;
-    PackedInt32Array scopes, stacks, versions;
+    PackedInt32Array scopes, stacks, versions, magnitudes;
     PackedStringArray definitions;
     const Store &store = _stores[domain];
     for (uint32_t index = 0; index < store.active.size(); ++index) {
@@ -1071,6 +1208,7 @@ Dictionary ModifierRuntime::list_modifiers(int32_t domain, uint64_t entity_handl
         source_ids.push_back(static_cast<int64_t>(store.source_id[index]));
         scopes.push_back(store.scope[index]);
         stacks.push_back(store.stacks[index]);
+        magnitudes.push_back(store.magnitude_q16[index]);
         applied.push_back(store.applied_day[index]);
         expiry.push_back(store.expiry_day[index]);
     }
@@ -1085,6 +1223,7 @@ Dictionary ModifierRuntime::list_modifiers(int32_t domain, uint64_t entity_handl
     out["source_ids"] = source_ids;
     out["scopes"] = scopes;
     out["stacks"] = stacks;
+    out["magnitude_q16"] = magnitudes;
     out["applied_days"] = applied;
     out["expiry_days"] = expiry;
     return out;
@@ -1097,7 +1236,7 @@ Dictionary ModifierRuntime::explain(int32_t domain, uint64_t entity_handle,
     if (sid < 0 || domain < 0 || domain >= DOMAIN_COUNT || _stats[sid].domain != domain)
         return fail_dict("modifier_stat_unknown_or_domain_mismatch");
     PackedInt64Array handles;
-    PackedInt32Array scopes, stacks;
+    PackedInt32Array scopes, stacks, magnitudes;
     PackedFloat64Array adds, factors;
     PackedStringArray definitions;
     double sum_add = 0.0, product_factor = 1.0;
@@ -1112,12 +1251,15 @@ Dictionary ModifierRuntime::explain(int32_t domain, uint64_t entity_handle,
         for (uint32_t term_offset = 0; term_offset < definition.term_count; ++term_offset) {
             const TermDefinition &term = _terms[definition.term_begin + term_offset];
             if (term.stat_id != sid) continue;
-            const double add = scaled_add(term, store.stacks[index]);
-            const double factor = scaled_factor(term, store.stacks[index]);
+            const double add = scaled_add(term, store.stacks[index],
+                                          store.magnitude_q16[index]);
+            const double factor = scaled_factor(term, store.stacks[index],
+                                                store.magnitude_q16[index]);
             handles.push_back(static_cast<int64_t>(make_handle(store, index)));
             definitions.push_back(definition.key.c_str());
             scopes.push_back(store.scope[index]);
             stacks.push_back(store.stacks[index]);
+            magnitudes.push_back(store.magnitude_q16[index]);
             adds.push_back(add);
             factors.push_back(factor);
             sum_add += add;
@@ -1138,6 +1280,7 @@ Dictionary ModifierRuntime::explain(int32_t domain, uint64_t entity_handle,
     out["definition_keys"] = definitions;
     out["scopes"] = scopes;
     out["stacks"] = stacks;
+    out["magnitude_q16"] = magnitudes;
     out["adds"] = adds;
     out["factors"] = factors;
     return out;
@@ -1157,6 +1300,7 @@ uint64_t ModifierRuntime::estimated_store_bytes(int32_t domain) const {
     PK_CAPACITY_BYTES(source_id);
     PK_CAPACITY_BYTES(scope);
     PK_CAPACITY_BYTES(stacks);
+    PK_CAPACITY_BYTES(magnitude_q16);
     PK_CAPACITY_BYTES(applied_day);
     PK_CAPACITY_BYTES(expiry_day);
     PK_CAPACITY_BYTES(expiry_revision);
@@ -1261,7 +1405,8 @@ Dictionary ModifierRuntime::report() const {
 Dictionary ModifierRuntime::poll_events(int64_t after_event_id, int32_t limit) const {
     limit = std::clamp(limit, 1, 512);
     PackedInt64Array ids, days, handles, entities, groups, source_types, source_ids, requests;
-    PackedInt32Array kinds, domains, scopes, old_stacks, new_stacks;
+    PackedInt32Array kinds, domains, scopes, old_stacks, new_stacks,
+        old_magnitudes, new_magnitudes;
     PackedStringArray definitions, reasons;
     for (const Event &event : _events) {
         if (event.id <= after_event_id || ids.size() >= limit) continue;
@@ -1278,6 +1423,8 @@ Dictionary ModifierRuntime::poll_events(int64_t after_event_id, int32_t limit) c
         requests.push_back(event.request_id);
         old_stacks.push_back(event.old_stacks);
         new_stacks.push_back(event.new_stacks);
+        old_magnitudes.push_back(event.old_magnitude_q16);
+        new_magnitudes.push_back(event.new_magnitude_q16);
         definitions.push_back(event.definition_id >= 0 &&
             event.definition_id < static_cast<int32_t>(_definitions.size())
                 ? _definitions[event.definition_id].key.c_str() : "");
@@ -1299,6 +1446,8 @@ Dictionary ModifierRuntime::poll_events(int64_t after_event_id, int32_t limit) c
     out["request_ids"] = requests;
     out["old_stacks"] = old_stacks;
     out["new_stacks"] = new_stacks;
+    out["old_magnitude_q16"] = old_magnitudes;
+    out["new_magnitude_q16"] = new_magnitudes;
     out["definition_keys"] = definitions;
     out["reasons"] = reasons;
     out["journal_overflow"] = static_cast<int64_t>(_journal_overflow);
@@ -1465,6 +1614,7 @@ bool ModifierRuntime::serialize_domain(int32_t domain, std::vector<uint8_t> &out
         append_le<uint64_t>(out, store.source_id[index]);
         append_le<int32_t>(out, store.scope[index]);
         append_le<int32_t>(out, store.stacks[index]);
+        append_le<int32_t>(out, store.magnitude_q16[index]);
         append_le<int64_t>(out, store.applied_day[index]);
         append_le<int64_t>(out, store.expiry_day[index]);
         append_le<uint32_t>(out, definition.term_count);
@@ -1523,7 +1673,7 @@ bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> 
     }
     struct SavedInstance {
         uint64_t handle = 0, entity = 0, group = 0, source_type = 0, source_id = 0;
-        int32_t definition = -1, scope = 0, stacks = 1;
+        int32_t definition = -1, scope = 0, stacks = 1, magnitude_q16 = Q16_ONE;
         int64_t applied = -1, expiry = -1;
     };
     std::vector<SavedInstance> saved;
@@ -1540,6 +1690,7 @@ bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> 
             !read_le(bytes, cursor, item.entity) || !read_le(bytes, cursor, item.group) ||
             !read_le(bytes, cursor, item.source_type) || !read_le(bytes, cursor, item.source_id) ||
             !read_le(bytes, cursor, item.scope) || !read_le(bytes, cursor, item.stacks) ||
+            !read_le(bytes, cursor, item.magnitude_q16) ||
             !read_le(bytes, cursor, item.applied) || !read_le(bytes, cursor, item.expiry) ||
             !read_le(bytes, cursor, term_count)) {
             error = "modifier_restore_instance_truncated";
@@ -1549,7 +1700,8 @@ bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> 
         if (item.definition < 0 || _definitions[item.definition].version != definition_version ||
             _definitions[item.definition].domain != domain ||
             term_count != _definitions[item.definition].term_count || item.stacks <= 0 ||
-            item.stacks > _definitions[item.definition].max_stacks) {
+            item.stacks > _definitions[item.definition].max_stacks ||
+            item.magnitude_q16 < 0 || item.magnitude_q16 > MAX_MAGNITUDE_Q16) {
             error = "modifier_restore_definition_incompatible";
             return false;
         }
@@ -1635,6 +1787,7 @@ bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> 
     store.source_id.assign(slots, 0);
     store.scope.assign(slots, GLOBAL);
     store.stacks.assign(slots, 1);
+    store.magnitude_q16.assign(slots, Q16_ONE);
     store.applied_day.assign(slots, -1);
     store.expiry_day.assign(slots, PERMANENT_EXPIRY);
     store.expiry_revision.assign(slots, 0);
@@ -1651,6 +1804,7 @@ bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> 
         store.source_id[index] = item.source_id;
         store.scope[index] = item.scope;
         store.stacks[index] = item.stacks;
+        store.magnitude_q16[index] = item.magnitude_q16;
         store.applied_day[index] = item.applied;
         store.expiry_day[index] = item.expiry;
         store.expiry_revision[index] = 1;

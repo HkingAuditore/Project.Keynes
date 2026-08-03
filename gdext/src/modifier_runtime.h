@@ -22,18 +22,24 @@ class NativeCountryRuntime;
 // catalog strings are resolved only at the Godot/save boundary.
 class ModifierRuntime {
 public:
-    static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 1;
+    static constexpr int32_t PROTOCOL_VERSION = 2;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 2;
     static constexpr int64_t PERMANENT_EXPIRY = -1;
+    static constexpr int32_t Q16_ONE = 65536;
+    static constexpr int32_t MAX_MAGNITUDE_Q16 = Q16_ONE * 4;
 
     enum Domain : int32_t { CLIMATE = 0, COUNTRY = 1, ECONOMY = 2, GAMEPLAY = 3, DOMAIN_COUNT = 4 };
     enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
     enum StackPolicy : int32_t { INDEPENDENT = 0, UNIQUE_SOURCE = 1, STACK_REFRESH = 2 };
     enum Operation : int32_t { ADD = 0, SUBTRACT = 1, MULTIPLY = 2, DIVIDE = 3 };
-    enum CommandOpcode : int32_t { COMMAND_APPLY = 1, COMMAND_REMOVE = 2, COMMAND_REFRESH = 3, COMMAND_SET_STACKS = 4 };
+    enum CommandOpcode : int32_t {
+        COMMAND_APPLY = 1, COMMAND_REMOVE = 2, COMMAND_REFRESH = 3,
+        COMMAND_SET_STACKS = 4, COMMAND_SET_MAGNITUDE = 5,
+    };
     enum EventKind : int32_t {
         EVENT_APPLY = 1, EVENT_REPLACE = 2, EVENT_STACK = 3, EVENT_REFRESH = 4,
-        EVENT_REMOVE = 5, EVENT_EXPIRE = 6, EVENT_TARGET_CLEANUP = 7, EVENT_REJECT = 8,
+        EVENT_REMOVE = 5, EVENT_EXPIRE = 6, EVENT_TARGET_CLEANUP = 7,
+        EVENT_REJECT = 8, EVENT_MAGNITUDE = 9,
     };
 
     godot::Dictionary configure(const godot::Dictionary &catalog, int32_t cell_count);
@@ -70,11 +76,21 @@ public:
     double country_construction_cost_factor(uint64_t country_handle) const;
     double country_construction_time_factor(uint64_t country_handle) const;
     double economy_building_output_factor(uint64_t building_handle,
-                                           uint64_t country_handle) const;
+                                           uint64_t settlement_cell,
+                                           int32_t economic_sector) const;
     bool apply_technology_effect(uint64_t country_handle,
                                  const std::string &definition_key,
                                  int32_t technology_id, int64_t day_index,
                                  std::string &error);
+    bool queue_family_group_effect(const std::string &definition_key,
+                                   int32_t settlement_cell,
+                                   uint64_t branch_stable_id,
+                                   int32_t magnitude_q16,
+                                   int64_t day_index,
+                                   std::string &error);
+    int32_t family_group_effect_magnitude(const std::string &definition_key,
+                                          int32_t settlement_cell,
+                                          uint64_t branch_stable_id) const;
 
     uint64_t register_gameplay_object(const std::string &archetype);
     bool unregister_gameplay_object(uint64_t handle, int64_t day_index);
@@ -170,6 +186,7 @@ private:
         std::vector<uint64_t> source_id;
         std::vector<int32_t> scope;
         std::vector<int32_t> stacks;
+        std::vector<int32_t> magnitude_q16;
         std::vector<int64_t> applied_day;
         std::vector<int64_t> expiry_day;
         std::vector<uint32_t> expiry_revision;
@@ -204,6 +221,7 @@ private:
         uint64_t source_id = 0;
         int32_t duration_days = -1;
         int32_t stacks = 1;
+        int32_t magnitude_q16 = Q16_ONE;
         uint64_t modifier_handle = 0;
         uint64_t submit_order = 0;
     };
@@ -229,6 +247,8 @@ private:
         int32_t new_stacks = 0;
         int64_t request_id = 0;
         std::string reason;
+        int32_t old_magnitude_q16 = Q16_ONE;
+        int32_t new_magnitude_q16 = Q16_ONE;
     };
     struct IdentityStore {
         std::vector<uint8_t> active;
@@ -253,12 +273,15 @@ private:
                        int64_t request_id, const std::string &reason, Result *result = nullptr);
     bool refresh_handle(const Command &command, int64_t day, Result &result);
     bool set_stacks(const Command &command, int64_t day, Result &result);
+    bool set_magnitude(const Command &command, int64_t day, Result &result);
     void add_instance_to_buckets(int32_t domain, uint32_t index);
     void remove_instance_from_buckets(int32_t domain, uint32_t index);
     void rebuild_bucket(int32_t domain, const BucketKey &key, Bucket &bucket);
     double bucket_factor(const Bucket &bucket) const;
-    double scaled_add(const TermDefinition &term, int32_t stacks) const;
-    double scaled_factor(const TermDefinition &term, int32_t stacks) const;
+    double scaled_add(const TermDefinition &term, int32_t stacks,
+                      int32_t magnitude_q16) const;
+    double scaled_factor(const TermDefinition &term, int32_t stacks,
+                         int32_t magnitude_q16) const;
     uint64_t make_handle(const Store &store, uint32_t index) const;
     bool resolve_handle(const Store &store, uint64_t handle, uint32_t &index) const;
     uint64_t scope_id_for(const Command &command) const;
