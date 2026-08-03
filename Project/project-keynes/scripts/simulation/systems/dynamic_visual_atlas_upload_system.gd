@@ -83,6 +83,8 @@ const SOFT_BUDGET_MULTIPLIER: float = 2.0
 const CPP_PIPELINE_PHASE_BUDGET: int = 4
 # C++ smooth phase 内部再按 cell cursor 切片，避免 dirty/full sweep 时单次 2ms+。
 const CPP_SMOOTH_CELLS_PER_CALL: int = 512
+const LUT_DENSE_DIRTY_MIN_CELLS: int = 64
+const LUT_DENSE_DIRTY_RATIO: float = 0.25
 # C++ 计算完成后，GPU texture commit 仍必须走主线程。一次 stride 可能同时
 # 产出 dyn/eco/smo/ice 多张 atlas；这里把它们排成队列。
 # 修复（2026-05-26）：原值=1 会导致 4 张 atlas 跨 4 个 tick 才上传完成，
@@ -165,6 +167,7 @@ var _dvas_diag_avg_window: int = 30
 var _dvas_ice_commit_runs: int = 0
 var _dvas_ice_skip_runs: int = 0
 var _last_breakdown: Dictionary = {}
+var _lut_dense_fallback_count: int = 0
 
 # Perf instrumentation freshness（方案 ④ Step 1）：generator 在每个 fast tick 顶部
 # 通过 set_current_fast_tick_idx 把当前 _fast_tick_count 同步进来。所有
@@ -359,6 +362,17 @@ func _lut_peek_dirty_count() -> int:
 	return int(source.peek_dirty_count())
 
 
+func _lut_dense_dirty_threshold(source) -> int:
+	if source == null or not source.has_method("dirty_mask_size"):
+		return 0
+	var cell_count := int(source.dirty_mask_size())
+	if cell_count <= 0:
+		return 0
+	return mini(cell_count, maxi(
+		LUT_DENSE_DIRTY_MIN_CELLS,
+		int(ceil(float(cell_count) * LUT_DENSE_DIRTY_RATIO))))
+
+
 func _lut_textures_ready() -> bool:
 	return world_data != null \
 			and world_data.enum_lut_tex != null \
@@ -367,9 +381,12 @@ func _lut_textures_ready() -> bool:
 
 
 func _lut_active_decay_pending() -> bool:
-	return baker != null \
-			and "_eco_active_decay_set" in baker \
-			and not baker._eco_active_decay_set.is_empty()
+	if baker == null:
+		return false
+	if baker.has_method("cell_lut_active_transition_pending") \
+			and bool(baker.cell_lut_active_transition_pending()):
+		return true
+	return "_eco_active_decay_set" in baker and not baker._eco_active_decay_set.is_empty()
 
 
 func _native_visual_commit_pending() -> bool:
@@ -494,23 +511,41 @@ func tick(ctx) -> Dictionary:
 				"due_this_tick": due_this_tick,
 				"dirty_count": dirty_count,
 			})
-		var lut_report: Dictionary = baker.refresh_cell_luts_daily(map, world_data)
-		var _lut_ms: float = float(Time.get_ticks_usec() - t_start_us) / 1000.0
+		var dirty_indices := PackedInt32Array()
+		var dirty_source_available := false
+		var dense_dirty_fallback := false
+		var dense_dirty_threshold := 0
+		var dirty_source = _lut_dirty_source()
+		if dirty_count >= 0 and dirty_source != null \
+				and dirty_source.has_method("read_and_clear_dirty_mask"):
+			dirty_source_available = true
+			dense_dirty_threshold = _lut_dense_dirty_threshold(dirty_source)
+			if dense_dirty_threshold > 0 and dirty_count >= dense_dirty_threshold \
+					and dirty_source.has_method("clear_dirty_mask"):
+				dirty_source.clear_dirty_mask()
+				dense_dirty_fallback = true
+				_lut_dense_fallback_count += 1
+			else:
+				dirty_indices = dirty_source.read_and_clear_dirty_mask()
+				dirty_count = dirty_indices.size()
+		var lut_report: Dictionary = baker.refresh_cell_luts_daily(
+			map, world_data, dirty_indices,
+			not dirty_source_available or dense_dirty_fallback)
 		_lut_last_refresh_tick = tick_index
 		_lut_refresh_pending = false
 		_lut_pending_before_tick = pending_before
 		_lut_catchup_tick = catchup
 		var report: Dictionary = {
 			"done": true,
-			"work_done": map.cell_count() if map != null else 0,
-			"elapsed_ms": _lut_ms,
+			"work_done": int(lut_report.get("processed_cells",
+				lut_report.get("dirty_cells", map.cell_count() if map != null else 0))),
+			"elapsed_ms": 0.0,
 			"progress_ratio": 1.0,
 			"path": "cell_indirection_lut",
 		}
 		report["lut_path"] = str(lut_report.get("path", ""))
 		report.merge(lut_report, true)
 		report["path"] = "cell_indirection_lut"
-		report["lut_refresh_ms"] = _lut_ms
 		report["lut_refresh_pending_before"] = pending_before
 		report["lut_refresh_pending_after"] = _lut_refresh_pending
 		report["lut_last_refresh_tick"] = _lut_last_refresh_tick
@@ -521,7 +556,13 @@ func tick(ctx) -> Dictionary:
 		report["lut_skip_no_dirty"] = false
 		report["lut_refresh_due"] = due_this_tick
 		report["mask_dirty_count"] = dirty_count
-		_last_breakdown = report.duplicate(true)
+		report["lut_dense_dirty_fallback"] = dense_dirty_fallback
+		report["lut_dense_dirty_threshold"] = dense_dirty_threshold
+		report["lut_dense_fallback_count"] = _lut_dense_fallback_count
+		var lut_wall_ms := float(Time.get_ticks_usec() - t_start_us) / 1000.0
+		report["elapsed_ms"] = lut_wall_ms
+		report["lut_refresh_ms"] = lut_wall_ms
+		_last_breakdown = report.duplicate(false)
 		_last_breakdown["_tick_idx"] = current_fast_tick_idx
 		return report
 

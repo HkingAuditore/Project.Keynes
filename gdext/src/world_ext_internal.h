@@ -118,6 +118,11 @@ struct AtlasPipelineState {
     PackedByteArray  lut_prev_veg;          // per-cell 上一帧 vegetation enum byte
     PackedByteArray  lut_prev_vit;          // per-cell 上一帧 q01(vitality) byte
     PackedByteArray  lut_transition_age;    // per-cell transition_age（0..255）
+    PackedByteArray  lut_enum_data;          // 持久 full buffer；dirty encode 原地 patch
+    PackedByteArray  lut_dyn_data;
+    PackedByteArray  lut_eco_data;
+    PackedByteArray  lut_weather_data;
+    PackedInt32Array lut_active_transition_indices;
 
     // CSR 缓存：地图稳定时常驻，invalidate_atlas_csr_cache 失效。
     PackedInt32Array csr_first_px;

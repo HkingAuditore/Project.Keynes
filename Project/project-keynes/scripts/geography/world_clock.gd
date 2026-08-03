@@ -186,17 +186,19 @@ func _process(delta: float) -> void:
 	# receiving day ticks. The economy hard barrier is different: it is raised
 	# only at a frozen cycle's settlement deadline, stops new days, and emits a
 	# real-frame pulse so same-day catchup can finish without deadlock.
+	var simulation_budget_start_us: int = Time.get_ticks_usec()
 	var hard_day_barrier := _simulation_backpressure_sources.has(&"economy_day_barrier") or \
 		_simulation_backpressure_sources.has(&"country_day_barrier")
+	var had_hard_day_barrier := hard_day_barrier
 	var pulse_start_us: int = Time.get_ticks_usec()
 	if hard_day_barrier:
 		simulation_backpressure_pulse.emit(_last_day)
-		# A time-boxed continuation may drain the barrier synchronously. Re-read
-		# it so a completed bucket does not cost an otherwise empty render frame.
+		# continuation 可能同步清掉 barrier，但本帧已经消耗过模拟预算。新的一天留到
+		# 下一帧启动，避免 pulse + 完整日 tick 在同一渲染帧叠加成尖峰。
 		hard_day_barrier = _simulation_backpressure_sources.has(&"economy_day_barrier") or \
 			_simulation_backpressure_sources.has(&"country_day_barrier")
 	_last_pulse_ms = float(Time.get_ticks_usec() - pulse_start_us) / 1000.0
-	var effective_speed := 0.0 if hard_day_barrier else (
+	var effective_speed := 0.0 if had_hard_day_barrier or hard_day_barrier else (
 		minf(speed_multiplier, 1.0) if has_simulation_backpressure() else speed_multiplier)
 	var target: float = delta * effective_speed
 	if target > float(max_sim_days_per_frame):
@@ -208,8 +210,12 @@ func _process(delta: float) -> void:
 	# → 一个完整 SUS tick，所以这里的墙钟测量天然涵盖当日全部模拟 + 渲染同步成本。
 	var t0_us: int = Time.get_ticks_usec()
 	var ran: int = 0
-	while not hard_day_barrier and _day_carry >= 1.0 and ran < max_sim_days_per_frame:
-		if ran > 0 and float(Time.get_ticks_usec() - t0_us) / 1000.0 >= sim_frame_budget_ms:
+	while not had_hard_day_barrier and not hard_day_barrier \
+			and _day_carry >= 1.0 and ran < max_sim_days_per_frame:
+		# 时间盒从 continuation pulse 之前开始计时；无 pulse 的普通帧仍保证至少推进
+		# 一天，保持低倍速/轻负载吞吐行为不变。
+		if ran > 0 and float(Time.get_ticks_usec() - simulation_budget_start_us) / 1000.0 \
+				>= sim_frame_budget_ms:
 			break
 		_day_carry -= 1.0
 		_advance_one_sim_day()

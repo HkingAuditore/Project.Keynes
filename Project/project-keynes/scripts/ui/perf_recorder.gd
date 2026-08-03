@@ -101,6 +101,8 @@ const FIXED_COLUMNS: Array = [
 	"tail_vegetation_dedup_skips",
 	"tail_vegetation_tasks",
 	"tail_vegetation_forced_tasks",
+	"tail_vegetation_max_task_ms",
+	"tail_vegetation_plan_ms",
 	"tail_vegetation_encode_ms",
 	"tail_vegetation_cache_update_ms",
 	"tail_vegetation_assemble_ms",

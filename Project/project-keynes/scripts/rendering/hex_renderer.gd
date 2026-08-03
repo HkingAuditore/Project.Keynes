@@ -9,6 +9,15 @@ const VisualTileHorizonBakerScript = preload(
 const DetailScatterChangeSetScript = preload("res://scripts/data/detail_scatter_change_set.gd")
 const VegetationFamilyLayerScript = preload("res://scripts/rendering/vegetation_family_layer.gd")
 
+const DETAIL_PLAN_IDLE: int = 0
+const DETAIL_PLAN_COLLECT: int = 1
+const DETAIL_PLAN_BUILD_CHUNKS: int = 2
+const DETAIL_PLAN_BEGIN_LAYERS: int = 3
+const DETAIL_PLAN_BUILD_TASKS: int = 4
+const DETAIL_PLAN_FALLBACK_COLLECT: int = 5
+const DETAIL_PLAN_FALLBACK_TASKS: int = 6
+const DETAIL_PLAN_FINALIZE: int = 7
+
 @export var hex_size: float = 22.0:
 	set(v):
 		hex_size = maxf(4.0, v)
@@ -305,6 +314,7 @@ var terrain_materials_enabled: bool = true
 @export var detail_scatter_chunked_multimesh_enabled: bool = true
 @export_range(2, 32, 1) var detail_scatter_chunk_size_cells: int = 16
 @export var detail_scatter_refresh_chunks_per_frame: int = 4
+@export_range(1, 128, 1) var detail_scatter_refresh_plan_items_per_frame: int = 16
 @export_range(0.25, 10.0, 0.25) var detail_scatter_resident_retention_seconds: float = 2.0
 # drain 信用预算：实测 4.0 时高倍速下 backlog 永不排空、帧均 drain 顶满预算
 # （tail_vegetation 持续 4-5ms）。配合全链路在途去重后重排队速率大幅下降，
@@ -461,6 +471,19 @@ var _detail_family_dirty_chunks: Dictionary = {}
 var _detail_refresh_queue: Array = []
 var _detail_refresh_indices: PackedInt32Array = PackedInt32Array()
 var _detail_refresh_batches: Array = []
+var _detail_plan_phase: int = DETAIL_PLAN_IDLE
+var _detail_plan_probe = null
+var _detail_plan_cursor: int = 0
+var _detail_plan_key_cursor: int = 0
+var _detail_plan_chunk_cursor: int = 0
+var _detail_plan_layer_cursor: int = 0
+var _detail_plan_dirty_chunks: Dictionary = {}
+var _detail_plan_chunk_keys: Array = []
+var _detail_plan_chunks: Array = []
+var _detail_plan_had_chunk_plan: bool = false
+var _detail_plan_fallback_profile_mask: int = 0
+var _detail_plan_all_family_mask: int = 0
+var _detail_plan_all_profile_mask: int = 0
 var _last_detail_refresh_report: Dictionary = {}
 # 入队节流/合并状态：跨日去重累积器 + 上次冲刷时刻。
 var _scatter_pending_cells: PackedInt32Array = PackedInt32Array()
@@ -617,6 +640,8 @@ var _perf_sampler: PerfSampler = null
 var _last_detail_drain_ms: float = 0.0
 var _last_detail_task_count: int = 0
 var _last_detail_forced_task_count: int = 0
+var _last_detail_max_task_ms: float = 0.0
+var _last_detail_plan_ms: float = 0.0
 var _last_detail_encode_ms: float = 0.0
 var _last_detail_cache_update_ms: float = 0.0
 var _last_detail_assemble_ms: float = 0.0
@@ -1076,150 +1101,255 @@ func _release_detail_refresh_inflight(cells: PackedInt32Array) -> void:
 		_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(requeue))
 
 
-func _start_next_detail_refresh_batch() -> bool:
-	if not _detail_refresh_queue.is_empty():
-		return true
-	if _detail_refresh_batches.is_empty():
-		_release_detail_refresh_inflight(_detail_refresh_indices)
-		_detail_refresh_indices = PackedInt32Array()
-		return false
+func _reset_detail_refresh_plan() -> void:
+	_detail_plan_phase = DETAIL_PLAN_IDLE
+	_detail_plan_probe = null
+	_detail_plan_cursor = 0
+	_detail_plan_key_cursor = 0
+	_detail_plan_chunk_cursor = 0
+	_detail_plan_layer_cursor = 0
+	_detail_plan_dirty_chunks.clear()
+	_detail_plan_chunk_keys.clear()
+	_detail_plan_chunks.clear()
+	_detail_plan_had_chunk_plan = false
+	_detail_plan_fallback_profile_mask = 0
+	_detail_plan_all_family_mask = 0
+	_detail_plan_all_profile_mask = 0
+
+
+func _begin_detail_refresh_plan() -> void:
 	_detail_refresh_indices = _detail_refresh_batches.pop_front()
 	_detail_refresh_queue.clear()
-	var chunk_plan: Array = []
+	_reset_detail_refresh_plan()
+	_detail_plan_all_family_mask = _detail_all_family_mask()
+	_detail_plan_all_profile_mask = (1 << _detail_layers.size()) - 1
 	if detail_scatter_chunked_multimesh_enabled:
 		for layer in _detail_layers:
-			if layer != null and is_instance_valid(layer) and layer.has_method("detail_chunk_plan_for_indices"):
-				chunk_plan = layer.detail_chunk_plan_for_indices(_detail_refresh_indices)
+			if layer != null and is_instance_valid(layer) \
+					and layer.has_method("detail_chunk_id_for_cell") \
+					and layer.has_method("detail_chunk_cells"):
+				_detail_plan_probe = layer
 				break
-	var had_chunk_plan := not chunk_plan.is_empty()
-	var active_chunk_plan: Array = []
-	for chunk in chunk_plan:
-		var chunk_id := int(chunk.get("chunk_id", -1))
-		var dirty_indices: PackedInt32Array = chunk.get("dirty_indices", PackedInt32Array())
-		var family_mask := 0
-		var profile_mask := 0
-		for raw_idx in dirty_indices:
-			family_mask |= int(_scatter_cell_family_masks.get(int(raw_idx), _detail_all_family_mask()))
-			profile_mask |= int(_scatter_cell_profile_masks.get(
-				int(raw_idx), (1 << _detail_layers.size()) - 1))
-		if family_mask == 0:
-			family_mask = _detail_all_family_mask()
-		if profile_mask == 0:
-			profile_mask = (1 << _detail_layers.size()) - 1
-		var in_prefetch := true
-		if not _detail_layers.is_empty():
-			var probe = _detail_layers[0]
-			if probe != null and is_instance_valid(probe) \
-					and probe.has_method("detail_chunk_is_in_prefetch"):
-				in_prefetch = bool(probe.detail_chunk_is_in_prefetch(chunk_id))
-		if not in_prefetch:
-			_detail_deferred_chunks[chunk_id] = int(_detail_deferred_chunks.get(chunk_id, 0)) | family_mask
-			_detail_deferred_profile_masks[chunk_id] = int(
-				_detail_deferred_profile_masks.get(chunk_id, 0)) | profile_mask
-			_detail_offscreen_deferred_cells += dirty_indices.size()
-			continue
-		var active: Dictionary = chunk.duplicate(false)
-		active["family_mask"] = family_mask
-		active["profile_mask"] = profile_mask
-		active_chunk_plan.append(active)
-	if not active_chunk_plan.is_empty() and not _detail_layers.is_empty():
-		var visibility_probe = _detail_layers[0]
-		active_chunk_plan.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-			var a_id := int(a.get("chunk_id", -1))
-			var b_id := int(b.get("chunk_id", -1))
-			var a_visible := bool(visibility_probe.detail_chunk_is_render_visible(a_id)) \
-				if visibility_probe.has_method("detail_chunk_is_render_visible") else true
-			var b_visible := bool(visibility_probe.detail_chunk_is_render_visible(b_id)) \
-				if visibility_probe.has_method("detail_chunk_is_render_visible") else true
-			if a_visible != b_visible:
-				return a_visible
-			return _detail_chunk_center_from_cells(
-				a.get("cell_indices", PackedInt32Array())).distance_squared_to(_camera_world_center) \
-				< _detail_chunk_center_from_cells(
-					b.get("cell_indices", PackedInt32Array())).distance_squared_to(_camera_world_center)
-		)
-	chunk_plan = active_chunk_plan
+	_detail_plan_phase = DETAIL_PLAN_COLLECT \
+		if _detail_plan_probe != null else DETAIL_PLAN_FALLBACK_COLLECT
+
+
+func _detail_plan_should_yield(deadline_usec: int, items_done: int, max_items: int) -> bool:
+	if max_items > 0 and items_done >= max_items:
+		return true
+	return deadline_usec > 0 and items_done > 0 and Time.get_ticks_usec() >= deadline_usec
+
+
+func _continue_detail_refresh_plan(deadline_usec: int, max_items: int) -> void:
+	var items_done := 0
 	var enqueued_msec := Time.get_ticks_msec()
-	for layer in _detail_layers:
-		if layer != null and is_instance_valid(layer) \
-				and layer.has_method("begin_detail_chunk_refresh"):
-			layer.begin_detail_chunk_refresh()
-	if not chunk_plan.is_empty():
-		# 同一 superchunk 的各 profile 连续排布，family 合并器可等待最后一个
-		# source 完成后只装配/上传一次。
-		for chunk in chunk_plan:
-			var profile_mask := int(chunk.get(
-				"profile_mask", (1 << _detail_layers.size()) - 1))
-			for layer_idx in range(_detail_layers.size()):
-				if (profile_mask & (1 << layer_idx)) == 0:
+	while _detail_plan_phase != DETAIL_PLAN_IDLE:
+		match _detail_plan_phase:
+			DETAIL_PLAN_COLLECT:
+				if _detail_plan_cursor < _detail_refresh_indices.size():
+					var cell_idx := int(_detail_refresh_indices[_detail_plan_cursor])
+					_detail_plan_cursor += 1
+					var chunk_id := int(_detail_plan_probe.detail_chunk_id_for_cell(cell_idx))
+					if chunk_id >= 0:
+						var dirty_indices: PackedInt32Array = _detail_plan_dirty_chunks.get(
+							chunk_id, PackedInt32Array())
+						dirty_indices.append(cell_idx)
+						_detail_plan_dirty_chunks[chunk_id] = dirty_indices
+					items_done += 1
+					if _detail_plan_should_yield(deadline_usec, items_done, max_items):
+						return
 					continue
-				var layer = _detail_layers[layer_idx]
-				if layer == null or not is_instance_valid(layer) \
-						or not layer.has_method("refresh_chunk_for_succession"):
+				_detail_plan_chunk_keys = _detail_plan_dirty_chunks.keys()
+				_detail_plan_chunk_keys.sort()
+				_detail_plan_had_chunk_plan = not _detail_plan_chunk_keys.is_empty()
+				_detail_plan_phase = DETAIL_PLAN_BUILD_CHUNKS \
+					if _detail_plan_had_chunk_plan else DETAIL_PLAN_FALLBACK_COLLECT
+				_detail_plan_cursor = 0
+
+			DETAIL_PLAN_BUILD_CHUNKS:
+				if _detail_plan_key_cursor < _detail_plan_chunk_keys.size():
+					var chunk_id := int(_detail_plan_chunk_keys[_detail_plan_key_cursor])
+					_detail_plan_key_cursor += 1
+					var dirty_indices: PackedInt32Array = _detail_plan_dirty_chunks[chunk_id]
+					var family_mask := 0
+					var profile_mask := 0
+					for raw_idx in dirty_indices:
+						family_mask |= int(_scatter_cell_family_masks.get(
+							int(raw_idx), _detail_plan_all_family_mask))
+						profile_mask |= int(_scatter_cell_profile_masks.get(
+							int(raw_idx), _detail_plan_all_profile_mask))
+					if family_mask == 0:
+						family_mask = _detail_plan_all_family_mask
+					if profile_mask == 0:
+						profile_mask = _detail_plan_all_profile_mask
+					var in_prefetch := true
+					if _detail_plan_probe.has_method("detail_chunk_is_in_prefetch"):
+						in_prefetch = bool(_detail_plan_probe.detail_chunk_is_in_prefetch(chunk_id))
+					if not in_prefetch:
+						_detail_deferred_chunks[chunk_id] = int(
+							_detail_deferred_chunks.get(chunk_id, 0)) | family_mask
+						_detail_deferred_profile_masks[chunk_id] = int(
+							_detail_deferred_profile_masks.get(chunk_id, 0)) | profile_mask
+						_detail_offscreen_deferred_cells += dirty_indices.size()
+					else:
+						var cell_indices: PackedInt32Array = _detail_plan_probe.detail_chunk_cells(chunk_id)
+						var visible := bool(_detail_plan_probe.detail_chunk_is_render_visible(chunk_id)) \
+							if _detail_plan_probe.has_method("detail_chunk_is_render_visible") else true
+						_detail_plan_chunks.append({
+							"chunk_id": chunk_id,
+							"cell_indices": cell_indices,
+							"dirty_indices": dirty_indices,
+							"dirty_cells": dirty_indices.size(),
+							"family_mask": family_mask,
+							"profile_mask": profile_mask,
+							"visible_priority": visible,
+							"distance_sq": _detail_chunk_center_from_cells(
+								cell_indices).distance_squared_to(_camera_world_center),
+						})
+					items_done += 1
+					if _detail_plan_should_yield(deadline_usec, items_done, max_items):
+						return
 					continue
-				_detail_refresh_queue.append({
-					"layer": layer,
-					"chunk_id": int(chunk.get("chunk_id", -1)),
-					"cell_indices": chunk.get("cell_indices", PackedInt32Array()),
-					"dirty_indices": chunk.get("dirty_indices", PackedInt32Array()),
-					"dirty_cells": int(chunk.get("dirty_cells", 0)),
-					"family_mask": int(chunk.get("family_mask", _detail_all_family_mask())),
-					"family": int(layer.detail_render_family()) \
-						if layer.has_method("detail_render_family") else 0,
-					"profile_index": layer_idx,
-					"enqueued_msec": enqueued_msec,
-					"visible_priority": bool(layer.detail_chunk_is_render_visible(
-						int(chunk.get("chunk_id", -1)))) \
-						if layer.has_method("detail_chunk_is_render_visible") else true,
-				})
-	elif not had_chunk_plan:
-		var fallback_profile_mask := 0
-		for raw_idx in _detail_refresh_indices:
-			fallback_profile_mask |= int(_scatter_cell_profile_masks.get(
-				int(raw_idx), (1 << _detail_layers.size()) - 1))
-		if fallback_profile_mask == 0:
-			fallback_profile_mask = (1 << _detail_layers.size()) - 1
-		for layer_idx in range(_detail_layers.size()):
-			if (fallback_profile_mask & (1 << layer_idx)) == 0:
-				continue
-			var layer = _detail_layers[layer_idx]
-			if layer == null or not is_instance_valid(layer):
-				continue
-			_detail_refresh_queue.append({
-				"layer": layer,
-				"profile_index": layer_idx,
-				"cell_indices": _detail_refresh_indices,
-			})
-	_last_detail_refresh_report = {
-		"queued_chunks": _detail_refresh_queue.size(),
-		"queued_layers": _detail_layers.size(),
-		"dirty_cells": _detail_refresh_indices.size(),
-		"pending_batches": _detail_refresh_batches.size(),
-		"chunks_done": 0,
-		"layers_done": 0,
-		"batch_chunks": chunk_plan.size(),
-		"elapsed_ms": 0.0,
-	}
-	if _detail_refresh_queue.is_empty():
-		_release_detail_refresh_inflight(_detail_refresh_indices)
-		_detail_refresh_indices = PackedInt32Array()
-		return _start_next_detail_refresh_batch() if not _detail_refresh_batches.is_empty() else false
-	return true
+				_detail_plan_chunks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+					var a_visible := bool(a.get("visible_priority", true))
+					var b_visible := bool(b.get("visible_priority", true))
+					if a_visible != b_visible:
+						return a_visible
+					return float(a.get("distance_sq", 0.0)) < float(b.get("distance_sq", 0.0))
+				)
+				_detail_plan_phase = DETAIL_PLAN_BEGIN_LAYERS
+				_detail_plan_layer_cursor = 0
+
+			DETAIL_PLAN_BEGIN_LAYERS:
+				if _detail_plan_layer_cursor < _detail_layers.size():
+					var layer = _detail_layers[_detail_plan_layer_cursor]
+					_detail_plan_layer_cursor += 1
+					if layer != null and is_instance_valid(layer) \
+							and layer.has_method("begin_detail_chunk_refresh"):
+						layer.begin_detail_chunk_refresh()
+					items_done += 1
+					if _detail_plan_should_yield(deadline_usec, items_done, max_items):
+						return
+					continue
+				_detail_plan_phase = DETAIL_PLAN_BUILD_TASKS
+				_detail_plan_chunk_cursor = 0
+				_detail_plan_layer_cursor = 0
+
+			DETAIL_PLAN_BUILD_TASKS:
+				if _detail_plan_chunk_cursor >= _detail_plan_chunks.size():
+					_detail_plan_phase = DETAIL_PLAN_FINALIZE
+					continue
+				var chunk: Dictionary = _detail_plan_chunks[_detail_plan_chunk_cursor]
+				if _detail_plan_layer_cursor >= _detail_layers.size():
+					_detail_plan_chunk_cursor += 1
+					_detail_plan_layer_cursor = 0
+					continue
+				var layer_idx := _detail_plan_layer_cursor
+				_detail_plan_layer_cursor += 1
+				var profile_mask := int(chunk.get("profile_mask", _detail_plan_all_profile_mask))
+				if (profile_mask & (1 << layer_idx)) != 0:
+					var layer = _detail_layers[layer_idx]
+					if layer != null and is_instance_valid(layer) \
+							and layer.has_method("refresh_chunk_for_succession"):
+						_detail_refresh_queue.append({
+							"layer": layer,
+							"chunk_id": int(chunk.get("chunk_id", -1)),
+							"cell_indices": chunk.get("cell_indices", PackedInt32Array()),
+							"dirty_indices": chunk.get("dirty_indices", PackedInt32Array()),
+							"dirty_cells": int(chunk.get("dirty_cells", 0)),
+							"family_mask": int(chunk.get(
+								"family_mask", _detail_plan_all_family_mask)),
+							"family": int(layer.detail_render_family()) \
+								if layer.has_method("detail_render_family") else 0,
+							"profile_index": layer_idx,
+							"enqueued_msec": enqueued_msec,
+							"visible_priority": bool(chunk.get("visible_priority", true)),
+						})
+				items_done += 1
+				if _detail_plan_should_yield(deadline_usec, items_done, max_items):
+					return
+
+			DETAIL_PLAN_FALLBACK_COLLECT:
+				if _detail_plan_cursor < _detail_refresh_indices.size():
+					var cell_idx := int(_detail_refresh_indices[_detail_plan_cursor])
+					_detail_plan_cursor += 1
+					_detail_plan_fallback_profile_mask |= int(_scatter_cell_profile_masks.get(
+						cell_idx, _detail_plan_all_profile_mask))
+					items_done += 1
+					if _detail_plan_should_yield(deadline_usec, items_done, max_items):
+						return
+					continue
+				if _detail_plan_fallback_profile_mask == 0:
+					_detail_plan_fallback_profile_mask = _detail_plan_all_profile_mask
+				_detail_plan_layer_cursor = 0
+				_detail_plan_phase = DETAIL_PLAN_FALLBACK_TASKS
+
+			DETAIL_PLAN_FALLBACK_TASKS:
+				if _detail_plan_layer_cursor >= _detail_layers.size():
+					_detail_plan_phase = DETAIL_PLAN_FINALIZE
+					continue
+				var layer_idx := _detail_plan_layer_cursor
+				_detail_plan_layer_cursor += 1
+				if (_detail_plan_fallback_profile_mask & (1 << layer_idx)) != 0:
+					var layer = _detail_layers[layer_idx]
+					if layer != null and is_instance_valid(layer):
+						_detail_refresh_queue.append({
+							"layer": layer,
+							"profile_index": layer_idx,
+							"cell_indices": _detail_refresh_indices,
+							"enqueued_msec": enqueued_msec,
+							"visible_priority": true,
+						})
+				items_done += 1
+				if _detail_plan_should_yield(deadline_usec, items_done, max_items):
+					return
+
+			DETAIL_PLAN_FINALIZE:
+				var batch_chunk_count := _detail_plan_chunks.size()
+				_last_detail_refresh_report = {
+					"queued_chunks": _detail_refresh_queue.size(),
+					"queued_layers": _detail_layers.size(),
+					"dirty_cells": _detail_refresh_indices.size(),
+					"pending_batches": _detail_refresh_batches.size(),
+					"chunks_done": 0,
+					"layers_done": 0,
+					"batch_chunks": batch_chunk_count,
+					"elapsed_ms": 0.0,
+				}
+				_reset_detail_refresh_plan()
+				if _detail_refresh_queue.is_empty():
+					_release_detail_refresh_inflight(_detail_refresh_indices)
+					_detail_refresh_indices = PackedInt32Array()
+
+
+func _start_next_detail_refresh_batch(
+		deadline_usec: int = 0, max_plan_items: int = 0) -> bool:
+	if not _detail_refresh_queue.is_empty():
+		return true
+	if _detail_plan_phase == DETAIL_PLAN_IDLE:
+		if _detail_refresh_batches.is_empty():
+			_release_detail_refresh_inflight(_detail_refresh_indices)
+			_detail_refresh_indices = PackedInt32Array()
+			return false
+		_begin_detail_refresh_plan()
+	# queue_detail_scatter_changes 可在仿真 tick 内调用；零预算调用只初始化状态，
+	# 真正规划统一留到 HexRenderer._process 的帧尾预算段。
+	if deadline_usec != 0 or max_plan_items > 0:
+		_continue_detail_refresh_plan(deadline_usec, max_plan_items)
+	return not _detail_refresh_queue.is_empty() \
+		or _detail_plan_phase != DETAIL_PLAN_IDLE \
+		or not _detail_refresh_batches.is_empty()
 
 
 func _drain_detail_refresh_queue() -> void:
 	_last_detail_task_count = 0
 	_last_detail_forced_task_count = 0
+	_last_detail_max_task_ms = 0.0
+	_last_detail_plan_ms = 0.0
 	_last_detail_encode_ms = 0.0
 	_last_detail_cache_update_ms = 0.0
 	_last_detail_assemble_ms = 0.0
 	_last_detail_upload_ms = 0.0
-	if _detail_refresh_queue.is_empty() and not _start_next_detail_refresh_batch():
-		# succession 队列已排空时仍要继续完成尚未结束的全局预算分层下发。
-		if _drain_one_detail_family_upload():
-			_mark_detail_budget_total_dirty()
-		_apply_detail_global_budget(false, true)
-		return
 	var chunk_budget := maxi(1, detail_scatter_refresh_chunks_per_frame)
 	var ms_budget := maxf(0.0, detail_scatter_refresh_apply_budget_ms)
 	# 信用制预算：每帧累积 ms_budget（上限 2× 防暴饮暴食）。严格闸门：信用不足
@@ -1228,18 +1358,49 @@ func _drain_detail_refresh_queue() -> void:
 	# 2.5ms 预算。防饿死：30 帧无进度则强制放行一个 chunk（兜底预算 < chunk 成本
 	# 的极端配置）。历史上该闸门曾与可视回归同时出现，事后查明回归根因是
 	# GDExt DLL 与烘焙源码版本错配，与本闸门无关。
-	if ms_budget > 0.0:
+	var detail_work_pending := not _detail_refresh_queue.is_empty() \
+		or _detail_plan_phase != DETAIL_PLAN_IDLE \
+		or not _detail_refresh_batches.is_empty()
+	if ms_budget > 0.0 and detail_work_pending:
 		_drain_credit_ms = minf(_drain_credit_ms + ms_budget, ms_budget * 2.0)
 	if not _drain_cfg_logged:
 		_drain_cfg_logged = true
-		print("[detail_scatter/DRAIN_CFG] budget_ms=%.2f chunks_per_frame=%d cells_per_batch=%d chunk_size=%d" % [
+		print("[detail_scatter/DRAIN_CFG] budget_ms=%.2f chunks_per_frame=%d plan_items=%d cells_per_batch=%d chunk_size=%d" % [
 			ms_budget, chunk_budget,
+			maxi(1, detail_scatter_refresh_plan_items_per_frame),
 			maxi(1, detail_scatter_refresh_cells_per_batch),
 			maxi(2, detail_scatter_chunk_size_cells),
 		])
+	var t0 := Time.get_ticks_usec()
+	if _detail_refresh_queue.is_empty():
+		var has_pending_work := detail_work_pending
+		var can_plan := ms_budget <= 0.0 or _drain_credit_ms > 0.0
+		if can_plan:
+			var plan_t0 := Time.get_ticks_usec()
+			var plan_deadline_usec := 0
+			if ms_budget > 0.0:
+				var plan_budget_ms := minf(ms_budget, maxf(_drain_credit_ms, 0.0))
+				plan_deadline_usec = t0 + int(plan_budget_ms * 1000.0)
+			has_pending_work = _start_next_detail_refresh_batch(
+				plan_deadline_usec, maxi(1, detail_scatter_refresh_plan_items_per_frame))
+			_last_detail_plan_ms = float(Time.get_ticks_usec() - plan_t0) / 1000.0
+			if ms_budget > 0.0:
+				_drain_credit_ms -= _last_detail_plan_ms
+		if _detail_refresh_queue.is_empty():
+			_last_detail_refresh_report["plan_ms"] = _last_detail_plan_ms
+			_last_detail_refresh_report["plan_active"] = _detail_plan_phase != DETAIL_PLAN_IDLE
+			_last_detail_refresh_report["remaining_chunks"] = 0
+			_last_detail_refresh_report["pending_batches"] = _detail_refresh_batches.size()
+			_last_detail_refresh_report["elapsed_ms"] = float(
+				_last_detail_refresh_report.get("elapsed_ms", 0.0)) + _last_detail_plan_ms
+			if not has_pending_work:
+				# succession 队列排空后继续完成尚未结束的 family/budget 分层下发。
+				if _drain_one_detail_family_upload():
+					_mark_detail_budget_total_dirty()
+				_apply_detail_global_budget(false, true)
+			return
 	var done := 0
 	var forced_one := false
-	var t0 := Time.get_ticks_usec()
 	while done < chunk_budget and not _detail_refresh_queue.is_empty():
 		if ms_budget > 0.0:
 			var head: Dictionary = _detail_refresh_queue[0]
@@ -1323,7 +1484,13 @@ func _drain_detail_refresh_queue() -> void:
 		done += 1
 		_drain_last_progress_frame = Engine.get_process_frames()
 		if ms_budget > 0.0:
-			_drain_credit_ms -= float(Time.get_ticks_usec() - task_t0) / 1000.0
+			var task_elapsed_ms := float(Time.get_ticks_usec() - task_t0) / 1000.0
+			_last_detail_max_task_ms = maxf(_last_detail_max_task_ms, task_elapsed_ms)
+			_drain_credit_ms -= task_elapsed_ms
+		else:
+			_last_detail_max_task_ms = maxf(
+				_last_detail_max_task_ms,
+				float(Time.get_ticks_usec() - task_t0) / 1000.0)
 		if forced_one:
 			_last_detail_forced_task_count = 1
 			break
@@ -1340,10 +1507,12 @@ func _drain_detail_refresh_queue() -> void:
 	_last_detail_refresh_report["elapsed_ms"] = float(_last_detail_refresh_report.get("elapsed_ms", 0.0)) + elapsed
 	_last_detail_refresh_report["remaining_chunks"] = _detail_refresh_queue.size()
 	_last_detail_refresh_report["pending_batches"] = _detail_refresh_batches.size()
+	_last_detail_refresh_report["plan_ms"] = _last_detail_plan_ms
+	_last_detail_refresh_report["plan_active"] = _detail_plan_phase != DETAIL_PLAN_IDLE
 	# 一个昂贵 chunk 已经消耗本帧信用时，不再叠加全层 visible-count 同步；
 	# 无 chunk 的帧按 layers_per_frame 渐进推进，避免 20+ 层一次性尖峰。
 	_apply_detail_global_budget(false, done == 0)
-	if _detail_refresh_queue.is_empty():
+	if _detail_refresh_queue.is_empty() and _detail_plan_phase == DETAIL_PLAN_IDLE:
 		if detail_scatter_refresh_log_enabled:
 			print("[detail_scatter/DONE] batch_cells=%d chunks=%d batch_chunks=%d elapsed=%.2fms pending_batches=%d budget=%s" % [
 				int(_last_detail_refresh_report.get("dirty_cells", 0)),
@@ -1412,6 +1581,9 @@ func detail_scatter_refresh_report() -> Dictionary:
 	report["oldest_visible_wait_ms"] = _oldest_visible_detail_task_wait_ms()
 	report["frame_tasks"] = _last_detail_task_count
 	report["frame_forced_tasks"] = _last_detail_forced_task_count
+	report["max_task_ms"] = _last_detail_max_task_ms
+	report["plan_ms"] = _last_detail_plan_ms
+	report["plan_active"] = _detail_plan_phase != DETAIL_PLAN_IDLE
 	report["encode_ms"] = _last_detail_encode_ms
 	report["cache_update_ms"] = _last_detail_cache_update_ms
 	report["assemble_ms"] = _last_detail_assemble_ms
@@ -1680,6 +1852,7 @@ func _spawn_detail_layers() -> void:
 	_detail_refresh_queue.clear()
 	_detail_refresh_batches.clear()
 	_detail_refresh_indices = PackedInt32Array()
+	_reset_detail_refresh_plan()
 	_scatter_pending_cells = PackedInt32Array()
 	_scatter_pending_seen.clear()
 	_scatter_requeue_cells.clear()

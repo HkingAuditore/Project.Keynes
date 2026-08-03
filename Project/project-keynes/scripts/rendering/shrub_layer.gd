@@ -921,8 +921,11 @@ var _chunked_multimesh_enabled: bool = true
 var _chunk_size_cells: int = 8
 var _chunk_nodes: Dictionary = {}
 ## chunk_id -> {cell_idx: PackedFloat32Array}。生态变化只替换 dirty cell，
-## 随后按稳定 cell 顺序装配一次 chunk buffer；不重新采样其余 255 格。
+## 随后按稳定 cell 顺序装配一次 chunk buffer；不重新采样其余格。
 var _chunk_cell_payloads: Dictionary = {}
+## chunk_id -> 已按稳定 LOD 顺序装配的 payload。family renderer 在 source task
+## 完成后会再次读取同一 chunk；缓存可避免第二次排序、分簇和整块复制。
+var _chunk_assembled_payloads: Dictionary = {}
 ## 地图几何在运行期不变。可见性查询复用 cell 列表与包围盒，避免每层每帧重新
 ## cube/offset 转换并扫描整个 superchunk。
 var _chunk_cell_indices_cache: Dictionary = {}
@@ -1366,7 +1369,10 @@ func _set_family_source_node_attached(node: MultiMeshInstance2D, attached: bool)
 
 func detail_family_chunk_payload(chunk_id: int) -> Dictionary:
 	if _chunk_cell_payloads.has(chunk_id):
-		var assembled := _assemble_chunk_cell_payloads(_chunk_cell_payloads[chunk_id])
+		var assembled: Dictionary = _chunk_assembled_payloads.get(chunk_id, {})
+		if assembled.is_empty():
+			assembled = _assemble_chunk_cell_payloads(_chunk_cell_payloads[chunk_id])
+			_chunk_assembled_payloads[chunk_id] = assembled
 		return {
 			"instance_count": int(assembled.get("instance_count", 0)),
 			"buffer": assembled.get("buffer", PackedFloat32Array()),
@@ -2254,6 +2260,7 @@ func _clear_chunk_nodes() -> void:
 			node.queue_free()
 	_chunk_nodes.clear()
 	_chunk_cell_payloads.clear()
+	_chunk_assembled_payloads.clear()
 	_chunk_dormant_since_msec.clear()
 	_clear_wrap_node_groups(_chunk_wrap_nodes)
 	_chunk_instance_counts.clear()
@@ -2712,6 +2719,7 @@ func evict_dormant_detail_chunks(now_msec: int, retention_msec: int) -> int:
 		if now_msec - int(_chunk_dormant_since_msec[chunk_id]) < retention_msec:
 			continue
 		_chunk_cell_payloads.erase(chunk_id)
+		_chunk_assembled_payloads.erase(chunk_id)
 		_chunk_dormant_since_msec.erase(chunk_id)
 		_chunk_instance_counts.erase(chunk_id)
 		_chunk_far_instance_counts.erase(chunk_id)
@@ -2973,6 +2981,7 @@ func _apply_chunk_payload(
 	else:
 		mm.buffer = PackedFloat32Array()
 		_chunk_cell_payloads[chunk_id] = {}
+		_chunk_assembled_payloads.erase(chunk_id)
 		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
 
 
@@ -3011,6 +3020,12 @@ func _apply_chunk_payload_direct(
 		_active_instance_count_valid = false
 		if not cache_already_updated:
 			_cache_chunk_cell_payloads(chunk_id, buffer, cell_indices, inst)
+		_chunk_assembled_payloads[chunk_id] = {
+			"buffer": buffer,
+			"cell_indices": cell_indices,
+			"instance_count": inst,
+			"far_count": far_count,
+		}
 		return
 	var mm := _prepare_chunk_multimesh(chunk_id, inst, far_count)
 	if inst > 0:
@@ -3021,6 +3036,7 @@ func _apply_chunk_payload_direct(
 	else:
 		mm.buffer = PackedFloat32Array()
 		_chunk_cell_payloads[chunk_id] = {}
+		_chunk_assembled_payloads.erase(chunk_id)
 		_mirror_shadow_chunk(chunk_id, PackedFloat32Array(), 0)
 
 
@@ -3031,15 +3047,23 @@ func _cache_chunk_cell_payloads(
 		inst: int) -> void:
 	var by_cell: Dictionary = {}
 	var safe_count := mini(inst, mini(cell_indices.size(), int(buffer.size() / 16)))
-	for i in range(safe_count):
-		var cell_idx := int(cell_indices[i])
+	var run_start := 0
+	while run_start < safe_count:
+		var cell_idx := int(cell_indices[run_start])
+		var run_end := run_start + 1
+		while run_end < safe_count and int(cell_indices[run_end]) == cell_idx:
+			run_end += 1
 		var cell_buffer: PackedFloat32Array = by_cell.get(cell_idx, PackedFloat32Array())
-		var old_size := cell_buffer.size()
-		cell_buffer.resize(old_size + 16)
-		for k in range(16):
-			cell_buffer[old_size + k] = buffer[i * 16 + k]
+		cell_buffer.append_array(buffer.slice(run_start * 16, run_end * 16))
 		by_cell[cell_idx] = cell_buffer
+		run_start = run_end
 	_chunk_cell_payloads[chunk_id] = by_cell
+	_chunk_assembled_payloads[chunk_id] = {
+		"buffer": buffer,
+		"cell_indices": cell_indices,
+		"instance_count": safe_count,
+		"far_count": int(_chunk_far_instance_counts.get(chunk_id, safe_count)),
+	}
 
 
 func _replace_chunk_cell_payloads(
@@ -3055,17 +3079,21 @@ func _replace_chunk_cell_payloads(
 	for raw_idx in dirty_indices:
 		by_cell[int(raw_idx)] = PackedFloat32Array()
 	var safe_count := mini(inst, mini(cell_indices.size(), int(buffer.size() / 16)))
-	for i in range(safe_count):
-		var cell_idx := int(cell_indices[i])
+	var run_start := 0
+	while run_start < safe_count:
+		var cell_idx := int(cell_indices[run_start])
+		var run_end := run_start + 1
+		while run_end < safe_count and int(cell_indices[run_end]) == cell_idx:
+			run_end += 1
 		var cell_buffer: PackedFloat32Array = by_cell.get(cell_idx, PackedFloat32Array())
-		var old_size := cell_buffer.size()
-		cell_buffer.resize(old_size + 16)
-		for k in range(16):
-			cell_buffer[old_size + k] = buffer[i * 16 + k]
+		cell_buffer.append_array(buffer.slice(run_start * 16, run_end * 16))
 		by_cell[cell_idx] = cell_buffer
+		run_start = run_end
 	_chunk_cell_payloads[chunk_id] = by_cell
 	_last_cache_update_ms = float(Time.get_ticks_usec() - cache_t0_us) / 1000.0
-	return _assemble_chunk_cell_payloads(by_cell)
+	var assembled := _assemble_chunk_cell_payloads(by_cell)
+	_chunk_assembled_payloads[chunk_id] = assembled
+	return assembled
 
 
 func _assemble_chunk_cell_payloads(by_cell: Dictionary) -> Dictionary:
@@ -3106,8 +3134,6 @@ func _assemble_chunk_cell_payloads(by_cell: Dictionary) -> Dictionary:
 	# sort/copy 全 chunk，也避免每追加一株就 resize PackedArray。
 	var merged := PackedFloat32Array()
 	var merged_cell_indices := PackedInt32Array()
-	merged.resize(total_instances * 16)
-	merged_cell_indices.resize(total_instances)
 	var write_instance := 0
 	for rank in range(max_far_clusters):
 		for raw_idx in ordered_cells:
@@ -3119,11 +3145,10 @@ func _assemble_chunk_cell_payloads(by_cell: Dictionary) -> Dictionary:
 			var clusters: PackedInt32Array = clusters_by_cell[raw_idx]
 			var start := int(clusters[rank * 2])
 			var count := int(clusters[rank * 2 + 1])
-			for local_instance in range(start, start + count):
-				for k in range(16):
-					merged[write_instance * 16 + k] = cell_buffer[local_instance * 16 + k]
-				merged_cell_indices[write_instance] = cell_idx
-				write_instance += 1
+			merged.append_array(cell_buffer.slice(start * 16, (start + count) * 16))
+			for _local_instance in range(count):
+				merged_cell_indices.append(cell_idx)
+			write_instance += count
 	var far_instance_count := write_instance
 	for rank in range(max_near_clusters):
 		for raw_idx in ordered_cells:
@@ -3135,11 +3160,10 @@ func _assemble_chunk_cell_payloads(by_cell: Dictionary) -> Dictionary:
 			var cell_buffer: PackedFloat32Array = by_cell[raw_idx]
 			var start := int(clusters[cluster_idx * 2])
 			var count := int(clusters[cluster_idx * 2 + 1])
-			for local_instance in range(start, start + count):
-				for k in range(16):
-					merged[write_instance * 16 + k] = cell_buffer[local_instance * 16 + k]
-				merged_cell_indices[write_instance] = cell_idx
-				write_instance += 1
+			merged.append_array(cell_buffer.slice(start * 16, (start + count) * 16))
+			for _local_instance in range(count):
+				merged_cell_indices.append(cell_idx)
+			write_instance += count
 	_last_assemble_ms = float(Time.get_ticks_usec() - assemble_t0_us) / 1000.0
 	return {
 		"buffer": merged,

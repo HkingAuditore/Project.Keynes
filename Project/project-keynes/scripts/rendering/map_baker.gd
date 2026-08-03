@@ -284,6 +284,15 @@ var _last_ecology_veg_bytes: Dictionary = {}  # HexCell -> int  (legacy, depreca
 var _last_ecology_vitality_bytes: Dictionary = {}  # HexCell -> int  (legacy, deprecated by SoA)
 var _ecology_transition_age_bytes: Dictionary = {}  # HexCell -> int  (legacy, deprecated by SoA)
 
+# Cell-indirection LUT 的 CPU 镜像。Godot 4 不能做 texture sub-region update，
+# 但可以在字节完全不变时跳过 Image 构造与 GPU upload；这些缓存也让 report 无需
+# 携带三份 PackedByteArray 穿过 SUS/perf 记录链。
+var _cell_enum_lut_bytes_cache: PackedByteArray = PackedByteArray()
+var _cell_dyn_lut_bytes_cache: PackedByteArray = PackedByteArray()
+var _cell_eco_lut_bytes_cache: PackedByteArray = PackedByteArray()
+var _cell_bounce_lut_bytes_cache: PackedByteArray = PackedByteArray()
+var _cell_lut_active_transition_count: int = 0
+
 # GM-only river Atlas probe. It samples a bounded set of river/non-river cells
 # at the LUT encode boundary so source values can be compared with published bytes.
 const RIVER_ATLAS_PROBE_CELL_LIMIT := 16
@@ -933,6 +942,11 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	_eco_transition_age_arr = PackedByteArray()
 	_eco_soa_initialized = false
 	_eco_active_decay_set = {}  # plan/dirty-push-atlas-encode 阶段 E：地图重生时清空
+	_cell_enum_lut_bytes_cache = PackedByteArray()
+	_cell_dyn_lut_bytes_cache = PackedByteArray()
+	_cell_eco_lut_bytes_cache = PackedByteArray()
+	_cell_bounce_lut_bytes_cache = PackedByteArray()
+	_cell_lut_active_transition_count = 0
 	# L: vector atlas 持久交错缓冲随地图重生失效（首次 commit 走 fallback 路径重建）。
 	_vector_atlas_data = PackedByteArray()
 	_vector_atlas_data_size = Vector2i.ZERO
@@ -5301,14 +5315,31 @@ const _BOUNCE_WATER_TERRAINS: Array = [0, 1, 18, 19, 21]
 # 自动共用同一份公式，也不需要为此 rebuild GDExtension。O(n_cells) 纯字节循环，
 # 6400 cell 下相对 enum/dyn/eco 的编码开销可忽略。
 func _publish_bounce_lut(enum_data: PackedByteArray, dyn_data: PackedByteArray,
-		world: WorldData, lw: int, lh: int) -> bool:
+		world: WorldData, lw: int, lh: int,
+		dirty_indices: PackedInt32Array = PackedInt32Array(),
+		force_full: bool = true) -> bool:
 	var slots: int = lw * lh
 	if enum_data.size() < slots * 4 or dyn_data.size() < slots * 4:
 		return false
-	var out := PackedByteArray()
-	out.resize(slots * 4)
+	var full_rebuild: bool = force_full or world.bounce_lut_tex == null \
+			or _cell_bounce_lut_bytes_cache.size() != slots * 4
+	if full_rebuild:
+		_cell_bounce_lut_bytes_cache = PackedByteArray()
+		_cell_bounce_lut_bytes_cache.resize(slots * 4)
+	var work_indices: PackedInt32Array = dirty_indices
+	if full_rebuild:
+		work_indices = PackedInt32Array()
+		work_indices.resize(slots)
+		for i in range(slots):
+			work_indices[i] = i
+	elif work_indices.is_empty():
+		return false
 	var terrain_count: int = _BOUNCE_ALBEDO.size()
-	for i in range(slots):
+	var changed: bool = full_rebuild or world.bounce_lut_tex == null
+	for raw_idx in work_indices:
+		var i := int(raw_idx)
+		if i < 0 or i >= slots:
+			continue
 		var base: int = i * 4
 		var terrain: int = enum_data[base]
 		var col: Color = _BOUNCE_ALBEDO[terrain] if terrain < terrain_count else _BOUNCE_FALLBACK
@@ -5320,12 +5351,23 @@ func _publish_bounce_lut(enum_data: PackedByteArray, dyn_data: PackedByteArray,
 			col = col.lerp(_BOUNCE_DRY, (1.0 - vitality) * 0.25)
 			var snow: float = float(dyn_data[base + 2]) / 255.0
 			col = col.lerp(_BOUNCE_SNOW, snow)
-		out[base] = int(clampf(col.r, 0.0, 1.0) * 255.0)
-		out[base + 1] = int(clampf(col.g, 0.0, 1.0) * 255.0)
-		out[base + 2] = int(clampf(col.b, 0.0, 1.0) * 255.0)
-		out[base + 3] = 0 if is_water else 255
+		var r := int(clampf(col.r, 0.0, 1.0) * 255.0)
+		var g := int(clampf(col.g, 0.0, 1.0) * 255.0)
+		var b := int(clampf(col.b, 0.0, 1.0) * 255.0)
+		var a := 0 if is_water else 255
+		if _cell_bounce_lut_bytes_cache[base] != r \
+				or _cell_bounce_lut_bytes_cache[base + 1] != g \
+				or _cell_bounce_lut_bytes_cache[base + 2] != b \
+				or _cell_bounce_lut_bytes_cache[base + 3] != a:
+			changed = true
+			_cell_bounce_lut_bytes_cache[base] = r
+			_cell_bounce_lut_bytes_cache[base + 1] = g
+			_cell_bounce_lut_bytes_cache[base + 2] = b
+			_cell_bounce_lut_bytes_cache[base + 3] = a
+	if not changed:
+		return false
 	world.bounce_lut_tex = _lut_tex_from_data(
-		out, lw, lh, Image.FORMAT_RGBA8, world.bounce_lut_tex)
+		_cell_bounce_lut_bytes_cache, lw, lh, Image.FORMAT_RGBA8, world.bounce_lut_tex)
 	return true
 
 
@@ -5450,7 +5492,11 @@ func _probe_float(values: PackedFloat32Array, idx: int) -> float:
 	return float(values[idx]) if idx >= 0 and idx < values.size() else NAN
 
 
-func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, publish_weather_lut: bool = true) -> Dictionary:
+func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false,
+		publish_weather_lut: bool = true,
+		dirty_indices: PackedInt32Array = PackedInt32Array(),
+		force_full_encode: bool = true) -> Dictionary:
+	var total_t0_us := Time.get_ticks_usec()
 	var report: Dictionary = {
 		"path": "gdscript",
 		"fallback": true,
@@ -5503,11 +5549,21 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 			"terrain_sea_ice": int(TerrainType.TERRAIN.SEA_ICE),
 			"veg_none": int(VegetationType.VEG.NONE),
 			"cache_valid": cache_valid,
+			"dirty_indices": dirty_indices,
+			"force_full_encode": force_full_encode,
+			"include_weather_lut": publish_weather_lut,
 			"snow_cover_arr": snow_cover_override,
 			"fog_k_arr": fog_k_override,
 		})
-		report = out.duplicate(true)
+		# Payload arrays are consumed locally. Never deep-copy or return them through the
+		# scheduler/perf report: at 6400 cells the old path copied ~100 KiB several times.
+		report = out.duplicate(false)
+		report.erase("enum_lut")
+		report.erase("dyn_lut")
+		report.erase("eco_lut")
+		report.erase("weather_lut")
 		report["lut_encode_path"] = "gdext"
+		_cell_lut_active_transition_count = int(out.get("active_transition_count", 0))
 		if snow_cover_override.size() >= n_cells:
 			report["lut_snow_source"] = "map_snow_cover_arr"
 		if not bool(out.get("fallback", true)):
@@ -5517,16 +5573,60 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false, p
 			if e is PackedByteArray and d is PackedByteArray and c is PackedByteArray:
 				out["lut_encode_path"] = "gdext"
 				_record_river_atlas_probe(map, out, d, c)
-				world.enum_lut_tex = _lut_tex_from_data(e, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
-				world.dyn_lut_tex = _lut_tex_from_data(d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
-				world.eco_lut_tex = _lut_tex_from_data(c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
-				report["bounce_lut_published"] = _publish_bounce_lut(e, d, world, lw, lh)
+				var enum_changed: bool = world.enum_lut_tex == null \
+						or _cell_enum_lut_bytes_cache.size() != e.size() \
+						or _cell_enum_lut_bytes_cache != e
+				var dyn_changed: bool = world.dyn_lut_tex == null \
+						or _cell_dyn_lut_bytes_cache.size() != d.size() \
+						or _cell_dyn_lut_bytes_cache != d
+				var eco_changed: bool = world.eco_lut_tex == null \
+						or _cell_eco_lut_bytes_cache.size() != c.size() \
+						or _cell_eco_lut_bytes_cache != c
+				report["enum_lut_changed"] = enum_changed
+				report["dyn_lut_changed"] = dyn_changed
+				report["eco_lut_changed"] = eco_changed
+				report["dirty_cells"] = n_cells \
+						if bool(out.get("full_encode", force_full_encode)) \
+						else dirty_indices.size()
+				var upload_t0_us := Time.get_ticks_usec()
+				if enum_changed:
+					var enum_upload_t0_us := Time.get_ticks_usec()
+					world.enum_lut_tex = _lut_tex_from_data(
+						e, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
+					report["enum_lut_upload_ms"] = float(Time.get_ticks_usec() - enum_upload_t0_us) / 1000.0
+					_cell_enum_lut_bytes_cache = e
+				else:
+					report["enum_lut_upload_ms"] = 0.0
+				if dyn_changed:
+					var dyn_upload_t0_us := Time.get_ticks_usec()
+					world.dyn_lut_tex = _lut_tex_from_data(
+						d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
+					report["dyn_lut_upload_ms"] = float(Time.get_ticks_usec() - dyn_upload_t0_us) / 1000.0
+					_cell_dyn_lut_bytes_cache = d
+				else:
+					report["dyn_lut_upload_ms"] = 0.0
+				if eco_changed:
+					var eco_upload_t0_us := Time.get_ticks_usec()
+					world.eco_lut_tex = _lut_tex_from_data(
+						c, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
+					report["eco_lut_upload_ms"] = float(Time.get_ticks_usec() - eco_upload_t0_us) / 1000.0
+					_cell_eco_lut_bytes_cache = c
+				else:
+					report["eco_lut_upload_ms"] = 0.0
+				report["texture_upload_ms"] = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
+				var bounce_t0_us := Time.get_ticks_usec()
+				report["bounce_lut_published"] = false
+				if enum_changed or dyn_changed or world.bounce_lut_tex == null:
+					report["bounce_lut_published"] = _publish_bounce_lut(
+						e, d, world, lw, lh, dirty_indices, force_full_encode)
+				report["bounce_lut_ms"] = float(Time.get_ticks_usec() - bounce_t0_us) / 1000.0
 				# weather LUT 发布已从动态视觉 LUT 日刷中解耦；初次 bake 或 weather_refresh commit 才更新时间戳。
 
 				var wlut = out.get("weather_lut", null)
 				if publish_weather_lut and wlut is PackedByteArray:
 					var wx_report: Dictionary = _publish_weather_lut_bytes(wlut, world, lw, lh)
 					report.merge(wx_report, true)
+				report["lut_total_ms"] = float(Time.get_ticks_usec() - total_t0_us) / 1000.0
 				return report
 	_bake_cell_luts_gd(map, world, lw, lh, snow_cover_override, publish_weather_lut, fog_k_override)
 
@@ -5744,11 +5844,17 @@ func refresh_weather_lut_from_weather(map: MapData, world: WorldData) -> Diction
 # 由 DynamicVisualAtlasUploadSystem 每 stride 起点调用（仅 flag 开启时）；weather_lut 已并入
 # weather_refresh commit path 同步生成并发布，避免不同 cadence 重置 weather_lerp。
 
-func refresh_cell_luts_daily(map: MapData, world: WorldData) -> Dictionary:
+func refresh_cell_luts_daily(map: MapData, world: WorldData,
+		dirty_indices: PackedInt32Array = PackedInt32Array(),
+		force_full_encode: bool = true) -> Dictionary:
 	if world == null or world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		return {"path": "none", "fallback": true, "reason": "missing_world_or_lut_dims"}
 	# cache_valid=true：C++ encode_cell_luts 按 prev 推进 eco transition_age（每日衰减）。
-	return bake_cell_luts(map, world, true, false)
+	return bake_cell_luts(map, world, true, false, dirty_indices, force_full_encode)
+
+
+func cell_lut_active_transition_pending() -> bool:
+	return _cell_lut_active_transition_count > 0
 
 
 

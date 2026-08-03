@@ -516,6 +516,10 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
         return false;
     }
     _native_daily_visual_commit_pending = false;
+    _pending_mark_dirty_all = false;
+    _pending_visual_dirty_mask = PackedByteArray();
+    _pending_visual_dirty_count = 0;
+    _pending_visual_dirty_dense = false;
     _map_data = map_data;
 
     int bound_count = 0;
@@ -618,6 +622,10 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
     _native_daily_tick_count = 0;
     _native_daily_slice_active = false;
     _native_daily_visual_commit_pending = false;
+    _pending_mark_dirty_all = false;
+    _pending_visual_dirty_mask = PackedByteArray();
+    _pending_visual_dirty_count = 0;
+    _pending_visual_dirty_dense = false;
     _native_fronts_snapshot.clear();
     _native_dirty_report.clear();
     _native_runtime_config.clear();
@@ -727,11 +735,13 @@ static bool pk_slot_affects_visual_dirty(const godot::StringName &slot_name) {
 }
 
 void DCWorldExt::bind_dirty_world(godot::Object *dirty_world) {
-    // sea-ice-snow-visual-fix-2026-06：从 GDScript 接收 DCWorld 句柄。
-    // 之后 _flush_slot_to_map 末尾会 call("mark_dirty_all") 把 atlas pipeline
-    // 的 dirty mask 信号补齐——C++ pass 用 _map_data->set() 直写 MapData，
-    // 绕过 GDScript write_* 上的自动 _dirty_mark_*，atlas 4 通道因此跳过编码。
     _dirty_world = dirty_world;
+}
+
+static int pk_visual_dirty_dense_threshold(int cell_count) {
+    if (cell_count <= 0) return 0;
+    const int ratio_threshold = (cell_count + 3) / 4;
+    return std::min(cell_count, std::max(64, ratio_threshold));
 }
 
 void DCWorldExt::_flush_slot_to_map(int comp_id) {
@@ -739,32 +749,91 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
     const Slot &s = _slots[comp_id];
     for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
         if (s.name == StringName(BIND_TABLE[i].slot_name)) {
-            switch (s.dtype) {
-                case SlotDType::F32:
-                    _map_data->set(StringName(BIND_TABLE[i].property_name), s.arr_f32);
-                    break;
-                case SlotDType::I32:
-                    _map_data->set(StringName(BIND_TABLE[i].property_name), s.arr_i32);
-                    break;
-                case SlotDType::U8:
-                    _map_data->set(StringName(BIND_TABLE[i].property_name), s.arr_u8);
-                    break;
+            const StringName prop_name(BIND_TABLE[i].property_name);
+            const Variant previous = _map_data->get(prop_name);
+            const bool visual_slot = pk_slot_affects_visual_dirty(s.name);
+            bool any_visual_dirty = false;
+            int cell_limit = _native_world_cell_count;
+            if (cell_limit <= 0) {
+                switch (s.dtype) {
+                    case SlotDType::F32: cell_limit = s.arr_f32.size(); break;
+                    case SlotDType::I32: cell_limit = s.arr_i32.size(); break;
+                    case SlotDType::U8:  cell_limit = s.arr_u8.size(); break;
+                }
             }
-            // sea-ice-snow-visual-fix-2026-06：通知 DCWorld 全 cell 脏，
-            // 让 atlas pipeline `read_and_clear_dirty_mask` 在下个 stride 拿到信号。
-            // 若 _dirty_world 未注入或 dirty_mask 关闭，mark_dirty_all 是 no-op。
-            // v3 验证完成（2026-06-13）：dirty 路径正常工作，mark_dirty_all 每个 climate
-            // pass 都被触发。诊断 print 已移除。
-            // dirty-mark-batch-2026-06：原先每 flush 立即跨边界 call mark_dirty_all，
-            // pass_a 16 slot flush = 16 次跨界开销 ~1.6-4.8ms。改为仅置 pending 标志，
-            // 由 climate_daily_system 在 round 末尾调 flush_pending_mark_dirty_all()
-            // 合并为 1 次跨界 call。atlas pipeline 在下个 stride 仍能拿到 dirty 信号。
-            if (pk_slot_affects_visual_dirty(s.name)) {
+            if (visual_slot && cell_limit > 0 &&
+                    _pending_visual_dirty_mask.size() != cell_limit) {
+                _pending_visual_dirty_mask.resize(cell_limit);
+            }
+            auto mark_changed = [&](int idx) {
+                if (!visual_slot || _pending_visual_dirty_dense ||
+                        idx < 0 || idx >= cell_limit) return;
+                if (_pending_visual_dirty_mask[idx] != 0) {
+                    any_visual_dirty = true;
+                    return;
+                }
+                _pending_visual_dirty_mask.set(idx, uint8_t(1));
+                ++_pending_visual_dirty_count;
+                any_visual_dirty = true;
+                const int dense_threshold = pk_visual_dirty_dense_threshold(cell_limit);
+                if (dense_threshold > 0 && _pending_visual_dirty_count >= dense_threshold) {
+                    _pending_visual_dirty_dense = true;
+                }
+            };
+            switch (s.dtype) {
+                case SlotDType::F32: {
+                    if (visual_slot && previous.get_type() == Variant::PACKED_FLOAT32_ARRAY) {
+                        const PackedFloat32Array old_values = previous;
+                        const int n = std::min(cell_limit,
+                                std::min(int(old_values.size()), int(s.arr_f32.size())));
+                        for (int idx = 0; idx < n && !_pending_visual_dirty_dense; ++idx) {
+                            if (old_values[idx] != s.arr_f32[idx]) mark_changed(idx);
+                        }
+                        for (int idx = n; idx < cell_limit && !_pending_visual_dirty_dense; ++idx) mark_changed(idx);
+                    } else if (visual_slot) {
+                        for (int idx = 0; idx < cell_limit && !_pending_visual_dirty_dense; ++idx) mark_changed(idx);
+                    }
+                    _map_data->set(prop_name, s.arr_f32);
+                    break;
+                }
+                case SlotDType::I32: {
+                    if (visual_slot && previous.get_type() == Variant::PACKED_INT32_ARRAY) {
+                        const PackedInt32Array old_values = previous;
+                        const int n = std::min(cell_limit,
+                                std::min(int(old_values.size()), int(s.arr_i32.size())));
+                        for (int idx = 0; idx < n && !_pending_visual_dirty_dense; ++idx) {
+                            if (old_values[idx] != s.arr_i32[idx]) mark_changed(idx);
+                        }
+                        for (int idx = n; idx < cell_limit && !_pending_visual_dirty_dense; ++idx) mark_changed(idx);
+                    } else if (visual_slot) {
+                        for (int idx = 0; idx < cell_limit && !_pending_visual_dirty_dense; ++idx) mark_changed(idx);
+                    }
+                    _map_data->set(prop_name, s.arr_i32);
+                    break;
+                }
+                case SlotDType::U8: {
+                    if (visual_slot && previous.get_type() == Variant::PACKED_BYTE_ARRAY) {
+                        const PackedByteArray old_values = previous;
+                        const int n = std::min(cell_limit,
+                                std::min(int(old_values.size()), int(s.arr_u8.size())));
+                        for (int idx = 0; idx < n && !_pending_visual_dirty_dense; ++idx) {
+                            if (old_values[idx] != s.arr_u8[idx]) mark_changed(idx);
+                        }
+                        for (int idx = n; idx < cell_limit && !_pending_visual_dirty_dense; ++idx) mark_changed(idx);
+                    } else if (visual_slot) {
+                        for (int idx = 0; idx < cell_limit && !_pending_visual_dirty_dense; ++idx) mark_changed(idx);
+                    }
+                    _map_data->set(prop_name, s.arr_u8);
+                    break;
+                }
+            }
+            if (any_visual_dirty || _pending_visual_dirty_dense) {
                 _pending_mark_dirty_all = true;
-                _native_dirty_report["flush_dirty_reason"] = String("visual_slot:") + String(s.name);
+                _native_dirty_report["flush_dirty_reason"] =
+                        String("visual_slot_diff:") + String(s.name);
                 _native_dirty_report["flush_dirty_slot"] = String(s.name);
                 _native_dirty_report["flush_dirty_all_pending"] = true;
-            } else {
+            } else if (!visual_slot) {
                 _native_dirty_report["flush_dirty_filtered_count"] =
                         int(_native_dirty_report.get("flush_dirty_filtered_count", 0)) + 1;
                 _native_dirty_report["flush_dirty_last_filtered_slot"] = String(s.name);
@@ -775,12 +844,34 @@ void DCWorldExt::_flush_slot_to_map(int comp_id) {
 }
 
 void DCWorldExt::flush_pending_mark_dirty_all() {
-    // 主线程调用：把累积的 mark_dirty_all 合并 emit 一次。多次调用幂等。
     if (_pending_mark_dirty_all && _dirty_world) {
-        _dirty_world->call(StringName("mark_dirty_all"));
+        if (_pending_visual_dirty_dense) {
+            _dirty_world->call(StringName("mark_dirty_all"));
+        } else if (_pending_visual_dirty_count > 0) {
+            PackedInt32Array dirty_indices;
+            dirty_indices.resize(_pending_visual_dirty_count);
+            int write = 0;
+            for (int i = 0; i < _pending_visual_dirty_mask.size(); ++i) {
+                if (_pending_visual_dirty_mask[i] != 0) dirty_indices.set(write++, i);
+            }
+            if (_dirty_world->has_method(StringName("mark_dirty_indexed"))) {
+                _dirty_world->call(StringName("mark_dirty_indexed"), dirty_indices);
+            } else {
+                _dirty_world->call(StringName("mark_dirty_all"));
+            }
+        }
+        _native_dirty_report["flush_dirty_indexed_count"] =
+                _pending_visual_dirty_dense ? 0 : _pending_visual_dirty_count;
+        _native_dirty_report["flush_dirty_observed_count"] = _pending_visual_dirty_count;
+        _native_dirty_report["flush_dirty_dense_fallback"] = _pending_visual_dirty_dense;
+        _native_dirty_report["flush_dirty_dense_threshold"] =
+                pk_visual_dirty_dense_threshold(_pending_visual_dirty_mask.size());
         _native_dirty_report["flush_dirty_all_emitted"] = true;
     }
     _pending_mark_dirty_all = false;
+    _pending_visual_dirty_mask = PackedByteArray();
+    _pending_visual_dirty_count = 0;
+    _pending_visual_dirty_dense = false;
     _native_dirty_report["flush_dirty_all_pending"] = false;
 }
 
@@ -790,24 +881,9 @@ void DCWorldExt::flush_slots_to_map() {
         const StringName slot_name(BIND_TABLE[i].slot_name);
         const int sid = component_id(slot_name);
         if (sid < 0 || sid >= _slots.size()) continue;
-        const Slot &s = _slots[sid];
-        const StringName prop_name(BIND_TABLE[i].property_name);
-        switch (s.dtype) {
-            case SlotDType::F32: _map_data->set(prop_name, s.arr_f32); break;
-            case SlotDType::I32: _map_data->set(prop_name, s.arr_i32); break;
-            case SlotDType::U8:  _map_data->set(prop_name, s.arr_u8);  break;
-        }
+        _flush_slot_to_map(sid);
     }
-    // sea-ice-snow-visual-fix-2026-06：批量 flush 末尾一次 mark dirty。
-    // dirty-mark-batch-2026-06：本路径立即 emit 并清 pending，避免后续 round 末尾
-    // 的 flush_pending_mark_dirty_all() 重复发布。
-    if (_dirty_world) {
-        _dirty_world->call(StringName("mark_dirty_all"));
-        _native_dirty_report["flush_dirty_reason"] = "bulk_flush_slots_to_map";
-        _native_dirty_report["flush_dirty_all_emitted"] = true;
-    }
-    _pending_mark_dirty_all = false;
-    _native_dirty_report["flush_dirty_all_pending"] = false;
+    flush_pending_mark_dirty_all();
 }
 
 void DCWorldExt::flush_slots_to_map_keys(const PackedStringArray &slot_names) {

@@ -20,6 +20,31 @@ class ForcedRefreshLayer:
 		refresh_calls += 1
 
 
+class PlanningLayer:
+	extends Node
+	var begin_calls: int = 0
+
+	func detail_chunk_id_for_cell(cell_idx: int) -> int:
+		return cell_idx
+
+	func detail_chunk_cells(chunk_id: int) -> PackedInt32Array:
+		return PackedInt32Array([chunk_id])
+
+	func detail_chunk_is_in_prefetch(_chunk_id: int) -> bool:
+		return true
+
+	func detail_chunk_is_render_visible(_chunk_id: int) -> bool:
+		return true
+
+	func begin_detail_chunk_refresh() -> void:
+		begin_calls += 1
+
+	func refresh_chunk_for_succession(
+			_chunk_id: int, _cells: PackedInt32Array, _dirty_count: int,
+			_dirty_indices: PackedInt32Array) -> bool:
+		return true
+
+
 func _init() -> void:
 	_run()
 	quit(0 if _failures == 0 else 1)
@@ -116,6 +141,37 @@ func _run() -> void:
 	_expect("default manifest keeps twenty visual layers", paths.size() == 20)
 	_expect("default manifest no longer spawns seagrass coverage",
 		not paths.has(SEAGRASS_PATH))
+	_expect("runtime vegetation chunks default to 16x16",
+		renderer.detail_scatter_chunk_size_cells == 16)
+
+	# 批次规划按 item 上限跨帧推进；第一步只消费一个 dirty cell，不应一次性
+	# 物化所有 chunk × layer 任务。
+	renderer._detail_layers.clear()
+	var planning_layer := PlanningLayer.new()
+	renderer.add_child(planning_layer)
+	renderer._detail_layers.append(planning_layer)
+	renderer.detail_scatter_refresh_plan_items_per_frame = 1
+	renderer._detail_refresh_batches.append(PackedInt32Array([0, 1, 2, 3]))
+	var planning_pending := renderer._start_next_detail_refresh_batch(
+		Time.get_ticks_usec() + 1000000, 1)
+	_expect("detail batch planning yields after one bounded item",
+		planning_pending and renderer._detail_plan_phase != renderer.DETAIL_PLAN_IDLE
+		and renderer._detail_plan_cursor == 1 and renderer._detail_refresh_queue.is_empty())
+	var plan_guard := 32
+	var materialized_tasks := 0
+	while renderer._detail_plan_phase != renderer.DETAIL_PLAN_IDLE and plan_guard > 0:
+		materialized_tasks += renderer._detail_refresh_queue.size()
+		renderer._detail_refresh_queue.clear()
+		renderer._start_next_detail_refresh_batch(Time.get_ticks_usec() + 1000000, 1)
+		plan_guard -= 1
+	materialized_tasks += renderer._detail_refresh_queue.size()
+	_expect("sliced detail planning eventually materializes all tasks",
+		plan_guard > 0 and materialized_tasks == 4
+		and planning_layer.begin_calls == 1)
+	renderer._detail_refresh_queue.clear()
+	renderer._detail_refresh_indices = PackedInt32Array()
+	renderer._reset_detail_refresh_plan()
+	planning_layer.free()
 
 	# 等待超时只允许打破预算推进一个任务；不能让整队超时任务同帧倾泻。
 	renderer._detail_layers.clear()

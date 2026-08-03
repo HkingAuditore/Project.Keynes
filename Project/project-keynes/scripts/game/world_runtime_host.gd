@@ -1444,6 +1444,8 @@ func _publish_fast_tick_perf_sample(
 		"tail_vegetation_dedup_skips": int(detail_report.get("enqueue_dedup_skips", 0)),
 		"tail_vegetation_tasks": int(detail_report.get("frame_tasks", 0)),
 		"tail_vegetation_forced_tasks": int(detail_report.get("frame_forced_tasks", 0)),
+		"tail_vegetation_max_task_ms": float(detail_report.get("max_task_ms", 0.0)),
+		"tail_vegetation_plan_ms": float(detail_report.get("plan_ms", 0.0)),
 		"tail_vegetation_encode_ms": float(detail_report.get("encode_ms", 0.0)),
 		"tail_vegetation_cache_update_ms": float(detail_report.get("cache_update_ms", 0.0)),
 		"tail_vegetation_assemble_ms": float(detail_report.get("assemble_ms", 0.0)),

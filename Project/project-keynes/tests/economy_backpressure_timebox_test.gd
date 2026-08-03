@@ -123,8 +123,11 @@ func _initialize() -> void:
 	resumed_clock.simulation_backpressure_pulse.connect(func(_day: int) -> void:
 		resumed_clock.request_simulation_backpressure(&"economy_day_barrier", false))
 	resumed_clock._process(1.0 / 60.0)
+	if resumed_clock.day_index() != 0:
+		failures.append("a continuation pulse started a new day in the same render frame")
+	resumed_clock._process(1.0 / 60.0)
 	if resumed_clock.day_index() != 1:
-		failures.append("a synchronously drained barrier still consumed an empty frame")
+		failures.append("a drained barrier did not resume day advancement on the next frame")
 
 	if failures.is_empty():
 		print("[economy-backpressure-timebox] PASS")
