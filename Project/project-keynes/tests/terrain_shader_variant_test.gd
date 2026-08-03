@@ -15,6 +15,10 @@ func _init() -> void:
 		"res://shaders/include/uniforms.gdshaderinc")
 	var water_source := FileAccess.get_file_as_string(
 		"res://shaders/include/water_pipeline.gdshaderinc")
+	var land_source := FileAccess.get_file_as_string(
+		"res://shaders/include/land_pipeline.gdshaderinc")
+	var material_constants_source := FileAccess.get_file_as_string(
+		"res://shaders/include/material_constants.gdshaderinc")
 	_expect(surface_source.contains("terrain_static_biome_is_water"),
 		"terrain edge blend contains an explicit coast-domain guard")
 	_expect(surface_source.contains("terrain_hybrid_static_weight"),
@@ -32,6 +36,16 @@ func _init() -> void:
 		"water categories consume continuous primary/secondary weights")
 	_expect(water_source.contains("continuous_sea_depth"),
 		"MID/HIGH ocean depth uses the continuous interpolated height field")
+	_expect(land_source.contains("vec3 river_surface_normal = vec3(0.0, 0.0, 1.0)"),
+		"river normal starts from an independent horizontal water surface")
+	_expect(land_source.contains(
+		"normal = normalize(mix(normal, river_surface_normal, river_normal_w))"),
+		"river center replaces terrain normal through an explicit bank blend")
+	_expect(not land_source.contains("mix(normal, river_wn, river_w"),
+		"river wave normal no longer inherits terrain normal in its core")
+	_expect(material_constants_source.contains("RIVER_NORMAL_WAVE_WEIGHT")
+		and material_constants_source.contains("RIVER_NORMAL_BLEND_END"),
+		"river normal separation uses centralized material constants")
 	_expect(source.contains("visual_land_biome"),
 		"full land material pipeline consumes a DitherUV-selected visual biome")
 	_expect(source.contains("visual_land_veg") and source.contains("visual_land_cover"),

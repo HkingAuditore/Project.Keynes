@@ -91,6 +91,9 @@ func _run() -> void:
 		_expect("stable player country id is preserved",
 			String(player.get("country_id", "")) == "country.player")
 		var minimum_distance := int(start.get("minimum_country_distance", 0))
+		_expect("country distance uses the reduced map-scale requirement",
+			minimum_distance == StartLocationPolicy.minimum_country_distance(60, 40)
+			and minimum_distance == 6)
 		for left in range(country_starts.size()):
 			for right in range(left + 1, country_starts.size()):
 				var distance := _land_distance(map,

@@ -57,7 +57,7 @@ Generation fails with a player-facing error when no valid survival candidate
 exists.
 
 Foreign starts use the same survival predicate. Their minimum pairwise land
-distance is `clamp(round(min(width, height) * 0.25), 6, 16)` over the map's
+distance is `clamp(round(min(width, height) * 0.15), 4, 12)` over the map's
 six-neighbor topology; disconnected landmasses count as infinitely distant.
 Selection is deterministic and greedily orders candidates by distance from the
 nearest selected start, natural precious metal, survival score, then cell index.

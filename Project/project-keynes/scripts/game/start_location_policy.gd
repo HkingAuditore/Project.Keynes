@@ -4,6 +4,9 @@ extends RefCounted
 const Profile = preload("res://scripts/game/start_location_profile.gd")
 const COUNTRY_NAME_PACK_PATH := "res://data/country/default_country_names.tres"
 const UNREACHABLE_DISTANCE := 0x3fffffff
+const COUNTRY_DISTANCE_MAP_RATIO := 0.15
+const MIN_COUNTRY_DISTANCE := 4
+const MAX_COUNTRY_DISTANCE := 12
 
 
 static func select_and_prepare(map: MapData, seed: int, foreign_count: int = 0,
@@ -39,8 +42,7 @@ static func select_and_prepare(map: MapData, seed: int, foreign_count: int = 0,
 	var top_count := maxi(1, int(ceil(candidates.size() * 0.25)))
 	var chosen_index := _stable_hash(seed, "player_start") % top_count
 	var cell_idx := int(candidates[chosen_index].cell)
-	var minimum_distance := clampi(
-		int(round(float(mini(map.width, map.height)) * 0.25)), 6, 16)
+	var minimum_distance := minimum_country_distance(map.width, map.height)
 	var nearest_start := PackedInt32Array()
 	nearest_start.resize(map.cell_count())
 	nearest_start.fill(UNREACHABLE_DISTANCE)
@@ -143,6 +145,13 @@ static func select_and_prepare(map: MapData, seed: int, foreign_count: int = 0,
 		"foreign_name_ids": foreign_name_ids,
 		"country_starts": country_starts,
 	}
+
+
+static func minimum_country_distance(map_width: int, map_height: int) -> int:
+	return clampi(
+		int(round(float(mini(map_width, map_height)) * COUNTRY_DISTANCE_MAP_RATIO)),
+		MIN_COUNTRY_DISTANCE,
+		MAX_COUNTRY_DISTANCE)
 
 
 static func _foreign_candidate_better(candidate: Dictionary, distance: int,
