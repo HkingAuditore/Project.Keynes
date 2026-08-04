@@ -230,6 +230,11 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_population_cell_snapshot);
     ClassDB::bind_method(D_METHOD("get_market_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_market_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("explain_cohort_satisfaction", "cohort_handle"),
+                         &DCWorldExt::explain_cohort_satisfaction);
+    ClassDB::bind_method(
+        D_METHOD("get_cell_satisfaction_attractiveness", "cell_idx"),
+        &DCWorldExt::get_cell_satisfaction_attractiveness);
     ClassDB::bind_method(D_METHOD("get_trade_orders_for_cell", "cell_idx", "offset", "limit"),
                          &DCWorldExt::get_trade_orders_for_cell, DEFVAL(0), DEFVAL(64));
     ClassDB::bind_method(D_METHOD("capture_economy_trade_topology", "neighbor_indices",

@@ -10,7 +10,7 @@
 ## 状态
 
 截至 2026-08-03，原生 catalog、四域 store、命令、调度、气候双路径、国家到经济
-桥、建筑产量、Gameplay identity、家族城市效果、protocol/save schema v2、PKEC v29、focused
+桥、建筑产量、Gameplay identity、家族城市效果、protocol/save schema v2、PKEC v30、focused
 test 已落地。两个隔离 agent forward-test 已完成，并据此补上 Modifier deadline-critical
 边界、Economy parent generation 校验及 Skill 路由。60x40 目标规模的 50 日 after 记录已完成；
 no-Modifier 同机 baseline 尚未取得，因此性能回归门槛仍是未验收项。
@@ -180,7 +180,7 @@ active/peak/bucket/query/bucket read/rebuild/snapshot version、事件计数和�
 | section/schema | 内容 |
 | --- | --- |
 | PKCN v4 | Country authority, tax policy + Country Modifier domain blob |
-| PKEC v29 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section |
+| PKEC v30 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section |
 | PKCM v1 | Climate Modifier domain |
 | PKGP v1 | Gameplay identity/base SoA + Gameplay Modifier domain |
 
@@ -189,7 +189,7 @@ term payload。恢复会校验 catalog hash、definition version、term payload�
 不兼容时失败，不重放 apply event。
 
 当前恢复采用严格 catalog hash、definition version 和 term payload 校验。
-PKEC reader 只接受 v29，v28 及更早版本不再通过税务或空 store 迁移；append-only
+PKEC reader 只接受 v30，v29 及更早版本不再通过税务或空 store 迁移；append-only
 catalog 差异也继续拒绝。focused runtime 未配置 Modifier 时，PKCN/PKEC 写入显式空
 domain marker。生产恢复顺序是 dynamic world、
 environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/player；PKCN 后先
@@ -200,7 +200,7 @@ environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/
 `tests/modifier_runtime_test.gd` 覆盖 apply/remove/expiry、stack refresh、global/group/entity、
 UNIQUE_SOURCE、stale handle、零 factor、Gameplay base/effective、journal v2、report 诊断和四域 round-trip。
 `country_runtime_test.gd` 验证 PKCN v4；`family_runtime_test.gd` 与
-`building_runtime_test.gd` 验证 PKEC v29 save/restore 与状态哈希。
+`building_runtime_test.gd` 验证 PKEC v30 save/restore 与状态哈希。
 正式 `PK_GAME_SAVE_ROUNDTRIP_TEST=1` 也已通过新建世界、PKSV 保存/恢复、authority hash
 对齐和恢复后首个经济周期。两套大型 economy suite 的 v20 存档断言虽通过，但各仍有 4 个
 既有 catalog/平衡断言失败，整体退出码为 1，不能把它们列为全绿门禁。

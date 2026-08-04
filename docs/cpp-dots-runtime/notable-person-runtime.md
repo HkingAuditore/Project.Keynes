@@ -19,7 +19,9 @@
 - 财产归因：`cash_claim`、`family_equity_share_q32`；
 - 已结算流量：`epoch_job_income`、`epoch_business_result`、
   `epoch_consumption_expense`、`epoch_tax`、`income_ema`；
-- 福利：`needs_satisfaction`、`worst_need_id` 与稀疏 `PersonNeedState`；
+- 福利：`needs_satisfaction`、`worst_need_id` 与稀疏 `PersonNeedState`。人物层保持生存口径，
+  不复制 cohort 的八维度 composite；综合满意度只在 cohort 与家族分支两级存在，
+  见[综合满意度运行时](./satisfaction-runtime.md)；
 - 岗位：`building_handle`、`job_kind`、`employee_role_index`、`job_since_day`。
 
 核心约束：
@@ -140,5 +142,5 @@ PKEC v27 保留 v26 家族 section，并在 header 追加人物目录 hash、语
 ## 验证入口
 
 `Project/project-keynes/tests/family_runtime_test.gd` 覆盖人物晋升、姓名、业主岗位与建筑反查、需求/消费
-归因、三账本守恒、PKEC v29 完整恢复和 state-hash round trip。修改市场/税/迁移/存档时还必须运行
+归因、三账本守恒、PKEC v30 完整恢复和 state-hash round trip。修改市场/税/迁移/存档时还必须运行
 受影响的 economy、tax、settlement 与 trade 回归，并按需运行 50 日 headless 性能记录。

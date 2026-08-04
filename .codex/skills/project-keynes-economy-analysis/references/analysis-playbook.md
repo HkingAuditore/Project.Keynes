@@ -148,6 +148,14 @@ combinations. Report:
 - owner, employee, and unemployed counts/rates;
 - first low-coverage, low-satisfaction, unemployment, and population-loss days.
 
+Two satisfaction figures now exist and they answer different questions. The subsistence
+dimension (`needs_satisfaction`) is the food-and-cold figure and is the only one behind
+starvation deaths. The composite is the eight-dimension weighted index that drives births,
+hire order, and family branch promotion. When a cohort looks unhappy, read
+`worst_dimension_id` before `worst_need_id`: a low composite caused by tax burden or savings
+has nothing to do with the market's stock levels. Contract:
+`docs/cpp-dots-runtime/satisfaction-runtime.md`.
+
 Keep wealth outside cohort identity. Handles may change after structural operations; use the stable
 signature/cell grain for long-run comparison. Report merchant versus nonmerchant wealth and income
 shares and, when useful, a population-weighted inequality measure. Explain whether inequality comes
@@ -160,7 +168,8 @@ Test concrete causal chains in both directions:
 
 ```text
 resource reserve -> building resource/input constraint -> utilization/output
-  -> market stock/shortage/price -> cohort coverage/satisfaction -> births/deaths
+  -> market stock/shortage/price -> cohort coverage/subsistence dimension -> starvation deaths
+  -> (with income growth, savings, tax burden, development) composite -> births
 
 merchant cash/credit -> funded procurement -> accepted output/inventory
   -> producer revenue/wages -> owner/worker funds -> household demand

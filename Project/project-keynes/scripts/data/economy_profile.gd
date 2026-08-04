@@ -88,7 +88,58 @@ extends Resource
 ## from the lower threshold where starvation mortality begins.
 @export_range(1, 65536, 1) var survival_production_target_q16: int = 65536
 ## Maximum per-person daily Q32 mortality when survival satisfaction is zero.
+## Starvation mortality is deliberately driven by the subsistence dimension
+## alone: dying of hunger is a physiological fact and must never follow from a
+## heavy tax burden or a backward settlement.
 @export_range(0, 4294967296, 1) var starvation_death_rate_q32: int = 21474836
+
+## --- Composite satisfaction ---
+## Fallback Q16 dimension weights for professions that do not author their own
+## `satisfaction_dimension_weights_q16`. Native enum order: subsistence, basic,
+## comfort, luxury, income growth, savings, tax burden, social development.
+@export var satisfaction_default_dimension_weights_q16: PackedInt32Array = PackedInt32Array([
+	65536, 45875, 26214, 13107, 19661, 19661, 16384, 13107,
+])
+## Subsistence gate slack. The composite may never exceed
+## `subsistence + (1 - subsistence) * slack`, so a starving cohort cannot be
+## rated satisfied because of its savings. 0 pins the composite to subsistence,
+## 65536 disables the gate entirely. The default is deliberately tight: a fully
+## fed cohort never feels the gate, while a fully starving one must stay under
+## the birth reference so its births fall below natural deaths.
+@export_range(0, 65536, 1) var satisfaction_subsistence_gate_slack_q16: int = 6554
+## Per-capita income EMA ratio (short EMA over long baseline EMA) that scores
+## zero and full marks on the income-growth dimension.
+@export_range(0, 655360, 1) var satisfaction_income_growth_floor_q16: int = 58982
+@export_range(1, 655360, 1) var satisfaction_income_growth_ceiling_q16: int = 78643
+## Q16 alpha of the slow income baseline EMA per settlement day. The fast
+## `income_ema` uses 1/8 per day, so 1/64 keeps the baseline roughly eight times
+## slower and makes the ratio a genuine growth signal.
+@export_range(1, 65536, 1) var satisfaction_income_baseline_alpha_q16: int = 1024
+## Months of living cost a cohort must hold in funds to score full marks on the
+## savings dimension (Q16 months).
+@export_range(1, 6553600, 1) var satisfaction_savings_target_months_q16: int = 393216
+## Net tax share of gross income that scores zero on the tax-burden dimension.
+## Net subsidies (negative burden) saturate the dimension at full marks.
+@export_range(1, 65536, 1) var satisfaction_tax_tolerance_q16: int = 22938
+## Q16 weights of the three social-development inputs: settlement tier, national
+## technology progress, and local built-industry variety. Normalized natively.
+@export var satisfaction_development_weights_q16: PackedInt32Array = PackedInt32Array([
+	26214, 26214, 13107,
+])
+## Local built-industry variety that saturates the third development input.
+@export_range(1, 256, 1) var satisfaction_development_variety_target: int = 12
+## Composite value treated as "fully satisfied" by the birth-rate reduction.
+## The raw composite is rescaled by this reference before entering
+## `birth_factor = 1 - satisfaction_birth_weight * (1 - birth_input)`, so an
+## early-era cohort with no luxuries, savings, or development does not collapse
+## its own birth rate.
+@export_range(1, 65536, 1) var satisfaction_birth_reference_q16: int = 45875
+## Composite thresholds (Q16, ascending) separating the five social-pressure
+## levels. A cell publishes `EVENT_ECONOMY_SOCIAL_PRESSURE` only when its
+## population-weighted level crosses one of these boundaries.
+@export var satisfaction_pressure_thresholds_q16: PackedInt32Array = PackedInt32Array([
+	13107, 26214, 39322, 52429,
+])
 @export_range(0, 65536, 1) var wage_ema_alpha_q16: int = 8192
 @export_range(0, 65536, 1) var wage_max_rise_q16_per_day: int = 1311
 @export_range(0, 65536, 1) var wage_max_fall_q16_per_day: int = 1311
@@ -235,6 +286,20 @@ func to_native_profile() -> Dictionary:
 		"starvation_satisfaction_threshold_q16": starvation_satisfaction_threshold_q16,
 		"survival_production_target_q16": survival_production_target_q16,
 		"starvation_death_rate_q32": starvation_death_rate_q32,
+		"satisfaction_default_dimension_weights_q16":
+			satisfaction_default_dimension_weights_q16,
+		"satisfaction_subsistence_gate_slack_q16":
+			satisfaction_subsistence_gate_slack_q16,
+		"satisfaction_income_growth_floor_q16": satisfaction_income_growth_floor_q16,
+		"satisfaction_income_growth_ceiling_q16": satisfaction_income_growth_ceiling_q16,
+		"satisfaction_income_baseline_alpha_q16": satisfaction_income_baseline_alpha_q16,
+		"satisfaction_savings_target_months_q16": satisfaction_savings_target_months_q16,
+		"satisfaction_tax_tolerance_q16": satisfaction_tax_tolerance_q16,
+		"satisfaction_development_weights_q16": satisfaction_development_weights_q16,
+		"satisfaction_development_variety_target":
+			satisfaction_development_variety_target,
+		"satisfaction_birth_reference_q16": satisfaction_birth_reference_q16,
+		"satisfaction_pressure_thresholds_q16": satisfaction_pressure_thresholds_q16,
 		"wage_ema_alpha_q16": wage_ema_alpha_q16,
 		"wage_max_rise_q16_per_day": wage_max_rise_q16_per_day,
 		"wage_max_fall_q16_per_day": wage_max_fall_q16_per_day,

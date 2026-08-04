@@ -496,14 +496,35 @@ void NativeEconomyRuntime::PopulationStore::clear(int32_t cells) {
     epoch_expense.clear();
     epoch_in_kind_income.clear();
     income_ema.clear();
+    epoch_tax_paid.clear();
+    epoch_subsidy_received.clear();
+    income_baseline_ema.clear();
     needs_satisfaction.clear();
     worst_need_id.clear();
+    composite_satisfaction.clear();
+    satisfaction_dims.clear();
+    worst_dimension_id.clear();
     flags.clear();
     demography_residual.clear();
     owner_employed.clear();
     employee_employed.clear();
     active_count = 0;
     high_water_slots = 0;
+}
+
+void NativeEconomyRuntime::PopulationStore::reset_satisfaction_slot(int32_t slot) {
+    epoch_tax_paid[slot] = 0;
+    epoch_subsidy_received[slot] = 0;
+    income_baseline_ema[slot] = 0;
+    needs_satisfaction[slot] = static_cast<uint16_t>(Q16_ONE - 1);
+    worst_need_id[slot] = std::numeric_limits<uint16_t>::max();
+    composite_satisfaction[slot] = static_cast<uint16_t>(Q16_ONE - 1);
+    worst_dimension_id[slot] = std::numeric_limits<uint8_t>::max();
+    const size_t base = static_cast<size_t>(slot) * static_cast<size_t>(SAT_DIM_COUNT);
+    for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+        satisfaction_dims[base + static_cast<size_t>(dim)] =
+            static_cast<uint16_t>(Q16_ONE - 1);
+    }
 }
 
 int32_t NativeEconomyRuntime::PopulationStore::allocate_page(int32_t cell) {
@@ -529,8 +550,15 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_page(int32_t cell) {
         epoch_expense.resize(next_size, 0);
         epoch_in_kind_income.resize(next_size, 0);
         income_ema.resize(next_size, 0);
+        epoch_tax_paid.resize(next_size, 0);
+        epoch_subsidy_received.resize(next_size, 0);
+        income_baseline_ema.resize(next_size, 0);
         needs_satisfaction.resize(next_size, static_cast<uint16_t>(Q16_ONE - 1));
         worst_need_id.resize(next_size, std::numeric_limits<uint16_t>::max());
+        composite_satisfaction.resize(next_size, static_cast<uint16_t>(Q16_ONE - 1));
+        satisfaction_dims.resize(next_size * static_cast<size_t>(SAT_DIM_COUNT),
+                                 static_cast<uint16_t>(Q16_ONE - 1));
+        worst_dimension_id.resize(next_size, std::numeric_limits<uint8_t>::max());
         flags.resize(next_size, 0);
         demography_residual.resize(next_size, 0);
         owner_employed.resize(next_size, 0);
@@ -574,8 +602,7 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_slot(int32_t cell, uint3
             epoch_expense[slot] = 0;
             epoch_in_kind_income[slot] = 0;
             income_ema[slot] = 0;
-            needs_satisfaction[slot] = static_cast<uint16_t>(Q16_ONE - 1);
-            worst_need_id[slot] = std::numeric_limits<uint16_t>::max();
+            reset_satisfaction_slot(slot);
             flags[slot] = 0;
             demography_residual[slot] = 0;
             owner_employed[slot] = 0;
@@ -594,13 +621,11 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_slot(int32_t cell, uint3
     epoch_expense[slot] = 0;
     epoch_in_kind_income[slot] = 0;
     income_ema[slot] = 0;
-    needs_satisfaction[slot] = static_cast<uint16_t>(Q16_ONE - 1);
-    worst_need_id[slot] = std::numeric_limits<uint16_t>::max();
+    reset_satisfaction_slot(slot);
     flags[slot] = 0;
     demography_residual[slot] = 0;
     owner_employed[slot] = 0;
     employee_employed[slot] = 0;
-    worst_need_id[slot] = std::numeric_limits<uint16_t>::max();
     ++active_count;
     return slot;
 }
@@ -627,6 +652,7 @@ void NativeEconomyRuntime::PopulationStore::release_slot(int32_t slot) {
     epoch_expense[slot] = 0;
     epoch_in_kind_income[slot] = 0;
     income_ema[slot] = 0;
+    reset_satisfaction_slot(slot);
     demography_residual[slot] = 0;
     owner_employed[slot] = 0;
     employee_employed[slot] = 0;
@@ -634,6 +660,15 @@ void NativeEconomyRuntime::PopulationStore::release_slot(int32_t slot) {
                            ? 1u
                            : generation[slot] + 1u;
     --active_count;
+}
+
+int32_t popcount_u64(uint64_t value) {
+    int32_t count = 0;
+    while (value != 0) {
+        value &= value - 1;
+        ++count;
+    }
+    return count;
 }
 
 std::vector<uint8_t> economy_packed_u8(const Dictionary &d, const char *key) {
@@ -860,7 +895,8 @@ void NativeEconomyRuntime::FamilyCellInfluenceStore::clear() {
     active.clear(); generation.clear(); family_handle.clear(); cell.clear();
     stable_id.clear(); population.clear(); cash.clear(); building_asset.clear();
     population_share_q16.clear(); cash_share_q16.clear();
-    building_share_q16.clear(); score_q16.clear(); prestige_level.clear();
+    building_share_q16.clear(); score_q16.clear(); satisfaction_q16.clear();
+    prestige_level.clear();
     pending_target_level.clear(); review_streak.clear(); last_review_day.clear();
     free_indices.clear();
 }
@@ -879,6 +915,7 @@ int32_t NativeEconomyRuntime::FamilyCellInfluenceStore::allocate() {
         cash.push_back(0); building_asset.push_back(0);
         population_share_q16.push_back(0); cash_share_q16.push_back(0);
         building_share_q16.push_back(0); score_q16.push_back(0);
+        satisfaction_q16.push_back(0);
         prestige_level.push_back(0); pending_target_level.push_back(0);
         review_streak.push_back(0); last_review_day.push_back(-1);
     }
@@ -886,7 +923,7 @@ int32_t NativeEconomyRuntime::FamilyCellInfluenceStore::allocate() {
     stable_id[index] = 0; population[index] = 0; cash[index] = 0;
     building_asset[index] = 0; population_share_q16[index] = 0;
     cash_share_q16[index] = 0; building_share_q16[index] = 0;
-    score_q16[index] = 0; prestige_level[index] = 0;
+    score_q16[index] = 0; satisfaction_q16[index] = 0; prestige_level[index] = 0;
     pending_target_level[index] = 0; review_streak[index] = 0;
     last_review_day[index] = -1;
     return index;
@@ -1243,8 +1280,30 @@ void NativeEconomyRuntime::touch_accounting_slot(int32_t slot) {
     _population.epoch_income[slot] = 0;
     _population.epoch_expense[slot] = 0;
     _population.epoch_in_kind_income[slot] = 0;
+    _population.epoch_tax_paid[slot] = 0;
+    _population.epoch_subsidy_received[slot] = 0;
     _population.flags[slot] = static_cast<uint16_t>(
         (_population.flags[slot] & ~ACCOUNTING_EPOCH_BIT) | expected);
+}
+
+void NativeEconomyRuntime::record_cohort_fiscal(int32_t slot,
+                                                int64_t signed_amount) {
+    // Attribution only: apply_fiscal_tax already moved the money, so this never
+    // mints, burns, or rebalances anything. It shares the lazy epoch reset with
+    // epoch_income/epoch_expense so callers may record before or after the
+    // corresponding funds mutation.
+    if (signed_amount == 0 || slot < 0 ||
+        slot >= static_cast<int32_t>(_population.active.size()) ||
+        _population.active[slot] == 0) return;
+    touch_accounting_slot(slot);
+    if (signed_amount > 0) {
+        _population.epoch_tax_paid[slot] = saturating_add(
+            _population.epoch_tax_paid[slot], signed_amount, _saturation_count);
+    } else {
+        _population.epoch_subsidy_received[slot] = saturating_add(
+            _population.epoch_subsidy_received[slot], -signed_amount,
+            _saturation_count);
+    }
 }
 
 bool NativeEconomyRuntime::ensure_merchant_invariant(int32_t cell, int64_t &repair_count,
@@ -2401,6 +2460,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _starvation_death_rate_q32 = std::clamp<int64_t>(
         dict_num<int64_t>(profile, "starvation_death_rate_q32", Q32_ONE / 200),
         0, Q32_ONE);
+    configure_satisfaction_profile(profile);
     _wage_ema_alpha_q16 = std::clamp(
         dict_num<int32_t>(profile, "wage_ema_alpha_q16", 8192), 0,
         static_cast<int32_t>(Q16_ONE));
@@ -2950,7 +3010,355 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     const auto building_factor_started = Clock::now();
     refresh_building_modifier_factors();
     _epoch_begin_building_factor_ms = elapsed_ms(building_factor_started);
+    refresh_epoch_development();
     return true;
+}
+
+void NativeEconomyRuntime::configure_satisfaction_profile(const Dictionary &profile) {
+    const auto read_weights = [&](const char *key, int32_t *out, size_t count) {
+        const std::vector<int32_t> values = packed_i32(profile, key);
+        if (values.size() != count) return;
+        for (size_t i = 0; i < count; ++i)
+            out[i] = std::clamp<int32_t>(values[i], 0,
+                                         static_cast<int32_t>(Q16_ONE));
+    };
+    read_weights("satisfaction_default_dimension_weights_q16",
+                 _satisfaction_default_weights_q16.data(),
+                 _satisfaction_default_weights_q16.size());
+    read_weights("satisfaction_development_weights_q16",
+                 _satisfaction_development_weights_q16.data(),
+                 _satisfaction_development_weights_q16.size());
+    _satisfaction_subsistence_gate_slack_q16 = std::clamp(
+        dict_num<int32_t>(profile, "satisfaction_subsistence_gate_slack_q16",
+                          6554),
+        0, static_cast<int32_t>(Q16_ONE));
+    _satisfaction_income_growth_floor_q16 = std::max(0, dict_num<int32_t>(
+        profile, "satisfaction_income_growth_floor_q16", 58982));
+    _satisfaction_income_growth_ceiling_q16 = std::max(
+        _satisfaction_income_growth_floor_q16 + 1,
+        dict_num<int32_t>(profile, "satisfaction_income_growth_ceiling_q16",
+                          78643));
+    _satisfaction_income_baseline_alpha_q16 = std::clamp(
+        dict_num<int32_t>(profile, "satisfaction_income_baseline_alpha_q16",
+                          1024),
+        1, static_cast<int32_t>(Q16_ONE));
+    _satisfaction_savings_target_months_q16 = std::max<int64_t>(1,
+        dict_num<int64_t>(profile, "satisfaction_savings_target_months_q16",
+                          393216));
+    _satisfaction_tax_tolerance_q16 = std::clamp(
+        dict_num<int32_t>(profile, "satisfaction_tax_tolerance_q16", 22938),
+        1, static_cast<int32_t>(Q16_ONE));
+    _satisfaction_development_variety_target = std::clamp(
+        dict_num<int32_t>(profile, "satisfaction_development_variety_target",
+                          12),
+        1, 256);
+    _satisfaction_birth_reference_q16 = std::clamp(
+        dict_num<int32_t>(profile, "satisfaction_birth_reference_q16", 45875),
+        1, static_cast<int32_t>(Q16_ONE));
+    const std::vector<int32_t> thresholds = packed_i32(
+        profile, "satisfaction_pressure_thresholds_q16");
+    if (thresholds.size() == _satisfaction_pressure_thresholds_q16.size()) {
+        int32_t previous = 0;
+        for (size_t i = 0; i < thresholds.size(); ++i) {
+            // Ascending and strictly inside (0, 1) so every level stays reachable.
+            previous = std::clamp<int32_t>(thresholds[i], previous + 1,
+                                           static_cast<int32_t>(Q16_ONE) - 1);
+            _satisfaction_pressure_thresholds_q16[i] = previous;
+        }
+    }
+}
+
+int64_t NativeEconomyRuntime::update_cohort_satisfaction(
+        int32_t slot, int32_t cell, int64_t subsistence_q16,
+        const Signature &signature, const int64_t *tier_weighted_q16,
+        const int64_t *tier_weight_q16, int64_t &sat) {
+    std::array<int64_t, SAT_DIM_COUNT> dims{};
+    std::array<int64_t, SAT_DIM_COUNT> weights{};
+    for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+        weights[static_cast<size_t>(dim)] =
+            signature.satisfaction_weights_q16[static_cast<size_t>(dim)];
+
+    // Tiers 0-3 come from the need reduction that just ran. The subsistence tier
+    // is overridden by the calorie/cold survival figure so starvation semantics
+    // stay identical to the pre-composite runtime.
+    for (int32_t tier = 0; tier < SAT_TIER_COUNT; ++tier) {
+        const int64_t weight = tier_weight_q16[tier];
+        if (weight <= 0) {
+            // The plan never asks for this tier, so scoring it would punish a
+            // class for needs it does not have. Drop it from the denominator.
+            weights[static_cast<size_t>(tier)] = 0;
+            dims[static_cast<size_t>(tier)] = Q16_ONE - 1;
+            continue;
+        }
+        dims[static_cast<size_t>(tier)] = std::clamp<int64_t>(
+            tier_weighted_q16[tier] / weight, 0, Q16_ONE - 1);
+    }
+    dims[SAT_DIM_SUBSISTENCE] = std::clamp<int64_t>(subsistence_q16, 0,
+                                                    Q16_ONE - 1);
+
+    const int64_t population = std::max<int64_t>(1, _population.population[slot]);
+    const int64_t per_capita_income = _population.income_ema[slot] / population;
+    const int64_t per_capita_baseline =
+        _population.income_baseline_ema[slot] / population;
+    if (per_capita_baseline <= 0) {
+        // No trailing baseline yet (a freshly seeded or freshly emptied cohort).
+        // Treat growth as neutral rather than inventing a ratio from zero.
+        dims[SAT_DIM_INCOME] = per_capita_income > 0 ? Q16_ONE - 1 : Q16_ONE / 2;
+    } else {
+        const int64_t growth_q16 = mul_div_sat(
+            std::max<int64_t>(0, per_capita_income), Q16_ONE,
+            per_capita_baseline, sat);
+        dims[SAT_DIM_INCOME] = normalize_band_q16(
+            growth_q16, _satisfaction_income_growth_floor_q16,
+            _satisfaction_income_growth_ceiling_q16, sat);
+    }
+
+    const int64_t daily_living_cost = cell >= 0 &&
+            cell < static_cast<int32_t>(_cell_living_cost_per_capita.size())
+        ? _cell_living_cost_per_capita[cell] : 0;
+    const int64_t monthly_cost = saturating_mul(
+        saturating_mul(std::max<int64_t>(0, daily_living_cost), population, sat),
+        30, sat);
+    if (monthly_cost <= 0) {
+        // Nothing costs anything here, so savings cannot express anxiety.
+        dims[SAT_DIM_SAVINGS] = Q16_ONE - 1;
+    } else {
+        const int64_t months_q16 = mul_div_sat(
+            std::max<int64_t>(0, _population.funds[slot]), Q16_ONE, monthly_cost,
+            sat);
+        dims[SAT_DIM_SAVINGS] = normalize_band_q16(
+            months_q16, 0, _satisfaction_savings_target_months_q16, sat);
+    }
+
+    const int64_t gross_income = saturating_add(
+        std::max<int64_t>(0, _population.epoch_income[slot]),
+        std::max<int64_t>(0, _population.epoch_in_kind_income[slot]), sat);
+    const int64_t net_tax = saturating_sub(_population.epoch_tax_paid[slot],
+                                           _population.epoch_subsidy_received[slot],
+                                           sat);
+    if (net_tax <= 0) {
+        dims[SAT_DIM_TAX] = Q16_ONE - 1;
+    } else if (gross_income <= 0) {
+        // Taxed while earning nothing is the worst possible burden.
+        dims[SAT_DIM_TAX] = 0;
+    } else {
+        const int64_t burden_q16 = mul_div_sat(net_tax, Q16_ONE, gross_income, sat);
+        dims[SAT_DIM_TAX] = Q16_ONE - 1 - normalize_band_q16(
+            burden_q16, 0, _satisfaction_tax_tolerance_q16, sat);
+    }
+
+    dims[SAT_DIM_DEVELOPMENT] = cell >= 0 &&
+            cell < static_cast<int32_t>(_epoch_cell_development_q16.size())
+        ? _epoch_cell_development_q16[cell] : 0;
+
+    int64_t weighted_total = 0;
+    int64_t weight_total = 0;
+    int64_t worst_shortfall = -1;
+    int32_t worst_dimension = static_cast<int32_t>(
+        std::numeric_limits<uint8_t>::max());
+    for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+        const int64_t weight = weights[static_cast<size_t>(dim)];
+        if (weight <= 0) continue;
+        const int64_t value = dims[static_cast<size_t>(dim)];
+        weighted_total = saturating_add(weighted_total,
+                                        saturating_mul(value, weight, sat), sat);
+        weight_total = saturating_add(weight_total, weight, sat);
+        const int64_t shortfall = saturating_mul(Q16_ONE - 1 - value, weight, sat);
+        if (shortfall > worst_shortfall) {
+            worst_shortfall = shortfall;
+            worst_dimension = dim;
+        }
+    }
+    const int64_t raw_q16 = weight_total > 0
+        ? std::clamp<int64_t>(weighted_total / weight_total, 0, Q16_ONE - 1)
+        : Q16_ONE - 1;
+    // Needs are hierarchical: a cohort that cannot eat may not be rated
+    // satisfied because it banked money or lives in a developed city. The
+    // ceiling lets the other dimensions lift it only through the configured
+    // slack above its subsistence floor.
+    const int64_t ceiling_q16 = saturating_add(
+        dims[SAT_DIM_SUBSISTENCE],
+        mul_div_sat(Q16_ONE - 1 - dims[SAT_DIM_SUBSISTENCE],
+                    _satisfaction_subsistence_gate_slack_q16, Q16_ONE, sat), sat);
+    const int64_t composite_q16 = std::clamp<int64_t>(
+        std::min(raw_q16, ceiling_q16), 0, Q16_ONE - 1);
+
+    _population.composite_satisfaction[slot] =
+        static_cast<uint16_t>(composite_q16);
+    _population.worst_dimension_id[slot] = static_cast<uint8_t>(worst_dimension);
+    const size_t base = static_cast<size_t>(slot) *
+        static_cast<size_t>(SAT_DIM_COUNT);
+    for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+        _population.satisfaction_dims[base + static_cast<size_t>(dim)] =
+            static_cast<uint16_t>(dims[static_cast<size_t>(dim)]);
+    return composite_q16;
+}
+
+int32_t NativeEconomyRuntime::living_standard_level_for(int64_t composite_q16) const {
+    // Seven presentation bands over the composite. They are display-only; every
+    // gameplay consumer reads composite_satisfaction or a single dimension.
+    // Calibrated against the composite, not the old survival figure: a cohort
+    // that eats well but owns nothing and lives in a hamlet lands near 0.45, so
+    // the bands sit well below the pre-composite thresholds.
+    static constexpr int64_t THRESHOLDS[6] = {
+        Q16_ONE * 12 / 100, Q16_ONE * 22 / 100, Q16_ONE * 33 / 100,
+        Q16_ONE * 45 / 100, Q16_ONE * 58 / 100, Q16_ONE * 72 / 100,
+    };
+    int32_t level = 0;
+    while (level < 6 && composite_q16 >= THRESHOLDS[level]) ++level;
+    return level;
+}
+
+int32_t NativeEconomyRuntime::social_pressure_level_for(
+        int64_t composite_q16) const {
+    int32_t level = 0;
+    while (level < SAT_PRESSURE_LEVEL_COUNT - 1 &&
+           composite_q16 >= _satisfaction_pressure_thresholds_q16[level])
+        ++level;
+    return level;
+}
+
+// Emits one gameplay fact per settled cell whose population-weighted pressure
+// level actually changed. The level, not the raw composite, is the dedup key,
+// so a cell drifting inside a band stays silent and the event volume per epoch
+// is bounded by the rolling workset.
+void NativeEconomyRuntime::publish_social_pressure_facts() {
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell < 0 || cell >= _cell_count ||
+            cell >= static_cast<int32_t>(_cell_social_pressure_level.size()))
+            continue;
+        int64_t weighted = 0;
+        int64_t population = 0;
+        int32_t grievance_slot = -1;
+        int64_t grievance_q16 = Q16_ONE;
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            const int64_t people = std::max<int64_t>(
+                0, _population.population[slot]);
+            if (people <= 0) return;
+            const int64_t composite = _population.composite_satisfaction[slot];
+            population = saturating_add(population, people, _saturation_count);
+            weighted = saturating_add(weighted,
+                saturating_mul(composite, people, _saturation_count),
+                _saturation_count);
+            if (composite < grievance_q16) {
+                grievance_q16 = composite;
+                grievance_slot = slot;
+            }
+        });
+        if (population <= 0) continue;
+        const int64_t composite_q16 = std::clamp<int64_t>(
+            weighted / population, 0, Q16_ONE - 1);
+        const int32_t level = social_pressure_level_for(composite_q16);
+        const int32_t previous = _cell_social_pressure_level[cell];
+        if (level == previous) continue;
+        _cell_social_pressure_level[cell] = static_cast<uint8_t>(level);
+        CommittedGameplayFact fact;
+        fact.kind = GAMEPLAY_FACT_SOCIAL_PRESSURE;
+        fact.cell = cell;
+        fact.entity_id = static_cast<int32_t>(std::clamp<int64_t>(
+            population, 0, std::numeric_limits<int32_t>::max()));
+        fact.value = composite_q16;
+        const int32_t worst_dimension = grievance_slot >= 0 &&
+                _population.worst_dimension_id[grievance_slot] !=
+                    std::numeric_limits<uint8_t>::max()
+            ? static_cast<int32_t>(_population.worst_dimension_id[grievance_slot])
+            : -1;
+        const int32_t worst_need = grievance_slot >= 0 &&
+                _population.worst_need_id[grievance_slot] !=
+                    std::numeric_limits<uint16_t>::max()
+            ? static_cast<int32_t>(_population.worst_need_id[grievance_slot])
+            : -1;
+        fact.payload = {level, worst_dimension, worst_need, previous};
+        fact.flags = level < previous ? 1 : 0;
+        _staging_gameplay_facts.push_back(fact);
+    }
+}
+
+int64_t NativeEconomyRuntime::normalize_band_q16(int64_t value, int64_t floor,
+                                                 int64_t ceiling,
+                                                 int64_t &sat) const {
+    if (ceiling <= floor) return value >= ceiling ? Q16_ONE - 1 : 0;
+    if (value <= floor) return 0;
+    if (value >= ceiling) return Q16_ONE - 1;
+    return std::clamp<int64_t>(
+        mul_div_sat(value - floor, Q16_ONE - 1, ceiling - floor, sat), 0,
+        Q16_ONE - 1);
+}
+
+void NativeEconomyRuntime::refresh_epoch_development() {
+    const int32_t country_count = std::max(0, _epoch_country_count);
+    _epoch_country_technology_progress_q16.assign(
+        static_cast<size_t>(country_count), 0);
+    const int64_t technology_total = static_cast<int64_t>(_technology_ids.size());
+    for (int32_t country = 0; country < country_count; ++country) {
+        if (technology_total <= 0) continue;
+        int64_t known = 0;
+        const size_t begin = static_cast<size_t>(country) *
+            static_cast<size_t>(_epoch_country_technology_words);
+        for (int32_t word = 0; word < _epoch_country_technology_words; ++word) {
+            const size_t index = begin + static_cast<size_t>(word);
+            if (index >= _epoch_country_technologies.size()) break;
+            known += popcount_u64(_epoch_country_technologies[index]);
+        }
+        _epoch_country_technology_progress_q16[country] = static_cast<int32_t>(
+            std::clamp<int64_t>(mul_div_sat(std::min(known, technology_total),
+                                            Q16_ONE, technology_total,
+                                            _saturation_count),
+                                0, Q16_ONE));
+    }
+
+    const size_t cells = static_cast<size_t>(std::max(0, _cell_count));
+    _epoch_cell_development_q16.assign(cells, 0);
+    const int64_t weight_total = static_cast<int64_t>(
+        _satisfaction_development_weights_q16[0]) +
+        _satisfaction_development_weights_q16[1] +
+        _satisfaction_development_weights_q16[2];
+    if (weight_total <= 0) return;
+    const int64_t tier_max = std::max<int64_t>(
+        1, static_cast<int64_t>(_prosperity_thresholds.size()) - 1);
+    const int64_t variety_target = std::max<int64_t>(
+        1, _satisfaction_development_variety_target);
+    const bool building_csr_valid =
+        _building_cell_offsets.size() == cells + 1;
+    for (size_t cell = 0; cell < cells; ++cell) {
+        const int64_t tier = cell < _settlements.tier.size()
+            ? std::min<int64_t>(_settlements.tier[cell], tier_max) : 0;
+        const int64_t tier_q16 = mul_div_sat(tier, Q16_ONE, tier_max,
+                                             _saturation_count);
+        int64_t technology_q16 = 0;
+        if (cell < _epoch_cell_country.size()) {
+            const int32_t country = _epoch_cell_country[cell];
+            if (country >= 0 && country < country_count)
+                technology_q16 = _epoch_country_technology_progress_q16[
+                    static_cast<size_t>(country)];
+        }
+        int64_t variety = 0;
+        if (building_csr_valid) {
+            // Groups are stored in stable (cell, type, owner) order, so distinct
+            // building types are the number of type transitions in the span.
+            const int32_t begin = _building_cell_offsets[cell];
+            const int32_t end = _building_cell_offsets[cell + 1];
+            int32_t previous_type = -1;
+            for (int32_t group = begin; group < end; ++group) {
+                const int32_t type_id = _buildings[group].type_id;
+                if (type_id == previous_type) continue;
+                previous_type = type_id;
+                ++variety;
+            }
+        }
+        const int64_t variety_q16 = mul_div_sat(
+            std::min(variety, variety_target), Q16_ONE, variety_target,
+            _saturation_count);
+        const int64_t weighted = saturating_add(saturating_add(
+            saturating_mul(tier_q16, _satisfaction_development_weights_q16[0],
+                           _saturation_count),
+            saturating_mul(technology_q16, _satisfaction_development_weights_q16[1],
+                           _saturation_count), _saturation_count),
+            saturating_mul(variety_q16, _satisfaction_development_weights_q16[2],
+                           _saturation_count), _saturation_count);
+        _epoch_cell_development_q16[cell] = static_cast<int32_t>(
+            std::clamp<int64_t>(weighted / weight_total, 0, Q16_ONE - 1));
+    }
 }
 
 void NativeEconomyRuntime::refresh_city_modifier_factors() {
@@ -3325,6 +3733,7 @@ void NativeEconomyRuntime::settle_income_subsidies_for_cell(
         if (paid <= 0) continue;
         const int32_t slot = subsidy_slots[i];
         touch_accounting_slot(slot);
+        record_cohort_fiscal(slot, -paid);
         _population.funds[slot] = saturating_add(
             _population.funds[slot], paid, saturation_count);
         trace_record_cashflow(
@@ -4504,6 +4913,23 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     const std::vector<int32_t> need_stable = packed_i32(catalog, "need_stable_ids");
     const std::vector<int32_t> need_living_weights =
         packed_i32(catalog, "need_living_cost_weights_q16");
+    // Satisfaction tier/weight columns are authored per global need id. An older
+    // catalog that predates them classifies everything as basic at full weight,
+    // which reproduces a plain per-need average.
+    std::vector<int32_t> need_satisfaction_tiers =
+        packed_i32(catalog, "need_satisfaction_tiers");
+    std::vector<int32_t> need_satisfaction_weights =
+        packed_i32(catalog, "need_satisfaction_weights_q16");
+    if (need_satisfaction_tiers.empty())
+        need_satisfaction_tiers.assign(_need_ids.size(), SAT_DIM_BASIC);
+    if (need_satisfaction_weights.empty())
+        need_satisfaction_weights.assign(_need_ids.size(),
+                                         static_cast<int32_t>(Q16_ONE));
+    if (need_satisfaction_tiers.size() != _need_ids.size() ||
+        need_satisfaction_weights.size() != _need_ids.size()) {
+        error = "need_satisfaction_columns_invalid";
+        return false;
+    }
     const std::vector<int32_t> need_priority = packed_i32(catalog, "need_priorities");
     const std::vector<int64_t> need_base = packed_i64(catalog, "need_base_qty_per_person");
     const std::vector<int32_t> need_wealth_elasticity = packed_i32(catalog, "need_wealth_elasticity_q16");
@@ -4569,6 +4995,10 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             need_env[n] < -1 || need_env[n] >= static_cast<int32_t>(_environment_curves.size()) ||
             need_living_weights[need_stable[n]] < 0 ||
             need_living_weights[need_stable[n]] > Q16_ONE ||
+            need_satisfaction_tiers[need_stable[n]] < 0 ||
+            need_satisfaction_tiers[need_stable[n]] >= SAT_TIER_COUNT ||
+            need_satisfaction_weights[need_stable[n]] < 0 ||
+            need_satisfaction_weights[need_stable[n]] > Q16_ONE ||
             variants_count <= 0 || variants_count > MAX_VARIANTS_PER_NEED) {
             error = "market_v2_need_entry_invalid";
             return false;
@@ -4577,7 +5007,9 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
                      need_base[n], need_wealth_elasticity[n], need_wealth_min[n],
                      need_wealth_max[n], need_price_quantity_elasticity[n],
                      need_price_quantity_floor[n], need_env[n],
-                     need_living_weights[need_stable[n]]};
+                     need_living_weights[need_stable[n]],
+                     need_satisfaction_tiers[need_stable[n]],
+                     need_satisfaction_weights[need_stable[n]]};
     }
     _variants.resize(variant_count);
     for (size_t v = 0; v < variant_count; ++v) {
@@ -4659,6 +5091,17 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         error = "signature_satisfaction_weight_size_mismatch";
         return false;
     }
+    // Per-signature composite weights. A profession that authors nothing emits
+    // -1 in every slot and inherits the profile default.
+    const std::vector<int32_t> sig_dimension_weights = packed_i32(
+        catalog, "signature_satisfaction_dimension_weights_q16");
+    const bool has_dimension_weights = !sig_dimension_weights.empty();
+    if (has_dimension_weights &&
+        sig_dimension_weights.size() !=
+            sig_count * static_cast<size_t>(SAT_DIM_COUNT)) {
+        error = "signature_satisfaction_dimension_weight_size_mismatch";
+        return false;
+    }
     _signatures.resize(sig_count);
     for (size_t i = 0; i < sig_count; ++i) {
         if (sig_prof[i] < 0 || sig_prof[i] >= static_cast<int32_t>(_profession_ids.size()) ||
@@ -4669,7 +5112,28 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             return false;
         }
         _signatures[i] = {sig_prof[i], sig_eth[i], sig_plan[i], sig_birth[i], sig_death[i],
-                          sig_sat_weight[i]};
+                          sig_sat_weight[i], {}};
+        Signature &signature = _signatures[i];
+        int64_t weight_total = 0;
+        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+            const int32_t authored = has_dimension_weights
+                ? sig_dimension_weights[i * static_cast<size_t>(SAT_DIM_COUNT) +
+                                        static_cast<size_t>(dim)]
+                : -1;
+            const int32_t weight = authored < 0
+                ? _satisfaction_default_weights_q16[static_cast<size_t>(dim)]
+                : authored;
+            if (weight > Q16_ONE) {
+                error = "signature_satisfaction_dimension_weight_out_of_range";
+                return false;
+            }
+            signature.satisfaction_weights_q16[static_cast<size_t>(dim)] = weight;
+            weight_total += weight;
+        }
+        if (weight_total <= 0) {
+            error = "signature_satisfaction_dimension_weights_empty";
+            return false;
+        }
     }
     _merchant_profession_id = -1;
     for (size_t p = 0; p < _profession_ids.size(); ++p) {
@@ -6503,9 +6967,13 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
         const std::vector<int64_t> &variant_prices,
         const std::vector<int64_t> &need_score_sums,
         const std::vector<int64_t> &need_environment, int64_t &sat) {
-    if (cell < 0 || cell >= _cell_count ||
-        _labor_signals.cell_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
-        _labor_signals.cell_offsets[cell] == _labor_signals.cell_offsets[cell + 1]) return;
+    if (cell < 0 || cell >= _cell_count) return;
+    // Labor signals only exist where somebody employs somebody, but the
+    // per-capita survival-plan cost is needed for every populated cell because
+    // the savings satisfaction dimension normalizes against it.
+    const bool labor_signals_ready =
+        _labor_signals.cell_offsets.size() == static_cast<size_t>(_cell_count + 1) &&
+        _labor_signals.cell_offsets[cell] != _labor_signals.cell_offsets[cell + 1];
     const int32_t ethnicity_count = static_cast<int32_t>(_ethnicity_ids.size());
     thread_local std::vector<int64_t> cache;
     thread_local std::vector<int32_t> cached_prices;
@@ -6672,6 +7140,9 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
     });
     const int64_t general = population_total > 0
         ? general_weighted / population_total : 0;
+    if (cell < static_cast<int32_t>(_cell_living_cost_per_capita.size()))
+        _cell_living_cost_per_capita[cell] = general;
+    if (!labor_signals_ready) return;
     for (int32_t signal = _labor_signals.cell_offsets[cell];
          signal < _labor_signals.cell_offsets[cell + 1]; ++signal) {
         const int32_t profession = _labor_signals.profession_ids[signal];
@@ -8118,6 +8589,7 @@ int64_t NativeEconomyRuntime::pay_building_wage_amount(
                 income_tax = apply_fiscal_tax(
                     cell, NativeCountryRuntime::TAX_INCOME, share, income_rate,
                     _saturation_count);
+                record_cohort_fiscal(slot, income_tax);
             }
         }
         const int64_t net_share = saturating_sub(
@@ -8600,6 +9072,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         thread_local std::vector<uint8_t> labor_survival_priority;
         thread_local std::vector<int32_t> labor_shortage_priority_q16;
         thread_local std::vector<int64_t> labor_tax_retention_q16;
+        // Composite satisfaction of the group's owner cohort as of the previous
+        // epoch. Employment runs before the market pass, so this is always last
+        // epoch's published value and never introduces a same-epoch cycle.
+        thread_local std::vector<int32_t> labor_owner_satisfaction_q16;
         const bool labor_income_tax_active =
             (_epoch_active_tax_mask & static_cast<uint8_t>(
                 1U << NativeCountryRuntime::TAX_INCOME)) != 0;
@@ -8608,6 +9084,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         labor_shortage_priority_q16.assign(static_cast<size_t>(last - first), 0);
         labor_tax_retention_q16.assign(static_cast<size_t>(last - first),
                                        Q16_ONE);
+        labor_owner_satisfaction_q16.assign(static_cast<size_t>(last - first), 0);
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell || group.count <= 0 ||
@@ -8651,6 +9128,13 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 labor_tax_retention_q16[static_cast<size_t>(g - first)] =
                     projected_employee_tax_retention_q16(
                         group, _saturation_count);
+            if (group.owner_signature_id >= 0) {
+                const int32_t owner_slot = _population.find_signature(
+                    cell, static_cast<uint32_t>(group.owner_signature_id));
+                if (owner_slot >= 0)
+                    labor_owner_satisfaction_q16[static_cast<size_t>(g - first)] =
+                        _population.composite_satisfaction[owner_slot];
+            }
             hire_order.push_back(g);
         }
         std::stable_sort(hire_order.begin(), hire_order.end(),
@@ -8675,6 +9159,13 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 return ga.realized_profit_margin_q16 > gb.realized_profit_margin_q16;
             if (ga.planned_utilization_q16 != gb.planned_utilization_q16)
                 return ga.planned_utilization_q16 > gb.planned_utilization_q16;
+            // Equally profitable employers are separated by how well their owner
+            // class actually lived last epoch, so labour drifts toward the
+            // trades that visibly pay off.
+            if (labor_owner_satisfaction_q16[local_a] !=
+                    labor_owner_satisfaction_q16[local_b])
+                return labor_owner_satisfaction_q16[local_a] >
+                    labor_owner_satisfaction_q16[local_b];
             return a < b;
         });
 
@@ -11017,6 +11508,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 business_tax = apply_fiscal_tax(
                     cell, NativeCountryRuntime::TAX_BUSINESS, paid,
                     business_rate, _saturation_count);
+                record_cohort_fiscal(offer.owner_slot, business_tax);
             }
             const int64_t producer_after_business_tax = saturating_sub(
                 paid, business_tax, _saturation_count);
@@ -11349,6 +11841,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             income_tax = apply_fiscal_tax(
                 cell, NativeCountryRuntime::TAX_INCOME, net_operating_income,
                 income_rate, _saturation_count);
+            record_cohort_fiscal(owner_slot, income_tax);
         }
         if (income_tax == 0) continue;
         touch_accounting_slot(owner_slot);
@@ -14405,6 +14898,9 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _environment_plant_available_water_q16.assign(cell_count, Q16_ONE / 2);
     _environment_snow_q16.assign(cell_count, 0);
     _environment_weather_q16.assign(cell_count, 0);
+    _cell_living_cost_per_capita.assign(cell_count, 0);
+    _epoch_cell_development_q16.assign(cell_count, 0);
+    _cell_social_pressure_level.assign(cell_count, 0);
     uint64_t bootstrap_environment_hash = 1469598103934665603ULL;
     auto mix_bootstrap_environment = [&](uint32_t value) {
         for (int32_t byte = 0; byte < 4; ++byte) {
@@ -18731,6 +19227,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<int64_t> need_environment_cache;
     thread_local std::vector<int64_t> cohort_worst_q16;
     thread_local std::vector<uint16_t> cohort_worst_need;
+    // Need-tier reduction, strided by SAT_TIER_COUNT per local cohort. A tier the
+    // cohort's plan never mentions keeps a zero weight and is dropped from the
+    // composite denominator, so a plan without luxuries is not penalized.
+    thread_local std::vector<int64_t> cohort_tier_weighted_q16;
+    thread_local std::vector<int64_t> cohort_tier_weight_q16;
     thread_local std::vector<int64_t> expected_births_q32_by_ethnicity;
     thread_local std::vector<int32_t> local_by_slot;
     thread_local std::vector<uint32_t> local_by_slot_stamp;
@@ -18790,6 +19291,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     cohort_staple_filled.assign(cohort_count, 0);
     cohort_clothing_required.assign(cohort_count, 0);
     cohort_clothing_filled.assign(cohort_count, 0);
+    cohort_tier_weighted_q16.assign(
+        static_cast<size_t>(cohort_count) * SAT_TIER_COUNT, 0);
+    cohort_tier_weight_q16.assign(
+        static_cast<size_t>(cohort_count) * SAT_TIER_COUNT, 0);
     expected_births_q32_by_ethnicity.assign(_ethnicity_ids.size(), 0);
     result.retained_consumed_by_good.assign(_market.good_count, 0);
     cohort_working_capital_reserve.assign(cohort_count, 0);
@@ -19698,6 +20203,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         _population.epoch_expense[slot] = saturating_add(
             _population.epoch_expense[slot], spend, sat);
         const int64_t subsidy = cohort_consumption_subsidy[local];
+        record_cohort_fiscal(slot, cohort_consumption_tax[local]);
+        record_cohort_fiscal(slot, -subsidy);
         if (trace_detail && spend > 0) {
             result.cashflows.push_back({_population.handle_for_slot(slot),
                 CASHFLOW_HOUSEHOLD_CONSUMPTION, 0, spend});
@@ -19763,6 +20270,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 income_tax = apply_fiscal_tax(
                     cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
                     income_rate, sat);
+                record_cohort_fiscal(slot, income_tax);
             }
         }
         const int64_t net_share = saturating_sub(share, income_tax, sat);
@@ -19815,54 +20323,27 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             ? Q16_ONE - 1
             : std::clamp<int64_t>(mul_div_sat(state.filled_units, Q16_ONE,
                                               state.desired_units, sat), 0, Q16_ONE - 1);
+        const Need &need = _needs[state.need_index];
+        const int64_t tier_weight = need.satisfaction_weight_q16;
+        if (tier_weight > 0) {
+            const size_t tier_index = static_cast<size_t>(local) * SAT_TIER_COUNT +
+                static_cast<size_t>(need.satisfaction_tier);
+            cohort_tier_weighted_q16[tier_index] = saturating_add(
+                cohort_tier_weighted_q16[tier_index],
+                saturating_mul(satisfaction, tier_weight, sat), sat);
+            cohort_tier_weight_q16[tier_index] = saturating_add(
+                cohort_tier_weight_q16[tier_index], tier_weight, sat);
+        }
         if (trace_detail) {
             CohortWelfareEntry &entry = result.welfare_entries[local];
             entry.need_ids.push_back(stable_need);
             entry.need_satisfaction_q16.push_back(static_cast<int32_t>(satisfaction));
+            entry.need_weight_q16.push_back(static_cast<int32_t>(tier_weight));
+            entry.need_tiers.push_back(static_cast<int32_t>(need.satisfaction_tier));
         }
         if (satisfaction < cohort_worst_q16[local]) {
             cohort_worst_q16[local] = satisfaction;
             cohort_worst_need[local] = static_cast<uint16_t>(_needs[state.need_index].stable_id);
-        }
-    }
-    if (trace_detail) {
-        auto need_band = [&](int32_t stable_need) -> int32_t {
-            if (stable_need < 0 || stable_need >= static_cast<int32_t>(_need_ids.size())) return 1;
-            const std::string &id = _need_ids[stable_need];
-            if (id == "staple_food" || id == "protein" || id == "produce" ||
-                id == "clothing") return 0;
-            if (id == "housing" || id == "household_goods" || id == "hygiene" ||
-                id == "healthcare" || id == "home_energy") return 1;
-            if (id == "luxury" || id == "status_goods") return 3;
-            return 2;
-        };
-        for (CohortWelfareEntry &entry : result.welfare_entries) {
-            int64_t total = 0;
-            int64_t band_total[4] = {0, 0, 0, 0};
-            int32_t band_count[4] = {0, 0, 0, 0};
-            for (int32_t i = 0; i < static_cast<int32_t>(entry.need_ids.size()); ++i) {
-                const int32_t value = entry.need_satisfaction_q16[i];
-                total += value;
-                const int32_t band = need_band(entry.need_ids[i]);
-                band_total[band] += value;
-                ++band_count[band];
-            }
-            entry.overall_satisfaction_q16 = entry.need_ids.empty() ? 0 :
-                static_cast<int32_t>(total / static_cast<int64_t>(entry.need_ids.size()));
-            const int64_t survival = band_count[0] > 0 ? band_total[0] / band_count[0] : 0;
-            const int64_t basics = band_count[1] > 0 ? band_total[1] / band_count[1] : 0;
-            const int64_t comfort = band_count[2] > 0 ? band_total[2] / band_count[2] : 0;
-            const int64_t luxury = band_count[3] > 0 ? band_total[3] / band_count[3] : 0;
-            if (survival < Q16_ONE * 50 / 100) entry.living_standard_level = 0;
-            else if (survival < Q16_ONE * 80 / 100) entry.living_standard_level = 1;
-            else if (band_count[1] == 0 || basics < Q16_ONE * 70 / 100)
-                entry.living_standard_level = 2;
-            else if (band_count[2] == 0 || comfort < Q16_ONE * 65 / 100)
-                entry.living_standard_level = 3;
-            else if (band_count[3] == 0 || luxury < Q16_ONE * 60 / 100)
-                entry.living_standard_level = 4;
-            else if (luxury < Q16_ONE * 85 / 100) entry.living_standard_level = 5;
-            else entry.living_standard_level = 6;
         }
     }
     // Sparse post-settlement attribution. Important people do not submit
@@ -20001,15 +20482,47 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             mul_div_sat(_population.income_ema[slot], Q16_ONE - income_alpha_q16,
                         Q16_ONE, sat),
             mul_div_sat(daily_net_income, income_alpha_q16, Q16_ONE, sat), sat);
+        const int64_t baseline_alpha_q16 = std::min<int64_t>(
+            Q16_ONE, static_cast<int64_t>(_epoch_days) *
+                _satisfaction_income_baseline_alpha_q16);
+        _population.income_baseline_ema[slot] = saturating_add(
+            mul_div_sat(_population.income_baseline_ema[slot],
+                        Q16_ONE - baseline_alpha_q16, Q16_ONE, sat),
+            mul_div_sat(daily_net_income, baseline_alpha_q16, Q16_ONE, sat), sat);
 
         const uint32_t signature_id = _population.signature_id[slot];
         const Signature &signature = _signatures[signature_id];
+        const int64_t composite_q16 = update_cohort_satisfaction(
+            slot, cell, survival_q16, signature,
+            &cohort_tier_weighted_q16[static_cast<size_t>(local) * SAT_TIER_COUNT],
+            &cohort_tier_weight_q16[static_cast<size_t>(local) * SAT_TIER_COUNT],
+            sat);
+        if (trace_detail && local < static_cast<int32_t>(
+                result.welfare_entries.size())) {
+            CohortWelfareEntry &entry = result.welfare_entries[local];
+            entry.overall_satisfaction_q16 = static_cast<int32_t>(composite_q16);
+            entry.living_standard_level = living_standard_level_for(composite_q16);
+            entry.worst_dimension_id = _population.worst_dimension_id[slot] ==
+                    std::numeric_limits<uint8_t>::max()
+                ? -1 : static_cast<int32_t>(_population.worst_dimension_id[slot]);
+            const size_t dims_base = static_cast<size_t>(slot) *
+                static_cast<size_t>(SAT_DIM_COUNT);
+            for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+                entry.satisfaction_dims_q16[static_cast<size_t>(dim)] =
+                    _population.satisfaction_dims[dims_base +
+                                                  static_cast<size_t>(dim)];
+        }
         if (signature.ethnicity_id >= 0 && signature.ethnicity_id <
                 static_cast<int32_t>(expected_births_q32_by_ethnicity.size())) {
-            // u16 satisfaction tops out at Q16_ONE - 1; treat that encoded
-            // ceiling as fully satisfied for the calibrated birth attractor.
-            const int64_t birth_satisfaction_q16 = survival_q16 >= Q16_ONE - 1
-                ? Q16_ONE : std::clamp<int64_t>(survival_q16, 0, Q16_ONE);
+            // Fertility answers to the whole composite, not just food: a taxed,
+            // savings-less, backward cohort has fewer children. The composite is
+            // rescaled by the birth reference first, otherwise an early-era
+            // cohort — which by construction scores nothing on luxury, savings,
+            // and development — would strangle its own birth rate.
+            const int64_t birth_satisfaction_q16 = std::clamp<int64_t>(
+                mul_div_sat(composite_q16, Q16_ONE,
+                            _satisfaction_birth_reference_q16, sat),
+                0, Q16_ONE);
             const int64_t birth_weight_q16 = std::clamp<int64_t>(
                 signature.satisfaction_birth_weight_q16, 0, Q16_ONE);
             const int64_t birth_reduction_q16 = mul_div_sat(
@@ -20033,6 +20546,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 expected_births_q32_by_ethnicity[signature.ethnicity_id],
                 expected_births_q32, sat);
         }
+        // Invariant: starvation mortality reads SAT_DIM_SUBSISTENCE and nothing
+        // else. Dying of hunger is a physiological fact, so a heavy tax burden,
+        // an empty purse, or a backward settlement must never kill anyone here.
         const int64_t survival_deficit = std::max<int64_t>(
             0, _starvation_satisfaction_threshold_q16 - survival_q16);
         const int64_t starvation_rate_q32 = mul_div_sat(
@@ -20358,7 +20874,21 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
                                       ? _population.demography_residual[source]
                                       : mul_div_sat(_population.demography_residual[source], move_pop,
                                                     source_pop, _saturation_count);
+    const int64_t move_tax_paid = move_pop == source_pop
+                                      ? _population.epoch_tax_paid[source]
+                                      : mul_div_sat(_population.epoch_tax_paid[source],
+                                                    move_pop, source_pop, _saturation_count);
+    const int64_t move_subsidy = move_pop == source_pop
+                                     ? _population.epoch_subsidy_received[source]
+                                     : mul_div_sat(_population.epoch_subsidy_received[source],
+                                                   move_pop, source_pop, _saturation_count);
+    const int64_t move_baseline_ema = move_pop == source_pop
+                                          ? _population.income_baseline_ema[source]
+                                          : mul_div_sat(_population.income_baseline_ema[source],
+                                                        move_pop, source_pop, _saturation_count);
     const uint16_t move_satisfaction = _population.needs_satisfaction[source];
+    const uint16_t move_composite = _population.composite_satisfaction[source];
+    const uint8_t move_worst_dimension = _population.worst_dimension_id[source];
 
     const int64_t source_population_before = _population.population[source];
     const int64_t source_funds_before = _population.funds[source];
@@ -20396,15 +20926,45 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
                                                          move_ema, _saturation_count);
     _population.demography_residual[destination] = saturating_add(
         _population.demography_residual[destination], move_residual, _saturation_count);
-    const int64_t satisfaction_weighted = saturating_add(
-        mul_div_sat(_population.needs_satisfaction[destination], destination_pop_before, 1,
-                    _saturation_count),
-        mul_div_sat(move_satisfaction, move_pop, 1, _saturation_count), _saturation_count);
-    _population.needs_satisfaction[destination] = static_cast<uint16_t>(
-        _population.population[destination] > 0
-            ? std::clamp<int64_t>(satisfaction_weighted / _population.population[destination],
-                                  0, Q16_ONE - 1)
-            : Q16_ONE - 1);
+    _population.epoch_tax_paid[destination] = saturating_add(
+        _population.epoch_tax_paid[destination], move_tax_paid, _saturation_count);
+    _population.epoch_subsidy_received[destination] = saturating_add(
+        _population.epoch_subsidy_received[destination], move_subsidy, _saturation_count);
+    _population.income_baseline_ema[destination] = saturating_add(
+        _population.income_baseline_ema[destination], move_baseline_ema,
+        _saturation_count);
+    // Satisfaction is an intensive per-capita quantity, so merging two cohorts
+    // blends it by population rather than summing it.
+    const int64_t merged_pop = _population.population[destination];
+    const auto blend_satisfaction = [&](uint16_t destination_value,
+                                        uint16_t incoming_value) -> uint16_t {
+        if (merged_pop <= 0) return static_cast<uint16_t>(Q16_ONE - 1);
+        const int64_t weighted = saturating_add(
+            mul_div_sat(destination_value, destination_pop_before, 1, _saturation_count),
+            mul_div_sat(incoming_value, move_pop, 1, _saturation_count),
+            _saturation_count);
+        return static_cast<uint16_t>(
+            std::clamp<int64_t>(weighted / merged_pop, 0, Q16_ONE - 1));
+    };
+    _population.needs_satisfaction[destination] = blend_satisfaction(
+        _population.needs_satisfaction[destination], move_satisfaction);
+    _population.composite_satisfaction[destination] = blend_satisfaction(
+        _population.composite_satisfaction[destination], move_composite);
+    {
+        const size_t destination_base =
+            static_cast<size_t>(destination) * static_cast<size_t>(SAT_DIM_COUNT);
+        const size_t source_base =
+            static_cast<size_t>(source) * static_cast<size_t>(SAT_DIM_COUNT);
+        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+            _population.satisfaction_dims[destination_base + static_cast<size_t>(dim)] =
+                blend_satisfaction(
+                    _population.satisfaction_dims[destination_base +
+                                                  static_cast<size_t>(dim)],
+                    _population.satisfaction_dims[source_base + static_cast<size_t>(dim)]);
+        }
+    }
+    if (destination_pop_before <= 0)
+        _population.worst_dimension_id[destination] = move_worst_dimension;
 
     audit_touch_population_lane(source);
     _population.population[source] -= move_pop;
@@ -20413,6 +20973,9 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
     _population.epoch_expense[source] -= move_expense;
     _population.epoch_in_kind_income[source] -= move_in_kind;
     _population.income_ema[source] -= move_ema;
+    _population.epoch_tax_paid[source] -= move_tax_paid;
+    _population.epoch_subsidy_received[source] -= move_subsidy;
+    _population.income_baseline_ema[source] -= move_baseline_ema;
     _population.demography_residual[source] -= move_residual;
     move_family_membership(static_cast<uint64_t>(source_handle),
         static_cast<uint64_t>(destination_handle), source_pop, move_pop,
@@ -21073,6 +21636,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             ++_cell_population_gen[cell];
             ++_cell_resource_gen[cell];
         }
+        publish_social_pressure_facts();
         _rolling_processed_cells = static_cast<int32_t>(_epoch_settlement_cells.size());
         _rolling_deferred_cells = std::max(
             0, _rolling_due_cells - _rolling_processed_cells);
@@ -24188,7 +24752,10 @@ void NativeEconomyRuntime::rebuild_family_influences() {
             return static_cast<size_t>(value);
         }
     };
-    struct Aggregate { int64_t population = 0, cash = 0, asset = 0; };
+    struct Aggregate {
+        int64_t population = 0, cash = 0, asset = 0;
+        int64_t satisfaction_weighted = 0;
+    };
     std::unordered_map<Key, Aggregate, KeyHash> aggregates;
     aggregates.reserve(_family_memberships.size() + _family_ownerships.size());
     for (const FamilyMembershipEdge &edge : _family_memberships) {
@@ -24198,10 +24765,15 @@ void NativeEconomyRuntime::rebuild_family_influences() {
         const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
         if (cell < 0 || cell >= _cell_count) continue;
         Aggregate &aggregate = aggregates[{edge.family_handle, cell}];
-        aggregate.population = saturating_add(aggregate.population,
-            std::max<int64_t>(0, edge.people), _saturation_count);
+        const int64_t people = std::max<int64_t>(0, edge.people);
+        aggregate.population = saturating_add(aggregate.population, people,
+                                              _saturation_count);
         aggregate.cash = saturating_add(aggregate.cash,
             std::max<int64_t>(0, edge.cash_claim), _saturation_count);
+        aggregate.satisfaction_weighted = saturating_add(
+            aggregate.satisfaction_weighted,
+            saturating_mul(_population.composite_satisfaction[slot], people,
+                           _saturation_count), _saturation_count);
     }
     const std::unordered_map<uint64_t, int32_t> &building_by_handle =
         building_handle_index();
@@ -24294,10 +24866,17 @@ void NativeEconomyRuntime::rebuild_family_influences() {
             item.second.cash, total_cash[key.cell]);
         _family_influences.building_share_q16[branch] = share(
             item.second.asset, total_asset[key.cell]);
+        // The 25/35/40 prestige formula is deliberately untouched: satisfaction
+        // is recorded alongside it and only gates the survival review below.
         _family_influences.score_q16[branch] = static_cast<int32_t>(
             (static_cast<int64_t>(_family_influences.population_share_q16[branch]) * 25 +
              static_cast<int64_t>(_family_influences.cash_share_q16[branch]) * 35 +
              static_cast<int64_t>(_family_influences.building_share_q16[branch]) * 40) / 100);
+        _family_influences.satisfaction_q16[branch] = item.second.population > 0
+            ? static_cast<int32_t>(std::clamp<int64_t>(
+                  item.second.satisfaction_weighted / item.second.population,
+                  0, Q16_ONE - 1))
+            : static_cast<int32_t>(Q16_ONE - 1);
         const int64_t phase = _family_influences.stable_id[branch] % 30;
         const bool review_due = _current_day >= 0 &&
             ((_current_day % 30 + 30) % 30) == phase;
@@ -24312,8 +24891,15 @@ void NativeEconomyRuntime::rebuild_family_influences() {
                         thresholds[level] * 80 / 100)
                     downgrade_target = level;
             }
+            // A branch whose own members live in the bottom pressure bands has
+            // no standing to rise, however much cash and land it controls.
+            // Decline is never blocked, so this can only slow promotion.
+            const bool members_discontent =
+                _family_influences.satisfaction_q16[branch] <
+                _satisfaction_pressure_thresholds_q16[1];
             int32_t target = current;
-            if (upgrade_target > current) target = upgrade_target;
+            if (upgrade_target > current && !members_discontent)
+                target = upgrade_target;
             else if (downgrade_target < current) target = downgrade_target;
             if (target == current) {
                 _family_influences.pending_target_level[branch] =
@@ -25550,7 +26136,11 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_population.generation); cap(_population.population); cap(_population.funds);
     cap(_population.epoch_income); cap(_population.epoch_expense);
     cap(_population.epoch_in_kind_income); cap(_population.income_ema);
+    cap(_population.epoch_tax_paid); cap(_population.epoch_subsidy_received);
+    cap(_population.income_baseline_ema);
     cap(_population.needs_satisfaction); cap(_population.worst_need_id);
+    cap(_population.composite_satisfaction); cap(_population.satisfaction_dims);
+    cap(_population.worst_dimension_id);
     cap(_population.flags); cap(_population.demography_residual);
     cap(_birth_residual_q32);
     cap(_population.owner_employed); cap(_population.employee_employed);
@@ -27788,9 +28378,14 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     }
     PackedInt32Array overall_satisfaction;
     PackedInt32Array living_standard_levels;
+    PackedInt32Array satisfaction_dims;
+    PackedInt32Array worst_dimensions;
+    PackedInt32Array worst_needs;
     PackedInt32Array welfare_need_offsets;
     PackedInt32Array welfare_need_ids;
     PackedInt32Array welfare_need_satisfaction;
+    PackedInt32Array welfare_need_weights;
+    PackedInt32Array welfare_need_tiers;
     PackedInt64Array wealth_demand_deltas;
     PackedInt64Array price_demand_deltas;
     welfare_need_offsets.push_back(0);
@@ -27808,14 +28403,34 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
             }
         }
         if (welfare == nullptr) welfare_complete = false;
-        overall_satisfaction.push_back(welfare != nullptr
-            ? welfare->overall_satisfaction_q16 : _population.needs_satisfaction[slot]);
-        living_standard_levels.push_back(welfare != nullptr
-            ? welfare->living_standard_level : -1);
+        // The composite and its dimensions are authoritative columns now, so
+        // they are always available; only the per-need breakdown still needs a
+        // traced settlement batch.
+        const int64_t composite_q16 = _population.composite_satisfaction[slot];
+        overall_satisfaction.push_back(static_cast<int32_t>(composite_q16));
+        living_standard_levels.push_back(living_standard_level_for(composite_q16));
+        const size_t dims_base = static_cast<size_t>(slot) *
+            static_cast<size_t>(SAT_DIM_COUNT);
+        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+            satisfaction_dims.push_back(static_cast<int32_t>(
+                _population.satisfaction_dims[dims_base + static_cast<size_t>(dim)]));
+        worst_dimensions.push_back(
+            _population.worst_dimension_id[slot] ==
+                    std::numeric_limits<uint8_t>::max()
+                ? -1 : static_cast<int32_t>(_population.worst_dimension_id[slot]));
+        worst_needs.push_back(
+            _population.worst_need_id[slot] == std::numeric_limits<uint16_t>::max()
+                ? -1 : static_cast<int32_t>(_population.worst_need_id[slot]));
         if (welfare != nullptr) {
             for (int32_t i = 0; i < static_cast<int32_t>(welfare->need_ids.size()); ++i) {
                 welfare_need_ids.push_back(welfare->need_ids[i]);
                 welfare_need_satisfaction.push_back(welfare->need_satisfaction_q16[i]);
+                welfare_need_weights.push_back(
+                    i < static_cast<int32_t>(welfare->need_weight_q16.size())
+                        ? welfare->need_weight_q16[i] : 0);
+                welfare_need_tiers.push_back(
+                    i < static_cast<int32_t>(welfare->need_tiers.size())
+                        ? welfare->need_tiers[i] : -1);
             }
         }
         welfare_need_offsets.push_back(welfare_need_ids.size());
@@ -27831,9 +28446,15 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["welfare_detail_available"] = welfare_complete;
     out["overall_satisfaction_by_cohort_q16"] = overall_satisfaction;
     out["living_standard_level_by_cohort"] = living_standard_levels;
+    out["satisfaction_dimension_count"] = SAT_DIM_COUNT;
+    out["satisfaction_dims_by_cohort_q16"] = satisfaction_dims;
+    out["worst_satisfaction_dimension_by_cohort"] = worst_dimensions;
+    out["worst_need_by_cohort"] = worst_needs;
     out["welfare_need_offsets"] = welfare_need_offsets;
     out["welfare_need_ids"] = welfare_need_ids;
     out["welfare_need_satisfaction_q16"] = welfare_need_satisfaction;
+    out["welfare_need_weight_q16"] = welfare_need_weights;
+    out["welfare_need_tiers"] = welfare_need_tiers;
     out["demand_attribution_good_count"] = _market.good_count;
     out["demand_wealth_delta_per_capita_daily"] = wealth_demand_deltas;
     out["demand_price_delta_per_capita_daily"] = price_demand_deltas;
@@ -28273,6 +28894,162 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
             0, Q16_ONE)
         : Q16_ONE;
     out["merchant_snapshot_saturation_count"] = snapshot_saturation;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
+        int64_t cohort_handle) const {
+    Dictionary out;
+    int32_t slot = -1;
+    if (!_configured ||
+        !_population.valid_handle(static_cast<uint64_t>(cohort_handle), slot)) {
+        out["ok"] = false;
+        out["reason"] = !_configured ? "economy_not_configured"
+                                     : "cohort_handle_invalid";
+        return out;
+    }
+    const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+    const Signature &signature = _signatures[_population.signature_id[slot]];
+    const size_t base = static_cast<size_t>(slot) *
+        static_cast<size_t>(SAT_DIM_COUNT);
+    PackedInt32Array dim_ids, dim_values, dim_weights, dim_contributions;
+    int64_t weighted_total = 0;
+    int64_t weight_total = 0;
+    int64_t diagnostic_sat = 0;
+    for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+        const int64_t value = _population.satisfaction_dims[
+            base + static_cast<size_t>(dim)];
+        const int64_t weight =
+            signature.satisfaction_weights_q16[static_cast<size_t>(dim)];
+        dim_ids.push_back(dim);
+        dim_values.push_back(static_cast<int32_t>(value));
+        dim_weights.push_back(static_cast<int32_t>(weight));
+        // The shortfall each dimension contributes to the composite, which is
+        // what makes one of them the worst.
+        dim_contributions.push_back(static_cast<int32_t>(std::clamp<int64_t>(
+            mul_div_sat(Q16_ONE - 1 - value, weight, Q16_ONE, diagnostic_sat),
+            0, Q16_ONE)));
+        if (weight <= 0) continue;
+        weighted_total = saturating_add(weighted_total,
+            saturating_mul(value, weight, diagnostic_sat), diagnostic_sat);
+        weight_total = saturating_add(weight_total, weight, diagnostic_sat);
+    }
+    const int64_t subsistence_q16 = _population.satisfaction_dims[
+        base + static_cast<size_t>(SAT_DIM_SUBSISTENCE)];
+    const int64_t raw_q16 = weight_total > 0
+        ? std::clamp<int64_t>(weighted_total / weight_total, 0, Q16_ONE - 1)
+        : Q16_ONE - 1;
+    const int64_t ceiling_q16 = saturating_add(subsistence_q16,
+        mul_div_sat(Q16_ONE - 1 - subsistence_q16,
+                    _satisfaction_subsistence_gate_slack_q16, Q16_ONE,
+                    diagnostic_sat), diagnostic_sat);
+    out["ok"] = true;
+    out["cohort_handle"] = cohort_handle;
+    out["cell_index"] = cell;
+    out["signature_id"] = static_cast<int32_t>(_population.signature_id[slot]);
+    out["profession_id"] = signature.profession_id;
+    out["population"] = _population.population[slot];
+    out["dim_ids"] = dim_ids;
+    out["dim_values_q16"] = dim_values;
+    out["dim_weights_q16"] = dim_weights;
+    out["dim_contributions_q16"] = dim_contributions;
+    out["raw_q16"] = raw_q16;
+    out["ceiling_q16"] = ceiling_q16;
+    out["composite_q16"] =
+        static_cast<int32_t>(_population.composite_satisfaction[slot]);
+    out["worst_dimension_id"] = _population.worst_dimension_id[slot] ==
+            std::numeric_limits<uint8_t>::max()
+        ? -1 : static_cast<int32_t>(_population.worst_dimension_id[slot]);
+    out["worst_need_id"] = _population.worst_need_id[slot] ==
+            std::numeric_limits<uint16_t>::max()
+        ? -1 : static_cast<int32_t>(_population.worst_need_id[slot]);
+    out["living_standard_level"] = living_standard_level_for(
+        _population.composite_satisfaction[slot]);
+    out["social_pressure_level"] = social_pressure_level_for(
+        _population.composite_satisfaction[slot]);
+    // Raw dimension inputs, so a designer can see why a dimension scored badly
+    // rather than only that it did.
+    out["income_ema"] = _population.income_ema[slot];
+    out["income_baseline_ema"] = _population.income_baseline_ema[slot];
+    out["funds"] = _population.funds[slot];
+    out["epoch_income"] = _population.epoch_income[slot];
+    out["epoch_in_kind_income"] = _population.epoch_in_kind_income[slot];
+    out["epoch_tax_paid"] = _population.epoch_tax_paid[slot];
+    out["epoch_subsidy_received"] = _population.epoch_subsidy_received[slot];
+    out["living_cost_per_capita"] = cell >= 0 && cell < static_cast<int32_t>(
+            _cell_living_cost_per_capita.size())
+        ? _cell_living_cost_per_capita[cell] : 0;
+    out["settlement_tier"] = cell >= 0 && cell < static_cast<int32_t>(
+            _settlements.tier.size())
+        ? static_cast<int32_t>(_settlements.tier[cell]) : 0;
+    out["development_q16"] = cell >= 0 && cell < static_cast<int32_t>(
+            _epoch_cell_development_q16.size())
+        ? _epoch_cell_development_q16[cell] : 0;
+    out["savings_target_months_q16"] = _satisfaction_savings_target_months_q16;
+    out["tax_tolerance_q16"] = _satisfaction_tax_tolerance_q16;
+    out["subsistence_gate_slack_q16"] =
+        _satisfaction_subsistence_gate_slack_q16;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::cell_satisfaction_attractiveness(
+        int32_t cell_idx) const {
+    Dictionary out;
+    if (!_configured || cell_idx < 0 || cell_idx >= _cell_count) {
+        out["ok"] = false;
+        out["reason"] = !_configured ? "economy_not_configured"
+                                     : "cell_index_invalid";
+        return out;
+    }
+    int64_t population = 0;
+    int64_t weighted = 0;
+    std::array<int64_t, SAT_DIM_COUNT> dim_weighted{};
+    int32_t cohort_count = 0;
+    _population.for_each_in_cell(cell_idx, [&](int32_t slot) {
+        const int64_t people = std::max<int64_t>(0, _population.population[slot]);
+        ++cohort_count;
+        if (people <= 0) return;
+        int64_t diagnostic_sat = 0;
+        population = saturating_add(population, people, diagnostic_sat);
+        weighted = saturating_add(weighted, saturating_mul(
+            _population.composite_satisfaction[slot], people, diagnostic_sat),
+            diagnostic_sat);
+        const size_t base = static_cast<size_t>(slot) *
+            static_cast<size_t>(SAT_DIM_COUNT);
+        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+            dim_weighted[static_cast<size_t>(dim)] = saturating_add(
+                dim_weighted[static_cast<size_t>(dim)],
+                saturating_mul(_population.satisfaction_dims[
+                    base + static_cast<size_t>(dim)], people, diagnostic_sat),
+                diagnostic_sat);
+    });
+    const int64_t composite_q16 = population > 0
+        ? std::clamp<int64_t>(weighted / population, 0, Q16_ONE - 1)
+        : Q16_ONE - 1;
+    PackedInt32Array dims;
+    for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+        dims.push_back(static_cast<int32_t>(population > 0
+            ? std::clamp<int64_t>(
+                  dim_weighted[static_cast<size_t>(dim)] / population, 0,
+                  Q16_ONE - 1)
+            : Q16_ONE - 1));
+    out["ok"] = true;
+    out["cell_index"] = cell_idx;
+    out["population"] = population;
+    out["cohort_count"] = cohort_count;
+    out["composite_q16"] = static_cast<int32_t>(composite_q16);
+    out["dim_values_q16"] = dims;
+    out["living_standard_level"] = living_standard_level_for(composite_q16);
+    out["social_pressure_level"] = social_pressure_level_for(composite_q16);
+    out["published_pressure_level"] = cell_idx < static_cast<int32_t>(
+            _cell_social_pressure_level.size())
+        ? static_cast<int32_t>(_cell_social_pressure_level[cell_idx]) : 0;
+    out["development_q16"] = cell_idx < static_cast<int32_t>(
+            _epoch_cell_development_q16.size())
+        ? _epoch_cell_development_q16[cell_idx] : 0;
+    out["living_cost_per_capita"] = cell_idx < static_cast<int32_t>(
+            _cell_living_cost_per_capita.size())
+        ? _cell_living_cost_per_capita[cell_idx] : 0;
     return out;
 }
 
@@ -29227,6 +30004,7 @@ Dictionary NativeEconomyRuntime::family_branch_effects(
     out["building_share_q16"] =
         _family_influences.building_share_q16[branch];
     out["prestige_score_q16"] = _family_influences.score_q16[branch];
+    out["satisfaction_q16"] = _family_influences.satisfaction_q16[branch];
     out["prestige_level"] = _family_influences.prestige_level[branch];
     out["pending_target_level"] =
         _family_influences.pending_target_level[branch];
@@ -29314,7 +30092,7 @@ Dictionary NativeEconomyRuntime::family_branches(
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min<int32_t>(rows.size(), offset + limit);
     PackedInt32Array cells, prestige_levels, population_shares, cash_shares,
-        building_shares, scores, pending_targets, review_streaks;
+        building_shares, scores, satisfactions, pending_targets, review_streaks;
     PackedInt64Array branch_handles, branch_stable_ids, populations, cash_claims,
         building_assets, last_review_days;
     for (int32_t i = offset; i < end; ++i) {
@@ -29346,6 +30124,8 @@ Dictionary NativeEconomyRuntime::family_branches(
             ? _family_influences.building_share_q16[influence] : 0);
         scores.push_back(influence >= 0
             ? _family_influences.score_q16[influence] : 0);
+        satisfactions.push_back(influence >= 0
+            ? _family_influences.satisfaction_q16[influence] : 0);
         pending_targets.push_back(influence >= 0
             ? _family_influences.pending_target_level[influence] : 0);
         review_streaks.push_back(influence >= 0
@@ -29366,6 +30146,7 @@ Dictionary NativeEconomyRuntime::family_branches(
     out["cash_shares_q16"] = cash_shares;
     out["building_shares_q16"] = building_shares;
     out["prestige_scores_q16"] = scores;
+    out["satisfactions_q16"] = satisfactions;
     out["pending_target_levels"] = pending_targets;
     out["review_streaks"] = review_streaks;
     out["last_review_days"] = last_review_days;
@@ -29897,7 +30678,19 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(_population.demography_residual[slot]));
         mix_u64(static_cast<uint64_t>(_population.owner_employed[slot]));
         mix_u64(static_cast<uint64_t>(_population.employee_employed[slot]));
+        mix_u64(_population.composite_satisfaction[slot]);
+        mix_u64(_population.worst_dimension_id[slot]);
+        const size_t dims_base = static_cast<size_t>(slot) *
+            static_cast<size_t>(SAT_DIM_COUNT);
+        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+            mix_u64(_population.satisfaction_dims[dims_base +
+                                                  static_cast<size_t>(dim)]);
+        mix_u64(static_cast<uint64_t>(_population.income_baseline_ema[slot]));
+        mix_u64(static_cast<uint64_t>(_population.epoch_tax_paid[slot]));
+        mix_u64(static_cast<uint64_t>(_population.epoch_subsidy_received[slot]));
     }
+    mix_u64(0x534f4350524553ULL); // "SOCPRES"
+    for (const uint8_t level : _cell_social_pressure_level) mix_u64(level);
     mix_u64(0x4249525448524553ULL); // "BIRTHRES"
     for (int64_t residual_q32 : _birth_residual_q32)
         mix_u64(static_cast<uint64_t>(residual_q32));
@@ -29955,6 +30748,7 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint32_t>(
             _family_influences.building_share_q16[i]));
         mix_u64(static_cast<uint32_t>(_family_influences.score_q16[i]));
+        mix_u64(static_cast<uint32_t>(_family_influences.satisfaction_q16[i]));
         mix_u64(_family_influences.prestige_level[i]);
         mix_u64(_family_influences.pending_target_level[i]);
         mix_u64(_family_influences.review_streak[i]);
@@ -30619,7 +31413,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         return make_save_chunk(SAVE_SECTION_HEADER, 1, payload);
     }
     if (_save.section == SAVE_SECTION_PAGES) {
-        const int32_t record_bytes = 12 + PAGE_SIZE * 79;
+        // 79 bytes of pre-v30 lane state plus 43 bytes of composite satisfaction
+        // and fiscal-burden columns.
+        const int32_t record_bytes = 12 + PAGE_SIZE * 122;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min<int32_t>(static_cast<int32_t>(_population.page_next.size()),
                                               _save.page_cursor + max_records);
@@ -30647,6 +31443,17 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<int64_t>(payload, _population.demography_residual[slot]);
                 append_le<int64_t>(payload, _population.owner_employed[slot]);
                 append_le<int64_t>(payload, _population.employee_employed[slot]);
+                append_le<uint16_t>(payload, _population.composite_satisfaction[slot]);
+                append_le<uint8_t>(payload, _population.worst_dimension_id[slot]);
+                const size_t dims_base = static_cast<size_t>(slot) *
+                    static_cast<size_t>(SAT_DIM_COUNT);
+                for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+                    append_le<uint16_t>(payload,
+                        _population.satisfaction_dims[dims_base +
+                                                      static_cast<size_t>(dim)]);
+                append_le<int64_t>(payload, _population.income_baseline_ema[slot]);
+                append_le<int64_t>(payload, _population.epoch_tax_paid[slot]);
+                append_le<int64_t>(payload, _population.epoch_subsidy_received[slot]);
             }
         }
         if (_save.page_cursor >= static_cast<int32_t>(_population.page_next.size())) ++_save.section;
@@ -30675,7 +31482,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_CELLS) {
-        const int32_t record_bytes = 117 +
+        const int32_t record_bytes = 118 +
             static_cast<int32_t>(_ethnicity_ids.size()) * 8;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min(_cell_count, _save.cell_cursor + max_records);
@@ -30719,6 +31526,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 _settlements.prosperity_generation[_save.cell_cursor]);
             append_le<uint32_t>(payload,
                 _settlements.name_roll_generation[_save.cell_cursor]);
+            append_le<uint8_t>(payload,
+                _cell_social_pressure_level[_save.cell_cursor]);
             const size_t birth_lane_begin =
                 static_cast<size_t>(_save.cell_cursor) * _ethnicity_ids.size();
             for (size_t ethnicity = 0; ethnicity < _ethnicity_ids.size(); ++ethnicity)
@@ -31208,7 +32017,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             static_cast<uint32_t>(_save.family_trait_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_FAMILY_INFLUENCES) {
-        constexpr int32_t record_bytes = 80;
+        constexpr int32_t record_bytes = 84;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min<int32_t>(_family_influences.active.size(),
             _save.family_influence_cursor + max_records);
@@ -31232,6 +32041,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int32_t>(payload,
                 _family_influences.building_share_q16[i]);
             append_le<int32_t>(payload, _family_influences.score_q16[i]);
+            append_le<int32_t>(payload, _family_influences.satisfaction_q16[i]);
             append_le<uint8_t>(payload, _family_influences.prestige_level[i]);
             append_le<uint8_t>(payload,
                 _family_influences.pending_target_level[i]);
@@ -31379,7 +32189,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         return false;
     }
     if (schema != SCHEMA_VERSION) {
-        error = schema <= 28 ? "economy_save_v28_or_earlier_unsupported" :
+        error = schema <= 29 ? "economy_save_v29_or_earlier_unsupported" :
             "economy_save_schema_unsupported";
         return false;
     }
@@ -31804,8 +32614,18 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _population.epoch_expense.assign(slots, 0);
         _population.epoch_in_kind_income.assign(slots, 0);
         _population.income_ema.assign(slots, 0);
+        _population.epoch_tax_paid.assign(slots, 0);
+        _population.epoch_subsidy_received.assign(slots, 0);
+        _population.income_baseline_ema.assign(slots, 0);
         _population.needs_satisfaction.assign(slots, static_cast<uint16_t>(Q16_ONE - 1));
         _population.worst_need_id.assign(slots, std::numeric_limits<uint16_t>::max());
+        _population.composite_satisfaction.assign(
+            slots, static_cast<uint16_t>(Q16_ONE - 1));
+        _population.satisfaction_dims.assign(
+            slots * static_cast<size_t>(SAT_DIM_COUNT),
+            static_cast<uint16_t>(Q16_ONE - 1));
+        _population.worst_dimension_id.assign(
+            slots, std::numeric_limits<uint8_t>::max());
         _population.flags.assign(slots, 0);
         _population.demography_residual.assign(slots, 0);
         _population.owner_employed.assign(slots, 0);
@@ -31850,6 +32670,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _environment_plant_available_water_q16.assign(_cell_count, 0);
         _environment_snow_q16.assign(_cell_count, 0);
         _environment_weather_q16.assign(_cell_count, 0);
+        _cell_living_cost_per_capita.assign(_cell_count, 0);
+        _epoch_cell_development_q16.assign(_cell_count, 0);
+        _cell_social_pressure_level.assign(_cell_count, 0);
         _environment_day = environment_day;
         _environment_hash = environment_hash;
         _epoch_days = epoch_days;
@@ -31946,8 +32769,41 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     !read_le(bytes, cursor, _population.flags[slot]) ||
                     !read_le(bytes, cursor, _population.demography_residual[slot]) ||
                     !read_le(bytes, cursor, _population.owner_employed[slot]) ||
-                    !read_le(bytes, cursor, _population.employee_employed[slot])) {
+                    !read_le(bytes, cursor, _population.employee_employed[slot]) ||
+                    !read_le(bytes, cursor, _population.composite_satisfaction[slot]) ||
+                    !read_le(bytes, cursor, _population.worst_dimension_id[slot])) {
                     error = "save_page_payload_truncated";
+                    return false;
+                }
+                const size_t dims_base = static_cast<size_t>(slot) *
+                    static_cast<size_t>(SAT_DIM_COUNT);
+                for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+                    if (!read_le(bytes, cursor,
+                                 _population.satisfaction_dims[
+                                     dims_base + static_cast<size_t>(dim)])) {
+                        error = "save_page_payload_truncated";
+                        return false;
+                    }
+                    if (_population.satisfaction_dims[
+                            dims_base + static_cast<size_t>(dim)] >= Q16_ONE) {
+                        error = "save_page_satisfaction_dimension_out_of_range";
+                        return false;
+                    }
+                }
+                if (!read_le(bytes, cursor, _population.income_baseline_ema[slot]) ||
+                    !read_le(bytes, cursor, _population.epoch_tax_paid[slot]) ||
+                    !read_le(bytes, cursor,
+                             _population.epoch_subsidy_received[slot])) {
+                    error = "save_page_payload_truncated";
+                    return false;
+                }
+                if (_population.composite_satisfaction[slot] >= Q16_ONE ||
+                    (_population.worst_dimension_id[slot] !=
+                         std::numeric_limits<uint8_t>::max() &&
+                     _population.worst_dimension_id[slot] >= SAT_DIM_COUNT) ||
+                    _population.epoch_tax_paid[slot] < 0 ||
+                    _population.epoch_subsidy_received[slot] < 0) {
+                    error = "save_page_satisfaction_state_out_of_range";
                     return false;
                 }
             }
@@ -32040,6 +32896,13 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     static_cast<uint8_t>(tier_flags & 0x7fU);
                 _settlements.name_forced[cell] =
                     (tier_flags & 0x80U) != 0 ? 1 : 0;
+            }
+            if (schema >= 30) {
+                if (!read_le(bytes, cursor, _cell_social_pressure_level[cell]) ||
+                    _cell_social_pressure_level[cell] >= SAT_PRESSURE_LEVEL_COUNT) {
+                    error = "save_cell_social_pressure_level_invalid";
+                    return false;
+                }
             }
             if (schema >= 28) {
                 const size_t birth_lane_begin =
@@ -32800,7 +33663,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             int64_t stable_id = 0, population = 0, cash = 0, asset = 0,
                 last_review = -1;
             int32_t population_share = 0, cash_share = 0,
-                building_share = 0, score = 0;
+                building_share = 0, score = 0, satisfaction = 0;
             int32_t family = -1;
             if (!read_le(bytes, cursor, index) ||
                 !read_le(bytes, cursor, active) ||
@@ -32815,6 +33678,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, cash_share) ||
                 !read_le(bytes, cursor, building_share) ||
                 !read_le(bytes, cursor, score) ||
+                !read_le(bytes, cursor, satisfaction) ||
                 !read_le(bytes, cursor, level) ||
                 !read_le(bytes, cursor, pending) ||
                 !read_le(bytes, cursor, streak) ||
@@ -32829,7 +33693,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                      population_share > Q16_ONE || cash_share < 0 ||
                      cash_share > Q16_ONE || building_share < 0 ||
                      building_share > Q16_ONE || score < 0 ||
-                     score > Q16_ONE))) {
+                     score > Q16_ONE || satisfaction < 0 ||
+                     satisfaction >= Q16_ONE))) {
                 error = "save_family_influence_invalid";
                 return false;
             }
@@ -32845,6 +33710,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _family_influences.cash_share_q16.push_back(cash_share);
             _family_influences.building_share_q16.push_back(building_share);
             _family_influences.score_q16.push_back(score);
+            _family_influences.satisfaction_q16.push_back(satisfaction);
             _family_influences.prestige_level.push_back(level);
             _family_influences.pending_target_level.push_back(pending);
             _family_influences.review_streak.push_back(streak);

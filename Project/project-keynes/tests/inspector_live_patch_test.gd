@@ -146,18 +146,24 @@ func _run() -> void:
 				visible_detail_cells += 1
 		var has_usage_group := false
 		var has_redundant_relation_text := false
+		var has_satisfaction_header := false
 		var detail_text := ""
 		for node in dialog._rows_grid.find_children("", "Label", true, false):
 			var label_text := String((node as Label).text)
 			detail_text += label_text + "\n"
 			has_usage_group = has_usage_group or label_text == "基本生活 · 满足 82%"
+			has_satisfaction_header = has_satisfaction_header \
+				or label_text == "满意度维度 · 最短板 储蓄"
 			has_redundant_relation_text = has_redundant_relation_text \
 				or label_text.contains("用途：") or label_text.contains("替代品") \
 				or label_text.begins_with("方案 ")
 		var dialog_panels: Array[Node] = dialog.find_children(
 			"", "PanelContainer", true, false)
-		if not dialog.is_open() or visible_detail_cells != 12:
-			failures.append("demand detail dialog did not render one group and two four-column rows")
+		# 满意度分解占一行表头加两行维度，需求明细占一个分组行加两行商品，都是四列。
+		if not dialog.is_open() or visible_detail_cells != 24:
+			failures.append("demand detail dialog did not render the satisfaction block above one group and two four-column rows")
+		elif not has_satisfaction_header:
+			failures.append("demand detail dialog did not surface the worst satisfaction dimension")
 		elif not has_usage_group or has_redundant_relation_text:
 			failures.append("demand detail dialog did not express substitution through usage grouping")
 		elif not detail_text.contains("财富 +0.020 · 价格 −0.005") \
@@ -400,10 +406,21 @@ func _market_category(step: float) -> Dictionary:
 func _population_category(step: float) -> Dictionary:
 	return {
 		"cohort_rows": [
-			{"id": "cohort_1", "name": "工人", "cohort_identity": "本地人口", "living_standard": "小康", "satisfaction": "82.0%", "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "本地人口 · 满意度 82.0%", "accent": UITokens.ACCENT, "icon": "profession.worker", "living_icon": "living_comfortable", "living_accent": UITokens.GOOD, "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
-			{"id": "cohort_2", "name": "商人", "cohort_identity": "本地人口", "living_standard": "富裕", "satisfaction": "90.0%", "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "本地人口 · 满意度 90.0%", "accent": UITokens.RESOURCE, "icon": "profession.merchant", "living_icon": "living_affluent", "living_accent": UITokens.RESOURCE, "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
+			{"id": "cohort_1", "name": "工人", "cohort_identity": "本地人口", "living_standard": "小康", "satisfaction": "82.0%", "worst_dimension": "储蓄", "satisfaction_rows": _satisfaction_rows(step), "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "本地人口 · 满意度 82.0%", "accent": UITokens.ACCENT, "icon": "profession.worker", "living_icon": "living_comfortable", "living_accent": UITokens.GOOD, "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
+			{"id": "cohort_2", "name": "商人", "cohort_identity": "本地人口", "living_standard": "富裕", "satisfaction": "90.0%", "worst_dimension": "税负", "satisfaction_rows": _satisfaction_rows(step), "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "本地人口 · 满意度 90.0%", "accent": UITokens.RESOURCE, "icon": "profession.merchant", "living_icon": "living_affluent", "living_accent": UITokens.RESOURCE, "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
 		],
 	}
+
+
+func _satisfaction_rows(step: float) -> Array:
+	return [
+		{"id": "satisfaction_dim_0", "name": "温饱",
+			"value": "%.1f%%" % (70.0 + step), "accent": UITokens.GOOD,
+			"worst": false, "visible": true},
+		{"id": "satisfaction_dim_5", "name": "储蓄",
+			"value": "%.1f%%" % (12.0 + step), "accent": UITokens.RISK,
+			"worst": true, "visible": true},
+	]
 
 
 func _demand_rows(step: float) -> Array:

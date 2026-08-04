@@ -59,6 +59,13 @@ dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提�
 稳定分支相位错峰评审，I–V 升级阈值为 2/5/10/20/40%，降级阈值为对应 80%；连续两次同向后
 直接切换到计算出的目标等级。
 
+分支另存 `satisfaction_q16`：成员 cohort 的
+[综合满意度](./satisfaction-runtime.md) composite 按 membership 人口加权。
+**威望公式一字未改**；满意度只作为**晋升**的否决条件——成员满意度低于社会压力阈值 1 的分支
+无论掌握多少现金与土地都不得上升。降级永不被阻塞，因此这只会减慢晋升。
+`get_family_branches` 与 `family_branches` 字典同时发布 `satisfaction_q16` /
+`satisfactions_q16`，该列进 family state hash 与 PKEC v30。
+
 行为偏好不随威望缩放，只在合法投资、职业迁移和 cohort 消费候选中调整 Q16 分数，不能绕过
 科技、资本、建材、资源、岗位或盈利门槛。商品偏好按家族人口占 cohort 的份额合成，并同时影响
 variant 份额和普通需求量；生存需求下限不下降。投资建设持久保存 sponsor family。
@@ -156,18 +163,20 @@ cohort→membership、family→building、building→ownership、cell→family�
 
 查询只允许在 native slice 间读取，不复制全图、不产生命令、不进入 state hash。
 
-## PKEC v29
+## PKEC v30
 
-当前 writer/reader 均为 PKEC v29。section 15–17 保存 FamilyStore、membership 与 ownership，
+当前 writer/reader 均为 PKEC v30。section 15–17 保存 FamilyStore、membership 与 ownership，
 section 18–19 保存人物与人物需求，section 20–22 保存 trait rolls、cell influences 和 pending trait
-commands，section 23 为 END。恢复校验 generation handle、目录 hash、强度步长、核心数量、唯一
+commands，section 23 为 END。cell influence 记录自 v30 起追加分支 `satisfaction_q16`。
+恢复校验 generation handle、目录 hash、强度步长、核心数量、唯一
 分支 stable ID、威望范围、连续评审状态和全部引用，再重建 CSR、selector cache、Modifier/Trigger
-binding 与冻结消费/资源因子。派生缓存不进入 PKEC 或 state hash。v28 及更早版本明确拒绝。
+binding 与冻结消费/资源因子。派生缓存不进入 PKEC 或 state hash。v29 及更早版本明确拒绝。
 
 ## 验证要求
 
 最低验收包括：家族形成门槛、实际业主占岗、职业统计、所有权 CSR、人口/货币/商品守恒、PKEC
-v29 hash round-trip、v28 明确拒绝、特性抽取/命令排序、分支威望滞回、动态效果、奖励防递归、generation 旧句柄拒绝，以及家族/人物关闭与
+v30 hash round-trip、v29 明确拒绝、特性抽取/命令排序、分支威望滞回、分支满意度门控只挡晋升不挡降级、
+动态效果、奖励防递归、generation 旧句柄拒绝，以及家族/人物关闭与
 开启的目标规模性能对比。
 
 ## 维护入口

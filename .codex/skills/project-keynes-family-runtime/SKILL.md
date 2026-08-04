@@ -1,6 +1,6 @@
 ---
 name: project-keynes-family-runtime
-description: Guide Project.Keynes notable-family runtime development and review, covering deterministic family traits, behavior preferences, per-cell prestige/influence, Modifier and Trigger effects, FamilyStore/NotablePersonStore, sparse membership/building ownership, conserved wealth and attribution, FAMILY_COMMIT/PERSON_COMMIT, PKEC v29, deterministic handles/hash, queries/UI, and sparse performance. Use when changing family traits/effects/prestige, family or important-person behavior, family-owned buildings, jobs/needs/wealth, Inspector/facade APIs, save/restore/tests, or family determinism and performance.
+description: Guide Project.Keynes notable-family runtime development and review, covering deterministic family traits, behavior preferences, per-cell prestige/influence, branch composite satisfaction, Modifier and Trigger effects, FamilyStore/NotablePersonStore, sparse membership/building ownership, conserved wealth and attribution, FAMILY_COMMIT/PERSON_COMMIT, PKEC v30, deterministic handles/hash, queries/UI, and sparse performance. Use when changing family traits/effects/prestige, family or important-person behavior, family-owned buildings, jobs/needs/wealth, Inspector/facade APIs, save/restore/tests, or family determinism and performance.
 ---
 
 # Project.Keynes Notable-Family Runtime
@@ -16,7 +16,12 @@ Read the current source before editing:
 
 - Read `docs/cpp-dots-runtime/notable-family-runtime.md` completely for the authoritative model.
 - Read `docs/cpp-dots-runtime/notable-person-runtime.md` completely when important people, names,
-  jobs, wealth, demand, lifecycle, queries, or PKEC v29 are in scope.
+  jobs, wealth, demand, lifecycle, queries, or PKEC v30 are in scope.
+- Read `docs/cpp-dots-runtime/satisfaction-runtime.md` when branch `satisfaction_q16`, the
+  promotion gate, or social-pressure events are in scope. Branch satisfaction is the
+  population-weighted composite of member cohorts; it gates **promotion only** (a branch whose
+  members live in the bottom pressure bands cannot rise) and never blocks decline. The
+  25/35/40 prestige formula stays untouched.
 - Read `gdext/src/economy_runtime.{h,cpp}` for `FamilyStore`, trait rolls, cell influence,
   relationship edges, employment, lifecycle, queries, hashing, and PKEC.
 - Read `gdext/src/world_ext_economy.cpp`, `world_ext.h`, and `world_ext_bind_methods.cpp` for the
@@ -171,9 +176,10 @@ scope unless their authority and save contracts are designed first.
 
 ## Evolve PKEC deliberately
 
-Current writer/reader is PKEC v29. Sections 15–17 store family records, memberships, and ownership;
+Current writer/reader is PKEC v30. Sections 15–17 store family records, memberships, and ownership;
 18–19 store important people and need attribution; 20 stores trait rolls; 21 stores family-cell
-influence; 22 stores ordered future trait mutations; 23 is END. Persist tombstone generations,
+influence (including the branch `satisfaction_q16` added in v30); 22 stores ordered future trait
+mutations; 23 is END. Persist tombstone generations,
 semantic family/person/trait catalog identity, person state, construction sponsor handles, prestige
 review state, and stable branch IDs. PKTR v2 persists dynamic branch Trigger accumulation and Modifier
 schema v2 persists magnitude. Do not persist continuation budgets, selector/CSR/reverse indexes,
@@ -182,8 +188,8 @@ frozen factor caches, worker results, or other reconstructed scratch.
 On restore, validate handles, unique stable identities/names, nonnegative rows, membership/person
 claim subset constraints, owned count against building count, exact person building/role references,
 sorted unique person needs, sponsor handles, and exact section completion before bootstrapping. Rebuild
-CSR and derived bindings only after validation. PKEC v28 and earlier are explicitly incompatible;
-there is no empty-family/person migration path in the v29 reader.
+CSR and derived bindings only after validation. PKEC v29 and earlier are explicitly incompatible;
+there is no empty-family/person migration path in the v30 reader.
 
 Include every authoritative family/person scalar and stable edge in state hash. Exclude display text,
 pagination, reports, CSR offsets, and other reconstructed caches. Test cold-bootstrap and committed

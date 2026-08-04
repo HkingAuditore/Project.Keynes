@@ -145,11 +145,14 @@ func _build_cohort_details(row: Dictionary) -> void:
 		{"label": "人均财富", "value": String(row.get("wealth", "—")).trim_prefix("人均 "), "accent": UITokens.RESOURCE},
 		{"label": "满意度", "value": String(row.get("satisfaction", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
 		{"label": "生活水平", "value": String(row.get("living_standard", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
+		{"label": "最短板", "value": String(row.get("worst_dimension", "—")), "accent": UITokens.WARN},
 		{"label": "收入/人", "value": String(row.get("income", "—")), "accent": UITokens.GOOD},
 		{"label": "支出/人", "value": String(row.get("expense", "—")), "accent": UITokens.RISK},
 		{"label": "净额/人", "value": String(row.get("net", "—")),
 			"accent": UITokens.GOOD if bool(row.get("net_positive", true)) else UITokens.RISK},
 	])
+	_add_rows_card("满意度维度", "growth", UITokens.ACCENT,
+		row.get("satisfaction_rows", []))
 	_add_rows_card("收入构成", "trend_up", UITokens.GOOD, row.get("income_rows", []))
 	_add_rows_card("支出构成", "trend_down", UITokens.RISK, row.get("expense_rows", []))
 	var demand: Dictionary = row.get("demand_summary", {})

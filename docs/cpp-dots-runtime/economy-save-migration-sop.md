@@ -13,7 +13,24 @@ u32 payload_bytes
 payload
 ```
 
-## PKEC v29（当前 writer）
+## PKEC v30（当前 writer）
+
+PKEC v30 保留 v29 的全部 payload 与 section 集合（END 仍为 23），只扩展三个既有 section
+的记录以持久化综合满意度权威列：
+
+- `SAVE_SECTION_PAGES` 的 cohort 记录追加 `composite_satisfaction`(u16)、
+  `worst_dimension_id`(u8)、`satisfaction_dims[SAT_DIM_COUNT]`(u16)、
+  `income_baseline_ema`(i64)、`epoch_tax_paid`(i64)、`epoch_subsidy_received`(i64)；
+- `SAVE_SECTION_FAMILY_INFLUENCES` 追加分支 `satisfaction_q16`；
+- `SAVE_SECTION_CELLS` 追加已发布的社会压力等级，避免重载后重放已发过的等级跨越事件。
+
+restore 校验每个维度值与 `worst_dimension_id` 的取值范围，越界即拒绝整个存档。全部新列
+进 `state_hash`；need 分档/权重与 signature 阶层权重列进 `catalog_hash`。当前 reader
+**只接受 v30**；v29 及更早统一返回 `economy_save_v29_or_earlier_unsupported`，
+不提供隐式空状态迁移。`game_save_coordinator.gd` 的 `pkec` provider schema 同步为 30。
+列语义见[综合满意度运行时](./satisfaction-runtime.md)。
+
+## PKEC v29（历史 writer）
 
 PKEC v29 保留 v28 的出生余数、人物、家族成员和建筑所有权，并新增家族特性运行时权威：
 
@@ -23,9 +40,8 @@ PKEC v29 保留 v28 的出生余数、人物、家族成员和建筑所有权，
 - section 23：END。
 
 header 同时保存特性目录 version/hash、核心抽取范围和权威记录数。PKTR v2 单独保存动态分支
-Trigger 累计，Modifier state v2 保存实例 `magnitude_q16`。当前 reader **只接受 v29**；v28
-及更早版本统一返回 `economy_save_v28_or_earlier_unsupported`，不提供隐式空状态迁移。完整联合
-存档仍必须先恢复 PKCN，再恢复 PKEC 和 PKTR/Modifier provider。
+Trigger 累计，Modifier state v2 保存实例 `magnitude_q16`。v29 已被 v30 取代并被 reader
+拒绝。完整联合存档仍必须先恢复 PKCN，再恢复 PKEC 和 PKTR/Modifier provider。
 
 ## PKEC v23（历史 writer）
 
@@ -101,10 +117,11 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 - 已恢复 PKCN 的 schema、generation 和 state hash
 - 贸易订单端点/状态/到达日、物资行/卖方 CSR、托管数量和稳定 next ID
 - 贸易流 key 唯一有序且 `(cell, good)` 在 catalog 范围内
+- 每个 cohort 的八个满意度维度值与 `worst_dimension_id` 落在 `[0, SAT_DIM_COUNT)` 范围内
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v29，并与 PKCN v4 交叉绑定。v28 及更早版本明确拒绝；后文旧版本章节
+当前写出 schema 为 PKEC v30，并与 PKCN v4 交叉绑定。v29 及更早版本明确拒绝；后文旧版本章节
 只记录历史格式演进，不代表当前 reader 仍接受这些版本。拓扑和未完成规划从不存档，加载后重建；联合存档
 只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
 
@@ -114,7 +131,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v29 与 PKCN v4 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
+当前 PKEC v30 与 PKCN v4 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
 并要求姓氏 `family_catalog_hash`、人物 `person_catalog_hash` 和特性
 `family_trait_catalog_hash` 一致。不存在当前 reader 可用的 append-only 迁移例外。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。

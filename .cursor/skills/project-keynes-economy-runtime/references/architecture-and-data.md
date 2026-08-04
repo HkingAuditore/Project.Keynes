@@ -40,6 +40,10 @@ Per lane:
 - `population:i64`, `funds:i64`.
 - `epoch_income:i64`, `epoch_expense:i64`, `income_ema:i64`.
 - `needs_satisfaction:u16`, `worst_need_id:u16`, `flags:u16`.
+- `composite_satisfaction:u16`, `worst_dimension_id:u8`, `satisfaction_dims:u16 × SAT_DIM_COUNT`
+  (stride-stored), `income_baseline_ema:i64`, `epoch_tax_paid:i64`,
+  `epoch_subsidy_received:i64` — the composite satisfaction authority, ~43 B/slot. All of them
+  enter `state_hash` and PKEC v30. See `docs/cpp-dots-runtime/satisfaction-runtime.md`.
 - `demography_residual:i64` reserved by the structural ABI; Market V2 does not run demography.
 
 Use `(generation << 32) | slot_index` as the external handle. Increment generation on release and
@@ -124,13 +128,18 @@ Coarse public API:
 - begin/read/end save
 - begin/feed/end restore
 - fixed-math probe and deterministic state hash
+- `explain_cohort_satisfaction(handle)` and `get_cell_satisfaction_attractiveness(cell)`:
+  pure reads, only safe between native slices, called only while the Inspector is open
 
 Do not add per-cohort setters.
 
 The Inspector opens with `get_population_cell_summary(cell)`, which returns only aggregate population,
 funds, income/expense, cohort count, and satisfaction. Full population, market, building, and natural
-resource detail is queried lazily for the visible tab. `get_population_cell_snapshot(cell)` also emits
-a cold-path cohort-major CSR demand preview:
+resource detail is queried lazily for the visible tab. `get_population_cell_snapshot(cell)` publishes
+the composite satisfaction columns for every cohort — `overall_satisfaction_by_cohort_q16`,
+`satisfaction_dims_by_cohort_q16` (stride `satisfaction_dimension_count`),
+`worst_satisfaction_dimension_by_cohort`, `living_standard_level_by_cohort` — without any trace
+filter, and also emits a cold-path cohort-major CSR demand preview:
 
 ```text
 demand_good_offsets       cohort_count + 1

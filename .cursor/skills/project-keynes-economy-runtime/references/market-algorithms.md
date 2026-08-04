@@ -96,6 +96,17 @@ merchant epoch_income += revenue share
 Distribute merchant revenue once per market, not per order. Compute total and worst-need satisfaction
 in one linear pass over need states; do not scan all need states once per cohort.
 
+That same pass also drives composite satisfaction. Four `Σ(weight × satisfaction)` / `Σweight`
+accumulators — keyed by the data-driven `Need.satisfaction_tier` — produce the subsistence, basic,
+comfort, and luxury dimensions with **zero extra iteration**. Income growth, savings, tax burden,
+and social development come from cohort ledgers and the epoch-boundary
+`_epoch_cell_development_q16` cache, so the hot loop only does multiply-add plus one
+`mul_div_sat`. Never add a second pass over need states, a string comparison, or a `Dictionary`
+here. `_population.composite_satisfaction` is the authoritative index for births, hire order,
+family branch promotion, and social-pressure events; `needs_satisfaction`
+(`SAT_DIM_SUBSISTENCE`) drives starvation mortality and nothing else. Full contract:
+`docs/cpp-dots-runtime/satisfaction-runtime.md`.
+
 Merchants also submit household demand. Total cohort money does not change from purchases.
 
 ## 6. EMA and Price V3

@@ -64,8 +64,18 @@ if ($ClosingAuditMode -ne '') {
 }
 if ($WorkerMode -ne '') { $godotArgs += "worker_mode=$WorkerMode" }
 
-& $GodotExe @godotArgs 2>&1 | Tee-Object -FilePath $logPath
-$godotExitCode = $LASTEXITCODE
+# Godot writes warnings to stderr. Under Stop mode a merged pipeline turns the
+# first one into a terminating NativeCommandError and kills the run mid-flight,
+# so the child process gets its own Continue scope. Failures are still caught by
+# the exit code and result-line checks below.
+$previousErrorAction = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    & $GodotExe @godotArgs 2>&1 | Tee-Object -FilePath $logPath
+    $godotExitCode = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $previousErrorAction
+}
 if ($godotExitCode -ne 0) {
     throw "Godot headless performance run failed with exit code $godotExitCode. Log: $logPath"
 }

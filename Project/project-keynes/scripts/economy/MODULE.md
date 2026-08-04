@@ -3,13 +3,19 @@
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、显赫家族、冻结国家科技、国内 Trade V1、
-> 税收财政、PKEC v29 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
+> 税收财政、PKEC v30 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
 > NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄、微观家庭与谱系尚未接入；
 > 自然出生和死亡由原生 household/structural 路径处理。
 
 > 2026-07-18 平衡口径：贸易使用稳定 `base_terrain`；石器食物保持 30 日商人库存目标；
 > 满意度公开字段是“食品与气候衣着的较低值”的生存满足度。黏土、盐、石油是静态地质存量，
 > 肥沃土壤缓慢恢复，伐木只发布开采 delta、不再由建筑生成森林。
+
+> 2026-08-04 综合满意度：cohort 与家族分支新增八维度 composite（温饱/基本/舒适/奢侈/
+> 收入增长/储蓄/税负/社会发展），按 profession 数据驱动权重合成并经生存闸门封顶，
+> 接管出生率、同格就业流动排序与家族分支晋升评审，并按等级跨越发布社会压力事件。
+> 上面那条生存口径仍然成立，但它现在只等于 `SAT_DIM_SUBSISTENCE` 且**只**驱动饥饿死亡。
+> 完整契约见 `docs/cpp-dots-runtime/satisfaction-runtime.md`。
 
 > v16：建筑采用 ACTIVE/SUSPENDED_LOSS/RECOVERY_PROBE 三态；商人是本地聚合债权池而非普通
 > 业主职业，5% 一次性溢价、六期偿还。自产只保留生存食品和寒冷最低衣物，实际消费价值进入
@@ -106,7 +112,7 @@
   营运资金；市场库存只按整套互补配方可执行的共同容量预留下周期物理投入，非生存加工不得提前锁住生存食物；居民消费和国内出口只能使用预留以上库存。
   商人采购目标以 `max(可行日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 good-specific 有效库存天数，并至少覆盖预留缺口；生存品供给下限为平滑日产量的 1/2，其他耐储品为 1/4，配置库存天数和目标量级不缩小。现金不足时按生存品、居民短缺、生产投入 reserve 缺口提高预算权重；权重只改变购买顺序，总预算仍以真实采购价值为上限。仅目标库存的剩余缺口可按冻结本地零售价的 20% 向生产者发行托底货币并入库；超过目标的余量进入 discard。电力等 cycle-flow 不能托底入库。
   国内贸易对每个目的地冻结同一笔现金预算：`商人正现金 - 既有订单预留 - 12.5% 营运底线`。候选裁量、利润裁剪和最终扣款共享这笔余额，生存品与关键投入也不得突破底线。
-  运行时报告、市场快照和 Economy CSV v23 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v29 或确定性哈希。v23 summary 另增加 `building_employee_to_owner_reallocations`。
+  运行时报告、市场快照和 Economy CSV v23 提供商人现金、库存零售/清算价值、总商业资产、采购毛利、贸易买卖现金、经营流出、流动性覆盖率和采购金额加权有效收购系数；这些字段只读派生，不进入 PKEC v30 或确定性哈希。v23 summary 另增加 `building_employee_to_owner_reallocations`。
 - 默认 `building_output_efficiency_q16=131072`（2 倍）统一提高所有建筑的物资产出；建设材料、生产投入、自然资源消耗、岗位与工资保持目录原值。倍率在 native 冷路径载入输出列时应用，不改变 building catalog hash 或 PKEC 字节结构。
 - `ProductionClimateProfile` 按 stable ID 排序编译为 Q16 定长列。到期 cell 冻结 30 日温度与
   `cell.plant_available_water`，计算温度/水分 fit，取较小值并应用 floor/exposure；无 Profile
@@ -369,10 +375,13 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v29. It retains the frozen environment, production-climate,
+Current saves are PKEC v30. It retains the frozen environment, production-climate,
 settlement, subsidy, fiscal, notable-family, person, and birth-residual authority from earlier
-schemas, and adds family trait rolls, per-cell influence branches, and ordered trait-mutation
-commands. The reader accepts v29 only; v28 and earlier return an explicit incompatible-save
+schemas, plus family trait rolls, per-cell influence branches, and ordered trait-mutation
+commands, and adds the composite-satisfaction columns: per-cohort composite, the eight
+dimension values, worst dimension, slow income baseline EMA, epoch tax paid and subsidy
+received; per-branch satisfaction; and the published per-cell social-pressure level.
+The reader accepts v30 only; v29 and earlier return an explicit incompatible-save
 error. Invalid family/person/cohort/building handles, overclaimed people or cash, invalid person
 jobs/needs, excessive owned counts, catalog/policy mismatch, truncation, range errors, and
 environment-hash mismatch all fail before the runtime becomes bootstrapped.
@@ -549,9 +558,9 @@ the three new deterministic policy controls and explicitly rejects v17.
 - No prosperity/name fields enter MapData, HexCell, or DataCore.
 - Inspector consumes selected-cell summaries; `SettlementLabelLayer` consumes
   full snapshot plus bounded deltas with fog, LOD, collision and pool limits.
-- Current PKEC v29 preserves the settlement state introduced by v24; older schemas are rejected.
+- Current PKEC v30 preserves the settlement state introduced by v24; older schemas are rejected.
 - Production bootstrap marks opening-country cells as forced-name capitals:
   they retain the exact 20-person contract and population-derived tier, but
   always receive a deterministic settlement name. The bit round-trips in current
-  PKEC v29 (the field was introduced in v24) and is exposed as
+  PKEC v30 (the field was introduced in v24) and is exposed as
   `settlement_name_forced`.

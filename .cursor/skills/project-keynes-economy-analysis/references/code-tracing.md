@@ -97,6 +97,12 @@ food, livelihood/cash coverage, needs satisfaction, worst need, birth/death rate
 threshold, demography residual, structural ECB, and cohort merge. Confirm population weighting and
 whether an observed profession disappears because of death, migration, signature change, or merge.
 
+For the composite index, search `SAT_DIM_`, `composite_satisfaction`, `satisfaction_dims`,
+`worst_dimension_id`, `refresh_epoch_development`, and `explain_cohort_satisfaction`. Births read
+the composite rescaled by `satisfaction_birth_reference_q16`; starvation deaths read only
+`SAT_DIM_SUBSISTENCE`. Do not attribute a birth-rate change to food without checking the other
+seven dimensions first.
+
 ### Natural resources
 
 Trace resource slot IDs from recorder control through `world_ext_economy.cpp`, capture of opening and

@@ -8,6 +8,10 @@ const DEFAULT_PROFILE_PATH := "res://data/economy/default_economy.tres"
 const GOOD_PROFILE_DIR := "res://data/goods"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EconomyProfileScript = preload("res://scripts/data/economy_profile.gd")
+## 与原生 SAT_DIM_* 枚举同序，供 Inspector 与溯源面板直接展示。
+const SATISFACTION_DIMENSION_NAMES := [
+	"温饱", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
+]
 
 enum Opcode {
 	TRANSFER_TO_COHORT = 1,
@@ -232,6 +236,27 @@ func market_cell_snapshot(cell_idx: int) -> Dictionary:
 		snapshot["details_available"] = false
 		snapshot["details_pending"] = bool(snapshot.get("busy", false))
 	return snapshot
+
+## 冷路径满意度溯源。只读且只在原生 slice 之间安全，Inspector 打开时才调用。
+func explain_cohort_satisfaction(cohort_handle: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("explain_cohort_satisfaction"):
+		return {"ok": false, "reason": "satisfaction explain API unavailable"}
+	var explained: Dictionary = _world_ext.explain_cohort_satisfaction(cohort_handle)
+	if bool(explained.get("ok", false)):
+		explained["dimension_names"] = SATISFACTION_DIMENSION_NAMES
+	return explained
+
+
+func cell_satisfaction_attractiveness(cell_idx: int) -> Dictionary:
+	if not _configured \
+			or not _world_ext.has_method("get_cell_satisfaction_attractiveness"):
+		return {"ok": false, "reason": "satisfaction attractiveness API unavailable"}
+	var attractiveness: Dictionary = \
+		_world_ext.get_cell_satisfaction_attractiveness(cell_idx)
+	if bool(attractiveness.get("ok", false)):
+		attractiveness["dimension_names"] = SATISFACTION_DIMENSION_NAMES
+	return attractiveness
+
 
 func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_trade_orders_for_cell"):

@@ -10,6 +10,7 @@ const EVENT_VISUAL_DIRTY_INTENT: int = 4
 const EVENT_ECONOMY_EPOCH_COMMITTED: int = 5
 const EVENT_ECONOMY_CONSTRUCTION_COMPLETED: int = 6
 const EVENT_ECONOMY_TRADE_ARRIVED: int = 7
+const EVENT_ECONOMY_SOCIAL_PRESSURE: int = 8
 
 const SOURCE_NATIVE: int = 1
 const SOURCE_GDSCRIPT: int = 2
@@ -20,6 +21,9 @@ const PAYLOAD_SUCCESSION_V1: int = 1
 const PAYLOAD_ECONOMY_EPOCH_V1: int = 2
 const PAYLOAD_ECONOMY_CONSTRUCTION_V1: int = 3
 const PAYLOAD_ECONOMY_TRADE_V1: int = 4
+## i0=新社会压力等级 (0 最紧张 .. 4 最满足)、i1=最差维度、i2=最差需求、
+## i3=上一等级；value=人口加权 composite Q16、entity_id=人口、flags=1 表示等级下降。
+const PAYLOAD_SOCIAL_PRESSURE_V1: int = 5
 
 var _world_ext = null
 var _schema: Dictionary = {}

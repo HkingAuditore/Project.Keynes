@@ -228,11 +228,23 @@ clothing_sat = clothing_desired == 0 ? 1 : clothing_filled / clothing_desired
 cold_exposure = max(clamp((0.5 - temperature) * 2, 0, 1), snow_cover)
 cold_clothing_ceiling = 1 - cold_exposure * (1 - clothing_sat)
 survival_sat = min(food_sat, cold_clothing_ceiling)
-birth_factor = 1 - satisfaction_birth_weight * (1 - survival_sat)
-effective_birth_rate_q32 = birth_rate_q32 * clamp(birth_factor, 0, 1)
-expected_births_q32 = population * effective_birth_rate_q32 * epoch_days
 starvation_deficit = max(0, starvation_satisfaction_threshold - survival_sat)
 ```
+
+`survival_sat` 即 `SAT_DIM_SUBSISTENCE`，也是 `needs_satisfaction` 的权威值。
+它**只**参与 `starvation_deficit`；饿死是生理事实，税负、储蓄和聚落发展都不得致死。
+出生率读综合满意度，并先按参考值重标定，否则早期 cohort（按构造在奢侈、储蓄、
+发展维度必然得零分）会自己掐死出生率：
+
+```text
+birth_input  = clamp(composite_sat * Q16 / satisfaction_birth_reference_q16, 0, 1)
+birth_factor = 1 - satisfaction_birth_weight * (1 - birth_input)
+effective_birth_rate_q32 = birth_rate_q32 * clamp(birth_factor, 0, 1)
+expected_births_q32 = population * effective_birth_rate_q32 * epoch_days
+```
+
+`composite_sat` 的八维度定义、权重契约与生存闸门见
+[综合满意度运行时](./satisfaction-runtime.md)。
 
 周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。
 职业默认出生率为每日 Q32 `353011`（约 3.0%/年），自然死亡率为 `294176`（约 2.5%/年），
@@ -560,9 +572,14 @@ non-service, same-ethnicity groups with at least one owner. The deterministic ro
 `seed/day/cell/target_group/source_group`. A group can participate in at most one
 successful movement per epoch. Same-profession movement changes only group fill;
 cross-profession movement transfers one cohort member and its proportional funds,
-income EMA, current income/expense/in-kind income, demography residual, and
-satisfaction. No money or goods are created, consumed, or transferred between
-accounts by the job decision itself.
+income EMA and slow income baseline EMA, current income/expense/in-kind income,
+epoch tax paid and subsidy received, demography residual, and every satisfaction
+column (composite, the eight dimensions, and the worst dimension). No money or
+goods are created, consumed, or transferred between accounts by the job decision
+itself. When two employers are equally profitable, hire order breaks the tie on
+the owner cohort's previous-epoch composite satisfaction; employment runs before
+the market pass, so that value is always last epoch's and never introduces a
+same-epoch cycle.
 
 ## CSV v12 derived balance formulas
 

@@ -169,8 +169,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v29 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 29)
+	_expect("PKEC v30 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 30)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -879,16 +879,16 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	for value in saved.get("chunks", []):
 		var chunk := (value as PackedByteArray).duplicate()
 		if chunk.size() >= 6:
-			chunk[4] = 28
+			chunk[4] = 29
 			chunk[5] = 0
 		legacy_chunks.append(chunk)
 	var restored := _new_ext(compiled, 1)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 1, 4415)
 	restored.configure_economy(catalog, profile, 1, 4415)
 	var result := _restore_economy(restored, legacy_chunks)
-	_expect("PKEC v29 explicitly rejects v28 economy saves",
+	_expect("PKEC v30 explicitly rejects v29 economy saves",
 		not bool(result.get("ok", true)) and
-		String(result.get("reason", "")) == "economy_save_v28_or_earlier_unsupported")
+		String(result.get("reason", "")) == "economy_save_v29_or_earlier_unsupported")
 
 func _new_ext(catalog: Dictionary, cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

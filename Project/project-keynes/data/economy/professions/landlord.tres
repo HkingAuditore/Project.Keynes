@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"landlord"
+satisfaction_dimension_weights_q16 = PackedInt32Array(39322, 39322, 39322, 52429, 32768, 39322, 45875, 26214)
 display_name = "地主"
 default_consumption_plan_id = &"owner_household"
 technology_tags = PackedStringArray("tech.bronze_casting")

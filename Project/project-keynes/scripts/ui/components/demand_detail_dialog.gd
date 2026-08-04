@@ -43,6 +43,7 @@ func show_details(details: Dictionary) -> void:
 	_total_cost_label.text = "%s/人/日" % String(details.get("total_daily_cost", "—"))
 	_clear_rows()
 	var visible_count := 0
+	_add_satisfaction_summary(details)
 	var groups: Array = details.get("groups", [])
 	if groups.is_empty():
 		for raw in details.get("rows", []):
@@ -124,6 +125,35 @@ func _attribution_text(row: Dictionary) -> String:
 func _signed_quantity(value: int) -> String:
 	return "%s%.3f" % ["+" if value > 0 else ("−" if value < 0 else ""),
 		absf(float(value)) / 1000.0]
+
+
+## 需求明细只解释"买了什么"，这里额外给出综合满意度的维度分解，
+## 让"为什么不满意"和"买不起什么"在同一屏内可对照。
+func _add_satisfaction_summary(details: Dictionary) -> void:
+	var rows: Array = details.get("satisfaction_rows", [])
+	if rows.is_empty():
+		return
+	var worst := String(details.get("worst_dimension", ""))
+	_add_table_label(_rows_grid,
+		"满意度维度" if worst.is_empty() else "满意度维度 · 最短板 %s" % worst,
+		188.0, HORIZONTAL_ALIGNMENT_LEFT, UITokens.ACCENT, true, 30.0)
+	_add_table_label(_rows_grid, "", 112.0,
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 30.0)
+	_add_table_label(_rows_grid, "", 112.0,
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 30.0)
+	_add_table_label(_rows_grid, "%d 个维度" % rows.size(), 120.0,
+		HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 30.0)
+	for raw in rows:
+		var row: Dictionary = raw
+		_add_table_label(_rows_grid, String(row.get("name", "—")), 188.0,
+			HORIZONTAL_ALIGNMENT_LEFT, UITokens.TEXT_MAIN, false, 26.0)
+		_add_table_label(_rows_grid, "", 112.0,
+			HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 26.0)
+		_add_table_label(_rows_grid, "", 112.0,
+			HORIZONTAL_ALIGNMENT_RIGHT, UITokens.TEXT_MUTED, false, 26.0)
+		_add_table_label(_rows_grid, String(row.get("value", "—")), 120.0,
+			HORIZONTAL_ALIGNMENT_RIGHT,
+			row.get("accent", UITokens.TEXT_MAIN), false, 26.0)
 
 
 func _add_group_header(group: Dictionary, row_count: int) -> void:
