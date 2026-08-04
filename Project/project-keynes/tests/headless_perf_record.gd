@@ -38,6 +38,10 @@ func _run() -> int:
 	var accuracy_preset := str(args.get("accuracy_preset", "")).to_upper()
 	var closing_audit_mode := str(args.get("closing_audit_mode", "")).to_upper()
 	var worker_mode := str(args.get("worker_mode", "")).to_upper()
+	# NS 化四方向深化 A/B:ns_gates=ON 在本进程内把 earth_like.tres 的四个方向
+	# gate 全部打开(动量/轨迹表+共享/散度阻尼/洋流),运行结束后恢复原值;
+	# 不落盘(.tres 从不保存)。ns_gates=WIND 只开风场三件套(Phase 1-3)。
+	var ns_gates := str(args.get("ns_gates", "")).to_upper()
 	var use_saved_setup := str(args.get("use_saved_setup", "false")).to_lower() in [
 		"1", "true", "yes", "on",
 	]
@@ -104,6 +108,30 @@ func _run() -> int:
 			push_error("[headless-perf] saved world setup requested but unavailable")
 			return 2
 		Engine.set_meta(WorldRuntimeHost.WORLD_SETUP_META, saved_setup)
+
+	# NS gate A/B:进程内改共享 climate profile(MapGenerator 懒加载同一缓存实例),
+	# 覆盖生成 + 运行全程,退出前恢复。
+	var climate_profile_res: Resource = null
+	var ns_prev_values: Dictionary = {}
+	if ns_gates in ["ON", "WIND", "ALL"]:
+		var gate_knobs: Dictionary = {
+			"wind_traj_table_enabled": true,
+			"wind_traj_weather_share": true,
+			"wind_momentum_advect_w": 0.3,
+			"wind_momentum_diffuse_w_daily": 0.08,
+			"wind_div_damp_alpha": 0.2,
+		}
+		if ns_gates in ["ON", "ALL"]:
+			gate_knobs["ocean_topo_steer_w"] = 0.15
+			gate_knobs["ocean_depth_curl_damp"] = 0.5
+		climate_profile_res = ResourceLoader.load("res://data/world/earth_like.tres", "Resource")
+		if climate_profile_res == null:
+			push_error("[headless-perf] ns_gates requested but earth_like.tres missing")
+			return 2
+		for k in gate_knobs:
+			ns_prev_values[k] = climate_profile_res.get(k)
+			climate_profile_res.set(k, gate_knobs[k])
+		print("[headless-perf] ns_gates=%s applied: %s" % [ns_gates, str(gate_knobs)])
 
 	var generation_started := Time.get_ticks_usec()
 	await host.generate_world(-1 if use_saved_setup else seed)
@@ -175,6 +203,9 @@ func _run() -> int:
 	recorder.call("bind_main", null)
 	host.free()
 	clock.free()
+	if climate_profile_res != null:
+		for k in ns_prev_values:
+			climate_profile_res.set(k, ns_prev_values[k])
 	await process_frame
 	if not output_ok:
 		push_error("[headless-perf] performance CSV export failed")

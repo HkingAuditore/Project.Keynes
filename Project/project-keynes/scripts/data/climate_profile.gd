@@ -987,6 +987,35 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 0.30, 0.01) var slp_mobile_low_amp: float = 0.16
 @export_range(0.05, 0.40, 0.01) var slp_mobile_low_sigma: float = 0.06
 @export_range(5.0, 120.0, 1.0) var slp_mobile_low_period_days: float = 16.0
+# ─── NS 化准动量风场(plan/NS化气候动力学四方向深化,2026-08-04) ──────────────
+# 把诊断式风场升级为带动量扩散、自平流、散度约束的准动量系统。所有旋钮默认
+# 0/关 → 旧诊断风逐位不变;每方向独立 gate,A/B + soak 验证后再在生产打开。
+#
+# 方向 A:动量扩散 + 自平流松弛(挂 wind pass 写回段,半隐式离散
+# dV/dt=-(V·∇)V+ν∇²V-r(V-V_force))。wind_momentum_advect_w>0 启用自平流
+# (沿回溯轨迹表三点插值上一轮动量,建议 0.3);wind_momentum_diffuse_w_daily>0
+# 启用 6 邻居动量扩散(日权重,pass 内按 wind_elapsed_days 与格距归一,建议 0.08)。
+@export_range(0.0, 0.5, 0.01) var wind_momentum_advect_w: float = 0.0
+@export_range(0.0, 0.5, 0.01) var wind_momentum_diffuse_w_daily: float = 0.0
+# 方向 C 基础设施:回溯轨迹表(半拉格朗日几何缓存,wind pass 末构建一次,
+# weather vapor/cloud 与 wind_air 气团热平流经风场指纹校验消费,失配自动落旧
+# hopping 并计数上报)。回溯长度 = |flux|·wind_traj_pos_scale·s·wind_traj_dt_days
+# (s=√(N/15000) 格距归一);dt 应与天气 round 真实 dt 一致(native stride 10)。
+@export var wind_traj_table_enabled: bool = false
+@export_range(0.0, 4.0, 0.05) var wind_traj_pos_scale: float = 0.65
+@export_range(0.25, 60.0, 0.25) var wind_traj_dt_days: float = 10.0
+# 消费端总闸:false → 轨迹表仅构建(供动量自平流)但不共享给 weather/wind_air,
+# 用于"动量开启而 weather 保持旧 hopping"的 A/B 隔离。
+@export var wind_traj_weather_share: bool = true
+# 方向 B:散度阻尼 L1(NWP 标准散度阻尼的 hex 离散,V-=α·∇(∇·V),挂 wind pass
+# 末尾;α 按格距 s² 归一,硬上限 0.3 格单位,>0 启用)。谱选择性压制网格级散度
+# 噪声,几乎不触行星尺度辐合。建议 0.1~0.2。
+@export_range(0.0, 0.3, 0.01) var wind_div_damp_alpha: float = 0.0
+# 方向 D:洋流地形转向 + 风应力旋度深度衰减(挂 PSI pass,60 tick cadence)。
+# ocean_topo_steer_w>0 → current-from-PSI 步加 k·(∇h×k) 等深线偏转分量;
+# ocean_depth_curl_damp>0 → 风应力旋度源项按深度衰减(陆架旋度效率降低)。
+@export_range(0.0, 0.5, 0.01) var ocean_topo_steer_w: float = 0.0
+@export_range(0.0, 1.0, 0.05) var ocean_depth_curl_damp: float = 0.0
 # Debug isolation: true forces physical wind solve to output WindBelt only,
 # bypassing pressure-gradient/coastal-thermal/synoptic/old-wind inertia.
 @export var wind_belt_only_debug: bool = false

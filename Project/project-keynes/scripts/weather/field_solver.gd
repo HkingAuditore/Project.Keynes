@@ -56,6 +56,15 @@ class_name DCWeatherFieldSolver
 ## 4. F.1 阶段（已上线）把 `run_slice` 整体调度切到
 ##    `DCWorldExt.run_weather_field_solve_pass` 的 C++ 实现，本类的 GDScript
 ##    实现作为 fallback 路径。
+##
+## ─── 隔离 fallback 声明（NS 化 Phase 2,2026-08-04）──────────────────
+## 生产 profile 已退休 legacy weather 生产注册（native C++ 是唯一生产路径），
+## 本 GDScript hot loop 定位为 **stale-DLL 隔离 fallback**：保留旧 hopping
+## 平流语义（`_upstream_vapor_idx_from_first`，离散邻居逐跳），**不镜像**
+## C++ 的风场轨迹表三点插值（`_phys_wind_traj` 成员缓存仅存在于 native 侧，
+## GDScript 无法访问 → 无法 bit-equal，强行近似反而引入第二条漂移源）。
+## 例外：静态纯函数 `hex_sextant_barycentric()` 与 C++ 保持 SAME_SOURCE
+## 数学定义互链（不依赖成员缓存，可供任何 GDScript 侧 SL 计算复用）。
 
 # ─── solver 实现入口（hot loop 已全量实装，见上方 PR-1..7 清单）─────
 
@@ -1540,6 +1549,90 @@ func _neighbor_average_vapor_idx(idx: int, neighbor_indices: PackedInt32Array, p
 		sum_v += prev_vapor[nb_idx]
 		n += 1
 	return sum_v / float(n)
+
+## ─── NS 化 Phase 0:六分扇形 barycentric(半拉格朗日终点插值)─────────────
+## SAME_SOURCE 数学定义:C++ 镜像 gdext/src/world_ext_internal.h::
+## pk_hex_sextant_barycentric()。给定回溯终点 target 与宿主 cell cur,在 cur 与
+## 其 1-ring 邻居组成的 6 个扇形三角形 (cur, nb_s, nb_{s+1}) 中寻找包含
+## target 的三角形,返回 {i0=cur, i1, i2, w0, w1, w2}。权重 clamp 到 [0,1]
+## 且和恒为 1(单调、无 overshoot);邻居缺失的扇形跳过,全部缺失退化为
+## (cur,cur,cur,1,0,0)。x 方向按 wrap_period_x 最小映像折叠(≤0.001 不环绕)。
+## 静态纯函数:供 physical_circulation_solver.gd(风场镜像动量自平流)与未来
+## GDScript 侧 SL 消费复用。
+static func hex_sextant_barycentric(cur: int, target: Vector2,
+		cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array,
+		wrap_period_x: float) -> Dictionary:
+	var out: Dictionary = {"i0": cur, "i1": cur, "i2": cur, "w0": 1.0, "w1": 0.0, "w2": 0.0}
+	var n_cells: int = cell_pos.size()
+	if cur < 0 or cur >= n_cells:
+		return out
+	var c: Vector2 = cell_pos[cur]
+	var dx: float = target.x - c.x
+	var dy: float = target.y - c.y
+	if wrap_period_x > 0.001:
+		var half: float = wrap_period_x * 0.5
+		if dx > half:
+			dx -= wrap_period_x
+		elif dx < -half:
+			dx += wrap_period_x
+	var base: int = cur * 6
+	var best_score: float = -2.0
+	var best_a: int = -1
+	var best_b: int = -1
+	var best_u1: float = 0.0
+	var best_u2: float = 0.0
+	for s in range(6):
+		var a: int = neighbor_indices[base + s]
+		var b: int = neighbor_indices[base + ((s + 1) % 6)]
+		if a < 0 or a >= n_cells or b < 0 or b >= n_cells:
+			continue
+		var eax: float = cell_pos[a].x - c.x
+		var eay: float = cell_pos[a].y - c.y
+		var ebx: float = cell_pos[b].x - c.x
+		var eby: float = cell_pos[b].y - c.y
+		if wrap_period_x > 0.001:
+			var half: float = wrap_period_x * 0.5
+			if eax > half:
+				eax -= wrap_period_x
+			elif eax < -half:
+				eax += wrap_period_x
+			if ebx > half:
+				ebx -= wrap_period_x
+			elif ebx < -half:
+				ebx += wrap_period_x
+		var det: float = eax * eby - eay * ebx
+		if det > -1e-7 and det < 1e-7:
+			continue
+		var inv_det: float = 1.0 / det
+		var u1: float = (dx * eby - dy * ebx) * inv_det
+		var u2: float = (eax * dy - eay * dx) * inv_det
+		if u1 < -1e-4 or u2 < -1e-4:
+			continue
+		var score: float = 1.0 - u1 - u2
+		if score > best_score:
+			best_score = score
+			best_a = a
+			best_b = b
+			best_u1 = u1
+			best_u2 = u2
+			if score >= 0.0:
+				break
+	if best_a < 0:
+		return out
+	var c1: float = clampf(best_u1, 0.0, 1.0)
+	var c2: float = clampf(best_u2, 0.0, 1.0)
+	var c0: float = 1.0 - c1 - c2
+	if c0 < 0.0:
+		var inv_sum: float = 1.0 / (c1 + c2)
+		c1 *= inv_sum
+		c2 *= inv_sum
+		c0 = 0.0
+	out["i1"] = best_a
+	out["i2"] = best_b
+	out["w0"] = c0
+	out["w1"] = c1
+	out["w2"] = c2
+	return out
 
 func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
 	if cell == null or dir.length_squared() <= 0.0001:

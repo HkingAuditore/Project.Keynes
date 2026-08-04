@@ -1709,6 +1709,13 @@ public:
     // TR/NB/water_ids 来自当前 pass 已解析的 slot/knob（调用方传入）。
     void _phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const int32_t *NB,
                                  const bool *is_water_lut, const godot::PackedByteArray &water_ids);
+    // NS 化 Phase 0：在 wind pass 末尾由最终风槽构建半拉格朗日回溯轨迹表
+    // （每 cell 3×i32 邻居索引 + 3×f32 权重），供动量自平流与 weather/wind_air
+    // SL 平流消费。内部用 pk::parallel_for_range，只读 slots、写 own-row。
+    void _phys_build_wind_traj(int n_cells, const float *POSX, const float *POSY,
+                               const int32_t *NB, const float *WX, const float *WY,
+                               const float *WSP, double wrap_period_x,
+                               double traj_pos_scale, double traj_dt_days);
 
     // ─── plan/dots-slp-psi-cpp: PSI ocean stream-function solver ─────────
     // Fused stage 3 + 4 + 5 (init + SOR iters + finalize) in one C++ call:
@@ -2148,6 +2155,7 @@ private:
     int _phys_sid_wvap = -1, _phys_sid_wcld = -1;
     int _phys_sid_ocx = -1, _phys_sid_ocy = -1, _phys_sid_psi_prev = -1;
     int _phys_sid_upwelling = -1;
+    int _phys_sid_elev = -1;  // NS 化 Phase 4:洋流深度耦合/地形转向读 elevation slot
     bool     _phys_is_water_lut[256];
     bool     _phys_is_water_valid = false;
     uint64_t _phys_static_fp = 0;
@@ -2172,6 +2180,24 @@ private:
     std::vector<float>   _phys_wind_sea_land_y;
     uint64_t _phys_wind_coast_fp = 0;
     bool     _phys_wind_coast_valid = false;
+
+    // ---- NS 化:风场回溯轨迹表缓存(Phase 0, plan/NS化气候动力学四方向深化) ----
+    // 半拉格朗日几何缓存:每 cell 回溯终点所在三角形 (i0=self宿主, i1, i2) +
+    // 重心权重 (w0,w1,w2),共 24B/cell(110k 格约 2.6MB)。wind pass 末由最终风槽
+    // 构建;指纹 = pk_wind_state_fp(n_cells, WX, WY, WSP) 64 降采样。消费端
+    // (weather field solve / wind_air) 复算指纹比对,失配落旧 hopping 并
+    // _phys_wind_traj_stale_count++ 上报。派生 scratch,不占 component slot。
+    std::vector<int32_t> _phys_wind_traj_idx;  // n*3
+    std::vector<float>   _phys_wind_traj_w;    // n*3
+    uint64_t _phys_wind_traj_fp = 0;
+    uint32_t _phys_wind_traj_gen = 0;          // 构建代数(每次成功构建递增)
+    bool     _phys_wind_traj_valid = false;
+    bool     _phys_wind_traj_consume_enabled = true;  // knob wind_traj_weather_share
+    int      _phys_wind_traj_stale_count = 0;
+    // 动量旧通量快照(成员化):切片执行时由首切片(start_idx==0)重建、后续切片
+    // 复用 → 切片==全量逐位一致(若每切片各拍,前序切片写回会污染后续邻居旧值)。
+    std::vector<float> _phys_wind_snap_fx;  // n
+    std::vector<float> _phys_wind_snap_fy;  // n
 
     // ---- entity / pool ----
     int                                       _entity_count = 0;

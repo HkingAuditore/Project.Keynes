@@ -608,6 +608,13 @@ var _slp_delta_p95_last: float = 0.0
 var _wind_delta_p95_last: float = 0.0
 var _wind_dir_delta_p95_last: float = 0.0
 var _wind_dir_flip_count_last: int = 0
+# NS 化四方向深化诊断(plan/NS化气候动力学四方向深化;gate 全关时恒 0,键始终存在)
+var _wind_momentum_delta_p95_last: float = 0.0
+var _wind_momentum_advect_w_eff_last: float = 0.0
+var _wind_momentum_diffuse_w_eff_last: float = 0.0
+var _wind_div_damp_alpha_eff_last: float = 0.0
+var _wind_traj_gen_last: int = 0
+var _wind_traj_stale_count_last: int = 0
 var _ocean_delta_p95_last: float = 0.0
 var _thermal_current_p95_last: float = 0.0
 var _ocean_current_preclamp_p95_last: float = 0.0
@@ -615,6 +622,9 @@ var _ocean_current_preclamp_max_last: float = 0.0
 var _ocean_current_clamp_count_last: int = 0
 var _ocean_current_clamp_ratio_last: float = 0.0
 var _ocean_current_max_magnitude_last: float = 0.0
+# NS 化 Phase 4 诊断(gate 关闭时恒 0)
+var _ocean_topo_steer_w_eff_last: float = 0.0
+var _ocean_depth_curl_damp_eff_last: float = 0.0
 var _phys_solve_rt_diag_count: int = 0
 var _phys_last_season_phase: float = NAN
 var _phys_last_sim_day: int = -1
@@ -6653,6 +6663,8 @@ func reset_physical_solve_state() -> void:
 	_ocean_current_clamp_count_last = 0
 	_ocean_current_clamp_ratio_last = 0.0
 	_ocean_current_max_magnitude_last = 0.0
+	_ocean_topo_steer_w_eff_last = 0.0
+	_ocean_depth_curl_damp_eff_last = 0.0
 	_phys_last_season_phase = NAN
 	_phys_last_sim_day = -1
 	_phys_abs_sim_day = -1
@@ -6750,6 +6762,13 @@ func get_physical_circulation_diag() -> Dictionary:
 		"wind_delta_p95": _wind_delta_p95_last,
 		"wind_dir_delta_p95": _wind_dir_delta_p95_last,
 		"wind_dir_flip_count": _wind_dir_flip_count_last,
+		# NS 化诊断(gate 全关时恒 0)
+		"wind_momentum_advect_diffuse_delta_p95": _wind_momentum_delta_p95_last,
+		"wind_momentum_advect_w_eff": _wind_momentum_advect_w_eff_last,
+		"wind_momentum_diffuse_w_eff": _wind_momentum_diffuse_w_eff_last,
+		"wind_div_damp_alpha_eff": _wind_div_damp_alpha_eff_last,
+		"wind_traj_gen": _wind_traj_gen_last,
+		"wind_traj_stale_count": _wind_traj_stale_count_last,
 		"daily_wind_ran": bool(_daily_wind_diag_last.get("ran", false)),
 		"daily_wind_path": str(_daily_wind_diag_last.get("path", "")),
 		"daily_wind_elapsed_ms": float(_daily_wind_diag_last.get("elapsed_ms", -1.0)),
@@ -6774,6 +6793,10 @@ func get_physical_circulation_diag() -> Dictionary:
 		"daily_wind_delta_p95": float(_daily_wind_diag_last.get("wind_delta_p95", 0.0)),
 		"daily_wind_dir_delta_p95": float(_daily_wind_diag_last.get("wind_dir_delta_p95", 0.0)),
 		"daily_wind_dir_flip_count": int(_daily_wind_diag_last.get("wind_dir_flip_count", 0)),
+		"daily_wind_momentum_advect_diffuse_delta_p95": float(_daily_wind_diag_last.get("momentum_advect_diffuse_delta_p95", 0.0)),
+		"daily_wind_div_damp_alpha_eff": float(_daily_wind_diag_last.get("div_damp_alpha_eff", 0.0)),
+		"daily_wind_traj_gen": int(_daily_wind_diag_last.get("wind_traj_gen", 0)),
+		"daily_wind_traj_stale_count": int(_daily_wind_diag_last.get("wind_traj_stale_count", 0)),
 		"psi_path": _psi_path_str_last,
 		"psi_native_ms": _psi_native_ms_last,
 		"psi_iters_run": _psi_iters_run_last,
@@ -6787,6 +6810,8 @@ func get_physical_circulation_diag() -> Dictionary:
 		"ocean_current_clamp_count": _ocean_current_clamp_count_last,
 		"ocean_current_clamp_ratio": _ocean_current_clamp_ratio_last,
 		"ocean_current_max_magnitude": _ocean_current_max_magnitude_last,
+		"ocean_topo_steer_w_eff": _ocean_topo_steer_w_eff_last,
+		"ocean_depth_curl_damp_eff": _ocean_depth_curl_damp_eff_last,
 	}
 
 
@@ -6822,6 +6847,12 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		"wind_delta_p95": 0.0,
 		"wind_dir_delta_p95": 0.0,
 		"wind_dir_flip_count": 0,
+		"momentum_advect_diffuse_delta_p95": 0.0,
+		"momentum_advect_w_eff": 0.0,
+		"momentum_diffuse_w_eff": 0.0,
+		"div_damp_alpha_eff": 0.0,
+		"wind_traj_gen": 0,
+		"wind_traj_stale_count": 0,
 		"slp_passA_ms": -1.0,
 		"slp_passB_ms": -1.0,
 		"slp_norm_ms": -1.0,
@@ -6993,6 +7024,14 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			"wind_synoptic_amp": profile.wind_synoptic_amp,
 			"wind_synoptic_period_days": profile.wind_synoptic_period_days,
 			"wind_belt_only_debug": profile.wind_belt_only_debug,
+			# NS 化(plan/NS化气候动力学四方向深化):动量/轨迹表/散度阻尼 gate,默认全关。
+			"wind_momentum_advect_w": profile.wind_momentum_advect_w,
+			"wind_momentum_diffuse_w_daily": profile.wind_momentum_diffuse_w_daily,
+			"wind_traj_table_enabled": profile.wind_traj_table_enabled,
+			"wind_traj_pos_scale": profile.wind_traj_pos_scale,
+			"wind_traj_dt_days": profile.wind_traj_dt_days,
+			"wind_traj_weather_share": profile.wind_traj_weather_share,
+			"wind_div_damp_alpha": profile.wind_div_damp_alpha,
 		}
 		var rc_wind_raw = _world_ext.run_wind_field_pass(knobs_wind)
 		var rc_wind: float = float(rc_wind_raw) if rc_wind_raw != null else -1.0
@@ -7018,12 +7057,25 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		_wind_delta_p95_last = float(knobs_wind.get("wind_delta_p95", 0.0))
 		_wind_dir_delta_p95_last = float(knobs_wind.get("wind_dir_delta_p95", 0.0))
 		_wind_dir_flip_count_last = int(knobs_wind.get("wind_dir_flip_count", 0))
+		# NS 化诊断键(旧 DLL 缺键时落默认 0,能力探测兼容)
+		_wind_momentum_delta_p95_last = float(knobs_wind.get("momentum_advect_diffuse_delta_p95", 0.0))
+		_wind_momentum_advect_w_eff_last = float(knobs_wind.get("momentum_advect_w_eff", 0.0))
+		_wind_momentum_diffuse_w_eff_last = float(knobs_wind.get("momentum_diffuse_w_eff", 0.0))
+		_wind_div_damp_alpha_eff_last = float(knobs_wind.get("div_damp_alpha_eff", 0.0))
+		_wind_traj_gen_last = int(knobs_wind.get("wind_traj_gen", 0))
+		_wind_traj_stale_count_last = int(knobs_wind.get("wind_traj_stale_count", 0))
 		_phys_wind_done_by_cpp = true
 		out["wind_cpp_done"] = true
 		out["wind_commit_ok"] = true
 		out["wind_delta_p95"] = _wind_delta_p95_last
 		out["wind_dir_delta_p95"] = _wind_dir_delta_p95_last
 		out["wind_dir_flip_count"] = _wind_dir_flip_count_last
+		out["momentum_advect_diffuse_delta_p95"] = _wind_momentum_delta_p95_last
+		out["momentum_advect_w_eff"] = _wind_momentum_advect_w_eff_last
+		out["momentum_diffuse_w_eff"] = _wind_momentum_diffuse_w_eff_last
+		out["div_damp_alpha_eff"] = _wind_div_damp_alpha_eff_last
+		out["wind_traj_gen"] = _wind_traj_gen_last
+		out["wind_traj_stale_count"] = _wind_traj_stale_count_last
 		out["wind_ran"] = true
 
 	out["ran"] = bool(out["slp_ran"]) or bool(out["wind_ran"])
@@ -7173,6 +7225,14 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		_phys_knobs_base_wind["wind_synoptic_amp"] = profile.wind_synoptic_amp
 		_phys_knobs_base_wind["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
 		_phys_knobs_base_wind["wind_belt_only_debug"] = profile.wind_belt_only_debug
+		# NS 化(plan/NS化气候动力学四方向深化):动量/轨迹表/散度阻尼 gate,默认全关。
+		_phys_knobs_base_wind["wind_momentum_advect_w"] = profile.wind_momentum_advect_w
+		_phys_knobs_base_wind["wind_momentum_diffuse_w_daily"] = profile.wind_momentum_diffuse_w_daily
+		_phys_knobs_base_wind["wind_traj_table_enabled"] = profile.wind_traj_table_enabled
+		_phys_knobs_base_wind["wind_traj_pos_scale"] = profile.wind_traj_pos_scale
+		_phys_knobs_base_wind["wind_traj_dt_days"] = profile.wind_traj_dt_days
+		_phys_knobs_base_wind["wind_traj_weather_share"] = profile.wind_traj_weather_share
+		_phys_knobs_base_wind["wind_div_damp_alpha"] = profile.wind_div_damp_alpha
 	# ── PSI base（变化：wind_x_arr / wind_y_arr / wind_speed_arr）
 	_phys_knobs_base_psi = {
 		"n_cells": n_cells,
@@ -7199,6 +7259,11 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		_phys_knobs_base_psi["ocean_thermal_current_weight"] = profile.ocean_thermal_current_weight
 		_phys_knobs_base_psi["ocean_density_cold_weight"] = profile.ocean_density_cold_weight
 		_phys_knobs_base_psi["ocean_density_ice_weight"] = profile.ocean_density_ice_weight
+		# NS 化 Phase 4(plan/NS化气候动力学四方向深化):地形转向 + 旋度深度衰减,默认全关。
+		_phys_knobs_base_psi["ocean_topo_steer_w"] = profile.ocean_topo_steer_w
+		_phys_knobs_base_psi["ocean_depth_curl_damp"] = profile.ocean_depth_curl_damp
+	if cfg != null and "sea_level" in cfg:
+		_phys_knobs_base_psi["sea_level"] = float(cfg.sea_level)
 	# ── UPWELLING base（全常量，可直接复用，无需 duplicate）
 	_phys_knobs_base_up = {
 		"stage": "upwelling",
@@ -7658,6 +7723,9 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							_ocean_current_clamp_count_last = int(ret_psi.get("ocean_current_clamp_count", 0))
 							_ocean_current_clamp_ratio_last = float(ret_psi.get("ocean_current_clamp_ratio", 0.0))
 							_ocean_current_max_magnitude_last = float(ret_psi.get("ocean_current_max_magnitude", 0.0))
+							# NS 化 Phase 4 诊断(旧 DLL 缺键落默认)
+							_ocean_topo_steer_w_eff_last = float(ret_psi.get("ocean_topo_steer_w", 0.0))
+							_ocean_depth_curl_damp_eff_last = float(ret_psi.get("ocean_depth_curl_damp", 0.0))
 							_psi_iters_run_last = int(ret_psi.get("psi_iters_run", _PHYS_PSI_TOTAL_ITERS))
 							_psi_residual_final_last = float(ret_psi.get("psi_residual_final", 0.0))
 							_psi_early_exit_last = bool(ret_psi.get("psi_early_exit", false))
