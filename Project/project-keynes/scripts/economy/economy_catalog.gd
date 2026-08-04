@@ -1140,8 +1140,13 @@ static func _append_building_goods(ids: PackedStringArray, quantities: PackedInt
 	return ""
 
 static func _load_resources(dir_path: String) -> Array:
+	# [pk-export-remap] DirAccess.get_files_at() 在导出/打包工程里看到的是 pck
+	# 目录项原名（会带 .remap 后缀，如 x.tres.remap），后缀过滤永远命不中，导
+	# 致整个目录被判定为空——这不是 web 专属坑，任何导出包（含桌面 exe）都会
+	# 中招，只是这之前只跑过编辑器内松散工程没触发。ResourceLoader.list_directory()
+	# 在两种场景下都返回逻辑名（x.tres），是 Godot 4.3+ 专门为此提供的 API。
 	var paths := PackedStringArray()
-	for file_name in DirAccess.get_files_at(dir_path):
+	for file_name in ResourceLoader.list_directory(dir_path):
 		if file_name.get_extension().to_lower() == "tres":
 			paths.append("%s/%s" % [dir_path, file_name])
 	paths.sort()

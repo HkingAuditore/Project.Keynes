@@ -71,8 +71,11 @@ func validate() -> Dictionary:
 		return _error("seed_out_of_range", "地图种子必须在 1 到 2147483647 之间。")
 	var width := int(base.get("map_width", 0))
 	var height := int(base.get("map_height", 0))
-	if width < 10 or width > 500 or height < 8 or height > 400:
-		return _error("map_size_out_of_range", "地图尺寸必须在 10..500 x 8..400 范围内。")
+	var max_width := DCFeatureFlags.max_map_width()
+	var max_height := DCFeatureFlags.max_map_height()
+	if width < 10 or width > max_width or height < 8 or height > max_height:
+		return _error("map_size_out_of_range",
+			"地图尺寸必须在 10..%d x 8..%d 范围内。" % [max_width, max_height])
 	base.map_width = width
 	base.map_height = height
 	base.initial_seed = seed

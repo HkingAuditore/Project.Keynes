@@ -158,12 +158,17 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 
 	// ── 1. 粗法线（宏观走向）──────────────────────────────────────────
 	vec3 N_coarse;
+#ifdef VT_USE_TERRAIN_NORMAL
 	if (terrain_normal_tex_bound) {
 		vec2 nxy = visual_sample_terrain_normal(uv).rg * 2.0 - 1.0;
 		nxy *= hillshade_coarse_strength;                       // 运行期再缩放走向强度
 		float nz = sqrt(max(1e-4, 1.0 - clamp(dot(nxy, nxy), 0.0, 0.998)));
 		N_coarse = vec3(nxy, nz);
-	} else {
+	} else
+#endif
+	{
+		// [pk-web-texture-budget] terrain_normal tile 已裁掉时，无条件走此运行期宽半径
+		// 差分（旧存档/未 rebake 时本就走这条路径，是已验证过的完整回退）。
 		float cr = hillshade_coarse_radius;
 		float lc = decode_height_rg8(uv - vec2(texel.x * cr, 0.0));
 		float rc = decode_height_rg8(uv + vec2(texel.x * cr, 0.0));

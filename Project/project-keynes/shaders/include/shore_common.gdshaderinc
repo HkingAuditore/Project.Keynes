@@ -141,8 +141,13 @@ ShoreHaloResult compute_shore_halo(
 // 等高线比硬六边形边平滑。返回 <0 表示纹理未绑定 → 调用方旁路回退旧硬边。
 // 注（2026-06-26）：原 5-tap 空间平均已按需求取消，仅依赖硬件双线性滤波（单次采样）。
 float coast_water_coverage(vec2 uv) {
+#ifndef VT_USE_WATER_DEPTH
+	// [pk-web-texture-budget] water_depth tile 已裁掉：调用方按"纹理未绑定"旁路回退旧硬边。
+	return -1.0;
+#else
 	if (!has_water_depth_tex) {
 		return -1.0;
 	}
 	return visual_sample_water_depth(uv).r;
+#endif
 }

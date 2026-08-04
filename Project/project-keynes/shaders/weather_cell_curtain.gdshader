@@ -1,5 +1,7 @@
 shader_type canvas_item;
-render_mode blend_mix;
+// [pk-web-texture-budget] 同 world_map.gdshader：不依赖引擎 Light2D，补 unshaded
+// 省掉隐式受光路径的纹理单元。
+render_mode blend_mix, unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 

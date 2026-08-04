@@ -65,12 +65,14 @@ float terrain_macro_amplitude(int biome) {
 	return 0.11;
 }
 
+#ifdef VT_USE_TERRAIN_DETAIL
 vec3 baked_biome_detail(int biome, vec2 uv) {
 	float d = visual_sample_terrain_detail(uv).r;
 	float signal = clamp((mix(TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX, d) - 1.0)
 			/ max(TERRAIN_DETAIL_BAKE_MAX - 1.0, 0.001), -1.0, 1.0);
 	return vec3(1.0 + signal * terrain_macro_amplitude(biome));
 }
+#endif
 
 vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
 	if (visual_quality <= 0) {
@@ -78,18 +80,25 @@ vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
 	}
 #if defined(PK_MOBILE_ANY)
 	// 移动端始终走烘焙 L8（或跳过），不算完整程序配方。
+#ifdef VT_USE_TERRAIN_DETAIL
 	if (has_terrain_detail_tex) {
 		return baked_biome_detail(biome, uv);
 	}
+#endif
 	return vec3(1.0);
 #else
 	// [albedo-visibility 2026-07-31] 桌面高画质必须跑完整 per-biome 程序纹理。
 	// 旧逻辑：只要绑了 terrain_detail_tex（tiled 模式永远绑）就早退到单通道 L8，
 	// 导致 visual_quality=2 时下方整段森林/沙丘/岩纹配方变成死代码——这就是
 	// "高画质也看不出纹理"的根因。中画质继续用烘焙 L8 保性能。
+	// [pk-web-texture-budget] terrain_detail tile 已裁掉时，直接跳过此早退，落到
+	// 下方 visual_quality==1 的廉价 fbm 公式 / >=2 的完整 per-biome 程序纹理——
+	// 后者本就是高画质档在纹理绑定时也会用到的路径，非临时代码。
+#ifdef VT_USE_TERRAIN_DETAIL
 	if (visual_quality < 2 && has_terrain_detail_tex) {
 		return baked_biome_detail(biome, uv);
 	}
+#endif
 	if (visual_quality == 1) {
 		float n = fbm(wp * 0.18, 2);
 		float amp = 0.060;

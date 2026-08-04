@@ -811,12 +811,21 @@ func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader
 		prefix += "#define MAP_VISUAL_TILED\n"
 	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	# [pk-web-texture-budget] Compatibility(GLES3/WebGL2) 后端只保证 16 个
+	# fragment 纹理单元；world_map.gdshader 是按桌面 Forward+/Mobile(32+) 预算
+	# 声明的 sampler 数量，超预算会在链接期报
+	# "texture image units count exceeds MAX_TEXTURE_IMAGE_UNITS(16)" 并整体
+	# 渲染失败。裁掉几张已经在该后端恒不生效的 sampler（terrain_material_tex /
+	# ocean_upwelling_tex，见各自声明处注释）。
+	if DCFeatureFlags.is_compatibility_renderer():
+		prefix += "#define PK_WEB_TEXTURE_BUDGET\n"
 	if prefix.is_empty():
 		return shader
 	var variant := shader.duplicate() as Shader
 	variant.code = prefix + shader.code
-	print("[hex_renderer/variant] tiled=%s quality=%s shader=%s" % [
-		_visual_tiles_active(), _mobile_quality_tier_define, source_path])
+	print("[hex_renderer/variant] tiled=%s quality=%s web_texture_budget=%s shader=%s" % [
+		_visual_tiles_active(), _mobile_quality_tier_define,
+		DCFeatureFlags.is_compatibility_renderer(), source_path])
 	return variant
 
 

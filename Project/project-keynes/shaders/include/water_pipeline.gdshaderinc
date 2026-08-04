@@ -220,6 +220,7 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 	// [water-depth-tex 2026-06-26] 快速路径：优先用 C++ 烘焙好的统一水深图（海/湖一张 R8）。
 	// 每水像素仅 1 次采样，取代下方"海洋 5×5/plus height 邻域 + compute_lake_shore_proxy 的
 	// 16× biome 多半径"两套估算。湖泊深浅、海洋大陆架→深渊全部来自 C++ 真实 per-cell 深度。
+#ifdef VT_USE_WATER_DEPTH
 	if (has_water_depth_tex) {
 		float wd = visual_sample_water_depth(ctx.uv).r;
 		float depth_signal = wd;
@@ -242,6 +243,9 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 		ctx.lake_depth_proxy = mix(depth_signal, wd, lake_type_w);
 		return;
 	}
+#endif
+	// [pk-web-texture-budget] water_depth tile 已裁掉时，无条件走下方运行期邻域估算
+	// （旧存档/未 rebake 时本就走这条路径，是已验证过的完整回退，非临时代码）。
 	vec2 tx = 1.0 / hm_resolution;
 	float deep_cnt = 0.0;
 	// 60 FPS 优化：mobile 全档位直接用已有 ctx.elev 判断海陆，0 个额外 sample。
@@ -691,6 +695,9 @@ vec3 apply_ocean_currents(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (ocean_current_debug) {
 		vec3 dir_tint = vec3(0.5 + oc_dir.x * 0.5, 0.5 + oc_dir.y * 0.3, 0.5 - oc_dir.x * 0.5);
 		col = mix(col, dir_tint, 0.28 * ocean_current_strength * non_static);
+		// [pk-web-texture-budget] upwelling 覆盖层纯 GM 调试用途，Compatibility
+		// 后端下 ocean_upwelling_tex 编译期不声明，这里同步跳过采样。
+#ifndef PK_WEB_TEXTURE_BUDGET
 		float up_raw = texture(ocean_upwelling_tex, ctx.uv).r;
 		float up_signed = up_raw * 2.0 - 1.0;
 		float up_mag = abs(up_signed);
@@ -700,6 +707,7 @@ vec3 apply_ocean_currents(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 				: vec3(0.62, 0.25, 0.85);
 			col = mix(col, up_color, 0.55 * up_mag * non_static);
 		}
+#endif
 	}
 	return col;
 }

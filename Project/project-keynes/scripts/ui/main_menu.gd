@@ -71,8 +71,8 @@ func _configure_new_game_form() -> void:
 	for preset in MAP_PRESETS:
 		_size_option.add_item(String(preset.label))
 	_size_option.select(1)
-	_configure_dimension_box(_width_box, 10, 500, 60)
-	_configure_dimension_box(_height_box, 8, 400, 40)
+	_configure_dimension_box(_width_box, 10, DCFeatureFlags.max_map_width(), 60)
+	_configure_dimension_box(_height_box, 8, DCFeatureFlags.max_map_height(), 40)
 	_set_custom_size_enabled(false)
 	_add_advanced_spin("大陆数量", "num_continents", 1, 8, 2)
 	_add_advanced_spin("大陆规模", "continent_size", 0.2, 0.9, 0.9, 0.01)

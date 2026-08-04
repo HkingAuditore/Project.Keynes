@@ -216,8 +216,11 @@ static func _content_entry(stable_id, display_name: String, icon_key: String,
 
 
 static func _load_profiles(dir_path: String) -> Array:
+	# [pk-export-remap] 见 economy_catalog.gd::_load_resources() 同名注释——导出
+	# 包里 DirAccess 看到的是带 .remap 后缀的目录项，用 ResourceLoader.list_directory()
+	# 才能拿到 x.tres 逻辑名。
 	var paths := PackedStringArray()
-	for file_name in DirAccess.get_files_at(dir_path):
+	for file_name in ResourceLoader.list_directory(dir_path):
 		if file_name.get_extension().to_lower() == "tres":
 			paths.append("%s/%s" % [dir_path, file_name])
 	paths.sort()

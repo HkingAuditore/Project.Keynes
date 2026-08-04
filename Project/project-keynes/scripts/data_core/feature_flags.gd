@@ -403,8 +403,50 @@ const TERRAIN_HORIZON_GPU_META: StringName = &"terrain_horizon_gpu_bake_enabled"
 static func terrain_horizon_gpu_bake_active() -> bool:
 	if Engine.has_meta(TERRAIN_HORIZON_GPU_META):
 		return bool(Engine.get_meta(TERRAIN_HORIZON_GPU_META))
-	return not OS.has_feature("mobile")   # 桌面默认开、移动端默认关（可显式覆盖）
+	# 桌面默认开；移动端与 web 默认关（可显式覆盖）。web 只有 Compatibility/WebGL2
+	# 后端，逐像素 8×steps marching 的开销与低端移动 GPU 同级。
+	return not (OS.has_feature("mobile") or is_web())
 
 ## 设置 GPU horizon 烘焙开关（debug console / 启动配置 / 性能档调用）。
 static func set_terrain_horizon_gpu_bake(enabled: bool) -> void:
 	Engine.set_meta(TERRAIN_HORIZON_GPU_META, enabled)
+
+
+# ─── Web 平台能力边界 ────────────────────────────────────────────────────
+# wasm32 只有 32 位地址空间，浏览器实际可用堆通常远小于 4 GiB，且 nothreads
+# 变体下整条日仿真串行跑在主线程上（掉帧直接表现为页面卡死）。因此 web 上把
+# 地图规模压到远低于桌面的 10..500 x 8..400。
+#
+# 下面两个上限是首次 bring-up 的保守值（约桌面默认 60x40 的 3 倍格数），不是
+# 实测出来的天花板；等 web 包能稳定跑完若干模拟日、量到真实堆占用之后再往上调。
+const WEB_MAX_MAP_WIDTH: int = 100
+const WEB_MAX_MAP_HEIGHT: int = 70
+
+## 当前是否跑在浏览器里。
+static func is_web() -> bool:
+	return OS.has_feature("web")
+
+## 地图宽度上限（桌面 500 / web 收紧）。新游戏校验与世界配置面板共用。
+static func max_map_width() -> int:
+	return WEB_MAX_MAP_WIDTH if is_web() else 500
+
+## 地图高度上限（桌面 400 / web 收紧）。
+static func max_map_height() -> int:
+	return WEB_MAX_MAP_HEIGHT if is_web() else 400
+
+
+# ─── Compatibility(GLES3/WebGL2) 渲染后端纹理单元预算 ───────────────────────
+# WebGL2 规范只保证 MAX_TEXTURE_IMAGE_UNITS(FRAGMENT) >= 16；桌面 Forward+/Mobile
+# (Vulkan/D3D12) 的同一后端实际暴露远高于此（通常 32+）。world_map.gdshader 声明的
+# sampler 数量是按桌面预算设计的，在 Compatibility 后端下会触发
+# "texture image units count exceeds MAX_TEXTURE_IMAGE_UNITS(16)" 链接失败。
+# 该后端不只是 web 独占（桌面也可以手动选 Compatibility），因此用渲染方式而非
+# is_web() 判定，desktop 上测试 Compatibility 也会自动获得同样的裁剪。
+static func is_compatibility_renderer() -> bool:
+	var rendering_method := ""
+	if RenderingServer.has_method("get_current_rendering_method"):
+		rendering_method = String(RenderingServer.get_current_rendering_method())
+	else:
+		rendering_method = String(ProjectSettings.get_setting(
+			"rendering/renderer/rendering_method", "mobile"))
+	return rendering_method == "gl_compatibility"

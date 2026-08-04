@@ -446,6 +446,7 @@ func _bind_ui() -> void:
 	_top_bar.setup_requested.connect(func() -> void: setup_requested.emit())
 	_top_bar.gm_requested.connect(toggle_gm_panel)
 	_top_bar.set_gm_available(_gm_available)
+	_layout_top_bar()
 
 	_right_panel = get_node("UIRoot/PanelLayer/RightPanel") as InspectorPanel
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
@@ -453,6 +454,7 @@ func _bind_ui() -> void:
 	_right_panel.visibility_changed.connect(_layout_overlay_legend)
 	_right_panel.demand_details_requested.connect(_on_demand_details_requested)
 	_right_panel.object_details_requested.connect(_on_object_details_requested)
+	_layout_right_panel()
 
 	_demand_detail_dialog = get_node("UIRoot/ModalLayer/DemandDetailDialog")
 	_object_detail_dialog = get_node("UIRoot/ModalLayer/ObjectDetailDialog")
@@ -489,7 +491,10 @@ func _bind_ui() -> void:
 	get_viewport().size_changed.connect(_layout_overlay_legend)
 	get_viewport().size_changed.connect(_layout_gm_panel)
 	get_viewport().size_changed.connect(_layout_country_action_bar)
+	get_viewport().size_changed.connect(_layout_top_bar)
+	get_viewport().size_changed.connect(_layout_right_panel)
 	_layout_overlay_legend()
+	_log_ui_layout_diagnostics("bind_ui")
 
 	if _diagnostics_source != null:
 		set_diagnostics_source(_diagnostics_source)
@@ -578,6 +583,77 @@ func _layout_gm_panel() -> void:
 	_gm_console.offset_right = UITokens.SPACE_SM + panel_width
 	_gm_console.offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM
 	_gm_console.offset_bottom = -UITokens.SPACE_SM
+
+
+# [web-layout-guard] PlayerTopBar / RightPanel 之前完全依赖 .tscn 里静态烘焙的
+# anchor+offset（从未在运行时被脚本重新应用过）。CountryActionBar/OverlayLegend/
+# GMPanel 三者虽然各自出于自己的动态需求（跟随姊妹面板可见性、紧凑模式阈值等）
+# 早就在跑"取实时 viewport 尺寸 → set_anchors_preset → 写 offset"这条路径，
+# 但客观上也顺带验证了这条路径在当前运行环境下是可靠的。这里让顶栏/详情面板走
+# 同一条已验证路径兜底，不再单纯依赖引擎在 Web 上是否可靠地对声明式 anchor
+# 做持续重新解算——即使原声明式 anchor 一直正常，这里重新套用同样的数值也是
+# 幂等的，不会有副作用。
+func _layout_top_bar() -> void:
+	if _top_bar == null:
+		return
+	_top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_top_bar.offset_left = 0.0
+	_top_bar.offset_top = 0.0
+	_top_bar.offset_right = 0.0
+	_top_bar.offset_bottom = PlayerTopBar.BAR_HEIGHT
+	UIAnimation.refresh_rest_position(_top_bar)
+
+
+func _layout_right_panel() -> void:
+	if _right_panel == null:
+		return
+	# PRESET_RIGHT_WIDE：anchor_left=anchor_right=1.0（贴右边）且 anchor_bottom=1.0
+	# （随视口高度伸展），必须用这个而不是 PRESET_TOP_RIGHT，否则 offset_bottom
+	# 会被解释成"相对顶部锚点"而不是"相对底部锚点"，面板会被压扁到顶部一小条。
+	_right_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	_right_panel.offset_left = -RIGHT_PANEL_WIDTH
+	_right_panel.offset_top = 68.0  # 与 inspector_panel.tscn 原始烘焙值保持一致
+	_right_panel.offset_right = 0.0
+	_right_panel.offset_bottom = -12.0  # 与 inspector_panel.tscn 原始烘焙值保持一致
+	_right_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_right_panel.grow_vertical = Control.GROW_DIRECTION_END
+	# 关键一步：UIAnimation.fade_slide_in/out 会把"第一次调用时的 control.position"
+	# 永久缓存成 rest position。如果不在这里主动刷新，等玩家第一次点开地块面板时，
+	# fade_slide_in 可能会缓存到一个还没被上面这套 offset 结算过的旧/零值，
+	# 之后每次开合面板都会被带回那个错误坐标——这正是"详情框缩在左上角"的成因。
+	UIAnimation.refresh_rest_position(_right_panel)
+
+
+# 排查 Web 构建"详情框/状态栏跑到左上角"问题用的一次性诊断输出；不影响任何
+# 表现，纯打日志，方便下次直接从控制台里比对具体数值而不用再靠截图猜。
+#
+# 目前最大嫌疑：Windows 高 DPI 缩放下 Godot Web 默认 hidpi=true，canvas 像素
+# 缓冲区尺寸会按 window.devicePixelRatio 放大，但引擎内部给 UI 锚点用的视口
+# 逻辑尺寸未必跟着同步（godotengine/godot#93106 这一类已知问题）——地图相机
+# 视图本身按视口自适应，看不出异常，锚定 UI 却会被挤压到左上角一小块。
+# export_presets.cfg 的 html/head_include 已经在引擎脚本跑之前把
+# window.devicePixelRatio 钉死成 1 来regress 这个根因；这里额外把浏览器端实测到
+# 的 devicePixelRatio 打出来，用来确认那个钉子是否真的生效（预期看到 1.000）。
+func _log_ui_layout_diagnostics(tag: String) -> void:
+	var vp_rect := get_viewport().get_visible_rect()
+	var win := get_window()
+	var win_size := win.size if win != null else Vector2i.ZERO
+	var scale_factor := win.content_scale_factor if win != null else -1.0
+	var scale_mode := win.content_scale_mode if win != null else -1
+	var top_bar_rect := _top_bar.get_rect() if _top_bar != null else Rect2()
+	var right_panel_rect := _right_panel.get_rect() if _right_panel != null else Rect2()
+	var country_bar_rect := _country_action_bar.get_rect() if _country_action_bar != null else Rect2()
+	var device_pixel_ratio := -1.0
+	if OS.has_feature("web") and Engine.has_singleton("JavaScriptBridge"):
+		var js_result = JavaScriptBridge.eval("window.devicePixelRatio", true)
+		if js_result != null:
+			device_pixel_ratio = float(js_result)
+	print(("[ui-layout-diag/%s] is_web=%s viewport_visible_rect=%s window_size=%s " +
+		"content_scale_factor=%.3f content_scale_mode=%d device_pixel_ratio=%.3f " +
+		"top_bar_rect=%s right_panel_rect=%s country_action_bar_rect=%s") % [
+		tag, OS.has_feature("web"), vp_rect, win_size, scale_factor, scale_mode,
+		device_pixel_ratio, top_bar_rect, right_panel_rect, country_bar_rect,
+	])
 
 
 func _get_local_gm_toggle_state(toggle_id: String) -> Dictionary:

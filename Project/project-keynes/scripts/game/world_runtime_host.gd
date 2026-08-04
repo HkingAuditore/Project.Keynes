@@ -1813,9 +1813,20 @@ func _apply_feature_flags() -> void:
 	DCFeatureFlags.set_cell_indirection(cell_indirection_enabled)
 	DCFeatureFlags.set_ocean_current_visual(ocean_current_visual_enabled)
 	DCFeatureFlags.set_sea_ice_atlas(sea_ice_atlas_enabled)
-	DCFeatureFlags.set_terrain_horizon_gpu_bake(
-		mobile_terrain_horizon_enabled if OS.has_feature("mobile") else true
-	)
+	# 桌面默认开；移动端由 mobile_terrain_horizon_enabled 开关控制；Web 只有
+	# Compatibility/WebGL2 后端，逐像素 marching 开销和离屏 viewport 读回都偏重
+	# （readback 在部分浏览器/驱动上会强制同步 flush GPU 管线），默认关闭——
+	# 这里必须和 DCFeatureFlags.terrain_horizon_gpu_bake_active() 的 fallback
+	# 语义保持一致。之前只判断了 "mobile"，漏判 Web，导致每次开局都把这条显式
+	# meta 覆盖成 true，盖掉了 feature_flags.gd 里"web 默认关"的设计。
+	var terrain_horizon_enabled: bool
+	if OS.has_feature("mobile"):
+		terrain_horizon_enabled = mobile_terrain_horizon_enabled
+	elif DCFeatureFlags.is_web():
+		terrain_horizon_enabled = false
+	else:
+		terrain_horizon_enabled = true
+	DCFeatureFlags.set_terrain_horizon_gpu_bake(terrain_horizon_enabled)
 
 
 func _world_setup_config() -> Dictionary:
@@ -1835,8 +1846,10 @@ func _apply_world_setup_base_config() -> void:
 		return
 	var base = config.get("base", {})
 	if base is Dictionary:
-		map_width = clampi(int((base as Dictionary).get("map_width", map_width)), 10, 500)
-		map_height = clampi(int((base as Dictionary).get("map_height", map_height)), 8, 400)
+		map_width = clampi(int((base as Dictionary).get("map_width", map_width)),
+			10, DCFeatureFlags.max_map_width())
+		map_height = clampi(int((base as Dictionary).get("map_height", map_height)),
+			8, DCFeatureFlags.max_map_height())
 		initial_seed = max(0, int((base as Dictionary).get("initial_seed", initial_seed)))
 		sea_level = clampf(float((base as Dictionary).get("sea_level", sea_level)), 0.1, 0.8)
 		num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)

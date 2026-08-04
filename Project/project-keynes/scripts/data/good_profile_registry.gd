@@ -19,8 +19,11 @@ static func ensure_loaded() -> void:
 	_loaded = true
 	_ordered.clear()
 	_by_id.clear()
+	# [pk-export-remap] 见 economy_catalog.gd::_load_resources() 同名注释——导出
+	# 包里 DirAccess 看到的是带 .remap 后缀的目录项，用 ResourceLoader.list_directory()
+	# 才能拿到 x.tres 逻辑名。
 	var paths := PackedStringArray()
-	for file_name in DirAccess.get_files_at(_PROFILE_DIR):
+	for file_name in ResourceLoader.list_directory(_PROFILE_DIR):
 		if file_name.get_extension().to_lower() == "tres":
 			paths.append("%s/%s" % [_PROFILE_DIR, file_name])
 	paths.sort()

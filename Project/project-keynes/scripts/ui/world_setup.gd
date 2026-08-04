@@ -318,7 +318,7 @@ func _create_field_control(field: Dictionary) -> Control:
 		return check
 
 	var min_value := float(field.get("min", 0.0))
-	var max_value := float(field.get("max", 1.0))
+	var max_value := _field_max_value(field)
 	if field_type == "int" and is_equal_approx(min_value, 0.0) and is_equal_approx(max_value, 100.0):
 		return _create_slider_spin_control(field)
 
@@ -332,6 +332,19 @@ func _create_field_control(field: Dictionary) -> Control:
 	spin.size_flags_horizontal = Control.SIZE_SHRINK_END
 	spin.value_changed.connect(func(_value: float) -> void: _on_number_field_changed())
 	return spin
+
+
+## BASE_FIELDS 是 const，装不下随平台变化的上限。地图尺寸在 web 上比桌面收得多
+## （见 DCFeatureFlags.max_map_*），这里在建控件时把声明值再压一道，避免面板允许
+## 玩家选到 NewGameConfig.validate 会直接拒绝的尺寸。
+func _field_max_value(field: Dictionary) -> float:
+	var declared := float(field.get("max", 1.0))
+	match String(field.get("name", "")):
+		"map_width":
+			return minf(declared, float(DCFeatureFlags.max_map_width()))
+		"map_height":
+			return minf(declared, float(DCFeatureFlags.max_map_height()))
+	return declared
 
 
 func _create_slider_spin_control(field: Dictionary) -> Control:

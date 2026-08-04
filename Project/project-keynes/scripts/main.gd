@@ -1112,8 +1112,10 @@ func _apply_world_setup_base_config() -> void:
 	var base = config.get("base", {})
 	if not (base is Dictionary):
 		return
-	map_width = clampi(int((base as Dictionary).get("map_width", map_width)), 10, 500)
-	map_height = clampi(int((base as Dictionary).get("map_height", map_height)), 8, 400)
+	map_width = clampi(int((base as Dictionary).get("map_width", map_width)),
+		10, DCFeatureFlags.max_map_width())
+	map_height = clampi(int((base as Dictionary).get("map_height", map_height)),
+		8, DCFeatureFlags.max_map_height())
 	initial_seed = max(0, int((base as Dictionary).get("initial_seed", initial_seed)))
 	sea_level = clampf(float((base as Dictionary).get("sea_level", sea_level)), 0.1, 0.8)
 	num_continents = clampi(int((base as Dictionary).get("num_continents", num_continents)), 1, 8)

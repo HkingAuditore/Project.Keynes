@@ -60,6 +60,18 @@ namespace {
 // SDFs whose encoded ranges are measured in raster pixels.
 constexpr double VISUAL_EDGE_DISTANCE_SATURATE_HEX = 0.90;
 
+// Task count for row-sliced bake images.
+//
+// pk::parallel_default_n_tasks() budgets one task per 1024 work units, which is
+// calibrated for simulation cells. A bake row is orders of magnitude heavier
+// (a full scanline of per-pixel noise), so at realistic heights (476 tile rows,
+// 600 heightmap rows) that formula collapses to a single task and the pass runs
+// serially. Slice by rows instead, keeping the dispatcher's 16-task ceiling.
+inline int bake_row_tasks(int rows) {
+    if (rows <= 1) return 1;
+    return std::max(1, std::min(16, rows / 8));
+}
+
 } // namespace
 
 
@@ -196,7 +208,8 @@ godot::Dictionary DCWorldExt::encode_bake_terrain_normal_tex_data(godot::Diction
             }
         }
     };
-    pk::parallel_for_range("pk_bake_terrain_normal", h, /*n_tasks=*/0, /*seq_threshold=*/64, run_range);
+    pk::parallel_for_range("pk_bake_terrain_normal", h, bake_row_tasks(h),
+            /*seq_threshold=*/64, run_range);
 
     auto t1 = std::chrono::high_resolution_clock::now();
 
@@ -310,7 +323,7 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                 }
             }
         };
-        pk::parallel_for_range("pk_bake_horizon_blur_x", h, 0, 32, blur_rows);
+        pk::parallel_for_range("pk_bake_horizon_blur_x", h, bake_row_tasks(h), 32, blur_rows);
         const float * const mid = horizontal.ptr();
         float * const dst_h = horizon_height.ptrw();
         auto blur_columns = [&](int y0, int y1) {
@@ -323,7 +336,7 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                 }
             }
         };
-        pk::parallel_for_range("pk_bake_horizon_blur_y", h, 0, 32, blur_columns);
+        pk::parallel_for_range("pk_bake_horizon_blur_y", h, bake_row_tasks(h), 32, blur_columns);
     }
     const float * const __restrict SRC = lowpass_radius > 0
         ? horizon_height.ptr() : src.ptr();
@@ -435,7 +448,8 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
             }
         }
     };
-    pk::parallel_for_range("pk_bake_horizon_tex", h, /*n_tasks=*/0, /*seq_threshold=*/32, run_range);
+    pk::parallel_for_range("pk_bake_horizon_tex", h, bake_row_tasks(h),
+            /*seq_threshold=*/32, run_range);
     auto t1 = std::chrono::high_resolution_clock::now();
 
     out["fallback"] = false;
@@ -1923,204 +1937,219 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     const double hy_above = 1.0 - sea_level;
     const double hy_inv_above = (hy_above > 1e-6) ? (1.0 / hy_above) : 0.0;
 
-    for (int y = 0; y < H; ++y) {
-        const double wy_base = origin_y + (double(y) + 0.5) * step_y;
-        const int row = y * W;
-        for (int x = 0; x < W; ++x) {
-            const double wx_base = origin_x + (double(x) + 0.5) * step_x;
+    // 逐行并行：每像素只写自己的 idx 槽，CGX/CGY/CREL 与四个 FastNoiseLite 实例
+    // 在此之后只读——噪声参数全部在进入并行区前设完，get_noise_2d 是纯读，
+    // 多线程共享同一实例安全。唯一的跨行共享写（CSR 直方图）已移到并行区之后。
+    auto run_rows = [&](int y_begin, int y_end) {
+        for (int y = y_begin; y < y_end; ++y) {
+            const double wy_base = origin_y + (double(y) + 0.5) * step_y;
+            const int row = y * W;
+            for (int x = 0; x < W; ++x) {
+                const double wx_base = origin_x + (double(x) + 0.5) * step_x;
 
-            // 1. warp（双频）
-            const double warp_x = cyl(NW_LO, wx_base, wy_base);
-            const double warp_y = cyl(NW_LO, wx_base + 31.7, wy_base - 17.3, 1.0, 31.7);
-            const double hi_x = cyl(NW_HI, wx_base + 91.1, wy_base + 53.7, 1.0, 91.1) * WARP_HIGH_AMP_RATIO;
-            const double hi_y = cyl(NW_HI, wx_base - 41.5, wy_base + 23.9, 1.0, -41.5) * WARP_HIGH_AMP_RATIO;
-            const double wx = wx_base + (warp_x + hi_x) * warp_scale;
-            const double wy = wy_base + (warp_y + hi_y) * warp_scale;
+                // 1. warp（双频）
+                const double warp_x = cyl(NW_LO, wx_base, wy_base);
+                const double warp_y = cyl(NW_LO, wx_base + 31.7, wy_base - 17.3, 1.0, 31.7);
+                const double hi_x = cyl(NW_HI, wx_base + 91.1, wy_base + 53.7, 1.0, 91.1) * WARP_HIGH_AMP_RATIO;
+                const double hi_y = cyl(NW_HI, wx_base - 41.5, wy_base + 23.9, 1.0, -41.5) * WARP_HIGH_AMP_RATIO;
+                const double wx = wx_base + (warp_x + hi_x) * warp_scale;
+                const double wy = wy_base + (warp_y + hi_y) * warp_scale;
 
-            // 2. cube 归属（world_to_cube_f + cube_round）
-            const double qf = (SQRT3 / 3.0 * wx - (1.0 / 3.0) * wy) / hex_size;
-            const double rf = (2.0 / 3.0 * wy) / hex_size;
-            const double sf = -qf - rf;
-            double rq = std::round(qf), rr = std::round(rf), rs = std::round(sf);
-            const double dq = std::fabs(rq - qf), dr = std::fabs(rr - rf), ds = std::fabs(rs - sf);
-            if (dq > dr && dq > ds) rq = -rr - rs;
-            else if (dr > ds) rr = -rq - rs;
-            else rs = -rq - rr;
-            const int cq = int(rq), cr = int(rr);
-            const int self_idx = cell_at_cube(cq, cr);
+                // 2. cube 归属（world_to_cube_f + cube_round）
+                const double qf = (SQRT3 / 3.0 * wx - (1.0 / 3.0) * wy) / hex_size;
+                const double rf = (2.0 / 3.0 * wy) / hex_size;
+                const double sf = -qf - rf;
+                double rq = std::round(qf), rr = std::round(rf), rs = std::round(sf);
+                const double dq = std::fabs(rq - qf), dr = std::fabs(rr - rf), ds = std::fabs(rs - sf);
+                if (dq > dr && dq > ds) rq = -rr - rs;
+                else if (dr > ds) rr = -rq - rs;
+                else rs = -rq - rr;
+                const int cq = int(rq), cr = int(rr);
+                const int self_idx = cell_at_cube(cq, cr);
 
-            // 3. sextant 邻居
-            const double scx = cube_to_world_x(cq, cr);
-            const double scy = cube_to_world_y(cr);
-            const double lx = (wx - scx) / hex_size;
-            const double ly = (wy - scy) / hex_size;
-            const double angle = std::atan2(ly, lx);
-            const int sextant = int(std::floor(fposmodd((angle + PI / 6.0) / (PI / 3.0), 6.0)));
-            const int s0 = sextant % 6;
-            const int s1 = (sextant + 1) % 6;
-            const int nb1_q = cq + NDQ[s0], nb1_r = cr + NDR[s0];
-            const int nb2_q = cq + NDQ[s1], nb2_r = cr + NDR[s1];
-            const int nb1_idx = cell_at_cube(nb1_q, nb1_r);
-            const int nb2_idx = cell_at_cube(nb2_q, nb2_r);
+                // 3. sextant 邻居
+                const double scx = cube_to_world_x(cq, cr);
+                const double scy = cube_to_world_y(cr);
+                const double lx = (wx - scx) / hex_size;
+                const double ly = (wy - scy) / hex_size;
+                const double angle = std::atan2(ly, lx);
+                const int sextant = int(std::floor(fposmodd((angle + PI / 6.0) / (PI / 3.0), 6.0)));
+                const int s0 = sextant % 6;
+                const int s1 = (sextant + 1) % 6;
+                const int nb1_q = cq + NDQ[s0], nb1_r = cr + NDR[s0];
+                const int nb2_q = cq + NDQ[s1], nb2_r = cr + NDR[s1];
+                const int nb1_idx = cell_at_cube(nb1_q, nb1_r);
+                const int nb2_idx = cell_at_cube(nb2_q, nb2_r);
 
-            // 4. barycentric（self + 2 邻居中心）
-            const double ax = scx, ay = scy;
-            const double bx = cube_to_world_x(nb1_q, nb1_r), b_y = cube_to_world_y(nb1_r);
-            const double ccx = cube_to_world_x(nb2_q, nb2_r), ccy = cube_to_world_y(nb2_r);
-            double w_self = 1.0, w_nb1 = 0.0, w_nb2 = 0.0;
-            {
-                const double v0x = bx - ax, v0y = b_y - ay;
-                const double v1x = ccx - ax, v1y = ccy - ay;
-                const double v2x = wx - ax, v2y = wy - ay;
-                const double d00 = v0x * v0x + v0y * v0y;
-                const double d01 = v0x * v1x + v0y * v1y;
-                const double d11 = v1x * v1x + v1y * v1y;
-                const double d20 = v2x * v0x + v2y * v0y;
-                const double d21 = v2x * v1x + v2y * v1y;
-                const double denom = d00 * d11 - d01 * d01;
-                if (std::fabs(denom) >= 0.000001) {
-                    const double inv = 1.0 / denom;
-                    double vb = (d11 * d20 - d01 * d21) * inv;
-                    double vc = (d00 * d21 - d01 * d20) * inv;
-                    double va = 1.0 - vb - vc;
-                    va = va < 0.0 ? 0.0 : va;
-                    vb = vb < 0.0 ? 0.0 : vb;
-                    vc = vc < 0.0 ? 0.0 : vc;
-                    const double sum = va + vb + vc;
-                    if (sum >= 0.0001) { w_self = va / sum; w_nb1 = vb / sum; w_nb2 = vc / sum; }
-                }
-            }
-
-            // 5. 取值
-            const double elev_self = self_idx >= 0 ? double(E[self_idx]) : 0.0;
-            const double elev_nb1 = nb1_idx >= 0 ? double(E[nb1_idx]) : elev_self;
-            const double elev_nb2 = nb2_idx >= 0 ? double(E[nb2_idx]) : elev_self;
-            const double moist_self = self_idx >= 0 ? double(M[self_idx]) : 0.5;
-            const double moist_nb1 = nb1_idx >= 0 ? double(M[nb1_idx]) : moist_self;
-            const double moist_nb2 = nb2_idx >= 0 ? double(M[nb2_idx]) : moist_self;
-            const int terrain_self = self_idx >= 0 ? int(T[self_idx]) : TT_OCEAN;
-            const int veg_self = self_idx >= 0 ? int(VG[self_idx]) : 0;
-            const int cover_self = self_idx >= 0 ? int(CV[self_idx]) : 0;
-
-            // 6. barycentric 插值
-            double elev_blend = elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2;
-            const double moist_blend = moist_self * w_self + moist_nb1 * w_nb1 + moist_nb2 * w_nb2;
-
-            // 6.5 [P1 hypsometric Layer A] 锚定 sea_level 的小 mix 残差重映射（重锐化台地边缘，
-            //     不重复整条 Layer B 曲线）；水下/无陆地段时透传。relief 随后叠在重塑基底上。
-            if (hy_inv_above > 0.0 && elev_blend > sea_level) {
-                elev_blend = pk_hypso_remap_elev(hypso, elev_blend, sea_level,
-                                                 hy_inv_above, hy_above, PK_HYPSO_LAYER_A_MIX);
-            }
-
-            // 6.6 [coast-beach 2026-06-25] 近岸海滩坡（治"海岸无法线"）：P1 后内陆平原也贴 sea_level，
-            //     elev 无法区分海岸/内陆，故改用 barycentric 水邻居权重(亚格距水近度)——只有真正与水
-            //     cell 相邻的陆地像素才下压成海滩坡（写进 height → terrain_normal_tex 拿到 crisp 海岸
-            //     法线，与河岸 #2a 同法）。仅陆地 self、止于水线不越过；与 GDScript 镜像同公式。
-            if (terrain_self != TT_OCEAN && terrain_self != TT_COAST && elev_blend > sea_level) {
-                constexpr double PK_COAST_BEACH = 0.05;  // 海滩坡最大下压(height 单位，× smoothstep)
-                double water_w = 0.0;
-                if (nb1_idx >= 0 && pk_is_water_terrain(uint8_t(T[nb1_idx]))) water_w += w_nb1;
-                if (nb2_idx >= 0 && pk_is_water_terrain(uint8_t(T[nb2_idx]))) water_w += w_nb2;
-                if (water_w > 0.0) {
-                    const double beach = water_w * water_w * (3.0 - 2.0 * water_w);  // smoothstep 锐化
-                    double e = elev_blend - PK_COAST_BEACH * beach;
-                    if (e < sea_level) e = sea_level;   // 海滩止于水线
-                    elev_blend = e;
-                }
-            }
-
-
-            // 7. [P0] per-pixel relief：各向异性脊线（沿等高线拉长）+ 连续振幅(relief 门控)
-            //    + 山脊/谷不对称（尖脊缓谷）+ 气候耦合（干→岩屑、湿→圆滑）；不绑 terrain 类别。
-            double elev_final = elev_blend;
-            if (terrain_self != TT_OCEAN && terrain_self != TT_COAST) {
-                // 插值 per-cell 梯度方向 + 局地起伏（复用 self/nb1/nb2 barycentric 权重）
-                double gx = CGX[size_t(self_idx)] * w_self;
-                double gy = CGY[size_t(self_idx)] * w_self;
-                double relief_p = CREL[size_t(self_idx)] * w_self;
-                if (nb1_idx >= 0) { gx += CGX[size_t(nb1_idx)] * w_nb1; gy += CGY[size_t(nb1_idx)] * w_nb1; relief_p += CREL[size_t(nb1_idx)] * w_nb1; }
-                if (nb2_idx >= 0) { gx += CGX[size_t(nb2_idx)] * w_nb2; gy += CGY[size_t(nb2_idx)] * w_nb2; relief_p += CREL[size_t(nb2_idx)] * w_nb2; }
-
-                // 连续振幅门控：relief 低→趋平（真平原），高→满振幅（无 terrain 硬分档）
-                const double gate = smooth01(RELIEF_LO, RELIEF_HI, relief_p);
-                // 脊线方向 = 梯度的垂直方向（沿等高线）
-                const double glen = std::sqrt(gx * gx + gy * gy);
-                double tx = 1.0, ty = 0.0;
-                if (glen > 1e-9) { tx = -gy / glen; ty = gx / glen; }
-                // 沿脊线 3-tap smear（每 tap 经 cyl()，圆柱接缝安全）→ 沿等高线方向拉长山脊
-                const double L = hex_size * RIDGE_SMEAR_HEX;
-                const double r0 = cyl(NR, wx_base, wy_base);
-                const double rA = cyl(NR, wx_base + tx * L, wy_base + ty * L, 1.0, tx * L);
-                const double rB = cyl(NR, wx_base - tx * L, wy_base - ty * L, 1.0, -tx * L);
-                const double smeared = (r0 * 2.0 + rA + rB) * 0.25;
-                const double R = r0 + (smeared - r0) * gate;   // 低起伏→各向同性，高起伏→沿脊
-                double ridge01 = (R + 1.0) * 0.5;
-                ridge01 = ridge01 < 0.0 ? 0.0 : (ridge01 > 1.0 ? 1.0 : ridge01);
-                const double shaped = std::pow(ridge01, K_CREST);   // 尖脊 + 缓谷
-                const double amp = RELIEF_AMP * gate;
-                // 气候耦合：干燥→更多高频岩屑、湿润→圆滑；仅在有起伏处出现（× gate）
-                const double dryness = 1.0 - moist_blend;
-                const double crag = cyl(ND, wx_base * CRAG_FREQ_MUL + 17.9,
-                                        wy_base * CRAG_FREQ_MUL - 11.3,
-                                        CRAG_FREQ_MUL, 17.9) * 0.5;
-                elev_final = elev_blend
-                        + (shaped - VALLEY_BIAS) * amp
-                        + crag * CRAG_AMP * (0.4 + 0.6 * dryness) * gate;
-            }
-
-            // 8. 权威硬主索引 + 通用视觉边界辅助数据。为所有合法邻格输出副索引
-            //    和距离，让 terrain/fog/weather 各自决定能否以及如何形成 ecotone；
-            //    动态状态、CSR 与交互仍不被视觉过渡改派。
-            int edge_secondary = -1;
-            double edge_gap_hex = VISUAL_EDGE_DISTANCE_SATURATE_HEX;
-            if (self_idx >= 0) {
-                const double self_dx = wx - scx;
-                const double self_dy = wy - scy;
-                const double self_distance = std::sqrt(self_dx * self_dx + self_dy * self_dy);
-                auto consider_edge_neighbor = [&](int candidate_idx, double cx, double cy) {
-                    if (candidate_idx < 0 || candidate_idx >= n_cells) return;
-                    const double dx = wx - cx;
-                    const double dy = wy - cy;
-                    const double candidate_distance = std::sqrt(dx * dx + dy * dy);
-                    const double gap = std::max(0.0,
-                            (candidate_distance - self_distance) / std::max(hex_size, 0.0001));
-                    if (edge_secondary < 0 || gap < edge_gap_hex - 1e-12 ||
-                            (std::fabs(gap - edge_gap_hex) <= 1e-12 &&
-                             candidate_idx < edge_secondary)) {
-                        edge_secondary = candidate_idx;
-                        edge_gap_hex = gap;
+                // 4. barycentric（self + 2 邻居中心）
+                const double ax = scx, ay = scy;
+                const double bx = cube_to_world_x(nb1_q, nb1_r), b_y = cube_to_world_y(nb1_r);
+                const double ccx = cube_to_world_x(nb2_q, nb2_r), ccy = cube_to_world_y(nb2_r);
+                double w_self = 1.0, w_nb1 = 0.0, w_nb2 = 0.0;
+                {
+                    const double v0x = bx - ax, v0y = b_y - ay;
+                    const double v1x = ccx - ax, v1y = ccy - ay;
+                    const double v2x = wx - ax, v2y = wy - ay;
+                    const double d00 = v0x * v0x + v0y * v0y;
+                    const double d01 = v0x * v1x + v0y * v1y;
+                    const double d11 = v1x * v1x + v1y * v1y;
+                    const double d20 = v2x * v0x + v2y * v0y;
+                    const double d21 = v2x * v1x + v2y * v1y;
+                    const double denom = d00 * d11 - d01 * d01;
+                    if (std::fabs(denom) >= 0.000001) {
+                        const double inv = 1.0 / denom;
+                        double vb = (d11 * d20 - d01 * d21) * inv;
+                        double vc = (d00 * d21 - d01 * d20) * inv;
+                        double va = 1.0 - vb - vc;
+                        va = va < 0.0 ? 0.0 : va;
+                        vb = vb < 0.0 ? 0.0 : vb;
+                        vc = vc < 0.0 ? 0.0 : vc;
+                        const double sum = va + vb + vc;
+                        if (sum >= 0.0001) { w_self = va / sum; w_nb1 = vb / sum; w_nb2 = vc / sum; }
                     }
-                };
-                consider_edge_neighbor(nb1_idx, bx, b_y);
-                consider_edge_neighbor(nb2_idx, ccx, ccy);
-            }
+                }
 
-            const int idx = row + x;
-            double hf = elev_final; hf = hf < 0.0 ? 0.0 : (hf > 1.0 ? 1.0 : hf);
-            double mf = moist_blend; mf = mf < 0.0 ? 0.0 : (mf > 1.0 ? 1.0 : mf);
-            HBUF[idx] = float(hf);
-            BBUF[idx] = uint8_t(terrain_self & 0xFF);
-            MBUF[idx] = float(mf);
-            VBUF[idx] = uint8_t(veg_self & 0xFF);
-            CBUF[idx] = uint8_t(cover_self & 0xFF);
-            P2C[idx] = self_idx;
-            if (emit_csr && self_idx >= 0 && self_idx < n_cells) CNT[self_idx] += 1;
-            if (edge_secondary >= 0 && edge_secondary < 0xFFFF) {
-                ESEC[idx * 2] = uint8_t(edge_secondary & 0xFF);
-                ESEC[idx * 2 + 1] = uint8_t((edge_secondary >> 8) & 0xFF);
-                const double edge_n = std::min(1.0,
-                        edge_gap_hex / VISUAL_EDGE_DISTANCE_SATURATE_HEX);
-                EDIST[idx] = uint8_t(std::round(edge_n * 255.0));
-            } else {
-                ESEC[idx * 2] = 0xFF;
-                ESEC[idx * 2 + 1] = 0xFF;
-                EDIST[idx] = 0xFF;
+                // 5. 取值
+                const double elev_self = self_idx >= 0 ? double(E[self_idx]) : 0.0;
+                const double elev_nb1 = nb1_idx >= 0 ? double(E[nb1_idx]) : elev_self;
+                const double elev_nb2 = nb2_idx >= 0 ? double(E[nb2_idx]) : elev_self;
+                const double moist_self = self_idx >= 0 ? double(M[self_idx]) : 0.5;
+                const double moist_nb1 = nb1_idx >= 0 ? double(M[nb1_idx]) : moist_self;
+                const double moist_nb2 = nb2_idx >= 0 ? double(M[nb2_idx]) : moist_self;
+                const int terrain_self = self_idx >= 0 ? int(T[self_idx]) : TT_OCEAN;
+                const int veg_self = self_idx >= 0 ? int(VG[self_idx]) : 0;
+                const int cover_self = self_idx >= 0 ? int(CV[self_idx]) : 0;
+
+                // 6. barycentric 插值
+                double elev_blend = elev_self * w_self + elev_nb1 * w_nb1 + elev_nb2 * w_nb2;
+                const double moist_blend = moist_self * w_self + moist_nb1 * w_nb1 + moist_nb2 * w_nb2;
+
+                // 6.5 [P1 hypsometric Layer A] 锚定 sea_level 的小 mix 残差重映射（重锐化台地边缘，
+                //     不重复整条 Layer B 曲线）；水下/无陆地段时透传。relief 随后叠在重塑基底上。
+                if (hy_inv_above > 0.0 && elev_blend > sea_level) {
+                    elev_blend = pk_hypso_remap_elev(hypso, elev_blend, sea_level,
+                                                     hy_inv_above, hy_above, PK_HYPSO_LAYER_A_MIX);
+                }
+
+                // 6.6 [coast-beach 2026-06-25] 近岸海滩坡（治"海岸无法线"）：P1 后内陆平原也贴 sea_level，
+                //     elev 无法区分海岸/内陆，故改用 barycentric 水邻居权重(亚格距水近度)——只有真正与水
+                //     cell 相邻的陆地像素才下压成海滩坡（写进 height → terrain_normal_tex 拿到 crisp 海岸
+                //     法线，与河岸 #2a 同法）。仅陆地 self、止于水线不越过；与 GDScript 镜像同公式。
+                if (terrain_self != TT_OCEAN && terrain_self != TT_COAST && elev_blend > sea_level) {
+                    constexpr double PK_COAST_BEACH = 0.05;  // 海滩坡最大下压(height 单位，× smoothstep)
+                    double water_w = 0.0;
+                    if (nb1_idx >= 0 && pk_is_water_terrain(uint8_t(T[nb1_idx]))) water_w += w_nb1;
+                    if (nb2_idx >= 0 && pk_is_water_terrain(uint8_t(T[nb2_idx]))) water_w += w_nb2;
+                    if (water_w > 0.0) {
+                        const double beach = water_w * water_w * (3.0 - 2.0 * water_w);  // smoothstep 锐化
+                        double e = elev_blend - PK_COAST_BEACH * beach;
+                        if (e < sea_level) e = sea_level;   // 海滩止于水线
+                        elev_blend = e;
+                    }
+                }
+
+
+                // 7. [P0] per-pixel relief：各向异性脊线（沿等高线拉长）+ 连续振幅(relief 门控)
+                //    + 山脊/谷不对称（尖脊缓谷）+ 气候耦合（干→岩屑、湿→圆滑）；不绑 terrain 类别。
+                double elev_final = elev_blend;
+                if (terrain_self != TT_OCEAN && terrain_self != TT_COAST) {
+                    // 插值 per-cell 梯度方向 + 局地起伏（复用 self/nb1/nb2 barycentric 权重）
+                    double gx = CGX[size_t(self_idx)] * w_self;
+                    double gy = CGY[size_t(self_idx)] * w_self;
+                    double relief_p = CREL[size_t(self_idx)] * w_self;
+                    if (nb1_idx >= 0) { gx += CGX[size_t(nb1_idx)] * w_nb1; gy += CGY[size_t(nb1_idx)] * w_nb1; relief_p += CREL[size_t(nb1_idx)] * w_nb1; }
+                    if (nb2_idx >= 0) { gx += CGX[size_t(nb2_idx)] * w_nb2; gy += CGY[size_t(nb2_idx)] * w_nb2; relief_p += CREL[size_t(nb2_idx)] * w_nb2; }
+
+                    // 连续振幅门控：relief 低→趋平（真平原），高→满振幅（无 terrain 硬分档）
+                    const double gate = smooth01(RELIEF_LO, RELIEF_HI, relief_p);
+                    // 脊线方向 = 梯度的垂直方向（沿等高线）
+                    const double glen = std::sqrt(gx * gx + gy * gy);
+                    double tx = 1.0, ty = 0.0;
+                    if (glen > 1e-9) { tx = -gy / glen; ty = gx / glen; }
+                    // 沿脊线 3-tap smear（每 tap 经 cyl()，圆柱接缝安全）→ 沿等高线方向拉长山脊
+                    const double L = hex_size * RIDGE_SMEAR_HEX;
+                    const double r0 = cyl(NR, wx_base, wy_base);
+                    const double rA = cyl(NR, wx_base + tx * L, wy_base + ty * L, 1.0, tx * L);
+                    const double rB = cyl(NR, wx_base - tx * L, wy_base - ty * L, 1.0, -tx * L);
+                    const double smeared = (r0 * 2.0 + rA + rB) * 0.25;
+                    const double R = r0 + (smeared - r0) * gate;   // 低起伏→各向同性，高起伏→沿脊
+                    double ridge01 = (R + 1.0) * 0.5;
+                    ridge01 = ridge01 < 0.0 ? 0.0 : (ridge01 > 1.0 ? 1.0 : ridge01);
+                    const double shaped = std::pow(ridge01, K_CREST);   // 尖脊 + 缓谷
+                    const double amp = RELIEF_AMP * gate;
+                    // 气候耦合：干燥→更多高频岩屑、湿润→圆滑；仅在有起伏处出现（× gate）
+                    const double dryness = 1.0 - moist_blend;
+                    const double crag = cyl(ND, wx_base * CRAG_FREQ_MUL + 17.9,
+                                            wy_base * CRAG_FREQ_MUL - 11.3,
+                                            CRAG_FREQ_MUL, 17.9) * 0.5;
+                    elev_final = elev_blend
+                            + (shaped - VALLEY_BIAS) * amp
+                            + crag * CRAG_AMP * (0.4 + 0.6 * dryness) * gate;
+                }
+
+                // 8. 权威硬主索引 + 通用视觉边界辅助数据。为所有合法邻格输出副索引
+                //    和距离，让 terrain/fog/weather 各自决定能否以及如何形成 ecotone；
+                //    动态状态、CSR 与交互仍不被视觉过渡改派。
+                int edge_secondary = -1;
+                double edge_gap_hex = VISUAL_EDGE_DISTANCE_SATURATE_HEX;
+                if (self_idx >= 0) {
+                    const double self_dx = wx - scx;
+                    const double self_dy = wy - scy;
+                    const double self_distance = std::sqrt(self_dx * self_dx + self_dy * self_dy);
+                    auto consider_edge_neighbor = [&](int candidate_idx, double cx, double cy) {
+                        if (candidate_idx < 0 || candidate_idx >= n_cells) return;
+                        const double dx = wx - cx;
+                        const double dy = wy - cy;
+                        const double candidate_distance = std::sqrt(dx * dx + dy * dy);
+                        const double gap = std::max(0.0,
+                                (candidate_distance - self_distance) / std::max(hex_size, 0.0001));
+                        if (edge_secondary < 0 || gap < edge_gap_hex - 1e-12 ||
+                                (std::fabs(gap - edge_gap_hex) <= 1e-12 &&
+                                 candidate_idx < edge_secondary)) {
+                            edge_secondary = candidate_idx;
+                            edge_gap_hex = gap;
+                        }
+                    };
+                    consider_edge_neighbor(nb1_idx, bx, b_y);
+                    consider_edge_neighbor(nb2_idx, ccx, ccy);
+                }
+
+                const int idx = row + x;
+                double hf = elev_final; hf = hf < 0.0 ? 0.0 : (hf > 1.0 ? 1.0 : hf);
+                double mf = moist_blend; mf = mf < 0.0 ? 0.0 : (mf > 1.0 ? 1.0 : mf);
+                HBUF[idx] = float(hf);
+                BBUF[idx] = uint8_t(terrain_self & 0xFF);
+                MBUF[idx] = float(mf);
+                VBUF[idx] = uint8_t(veg_self & 0xFF);
+                CBUF[idx] = uint8_t(cover_self & 0xFF);
+                P2C[idx] = self_idx;
+                if (edge_secondary >= 0 && edge_secondary < 0xFFFF) {
+                    ESEC[idx * 2] = uint8_t(edge_secondary & 0xFF);
+                    ESEC[idx * 2 + 1] = uint8_t((edge_secondary >> 8) & 0xFF);
+                    const double edge_n = std::min(1.0,
+                            edge_gap_hex / VISUAL_EDGE_DISTANCE_SATURATE_HEX);
+                    EDIST[idx] = uint8_t(std::round(edge_n * 255.0));
+                } else {
+                    ESEC[idx * 2] = 0xFF;
+                    ESEC[idx * 2 + 1] = 0xFF;
+                    EDIST[idx] = 0xFF;
+                }
             }
         }
-    }
+    };
+    pk::parallel_for_range("pk_bake_terrain_index", H, bake_row_tasks(H),
+            /*seq_threshold=*/8, run_rows);
 
     // ── CSR build：prefix-sum first_px + scatter flat（counting sort，by cell.index）──
+    // 直方图必须留在 run_rows 之外：CNT[cell] 是跨行共享的累加目标，放进并行体里
+    // 就是 data race。逐 P2C 串行数一遍与原逐像素累加结果逐位相同，且 O(n_pix)
+    // 相对每像素 ~24 次噪声采样可忽略。
+    if (emit_csr) {
+        for (int i = 0; i < n_pix; ++i) {
+            const int c = P2C[i];
+            if (c >= 0 && c < n_cells) CNT[c] += 1;
+        }
+    }
     int total_px = 0;
     PackedInt32Array flat_px;
     int32_t *FLAT = nullptr;
@@ -2479,53 +2508,57 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 std::cos(phase) * radius, std::sin(phase) * radius, wy));
     };
 
-    for (int y = 0; y < H; ++y) {
-        const int wy_i = y + halo;
-        const double wy = origin_y + (double(y) + 0.5) * step_y;
-        for (int x = 0; x < W; ++x) {
-            const int wx_i = x + halo;
-            const int si = wy_i * WW + wx_i;
-            const int di = y * W + x;
-            const double wx = origin_x + (double(x) + 0.5) * step_x;
-            const double h = std::max(0.0, std::min(1.0, double(HW[si])));
-            const int h16 = std::max(0, std::min(65535, int(std::round(h * 65535.0))));
-            HD[di * 2] = uint8_t((h16 >> 8) & 0xFF);
-            HD[di * 2 + 1] = uint8_t(h16 & 0xFF);
+    auto encode_rows = [&](int y_begin, int y_end) {
+        for (int y = y_begin; y < y_end; ++y) {
+            const int wy_i = y + halo;
+            const double wy = origin_y + (double(y) + 0.5) * step_y;
+            for (int x = 0; x < W; ++x) {
+                const int wx_i = x + halo;
+                const int si = wy_i * WW + wx_i;
+                const int di = y * W + x;
+                const double wx = origin_x + (double(x) + 0.5) * step_x;
+                const double h = std::max(0.0, std::min(1.0, double(HW[si])));
+                const int h16 = std::max(0, std::min(65535, int(std::round(h * 65535.0))));
+                HD[di * 2] = uint8_t((h16 >> 8) & 0xFF);
+                HD[di * 2 + 1] = uint8_t(h16 & 0xFF);
 
-            const double sx = (double(HW[wy_i * WW + wx_i + normal_radius_x]) -
-                    double(HW[wy_i * WW + wx_i - normal_radius_x])) * normal_gain_x;
-            const double sy = (double(HW[(wy_i + normal_radius_y) * WW + wx_i]) -
-                    double(HW[(wy_i - normal_radius_y) * WW + wx_i])) * normal_gain_y;
-            const double inv_len = 1.0 / std::sqrt(sx * sx + sy * sy + 1.0);
-            ND[di * 2] = uint8_t(std::max(0, std::min(255,
-                    int(std::round((-sx * inv_len * 0.5 + 0.5) * 255.0)))));
-            ND[di * 2 + 1] = uint8_t(std::max(0, std::min(255,
-                    int(std::round((-sy * inv_len * 0.5 + 0.5) * 255.0)))));
+                const double sx = (double(HW[wy_i * WW + wx_i + normal_radius_x]) -
+                        double(HW[wy_i * WW + wx_i - normal_radius_x])) * normal_gain_x;
+                const double sy = (double(HW[(wy_i + normal_radius_y) * WW + wx_i]) -
+                        double(HW[(wy_i - normal_radius_y) * WW + wx_i])) * normal_gain_y;
+                const double inv_len = 1.0 / std::sqrt(sx * sx + sy * sy + 1.0);
+                ND[di * 2] = uint8_t(std::max(0, std::min(255,
+                        int(std::round((-sx * inv_len * 0.5 + 0.5) * 255.0)))));
+                ND[di * 2 + 1] = uint8_t(std::max(0, std::min(255,
+                        int(std::round((-sy * inv_len * 0.5 + 0.5) * 255.0)))));
 
-            const int ci = P2C[si];
-            MD[di * 4] = BIOME_W[si];
-            MD[di * 4 + 1] = ci >= 0 && ci < 0xFFFF ? uint8_t(ci & 0xFF) : 0xFF;
-            MD[di * 4 + 2] = ci >= 0 && ci < 0xFFFF ? uint8_t((ci >> 8) & 0xFF) : 0xFF;
-            MD[di * 4 + 3] = (LF != nullptr && ci >= 0 && ci < landform.size()) ? LF[ci] : 0;
+                const int ci = P2C[si];
+                MD[di * 4] = BIOME_W[si];
+                MD[di * 4 + 1] = ci >= 0 && ci < 0xFFFF ? uint8_t(ci & 0xFF) : 0xFF;
+                MD[di * 4 + 2] = ci >= 0 && ci < 0xFFFF ? uint8_t((ci >> 8) & 0xFF) : 0xFF;
+                MD[di * 4 + 3] = (LF != nullptr && ci >= 0 && ci < landform.size()) ? LF[ci] : 0;
 
-            const double f = std::max(0.0, std::min(1.0, double(FLOW_W[si])));
-            FD[di] = uint8_t(std::round(f * 255.0));
-            double depth = 0.0;
-            if (CS != nullptr && ci >= 0 && ci < n_cells && CS[ci] > 1e-4f) {
-                const double raw = std::max(0.0, double(CS[ci]) - h);
-                const bool lake = CT != nullptr && CT[ci] == 18;
-                depth = std::min(1.0, raw / (lake ? 0.16 : std::max(1e-4, sea_level)));
-            } else if (BWATER != nullptr) {
-                depth = sample_base_byte(BWATER, wx, wy);
+                const double f = std::max(0.0, std::min(1.0, double(FLOW_W[si])));
+                FD[di] = uint8_t(std::round(f * 255.0));
+                double depth = 0.0;
+                if (CS != nullptr && ci >= 0 && ci < n_cells && CS[ci] > 1e-4f) {
+                    const double raw = std::max(0.0, double(CS[ci]) - h);
+                    const bool lake = CT != nullptr && CT[ci] == 18;
+                    depth = std::min(1.0, raw / (lake ? 0.16 : std::max(1e-4, sea_level)));
+                } else if (BWATER != nullptr) {
+                    depth = sample_base_byte(BWATER, wx, wy);
+                }
+                WD[di] = uint8_t(std::round(depth * 255.0));
+                const double dn = std::max(-1.0, std::min(1.0, detail_periodic(wx, wy)));
+                DD[di] = uint8_t(std::round((dn * 0.5 + 0.5) * 255.0));
+                ED[di * 2] = EW[si * 2];
+                ED[di * 2 + 1] = EW[si * 2 + 1];
+                EDD[di] = EDW[si];
             }
-            WD[di] = uint8_t(std::round(depth * 255.0));
-            const double dn = std::max(-1.0, std::min(1.0, detail_periodic(wx, wy)));
-            DD[di] = uint8_t(std::round((dn * 0.5 + 0.5) * 255.0));
-            ED[di * 2] = EW[si * 2];
-            ED[di * 2 + 1] = EW[si * 2 + 1];
-            EDD[di] = EDW[si];
         }
-    }
+    };
+    pk::parallel_for_range("pk_bake_visual_tile_encode", H, bake_row_tasks(H),
+            /*seq_threshold=*/8, encode_rows);
 
     auto hash_bytes = [](const PackedByteArray &data) -> int64_t {
         uint64_t h = 1469598103934665603ULL;
@@ -2655,7 +2688,7 @@ godot::Dictionary DCWorldExt::run_resample_visual_horizon_layer_pass(godot::Dict
         }
     };
     pk::parallel_for_range("pk_visual_horizon_resample", dst_h,
-            /*n_tasks=*/0, /*seq_threshold=*/64, run_range);
+            bake_row_tasks(dst_h), /*seq_threshold=*/64, run_range);
     const auto t1 = std::chrono::high_resolution_clock::now();
 
     uint64_t hash = 1469598103934665603ULL;
