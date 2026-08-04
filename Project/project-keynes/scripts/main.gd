@@ -3419,6 +3419,8 @@ func get_sim_breakdowns() -> Dictionary:
 		out["sea_ice_atlas"] = _generator.sus_sea_ice_atlas_breakdown()
 	if _generator.has_method("sus_dynamic_visual_atlas_breakdown"):
 		out["dynamic_visual_atlas"] = _generator.sus_dynamic_visual_atlas_breakdown()
+	if _generator.has_method("sus_ocean_currents_breakdown"):
+		out["ocean"] = _generator.sus_ocean_currents_breakdown()
 	if _generator.has_method("get_economy_perf_report"):
 		var economy_perf: Dictionary = _generator.get_economy_perf_report()
 		if not economy_perf.is_empty():

@@ -27,6 +27,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -464,6 +465,99 @@ inline void wf_wrapped_delta(float ax, float ay, float bx, float by,
             dx += wrap_width_x;
         }
     }
+}
+
+// ─── NS 化 Phase 0:六分扇形 barycentric(半拉格朗日终点插值) ────────────
+// 给定回溯终点 P=(tx,ty) 与宿主 cell `cur`,在 cur 与其 1-ring 邻居组成的 6 个
+// 扇形三角形 (cur, nb_s, nb_{s+1}) 中寻找包含 P 的三角形,返回
+// (i0=cur, i1, i2) 与重心权重 (w0,w1,w2)。
+//   - 权重 clamp 到 [0,1] 且和恒为 1(单调、无 overshoot);P 落在六边形外时
+//     clamp 到最近扇形边(等价投影)。
+//   - 邻居缺失(<0 或越界)的扇形跳过;全部不可用退化为 (cur,cur,cur,1,0,0)。
+//   - x 方向按 wrap_period_x 最小映像折叠(≤0.001 = 不环绕),y 不环绕。
+// SAME_SOURCE 数学定义:GDScript 镜像 field_solver.gd::_hex_sextant_barycentric()。
+inline void pk_hex_sextant_barycentric(
+        int cur, float tx, float ty,
+        const float *POSX, const float *POSY, const int32_t *NB, int n_cells,
+        float wrap_period_x,
+        int &i0, int &i1, int &i2, float &w0, float &w1, float &w2) {
+    i0 = cur; i1 = cur; i2 = cur; w0 = 1.0f; w1 = 0.0f; w2 = 0.0f;
+    if (cur < 0 || cur >= n_cells) return;
+    const float cx = POSX[cur];
+    const float cy = POSY[cur];
+    float dx = tx - cx;
+    const float dy = ty - cy;
+    if (wrap_period_x > 0.001f) {
+        const float half = wrap_period_x * 0.5f;
+        if (dx > half) dx -= wrap_period_x;
+        else if (dx < -half) dx += wrap_period_x;
+    }
+    const int base = cur * 6;
+    float best_score = -2.0f;
+    int   best_a = -1, best_b = -1;
+    float best_u1 = 0.0f, best_u2 = 0.0f;
+    for (int s = 0; s < 6; ++s) {
+        const int a = NB[base + s];
+        const int b = NB[base + ((s + 1) % 6)];
+        if (a < 0 || a >= n_cells || b < 0 || b >= n_cells) continue;
+        float eax = POSX[a] - cx;
+        const float eay = POSY[a] - cy;
+        float ebx = POSX[b] - cx;
+        const float eby = POSY[b] - cy;
+        if (wrap_period_x > 0.001f) {
+            const float half = wrap_period_x * 0.5f;
+            if (eax > half) eax -= wrap_period_x;
+            else if (eax < -half) eax += wrap_period_x;
+            if (ebx > half) ebx -= wrap_period_x;
+            else if (ebx < -half) ebx += wrap_period_x;
+        }
+        const float det = eax * eby - eay * ebx;
+        if (det > -1e-7f && det < 1e-7f) continue;
+        // 解 [ea eb]·(u1,u2)^T = (dx,dy)^T:w0 = 1-u1-u2 为中心权重。
+        const float inv_det = 1.0f / det;
+        const float u1 = (dx * eby - dy * ebx) * inv_det;
+        const float u2 = (eax * dy - eay * dx) * inv_det;
+        if (u1 < -1e-4f || u2 < -1e-4f) continue;  // 不在本扇形楔内
+        const float score = 1.0f - u1 - u2;         // = w0,越大越贴近三角形内部
+        if (score > best_score) {
+            best_score = score;
+            best_a = a; best_b = b;
+            best_u1 = u1; best_u2 = u2;
+            if (score >= 0.0f) break;               // 真包含,直接命中
+        }
+    }
+    if (best_a < 0) return;  // 无可用扇形 → own-cell 退化
+    float c1 = best_u1 < 0.0f ? 0.0f : (best_u1 > 1.0f ? 1.0f : best_u1);
+    float c2 = best_u2 < 0.0f ? 0.0f : (best_u2 > 1.0f ? 1.0f : best_u2);
+    float c0 = 1.0f - c1 - c2;
+    if (c0 < 0.0f) {  // 点在斜边之外:沿边归一,权重仍和为 1
+        const float inv_sum = 1.0f / (c1 + c2);
+        c1 *= inv_sum; c2 *= inv_sum; c0 = 0.0f;
+    }
+    i1 = best_a; i2 = best_b;
+    w0 = c0; w1 = c1; w2 = c2;
+}
+
+// 风场状态轻量指纹(64 降采样 + n_cells):轨迹表构建时快照,消费端复算比对,
+// 任何绕过 wind pass 的风槽改写(GDScript fallback/换图)即失配 → 落旧路径。
+// 非加密强度,仅作 stale 安全网;采样索引固定 → 确定性。
+inline uint64_t pk_wind_state_fp(int n_cells, const float *WX, const float *WY,
+                                 const float *WSP) {
+    uint64_t fp = 1469598103934665603ull;  // FNV-1a offset basis
+    auto mix = [&fp](uint32_t bits) {
+        fp ^= uint64_t(bits);
+        fp *= 1099511628211ull;  // FNV-1a prime
+    };
+    mix(uint32_t(n_cells));
+    const int stride = (n_cells > 64) ? (n_cells / 64) : 1;
+    for (int i = 0; i < n_cells; i += stride) {
+        uint32_t bx = 0, by = 0, bs = 0;
+        std::memcpy(&bx, WX + i, sizeof(float));
+        std::memcpy(&by, WY + i, sizeof(float));
+        std::memcpy(&bs, WSP + i, sizeof(float));
+        mix(bx); mix(by); mix(bs);
+    }
+    return fp;
 }
 
 // Mirror weather_system.gd::_neighbor_aligned_idx (line 1261).

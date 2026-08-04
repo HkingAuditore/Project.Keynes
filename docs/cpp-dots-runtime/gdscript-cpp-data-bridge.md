@@ -411,6 +411,17 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
   护栏：`physical_warn_wrap_units()`（`world_ext_physical.cpp`）在两个 pass 内用已算好的 POSX 跨度
   校验来值，比值落在 `[1.0, 1.5]` 之外即 `push_warning` 一次（正确时 ≈1.005，世界单位错配时 ≈`hex_size`），
   避免这类错配第三次静默逃逸。
+- **风场回溯轨迹表成员缓存 + 指纹契约（NS 化 2026-08-04）**：
+  `_phys_wind_traj_idx/w`（n×3 索引 + n×3 权重，24B/cell，派生 scratch 不占 component slot、不参与
+  codegen/save）由 `run_wind_field_pass` 末切片对**最终发布风**构建一次；`_phys_wind_traj_fp =
+  pk_wind_state_fp(n_cells, WX, WY, WSP)`（64 降采样 FNV，固定采样索引 → 确定性）随表快照。
+  消费端（`run_weather_field_solve_pass` vapor/cloud、`run_wind_air_mass_pass` 气团热）每次调用
+  复算当前风槽指纹比对：**失配 = 有代码绕过 wind pass 改写了风槽**（GDScript fallback、测试直接
+  `refresh_slots_from_map_keys`、换图），自动落旧 hopping 路径并 `_phys_wind_traj_stale_count++`
+  （knobs `wind_traj_stale_count` 上报，防静默消费过期表）。`wind_traj_weather_share=false` 时只构建
+  不共享（动量自平流 A/B 隔离用）。同一契约也适用动量快照 `_phys_wind_snap_fx/fy`（仅 `start_idx==0`
+  重建，见 scheduling-and-job-graph.md 切片规则）。轨迹表 walk/barycentric 依赖 `wrap_period_x`
+  最小映像折叠，单位契约同上（`HexUtils.wrap_period_cell_pos_x`，生产两路径均已满足）。
 - **物理 pass 的纬度 `ny` 必须来自 `cell_lat_norm` slot，不得由 `cell_pos_y` ÷ `world_bounds` 重算
   （wind-belt-lat-fix 2026-08-03，同一单位错配家族的第三处，也是危害最大的一处）**：
   `ny ∈ [0,1]`（0 = 第 0 行，0.5 = 赤道，1 = 末行），权威定义是

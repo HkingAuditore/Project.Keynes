@@ -367,6 +367,36 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const int world_seed = int(knobs.has("world_seed") ? int(knobs["world_seed"]) : 0);
     const double wrap_origin_x = double(knobs.has("wrap_origin_x") ? double(knobs["wrap_origin_x"]) : 0.0);
     const double wrap_period_x = double(knobs.has("wrap_period_x") ? double(knobs["wrap_period_x"]) : 0.0);
+    // ─── NS 化旋钮(plan/NS化气候动力学四方向深化,2026-08-04)──────────────
+    // 全部默认 0/关 → 缺省时与旧诊断风逐位一致。分 Phase 独立 gate,便于 A/B。
+    // 方向 A:动量自平流权重(≤0.5,读上一轮轨迹表;首跑无表退化为 own-cell)
+    double momentum_advect_w = double(knobs.has("wind_momentum_advect_w") ? double(knobs["wind_momentum_advect_w"]) : 0.0);
+    momentum_advect_w = wind_clamp(momentum_advect_w, 0.0, 0.5);
+    // 方向 A:动量扩散日权重(6 邻居 Laplacian 松弛;dt 与格距归一在主循环前换算)
+    double momentum_diffuse_w_daily = double(knobs.has("wind_momentum_diffuse_w_daily") ? double(knobs["wind_momentum_diffuse_w_daily"]) : 0.0);
+    momentum_diffuse_w_daily = wind_clamp(momentum_diffuse_w_daily, 0.0, 0.5);
+    // Phase 0:轨迹表构建 gate(动量自平流开启时强制构建,供下一轮消费)
+    const bool traj_table_enabled = bool(knobs.has("wind_traj_table_enabled") ? bool(knobs["wind_traj_table_enabled"]) : false);
+    // 回溯长度 = |flux|·traj_pos_scale·s·traj_dt_days(pos 单位;s=√(N/15000) 格距归一)
+    double traj_pos_scale = double(knobs.has("wind_traj_pos_scale") ? double(knobs["wind_traj_pos_scale"]) : 0.65);
+    traj_pos_scale = wind_clamp(traj_pos_scale, 0.0, 4.0);
+    double traj_dt_days = double(knobs.has("wind_traj_dt_days") ? double(knobs["wind_traj_dt_days"]) : 10.0);
+    traj_dt_days = wind_clamp(traj_dt_days, 0.25, 60.0);
+    // 消费端总闸(weather field solve / wind_air):false 时仅构建不共享(A/B 隔离)
+    _phys_wind_traj_consume_enabled = bool(knobs.has("wind_traj_weather_share") ? bool(knobs["wind_traj_weather_share"]) : true);
+    // 方向 B:散度阻尼 L1 强度(格单位,硬上限 0.3;超出 push_warning 并 clamp)
+    double div_damp_alpha = double(knobs.has("wind_div_damp_alpha") ? double(knobs["wind_div_damp_alpha"]) : 0.0);
+    if (div_damp_alpha > 0.3) {
+        static bool s_warned_div_alpha = false;
+        if (!s_warned_div_alpha) {
+            s_warned_div_alpha = true;
+            UtilityFunctions::push_warning(
+                "[DCWorldExt] run_wind_field_pass: wind_div_damp_alpha > 0.3 clamped "
+                "(散度阻尼硬上限,防误杀天气尺度辐合)");
+        }
+        div_damp_alpha = 0.3;
+    }
+    if (div_damp_alpha < 0.0) div_damp_alpha = 0.0;
     if (n_cells <= 0)         { diag("n_cells <= 0"); return -1.0; }
     if (bounds_size_y <= 0.001) { diag("world_bounds_size_y <= 0.001"); return -1.0; }
 
@@ -483,6 +513,43 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
                                  s_warned_wind_wrap);
     }
     const uint32_t seed_bits = static_cast<uint32_t>(world_seed);
+
+    // ─── NS 化 Phase 1:旧通量快照 + 有效权重换算(动量关闭时零成本零数值差)──
+    // 快照是并行安全的唯一前提:主循环内邻居的旧通量必须读快照而非 slot(slot 在
+    // 并行写回中)。内存 ≈0.9MB@110k,内存换耗时(与 coast BFS 缓存同策)。
+    // 切片兼容:快照驻留成员,只在首切片(start_idx==0)或换图(size 失配)重建;
+    // 后续切片复用 → 切片执行与全量执行逐位一致(每切片各拍会读到前序切片已写回
+    // 的新风,污染"旧值"语义)。
+    const bool momentum_active = (momentum_advect_w > 0.0 || momentum_diffuse_w_daily > 0.0);
+    if (momentum_active
+            && (start_idx == 0 || int(_phys_wind_snap_fx.size()) != n_cells)) {
+        _phys_wind_snap_fx.resize(static_cast<size_t>(n_cells));
+        _phys_wind_snap_fy.resize(static_cast<size_t>(n_cells));
+        for (int i = 0; i < n_cells; ++i) {
+            _phys_wind_snap_fx[static_cast<size_t>(i)] = WX[i] * WSP_SLOT[i];
+            _phys_wind_snap_fy[static_cast<size_t>(i)] = WY[i] * WSP_SLOT[i];
+        }
+    }
+    const float * const __restrict SNAP_FX = momentum_active ? _phys_wind_snap_fx.data() : nullptr;
+    const float * const __restrict SNAP_FY = momentum_active ? _phys_wind_snap_fy.data() : nullptr;
+    // 扩散权重:日权重按 wind_elapsed_days 换算(沿用 max_turn_rad 的 rate 语义),
+    // 再乘 s² 格距归一(w=ν·dt/h²,h∝1/√N);上限 0.5 = 6 邻居显式扩散无条件稳定域。
+    const double grid_s = std::sqrt(double(n_cells) / 15000.0);
+    double diffuse_w = 0.0;
+    if (momentum_diffuse_w_daily > 0.0) {
+        diffuse_w = 1.0 - std::pow(1.0 - momentum_diffuse_w_daily, wind_elapsed_days);
+        diffuse_w *= grid_s * grid_s;
+        if (diffuse_w > 0.5) diffuse_w = 0.5;
+    }
+    // 自平流读上一轮轨迹表(几何冻结系数,滞后一次 wind 更新);首跑无表 → 跳过。
+    const int32_t * const __restrict TRAJ_IDX =
+        (momentum_advect_w > 0.0 && _phys_wind_traj_valid
+         && int(_phys_wind_traj_idx.size()) == n_cells * 3
+         && pk_wind_state_fp(n_cells, WX, WY, WSP_SLOT) == _phys_wind_traj_fp)
+            ? _phys_wind_traj_idx.data() : nullptr;
+    const float * const __restrict TRAJ_W = (TRAJ_IDX != nullptr) ? _phys_wind_traj_w.data() : nullptr;
+    std::vector<float> momentum_delta;
+    if (momentum_active) momentum_delta.assign(static_cast<size_t>(n_cells), 0.0f);
 
     pk::parallel_for_range_with_emit<WindFlipEmit>(
         "pk_wind_field", slice_n, wind_flip_emit,
@@ -764,8 +831,46 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         }
         const double target_flux_x = dir_x * spd;
         const double target_flux_y = dir_y * spd;
-        const double final_flux_x = old_flux_x + (target_flux_x - old_flux_x) * effective_rate;
-        const double final_flux_y = old_flux_y + (target_flux_y - old_flux_y) * effective_rate;
+        // NS 化 Phase 1:transported momentum = 旧动量 + 自平流增量 + 扩散增量。
+        // 松弛形式即动量方程 dV/dt = -(V·∇)V + ν∇²V - r(V - V_force) 的半隐式离散:
+        //   final = transp + r·(target - transp) ≡ r·target + (1-r)·transp。
+        // momentum 关闭时 transp==old_flux,与旧代码逐位一致;开启时只从 SNAP 快照
+        // 读邻居(并行安全),诊断差量写入 momentum_delta[i](own-cell,无 race)。
+        double transp_x = old_flux_x;
+        double transp_y = old_flux_y;
+        if (momentum_active && old_dir_valid) {
+            if (TRAJ_IDX != nullptr) {
+                const int t3 = i * 3;
+                const int j0 = TRAJ_IDX[t3], j1 = TRAJ_IDX[t3 + 1], j2 = TRAJ_IDX[t3 + 2];
+                const double q0 = double(TRAJ_W[t3]);
+                const double q1 = double(TRAJ_W[t3 + 1]);
+                const double q2 = double(TRAJ_W[t3 + 2]);
+                const double sl_x = q0 * double(SNAP_FX[j0]) + q1 * double(SNAP_FX[j1]) + q2 * double(SNAP_FX[j2]);
+                const double sl_y = q0 * double(SNAP_FY[j0]) + q1 * double(SNAP_FY[j1]) + q2 * double(SNAP_FY[j2]);
+                transp_x += momentum_advect_w * (sl_x - old_flux_x);
+                transp_y += momentum_advect_w * (sl_y - old_flux_y);
+            }
+            if (diffuse_w > 0.0) {
+                double sum_x = 0.0, sum_y = 0.0;
+                int nb_cnt = 0;
+                for (int d = 0; d < 6; ++d) {
+                    const int32_t ni = NB[base + d];
+                    if (ni < 0) continue;
+                    sum_x += double(SNAP_FX[ni]);
+                    sum_y += double(SNAP_FY[ni]);
+                    ++nb_cnt;
+                }
+                if (nb_cnt > 0) {  // 缺邻按自身处理(零通量边界),lap = avg_nb - own
+                    transp_x += diffuse_w * (sum_x / double(nb_cnt) - old_flux_x);
+                    transp_y += diffuse_w * (sum_y / double(nb_cnt) - old_flux_y);
+                }
+            }
+            momentum_delta[static_cast<size_t>(i)] = float(std::sqrt(
+                (transp_x - old_flux_x) * (transp_x - old_flux_x)
+                + (transp_y - old_flux_y) * (transp_y - old_flux_y)));
+        }
+        const double final_flux_x = transp_x + (target_flux_x - transp_x) * effective_rate;
+        const double final_flux_y = transp_y + (target_flux_y - transp_y) * effective_rate;
         const double final_spd = old_spd + (spd - old_spd) * effective_rate;
         double final_dir_x = dir_x;
         double final_dir_y = dir_y;
@@ -809,6 +914,75 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         }); // pk_wind_field parallel_for_range_with_emit
     wind_flip_count = wind_flip_emit.flip;
 
+    // ─── NS 化 Phase 3:散度阻尼 L1(仅末切片/全量,对完整新风场执行)─────────
+    // div = ∇·V 与 grad(div) 用与 (b) 段相同的 (1/3)Σ_d Δ·NB_DIR 离散(内洽):
+    // V += α_eff·∇div —— 符号取 +:∂E/∂t = -α∫|∇div|² ≤ 0(E=½∫div²),
+    // 即 div 的扩散(阻尼);取 - 则是反扩散,放大散度模态(2026-08-04 DIV-only
+    // A/B 实测证实:div p95 +10%、风速 +3.8%,已据此翻转符号)。
+    // α 按 s² 格距归一、硬上限 0.3 → 谱选择性压制网格级散度噪声,
+    // 几乎不触行星尺度辐合(NWP 标准散度阻尼)。两趟只读/写分离 sweep,bit-equal 并行。
+    // 不复用 turn-limit(α 小,增量远低于 32°/日帽);div_damp_alpha==0 时零成本。
+    double div_damp_applied = 0.0;
+    if (div_damp_alpha > 0.0 && end_idx == n_cells && n_cells > 0) {
+        double a_eff = div_damp_alpha * grid_s * grid_s;
+        if (a_eff > 0.3) a_eff = 0.3;
+        std::vector<float> div_f(static_cast<size_t>(n_cells), 0.0f);
+        float * const __restrict DIV = div_f.data();
+        pk::parallel_for_range("pk_wind_div1", n_cells, [&](int rb, int re) {
+            for (int i = rb; i < re; ++i) {
+                const double fx_i = double(WX[i]) * double(WSP_SLOT[i]);
+                const double fy_i = double(WY[i]) * double(WSP_SLOT[i]);
+                double dv = 0.0;
+                const int base = i * 6;
+                for (int d = 0; d < 6; ++d) {
+                    const int32_t ni = NB[base + d];
+                    if (ni < 0) continue;
+                    const double dfx = double(WX[ni]) * double(WSP_SLOT[ni]) - fx_i;
+                    const double dfy = double(WY[ni]) * double(WSP_SLOT[ni]) - fy_i;
+                    dv += dfx * NB_DIR_X[d] + dfy * NB_DIR_Y[d];
+                }
+                DIV[i] = float(dv / 3.0);
+            }
+        });
+        pk::parallel_for_range("pk_wind_div2", n_cells, [&](int rb, int re) {
+            for (int i = rb; i < re; ++i) {
+                const double d_self = double(DIV[i]);
+                double gx = 0.0, gy = 0.0;
+                const int base = i * 6;
+                int nb_cnt = 0;
+                for (int d = 0; d < 6; ++d) {
+                    const int32_t ni = NB[base + d];
+                    if (ni < 0) continue;
+                    gx += (double(DIV[ni]) - d_self) * NB_DIR_X[d];
+                    gy += (double(DIV[ni]) - d_self) * NB_DIR_Y[d];
+                    ++nb_cnt;
+                }
+                if (nb_cnt == 0) continue;
+                gx /= 3.0;
+                gy /= 3.0;
+                const double fx = double(WX[i]) * double(WSP_SLOT[i]) + a_eff * gx;
+                const double fy = double(WY[i]) * double(WSP_SLOT[i]) + a_eff * gy;
+                const double len2 = fx * fx + fy * fy;
+                if (len2 > 1e-8) {
+                    const double inv = 1.0 / std::sqrt(len2);
+                    WX[i] = float(fx * inv);
+                    WY[i] = float(fy * inv);
+                    WSP_SLOT[i] = float(std::sqrt(len2));
+                }
+            }
+        });
+        div_damp_applied = a_eff;
+    }
+
+    // ─── NS 化 Phase 0/2:回溯轨迹表(消费端 weather/wind_air 指纹校验共享)────
+    // 动量自平流开启时强制构建(下一轮 wind pass 读本表);只在末切片对完整新风场
+    // 构建,保证表与发布风严格一致。构建于 div 阻尼之后 → 表反映最终风。
+    if ((traj_table_enabled || momentum_active) && end_idx == n_cells && n_cells > 0) {
+        _phys_build_wind_traj(n_cells, POSX, POSY, NB, WX, WY, WSP_SLOT,
+                              wrap_period_x, traj_pos_scale, traj_dt_days);
+        knobs["wind_traj_gen"] = int(_phys_wind_traj_gen);
+    }
+
     // Item 2: 重建完整 wind_speed_out（GDScript 整图写回 cell.wind_speed；切片外 cell
     // 取 slot 上一 tick 值，切片内 cell 取本 tick 新值 → 整图一致、无 0 污染）。
     {
@@ -835,6 +1009,16 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         knobs["wind_dir_delta_p95"] = double(wind_dir_delta[p95_i]);
         knobs["wind_dir_flip_count"] = wind_flip_count;
     }
+    // NS 化诊断键(进现有 slow-dump 链;momentum/div_damp 关闭时恒 0,键始终存在)。
+    if (!momentum_delta.empty()) {
+        std::sort(momentum_delta.begin(), momentum_delta.end());
+        const size_t p95_i = std::min(momentum_delta.size() - 1, size_t(std::floor(double(momentum_delta.size() - 1) * 0.95)));
+        knobs["momentum_advect_diffuse_delta_p95"] = double(momentum_delta[p95_i]);
+    }
+    knobs["momentum_advect_w_eff"] = momentum_advect_w;
+    knobs["momentum_diffuse_w_eff"] = diffuse_w;
+    knobs["div_damp_alpha_eff"] = div_damp_applied;
+    knobs["wind_traj_stale_count"] = _phys_wind_traj_stale_count;
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -1583,6 +1767,7 @@ void DCWorldExt::_phys_resolve_static(int n_cells, const godot::PackedByteArray 
     _phys_sid_ocy       = component_id(StringName("cell_ocean_current_y"));
     _phys_sid_psi_prev  = component_id(StringName("cell_ocean_psi"));
     _phys_sid_upwelling = component_id(StringName("cell_upwelling_strength"));
+    _phys_sid_elev      = component_id(StringName("cell_elevation"));
 
     for (int i = 0; i < 256; ++i) _phys_is_water_lut[i] = false;
     for (int k = 0; k < water_ids.size(); ++k) {
@@ -1718,6 +1903,89 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
 
     _phys_wind_coast_fp = fp;
     _phys_wind_coast_valid = true;
+}
+
+// ─── NS 化 Phase 0：风场回溯轨迹表构建 ─────────────────────────────────
+// 每 cell 沿 -通量 回溯 dist = |flux|·traj_pos_scale·s·traj_dt_days（s=√(N/15000)
+// 格距归一：世界是固定大小行星，格距∝1/√N，同一物理距离在高分辨率图上跨更多格），
+// 上限 12 pos 单位（≈7 格）防御异常风速。回溯终点用直线近似（低速大 dt 下与
+// RK2 差异 < 亚格级），随后按最对齐邻居逐格 walk（≤12 跳）推进宿主 cell，
+// 保证宿主与终点一致，再交 pk_hex_sextant_barycentric 求三点权重。
+// 只读 wind slots（已写完，稳定）、写 own-row → parallel_for_range bit-equal。
+void DCWorldExt::_phys_build_wind_traj(int n_cells, const float *POSX, const float *POSY,
+                                       const int32_t *NB, const float *WX, const float *WY,
+                                       const float *WSP, double wrap_period_x,
+                                       double traj_pos_scale, double traj_dt_days) {
+    if (int(_phys_wind_traj_idx.size()) != n_cells * 3) {
+        _phys_wind_traj_idx.assign(static_cast<size_t>(n_cells) * 3, 0);
+        _phys_wind_traj_w.assign(static_cast<size_t>(n_cells) * 3, 0.0f);
+    }
+    const double grid_s = std::sqrt(double(n_cells) / 15000.0);
+    const double step_len = traj_pos_scale * grid_s * traj_dt_days;
+    const double max_dist = 12.0;
+    const float wrap_f = float(wrap_period_x);
+    int32_t * const __restrict TIDX = _phys_wind_traj_idx.data();
+    float * const __restrict TW = _phys_wind_traj_w.data();
+    pk::parallel_for_range("pk_wind_traj", n_cells, [&](int rb, int re) {
+        for (int i = rb; i < re; ++i) {
+            const int t3 = i * 3;
+            const double fx = double(WX[i]) * double(WSP[i]);
+            const double fy = double(WY[i]) * double(WSP[i]);
+            const double sp = std::sqrt(fx * fx + fy * fy);
+            if (sp < 1e-6 || step_len <= 0.0) {
+                TIDX[t3] = i; TIDX[t3 + 1] = i; TIDX[t3 + 2] = i;
+                TW[t3] = 1.0f; TW[t3 + 1] = 0.0f; TW[t3 + 2] = 0.0f;
+                continue;
+            }
+            double dist = sp * step_len;
+            if (dist > max_dist) dist = max_dist;
+            const double inv_sp = 1.0 / sp;
+            const double tx = double(POSX[i]) - fx * inv_sp * dist;
+            const double ty = double(POSY[i]) - fy * inv_sp * dist;
+            // walk：把宿主推进到终点所在 cell（每步选与剩余位移最对齐的邻居）。
+            int cur = i;
+            for (int hop = 0; hop < 12; ++hop) {
+                double dx = tx - double(POSX[cur]);
+                const double dy = ty - double(POSY[cur]);
+                if (wrap_period_x > 0.001) {
+                    const double half = wrap_period_x * 0.5;
+                    if (dx > half) dx -= wrap_period_x;
+                    else if (dx < -half) dx += wrap_period_x;
+                }
+                const double dl2 = dx * dx + dy * dy;
+                if (dl2 <= 0.75) break;  // ≈inradius²(0.866²)内视为本 cell 域
+                int best = -1;
+                double best_dot = 0.5;   // 方向不明(<60°)即停,防跨域抖动
+                const int base = cur * 6;
+                for (int d = 0; d < 6; ++d) {
+                    const int32_t ni = NB[base + d];
+                    if (ni < 0) continue;
+                    double ndx = double(POSX[ni]) - double(POSX[cur]);
+                    const double ndy = double(POSY[ni]) - double(POSY[cur]);
+                    if (wrap_period_x > 0.001) {
+                        const double half = wrap_period_x * 0.5;
+                        if (ndx > half) ndx -= wrap_period_x;
+                        else if (ndx < -half) ndx += wrap_period_x;
+                    }
+                    const double nl2 = ndx * ndx + ndy * ndy;
+                    if (nl2 < 1e-6) continue;
+                    const double dot = (ndx * dx + ndy * dy) / std::sqrt(nl2 * dl2);
+                    if (dot > best_dot) { best_dot = dot; best = ni; }
+                }
+                if (best < 0) break;
+                cur = best;
+            }
+            int i0, i1, i2;
+            float w0, w1, w2;
+            pk_hex_sextant_barycentric(cur, float(tx), float(ty), POSX, POSY, NB,
+                                       n_cells, wrap_f, i0, i1, i2, w0, w1, w2);
+            TIDX[t3] = i0; TIDX[t3 + 1] = i1; TIDX[t3 + 2] = i2;
+            TW[t3] = w0; TW[t3 + 1] = w1; TW[t3 + 2] = w2;
+        }
+    });
+    _phys_wind_traj_fp = pk_wind_state_fp(n_cells, WX, WY, WSP);
+    ++_phys_wind_traj_gen;
+    _phys_wind_traj_valid = true;
 }
 
 godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
@@ -2392,6 +2660,22 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     const float THERMAL_CURRENT_WEIGHT = float(knobs.has("ocean_thermal_current_weight") ? double(knobs["ocean_thermal_current_weight"]) : TH_WEIGHT);
     const float DENSITY_COLD_WEIGHT = float(knobs.has("ocean_density_cold_weight") ? double(knobs["ocean_density_cold_weight"]) : 0.22);
     const float DENSITY_ICE_WEIGHT = float(knobs.has("ocean_density_ice_weight") ? double(knobs["ocean_density_ice_weight"]) : 0.12);
+    // ─── NS 化 Phase 4:洋流深度耦合 + 地形转向(默认 0 → 旧行为逐位不变)─────
+    // 风应力旋度源项按深度衰减:陆架上旋度效率降低(浅水底摩擦耗散)。
+    // depth = sea_level - elev(归一化单位),depth_ref 参考水深,damp=0 关闭。
+    float DEPTH_CURL_DAMP = float(knobs.has("ocean_depth_curl_damp") ? double(knobs["ocean_depth_curl_damp"]) : 0.0);
+    if (DEPTH_CURL_DAMP < 0.0f) DEPTH_CURL_DAMP = 0.0f;
+    else if (DEPTH_CURL_DAMP > 1.0f) DEPTH_CURL_DAMP = 1.0f;
+    float SEA_LEVEL = float(knobs.has("sea_level") ? double(knobs["sea_level"]) : 0.42);
+    if (SEA_LEVEL < 0.05f) SEA_LEVEL = 0.05f;
+    else if (SEA_LEVEL > 0.95f) SEA_LEVEL = 0.95f;
+    float DEPTH_REF = float(knobs.has("ocean_depth_ref") ? double(knobs["ocean_depth_ref"]) : 0.12);
+    if (DEPTH_REF < 0.01f) DEPTH_REF = 0.01f;
+    // current-from-PSI 步加地形等深线偏转分量 k_topo·(∇h × k)(洋流被等深线引导,
+    // 陆架/海山绕流);k_topo 默认 0 关闭。
+    float TOPO_STEER_W = float(knobs.has("ocean_topo_steer_w") ? double(knobs["ocean_topo_steer_w"]) : 0.0);
+    if (TOPO_STEER_W < 0.0f) TOPO_STEER_W = 0.0f;
+    else if (TOPO_STEER_W > 0.5f) TOPO_STEER_W = 0.5f;
     // warm-start（plan/psi-warm-start 2026-06-17）：SOR 用上一轮发布在 cell_ocean_psi
     // slot 的 ψ 作初值，而非每轮从 0 冷启动。洋流流函数日间变化极小，warm-start 后
     // 残差很小，少量迭代即可收敛（配合 psi_total_iters 下调）。默认 true；A/B 对照
@@ -2476,6 +2760,13 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     }
     if (sid_ocy >= 0 && _slots.write[sid_ocy].arr_f32.size() == n_cells) {
         OLD_OCY = _slots.write[sid_ocy].arr_f32.ptr();
+    }
+    // NS 化 Phase 4:elevation slot(深度耦合/地形转向的数据源);缺失时两项自动失效,
+    // 与 knob=0 等价(旧行为),由 out["ocean_topo_active"] 上报实际状态。
+    const int sid_elev = _phys_sid_elev;
+    const float *ELEV = nullptr;
+    if (sid_elev >= 0 && _slots.write[sid_elev].arr_f32.size() == n_cells) {
+        ELEV = _slots.write[sid_elev].arr_f32.ptr();
     }
     // warm-start：上一轮 ψ 已发布到 cell_ocean_psi slot；读它作 SOR 初值。
     // 冷启动 / slot 不可用 / 显式关闭时为 null → 退回 0 初值。
@@ -2642,6 +2933,7 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     //   source    = -curl / beta_a * PSI_SOURCE_SCALE        // sign: ∇²ψ + R ∂ψ/∂x = -ω/|β|
     const float HALF_PI_PREP = 1.5707963267948966f;
     const float PI_PREP      = 3.14159265358979323846f;
+    const bool depth_damp_active = (DEPTH_CURL_DAMP > 0.0f && ELEV != nullptr);
     for (int k = 0; k < n_water; ++k) {
         const float ls_abs = std::fabs(ls_w[k]);
         float b = std::cos(ls_abs * HALF_PI_PREP);
@@ -2649,6 +2941,15 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         beta_abs[k] = b;
         r_factor[k] = PSI_R_BASE * (0.5f + std::sin(ls_abs * PI_PREP));
         source[k]   = -PSI_SRC_SCALE * curl[k] / b;
+        // NS 化 Phase 4:深度衰减 — 浅水(陆架)旋度效率降低,深海不变。
+        // factor = lerp(1.0, clamp(depth/depth_ref, 0.2, 1.0), damp);damp=0 → ×1 逐位不变。
+        if (depth_damp_active) {
+            const int i_w = water_to_cell[k];
+            float depth_norm = (SEA_LEVEL - ELEV[i_w]) / DEPTH_REF;
+            if (depth_norm < 0.2f) depth_norm = 0.2f;
+            else if (depth_norm > 1.0f) depth_norm = 1.0f;
+            source[k] *= (1.0f - DEPTH_CURL_DAMP) + DEPTH_CURL_DAMP * depth_norm;
+        }
         // psi[k] already zero from std::vector constructor.
     }
 
@@ -2767,6 +3068,25 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         cy += thermal_y;
         thermal_current_mag[static_cast<size_t>(k)] = std::sqrt(thermal_x * thermal_x + thermal_y * thermal_y);
 
+        // NS 化 Phase 4:地形等深线转向 — 加 k_topo·(∇h × k) 分量(洋流被等深线
+        // 引导,陆架/海山绕流)。∇h 仅对水邻居差分(陆邻居视作同高 → 该方向无贡献),
+        // 与密度梯度同 (1/3)Σ_d 离散;knob=0 → 逐位不变。
+        if (TOPO_STEER_W > 0.0f && ELEV != nullptr) {
+            const float h_self = ELEV[i];
+            float hx = 0.0f, hy = 0.0f;
+            for (int d = 0; d < 6; ++d) {
+                const int ni = NB[base_i + d];
+                if (ni < 0 || ni >= n_cells || !is_water_lut[TR[ni]]) continue;
+                const float dh = ELEV[ni] - h_self;
+                hx += dh * NB_DIR_X[d];
+                hy += dh * NB_DIR_Y[d];
+            }
+            hx /= 3.0f;
+            hy /= 3.0f;
+            cx += TOPO_STEER_W * (-hy);
+            cy += TOPO_STEER_W * (hx);
+        }
+
         // High-lat thermohaline overlay (preserve "polar cold sinker" semantics).
         const float ls     = ls_w[k];
         const float ls_abs = std::fabs(ls);
@@ -2866,6 +3186,10 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     out["psi_residual_final"] = double(psi_residual_final);
     out["psi_early_exit"] = psi_early_exit;
     out["psi_mode"] = PSI_EARLY_EXIT_MODE;
+    // NS 化 Phase 4 诊断键:knob 回显 + elevation slot 实际可用状态。
+    out["ocean_topo_steer_w"] = double(TOPO_STEER_W);
+    out["ocean_depth_curl_damp"] = double(DEPTH_CURL_DAMP);
+    out["ocean_topo_active"] = (ELEV != nullptr);
     if (!ocean_delta.empty()) {
         std::sort(ocean_delta.begin(), ocean_delta.end());
         const size_t p95_i = std::min(ocean_delta.size() - 1, size_t(std::floor(double(ocean_delta.size() - 1) * 0.95)));

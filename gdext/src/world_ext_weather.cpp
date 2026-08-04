@@ -803,6 +803,29 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float * const __restrict GEOM_DY   = use_geom_cache ? _wf_nb_dy.data()   : nullptr;
     const float * const __restrict GEOM_INVD = use_geom_cache ? _wf_nb_invd.data() : nullptr;
 
+    // ─── NS 化 Phase 2:风场回溯轨迹表消费资格(半拉格朗日三点插值替代 hopping)──
+    // 轨迹表由 wind pass 末构建(成员缓存);指纹 = 风场 64 降采样状态,任何绕过
+    // wind pass 的风槽改写/换图即失配 → 落旧 hopping 并 _phys_wind_traj_stale_count++。
+    // knob wind_traj_weather_share=false 时仅构建不消费(A/B 隔离)。
+    const int32_t *TRAJ_IDX = nullptr;
+    const float   *TRAJ_W   = nullptr;
+    if (_phys_wind_traj_valid && _phys_wind_traj_consume_enabled
+            && int(_phys_wind_traj_idx.size()) == n_cells * 3) {
+        if (pk_wind_state_fp(n_cells, WX, WY, WSPD) == _phys_wind_traj_fp) {
+            TRAJ_IDX = _phys_wind_traj_idx.data();
+            TRAJ_W   = _phys_wind_traj_w.data();
+        } else {
+            ++_phys_wind_traj_stale_count;
+        }
+    }
+    // 轨迹表三点插值:权重构建期已 clamp≥0 归一(单调、无 overshoot)。
+    auto wx_traj_sample = [&](int idx, const float *FIELD) -> float {
+        const int t3 = idx * 3;
+        return TRAJ_W[t3] * FIELD[TRAJ_IDX[t3]]
+             + TRAJ_W[t3 + 1] * FIELD[TRAJ_IDX[t3 + 1]]
+             + TRAJ_W[t3 + 2] * FIELD[TRAJ_IDX[t3 + 2]];
+    };
+
     // 几何缓存派发 wrapper（cache 命中走缓存变体，否则回退原 helper；两路 bit-equal）。
     auto wx_aligned = [&](int idx, float dx, float dy) -> int {
         return use_geom_cache
@@ -953,8 +976,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             ? wx_aligned(i, -wind_dx, -wind_dy)
             : -1;
 
-        const float advected_vapor = wx_upstream_avg(
-            i, upstream_idx, PV, wind_dx, wind_dy);
+        // NS 化 Phase 2:轨迹表命中 → 真半拉格朗日三点插值(1 次表查 + 3 点 lerp,
+        // 替代 3×6 邻居探测的 hopping,回溯长度含风速×dt 语义);未命中 → 旧路径。
+        const float advected_vapor = (TRAJ_IDX != nullptr)
+            ? wx_traj_sample(i, PV)
+            : wx_upstream_avg(i, upstream_idx, PV, wind_dx, wind_dy);
 
         // neighbor_vapor 已在上方 P3 融合 gather 中算出。
 
@@ -1203,8 +1229,10 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         // cloud_water 随风平流(搬运湿团) + 凝结加入 + 邻域扩散。复用 vapor 平流 helper(传 PCW)。
         float cloud_water = (PCW != nullptr) ? PCW[i] : 0.0f;
         if (PCW != nullptr && upstream_idx >= 0 && upstream_idx < n_cells) {
-            const float cw_upwind = wx_upstream_avg(
-                i, upstream_idx, PCW, wind_dx, wind_dy);
+            // NS 化 Phase 2:与 vapor 同一张轨迹表(湿团整体随风输运)。
+            const float cw_upwind = (TRAJ_IDX != nullptr)
+                ? wx_traj_sample(i, PCW)
+                : wx_upstream_avg(i, upstream_idx, PCW, wind_dx, wind_dy);
             const float cw_neighbor = wf_neighbor_average_vapor_idx(i, NB, PCW);
             float adv_w_c = field_advect_cloud * (0.55f + 0.45f * wind_mag);
             if (adv_w_c > 0.98f) adv_w_c = 0.98f;
@@ -1509,6 +1537,12 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     }
 
     // §11.2 flush: push CoW-detached weather output slots back to MapData
+    {
+        // NS 化 Phase 2 诊断键:轨迹表消费状态进 knobs(两条 return 路径共用)。
+        Dictionary &diag_knobs = const_cast<Dictionary &>(knobs);
+        diag_knobs["wind_traj_used"] = (TRAJ_IDX != nullptr);
+        diag_knobs["wind_traj_stale_count"] = _phys_wind_traj_stale_count;
+    }
     if (use_next_outputs) {
         Dictionary &mutable_knobs = const_cast<Dictionary &>(knobs);
         mutable_knobs["out_vapor"] = out_vapor_arr;
@@ -1977,6 +2011,20 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
+    // NS 化 Phase 2:风场回溯轨迹表消费资格(与 weather field solve 同一契约:
+    // 指纹失配 → 旧 hopping 并计数;knob wind_traj_weather_share=false → 仅构建不消费)。
+    const int32_t *TRAJ_IDX = nullptr;
+    const float   *TRAJ_W   = nullptr;
+    if (_phys_wind_traj_valid && _phys_wind_traj_consume_enabled
+            && int(_phys_wind_traj_idx.size()) == n_cells * 3) {
+        if (pk_wind_state_fp(n_cells, WX, WY, WSP) == _phys_wind_traj_fp) {
+            TRAJ_IDX = _phys_wind_traj_idx.data();
+            TRAJ_W   = _phys_wind_traj_w.data();
+        } else {
+            ++_phys_wind_traj_stale_count;
+        }
+    }
+
     for (int i = start_idx; i < end_idx; ++i) {
         A[i] = 0.0f;
 
@@ -2017,9 +2065,22 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
         }
 
         const float temp_self_raw = TB[i];
-        const float temp_up_raw = TB[upstream_idx];
         const float temp_self = std::isfinite(temp_self_raw) ? temp_self_raw : BL[i];
-        const float temp_up = std::isfinite(temp_up_raw) ? temp_up_raw : BL[upstream_idx];
+        // NS 化 Phase 2:轨迹表命中 → 回溯三角形三点插值上游温度(每顶点独立
+        // finite 守门,与旧 temp_up_raw 单点守门同语义);未命中 → 旧离散上游。
+        float temp_up;
+        if (TRAJ_IDX != nullptr) {
+            const int t3 = i * 3;
+            const int j0 = TRAJ_IDX[t3], j1 = TRAJ_IDX[t3 + 1], j2 = TRAJ_IDX[t3 + 2];
+            const float t0r = TB[j0], t1r = TB[j1], t2r = TB[j2];
+            const float t0v = std::isfinite(t0r) ? t0r : BL[j0];
+            const float t1v = std::isfinite(t1r) ? t1r : BL[j1];
+            const float t2v = std::isfinite(t2r) ? t2r : BL[j2];
+            temp_up = TRAJ_W[t3] * t0v + TRAJ_W[t3 + 1] * t1v + TRAJ_W[t3 + 2] * t2v;
+        } else {
+            const float temp_up_raw = TB[upstream_idx];
+            temp_up = std::isfinite(temp_up_raw) ? temp_up_raw : BL[upstream_idx];
+        }
         float speed_mix = wf_wind_speed_norm(wind_x, wind_y, WSP[i]) / 1.2f;
         if (speed_mix < 0.25f) speed_mix = 0.25f;
         else if (speed_mix > 1.35f) speed_mix = 1.35f;
@@ -2030,6 +2091,8 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
     knobs["cursor_start"] = start_idx;
     knobs["cursor_end"] = end_idx;
     knobs["processed_cells"] = end_idx - start_idx;
+    knobs["wind_traj_used"] = (TRAJ_IDX != nullptr);
+    knobs["wind_traj_stale_count"] = _phys_wind_traj_stale_count;
 
     if (!bool(knobs.get("defer_flush", false))) {
         _flush_slot_to_map(sid_air_anom);

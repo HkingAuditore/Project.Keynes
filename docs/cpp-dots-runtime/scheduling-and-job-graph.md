@@ -500,6 +500,7 @@ legacy `SusJob` 和 C++ `SusSchedulerExt` 都维护 skip 统计。长期 `frame_
 - C++/fallback path 必须写进 report，不能只写日志。
 - 长 pass 要拆 stage 或 cell/pixel range，不要依赖 scheduler 抢占。
   - ocean physical stage 已落地该规则：`run_slp_field_pass` / `run_wind_field_pass` / `run_physical_circulation_pass` 现接受 cell-range knob，由 `OceanCurrentsJob._physical_solve_step_one` 的 stage 内 cursor 把 SLP/wind/upwelling 各自摊到多 tick；全局归约（SLP recenter/p95/融合/发布、WIND coast BFS）只在末切片执行，沿用文档既定 `start_idx==0`（一轮首切片）/`end_idx==n_cells`（末切片）idiom。PSI 因 Gauss-Seidel 全扫掠按设计不做 cell-range 切片。默认关闭，开启前须 bit-equal + 零 fallback + 每切片 <1ms 验收。
+  - NS 化新增段（2026-08-04）遵循同一游标语义：动量旧通量快照驻留成员 `_phys_wind_snap_fx/fy`，只在 `start_idx==0`（或 size 失配换图）重建、后续切片复用——否则前序切片写回的新风会污染"旧值"语义，切片 ≠ 全量。散度阻尼 L1 与轨迹表构建（均为全图操作）只在 `end_idx==n_cells` 的末切片执行，与 coast BFS / SLP recenter 同级。验收：`tests/native_wind_traj_momentum_test.gd` 的"两切片 ≡ 全量 逐位一致"用例。
 - `must_run` 只用于物理/气候等不能冻结的系统，不用于普通上传。
 - 上传类 job 可以被 budget skip，但要有 starvation 保护或 dirty queue 机制。
 - job 内部调用 C++ pass 后，必须把 native breakdown 合并进 report，供 `main.gd` 输出。

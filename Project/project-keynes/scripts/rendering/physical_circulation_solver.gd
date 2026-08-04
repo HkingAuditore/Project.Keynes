@@ -461,6 +461,101 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 			sea_land[nb_s] = cur_landS
 			sea_queue.append(nb_s)
 
+	# ─── NS 化 Phase 1 结构镜像(近似级 stale-DLL fallback,不要求逐位)───────
+	# SAME_SOURCE 数学定义:C++ gdext/src/world_ext_physical.cpp::run_wind_field_pass
+	# 动量段。transp = 旧动量 + 自平流增量(轨迹三点插值) + 扩散增量(6 邻居 Laplacian);
+	# final = transp.lerp(target, r)。本镜像缺 synoptic/移动低压本就近似,轨迹表按
+	# 调用内即时构建(无 C++ 成员缓存),knob 默认 0 → 旧行为逐位不变。
+	var momentum_advect_w: float = clampf(
+		float(profile.get("wind_momentum_advect_w")) if profile != null and profile.get("wind_momentum_advect_w") != null else 0.0,
+		0.0, 0.5)
+	var momentum_diffuse_w_daily: float = clampf(
+		float(profile.get("wind_momentum_diffuse_w_daily")) if profile != null and profile.get("wind_momentum_diffuse_w_daily") != null else 0.0,
+		0.0, 0.5)
+	var momentum_active: bool = (momentum_advect_w > 0.0 or momentum_diffuse_w_daily > 0.0)
+	var snap_flux: Array = []          # idx → Vector2 旧通量快照(并行/乱序安全的前提)
+	var traj_rows: Array = []          # idx → {i0,i1,i2,w0,w1,w2}(仅 advect>0 时构建)
+	var diffuse_w: float = 0.0
+	if momentum_active:
+		var n_cells_m: int = cells.size()
+		snap_flux.resize(n_cells_m)
+		traj_rows.resize(n_cells_m)
+		var grid_s: float = sqrt(float(n_cells_m) / 15000.0)
+		if momentum_diffuse_w_daily > 0.0:
+			# fallback 路径无 wind_elapsed_days 语义(C++ 按真实间隔换算),按 dt=1 近似。
+			diffuse_w = minf(momentum_diffuse_w_daily * grid_s * grid_s, 0.5)
+		var cell_pos_m := PackedVector2Array()
+		cell_pos_m.resize(n_cells_m)
+		for cell_m: HexCell in cells:
+			var idx_m: int = _cell_idx(map, cell_m)
+			if idx_m < 0:
+				continue
+			var f := Vector2.ZERO
+			if cell_m.wind_vector.length_squared() > 0.0001 and cell_m.wind_speed > 0.0001:
+				f = cell_m.wind_vector.normalized() * cell_m.wind_speed
+			snap_flux[idx_m] = f
+			cell_pos_m[idx_m] = Vector2(
+				map.cell_pos_x_arr[idx_m] if map.cell_pos_x_arr.size() > idx_m else 0.0,
+				map.cell_pos_y_arr[idx_m] if map.cell_pos_y_arr.size() > idx_m else 0.0)
+		if momentum_advect_w > 0.0:
+			var nb_idx_m: PackedInt32Array = map.neighbor_indices_packed()
+			var wrap_m: float = HexUtils.wrap_period_cell_pos_x(map.width)
+			var traj_scale: float = clampf(
+				float(profile.get("wind_traj_pos_scale")) if profile != null and profile.get("wind_traj_pos_scale") != null else 0.65,
+				0.0, 4.0)
+			var traj_dt: float = clampf(
+				float(profile.get("wind_traj_dt_days")) if profile != null and profile.get("wind_traj_dt_days") != null else 10.0,
+				0.25, 60.0)
+			var step_len: float = traj_scale * grid_s * traj_dt
+			for cell_t: HexCell in cells:
+				var idx_t: int = _cell_idx(map, cell_t)
+				if idx_t < 0:
+					continue
+				var flux_t: Vector2 = snap_flux[idx_t]
+				var sp_t: float = flux_t.length()
+				if sp_t < 0.000001 or step_len <= 0.0:
+					traj_rows[idx_t] = {"i0": idx_t, "i1": idx_t, "i2": idx_t, "w0": 1.0, "w1": 0.0, "w2": 0.0}
+					continue
+				var dist_t: float = minf(sp_t * step_len, 12.0)
+				var target_t: Vector2 = cell_pos_m[idx_t] - flux_t.normalized() * dist_t
+				# walk:推进宿主到终点所在 cell(≤12 跳,与 C++ 构建器同策略)
+				var cur_t: int = idx_t
+				for _hop in range(12):
+					var delta_t: Vector2 = target_t - cell_pos_m[cur_t]
+					if wrap_m > 0.001:
+						var half_m: float = wrap_m * 0.5
+						if delta_t.x > half_m:
+							delta_t.x -= wrap_m
+						elif delta_t.x < -half_m:
+							delta_t.x += wrap_m
+					if delta_t.length_squared() <= 0.75:
+						break
+					var best_t: int = -1
+					var best_dot_t: float = 0.5
+					var base_t: int = cur_t * 6
+					for d_t in range(6):
+						var ni_t: int = nb_idx_m[base_t + d_t]
+						if ni_t < 0:
+							continue
+						var nd_t: Vector2 = cell_pos_m[ni_t] - cell_pos_m[cur_t]
+						if wrap_m > 0.001:
+							var half_n: float = wrap_m * 0.5
+							if nd_t.x > half_n:
+								nd_t.x -= wrap_m
+							elif nd_t.x < -half_n:
+								nd_t.x += wrap_m
+						if nd_t.length_squared() < 0.000001:
+							continue
+						var dot_t: float = nd_t.normalized().dot(delta_t.normalized())
+						if dot_t > best_dot_t:
+							best_dot_t = dot_t
+							best_t = ni_t
+					if best_t < 0:
+						break
+					cur_t = best_t
+				traj_rows[idx_t] = DCWeatherFieldSolver.hex_sextant_barycentric(
+					cur_t, target_t, cell_pos_m, nb_idx_m, wrap_m)
+
 	for cell: HexCell in cells:
 		if cell == null:
 			continue
@@ -622,7 +717,32 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 		if old_dir.length_squared() > 0.0001:
 			old_flux = old_dir.normalized() * old_spd
 		var target_flux: Vector2 = dir * spd
-		var final_flux: Vector2 = old_flux.lerp(target_flux, effective_rate)
+		# NS 化 Phase 1 结构镜像:transp = 旧动量 + 自平流增量 + 扩散增量;
+		# final = transp.lerp(target, r)。momentum 关闭时 transp==old_flux 逐位不变。
+		var transp: Vector2 = old_flux
+		if momentum_active and old_dir.length_squared() > 0.0001 and old_spd > 0.0001:
+			var idx_mom: int = _cell_idx(map, cell)
+			if idx_mom >= 0:
+				if momentum_advect_w > 0.0 and traj_rows[idx_mom] != null:
+					var row: Dictionary = traj_rows[idx_mom]
+					var sl: Vector2 = float(row["w0"]) * snap_flux[int(row["i0"])] \
+						+ float(row["w1"]) * snap_flux[int(row["i1"])] \
+						+ float(row["w2"]) * snap_flux[int(row["i2"])]
+					transp += momentum_advect_w * (sl - old_flux)
+				if diffuse_w > 0.0:
+					var sum_nb := Vector2.ZERO
+					var cnt_nb: int = 0
+					for nb_d: HexCell in nbs:
+						if nb_d == null:
+							continue
+						var idx_nb: int = _cell_idx(map, nb_d)
+						if idx_nb < 0:
+							continue
+						sum_nb += snap_flux[idx_nb]
+						cnt_nb += 1
+					if cnt_nb > 0:
+						transp += diffuse_w * (sum_nb / float(cnt_nb) - old_flux)
+		var final_flux: Vector2 = transp.lerp(target_flux, effective_rate)
 		var final_spd: float = lerpf(old_spd, spd, effective_rate)
 		var final_dir: Vector2 = final_flux.normalized() if final_flux.length_squared() > 0.0001 else dir
 		cell.wind_vector = final_dir
