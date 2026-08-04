@@ -110,6 +110,8 @@ func _request_demand_details(row_id: String) -> void:
 			String(data.get("cohort_identity", "本地人口")),
 			String(data.get("living_standard", "待评估")),
 			String(data.get("satisfaction", "—"))],
+		"worst_dimension": String(data.get("worst_dimension", "")),
+		"satisfaction_rows": (data.get("satisfaction_rows", []) as Array).duplicate(true),
 		"rows": (data.get("demand_rows", []) as Array).duplicate(true),
 		"groups": (data.get("demand_groups", []) as Array).duplicate(true),
 		"total_quantity": String(summary.get("total_quantity", "—")),

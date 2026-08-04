@@ -330,6 +330,10 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
             } else if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_TRADE_ARRIVED) {
                 event_type = 7;
                 payload_schema = 4;
+            } else if (fact.kind ==
+                    NativeEconomyRuntime::GAMEPLAY_FACT_SOCIAL_PRESSURE) {
+                event_type = 8;
+                payload_schema = 5;
             }
             if (event_type == 0) continue;
             if (_emit_gameplay_event(day_index, 9, event_type, 1, fact.flags,
@@ -424,6 +428,18 @@ Dictionary DCWorldExt::get_market_cell_snapshot(int cell_idx) const {
         return unavailable();
     }
     return runtime_from(_economy_runtime)->market_cell_snapshot(cell_idx);
+}
+
+Dictionary DCWorldExt::explain_cohort_satisfaction(int64_t cohort_handle) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->explain_cohort_satisfaction(
+        cohort_handle);
+}
+
+Dictionary DCWorldExt::get_cell_satisfaction_attractiveness(int cell_idx) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->cell_satisfaction_attractiveness(
+        cell_idx);
 }
 
 Dictionary DCWorldExt::get_country_fiscal_snapshot(int64_t handle) const {

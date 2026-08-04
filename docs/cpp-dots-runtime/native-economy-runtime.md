@@ -9,7 +9,18 @@ closing audit 契约见
 `NativeEconomyRuntime`；动态人口和商品状态不进入 DataCore `_slots`，也不回填
 `MapData.goods_*`。
 
-## PKEC v22 production climate（历史基础，当前由 PKEC v29 持久化）
+## 2026-08-04 综合满意度接管（PKEC v30）
+
+cohort 满意度不再是单一的生存指标。`_population.composite_satisfaction` 是权威的
+八维度综合指数（温饱/基本/舒适/奢侈/收入增长/储蓄/税负/社会发展），按 profession
+数据驱动权重加权平均后经生存闸门封顶，接管出生率、同格就业流动排序与家族分支晋升评审，
+并按等级跨越发布 `EVENT_ECONOMY_SOCIAL_PRESSURE`。`needs_satisfaction`
+（`SAT_DIM_SUBSISTENCE`）保留原语义但**只**驱动饥饿死亡。
+
+维度定义、数据驱动权重契约、合成公式、溯源 API、事件 payload、PKEC v30 列布局与
+性能验收数据是[综合满意度运行时](./satisfaction-runtime.md)的职责，本文件不重复。
+
+## PKEC v22 production climate（历史基础，当前由 PKEC v30 持久化）
 
 PKEC v22 adds frozen 30-day temperature and plant-available water to every cell
 record and four climate diagnostics to every building record. Restore accepts
@@ -79,7 +90,7 @@ state is introduced.
 ## 2026-07-18 石器经济与资源平衡修正
 
 - 国内贸易拓扑只读取 `cell_base_terrain`；气候系统对 `cell_terrain` 的季节性海冰切换不再改变规范化拓扑哈希或重置路线计划。
-- `satisfaction_q16` 保持兼容，新增同值的 `survival_satisfaction_q16` 与 cohort 数组别名，明确该指标是食品与气候衣着两者较低值，不代表全部舒适/奢侈需求。
+- `satisfaction_q16` 保持兼容，新增同值的 `survival_satisfaction_q16` 与 cohort 数组别名，明确该指标是食品与气候衣着两者较低值，不代表全部舒适/奢侈需求。2026-08-04 起舒适/奢侈由 `composite_satisfaction` 的独立维度表达。
 - 石器食物的商品库存比例从 1.5 调到 1.0，即仍维持完整 30 日目标；生产者托底收购和现金保留规则不变，避免采购量断崖式下降。
 - 火塘配方为每日 `7000` 植物 + `3500` 肉类 → `12628` 加工食品，肉类为 50% 软约束；打制石器为 `100` 燧石 → `220` 工具；家庭织造为 `120` 采集植物 → `110` 布匹，不再无原料产布。伐木建筑只开采森林，不再反向生成人工林。
 - 黄金/白银发行价值为 `800000/50000`；淘金场和露天银矿分别雇用 1/2 名矿工，参考日薪统一为
@@ -126,9 +137,9 @@ state is introduced.
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v29 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v30 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数，并追加家族特性 roll、
-  per-cell influence branch 与有序特性命令 sections。reader 只接受 v29，v28 及更早版本明确拒绝。
+  per-cell influence branch 与有序特性命令 sections。reader 只接受 v30，v29 及更早版本明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
   成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 - 重要人物不创建第二人口、钱包或订单；姓名、岗位、建筑、财产与需求均为家族/cohort 已实现结果的
@@ -593,12 +604,14 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 
 三个饮食 need 对 UI 统一显示为“食品”，但 native 仍分别保留营养、价格和技术替代权重；野味是
 蛋白质替代品。Inspector 从嵌套 CSR 枚举计划内全部组件，以 market 科技位过滤，零分配但已解锁
-的替代品仍显示；数量和支出仍只来自 `demand_good_*` 聚合列。`needs_satisfaction` 的权威语义改为
-食品总满足与气候衣着满足的较小值。周期开始时仍存活人口先就业和生产；默认 50% 是消费后的
-饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death 审计和结构
-回收路径。默认职业年出生/自然死亡率为 4.0%/2.5%，完全满足时净增长目标约 1.5%；
-生存满足率仅以 50% 权重削减出生率。出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，
-并由 PKEC v29 持久化；不新增调度阶段。
+的替代品仍显示；数量和支出仍只来自 `demand_good_*` 聚合列。`needs_satisfaction` 的权威语义是
+食品总满足与气候衣着满足的较小值，等价于 `SAT_DIM_SUBSISTENCE`；自 2026-08-04 起它
+**只**驱动饥饿死亡，出生率与其余玩法读 `composite_satisfaction`，见
+[综合满意度运行时](./satisfaction-runtime.md)。周期开始时仍存活人口先就业和生产；默认 50%
+是消费后的饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death
+审计和结构回收路径。默认职业年出生/自然死亡率为 4.0%/2.5%，完全满足时净增长目标约 1.5%；
+出生率折减读 composite 并先按 `satisfaction_birth_reference_q16` 重标定，权重仍为 50%。
+出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v30 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -788,7 +801,7 @@ transient. They do not enter PKEC v20 or the state hash. CSV v19 adds the driver
 good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
 columns.
 
-## PKEC v22 rolling settlement (historical foundation, retained by PKEC v29)
+## PKEC v22 rolling settlement (historical foundation, retained by PKEC v30)
 
 The production runtime no longer waits for a global epoch. Stable cell phase is
 `cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded

@@ -299,7 +299,7 @@ func _register_providers() -> void:
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
 		_make_provider(&"pkcn", 4, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		_make_provider(&"pkec", 29, PackedStringArray(["pkec"]),
+		_make_provider(&"pkec", 30, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 1, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -358,7 +358,7 @@ func _manifest_compatible(raw_manifest) -> bool:
 		if provider_id == "pkcn":
 			schema_compatible = saved_schema in [3, 4]
 		elif provider_id == "pkec":
-			schema_compatible = saved_schema == 29
+			schema_compatible = saved_schema == 30
 		elif provider_id == "pktr":
 			schema_compatible = saved_schema == 2
 		if not schema_compatible:

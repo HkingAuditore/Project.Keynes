@@ -19,6 +19,7 @@ constexpr int PK_EVENT_VISUAL_DIRTY_INTENT = 4;
 constexpr int PK_EVENT_ECONOMY_EPOCH_COMMITTED = 5;
 constexpr int PK_EVENT_ECONOMY_CONSTRUCTION_COMPLETED = 6;
 constexpr int PK_EVENT_ECONOMY_TRADE_ARRIVED = 7;
+constexpr int PK_EVENT_ECONOMY_SOCIAL_PRESSURE = 8;
 
 constexpr int PK_EVENT_SOURCE_NATIVE = 1;
 constexpr int PK_EVENT_SOURCE_GDSCRIPT = 2;
@@ -29,6 +30,10 @@ constexpr int PK_PAYLOAD_SUCCESSION_V1 = 1; // i0=old_veg, i1=new_veg
 constexpr int PK_PAYLOAD_ECONOMY_EPOCH_V1 = 2; // i0=epoch, i1=newest id, i2=count
 constexpr int PK_PAYLOAD_ECONOMY_CONSTRUCTION_V1 = 3; // i0=type hash, i1=type id, i2=owner signature, i3=sponsor family index
 constexpr int PK_PAYLOAD_ECONOMY_TRADE_V1 = 4; // i0=source, i1=destination, i2=good, i3=inter-country
+// i0=new level, i1=worst dimension, i2=worst need, i3=previous level;
+// value=population-weighted composite Q16, entity_id=population, flags=1 when
+// the level fell.
+constexpr int PK_PAYLOAD_SOCIAL_PRESSURE_V1 = 5;
 
 static int64_t event_i64_at(const PackedInt64Array &arr, int idx, int64_t fallback) {
     return (idx >= 0 && idx < arr.size()) ? arr[idx] : fallback;
@@ -154,6 +159,7 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     types["ECONOMY_EPOCH_COMMITTED"] = PK_EVENT_ECONOMY_EPOCH_COMMITTED;
     types["ECONOMY_CONSTRUCTION_COMPLETED"] = PK_EVENT_ECONOMY_CONSTRUCTION_COMPLETED;
     types["ECONOMY_TRADE_ARRIVED"] = PK_EVENT_ECONOMY_TRADE_ARRIVED;
+    types["ECONOMY_SOCIAL_PRESSURE"] = PK_EVENT_ECONOMY_SOCIAL_PRESSURE;
     schema["types"] = types;
 
     Dictionary sources;
@@ -168,6 +174,7 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     payloads["ECONOMY_EPOCH_V1"] = PK_PAYLOAD_ECONOMY_EPOCH_V1;
     payloads["ECONOMY_CONSTRUCTION_V1"] = PK_PAYLOAD_ECONOMY_CONSTRUCTION_V1;
     payloads["ECONOMY_TRADE_V1"] = PK_PAYLOAD_ECONOMY_TRADE_V1;
+    payloads["SOCIAL_PRESSURE_V1"] = PK_PAYLOAD_SOCIAL_PRESSURE_V1;
     schema["payload_schemas"] = payloads;
     schema["fields"] = Array::make(
         "event_id", "tick", "phase", "type", "source", "flags", "entity_handle",

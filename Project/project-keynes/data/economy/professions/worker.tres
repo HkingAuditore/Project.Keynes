@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"worker"
+satisfaction_dimension_weights_q16 = PackedInt32Array(62915, 45875, 22938, 6554, 32768, 22938, 26214, 13107)
 display_name = "工人"
 default_consumption_plan_id = &"industrial_worker_household"
 technology_tags = PackedStringArray("tech.steam_power")

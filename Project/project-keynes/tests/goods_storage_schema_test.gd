@@ -358,25 +358,25 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v29 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 29)
+	_expect("v30 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 30)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v29 save emits chunks", chunks.size() >= 12)
-	_expect("v29 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v30 save emits chunks", chunks.size() >= 12)
+	_expect("v30 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
 	var legacy_header: PackedByteArray = chunks[0].duplicate()
-	legacy_header[4] = 28
+	legacy_header[4] = 29
 	legacy_header[5] = 0
 	var legacy_result: Dictionary = legacy_target.feed_economy_restore_chunk(legacy_header)
-	_expect("PKEC v28 is rejected precisely",
+	_expect("PKEC v29 is rejected precisely",
 		not bool(legacy_result.get("ok", true)) and
-		String(legacy_result.get("reason", "")) == "economy_save_v28_or_earlier_unsupported")
+		String(legacy_result.get("reason", "")) == "economy_save_v29_or_earlier_unsupported")
 	var mismatch_target: Object = _new_ext(1, 0.1)
 	var mismatch_catalog := catalog.duplicate(true)
 	mismatch_catalog["catalog_hash"] = int(catalog.catalog_hash) + 1

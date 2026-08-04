@@ -22,6 +22,13 @@ const Q16_ONE := 65536
 ## unemployed pool could "hire itself". Catalog validation rejects any building
 ## that references it.
 const UNEMPLOYED_PROFESSION_ID := "unemployed"
+## Composite satisfaction dimensions, in native `SAT_DIM_*` order: subsistence,
+## basic, comfort, luxury, income growth, savings, tax burden, social
+## development. The first four are the need tiers, so every need must classify
+## into `[0, SATISFACTION_TIER_COUNT)`.
+const SATISFACTION_DIMENSION_COUNT := 8
+const SATISFACTION_TIER_COUNT := 4
+const SATISFACTION_DEVELOPMENT_INPUT_COUNT := 3
 const SIGNAL_IDS := {
 	"temperature": 0,
 	"moisture": 1,
@@ -49,14 +56,24 @@ static func compile_native_catalog() -> Dictionary:
 
 	var need_ids := PackedStringArray()
 	var need_living_cost_weights := PackedInt32Array()
+	var need_satisfaction_tiers := PackedInt32Array()
+	var need_satisfaction_weights := PackedInt32Array()
 	var need_semantic_tag_offsets := PackedInt32Array([0])
 	var need_semantic_tags := PackedStringArray()
 	for need in needs:
 		var living_weight := int(need.living_cost_weight_q16)
 		if living_weight < 0 or living_weight > Q16_ONE:
 			return {"ok": false, "reason": "invalid living cost weight: %s" % String(need.id)}
+		var satisfaction_tier := int(need.satisfaction_tier)
+		if satisfaction_tier < 0 or satisfaction_tier >= SATISFACTION_TIER_COUNT:
+			return {"ok": false, "reason": "invalid need satisfaction tier: %s" % String(need.id)}
+		var satisfaction_weight := int(need.satisfaction_weight_q16)
+		if satisfaction_weight < 0 or satisfaction_weight > Q16_ONE:
+			return {"ok": false, "reason": "invalid need satisfaction weight: %s" % String(need.id)}
 		need_ids.append(String(need.id))
 		need_living_cost_weights.append(living_weight)
+		need_satisfaction_tiers.append(satisfaction_tier)
+		need_satisfaction_weights.append(satisfaction_weight)
 		var normalized_tags := PackedStringArray()
 		for source_tags in [need.use_tags as PackedStringArray,
 				need.semantic_tags as PackedStringArray]:
@@ -235,9 +252,19 @@ static func compile_native_catalog() -> Dictionary:
 	var signature_birth_rate_q32 := PackedInt64Array()
 	var signature_death_rate_q32 := PackedInt64Array()
 	var signature_satisfaction_birth_weight_q16 := PackedInt64Array()
+	var signature_satisfaction_dimension_weights := PackedInt32Array()
 	var signature_keys := PackedStringArray()
 	for profession_idx in range(professions.size()):
 		var profession = professions[profession_idx]
+		var dimension_weights: PackedInt32Array = profession.satisfaction_dimension_weights_q16
+		if not dimension_weights.is_empty() \
+				and dimension_weights.size() != SATISFACTION_DIMENSION_COUNT:
+			return {"ok": false, "reason":
+				"profession satisfaction weight count mismatch: %s" % String(profession.id)}
+		for weight in dimension_weights:
+			if int(weight) < 0 or int(weight) > Q16_ONE:
+				return {"ok": false, "reason":
+					"invalid profession satisfaction weight: %s" % String(profession.id)}
 		for ethnicity_idx in range(ethnicities.size()):
 			var ethnicity = ethnicities[ethnicity_idx]
 			signature_keys.append("%s|%s" % [String(profession.id), String(ethnicity.id)])
@@ -247,6 +274,13 @@ static func compile_native_catalog() -> Dictionary:
 			signature_birth_rate_q32.append((int(profession.birth_rate_q32) * int(ethnicity.birth_rate_factor_q16)) / Q16_ONE)
 			signature_death_rate_q32.append((int(profession.death_rate_q32) * int(ethnicity.death_rate_factor_q16)) / Q16_ONE)
 			signature_satisfaction_birth_weight_q16.append(int(profession.satisfaction_birth_weight_q16))
+			# An unauthored profession emits -1 in every slot; native substitutes
+			# the profile-wide default rather than silently weighting nothing.
+			if dimension_weights.is_empty():
+				for _dimension in range(SATISFACTION_DIMENSION_COUNT):
+					signature_satisfaction_dimension_weights.append(-1)
+			else:
+				signature_satisfaction_dimension_weights.append_array(dimension_weights)
 
 	var catalog := {
 		"profession_ids": profession_ids,
@@ -258,6 +292,8 @@ static func compile_native_catalog() -> Dictionary:
 		"ethnicity_ids": ethnicity_ids,
 		"need_ids": need_ids,
 		"need_living_cost_weights_q16": need_living_cost_weights,
+		"need_satisfaction_tiers": need_satisfaction_tiers,
+		"need_satisfaction_weights_q16": need_satisfaction_weights,
 		"need_semantic_tag_offsets": need_semantic_tag_offsets,
 		"need_semantic_tags": need_semantic_tags,
 		"plan_ids": plan_ids,
@@ -288,6 +324,9 @@ static func compile_native_catalog() -> Dictionary:
 		"signature_birth_rate_q32": signature_birth_rate_q32,
 		"signature_death_rate_q32": signature_death_rate_q32,
 		"signature_satisfaction_birth_weight_q16": signature_satisfaction_birth_weight_q16,
+		"signature_satisfaction_dimension_weights_q16":
+			signature_satisfaction_dimension_weights,
+		"satisfaction_dimension_count": SATISFACTION_DIMENSION_COUNT,
 		"signature_keys": signature_keys,
 	}
 	for key in good_columns:

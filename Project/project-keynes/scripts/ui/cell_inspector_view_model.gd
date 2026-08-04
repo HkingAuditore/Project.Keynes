@@ -1177,10 +1177,16 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var satisfaction: PackedInt32Array = snapshot.get(
 		"survival_satisfaction_by_cohort_q16",
 		snapshot.get("satisfaction_by_cohort_q16", PackedInt32Array()))
+	# 综合满意度自 PKEC v30 起是权威列，任何 cohort 都可读，不再依赖 trace。
 	var overall_satisfaction: PackedInt32Array = snapshot.get(
 		"overall_satisfaction_by_cohort_q16", satisfaction)
 	var living_levels: PackedInt32Array = snapshot.get(
 		"living_standard_level_by_cohort", PackedInt32Array())
+	var dimension_count := int(snapshot.get("satisfaction_dimension_count", 0))
+	var satisfaction_dims: PackedInt32Array = snapshot.get(
+		"satisfaction_dims_by_cohort_q16", PackedInt32Array())
+	var worst_dimensions: PackedInt32Array = snapshot.get(
+		"worst_satisfaction_dimension_by_cohort", PackedInt32Array())
 	var welfare_available := bool(snapshot.get("welfare_detail_available", false))
 	var welfare_need_offsets: PackedInt32Array = snapshot.get("welfare_need_offsets", PackedInt32Array())
 	var welfare_need_ids: PackedInt32Array = snapshot.get("welfare_need_ids", PackedInt32Array())
@@ -1231,6 +1237,10 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		var sat := float(overall_satisfaction[i]) / 65536.0 if i < overall_satisfaction.size() else 0.0
 		var living_level := int(living_levels[i]) if i < living_levels.size() else -1
 		var living_name := _living_standard_name(living_level)
+		var worst_dimension := int(worst_dimensions[i]) \
+			if i < worst_dimensions.size() else -1
+		var dimension_rows := _satisfaction_dimension_rows(
+			satisfaction_dims, dimension_count, i, worst_dimension)
 		var need_satisfaction_by_id := {}
 		if welfare_need_offsets.size() == populations.size() + 1:
 			var welfare_begin := clampi(int(welfare_need_offsets[i]), 0, welfare_need_ids.size())
@@ -1366,6 +1376,8 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"living_accent": _living_standard_accent(living_level),
 			"living_standard": living_name,
 			"satisfaction": "%.1f%%" % (sat * 100.0),
+			"satisfaction_rows": dimension_rows,
+			"worst_dimension": _satisfaction_dimension_name(worst_dimension),
 			"demand_rows": demand_rows,
 			"demand_groups": demand_groups,
 			"income_rows": income_rows,
@@ -1448,6 +1460,50 @@ func _living_standard_accent(level: int) -> Color:
 	if level <= 2:
 		return UITokens.WARN
 	if level <= 4:
+		return UITokens.GOOD
+	return UITokens.RESOURCE
+
+
+## 与原生 SAT_DIM_* 枚举同序。
+const SATISFACTION_DIMENSION_NAMES := [
+	"温饱", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
+]
+
+
+func _satisfaction_dimension_name(dimension: int) -> String:
+	return String(SATISFACTION_DIMENSION_NAMES[dimension]) \
+		if dimension >= 0 and dimension < SATISFACTION_DIMENSION_NAMES.size() \
+		else "待评估"
+
+
+func _satisfaction_dimension_rows(dims: PackedInt32Array, dimension_count: int,
+		cohort_idx: int, worst_dimension: int) -> Array:
+	var rows := []
+	if dimension_count <= 0:
+		return rows
+	var begin := cohort_idx * dimension_count
+	if begin < 0 or begin + dimension_count > dims.size():
+		return rows
+	for dimension in range(dimension_count):
+		var value := float(dims[begin + dimension]) / 65536.0
+		var is_worst := dimension == worst_dimension
+		rows.append({
+			"id": "satisfaction_dim_%d" % dimension,
+			"name": _satisfaction_dimension_name(dimension),
+			"value": "%.1f%%" % (value * 100.0),
+			"accent": UITokens.RISK if is_worst else _satisfaction_accent(value),
+			"worst": is_worst,
+			"visible": true,
+		})
+	return rows
+
+
+func _satisfaction_accent(value: float) -> Color:
+	if value < 0.22:
+		return UITokens.RISK
+	if value < 0.45:
+		return UITokens.WARN
+	if value < 0.72:
 		return UITokens.GOOD
 	return UITokens.RESOURCE
 

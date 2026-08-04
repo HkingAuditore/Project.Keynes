@@ -5,3 +5,5 @@ script = ExtResource("1")
 id = &"staple_food"
 display_name = "食品"
 living_cost_weight_q16 = 65536
+satisfaction_tier = 0
+satisfaction_weight_q16 = 65536

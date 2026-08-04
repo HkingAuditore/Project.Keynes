@@ -355,18 +355,18 @@ func _run() -> void:
 		family_handle, 0, 64).get("total", 0))
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v29 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 29)
+	_expect("PKEC v30 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 30)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("PKEC v29 save completes", not chunks.is_empty()
+	_expect("PKEC v30 save completes", not chunks.is_empty()
 		and bool(ext.end_economy_save().get("ok", false)))
 	var legacy_chunk := chunks[0].duplicate()
-	legacy_chunk[4] = 28
+	legacy_chunk[4] = 29
 	legacy_chunk[5] = 0
 	var legacy := _new_ext(catalog)
 	_expect("legacy restore country bootstraps", _configure_country(
@@ -375,10 +375,10 @@ func _run() -> void:
 		catalog, profile, 1, 260801).get("ok", false)))
 	legacy.begin_economy_restore()
 	var legacy_result: Dictionary = legacy.feed_economy_restore_chunk(legacy_chunk)
-	_expect("PKEC v28 and earlier return an explicit incompatibility error",
+	_expect("PKEC v29 and earlier return an explicit incompatibility error",
 		not bool(legacy_result.get("ok", true))
 		and String(legacy_result.get("reason", ""))
-			== "economy_save_v28_or_earlier_unsupported")
+			== "economy_save_v29_or_earlier_unsupported")
 	var restored := _new_ext(catalog)
 	_expect("restore country bootstraps", _configure_country(
 		restored, catalog, 260801))

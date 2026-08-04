@@ -28,7 +28,10 @@ class TriggerRuntime;
 class NativeEconomyRuntime {
 public:
     // 28: persistent per-cell/per-ethnicity Q32 birth residuals.
-    static constexpr int32_t SCHEMA_VERSION = 29;
+    // 30: authoritative composite satisfaction dimensions, income baseline EMA,
+    //     per-cohort fiscal burden accumulators, family branch satisfaction, and
+    //     per-cell published social-pressure level.
+    static constexpr int32_t SCHEMA_VERSION = 30;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -52,6 +55,26 @@ public:
     // across native slices, so this is a deterministic work cap rather than a
     // wall-clock deadline.
     static constexpr int32_t TRADE_ROUTE_EXPANSIONS_PER_SLICE = 256;
+
+    // Composite satisfaction dimensions. The first SAT_TIER_COUNT entries are
+    // need tiers fed by the household market clearing; the rest are derived from
+    // cohort ledgers and frozen epoch context. Extending the model means
+    // appending an enumerator before SAT_DIM_COUNT and widening the authored
+    // weight columns; no storage layout outside this stride changes.
+    enum SatisfactionDimension : int32_t {
+        SAT_DIM_SUBSISTENCE = 0,
+        SAT_DIM_BASIC = 1,
+        SAT_DIM_COMFORT = 2,
+        SAT_DIM_LUXURY = 3,
+        SAT_DIM_INCOME = 4,
+        SAT_DIM_SAVINGS = 5,
+        SAT_DIM_TAX = 6,
+        SAT_DIM_DEVELOPMENT = 7,
+        SAT_DIM_COUNT = 8,
+    };
+    static constexpr int32_t SAT_TIER_COUNT = 4;
+    static constexpr int32_t SAT_DEVELOPMENT_INPUT_COUNT = 3;
+    static constexpr int32_t SAT_PRESSURE_LEVEL_COUNT = 5;
 
     enum CommandOpcode : int32_t {
         COMMAND_TRANSFER_TO_COHORT = 1,
@@ -139,6 +162,10 @@ public:
     godot::Dictionary building_notable_people(int64_t building_handle,
                                               int32_t offset,
                                               int32_t limit) const;
+    // Cold-path satisfaction tracing. Both are pure reads of published state
+    // and are only safe to call between native slices.
+    godot::Dictionary explain_cohort_satisfaction(int64_t cohort_handle) const;
+    godot::Dictionary cell_satisfaction_attractiveness(int32_t cell_idx) const;
     godot::Dictionary fiscal_snapshot(int64_t country_handle) const;
     godot::Dictionary fixed_math_probe(const godot::Dictionary &vectors) const;
     godot::Dictionary production_climate_math_probe(
@@ -198,6 +225,7 @@ public:
     enum GameplayFactKind : int32_t {
         GAMEPLAY_FACT_CONSTRUCTION_COMPLETED = 1,
         GAMEPLAY_FACT_TRADE_ARRIVED = 2,
+        GAMEPLAY_FACT_SOCIAL_PRESSURE = 3,
     };
     bool drain_committed_gameplay_facts(
         std::vector<CommittedGameplayFact> &out);
@@ -319,6 +347,10 @@ private:
         int32_t price_quantity_floor_q16 = 0;
         int32_t quantity_env_curve = -1;
         int32_t living_cost_weight_q16 = 0;
+        // Composite satisfaction classification, resolved from the need catalog
+        // rather than from need id strings.
+        int32_t satisfaction_tier = SAT_DIM_BASIC;
+        int32_t satisfaction_weight_q16 = Q16_ONE;
     };
 
     struct VariantChoice {
@@ -366,6 +398,8 @@ private:
         int64_t birth_rate_q32 = 0;
         int64_t death_rate_q32 = 0;
         int64_t satisfaction_birth_weight_q16 = Q16_ONE;
+        // Class-specific composite weights, indexed by SatisfactionDimension.
+        std::array<int32_t, SAT_DIM_COUNT> satisfaction_weights_q16{};
     };
 
     struct BuildingType {
@@ -622,6 +656,10 @@ private:
         std::vector<int32_t> cash_share_q16;
         std::vector<int32_t> building_share_q16;
         std::vector<int32_t> score_q16;
+        // Population-weighted composite satisfaction of the member cohorts in
+        // this cell. Feeds branch-survival review; the prestige formula is
+        // deliberately unchanged.
+        std::vector<int32_t> satisfaction_q16;
         std::vector<uint8_t> prestige_level;
         std::vector<uint8_t> pending_target_level;
         std::vector<uint8_t> review_streak;
@@ -749,8 +787,24 @@ private:
         // It is reset with the epoch and intentionally excluded from save/hash authority.
         std::vector<int64_t> epoch_in_kind_income;
         std::vector<int64_t> income_ema;
+        // Gross fiscal flows realized this epoch. They are pure attribution of
+        // transfers that already happened, so they never participate in money
+        // conservation; they exist so the tax-burden dimension can be computed
+        // without re-deriving rates.
+        std::vector<int64_t> epoch_tax_paid;
+        std::vector<int64_t> epoch_subsidy_received;
+        // Slow per-capita income EMA. `income_ema` tracks the current level;
+        // this baseline trails it so their ratio is a growth signal.
+        std::vector<int64_t> income_baseline_ema;
+        // Subsistence satisfaction. Retains its historical name because it is
+        // still the sole input to starvation mortality.
         std::vector<uint16_t> needs_satisfaction;
         std::vector<uint16_t> worst_need_id;
+        // Composite satisfaction plus its SAT_DIM_COUNT-strided breakdown and
+        // the dimension responsible for the largest weighted shortfall.
+        std::vector<uint16_t> composite_satisfaction;
+        std::vector<uint16_t> satisfaction_dims;
+        std::vector<uint8_t> worst_dimension_id;
         std::vector<uint16_t> flags;
         std::vector<int64_t> demography_residual;
         std::vector<int64_t> owner_employed;
@@ -760,6 +814,7 @@ private:
         int64_t high_water_slots = 0;
 
         void clear(int32_t cells);
+        void reset_satisfaction_slot(int32_t slot);
         int32_t allocate_page(int32_t cell);
         mutable int64_t scan_steps = 0;  // Diagnostics only.
         int32_t find_signature(int32_t cell, uint32_t signature) const;
@@ -1189,10 +1244,16 @@ private:
 
     struct CohortWelfareEntry {
         uint64_t cohort_handle = 0;
+        // Mirrors of the authoritative columns, copied here so the Inspector can
+        // read per-need detail and the composite from one trace payload.
         int32_t overall_satisfaction_q16 = 0;
         int32_t living_standard_level = 0;
+        int32_t worst_dimension_id = -1;
+        std::array<int32_t, SAT_DIM_COUNT> satisfaction_dims_q16{};
         std::vector<int32_t> need_ids;
         std::vector<int32_t> need_satisfaction_q16;
+        std::vector<int32_t> need_weight_q16;
+        std::vector<int32_t> need_tiers;
         std::vector<int64_t> previous_demand_per_capita_daily;
         std::vector<int64_t> wealth_demand_delta_per_capita_daily;
         std::vector<int64_t> price_demand_delta_per_capita_daily;
@@ -1641,6 +1702,8 @@ private:
                 welfare_bytes += static_cast<int64_t>(
                     entry.need_ids.capacity() * sizeof(int32_t) +
                     entry.need_satisfaction_q16.capacity() * sizeof(int32_t) +
+                    entry.need_weight_q16.capacity() * sizeof(int32_t) +
+                    entry.need_tiers.capacity() * sizeof(int32_t) +
                     entry.previous_demand_per_capita_daily.capacity() * sizeof(int64_t) +
                     entry.wealth_demand_delta_per_capita_daily.capacity() * sizeof(int64_t) +
                     entry.price_demand_delta_per_capita_daily.capacity() * sizeof(int64_t));
@@ -1822,6 +1885,22 @@ private:
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
     int32_t _survival_production_target_q16 = Q16_ONE;
     int64_t _starvation_death_rate_q32 = Q32_ONE / 200;
+    // Composite satisfaction tuning. Weights are authored per profession; these
+    // are the profile-wide fallbacks and the shared normalization references.
+    std::array<int32_t, SAT_DIM_COUNT> _satisfaction_default_weights_q16 = {
+        65536, 45875, 26214, 13107, 19661, 19661, 16384, 13107};
+    int32_t _satisfaction_subsistence_gate_slack_q16 = 6554;
+    int32_t _satisfaction_income_growth_floor_q16 = 58982;
+    int32_t _satisfaction_income_growth_ceiling_q16 = 78643;
+    int32_t _satisfaction_income_baseline_alpha_q16 = 1024;
+    int64_t _satisfaction_savings_target_months_q16 = 393216;
+    int32_t _satisfaction_tax_tolerance_q16 = 22938;
+    std::array<int32_t, SAT_DEVELOPMENT_INPUT_COUNT>
+        _satisfaction_development_weights_q16 = {26214, 26214, 13107};
+    int32_t _satisfaction_development_variety_target = 12;
+    int32_t _satisfaction_birth_reference_q16 = 45875;
+    std::array<int32_t, SAT_PRESSURE_LEVEL_COUNT - 1>
+        _satisfaction_pressure_thresholds_q16 = {13107, 26214, 39322, 52429};
     int32_t _wage_ema_alpha_q16 = 8192;
     int32_t _wage_max_rise_q16_per_day = 1311;
     int32_t _wage_max_fall_q16_per_day = 1311;
@@ -2886,6 +2965,19 @@ private:
     std::vector<uint8_t> _epoch_country_variant_available;
     std::vector<int32_t> _epoch_country_building_type_offsets;
     std::vector<int32_t> _epoch_country_building_type_indices;
+    // Social-development inputs frozen with the country epoch. Technology
+    // progress is one popcount per country; the per-cell value additionally
+    // folds in settlement tier and local built-industry variety so the hot loop
+    // only reads a single Q16 per cell.
+    std::vector<int32_t> _epoch_country_technology_progress_q16;
+    std::vector<int32_t> _epoch_cell_development_q16;
+    // Population-weighted survival-plan cost per person per day, refreshed by
+    // compute_cell_living_costs_from_basis. Derived diagnostics only: it is the
+    // savings dimension's denominator and never moves money.
+    std::vector<int64_t> _cell_living_cost_per_capita;
+    // Last published social-pressure level per cell. Persisted so a reload does
+    // not replay a level-crossing event that already fired.
+    std::vector<uint8_t> _cell_social_pressure_level;
     int32_t _epoch_country_count = 0;
     int32_t _epoch_country_technology_words = 0;
     uint64_t _epoch_country_generation = 0;
@@ -3135,7 +3227,25 @@ private:
     inline int32_t unemployed_signature_for_ethnicity(int32_t ethnicity_id) const {
         return signature_for_profession_ethnicity(_unemployed_profession_id, ethnicity_id);
     }
+    void configure_satisfaction_profile(const godot::Dictionary &profile);
     bool capture_country_epoch(std::string &error);
+    void refresh_epoch_development();
+    // Writes the authoritative composite/dimension columns for one cohort and
+    // returns the composite. `tier_*_q16` point at the SAT_TIER_COUNT-wide slice
+    // the household need reduction just produced for this cohort.
+    int64_t update_cohort_satisfaction(int32_t slot, int32_t cell,
+                                       int64_t subsistence_q16,
+                                       const Signature &signature,
+                                       const int64_t *tier_weighted_q16,
+                                       const int64_t *tier_weight_q16,
+                                       int64_t &sat);
+    int64_t normalize_band_q16(int64_t value, int64_t floor, int64_t ceiling,
+                               int64_t &sat) const;
+    int32_t living_standard_level_for(int64_t composite_q16) const;
+    // Social-pressure level 0..4, ascending with satisfaction: 0 is the most
+    // distressed band and 4 is contentment.
+    int32_t social_pressure_level_for(int64_t composite_q16) const;
+    void publish_social_pressure_facts();
     bool prepare_fiscal_budgets(std::string &error);
     void settle_income_subsidies_for_cell(int32_t cell,
                                           int64_t &saturation_count);
@@ -3375,6 +3485,7 @@ private:
         int64_t &saturation_count) const;
     bool is_merchant_slot(int32_t slot) const;
     void touch_accounting_slot(int32_t slot);
+    void record_cohort_fiscal(int32_t slot, int64_t signed_amount);
     void rebuild_incremental_audit_shadow();
     void begin_incremental_audit_epoch();
     void audit_touch_population_lane(int32_t slot);

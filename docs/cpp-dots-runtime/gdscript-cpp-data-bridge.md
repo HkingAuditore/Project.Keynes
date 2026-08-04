@@ -13,7 +13,7 @@
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v4, PKEC v29, PKCM v1, PKGP v1, and `PKEnvironmentRuntime v1`. Environment export includes the
+PKCN v4, PKEC v30, PKCM v1, PKGP v1, and `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
 and dimensions before swapping any arrays. See
@@ -167,6 +167,17 @@ cashflow CSR、周期日期和 `settlement_detail_available/pending`。滚动五
 到期结算时提交新的完整 cashflow 批次；其余相位继续保留上一次完整分类，首次选中则保持
 pending 直到该地块首次到期结算。
 该缓存不进入 DataCore slot、PKEC 存档或核心 state hash。
+
+综合满意度不走 trace：`get_population_cell_snapshot` 对**每个** cohort 都发布权威列
+`overall_satisfaction_by_cohort_q16`、`satisfaction_dims_by_cohort_q16`（stride 为
+`satisfaction_dimension_count`）、`worst_satisfaction_dimension_by_cohort` 与
+`living_standard_level_by_cohort`。另有两个纯读冷查询：
+`explain_cohort_satisfaction(cohort_handle)` 返回逐维度的值/权重/缺口贡献、
+`raw_q16` / `ceiling_q16` / `composite_q16` 以及各维度的原始输入；
+`get_cell_satisfaction_attractiveness(cell_idx)` 返回同一批列的人口加权聚合与已发布的
+社会压力等级。两者只在 native slice 之间安全，GDScript 侧包装在
+`EconomyFacade.explain_cohort_satisfaction` / `cell_satisfaction_attractiveness`，
+会附带 `dimension_names`。列语义见[综合满意度运行时](./satisfaction-runtime.md)。
 
 ## GDScript 写入 C++ 可见数据
 

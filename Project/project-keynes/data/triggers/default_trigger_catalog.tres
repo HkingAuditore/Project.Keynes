@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="TriggerCatalog" load_steps=8 format=3]
+[gd_resource type="Resource" script_class="TriggerCatalog" load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/trigger/trigger_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/trigger/trigger_definition.gd" id="2_definition"]
@@ -47,6 +47,26 @@ dynamic_binding = true
 selector_field = 5
 effects = Array[Resource]([SubResource("EffectTradePopulation")])
 
+[sub_resource type="Resource" id="EffectSocialPressureNotice"]
+script = ExtResource("3_effect")
+action = 13
+source_priority = 100
+domain = 2
+value_mode = 2
+command_key = &"economy.social_pressure_notice"
+
+[sub_resource type="Resource" id="TriggerSocialPressureRelief"]
+script = ExtResource("2_definition")
+key = &"economy.social_pressure_relief"
+source_id = 1
+event_type = 8
+payload_schema = 5
+aggregator = 5
+value_field = 2
+threshold = 1
+condition_ops = PackedInt32Array(3)
+effects = Array[Resource]([SubResource("EffectSocialPressureNotice")])
+
 [resource]
 script = ExtResource("1_catalog")
-definitions = Array[Resource]([SubResource("TriggerHuntingBuilding"), SubResource("TriggerTradePopulation")])
+definitions = Array[Resource]([SubResource("TriggerHuntingBuilding"), SubResource("TriggerTradePopulation"), SubResource("TriggerSocialPressureRelief")])

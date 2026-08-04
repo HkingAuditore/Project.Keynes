@@ -12,11 +12,14 @@
 当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见
 [运行时性能优化契约（2026-07）](runtime-performance-optimization-2026-07.md)。
 
-显赫家族的原生 SoA、特性、地块威望、成员/建筑稀疏边、守恒财产归属、冷查询与 PKEC v29
+显赫家族的原生 SoA、特性、地块威望、成员/建筑稀疏边、守恒财产归属、冷查询与 PKEC v30
 契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 
-家族重要人物的稀疏 SoA、姓名、岗位/建筑追溯、已实现收入与消费需求归因、生命周期及 PKEC v29
+家族重要人物的稀疏 SoA、姓名、岗位/建筑追溯、已实现收入与消费需求归因、生命周期及 PKEC v30
 契约见[家族重要人物原生运行时](./notable-person-runtime.md)。
+
+cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门、玩法接管点、explain 溯源、
+社会压力事件与 PKEC v30 satisfaction 列见[综合满意度运行时](./satisfaction-runtime.md)。
 
 本目录记录 Project.Keynes 当前运行期 C++/DOTS 架构的真实状态，面向后续开发、排障和继续迁移。这里不是历史路线图，也不是一次性验收记录；历史文档仍保留原状，本目录负责把已经落到代码里的调度、数据通信、计算链路和性能诊断规则整理成可执行参考。
 
@@ -66,6 +69,10 @@
 8. [Native Economy Runtime](./native-economy-runtime.md)
    - PopulationCohort chunk、MarketStore、handle、并行边界和公共 API。
 
+8b. [综合满意度运行时](./satisfaction-runtime.md)
+   - 八维度 composite、阶层数据驱动权重、生存闸门、出生率/就业/家族接管、
+     explain 溯源、社会压力事件与 PKEC v30 列。
+
 9. [Domestic Trade Runtime](./domestic-trade-runtime.md)
    - 国内六邻接运输、稀疏贸易信号、有界寻路、贸易单托管结算、PKEC v12 与软切片契约。
 
@@ -76,7 +83,7 @@
     - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
-   - `country_daily`、命令屏障、PKCN v4 + PKEC v29 顺序与兼容性拒绝。
+   - `country_daily`、命令屏障、PKCN v4 + PKEC v30 顺序与兼容性拒绝。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。
@@ -109,7 +116,7 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 显赫家族专项 Skill 位于
 [`project-keynes-family-runtime`](../../.codex/skills/project-keynes-family-runtime/SKILL.md)，
 约束 FamilyStore、NotablePersonStore、成员/产业稀疏边、业主岗位、守恒财产、人物经济归因、
-生命周期、查询、PKEC v29 和性能验收。修改显赫家族/人物机制、姓名目录、UI 或存档时必须同时使用
+生命周期、查询、PKEC v30 和性能验收。修改显赫家族/人物机制、姓名目录、UI 或存档时必须同时使用
 并同步该 Skill。
 
 ## 与现有文档的关系

@@ -21,3 +21,12 @@ extends Resource
 @export var birth_rate_q32: int = 470681
 @export var death_rate_q32: int = 294176
 @export var satisfaction_birth_weight_q16: int = 32768
+
+## Q16 weights for the eight composite satisfaction dimensions, in native enum
+## order: subsistence, basic, comfort, luxury, income growth, savings, tax
+## burden, social development. This is where class (阶层) differentiation lives:
+## a subsistence farmer weights survival and savings, a merchant weights income
+## growth and tax burden, a notable weights luxury and development.
+## Leave empty to inherit `EconomyProfile.satisfaction_default_dimension_weights_q16`.
+## A dimension whose weight is 0 never enters the composite denominator.
+@export var satisfaction_dimension_weights_q16: PackedInt32Array = PackedInt32Array()

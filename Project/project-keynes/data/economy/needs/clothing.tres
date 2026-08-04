@@ -5,3 +5,5 @@ script = ExtResource("1")
 id = &"clothing"
 display_name = "衣着"
 living_cost_weight_q16 = 65536
+satisfaction_tier = 0
+satisfaction_weight_q16 = 45875

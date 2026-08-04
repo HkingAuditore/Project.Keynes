@@ -45,6 +45,14 @@ Adapters ACK only the contiguous prefix they applied successfully.
 发布一次，再扇出到本地合资格分支；无需为每个家族重复发布事实。解绑会立即删除对应 state 和
 未派发 effect，威望降级不会保留旧累计。
 
+`ECONOMY_SOCIAL_PRESSURE = 8` / `SOCIAL_PRESSURE_V1 = 5` 走同一条 committed gameplay fact
+通路，**只在地块的人口加权满意度等级（0 最紧张 .. 4 最满足）跨越时**发布，沿用聚落繁荣度的
+level-change 去重模式，所以每 epoch 的事件量以滚动 workset 为上界。payload 为
+`i0` 新等级、`i1` 最差维度、`i2` 最差需求、`i3` 上一等级，`value` 是人口加权 composite（Q16），
+`entity_id` 是人口，`flags=1` 表示等级下降，天然匹配既有 `STATE_LEVEL` / `PUSH_CROSSING`
+聚合器。示例条目见 `data/triggers/default_trigger_catalog.tres` 的
+`economy.social_pressure_relief`；维度语义见[综合满意度运行时](./satisfaction-runtime.md)。
+
 ## Persistence and recovery
 
 `PKTR v2` stores catalog hash/version, source cursors, dynamic branch bindings, trigger SoA (accumulator,
