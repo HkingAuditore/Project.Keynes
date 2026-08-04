@@ -908,8 +908,11 @@ func _attach_population_display_metadata(snapshot: Dictionary) -> void:
 
 static func _load_display_names(directory: String) -> Dictionary:
 	var result := {}
+	# [pk-export-remap] 见 economy_catalog.gd::_load_resources() 同名注释——导出
+	# 包里 DirAccess 看到的是带 .remap 后缀的目录项，用 ResourceLoader.list_directory()
+	# 才能拿到 x.tres 逻辑名。
 	var paths := PackedStringArray()
-	for file_name in DirAccess.get_files_at(directory):
+	for file_name in ResourceLoader.list_directory(directory):
 		if file_name.get_extension().to_lower() == "tres":
 			paths.append("%s/%s" % [directory, file_name])
 	paths.sort()

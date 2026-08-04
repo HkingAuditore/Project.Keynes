@@ -10,6 +10,10 @@ Build commands (run from gdext/ directory in a VS 2022 x64 Native Tools Command 
     scons platform=linux   target=template_debug
     scons platform=android target=template_release arch=arm64
 
+Web (needs emsdk 4.0.20 activated — must match the Emscripten version used to build
+the official Godot 4.6 templates, otherwise the side module fails to load):
+    scons platform=web target=template_release arch=wasm32 threads=no lto=none
+
 Output goes directly into the Godot project's addons/dots_ext/bin/<platform>/
 so no manual copy step is required after a build.
 """
@@ -32,6 +36,9 @@ env.Append(CPPPATH=["src/"])
 # ---------------------------------------------------------------------------
 opts = Variables()
 opts.Add(BoolVariable("avx2", "Enable AVX2 codegen for SIMD bench paths", True))
+# WebAssembly SIMD128（Chrome 91+/Firefox 89+/Safari 16.4+）。默认关，首次 bring-up
+# 先用最保守的字节码；确认能跑之后再 `wasm_simd=yes` 找回一部分标量路径的损失。
+opts.Add(BoolVariable("wasm_simd", "Enable WebAssembly SIMD128 (web only)", False))
 opts.Update(env)
 
 # AVX2 / FMA only make sense on x86_64. Apple Silicon (arm64) + ARM Linux + Android
@@ -48,8 +55,12 @@ if env["avx2"] and _arch_is_x86_64:
         env.Append(CPPDEFINES=["PK_HAVE_AVX2=1"])
     # else: skip on android/ios/web — those targets pick their own arch.
 else:
-    # 包含 avx2=no 显式关闭 与 arm64 / android arm 等非 x86_64 架构。
+    # 包含 avx2=no 显式关闭 与 arm64 / android arm / web wasm32 等非 x86_64 架构。
     env.Append(CPPDEFINES=["PK_HAVE_AVX2=0"])
+
+if env["platform"] == "web" and env["wasm_simd"]:
+    env.Append(CCFLAGS=["-msimd128"])
+    env.Append(LINKFLAGS=["-msimd128"])
 
 sources = (
     Glob("src/*.cpp")
@@ -80,6 +91,13 @@ elif platform == "macos":
     )
 elif platform == "android":
     output_path = addons_bin + "android/libdots_ext{}{}".format(
+        env["suffix"], env["SHLIBSUFFIX"]
+    )
+elif platform == "web":
+    # godot-cpp/tools/web.py 把 SHLIBSUFFIX 设成 ".wasm" 并加 -sSIDE_MODULE=1；
+    # threads=no 时 env["suffix"] 会自带 ".nothreads"，与 .gdextension 里
+    # web.*.wasm32（无 threads 特性标签）那两条 key 对应。
+    output_path = addons_bin + "web/libdots_ext{}{}".format(
         env["suffix"], env["SHLIBSUFFIX"]
     )
 else:

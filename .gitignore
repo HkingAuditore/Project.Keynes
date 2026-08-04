@@ -6,3 +6,7 @@ __pycache__/
 
 # 本地私有配置文档，不纳入版本管理
 /docs/3000-mcp-setup.md
+
+# Emscripten SDK（web 构建工具链，约 1.9 GB）。装在仓库目录内只是图方便，
+# 属于本机环境而非项目源码。版本要求见 gdext/build_web.bat。
+/emsdk/

@@ -534,13 +534,13 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_page(int32_t cell) {
         free_pages.pop_back();
         page_cell[page] = cell;
         page_next[page] = -1;
-        const int32_t base = page * PAGE_SIZE;
-        std::fill(active.begin() + base, active.begin() + base + PAGE_SIZE, uint8_t{0});
+        const int32_t base = page * COHORT_PAGE_SIZE;
+        std::fill(active.begin() + base, active.begin() + base + COHORT_PAGE_SIZE, uint8_t{0});
     } else {
         page = static_cast<int32_t>(page_next.size());
         page_next.push_back(-1);
         page_cell.push_back(cell);
-        const size_t next_size = static_cast<size_t>(page + 1) * PAGE_SIZE;
+        const size_t next_size = static_cast<size_t>(page + 1) * COHORT_PAGE_SIZE;
         active.resize(next_size, 0);
         signature_id.resize(next_size, 0);
         generation.resize(next_size, 1);
@@ -590,8 +590,8 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_slot(int32_t cell, uint3
     if (existing >= 0) return existing;
     if (cell_first_page[cell] < 0) allocate_page(cell);
     for (int32_t p = cell_first_page[cell]; p >= 0; p = page_next[p]) {
-        const int32_t base = p * PAGE_SIZE;
-        for (int32_t lane = 0; lane < PAGE_SIZE; ++lane) {
+        const int32_t base = p * COHORT_PAGE_SIZE;
+        for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
             const int32_t slot = base + lane;
             if (active[slot] != 0) continue;
             active[slot] = 1;
@@ -612,7 +612,7 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_slot(int32_t cell, uint3
         }
     }
     const int32_t page = allocate_page(cell);
-    const int32_t slot = page * PAGE_SIZE;
+    const int32_t slot = page * COHORT_PAGE_SIZE;
     active[slot] = 1;
     signature_id[slot] = signature;
     population[slot] = 0;
@@ -1037,9 +1037,9 @@ void NativeEconomyRuntime::PopulationStore::reclaim_empty_pages(int32_t cell) {
     int32_t page = cell_first_page[cell];
     while (page >= 0) {
         const int32_t next = page_next[page];
-        const int32_t base = page * PAGE_SIZE;
+        const int32_t base = page * COHORT_PAGE_SIZE;
         bool any = false;
-        for (int32_t lane = 0; lane < PAGE_SIZE; ++lane) any |= active[base + lane] != 0;
+        for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) any |= active[base + lane] != 0;
         if (!any) {
             if (previous < 0) cell_first_page[cell] = next;
             else page_next[previous] = next;
@@ -8645,7 +8645,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     const int64_t count = cmd.i64_0;
     if (cell < 0 || cell >= _cell_count || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
-        _population.page_cell[owner_slot / PAGE_SIZE] != cell) {
+        _population.page_cell[owner_slot / COHORT_PAGE_SIZE] != cell) {
         _last_building_rejection_reason = "building_target_invalid";
         ++_rejected_commands;
         return true;
@@ -8916,7 +8916,7 @@ bool NativeEconomyRuntime::apply_demolish_command(const Command &cmd, int32_t ow
     const int64_t count = cmd.i64_0;
     if (cell < 0 || cell >= _cell_count || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
-        _population.page_cell[owner_slot / PAGE_SIZE] != cell) {
+        _population.page_cell[owner_slot / COHORT_PAGE_SIZE] != cell) {
         _last_building_rejection_reason = "demolish_target_invalid";
         ++_rejected_commands;
         return true;
@@ -17174,7 +17174,7 @@ int64_t NativeEconomyRuntime::credit_trade_sellers(int32_t order_index, int64_t 
         int32_t slot = -1;
         if (!_population.valid_handle(_trade_orders.seller_handles[i], slot) ||
             !is_merchant_slot(slot) ||
-            _population.page_cell[slot / PAGE_SIZE] != _trade_orders.sources[order_index])
+            _population.page_cell[slot / COHORT_PAGE_SIZE] != _trade_orders.sources[order_index])
             continue;
         const int64_t weight = std::max<int64_t>(1, _trade_orders.seller_weights[i]);
         valid.push_back({slot, weight});
@@ -18816,7 +18816,7 @@ bool NativeEconomyRuntime::apply_family_population_reward(
             int32_t slot = -1;
             if (edge.family_handle != family_handle || edge.people <= 0 ||
                 !_population.valid_handle(edge.cohort_handle, slot) ||
-                _population.page_cell[slot / PAGE_SIZE] != cell) continue;
+                _population.page_cell[slot / COHORT_PAGE_SIZE] != cell) continue;
             if (edge.people > best_people || (edge.people == best_people &&
                     (target_slot < 0 || edge.cohort_handle <
                         _population.handle_for_slot(target_slot)))) {
@@ -18921,7 +18921,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                 error = "stale_cohort_handle_during_ledger";
                 return false;
             }
-            event_cell = _population.page_cell[slot / PAGE_SIZE];
+            event_cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
             touch_accounting_slot(slot);
             const int64_t country_handle = cmd.i64_1 != 0 ? cmd.i64_1
                 : (_country_runtime == nullptr ? 0 : _country_runtime->country_handle_for_cell(event_cell));
@@ -18951,7 +18951,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                 error = "stale_cohort_handle_during_mint";
                 return false;
             }
-            event_cell = _population.page_cell[slot / PAGE_SIZE];
+            event_cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
             touch_accounting_slot(slot);
             const int64_t funds_before = _population.funds[slot];
             const int64_t income_before = _population.epoch_income[slot];
@@ -18974,7 +18974,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                 error = "stale_cohort_handle_during_burn";
                 return false;
             }
-            event_cell = _population.page_cell[slot / PAGE_SIZE];
+            event_cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
             touch_accounting_slot(slot);
             const int64_t amount = std::min(cmd.i64_0, std::max<int64_t>(0, _population.funds[slot]));
             const int64_t funds_before = _population.funds[slot];
@@ -19060,7 +19060,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                 error = "stale_cohort_handle_during_population_adjust";
                 return false;
             }
-            event_cell = _population.page_cell[slot / PAGE_SIZE];
+            event_cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
             touch_accounting_slot(slot);
             const int64_t before = _population.population[slot];
             const int64_t after = std::max<int64_t>(0, saturating_add(before, cmd.i64_0,
@@ -19075,7 +19075,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             if (actual_delta != 0)
                 _structural_touched_cells.push_back(event_cell);
             if (after == 0) {
-                const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+                const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
                 _structural_commands.push_back({0, slot, cell,
                                                 static_cast<int32_t>(_population.signature_id[slot]),
                                                 0, 0, cmd.sequence});
@@ -19088,13 +19088,13 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                 error = "stale_cohort_handle_during_structure_queue";
                 return false;
             }
-            event_cell = _population.page_cell[slot / PAGE_SIZE];
+            event_cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
             touch_accounting_slot(slot);
             const int64_t requested = cmd.i64_0 <= 0 ? _population.population[slot] : cmd.i64_0;
             _structural_commands.push_back({cmd.opcode, slot,
                                             cmd.opcode == COMMAND_MOVE_POPULATION
                                                 ? cmd.i32_0
-                                                : _population.page_cell[slot / PAGE_SIZE],
+                                                : _population.page_cell[slot / COHORT_PAGE_SIZE],
                                             cmd.opcode == COMMAND_CHANGE_SIGNATURE
                                                 ? cmd.i32_0
                                                 : static_cast<int32_t>(_population.signature_id[slot]),
@@ -19107,7 +19107,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                 error = "stale_cohort_handle_during_transfer";
                 return false;
             }
-            event_cell = _population.page_cell[slot / PAGE_SIZE];
+            event_cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
             touch_accounting_slot(slot);
             const int64_t country_handle = cmd.i64_1 != 0 ? cmd.i64_1
                 : (_country_runtime == nullptr ? 0 : _country_runtime->country_handle_for_cell(event_cell));
@@ -19595,7 +19595,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                       approximation_variant_active.end(), uint8_t{1});
     }
     const auto cohort_cell = [&](int32_t slot) {
-        const int32_t page = slot / PAGE_SIZE;
+        const int32_t page = slot / COHORT_PAGE_SIZE;
         return page >= 0 && page < static_cast<int32_t>(_population.page_cell.size())
             ? _population.page_cell[page] : -1;
     };
@@ -19786,7 +19786,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             good_id >= _market.good_count ||
             owner_slot >= static_cast<int32_t>(_population.active.size()) ||
             _population.active[owner_slot] == 0) return;
-        const int32_t page = owner_slot / PAGE_SIZE;
+        const int32_t page = owner_slot / COHORT_PAGE_SIZE;
         if (page < 0 || page >= static_cast<int32_t>(_population.page_cell.size())) return;
         const int32_t cell = _population.page_cell[page];
         if (cell < 0 || cell >= static_cast<int32_t>(_market.cell_to_market.size())) return;
@@ -20458,7 +20458,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             : std::clamp<int64_t>(mul_div_sat(
                 cohort_clothing_filled[local], Q16_ONE,
                 cohort_clothing_required[local], sat), 0, Q16_ONE - 1);
-        const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+        const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
         const int64_t temperature_q16 = cell >= 0 && cell < _cell_count
             ? _environment_temperature_q16[cell] : Q16_ONE / 2;
         const int64_t snow_q16 = cell >= 0 && cell < _cell_count
@@ -20579,7 +20579,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             remaining_market_population -= deaths;
             result.deaths = saturating_add(result.deaths, deaths, sat);
             if (_population.population[slot] == 0) {
-                const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+                const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
                 result.structural_commands.push_back({
                     0, slot, cell, static_cast<int32_t>(signature_id), 0, 0, _epoch_id});
             }
@@ -20777,7 +20777,7 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
         return true;
     }
     const int32_t source = cmd.source_slot;
-    const int32_t source_cell = _population.page_cell[source / PAGE_SIZE];
+    const int32_t source_cell = _population.page_cell[source / COHORT_PAGE_SIZE];
     const int64_t source_handle = static_cast<int64_t>(_population.handle_for_slot(source));
     if (cmd.opcode == STRUCTURAL_REMOVE_EMPTY) {
         const int64_t estate_funds = _population.funds[source];
@@ -20841,7 +20841,7 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
                                                    bool *source_drained_out,
                                                    uint64_t preferred_family_handle) {
     if (source_drained_out != nullptr) *source_drained_out = false;
-    const int32_t source_cell = _population.page_cell[source / PAGE_SIZE];
+    const int32_t source_cell = _population.page_cell[source / COHORT_PAGE_SIZE];
     const int64_t source_handle = static_cast<int64_t>(_population.handle_for_slot(source));
     const int32_t cmd_cell = dest_cell;
     const int32_t cmd_signature = dest_signature;
@@ -23769,7 +23769,7 @@ int32_t NativeEconomyRuntime::family_consumption_factor_q16(
                 sat), sat);
     }
     int64_t factor = mul_div_sat(weighted, 1, population, sat);
-    const int32_t cell = _population.page_cell[cohort_slot / PAGE_SIZE];
+    const int32_t cell = _population.page_cell[cohort_slot / COHORT_PAGE_SIZE];
     const size_t city_index = static_cast<size_t>(std::max(0, cell)) *
         _need_ids.size() + static_cast<size_t>(std::max(0, need_id));
     if (cell >= 0 && cell < _cell_count && need_id >= 0 &&
@@ -23807,7 +23807,7 @@ int32_t NativeEconomyRuntime::family_good_consumption_factor_q16(
         }
     }
     int64_t factor = mul_div_sat(weighted, 1, population, sat);
-    const int32_t cell = _population.page_cell[cohort_slot / PAGE_SIZE];
+    const int32_t cell = _population.page_cell[cohort_slot / COHORT_PAGE_SIZE];
     const size_t city_index = static_cast<size_t>(std::max(0, cell)) *
         _good_ids.size() + static_cast<size_t>(good_id);
     if (cell >= 0 && cell < _cell_count && city_index <
@@ -24274,7 +24274,7 @@ void NativeEconomyRuntime::rebuild_family_indices() {
         int32_t slot = -1, family = -1;
         if (!_population.valid_handle(edge.cohort_handle, slot) ||
             !_families.valid_handle(edge.family_handle, family)) continue;
-        const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+        const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
         if (cell >= 0) cell_family.emplace_back(cell, family);
     }
     for (const FamilyBuildingOwnership &edge : _family_ownerships) {
@@ -24611,7 +24611,7 @@ bool NativeEconomyRuntime::repair_forced_capital_founder(int32_t cell) {
     for (const FamilyMembershipEdge &edge : _family_memberships) {
         int32_t slot = -1;
         if (_population.valid_handle(edge.cohort_handle, slot) &&
-            _population.page_cell[slot / PAGE_SIZE] == cell && edge.people > 0)
+            _population.page_cell[slot / COHORT_PAGE_SIZE] == cell && edge.people > 0)
             return false;
     }
     const auto type_it = std::lower_bound(_building_type_ids.begin(),
@@ -24762,7 +24762,7 @@ void NativeEconomyRuntime::rebuild_family_influences() {
         int32_t family = -1, slot = -1;
         if (!_families.valid_handle(edge.family_handle, family) ||
             !_population.valid_handle(edge.cohort_handle, slot)) continue;
-        const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+        const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
         if (cell < 0 || cell >= _cell_count) continue;
         Aggregate &aggregate = aggregates[{edge.family_handle, cell}];
         const int64_t people = std::max<int64_t>(0, edge.people);
@@ -25047,7 +25047,7 @@ void NativeEconomyRuntime::review_family_lifecycle() {
             if (edge.family_handle != handle) continue;
             int32_t slot = -1;
             if (!_population.valid_handle(edge.cohort_handle, slot)) continue;
-            branch_pop[_population.page_cell[slot / PAGE_SIZE]] += edge.people;
+            branch_pop[_population.page_cell[slot / COHORT_PAGE_SIZE]] += edge.people;
         }
         for (const auto &branch : branch_pop) {
             if (branch.second > best_pop ||
@@ -25203,7 +25203,7 @@ void NativeEconomyRuntime::rebuild_person_indices() {
             ++_person_family_offsets[static_cast<size_t>(family) + 1];
         if (_population.valid_handle(_persons.cohort_handle[i], slot)) {
             ++_person_cohort_offsets[static_cast<size_t>(slot) + 1];
-            const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+            const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
             if (cell >= 0 && cell < _cell_count)
                 ++_person_cell_offsets[static_cast<size_t>(cell) + 1];
         }
@@ -25244,7 +25244,7 @@ void NativeEconomyRuntime::rebuild_person_indices() {
             _person_family_indices[fc[family]++] = i;
         if (_population.valid_handle(_persons.cohort_handle[i], slot)) {
             _person_cohort_indices[cc[slot]++] = i;
-            const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+            const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
             if (cell >= 0 && cell < _cell_count)
                 _person_cell_indices[xc[cell]++] = i;
         }
@@ -25408,7 +25408,7 @@ void NativeEconomyRuntime::promote_person_for_family(int32_t family_index) {
     int32_t slot = -1;
     if (!_population.valid_handle(
             _family_memberships[best_edge].cohort_handle, slot)) return;
-    const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+    const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
     int32_t cell_people = 0;
     if (_person_cell_offsets.size() == static_cast<size_t>(_cell_count + 1))
         cell_people = _person_cell_offsets[cell + 1] - _person_cell_offsets[cell];
@@ -25416,7 +25416,7 @@ void NativeEconomyRuntime::promote_person_for_family(int32_t family_index) {
         int32_t candidate_slot = -1;
         if (_persons.active[i] != 0 &&
             _population.valid_handle(_persons.cohort_handle[i], candidate_slot) &&
-            _population.page_cell[candidate_slot / PAGE_SIZE] == cell) ++cell_people;
+            _population.page_cell[candidate_slot / COHORT_PAGE_SIZE] == cell) ++cell_people;
     }
     if (cell_people >= _person_max_per_cell) return;
     const int32_t index = _persons.allocate();
@@ -25582,7 +25582,7 @@ void NativeEconomyRuntime::bind_notable_person_jobs() {
         if (_persons.active[i] == 0 || _persons.job_kind[i] != 0) continue;
         int32_t slot = -1;
         if (!_population.valid_handle(_persons.cohort_handle[i], slot)) continue;
-        const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+        const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
         const int32_t signature = static_cast<int32_t>(_population.signature_id[slot]);
         if (signature < 0 || signature >= static_cast<int32_t>(_signatures.size()))
             continue;
@@ -25802,7 +25802,7 @@ uint64_t NativeEconomyRuntime::sponsor_family_for_cohort(
     int64_t best_claim = -1;
     int32_t slot = -1;
     if (!_population.valid_handle(cohort_handle, slot) ||
-        _population.page_cell[slot / PAGE_SIZE] != cell ||
+        _population.page_cell[slot / COHORT_PAGE_SIZE] != cell ||
         _family_cohort_offsets.size() != _population.active.size() + 1)
         return 0;
     for (int32_t p = _family_cohort_offsets[slot];
@@ -28908,7 +28908,7 @@ Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
                                      : "cohort_handle_invalid";
         return out;
     }
-    const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+    const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
     const Signature &signature = _signatures[_population.signature_id[slot]];
     const size_t base = static_cast<size_t>(slot) *
         static_cast<size_t>(SAT_DIM_COUNT);
@@ -30058,7 +30058,7 @@ Dictionary NativeEconomyRuntime::family_branches(
         if (edge.family_handle != handle) continue;
         int32_t slot = -1;
         if (!_population.valid_handle(edge.cohort_handle, slot)) continue;
-        const int32_t cell = _population.page_cell[slot / PAGE_SIZE];
+        const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
         Branch &branch = by_cell[cell];
         branch.cell = cell; branch.people += edge.people;
         branch.cash += edge.cash_claim;
@@ -30242,7 +30242,7 @@ Dictionary NativeEconomyRuntime::family_notable_people(
         given_names.push_back(_persons.given_name_id[person]);
         disambiguators.push_back(static_cast<int32_t>(
             _persons.name_disambiguator[person]));
-        cells.push_back(cohort_ok ? _population.page_cell[slot / PAGE_SIZE] : -1);
+        cells.push_back(cohort_ok ? _population.page_cell[slot / COHORT_PAGE_SIZE] : -1);
         professions.push_back(signature >= 0 && signature < static_cast<int32_t>(
             _signatures.size()) ? _signatures[signature].profession_id : -1);
         cash_claims.push_back(_persons.cash_claim[person]);
@@ -30314,7 +30314,7 @@ Dictionary NativeEconomyRuntime::notable_person_snapshot(
     out["name_disambiguator"] = static_cast<int32_t>(
         _persons.name_disambiguator[person]);
     out["notable_since_day"] = _persons.notable_since_day[person];
-    out["cell_idx"] = _population.page_cell[slot / PAGE_SIZE];
+    out["cell_idx"] = _population.page_cell[slot / COHORT_PAGE_SIZE];
     out["profession_id"] = profession; out["cash_claim"] = _persons.cash_claim[person];
     out["family_equity_share_q32"] = _persons.family_equity_share_q32[person];
     out["attributed_asset_value"] = attributed_asset;
@@ -31415,7 +31415,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     if (_save.section == SAVE_SECTION_PAGES) {
         // 79 bytes of pre-v30 lane state plus 43 bytes of composite satisfaction
         // and fiscal-burden columns.
-        const int32_t record_bytes = 12 + PAGE_SIZE * 122;
+        const int32_t record_bytes = 12 + COHORT_PAGE_SIZE * 122;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min<int32_t>(static_cast<int32_t>(_population.page_next.size()),
                                               _save.page_cursor + max_records);
@@ -31426,8 +31426,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int32_t>(payload, page);
             append_le<int32_t>(payload, _population.page_next[page]);
             append_le<int32_t>(payload, _population.page_cell[page]);
-            const int32_t base = page * PAGE_SIZE;
-            for (int32_t lane = 0; lane < PAGE_SIZE; ++lane) {
+            const int32_t base = page * COHORT_PAGE_SIZE;
+            for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
                 const int32_t slot = base + lane;
                 append_le<uint8_t>(payload, _population.active[slot]);
                 append_le<uint32_t>(payload, _population.signature_id[slot]);
@@ -32467,7 +32467,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             : building_catalog_hash == _building_catalog_hash;
         if (saved_cells != _cell_count || markets <= 0 || markets > _cell_count ||
             goods != static_cast<int32_t>(_good_ids.size()) || pages < 0 || active_count < 0 ||
-            active_count > static_cast<int64_t>(pages) * PAGE_SIZE ||
+            active_count > static_cast<int64_t>(pages) * COHORT_PAGE_SIZE ||
             pending_count < 0 || pending_count > 1000000 ||
             audit_count < 0 || audit_count > 3650 || signal_count < 0 ||
             signal_count > 10000000 || labor_signal_count < 0 ||
@@ -32604,7 +32604,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _population.clear(_cell_count);
         _population.page_next.assign(pages, -1);
         _population.page_cell.assign(pages, -1);
-        const size_t slots = static_cast<size_t>(pages) * PAGE_SIZE;
+        const size_t slots = static_cast<size_t>(pages) * COHORT_PAGE_SIZE;
         _population.active.assign(slots, 0);
         _population.signature_id.assign(slots, 0);
         _population.generation.assign(slots, 1);
@@ -32753,8 +32753,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             }
             _population.page_next[page] = next;
             _population.page_cell[page] = cell;
-            const int32_t base = page * PAGE_SIZE;
-            for (int32_t lane = 0; lane < PAGE_SIZE; ++lane) {
+            const int32_t base = page * COHORT_PAGE_SIZE;
+            for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
                 const int32_t slot = base + lane;
                 if (!read_le(bytes, cursor, _population.active[slot]) ||
                     !read_le(bytes, cursor, _population.signature_id[slot]) ||
@@ -32777,16 +32777,17 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 }
                 const size_t dims_base = static_cast<size_t>(slot) *
                     static_cast<size_t>(SAT_DIM_COUNT);
+                // satisfaction_dims 是 uint16_t（[0, 65535]），而合法值域上限恰好就是
+                // Q16_ONE - 1 = 65535——两者重合，所以「>= Q16_ONE(65536)」这类范围检查
+                // 对该存储类型永远不可能为真（也是 clang 在 web 构建里报
+                // -Wtautological-constant-out-of-range-compare 的位置）。不是漏检：
+                // 任何能从文件里读出来的比特模式已经天然落在合法区间，删掉判断不改变
+                // 校验结果，只是去掉死代码。
                 for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
                     if (!read_le(bytes, cursor,
                                  _population.satisfaction_dims[
                                      dims_base + static_cast<size_t>(dim)])) {
                         error = "save_page_payload_truncated";
-                        return false;
-                    }
-                    if (_population.satisfaction_dims[
-                            dims_base + static_cast<size_t>(dim)] >= Q16_ONE) {
-                        error = "save_page_satisfaction_dimension_out_of_range";
                         return false;
                     }
                 }
@@ -32797,8 +32798,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     error = "save_page_payload_truncated";
                     return false;
                 }
-                if (_population.composite_satisfaction[slot] >= Q16_ONE ||
-                    (_population.worst_dimension_id[slot] !=
+                // composite_satisfaction 同样是 uint16_t，见上方 satisfaction_dims 的
+                // 注释——「>= Q16_ONE」对该类型恒假，不是遗漏的校验条件。
+                if ((_population.worst_dimension_id[slot] !=
                          std::numeric_limits<uint8_t>::max() &&
                      _population.worst_dimension_id[slot] >= SAT_DIM_COUNT) ||
                     _population.epoch_tax_paid[slot] < 0 ||
@@ -33570,7 +33572,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                      equity_share < 0 || equity_share > Q32_ONE ||
                      epoch_job_income < 0 || epoch_consumption_expense < 0 ||
                      epoch_tax < 0 || income_ema < 0 ||
-                     satisfaction >= Q16_ONE ||
+                     // satisfaction 是 uint16_t，见 satisfaction_dims 处的注释——
+                     // 「>= Q16_ONE」对该类型恒假。
                      (job_kind == 0 &&
                         (building_handle != 0 || employee_role != -1)) ||
                      (job_kind != 0 && building_handle == 0) ||
@@ -33621,7 +33624,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 state.stable_need_id < 0 || state.stable_need_id >=
                     static_cast<int32_t>(_needs.size()) ||
                 state.desired_period_units < 0 ||
-                state.satisfaction_q16 >= Q16_ONE ||
+                // satisfaction_q16 是 uint16_t，见 satisfaction_dims 处的注释——
+                // 「>= Q16_ONE」对该类型恒假。
                 state.attributed_spend < 0) {
                 error = "save_person_need_invalid";
                 return false;
@@ -33891,8 +33895,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         }
         if (next >= 0) referenced[next] = 1;
         if (cell < 0) _population.free_pages.push_back(page);
-        const int32_t base = page * PAGE_SIZE;
-        for (int32_t lane = 0; lane < PAGE_SIZE; ++lane) {
+        const int32_t base = page * COHORT_PAGE_SIZE;
+        for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
             const int32_t slot = base + lane;
             if (_population.active[slot] == 0) continue;
             if (cell < 0 || _population.signature_id[slot] >= _signatures.size() ||
@@ -34378,7 +34382,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 const int32_t group = building_index_for_handle(
                     _persons.building_handle[i]);
                 if (group < 0 || _buildings[group].cell !=
-                        _population.page_cell[cohort / PAGE_SIZE]) {
+                        _population.page_cell[cohort / COHORT_PAGE_SIZE]) {
                     out["ok"] = false;
                     out["reason"] = "restore_person_building_invalid";
                     return out;

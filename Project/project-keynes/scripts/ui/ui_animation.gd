@@ -67,6 +67,19 @@ static func _rest_position(control: Control) -> Vector2:
 	return control.get_meta("_ui_rest_position")
 
 
+# _rest_position() 只在第一次调用时从 control.position 取值并永久缓存——如果
+# 那次快照发生在锚点还没结算出最终位置之前（比如面板首次从 hidden 切到
+# visible 的那一帧），或者面板所在的 viewport 后续合法地变了尺寸（窗口缩放、
+# Web 画布自适应），缓存值就会永久跟真实锚点位置错位，之后每次 slide 都会把
+# 面板带到这个过期坐标上，而不是当前锚点算出来的正确位置。任何主动重新套用
+# 锚点/offset 的布局代码（比如 GameUIManager._layout_right_panel）都应该在
+# 确认控件当前不在动画中时，用这个函数把缓存刷新成最新的静止位置。
+static func refresh_rest_position(control: Control) -> void:
+	if control == null or control.has_meta("_ui_active_tween"):
+		return
+	control.set_meta("_ui_rest_position", control.position)
+
+
 static func _kill_active(control: CanvasItem) -> void:
 	if not control.has_meta("_ui_active_tween"):
 		return

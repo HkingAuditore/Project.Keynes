@@ -1613,12 +1613,17 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
             goto write_failed;
         }
     }
-    const int64_t total_us = std::chrono::duration_cast<std::chrono::microseconds>(
-        Clock::now() - encode_start).count();
-    _write_us_last = local_write_us;
-    _encode_us_last = std::max<int64_t>(0, total_us - local_write_us);
-    bytes = local_bytes;
-    return true;
+    // 成功分支的尾部必须自成作用域：total_us 带初始化，而它若与 write_failed
+    // 同处一个作用域，上面每一条 goto 都算「跳过带初始化的声明」——MSVC 放行，
+    // clang（web/wasm 走 emcc）按标准直接报错。
+    {
+        const int64_t total_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            Clock::now() - encode_start).count();
+        _write_us_last = local_write_us;
+        _encode_us_last = std::max<int64_t>(0, total_us - local_write_us);
+        bytes = local_bytes;
+        return true;
+    }
 
 write_failed:
     close_files();

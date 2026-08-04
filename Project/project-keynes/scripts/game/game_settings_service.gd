@@ -63,17 +63,23 @@ func save_settings() -> Dictionary:
 
 
 func apply() -> void:
-	var mode := String(_settings.window_mode)
-	match mode:
-		"fullscreen":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-		"windowed":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			DisplayServer.window_set_size(Vector2i(_settings.resolution_width, _settings.resolution_height))
-		_:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
-	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if _settings.vsync else DisplayServer.VSYNC_DISABLED)
+	# Web 没有原生窗口概念："fullscreen"在浏览器里必须由用户输入手势触发，
+	# 否则 requestFullscreen() 会被静默拒绝（见 DisplayServerWeb::window_set_mode
+	# 的报错提示）；WINDOW_FLAG_BORDERLESS / window_set_size 在 Web 平台也均为
+	# no-op。这些调用在 Web 上不会生效，干脆跳过，交给浏览器自身的画布自适应
+	# (canvasResizePolicy=adaptive) 去决定实际尺寸，避免和它产生不必要的冲突。
+	if not OS.has_feature("web"):
+		var mode := String(_settings.window_mode)
+		match mode:
+			"fullscreen":
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+			"windowed":
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+				DisplayServer.window_set_size(Vector2i(_settings.resolution_width, _settings.resolution_height))
+			_:
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+				DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if _settings.vsync else DisplayServer.VSYNC_DISABLED)
 	get_tree().root.content_scale_factor = float(_settings.ui_scale_percent) / 100.0
 	var bus := AudioServer.get_bus_index("Master")
 	if bus >= 0:

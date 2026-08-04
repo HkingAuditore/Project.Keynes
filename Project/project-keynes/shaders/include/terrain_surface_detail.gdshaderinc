@@ -12,11 +12,17 @@ struct TerrainStaticMaterial {
 };
 
 int decode_edge_secondary_index(vec2 uv) {
+#ifdef VT_USE_EDGE_NEIGHBOR
 	vec2 rg = visual_sample_edge_neighbor(uv).rg;
 	int lo = int(rg.r * 255.0 + 0.5);
 	int hi = int(rg.g * 255.0 + 0.5);
 	int cid = lo + hi * 256;
 	return (cid >= 65535) ? -1 : cid;
+#else
+	// [pk-web-texture-budget] edge_neighbor tile 已裁掉：次生邻格混合永远关闭，
+	// 所有调用方在 secondary_id<0 时都已回退到硬主 cell，视觉上退化为硬边。
+	return -1;
+#endif
 }
 
 bool terrain_static_biome_is_water(int biome) {
@@ -47,7 +53,7 @@ vec2 terrain_periodic_world_uv(vec2 wp, float tile_world_size) {
 // still use the runtime switch so an allocation/import failure can fall back
 // without selecting a different shader resource.
 bool terrain_materials_active() {
-#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID)
+#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID) || defined(PK_WEB_TEXTURE_BUDGET)
 	return false;
 #else
 	return terrain_materials_enabled && terrain_material_tex_bound && visual_quality >= 2;
@@ -74,12 +80,16 @@ int terrain_material_layer(int biome) {
 }
 
 vec4 terrain_material_sample(int biome, vec2 wp) {
+#ifdef PK_WEB_TEXTURE_BUDGET
+	return vec4(1.0, 0.5, 0.5, 0.5);
+#else
 	int layer = terrain_material_layer(biome);
 	if (layer < 0) {
 		return vec4(1.0, 0.5, 0.5, 0.5);
 	}
 	vec2 material_uv = terrain_periodic_world_uv(wp, terrain_material_world_size);
 	return texture(terrain_material_tex, vec3(material_uv, float(layer)));
+#endif
 }
 
 vec3 terrain_material_albedo_detail(vec4 material) {
@@ -161,6 +171,11 @@ float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
 // provides a shared visual anchor for the final land pipeline; cell-owned
 // weather, fog, ecology and interaction state remain hard-primary data.
 float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
+#ifndef VT_USE_EDGE_DISTANCE
+	// [pk-web-texture-budget] edge_distance tile 已裁掉：次生生态过渡带永远关闭，
+	// 与 decode_edge_secondary_index() 的 -1 回退配合，退化为硬主 cell 边界。
+	return 0.0;
+#else
 	if (!has_terrain_edge_data) {
 		return 0.0;
 	}
@@ -195,6 +210,7 @@ float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
 	float ecotone_weight = 0.5 * (1.0 - smoothstep(
 			0.0, max(natural_width, 0.0001), distance_to_edge));
 	return max(aa_weight, ecotone_weight);
+#endif
 #endif
 }
 
@@ -397,9 +413,13 @@ vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
 				has_terrain_edge_data ? decode_edge_secondary_index(uv) : -1);
 	}
 	if (terrain_surface_debug_view == 3) {
+#ifdef VT_USE_EDGE_DISTANCE
 		float d = has_terrain_edge_data
 				? visual_sample_edge_distance(uv).r
 				: 1.0;
+#else
+		float d = 1.0;
+#endif
 		return vec3(d);
 	}
 	if (terrain_surface_debug_view == 4) {

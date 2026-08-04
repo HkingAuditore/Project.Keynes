@@ -33,7 +33,10 @@ public:
     //     per-cell published social-pressure level.
     static constexpr int32_t SCHEMA_VERSION = 30;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
-    static constexpr int32_t PAGE_SIZE = 64;
+    // 不能叫 PAGE_SIZE：那是 POSIX 保留的宏名，emscripten 的 musl
+    // <bits/limits.h> 无条件 `#define PAGE_SIZE 65536`，会把这行成员声明展开成
+    // `static constexpr int32_t 65536 = 64;`。
+    static constexpr int32_t COHORT_PAGE_SIZE = 64;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int64_t Q16_ONE = 65536;
@@ -826,8 +829,8 @@ private:
         template <typename F> void for_each_in_cell(int32_t cell, F &&fn) const {
             if (cell < 0 || cell >= static_cast<int32_t>(cell_first_page.size())) return;
             for (int32_t p = cell_first_page[cell]; p >= 0; p = page_next[p]) {
-                const int32_t base = p * PAGE_SIZE;
-                for (int32_t lane = 0; lane < PAGE_SIZE; ++lane) {
+                const int32_t base = p * COHORT_PAGE_SIZE;
+                for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
                     const int32_t slot = base + lane;
                     if (active[slot] != 0) fn(slot);
                 }

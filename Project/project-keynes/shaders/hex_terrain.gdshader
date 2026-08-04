@@ -1,4 +1,5 @@
 shader_type canvas_item;
+render_mode unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 

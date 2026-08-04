@@ -1,5 +1,11 @@
 shader_type canvas_item;
-render_mode blend_mix;
+// [pk-web-texture-budget] 全部光照都是本 shader 自算（太阳向量/horizon shadow/GI），
+// 项目从不使用引擎 Light2D；缺 unshaded 会让 Godot 额外编译"受光"路径，隐式多占
+// 1-2 个 fragment 纹理单元（灯光贴图/阴影图集 sampler），在 Compatibility(GLES3/
+// WebGL2) 16 单元预算下是纯浪费。其余同类全屏 canvas shader
+// （data_overlay/fog_of_war/country_border/hex_edge_overlay）都已带 unshaded，
+// 这里补齐。
+render_mode blend_mix, unshaded;
 
 // world_map.gdshader v9.atlas — 高分辨率地理仿真渲染（结构重构版 2026-05-19）
 // [sky-sh-ambient 2026-06-29] 引入 L1 球谐天光（earth_daylight.earth_sky_sh）；本注释用于
@@ -77,15 +83,29 @@ render_mode blend_mix;
 #include "res://shaders/include/shader_quality.gdshaderinc"
 #include "res://shaders/include/uniforms.gdshaderinc"
 #define VT_USE_HEIGHT
+// [pk-web-texture-budget] Compatibility(GLES3/WebGL2) 16 纹理单元预算下，本文件
+// 已逼近上限；以下 5 个 tile 全部裁掉，调用方均已改为回退到已验证过的运行期
+// 估算路径（旧存档/未 rebake 时本就走这些路径，非新增代码）：
+//   - TERRAIN_NORMAL：粗法线回退到 hillshade_tod 的宽半径高度差分。
+//   - WATER_DEPTH   ：水深回退到 water_pipeline 的邻域 height 估算。
+//   - TERRAIN_DETAIL：biome 细节回退到 procedural_biome_detail 的程序噪声配方。
+//   - EDGE_NEIGHBOR / EDGE_DISTANCE：次生生态过渡带关闭，退化为硬主 cell 边界。
+#ifndef PK_WEB_TEXTURE_BUDGET
 #define VT_USE_TERRAIN_NORMAL
-#define VT_USE_HORIZON
-#define VT_USE_GI_OCCLUDER
-#define VT_USE_MAP_INDEX
-#define VT_USE_FLOW
 #define VT_USE_WATER_DEPTH
 #define VT_USE_TERRAIN_DETAIL
 #define VT_USE_EDGE_NEIGHBOR
 #define VT_USE_EDGE_DISTANCE
+#endif
+#define VT_USE_HORIZON
+// [pk-web-texture-budget] GI 单次弹射（gi_occluder tile + bounce_lut，共 2 个
+// 纹理单元）在 Compatibility(GLES3/WebGL2) 后端下裁掉——sky visibility/direct
+// shadow 等其余 horizon 派生量不受影响，只丢弹射色溢出这一项纯装饰性增强。
+#ifndef PK_WEB_TEXTURE_BUDGET
+#define VT_USE_GI_OCCLUDER
+#endif
+#define VT_USE_MAP_INDEX
+#define VT_USE_FLOW
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"

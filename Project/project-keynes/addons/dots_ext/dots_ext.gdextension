@@ -16,3 +16,10 @@ macos.debug.x86_64      = "res://addons/dots_ext/bin/macos/libdots_ext.macos.tem
 macos.release.x86_64    = "res://addons/dots_ext/bin/macos/libdots_ext.macos.template_release.x86_64.dylib"
 android.debug.arm64     = "res://addons/dots_ext/bin/android/libdots_ext.android.template_debug.arm64.so"
 android.release.arm64   = "res://addons/dots_ext/bin/android/libdots_ext.android.template_release.arm64.so"
+
+; Web: "threads" 特性标签由导出预设的 variant/thread_support 决定，必须与编译
+; dots_ext 时的 threads= 选项一致，否则 pthread ABI 不匹配、side module 加载失败。
+web.debug.threads.wasm32    = "res://addons/dots_ext/bin/web/libdots_ext.web.template_debug.wasm32.wasm"
+web.release.threads.wasm32  = "res://addons/dots_ext/bin/web/libdots_ext.web.template_release.wasm32.wasm"
+web.debug.wasm32            = "res://addons/dots_ext/bin/web/libdots_ext.web.template_debug.wasm32.nothreads.wasm"
+web.release.wasm32          = "res://addons/dots_ext/bin/web/libdots_ext.web.template_release.wasm32.nothreads.wasm"

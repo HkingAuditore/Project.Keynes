@@ -92,7 +92,24 @@ body {
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="ProjectKeynes.icon.png" />
 <link rel="apple-touch-icon" href="ProjectKeynes.apple-touch-icon.png"/>
-
+<script>
+// [pk-web-dpi-fix] Windows 高 DPI 缩放（125%/150% 等）下，Godot Web 默认
+// hidpi=true 会让 canvas 内部像素缓冲区尺寸按 window.devicePixelRatio 放大，
+// 但引擎内部用于 UI 锚点计算的视口逻辑尺寸与实际绘制/CSS 尺寸之间容易出现
+// 不一致（已知引擎问题类别，见 godotengine/godot#93106），表现为详情框、
+// 顶部状态栏等锚定 UI 被挤压 / 错位到左上角一小块，而地图相机视图因为本身
+// 自适应视口不受影响、看起来正常。在引擎脚本运行前把 devicePixelRatio 锁定
+// 为 1，让 canvas 缓冲区尺寸始终等于 CSS 尺寸，从根上避免这个不一致；
+// 代价是 HiDPI 屏幕上渲染分辨率略降（对本项目 Web 预算也是净收益）。
+try {
+	Object.defineProperty(window, 'devicePixelRatio', {
+		get: function () { return 1; },
+		configurable: true
+	});
+} catch (e) {
+	console.warn('[pk-web-dpi-fix] failed to pin devicePixelRatio', e);
+}
+</script>
 	</head>
 	<body>
 		<canvas id="canvas">
@@ -111,8 +128,8 @@ body {
 
 		<script src="ProjectKeynes.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"ProjectKeynes","experimentalVK":false,"fileSizes":{"ProjectKeynes.pck":28494416,"ProjectKeynes.wasm":1601076},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
-const GODOT_THREADS_ENABLED = true;
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"ProjectKeynes","experimentalVK":false,"fileSizes":{"ProjectKeynes.pck":28507196,"ProjectKeynes.wasm":1509558},"focusCanvas":true,"gdextensionLibs":["libdots_ext.web.template_release.wasm32.nothreads.wasm"],"godotPoolSize":4};
+const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
 (function () {

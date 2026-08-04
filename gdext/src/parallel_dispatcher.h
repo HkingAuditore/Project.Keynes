@@ -34,10 +34,27 @@
 #include <utility>
 #include <vector>
 
+#include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/variant/string.hpp>
 
 namespace pk {
+
+// [pk-web-nothreads-hang] Web 单线程（nothreads）导出下 WorkerThreadPool::
+// get_singleton() 不是 nullptr（池对象本身仍存在），但没有真正的 worker 线程
+// 去消费任务：add_native_group_task 入队后永远等不到线程取走执行，
+// wait_for_group_task_completion 会在调用线程（浏览器唯一的主线程）上死等，
+// 表现为点击生成世界后整个页面彻底卡死——这是 Godot 官方文档确认过的已知行为
+// （因此专门加了 "nothreads" feature tag，见 godotengine/godot#93563）。
+// 结果只由构建期的线程支持决定，运行期不会变化，缓存一次即可；inline 函数里的
+// static 变量在所有翻译单元间共享同一份，不会重复初始化。
+inline bool parallel_has_real_worker_threads() {
+    static const bool has_threads = [] {
+        godot::OS *os = godot::OS::get_singleton();
+        return os != nullptr && !os->has_feature("nothreads");
+    }();
+    return has_threads;
+}
 
 // 自适应 n_tasks：每 task ~1024 cells，clamp [1, 16]。
 // 与 ocean_water_thread (line 4631) / ocean_land_thread (line 4908) 公式 1:1。
@@ -78,10 +95,13 @@ inline void parallel_for_range(const char *label,
         return;
     }
 
-    // 3) WTP 缺失 fallback：按 task_idx 顺序在调用线程内跑（与 pass_b line 4336
-    //    "in-thread loop over the would-be tasks" 一致），保持调度等价。
+    // 3) WTP 缺失 / 无真实 worker 线程 fallback：按 task_idx 顺序在调用线程内跑
+    //    （与 pass_b line 4336 "in-thread loop over the would-be tasks" 一致），
+    //    保持调度等价。见 parallel_has_real_worker_threads() 顶部注释——Web
+    //    nothreads 下 wtp 非空但没有线程消费任务，必须同等走这条回退路径，
+    //    否则下面的 wait_for_group_task_completion 会死等到浏览器页面卡死。
     WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
-    if (wtp == nullptr) {
+    if (wtp == nullptr || !parallel_has_real_worker_threads()) {
         const int chunk = (n + n_tasks - 1) / n_tasks;
         for (int t = 0; t < n_tasks; ++t) {
             const int begin = t * chunk;
@@ -172,10 +192,11 @@ inline void parallel_for_range_with_emit(const char *label,
         return;
     }
 
-    // WTP 缺失 fallback：按 task_idx 顺序在调用线程内跑，每段一个 local emit
+    // WTP 缺失 / 无真实 worker 线程 fallback（同上，见 parallel_has_real_worker_
+    // threads() 顶部注释）：按 task_idx 顺序在调用线程内跑，每段一个 local emit
     // 然后串行 merge_into。与真并行路径 bit-equal。
     WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
-    if (wtp == nullptr) {
+    if (wtp == nullptr || !parallel_has_real_worker_threads()) {
         const int chunk = (n + n_tasks - 1) / n_tasks;
         for (int t = 0; t < n_tasks; ++t) {
             const int begin = t * chunk;

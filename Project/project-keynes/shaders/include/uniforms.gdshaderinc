@@ -69,7 +69,11 @@ uniform int gi_debug_view = 0;
 // RGB=该 cell 当前地表代表色，A=有效性/强度缩放（0=水体或 map 外，不参与弹射）。
 // 刻意是近似量而非 fragment albedo 的精确镜像：弹射项乘了 (1-V_sky) 与 ≤0.3 的增益，
 // 能量占比极低，公式偏差不可见，不值得再引入一处必须永久同步的 CPU/GPU 双份实现。
+// [pk-web-texture-budget] 唯一消费者 gi_evaluate_bounce() 整体挂在
+// #ifdef VT_USE_GI_OCCLUDER 下（见 brdf.gdshaderinc）；该宏关闭时一并裁掉声明。
+#ifndef PK_WEB_TEXTURE_BUDGET
 uniform sampler2D bounce_lut : filter_nearest, repeat_disable;
+#endif
 uniform bool gi_bounce_bound = false;
 // [river-render-restore 2026-06-19] 河流 SDF（L8, derived_size）：R = 河流强度 [0,1]，
 // 1=河心、0=远离河道。scalar_atlas 退役后单独用这张轻量纹理把河网视觉接回（见 land_pipeline
@@ -88,7 +92,14 @@ uniform float terrain_ecotone_width = 0.84;
 uniform float terrain_ecotone_noise = 0.22;
 // [terrain-material-tiles] 四方连续材质族数组。只在 HIGH 且运行时成功绑定时
 // 采样；其它画质继续使用 terrain_detail_tex / 程序化旧路径。
+// [pk-web-texture-budget] Compatibility(GLES3/WebGL2) 后端下 map_baker 恒
+// 不分配这张数组（_terrain_materials_supported_for_renderer 拒绝
+// "gl_compatibility"），terrain_material_tex_bound 恒为 false——sampler 声明
+// 本身就是死重量，直接编译期裁掉以省一个纹理单元（见 shader_quality.gdshaderinc
+// PK_WEB_TEXTURE_BUDGET）。
+#ifndef PK_WEB_TEXTURE_BUDGET
 uniform sampler2DArray terrain_material_tex : filter_linear_mipmap, repeat_enable;
+#endif
 uniform bool terrain_material_tex_bound = false;
 uniform bool terrain_materials_enabled = true;
 uniform float terrain_material_world_size = 384.0;
@@ -389,7 +400,11 @@ uniform float deep_ocean_patch_boost            : hint_range(0.0, 1.0) = 0.50;
 uniform bool  ocean_current_debug = false;
 // Systemic Ocean Currents：独立 L8 纹理，编码 per-pixel 上升流强度（0=下沉 / 128=中性 / 255=上升）。
 // 主路径不采样；仅 ocean_current_debug 开启时作为彩色覆盖叠加。
+// [pk-web-texture-budget] 纯 GM 调试可视化，map_baker 也一直把
+// world.upwelling_tex 留空（见"方案 0"注释）；Compatibility 后端下编译期裁掉。
+#ifndef PK_WEB_TEXTURE_BUDGET
 uniform sampler2D ocean_upwelling_tex : source_color, filter_linear, repeat_disable;
+#endif
 
 
 // =========================================================================
