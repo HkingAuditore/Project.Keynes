@@ -443,6 +443,13 @@ static func max_map_height() -> int:
 # 该后端不只是 web 独占（桌面也可以手动选 Compatibility），因此用渲染方式而非
 # is_web() 判定，desktop 上测试 Compatibility 也会自动获得同样的裁剪。
 static func is_compatibility_renderer() -> bool:
+	# Web 平台物理上只有 gl_compatibility 渲染器（WebGL2，无 RenderingDevice）。
+	# 但项目 rendering_method="mobile" 且未配 rendering_method.web 覆盖时，
+	# get_current_rendering_method() 在 web 上可能仍返回 "mobile"（fallback 前
+	# 的请求值而非实际值），导致 compat 分支（单通道加宽 / 纹理预算 / legacy
+	# tiles）全部静默失效——2026-08-05 web 包 flow_tex 读出 4×4 兜底即此根因。
+	if is_web():
+		return true
 	var rendering_method := ""
 	if RenderingServer.has_method("get_current_rendering_method"):
 		rendering_method = String(RenderingServer.get_current_rendering_method())

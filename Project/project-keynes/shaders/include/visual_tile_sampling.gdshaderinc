@@ -99,12 +99,41 @@ vec2 visual_static_texture_size() { return vec2(textureSize(map_index_atlas, 0))
 #endif
 
 #ifdef VT_USE_FLOW
+// [归因修正 2026-08-05] 早年记录的"WebGL2 单通道纹理建不起来→兜底 4×4 白纹"实为**纹理
+// 单元撞车**：GLES3 canvas 内建纹理占顶部单元（MAX-7 高光…MAX-2 灯光图集），材质 sampler
+// 从 unit 1 分配，flow 是第 9 张落在 unit 9，每帧被高光槽的 4×4 默认白纹覆盖——与格式无关
+// （R8/RG8/RGBA8 全试过）。材质 sampler 必须 ≤8，见 uniforms.gdshaderinc budget 注释。
+// 仍不能靠"没绑就采样得 0"降级：绑定与否由 CPU 侧显式推这个标志。
+uniform bool has_flow_tex = false;
 #ifdef MAP_VISUAL_TILED
 uniform sampler2DArray visual_flow_tiles : filter_linear, repeat_disable;
 vec4 visual_sample_flow(vec2 uv) { return texture(visual_flow_tiles, visual_tile_address(uv)); }
 #else
 uniform sampler2D flow_tex : filter_linear, repeat_disable;
 vec4 visual_sample_flow(vec2 uv) { return texture(flow_tex, visual_static_wrap_uv(uv)); }
+#endif
+// [flow-diag] 采样器实际看到的尺寸，以及绕过过滤/wrap 的整数取样。这是唯一能从 GPU 侧
+// 证伪"纹理绑对了"的手段：CPU 侧 get_size()/get_format() 在兜底发生时依然全部正常，
+// 只有 textureSize() 会报 4×4（引擎默认白纹理的尺寸）。2026-08 Web 整图发蓝就是这样定位的。
+#ifdef MAP_VISUAL_TILED
+ivec2 visual_flow_texture_size() { return textureSize(visual_flow_tiles, 0).xy; }
+float visual_flow_texel(vec2 uv) {
+	vec3 addr = visual_tile_address(uv);
+	ivec3 sz = textureSize(visual_flow_tiles, 0);
+	// GLES3/WebGL2 不接受 ivec3(vec2,int) 构造（桌面 glslang 放行），必须显式先转 ivec2，
+	// 否则 MAP_VISUAL_TILED 变体在 Compatibility 上整 shader 编译失败（2026-08-05 探针实锤）。
+	ivec2 txy = ivec2(clamp(addr.xy * vec2(sz.xy), vec2(0.0), vec2(sz.xy) - vec2(1.0)));
+	ivec3 tc = ivec3(txy, int(addr.z));
+	return texelFetch(visual_flow_tiles, tc, 0).r;
+}
+#else
+ivec2 visual_flow_texture_size() { return textureSize(flow_tex, 0); }
+float visual_flow_texel(vec2 uv) {
+	ivec2 sz = textureSize(flow_tex, 0);
+	vec2 wuv = visual_static_wrap_uv(uv);
+	ivec2 tc = ivec2(clamp(wuv * vec2(sz), vec2(0.0), vec2(sz) - vec2(1.0)));
+	return texelFetch(flow_tex, tc, 0).r;
+}
 #endif
 #endif
 

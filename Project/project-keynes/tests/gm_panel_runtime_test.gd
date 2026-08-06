@@ -6,6 +6,7 @@ class FakeRuntime:
 	var snapshot_calls := 0
 	var command_calls := 0
 	var toggle_set_calls := 0
+	var flow_report_calls := 0
 	var toggle_state := false
 
 	func get_gm_capabilities() -> Dictionary:
@@ -21,8 +22,14 @@ class FakeRuntime:
 			"toggles": [
 				{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
 				{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
+				{"id": "diagnostics.dump_flow_tex_report", "label": "输出 FlowTex 完整诊断",
+					"group": "诊断", "kind": "button"},
 			],
 		}
+
+	func dump_flow_tex_report() -> Dictionary:
+		flow_report_calls += 1
+		return {"ok": true, "message": "测试 FlowTex 诊断完成"}
 
 	func get_gm_snapshot(section: String, _context: Dictionary = {}) -> Dictionary:
 		snapshot_calls += 1
@@ -78,6 +85,14 @@ func _run() -> void:
 	)
 	_expect(day_night_toggle != null and day_night_toggle.button_pressed,
 		"day/night checkbox mirrors enabled runtime default", failures)
+	var flow_report_button: Button = (
+		(console.get("_gm_action_buttons") as Dictionary).get("diagnostics.dump_flow_tex_report")
+	)
+	_expect(flow_report_button != null, "flow report action button built", failures)
+	if flow_report_button != null:
+		flow_report_button.pressed.emit()
+		await process_frame
+		_expect(runtime.flow_report_calls == 1, "flow report action calls runtime", failures)
 	_expect(runtime.toggle_set_calls == 0, "toggle-state readback never invokes setter", failures)
 	console.close_panel()
 	await create_timer(0.25).timeout

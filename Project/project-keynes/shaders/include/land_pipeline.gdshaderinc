@@ -679,6 +679,11 @@ vec3 render_land_pipeline(
 		float eco_growth,
 		float eco_valid,
 	vec4 pixel_noise) {
+	// 15 = 河流层之前的静态材质底色。与 12（底色全部叠加完、光照前）成对使用：
+	// 15 正常而 12 发蓝，说明是 compute_land_base_surface 里的河流 flow 层把陆地刷成了水色。
+	if (terrain_surface_debug_view == 15) {
+		return compute_terrain_static_material(biome, elev, wp, uv).color;
+	}
 	float mixed_micro_strength = terrain_biome_micro_strength(biome);
 	SurfaceParams surface = compute_land_base_surface(
 			biome, landform, elev, wp, uv, scals,
@@ -714,5 +719,10 @@ vec3 render_land_pipeline(
 	surface = apply_land_material_overlays(
 		surface, biome, cover, current_temp, elev, moist, dyn_snow, dyn_valid, scals.g);
 
+	// 12 = 光照前的地表底色。与 11（光照后、全局调整前）配合把陆地管线切成
+	// 「底色 / 光照 / 全局调整」三段，一次导出定位到其中一段。
+	if (terrain_surface_debug_view == 12) {
+		return surface.base_color;
+	}
 	return shade_land_surface(surface, uv, lat_signed);
 }

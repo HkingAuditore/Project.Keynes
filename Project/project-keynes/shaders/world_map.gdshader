@@ -171,9 +171,12 @@ void fragment() {
 
 	vec4 scals = vec4(0.0);  // scalar_atlas 退役：moist/lat 由 LUT/uv 重建。
 	// [river-render-restore 2026-06-19] flow 通道单独从 flow_tex 重建（河流 SDF）。
-	// 未绑定纹理时 texture() 返回 0 → 无河，安全。land/water pipeline 读 scals.g 画河网。
-	// 低画质仍要保留静态河网；昂贵的河流动效/坡向流纹已在 land_pipeline 里按质量档裁掉。
-	scals.g = visual_sample_flow(uv).r;
+	// land/water pipeline 读 scals.g 画河网。低画质仍要保留静态河网；昂贵的河流动效/
+	// 坡向流纹已在 land_pipeline 里按质量档裁掉。
+	// 降级必须走 has_flow_tex 而不是"没绑就采样得 0"：GLES3/WebGL2 下解析不到的
+	// sampler2D 兜底成 4×4 白纹理，flow 会恒为 1，整片陆地被混上河水色。
+	float flow_raw = visual_sample_flow(uv).r;
+	scals.g = has_flow_tex ? flow_raw : 0.0;
 	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
 	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。
@@ -361,7 +364,57 @@ void fragment() {
 
 		// 保留旧 11 参数 ABI，避免 ShaderInclude 热缓存与主 shader 热重载不同步。
 		// 气候参数仅用于接口兼容，global_adjustments 内不再消费它们。
-		if (terrain_surface_debug_view > 0) {
+		// 13 = 陆/水分支判定。用户报告的现象是「所有格子都像被一层水面渲染覆盖」，
+		// 这一档直接把 is_water 的取值画出来，并按具体水 biome 分色，一眼区分成因：
+		//   绿   = 走陆地管线（正常陆地）
+		//   白   = B_SEA_ICE。cid<0 时 biome 被无条件赋成它，所以整片白 = 索引失效
+		//   蓝   = B_OCEAN，即 enum_lut.r 读成 0
+		//   青/深蓝/品红/黄 = COAST / LAKE / REEF / KELP
+		// 14 = flow（河流 SDF）。灰阶=原始取值，红=已越过 river_threshold_low，也就是
+		// land_pipeline 会把该像素混上河水色的区域。正常应当是接近全黑的底图上几条细红
+		// 河线；整屏发白/发红即 flow_tex 没绑上（GLES3 兜底白纹理）。
+		// 刻意读未经 has_flow_tex 门控的 flow_raw：门控已经把管线侧的故障挡住了，这一档
+		// 要能继续报出"纹理其实没绑"这件事，否则修复会把诊断一起掩盖掉。
+		if (terrain_surface_debug_view == 14) {
+			float f = clamp(flow_raw, 0.0, 1.0);
+			vec3 fv = vec3(f);
+			if (f >= river_threshold_low) { fv = vec3(1.0, 0.0, 0.0); }
+			COLOR = vec4(fv, 1.0);
+		} else if (terrain_surface_debug_view == 16) {
+			// 16 = flow_tex 采样器实际看到的尺寸，以 12 位二进制条读出（0..4095）。
+			// 上半屏 = 宽，下半屏 = 高；左边是最高位，白=1、深蓝=0，每 4 位一条红分隔。
+			// 读出 derived_size = 正常；读出 4×4 = 采样器落到了引擎默认白纹理。
+			// tests/_tmp_decode_texsize_view.gd 可以直接从截图里把这两个数解出来。
+			ivec2 fs = visual_flow_texture_size();
+			int val = (SCREEN_UV.y < 0.5) ? fs.x : fs.y;
+			int bit = clamp(11 - int(floor(SCREEN_UV.x * 12.0)), 0, 11);
+			vec3 c = (((val >> bit) & 1) == 1) ? vec3(1.0) : vec3(0.05, 0.05, 0.20);
+			if (bit % 4 == 3 && fract(SCREEN_UV.x * 12.0) < 0.08) {
+				c = vec3(1.0, 0.0, 0.0);
+			}
+			COLOR = vec4(c, 1.0);
+		} else if (terrain_surface_debug_view == 17) {
+			// 17 = 用 texelFetch 整数取样 flow，绕过 filter_linear 与 wrap uv。
+			// 若这一档恢复出细红河线而 14 仍整屏红，问题在过滤/采样状态而非纹理内容。
+			float f = clamp(visual_flow_texel(uv), 0.0, 1.0);
+			vec3 fv = vec3(f);
+			if (f >= river_threshold_low) { fv = vec3(1.0, 0.0, 0.0); }
+			COLOR = vec4(fv, 1.0);
+		} else if (terrain_surface_debug_view == 13) {
+			vec3 branch = vec3(0.0, 1.0, 0.0);
+			if (biome == B_SEA_ICE) { branch = vec3(1.0); }
+			else if (biome == B_OCEAN) { branch = vec3(0.0, 0.25, 1.0); }
+			else if (biome == B_COAST) { branch = vec3(0.0, 0.9, 0.9); }
+			else if (biome == B_LAKE) { branch = vec3(0.0, 0.0, 0.5); }
+			else if (biome == B_REEF) { branch = vec3(1.0, 0.0, 1.0); }
+			else if (biome == B_KELP) { branch = vec3(1.0, 0.9, 0.0); }
+			COLOR = vec4(branch, 1.0);
+		} else if (terrain_surface_debug_view == 11 || terrain_surface_debug_view == 12
+				|| terrain_surface_debug_view == 15) {
+			// 11 = 光照后、apply_global_adjustments 前；12 = 光照前的底色；
+			// 15 = 河流 flow 层之前的静态材质底色（三者都在 land_pipeline 里取值）。
+			COLOR = vec4(col, 1.0);
+		} else if (terrain_surface_debug_view > 0) {
 			COLOR = vec4(terrain_surface_debug_color(uv, wp, _cell_id), 1.0);
 		} else {
 			COLOR = apply_global_adjustments(

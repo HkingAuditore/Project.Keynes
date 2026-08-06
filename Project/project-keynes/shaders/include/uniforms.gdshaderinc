@@ -106,7 +106,14 @@ uniform float terrain_material_world_size = 384.0;
 uniform float terrain_material_albedo_strength = 0.6;
 uniform float terrain_material_normal_strength = 0.15;
 uniform float terrain_material_roughness_strength = 0.35;
+// [pk-web-texture-budget] GLES3 canvas 把顶部单元预留给内建纹理（MAX-7 高光 / MAX-6 法线
+// / MAX-5 SDF / MAX-4 屏幕 / MAX-2 灯光图集），材质 sampler 从 unit 1 顺序分配——WebGL2
+// 16 单元下材质最多 8 张（unit 1..8），第 9 张起每帧被内建默认白纹覆盖。2026-08-05 web
+// flow 恒 1 全河/全白的真根因即第 9 张 sampler（flow）落在 unit 9 被高光槽顶替，与格式无关。
+// 微纹理是纯装饰（材质贴图激活时本就跳过），预算后端整体裁剪，把材质数压回 8。
+#ifndef PK_WEB_TEXTURE_BUDGET
 uniform sampler2D terrain_micro_tex : filter_linear_mipmap, repeat_enable;
+#endif
 uniform bool has_terrain_micro_tex = false;
 uniform float camera_zoom = 1.0;
 // 表面调试视图：0 关 / 1 主导下标 / 2 次级下标 / 3 边缘距离 / 4 次级权重 / 5 微样本UVα /
@@ -419,16 +426,6 @@ uniform float temperature_visual_strength : hint_range(0.0, 1.5) = 1.25;
 uniform float moisture_visual_strength : hint_range(0.0, 1.5) = 1.18;
 uniform float vitality_visual_strength : hint_range(0.0, 1.5) = 1.12;
 uniform int ecology_visual_quality : hint_range(0, 2) = 2;
-
-
-// =========================================================================
-// 【季节过渡 dissolve 组】
-// =========================================================================
-// Seasonal terrain transition overlay. Main terrain stays opaque; the temporary
-// old-terrain layer dissolves out over early-season progress to avoid hard cuts.
-uniform bool season_transition_overlay = false;
-uniform float season_transition_progress : hint_range(0.0, 1.0) = 1.0;
-uniform float season_transition_softness : hint_range(0.02, 0.45) = 0.18;
 
 
 // =========================================================================

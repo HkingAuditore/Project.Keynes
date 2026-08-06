@@ -61,9 +61,13 @@ static func resolve(
 	layout.mode = String(options.get("mode", _configured_mode()))
 	if layout.mode not in [MODE_LEGACY, MODE_PROBE, MODE_TILED]:
 		layout.mode = MODE_TILED
+	# WebGL2(Compatibility) 下运行时 **单张大尺寸纹理**（1024×642 这类 derived-size 图）会
+	# 静默落成引擎 4×4 默认白纹理，而 Texture2DArray 分层上传是本项目在 Web 上唯一逐张
+	# 验证过的稳定通道（2026-08-05 flow 全红根因）。因此 compat 不再强制 LEGACY，
+	# 反而优先 tiled；预算由后面的 density/max_layers/max_texture_size 约束兜底。
 	if String(options.get("rendering_method", _rendering_method())) == "gl_compatibility":
-		layout.mode = MODE_LEGACY
-		layout.fallback_reason = "compatibility_renderer"
+		layout.mode = MODE_TILED
+		layout.fallback_reason = "compatibility_renderer_tiles_preferred"
 
 	layout.wrap_x = wrap_period_x > 0.0001
 	layout.wrap_period_x = wrap_period_x if layout.wrap_x else 0.0

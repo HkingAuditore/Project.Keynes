@@ -63,7 +63,7 @@ func _run() -> void:
 
 func _validate_layer_binding() -> void:
 	var neighbor_image := Image.create(2, 2, false, Image.FORMAT_RG8)
-	var distance_image := Image.create(2, 2, false, Image.FORMAT_L8)
+	var distance_image := Image.create(2, 2, false, Image.FORMAT_R8)
 	var neighbor_tex := ImageTexture.create_from_image(neighbor_image)
 	var distance_tex := ImageTexture.create_from_image(distance_image)
 

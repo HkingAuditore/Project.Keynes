@@ -53,6 +53,12 @@ func record_climate_breakdown(d: Dictionary) -> void:
 	_last_climate_breakdown = d
 
 
+func merge_climate_breakdown(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	_last_climate_breakdown.merge(d, true)
+
+
 func get_climate_breakdown() -> Dictionary:
 	return _last_climate_breakdown.duplicate()
 
@@ -98,6 +104,18 @@ var _daily_weather_call_count: int = 0
 
 func record_weather_breakdown(d: Dictionary) -> void:
 	_last_weather_breakdown = d
+
+
+func replace_weather_breakdown(d: Dictionary, tick_idx: int = -1) -> void:
+	_last_weather_breakdown = d.duplicate(true)
+	if tick_idx >= 0:
+		_last_weather_breakdown["_tick_idx"] = tick_idx
+
+
+func merge_weather_breakdown(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	_last_weather_breakdown.merge(d, true)
 
 
 func get_weather_breakdown() -> Dictionary:

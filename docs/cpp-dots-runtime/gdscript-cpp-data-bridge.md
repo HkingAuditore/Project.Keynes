@@ -404,7 +404,7 @@ plan: *cell-index atlas indirection*（详见 computation-pipelines.md「Cell-in
   注意波数侧本来就是对的：`slp_syn_k1x/k2x` 与 wind 侧 `k1x/k2x` 均取 `1 + (seed_bits & 1)` 整数谐波
   （见两处源码注释），移动低压也已在归一化 x 上做 ±0.5 最小映像折叠 —— 唯一坏的就是周期单位。
   **区分消费者**：`world.wrap_period_x` 与 `_cyl_noise` / horizon marching / visual tiles /
-  `_bake_geometry_fields_native` / `_bake_terrain_index_native` / `_bake_river_sdf` 是像素/世界空间，
+  `_bake_geometry_fields_native` / `DCTerrainIndexBaker` / `_bake_river_sdf` 是像素/世界空间，
   继续用 `HexUtils.wrap_period_x(map_width, hex_size)`，**不要一起改**。
   判别经验法则：knob 里同时出现 `wrap_origin_x: 0.0` 的是 `cell_pos_x` 空间（POSX 最小值恰为 0）；
   出现 `width/height/origin_x/size_x` 等像素字段的是世界空间。

@@ -156,6 +156,8 @@ const TriggerFacadeScript = preload("res://scripts/trigger/trigger_facade.gd")
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const StartLocationPolicyScript = preload("res://scripts/game/start_location_policy.gd")
 const StarterSettlementBootstrapScript = preload("res://scripts/economy/starter_settlement_bootstrap.gd")
+const DiagnosticsBusScript = preload("res://scripts/geography/diagnostics_bus.gd")
+const TerrainGeneratorScript = preload("res://scripts/geography/map_generation/terrain_gen.gd")
 
 # Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
 # DCSystemScheduler facade，由 C++ SusSchedulerExt 负责 budget/skip 统计。
@@ -350,6 +352,7 @@ var _rng:             RandomNumberGenerator
 # ─── Phase 2：跨季 / 跨年保留状态 ────────────────────────────────────────
 # 保留 baker 实例，rebake biome 时复用它的 noise，避免重新 init 一次（也保证 warp 同相）
 var _baker: MapBaker = null
+var _terrain_generator: RefCounted = null
 # 保留 cfg 给 refresh_seasonal 用（不需要每次外部传）
 var _last_cfg: MapConfig = null
 
@@ -361,7 +364,7 @@ var _ocean_land_pass_module: DCOceanLandPass = null
 
 # Seasonal Continuous Climate：refresh_climate_daily 调用计数器（耗时打点节流用）。
 # 首次调用必打，之后每个 WorldClock 年长打一次，避免日志被高频日级刷新淹没。
-var _daily_climate_call_count: int = 0
+var _diagnostics_bus: RefCounted = DiagnosticsBusScript.new()
 # Systemic Ocean Currents：_apply_ocean_heat_transport_pass 调用计数器（同节流策略）。
 var _heat_transport_call_count: int = 0
 # Wind Temperature Coupling：_apply_wind_heat_transport_pass 调用计数器（同节流策略）。
@@ -370,7 +373,6 @@ var _wind_heat_call_count: int = 0
 # Daily-sim perf instrumentation：上一次 refresh_climate_daily 的子段拆解。
 # 字段：pass_a_ms / pass_b_ms / ocean_ms / sea_ice_ms / ice_bake_ms / transp_ms /
 # total_ms / cells。main.gd fast tick WARN 路径用它定位是哪一段慢。
-var _last_climate_breakdown: Dictionary = {}
 var _last_sea_ice_daily_breakdown: Dictionary = {}
 
 # A.2.1.A3 — Pass B 稀疏遍历专用：dirty + 1 跳邻居膨胀后的 visit mask。
@@ -408,7 +410,6 @@ var _pa_last_total_cells: int = 0
 #       transp_ms / albedo_ms / veg_dyn_ms / cover_rebake_ms / veg_rebake_ms /
 #       feedback_ms / total_ms / fronts 。
 # main.gd fast tick WARN 路径用它定位 weather_refresh 的哪一段慢。
-var _last_weather_breakdown: Dictionary = {}
 # Weather refresh sliced：跨 stage_a / stage_b 共享当轮起点时间 + tick_ms + fronts，
 # 让 stage_b 收尾时算出的 total_ms 真正反映"第一片到第二片"完整跨 tick 耗时。
 var _weather_round_t0_us: int = 0
@@ -1242,7 +1243,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	await _yield_generation_frame()
 
 	# Milestone 1：landform / vegetation / cover 三轴在 native post_base 结果里已就绪
-	# （_assemble_native_generation_map 装配时写入），无需再 _sync_axes_for_map。
+	# （DCTerrainGenerator.assemble_native_result 装配时写入），无需再 _sync_axes_for_map。
 	# 在玩法层 baking 之前快照"年均"基线，给 Phase 2 季节刷新做参考
 	_snapshot_base_state(map)
 
@@ -5086,14 +5087,13 @@ func _record_native_daily_slice_climate_breakdown(res: Dictionary, breakdown: Di
 		if not pass_diag.has("path"):
 			pass_diag["path"] = diag["path"]
 	diag["pass_diag"] = pass_diag
-	_last_climate_breakdown = diag
+	_diagnostics_bus.record_climate_breakdown(diag)
 
 
 func _record_native_daily_job_shell_diag(diag: Dictionary) -> void:
-	if _last_climate_breakdown.is_empty() or diag.is_empty():
+	if _diagnostics_bus.get_climate_breakdown().is_empty() or diag.is_empty():
 		return
-	for key in diag.keys():
-		_last_climate_breakdown[key] = diag[key]
+	_diagnostics_bus.merge_climate_breakdown(diag)
 
 
 func _native_daily_contract_stride_days() -> int:
@@ -5393,8 +5393,7 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 	breakdown["bundle_pass_keys"] = _native_daily_slice_bundle_pass_keys
 	# Shallow copy (CoW-safe): only top-level keys are added; nested PackedArrays
 	# share buffers instead of being byte-copied each slice.
-	_last_weather_breakdown = breakdown.duplicate()
-	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
+	_diagnostics_bus.replace_weather_breakdown(breakdown, _current_fast_tick_idx)
 	_dump_weather_breakdown_if_slow()
 	var rc_int: int = int(res.get("rc", -1))
 	var done: bool = bool(res.get("done", true))
@@ -5600,9 +5599,8 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 	var native_call_ms: float = float(Time.get_ticks_usec() - native_t0) / 1000.0
 	res["bundle_pass_keys"] = _native_daily_bundle_pass_keys(bundle)
 	var breakdown: Dictionary = res.get("breakdown", {})
-	_last_weather_breakdown = breakdown.duplicate(true)
+	_diagnostics_bus.replace_weather_breakdown(breakdown, _current_fast_tick_idx)
 	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
-	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
 	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
 	_dump_weather_breakdown_if_slow()
 	# Phase A.2 unified fast tick：成功路径下同步 weather state（fronts + cyclone +
@@ -5667,8 +5665,7 @@ func run_native_sim_tick_from_job(ctx: SusTickContext, _map: MapData, _world: Wo
 	var native_call_ms: float = float(Time.get_ticks_usec() - native_t0) / 1000.0
 	res["bundle_pass_keys"] = _native_daily_bundle_pass_keys(bundle)
 	var breakdown: Dictionary = res.get("breakdown", {})
-	_last_weather_breakdown = breakdown.duplicate(true)
-	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
+	_diagnostics_bus.replace_weather_breakdown(breakdown, _current_fast_tick_idx)
 	_dump_weather_breakdown_if_slow()
 	if unified_weather_embedded and _weather_system != null:
 		var rc_int: int = int(res.get("rc", -1))
@@ -5777,6 +5774,7 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。
 func sus_reset_all() -> void:
 	_abort_all_climate_passes("sus_reset_all")
+	_diagnostics_bus.clear_all()
 	if _sus != null:
 		_sus.reset_all_progress()
 
@@ -5807,7 +5805,7 @@ func get_current_fast_tick_idx() -> int:
 # Daily-sim perf instrumentation：返回上一次 refresh_climate_daily 的子段拆解，
 # 供 main.gd fast tick WARN / 详细日志路径定位 6 段子耗时。
 func sus_climate_breakdown() -> Dictionary:
-	return _last_climate_breakdown.duplicate()
+	return _diagnostics_bus.get_climate_breakdown()
 
 
 func sus_ocean_currents_breakdown() -> Dictionary:
@@ -5835,12 +5833,11 @@ func last_refresh_climate_slice_ms() -> float:
 # Daily-sim perf instrumentation（weather）：返回上一次 refresh_daily 的子段拆解，
 # 供 main.gd fast tick WARN 路径定位 weather_refresh 的生成/分发/反馈 8+ 段子耗时。
 func sus_weather_breakdown() -> Dictionary:
-	return _normalized_weather_breakdown(_last_weather_breakdown)
+	return _normalized_weather_breakdown(_diagnostics_bus.get_weather_breakdown())
 
 
 func merge_weather_job_breakdown(extra: Dictionary) -> void:
-	for k in extra.keys():
-		_last_weather_breakdown[k] = extra[k]
+	_diagnostics_bus.merge_weather_breakdown(extra)
 
 
 func _weather_front_count_from_value(v) -> int:
@@ -8891,22 +8888,6 @@ func _native_generation_profile_dict() -> Dictionary:
 	return out
 
 
-func _native_generation_array_ok(res: Dictionary, key: String, n: int, type_id: int) -> bool:
-	var v = res.get(key, null)
-	if typeof(v) != type_id:
-		return false
-	return v.size() == n
-
-
-func get_native_generation_base_report() -> Dictionary:
-	return _native_generation_base_report.duplicate(true)
-
-
-func _native_generation_post_base_ok() -> bool:
-	var post = _native_generation_base_report.get("post_base", null)
-	return typeof(post) == TYPE_DICTIONARY \
-		and int(post.get("rc", -1)) == 0 \
-		and not bool(post.get("fallback", true))
 
 
 # native generation ACTIVE 路径：C++ 负责 base SoA + post-base 湖泊/河流/
@@ -8983,7 +8964,7 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 			"cover_arr": TYPE_PACKED_BYTE_ARRAY,
 		}
 		for key in required.keys():
-			if not _native_generation_array_ok(res, key, n, int(required[key])):
+			if not TerrainGeneratorScript.native_generation_array_ok(res, key, n, int(required[key])):
 				push_warning("[native_generation/base] bad array %s; fallback" % key)
 				return null
 
@@ -9003,7 +8984,9 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 			return null
 		final_res = post_res
 
-	var map := _assemble_native_generation_map(final_res, cfg)
+	if _terrain_generator == null:
+		_terrain_generator = TerrainGeneratorScript.new(self)
+	var map: MapData = _terrain_generator.assemble_native_result(final_res, cfg)
 	if map == null:
 		push_warning("[native_generation] final result invalid（装配失败）；中止生成")
 		return null
@@ -9056,115 +9039,8 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	return map
 
 
-func _assemble_native_generation_map(res: Dictionary, cfg: MapConfig) -> MapData:
-	var n: int = int(res.get("n_cells", 0))
-	if cfg == null or n <= 0 or n != int(cfg.width) * int(cfg.height):
-		return null
-	var required := {
-		"q_arr": TYPE_PACKED_INT32_ARRAY,
-		"r_arr": TYPE_PACKED_INT32_ARRAY,
-		"elevation_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"base_moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"temp_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"terrain_arr": TYPE_PACKED_BYTE_ARRAY,
-		"landform_arr": TYPE_PACKED_BYTE_ARRAY,
-		"vegetation_arr": TYPE_PACKED_BYTE_ARRAY,
-		"cover_arr": TYPE_PACKED_BYTE_ARRAY,
-		"vegetation_vitality_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"soil_moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"water_balance_30d_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"plant_available_water_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"vegetation_growth_pressure_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"vegetation_heat_stress_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"vegetation_drought_stress_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"vegetation_cold_stress_arr": TYPE_PACKED_FLOAT32_ARRAY,
-		"vegetation_regen_score_arr": TYPE_PACKED_FLOAT32_ARRAY,
-	}
-	for key in required.keys():
-		if not _native_generation_array_ok(res, key, n, int(required[key])):
-			push_warning("[native_generation/assemble] bad array %s" % key)
-			return null
-
-	var q_arr: PackedInt32Array = res["q_arr"]
-	var r_arr: PackedInt32Array = res["r_arr"]
-	var elevation_arr: PackedFloat32Array = res["elevation_arr"]
-	var moisture_arr: PackedFloat32Array = res["moisture_arr"]
-	var base_moisture_arr: PackedFloat32Array = res["base_moisture_arr"]
-	var temp_arr: PackedFloat32Array = res["temp_arr"]
-	var temp_baseline_arr: PackedFloat32Array = res["temp_baseline_arr"] if res.has("temp_baseline_arr") else temp_arr
-	var temp_30d_arr: PackedFloat32Array = res["temp_30d_arr"] if res.has("temp_30d_arr") else temp_arr
-	var temp_365d_arr: PackedFloat32Array = res["temp_365d_arr"] if res.has("temp_365d_arr") else temp_arr
-	var terrain_arr: PackedByteArray = res["terrain_arr"]
-	var base_terrain_arr: PackedByteArray = res["base_terrain_arr"] if res.has("base_terrain_arr") else terrain_arr
-	var landform_arr: PackedByteArray = res["landform_arr"]
-	var base_landform_arr: PackedByteArray = res["base_landform_arr"] if res.has("base_landform_arr") else landform_arr
-	var vegetation_arr: PackedByteArray = res["vegetation_arr"]
-	var base_vegetation_arr: PackedByteArray = res["base_vegetation_arr"] if res.has("base_vegetation_arr") else vegetation_arr
-	var cover_arr: PackedByteArray = res["cover_arr"]
-	var has_river_arr: PackedByteArray = res["has_river_arr"] if res.has("has_river_arr") else PackedByteArray()
-	var river_flow_arr: PackedFloat32Array = res["river_flow_arr"] if res.has("river_flow_arr") else PackedFloat32Array()
-	var river_downstream_arr: PackedInt32Array = res["river_downstream_arr"] if res.has("river_downstream_arr") else PackedInt32Array()
-	var hydro_parent_arr: PackedInt32Array = res["hydro_parent_arr"] if res.has("hydro_parent_arr") else PackedInt32Array()
-	var has_volcano_arr: PackedByteArray = res["has_volcano_arr"] if res.has("has_volcano_arr") else PackedByteArray()
-	var is_lake_seed_arr: PackedByteArray = res["is_lake_seed_arr"] if res.has("is_lake_seed_arr") else PackedByteArray()
-	var water_depth_arr: PackedFloat32Array = res["water_depth_arr"] if res.has("water_depth_arr") else PackedFloat32Array()
-	var map := MapData.new(cfg.width, cfg.height)
-	for i in range(n):
-		var cell := HexCell.new(int(q_arr[i]), int(r_arr[i]))
-		cell.elevation = float(elevation_arr[i])
-		cell.moisture = float(moisture_arr[i])
-		cell.base_moisture = float(base_moisture_arr[i])
-		cell.apply_terrain(int(terrain_arr[i]))
-		cell.base_terrain = int(base_terrain_arr[i]) if base_terrain_arr.size() == n else int(terrain_arr[i])
-		cell.landform = int(landform_arr[i])
-		cell.base_landform = int(base_landform_arr[i]) if base_landform_arr.size() == n else int(landform_arr[i])
-		cell.vegetation = int(vegetation_arr[i])
-		cell.base_vegetation = int(base_vegetation_arr[i]) if base_vegetation_arr.size() == n else int(vegetation_arr[i])
-		cell.cover = int(cover_arr[i])
-		cell.has_river = has_river_arr.size() == n and int(has_river_arr[i]) != 0
-		cell.river_flow = float(river_flow_arr[i]) if river_flow_arr.size() == n else (1.0 if cell.has_river else 0.0)
-		if river_downstream_arr.size() == n:
-			var downstream_idx: int = int(river_downstream_arr[i])
-			if downstream_idx >= 0 and downstream_idx < n:
-				cell.river_downstream = Vector3i(int(q_arr[downstream_idx]), int(r_arr[downstream_idx]), -int(q_arr[downstream_idx]) - int(r_arr[downstream_idx]))
-				cell.has_river_downstream = true
-		cell.has_volcano = has_volcano_arr.size() == n and int(has_volcano_arr[i]) != 0
-		cell.is_lake_seed = is_lake_seed_arr.size() == n and int(is_lake_seed_arr[i]) != 0
-		cell.water_depth = float(water_depth_arr[i]) if water_depth_arr.size() == n else 0.0
-		cell._temperature_backing = float(temp_arr[i])
-		cell._temp_baseline_backing = float(temp_baseline_arr[i])
-		cell._temp_30d_mean_backing = float(temp_30d_arr[i])
-		cell._temp_365d_mean_backing = float(temp_365d_arr[i])
-		cell._temp_dev_from_annual_backing = 0.0
-		cell._ema_initialized = true
-		cell.current_state = {
-			"season": 1,
-			"temperature": float(temp_arr[i]),
-			"moisture": cell.base_moisture,
-			"snow_cover": 0.0,
-			"biome": int(cell.terrain),
-			"landform": int(cell.landform),
-			"vegetation": int(cell.vegetation),
-			"cover": int(cell.cover),
-			"weather": int(WeatherType.WT.CLEAR),
-			"weather_intensity": 0.0,
-		}
-		map.set_cell(cell)
-	map.set_pending_generation_ecology({
-		"vegetation_vitality_arr": res["vegetation_vitality_arr"],
-		"soil_moisture_arr": res["soil_moisture_arr"],
-		"water_balance_30d_arr": res["water_balance_30d_arr"],
-		"plant_available_water_arr": res["plant_available_water_arr"],
-		"vegetation_growth_pressure_arr": res["vegetation_growth_pressure_arr"],
-		"vegetation_heat_stress_arr": res["vegetation_heat_stress_arr"],
-		"vegetation_drought_stress_arr": res["vegetation_drought_stress_arr"],
-		"vegetation_cold_stress_arr": res["vegetation_cold_stress_arr"],
-		"vegetation_regen_score_arr": res["vegetation_regen_score_arr"],
-	})
-	if hydro_parent_arr.size() == n:
-		map.hydro_parent_arr = hydro_parent_arr.duplicate()
-	return map
+## Legacy compatibility helper retained for migration comparison only.
+## Production native generation uses DCTerrainGenerator.assemble_native_result.
 
 
 # ─── 噪声初始化 ──────────────────────────────────────────────────────────
@@ -10140,7 +10016,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 		_climate_pass_b(map, season_phase)
 		t_pass_b_ms = (Time.get_ticks_usec() - t_pass_b_us0) / 1000.0
 
-	_daily_climate_call_count += 1
+	var climate_call_count: int = _diagnostics_bus.increment_climate_call_count()
 
 	# Ocean heat transport：水段 + 陆段（受主开关控）。
 	# 切片化路径会把这两段拆到独立 sub-tick；wrapper 保持串联调用以维持
@@ -10178,7 +10054,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 
 	# Daily-sim perf instrumentation：把 7 段子耗时缓存到生成器成员，
 	# 由 main.gd 的 fast tick 详细日志 / WARN 路径按需读取。
-	_last_climate_breakdown = {
+	var climate_breakdown: Dictionary = {
 		"pass_a_ms": t_pass_a_ms,
 		"pass_b_ms": t_pass_b_ms,
 		"ocean_ms": t_ocean_ms,
@@ -10190,7 +10066,8 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 		"cells": map.cell_count(),
 		"_tick_idx": _current_fast_tick_idx,
 	}
-	if _is_annual_log_tick(_daily_climate_call_count):
+	_diagnostics_bus.record_climate_breakdown(climate_breakdown)
+	if _is_annual_log_tick(climate_call_count):
 		# I1.A-1: wrapper 路径也补上 path=... 标识，与 sliced 路径输出格式对齐。
 		# 实际该路径在 SUS 接管后基本不触发（已走 ClimateDailySystem.sliced），
 		# 但保留对齐避免日志解析脚本分歧。
@@ -10201,7 +10078,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 			else:
 				_wrap_path = "data_core_cells_only"
 		print("refresh_climate_daily #%d: %dms (cells=%d, phase=%.3f) | A=%.1f B=%.1f ocean=%.1f wind=%.1f sea_ice=%.1f ice_bake=%.1f transp=%.1f path=%s" % [
-			_daily_climate_call_count,
+			climate_call_count,
 			Time.get_ticks_msec() - t0,
 			map.cell_count(),
 			season_phase,
@@ -10272,9 +10149,9 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 	# 之后按 WorldClock 年长节流）。诊断完成后整段删除。
 	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_climate_pass_a / use_data_core_climate
 	# flag 已删除——这里保留原原生 DIAG 输出格式不变，但打印常量 true。
-	if _daily_climate_call_count <= 3 or _is_annual_log_tick(_daily_climate_call_count):
+	if _diagnostics_bus.get_climate_call_count() <= 3 or _is_annual_log_tick(_diagnostics_bus.get_climate_call_count()):
 		print("[DIAG pass_a_entry] day=%d phase=%.3f gdext_pass_a=%s use_data_core_climate=%s use_soa_pipeline=%s use_sparse_climate=%s ext_bound=%s" % [
-			_daily_climate_call_count, season_phase,
+			_diagnostics_bus.get_climate_call_count(), season_phase,
 			"true",
 			"true",
 			str(bool(cp.use_soa_pipeline)),
@@ -10346,12 +10223,12 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 		# [DIAG mask_dirty=2400 排查 · 2026-05-20] C++ Pass-A 路径 rc + DCWorld dirty
 		# 即时观测：rc>=0 表示 C++ 接管并已 return；此处 peek 一次 dirty count 看 C++
 		# 端是否在 set() 推回 MapData 时也副作用 mark 到 DCWorld（理论上不会）。
-		if _daily_climate_call_count <= 3 or _is_annual_log_tick(_daily_climate_call_count):
+		if _diagnostics_bus.get_climate_call_count() <= 3 or _is_annual_log_tick(_diagnostics_bus.get_climate_call_count()):
 			var _dirty_after_cpp: int = -1
 			if _data_core_world != null and _data_core_world.has_method("peek_dirty_count"):
 				_dirty_after_cpp = int(_data_core_world.peek_dirty_count())
 			print("[DIAG pass_a_cpp] day=%d rc=%.4f cpp_taken_over=%s dirty_count_after_cpp=%d" % [
-				_daily_climate_call_count, rc, str(rc >= 0.0), _dirty_after_cpp
+				_diagnostics_bus.get_climate_call_count(), rc, str(rc >= 0.0), _dirty_after_cpp
 			])
 		if rc >= 0.0:
 			# C++ 路径已接管整段 Pass-A 并已通过 set() 把结果推回 MapData。
@@ -10979,17 +10856,18 @@ func _dump_sea_ice_breakdown_if_slow() -> void:
 #   stage_a/b 各段 / albedo / veg_dyn / cover_rebake / veg_rebake / feedback / fronts / path。
 # 节流到至少 30 fast tick 间隔一次。
 func _dump_weather_breakdown_if_slow() -> void:
-	if _last_weather_breakdown.is_empty():
+	var weather_breakdown: Dictionary = _diagnostics_bus.get_weather_breakdown()
+	if weather_breakdown.is_empty():
 		return
-	var total_wall: float = float(_last_weather_breakdown.get("weather_tick_ms", 0.0))
-	var cyclone_ms_v: float = float(_last_weather_breakdown.get("cyclone_ms", 0.0))
+	var total_wall: float = float(weather_breakdown.get("weather_tick_ms", 0.0))
+	var cyclone_ms_v: float = float(weather_breakdown.get("cyclone_ms", 0.0))
 	if total_wall < _WEATHER_SLOW_DUMP_TOTAL_THRESHOLD_MS \
 			and cyclone_ms_v < _WEATHER_SLOW_DUMP_CYCLONE_THRESHOLD_MS:
 		return
 	if _current_fast_tick_idx - _weather_slow_dump_last_tick < _WEATHER_SLOW_DUMP_MIN_INTERVAL:
 		return
 	_weather_slow_dump_last_tick = _current_fast_tick_idx
-	var b: Dictionary = _normalized_weather_breakdown(_last_weather_breakdown)
+	var b: Dictionary = _normalized_weather_breakdown(weather_breakdown)
 	print("[weather/slow-dump] tick=%d path=%s tick_ms=%.2f (adv=%.2f spawn=%.2f dist=%.2f cyc=%.2f stage_b=%.2f albedo=%.2f veg_dyn=%.2f feedback=%.2f cover_rb=%.2f veg_rb=%.2f) fronts=%d" % [
 		_current_fast_tick_idx,
 		str(b.get("path", "?")),
@@ -11917,7 +11795,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				print("[sea_ice/F.4] gdext path ACTIVE (dispatch=%s) — first run elapsed=%.2fms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)" % [_sea_ice_dispatch_path, rc])
 
 			# 节流打点（每个日历年长）
-			if _is_annual_log_tick(_daily_climate_call_count):
+			if _is_annual_log_tick(_diagnostics_bus.get_climate_call_count()):
 				print("_apply_sea_ice_daily_pass[F.4]: %.2fms (water=%d, flipped=%d, phase=%.3f)" % [
 					rc, water_count_cpp, flipped_count_cpp, season_phase
 				])
@@ -12203,7 +12081,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 	_gdext_ocean_anomaly_buf_cached = PackedFloat32Array()
 
 	# 节流打点（每个日历年长）
-	if _is_annual_log_tick(_daily_climate_call_count):
+	if _is_annual_log_tick(_diagnostics_bus.get_climate_call_count()):
 		print("_apply_sea_ice_daily_pass: %dms (water=%d, flipped=%d, phase=%.3f)" % [
 			Time.get_ticks_msec() - t0, water_count, flipped_count, season_phase
 		])
@@ -12928,12 +12806,12 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			_pa_last_total_cells = n
 
 	# [DIAG mask_dirty=2400 排查 · 2026-05-20] SoA Pass-A push 末尾路径 dump
-	if _daily_climate_call_count <= 3 or _is_annual_log_tick(_daily_climate_call_count):
+	if _diagnostics_bus.get_climate_call_count() <= 3 or _is_annual_log_tick(_diagnostics_bus.get_climate_call_count()):
 		var _dirty_after_pa: int = -1
 		if _data_core_world != null and _data_core_world.has_method("peek_dirty_count"):
 			_dirty_after_pa = int(_data_core_world.peek_dirty_count())
 		print("[DIAG pass_a_soa_end] day=%d use_sparse=%s dirty_mask_size=%d _pa_last_pushed=%d _pa_last_total=%d dc_dirty_count=%d" % [
-			_daily_climate_call_count, str(use_sparse), dirty_mask.size(),
+			_diagnostics_bus.get_climate_call_count(), str(use_sparse), dirty_mask.size(),
 			_pa_last_pushed_cells, _pa_last_total_cells, _dirty_after_pa,
 		])
 	# A.2.1.A2-fix — Pass A 完成：把本日全图 drift 写回 generator 成员，供下一日 epsilon 比对扣除。
@@ -13372,12 +13250,12 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			_pb_path_tag = "fallback_full"
 			_pb_dirty_count_local = n
 		# [DIAG mask_dirty=2400 排查 · 2026-05-20] Pass-B push 完成后路径 dump
-		if _daily_climate_call_count <= 3 or _is_annual_log_tick(_daily_climate_call_count):
+		if _diagnostics_bus.get_climate_call_count() <= 3 or _is_annual_log_tick(_diagnostics_bus.get_climate_call_count()):
 			var _dirty_after_pb: int = -1
 			if _data_core_world.has_method("peek_dirty_count"):
 				_dirty_after_pb = int(_data_core_world.peek_dirty_count())
 			print("[DIAG pass_b_push] day=%d path=%s use_sparse=%s mask_size=%d wrote=%d dc_dirty_count=%d" % [
-				_daily_climate_call_count, _pb_path_tag, str(_pb_use_sparse),
+				_diagnostics_bus.get_climate_call_count(), _pb_path_tag, str(_pb_use_sparse),
 				_pb_dirty_mask.size(), _pb_dirty_count_local, _dirty_after_pb,
 			])
 
@@ -14351,9 +14229,8 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 	# breakdown：weather_system 已经按 path="gdext_combined" + 各段 ms 装好；外部 perf
 	# overlay / SUS publish 直接读 _last_weather_breakdown 即可。
 	var br: Dictionary = res.get("breakdown", {})
-	_last_weather_breakdown = br.duplicate(true)
+	_diagnostics_bus.replace_weather_breakdown(br, _current_fast_tick_idx)
 	# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
-	_last_weather_breakdown["_tick_idx"] = _current_fast_tick_idx
 	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
 	_dump_weather_breakdown_if_slow()
 	# weather_round_tick_ms 用于 sliced 路径与本路径共享 perf 字段：取 advance+distribute+summary 段
@@ -14375,7 +14252,7 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 	var merged_succession_applied: int = _apply_vegetation_succession_candidates(
 		map, merged_succession_indices, merged_succession_to_vegetation, cp_now)
 	br["succession_applied_count"] = merged_succession_applied
-	_last_weather_breakdown["succession_applied_count"] = merged_succession_applied
+	_diagnostics_bus.merge_weather_breakdown({"succession_applied_count": merged_succession_applied})
 	if _baker != null:
 		if _weather_system.has_method("has_cover_dirty") and bool(_weather_system.has_cover_dirty()):
 			_mark_enum_atlas_dirty(true, false)
@@ -14399,11 +14276,11 @@ func weather_native_daily_readiness_report() -> Dictionary:
 		"has_knobs_builder": false,
 		"has_result_apply": false,
 		"has_weather_lut_publish": has_method("publish_weather_lut_after_weather_commit"),
-		"field_commit_path": str(_last_weather_breakdown.get("field_commit_path", "")),
-		"field_commit_publish_verified": bool(_last_weather_breakdown.get("field_commit_publish_verified", false)),
-		"field_commit_publish_repaired": bool(_last_weather_breakdown.get("field_commit_publish_repaired", false)),
-		"field_commit_init_count": int(_last_weather_breakdown.get("field_commit_init_count", 0)),
-		"field_commit_publish_reason": str(_last_weather_breakdown.get("field_commit_publish_reason", "")),
+		"field_commit_path": str(_diagnostics_bus.get_weather_breakdown().get("field_commit_path", "")),
+		"field_commit_publish_verified": bool(_diagnostics_bus.get_weather_breakdown().get("field_commit_publish_verified", false)),
+		"field_commit_publish_repaired": bool(_diagnostics_bus.get_weather_breakdown().get("field_commit_publish_repaired", false)),
+		"field_commit_init_count": int(_diagnostics_bus.get_weather_breakdown().get("field_commit_init_count", 0)),
+		"field_commit_publish_reason": str(_diagnostics_bus.get_weather_breakdown().get("field_commit_publish_reason", "")),
 	}
 	if _data_core_world_ext != null:
 		report["has_combined_method"] = _data_core_world_ext.has_method("run_weather_refresh_daily_pass")
@@ -14521,7 +14398,7 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 	var cursor_start: int = int(result.get("cursor_start", -1))
 	var cursor_end: int = int(result.get("cursor_end", -1))
 	var sub: Dictionary = _weather_system.last_breakdown() if _weather_system.has_method("last_breakdown") else {}
-	_last_weather_breakdown = {
+	var weather_breakdown: Dictionary = {
 		"weather_tick_ms": elapsed_ms,
 		"advance_ms": elapsed_ms,
 		"spawn_ms": 0.0,
@@ -14558,6 +14435,7 @@ func run_weather_refresh_stage_a_slice(cell_budget: int) -> Dictionary:
 		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
 		"_tick_idx": _current_fast_tick_idx,
 	}
+	_diagnostics_bus.replace_weather_breakdown(weather_breakdown, _current_fast_tick_idx)
 	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
 	_dump_weather_breakdown_if_slow()
 	return result
@@ -14572,7 +14450,7 @@ func commit_weather_refresh_stage_a(map: MapData, world: WorldData) -> Array[Wea
 	var sub: Dictionary = _weather_system.last_breakdown() if _weather_system.has_method("last_breakdown") else {}
 	_weather_round_tick_ms = float(sub.get("weather_tick_ms", sub.get("field_solve_ms", 0.0)))
 	if not sub.is_empty():
-		var merged: Dictionary = _last_weather_breakdown.duplicate(true)
+		var merged: Dictionary = _diagnostics_bus.get_weather_breakdown()
 		merged.merge(sub, true)
 		merged["weather_tick_ms"] = _weather_round_tick_ms
 		merged["weather_field_bake_ms"] = float(merged.get("weather_field_bake_ms", 0.0))
@@ -14585,7 +14463,7 @@ func commit_weather_refresh_stage_a(map: MapData, world: WorldData) -> Array[Wea
 		merged["total_ms"] = (Time.get_ticks_usec() - _weather_round_t0_us) / 1000.0
 		merged["fronts"] = fronts.size()
 		merged["_tick_idx"] = _current_fast_tick_idx
-		_last_weather_breakdown = merged
+		_diagnostics_bus.replace_weather_breakdown(merged, _current_fast_tick_idx)
 	_last_active_fronts = fronts
 	_weather_round_fronts = fronts
 	return fronts
@@ -14683,19 +14561,21 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 	res["substage"] = "route_full"
 	res["refresh_ms"] = refresh_ms
 	res["path"] = str(res.get("path", "gdext"))
-	_last_weather_breakdown["hydrology_discharge_ms"] = elapsed_ms
-	_last_weather_breakdown["hydrology_native_ms"] = float(res.get("native_ms", 0.0))
-	_last_weather_breakdown["hydrology_compute_ms"] = float(res.get("compute_ms", 0.0))
-	_last_weather_breakdown["hydrology_flush_ms"] = float(res.get("flush_ms", 0.0))
-	_last_weather_breakdown["hydrology_refresh_ms"] = refresh_ms
-	_last_weather_breakdown["hydrology_water_budget_error"] = float(res.get("water_budget_error", 0.0))
-	_last_weather_breakdown["hydrology_river_discharge_p95"] = float(res.get("river_discharge_p95", 0.0))
-	_last_weather_breakdown["hydrology_river_discharge_max"] = float(res.get("river_discharge_max", 0.0))
-	_last_weather_breakdown["hydrology_riparian_neighbor_touches"] = int(res.get("riparian_neighbor_touches", 0))
-	_last_weather_breakdown["hydrology_moisture_response_alpha"] = float(res.get("moisture_response_alpha", 0.0))
-	_last_weather_breakdown["hydrology_river_moisture_max_delta"] = float(res.get("river_moisture_max_delta", 0.0))
-	_last_weather_breakdown["hydrology_riparian_moisture_max_delta"] = float(res.get("riparian_moisture_max_delta", 0.0))
-	_last_weather_breakdown["hydrology_flood_count"] = int(res.get("flood_count", res.get("flood_candidate_count", 0)))
+	_diagnostics_bus.merge_weather_breakdown({
+		"hydrology_discharge_ms": elapsed_ms,
+		"hydrology_native_ms": float(res.get("native_ms", 0.0)),
+		"hydrology_compute_ms": float(res.get("compute_ms", 0.0)),
+		"hydrology_flush_ms": float(res.get("flush_ms", 0.0)),
+		"hydrology_refresh_ms": refresh_ms,
+		"hydrology_water_budget_error": float(res.get("water_budget_error", 0.0)),
+		"hydrology_river_discharge_p95": float(res.get("river_discharge_p95", 0.0)),
+		"hydrology_river_discharge_max": float(res.get("river_discharge_max", 0.0)),
+		"hydrology_riparian_neighbor_touches": int(res.get("riparian_neighbor_touches", 0)),
+		"hydrology_moisture_response_alpha": float(res.get("moisture_response_alpha", 0.0)),
+		"hydrology_river_moisture_max_delta": float(res.get("river_moisture_max_delta", 0.0)),
+		"hydrology_riparian_moisture_max_delta": float(res.get("riparian_moisture_max_delta", 0.0)),
+		"hydrology_flood_count": int(res.get("flood_count", res.get("flood_candidate_count", 0))),
+	})
 	return res
 
 
@@ -15034,7 +14914,7 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 	var sub: Dictionary = {}
 	if _weather_system.has_method("last_breakdown"):
 		sub = _weather_system.last_breakdown()
-	_last_weather_breakdown = {
+	var weather_breakdown: Dictionary = {
 		"weather_tick_ms": _weather_round_tick_ms,
 		"advance_ms": float(sub.get("advance_ms", 0.0)),
 		"spawn_ms": float(sub.get("spawn_ms", 0.0)),
@@ -15088,6 +14968,7 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 		# 方案 ④ Step 1：标记本帧 fast tick，perf_recorder 据此过滤 stale 回放
 		"_tick_idx": _current_fast_tick_idx,
 	}
+	_diagnostics_bus.replace_weather_breakdown(weather_breakdown, _current_fast_tick_idx)
 	# 5/21 突刺诊断：weather_tick≥5ms 或 cyclone≥3ms 时打全字段
 	_dump_weather_breakdown_if_slow()
 

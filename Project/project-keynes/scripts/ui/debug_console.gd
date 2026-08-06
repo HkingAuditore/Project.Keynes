@@ -61,6 +61,7 @@ var _gm_history_cursor := 0
 var _gm_output_lines: Array = []
 var _gm_toggle_container: VBoxContainer
 var _gm_toggle_buttons: Dictionary = {}
+var _gm_action_buttons: Dictionary = {}
 var _gm_record_status_labels: Dictionary = {}
 var _gm_local_toggle_getter: Callable
 var _gm_local_toggle_setter: Callable
@@ -558,6 +559,7 @@ func _rebuild_gm_toggle_controls(toggles: Array) -> void:
 		_gm_toggle_container.remove_child(child)
 		child.queue_free()
 	_gm_toggle_buttons.clear()
+	_gm_action_buttons.clear()
 	var last_group := ""
 	for raw in toggles:
 		var spec: Dictionary = raw
@@ -566,12 +568,55 @@ func _rebuild_gm_toggle_controls(toggles: Array) -> void:
 			var header := _make_section_header(group)
 			_gm_toggle_container.add_child(header)
 			last_group = group
+		var control_kind := String(spec.get("kind", "toggle"))
+		if control_kind == "button":
+			_add_gm_capability_action_row(spec)
+			continue
 		var toggle := CheckBox.new()
 		var toggle_id := String(spec.get("id", ""))
 		toggle.text = String(spec.get("label", toggle_id))
 		toggle.toggled.connect(_on_gm_toggle_changed.bind(toggle_id))
 		_gm_toggle_container.add_child(toggle)
 		_gm_toggle_buttons[toggle_id] = toggle
+
+
+func _add_gm_capability_action_row(spec: Dictionary) -> void:
+	var action_id := String(spec.get("id", ""))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(38.0, 34.0)
+	button.tooltip_text = String(spec.get("tooltip", spec.get("label", action_id)))
+	IconButton.apply(button, StringName(spec.get("icon", &"summary.overview")), 15)
+	button.pressed.connect(_on_gm_capability_action_pressed.bind(action_id))
+	row.add_child(button)
+	var label := Label.new()
+	label.text = String(spec.get("label", action_id))
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(label)
+	_gm_toggle_container.add_child(row)
+	_gm_action_buttons[action_id] = button
+
+
+func _on_gm_capability_action_pressed(action_id: String) -> void:
+	if action_id != "diagnostics.dump_flow_tex_report":
+		_append_gm_output("未知诊断动作：%s" % action_id, true)
+		return
+	if _main == null or not _main.has_method("dump_flow_tex_report"):
+		_append_gm_output("当前运行时不支持 FlowTex 完整诊断", true)
+		return
+	_append_gm_output("FlowTex：正在采集 CPU、材质与 GPU 诊断帧…", false)
+	# 隐藏 GM 面板，避免它覆盖 debug view 的位条和灰阶采样区域。
+	var was_visible := visible
+	visible = false
+	var result = await _main.call("dump_flow_tex_report")
+	visible = was_visible
+	if result is Dictionary:
+		_append_gm_output(String(result.get("message", "FlowTex 诊断完成")),
+			not bool(result.get("ok", false)))
+	else:
+		_append_gm_output("FlowTex 诊断完成，详情见控制台日志", false)
 
 
 func _add_gm_atlas_probe_recorder_row(parent: Control) -> void:

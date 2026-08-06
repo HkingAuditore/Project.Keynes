@@ -1558,3 +1558,33 @@ legacy path, never a mixed array/single-texture material.
 Performance gates and the memory model are maintained in
 [Visual Tile Rendering](./visual-tile-rendering.md). Headless Dummy rendering cannot prove
 shader compilation, GPU p95, visual seams or device memory limits.
+
+## FlowTex Web diagnostics
+
+Use the GM diagnostics action `输出 FlowTex 完整诊断（CPU/材质/sampler/GPU）` for a one-shot
+report. It prints `[flow-tex-report]` sections to stdout/the browser console and briefly
+captures the existing terrain debug views 14, 16, and 17 before restoring the previous view.
+The action is intentionally outside the daily scheduler and may perform one viewport
+readback; do not call it from a tick or per-frame callback.
+
+Interpret the sections in this order:
+
+- `buffer` and `encode`: `flow_buffer` dimensions/statistics, native/GDScript path, byte
+  distribution, and Compatibility upload widening (`RG8_expanded`). `hi_frac≈1` here means
+  the bad value was already produced before the GPU boundary.
+- `textures`: world/tiled texture descriptors, material descriptors, object identity, format,
+  RID, dimensions, and `has_flow_tex`. In tiled mode, `visual_flow_tiles` is authoritative;
+  a null legacy `flow_tex` is expected.
+- `shader` and `samplers`: active shader source/variant, `MAP_VISUAL_TILED`,
+  `PK_WEB_TEXTURE_BUDGET`, and every object uniform with its bound texture. Compatibility/WebGL2
+  must keep the material sampler set within the eight slots available after Godot Canvas
+  reserved units; a missing budget define or more than eight samplers is a binding risk.
+- `gpu_texture_size_view16`: the Shader-side `textureSize()` decoded from the viewport. A
+  `4×4` result indicates the engine default texture rather than the expected flow texture.
+  `gpu_texel_view17` uses `texelFetch` to bypass filtering/wrap; if it is normal while view 14
+  is wrong, investigate UV/filter state instead of generation.
+
+The GPU summaries are viewport observations, not a replacement for CPU texture metadata:
+WebGL2 has no shader printf, and arbitrary texture readback is backend-dependent. Always keep
+the captured `gpu_texture_size_view16` and the browser WebGL shader/link console output with
+the report.

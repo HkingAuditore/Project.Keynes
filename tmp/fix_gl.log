@@ -1,0 +1,544 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+OpenGL API 3.3.0 NVIDIA 610.74 - Compatibility - Using Device: NVIDIA - NVIDIA GeForce RTX 4080
+
+[backend-probe] driver=3.3.0 NVIDIA 610.74 adapter=NVIDIA GeForce RTX 4080
+[hex_renderer/variant] tiled=false quality= web_texture_budget=true shader=res://shaders/world_map.gdshader
+Godot_v4.6.2-stable_win64_console.exe : ERROR: OverlayLegend 蹇呴』閫氳繃 map_overlay_legend.tscn 瀹炰緥鍖栥€?
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-839613f2-3e1b-4b6a-a00f-fe20949afa28.ps1:90 字符: 1
++ & "D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_c ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: OverlayL...nd.tscn 瀹炰緥鍖栥€?:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://scripts/ui/overlay_legend.gd:113)
+[detail_scatter/DRAIN_CFG] budget_ms=2.50 chunks_per_frame=4 plan_items=16 cells_per_batch=32 chunk_size=16
+[clock/step] delta=142.8ms speed=1x target=0.14d ran=0 pulse=0.00ms loop=0.00ms full=0.01ms carry=0.14
+SCRIPT ERROR: Invalid assignment of property or key 'visible' with value of type 'bool' on a base object of type 'null 
+instance'.
+   at: OverlayLegend.clear_pointer (res://scripts/ui/overlay_legend.gd:220)
+   GDScript backtrace (most recent call first):
+       [0] clear_pointer (res://scripts/ui/overlay_legend.gd:220)
+       [1] _clear_selection (res://scripts/main.gd:2795)
+       [2] _generate_and_render (res://scripts/main.gd:2250)
+       [3] _ready (res://scripts/main.gd:528)
+[WorldSetup] ClimateProfile path=res://data/world/earth_like.tres mobile=false split_weather=true wind_period=6 native_stride=10 native_budget=10 natres_stride=5 dyn_visual_stride=4 weather_advect_steps=4
+[splash] bake stage=preparing fraction=0.03
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=7.557 water=1210 land=1190
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.793 lakes=0 rivers=209 volcanoes=2
+[native_generation/vegetation] native_ms=0.709 candidates=1173 none=976 score=[0.006,1.002,1.146] plant_water_land=1190 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=2 largest=1004 | land_below_sea=0.0% | terr_distinct=23 entropy=3.423bit | river_ratio=8.708%
+MapGenerator v7: per-cell 63ms (2400 cells, path=gdext_base)
+[splash] bake stage=continents fraction=0.28
+[splash] bake stage=climate fraction=0.40
+MapBaker v6: hm=(1024, 606) seed=135998585
+[splash] bake stage=terrain fraction=0.44
+    [fused] terrain=71.8ms erosion=2.0ms(ok=true) river=15.0ms(ok=true) latitude=0.1ms coast_sdf=4.4ms(ok=true)
+  geometry fields (fused C++): 156ms
+[splash] bake stage=physical fraction=0.71
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[splash] bake stage=atlas fraction=0.80
+[splash] bake stage=encode fraction=0.83
+[splash] bake stage=encode fraction=0.84
+[splash] bake stage=encode fraction=0.85
+  visual tiles: legacy (compatibility_renderer)
+[splash] bake stage=encode fraction=0.86
+WARNING: [terrain-material-tiles] disabled (compatibility_renderer)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] bake_world (res://scripts/rendering/map_baker.gd:1137)
+       [1] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1169)
+[splash] bake stage=encode fraction=0.87
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 2520ms
+MapBaker v6: total 2684ms
+[splash] bake stage=encode fraction=0.88
+MapGenerator v7: bake 2710ms
+[splash] bake stage=ecology fraction=0.90
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[splash] bake stage=simulation fraction=0.96
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 143 components bound (auto-registered=143; snapshot model; see world_ext.cpp comment & charter 脗搂11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.143 compute_ms=0.103 flush_ms=0.039
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.97ms wind=0.35ms psi=0.29ms(ran=true) upwelling=0.07ms total=2.15ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 2ms path=gdext
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=121 cohorts=0 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=none founder_families=0 founder_people=0
+[country] ACTIVE native authority countries=1 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE 鈥?first to_*_knobs_dict hit (field_rebuild_count=1 expected 鈮?; stable Hz target 鈮? Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "modifier_daily", "natural_resource_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[splash] bake stage=done fraction=1.00
+[main] view adapter rebuilt: kind=World | DCViewAdapter.World(n=2400, components=142, src=map_data)
+[hex_renderer/variant] tiled=false quality= web_texture_budget=true shader=res://shaders/world_map.gdshader
+[terrain_horizon] GPU bake start: hm_size=(1024, 606) params={ "steps": 1024, "step_px": 2.0, "step_growth": 0.35, "lowpass_radius": 1, "max_horizon_angle": 1.309, "bias": 0.01, "height_world_scale": 352.0, "sea_level": 0.42, "texel_x": 2.33726525306702, "texel_y": 2.34158415841584, "wrap_period_x": 2286.30706599092 }
+[detail_scatter/REBUILD] reason=renderer_rebuild layers=20 total_rebuild_ms=1431.98 total_inst=10548 total_cand=10548 budget={ "total_instances": 8844, "budget": 70000, "visible_fraction": 1.0, "applied_visible_fraction": 1.0, "budget_apply_fraction": 1.0, "budget_apply_active": false, "budget_apply_cursor": 0, "budget_apply_count": 36, "budget_apply_skip_count": 0, "budget_apply_last_ms": 1.944, "budget_apply_ms_total": 2.556, "budget_total_scan_count": 2, "budget_total_scan_ms": 0.014, "budget_total_dirty": false, "layer_count": 20 }
+  [detail_scatter/TOP1] name=GrassLayer rebuild=121.40ms path=gdext_chunked inst=2369 cand=2369 wrap=0 reason=
+  [detail_scatter/TOP2] name=ShrubLayer2 rebuild=114.22ms path=gdext_chunked inst=5624 cand=5624 wrap=0 reason=
+  [detail_scatter/TOP3] name=TreeLayer7 rebuild=98.89ms path=gdext_chunked inst=356 cand=356 wrap=0 reason=
+  [detail_scatter/TOP4] name=GrassLayer1 rebuild=86.74ms path=gdext_chunked inst=913 cand=913 wrap=0 reason=
+  [detail_scatter/TOP5] name=DetailLayer8 rebuild=85.69ms path=gdext_chunked inst=169 cand=169 wrap=0 reason=
+  [detail_scatter/VIS] { "name": &"GrassLayer", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 2369, "chunk_nodes": 11, "chunk_nodes_visible": 11, "chunk_mm_valid": 11, "chunk_mesh_valid": 11, "chunk_visible_sum": 2088, "chunk_inst_sum": 2369, "origin_samples": [{ "pos": (254.7425, 81.89598), "uv": (0.124817, 0.088684) }, { "pos": (309.5863, 85.65672), "uv": (0.147705, 0.09137) }, { "pos": (359.1824, 61.19871), "uv": (0.168457, 0.074097) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 11, "chunk_material_shared": 11, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"GrassLayer1", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 913, "chunk_nodes": 11, "chunk_nodes_visible": 11, "chunk_mm_valid": 11, "chunk_mesh_valid": 11, "chunk_visible_sum": 839, "chunk_inst_sum": 913, "origin_samples": [{ "pos": (340.5569, 52.57583), "uv": (0.160645, 0.068054) }, { "pos": (369.9834, 57.52475), "uv": (0.172852, 0.071533) }, { "pos": (177.5681, 92.87477), "uv": (0.092529, 0.096436) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 11, "chunk_material_shared": 11, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"ShrubLayer2", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.6835938023869, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 5624, "chunk_nodes": 11, "chunk_nodes_visible": 11, "chunk_mm_valid": 11, "chunk_mesh_valid": 11, "chunk_visible_sum": 5074, "chunk_inst_sum": 5624, "origin_samples": [{ "pos": (322.5364, 73.84468), "uv": (0.153076, 0.083008) }, { "pos": (359.2714, 61.48664), "uv": (0.168457, 0.07428) }, { "pos": (387.5179, 51.80124), "uv": (0.180298, 0.067505) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 11, "chunk_material_shared": 11, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer3", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.6835938023869, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 101, "chunk_nodes": 10, "chunk_nodes_visible": 10, "chunk_mm_valid": 10, "chunk_mesh_valid": 10, "chunk_visible_sum": 96, "chunk_inst_sum": 101, "origin_samples": [{ "pos": (390.5654, 274.8065), "uv": (0.181519, 0.224609) }, { "pos": (564.2216, 314.292), "uv": (0.253906, 0.252441) }, { "pos": (313.5833, 359.7785), "uv": (0.149292, 0.284424) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 10, "chunk_material_shared": 10, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer4", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.6835938023869, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 177, "chunk_nodes": 10, "chunk_nodes_visible": 10, "chunk_mm_valid": 10, "chunk_mesh_valid": 10, "chunk_visible_sum": 168, "chunk_inst_sum": 177, "origin_samples": [{ "pos": (475.1099, 117.1621), "uv": (0.216797, 0.113525) }, { "pos": (503.4672, 145.1289), "uv": (0.228638, 0.133179) }, { "pos": (375.7625, 189.3765), "uv": (0.175293, 0.164429) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 10, "chunk_material_shared": 10, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer5", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 58, "chunk_nodes": 8, "chunk_nodes_visible": 8, "chunk_mm_valid": 8, "chunk_mesh_valid": 8, "chunk_visible_sum": 58, "chunk_inst_sum": 58, "origin_samples": [{ "pos": (222.0977, 150.2067), "uv": (0.111145, 0.136841) }, { "pos": (395.2844, 156.7794), "uv": (0.183472, 0.141479) }, { "pos": (448.0623, 191.3973), "uv": (0.205566, 0.165771) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 8, "chunk_material_shared": 8, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer6", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.6835938023869, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 23, "chunk_nodes": 4, "chunk_nodes_visible": 4, "chunk_mm_valid": 4, "chunk_mesh_valid": 4, "chunk_visible_sum": 23, "chunk_inst_sum": 23, "origin_samples": [{ "pos": (896.1395, 399.3435), "uv": (0.392578, 0.312256) }, { "pos": (962.0847, 414.2564), "uv": (0.420166, 0.322754) }, { "pos": (990.4946, 439.9877), "uv": (0.432129, 0.341064) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 4, "chunk_material_shared": 4, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"TreeLayer7", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 356, "chunk_nodes": 9, "chunk_nodes_visible": 9, "chunk_mm_valid": 9, "chunk_mesh_valid": 9, "chunk_visible_sum": 356, "chunk_inst_sum": 356, "origin_samples": [{ "pos": (905.077, 87.69181), "uv": (0.396484, 0.092773) }, { "pos": (823.111, 110.7623), "uv": (0.362061, 0.109009) }, { "pos": (873.3029, 99.4794), "uv": (0.383057, 0.101074) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 9, "chunk_material_shared": 9, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer8", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 169, "chunk_nodes": 7, "chunk_nodes_visible": 7, "chunk_mm_valid": 7, "chunk_mesh_valid": 7, "chunk_visible_sum": 169, "chunk_inst_sum": 169, "origin_samples": [{ "pos": (696.8615, 68.14506), "uv": (0.309326, 0.078979) }, { "pos": (904.877, 87.94637), "uv": (0.39624, 0.092957) }, { "pos": (755.9402, 106.9449), "uv": (0.334229, 0.106323) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 7, "chunk_material_shared": 7, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"TreeLayer9", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 63, "chunk_nodes": 6, "chunk_nodes_visible": 6, "chunk_mm_valid": 6, "chunk_mesh_valid": 6, "chunk_visible_sum": 63, "chunk_inst_sum": 63, "origin_samples": [{ "pos": (904.877, 87.94637), "uv": (0.39624, 0.092957) }, { "pos": (980.1921, 106.6045), "uv": (0.427734, 0.106079) }, { "pos": (957.2847, 139.3619), "uv": (0.418213, 0.12915) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 6, "chunk_material_shared": 6, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"TreeLayer10", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 108, "chunk_nodes": 10, "chunk_nodes_visible": 10, "chunk_mm_valid": 10, "chunk_mesh_valid": 10, "chunk_visible_sum": 108, "chunk_inst_sum": 108, "origin_samples": [{ "pos": (904.877, 87.94637), "uv": (0.39624, 0.092957) }, { "pos": (873.2723, 99.48405), "uv": (0.383057, 0.101074) }, { "pos": (1011.556, 131.8756), "uv": (0.440918, 0.123901) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 10, "chunk_material_shared": 10, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer11", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 31, "chunk_nodes": 4, "chunk_nodes_visible": 4, "chunk_mm_valid": 4, "chunk_mesh_valid": 4, "chunk_visible_sum": 31, "chunk_inst_sum": 31, "origin_samples": [{ "pos": (1858.129, 393.0093), "uv": (0.794434, 0.307861) }, { "pos": (1870.925, 406.9362), "uv": (0.799805, 0.317627) }, { "pos": (1855.333, 416.3203), "uv": (0.793457, 0.324219) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 4, "chunk_material_shared": 4, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer12", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 1, "chunk_nodes": 1, "chunk_nodes_visible": 1, "chunk_mm_valid": 1, "chunk_mesh_valid": 1, "chunk_visible_sum": 1, "chunk_inst_sum": 1, "origin_samples": [{ "pos": (323.3701, 1201.902), "uv": (0.153442, 0.87793) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 1, "chunk_material_shared": 1, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer13", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 2, "chunk_nodes": 1, "chunk_nodes_visible": 1, "chunk_mm_valid": 1, "chunk_mesh_valid": 1, "chunk_visible_sum": 2, "chunk_inst_sum": 2, "origin_samples": [{ "pos": (1011.556, 131.8756), "uv": (0.440918, 0.123901) }, { "pos": (1073.097, 171.1887), "uv": (0.466553, 0.151611) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 1, "chunk_material_shared": 1, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer14", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.15625008381905, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 179, "chunk_nodes": 10, "chunk_nodes_visible": 10, "chunk_mm_valid": 10, "chunk_mesh_valid": 10, "chunk_visible_sum": 176, "chunk_inst_sum": 179, "origin_samples": [{ "pos": (217.1316, 80.2971), "uv": (0.10907, 0.087585) }, { "pos": (409.9015, 96.34917), "uv": (0.189575, 0.098877) }, { "pos": (381.8021, 149.3745), "uv": (0.177856, 0.13623) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 10, "chunk_material_shared": 10, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer15", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.15625008381905, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 38, "chunk_nodes": 8, "chunk_nodes_visible": 8, "chunk_mm_valid": 8, "chunk_mesh_valid": 8, "chunk_visible_sum": 38, "chunk_inst_sum": 38, "origin_samples": [{ "pos": (298.4942, 88.50787), "uv": (0.143066, 0.093323) }, { "pos": (323.1461, 109.4008), "uv": (0.15332, 0.108093) }, { "pos": (571.7836, 243.4258), "uv": (0.25708, 0.202515) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 8, "chunk_material_shared": 8, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer16", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 238, "chunk_nodes": 5, "chunk_nodes_visible": 5, "chunk_mm_valid": 5, "chunk_mesh_valid": 5, "chunk_visible_sum": 207, "chunk_inst_sum": 238, "origin_samples": [{ "pos": (696.8615, 68.14506), "uv": (0.309326, 0.078979) }, { "pos": (706.7215, 94.31059), "uv": (0.313477, 0.097412) }, { "pos": (638.5862, 139.6421), "uv": (0.285156, 0.129395) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 5, "chunk_material_shared": 5, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer17", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 1.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 7, "chunk_nodes": 5, "chunk_nodes_visible": 5, "chunk_mm_valid": 5, "chunk_mesh_valid": 5, "chunk_visible_sum": 7, "chunk_inst_sum": 7, "origin_samples": [{ "pos": (369.9834, 57.52475), "uv": (0.172852, 0.071533) }, { "pos": (1011.556, 131.8756), "uv": (0.440918, 0.123901) }, { "pos": (1114.327, 830.0336), "uv": (0.483887, 0.615723) }], "spawn_domain": 0, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 5, "chunk_material_shared": 5, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer18", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 68, "chunk_nodes": 8, "chunk_nodes_visible": 8, "chunk_mm_valid": 8, "chunk_mesh_valid": 8, "chunk_visible_sum": 68, "chunk_inst_sum": 68, "origin_samples": [{ "pos": (265.571, 219.2434), "uv": (0.129272, 0.185425) }, { "pos": (304.4514, 198.0944), "uv": (0.145508, 0.170532) }, { "pos": (343.1762, 188.9505), "uv": (0.161743, 0.164063) }], "spawn_domain": 1, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 8, "chunk_material_shared": 8, "chunk_material_other": 0 } }
+  [detail_scatter/VIS] { "name": &"DetailLayer19", "in_tree": true, "layer_visible": true, "profile_enabled": true, "camera_lod_hidden": false, "shadow_fraction": 1.0, "lod_zoom_t": 0.0, "lod_alpha": 1.0, "camera_zoom": 1.0, "instance_count": 23, "chunk_nodes": 6, "chunk_nodes_visible": 6, "chunk_mm_valid": 6, "chunk_mesh_valid": 6, "chunk_visible_sum": 23, "chunk_inst_sum": 23, "origin_samples": [{ "pos": (281.9011, 312.0826), "uv": (0.136108, 0.250732) }, { "pos": (2072.491, 463.7504), "uv": (0.884277, 0.357666) }, { "pos": (2129.286, 496.1825), "uv": (0.907715, 0.380615) }], "spawn_domain": 1, "cid_probe": [], "chunk_material_probe": { "tiled_active": false, "base_shader_tiled": false, "map_index_param": true, "grid_size_param": "", "interior_param": "", "domain_origin_param": "", "world_size_param": "(2393.36, 1419.0)", "wrap_param": 2286.30706599092, "chunk_count": 6, "chunk_material_shared": 6, "chunk_material_other": 0 } }
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[DIAG pass_a_entry] day=0 phase=0.009 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=2400
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true锛圕++ 浼氳窇 full path 绛変环缁撴灉锛屼笉闃绘锛?
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=14400, got nb_size=14400)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK 鈫?will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15150
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true锛堜粎浣滆瘖鏂級
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.2070 n_cells=2400 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) 鈥?first run elapsed=0.21ms (legacy GDScript baseline 鈮?5.2ms; charter 搂7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=2400 nb=14400)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK 鈫?will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15141
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true锛堜粎浣滆瘖鏂級
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.1519 n=2400 advect=3
+[ocean_water/F.2a] gdext path ACTIVE 鈥?first run elapsed=0.15ms (legacy GDScript baseline 鈮?3.4ms; charter 搂7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=2400 nb=14400)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK 鈫?will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15142
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true锛堜粎浣滆瘖鏂級
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0473 n=2400 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE 鈥?first run elapsed=0.05ms (legacy GDScript baseline 鈮?3.4ms; charter 搂7 target < 0.5ms)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+  verdict = OK 鈫?will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15153
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true锛堜粎浣滆瘖鏂紝涓嶉樆姝笅鏂?C++ 璋冪敤锛?
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0545 n_cells=2400 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) 鈥?first run elapsed=0.05ms (legacy GDScript baseline 鈮?5.1ms; charter 搂7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.05ms (water=1210, flipped=0, phase=0.009)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.991 avg=0.495 | water n=1210 t_min_w=0.000 below_form=320 (26.4%) | SIF pos=316 max=0.400 avg_w=0.0706 near_thr=120 | climate_anom=0.000
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+  verdict = OK 鈫?will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15155
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true锛堜粎浣滆瘖鏂紝涓嶉樆姝笅鏂?C++ 璋冪敤锛?
+[transp/F.5] DEBUG call#1: rc=0.0361 donor_table.size()=28 n_cells=2400 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE 鈥?first run elapsed=0.04ms (legacy GDScript baseline 鈮?3.2ms; charter 搂7 target < 0.3ms)
+refresh_climate_daily #1: 109ms (cells=2400, phase=0.009) | A=2.9 B=3.5 ocean=6.4 wind=90.1 sea_ice=3.0 ice_bake=0.0 transp=2.1 path=data_core_cells_only
+=== World baked in 4237ms ===
+  OCEAN: 597
+  COAST: 447
+  TUNDRA: 182
+  FLOODPLAIN: 278
+  DELTA: 19
+  TAIGA: 100
+  STEPPE: 58
+  KELP: 61
+  GLACIER: 17
+  FOREST: 259
+  SWAMP: 44
+  GRASSLAND: 34
+  CHAPARRAL: 15
+  OASIS: 7
+  MOUNTAIN: 17
+  BADLANDS: 40
+  DESERT: 40
+  REEF: 105
+  MESA: 4
+  SAVANNA: 41
+  JUNGLE: 31
+  MANGROVE: 2
+  MOOR: 2
+[DOTS-Final-Push] (no profile bound)
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+WARNING: [demo_thermal_gradient] pass skipped 鈥?disabled (ClimateProfile.demo_thermal_gradient_enabled=false or no _c()
+)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _demo_tg_diag_once (res://scripts/main.gd:2907)
+       [1] _run_demo_thermal_gradient_pass_if_enabled (res://scripts/main.gd:2922)
+       [2] _on_day_changed (res://scripts/main.gd:1454)
+       [3] _advance_one_sim_day (res://scripts/geography/world_clock.gd:163)
+       [4] _process (res://scripts/geography/world_clock.gd:221)
+fast tick #1: 6ms (sus=6.39 render=0.02 ui=0.00 skipped_day=false)
+[weather-layer][lut] #1 update_usec=8448240 last_usec=8448240 lerp=0.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #2 update_usec=8448240 last_usec=8448240 lerp=0.344 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[terrain_horizon] GPU readback 1024x606 fmt=5 mid(rgba*255)=[231,0,91,207] q=[48,0,2,137]
+[terrain_horizon] GPU bake applied to main shader=true (strength=0.80)
+[weather-layer][lut] #3 update_usec=8448240 last_usec=8448240 lerp=0.371 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #4 update_usec=8448240 last_usec=8448240 lerp=0.378 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #5 update_usec=8448240 last_usec=8448240 lerp=0.387 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #6 update_usec=8448240 last_usec=8448240 lerp=0.392 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #7 update_usec=8448240 last_usec=8448240 lerp=0.395 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #8 update_usec=8448240 last_usec=8448240 lerp=0.405 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #9 update_usec=8448240 last_usec=8448240 lerp=0.410 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #10 update_usec=8448240 last_usec=8448240 lerp=0.418 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #11 update_usec=8448240 last_usec=8448240 lerp=0.429 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #12 update_usec=8448240 last_usec=8448240 lerp=0.437 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.26
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.46
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.66
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.84
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=311 isw_mis=0 terrain_written=true isw_written=false
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=1.3ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.06
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.28
+[clock/step] delta=2.3ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.51
+[clock/step] delta=4.2ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.75
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #13 update_usec=8448240 last_usec=8448240 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.07
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.26
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.47
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.72
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.91
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.074 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.074 slp_out=2400 n=2400 published=false -> commit_ok
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.11
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.31
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.51
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.71
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.90
+[natural_resource/slow-dump] tick=5 day=5 wall=3.92 cpp=0.662 compute=0.445 loop=0.223 flush=0.075 wrapper=3.236 layout=cell_range_fused_seq_dt dispatches=0 resources=9/31 skipped_static=22 published=true total_delta=-54121932.65811
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #14 update_usec=8448240 last_usec=8448240 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.12
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.32
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.55
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.73
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.94
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.14
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.33
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.57
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.76
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.95
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #15 update_usec=8448240 last_usec=8448240 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.14
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.33
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.55
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.76
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.96
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.063 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.063 slp_out=2400 n=2400 published=false -> commit_ok
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.13
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.33
+[clock/step] delta=3.0ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.57
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.92
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #16 update_usec=8448240 last_usec=8448240 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.10
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.29
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.48
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.67
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.86
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.08
+[clock/step] delta=1.6ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.28
+[clock/step] delta=1.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.45
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.63
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.83
+[DCSystemScheduler][RT] ocean_skip#8 tick=11 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.02
+[weather-layer][lut] #17 update_usec=8448240 last_usec=8448240 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.24
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.45
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.64
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.84
+[slp_field] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#3: rc=0.066 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#3 phase=0.0438 rc=0.066 slp_out=2400 n=2400 published=false -> commit_ok
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.06
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.25
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.48
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.67
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.86
+[DCSystemScheduler][RT] ocean_skip#9 tick=13 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #18 update_usec=8448240 last_usec=8448240 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.14
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.34
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.53
+[clock/step] delta=1.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.81
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=244 isw_mis=0 terrain_written=true isw_written=false
+[DCSystemScheduler][RT] ocean_skip#10 tick=14 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.01
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.23
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.42
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.62
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.87
+[DCSystemScheduler][RT] ocean_skip#11 tick=15 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #19 update_usec=8448240 last_usec=8448240 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.07
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.26
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.46
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.66
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.86
+[slp_field][RT-DIAG] call#4 phase=0.0438 rc=0.067 slp_out=2400 n=2400 published=false -> commit_ok
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.06
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.27
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.45
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.65
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.88
+[DCSystemScheduler][RT] ocean_skip#12 tick=17 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #20 update_usec=8448240 last_usec=8448240 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.08
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.27
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.57
+[clock/step] delta=1.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.74
+[clock/step] delta=1.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.95
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[clock/step] delta=1.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.16
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.37
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.65
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.94
+[DCSystemScheduler][RT] ocean_skip#13 tick=19 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #21 update_usec=30580214 last_usec=30580214 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.22
+[clock/step] delta=2.3ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.49
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.77
+[slp_field][RT-DIAG] call#5 phase=0.0438 rc=0.063 slp_out=2400 n=2400 published=false -> commit_ok
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.04
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.32
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.59
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.87
+[DCSystemScheduler][RT] ocean_skip#14 tick=21 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #22 update_usec=30580214 last_usec=30580214 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.15
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.42
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.69
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.96
+[DCSystemScheduler][RT] ocean_skip#15 tick=22 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.24
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.51
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.78
+[DCSystemScheduler][RT] ocean_skip#16 tick=23 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #23 update_usec=30580214 last_usec=30580214 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.06
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.34
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.61
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.89
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=16 isw_mis=0 terrain_written=true isw_written=false
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.17
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.44
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.71
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.98
+[DCSystemScheduler][RT] ocean_skip#17 tick=25 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #24 update_usec=30580214 last_usec=30580214 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.25
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.52
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.79
+[DCSystemScheduler][RT] ocean_skip#18 tick=26 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.06
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.34
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.61
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.88
+[DCSystemScheduler][RT] ocean_skip#19 tick=27 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #25 update_usec=30580214 last_usec=30580214 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.16
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.43
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.70
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.97
+[hex-renderer] set_weather_fronts(n=12) layer=WeatherLayer
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.08ms carry=0.27
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.59
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.91
+[DCSystemScheduler][RT] ocean_skip#20 tick=29 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #26 update_usec=40604860 last_usec=40604860 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.23
+[clock/step] delta=2.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.54
+[clock/step] delta=2.7ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.86
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.13ms carry=0.17
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.49
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.80
+[DCSystemScheduler][RT] ocean_skip#21 tick=31 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #27 update_usec=40604860 last_usec=40604860 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.12
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.44
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.75
+[slp_field] gdext path ACTIVE 鈥?first run elapsed=0.23ms (legacy GDScript baseline ~36ms; target < 3ms)
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.06
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.37
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.69
+[DCSystemScheduler][RT] ocean_skip#22 tick=33 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #28 update_usec=40604860 last_usec=40604860 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.00
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.33
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.65
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.09ms carry=0.96
+[dc/terrain_mirror_sync] reason=sus_tick_pre terrain_mis=8 isw_mis=0 terrain_written=true isw_written=false
+[DCSystemScheduler][RT] ocean_skip#23 tick=34 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.27
+[clock/step] delta=2.1ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.53
+[clock/step] delta=1.9ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.83
+[DCSystemScheduler][RT] ocean_skip#24 tick=35 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #29 update_usec=40604860 last_usec=40604860 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.16
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.46
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.37ms carry=0.78
+[clock/step] delta=1.6ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.13
+[clock/step] delta=3.0ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.45
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.76
+[DCSystemScheduler][RT] ocean_skip#25 tick=37 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #30 update_usec=40604860 last_usec=40604860 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=3.0ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.09
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.10ms carry=0.40
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.12ms carry=0.71
+[DCSystemScheduler][RT] ocean_skip#26 tick=38 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=3.0ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.03
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.37
+[clock/step] delta=3.0ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.70
+[DCSystemScheduler][RT] ocean_skip#27 tick=39 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #31 update_usec=50631057 last_usec=50631057 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.01
+[clock/step] delta=2.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.35
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.67
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.98
+[psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver] gdext path ACTIVE 鈥?first run elapsed=0.20ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+[psi_solver] commit-diag call#1: rc=0.203 n_water=942 n_cells=2400 published=true
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.11ms carry=0.31
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.63
+[clock/step] delta=2.4ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.94
+[DCSystemScheduler][RT] ocean_skip#28 tick=41 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #32 update_usec=50631057 last_usec=50631057 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.27
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.59
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.90
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.23
+[clock/step] delta=2.5ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.14ms carry=0.54
+[clock/step] delta=2.8ms speed=1x target=0.00d ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.86
+[backend-probe] lut_dims=(2048.0, 2.0) map_index_atlas=():<ImageTexture#-9223371832390839395>
+[backend-probe] shot 0 -> D:/Godot/ProjectKeynes/Project.Keynes/tmp/shots/fix_gl_0.png err=0 size=(1366, 768) mean_rgb=(0.216,0.294,0.313) blue_dom=58.1% green_dom=16.5%
+[DCSystemScheduler][RT] ocean_skip#29 tick=43 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[weather-layer][lut] #33 update_usec=50631057 last_usec=50631057 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[backend-probe] shot 1 -> D:/Godot/ProjectKeynes/Project.Keynes/tmp/shots/fix_gl_1.png err=0 size=(1366, 768) mean_rgb=(0.160,0.249,0.309) blue_dom=60.2% green_dom=5.5%
+[backend-probe] shot 2 -> D:/Godot/ProjectKeynes/Project.Keynes/tmp/shots/fix_gl_2.png err=0 size=(1366, 768) mean_rgb=(0.249,0.323,0.335) blue_dom=57.9% green_dom=16.3%
+[backend-probe] DONE
+ERROR: 30 RID allocations of type 'N5GLES37TextureE' were leaked at exit.
+ERROR: Texture with GL ID of 20: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 21: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 22: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 23: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 24: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 25: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 26: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 27: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 28: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 29: leaked 3064 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 35: leaked 348 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 36: leaked 340 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 39: leaked 4 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 40: leaked 4 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 57: leaked 1654134 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 58: leaked 827067 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 59: leaked 1654134 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 60: leaked 1654134 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 61: leaked 3308268 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 62: leaked 827067 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 63: leaked 827067 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 64: leaked 827067 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 65: leaked 349524 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 66: leaked 16384 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 67: leaked 16384 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 68: leaked 16384 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 69: leaked 16384 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 70: leaked 16384 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 71: leaked 16384 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: Texture with GL ID of 110: leaked 3308268 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:77)
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 383 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

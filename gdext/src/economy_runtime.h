@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <limits>
 #include <numeric>
 #include <string>
 #include <unordered_map>
@@ -40,6 +41,11 @@ public:
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int64_t Q16_ONE = 65536;
+    static constexpr int64_t PRODUCER_SUPPORT_PRICE_NUMERATOR = 1;
+    static constexpr int64_t PRODUCER_SUPPORT_PRICE_DENOMINATOR = 5;
+    static constexpr int32_t PRICE_NUMERIC_GUARD_MIN = 1;
+    static constexpr int32_t PRICE_NUMERIC_GUARD_MAX =
+        std::numeric_limits<int32_t>::max();
     static constexpr int64_t MERCHANT_INVENTORY_HIGH_WATER_Q16 =
         Q16_ONE + Q16_ONE / 5;
     static constexpr int64_t Q32_ONE = 4294967296LL;

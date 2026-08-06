@@ -46,6 +46,8 @@ var test_economy_population_scale: int = 0
 @export var mobile_terrain_horizon_enabled: bool = false
 
 var _renderer: HexRenderer = null
+# GM 开关「关闭地形 GI」按下时暂存的三个强度原值，关掉开关时原样还回去。
+var _gi_saved_strengths: Dictionary = {}
 var _camera: MapCamera = null
 var _world_clock: WorldClock = null
 var _map_overlay_layer: DataOverlayLayer = null
@@ -774,6 +776,22 @@ func get_gm_capabilities() -> Dictionary:
 			{"id": "diagnostics.perf_sampler", "label": "渲染性能采样", "group": "诊断"},
 			{"id": "diagnostics.pk_log", "label": "PKLog 诊断日志", "group": "诊断"},
 			{"id": "diagnostics.terrain_material_gate", "label": "材质贴图门禁视图（绿=激活）", "group": "诊断"},
+			{"id": "diagnostics.cell_index_view", "label": "Cell 索引视图（每格一色，全黑=索引图失效）", "group": "诊断"},
+			{"id": "diagnostics.enum_lut_view", "label": "enum_lut 直读视图（分区着色，全黑=LUT 读成零）", "group": "诊断"},
+			{"id": "diagnostics.water_branch_view", "label": "陆/水分支视图（绿=陆地 白=海冰 蓝=海洋）", "group": "诊断"},
+			{"id": "diagnostics.pre_adjust_view", "label": "全局调整前的颜色（对比正常画面）", "group": "诊断"},
+			{"id": "diagnostics.base_color_view", "label": "光照前的地表底色", "group": "诊断"},
+			{"id": "diagnostics.river_flow_view", "label": "河流 flow 视图（红=判定为河，整屏红=flow_tex 未绑定）", "group": "诊断"},
+			{"id": "diagnostics.static_color_view", "label": "河流层之前的静态底色", "group": "诊断"},
+			{"id": "diagnostics.flow_texsize_view", "label": "flow_tex 采样器尺寸（12 位条：derived_size=正常 4×4=兜底白纹理）", "group": "诊断"},
+			{"id": "diagnostics.flow_texel_view", "label": "flow texelFetch 取样（绕过过滤/wrap）", "group": "诊断"},
+			{"id": "diagnostics.dump_flow_tex_report", "label": "输出 FlowTex 完整诊断（CPU/材质/sampler/GPU）",
+				"group": "诊断", "kind": "button", "icon": &"summary.overview",
+				"tooltip": "打印 Web FlowTex 的生成、编码、上传、绑定、Shader 变体和 GPU 实际读取信息"},
+			{"id": "diagnostics.dyn_lut_view", "label": "dyn_lut 直读视图（R温度 G湿度 B雪，全黑=读成零）", "group": "诊断"},
+			{"id": "diagnostics.eco_lut_view", "label": "eco_lut 直读视图（R叶量 G胁迫 B物候，全黑=读成零）", "group": "诊断"},
+			{"id": "diagnostics.sky_visibility_view", "label": "天空可见度视图（灰阶，越黑=AO 压得越狠）", "group": "诊断"},
+			{"id": "diagnostics.gi_off", "label": "关闭地形 GI（AO/bent/弹射归零，回退到接入前）", "group": "诊断"},
 			{"id": "diagnostics.terrain_materials", "label": "地形材质贴图（A/B，近景看颗粒）", "group": "诊断"},
 		],
 	}
@@ -885,6 +903,58 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 			if _renderer == null:
 				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
 			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 7}
+		"diagnostics.cell_index_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 1}
+		"diagnostics.enum_lut_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 8}
+		"diagnostics.water_branch_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 13}
+		"diagnostics.pre_adjust_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 11}
+		"diagnostics.base_color_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 12}
+		"diagnostics.river_flow_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 14}
+		"diagnostics.static_color_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 15}
+		"diagnostics.flow_texsize_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 16}
+		"diagnostics.flow_texel_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 17}
+		"diagnostics.dyn_lut_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 9}
+		"diagnostics.eco_lut_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.terrain_surface_debug_view == 10}
+		"diagnostics.sky_visibility_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": _renderer.gi_debug_view == 1}
+		"diagnostics.gi_off":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			return {"ok": true, "enabled": not _gi_saved_strengths.is_empty()}
 		"diagnostics.terrain_materials":
 			return _gm_renderer_toggle_state("terrain_materials_enabled")
 	return _gm_error("unknown_toggle", "未知 GM 开关。")
@@ -940,6 +1010,80 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
 			_renderer.terrain_surface_debug_view = 7 if enabled else 0
 			_print_terrain_material_gate_state()
+		"diagnostics.cell_index_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 1 if enabled else 0
+			if enabled:
+				_print_cell_index_view_state()
+		"diagnostics.enum_lut_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 8 if enabled else 0
+			if enabled:
+				_print_enum_lut_view_state()
+		"diagnostics.water_branch_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 13 if enabled else 0
+			if enabled:
+				print("[water-branch-view] 绿=陆地管线 / 白=B_SEA_ICE（cid<0 会无条件赋成它）"
+					+ " / 蓝=B_OCEAN / 青=COAST / 深蓝=LAKE / 品红=REEF / 黄=KELP")
+		"diagnostics.pre_adjust_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 11 if enabled else 0
+		"diagnostics.base_color_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 12 if enabled else 0
+		"diagnostics.river_flow_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 14 if enabled else 0
+			if enabled:
+				_print_river_flow_state()
+		"diagnostics.static_color_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 15 if enabled else 0
+		"diagnostics.flow_texsize_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 16 if enabled else 0
+			if enabled:
+				print("[flow-texsize-view] 12 位二进制条：上半屏=宽 下半屏=高，左起最高位，"
+					+ "白=1 深蓝=0，每 4 位一条红分隔")
+				_print_terrain_sampler_inventory()
+		"diagnostics.flow_texel_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 17 if enabled else 0
+			if enabled:
+				print("[flow-texel-view] texelFetch 整数取样，绕过 filter_linear 与 wrap uv；"
+					+ "恢复出细红河线 = 问题在过滤/采样状态而非纹理内容")
+		"diagnostics.dyn_lut_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 9 if enabled else 0
+			if enabled:
+				_print_daily_lut_upload_state("dyn")
+		"diagnostics.eco_lut_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.terrain_surface_debug_view = 10 if enabled else 0
+			if enabled:
+				_print_daily_lut_upload_state("eco")
+		"diagnostics.sky_visibility_view":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_renderer.gi_debug_view = 1 if enabled else 0
+			if enabled:
+				_print_terrain_gi_state("sky-visibility-view")
+		"diagnostics.gi_off":
+			if _renderer == null:
+				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
+			_set_terrain_gi_disabled(enabled)
 		"diagnostics.terrain_materials":
 			if not _gm_call_renderer_toggle("set_terrain_materials_enabled", enabled):
 				return _gm_error("renderer_unavailable", "渲染器尚未就绪。")
@@ -1312,6 +1456,498 @@ func _print_terrain_material_gate_state() -> void:
 			str(mat.get_shader_parameter("terrain_material_tex") != null)])
 
 
+# GM 开关「Cell 索引视图」：shader 的 dv1 分支直出 decode_cell_index 的哈希色，
+# 绕开整条着色管线，卡在 map_index_atlas 之后、cell_lut_uv/enum_lut 之前。
+#   彩色马赛克（每格一色）= 索引图正常，塌缩发生在 LUT 采样一侧
+#   纯黑                  = cid<0，采到 1×1 白纹理（0xFFFF 哨兵），索引图未真正绑定
+#   整片单一非黑色        = cid 恒定，索引图采到常量
+# 一并打印 CPU 侧真值，便于和屏幕结果对照。
+func _print_cell_index_view_state() -> void:
+	if _renderer == null:
+		return
+	print("[cell-index-view] 彩色马赛克=索引图正常 / 纯黑=cid<0 索引图失效 / 单一色=cid 恒定")
+	var world = _renderer._world
+	if world != null:
+		var atlas: Texture2D = world.enum_atlas_tex
+		print("[cell-index-view] world 侧: atlas=%s size=%s derived=%s lut_dims=%s" % [
+			str(atlas != null), str(atlas.get_size()) if atlas != null else "-",
+			str(world.derived_size), str(world.lut_dims)])
+	if _renderer._shader_mat != null:
+		var mat: ShaderMaterial = _renderer._shader_mat
+		var bound: Texture2D = mat.get_shader_parameter("map_index_atlas")
+		print("[cell-index-view] 材质 uniform: map_index_atlas=%s size=%s lut_dims=%s" % [
+			str(bound != null), str(bound.get_size()) if bound != null else "-",
+			str(mat.get_shader_parameter("lut_dims"))])
+
+
+# GM 开关「enum_lut 直读视图」：shader 的 dv8 分支直出 texture(enum_lut, cell_lut_uv(cid))，
+# 卡在 Cell 索引视图的下一环——索引已确认有效时，这一档判定 LUT 采样本身。
+#   分区着色（色相=biome 哈希，亮度=fog_k）= LUT 正常
+#   纯黑 = biome 0 且 fog_k 0，整张 LUT 读成零；这正是「发暗偏蓝像蒙在水下」的成因
+#   品红 = cid<0，不该出现在这一档
+# 同时对比材质上绑的 enum_lut 与 world.enum_lut_tex 是否为同一对象：LUT 走
+# ImageTexture.update() 原地上传，设计上假定对象恒定，一旦对象换过而材质没重绑，
+# 材质就会一直采着旧纹理。
+func _print_enum_lut_view_state() -> void:
+	if _renderer == null:
+		return
+	print("[enum-lut-view] 分区着色=LUT 正常 / 纯黑=LUT 读成零 / 品红=cid<0")
+	var world = _renderer._world
+	var world_tex: Texture2D = world.enum_lut_tex if world != null else null
+	if world != null:
+		print("[enum-lut-view] world 侧: enum_lut=%s size=%s lut_dims=%s" % [
+			str(world_tex != null), str(world_tex.get_size()) if world_tex != null else "-",
+			str(world.lut_dims)])
+	if _renderer._shader_mat != null:
+		var mat: ShaderMaterial = _renderer._shader_mat
+		var bound: Texture2D = mat.get_shader_parameter("enum_lut")
+		var same_object: bool = bound != null and bound == world_tex
+		print("[enum-lut-view] 材质 uniform: enum_lut=%s size=%s 与 world 同对象=%s" % [
+			str(bound != null), str(bound.get_size()) if bound != null else "-",
+			str(same_object)])
+		if bound != null and not same_object:
+			push_warning("[enum-lut-view] 材质绑的 enum_lut 不是 world.enum_lut_tex；"
+				+ "日刷内容全部落在另一张纹理上")
+
+
+# GM 开关「河流 flow 视图」：屏幕给的是 shader 采到的 flow，这里补上 CPU 侧的
+# flow_tex 绑定状态。注意 CPU 侧全绿并不能排除问题——GLES3 兜底成 4×4 白纹理时这里
+# 每一项都正常，要判死必须看 dv16 的 textureSize。
+func _print_river_flow_state() -> void:
+	if _renderer == null:
+		return
+	print("[river-flow-view] 黑底+细红线=正常 / 整屏红=flow 恒高（sampler 落到 GLES3 兜底白纹理，用 dv16 确认）")
+	var world = _renderer._world
+	var world_tex: Texture2D = world.flow_tex if world != null else null
+	if world != null:
+		print("[river-flow-view] world 侧: flow_tex=%s size=%s derived_size=%s" % [
+			str(world_tex != null), str(world_tex.get_size()) if world_tex != null else "-",
+			str(world.derived_size)])
+	if _renderer._shader_mat != null:
+		var bound: Texture2D = _renderer._shader_mat.get_shader_parameter("flow_tex")
+		var bound_fmt: int = bound.get_format() if bound != null and bound.has_method("get_format") else -1
+		var want_fmt: int = DCAtlasEncoders.single_channel_format()
+		print("[river-flow-view] 材质 uniform: flow_tex=%s size=%s fmt=%d want=%d 与 world 同对象=%s has_flow_tex=%s" % [
+			str(bound != null), str(bound.get_size()) if bound != null else "-",
+			bound_fmt, want_fmt,
+			str(bound != null and bound == world_tex),
+			str(_renderer._shader_mat.get_shader_parameter("has_flow_tex"))])
+		if bound == null:
+			push_warning("[river-flow-view] flow_tex 未绑定；GLES3 兜底白纹理会让整片陆地被判成河")
+		elif bound_fmt != want_fmt:
+			push_warning("[river-flow-view] flow_tex 格式=%d，本后端期望 %d；单通道纹理在 WebGL2 上会被换成 4×4 白纹理" % [
+				bound_fmt, want_fmt])
+	print("[river-flow-view] river_strength=%.2f threshold_low=%.2f threshold_high=%.2f" % [
+		_renderer.river_strength, _renderer.river_threshold_low, _renderer.river_threshold_high])
+	# 关键读数：源 float buffer 与编码字节的分布。src.hi_frac≈1 说明上游 river SDF 就
+	# 产出了全 1（渲染无关的数据 bug）；src 正常而 out.hi_frac≈1 说明编码器；两者都正常
+	# 却仍整屏红，才是上传/格式问题。upload=RG8_expanded 才是 Compatibility 加宽真正跑通。
+	print("[river-flow-view] encode=", DCAtlasEncoders.last_flow_encode_info)
+	var world_now = _renderer._world
+	if world_now != null:
+		print("[river-flow-view] world.flow_buffer size=%d（期望 %d）" % [
+			world_now.flow_buffer.size(), world_now.derived_size.x * world_now.derived_size.y])
+
+
+# GM 动作「输出 FlowTex 完整诊断」：这是一次性诊断，不进入每日 tick。
+# CPU 侧输出生成/编码/上传元数据；GPU 侧通过现有 dv14/dv16/dv17 视图抓一帧，
+# 让 WebGL2 实际采样到的 textureSize 与 texelFetch 分布也进入浏览器控制台。
+func dump_flow_tex_report() -> Dictionary:
+	if _renderer == null:
+		return _gm_error("renderer_unavailable", "渲染器尚未就绪，无法输出 FlowTex 诊断。")
+	var report := _collect_flow_tex_report()
+	_print_flow_tex_report_section("runtime", report.get("runtime", {}))
+	_print_flow_tex_report_section("path", report.get("path", {}))
+	_print_flow_tex_report_section("buffer", report.get("buffer", {}))
+	_print_flow_tex_report_section("encode", report.get("encode", {}))
+	_print_flow_tex_report_section("textures", report.get("textures", {}))
+	_print_flow_tex_report_section("shader", report.get("shader", {}))
+	_print_flow_tex_report_section("samplers", report.get("samplers", []))
+
+	var previous_view := int(_renderer.terrain_surface_debug_view)
+	var gpu_flow_image = await _capture_flow_debug_view(14)
+	report["gpu_flow_view"] = _summarize_flow_debug_image(gpu_flow_image)
+	_print_flow_tex_report_section("gpu_flow_view14", report["gpu_flow_view"])
+	var gpu_size_image = await _capture_flow_debug_view(16)
+	report["gpu_texture_size"] = _decode_flow_texture_size_view(gpu_size_image)
+	_print_flow_tex_report_section("gpu_texture_size_view16", report["gpu_texture_size"])
+	var gpu_texel_image = await _capture_flow_debug_view(17)
+	report["gpu_texel_fetch"] = _summarize_flow_debug_image(gpu_texel_image)
+	_print_flow_tex_report_section("gpu_texel_view17", report["gpu_texel_fetch"])
+	_renderer.terrain_surface_debug_view = previous_view
+
+	var issues: PackedStringArray = report.get("issues", PackedStringArray())
+	print("[flow-tex-report] issues=%s" % str(issues))
+	print("[flow-tex-report] END")
+	return {"ok": true, "code": "ok", "message": "FlowTex 完整诊断已输出（%d 个疑点；详情见 stdout/浏览器控制台）。" % issues.size(),
+		"data": report}
+
+
+func _collect_flow_tex_report() -> Dictionary:
+	var current_method := String(RenderingServer.get_current_rendering_method()) \
+		if RenderingServer.has_method("get_current_rendering_method") else "unknown"
+	var adapter_api := String(RenderingServer.get_video_adapter_api_version()) \
+		if RenderingServer.has_method("get_video_adapter_api_version") else "unknown"
+	var adapter_name := String(RenderingServer.get_video_adapter_name()) \
+		if RenderingServer.has_method("get_video_adapter_name") else "unknown"
+	var report := {
+		"runtime": {
+			"os": OS.get_name(),
+			"web_feature": OS.has_feature("web"),
+			"feature_flags_web": DCFeatureFlags.is_web(),
+			"compatibility_renderer": DCFeatureFlags.is_compatibility_renderer(),
+			"rendering_method": current_method,
+			"video_adapter_api": adapter_api,
+			"video_adapter_name": adapter_name,
+			"ticks_msec": Time.get_ticks_msec(),
+		},
+	}
+	var world = _renderer._world
+	var material: ShaderMaterial = _renderer._shader_mat
+	var tiles = world.visual_tiles if world != null else null
+	var tiled := tiles != null and bool(tiles.ready) and tiles.layout != null \
+		and String(tiles.layout.mode) == "tiled"
+	var world_flow = world.flow_tex if world != null else null
+	var tiled_flow = tiles.flow if tiled else null
+	var effective_flow = tiled_flow if tiled else world_flow
+	var expected_buffer := int(world.derived_size.x * world.derived_size.y) if world != null else 0
+	var buffer: PackedFloat32Array = world.flow_buffer if world != null else PackedFloat32Array()
+	report["path"] = {
+		"tiled": tiled,
+		"layout_mode": String(tiles.layout.mode) if tiles != null and tiles.layout != null else "none",
+		"shader_variant_tiled": material != null and material.shader != null
+			and material.shader.code.contains("#define MAP_VISUAL_TILED"),
+		"effective_flow": "visual_flow_tiles" if tiled else "flow_tex",
+		"expected_buffer_pixels": expected_buffer,
+	}
+	report["buffer"] = _flow_buffer_stats(buffer, expected_buffer)
+	report["encode"] = DCAtlasEncoders.last_flow_encode_info.duplicate(true)
+	report["textures"] = {
+		"expected_compat_format": _flow_format_descriptor(DCAtlasEncoders.single_channel_format()),
+		"world_flow_tex": _flow_texture_descriptor(world_flow),
+		"tiled_flow_tiles": _flow_texture_descriptor(tiled_flow),
+		"effective_flow": _flow_texture_descriptor(effective_flow),
+		"material_flow_tex": _flow_texture_descriptor(
+			material.get_shader_parameter("flow_tex") if material != null else null),
+		"material_visual_flow_tiles": _flow_texture_descriptor(
+			material.get_shader_parameter("visual_flow_tiles") if material != null else null),
+		"world_material_same_object": material != null and world_flow != null
+			and material.get_shader_parameter("flow_tex") == world_flow,
+		"has_flow_tex": material.get_shader_parameter("has_flow_tex") if material != null else false,
+	}
+	var shader_report := {}
+	if material != null and material.shader != null:
+		var shader_code: String = material.shader.code
+		shader_report = {
+			"source_path": String(_renderer.get("_active_shader_source_path")),
+			"debug_view": int(_renderer.terrain_surface_debug_view),
+			"pk_web_texture_budget": shader_code.contains("#define PK_WEB_TEXTURE_BUDGET"),
+			"map_visual_tiled": shader_code.contains("#define MAP_VISUAL_TILED"),
+			"shader_uniform_count": material.shader.get_shader_uniform_list().size(),
+		}
+	report["shader"] = shader_report
+	var samplers: Array = _flow_sampler_inventory(material)
+	report["samplers"] = samplers
+	var issues := PackedStringArray()
+	if world == null:
+		issues.append("world_missing")
+	if material == null or material.shader == null:
+		issues.append("terrain_material_or_shader_missing")
+	if buffer.size() != expected_buffer:
+		issues.append("flow_buffer_size_mismatch")
+	var buffer_stats: Dictionary = report["buffer"]
+	if float(buffer_stats.get("hi_frac", 0.0)) >= 0.98:
+		issues.append("flow_buffer_almost_all_high")
+	var effective_desc: Dictionary = report["textures"]["effective_flow"]
+	if not bool(effective_desc.get("bound", false)):
+		issues.append("effective_flow_texture_missing")
+	if material != null:
+		var expected_name := "visual_flow_tiles" if tiled else "flow_tex"
+		var effective_bound = material.get_shader_parameter(expected_name)
+		if effective_bound == null:
+			issues.append("effective_flow_uniform_unbound")
+		if not bool(material.get_shader_parameter("has_flow_tex")):
+			issues.append("has_flow_tex_false")
+	if DCFeatureFlags.is_compatibility_renderer():
+		if samplers.size() > 8:
+			issues.append("compat_sampler_count_over_8")
+		if not bool(shader_report.get("pk_web_texture_budget", false)):
+			issues.append("PK_WEB_TEXTURE_BUDGET_missing")
+	report["issues"] = issues
+	return report
+
+
+func _flow_buffer_stats(buffer: PackedFloat32Array, expected: int) -> Dictionary:
+	var n := buffer.size()
+	if n <= 0:
+		return {"size": 0, "expected": expected, "samples": 0}
+	var stride := maxi(1, n / 65536)
+	var min_value := INF
+	var max_value := -INF
+	var sum := 0.0
+	var high := 0
+	var nonzero := 0
+	var nonfinite := 0
+	var samples := 0
+	var i := 0
+	while i < n:
+		var value := float(buffer[i])
+		if not is_finite(value):
+			nonfinite += 1
+		else:
+			min_value = minf(min_value, value)
+			max_value = maxf(max_value, value)
+			sum += value
+			if value >= 0.70:
+				high += 1
+			if value > 0.0001:
+				nonzero += 1
+		samples += 1
+		i += stride
+	return {"size": n, "expected": expected, "samples": samples, "stride": stride,
+		"min": min_value, "max": max_value, "mean": sum / float(maxi(samples, 1)),
+		"hi_frac": float(high) / float(maxi(samples, 1)),
+		"nonzero_frac": float(nonzero) / float(maxi(samples, 1)), "nonfinite": nonfinite}
+
+
+func _flow_texture_descriptor(texture) -> Dictionary:
+	if texture == null:
+		return {"bound": false}
+	var out := {"bound": true, "class": texture.get_class(),
+		"instance_id": texture.get_instance_id()}
+	if texture.has_method("get_size"):
+		out["size"] = str(texture.get_size())
+	if texture.has_method("get_width"):
+		out["width"] = int(texture.get_width())
+	if texture.has_method("get_height"):
+		out["height"] = int(texture.get_height())
+	if texture.has_method("get_layers"):
+		out["layers"] = int(texture.get_layers())
+	if texture.has_method("get_format"):
+		var format := int(texture.get_format())
+		out["format"] = _flow_format_descriptor(format)
+	if texture.has_method("get_rid"):
+		out["rid"] = str(texture.get_rid())
+	if texture is Resource:
+		out["resource_path"] = String((texture as Resource).resource_path)
+	return out
+
+
+func _flow_format_descriptor(format: int) -> Dictionary:
+	var name := "unknown"
+	match format:
+		Image.FORMAT_L8:
+			name = "L8"
+		Image.FORMAT_R8:
+			name = "R8"
+		Image.FORMAT_RG8:
+			name = "RG8"
+		Image.FORMAT_RGBA8:
+			name = "RGBA8"
+	return {"id": format, "name": name}
+
+
+func _flow_sampler_inventory(material: ShaderMaterial) -> Array:
+	var out: Array = []
+	if material == null or material.shader == null:
+		return out
+	for raw in material.shader.get_shader_uniform_list():
+		var uniform: Dictionary = raw
+		if int(uniform.get("type", TYPE_NIL)) != TYPE_OBJECT:
+			continue
+		var name := String(uniform.get("name", ""))
+		var entry := _flow_texture_descriptor(material.get_shader_parameter(name))
+		entry["name"] = name
+		entry["hint"] = String(uniform.get("hint_string", ""))
+		out.append(entry)
+	return out
+
+
+func _capture_flow_debug_view(view: int):
+	if _renderer == null:
+		return null
+	_renderer.terrain_surface_debug_view = view
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var viewport := get_viewport()
+	if viewport == null or viewport.get_texture() == null:
+		return null
+	return viewport.get_texture().get_image()
+
+
+func _decode_flow_texture_size_view(image) -> Dictionary:
+	if image == null:
+		return {"ok": false, "reason": "viewport_readback_failed"}
+	var width: int = int(image.get_width())
+	var height: int = int(image.get_height())
+	var values := PackedInt32Array()
+	var confidence := PackedFloat32Array()
+	for half in range(2):
+		var y_lo := int((0.10 + 0.5 * float(half)) * float(height))
+		var y_hi := int((0.40 + 0.5 * float(half)) * float(height))
+		var value := 0
+		var good := 0
+		var total := 0
+		for slot in range(12):
+			var x := clampi(int((float(slot) + 0.5) / 12.0 * float(width)), 0, width - 1)
+			var white := 0
+			var dark := 0
+			for y in range(y_lo, y_hi, 3):
+				var color: Color = image.get_pixel(x, y)
+				if color.r > 0.75 and color.g > 0.75 and color.b > 0.75:
+					white += 1
+				elif color.b > color.r and color.r < 0.35:
+					dark += 1
+			var bit_one := white > dark
+			if white != dark:
+				good += 1
+			total += white + dark
+			if bit_one:
+				value |= 1 << (11 - slot)
+		values.append(value)
+		confidence.append(float(good) / 12.0)
+	return {"ok": true, "size": str(Vector2i(width, height)),
+		"width": values[0], "height": values[1], "confidence": confidence}
+
+
+func _summarize_flow_debug_image(image) -> Dictionary:
+	if image == null:
+		return {"ok": false, "reason": "viewport_readback_failed"}
+	var width: int = int(image.get_width())
+	var height: int = int(image.get_height())
+	var stride := maxi(1, mini(width, height) / 128)
+	var recognized := 0
+	var red := 0
+	var gray := 0
+	var gray_sum := 0.0
+	for y in range(0, height, stride):
+		for x in range(0, width, stride):
+			var color: Color = image.get_pixel(x, y)
+			if color.r > 0.80 and color.g < 0.20 and color.b < 0.20:
+				red += 1
+				recognized += 1
+			elif absf(color.r - color.g) < 0.035 and absf(color.g - color.b) < 0.035:
+				gray += 1
+				gray_sum += (color.r + color.g + color.b) / 3.0
+				recognized += 1
+	return {"ok": true, "size": str(Vector2i(width, height)), "stride": stride,
+		"recognized_frac": float(recognized) / float(maxi(1, int(ceil(float(width * height) / float(stride * stride))))),
+		"red_frac": float(red) / float(maxi(recognized, 1)),
+		"gray_frac": float(gray) / float(maxi(recognized, 1)),
+		"gray_mean": gray_sum / float(maxi(gray, 1))}
+
+
+func _print_flow_tex_report_section(name: String, value) -> void:
+	print("[flow-tex-report][%s] %s" % [name, str(value)])
+
+
+# [flow-diag] 列出主地图材质每个 sampler 当前绑的纹理与尺寸。dv16 报出的采样器尺寸
+# 若和这里某一行对得上，就说明纹理单元串位了（绑到了另一张图）；若谁都对不上（例如 4×4），
+# 那是引擎内部的兜底纹理。fmt 列同样关键：单通道（0=L8 / 2=R8）在 WebGL2 上就是建不起来的。
+func _print_terrain_sampler_inventory() -> void:
+	if _renderer == null or _renderer._shader_mat == null:
+		return
+	var mat: ShaderMaterial = _renderer._shader_mat
+	var shader: Shader = mat.shader
+	if shader == null:
+		return
+	var lines: Array[String] = []
+	for u in shader.get_shader_uniform_list():
+		if int(u.get("type", TYPE_NIL)) != TYPE_OBJECT:
+			continue
+		var uname: String = str(u.get("name", ""))
+		var tex = mat.get_shader_parameter(uname)
+		if tex == null:
+			lines.append("%s=<null>" % uname)
+		elif tex is Texture2D:
+			lines.append("%s=%dx%d fmt=%s" % [uname, int(tex.get_size().x),
+				int(tex.get_size().y),
+				str(tex.get_format()) if tex.has_method("get_format") else "?"])
+		else:
+			lines.append("%s=<%s>" % [uname, tex.get_class()])
+	print("[flow-diag] 材质 sampler 清单（%d 项）：" % lines.size())
+	for line in lines:
+		print("[flow-diag]   ", line)
+
+
+# GM 开关「dyn_lut / eco_lut 直读视图」：屏幕给的是 GPU 侧读到的值，这里补上
+# CPU 侧真值——MapBaker 缓存着最后一次交给 ImageTexture.update() 的字节。两边一
+# 对照就能把「打包出来就是零」和「字节没问题但没传上 GPU」分开。
+func _print_daily_lut_upload_state(which: String) -> void:
+	if _renderer == null:
+		return
+	var tag := "%s-lut-view" % which
+	print("[%s] 彩色梯度=正常 / 纯黑=整张读成零 / 品红=cid<0" % tag)
+	var world = _renderer._world
+	var world_tex: Texture2D = world.get("%s_lut_tex" % which) if world != null else null
+	if world != null:
+		print("[%s] world 侧: tex=%s size=%s lut_dims=%s" % [
+			tag, str(world_tex != null), str(world_tex.get_size()) if world_tex != null else "-",
+			str(world.lut_dims)])
+	if _renderer._shader_mat != null:
+		var bound: Texture2D = _renderer._shader_mat.get_shader_parameter("%s_lut" % which)
+		print("[%s] 材质 uniform: tex=%s 与 world 同对象=%s" % [
+			tag, str(bound != null), str(bound != null and bound == world_tex)])
+	var baker = _gm_map_baker()
+	if baker == null:
+		print("[%s] MapBaker 不可用，取不到 CPU 侧字节" % tag)
+		return
+	var bytes = baker.get("_cell_%s_lut_bytes_cache" % which)
+	if bytes is PackedByteArray:
+		var nonzero := 0
+		for b in bytes:
+			if b != 0:
+				nonzero += 1
+		print("[%s] CPU 侧最后一次上传: %d 字节，非零 %d（%.1f%%）" % [
+			tag, bytes.size(), nonzero,
+			100.0 * float(nonzero) / float(maxi(bytes.size(), 1))])
+
+
+# GM 开关「关闭地形 GI」：把 AO / bent normal / 弹射三个强度归零。按 hex_renderer
+# 里 Terrain GI 那组 @export 的注释，这等价于精确回退到 2026-07-31 接入 GI 之前，
+# 因此是把「GI 层」与「投影阴影层」分开的判定手段——两者共用同一张 horizon 图，
+# 但 GI 另走 gi_horizon_lut 解码，投影阴影正常并不能证明 GI 也正常。
+const _GI_STRENGTH_PROPS := ["gi_ao_strength", "gi_bent_strength", "gi_bounce_strength"]
+
+func _set_terrain_gi_disabled(disabled: bool) -> void:
+	if disabled:
+		if _gi_saved_strengths.is_empty():
+			for prop in _GI_STRENGTH_PROPS:
+				_gi_saved_strengths[prop] = float(_renderer.get(prop))
+		for prop in _GI_STRENGTH_PROPS:
+			_renderer.set(prop, 0.0)
+	else:
+		for prop in _gi_saved_strengths:
+			_renderer.set(prop, _gi_saved_strengths[prop])
+		_gi_saved_strengths.clear()
+	_print_terrain_gi_state("gi-off" if disabled else "gi-on")
+
+
+func _print_terrain_gi_state(tag: String) -> void:
+	if _renderer == null:
+		return
+	print("[%s] ao=%.2f floor=%.2f bent=%.2f bounce=%.2f max_angle=%.3f horizon_strength=%.2f" % [
+		tag, _renderer.gi_ao_strength, _renderer.gi_ao_floor, _renderer.gi_bent_strength,
+		_renderer.gi_bounce_strength, _renderer.terrain_horizon_max_angle,
+		_renderer.terrain_horizon_strength])
+	var world = _renderer._world
+	if world != null:
+		var horizon: Texture2D = world.terrain_horizon_tex
+		print("[%s] horizon_tex=%s size=%s occluder=%s bounce_lut=%s" % [
+			tag, str(horizon != null), str(horizon.get_size()) if horizon != null else "-",
+			str(world.gi_occluder_tex != null), str(world.bounce_lut_tex != null)])
+	if _renderer._shader_mat != null:
+		var mat: ShaderMaterial = _renderer._shader_mat
+		var lut = mat.get_shader_parameter("gi_horizon_lut")
+		# gi_horizon_lut 是 PackedVector3Array(16) 的 uniform 数组而非纹理。
+		# 首末两项是解析式的，对不上就说明数组没正确送达 shader。
+		print("[%s] gi_horizon_lut size=%s head=%s tail=%s bound=%s" % [
+			tag, str(lut.size()) if lut != null else "null",
+			str(lut[0]) if lut != null and lut.size() > 0 else "-",
+			str(lut[lut.size() - 1]) if lut != null and lut.size() > 0 else "-",
+			str(mat.get_shader_parameter("gi_lut_bound"))])
+
+
 func _gm_call_renderer_toggle(method: String, enabled: bool) -> bool:
 	if _renderer == null or not _renderer.has_method(method):
 		return false
@@ -1574,8 +2210,6 @@ func on_visual_day_phase_changed(visual_day_phase: float) -> void:
 func on_season_changed(season_idx: int) -> void:
 	if _generator == null or _current_map == null or _world_data == null:
 		return
-	if _renderer != null and _renderer.has_method("begin_season_transition") and _world_clock != null:
-		_renderer.begin_season_transition(_world_clock.season_phase())
 	var cp = _generator._c() if _generator.has_method("_c") else null
 	mark_map_overlay_dirty(&"season_changed")
 	var use_legacy := false
