@@ -1760,6 +1760,12 @@ func _commit_cpp_atlas_task_to_gpu(task: Dictionary) -> int:
 			W, H, false,
 			Image.FORMAT_R8 if image_format == int(Image.FORMAT_R8) else Image.FORMAT_RGBA8,
 			buf)
+	# Compatibility(GLES3) 下单通道纹理会被引擎换成 4×4 默认白纹理（见
+	# DCAtlasEncoders._single_channel_format），ice 通道必须一起加宽。
+	if img.get_format() == Image.FORMAT_R8:
+		var want_ice: int = DCAtlasEncoders.single_channel_format()
+		if want_ice != Image.FORMAT_R8:
+			img.convert(want_ice)
 	var _img_create_ms: float = float(Time.get_ticks_usec() - _commit_t0_us) / 1000.0
 	var _create_from_image_path: bool = false
 	var _commit_t1_us: int = Time.get_ticks_usec()

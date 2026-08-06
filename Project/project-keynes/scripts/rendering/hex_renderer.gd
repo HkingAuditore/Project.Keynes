@@ -110,8 +110,6 @@ const DETAIL_PLAN_FINALIZE: int = 7
 @export_range(0.0, 1.0, 0.01) var vegetation_season_strength: float = 1.0
 @export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
 @export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88
-@export_range(0.0, 1.0, 0.01) var season_transition_phase_span: float = 0.33
-@export_range(0.02, 0.45, 0.01) var season_transition_softness: float = 0.18
 # 2026-05-19：dynamic_cell / dyn_atlas_smooth / ecology / ice 四张 atlas 的上传节流。
 # 1=每仿真日上传一次；2（默认）=每 2 仿真日；4=每 4 仿真日。值越大越省 CPU 但雪线/海冰
 # 视觉变化越"卡顿"。运行时改这个值会触发 DynamicVisualAtlasUploadSystem.reconfigure。
@@ -165,9 +163,9 @@ var _wind_strength: float = 0.15
 ## A/B switch for the HIGH terrain material-array path. This is intentionally
 ## not exposed as a player-facing setting; false restores the legacy path.
 var terrain_materials_enabled: bool = true
-@export_range(0, 7, 1) var terrain_surface_debug_view: int = 0:
+@export_range(0, 17, 1) var terrain_surface_debug_view: int = 0:
 	set(value):
-		terrain_surface_debug_view = clampi(value, 0, 7)
+		terrain_surface_debug_view = clampi(value, 0, 17)
 		if _shader_mat != null:
 			_shader_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
 
@@ -204,16 +202,12 @@ var terrain_materials_enabled: bool = true
 		terrain_ecotone_width = clampf(value, 0.0, 0.96)
 		if _shader_mat != null:
 			_shader_mat.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
-		if _season_transition_mat != null:
-			_season_transition_mat.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
 		_push_overlay_edge_transition_data()
 @export_range(0.0, 0.45, 0.01) var terrain_ecotone_noise: float = 0.22:
 	set(value):
 		terrain_ecotone_noise = clampf(value, 0.0, 0.45)
 		if _shader_mat != null:
 			_shader_mat.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
-		if _season_transition_mat != null:
-			_season_transition_mat.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
 		_push_overlay_edge_transition_data()
 @export var day_night_enabled: bool = true
 @export var water_effect_enabled: bool = true
@@ -455,9 +449,7 @@ var terrain_materials_enabled: bool = true
 @export var global_darken: float = 0.0
 
 var _world_quad: MeshInstance2D
-var _season_transition_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
-var _season_transition_mat: ShaderMaterial = null
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
 var _border_layer: CountryBorderLayer = null  # 国界线（几何 ribbon，z=6）
 var _fog_layer: FogOfWarLayer = null  # 视野迷雾（全图 quad，z=12，盖住天气与国界）
@@ -550,8 +542,6 @@ var _camera_zoom: float = 1.0
 var _season_phase: float = 1.0   # 0=spring 1=summer 2=autumn 3=winter
 var _climate_anomaly: float = 0.0
 var _world_time: float = 0.0
-var _season_transition_active: bool = false
-var _season_transition_start_phase: float = 1.0
 # 任务 2：昼夜相位 ∈ [0,1)，由 WorldClock 节流推送。
 var _day_phase: float = 0.25   # 初始化正午，保证新地图默认白天效果
 # 阶段 D（vegetation-visual-pcg）：植被 shader 的全局风场。方向由当前天气锋面
@@ -571,6 +561,8 @@ var _tod_debug_sun_uv: Vector2 = Vector2(0.25, 0.5)
 var _tod_debug_sun_height_scale: float = 1.0
 var _shader_hot_reload_accum: float = 0.0
 var _active_material_source_path: String = ""
+# 已推给 _shader_mat 的 cell LUT 网格尺寸；见 _sync_cell_lut_dims。
+var _pushed_lut_dims: Vector2i = Vector2i.ZERO
 var _active_shader_source_path: String = ""
 var _material_source_mtime: int = 0
 var _shader_source_mtime: int = 0
@@ -660,11 +652,6 @@ func _ready() -> void:
 	_world_quad.name = "WorldQuad"
 	_world_quad.z_index = 0
 	add_child(_world_quad)
-	_season_transition_quad = MeshInstance2D.new()
-	_season_transition_quad.name = "SeasonTransitionQuad"
-	_season_transition_quad.z_index = 0
-	_season_transition_quad.visible = false
-	add_child(_season_transition_quad)
 	_spawn_detail_layers()
 	# v9.split：天气表现层
 	_weather_layer = WeatherLayer.new()
@@ -695,6 +682,8 @@ func _process(delta: float) -> void:
 	_poll_shader_hot_reload(delta)
 	if _shader_mat == null:
 		return
+	_sync_cell_lut_dims()
+	_sync_cell_lut_textures()
 	_world_time += delta
 	_shader_mat.set_shader_parameter("world_time", _world_time)
 	var wind_boost := _detail_wind_boost * weather_strength
@@ -710,9 +699,6 @@ func _process(delta: float) -> void:
 	var drain_started_usec := Time.get_ticks_usec()
 	_drain_detail_refresh_queue()
 	_last_detail_drain_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("world_time", _world_time)
-		_update_season_transition()
 	# 任务 1：性能采样（仅当 perf_sampler_enabled 为 true 时启用）
 	if _perf_sampler != null:
 		_perf_sampler.push_frame_ms(delta * 1000.0)
@@ -742,6 +728,9 @@ func _sweep_dormant_detail_chunks() -> void:
 
 func _load_shader() -> void:
 	var next_mat: ShaderMaterial = null
+	# 新材质从 .tres 重建，lut_dims 回到默认 (1,1)；作废记录让 _sync_cell_lut_dims
+	# 在 _apply_uniforms 万一没跟上时也能补推。
+	_pushed_lut_dims = Vector2i.ZERO
 	_active_material_source_path = ""
 	_active_shader_source_path = ""
 
@@ -1977,7 +1966,6 @@ func _poll_shader_hot_reload(delta: float) -> void:
 		return
 
 	_load_shader()
-	_clear_season_transition()
 	if _map != null and _world != null and _shader_mat != null:
 		_apply_uniforms()
 	print("[HexRenderer] hot-reloaded world shader/material")
@@ -1997,8 +1985,8 @@ func _file_modified_time(path: String) -> int:
 # ─── 对外接口 ────────────────────────────────────────────────────────────
 
 func set_map(map: MapData, world: WorldData = null) -> void:
-	var replacing_world := _world != null and world != null and _world != world
-	if replacing_world and _visual_tile_horizon_baker != null:
+	if _world != null and world != null and _world != world \
+			and _visual_tile_horizon_baker != null:
 		_visual_tile_horizon_baker.cancel()
 	_map = map
 	_world = world
@@ -2011,51 +1999,8 @@ func set_map(map: MapData, world: WorldData = null) -> void:
 		_weather_layer.set_world_ref(_world)  # 帧间插值:weather_lut_prev_tex 源
 	# [terrain-horizon-gpu 2026-07-03] map_baker 若登记了 GPU 离屏烘焙，这里在场景树内发起。
 	_maybe_bake_terrain_horizon_gpu()
-	if replacing_world:
-		_clear_season_transition()
 	if is_inside_tree():
 		_rebuild()
-
-func begin_season_transition(start_phase: float) -> void:
-	if _shader_mat == null or _world_quad == null or _world == null or _world.enum_atlas_tex == null:
-		return
-	if _world_quad.mesh == null:
-		return
-	var img := _world.enum_atlas_tex.get_image()
-	if img == null or img.is_empty():
-		return
-	var enum_snapshot := ImageTexture.create_from_image(img.duplicate())
-	_season_transition_mat = _shader_mat.duplicate() as ShaderMaterial
-	if _season_transition_mat == null:
-		return
-	_season_transition_mat.set_shader_parameter("map_index_atlas", enum_snapshot)
-	_season_transition_mat.set_shader_parameter("season_transition_overlay", true)
-	_season_transition_mat.set_shader_parameter("season_transition_progress", 0.0)
-	_season_transition_mat.set_shader_parameter("season_transition_softness", season_transition_softness)
-	_season_transition_quad.mesh = _world_quad.mesh
-	_season_transition_quad.material = _season_transition_mat
-	_season_transition_quad.visible = true
-	_season_transition_active = true
-	_season_transition_start_phase = fposmod(start_phase, 4.0)
-
-func _clear_season_transition() -> void:
-	_season_transition_active = false
-	_season_transition_mat = null
-	if _season_transition_quad != null:
-		_season_transition_quad.visible = false
-		_season_transition_quad.material = null
-		_season_transition_quad.mesh = null
-
-func _update_season_transition() -> void:
-	if not _season_transition_active or _season_transition_mat == null:
-		return
-	var span := maxf(season_transition_phase_span, 0.001)
-	var elapsed := fposmod(_season_phase - _season_transition_start_phase, 4.0)
-	var progress := clampf(elapsed / span, 0.0, 1.0)
-	_season_transition_mat.set_shader_parameter("season_transition_progress", progress)
-	_season_transition_mat.set_shader_parameter("season_transition_softness", season_transition_softness)
-	if progress >= 1.0:
-		_clear_season_transition()
 
 func get_world_bounds() -> Rect2:
 	if _world != null:
@@ -2119,9 +2064,6 @@ func set_season_phase(phase: float) -> void:
 	_season_phase = phase
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("season_phase", _season_phase)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("season_phase", _season_phase)
-		_update_season_transition()
 	if _weather_layer != null:
 		_weather_layer.set_season_phase(_season_phase)
 	if _fog_layer != null:
@@ -2135,8 +2077,6 @@ func set_climate_anomaly(v: float) -> void:
 	_climate_anomaly = v
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("climate_anomaly", _climate_anomaly)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("climate_anomaly", _climate_anomaly)
 
 # True Insolation-Driven（Phase F）：旧兼容 setter。运行时和 shader 统一保持
 # insolation 分支，bool 只保留给旧材质参数兼容。
@@ -2145,8 +2085,6 @@ func set_true_insolation_enabled(v: bool) -> void:
 	true_insolation_enabled = true
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("true_insolation_enabled", true_insolation_enabled)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("true_insolation_enabled", true_insolation_enabled)
 
 # 任务 2：昼夜相位。由 main.gd 接收 WorldClock.day_phase_changed 信号后转发。
 # 同时写入地形 shader 与 weather overlay shader（两者都需要昼夜相位。但后者
@@ -2154,8 +2092,6 @@ func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("day_phase", _day_phase)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("day_phase", _day_phase)
 	if _weather_layer != null:
 		_weather_layer.set_day_phase(_day_phase)
 	if _fog_layer != null:
@@ -2172,9 +2108,6 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 		_shader_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
-		_season_transition_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_position"):
 		_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 	if _fog_layer != null:
@@ -2190,8 +2123,6 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_height_scale"):
 		_weather_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 	if _fog_layer != null:
@@ -2239,8 +2170,6 @@ func set_camera_zoom(value: float) -> void:
 	_camera_zoom = next_zoom
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("camera_zoom", _camera_zoom)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("camera_zoom", _camera_zoom)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_camera_zoom(_camera_zoom)
 	)
@@ -2654,8 +2583,15 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 
 # [terrain-gi 2026-07-31] legacy 全局 map_index（RGBA8，G/B=cell.index 低/高字节）的字节视图，
 # 供 C++ 全局 horizon pass 顺带产出遮挡源 cell。拿不到就返回空数组，调用方据此关闭弹射。
+#
+# get_image() 是一次 GPU 回读，Godot 对桌面 GL（glGetTexImage）与 GLES/WebGL2
+# （FBO + glReadPixels）走两条不同实现，后者不可信。而这份数据唯一的下游是
+# GI 弹射的 bounce_lut，它在 PK_WEB_TEXTURE_BUDGET 下本就被编译掉了——所以
+# Compatibility 后端直接跳过回读：既省一次全图回读，也避免把坏数据喂给 C++ pass。
 func _global_map_index_bytes(world: WorldData) -> PackedByteArray:
 	if world == null or world.enum_atlas_tex == null:
+		return PackedByteArray()
+	if DCFeatureFlags.is_compatibility_renderer():
 		return PackedByteArray()
 	var image := world.enum_atlas_tex.get_image()
 	if image == null:
@@ -2980,18 +2916,6 @@ func apply_tod(profile: TODProfile) -> void:
 		)
 		_shader_mat.set_shader_parameter("tod_night_factor", profile.night_factor)
 		_shader_mat.set_shader_parameter("tod_exposure", profile.exposure)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("tod_sun_dir", profile.sun_dir)
-		_season_transition_mat.set_shader_parameter(
-			"tod_sun_color",
-			Vector3(profile.sun_color.r, profile.sun_color.g, profile.sun_color.b)
-		)
-		_season_transition_mat.set_shader_parameter(
-			"tod_ambient_color",
-			Vector3(profile.ambient_color.r, profile.ambient_color.g, profile.ambient_color.b)
-		)
-		_season_transition_mat.set_shader_parameter("tod_night_factor", profile.night_factor)
-		_season_transition_mat.set_shader_parameter("tod_exposure", profile.exposure)
 	if _weather_layer != null and _weather_layer.has_method("apply_tod"):
 		_weather_layer.apply_tod(profile)
 	# 植被/点缀层随昼夜统一着色（修复"树草常亮"）。缓存供新生成层补推。
@@ -3391,6 +3315,63 @@ func _rebuild() -> void:
 		return
 	_apply_uniforms()
 
+# cell LUT 网格尺寸是间接寻址的比例因子：cell_lut_uv 用它把 cell.index 换算成
+# texel 中心。推成退化值（Vector2i.ZERO 是 WorldData 的初值，(1,1) 是
+# world_map_material.tres 的默认值）会让 lw 被钳到 1、除数被 max() 抬到 1，
+# 于是整张地图的每个像素都落到 enum_lut 的同一个 texel —— 全图按某个 cell 的
+# biome 着色。那个 cell 通常是海洋，画面就变成"整体偏蓝像蒙在水下，但 height_tex
+# 驱动的山体阴影与植被层仍然正常"。
+#
+# lut_dims 过去只在 _apply_uniforms 里推一次，一旦在 bake 写入 world.lut_dims 之前
+# 推了退化值就永远纠正不回来。这里记下已推的值，交给 _sync_cell_lut_dims 每帧比对。
+func _push_cell_lut_dims(sm: ShaderMaterial, dims: Vector2i) -> void:
+	if dims.x <= 1 and dims.y <= 1 and _world != null and _world.enum_lut_tex != null:
+		push_warning("[hex_renderer] degenerate lut_dims %s pushed while enum_lut is bound; "
+			% str(dims) + "cell LUT indirection will collapse onto one texel")
+	sm.set_shader_parameter("lut_dims", Vector2(dims.x, dims.y))
+	_pushed_lut_dims = dims
+
+
+# world.lut_dims 由 bake / daily LUT 刷新写入，与 enum/dyn/eco/bounce LUT 纹理的
+# 网格严格同源。它一旦与材质上已推的值不一致，间接寻址就整体错位，所以这里补推。
+# 稳态下是一次 Vector2i 比较，命中才写 uniform。
+func _sync_cell_lut_dims() -> void:
+	if _world == null:
+		return
+	var dims := _world.lut_dims
+	if dims == _pushed_lut_dims or dims.x <= 0 or dims.y <= 0:
+		return
+	# 健康路径下 _apply_uniforms 已把两者对齐，这里不会命中；命中即说明材质上的
+	# lut_dims 曾经落在退化值上，把它打出来便于定位是哪条路径先推的。
+	print("[hex_renderer] lut_dims resync %s -> %s (cell LUT indirection was misaddressed)"
+		% [str(_pushed_lut_dims), str(dims)])
+	_push_cell_lut_dims(_shader_mat, dims)
+
+
+# lut_dims 的姊妹问题：LUT 纹理**对象**本身漂移。日刷走 _lut_tex_from_data，尺寸
+# 对得上时是 ImageTexture.update() 原地上传、对象不变，所以材质那一次绑定长期有效；
+# 但只要走了 create_from_image 分支（首次创建、尺寸变更、或纹理被置空后重建），
+# world 侧换成新对象而材质仍指着旧的，之后所有日刷内容都写进一张没人采样的纹理，
+# 材质就永远停在旧快照上。稳态下这里是四次引用比较，不相等才写 uniform。
+func _sync_cell_lut_textures() -> void:
+	if _world == null or _shader_mat == null:
+		return
+	for lut_name in ["enum_lut", "dyn_lut", "eco_lut", "bounce_lut"]:
+		var world_tex: Texture2D = _world.get(lut_name + "_tex")
+		if world_tex == null or _shader_mat.get_shader_parameter(lut_name) == world_tex:
+			continue
+		print("[hex_renderer] %s rebind (material held a stale LUT texture object)" % lut_name)
+		_shader_mat.set_shader_parameter(lut_name, world_tex)
+		if lut_name == "bounce_lut":
+			_shader_mat.set_shader_parameter("gi_bounce_bound", true)
+		elif lut_name == "enum_lut":
+			# 迷雾层与天气层各自缓存了同一张 enum_lut（A 通道 = 知识度），
+			# 它们的 setter 同样是"绑一次"语义，漂移时要一起补。
+			if _fog_layer != null:
+				_fog_layer.set_enum_lut_texture(world_tex)
+			_push_fog_uniforms()
+
+
 func _wrap_period_x() -> float:
 	if _map == null:
 		return 0.0
@@ -3471,6 +3452,8 @@ func _apply_uniforms() -> void:
 	# [river-render-restore 2026-06-19] 河流 SDF 纹理重新接回主地图 shader（flow 视觉层）。
 	if not tiled:
 		sm.set_shader_parameter("flow_tex", _world.flow_tex)
+	sm.set_shader_parameter("has_flow_tex",
+		visual_tiles.flow != null if tiled else _world.flow_tex != null)
 	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8：绑定后 shader 每水像素 1 次采样取代旧"海洋 5×5
 	# height 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算；未绑定时 has_water_depth_tex=false →
 	# water_pipeline 回退旧逐邻域算法。
@@ -3528,7 +3511,7 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	sm.set_shader_parameter("eco_lut", _world.eco_lut_tex)
-	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
+	_push_cell_lut_dims(sm, _world.lut_dims)
 	# [terrain-gi 档 2] 弹射代表色 LUT：与 enum/dyn/eco 同一 lut_dims 网格、同一日刷节奏。
 	sm.set_shader_parameter("bounce_lut", _world.bounce_lut_tex)
 	sm.set_shader_parameter("gi_bounce_bound", _world.bounce_lut_tex != null
@@ -3582,10 +3565,6 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("vitality_visual_strength", vitality_visual_strength)
 	sm.set_shader_parameter("ecology_visual_quality", ecology_visual_quality)
 	_push_terrain_horizon_uniforms()
-	# Seasonal transition is only enabled on the temporary old-terrain overlay.
-	sm.set_shader_parameter("season_transition_overlay", false)
-	sm.set_shader_parameter("season_transition_progress", 1.0)
-	sm.set_shader_parameter("season_transition_softness", season_transition_softness)
 
 	# Milestone 3：默认填空 weather 数组；全局天气强度只由 WeatherLayer 消费。
 
@@ -3749,9 +3728,6 @@ func _push_vegetation_season_lut() -> void:
 		shifts[veg] = Vector4(shift.r, shift.g, shift.b, shift.a)
 	_shader_mat.set_shader_parameter("vegetation_season_lut", lut)
 	_shader_mat.set_shader_parameter("vegetation_anomaly_shift", shifts)
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("vegetation_season_lut", lut)
-		_season_transition_mat.set_shader_parameter("vegetation_anomaly_shift", shifts)
 
 # ─── Fast-tick perf opt (E)：细粒度纹理重绑接口 ──────────────────────────
 # 背景：原 `set_map` 路径会触发 `_rebuild` → `_build_world_quad_mesh` + `_apply_uniforms`，
@@ -3776,14 +3752,10 @@ func _push_vegetation_season_lut() -> void:
 #   - 不重新计算 world_bounds / world_origin / world_size / sea_level / hm_resolution
 #   - 不重发 hypsometric 调色板、water 视觉、TOD 参数等静态 uniform
 #   - 不重置 _weather_layer.setup（weather layer 自有节奏）
-#   - 不重置 season_transition uniform（季节过渡材质独立路径）
 func set_biome_tex_only(world: WorldData) -> void:
 	if _shader_mat == null or world == null or world.enum_atlas_tex == null:
 		return
 	_shader_mat.set_shader_parameter("map_index_atlas", world.enum_atlas_tex)
-	# season 过渡材质若激活，也同步重绑（确保过渡覆盖层的 enum_atlas 不滞后）
-	if _season_transition_mat != null:
-		_season_transition_mat.set_shader_parameter("map_index_atlas", world.enum_atlas_tex)
 
 func set_cover_tex_only(world: WorldData) -> void:
 	# Project.Keynes 把 biome / cover / vegetation / weather 共用一张 enum_atlas，

@@ -360,6 +360,10 @@ SurfaceParams apply_terrain_micro_surface(
 		float snow_amount) {
 	// HIGH tiled materials already provide albedo, tangent normal and roughness;
 	// keep the old micro texture completely out of that path.
+#ifdef PK_WEB_TEXTURE_BUDGET
+	// web 预算下 terrain_micro_tex 声明已被整体裁剪（纹理单元撞车防护，见 uniforms）。
+	return surface;
+#else
 	if (terrain_materials_active() || !has_terrain_micro_tex) {
 		return surface;
 	}
@@ -394,6 +398,7 @@ SurfaceParams apply_terrain_micro_surface(
 	float grain = (micro.a * 2.0 - 1.0) * 0.028 * strength * snow_flatten;
 	surface.base_color *= 1.0 + grain;
 	return surface;
+#endif
 }
 
 vec3 terrain_index_debug_color(int cid) {
@@ -426,9 +431,13 @@ vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
 		return vec3(terrain_edge_secondary_weight(uv, wp) * 2.0);
 	}
 	if (terrain_surface_debug_view == 5) {
+#if defined(PK_WEB_TEXTURE_BUDGET)
+		vec2 n = vec2(0.5);
+#else
 		vec2 n = !terrain_materials_active() && has_terrain_micro_tex
 				? texture(terrain_micro_tex, terrain_micro_uv(wp)).rg
 				: vec2(0.5);
+#endif
 		return vec3(n, terrain_micro_zoom_alpha());
 	}
 	// [terrain-material-tiles 诊断] 7 = 材质路径门禁可视化：
@@ -439,6 +448,34 @@ vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
 		if (!terrain_material_tex_bound) { return vec3(0.0, 0.0, 1.0); }
 		if (!terrain_materials_active()) { return vec3(1.0, 0.5, 0.0); }
 		return vec3(0.0, 1.0, 0.0);
+	}
+	// 8 = enum_lut 直读：接在 dv1 之后的下一环。dv1 证明 cid 有效时，这一档判定
+	// LUT 采样本身。色相 = biome id 哈希，亮度 = fog_k（elut.a）。
+	//   分区着色 = LUT 正常；纯黑 = biome 0 且 fog_k 0（整张 LUT 读成零，
+	//   即水管线 + 迷雾灰化同时触发，正是「发暗偏蓝像蒙在水下」的成因）；
+	//   品红 = cid 无效，不该出现在这一档。
+	if (terrain_surface_debug_view == 8) {
+		if (primary_id < 0) {
+			return vec3(1.0, 0.0, 1.0);
+		}
+		vec4 elut = texture(enum_lut, cell_lut_uv(primary_id));
+		return terrain_index_debug_color(int(elut.r * 255.0 + 0.5)) * elut.a;
+	}
+	// 9 / 10 = dyn_lut / eco_lut 直读。这两张与 enum_lut 同走 ImageTexture.update()
+	// 增量上传，但内容每日都变（enum_lut 基本静止、多数天根本不触发上传），所以
+	// 上传通道一旦不可靠，最先且只有它们会塌。
+	//   9  = R 温度 / G 湿度 / B 雪盖（陆地应有明显的纬度与地形梯度）
+	//   10 = R 叶量 / G 胁迫 / B 物候（植被区应非零）
+	// 纯黑 = 整张读成零。dyn_lut 全零在陆地上就是「最冷 + 活力 0」，而水格的
+	// 海冰比例同样是 0，所以海洋看不出异常——与观察到的现象一致。
+	if (terrain_surface_debug_view == 9 || terrain_surface_debug_view == 10) {
+		if (primary_id < 0) {
+			return vec3(1.0, 0.0, 1.0);
+		}
+		vec2 luv = cell_lut_uv(primary_id);
+		return (terrain_surface_debug_view == 9)
+				? texture(dyn_lut, luv).rgb
+				: texture(eco_lut, luv).rgb;
 	}
 	return vec3(terrain_micro_zoom_alpha());
 }

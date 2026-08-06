@@ -144,6 +144,19 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 - `eco_valid = step(0.01, eco_foliage + eco_stress + eco_transition)`：生态层是否已 bake；
 - `scalar_atlas` / `vector_atlas` / `dynamic_cell_atlas` / `dyn_atlas_smooth_atlas` /
   `ecology_visual_atlas` / `ice_state_atlas` / `sea_ice_tex` 已退役，不再绑定或采样。
+- **单通道纹理必须走 `DCAtlasEncoders.upload_single_channel()`，不要自己
+  `Image.create_from_data(..., FORMAT_R8/L8, ...)`。** Web(WebGL2) 上单通道纹理**建不起来**
+  （L8、R8 都试过），Godot 会把该 sampler 静默换成内部的 4×4 默认**白**纹理，所以该入口在
+  Compatibility 后端下把格式加宽到 RGBA8（同构建下 RG8/RGBA8 均正常）。消费者只读 `.r`，
+  `Image.convert()` 保证 `.r` 逐位保值。
+- **这类失效在 GDScript 侧完全看不出来**：`Texture2D.get_size()`、`get_format()`、
+  `has_*` 标志、CPU 侧字节统计全部正常，唯一能证伪的是 shader 里的 `textureSize()` ——
+  兜底发生时它报 `4×4`。诊断档 `terrain_surface_debug_view = 16` 就是把这个尺寸按 12 位
+  二进制条画出来的（配 `tests/_tmp_decode_texsize_view.gd` 从截图解码）。
+- **可选纹理一律配一个 `has_*` bool，不要靠"没绑就采样得 0"降级。** 兜底纹理是白而非黑，
+  所以"缺省=无效果"的写法在 Web 上会整体翻转成"缺省=效果拉满"——2026-08 Web 端整图发蓝
+  就是 `flow` 恒为 1.0（判定全图是河心）导致的。
+  `flow_tex`（`has_flow_tex`）与 `water_depth_tex`（`has_water_depth_tex`）都按这个约定走。
 
 ---
 
@@ -174,7 +187,6 @@ else            →  render_water_pipeline()
 
 GLOBAL          →  apply_global_adjustments
                      ├── 羊皮纸纸纹（pixel_noise.b 派生 grain）
-                     ├── season_transition_overlay（pixel_noise.a 派生 dissolve）
                      ├── apply_tonemap（ACES 或 Reinhard）
                      └── linear_to_srgb（仅 USE_LINEAR_LIGHTING=true）
 ```
@@ -441,7 +453,6 @@ return apply_water_specials(
 vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_snow, ...) {
     col = apply_paper_grain(col, wp, pixel_noise);          // 羊皮纸纸纹
     col = apply_equator_band(col, ...);                     // 赤道带柔光
-    col = apply_season_transition_overlay(col, pixel_noise);// 季节过渡 dissolve
     if (USE_LINEAR_LIGHTING && day_night_enabled) {
         col = apply_tonemap(col);    // ACES 或 Reinhard，内部自带 exposure_bias
         col = linear_to_srgb(col);

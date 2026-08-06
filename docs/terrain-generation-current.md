@@ -10,14 +10,15 @@
 | --- | --- | --- |
 | 世界生成入口 | `Project/project-keynes/scripts/geography/map_generator.gd` | `generate()` |
 | native 生成桥 | `Project/project-keynes/scripts/geography/map_generator.gd` | `_generate_cells_native_base()` |
-| native 结果装配 | `Project/project-keynes/scripts/geography/map_generator.gd` | `_assemble_native_generation_map()` |
+| native 结果装配 | `Project/project-keynes/scripts/geography/map_generation/terrain_gen.gd` | `TerrainGeneratorScript.assemble_native_result()` |
 | C++ base 生成 | `gdext/src/world_ext.cpp` | `DCWorldExt::run_native_world_generate_base_pass()` |
 | C++ post-base 后处理 | `gdext/src/world_ext.cpp` | `DCWorldExt::run_native_world_generate_post_base_pass()` |
 | C++ 同源 helper | `gdext/src/world_ext.cpp` | `pk_compute_temperature()` / `pk_decide_terrain_ex()` / `pk_derive_*()` |
 | GDScript 运行期 helper | `Project/project-keynes/scripts/geography/map_generator.gd` | `_compute_temperature()` / `_decide_terrain()` / `_derive_*()` |
 | 渲染烘焙入口 | `Project/project-keynes/scripts/rendering/map_baker.gd` | `bake_world()` |
-| 视觉高度/biome 上采样 | `Project/project-keynes/scripts/rendering/map_baker.gd` | `_bake_height_biome_moisture()` |
-| 河流视觉 SDF | `Project/project-keynes/scripts/rendering/map_baker.gd` | `_bake_river_sdf()` / `_trace_river_chain()` |
+| terrain-index native bridge | `Project/project-keynes/scripts/rendering/bakers/terrain_index_baker.gd` | `DCTerrainIndexBaker.bake()` / `apply_result()` |
+| 视觉高度/biome 上采样 | `Project/project-keynes/scripts/rendering/bakers/terrain_baker.gd` | `DCTerrainBaker.bake_height_biome_moisture()` |
+| 河流视觉 SDF | `Project/project-keynes/scripts/rendering/bakers/terrain_baker.gd` | `DCTerrainBaker.bake_river_sdf()` |
 | SoA 镜像 | `Project/project-keynes/scripts/geography/map_data.gd` | `_build_indices()` / `init_soa_from_bake()` |
 | 枚举定义 | `Project/project-keynes/scripts/geography/terrain_type.gd` | `TerrainType.TERRAIN` |
 | 三轴定义 | `Project/project-keynes/scripts/geography/landform_type.gd` / `vegetation_type.gd` / `cover_type.gd` | `LandformType.LF` / `VegetationType.VEG` / `CoverType.CV` |
@@ -29,7 +30,7 @@
 
 1. **C++ base pass**：`run_native_world_generate_base_pass()` 生成基础 per-cell 数组，包括 cube 坐标、海拔、湿度、温度、初始 terrain、初始三轴、湖泊种子标记。
 2. **C++ post-base pass**：`run_native_world_generate_post_base_pass()` 基于 base 输出继续做湖泊连通、雨影、河流、河岸生态、植被反馈、特殊地貌、reef/kelp，返回最终 per-cell 数组。
-3. **GDScript 装配和运行期接入**：`_assemble_native_generation_map()` 只校验数组并创建 `MapData` / `HexCell`；`MapBaker` 负责视觉烘焙；`MapData.init_soa_from_bake()` 把 HexCell AoS 同步到 SoA；`_setup_sus()` 绑定 DataCore / C++ runtime。
+3. **GDScript 装配和运行期接入**：`TerrainGeneratorScript.assemble_native_result()` 只校验数组并创建 `MapData` / `HexCell`；`MapBaker` 负责视觉烘焙；`MapData.init_soa_from_bake()` 把 HexCell AoS 同步到 SoA；`_setup_sus()` 绑定 DataCore / C++ runtime。
 
 ## 顶层生成流程
 
@@ -41,7 +42,7 @@
 4. 调 `_generate_cells_native_base(cfg, seed)`。
 5. `_generate_cells_native_base()` 调 `DCWorldExt.run_native_world_generate_base_pass(seed, cfg_dict, profile_dict)`。
 6. base 成功后调 `DCWorldExt.run_native_world_generate_post_base_pass(seed, cfg_dict, profile_dict, base_res)`。
-7. post-base 成功后调 `_assemble_native_generation_map()` 创建 `MapData` 和 `HexCell`。
+7. post-base 成功后调 `TerrainGeneratorScript.assemble_native_result()` 创建 `MapData` 和 `HexCell`。
 8. `_snapshot_base_state(map)` 保存 `base_terrain / base_landform / base_vegetation`。
 9. `_bootstrap_sea_ice_fraction(map, cfg)` 初始化海冰连续覆盖率，稳定极地多年冰可把 `terrain` 翻成 `SEA_ICE`。
 10. `_sync_axes_for_map(map, cfg)` 因海冰可能改写 terrain，重新派生三轴。
@@ -463,7 +464,7 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 
 ## GDScript 装配
 
-函数：`MapGenerator._assemble_native_generation_map(res, cfg)`。
+函数：`TerrainGeneratorScript.assemble_native_result(res, cfg)`。
 
 它不重新生成地形，只做数组校验和对象装配：
 
@@ -502,9 +503,9 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 1. 初始化 baker RNG 和视觉噪声。
 2. 清空海冰、enum atlas、weather atlas、dynamic atlas、cell-index LUT 等缓存。
 3. 创建 `WorldData`，计算 `world_bounds`、`hm_size`、`derived_size`、`sea_level`、`bake_seed`。
-4. `_bake_height_biome_moisture()` 一次循环生成 `height_buffer / biome_buffer / moisture_buffer / vegetation_buffer / cover_buffer`，并建立 `pixel_to_cell_lookup / cell_pixel_lists / CSR`。
-5. `_hydraulic_erosion()` 对视觉 `height_buffer` 做轻度水力侵蚀。
-6. `_bake_river_sdf()` 把 `cell.has_river` 链烘成河流 SDF。
+4. `DCTerrainBaker.bake_height_biome_moisture()` 一次循环生成 `height_buffer / biome_buffer / moisture_buffer / vegetation_buffer / cover_buffer`，并建立 `pixel_to_cell_lookup / cell_pixel_lists / CSR`。
+5. `DCTerrainBaker.bake_hydraulic_erosion()` 对视觉 `height_buffer` 做轻度水力侵蚀。
+6. `DCTerrainBaker.bake_river_sdf()` 把 `cell.has_river` 链烘成河流 SDF。
 7. `_bake_latitude_buffer()` 生成每像素纬度。
 8. `_bake_initial_physical_circulation()` 和 `_bake_initial_vector_buffers()` 生成风、洋流、上升流相关 buffer。
 9. 跳过已退役的 dynamic/ecology/smooth/ice per-pixel atlas。
@@ -513,7 +514,9 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 
 ### 高度、biome、湿度上采样
 
-函数：`MapBaker._bake_height_biome_moisture()`。
+函数：`DCTerrainBaker.bake_height_biome_moisture()`。
+
+该函数是 native terrain-index 缺失时的 GDScript ground-truth fallback；它通过显式噪声对象和 bake knobs 调用 `DCTerrainGeometryUtils` 的无状态几何工具，不复制 MapBaker 的状态。融合 native geometry pass 成功时不会执行该 fallback。
 
 每个像素：
 
@@ -530,7 +533,7 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 
 ### 轻度水力侵蚀
 
-函数：`MapBaker._hydraulic_erosion()`。
+函数：`DCTerrainBaker.bake_hydraulic_erosion()`。
 
 这是视觉层侵蚀，不回写 `HexCell.elevation`：
 
@@ -542,22 +545,16 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 6. 侵蚀按 brush kernel 从邻近像素扣高度。
 7. 水量按 `EROSION_EVAPORATION` 衰减，过低则停止。
 
-### 河流 SDF
+### River SDF
 
-函数：`MapBaker._bake_river_sdf()`、`_trace_all_rivers()`、`_trace_river_chain()`。
+函数：`DCTerrainBaker.bake_river_sdf()`（`scripts/rendering/bakers/terrain_baker.gd`）。
 
-流程：
+1. GDScript 显式构造几何 knobs：尺寸、世界 bounds、hex size、seed、基础半径、SDF 距离上限、Catmull-Rom 步长和 X wrap 周期。
+2. `DCWorldExt.run_bake_river_sdf_pass()` 在 C++ 内完成河流拓扑 trace、跨经度连续展开、Catmull-Rom 致密化、warp、可变宽度 stamp、3-4 chamfer SDT 和归一化。
+3. GDScript 只校验 `out_buf` 类型和 `W*H` 尺寸；非法或 native fallback 返回全尺寸空 buffer并记录错误。
+4. 河流拓扑不跨语言传输；post-base 先把拓扑暂存到 `DCWorldExt`，bake pass 直接读取。
+5. 输出写入 `world.flow_buffer`，随后由现有纹理上传路径发布。
 
-1. `_trace_all_rivers()` 遍历 `has_river` 且非终端水体的格子。
-2. 先按 `river_downstream` 统计入流数，入流数为 0 的河格作为支流/主流源头。
-3. `_trace_river_chain()` 沿 C++ 输出的 `river_downstream` 指针追踪，而不是按原始海拔重新猜下坡邻居。
-4. 如果支流接入已访问主河道，仍追加合流点，避免视觉断裂。
-5. `river_flow` 随折线一起插值，作为每段 stroke 半径的权重。
-6. `_catmull_rom_dense_with_widths()` 用 Catmull-Rom 曲线加密折线和宽度。
-7. `_warp_river_chain()` 用地形同源 warp 噪声让河道弯曲。
-8. `_stamp_polyline_variable()` 按 `river_flow` 栅格化可变宽度折线。
-9. `_chamfer_sdt()` 用 3-4 chamfer 距离变换生成距离场。
-9. 输出 `[0,1]`：`1` 表示河上，`0` 表示距离超过 `SDF_MAX_DIST_PX`。
 
 ### 纹理编码
 
@@ -566,6 +563,13 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 | `_encode_height_tex()` | `height_tex` | RG8 16-bit，高字节 R，低字节 G |
 | `_encode_enum_atlas()` | `enum_atlas_tex` | RGBA8 map-index，`R=terrain/biome`，`G/B=cell.index`，`A=0` |
 | `bake_cell_luts()` | per-cell LUTs | enum/dynamic/ecology LUT |
+
+### Terrain detail R8
+
+`DCTerrainBaker.rebake_terrain_detail_texture()` 负责跨 biome 连续的 detail
+noise raster、byte quantization 和 `DCAtlasEncoders.encode_r8_tex()` 调用。
+`MapBaker` 只传入 detail/ridge noise、`WorldData`、native encoder 和范围常量，
+再接收返回的 `ImageTexture`；不再持有该像素循环。
 
 ## MapData / SoA / DataCore
 
@@ -587,8 +591,8 @@ C++ 权威 helper 在 `world_ext.cpp`，GDScript 同源 helper 在 `map_generato
 1. 初始生成没有 GDScript fallback。修改 `world_ext.cpp` 后必须 rebuild GDExtension。
 2. C++ helper 与 GDScript helper、shader helper 有 SAME_SOURCE 关系，尤其是纬度温度曲线、海拔降温、雪盖和海冰公式。
 3. `MapConfig.river_count` 当前不控制河流数量；主河由 `river_channel_init_cells` 控制，高地源流由 `river_headwater_init_cells / river_headwater_min_land_h` 控制，之后会沿 `hydro_parent` 下坡连通到水体。
-4. `has_river` 是逻辑 flag，terrain 不会变成 river；视觉河流由 `MapBaker._bake_river_sdf()` 生成。
-5. `MapBaker._hydraulic_erosion()` 只改视觉高度图，不回写逻辑海拔，因此不影响玩法水文。
+4. `has_river` 是逻辑 flag，terrain 不会变成 river；视觉河流由 `DCTerrainBaker.bake_river_sdf()` 生成。
+5. `DCTerrainBaker.bake_hydraulic_erosion()` 只改视觉高度图，不回写逻辑海拔，因此不影响玩法水文。
 6. post-base 的 `base_moisture` 快照在雨影之前；运行期季节刷新从该基线出发。
 7. 海冰 bootstrap 可能改写 terrain，所以 native post-base 后仍需要一次 `_sync_axes_for_map()`。
 8. 三轴语义已取代单轴 terrain 作为新代码推荐读取方式；terrain 仍是渲染和兼容层重要 enum。

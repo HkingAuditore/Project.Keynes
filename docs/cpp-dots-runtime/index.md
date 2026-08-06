@@ -2,6 +2,9 @@
 
 ## Formal game flow and PKSV
 
+- [Module Boundaries](../architecture/module-boundaries.md): source-file
+  ownership, dependency direction, extraction thresholds, and verification gate.
+
 - [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)：81 项权威目录、国家研究状态、
   科技值市场与国家采购、科技 Modifier、GraphEdit 工作区以及 PKCN v4/PKEC v23 存档契约。
 
@@ -142,7 +145,7 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 | System wrappers | `Project/project-keynes/scripts/simulation/systems/*.gd` | DataCore/DCSystem 版 runtime jobs。 |
 | Legacy jobs | `Project/project-keynes/scripts/simulation/sus/jobs/*.gd` | 兼容 jobs，部分仍被 wrapper 委托。 |
 | Runtime orchestration | `Project/project-keynes/scripts/geography/map_generator.gd` | `_setup_sus()` 注册系统，调度 climate/ocean/weather pass。 |
-| Native economy | `gdext/src/economy_runtime.cpp`, `Project/project-keynes/scripts/economy/*.gd` | 独立 `ECONOMY_GRAPH`、catalog/facade、committed gameplay/save 与 selected-cell live Inspector bridge。 |
+| Native economy | `gdext/src/economy_runtime*.cpp`, `Project/project-keynes/scripts/economy/*.gd` | 独立 `ECONOMY_GRAPH`；catalog、profile、configuration、domain、persistence、events 与 query translation units；root 仅保留 stage/worker/publish orchestration；committed gameplay/save 与 selected-cell live Inspector bridge 不变。 |
 | Native country | `gdext/src/country_runtime.cpp`, `gdext/src/world_ext_country.cpp`, `Project/project-keynes/scripts/country/*.gd` | 国家身份、领土、科技、国库、PKCN 与 `country_daily` 权威；只镜像 `cell.country_slot`。 |
 | Native modifier | `gdext/src/modifier_runtime.*`, `gdext/src/world_ext_modifier.cpp`, `Project/project-keynes/scripts/modifier/*.gd` | 四域独立 store、PackedArray command、explain/journal/save 与 `modifier_daily` 冻结发布。 |
 | Rendering / physical ocean | `Project/project-keynes/scripts/rendering/map_baker.gd` | SLP/wind/PSI/upwelling/raster 等 ocean currents 物理链路。 |
@@ -158,3 +161,31 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 - 修改 scheduler 报告字段、skip 原因、budget 窗口或 job 注册顺序时，同时更新 [Scheduling and Job Graph](./scheduling-and-job-graph.md) 和 [Performance Diagnostics Playbook](./performance-diagnostics-playbook.md)。
 - 修改 LUT 通道布局、迷雾/国界视觉、PKSV section 集合或渲染 z 序时，同时更新 [视野迷雾与国界线](./vision-fog-and-borders.md)、[Computation Pipelines](./computation-pipelines.md) 与 [Formal Game Flow, Player Start, and PKSV](./game-flow-start-save.md)。
 - 文档里提到的符号必须能用 `rg` 在源码里找到；历史计划中的已废弃名字不要作为当前状态写入。
+E9c economy publish split: `gdext/src/economy_runtime_publish.cpp` owns
+publish-phase-local reset/cursors, closing conservation audits, watermark and
+trade diagnostics, resource-delta readiness and ordered COMMIT. The root
+`economy_runtime.cpp` remains the sole owner of aggregate-publish stage entry,
+outer cursor/yield boundaries, stage order and next-stage selection.
+
+E9d economy result-container split: `gdext/src/economy_runtime_results.cpp`
+owns `MarketResult`/`ProductionResult` reset/capacity methods and worker
+TLS sink definitions. Result aggregation, worker scheduling, stage boundaries
+and conservation authority remain in `economy_runtime.cpp`.
+
+E9e economy diagnostics split:
+`gdext/src/economy_runtime_diagnostics.cpp` owns read-only progress, memory,
+slice-breakdown and compact/full report formatting. Report keys and scheduler
+semantics are unchanged; stage/cursor mutation and worker execution remain in
+`economy_runtime.cpp`.
+
+E9f economy settlement lifecycle split:
+`gdext/src/economy_runtime_settlements.cpp` owns committed population totals,
+prosperity hysteresis, stable settlement naming, settlement initialization and
+changed-cell updates plus bounded settlement row construction. The native
+`SettlementStore` owner, forced-name behavior, query fields and aggregate
+publish/COMMIT ordering remain unchanged.
+
+E9b2 economy epoch lifecycle: `gdext/src/economy_runtime_epoch.cpp` owns
+epoch preflight, frozen country/workset preparation, transient vectors,
+opening audit lanes and completed performance snapshots; stage order, outer
+cursors and worker scheduling remain in `economy_runtime.cpp`.

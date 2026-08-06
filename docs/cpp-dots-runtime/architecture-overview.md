@@ -48,6 +48,19 @@ DCWorld (GDScript) <---- schema ----> DCWorldExt (C++ GDExtension)
 MapData, render atlases, weather fronts, debug views
 ```
 
+File ownership follows the runtime boundary: `MapGenerator` and `MapBaker`
+remain stable orchestration facades, while domain implementations live under
+`geography/map_generation`, `simulation/*`, and `rendering/bakers`. Runtime
+diagnostic snapshots are owned by `DCDiagnosticsBus`; they are reports only and
+never become simulation or DataCore authority. See
+`docs/architecture/module-boundaries.md` for extraction and dependency rules.
+
+The first completed extraction keeps the native generation result contract in
+`geography/map_generation/terrain_gen.gd` and the native latitude bake contract
+in `rendering/bakers/climate_baker.gd`. Both modules receive explicit inputs and
+return data packages; neither registers systems, writes slots, or owns Godot
+rendering objects.
+
 `MapData` 另持三个视野数组（`visible_arr` / `explored_arr` / `fog_k_arr`），
 `WorldData` 另持两个生成期烘死的静态视野场（`cell_view_height` /
 `cell_view_block`）；它们由 `VisionSolver` 而非任何 C++ pass 维护。

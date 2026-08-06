@@ -2178,8 +2178,6 @@ func _on_season_changed(_season_idx: int) -> void:
 		var use_legacy: bool = false
 		if cp != null and "season_refresh_legacy_signal" in cp:
 			use_legacy = bool(cp.season_refresh_legacy_signal)
-		if _renderer != null and _renderer.has_method("begin_season_transition"):
-			_renderer.begin_season_transition(_world_clock.season_phase())
 		if use_legacy:
 			var t0 := Time.get_ticks_msec()
 			if _generator.has_method("queue_season_refresh"):

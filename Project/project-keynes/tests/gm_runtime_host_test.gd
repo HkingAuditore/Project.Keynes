@@ -32,6 +32,7 @@ func _run() -> void:
 	var atlas_toggle_found := false
 	var autosave_toggle_found := false
 	var river_probe_command_found := false
+	var flow_report_action_found := false
 	for toggle in capabilities.get("toggles", []):
 		if String(toggle.get("id", "")) == "visual.fog_of_war":
 			fog_toggle_found = true
@@ -41,6 +42,9 @@ func _run() -> void:
 			atlas_toggle_found = true
 		if String(toggle.get("id", "")) == "system.autosave":
 			autosave_toggle_found = true
+		if String(toggle.get("id", "")) == "diagnostics.dump_flow_tex_report" \
+				and String(toggle.get("kind", "toggle")) == "button":
+			flow_report_action_found = true
 	for command in capabilities.get("commands", []):
 		if String(command.get("id", "")) == "diagnostics.dump_atlas_river_probe":
 			river_probe_command_found = true
@@ -49,6 +53,9 @@ func _run() -> void:
 	_expect(atlas_toggle_found, "dynamic atlas toggle capability", failures)
 	_expect(autosave_toggle_found, "autosave toggle capability", failures)
 	_expect(river_probe_command_found, "river probe command capability", failures)
+	_expect(flow_report_action_found, "flow report action capability", failures)
+	_expect(host.dump_flow_tex_report().get("code") == "renderer_unavailable",
+		"flow report renderer readiness boundary", failures)
 	_expect(host.execute_gm_command("diagnostics.dump_atlas_river_probe", {}).get("code") == "baker_unavailable",
 		"river probe command readiness boundary", failures)
 	_expect(host.set_gm_toggle("simulation.click_claim_territory", true).get("code") == "world_not_ready",

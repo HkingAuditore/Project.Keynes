@@ -1,5 +1,8 @@
 # Project.Keynes System Map
 
+Source-file ownership and decomposition rules live in
+[`docs/architecture/module-boundaries.md`](../docs/architecture/module-boundaries.md).
+
 ## Formal game entry (2026-07)
 
 `project.godot` starts `scenes/main_menu.tscn`. The product flow is
@@ -43,7 +46,7 @@ order.
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
 - 视野迷雾与国界：读 `docs/cpp-dots-runtime/vision-fog-and-borders.md`、`Project/project-keynes/scripts/geography/vision_solver.gd`、`Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`、`Project/project-keynes/scripts/rendering/country_border_layer.gd`。
 - 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/cpp-dots-runtime/performance-diagnostics-playbook.md`、`Project/project-keynes/tests/*.gd`。
-- 阶层、市场、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/cpp-dots-runtime/native-economy-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。
+- 阶层、市场、财政、建筑、就业、投资、资源、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`gdext/src/economy_runtime_storage.cpp`、`gdext/src/economy_runtime_math.cpp`、`gdext/src/economy_runtime_fiscal.cpp`、`gdext/src/economy_runtime_building_storage.cpp`、`gdext/src/economy_runtime_building_employment.cpp`、`gdext/src/economy_runtime_building_resources.cpp`、`gdext/src/economy_runtime_building_production.cpp`、`gdext/src/economy_runtime_building_investment.cpp`、`gdext/src/economy_runtime_building_construction.cpp`、`gdext/src/economy_runtime_building_commit.cpp`、`gdext/src/economy_runtime_market.cpp`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/cpp-dots-runtime/native-economy-runtime.md`、`docs/cpp-dots-runtime/tax-fiscal-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。拆分依赖矩阵见 `docs/architecture/economy-runtime-split.md`。
 
 ## 运行入口
 
@@ -76,8 +79,10 @@ world_setup.tscn
   -> WorldRuntimeHost.generate_world()
   -> await MapGenerator.generate(cfg, hex_size)
   -> DCWorldExt native world generation base/post-base
+  -> DCTerrainGenerator.assemble_native_result()
   -> MapData + HexCell assembly
   -> MapBaker.bake_world() produces WorldData buffers/textures
+  -> DCClimateBaker.bake_latitude_buffer() validates native latitude field
   -> MapData._build_indices() + init_soa_from_bake()
   -> DCWorld.bind_map_data(map)
   -> DCWorldExt.bind_map_data(map)
@@ -238,7 +243,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 ## 渲染与视觉
 
-`MapBaker` 把 per-hex `MapData` 烘成高分辨率 `WorldData`。它负责 height/terrain/moisture/river SDF、物理环流初始场、water depth/normal、enum/dynamic/ecology/weather atlas 等。当前文件仍然很大，`rendering/bakers/*.gd` 里有部分目的地骨架。
+`MapBaker` 把 per-hex `MapData` 烘成高分辨率 `WorldData`。它负责 bake_world 编排、物理环流初始场、water depth/normal、enum/dynamic/ecology/weather atlas 等；height/biome/moisture fallback、river SDF、erosion 请求和 terrain detail raster 由 `DCTerrainBaker` 承担，无状态几何 helper 集中在 `rendering/bakers/terrain_geometry_utils.gd`。当前文件仍然很大，`rendering/bakers/*.gd` 里有部分目的地骨架。
 
 `WorldData` 保存 CPU buffer 和 GPU `ImageTexture`：
 
@@ -508,7 +513,65 @@ debug recording is Economy CSV v22.
 - Formal opening-country cells carry a native forced-name bit, so every
   20-person capital is named while its prosperity tier remains population-only.
 - Visible boundary: Godot pooled label layer; no economic mirror or fallback.
+- Settlement lifecycle implementation: `gdext/src/economy_runtime_settlements.cpp`
+  owns committed population lookup, prosperity hysteresis, stable name
+  assignment/release, initialization/update and bounded settlement row fields.
+  `NativeEconomyRuntime::SettlementStore` remains the sole mutable owner, and
+  aggregate publish/COMMIT ordering remains in the runtime orchestration path.
 
 - TriggerRuntime: `gdext/src/trigger_runtime.{h,cpp}`, `world_ext_trigger.cpp`,
   `scripts/trigger/trigger_facade.gd`, `trigger_daily_system.gd`; PKTR provider in
   `game_save_coordinator.gd`.
+
+- Economy trade implementation: `gdext/src/economy_runtime_trade.cpp`; the root
+  `economy_runtime.cpp` retains only trade stage orchestration and cross-stage
+  aggregation. Merchant procurement capability helpers remain in the building/
+  production boundary.
+- Economy persistence: `gdext/src/economy_runtime_persistence.cpp` owns lifecycle
+  and committed-boundary validation;
+  `gdext/src/economy_runtime_persistence_write.cpp` owns ordered PKEC v30 encoding;
+  `gdext/src/economy_runtime_persistence_read.cpp` owns validated decoding.
+  `economy_runtime_persistence_codec.h` is the sole section-number contract, and
+  `economy_runtime_binary_codec.h` is shared with root event archive encoding.
+- Economy bounded query facade:
+  `gdext/src/economy_runtime_queries_population.cpp` owns settlement/population
+  snapshots, while `gdext/src/economy_runtime_queries_market_building.cpp` owns
+  market, satisfaction, fiscal, building, family, notable-person and per-cell
+  trade-order facade methods. Both operate on the sole `NativeEconomyRuntime`
+  owner and do not advance scheduler stages.
+- Shared economy Godot variant decoding:
+  `gdext/src/economy_runtime_variant_helpers.h`; extracted catalog/profile/
+  configuration/query code and retained root event code use the same stateless
+  helper implementation.
+- Economy catalog/profile/configuration split:
+  `gdext/src/economy_runtime_catalog.cpp` owns stable-ID catalog compilation,
+  `gdext/src/economy_runtime_profile.cpp` owns formula registration and profile
+  decoding, and `gdext/src/economy_runtime_configuration.cpp` owns
+  configure/bootstrap/command submission. The root retains epoch/stage, worker,
+  publish and event/report orchestration; native authority and public APIs are
+  unchanged.
+- Economy event/report split: `gdext/src/economy_runtime_events.cpp` owns
+  committed trace/cashflow/gameplay facts, event schema/filter/query/ack/report
+  and PKEJ archive streaming. The aggregate-publish stage remains root-owned,
+  and trace hashing remains shared with root-only deterministic identity work.
+- Economy epoch lifecycle split: `gdext/src/economy_runtime_epoch.cpp` owns
+  epoch preflight, frozen country/workset setup, transient epoch initialization,
+  opening audit lanes and completed performance snapshots. The root
+  `economy_runtime.cpp` retains ongoing stage dispatch, outer cursors, worker
+  scheduling and stage order.
+- Economy publish split: `gdext/src/economy_runtime_publish.cpp` owns
+  publish-phase-local cursors, closing population/money/goods audits,
+  settlement watermark and trade diagnostics, resource-delta readiness and the
+  ordered `aggregate_publish/COMMIT` handoff. The root remains the only owner
+  of aggregate-publish stage entry, slice/yield boundaries and next-stage
+  selection; `_epoch_active`, `_last_committed_day` and
+  `capture_completed_perf_snapshot()` keep their existing authority/contract.
+- Economy result-container split: `gdext/src/economy_runtime_results.cpp`
+  owns `MarketResult`/`ProductionResult` reset and capacity accounting plus
+  worker TLS sink definitions. The root remains the sole owner of worker
+  dispatch, result merge order, stage transitions and conservation checks.
+- Economy diagnostics split: `gdext/src/economy_runtime_diagnostics.cpp`
+  owns read-only stage progress, memory accounting, household slice breakdown
+  and compact/full reports. The report schema and scheduler-visible fields are
+  unchanged; `economy_runtime.cpp` still owns all stage mutations and worker
+  execution.

@@ -10,11 +10,13 @@ const FIELD_FORMATS := {
 	"height": Image.FORMAT_RG8,
 	"terrain_normal": Image.FORMAT_RG8,
 	"map_index": Image.FORMAT_RGBA8,
-	"flow": Image.FORMAT_L8,
-	"water_depth": Image.FORMAT_L8,
-	"terrain_detail": Image.FORMAT_L8,
+	# 这里是 **载荷** 格式（C++ bake 产出的 stride），不一定等于最终纹理格式：
+	# Compatibility 下单通道纹理要加宽，见 _texture_format()。
+	"flow": Image.FORMAT_R8,
+	"water_depth": Image.FORMAT_R8,
+	"terrain_detail": Image.FORMAT_R8,
 	"edge_neighbor": Image.FORMAT_RG8,
-	"edge_distance": Image.FORMAT_L8,
+	"edge_distance": Image.FORMAT_R8,
 	"horizon": Image.FORMAT_RGBA8,
 	"gi_occluder": Image.FORMAT_RGBA8,
 }
@@ -49,7 +51,7 @@ func initialize_empty(resolved_layout) -> bool:
 		fallback_reason = "invalid_layout"
 		return false
 	for field_name in FIELD_FORMATS:
-		var texture := _create_empty_array(int(FIELD_FORMATS[field_name]))
+		var texture := _create_empty_array(_texture_format(int(FIELD_FORMATS[field_name])))
 		if texture == null:
 			fallback_reason = "array_create_failed:%s" % field_name
 			clear()
@@ -71,9 +73,27 @@ func upload_layer_bundle(layer_id: int, bundle: Dictionary) -> bool:
 		if data.size() != expected:
 			fallback_reason = "invalid_payload:%s:%d/%d" % [field_name, data.size(), expected]
 			return false
-		var image := Image.create_from_data(
-			layout.layer_size.x, layout.layer_size.y, false, format, data
-		)
+		var tex_format: int = _texture_format(format)
+		var image: Image
+		# Compatibility 单通道加宽禁止 Image.convert（与 atlas_encoders._upload_r8 同因：
+		# wasm 下 convert 产物可能 CPU 侧报对、GPU 仍落 4×4 白纹理）。改字节展开到 RG8。
+		if tex_format != format and (format == Image.FORMAT_R8 or format == Image.FORMAT_L8) \
+				and tex_format == Image.FORMAT_RG8:
+			var n: int = layout.layer_size.x * layout.layer_size.y
+			var expanded := PackedByteArray()
+			expanded.resize(n * 2)
+			for i in range(n):
+				var v: int = data[i] if data.size() > i else 0
+				expanded[i * 2] = v
+				expanded[i * 2 + 1] = v
+			image = Image.create_from_data(
+				layout.layer_size.x, layout.layer_size.y, false, tex_format, expanded)
+		else:
+			image = Image.create_from_data(
+				layout.layer_size.x, layout.layer_size.y, false, format, data
+			)
+			if tex_format != format:
+				image.convert(tex_format)
 		var texture: Texture2DArray = get(field_name)
 		texture.update_layer(image, layer_id)
 	return true
@@ -127,9 +147,17 @@ func _create_empty_array(format: int) -> Texture2DArray:
 	return texture
 
 
+# 载荷格式 → 实际纹理格式。Compatibility(GLES3) 下单通道纹理建不起来，引擎会把
+# sampler 换成 4×4 默认白纹理，所以要加宽；见 DCAtlasEncoders.single_channel_format()。
+static func _texture_format(payload_format: int) -> int:
+	if payload_format == Image.FORMAT_R8 or payload_format == Image.FORMAT_L8:
+		return DCAtlasEncoders.single_channel_format()
+	return payload_format
+
+
 static func _format_stride(format: int) -> int:
 	match format:
-		Image.FORMAT_L8:
+		Image.FORMAT_R8, Image.FORMAT_L8:
 			return 1
 		Image.FORMAT_RG8:
 			return 2

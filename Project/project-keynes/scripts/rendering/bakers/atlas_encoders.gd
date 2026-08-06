@@ -24,9 +24,128 @@ static func _same_size(existing: ImageTexture, W: int, H: int) -> bool:
 	return existing != null and existing.get_size() == Vector2(float(W), float(H))
 
 
-static func _upload_l8(data: PackedByteArray, W: int, H: int, existing: ImageTexture = null) -> ImageTexture:
-	var img: Image = Image.create_from_data(W, H, false, Image.FORMAT_L8, data)
-	if _same_size(existing, W, H):
+# [flow-diag] 记录最后一次 flow 编码的输入 float buffer 与输出字节分布，供 GM
+# 「河流 flow 视图」打印。Web 上 flow 整张读成 1.0 时，靠它区分三种成因：
+# 源 buffer 就是全 1（上游 river SDF 的问题）／buffer 对但字节全 255（编码器）／
+# 两者都对但 GPU 读成白（上传或格式）。扫描按 stride 抽样，避免拖慢 bake。
+static var last_flow_encode_info: Dictionary = {}
+
+# [flow-diag] _upload_r8 加宽路径的最终产物统计（R 通道全量）。encode 日志里的 out
+# 统计的是加宽前的 R8 字节，GPU 实际看到的 RGBA8 数据由此闭环验证。
+static var last_r8_upload_verify: Dictionary = {}
+
+const _DIAG_SAMPLE_TARGET := 65536
+
+
+static func _float_buffer_stats(buf: PackedFloat32Array, n: int) -> Dictionary:
+	if n <= 0 or buf.size() < n:
+		return {"n": 0, "buf_size": buf.size()}
+	var stride: int = maxi(1, n / _DIAG_SAMPLE_TARGET)
+	var mn: float = INF
+	var mx: float = -INF
+	var sum: float = 0.0
+	var hi: int = 0
+	var samples: int = 0
+	var i: int = 0
+	while i < n:
+		var v: float = buf[i]
+		mn = minf(mn, v)
+		mx = maxf(mx, v)
+		sum += v
+		if v >= 0.70:
+			hi += 1
+		samples += 1
+		i += stride
+	return {"n": n, "buf_size": buf.size(), "samples": samples, "stride": stride,
+		"min": mn, "max": mx, "mean": sum / float(samples),
+		"hi_frac": float(hi) / float(samples)}
+
+
+static func _byte_buffer_stats(data: PackedByteArray, n: int) -> Dictionary:
+	if n <= 0 or data.size() < n:
+		return {"n": 0, "data_size": data.size()}
+	var stride: int = maxi(1, n / _DIAG_SAMPLE_TARGET)
+	var mn: int = 255
+	var mx: int = 0
+	var sum: int = 0
+	var hi: int = 0
+	var samples: int = 0
+	var i: int = 0
+	while i < n:
+		var v: int = data[i]
+		mn = mini(mn, v)
+		mx = maxi(mx, v)
+		sum += v
+		# 179/255 ≈ 0.70 == river_threshold_low
+		if v >= 179:
+			hi += 1
+		samples += 1
+		i += stride
+	return {"data_size": data.size(), "samples": samples,
+		"min": mn, "max": mx, "mean": float(sum) / float(samples),
+		"hi_frac": float(hi) / float(samples)}
+
+
+# 单通道 bake 纹理的实际上传格式。
+#
+# [归因修正 2026-08-05] 早年认为"Web(WebGL2) 上单通道纹理建不起来、被静默换成 4×4
+# 默认白纹"（L8/R8 都试过、textureSize 报 4×4、CPU 侧全绿）——真根因是**纹理单元
+# 撞车**：flow 是材质第 9 张 sampler（unit 9），与 GLES3 canvas 内建高光槽
+# （MAX-7）冲突，每帧被内建 4×4 默认白纹覆盖，与像素格式无关。修复在
+# uniforms.gdshaderinc：PK_WEB_TEXTURE_BUDGET 下把材质 sampler 裁到 ≤8。
+# 单通道仍加宽到 **RG8**（与 height_tex 同款上传路径，显存只 ×2，shader 只读 .r），
+# 属于保守防御；禁止 Image.convert(R8→…)（wasm 下 convert 产物未验证）。
+#
+# 桌面 opengl3 并不复现撞车（32 单元、预留槽在 25+），但这里仍按整个 Compatibility
+# 后端开关，好处是 `--rendering-driver opengl3` 的本地探针能走相同代码路径。
+static func single_channel_format() -> int:
+	if DCFeatureFlags.is_compatibility_renderer():
+		return Image.FORMAT_RG8
+	return Image.FORMAT_R8
+
+
+## 单通道数据 → ImageTexture 的统一入口。任何单通道纹理都必须走这里，**不要**自己
+## `Image.create_from_data(..., FORMAT_R8/L8, ...)`，否则会踩上面那个 Compatibility 陷阱。
+static func upload_single_channel(data: PackedByteArray, W: int, H: int,
+		existing: ImageTexture = null) -> ImageTexture:
+	return _upload_r8(data, W, H, existing)
+
+
+# update() 要求格式一致，所以 existing 格式不符时必须重建而不是原地更新。
+static func _upload_r8(data: PackedByteArray, W: int, H: int, existing: ImageTexture = null) -> ImageTexture:
+	var want: int = single_channel_format()
+	var img: Image
+	if want == Image.FORMAT_R8:
+		img = Image.create_from_data(W, H, false, Image.FORMAT_R8, data)
+		last_r8_upload_verify = {"format": "R8", "widened": false}
+	else:
+		# Compatibility：字节级手工展开到 RG8（R=v,G=v），绝不走 Image.convert。
+		var n: int = W * H
+		var expanded: PackedByteArray = PackedByteArray()
+		expanded.resize(n * 2)
+		var has_data: bool = data.size() >= n
+		var sum: int = 0
+		var hi: int = 0
+		var mn: int = 255
+		var mx: int = 0
+		for i in range(n):
+			var v: int = data[i] if has_data else 0
+			var o: int = i * 2
+			expanded[o] = v
+			expanded[o + 1] = v
+			sum += v
+			mn = mini(mn, v)
+			mx = maxi(mx, v)
+			if v >= 179:
+				hi += 1
+		var nf: float = float(maxi(n, 1))
+		last_r8_upload_verify = {
+			"format": "RG8_expanded", "widened": true, "n": n,
+			"src_size": data.size(), "expanded_size": expanded.size(),
+			"min": mn, "max": mx, "mean": float(sum) / nf, "hi_frac": float(hi) / nf,
+		}
+		img = Image.create_from_data(W, H, false, want, expanded)
+	if _same_size(existing, W, H) and existing.get_format() == want:
 		existing.update(img)
 		return existing
 	return ImageTexture.create_from_image(img)
@@ -244,17 +363,17 @@ static func encode_upwelling_tex(upwelling_buf: PackedByteArray, size: Vector2i,
 		"default_byte": 128,
 	})
 	if not bool(ret.get("fallback", true)):
-		return _upload_l8(ret.get("data", PackedByteArray()), W, H, existing)
+		return _upload_r8(ret.get("data", PackedByteArray()), W, H, existing)
 
 	var n: int = W * H
 	if upwelling_buf.size() == n:
-		return _upload_l8(upwelling_buf, W, H, existing)
+		return _upload_r8(upwelling_buf, W, H, existing)
 	var data: PackedByteArray = PackedByteArray()
 	data.resize(n)
 	var has_up: bool = upwelling_buf.size() >= n
 	for i in range(n):
 		data[i] = upwelling_buf[i] if has_up else 128
-	return _upload_l8(data, W, H, existing)
+	return _upload_r8(data, W, H, existing)
 
 
 # 传入 existing（非 null + 同尺寸）会尝试原地 update 以复用 GPU 句柄，
@@ -270,7 +389,7 @@ static func encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageT
 		"default_byte": 0,
 	})
 	if not bool(ret.get("fallback", true)):
-		return _upload_l8(ret.get("data", PackedByteArray()), W, H, existing)
+		return _upload_r8(ret.get("data", PackedByteArray()), W, H, existing)
 
 	var n: int = W * H
 	var data: PackedByteArray = PackedByteArray()
@@ -278,7 +397,7 @@ static func encode_r8_tex(buf: PackedByteArray, size: Vector2i, existing: ImageT
 	var has_buf: bool = buf.size() >= n
 	for i in range(n):
 		data[i] = buf[i] if has_buf else 0
-	return _upload_l8(data, W, H, existing)
+	return _upload_r8(data, W, H, existing)
 
 
 static func encode_rg8_tex(buf: PackedByteArray, size: Vector2i,
@@ -300,14 +419,28 @@ static func encode_flow_tex(buf: PackedFloat32Array, size: Vector2i, existing: I
 		"width": W,
 		"height": H,
 	})
+	last_flow_encode_info = {
+		"size": Vector2i(W, H),
+		"path": str(ret.get("path", "gdscript")),
+		"reason": str(ret.get("reason", "")),
+		"src": _float_buffer_stats(buf, W * H),
+	}
 	if not bool(ret.get("fallback", true)):
-		return _upload_l8(ret.get("data", PackedByteArray()), W, H, existing)
+		var native_bytes: PackedByteArray = ret.get("data", PackedByteArray())
+		last_flow_encode_info["out"] = _byte_buffer_stats(native_bytes, W * H)
+		var tex_native := _upload_r8(native_bytes, W, H, existing)
+		last_flow_encode_info["upload"] = last_r8_upload_verify
+		return tex_native
 
 	var n: int = W * H
 	if buf.size() < n:
+		last_flow_encode_info["out"] = {"skipped": "buffer too small"}
 		return existing
 	var bytes: PackedByteArray = PackedByteArray()
 	bytes.resize(n)
 	for i in range(n):
 		bytes[i] = int(clampf(buf[i], 0.0, 1.0) * 255.0 + 0.5)
-	return encode_r8_tex(bytes, size, existing, native_ext)
+	last_flow_encode_info["out"] = _byte_buffer_stats(bytes, n)
+	var tex_fallback := encode_r8_tex(bytes, size, existing, native_ext)
+	last_flow_encode_info["upload"] = last_r8_upload_verify
+	return tex_fallback

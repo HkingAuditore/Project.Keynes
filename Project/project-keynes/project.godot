@@ -54,9 +54,4 @@ rendering/map_tiles/horizon_height_scale_hex=16.0
 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="mobile"
-; Web 平台专属覆盖（key 后缀 .web 是 Godot 4 的 per-platform override 语法，
-; 只在导出/运行 Web 时生效，桌面与 Android/iOS 仍读上面的 base 值不受影响）。
-; Web 本就只能用 Compatibility(WebGL2)，引擎即使没有这条也会在导出时自动
-; 落到 Compatibility；这里显式声明只是让配置自解释，不改变任何平台的实际行为。
-renderer/rendering_method.web="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true

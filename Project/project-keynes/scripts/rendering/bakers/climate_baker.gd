@@ -9,7 +9,7 @@ class_name DCClimateBaker
 ## ─── 待迁移函数清单 ───────────────────────────────────────────────
 ##
 ## 一次性烘焙：
-##   - `_bake_latitude_buffer` (line 2322) — 纬度查找表
+##   - `bake_latitude_buffer` — native 纬度场结果校验与空结果策略
 ##   - `bake_world` 中 climate atlas 部分（temperature / moisture / snow_cover
 ##     / sea_ice 上传到 R8/RGBA8 atlas）
 ##
@@ -26,5 +26,21 @@ class_name DCClimateBaker
 ## ─── 拆完后预期 ────────────────────────────────────────────────────
 ## 本文件 ~500 行。
 
-func _init(_ctx: DCBakerContext) -> void:
-	push_warning("[DCClimateBaker] not yet implemented — call MapBaker directly")
+static func bake_latitude_buffer(_bounds: Rect2, size: Vector2i, world_ext: Object) -> PackedFloat32Array:
+	var W: int = size.x
+	var H: int = size.y
+	var empty := PackedFloat32Array()
+	empty.resize(maxi(W * H, 0))
+	if W <= 0 or H <= 0:
+		return empty
+	if world_ext == null or not world_ext.has_method("run_bake_latitude_field_pass"):
+		push_error("[bake_latitude_buffer] native latitude pass unavailable")
+		return empty
+	var rep: Dictionary = world_ext.run_bake_latitude_field_pass({"width": W, "height": H})
+	var ok: bool = rep != null and typeof(rep) == TYPE_DICTIONARY and not bool(rep.get("fallback", true))
+	var latitude: PackedFloat32Array = rep.get("latitude_buffer", PackedFloat32Array()) if ok else PackedFloat32Array()
+	if not ok or latitude.size() != W * H:
+		push_error("[bake_latitude_buffer] native result invalid (reason=%s)" % (
+			String(rep.get("reason", "unknown")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
+		return empty
+	return latitude
