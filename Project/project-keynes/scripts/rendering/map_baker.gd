@@ -76,12 +76,13 @@ const TerrainGeometryScript = preload("res://scripts/rendering/bakers/terrain_ge
 const PhysCircSolverScript = preload("res://scripts/rendering/physical_circulation_solver.gd")
 
 # ─── 分辨率 ───────────────────────────────────────────────────────────────
-# 桌面 1024×N，移动端 512×N。hex 网格本身只 60×40，1024 已远超；移动端 512
+# 桌面 1024×N；移动端 / Web 512×N。hex 网格本身只 60×40，1024 已远超；512
 # 让 derived_size 从 1024×606 (620k px) 降到 512×303 (155k px) — atlas RGBA
 # 从 2.4MB 降到 0.6MB，4 张总 GPU 上传从 9.6MB 降到 2.4MB，Adreno 830 上单
-# tick atlas commit 从 12ms 降到 ~3ms。地形细节肉眼可分辨度差异可接受
-# （hex 边界已被 warp noise 模糊）。需要时把 _hm_max_dim() 改回 1024 即可
-# 强制移动端走桌面分辨率。
+# tick atlas commit 从 12ms 降到 ~3ms。Web 必须同档：浏览器 nothreads WASM 上
+# 仍用 1024 会把 terrain-index / encode / horizon 的 O(像素) 开销放大 ~4×。
+# 地形细节肉眼可分辨度差异可接受（hex 边界已被 warp noise 模糊）。需要时把
+# _hm_max_dim() 改回 1024 即可强制受限平台走桌面分辨率。
 const HM_MAX_DIM_DESKTOP := 1024
 const HM_MAX_DIM_MOBILE := 512
 
@@ -90,14 +91,17 @@ static func _hm_max_dim() -> int:
 	# atlas 从 512 进一步降到 256，看 GPU 负载减半 FPS 提升多少。重启失效。
 	if Engine.has_meta(&"force_atlas_quarter_size") and bool(Engine.get_meta(&"force_atlas_quarter_size")):
 		return 256
-	return HM_MAX_DIM_MOBILE if OS.has_feature("mobile") else HM_MAX_DIM_DESKTOP
+	# Web 没有 mobile feature，但 bake 预算与 mobile 同档（nothreads WASM 单线程）。
+	if OS.has_feature("mobile") or OS.has_feature("web"):
+		return HM_MAX_DIM_MOBILE
+	return HM_MAX_DIM_DESKTOP
 
 # 兼容：保留旧常量名，值跟 desktop 一致。其它文件仍引用 HM_MAX_DIM 时不破坏；
 # 真正决定渲染分辨率的是 _resolve_hm_size() 里调 _hm_max_dim()。
 const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 
-# [terrain-horizon 2026-07-03] 8 方向 horizon 生成期烘焙参数。移动端默认不烘焙，shader 走现有
-# normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
+# [terrain-horizon 2026-07-03] 8 方向 horizon 生成期烘焙参数。mobile/web 默认不烘焙，
+# shader 走现有 normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
 const TERRAIN_HORIZON_STEPS := 1024
 const TERRAIN_HORIZON_STEP_PX := 2.0
 const TERRAIN_HORIZON_STEP_GROWTH := 0.35  # 近密远疏；0 退回固定步长
@@ -136,20 +140,14 @@ static var _shared_terrain_material_error_by_size: Dictionary = {}
 
 
 static func _terrain_materials_supported_for_renderer(rendering_method: String) -> bool:
-	# Compatibility keeps the legacy shader/tile path. Do not allocate the
-	# standalone array there even when the backend happens to expose an array
-	# texture API, because the material variant is not part of that contract.
-	return rendering_method != "gl_compatibility"
+	# Compatibility/Web 现在也分配材质数组：主地形砍掉 eco_lut 后腾出 1 个
+	# sampler 槽，PK_WEB_TEXTURE_BUDGET 变体已重新声明 terrain_material_tex。
+	# rendering_method 参数保留供调用方诊断；不再按 gl_compatibility 拒绝。
+	return true
 
 
 static func _terrain_materials_supported() -> bool:
-	var rendering_method := ""
-	if RenderingServer.has_method("get_current_rendering_method"):
-		rendering_method = String(RenderingServer.get_current_rendering_method())
-	else:
-		rendering_method = String(ProjectSettings.get_setting(
-			"rendering/renderer/rendering_method", "mobile"))
-	return _terrain_materials_supported_for_renderer(rendering_method)
+	return true
 
 # Daily Sim SoA Refactor 阶段 1：海冰 GPU 上传从 scalar_atlas.a 拆出到独立 sea_ice_tex（R8）。
 # 拆分前每日要传整张 RGBA8（2400×?，~7MB），其中 RGB 三通道是地形烘焙后的恒定值，
@@ -1078,11 +1076,15 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	stage_progress.emit("atlas", 0.82)
 	await _yield_generation_frame()
 
-	# 编码纹理：保留 height + map_index；动态视觉走 LUT。
+	# 编码纹理：height+flow 打进同一张 RGBA8（RG=16-bit height，B=flow）；map_index 独立；
+	# 动态视觉走 LUT。hm_size==derived_size，分辨率可合；Web 省 1 个材质 sampler。
 	stage_progress.emit("encode", 0.88)
 	await _yield_generation_frame()
 	t = Time.get_ticks_msec()
-	world.height_tex = DCAtlasEncoders.encode_height_tex(world.height_buffer, world.hm_size, _world_ext)
+	world.height_tex = DCAtlasEncoders.encode_height_flow_tex(
+		world.height_buffer, world.flow_buffer, world.hm_size, world.height_tex, _world_ext)
+	# 独立 flow_tex 退役：legacy shader 从 height_tex.B 读 flow。字段保留以兼容旧诊断/存档读。
+	world.flow_tex = null
 	# [terrain-normal-bake 2026-06-25] 烘焙总体地形法线（宽半径梯度 → RG8）。地形静态，运行期
 	# shader 直接 1 次采样拿宏观山脉走向，细节法线运行期按 biome/性能档叠（见 hillshade_tod）。
 	world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(
@@ -1095,7 +1097,9 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	#      实际由 HexRenderer.set_map 用 SubViewport + canvas shader 在场景树内延迟烘焙（PC/移动端
 	#      同一路径）。生成期不阻塞、不占 CPU marching。
 	#   2. CPU C++（GPU 关时桌面 fallback）：DCAtlasEncoders.encode_horizon_tex（native SoA marching）。
-	#   3. 移动端且 GPU 关：null，shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。
+	#   3. mobile/web 且 GPU 关：null，shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。
+	#      Web 绝不能落到路径 2：GPU 默认关后若误走 CPU（steps=1024×8 向），nothreads WASM
+	#      上生成期会卡死数秒～数十秒。
 	world.terrain_horizon_gpu_pending = false
 	world.terrain_horizon_gpu_params = {}
 	var horizon_height_scale_hex := maxf(float(ProjectSettings.get_setting(
@@ -1121,7 +1125,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		}
 		world.terrain_horizon_gpu_pending = true
 		# 不清空 world.terrain_horizon_tex：regenerate 时旧图短暂沿用，GPU 烘完后回填，避免闪烁。
-	elif OS.has_feature("mobile"):
+	elif OS.has_feature("mobile") or OS.has_feature("web"):
 		world.terrain_horizon_tex = null
 	else:
 		world.terrain_horizon_tex = DCAtlasEncoders.encode_horizon_tex(
@@ -1137,9 +1141,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	stage_progress.emit("encode", 0.93)
 	await _yield_generation_frame()
 	world.scalar_atlas_tex = null
-	# [river-render-restore 2026-06-19] 把河流 SDF（flow_buffer, float[0,1]）编码成 L8 纹理
-	# 接回主地图 shader。scalar_atlas 退役后此通道断供，导致 has_river 河网完全不可见。
-	world.flow_tex = DCAtlasEncoders.encode_flow_tex(world.flow_buffer, world.derived_size, world.flow_tex, _world_ext)
+	# flow 已在 encode_height_flow_tex 打进 height_tex.B；此处不再单独 encode_flow_tex。
 	world.sea_ice_tex = null
 	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8 → shader 每水像素单次采样，取代旧"海洋 5×5 height
 	# 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算。空 buffer（fused 失败/旧路径）→ null tex，
@@ -1163,17 +1165,16 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# [terrain-material-tiles] Shared four-layer material array. A missing
 	# import, unsupported array allocation or mipmap failure is non-fatal: the
 	# renderer keeps terrain_material_tex_bound=false and uses the old path.
-	var terrain_material_size := TERRAIN_MATERIAL_SIZE_MOBILE if OS.has_feature("mobile") \
+	var terrain_material_size := TERRAIN_MATERIAL_SIZE_MOBILE \
+			if (OS.has_feature("mobile") or OS.has_feature("web")) \
 			else TERRAIN_MATERIAL_SIZE_DESKTOP
 	if _terrain_materials_supported():
 		world.terrain_material_tex = get_or_build_shared_terrain_material_tex(terrain_material_size)
 	else:
 		world.terrain_material_tex = null
-		_shared_terrain_material_error_by_size[terrain_material_size] = "compatibility_renderer"
+		_shared_terrain_material_error_by_size[terrain_material_size] = "unsupported"
 	world.terrain_material_tex_bound = world.terrain_material_tex != null
 	if not world.terrain_material_tex_bound:
-		# Compatibility/WebGL2 is an expected capability downgrade. Keep this out
-		# of the debugger error stream; the legacy terrain shader remains valid.
 		print("[terrain-material-tiles] disabled (%s)" %
 			shared_terrain_material_error(terrain_material_size))
 	stage_progress.emit("encode", 0.98)
@@ -1214,7 +1215,7 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 	if map == null or world == null:
 		return false
 	# Web exports run the whole baker on the browser's single WASM thread. The
-	# Compatibility Texture2DArray path allocates and uploads nine arrays before
+	# Compatibility Texture2DArray path allocates and uploads static field arrays before
 	# yielding, which can make WebGL2 appear hung during map generation. The
 	# already-tested atlas path below is incremental and keeps the map usable.
 	if OS.has_feature("web"):
@@ -3970,7 +3971,7 @@ func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> v
 # ─── 内部：分辨率 / 噪声初始化 ──────────────────────────────────────────
 
 func _resolve_hm_size(bounds: Rect2) -> Vector2i:
-	# 移动端走 512，桌面走 1024。详见 HM_MAX_DIM_DESKTOP/MOBILE 注释。
+	# 移动端 / Web 走 512，桌面走 1024。详见 HM_MAX_DIM_DESKTOP/MOBILE 注释。
 	var dim_max: int = _hm_max_dim()
 	if bounds.size.x < 0.01 or bounds.size.y < 0.01:
 		return Vector2i(dim_max, dim_max)

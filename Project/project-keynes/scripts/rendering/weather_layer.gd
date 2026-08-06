@@ -1315,7 +1315,7 @@ func _load_overlay_shader() -> void:
 		push_warning("WeatherLayer: shader not found at %s" % OVERLAY_SHADER_PATH)
 		return
 	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
-	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
 	if not prefix.is_empty():
 		shader = shader.duplicate() as Shader
@@ -1332,7 +1332,7 @@ func _load_curtain_shader() -> void:
 	if shader == null:
 		push_warning("WeatherLayer: shader not found at %s" % CURTAIN_SHADER_PATH)
 		return
-	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		var src: String = shader.code
 		if not src.begins_with("#define"):
 			shader = shader.duplicate() as Shader

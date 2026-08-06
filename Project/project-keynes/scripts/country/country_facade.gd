@@ -2,6 +2,7 @@ class_name CountryFacade
 extends RefCounted
 
 signal country_committed(report: Dictionary)
+signal research_signal_discovered(event: Dictionary)
 
 const DEFAULT_PROFILE_PATH := "res://data/country/default_country.tres"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
@@ -21,6 +22,7 @@ enum Opcode {
 	SET_TAX_DEFAULT = 11,
 	SET_TAX_OVERRIDE = 12,
 	CLEAR_TAX_OVERRIDE = 13,
+	DISCOVER_COUNTRY_SIGNAL = 14,
 }
 
 enum TaxKind {
@@ -92,7 +94,7 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 		batch.sequences.append(int(command.get("sequence", 0)))
 		batch.target_handles.append(int(command.get("target_handle", 0)))
 		batch.cell_indices.append(int(command.get("cell", -1)))
-		batch.aux_i32.append(int(command.get("technology", -1)))
+		batch.aux_i32.append(int(command.get("signal", command.get("technology", -1))))
 		batch.domain_i32.append(int(command.get("domain", -1)))
 		batch.position_i32.append(int(command.get("position", -1)))
 		var weights: PackedInt32Array = command.get("weights_bp",
@@ -177,6 +179,22 @@ func reveal_all_technologies(handle: int, effective_day: int,
 	return submit([{"opcode": Opcode.REVEAL_ALL_TECHNOLOGIES,
 		"target_handle": handle, "effective_day": effective_day, "sequence": sequence}])
 
+func discover_research_signal(handle: int, signal_id: StringName, cell: int,
+		source_kind: int, effective_day: int, sequence: int) -> Dictionary:
+	var ids: PackedStringArray = _catalog.get("research_signal_ids", PackedStringArray())
+	var signal_index := ids.find(String(signal_id))
+	if signal_index < 0:
+		return {"ok": false, "reason": "unknown research signal id: %s" % String(signal_id)}
+	return submit([{
+		"opcode": Opcode.DISCOVER_COUNTRY_SIGNAL,
+		"target_handle": handle,
+		"signal": signal_index,
+		"cell": cell,
+		"value": source_kind,
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
 
 func set_tax_default(handle: int, kind: int, rate_percent: int,
 		effective_day: int, sequence: int) -> Dictionary:
@@ -253,6 +271,10 @@ func _tax_item_index(kind: int, item_id: StringName) -> int:
 func research_snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_research_snapshot(handle) if _configured else {}
 
+func research_signal_snapshot(handle: int) -> Dictionary:
+	return _world_ext.get_country_research_signal_snapshot(handle) if _configured \
+			and _world_ext.has_method("get_country_research_signal_snapshot") else {}
+
 func _technology_index(technology_id: StringName) -> int:
 	var ids: PackedStringArray = _catalog.get("technology_ids", PackedStringArray())
 	return ids.find(String(technology_id))
@@ -276,6 +298,20 @@ func dispatch_committed_events(result: Dictionary) -> void:
 	var ids: PackedInt64Array = events.get("event_ids", PackedInt64Array())
 	if not ids.is_empty():
 		_last_event_id = int(ids[ids.size() - 1])
+	var opcodes: PackedInt32Array = events.get("opcodes", PackedInt32Array())
+	var handles: PackedInt64Array = events.get("country_handles", PackedInt64Array())
+	var cells: PackedInt32Array = events.get("cells", PackedInt32Array())
+	var signal_ids: PackedInt32Array = events.get("signal_ids", PackedInt32Array())
+	var sources: PackedInt32Array = events.get("signal_source_kinds", PackedInt32Array())
+	for i in opcodes.size():
+		if int(opcodes[i]) != Opcode.DISCOVER_COUNTRY_SIGNAL:
+			continue
+		research_signal_discovered.emit({
+			"country_handle": int(handles[i]) if i < handles.size() else 0,
+			"cell": int(cells[i]) if i < cells.size() else -1,
+			"signal": int(signal_ids[i]) if i < signal_ids.size() else -1,
+			"source_kind": int(sources[i]) if i < sources.size() else 0,
+		})
 	country_committed.emit(result.duplicate(true))
 
 func is_configured() -> bool:

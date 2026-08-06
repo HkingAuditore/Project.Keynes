@@ -106,6 +106,112 @@ Dictionary DCWorldExt::run_native_world_generate_full_pass(int seed,
     return post_res;
 }
 
+Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &knobs) {
+    using godot::PackedByteArray;
+    using godot::PackedInt32Array;
+    Dictionary out;
+    out["ok"] = false;
+    const int width = int(knobs.get("width", 0));
+    const int height = int(knobs.get("height", 0));
+    const int seed = int(knobs.get("seed", 0));
+    const int64_t n64 = int64_t(width) * int64_t(height);
+    if (width <= 0 || height <= 0 || n64 <= 0 || n64 > 1000000) {
+        out["reason"] = String("research_signal_generation_dimensions_invalid");
+        return out;
+    }
+    const int n = int(n64);
+    const PackedByteArray vegetation = knobs.get("generation_vegetation", PackedByteArray());
+    const PackedByteArray landform = knobs.get("landform", PackedByteArray());
+    const PackedByteArray rivers = knobs.get("has_river", PackedByteArray());
+    const PackedByteArray volcanoes = knobs.get("has_volcano", PackedByteArray());
+    const PackedByteArray water = knobs.get("is_water", PackedByteArray());
+    const PackedInt32Array signal_ids = knobs.get("signal_ids", PackedInt32Array());
+    if (vegetation.size() != n || landform.size() != n || rivers.size() != n ||
+        volcanoes.size() != n || water.size() != n || signal_ids.size() != 10) {
+        out["reason"] = String("research_signal_generation_input_shape_invalid");
+        return out;
+    }
+    // signal_ids follows the stable catalog order for the ten static signals:
+    // maize,wheat,potato,horse,freshwater,river_valley,volcanic,high_plateau,coastal_estuary,copper.
+    const uint8_t *veg = vegetation.ptr();
+    const uint8_t *lf = landform.ptr();
+    const uint8_t *riv = rivers.ptr();
+    const uint8_t *volc = volcanoes.ptr();
+    const uint8_t *is_water = water.ptr();
+    const int32_t *sid = signal_ids.ptr();
+    PackedByteArray realms;
+    realms.resize(n);
+    uint8_t *realm = realms.ptrw();
+    PackedInt32Array offsets;
+    offsets.resize(n + 1);
+    int32_t *offset = offsets.ptrw();
+    PackedInt32Array ids;
+    PackedInt32Array values;
+    ids.resize(0); values.resize(0);
+    std::vector<int32_t> scratch;
+    scratch.reserve(6);
+    auto realm_for = [&](int cell) -> uint8_t {
+        if (is_water[cell] != 0) return 0;
+        const int row = cell / width;
+        const int col = cell - row * width;
+        const uint32_t h = uint32_t(seed) ^ uint32_t(col * 0x9e3779b9U) ^ uint32_t(row * 0x85ebca6bU);
+        const int band = (int((h >> 28U) & 3U) - 1);
+        const int x = (col * 100) / std::max(width, 1);
+        const int y = (row * 100) / std::max(height, 1);
+        if (y >= 30 && y <= 68 && x < 30 + band * 4) return uint8_t(1);       // neotropical
+        if (y >= 25 && y <= 60 && x < 56 + band * 3) return uint8_t(2);       // western Eurasian
+        if (y >= 28 && y <= 58 && x >= 42 && x <= 82) return uint8_t(3);      // Eurasian steppe
+        if (y >= 38 && y <= 76 && x >= 76) return uint8_t(5);                 // east Asian
+        if (y >= 30 && y <= 74 && x >= 28 && x < 48) return uint8_t(4);       // subsaharan
+        return uint8_t(6);                                                     // australasian/other
+    };
+    auto has_water_neighbor = [&](int cell) {
+        const int row = cell / width;
+        const int col = cell - row * width;
+        const int left = row * width + ((col + width - 1) % width);
+        const int right = row * width + ((col + 1) % width);
+        const int up = row > 0 ? cell - width : -1;
+        const int down = row + 1 < height ? cell + width : -1;
+        return is_water[left] || is_water[right] || (up >= 0 && is_water[up]) ||
+               (down >= 0 && is_water[down]);
+    };
+    int32_t cursor = 0;
+    for (int cell = 0; cell < n; ++cell) {
+        offset[cell] = cursor;
+        const uint8_t r = realm_for(cell);
+        realm[cell] = r;
+        scratch.clear();
+        if (is_water[cell] == 0) {
+            const bool grass = veg[cell] == 9 || veg[cell] == 10 || veg[cell] == 13 || veg[cell] == 26;
+            if (r == 1 && grass) scratch.push_back(sid[0]);
+            if (r == 2 && (veg[cell] == 9 || veg[cell] == 10)) scratch.push_back(sid[1]);
+            if (r == 1 && lf[cell] == 13 && (veg[cell] == 9 || veg[cell] == 10 || veg[cell] == 3)) scratch.push_back(sid[2]);
+            if (r == 3 && (veg[cell] == 9 || veg[cell] == 10)) scratch.push_back(sid[3]);
+            if (riv[cell] != 0) { scratch.push_back(sid[4]); scratch.push_back(sid[5]); }
+            if (volc[cell] != 0 || lf[cell] == 12) scratch.push_back(sid[6]);
+            if (lf[cell] == 13) scratch.push_back(sid[7]);
+            if (riv[cell] != 0 && has_water_neighbor(cell)) scratch.push_back(sid[8]);
+        }
+        std::sort(scratch.begin(), scratch.end());
+        scratch.erase(std::unique(scratch.begin(), scratch.end()), scratch.end());
+        for (int32_t signal : scratch) {
+            if (signal < 0) continue;
+            ids.push_back(signal);
+            values.push_back(1);
+            ++cursor;
+        }
+    }
+    offset[n] = cursor;
+    out["ok"] = true;
+    out["path"] = String("gdext");
+    out["generation_vegetation"] = vegetation;
+    out["cell_biogeographic_realm"] = realms;
+    out["cell_signal_offsets"] = offsets;
+    out["cell_signal_ids"] = ids;
+    out["cell_signal_values"] = values;
+    return out;
+}
+
 Dictionary DCWorldExt::start_native_generation(int seed,
                                                const Dictionary &cfg,
                                                const Dictionary &profile) {

@@ -34,7 +34,7 @@ func _run() -> void:
 		return
 	for layer_id in range(layout.layer_count):
 		var data := PackedByteArray()
-		data.resize(layout.layer_size.x * layout.layer_size.y * 2)
+		data.resize(layout.layer_size.x * layout.layer_size.y * 4)
 		for y in range(layout.layer_size.y):
 			for x in range(layout.layer_size.x):
 				var global_x: int = posmod(layer_id * layout.interior_size.x + x - layout.gutter_px,
@@ -43,11 +43,13 @@ func _run() -> void:
 				var ridge: float = 0.82 if abs(global_x - 16) <= 1 else 0.35
 				var h: float = clampf(ridge + float(global_y) * 0.001, 0.0, 1.0)
 				var encoded: int = clampi(int(round(h * 65535.0)), 0, 65535)
-				var offset: int = (y * layout.layer_size.x + x) * 2
+				var offset: int = (y * layout.layer_size.x + x) * 4
 				data[offset] = (encoded >> 8) & 0xFF
 				data[offset + 1] = encoded & 0xFF
+				data[offset + 2] = 0  # flow channel unused in this smoke
+				data[offset + 3] = 0
 		var image := Image.create_from_data(layout.layer_size.x, layout.layer_size.y,
-			false, Image.FORMAT_RG8, data)
+			false, Image.FORMAT_RGBA8, data)
 		tiles.height.update_layer(image, layer_id)
 
 	_baker = VisualTileHorizonBaker.new()

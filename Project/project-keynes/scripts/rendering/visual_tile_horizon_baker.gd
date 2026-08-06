@@ -66,9 +66,21 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 		if image == null:
 			_cleanup()
 			return _failure("height_layer_readback_failed:%d" % layer_id, t0)
-		if image.get_format() != Image.FORMAT_RG8:
-			image.convert(Image.FORMAT_RG8)
-		input_data[layer_id] = image.get_data()
+		# Horizon compute 只需要 RG16 elev；height 现为 RGBA8（B=flow），显式抽 RG。
+		var rg_bytes: PackedByteArray
+		if image.get_format() == Image.FORMAT_RGBA8:
+			var src: PackedByteArray = image.get_data()
+			var n: int = layout.layer_size.x * layout.layer_size.y
+			rg_bytes = PackedByteArray()
+			rg_bytes.resize(n * 2)
+			for i in range(n):
+				rg_bytes[i * 2] = src[i * 4]
+				rg_bytes[i * 2 + 1] = src[i * 4 + 1]
+		else:
+			if image.get_format() != Image.FORMAT_RG8:
+				image.convert(Image.FORMAT_RG8)
+			rg_bytes = image.get_data()
+		input_data[layer_id] = rg_bytes
 
 	var texture_format := RDTextureFormat.new()
 	texture_format.format = RenderingDevice.DATA_FORMAT_R8G8_UNORM

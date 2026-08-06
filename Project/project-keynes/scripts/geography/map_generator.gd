@@ -158,6 +158,7 @@ const StartLocationPolicyScript = preload("res://scripts/game/start_location_pol
 const StarterSettlementBootstrapScript = preload("res://scripts/economy/starter_settlement_bootstrap.gd")
 const DiagnosticsBusScript = preload("res://scripts/geography/diagnostics_bus.gd")
 const TerrainGeneratorScript = preload("res://scripts/geography/map_generation/terrain_gen.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
 # Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
 # DCSystemScheduler facade，由 C++ SusSchedulerExt 负责 budget/skip 统计。
@@ -1422,6 +1423,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# write_f32_indexed 全字段后可彻底删除（master 手册 §3.10.3）。
 	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
 	map.init_soa_from_bake()
+	_generate_static_research_signals(map)
 	# Natural resources are bootstrapped in _setup_sus after the deferred
 	# physical circulation solve has published per-cell currents/upwelling.
 	# This keeps fisheries from silently sampling zero-valued ocean drivers.
@@ -9846,7 +9848,62 @@ static func _is_water(t: int) -> bool:
 			or t == TerrainType.TERRAIN.LAKE \
 			or t == TerrainType.TERRAIN.REEF \
 			or t == TerrainType.TERRAIN.KELP \
-			or t == TerrainType.TERRAIN.SEA_ICE
+		or t == TerrainType.TERRAIN.SEA_ICE
+
+
+## Immutable world facts are computed once in C++ and retained as CSR.  The
+## resulting data is intentionally map-owned, never country-owned: discovery is
+## later submitted through NativeCountryRuntime at the country command boundary.
+func _generate_static_research_signals(map: MapData) -> void:
+	if map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_research_signal_generation_pass"):
+		push_error("[research-signals] native generation pass unavailable")
+		return
+	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
+	if not bool(catalog.get("ok", false)):
+		push_error("[research-signals] catalog compile failed: %s" % String(catalog.get("reason", "unknown")))
+		return
+	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	var dense := PackedInt32Array()
+	for key in [
+		"bio.maize", "bio.wheat", "bio.potato", "bio.horse",
+		"resource.freshwater", "landform.river_valley", "landform.volcanic",
+		"landform.high_plateau", "landform.coastal_estuary", "resource.copper_ore",
+	]:
+		var index := ids.find(key)
+		if index < 0:
+			push_error("[research-signals] required catalog id missing: %s" % key)
+			return
+		dense.append(index)
+	var result: Dictionary = _data_core_world_ext.run_research_signal_generation_pass({
+		"width": map.width,
+		"height": map.height,
+		"seed": _last_seed,
+		"generation_vegetation": map.vegetation_arr,
+		"landform": map.landform_arr,
+		"has_river": map.has_river_arr,
+		"has_volcano": map.has_volcano_arr,
+		"is_water": map.is_water_arr,
+		"signal_ids": dense,
+	})
+	if not bool(result.get("ok", false)):
+		push_error("[research-signals] native generation failed: %s" % String(result.get("reason", "unknown")))
+		return
+	var n := map.cell_count()
+	var offsets: PackedInt32Array = result.get("cell_signal_offsets", PackedInt32Array())
+	var values: PackedInt32Array = result.get("cell_signal_values", PackedInt32Array())
+	var signal_ids: PackedInt32Array = result.get("cell_signal_ids", PackedInt32Array())
+	var realms: PackedByteArray = result.get("cell_biogeographic_realm", PackedByteArray())
+	var generation_vegetation: PackedByteArray = result.get("generation_vegetation", PackedByteArray())
+	if offsets.size() != n + 1 or realms.size() != n or generation_vegetation.size() != n \
+			or values.size() != signal_ids.size():
+		push_error("[research-signals] native output shape invalid")
+		return
+	map.generation_vegetation_arr = generation_vegetation
+	map.cell_biogeographic_realm_arr = realms
+	map.cell_research_signal_offsets = offsets
+	map.cell_research_signal_ids = signal_ids
+	map.cell_research_signal_values = values
 
 # Phase 14：永久性地标 — 一旦设定不被季节 / biome 重决策覆盖。
 # terrain-overhaul：CHAPARRAL/MOOR/FLOODPLAIN/MESA 为特征 pass 专属地形（分类器无法

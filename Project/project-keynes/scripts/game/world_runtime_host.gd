@@ -789,7 +789,7 @@ func get_gm_capabilities() -> Dictionary:
 				"group": "诊断", "kind": "button", "icon": &"summary.overview",
 				"tooltip": "打印 Web FlowTex 的生成、编码、上传、绑定、Shader 变体和 GPU 实际读取信息"},
 			{"id": "diagnostics.dyn_lut_view", "label": "dyn_lut 直读视图（R温度 G湿度 B雪，全黑=读成零）", "group": "诊断"},
-			{"id": "diagnostics.eco_lut_view", "label": "eco_lut 直读视图（R叶量 G胁迫 B物候，全黑=读成零）", "group": "诊断"},
+			{"id": "diagnostics.eco_lut_view", "label": "eco_lut 视图（主地形已退役，灰占位；植被层仍用）", "group": "诊断"},
 			{"id": "diagnostics.sky_visibility_view", "label": "天空可见度视图（灰阶，越黑=AO 压得越狠）", "group": "诊断"},
 			{"id": "diagnostics.gi_off", "label": "关闭地形 GI（AO/bent/弹射归零，回退到接入前）", "group": "诊断"},
 			{"id": "diagnostics.terrain_materials", "label": "地形材质贴图（A/B，近景看颗粒）", "group": "诊断"},
@@ -1511,37 +1511,49 @@ func _print_enum_lut_view_state() -> void:
 
 
 # GM 开关「河流 flow 视图」：屏幕给的是 shader 采到的 flow，这里补上 CPU 侧的
-# flow_tex 绑定状态。注意 CPU 侧全绿并不能排除问题——GLES3 兜底成 4×4 白纹理时这里
+# height_tex.B / tiled flow 绑定状态。注意 CPU 侧全绿并不能排除问题——GLES3 兜底成 4×4 白纹理时这里
 # 每一项都正常，要判死必须看 dv16 的 textureSize。
 func _print_river_flow_state() -> void:
 	if _renderer == null:
 		return
 	print("[river-flow-view] 黑底+细红线=正常 / 整屏红=flow 恒高（sampler 落到 GLES3 兜底白纹理，用 dv16 确认）")
 	var world = _renderer._world
-	var world_tex: Texture2D = world.flow_tex if world != null else null
+	var tiled := false
+	var tiles = world.visual_tiles if world != null else null
+	if tiles != null and bool(tiles.ready) and tiles.layout != null \
+			and String(tiles.layout.mode) == "tiled":
+		tiled = true
+	var world_tex: Texture2D = null
 	if world != null:
-		print("[river-flow-view] world 侧: flow_tex=%s size=%s derived_size=%s" % [
-			str(world_tex != null), str(world_tex.get_size()) if world_tex != null else "-",
+		world_tex = tiles.height if tiled else world.height_tex
+		print("[river-flow-view] world 侧: packed_in_height=true tiled=%s tex=%s size=%s derived_size=%s" % [
+			str(tiled), str(world_tex != null),
+			str(world_tex.get_size()) if world_tex != null else "-",
 			str(world.derived_size)])
 	if _renderer._shader_mat != null:
-		var bound: Texture2D = _renderer._shader_mat.get_shader_parameter("flow_tex")
+		var bound_name := "visual_height_tiles" if tiled else "height_tex"
+		var bound: Texture2D = _renderer._shader_mat.get_shader_parameter(bound_name)
 		var bound_fmt: int = bound.get_format() if bound != null and bound.has_method("get_format") else -1
-		var want_fmt: int = DCAtlasEncoders.single_channel_format()
-		print("[river-flow-view] 材质 uniform: flow_tex=%s size=%s fmt=%d want=%d 与 world 同对象=%s has_flow_tex=%s" % [
-			str(bound != null), str(bound.get_size()) if bound != null else "-",
+		var want_fmt: int = Image.FORMAT_RGBA8
+		print("[river-flow-view] 材质 uniform: %s=%s size=%s fmt=%d want=%d 与 world 同对象=%s has_flow_tex=%s" % [
+			bound_name, str(bound != null), str(bound.get_size()) if bound != null else "-",
 			bound_fmt, want_fmt,
 			str(bound != null and bound == world_tex),
 			str(_renderer._shader_mat.get_shader_parameter("has_flow_tex"))])
 		if bound == null:
-			push_warning("[river-flow-view] flow_tex 未绑定；GLES3 兜底白纹理会让整片陆地被判成河")
-		elif bound_fmt != want_fmt:
-			push_warning("[river-flow-view] flow_tex 格式=%d，本后端期望 %d；单通道纹理在 WebGL2 上会被换成 4×4 白纹理" % [
-				bound_fmt, want_fmt])
+			push_warning("[river-flow-view] %s 未绑定；GLES3 兜底白纹理会让整片陆地被判成河" % bound_name)
+		elif bound_fmt != want_fmt and not tiled:
+			push_warning("[river-flow-view] height_tex 格式=%d，期望 RGBA8（B=flow）；格式错会导致 height/flow 解码错乱" % [
+				bound_fmt])
+		elif tiled and bound != null and bound.has_method("get_format") \
+				and bound_fmt != want_fmt and bound_fmt != -1:
+			# Texture2DArray.get_format 在部分后端可用；不对则跳过。
+			push_warning("[river-flow-view] visual_height_tiles 格式=%d，期望 RGBA8（B=flow）" % bound_fmt)
 	print("[river-flow-view] river_strength=%.2f threshold_low=%.2f threshold_high=%.2f" % [
 		_renderer.river_strength, _renderer.river_threshold_low, _renderer.river_threshold_high])
 	# 关键读数：源 float buffer 与编码字节的分布。src.hi_frac≈1 说明上游 river SDF 就
 	# 产出了全 1（渲染无关的数据 bug）；src 正常而 out.hi_frac≈1 说明编码器；两者都正常
-	# 却仍整屏红，才是上传/格式问题。upload=RG8_expanded 才是 Compatibility 加宽真正跑通。
+	# 却仍整屏红，才是上传/格式问题。upload=RGBA8 表示 height+flow 合并路径。
 	print("[river-flow-view] encode=", DCAtlasEncoders.last_flow_encode_info)
 	var world_now = _renderer._world
 	if world_now != null:
@@ -1607,9 +1619,8 @@ func _collect_flow_tex_report() -> Dictionary:
 	var tiles = world.visual_tiles if world != null else null
 	var tiled := tiles != null and bool(tiles.ready) and tiles.layout != null \
 		and String(tiles.layout.mode) == "tiled"
-	var world_flow = world.flow_tex if world != null else null
-	var tiled_flow = tiles.flow if tiled else null
-	var effective_flow = tiled_flow if tiled else world_flow
+	var world_flow = (tiles.height if tiled else world.height_tex) if world != null else null
+	var effective_flow = world_flow
 	var expected_buffer := int(world.derived_size.x * world.derived_size.y) if world != null else 0
 	var buffer: PackedFloat32Array = world.flow_buffer if world != null else PackedFloat32Array()
 	report["path"] = {
@@ -1617,22 +1628,23 @@ func _collect_flow_tex_report() -> Dictionary:
 		"layout_mode": String(tiles.layout.mode) if tiles != null and tiles.layout != null else "none",
 		"shader_variant_tiled": material != null and material.shader != null
 			and material.shader.code.contains("#define MAP_VISUAL_TILED"),
-		"effective_flow": "visual_flow_tiles" if tiled else "flow_tex",
+		"effective_flow": "visual_height_tiles.B" if tiled else "height_tex.B",
 		"expected_buffer_pixels": expected_buffer,
 	}
 	report["buffer"] = _flow_buffer_stats(buffer, expected_buffer)
 	report["encode"] = DCAtlasEncoders.last_flow_encode_info.duplicate(true)
 	report["textures"] = {
-		"expected_compat_format": _flow_format_descriptor(DCAtlasEncoders.single_channel_format()),
-		"world_flow_tex": _flow_texture_descriptor(world_flow),
-		"tiled_flow_tiles": _flow_texture_descriptor(tiled_flow),
+		"expected_compat_format": _flow_format_descriptor(Image.FORMAT_RGBA8),
+		"world_flow_tex_retired": _flow_texture_descriptor(world.flow_tex if world != null else null),
+		"world_height_or_tiles": _flow_texture_descriptor(world_flow),
 		"effective_flow": _flow_texture_descriptor(effective_flow),
-		"material_flow_tex": _flow_texture_descriptor(
-			material.get_shader_parameter("flow_tex") if material != null else null),
-		"material_visual_flow_tiles": _flow_texture_descriptor(
-			material.get_shader_parameter("visual_flow_tiles") if material != null else null),
-		"world_material_same_object": material != null and world_flow != null
-			and material.get_shader_parameter("flow_tex") == world_flow,
+		"material_height_tex": _flow_texture_descriptor(
+			material.get_shader_parameter("height_tex") if material != null else null),
+		"material_visual_height_tiles": _flow_texture_descriptor(
+			material.get_shader_parameter("visual_height_tiles") if material != null else null),
+		"world_material_same_object": material != null and world_flow != null and (
+			(material.get_shader_parameter("visual_height_tiles") == world_flow) if tiled
+			else (material.get_shader_parameter("height_tex") == world_flow)),
 		"has_flow_tex": material.get_shader_parameter("has_flow_tex") if material != null else false,
 	}
 	var shader_report := {}
@@ -1662,12 +1674,19 @@ func _collect_flow_tex_report() -> Dictionary:
 	if not bool(effective_desc.get("bound", false)):
 		issues.append("effective_flow_texture_missing")
 	if material != null:
-		var expected_name := "visual_flow_tiles" if tiled else "flow_tex"
+		var expected_name := "visual_height_tiles" if tiled else "height_tex"
 		var effective_bound = material.get_shader_parameter(expected_name)
 		if effective_bound == null:
 			issues.append("effective_flow_uniform_unbound")
 		if not bool(material.get_shader_parameter("has_flow_tex")):
 			issues.append("has_flow_tex_false")
+		if material.shader != null:
+			if material.shader.code.contains("uniform sampler2D flow_tex") \
+					or material.shader.code.contains("uniform sampler2DArray visual_flow_tiles"):
+				issues.append("retired_flow_sampler_still_declared")
+		if not tiled and effective_bound != null and effective_bound.has_method("get_format") \
+				and int(effective_bound.get_format()) != Image.FORMAT_RGBA8:
+			issues.append("legacy_height_tex_not_rgba8")
 	if DCFeatureFlags.is_compatibility_renderer():
 		if samplers.size() > 8:
 			issues.append("compat_sampler_count_over_8")
@@ -2322,12 +2341,28 @@ func _connect_country_committed() -> void:
 	var callback := Callable(self, "_on_country_committed")
 	if not facade.country_committed.is_connected(callback):
 		facade.country_committed.connect(callback)
+	if facade.has_signal("research_signal_discovered"):
+		var signal_callback := Callable(self, "_on_research_signal_discovered")
+		if not facade.research_signal_discovered.is_connected(signal_callback):
+			facade.research_signal_discovered.connect(signal_callback)
 
 
 func _on_country_committed(_report: Dictionary) -> void:
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
 	refresh_country_visuals("country_committed")
+
+func _on_research_signal_discovered(event: Dictionary) -> void:
+	if _generator == null or not _generator.has_method("get_gameplay_event_bus"):
+		return
+	var bus = _generator.get_gameplay_event_bus()
+	if bus == null:
+		return
+	bus.publish_event(GameplayEventBus.EVENT_RESEARCH_SIGNAL_DISCOVERED,
+		int(event.get("cell", -1)), _world_clock.day_index() if _world_clock != null else 0,
+		0, GameplayEventBus.SOURCE_GDSCRIPT, 0, GameplayEventBus.PAYLOAD_RESEARCH_SIGNAL_V1,
+		int(event.get("signal", -1)), int(event.get("source_kind", 0)), 0, 1,
+		int(event.get("country_handle", 0)), 1)
 
 
 ## 重算视野 → 把知识度推进 enum_lut.a → 重建国界 mesh。
@@ -2397,11 +2432,45 @@ func _resolve_player_country_handle() -> int:
 
 
 func _refresh_vision() -> Dictionary:
+	var previous: PackedByteArray = _current_map.explored_arr.duplicate()
+	var result: Dictionary
 	if not _fog_of_war_enabled:
 		# 迷雾关：全图视作已探索且可见。UI 门控与 enum_lut.a 因此自动放行，
 		# 不需要在每个消费点再判一次 flag。
-		return VisionSolver.mark_all_visible(_current_map)
-	return VisionSolver.solve(_current_map, _world_data, _player_country_slot)
+		result = VisionSolver.mark_all_visible(_current_map)
+	else:
+		result = VisionSolver.solve(_current_map, _world_data, _player_country_slot)
+	_submit_discovered_map_signals(previous)
+	return result
+
+func _submit_discovered_map_signals(previous: PackedByteArray) -> void:
+	if _current_map == null or previous.size() != _current_map.explored_arr.size() \
+			or _current_map.cell_research_signal_offsets.size() != _current_map.cell_count() + 1 \
+			or _generator == null or not _generator.has_method("get_country_facade"):
+		return
+	var facade = _generator.get_country_facade()
+	var handle := _resolve_player_country_handle()
+	if facade == null or handle == 0:
+		return
+	var commands: Array[Dictionary] = []
+	var effective_day := _world_clock.day_index() + 1 if _world_clock != null else 1
+	for cell in _current_map.cell_count():
+		if previous[cell] != 0 or _current_map.explored_arr[cell] == 0:
+			continue
+		var begin := int(_current_map.cell_research_signal_offsets[cell])
+		var end := int(_current_map.cell_research_signal_offsets[cell + 1])
+		for edge in range(begin, end):
+			commands.append({
+				"opcode": CountryFacade.Opcode.DISCOVER_COUNTRY_SIGNAL,
+				"target_handle": handle,
+				"signal": int(_current_map.cell_research_signal_ids[edge]),
+				"cell": cell,
+				"value": 1,
+				"effective_day": effective_day,
+				"sequence": cell * 16 + (edge - begin),
+			})
+	if not commands.is_empty():
+		facade.submit(commands)
 
 
 ## 迷雾值住在 enum_lut 的 A 通道，所以视野一变就必须重烘一次 LUT。

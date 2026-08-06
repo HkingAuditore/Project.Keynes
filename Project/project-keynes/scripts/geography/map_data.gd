@@ -272,6 +272,14 @@ var fog_k_arr:              PackedByteArray = PackedByteArray()
 var fog_solved: bool = false
 var resource_habitat_mask_arr: PackedByteArray = PackedByteArray()
 
+## Generation-only static research evidence. These arrays are not DataCore slots:
+## they describe immutable world facts, while countries own discovery knowledge.
+var generation_vegetation_arr: PackedByteArray = PackedByteArray()
+var cell_biogeographic_realm_arr: PackedByteArray = PackedByteArray()
+var cell_research_signal_offsets: PackedInt32Array = PackedInt32Array()
+var cell_research_signal_ids: PackedInt32Array = PackedInt32Array()
+var cell_research_signal_values: PackedInt32Array = PackedInt32Array()
+
 # ─── Dirty Mask（需求 2.1 / 2.4 阶段 A.2 投入使用） ───────────────────────
 # 每个 cell 1 字节：0 = clean、1 = dirty。Pass A 写入时按 epsilon 判定标 dirty；
 # Pass B / 下游稀疏 sub-pass 仅遍历 dirty=1 的 cell（含 1 跳邻居膨胀）。

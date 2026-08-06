@@ -4,7 +4,8 @@ class_name PlayerGame
 const MAIN_MENU_SCENE_PATH := "res://scenes/main_menu.tscn"
 const DEFAULT_DAY_NIGHT_ENABLED := true
 
-# 桌面玩家场景与调试场景共用高画质基线；移动端仍由 mobile quality tier 控制预算。
+# 桌面玩家场景默认高画质；mobile/web 由 GameSettings.render_quality 驱动
+# 编译期 MOBILE_QUALITY_* + 运行期 visual_quality（auto→LOW）。
 @export_range(0, 2, 1) var visual_quality: int = 2
 @export_range(0, 2, 1) var mobile_quality_tier: int = 0
 @export var perf_sampler_enabled: bool = false
@@ -217,10 +218,9 @@ func _push_visual_toggles() -> void:
 		return
 	var quality_setting := String(GameSettings.values().get("render_quality", "auto"))
 	visual_quality = _resolved_visual_quality(quality_setting)
-	if OS.has_feature("mobile") and _renderer.has_method("set_mobile_quality_tier"):
-		# Compile-time tier must be selected before runtime visual_quality is pushed.
-		# The exported mobile_quality_tier remains an inspector/debug value only.
-		_renderer.set_mobile_quality_tier(_mobile_quality_define_from_setting(quality_setting))
+	# mobile/web：编译期 MOBILE_QUALITY_* 档必须在 set_visual_quality 之前推送。
+	if DCFeatureFlags.uses_shader_quality_tier() and _renderer.has_method("set_mobile_quality_tier"):
+		_renderer.set_mobile_quality_tier(_shader_quality_define_from_setting(quality_setting))
 	if _renderer.has_method("set_visual_quality"):
 		_renderer.set_visual_quality(visual_quality)
 	if _renderer.has_method("set_perf_sampler_enabled"):
@@ -245,7 +245,8 @@ func _resolved_visual_quality(quality: String) -> int:
 		"high":
 			return 2
 		_:
-			return 0 if OS.has_feature("mobile") else 2
+			# auto：mobile/web 默认 LOW；桌面默认 HIGH。
+			return 0 if DCFeatureFlags.uses_shader_quality_tier() else 2
 
 
 func _mobile_quality_tier_to_define(tier: int) -> String:
@@ -260,7 +261,7 @@ func _mobile_quality_tier_to_define(tier: int) -> String:
 			return "MOBILE_QUALITY_MID"
 
 
-func _mobile_quality_define_from_setting(quality: String) -> String:
+func _shader_quality_define_from_setting(quality: String) -> String:
 	match quality:
 		"medium":
 			return "MOBILE_QUALITY_MID"

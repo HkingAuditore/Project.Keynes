@@ -172,7 +172,8 @@ varying float shrub_terrain_ao;
 varying vec2 shrub_basis_x;
 varying vec2 shrub_basis_y;
 
-// height_tex：RG8 16-bit 归一化海拔，解码 (R*256+G)/257（与 height.gdshaderinc 同式）。
+// height_tex：RG/RGBA 16-bit 归一化海拔，解码 (R*256+G)/257（与 height.gdshaderinc 同式；
+// Legacy 主图现为 RGBA8，B=flow，本层只读 .rg）。
 float shrub_decode_height(vec2 uv) {
 	vec2 rg = visual_sample_height(uv).rg;
 	return (rg.r * 256.0 + rg.g) / 257.0;
@@ -3533,7 +3534,7 @@ func _apply_profile_uniforms() -> void:
 		var sc = cfg.get("shadow_color")
 		_shadow_material.set_shader_parameter("shadow_color", sc if sc is Color else Color(0.05, 0.06, 0.08, 1.0))
 		var shadow_strength := _profile_float(&"shadow_strength", 0.28)
-		if OS.has_feature("mobile") and _active_quality_tier() >= 2:
+		if DCFeatureFlags.uses_shader_quality_tier() and _active_quality_tier() >= 2:
 			shadow_strength *= 0.5
 		_shadow_material.set_shader_parameter("shadow_strength", shadow_strength)
 		_shadow_material.set_shader_parameter("lod_alpha", _lod_alpha)
@@ -5327,7 +5328,9 @@ func _quality_size_scale() -> float:
 
 
 func _active_quality_tier() -> int:
-	return clampi(_mobile_quality_tier if OS.has_feature("mobile") else _visual_quality, 0, 2)
+	return clampi(
+		_mobile_quality_tier if DCFeatureFlags.uses_shader_quality_tier() else _visual_quality,
+		0, 2)
 
 
 func _detail_kind() -> int:

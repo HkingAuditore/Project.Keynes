@@ -59,8 +59,8 @@ func _init() -> void:
 		"invalid array target returns a fallback result")
 	_expect(not String(failed_result.get("reason", "")).is_empty(),
 		"array failure records a reason")
-	_expect(not MapBakerScript._terrain_materials_supported_for_renderer("gl_compatibility"),
-		"Compatibility renderer disables terrain material arrays")
+	_expect(MapBakerScript._terrain_materials_supported_for_renderer("gl_compatibility"),
+		"Compatibility renderer allocates terrain material arrays (eco_lut slot freed)")
 	_expect(MapBakerScript._terrain_materials_supported_for_renderer("mobile"),
 		"native renderer allows terrain material arrays")
 

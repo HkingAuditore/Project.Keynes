@@ -94,16 +94,17 @@ texel 18 bytes 估算；compute 临时工作集额外按 12 bytes 估算。可�
 
 | 字段 | Image 格式 | bytes/texel | 语义 |
 | --- | --- | ---: | --- |
-| `height` | RG8 | 2 | 16-bit 最终视觉高度 |
+| `height` | RGBA8 | 4 | RG=16-bit 最终视觉高度；B=河流 SDF；A=0 |
 | `terrain_normal` | RG8 | 2 | 最终视觉高度的宏观法线 xy |
 | `map_index` | RGBA8 | 4 | biome、cell id low/high、landform |
-| `flow` | L8 | 1 | 高分河流 SDF |
 | `water_depth` | L8 | 1 | 海/湖水深 |
 | `terrain_detail` | L8 | 1 | 静态地表细节 |
 | `edge_neighbor` | RG8 | 2 | 次级 cell id |
 | `edge_distance` | L8 | 1 | cell 边界距离 |
 | `horizon` | RGBA8 | 4 | 8 方向、每方向 4-bit |
 | `gi_occluder` | RGBA8 | 4 | 遮挡最强两个方向的落点 cell id，RG=主源、BA=次源，低字节在前 |
+
+独立 `flow` 层已退役（2026-08-06 height-flow-pack）：河流 SDF 打进 `height.B`，与 Legacy `height_tex` 对齐。`BYTES_PER_PHYSICAL_TEXEL` = 23。
 
 `horizon` 与 `gi_occluder` 是 `COMPUTE_FIELDS`：它们由 horizon compute 产出，不参与
 `upload_layer_bundle` 的静态字段上传。

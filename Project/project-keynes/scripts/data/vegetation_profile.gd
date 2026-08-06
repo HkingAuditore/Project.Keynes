@@ -42,6 +42,11 @@ extends Resource
 @export var next_richer: int = -1          # long-term climate boon → upgrade
 @export var next_harsher: int = -1         # long-term climate hardship → downgrade
 
+# Research-signal generation consumes these only at catalog/map generation time.
+# They deliberately do not alter ecological succession, transpiration, or visuals.
+@export var research_habitat_tags: PackedStringArray = PackedStringArray()
+@export var discovery_context_tags: PackedStringArray = PackedStringArray()
+
 # ─── map-visual-overhaul-v1：四季换色 LUT（shader 着色用） ──────────────
 # season_color_lut：4 项 [春, 夏, 秋, 冬] 色相偏移色（叠乘到 base 着色，1.0,1.0,1.0,1.0 = 不偏移）。
 #   shader 端按当前半球的 season_phase ∈ [0,4) 做 4 段 cubic mix，南北半球反相。

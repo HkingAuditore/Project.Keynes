@@ -20,8 +20,10 @@
 // 【纹理输入组】
 // =========================================================================
 // world_map.gdshader v9.atlas：高分辨率地理仿真渲染
-//   height_tex       (RG8 16-bit, hm_size, LINEAR)
-//                     归一化海拔 [0, 1]，解码 (R*256 + G) / 257
+//   height_tex       (RGBA8, hm_size, LINEAR)
+//                     RG = 16-bit 归一化海拔 [0,1]，解码 (R*256 + G) / 257
+//                     B  = river flow SDF [0,1]（原独立 flow_tex；Web 省 1 sampler）
+//                     A  = 0（保留）
 //   terrain_horizon_tex (RGBA8, hm_size, NEAREST)
 //                     8 directions horizon angle, high/low nibble packed; shader manually filters after unpack
 //   map_index_atlas  (RGBA8, derived_size, NEAREST)
@@ -75,9 +77,9 @@ uniform int gi_debug_view = 0;
 uniform sampler2D bounce_lut : filter_nearest, repeat_disable;
 #endif
 uniform bool gi_bounce_bound = false;
-// [river-render-restore 2026-06-19] 河流 SDF（L8, derived_size）：R = 河流强度 [0,1]，
-// 1=河心、0=远离河道。scalar_atlas 退役后单独用这张轻量纹理把河网视觉接回（见 land_pipeline
-// 的 flow）。未绑定时采样得 0（无河），安全降级。
+// [river-render-restore 2026-06-19 / height-flow-pack 2026-08-06]
+// 河流 SDF：Legacy/Tiled 均读 height*.B（RGBA8）。
+// has_flow_tex=false 时视觉降级为无河（不可靠"未绑采样得 0"）。
 // [water-depth-tex 2026-06-26] 海/湖统一归一水深（R8, derived_size）：R = 水深 [0,1]，0=岸/陆、
 // 1=最深。C++ 生成期算好 per-cell（海洋 1-E/sea + 湖泊湖岸→湖心碗形），bake 经 pixel_to_cell_index
 // 扇出。water_pipeline 用它做深浅着色，单次采样取代旧"海洋 5×5 height 邻域 + 湖泊 16× biome 多半径"。
@@ -92,14 +94,11 @@ uniform float terrain_ecotone_width = 0.84;
 uniform float terrain_ecotone_noise = 0.22;
 // [terrain-material-tiles] 四方连续材质族数组。只在 HIGH 且运行时成功绑定时
 // 采样；其它画质继续使用 terrain_detail_tex / 程序化旧路径。
-// [pk-web-texture-budget] Compatibility(GLES3/WebGL2) 后端下 map_baker 恒
-// 不分配这张数组（_terrain_materials_supported_for_renderer 拒绝
-// "gl_compatibility"），terrain_material_tex_bound 恒为 false——sampler 声明
-// 本身就是死重量，直接编译期裁掉以省一个纹理单元（见 shader_quality.gdshaderinc
-// PK_WEB_TEXTURE_BUDGET）。
-#ifndef PK_WEB_TEXTURE_BUDGET
+// [pk-web-texture-budget 2026-08-06] Compatibility 预算砍掉 eco_lut 后腾出 1 槽，
+// 材质数组重新纳入；height+flow 合并后再腾 1 槽（现为 height/horizon/map_index/noise/
+// enum/dyn/material = 7，留 1 裕量）。
+// 微纹理仍裁掉（材质激活时本就跳过；未激活走 procedural）。
 uniform sampler2DArray terrain_material_tex : filter_linear_mipmap, repeat_enable;
-#endif
 uniform bool terrain_material_tex_bound = false;
 uniform bool terrain_materials_enabled = true;
 uniform float terrain_material_world_size = 384.0;
@@ -138,11 +137,12 @@ const float NOISE_TEX_SCALE = 256.0;
 //   **必须 NEAREST**：索引插值会得到垃圾 cell。
 // enum_lut（RGBA8 NEAREST）：per-cell R=biome G=veg B=cover A=迷雾知识度 k。
 // dyn_lut（RGBA8 NEAREST）：per-cell R=temp G=wet B=snow A=ice|vitality。
-// eco_lut（RGBA8 NEAREST）：per-cell ecology。
 // lut_dims：(lut_w, lut_h) LUT 纹理网格尺寸，shader 据此把 cell.index → texel uv。
+// eco_lut 已从主地形 shader 移除（2026-08-06）：主地图着色与 dyn_vitality 高度重叠，
+// 占一个纹理单元却收益薄；mobile/web 预算把该槽让给 terrain_material_tex。
+// 植被实例层（shrub_layer）仍有独立 eco_lut sampler，不走本文件。
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform sampler2D dyn_lut  : filter_nearest, repeat_disable;
-uniform sampler2D eco_lut  : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0, 1.0);
 
 

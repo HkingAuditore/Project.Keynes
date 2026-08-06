@@ -1573,8 +1573,9 @@ Interpret the sections in this order:
   distribution, and Compatibility upload widening (`RG8_expanded`). `hi_frac≈1` here means
   the bad value was already produced before the GPU boundary.
 - `textures`: world/tiled texture descriptors, material descriptors, object identity, format,
-  RID, dimensions, and `has_flow_tex`. In tiled mode, `visual_flow_tiles` is authoritative;
-  a null legacy `flow_tex` is expected.
+  RID, dimensions, and `has_flow_tex`. Flow is packed in `height_tex.B` /
+  `visual_height_tiles.B`（RGBA8）；a null legacy `flow_tex` / retired `visual_flow_tiles`
+  is expected.
 - `shader` and `samplers`: active shader source/variant, `MAP_VISUAL_TILED`,
   `PK_WEB_TEXTURE_BUDGET`, and every object uniform with its bound texture. Compatibility/WebGL2
   must keep the material sampler set within the eight slots available after Godot Canvas

@@ -136,12 +136,13 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 | `map_index_atlas` | RGBA8 NEAREST | R=biome, G/B=`cell.index` low/high, A=landform |
 | `enum_lut` | RGB8 NEAREST | per-cell biome / vegetation / cover |
 | `dyn_lut` | RGBA8 NEAREST | R=temp, G=wetness, B=snow_cover, A=sea_ice 或 vitality |
-| `eco_lut` | RGBA8 NEAREST | R=foliage_density, G=stress, B=transition_age, A=growth |
+| `terrain_material_tex` | Texture2DArray | 四方连续材质族（Compatibility 亦启用；主地形已不绑 `eco_lut`） |
 
 **关键约定**：
 
 - `dyn_valid = (_cell_id < 0) ? 0.0 : 1.0`：地图外哨兵像素走 fallback；
-- `eco_valid = step(0.01, eco_foliage + eco_stress + eco_transition)`：生态层是否已 bake；
+- 主地形 **不再采样 `eco_lut`**（2026-08-06）：叶量/胁迫/物候与 `dyn_vitality` 高度重叠，
+  纹理槽让给 `terrain_material_tex`。植被 MultiMesh（`shrub_layer`）仍可独立绑 `eco_lut`。
 - `scalar_atlas` / `vector_atlas` / `dynamic_cell_atlas` / `dyn_atlas_smooth_atlas` /
   `ecology_visual_atlas` / `ice_state_atlas` / `sea_ice_tex` 已退役，不再绑定或采样。
 - **单通道纹理必须走 `DCAtlasEncoders.upload_single_channel()`，不要自己
@@ -166,10 +167,9 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 
 ```
 SETUP（world_map.gdshader::fragment）
-  ├── 采样 6 张 atlas + noise_tex（1 次 pixel_noise）
+  ├── 采样核心 atlas + noise_tex（1 次 pixel_noise）+ 可选 terrain_material_tex
   ├── 解码 elev / biome / veg / cover / moist / lat_norm
   ├── 解码 dyn_temp / dyn_wet / dyn_snow / dyn_vitality
-  ├── 解码 eco_foliage / eco_stress / eco_transition / eco_growth
   ├── 计算 lat_signed / season_offset / current_temp
   └── 判定 is_water = biome ∈ {OCEAN, COAST, LAKE, REEF, KELP, SEA_ICE}
 
@@ -326,8 +326,7 @@ vec3 render_land_pipeline(
     float elev, float moist, vec2 wp, vec2 uv,
     vec4 scals, float lat_signed, float current_temp,
     float dyn_snow, float dyn_valid, float dyn_vitality,
-    float eco_foliage, float eco_stress, float eco_transition,
-    float eco_growth, float eco_valid, vec4 pixel_noise);
+    vec4 pixel_noise);
 ```
 
 ### 8.2 LAND 1.x — `compute_land_base_surface`
