@@ -15,3 +15,4 @@ temp_tolerance = 0.16
 moist_tolerance = 0.2
 next_richer = 14
 next_harsher = 15
+research_habitat_tags = PackedStringArray("habitat.seasonal_wet", "habitat.warm_crop")

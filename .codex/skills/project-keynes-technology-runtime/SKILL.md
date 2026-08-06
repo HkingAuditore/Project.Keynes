@@ -64,6 +64,25 @@ Also use `civ-grounded-development` for repository changes. Add
 - Do not add taxes, cross-country technology trade, research diplomacy, or AI research policy as
   incidental scope.
 
+## Research-signal prerequisite contract
+
+Technology prerequisites are no longer limited to `prerequisite_ids`. `TechnologyCatalog` compiles
+authoring-side `ResearchCondition` / `ResearchPredicate` data into postfix dense IR; legacy
+`prerequisite_ids` remain the structural compatibility gate. `NativeCountryRuntime` evaluates the
+IR from its frozen numeric state, never from Resources, strings, or Dictionaries.
+
+The currently active v1 operators are `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`,
+`ALL_OF`, `ANY_OF`, `AT_LEAST`, and `NOT`. Treat `COUNTRY_FLAG`, `COUNTRY_STAT`,
+`BUILDING_COUNT`, `CURRENT_STATE`, `EVENT_OCCURRED`, `SEQUENCE`, and `WITHIN_DAYS` as declared
+authoring surface only until a packed native source and focused tests are added; do not silently
+compile them as an always-true condition.
+
+`ResearchSignalCatalog` owns stable IDs and catalog metadata for Bio, resource, landform, weather,
+and breakthrough signals. A technology may only use a dense signal ID resolved at catalog compile
+time. Permanent map discoveries are country-local: they block/unblock queue heads while preserving
+their existing progress, and must not be treated as goods inventory or as cross-country technology
+transfer. `pending` technology activation remains unchanged and must not re-check a gate.
+
 ## Verify
 
 From the repository root run:

@@ -3,16 +3,15 @@ extends RefCounted
 
 const VisualTileLayoutScript = preload("res://scripts/rendering/visual_tile_layout.gd")
 
-# [terrain-gi 2026-07-31] gi_occluder 与 horizon 一样由 compute 异步产出（不是静态 bake
-# bundle 的一部分），RG=主导遮挡源 cell id 低/高字节，BA=次遮挡源，0xFFFF=无有效遮挡源。
-# 新增 4 bytes/texel，合计 22——visual_tile_layout.BYTES_PER_PHYSICAL_TEXEL 必须同步。
+# [terrain-gi 2026-07-31 / height-flow-pack 2026-08-06]
+# height 现为 RGBA8（RG=16-bit elev，B=flow，A=0），独立 flow 层退役。
+# 合计 23 bytes/texel——visual_tile_layout.BYTES_PER_PHYSICAL_TEXEL 必须同步。
 const FIELD_FORMATS := {
-	"height": Image.FORMAT_RG8,
+	"height": Image.FORMAT_RGBA8,
 	"terrain_normal": Image.FORMAT_RG8,
 	"map_index": Image.FORMAT_RGBA8,
 	# 这里是 **载荷** 格式（C++ bake 产出的 stride），不一定等于最终纹理格式：
 	# Compatibility 下单通道纹理要加宽，见 _texture_format()。
-	"flow": Image.FORMAT_R8,
 	"water_depth": Image.FORMAT_R8,
 	"terrain_detail": Image.FORMAT_R8,
 	"edge_neighbor": Image.FORMAT_RG8,
@@ -36,7 +35,6 @@ var bake_report: Dictionary = {}
 var height: Texture2DArray
 var terrain_normal: Texture2DArray
 var map_index: Texture2DArray
-var flow: Texture2DArray
 var water_depth: Texture2DArray
 var terrain_detail: Texture2DArray
 var edge_neighbor: Texture2DArray
@@ -60,10 +58,38 @@ func initialize_empty(resolved_layout) -> bool:
 	return true
 
 
+# [height-flow-pack] 兼容旧 DLL：若仍返回 height=N*2 + flow=N，在此拼成 RGBA8。
+# 新 DLL 直接产出 height=N*4，无 flow key。
+static func normalize_height_flow_bundle(bundle: Dictionary, layer_size: Vector2i) -> Dictionary:
+	if bundle == null or bundle.is_empty():
+		return bundle
+	var n: int = layer_size.x * layer_size.y
+	if n <= 0:
+		return bundle
+	var height: PackedByteArray = bundle.get("height", PackedByteArray())
+	var flow: PackedByteArray = bundle.get("flow", PackedByteArray())
+	if height.size() == n * 4:
+		bundle.erase("flow")
+		return bundle
+	if height.size() == n * 2 and flow.size() == n:
+		var rgba := PackedByteArray()
+		rgba.resize(n * 4)
+		for i in range(n):
+			var o: int = i * 4
+			rgba[o] = height[i * 2]
+			rgba[o + 1] = height[i * 2 + 1]
+			rgba[o + 2] = flow[i]
+			rgba[o + 3] = 0
+		bundle["height"] = rgba
+		bundle.erase("flow")
+	return bundle
+
+
 func upload_layer_bundle(layer_id: int, bundle: Dictionary) -> bool:
 	if layout == null or layer_id < 0 or layer_id >= layout.layer_count:
 		fallback_reason = "invalid_layer"
 		return false
+	bundle = normalize_height_flow_bundle(bundle, layout.layer_size)
 	for field_name in FIELD_FORMATS:
 		if field_name in COMPUTE_FIELDS or not bundle.has(field_name):
 			continue

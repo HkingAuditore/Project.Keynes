@@ -2267,11 +2267,16 @@ func _generate_and_render(seed_val: int) -> void:
 	# 旧 sea_ice_tex 逐像素海冰贴图开关（同样必须在 bake_world 前推送）。默认关 → bake
 	# 不再产出那张死贴图，prepare/upload no-op；主海冰视觉走 shader 派生不受影响。
 	DCFeatureFlags.set_sea_ice_atlas(sea_ice_atlas_enabled)
-	# Terrain horizon 在移动端默认关闭；启动页开关启用时走 GPU 离屏烘焙，并在
-	# _push_visual_toggles_legacy 里提升移动 shader quality，确保运行期不被 LOW/MID 剪掉。
-	DCFeatureFlags.set_terrain_horizon_gpu_bake(
-		mobile_terrain_horizon_enabled if OS.has_feature("mobile") else true
-	)
+	# Terrain horizon：桌面默认开；移动端由启动页开关控制；Web 强制关（与
+	# WorldRuntimeHost._apply_feature_flags / DCFeatureFlags 默认一致，避免 meta
+	# 被写成 true 后盖掉 web 关阴影设计）。移动端启用后 _push_visual_toggles_legacy
+	# 会提升 mobile shader quality，确保运行期不被 LOW/MID 剪掉。
+	var terrain_horizon_gpu := true
+	if OS.has_feature("mobile"):
+		terrain_horizon_gpu = mobile_terrain_horizon_enabled
+	elif OS.has_feature("web"):
+		terrain_horizon_gpu = false
+	DCFeatureFlags.set_terrain_horizon_gpu_bake(terrain_horizon_gpu)
 
 	var cfg := MapConfig.make(map_width, map_height)
 	cfg.num_continents = num_continents
@@ -2426,8 +2431,9 @@ func _push_visual_toggles_legacy() -> void:
 	#   fbm octave / 多层云 / day_night / 部分 hillshade。预期 frame ms 12-16ms
 	#   → 60 FPS 可达（vsync_mode=1 锁 60Hz/120Hz）。
 	# 桌面端继续走 @export default visual_quality=1。
-	if OS.has_feature("mobile"):
-		if mobile_terrain_horizon_enabled:
+	# mobile/web：auto 压到 LOW；mobile 开 terrain horizon 时仍可抬到 HIGH。
+	if DCFeatureFlags.uses_shader_quality_tier():
+		if OS.has_feature("mobile") and mobile_terrain_horizon_enabled:
 			if mobile_quality_tier < 2:
 				mobile_quality_tier = 2
 				print("[mobile/terrain-horizon] 启用后强制 mobile_quality_tier=2 (HIGH)")
@@ -2436,18 +2442,19 @@ func _push_visual_toggles_legacy() -> void:
 				print("[mobile/terrain-horizon] 启用后保持 visual_quality>=1")
 		elif render_quality_mode < 0 and visual_quality > 0:
 			visual_quality = 0
-			print("[mobile/visual-quality] 强制 visual_quality=0 (60 FPS 优化；shader 主导 70%% 帧时间)")
+			mobile_quality_tier = 0
+			var plat := "web" if DCFeatureFlags.is_web() else "mobile"
+			print("[%s/visual-quality] 强制 visual_quality=0 + tier=LOW (受限平台默认)" % plat)
 	if _renderer != null:
-		# Mobile quality tier 推送（2026-06-15）：必须在 set_visual_quality 之前，
-		# 这样 set_mobile_quality_tier 触发的 _load_shader() 就能拿到正确 tier。
-		if OS.has_feature("mobile") and _renderer.has_method("set_mobile_quality_tier"):
+		# 编译期质量档必须在 set_visual_quality 之前推送。
+		if DCFeatureFlags.uses_shader_quality_tier() and _renderer.has_method("set_mobile_quality_tier"):
 			var tier_define: String = _mobile_quality_tier_to_define(mobile_quality_tier)
 			_renderer.set_mobile_quality_tier(tier_define)
 		_renderer.set_visual_quality(visual_quality)
 		# 60 FPS 优化（2026-06-14 路线 B）：ecology_visual_quality 也锁 0。
 		# 之前 main.gd 从来没 push 过这个值，renderer @export default=2 一直生效。
 		# eco_q≥2 跑 snowline_visual_strength（额外 fbm + bloom）+ 跨 cell 平滑等。
-		if OS.has_feature("mobile") and _renderer.has_method("set_ecology_visual_quality"):
+		if DCFeatureFlags.uses_shader_quality_tier() and _renderer.has_method("set_ecology_visual_quality"):
 			_renderer.set_ecology_visual_quality(0)
 		_renderer.set_day_night_enabled(day_night_enabled)
 		_renderer.set_water_effect_enabled(water_effect_enabled)

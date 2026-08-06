@@ -20,10 +20,9 @@ func _init() -> void:
 		quit(1)
 		return
 	var expected := {
-		"height": 20 * 20 * 2,
+		"height": 20 * 20 * 4,
 		"terrain_normal": 20 * 20 * 2,
 		"map_index": 20 * 20 * 4,
-		"flow": 20 * 20,
 		"water_depth": 20 * 20,
 		"terrain_detail": 20 * 20,
 		"edge_neighbor": 20 * 20 * 2,
@@ -32,10 +31,14 @@ func _init() -> void:
 	for field in expected:
 		var data: PackedByteArray = first.get(field, PackedByteArray())
 		if data.size() != int(expected[field]):
-			push_error("visual_tile_native_bake_test: %s size=%d expected=%d" % [
+			push_error("visual_tile_native_bake_test: %s size=%d expected=%d (height-flow-pack: rebuild gdext if height still N*2)" % [
 				field, data.size(), int(expected[field])])
 			quit(1)
 			return
+	if first.has("flow") and PackedByteArray(first.get("flow")).size() > 0:
+		push_error("visual_tile_native_bake_test: separate flow payload still present; expected packed into height.B")
+		quit(1)
+		return
 	if first.get("hashes", {}) != second.get("hashes", {}):
 		push_error("visual_tile_native_bake_test: deterministic hashes differ")
 		quit(1)

@@ -197,6 +197,7 @@ public:
     godot::Dictionary get_country_snapshot(int64_t handle) const;
     godot::Dictionary get_country_treasury_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_research_signal_snapshot(int64_t handle) const;
     godot::Dictionary get_country_tax_policy_snapshot(int64_t handle) const;
     godot::Dictionary get_country_fiscal_snapshot(int64_t handle) const;
     godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
@@ -382,6 +383,9 @@ public:
     godot::Dictionary run_native_world_generate_full_pass(int seed,
                                                           const godot::Dictionary &cfg,
                                                           const godot::Dictionary &profile);
+    // Static, generation-only research evidence. Input/output are packed arrays;
+    // no MapData/Object access or per-cell Variant allocation occurs in the loop.
+    godot::Dictionary run_research_signal_generation_pass(const godot::Dictionary &knobs);
     godot::Dictionary run_native_world_generate_pass(int seed,
                                                      const godot::Dictionary &cfg,
                                                      const godot::Dictionary &profile);

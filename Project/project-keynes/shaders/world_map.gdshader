@@ -34,6 +34,7 @@ render_mode blend_mix, unshaded;
 // [terrain-material-tiles 2026-08-01b] debug_view=7 材质门禁可视化（GM 面板可切）；touch。
 // [terrain-material-tiles 2026-08-01c] 材质强度默认值提升（albedo 0.6 / normal 0.15）；touch。
 // [terrain-material-tiles 2026-08-01d] world_size 128→384 修 mipmap 预滤波；GPT-image-2 风格化贴图换源；touch。
+// [eco-lut-retire 2026-08-06] 主地形移除 eco_lut，Compatibility 预算槽让给 terrain_material_tex；touch。
 // [water-edge-continuous 2026-08-02] 水体静态类别/水深改用距离场连续混合；LOW 编译期旁路。
 // [river-normal-separation 2026-08-03] 河心改用水平面基准的独立水波法线，河岸才与地形法线过渡；touch。
 // ═══════════════════════════════════════════════════════════════════════════
@@ -45,11 +46,10 @@ render_mode blend_mix, unshaded;
 // 主文件仅保留：shader_type、render_mode、按拓扑顺序的 #include、vertex()、
 // fragment()（SETUP 解码 → LAND/SEA 分支调度 → GLOBAL 输出）。具体算法均下沉到 include。
 // 通道语义快速参考（详细请见 uniforms.gdshaderinc）：
-//   height_tex (RG8 LINEAR)        归一化海拔 [0,1]，解码 (R*256 + G)/257
+//   height_tex (RGBA8 LINEAR)      RG=海拔 (R*256+G)/257；B=river flow（原独立 flow_tex）
 //   terrain_horizon_tex (RGBA8)    8 方向 horizon angle，high/low nibble packed
 //   map_index_atlas (RGBA8 NEAREST) R=biome  GB=cell.index
-//   enum/dyn/eco LUT:
-//                                   per-cell enum / dynamic / ecology visual state
+//   enum/dyn LUT:                  per-cell enum / dynamic visual state（eco_lut 已退役）
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Include 拓扑顺序（不可随意调整） ─────────────────────────────────────
@@ -170,7 +170,7 @@ void fragment() {
 	float elev = decode_height_rg8(uv);
 
 	vec4 scals = vec4(0.0);  // scalar_atlas 退役：moist/lat 由 LUT/uv 重建。
-	// [river-render-restore 2026-06-19] flow 通道单独从 flow_tex 重建（河流 SDF）。
+	// [river-render-restore / height-flow-pack] flow：Legacy/Tiled 均自 height*.B。
 	// land/water pipeline 读 scals.g 画河网。低画质仍要保留静态河网；昂贵的河流动效/
 	// 坡向流纹已在 land_pipeline 里按质量档裁掉。
 	// 降级必须走 has_flow_tex 而不是"没绑就采样得 0"：GLES3/WebGL2 下解析不到的
@@ -183,12 +183,8 @@ void fragment() {
 	// [dither-index 2026-06-25] 全档位 NEAREST：cell 索引边缘融合（烘焙期 Bayer dither）已在
 	// 索引层软化离散硬边，无需再对 dyn/eco LUT 做跨格 4-tap 双线性。
 	vec4 dyns = dyn_lut_nearest(uv);
-	// Mobile 三档全跳 ecology（eco_valid=0 等同 dynamic 路径）
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
-	vec4 ecos = vec4(0.0);  // foliage=0 → eco_valid=0，下游路径直接走 dynamic
-#else
-	vec4 ecos = eco_lut_nearest(uv);
-#endif
+	// [eco-lut-retire 2026-08-06] 主地形不再读 eco_lut：着色与 dyn_vitality 重叠，
+	// 纹理槽让给 terrain_material_tex（web/mobile/desktop 统一）。植被层自有 eco_lut。
 
 	// enum 通道（biome/veg/cover）走 cell 索引图 + enum_lut。
 	// cid<0 是极地外侧的不可交互 padding。玩家地图把它表现为海冰，既明确世界边界，
@@ -235,11 +231,6 @@ void fragment() {
 	float dyn_wet = dyns.g;
 	float dyn_snow = dyns.b;
 	float dyn_vitality = dyns.a;
-	float eco_foliage = ecos.r;
-	float eco_stress = ecos.g;
-	float eco_transition = ecos.b;
-	float eco_growth = ecos.a;
-	float eco_valid = step(0.01, eco_foliage + eco_stress + eco_transition);
 	// [snow-dyn-valid-fix 2026-06-16] 真实格子动态 atlas/LUT 恒为有效。
 	// 历史背景：旧值 step(0.02, dyn_temp) 是为了兜底"bake_world 阶段温度尚未初始化
 	// (默认 0.0)→ atlas R 通道为 0"的时序窗口。但该哨兵把真实极寒格(温度=0)误判为
@@ -343,8 +334,7 @@ void fragment() {
 			col = render_land_pipeline(
 				visual_land_biome, visual_land_veg, visual_land_cover, landform,
 				elev, moist, wp, uv, scals, lat_signed, current_temp,
-				wind_v, dyn_snow, dyn_valid, dyn_vitality, eco_foliage, eco_stress,
-				eco_transition, eco_growth, eco_valid, pixel_noise);
+				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise);
 		} else {
 			col = render_water_pipeline(
 				biome, cover, water_secondary_biome, water_secondary_cover,
@@ -372,7 +362,7 @@ void fragment() {
 		//   青/深蓝/品红/黄 = COAST / LAKE / REEF / KELP
 		// 14 = flow（河流 SDF）。灰阶=原始取值，红=已越过 river_threshold_low，也就是
 		// land_pipeline 会把该像素混上河水色的区域。正常应当是接近全黑的底图上几条细红
-		// 河线；整屏发白/发红即 flow_tex 没绑上（GLES3 兜底白纹理）。
+		// 河线；整屏发白/发红即 flow 采样器落到 GLES3 兜底白纹理（Legacy 应读 height_tex）。
 		// 刻意读未经 has_flow_tex 门控的 flow_raw：门控已经把管线侧的故障挡住了，这一档
 		// 要能继续报出"纹理其实没绑"这件事，否则修复会把诊断一起掩盖掉。
 		if (terrain_surface_debug_view == 14) {
@@ -381,7 +371,8 @@ void fragment() {
 			if (f >= river_threshold_low) { fv = vec3(1.0, 0.0, 0.0); }
 			COLOR = vec4(fv, 1.0);
 		} else if (terrain_surface_debug_view == 16) {
-			// 16 = flow_tex 采样器实际看到的尺寸，以 12 位二进制条读出（0..4095）。
+			// 16 = flow 所在采样器尺寸（height_tex / visual_height_tiles），
+			// 以 12 位二进制条读出（0..4095）。
 			// 上半屏 = 宽，下半屏 = 高；左边是最高位，白=1、深蓝=0，每 4 位一条红分隔。
 			// 读出 derived_size = 正常；读出 4×4 = 采样器落到了引擎默认白纹理。
 			// tests/_tmp_decode_texsize_view.gd 可以直接从截图里把这两个数解出来。

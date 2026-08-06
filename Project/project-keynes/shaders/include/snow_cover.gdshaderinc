@@ -31,9 +31,6 @@ vec3 apply_snow_cover(
 		vec2 uv,
 		float dyn_snow,
 		float dyn_valid,
-		float eco_valid,
-		float eco_stress,
-		float eco_foliage,
 		float river_flow,
 		vec4 pixel_noise) {
 	if (is_water) return base_col;
@@ -72,7 +69,7 @@ vec3 apply_snow_cover(
 		raw_snow_signal = clamp(dyn_signal * amount_jitter, 0.0, 1.0);
 	}
 
-	// 4) 坡度/生态修正。
+	// 4) 坡度修正（生态 eco_lut 调制已从主地形移除，仅留坡度卸雪）。
 	float snow_slope_mag = 0.0;
 	bool slope_ready = false;
 	float slope_shed = 0.0;
@@ -87,8 +84,6 @@ vec3 apply_snow_cover(
 		slope_shed = smoothstep(0.42, 1.10, snow_slope_mag) * 0.16;
 	}
 	float snow_signal = raw_snow_signal;
-	snow_signal += eco_valid * eco_stress * smoothstep(0.12, 0.38, raw_snow_signal) * 0.10;
-	snow_signal -= eco_valid * eco_foliage * 0.16;
 	snow_signal -= slope_shed;
 	snow_signal = clamp(snow_signal, 0.0, 1.0);
 	float snow_factor = mix(raw_snow_signal, snow_signal, snowline_visual_strength) * dynamic_snow_strength;

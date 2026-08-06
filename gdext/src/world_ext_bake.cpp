@@ -2459,10 +2459,11 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         }
     }
 
-    PackedByteArray height_data; height_data.resize(N * 2);
+    // [height-flow-pack 2026-08-06] height RGBA8：RG=16-bit elev，B=flow，A=0。
+    // 与 Legacy encode_height_flow_tex 对齐；不再单独产出 flow 层。
+    PackedByteArray height_data; height_data.resize(N * 4);
     PackedByteArray normal_data; normal_data.resize(N * 2);
     PackedByteArray map_index_data; map_index_data.resize(N * 4);
-    PackedByteArray flow_data; flow_data.resize(N);
     PackedByteArray water_data; water_data.resize(N);
     PackedByteArray detail_data; detail_data.resize(N);
     PackedByteArray edge_data; edge_data.resize(N * 2);
@@ -2470,7 +2471,6 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     uint8_t * const HD = height_data.ptrw();
     uint8_t * const ND = normal_data.ptrw();
     uint8_t * const MD = map_index_data.ptrw();
-    uint8_t * const FD = flow_data.ptrw();
     uint8_t * const WD = water_data.ptrw();
     uint8_t * const DD = detail_data.ptrw();
     uint8_t * const ED = edge_data.ptrw();
@@ -2519,8 +2519,11 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 const double wx = origin_x + (double(x) + 0.5) * step_x;
                 const double h = std::max(0.0, std::min(1.0, double(HW[si])));
                 const int h16 = std::max(0, std::min(65535, int(std::round(h * 65535.0))));
-                HD[di * 2] = uint8_t((h16 >> 8) & 0xFF);
-                HD[di * 2 + 1] = uint8_t(h16 & 0xFF);
+                const double f = std::max(0.0, std::min(1.0, double(FLOW_W[si])));
+                HD[di * 4] = uint8_t((h16 >> 8) & 0xFF);
+                HD[di * 4 + 1] = uint8_t(h16 & 0xFF);
+                HD[di * 4 + 2] = uint8_t(std::round(f * 255.0));
+                HD[di * 4 + 3] = 0;
 
                 const double sx = (double(HW[wy_i * WW + wx_i + normal_radius_x]) -
                         double(HW[wy_i * WW + wx_i - normal_radius_x])) * normal_gain_x;
@@ -2538,8 +2541,6 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 MD[di * 4 + 2] = ci >= 0 && ci < 0xFFFF ? uint8_t((ci >> 8) & 0xFF) : 0xFF;
                 MD[di * 4 + 3] = (LF != nullptr && ci >= 0 && ci < landform.size()) ? LF[ci] : 0;
 
-                const double f = std::max(0.0, std::min(1.0, double(FLOW_W[si])));
-                FD[di] = uint8_t(std::round(f * 255.0));
                 double depth = 0.0;
                 if (CS != nullptr && ci >= 0 && ci < n_cells && CS[ci] > 1e-4f) {
                     const double raw = std::max(0.0, double(CS[ci]) - h);
@@ -2573,7 +2574,6 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     hashes["height"] = hash_bytes(height_data);
     hashes["terrain_normal"] = hash_bytes(normal_data);
     hashes["map_index"] = hash_bytes(map_index_data);
-    hashes["flow"] = hash_bytes(flow_data);
     hashes["water_depth"] = hash_bytes(water_data);
     hashes["terrain_detail"] = hash_bytes(detail_data);
     hashes["edge_neighbor"] = hash_bytes(edge_data);
@@ -2589,7 +2589,6 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     out["height"] = height_data;
     out["terrain_normal"] = normal_data;
     out["map_index"] = map_index_data;
-    out["flow"] = flow_data;
     out["water_depth"] = water_data;
     out["terrain_detail"] = detail_data;
     out["edge_neighbor"] = edge_data;

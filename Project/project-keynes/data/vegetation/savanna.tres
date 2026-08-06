@@ -15,3 +15,4 @@ temp_tolerance = 0.28
 moist_tolerance = 0.32
 next_richer = 15
 next_harsher = 16
+research_habitat_tags = PackedStringArray("habitat.open_grassland", "habitat.warm_crop", "habitat.grazer")

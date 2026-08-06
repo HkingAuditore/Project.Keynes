@@ -54,6 +54,19 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
   economy owns taxable events and fiscal escrow. Do not add research growth, diplomacy, war,
   country AI, deletion, or technology revocation as incidental behavior.
 
+## Research-signal evidence
+
+Country discovery evidence is native authority. `DISCOVER_COUNTRY_SIGNAL` accepts an already-dense
+signal ID plus source cell/kind, stages it with ordinary country commands, and deduplicates by
+`(country, signal, cell)`. Store permanent membership in a compact country×signal bitset and only
+store count/first-day/last-day/first-cell in sorted sparse evidence; never create a full
+country×signal-value matrix or write these fields into `HexCell`/DataCore.
+
+Vision is not country authority. Its player-fog transition only submits the command at the next
+country boundary. `CountryFacade.research_signal_snapshot()` and country events are cold-path/UI
+facades. PKCN v5 persists the signal catalog identity, bitset, observed-cell dedupe keys, and sparse
+evidence; restore rejects older schemas and catalog mismatch explicitly.
+
 ## Verify
 
 From the repository root run:

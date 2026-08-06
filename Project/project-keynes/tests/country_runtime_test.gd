@@ -232,6 +232,28 @@ func _run() -> void:
 			"reason", "")) == "country_tax_command_invalid" and
 		String(tax_matrix_ext.submit_country_commands(invalid_item).get(
 			"reason", "")) == "country_tax_command_invalid")
+	var river_valley := (compiled.research_signal_ids as PackedStringArray).find(
+		"landform.river_valley")
+	var signal_commands := _commands([
+		{"opcode": 14, "day": 5, "sequence": 1, "handle": beta.country_handle,
+			"cell": 0, "aux": river_valley, "value": 1, "stable_id": "", "name": ""},
+		{"opcode": 14, "day": 5, "sequence": 2, "handle": beta.country_handle,
+			"cell": 0, "aux": river_valley, "value": 1, "stable_id": "", "name": ""},
+		{"opcode": 14, "day": 5, "sequence": 3, "handle": beta.country_handle,
+			"cell": 1, "aux": river_valley, "value": 1, "stable_id": "", "name": ""},
+	])
+	_expect("research signal commands queue", river_valley >= 0 and
+		bool(ext.submit_country_commands(signal_commands).get("ok", false)))
+	_expect("research signal discovery commits once per cell",
+		bool(ext.run_country_slice({"day_index": 5}).get("ok", false)))
+	var signal_snapshot: Dictionary = ext.get_country_research_signal_snapshot(beta.country_handle)
+	_expect("research signal evidence keeps distinct count and provenance",
+		signal_snapshot.signal_ids.size() == 1 and
+		int(signal_snapshot.signal_ids[0]) == river_valley and
+		int(signal_snapshot.counts[0]) == 2 and
+		int(signal_snapshot.first_cells[0]) == 0 and
+		int(signal_snapshot.first_days[0]) == 5 and
+		int(signal_snapshot.last_days[0]) == 5)
 
 	var continuation_profile := profile.duplicate(true)
 	continuation_profile.country_max_commands_per_slice = 1
@@ -268,7 +290,7 @@ func _run() -> void:
 		int(continuation_ext.get_country_cell_summary(1).country_handle) == int(continuation_beta.country_handle))
 
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v4 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 4)
+	_expect("PKCN v5 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 5)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)

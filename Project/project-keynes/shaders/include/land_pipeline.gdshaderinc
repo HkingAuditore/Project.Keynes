@@ -32,11 +32,6 @@ struct LandModInputs {
 	float dyn_snow;
 	float dyn_valid;
 	float dyn_vitality;
-	float eco_foliage;
-	float eco_stress;
-	float eco_transition;
-	float eco_growth;
-	float eco_valid;
 	vec4 pixel_noise;
 	vec2 wp;
 };
@@ -57,7 +52,8 @@ SurfaceParams compute_land_base_surface(
 	vec3 col = static_mat.color;
 	mixed_micro_strength = static_mat.micro_strength;
 
-	// [river-render-restore 2026-06-19] 河流 SDF 视觉层重新接回：flow 来自 flow_tex（scals.g）。
+	// [river-render-restore 2026-06-19] 河流 SDF 视觉层重新接回：flow 来自 scals.g
+	//（height*.B：Legacy=height_tex，Tiled=visual_height_tiles）。
 	float flow = scals.g;
 	float river_t_raw = smoothstep(river_threshold_low, river_threshold_high, flow);
 	float river_t = river_t_raw;
@@ -309,21 +305,8 @@ SurfaceParams apply_environment_color_grade(SurfaceParams surface, LandModInputs
 		decline_w = (1.0 - smoothstep(0.35, 0.70, vitality)) * vitality_visual_strength;
 		dieback_w = (1.0 - smoothstep(0.10, 0.35, vitality)) * vitality_visual_strength;
 	}
-	if (i.eco_valid > 0.5 && i.veg != V_NONE) {
-		float eco_q = float(min(ecology_visual_quality, visual_quality));
-		float foliage_noise = (eco_q >= 1.0) ? i.pixel_noise.g : 0.5;
-		float patch_noise = (eco_q >= 2.0) ? i.pixel_noise.a : 0.5;
-		float foliage = clamp(i.eco_foliage + (foliage_noise - 0.5) * 0.22
-				+ (patch_noise - 0.5) * 0.12, 0.0, 1.0);
-		float stress = clamp(i.eco_stress + (patch_noise - 0.5) * 0.18, 0.0, 1.0);
-		foliage_w = smoothstep(0.10, 0.85, foliage) * foliage_density_strength
-				* ecology_visual_strength * (1.0 - stress * 0.55);
-		stress_w = smoothstep(0.22, 0.95, stress) * ecology_visual_strength;
-		float transition_w = smoothstep(0.02, 0.75, i.eco_transition);
-		foliage_w += transition_w * smoothstep(0.56, 0.82, i.eco_growth)
-				* ecology_visual_strength * 0.22;
-		decline_w += transition_w * (1.0 - foliage) * ecology_visual_strength * 0.28;
-	}
+	// eco_lut 已从主地形移除：叶量/胁迫/物候调制原先与 dyn_vitality 高度重叠，
+	// 现统一走 vitality 权重（mobile 路径早已如此）。
 	// 活力表示生态状态良好，不等于地表必然翠绿。健康绿必须同时获得水分支持；
 	// 荒漠、盐碱地、寒漠和旱生植被始终保留沙黄/赭褐的生态身份。
 	bool arid_identity = i.biome == B_DESERT || i.biome == B_SALT_FLAT
@@ -458,9 +441,6 @@ SurfaceParams apply_land_color_overlays(
 		float current_temp,
 		float dyn_snow,
 		float dyn_valid,
-		float eco_foliage,
-		float eco_stress,
-		float eco_valid,
 		vec4 pixel_noise) {
 	vec3 col = surface.base_color;
 
@@ -485,7 +465,7 @@ SurfaceParams apply_land_color_overlays(
 	// LAND 3.1.b：统一雪盖色（季节性雪线 / 真实积雪 / BLIZZARD 新雪）
 	col = apply_snow_cover(
 		col, biome, veg, current_temp, elev, false, moist, wp, uv,
-		dyn_snow, dyn_valid, eco_valid, eco_stress, eco_foliage, scals.g, pixel_noise);
+		dyn_snow, dyn_valid, scals.g, pixel_noise);
 
 	// LAND 3.1.c：覆盖物轴（FLOODING / PERMAFROST / GLACIER）
 	// SNOW / SEA_ICE 已由雪盖 / 海面主路径处理，cover_overlay 内部返回 0 跳过。
@@ -673,11 +653,6 @@ vec3 render_land_pipeline(
 		float dyn_snow,
 		float dyn_valid,
 		float dyn_vitality,
-		float eco_foliage,
-		float eco_stress,
-		float eco_transition,
-		float eco_growth,
-		float eco_valid,
 	vec4 pixel_noise) {
 	// 15 = 河流层之前的静态材质底色。与 12（底色全部叠加完、光照前）成对使用：
 	// 15 正常而 12 发蓝，说明是 compute_land_base_surface 里的河流 flow 层把陆地刷成了水色。
@@ -700,11 +675,6 @@ vec3 render_land_pipeline(
 	mi.dyn_snow = dyn_snow;
 	mi.dyn_valid = dyn_valid;
 	mi.dyn_vitality = dyn_vitality;
-	mi.eco_foliage = eco_foliage;
-	mi.eco_stress = eco_stress;
-	mi.eco_transition = eco_transition;
-	mi.eco_growth = eco_growth;
-	mi.eco_valid = eco_valid;
 	mi.pixel_noise = pixel_noise;
 	mi.wp = wp;
 	float micro_vitality = mix(1.0, dyn_vitality, dyn_valid);
@@ -715,7 +685,7 @@ vec3 render_land_pipeline(
 
 	surface = apply_land_color_overlays(
 		surface, biome, veg, cover, elev, moist, wp, uv, scals, current_temp,
-		dyn_snow, dyn_valid, eco_foliage, eco_stress, eco_valid, pixel_noise);
+		dyn_snow, dyn_valid, pixel_noise);
 	surface = apply_land_material_overlays(
 		surface, biome, cover, current_temp, elev, moist, dyn_snow, dyn_valid, scals.g);
 

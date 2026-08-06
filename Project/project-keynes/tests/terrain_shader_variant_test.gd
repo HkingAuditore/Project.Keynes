@@ -107,6 +107,8 @@ func _init() -> void:
 		_expect(names.has("visual_height_tiles"), "%s tiled exposes height array" % label)
 		_expect(names.has("visual_map_index_tiles"), "%s tiled exposes map-index array" % label)
 		_expect(names.has("visual_horizon_tiles"), "%s tiled exposes horizon array" % label)
+		_expect(not names.has("visual_flow_tiles"),
+			"%s tiled omits retired visual_flow_tiles (height.B)" % label)
 		_expect(not names.has("height_tex"), "%s tiled omits legacy height sampler" % label)
 		_expect(not names.has("map_index_atlas"), "%s tiled omits legacy map-index sampler" % label)
 		_expect(not names.has("terrain_horizon_tex"), "%s tiled omits legacy horizon sampler" % label)
@@ -118,6 +120,34 @@ func _init() -> void:
 	_expect(surface_source.contains("terrain_material_layer")
 		and surface_source.contains("terrain_material_sample"),
 		"biome-to-layer material sampling is present")
+	_expect(not uniforms_source.contains("uniform sampler2D eco_lut"),
+		"main terrain uniforms no longer declare eco_lut")
+	var web_budget := Shader.new()
+	web_budget.code = "#define PK_WEB_TEXTURE_BUDGET\n" + source
+	var web_names := {}
+	for entry in web_budget.get_shader_uniform_list():
+		web_names[String(entry.get("name", ""))] = true
+	_expect(not web_names.is_empty(), "web texture budget variant compiles")
+	_expect(web_names.has("terrain_material_tex"),
+		"web budget exposes terrain_material_tex after eco_lut retire")
+	_expect(not web_names.has("eco_lut"),
+		"web budget omits eco_lut from main terrain")
+	_expect(not web_names.has("flow_tex"),
+		"web budget omits retired legacy flow_tex (packed into height_tex.B)")
+	_expect(web_names.has("has_flow_tex"),
+		"web budget keeps has_flow_tex gate")
+	_expect(not web_names.has("terrain_micro_tex"),
+		"web budget still omits terrain_micro_tex")
+	for label in variants:
+		var shader := Shader.new()
+		shader.code = String(variants[label]) + source
+		var names := {}
+		for entry in shader.get_shader_uniform_list():
+			names[String(entry.get("name", ""))] = true
+		_expect(not names.has("flow_tex"),
+			"%s legacy omits flow_tex sampler (height_tex.B)" % label)
+		_expect(names.has("height_tex") and names.has("has_flow_tex"),
+			"%s legacy keeps height_tex + has_flow_tex" % label)
 	print("=== terrain shader variants: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

@@ -32,7 +32,14 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v4 / PKEC v30
+## PKCN v5 / PKEC v30
+
+PKCN v5 adds country-owned research-signal evidence. Permanent discoveries are
+stored as a dense `country × signal` bitset; observed `(signal, cell)` pairs and
+first/last-day provenance remain sorted sparse vectors. `DISCOVER_COUNTRY_SIGNAL`
+is idempotent per country/signal/cell and is committed through the normal country
+command barrier. The static signal catalog and its stable IDs participate in the
+country catalog hash, so v4 and older PKCN streams are explicitly rejected.
 
 当前 writer 写出 PKCN v4 与 PKEC v30。PKCN v4 在 v3 研究状态之上增加五类默认税率、
 按职业/物资/建筑的稀疏覆盖和税务政策版本；PKEC v30 保留 generation-safe 的逐 cell

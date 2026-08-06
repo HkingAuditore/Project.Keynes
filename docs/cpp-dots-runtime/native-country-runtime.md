@@ -1,4 +1,20 @@
-# Native Country Runtime（PKCN v4）
+# Native Country Runtime（PKCN v5）
+
+## Research signals
+
+`NativeCountryRuntime` also owns country discovery evidence for the compiled
+`ResearchSignalCatalog`. Static map signal CSR is not country state: when vision
+first explores a cell, GDScript submits `DISCOVER_COUNTRY_SIGNAL` for the player
+country at the next country boundary. Native storage uses a bitset for permanent
+presence plus sparse sorted evidence for distinct observed cells, counts, and
+first/last observation provenance. Technology condition IR reads these numeric
+snapshots; it never queries map Resources, strings, or dictionaries in the daily
+research loop.
+
+The active command is `DISCOVER_COUNTRY_SIGNAL=14`; it is deduplicated by the sorted
+`(signal_dense_id, cell_idx)` key before evidence and facts are published. The cold snapshot exposes
+signal IDs, distinct counts, first/last days, and first cells. A signal catalog mismatch, malformed
+dense ID, invalid cell, or legacy PKCN schema is rejected rather than defaulted.
 
 `NativeCountryRuntime` 是国家身份、领土、国家科技、税务政策与国家国库的唯一可变权威。它与
 `NativeEconomyRuntime` 同级，由 `DCWorldExt` 组合持有；GDScript 不维护第二份国家状态。

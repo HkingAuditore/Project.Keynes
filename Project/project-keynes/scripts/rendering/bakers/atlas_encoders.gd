@@ -161,7 +161,7 @@ static func _upload_rg8(data: PackedByteArray, W: int, H: int, existing: ImageTe
 
 static func _upload_rgba8(data: PackedByteArray, W: int, H: int, existing: ImageTexture = null) -> ImageTexture:
 	var img: Image = Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data)
-	if _same_size(existing, W, H):
+	if _same_size(existing, W, H) and existing.get_format() == Image.FORMAT_RGBA8:
 		existing.update(img)
 		return existing
 	return ImageTexture.create_from_image(img)
@@ -202,6 +202,89 @@ static func encode_height_tex(buf: PackedFloat32Array, size: Vector2i,
 		data[i * 2] = (v16 >> 8) & 0xFF
 		data[i * 2 + 1] = v16 & 0xFF
 	return _upload_rg8(data, W, H)
+
+
+# [height-flow-pack 2026-08-06] Legacy 主地图把 height(RG16) 与 river flow(L8) 打进同一张
+# RGBA8：RG=既有 16-bit height，B=flow，A=0。hm_size==derived_size 后分辨率可合；
+# 腾出 1 个 WebGL2/GLES3 材质 sampler（原独立 flow_tex）。CPU 侧仍保留分离的
+# height_buffer / flow_buffer。Tiled 的 visual_height_tiles 同步打成 RGBA8（B=flow）。
+static func encode_height_flow_tex(height_buf: PackedFloat32Array, flow_buf: PackedFloat32Array,
+		size: Vector2i, existing: ImageTexture = null,
+		native_ext: Object = null) -> ImageTexture:
+	var W: int = size.x
+	var H: int = size.y
+	var n: int = W * H
+	if W <= 0 or H <= 0:
+		last_flow_encode_info = {"size": Vector2i(W, H), "path": "skipped", "reason": "bad_size"}
+		return existing
+
+	var height_bytes: PackedByteArray = PackedByteArray()
+	var flow_bytes: PackedByteArray = PackedByteArray()
+	var height_path := "gdscript"
+	var flow_path := "gdscript"
+	var height_ret: Dictionary = _native_data(native_ext, &"encode_bake_height_tex_data", {
+		"buffer": height_buf,
+		"width": W,
+		"height": H,
+	})
+	if not bool(height_ret.get("fallback", true)):
+		height_bytes = height_ret.get("data", PackedByteArray())
+		height_path = str(height_ret.get("path", "native"))
+	var flow_ret: Dictionary = _native_data(native_ext, &"encode_bake_flow_tex_data", {
+		"buffer": flow_buf,
+		"width": W,
+		"height": H,
+	})
+	if not bool(flow_ret.get("fallback", true)):
+		flow_bytes = flow_ret.get("data", PackedByteArray())
+		flow_path = str(flow_ret.get("path", "native"))
+
+	last_flow_encode_info = {
+		"size": Vector2i(W, H),
+		"path": "height_flow_pack",
+		"height_path": height_path,
+		"flow_path": flow_path,
+		"src": _float_buffer_stats(flow_buf, n),
+		"packed_channel": "B",
+		"format": "RGBA8",
+	}
+
+	var rgba: PackedByteArray = PackedByteArray()
+	rgba.resize(n * 4)
+	var has_native_height := height_bytes.size() == n * 2
+	var has_native_flow := flow_bytes.size() == n
+	var has_height_buf := height_buf.size() >= n
+	var has_flow_buf := flow_buf.size() >= n
+	if not has_flow_buf and not has_native_flow:
+		last_flow_encode_info["out"] = {"skipped": "flow buffer too small"}
+	for i in range(n):
+		var o: int = i * 4
+		if has_native_height:
+			rgba[o] = height_bytes[i * 2]
+			rgba[o + 1] = height_bytes[i * 2 + 1]
+		elif has_height_buf:
+			var v: float = clampf(height_buf[i], 0.0, 1.0)
+			var v16: int = clampi(int(round(v * 65535.0)), 0, 65535)
+			rgba[o] = (v16 >> 8) & 0xFF
+			rgba[o + 1] = v16 & 0xFF
+		else:
+			rgba[o] = 0
+			rgba[o + 1] = 0
+		if has_native_flow:
+			rgba[o + 2] = flow_bytes[i]
+		elif has_flow_buf:
+			rgba[o + 2] = int(clampf(flow_buf[i], 0.0, 1.0) * 255.0 + 0.5)
+		else:
+			rgba[o + 2] = 0
+		rgba[o + 3] = 0
+
+	var flow_only: PackedByteArray = PackedByteArray()
+	flow_only.resize(n)
+	for i in range(n):
+		flow_only[i] = rgba[i * 4 + 2]
+	last_flow_encode_info["out"] = _byte_buffer_stats(flow_only, n)
+	last_flow_encode_info["upload"] = {"format": "RGBA8", "n": n, "bytes": rgba.size()}
+	return _upload_rgba8(rgba, W, H, existing)
 
 
 # [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（宽半径梯度 → RG8: nx,ny）。

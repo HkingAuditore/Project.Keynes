@@ -90,7 +90,7 @@ var visual_tiles: RefCounted
 
 # ─── shader 用 ImageTexture（编码后） ─────────────────────────────────────
 # v9.atlas：把 9 张 derived 贴图合并成 3 张 atlas，降低 sampler 绑定数与 uniform 上传量。
-# height_tex 因为分辨率与精度需求独立保留（hm_size + RG8 16-bit）。
+# height_tex 因为分辨率与精度需求独立保留（hm_size；现为 RGBA8：RG=16-bit height，B=flow）。
 #
 # enum_atlas_tex   (RGBA8 NEAREST, derived_size；map_index_atlas)
 #   R = biome (TerrainType.TERRAIN id)
@@ -111,10 +111,9 @@ var height_tex: ImageTexture
 var enum_atlas_tex: ImageTexture
 var scalar_atlas_tex: ImageTexture
 var vector_atlas_tex: ImageTexture
-# [river-render-restore 2026-06-19] 河流 SDF 专用 L8 纹理（derived_size）。
-# scalar_atlas 退役后 flow 通道断供，has_river 链生成的 flow_buffer 从未上传 GPU →
-# 河流在主地图完全不可见。这里把 flow_buffer 单独编码成一张轻量 L8 纹理重新接回 shader，
-# 不复活整张 scalar_atlas（moisture/lat 仍走 LUT/uv）。bake_world 烘焙一次，之后不变。
+# [river-render-restore 2026-06-19 / height-flow-pack 2026-08-06]
+# Legacy 主地图不再单独上传 flow：flow_buffer 打进 height_tex.B。本字段保留为 null
+#（兼容旧诊断/读档路径）；Tiled 亦已打进 visual_height_tiles.B。
 var flow_tex: ImageTexture
 # [water-depth-tex 2026-06-26] 海/湖统一水深 R8 纹理（derived_size，与 height/biome 同 uv）。
 # 主水体 shader 按它做深浅着色（深海蓝 / 浅滩青 / 湖心暗），单次采样取代旧海洋邻域 + 湖泊多半径。

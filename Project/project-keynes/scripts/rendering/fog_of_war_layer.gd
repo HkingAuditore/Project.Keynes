@@ -99,14 +99,13 @@ func _ensure_nodes() -> void:
 	_push_edge_transition_data()
 
 
-## 编译期质量档：与 WeatherLayer 同套 —— 只在移动端给 shader 源码前置 #define，
-## 桌面端拿未修改的源码走 PK_QUALITY_DESKTOP 全效果分支。
+## 编译期质量档：mobile/web 共用 MOBILE_QUALITY_*；桌面不 prepend。
 func _load_shader() -> Shader:
 	var sh := ResourceLoader.load(SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if sh == null:
 		return null
 	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
-	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
 	if not prefix.is_empty():
 		sh = sh.duplicate() as Shader
@@ -306,7 +305,7 @@ func set_visual_quality(quality: int) -> void:
 ## 当前实际生效的档位 = min(编译期 tier 上限, 运行时档)。
 func effective_quality() -> int:
 	var cap := 3
-	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		match _mobile_quality_tier_define:
 			"MOBILE_QUALITY_LOW":
 				cap = 0

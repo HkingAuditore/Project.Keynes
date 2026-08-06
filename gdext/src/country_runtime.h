@@ -21,7 +21,7 @@ class ModifierRuntime;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 4;
+    static constexpr int32_t SCHEMA_VERSION = 5;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
@@ -50,6 +50,9 @@ public:
         COMMAND_SET_TAX_DEFAULT = 11,
         COMMAND_SET_TAX_OVERRIDE = 12,
         COMMAND_CLEAR_TAX_OVERRIDE = 13,
+        // Internal/domain command: static map/event evidence becomes
+        // country-owned research knowledge at the country command boundary.
+        COMMAND_DISCOVER_COUNTRY_SIGNAL = 14,
     };
 
     enum RuntimeMode : int32_t { MODE_OFF = 0, MODE_PROBE = 1, MODE_ACTIVE = 2 };
@@ -88,6 +91,7 @@ public:
     godot::Dictionary country_snapshot(int64_t handle) const;
     godot::Dictionary treasury_snapshot(int64_t handle) const;
     godot::Dictionary research_snapshot(int64_t handle) const;
+    godot::Dictionary research_signal_snapshot(int64_t handle) const;
     godot::Dictionary tax_policy_snapshot(int64_t handle) const;
     godot::PackedInt32Array cell_country_snapshot() const;
     int64_t state_hash() const;
@@ -174,6 +178,8 @@ private:
         int32_t old_country_slot = -1;
         int32_t new_country_slot = -1;
         int32_t technology_id = -1;
+        int32_t signal_id = -1;
+        int32_t signal_source_kind = 0;
         std::string stable_id;
         std::string display_name;
     };
@@ -217,6 +223,14 @@ private:
         bool empty() const { return count == 0; }
     };
 
+    struct SignalEvidence {
+        int32_t signal = -1;
+        int32_t count = 0;
+        int64_t first_day = -1;
+        int64_t last_day = -1;
+        int32_t first_cell = -1;
+    };
+
     struct CommandBatchState {
         bool active = false;
         int64_t day = -1;
@@ -234,9 +248,13 @@ private:
         std::vector<uint8_t> research_auto_purchase;
         std::vector<int64_t> research_daily_budgets;
         std::vector<int64_t> research_deferred_points;
+        std::vector<uint64_t> signals;
+        std::vector<std::vector<uint64_t>> signal_cells;
+        std::vector<std::vector<SignalEvidence>> signal_evidence;
         bool stage_technologies = false;
         bool stage_goods = false;
         bool stage_research = false;
+        bool stage_signals = false;
         bool stage_tax = false;
         std::vector<int8_t> tax_defaults;
         std::vector<int8_t> income_tax_overrides;
@@ -279,6 +297,17 @@ private:
     bool prerequisites_met(int32_t slot, int32_t technology) const;
     bool prerequisites_met(const std::vector<uint64_t> &completed, int32_t slot,
                            int32_t technology) const;
+    bool research_condition_met(int32_t slot, int32_t technology) const;
+    bool research_condition_met(const std::vector<uint64_t> &completed,
+                                const std::vector<uint64_t> &signals,
+                                int32_t slot, int32_t technology) const;
+    bool signal_present(const std::vector<uint64_t> &signals, int32_t slot,
+                        int32_t signal) const;
+    int32_t signal_count(int32_t slot, int32_t signal) const;
+    static SignalEvidence *find_signal_evidence(std::vector<SignalEvidence> &entries,
+                                                int32_t signal);
+    static const SignalEvidence *find_signal_evidence(
+        const std::vector<SignalEvidence> &entries, int32_t signal);
     int64_t progress_for(int32_t slot, int32_t technology) const;
     void set_progress(int32_t slot, int32_t technology, int64_t value);
     int32_t run_research_day(int64_t day_index);
@@ -289,6 +318,7 @@ private:
     int32_t _cell_count = 0;
     int64_t _seed = 0;
     int32_t _technology_words = 0;
+    int32_t _research_signal_words = 0;
     int32_t _technology_points_good_id = -1;
     ModifierRuntime *_modifier_runtime = nullptr;
     int32_t _starting_country_slot = -1;
@@ -302,6 +332,7 @@ private:
     std::vector<std::string> _profession_ids;
     std::vector<std::string> _building_type_ids;
     std::vector<std::string> _technology_ids;
+    std::vector<std::string> _research_signal_ids;
     std::unordered_map<std::string, int32_t> _good_index;
     std::unordered_map<std::string, int32_t> _technology_index;
     std::vector<int32_t> _starting_technologies;
@@ -314,6 +345,11 @@ private:
     std::vector<int32_t> _technology_milestone_required_counts;
     std::vector<int32_t> _technology_flags;
     std::vector<std::string> _technology_modifier_definition_keys;
+    std::vector<uint8_t> _research_signal_requires_provenance;
+    std::vector<int32_t> _technology_research_condition_offsets;
+    std::vector<int32_t> _technology_research_condition_ops;
+    std::vector<int32_t> _technology_research_condition_refs;
+    std::vector<int64_t> _technology_research_condition_values;
     std::vector<uint8_t> _is_water;
 
     CountryStore _countries;
@@ -324,6 +360,9 @@ private:
     std::vector<int64_t> _country_goods;
     std::vector<uint64_t> _country_discovered;
     std::vector<uint64_t> _country_pending_technologies;
+    std::vector<uint64_t> _country_research_signals;
+    std::vector<std::vector<uint64_t>> _country_research_signal_cells;
+    std::vector<std::vector<SignalEvidence>> _country_research_signal_evidence;
     std::vector<std::vector<std::pair<int32_t, int64_t>>> _country_research_progress;
     std::vector<int32_t> _country_research_queues;
     std::vector<uint8_t> _country_research_queue_lengths;

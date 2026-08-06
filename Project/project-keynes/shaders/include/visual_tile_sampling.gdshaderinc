@@ -105,34 +105,34 @@ vec2 visual_static_texture_size() { return vec2(textureSize(map_index_atlas, 0))
 // （R8/RG8/RGBA8 全试过）。材质 sampler 必须 ≤8，见 uniforms.gdshaderinc budget 注释。
 // 仍不能靠"没绑就采样得 0"降级：绑定与否由 CPU 侧显式推这个标志。
 uniform bool has_flow_tex = false;
-#ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_flow_tiles : filter_linear, repeat_disable;
-vec4 visual_sample_flow(vec2 uv) { return texture(visual_flow_tiles, visual_tile_address(uv)); }
-#else
-uniform sampler2D flow_tex : filter_linear, repeat_disable;
-vec4 visual_sample_flow(vec2 uv) { return texture(flow_tex, visual_static_wrap_uv(uv)); }
-#endif
+// [height-flow-pack 2026-08-06] Legacy + Tiled 统一：flow 打在 height 纹理的 B 通道
+//（RGBA8；RG=16-bit height）。不再声明独立 flow_tex / visual_flow_tiles。
+// 须同时定义 VT_USE_HEIGHT。
+vec4 visual_sample_flow(vec2 uv) {
+	vec4 h = visual_sample_height(uv);
+	return vec4(h.b, 0.0, 0.0, 1.0);
+}
 // [flow-diag] 采样器实际看到的尺寸，以及绕过过滤/wrap 的整数取样。这是唯一能从 GPU 侧
 // 证伪"纹理绑对了"的手段：CPU 侧 get_size()/get_format() 在兜底发生时依然全部正常，
 // 只有 textureSize() 会报 4×4（引擎默认白纹理的尺寸）。2026-08 Web 整图发蓝就是这样定位的。
 #ifdef MAP_VISUAL_TILED
-ivec2 visual_flow_texture_size() { return textureSize(visual_flow_tiles, 0).xy; }
+ivec2 visual_flow_texture_size() { return textureSize(visual_height_tiles, 0).xy; }
 float visual_flow_texel(vec2 uv) {
 	vec3 addr = visual_tile_address(uv);
-	ivec3 sz = textureSize(visual_flow_tiles, 0);
+	ivec3 sz = textureSize(visual_height_tiles, 0);
 	// GLES3/WebGL2 不接受 ivec3(vec2,int) 构造（桌面 glslang 放行），必须显式先转 ivec2，
 	// 否则 MAP_VISUAL_TILED 变体在 Compatibility 上整 shader 编译失败（2026-08-05 探针实锤）。
 	ivec2 txy = ivec2(clamp(addr.xy * vec2(sz.xy), vec2(0.0), vec2(sz.xy) - vec2(1.0)));
 	ivec3 tc = ivec3(txy, int(addr.z));
-	return texelFetch(visual_flow_tiles, tc, 0).r;
+	return texelFetch(visual_height_tiles, tc, 0).b;
 }
 #else
-ivec2 visual_flow_texture_size() { return textureSize(flow_tex, 0); }
+ivec2 visual_flow_texture_size() { return textureSize(height_tex, 0); }
 float visual_flow_texel(vec2 uv) {
-	ivec2 sz = textureSize(flow_tex, 0);
+	ivec2 sz = textureSize(height_tex, 0);
 	vec2 wuv = visual_static_wrap_uv(uv);
 	ivec2 tc = ivec2(clamp(wuv * vec2(sz), vec2(0.0), vec2(sz) - vec2(1.0)));
-	return texelFetch(flow_tex, tc, 0).r;
+	return texelFetch(height_tex, tc, 0).b;
 }
 #endif
 #endif

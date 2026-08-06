@@ -65,7 +65,8 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
-| CountryStore / territory / technology / treasury / tax policy | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、领土 CSR、国家科技、国库与五类税表；仅 `cell.country_slot` 发布到 DataCore，PKCN v4 持久化。 |
+| CountryStore / territory / technology / treasury / tax policy | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、领土 CSR、国家科技、国库与五类税表；仅 `cell.country_slot` 发布到 DataCore，PKCN v5 持久化。 |
+| Static research signals | C++ generation pass + native country evidence | `run_research_signal_generation_pass` / `country_daily` | Generation writes deterministic cell-indexed CSR (`offsets`, dense IDs, values); vision submits idempotent country discovery commands, while technology conditions consume only dense country evidence. |
 | ModifierStore | C++ ACTIVE authority | `modifier_daily` | 四域隔离 SoA/bucket；不写 base，发布冻结 effective 聚合与 journal。 |
 | PopulationCohort / MarketStore / fiscal escrow | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家税率、N 日 need/bundle 清算、源头扣缴与补贴托管；worker 写独占 cell lane，财政提交统一更新国库并发布 PKEC v30。 |
 | 综合满意度（八维度 composite） | C++ ACTIVE authority，寄生在既有归约循环 | `economy_daily` 的 household market 归约 + `refresh_epoch_development()` | 四档需求累加器零额外遍历；收入增长/储蓄/税负三维读 cohort 账本，社会发展维度在 epoch 边界缓存为 `_epoch_cell_development_q16` 后热循环 O(1) 只读。详见[综合满意度运行时](./satisfaction-runtime.md)。 |
@@ -84,6 +85,20 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Temp baseline year bake（生成期） | C++ 权威 + GDScript fallback | `run_temp_baseline_year_bake` | `cell_lat_norm` 几何量烘焙、ext 未就绪时 fallback。 |
 
 > `cell_temp_baseline_year`（海冰 + 显示温度的运行期年 baseline）权威计算已收回 C++，见下文 "Temp baseline year bake" 节。注意它与 pass_a 每日写的运行期 `cell_temp_baseline`（辐射 + 热惯性积分）是两个不同字段。
+
+## Static research-signal generation
+
+`run_research_signal_generation_pass` is a post-assembly native map pass. It receives generation
+vegetation, landform/river/volcano/water arrays, dimensions, seed, and the catalog's dense static
+signal IDs. It emits `generation_vegetation`, `cell_biogeographic_realm`, and a cell-indexed CSR
+(`cell_signal_offsets`, `cell_signal_ids`, `cell_signal_values`). No new DataCore component or
+per-cell Godot object is created.
+
+The pass currently derives maize/wheat/potato/horse from deterministic realm + generation habitat,
+and derives freshwater, river valley, volcanic, high plateau, and coastal estuary from static map
+fields. `MapGenerator` validates only CSR shape and publishes it to `MapData`. On vision's first
+exploration of a cell, `WorldRuntimeHost` submits a country command; C++ country state—not MapData—
+records the discovery. Runtime vegetation evolution and cover do not revoke knowledge.
 
 ## Native world generation base + post-base + publish（生成期）
 
@@ -154,11 +169,11 @@ Fallback（仅指 bind 后的 republish 层 `run_native_world_generate_pass`，*
 
 C++ 入口：
 
-- `encode_bake_height_tex_data`：`height_buffer` F32 `[0,1]` → RG8 16-bit，高字节/低字节与旧 GDScript `round(v*65535)` bit-equivalent。
+- `encode_bake_height_tex_data`：`height_buffer` F32 `[0,1]` → RG8 16-bit，高字节/低字节与旧 GDScript `round(v*65535)` bit-equivalent。Legacy 上传时由 `DCAtlasEncoders.encode_height_flow_tex` 再与 flow 拼成 RGBA8（B=flow）。
 - `encode_bake_terrain_normal_tex_data`：**生成期烘焙"总体地形法线"**（2026-06-25）。`height_buffer` → 宽半径（`coarse_radius` texel）中心差分得平滑梯度，按参考增益 `slope_gain` 构 `N=normalize(-sx,-sy,1)`，存 `nx,ny`→RG8（`nz` shader 重建）；X 圆柱环绕、Y clamp；按行 `pk::parallel_for_range` 并行。地形是静态的，这张图烘一次、之后不变；运行期 shader 1 次采样即得宏观山脉走向，替代每帧宽半径 4-tap。GDScript 侧 `DCAtlasEncoders.encode_terrain_normal_tex` 提供等价 debug fallback。
 - `encode_bake_horizon_tex_data`：**生成期烘焙 8 方向地形遮蔽角**（2026-07-03，2026-08-02 低频化）。`height_buffer` 先在 Horizon 派生路径内做独立 3×3 `1-2-1` 高斯低通（不回写侵蚀/河流/法线使用的权威高度），再沿 E/NE/N/NW/W/SW/S/SE trace；marching 距离为 `step_px·(s + 0.5·step_growth·s·(s-1))`，近处密采样、远处渐增，避免固定步长形成规则梳状阴影。取最大 `atan2(dh*height_world_scale, dist_world)`，按 `max_horizon_angle` 量化为 4-bit；RGBA8 每通道 high/low nibble 存两个方向（R=E/NE, G=N/NW, B=W/SW, A=S/SE）。默认 `height_scale_hex=16`、`step_growth=0.35`、`lowpass_radius=1`。采样坐标 X 圆柱环绕、Y clamp；遮挡距离按射线实际行进距离计算，不取圆柱最短经度距离。低通与 trace 均按行 `pk::parallel_for_range` 并行。因 nibble-packed byte 不能硬件线性过滤，运行期 shader 用 NEAREST 采样并在解码后手动双线性插值，再按 TOD 太阳方位插值。GDScript 侧无热循环 fallback；ext 缺失时返回 null/旧纹理，shader 自动关闭。**可选 `emit_occluder_cells=true` + `map_index_data`（全局 map-index RGBA8）时顺带产出 `occluder_data`**（terrain-gi 2026-07-31）：同一次 trace 记录每个方向的最强遮挡落点，取量化角最大的两个方向，把落点的 `cell.index`（map-index 的 G/B 通道）打包成 RGBA8（RG=主源、BA=次源，低字节在前，`0xFFFF` 为无效哨兵）。它是 tiled compute 路径 `gi_occluder` 的 legacy 等价物，独立降级——不传 map_index 就只出 horizon，AO/bent normal 不受影响、只关闭弹射。
 - `encode_bake_enum_atlas_payload`：map-index atlas RGBA8，`R=biome`、`G/B=cell.index low/high`、`A=landform`；输入使用 `WorldData` 的 CSR 像素反向索引与按 `cell.index` 排列的 landform byte。
-- `encode_bake_flow_tex_data`：river SDF/flow F32 `[0,1]` → L8。
+- `encode_bake_flow_tex_data`：river SDF/flow F32 `[0,1]` → L8。Legacy/Tiled 均打进 height 纹理的 B 通道，不再单独建 `flow_tex` / `visual_flow_tiles`。
 - `encode_bake_r8_tex_data`：通用 U8 → L8，支持缺失输入时按 `default_byte` 填充（火山场默认 0、upwelling buffer 默认 128）。
 - `encode_bake_upwelling_tex_data`：F6 debug upwelling 纹理，读取已绑定 SoA 的 `cell_terrain` 和 `cell_upwelling_strength`，通过 pixel→cell index 表编码 L8；未 bind 时保留 GDScript debug fallback。
 
@@ -294,6 +309,16 @@ relief（见下 “P0 relief”）。
 - `DCWorldExt::run_bake_erosion_pass` / `terrain_baker.gd::DCTerrainBaker.bake_hydraulic_erosion`
 
 **bake 期几何场编排下沉 C++（dots-total-cpp step2，2026-06-25）**：`run_bake_geometry_fields_pass` 是单次驱动——GDScript 在 `bake_world` 里只发**一次请求**（一个 knobs 含 terrain-index 所需 cell SoA + 几何参数 + erosion 常量），C++ 在进程内依次串起 terrain-index → erosion → river SDF → latitude sub-pass，**中间 buffer（尤其 height_buffer）全部留在 C++、不跨语言往返**（原 height 在 terrain→erosion→encode 间往返 4 次，现仅最终一次随 bundle 返回），一次返回完整几何 bundle（`height_buffer/biome_buffer/moisture_buffer/vegetation_buffer/cover_buffer` + `flow_buffer` + `latitude_buffer` + CSR `cell_first_px/cell_px_count/flat_px_indices` + `pixel_to_cell_index` + 各 stage `*_ms`/`*_ok` 诊断）。GDScript `_bake_geometry_fields_native` 只解包到 `world.*`，`DCTerrainIndexBaker.apply_result()` 负责共享的 terrain buffers、edge textures 和对象侧 `pixel_to_cell_lookup`/`cell_pixel_lists`。`bake_world` 为**融合优先 + 旧 per-pass 回退**：融合 pass 缺失（DLL 未 rebuild）或 terrain sub-pass fallback 时，退回 `DCTerrainIndexBaker.bake()` / GDScript ground-truth + 各单 pass，行为同迁移前。废弃的 volcano field 已从几何 bundle 与 GPU 上传路径删除；火山视觉继续由 `landform == LF_VOLCANO` + height/normal 表现。
+
+**bake 分辨率平台档（2026-08-06）**：`MapBaker._hm_max_dim()` 决定 `hm_size`/`derived_size` 长边。桌面 1024；**mobile 与 web 同档 512**（~155k px，约为桌面 620k 的 1/4）。Web 此前只认 `mobile` feature、浏览器会静默落到 1024，在 nothreads WASM 上把 terrain-index/encode/horizon 的 O(像素) 成本放大约 4×；现用 `OS.has_feature("web")` 与 mobile 共用 `HM_MAX_DIM_MOBILE`。日志 `MapBaker v6: hm=` 在 web 上应约为 `(512, 300)` 量级（随地图宽高比变化）。
+
+**terrain horizon 平台分流（2026-08-06）**：GPU horizon 在 web/mobile 默认关（`DCFeatureFlags.terrain_horizon_gpu_bake_active`）。`bake_world` encode 段此前只把 `mobile` 映射到「跳过 → `terrain_horizon_tex=null`」，web 会落到桌面 CPU `encode_horizon_tex`（`steps=1024`×8 向），nothreads WASM 上可拖垮生成。现 **mobile 与 web 同走 skip**；仅桌面在 GPU 关时保留 CPU C++ fallback。shader 侧 `terrain_horizon_tex_bound=false` → 无投射阴影回退。
+
+**主地形退役 eco_lut、Web 启用材质贴图（2026-08-06）**：`world_map` 不再声明/采样 `eco_lut`（叶量/胁迫/物候与 `dyn_lut.A` vitality 高度重叠；mobile 本就编译期跳过）。腾出的 Compatibility 预算槽接入 `terrain_material_tex`。植被实例层（`shrub_layer`）仍可独立绑 `eco_lut`。
+
+**height+flow 合并（2026-08-06）**：Legacy `height_tex` 与 Tiled `visual_height_tiles` 均为 RGBA8（RG=16-bit height，B=flow，A=0）；独立 `flow_tex` / `visual_flow_tiles` 退役。CPU 仍保留分离 buffer。旧 DLL 若仍返回 `height=N*2`+`flow=N`，`VisualTileSet.normalize_height_flow_bundle` 会在上传前拼包。`BYTES_PER_PHYSICAL_TEXEL`=23。`PK_WEB_TEXTURE_BUDGET` 下现为 height/horizon/map_index/noise/enum/dyn/**material** = **7**（留 1 裕量）。
+
+**Web shader 质量档（2026-08-06）**：与 mobile 共用 `MOBILE_QUALITY_LOW/MID/HIGH` 编译期 define + 运行期 `visual_quality`。`DCFeatureFlags.uses_shader_quality_tier()` = mobile|web；设置 `render_quality=auto` 在 web 上默认 LOW（不再误用桌面 HIGH）。高档仍叠加 `PK_WEB_TEXTURE_BUDGET`（纹理单元硬裁剪与分档正交）。日志 `[hex_renderer/variant] quality=MOBILE_QUALITY_* web_texture_budget=true`。
 
 各 sub-pass 链路与 I/O（被 `run_bake_geometry_fields_pass` 内部调用，也可单独调用）：
 

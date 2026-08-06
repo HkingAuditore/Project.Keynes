@@ -72,7 +72,7 @@ const DETAIL_PLAN_FINALIZE: int = 7
 @export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 15.0
 
 # ─── 河流 ────────────────────────────────────────────────────────────────
-# v6：flow_tex 是 SDF 反距离编码（1=河中心，0=>=SDF_MAX_DIST_PX 远）。
+	# v6：flow 是 SDF 反距离编码（1=河中心，0=>=SDF_MAX_DIST_PX 远）；Legacy 打在 height_tex.B。
 # baker 的 SDF_MAX_DIST_PX = 5 像素，保持大尺度地图上河流为细线。
 # threshold_low=外圈 outline 起点，threshold_high=内圈主色完全。
 @export_group("Rivers")
@@ -780,9 +780,8 @@ func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader:
 	if shader == null:
 		push_warning("HexRenderer: shader not found at %s" % source_path)
 		return mat.shader
-	# Mobile quality tier 编译时变体（2026-06-15）：移动端 prepend #define MOBILE_QUALITY_*
-	# 让 GPU 编译三种独立 shader 二进制（GPU warp 不再为所有 if 分支保留 register）。
-	# tier 由 main.gd::_mobile_shader_quality_tier_for_define() 推送（onready 时机）。
+	# mobile/web 质量档编译时变体：prepend #define MOBILE_QUALITY_*
+	# 让 GPU 编译独立 shader 二进制。tier 由 player_game / main 推送。
 	return _apply_shader_variant_prefix(shader, source_path)
 
 
@@ -798,14 +797,16 @@ func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader
 	var prefix := ""
 	if _visual_tiles_active():
 		prefix += "#define MAP_VISUAL_TILED\n"
-	if OS.has_feature("mobile") and _mobile_quality_tier_define != "":
+	# mobile/web 共用 MOBILE_QUALITY_* 编译期档（由 set_mobile_quality_tier 推送）。
+	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
 	# [pk-web-texture-budget] Compatibility(GLES3/WebGL2) 后端只保证 16 个
 	# fragment 纹理单元；world_map.gdshader 是按桌面 Forward+/Mobile(32+) 预算
 	# 声明的 sampler 数量，超预算会在链接期报
 	# "texture image units count exceeds MAX_TEXTURE_IMAGE_UNITS(16)" 并整体
-	# 渲染失败。裁掉几张已经在该后端恒不生效的 sampler（terrain_material_tex /
-	# ocean_upwelling_tex，见各自声明处注释）。
+	# 渲染失败。裁掉若干装饰性 sampler（terrain_micro / bounce_lut / upwelling /
+	# detail/edge/normal/water_depth/gi_occluder 等）。2026-08-06 起主地形不再
+	# 声明 eco_lut，腾出的槽给 terrain_material_tex；同日 height+flow 合并再省 1 槽。
 	if DCFeatureFlags.is_compatibility_renderer():
 		prefix += "#define PK_WEB_TEXTURE_BUDGET\n"
 	if prefix.is_empty():
@@ -818,7 +819,7 @@ func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader
 	return variant
 
 
-# Mobile shader quality tier（2026-06-15）：由 main.gd::_push_visual_toggles 推过来。
+# Shader quality tier（mobile/web）：由 player_game / main._push_visual_toggles 推过来。
 # 空字符串 = 桌面端 / 不 prepend define。可选值 "MOBILE_QUALITY_LOW" / "MID" / "HIGH"。
 var _mobile_quality_tier_define: String = ""
 
@@ -3356,7 +3357,7 @@ func _sync_cell_lut_dims() -> void:
 func _sync_cell_lut_textures() -> void:
 	if _world == null or _shader_mat == null:
 		return
-	for lut_name in ["enum_lut", "dyn_lut", "eco_lut", "bounce_lut"]:
+	for lut_name in ["enum_lut", "dyn_lut", "bounce_lut"]:
 		var world_tex: Texture2D = _world.get(lut_name + "_tex")
 		if world_tex == null or _shader_mat.get_shader_parameter(lut_name) == world_tex:
 			continue
@@ -3370,7 +3371,8 @@ func _sync_cell_lut_textures() -> void:
 			if _fog_layer != null:
 				_fog_layer.set_enum_lut_texture(world_tex)
 			_push_fog_uniforms()
-
+	# eco_lut 不在主材质；植被层在 set_world_material_inputs / set_map 路径绑定，
+	# 日刷走 ImageTexture.update 保对象稳定，无需在此同步。
 
 func _wrap_period_x() -> float:
 	if _map == null:
@@ -3426,7 +3428,6 @@ func _apply_uniforms() -> void:
 		sm.set_shader_parameter("visual_terrain_normal_tiles", visual_tiles.terrain_normal)
 		sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
 		sm.set_shader_parameter("visual_map_index_tiles", visual_tiles.map_index)
-		sm.set_shader_parameter("visual_flow_tiles", visual_tiles.flow)
 		sm.set_shader_parameter("visual_water_depth_tiles", visual_tiles.water_depth)
 		sm.set_shader_parameter("visual_terrain_detail_tiles", visual_tiles.terrain_detail)
 		sm.set_shader_parameter("visual_edge_neighbor_tiles", visual_tiles.edge_neighbor)
@@ -3449,11 +3450,12 @@ func _apply_uniforms() -> void:
 	_push_gi_uniforms(sm, tiled, visual_tiles)
 	if not tiled:
 		sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
-	# [river-render-restore 2026-06-19] 河流 SDF 纹理重新接回主地图 shader（flow 视觉层）。
-	if not tiled:
-		sm.set_shader_parameter("flow_tex", _world.flow_tex)
+	# [height-flow-pack 2026-08-06] Legacy/Tiled flow 都在 height*.B，不再绑独立 flow sampler。
+	# has_flow_tex：height 纹理就绪且 flow_buffer 齐 = 已打包。
 	sm.set_shader_parameter("has_flow_tex",
-		visual_tiles.flow != null if tiled else _world.flow_tex != null)
+		(visual_tiles.height != null if tiled else _world.height_tex != null)
+		and _world.flow_buffer.size() >= _world.hm_size.x * _world.hm_size.y
+		and _world.hm_size.x > 0 and _world.hm_size.y > 0)
 	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8：绑定后 shader 每水像素 1 次采样取代旧"海洋 5×5
 	# height 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算；未绑定时 has_water_depth_tex=false →
 	# water_pipeline 回退旧逐邻域算法。
@@ -3510,7 +3512,7 @@ func _apply_uniforms() -> void:
 	var _indirect_ready: bool = _world.enum_atlas_tex != null and _world.enum_lut_tex != null
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
-	sm.set_shader_parameter("eco_lut", _world.eco_lut_tex)
+	# eco_lut 仅绑给植被实例层；主地形已退役该 sampler（槽位给 terrain_material_tex）。
 	_push_cell_lut_dims(sm, _world.lut_dims)
 	# [terrain-gi 档 2] 弹射代表色 LUT：与 enum/dyn/eco 同一 lut_dims 网格、同一日刷节奏。
 	sm.set_shader_parameter("bounce_lut", _world.bounce_lut_tex)

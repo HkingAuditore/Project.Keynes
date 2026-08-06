@@ -17,6 +17,23 @@
 `EconomyCatalog` 只接受权威科技目录，并验证所有 `tech.*` 标签。科技 dense ID 采用目录
 拓扑顺序；经济编译期把字符串标签解析成 dense ID，运行热循环不查找字符串。
 
+## Research-signal conditions (PKCN v5)
+
+`ResearchSignalCatalog` is static content, not another runtime. It compiles stable signal IDs for
+Bio, resource, landform, weather and breakthrough observations. `TechnologyCatalog` compiles
+technology conditions to postfix dense IR and includes that IR plus the signal catalog in the country
+catalog hash. Legacy `prerequisite_ids` remains the compatibility structural gate.
+
+The active native condition subset is `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`,
+`ALL_OF`, `ANY_OF`, `AT_LEAST`, and `NOT`. The queue head blocks when an active condition fails but
+keeps its progress; deferred domain points do not spill to another domain. `pending` activation does
+not re-evaluate a condition. `COUNTRY_FLAG`, statistics, buildings, transient weather/event windows,
+sequence, and reveal-condition evaluation are authoring extension points, not active v1 semantics.
+
+Static signal discovery is country-local and is initiated only by a 0→1 explored-cell transition.
+The map stores a CSR of possible signals; `NativeCountryRuntime` owns whether a country has observed
+them. Goods stock never implies Bio discovery, and countries do not automatically share evidence.
+
 ## 目录
 
 首版目录包含 81 个定义：4 个开局完成根科技和 77 个可研究科技，覆盖 11 个时代以及农业、

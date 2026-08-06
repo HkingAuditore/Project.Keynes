@@ -1,6 +1,10 @@
 class_name TechnologyCatalog
 extends RefCounted
 
+const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
+const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
+const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
+
 const DOMAIN_IDS := ["agriculture", "engineering", "science", "society"]
 const DOMAIN_NAMES := ["农业", "工程", "科学", "社会"]
 const DOMAIN_COLORS := [
@@ -13,6 +17,28 @@ const STARTING_IDS := [
 const FLAG_ERA_KEY := 1
 const FLAG_MILESTONE := 2
 const FLAG_STARTING := 4
+
+# Packed postfix IR shared with NativeCountryRuntime. Values are deliberately
+# numeric here so no authoring StringName reaches the country hot path.
+const CONDITION_PUSH_TECH_COMPLETED := 1
+const CONDITION_PUSH_SIGNAL_PRESENT := 2
+const CONDITION_PUSH_SIGNAL_COUNT := 3
+const CONDITION_ALL_OF := 10
+const CONDITION_ANY_OF := 11
+const CONDITION_AT_LEAST := 12
+const CONDITION_NOT := 13
+
+## Existing content remains unchanged unless a row is listed here. This is the
+## first real gameplay gate: irrigation needs a discovered river-valley signal.
+## Future content may use ResearchCondition/ResearchPredicate resources instead.
+const TECHNOLOGY_RESEARCH_CONDITION_SPECS := {
+	"tech.irrigation": {
+		"operator": ResearchConditionScript.Operator.ALL_OF,
+		"children": [
+			{"kind": ResearchPredicateScript.Kind.SIGNAL_PRESENT, "id": "landform.river_valley"},
+		],
+	},
+}
 
 const ERA_ROWS := [
 	["stone", "石器时代", "tech.settled_knowledge"],
@@ -114,6 +140,9 @@ const TECHNOLOGY_ROWS := [
 ]
 
 static func compile_native_catalog() -> Dictionary:
+	var signal_catalog := ResearchSignalCatalogScript.compile_native_catalog()
+	if not bool(signal_catalog.get("ok", false)):
+		return signal_catalog
 	var ids := PackedStringArray()
 	var names := PackedStringArray()
 	var era_ids := PackedStringArray()
@@ -184,7 +213,11 @@ static func compile_native_catalog() -> Dictionary:
 		era_ids_out.append(String(row[0]))
 		era_names.append(String(row[1]))
 		era_milestones.append(int(id_to_index[String(row[2])]))
-	return {
+	var conditions := _compile_research_conditions(ids,
+		signal_catalog.get("research_signal_ids", PackedStringArray()))
+	if not bool(conditions.get("ok", false)):
+		return conditions
+	var out := {
 		"ok": true,
 		"technology_ids": ids,
 		"technology_display_names": names,
@@ -207,6 +240,118 @@ static func compile_native_catalog() -> Dictionary:
 		"technology_era_milestone_indices": era_milestones,
 		"starting_technology_ids": PackedStringArray(STARTING_IDS),
 	}
+	for key in signal_catalog:
+		if key != "ok":
+			out[key] = signal_catalog[key]
+	for key in conditions:
+		if key != "ok":
+			out[key] = conditions[key]
+	return out
+
+static func _compile_research_conditions(
+		technology_ids: PackedStringArray, signal_ids: PackedStringArray) -> Dictionary:
+	var offsets := PackedInt32Array([0])
+	var ops := PackedInt32Array()
+	var refs := PackedInt32Array()
+	var values := PackedInt64Array()
+	var signal_index := {}
+	var technology_index := {}
+	for i in range(signal_ids.size()):
+		signal_index[String(signal_ids[i])] = i
+	for i in range(technology_ids.size()):
+		technology_index[String(technology_ids[i])] = i
+	for technology_id in technology_ids:
+		var spec = TECHNOLOGY_RESEARCH_CONDITION_SPECS.get(String(technology_id), null)
+		if spec != null:
+			var error := _append_condition_postfix(spec, signal_index, technology_index,
+				ops, refs, values)
+			if error != "":
+				return {"ok": false, "reason": error, "technology_id": String(technology_id)}
+		offsets.append(ops.size())
+	return {
+		"ok": true,
+		"technology_research_condition_offsets": offsets,
+		"technology_research_condition_ops": ops,
+		"technology_research_condition_refs": refs,
+		"technology_research_condition_values": values,
+	}
+
+static func _append_condition_postfix(spec, signal_index: Dictionary, technology_index: Dictionary,
+		ops: PackedInt32Array, refs: PackedInt32Array, values: PackedInt64Array) -> String:
+	if spec is ResearchPredicateScript:
+		return _append_predicate(spec, signal_index, technology_index, ops, refs, values)
+	if spec is Dictionary and spec.has("kind"):
+		return _append_predicate_dict(spec, signal_index, technology_index, ops, refs, values)
+	var operator_value := -1
+	var children: Array = []
+	var required_count := 0
+	if spec is ResearchConditionScript:
+		operator_value = int(spec.operator)
+		children = spec.children
+		required_count = int(spec.required_count)
+	elif spec is Dictionary:
+		operator_value = int(spec.get("operator", -1))
+		children = spec.get("children", [])
+		required_count = int(spec.get("required_count", 0))
+	else:
+		return "technology_condition_invalid_node"
+	if operator_value == ResearchConditionScript.Operator.ATOM:
+		if spec is ResearchConditionScript:
+			return _append_condition_postfix(spec.atom, signal_index, technology_index, ops, refs, values)
+		return _append_condition_postfix((spec as Dictionary).get("atom", null), signal_index, technology_index, ops, refs, values)
+	if children.is_empty():
+		return "technology_condition_empty_composite"
+	for child in children:
+		var error := _append_condition_postfix(child, signal_index, technology_index, ops, refs, values)
+		if error != "":
+			return error
+	match operator_value:
+		ResearchConditionScript.Operator.ALL_OF:
+			ops.append(CONDITION_ALL_OF); refs.append(children.size()); values.append(0)
+		ResearchConditionScript.Operator.ANY_OF:
+			ops.append(CONDITION_ANY_OF); refs.append(children.size()); values.append(0)
+		ResearchConditionScript.Operator.AT_LEAST:
+			if required_count <= 0 or required_count > children.size():
+				return "technology_condition_at_least_invalid"
+			ops.append(CONDITION_AT_LEAST); refs.append(children.size()); values.append(required_count)
+		ResearchConditionScript.Operator.NOT:
+			if children.size() != 1:
+				return "technology_condition_not_arity_invalid"
+			ops.append(CONDITION_NOT); refs.append(1); values.append(0)
+		_:
+			return "technology_condition_operator_unsupported"
+	return ""
+
+static func _append_predicate(predicate: Resource, signal_index: Dictionary,
+		technology_index: Dictionary, ops: PackedInt32Array, refs: PackedInt32Array,
+		values: PackedInt64Array) -> String:
+	return _append_predicate_dict({
+		"kind": int(predicate.kind), "id": String(predicate.reference_id),
+		"value": int(predicate.value), "comparator": int(predicate.comparator),
+	}, signal_index, technology_index, ops, refs, values)
+
+static func _append_predicate_dict(predicate: Dictionary, signal_index: Dictionary,
+		technology_index: Dictionary, ops: PackedInt32Array, refs: PackedInt32Array,
+		values: PackedInt64Array) -> String:
+	var kind := int(predicate.get("kind", -1))
+	var id := String(predicate.get("id", predicate.get("reference_id", "")))
+	var value := int(predicate.get("value", 1))
+	if kind == ResearchPredicateScript.Kind.TECH_COMPLETED:
+		if not technology_index.has(id):
+			return "technology_condition_technology_reference_unknown"
+		ops.append(CONDITION_PUSH_TECH_COMPLETED); refs.append(int(technology_index[id])); values.append(1)
+		return ""
+	if kind == ResearchPredicateScript.Kind.SIGNAL_PRESENT:
+		if not signal_index.has(id):
+			return "technology_condition_signal_reference_unknown"
+		ops.append(CONDITION_PUSH_SIGNAL_PRESENT); refs.append(int(signal_index[id])); values.append(1)
+		return ""
+	if kind == ResearchPredicateScript.Kind.SIGNAL_COUNT:
+		if not signal_index.has(id) or value <= 0:
+			return "technology_condition_signal_count_invalid"
+		ops.append(CONDITION_PUSH_SIGNAL_COUNT); refs.append(int(signal_index[id])); values.append(value)
+		return ""
+	return "technology_condition_predicate_unsupported"
 
 static func _modifier_definition_keys(ids: PackedStringArray) -> PackedStringArray:
 	var out := PackedStringArray()

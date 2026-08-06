@@ -109,7 +109,7 @@ const RENDER_FIELDS := [
 	{
 		"name": "render_quality_mode",
 		"label": "渲染质量",
-		"hint": "自动：沿用平台默认；低/中/高会手动指定 visual quality，移动端也同步指定 shader quality tier。",
+		"hint": "自动：桌面偏高、mobile/web 偏低；低/中/高会指定 visual quality，mobile/web 同步编译期 shader quality tier。",
 		"type": "option",
 		"default": -1,
 		"options": [

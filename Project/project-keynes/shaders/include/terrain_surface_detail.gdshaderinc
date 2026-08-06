@@ -49,14 +49,15 @@ vec2 terrain_periodic_world_uv(vec2 wp, float tile_world_size) {
 	return vec2(wrapped_phase * repeat_count, wp.y / max(tile_world_size, 1.0));
 }
 
-// Mobile LOW/MID variants compile out the array path. Desktop and mobile HIGH
-// still use the runtime switch so an allocation/import failure can fall back
-// without selecting a different shader resource.
+// Mobile LOW/MID variants compile out the array path. Desktop / mobile HIGH /
+// Compatibility(Web) still use the runtime switch so an allocation/import
+// failure can fall back without selecting a different shader resource.
+// visual_quality：0=LOW 程序化；>=1（默认 MID）即可采材质贴图。
 bool terrain_materials_active() {
-#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID) || defined(PK_WEB_TEXTURE_BUDGET)
+#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID)
 	return false;
 #else
-	return terrain_materials_enabled && terrain_material_tex_bound && visual_quality >= 2;
+	return terrain_materials_enabled && terrain_material_tex_bound && visual_quality >= 1;
 #endif
 }
 
@@ -80,16 +81,12 @@ int terrain_material_layer(int biome) {
 }
 
 vec4 terrain_material_sample(int biome, vec2 wp) {
-#ifdef PK_WEB_TEXTURE_BUDGET
-	return vec4(1.0, 0.5, 0.5, 0.5);
-#else
 	int layer = terrain_material_layer(biome);
 	if (layer < 0) {
 		return vec4(1.0, 0.5, 0.5, 0.5);
 	}
 	vec2 material_uv = terrain_periodic_world_uv(wp, terrain_material_world_size);
 	return texture(terrain_material_tex, vec3(material_uv, float(layer)));
-#endif
 }
 
 vec3 terrain_material_albedo_detail(vec4 material) {
@@ -461,21 +458,19 @@ vec3 terrain_surface_debug_color(vec2 uv, vec2 wp, int primary_id) {
 		vec4 elut = texture(enum_lut, cell_lut_uv(primary_id));
 		return terrain_index_debug_color(int(elut.r * 255.0 + 0.5)) * elut.a;
 	}
-	// 9 / 10 = dyn_lut / eco_lut 直读。这两张与 enum_lut 同走 ImageTexture.update()
-	// 增量上传，但内容每日都变（enum_lut 基本静止、多数天根本不触发上传），所以
-	// 上传通道一旦不可靠，最先且只有它们会塌。
-	//   9  = R 温度 / G 湿度 / B 雪盖（陆地应有明显的纬度与地形梯度）
-	//   10 = R 叶量 / G 胁迫 / B 物候（植被区应非零）
-	// 纯黑 = 整张读成零。dyn_lut 全零在陆地上就是「最冷 + 活力 0」，而水格的
-	// 海冰比例同样是 0，所以海洋看不出异常——与观察到的现象一致。
+	// 9 = dyn_lut 直读。与 enum_lut 同走 ImageTexture.update() 增量上传。
+	//   R 温度 / G 湿度 / B 雪盖（陆地应有明显的纬度与地形梯度）
+	// 10 = 旧 eco_lut 直读已退役（主地形不再绑 eco_lut）；显示中性灰作占位。
+	// 纯黑 = dyn_lut 整张读成零。
 	if (terrain_surface_debug_view == 9 || terrain_surface_debug_view == 10) {
 		if (primary_id < 0) {
 			return vec3(1.0, 0.0, 1.0);
 		}
+		if (terrain_surface_debug_view == 10) {
+			return vec3(0.35);
+		}
 		vec2 luv = cell_lut_uv(primary_id);
-		return (terrain_surface_debug_view == 9)
-				? texture(dyn_lut, luv).rgb
-				: texture(eco_lut, luv).rgb;
+		return texture(dyn_lut, luv).rgb;
 	}
 	return vec3(terrain_micro_zoom_alpha());
 }
