@@ -4338,6 +4338,10 @@ bool NativeEconomyRuntime::should_run(int64_t day_index) const {
     if (!_epoch_active && _country_runtime != nullptr &&
         _country_runtime->should_run(day_index))
         return false;
+    // Effect ingress is a first-class safe-boundary workload.  Do not let a
+    // quiet market starve a preflighted native Effect transaction while it is
+    // waiting to enter the next frozen ledger cycle.
+    if (has_pending_effect_commands()) return true;
     return _epoch_active || day_index > _last_committed_day ||
            trade_planner_should_run();
 }
@@ -6191,9 +6195,25 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             const int32_t end = std::min<int32_t>(static_cast<int32_t>(_epoch_commands.size()),
                                                   _command_cursor + _commands_per_slice);
             for (; _command_cursor < end; ++_command_cursor) {
-                if (!apply_command(_epoch_commands[_command_cursor], error)) {
+                const Command &command = _epoch_commands[_command_cursor];
+                if (!apply_command(command, error)) {
+                    if (command.effect_request_id != 0) {
+                        EffectCommandResult &result = _effect_command_results[
+                            command.effect_request_id];
+                        result.complete = 1;
+                        result.ok = 0;
+                        result.reason = error.empty()
+                            ? "effect_economy_commit_failed" : error;
+                    }
                     fail(error);
                     break;
+                }
+                if (command.effect_request_id != 0) {
+                    EffectCommandResult &result = _effect_command_results[
+                        command.effect_request_id];
+                    result.complete = 1;
+                    result.ok = 1;
+                    result.reason.clear();
                 }
                 ++_processed_commands;
                 ++work_done;
@@ -10471,6 +10491,8 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint32_t>(cmd.i32_1));
         mix_u64(static_cast<uint64_t>(cmd.i64_0));
         mix_u64(static_cast<uint64_t>(cmd.i64_1));
+        mix_u64(static_cast<uint64_t>(cmd.effect_request_id));
+        mix_u64(cmd.effect_idempotency_key);
     }
     for (const BuildingGroup &group : _buildings) {
         mix_u64(static_cast<uint32_t>(group.cell));
@@ -10724,6 +10746,9 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _trade_flows.clear();
     _pending_commands.clear();
     _epoch_commands.clear();
+    _effect_command_results.clear();
+    _effect_idempotency_requests.clear();
+    _next_effect_request_id = 1;
     _structural_commands.clear();
     _committed_cells.clear();
     _staging_cells.clear();

@@ -54,18 +54,19 @@ Assert-Text "gdext/src/world_ext_climate.cpp" @(
 )
 Assert-Text "gdext/src/economy_runtime.cpp" @(
     "effective_building_output_quantity", "country_economy_output_factor",
-    "ensure_building_identity", "SAVE_SECTION_MODIFIERS"
+    "ensure_building_identity"
 )
-Assert-Text "gdext/src/country_runtime.h" @("SCHEMA_VERSION = 4")
-Assert-Text "gdext/src/economy_runtime.h" @("SCHEMA_VERSION = 29")
+Assert-Text "gdext/src/economy_runtime_persistence_codec.h" @("SAVE_SECTION_MODIFIERS")
+Assert-Text "gdext/src/country_runtime.h" @("SCHEMA_VERSION = 6")
+Assert-Text "gdext/src/economy_runtime.h" @("SCHEMA_VERSION = 31")
 Assert-Text "gdext/src/modifier_runtime.h" @(
     "PROTOCOL_VERSION = 2", "SAVE_SCHEMA_VERSION = 2", "COMMAND_SET_MAGNITUDE"
 )
 Assert-Text "Project/project-keynes/scripts/game/game_save_coordinator.gd" @(
-    '"pkcm"', '"pkgp"', '&"pkcn", 4', '&"pkec", 29'
+    '"pkcm"', '"pkgp"', '&"pkcn", 6', '&"pkec", 31'
 )
 Assert-Text "docs/cpp-dots-runtime/native-modifier-runtime.md" @(
-    "clamp\(\(base \+ sum\(add\)\)", "PKCM v1", "PKCN v4", "PKEC v29", "PKGP v1"
+    "clamp\(\(base \+ sum\(add\)\)", "PKCM v1", "PKCN v6", "PKEC v31", "PKGP v1"
 )
 Assert-Text ".codex/skills/project-keynes-modifier-runtime/SKILL.md" @(
     "Non-Negotiable Invariants", "verify_modifier_runtime.ps1",

@@ -344,6 +344,9 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _tax_policy_version = 0;
     _last_research_day = -1;
     _pending_commands.clear();
+    _effect_command_results.clear();
+    _effect_command_idempotency.clear();
+    _next_effect_request_id = 1;
     _events.clear();
     _command_batch = {};
     _is_water.clear();
@@ -517,6 +520,9 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _tax_policy_version = 0;
     _last_research_day = -1;
     _pending_commands.clear();
+    _effect_command_results.clear();
+    _effect_command_idempotency.clear();
+    _next_effect_request_id = 1;
     _events.clear();
     _command_batch = {};
 
@@ -733,6 +739,90 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
     out["submitted"] = static_cast<int64_t>(count);
     out["pending"] = static_cast<int64_t>(_pending_commands.size());
     return out;
+}
+
+bool NativeCountryRuntime::submit_effect_commands_pod(
+        const EffectCommand *commands, size_t count, std::vector<int64_t> &request_ids,
+        std::string &error) {
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF) {
+        error = "country_runtime_unavailable";
+        return false;
+    }
+    if (commands == nullptr || count == 0) { error = "country_effect_command_empty"; return false; }
+    request_ids.clear();
+    request_ids.reserve(count);
+    std::vector<Command> staged;
+    staged.reserve(count);
+    auto lo_i32 = [](int64_t value) { return static_cast<int32_t>(static_cast<uint32_t>(value)); };
+    auto hi_i32 = [](int64_t value) { return static_cast<int32_t>(static_cast<uint64_t>(value) >> 32U); };
+    auto u16 = [](int64_t value, int32_t shift) {
+        return static_cast<int32_t>((static_cast<uint64_t>(value) >> shift) & 0xffffULL);
+    };
+    for (size_t i = 0; i < count; ++i) {
+        const EffectCommand &source = commands[i];
+        if (source.opcode < COMMAND_CREATE_COUNTRY || source.opcode > COMMAND_DISCOVER_COUNTRY_SIGNAL ||
+            source.effective_day < 0 || source.sequence < 0 || source.idempotency_key == 0) {
+            error = "country_effect_command_invalid";
+            return false;
+        }
+        const auto duplicate = _effect_command_idempotency.find(source.idempotency_key);
+        if (duplicate != _effect_command_idempotency.end()) {
+            request_ids.push_back(duplicate->second);
+            continue;
+        }
+        if (source.opcode != COMMAND_CREATE_COUNTRY && source.target_handle != 0 &&
+            static_cast<uint32_t>(source.target_handle >> 32U) != source.target_generation) {
+            error = "country_effect_target_generation_invalid";
+            return false;
+        }
+        Command command;
+        command.opcode = source.opcode;
+        command.effective_day = source.effective_day;
+        command.sequence = source.sequence;
+        command.target_handle = source.target_handle;
+        command.cell = lo_i32(source.payload[0]);
+        command.aux = hi_i32(source.payload[0]);
+        command.domain = lo_i32(source.payload[1]);
+        command.position = hi_i32(source.payload[1]);
+        command.weights_bp[0] = u16(source.payload[2], 0);
+        command.weights_bp[1] = u16(source.payload[2], 16);
+        command.weights_bp[2] = u16(source.payload[2], 32);
+        command.weights_bp[3] = u16(source.payload[2], 48);
+        command.tax_kind = lo_i32(source.payload[3]);
+        command.tax_item = static_cast<int32_t>(static_cast<int16_t>(u16(source.payload[3], 32)));
+        command.tax_rate_percent = static_cast<int32_t>(static_cast<int16_t>(u16(source.payload[3], 48)));
+        command.value = source.value;
+        command.stable_id = source.stable_id == nullptr ? "" : source.stable_id;
+        command.display_name = source.display_name == nullptr ? "" : source.display_name;
+        command.submit_order = ++_submit_order;
+        command.effect_request_id = _next_effect_request_id++;
+        command.effect_idempotency_key = source.idempotency_key;
+        _effect_command_results.emplace(command.effect_request_id, EffectCommandResult{});
+        _effect_command_idempotency[source.idempotency_key] = command.effect_request_id;
+        request_ids.push_back(command.effect_request_id);
+        staged.push_back(std::move(command));
+    }
+    _pending_commands.insert(_pending_commands.end(),
+        std::make_move_iterator(staged.begin()), std::make_move_iterator(staged.end()));
+    return true;
+}
+
+bool NativeCountryRuntime::effect_command_result_pod(int64_t request_id, bool &complete,
+        bool &ok, std::string &reason) const {
+    const auto found = _effect_command_results.find(request_id);
+    if (found == _effect_command_results.end()) {
+        complete = true; ok = false; reason = "country_effect_request_unknown"; return false;
+    }
+    complete = found->second.complete != 0;
+    ok = found->second.ok != 0;
+    reason = found->second.reason;
+    return true;
+}
+
+bool NativeCountryRuntime::has_pending_effect_commands() const {
+    for (const auto &entry : _effect_command_results)
+        if (entry.second.complete == 0) return true;
+    return false;
 }
 
 bool NativeCountryRuntime::should_run(int64_t day_index) const {
@@ -1311,6 +1401,11 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
 
     if (!error.empty()) {
         const double preflight_ms = batch.preflight_ms;
+        for (const Command &command : batch.commands) {
+            if (command.effect_request_id == 0) continue;
+            EffectCommandResult &result = _effect_command_results[command.effect_request_id];
+            result.complete = 1; result.ok = 0; result.reason = error;
+        }
         _command_batch = {};
         publish_report("command_preflight", day, preflight_ms, 0, 0, 0, 0, false, error);
         Dictionary out = report();
@@ -1343,6 +1438,11 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     }
     if (!error.empty()) {
         const double preflight_ms = batch.preflight_ms;
+        for (const Command &command : batch.commands) {
+            if (command.effect_request_id == 0) continue;
+            EffectCommandResult &result = _effect_command_results[command.effect_request_id];
+            result.complete = 1; result.ok = 0; result.reason = error;
+        }
         _command_batch = {};
         publish_report("command_preflight", day, preflight_ms, 0, 0, 0, 0, false, error);
         Dictionary out = report();
@@ -1392,6 +1492,11 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     const bool stage_research = batch.stage_research;
     const bool stage_signals = batch.stage_signals;
     const bool stage_tax = batch.stage_tax;
+    for (const Command &command : batch.commands) {
+        if (command.effect_request_id == 0) continue;
+        EffectCommandResult &result = _effect_command_results[command.effect_request_id];
+        result.complete = 1; result.ok = 1; result.reason.clear();
+    }
     _command_batch = {};
 
     const Clock::time_point apply_start = Clock::now();
@@ -1583,6 +1688,9 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _country_research_completed_total.clear();
     _last_research_day = -1;
     _pending_commands.clear();
+    _effect_command_results.clear();
+    _effect_command_idempotency.clear();
+    _next_effect_request_id = 1;
     _events.clear();
     _command_batch = {};
     ++_generation;
@@ -1910,6 +2018,16 @@ bool NativeCountryRuntime::has_technology(int32_t country_slot, int32_t technolo
         technology_id < 0 || technology_id >= static_cast<int32_t>(_technology_ids.size())) return false;
     return (_country_technologies[static_cast<size_t>(country_slot) * _technology_words + technology_id / 64] &
             (1ULL << (technology_id % 64))) != 0;
+}
+
+bool NativeCountryRuntime::has_research_signal(int32_t country_slot,
+                                                int32_t signal_id) const {
+    if (country_slot < 0 || country_slot >= static_cast<int32_t>(_countries.active.size()) ||
+        signal_id < 0 || signal_id >= static_cast<int32_t>(_research_signal_ids.size()) ||
+        _countries.active[static_cast<size_t>(country_slot)] == 0) return false;
+    const size_t base = static_cast<size_t>(country_slot) * _research_signal_words;
+    return (_country_research_signals[base + static_cast<size_t>(signal_id / 64)] &
+            (1ULL << (signal_id % 64))) != 0;
 }
 
 bool NativeCountryRuntime::prerequisites_met(const std::vector<uint64_t> &completed,
@@ -2720,6 +2838,8 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
         append_string(out, command.stable_id);
         append_string(out, command.display_name);
         append_le<uint64_t>(out, command.submit_order);
+        append_le<int64_t>(out, command.effect_request_id);
+        append_le<uint64_t>(out, command.effect_idempotency_key);
     }
     std::vector<uint8_t> modifier_bytes;
     if (_modifier_runtime != nullptr &&
@@ -3085,7 +3205,9 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
         }
         if (!read_le(bytes, cursor, command.value) ||
             !read_string(bytes, cursor, command.stable_id) || !read_string(bytes, cursor, command.display_name) ||
-            !read_le(bytes, cursor, command.submit_order)) { error = "country_save_command_truncated"; return false; }
+            !read_le(bytes, cursor, command.submit_order) ||
+            !read_le(bytes, cursor, command.effect_request_id) ||
+            !read_le(bytes, cursor, command.effect_idempotency_key)) { error = "country_save_command_truncated"; return false; }
         if (command.opcode < COMMAND_CREATE_COUNTRY ||
             command.opcode > COMMAND_DISCOVER_COUNTRY_SIGNAL ||
             command.effective_day < 0 ||
@@ -3125,6 +3247,7 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
             return false;
         }
         if (command.opcode >= COMMAND_SET_TAX_DEFAULT &&
+            command.opcode <= COMMAND_CLEAR_TAX_OVERRIDE &&
             (command.tax_kind < 0 || command.tax_kind >= TAX_KIND_COUNT ||
              command.tax_rate_percent < -100 ||
              command.tax_rate_percent > 100 ||
@@ -3196,6 +3319,21 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     _tax_policy_version = tax_policy_version;
     _last_research_day = last_research_day;
     _pending_commands = std::move(commands);
+    _effect_command_results.clear();
+    _effect_command_idempotency.clear();
+    _next_effect_request_id = 1;
+    for (const Command &command : _pending_commands) {
+        if (command.effect_request_id <= 0) continue;
+        if (command.effect_idempotency_key == 0 ||
+            !_effect_command_idempotency.emplace(command.effect_idempotency_key,
+                command.effect_request_id).second) {
+            error = "country_save_effect_command_invalid";
+            return false;
+        }
+        _effect_command_results.emplace(command.effect_request_id, EffectCommandResult{});
+        _next_effect_request_id = std::max(_next_effect_request_id,
+            command.effect_request_id + 1);
+    }
     _generation = generation_value;
     _last_committed_day = committed_day;
     _submit_order = std::max(saved_submit_order, max_submit_order);

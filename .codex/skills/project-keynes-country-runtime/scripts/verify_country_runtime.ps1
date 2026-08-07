@@ -11,6 +11,7 @@ try {
         'gdext/src/country_runtime.h',
         'gdext/src/country_runtime.cpp',
         'gdext/src/world_ext_country.cpp',
+        'gdext/src/economy_runtime_persistence_read.cpp',
         'Project/project-keynes/scripts/country/country_facade.gd',
         'Project/project-keynes/scripts/simulation/systems/country_daily_system.gd',
         'docs/cpp-dots-runtime/native-country-runtime.md'
@@ -35,9 +36,10 @@ try {
     if ($schemaMatches.Count -eq 0) { throw 'PKEC SCHEMA_VERSION is missing from economy_runtime.h.' }
     $schemaVersion = [int]($schemaMatches[0] -replace '\D', '')
     if ($schemaVersion -lt 11) { throw "PKEC schema $schemaVersion predates country authority (expected >= 11)." }
-    # The reject code was renamed from legacy_countryless_economy_save_unsupported
-    # to legacy_economy_save_unsupported; assert the current symbol.
-    $legacyReject = rg -n 'legacy_economy_save_unsupported' gdext/src/economy_runtime.h gdext/src/economy_runtime.cpp
+    # PKEC v29 and earlier are rejected by the persistence reader. Keep this
+    # assertion on the implementation's precise current reason so a stale
+    # verifier cannot silently bless an incompatible migration contract.
+    $legacyReject = rg -n 'economy_save_v29_or_earlier_unsupported' gdext/src/economy_runtime_persistence_read.cpp
     if (-not $legacyReject) { throw 'Precise legacy PKEC rejection is missing.' }
 
     if ($Build) {

@@ -36,6 +36,15 @@ func tick(ctx) -> Dictionary:
 	var native_dispatched: Dictionary = {}
 	if facade.world_ext().has_method("dispatch_effect_native_modifier"):
 		native_dispatched = facade.world_ext().dispatch_effect_native_modifier()
+	var native_country_dispatched: Dictionary = {}
+	if facade.world_ext().has_method("dispatch_effect_native_country"):
+		native_country_dispatched = facade.world_ext().dispatch_effect_native_country()
+	var native_economy_dispatched: Dictionary = {}
+	if facade.world_ext().has_method("dispatch_effect_native_economy"):
+		native_economy_dispatched = facade.world_ext().dispatch_effect_native_economy()
+	var native_gameplay_dispatched: Dictionary = {}
+	if facade.world_ext().has_method("dispatch_effect_native_gameplay"):
+		native_gameplay_dispatched = facade.world_ext().dispatch_effect_native_gameplay()
 	var dispatched := facade.dispatch_transactions()
 	_last_report = facade.report()
 	return {
@@ -49,6 +58,14 @@ func tick(ctx) -> Dictionary:
 		"transactions_dispatched": int(dispatched.get("dispatched", 0)),
 		"native_modifier_transactions": int(native_dispatched.get("submitted_transactions", 0)),
 		"native_modifier_commands": int(native_dispatched.get("submitted_commands", 0)),
+		"native_country_transactions": int(native_country_dispatched.get("submitted_transactions", 0)),
+		"native_country_commands": int(native_country_dispatched.get("submitted_commands", 0)),
+		"native_economy_transactions": int(native_economy_dispatched.get("submitted_transactions", 0)),
+		"native_economy_commands": int(native_economy_dispatched.get("submitted_commands", 0)),
+		"native_gameplay_transactions": int(native_gameplay_dispatched.get("submitted_transactions", 0)),
+		"native_gameplay_commands": int(native_gameplay_dispatched.get("submitted_commands", 0)),
+		"legacy_fallback_transactions": int(_last_report.get("legacy_fallback_transactions", 0)),
+		"native_claimed_transactions": int(dispatched.get("native_claimed_transactions", 0)),
 		"missing_adapters": int(dispatched.get("missing_adapters", 0)),
 		"fallback_reason": String(result.get("last_error", "")),
 	}

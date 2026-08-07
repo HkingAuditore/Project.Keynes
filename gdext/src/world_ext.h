@@ -18,9 +18,11 @@
 // Once that holds, I3.B can replace one sub-pass at a time with a C++
 // implementation behind `use_gdext_climate`.
 
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
+#include <string>
 #include <vector>
 
 #include <godot_cpp/classes/object.hpp>
@@ -277,6 +279,37 @@ public:
     godot::Dictionary run_effect_daily(int64_t day_index);
     godot::Dictionary dispatch_effect_native_modifier();
     godot::Dictionary ack_effect_native_modifier();
+    godot::Dictionary dispatch_effect_native_country();
+    godot::Dictionary ack_effect_native_country();
+    godot::Dictionary dispatch_effect_native_economy();
+    godot::Dictionary ack_effect_native_economy();
+    struct EffectGameplayCommand {
+        int32_t action = 0;
+        int32_t domain = -1;
+        int32_t opcode = 0;
+        int64_t effective_day = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        int64_t value_i64 = 0;
+        std::array<int64_t, 4> payload{};
+        uint64_t idempotency_key = 0;
+        int64_t request_id = 0;
+    };
+    // Native gameplay/event Effect ingress. The event journal remains the
+    // authority; this queue only preserves the Effect safe-boundary ACK.
+    bool submit_effect_gameplay_commands_pod(const EffectGameplayCommand *commands,
+                                             size_t count,
+                                             std::vector<int64_t> &request_ids,
+                                             std::string &error);
+    bool effect_gameplay_command_result_pod(int64_t request_id, bool &complete,
+                                            bool &ok, std::string &reason) const;
+    bool gameplay_effect_should_run(int64_t day_index) const;
+    godot::Dictionary run_gameplay_effects(int64_t day_index);
+    godot::Dictionary dispatch_effect_native_gameplay();
+    godot::Dictionary ack_effect_native_gameplay();
+    // Read-only state of native Effect ingress queues.  Save coordination
+    // uses this to reject a cross-section snapshot before a domain ACK.
+    godot::Dictionary get_effect_native_adapter_report() const;
     bool effect_should_run(int64_t day_index) const;
     godot::Dictionary poll_effect_transactions(int64_t after_transaction_id,
                                                int limit = 128) const;
@@ -288,6 +321,19 @@ public:
     godot::PackedByteArray capture_effect_state() const;
     godot::Dictionary restore_effect_state(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_effect_state();
+
+    // Native ideology authority.  It owns only country-scoped ideology
+    // collection/progression state and delegates domain effects elsewhere.
+    godot::Dictionary configure_ideologies(const godot::Dictionary &catalog);
+    godot::Dictionary submit_ideology_commands(const godot::Dictionary &batch);
+    godot::Dictionary run_ideology_daily(int64_t day_index);
+    bool ideology_should_run(int64_t day_index) const;
+    godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
+    godot::Dictionary explain_ideology(int64_t country_handle, int32_t ideology_id) const;
+    godot::Dictionary get_ideology_report() const;
+    godot::PackedByteArray capture_ideology_state() const;
+    godot::Dictionary restore_ideology_state(const godot::PackedByteArray &bytes);
+    godot::Dictionary clear_ideology_state();
 
     // Native-only hot-path helpers. They resolve no strings in the consumer loop.
     float modifier_climate_radiative_target(int cell, float base_value) const;
@@ -2342,6 +2388,7 @@ private:
     void                                     *_modifier_runtime       = nullptr;
     void                                     *_trigger_runtime         = nullptr;
     void                                     *_effect_runtime          = nullptr;
+    void                                     *_ideology_runtime        = nullptr;
     uint64_t                                  _natural_resource_modifier_version =
         std::numeric_limits<uint64_t>::max();
     uint64_t                                  _natural_resource_modifier_catalog_hash = 0;
@@ -2433,6 +2480,11 @@ private:
         int32_t payload_i2 = 0;
         int32_t payload_i3 = 0;
     };
+    struct EffectGameplayCommandResult {
+        uint8_t complete = 0;
+        uint8_t ok = 0;
+        std::string reason;
+    };
     std::vector<GameplayEventRecord>        _gameplay_events;
     godot::HashMap<godot::StringName, int64_t> _gameplay_consumer_ack;
     int64_t                                 _gameplay_next_event_id = 1;
@@ -2441,6 +2493,12 @@ private:
     int                                     _gameplay_max_events = 8192;
     double                                  _gameplay_last_native_ms = 0.0;
     godot::String                           _gameplay_last_fallback_reason;
+    std::vector<EffectGameplayCommand>      _effect_gameplay_commands;
+    std::unordered_map<int64_t, EffectGameplayCommandResult>
+                                                _effect_gameplay_results;
+    std::unordered_map<uint64_t, int64_t>   _effect_gameplay_idempotency;
+    std::unordered_map<uint64_t, int64_t>   _effect_gameplay_event_ids;
+    int64_t                                 _effect_gameplay_next_request_id = 1;
 
     // 内部辅助：cyclone wake 一日推进。由 run_weather_refresh_daily_pass 调用。
     // fronts 入参 = run_weather_summary_fronts_pass 返回的 Array[Dictionary]

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <limits>
+#include <unordered_set>
 
 namespace pk {
 
@@ -24,6 +25,14 @@ constexpr int PK_EVENT_ECONOMY_SOCIAL_PRESSURE = 8;
 constexpr int PK_EVENT_SOURCE_NATIVE = 1;
 constexpr int PK_EVENT_SOURCE_GDSCRIPT = 2;
 constexpr int PK_EVENT_SOURCE_DEBUG = 3;
+constexpr int PK_EVENT_SOURCE_EFFECT = 4;
+constexpr int PK_EFFECT_ACTION_GAMEPLAY = 4;
+constexpr int PK_EFFECT_ACTION_PUBLISH_EVENT = 5;
+constexpr int PK_EFFECT_ACTION_CUSTOM_DOMAIN = 6;
+constexpr int PK_EFFECT_GAMEPLAY_DOMAIN = 3;
+constexpr int PK_EFFECT_PUBLISH_DOMAIN = 4;
+constexpr int PK_EFFECT_CUSTOM_DOMAIN = 6;
+constexpr int PK_EFFECT_CUSTOM_AUDIT_OPCODE = 1;
 
 constexpr int PK_PAYLOAD_NONE = 0;
 constexpr int PK_PAYLOAD_SUCCESSION_V1 = 1; // i0=old_veg, i1=new_veg
@@ -113,6 +122,158 @@ int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
         _gameplay_dropped_event_count += 1;
     }
     return ev.event_id;
+}
+
+bool DCWorldExt::submit_effect_gameplay_commands_pod(
+        const EffectGameplayCommand *commands, size_t count,
+        std::vector<int64_t> &request_ids, std::string &error) {
+    request_ids.clear();
+    if ((commands == nullptr && count != 0) || count > 1000000ULL) {
+        error = "effect_gameplay_command_batch_invalid";
+        return false;
+    }
+    if (_effect_gameplay_commands.size() + count > 1000000ULL ||
+        _effect_gameplay_results.size() + count > 1000000ULL) {
+        error = "effect_gameplay_queue_capacity_exceeded";
+        return false;
+    }
+    std::vector<EffectGameplayCommand> staged;
+    staged.reserve(count);
+    std::unordered_map<uint64_t, int64_t> staged_keys;
+    request_ids.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const EffectGameplayCommand &source = commands[i];
+        const bool gameplay = source.action == PK_EFFECT_ACTION_GAMEPLAY &&
+            source.domain == PK_EFFECT_GAMEPLAY_DOMAIN && source.opcode > 0;
+        const bool publish = source.action == PK_EFFECT_ACTION_PUBLISH_EVENT &&
+            source.domain == PK_EFFECT_PUBLISH_DOMAIN && source.opcode > 0;
+        const bool custom_audit = source.action == PK_EFFECT_ACTION_CUSTOM_DOMAIN &&
+            source.domain == PK_EFFECT_CUSTOM_DOMAIN &&
+            source.opcode == PK_EFFECT_CUSTOM_AUDIT_OPCODE;
+        if ((!gameplay && !publish && !custom_audit) || source.effective_day < 0 ||
+            source.idempotency_key == 0) {
+            error = source.action == PK_EFFECT_ACTION_PUBLISH_EVENT
+                ? "effect_publish_event_command_invalid"
+                : "effect_gameplay_native_consumer_unregistered";
+            return false;
+        }
+        const auto existing = _effect_gameplay_idempotency.find(
+            source.idempotency_key);
+        if (existing != _effect_gameplay_idempotency.end()) {
+            request_ids.push_back(existing->second);
+            continue;
+        }
+        const auto duplicate = staged_keys.find(source.idempotency_key);
+        if (duplicate != staged_keys.end()) {
+            request_ids.push_back(duplicate->second);
+            continue;
+        }
+        EffectGameplayCommand command = source;
+        command.request_id = _effect_gameplay_next_request_id +
+            static_cast<int64_t>(staged.size());
+        staged_keys.emplace(command.idempotency_key, command.request_id);
+        request_ids.push_back(command.request_id);
+        staged.push_back(command);
+    }
+    if (_effect_gameplay_next_request_id > std::numeric_limits<int64_t>::max() -
+            static_cast<int64_t>(staged.size())) {
+        error = "effect_gameplay_request_id_exhausted";
+        return false;
+    }
+    for (const EffectGameplayCommand &command : staged) {
+        _effect_gameplay_idempotency.emplace(command.idempotency_key,
+            command.request_id);
+        _effect_gameplay_results.emplace(command.request_id,
+            EffectGameplayCommandResult{});
+        _effect_gameplay_commands.push_back(command);
+    }
+    _effect_gameplay_next_request_id += static_cast<int64_t>(staged.size());
+    return true;
+}
+
+bool DCWorldExt::effect_gameplay_command_result_pod(int64_t request_id,
+        bool &complete, bool &ok, std::string &reason) const {
+    complete = false;
+    ok = false;
+    reason.clear();
+    const auto found = _effect_gameplay_results.find(request_id);
+    if (found == _effect_gameplay_results.end()) {
+        reason = "effect_gameplay_request_unknown";
+        return false;
+    }
+    complete = found->second.complete != 0;
+    ok = found->second.ok != 0;
+    reason = found->second.reason;
+    return true;
+}
+
+bool DCWorldExt::gameplay_effect_should_run(int64_t day_index) const {
+    for (const EffectGameplayCommand &command : _effect_gameplay_commands)
+        if (command.effective_day <= day_index) return true;
+    return false;
+}
+
+Dictionary DCWorldExt::run_gameplay_effects(int64_t day_index) {
+    Dictionary out;
+    int32_t committed = 0;
+    int32_t rejected = 0;
+    std::vector<EffectGameplayCommand> retained;
+    retained.reserve(_effect_gameplay_commands.size());
+    for (const EffectGameplayCommand &command : _effect_gameplay_commands) {
+        if (command.effective_day > day_index) {
+            retained.push_back(command);
+            continue;
+        }
+        EffectGameplayCommandResult &result = _effect_gameplay_results[
+            command.request_id];
+        const auto duplicate = _effect_gameplay_event_ids.find(
+            command.idempotency_key);
+        if (duplicate != _effect_gameplay_event_ids.end()) {
+            result.complete = 1;
+            result.ok = 1;
+            result.reason.clear();
+            ++committed;
+            continue;
+        }
+        if (_gameplay_max_events <= 0 ||
+            static_cast<int32_t>(_gameplay_events.size()) >= _gameplay_max_events) {
+            result.complete = 1;
+            result.ok = 0;
+            result.reason = "effect_publish_event_journal_capacity_exceeded";
+            ++rejected;
+            continue;
+        }
+        const int64_t event_id = _emit_gameplay_event(command.effective_day, 95,
+            command.opcode, PK_EVENT_SOURCE_EFFECT, 0, command.target_handle,
+            static_cast<int32_t>(command.payload[0]),
+            static_cast<int32_t>(command.payload[1]),
+            static_cast<int32_t>(command.payload[2]), command.value_i64,
+            static_cast<int32_t>(command.payload[0]),
+            static_cast<int32_t>(command.payload[1]),
+            static_cast<int32_t>(command.payload[2]),
+            static_cast<int32_t>(command.payload[3]));
+        if (event_id <= 0) {
+            result.complete = 1;
+            result.ok = 0;
+            result.reason = "effect_publish_event_journal_overflow";
+            ++rejected;
+            continue;
+        }
+        _effect_gameplay_event_ids.emplace(command.idempotency_key, event_id);
+        result.complete = 1;
+        result.ok = 1;
+        result.reason.clear();
+        ++committed;
+    }
+    _effect_gameplay_commands.swap(retained);
+    out["ok"] = rejected == 0;
+    out["committed"] = committed;
+    out["rejected"] = rejected;
+    out["pending"] = static_cast<int32_t>(_effect_gameplay_commands.size());
+    out["done"] = _effect_gameplay_commands.empty();
+    out["stage"] = "gameplay_effect";
+    out["path"] = "GAMEPLAY_EFFECT";
+    return out;
 }
 
 void DCWorldExt::_emit_succession_events(const PackedInt32Array &indices,
@@ -446,17 +607,52 @@ Dictionary DCWorldExt::replay_gameplay_events(Dictionary opts) const {
 Dictionary DCWorldExt::snapshot_gameplay_event_journal(Dictionary opts) const {
     Dictionary replay_opts = opts;
     Dictionary out = replay_gameplay_events(replay_opts);
-    out["version"] = 2;
+    out["version"] = 3;
     out["next_event_id"] = _gameplay_next_event_id;
     out["dropped_event_count"] = _gameplay_dropped_event_count;
     out["first_dropped_event_id"] = _gameplay_first_dropped_event_id;
     out["max_events"] = _gameplay_max_events;
+    std::vector<std::pair<uint64_t, int64_t>> effect_keys;
+    effect_keys.reserve(_effect_gameplay_idempotency.size());
+    for (const auto &entry : _effect_gameplay_idempotency) {
+        const auto event = _effect_gameplay_event_ids.find(entry.first);
+        if (event != _effect_gameplay_event_ids.end())
+            effect_keys.push_back({entry.first, entry.second});
+    }
+    std::sort(effect_keys.begin(), effect_keys.end());
+    PackedInt64Array idempotency_keys;
+    PackedInt64Array request_ids;
+    PackedInt64Array event_ids;
+    idempotency_keys.resize(static_cast<int64_t>(effect_keys.size()));
+    request_ids.resize(static_cast<int64_t>(effect_keys.size()));
+    event_ids.resize(static_cast<int64_t>(effect_keys.size()));
+    for (int64_t i = 0; i < static_cast<int64_t>(effect_keys.size()); ++i) {
+        const auto event = _effect_gameplay_event_ids.find(effect_keys[static_cast<size_t>(i)].first);
+        idempotency_keys[i] = static_cast<int64_t>(effect_keys[static_cast<size_t>(i)].first);
+        request_ids[i] = effect_keys[static_cast<size_t>(i)].second;
+        event_ids[i] = event == _effect_gameplay_event_ids.end() ? 0 : event->second;
+    }
+    out["effect_idempotency_keys"] = idempotency_keys;
+    out["effect_request_ids"] = request_ids;
+    out["effect_event_ids"] = event_ids;
     return out;
 }
 
 Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
     _gameplay_events.clear();
     _gameplay_consumer_ack.clear();
+    _effect_gameplay_commands.clear();
+    _effect_gameplay_results.clear();
+    _effect_gameplay_idempotency.clear();
+    _effect_gameplay_event_ids.clear();
+    _effect_gameplay_next_request_id = 1;
+    const int version = int(snapshot.get("version", 2));
+    if (version != 2 && version != 3) {
+        Dictionary invalid;
+        invalid["ok"] = false;
+        invalid["reason"] = "gameplay_journal_schema_unsupported";
+        return invalid;
+    }
     _gameplay_next_event_id = int64_t(snapshot.get("next_event_id", 1));
     _gameplay_dropped_event_count = int64_t(snapshot.get("dropped_event_count", 0));
     _gameplay_first_dropped_event_id = int64_t(snapshot.get("first_dropped_event_id", 0));
@@ -502,6 +698,42 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
             _gameplay_next_event_id = ev.event_id + 1;
         }
     }
+    if (version >= 3) {
+        PackedInt64Array effect_keys = dictionary_i64_array(snapshot,
+            "effect_idempotency_keys");
+        PackedInt64Array effect_requests = dictionary_i64_array(snapshot,
+            "effect_request_ids");
+        PackedInt64Array effect_events = dictionary_i64_array(snapshot,
+            "effect_event_ids");
+        if (effect_keys.size() != effect_requests.size() ||
+            effect_keys.size() != effect_events.size()) {
+            Dictionary invalid;
+            invalid["ok"] = false;
+            invalid["reason"] = "gameplay_effect_idempotency_shape_invalid";
+            return invalid;
+        }
+        std::unordered_set<int64_t> event_set;
+        for (const GameplayEventRecord &event : _gameplay_events)
+            event_set.insert(event.event_id);
+        for (int i = 0; i < effect_keys.size(); ++i) {
+            const uint64_t key = static_cast<uint64_t>(effect_keys[i]);
+            const int64_t request = effect_requests[i];
+            const int64_t event = effect_events[i];
+            if (key == 0 || request <= 0 || event <= 0 ||
+                event_set.find(event) == event_set.end() ||
+                !_effect_gameplay_idempotency.emplace(key, request).second ||
+                !_effect_gameplay_event_ids.emplace(key, event).second ||
+                !_effect_gameplay_results.emplace(request,
+                    EffectGameplayCommandResult{1, 1, {}}).second) {
+                Dictionary invalid;
+                invalid["ok"] = false;
+                invalid["reason"] = "gameplay_effect_idempotency_invalid";
+                return invalid;
+            }
+            _effect_gameplay_next_request_id = std::max(
+                _effect_gameplay_next_request_id, request + 1);
+        }
+    }
     Dictionary out;
     out["ok"] = true;
     out["restored"] = int(_gameplay_events.size());
@@ -513,6 +745,11 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
 Dictionary DCWorldExt::clear_gameplay_events(Dictionary opts) {
     const bool keep_cursors = bool(opts.get("keep_cursors", false));
     _gameplay_events.clear();
+    _effect_gameplay_commands.clear();
+    _effect_gameplay_results.clear();
+    _effect_gameplay_idempotency.clear();
+    _effect_gameplay_event_ids.clear();
+    _effect_gameplay_next_request_id = 1;
     if (!keep_cursors) {
         _gameplay_consumer_ack.clear();
     }
@@ -537,6 +774,8 @@ Dictionary DCWorldExt::get_gameplay_event_bus_report() const {
     out["first_dropped_event_id"] = _gameplay_first_dropped_event_id;
     out["native_ms"] = _gameplay_last_native_ms;
     out["fallback_reason"] = _gameplay_last_fallback_reason;
+    out["effect_pending_commands"] = static_cast<int64_t>(_effect_gameplay_commands.size());
+    out["effect_idempotency_count"] = static_cast<int64_t>(_effect_gameplay_idempotency.size());
 
     Dictionary lag;
     const int64_t newest = _gameplay_events.empty() ? 0 : _gameplay_events.back().event_id;

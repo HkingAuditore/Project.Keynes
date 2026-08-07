@@ -185,6 +185,9 @@ const CountryDailySystemScript = preload("res://scripts/simulation/systems/count
 const ModifierDailySystemScript = preload("res://scripts/simulation/systems/modifier_daily_system.gd")
 const TriggerDailySystemScript = preload("res://scripts/simulation/systems/trigger_daily_system.gd")
 const EffectRuntimeSystemScript = preload("res://scripts/simulation/systems/effect_runtime_system.gd")
+const GameplayEffectSystemScript = preload("res://scripts/simulation/systems/gameplay_effect_system.gd")
+const IdeologyFacadeScript = preload("res://scripts/ideology/ideology_facade.gd")
+const IdeologyRuntimeSystemScript = preload("res://scripts/simulation/systems/ideology_runtime_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -1043,6 +1046,9 @@ var _trigger_facade = null
 var _trigger_daily_job = null
 var _effect_facade = null
 var _effect_daily_job = null
+var _gameplay_effect_job = null
+var _ideology_facade = null
+var _ideology_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
 var _continuation_perf_pending: Dictionary = {}
@@ -1490,6 +1496,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	_modifier_daily_job = null
 	_trigger_facade = null
 	_trigger_daily_job = null
+	_ideology_facade = null
+	_ideology_daily_job = null
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_modifiers") \
 			or not _data_core_world_ext.has_method("configure_country") \
 			or not _data_core_world_ext.has_method("configure_economy"):
@@ -1520,6 +1528,15 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[country] configure failed: %s" % String(country_configured.get("reason", "unknown")))
 		_country_facade = null
 		return
+	if _data_core_world_ext.has_method("configure_ideologies"):
+		var ideology_facade := IdeologyFacadeScript.new()
+		var ideology_configured: Dictionary = ideology_facade.configure(
+			_data_core_world_ext, _country_facade.native_catalog())
+		if bool(ideology_configured.get("ok", false)):
+			_ideology_facade = ideology_facade
+		else:
+			push_error("[ideology] configure failed: %s" % String(
+				ideology_configured.get("reason", "unknown")))
 	if _save_restore_preparation_enabled:
 		_save_restore_seed = seed_value
 		print("[save/restore] country configured without bootstrap; awaiting PKCN")
@@ -1712,6 +1729,11 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 		_sus.configure_job_from_profile(
 			_trigger_daily_job, scheduler_profile, false, &"trigger_runtime", 1)
 		_runtime_register_system(_trigger_daily_job)
+	if _ideology_facade != null and _ideology_facade.is_configured():
+		_ideology_daily_job = IdeologyRuntimeSystemScript.new(_ideology_facade)
+		_sus.configure_job_from_profile(
+			_ideology_daily_job, scheduler_profile, false, &"ideology_runtime", 1)
+		_runtime_register_system(_ideology_daily_job)
 	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
 	_sus.configure_job_from_profile(
 		_country_daily_job, scheduler_profile, false, &"country_daily", 1)
@@ -1744,6 +1766,10 @@ func get_trigger_facade():
 
 func get_effect_facade():
 	return _effect_facade
+
+
+func get_ideology_facade():
+	return _ideology_facade
 
 
 func get_trigger_report() -> Dictionary:
@@ -2278,6 +2304,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# it before economy bootstrap, whose valid early returns must not starve it.
 	_effect_facade = null
 	_effect_daily_job = null
+	_gameplay_effect_job = null
 	if _data_core_world_ext != null and _data_core_world_ext.has_method("configure_effects"):
 		var effect_facade := EffectFacadeScript.new()
 		var effect_catalog := EffectDomainCatalogScript.build()
@@ -2292,6 +2319,10 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 				_sus.configure_job_from_profile(
 					_effect_daily_job, cp_sched, false, &"effect_runtime", 1)
 				_runtime_register_system(_effect_daily_job)
+				_gameplay_effect_job = GameplayEffectSystemScript.new(_effect_facade)
+				_sus.configure_job_from_profile(
+					_gameplay_effect_job, cp_sched, false, &"gameplay_effect", 1)
+				_runtime_register_system(_gameplay_effect_job)
 			else:
 				push_error("[effect] configure failed: %s" % String(
 					effect_configured.get("reason", "unknown")))
@@ -2537,10 +2568,32 @@ func restore_environment_runtime_state(state: Dictionary) -> Dictionary:
 
 
 func advance_save_boundary() -> void:
-	# Save requests freeze the clock, so drain the already-open native country
-	# and economy continuations explicitly while rendering continues.
-	if _world_clock_ref != null:
-		_continue_economy_inflight(_world_clock_ref.day_index())
+	# Save requests freeze the clock.  Drain the same ordered native Effect
+	# chain that a normal daily SUS tick would run before continuing Country and
+	# Economy at their own safe boundaries.  This keeps PKEF, PKCN, PKEC and the
+	# gameplay journal from being captured on opposite sides of an ACK.
+	if _world_clock_ref == null or _sus == null:
+		return
+	var day: int = _world_clock_ref.day_index()
+	var ctx := SusTickContext.make(day, day, _world_clock_ref.speed_multiplier,
+		1.0, &"save_boundary")
+	if _trigger_daily_job != null and _trigger_facade != null and \
+			bool(_trigger_facade.world_ext().trigger_should_run(day)):
+		_sus.continue_system(&"trigger_runtime", ctx)
+	if _ideology_daily_job != null and _ideology_facade != null and \
+			bool(_ideology_facade.world_ext().ideology_should_run(day)):
+		_sus.continue_system(&"ideology_runtime", ctx)
+	if _effect_daily_job != null and _effect_facade != null and \
+			bool(_effect_facade.world_ext().effect_should_run(day)):
+		_sus.continue_system(&"effect_runtime", ctx)
+	if _modifier_daily_job != null and _modifier_facade != null and \
+			bool(_modifier_facade.world_ext().modifier_should_run(day)):
+		_sus.continue_system(&"modifier_daily", ctx)
+	if _gameplay_effect_job != null and _effect_facade != null and \
+			_effect_facade.world_ext().has_method("gameplay_effect_should_run") and \
+			bool(_effect_facade.world_ext().gameplay_effect_should_run(day)):
+		_sus.continue_system(&"gameplay_effect", ctx)
+	_continue_economy_inflight(day)
 
 
 func environment_runtime_step_budgeted(budget_ms: float, max_cells: int = 0, max_pixels: int = 0, max_indices: int = 0, pipeline: StringName = &"ocean") -> Dictionary:

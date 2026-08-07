@@ -54,14 +54,14 @@ func _init() -> void:
 		int(person_target >> 32), 9001, 0)
 	var person_preflight: Dictionary = person_adapter.call(_preflight(person_command))
 	_require(bool(person_preflight.get("ok", false)) and
-		int(person_preflight.get("ack_mask", 0)) == (1 << ModifierFacadeScript.Domain.GAMEPLAY),
+		int(person_preflight.get("ack_mask", 0)) == 1,
 		str(person_preflight))
 	var person_pending: Dictionary = person_adapter.call(person_command)
 	_require(not bool(person_pending.get("ok", true)), str(person_pending))
 	_require(bool(ext.run_modifier_daily(0).get("ok", false)), "person modifier boundary")
 	var person_committed: Dictionary = person_adapter.call(person_command)
 	_require(bool(person_committed.get("ok", false)) and
-		int(person_committed.get("ack_mask", 0)) == (1 << ModifierFacadeScript.Domain.GAMEPLAY),
+		int(person_committed.get("ack_mask", 0)) == 1,
 		str(person_committed))
 	var person_modifiers: Dictionary = modifier.list_for_target(
 		ModifierFacadeScript.Domain.GAMEPLAY, person_target)
@@ -71,14 +71,14 @@ func _init() -> void:
 	var family_command := _command(&"family.city.production_boost", 123, 0, 9002, 1)
 	var family_preflight: Dictionary = family_adapter.call(_preflight(family_command))
 	_require(bool(family_preflight.get("ok", false)) and
-		int(family_preflight.get("ack_mask", 0)) == (1 << ModifierFacadeScript.Domain.ECONOMY),
+		int(family_preflight.get("ack_mask", 0)) == 1,
 		str(family_preflight))
 	var family_pending: Dictionary = family_adapter.call(family_command)
 	_require(not bool(family_pending.get("ok", true)), str(family_pending))
 	_require(bool(ext.run_modifier_daily(1).get("ok", false)), "family modifier boundary")
 	var family_committed: Dictionary = family_adapter.call(family_command)
 	_require(bool(family_committed.get("ok", false)) and
-		int(family_committed.get("ack_mask", 0)) == (1 << ModifierFacadeScript.Domain.ECONOMY),
+		int(family_committed.get("ack_mask", 0)) == 1,
 		str(family_committed))
 	var family_modifiers: Dictionary = modifier.list_for_target(ModifierFacadeScript.Domain.ECONOMY, 0)
 	_require((family_modifiers.get("definition_keys", PackedStringArray()) as PackedStringArray)

@@ -79,6 +79,9 @@ func tick(ctx) -> Dictionary:
 		ext.has_method("run_economy_slice_compact")
 	var result: Dictionary = ext.run_economy_slice_compact(native_ctx) if compact_slice \
 		else ext.run_economy_slice(native_ctx)
+	var effect_ack: Dictionary = {}
+	if ext.has_method("ack_effect_native_economy"):
+		effect_ack = ext.ack_effect_native_economy()
 	# Full slice reports are newly allocated native dictionaries and remain
 	# immutable after this boundary. Continuations keep the last full diagnostic
 	# snapshot so their compact report does not erase recorder/UI fields.
@@ -162,6 +165,7 @@ func tick(ctx) -> Dictionary:
 			result.get("workload_deadline_feasible", true)),
 		"workload_cycle_clamped": bool(result.get("workload_cycle_clamped", false)),
 		"fatal": bool(result.get("fatal", false)),
+		"effect_native_acked": int(effect_ack.get("acknowledged", 0)),
 	}
 
 func last_report() -> Dictionary:

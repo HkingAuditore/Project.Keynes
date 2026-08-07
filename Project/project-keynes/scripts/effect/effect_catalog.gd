@@ -94,8 +94,15 @@ func compile_native_catalog() -> Dictionary:
 			if command.action < 1 or command.action > 6 or command.domain < -1 \
 					or command.domain >= 32 or command.target_resolver < 0 \
 					or command.target_resolver > 2 or command.value_mode < 0 \
-					or command.value_mode > 1 or command.stacks <= 0:
+					or command.value_mode > 1 or command.stacks <= 0 \
+					or command.duration_days < -1 or command.command_key == &"" \
+					or (command.action != 1 and command.definition_key == &""):
 				return {"ok": false, "reason": "effect_command_invalid"}
+			if command.target_resolver == 0 and command.static_target == 0:
+				return {"ok": false, "reason": "effect_command_static_target_invalid"}
+			var native_error := _native_command_error(command)
+			if not native_error.is_empty():
+				return {"ok": false, "reason": native_error}
 			out.command_actions.append(command.action)
 			out.command_domains.append(command.domain)
 			out.command_opcodes.append(command.opcode)
@@ -114,3 +121,28 @@ func compile_native_catalog() -> Dictionary:
 		out.command_offsets.append(out.command_actions.size())
 	out.ok = true
 	return out
+
+static func _native_command_error(command: Resource) -> String:
+	match int(command.action):
+		1:
+			if command.domain < 0 or command.domain > 3 \
+					or (command.opcode != 1 and command.opcode != 2):
+				return "effect_modifier_opcode_unregistered"
+		2:
+			if command.domain != 1 or command.opcode < 1 or command.opcode > 14:
+				return "effect_country_opcode_unregistered"
+		3:
+			if command.domain != 2 or command.opcode < 1 or command.opcode > 15:
+				return "effect_economy_opcode_unregistered"
+		4:
+			if command.domain != 3 or command.opcode <= 0:
+				return "effect_gameplay_opcode_unregistered"
+		5:
+			if command.domain != 4 or command.opcode <= 0:
+				return "effect_publish_event_opcode_unregistered"
+		6:
+			if command.domain != 6 or command.opcode != 1:
+				return "effect_custom_domain_adapter_unregistered"
+		_:
+			return "effect_command_action_unregistered"
+	return ""

@@ -47,6 +47,12 @@ only for that accepted prefix, preserving PKTR as the authority for unhanded or
 unsupported actions. Remaining actions continue through the GDScript
 compatibility adapter and cannot be skipped by the native handoff.
 
+`IDEOLOGY_COMMAND` is also a typed native handoff. Its opcode is an ideology
+command; target is the country handle; payload slots carry ideology dense ID,
+offer generation, choice index, and gate ID. Trigger accepts it only into the
+deterministically sorted ideology command queue, then advances its own cursor.
+It never writes ideology storage, Country, or Modifier directly.
+
 动态家族分支 binding 以 `(definition, branch_handle, cell)` 标识，并建立
 `(source,event_type,cell)` 稀疏索引。建筑完工和跨 settlement-cell 贸易只向 GameplayEventBus
 发布一次，再扇出到本地合资格分支；无需为每个家族重复发布事实。解绑会立即删除对应 state 和

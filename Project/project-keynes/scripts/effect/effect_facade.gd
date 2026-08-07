@@ -13,6 +13,11 @@ var _last_transaction_id := 0
 var _adapters: Dictionary = {}
 var _last_report: Dictionary = {}
 var _modifier_pending: Dictionary = {}
+var _legacy_fallback_transactions := 0
+var _native_claimed_transactions_skipped := 0
+
+func _adapter_ack_bit(action: int) -> int:
+	return (1 << (action - 1)) if action >= 1 and action <= 6 else 0
 
 func configure(world_ext: Object, clock: WorldClock = null,
 		catalog: Resource = null) -> Dictionary:
@@ -31,6 +36,8 @@ func configure(world_ext: Object, clock: WorldClock = null,
 	_configured = bool(result.get("ok", false))
 	_last_transaction_id = 0
 	_modifier_pending.clear()
+	_legacy_fallback_transactions = 0
+	_native_claimed_transactions_skipped = 0
 	return result
 
 func register_adapter(action: int, domain: int, command_key: StringName,
@@ -57,7 +64,7 @@ func register_domain_adapters(modifier_facade: ModifierFacade = null,
 func _adapt_technology_modifier(command: Dictionary, modifier_facade: ModifierFacade,
 		country_facade: CountryFacade = null) -> Dictionary:
 	if String(command.get("phase", "commit")) == "preflight":
-		return {"ok": true, "ack_mask": 1 << ModifierFacade.Domain.COUNTRY}
+		return {"ok": true, "ack_mask": _adapter_ack_bit(1)}
 	var technology_index := int(command.get("transaction", {}).get("source_instance_id", 0)) & 0xffff
 	var technology_key := "technology.%d" % technology_index
 	if country_facade != null:
@@ -76,7 +83,7 @@ func _adapt_technology_modifier(command: Dictionary, modifier_facade: ModifierFa
 
 func _adapt_family_modifier(command: Dictionary, modifier_facade: ModifierFacade) -> Dictionary:
 	if String(command.get("phase", "commit")) == "preflight":
-		return {"ok": true, "ack_mask": 1 << ModifierFacade.Domain.ECONOMY}
+		return {"ok": true, "ack_mask": _adapter_ack_bit(1)}
 	var key := String(command.get("definition_key", ""))
 	var branch_stable_id := int(command.get("target_handle", 0))
 	var settlement_cell := int(command.get("target_generation", -1))
@@ -92,7 +99,7 @@ func _adapt_family_modifier(command: Dictionary, modifier_facade: ModifierFacade
 
 func _adapt_person_modifier(command: Dictionary, modifier_facade: ModifierFacade) -> Dictionary:
 	if String(command.get("phase", "commit")) == "preflight":
-		return {"ok": true, "ack_mask": 1 << ModifierFacade.Domain.GAMEPLAY}
+		return {"ok": true, "ack_mask": _adapter_ack_bit(1)}
 	var key := String(command.get("definition_key", ""))
 	return _queue_modifier_once(command, modifier_facade,
 		ModifierFacade.Domain.GAMEPLAY, StringName(key),
@@ -115,7 +122,7 @@ func _queue_modifier_once(command: Dictionary, modifier_facade: ModifierFacade,
 		var result: Dictionary = modifier_facade.get_command_result(pending_request)
 		if bool(result.get("ok", false)):
 			_modifier_pending.erase(idempotency_key)
-			return {"ok": true, "ack_mask": 1 << domain, "request_id": pending_request}
+			return {"ok": true, "ack_mask": _adapter_ack_bit(1), "request_id": pending_request}
 		if bool(result.get("pending", false)) or String(result.get("reason", "")) == "modifier_request_unknown":
 			return {"ok": false, "reason": "effect_modifier_commit_pending",
 				"request_id": pending_request}
@@ -173,7 +180,12 @@ func world_ext() -> Object:
 	return _world_ext
 
 func report() -> Dictionary:
-	return _world_ext.get_effect_report() if _configured else {"configured": false}
+	if not _configured:
+		return {"configured": false}
+	var out: Dictionary = _world_ext.get_effect_report()
+	out["legacy_fallback_transactions"] = _legacy_fallback_transactions
+	out["native_claimed_transactions_skipped"] = _native_claimed_transactions_skipped
+	return out
 
 func explain(instance_id: int) -> Dictionary:
 	return _world_ext.explain_effect(instance_id) if _configured else {
@@ -185,9 +197,11 @@ func dispatch_transactions() -> Dictionary:
 	var batch: Dictionary = _world_ext.poll_effect_transactions(_last_transaction_id, 128)
 	if not bool(batch.get("ok", false)):
 		return batch
+	_native_claimed_transactions_skipped += int(batch.get("native_claimed_transactions", 0))
 	var ids: PackedInt64Array = batch.get("transaction_ids", PackedInt64Array())
 	if ids.is_empty():
-		return {"ok": true, "dispatched": 0, "transactions": 0}
+		return {"ok": true, "dispatched": 0, "transactions": 0,
+			"native_claimed_transactions": int(batch.get("native_claimed_transactions", 0))}
 	var offsets: PackedInt32Array = batch.get("command_offsets", PackedInt32Array([0]))
 	var idempotency_keys: PackedInt64Array = batch.get(
 		"command_idempotency_keys", PackedInt64Array())
@@ -268,9 +282,9 @@ func dispatch_transactions() -> Dictionary:
 			var commit_command: Dictionary = commands[command_index].duplicate(true)
 			commit_command["phase"] = &"commit"
 			var result = adapters[command_index].call(commit_command)
-			var domain := int(commands[command_index].get("domain", -1))
+			var action := int(commands[command_index].get("action", 0))
 			if result is Dictionary and bool(result.get("ok", false)):
-				var bit := int(result.get("ack_mask", (1 << domain) if domain >= 0 else 0))
+				var bit := int(result.get("ack_mask", _adapter_ack_bit(action)))
 				ack_mask |= bit
 			else:
 				all_ok = false
@@ -295,9 +309,11 @@ func dispatch_transactions() -> Dictionary:
 			# keeps it pollable for an idempotent retry on the next safe boundary.
 			break
 	_last_transaction_id = contiguous_cursor
+	_legacy_fallback_transactions += dispatched
 	transactions_available.emit(batch)
 	return {"ok": true, "dispatched": dispatched, "transactions": ids.size(),
-		"missing_adapters": missing, "last_transaction_id": _last_transaction_id}
+		"missing_adapters": missing, "last_transaction_id": _last_transaction_id,
+		"native_claimed_transactions": int(batch.get("native_claimed_transactions", 0))}
 
 func _adapter_key(action: int, domain: int, command_key: StringName) -> String:
 	return "%d:%d:%s" % [action, domain, String(command_key)]

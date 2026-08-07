@@ -1,0 +1,72 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/ideology_workspace.gd" id="1_script"]
+
+[node name="IdeologyWorkspace" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="Status" type="HBoxContainer" parent="Root"]
+layout_mode = 2
+theme_type_variation = &"PKInsetPanel"
+theme_override_constants/separation = 16
+
+[node name="Points" type="Label" parent="Root/Status"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Slots" type="Label" parent="Root/Status"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Spirits" type="Label" parent="Root/Status"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Actions" type="HBoxContainer" parent="Root"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="OpenOffer" type="Button" parent="Root/Actions"]
+layout_mode = 2
+text = "抽取理念（三选一）"
+
+[node name="Hint" type="Label" parent="Root/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Offer" type="PanelContainer" parent="Root"]
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKPanel"
+
+[node name="Cards" type="HBoxContainer" parent="Root/Offer"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="Scroll" type="ScrollContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Rows" type="VBoxContainer" parent="Root/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6

@@ -1,9 +1,10 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/country_panel.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_workspace.tscn" id="3_technology"]
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_workspace.tscn" id="4_economy"]
+[ext_resource type="PackedScene" path="res://scenes/ui/ideology_workspace.tscn" id="5_ideology"]
 
 [node name="CountryPanel" type="Control"]
 visible = false
@@ -86,6 +87,11 @@ visible = false
 layout_mode = 2
 
 [node name="EconomyWorkspace" parent="Center/Dialog/Content/SectionHost" instance=ExtResource("4_economy")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="IdeologyWorkspace" parent="Center/Dialog/Content/SectionHost" instance=ExtResource("5_ideology")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2

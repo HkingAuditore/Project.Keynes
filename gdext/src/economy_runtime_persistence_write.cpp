@@ -262,7 +262,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.cell_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_COMMANDS) {
-        constexpr int32_t record_bytes = 60;
+        constexpr int32_t record_bytes = 76;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min<int32_t>(static_cast<int32_t>(_pending_commands.size()),
                                               _save.command_cursor + max_records);
@@ -279,6 +279,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int64_t>(payload, cmd.i64_0);
             append_le<int64_t>(payload, cmd.i64_1);
             append_le<uint64_t>(payload, cmd.submit_order);
+            append_le<int64_t>(payload, cmd.effect_request_id);
+            append_le<uint64_t>(payload, cmd.effect_idempotency_key);
         }
         if (_save.command_cursor >= static_cast<int32_t>(_pending_commands.size())) ++_save.section;
         return make_save_chunk(SAVE_SECTION_COMMANDS,

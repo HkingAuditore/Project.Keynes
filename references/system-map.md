@@ -42,6 +42,7 @@ order.
 
 - 地图生成和地形水文：读 `docs/terrain-generation-current.md`、`gdext/src/world_ext_generate.cpp`、`Project/project-keynes/scripts/geography/map_config.gd`、`Project/project-keynes/scripts/data/climate_profile.gd`。
 - C++/DOTS 运行时：读 `docs/cpp-dots-runtime/architecture-overview.md`、`docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`、`docs/cpp-dots-runtime/scheduling-and-job-graph.md`、`gdext/src/world_ext*.cpp`、`gdext/src/sus_scheduler_ext.cpp`、`gdext/src/system_schedule.cpp`。
+- 理念：读 `docs/cpp-dots-runtime/native-ideology-runtime.md`、`gdext/src/ideology_runtime.*`、`Project/project-keynes/scripts/ideology/`、`Project/project-keynes/scripts/ui/components/ideology_workspace.gd`。理念状态由独立 native runtime 持有，Effect/Modifier/Country 不接管其收藏、槽位或理解度。
 - 气候/天气/海洋：读 `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`、`Project/project-keynes/scripts/weather/weather_system.gd`、`Project/project-keynes/scripts/weather/field_solver.gd`、`Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`、`docs/cpp-dots-runtime/computation-pipelines.md`。
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
 - 视野迷雾与国界：读 `docs/cpp-dots-runtime/vision-fog-and-borders.md`、`Project/project-keynes/scripts/geography/vision_solver.gd`、`Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`、`Project/project-keynes/scripts/rendering/country_border_layer.gd`。
@@ -525,8 +526,9 @@ debug recording is Economy CSV v22.
 - EffectRuntime: `gdext/src/effect_runtime.{h,cpp}`, `world_ext_effect.cpp`,
   `scripts/effect/`, `effect_runtime_system.gd`; PKEF provider in
   `game_save_coordinator.gd`. It owns packed effect programs, instances,
-  frozen snapshots, plans, transactions and ACK cursors, while domain adapters
-  own every authoritative mutation.
+  frozen snapshots, plans, transactions, durable external bindings and ACK
+  cursors. Native adapters stage Country/Economy POD commands and journal
+  `PUBLISH_EVENT`; domain owners retain every authoritative mutation.
 
 - Economy trade implementation: `gdext/src/economy_runtime_trade.cpp`; the root
   `economy_runtime.cpp` retains only trade stage orchestration and cross-stage
@@ -534,7 +536,7 @@ debug recording is Economy CSV v22.
   production boundary.
 - Economy persistence: `gdext/src/economy_runtime_persistence.cpp` owns lifecycle
   and committed-boundary validation;
-  `gdext/src/economy_runtime_persistence_write.cpp` owns ordered PKEC v30 encoding;
+  `gdext/src/economy_runtime_persistence_write.cpp` owns ordered PKEC v31 encoding;
   `gdext/src/economy_runtime_persistence_read.cpp` owns validated decoding.
   `economy_runtime_persistence_codec.h` is the sole section-number contract, and
   `economy_runtime_binary_codec.h` is shared with root event archive encoding.
