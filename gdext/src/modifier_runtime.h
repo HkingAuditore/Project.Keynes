@@ -6,6 +6,7 @@
 #include <queue>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <godot_cpp/variant/dictionary.hpp>
@@ -41,13 +42,38 @@ public:
         EVENT_REMOVE = 5, EVENT_EXPIRE = 6, EVENT_TARGET_CLEANUP = 7,
         EVENT_REJECT = 8, EVENT_MAGNITUDE = 9,
     };
+    // Native batch ingress used by EffectRuntime. `definition_key` is resolved
+    // before entering the Modifier daily commit, so no Godot Variant or
+    // Dictionary construction occurs per Effect command.
+    struct NativeCommand {
+        int32_t opcode = 0;
+        int32_t producer = 0;
+        int64_t sequence = 0;
+        int64_t effective_day = 0;
+        const char *definition_key = nullptr;
+        int32_t domain = CLIMATE;
+        int32_t scope = ENTITY;
+        uint64_t entity_handle = 0;
+        uint64_t group_handle = 0;
+        uint64_t source_type = 0;
+        uint64_t source_id = 0;
+        int32_t duration_days = -1;
+        int32_t stacks = 1;
+        int32_t magnitude_q16 = Q16_ONE;
+        uint64_t modifier_handle = 0;
+    };
 
     godot::Dictionary configure(const godot::Dictionary &catalog, int32_t cell_count);
     godot::Dictionary submit_commands(const godot::Dictionary &packed_batch);
+    bool submit_commands_pod(const NativeCommand *commands, size_t count,
+                             std::vector<int64_t> &request_ids,
+                             std::string &error);
     godot::Dictionary run_daily(int64_t day_index);
     bool should_run(int64_t day_index) const;
 
     godot::Dictionary command_result(int64_t request_id) const;
+    bool command_result_pod(int64_t request_id, bool &complete, bool &ok,
+                            std::string &reason) const;
     godot::Dictionary list_modifiers(int32_t domain, uint64_t entity_handle,
                                      const godot::String &stat_key) const;
     godot::Dictionary explain(int32_t domain, uint64_t entity_handle,
@@ -104,6 +130,11 @@ public:
                                    int32_t magnitude_q16,
                                    int64_t day_index,
                                    std::string &error);
+    bool queue_family_group_effect_remove(const std::string &definition_key,
+                                          int32_t settlement_cell,
+                                          uint64_t branch_stable_id,
+                                          int64_t day_index,
+                                          std::string &error);
     int32_t family_group_effect_magnitude(const std::string &definition_key,
                                           int32_t settlement_cell,
                                           uint64_t branch_stable_id) const;
@@ -120,6 +151,8 @@ public:
                                       int32_t owner_signature_id);
     bool retire_building_identity(int32_t cell, int32_t type_id,
                                   int32_t owner_signature_id, int64_t day_index);
+    void register_person_target(uint64_t handle);
+    void unregister_person_target(uint64_t handle);
 
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     bool serialize_domain(int32_t domain, std::vector<uint8_t> &out,
@@ -294,6 +327,7 @@ private:
     uint64_t apply_command(const Command &command, int64_t day, Result &result);
     bool remove_handle(int32_t domain, uint64_t handle, int64_t day, int32_t event_kind,
                        int64_t request_id, const std::string &reason, Result *result = nullptr);
+    bool remove_unique_command(const Command &command, int64_t day, Result &result);
     bool refresh_handle(const Command &command, int64_t day, Result &result);
     bool set_stacks(const Command &command, int64_t day, Result &result);
     bool set_magnitude(const Command &command, int64_t day, Result &result);
@@ -354,6 +388,7 @@ private:
     std::vector<std::vector<double>> _gameplay_base_by_stat;
     IdentityStore _building_identities;
     std::unordered_map<BuildingKey, uint64_t, BuildingKeyHash> _building_handles;
+    std::unordered_set<uint64_t> _person_targets;
     NativeCountryRuntime *_country_runtime = nullptr;
 };
 

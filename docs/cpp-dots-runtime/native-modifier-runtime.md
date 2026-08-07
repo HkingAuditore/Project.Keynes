@@ -225,3 +225,13 @@ no-Modifier baseline，不能据此判定 3%/5% 回归门槛。
 
 Trigger effects may queue Modifier commands, but TriggerRuntime never fans out or
 mutates ModifierStore directly. Modifier remains the owner of modifier lifecycle.
+
+EffectRuntime may emit `MODIFIER_COMMAND` transactions for this runtime. The
+Modifier adapter is responsible for preflight, safe-boundary command application,
+generation validation and idempotent ACK. EffectRuntime never writes a
+ModifierStore bucket, base value, effective cache, or modifier persistence
+section directly. Known Effect Modifier commands use a C++ POD batch at
+`modifier_daily`; the GDScript adapter remains a compatibility transport only.
+Retiring an Effect-owned `INDEPENDENT` definition removes all rows with the same
+definition, scope, source type, and source ID at that lifecycle boundary. See
+[`native-effect-runtime.md`](./native-effect-runtime.md).

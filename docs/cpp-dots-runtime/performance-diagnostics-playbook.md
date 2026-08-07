@@ -19,6 +19,42 @@ deadline-critical descriptor 未生效，必须先修复同日冻结边界再分
 p95。当前 3%/5% 门槛尚无匹配的同机 no-Modifier baseline，不能仅凭 focused test 宣称通过。验证入口见
 [`native-modifier-runtime.md`](./native-modifier-runtime.md)。
 
+## Effect Runtime diagnostics
+
+Inspect `effect_runtime` in the same scheduler window as Trigger and Modifier:
+`path=EFFECT_GRAPH`, `stage_name=effect_evaluate`, `done`, `progress_ratio`,
+`work_done`, `transactions_planned`, `transactions_dispatched`, and
+`missing_adapters`, `native_modifier_transactions`, and
+`native_modifier_commands`. The native report adds `run_cursor`,
+`pending_transactions`, `planned_transactions`, `preflighted_transactions`,
+`committed_transactions`, `acked_transactions`, `behavior_failures`,
+`overflow_count`, `last_evaluate_ms`, `last_native_modifier_dispatch_ms`,
+`last_native_modifier_ack_ms`, `due_queue_count`, `dirty_queue_count`,
+`candidate_count`, `candidate_cursor`, `dormant_instances_scanned`,
+`pending_command_idempotency_count`,
+`metric_slab_bytes`, `last_parallel_planning_ms`, `last_parallel_merge_ms`,
+`last_parallel_worker_count`, `parallel_dispatches`, `serial_fallback_dispatches`,
+`last_parallel_path`, `last_parallel_fallback_reason`, and `last_error`.
+
+Interpret `done=false` as a cooperative same-day continuation, not a failed
+effect. A growing `candidate_cursor`/`run_cursor` with no transaction indicates condition gating;
+an unchanged cursor indicates the effect slice budget is too small or a pending
+day barrier. A transaction stuck in `PLANNED` means adapter preflight was not
+completed; `PREFLIGHTED` means preflight succeeded but safe commit did not;
+`COMMITTED` with missing ACK means the domain committed but has not acknowledged
+the command. Missing adapters must remain visible as `missing_adapters` and must
+not advance the contiguous transaction cursor. Do not claim a performance
+target from the focused fixture; use the same-machine 30+ tick baseline and
+after comparison for production effect catalogs.
+
+For a high candidate count, first distinguish `last_parallel_path`:
+`parallel_plan_serial_merge` means workers planned frozen declarative IR and
+the reported merge time is intentionally single-writer; `serial_fallback_plan_merge`
+names the no-worker plan/replay path, while `serial` names a threshold or behavior
+fallback. A growing `due_queue_count` with zero
+`dormant_instances_scanned` is expected sparse scheduling, not a missed full
+scan.
+
 2026-07-28 debug headless after（60x40、50 日、speed 50、seed 20260718）中，
 `modifier_daily` avg/median/p95/max 为 0.0844/0.0765/0.1110/0.1140 ms，50/50 为
 `MODIFIER_GRAPH` 且无 skip；总 SUS median/p95 为 7.4355/9.8540 ms。该次没有匹配的

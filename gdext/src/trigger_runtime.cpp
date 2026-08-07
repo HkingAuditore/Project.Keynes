@@ -1,4 +1,5 @@
 #include "trigger_runtime.h"
+#include "effect_runtime.h"
 
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
@@ -1014,6 +1015,46 @@ Dictionary TriggerRuntime::ack_effects(int64_t up_to_effect_id) {
     out["ok"] = true;
     out["acked_effect_id"] = _acked_effect_id;
     out["pending_effects"] = static_cast<int64_t>(_effects.size());
+    return out;
+}
+
+Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
+                                           int32_t limit) {
+    if (!_configured || effect_runtime == nullptr) return failure("trigger_effect_handoff_unavailable");
+    const int32_t max_count = std::max(1, std::min(limit, 4096));
+    int32_t handed_off = 0;
+    int64_t last_effect_id = _acked_effect_id;
+    std::string blocked_reason;
+    for (const Effect &effect : _effects) {
+        if (effect.id <= _acked_effect_id) continue;
+        if (handed_off >= max_count) break;
+        // Only the typed Modifier action is native in this bridge. Other
+        // domains stay on TriggerFacade's compatibility adapter path.
+        if (effect.action < MODIFIER_APPLY || effect.action > MODIFIER_SET_STACKS) {
+            blocked_reason = "trigger_effect_domain_adapter_required";
+            break;
+        }
+        std::string error;
+        if (!effect_runtime->enqueue_trigger_effect_pod(
+                effect.id, effect.effective_day, effect.trigger_id,
+                effect.target_handle, effect.target_generation,
+                effect.fire_sequence, effect.action, effect.domain, effect.opcode,
+                effect.resolved_value, effect.duration_days, effect.stacks,
+                effect.command_key, effect.definition_key, effect.payload, error)) {
+            blocked_reason = error.empty() ? "trigger_effect_handoff_failed" : error;
+            break;
+        }
+        last_effect_id = effect.id;
+        ++handed_off;
+    }
+    if (handed_off > 0) ack_effects(last_effect_id);
+    Dictionary out;
+    out["ok"] = blocked_reason.empty();
+    out["native_supported"] = true;
+    out["handed_off"] = handed_off;
+    out["last_effect_id"] = last_effect_id;
+    out["blocked"] = !blocked_reason.empty();
+    if (!blocked_reason.empty()) out["reason"] = String(blocked_reason.c_str());
     return out;
 }
 

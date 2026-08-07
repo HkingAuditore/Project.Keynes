@@ -522,6 +522,11 @@ debug recording is Economy CSV v22.
 - TriggerRuntime: `gdext/src/trigger_runtime.{h,cpp}`, `world_ext_trigger.cpp`,
   `scripts/trigger/trigger_facade.gd`, `trigger_daily_system.gd`; PKTR provider in
   `game_save_coordinator.gd`.
+- EffectRuntime: `gdext/src/effect_runtime.{h,cpp}`, `world_ext_effect.cpp`,
+  `scripts/effect/`, `effect_runtime_system.gd`; PKEF provider in
+  `game_save_coordinator.gd`. It owns packed effect programs, instances,
+  frozen snapshots, plans, transactions and ACK cursors, while domain adapters
+  own every authoritative mutation.
 
 - Economy trade implementation: `gdext/src/economy_runtime_trade.cpp`; the root
   `economy_runtime.cpp` retains only trade stage orchestration and cross-stage

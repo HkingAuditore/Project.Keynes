@@ -24,6 +24,33 @@ DCSystem / SusJob run_slice(ctx)
 DCWorldExt run_*_pass()
 ```
 
+## Effect Runtime ordering
+
+`effect_runtime` is a production `DCSystem` wrapper. It is configured and
+registered directly by `MapGenerator._setup_sus()` before country/economy
+bootstrap, so an economy or country initialization early return cannot starve
+the independent effect graph. Its fixed ordering is
+`trigger_runtime` priority 80 -> `effect_runtime` priority 85 ->
+`modifier_daily` priority 90. The effect job is deadline-critical only when
+`effect_should_run(day)` reports due instances, pending transactions, or an
+unfinished same-day cursor. It runs one cooperative slice per scheduler visit and returns
+`done=false` while the native instance cursor is incomplete; it never advances
+country, economy, Modifier, or conserved state itself.
+
+Within a slice, a contiguous declarative candidate batch of 64 or more uses
+worker planning when the platform provides real threads. Planning reads frozen
+Effect slabs only; deterministic serial replay retains all transaction and
+cadence writes. Behavior callbacks remain serial until their owner declares
+them thread-safe. No-worker platforms use the same plan/replay contract on the
+calling thread.
+
+After its native evaluation slice, `EffectRuntimeSystem` calls the C++
+`dispatch_effect_native_modifier()` batch bridge. `ModifierDailySystem` calls
+`ack_effect_native_modifier()` immediately after `run_modifier_daily()`. Thus
+the ordering is not merely a priority convention: Modifier is the safe commit
+boundary for native Effect commands. `EffectFacade.dispatch_transactions()` is
+still called for unsupported/custom commands only.
+
 Backend fallback：
 
 ```text
@@ -98,6 +125,7 @@ DCSystemScheduler
 | `country_daily` | `simulation/systems/country_daily_system.gd` | ACTIVE 国家命令图；原子预检/应用/发布领土、名称与科技变化。 | priority 255；`must_run=false`、`max_slices=1`、`use_job_should_run=true`；无到期命令零 slice，跨帧批次使用 `country_day_barrier`。 |
 | `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；建筑计划/投入 reserve 使用两遍 active-cell continuation，随后按建筑 cell/cohort 预算错峰生产与 N 日居民市场。国内贸易规划复用同一 job 的软 slice。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。`building_cells_per_slice=0` 自动取市场 cell budget 的 1/4 并封顶 512；贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
 | `modifier_daily` | `simulation/systems/modifier_daily_system.gd` | ACTIVE `MODIFIER_GRAPH`：先过期，再按 producer/sequence 稳定执行命令并发布四域 snapshot version。 | priority 90；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、`use_job_deadline_critical=true`；有当日边界工作时预算旁路一次，保证早于 climate 100、country 255、economy 260。consumer 中产生的命令延至后续安全边界。 |
+| `effect_runtime` | `simulation/systems/effect_runtime_system.gd` | ACTIVE `EFFECT_GRAPH`：对 frozen metric snapshot 评估 dense effect IR/Behavior，声明式 batch 在 worker plan 后稳定串行 merge，生成跨域 transaction，不直接写 domain。 | priority 85；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、`use_job_deadline_critical=true`；`max_work_per_slice` 与每个定义的 `max_work` 共同限制工作量。 |
 
 Modifier 的冻结点、scope 与领域消费顺序见
 [`native-modifier-runtime.md`](./native-modifier-runtime.md)。Modifier store 不得在 climate/economy

@@ -6,7 +6,7 @@ signal load_completed(slot_id: String, result: Dictionary)
 const REQUIRED_SECTIONS := [
 	"new_game_config", "world_clock", "dynamic_world", "environment",
 	"pkcm", "pkcn", "pkec", "pkgp", "pkfg", "journal",
-	"player_context", "player_view", "preview", "pktr",
+	"player_context", "player_view", "preview", "pktr", "pkef",
 ]
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
@@ -106,7 +106,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 	var bytes_by_id: Dictionary = container.get("section_bytes", {})
 	for required in REQUIRED_SECTIONS:
 		if not bytes_by_id.has(required):
-			if required in ["pkcm", "pkgp", "pktr"]:
+			if required in ["pkcm", "pkgp", "pktr", "pkef"]:
 				bytes_by_id[required] = PackedByteArray()
 				continue
 			return _result(false, "save_provider_missing", "存档缺少必需 section：%s" % required)
@@ -122,6 +122,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 	decoded["pkcm"] = bytes_by_id.pkcm
 	decoded["pkgp"] = bytes_by_id.pkgp
 	decoded["pktr"] = bytes_by_id.pktr
+	decoded["pkef"] = bytes_by_id.pkef
 	decoded["preview"] = bytes_by_id.preview
 	_pending_load = {
 		"slot_id": slot_id,
@@ -224,7 +225,8 @@ func _wait_for_safe_boundary() -> Dictionary:
 		if bool(boundary.get("ok", false)):
 			return boundary
 		var code := String(boundary.get("code", ""))
-		if code not in ["save_requires_committed_boundary", "save_requires_idle_country"]:
+		if code not in ["save_requires_committed_boundary", "save_requires_idle_country", \
+			"save_requires_idle_effect"]:
 			return boundary
 		var generator := _runtime_host.generator()
 		if generator != null and generator.has_method("advance_save_boundary"):
@@ -254,6 +256,12 @@ func _can_save() -> Dictionary:
 		country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
 	if country_busy:
 		return _result(false, "save_requires_idle_country", "国家命令图尚未空闲。")
+	var effect = generator.get_effect_facade()
+	var effect_ext = effect.world_ext() if effect != null and effect.has_method("world_ext") else null
+	if effect_ext != null and effect_ext.has_method("effect_should_run") \
+			and bool(effect_ext.effect_should_run(_world_clock.day_index())):
+		return _result(false, "save_requires_idle_effect",
+			"Effect transaction has not reached a safe commit boundary")
 	return _result(true, "ok", "")
 
 
@@ -312,6 +320,9 @@ func _register_providers() -> void:
 		_make_provider(&"pktr", 2, PackedStringArray(["pktr"]),
 			"_can_trigger_provider", "_write_trigger_provider",
 			"_restore_trigger_provider"),
+		_make_provider(&"pkef", 4, PackedStringArray(["pkef"]),
+			"_can_effect_provider", "_write_effect_provider",
+			"_restore_effect_provider"),
 		_make_provider(&"player_session", 1,
 			PackedStringArray(["player_context", "player_view", "preview"]),
 			"_can_player_provider", "_write_player_provider", "_restore_player_provider"),
@@ -349,7 +360,7 @@ func _manifest_compatible(raw_manifest) -> bool:
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
 		if not by_id.has(provider_id):
-			if provider_id in ["pkcm", "pkgp"]:
+			if provider_id in ["pkcm", "pkgp", "pkef"]:
 				continue
 			return false
 		var entry: Dictionary = by_id[provider_id]
@@ -361,6 +372,10 @@ func _manifest_compatible(raw_manifest) -> bool:
 			schema_compatible = saved_schema == 30
 		elif provider_id == "pktr":
 			schema_compatible = saved_schema == 2
+		elif provider_id == "pkef":
+			# PKEF is optional for saves predating EffectRuntime, but a present
+			# section must match the native PKEF v4 wire protocol.
+			schema_compatible = saved_schema == 4
 		if not schema_compatible:
 			return false
 		var actual := PackedStringArray(entry.get("sections", []))
@@ -435,6 +450,16 @@ func _can_trigger_provider(context: Dictionary) -> Dictionary:
 		"Trigger provider unavailable" if not available else "")
 
 
+func _can_effect_provider(context: Dictionary) -> Dictionary:
+	var generator = context.get("generator")
+	var facade = generator.get_effect_facade() if generator != null and generator.has_method("get_effect_facade") else null
+	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
+	var available: bool = ext != null and ext.has_method("capture_effect_state") \
+		and ext.has_method("restore_effect_state") and ext.has_method("clear_effect_state")
+	return _result(available, "ok" if available else "save_provider_missing",
+		"Effect provider unavailable" if not available else "")
+
+
 func _can_journal_provider(context: Dictionary) -> Dictionary:
 	var event_bus = context.get("event_bus")
 	return _result(event_bus != null, "ok" if event_bus != null else "save_provider_missing",
@@ -496,6 +521,14 @@ func _write_trigger_provider(context: Dictionary) -> Dictionary:
 	if bytes.is_empty():
 		return _result(false, "pktr_save_failed", "Trigger state serialization failed")
 	return {"ok": true, "sections": {"pktr": bytes}}
+
+
+func _write_effect_provider(context: Dictionary) -> Dictionary:
+	var facade = context.generator.get_effect_facade()
+	var bytes: PackedByteArray = facade.world_ext().capture_effect_state()
+	if bytes.is_empty():
+		return _result(false, "pkef_save_failed", "Effect state serialization failed")
+	return {"ok": true, "sections": {"pkef": bytes}}
 
 
 func _write_modifier_provider(context: Dictionary, domain: int,
@@ -602,6 +635,15 @@ func _restore_trigger_provider(sections: Dictionary, context: Dictionary) -> Dic
 	var result: Dictionary = ext.clear_trigger_state() if bytes.is_empty() else ext.restore_trigger_state(bytes)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pktr_restore_failed", String(result.get("reason", "Trigger state restore failed")))
+
+
+func _restore_effect_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
+	var facade = context.generator.get_effect_facade()
+	var ext = facade.world_ext()
+	var bytes := PackedByteArray(sections.get("pkef", PackedByteArray()))
+	var result: Dictionary = ext.clear_effect_state() if bytes.is_empty() else ext.restore_effect_state(bytes)
+	return result if bool(result.get("ok", false)) else _result(false,
+		"pkef_restore_failed", String(result.get("reason", "Effect state restore failed")))
 
 
 func _restore_modifier_provider(sections: Dictionary, context: Dictionary,

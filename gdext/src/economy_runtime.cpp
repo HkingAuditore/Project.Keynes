@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "effect_runtime.h"
 #include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
 #include "modifier_runtime.h"
@@ -7997,14 +7998,38 @@ void NativeEconomyRuntime::clear_family_branch_effects(uint64_t branch_handle) {
         [&](const FamilyTriggerBinding &binding) {
             return binding.branch_handle == branch_handle;
         }), _family_trigger_bindings.end());
-    if (_modifier_runtime != nullptr) {
+    if (_effect_runtime != nullptr) {
+        const uint64_t stable_id = static_cast<uint64_t>(_family_influences.stable_id[branch]);
+        const uint32_t generation = static_cast<uint32_t>(branch_handle >> 32U);
         for (FamilyModifierBinding &binding : _family_modifier_bindings) {
             if (binding.branch_handle != branch_handle ||
                 binding.magnitude_q16 == 0) continue;
             std::string error;
-            _modifier_runtime->queue_family_group_effect(binding.definition_key,
-                _family_influences.cell[branch], static_cast<uint64_t>(
-                    _family_influences.stable_id[branch]), 0,
+            uint64_t identity = trace_hash_mix(1469598103934665603ULL, stable_id);
+            identity = trace_hash_mix(identity, static_cast<uint32_t>(
+                _family_influences.cell[branch]));
+            uint64_t definition_hash = 1469598103934665603ULL;
+            for (unsigned char ch : binding.definition_key)
+                definition_hash = trace_hash_mix(definition_hash, ch);
+            identity = trace_hash_mix(identity, definition_hash);
+            const int64_t instance_id = static_cast<int64_t>(identity &
+                0x7fffffffffffffffULL);
+            const bool retired = _effect_runtime->retire_instance_pod(
+                instance_id, generation, _current_day, error);
+            // Keep a non-zero binding when the bounded Effect queue is full or
+            // the definition is temporarily unavailable. The next branch
+            // reconciliation can retry retirement instead of silently losing
+            // the only cleanup handle.
+            if (retired) binding.magnitude_q16 = 0;
+        }
+    } else if (_modifier_runtime != nullptr) {
+        for (FamilyModifierBinding &binding : _family_modifier_bindings) {
+            if (binding.branch_handle != branch_handle ||
+                binding.magnitude_q16 == 0) continue;
+            std::string error;
+            _modifier_runtime->queue_family_group_effect_remove(
+                binding.definition_key, _family_influences.cell[branch],
+                static_cast<uint64_t>(_family_influences.stable_id[branch]),
                 _current_day, error);
             binding.magnitude_q16 = 0;
         }
@@ -8012,7 +8037,8 @@ void NativeEconomyRuntime::clear_family_branch_effects(uint64_t branch_handle) {
     _family_modifier_bindings.erase(std::remove_if(
         _family_modifier_bindings.begin(), _family_modifier_bindings.end(),
         [&](const FamilyModifierBinding &binding) {
-            return binding.branch_handle == branch_handle;
+            return binding.branch_handle == branch_handle &&
+                binding.magnitude_q16 == 0;
         }), _family_modifier_bindings.end());
 }
 
@@ -8023,6 +8049,32 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         !_families.valid_handle(_family_influences.family_handle[branch], family))
         return;
     const int32_t level = _family_influences.prestige_level[branch];
+    auto submit_effect_instance = [&](const std::string &definition_key,
+                                      int32_t magnitude_q16) -> bool {
+        if (_effect_runtime == nullptr || !submit_changes) return false;
+        const uint64_t stable_id = static_cast<uint64_t>(
+            _family_influences.stable_id[branch]);
+        uint64_t identity = trace_hash_mix(1469598103934665603ULL, stable_id);
+        identity = trace_hash_mix(identity, static_cast<uint32_t>(
+            _family_influences.cell[branch]));
+        uint64_t definition_hash = 1469598103934665603ULL;
+        for (unsigned char ch : definition_key)
+            definition_hash = trace_hash_mix(definition_hash, ch);
+        identity = trace_hash_mix(identity, definition_hash);
+        const int64_t instance_id = static_cast<int64_t>(identity &
+            0x7fffffffffffffffULL);
+        const uint32_t generation = static_cast<uint32_t>(branch_handle >> 32U);
+        std::string error;
+        if (!_effect_runtime->upsert_instance_pod(
+                instance_id, std::string("family.modifier.") + definition_key,
+                generation, 0x46414d494c59, static_cast<int64_t>(stable_id),
+                branch_handle, stable_id,
+                static_cast<uint32_t>(_family_influences.cell[branch]), 0,
+                _current_day, true, error))
+            return false;
+        return _effect_runtime->set_metric_pod(instance_id, 0,
+            _current_day + 1, magnitude_q16, error);
+    };
     std::unordered_map<std::string, int32_t> desired;
     std::unordered_map<std::string, int32_t> desired_triggers;
     for (const FamilyTraitRoll &roll : _family_traits) {
@@ -8055,7 +8107,10 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         if (binding.branch_handle != branch_handle) continue;
         const auto found = desired.find(binding.definition_key);
         const int32_t magnitude = found == desired.end() ? 0 : found->second;
-        if (submit_changes && _modifier_runtime != nullptr &&
+        if (submit_changes && _effect_runtime != nullptr &&
+            magnitude != binding.magnitude_q16) {
+            submit_effect_instance(binding.definition_key, magnitude);
+        } else if (submit_changes && _modifier_runtime != nullptr &&
             magnitude != binding.magnitude_q16) {
             std::string error;
             _modifier_runtime->queue_family_group_effect(binding.definition_key,
@@ -8074,6 +8129,8 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                 item.first, _family_influences.cell[branch], static_cast<uint64_t>(
                     _family_influences.stable_id[branch]));
             if (restored >= 0) magnitude = restored;
+        } else if (submit_changes && _effect_runtime != nullptr) {
+            submit_effect_instance(item.first, magnitude);
         } else if (_modifier_runtime != nullptr) {
             std::string error;
             _modifier_runtime->queue_family_group_effect(item.first,
@@ -9339,6 +9396,18 @@ void NativeEconomyRuntime::retire_person(int32_t person_index) {
             _persons.active.size()) || _persons.active[person_index] == 0) return;
     const auto retire_call_started = Clock::now();
     ++_person_retire_calls;
+    const uint64_t person_handle = _persons.handle_for_index(person_index);
+    if (_effect_runtime != nullptr) {
+        uint64_t hash = trace_hash_mix(1469598103934665603ULL,
+            static_cast<uint64_t>(_persons.stable_id[person_index]));
+        hash = trace_hash_mix(hash, 0x504552534f4eULL);
+        std::string error;
+        _effect_runtime->retire_instance_pod(
+            static_cast<int64_t>(hash & 0x7fffffffffffffffULL),
+            static_cast<uint32_t>(person_handle >> 32U), _current_day, error);
+    }
+    if (_modifier_runtime != nullptr)
+        _modifier_runtime->unregister_person_target(person_handle);
     // Releasing the slot bumps the generation, so the retired handle can never
     // match again. Orphaned need rows are dropped by one compaction pass
     // instead of one full-array erase per retirement.
@@ -9347,6 +9416,28 @@ void NativeEconomyRuntime::retire_person(int32_t person_index) {
     _person_needs_orphaned = true;
     _person_indices_dirty = true;
     _person_retire_call_ms += elapsed_ms(retire_call_started);
+}
+
+void NativeEconomyRuntime::register_person_effect(int32_t person_index) {
+    if (_effect_runtime == nullptr || _modifier_runtime == nullptr ||
+        person_index < 0 || person_index >= static_cast<int32_t>(_persons.active.size()) ||
+        _persons.active[person_index] == 0) return;
+    const uint64_t person_handle = _persons.handle_for_index(person_index);
+    _modifier_runtime->register_person_target(person_handle);
+    uint64_t hash = trace_hash_mix(1469598103934665603ULL,
+        static_cast<uint64_t>(_persons.stable_id[person_index]));
+    hash = trace_hash_mix(hash, 0x504552534f4eULL);
+    const int64_t instance_id = static_cast<int64_t>(
+        hash & 0x7fffffffffffffffULL);
+    if (_effect_runtime->has_instance_pod(instance_id,
+            static_cast<uint32_t>(person_handle >> 32U))) return;
+    std::string error;
+    _effect_runtime->upsert_instance_pod(
+        instance_id,
+        "person.modifier.gameplay.generic.bonus",
+        static_cast<uint32_t>(person_handle >> 32U), 0x50455253,
+        _persons.stable_id[person_index], person_handle, person_handle,
+        static_cast<uint32_t>(person_handle >> 32U), 0, _current_day, true, error);
 }
 
 void NativeEconomyRuntime::promote_person_for_family(int32_t family_index) {
@@ -9495,6 +9586,7 @@ void NativeEconomyRuntime::promote_person_for_family(int32_t family_index) {
     _persons.needs_satisfaction[index] = _population.needs_satisfaction[slot];
     _persons.worst_need_id[index] = _population.worst_need_id[slot];
     ++_persons_promoted;
+    register_person_effect(index);
     _person_indices_dirty = true;
     (void)handle;
 }
@@ -9711,6 +9803,7 @@ bool NativeEconomyRuntime::run_person_commit_slice(int64_t &work_done,
         for (; _person_commit_cursor < end; ++_person_commit_cursor) {
             const int32_t i = _person_commit_cursor;
             if (_persons.active[i] == 0) continue;
+            register_person_effect(i);
             int32_t family = -1, slot = -1;
             if (!_families.valid_handle(_persons.family_handle[i], family) ||
                 !_population.valid_handle(_persons.cohort_handle[i], slot) ||

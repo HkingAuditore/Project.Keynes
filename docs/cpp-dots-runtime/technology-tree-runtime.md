@@ -145,3 +145,12 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 - `country_runtime_test.gd`
 - `economy_rolling_runtime_test.gd`
 - `economy_trade_runtime_test.gd`
+
+## Effect Runtime 接入
+
+科技研究、发现、前置条件和完成位仍归 `NativeCountryRuntime` 所有。完成
+科技后，原生运行时建立稳定的 `(country_handle, technology_dense_id)`
+Effect instance；`technology.modifier` 在 Effect safe boundary 生成已有的
+Modifier apply command。Modifier definition key 继续由科技目录编译，未在
+Effect 目录中复制一份数值配置；PKCN 仍只保存科技权威状态，PKEF 保存
+Effect instance/transaction。

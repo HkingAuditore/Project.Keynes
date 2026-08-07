@@ -153,6 +153,8 @@ const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
 const TriggerFacadeScript = preload("res://scripts/trigger/trigger_facade.gd")
+const EffectFacadeScript = preload("res://scripts/effect/effect_facade.gd")
+const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const StartLocationPolicyScript = preload("res://scripts/game/start_location_policy.gd")
 const StarterSettlementBootstrapScript = preload("res://scripts/economy/starter_settlement_bootstrap.gd")
@@ -182,6 +184,7 @@ const EconomyDailySystemScript = preload("res://scripts/simulation/systems/econo
 const CountryDailySystemScript = preload("res://scripts/simulation/systems/country_daily_system.gd")
 const ModifierDailySystemScript = preload("res://scripts/simulation/systems/modifier_daily_system.gd")
 const TriggerDailySystemScript = preload("res://scripts/simulation/systems/trigger_daily_system.gd")
+const EffectRuntimeSystemScript = preload("res://scripts/simulation/systems/effect_runtime_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -1038,6 +1041,8 @@ var _modifier_facade = null
 var _modifier_daily_job = null
 var _trigger_facade = null
 var _trigger_daily_job = null
+var _effect_facade = null
+var _effect_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
 var _continuation_perf_pending: Dictionary = {}
@@ -1683,10 +1688,15 @@ func _capture_economy_trade_topology(map: MapData) -> Dictionary:
 
 
 func _register_country_economy_systems(scheduler_profile) -> Dictionary:
-	if _sus == null or _modifier_facade == null or _country_facade == null or _economy_facade == null:
+	if _sus == null:
+		return {"ok": false, "reason": "runtime_scheduler_unavailable"}
+	if _modifier_facade == null or _country_facade == null or _economy_facade == null:
 		return {"ok": false, "reason": "country_economy_runtime_unavailable"}
 	if _modifier_daily_job != null or _country_daily_job != null or _economy_daily_job != null:
 		return {"ok": false, "reason": "country_economy_systems_already_registered"}
+	if _effect_facade != null and _effect_facade.is_configured():
+		_effect_facade.register_domain_adapters(_modifier_facade, _country_facade,
+			_economy_facade)
 	_modifier_daily_job = ModifierDailySystemScript.new(_modifier_facade)
 	_sus.configure_job_from_profile(
 		_modifier_daily_job, scheduler_profile, false, &"modifier_daily", 1)
@@ -1732,9 +1742,15 @@ func get_modifier_facade():
 func get_trigger_facade():
 	return _trigger_facade
 
+func get_effect_facade():
+	return _effect_facade
+
 
 func get_trigger_report() -> Dictionary:
 	return _trigger_facade.report() if _trigger_facade != null else {"configured": false}
+
+func get_effect_report() -> Dictionary:
+	return _effect_facade.report() if _effect_facade != null else {"configured": false}
 
 
 func get_modifier_report() -> Dictionary:
@@ -2258,8 +2274,30 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if _weather_system != null and _weather_system.has_method("configure_gdext_acceleration"):
 		var cp_f1 := _c()
 		_weather_system.configure_gdext_acceleration(_data_core_world_ext, true, cp_f1, _data_core_world)
-	# Independent ECONOMY_GRAPH is registered before the native/legacy daily
-	# fork, so both environmental authority modes share one economy schedule.
+	# EffectRuntime is independent from Country/Economy. Configure and register
+	# it before economy bootstrap, whose valid early returns must not starve it.
+	_effect_facade = null
+	_effect_daily_job = null
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("configure_effects"):
+		var effect_facade := EffectFacadeScript.new()
+		var effect_catalog := EffectDomainCatalogScript.build()
+		if effect_catalog == null:
+			push_error("[effect] domain catalog build failed")
+		else:
+			var effect_configured: Dictionary = effect_facade.configure(
+				_data_core_world_ext, _world_clock_ref, effect_catalog)
+			if bool(effect_configured.get("ok", false)):
+				_effect_facade = effect_facade
+				_effect_daily_job = EffectRuntimeSystemScript.new(_effect_facade)
+				_sus.configure_job_from_profile(
+					_effect_daily_job, cp_sched, false, &"effect_runtime", 1)
+				_runtime_register_system(_effect_daily_job)
+			else:
+				push_error("[effect] configure failed: %s" % String(
+					effect_configured.get("reason", "unknown")))
+	# Independent ECONOMY_GRAPH is registered after EffectRuntime and before the
+	# native/legacy daily fork, so both environmental authority modes share one
+	# economy schedule.
 	_setup_economy_runtime(map, cfg, cp_sched)
 	_season_refresh_job = SeasonRefreshSystemScript.new(self, map, world)
 	_sus.configure_job_from_profile(_season_refresh_job, cp_sched)

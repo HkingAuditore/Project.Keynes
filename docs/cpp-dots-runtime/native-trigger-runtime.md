@@ -40,6 +40,13 @@ Effects are sorted by `(effective_day, source_priority, trigger_id, target_handl
 fire_sequence)` and carry idempotency `(trigger_id, target_generation, fire_sequence)`.
 Adapters ACK only the contiguous prefix they applied successfully.
 
+Supported Modifier actions are handed to EffectRuntime as one contiguous native
+prefix through `handoff_trigger_effects()`. EffectRuntime owns the ensuing
+transaction and native Modifier ACK; TriggerRuntime advances its effect cursor
+only for that accepted prefix, preserving PKTR as the authority for unhanded or
+unsupported actions. Remaining actions continue through the GDScript
+compatibility adapter and cannot be skipped by the native handoff.
+
 动态家族分支 binding 以 `(definition, branch_handle, cell)` 标识，并建立
 `(source,event_type,cell)` 稀疏索引。建筑完工和跨 settlement-cell 贸易只向 GameplayEventBus
 发布一次，再扇出到本地合资格分支；无需为每个家族重复发布事实。解绑会立即删除对应 state 和
@@ -88,3 +95,9 @@ The design was compared against [EnTT](https://github.com/skypjack/entt),
 observer/dispatcher and compiled-rule patterns informed the indexed ingress and
 condition IR. None was imported: each would duplicate the existing DataCore/SUS
 authority or introduce a dynamic object model in the simulation hot path.
+
+When a Trigger reward is a configurable multi-step effect, it may enqueue an
+EffectRuntime instance or typed effect input. EffectRuntime then owns only the
+plan/transaction/ACK lifecycle; TriggerRuntime still owns event cursors and
+PKTR state, and the target domain still owns the eventual mutation. See
+[`native-effect-runtime.md`](./native-effect-runtime.md).

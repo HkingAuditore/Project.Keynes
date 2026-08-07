@@ -381,6 +381,47 @@ Dictionary ModifierRuntime::submit_commands(const Dictionary &batch) {
     return out;
 }
 
+bool ModifierRuntime::submit_commands_pod(const NativeCommand *commands, size_t count,
+                                          std::vector<int64_t> &request_ids,
+                                          std::string &error) {
+    if (!_configured) {
+        error = "modifier_runtime_not_configured";
+        return false;
+    }
+    if (commands == nullptr || count == 0) {
+        error = "modifier_command_shape_invalid";
+        return false;
+    }
+    request_ids.clear();
+    request_ids.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const NativeCommand &source = commands[i];
+        Command command;
+        command.opcode = source.opcode;
+        command.producer = source.producer;
+        command.sequence = source.sequence;
+        command.effective_day = source.effective_day;
+        command.request_id = _next_request_id++;
+        command.definition_id = definition_id(source.definition_key != nullptr
+            ? source.definition_key : "");
+        command.domain = source.domain;
+        command.scope = source.scope;
+        command.entity_handle = source.entity_handle;
+        command.group_handle = source.group_handle;
+        command.source_type = source.source_type;
+        command.source_id = source.source_id;
+        command.duration_days = source.duration_days;
+        command.stacks = source.stacks;
+        command.magnitude_q16 = source.magnitude_q16;
+        command.modifier_handle = source.modifier_handle;
+        command.submit_order = ++_submit_order;
+        _pending_commands.push_back(command);
+        _results[command.request_id] = {false, "pending", 0, -1};
+        request_ids.push_back(command.request_id);
+    }
+    return true;
+}
+
 bool ModifierRuntime::should_run(int64_t day_index) const {
     if (!_configured) return false;
     for (const Command &command : _pending_commands)
@@ -431,7 +472,9 @@ bool ModifierRuntime::validate_target(const Command &command, std::string &error
             error = "modifier_building_handle_stale";
             return false;
         }
-        if (command.domain == GAMEPLAY && !valid_identity(_gameplay_identities, command.entity_handle)) {
+        if (command.domain == GAMEPLAY &&
+            !valid_identity(_gameplay_identities, command.entity_handle) &&
+            _person_targets.find(command.entity_handle) == _person_targets.end()) {
             error = "modifier_gameplay_handle_stale";
             return false;
         }
@@ -769,6 +812,66 @@ bool ModifierRuntime::remove_handle(int32_t domain, uint64_t handle, int64_t day
     return true;
 }
 
+bool ModifierRuntime::remove_unique_command(const Command &command, int64_t day,
+                                            Result &result) {
+    if (command.domain < 0 || command.domain >= DOMAIN_COUNT ||
+        command.definition_id < 0 ||
+        command.definition_id >= static_cast<int32_t>(_definitions.size())) {
+        result = {false, "modifier_remove_definition_invalid", 0, day};
+        return false;
+    }
+    const Definition &definition = _definitions[command.definition_id];
+    if (definition.policy == INDEPENDENT) {
+        // Effect-owned independent stacks have no `unique_instances` entry,
+        // but retirement still must remove every row created by this exact
+        // (definition, scope, source) identity. This is a lifecycle-only
+        // boundary operation, never a simulation hot-loop query.
+        const uint64_t requested_scope_id = scope_id_for(command);
+        const Store &store = _stores[command.domain];
+        std::vector<uint64_t> matching_handles;
+        for (uint32_t index = 0; index < store.active.size(); ++index) {
+            if (store.active[index] == 0 ||
+                store.definition_id[index] != command.definition_id ||
+                store.scope[index] != command.scope ||
+                store.source_type[index] != command.source_type ||
+                store.source_id[index] != command.source_id)
+                continue;
+            const uint64_t stored_scope_id = store.scope[index] == GLOBAL ? 0 :
+                (store.scope[index] == GROUP ? store.group_handle[index] :
+                 store.entity_handle[index]);
+            if (stored_scope_id == requested_scope_id)
+                matching_handles.push_back(make_handle(store, index));
+        }
+        if (matching_handles.empty()) {
+            result = {true, "already_removed", 0, day};
+            return true;
+        }
+        Result removed;
+        for (const uint64_t handle : matching_handles) {
+            if (!remove_handle(command.domain, handle, day, EVENT_REMOVE,
+                               command.request_id, "removed", &removed)) {
+                result = removed;
+                return false;
+            }
+        }
+        result = removed;
+        return true;
+    }
+    const uint64_t scope_id = scope_id_for(command);
+    const UniqueKey key{command.definition_id, command.scope, scope_id,
+                        command.source_type, command.source_id};
+    const Store &store = _stores[command.domain];
+    const auto found = store.unique_instances.find(key);
+    // Retrying after a completed remove must not turn a normal replay into a
+    // stale-handle failure.
+    if (found == store.unique_instances.end()) {
+        result = {true, "already_removed", 0, day};
+        return true;
+    }
+    return remove_handle(command.domain, make_handle(store, found->second), day,
+                         EVENT_REMOVE, command.request_id, "removed", &result);
+}
+
 bool ModifierRuntime::refresh_handle(const Command &command, int64_t day,
                                      Result &result) {
     if (command.domain < 0 || command.domain >= DOMAIN_COUNT) {
@@ -916,8 +1019,10 @@ Dictionary ModifierRuntime::run_daily(int64_t day_index) {
         if (command.opcode == COMMAND_APPLY) {
             ok = apply_command(command, day_index, result) != 0;
         } else if (command.opcode == COMMAND_REMOVE) {
-            ok = remove_handle(command.domain, command.modifier_handle, day_index,
-                EVENT_REMOVE, command.request_id, "removed", &result);
+            ok = command.modifier_handle != 0
+                ? remove_handle(command.domain, command.modifier_handle, day_index,
+                    EVENT_REMOVE, command.request_id, "removed", &result)
+                : remove_unique_command(command, day_index, result);
         } else if (command.opcode == COMMAND_REFRESH) {
             ok = refresh_handle(command, day_index, result);
         } else if (command.opcode == COMMAND_SET_STACKS) {
@@ -1191,6 +1296,40 @@ bool ModifierRuntime::queue_family_group_effect(
     return true;
 }
 
+bool ModifierRuntime::queue_family_group_effect_remove(
+        const std::string &definition_key, int32_t settlement_cell,
+        uint64_t branch_stable_id, int64_t day_index, std::string &error) {
+    const int32_t did = definition_id(definition_key);
+    if (!_configured || did < 0 || _definitions[did].domain != ECONOMY ||
+        _definitions[did].policy == INDEPENDENT) {
+        error = "family_modifier_definition_invalid";
+        return false;
+    }
+    if (settlement_cell < 0 || settlement_cell >= _cell_count ||
+        branch_stable_id == 0) {
+        error = "family_modifier_target_invalid";
+        return false;
+    }
+    Command command;
+    command.opcode = COMMAND_REMOVE;
+    command.producer = 160;
+    command.sequence = static_cast<int64_t>(++_submit_order);
+    command.effective_day = std::max<int64_t>(day_index, _current_day);
+    command.request_id = _next_request_id++;
+    command.definition_id = did;
+    command.domain = ECONOMY;
+    command.scope = GROUP;
+    command.group_handle = static_cast<uint64_t>(settlement_cell);
+    command.source_type = 0x46414d494c59ULL; // FAMILY
+    command.source_id = branch_stable_id;
+    command.duration_days = -1;
+    command.stacks = 1;
+    command.submit_order = _submit_order;
+    _pending_commands.push_back(command);
+    _results[command.request_id] = {false, "pending", 0, -1};
+    return true;
+}
+
 int32_t ModifierRuntime::family_group_effect_magnitude(
         const std::string &definition_key, int32_t settlement_cell,
         uint64_t branch_stable_id) const {
@@ -1236,6 +1375,21 @@ Dictionary ModifierRuntime::command_result(int64_t request_id) const {
     out["day"] = it->second.day;
     out["pending"] = it->second.reason == "pending";
     return out;
+}
+
+bool ModifierRuntime::command_result_pod(int64_t request_id, bool &complete,
+                                         bool &ok, std::string &reason) const {
+    const auto it = _results.find(request_id);
+    if (it == _results.end()) {
+        complete = true;
+        ok = false;
+        reason = "modifier_request_unknown";
+        return false;
+    }
+    complete = it->second.reason != "pending";
+    ok = it->second.ok;
+    reason = it->second.reason;
+    return true;
 }
 
 Dictionary ModifierRuntime::list_modifiers(int32_t domain, uint64_t entity_handle,
@@ -1635,6 +1789,14 @@ bool ModifierRuntime::retire_building_identity(int32_t cell, int32_t type_id,
     return retire_identity(_building_identities, handle);
 }
 
+void ModifierRuntime::register_person_target(uint64_t handle) {
+    if (handle != 0) _person_targets.insert(handle);
+}
+
+void ModifierRuntime::unregister_person_target(uint64_t handle) {
+    if (handle != 0) _person_targets.erase(handle);
+}
+
 void ModifierRuntime::clear_domain(int32_t domain) {
     if (domain < 0 || domain >= DOMAIN_COUNT) return;
     // Caches keyed on the snapshot version treat equality as "nothing changed",
@@ -1649,6 +1811,7 @@ void ModifierRuntime::clear_domain(int32_t domain) {
         _building_handles.clear();
     } else if (domain == GAMEPLAY) {
         _gameplay_identities = IdentityStore{};
+        _person_targets.clear();
         for (std::vector<double> &values : _gameplay_base_by_stat) values.clear();
     }
 }

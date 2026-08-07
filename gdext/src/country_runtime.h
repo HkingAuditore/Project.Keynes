@@ -14,6 +14,8 @@
 
 namespace pk {
 
+class EffectRuntime;
+
 class ModifierRuntime;
 
 // Sole mutable authority for country identity, territory, country technology,
@@ -138,6 +140,11 @@ public:
     int32_t good_count() const { return static_cast<int32_t>(_good_ids.size()); }
     int32_t technology_count() const { return static_cast<int32_t>(_technology_ids.size()); }
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
+    void attach_effect_runtime(EffectRuntime *runtime) {
+        _effect_runtime = runtime;
+        _effect_runtime_enabled = runtime != nullptr;
+    }
+    void set_effect_runtime_enabled(bool enabled) { _effect_runtime_enabled = enabled; }
 
 private:
     struct CountryStore {
@@ -321,6 +328,8 @@ private:
     int32_t _research_signal_words = 0;
     int32_t _technology_points_good_id = -1;
     ModifierRuntime *_modifier_runtime = nullptr;
+    EffectRuntime *_effect_runtime = nullptr;
+    bool _effect_runtime_enabled = false;
     int32_t _starting_country_slot = -1;
     uint64_t _generation = 0;
     uint64_t _submit_order = 0;

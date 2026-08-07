@@ -186,4 +186,13 @@ v30 hash round-trip、v29 明确拒绝、特性抽取/命令排序、分支威�
 - 家族行为、重要人物、守恒、职业统计、所有权 CSR 与当前 PKEC 的最小回归入口是
   `Project/project-keynes/tests/family_runtime_test.gd`。
 - 影响通用经济、税务、国家或调度时，同时加载相应 Economy、Tax、Country 与 Runtime
-  Architecture Skill；本页仍是家族模型的项目文档单一事实源。
+Architecture Skill；本页仍是家族模型的项目文档单一事实源。
+
+## Effect Runtime 接入
+
+家族 Trait 的经济 Modifier 仍由 `FAMILY_COMMIT` 计算最终分支值，但提交
+路径已通过 Native Effect Runtime：分支以
+`(branch_stable_id, cell, modifier_definition_key)` 建立 Effect instance，
+把最终 Q16 强度作为冻结 metric，随后由 `family.modifier` adapter 排入现有
+Modifier Runtime。家族 TraitStore、分支 generation、Trigger binding 以及
+人口/现金/建筑守恒边界不变；grant/remove/set-strength 仍只走家族命令。

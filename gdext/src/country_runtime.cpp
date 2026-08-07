@@ -1,4 +1,5 @@
 #include "country_runtime.h"
+#include "effect_runtime.h"
 #include "modifier_runtime.h"
 
 #include <algorithm>
@@ -624,6 +625,25 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
 
     rebuild_cell_csr();
     _generation = 1;
+    if (_effect_runtime_enabled && _effect_runtime != nullptr) {
+        for (int32_t slot = 0; slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
+            const uint64_t handle = make_handle(slot);
+            for (int32_t technology = 0;
+                 technology < static_cast<int32_t>(_technology_ids.size()); ++technology) {
+                if (!has_technology(slot, technology) ||
+                    _technology_modifier_definition_keys[static_cast<size_t>(technology)].empty())
+                    continue;
+                std::string effect_error;
+                _effect_runtime->upsert_instance_pod(
+                    static_cast<int64_t>(((handle & 0x00007fffffffffffULL) << 16U) |
+                        static_cast<uint64_t>(technology + 1)),
+                    std::string("technology.") + _technology_ids[static_cast<size_t>(technology)],
+                    static_cast<uint32_t>(handle >> 32U), 0x54454348, technology + 1,
+                    handle, handle, static_cast<uint32_t>(handle >> 32U), 0,
+                    0, true, effect_error);
+            }
+        }
+    }
     _bootstrapped = true;
     _last_committed_day = -1;
     _last_research_day = -1;
@@ -2110,14 +2130,43 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
             const size_t word_index = word_base + technology / 64;
             const uint64_t bit = 1ULL << (technology % 64);
             if ((_country_pending_technologies[word_index] & bit) == 0) continue;
-            bool modifier_ready = true;
-            if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
-                !_technology_modifier_definition_keys[static_cast<size_t>(technology)].empty()) {
+            const std::string &technology_modifier_key =
+                _technology_modifier_definition_keys[static_cast<size_t>(technology)];
+            bool modifier_ready = technology_modifier_key.empty();
+            bool effect_attempted = false;
+            bool effect_registration_failed = false;
+            const uint64_t handle = make_handle(slot);
+            if (_effect_runtime_enabled && _effect_runtime != nullptr &&
+                !technology_modifier_key.empty()) {
+                effect_attempted = true;
+                std::string effect_error;
+                const int64_t effect_instance_id = static_cast<int64_t>(
+                    ((handle & 0x00007fffffffffffULL) << 16U) |
+                    static_cast<uint64_t>(technology + 1));
+                const uint32_t effect_generation = static_cast<uint32_t>(handle >> 32U);
+                bool effect_registered = _effect_runtime->has_instance_pod(
+                    effect_instance_id, effect_generation);
+                if (!effect_registered) {
+                    effect_registered = _effect_runtime->upsert_instance_pod(
+                            effect_instance_id,
+                            std::string("technology.") + _technology_ids[static_cast<size_t>(technology)],
+                            effect_generation, 0x54454348, technology + 1,
+                            handle, handle, effect_generation, 0,
+                            day_index, true, effect_error);
+                    if (!effect_registered) {
+                        effect_registration_failed = true;
+                    }
+                }
+                modifier_ready = effect_registered &&
+                    _effect_runtime->instance_fire_acked_pod(
+                        effect_instance_id, effect_generation);
+            }
+            if (!modifier_ready && (!effect_attempted || effect_registration_failed) &&
+                _modifier_runtime != nullptr && _modifier_runtime->configured() &&
+                !technology_modifier_key.empty()) {
                 std::string modifier_error;
                 modifier_ready = _modifier_runtime->apply_technology_effect(
-                    make_handle(slot),
-                    _technology_modifier_definition_keys[static_cast<size_t>(technology)],
-                    technology, day_index, modifier_error);
+                    handle, technology_modifier_key, technology, day_index, modifier_error);
             }
             if (!modifier_ready) continue;
             _country_technologies[word_index] |= bit;

@@ -997,3 +997,32 @@ Horizon compute bypasses the language bridge except for final readback/upload; i
 fallback `run_resample_visual_horizon_layer_pass` follows the same one-layer byte contract.
 No Tile array is attached to component schema or save data. Full contract:
 [Visual Tile Rendering](./visual-tile-rendering.md).
+
+## Effect Runtime packed bridge
+
+`EffectCatalog` is a cold Resource compiler. It emits packed metric/definition
+columns and CSR offsets; `DCWorldExt.configure_effects()` resolves stable keys
+to dense IDs. `EffectFacade.submit_effect_instances()` and
+`submit_effect_snapshots()` are the only normal ingress paths. Daily evaluation
+returns a packed transaction batch, including command domains and the stable
+`command_idempotency_keys` array. In production, known technology/family/person/trigger
+Modifier commands bypass that poll batch through
+`dispatch_effect_native_modifier()` and a POD `ModifierRuntime::NativeCommand`
+batch; `ack_effect_native_modifier()` runs after the Modifier safe boundary.
+The poll/Callable route remains only for unsupported adapters. The native loop
+never receives a Godot `Dictionary`, `String`, `Callable`, or Object reference.
+Declarative planning batches read frozen C++ slabs in worker threads and merge
+in candidate order on the calling thread; no GDScript calculation participates.
+An input revision newer than the instance's consumed revision can schedule one
+same-day dirty replay, while an unchanged revision waits for normal cadence.
+Native request IDs are intentionally not persistent. PKEF stores an in-flight
+native-bound `PREFLIGHTED` transaction as `PLANNED`, so restore repeats its
+idempotent C++ enqueue instead of retaining a request ID from an older process.
+
+`EffectFacade` is an adapter transport boundary. For each transaction it asks
+adapters to preflight without mutation, marks the native transaction
+`PREFLIGHTED`, asks adapters to commit at their domain-safe boundary, marks it
+`COMMITTED`, and ACKs only after the commit result. Missing or failed adapters
+leave the transaction pollable; the contiguous transport cursor does not skip
+later transactions. Effect commands must call existing domain command APIs and
+must carry the idempotency key through retries.

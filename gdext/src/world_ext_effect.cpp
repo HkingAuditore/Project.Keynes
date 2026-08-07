@@ -1,0 +1,139 @@
+#include "world_ext.h"
+
+#include "effect_runtime.h"
+#include "country_runtime.h"
+#include "economy_runtime.h"
+#include "modifier_runtime.h"
+
+namespace pk {
+
+using namespace godot;
+
+namespace {
+EffectRuntime *runtime_from(void *opaque) {
+    return static_cast<EffectRuntime *>(opaque);
+}
+const EffectRuntime *runtime_from(const void *opaque) {
+    return static_cast<const EffectRuntime *>(opaque);
+}
+Dictionary unavailable() {
+    Dictionary out;
+    out["ok"] = false;
+    out["reason"] = "effect_runtime_unavailable";
+    return out;
+}
+} // namespace
+
+Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
+    if (_effect_runtime == nullptr) _effect_runtime = new EffectRuntime();
+    Dictionary result = runtime_from(_effect_runtime)->configure(catalog);
+    if (bool(result.get("ok", false))) {
+        if (_country_runtime != nullptr)
+            static_cast<NativeCountryRuntime *>(_country_runtime)->attach_effect_runtime(
+                runtime_from(_effect_runtime));
+        if (_economy_runtime != nullptr)
+            static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_effect_runtime(
+                runtime_from(_effect_runtime));
+    }
+    return result;
+}
+
+Dictionary DCWorldExt::submit_effect_instances(const Dictionary &batch) {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->submit_instances(batch);
+}
+
+Dictionary DCWorldExt::retire_effect_instance(int64_t instance_id,
+                                              int64_t generation,
+                                              int64_t effective_day) {
+    if (_effect_runtime == nullptr) return unavailable();
+    std::string error;
+    const bool ok = generation > 0 && runtime_from(_effect_runtime)->retire_instance_pod(
+        instance_id, static_cast<uint32_t>(generation), effective_day, error);
+    Dictionary out;
+    out["ok"] = ok;
+    if (!ok) out["reason"] = String(error.c_str());
+    return out;
+}
+
+bool DCWorldExt::effect_instance_fire_acked(int64_t instance_id,
+                                            int64_t generation) const {
+    return _effect_runtime != nullptr && generation > 0 &&
+        runtime_from(_effect_runtime)->instance_fire_acked_pod(
+            instance_id, static_cast<uint32_t>(generation));
+}
+
+Dictionary DCWorldExt::submit_effect_snapshots(const Dictionary &batch) {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->submit_snapshots(batch);
+}
+
+Dictionary DCWorldExt::run_effect_daily(int64_t day_index) {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->run_daily(day_index);
+}
+
+Dictionary DCWorldExt::dispatch_effect_native_modifier() {
+    if (_effect_runtime == nullptr || _modifier_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->dispatch_native_modifier(
+        static_cast<ModifierRuntime *>(_modifier_runtime));
+}
+
+Dictionary DCWorldExt::ack_effect_native_modifier() {
+    if (_effect_runtime == nullptr || _modifier_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->ack_native_modifier(
+        static_cast<ModifierRuntime *>(_modifier_runtime));
+}
+
+bool DCWorldExt::effect_should_run(int64_t day_index) const {
+    return _effect_runtime != nullptr &&
+        runtime_from(_effect_runtime)->should_run(day_index);
+}
+
+Dictionary DCWorldExt::poll_effect_transactions(int64_t after_transaction_id,
+                                                int limit) const {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->poll_transactions(after_transaction_id, limit);
+}
+
+Dictionary DCWorldExt::preflight_effect_transactions(const Dictionary &batch) {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->preflight_transactions(batch);
+}
+
+Dictionary DCWorldExt::commit_effect_transactions(const Dictionary &batch) {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->commit_transactions(batch);
+}
+
+Dictionary DCWorldExt::ack_effect_transactions(const Dictionary &batch) {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->ack_transactions(batch);
+}
+
+Dictionary DCWorldExt::explain_effect(int64_t instance_id) const {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->explain(instance_id);
+}
+
+Dictionary DCWorldExt::get_effect_report() const {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->report();
+}
+
+PackedByteArray DCWorldExt::capture_effect_state() const {
+    return _effect_runtime == nullptr ? PackedByteArray()
+        : runtime_from(_effect_runtime)->capture();
+}
+
+Dictionary DCWorldExt::restore_effect_state(const PackedByteArray &bytes) {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->restore(bytes);
+}
+
+Dictionary DCWorldExt::clear_effect_state() {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->clear_state();
+}
+
+} // namespace pk

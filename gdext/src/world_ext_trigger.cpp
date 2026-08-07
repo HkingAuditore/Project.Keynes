@@ -1,6 +1,7 @@
 #include "world_ext.h"
 
 #include "trigger_runtime.h"
+#include "effect_runtime.h"
 #include "economy_runtime.h"
 
 #include <cstring>
@@ -64,6 +65,13 @@ Dictionary DCWorldExt::poll_trigger_effects(int64_t after_effect_id,
 Dictionary DCWorldExt::ack_trigger_effects(int64_t up_to_effect_id) {
     return _trigger_runtime == nullptr ? unavailable()
         : runtime_from(_trigger_runtime)->ack_effects(up_to_effect_id);
+}
+
+Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
+    if (_trigger_runtime == nullptr || _effect_runtime == nullptr)
+        return unavailable();
+    return runtime_from(_trigger_runtime)->handoff_effects(
+        static_cast<EffectRuntime *>(_effect_runtime), limit);
 }
 
 Dictionary DCWorldExt::set_trigger_enabled(const Dictionary &batch) {

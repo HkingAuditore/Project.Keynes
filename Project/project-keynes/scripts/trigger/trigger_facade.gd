@@ -98,6 +98,13 @@ func ingest_committed_events(day_index: int, max_events: int = 512) -> Dictionar
 
 func dispatch_effects(max_effects: int = 512) -> Dictionary:
 	if not _configured: return {"ok": false, "reason": "trigger_runtime_not_configured"}
+	# Native Modifier effects are handed to EffectRuntime first. TriggerRuntime
+	# remains the cursor owner; the native call ACKs only the contiguous prefix.
+	if _world_ext.has_method("handoff_trigger_effects"):
+		var native_handoff: Dictionary = _world_ext.handoff_trigger_effects(max_effects)
+		if bool(native_handoff.get("native_supported", false)):
+			var native_last := int(native_handoff.get("last_effect_id", _last_effect_id))
+			_last_effect_id = maxi(_last_effect_id, native_last)
 	var batch: Dictionary = _world_ext.poll_trigger_effects(_last_effect_id, max_effects)
 	var ids: PackedInt64Array = batch.get("effect_ids", PackedInt64Array())
 	if ids.is_empty(): return {"ok": true, "dispatched": 0, "pending": int(batch.get("count", 0))}
