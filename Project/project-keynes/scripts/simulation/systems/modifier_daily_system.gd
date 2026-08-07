@@ -40,6 +40,11 @@ func tick(ctx) -> Dictionary:
 		return {"done": true, "elapsed_ms": 0.0, "stage_name": "modifier_unavailable"}
 	var result: Dictionary = facade.world_ext().run_modifier_daily(
 		int(ctx.day_index) if ctx != null else 0)
+	# Modifier Runtime is the safe commit boundary for native Effect commands.
+	# This is a C++ -> C++ ACK; GDScript only keeps the scheduler shell.
+	var effect_ack: Dictionary = {}
+	if facade.world_ext().has_method("ack_effect_native_modifier"):
+		effect_ack = facade.world_ext().ack_effect_native_modifier()
 	_last_report = result.duplicate(true)
 	facade.dispatch_events()
 	return {
@@ -51,6 +56,7 @@ func tick(ctx) -> Dictionary:
 		"path": String(result.get("path", "MODIFIER_GRAPH")),
 		"commands_applied": int(result.get("commands_applied", 0)),
 		"expired": int(result.get("expired", 0)),
+		"effect_native_acked": int(effect_ack.get("acknowledged", 0)),
 	}
 
 

@@ -109,7 +109,7 @@ backup. Incompatible generator/catalog/schema hashes are rejected rather than
 guessed or migrated.
 
 Required sections are `new_game_config`, `world_clock`, `dynamic_world`,
-`environment`, `pkcm`, `pkcn`, `pkec`, `pkgp`, `pkfg`, `journal`, `pktr`, `player_context`,
+`environment`, `pkcm`, `pkcn`, `pkec`, `pkgp`, `pkef`, `pkfg`, `journal`, `pktr`, `player_context`,
 `player_view`, and `preview`. Missing authority fails closed. `environment` uses
 `PKEnvironmentRuntime v1` and includes native core SoA, weather ping-pong,
 topology, dirty/active sets, round flags, stage cursors, and publish versions;
@@ -121,7 +121,12 @@ Every authority is registered through `RuntimeStateProvider`, whose contract is
 provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
-PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, PKTR, then player session/view/preview.
+PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, PKTR, PKEF, then player
+session/view/preview. PKEF is restored after PKTR so Trigger-owned source state
+and any trigger-to-effect handoff are present before pending Effect transactions
+are resumed. Save capture additionally waits for `effect_should_run(day)` to be
+false, so no transient native Effect-to-Modifier request binding is captured
+between the Effect and Modifier safe boundaries.
 PKCM v1 saves Climate modifiers. PKCN v4 embeds Country modifiers, research and tax policy; PKEC v30
 embeds Economy modifiers, BuildingIdentityStore, family traits/cell influence, and production-climate state;
 PKGP v1 saves Gameplay identity/base SoA and modifiers; PKTR v2 saves static and dynamic branch
@@ -161,7 +166,7 @@ Restore order is strict:
    modifiers, building identities, notable families, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
-8. Restore journal and PKTR v2, then player/session context.
+8. Restore journal and PKTR v2, then PKEF v4 pending Effect state.
 9. Rebuild derived views/render resources and scheduler topology.
 10. Restore selected cell, camera position/zoom, pause, and speed.
 

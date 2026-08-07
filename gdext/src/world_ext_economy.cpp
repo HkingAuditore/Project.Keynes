@@ -5,6 +5,7 @@
 #include "country_runtime.h"
 #include "modifier_runtime.h"
 #include "trigger_runtime.h"
+#include "effect_runtime.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,6 +50,9 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
         Dictionary configured = static_cast<NativeCountryRuntime *>(_country_runtime)->configure(
             catalog, country_profile, cell_count, seed);
         if (!static_cast<bool>(configured.get("ok", false))) return configured;
+        if (_effect_runtime != nullptr)
+            static_cast<NativeCountryRuntime *>(_country_runtime)->attach_effect_runtime(
+                static_cast<EffectRuntime *>(_effect_runtime));
         PackedByteArray all_land;
         all_land.resize(cell_count);
         all_land.fill(0);
@@ -65,6 +69,9 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
         static_cast<ModifierRuntime *>(_modifier_runtime));
     runtime_from(_economy_runtime)->attach_trigger_runtime(
         static_cast<TriggerRuntime *>(_trigger_runtime));
+    if (_effect_runtime != nullptr)
+        runtime_from(_economy_runtime)->attach_effect_runtime(
+            static_cast<EffectRuntime *>(_effect_runtime));
     _economy_last_notified_event_id = 0;
     return runtime_from(_economy_runtime)->configure(catalog, profile, cell_count, seed);
 }

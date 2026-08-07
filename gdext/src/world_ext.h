@@ -255,6 +255,7 @@ public:
     godot::Dictionary poll_trigger_effects(int64_t after_effect_id,
                                             int limit = 128) const;
     godot::Dictionary ack_trigger_effects(int64_t up_to_effect_id);
+    godot::Dictionary handoff_trigger_effects(int limit = 128);
     godot::Dictionary set_trigger_enabled(const godot::Dictionary &batch);
     godot::Dictionary reconcile_trigger_branch_bindings(const godot::Dictionary &batch);
     godot::Dictionary get_trigger_branch_progress(int64_t branch_handle) const;
@@ -263,6 +264,30 @@ public:
     godot::PackedByteArray capture_trigger_state() const;
     godot::Dictionary restore_trigger_state(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_trigger_state();
+
+    // Generic Effect Runtime. It owns immutable effect programs, active
+    // instances, plans and cross-domain ACK state; domain runtimes own all
+    // authoritative mutations.
+    godot::Dictionary configure_effects(const godot::Dictionary &catalog);
+    godot::Dictionary submit_effect_instances(const godot::Dictionary &batch);
+    godot::Dictionary retire_effect_instance(int64_t instance_id, int64_t generation,
+                                             int64_t effective_day);
+    bool effect_instance_fire_acked(int64_t instance_id, int64_t generation) const;
+    godot::Dictionary submit_effect_snapshots(const godot::Dictionary &batch);
+    godot::Dictionary run_effect_daily(int64_t day_index);
+    godot::Dictionary dispatch_effect_native_modifier();
+    godot::Dictionary ack_effect_native_modifier();
+    bool effect_should_run(int64_t day_index) const;
+    godot::Dictionary poll_effect_transactions(int64_t after_transaction_id,
+                                               int limit = 128) const;
+    godot::Dictionary preflight_effect_transactions(const godot::Dictionary &batch);
+    godot::Dictionary commit_effect_transactions(const godot::Dictionary &batch);
+    godot::Dictionary ack_effect_transactions(const godot::Dictionary &batch);
+    godot::Dictionary explain_effect(int64_t instance_id) const;
+    godot::Dictionary get_effect_report() const;
+    godot::PackedByteArray capture_effect_state() const;
+    godot::Dictionary restore_effect_state(const godot::PackedByteArray &bytes);
+    godot::Dictionary clear_effect_state();
 
     // Native-only hot-path helpers. They resolve no strings in the consumer loop.
     float modifier_climate_radiative_target(int cell, float base_value) const;
@@ -2316,6 +2341,7 @@ private:
     void                                     *_country_runtime        = nullptr;
     void                                     *_modifier_runtime       = nullptr;
     void                                     *_trigger_runtime         = nullptr;
+    void                                     *_effect_runtime          = nullptr;
     uint64_t                                  _natural_resource_modifier_version =
         std::numeric_limits<uint64_t>::max();
     uint64_t                                  _natural_resource_modifier_catalog_hash = 0;

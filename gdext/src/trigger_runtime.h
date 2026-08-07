@@ -11,6 +11,8 @@
 
 namespace pk {
 
+class EffectRuntime;
+
 // Native trigger authority. Catalog parsing is a cold boundary; event ingest,
 // aggregation, condition evaluation, and effect generation use dense POD data.
 class TriggerRuntime {
@@ -84,6 +86,9 @@ public:
     godot::Dictionary run_daily(int64_t day_index);
     godot::Dictionary poll_effects(int64_t after_effect_id, int32_t limit) const;
     godot::Dictionary ack_effects(int64_t up_to_effect_id);
+    // Transfers the contiguous supported prefix to EffectRuntime. Trigger
+    // state/cursors remain owned here; EffectRuntime owns the resulting ACK.
+    godot::Dictionary handoff_effects(EffectRuntime *effect_runtime, int32_t limit);
     godot::Dictionary set_enabled(const godot::Dictionary &batch);
     godot::Dictionary reconcile_branch_bindings(const godot::Dictionary &batch);
     godot::Dictionary branch_progress(uint64_t branch_handle) const;

@@ -189,6 +189,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::poll_trigger_effects, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("ack_trigger_effects", "up_to_effect_id"),
                          &DCWorldExt::ack_trigger_effects);
+    ClassDB::bind_method(D_METHOD("handoff_trigger_effects", "limit"),
+                         &DCWorldExt::handoff_trigger_effects, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("set_trigger_enabled", "batch"),
                          &DCWorldExt::set_trigger_enabled);
     ClassDB::bind_method(D_METHOD("reconcile_trigger_branch_bindings", "batch"),
@@ -205,6 +207,42 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_trigger_state);
     ClassDB::bind_method(D_METHOD("clear_trigger_state"),
                          &DCWorldExt::clear_trigger_state);
+    ClassDB::bind_method(D_METHOD("configure_effects", "catalog"),
+                         &DCWorldExt::configure_effects);
+    ClassDB::bind_method(D_METHOD("submit_effect_instances", "batch"),
+                         &DCWorldExt::submit_effect_instances);
+    ClassDB::bind_method(D_METHOD("retire_effect_instance", "instance_id", "generation", "effective_day"),
+                         &DCWorldExt::retire_effect_instance);
+    ClassDB::bind_method(D_METHOD("effect_instance_fire_acked", "instance_id", "generation"),
+                         &DCWorldExt::effect_instance_fire_acked);
+    ClassDB::bind_method(D_METHOD("submit_effect_snapshots", "batch"),
+                         &DCWorldExt::submit_effect_snapshots);
+    ClassDB::bind_method(D_METHOD("run_effect_daily", "day_index"),
+                         &DCWorldExt::run_effect_daily);
+    ClassDB::bind_method(D_METHOD("dispatch_effect_native_modifier"),
+                         &DCWorldExt::dispatch_effect_native_modifier);
+    ClassDB::bind_method(D_METHOD("ack_effect_native_modifier"),
+                         &DCWorldExt::ack_effect_native_modifier);
+    ClassDB::bind_method(D_METHOD("effect_should_run", "day_index"),
+                         &DCWorldExt::effect_should_run);
+    ClassDB::bind_method(D_METHOD("poll_effect_transactions", "after_transaction_id", "limit"),
+                         &DCWorldExt::poll_effect_transactions, DEFVAL(128));
+    ClassDB::bind_method(D_METHOD("preflight_effect_transactions", "batch"),
+                         &DCWorldExt::preflight_effect_transactions);
+    ClassDB::bind_method(D_METHOD("commit_effect_transactions", "batch"),
+                         &DCWorldExt::commit_effect_transactions);
+    ClassDB::bind_method(D_METHOD("ack_effect_transactions", "batch"),
+                         &DCWorldExt::ack_effect_transactions);
+    ClassDB::bind_method(D_METHOD("explain_effect", "instance_id"),
+                         &DCWorldExt::explain_effect);
+    ClassDB::bind_method(D_METHOD("get_effect_report"),
+                         &DCWorldExt::get_effect_report);
+    ClassDB::bind_method(D_METHOD("capture_effect_state"),
+                         &DCWorldExt::capture_effect_state);
+    ClassDB::bind_method(D_METHOD("restore_effect_state", "bytes"),
+                         &DCWorldExt::restore_effect_state);
+    ClassDB::bind_method(D_METHOD("clear_effect_state"),
+                         &DCWorldExt::clear_effect_state);
     ClassDB::bind_method(D_METHOD("ensure_modifier_building_handle", "cell", "type_id", "owner_signature_id"),
                          &DCWorldExt::ensure_modifier_building_handle);
     // Independent native PopulationCohort + local-market authority.

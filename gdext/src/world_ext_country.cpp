@@ -1,5 +1,6 @@
 #include "world_ext.h"
 #include "country_runtime.h"
+#include "effect_runtime.h"
 #include "modifier_runtime.h"
 #include "economy_runtime.h"
 
@@ -33,6 +34,9 @@ Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
     if (_modifier_runtime != nullptr)
         static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(
             country_runtime_from(_country_runtime));
+    if (_effect_runtime != nullptr)
+        country_runtime_from(_country_runtime)->attach_effect_runtime(
+            static_cast<EffectRuntime *>(_effect_runtime));
     country_runtime_from(_country_runtime)->attach_modifier_runtime(
         static_cast<ModifierRuntime *>(_modifier_runtime));
     Dictionary out = country_runtime_from(_country_runtime)->configure(catalog, profile, cell_count, seed);

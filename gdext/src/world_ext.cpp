@@ -8,6 +8,7 @@
 #include "country_runtime.h"           // Independent COUNTRY_GRAPH authority
 #include "modifier_runtime.h"          // Shared four-domain Modifier authority
 #include "trigger_runtime.h"           // Generic event-to-effect trigger authority
+#include "effect_runtime.h"            // Generic effect plan/transaction authority
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
 // 双保险：仍未定义时手动兜底，避免某些编译器/PCH 顺序问题。
@@ -65,6 +66,10 @@ DCWorldExt::~DCWorldExt() {
     if (_trigger_runtime != nullptr) {
         delete static_cast<TriggerRuntime *>(_trigger_runtime);
         _trigger_runtime = nullptr;
+    }
+    if (_effect_runtime != nullptr) {
+        delete static_cast<EffectRuntime *>(_effect_runtime);
+        _effect_runtime = nullptr;
     }
     if (_modifier_runtime != nullptr) {
         delete static_cast<ModifierRuntime *>(_modifier_runtime);

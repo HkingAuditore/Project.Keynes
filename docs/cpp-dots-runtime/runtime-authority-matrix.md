@@ -16,6 +16,7 @@
 | Country modifiers | Country `ModifierStore` | embedded in PKCN v4 | Technology and fine-grained tax-rate effects alter frozen consumers, never ledgers directly |
 | Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v30, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
+| Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v4 | Owns catalog IR, flat metric slabs, due/dirty candidates, deterministic worker plans and ACKs; never owns country/economy/Modifier stores |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
 | Current visibility and fog knowledge | `VisionSolver` writing `cell.visible` and `MapData.fog_k_arr` | none; derived | Pure function of territory plus baked terrain; recomputed on restore, never saved |
@@ -189,3 +190,22 @@ explicitly request `defer_visible_publish`.
 `TriggerRuntime` owns committed event aggregation, condition IR, dynamic family-branch bindings,
 the ordered effect buffer, and PKTR v2. GameplayEventBus owns facts and replay; Modifier,
 Country, Economy, and Gameplay remain owners of effect application.
+
+`EffectRuntime` is the next graph owner at priority 85. It owns packed effect
+definitions, active instances, frozen metric revisions, deterministic plans,
+cross-domain transactions and PKEF v4 ACK state. Declarative candidate planning
+may run in workers over frozen slabs, while stable transaction replay remains a
+single EffectRuntime writer. Known Effect-to-Modifier
+commands are batch-enqueued in C++ and ACKed after `modifier_daily`; unsupported
+commands retain the adapter boundary
+`preflight -> PREFLIGHTED -> safe commit -> COMMITTED -> ACK`; it never writes
+Trigger, Modifier, Country, Economy, Gameplay or conserved state. PKEF is
+restored after PKTR so trigger-produced pending work resumes against the same
+source snapshot.
+
+Technology and family Modifier producers now register instances through this
+owner: country research keeps technology bits in PKCN, while family branch
+strength stays in `FAMILY_COMMIT`; Effect only plans the typed Modifier command.
+Native person promotion and `PERSON_COMMIT` also register the current
+`person.modifier.gameplay.generic.bonus` instance. No person ledger or
+structural authority is moved out of `NotablePersonStore`/`PERSON_COMMIT`.

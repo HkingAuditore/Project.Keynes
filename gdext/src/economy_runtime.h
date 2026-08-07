@@ -18,6 +18,8 @@
 
 namespace pk {
 
+class EffectRuntime;
+
 class NativeCountryRuntime;
 class EconomyCsvRecorder;
 class ModifierRuntime;
@@ -107,6 +109,7 @@ public:
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
+    void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
     void attach_trigger_runtime(TriggerRuntime *runtime) { _trigger_runtime = runtime; }
     bool country_restore_allowed() const {
         return !_bootstrapped && !_save.active && !_restore.active;
@@ -2891,6 +2894,7 @@ private:
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
     ModifierRuntime *_modifier_runtime = nullptr;
+    EffectRuntime *_effect_runtime = nullptr;
     TriggerRuntime *_trigger_runtime = nullptr;
     std::vector<int32_t> _epoch_cell_country;
     std::vector<uint64_t> _epoch_country_technologies;
@@ -3476,6 +3480,7 @@ private:
     void update_person_equity_shares();
     void review_person_promotions();
     void promote_person_for_family(int32_t family_index);
+    void register_person_effect(int32_t person_index);
     void retire_person(int32_t person_index);
     void record_person_demography(int32_t cohort_slot,
                                   int64_t population_before,

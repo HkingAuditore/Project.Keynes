@@ -126,6 +126,18 @@ family→person、cohort→person、cell→person、building→person、person�
 
 这些接口只读且只能在 native slice 间调用。UI 不持有可变人物状态，也不能直接改 claim 或岗位。
 
+## Effect Runtime 边界
+
+原生人物晋升和每次 `PERSON_COMMIT` 都会注册 generation-safe
+`person.modifier.gameplay.generic.bonus` 实例，并在 Effect -> native
+Modifier 安全边界生效或退役。它目前只作用于现有 Gameplay Modifier；不是
+人物人口、钱包、需求或岗位的第二份账本。
+
+`EffectFacade.submit_person_modifier_instance()` 是未来 authored 人物效果的
+扩展入口，必须携带 generation-safe person handle，并在 `PERSON_COMMIT` 后
+提交。adapter 只能排入现有 Modifier/Economy typed command。人物岗位、需求满足、
+现金归因和退休仍由 `NotablePersonStore` 与 `PERSON_COMMIT` 唯一负责。
+
 ## PKEC v27
 
 PKEC v27 保留 v26 家族 section，并在 header 追加人物目录 hash、语义策略、人物槽位数和需求边数：

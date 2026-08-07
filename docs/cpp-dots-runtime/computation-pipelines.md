@@ -15,6 +15,36 @@ Gameplay 使用独立 identity/base SoA，查询时组合 Gameplay store；对�
 跨域不直接写 store。完整数据结构和存档见
 [`native-modifier-runtime.md`](./native-modifier-runtime.md)。
 
+## Effect pipeline
+
+```text
+committed trigger/fact boundary
+  -> EffectRuntime frozen instance + metric snapshot
+  -> dense condition/value IR or registered C++ BehaviorFn
+  -> deterministic plan hash + idempotent typed commands
+  -> adapter preflight
+  -> domain safe-boundary commit
+  -> per-domain ACK; pending transaction remains in PKEF until complete
+```
+
+EffectRuntime is an orchestration/transaction authority only. Modifier, Country,
+Economy, Gameplay and conserved ledgers remain the sole writers of their own
+state. Configuration programs use fixed Q16 arithmetic and a bounded value
+stack. Open-ended algorithms use a compile-time C++ behavior with a preallocated
+bounded command buffer; the callback reads frozen inputs and returns commands,
+never mutating a domain. Technology completion, family branch reconciliation,
+and native person promotion/`PERSON_COMMIT` now register native Effect
+instances; their known Modifier commands are batched in C++ into
+`ModifierRuntime` and ACKed at the Modifier daily boundary. The current person
+producer applies only `gameplay.generic.bonus`; PersonStore remains authority
+for every person ledger and structural field.
+
+At scale, eligible declarative candidates are planned against frozen native slabs
+in worker-local output rows, then merged in candidate order by one C++ writer.
+This parallelizes arithmetic without allowing a worker to mutate a transaction
+store or a domain. The serial fallback uses the same planning shape. Behavior
+callbacks keep the serial route until their owner can prove thread safety.
+
 经济 scratch/cache 与 native daily 可见发布的 2026-07 调整见
 [运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
 
