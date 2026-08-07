@@ -3,6 +3,7 @@
 #include "effect_runtime.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
+#include "ideology_runtime.h"
 #include "modifier_runtime.h"
 
 namespace pk {
@@ -33,6 +34,15 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
                 runtime_from(_effect_runtime));
         if (_economy_runtime != nullptr)
             static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_effect_runtime(
+                runtime_from(_effect_runtime));
+        // Country runtime is configured before EffectRuntime during normal
+        // startup, and ideology is intentionally configured with the country
+        // catalog at that same early boundary.  Keep the peer link symmetric:
+        // otherwise NativeIdeologyRuntime retains a null EffectRuntime when
+        // EffectRuntime is configured later, so its first equip/upgrade is
+        // rejected despite both runtimes being healthy.
+        if (_ideology_runtime != nullptr)
+            static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->attach_effect_runtime(
                 runtime_from(_effect_runtime));
     }
     return result;
@@ -83,6 +93,60 @@ Dictionary DCWorldExt::ack_effect_native_modifier() {
     if (_effect_runtime == nullptr || _modifier_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->ack_native_modifier(
         static_cast<ModifierRuntime *>(_modifier_runtime));
+}
+
+Dictionary DCWorldExt::dispatch_effect_native_country() {
+    if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->dispatch_native_country(
+        static_cast<NativeCountryRuntime *>(_country_runtime));
+}
+
+Dictionary DCWorldExt::ack_effect_native_country() {
+    if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->ack_native_country(
+        static_cast<NativeCountryRuntime *>(_country_runtime));
+}
+
+Dictionary DCWorldExt::dispatch_effect_native_economy() {
+    if (_effect_runtime == nullptr || _economy_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->dispatch_native_economy(
+        static_cast<NativeEconomyRuntime *>(_economy_runtime));
+}
+
+Dictionary DCWorldExt::ack_effect_native_economy() {
+    if (_effect_runtime == nullptr || _economy_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->ack_native_economy(
+        static_cast<NativeEconomyRuntime *>(_economy_runtime));
+}
+
+Dictionary DCWorldExt::dispatch_effect_native_gameplay() {
+    if (_effect_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->dispatch_native_gameplay(this);
+}
+
+Dictionary DCWorldExt::ack_effect_native_gameplay() {
+    if (_effect_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->ack_native_gameplay(this);
+}
+
+Dictionary DCWorldExt::get_effect_native_adapter_report() const {
+    Dictionary out;
+    const bool country_pending = _country_runtime != nullptr &&
+        static_cast<const NativeCountryRuntime *>(_country_runtime)
+            ->has_pending_effect_commands();
+    const bool economy_pending = _economy_runtime != nullptr &&
+        static_cast<const NativeEconomyRuntime *>(_economy_runtime)
+            ->has_pending_effect_commands();
+    const bool gameplay_pending = !_effect_gameplay_commands.empty();
+    out["country_pending"] = country_pending;
+    out["economy_pending"] = economy_pending;
+    out["gameplay_pending"] = gameplay_pending;
+    out["country_pending_count"] = country_pending ? 1 : 0;
+    out["economy_pending_count"] = economy_pending ? 1 : 0;
+    out["gameplay_pending_count"] = static_cast<int64_t>(
+        _effect_gameplay_commands.size());
+    out["idle"] = !country_pending && !economy_pending && !gameplay_pending;
+    return out;
 }
 
 bool DCWorldExt::effect_should_run(int64_t day_index) const {

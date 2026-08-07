@@ -36,6 +36,7 @@ func build(include_treasury: bool = false) -> Dictionary:
 		if facade.has_method("fiscal_snapshot") else {}
 	var country_snapshot: Dictionary = facade.snapshot(country_handle) \
 		if facade.has_method("snapshot") else {}
+	var ideology := _ideology_model(country_handle)
 	var treasury := _treasury_model(facade, country_handle) if include_treasury \
 		else _unavailable_treasury("当前页面未请求国库明细")
 	var treasury_available := bool(treasury.get("available", false))
@@ -63,7 +64,22 @@ func build(include_treasury: bool = false) -> Dictionary:
 		"technology_definitions": TechnologyCatalogScript.public_definitions(),
 		"technology_eras": TechnologyCatalogScript.public_era_metadata(),
 		"technology_domains": TechnologyCatalogScript.public_domain_metadata(),
+		"ideology": ideology,
 	}
+
+
+func _ideology_model(country_handle: int) -> Dictionary:
+	if _generator == null or not _generator.has_method("get_ideology_facade"):
+		return {"available": false, "reason": "理念运行时不可用。"}
+	var facade = _generator.get_ideology_facade()
+	if facade == null or not facade.has_method("is_configured") or not facade.is_configured():
+		return {"available": false, "reason": "理念运行时尚未配置。"}
+	var snapshot: Dictionary = facade.snapshot(country_handle)
+	var catalog: Dictionary = facade.catalog_view()
+	if not bool(snapshot.get("ok", false)) or not bool(catalog.get("ok", false)):
+		return {"available": false, "reason": String(snapshot.get("reason",
+			catalog.get("reason", "理念快照不可用。")))}
+	return {"available": true, "facade": facade, "snapshot": snapshot, "catalog": catalog}
 
 
 func _treasury_model(facade, country_handle: int) -> Dictionary:

@@ -1,5 +1,6 @@
 #include "trigger_runtime.h"
 #include "effect_runtime.h"
+#include "ideology_runtime.h"
 
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
@@ -334,7 +335,8 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
             effect.action == MODIFIER_REMOVE || effect.action == MODIFIER_REFRESH ||
             effect.action == MODIFIER_SET_STACKS || effect.action == COUNTRY_COMMAND ||
             effect.action == ECONOMY_COMMAND || effect.action == GAMEPLAY_COMMAND ||
-            effect.action == PUBLISH_EVENT || effect.action == CUSTOM_DOMAIN_COMMAND;
+            effect.action == PUBLISH_EVENT || effect.action == CUSTOM_DOMAIN_COMMAND ||
+            effect.action == IDEOLOGY_COMMAND;
         if (!valid_action ||
             effect.target_resolver < TARGET_STATIC ||
             effect.target_resolver > TARGET_SNAPSHOT ||
@@ -1019,6 +1021,7 @@ Dictionary TriggerRuntime::ack_effects(int64_t up_to_effect_id) {
 }
 
 Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
+                                           NativeIdeologyRuntime *ideology_runtime,
                                            int32_t limit) {
     if (!_configured || effect_runtime == nullptr) return failure("trigger_effect_handoff_unavailable");
     const int32_t max_count = std::max(1, std::min(limit, 4096));
@@ -1028,8 +1031,29 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
     for (const Effect &effect : _effects) {
         if (effect.id <= _acked_effect_id) continue;
         if (handed_off >= max_count) break;
-        // Only the typed Modifier action is native in this bridge. Other
-        // domains stay on TriggerFacade's compatibility adapter path.
+        if (effect.action == IDEOLOGY_COMMAND) {
+            if (ideology_runtime == nullptr) {
+                blocked_reason = "trigger_ideology_runtime_unavailable";
+                break;
+            }
+            std::string error;
+            if (!ideology_runtime->submit_trigger_command_pod(effect.opcode,
+                    effect.effective_day, effect.source_priority,
+                    static_cast<int64_t>(effect.fire_sequence), effect.target_handle,
+                    static_cast<int32_t>(effect.payload[0]), effect.resolved_value,
+                    static_cast<uint32_t>(std::max<int64_t>(0, effect.payload[1])),
+                    static_cast<int32_t>(effect.payload[2]),
+                    static_cast<int32_t>(effect.payload[3]), error)) {
+                blocked_reason = error.empty() ? "trigger_ideology_handoff_failed" : error;
+                break;
+            }
+            last_effect_id = effect.id;
+            ++handed_off;
+            continue;
+        }
+        // Modifier actions are native here; other domains stay on the
+        // TriggerFacade compatibility path until their safe-boundary adapter
+        // is migrated.
         if (effect.action < MODIFIER_APPLY || effect.action > MODIFIER_SET_STACKS) {
             blocked_reason = "trigger_effect_domain_adapter_required";
             break;

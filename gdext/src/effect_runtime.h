@@ -15,6 +15,9 @@
 namespace pk {
 
 class ModifierRuntime;
+class NativeCountryRuntime;
+class NativeEconomyRuntime;
+class DCWorldExt;
 
 // Generic effect plan/transaction authority. It evaluates immutable catalog
 // programs against submitted POD snapshots and emits typed commands. Domain
@@ -23,7 +26,7 @@ class ModifierRuntime;
 class EffectRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 4;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 5;
     static constexpr int64_t Q16_ONE = 65536;
 
     enum Instruction : int32_t {
@@ -91,6 +94,23 @@ public:
         std::array<int64_t, 4> payload{};
     };
 
+    // Durable identity for an external owner (ideology, trigger, etc.).  The
+    // transaction row is intentionally reclaimable after ACK; this binding is
+    // the compact proof that a peer-owned persistent effect still exists.
+    struct ExternalSourceBinding {
+        int64_t binding_id = 0;
+        uint32_t generation = 1;
+        int32_t source_type = 0;
+        int64_t source_id = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        int32_t level = -1;
+        uint8_t location = 0;
+        uint8_t active = 0;
+        uint64_t template_signature = 0;
+        uint64_t program_hash = 0;
+    };
+
     struct BehaviorInput {
         int64_t instance_id = 0;
         uint32_t instance_generation = 0;
@@ -136,6 +156,29 @@ public:
                              int32_t level, int64_t next_due_day, bool active,
                              std::string &error);
     bool has_instance_pod(int64_t instance_id, uint32_t generation) const;
+    bool upsert_external_binding_pod(int64_t binding_id, uint32_t generation,
+                                     int32_t source_type, int64_t source_id,
+                                     uint64_t target_handle,
+                                     uint32_t target_generation, int32_t level,
+                                     uint8_t location, uint64_t template_signature,
+                                     uint64_t program_hash, std::string &error);
+    bool retire_external_binding_pod(int64_t binding_id, uint32_t generation,
+                                     std::string &error);
+    bool has_external_binding_pod(int64_t binding_id, uint32_t generation,
+                                  int32_t source_type, int64_t source_id,
+                                  uint64_t target_handle,
+                                  uint32_t target_generation, int32_t level,
+                                  uint8_t location,
+                                  uint64_t template_signature,
+                                  uint64_t program_hash) const;
+    // Strict restore audit for peer-owned transitions. Every expected
+    // transaction must still be pending under the declared external source,
+    // and no other pending transaction for the same target may exist.
+    bool verify_external_pending_transactions_pod(
+        int32_t source_type, uint64_t target_handle, uint64_t source_id_mask,
+        const std::vector<int64_t> &expected_transaction_ids,
+        const std::vector<uint64_t> &expected_source_ids,
+        std::string &error) const;
     bool instance_fire_acked_pod(int64_t instance_id, uint32_t generation) const;
     bool set_metric_pod(int64_t instance_id, int32_t metric_id,
                         int64_t revision, int64_t value_q16,
@@ -156,6 +199,25 @@ public:
                                     const std::string &definition_key,
                                     const std::array<int64_t, 4> &payload,
                                     std::string &error);
+    // Typed ingress for peer authorities (currently ideology).  The caller
+    // supplies a precompiled program and command-template identity; Effect
+    // Runtime still owns the transaction, idempotency and domain ACK.
+    bool enqueue_external_effect_pod(int64_t effect_id, int64_t effective_day,
+                                     int32_t source_type, int64_t source_id,
+                                     const std::string &program_key,
+                                     uint64_t source_handle, uint64_t target_handle,
+                                     uint32_t target_generation,
+                                     uint64_t fire_sequence, int32_t action,
+                                     int32_t domain, int32_t opcode,
+                                     int64_t resolved_value, int32_t duration_days,
+                                     int32_t stacks, const std::string &command_key,
+                                     const std::string &definition_key,
+                                     const std::array<int64_t, 4> &payload,
+                                     std::string &error,
+                                     int64_t *out_transaction_id = nullptr);
+    // Peer runtimes retain only transaction IDs. ACKED rows can be compacted,
+    // while REJECTED rows remain queryable until their producer observes them.
+    int32_t transaction_status_pod(int64_t transaction_id) const;
     godot::Dictionary submit_instances(const godot::Dictionary &batch);
     godot::Dictionary submit_snapshots(const godot::Dictionary &batch);
     godot::Dictionary run_daily(int64_t day_index);
@@ -163,7 +225,14 @@ public:
     // constructing a Godot Dictionary/Callable per effect transaction.
     godot::Dictionary dispatch_native_modifier(ModifierRuntime *modifier_runtime);
     godot::Dictionary ack_native_modifier(ModifierRuntime *modifier_runtime);
+    godot::Dictionary dispatch_native_country(NativeCountryRuntime *country_runtime);
+    godot::Dictionary ack_native_country(NativeCountryRuntime *country_runtime);
+    godot::Dictionary dispatch_native_economy(NativeEconomyRuntime *economy_runtime);
+    godot::Dictionary ack_native_economy(NativeEconomyRuntime *economy_runtime);
+    godot::Dictionary dispatch_native_gameplay(DCWorldExt *world_ext);
+    godot::Dictionary ack_native_gameplay(DCWorldExt *world_ext);
     bool should_run(int64_t day_index) const;
+    uint64_t catalog_hash() const { return _catalog_hash; }
     godot::Dictionary poll_transactions(int64_t after_transaction_id,
                                          int32_t limit) const;
     godot::Dictionary preflight_transactions(const godot::Dictionary &batch);
@@ -187,6 +256,13 @@ private:
         int32_t arg1 = 0;
         int64_t value = 0;
     };
+    enum NativeModifierAdapterKind : int32_t {
+        NATIVE_MODIFIER_GENERIC = 0,
+        NATIVE_MODIFIER_TECHNOLOGY = 1,
+        NATIVE_MODIFIER_FAMILY = 2,
+        NATIVE_MODIFIER_PERSON = 3,
+        NATIVE_MODIFIER_TRIGGER = 4,
+    };
     struct CommandDefinition {
         int32_t action = CUSTOM_DOMAIN_COMMAND;
         int32_t domain = -1;
@@ -199,6 +275,7 @@ private:
         int32_t stacks = 1;
         std::string command_key;
         std::string definition_key;
+        int32_t native_modifier_adapter = NATIVE_MODIFIER_GENERIC;
         std::array<int64_t, 4> payload{};
     };
     struct Definition {
@@ -297,6 +374,7 @@ private:
         int64_t transaction_id = 0;
         uint32_t request_begin = 0;
         uint32_t request_count = 0;
+        uint32_t domain_bit = 0;
     };
 
     bool evaluate_condition(const Definition &definition,
@@ -312,11 +390,21 @@ private:
     static void append_planned_command(std::vector<Command> &commands,
                                        uint32_t &required_ack_mask,
                                        const Command &command);
+    // The content domain on a Modifier command is a ModifierRuntime subdomain
+    // (country/economy/gameplay), not an Effect adapter identity.  ACK state
+    // must therefore be keyed by the adapter/action that owns the safe commit
+    // boundary, otherwise a Country modifier (domain 1) aliases a Country
+    // command (also domain 1) in a mixed transaction.
+    static uint32_t adapter_ack_bit_for(const Command &command);
     void append_command(Transaction &transaction, const Command &command);
     void index_transaction_commands(const Transaction &transaction);
     void unindex_transaction_commands(const Transaction &transaction);
     void track_pending_transaction(const Transaction &transaction);
     void untrack_pending_transaction(const Transaction &transaction);
+    // Returns true only when this domain ACK completed the transaction's full
+    // domain mask. A transaction may otherwise remain COMMITTED while another
+    // native domain is still pending at its own safety boundary.
+    bool acknowledge_native_domain(Transaction &transaction, uint32_t domain_bit);
     void rebuild_command_idempotency_index();
     void compact_terminal_transactions();
     bool create_retirement_transaction(int32_t instance_index,
@@ -365,6 +453,15 @@ private:
     uint64_t _native_modifier_transactions = 0;
     uint64_t _native_modifier_commands = 0;
     uint64_t _native_modifier_acks = 0;
+    uint64_t _native_country_transactions = 0;
+    uint64_t _native_country_commands = 0;
+    uint64_t _native_country_acks = 0;
+    uint64_t _native_economy_transactions = 0;
+    uint64_t _native_economy_commands = 0;
+    uint64_t _native_economy_acks = 0;
+    uint64_t _native_gameplay_transactions = 0;
+    uint64_t _native_gameplay_commands = 0;
+    uint64_t _native_gameplay_acks = 0;
     double _last_evaluate_ms = 0.0;
     double _last_native_dispatch_ms = 0.0;
     double _last_native_ack_ms = 0.0;
@@ -404,9 +501,20 @@ private:
     std::unordered_map<int64_t, int32_t> _transaction_ids;
     std::unordered_map<int64_t, uint32_t> _pending_transactions_by_instance;
     std::unordered_map<uint64_t, uint32_t> _pending_command_idempotency;
+    std::vector<ExternalSourceBinding> _external_bindings;
+    std::unordered_map<int64_t, int32_t> _external_binding_ids;
     std::vector<int64_t> _native_request_ids;
     std::vector<NativeAckBinding> _native_ack_bindings;
     std::unordered_set<int64_t> _native_bound_transaction_ids;
+    std::vector<int64_t> _native_country_request_ids;
+    std::vector<NativeAckBinding> _native_country_ack_bindings;
+    std::unordered_set<int64_t> _native_country_bound_transaction_ids;
+    std::vector<int64_t> _native_economy_request_ids;
+    std::vector<NativeAckBinding> _native_economy_ack_bindings;
+    std::unordered_set<int64_t> _native_economy_bound_transaction_ids;
+    std::vector<int64_t> _native_gameplay_request_ids;
+    std::vector<NativeAckBinding> _native_gameplay_ack_bindings;
+    std::unordered_set<int64_t> _native_gameplay_bound_transaction_ids;
     int32_t _max_native_modifier_commands = 4096;
 };
 

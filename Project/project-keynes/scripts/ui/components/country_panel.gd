@@ -8,7 +8,7 @@ signal section_selected(section_id: String)
 
 const SECTION_DEFINITIONS := [
 	{"id": "technology", "label": "科技", "icon": &"country.technology", "accent": UITokens.CLIMATE, "available": true},
-	{"id": "politics", "label": "政治", "icon": &"country.politics", "accent": UITokens.ACCENT, "available": false},
+	{"id": "ideology", "label": "理念", "icon": &"country.politics", "accent": UITokens.ACCENT, "available": true},
 	{"id": "economy", "label": "经济", "icon": &"country.economy", "accent": UITokens.RESOURCE, "available": true},
 	{"id": "military", "label": "军事", "icon": &"country.military", "accent": UITokens.RISK, "available": false},
 	{"id": "diplomacy", "label": "外交", "icon": &"country.diplomacy", "accent": UITokens.WATER, "available": false},
@@ -22,6 +22,7 @@ var _section_icon: IconBadge
 var _section_title: Label
 var _technology_workspace: Control
 var _economy_workspace: Control
+var _ideology_workspace: Control
 var _model: Dictionary = {}
 var _section_id := ""
 var _compact := false
@@ -38,10 +39,11 @@ func _ready() -> void:
 	_section_title = get_node_or_null("Center/Dialog/Content/Header/SectionTitle") as Label
 	_technology_workspace = get_node_or_null("Center/Dialog/Content/SectionHost/TechnologyWorkspace") as Control
 	_economy_workspace = get_node_or_null("Center/Dialog/Content/SectionHost/EconomyWorkspace") as Control
+	_ideology_workspace = get_node_or_null("Center/Dialog/Content/SectionHost/IdeologyWorkspace") as Control
 	var close_button := get_node_or_null("Center/Dialog/Content/Header/CloseButton") as Button
 	if _center == null or _dialog == null or _section_host == null \
 			or _section_icon == null or _section_title == null \
-			or _technology_workspace == null or _economy_workspace == null \
+			or _technology_workspace == null or _economy_workspace == null or _ideology_workspace == null \
 			or close_button == null:
 		push_error("CountryPanel 必须通过 country_panel.tscn 实例化。")
 		return
@@ -92,6 +94,9 @@ func refresh_summary(model: Dictionary) -> void:
 	if _section_id == "economy" and _economy_workspace != null:
 		_economy_workspace.refresh_model(model)
 		return
+	if _section_id == "ideology" and _ideology_workspace != null:
+		_ideology_workspace.refresh_model(model)
+		return
 	_apply_section()
 
 
@@ -112,14 +117,20 @@ func _apply_section() -> void:
 	_section_title.add_theme_color_override("font_color", accent.lerp(UITokens.TEXT_MAIN, 0.55))
 	var technology_open := _section_id == "technology"
 	var economy_open := _section_id == "economy"
+	var ideology_open := _section_id == "ideology"
 	_technology_workspace.visible = technology_open
 	_economy_workspace.visible = economy_open
+	_ideology_workspace.visible = ideology_open
 	if technology_open:
 		_technology_workspace.set_model(_model)
 		_technology_workspace.set_compact(_compact)
 		return
 	if economy_open:
 		_economy_workspace.set_model(_model)
+		return
+	if ideology_open:
+		_ideology_workspace.set_model(_model)
+		_ideology_workspace.set_compact(_compact)
 		return
 
 
@@ -143,3 +154,5 @@ func _update_responsive_layout() -> void:
 	_dialog.custom_minimum_size = Vector2.ZERO
 	if _technology_workspace != null:
 		_technology_workspace.set_compact(_compact)
+	if _ideology_workspace != null:
+		_ideology_workspace.set_compact(_compact)

@@ -34,7 +34,7 @@ public:
     // 30: authoritative composite satisfaction dimensions, income baseline EMA,
     //     per-cohort fiscal burden accumulators, family branch satisfaction, and
     //     per-cell published social-pressure level.
-    static constexpr int32_t SCHEMA_VERSION = 30;
+    static constexpr int32_t SCHEMA_VERSION = 31;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     // 不能叫 PAGE_SIZE：那是 POSIX 保留的宏名，emscripten 的 musl
     // <bits/limits.h> 无条件 `#define PAGE_SIZE 65536`，会把这行成员声明展开成
@@ -125,6 +125,27 @@ public:
     godot::Dictionary bootstrap(const godot::Dictionary &population_packet,
                                 const godot::Dictionary &market_packet);
     godot::Dictionary submit_commands(const godot::Dictionary &batch);
+    // EffectRuntime's Economy adapter uses this fixed POD ABI. Payload layout
+    // is compiled at the catalog boundary: payload_i0's low/high words become
+    // i32_0/i32_1, value_q16 becomes i64_0 and payload_i1 becomes i64_1.
+    struct EffectCommand {
+        int32_t opcode = 0;
+        int64_t effective_day = 0;
+        int64_t sequence = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        int32_t i32_0 = 0;
+        int32_t i32_1 = 0;
+        int64_t i64_0 = 0;
+        int64_t i64_1 = 0;
+        uint64_t idempotency_key = 0;
+    };
+    bool submit_effect_commands_pod(const EffectCommand *commands, size_t count,
+                                    std::vector<int64_t> &request_ids,
+                                    std::string &error);
+    bool effect_command_result_pod(int64_t request_id, bool &complete,
+                                   bool &ok, std::string &reason) const;
+    bool has_pending_effect_commands() const;
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_slice_compact(const godot::Dictionary &ctx);
     bool capture_environment(int64_t day_index, const float *temperature,
@@ -1149,6 +1170,14 @@ private:
         int64_t i64_0 = 0;
         int64_t i64_1 = 0;
         uint64_t submit_order = 0;
+        int64_t effect_request_id = 0;
+        uint64_t effect_idempotency_key = 0;
+    };
+
+    struct EffectCommandResult {
+        uint8_t complete = 0;
+        uint8_t ok = 0;
+        std::string reason;
     };
 
     struct StructuralCommand {
@@ -2824,6 +2853,9 @@ private:
     std::vector<int32_t> _market_cells;
     std::vector<Command> _pending_commands;
     std::vector<Command> _epoch_commands;
+    std::unordered_map<int64_t, EffectCommandResult> _effect_command_results;
+    std::unordered_map<uint64_t, int64_t> _effect_idempotency_requests;
+    int64_t _next_effect_request_id = 1;
     std::vector<StructuralCommand> _structural_commands;
     std::vector<CellSummary> _committed_cells;
     std::vector<CellSummary> _staging_cells;
@@ -3183,6 +3215,7 @@ private:
     int64_t trade_transit_goods() const;
     int64_t trade_escrow_cash() const;
     bool apply_command(const Command &cmd, std::string &error);
+    bool validate_command_pod(const Command &cmd, std::string &error) const;
     bool apply_family_free_building_reward(const Command &cmd,
                                            std::string &error);
     bool apply_family_population_reward(const Command &cmd,

@@ -31,7 +31,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION) {
+    if (schema != 30 && schema != SCHEMA_VERSION) {
         error = schema <= 29 ? "economy_save_v29_or_earlier_unsupported" :
             "economy_save_schema_unsupported";
         return false;
@@ -772,9 +772,29 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, cmd.sequence) || !read_le(bytes, cursor, cmd.target_handle) ||
                 !read_le(bytes, cursor, cmd.i32_0) || !read_le(bytes, cursor, cmd.i32_1) ||
                 !read_le(bytes, cursor, cmd.i64_0) || !read_le(bytes, cursor, cmd.i64_1) ||
-                !read_le(bytes, cursor, cmd.submit_order)) {
+                !read_le(bytes, cursor, cmd.submit_order) ||
+                (_restore.schema_version >= 31 &&
+                    (!read_le(bytes, cursor, cmd.effect_request_id) ||
+                     !read_le(bytes, cursor, cmd.effect_idempotency_key)))) {
                 error = "save_command_payload_truncated";
                 return false;
+            }
+            if (cmd.effect_request_id < 0 ||
+                (cmd.effect_request_id == 0 && cmd.effect_idempotency_key != 0) ||
+                (cmd.effect_request_id != 0 && cmd.effect_idempotency_key == 0)) {
+                error = "save_effect_command_identity_invalid";
+                return false;
+            }
+            if (cmd.effect_request_id != 0) {
+                if (!_effect_idempotency_requests.emplace(
+                        cmd.effect_idempotency_key, cmd.effect_request_id).second ||
+                    !_effect_command_results.emplace(cmd.effect_request_id,
+                        EffectCommandResult{}).second) {
+                    error = "save_effect_command_identity_duplicate";
+                    return false;
+                }
+                _next_effect_request_id = std::max(_next_effect_request_id,
+                    cmd.effect_request_id + 1);
             }
             _pending_commands.push_back(cmd);
             ++_restore.restored_commands;

@@ -223,6 +223,24 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::dispatch_effect_native_modifier);
     ClassDB::bind_method(D_METHOD("ack_effect_native_modifier"),
                          &DCWorldExt::ack_effect_native_modifier);
+    ClassDB::bind_method(D_METHOD("dispatch_effect_native_country"),
+                         &DCWorldExt::dispatch_effect_native_country);
+    ClassDB::bind_method(D_METHOD("ack_effect_native_country"),
+                         &DCWorldExt::ack_effect_native_country);
+    ClassDB::bind_method(D_METHOD("dispatch_effect_native_economy"),
+                         &DCWorldExt::dispatch_effect_native_economy);
+    ClassDB::bind_method(D_METHOD("ack_effect_native_economy"),
+                         &DCWorldExt::ack_effect_native_economy);
+    ClassDB::bind_method(D_METHOD("dispatch_effect_native_gameplay"),
+                         &DCWorldExt::dispatch_effect_native_gameplay);
+    ClassDB::bind_method(D_METHOD("ack_effect_native_gameplay"),
+                         &DCWorldExt::ack_effect_native_gameplay);
+    ClassDB::bind_method(D_METHOD("get_effect_native_adapter_report"),
+                         &DCWorldExt::get_effect_native_adapter_report);
+    ClassDB::bind_method(D_METHOD("gameplay_effect_should_run", "day_index"),
+                         &DCWorldExt::gameplay_effect_should_run);
+    ClassDB::bind_method(D_METHOD("run_gameplay_effects", "day_index"),
+                         &DCWorldExt::run_gameplay_effects);
     ClassDB::bind_method(D_METHOD("effect_should_run", "day_index"),
                          &DCWorldExt::effect_should_run);
     ClassDB::bind_method(D_METHOD("poll_effect_transactions", "after_transaction_id", "limit"),
@@ -243,6 +261,26 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_effect_state);
     ClassDB::bind_method(D_METHOD("clear_effect_state"),
                          &DCWorldExt::clear_effect_state);
+    ClassDB::bind_method(D_METHOD("configure_ideologies", "catalog"),
+                         &DCWorldExt::configure_ideologies);
+    ClassDB::bind_method(D_METHOD("submit_ideology_commands", "batch"),
+                         &DCWorldExt::submit_ideology_commands);
+    ClassDB::bind_method(D_METHOD("run_ideology_daily", "day_index"),
+                         &DCWorldExt::run_ideology_daily);
+    ClassDB::bind_method(D_METHOD("ideology_should_run", "day_index"),
+                         &DCWorldExt::ideology_should_run);
+    ClassDB::bind_method(D_METHOD("get_ideology_snapshot", "country_handle"),
+                         &DCWorldExt::get_ideology_snapshot);
+    ClassDB::bind_method(D_METHOD("explain_ideology", "country_handle", "ideology_id"),
+                         &DCWorldExt::explain_ideology);
+    ClassDB::bind_method(D_METHOD("get_ideology_report"),
+                         &DCWorldExt::get_ideology_report);
+    ClassDB::bind_method(D_METHOD("capture_ideology_state"),
+                         &DCWorldExt::capture_ideology_state);
+    ClassDB::bind_method(D_METHOD("restore_ideology_state", "bytes"),
+                         &DCWorldExt::restore_ideology_state);
+    ClassDB::bind_method(D_METHOD("clear_ideology_state"),
+                         &DCWorldExt::clear_ideology_state);
     ClassDB::bind_method(D_METHOD("ensure_modifier_building_handle", "cell", "type_id", "owner_signature_id"),
                          &DCWorldExt::ensure_modifier_building_handle);
     // Independent native PopulationCohort + local-market authority.

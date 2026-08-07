@@ -6,7 +6,7 @@ signal load_completed(slot_id: String, result: Dictionary)
 const REQUIRED_SECTIONS := [
 	"new_game_config", "world_clock", "dynamic_world", "environment",
 	"pkcm", "pkcn", "pkec", "pkgp", "pkfg", "journal",
-	"player_context", "player_view", "preview", "pktr", "pkef",
+	"player_context", "player_view", "preview", "pktr", "pkef", "pkid",
 ]
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
@@ -106,7 +106,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 	var bytes_by_id: Dictionary = container.get("section_bytes", {})
 	for required in REQUIRED_SECTIONS:
 		if not bytes_by_id.has(required):
-			if required in ["pkcm", "pkgp", "pktr", "pkef"]:
+			if required in ["pkcm", "pkgp", "pktr", "pkef", "pkid"]:
 				bytes_by_id[required] = PackedByteArray()
 				continue
 			return _result(false, "save_provider_missing", "存档缺少必需 section：%s" % required)
@@ -123,6 +123,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 	decoded["pkgp"] = bytes_by_id.pkgp
 	decoded["pktr"] = bytes_by_id.pktr
 	decoded["pkef"] = bytes_by_id.pkef
+	decoded["pkid"] = bytes_by_id.pkid
 	decoded["preview"] = bytes_by_id.preview
 	_pending_load = {
 		"slot_id": slot_id,
@@ -226,7 +227,9 @@ func _wait_for_safe_boundary() -> Dictionary:
 			return boundary
 		var code := String(boundary.get("code", ""))
 		if code not in ["save_requires_committed_boundary", "save_requires_idle_country", \
-			"save_requires_idle_effect"]:
+			"save_requires_idle_effect", "save_requires_idle_ideology", \
+			"save_requires_idle_effect_country", "save_requires_idle_effect_economy", \
+			"save_requires_idle_effect_gameplay"]:
 			return boundary
 		var generator := _runtime_host.generator()
 		if generator != null and generator.has_method("advance_save_boundary"):
@@ -245,6 +248,22 @@ func _can_save() -> Dictionary:
 		return _result(false, "save_provider_missing", "国家或经济 provider 未注册。")
 	var country_report: Dictionary = country.report()
 	var economy_report: Dictionary = economy.report()
+	var effect = generator.get_effect_facade()
+	var effect_ext = effect.world_ext() if effect != null and effect.has_method("world_ext") else null
+	# The Effect owner is persisted independently from the domain owners.  Do
+	# not capture PKEF/PKCN/PKEC/journal while a native POD request has crossed
+	# Effect preflight but has not received the owning domain's durable ACK.
+	if effect_ext != null and effect_ext.has_method("get_effect_native_adapter_report"):
+		var adapters: Dictionary = effect_ext.get_effect_native_adapter_report()
+		if bool(adapters.get("country_pending", false)):
+			return _result(false, "save_requires_idle_effect_country",
+				"等待理念/Effect Country 命令提交")
+		if bool(adapters.get("economy_pending", false)):
+			return _result(false, "save_requires_idle_effect_economy",
+				"等待理念/Effect Economy 命令提交")
+		if bool(adapters.get("gameplay_pending", false)):
+			return _result(false, "save_requires_idle_effect_gameplay",
+				"等待理念/Effect Gameplay 事件写入 journal")
 	if bool(economy_report.get("busy", economy_report.get("epoch_active", false))) \
 			or not bool(economy_report.get("committed", true)):
 		return _result(false, "save_requires_committed_boundary", "经济尚未到达联合提交边界。")
@@ -256,12 +275,16 @@ func _can_save() -> Dictionary:
 		country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
 	if country_busy:
 		return _result(false, "save_requires_idle_country", "国家命令图尚未空闲。")
-	var effect = generator.get_effect_facade()
-	var effect_ext = effect.world_ext() if effect != null and effect.has_method("world_ext") else null
 	if effect_ext != null and effect_ext.has_method("effect_should_run") \
 			and bool(effect_ext.effect_should_run(_world_clock.day_index())):
 		return _result(false, "save_requires_idle_effect",
 			"Effect transaction has not reached a safe commit boundary")
+	var ideology = generator.get_ideology_facade() if generator.has_method("get_ideology_facade") else null
+	var ideology_ext = ideology.world_ext() if ideology != null and ideology.has_method("world_ext") else null
+	if ideology_ext != null and ideology_ext.has_method("ideology_should_run") \
+			and bool(ideology_ext.ideology_should_run(_world_clock.day_index())):
+		return _result(false, "save_requires_idle_ideology",
+			"Ideology commands have not reached their safe boundary")
 	return _result(true, "ok", "")
 
 
@@ -305,9 +328,9 @@ func _register_providers() -> void:
 			"_restore_climate_modifier_provider"),
 		_make_provider(&"world_clock", 1, PackedStringArray(["world_clock"]),
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
-		_make_provider(&"pkcn", 4, PackedStringArray(["pkcn"]),
+		_make_provider(&"pkcn", 6, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		_make_provider(&"pkec", 30, PackedStringArray(["pkec"]),
+		_make_provider(&"pkec", 31, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 1, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -315,14 +338,19 @@ func _register_providers() -> void:
 		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
 		_make_provider(&"pkfg", 1, PackedStringArray(["pkfg"]),
 			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
-		_make_provider(&"journal", 1, PackedStringArray(["journal"]),
+		# v3 adds native Effect PUBLISH_EVENT idempotency evidence. The manifest
+		# must match the payload schema, or list_slots() rejects newly written saves.
+		_make_provider(&"journal", 3, PackedStringArray(["journal"]),
 			"_can_journal_provider", "_write_journal_provider", "_restore_journal_provider"),
 		_make_provider(&"pktr", 2, PackedStringArray(["pktr"]),
 			"_can_trigger_provider", "_write_trigger_provider",
 			"_restore_trigger_provider"),
-		_make_provider(&"pkef", 4, PackedStringArray(["pkef"]),
+		_make_provider(&"pkef", 5, PackedStringArray(["pkef"]),
 			"_can_effect_provider", "_write_effect_provider",
 			"_restore_effect_provider"),
+		_make_provider(&"pkid", 2, PackedStringArray(["pkid"]),
+			"_can_ideology_provider", "_write_ideology_provider",
+			"_restore_ideology_provider"),
 		_make_provider(&"player_session", 1,
 			PackedStringArray(["player_context", "player_view", "preview"]),
 			"_can_player_provider", "_write_player_provider", "_restore_player_provider"),
@@ -360,22 +388,33 @@ func _manifest_compatible(raw_manifest) -> bool:
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
 		if not by_id.has(provider_id):
-			if provider_id in ["pkcm", "pkgp", "pkef"]:
+			if provider_id in ["pkcm", "pkgp", "pkef", "pkid"]:
 				continue
 			return false
 		var entry: Dictionary = by_id[provider_id]
 		var saved_schema := int(entry.get("schema_version", -1))
 		var schema_compatible: bool = saved_schema == provider.schema_version()
 		if provider_id == "pkcn":
-			schema_compatible = saved_schema in [3, 4]
+			# PKCN v6 carries Country Effect ingress identities. Its native reader is
+			# exact-version only, so advertising an older schema would defer failure
+			# until after partial session restore.
+			schema_compatible = saved_schema == 6
 		elif provider_id == "pkec":
-			schema_compatible = saved_schema == 30
+			schema_compatible = saved_schema in [30, 31]
 		elif provider_id == "pktr":
 			schema_compatible = saved_schema == 2
+		elif provider_id == "journal":
+			schema_compatible = saved_schema in [1, 2, 3]
 		elif provider_id == "pkef":
 			# PKEF is optional for saves predating EffectRuntime, but a present
-			# section must match the native PKEF v4 wire protocol.
-			schema_compatible = saved_schema == 4
+			# v4/v5 section must be accepted by the native reader. PKID v2 performs
+			# the strict durable-binding check after PKEF has restored.
+			schema_compatible = saved_schema in [4, 5]
+		elif provider_id == "pkid":
+			# Legacy saves predate the ideology provider; an absent PKID restores
+			# as an empty ideology state. PKID v1 is readable only for fully
+			# inactive ideology state; active v1 lacks the required PKEF binding.
+			schema_compatible = saved_schema in [1, 2]
 		if not schema_compatible:
 			return false
 		var actual := PackedStringArray(entry.get("sections", []))
@@ -460,6 +499,16 @@ func _can_effect_provider(context: Dictionary) -> Dictionary:
 		"Effect provider unavailable" if not available else "")
 
 
+func _can_ideology_provider(context: Dictionary) -> Dictionary:
+	var generator = context.get("generator")
+	var facade = generator.get_ideology_facade() if generator != null and generator.has_method("get_ideology_facade") else null
+	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
+	var available: bool = ext != null and ext.has_method("capture_ideology_state") \
+		and ext.has_method("restore_ideology_state") and ext.has_method("clear_ideology_state")
+	return _result(available, "ok" if available else "save_provider_missing",
+		"Ideology provider unavailable" if not available else "")
+
+
 func _can_journal_provider(context: Dictionary) -> Dictionary:
 	var event_bus = context.get("event_bus")
 	return _result(event_bus != null, "ok" if event_bus != null else "save_provider_missing",
@@ -529,6 +578,14 @@ func _write_effect_provider(context: Dictionary) -> Dictionary:
 	if bytes.is_empty():
 		return _result(false, "pkef_save_failed", "Effect state serialization failed")
 	return {"ok": true, "sections": {"pkef": bytes}}
+
+
+func _write_ideology_provider(context: Dictionary) -> Dictionary:
+	var facade = context.generator.get_ideology_facade()
+	var bytes: PackedByteArray = facade.world_ext().capture_ideology_state()
+	if bytes.is_empty():
+		return _result(false, "pkid_save_failed", "Ideology state serialization failed")
+	return {"ok": true, "sections": {"pkid": bytes}}
 
 
 func _write_modifier_provider(context: Dictionary, domain: int,
@@ -644,6 +701,17 @@ func _restore_effect_provider(sections: Dictionary, context: Dictionary) -> Dict
 	var result: Dictionary = ext.clear_effect_state() if bytes.is_empty() else ext.restore_effect_state(bytes)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pkef_restore_failed", String(result.get("reason", "Effect state restore failed")))
+
+
+func _restore_ideology_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
+	var facade = context.generator.get_ideology_facade()
+	var ext = facade.world_ext()
+	# PKID is intentionally an empty-state migration for saves made before the
+	# ideology runtime. New saves always contain a non-empty native PKID payload.
+	var bytes := PackedByteArray(sections.get("pkid", PackedByteArray()))
+	var result: Dictionary = ext.clear_ideology_state() if bytes.is_empty() else ext.restore_ideology_state(bytes)
+	return result if bool(result.get("ok", false)) else _result(false,
+		"pkid_restore_failed", String(result.get("reason", "Ideology state restore failed")))
 
 
 func _restore_modifier_provider(sections: Dictionary, context: Dictionary,

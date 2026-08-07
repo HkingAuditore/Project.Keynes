@@ -44,6 +44,9 @@ func tick(ctx) -> Dictionary:
 		"day_index": int(ctx.day_index) if ctx != null else 0,
 		"tick_index": int(ctx.tick_index) if ctx != null else 0,
 	})
+	var effect_ack: Dictionary = {}
+	if facade.world_ext().has_method("ack_effect_native_country"):
+		effect_ack = facade.world_ext().ack_effect_native_country()
 	_last_report = result.duplicate(true)
 	facade.dispatch_committed_events(result)
 	var barrier := bool(result.get("country_day_barrier", false))
@@ -59,6 +62,7 @@ func tick(ctx) -> Dictionary:
 		"changed_cells": int(result.get("changed_cells", 0)),
 		"changed_countries": int(result.get("changed_countries", 0)),
 		"published_to_slot": bool(result.get("published_to_slot", false)),
+		"effect_native_acked": int(effect_ack.get("acknowledged", 0)),
 	}
 
 func last_report() -> Dictionary:

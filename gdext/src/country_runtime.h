@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -23,7 +24,7 @@ class ModifierRuntime;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 5;
+    static constexpr int32_t SCHEMA_VERSION = 6;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
@@ -59,6 +60,22 @@ public:
 
     enum RuntimeMode : int32_t { MODE_OFF = 0, MODE_PROBE = 1, MODE_ACTIVE = 2 };
 
+    // EffectRuntime's country adapter uses this POD ABI.  `payload` is
+    // precompiled by the Effect catalog: [cell|aux], [domain|position], four
+    // packed int16 research weights, and tax kind/item/rate respectively.
+    struct EffectCommand {
+        int32_t opcode = 0;
+        int64_t effective_day = 0;
+        int64_t sequence = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        int64_t value = 0;
+        std::array<int64_t, 4> payload{};
+        uint64_t idempotency_key = 0;
+        const char *stable_id = nullptr;
+        const char *display_name = nullptr;
+    };
+
     struct EconomySnapshot {
         std::vector<int32_t> cell_country_slot;
         std::vector<uint64_t> country_handles;
@@ -84,6 +101,12 @@ public:
     godot::Dictionary bootstrap(const godot::Dictionary &packet,
                                 const godot::PackedByteArray &is_water);
     godot::Dictionary submit_commands(const godot::Dictionary &batch);
+    bool submit_effect_commands_pod(const EffectCommand *commands, size_t count,
+                                    std::vector<int64_t> &request_ids,
+                                    std::string &error);
+    bool effect_command_result_pod(int64_t request_id, bool &complete,
+                                   bool &ok, std::string &reason) const;
+    bool has_pending_effect_commands() const;
     bool should_run(int64_t day_index) const;
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary report() const;
@@ -115,6 +138,9 @@ public:
     // transfers validate generation-bearing handles.
     bool copy_economy_snapshot(EconomySnapshot &out) const;
     bool has_technology(int32_t country_slot, int32_t technology_id) const;
+    // Native peer runtimes may read this compact fact bitset at their own
+    // scheduled boundary.  Research evidence remains Country authority.
+    bool has_research_signal(int32_t country_slot, int32_t signal_id) const;
     int32_t country_slot_for_cell(int32_t cell) const;
     int64_t country_handle_for_cell(int32_t cell) const;
     bool valid_handle(int64_t handle) const;
@@ -174,6 +200,8 @@ private:
         std::string stable_id;
         std::string display_name;
         uint64_t submit_order = 0;
+        int64_t effect_request_id = 0;
+        uint64_t effect_idempotency_key = 0;
     };
 
     struct Event {
@@ -228,6 +256,12 @@ private:
         }
         size_t size() const { return count; }
         bool empty() const { return count == 0; }
+    };
+
+    struct EffectCommandResult {
+        uint8_t complete = 0;
+        uint8_t ok = 0;
+        std::string reason;
     };
 
     struct SignalEvidence {
@@ -392,6 +426,9 @@ private:
     uint64_t _tax_policy_version = 0;
     int64_t _last_research_day = -1;
     std::vector<Command> _pending_commands;
+    std::unordered_map<int64_t, EffectCommandResult> _effect_command_results;
+    std::unordered_map<uint64_t, int64_t> _effect_command_idempotency;
+    int64_t _next_effect_request_id = 1;
     std::deque<Event> _events;
     CommandBatchState _command_batch;
     godot::Dictionary _report;

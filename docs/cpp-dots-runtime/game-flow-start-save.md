@@ -109,7 +109,7 @@ backup. Incompatible generator/catalog/schema hashes are rejected rather than
 guessed or migrated.
 
 Required sections are `new_game_config`, `world_clock`, `dynamic_world`,
-`environment`, `pkcm`, `pkcn`, `pkec`, `pkgp`, `pkef`, `pkfg`, `journal`, `pktr`, `player_context`,
+`environment`, `pkcm`, `pkcn`, `pkec`, `pkgp`, `pkef`, `pkid`, `pkfg`, `journal`, `pktr`, `player_context`,
 `player_view`, and `preview`. Missing authority fails closed. `environment` uses
 `PKEnvironmentRuntime v1` and includes native core SoA, weather ping-pong,
 topology, dirty/active sets, round flags, stage cursors, and publish versions;
@@ -121,16 +121,26 @@ Every authority is registered through `RuntimeStateProvider`, whose contract is
 provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
-PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, PKTR, PKEF, then player
+PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, PKTR, PKEF, PKID, then player
 session/view/preview. PKEF is restored after PKTR so Trigger-owned source state
 and any trigger-to-effect handoff are present before pending Effect transactions
-are resumed. Save capture additionally waits for `effect_should_run(day)` to be
-false, so no transient native Effect-to-Modifier request binding is captured
-between the Effect and Modifier safe boundaries.
-PKCM v1 saves Climate modifiers. PKCN v4 embeds Country modifiers, research and tax policy; PKEC v30
-embeds Economy modifiers, BuildingIdentityStore, family traits/cell influence, and production-climate state;
-PKGP v1 saves Gameplay identity/base SoA and modifiers; PKTR v2 saves static and dynamic branch
-Trigger accumulation. Legacy PKCN/PKEC technology-tree saves are
+are resumed. `PKID v2` follows `PKEF v5`: every active ideology must match its
+durable external binding by identity, generation, level, location, template
+signature, and Effect program hash. Missing/mismatched bindings or unknown
+pending transitions fail restore; PKID and PKEF must also agree on the exact
+country/ideology source of every pending transaction, with no extra PKEF
+ideology transaction omitted by PKID. They are never repaired by replaying effects.
+PKID v1 is accepted only when every ideology is inactive. Save capture waits for
+`ideology_should_run(day)`, `effect_should_run(day)`, and every native
+Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
+can span a preflight/commit/ACK boundary.
+PKCM v1 saves Climate modifiers. PKCN v6 embeds Country modifiers, research,
+tax policy, and native Effect ingress idempotency; PKEC v31 embeds Economy
+modifiers, BuildingIdentityStore, family traits/cell influence,
+production-climate state, and Economy Effect ingress idempotency. PKGP v1 saves
+Gameplay identity/base SoA and modifiers; journal v3 saves native
+`PUBLISH_EVENT` Effect idempotency evidence; PKTR v2 saves static and dynamic
+branch Trigger accumulation. Legacy PKCN/PKEC technology-tree saves are
 rejected with `legacy_technology_tree_save_unsupported`.
 
 `pkfg` is `PKFogOfWar v1` and persists exactly one array: the monotonic
@@ -148,12 +158,15 @@ valid backups remain recoverable.
 
 ## Safe Boundary and Restore
 
-A save request freezes the clock while rendering continues. If country or
-economy has an open continuation, `GameSaveCoordinator` advances it once per
-render frame until country is idle and economy is committed. It then captures
-all providers and restores the original pause and speed state. Annual autosave
-runs once after the new year's first joint safe boundary. Return-to-menu and
-exit await autosave success; failure offers retry, discard, or cancel.
+A save request freezes the clock while rendering continues. If Trigger,
+Ideology, Effect, Modifier, Gameplay Effect, Country, or Economy has pending
+safe-boundary work, `GameSaveCoordinator` advances the native order
+`Trigger -> Ideology -> Effect -> Modifier -> Gameplay -> Country -> Economy`
+once per render frame until every owner is idle and Economy is committed. It
+then captures all providers and restores the original pause and speed state.
+Annual autosave runs once after the new year's first joint safe boundary.
+Return-to-menu and exit await autosave success; failure offers retry, discard,
+or cancel.
 
 Restore order is strict:
 
@@ -161,12 +174,15 @@ Restore order is strict:
 2. Regenerate static terrain from the complete saved `NewGameConfig`.
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
-5. Restore PKCN v4, including Country modifiers, research state and tax policy.
-6. Restore PKEC v30 after trade topology has been configured, including Economy
+5. Restore PKCN v6, including Country modifiers, research state, tax policy,
+   and native Country Effect ingress idempotency.
+6. Restore PKEC v31 after trade topology has been configured, including Economy
    modifiers, building identities, notable families, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
-8. Restore journal and PKTR v2, then PKEF v4 pending Effect state.
+8. Restore journal v3 and PKTR v2, then PKEF v5 pending Effect state and PKID v2
+   ideology state. PKID verifies its active PKEF bindings before the session is
+   allowed to resume.
 9. Rebuild derived views/render resources and scheduler topology.
 10. Restore selected cell, camera position/zoom, pause, and speed.
 
@@ -213,5 +229,5 @@ economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtens
 desktop/narrow UI checks.
 For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
 
-Save flow requires `PKTR v2` after journal/domain state. Missing PKTR, PKTR v1, PKEC v28 or older,
+Save flow requires `PKTR v2` after journal/domain state. Missing PKTR, PKTR v1, PKEC v29 or older,
 and incompatible catalog hashes reject restore; no empty-trigger migration is provided.

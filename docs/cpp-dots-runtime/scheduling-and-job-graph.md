@@ -30,8 +30,9 @@ DCWorldExt run_*_pass()
 registered directly by `MapGenerator._setup_sus()` before country/economy
 bootstrap, so an economy or country initialization early return cannot starve
 the independent effect graph. Its fixed ordering is
-`trigger_runtime` priority 80 -> `effect_runtime` priority 85 ->
-`modifier_daily` priority 90. The effect job is deadline-critical only when
+`trigger_runtime` priority 80 -> `ideology_runtime` priority 82 -> `effect_runtime` priority 85 ->
+`modifier_daily` priority 90 -> `gameplay_effect` priority 95 ->
+`country_daily` priority 255 -> `economy_daily` priority 260. The effect job is deadline-critical only when
 `effect_should_run(day)` reports due instances, pending transactions, or an
 unfinished same-day cursor. It runs one cooperative slice per scheduler visit and returns
 `done=false` while the native instance cursor is incomplete; it never advances
@@ -126,6 +127,8 @@ DCSystemScheduler
 | `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；建筑计划/投入 reserve 使用两遍 active-cell continuation，随后按建筑 cell/cohort 预算错峰生产与 N 日居民市场。国内贸易规划复用同一 job 的软 slice。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。`building_cells_per_slice=0` 自动取市场 cell budget 的 1/4 并封顶 512；贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
 | `modifier_daily` | `simulation/systems/modifier_daily_system.gd` | ACTIVE `MODIFIER_GRAPH`：先过期，再按 producer/sequence 稳定执行命令并发布四域 snapshot version。 | priority 90；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、`use_job_deadline_critical=true`；有当日边界工作时预算旁路一次，保证早于 climate 100、country 255、economy 260。consumer 中产生的命令延至后续安全边界。 |
 | `effect_runtime` | `simulation/systems/effect_runtime_system.gd` | ACTIVE `EFFECT_GRAPH`：对 frozen metric snapshot 评估 dense effect IR/Behavior，声明式 batch 在 worker plan 后稳定串行 merge，生成跨域 transaction，不直接写 domain。 | priority 85；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、`use_job_deadline_critical=true`；`max_work_per_slice` 与每个定义的 `max_work` 共同限制工作量。 |
+| `ideology_runtime` | `simulation/systems/ideology_runtime_system.gd` | Country-scoped ideology collection, slots, offers, understanding and transition intent; it creates no domain write directly. | priority 82；only active ideology rows receive daily visits; `dormant_scan_count=0`. |
+| `gameplay_effect` | `simulation/systems/gameplay_effect_system.gd` | Commits native `PUBLISH_EVENT` POD ingress to the authoritative gameplay journal, then returns the Effect ACK. | priority 95；no second gameplay state, no script consumer in the commit path. |
 
 Modifier 的冻结点、scope 与领域消费顺序见
 [`native-modifier-runtime.md`](./native-modifier-runtime.md)。Modifier store 不得在 climate/economy

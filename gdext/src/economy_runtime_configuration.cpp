@@ -931,6 +931,167 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
     return out;
 }
 
+bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
+                                                std::string &error) const {
+    if (cmd.opcode < COMMAND_TRANSFER_TO_COHORT ||
+        cmd.opcode > COMMAND_FAMILY_POPULATION_REWARD ||
+        cmd.effective_day < 0 || cmd.sequence < 0 ||
+        (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION)) {
+        error = "command_entry_invalid";
+        return false;
+    }
+    const bool family_reward = cmd.opcode == COMMAND_FAMILY_FREE_BUILDING ||
+        cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
+    if (!family_reward && cmd.opcode != COMMAND_ADD_STOCK &&
+        cmd.opcode != COMMAND_REMOVE_STOCK &&
+        cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
+        cmd.opcode != COMMAND_MARKET_GOOD_TO_COUNTRY) {
+        int32_t slot = -1;
+        if (!_population.valid_handle(cmd.target_handle, slot)) {
+            error = "stale_or_invalid_cohort_handle";
+            return false;
+        }
+    }
+    if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_REMOVE_STOCK ||
+         cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET ||
+         cmd.opcode == COMMAND_MARKET_GOOD_TO_COUNTRY) &&
+        (cmd.i32_0 < 0 || cmd.i32_0 >= _market.market_count ||
+         cmd.i32_1 < 0 || cmd.i32_1 >= _market.good_count)) {
+        error = "command_market_target_invalid";
+        return false;
+    }
+    if ((cmd.opcode == COMMAND_ADD_STOCK ||
+         cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET) &&
+        (cmd.i32_0 < 0 || cmd.i32_0 >= static_cast<int32_t>(
+            _merchant_primary_slot.size()) ||
+         _merchant_primary_slot[cmd.i32_0] < 0)) {
+        error = "cannot_add_stock_without_local_merchant";
+        return false;
+    }
+    if ((cmd.opcode == COMMAND_MOVE_POPULATION &&
+         (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count)) ||
+        (cmd.opcode == COMMAND_CHANGE_SIGNATURE &&
+         (cmd.i32_0 < 0 || cmd.i32_0 >= static_cast<int32_t>(
+             _signatures.size())))) {
+        error = "command_structural_target_invalid";
+        return false;
+    }
+    if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH) &&
+        (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count || cmd.i32_1 < 0 ||
+         cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) ||
+         cmd.i64_0 <= 0)) {
+        error = "command_building_target_invalid";
+        return false;
+    }
+    if (family_reward) {
+        int32_t branch = -1;
+        const bool free_building = cmd.opcode == COMMAND_FAMILY_FREE_BUILDING;
+        if (!_family_influences.valid_handle(cmd.target_handle, branch) ||
+            cmd.i32_0 < 0 || cmd.i32_0 > 1 || cmd.i64_0 <= 0 ||
+            (free_building && (cmd.i32_1 < 0 || cmd.i32_1 >=
+                static_cast<int32_t>(_building_types.size())))) {
+            error = "command_family_reward_target_invalid";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool NativeEconomyRuntime::submit_effect_commands_pod(
+        const EffectCommand *commands, size_t count,
+        std::vector<int64_t> &request_ids, std::string &error) {
+    request_ids.clear();
+    if (!_bootstrapped || _fatal || _save.active || _restore.active) {
+        error = !_bootstrapped ? "economy_not_bootstrapped" :
+            (_fatal ? "economy_fatal" : "save_restore_active");
+        return false;
+    }
+    if ((commands == nullptr && count != 0) || count > 1000000ULL) {
+        error = "effect_economy_command_batch_invalid";
+        return false;
+    }
+    std::vector<Command> staged;
+    staged.reserve(count);
+    request_ids.reserve(count);
+    std::unordered_map<uint64_t, int64_t> staged_idempotency;
+    for (size_t i = 0; i < count; ++i) {
+        const EffectCommand &source = commands[i];
+        if (source.idempotency_key == 0 || source.sequence < 0) {
+            error = "effect_economy_command_identity_invalid";
+            return false;
+        }
+        const auto existing = _effect_idempotency_requests.find(
+            source.idempotency_key);
+        if (existing != _effect_idempotency_requests.end()) {
+            request_ids.push_back(existing->second);
+            continue;
+        }
+        const auto duplicate = staged_idempotency.find(source.idempotency_key);
+        if (duplicate != staged_idempotency.end()) {
+            request_ids.push_back(duplicate->second);
+            continue;
+        }
+        Command command;
+        command.opcode = source.opcode;
+        command.effective_day = source.effective_day;
+        command.sequence = source.sequence;
+        command.target_handle = source.target_handle;
+        command.i32_0 = source.i32_0;
+        command.i32_1 = source.i32_1;
+        command.i64_0 = source.i64_0;
+        command.i64_1 = source.i64_1;
+        command.effect_request_id = _next_effect_request_id +
+            static_cast<int64_t>(staged.size());
+        command.effect_idempotency_key = source.idempotency_key;
+        if (!validate_command_pod(command, error)) {
+            error = "effect_economy_preflight_" + error;
+            return false;
+        }
+        staged_idempotency.emplace(source.idempotency_key,
+            command.effect_request_id);
+        request_ids.push_back(command.effect_request_id);
+        staged.push_back(command);
+    }
+    if (_pending_commands.size() + staged.size() > 1000000ULL ||
+        _effect_command_results.size() + staged.size() > 1000000ULL ||
+        _next_effect_request_id > std::numeric_limits<int64_t>::max() -
+            static_cast<int64_t>(staged.size())) {
+        error = "effect_economy_queue_capacity_exceeded";
+        return false;
+    }
+    for (Command &command : staged) {
+        command.submit_order = _next_submit_order++;
+        _effect_idempotency_requests.emplace(command.effect_idempotency_key,
+            command.effect_request_id);
+        _effect_command_results.emplace(command.effect_request_id,
+            EffectCommandResult{});
+        _pending_commands.push_back(command);
+    }
+    _next_effect_request_id += static_cast<int64_t>(staged.size());
+    return true;
+}
+
+bool NativeEconomyRuntime::effect_command_result_pod(int64_t request_id,
+        bool &complete, bool &ok, std::string &reason) const {
+    complete = false;
+    ok = false;
+    reason.clear();
+    const auto found = _effect_command_results.find(request_id);
+    if (found == _effect_command_results.end()) {
+        reason = "effect_economy_request_unknown";
+        return false;
+    }
+    complete = found->second.complete != 0;
+    ok = found->second.ok != 0;
+    reason = found->second.reason;
+    return true;
+}
+
+bool NativeEconomyRuntime::has_pending_effect_commands() const {
+    for (const auto &entry : _effect_command_results)
+        if (entry.second.complete == 0) return true;
+    return false;
+}
+
 
 } // namespace pk
-

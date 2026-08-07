@@ -10,8 +10,8 @@ var adapter_phases: Array[String] = []
 
 func _test_effect_adapter(command: Dictionary) -> Dictionary:
 	adapter_phases.append(String(command.get("phase", "")))
-	var domain := int(command.get("domain", -1))
-	return {"ok": true, "ack_mask": (1 << domain) if domain >= 0 else 0}
+	var action := int(command.get("action", 0))
+	return {"ok": true, "ack_mask": (1 << (action - 1)) if action >= 1 else 0}
 
 func _assert_ok(result: Dictionary, label: String) -> void:
 	assert(bool(result.get("ok", false)), "%s: %s" % [label, str(result)])
@@ -117,7 +117,7 @@ func _init() -> void:
 	assert(int(transactions.command_idempotency_keys[0]) != 0, str(transactions))
 	var tx_id := int(transactions.transaction_ids[0])
 	var required := int(transactions.required_ack_masks[0])
-	assert(required == ((1 << 1) | (1 << 3)), str(transactions))
+	assert(required == ((1 << 0) | (1 << 1)), str(transactions))
 	assert(int(transactions.statuses[0]) == PLANNED, str(transactions))
 
 	# ACK cannot bypass preflight and commit.
@@ -141,13 +141,13 @@ func _init() -> void:
 	# Multi-domain ACK can arrive in separate safe-boundary commits.
 	_assert_ok(ext.ack_effect_transactions({
 		"transaction_ids": PackedInt64Array([tx_id]),
-		"ack_masks": PackedInt32Array([1 << 1]),
+		"ack_masks": PackedInt32Array([1 << 0]),
 	}), "partial ACK")
 	transactions = _poll(ext)
 	assert(int(transactions.statuses[0]) == COMMITTED, str(transactions))
 	_assert_ok(ext.ack_effect_transactions({
 		"transaction_ids": PackedInt64Array([tx_id]),
-		"ack_masks": PackedInt32Array([1 << 3]),
+		"ack_masks": PackedInt32Array([1 << 1]),
 	}), "final ACK")
 	var duplicate_ack: Dictionary = ext.ack_effect_transactions({
 		"transaction_ids": PackedInt64Array([tx_id]),

@@ -12,6 +12,7 @@
 namespace pk {
 
 class EffectRuntime;
+class NativeIdeologyRuntime;
 
 // Native trigger authority. Catalog parsing is a cold boundary; event ingest,
 // aggregation, condition evaluation, and effect generation use dense POD data.
@@ -71,6 +72,7 @@ public:
         GAMEPLAY_COMMAND = 12,
         PUBLISH_EVENT = 13,
         CUSTOM_DOMAIN_COMMAND = 14,
+        IDEOLOGY_COMMAND = 15,
     };
     enum EffectValueMode : int32_t {
         EFFECT_CONSTANT = 0,
@@ -88,7 +90,9 @@ public:
     godot::Dictionary ack_effects(int64_t up_to_effect_id);
     // Transfers the contiguous supported prefix to EffectRuntime. Trigger
     // state/cursors remain owned here; EffectRuntime owns the resulting ACK.
-    godot::Dictionary handoff_effects(EffectRuntime *effect_runtime, int32_t limit);
+    godot::Dictionary handoff_effects(EffectRuntime *effect_runtime,
+                                      NativeIdeologyRuntime *ideology_runtime,
+                                      int32_t limit);
     godot::Dictionary set_enabled(const godot::Dictionary &batch);
     godot::Dictionary reconcile_branch_bindings(const godot::Dictionary &batch);
     godot::Dictionary branch_progress(uint64_t branch_handle) const;

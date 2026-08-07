@@ -9,6 +9,7 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
+const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
 
 const Q16_ONE := 65536
 
@@ -102,6 +103,15 @@ static func build() -> Resource:
 				trigger_modifier_key, int(modifier_domains[i])))
 	if not definition_seen.has("person.modifier"):
 		definitions.append(_person_definition(""))
+	# Ideology owns progression, but its authored command templates must be
+	# compiled by EffectRuntime so domain mutation remains ACK-gated there.
+	var ideology_catalog: Resource = IdeologyCatalogScript.load_default()
+	var ideology_country_catalog := EconomyCatalogScript.compile_native_catalog()
+	if ideology_catalog != null and bool(ideology_country_catalog.get("ok", false)):
+		var ideology_ir: Dictionary = ideology_catalog.compile_native_catalog(ideology_country_catalog)
+		if not bool(ideology_ir.get("ok", false)):
+			return null
+		definitions.append(_ideology_command_definition(ideology_ir))
 	definitions.sort_custom(func(a, b) -> bool: return String(a.key) < String(b.key))
 	catalog.definitions = definitions
 	return catalog
@@ -171,6 +181,51 @@ static func _trigger_modifier_definition(modifier_key: String, domain: int) -> R
 	end.op = 12 # END; Trigger handoff emits the typed command directly.
 	definition.instructions = [end]
 	definition.commands = [_command(1, domain, 1, &"trigger.modifier", modifier_key)]
+	return definition
+
+
+static func _ideology_command_definition(ideology_ir: Dictionary) -> Resource:
+	var definition := EffectDefinitionScript.new()
+	definition.key = &"ideology.command"
+	definition.version = 1
+	definition.cadence_days = 3650
+	var end := EffectInstructionScript.new()
+	end.op = 12 # External ideology ingress owns firing; this program is a template registry.
+	definition.instructions = [end]
+	for prefix in ["persistent", "on_enter"]:
+		var actions: PackedInt32Array = ideology_ir.get("%s_actions" % prefix, PackedInt32Array())
+		var domains: PackedInt32Array = ideology_ir.get("%s_domains" % prefix, PackedInt32Array())
+		var opcodes: PackedInt32Array = ideology_ir.get("%s_opcodes" % prefix, PackedInt32Array())
+		var values: PackedInt64Array = ideology_ir.get("%s_values_q16" % prefix, PackedInt64Array())
+		var durations: PackedInt32Array = ideology_ir.get("%s_duration_days" % prefix, PackedInt32Array())
+		var stacks: PackedInt32Array = ideology_ir.get("%s_stacks" % prefix, PackedInt32Array())
+		var keys: PackedStringArray = ideology_ir.get("%s_command_keys" % prefix, PackedStringArray())
+		var definitions: PackedStringArray = ideology_ir.get("%s_definition_keys" % prefix, PackedStringArray())
+		var i0: PackedInt64Array = ideology_ir.get("%s_payload_i0" % prefix, PackedInt64Array())
+		var i1: PackedInt64Array = ideology_ir.get("%s_payload_i1" % prefix, PackedInt64Array())
+		var i2: PackedInt64Array = ideology_ir.get("%s_payload_i2" % prefix, PackedInt64Array())
+		var i3: PackedInt64Array = ideology_ir.get("%s_payload_i3" % prefix, PackedInt64Array())
+		for i in actions.size():
+			if i >= domains.size() or i >= opcodes.size() or i >= values.size() \
+					or i >= durations.size() or i >= stacks.size() or i >= keys.size() \
+					or i >= definitions.size():
+				return EffectDefinitionScript.new() # configure will reject the empty key.
+			var command := EffectCommandScript.new()
+			command.action = actions[i]
+			command.domain = domains[i]
+			command.opcode = opcodes[i]
+			command.target_resolver = 1
+			command.value_mode = 0
+			command.value_q16 = values[i]
+			command.duration_days = durations[i]
+			command.stacks = stacks[i]
+			command.command_key = StringName(keys[i])
+			command.definition_key = StringName(definitions[i])
+			command.payload_i0 = i0[i] if i < i0.size() else 0
+			command.payload_i1 = i1[i] if i < i1.size() else 0
+			command.payload_i2 = i2[i] if i < i2.size() else 0
+			command.payload_i3 = i3[i] if i < i3.size() else 0
+			definition.commands.append(command)
 	return definition
 
 

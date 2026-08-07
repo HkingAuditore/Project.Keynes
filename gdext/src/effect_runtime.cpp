@@ -1,5 +1,8 @@
 #include "effect_runtime.h"
+#include "country_runtime.h"
+#include "economy_runtime.h"
 #include "modifier_runtime.h"
+#include "world_ext.h"
 #include "parallel_dispatcher.h"
 
 #include <godot_cpp/variant/packed_int32_array.hpp>
@@ -29,6 +32,86 @@ constexpr int32_t MAX_METRICS = 65536;
 constexpr int32_t MAX_INSTRUCTIONS = 1048576;
 constexpr int32_t MAX_COMMANDS = 1048576;
 constexpr int32_t MAX_STACK = 256;
+
+// Native Effect ABI registration.  These are deliberately fixed at startup
+// rather than discovered from strings in the daily path.  Country/Economy
+// opcodes mirror their authoritative runtime enums; gameplay/custom rows are
+// routed through the native gameplay journal consumer below.
+bool native_command_shape_valid(int32_t action, int32_t domain, int32_t opcode,
+                                int32_t target_resolver, int32_t duration_days,
+                                int32_t stacks, std::string &reason) {
+    if (action < EffectRuntime::MODIFIER_COMMAND ||
+        action > EffectRuntime::CUSTOM_DOMAIN_COMMAND) {
+        reason = "effect_command_action_unregistered";
+        return false;
+    }
+    if (domain < 0 || domain >= 32 || stacks <= 0 || duration_days < -1 ||
+        target_resolver < EffectRuntime::TARGET_STATIC ||
+        target_resolver > EffectRuntime::TARGET_SOURCE) {
+        reason = "effect_command_layout_invalid";
+        return false;
+    }
+    switch (action) {
+        case EffectRuntime::MODIFIER_COMMAND:
+            if (domain > 3 || (opcode != ModifierRuntime::COMMAND_APPLY &&
+                               opcode != ModifierRuntime::COMMAND_REMOVE)) {
+                reason = "effect_modifier_opcode_unregistered";
+                return false;
+            }
+            break;
+        case EffectRuntime::COUNTRY_COMMAND:
+            if (domain != 1 || opcode < NativeCountryRuntime::COMMAND_CREATE_COUNTRY ||
+                opcode > NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL) {
+                reason = "effect_country_opcode_unregistered";
+                return false;
+            }
+            break;
+        case EffectRuntime::ECONOMY_COMMAND:
+            if (domain != 2 || opcode < NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT ||
+                opcode > NativeEconomyRuntime::COMMAND_FAMILY_POPULATION_REWARD) {
+                reason = "effect_economy_opcode_unregistered";
+                return false;
+            }
+            break;
+        case EffectRuntime::GAMEPLAY_COMMAND:
+            if (domain != 3 || opcode <= 0) {
+                reason = "effect_gameplay_opcode_unregistered";
+                return false;
+            }
+            break;
+        case EffectRuntime::PUBLISH_EVENT:
+            if (domain != 4 || opcode <= 0) {
+                reason = "effect_publish_event_opcode_unregistered";
+                return false;
+            }
+            break;
+        case EffectRuntime::CUSTOM_DOMAIN_COMMAND:
+            // The first native custom consumer is the journal-backed audit
+            // command. New custom domains must register a C++ adapter and add
+            // an explicit shape check here before content can compile.
+            if (domain != 6 || opcode != 1) {
+                reason = "effect_custom_domain_adapter_unregistered";
+                return false;
+            }
+            break;
+        default:
+            reason = "effect_command_action_unregistered";
+            return false;
+    }
+    return true;
+}
+
+// Effect content has two domain concepts.  `Command::domain` names the target
+// domain (and, for Modifier, its subdomain).  ACKs instead belong to the
+// native adapter that crosses a distinct safe boundary.  Keep that mapping
+// fixed and POD-only so a Country modifier cannot accidentally acknowledge a
+// CountryRuntime command in the same transaction.
+uint32_t native_adapter_ack_bit(int32_t action) {
+    if (action < EffectRuntime::MODIFIER_COMMAND ||
+        action > EffectRuntime::CUSTOM_DOMAIN_COMMAND)
+        return 0;
+    return 1u << static_cast<uint32_t>(action - EffectRuntime::MODIFIER_COMMAND);
+}
 
 std::unordered_map<std::string, EffectRuntime::BehaviorFn> &behavior_registry() {
     static std::unordered_map<std::string, EffectRuntime::BehaviorFn> registry;
@@ -395,13 +478,28 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         command.stacks = std::max(1, command_stacks[i]);
         command.command_key = string_at(command_keys, i);
         command.definition_key = string_at(command_definition_keys, i);
+        if (command.action == MODIFIER_COMMAND) {
+            if (command.command_key == "technology.modifier")
+                command.native_modifier_adapter = NATIVE_MODIFIER_TECHNOLOGY;
+            else if (command.command_key == "family.modifier")
+                command.native_modifier_adapter = NATIVE_MODIFIER_FAMILY;
+            else if (command.command_key == "person.modifier")
+                command.native_modifier_adapter = NATIVE_MODIFIER_PERSON;
+            else if (command.command_key == "trigger.modifier")
+                command.native_modifier_adapter = NATIVE_MODIFIER_TRIGGER;
+        }
         command.payload = {command_payload_i0[i], command_payload_i1[i],
                            command_payload_i2[i], command_payload_i3[i]};
-        if (command.target_resolver < TARGET_STATIC || command.target_resolver > TARGET_SOURCE ||
+        std::string command_error;
+        if (!native_command_shape_valid(command.action, command.domain, command.opcode,
+                command.target_resolver, command.duration_days, command.stacks,
+                command_error) ||
             command.value_mode < VALUE_CONSTANT || command.value_mode > VALUE_STACK_TOP ||
-            command.domain < -1 || command.domain >= 32 || command.stacks <= 0 ||
-            (command.action < MODIFIER_COMMAND || command.action > CUSTOM_DOMAIN_COMMAND))
-            return failure("effect_command_definition_invalid");
+            command.command_key.empty() ||
+            (command.action != MODIFIER_COMMAND && command.definition_key.empty()) ||
+            (command.target_resolver == TARGET_STATIC && command.static_target == 0))
+            return failure(command_error.empty() ? "effect_command_definition_invalid"
+                                                 : command_error.c_str());
         _command_definitions.push_back(command);
     }
 
@@ -539,6 +637,17 @@ void EffectRuntime::reset_runtime_state() {
     _native_request_ids.clear();
     _native_ack_bindings.clear();
     _native_bound_transaction_ids.clear();
+    _native_country_request_ids.clear();
+    _native_country_ack_bindings.clear();
+    _native_country_bound_transaction_ids.clear();
+    _native_economy_request_ids.clear();
+    _native_economy_ack_bindings.clear();
+    _native_economy_bound_transaction_ids.clear();
+    _native_gameplay_request_ids.clear();
+    _native_gameplay_ack_bindings.clear();
+    _native_gameplay_bound_transaction_ids.clear();
+    _external_bindings.clear();
+    _external_binding_ids.clear();
     _instances_submitted = 0;
     _programs_evaluated = 0;
     _commands_emitted = 0;
@@ -549,6 +658,15 @@ void EffectRuntime::reset_runtime_state() {
     _native_modifier_transactions = 0;
     _native_modifier_commands = 0;
     _native_modifier_acks = 0;
+    _native_country_transactions = 0;
+    _native_country_commands = 0;
+    _native_country_acks = 0;
+    _native_economy_transactions = 0;
+    _native_economy_commands = 0;
+    _native_economy_acks = 0;
+    _native_gameplay_transactions = 0;
+    _native_gameplay_commands = 0;
+    _native_gameplay_acks = 0;
     _last_native_dispatch_ms = 0.0;
     _last_native_ack_ms = 0.0;
     _last_parallel_planning_ms = 0.0;
@@ -755,6 +873,172 @@ bool EffectRuntime::has_instance_pod(int64_t instance_id, uint32_t generation) c
         _instances[static_cast<size_t>(index)].generation == generation;
 }
 
+bool EffectRuntime::upsert_external_binding_pod(
+        int64_t binding_id, uint32_t generation, int32_t source_type,
+        int64_t source_id, uint64_t target_handle, uint32_t target_generation,
+        int32_t level, uint8_t location, uint64_t template_signature,
+        uint64_t program_hash, std::string &error) {
+    if (!_configured) { error = "effect_runtime_unconfigured"; return false; }
+    if (binding_id <= 0 || generation == 0 || target_handle == 0 ||
+        target_generation == 0 || level < -1 || location > 2) {
+        error = "effect_external_binding_invalid";
+        return false;
+    }
+    const auto found = _external_binding_ids.find(binding_id);
+    if (found != _external_binding_ids.end()) {
+        ExternalSourceBinding &binding = _external_bindings[
+            static_cast<size_t>(found->second)];
+        // A rejected transition may roll a stable external identity back to
+        // its previously durable generation.  This is safe only after that
+        // binding was explicitly retired: an active binding must remain
+        // monotonic so no live source can be overwritten by a stale command.
+        if (binding.generation != generation && generation < binding.generation &&
+            binding.active != 0) {
+            error = "effect_external_binding_generation_regressed";
+            return false;
+        }
+        binding.generation = generation;
+        binding.source_type = source_type;
+        binding.source_id = source_id;
+        binding.target_handle = target_handle;
+        binding.target_generation = target_generation;
+        binding.level = level;
+        binding.location = location;
+        binding.active = 1;
+        binding.template_signature = template_signature;
+        binding.program_hash = program_hash;
+        return true;
+    }
+    if (static_cast<int32_t>(_external_bindings.size()) >= _max_instances) {
+        ++_overflow_count;
+        error = "effect_external_binding_capacity_exceeded";
+        return false;
+    }
+    ExternalSourceBinding binding;
+    binding.binding_id = binding_id;
+    binding.generation = generation;
+    binding.source_type = source_type;
+    binding.source_id = source_id;
+    binding.target_handle = target_handle;
+    binding.target_generation = target_generation;
+    binding.level = level;
+    binding.location = location;
+    binding.active = 1;
+    binding.template_signature = template_signature;
+    binding.program_hash = program_hash;
+    _external_binding_ids[binding_id] = static_cast<int32_t>(_external_bindings.size());
+    _external_bindings.push_back(binding);
+    return true;
+}
+
+bool EffectRuntime::retire_external_binding_pod(int64_t binding_id,
+                                                uint32_t generation,
+                                                std::string &error) {
+    const auto found = _external_binding_ids.find(binding_id);
+    if (found == _external_binding_ids.end()) {
+        error = "effect_external_binding_unknown";
+        return false;
+    }
+    ExternalSourceBinding &binding = _external_bindings[
+        static_cast<size_t>(found->second)];
+    if (binding.generation != generation) {
+        error = "effect_external_binding_generation_mismatch";
+        return false;
+    }
+    binding.active = 0;
+    return true;
+}
+
+bool EffectRuntime::has_external_binding_pod(int64_t binding_id,
+                                             uint32_t generation,
+                                             int32_t source_type,
+                                             int64_t source_id,
+                                             uint64_t target_handle,
+                                             uint32_t target_generation,
+                                             int32_t level,
+                                             uint8_t location,
+                                             uint64_t template_signature,
+                                             uint64_t program_hash) const {
+    const auto found = _external_binding_ids.find(binding_id);
+    if (found == _external_binding_ids.end()) return false;
+    const ExternalSourceBinding &binding = _external_bindings[
+        static_cast<size_t>(found->second)];
+    return binding.active != 0 && binding.generation == generation &&
+        binding.source_type == source_type && binding.source_id == source_id &&
+        binding.target_handle == target_handle &&
+        binding.target_generation == target_generation && binding.level == level &&
+        binding.location == location &&
+        binding.template_signature == template_signature &&
+        binding.program_hash == program_hash;
+}
+
+bool EffectRuntime::verify_external_pending_transactions_pod(
+        int32_t source_type, uint64_t target_handle, uint64_t source_id_mask,
+        const std::vector<int64_t> &expected_transaction_ids,
+        const std::vector<uint64_t> &expected_source_ids,
+        std::string &error) const {
+    if (target_handle == 0 || source_id_mask == 0 ||
+        expected_transaction_ids.size() != expected_source_ids.size()) {
+        error = "effect_external_pending_audit_invalid";
+        return false;
+    }
+    std::unordered_map<int64_t, uint64_t> expected;
+    expected.reserve(expected_transaction_ids.size());
+    for (size_t i = 0; i < expected_transaction_ids.size(); ++i) {
+        const int64_t transaction_id = expected_transaction_ids[i];
+        const uint64_t source_id = expected_source_ids[i] & source_id_mask;
+        if (transaction_id <= 0 || source_id == 0 ||
+            !expected.emplace(transaction_id, source_id).second) {
+            error = "effect_external_pending_expected_invalid";
+            return false;
+        }
+    }
+    auto source_for = [&](const Transaction &transaction) -> const Instance * {
+        const int32_t index = instance_index_for_id(transaction.source_instance_id);
+        if (index < 0 || index >= static_cast<int32_t>(_instances.size())) return nullptr;
+        const Instance &instance = _instances[static_cast<size_t>(index)];
+        return instance.source_type == source_type &&
+            instance.target_handle == target_handle ? &instance : nullptr;
+    };
+    for (const auto &entry : expected) {
+        const int32_t transaction_index = transaction_index_for_id(entry.first);
+        if (transaction_index < 0 ||
+            transaction_index >= static_cast<int32_t>(_transactions.size())) {
+            error = "effect_external_pending_transaction_missing";
+            return false;
+        }
+        const Transaction &transaction = _transactions[
+            static_cast<size_t>(transaction_index)];
+        if (transaction.status != PLANNED && transaction.status != PREFLIGHTED &&
+            transaction.status != COMMITTED) {
+            error = "effect_external_pending_transaction_terminal";
+            return false;
+        }
+        const Instance *instance = source_for(transaction);
+        if (instance == nullptr ||
+            (static_cast<uint64_t>(instance->source_id) & source_id_mask) !=
+                entry.second) {
+            error = "effect_external_pending_source_mismatch";
+            return false;
+        }
+    }
+    for (const Transaction &transaction : _transactions) {
+        if (transaction.status != PLANNED && transaction.status != PREFLIGHTED &&
+            transaction.status != COMMITTED)
+            continue;
+        const Instance *instance = source_for(transaction);
+        if (instance == nullptr) continue;
+        const auto found = expected.find(transaction.id);
+        if (found == expected.end() ||
+            (static_cast<uint64_t>(instance->source_id) & source_id_mask) !=
+                found->second) {
+            error = "effect_external_pending_transaction_unknown";
+            return false;
+        }
+    }
+    return true;
+}
+
 bool EffectRuntime::instance_fire_acked_pod(int64_t instance_id,
                                             uint32_t generation) const {
     const int32_t index = instance_index_for_id(instance_id);
@@ -820,6 +1104,20 @@ bool EffectRuntime::enqueue_trigger_effect_pod(
         int64_t resolved_value, int32_t duration_days, int32_t stacks,
         const std::string &command_key, const std::string &definition_key,
         const std::array<int64_t, 4> &payload, std::string &error) {
+    return enqueue_external_effect_pod(effect_id, effective_day, 0x54524947,
+        trigger_id, std::string("trigger.modifier.") + definition_key, target_handle,
+        target_handle, target_generation, fire_sequence, action, domain, opcode,
+        resolved_value, duration_days, stacks, command_key, definition_key, payload, error);
+}
+
+bool EffectRuntime::enqueue_external_effect_pod(
+        int64_t effect_id, int64_t effective_day, int32_t source_type,
+        int64_t source_id, const std::string &program_key, uint64_t source_handle,
+        uint64_t target_handle, uint32_t target_generation, uint64_t fire_sequence,
+        int32_t action, int32_t domain, int32_t opcode, int64_t resolved_value,
+        int32_t duration_days, int32_t stacks, const std::string &command_key,
+        const std::string &definition_key, const std::array<int64_t, 4> &payload,
+        std::string &error, int64_t *out_transaction_id) {
     if (!_configured) { error = "effect_runtime_unconfigured"; return false; }
     if (effect_id <= 0 || target_generation == 0 || target_handle == 0 ||
         domain < 0 || domain >= 32 || stacks <= 0 || command_key.empty() ||
@@ -830,13 +1128,33 @@ bool EffectRuntime::enqueue_trigger_effect_pod(
     const uint64_t idempotency = make_hash(static_cast<uint64_t>(effect_id),
         target_generation, fire_sequence, 0);
     if (_pending_command_idempotency.find(idempotency) !=
-        _pending_command_idempotency.end()) return true;
+        _pending_command_idempotency.end()) {
+        if (out_transaction_id != nullptr) {
+            for (const Transaction &transaction : _transactions) {
+                for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+                    const Command *existing = command_at(transaction, ordinal);
+                    if (existing != nullptr && existing->idempotency_key == idempotency) {
+                        *out_transaction_id = transaction.id;
+                        return true;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    const bool modifier_remove = action == MODIFIER_COMMAND &&
+        opcode == ModifierRuntime::COMMAND_REMOVE;
     int32_t command_definition_id = -1;
     for (int32_t i = 0; i < static_cast<int32_t>(_command_definitions.size()); ++i) {
         const CommandDefinition &candidate = _command_definitions[i];
         if (candidate.command_key == command_key &&
             candidate.definition_key == definition_key &&
-            candidate.domain == domain) {
+            candidate.action == action && candidate.domain == domain &&
+            (candidate.opcode == opcode || (modifier_remove &&
+                candidate.opcode == ModifierRuntime::COMMAND_APPLY)) &&
+            candidate.target_resolver == TARGET_INSTANCE &&
+            candidate.duration_days == duration_days &&
+            candidate.stacks == stacks && candidate.payload == payload) {
             command_definition_id = i;
             break;
         }
@@ -846,13 +1164,13 @@ bool EffectRuntime::enqueue_trigger_effect_pod(
         return false;
     }
     const int64_t instance_id = static_cast<int64_t>(make_hash(
-        0x54524947474552ULL, 1, static_cast<uint64_t>(effect_id),
-        static_cast<uint32_t>(trigger_id)) & 0x7fffffffffffffffULL);
+        static_cast<uint64_t>(source_type), static_cast<uint32_t>(source_id),
+        static_cast<uint64_t>(effect_id), static_cast<uint32_t>(target_generation)) &
+        0x7fffffffffffffffULL);
     const uint32_t generation = std::max<uint32_t>(1, target_generation);
     if (instance_index_for_id(instance_id) < 0) {
-        if (!upsert_instance_pod(instance_id,
-                std::string("trigger.modifier.") + definition_key, generation,
-                0x54524947, trigger_id, target_handle, target_handle,
+        if (!upsert_instance_pod(instance_id, program_key, generation,
+                source_type, source_id, source_handle, target_handle,
                 target_generation, 0, effective_day, false, error)) return false;
     }
     if (static_cast<int32_t>(_transactions.size()) >= _max_transactions) {
@@ -917,7 +1235,15 @@ bool EffectRuntime::enqueue_trigger_effect_pod(
         static_cast<int32_t>(_transactions.size() - 1);
     track_pending_transaction(_transactions.back());
     index_transaction_commands(_transactions.back());
+    if (out_transaction_id != nullptr) *out_transaction_id = _transactions.back().id;
     return true;
+}
+
+int32_t EffectRuntime::transaction_status_pod(int64_t transaction_id) const {
+    const int32_t index = transaction_index_for_id(transaction_id);
+    if (index >= 0 && index < static_cast<int32_t>(_transactions.size()))
+        return _transactions[static_cast<size_t>(index)].status;
+    return transaction_id > 0 && transaction_id <= _acked_transaction_id ? ACKED : 0;
 }
 
 Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
@@ -1182,8 +1508,7 @@ void EffectRuntime::append_command(Transaction &transaction, const Command &comm
     _command_arena.push_back(command);
     ++transaction.command_count;
     ++_commands_emitted;
-    if (command.domain >= 0 && command.domain < 32)
-        transaction.required_ack_mask |= (1u << static_cast<uint32_t>(command.domain));
+    transaction.required_ack_mask |= adapter_ack_bit_for(command);
 }
 
 void EffectRuntime::index_transaction_commands(const Transaction &transaction) {
@@ -1216,6 +1541,27 @@ void EffectRuntime::untrack_pending_transaction(const Transaction &transaction) 
     if (found == _pending_transactions_by_instance.end()) return;
     if (found->second <= 1) _pending_transactions_by_instance.erase(found);
     else --found->second;
+}
+
+bool EffectRuntime::acknowledge_native_domain(Transaction &transaction,
+                                              uint32_t domain_bit) {
+    if (domain_bit == 0 || (domain_bit & transaction.required_ack_mask) == 0) {
+        transaction.status = RESYNC_REQUIRED;
+        _last_error = "effect_native_ack_domain_mask_invalid";
+        return false;
+    }
+    transaction.received_ack_mask |= domain_bit;
+    if ((transaction.received_ack_mask & transaction.required_ack_mask) !=
+            transaction.required_ack_mask) {
+        transaction.status = COMMITTED;
+        return false;
+    }
+    untrack_pending_transaction(transaction);
+    transaction.status = ACKED;
+    unindex_transaction_commands(transaction);
+    _acked_transaction_id = std::max(_acked_transaction_id, transaction.id);
+    ++_transactions_acked;
+    return true;
 }
 
 void EffectRuntime::rebuild_command_idempotency_index() {
@@ -1277,7 +1623,7 @@ void EffectRuntime::compact_terminal_transactions() {
     std::vector<Command> compacted_commands;
     compacted_commands.reserve(_command_arena.size());
     for (Transaction &transaction : _transactions) {
-        if (transaction.status == ACKED || transaction.status == REJECTED) {
+        if (transaction.status == ACKED) {
             const int32_t instance_index =
                 instance_index_for_id(transaction.source_instance_id);
             if (instance_index >= 0) retired_candidates.push_back(instance_index);
@@ -1506,8 +1852,11 @@ void EffectRuntime::append_planned_command(std::vector<Command> &commands,
         if (existing.idempotency_key == command.idempotency_key) return;
     }
     commands.push_back(command);
-    if (command.domain >= 0 && command.domain < 32)
-        required_ack_mask |= (1u << static_cast<uint32_t>(command.domain));
+    required_ack_mask |= adapter_ack_bit_for(command);
+}
+
+uint32_t EffectRuntime::adapter_ack_bit_for(const Command &command) {
+    return native_adapter_ack_bit(command.action);
 }
 
 bool EffectRuntime::execute_program_plan(const Definition &definition,
@@ -2111,15 +2460,16 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
         int32_t transaction_index = -1;
         uint32_t request_offset = 0;
         uint32_t request_count = 0;
+        uint32_t domain_mask = 0;
     };
     std::vector<ModifierRuntime::NativeCommand> native_commands;
     std::vector<PendingTransaction> pending_transactions;
     native_commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
     pending_transactions.reserve(std::min<int32_t>(_max_transactions, 4096));
 
-    // Preserve the contiguous transaction boundary: an unsupported transaction
-    // remains pollable through EffectFacade and prevents later native work from
-    // overtaking it.
+    // A transaction may contain commands for several native domains. Each
+    // adapter claims only its own command subset; the shared ACK mask keeps the
+    // transaction hidden from fallback polling until every domain is done.
     for (int32_t tx_index = 0;
          tx_index < static_cast<int32_t>(_transactions.size());
          ++tx_index) {
@@ -2127,10 +2477,9 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
         if (transaction.status == ACKED || transaction.status == REJECTED ||
             transaction.status == RESYNC_REQUIRED)
             continue;
-        if (binding_exists(transaction.id) || transaction.status != PLANNED)
-            break;
-        if (transaction.command_count == 0 || transaction.required_ack_mask == 0)
-            break;
+        if (binding_exists(transaction.id) || transaction.command_count == 0 ||
+            transaction.required_ack_mask == 0)
+            continue;
 
         const int32_t instance_index = instance_index_for_id(transaction.source_instance_id);
         const Instance *source_instance = instance_index >= 0 &&
@@ -2138,18 +2487,43 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
             ? &_instances[static_cast<size_t>(instance_index)] : nullptr;
         if (source_instance == nullptr ||
             source_instance->generation != transaction.source_generation)
-            break;
+            continue;
 
         const uint32_t request_offset = static_cast<uint32_t>(native_commands.size());
         bool supported = true;
+        uint32_t domain_mask = 0;
         for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
             const Command *command = command_at(transaction, ordinal);
             if (command == nullptr) { supported = false; break; }
-            const std::string command_key = command_key_for(*command);
+            if (command->action != MODIFIER_COMMAND) continue;
+            if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
+                continue;
             const std::string *definition_key = definition_key_ptr(*command);
             if (definition_key == nullptr || definition_key->empty()) {
                 supported = false;
                 break;
+            }
+            int32_t adapter_kind = NATIVE_MODIFIER_GENERIC;
+            if (command->command_definition_id >= 0 &&
+                command->command_definition_id < static_cast<int32_t>(
+                    _command_definitions.size())) {
+                adapter_kind = _command_definitions[
+                    static_cast<size_t>(command->command_definition_id)]
+                    .native_modifier_adapter;
+            } else {
+                // Behavior commands are a compile-time extension point. Keep
+                // their legacy key compatibility outside declarative content;
+                // ordinary catalog/template commands never execute this
+                // string branch in the native daily adapter path.
+                const std::string behavior_key = command_key_for(*command);
+                if (behavior_key == "technology.modifier")
+                    adapter_kind = NATIVE_MODIFIER_TECHNOLOGY;
+                else if (behavior_key == "family.modifier")
+                    adapter_kind = NATIVE_MODIFIER_FAMILY;
+                else if (behavior_key == "person.modifier")
+                    adapter_kind = NATIVE_MODIFIER_PERSON;
+                else if (behavior_key == "trigger.modifier")
+                    adapter_kind = NATIVE_MODIFIER_TRIGGER;
             }
             ModifierRuntime::NativeCommand native;
             native.opcode = command->opcode;
@@ -2160,7 +2534,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
             native.stacks = std::max(1, command->stacks);
             native.modifier_handle = 0;
 
-            if (command_key == "technology.modifier") {
+            if (adapter_kind == NATIVE_MODIFIER_TECHNOLOGY) {
                 native.producer = 180;
                 native.domain = ModifierRuntime::COUNTRY;
                 native.scope = ModifierRuntime::ENTITY;
@@ -2168,7 +2542,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_type = 0x54454348ULL; // TECH
                 native.source_id = static_cast<uint64_t>(transaction.source_instance_id) & 0xffffULL;
                 native.magnitude_q16 = ModifierRuntime::Q16_ONE;
-            } else if (command_key == "family.modifier") {
+            } else if (adapter_kind == NATIVE_MODIFIER_FAMILY) {
                 native.producer = 160;
                 native.domain = ModifierRuntime::ECONOMY;
                 native.scope = ModifierRuntime::GROUP;
@@ -2177,7 +2551,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_id = command->target_handle;
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
                     command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
-            } else if (command_key == "person.modifier") {
+            } else if (adapter_kind == NATIVE_MODIFIER_PERSON) {
                 native.producer = 170;
                 native.domain = command->domain;
                 native.scope = ModifierRuntime::ENTITY;
@@ -2187,7 +2561,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
                     std::max<int64_t>(1, command->value_q16), 0,
                     ModifierRuntime::MAX_MAGNITUDE_Q16));
-            } else if (command_key == "trigger.modifier") {
+            } else if (adapter_kind == NATIVE_MODIFIER_TRIGGER) {
                 native.producer = 175;
                 native.domain = command->domain;
                 native.scope = ModifierRuntime::ENTITY;
@@ -2212,6 +2586,8 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 supported = false;
                 break;
             }
+            if (command->domain >= 0 && command->domain < 32)
+                domain_mask |= adapter_ack_bit_for(*command);
             native_commands.push_back(native);
         }
         if (!supported) {
@@ -2220,12 +2596,12 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
         }
         const uint32_t request_count = static_cast<uint32_t>(native_commands.size()) -
             request_offset;
-        if (request_count == 0) break;
+        if (request_count == 0 || domain_mask == 0) continue;
         if (native_commands.size() > static_cast<size_t>(_max_native_modifier_commands)) {
             native_commands.resize(request_offset);
-            break;
+            continue;
         }
-        pending_transactions.push_back({tx_index, request_offset, request_count});
+        pending_transactions.push_back({tx_index, request_offset, request_count, domain_mask});
     }
 
     Dictionary out;
@@ -2256,7 +2632,8 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
         _native_request_ids.insert(_native_request_ids.end(),
             request_ids.begin() + pending.request_offset,
             request_ids.begin() + pending.request_offset + pending.request_count);
-        _native_ack_bindings.push_back({transaction.id, request_begin, pending.request_count});
+        _native_ack_bindings.push_back({transaction.id, request_begin,
+            pending.request_count, pending.domain_mask});
         _native_bound_transaction_ids.insert(transaction.id);
         transaction.status = PREFLIGHTED;
     }
@@ -2330,13 +2707,7 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
             _last_error = failure_reason;
             continue;
         }
-        if (transaction->status == PREFLIGHTED) transaction->status = COMMITTED;
-        transaction->received_ack_mask |= transaction->required_ack_mask;
-        untrack_pending_transaction(*transaction);
-        transaction->status = ACKED;
-        unindex_transaction_commands(*transaction);
-        _acked_transaction_id = std::max(_acked_transaction_id, transaction->id);
-        ++_transactions_acked;
+        acknowledge_native_domain(*transaction, binding.domain_bit);
         ++acknowledged;
     }
     for (const NativeAckBinding &binding : _native_ack_bindings) {
@@ -2361,12 +2732,505 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
     return out;
 }
 
+Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_runtime) {
+    if (!_configured) return failure("effect_runtime_unconfigured");
+    if (country_runtime == nullptr) return failure("country_runtime_unavailable");
+    const auto started = std::chrono::steady_clock::now();
+    struct PendingTransaction { int32_t index = -1; uint32_t begin = 0; uint32_t count = 0; uint32_t domain_mask = 0; };
+    std::vector<NativeCountryRuntime::EffectCommand> commands;
+    std::vector<PendingTransaction> pending;
+    commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
+    for (int32_t tx_index = 0; tx_index < static_cast<int32_t>(_transactions.size()); ++tx_index) {
+        Transaction &transaction = _transactions[static_cast<size_t>(tx_index)];
+        if (transaction.status == ACKED || transaction.status == REJECTED ||
+            transaction.status == RESYNC_REQUIRED)
+            continue;
+        if (_native_country_bound_transaction_ids.find(transaction.id) !=
+                _native_country_bound_transaction_ids.end())
+            continue;
+        if (transaction.command_count == 0) continue;
+        const uint32_t begin = static_cast<uint32_t>(commands.size());
+        bool supported = true;
+        uint32_t domain_mask = 0;
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+            const Command *command = command_at(transaction, ordinal);
+            if (command == nullptr) {
+                supported = false;
+                break;
+            }
+            if (command->action != COUNTRY_COMMAND) continue;
+            if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
+                continue;
+            if (command->domain < 0 || command->domain >= 32 ||
+                command->command_definition_id < 0 ||
+                command->command_definition_id >= static_cast<int32_t>(_command_definitions.size()) ||
+                command->opcode < NativeCountryRuntime::COMMAND_CREATE_COUNTRY ||
+                command->opcode > NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL) {
+                supported = false;
+                break;
+            }
+            const CommandDefinition &definition = _command_definitions[
+                static_cast<size_t>(command->command_definition_id)];
+            NativeCountryRuntime::EffectCommand native;
+            native.opcode = command->opcode;
+            native.effective_day = transaction.effective_day;
+            native.sequence = static_cast<int64_t>(command->idempotency_key);
+            native.target_handle = command->target_handle;
+            native.target_generation = command->target_generation;
+            native.value = command->value_q16;
+            native.payload = command->payload;
+            native.idempotency_key = command->idempotency_key;
+            // For structural country commands the catalog carries immutable
+            // names in the existing cold string columns.  No Godot Variant is
+            // built in this bridge.
+            native.stable_id = definition.definition_key.c_str();
+            native.display_name = definition.command_key.c_str();
+            commands.push_back(native);
+            domain_mask |= adapter_ack_bit_for(*command);
+        }
+        if (!supported) { commands.resize(begin); continue; }
+        const uint32_t count = static_cast<uint32_t>(commands.size()) - begin;
+        if (count == 0 || domain_mask == 0 || commands.size() > static_cast<size_t>(_max_native_modifier_commands)) {
+            commands.resize(begin);
+            continue;
+        }
+        pending.push_back({tx_index, begin, count, domain_mask});
+    }
+    Dictionary out;
+    out["ok"] = true; out["submitted_transactions"] = 0; out["submitted_commands"] = 0;
+    if (commands.empty()) {
+        _last_native_dispatch_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        return out;
+    }
+    std::vector<int64_t> request_ids;
+    std::string error;
+    if (!country_runtime->submit_effect_commands_pod(commands.data(), commands.size(), request_ids, error) ||
+        request_ids.size() != commands.size()) {
+        _last_error = error.empty() ? "effect_native_country_enqueue_failed" : error;
+        out["ok"] = false; out["reason"] = String(_last_error.c_str());
+        return out;
+    }
+    for (const PendingTransaction &item : pending) {
+        Transaction &transaction = _transactions[static_cast<size_t>(item.index)];
+        const uint32_t request_begin = static_cast<uint32_t>(_native_country_request_ids.size());
+        _native_country_request_ids.insert(_native_country_request_ids.end(),
+            request_ids.begin() + item.begin, request_ids.begin() + item.begin + item.count);
+        _native_country_ack_bindings.push_back({transaction.id, request_begin,
+            item.count, item.domain_mask});
+        _native_country_bound_transaction_ids.insert(transaction.id);
+        transaction.status = PREFLIGHTED;
+    }
+    out["submitted_transactions"] = static_cast<int32_t>(pending.size());
+    out["submitted_commands"] = static_cast<int32_t>(commands.size());
+    _native_country_transactions += pending.size();
+    _native_country_commands += commands.size();
+    _last_native_dispatch_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    return out;
+}
+
+Dictionary EffectRuntime::ack_native_country(NativeCountryRuntime *country_runtime) {
+    if (!_configured) return failure("effect_runtime_unconfigured");
+    if (country_runtime == nullptr) return failure("country_runtime_unavailable");
+    int32_t acknowledged = 0, rejected = 0;
+    std::vector<NativeAckBinding> retained;
+    std::vector<int64_t> retained_ids;
+    retained.reserve(_native_country_ack_bindings.size());
+    retained_ids.reserve(_native_country_request_ids.size());
+    for (const NativeAckBinding &binding : _native_country_ack_bindings) {
+        const int32_t index = transaction_index_for_id(binding.transaction_id);
+        if (index < 0 || index >= static_cast<int32_t>(_transactions.size())) continue;
+        Transaction &transaction = _transactions[static_cast<size_t>(index)];
+        bool pending = false, failed = false;
+        std::string reason;
+        for (uint32_t i = 0; i < binding.request_count; ++i) {
+            const size_t request_index = static_cast<size_t>(binding.request_begin) + i;
+            if (request_index >= _native_country_request_ids.size()) { failed = true; reason = "effect_native_country_binding_invalid"; break; }
+            bool complete = false, ok = false;
+            if (!country_runtime->effect_command_result_pod(_native_country_request_ids[request_index],
+                    complete, ok, reason)) { failed = true; break; }
+            if (!complete) { pending = true; break; }
+            if (!ok) { failed = true; break; }
+        }
+        if (pending && !failed) {
+            NativeAckBinding kept{binding.transaction_id,
+                static_cast<uint32_t>(retained_ids.size()), binding.request_count,
+                binding.domain_bit};
+            for (uint32_t i = 0; i < binding.request_count; ++i)
+                retained_ids.push_back(_native_country_request_ids[
+                    static_cast<size_t>(binding.request_begin) + i]);
+            retained.push_back(kept);
+            continue;
+        }
+        if (failed) {
+            untrack_pending_transaction(transaction); transaction.status = REJECTED;
+            ++_preflight_rejects; ++rejected; _last_error = reason.empty() ? "effect_native_country_rejected" : reason;
+        } else {
+            acknowledge_native_domain(transaction, binding.domain_bit);
+            ++acknowledged;
+        }
+        _native_country_bound_transaction_ids.erase(binding.transaction_id);
+    }
+    _native_country_ack_bindings.swap(retained);
+    _native_country_request_ids.swap(retained_ids);
+    if (acknowledged != 0 || rejected != 0) compact_terminal_transactions();
+    Dictionary out;
+    out["ok"] = rejected == 0; out["acknowledged"] = acknowledged;
+    out["rejected"] = rejected; out["pending"] = static_cast<int32_t>(_native_country_ack_bindings.size());
+    if (rejected != 0) out["reason"] = String(_last_error.c_str());
+    _native_country_acks += static_cast<uint64_t>(acknowledged);
+    return out;
+}
+
+Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_runtime) {
+    if (!_configured) return failure("effect_runtime_unconfigured");
+    if (economy_runtime == nullptr) return failure("economy_runtime_unavailable");
+    const auto started = std::chrono::steady_clock::now();
+    struct PendingTransaction { int32_t index = -1; uint32_t begin = 0; uint32_t count = 0; uint32_t domain_mask = 0; };
+    std::vector<NativeEconomyRuntime::EffectCommand> commands;
+    std::vector<PendingTransaction> pending;
+    commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
+    for (int32_t tx_index = 0; tx_index < static_cast<int32_t>(_transactions.size()); ++tx_index) {
+        Transaction &transaction = _transactions[static_cast<size_t>(tx_index)];
+        if (transaction.status == ACKED || transaction.status == REJECTED ||
+            transaction.status == RESYNC_REQUIRED ||
+            _native_economy_bound_transaction_ids.find(transaction.id) !=
+                _native_economy_bound_transaction_ids.end() ||
+            transaction.command_count == 0)
+            continue;
+        const uint32_t begin = static_cast<uint32_t>(commands.size());
+        bool supported = true;
+        uint32_t domain_mask = 0;
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+            const Command *command = command_at(transaction, ordinal);
+            if (command == nullptr) {
+                supported = false;
+                break;
+            }
+            if (command->action != ECONOMY_COMMAND) continue;
+            if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
+                continue;
+            if (command->domain < 0 || command->domain >= 32 ||
+                command->opcode < NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT ||
+                command->opcode > NativeEconomyRuntime::COMMAND_FAMILY_POPULATION_REWARD) {
+                supported = false;
+                break;
+            }
+            NativeEconomyRuntime::EffectCommand native;
+            native.opcode = command->opcode;
+            native.effective_day = transaction.effective_day;
+            native.sequence = static_cast<int64_t>(command->idempotency_key &
+                0x7fffffffffffffffULL);
+            native.target_handle = command->target_handle;
+            native.target_generation = command->target_generation;
+            const uint64_t packed_i32 = static_cast<uint64_t>(command->payload[0]);
+            native.i32_0 = static_cast<int32_t>(packed_i32 & 0xffffffffULL);
+            native.i32_1 = static_cast<int32_t>((packed_i32 >> 32U) & 0xffffffffULL);
+            native.i64_0 = command->value_q16;
+            native.i64_1 = command->payload[1];
+            native.idempotency_key = command->idempotency_key;
+            commands.push_back(native);
+            domain_mask |= adapter_ack_bit_for(*command);
+        }
+        if (!supported) {
+            commands.resize(begin);
+            continue;
+        }
+        const uint32_t count = static_cast<uint32_t>(commands.size()) - begin;
+        if (count == 0 || domain_mask == 0 || commands.size() > static_cast<size_t>(_max_native_modifier_commands)) {
+            commands.resize(begin);
+            continue;
+        }
+        pending.push_back({tx_index, begin, count, domain_mask});
+    }
+    Dictionary out;
+    out["ok"] = true;
+    out["submitted_transactions"] = 0;
+    out["submitted_commands"] = 0;
+    if (commands.empty()) {
+        _last_native_dispatch_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        return out;
+    }
+    std::vector<int64_t> request_ids;
+    std::string error;
+    if (!economy_runtime->submit_effect_commands_pod(commands.data(), commands.size(),
+            request_ids, error) || request_ids.size() != commands.size()) {
+        _last_error = error.empty() ? "effect_native_economy_enqueue_failed" : error;
+        out["ok"] = false;
+        out["reason"] = String(_last_error.c_str());
+        return out;
+    }
+    for (const PendingTransaction &item : pending) {
+        Transaction &transaction = _transactions[static_cast<size_t>(item.index)];
+        const uint32_t request_begin = static_cast<uint32_t>(
+            _native_economy_request_ids.size());
+        _native_economy_request_ids.insert(_native_economy_request_ids.end(),
+            request_ids.begin() + item.begin, request_ids.begin() + item.begin + item.count);
+        _native_economy_ack_bindings.push_back({transaction.id, request_begin,
+            item.count, item.domain_mask});
+        _native_economy_bound_transaction_ids.insert(transaction.id);
+        transaction.status = PREFLIGHTED;
+    }
+    out["submitted_transactions"] = static_cast<int32_t>(pending.size());
+    out["submitted_commands"] = static_cast<int32_t>(commands.size());
+    _native_economy_transactions += pending.size();
+    _native_economy_commands += commands.size();
+    _last_native_dispatch_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    return out;
+}
+
+Dictionary EffectRuntime::ack_native_economy(NativeEconomyRuntime *economy_runtime) {
+    if (!_configured) return failure("effect_runtime_unconfigured");
+    if (economy_runtime == nullptr) return failure("economy_runtime_unavailable");
+    const auto started = std::chrono::steady_clock::now();
+    std::vector<NativeAckBinding> retained;
+    std::vector<int64_t> retained_ids;
+    retained.reserve(_native_economy_ack_bindings.size());
+    retained_ids.reserve(_native_economy_request_ids.size());
+    int32_t acknowledged = 0;
+    int32_t rejected = 0;
+    for (const NativeAckBinding &binding : _native_economy_ack_bindings) {
+        const int32_t index = transaction_index_for_id(binding.transaction_id);
+        if (index < 0 || index >= static_cast<int32_t>(_transactions.size())) continue;
+        Transaction &transaction = _transactions[static_cast<size_t>(index)];
+        bool pending = false;
+        bool failed = false;
+        std::string reason;
+        for (uint32_t i = 0; i < binding.request_count; ++i) {
+            const size_t request_index = static_cast<size_t>(binding.request_begin) + i;
+            if (request_index >= _native_economy_request_ids.size()) {
+                failed = true;
+                reason = "effect_native_economy_binding_invalid";
+                break;
+            }
+            bool complete = false;
+            bool ok = false;
+            if (!economy_runtime->effect_command_result_pod(
+                    _native_economy_request_ids[request_index], complete, ok, reason)) {
+                failed = true;
+                break;
+            }
+            if (!complete) {
+                pending = true;
+                break;
+            }
+            if (!ok) {
+                failed = true;
+                break;
+            }
+        }
+        if (pending && !failed) {
+            NativeAckBinding kept{binding.transaction_id,
+                static_cast<uint32_t>(retained_ids.size()), binding.request_count,
+                binding.domain_bit};
+            for (uint32_t i = 0; i < binding.request_count; ++i)
+                retained_ids.push_back(_native_economy_request_ids[
+                    static_cast<size_t>(binding.request_begin) + i]);
+            retained.push_back(kept);
+            continue;
+        }
+        if (failed) {
+            untrack_pending_transaction(transaction);
+            transaction.status = REJECTED;
+            ++_preflight_rejects;
+            ++rejected;
+            _last_error = reason.empty() ? "effect_native_economy_rejected" : reason;
+        } else {
+            acknowledge_native_domain(transaction, binding.domain_bit);
+            ++acknowledged;
+        }
+        _native_economy_bound_transaction_ids.erase(binding.transaction_id);
+    }
+    _native_economy_ack_bindings.swap(retained);
+    _native_economy_request_ids.swap(retained_ids);
+    if (acknowledged != 0 || rejected != 0) compact_terminal_transactions();
+    Dictionary out;
+    out["ok"] = rejected == 0;
+    out["acknowledged"] = acknowledged;
+    out["rejected"] = rejected;
+    out["pending"] = static_cast<int32_t>(_native_economy_ack_bindings.size());
+    if (rejected != 0) out["reason"] = String(_last_error.c_str());
+    _native_economy_acks += static_cast<uint64_t>(acknowledged);
+    _last_native_ack_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    return out;
+}
+
+Dictionary EffectRuntime::dispatch_native_gameplay(DCWorldExt *world_ext) {
+    if (!_configured) return failure("effect_runtime_unconfigured");
+    if (world_ext == nullptr) return failure("gameplay_effect_runtime_unavailable");
+    const auto started = std::chrono::steady_clock::now();
+    struct PendingTransaction { int32_t index = -1; uint32_t begin = 0; uint32_t count = 0; uint32_t domain_mask = 0; };
+    std::vector<DCWorldExt::EffectGameplayCommand> commands;
+    std::vector<PendingTransaction> pending;
+    commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
+    for (int32_t tx_index = 0; tx_index < static_cast<int32_t>(_transactions.size()); ++tx_index) {
+        Transaction &transaction = _transactions[static_cast<size_t>(tx_index)];
+        if ((transaction.status != PLANNED && transaction.status != PREFLIGHTED &&
+             transaction.status != COMMITTED) || transaction.command_count == 0 ||
+            _native_gameplay_bound_transaction_ids.find(transaction.id) !=
+                _native_gameplay_bound_transaction_ids.end())
+            continue;
+        const uint32_t begin = static_cast<uint32_t>(commands.size());
+        bool supported = true;
+        uint32_t domain_mask = 0;
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+            const Command *command = command_at(transaction, ordinal);
+            if (command == nullptr) {
+                supported = false;
+                break;
+            }
+            const bool native_gameplay = command != nullptr &&
+                command->action == GAMEPLAY_COMMAND && command->domain == 3 &&
+                command->opcode > 0;
+            const bool native_publish = command != nullptr &&
+                command->action == PUBLISH_EVENT && command->domain == 4 &&
+                command->opcode > 0;
+            const bool native_custom = command != nullptr &&
+                command->action == CUSTOM_DOMAIN_COMMAND && command->domain == 6 &&
+                command->opcode == 1;
+            if (!native_gameplay && !native_publish && !native_custom) {
+                continue;
+            }
+            if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
+                continue;
+            DCWorldExt::EffectGameplayCommand native;
+            native.action = command->action;
+            native.domain = command->domain;
+            native.opcode = command->opcode;
+            native.effective_day = transaction.effective_day;
+            native.target_handle = command->target_handle;
+            native.target_generation = command->target_generation;
+            native.value_i64 = command->value_q16;
+            native.payload = command->payload;
+            native.idempotency_key = command->idempotency_key;
+            commands.push_back(native);
+            domain_mask |= adapter_ack_bit_for(*command);
+        }
+        if (!supported) {
+            commands.resize(begin);
+            continue;
+        }
+        const uint32_t count = static_cast<uint32_t>(commands.size()) - begin;
+        if (count == 0 || domain_mask == 0 || commands.size() > static_cast<size_t>(_max_native_modifier_commands)) {
+            commands.resize(begin);
+            continue;
+        }
+        pending.push_back({tx_index, begin, count, domain_mask});
+    }
+    Dictionary out;
+    out["ok"] = true;
+    out["submitted_transactions"] = 0;
+    out["submitted_commands"] = 0;
+    if (commands.empty()) {
+        _last_native_dispatch_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        return out;
+    }
+    std::vector<int64_t> request_ids;
+    std::string error;
+    if (!world_ext->submit_effect_gameplay_commands_pod(commands.data(),
+            commands.size(), request_ids, error) || request_ids.size() != commands.size()) {
+        _last_error = error.empty() ? "effect_native_gameplay_enqueue_failed" : error;
+        out["ok"] = false;
+        out["reason"] = String(_last_error.c_str());
+        return out;
+    }
+    for (const PendingTransaction &item : pending) {
+        Transaction &transaction = _transactions[static_cast<size_t>(item.index)];
+        const uint32_t request_begin = static_cast<uint32_t>(
+            _native_gameplay_request_ids.size());
+        _native_gameplay_request_ids.insert(_native_gameplay_request_ids.end(),
+            request_ids.begin() + item.begin, request_ids.begin() + item.begin + item.count);
+        _native_gameplay_ack_bindings.push_back({transaction.id, request_begin,
+            item.count, item.domain_mask});
+        _native_gameplay_bound_transaction_ids.insert(transaction.id);
+        transaction.status = PREFLIGHTED;
+    }
+    out["submitted_transactions"] = static_cast<int32_t>(pending.size());
+    out["submitted_commands"] = static_cast<int32_t>(commands.size());
+    _native_gameplay_transactions += pending.size();
+    _native_gameplay_commands += commands.size();
+    _last_native_dispatch_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    return out;
+}
+
+Dictionary EffectRuntime::ack_native_gameplay(DCWorldExt *world_ext) {
+    if (!_configured) return failure("effect_runtime_unconfigured");
+    if (world_ext == nullptr) return failure("gameplay_effect_runtime_unavailable");
+    std::vector<NativeAckBinding> retained;
+    std::vector<int64_t> retained_ids;
+    retained.reserve(_native_gameplay_ack_bindings.size());
+    retained_ids.reserve(_native_gameplay_request_ids.size());
+    int32_t acknowledged = 0;
+    int32_t rejected = 0;
+    for (const NativeAckBinding &binding : _native_gameplay_ack_bindings) {
+        const int32_t index = transaction_index_for_id(binding.transaction_id);
+        if (index < 0 || index >= static_cast<int32_t>(_transactions.size())) continue;
+        Transaction &transaction = _transactions[static_cast<size_t>(index)];
+        bool pending = false;
+        bool failed = false;
+        std::string reason;
+        for (uint32_t i = 0; i < binding.request_count; ++i) {
+            const size_t request_index = static_cast<size_t>(binding.request_begin) + i;
+            bool complete = false;
+            bool ok = false;
+            if (request_index >= _native_gameplay_request_ids.size() ||
+                !world_ext->effect_gameplay_command_result_pod(
+                    _native_gameplay_request_ids[request_index], complete, ok, reason)) {
+                failed = true;
+                if (reason.empty()) reason = "effect_native_gameplay_binding_invalid";
+                break;
+            }
+            if (!complete) { pending = true; failed = false; break; }
+            if (!ok) { failed = true; break; }
+        }
+        if (pending && !failed) {
+            NativeAckBinding kept{binding.transaction_id,
+                static_cast<uint32_t>(retained_ids.size()), binding.request_count};
+            for (uint32_t i = 0; i < binding.request_count; ++i)
+                retained_ids.push_back(_native_gameplay_request_ids[
+                    static_cast<size_t>(binding.request_begin) + i]);
+            retained.push_back(kept);
+            continue;
+        }
+        if (failed) {
+            untrack_pending_transaction(transaction);
+            transaction.status = REJECTED;
+            ++_preflight_rejects;
+            ++rejected;
+            _last_error = reason.empty() ? "effect_native_gameplay_rejected" : reason;
+        } else {
+            acknowledge_native_domain(transaction, binding.domain_bit);
+            ++acknowledged;
+        }
+        _native_gameplay_bound_transaction_ids.erase(binding.transaction_id);
+    }
+    _native_gameplay_ack_bindings.swap(retained);
+    _native_gameplay_request_ids.swap(retained_ids);
+    if (acknowledged != 0 || rejected != 0) compact_terminal_transactions();
+    Dictionary out;
+    out["ok"] = rejected == 0;
+    out["acknowledged"] = acknowledged;
+    out["rejected"] = rejected;
+    out["pending"] = static_cast<int32_t>(_native_gameplay_ack_bindings.size());
+    if (rejected != 0) out["reason"] = String(_last_error.c_str());
+    _native_gameplay_acks += static_cast<uint64_t>(acknowledged);
+    return out;
+}
+
 bool EffectRuntime::should_run(int64_t day_index) const {
     if (!_configured) return false;
     if (_run_day == day_index &&
         _candidate_cursor < static_cast<int32_t>(_run_candidates.size())) return true;
     if (!_pending_command_idempotency.empty() ||
-        !_native_ack_bindings.empty()) return true;
+        !_native_ack_bindings.empty() || !_native_country_ack_bindings.empty() ||
+        !_native_economy_ack_bindings.empty() ||
+        !_native_gameplay_ack_bindings.empty()) return true;
     if (!_dirty_queue.empty()) return true;
     if (!_due_heap.empty() && _due_heap.top().day <= day_index) return true;
     return false;
@@ -2403,17 +3267,30 @@ Dictionary EffectRuntime::poll_transactions(int64_t after_transaction_id,
     PackedInt64Array payload_i3;
     command_offsets.append(0);
     int32_t emitted = 0;
+    int32_t native_claimed = 0;
     limit = std::max(1, std::min(limit, 1024));
     for (const Transaction &transaction : _transactions) {
         if (transaction.id <= after_transaction_id || transaction.status == ACKED ||
             transaction.status == REJECTED || transaction.status == RESYNC_REQUIRED)
             continue;
-        const bool native_modifier_pending = std::any_of(
-            _native_ack_bindings.begin(), _native_ack_bindings.end(),
-            [&](const NativeAckBinding &binding) {
-                return binding.transaction_id == transaction.id;
-            });
-        if (native_modifier_pending) continue;
+        // Native-owned transactions must never be handed back to the legacy
+        // GDScript transport.  This matters for ideology: a transaction is
+        // already PREFLIGHTED by a POD adapter while the domain waits for its
+        // own safe boundary, and a second transport must not try to resolve
+        // its command keys or create a duplicate request.
+        const bool native_owned_pending =
+            _native_bound_transaction_ids.find(transaction.id) !=
+                _native_bound_transaction_ids.end() ||
+            _native_country_bound_transaction_ids.find(transaction.id) !=
+                _native_country_bound_transaction_ids.end() ||
+            _native_economy_bound_transaction_ids.find(transaction.id) !=
+                _native_economy_bound_transaction_ids.end() ||
+            _native_gameplay_bound_transaction_ids.find(transaction.id) !=
+                _native_gameplay_bound_transaction_ids.end();
+        if (native_owned_pending) {
+            ++native_claimed;
+            continue;
+        }
         if (emitted >= limit) break;
         ids.append(transaction.id);
         source_instances.append(transaction.source_instance_id);
@@ -2472,6 +3349,7 @@ Dictionary EffectRuntime::poll_transactions(int64_t after_transaction_id,
     out["command_payload_i2"] = payload_i2;
     out["command_payload_i3"] = payload_i3;
     out["count"] = emitted;
+    out["native_claimed_transactions"] = native_claimed;
     return out;
 }
 
@@ -2633,6 +3511,7 @@ Dictionary EffectRuntime::report() const {
     out["instance_storage_slots"] = static_cast<int32_t>(_instances.size());
     out["free_instance_slots"] = static_cast<int32_t>(_free_instance_indices.size());
     out["transactions"] = static_cast<int32_t>(_transactions.size());
+    out["external_bindings"] = static_cast<int32_t>(_external_binding_ids.size());
     out["pending_command_idempotency_count"] = static_cast<int64_t>(
         _pending_command_idempotency.size());
     out["pending_transactions"] = static_cast<int32_t>(std::count_if(
@@ -2667,10 +3546,27 @@ Dictionary EffectRuntime::report() const {
     out["native_modifier_transactions"] = static_cast<int64_t>(_native_modifier_transactions);
     out["native_modifier_commands"] = static_cast<int64_t>(_native_modifier_commands);
     out["native_modifier_acks"] = static_cast<int64_t>(_native_modifier_acks);
+    out["native_country_transactions"] = static_cast<int64_t>(_native_country_transactions);
+    out["native_country_commands"] = static_cast<int64_t>(_native_country_commands);
+    out["native_country_acks"] = static_cast<int64_t>(_native_country_acks);
+    out["native_economy_transactions"] = static_cast<int64_t>(_native_economy_transactions);
+    out["native_economy_commands"] = static_cast<int64_t>(_native_economy_commands);
+    out["native_economy_acks"] = static_cast<int64_t>(_native_economy_acks);
+    out["native_gameplay_transactions"] = static_cast<int64_t>(_native_gameplay_transactions);
+    out["native_gameplay_commands"] = static_cast<int64_t>(_native_gameplay_commands);
+    out["native_gameplay_acks"] = static_cast<int64_t>(_native_gameplay_acks);
     out["due_queue_count"] = static_cast<int64_t>(_due_heap.size());
     out["dirty_queue_count"] = static_cast<int64_t>(_dirty_queue.size());
     out["candidate_count"] = static_cast<int64_t>(_run_candidates.size());
     out["candidate_cursor"] = _candidate_cursor;
+    out["native_modifier_ack_pending"] = static_cast<int64_t>(
+        _native_ack_bindings.size());
+    out["native_country_ack_pending"] = static_cast<int64_t>(
+        _native_country_ack_bindings.size());
+    out["native_economy_ack_pending"] = static_cast<int64_t>(
+        _native_economy_ack_bindings.size());
+    out["native_gameplay_ack_pending"] = static_cast<int64_t>(
+        _native_gameplay_ack_bindings.size());
     out["dormant_instances_scanned"] = 0;
     out["metric_slab_bytes"] = static_cast<int64_t>(
         _metric_values.capacity() * sizeof(int64_t) +
@@ -2741,8 +3637,14 @@ PackedByteArray EffectRuntime::capture() const {
         // PLANNED so the restored runtime can submit it again idempotently.
         const int32_t persisted_status =
             transaction.status == PREFLIGHTED &&
-            _native_bound_transaction_ids.find(transaction.id) !=
-                _native_bound_transaction_ids.end()
+            (_native_bound_transaction_ids.find(transaction.id) !=
+                _native_bound_transaction_ids.end() ||
+             _native_country_bound_transaction_ids.find(transaction.id) !=
+                _native_country_bound_transaction_ids.end() ||
+             _native_economy_bound_transaction_ids.find(transaction.id) !=
+                _native_economy_bound_transaction_ids.end() ||
+             _native_gameplay_bound_transaction_ids.find(transaction.id) !=
+                _native_gameplay_bound_transaction_ids.end())
             ? PLANNED : transaction.status;
         append_le<int32_t>(bytes, persisted_status);
         append_le<uint32_t>(bytes, transaction.command_count);
@@ -2763,6 +3665,20 @@ PackedByteArray EffectRuntime::capture() const {
             for (int64_t value : command->payload) append_le<int64_t>(bytes, value);
         }
     }
+    append_le<uint32_t>(bytes, static_cast<uint32_t>(_external_bindings.size()));
+    for (const ExternalSourceBinding &binding : _external_bindings) {
+        append_le<int64_t>(bytes, binding.binding_id);
+        append_le<uint32_t>(bytes, binding.generation);
+        append_le<int32_t>(bytes, binding.source_type);
+        append_le<int64_t>(bytes, binding.source_id);
+        append_le<uint64_t>(bytes, binding.target_handle);
+        append_le<uint32_t>(bytes, binding.target_generation);
+        append_le<int32_t>(bytes, binding.level);
+        append_le<uint8_t>(bytes, binding.location);
+        append_le<uint8_t>(bytes, binding.active);
+        append_le<uint64_t>(bytes, binding.template_signature);
+        append_le<uint64_t>(bytes, binding.program_hash);
+    }
     append_le<uint32_t>(bytes, SAVE_END);
     PackedByteArray out;
     out.resize(bytes.size());
@@ -2780,7 +3696,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
     int32_t schema = 0, protocol = 0;
     uint64_t hash = 0;
     if (!read_le(bytes, size, cursor, magic) || magic != SAVE_MAGIC ||
-        !read_le(bytes, size, cursor, schema) || schema != SAVE_SCHEMA_VERSION ||
+        !read_le(bytes, size, cursor, schema) || (schema != 4 && schema != SAVE_SCHEMA_VERSION) ||
         !read_le(bytes, size, cursor, protocol) || protocol != PROTOCOL_VERSION ||
         !read_le(bytes, size, cursor, hash) || hash != _catalog_hash)
         return failure("pkef_header_incompatible");
@@ -2942,8 +3858,25 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                  command.command_key_id >= static_cast<int32_t>(_behavior_command_keys.size())) ||
                 !command_idempotency_keys.emplace(command.idempotency_key).second)
                 return failure("pkef_command_invalid");
-            if (command.domain >= 0)
-                derived_ack_mask |= (1u << static_cast<uint32_t>(command.domain));
+            if (command.command_definition_id >= 0) {
+                const CommandDefinition &definition = _command_definitions[
+                    static_cast<size_t>(command.command_definition_id)];
+                std::string command_error;
+                const bool remove_alias = command.action == MODIFIER_COMMAND &&
+                    command.opcode == ModifierRuntime::COMMAND_REMOVE &&
+                    definition.opcode == ModifierRuntime::COMMAND_APPLY;
+                if ((!remove_alias && (definition.action != command.action ||
+                                       definition.domain != command.domain ||
+                                       definition.opcode != command.opcode)) ||
+                    definition.duration_days != command.duration_days ||
+                    definition.stacks != command.stacks ||
+                    !native_command_shape_valid(command.action, command.domain,
+                        command.opcode, definition.target_resolver,
+                        command.duration_days, command.stacks, command_error))
+                    return failure(command_error.empty()
+                        ? "pkef_command_definition_mismatch" : command_error.c_str());
+            }
+            derived_ack_mask |= adapter_ack_bit_for(command);
             for (int64_t &value : command.payload)
                 if (!read_le(bytes, size, cursor, value)) return failure("pkef_command_payload_truncated");
             restored_command_arena.push_back(std::move(command));
@@ -2977,6 +3910,37 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             return failure("pkef_transaction_plan_hash_invalid");
         max_transaction_id = std::max(max_transaction_id, transaction.id);
         restored_transactions.push_back(std::move(transaction));
+    }
+    std::vector<ExternalSourceBinding> restored_bindings;
+    std::unordered_map<int64_t, int32_t> restored_binding_ids;
+    if (schema >= 5) {
+        uint32_t binding_count = 0;
+        if (!read_le(bytes, size, cursor, binding_count) ||
+            binding_count > static_cast<uint32_t>(_max_instances))
+            return failure("pkef_external_binding_count_invalid");
+        restored_bindings.reserve(binding_count);
+        for (uint32_t i = 0; i < binding_count; ++i) {
+            ExternalSourceBinding binding;
+            if (!read_le(bytes, size, cursor, binding.binding_id) ||
+                !read_le(bytes, size, cursor, binding.generation) ||
+                !read_le(bytes, size, cursor, binding.source_type) ||
+                !read_le(bytes, size, cursor, binding.source_id) ||
+                !read_le(bytes, size, cursor, binding.target_handle) ||
+                !read_le(bytes, size, cursor, binding.target_generation) ||
+                !read_le(bytes, size, cursor, binding.level) ||
+                !read_le(bytes, size, cursor, binding.location) ||
+                !read_le(bytes, size, cursor, binding.active) ||
+                !read_le(bytes, size, cursor, binding.template_signature) ||
+                !read_le(bytes, size, cursor, binding.program_hash))
+                return failure("pkef_external_binding_truncated");
+            if (binding.binding_id <= 0 || binding.generation == 0 ||
+                binding.target_handle == 0 || binding.target_generation == 0 ||
+                binding.level < -1 || binding.location > 2 || binding.active > 1 ||
+                !restored_binding_ids.emplace(binding.binding_id,
+                    static_cast<int32_t>(restored_bindings.size())).second)
+                return failure("pkef_external_binding_invalid");
+            restored_bindings.push_back(binding);
+        }
     }
     if (!read_le(bytes, size, cursor, end_magic) || end_magic != SAVE_END)
         return failure("pkef_end_marker_missing");
@@ -3017,6 +3981,8 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
     _transaction_ids.reserve(_transactions.size());
     for (size_t i = 0; i < _transactions.size(); ++i)
         _transaction_ids[_transactions[i].id] = static_cast<int32_t>(i);
+    _external_bindings = std::move(restored_bindings);
+    _external_binding_ids = std::move(restored_binding_ids);
     rebuild_command_idempotency_index();
     Dictionary out;
     out["ok"] = true;

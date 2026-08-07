@@ -119,9 +119,10 @@ func _run() -> void:
 	ext.submit_country_commands(rename_and_tech)
 	_expect("rename and country technology commit", bool(ext.run_country_slice({"day_index": 2}).get("ok", false)))
 	var beta_after: Dictionary = ext.get_country_snapshot(beta.country_handle)
-	_expect("country-wide metadata query reflects commit",
+	var beta_research: Dictionary = ext.get_country_research_snapshot(beta.country_handle)
+	_expect("country-wide metadata query reflects ACK-gated commit",
 		String(beta_after.country_name) == "贝塔共和国" and
-		(beta_after.technology_ids as PackedStringArray).has("tech.autonomous_systems"))
+		int((beta_research.technology_states as PackedInt32Array)[autonomous_systems]) == 4)
 	var artisan := (compiled.profession_ids as PackedStringArray).find("artisan")
 	var tax_commands := _commands([
 		{"opcode": 11, "day": 3, "sequence": 1, "handle": beta.country_handle,
@@ -289,8 +290,14 @@ func _run() -> void:
 		int(continuation_ext.get_country_cell_summary(0).country_handle) == int(continuation_beta.country_handle) and
 		int(continuation_ext.get_country_cell_summary(1).country_handle) == int(continuation_beta.country_handle))
 
+	var pending_signal_commands := _commands([
+		{"opcode": 14, "day": 6, "sequence": 1, "handle": beta.country_handle,
+			"cell": 2, "aux": river_valley, "value": 1, "stable_id": "", "name": ""},
+	])
+	_expect("pending research signal command queues before PKCN capture",
+		bool(ext.submit_country_commands(pending_signal_commands).get("ok", false)))
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v5 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 5)
+	_expect("PKCN v6 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 6)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)

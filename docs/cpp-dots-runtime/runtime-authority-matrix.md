@@ -1,5 +1,18 @@
 # Runtime Authority Matrix
 
+## Current schema precedence (2026-08-07)
+
+The current implementation supersedes older historical rows retained in the
+long-form matrix below: country authority is **PKCN v6**, economy authority is
+**PKEC v31**, configurable cross-domain effects are **PKEF v5**, ideology state
+is **PKID v2**, and the native gameplay journal is **journal v3**. The save
+coordinator restores domain state in its documented order and verifies active
+ideology bindings against PKEF; recovery never replays an effect to repair a
+missing binding. Effect ACK masks identify adapters rather than authored domain
+numbers, so Modifier subdomains cannot alias Country/Economy adapter ACKs in a
+mixed transaction. Legacy PKEC v29 and earlier are rejected with
+`economy_save_v29_or_earlier_unsupported`.
+
 ## Game flow and persistence authorities
 
 | State | Authority | Persistent provider | Rule |
@@ -7,16 +20,18 @@
 | Pending new/load request | `GameFlowService` | none; one-shot process state | Never use `Engine` meta on the product path |
 | Validated world creation inputs | `NewGameConfig v3` | PKSV `new_game_config` | Store seed, foreign count, starting country cash and research policy; v2 migrates with zero foreigners |
 | Player and foreign identity/territory | PKCN / `NativeCountryRuntime` | PKSV `pkcn` plus player-only `player_context` | Player is slot 0; each opening country owns one cell; only `cell.country_slot` is mirrored to cells |
-| Population, market, buildings, family traits/cell influence, notable families and important people, prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v30 | Restore only after PKCN and trade topology; v29 and earlier rejected |
+| Population, market, buildings, family traits/cell influence, notable families and important people, prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v31 | Restore only after PKCN and trade topology; v30 and earlier require explicit compatibility handling |
 | Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v30 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE` |
 | Dynamic cell SoA | `DCWorld` / `DCWorldExt` by component contract | PKSV `dynamic_world` | Missing provider fails the save |
 | Native environment rounds | `EnvironmentRuntime` | `PKEnvironmentRuntime v1` in PKSV `environment` | Persist arrays, ping-pong, dirty sets, topology and cursors, not counters only |
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
-| Country research, technology, treasury and tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v4 | Owns discovery, research, five tax defaults, sparse overrides and fiscal cash bridge |
-| Country modifiers | Country `ModifierStore` | embedded in PKCN v4 | Technology and fine-grained tax-rate effects alter frozen consumers, never ledgers directly |
-| Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v30, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
+| Country research, technology, treasury and tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v6 | Owns discovery, research, five tax defaults, sparse overrides, fiscal cash bridge and native Effect ingress idempotency |
+| Country modifiers | Country `ModifierStore` | embedded in PKCN v6 | Technology and fine-grained tax-rate effects alter frozen consumers, never ledgers directly |
+| Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v31, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
-| Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v4 | Owns catalog IR, flat metric slabs, due/dirty candidates, deterministic worker plans and ACKs; never owns country/economy/Modifier stores |
+| Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v5 | Owns catalog IR, flat metric slabs, due/dirty candidates, deterministic worker plans, durable external bindings and ACKs; never owns country/economy/Modifier stores |
+| Country ideology collection/progression/offers | `NativeIdeologyRuntime` | PKSV `pkid` / PKID v2 | Owns sparse country idea state, slots, points, offer RNG and gates; active states verify PKEF external binding identity rather than replay effects |
+| Effect-originated gameplay events | native Gameplay journal | PKSV `journal` v3 | `gameplay_effect` is the POD ingress/ACK boundary; journal stores Effect idempotency evidence |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
 | Current visibility and fog knowledge | `VisionSolver` writing `cell.visible` and `MapData.fog_k_arr` | none; derived | Pure function of territory plus baked terrain; recomputed on restore, never saved |
@@ -193,11 +208,12 @@ Country, Economy, and Gameplay remain owners of effect application.
 
 `EffectRuntime` is the next graph owner at priority 85. It owns packed effect
 definitions, active instances, frozen metric revisions, deterministic plans,
-cross-domain transactions and PKEF v4 ACK state. Declarative candidate planning
+cross-domain transactions, durable external bindings, and PKEF v5 ACK state. Declarative candidate planning
 may run in workers over frozen slabs, while stable transaction replay remains a
-single EffectRuntime writer. Known Effect-to-Modifier
-commands are batch-enqueued in C++ and ACKed after `modifier_daily`; unsupported
-commands retain the adapter boundary
+single EffectRuntime writer. Known Effect-to-Modifier, all 14 Country opcodes,
+all 15 Economy opcodes, and the Gameplay/PublishEvent/registered-CustomDomain
+ingress are batch-enqueued in C++ and ACKed at their owning safe boundaries;
+unsupported or unregistered commands retain the adapter boundary
 `preflight -> PREFLIGHTED -> safe commit -> COMMITTED -> ACK`; it never writes
 Trigger, Modifier, Country, Economy, Gameplay or conserved state. PKEF is
 restored after PKTR so trigger-produced pending work resumes against the same

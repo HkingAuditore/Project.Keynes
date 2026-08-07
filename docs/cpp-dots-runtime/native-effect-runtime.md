@@ -41,6 +41,18 @@ boolean composition. Value instructions include `CONST`, `READ_METRIC`,
 
 All numeric values use Q16. `DIV_FLOOR` returns a Q16 integer quotient. New
 configuration operators must be bounded and validated at catalog compile time.
+Command rows are validated twice: the GDScript compiler rejects missing keys,
+invalid target layouts, wrong adapter domains, and unsupported opcode ranges;
+`EffectRuntime::configure()` repeats the same checks before exposing a catalog.
+The configured command row is the native command template ID carried by a
+runtime command. Known Modifier producer variants are also classified once at
+configure time, so declarative dispatch does not compare command-key strings in
+the daily adapter path; only the compile-time Behavior compatibility extension
+retains a cold legacy key branch.
+The current native ABI therefore covers Country opcodes `1..14`, Economy
+opcodes `1..15`, Modifier apply/remove, Gameplay rows on domain `3`, journal
+events on domain `4`, and only the registered CustomDomain audit opcode
+`domain=6/opcode=1`.
 An effect with `behavior_id` calls a compile-time registered
 `EffectRuntime::BehaviorFn`; the callback reads a frozen `BehaviorInput` and
 returns POD commands. Behavior commands use integer key IDs from the catalog's
@@ -104,7 +116,30 @@ stale handles before commit. Known `technology.modifier`, `family.modifier`,
 `ModifierRuntime::NativeCommand` rows, Modifier Runtime commits them at
 `modifier_daily`, and C++ ACKs the Effect transaction. A native-bound
 transaction is hidden from the fallback poll path to prevent duplicate enqueue.
-Unsupported or mixed commands use `EffectFacade.dispatch_transactions()` as the
+Native adapters claim complete POD transactions for Modifier, all current Country
+opcodes (1..14), all current Economy opcodes (1..15), `GAMEPLAY_COMMAND`,
+`PUBLISH_EVENT`, and the registered CustomDomain audit command. Country and
+Economy only stage requests; their own command/ledger boundary preflights and
+commits them, then Effect observes a durable idempotent ACK. Gameplay,
+PublishEvent, and the registered CustomDomain command share the fixed-capacity
+native gameplay ingress and journal-backed idempotency table at
+`gameplay_effect` priority 95. ACK means the event is durable, not that a UI
+subscriber has consumed it. New CustomDomain opcodes are rejected at catalog
+compile time until a C++ adapter explicitly registers their domain/opcode
+shape; they never fall through to GDScript.
+Native-owned transactions are excluded from `EffectFacade.poll_transactions()`,
+so ideology never reaches the GDScript compatibility transport.
+
+Transaction ACK masks are keyed by native adapter identity, not by the authored
+`command.domain`. This distinction is required because a Modifier command uses
+`domain` for its Modifier subdomain (for example Country = 1), while a real
+Country command also authors domain 1. The fixed adapter bits are Modifier,
+Country, Economy, Gameplay, PublishEvent, and CustomDomain. A mixed transaction
+therefore remains `COMMITTED` until every adapter bit is durable; an adapter
+whose bit is already received skips its commands on retry instead of submitting
+them again.
+
+Unsupported legacy commands use `EffectFacade.dispatch_transactions()` as the
 compatibility transport. Each fallback adapter receives `phase=preflight` first
 and must validate without mutation; after the runtime enters `PREFLIGHTED`, the
 adapter receives `phase=commit` at its domain safe boundary. The runtime then
@@ -175,20 +210,37 @@ transactions not claimed by the native bridge.
 
 ## Persistence and diagnostics
 
-`PKEF v4` stores catalog hash, runtime cursors, an in-progress candidate list,
+`PKEF v5` stores catalog hash, runtime cursors, an in-progress candidate list,
 instances, input metrics, published and consumed input revisions, fire sequences, and pending
-transactions/commands. Native Modifier request IDs are process-local and are
+transactions/commands. It additionally stores durable `ExternalSourceBinding`
+rows for peer-owned persistent sources: source identity, target handle/generation,
+ideology level/location, binding generation, persistent-template signature and
+program hash. Native adapter request IDs are process-local and are
 not serialized: a native-bound `PREFLIGHTED` transaction is written as
 `PLANNED` and is safely re-submitted with the same command idempotency key after
 restore. Restore rejects
 wrong protocol, schema, catalog hash, truncation, invalid IDs, and invalid
-transaction status. Domain state is not duplicated in PKEF.
+transaction status. Domain state is not duplicated in PKEF; its domain-side
+idempotency evidence remains in PKCN, PKEC, or the gameplay journal.
+
+Strict peer restore also audits pending external transactions. PKID supplies the
+exact transaction IDs and ideology source prefixes it owns; PKEF rejects a
+missing/mismatched source as well as any additional pending ideology transaction
+for the same country. This prevents an orphaned pre-load transaction from being
+silently granted after the ideology state has forgotten it.
+
+Peer runtimes can enqueue a precompiled external command and retain only the
+returned transaction ID. `transaction_status_pod()` reports a live state or an
+ACKED result through the contiguous durable ACK cursor after ACK compaction;
+REJECTED rows remain queryable so a producer (currently ideology progression)
+can roll back its local intent instead of treating an unknown transaction as a
+successful grant.
 
 `get_effect_report()` exposes catalog hash, instance/transaction counts,
 pending ACKs, explicit transaction-state counts, work, elapsed time, behavior
 failures, overflow, due/dirty/candidate counts, flat-slab bytes, native Modifier
 batch timings, worker planning/serial merge timings, worker/fallback path fields,
-the pending idempotency-key count, and last error. `PKEF v4` restore parses into temporary
+the pending idempotency-key count, per-native-adapter pending ACK counts, and last error. `PKEF v5` restore parses into temporary
 vectors and swaps only after all bounds, command masks, plan hash and end marker
 checks pass, so a truncated save cannot clear the live state.
 `explain_effect(instance_id)` reports the resolved program, input revision,

@@ -8,7 +8,8 @@ const GameplayEventBusScript = preload("res://scripts/data_core/gameplay_event_b
 
 enum Action { MODIFIER_APPLY = 1, MODIFIER_REMOVE = 2, MODIFIER_REFRESH = 3,
 	MODIFIER_SET_STACKS = 4, COUNTRY_COMMAND = 10, ECONOMY_COMMAND = 11,
-	GAMEPLAY_COMMAND = 12, PUBLISH_EVENT = 13, CUSTOM_DOMAIN_COMMAND = 14 }
+	GAMEPLAY_COMMAND = 12, PUBLISH_EVENT = 13, CUSTOM_DOMAIN_COMMAND = 14,
+	IDEOLOGY_COMMAND = 15 }
 
 var _world_ext: Object
 var _clock: WorldClock
