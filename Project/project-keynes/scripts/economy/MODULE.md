@@ -27,6 +27,9 @@
 - C++ `NativeEconomyRuntime` 拥有全部可变经济状态和 hot loop。
 - `DCWorldExt` 只组合 runtime 并暴露粗粒度 API 与周期 sample-day 环境快照。
 - `EconomyCatalog` 冷启动编译 stable ID/CSR/PackedArrays；`EconomyFacade` 只打包命令和查询。
+- 玩家建设使用 `TREASURY_SPONSORED_BUILD`：只访问目标建筑 construction CSR、目标格市场行和
+  国家稠密国库行。结算先扣国库物资，再以执行边界本地零售价购买缺口；物资、商人或现金任一
+  不足则整单零变更。UI 报价限制为当前分页最多 32 个 dense type，并明确为非锁定预览。
 - `EconomyDailySystem` 是 SUS/WorldClock 薄壳；gameplay/save 只读 committed，Inspector 的选中
   cell 冷查询可读取切片间最新完整 snapshot，并以 `snapshot_source` 标记来源。
 - 人口 snapshot 用 cohort-major CSR 返回原生计算的预计单位/人/日；Inspector 先按玩家可见用途
@@ -167,7 +170,7 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 # Building runtime
 
 `BuildingProfile` 位于 `data/economy/buildings/`，由 `EconomyCatalog` 编译进 native catalog。
-`EconomyFacade.build/demolish/building_cell_snapshot` 是 GDScript 粗边界；建筑、岗位、生产、所有权
+`EconomyFacade.build/demolish/treasury_sponsored_build/building_cell_snapshot` 是 GDScript 粗边界；建筑、岗位、生产、所有权
 份额和账本只由 C++ 修改。目录生成时 fixed/adaptive role 的参考工资均以职业默认生活成本为
 下限，并按默认商人收购价、80% 售出率校准足以覆盖投入、工资、业主生活成本和目标利润的产量。目录审计遍历全部建筑并另限制生产原料成本
 不超过默认商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`，且工业总投入物量不超过
