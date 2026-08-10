@@ -90,6 +90,8 @@ func tick(ctx) -> Dictionary:
 		_last_report["_tick_idx"] = int(ctx.tick_index) if ctx != null else -1
 	if facade.has_method("dispatch_committed_events"):
 		facade.dispatch_committed_events(result)
+	if facade.has_method("dispatch_construction_command_receipts"):
+		facade.dispatch_construction_command_receipts()
 	var over_budget := bool(result.get("commit_over_budget", false))
 	# A multi-day frozen cycle is expected to remain in-flight while the world
 	# advances. Only stop the calendar at its settlement deadline (or on fatal),

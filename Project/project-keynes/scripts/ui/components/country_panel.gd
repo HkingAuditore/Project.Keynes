@@ -26,6 +26,7 @@ var _ideology_workspace: Control
 var _model: Dictionary = {}
 var _section_id := ""
 var _compact := false
+var _player_controller = null
 
 
 func _ready() -> void:
@@ -78,6 +79,14 @@ func is_panel_open() -> bool:
 	return visible
 
 
+func set_player_controller(controller) -> void:
+	_player_controller = controller
+	if _technology_workspace != null and _technology_workspace.has_method("set_player_controller"):
+		_technology_workspace.set_player_controller(controller)
+	if _economy_workspace != null and _economy_workspace.has_method("set_player_controller"):
+		_economy_workspace.set_player_controller(controller)
+
+
 func current_section() -> String:
 	return _section_id
 
@@ -122,10 +131,14 @@ func _apply_section() -> void:
 	_economy_workspace.visible = economy_open
 	_ideology_workspace.visible = ideology_open
 	if technology_open:
+		if _technology_workspace.has_method("set_player_controller"):
+			_technology_workspace.set_player_controller(_player_controller)
 		_technology_workspace.set_model(_model)
 		_technology_workspace.set_compact(_compact)
 		return
 	if economy_open:
+		if _economy_workspace.has_method("set_player_controller"):
+			_economy_workspace.set_player_controller(_player_controller)
 		_economy_workspace.set_model(_model)
 		return
 	if ideology_open:

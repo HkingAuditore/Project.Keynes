@@ -852,6 +852,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             cmd.opcode == COMMAND_FAMILY_FREE_BUILDING ||
             cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
         const bool targets_cohort = !family_reward &&
+                                    cmd.opcode != COMMAND_TREASURY_SPONSORED_BUILD &&
                                     cmd.opcode != COMMAND_ADD_STOCK &&
                                     cmd.opcode != COMMAND_REMOVE_STOCK &&
                                     cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
@@ -881,9 +882,18 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             ++_rejected_commands;
             return true;
         }
-        if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH) &&
+        if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH ||
+             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD) &&
             (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count || cmd.i32_1 < 0 ||
              cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 <= 0)) {
+            ++_rejected_commands;
+            return true;
+        }
+        if (cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD &&
+            (cmd.i64_0 != 1 ||
+             cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
+             _country_runtime == nullptr || !_country_runtime->valid_handle(
+                 static_cast<int64_t>(cmd.target_handle)))) {
             ++_rejected_commands;
             return true;
         }

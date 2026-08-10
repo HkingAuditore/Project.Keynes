@@ -11,7 +11,7 @@
 | 已揭示、已完成、待生效、稀疏进度、四领域队列、权重和采购政策 | `NativeCountryRuntime` |
 | 科技值生产、市场库存、私人购买、国内贸易和国家采购 | `NativeEconomyRuntime` |
 | 科技提供的数值效果 | Country domain `ModifierRuntime` |
-| 科技界面显示和交互 | `TechnologyWorkspace`（全屏），只读快照加命令提交 |
+| 科技界面显示和交互 | `TechnologyWorkspace`（全屏），只读快照；正式写操作经 `PlayerController.request_command()` 白名单网关提交 |
 | 科技树静态几何 | `TechnologyTreeLayout` 纯函数，一次性烘焙 |
 
 `EconomyCatalog` 只接受权威科技目录，并验证所有 `tech.*` 标签。科技 dense ID 采用目录
@@ -96,6 +96,8 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 `EconomyWorkspace`，经 `CountryFacade.treasury_snapshot()` 展示国家现金与全部非零国库物资；
 政治/军事/外交暂用统一 `SectionPlaceholderScreen`。科技 section 挂载全屏
 `TechnologyWorkspace`：顶部 icon 化状态条、左侧研究方针栏、中央科技树、右侧详情卡。
+
+工作区不持有 `CountryFacade`、玩家国家句柄或命令序列。权重、预算和队列操作只发出结构化玩家意图，由 `PlayerController` 解析正式会话、分配下一日生效日与单调 sequence，再委托 `NativeCountryRuntime`。
 
 科技树是单个自绘 `TechnologyTreeView`，不再使用 `GraphEdit`，也不为 81 个节点创建子节点。
 几何由纯函数 `TechnologyTreeLayout` 一次性烘焙：全局 DAG 层号、时代分带、同层重心排序、

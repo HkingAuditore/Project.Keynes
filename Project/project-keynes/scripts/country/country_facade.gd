@@ -23,6 +23,11 @@ enum Opcode {
 	SET_TAX_OVERRIDE = 12,
 	CLEAR_TAX_OVERRIDE = 13,
 	DISCOVER_COUNTRY_SIGNAL = 14,
+	SET_CELL_TAX_DEFAULT = 15,
+	CLEAR_CELL_TAX_DEFAULT = 16,
+	SET_CELL_TAX_OVERRIDE = 17,
+	CLEAR_CELL_TAX_OVERRIDE = 18,
+	CLEAR_CELL_TAX_POLICY = 19,
 }
 
 enum TaxKind {
@@ -224,6 +229,7 @@ func set_tax_override(handle: int, kind: int, item_id: StringName,
 		"target_handle": handle,
 		"tax_kind": kind,
 		"tax_item": item,
+		"stable_id": String(item_id),
 		"tax_rate_percent": rate_percent,
 		"effective_day": effective_day,
 		"sequence": sequence,
@@ -240,6 +246,7 @@ func clear_tax_override(handle: int, kind: int, item_id: StringName,
 		"target_handle": handle,
 		"tax_kind": kind,
 		"tax_item": item,
+		"stable_id": String(item_id),
 		"effective_day": effective_day,
 		"sequence": sequence,
 	}])
@@ -247,6 +254,92 @@ func clear_tax_override(handle: int, kind: int, item_id: StringName,
 
 func tax_policy_snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_tax_policy_snapshot(handle) if _configured else {}
+
+
+func set_cell_tax_default(handle: int, cell: int, kind: int, rate_percent: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if kind < TaxKind.INCOME or kind > TaxKind.EXPORT:
+		return {"ok": false, "reason": "invalid tax kind"}
+	if rate_percent < -100 or rate_percent > 100:
+		return {"ok": false, "reason": "tax rate must be within -100..100"}
+	return submit([{
+		"opcode": Opcode.SET_CELL_TAX_DEFAULT,
+		"target_handle": handle,
+		"cell": cell,
+		"tax_kind": kind,
+		"tax_rate_percent": rate_percent,
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
+
+func clear_cell_tax_default(handle: int, cell: int, kind: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if kind < TaxKind.INCOME or kind > TaxKind.EXPORT:
+		return {"ok": false, "reason": "invalid tax kind"}
+	return submit([{
+		"opcode": Opcode.CLEAR_CELL_TAX_DEFAULT,
+		"target_handle": handle,
+		"cell": cell,
+		"tax_kind": kind,
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
+
+func set_cell_tax_override(handle: int, cell: int, kind: int,
+		item_id: StringName, rate_percent: int, effective_day: int,
+		sequence: int) -> Dictionary:
+	var item := _tax_item_index(kind, item_id)
+	if item < 0:
+		return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
+	if rate_percent < -100 or rate_percent > 100:
+		return {"ok": false, "reason": "tax rate must be within -100..100"}
+	return submit([{
+		"opcode": Opcode.SET_CELL_TAX_OVERRIDE,
+		"target_handle": handle,
+		"cell": cell,
+		"tax_kind": kind,
+		"tax_item": item,
+		"stable_id": String(item_id),
+		"tax_rate_percent": rate_percent,
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
+
+func clear_cell_tax_override(handle: int, cell: int, kind: int,
+		item_id: StringName, effective_day: int, sequence: int) -> Dictionary:
+	var item := _tax_item_index(kind, item_id)
+	if item < 0:
+		return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
+	return submit([{
+		"opcode": Opcode.CLEAR_CELL_TAX_OVERRIDE,
+		"target_handle": handle,
+		"cell": cell,
+		"tax_kind": kind,
+		"tax_item": item,
+		"stable_id": String(item_id),
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
+
+func clear_cell_tax_policy(handle: int, cell: int, effective_day: int,
+		sequence: int) -> Dictionary:
+	return submit([{
+		"opcode": Opcode.CLEAR_CELL_TAX_POLICY,
+		"target_handle": handle,
+		"cell": cell,
+		"effective_day": effective_day,
+		"sequence": sequence,
+	}])
+
+
+func cell_tax_policy_snapshot(cell: int) -> Dictionary:
+	return _world_ext.get_country_cell_tax_policy_snapshot(cell) \
+		if _configured and _world_ext.has_method( \
+			"get_country_cell_tax_policy_snapshot") else {}
 
 
 func fiscal_snapshot(handle: int) -> Dictionary:

@@ -43,7 +43,7 @@ var _model: Dictionary = {}
 var _page := "treasury"
 var _pending: Dictionary = {}
 var _preview_defaults: Dictionary = {}
-var _sequence := 1
+var _player_controller = null
 var _refresh_dirty := false
 var _has_rendered_model := false
 var _last_render_msec := 0
@@ -90,6 +90,10 @@ func set_model(model: Dictionary) -> void:
 	# Opening/switching to the workspace must paint immediately. Only repeated
 	# live-tick patches are coalesced.
 	_apply_model(Time.get_ticks_msec())
+
+
+func set_player_controller(controller) -> void:
+	_player_controller = controller
 
 
 func refresh_model(model: Dictionary) -> void:
@@ -521,12 +525,11 @@ func _on_reset_pressed(key: String, kind: String) -> void:
 
 
 func _clear_override(kind: String, item_id: String) -> void:
-	var facade = _model.get("country_facade")
-	if facade == null:
+	if _player_controller == null:
 		return
-	var result: Dictionary = facade.clear_tax_override(
-		int(_model.get("country_handle", 0)),
-		int(TAX_KIND[kind]), StringName(item_id), _effective_day(), _next_sequence())
+	var result: Dictionary = _player_controller.request_command(
+		&"country.tax.clear_override", {
+			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id)})
 	if bool(result.get("ok", false)):
 		_mark_pending(kind, item_id)
 		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
@@ -544,17 +547,16 @@ func _clear_override(kind: String, item_id: String) -> void:
 
 
 func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) -> void:
-	var facade = _model.get("country_facade")
-	if facade == null:
+	if _player_controller == null:
 		return
-	var handle := int(_model.get("country_handle", 0))
 	var result: Dictionary
 	if is_default:
-		result = facade.set_tax_default(handle, int(TAX_KIND[kind]), rate,
-			_effective_day(), _next_sequence())
+		result = _player_controller.request_command(&"country.tax.set_default", {
+			"kind": int(TAX_KIND[kind]), "rate_percent": rate})
 	else:
-		result = facade.set_tax_override(handle, int(TAX_KIND[kind]),
-			StringName(item_id), rate, _effective_day(), _next_sequence())
+		result = _player_controller.request_command(&"country.tax.set_override", {
+			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id),
+			"rate_percent": rate})
 	if bool(result.get("ok", false)):
 		if is_default:
 			_preview_defaults.erase(kind)
@@ -637,12 +639,6 @@ func _resolve_pending_commands() -> void:
 
 func _effective_day() -> int:
 	return int(_model.get("current_day", -1)) + 1
-
-
-func _next_sequence() -> int:
-	var result := _sequence
-	_sequence += 1
-	return result
 
 
 func _apply_goods(goods: Array, wanted: Dictionary) -> void:

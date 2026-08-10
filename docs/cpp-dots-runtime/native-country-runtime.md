@@ -1,4 +1,10 @@
-# Native Country Runtime（PKCN v5）
+# Native Country Runtime（PKCN v7）
+
+> v7 adds the authoritative `CellTaxPolicyStore`: `cell_policy_id[cell]` uses
+> `0` for full national inheritance, while identical non-empty policies are
+> content-interned. Commands 15..19 stage only touched cells. Territory transfer
+> clears the local policy atomically. Save/hash surfaces canonicalize by cell and
+> stable item ID; transient policy IDs never cross the persistence boundary.
 
 ## Research signals
 
@@ -79,6 +85,10 @@ GM 的“点击地块接管领土”不新增 opcode：`WorldRuntimeHost` 在会
 
 `ACTIVE` 是生产默认并发布 `cell.country_slot`；`PROBE` 运行原生状态但不发布该可见镜像；
 `OFF` 明确禁用依赖国家科技/国库的经济，不恢复逐地块科技或全局国库。
+
+经济侧国库资助建设通过内部 `spend_treasury_assets` 批量接口扣除多种物资与现金。接口先验证
+handle、重复 good、非负数量和全部余额，再一次性提交并只递增一次国家版本；任何预检失败均不
+改变国库。市场扣减和商人收款仍由 `NativeEconomyRuntime` 在同一经济事务路径负责。
 
 ## 国家视觉挂钩
 

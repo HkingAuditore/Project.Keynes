@@ -221,37 +221,48 @@ func _update_inertia(delta: float) -> void:
 
 # ───────────────────────────── 输入分发 ─────────────────────────────
 
-func _unhandled_input(event: InputEvent) -> void:
+## Called by PlayerController after UI focus gating. Keeping input dispatch out
+## of the camera prevents it from bypassing the formal player-session boundary.
+func handle_player_input(event: InputEvent) -> bool:
 	if event is InputEventScreenTouch:
 		_handle_screen_touch(event as InputEventScreenTouch)
+		return true
 	elif event is InputEventScreenDrag:
 		_handle_screen_drag(event as InputEventScreenDrag)
+		return true
 	elif event is InputEventMagnifyGesture:
 		# 触控板/部分平台的捏合手势
 		var mg := event as InputEventMagnifyGesture
 		_set_target_zoom(_target_zoom.x * mg.factor, mg.position)
+		return true
 	elif event is InputEventPanGesture:
 		var pg := event as InputEventPanGesture
 		_stop_inertia()
 		position += pg.delta * 12.0 / zoom
 		_clamp_position()
+		return true
 	elif event is InputEventMouseButton:
 		_handle_mouse_button(event as InputEventMouseButton)
+		return true
 	elif event is InputEventMouseMotion:
 		_handle_mouse_motion(event as InputEventMouseMotion)
+		return true
 	elif event is InputEventKey:
-		_handle_key(event as InputEventKey)
+		return _handle_key(event as InputEventKey)
+	return false
 
 # 键盘 +/- 缩放（锚定视口中心）。与 main.gd 的功能热键不冲突。
-func _handle_key(k: InputEventKey) -> void:
+func _handle_key(k: InputEventKey) -> bool:
 	if not k.pressed or k.echo:
-		return
+		return false
 	var center := get_viewport_rect().size * 0.5
-	match k.keycode:
-		KEY_EQUAL, KEY_KP_ADD:
-			_set_target_zoom(_target_zoom.x * key_zoom_step, center)
-		KEY_MINUS, KEY_KP_SUBTRACT:
-			_set_target_zoom(_target_zoom.x / key_zoom_step, center)
+	if k.is_action_pressed(&"player_zoom_in"):
+		_set_target_zoom(_target_zoom.x * key_zoom_step, center)
+		return true
+	if k.is_action_pressed(&"player_zoom_out"):
+		_set_target_zoom(_target_zoom.x / key_zoom_step, center)
+		return true
+	return false
 
 # ── 鼠标（含移动端单指模拟）──
 

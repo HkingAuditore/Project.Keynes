@@ -14,8 +14,7 @@ const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_pro
 var _repository = SaveRepositoryScript.new()
 var _runtime_host: WorldRuntimeHost
 var _world_clock: WorldClock
-var _camera: MapCamera
-var _selection: SelectionController
+var _player_controller
 var _pending_load: Dictionary = {}
 var _pending_view: Dictionary = {}
 var _last_autosave_year := -1
@@ -46,12 +45,11 @@ func load_preview(slot_id: String) -> Dictionary:
 	return _repository.load_preview(slot_id)
 
 
-func bind_runtime(host: WorldRuntimeHost, clock: WorldClock, camera: MapCamera,
-		selection: SelectionController) -> void:
+func bind_runtime(host: WorldRuntimeHost, clock: WorldClock,
+		player_controller) -> void:
 	_runtime_host = host
 	_world_clock = clock
-	_camera = camera
-	_selection = selection
+	_player_controller = player_controller
 	if _world_clock != null:
 		var callback := Callable(self, "_on_year_changed")
 		if not _world_clock.year_changed.is_connected(callback):
@@ -171,13 +169,8 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 func apply_pending_view(map: MapData) -> void:
 	if _pending_view.is_empty():
 		return
-	if _camera != null:
-		_camera.global_position = _pending_view.get("camera_position", _camera.global_position)
-		_camera.zoom = _pending_view.get("camera_zoom", _camera.zoom)
-	if _selection != null and map != null:
-		var selected := int(_pending_view.get("selected_cell", -1))
-		if selected >= 0 and selected < map.cell_count():
-			_selection.select_cell(map.cell_at(selected))
+	if _player_controller != null:
+		_player_controller.restore_view_state(map, _pending_view)
 	_pending_view.clear()
 
 
@@ -395,10 +388,10 @@ func _manifest_compatible(raw_manifest) -> bool:
 		var saved_schema := int(entry.get("schema_version", -1))
 		var schema_compatible: bool = saved_schema == provider.schema_version()
 		if provider_id == "pkcn":
-			# PKCN v6 carries Country Effect ingress identities. Its native reader is
+			# PKCN v7 carries sparse cell tax policies and Country Effect ingress identities. Its native reader is
 			# exact-version only, so advertising an older schema would defer failure
 			# until after partial session restore.
-			schema_compatible = saved_schema == 6
+			schema_compatible = saved_schema == 7
 		elif provider_id == "pkec":
 			schema_compatible = saved_schema in [30, 31]
 		elif provider_id == "pktr":
@@ -623,14 +616,15 @@ func _write_journal_provider(context: Dictionary) -> Dictionary:
 
 func _write_player_provider(_context: Dictionary) -> Dictionary:
 	var preview := _capture_preview()
-	var selected := _selection.selected_cell() if _selection != null else null
+	var view: Dictionary = _player_controller.capture_view_state() \
+		if _player_controller != null else {
+			"selected_cell": -1,
+			"camera_position": Vector2.ZERO,
+			"camera_zoom": Vector2.ONE,
+		}
 	return {"ok": true, "sections": {
 		"player_context": GameFlow.session(),
-		"player_view": {
-			"selected_cell": int(selected.index) if selected != null else -1,
-			"camera_position": _camera.global_position if _camera != null else Vector2.ZERO,
-			"camera_zoom": _camera.zoom if _camera != null else Vector2.ONE,
-		},
+		"player_view": view,
 		"preview": preview,
 	}}
 

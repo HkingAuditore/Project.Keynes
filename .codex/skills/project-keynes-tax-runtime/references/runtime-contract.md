@@ -19,6 +19,7 @@ Taxation is not a separate runtime.
 | Concern | Authority |
 |---|---|
 | Default rates, sparse overrides, policy version | `NativeCountryRuntime` |
+| Per-cell defaults and sparse item overrides | `NativeCountryRuntime::CellTaxPolicyStore` |
 | Country cash treasury | `NativeCountryRuntime` |
 | Country tax Modifier entity | `ModifierRuntime` using country handle |
 | Frozen effective rates | `NativeEconomyRuntime` |
@@ -61,6 +62,9 @@ Commands:
 - `SET_TAX_DEFAULT`
 - `SET_TAX_OVERRIDE`
 - `CLEAR_TAX_OVERRIDE`
+- `SET/CLEAR_CELL_TAX_DEFAULT`
+- `SET/CLEAR_CELL_TAX_OVERRIDE`
+- `CLEAR_CELL_TAX_POLICY`
 
 Command columns include `tax_kinds`, `tax_item_indices`, and `tax_rate_percent`. The facade validates
 stable IDs and converts them to dense IDs before submission. `CountryDailySystem` commits commands
@@ -80,6 +84,12 @@ The country policy and Modifier catalogs must use the same sorted profession/goo
 Reject duplicate keys and shape/hash mismatches. The economy resolves stat IDs outside workers,
 batch-queries each country once per epoch, rounds half away from zero, clamps to `[-100,100]`, and
 stores contiguous `int8` arrays.
+
+Cell precedence is cell item → cell kind default → country item → country kind
+default, followed by Country Modifier. Economy compiles only used
+`(country, policy)` pairs, shares local-default rows by `(country, kind, base)`,
+and keeps exact entries as sorted short slices. Never allocate a
+`cell_count × tax_catalog_size` matrix.
 
 Generate an active-tax bitmask from the frozen arrays. When a kind is entirely zero, preserve the
 original settlement/prediction fast path and skip unnecessary fiscal drafts.

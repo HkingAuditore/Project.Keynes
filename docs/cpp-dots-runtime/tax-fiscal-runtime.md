@@ -19,6 +19,12 @@
 `CLEAR_TAX_OVERRIDE`；`country_daily` 在命令的 effective day 原子提交，经济图随后
 冻结本轮到期 cell 使用的政策。
 
+地块级政策使用 `CellTaxPolicyStore` 的稀疏驻留行：每格只有一个 `u32` policy ID，
+`0` 表示完全继承全国；驻留行保存五个可继承默认率和按 `(kind,item)` 排序的细项覆盖。
+继承固定为“地块细项 → 地块税种默认 → 全国细项 → 全国税种默认”，最后统一应用
+Country Modifier。显式本地值即使等于父级也不会自动消失，只有 clear/reset 命令恢复继承。
+领土易主在同一原子提交中把该格 policy ID 置零。
+
 Modifier stat key 由同一份排序后的 economy catalog 生成：
 
 ```text
@@ -29,13 +35,18 @@ country.tax.import.<good>.rate_pct
 country.tax.export.<good>.rate_pct
 ```
 
-每个 economy epoch 使用预解析 stat ID 做一次批量查询。最终值按半值远离零量化为整数，
+每个 economy epoch 只编译实际出现的 `(country, policy)`。本地默认率按
+`(country, kind, base_rate)` 共享连续有效率行，细项覆盖只编译自身条目；worker 查询为
+逐格 bitmask → 短有序细项切片 → 共享默认率行 → 全国连续率。最终值按半值远离零量化为整数，
 再 clamp 到 `[-100,100]`；worker 热路径只读连续数组，不做字符串、Variant、Godot API
 调用或共享国库写入。
 
 五类冻结税表同时生成 epoch active-tax bitmask。对应税种全零时，家庭订单、工资、商人所得、
 建筑生产、招聘价值、投资价值和财政提交均走原有零税快路，不建立逐交易税务草案；因此默认
 `0%` 政策不应为 worker 热路径引入字符串、分配或无意义的逐项税额计算。
+
+PKCN v7 按 cell 和 stable item ID 的规范顺序保存稀疏地块政策及 pending 命令；内部
+policy ID 不进入存档或确定性 hash。PKEC 保持 v31，并在恢复后从 PKCN v7 重新编译缓存。
 
 ## 行为价值判断
 

@@ -35,7 +35,7 @@ var _live_common_hash := 0
 var _live_category_generation := -1
 var _live_category_hash := 0
 var _live_revision_valid := false
-var _country_facade = null
+var _player_controller = null
 var _country_view_model: CountryViewModel
 var _country_action_bar: CountryActionBar
 var _country_panel: CountryPanel
@@ -68,26 +68,18 @@ func set_world_context(
 		sea_level: float,
 		hex_size: float
 ) -> void:
-	if _country_facade != null and _country_facade.has_signal("country_committed"):
-		var old_callback := Callable(self, "_on_country_committed")
-		if _country_facade.country_committed.is_connected(old_callback):
-			_country_facade.country_committed.disconnect(old_callback)
 	if _inspector_view_model == null:
 		_inspector_view_model = CellInspectorViewModel.new()
 	_map = map
 	_inspector_view_model.set_context(map, generator, view_adapter, world_clock, sea_level, hex_size)
 	_invalidate_live_revision()
-	_country_facade = generator.get_country_facade() if generator != null and \
-		generator.has_method("get_country_facade") else null
 	if _country_view_model == null:
 		_country_view_model = CountryViewModel.new()
 	_country_view_model.set_context(generator)
-	if _country_facade != null and _country_facade.has_signal("country_committed"):
-		var callback := Callable(self, "_on_country_committed")
-		if not _country_facade.country_committed.is_connected(callback):
-			_country_facade.country_committed.connect(callback)
 	if _right_panel != null:
 		_right_panel.reset_for_world()
+	if _country_panel != null and _country_panel.has_method("set_player_controller"):
+		_country_panel.set_player_controller(_player_controller)
 	if _map_overlay_toolbar != null:
 		_map_overlay_toolbar.reset_for_world()
 	if _map_overlay_legend != null:
@@ -295,6 +287,38 @@ func _on_inspector_tab_data_requested(tab_id: String) -> void:
 		tab_id, _inspector_view_model.build_tab_category(_selected_cell, tab_id))
 
 
+func _on_construction_page_requested(search: String, offset: int) -> void:
+	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
+		return
+	_right_panel.set_construction_model(
+		_inspector_view_model.build_construction_options(
+			int(_selected_cell.index), search, offset))
+
+
+func _on_construction_requested(request: Dictionary) -> void:
+	if _selected_cell == null or _player_controller == null or _right_panel == null:
+		return
+	var result: Dictionary = _player_controller.request_command(
+		&"construction.build", {"cell_idx": int(_selected_cell.index),
+			"building_id": StringName(request.get("building_id", &"")),
+			"ownership_policy": &"treasury_sponsored_private"})
+	_right_panel.set_construction_feedback(
+		String(result.get("message", result.get("reason", "修建命令未能提交。"))),
+		bool(result.get("ok", false)))
+
+
+func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
+	if id != &"construction.build" or _selected_cell == null \
+			or int(result.get("cell_idx", -1)) != int(_selected_cell.index):
+		return
+	refresh_selected_panel()
+	if _right_panel != null:
+		_right_panel.set_construction_feedback(
+			String(result.get("message", "修建命令已结算。")),
+			bool(result.get("ok", false)))
+	refresh_country_summary()
+
+
 func _invalidate_live_revision() -> void:
 	_live_revision_cell = -1
 	_live_revision_tab = ""
@@ -437,6 +461,32 @@ func set_resource_discovery_context(
 			technology_ids, enforce_discovery)
 
 
+func set_player_controller(controller) -> void:
+	if _player_controller != null and _player_controller.has_signal("country_committed"):
+		var old_callback := Callable(self, "_on_country_committed")
+		if _player_controller.country_committed.is_connected(old_callback):
+			_player_controller.country_committed.disconnect(old_callback)
+	if _player_controller != null and _player_controller.has_signal("command_settled"):
+		var old_settled := Callable(self, "_on_player_command_settled")
+		if _player_controller.command_settled.is_connected(old_settled):
+			_player_controller.command_settled.disconnect(old_settled)
+	_player_controller = controller
+	if _country_panel != null and _country_panel.has_method("set_player_controller"):
+		_country_panel.set_player_controller(controller)
+	if _right_panel != null and _right_panel.has_method("set_player_controller"):
+		_right_panel.set_player_controller(controller)
+	if _object_detail_dialog != null and _object_detail_dialog.has_method("set_player_controller"):
+		_object_detail_dialog.set_player_controller(controller)
+	if _player_controller != null and _player_controller.has_signal("country_committed"):
+		var callback := Callable(self, "_on_country_committed")
+		if not _player_controller.country_committed.is_connected(callback):
+			_player_controller.country_committed.connect(callback)
+	if _player_controller != null and _player_controller.has_signal("command_settled"):
+		var settled := Callable(self, "_on_player_command_settled")
+		if not _player_controller.command_settled.is_connected(settled):
+			_player_controller.command_settled.connect(settled)
+
+
 func _bind_ui() -> void:
 	_top_bar = get_node("UIRoot/HUDLayer/PlayerTopBar") as PlayerTopBar
 	_top_bar.pause_toggled.connect(func(paused: bool) -> void: pause_toggled.emit(paused))
@@ -449,15 +499,20 @@ func _bind_ui() -> void:
 	_layout_top_bar()
 
 	_right_panel = get_node("UIRoot/PanelLayer/RightPanel") as InspectorPanel
+	_right_panel.set_player_controller(_player_controller)
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
 	_right_panel.visibility_changed.connect(_layout_overlay_legend)
 	_right_panel.demand_details_requested.connect(_on_demand_details_requested)
 	_right_panel.object_details_requested.connect(_on_object_details_requested)
+	_right_panel.construction_page_requested.connect(_on_construction_page_requested)
+	_right_panel.construction_requested.connect(_on_construction_requested)
 	_layout_right_panel()
 
 	_demand_detail_dialog = get_node("UIRoot/ModalLayer/DemandDetailDialog")
 	_object_detail_dialog = get_node("UIRoot/ModalLayer/ObjectDetailDialog")
+	if _object_detail_dialog.has_method("set_player_controller"):
+		_object_detail_dialog.set_player_controller(_player_controller)
 	_debug_layer = get_node("UIRoot/DebugLayer") as Control
 
 	if _gm_available:

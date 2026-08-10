@@ -233,6 +233,134 @@ func _run() -> void:
 			"reason", "")) == "country_tax_command_invalid" and
 		String(tax_matrix_ext.submit_country_commands(invalid_item).get(
 			"reason", "")) == "country_tax_command_invalid")
+	var farmer := (compiled.profession_ids as PackedStringArray).find("farmer")
+	if farmer < 0 or farmer == artisan:
+		farmer = 0 if artisan != 0 else 1
+	var cell_policy_rows: Array[Dictionary] = [
+		{"opcode": 11, "day": 2, "sequence": 10, "handle": tax_matrix_handle,
+			"cell": -1, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 0, "tax_rate": 10},
+		{"opcode": 12, "day": 2, "sequence": 11, "handle": tax_matrix_handle,
+			"cell": -1, "aux": -1, "stable_id": "artisan", "name": "",
+			"tax_kind": 0, "tax_item": artisan, "tax_rate": 15},
+		{"opcode": 15, "day": 2, "sequence": 12, "handle": tax_matrix_handle,
+			"cell": 0, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 0, "tax_rate": 20},
+		{"opcode": 17, "day": 2, "sequence": 13, "handle": tax_matrix_handle,
+			"cell": 0, "aux": -1, "stable_id": "artisan", "name": "",
+			"tax_kind": 0, "tax_item": artisan, "tax_rate": 25},
+	]
+	_expect("cell defaults and item overrides queue",
+		bool(tax_matrix_ext.submit_country_commands(
+			_commands(cell_policy_rows)).get("ok", false)))
+	_expect("cell tax policy commits atomically",
+		bool(tax_matrix_ext.run_country_slice({"day_index": 2}).get("ok", false)))
+	var cell0_policy: Dictionary = tax_matrix_ext.get_country_cell_tax_policy_snapshot(0)
+	var cell1_policy: Dictionary = tax_matrix_ext.get_country_cell_tax_policy_snapshot(1)
+	_expect("four-level inheritance resolves cell item and cell default first",
+		int(cell0_policy.income.final_base_rates[artisan]) == 25 and
+		int(cell0_policy.income.final_base_rates[farmer]) == 20 and
+		String(cell0_policy.income.source_scopes[artisan]) == "cell_item" and
+		String(cell0_policy.income.source_scopes[farmer]) == "cell_default")
+	_expect("cells without local policy resolve national item then national default",
+		int(cell1_policy.income.final_base_rates[artisan]) == 15 and
+		int(cell1_policy.income.final_base_rates[farmer]) == 10 and
+		String(cell1_policy.income.source_scopes[artisan]) == "country_item" and
+		String(cell1_policy.income.source_scopes[farmer]) == "country_default")
+	var explicit_same := _commands([{
+		"opcode": 17, "day": 3, "sequence": 1, "handle": tax_matrix_handle,
+		"cell": 1, "aux": -1, "stable_id": "artisan", "name": "",
+		"tax_kind": 0, "tax_item": artisan, "tax_rate": 15,
+	}])
+	tax_matrix_ext.submit_country_commands(explicit_same)
+	tax_matrix_ext.run_country_slice({"day_index": 3})
+	cell1_policy = tax_matrix_ext.get_country_cell_tax_policy_snapshot(1)
+	_expect("explicit local value equal to parent remains explicit",
+		int(cell1_policy.income.has_local_item[artisan]) == 1 and
+		String(cell1_policy.income.source_scopes[artisan]) == "cell_item")
+	var clear_local := _commands([{
+		"opcode": 18, "day": 4, "sequence": 1, "handle": tax_matrix_handle,
+		"cell": 1, "aux": -1, "stable_id": "artisan", "name": "",
+		"tax_kind": 0, "tax_item": artisan,
+	}])
+	tax_matrix_ext.submit_country_commands(clear_local)
+	tax_matrix_ext.run_country_slice({"day_index": 4})
+	cell1_policy = tax_matrix_ext.get_country_cell_tax_policy_snapshot(1)
+	_expect("clearing local item restores national item inheritance",
+		int(cell1_policy.income.has_local_item[artisan]) == 0 and
+		String(cell1_policy.income.source_scopes[artisan]) == "country_item")
+	var hash_before_invalid_cell_batch := int(tax_matrix_ext.get_country_state_hash())
+	var invalid_cell_batch := _commands([
+		{"opcode": 15, "day": 5, "sequence": 1, "handle": tax_matrix_handle,
+			"cell": 0, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 1, "tax_rate": -100},
+		{"opcode": 15, "day": 5, "sequence": 2, "handle": tax_matrix_handle,
+			"cell": 2, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 1, "tax_rate": 100},
+	])
+	tax_matrix_ext.submit_country_commands(invalid_cell_batch)
+	var invalid_cell_result: Dictionary = tax_matrix_ext.run_country_slice({"day_index": 5})
+	_expect("mixed valid and invalid cell tax commands reject atomically",
+		not bool(invalid_cell_result.get("ok", true)) and
+		int(tax_matrix_ext.get_country_state_hash()) == hash_before_invalid_cell_batch)
+	var shared_rows := _commands([
+		{"opcode": 19, "day": 6, "sequence": 1, "handle": tax_matrix_handle,
+			"cell": 0, "aux": -1, "stable_id": "", "name": ""},
+		{"opcode": 19, "day": 6, "sequence": 2, "handle": tax_matrix_handle,
+			"cell": 1, "aux": -1, "stable_id": "", "name": ""},
+		{"opcode": 15, "day": 6, "sequence": 3, "handle": tax_matrix_handle,
+			"cell": 0, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 1, "tax_rate": -100},
+		{"opcode": 15, "day": 6, "sequence": 4, "handle": tax_matrix_handle,
+			"cell": 1, "aux": -1, "stable_id": "", "name": "",
+			"tax_kind": 1, "tax_rate": -100},
+	])
+	tax_matrix_ext.submit_country_commands(shared_rows)
+	tax_matrix_ext.run_country_slice({"day_index": 6})
+	_expect("identical cell policies are interned and diagnostics expose sharing",
+		int(tax_matrix_ext.get_country_report().get(
+			"cell_tax_shared_policy_count", 0)) >= 1)
+	var create_cell_owner := _commands([{
+		"opcode": 1, "day": 7, "sequence": 1, "handle": 0,
+		"cell": 2, "aux": -1, "stable_id": "country.cell.beta",
+		"name": "Cell Beta",
+	}])
+	tax_matrix_ext.submit_country_commands(create_cell_owner)
+	tax_matrix_ext.run_country_slice({"day_index": 7})
+	var cell_beta: Dictionary = tax_matrix_ext.get_country_cell_summary(2)
+	var transfer_local_cell := _commands([{
+		"opcode": 3, "day": 8, "sequence": 1,
+		"handle": int(cell_beta.country_handle), "cell": 0, "aux": -1,
+		"stable_id": "", "name": "",
+	}])
+	tax_matrix_ext.submit_country_commands(transfer_local_cell)
+	tax_matrix_ext.run_country_slice({"day_index": 8})
+	cell0_policy = tax_matrix_ext.get_country_cell_tax_policy_snapshot(0)
+	_expect("territory transfer clears the old owner's local tax policy",
+		int(cell0_policy.country_handle) == int(cell_beta.country_handle) and
+		int(cell0_policy.has_local_default[1]) == 0 and
+		String(cell0_policy.consumption.source_scopes[grain]) == "country_default")
+	var cell_save_begin: Dictionary = tax_matrix_ext.begin_country_save(4096)
+	var cell_save_chunks: Array[PackedByteArray] = []
+	while bool(cell_save_begin.get("ok", false)):
+		var cell_chunk: PackedByteArray = tax_matrix_ext.read_country_save_chunk(4096)
+		if cell_chunk.is_empty():
+			break
+		cell_save_chunks.append(cell_chunk)
+	tax_matrix_ext.end_country_save()
+	var cell_restored := _new_ext(4)
+	cell_restored.configure_country(catalog, profile, 4, 100)
+	cell_restored.bootstrap_country(packet, water)
+	cell_restored.begin_country_restore()
+	for cell_chunk in cell_save_chunks:
+		cell_restored.feed_country_restore_chunk(cell_chunk)
+	var cell_restore_result: Dictionary = cell_restored.end_country_restore()
+	_expect("PKCN v7 sparse cell policies round-trip with exact replay hash",
+		bool(cell_restore_result.get("ok", false)) and
+		int(cell_restored.get_country_state_hash()) ==
+			int(tax_matrix_ext.get_country_state_hash()) and
+		int(cell_restored.get_country_cell_tax_policy_snapshot(1).
+			has_local_default[1]) == 1)
 	var river_valley := (compiled.research_signal_ids as PackedStringArray).find(
 		"landform.river_valley")
 	var signal_commands := _commands([
@@ -297,7 +425,7 @@ func _run() -> void:
 	_expect("pending research signal command queues before PKCN capture",
 		bool(ext.submit_country_commands(pending_signal_commands).get("ok", false)))
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v6 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 6)
+	_expect("PKCN v7 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 7)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)

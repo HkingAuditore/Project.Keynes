@@ -134,7 +134,7 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 `ideology_should_run(day)`, `effect_should_run(day)`, and every native
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
-PKCM v1 saves Climate modifiers. PKCN v6 embeds Country modifiers, research,
+PKCM v1 saves Climate modifiers. PKCN v7 embeds Country modifiers, research,
 tax policy, and native Effect ingress idempotency; PKEC v31 embeds Economy
 modifiers, BuildingIdentityStore, family traits/cell influence,
 production-climate state, and Economy Effect ingress idempotency. PKGP v1 saves
@@ -174,7 +174,7 @@ Restore order is strict:
 2. Regenerate static terrain from the complete saved `NewGameConfig`.
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
-5. Restore PKCN v6, including Country modifiers, research state, tax policy,
+5. Restore PKCN v7, including Country modifiers, research state, national/cell tax policy,
    and native Country Effect ingress idempotency.
 6. Restore PKEC v31 after trade topology has been configured, including Economy
    modifiers, building identities, notable families, and production-climate state.

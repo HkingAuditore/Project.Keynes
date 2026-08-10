@@ -1,5 +1,10 @@
 # Economy Runtime Architecture and Data
 
+Cell-tax addendum: per-cell tax policy is an epoch-only compiled cache made of
+short sorted exact slices, shared local-default effective rows, per-cell compiled
+IDs and active masks. Do not allocate a cell×catalog matrix or access
+ModifierStore/Country objects in worker loops.
+
 ## Contents
 
 1. Authority and layering

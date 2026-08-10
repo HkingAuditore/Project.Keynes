@@ -8,16 +8,21 @@ const FamilyListScene := preload("res://scenes/ui/family_list.tscn")
 const MarketListScene := preload("res://scenes/ui/market_list.tscn")
 const CohortListScene := preload("res://scenes/ui/cohort_list.tscn")
 const BuildingListScene := preload("res://scenes/ui/building_list.tscn")
+const ConstructionPickerScene := preload("res://scenes/ui/construction_picker.tscn")
 const GaugeBarScene := preload("res://scenes/ui/gauge_bar.tscn")
 const BadgeRowScene := preload("res://scenes/ui/badge_row.tscn")
 const MetricGridScene := preload("res://scenes/ui/metric_grid.tscn")
 const SectionHeaderScene := preload("res://scenes/ui/section_header.tscn")
 const GroupSeparatorScene := preload("res://scenes/ui/group_separator.tscn")
+const CellTaxWorkspaceScript := preload(
+	"res://scripts/ui/components/cell_tax_workspace.gd")
 
 signal close_requested()
 signal tab_data_requested(tab_id: String)
 signal demand_details_requested(details: Dictionary)
 signal object_details_requested(request: Dictionary)
+signal construction_page_requested(search: String, offset: int)
+signal construction_requested(request: Dictionary)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
@@ -36,6 +41,7 @@ var _insight_list: InsightList
 var _resource_list: ResourceList
 var _cohort_list
 var _building_list
+var _construction_picker
 var _market_list
 var _family_list
 var _metric_controls: Dictionary = {}
@@ -43,6 +49,8 @@ var _gauge_controls: Dictionary = {}
 var _chart_controls: Dictionary = {}
 var _summary_trends: Dictionary = {}
 var _last_score_band := -1
+var _player_controller = null
+var _cell_tax_workspace = null
 
 
 func _ready() -> void:
@@ -68,6 +76,12 @@ func _ready() -> void:
 
 func set_model(model: Dictionary, _rebuild_visible: bool = true) -> void:
 	set_model_for_selection(model)
+
+
+func set_player_controller(controller) -> void:
+	_player_controller = controller
+	if _cell_tax_workspace != null:
+		_cell_tax_workspace.set_player_controller(controller)
 
 
 func set_model_for_selection(model: Dictionary) -> void:
@@ -147,6 +161,7 @@ func reset_for_world() -> void:
 	_metric_controls.clear()
 	_gauge_controls.clear()
 	_chart_controls.clear()
+	_cell_tax_workspace = null
 	if _tabs != null:
 		_tabs.clear_tabs()
 	if _scroll != null:
@@ -209,6 +224,7 @@ func _render_content(reset_scroll: bool) -> void:
 	_resource_list = null
 	_cohort_list = null
 	_building_list = null
+	_construction_picker = null
 	_market_list = null
 	_metric_controls.clear()
 	_gauge_controls.clear()
@@ -221,6 +237,12 @@ func _render_content(reset_scroll: bool) -> void:
 
 
 func _build_category_content(data: Dictionary) -> void:
+	if data.has("cell_tax_policy"):
+		_cell_tax_workspace = CellTaxWorkspaceScript.new()
+		_cell_tax_workspace.set_player_controller(_player_controller)
+		_content_box.add_child(_cell_tax_workspace)
+		_cell_tax_workspace.set_model(data.get("cell_tax_policy", {}), true)
+		return
 	var root_data := data.duplicate(false)
 	root_data.erase("sections")
 	_build_category_block(root_data)
@@ -280,6 +302,17 @@ func _build_category_block(data: Dictionary) -> void:
 	var building_rows: Array = data.get("building_rows", [])
 	if data.has("building_rows"):
 		_add_group_separator()
+		if data.has("construction"):
+			_construction_picker = ConstructionPickerScene.instantiate()
+			_construction_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_construction_picker.page_requested.connect(
+				func(search: String, offset: int) -> void:
+					construction_page_requested.emit(search, offset))
+			_construction_picker.build_requested.connect(
+				func(request: Dictionary) -> void: construction_requested.emit(request))
+			_construction_picker.set_model(data.get("construction", {}))
+			_content_box.add_child(_construction_picker)
+			_add_group_separator()
 		_building_list = BuildingListScene.instantiate() as BuildingList
 		_building_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_building_list.details_requested.connect(
@@ -339,6 +372,9 @@ func _build_category_block(data: Dictionary) -> void:
 
 
 func _apply_category_patch(data: Dictionary) -> void:
+	if _cell_tax_workspace != null and data.has("cell_tax_policy"):
+		_cell_tax_workspace.set_model(data.get("cell_tax_policy", {}), false)
+		return
 	_apply_category_block_patch(data)
 	for raw_section in data.get("sections", []):
 		_apply_category_block_patch(raw_section as Dictionary)
@@ -355,6 +391,8 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 		_resource_list.update_rows(data.get("resource_rows", []))
 	if _building_list != null and data.has("building_rows"):
 		_building_list.update_rows(data.get("building_rows", []))
+	if _construction_picker != null and data.has("construction"):
+		_construction_picker.set_model(data.get("construction", {}))
 	if _market_list != null and data.has("market_rows"):
 		_market_list.update_rows(data.get("market_rows", []))
 	for raw in data.get("metrics", []):
@@ -418,6 +456,16 @@ func _apply_gauge(bar: GaugeBar, gauge: Dictionary) -> void:
 		String(gauge.get("status_label", "")),
 		String(gauge.get("value_text", ""))
 	)
+
+
+func set_construction_model(model: Dictionary) -> void:
+	if _construction_picker != null:
+		_construction_picker.set_model(model)
+
+
+func set_construction_feedback(message: String, ok: bool) -> void:
+	if _construction_picker != null:
+		_construction_picker.set_feedback(message, ok)
 
 
 func _add_group_separator() -> void:

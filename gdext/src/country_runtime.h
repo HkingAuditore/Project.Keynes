@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <deque>
@@ -24,7 +25,7 @@ class ModifierRuntime;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 6;
+    static constexpr int32_t SCHEMA_VERSION = 7;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
@@ -56,6 +57,11 @@ public:
         // Internal/domain command: static map/event evidence becomes
         // country-owned research knowledge at the country command boundary.
         COMMAND_DISCOVER_COUNTRY_SIGNAL = 14,
+        COMMAND_SET_CELL_TAX_DEFAULT = 15,
+        COMMAND_CLEAR_CELL_TAX_DEFAULT = 16,
+        COMMAND_SET_CELL_TAX_OVERRIDE = 17,
+        COMMAND_CLEAR_CELL_TAX_OVERRIDE = 18,
+        COMMAND_CLEAR_CELL_TAX_POLICY = 19,
     };
 
     enum RuntimeMode : int32_t { MODE_OFF = 0, MODE_PROBE = 1, MODE_ACTIVE = 2 };
@@ -76,6 +82,34 @@ public:
         const char *display_name = nullptr;
     };
 
+    // Canonical sparse cell policy payload. Policy id 0 is implicit and means
+    // complete inheritance; ids are transient runtime implementation details.
+    struct CellTaxOverride {
+        int32_t kind = -1;
+        int32_t item = -1;
+        int8_t rate = TAX_RATE_INHERIT;
+
+        bool operator==(const CellTaxOverride &other) const {
+            return kind == other.kind && item == other.item && rate == other.rate;
+        }
+    };
+
+    struct CellTaxPolicy {
+        std::array<int8_t, TAX_KIND_COUNT> defaults{
+            TAX_RATE_INHERIT, TAX_RATE_INHERIT, TAX_RATE_INHERIT,
+            TAX_RATE_INHERIT, TAX_RATE_INHERIT};
+        std::vector<CellTaxOverride> overrides;
+
+        bool empty() const {
+            return std::all_of(defaults.begin(), defaults.end(),
+                               [](int8_t rate) { return rate == TAX_RATE_INHERIT; }) &&
+                   overrides.empty();
+        }
+        bool operator==(const CellTaxPolicy &other) const {
+            return defaults == other.defaults && overrides == other.overrides;
+        }
+    };
+
     struct EconomySnapshot {
         std::vector<int32_t> cell_country_slot;
         std::vector<uint64_t> country_handles;
@@ -85,6 +119,8 @@ public:
         std::vector<int8_t> business_tax_rates;
         std::vector<int8_t> import_tax_rates;
         std::vector<int8_t> export_tax_rates;
+        std::vector<uint32_t> cell_tax_policy_ids;
+        std::vector<CellTaxPolicy> cell_tax_policies;
         int32_t country_count = 0;
         int32_t technology_words = 0;
         int32_t profession_count = 0;
@@ -118,6 +154,7 @@ public:
     godot::Dictionary research_snapshot(int64_t handle) const;
     godot::Dictionary research_signal_snapshot(int64_t handle) const;
     godot::Dictionary tax_policy_snapshot(int64_t handle) const;
+    godot::Dictionary cell_tax_policy_snapshot(int32_t cell) const;
     godot::PackedInt32Array cell_country_snapshot() const;
     int64_t state_hash() const;
     int64_t state_hash_v3_compat() const;
@@ -146,7 +183,14 @@ public:
     bool valid_handle(int64_t handle) const;
     int64_t total_cash() const;
     int64_t cash_for_slot(int32_t country_slot) const;
+    int64_t cash_for_handle(int64_t country_handle) const;
     int64_t total_good(int32_t good_id) const;
+    int64_t good_for_handle(int64_t country_handle, int32_t good_id) const;
+    bool spend_treasury_assets(int64_t country_handle,
+                               const int32_t *good_ids,
+                               const int64_t *quantities,
+                               size_t good_count,
+                               int64_t cash);
     int64_t transfer_cash_to_cohort(int64_t country_handle, int64_t requested);
     int64_t transfer_cash_from_cohort(int64_t country_handle, int64_t offered);
     int64_t reserve_fiscal_cash(int64_t country_handle, int64_t requested);
@@ -297,12 +341,14 @@ private:
         bool stage_research = false;
         bool stage_signals = false;
         bool stage_tax = false;
+        bool stage_cell_tax = false;
         std::vector<int8_t> tax_defaults;
         std::vector<int8_t> income_tax_overrides;
         std::vector<int8_t> consumption_tax_overrides;
         std::vector<int8_t> business_tax_overrides;
         std::vector<int8_t> import_tax_overrides;
         std::vector<int8_t> export_tax_overrides;
+        std::unordered_map<int32_t, CellTaxPolicy> cell_tax_updates;
         SparseCellDelta cell_delta;
         std::vector<int32_t> cell_delta_order;
         std::vector<int32_t> direct_cell_owners;
@@ -323,6 +369,13 @@ private:
                                     const std::vector<int8_t> &overrides,
                                     int32_t country_slot, int32_t kind,
                                     int32_t item, int32_t item_count);
+    static uint64_t cell_tax_policy_hash(const CellTaxPolicy &policy);
+    uint32_t intern_cell_tax_policy(const CellTaxPolicy &policy);
+    void release_cell_tax_policy(uint32_t policy_id);
+    void rebuild_cell_tax_policy_intern();
+    const CellTaxPolicy &cell_tax_policy(uint32_t policy_id) const;
+    const std::vector<std::string> &tax_item_ids(int32_t kind) const;
+    int32_t tax_item_index(int32_t kind, const std::string &stable_id) const;
     void rebuild_cell_csr();
     void publish_report(const char *stage, int64_t day, double preflight_ms,
                         double apply_ms, double publish_ms, int32_t changed_cells,
@@ -423,6 +476,11 @@ private:
     std::vector<int8_t> _country_business_tax_overrides;
     std::vector<int8_t> _country_import_tax_overrides;
     std::vector<int8_t> _country_export_tax_overrides;
+    std::vector<uint32_t> _cell_tax_policy_ids;
+    std::vector<CellTaxPolicy> _cell_tax_policies;
+    std::vector<uint32_t> _cell_tax_policy_refcounts;
+    std::vector<uint32_t> _cell_tax_policy_free_ids;
+    std::unordered_map<uint64_t, std::vector<uint32_t>> _cell_tax_policy_intern;
     uint64_t _tax_policy_version = 0;
     int64_t _last_research_day = -1;
     std::vector<Command> _pending_commands;

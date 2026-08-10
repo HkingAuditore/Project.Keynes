@@ -1,5 +1,10 @@
 # Economy bridge and conservation
 
+Cell-tax addendum: the immutable epoch snapshot carries transient cell→policy
+mapping plus canonical sparse policy rows directly to native Economy. Economy
+compiles only used `(country_handle, policy_id)` pairs. Policy IDs never enter
+PKCN or deterministic state hashes, and workers never dereference Country objects.
+
 ## Narrow native bridge
 
 `NativeEconomyRuntime` holds a non-owning pointer to `NativeCountryRuntime`. Never route hot economy
@@ -12,6 +17,7 @@ At every economy sample day freeze:
 - country generations;
 - country technology words;
 - country tax defaults/overrides resolved to dense profession/good/building arrays;
+- sparse cell tax policy mapping and canonical policy rows;
 - country generation/state hash.
 
 Territory, technology, and tax-policy commits during the cycle apply only to the next cycle.

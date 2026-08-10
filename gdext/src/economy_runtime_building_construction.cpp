@@ -1,8 +1,195 @@
 #include "economy_runtime.h"
+#include "country_runtime.h"
 
 #include <algorithm>
 
 namespace pk {
+
+void NativeEconomyRuntime::stage_construction_receipt(
+        const Command &cmd, bool ok, const char *code, int64_t cash_paid,
+        int64_t treasury_goods_used, int64_t market_goods_used) {
+    _staging_construction_receipts.push_back({0, cmd.sequence,
+        cmd.effective_day, _current_day, cmd.target_handle, cmd.i32_0,
+        cmd.i32_1, ok, code == nullptr ? "command_rejected" : code,
+        cash_paid, treasury_goods_used, market_goods_used});
+}
+
+int32_t NativeEconomyRuntime::treasury_build_owner_signature(
+        int32_t cell, int32_t type_id) const {
+    if (cell < 0 || cell >= _cell_count || type_id < 0 ||
+        type_id >= static_cast<int32_t>(_building_types.size())) return -1;
+    const int32_t owner_profession = _building_types[type_id].owner_profession_id;
+    if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+        for (int32_t group = _building_cell_offsets[cell];
+             group < _building_cell_offsets[cell + 1]; ++group) {
+            const BuildingGroup &candidate = _buildings[group];
+            if (candidate.type_id == type_id && candidate.count > 0 &&
+                candidate.owner_signature_id >= 0 &&
+                candidate.owner_signature_id < static_cast<int32_t>(_signatures.size()) &&
+                _signatures[candidate.owner_signature_id].profession_id == owner_profession) {
+                return candidate.owner_signature_id;
+            }
+        }
+    }
+    std::vector<int64_t> population_by_ethnicity(_ethnicity_ids.size(), 0);
+    int64_t local_sat = 0;
+    _population.for_each_in_cell(cell, [&](int32_t slot) {
+        const int32_t signature = static_cast<int32_t>(_population.signature_id[slot]);
+        if (signature < 0 || signature >= static_cast<int32_t>(_signatures.size())) return;
+        const int32_t ethnicity = _signatures[signature].ethnicity_id;
+        if (ethnicity < 0 || ethnicity >= static_cast<int32_t>(
+                population_by_ethnicity.size())) return;
+        population_by_ethnicity[ethnicity] = saturating_add(
+            population_by_ethnicity[ethnicity],
+            std::max<int64_t>(0, _population.population[slot]), local_sat);
+    });
+    int32_t dominant_ethnicity = -1;
+    int64_t dominant_population = -1;
+    for (int32_t ethnicity = 0; ethnicity < static_cast<int32_t>(
+            population_by_ethnicity.size()); ++ethnicity) {
+        const int32_t signature = signature_for_profession_ethnicity(
+            owner_profession, ethnicity);
+        if (signature < 0) continue;
+        if (population_by_ethnicity[ethnicity] > dominant_population) {
+            dominant_population = population_by_ethnicity[ethnicity];
+            dominant_ethnicity = ethnicity;
+        }
+    }
+    return dominant_ethnicity >= 0
+        ? signature_for_profession_ethnicity(owner_profession, dominant_ethnicity)
+        : -1;
+}
+
+bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
+        const Command &cmd, std::string &error) {
+    const int32_t cell = cmd.i32_0;
+    const int32_t type_id = cmd.i32_1;
+    auto reject = [&](const char *code) {
+        _last_building_rejection_reason = code;
+        ++_rejected_commands;
+        stage_construction_receipt(cmd, false, code);
+        return true;
+    };
+    if (cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+        return reject("unsupported_ownership_policy");
+    if (_country_runtime == nullptr ||
+        !_country_runtime->valid_handle(static_cast<int64_t>(cmd.target_handle)) ||
+        cell < 0 || cell >= _cell_count || type_id < 0 ||
+        type_id >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 != 1)
+        return reject("construction_target_invalid");
+    if (_country_runtime->country_handle_for_cell(cell) !=
+            static_cast<int64_t>(cmd.target_handle))
+        return reject("construction_cell_not_owned");
+    if (!building_available(cell, type_id, true))
+        return reject("construction_technology_locked");
+    if (!building_constructible(cell, type_id, true))
+        return reject("construction_obsolete");
+    if (!evaluate_building_conditions(type_id, cell))
+        return reject("construction_conditions_failed");
+    if (!family_free_building_resources_legal(cell, type_id, 1))
+        return reject("construction_resource_unavailable");
+
+    const int32_t owner_signature = treasury_build_owner_signature(cell, type_id);
+    if (owner_signature < 0) return reject("construction_owner_signature_unavailable");
+    const int32_t market = _market.cell_to_market[cell];
+    if (market < 0 || market >= _market.market_count)
+        return reject("construction_market_unavailable");
+    const int32_t country_slot = cell < static_cast<int32_t>(
+            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
+    const int32_t cost_factor = country_slot >= 0 && country_slot <
+            static_cast<int32_t>(_epoch_country_construction_cost_factor_q16.size())
+        ? _epoch_country_construction_cost_factor_q16[country_slot] : Q16_ONE;
+    const BuildingType &type = _building_types[type_id];
+    std::vector<int32_t> good_ids;
+    std::vector<int64_t> required;
+    good_ids.reserve(type.construction_count);
+    required.reserve(type.construction_count);
+    for (int32_t edge = 0; edge < type.construction_count; ++edge) {
+        const GoodAmount &item = _building_construction_goods[
+            type.construction_begin + edge];
+        if (!good_available(cell, item.good_id, true))
+            return reject("construction_technology_locked");
+        const int64_t quantity = std::max<int64_t>(1, mul_div_sat(
+            item.quantity, cost_factor, Q16_ONE, _saturation_count));
+        auto found = std::find(good_ids.begin(), good_ids.end(), item.good_id);
+        if (found == good_ids.end()) {
+            good_ids.push_back(item.good_id);
+            required.push_back(quantity);
+        } else {
+            const size_t index = static_cast<size_t>(found - good_ids.begin());
+            required[index] = saturating_add(required[index], quantity,
+                                             _saturation_count);
+        }
+    }
+
+    std::vector<int64_t> treasury_used(good_ids.size(), 0);
+    std::vector<int64_t> market_used(good_ids.size(), 0);
+    int64_t total_cash = 0;
+    int64_t treasury_goods_total = 0;
+    int64_t market_goods_total = 0;
+    for (size_t i = 0; i < good_ids.size(); ++i) {
+        treasury_used[i] = std::min<int64_t>(required[i], std::max<int64_t>(0,
+            _country_runtime->good_for_handle(
+                static_cast<int64_t>(cmd.target_handle), good_ids[i])));
+        market_used[i] = required[i] - treasury_used[i];
+        const int64_t lane = _market.index(market, good_ids[i]);
+        if (_market.stock[lane] < market_used[i])
+            return reject("construction_materials_insufficient");
+        total_cash = saturating_add(total_cash, mul_div_sat(
+            market_used[i], _market.price[lane], GOODS_SCALE,
+            _saturation_count), _saturation_count);
+        treasury_goods_total = saturating_add(
+            treasury_goods_total, treasury_used[i], _saturation_count);
+        market_goods_total = saturating_add(
+            market_goods_total, market_used[i], _saturation_count);
+    }
+    if (total_cash > 0 && (_merchant_offsets.size() !=
+            static_cast<size_t>(_cell_count + 1) ||
+            _merchant_offsets[cell] >= _merchant_offsets[cell + 1]))
+        return reject("construction_market_unavailable");
+    if (_country_runtime->cash_for_handle(
+            static_cast<int64_t>(cmd.target_handle)) < total_cash)
+        return reject("construction_treasury_cash_insufficient");
+    if (!_country_runtime->spend_treasury_assets(
+            static_cast<int64_t>(cmd.target_handle), good_ids.data(),
+            treasury_used.data(), good_ids.size(), total_cash))
+        return reject("construction_treasury_preflight_drift");
+
+    for (size_t i = 0; i < good_ids.size(); ++i) {
+        const int64_t lane = _market.index(market, good_ids[i]);
+        audit_touch_market_lane(static_cast<size_t>(lane));
+        _market.stock[lane] -= market_used[i];
+        _construction_goods_consumed = saturating_add(
+            _construction_goods_consumed, required[i], _saturation_count);
+        const int32_t signal = ensure_market_signal_index(cell, good_ids[i]);
+        if (signal >= 0 && signal < static_cast<int32_t>(
+                _epoch_nonhousehold_withdrawals.size())) {
+            _epoch_nonhousehold_withdrawals[signal] = saturating_add(
+                _epoch_nonhousehold_withdrawals[signal], required[i],
+                _saturation_count);
+        }
+    }
+    if (total_cash > 0 && credit_local_merchants(
+            cell, total_cash, CASHFLOW_MERCHANT_BUSINESS) != total_cash) {
+        error = "construction_merchant_credit_invariant_failed";
+        return false;
+    }
+    const int32_t time_factor = country_slot >= 0 && country_slot <
+            static_cast<int32_t>(_epoch_country_construction_time_factor_q16.size())
+        ? _epoch_country_construction_time_factor_q16[country_slot] : Q16_ONE;
+    const int32_t construction_days = type.construction_days <= 0 ? 0 :
+        std::max<int32_t>(1, static_cast<int32_t>(mul_div_sat(
+            type.construction_days, time_factor, Q16_ONE, _saturation_count)));
+    _pending_construction.push_back({cell, type_id, owner_signature, 1,
+        _sample_day + construction_days, cmd.sequence, 0, 0, 0, 0});
+    trace_append(EVENT_CONSTRUCTION_STARTED, static_cast<int32_t>(_stage),
+        cell, SUBJECT_BUILDING_GROUP, owner_signature, type_id,
+        OWNERSHIP_TREASURY_SPONSORED_PRIVATE, 1, total_cash,
+        _sample_day + construction_days, cmd.sequence, nullptr);
+    stage_construction_receipt(cmd, true, "ok", total_cash,
+                               treasury_goods_total, market_goods_total);
+    return true;
+}
 
 bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner_slot,
                                                 std::string &error,

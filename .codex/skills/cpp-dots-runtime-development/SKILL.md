@@ -11,6 +11,10 @@ This skill is project-local and should be used together with `civ-grounded-devel
 
 ## Source Of Truth
 
+For sparse per-entity policy features, keep authority storage canonical and
+interned, compile only combinations used by the frozen epoch, and restrict worker
+hot loops to POD arrays, integer indices, masks, and bounded slices.
+
 Before changing code, read the relevant current-runtime docs:
 
 - `docs/cpp-dots-runtime/index.md`

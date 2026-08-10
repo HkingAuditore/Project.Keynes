@@ -1102,6 +1102,203 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     return out;
 }
 
+Dictionary NativeEconomyRuntime::treasury_construction_quotes(
+        int64_t country_handle, int32_t cell_idx,
+        const PackedInt32Array &requested_type_ids) const {
+    Dictionary out;
+    out["ok"] = false;
+    out["cell_idx"] = cell_idx;
+    out["country_handle"] = country_handle;
+    out["snapshot_day"] = _current_day;
+    out["nonbinding"] = true;
+    if (!_bootstrapped || _fatal || _country_runtime == nullptr) {
+        out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" :
+            (_fatal ? "economy_fatal" : "country_runtime_required");
+        return out;
+    }
+    if (cell_idx < 0 || cell_idx >= _cell_count ||
+        !_country_runtime->valid_handle(country_handle)) {
+        out["reason"] = "construction_target_invalid";
+        return out;
+    }
+
+    PackedInt32Array type_ids;
+    PackedByteArray eligible;
+    PackedStringArray reason_codes;
+    PackedInt64Array cash_required;
+    PackedInt64Array treasury_goods_total;
+    PackedInt64Array market_goods_total;
+    PackedInt32Array material_offsets;
+    PackedInt32Array material_good_ids;
+    PackedInt64Array material_required;
+    PackedInt64Array material_treasury;
+    PackedInt64Array material_market;
+    PackedInt32Array material_prices;
+    material_offsets.push_back(0);
+
+    const int32_t market = _market.cell_to_market[cell_idx];
+    const bool owned = _country_runtime->country_handle_for_cell(cell_idx) == country_handle;
+    const int32_t country_slot = _country_runtime->country_slot_for_cell(cell_idx);
+    const int32_t cost_factor = country_slot >= 0 && country_slot <
+            static_cast<int32_t>(_epoch_country_construction_cost_factor_q16.size())
+        ? _epoch_country_construction_cost_factor_q16[country_slot] : Q16_ONE;
+
+    for (int64_t cursor = 0; cursor < requested_type_ids.size(); ++cursor) {
+        const int32_t type_id = requested_type_ids[cursor];
+        type_ids.push_back(type_id);
+        bool can_build = owned;
+        std::string reason = owned ? "ok" : "construction_cell_not_owned";
+        int64_t quote_cash = 0;
+        int64_t quote_treasury = 0;
+        int64_t quote_market = 0;
+        int64_t quote_sat = 0;
+        if (can_build && (type_id < 0 ||
+                type_id >= static_cast<int32_t>(_building_types.size()))) {
+            can_build = false;
+            reason = "construction_target_invalid";
+        }
+        if (can_build && !building_available(cell_idx, type_id, false)) {
+            can_build = false;
+            reason = "construction_technology_locked";
+        }
+        if (can_build && !building_constructible(cell_idx, type_id, false)) {
+            can_build = false;
+            reason = "construction_obsolete";
+        }
+        if (can_build && !evaluate_building_conditions(type_id, cell_idx)) {
+            can_build = false;
+            reason = "construction_conditions_failed";
+        }
+        if (can_build && !family_free_building_resources_legal(
+                cell_idx, type_id, 1)) {
+            can_build = false;
+            reason = "construction_resource_unavailable";
+        }
+
+        if (type_id >= 0 && type_id < static_cast<int32_t>(_building_types.size())) {
+            const BuildingType &type = _building_types[type_id];
+            std::vector<int32_t> quote_good_ids;
+            std::vector<int64_t> quote_required;
+            quote_good_ids.reserve(type.construction_count);
+            quote_required.reserve(type.construction_count);
+            for (int32_t edge = 0; edge < type.construction_count; ++edge) {
+                const GoodAmount &item = _building_construction_goods[
+                    type.construction_begin + edge];
+                const int64_t required = std::max<int64_t>(1, mul_div_sat(
+                    item.quantity, cost_factor, Q16_ONE, quote_sat));
+                auto found = std::find(quote_good_ids.begin(),
+                                       quote_good_ids.end(), item.good_id);
+                if (found == quote_good_ids.end()) {
+                    quote_good_ids.push_back(item.good_id);
+                    quote_required.push_back(required);
+                } else {
+                    const size_t index = static_cast<size_t>(
+                        found - quote_good_ids.begin());
+                    quote_required[index] = saturating_add(
+                        quote_required[index], required, quote_sat);
+                }
+                if (can_build && !good_available(cell_idx, item.good_id, false)) {
+                    can_build = false;
+                    reason = "construction_technology_locked";
+                }
+            }
+            for (size_t item_index = 0; item_index < quote_good_ids.size();
+                 ++item_index) {
+                const int32_t good_id = quote_good_ids[item_index];
+                const int64_t required = quote_required[item_index];
+                const int64_t treasury = std::min<int64_t>(required,
+                    std::max<int64_t>(0, _country_runtime->good_for_handle(
+                        country_handle, good_id)));
+                const int64_t shortfall = required - treasury;
+                const int64_t local_stock = market >= 0 && market < _market.market_count
+                    ? std::max<int64_t>(0, _market.stock[
+                        _market.index(market, good_id)]) : 0;
+                const int32_t price = market >= 0 && market < _market.market_count
+                    ? _market.price[_market.index(market, good_id)] : 0;
+                material_good_ids.push_back(good_id);
+                material_required.push_back(required);
+                material_treasury.push_back(treasury);
+                material_market.push_back(shortfall);
+                material_prices.push_back(price);
+                quote_treasury = saturating_add(
+                    quote_treasury, treasury, quote_sat);
+                quote_market = saturating_add(
+                    quote_market, shortfall, quote_sat);
+                quote_cash = saturating_add(quote_cash, mul_div_sat(
+                    shortfall, price, GOODS_SCALE, quote_sat), quote_sat);
+                if (can_build && local_stock < shortfall) {
+                    can_build = false;
+                    reason = "construction_materials_insufficient";
+                }
+            }
+        }
+        if (can_build && quote_cash > 0 &&
+            (_merchant_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
+             _merchant_offsets[cell_idx] >= _merchant_offsets[cell_idx + 1])) {
+            can_build = false;
+            reason = "construction_market_unavailable";
+        }
+        if (can_build && _country_runtime->cash_for_handle(country_handle) < quote_cash) {
+            can_build = false;
+            reason = "construction_treasury_cash_insufficient";
+        }
+        eligible.push_back(can_build ? 1 : 0);
+        reason_codes.push_back(String(reason.c_str()));
+        cash_required.push_back(quote_cash);
+        treasury_goods_total.push_back(quote_treasury);
+        market_goods_total.push_back(quote_market);
+        material_offsets.push_back(material_good_ids.size());
+    }
+
+    out["ok"] = true;
+    out["type_ids"] = type_ids;
+    out["eligible"] = eligible;
+    out["reason_codes"] = reason_codes;
+    out["cash_required"] = cash_required;
+    out["treasury_goods_used"] = treasury_goods_total;
+    out["market_goods_used"] = market_goods_total;
+    out["material_offsets"] = material_offsets;
+    out["material_good_ids"] = material_good_ids;
+    out["material_required"] = material_required;
+    out["material_treasury"] = material_treasury;
+    out["material_market"] = material_market;
+    out["material_prices"] = material_prices;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::construction_command_receipts(
+        int64_t after_receipt_id, int32_t limit) const {
+    Dictionary out;
+    limit = std::clamp(limit, 1, 256);
+    Array receipts;
+    int64_t last_receipt_id = after_receipt_id;
+    for (const ConstructionCommandReceipt &receipt :
+         _committed_construction_receipts) {
+        if (receipt.receipt_id <= after_receipt_id) continue;
+        Dictionary row;
+        row["receipt_id"] = receipt.receipt_id;
+        row["sequence"] = receipt.sequence;
+        row["effective_day"] = receipt.effective_day;
+        row["settled_day"] = receipt.settled_day;
+        row["country_handle"] = static_cast<int64_t>(receipt.country_handle);
+        row["cell_idx"] = receipt.cell;
+        row["type_id"] = receipt.type_id;
+        row["ok"] = receipt.ok;
+        row["code"] = String(receipt.code.c_str());
+        row["cash_paid"] = receipt.cash_paid;
+        row["treasury_goods_used"] = receipt.treasury_goods_used;
+        row["market_goods_used"] = receipt.market_goods_used;
+        receipts.push_back(row);
+        last_receipt_id = receipt.receipt_id;
+        if (receipts.size() >= limit) break;
+    }
+    out["ok"] = true;
+    out["receipts"] = receipts;
+    out["count"] = receipts.size();
+    out["last_receipt_id"] = last_receipt_id;
+    return out;
+}
+
 Dictionary NativeEconomyRuntime::family_cell_snapshot(
         int32_t cell_idx, int32_t offset, int32_t limit) const {
     Dictionary out;

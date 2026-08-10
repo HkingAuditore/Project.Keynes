@@ -558,6 +558,21 @@ Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
     return out;
 }
 
+Dictionary DCWorldExt::get_treasury_construction_quotes(
+        int64_t country_handle, int cell_idx,
+        const PackedInt32Array &type_ids) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->treasury_construction_quotes(
+        country_handle, cell_idx, type_ids);
+}
+
+Dictionary DCWorldExt::get_construction_command_receipts(
+        int64_t after_receipt_id, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->construction_command_receipts(
+        after_receipt_id, limit);
+}
+
 Dictionary DCWorldExt::get_family_cell_snapshot(
         int cell_idx, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();

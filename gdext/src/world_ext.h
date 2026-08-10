@@ -201,6 +201,7 @@ public:
     godot::Dictionary get_country_research_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_signal_snapshot(int64_t handle) const;
     godot::Dictionary get_country_tax_policy_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_cell_tax_policy_snapshot(int cell_idx) const;
     godot::Dictionary get_country_fiscal_snapshot(int64_t handle) const;
     godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
     godot::Dictionary reset_country(const godot::String &reason);
@@ -374,6 +375,11 @@ public:
         const godot::PackedInt32Array &trade_move_cost_lut,
         int64_t generation = 0);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_treasury_construction_quotes(
+        int64_t country_handle, int cell_idx,
+        const godot::PackedInt32Array &type_ids) const;
+    godot::Dictionary get_construction_command_receipts(
+        int64_t after_receipt_id, int limit = 64) const;
     godot::Dictionary get_family_cell_snapshot(int cell_idx, int offset = 0,
                                                 int limit = 64) const;
     godot::Dictionary get_family_snapshot(int64_t family_handle) const;

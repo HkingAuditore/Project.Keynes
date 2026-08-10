@@ -21,12 +21,12 @@ var _title_label: Label
 var _subtitle_label: Label
 var _content: VBoxContainer
 var _status_label: Label
-var _facade = null
+var _player_controller = null
 var _country_handle := 0
+var _cell := -1
 var _editable := false
 var _current_day := -1
 var _policy_version := -1
-var _sequence := 1
 var _lanes: Dictionary = {}
 var _pending: Dictionary = {}
 var _last_command_result: Dictionary = {}
@@ -59,8 +59,8 @@ func show_details(payload: Dictionary) -> void:
 	_pending.clear()
 	_lanes.clear()
 	_fact_columns.clear()
-	_facade = payload.get("country_facade", null)
 	_country_handle = 0
+	_cell = -1
 	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
 		payload.get("accent", UITokens.ACCENT))
 	_title_label.text = String(payload.get("name", "对象详情"))
@@ -84,6 +84,10 @@ func show_details(payload: Dictionary) -> void:
 		_build_tax_section(tax)
 	elif kind != "resource" and not String(tax.get("reason", "")).is_empty():
 		_add_muted_note(String(tax.get("reason", "")))
+
+
+func set_player_controller(controller) -> void:
+	_player_controller = controller
 	visible = true
 	UIAnimation.crossfade(self, UITokens.ANIM_FAST)
 
@@ -344,7 +348,8 @@ func _build_tax_section(tax: Dictionary) -> void:
 	_current_day = int(tax.get("current_day", -1))
 	_policy_version = int(tax.get("policy_version", -1))
 	_country_handle = int(tax.get("country_handle", 0))
-	_editable = bool(tax.get("editable", false))
+	_cell = int(tax.get("cell", -1))
+	_editable = bool(tax.get("editable", false)) and _player_controller != null
 	var section := TaxSectionScene.instantiate() as VBoxContainer
 	_content.add_child(section)
 	var icon := section.get_node("Head/Icon") as IconBadge
@@ -404,17 +409,17 @@ func _refresh_lane_note(kind: String) -> void:
 	(lane.get("note") as Label).text = " · ".join(parts)
 
 
-# 与 EconomyWorkspace 的语义一致：输入即覆盖；值回到默认即清除覆盖；
+# 输入确认始终写入显式本地覆盖，即使数值等于父级；只有重置按钮清除覆盖。
 # 命令次日生效并进入 pending，直到 country_daily 原子提交后由 refresh_tax 解除。
 func _on_lane_text_submitted(_text: String, kind: String) -> void:
-	_confirm_lane(kind)
+	_confirm_lane(kind, true)
 
 
 func _on_lane_focus_exited(kind: String) -> void:
 	_confirm_lane(kind)
 
 
-func _confirm_lane(kind: String) -> void:
+func _confirm_lane(kind: String, explicit_confirm: bool = false) -> void:
 	var lane: Dictionary = _lanes.get(kind, {})
 	if lane.is_empty():
 		return
@@ -423,15 +428,9 @@ func _confirm_lane(kind: String) -> void:
 	var rate := int(spin.value)
 	var base := int(data.get("base", 0))
 	var overridden := bool(data.get("has_override", false))
-	var default_rate := int(data.get("default_rate", 0))
-	if not overridden and rate == default_rate:
+	if rate == base and not explicit_confirm:
 		return
-	if rate == base and not overridden:
-		return
-	if rate == default_rate and overridden:
-		_clear_lane_override(kind, StringName(data.get("item_id", "")))
-	elif rate != base:
-		_submit_lane_override(kind, StringName(data.get("item_id", "")), rate)
+	_submit_lane_override(kind, StringName(data.get("item_id", "")), rate)
 
 
 func _on_lane_reset_pressed(kind: String) -> void:
@@ -443,10 +442,12 @@ func _on_lane_reset_pressed(kind: String) -> void:
 
 
 func _submit_lane_override(kind: String, item_id: StringName, rate: int) -> void:
-	if not _editable or _facade == null:
+	if not _editable or _player_controller == null:
 		return
-	var result: Dictionary = _facade.set_tax_override(_country_handle,
-		int(TAX_KIND_IDS[kind]), item_id, rate, _effective_day(), _next_sequence())
+	var result: Dictionary = _player_controller.request_command(
+		&"country.tax.cell.set_override", {
+			"cell": _cell, "kind": int(TAX_KIND_IDS[kind]),
+			"item_id": item_id, "rate_percent": rate})
 	_last_command_result = result
 	var lane: Dictionary = _lanes.get(kind, {})
 	if bool(result.get("ok", false)):
@@ -459,7 +460,8 @@ func _submit_lane_override(kind: String, item_id: StringName, rate: int) -> void
 			(lane.get("data") as Dictionary)["base"] = rate
 			(lane.get("data") as Dictionary)["has_override"] = true
 			(lane.get("reset") as Button).visible = true
-		_set_status("税率命令已确认，将于第 %d 日生效" % (_effective_day() + 1))
+		_set_status("税率命令已确认，将于第 %d 日生效" %
+			int(result.get("effective_day", _effective_day())))
 	else:
 		if not lane.is_empty():
 			(lane.get("spin") as SpinBox).set_value_no_signal(
@@ -468,10 +470,12 @@ func _submit_lane_override(kind: String, item_id: StringName, rate: int) -> void
 
 
 func _clear_lane_override(kind: String, item_id: StringName) -> void:
-	if not _editable or _facade == null:
+	if not _editable or _player_controller == null:
 		return
-	var result: Dictionary = _facade.clear_tax_override(_country_handle,
-		int(TAX_KIND_IDS[kind]), item_id, _effective_day(), _next_sequence())
+	var result: Dictionary = _player_controller.request_command(
+		&"country.tax.cell.clear_override", {
+			"cell": _cell, "kind": int(TAX_KIND_IDS[kind]),
+			"item_id": item_id})
 	_last_command_result = result
 	var lane: Dictionary = _lanes.get(kind, {})
 	if bool(result.get("ok", false)):
@@ -485,7 +489,8 @@ func _clear_lane_override(kind: String, item_id: StringName) -> void:
 			data["base"] = default_rate
 			data["has_override"] = false
 			(lane.get("reset") as Button).visible = false
-		_set_status("已恢复默认税率，将于第 %d 日生效" % (_effective_day() + 1))
+		_set_status("已恢复继承税率，将于第 %d 日生效" %
+			int(result.get("effective_day", _effective_day())))
 	else:
 		_set_status(String(result.get("reason", "税率覆盖清除命令提交失败")), true)
 
@@ -528,12 +533,6 @@ func _apply_lane_authoritative(kind: String, lane: Dictionary) -> void:
 
 func _effective_day() -> int:
 	return _current_day + 1
-
-
-func _next_sequence() -> int:
-	var result := _sequence
-	_sequence += 1
-	return result
 
 
 func _set_status(text: String, warn: bool = false) -> void:

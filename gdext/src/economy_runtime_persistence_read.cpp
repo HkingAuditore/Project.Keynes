@@ -443,6 +443,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _government_research_procurement_orders = saved_research_orders;
         _audit_history.clear();
         _committed_event_batches.clear();
+        _staging_construction_receipts.clear();
+        _committed_construction_receipts.clear();
+        _next_construction_receipt_id = 1;
         _event_consumer_ack.clear();
         _population.clear(_cell_count);
         _population.page_next.assign(pages, -1);

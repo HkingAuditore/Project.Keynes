@@ -37,3 +37,11 @@ state hash；冻结报告公开 `country_schema_version`、`country_generation` 
 
 国家 `OFF`、目录数量不一致或快照 shape 不一致时返回 `country_runtime_required` /
 `country_snapshot_shape_invalid`，经济不会恢复旧的全局国库或逐地块科技路径。
+
+## 地块税务 epoch 缓存
+
+地块税务不经 GDScript：Country snapshot 直接复制 cell→policy 映射与规范政策行。
+Economy 仅为实际使用的 `(country_handle, policy_id)` 编译缓存；相同本地默认率由
+`(country, tax_kind, base_rate)` 共享连续行，细项保持短有序切片。worker 查询只执行
+逐格 bitmask、整数索引、短切片和全国连续率回退。冻结周期继续使用旧快照，下一周期才看到
+新政策或领土所有者。

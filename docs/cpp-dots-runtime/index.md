@@ -12,6 +12,11 @@
   `NewGameConfig v3`、确定性多国单格开局、每国 20 人聚落、PKSV 安全边界与恢复顺序。
 - 修改启动场景、玩家出生、完整存档或退出流程前先读该文档。
 
+- [PlayerController 玩家会话运行时](./player-controller-runtime.md)：正式玩家输入、
+  选中态、镜头/时间编排、研究命令白名单、UI intent 边界和 `player_view` 恢复顺序。
+- 修改 `player_controller.gd`、玩家场景输入、技术工作台命令或玩家视图存档前先读该文档
+  及仓库内 `project-keynes-player-controller` Skill。
+
 当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见
 [运行时性能优化契约（2026-07）](runtime-performance-optimization-2026-07.md)。
 

@@ -3,10 +3,10 @@ class_name EffectRuntimeSystem
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var facade: EffectFacade
+var facade = null
 var _last_report: Dictionary = {}
 
-func _init(p_facade: EffectFacade) -> void:
+func _init(p_facade) -> void:
 	id = &"effect_runtime"
 	priority = 85
 	must_run = false
@@ -45,7 +45,7 @@ func tick(ctx) -> Dictionary:
 	var native_gameplay_dispatched: Dictionary = {}
 	if facade.world_ext().has_method("dispatch_effect_native_gameplay"):
 		native_gameplay_dispatched = facade.world_ext().dispatch_effect_native_gameplay()
-	var dispatched := facade.dispatch_transactions()
+	var dispatched: Dictionary = facade.dispatch_transactions()
 	_last_report = facade.report()
 	return {
 		"done": bool(result.get("done", true)),

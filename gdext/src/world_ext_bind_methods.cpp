@@ -121,6 +121,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_country_research_signal_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_tax_policy_snapshot", "handle"),
                          &DCWorldExt::get_country_tax_policy_snapshot);
+    ClassDB::bind_method(D_METHOD("get_country_cell_tax_policy_snapshot", "cell_idx"),
+                         &DCWorldExt::get_country_cell_tax_policy_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_fiscal_snapshot", "handle"),
                          &DCWorldExt::get_country_fiscal_snapshot);
     ClassDB::bind_method(D_METHOD("poll_country_events", "after_event_id", "limit"),
@@ -321,6 +323,13 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::capture_economy_trade_topology, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("get_building_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_building_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("get_treasury_construction_quotes",
+                                  "country_handle", "cell_idx", "type_ids"),
+                         &DCWorldExt::get_treasury_construction_quotes);
+    ClassDB::bind_method(D_METHOD("get_construction_command_receipts",
+                                  "after_receipt_id", "limit"),
+                         &DCWorldExt::get_construction_command_receipts,
+                         DEFVAL(64));
     ClassDB::bind_method(D_METHOD("get_family_cell_snapshot", "cell_idx",
                                   "offset", "limit"),
                          &DCWorldExt::get_family_cell_snapshot, DEFVAL(0),

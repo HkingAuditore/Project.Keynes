@@ -121,7 +121,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v30，并与 PKCN v4 交叉绑定。v29 及更早版本明确拒绝；后文旧版本章节
+当前写出 schema 为 PKEC v31，并与 PKCN v7 交叉绑定。PKEC v30 及更早版本按当前兼容表处理；后文旧版本章节
 只记录历史格式演进，不代表当前 reader 仍接受这些版本。拓扑和未完成规划从不存档，加载后重建；联合存档
 只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
 
@@ -131,7 +131,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v30 与 PKCN v4 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
+当前 PKEC v31 与 PKCN v7 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
 并要求姓氏 `family_catalog_hash`、人物 `person_catalog_hash` 和特性
 `family_trait_catalog_hash` 一致。不存在当前 reader 可用的 append-only 迁移例外。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。

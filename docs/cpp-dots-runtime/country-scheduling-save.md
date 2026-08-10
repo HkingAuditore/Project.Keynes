@@ -32,7 +32,7 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v6 / PKEC v31
+## PKCN v7 / PKEC v31
 
 PKCN v5 adds country-owned research-signal evidence. Permanent discoveries are
 stored as a dense `country × signal` bitset; observed `(signal, cell)` pairs and
@@ -41,12 +41,14 @@ is idempotent per country/signal/cell and is committed through the normal countr
 command barrier. The static signal catalog and its stable IDs participate in the
 country catalog hash, so v4 and older PKCN streams are explicitly rejected.
 
-当前 writer 写出 PKCN v6 与 PKEC v31。PKCN v6 在国家研究、研究信号、税务政策和
+当前 writer 写出 PKCN v7 与 PKEC v31。PKCN v7 在国家研究、研究信号、全国税务政策、
+规范化稀疏地块税务政策和
 Country Modifier 状态之外，持久化原生 Country Effect ingress 的 prepared/committed
 结果与命令幂等记录；PKEC v31 在既有经济、家族、建筑身份和生产气候状态之外，
 持久化原生 Economy Effect ingress 的待处理结果与幂等证据。恢复后以相同 Effect
 command idempotency key 重投只会补齐 ACK，不会重复授予。reader 仅接受当前 schema；
-旧版本与 catalog mismatch 均明确拒绝。恢复仍必须先 PKCN 后 PKEC。
+PKCN v6 及更旧版本与 catalog mismatch 均明确拒绝。恢复仍必须先 PKCN 后 PKEC；
+地块税务编译缓存不持久化，由 PKEC 恢复后的下一个经济 epoch 重建。
 
 历史 PKCN v3 增加完整国家研究状态；PKEC v22 在
 v21 科技值采购累计基础上增加生产气候冻结与诊断字段。经济旧版本统一返回
