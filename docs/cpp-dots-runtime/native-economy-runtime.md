@@ -120,6 +120,16 @@ state is introduced.
 | 调度和结算屏障 | `EconomyDailySystem`/`WorldClock` | 周期内正常跨日；仅截止日未完成时 same-day catchup。 |
 | 查询与存档 I/O | GDScript 薄壳 | Inspector 只读 selected-cell slice-complete snapshot；存档只读 committed boundary，4–16MB byte chunks。 |
 
+### 玩家国库资助建设
+
+`TREASURY_SPONSORED_BUILD` 沿用通用 `(effective_day, sequence, submit_order)` 命令序列，
+固定 `count=1` 和私营业主布局。执行时重新验证领土、科技、淘汰、条件及自然资源承载，随后仅
+遍历目标建筑的 construction CSR：国家物资优先，本格市场补足，并按本期零售价计算国库现金。
+全部物资、市场、商人与现金先预检，国家国库通过单次批量接口扣减，之后才扣市场、向当地商人
+付款并追加 `pending_construction`。失败不产生部分状态。轻量 receipt 独立于诊断 trace，发布
+sequence、settled day、稳定结果码及实际两类物资/现金支出；它是瞬态 UI 回执，不进入状态 hash
+或 PKEC v31，因此没有新增存档 section、DataCore slot 或调度阶段。
+
 不存在大规模 GDScript fallback。原生 ABI 不可用时经济显式 disabled；显式 PROBE 模式
 保留 catalog/bootstrap/查询和显式测试能力，但不进入生产 scheduler。
 
