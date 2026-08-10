@@ -413,7 +413,7 @@ include 要求调用方**在 include 之前**声明 `season_phase` / `day_phase`
 `FogOfWarLayer` 与 `WeatherLayer` 使用相同的 `_clock_speed_multiplier` /
 `_clock_running` 接口。运行时 `_world_time += delta * speed_multiplier`，所以 x5/x20
 会同步加快 octave 相对漂移和内部翻卷；暂停时按天气层既有语义保留 1x 真实时间的缓慢
-大气运动，不让画面完全冻结。正式玩家路径由 `TimeControlsController ->
+大气运动，不让画面完全冻结。正式玩家路径由 `PlayerController ->
 WorldRuntimeHost.on_speed_changed/on_clock_running_changed` 同时推给两层，debug
 `main.gd` 也同步两层。禁止让迷雾层退回独立的真实时间计时。
 

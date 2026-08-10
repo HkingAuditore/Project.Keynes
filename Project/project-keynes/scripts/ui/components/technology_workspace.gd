@@ -1,6 +1,8 @@
 extends Control
 class_name TechnologyWorkspace
 
+const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
+
 # Full-bleed research screen: an icon-led status strip, a policy column driven by
 # direct manipulation, the self-drawn technology tree, and a detail card. Every
 # control commits on release, so there is no submit button anywhere.
@@ -17,14 +19,12 @@ const DETAIL_WIDTH := 292.0
 const DETAIL_WIDTH_COMPACT := 238.0
 const DOMAIN_COUNT := 4
 
-var _facade = null
-var _country_handle := 0
+var _player_controller = null
 var _definitions: Array = []
 var _eras: Array = []
 var _domains: Array = []
 var _era_names: Dictionary = {}
 var _research: Dictionary = {}
-var _sequence := 100000
 var _queue_signature := ""
 var _detail_signature := ""
 
@@ -99,8 +99,6 @@ func _ready() -> void:
 func set_model(model: Dictionary) -> void:
 	if _tree == null:
 		_ready()
-	_facade = model.get("country_facade")
-	_country_handle = int(model.get("country_handle", 0))
 	_research = model.get("research", {})
 	if _definitions.is_empty():
 		_definitions = model.get("technology_definitions", [])
@@ -120,10 +118,12 @@ func set_model(model: Dictionary) -> void:
 func refresh_research(model: Dictionary) -> void:
 	if _tree == null:
 		return
-	_facade = model.get("country_facade", _facade)
-	_country_handle = int(model.get("country_handle", _country_handle))
 	_research = model.get("research", {})
 	_apply_research()
+
+
+func set_player_controller(controller) -> void:
+	_player_controller = controller
 
 
 func set_compact(compact: bool) -> void:
@@ -366,52 +366,57 @@ func _on_weights_previewed(weights_bp: PackedInt32Array) -> void:
 
 
 func _on_weights_committed(weights_bp: PackedInt32Array) -> void:
-	if _facade == null or _country_handle == 0:
+	if _player_controller == null:
 		return
-	_sequence += 1
-	_facade.set_research_weights(_country_handle, weights_bp, _effective_day(), _sequence)
-	policy_submitted.emit()
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_RESEARCH_SET_WEIGHTS, {"weights_bp": weights_bp})
+	if bool(result.get("ok", false)):
+		policy_submitted.emit()
 
 
 func _on_budget_committed(enabled: bool, daily_cash_limit: int) -> void:
-	if _facade == null or _country_handle == 0:
+	if _player_controller == null:
 		return
-	_sequence += 1
-	_facade.set_research_budget(_country_handle, enabled, daily_cash_limit,
-		_effective_day(), _sequence)
-	policy_submitted.emit()
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_RESEARCH_SET_BUDGET,
+		{"enabled": enabled, "daily_cash_limit": daily_cash_limit})
+	if bool(result.get("ok", false)):
+		policy_submitted.emit()
 
 
 func _enqueue(index: int) -> void:
-	if _facade == null or index < 0 or index >= _definitions.size():
+	if _player_controller == null or index < 0 or index >= _definitions.size():
 		return
 	var definition: Dictionary = _definitions[index]
-	_sequence += 1
-	_facade.enqueue_research(_country_handle, StringName(definition.get("id", "")),
-		_domain_index_of(definition), -1, _effective_day(), _sequence)
-	_detail.mark_submitted()
-	policy_submitted.emit()
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_RESEARCH_ENQUEUE,
+		{"technology_id": StringName(definition.get("id", "")),
+		"domain": _domain_index_of(definition)})
+	if bool(result.get("ok", false)):
+		_detail.mark_submitted()
+		policy_submitted.emit()
 
 
 func _remove_from_queue(index: int) -> void:
-	if _facade == null or index < 0 or index >= _definitions.size():
+	if _player_controller == null or index < 0 or index >= _definitions.size():
 		return
-	_sequence += 1
-	_facade.remove_research(_country_handle,
-		StringName((_definitions[index] as Dictionary).get("id", "")),
-		_effective_day(), _sequence)
-	_detail.mark_submitted()
-	policy_submitted.emit()
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_RESEARCH_REMOVE,
+		{"technology_id": StringName((_definitions[index] as Dictionary).get("id", ""))})
+	if bool(result.get("ok", false)):
+		_detail.mark_submitted()
+		policy_submitted.emit()
 
 
 func _move_in_queue(technology: int, domain: int, position: int) -> void:
-	if _facade == null or technology < 0 or technology >= _definitions.size():
+	if _player_controller == null or technology < 0 or technology >= _definitions.size():
 		return
-	_sequence += 1
-	_facade.move_research(_country_handle,
-		StringName((_definitions[technology] as Dictionary).get("id", "")),
-		domain, position, _effective_day(), _sequence)
-	policy_submitted.emit()
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_RESEARCH_MOVE,
+		{"technology_id": StringName((_definitions[technology] as Dictionary).get("id", "")),
+		"domain": domain, "position": position})
+	if bool(result.get("ok", false)):
+		policy_submitted.emit()
 
 
 func _domain_index_of(definition: Dictionary) -> int:
@@ -438,7 +443,3 @@ func _domain_accent(domain: int) -> Color:
 	if domain < _domains.size():
 		return (_domains[domain] as Dictionary).get("accent", UITokens.ACCENT)
 	return UITokens.ACCENT
-
-
-func _effective_day() -> int:
-	return maxi(0, int(_research.get("last_research_day", -1)) + 1)

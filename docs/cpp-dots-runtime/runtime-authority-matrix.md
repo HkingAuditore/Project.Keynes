@@ -3,7 +3,7 @@
 ## Current schema precedence (2026-08-07)
 
 The current implementation supersedes older historical rows retained in the
-long-form matrix below: country authority is **PKCN v6**, economy authority is
+long-form matrix below: country authority is **PKCN v7**, economy authority is
 **PKEC v31**, configurable cross-domain effects are **PKEF v5**, ideology state
 is **PKID v2**, and the native gameplay journal is **journal v3**. The save
 coordinator restores domain state in its documented order and verifies active
@@ -25,8 +25,8 @@ mixed transaction. Legacy PKEC v29 and earlier are rejected with
 | Dynamic cell SoA | `DCWorld` / `DCWorldExt` by component contract | PKSV `dynamic_world` | Missing provider fails the save |
 | Native environment rounds | `EnvironmentRuntime` | `PKEnvironmentRuntime v1` in PKSV `environment` | Persist arrays, ping-pong, dirty sets, topology and cursors, not counters only |
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
-| Country research, technology, treasury and tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v6 | Owns discovery, research, five tax defaults, sparse overrides, fiscal cash bridge and native Effect ingress idempotency |
-| Country modifiers | Country `ModifierStore` | embedded in PKCN v6 | Technology and fine-grained tax-rate effects alter frozen consumers, never ledgers directly |
+| Country research, technology, treasury and national/cell tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v7 | Owns discovery, research, five national defaults/overrides, interned sparse per-cell policies, fiscal cash bridge and native Effect ingress idempotency |
+| Country modifiers | Country `ModifierStore` | embedded in PKCN v7 | Technology and fine-grained tax-rate effects alter frozen national/cell consumers, never ledgers directly |
 | Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v31, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
 | Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v5 | Owns catalog IR, flat metric slabs, due/dirty candidates, deterministic worker plans, durable external bindings and ACKs; never owns country/economy/Modifier stores |
@@ -35,7 +35,8 @@ mixed transaction. Legacy PKEC v29 and earlier are rejected with
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
 | Current visibility and fog knowledge | `VisionSolver` writing `cell.visible` and `MapData.fog_k_arr` | none; derived | Pure function of territory plus baked terrain; recomputed on restore, never saved |
-| Selection/camera | player scene controllers | PKSV `player_view` | Restore after derived map/render resources exist |
+| Selection/camera | `PlayerController` + `MapCamera` Godot boundary | PKSV `player_view` | Restore after derived map/render resources exist; PlayerController owns input/session orchestration, MapCamera owns smoothing/inertia |
+| Player construction intent/receipt | `PlayerController` + `EconomyFacade` boundary; settlement in `NativeEconomyRuntime`, treasury in `NativeCountryRuntime` | Pending command remains in PKEC v31; receipt is transient | Quotes are bounded/nonbinding; execution atomically consumes treasury goods, local-market goods and treasury cash without a new scheduler stage |
 
 Transient 经济缓存与 climate/ocean hot-state capsule 不改变本矩阵的权威
 划分；具体边界见

@@ -164,6 +164,7 @@ void NativeEconomyRuntime::trace_reconcile_inspector_cashflows() {
 
 void NativeEconomyRuntime::trace_begin_epoch() {
 	_staging_gameplay_facts.clear();
+    _staging_construction_receipts.clear();
     if (_trace_filter_pending) {
         _trace_cell_mask.swap(_pending_trace_cell_mask);
         _pending_trace_cell_mask.clear();
@@ -295,6 +296,14 @@ void NativeEconomyRuntime::trace_commit_epoch(int64_t population_error,
             _staging_gameplay_facts.begin(), _staging_gameplay_facts.end());
         _staging_gameplay_facts.clear();
     }
+    for (ConstructionCommandReceipt &receipt : _staging_construction_receipts) {
+        receipt.receipt_id = _next_construction_receipt_id++;
+        _committed_construction_receipts.push_back(std::move(receipt));
+    }
+    _staging_construction_receipts.clear();
+    while (_committed_construction_receipts.size() > 256U) {
+        _committed_construction_receipts.pop_front();
+    }
     const int64_t leg_count = static_cast<int64_t>(_staging_events.legs.size());
     if (_trace_mode != TRACE_OFF) {
         _staging_events.first_event_id = _next_event_id;
@@ -317,6 +326,7 @@ void NativeEconomyRuntime::trace_commit_epoch(int64_t population_error,
 
 void NativeEconomyRuntime::trace_abort_epoch() {
 	_staging_gameplay_facts.clear();
+    _staging_construction_receipts.clear();
     if (!_staging_events.events.empty()) {
         _trace_uncommitted_discarded += static_cast<int64_t>(_staging_events.events.size());
     }

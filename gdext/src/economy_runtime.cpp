@@ -901,6 +901,10 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_business_tax_rates = std::move(snapshot.business_tax_rates);
     _epoch_import_tax_rates = std::move(snapshot.import_tax_rates);
     _epoch_export_tax_rates = std::move(snapshot.export_tax_rates);
+    std::vector<uint32_t> snapshot_cell_tax_policy_ids =
+        std::move(snapshot.cell_tax_policy_ids);
+    std::vector<NativeCountryRuntime::CellTaxPolicy>
+        snapshot_cell_tax_policies = std::move(snapshot.cell_tax_policies);
     const auto tax_shape_valid = [&](const std::vector<int8_t> &rates,
                                      size_t item_count) {
         return rates.size() == static_cast<size_t>(
@@ -912,6 +916,12 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         !tax_shape_valid(_epoch_import_tax_rates, _good_ids.size()) ||
         !tax_shape_valid(_epoch_export_tax_rates, _good_ids.size())) {
         error = "country_tax_snapshot_shape_invalid";
+        return false;
+    }
+    if (snapshot_cell_tax_policy_ids.size() !=
+            static_cast<size_t>(_cell_count) ||
+        snapshot_cell_tax_policies.empty()) {
+        error = "country_cell_tax_snapshot_shape_invalid";
         return false;
     }
     const auto requirements_available = [&](int32_t country, int32_t begin,
@@ -1102,23 +1112,256 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                         _epoch_country_handles[static_cast<size_t>(country)]));
         }
     }
-    _epoch_active_tax_mask = 0;
-    const auto mark_active_tax = [&](int32_t kind,
-                                     const std::vector<int8_t> &rates) {
-        if (std::any_of(rates.begin(), rates.end(),
-                        [](int8_t rate) { return rate != 0; }))
-            _epoch_active_tax_mask |= static_cast<uint8_t>(1U << kind);
+    const auto cell_tax_compile_started = Clock::now();
+    _epoch_cell_compiled_tax_policy.assign(
+        static_cast<size_t>(_cell_count), 0);
+    _epoch_cell_active_tax_mask.assign(static_cast<size_t>(_cell_count), 0);
+    _epoch_compiled_cell_tax_policies.assign(1, CompiledCellTaxPolicy{});
+    _epoch_compiled_cell_tax_overrides.clear();
+    _epoch_compiled_cell_tax_default_rows.clear();
+    _epoch_compiled_cell_tax_default_rates.clear();
+    _epoch_has_cell_tax_policies = false;
+    std::unordered_map<uint64_t, uint32_t> compiled_policy_ids;
+    std::unordered_map<uint64_t, int32_t> default_row_ids;
+    const auto item_count_for_kind = [&](int32_t kind) -> size_t {
+        switch (kind) {
+            case NativeCountryRuntime::TAX_INCOME:
+                return _profession_ids.size();
+            case NativeCountryRuntime::TAX_BUSINESS:
+                return _building_types.size();
+            case NativeCountryRuntime::TAX_CONSUMPTION:
+            case NativeCountryRuntime::TAX_IMPORT:
+            case NativeCountryRuntime::TAX_EXPORT:
+                return _good_ids.size();
+            default: return 0;
+        }
     };
-    mark_active_tax(NativeCountryRuntime::TAX_INCOME,
-                    _epoch_income_tax_rates);
-    mark_active_tax(NativeCountryRuntime::TAX_CONSUMPTION,
-                    _epoch_consumption_tax_rates);
-    mark_active_tax(NativeCountryRuntime::TAX_BUSINESS,
-                    _epoch_business_tax_rates);
-    mark_active_tax(NativeCountryRuntime::TAX_IMPORT,
-                    _epoch_import_tax_rates);
-    mark_active_tax(NativeCountryRuntime::TAX_EXPORT,
-                    _epoch_export_tax_rates);
+    const auto &stat_ids_for_kind = [&](int32_t kind)
+            -> const std::vector<int32_t> & {
+        switch (kind) {
+            case NativeCountryRuntime::TAX_INCOME:
+                return _income_tax_stat_ids;
+            case NativeCountryRuntime::TAX_CONSUMPTION:
+                return _consumption_tax_stat_ids;
+            case NativeCountryRuntime::TAX_BUSINESS:
+                return _business_tax_stat_ids;
+            case NativeCountryRuntime::TAX_IMPORT:
+                return _import_tax_stat_ids;
+            case NativeCountryRuntime::TAX_EXPORT:
+                return _export_tax_stat_ids;
+            default: {
+                static const std::vector<int32_t> empty;
+                return empty;
+            }
+        }
+    };
+    const auto ensure_default_row = [&](int32_t country, int32_t kind,
+                                        int8_t base_rate) -> int32_t {
+        const uint64_t key =
+            (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 32U) |
+            (static_cast<uint64_t>(static_cast<uint8_t>(kind)) << 16U) |
+            static_cast<uint16_t>(static_cast<int32_t>(base_rate) + 100);
+        const auto found = default_row_ids.find(key);
+        if (found != default_row_ids.end()) return found->second;
+        const size_t item_count = item_count_for_kind(kind);
+        CompiledCellTaxDefaultRow row;
+        row.kind = kind;
+        row.country = country;
+        row.base_rate = base_rate;
+        row.offset = static_cast<int32_t>(
+            _epoch_compiled_cell_tax_default_rates.size());
+        row.count = static_cast<int32_t>(item_count);
+        _epoch_compiled_cell_tax_default_rates.resize(
+            _epoch_compiled_cell_tax_default_rates.size() + item_count,
+            base_rate);
+        if (_modifier_runtime != nullptr && item_count > 0) {
+            const auto &stat_ids = stat_ids_for_kind(kind);
+            _modifier_runtime->effective_values(
+                ModifierRuntime::COUNTRY, stat_ids.data(),
+                _epoch_country_handles[static_cast<size_t>(country)],
+                _epoch_compiled_cell_tax_default_rates.data() + row.offset,
+                _epoch_compiled_cell_tax_default_rates.data() + row.offset,
+                item_count);
+        }
+        const int32_t row_id = static_cast<int32_t>(
+            _epoch_compiled_cell_tax_default_rows.size());
+        _epoch_compiled_cell_tax_default_rows.push_back(row);
+        default_row_ids.emplace(key, row_id);
+        return row_id;
+    };
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        const uint32_t authority_id =
+            snapshot_cell_tax_policy_ids[static_cast<size_t>(cell)];
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+        if (authority_id == 0 ||
+            authority_id >= snapshot_cell_tax_policies.size() ||
+            country < 0 || country >= _epoch_country_count)
+            continue;
+        _epoch_has_cell_tax_policies = true;
+        const uint64_t key =
+            (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 32U) |
+            authority_id;
+        auto compiled_found = compiled_policy_ids.find(key);
+        if (compiled_found == compiled_policy_ids.end()) {
+            const auto &authority = snapshot_cell_tax_policies[authority_id];
+            CompiledCellTaxPolicy compiled;
+            for (int32_t kind = 0;
+                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                compiled.override_begin[static_cast<size_t>(kind)] =
+                    static_cast<int32_t>(
+                        _epoch_compiled_cell_tax_overrides.size());
+                for (const auto &entry : authority.overrides) {
+                    if (entry.kind != kind) continue;
+                    int8_t effective = entry.rate;
+                    if (_modifier_runtime != nullptr) {
+                        const auto &stat_ids = stat_ids_for_kind(kind);
+                        _modifier_runtime->effective_values(
+                            ModifierRuntime::COUNTRY,
+                            stat_ids.data() + entry.item,
+                            _epoch_country_handles[static_cast<size_t>(country)],
+                            &effective, &effective, 1);
+                    }
+                    _epoch_compiled_cell_tax_overrides.push_back(
+                        {entry.item, effective});
+                    if (effective != 0)
+                        compiled.active_mask |= static_cast<uint8_t>(1U << kind);
+                }
+                compiled.override_end[static_cast<size_t>(kind)] =
+                    static_cast<int32_t>(
+                        _epoch_compiled_cell_tax_overrides.size());
+                const int8_t local_default =
+                    authority.defaults[static_cast<size_t>(kind)];
+                if (local_default != NativeCountryRuntime::TAX_RATE_INHERIT) {
+                    const int32_t row_id = ensure_default_row(
+                        country, kind, local_default);
+                    compiled.default_row_ids[static_cast<size_t>(kind)] = row_id;
+                    const CompiledCellTaxDefaultRow &row =
+                        _epoch_compiled_cell_tax_default_rows[
+                            static_cast<size_t>(row_id)];
+                    if (std::any_of(
+                            _epoch_compiled_cell_tax_default_rates.begin() +
+                                row.offset,
+                            _epoch_compiled_cell_tax_default_rates.begin() +
+                                row.offset + row.count,
+                            [](int8_t rate) { return rate != 0; })) {
+                        compiled.active_mask |=
+                            static_cast<uint8_t>(1U << kind);
+                    }
+                }
+            }
+            compiled.active_mask = 0;
+            const auto national_rates_for_kind = [&](int32_t kind)
+                    -> const std::vector<int8_t> & {
+                switch (kind) {
+                    case NativeCountryRuntime::TAX_INCOME:
+                        return _epoch_income_tax_rates;
+                    case NativeCountryRuntime::TAX_CONSUMPTION:
+                        return _epoch_consumption_tax_rates;
+                    case NativeCountryRuntime::TAX_BUSINESS:
+                        return _epoch_business_tax_rates;
+                    case NativeCountryRuntime::TAX_IMPORT:
+                        return _epoch_import_tax_rates;
+                    default: return _epoch_export_tax_rates;
+                }
+            };
+            for (int32_t kind = 0;
+                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                const size_t item_count = item_count_for_kind(kind);
+                const auto &national = national_rates_for_kind(kind);
+                int32_t override_cursor =
+                    compiled.override_begin[static_cast<size_t>(kind)];
+                const int32_t override_end =
+                    compiled.override_end[static_cast<size_t>(kind)];
+                const int32_t row_id =
+                    compiled.default_row_ids[static_cast<size_t>(kind)];
+                for (int32_t item = 0;
+                     item < static_cast<int32_t>(item_count); ++item) {
+                    int8_t rate = 0;
+                    while (override_cursor < override_end &&
+                           _epoch_compiled_cell_tax_overrides[
+                               static_cast<size_t>(override_cursor)].item < item)
+                        ++override_cursor;
+                    if (override_cursor < override_end &&
+                        _epoch_compiled_cell_tax_overrides[
+                            static_cast<size_t>(override_cursor)].item == item) {
+                        rate = _epoch_compiled_cell_tax_overrides[
+                            static_cast<size_t>(override_cursor)].rate;
+                    } else if (row_id >= 0) {
+                        const CompiledCellTaxDefaultRow &row =
+                            _epoch_compiled_cell_tax_default_rows[
+                                static_cast<size_t>(row_id)];
+                        rate = _epoch_compiled_cell_tax_default_rates[
+                            static_cast<size_t>(row.offset + item)];
+                    } else {
+                        rate = national[
+                            static_cast<size_t>(country) * item_count +
+                            static_cast<size_t>(item)];
+                    }
+                    if (rate != 0) {
+                        compiled.active_mask |=
+                            static_cast<uint8_t>(1U << kind);
+                        break;
+                    }
+                }
+            }
+            const uint32_t compiled_id = static_cast<uint32_t>(
+                _epoch_compiled_cell_tax_policies.size());
+            _epoch_compiled_cell_tax_policies.push_back(compiled);
+            compiled_policy_ids.emplace(key, compiled_id);
+            compiled_found = compiled_policy_ids.find(key);
+        }
+        _epoch_cell_compiled_tax_policy[static_cast<size_t>(cell)] =
+            compiled_found->second;
+    }
+    std::vector<uint8_t> country_tax_masks(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    const auto mark_country_tax = [&](int32_t kind,
+                                      const std::vector<int8_t> &rates,
+                                      size_t item_count) {
+        for (int32_t country = 0; country < _epoch_country_count; ++country) {
+            const auto begin = rates.begin() +
+                static_cast<ptrdiff_t>(static_cast<size_t>(country) * item_count);
+            if (std::any_of(begin, begin + static_cast<ptrdiff_t>(item_count),
+                            [](int8_t rate) { return rate != 0; }))
+                country_tax_masks[static_cast<size_t>(country)] |=
+                    static_cast<uint8_t>(1U << kind);
+        }
+    };
+    mark_country_tax(NativeCountryRuntime::TAX_INCOME,
+                     _epoch_income_tax_rates, _profession_ids.size());
+    mark_country_tax(NativeCountryRuntime::TAX_CONSUMPTION,
+                     _epoch_consumption_tax_rates, _good_ids.size());
+    mark_country_tax(NativeCountryRuntime::TAX_BUSINESS,
+                     _epoch_business_tax_rates, _building_types.size());
+    mark_country_tax(NativeCountryRuntime::TAX_IMPORT,
+                     _epoch_import_tax_rates, _good_ids.size());
+    mark_country_tax(NativeCountryRuntime::TAX_EXPORT,
+                     _epoch_export_tax_rates, _good_ids.size());
+    _epoch_active_tax_mask = 0;
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+        uint8_t mask = 0;
+        const uint32_t compiled_id =
+            _epoch_cell_compiled_tax_policy[static_cast<size_t>(cell)];
+        if (compiled_id > 0 &&
+            compiled_id < _epoch_compiled_cell_tax_policies.size())
+            mask = _epoch_compiled_cell_tax_policies[compiled_id].active_mask;
+        else if (country >= 0 && country < _epoch_country_count)
+            mask = country_tax_masks[static_cast<size_t>(country)];
+        _epoch_cell_active_tax_mask[static_cast<size_t>(cell)] = mask;
+        _epoch_active_tax_mask |= mask;
+    }
+    _epoch_cell_tax_cache_bytes = static_cast<int64_t>(
+        _epoch_cell_compiled_tax_policy.size() * sizeof(uint32_t) +
+        _epoch_cell_active_tax_mask.size() * sizeof(uint8_t) +
+        _epoch_compiled_cell_tax_policies.size() *
+            sizeof(CompiledCellTaxPolicy) +
+        _epoch_compiled_cell_tax_overrides.size() *
+            sizeof(CompiledCellTaxOverride) +
+        _epoch_compiled_cell_tax_default_rows.size() *
+            sizeof(CompiledCellTaxDefaultRow) +
+        _epoch_compiled_cell_tax_default_rates.size() * sizeof(int8_t));
+    _epoch_cell_tax_compile_ms = elapsed_ms(cell_tax_compile_started);
     const auto building_factor_started = Clock::now();
     refresh_building_modifier_factors();
     _epoch_begin_building_factor_ms = elapsed_ms(building_factor_started);
@@ -5238,6 +5481,8 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             return apply_family_free_building_reward(cmd, error);
         case COMMAND_FAMILY_POPULATION_REWARD:
             return apply_family_population_reward(cmd, error);
+        case COMMAND_TREASURY_SPONSORED_BUILD:
+            return apply_treasury_sponsored_build_command(cmd, error);
         default:
             error = "unsupported_command_opcode";
             return false;
@@ -10784,6 +11029,9 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _last_completed_perf = {};
     _staging_events = {};
     _committed_event_batches.clear();
+    _staging_construction_receipts.clear();
+    _committed_construction_receipts.clear();
+    _next_construction_receipt_id = 1;
     _staging_gameplay_facts.clear();
     _committed_gameplay_facts.clear();
     _audit_history.clear();
@@ -10833,6 +11081,15 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_business_tax_rates.clear();
     _epoch_import_tax_rates.clear();
     _epoch_export_tax_rates.clear();
+    _epoch_cell_compiled_tax_policy.clear();
+    _epoch_cell_active_tax_mask.clear();
+    _epoch_compiled_cell_tax_policies.clear();
+    _epoch_compiled_cell_tax_overrides.clear();
+    _epoch_compiled_cell_tax_default_rows.clear();
+    _epoch_compiled_cell_tax_default_rates.clear();
+    _epoch_cell_tax_cache_bytes = 0;
+    _epoch_cell_tax_compile_ms = 0.0;
+    _epoch_has_cell_tax_policies = false;
     _fiscal_previous_requests.clear();
     _fiscal_previous_country_handles.clear();
     _fiscal_reservation_requests.clear();

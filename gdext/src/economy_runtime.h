@@ -103,6 +103,11 @@ public:
         COMMAND_MARKET_GOOD_TO_COUNTRY = 13,
         COMMAND_FAMILY_FREE_BUILDING = 14,
         COMMAND_FAMILY_POPULATION_REWARD = 15,
+        COMMAND_TREASURY_SPONSORED_BUILD = 16,
+    };
+
+    enum ConstructionOwnershipPolicy : int32_t {
+        OWNERSHIP_TREASURY_SPONSORED_PRIVATE = 1,
     };
 
     NativeEconomyRuntime();
@@ -173,6 +178,11 @@ public:
     godot::Dictionary trade_orders_for_cell(int32_t cell_idx, int32_t offset,
                                              int32_t limit) const;
     godot::Dictionary building_cell_snapshot(int32_t cell_idx) const;
+    godot::Dictionary treasury_construction_quotes(
+        int64_t country_handle, int32_t cell_idx,
+        const godot::PackedInt32Array &type_ids) const;
+    godot::Dictionary construction_command_receipts(int64_t after_receipt_id,
+                                                     int32_t limit) const;
     godot::Dictionary family_cell_snapshot(int32_t cell_idx, int32_t offset,
                                             int32_t limit) const;
     godot::Dictionary family_snapshot(int64_t family_handle) const;
@@ -1495,6 +1505,21 @@ private:
         int64_t expense = 0;
     };
 
+    struct ConstructionCommandReceipt {
+        int64_t receipt_id = 0;
+        int64_t sequence = 0;
+        int64_t effective_day = 0;
+        int64_t settled_day = 0;
+        uint64_t country_handle = 0;
+        int32_t cell = -1;
+        int32_t type_id = -1;
+        bool ok = false;
+        std::string code;
+        int64_t cash_paid = 0;
+        int64_t treasury_goods_used = 0;
+        int64_t market_goods_used = 0;
+    };
+
     enum TradeSignalDiagnosticReason : int32_t {
         TRADE_SIGNAL_DIAG_NONE = 0,
         TRADE_SIGNAL_DIAG_NO_SPREAD = 1,
@@ -2360,6 +2385,9 @@ private:
     bool _inspector_trace_pending = false;
     EventBatch _staging_events;
     std::deque<EventBatch> _committed_event_batches;
+    std::vector<ConstructionCommandReceipt> _staging_construction_receipts;
+    std::deque<ConstructionCommandReceipt> _committed_construction_receipts;
+    int64_t _next_construction_receipt_id = 1;
     std::vector<CommittedGameplayFact> _staging_gameplay_facts;
     std::vector<CommittedGameplayFact> _committed_gameplay_facts;
     std::deque<AuditFrame> _audit_history;
@@ -2947,6 +2975,36 @@ private:
     std::vector<int8_t> _epoch_business_tax_rates;
     std::vector<int8_t> _epoch_import_tax_rates;
     std::vector<int8_t> _epoch_export_tax_rates;
+    static constexpr size_t CELL_TAX_KIND_COUNT = 5;
+    struct CompiledCellTaxOverride {
+        int32_t item = -1;
+        int8_t rate = 0;
+    };
+    struct CompiledCellTaxPolicy {
+        std::array<int32_t, CELL_TAX_KIND_COUNT>
+            default_row_ids{-1, -1, -1, -1, -1};
+        std::array<int32_t, CELL_TAX_KIND_COUNT>
+            override_begin{};
+        std::array<int32_t, CELL_TAX_KIND_COUNT>
+            override_end{};
+        uint8_t active_mask = 0;
+    };
+    struct CompiledCellTaxDefaultRow {
+        int32_t kind = -1;
+        int32_t country = -1;
+        int8_t base_rate = 0;
+        int32_t offset = 0;
+        int32_t count = 0;
+    };
+    std::vector<uint32_t> _epoch_cell_compiled_tax_policy;
+    std::vector<uint8_t> _epoch_cell_active_tax_mask;
+    std::vector<CompiledCellTaxPolicy> _epoch_compiled_cell_tax_policies;
+    std::vector<CompiledCellTaxOverride> _epoch_compiled_cell_tax_overrides;
+    std::vector<CompiledCellTaxDefaultRow> _epoch_compiled_cell_tax_default_rows;
+    std::vector<int8_t> _epoch_compiled_cell_tax_default_rates;
+    int64_t _epoch_cell_tax_cache_bytes = 0;
+    double _epoch_cell_tax_compile_ms = 0.0;
+    bool _epoch_has_cell_tax_policies = false;
     uint64_t _epoch_tax_policy_version = 0;
     uint8_t _epoch_active_tax_mask = 0;
     static constexpr int32_t ACTIVE_TAX_KIND_COUNT = 3;
@@ -3654,6 +3712,15 @@ private:
     // Non-null only while a market worker task is running; stage_cell_summary
     // appends here instead of the shared list. Null on every scalar path.
     static thread_local std::vector<int32_t> *_staging_touched_sink;
+
+    bool apply_treasury_sponsored_build_command(const Command &cmd,
+                                                 std::string &error);
+    int32_t treasury_build_owner_signature(int32_t cell,
+                                           int32_t type_id) const;
+    void stage_construction_receipt(const Command &cmd, bool ok,
+                                    const char *code, int64_t cash_paid = 0,
+                                    int64_t treasury_goods_used = 0,
+                                    int64_t market_goods_used = 0);
 };
 
 } // namespace pk

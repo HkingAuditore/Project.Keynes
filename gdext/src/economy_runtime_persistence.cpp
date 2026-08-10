@@ -404,6 +404,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool family_reward =
             cmd.opcode == COMMAND_FAMILY_FREE_BUILDING ||
             cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
+        const bool treasury_build =
+            cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD;
         int32_t branch = -1;
         const bool target_ok = family_reward
             ? (_family_influences.valid_handle(cmd.target_handle, branch) &&
@@ -411,6 +413,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
                (cmd.opcode != COMMAND_FAMILY_FREE_BUILDING ||
                 (cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                     _building_types.size()))))
+            : treasury_build
+            ? (_country_runtime != nullptr && _country_runtime->valid_handle(
+                   static_cast<int64_t>(cmd.target_handle)) &&
+               cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count &&
+               cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
+                   _building_types.size()) && cmd.i64_0 == 1 &&
+               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
             : market_target
             ? (cmd.i32_0 >= 0 && cmd.i32_0 < _market.market_count &&
                cmd.i32_1 >= 0 && cmd.i32_1 < _market.good_count &&
@@ -420,7 +429,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                     static_cast<int64_t>(cmd.target_handle)))))
             : _population.valid_handle(cmd.target_handle, slot);
         if (cmd.opcode < COMMAND_TRANSFER_TO_COHORT ||
-            cmd.opcode > COMMAND_FAMILY_POPULATION_REWARD ||
+            cmd.opcode > COMMAND_TREASURY_SPONSORED_BUILD ||
             !target_ok || cmd.effective_day < 0 || cmd.sequence < 0 ||
             (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION)) {
             out["ok"] = false;

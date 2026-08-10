@@ -3,6 +3,7 @@ extends RefCounted
 
 signal economy_event_batch_available(meta: Dictionary)
 signal economy_event_batch(batch: Dictionary)
+signal construction_command_settled(result: Dictionary)
 
 const DEFAULT_PROFILE_PATH := "res://data/economy/default_economy.tres"
 const GOOD_PROFILE_DIR := "res://data/goods"
@@ -29,7 +30,10 @@ enum Opcode {
 	MARKET_GOOD_TO_COUNTRY = 13,
 	FAMILY_FREE_BUILDING = 14,
 	FAMILY_POPULATION_REWARD = 15,
+	TREASURY_SPONSORED_BUILD = 16,
 }
+
+const OWNERSHIP_TREASURY_SPONSORED_PRIVATE := 1
 
 var _world_ext: Object = null
 var _profile = null
@@ -41,6 +45,7 @@ var _building_display_names: Dictionary = {}
 var _need_display_names: Dictionary = {}
 var _good_display_names: Dictionary = {}
 var _family_trait_sequence: int = 0
+var _construction_receipt_cursor: int = 0
 
 func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
 	_world_ext = world_ext
@@ -64,6 +69,7 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 	var result: Dictionary = _world_ext.configure_economy(
 		native_catalog, _profile.to_native_profile(), cell_count, seed)
 	_configured = bool(result.get("ok", false))
+	_construction_receipt_cursor = 0
 	return result
 
 func bootstrap(population_packet: Dictionary = {}, market_packet: Dictionary = {},
@@ -272,6 +278,135 @@ func building_cell_snapshot(cell_idx: int) -> Dictionary:
 	if snapshot.has("building_type_ids"):
 		_attach_building_display_metadata(snapshot)
 	return snapshot
+
+
+func construction_catalog(search: String = "", offset: int = 0,
+		limit: int = 32) -> Dictionary:
+	var ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
+	var matches := PackedInt32Array()
+	var needle := search.strip_edges().to_lower()
+	for type_id in range(ids.size()):
+		var stable_id := String(ids[type_id])
+		var display_name := String(_building_display_names.get(stable_id, stable_id))
+		if needle.is_empty() or stable_id.to_lower().contains(needle) \
+				or display_name.to_lower().contains(needle):
+			matches.append(type_id)
+	var begin := clampi(offset, 0, matches.size())
+	var end := mini(matches.size(), begin + clampi(limit, 1, 32))
+	return {"ok": true, "total": matches.size(), "offset": begin,
+		"limit": clampi(limit, 1, 32), "type_ids": matches.slice(begin, end)}
+
+
+func treasury_construction_options(country_handle: int, cell_idx: int,
+		search: String = "", offset: int = 0, limit: int = 32) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_treasury_construction_quotes"):
+		return {"ok": false, "reason": "construction_quote_api_unavailable"}
+	var page := construction_catalog(search, offset, limit)
+	var type_ids: PackedInt32Array = page.get("type_ids", PackedInt32Array())
+	var quotes: Dictionary = _world_ext.get_treasury_construction_quotes(
+		country_handle, cell_idx, type_ids)
+	if not bool(quotes.get("ok", false)):
+		return quotes
+	var stable_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
+	var good_ids: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
+	var eligible: PackedByteArray = quotes.get("eligible", PackedByteArray())
+	var reasons: PackedStringArray = quotes.get("reason_codes", PackedStringArray())
+	var cash: PackedInt64Array = quotes.get("cash_required", PackedInt64Array())
+	var treasury_totals: PackedInt64Array = quotes.get(
+		"treasury_goods_used", PackedInt64Array())
+	var market_totals: PackedInt64Array = quotes.get(
+		"market_goods_used", PackedInt64Array())
+	var material_offsets: PackedInt32Array = quotes.get(
+		"material_offsets", PackedInt32Array())
+	var material_good_ids: PackedInt32Array = quotes.get(
+		"material_good_ids", PackedInt32Array())
+	var material_required: PackedInt64Array = quotes.get(
+		"material_required", PackedInt64Array())
+	var material_treasury: PackedInt64Array = quotes.get(
+		"material_treasury", PackedInt64Array())
+	var material_market: PackedInt64Array = quotes.get(
+		"material_market", PackedInt64Array())
+	var items := []
+	for i in range(type_ids.size()):
+		var type_id := int(type_ids[i])
+		var stable_id := String(stable_ids[type_id]) if type_id >= 0 \
+				and type_id < stable_ids.size() else ""
+		var materials := []
+		var material_begin := int(material_offsets[i]) if i < material_offsets.size() else 0
+		var material_end := int(material_offsets[i + 1]) \
+				if i + 1 < material_offsets.size() else material_begin
+		for edge in range(material_begin, material_end):
+			var good_idx := int(material_good_ids[edge])
+			var good_id := String(good_ids[good_idx]) if good_idx >= 0 \
+					and good_idx < good_ids.size() else ""
+			materials.append({"good_id": good_id,
+				"name": String(_good_display_names.get(good_id, good_id)),
+				"required": int(material_required[edge]),
+				"treasury": int(material_treasury[edge]),
+				"market": int(material_market[edge])})
+		items.append({"type_id": type_id, "building_id": stable_id,
+			"name": String(_building_display_names.get(stable_id, stable_id)),
+			"eligible": i < eligible.size() and eligible[i] != 0,
+			"reason_code": String(reasons[i]) if i < reasons.size() else "command_rejected",
+			"cash_required": int(cash[i]) if i < cash.size() else 0,
+			"treasury_goods_used": int(treasury_totals[i]) if i < treasury_totals.size() else 0,
+			"market_goods_used": int(market_totals[i]) if i < market_totals.size() else 0,
+			"materials": materials})
+	return {"ok": true, "items": items, "total": int(page.get("total", 0)),
+		"offset": int(page.get("offset", 0)), "limit": int(page.get("limit", 32)),
+		"snapshot_day": int(quotes.get("snapshot_day", -1)), "nonbinding": true}
+
+
+func treasury_sponsored_build(country_handle: int, cell_idx: int,
+		building_id: StringName, effective_day: int, sequence: int,
+		ownership_policy: StringName = &"treasury_sponsored_private") -> Dictionary:
+	if ownership_policy != &"treasury_sponsored_private":
+		return {"ok": false, "reason": "unsupported_ownership_policy"}
+	var type_id := building_type_id(building_id)
+	if type_id < 0:
+		return {"ok": false, "reason": "construction_target_invalid"}
+	return submit([{"opcode": Opcode.TREASURY_SPONSORED_BUILD,
+		"effective_day": effective_day, "sequence": sequence,
+		"target_handle": country_handle, "i32_0": cell_idx, "i32_1": type_id,
+		"i64_0": 1, "i64_1": OWNERSHIP_TREASURY_SPONSORED_PRIVATE}])
+
+
+func dispatch_construction_command_receipts() -> void:
+	if not _configured or not _world_ext.has_method(
+			"get_construction_command_receipts"):
+		return
+	var page: Dictionary = _world_ext.get_construction_command_receipts(
+		_construction_receipt_cursor, 64)
+	if not bool(page.get("ok", false)):
+		return
+	var stable_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
+	for raw in page.get("receipts", []):
+		var result: Dictionary = raw
+		var type_id := int(result.get("type_id", -1))
+		result["building_id"] = String(stable_ids[type_id]) if type_id >= 0 \
+				and type_id < stable_ids.size() else ""
+		result["message"] = _construction_result_message(
+			String(result.get("code", "command_rejected")))
+		construction_command_settled.emit(result)
+	_construction_receipt_cursor = maxi(_construction_receipt_cursor,
+		int(page.get("last_receipt_id", _construction_receipt_cursor)))
+
+
+static func _construction_result_message(code: String) -> String:
+	return {
+		"ok": "建筑已开工。",
+		"construction_cell_not_owned": "目标地块已不属于玩家国家。",
+		"construction_technology_locked": "建造所需科技尚未解锁。",
+		"construction_obsolete": "该建筑层级已经淘汰。",
+		"construction_conditions_failed": "目标地块不满足建筑放置条件。",
+		"construction_resource_unavailable": "当地自然资源承载不足。",
+		"construction_materials_insufficient": "国库与当地市场的建材总量不足。",
+		"construction_treasury_cash_insufficient": "国库资金不足以购买缺少的建材。",
+		"construction_market_unavailable": "当地市场没有可结算的商人。",
+		"unsupported_ownership_policy": "当前版本不支持该产权策略。",
+	}.get(code, "修建命令未能执行。")
 
 
 func family_cell_snapshot(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:

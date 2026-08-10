@@ -53,13 +53,13 @@ order.
 
 Godot 项目根是 `Project/project-keynes`。`project.godot` 的主场景是 `res://scenes/main_menu.tscn`（见上文「Formal game entry」），正式流程经 `GameFlowService` 进入 `res://scenes/player_game.tscn`，由 `scripts/game/player_game.gd` / `scripts/game/world_runtime_host.gd` 承接。`res://scenes/world_setup.tscn`（`scripts/ui/world_setup.gd`，地图尺寸/seed/海平面/大陆数量等友好化控件）降级为开发工具入口，`res://scenes/main.tscn` 保留旧 debug/runtime lab。
 
-`player_game.gd` 是面向玩家的轻量场景装配层。它连接 `WorldRuntimeHost`、`GameUIManager`、`MapInteractionController`、`SelectionController` 和 `TimeControlsController`；地图生成、DataCore、SUS、native daily 的权威仍在 `MapGenerator` / `DCWorldExt` / scheduler 链路内。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的 `PLAYER_GM` 模式：顶栏按钮、反引号或 F1 打开总览/选中对象/指令/开关/记录五页管理面板，F4 切换 FPS HUD；入口只在 editor 或 debug/dev 构建创建，release 不创建面板并禁用快捷键。性能 CSV、地块 CSV 与只读经济 epoch CSV 分别由既有 `PerfRecorder`、`TileDataRecorder` 和 `EconomyDataRecorder` 生成。玩家场景挂载独立 `DataOverlayLayer`，但只使用静态 cell-index atlas + 动态 per-cell RGBA8 LUT；soak/A-B 与旧 `LEGACY_DEBUG_LAB` 的全图 overlay/迁移实验开关仍只在 debug 入口。
+`player_game.gd` 是面向玩家的轻量场景生命周期装配层。正式玩家交互由唯一的 `PlayerController` 统一编排：它负责地图点击、选中态、镜头输入转发、时间控制和正式玩家命令网关；`WorldRuntimeHost`、`MapGenerator`、`DCWorldExt` 与 scheduler 仍然拥有地图、DataCore、SUS 和 native daily 权威。玩家场景复用 `PerfMiniHUD` 和 `DebugConsole` 的 `PLAYER_GM` 模式：顶栏按钮、反引号或 F1 打开总览/选中对象/指令/开关/记录五页管理面板，F4 切换 FPS HUD；入口只在 editor 或 debug/dev 构建创建，release 不创建面板并禁用快捷键。性能 CSV、地块 CSV 与只读经济 epoch CSV 分别由既有 `PerfRecorder`、`TileDataRecorder` 和 `EconomyDataRecorder` 生成。玩家场景挂载独立 `DataOverlayLayer`，但只使用静态 cell-index atlas + 动态 per-cell RGBA8 LUT；soak/A-B 与旧 `LEGACY_DEBUG_LAB` 的全图 overlay/迁移实验开关仍只在 debug 入口。
 
 `WorldRuntimeHost` 是 GM 的稳定运行时边界：`get_gm_capabilities()` 描述白名单命令、数据页和开关，`get_gm_snapshot(section, context)` 返回带 revision 的有界快照，`execute_gm_command(id, args)` 返回结构化排队/错误结果，`set_gm_toggle(id, enabled)` 设置后再读回实际状态。`GMPanelViewModel` 只负责 `<command_id> key=value` 解析、补全、验证和固定行模型；UI 不直接写 `MapData`、DataCore SoA 或 native 对象。除时间暂停/速度外，国家与经济写操作默认排到下一游戏日，使用会话内单调 sequence 并复用 `CountryFacade` / `EconomyFacade` 的原生命令预检与冻结周期提交规则；显示货币按 `×10000`、商品按 `×1000` 转成定点整数。
 
 GM 的 `visual.fog_of_war` 开关复用 `WorldRuntimeHost.set_fog_of_war_enabled()`：它回读正式对局上下文门控后的实际状态，并通过既有 `VisionSolver -> enum_lut.a -> HexRenderer/Inspector` 链刷新，不直接改写国家 runtime。
 
-GM 的 `simulation.click_claim_territory` 是会话级操作模式。启用后，`SelectionController -> WorldRuntimeHost.set_selected_cell()` 仍先完成正常选中，再由 host 使用缓存的玩家国家 handle 包装既有 `country.transfer_territory`，按下一游戏日与单调 sequence 提交；水域、重复排队和已归属格在 GDScript 边界快速返回，其余领土约束继续由 `CountryFacade` / native 批次预检负责。
+GM 的 `simulation.click_claim_territory` 是会话级操作模式。启用后，`PlayerController -> WorldRuntimeHost.set_selected_cell()` 仍先完成正常选中，再由 host 使用缓存的玩家国家 handle 包装既有 `country.transfer_territory`，按下一游戏日与单调 sequence 提交；水域、重复排队和已归属格在 GDScript 边界快速返回，其余领土约束继续由 `CountryFacade` / native 批次预检负责。正式研究命令从 `PlayerController.request_command()` 进入，GM 命令仍是独立入口。
 
 `main.gd` 是当前 debug 主场景协调者，仍然很大。它负责：
 
@@ -89,7 +89,7 @@ world_setup.tscn
   -> DCWorldExt.bind_map_data(map)
   -> MapGenerator._setup_sus()
   -> WorldClock.day_changed
-  -> TimeControlsController
+  -> PlayerController
   -> WorldRuntimeHost.run_daily_tick()
   -> MapGenerator.sus_tick_daily()
   -> DCSystemScheduler / SUS / SusSchedulerExt
@@ -298,11 +298,11 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 - `player_game.gd`：玩家主场景装配层，负责 runtime/UI/controller wiring、基础玩家热键，以及 F1/反引号 GM 面板与 F4 性能 HUD 入口；Escape 先关闭 GM，再处理地图子菜单与暂停菜单。
 - `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、`PLAYER_GM` 面板、FPS HUD、safe area 和控制信号；不直接承担逐字段渲染。左侧 GM 面板在宽屏目标宽度 560px，在 800px 视口按右侧 460px Inspector 剩余空间收缩，二者可同时使用。
 - `ui/components/country_action_bar.gd` / `country_panel.gd` / `ui/country_view_model.gd`：底部国家事务入口与全屏 section shell。玩家国家固定由 `gameplay_start_report().cell` 解析，模型经 `CountryFacade.cell_summary()`、`research_snapshot()` 与只读 `treasury_snapshot()` 读取已提交状态；`CountryPanel` 自身只有 section 标题条与内容区，不再叠加国家档案 header、摘要卡或 section tab，section 切换只由底栏驱动。经济 section 使用 `economy_workspace.gd` 展示国家现金与全部非零国库物资，每日只修补可见值；政治/军事/外交暂用 `section_placeholder_screen.gd`，不创建任何状态或命令。`IconBadge` 继续以 Font Awesome 为默认族，并为国家事务集中提供 Lucide 导航图标与 Tabler 摘要图标。
-- `ui/technology_tree_layout.gd` / `ui/components/technology_workspace.gd` / `technology_tree_view.gd` / `research_weight_dial.gd` / `procurement_budget_slider.gd` / `technology_detail_card.gd` / `technology_queue_row.gd`：全屏科技界面。布局是纯函数一次性烘焙的静态几何；树视图单 `Control` 自绘 81 个节点，按「已揭示 ∪ 直接未知后继」裁剪迷雾并把可平移范围限制在可见集包围盒内，永远 1:1 绘制、滚轮只平移不缩放；权重盘与采购滑块拖动即预览、松手即提交，界面无任何提交按钮，权重盘的抓取区是整条轴臂、圆心为无主死区、按下未移动不发命令；日 tick 只修补状态数组与可见文本。
+- `ui/technology_tree_layout.gd` / `ui/components/technology_workspace.gd` / `technology_tree_view.gd` / `research_weight_dial.gd` / `procurement_budget_slider.gd` / `technology_detail_card.gd` / `technology_queue_row.gd`：全屏科技界面。布局是纯函数一次性烘焙的静态几何；树视图单 `Control` 自绘 81 个节点，按「已揭示 ∪ 直接未知后继」裁剪迷雾并把可平移范围限制在可见集包围盒内，永远 1:1 绘制、滚轮只平移不缩放；权重盘与采购滑块拖动即预览、松手即通过 `PlayerController.request_command()` 提交，界面无任何提交按钮，工作区不持有 CountryFacade/玩家句柄/命令序列；权重盘的抓取区是整条轴臂、圆心为无主死区、按下未移动不发命令；日 tick 只修补状态数组与可见文本。
 - `ui/components/map_overlay_toolbar.gd` / `ui/overlay_legend.gd`：左侧纯图标双列信息菜单与非交互图例。资源按钮来自 `ResourceProfileRegistry`，按钮无可见文字，名称和说明通过 Tooltip/图例呈现。图例停靠右下角，Inspector 打开时自动左移避让；连续资源使用固定 profile 参考值与低值扩展的高色差色带，海拔使用同时改变色相和亮度的高对比科学色带。
 - `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
-- `map_interaction_controller.gd` / `selection_controller.gd` / `time_controls_controller.gd`：玩家输入、选中态和时间控制器。
+- `player_controller.gd`：正式玩家输入、选中态、时间控制、镜头转发和玩家命令网关；不拥有模拟状态。`construction.build` 从选中玩家领土地块进入 `EconomyFacade`，报价只读当前页，实际结算由原生经济边界按国库物资→本格市场→国库现金原子处理，并以 sequence 对应的瞬态 receipt 回传。
 - `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
 - `info_panel_controller.gd`：右侧地块信息面板。
 - `debug_console.gd`：默认 `LEGACY_DEBUG_LAB` 保留 overlay、模拟开关、迁移实验与 Telemetry；正式玩家场景显式选择 `PLAYER_GM`，只展示白名单运营能力。GM 可见时只以 2Hz 刷新当前页并更新缓存控件，隐藏时停止计时器，不在日 tick 重建节点树。

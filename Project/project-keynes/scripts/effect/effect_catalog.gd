@@ -19,7 +19,10 @@ const PROTOCOL_VERSION := 1
 
 static func load_default() -> Resource:
 	var loaded := ResourceLoader.load(DEFAULT_PATH, "Resource")
-	return loaded if loaded != null else EffectCatalog.new()
+	if loaded != null:
+		return loaded
+	var catalog_script: Script = load("res://scripts/effect/effect_catalog.gd") as Script
+	return catalog_script.new() if catalog_script != null else null
 
 func compile_native_catalog() -> Dictionary:
 	var out := {

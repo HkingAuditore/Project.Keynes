@@ -128,6 +128,8 @@ func build(cell: HexCell) -> Dictionary:
 			{"id": "market", "label": "市场信息", "icon": "resource"},
 			{"id": "buildings", "label": "建筑", "icon": "building"},
 		])
+		if bool(country_summary.get("owned", false)):
+			tabs.append({"id": "tax", "label": "税务", "icon": "tax.section"})
 	var cards: Array = _summary_cards(temp, moist, population_summary, country_summary) \
 		if intel_visible else _out_of_sight_summary_cards(temp, moist)
 	var geography_category := _geography_information_category(cell, idx, terrain_v,
@@ -229,7 +231,8 @@ func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
 		"tab_id": tab_id,
 		"common_hash": hash(common_state),
 		"category_generation": int(population_summary.get(
-			"settlement_generation", -1)) if tab_id == "population" else -1,
+			"settlement_generation", -1)) if tab_id == "population" else \
+			int(_cell_tax_policy_version(idx)) if tab_id == "tax" else -1,
 		"population_summary": population_summary,
 	}
 
@@ -331,7 +334,9 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 		"market":
 			return _market_category(_market_snapshot(idx))
 		"buildings":
-			return _building_category(_building_snapshot(idx))
+			return _building_category(_building_snapshot(idx), idx)
+		"tax":
+			return _cell_tax_category(idx)
 		"natural_resources":
 			return _resources_category(_resource_state(
 				idx, LandformType.is_water(_landform(cell, idx)),
@@ -448,8 +453,6 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 			String(country.get("country_name", "无主之地"))],
 		"row": row,
 		"tax": _tax_slice(idx, kind, item_id, country),
-		"country_facade": _generator.get_country_facade() if _generator != null \
-			and _generator.has_method("get_country_facade") else null,
 	}
 
 
@@ -502,18 +505,25 @@ func _tax_slice(cell_idx: int, kind: String, item_id: String, country: Dictionar
 		return {"available": false, "reason": "无主之地没有税收政策"}
 	var facade = _generator.get_country_facade() if _generator != null \
 		and _generator.has_method("get_country_facade") else null
-	if facade == null or not facade.has_method("tax_policy_snapshot"):
+	if facade == null or not facade.has_method("cell_tax_policy_snapshot"):
 		return {"available": false, "reason": "税收政策暂不可用"}
 	var owner_handle := int(country.get("country_handle", 0))
-	var policy: Dictionary = facade.tax_policy_snapshot(owner_handle)
+	var policy: Dictionary = facade.cell_tax_policy_snapshot(cell_idx)
 	if not bool(policy.get("ok", false)):
 		return {"available": false,
 			"reason": String(policy.get("reason", "税收政策暂不可用"))}
-	var defaults: PackedInt32Array = policy.get("default_rates", PackedInt32Array())
+	var country_defaults: PackedInt32Array = policy.get(
+		"country_default_rates", PackedInt32Array())
+	var local_defaults: PackedInt32Array = policy.get(
+		"local_default_rates", PackedInt32Array())
+	var has_local_default: PackedByteArray = policy.get(
+		"has_local_default", PackedByteArray())
 	var items: Array = []
 	for tax_kind_value in kinds:
 		var tax_kind := String(tax_kind_value)
-		var catalog_ids := _tax_catalog_ids(policy, tax_kind)
+		var group: Dictionary = policy.get(tax_kind, {})
+		var catalog_ids: PackedStringArray = group.get(
+			"item_ids", PackedStringArray())
 		var index := -1
 		for i in range(catalog_ids.size()):
 			if String(catalog_ids[i]) == item_id:
@@ -521,13 +531,20 @@ func _tax_slice(cell_idx: int, kind: String, item_id: String, country: Dictionar
 				break
 		if index < 0:
 			continue
-		var group: Dictionary = policy.get(tax_kind, {})
-		var rates: PackedInt32Array = group.get("rates", PackedInt32Array())
+		var rates: PackedInt32Array = group.get(
+			"final_base_rates", PackedInt32Array())
 		if index >= rates.size():
 			continue
 		var effective: PackedInt32Array = group.get("effective_rates", rates)
-		var flags: PackedByteArray = group.get("has_override", PackedByteArray())
+		var flags: PackedByteArray = group.get(
+			"has_local_item", PackedByteArray())
+		var country_bases: PackedInt32Array = group.get(
+			"country_base_rates", PackedInt32Array())
 		var kind_id := int(TAX_KIND_IDS[tax_kind])
+		var inherited_rate := int(local_defaults[kind_id]) \
+			if kind_id < has_local_default.size() and has_local_default[kind_id] != 0 \
+			else (int(country_bases[index]) if index < country_bases.size() \
+				else (int(country_defaults[kind_id]) if kind_id < country_defaults.size() else 0))
 		items.append({
 			"kind": tax_kind,
 			"kind_label": String(TAX_KIND_LABELS[tax_kind]),
@@ -537,7 +554,7 @@ func _tax_slice(cell_idx: int, kind: String, item_id: String, country: Dictionar
 			"effective": int(effective[index]) if index < effective.size() \
 				else int(rates[index]),
 			"has_override": index < flags.size() and flags[index] != 0,
-			"default_rate": int(defaults[kind_id]) if kind_id < defaults.size() else 0,
+			"default_rate": inherited_rate,
 			"placeholder_note": "待跨国贸易接入：当前事件数与金额恒为零" \
 				if tax_kind == "import" or tax_kind == "export" else "",
 		})
@@ -550,11 +567,36 @@ func _tax_slice(cell_idx: int, kind: String, item_id: String, country: Dictionar
 		"editable": player_handle >= 0 and owner_handle == player_handle,
 		"country_name": String(country.get("country_name", "")),
 		"country_handle": owner_handle,
+		"cell": cell_idx,
 		"current_day": int(facade.report().get("last_committed_day", -1)) \
 			if facade.has_method("report") else -1,
 		"policy_version": int(policy.get("policy_version", -1)),
 		"items": items,
 	}
+
+
+func _cell_tax_policy_version(cell_idx: int) -> int:
+	var category := _cell_tax_category(cell_idx)
+	var policy: Dictionary = category.get("cell_tax_policy", {})
+	return int(policy.get("policy_version", -1))
+
+
+func _cell_tax_category(cell_idx: int) -> Dictionary:
+	var country := _country_summary(cell_idx)
+	if not bool(country.get("ok", false)) or not bool(country.get("owned", false)):
+		return {}
+	var facade = _generator.get_country_facade() if _generator != null \
+		and _generator.has_method("get_country_facade") else null
+	if facade == null or not facade.has_method("cell_tax_policy_snapshot"):
+		return {}
+	var policy: Dictionary = facade.cell_tax_policy_snapshot(cell_idx)
+	if not bool(policy.get("ok", false)):
+		return {}
+	policy["editable"] = int(policy.get("country_handle", 0)) == \
+		_player_country_handle()
+	policy["current_day"] = int(facade.report().get("last_committed_day", -1)) \
+		if facade.has_method("report") else -1
+	return {"cell_tax_policy": policy}
 
 
 func _tax_catalog_ids(policy: Dictionary, tax_kind: String) -> PackedStringArray:
@@ -1651,7 +1693,7 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 	}
 
 
-func _building_category(snapshot: Dictionary) -> Dictionary:
+func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "buildings_unavailable", "text": "建筑运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "building"}]}
 	if not snapshot.has("group_type_ids"):
@@ -1893,8 +1935,35 @@ func _building_category(snapshot: Dictionary) -> Dictionary:
 	return {
 		"insights": [{"id": "buildings_empty", "text": "此地块当前没有建筑。", "accent": UITokens.TEXT_MUTED, "icon": "building"}] if rows.is_empty() else [],
 		"metrics": [{"id": "building_total", "title": "建筑总数", "value": "%s 栋" % UITokens.format_compact_number_cn(float(total_count), 1), "subtitle": "%d 个业主建筑组" % group_types.size(), "accent": UITokens.ACCENT, "icon": "building"}],
+		"construction": build_construction_options(cell_idx),
 		"building_rows": rows,
 	}
+
+
+func build_construction_options(cell_idx: int, search: String = "",
+		offset: int = 0) -> Dictionary:
+	if cell_idx < 0 or _generator == null \
+			or not _generator.has_method("get_country_facade") \
+			or not _generator.has_method("get_economy_facade") \
+			or not _generator.has_method("gameplay_start_report"):
+		return {"available": false, "message": "玩家运行时尚未就绪。"}
+	var country = _generator.get_country_facade()
+	var economy = _generator.get_economy_facade()
+	var start: Dictionary = _generator.gameplay_start_report()
+	if country == null or economy == null or not bool(start.get("ok", false)):
+		return {"available": false, "message": "玩家国家尚未就绪。"}
+	var player_summary: Dictionary = country.cell_summary(int(start.get("cell", -1)))
+	var target_summary: Dictionary = country.cell_summary(cell_idx)
+	var player_handle := int(player_summary.get("country_handle", 0))
+	if player_handle == 0 or not bool(target_summary.get("owned", false)) \
+			or int(target_summary.get("country_handle", 0)) != player_handle:
+		return {"available": false, "message": "只能在玩家领土内修建建筑。"}
+	var page: Dictionary = economy.treasury_construction_options(
+		player_handle, cell_idx, search, offset, 32)
+	if not bool(page.get("ok", false)):
+		return {"available": false, "message": "暂时无法取得建造报价。"}
+	page["available"] = true
+	return page
 
 
 func _append_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int, kind: String,

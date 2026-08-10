@@ -3,10 +3,10 @@ class_name GameplayEffectSystem
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var facade: EffectFacade
+var facade = null
 var _last_report: Dictionary = {}
 
-func _init(p_facade: EffectFacade) -> void:
+func _init(p_facade) -> void:
 	id = &"gameplay_effect"
 	priority = 95
 	must_run = false

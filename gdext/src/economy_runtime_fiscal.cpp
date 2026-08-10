@@ -33,6 +33,10 @@ int8_t NativeEconomyRuntime::frozen_tax_rate(int32_t cell, int32_t kind,
         return 0;
     if (cell < 0 || cell >= static_cast<int32_t>(_epoch_cell_country.size()) ||
         item < 0) return 0;
+    if (!_epoch_cell_active_tax_mask.empty() &&
+        (_epoch_cell_active_tax_mask[static_cast<size_t>(cell)] &
+         static_cast<uint8_t>(1U << kind)) == 0)
+        return 0;
     const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
     if (country < 0 || country >= _epoch_country_count) return 0;
     const std::vector<int8_t> *rates = nullptr;
@@ -63,8 +67,62 @@ int8_t NativeEconomyRuntime::frozen_tax_rate(int32_t cell, int32_t kind,
     }
     const size_t index = static_cast<size_t>(country) * item_count +
         static_cast<size_t>(item);
-    return item < static_cast<int32_t>(item_count) && index < rates->size()
-        ? (*rates)[index] : 0;
+    if (item >= static_cast<int32_t>(item_count) || index >= rates->size())
+        return 0;
+    if (_epoch_has_cell_tax_policies &&
+        cell < static_cast<int32_t>(
+            _epoch_cell_compiled_tax_policy.size())) {
+        const uint32_t compiled_id =
+            _epoch_cell_compiled_tax_policy[static_cast<size_t>(cell)];
+        if (compiled_id > 0 &&
+            compiled_id < _epoch_compiled_cell_tax_policies.size()) {
+            const CompiledCellTaxPolicy &compiled =
+                _epoch_compiled_cell_tax_policies[compiled_id];
+            const int32_t slice_begin =
+                compiled.override_begin[static_cast<size_t>(kind)];
+            const int32_t slice_end =
+                compiled.override_end[static_cast<size_t>(kind)];
+            const int32_t slice_size = slice_end - slice_begin;
+            if (slice_size <= 8) {
+                for (int32_t cursor = slice_begin; cursor < slice_end;
+                     ++cursor) {
+                    const CompiledCellTaxOverride &entry =
+                        _epoch_compiled_cell_tax_overrides[
+                            static_cast<size_t>(cursor)];
+                    if (entry.item == item) return entry.rate;
+                    if (entry.item > item) break;
+                }
+            } else {
+                const auto begin =
+                    _epoch_compiled_cell_tax_overrides.begin() + slice_begin;
+                const auto end =
+                    _epoch_compiled_cell_tax_overrides.begin() + slice_end;
+                const auto found = std::lower_bound(
+                    begin, end, item,
+                    [](const CompiledCellTaxOverride &entry, int32_t key) {
+                        return entry.item < key;
+                    });
+                if (found != end && found->item == item) return found->rate;
+            }
+            const int32_t row_id =
+                compiled.default_row_ids[static_cast<size_t>(kind)];
+            if (row_id >= 0 && row_id < static_cast<int32_t>(
+                    _epoch_compiled_cell_tax_default_rows.size())) {
+                const CompiledCellTaxDefaultRow &row =
+                    _epoch_compiled_cell_tax_default_rows[
+                        static_cast<size_t>(row_id)];
+                if (item < row.count) {
+                    const size_t local_index =
+                        static_cast<size_t>(row.offset + item);
+                    if (local_index <
+                        _epoch_compiled_cell_tax_default_rates.size())
+                        return _epoch_compiled_cell_tax_default_rates[
+                            local_index];
+                }
+            }
+        }
+    }
+    return (*rates)[index];
 }
 
 int64_t NativeEconomyRuntime::fiscal_escrow_total() const {

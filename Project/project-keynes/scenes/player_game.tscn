@@ -7,9 +7,7 @@
 [ext_resource type="Script" uid="uid://cdia5pxf0v0uh" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
 [ext_resource type="Script" uid="uid://byvlm8cpk3u5i" path="res://scripts/game/world_runtime_host.gd" id="6_runtime"]
 [ext_resource type="Script" uid="uid://chdm47b1d80b0" path="res://scripts/ui/game_ui_manager.gd" id="7_ui"]
-[ext_resource type="Script" uid="uid://b4gxsp78rol7i" path="res://scripts/game/map_interaction_controller.gd" id="8_map_input"]
-[ext_resource type="Script" uid="uid://d0oc6ub36db5q" path="res://scripts/game/selection_controller.gd" id="9_selection"]
-[ext_resource type="Script" uid="uid://bq0d7id8sawbm" path="res://scripts/game/time_controls_controller.gd" id="10_time"]
+[ext_resource type="Script" path="res://scripts/game/player_controller.gd" id="8_player_controller"]
 [ext_resource type="Script" uid="uid://doewiqfv0iv3t" path="res://scripts/rendering/data_overlay_layer.gd" id="11_overlay"]
 [ext_resource type="PackedScene" path="res://scenes/ui/player_top_bar.tscn" id="12_top_bar"]
 [ext_resource type="PackedScene" path="res://scenes/ui/inspector_panel.tscn" id="13_inspector"]
@@ -143,13 +141,5 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="Controllers" type="Node" parent="." unique_id=1023979025]
-
-[node name="MapInteractionController" type="Node" parent="Controllers" unique_id=1963814996]
-script = ExtResource("8_map_input")
-
-[node name="SelectionController" type="Node" parent="Controllers" unique_id=340411434]
-script = ExtResource("9_selection")
-
-[node name="TimeControlsController" type="Node" parent="Controllers" unique_id=2023488763]
-script = ExtResource("10_time")
+[node name="PlayerController" type="Node" parent="." unique_id=1023979025]
+script = ExtResource("8_player_controller")

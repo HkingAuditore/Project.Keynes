@@ -168,6 +168,12 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_building_structure_gen); cap(_cell_technology_gen);
     cap(_cell_resource_gen); cap(_cell_trade_gen);
     cap(_epoch_cell_country); cap(_epoch_country_technologies);
+    cap(_epoch_cell_compiled_tax_policy);
+    cap(_epoch_cell_active_tax_mask);
+    cap(_epoch_compiled_cell_tax_policies);
+    cap(_epoch_compiled_cell_tax_overrides);
+    cap(_epoch_compiled_cell_tax_default_rows);
+    cap(_epoch_compiled_cell_tax_default_rates);
     cap(_epoch_country_building_available);
     cap(_epoch_country_good_available);
     cap(_epoch_country_profession_available);
@@ -593,6 +599,15 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _investment_gate_capital_type_skips;
     out["building_factor_cache_hits"] = _building_factor_cache_hits;
     out["building_factor_cache_misses"] = _building_factor_cache_misses;
+    out["cell_tax_compiled_policy_count"] = static_cast<int64_t>(
+        _epoch_compiled_cell_tax_policies.empty()
+            ? 0 : _epoch_compiled_cell_tax_policies.size() - 1);
+    out["cell_tax_shared_default_row_count"] = static_cast<int64_t>(
+        _epoch_compiled_cell_tax_default_rows.size());
+    out["cell_tax_compiled_override_count"] = static_cast<int64_t>(
+        _epoch_compiled_cell_tax_overrides.size());
+    out["cell_tax_cache_bytes"] = _epoch_cell_tax_cache_bytes;
+    out["cell_tax_epoch_compile_ms"] = _epoch_cell_tax_compile_ms;
     out["approximation_probe_violations"] =
         _approximation_probe_violations;
     out["approximation_probe_max_spend_error_q16"] =

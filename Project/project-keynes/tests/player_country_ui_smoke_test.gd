@@ -291,6 +291,27 @@ func _run() -> void:
 
 	# ── 地块对象详情弹窗 ─────────────────────────────────────
 	var right_panel := ui.get("_right_panel") as InspectorPanel
+	if right_panel != null:
+		right_panel.select_tab("tax")
+		await process_frame
+		var cell_tax_workspace = right_panel.get("_cell_tax_workspace")
+		_expect("owned visible cell exposes an editable Inspector tax workspace",
+			cell_tax_workspace != null and
+			bool((cell_tax_workspace.get("_model") as Dictionary).get("editable", false)))
+		_expect("Inspector tax list uses a fixed virtual row pool",
+			cell_tax_workspace != null and
+			int(cell_tax_workspace.call("pooled_row_count")) == 10)
+		if cell_tax_workspace != null:
+			var workspace_id: int = cell_tax_workspace.get_instance_id()
+			var tax_scroll := cell_tax_workspace.get("_scroll") as ScrollContainer
+			tax_scroll.scroll_vertical = 40
+			ui.refresh_selected_daily_lines(false, clock.day_index())
+			await process_frame
+			_expect("daily tax refresh reuses nodes and preserves scroll",
+				right_panel.get("_cell_tax_workspace").get_instance_id() == workspace_id and
+				tax_scroll.scroll_vertical == 40)
+		right_panel.select_tab("population")
+		await process_frame
 	var detail_dialog = ui.get("_object_detail_dialog")
 	var inspector_vm := ui.get("_inspector_view_model") as CellInspectorViewModel
 	var country_facade = ui.get("_country_facade")
@@ -325,7 +346,7 @@ func _run() -> void:
 			_expect("cohort detail payload carries all required keys",
 				cohort_payload.has("row") and cohort_payload.has("tax") \
 					and cohort_payload.has("subtitle") \
-					and cohort_payload.has("country_facade") \
+					and not cohort_payload.has("country_facade") \
 					and not sample_profession_id.is_empty())
 			var stale_payload := inspector_vm.build_object_detail(
 				selected_cell, {"kind": "cohort", "row_id": "cohort_stale_handle",

@@ -846,7 +846,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
     // Preflight the whole batch before mutating the queue.
     for (size_t i = 0; i < n; ++i) {
         if (opcodes[i] < COMMAND_TRANSFER_TO_COHORT ||
-            opcodes[i] > COMMAND_FAMILY_POPULATION_REWARD ||
+            opcodes[i] > COMMAND_TREASURY_SPONSORED_BUILD ||
             days[i] < 0 || sequences[i] < 0 ||
             (i64_0[i] < 0 && opcodes[i] != COMMAND_ADD_POPULATION)) {
             out["ok"] = false;
@@ -857,7 +857,9 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         const bool family_reward =
             opcodes[i] == COMMAND_FAMILY_FREE_BUILDING ||
             opcodes[i] == COMMAND_FAMILY_POPULATION_REWARD;
-        if (!family_reward && opcodes[i] != COMMAND_ADD_STOCK &&
+        const bool treasury_build =
+            opcodes[i] == COMMAND_TREASURY_SPONSORED_BUILD;
+        if (!family_reward && !treasury_build && opcodes[i] != COMMAND_ADD_STOCK &&
             opcodes[i] != COMMAND_REMOVE_STOCK &&
             opcodes[i] != COMMAND_COUNTRY_GOOD_TO_MARKET &&
             opcodes[i] != COMMAND_MARKET_GOOD_TO_COUNTRY) {
@@ -895,11 +897,24 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             out["index"] = static_cast<int64_t>(i);
             return out;
         }
-        if ((opcodes[i] == COMMAND_BUILD || opcodes[i] == COMMAND_DEMOLISH) &&
+        if ((opcodes[i] == COMMAND_BUILD || opcodes[i] == COMMAND_DEMOLISH ||
+             treasury_build) &&
             (i32_0[i] < 0 || i32_0[i] >= _cell_count || i32_1[i] < 0 ||
              i32_1[i] >= static_cast<int32_t>(_building_types.size()) || i64_0[i] <= 0)) {
             out["ok"] = false;
             out["reason"] = "command_building_target_invalid";
+            out["index"] = static_cast<int64_t>(i);
+            return out;
+        }
+        if (treasury_build &&
+            (i64_0[i] != 1 ||
+             i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
+             _country_runtime == nullptr ||
+             !_country_runtime->valid_handle(handles[i]))) {
+            out["ok"] = false;
+            out["reason"] = i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE
+                ? "unsupported_ownership_policy"
+                : "command_treasury_build_target_invalid";
             out["index"] = static_cast<int64_t>(i);
             return out;
         }
