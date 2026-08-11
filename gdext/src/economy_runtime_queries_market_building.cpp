@@ -565,8 +565,239 @@ Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
     out["cumulative_subsidy_requested"] =
         pack(_fiscal_cumulative_requests);
     out["cumulative_subsidy_paid"] = pack(_fiscal_cumulative_paid);
-    out["tariff_events"] = 0;
-    out["tariffs_active"] = false;
+    const size_t import_summary = static_cast<size_t>(country) *
+        NativeCountryRuntime::TAX_KIND_COUNT + NativeCountryRuntime::TAX_IMPORT;
+    const size_t export_summary = static_cast<size_t>(country) *
+        NativeCountryRuntime::TAX_KIND_COUNT + NativeCountryRuntime::TAX_EXPORT;
+    const int64_t tariff_events =
+        import_summary < _fiscal_last_events.size()
+            ? _fiscal_last_events[import_summary] : 0;
+    const int64_t export_events =
+        export_summary < _fiscal_last_events.size()
+            ? _fiscal_last_events[export_summary] : 0;
+    PackedInt64Array tariff_event_counts;
+    tariff_event_counts.resize(NativeCountryRuntime::TAX_KIND_COUNT);
+    tariff_event_counts[NativeCountryRuntime::TAX_IMPORT] = tariff_events;
+    tariff_event_counts[NativeCountryRuntime::TAX_EXPORT] = export_events;
+    out["tariff_event_counts"] = tariff_event_counts;
+    out["tariff_events"] = tariff_events + export_events;
+    out["tariffs_active"] = tariff_events > 0 || export_events > 0;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::country_trade_snapshot(
+        int64_t country_handle, const String &view, int32_t offset,
+        int32_t limit) const {
+    Dictionary out;
+    if (_country_runtime == nullptr ||
+        !_country_runtime->valid_handle(country_handle)) {
+        out["ok"] = false;
+        out["reason"] = "country_handle_invalid";
+        return out;
+    }
+    const auto found = std::find(_epoch_country_handles.begin(),
+        _epoch_country_handles.end(), static_cast<uint64_t>(country_handle));
+    if (!_configured || found == _epoch_country_handles.end()) {
+        out["ok"] = false;
+        out["reason"] = !_configured ? "economy_not_configured" :
+            "country_handle_invalid";
+        return out;
+    }
+    const int32_t country = static_cast<int32_t>(
+        found - _epoch_country_handles.begin());
+    const int32_t page_limit = std::clamp(limit, 1, 64);
+    const int32_t page_offset = std::max(0, offset);
+    out["ok"] = true;
+    out["country_handle"] = country_handle;
+    out["view"] = view;
+    out["revision"] = static_cast<int64_t>(_country_trade_revision);
+    if (view == "summary") {
+        const auto fiscal_value = [&](int32_t kind, const std::vector<int64_t> &values) {
+            const size_t index = static_cast<size_t>(country) *
+                NativeCountryRuntime::TAX_KIND_COUNT + kind;
+            return index < values.size() ? values[index] : int64_t{0};
+        };
+        const int64_t imports = fiscal_value(NativeCountryRuntime::TAX_IMPORT,
+            _fiscal_last_bases);
+        const int64_t exports = fiscal_value(NativeCountryRuntime::TAX_EXPORT,
+            _fiscal_last_bases);
+        const int64_t tariff_income = fiscal_value(
+            NativeCountryRuntime::TAX_IMPORT, _fiscal_last_collected) +
+            fiscal_value(NativeCountryRuntime::TAX_EXPORT, _fiscal_last_collected) -
+            fiscal_value(NativeCountryRuntime::TAX_IMPORT, _fiscal_last_paid) -
+            fiscal_value(NativeCountryRuntime::TAX_EXPORT, _fiscal_last_paid);
+        out["previous_import_base"] = imports;
+        out["previous_export_base"] = exports;
+        out["previous_net_export_base"] = exports - imports;
+        out["previous_tariff_net_income"] = tariff_income;
+        out["cumulative_import_base"] = fiscal_value(
+            NativeCountryRuntime::TAX_IMPORT, _fiscal_cumulative_bases);
+        out["cumulative_export_base"] = fiscal_value(
+            NativeCountryRuntime::TAX_EXPORT, _fiscal_cumulative_bases);
+        out["cumulative_tariff_net_income"] =
+            fiscal_value(NativeCountryRuntime::TAX_IMPORT,
+                _fiscal_cumulative_collected) +
+            fiscal_value(NativeCountryRuntime::TAX_EXPORT,
+                _fiscal_cumulative_collected) -
+            fiscal_value(NativeCountryRuntime::TAX_IMPORT,
+                _fiscal_cumulative_paid) -
+            fiscal_value(NativeCountryRuntime::TAX_EXPORT,
+                _fiscal_cumulative_paid);
+        return out;
+    }
+    if (view == "goods") {
+        std::vector<int32_t> fallback_rows;
+        const std::vector<int32_t> *rows = nullptr;
+        if (country < static_cast<int32_t>(_country_good_display_rows.size()) &&
+            country < static_cast<int32_t>(_country_good_display_dirty.size()) &&
+            _country_good_display_dirty[static_cast<size_t>(country)] == 0) {
+            rows = &_country_good_display_rows[static_cast<size_t>(country)];
+        } else {
+            for (int32_t i = 0; i < static_cast<int32_t>(
+                    _country_good_trade.countries.size()); ++i)
+                if (_country_good_trade.countries[i] == country)
+                    fallback_rows.push_back(i);
+            std::sort(fallback_rows.begin(), fallback_rows.end(),
+                [&](int32_t a, int32_t b) {
+                    if (_country_good_trade.goods[a] !=
+                            _country_good_trade.goods[b])
+                        return _country_good_trade.goods[a] <
+                            _country_good_trade.goods[b];
+                    return a < b;
+                });
+            rows = &fallback_rows;
+        }
+        const int32_t total = static_cast<int32_t>(rows->size());
+        const int32_t begin = std::min(page_offset, total);
+        const int32_t end = std::min(total, begin + page_limit);
+        PackedInt32Array goods;
+        PackedInt64Array imports, exports, import_base, export_base,
+            import_tariff, export_tariff, cumulative_imports,
+            cumulative_exports, cumulative_import_base, cumulative_export_base,
+            cumulative_import_tariff, cumulative_export_tariff;
+        for (int32_t p = begin; p < end; ++p) {
+            const int32_t i = (*rows)[static_cast<size_t>(p)];
+            goods.push_back(_country_good_trade.goods[i]);
+            const bool current_batch = i < static_cast<int32_t>(
+                _country_good_trade.batch_epoch.size()) &&
+                _country_good_trade.batch_epoch[i] == _epoch_id;
+            imports.push_back(current_batch ?
+                _country_good_trade.batch_import_quantity[i] : 0);
+            exports.push_back(current_batch ?
+                _country_good_trade.batch_export_quantity[i] : 0);
+            import_base.push_back(current_batch ?
+                _country_good_trade.batch_import_base[i] : 0);
+            export_base.push_back(current_batch ?
+                _country_good_trade.batch_export_base[i] : 0);
+            import_tariff.push_back(current_batch ?
+                _country_good_trade.batch_import_tariff[i] : 0);
+            export_tariff.push_back(current_batch ?
+                _country_good_trade.batch_export_tariff[i] : 0);
+            cumulative_imports.push_back(_country_good_trade.import_quantity[i]);
+            cumulative_exports.push_back(_country_good_trade.export_quantity[i]);
+            cumulative_import_base.push_back(_country_good_trade.import_base[i]);
+            cumulative_export_base.push_back(_country_good_trade.export_base[i]);
+            cumulative_import_tariff.push_back(_country_good_trade.import_tariff[i]);
+            cumulative_export_tariff.push_back(_country_good_trade.export_tariff[i]);
+        }
+        out["total"] = total;
+        out["offset"] = begin;
+        out["limit"] = page_limit;
+        out["has_more"] = end < total;
+        out["goods"] = goods;
+        out["import_quantity"] = imports;
+        out["export_quantity"] = exports;
+        out["import_base"] = import_base;
+        out["export_base"] = export_base;
+        out["import_tariff"] = import_tariff;
+        out["export_tariff"] = export_tariff;
+        out["cumulative_import_quantity"] = cumulative_imports;
+        out["cumulative_export_quantity"] = cumulative_exports;
+        out["cumulative_import_base"] = cumulative_import_base;
+        out["cumulative_export_base"] = cumulative_export_base;
+        out["cumulative_import_tariff"] = cumulative_import_tariff;
+        out["cumulative_export_tariff"] = cumulative_export_tariff;
+        return out;
+    }
+    if (view == "partners") {
+        std::vector<int32_t> fallback_rows;
+        const std::vector<int32_t> *rows = nullptr;
+        if (country < static_cast<int32_t>(
+                _country_partner_display_rows.size()) &&
+            country < static_cast<int32_t>(
+                _country_partner_display_dirty.size()) &&
+            _country_partner_display_dirty[static_cast<size_t>(country)] == 0) {
+            rows = &_country_partner_display_rows[static_cast<size_t>(country)];
+        } else {
+            for (int32_t i = 0; i < static_cast<int32_t>(
+                    _country_partner_trade.countries.size()); ++i)
+                if (_country_partner_trade.countries[i] == country)
+                    fallback_rows.push_back(i);
+            std::sort(fallback_rows.begin(), fallback_rows.end(),
+                [&](int32_t a, int32_t b) {
+                    if (_country_partner_trade.partners[a] !=
+                            _country_partner_trade.partners[b])
+                        return _country_partner_trade.partners[a] <
+                            _country_partner_trade.partners[b];
+                    return a < b;
+                });
+            rows = &fallback_rows;
+        }
+        const int32_t total = static_cast<int32_t>(rows->size());
+        const int32_t begin = std::min(page_offset, total);
+        const int32_t end = std::min(total, begin + page_limit);
+        PackedInt32Array partners;
+        PackedInt64Array partner_handles;
+        PackedInt64Array imports, exports, import_base, export_base, orders,
+            cumulative_imports, cumulative_exports, cumulative_import_base,
+            cumulative_export_base, cumulative_orders;
+        for (int32_t p = begin; p < end; ++p) {
+            const int32_t i = (*rows)[static_cast<size_t>(p)];
+            partners.push_back(_country_partner_trade.partners[i]);
+            const int32_t partner_slot = _country_partner_trade.partners[i];
+            partner_handles.push_back(
+                partner_slot >= 0 && partner_slot < static_cast<int32_t>(
+                    _epoch_country_handles.size())
+                    ? static_cast<int64_t>(_epoch_country_handles[partner_slot]) : 0);
+            const bool current_batch = i < static_cast<int32_t>(
+                _country_partner_trade.batch_epoch.size()) &&
+                _country_partner_trade.batch_epoch[i] == _epoch_id;
+            imports.push_back(current_batch ?
+                _country_partner_trade.batch_import_quantity[i] : 0);
+            exports.push_back(current_batch ?
+                _country_partner_trade.batch_export_quantity[i] : 0);
+            import_base.push_back(current_batch ?
+                _country_partner_trade.batch_import_base[i] : 0);
+            export_base.push_back(current_batch ?
+                _country_partner_trade.batch_export_base[i] : 0);
+            orders.push_back(current_batch ?
+                _country_partner_trade.batch_order_count[i] : 0);
+            cumulative_imports.push_back(_country_partner_trade.import_quantity[i]);
+            cumulative_exports.push_back(_country_partner_trade.export_quantity[i]);
+            cumulative_import_base.push_back(_country_partner_trade.import_base[i]);
+            cumulative_export_base.push_back(_country_partner_trade.export_base[i]);
+            cumulative_orders.push_back(_country_partner_trade.order_count[i]);
+        }
+        out["total"] = total;
+        out["offset"] = begin;
+        out["limit"] = page_limit;
+        out["has_more"] = end < total;
+        out["partners"] = partners;
+        out["partner_handles"] = partner_handles;
+        out["import_quantity"] = imports;
+        out["export_quantity"] = exports;
+        out["import_base"] = import_base;
+        out["export_base"] = export_base;
+        out["order_count"] = orders;
+        out["cumulative_import_quantity"] = cumulative_imports;
+        out["cumulative_export_quantity"] = cumulative_exports;
+        out["cumulative_import_base"] = cumulative_import_base;
+        out["cumulative_export_base"] = cumulative_export_base;
+        out["cumulative_order_count"] = cumulative_orders;
+        return out;
+    }
+    out["ok"] = false;
+    out["reason"] = "country_trade_view_invalid";
     return out;
 }
 
@@ -601,9 +832,12 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
 	PackedInt32Array highest_available_tiers;
 	PackedInt32Array technology_tag_offsets;
 	PackedStringArray technology_tags;
+	PackedInt32Array required_technology_tag_offsets;
+	PackedStringArray required_technology_tags;
 	PackedByteArray technology_available;
 	PackedByteArray construction_available;
 	technology_tag_offsets.push_back(0);
+	required_technology_tag_offsets.push_back(0);
     type_counts.resize(static_cast<int64_t>(_building_types.size()));
     type_counts.fill(0);
     for (const std::string &id : _building_type_ids) type_ids.push_back(String(id.c_str()));
@@ -636,6 +870,12 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
 			technology_tags.push_back(String(_building_technology_tags[k].c_str()));
 		}
 		technology_tag_offsets.push_back(technology_tags.size());
+		for (int32_t k = _building_required_technology_tag_offsets[i];
+			 k < _building_required_technology_tag_offsets[i + 1]; ++k) {
+			required_technology_tags.push_back(String(
+				_building_required_technology_tags[k].c_str()));
+		}
+		required_technology_tag_offsets.push_back(required_technology_tags.size());
 	}
     PackedInt32Array group_type_ids;
     PackedInt32Array owner_signature_ids;
@@ -958,6 +1198,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
 	out["building_highest_available_tiers"] = highest_available_tiers;
 	out["building_technology_tag_offsets"] = technology_tag_offsets;
 	out["building_technology_tags"] = technology_tags;
+	out["building_required_technology_tag_offsets"] = required_technology_tag_offsets;
+	out["building_required_technology_tags"] = required_technology_tags;
 	out["building_technology_available"] = technology_available;
 	out["building_construction_available"] = construction_available;
     out["group_type_ids"] = group_type_ids;
@@ -1487,6 +1729,22 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
         profession_owner[profession] += edge.owner_employed;
         profession_employee[profession] += edge.employee_employed;
     }
+    int64_t transit_population = 0;
+    for (size_t expedition = 0; expedition < _family_expeditions.active.size(); ++expedition) {
+        if (_family_expeditions.active[expedition] == 0 ||
+            _family_expeditions.family_handle[expedition] != handle) continue;
+        transit_population += _family_expeditions.population[expedition];
+        const uint32_t begin = _family_expeditions.payload_begin[expedition];
+        const uint32_t count = _family_expeditions.payload_count[expedition];
+        for (uint32_t p = 0; p < count; ++p) {
+            const FamilyExpeditionPayload &payload =
+                _family_expedition_payloads[begin + p];
+            if (payload.signature < 0 ||
+                payload.signature >= static_cast<int32_t>(_signatures.size())) continue;
+            const int32_t profession = _signatures[payload.signature].profession_id;
+            profession_people[profession] += payload.people;
+        }
+    }
     PackedInt32Array professions;
     PackedInt64Array people, owners, employees;
 
@@ -1534,6 +1792,7 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
     out["origin_ethnicity_id"] = _families.origin_ethnicity[index];
     out["decline_reviews"] = _families.decline_reviews[index];
     out["population"] = family_population(handle);
+    out["transit_population"] = transit_population;
     out["cash_claim"] = cash;
     out["productive_asset_value"] = asset_value;
     out["net_worth"] = cash + asset_value;
@@ -2076,16 +2335,28 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
     PackedInt32Array sources;
     PackedInt32Array destinations;
     PackedInt32Array countries;
+    PackedInt64Array source_country_handles;
+    PackedInt64Array destination_country_handles;
+    PackedInt32Array source_country_slots;
+    PackedInt32Array destination_country_slots;
     PackedInt64Array departure_days;
     PackedInt64Array arrival_days;
+    PackedInt64Array base_cash;
     PackedInt64Array cash_escrow;
     PackedInt64Array capacity_work;
+    PackedByteArray order_flags;
     PackedByteArray states;
     PackedByteArray cargo_delivered;
     PackedInt32Array line_offsets;
     PackedInt32Array line_goods;
     PackedInt64Array line_quantities;
     PackedInt32Array line_unit_prices;
+    PackedInt32Array line_destination_prices;
+    PackedInt64Array line_base_values;
+    PackedInt64Array line_retail_values;
+    PackedInt64Array line_import_transfers;
+    PackedInt64Array line_export_transfers;
+    PackedByteArray line_flags;
     line_offsets.push_back(0);
     for (int32_t order = 0; order < _trade_orders.size(); ++order) {
         const bool outbound = _trade_orders.sources[order] == cell_idx;
@@ -2097,8 +2368,18 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
         sources.push_back(_trade_orders.sources[order]);
         destinations.push_back(_trade_orders.destinations[order]);
         countries.push_back(_trade_orders.countries[order]);
+        source_country_handles.push_back(
+            static_cast<int64_t>(_trade_orders.source_country_handles[order]));
+        destination_country_handles.push_back(
+            static_cast<int64_t>(_trade_orders.destination_country_handles[order]));
+        source_country_slots.push_back(_trade_orders.source_country_slots[order]);
+        destination_country_slots.push_back(
+            _trade_orders.destination_country_slots[order]);
         departure_days.push_back(_trade_orders.departure_days[order]);
         arrival_days.push_back(_trade_orders.arrival_days[order]);
+        int64_t order_base = 0;
+        int64_t query_saturation = 0;
+        uint8_t combined_flags = 0;
         cash_escrow.push_back(_trade_orders.cash_escrow[order]);
         capacity_work.push_back(_trade_orders.capacity_work[order]);
         states.push_back(_trade_orders.states[order]);
@@ -2108,7 +2389,21 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
             line_goods.push_back(_trade_orders.line_goods[line]);
             line_quantities.push_back(_trade_orders.line_quantities[line]);
             line_unit_prices.push_back(_trade_orders.line_unit_prices[line]);
+            line_destination_prices.push_back(
+                _trade_orders.line_destination_prices[line]);
+            line_base_values.push_back(_trade_orders.line_base_values[line]);
+            line_retail_values.push_back(_trade_orders.line_retail_values[line]);
+            line_import_transfers.push_back(
+                _trade_orders.line_import_transfers[line]);
+            line_export_transfers.push_back(
+                _trade_orders.line_export_transfers[line]);
+            line_flags.push_back(_trade_orders.line_flags[line]);
+            order_base = saturating_add(order_base,
+                _trade_orders.line_base_values[line], query_saturation);
+            combined_flags |= _trade_orders.line_flags[line];
         }
+        base_cash.push_back(order_base);
+        order_flags.push_back(combined_flags);
         line_offsets.push_back(line_goods.size());
     }
     out["ok"] = true;
@@ -2121,16 +2416,28 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
     out["source_cells"] = sources;
     out["destination_cells"] = destinations;
     out["country_slots"] = countries;
+    out["source_country_handles"] = source_country_handles;
+    out["destination_country_handles"] = destination_country_handles;
+    out["source_country_slots"] = source_country_slots;
+    out["destination_country_slots"] = destination_country_slots;
     out["departure_days"] = departure_days;
     out["arrival_days"] = arrival_days;
+    out["base_cash"] = base_cash;
     out["cash_escrow"] = cash_escrow;
     out["capacity_work"] = capacity_work;
+    out["order_flags"] = order_flags;
     out["states"] = states;
     out["cargo_delivered"] = cargo_delivered;
     out["line_offsets"] = line_offsets;
     out["line_good_ids"] = line_goods;
     out["line_quantities"] = line_quantities;
     out["line_unit_prices"] = line_unit_prices;
+    out["line_destination_prices"] = line_destination_prices;
+    out["line_base_values"] = line_base_values;
+    out["line_retail_values"] = line_retail_values;
+    out["line_import_transfers"] = line_import_transfers;
+    out["line_export_transfers"] = line_export_transfers;
+    out["line_flags"] = line_flags;
     return out;
 }
 

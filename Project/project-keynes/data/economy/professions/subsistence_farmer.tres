@@ -6,4 +6,4 @@ id = &"subsistence_farmer"
 satisfaction_dimension_weights_q16 = PackedInt32Array(65536, 39322, 13107, 0, 13107, 26214, 19661, 6554)
 display_name = "自给农民"
 default_consumption_plan_id = &"survival_household"
-technology_tags = PackedStringArray("tech.pottery")
+technology_tags = PackedStringArray()

@@ -1,5 +1,12 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
+## PKEC v34（当前 writer）
+
+v34 新增 `CANAL_QUOTES=27`、`CANAL_PROJECTS=28`、`END=29`，header 保存报价/项目数和
+quote/project/receipt 的 next-id。v33 `END=27` 仍可读并迁移为空运河经济集合；DataCore
+dynamic-world 负责两个 cell 字段，PKEF 负责未 ACK 的 canal commit。详见
+[运河运行时](./canal-runtime.md)。
+
 ## 流式格式
 
 存档只能在 committed boundary 开始。每个 chunk 是独立 section：
@@ -13,7 +20,7 @@ u32 payload_bytes
 payload
 ```
 
-## PKEC v30（当前 writer）
+## PKEC v30（历史 writer）
 
 PKEC v30 保留 v29 的全部 payload 与 section 集合（END 仍为 23），只扩展三个既有 section
 的记录以持久化综合满意度权威列：

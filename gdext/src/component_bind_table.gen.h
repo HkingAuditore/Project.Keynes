@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 143
+// Schema entries: 145
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -111,6 +111,8 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_river_storage",                    "river_storage_arr",                    SlotDType::F32 },
     { "cell_groundwater_storage",              "groundwater_storage_arr",              SlotDType::F32 },
     { "cell_surface_runoff",                   "surface_runoff_arr",                   SlotDType::F32 },
+    { "cell_canal_edge_mask",                  "canal_edge_mask_arr",                  SlotDType::U8 },
+    { "cell_canal_water",                      "canal_water_arr",                      SlotDType::F32 },
     { "cell_res_timber_reserve",               "res_timber_reserve_arr",               SlotDType::F32 },
     { "cell_res_stone_reserve",                "res_stone_reserve_arr",                SlotDType::F32 },
     { "cell_res_fertile_soil_reserve",         "res_fertile_soil_reserve_arr",         SlotDType::F32 },

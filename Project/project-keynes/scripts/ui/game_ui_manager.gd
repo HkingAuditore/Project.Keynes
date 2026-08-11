@@ -13,6 +13,7 @@ signal map_overlay_cleared()
 signal pause_menu_visibility_changed(open: bool)
 signal return_main_menu_requested()
 signal exit_game_requested()
+signal era_reward_choice_requested(offer_generation: int, choice_index: int)
 
 const RIGHT_PANEL_WIDTH := 460.0
 const OVERLAY_LEGEND_WIDTH := 198.0
@@ -23,6 +24,9 @@ var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
 var _demand_detail_dialog
 var _object_detail_dialog
+var _colonization_panel: ColonizationPlannerPanel
+var _colonization_route: ColonizationRouteLayer
+var _colonization_targeting: Dictionary = {}
 var _object_detail_context: Dictionary = {}
 var _inspector_view_model: CellInspectorViewModel
 var _map: MapData
@@ -45,6 +49,7 @@ var _diagnostics_source: Node = null
 var _map_overlay_toolbar: MapOverlayToolbar
 var _map_overlay_legend: OverlayLegend
 var _pause_menu
+var _era_reward_dialog: EraRewardDialog
 var _gm_available := false
 var _debug_layer: Control
 
@@ -71,6 +76,11 @@ func set_world_context(
 	if _inspector_view_model == null:
 		_inspector_view_model = CellInspectorViewModel.new()
 	_map = map
+	if _colonization_route != null:
+		var wrap_period := float(_diagnostics_source.map_wrap_period_x()) \
+			if _diagnostics_source != null and _diagnostics_source.has_method(
+				"map_wrap_period_x") else 0.0
+		_colonization_route.set_context(map, world_clock, hex_size, wrap_period)
 	_inspector_view_model.set_context(map, generator, view_adapter, world_clock, sea_level, hex_size)
 	_invalidate_live_revision()
 	if _country_view_model == null:
@@ -87,6 +97,8 @@ func set_world_context(
 	if _demand_detail_dialog != null:
 		_demand_detail_dialog.close_dialog()
 	_close_object_detail_dialog()
+	if _colonization_panel != null:
+		_colonization_panel.close_panel()
 	if _gm_console != null:
 		_gm_console.refresh_gm_capabilities()
 	if _country_panel != null:
@@ -111,6 +123,10 @@ func set_diagnostics_source(source: Node) -> void:
 		_perf_hud.set_main(source)
 
 
+func set_colonization_route_layer(layer: ColonizationRouteLayer) -> void:
+	_colonization_route = layer
+
+
 func toggle_gm_panel() -> void:
 	if not _gm_available or _gm_console == null:
 		return
@@ -132,6 +148,12 @@ func toggle_perf_hud() -> void:
 func show_cell_panel(cell: HexCell) -> void:
 	_close_object_detail_dialog()
 	_selected_cell = cell
+	if not _colonization_targeting.is_empty():
+		var targeting := _colonization_targeting.duplicate()
+		_colonization_targeting.clear()
+		_open_colonization_target(int(cell.index),
+			int(targeting.get("family_handle", 0)),
+			int(targeting.get("source_cell", -1)))
 	_invalidate_live_revision()
 	_last_cached_panel_ms = Time.get_ticks_msec()
 	if _inspector_view_model == null or _right_panel == null:
@@ -307,9 +329,73 @@ func _on_construction_requested(request: Dictionary) -> void:
 		bool(result.get("ok", false)))
 
 
+func _open_colonization_target(target_cell: int, family_handle: int = 0,
+		source_cell: int = -1) -> void:
+	if _colonization_panel == null:
+		return
+	_close_object_detail_dialog()
+	_colonization_panel.open_target(target_cell, family_handle, source_cell)
+
+
+func _on_colonization_requested(request: Dictionary) -> void:
+	_open_colonization_target(int(request.get("target_cell", -1)))
+
+
+func _on_family_colonization_requested(family_handle: int,
+		source_cell: int) -> void:
+	_colonization_targeting = {
+		"family_handle": family_handle,
+		"source_cell": source_cell,
+	}
+	_close_object_detail_dialog()
+	if _right_panel != null:
+		_right_panel.hide()
+
+
+func _on_colonization_start_requested(args: Dictionary) -> void:
+	if _player_controller == null or _colonization_panel == null:
+		return
+	var result: Dictionary = _player_controller.request_command(
+		&"family.colonization.start", args)
+	_colonization_panel.set_feedback(String(result.get("message",
+		result.get("code", "开拓命令未能提交。"))), bool(result.get("ok", false)))
+	if bool(result.get("ok", false)) and result.has("expedition_handle"):
+		_on_expedition_selected(int(result.expedition_handle))
+
+
+func _on_colonization_cancel_requested(expedition_handle: int) -> void:
+	if _player_controller == null or _colonization_panel == null:
+		return
+	var result: Dictionary = _player_controller.request_command(
+		&"family.colonization.cancel", {"expedition_handle": expedition_handle})
+	_colonization_panel.set_feedback(String(result.get("message",
+		result.get("code", "取消命令未能提交。"))), bool(result.get("ok", false)))
+	if bool(result.get("ok", false)):
+		_on_expedition_selected(expedition_handle)
+
+
+func _on_expedition_selected(expedition_handle: int) -> void:
+	if _player_controller == null or _colonization_route == null:
+		return
+	var snapshot: Dictionary = _player_controller.get_family_expedition_snapshot(
+		expedition_handle)
+	if bool(snapshot.get("ok", false)):
+		_colonization_route.show_expedition(snapshot)
+
+
 func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
-	if id != &"construction.build" or _selected_cell == null \
-			or int(result.get("cell_idx", -1)) != int(_selected_cell.index):
+	if id == &"family.colonization.start" or \
+			id == &"family.colonization.cancel":
+		if _colonization_panel != null:
+			_colonization_panel.set_feedback(String(result.get(
+				"message", "开拓队状态已更新。")), bool(result.get("ok", true)))
+			_colonization_panel.refresh_expeditions_if_visible()
+		if _selected_cell != null and String(result.get("code", "")) == "CLAIMED":
+			refresh_selected_panel()
+		refresh_country_summary()
+		return
+	if id != &"construction.build" or _selected_cell == null or \
+			int(result.get("cell_idx", -1)) != int(_selected_cell.index):
 		return
 	refresh_selected_panel()
 	if _right_panel != null:
@@ -433,6 +519,14 @@ func map_safe_area() -> Rect2:
 
 
 func dismiss_overlay_menu() -> bool:
+	if is_era_reward_modal_open():
+		return true
+	if not _colonization_targeting.is_empty():
+		_cancel_colonization_targeting()
+		return true
+	if _colonization_panel != null and _colonization_panel.visible:
+		_colonization_panel.close_panel()
+		return true
 	if _country_panel != null and _country_panel.is_panel_open():
 		close_country_panel()
 		return true
@@ -443,8 +537,32 @@ func dismiss_overlay_menu() -> bool:
 
 
 func toggle_pause_menu() -> void:
-	if _pause_menu != null:
+	if _pause_menu != null and not is_era_reward_modal_open():
 		_pause_menu.toggle()
+
+
+func show_era_reward_offer(offer: Dictionary) -> void:
+	if _era_reward_dialog != null:
+		_era_reward_dialog.present_offer(offer)
+
+
+func show_era_reward_error(message: String) -> void:
+	if _era_reward_dialog != null:
+		_era_reward_dialog.show_error(message)
+
+
+func show_era_reward_pending() -> void:
+	if _era_reward_dialog != null:
+		_era_reward_dialog.show_pending()
+
+
+func close_era_reward_offer() -> void:
+	if _era_reward_dialog != null:
+		_era_reward_dialog.close_offer()
+
+
+func is_era_reward_modal_open() -> bool:
+	return _era_reward_dialog != null and _era_reward_dialog.is_offer_open()
 
 
 func show_exit_save_failure(action: String, result: Dictionary) -> void:
@@ -477,6 +595,8 @@ func set_player_controller(controller) -> void:
 		_right_panel.set_player_controller(controller)
 	if _object_detail_dialog != null and _object_detail_dialog.has_method("set_player_controller"):
 		_object_detail_dialog.set_player_controller(controller)
+	if _colonization_panel != null:
+		_colonization_panel.set_player_controller(controller)
 	if _player_controller != null and _player_controller.has_signal("country_committed"):
 		var callback := Callable(self, "_on_country_committed")
 		if not _player_controller.country_committed.is_connected(callback):
@@ -507,12 +627,29 @@ func _bind_ui() -> void:
 	_right_panel.object_details_requested.connect(_on_object_details_requested)
 	_right_panel.construction_page_requested.connect(_on_construction_page_requested)
 	_right_panel.construction_requested.connect(_on_construction_requested)
+	_right_panel.colonization_requested.connect(_on_colonization_requested)
 	_layout_right_panel()
 
 	_demand_detail_dialog = get_node("UIRoot/ModalLayer/DemandDetailDialog")
 	_object_detail_dialog = get_node("UIRoot/ModalLayer/ObjectDetailDialog")
 	if _object_detail_dialog.has_method("set_player_controller"):
 		_object_detail_dialog.set_player_controller(_player_controller)
+	_object_detail_dialog.colonization_requested.connect(
+		_on_family_colonization_requested)
+	_colonization_panel = get_node(
+		"UIRoot/ModalLayer/ColonizationPlannerPanel") as ColonizationPlannerPanel
+	_colonization_panel.set_player_controller(_player_controller)
+	_colonization_panel.route_requested.connect(func(detail: Dictionary) -> void:
+		if _colonization_route != null:
+			_colonization_route.show_quote(detail)
+	)
+	_colonization_panel.route_cleared.connect(func() -> void:
+		if _colonization_route != null:
+			_colonization_route.clear_route()
+	)
+	_colonization_panel.start_requested.connect(_on_colonization_start_requested)
+	_colonization_panel.cancel_requested.connect(_on_colonization_cancel_requested)
+	_colonization_panel.expedition_selected.connect(_on_expedition_selected)
 	_debug_layer = get_node("UIRoot/DebugLayer") as Control
 
 	if _gm_available:
@@ -571,6 +708,32 @@ func _bind_ui() -> void:
 		func(open: bool) -> void: pause_menu_visibility_changed.emit(open))
 	_pause_menu.return_menu_requested.connect(func() -> void: return_main_menu_requested.emit())
 	_pause_menu.exit_requested.connect(func() -> void: exit_game_requested.emit())
+	_era_reward_dialog = get_node(
+		"UIRoot/ModalLayer/EraRewardDialog") as EraRewardDialog
+	_era_reward_dialog.choice_requested.connect(
+		func(generation: int, index: int) -> void:
+			era_reward_choice_requested.emit(generation, index))
+
+
+func _cancel_colonization_targeting() -> void:
+	_colonization_targeting.clear()
+	if _colonization_route != null:
+		_colonization_route.clear_route()
+	if _selected_cell != null and _right_panel != null:
+		show_cell_panel(_selected_cell)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _colonization_targeting.is_empty():
+		return
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_ESCAPE:
+		_cancel_colonization_targeting()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and event.pressed \
+			and event.button_index == MOUSE_BUTTON_RIGHT:
+		_cancel_colonization_targeting()
+		get_viewport().set_input_as_handled()
 
 func _on_map_overlay_requested(request: Dictionary) -> void:
 	var mode := int(request.get("mode", OverlayMode.MODE.NONE))

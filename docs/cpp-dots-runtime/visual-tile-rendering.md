@@ -1,5 +1,9 @@
 # Visual Tile Rendering
 
+运河复用 height RGBA8 的 A 通道（RG=height、B=river SDF、A=canal SDF），不增加 sampler。
+运行期只重烘并上传受影响 layer 的 height/terrain_normal；每帧一层，失败保留重试，
+horizon/GI 不重算。见 [运河运行时](./canal-runtime.md)。
+
 本文描述当前地图静态视觉栅格的分块实现。目标是在不提高生成/仿真权威分辨率的前提下，
 让大地图按设备预算获得更高的地形、河流、海岸、迷雾和天气采样精度。
 

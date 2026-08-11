@@ -6,4 +6,4 @@ id = &"miner"
 satisfaction_dimension_weights_q16 = PackedInt32Array(62915, 45875, 22938, 6554, 32768, 22938, 26214, 13107)
 display_name = "矿工"
 default_consumption_plan_id = &"extractive_household"
-technology_tags = PackedStringArray("tech.gathering")
+technology_tags = PackedStringArray()

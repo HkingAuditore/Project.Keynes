@@ -88,6 +88,20 @@ func _run() -> void:
 		String(ext.get_country_cell_summary(3).country_name) == "无主之地")
 	_expect("country treasury is sparse and scaled",
 		int(ext.get_country_treasury_snapshot(alpha.country_handle).quantities[0]) == 5000)
+	var claim_ext := _new_ext(4)
+	claim_ext.configure_country(catalog, profile, 4, 1001)
+	claim_ext.bootstrap_country(packet, water)
+	var claim_country: Dictionary = claim_ext.get_country_cell_summary(0)
+	var claim_unowned := _commands([{
+		"opcode": 20, "day": 0, "sequence": 90, "handle": claim_country.country_handle,
+		"cell": 2, "aux": -1, "stable_id": "", "name": "",
+	}])
+	_expect("CLAIM_UNOWNED_TERRITORY queues through the country authority",
+		bool(claim_ext.submit_country_commands(claim_unowned).get("ok", false)))
+	_expect("claim commits only the neutral target",
+		bool(claim_ext.run_country_slice({"day_index": 0}).get("ok", false))
+		and int(claim_ext.get_country_cell_summary(2).country_handle) ==
+			int(claim_country.country_handle))
 
 	var create := _commands([{
 		"opcode": 1, "day": 0, "sequence": 1, "handle": 0,
@@ -355,7 +369,7 @@ func _run() -> void:
 	for cell_chunk in cell_save_chunks:
 		cell_restored.feed_country_restore_chunk(cell_chunk)
 	var cell_restore_result: Dictionary = cell_restored.end_country_restore()
-	_expect("PKCN v7 sparse cell policies round-trip with exact replay hash",
+	_expect("PKCN v11 sparse cell policies round-trip with exact replay hash",
 		bool(cell_restore_result.get("ok", false)) and
 		int(cell_restored.get_country_state_hash()) ==
 			int(tax_matrix_ext.get_country_state_hash()) and
@@ -425,7 +439,7 @@ func _run() -> void:
 	_expect("pending research signal command queues before PKCN capture",
 		bool(ext.submit_country_commands(pending_signal_commands).get("ok", false)))
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v7 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 7)
+	_expect("PKCN v11 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 11)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)
@@ -459,7 +473,7 @@ func _run() -> void:
 	for chunk in chunks: mismatched.feed_country_restore_chunk(chunk)
 	_expect("PKCN catalog mismatch is rejected precisely",
 		String(mismatched.end_country_restore().get("reason", "")) ==
-		"country_save_catalog_or_shape_mismatch")
+		"catalog_hash_mismatch")
 
 func _new_ext(cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

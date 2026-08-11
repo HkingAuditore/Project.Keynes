@@ -17,12 +17,14 @@ const BARYCENTRE_PASSES := 3
 const FALLBACK_DOMAIN_IDS := ["agriculture", "engineering", "science", "society"]
 
 
-static func build(definitions: Array, eras: Array, domains: Array = []) -> Dictionary:
+static func build(definitions: Array, eras: Array, domains: Array = [],
+		visual_edges: Array = []) -> Dictionary:
 	var count := definitions.size()
 	if count == 0:
 		return {"ok": false, "nodes": [], "edges": [], "bands": [],
 			"parents": [], "children": [], "content_rect": Rect2()}
 	var domain_indices := _domain_indices(definitions, domains)
+	var lane_indices := _lane_indices(definitions, domain_indices)
 	var index_by_id := {}
 	for i in range(count):
 		index_by_id[String((definitions[i] as Dictionary).get("id", ""))] = i
@@ -31,26 +33,44 @@ static func build(definitions: Array, eras: Array, domains: Array = []) -> Dicti
 	for i in range(count):
 		parents.append(PackedInt32Array())
 		children.append(PackedInt32Array())
-	var edge_pairs: Array[Vector2i] = []
+	var edge_pairs: Array[Dictionary] = []
 	# Packed arrays nested in an Array are copied on subscript, so every edge is
-	# written back explicitly instead of mutating a temporary.
-	for child in range(count):
-		var definition: Dictionary = definitions[child]
-		var sources := PackedStringArray()
-		sources.append_array(definition.get("prerequisite_ids", PackedStringArray()))
-		if bool(definition.get("is_milestone", false)):
-			sources.append_array(definition.get("milestone_candidate_ids", PackedStringArray()))
-		var child_parents := PackedInt32Array()
-		for source_id in sources:
-			var parent := int(index_by_id.get(String(source_id), -1))
-			if parent < 0 or parent == child or parent in child_parents:
+	# written back explicitly instead of mutating a temporary. Only hard edges
+	# participate in dependency depth; the other kinds are cached drawing data.
+	if not visual_edges.is_empty():
+		for edge_value in visual_edges:
+			var edge: Dictionary = edge_value
+			var parent := int(index_by_id.get(String(edge.get("from", "")), -1))
+			var child := int(index_by_id.get(String(edge.get("to", "")), -1))
+			var kind := String(edge.get("kind", ""))
+			if parent < 0 or child < 0 or parent == child \
+					or kind not in ["hard", "alternative", "application", "milestone_candidate"]:
 				continue
-			child_parents.append(parent)
+			edge_pairs.append({"from": parent, "to": child, "kind": kind})
+			if kind != "hard":
+				continue
+			var child_parents: PackedInt32Array = parents[child]
+			if not child_parents.has(parent):
+				child_parents.append(parent)
+				parents[child] = child_parents
 			var parent_children: PackedInt32Array = children[parent]
-			parent_children.append(child)
-			children[parent] = parent_children
-			edge_pairs.append(Vector2i(parent, child))
-		parents[child] = child_parents
+			if not parent_children.has(child):
+				parent_children.append(child)
+				children[parent] = parent_children
+	else:
+		for child in range(count):
+			var definition: Dictionary = definitions[child]
+			var child_parents := PackedInt32Array()
+			for source_id in definition.get("prerequisite_ids", PackedStringArray()):
+				var parent := int(index_by_id.get(String(source_id), -1))
+				if parent < 0 or parent == child or parent in child_parents:
+					continue
+				child_parents.append(parent)
+				var parent_children: PackedInt32Array = children[parent]
+				parent_children.append(child)
+				children[parent] = parent_children
+				edge_pairs.append({"from": parent, "to": child, "kind": "hard"})
+			parents[child] = child_parents
 
 	var era_order := _era_order(definitions, eras)
 	var era_slot := {}
@@ -107,7 +127,7 @@ static func build(definitions: Array, eras: Array, domains: Array = []) -> Dicti
 		})
 		band_top = band_bottom + ERA_GAP
 
-	_assign_columns(bands, positions, sizes, parents, children, domain_indices)
+	_assign_columns(bands, positions, sizes, parents, children, lane_indices)
 
 	var nodes: Array[Dictionary] = []
 	var content_rect := Rect2()
@@ -117,6 +137,7 @@ static func build(definitions: Array, eras: Array, domains: Array = []) -> Dicti
 			"index": i,
 			"rect": rect,
 			"domain": domain_indices[i],
+			"lane": lane_indices[i],
 			"is_milestone": bool((definitions[i] as Dictionary).get("is_milestone", false)),
 			"is_era_key": bool((definitions[i] as Dictionary).get("is_era_key", false)),
 			"era_index": band_indices[i],
@@ -126,12 +147,20 @@ static func build(definitions: Array, eras: Array, domains: Array = []) -> Dicti
 
 	var edges: Array[Dictionary] = []
 	for pair in edge_pairs:
+		var from := int(pair.from)
+		var to := int(pair.to)
+		var edge_kind := String(pair.kind)
+		var points := _edge_points(
+			Rect2(positions[from], sizes[from]), Rect2(positions[to], sizes[to]))
+		var bounds := Rect2(points[0], Vector2.ZERO)
+		for point in points:
+			bounds = bounds.expand(point)
 		edges.append({
-			"from": pair.x,
-			"to": pair.y,
-			"points": _edge_points(
-				Rect2(positions[pair.x], sizes[pair.x]),
-				Rect2(positions[pair.y], sizes[pair.y])),
+			"from": from,
+			"to": to,
+			"kind": edge_kind,
+			"points": points,
+			"bounds": bounds.grow(3.0),
 		})
 
 	for band in bands:
@@ -162,6 +191,24 @@ static func _domain_indices(definitions: Array, domains: Array) -> PackedInt32Ar
 		var data: Dictionary = definition
 		var resolved := order.find(String(data.get("domain_id", "")))
 		indices.append(maxi(0, resolved))
+	return indices
+
+
+static func _lane_indices(definitions: Array,
+		fallback_indices: PackedInt32Array) -> PackedInt32Array:
+	var lane_order := PackedStringArray()
+	var indices := PackedInt32Array()
+	for index in range(definitions.size()):
+		var definition: Dictionary = definitions[index]
+		var lane := String(definition.get("layout_lane", ""))
+		if lane.is_empty():
+			indices.append(fallback_indices[index])
+			continue
+		var lane_index := lane_order.find(lane)
+		if lane_index < 0:
+			lane_order.append(lane)
+			lane_index = lane_order.size() - 1
+		indices.append(lane_index)
 	return indices
 
 

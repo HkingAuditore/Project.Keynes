@@ -5,4 +5,4 @@ script = ExtResource("1")
 id = &"metallurgist"
 display_name = "冶金师"
 default_consumption_plan_id = &"artisan_household"
-technology_tags = PackedStringArray("tech.bronze_casting")
+technology_tags = PackedStringArray()

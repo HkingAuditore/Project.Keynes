@@ -1,8 +1,13 @@
 # Native Modifier Runtime
 
-科技树通过永久 `UNIQUE_SOURCE` Country Modifier 提供四领域研究效率、研究成本、科研机构
-与五部门产出、施工成本/时间和国内贸易能力效果。完成节点先 pending，次日应用 Modifier
-成功后才发布完成标签；详见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。
+科技树通过永久 `UNIQUE_SOURCE` Country Modifier 提供四领域研究效率、研究成本、科研机构、
+五部门、生产家族与精确建筑类型产出、施工/贸易和旱涝寒热适应效果。完成节点先 pending，Effect
+中的 Modifier 与 `technology.adopted` 等全部命令 ACK 后才发布完成标签；详见
+[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。
+当前 360 节点目录显式作者化 381 个 term；不再根据路线标签批量推导全国部门效果。每个非开局
+节点保留 1-3 个真实消费者条款，生产家族或同一精确建筑累计不超过 +125%，全国部门/研究/贸易
+累计不超过 +50%，且含泛化全国条款的节点不超过非开局节点的 20%。所有泛化条款都与一个
+生产家族或精确建筑效果配对。
 
 本文是 Project.Keynes 全域 Modifier Runtime 的当前实现主说明。代码、测试、
 架构文档和 `project-keynes-modifier-runtime` Skill 与本文不一致时，变更不能交付。
@@ -44,6 +49,8 @@ dense ID。运行时查询只使用 dense ID；存档、journal 和 explain 使�
 | --- | --- | --- | --- |
 | `climate.cell.radiative_target` | Climate | `[0, 1]` | climate Pass-A |
 | `country.economy_output_factor` | Country | `[0, 16]` | country epoch snapshot |
+| `country.output.family.<id>_factor` | Country | `[0, 3]` | frozen country×family building output |
+| `country.output.building.<id>_factor` | Country | `[0, 3]` | frozen country×building-type output |
 | `economy.building.output_factor` | Economy | `[0, 16]` | building output helper |
 | `economy.city.output_factor` | Economy | `[0, 8]` | settlement epoch output cache |
 | `economy.city.birth_factor` | Economy | `[0, 4]` | household demography |
@@ -143,8 +150,8 @@ add/factor 数组，worker 只读取 POD，不访问 Godot API 或可变 store�
 ### Country 与 Economy
 
 `NativeCountryRuntime::EconomySnapshot` 发布 generation-safe country handles。Economy 在
-`capture_country_epoch()` 中把 `country.economy_output_factor` 转成 Q16 数组，并为每个
-BuildingGroup 缓存 generation-safe identity 和组合后的 output factor。
+`capture_country_epoch()` 中把国家总产出、部门、科研机构、生产家族和精确建筑类型因子转成
+连续 Q16 数组，并为每个 BuildingGroup 缓存 generation-safe identity 和组合后的 output factor。
 
 `effective_building_output_quantity()` 是统一定点入口：先计算 base、building days 和
 utilization，再乘冻结的 country/building 组合因子。实际生产、工资可负担性、生存产量、
@@ -179,8 +186,8 @@ active/peak/bucket/query/bucket read/rebuild/snapshot version、事件计数和�
 
 | section/schema | 内容 |
 | --- | --- |
-| PKCN v7 | Country authority, national/cell tax policy + Country Modifier domain blob + native Effect ingress idempotency |
-| PKEC v31 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section + native Effect ingress idempotency |
+| PKCN v11 | Country authority, technology/research-signal identity, national/cell tax policy + Country Modifier domain blob + native Effect ingress idempotency |
+| PKEC v34 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section + native Effect ingress idempotency + canal projects/quotes |
 | PKCM v1 | Climate Modifier domain |
 | PKGP v1 | Gameplay identity/base SoA + Gameplay Modifier domain |
 
@@ -199,8 +206,8 @@ environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/
 
 `tests/modifier_runtime_test.gd` 覆盖 apply/remove/expiry、stack refresh、global/group/entity、
 UNIQUE_SOURCE、stale handle、零 factor、Gameplay base/effective、journal v2、report 诊断和四域 round-trip。
-`country_runtime_test.gd` 验证 PKCN v7；`family_runtime_test.gd` 与
-`building_runtime_test.gd` 验证 PKEC v31 save/restore 与状态哈希。
+`country_runtime_test.gd` 验证 PKCN v11；`family_runtime_test.gd` 与
+`building_runtime_test.gd` 验证 PKEC v34 save/restore 与状态哈希。
 正式 `PK_GAME_SAVE_ROUNDTRIP_TEST=1` 也已通过新建世界、PKSV 保存/恢复、authority hash
 对齐和恢复后首个经济周期。两套大型 economy suite 的 v20 存档断言虽通过，但各仍有 4 个
 既有 catalog/平衡断言失败，整体退出码为 1，不能把它们列为全绿门禁。

@@ -355,18 +355,18 @@ func _run() -> void:
 		family_handle, 0, 64).get("total", 0))
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v30 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 30)
+	_expect("PKEC v34 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 34)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("PKEC v30 save completes", not chunks.is_empty()
+	_expect("PKEC v34 save completes", not chunks.is_empty()
 		and bool(ext.end_economy_save().get("ok", false)))
 	var legacy_chunk := chunks[0].duplicate()
-	legacy_chunk[4] = 29
+	legacy_chunk[4] = 31
 	legacy_chunk[5] = 0
 	var legacy := _new_ext(catalog)
 	_expect("legacy restore country bootstraps", _configure_country(
@@ -375,10 +375,10 @@ func _run() -> void:
 		catalog, profile, 1, 260801).get("ok", false)))
 	legacy.begin_economy_restore()
 	var legacy_result: Dictionary = legacy.feed_economy_restore_chunk(legacy_chunk)
-	_expect("PKEC v29 and earlier return an explicit incompatibility error",
+	_expect("PKEC v31 and earlier return an explicit incompatibility error",
 		not bool(legacy_result.get("ok", true))
 		and String(legacy_result.get("reason", ""))
-			== "economy_save_v29_or_earlier_unsupported")
+			== "economy_save_v31_or_earlier_unsupported")
 	var restored := _new_ext(catalog)
 	_expect("restore country bootstraps", _configure_country(
 		restored, catalog, 260801))
@@ -389,7 +389,7 @@ func _run() -> void:
 		_expect("restore chunk accepted", bool(
 			restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	var restore_end: Dictionary = restored.end_economy_restore()
-	_expect("PKEC v29 restores family and important-person authority",
+	_expect("PKEC v34 restores family and important-person authority",
 		bool(restore_end.get("ok", false))
 		and int(restore_end.get("restored_families", 0)) == 1
 		and int(restore_end.get("restored_persons", 0)) == person_count_before

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"sharecropper"
+display_name = "分成佃农"
+default_consumption_plan_id = &"agrarian_household"
+profession_class_id = &"farmer"
+semantic_tags = PackedStringArray("agriculture", "tenant", "sharecropping")
+technology_tags = PackedStringArray("institution.sharecropping")
+satisfaction_dimension_weights_q16 = PackedInt32Array(65536, 39322, 13107, 0, 19661, 26214, 26214, 6554)

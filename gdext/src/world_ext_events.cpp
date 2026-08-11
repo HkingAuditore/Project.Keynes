@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "economy_runtime.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -21,6 +22,7 @@ constexpr int PK_EVENT_ECONOMY_EPOCH_COMMITTED = 5;
 constexpr int PK_EVENT_ECONOMY_CONSTRUCTION_COMPLETED = 6;
 constexpr int PK_EVENT_ECONOMY_TRADE_ARRIVED = 7;
 constexpr int PK_EVENT_ECONOMY_SOCIAL_PRESSURE = 8;
+constexpr int PK_EVENT_TARIFF_SUBSIDY_INTENT = 15;
 
 constexpr int PK_EVENT_SOURCE_NATIVE = 1;
 constexpr int PK_EVENT_SOURCE_GDSCRIPT = 2;
@@ -33,6 +35,7 @@ constexpr int PK_EFFECT_GAMEPLAY_DOMAIN = 3;
 constexpr int PK_EFFECT_PUBLISH_DOMAIN = 4;
 constexpr int PK_EFFECT_CUSTOM_DOMAIN = 6;
 constexpr int PK_EFFECT_CUSTOM_AUDIT_OPCODE = 1;
+constexpr int PK_EFFECT_CUSTOM_CANAL_COMMIT_OPCODE = 2;
 
 constexpr int PK_PAYLOAD_NONE = 0;
 constexpr int PK_PAYLOAD_SUCCESSION_V1 = 1; // i0=old_veg, i1=new_veg
@@ -43,6 +46,9 @@ constexpr int PK_PAYLOAD_ECONOMY_TRADE_V1 = 4; // i0=source, i1=destination, i2=
 // value=population-weighted composite Q16, entity_id=population, flags=1 when
 // the level fell.
 constexpr int PK_PAYLOAD_SOCIAL_PRESSURE_V1 = 5;
+// cell=destination, entity_id=order, value=quantity; i0=source,
+// i1=source country slot, i2=destination country slot, i3=good.
+constexpr int PK_PAYLOAD_ECONOMY_TRADE_V2 = 8;
 
 static int64_t event_i64_at(const PackedInt64Array &arr, int idx, int64_t fallback) {
     return (idx >= 0 && idx < arr.size()) ? arr[idx] : fallback;
@@ -149,7 +155,8 @@ bool DCWorldExt::submit_effect_gameplay_commands_pod(
             source.domain == PK_EFFECT_PUBLISH_DOMAIN && source.opcode > 0;
         const bool custom_audit = source.action == PK_EFFECT_ACTION_CUSTOM_DOMAIN &&
             source.domain == PK_EFFECT_CUSTOM_DOMAIN &&
-            source.opcode == PK_EFFECT_CUSTOM_AUDIT_OPCODE;
+            (source.opcode == PK_EFFECT_CUSTOM_AUDIT_OPCODE ||
+             source.opcode == PK_EFFECT_CUSTOM_CANAL_COMMIT_OPCODE);
         if ((!gameplay && !publish && !custom_audit) || source.effective_day < 0 ||
             source.idempotency_key == 0) {
             error = source.action == PK_EFFECT_ACTION_PUBLISH_EVENT
@@ -235,6 +242,27 @@ Dictionary DCWorldExt::run_gameplay_effects(int64_t day_index) {
             ++committed;
             continue;
         }
+        if (command.action == PK_EFFECT_ACTION_CUSTOM_DOMAIN &&
+            command.domain == PK_EFFECT_CUSTOM_DOMAIN &&
+            command.opcode == PK_EFFECT_CUSTOM_CANAL_COMMIT_OPCODE) {
+            std::string commit_error;
+            if (!commit_canal_effect(command.target_handle,
+                    command.target_generation, command.idempotency_key,
+                    commit_error)) {
+                result.complete = 1;
+                result.ok = 0;
+                result.reason = commit_error.empty()
+                    ? "canal_commit_failed" : commit_error;
+                ++rejected;
+                continue;
+            }
+            _effect_gameplay_event_ids.emplace(command.idempotency_key, -1);
+            result.complete = 1;
+            result.ok = 1;
+            result.reason.clear();
+            ++committed;
+            continue;
+        }
         if (_gameplay_max_events <= 0 ||
             static_cast<int32_t>(_gameplay_events.size()) >= _gameplay_max_events) {
             result.complete = 1;
@@ -273,6 +301,116 @@ Dictionary DCWorldExt::run_gameplay_effects(int64_t day_index) {
     out["done"] = _effect_gameplay_commands.empty();
     out["stage"] = "gameplay_effect";
     out["path"] = "GAMEPLAY_EFFECT";
+    return out;
+}
+
+bool DCWorldExt::commit_canal_effect(
+        uint64_t project_handle, uint32_t project_generation,
+        uint64_t idempotency_key, std::string &error) {
+    if (idempotency_key == 0 || project_handle == 0 || project_generation == 0) {
+        error = "canal_commit_identity_invalid";
+        return false;
+    }
+    if (_canal_commit_idempotency.find(idempotency_key) !=
+            _canal_commit_idempotency.end()) return true;
+    if (_economy_runtime == nullptr || !_bound) {
+        error = "canal_commit_runtime_unavailable";
+        return false;
+    }
+    const int mask_sid = component_id(StringName("cell_canal_edge_mask"));
+    const int water_sid = component_id(StringName("cell_canal_water"));
+    if (mask_sid < 0 || mask_sid >= _slots.size() || water_sid < 0 ||
+        water_sid >= _slots.size() || _slots[mask_sid].dtype != SlotDType::U8 ||
+        _slots[water_sid].dtype != SlotDType::F32) {
+        error = "canal_commit_slots_unavailable";
+        return false;
+    }
+    std::vector<int32_t> route_cells;
+    std::vector<int32_t> route_dirs;
+    uint64_t topology_hash = 0;
+    NativeEconomyRuntime *runtime =
+        static_cast<NativeEconomyRuntime *>(_economy_runtime);
+    if (!runtime->canal_project_commit_payload(project_handle,
+            project_generation, route_cells, route_dirs, topology_hash, error))
+        return false;
+    if (route_cells.size() < 2 || route_cells.size() > 33 ||
+        route_dirs.size() + 1 != route_cells.size()) {
+        error = "canal_commit_route_shape_invalid";
+        return false;
+    }
+    PackedByteArray next_mask = _slots[mask_sid].arr_u8;
+    const int32_t cell_count = next_mask.size();
+    if (topology_hash == 0 || runtime->canal_topology_hash() != topology_hash) {
+        error = "canal_commit_topology_stale";
+        return false;
+    }
+    if (_map_data == nullptr ||
+        !_map_data->has_method(StringName("neighbor_indices_packed"))) {
+        error = "canal_commit_neighbors_unavailable";
+        return false;
+    }
+    const Variant neighbor_variant = _map_data->call(
+        StringName("neighbor_indices_packed"));
+    if (neighbor_variant.get_type() != Variant::PACKED_INT32_ARRAY) {
+        error = "canal_commit_neighbors_invalid";
+        return false;
+    }
+    const PackedInt32Array neighbors = neighbor_variant;
+    if (neighbors.size() != cell_count * 6) {
+        error = "canal_commit_neighbors_invalid";
+        return false;
+    }
+    const int32_t *neighbor_ptr = neighbors.ptr();
+    std::unordered_set<int32_t> unique_cells;
+    for (size_t edge = 0; edge < route_dirs.size(); ++edge) {
+        const int32_t from = route_cells[edge];
+        const int32_t to = route_cells[edge + 1];
+        const int32_t direction = route_dirs[edge];
+        if (from < 0 || from >= cell_count || to < 0 || to >= cell_count ||
+            from == to || direction < 0 || direction >= 6 ||
+            neighbor_ptr[from * 6 + direction] != to ||
+            neighbor_ptr[to * 6 + ((direction + 3) % 6)] != from ||
+            !unique_cells.insert(from).second) {
+            error = "canal_commit_route_invalid";
+            return false;
+        }
+    }
+    if (!unique_cells.insert(route_cells.back()).second) {
+        error = "canal_commit_route_repeats_cell";
+        return false;
+    }
+    uint8_t *mask = next_mask.ptrw();
+    for (size_t edge = 0; edge < route_dirs.size(); ++edge) {
+        const int32_t from = route_cells[edge];
+        const int32_t to = route_cells[edge + 1];
+        const int32_t direction = route_dirs[edge];
+        const int32_t reverse = (direction + 3) % 6;
+        mask[from] = static_cast<uint8_t>(mask[from] | (1U << direction));
+        mask[to] = static_cast<uint8_t>(mask[to] | (1U << reverse));
+    }
+    // One assignment publishes the fully validated route to the slot. No
+    // consumer can observe a half-built canal.
+    _slots.write[mask_sid].arr_u8 = next_mask;
+    _flush_slot_to_map(mask_sid);
+    if (!runtime->refresh_canal_topology(next_mask.ptr(),
+            _slots[water_sid].arr_f32.ptr(), cell_count, error)) return false;
+    ++_canal_topology_generation;
+    _canal_visual_dirty_cells.insert(_canal_visual_dirty_cells.end(),
+        route_cells.begin(), route_cells.end());
+    std::sort(_canal_visual_dirty_cells.begin(), _canal_visual_dirty_cells.end());
+    _canal_visual_dirty_cells.erase(std::unique(_canal_visual_dirty_cells.begin(),
+        _canal_visual_dirty_cells.end()), _canal_visual_dirty_cells.end());
+    _canal_commit_idempotency.insert(idempotency_key);
+    (void)topology_hash;
+    return true;
+}
+
+PackedInt32Array DCWorldExt::consume_canal_visual_dirty_cells() {
+    PackedInt32Array out;
+    out.resize(static_cast<int64_t>(_canal_visual_dirty_cells.size()));
+    for (int64_t i = 0; i < out.size(); ++i)
+        out.set(i, _canal_visual_dirty_cells[static_cast<size_t>(i)]);
+    _canal_visual_dirty_cells.clear();
     return out;
 }
 
@@ -321,6 +459,7 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     types["ECONOMY_CONSTRUCTION_COMPLETED"] = PK_EVENT_ECONOMY_CONSTRUCTION_COMPLETED;
     types["ECONOMY_TRADE_ARRIVED"] = PK_EVENT_ECONOMY_TRADE_ARRIVED;
     types["ECONOMY_SOCIAL_PRESSURE"] = PK_EVENT_ECONOMY_SOCIAL_PRESSURE;
+    types["TARIFF_SUBSIDY_INTENT"] = PK_EVENT_TARIFF_SUBSIDY_INTENT;
     schema["types"] = types;
 
     Dictionary sources;
@@ -335,6 +474,7 @@ Dictionary DCWorldExt::get_gameplay_event_schema() const {
     payloads["ECONOMY_EPOCH_V1"] = PK_PAYLOAD_ECONOMY_EPOCH_V1;
     payloads["ECONOMY_CONSTRUCTION_V1"] = PK_PAYLOAD_ECONOMY_CONSTRUCTION_V1;
     payloads["ECONOMY_TRADE_V1"] = PK_PAYLOAD_ECONOMY_TRADE_V1;
+    payloads["ECONOMY_TRADE_V2"] = PK_PAYLOAD_ECONOMY_TRADE_V2;
     payloads["SOCIAL_PRESSURE_V1"] = PK_PAYLOAD_SOCIAL_PRESSURE_V1;
     schema["payload_schemas"] = payloads;
     schema["fields"] = Array::make(
@@ -607,7 +747,10 @@ Dictionary DCWorldExt::replay_gameplay_events(Dictionary opts) const {
 Dictionary DCWorldExt::snapshot_gameplay_event_journal(Dictionary opts) const {
     Dictionary replay_opts = opts;
     Dictionary out = replay_gameplay_events(replay_opts);
-    out["version"] = 3;
+    // v4 permits event_id == -1 for custom gameplay-domain commits (canals).
+    // Those commands mutate authoritative slots instead of appending a normal
+    // GameplayEventRecord, but still need durable idempotency evidence.
+    out["version"] = 4;
     out["next_event_id"] = _gameplay_next_event_id;
     out["dropped_event_count"] = _gameplay_dropped_event_count;
     out["first_dropped_event_id"] = _gameplay_first_dropped_event_id;
@@ -645,9 +788,10 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
     _effect_gameplay_results.clear();
     _effect_gameplay_idempotency.clear();
     _effect_gameplay_event_ids.clear();
+    _canal_commit_idempotency.clear();
     _effect_gameplay_next_request_id = 1;
     const int version = int(snapshot.get("version", 2));
-    if (version != 2 && version != 3) {
+    if (version != 2 && version != 3 && version != 4) {
         Dictionary invalid;
         invalid["ok"] = false;
         invalid["reason"] = "gameplay_journal_schema_unsupported";
@@ -719,8 +863,10 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
             const uint64_t key = static_cast<uint64_t>(effect_keys[i]);
             const int64_t request = effect_requests[i];
             const int64_t event = effect_events[i];
-            if (key == 0 || request <= 0 || event <= 0 ||
-                event_set.find(event) == event_set.end() ||
+            const bool custom_commit = version >= 4 && event == -1;
+            if (key == 0 || request <= 0 ||
+                (!custom_commit && (event <= 0 ||
+                    event_set.find(event) == event_set.end())) ||
                 !_effect_gameplay_idempotency.emplace(key, request).second ||
                 !_effect_gameplay_event_ids.emplace(key, event).second ||
                 !_effect_gameplay_results.emplace(request,
@@ -730,6 +876,7 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
                 invalid["reason"] = "gameplay_effect_idempotency_invalid";
                 return invalid;
             }
+            if (custom_commit) _canal_commit_idempotency.insert(key);
             _effect_gameplay_next_request_id = std::max(
                 _effect_gameplay_next_request_id, request + 1);
         }
@@ -749,6 +896,7 @@ Dictionary DCWorldExt::clear_gameplay_events(Dictionary opts) {
     _effect_gameplay_results.clear();
     _effect_gameplay_idempotency.clear();
     _effect_gameplay_event_ids.clear();
+    _canal_commit_idempotency.clear();
     _effect_gameplay_next_request_id = 1;
     if (!keep_cursors) {
         _gameplay_consumer_ack.clear();

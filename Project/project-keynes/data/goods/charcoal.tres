@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"charcoal"
+display_name = "木炭"
+category_id = &"solid_fuel"
+substitution_category_ids = PackedStringArray("solid_fuel", "smelting_fuel")
+technology_tags = PackedStringArray("industry.energy", "tech.charcoal_burning")
+default_price = 9000
+min_price = 900
+max_price = 90000
+

@@ -177,6 +177,8 @@ void fragment() {
 	// sampler2D 兜底成 4×4 白纹理，flow 会恒为 1，整片陆地被混上河水色。
 	float flow_raw = visual_sample_flow(uv).r;
 	scals.g = has_flow_tex ? flow_raw : 0.0;
+	// Same texture/sampler: height.A is the artificial-canal SDF.
+	scals.b = visual_sample_height(uv).a;
 	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
 	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。

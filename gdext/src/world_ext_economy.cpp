@@ -118,6 +118,8 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         // dynamic terrain lane.  In particular, seasonal sea-ice flips must
         // not invalidate and rebuild the route plan every economy cycle.
         const int terrain_sid = component_id(StringName("cell_base_terrain"));
+        const int canal_mask_sid = component_id(StringName("cell_canal_edge_mask"));
+        const int canal_water_sid = component_id(StringName("cell_canal_water"));
         const Variant neighbor_variant = _map_data->call(
             StringName("neighbor_indices_packed"));
         const Variant passable_variant = _map_data->call(
@@ -125,7 +127,11 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         const Variant cost_variant = _map_data->call(
             StringName("economy_trade_move_cost_lut"));
         if (terrain_sid >= 0 && terrain_sid < _slots.size() &&
+            canal_mask_sid >= 0 && canal_mask_sid < _slots.size() &&
+            canal_water_sid >= 0 && canal_water_sid < _slots.size() &&
             _slots[terrain_sid].dtype == SlotDType::U8 &&
+            _slots[canal_mask_sid].dtype == SlotDType::U8 &&
+            _slots[canal_water_sid].dtype == SlotDType::F32 &&
             neighbor_variant.get_type() == Variant::PACKED_INT32_ARRAY &&
             passable_variant.get_type() == Variant::PACKED_BYTE_ARRAY &&
             cost_variant.get_type() == Variant::PACKED_INT32_ARRAY) {
@@ -137,7 +143,10 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                 costs.size() == 256) {
                 std::string topology_error;
                 if (!runtime->capture_trade_topology(neighbors.ptr(),
-                        _slots[terrain_sid].arr_u8.ptr(), passable.ptr(), costs.ptr(),
+                        _slots[terrain_sid].arr_u8.ptr(),
+                        _slots[canal_mask_sid].arr_u8.ptr(),
+                        _slots[canal_water_sid].arr_f32.ptr(),
+                        passable.ptr(), costs.ptr(),
                         count, 0, topology_error)) {
                     Dictionary out;
                     out["ok"] = false;
@@ -147,6 +156,14 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                     out["stage"] = "trade_topology_snapshot";
                     out["fatal_reason"] = String(topology_error.c_str());
                     return out;
+                }
+                if (_canal_topology_generation == 0) {
+                    const PackedByteArray &mask = _slots[canal_mask_sid].arr_u8;
+                    for (int32_t cell = 0; cell < mask.size(); ++cell) {
+                        if ((mask[cell] & 0x3fU) != 0)
+                            _canal_visual_dirty_cells.push_back(cell);
+                    }
+                    _canal_topology_generation = 1;
                 }
             }
         }
@@ -336,11 +353,23 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                 }
             } else if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_TRADE_ARRIVED) {
                 event_type = 7;
-                payload_schema = 4;
+                payload_schema = 8;
+            } else if (fact.kind ==
+                    NativeEconomyRuntime::GAMEPLAY_FACT_TARIFF_SUBSIDY_INTENT) {
+                event_type = 15;
+                payload_schema = 8;
             } else if (fact.kind ==
                     NativeEconomyRuntime::GAMEPLAY_FACT_SOCIAL_PRESSURE) {
                 event_type = 8;
                 payload_schema = 5;
+            } else if (fact.kind ==
+                    NativeEconomyRuntime::GAMEPLAY_FACT_TECHNOLOGY_PRACTICE) {
+                event_type = 14;
+                payload_schema = 7;
+            } else if (fact.kind ==
+                    NativeEconomyRuntime::GAMEPLAY_FACT_TECHNOLOGY_CONTACT) {
+                event_type = 16;
+                payload_schema = 7;
             }
             if (event_type == 0) continue;
             if (_emit_gameplay_event(day_index, 9, event_type, 1, fact.flags,
@@ -454,6 +483,13 @@ Dictionary DCWorldExt::get_country_fiscal_snapshot(int64_t handle) const {
     return runtime_from(_economy_runtime)->fiscal_snapshot(handle);
 }
 
+Dictionary DCWorldExt::get_country_trade_snapshot(
+        int64_t handle, const String &view, int offset, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->country_trade_snapshot(
+        handle, view, offset, limit);
+}
+
 Dictionary DCWorldExt::get_trade_orders_for_cell(
         int cell_idx, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
@@ -474,8 +510,11 @@ Dictionary DCWorldExt::capture_economy_trade_topology(
         return out;
     }
     std::string error;
+    std::vector<uint8_t> empty_canal(static_cast<size_t>(terrain.size()), 0);
+    std::vector<float> empty_water(static_cast<size_t>(terrain.size()), 0.0f);
     const bool ok = runtime_from(_economy_runtime)->capture_trade_topology(
-        neighbor_indices.ptr(), terrain.ptr(), trade_passable_lut.ptr(),
+        neighbor_indices.ptr(), terrain.ptr(), empty_canal.data(), empty_water.data(),
+        trade_passable_lut.ptr(),
         trade_move_cost_lut.ptr(), terrain.size(), static_cast<uint64_t>(generation), error);
     out["ok"] = ok;
     if (!ok) out["reason"] = String(error.c_str());
@@ -595,6 +634,108 @@ Dictionary DCWorldExt::get_family_branches(
     if (_economy_runtime == nullptr) return unavailable();
     return runtime_from(_economy_runtime)->family_branches(
         family_handle, offset, limit);
+}
+
+Dictionary DCWorldExt::get_canal_route_quote(
+        int64_t country_handle, int start_cell, int end_cell,
+        const PackedInt32Array &waypoints) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->canal_route_quote(
+        country_handle, start_cell, end_cell, waypoints);
+}
+
+Dictionary DCWorldExt::get_canal_route_quote_detail(
+        int64_t country_handle, int64_t quote_token) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->canal_route_quote_detail(
+        country_handle, quote_token);
+}
+
+Dictionary DCWorldExt::queue_canal_construction(
+        int64_t country_handle, int64_t quote_token,
+        int64_t effective_day, int64_t sequence) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->queue_canal_construction(
+        country_handle, quote_token, effective_day, sequence);
+}
+
+Dictionary DCWorldExt::get_canal_construction_receipts(
+        int64_t country_handle, int64_t after_receipt_id, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->canal_construction_receipts(
+        country_handle, after_receipt_id, limit);
+}
+
+Dictionary DCWorldExt::get_family_colonization_quotes(
+        int64_t country_handle, int target_cell, int64_t family_filter,
+        int source_filter, int offset, int limit) {
+    if (_economy_runtime == nullptr || _map_data == nullptr) return unavailable();
+    const Variant visible_variant = _map_data->get(StringName("visible_arr"));
+    if (visible_variant.get_type() != Variant::PACKED_BYTE_ARRAY) {
+        Dictionary out; out["ok"] = false;
+        out["code"] = "colonization_visibility_unavailable"; return out;
+    }
+    const PackedByteArray visible = visible_variant;
+    const uint64_t revision = static_cast<uint64_t>(static_cast<int64_t>(
+        _map_data->get(StringName("vision_revision"))));
+    return runtime_from(_economy_runtime)->family_colonization_quotes(
+        country_handle, target_cell, family_filter, source_filter, offset,
+        limit, visible.ptr(), visible.size(), revision);
+}
+
+Dictionary DCWorldExt::get_family_colonization_quote_detail(
+        int64_t quote_token) const {
+    return _economy_runtime == nullptr ? unavailable() :
+        runtime_from(_economy_runtime)->family_colonization_quote_detail(
+            quote_token);
+}
+
+Dictionary DCWorldExt::start_family_colonization(
+        int64_t country_handle, int64_t family_handle, int source_cell,
+        int target_cell, int64_t population, int64_t quote_token,
+        int64_t effective_day, int64_t sequence) {
+    if (_economy_runtime == nullptr || _map_data == nullptr) return unavailable();
+    const Variant visible_variant = _map_data->get(StringName("visible_arr"));
+    if (visible_variant.get_type() != Variant::PACKED_BYTE_ARRAY) {
+        Dictionary out; out["ok"] = false;
+        out["code"] = "colonization_visibility_unavailable"; return out;
+    }
+    const PackedByteArray visible = visible_variant;
+    const uint64_t revision = static_cast<uint64_t>(static_cast<int64_t>(
+        _map_data->get(StringName("vision_revision"))));
+    return runtime_from(_economy_runtime)->submit_family_colonization_start(
+        country_handle, family_handle, source_cell, target_cell, population,
+        quote_token, effective_day, sequence, visible.ptr(), visible.size(),
+        revision);
+}
+
+Dictionary DCWorldExt::cancel_family_colonization(
+        int64_t country_handle, int64_t expedition_handle,
+        int64_t effective_day, int64_t sequence) {
+    return _economy_runtime == nullptr ? unavailable() :
+        runtime_from(_economy_runtime)->submit_family_colonization_cancel(
+            country_handle, expedition_handle, effective_day, sequence);
+}
+
+Dictionary DCWorldExt::get_family_expeditions(
+        int64_t country_handle, int offset, int limit) const {
+    return _economy_runtime == nullptr ? unavailable() :
+        runtime_from(_economy_runtime)->family_expeditions(
+            country_handle, offset, limit);
+}
+
+Dictionary DCWorldExt::get_family_expedition_snapshot(
+        int64_t country_handle, int64_t expedition_handle) const {
+    return _economy_runtime == nullptr ? unavailable() :
+        runtime_from(_economy_runtime)->family_expedition_snapshot(
+            country_handle, expedition_handle);
+}
+
+Dictionary DCWorldExt::get_family_colonization_receipts(
+        int64_t country_handle, int64_t after_receipt_id, int limit) const {
+    return _economy_runtime == nullptr ? unavailable() :
+        runtime_from(_economy_runtime)->family_colonization_receipts(
+            country_handle, after_receipt_id, limit);
 }
 
 Dictionary DCWorldExt::get_family_branch_effects(

@@ -721,6 +721,12 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     float   * const __restrict OUT_ALPHA = (!use_next_outputs && weather_transition_enabled && s_walpha != nullptr) ? s_walpha->arr_f32.ptrw() : nullptr;
     uint8_t * const __restrict OUT_FIN   = use_next_outputs ? nullptr : s_wfin.arr_u8.ptrw();
 
+    if (start_idx == 0) {
+        _advance_and_stamp_cyclones(knobs, n_cells, NB, POS, TERR, TR, WX, WY,
+                                    WSPD, PV, s_wins.arr_f32.ptr(), PREV_CNV,
+                                    nullptr);
+    }
+
     // ─── 计时 (返回给调用方做对账，charter §0 铁律 3) ──────────────────
     auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -957,6 +963,14 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
 
         float wind_x = WX[i];
         float wind_y = WY[i];
+        const bool cyclone_forced = i < int(_cyclone_force_tag.size()) &&
+            _cyclone_force_tag[static_cast<size_t>(i)] == _cyclone_force_generation;
+        const float cyclone_lift = cyclone_forced
+            ? _cyclone_force_lift[static_cast<size_t>(i)] : 0.0f;
+        if (cyclone_forced) {
+            wind_x += _cyclone_force_x[static_cast<size_t>(i)];
+            wind_y += _cyclone_force_y[static_cast<size_t>(i)];
+        }
         const float wlen2 = wind_x * wind_x + wind_y * wind_y;
         float wind_dx, wind_dy;
         if (wlen2 < 0.0001f) {
@@ -1162,12 +1176,19 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                                      * wf_smoothstep(0.56f, 0.76f, temp) * 0.75f;
             }
         }
+        if (bool(knobs.get("thermal_monsoon_enabled",
+                _native_runtime_config.get("thermal_monsoon_enabled", false))) &&
+            i < int(_phys_monsoon_thermal.size())) {
+            coastal_monsoon_flux *= std::max(
+                0.0f, _phys_monsoon_thermal[static_cast<size_t>(i)]);
+        }
         float dynamic_forcing = frontogenesis;
         const float convergence_forcing = convergence * 0.65f;
         if (convergence_forcing > dynamic_forcing) dynamic_forcing = convergence_forcing;
         if (convective > dynamic_forcing) dynamic_forcing = convective;
         if (ocean_convective > dynamic_forcing) dynamic_forcing = ocean_convective;
         if (coastal_monsoon_flux > dynamic_forcing) dynamic_forcing = coastal_monsoon_flux;
+        if (cyclone_lift > dynamic_forcing) dynamic_forcing = cyclone_lift;
         if (stratiform > dynamic_forcing) dynamic_forcing = stratiform;  // Stage11 冷区层状降水
         // Stage12「让天气移动」: ψ>0(气旋/低压)在所有纬度加抬升(base)+斜压带额外强化(锋面)→移动的雨系统;
         // ψ 随流场平流→雨带跟着移动。Stage9 的纯斜压门控改为 base + 斜压 bonus(热带也吃 base,接受适度热带变率)。
@@ -1210,6 +1231,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                          + convective * field_thermal_conv_cond
                          + ocean_convective * 0.90f
                          + stratiform * 0.75f
+                         + cyclone_lift * 1.10f
                          + psi_lift * 1.20f;     // 方案③+ 0.90→1.20 ψ 致凝结(移动涡旋成云,主导)
         if (cond_force < 0.0f) cond_force = 0.0f;
         else if (cond_force > 1.0f) cond_force = 1.0f;
@@ -1249,6 +1271,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
                           + lift_pos * 1.20f
                           + frontogenesis * 0.55f
                           + ocean_convective * 0.35f;
+        instability += cyclone_lift * 0.45f;
         if (instability < 0.0f) instability = 0.0f;
         else if (instability > 1.0f) instability = 1.0f;
 
@@ -1263,6 +1286,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         trig += convective * field_thermal_conv_precip;   // 对流雨高效成雨，旁路 autoconv 瓶颈(内陆 cw 少)
         trig += ocean_convective * 0.95f;
         trig += stratiform * 0.80f;   // Stage11 层状降水高效成雨(冷/高/水区,旁路 autoconv)→修 #4湖/#5a雪/#6山
+        trig += cyclone_lift * 0.75f;
         trig += psi_lift * 1.50f;     // 方案③+ 1.10→1.50 ψ 致雨主驱动(降水成片随 ψ 平移,盖过静止 lift)
         trig += oro_elev * 0.18f * wf_smoothstep(0.02f, 0.10f, cloud_water);  // 弱化固定地形转化，保留迎风坡但不锁死雨核
         trig *= psi_supp;             // Stage14 ψ<0 压低降水→移动晴空
@@ -1444,6 +1468,9 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             ocean_an, wind_len, temp_anom_i,
             std::max(onshore_moist_flux, coastal_monsoon_flux),
             cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls);
+        if (cyclone_lift >= 0.58f && on_water) {
+            wt = uint8_t(std::clamp(int(knobs.get("cyclone_storm_type_id", 2)), 0, 255));
+        }
         if (!wf_is_precip_weather_type(wt) && precip > 0.0f) {
             vapor += precip * 0.65f;
             if (vapor > 1.0f) vapor = 1.0f;
@@ -3695,6 +3722,135 @@ Dictionary DCWorldExt::run_weather_summary_fronts_pass(const Dictionary &knobs) 
 //
 // 知识库笔记（front_advect.gd 注释）：扰动 key 必须用 q*10000+r，不是
 // summary_qr_to_idx 的 (q<<32)^r 编码，否则 GDScript 镜像 bit-not-equal。
+void DCWorldExt::_advance_and_stamp_cyclones(
+        const Dictionary &knobs, int n_cells, const int32_t *neighbors,
+        const Vector2 *positions, const uint8_t *terrain, const float *temp,
+        const float *wind_x, const float *wind_y, const float *wind_speed,
+        const float *vapor, const float *instability, const float *convergence,
+        const float *lat_norm) {
+    const bool enabled = bool(knobs.get("native_tropical_cyclone_enabled",
+        _native_runtime_config.get("native_tropical_cyclone_enabled", false)));
+    if (!enabled || n_cells <= 0 || neighbors == nullptr || positions == nullptr ||
+        terrain == nullptr || temp == nullptr || wind_x == nullptr || wind_y == nullptr ||
+        wind_speed == nullptr || vapor == nullptr || instability == nullptr || convergence == nullptr) return;
+    if (_cyclone_force_tag.size() != static_cast<size_t>(n_cells)) {
+        _cyclone_force_tag.assign(static_cast<size_t>(n_cells), 0u);
+        _cyclone_visit_tag.assign(static_cast<size_t>(n_cells), 0u);
+        _cyclone_force_x.assign(static_cast<size_t>(n_cells), 0.0f);
+        _cyclone_force_y.assign(static_cast<size_t>(n_cells), 0.0f);
+        _cyclone_force_lift.assign(static_cast<size_t>(n_cells), 0.0f);
+    }
+    if (++_cyclone_force_generation == 0u) {
+        std::fill(_cyclone_force_tag.begin(), _cyclone_force_tag.end(), 0u);
+        std::fill(_cyclone_visit_tag.begin(), _cyclone_visit_tag.end(), 0u);
+        _cyclone_force_generation = 1u;
+    }
+    _cyclone_last_touched_cells = 0;
+    const float dt_total = dc_clampf(float(knobs.get("weather_transition_dt_days", 1.0)), 0.0f, 30.0f);
+    const int steps = std::max(1, int(std::ceil(dt_total)));
+    const float dt = dt_total / float(steps);
+    const float wb_y = float(knobs.get("world_bounds_pos_y", 0.0));
+    const float wb_h = std::max(0.001f, float(knobs.get("world_bounds_size_y", 1.0)));
+    const float wrap_x = std::max(0.0f, float(knobs.get("weather_wrap_width_x", 0.0)));
+    const int max_radius = std::clamp(int(knobs.get("tropical_cyclone_max_radius_cells",
+        _native_runtime_config.get("tropical_cyclone_max_radius_cells", 5))), 2, 6);
+    for (CycloneWakeEntry &e : _cyclone_perturbations) {
+        for (int step = 0; step < steps; ++step) {
+            const int i = e.cell_idx;
+            if (i < 0 || i >= n_cells) { e.intensity = 0.0f; break; }
+            const float ny = dc_clampf((positions[i].y - wb_y) / wb_h, 0.0f, 1.0f);
+            const float signed_lat = (ny - 0.5f) * 2.0f;
+            float shear = 0.0f;
+            for (int d = 0; d < 6; ++d) {
+                const int ni = neighbors[i * 6 + d];
+                if (ni < 0) continue;
+                const float dx = wind_x[ni] - wind_x[i], dy = wind_y[ni] - wind_y[i];
+                shear = std::max(shear, std::sqrt(dx * dx + dy * dy) / 2.0f);
+            }
+            const bool on_water = wf_is_water_terrain(terrain[i]);
+            const float potential = wf_smoothstep(0.54f, 0.76f, temp[i])
+                * wf_smoothstep(0.42f, 0.72f, vapor[i])
+                * (0.35f + 0.65f * std::max(instability[i], convergence[i]))
+                * (1.0f - dc_clampf(shear, 0.0f, 1.0f)) * (on_water ? 1.0f : 0.15f);
+            e.intensity += (potential - e.intensity) * (on_water ? 0.16f : 0.38f) * dt;
+            if (temp[i] < 0.50f) e.intensity -= (0.50f - temp[i]) * 0.35f * dt;
+            e.intensity = dc_clampf(e.intensity, 0.0f, 1.0f);
+            e.age_days += dt;
+            Vector2 guide(wind_x[i] - 0.12f * std::abs(signed_lat), wind_y[i]);
+            if (guide.length_squared() > 1e-5f) guide = guide.normalized();
+            else guide = e.steering.length_squared() > 1e-5f ? e.steering.normalized() : Vector2(-1.0f, 0.0f);
+            e.steering = e.steering.lerp(guide, 0.35f).normalized();
+            e.move_progress += dt * (0.25f + dc_clampf(wind_speed[i], 0.0f, 1.5f) * 0.35f);
+            if (e.move_progress >= 1.0f) {
+                int best = -1; float best_dot = 0.10f;
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = neighbors[i * 6 + d]; if (ni < 0) continue;
+                    float dx = positions[ni].x - positions[i].x;
+                    if (wrap_x > 0.0f) dx = pk_wrap_min_image_dx(dx, wrap_x);
+                    const float dy = positions[ni].y - positions[i].y;
+                    const float len2 = dx * dx + dy * dy; if (len2 <= 1e-6f) continue;
+                    const float dot = (dx * e.steering.x + dy * e.steering.y) / std::sqrt(len2);
+                    if (dot > best_dot) { best_dot = dot; best = ni; }
+                }
+                if (best >= 0) e.cell_idx = best;
+                e.move_progress -= 1.0f;
+            }
+        }
+        e.radius_cells = dc_clampf(2.0f + e.intensity * float(max_radius - 2), 2.0f, float(max_radius));
+        e.days_left = std::max(0, int(std::ceil(32.0f - e.age_days)));
+        e.init_days = 32;
+    }
+    const size_t before = _cyclone_perturbations.size();
+    _cyclone_perturbations.erase(std::remove_if(_cyclone_perturbations.begin(), _cyclone_perturbations.end(),
+        [](const CycloneWakeEntry &e) { return e.intensity < 0.075f || e.age_days > 32.0f; }),
+        _cyclone_perturbations.end());
+    _cyclone_total_decay += int(before - _cyclone_perturbations.size());
+    std::vector<int32_t> queue;
+    std::vector<int8_t> distance;
+    queue.reserve(256); distance.reserve(256);
+    uint32_t visit_generation = _cyclone_force_generation;
+    for (const CycloneWakeEntry &e : _cyclone_perturbations) {
+        if (e.cell_idx < 0 || e.cell_idx >= n_cells) continue;
+        if (++visit_generation == 0u) { std::fill(_cyclone_visit_tag.begin(), _cyclone_visit_tag.end(), 0u); visit_generation = 1u; }
+        queue.clear(); distance.clear(); queue.push_back(e.cell_idx); distance.push_back(0);
+        _cyclone_visit_tag[static_cast<size_t>(e.cell_idx)] = visit_generation;
+        const int radius = std::clamp(int(std::ceil(e.radius_cells)), 2, max_radius);
+        for (size_t head = 0; head < queue.size(); ++head) {
+            const int i = queue[head], dist = int(distance[head]);
+            const float falloff = 1.0f - float(dist) / float(radius + 1);
+            if (_cyclone_force_tag[static_cast<size_t>(i)] != _cyclone_force_generation) {
+                _cyclone_force_tag[static_cast<size_t>(i)] = _cyclone_force_generation;
+                _cyclone_force_x[static_cast<size_t>(i)] = 0.0f;
+                _cyclone_force_y[static_cast<size_t>(i)] = 0.0f;
+                _cyclone_force_lift[static_cast<size_t>(i)] = 0.0f;
+                ++_cyclone_last_touched_cells;
+            }
+            float dx = positions[i].x - positions[e.cell_idx].x;
+            if (wrap_x > 0.0f) dx = pk_wrap_min_image_dx(dx, wrap_x);
+            const float dy = positions[i].y - positions[e.cell_idx].y;
+            Vector2 tangent;
+            if (dx * dx + dy * dy > 1e-6f) {
+                const float ny = dc_clampf((positions[e.cell_idx].y - wb_y) / wb_h, 0.0f, 1.0f);
+                const float hemi = ny < 0.5f ? 1.0f : -1.0f;
+                tangent = Vector2(-dy * hemi, dx * hemi).normalized();
+            } else tangent = Vector2(-e.steering.y, e.steering.x);
+            const float force = e.intensity * falloff * 0.62f;
+            _cyclone_force_x[static_cast<size_t>(i)] += tangent.x * force;
+            _cyclone_force_y[static_cast<size_t>(i)] += tangent.y * force;
+            _cyclone_force_lift[static_cast<size_t>(i)] = std::max(_cyclone_force_lift[static_cast<size_t>(i)], e.intensity * falloff);
+            if (dist >= radius) continue;
+            for (int d = 0; d < 6; ++d) {
+                const int ni = neighbors[i * 6 + d];
+                if (ni < 0 || _cyclone_visit_tag[static_cast<size_t>(ni)] == visit_generation) continue;
+                _cyclone_visit_tag[static_cast<size_t>(ni)] = visit_generation;
+                queue.push_back(ni); distance.push_back(int8_t(dist + 1));
+            }
+        }
+    }
+    for (CycloneWakeEntry &e : _cyclone_perturbations) { e.vec = e.steering * e.intensity; e.vec_init = e.vec; }
+    (void)lat_norm;
+}
+
 double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
                                      const Array &fronts_from_summary) {
     using godot::StringName;
@@ -3738,13 +3894,32 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
     const int cyclone_wake_days = int(knobs.get("cyclone_wake_days", 7));
     const int storm_type_id = int(knobs.get("cyclone_storm_type_id", -1));
     const int n_cells = int(knobs.get("n_cells", 0));
+    const bool native_entity_enabled = bool(knobs.get("native_tropical_cyclone_enabled",
+        _native_runtime_config.get("native_tropical_cyclone_enabled", false)));
+    const int cyclone_capacity = std::clamp(int(knobs.get("tropical_cyclone_capacity",
+        _native_runtime_config.get("tropical_cyclone_capacity", 24))), 1, 64);
+    const int births_per_commit = std::clamp(int(knobs.get("tropical_cyclone_births_per_commit",
+        _native_runtime_config.get("tropical_cyclone_births_per_commit", 2))), 1, 4);
+    const float min_temp = dc_clampf(float(knobs.get("tropical_cyclone_min_temp",
+        _native_runtime_config.get("tropical_cyclone_min_temp", 0.58))), 0.0f, 1.0f);
+    const float min_instability = dc_clampf(float(knobs.get("tropical_cyclone_min_instability",
+        _native_runtime_config.get("tropical_cyclone_min_instability", 0.40))), 0.0f, 1.0f);
+    const float max_shear = dc_clampf(float(knobs.get("tropical_cyclone_max_shear",
+        _native_runtime_config.get("tropical_cyclone_max_shear", 0.42))), 0.0f, 1.0f);
+    const float min_lat = dc_clampf(float(knobs.get("tropical_cyclone_min_lat",
+        _native_runtime_config.get("tropical_cyclone_min_lat", 0.06))), 0.0f, 1.0f);
+    const float max_lat = dc_clampf(float(knobs.get("tropical_cyclone_max_lat",
+        _native_runtime_config.get("tropical_cyclone_max_lat", 0.40))), min_lat, 1.0f);
+    const float wb_y = float(knobs.get("world_bounds_pos_y", 0.0));
+    const float wb_h = std::max(0.001f, float(knobs.get("world_bounds_size_y", 1.0)));
     PackedByteArray  water_ids = knobs.get("water_terrain_ids", PackedByteArray());
     PackedInt32Array cell_q    = knobs.get("cell_q_arr", PackedInt32Array());
     PackedInt32Array cell_r    = knobs.get("cell_r_arr", PackedInt32Array());
+    PackedInt32Array neighbor_idx = knobs.get("neighbor_indices", PackedInt32Array());
 
     // ─── Phase 1: 衰减 / 淘汰 ───────────────────────────────────────────
     // 等价 GDScript: days_left -= 1；<=0 删除；否则 vec = vec_init * days_left/init_days
-    {
+    if (!native_entity_enabled) {
         auto t_p1_0 = std::chrono::high_resolution_clock::now();
         size_t write = 0;
         for (size_t read = 0; read < _cyclone_perturbations.size(); ++read) {
@@ -3778,6 +3953,8 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
     const int sid_w_precip = component_id(StringName("cell_weather_precip"));
     const int sid_w_cloud = component_id(StringName("cell_weather_cloud"));
     const int sid_w_conv = component_id(StringName("cell_weather_convergence"));
+    const int sid_wx = component_id(StringName("cell_wind_x"));
+    const int sid_wy = component_id(StringName("cell_wind_y"));
     if (sid_terrain < 0 || n_cells <= 0 || water_ids.size() <= 0 ||
         cell_q.size() < n_cells || cell_r.size() < n_cells ||
         storm_type_id < 0 || cyclone_wake_days <= 0 ||
@@ -3793,6 +3970,8 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
     Slot &s_w_precip = _slots.write[sid_w_precip];
     Slot &s_w_cloud = _slots.write[sid_w_cloud];
     Slot &s_w_conv = _slots.write[sid_w_conv];
+    Slot *s_wx = sid_wx >= 0 ? &_slots.write[sid_wx] : nullptr;
+    Slot *s_wy = sid_wy >= 0 ? &_slots.write[sid_wy] : nullptr;
     if (int(s_terrain.arr_u8.size()) < n_cells ||
         int(s_temp.arr_f32.size()) < n_cells ||
         int(s_w_inst.arr_f32.size()) < n_cells ||
@@ -3809,6 +3988,9 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
     const float * const W_PRECIP = s_w_precip.arr_f32.ptr();
     const float * const W_CLOUD = s_w_cloud.arr_f32.ptr();
     const float * const W_CONV = s_w_conv.arr_f32.ptr();
+    const float * const WIND_X = s_wx != nullptr && s_wx->arr_f32.size() >= n_cells ? s_wx->arr_f32.ptr() : nullptr;
+    const float * const WIND_Y = s_wy != nullptr && s_wy->arr_f32.size() >= n_cells ? s_wy->arr_f32.ptr() : nullptr;
+    const int32_t * const NB_GEN = neighbor_idx.size() >= n_cells * 6 ? neighbor_idx.ptr() : nullptr;
 
     // is_water LUT（与 summary / sea_ice / wind 同模式）
     bool is_water_lut[256];
@@ -3858,6 +4040,7 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
     {
         auto t_p2_0 = std::chrono::high_resolution_clock::now();
         for (int fi = 0; fi < n_fronts; ++fi) {
+            if (native_entity_enabled && n_injected >= births_per_commit) break;
             const Dictionary f = fronts_from_summary[fi];
             const int ftype = int(f.get("type", -1));
             if (ftype != storm_type_id) continue;
@@ -3871,12 +4054,25 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
             if (idx < 0 || idx >= n_cells) continue;
             if (!is_water_lut[TERR[idx]]) continue;
 
+            const float abs_lat = std::abs((center.y - wb_y) / wb_h * 2.0f - 1.0f);
+            if (native_entity_enabled && (abs_lat < min_lat || abs_lat > max_lat)) continue;
+            if (native_entity_enabled && WIND_X != nullptr && WIND_Y != nullptr && NB_GEN != nullptr) {
+                float shear = 0.0f;
+                for (int d = 0; d < 6; ++d) {
+                    const int ni = NB_GEN[idx * 6 + d];
+                    if (ni < 0) continue;
+                    const float dx = WIND_X[ni] - WIND_X[idx], dy = WIND_Y[ni] - WIND_Y[idx];
+                    shear = std::max(shear, std::sqrt(dx * dx + dy * dy) / 2.0f);
+                }
+                if (shear > max_shear) continue;
+            }
+
             Vector2 wind = f.get("velocity", Vector2());
             const float front_speed_norm = wind.length() / std::max(hex_size, 0.001f);
-            if (T[idx] < 0.56f) continue;
+            if (T[idx] < (native_entity_enabled ? min_temp : 0.56f)) continue;
             if (W_PRECIP[idx] < 0.05f) continue;
             if (W_CLOUD[idx] < 0.22f) continue;
-            if (W_INST[idx] < 0.48f && W_CONV[idx] < 0.30f) continue;
+            if (W_INST[idx] < (native_entity_enabled ? min_instability : 0.48f) && W_CONV[idx] < 0.30f) continue;
             if (front_speed_norm < 0.16f && intensity < 0.82f) continue;
             if (wind.length_squared() < 1e-4f) {
                 wind = Vector2(1.0f, 0.0f);
@@ -3895,6 +4091,11 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
                     e.vec_init  = perturb;
                     e.days_left = cyclone_wake_days;
                     e.init_days = cyclone_wake_days;
+                    if (native_entity_enabled) {
+                        e.steering = wind.normalized();
+                        e.intensity = std::max(e.intensity, intensity);
+                        e.radius_cells = 2.0f + intensity * 3.0f;
+                    }
                     replaced = true;
                     break;
                 }
@@ -3902,15 +4103,27 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
             if (replaced) {
                 ++n_replaced;
             } else {
+                if (native_entity_enabled && int(_cyclone_perturbations.size()) >= cyclone_capacity) continue;
                 CycloneWakeEntry ne;
+                ne.stable_id = _cyclone_next_stable_id++;
                 ne.key       = key_gd;
                 ne.cell_idx  = idx;
                 ne.vec       = perturb;
                 ne.vec_init  = perturb;
                 ne.days_left = cyclone_wake_days;
                 ne.init_days = cyclone_wake_days;
+                if (native_entity_enabled) {
+                    ne.steering = wind.normalized();
+                    ne.intensity = intensity;
+                    ne.radius_cells = 2.0f + intensity * 3.0f;
+                    ne.age_days = 0.0f;
+                    ne.move_progress = 0.0f;
+                    ne.days_left = 32;
+                    ne.init_days = 32;
+                }
                 _cyclone_perturbations.push_back(ne);
                 ++n_injected;
+                if (native_entity_enabled) ++_cyclone_total_genesis;
             }
         }
         auto t_p2_1 = std::chrono::high_resolution_clock::now();
@@ -3935,6 +4148,136 @@ Dictionary DCWorldExt::get_cyclone_perturbations_dict() const {
         // key 用 int64 —— GDScript Dictionary 接受 int key（自动 Variant::INT）
         out[godot::Variant(int64_t(e.key))] = d;
     }
+    return out;
+}
+
+Dictionary DCWorldExt::get_active_cyclone_snapshot() const {
+    Dictionary out;
+    Array entries;
+    entries.resize(int(_cyclone_perturbations.size()));
+    for (int i = 0; i < int(_cyclone_perturbations.size()); ++i) {
+        const CycloneWakeEntry &e = _cyclone_perturbations[static_cast<size_t>(i)];
+        Dictionary d;
+        d["stable_id"] = int64_t(e.stable_id);
+        d["cell_idx"] = e.cell_idx;
+        d["steering"] = e.steering;
+        d["intensity"] = e.intensity;
+        d["radius_cells"] = e.radius_cells;
+        d["age_days"] = e.age_days;
+        d["days_left"] = e.days_left;
+        entries[i] = d;
+    }
+    out["count"] = entries.size();
+    out["capacity"] = int(_native_runtime_config.get("tropical_cyclone_capacity", 24));
+    out["cyclones"] = entries;
+    return out;
+}
+
+Dictionary DCWorldExt::get_climate_modes_report() const {
+    Dictionary out;
+    out["thermal_monsoon_enabled"] = bool(_native_runtime_config.get("thermal_monsoon_enabled", false));
+    out["monsoon_eligible_cells"] = _monsoon_eligible_cells;
+    out["monsoon_onshore_cells"] = _monsoon_onshore_cells;
+    out["monsoon_offshore_cells"] = _monsoon_offshore_cells;
+    out["monsoon_contrast_abs_max"] = _monsoon_contrast_abs_max;
+    out["monsoon_coast_cache_hit"] = _phys_wind_coast_last_hit;
+    out["monsoon_coast_cache_build_ms"] = _phys_wind_coast_build_ms;
+    out["enso_enabled"] = bool(_native_runtime_config.get("enso_basin_modes_enabled", false));
+    out["enso_basin_count"] = int(_enso_states.size());
+    out["enso_cache_hit"] = _enso_cache_last_hit;
+    out["enso_cache_build_ms"] = _enso_cache_build_ms;
+    Array basins;
+    basins.resize(int(_enso_states.size()));
+    for (int i = 0; i < int(_enso_states.size()); ++i) {
+        const EnsoBasinState &s = _enso_states[static_cast<size_t>(i)];
+        Dictionary d;
+        d["signature"] = int64_t(s.signature);
+        d["temp_index"] = s.temp_index;
+        d["recharge_index"] = s.recharge_index;
+        d["wind_anomaly"] = s.wind_anomaly;
+        d["member_count"] = i < int(_enso_basins.size()) ? _enso_basins[static_cast<size_t>(i)].member_count : 0;
+        basins[i] = d;
+    }
+    out["enso_basins"] = basins;
+    out["cyclone_enabled"] = bool(_native_runtime_config.get("native_tropical_cyclone_enabled", false));
+    out["cyclone_active_count"] = int(_cyclone_perturbations.size());
+    out["cyclone_touched_cells"] = _cyclone_last_touched_cells;
+    out["cyclone_total_genesis"] = _cyclone_total_genesis;
+    out["cyclone_total_decay"] = _cyclone_total_decay;
+    return out;
+}
+
+Dictionary DCWorldExt::capture_climate_modes_state() const {
+    Dictionary out;
+    out["schema"] = String("PKClimateModes");
+    out["version"] = 1;
+    out["next_cyclone_id"] = int64_t(_cyclone_next_stable_id);
+    Array basins;
+    for (const EnsoBasinState &s : _enso_states) {
+        Dictionary d;
+        d["signature"] = int64_t(s.signature);
+        d["temp_index"] = s.temp_index;
+        d["recharge_index"] = s.recharge_index;
+        d["wind_ema"] = s.wind_ema;
+        d["wind_anomaly"] = s.wind_anomaly;
+        d["last_update_tick"] = s.last_update_tick;
+        basins.append(d);
+    }
+    out["enso_basins"] = basins;
+    Array cyclones;
+    for (const CycloneWakeEntry &e : _cyclone_perturbations) {
+        Dictionary d;
+        d["stable_id"] = int64_t(e.stable_id);
+        d["key"] = e.key;
+        d["cell_idx"] = e.cell_idx;
+        d["steering"] = e.steering;
+        d["intensity"] = e.intensity;
+        d["radius_cells"] = e.radius_cells;
+        d["age_days"] = e.age_days;
+        d["move_progress"] = e.move_progress;
+        cyclones.append(d);
+    }
+    out["cyclones"] = cyclones;
+    out["total_genesis"] = _cyclone_total_genesis;
+    out["total_decay"] = _cyclone_total_decay;
+    return out;
+}
+
+Dictionary DCWorldExt::restore_climate_modes_state(const Dictionary &state) {
+    Dictionary out;
+    if (String(state.get("schema", String())) != String("PKClimateModes") || int(state.get("version", 0)) != 1) {
+        out["ok"] = false;
+        out["code"] = String("climate_modes_schema_mismatch");
+        return out;
+    }
+    _climate_modes_pending_restore = state.duplicate(true);
+    _cyclone_perturbations.clear();
+    Array cyclones = state.get("cyclones", Array());
+    const int capacity = std::clamp(int(_native_runtime_config.get("tropical_cyclone_capacity", 24)), 1, 64);
+    for (int i = 0; i < cyclones.size() && int(_cyclone_perturbations.size()) < capacity; ++i) {
+        Dictionary d = cyclones[i];
+        CycloneWakeEntry e;
+        e.stable_id = uint64_t(int64_t(d.get("stable_id", 0)));
+        e.key = int64_t(d.get("key", 0));
+        e.cell_idx = int(d.get("cell_idx", -1));
+        e.steering = d.get("steering", Vector2(-1.0f, 0.0f));
+        e.intensity = dc_clampf(float(d.get("intensity", 0.0)), 0.0f, 1.0f);
+        e.radius_cells = dc_clampf(float(d.get("radius_cells", 2.0)), 2.0f, 6.0f);
+        e.age_days = dc_clampf(float(d.get("age_days", 0.0)), 0.0f, 32.0f);
+        e.move_progress = dc_clampf(float(d.get("move_progress", 0.0)), 0.0f, 1.0f);
+        e.vec = e.steering * e.intensity;
+        e.vec_init = e.vec;
+        e.days_left = std::max(0, int(std::ceil(32.0f - e.age_days)));
+        e.init_days = 32;
+        if (e.cell_idx >= 0 && e.intensity >= 0.075f) _cyclone_perturbations.push_back(e);
+    }
+    _cyclone_next_stable_id = std::max<uint64_t>(1, uint64_t(int64_t(state.get("next_cyclone_id", 1))));
+    _cyclone_total_genesis = std::max(0, int(state.get("total_genesis", 0)));
+    _cyclone_total_decay = std::max(0, int(state.get("total_decay", 0)));
+    out["ok"] = true;
+    out["code"] = String("ok");
+    out["cyclone_count"] = int(_cyclone_perturbations.size());
+    out["enso_state_pending"] = Array(state.get("enso_basins", Array())).size();
     return out;
 }
 

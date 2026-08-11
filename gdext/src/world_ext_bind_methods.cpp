@@ -263,6 +263,14 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_effect_state);
     ClassDB::bind_method(D_METHOD("clear_effect_state"),
                          &DCWorldExt::clear_effect_state);
+    ClassDB::bind_method(D_METHOD("bind_era_reward_player_country",
+                                  "country_handle"),
+                         &DCWorldExt::bind_era_reward_player_country);
+    ClassDB::bind_method(D_METHOD("get_era_reward_offer"),
+                         &DCWorldExt::get_era_reward_offer);
+    ClassDB::bind_method(D_METHOD("choose_era_reward", "offer_generation",
+                                  "choice_index", "effective_day"),
+                         &DCWorldExt::choose_era_reward);
     ClassDB::bind_method(D_METHOD("configure_ideologies", "catalog"),
                          &DCWorldExt::configure_ideologies);
     ClassDB::bind_method(D_METHOD("submit_ideology_commands", "batch"),
@@ -315,6 +323,10 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("get_cell_satisfaction_attractiveness", "cell_idx"),
         &DCWorldExt::get_cell_satisfaction_attractiveness);
+    ClassDB::bind_method(D_METHOD("get_country_trade_snapshot",
+                                  "country_handle", "view", "offset", "limit"),
+                         &DCWorldExt::get_country_trade_snapshot,
+                         DEFVAL("summary"), DEFVAL(0), DEFVAL(32));
     ClassDB::bind_method(D_METHOD("get_trade_orders_for_cell", "cell_idx", "offset", "limit"),
                          &DCWorldExt::get_trade_orders_for_cell, DEFVAL(0), DEFVAL(64));
     ClassDB::bind_method(D_METHOD("capture_economy_trade_topology", "neighbor_indices",
@@ -341,6 +353,50 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_family_branches", "family_handle",
                                   "offset", "limit"),
                          &DCWorldExt::get_family_branches, DEFVAL(0), DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_family_colonization_quotes",
+                                  "country_handle", "target_cell",
+                                  "family_filter", "source_filter", "offset",
+                                  "limit"),
+                         &DCWorldExt::get_family_colonization_quotes,
+                         DEFVAL(0), DEFVAL(-1), DEFVAL(0), DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_family_colonization_quote_detail",
+                                  "quote_token"),
+                         &DCWorldExt::get_family_colonization_quote_detail);
+    ClassDB::bind_method(D_METHOD("start_family_colonization",
+                                  "country_handle", "family_handle",
+                                  "source_cell", "target_cell", "population",
+                                  "quote_token", "effective_day", "sequence"),
+                         &DCWorldExt::start_family_colonization);
+    ClassDB::bind_method(D_METHOD("cancel_family_colonization",
+                                  "country_handle", "expedition_handle",
+                                  "effective_day", "sequence"),
+                         &DCWorldExt::cancel_family_colonization);
+    ClassDB::bind_method(D_METHOD("get_family_expeditions", "country_handle",
+                                  "offset", "limit"),
+                         &DCWorldExt::get_family_expeditions,
+                         DEFVAL(0), DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_family_expedition_snapshot",
+                                  "country_handle", "expedition_handle"),
+                         &DCWorldExt::get_family_expedition_snapshot);
+    ClassDB::bind_method(D_METHOD("get_family_colonization_receipts",
+                                  "country_handle", "after_receipt_id", "limit"),
+                         &DCWorldExt::get_family_colonization_receipts,
+                         DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_canal_route_quote", "country_handle",
+                                  "start_cell", "end_cell", "waypoints"),
+                         &DCWorldExt::get_canal_route_quote,
+                         DEFVAL(PackedInt32Array()));
+    ClassDB::bind_method(D_METHOD("get_canal_route_quote_detail",
+                                  "country_handle", "quote_token"),
+                         &DCWorldExt::get_canal_route_quote_detail);
+    ClassDB::bind_method(D_METHOD("queue_canal_construction",
+                                  "country_handle", "quote_token",
+                                  "effective_day", "sequence"),
+                         &DCWorldExt::queue_canal_construction);
+    ClassDB::bind_method(D_METHOD("get_canal_construction_receipts",
+                                  "country_handle", "after_receipt_id", "limit"),
+                         &DCWorldExt::get_canal_construction_receipts,
+                         DEFVAL(64));
     ClassDB::bind_method(D_METHOD("get_family_branch_effects", "family_handle",
                                   "cell_idx"),
                          &DCWorldExt::get_family_branch_effects);
@@ -612,6 +668,14 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("get_cyclone_perturbations_dict"),
         &DCWorldExt::get_cyclone_perturbations_dict);
+    ClassDB::bind_method(D_METHOD("get_active_cyclone_snapshot"),
+                         &DCWorldExt::get_active_cyclone_snapshot);
+    ClassDB::bind_method(D_METHOD("get_climate_modes_report"),
+                         &DCWorldExt::get_climate_modes_report);
+    ClassDB::bind_method(D_METHOD("capture_climate_modes_state"),
+                         &DCWorldExt::capture_climate_modes_state);
+    ClassDB::bind_method(D_METHOD("restore_climate_modes_state", "state"),
+                         &DCWorldExt::restore_climate_modes_state);
 
     // Block B: ocean_currents wind solver (dots-wind-validation.md)
     ClassDB::bind_method(
@@ -703,6 +767,9 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_bake_visual_tile_layer_pass", "knobs"),
         &DCWorldExt::run_bake_visual_tile_layer_pass);
+    ClassDB::bind_method(
+        D_METHOD("consume_canal_visual_dirty_cells"),
+        &DCWorldExt::consume_canal_visual_dirty_cells);
     ClassDB::bind_method(
         D_METHOD("run_resample_visual_horizon_layer_pass", "knobs"),
         &DCWorldExt::run_resample_visual_horizon_layer_pass);

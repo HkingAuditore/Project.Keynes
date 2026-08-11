@@ -13,6 +13,7 @@
 
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/string_name.hpp>
 
@@ -34,7 +35,7 @@ public:
     // 30: authoritative composite satisfaction dimensions, income baseline EMA,
     //     per-cohort fiscal burden accumulators, family branch satisfaction, and
     //     per-cell published social-pressure level.
-    static constexpr int32_t SCHEMA_VERSION = 31;
+    static constexpr int32_t SCHEMA_VERSION = 34;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     // 不能叫 PAGE_SIZE：那是 POSIX 保留的宏名，emscripten 的 musl
     // <bits/limits.h> 无条件 `#define PAGE_SIZE 65536`，会把这行成员声明展开成
@@ -104,6 +105,13 @@ public:
         COMMAND_FAMILY_FREE_BUILDING = 14,
         COMMAND_FAMILY_POPULATION_REWARD = 15,
         COMMAND_TREASURY_SPONSORED_BUILD = 16,
+        COMMAND_START_FAMILY_EXPEDITION = 17,
+        COMMAND_CANCEL_FAMILY_EXPEDITION = 18,
+        COMMAND_SETTLE_FAMILY_EXPEDITION = 19,
+        // Domain-only command. It is intentionally not accepted by the generic
+        // submit_commands() API; EconomyFacade can enqueue it only after a
+        // server-owned quote token has been validated.
+        COMMAND_BUILD_CANAL = 20,
     };
 
     enum ConstructionOwnershipPolicy : int32_t {
@@ -177,12 +185,26 @@ public:
     godot::Dictionary market_cell_snapshot(int32_t cell_idx) const;
     godot::Dictionary trade_orders_for_cell(int32_t cell_idx, int32_t offset,
                                              int32_t limit) const;
+    godot::Dictionary country_trade_snapshot(int64_t country_handle,
+                                              const godot::String &view,
+                                              int32_t offset, int32_t limit) const;
     godot::Dictionary building_cell_snapshot(int32_t cell_idx) const;
     godot::Dictionary treasury_construction_quotes(
         int64_t country_handle, int32_t cell_idx,
         const godot::PackedInt32Array &type_ids) const;
     godot::Dictionary construction_command_receipts(int64_t after_receipt_id,
                                                      int32_t limit) const;
+    godot::Dictionary canal_route_quote(
+        int64_t country_handle, int32_t start_cell, int32_t end_cell,
+        const godot::PackedInt32Array &waypoints);
+    godot::Dictionary canal_route_quote_detail(
+        int64_t country_handle, int64_t quote_token) const;
+    godot::Dictionary queue_canal_construction(
+        int64_t country_handle, int64_t quote_token,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary canal_construction_receipts(
+        int64_t country_handle, int64_t after_receipt_id,
+        int32_t limit) const;
     godot::Dictionary family_cell_snapshot(int32_t cell_idx, int32_t offset,
                                             int32_t limit) const;
     godot::Dictionary family_snapshot(int64_t family_handle) const;
@@ -198,6 +220,29 @@ public:
     godot::Dictionary family_notable_people(int64_t family_handle,
                                             int32_t offset,
                                             int32_t limit) const;
+    godot::Dictionary family_colonization_quotes(
+        int64_t country_handle, int32_t target_cell, int64_t family_filter,
+        int32_t source_filter, int32_t offset, int32_t limit,
+        const uint8_t *visible, int32_t visible_count,
+        uint64_t vision_revision);
+    godot::Dictionary family_colonization_quote_detail(
+        int64_t quote_token) const;
+    godot::Dictionary submit_family_colonization_start(
+        int64_t country_handle, int64_t family_handle, int32_t source_cell,
+        int32_t target_cell, int64_t population, int64_t quote_token,
+        int64_t effective_day, int64_t sequence, const uint8_t *visible,
+        int32_t visible_count, uint64_t vision_revision);
+    godot::Dictionary submit_family_colonization_cancel(
+        int64_t country_handle, int64_t expedition_handle,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary family_expeditions(int64_t country_handle,
+                                         int32_t offset,
+                                         int32_t limit) const;
+    godot::Dictionary family_expedition_snapshot(
+        int64_t country_handle, int64_t expedition_handle) const;
+    godot::Dictionary family_colonization_receipts(
+        int64_t country_handle, int64_t after_receipt_id,
+        int32_t limit) const;
     godot::Dictionary notable_person_snapshot(int64_t person_handle) const;
     godot::Dictionary notable_person_needs(int64_t person_handle,
                                            int32_t offset,
@@ -269,6 +314,41 @@ public:
         GAMEPLAY_FACT_CONSTRUCTION_COMPLETED = 1,
         GAMEPLAY_FACT_TRADE_ARRIVED = 2,
         GAMEPLAY_FACT_SOCIAL_PRESSURE = 3,
+        GAMEPLAY_FACT_TARIFF_SUBSIDY_INTENT = 4,
+        GAMEPLAY_FACT_TECHNOLOGY_PRACTICE = 5,
+        GAMEPLAY_FACT_TECHNOLOGY_CONTACT = 6,
+        GAMEPLAY_FACT_INFRASTRUCTURE_COMPLETED = 7,
+    };
+    enum TechnologyPracticeRule : int32_t {
+        PRACTICE_MAIZE_SELECTION = 0,
+        PRACTICE_DRYLAND_DAYS = 1,
+        PRACTICE_DRYLAND_DROUGHTS = 2,
+        PRACTICE_HYDRAULIC_ENGINEERING = 3,
+        PRACTICE_METALWORKING = 4,
+        PRACTICE_PRINTING = 5,
+        PRACTICE_STEAM_POWER = 6,
+        PRACTICE_ELECTRIFICATION = 7,
+        PRACTICE_INDUSTRIAL_ORGANIZATION = 8,
+        PRACTICE_AUTOMATION = 9,
+        PRACTICE_CLIMATE_MODELING = 10,
+        PRACTICE_SEED_SAVING = 11,
+        PRACTICE_RAINFED_ADAPTATION = 12,
+        PRACTICE_PADDY_CONTROL = 13,
+        PRACTICE_TERRACE_MAINTENANCE = 14,
+        PRACTICE_MINE_SUPPORT = 15,
+        PRACTICE_MINE_DRAINAGE = 16,
+        PRACTICE_KILN_TEMPERATURE = 17,
+        PRACTICE_PRINT_CALIBRATION = 18,
+        PRACTICE_STEAM_SEALING = 19,
+        PRACTICE_MOTOR_WINDING = 20,
+        PRACTICE_ASSEMBLY_LINE = 21,
+        PRACTICE_DIGITAL_CONTROL = 22,
+        PRACTICE_MARITIME_OPERATIONS = 23,
+        PRACTICE_WATERSHED_MANAGEMENT = 24,
+        PRACTICE_FOREST_MANAGEMENT = 25,
+        PRACTICE_CHEMICAL_PROCESS_CONTROL = 26,
+        PRACTICE_ENERGY_CONTROL = 27,
+        PRACTICE_RULE_COUNT = 28,
     };
     bool drain_committed_gameplay_facts(
         std::vector<CommittedGameplayFact> &out);
@@ -276,10 +356,27 @@ public:
                                            int32_t *out_cells, int32_t capacity) const;
     bool capture_trade_topology(const int32_t *neighbor_indices,
                                 const uint8_t *terrain,
+                                const uint8_t *canal_edge_mask,
+                                const float *canal_water,
                                 const uint8_t *trade_passable_lut,
                                 const int32_t *trade_move_cost_lut,
                                 int32_t count, uint64_t generation,
                                 std::string &error);
+    bool refresh_canal_topology(const uint8_t *canal_edge_mask,
+                                const float *canal_water,
+                                int32_t count, std::string &error);
+    int32_t trade_edge_cost(int32_t from_cell, int32_t to_cell) const;
+    uint64_t canal_topology_hash() const {
+        return _trade_topology.ready ? _trade_topology.topology_hash : 0;
+    }
+    // Bounded, read-only payload used by the Effect gameplay adapter. The
+    // route remains Economy-owned until the Effect transaction is ACKED.
+    bool canal_project_commit_payload(uint64_t project_handle,
+                                      uint32_t project_generation,
+                                      std::vector<int32_t> &route_cells,
+                                      std::vector<int32_t> &route_edge_dirs,
+                                      uint64_t &topology_hash,
+                                      std::string &error) const;
 
 private:
     friend class EconomyCsvRecorder;
@@ -739,6 +836,98 @@ private:
         int32_t reward_target = 0;
     };
 
+    enum FamilyExpeditionState : uint8_t {
+        EXPEDITION_OUTBOUND = 1,
+        EXPEDITION_SETTLING = 2,
+        EXPEDITION_RETURNING = 3,
+    };
+
+    struct FamilyExpeditionPayload {
+        uint64_t source_cohort_handle = 0;
+        int32_t signature = -1;
+        int64_t people = 0;
+        int64_t funds = 0;
+        int64_t epoch_income = 0;
+        int64_t epoch_expense = 0;
+        int64_t epoch_in_kind_income = 0;
+        int64_t income_ema = 0;
+        int64_t epoch_tax_paid = 0;
+        int64_t epoch_subsidy_received = 0;
+        int64_t income_baseline_ema = 0;
+        int64_t demography_residual = 0;
+        int64_t cash_claim = 0;
+        int64_t owner_employed = 0;
+        int64_t employee_employed = 0;
+        uint32_t person_begin = 0;
+        uint32_t person_count = 0;
+        uint16_t needs_satisfaction = 0;
+        uint16_t worst_need_id = std::numeric_limits<uint16_t>::max();
+        uint16_t composite_satisfaction = 0;
+        std::array<uint16_t, SAT_DIM_COUNT> satisfaction_dims{};
+        uint8_t worst_dimension_id = 0;
+        // Transient lane reservation rebuilt from authoritative payload data.
+        int32_t reserved_slot = -1;
+    };
+
+    struct FamilyExpeditionStore {
+        std::vector<uint8_t> active;
+        std::vector<uint32_t> generation;
+        std::vector<int64_t> stable_id;
+        std::vector<uint64_t> country_handle;
+        std::vector<uint64_t> family_handle;
+        std::vector<int32_t> source_cell;
+        std::vector<int32_t> target_cell;
+        std::vector<int64_t> departure_day;
+        std::vector<int64_t> due_day;
+        std::vector<int32_t> route_cost;
+        std::vector<int32_t> speed;
+        std::vector<uint8_t> state;
+        std::vector<int64_t> population;
+        std::vector<uint32_t> route_begin;
+        std::vector<uint32_t> route_count;
+        std::vector<uint32_t> payload_begin;
+        std::vector<uint32_t> payload_count;
+        std::vector<int64_t> effect_transaction_id;
+        std::vector<uint64_t> idempotency_key;
+        std::vector<int32_t> free_indices;
+        int64_t active_count = 0;
+
+        void clear();
+        int32_t allocate();
+        void release(int32_t index);
+        uint64_t handle_for_index(int32_t index) const;
+        bool valid_handle(uint64_t handle, int32_t &index_out) const;
+    };
+
+    struct ColonizationQuoteCacheEntry {
+        uint64_t token = 0;
+        uint64_t country_handle = 0;
+        uint64_t family_handle = 0;
+        int32_t source_cell = -1;
+        int32_t target_cell = -1;
+        int64_t maximum_population = 0;
+        int32_t route_cost = 0;
+        int32_t travel_days = 0;
+        uint64_t topology_generation = 0;
+        uint64_t country_generation = 0;
+        uint64_t vision_hash = 0;
+        uint64_t route_hash = 0;
+        uint32_t route_begin = 0;
+        uint32_t route_count = 0;
+    };
+
+    struct ColonizationReceipt {
+        int64_t receipt_id = 0;
+        int64_t sequence = 0;
+        int64_t effective_day = 0;
+        int64_t settled_day = 0;
+        uint64_t country_handle = 0;
+        uint64_t expedition_handle = 0;
+        int32_t target_cell = -1;
+        uint8_t kind = 0;
+        std::string code;
+    };
+
     struct BuildingRoleSpan {
         int32_t employee_begin = -1;
         int32_t input_begin = -1;
@@ -820,6 +1009,8 @@ private:
         std::vector<int32_t> free_pages;
 
         std::vector<uint8_t> active;
+        std::vector<uint8_t> reserved;
+        std::vector<uint64_t> reservation_owner;
         std::vector<uint32_t> signature_id;
         std::vector<uint32_t> generation;
         std::vector<int64_t> population;
@@ -862,6 +1053,11 @@ private:
         mutable int64_t scan_steps = 0;  // Diagnostics only.
         int32_t find_signature(int32_t cell, uint32_t signature) const;
         int32_t allocate_slot(int32_t cell, uint32_t signature);
+        int32_t reserve_slot(int32_t cell, uint32_t signature,
+                             uint64_t owner);
+        int32_t claim_reserved_slot(int32_t slot, int32_t cell,
+                                    uint32_t signature, uint64_t owner);
+        void release_reserved_slot(int32_t slot, uint64_t owner);
         bool valid_handle(uint64_t handle, int32_t &slot_out) const;
         uint64_t handle_for_slot(int32_t slot) const;
         void release_slot(int32_t slot);
@@ -960,6 +1156,9 @@ private:
         std::vector<int32_t> neighbors;
         std::vector<uint8_t> passable;
         std::vector<int32_t> enter_cost;
+        std::vector<int32_t> edge_cost;
+        std::vector<uint8_t> canal_edge_mask;
+        std::vector<float> canal_water;
         std::vector<int32_t> component;
         uint64_t topology_generation = 0;
         uint64_t topology_hash = 0;
@@ -973,6 +1172,9 @@ private:
             neighbors.clear();
             passable.clear();
             enter_cost.clear();
+            edge_cost.clear();
+            canal_edge_mask.clear();
+            canal_water.clear();
             component.clear();
             topology_generation = 0;
             topology_hash = 0;
@@ -996,11 +1198,20 @@ private:
         int32_t destination = -1;
         int32_t good = -1;
         int32_t country = -1;
+        // `country` is retained as the source-country compatibility field.
+        int32_t source_country = -1;
+        int32_t destination_country = -1;
+        uint64_t source_country_handle = 0;
+        uint64_t destination_country_handle = 0;
         int32_t route_cost = 0;
         int32_t source_price = 0;
         int32_t destination_price = 0;
         int64_t quantity = 0;
         int64_t expected_profit = 0;
+        int64_t base_value = 0;
+        int64_t retail_value = 0;
+        int64_t import_transfer = 0;
+        int64_t export_transfer = 0;
         int64_t capacity_work = 0;
         int64_t density_q16 = 0;
         int32_t signal_age_days = 0;
@@ -1010,6 +1221,32 @@ private:
         int64_t planned_day = -1;
         uint64_t topology_generation = 0;
         uint64_t country_topology_hash = 0;
+        uint8_t flags = 0;
+    };
+
+    enum TradeLineFlags : uint8_t {
+        TRADE_LINE_FOREIGN = 1U << 0,
+        TRADE_LINE_RELIEF = 1U << 1,
+        TRADE_LINE_IMPORT_SUBSIDY = 1U << 2,
+        TRADE_LINE_EXPORT_SUBSIDY = 1U << 3,
+        TRADE_LINE_IMPORT_TAX = 1U << 4,
+        TRADE_LINE_EXPORT_TAX = 1U << 5,
+    };
+
+    struct TradeQuote {
+        int64_t base = 0;
+        int64_t retail = 0;
+        int64_t import_transfer = 0;
+        int64_t export_transfer = 0;
+        int64_t importer_outlay = 0;
+        int64_t exporter_receipt = 0;
+        int64_t importer_profit = 0;
+        int64_t combined_profit = 0;
+        int64_t margin_q16 = 0;
+        int32_t source_price = 0;
+        int32_t destination_price = 0;
+        bool foreign = false;
+        bool relief = false;
     };
 
     struct TradePlanStore {
@@ -1027,6 +1264,10 @@ private:
         std::vector<TradeSignal> destinations;
         std::vector<TradeCandidate> working_candidates;
         std::vector<TradeCandidate> ready_candidates;
+        // Rebuildable one-batch retry queue for nominally viable routes that
+        // emitted a tariff subsidy intent. It is deliberately not persisted or
+        // hashed; dispatch revalidates every endpoint, price and resource bound.
+        std::vector<TradeCandidate> deferred_subsidy_candidates;
         std::vector<int64_t> distance;
         std::vector<uint32_t> distance_stamp;
         std::vector<int32_t> target_signal;
@@ -1056,6 +1297,7 @@ private:
             destinations.clear();
             working_candidates.clear();
             ready_candidates.clear();
+            deferred_subsidy_candidates.clear();
             distance.clear();
             distance_stamp.clear();
             target_signal.clear();
@@ -1083,6 +1325,10 @@ private:
         std::vector<int32_t> sources;
         std::vector<int32_t> destinations;
         std::vector<int32_t> countries;
+        std::vector<uint64_t> source_country_handles;
+        std::vector<uint64_t> destination_country_handles;
+        std::vector<int32_t> source_country_slots;
+        std::vector<int32_t> destination_country_slots;
         std::vector<int64_t> departure_days;
         std::vector<int64_t> arrival_days;
         std::vector<int64_t> cash_escrow;
@@ -1093,6 +1339,12 @@ private:
         std::vector<int32_t> line_goods;
         std::vector<int64_t> line_quantities;
         std::vector<int32_t> line_unit_prices;
+        std::vector<int32_t> line_destination_prices;
+        std::vector<int64_t> line_base_values;
+        std::vector<int64_t> line_retail_values;
+        std::vector<int64_t> line_import_transfers;
+        std::vector<int64_t> line_export_transfers;
+        std::vector<uint8_t> line_flags;
         std::vector<int32_t> seller_offsets;
         std::vector<uint64_t> seller_handles;
         std::vector<int64_t> seller_weights;
@@ -1106,10 +1358,15 @@ private:
 
         void clear() {
             ids.clear(); sources.clear(); destinations.clear(); countries.clear();
+            source_country_handles.clear(); destination_country_handles.clear();
+            source_country_slots.clear(); destination_country_slots.clear();
             departure_days.clear(); arrival_days.clear(); cash_escrow.clear();
             capacity_work.clear(); states.clear(); cargo_delivered.clear();
             line_offsets.assign(1, 0); line_goods.clear(); line_quantities.clear();
-            line_unit_prices.clear(); seller_offsets.assign(1, 0);
+            line_unit_prices.clear(); line_destination_prices.clear();
+            line_base_values.clear(); line_retail_values.clear();
+            line_import_transfers.clear(); line_export_transfers.clear();
+            line_flags.clear(); seller_offsets.assign(1, 0);
             seller_handles.clear(); seller_weights.clear();
             arrival_bucket_days.clear(); arrival_bucket_offsets.assign(1, 0);
             arrival_bucket_orders.clear(); arrival_buckets_dirty = true;
@@ -1129,6 +1386,82 @@ private:
         void clear() {
             cells.clear(); goods.clear(); import_ema.clear(); export_ema.clear();
             period_import.clear(); period_export.clear();
+        }
+    };
+
+    struct CountryGoodTradeAggregateStore {
+        std::vector<int32_t> countries;
+        std::vector<int32_t> goods;
+        // Cumulative authority.
+        std::vector<int64_t> import_quantity;
+        std::vector<int64_t> export_quantity;
+        std::vector<int64_t> import_base;
+        std::vector<int64_t> export_base;
+        std::vector<int64_t> import_tariff;
+        std::vector<int64_t> export_tariff;
+        // Latest touched epoch. Query treats rows from an older epoch as a
+        // lazy-zero previous batch while retaining the cumulative columns.
+        std::vector<int64_t> batch_epoch;
+        std::vector<int64_t> batch_import_quantity;
+        std::vector<int64_t> batch_export_quantity;
+        std::vector<int64_t> batch_import_base;
+        std::vector<int64_t> batch_export_base;
+        std::vector<int64_t> batch_import_tariff;
+        std::vector<int64_t> batch_export_tariff;
+        void clear() {
+            countries.clear(); goods.clear(); import_quantity.clear();
+            export_quantity.clear(); import_base.clear(); export_base.clear();
+            import_tariff.clear(); export_tariff.clear();
+            batch_epoch.clear(); batch_import_quantity.clear();
+            batch_export_quantity.clear(); batch_import_base.clear();
+            batch_export_base.clear(); batch_import_tariff.clear();
+            batch_export_tariff.clear();
+        }
+    };
+
+    struct CountryPartnerTradeAggregateStore {
+        std::vector<int32_t> countries;
+        std::vector<int32_t> partners;
+        // Cumulative authority.
+        std::vector<int64_t> import_quantity;
+        std::vector<int64_t> export_quantity;
+        std::vector<int64_t> import_base;
+        std::vector<int64_t> export_base;
+        std::vector<int64_t> order_count;
+        std::vector<int64_t> batch_epoch;
+        std::vector<int64_t> batch_import_quantity;
+        std::vector<int64_t> batch_export_quantity;
+        std::vector<int64_t> batch_import_base;
+        std::vector<int64_t> batch_export_base;
+        std::vector<int64_t> batch_order_count;
+        void clear() {
+            countries.clear(); partners.clear(); import_quantity.clear();
+            export_quantity.clear(); import_base.clear(); export_base.clear();
+            order_count.clear();
+            batch_epoch.clear(); batch_import_quantity.clear();
+            batch_export_quantity.clear(); batch_import_base.clear();
+            batch_export_base.clear(); batch_order_count.clear();
+        }
+    };
+
+    struct TariffHistoryStore {
+        std::vector<int32_t> countries;
+        std::vector<int32_t> kinds;
+        std::vector<int64_t> bases;
+        std::vector<int64_t> assessed;
+        std::vector<int64_t> collected;
+        std::vector<int64_t> requests;
+        std::vector<int64_t> reserved;
+        std::vector<int64_t> paid;
+        std::vector<int64_t> cumulative_bases;
+        std::vector<int64_t> cumulative_collected;
+        std::vector<int64_t> cumulative_requests;
+        std::vector<int64_t> cumulative_paid;
+        void clear() {
+            countries.clear(); kinds.clear(); bases.clear(); assessed.clear();
+            collected.clear(); requests.clear(); reserved.clear(); paid.clear();
+            cumulative_bases.clear(); cumulative_collected.clear();
+            cumulative_requests.clear(); cumulative_paid.clear();
         }
     };
 
@@ -1216,6 +1549,7 @@ private:
         int64_t goods_stock = 0;
         int64_t country_goods = 0;
         int64_t transit_goods = 0;
+        int64_t transit_population = 0;
         int64_t escrow_cash = 0;
         int64_t merchant_cash = 0;
         int64_t merchant_inventory_retail_value = 0;
@@ -1397,6 +1731,10 @@ private:
         CASHFLOW_CONSUMPTION_SUBSIDY = 17,
         CASHFLOW_BUSINESS_SUBSIDY = 18,
         CASHFLOW_FISCAL_ESCROW = 19,
+        CASHFLOW_IMPORT_TAX = 20,
+        CASHFLOW_EXPORT_TAX = 21,
+        CASHFLOW_IMPORT_SUBSIDY = 22,
+        CASHFLOW_EXPORT_SUBSIDY = 23,
     };
 
     enum EventKind : int32_t {
@@ -1414,6 +1752,18 @@ private:
         EVENT_TRADE_DISPATCHED = 12,
         EVENT_TRADE_ARRIVED = 13,
         EVENT_POPULATION_SOURCE = 14,
+        EVENT_TARIFF_SUBSIDY_INTENT = 15,
+    };
+
+    enum EventFlags : int32_t {
+        EVENT_FLAG_DETAIL_PRESENT = 1 << 0,
+        EVENT_FLAG_DETAIL_TRUNCATED = 1 << 1,
+        EVENT_FLAG_TRADE_FOREIGN = 1 << 8,
+        EVENT_FLAG_TRADE_RELIEF = 1 << 9,
+        EVENT_FLAG_TRADE_IMPORT_SUBSIDY = 1 << 10,
+        EVENT_FLAG_TRADE_EXPORT_SUBSIDY = 1 << 11,
+        EVENT_FLAG_TRADE_IMPORT_TAX = 1 << 12,
+        EVENT_FLAG_TRADE_EXPORT_TAX = 1 << 13,
     };
 
     enum EventField : int32_t {
@@ -1457,6 +1807,11 @@ private:
         FIELD_BUILDING_BONUS_PAID = 38,
         FIELD_BUILDING_BONUS_DUE = 39,
         FIELD_BUILDING_WAGE_SUSPENDED = 40,
+        FIELD_TRADE_QUANTITY = 41,
+        FIELD_TRADE_BASE_VALUE = 42,
+        FIELD_TRADE_RETAIL_VALUE = 43,
+        FIELD_TRADE_IMPORT_TRANSFER = 44,
+        FIELD_TRADE_EXPORT_TRANSFER = 45,
     };
 
     enum EventSubjectKind : int32_t {
@@ -1513,6 +1868,69 @@ private:
         uint64_t country_handle = 0;
         int32_t cell = -1;
         int32_t type_id = -1;
+        bool ok = false;
+        std::string code;
+        int64_t cash_paid = 0;
+        int64_t treasury_goods_used = 0;
+        int64_t market_goods_used = 0;
+    };
+
+    enum CanalSourceKind : uint8_t {
+        CANAL_SOURCE_NONE = 0,
+        CANAL_SOURCE_SALINE = 1,
+        CANAL_SOURCE_FRESHWATER = 2,
+    };
+
+    enum CanalProjectState : uint8_t {
+        CANAL_PROJECT_BUILDING = 1,
+        CANAL_PROJECT_AWAITING_EFFECT = 2,
+        CANAL_PROJECT_COMPLETED = 3,
+        CANAL_PROJECT_FAILED = 4,
+    };
+
+    struct CanalQuote {
+        uint64_t token = 0;
+        uint64_t country_handle = 0;
+        int64_t snapshot_day = -1;
+        uint64_t topology_hash = 0;
+        uint64_t country_generation = 0;
+        uint64_t price_hash = 0;
+        uint8_t source_kind = CANAL_SOURCE_NONE;
+        int32_t new_edge_count = 0;
+        int32_t reused_edge_count = 0;
+        int32_t construction_days = 0;
+        int64_t cash_required = 0;
+        std::array<int32_t, 2> material_good_ids{{-1, -1}};
+        std::array<int64_t, 2> material_quantities{{0, 0}};
+        std::vector<int32_t> route_cells;
+        std::vector<int32_t> route_edge_dirs;
+    };
+
+    struct CanalProject {
+        uint64_t handle = 0;
+        uint32_t generation = 1;
+        uint64_t country_handle = 0;
+        int64_t effective_day = 0;
+        int64_t sequence = 0;
+        int64_t ready_day = 0;
+        int64_t effect_transaction_id = 0;
+        uint64_t topology_hash = 0;
+        int64_t cash_paid = 0;
+        int64_t treasury_goods_used = 0;
+        int64_t market_goods_used = 0;
+        uint8_t source_kind = CANAL_SOURCE_NONE;
+        uint8_t state = CANAL_PROJECT_BUILDING;
+        std::vector<int32_t> route_cells;
+        std::vector<int32_t> route_edge_dirs;
+    };
+
+    struct CanalConstructionReceipt {
+        int64_t receipt_id = 0;
+        int64_t effective_day = 0;
+        int64_t settled_day = 0;
+        int64_t sequence = 0;
+        uint64_t country_handle = 0;
+        uint64_t project_handle = 0;
         bool ok = false;
         std::string code;
         int64_t cash_paid = 0;
@@ -1819,6 +2237,12 @@ private:
         int32_t family_trait_cursor = 0;
         int32_t family_influence_cursor = 0;
         int32_t family_trait_command_cursor = 0;
+        int32_t family_expedition_cursor = 0;
+        int32_t tariff_history_cursor = 0;
+        int32_t country_good_cursor = 0;
+        int32_t country_partner_cursor = 0;
+        int32_t canal_quote_cursor = 0;
+        int32_t canal_project_cursor = 0;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
         bool end_emitted = false;
@@ -1851,6 +2275,16 @@ private:
         int32_t restored_trade_orders = 0;
         int32_t expected_trade_flows = 0;
         int32_t restored_trade_flows = 0;
+        int32_t expected_tariff_history = 0;
+        int32_t restored_tariff_history = 0;
+        int32_t expected_country_good = 0;
+        int32_t restored_country_good = 0;
+        int32_t expected_country_partner = 0;
+        int32_t restored_country_partner = 0;
+        int32_t expected_canal_quotes = 0;
+        int32_t restored_canal_quotes = 0;
+        int32_t expected_canal_projects = 0;
+        int32_t restored_canal_projects = 0;
         int32_t expected_persons = 0;
         int32_t expected_person_needs = 0;
         int32_t restored_fiscal = 0;
@@ -1881,6 +2315,16 @@ private:
         bool family_traits_seen = false;
         bool family_influences_seen = false;
         bool family_trait_commands_seen = false;
+        int32_t expected_family_expedition_slots = 0;
+        int32_t expected_family_expeditions = 0;
+        int32_t restored_family_expedition_slots = 0;
+        int32_t restored_family_expeditions = 0;
+        bool family_expeditions_seen = false;
+        bool tariff_history_seen = false;
+        bool country_good_seen = false;
+        bool country_partner_seen = false;
+        bool canal_quotes_seen = false;
+        bool canal_projects_seen = false;
     };
 
     struct EventArchiveState {
@@ -2310,6 +2754,7 @@ private:
     int64_t _closing_audit_population_full_scan_entries = 0;
     int64_t _closing_audit_market_full_scan_entries = 0;
     AuditTotals _incremental_closing_totals;
+    bool _opening_audit_force_full = false;
     std::vector<int64_t> _audit_shadow_population;
     std::vector<int64_t> _audit_shadow_funds;
     std::vector<int64_t> _audit_shadow_market_stock;
@@ -2542,6 +2987,37 @@ private:
     AuditTotals _publish_accum;
     PopulationStore _population;
     FamilyStore _families;
+    FamilyExpeditionStore _family_expeditions;
+    std::vector<int32_t> _family_expedition_route_cells;
+    std::vector<int32_t> _family_expedition_route_costs;
+    std::vector<FamilyExpeditionPayload> _family_expedition_payloads;
+    std::vector<uint64_t> _family_expedition_person_handles;
+    std::unordered_map<uint64_t, int32_t> _family_expedition_target_index;
+    std::vector<std::pair<int64_t, int32_t>> _family_expedition_due_heap;
+    std::vector<ColonizationReceipt> _colonization_receipts;
+    int64_t _next_colonization_receipt_id = 1;
+    int64_t _next_family_expedition_stable_id = 1;
+    std::vector<ColonizationQuoteCacheEntry> _colonization_quote_cache;
+    std::unordered_map<uint64_t, int32_t> _colonization_quote_index;
+    std::vector<int32_t> _colonization_quote_route_cells;
+    std::vector<int32_t> _colonization_quote_route_costs;
+    std::vector<int64_t> _colonization_distance;
+    std::vector<uint32_t> _colonization_distance_stamp;
+    std::vector<int32_t> _colonization_parent;
+    std::vector<uint32_t> _colonization_parent_stamp;
+    std::vector<std::pair<int64_t, int32_t>> _colonization_route_heap;
+    uint32_t _colonization_search_stamp = 0;
+    double _colonization_route_query_ms = 0.0;
+    double _colonization_payload_split_ms = 0.0;
+    double _colonization_cross_domain_ms = 0.0;
+    std::vector<CanalQuote> _canal_quotes;
+    std::unordered_map<uint64_t, int32_t> _canal_quote_index;
+    std::vector<CanalProject> _canal_projects;
+    std::unordered_map<uint64_t, int32_t> _canal_project_index;
+    std::vector<CanalConstructionReceipt> _canal_receipts;
+    uint64_t _next_canal_quote_token = 1;
+    uint64_t _next_canal_project_id = 1;
+    int64_t _next_canal_receipt_id = 1;
     FamilyCellInfluenceStore _family_influences;
     NotablePersonStore _persons;
     std::vector<FamilyMembershipEdge> _family_memberships;
@@ -2671,8 +3147,8 @@ private:
     std::vector<int64_t> _building_recovery_probe_capacity_q16;
     std::vector<uint8_t> _building_recovery_liquidation_eligible;
     // Per-group cache for refresh_building_modifier_factors, keyed on every
-    // input of group.output_factor_q16 / modifier_handle: the three frozen
-    // country factor values, country handle, ECONOMY store snapshot_version,
+    // input of group.output_factor_q16 / modifier_handle: every frozen
+    // country factor value, country handle, ECONOMY store snapshot_version,
     // and the (type, owner) identity. _buildings is append-only (groups are
     // never erased or reordered), so this parallel array stays aligned across
     // epochs. Cache hits skip both ensure_building_identity and the ECONOMY
@@ -2681,6 +3157,8 @@ private:
         int64_t country_factor_q16 = std::numeric_limits<int64_t>::min();
         int64_t sector_factor_q16 = 0;
         int64_t research_factor_q16 = 0;
+        int64_t family_factor_q16 = 0;
+        int64_t building_type_factor_q16 = 0;
         uint64_t country_handle = 0;
         uint64_t mod_version = 0;
         int32_t cell = -1;
@@ -2775,6 +3253,21 @@ private:
     TradePlanStore _trade_plan;
     TradeOrderStore _trade_orders;
     TradeFlowSignalStore _trade_flows;
+    CountryGoodTradeAggregateStore _country_good_trade;
+    CountryPartnerTradeAggregateStore _country_partner_trade;
+    TariffHistoryStore _tariff_history;
+    // Rebuildable sparse lookup/display indices.  The authoritative aggregate
+    // columns above remain the only persisted/hashed state; these maps remove
+    // the former O(total aggregates) rebuild from every dispatch, while the
+    // per-country sorted row lists make paged UI queries O(limit).
+    std::unordered_map<uint64_t, int32_t> _country_good_trade_index;
+    std::unordered_map<uint64_t, int32_t> _country_partner_trade_index;
+    std::unordered_map<uint64_t, int32_t> _tariff_history_index;
+    std::vector<std::vector<int32_t>> _country_good_display_rows;
+    std::vector<std::vector<int32_t>> _country_partner_display_rows;
+    std::vector<uint8_t> _country_good_display_dirty;
+    std::vector<uint8_t> _country_partner_display_dirty;
+    uint64_t _country_trade_revision = 0;
     LaborMarketStore _labor_signals;
     LaborMarketStore _labor_signals_rebuild_scratch;
     std::vector<FormulaDefinition> _formulas;
@@ -2948,8 +3441,17 @@ private:
 	std::vector<int32_t> _building_upgrade_tiers;
 	std::vector<int32_t> _building_technology_tag_offsets;
 	std::vector<std::string> _building_technology_tags;
+	std::vector<int32_t> _building_required_technology_tag_offsets;
+	std::vector<std::string> _building_required_technology_tags;
+    std::vector<uint32_t> _building_technology_practice_masks;
+    std::array<int32_t, 27> _breakthrough_signal_ids{};
+    int32_t _bio_maize_signal_id = -1;
+    std::array<int32_t, 8> _metal_resource_signal_ids{
+        -1, -1, -1, -1, -1, -1, -1, -1};
     std::vector<int32_t> _building_technology_offsets;
     std::vector<int32_t> _building_required_technologies;
+    std::vector<int32_t> _building_all_technology_offsets;
+    std::vector<int32_t> _building_all_required_technologies;
     std::vector<std::string> _technology_ids;
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
@@ -2966,6 +3468,9 @@ private:
     std::vector<int32_t> _business_tax_stat_ids;
     std::vector<int32_t> _import_tax_stat_ids;
     std::vector<int32_t> _export_tax_stat_ids;
+    std::vector<int32_t> _country_family_output_stat_ids;
+    std::vector<int32_t> _country_building_output_stat_ids;
+    std::array<int32_t, 4> _country_climate_loss_stat_ids{-1, -1, -1, -1};
     int32_t _city_birth_stat_id = -1;
     int32_t _city_consumption_stat_id = -1;
     std::vector<int32_t> _city_need_consumption_stat_ids;
@@ -3029,16 +3534,42 @@ private:
     std::vector<int64_t> _fiscal_last_reserved;
     std::vector<int64_t> _fiscal_last_paid;
     std::vector<int64_t> _fiscal_last_unmet;
+    std::vector<int64_t> _fiscal_last_events;
     std::vector<int64_t> _fiscal_cumulative_bases;
     std::vector<int64_t> _fiscal_cumulative_collected;
     std::vector<int64_t> _fiscal_cumulative_requests;
     std::vector<int64_t> _fiscal_cumulative_paid;
+    // Tariffs stay on a sparse cell x {import, export} lane separate from the
+    // domestic cell x 3 fiscal arrays. The dense generation-stamped lookup is
+    // transient metadata; monetary columns exist only for endpoint lanes
+    // touched in the current epoch.
+    std::vector<int32_t> _tariff_epoch_cells;
+    std::vector<uint8_t> _tariff_epoch_kinds;
+    std::vector<int64_t> _tariff_epoch_bases;
+    std::vector<int64_t> _tariff_epoch_assessed;
+    std::vector<int64_t> _tariff_epoch_collected;
+    std::vector<int64_t> _tariff_epoch_requests;
+    std::vector<int64_t> _tariff_epoch_reserved;
+    std::vector<int64_t> _tariff_epoch_paid;
+    std::vector<int64_t> _tariff_epoch_events;
+    std::vector<int32_t> _tariff_lane_index;
+    std::vector<uint32_t> _tariff_lane_stamp;
+    uint32_t _tariff_lane_generation = 0;
+    // Tariff subsidies share the country escrow with domestic subsidies. The
+    // country vectors are the authoritative reservation budget consumed by
+    // dispatch; cell lanes remain the sparse reporting surface.
+    std::vector<int64_t> _tariff_country_requests;
+    std::vector<int64_t> _tariff_country_budgets;
+    std::vector<int64_t> _tariff_country_remaining;
     // Per-slot derived epoch scratch; intentionally excluded from save/hash.
     std::vector<int64_t> _income_taxable_base_by_slot;
     std::vector<int64_t> _income_subsidy_floor_by_slot;
     std::vector<int32_t> _epoch_country_output_factor_q16;
     std::vector<int32_t> _epoch_country_sector_output_factor_q16;
     std::vector<int32_t> _epoch_country_research_output_factor_q16;
+    std::vector<int32_t> _epoch_country_family_output_factor_q16;
+    std::vector<int32_t> _epoch_country_building_output_factor_q16;
+    std::vector<int32_t> _epoch_country_climate_loss_factor_q16;
     std::vector<int32_t> _epoch_country_trade_capacity_factor_q16;
     std::vector<int32_t> _epoch_country_trade_speed_factor_q16;
     std::vector<int32_t> _epoch_country_construction_cost_factor_q16;
@@ -3064,6 +3595,7 @@ private:
     // same result and hot loops can consume the ascending CSR directly.
     std::vector<uint8_t> _epoch_country_building_available;
     std::vector<uint8_t> _epoch_country_good_available;
+    std::vector<uint8_t> _epoch_country_market_available;
     std::vector<uint8_t> _epoch_country_profession_available;
     std::vector<uint8_t> _epoch_country_variant_available;
     std::vector<int32_t> _epoch_country_building_type_offsets;
@@ -3086,6 +3618,9 @@ private:
     uint64_t _epoch_country_generation = 0;
     uint64_t _epoch_country_hash = 0;
     uint64_t _epoch_country_topology_hash = 0;
+    // Merchant capacity is frozen with the country snapshot so dispatch does
+    // not rescan every map cell on each trade slice.
+    std::vector<int64_t> _epoch_country_merchant_population;
     std::vector<BuildingType> _building_types;
     std::vector<std::string> _production_climate_profile_ids;
     std::vector<ProductionClimateProfile> _production_climate_profiles;
@@ -3240,6 +3775,12 @@ private:
                                       int32_t &destination_price,
                                       int64_t &profit, int64_t &margin_q16,
                                       int64_t &sat) const;
+    TradeQuote make_trade_quote(int32_t source, int32_t destination,
+                                int32_t good, int64_t quantity,
+                                int32_t source_price,
+                                int32_t destination_price,
+                                bool relief_route,
+                                int64_t &saturation_count) const;
     int64_t merchant_inventory_target(int32_t market, int32_t good,
                                       int32_t signal_index,
                                       int64_t realized_withdrawal,
@@ -3267,9 +3808,14 @@ private:
         const std::vector<uint64_t> &sorted_unique_keys);
     void record_trade_signal_attempt(int32_t cell, int32_t good, int32_t reason);
     void refresh_trade_response_diagnostics();
-    int64_t credit_trade_sellers(int32_t order_index, int64_t amount);
+    int64_t credit_trade_sellers(int32_t order_index, int64_t amount,
+                                 int32_t cashflow_source = CASHFLOW_MERCHANT_BUSINESS);
+    int64_t debit_trade_sellers(int32_t order_index, int64_t amount,
+                                int32_t cashflow_source);
     void rebuild_trade_arrival_buckets();
     void compact_trade_orders(const std::vector<uint8_t> &remove);
+    void rebuild_country_trade_indices();
+    void sort_dirty_country_trade_display_indices();
     int64_t trade_transit_goods() const;
     int64_t trade_escrow_cash() const;
     bool apply_command(const Command &cmd, std::string &error);
@@ -3301,6 +3847,42 @@ private:
                                 std::string &error,
                                 bool *source_drained_out = nullptr,
                                 uint64_t preferred_family_handle = 0);
+    bool apply_start_family_expedition(const Command &cmd,
+                                       std::string &error);
+    bool apply_cancel_family_expedition(const Command &cmd,
+                                        std::string &error);
+    bool apply_settle_family_expedition(const Command &cmd,
+                                        std::string &error);
+    bool extract_family_expedition_payload(int32_t expedition,
+                                           int64_t requested,
+                                           std::string &error);
+    bool restore_family_expedition_payload(int32_t expedition,
+                                            int32_t destination_cell,
+                                            std::string &error);
+    bool finalize_immediate_family_expedition_settlement(
+        int32_t destination_cell, std::string &error);
+    void release_family_expedition_reservations(int32_t expedition);
+    bool process_due_family_expeditions(int64_t day, std::string &error);
+    void rebuild_family_expedition_indices();
+    void push_family_expedition_due(int32_t expedition);
+    void append_colonization_receipt(int32_t expedition, int64_t sequence,
+                                     int64_t effective_day, int64_t settled_day,
+                                     uint8_t kind, const char *code);
+    int64_t family_population_in_cell(uint64_t family_handle,
+                                      int32_t cell) const;
+    bool plan_family_colonization_route(uint64_t country_handle,
+                                        int32_t source_cell,
+                                        int32_t target_cell,
+                                        const uint8_t *visible,
+                                        int32_t visible_count,
+                                        std::vector<int32_t> &route,
+                                        std::vector<int32_t> &cumulative,
+                                        int32_t &cost,
+                                        std::string &error);
+    uint64_t colonization_visibility_hash(const uint8_t *visible,
+                                          int32_t count) const;
+    uint64_t family_expedition_target_key(uint64_t country_handle,
+                                          int32_t target_cell) const;
     bool publish_epoch_slice(int64_t &work_done, std::string &error);
     void reset_publish_state();
     bool compile_building_catalog(const godot::Dictionary &catalog, std::string &error);
@@ -3309,6 +3891,15 @@ private:
     bool cell_has_requirements(int32_t cell, int32_t begin, int32_t end,
                                const std::vector<int32_t> &requirements,
                                bool frozen) const;
+    bool cell_has_all_requirements(int32_t cell, int32_t begin, int32_t end,
+                                   const std::vector<int32_t> &requirements,
+                                   bool frozen) const;
+    bool good_production_available(int32_t cell, int32_t good_id,
+                                   bool frozen = true) const;
+    bool good_market_available(int32_t cell, int32_t good_id,
+                               bool frozen = true) const;
+    // Compatibility name for callers that are explicitly asking for the
+    // technology gate (UI/building unlock queries).
     bool good_available(int32_t cell, int32_t good_id, bool frozen = true) const;
     bool profession_available(int32_t cell, int32_t profession_id,
                               bool frozen = true) const;
@@ -3350,6 +3941,7 @@ private:
     // distressed band and 4 is contentment.
     int32_t social_pressure_level_for(int64_t composite_q16) const;
     void publish_social_pressure_facts();
+    void publish_technology_practice_facts();
     bool prepare_fiscal_budgets(std::string &error);
     void settle_income_subsidies_for_cell(int32_t cell,
                                           int64_t &saturation_count);
@@ -3360,6 +3952,8 @@ private:
     int64_t expected_fiscal_transfer(int32_t cell, int32_t kind, int64_t base,
                                      int8_t rate,
                                      int64_t &saturation_count) const;
+    int32_t tariff_epoch_lane_index(int32_t cell, int32_t tariff_kind,
+                                    bool create);
     int64_t expected_after_tax_income(int32_t cell, int32_t profession,
                                       int64_t gross_income,
                                       int64_t &saturation_count) const;
@@ -3715,6 +4309,20 @@ private:
 
     bool apply_treasury_sponsored_build_command(const Command &cmd,
                                                  std::string &error);
+    bool apply_canal_build_command(const Command &cmd, std::string &error);
+    bool process_due_canal_projects(int64_t day, std::string &error);
+    bool plan_canal_route(uint64_t country_handle, int32_t start_cell,
+                          int32_t end_cell,
+                          const godot::PackedInt32Array &waypoints,
+                          CanalQuote &quote, std::string &error) const;
+    bool validate_canal_quote_snapshot(const CanalQuote &quote,
+                                       std::string &error) const;
+    godot::Dictionary canal_quote_dictionary(const CanalQuote &quote) const;
+    void stage_canal_receipt(const Command &cmd, bool ok,
+                             const char *code, uint64_t project_handle = 0,
+                             int64_t cash_paid = 0,
+                             int64_t treasury_goods_used = 0,
+                             int64_t market_goods_used = 0);
     int32_t treasury_build_owner_signature(int32_t cell,
                                            int32_t type_id) const;
     void stage_construction_receipt(const Command &cmd, bool ok,

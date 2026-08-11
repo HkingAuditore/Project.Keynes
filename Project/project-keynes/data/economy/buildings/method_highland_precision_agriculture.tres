@@ -1,0 +1,42 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"method_highland_precision_agriculture"
+display_name = "高地精准块茎农业"
+building_kind = "collector"
+economic_sector_id = "agriculture"
+semantic_tags = PackedStringArray("method.highland", "method.precision_agriculture")
+technology_tags = PackedStringArray("tech.biotechnology")
+required_technology_tags = PackedStringArray("tech.highland_tuber_farming", "tech.precision_agriculture", "tech.geographic_information_systems")
+upgrade_family_id = &"highland_crop_farming"
+upgrade_tier = 1
+production_climate_profile_id = &"dryland_crop"
+construction_days = 150
+construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "glass")
+construction_quantities = PackedInt64Array(32000, 22000, 20000, 8000)
+owner_profession_id = &"landlord"
+employee_profession_ids = PackedStringArray("agricultural_worker", "technician", "engineer", "manager")
+employee_slots_per_building = PackedInt64Array(8, 4, 2, 2)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(14740, 17136, 19500, 17136)
+input_good_ids = PackedStringArray("fertilizer", "agricultural_machinery", "electricity", "computers")
+input_quantities_per_day = PackedInt64Array(500, 650, 700, 300)
+input_required_q16 = PackedInt32Array(32768, 32768, 32768, 32768)
+input_candidate_offsets = PackedInt32Array(0)
+output_good_ids = PackedStringArray("potatoes")
+output_quantities_per_day = PackedInt64Array(8200)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = PackedStringArray("arable_land")
+resource_quantities_per_day = PackedInt64Array(900)
+resource_interaction_modes = PackedStringArray("capacity")
+resource_access_modes = PackedStringArray("local")
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array(1, 1, 2)
+condition_signals = PackedInt32Array(4, 10, 0)
+condition_compares = PackedInt32Array(5, 4, 0)
+condition_reference_ids = PackedStringArray("", "arable_land", "")
+condition_values = PackedInt64Array(39322, 0, 0)

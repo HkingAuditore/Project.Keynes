@@ -4,6 +4,11 @@ extends RefCounted
 const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
+const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
+
+const NETWORK_DATA_PATH := "res://data/technology/technology_network.json"
+
+static var _network_payload_cache: Dictionary = {}
 
 const DOMAIN_IDS := ["agriculture", "engineering", "science", "society"]
 const DOMAIN_NAMES := ["农业", "工程", "科学", "社会"]
@@ -11,9 +16,9 @@ const DOMAIN_COLORS := [
 	Color(0.39, 0.62, 0.31), Color(0.72, 0.48, 0.24),
 	Color(0.28, 0.58, 0.74), Color(0.67, 0.48, 0.68),
 ]
-const STARTING_IDS := [
-	"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control",
-]
+## No technology is completed globally for every geography. Starter eligibility
+## is authored per node in technology_network.json.
+const STARTING_IDS := []
 const FLAG_ERA_KEY := 1
 const FLAG_MILESTONE := 2
 const FLAG_STARTING := 4
@@ -28,121 +33,75 @@ const CONDITION_ANY_OF := 11
 const CONDITION_AT_LEAST := 12
 const CONDITION_NOT := 13
 
-## Existing content remains unchanged unless a row is listed here. This is the
-## first real gameplay gate: irrigation needs a discovered river-valley signal.
-## Future content may use ResearchCondition/ResearchPredicate resources instead.
-const TECHNOLOGY_RESEARCH_CONDITION_SPECS := {
-	"tech.irrigation": {
-		"operator": ResearchConditionScript.Operator.ALL_OF,
-		"children": [
-			{"kind": ResearchPredicateScript.Kind.SIGNAL_PRESENT, "id": "landform.river_valley"},
-		],
-	},
+const ROUTE_CATEGORY_NAMES_ZH := {
+	"ai": "人工智能", "animal": "动物", "climate": "气候", "craft": "工艺",
+	"crop": "作物", "ecology": "生态", "energy": "能源", "geography": "地理",
+	"institution": "制度", "material": "材料", "resource": "资源", "trade": "贸易",
 }
 
-const ERA_ROWS := [
-	["stone", "石器时代", "tech.settled_knowledge"],
-	["bronze", "青铜时代", "tech.organized_settlements"],
-	["classical", "古典时代", "tech.classical_synthesis"],
-	["feudal", "封建时代", "tech.institutional_learning"],
-	["exploration", "探索时代", "tech.global_exchange"],
-	["enlightenment", "启蒙时代", "tech.enlightenment_institutions"],
-	["steam", "蒸汽时代", "tech.industrialization"],
-	["electrical", "电气时代", "tech.electrical_society"],
-	["atomic", "原子时代", "tech.atomic_modernity"],
-	["information", "信息时代", "tech.information_society"],
-	["ai", "人工智能时代", "tech.cognitive_automation"],
-]
+const ROUTE_VALUE_NAMES_ZH := {
+	"academic": "学术", "alloys": "合金", "automated": "自动化", "autonomy": "自主系统",
+	"biotechnology": "生物技术", "calendar": "历法", "chemistry": "化学", "clay": "黏土",
+	"coal": "煤炭", "coast": "沿海", "cold": "寒冷", "collaboration": "人机协作",
+	"combustion": "内燃", "communication": "通信", "community": "社群", "computing": "计算",
+	"copper": "铜", "drought": "干旱", "education": "教育", "electric": "电力",
+	"exchange": "交流", "experimental": "实验", "factory": "工厂", "fire": "火",
+	"flood": "洪水", "forest": "森林", "game": "野生动物", "general": "通用农艺",
+	"gold": "黄金",
+	"guild": "行会", "health": "卫生", "heat": "高温", "highland": "高地",
+	"horse": "马匹", "industrial": "工业农业", "inland": "内陆", "iron": "铁",
+	"knowledge": "知识", "laboratory": "实验室", "learning": "机器学习", "machinery": "机械",
+	"maize": "玉米", "maritime": "海运", "market": "市场", "materials": "合成材料",
+	"mechanized": "机械化", "minerals": "矿产", "modeling": "建模", "network": "网络",
+	"nuclear": "核能", "observation": "观察", "oil": "石油", "oral": "口述传承",
+	"pasture": "牧场", "phosphate": "磷矿", "planning": "规划", "plants": "野生植物",
+	"precision": "精准", "printing": "印刷", "rail": "铁路", "rare_earth": "稀土",
+	"records": "记录", "rice": "水稻", "river": "河流", "saltpeter": "硝石",
+	"settlement": "聚落", "silver": "白银", "state": "国家治理", "steam": "蒸汽", "steppe": "草原",
+	"stone": "石材", "storage": "储藏", "sulfur": "硫", "survey": "测绘",
+	"textiles": "纺织", "thermal": "热能", "tin": "锡", "tools": "工具",
+	"tropical": "热带作物", "tuber": "块茎作物", "university": "大学", "urban": "城市",
+	"water": "水力", "wheat": "小麦", "wind": "风力", "writing": "文字",
+}
 
-# id, name, era, domain, cost, prerequisites, is_key, effect
-const TECHNOLOGY_ROWS := [
-	["tech.hunting", "狩猎", "stone", "society", 0, [], false, "开局根科技"],
-	["tech.gathering", "采集", "stone", "agriculture", 0, [], false, "开局根科技"],
-	["tech.stone_knapping", "石器打制", "stone", "engineering", 0, [], false, "开局根科技"],
-	["tech.fire_control", "火的控制", "stone", "science", 0, [], false, "开局根科技"],
-	["tech.seasonal_foraging", "冬季采集", "stone", "agriculture", 2000, ["tech.gathering"], true, "农业产出 +5%"],
-	["tech.composite_tools", "复合工具", "stone", "engineering", 2000, ["tech.stone_knapping"], true, "制造产出 +5%"],
-	["tech.natural_observation", "自然观察", "stone", "science", 2500, ["tech.fire_control"], true, "科学研究效率 +5%"],
-	["tech.oral_tradition", "口述传统", "stone", "society", 2500, ["tech.hunting"], true, "解锁传知者与科研议事圈"],
-	["tech.controlled_burning", "控制焚烧", "stone", "agriculture", 3500, ["tech.seasonal_foraging", "tech.fire_control"], false, "农业与采掘产出 +5%"],
-	["tech.communal_specialization", "共同体分工", "stone", "society", 3500, ["tech.oral_tradition", "tech.composite_tools"], false, "施工时间 -5%"],
-	["tech.settled_knowledge", "定居知识", "stone", "society", 5000, [], false, "开启青铜时代"],
-	["tech.crop_domestication", "作物驯化", "bronze", "agriculture", 6000, ["tech.settled_knowledge", "tech.seasonal_foraging"], false, "农业产出 +5%"],
-	["tech.pottery", "陶器", "bronze", "engineering", 6000, ["tech.settled_knowledge", "tech.composite_tools"], false, "解锁陶器产业"],
-	["tech.bronze_casting", "青铜铸造", "bronze", "engineering", 7500, ["tech.pottery"], true, "制造产出 +10%"],
-	["tech.celestial_calendars", "天文历法", "bronze", "science", 7500, ["tech.settled_knowledge", "tech.natural_observation"], true, "科学研究效率 +10%"],
-	["tech.record_keeping", "记录制度", "bronze", "society", 9000, ["tech.settled_knowledge", "tech.oral_tradition"], true, "解锁书记员与书记学校"],
-	["tech.irrigation", "灌溉", "bronze", "agriculture", 9000, ["tech.crop_domestication", "tech.celestial_calendars"], true, "农业产出 +15%"],
-	["tech.organized_settlements", "组织化聚落", "bronze", "society", 12000, [], false, "开启古典时代"],
-	["tech.writing", "文字", "classical", "society", 15000, ["tech.organized_settlements", "tech.record_keeping"], false, "解锁文字与手稿产业"],
-	["tech.masonry", "砖石工程", "classical", "engineering", 15000, ["tech.organized_settlements", "tech.bronze_casting"], false, "施工成本 -10%"],
-	["tech.natural_philosophy", "自然哲学", "classical", "science", 18000, ["tech.organized_settlements", "tech.celestial_calendars"], true, "科学研究效率 +10%"],
-	["tech.crop_rotation", "轮作", "classical", "agriculture", 18000, ["tech.organized_settlements", "tech.irrigation"], true, "农业产出 +10%"],
-	["tech.road_engineering", "道路工程", "classical", "engineering", 22000, ["tech.masonry"], true, "国内贸易容量 +15%"],
-	["tech.scholarly_academies", "学术学院", "classical", "society", 22000, ["tech.writing", "tech.natural_philosophy"], true, "解锁学者与古典学院"],
-	["tech.classical_synthesis", "古典综合", "classical", "society", 30000, [], false, "开启封建时代"],
-	["tech.three_field_system", "三圃制", "feudal", "agriculture", 35000, ["tech.classical_synthesis", "tech.crop_rotation"], true, "农业产出 +15%"],
-	["tech.water_power", "水力机械", "feudal", "engineering", 35000, ["tech.classical_synthesis", "tech.road_engineering"], true, "能源产出 +15%"],
-	["tech.manuscript_culture", "手抄本文化", "feudal", "science", 42000, ["tech.classical_synthesis", "tech.natural_philosophy"], false, "知识产出 +10%"],
-	["tech.guild_organization", "行会组织", "feudal", "society", 42000, ["tech.classical_synthesis", "tech.scholarly_academies"], true, "制造产出 +10%"],
-	["tech.scholastic_method", "经院方法", "feudal", "science", 50000, ["tech.manuscript_culture"], true, "研究成本 -10%"],
-	["tech.chartered_universities", "特许大学", "feudal", "society", 50000, ["tech.guild_organization", "tech.scholastic_method"], false, "解锁特许大学"],
-	["tech.institutional_learning", "制度化学术", "feudal", "society", 70000, [], false, "开启探索时代"],
-	["tech.agronomic_exchange", "农艺交流", "exploration", "agriculture", 80000, ["tech.institutional_learning", "tech.three_field_system"], true, "农业产出 +15%"],
-	["tech.oceanic_navigation", "远洋航海", "exploration", "engineering", 80000, ["tech.institutional_learning", "tech.water_power"], true, "国内贸易速度 +15%"],
-	["tech.cartography", "测绘学", "exploration", "science", 95000, ["tech.institutional_learning", "tech.scholastic_method"], true, "国内贸易容量 +15%"],
-	["tech.printing_press", "印刷术", "exploration", "society", 95000, ["tech.institutional_learning", "tech.guild_organization"], true, "解锁印刷学社"],
-	["tech.ship_design", "远洋船舶设计", "exploration", "engineering", 115000, ["tech.oceanic_navigation", "tech.cartography"], false, "国内贸易容量 +20%"],
-	["tech.double_entry_bookkeeping", "复式记账", "exploration", "society", 115000, ["tech.printing_press", "tech.cartography"], false, "施工成本 -10%"],
-	["tech.global_exchange", "全球交流", "exploration", "society", 160000, [], false, "开启启蒙时代"],
-	["tech.agricultural_improvement", "农业改良", "enlightenment", "agriculture", 180000, ["tech.global_exchange", "tech.agronomic_exchange"], true, "农业产出 +20%"],
-	["tech.precision_engineering", "精密工程", "enlightenment", "engineering", 180000, ["tech.global_exchange", "tech.oceanic_navigation"], true, "制造产出 +15%"],
-	["tech.experimental_science", "实验科学", "enlightenment", "science", 215000, ["tech.global_exchange", "tech.cartography"], true, "解锁科学家与博学学会"],
-	["tech.political_economy", "政治经济学", "enlightenment", "society", 215000, ["tech.global_exchange", "tech.printing_press"], true, "贸易容量 +10%、施工成本 -5%"],
-	["tech.probability_statistics", "概率统计", "enlightenment", "science", 260000, ["tech.experimental_science"], false, "科学研究效率 +15%"],
-	["tech.standardization", "工业标准化", "enlightenment", "engineering", 260000, ["tech.precision_engineering", "tech.political_economy"], false, "制造产出 +15%"],
-	["tech.enlightenment_institutions", "启蒙制度", "enlightenment", "society", 360000, [], false, "核心：研究成本 -20%"],
-	["tech.mechanized_agriculture", "机械化农业", "steam", "agriculture", 400000, ["tech.enlightenment_institutions", "tech.agricultural_improvement"], true, "核心：农业产出 +25%"],
-	["tech.steam_power", "蒸汽动力", "steam", "engineering", 400000, ["tech.enlightenment_institutions", "tech.precision_engineering"], true, "核心：能源产出 +25%"],
-	["tech.thermodynamics", "热力学", "steam", "science", 480000, ["tech.enlightenment_institutions", "tech.experimental_science"], true, "能源产出 +15%"],
-	["tech.industrial_organization", "工业组织", "steam", "society", 480000, ["tech.enlightenment_institutions", "tech.political_economy"], true, "施工时间 -15%"],
-	["tech.coke_smelting", "焦炭冶炼", "steam", "engineering", 580000, ["tech.steam_power", "tech.thermodynamics"], false, "制造产出 +15%"],
-	["tech.rail_logistics", "铁路物流", "steam", "society", 580000, ["tech.steam_power", "tech.industrial_organization"], false, "贸易容量 +20%、速度 +10%"],
-	["tech.industrialization", "工业化", "steam", "society", 800000, [], false, "开启电气时代"],
-	["tech.synthetic_fertilizer", "合成肥料", "electrical", "agriculture", 900000, ["tech.industrialization", "tech.mechanized_agriculture"], true, "农业产出 +20%"],
-	["tech.electrification", "电气化", "electrical", "engineering", 900000, ["tech.industrialization", "tech.steam_power"], true, "核心：能源产出 +30%"],
-	["tech.electrochemistry", "电化学", "electrical", "science", 1080000, ["tech.industrialization", "tech.thermodynamics"], true, "制造产出 +15%"],
-	["tech.public_education", "公共教育", "electrical", "society", 1080000, ["tech.industrialization", "tech.industrial_organization"], true, "社会研究效率 +15%"],
-	["tech.radio", "无线电", "electrical", "science", 1300000, ["tech.electrification", "tech.electrochemistry"], false, "知识产出 +15%"],
-	["tech.mass_production", "大规模生产", "electrical", "engineering", 1300000, ["tech.electrification", "tech.public_education"], false, "制造产出 +20%"],
-	["tech.electrical_society", "电气社会", "electrical", "society", 1800000, [], false, "开启原子时代"],
-	["tech.industrial_agronomy", "工业农学", "atomic", "agriculture", 2000000, ["tech.electrical_society", "tech.synthetic_fertilizer"], true, "农业产出 +20%"],
-	["tech.advanced_metallurgy", "先进冶金", "atomic", "engineering", 2000000, ["tech.electrical_society", "tech.electrification"], true, "制造产出 +20%"],
-	["tech.nuclear_fission", "核裂变", "atomic", "science", 2400000, ["tech.electrical_society", "tech.electrochemistry"], true, "能源产出 +20%"],
-	["tech.national_laboratories", "国家实验室", "atomic", "society", 2400000, ["tech.electrical_society", "tech.public_education"], true, "解锁国家实验室、知识产出 +20%"],
-	["tech.geological_prospecting", "地质勘探", "atomic", "science", 2900000, ["tech.nuclear_fission"], false, "采掘产出 +20%"],
-	["tech.operations_research", "运筹学", "atomic", "society", 2900000, ["tech.national_laboratories", "tech.advanced_metallurgy"], false, "施工时间 -15%、贸易容量 +10%"],
-	["tech.atomic_modernity", "原子现代性", "atomic", "society", 4000000, [], false, "开启信息时代"],
-	["tech.precision_agriculture", "精准农业", "information", "agriculture", 4500000, ["tech.atomic_modernity", "tech.industrial_agronomy"], true, "农业产出 +20%"],
-	["tech.digital_computing", "数字计算", "information", "engineering", 4500000, ["tech.atomic_modernity", "tech.advanced_metallurgy"], false, "核心：知识产出 +25%"],
-	["tech.information_theory", "信息论", "information", "science", 5400000, ["tech.atomic_modernity", "tech.nuclear_fission"], true, "科学研究效率 +20%"],
-	["tech.knowledge_economy", "知识经济", "information", "society", 5400000, ["tech.atomic_modernity", "tech.national_laboratories"], true, "社会研究效率 +20%"],
-	["tech.software_engineering", "软件工程", "information", "engineering", 6500000, ["tech.digital_computing", "tech.information_theory"], true, "知识产出 +15%、制造产出 +10%"],
-	["tech.networked_computing", "网络计算", "information", "society", 6500000, ["tech.digital_computing", "tech.knowledge_economy"], false, "贸易容量 +20%、速度 +15%"],
-	["tech.information_society", "信息社会", "information", "society", 9000000, [], false, "开启人工智能时代"],
-	["tech.automated_agriculture", "自动化农业", "ai", "agriculture", 10000000, ["tech.information_society", "tech.precision_agriculture"], true, "农业产出 +20%"],
-	["tech.machine_learning", "机器学习", "ai", "science", 10000000, ["tech.information_society", "tech.information_theory", "tech.digital_computing"], false, "核心：知识产出 +30%"],
-	["tech.neural_networks", "神经网络", "ai", "science", 12000000, ["tech.machine_learning"], true, "科学研究效率 +20%"],
-	["tech.human_machine_collaboration", "人机协作", "ai", "society", 12000000, ["tech.information_society", "tech.knowledge_economy"], true, "社会研究效率 +20%"],
-	["tech.autonomous_systems", "自主系统", "ai", "engineering", 14500000, ["tech.machine_learning", "tech.software_engineering"], true, "制造产出 +20%"],
-	["tech.distributed_intelligence", "分布式智能", "ai", "engineering", 14500000, ["tech.autonomous_systems", "tech.human_machine_collaboration"], false, "贸易容量 +20%、知识产出 +10%"],
-	["tech.cognitive_automation", "认知自动化", "ai", "society", 20000000, [], false, "完成科技树、研究成本 -10%"],
-]
+static func _network_payload() -> Dictionary:
+	if not _network_payload_cache.is_empty():
+		return _network_payload_cache
+	var file := FileAccess.open(NETWORK_DATA_PATH, FileAccess.READ)
+	if file == null:
+		return {"ok": false, "reason": "technology_network_missing", "path": NETWORK_DATA_PATH}
+	var parsed = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not parsed is Dictionary:
+		return {"ok": false, "reason": "technology_network_json_invalid"}
+	_network_payload_cache = (parsed as Dictionary).duplicate(true)
+	_network_payload_cache["ok"] = true
+	return _network_payload_cache
+
 
 static func compile_native_catalog() -> Dictionary:
 	var signal_catalog := ResearchSignalCatalogScript.compile_native_catalog()
 	if not bool(signal_catalog.get("ok", false)):
 		return signal_catalog
+	var network := _network_payload()
+	if not bool(network.get("ok", false)):
+		return network
+	var technology_rows: Array = (network.get("nodes", []) as Array).duplicate(true)
+	var source_era_order := {}
+	for era_index_value in range((network.get("eras", []) as Array).size()):
+		source_era_order[String(((network.get("eras", []) as Array)[era_index_value] as Dictionary).get("id", ""))] = era_index_value
+	technology_rows.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_era := int(source_era_order.get(String(left.get("era_id", "")), 999))
+		var right_era := int(source_era_order.get(String(right.get("era_id", "")), 999))
+		if left_era != right_era:
+			return left_era < right_era
+		if bool(left.get("is_milestone", false)) != bool(right.get("is_milestone", false)):
+			return not bool(left.get("is_milestone", false))
+		return int(left.get("layout_order", 0)) < int(right.get("layout_order", 0)))
+	var era_rows: Array = network.get("eras", [])
+	var domain_rows: Array = network.get("domains", [])
+	if technology_rows.size() != 360 or era_rows.size() != 11 or domain_rows.size() != 4:
+		return {"ok": false, "reason": "technology_network_shape_invalid"}
 	var ids := PackedStringArray()
 	var names := PackedStringArray()
 	var era_ids := PackedStringArray()
@@ -155,68 +114,144 @@ static func compile_native_catalog() -> Dictionary:
 	var milestone_required := PackedInt32Array()
 	var flags := PackedInt32Array()
 	var effects := PackedStringArray()
+	var profiles := PackedStringArray()
+	var route_tag_offsets := PackedInt32Array([0])
+	var route_tags := PackedStringArray()
+	var node_roles := PackedStringArray()
+	var primary_route_tags := PackedStringArray()
+	var layout_lanes := PackedStringArray()
+	var network_roles := PackedStringArray()
+	var anchor_kinds := PackedStringArray()
+	var starter_capability_offsets := PackedInt32Array([0])
+	var starter_capability_tags := PackedStringArray()
 	var id_to_index := {}
 	var era_index := {}
-	for i in range(ERA_ROWS.size()):
-		era_index[String(ERA_ROWS[i][0])] = i
-	for row in TECHNOLOGY_ROWS:
-		var id := String(row[0])
+	var era_milestone_ids := PackedStringArray()
+	for i in range(era_rows.size()):
+		var era_row: Dictionary = era_rows[i]
+		era_index[String(era_row.get("id", ""))] = i
+		era_milestone_ids.append(String(era_row.get("milestone_id", "")))
+	for row_value in technology_rows:
+		var row: Dictionary = row_value
+		var id := String(row.get("id", ""))
 		if not id.begins_with("tech.") or id_to_index.has(id):
 			return {"ok": false, "reason": "technology_id_invalid_or_duplicate", "id": id}
 		id_to_index[id] = ids.size()
 		ids.append(id)
-		names.append(String(row[1]))
-	for row in TECHNOLOGY_ROWS:
-		var era := String(row[2])
-		var domain := DOMAIN_IDS.find(String(row[3]))
-		if not era_index.has(era) or domain < 0 or int(row[4]) < 0:
-			return {"ok": false, "reason": "technology_metadata_invalid", "id": String(row[0])}
+		names.append(String(row.get("display_name", "")))
+	var research_condition_specs := {}
+	var reveal_condition_specs := {}
+	for row_value in technology_rows:
+		var row: Dictionary = row_value
+		var row_id := String(row.get("id", ""))
+		var row_index := int(id_to_index[row_id])
+		var era := String(row.get("era_id", ""))
+		var domain := DOMAIN_IDS.find(String(row.get("domain_id", "")))
+		var secondary_routes: Array = row.get("secondary_route_tags", [])
+		if not era_index.has(era) or domain < 0 or int(row.get("cost_points", -1)) < 0 \
+				or String(row.get("effect_profile", "")).is_empty() \
+				or String(row.get("main_lane", "")).is_empty() or secondary_routes.is_empty():
+			return {"ok": false, "reason": "technology_metadata_invalid", "id": row_id}
 		era_ids.append(era)
 		domain_indices.append(domain)
-		costs.append(int(row[4]) * 1000)
-		for prerequisite in row[5]:
+		var is_starter := bool(row.get("is_starter_eligible", false))
+		costs.append(0 if is_starter else int(row.get("cost_points", 0)) * 1000)
+		var hard_prerequisites: Array = row.get("hard_prerequisite_ids", [])
+		if hard_prerequisites.size() > 2:
+			return {"ok": false, "reason": "technology_hard_prerequisite_limit_exceeded", "id": row_id}
+		for prerequisite in hard_prerequisites:
 			var prerequisite_id := String(prerequisite)
 			if not id_to_index.has(prerequisite_id):
-				return {"ok": false, "reason": "technology_prerequisite_missing", "id": String(row[0]), "prerequisite": prerequisite_id}
+				return {"ok": false, "reason": "technology_prerequisite_missing", "id": row_id, "prerequisite": prerequisite_id}
 			var prerequisite_index := int(id_to_index[prerequisite_id])
-			if prerequisite_index >= ids.find(String(row[0])):
-				return {"ok": false, "reason": "technology_catalog_not_topological", "id": String(row[0])}
+			if prerequisite_index >= row_index:
+				return {"ok": false, "reason": "technology_catalog_not_topological", "id": row_id}
 			prerequisites.append(prerequisite_index)
 		prerequisite_offsets.append(prerequisites.size())
+		var is_milestone := bool(row.get("is_milestone", false))
+		var candidate_ids: Array = []
+		if is_milestone:
+			for candidate_value in technology_rows:
+				var candidate: Dictionary = candidate_value
+				if String(candidate.get("era_id", "")) == era \
+						and bool(candidate.get("is_milestone_candidate", false)):
+					candidate_ids.append(String(candidate.get("id", "")))
+			if candidate_ids.size() != 16:
+				return {"ok": false, "reason": "technology_era_candidate_count_invalid", "id": row_id}
+			for candidate_id in candidate_ids:
+				var candidate_index := int(id_to_index.get(candidate_id, -1))
+				if candidate_index < 0 or candidate_index >= row_index:
+					return {"ok": false, "reason": "technology_era_candidate_invalid", "id": row_id, "candidate": candidate_id}
+				milestone_candidates.append(candidate_index)
 		milestone_offsets.append(milestone_candidates.size())
-		milestone_required.append(0)
-		flags.append((1 if bool(row[6]) else 0) | (4 if STARTING_IDS.has(String(row[0])) else 0))
-		effects.append(String(row[7]))
-	for era_row in ERA_ROWS:
-		var milestone_id := String(era_row[2])
-		var milestone_index := int(id_to_index.get(milestone_id, -1))
-		if milestone_index < 0:
-			return {"ok": false, "reason": "technology_milestone_missing", "id": milestone_id}
-		var candidates := []
-		for i in range(ids.size()):
-			if String(era_ids[i]) == String(era_row[0]) and (int(flags[i]) & 1) != 0:
-				candidates.append(i)
-		if candidates.size() != 4:
-			return {"ok": false, "reason": "technology_era_key_count_invalid", "era": String(era_row[0]), "count": candidates.size()}
-		var insert_at := int(milestone_offsets[milestone_index])
-		for candidate in candidates:
-			milestone_candidates.insert(insert_at, candidate)
-			insert_at += 1
-		for i in range(milestone_index + 1, milestone_offsets.size()):
-			milestone_offsets[i] += candidates.size()
-		milestone_required[milestone_index] = 2
-		flags[milestone_index] = int(flags[milestone_index]) | 2
+		milestone_required.append(5 if is_milestone else 0)
+		flags.append((FLAG_ERA_KEY if bool(row.get("is_milestone_candidate", false)) else 0) \
+			| (FLAG_MILESTONE if is_milestone else 0) \
+			| (FLAG_STARTING if is_starter else 0))
+		effects.append(String(row.get("effect_summary", "")))
+		profiles.append(String(row.get("effect_profile", "")))
+		var route_seen := {}
+		for route_tag in secondary_routes:
+			var normalized_route := String(route_tag).strip_edges()
+			if not normalized_route.begins_with("route.") or route_seen.has(normalized_route):
+				return {"ok": false, "reason": "technology_route_tag_invalid", "id": row_id}
+			route_seen[normalized_route] = true
+			route_tags.append(normalized_route)
+		route_tag_offsets.append(route_tags.size())
+		var primary_route := String(secondary_routes[0])
+		primary_route_tags.append(primary_route)
+		layout_lanes.append(String(row.get("main_lane", "")))
+		node_roles.append(String(row.get("node_role", "")))
+		network_roles.append(String(row.get("network_role", "")))
+		anchor_kinds.append(String(row.get("anchor_kind", "")))
+		for capability_tag in row.get("starter_capability_tags", []):
+			starter_capability_tags.append(String(capability_tag))
+		starter_capability_offsets.append(starter_capability_tags.size())
+		var research_spec: Dictionary = (row.get("research_condition", {}) as Dictionary).duplicate(true)
+		var reveal_spec: Dictionary = (row.get("reveal_condition", {}) as Dictionary).duplicate(true)
+		var content_effects: Array = row.get("content_effects", [])
+		if row.has("content_effects") and not _validate_content_effects(content_effects,
+				(row.get("expected_bindings", []) as Array)):
+			return {"ok": false, "reason": "technology_content_effect_invalid", "id": row_id}
+		if not research_spec.is_empty():
+			research_condition_specs[row_id] = research_spec
+		if not reveal_spec.is_empty():
+			reveal_condition_specs[row_id] = reveal_spec
 	var era_ids_out := PackedStringArray()
 	var era_names := PackedStringArray()
 	var era_milestones := PackedInt32Array()
-	for row in ERA_ROWS:
-		era_ids_out.append(String(row[0]))
-		era_names.append(String(row[1]))
-		era_milestones.append(int(id_to_index[String(row[2])]))
-	var conditions := _compile_research_conditions(ids,
-		signal_catalog.get("research_signal_ids", PackedStringArray()))
+	for era_value in era_rows:
+		var era_row: Dictionary = era_value
+		var milestone_id := String(era_row.get("milestone_id", ""))
+		if not id_to_index.has(milestone_id):
+			return {"ok": false, "reason": "technology_milestone_missing", "id": milestone_id}
+		era_ids_out.append(String(era_row.get("id", "")))
+		era_names.append(String(era_row.get("display_name", "")))
+		era_milestones.append(int(id_to_index[milestone_id]))
+	var signal_ids: PackedStringArray = signal_catalog.get("research_signal_ids", PackedStringArray())
+	var conditions := _compile_condition_specs(ids, signal_ids,
+		research_condition_specs, "technology_research_condition")
 	if not bool(conditions.get("ok", false)):
 		return conditions
+	var reveal_conditions := _compile_condition_specs(ids, signal_ids,
+		reveal_condition_specs, "technology_reveal_condition")
+	if not bool(reveal_conditions.get("ok", false)):
+		return reveal_conditions
+	var reveal_reverse := _compile_reveal_reverse_index(ids.size(), signal_ids.size(),
+		reveal_conditions)
+	var modifier_ir := _compile_explicit_modifier_term_ir(technology_rows)
+	if not bool(modifier_ir.get("ok", false)):
+		return modifier_ir
+	var recipe_ids := PackedStringArray()
+	var recipe_versions := PackedInt32Array()
+	var starter_eligible_ids := PackedStringArray()
+	for row_value in technology_rows:
+		if bool((row_value as Dictionary).get("is_starter_eligible", false)):
+			starter_eligible_ids.append(String((row_value as Dictionary).get("id", "")))
+	for id in ids:
+		var is_starting := starter_eligible_ids.has(String(id))
+		recipe_ids.append("" if is_starting else "technology.%s" % String(id))
+		recipe_versions.append(0 if is_starting else 1)
 	var out := {
 		"ok": true,
 		"technology_ids": ids,
@@ -231,6 +266,18 @@ static func compile_native_catalog() -> Dictionary:
 		"technology_milestone_required_counts": milestone_required,
 		"technology_flags": flags,
 		"technology_effect_summaries": effects,
+		"technology_effect_profile_ids": profiles,
+		"technology_effect_recipe_ids": recipe_ids,
+		"technology_effect_recipe_versions": recipe_versions,
+		"technology_route_tag_offsets": route_tag_offsets,
+		"technology_route_tags": route_tags,
+		"technology_node_roles": node_roles,
+		"technology_primary_route_tags": primary_route_tags,
+		"technology_layout_lanes": layout_lanes,
+		"technology_network_roles": network_roles,
+		"technology_anchor_kinds": anchor_kinds,
+		"technology_starter_capability_offsets": starter_capability_offsets,
+		"technology_starter_capability_tags": starter_capability_tags,
 		"technology_modifier_definition_keys": _modifier_definition_keys(ids),
 		"technology_domain_ids": PackedStringArray(DOMAIN_IDS),
 		"technology_domain_display_names": PackedStringArray(DOMAIN_NAMES),
@@ -238,18 +285,100 @@ static func compile_native_catalog() -> Dictionary:
 		"technology_era_ids_ordered": era_ids_out,
 		"technology_era_display_names": era_names,
 		"technology_era_milestone_indices": era_milestones,
+		# Technology owns the stable milestone -> reward-pool routing. The
+		# candidate rules and executable templates remain Effect catalog data.
+		"technology_era_reward_pool_ids": PackedStringArray(),
 		"starting_technology_ids": PackedStringArray(STARTING_IDS),
+		"starter_eligible_technology_ids": starter_eligible_ids,
+		"technology_visual_edges": (network.get("visual_edges", []) as Array).duplicate(true),
 	}
+	for era_index_value in range(era_rows.size()):
+		out.technology_era_reward_pool_ids.append(
+			"era_reward.pool.%s" % String((era_rows[era_index_value] as Dictionary).get("id", "")))
 	for key in signal_catalog:
 		if key != "ok":
 			out[key] = signal_catalog[key]
 	for key in conditions:
 		if key != "ok":
 			out[key] = conditions[key]
+	for key in reveal_conditions:
+		if key != "ok":
+			out[key] = reveal_conditions[key]
+	for key in reveal_reverse:
+		if key != "ok":
+			out[key] = reveal_reverse[key]
+	for key in modifier_ir:
+		if key != "ok":
+			out[key] = modifier_ir[key]
 	return out
 
-static func _compile_research_conditions(
-		technology_ids: PackedStringArray, signal_ids: PackedStringArray) -> Dictionary:
+
+static func _compile_explicit_modifier_term_ir(nodes: Array) -> Dictionary:
+	var offsets := PackedInt32Array([0])
+	var stat_keys := PackedStringArray()
+	var operations := PackedInt32Array()
+	var values := PackedFloat64Array()
+	for node_value in nodes:
+		var node: Dictionary = node_value
+		var terms: Array = node.get("modifier_terms", [])
+		if terms.is_empty() and not bool(node.get("is_starter_eligible", false)):
+			return {"ok": false, "reason": "technology_modifier_terms_missing",
+				"id": String(node.get("id", ""))}
+		if terms.size() > 3:
+			return {"ok": false, "reason": "technology_modifier_term_limit_exceeded",
+				"id": String(node.get("id", ""))}
+		for term_value in terms:
+			var term: Dictionary = term_value
+			var stat_key := String(term.get("stat", "")).strip_edges()
+			var operation := int(term.get("operation", -1))
+			var value := float(term.get("value", NAN))
+			if stat_key.is_empty() or operation < 0 or operation > 3 or not is_finite(value):
+				return {"ok": false, "reason": "technology_modifier_term_invalid",
+					"id": String(node.get("id", ""))}
+			stat_keys.append(stat_key)
+			operations.append(operation)
+			values.append(value)
+		offsets.append(stat_keys.size())
+	return {
+		"ok": true,
+		"technology_modifier_term_offsets": offsets,
+		"technology_modifier_term_stat_keys": stat_keys,
+		"technology_modifier_term_operations": operations,
+		"technology_modifier_term_values": values,
+	}
+
+
+static func _validate_content_effects(effects: Array, expected_bindings: Array) -> bool:
+	var expected := {}
+	for binding_value in expected_bindings:
+		var binding: Dictionary = binding_value
+		expected["%d|%s" % [int(binding.get("kind", 0)), String(binding.get("id", ""))]] = false
+	for effect_value in effects:
+		if not effect_value is Dictionary:
+			return false
+		var effect: Dictionary = effect_value
+		var effect_id := String(effect.get("id", "")).strip_edges()
+		if String(effect.get("kind", "")).strip_edges().is_empty() or effect_id.is_empty() \
+				or String(effect.get("subject", "")).is_empty() \
+				or String(effect.get("attribute", "")).is_empty() \
+				or String(effect.get("operation", "")).is_empty() \
+				or String(effect.get("implementation", "")).is_empty() \
+				or String(effect.get("status", "")).is_empty():
+			return false
+		var binding_kind := int(effect.get("binding_kind", 0))
+		if binding_kind > 0:
+			var key := "%d|%s" % [binding_kind, effect_id]
+			if not expected.has(key):
+				return false
+			expected[key] = true
+	for key in expected:
+		if not bool(expected[key]):
+			return false
+	return true
+
+static func _compile_condition_specs(
+		technology_ids: PackedStringArray, signal_ids: PackedStringArray,
+		specs: Dictionary, prefix: String) -> Dictionary:
 	var offsets := PackedInt32Array([0])
 	var ops := PackedInt32Array()
 	var refs := PackedInt32Array()
@@ -261,7 +390,7 @@ static func _compile_research_conditions(
 	for i in range(technology_ids.size()):
 		technology_index[String(technology_ids[i])] = i
 	for technology_id in technology_ids:
-		var spec = TECHNOLOGY_RESEARCH_CONDITION_SPECS.get(String(technology_id), null)
+		var spec = specs.get(String(technology_id), null)
 		if spec != null:
 			var error := _append_condition_postfix(spec, signal_index, technology_index,
 				ops, refs, values)
@@ -270,10 +399,48 @@ static func _compile_research_conditions(
 		offsets.append(ops.size())
 	return {
 		"ok": true,
-		"technology_research_condition_offsets": offsets,
-		"technology_research_condition_ops": ops,
-		"technology_research_condition_refs": refs,
-		"technology_research_condition_values": values,
+		"%s_offsets" % prefix: offsets,
+		"%s_ops" % prefix: ops,
+		"%s_refs" % prefix: refs,
+		"%s_values" % prefix: values,
+	}
+
+static func _compile_reveal_reverse_index(
+		technology_count: int, signal_count: int, conditions: Dictionary) -> Dictionary:
+	var buckets: Array[PackedInt32Array] = []
+	for _signal in range(signal_count):
+		buckets.append(PackedInt32Array())
+	var offsets: PackedInt32Array = conditions.get(
+		"technology_reveal_condition_offsets", PackedInt32Array())
+	var ops: PackedInt32Array = conditions.get(
+		"technology_reveal_condition_ops", PackedInt32Array())
+	var refs: PackedInt32Array = conditions.get(
+		"technology_reveal_condition_refs", PackedInt32Array())
+	for technology in range(technology_count):
+		if technology + 1 >= offsets.size():
+			continue
+		for cursor in range(offsets[technology], offsets[technology + 1]):
+			if cursor < 0 or cursor >= ops.size() or cursor >= refs.size():
+				continue
+			if ops[cursor] != CONDITION_PUSH_SIGNAL_PRESENT and \
+					ops[cursor] != CONDITION_PUSH_SIGNAL_COUNT:
+				continue
+			var signal_index_value := int(refs[cursor])
+			if signal_index_value < 0 or signal_index_value >= buckets.size():
+				continue
+			if not buckets[signal_index_value].has(technology):
+				buckets[signal_index_value].append(technology)
+	var reverse_offsets := PackedInt32Array([0])
+	var reverse_technologies := PackedInt32Array()
+	for bucket in buckets:
+		var ordered := Array(bucket)
+		ordered.sort()
+		for technology in ordered:
+			reverse_technologies.append(int(technology))
+		reverse_offsets.append(reverse_technologies.size())
+	return {
+		"technology_reveal_signal_offsets": reverse_offsets,
+		"technology_reveal_signal_technologies": reverse_technologies,
 	}
 
 static func _append_condition_postfix(spec, signal_index: Dictionary, technology_index: Dictionary,
@@ -359,65 +526,39 @@ static func _modifier_definition_keys(ids: PackedStringArray) -> PackedStringArr
 		out.append("technology.%s" % String(id).trim_prefix("tech."))
 	return out
 
-static func modifier_terms(technology_id: String, domain: int, flags: int) -> Array[Dictionary]:
-	if (flags & FLAG_STARTING) != 0:
-		return []
-	var terms: Array[Dictionary] = []
-	var research_stats := [
-		"country.research.agriculture_efficiency",
-		"country.research.engineering_efficiency",
-		"country.research.science_efficiency",
-		"country.research.society_efficiency",
-	]
-	var sector_stats := [
-		"country.output.agriculture_factor",
-		"country.output.manufacturing_factor",
-		"country.output.knowledge_factor",
-		"country.trade.capacity_factor",
-	]
-	terms.append({"stat": research_stats[domain], "operation": 0,
-		"value": 0.02 if (flags & FLAG_ERA_KEY) != 0 else 0.01})
-	terms.append({"stat": sector_stats[domain], "operation": 0,
-		"value": 0.06 if (flags & FLAG_ERA_KEY) != 0 else 0.04})
-	if domain == 1:
-		terms.append({"stat": "country.construction.time_factor", "operation": 2,
-			"value": 0.99})
-	elif domain == 2:
-		terms.append({"stat": "country.research.institution_output_factor",
-			"operation": 0, "value": 0.03})
-	elif domain == 3:
-		terms.append({"stat": "country.trade.speed_factor", "operation": 0,
-			"value": 0.01})
-	if technology_id in ["tech.enlightenment_institutions", "tech.digital_computing"]:
-		terms.append({"stat": "country.research.cost_factor", "operation": 2,
-			"value": 0.85 if technology_id.ends_with("digital_computing") else 0.90})
-	if technology_id in ["tech.mechanized_agriculture"]:
-		terms.append({"stat": "country.output.agriculture_factor", "operation": 0,
-			"value": 0.30})
-	if technology_id in ["tech.steam_power", "tech.electrification"]:
-		terms.append({"stat": "country.output.energy_factor", "operation": 0,
-			"value": 0.30})
-	if technology_id == "tech.machine_learning":
-		terms.append({"stat": "country.research.institution_output_factor",
-			"operation": 0, "value": 0.30})
-	return terms
 
 static func public_definitions() -> Array[Dictionary]:
 	var compiled := compile_native_catalog()
 	if not bool(compiled.get("ok", false)):
 		return []
+	var network := _network_payload()
+	if not bool(network.get("ok", false)):
+		return []
+	var source_by_id := {}
+	for source_value in network.get("nodes", []):
+		var source: Dictionary = source_value
+		source_by_id[String(source.get("id", ""))] = source
 	var out: Array[Dictionary] = []
 	var ids: PackedStringArray = compiled.technology_ids
 	for i in range(ids.size()):
+		var technology_id := String(ids[i])
+		var source: Dictionary = source_by_id.get(technology_id, {})
 		var prerequisites_out := PackedStringArray()
 		for edge in range(compiled.technology_prerequisite_offsets[i], compiled.technology_prerequisite_offsets[i + 1]):
 			prerequisites_out.append(ids[compiled.technology_prerequisites[edge]])
 		var candidates_out := PackedStringArray()
 		for edge in range(compiled.technology_milestone_offsets[i], compiled.technology_milestone_offsets[i + 1]):
 			candidates_out.append(ids[compiled.technology_milestone_candidates[edge]])
+		var public_route_tags: PackedStringArray = compiled.technology_route_tags.slice(
+			compiled.technology_route_tag_offsets[i],
+			compiled.technology_route_tag_offsets[i + 1])
+		var starter_capabilities: PackedStringArray = \
+			compiled.technology_starter_capability_tags.slice(
+				compiled.technology_starter_capability_offsets[i],
+				compiled.technology_starter_capability_offsets[i + 1])
 		out.append({
 			"id": ids[i],
-			"display_name": compiled.technology_display_names[i],
+			"display_name": String(compiled.technology_display_names[i]),
 			"era_id": compiled.technology_era_ids[i],
 			"domain_id": DOMAIN_IDS[compiled.technology_domain_indices[i]],
 			"cost_points": int(compiled.technology_costs[i]) / 1000,
@@ -427,31 +568,98 @@ static func public_definitions() -> Array[Dictionary]:
 			"is_milestone": (int(compiled.technology_flags[i]) & 2) != 0,
 			"is_era_key": (int(compiled.technology_flags[i]) & 1) != 0,
 			"is_starting": (int(compiled.technology_flags[i]) & 4) != 0,
-			"effect_summary": compiled.technology_effect_summaries[i],
+			"is_starter_eligible": (compiled.starter_eligible_technology_ids as PackedStringArray).has(technology_id),
+			"effect_summary": String(compiled.technology_effect_summaries[i]),
+			"effect_profile": compiled.technology_effect_profile_ids[i],
+			"node_role": String(compiled.technology_node_roles[i]),
+			"network_role": String(compiled.technology_network_roles[i]),
+			"anchor_kind": String(compiled.technology_anchor_kinds[i]),
+			"primary_route_tag": String(compiled.technology_primary_route_tags[i]),
+			"layout_lane": String(compiled.technology_layout_lanes[i]),
+			"main_lane": String(compiled.technology_layout_lanes[i]),
+			"starter_capability_tags": starter_capabilities,
+			"route_tags": public_route_tags,
+			"route_display_names": _localized_route_names(public_route_tags),
+			"research_condition": (source.get("research_condition", {}) as Dictionary).duplicate(true),
+			"reveal_condition": (source.get("reveal_condition", {}) as Dictionary).duplicate(true),
+			"modifier_terms": (source.get("modifier_terms", []) as Array).duplicate(true),
+			"expected_bindings": (source.get("expected_bindings", []) as Array).duplicate(true),
+			"content_effects": (source.get("content_effects", []) as Array).duplicate(true),
+			"opportunity_cost": String(source.get("opportunity_cost", "")),
+			"same_lane_successor_ids": PackedStringArray(source.get("same_lane_successor_ids", [])),
+			"application_target_ids": PackedStringArray(source.get("application_target_ids", [])),
+			"terminal_reason": String(source.get("terminal_reason", "")),
 		})
+	return out
+
+
+static func public_visual_edges() -> Array[Dictionary]:
+	var network := _network_payload()
+	if not bool(network.get("ok", false)):
+		return []
+	var out: Array[Dictionary] = []
+	for edge_value in network.get("visual_edges", []):
+		out.append((edge_value as Dictionary).duplicate(true))
+	return out
+
+
+static func public_lane_metadata() -> Array[Dictionary]:
+	var network := _network_payload()
+	if not bool(network.get("ok", false)):
+		return []
+	var out: Array[Dictionary] = []
+	for lane_value in (network.get("backbones", []) as Array) + (network.get("specialist_lanes", []) as Array):
+		out.append((lane_value as Dictionary).duplicate(true))
+	return out
+
+
+static func route_display_name(route_tag: String) -> String:
+	var parts := route_tag.split(".", false)
+	if parts.size() != 3 or parts[0] != "route":
+		return route_tag
+	var category := String(ROUTE_CATEGORY_NAMES_ZH.get(parts[1], parts[1]))
+	var value := String(ROUTE_VALUE_NAMES_ZH.get(parts[2], parts[2]))
+	return "%s · %s" % [category, value]
+
+
+static func _localized_route_names(route_tags: PackedStringArray) -> PackedStringArray:
+	var out := PackedStringArray()
+	for route_tag in route_tags:
+		out.append(route_display_name(String(route_tag)))
 	return out
 
 # Era and domain presentation metadata is authored here so no reader has to
 # rediscover display names from raw ids.
 static func public_era_metadata() -> Array[Dictionary]:
+	var network := _network_payload()
+	if not bool(network.get("ok", false)):
+		return []
 	var out: Array[Dictionary] = []
-	for index in range(ERA_ROWS.size()):
-		var row: Array = ERA_ROWS[index]
+	var rows: Array = network.get("eras", [])
+	for index in range(rows.size()):
+		var row: Dictionary = rows[index]
 		out.append({
-			"id": String(row[0]),
-			"display_name": String(row[1]),
-			"milestone_id": String(row[2]),
+			"id": String(row.get("id", "")),
+			"display_name": String(row.get("display_name", "")),
+			"milestone_id": String(row.get("milestone_id", "")),
+			"candidate_required": int(row.get("candidate_required", 5)),
 			"sort_order": index,
 		})
 	return out
 
 static func public_domain_metadata() -> Array[Dictionary]:
+	var network := _network_payload()
+	if not bool(network.get("ok", false)):
+		return []
 	var out: Array[Dictionary] = []
-	for index in range(DOMAIN_IDS.size()):
+	var rows: Array = network.get("domains", [])
+	for index in range(rows.size()):
+		var row: Dictionary = rows[index]
+		var accent := Color.from_string(String(row.get("accent", "#ffffff")), Color.WHITE)
 		out.append({
-			"id": String(DOMAIN_IDS[index]),
-			"display_name": String(DOMAIN_NAMES[index]),
-			"accent": DOMAIN_COLORS[index],
+			"id": String(row.get("id", "")),
+			"display_name": String(row.get("display_name", "")),
+			"accent": accent,
 			"sort_order": index,
 		})
 	return out

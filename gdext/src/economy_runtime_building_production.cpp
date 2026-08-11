@@ -53,9 +53,24 @@ int64_t NativeEconomyRuntime::production_climate_capacity_q16(
     if (water_fit_q16 != nullptr) *water_fit_q16 = water_fit;
     const int64_t raw = std::min(temperature_fit, water_fit);
     const int64_t bounded = std::max<int64_t>(climate.floor_q16, raw);
-    return std::clamp<int64_t>(
-        Q16_ONE - mul_div_sat(climate.exposure_q16,
-            Q16_ONE - bounded, Q16_ONE, saturation_count), 0, Q16_ONE);
+    int64_t loss_factor_q16 = Q16_ONE;
+    const int32_t country = cell >= 0 &&
+            cell < static_cast<int32_t>(_epoch_cell_country.size())
+        ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
+    if (country >= 0 && country < _epoch_country_count) {
+        const bool temperature_limiting = temperature_fit <= water_fit;
+        const size_t adaptation = temperature_limiting
+            ? (environment.temperature_30d_q16 < climate.temperature_opt_q16 ? 2U : 3U)
+            : (environment.plant_available_water_q16 < climate.water_opt_q16 ? 0U : 1U);
+        const size_t index = static_cast<size_t>(country) * 4U + adaptation;
+        if (index < _epoch_country_climate_loss_factor_q16.size())
+            loss_factor_q16 = _epoch_country_climate_loss_factor_q16[index];
+    }
+    const int64_t exposed_loss = mul_div_sat(climate.exposure_q16,
+        Q16_ONE - bounded, Q16_ONE, saturation_count);
+    const int64_t adapted_loss = mul_div_sat(exposed_loss, loss_factor_q16,
+        Q16_ONE, saturation_count);
+    return std::clamp<int64_t>(Q16_ONE - adapted_loss, 0, Q16_ONE);
 }
 
 void NativeEconomyRuntime::prepare_group_climate_capacity(
@@ -82,7 +97,11 @@ bool NativeEconomyRuntime::building_available(int32_t cell, int32_t type_id,
         type_id + 1 < static_cast<int32_t>(_building_technology_offsets.size()) &&
         cell_has_requirements(cell, _building_technology_offsets[type_id],
             _building_technology_offsets[type_id + 1],
-            _building_required_technologies, frozen);
+            _building_required_technologies, frozen) &&
+        type_id + 1 < static_cast<int32_t>(_building_all_technology_offsets.size()) &&
+        cell_has_all_requirements(cell, _building_all_technology_offsets[type_id],
+            _building_all_technology_offsets[type_id + 1],
+            _building_all_required_technologies, frozen);
 }
 
 bool NativeEconomyRuntime::building_constructible(int32_t cell, int32_t type_id,
@@ -601,7 +620,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         for (int32_t c = input.candidate_begin;
              c < input.candidate_begin + input.candidate_count; ++c) {
             const InputCandidate &candidate = _building_input_candidates[c];
-            if (!good_available(cell, candidate.good_id, true)) continue;
+            if (!good_market_available(cell, candidate.good_id, true)) continue;
             if (require_stock &&
                 _market.stock[_market.index(market, candidate.good_id)] <= 0) continue;
             int64_t capacity_q16 = Q16_ONE;

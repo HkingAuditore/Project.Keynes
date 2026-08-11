@@ -793,6 +793,230 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             _building_technology_tags, _building_type_ids.size(),
             _building_technology_offsets, _building_required_technologies,
             "building_technology_catalog_invalid")) return false;
+    if (!compile_technology_tags(_building_required_technology_tag_offsets,
+            _building_required_technology_tags, _building_type_ids.size(),
+            _building_all_technology_offsets, _building_all_required_technologies,
+            "building_required_technology_catalog_invalid")) return false;
+    _building_technology_practice_masks.assign(_building_type_ids.size(), 0);
+    auto type_has_tag = [&](size_t type, const char *wanted) {
+        if (type + 1 >= _building_technology_tag_offsets.size()) return false;
+        for (int32_t i = _building_technology_tag_offsets[type];
+             i < _building_technology_tag_offsets[type + 1]; ++i) {
+            if (_building_technology_tags[static_cast<size_t>(i)] == wanted)
+                return true;
+        }
+        return false;
+    };
+    auto type_has_required_tag = [&](size_t type, const char *wanted) {
+        if (type + 1 >= _building_required_technology_tag_offsets.size()) return false;
+        for (int32_t i = _building_required_technology_tag_offsets[type];
+             i < _building_required_technology_tag_offsets[type + 1]; ++i) {
+            if (_building_required_technology_tags[static_cast<size_t>(i)] == wanted)
+                return true;
+        }
+        return false;
+    };
+    auto type_has_technology = [&](size_t type, const char *wanted) {
+        return type_has_tag(type, wanted) || type_has_required_tag(type, wanted);
+    };
+    auto type_outputs = [&](size_t type, const char *wanted) {
+        if (type >= _building_types.size()) return false;
+        const BuildingType &building = _building_types[type];
+        for (int32_t i = building.output_begin;
+             i < building.output_begin + building.output_count; ++i) {
+            const int32_t good = _building_outputs[static_cast<size_t>(i)].good_id;
+            if (good >= 0 && good < static_cast<int32_t>(_good_ids.size()) &&
+                _good_ids[static_cast<size_t>(good)] == wanted)
+                return true;
+        }
+        return false;
+    };
+    auto practice_bit = [](int32_t rule) { return uint32_t{1} << rule; };
+    for (size_t type = 0; type < _building_type_ids.size(); ++type) {
+        const std::string &id = _building_type_ids[type];
+        const BuildingType &building = _building_types[type];
+        uint32_t mask = 0;
+        if (id.find("landed_estate") != std::string::npos ||
+            type_outputs(type, "corn_grain"))
+            mask |= practice_bit(PRACTICE_MAIZE_SELECTION);
+        if (building.production_climate_profile_id >= 0 &&
+            building.production_climate_profile_id <
+                static_cast<int32_t>(_production_climate_profile_ids.size()) &&
+            _production_climate_profile_ids[static_cast<size_t>(
+                building.production_climate_profile_id)] == "dryland_crop") {
+            mask |= practice_bit(PRACTICE_DRYLAND_DAYS) |
+                    practice_bit(PRACTICE_DRYLAND_DROUGHTS);
+        }
+        if (type_has_tag(type, "tech.irrigation") ||
+            type_has_tag(type, "tech.canal_engineering") ||
+            type_has_tag(type, "tech.hydraulic_engineering") ||
+            type_has_tag(type, "tech.rice_paddy_cultivation"))
+            mask |= practice_bit(PRACTICE_HYDRAULIC_ENGINEERING);
+        if (type_outputs(type, "tools") ||
+            id.find("tool_workshop") != std::string::npos)
+            mask |= practice_bit(PRACTICE_METALWORKING);
+        if (type_outputs(type, "printed_materials"))
+            mask |= practice_bit(PRACTICE_PRINTING);
+        if (id.rfind("steam_", 0) == 0 ||
+            type_has_tag(type, "tech.steam_power"))
+            mask |= practice_bit(PRACTICE_STEAM_POWER);
+        if (id.find("electric") != std::string::npos ||
+            type_has_tag(type, "tech.electrification") ||
+            type_has_tag(type, "tech.electric_grid"))
+            mask |= practice_bit(PRACTICE_ELECTRIFICATION);
+        if (building.kind == 1 && building.employee_count > 0)
+            mask |= practice_bit(PRACTICE_INDUSTRIAL_ORGANIZATION);
+        if (type_has_tag(type, "tech.robotic_manufacturing") ||
+            type_has_tag(type, "tech.autonomous_systems") ||
+            type_has_tag(type, "tech.automated_agriculture") ||
+            type_has_tag(type, "tech.autonomous_mining") ||
+            type_has_tag(type, "tech.digital_control") ||
+            type_has_tag(type, "tech.automated_logistics") ||
+            id.find("robot") != std::string::npos)
+            mask |= practice_bit(PRACTICE_AUTOMATION);
+        if (id == "computing_research_center" ||
+            id == "industrial_research_laboratory" ||
+            type_has_tag(type, "tech.climate_modeling"))
+            mask |= practice_bit(PRACTICE_CLIMATE_MODELING);
+        if (type_outputs(type, "corn_grain") || type_outputs(type, "wheat_grain") ||
+            type_outputs(type, "rice_grain") || type_outputs(type, "potatoes") ||
+            type_outputs(type, "seed_cotton"))
+            mask |= practice_bit(PRACTICE_SEED_SAVING);
+        if (building.production_climate_profile_id >= 0 &&
+            building.production_climate_profile_id <
+                static_cast<int32_t>(_production_climate_profile_ids.size())) {
+            const std::string &climate = _production_climate_profile_ids[
+                static_cast<size_t>(building.production_climate_profile_id)];
+            if (climate == "dryland_crop")
+                mask |= practice_bit(PRACTICE_RAINFED_ADAPTATION);
+            if (climate == "paddy_crop")
+                mask |= practice_bit(PRACTICE_PADDY_CONTROL);
+        }
+        if (id.find("terrace") != std::string::npos ||
+            type_has_technology(type, "tech.terrace_farming"))
+            mask |= practice_bit(PRACTICE_TERRACE_MAINTENANCE);
+        const bool mine_working = id.find("mine") != std::string::npos ||
+            id.find("adit") != std::string::npos ||
+            id.find("placer_gold") != std::string::npos ||
+            id.find("silver_working") != std::string::npos;
+        if (mine_working)
+            mask |= practice_bit(PRACTICE_MINE_SUPPORT);
+        if (mine_working && (type_has_technology(type, "tech.deep_mining") ||
+            type_has_technology(type, "tech.shaft_sinking") ||
+            type_has_technology(type, "tech.mine_drainage") ||
+            id.rfind("steam_", 0) == 0))
+            mask |= practice_bit(PRACTICE_MINE_DRAINAGE);
+        if (id.find("kiln") != std::string::npos ||
+            id.find("smelter") != std::string::npos || id == "charcoal_pit" ||
+            id == "bricks_plant")
+            mask |= practice_bit(PRACTICE_KILN_TEMPERATURE);
+        if (type_outputs(type, "printed_materials"))
+            mask |= practice_bit(PRACTICE_PRINT_CALIBRATION);
+        if (id.rfind("steam_", 0) == 0 || id == "atmospheric_engine_workshop")
+            mask |= practice_bit(PRACTICE_STEAM_SEALING);
+        if (type_outputs(type, "electric_motor") ||
+            type_has_technology(type, "tech.electric_motors"))
+            mask |= practice_bit(PRACTICE_MOTOR_WINDING);
+        if (type_has_technology(type, "tech.assembly_line") ||
+            type_has_technology(type, "tech.mass_production"))
+            mask |= practice_bit(PRACTICE_ASSEMBLY_LINE);
+        if (type_has_technology(type, "tech.digital_control") ||
+            type_has_technology(type, "tech.autonomous_systems") ||
+            type_has_technology(type, "tech.robotic_manufacturing"))
+            mask |= practice_bit(PRACTICE_DIGITAL_CONTROL);
+        if (id.find("shipyard") != std::string::npos ||
+            type_has_technology(type, "tech.oceanic_navigation") ||
+            type_has_technology(type, "tech.oceanic_ship_design") ||
+            type_has_technology(type, "tech.coastal_shipyards") ||
+            type_has_technology(type, "tech.automated_logistics") ||
+            type_has_technology(type, "tech.autonomous_logistics"))
+            mask |= practice_bit(PRACTICE_MARITIME_OPERATIONS);
+        if (id.find("irrigation") != std::string::npos ||
+            id.find("waterworks") != std::string::npos ||
+            type_has_technology(type, "tech.canal_engineering") ||
+            type_has_technology(type, "tech.hydraulic_engineering") ||
+            type_has_technology(type, "tech.hydrological_remote_sensing") ||
+            type_has_technology(type, "tech.precision_irrigation") ||
+            type_has_technology(type, "tech.adaptive_irrigation"))
+            mask |= practice_bit(PRACTICE_WATERSHED_MANAGEMENT);
+        if (id.find("timber") != std::string::npos ||
+            id.find("lumber") != std::string::npos ||
+            type_outputs(type, "paper") || type_outputs(type, "lumber") ||
+            type_has_technology(type, "tech.forest_management") ||
+            type_has_technology(type, "tech.steam_sawmilling"))
+            mask |= practice_bit(PRACTICE_FOREST_MANAGEMENT);
+        if (id.find("chemical") != std::string::npos ||
+            id.find("fertilizer") != std::string::npos ||
+            id.find("petrochemical") != std::string::npos ||
+            type_has_technology(type, "tech.industrial_chemistry") ||
+            type_has_technology(type, "tech.electrochemistry") ||
+            type_has_technology(type, "tech.petrochemical_cracking"))
+            mask |= practice_bit(PRACTICE_CHEMICAL_PROCESS_CONTROL);
+        if (id.find("power_plant") != std::string::npos ||
+            type_has_technology(type, "tech.electric_generation") ||
+            type_has_technology(type, "tech.electric_grid") ||
+            type_has_technology(type, "tech.nuclear_energy") ||
+            type_has_technology(type, "tech.smart_grid"))
+            mask |= practice_bit(PRACTICE_ENERGY_CONTROL);
+        _building_technology_practice_masks[type] = mask;
+    }
+    for (const int32_t rule : {PRACTICE_MARITIME_OPERATIONS,
+                               PRACTICE_WATERSHED_MANAGEMENT,
+                               PRACTICE_FOREST_MANAGEMENT,
+                               PRACTICE_CHEMICAL_PROCESS_CONTROL,
+                               PRACTICE_ENERGY_CONTROL}) {
+        bool has_publisher = false;
+        for (const uint32_t mask : _building_technology_practice_masks) {
+            if ((mask & (uint32_t{1} << rule)) != 0) {
+                has_publisher = true;
+                break;
+            }
+        }
+        if (!has_publisher) {
+            error = "technology_practice_publisher_missing:" +
+                std::to_string(rule);
+            return false;
+        }
+    }
+    const std::vector<std::string> research_signals = packed_strings(
+        catalog, "research_signal_ids");
+    auto signal_id = [&](const char *wanted) {
+        const auto found = std::find(research_signals.begin(),
+                                     research_signals.end(), wanted);
+        return found != research_signals.end() && *found == wanted
+            ? static_cast<int32_t>(found - research_signals.begin()) : -1;
+    };
+    _bio_maize_signal_id = signal_id("bio.maize");
+    const std::array<const char *, 27> breakthrough_ids{
+        "breakthrough.maize_selection", "breakthrough.dryland_adaptation",
+        "breakthrough.hydraulic_engineering", "breakthrough.metalworking",
+        "breakthrough.printing", "breakthrough.steam_power",
+        "breakthrough.electrification", "breakthrough.industrial_organization",
+        "breakthrough.automation", "breakthrough.climate_modeling",
+        "breakthrough.seed_saving", "breakthrough.rainfed_adaptation",
+        "breakthrough.paddy_control", "breakthrough.terrace_maintenance",
+        "breakthrough.mine_support", "breakthrough.mine_drainage",
+        "breakthrough.kiln_temperature", "breakthrough.print_calibration",
+        "breakthrough.steam_sealing", "breakthrough.motor_winding",
+        "breakthrough.assembly_line", "breakthrough.digital_control",
+        "breakthrough.maritime_operations", "breakthrough.watershed_management",
+        "breakthrough.forest_management", "breakthrough.chemical_process_control",
+        "breakthrough.energy_control"};
+    for (size_t i = 0; i < breakthrough_ids.size(); ++i)
+        _breakthrough_signal_ids[i] = signal_id(breakthrough_ids[i]);
+    for (size_t i = 22; i < breakthrough_ids.size(); ++i) {
+        if (_breakthrough_signal_ids[i] < 0) {
+            error = "technology_practice_signal_missing:" +
+                std::string(breakthrough_ids[i]);
+            return false;
+        }
+    }
+    const std::array<const char *, 8> metal_signal_ids{
+        "resource.copper_ore", "resource.iron_ore", "resource.tin_ore",
+        "resource.gold_ore", "resource.silver_ore", "resource.lead_ore",
+        "resource.zinc_ore", "resource.manganese_ore"};
+    for (size_t i = 0; i < metal_signal_ids.size(); ++i)
+        _metal_resource_signal_ids[i] = signal_id(metal_signal_ids[i]);
     _living_cost_base_plan_id = -1;
     for (size_t p = 0; p < _plan_ids.size(); ++p) {
         if (_plan_ids[p] == _living_cost_base_plan_stable_id) {
@@ -1132,9 +1356,16 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     if (_building_type_ids.empty()) {
         _building_technology_tag_offsets = packed_i32(catalog, "building_technology_tag_offsets");
         _building_technology_tags = packed_strings(catalog, "building_technology_tags");
+        _building_required_technology_tag_offsets = packed_i32(
+            catalog, "building_required_technology_tag_offsets");
+        _building_required_technology_tags = packed_strings(
+            catalog, "building_required_technology_tags");
         if (_building_technology_tag_offsets.size() != 1 ||
             _building_technology_tag_offsets.front() != 0 ||
-            !_building_technology_tags.empty() || !_building_upgrade_family_ids.empty() ||
+            !_building_technology_tags.empty() ||
+            _building_required_technology_tag_offsets.size() != 1 ||
+            _building_required_technology_tag_offsets.front() != 0 ||
+            !_building_required_technology_tags.empty() || !_building_upgrade_family_ids.empty() ||
             !_building_upgrade_family_indices.empty() || !_building_upgrade_tiers.empty()) {
             error = "building_technology_catalog_invalid";
             return false;
@@ -1184,6 +1415,10 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     _building_economic_sectors = packed_i32(catalog, "building_economic_sectors");
 	_building_technology_tag_offsets = packed_i32(catalog, "building_technology_tag_offsets");
 	_building_technology_tags = packed_strings(catalog, "building_technology_tags");
+    _building_required_technology_tag_offsets = packed_i32(
+        catalog, "building_required_technology_tag_offsets");
+    _building_required_technology_tags = packed_strings(
+        catalog, "building_required_technology_tags");
     const std::vector<int32_t> employee_offsets = packed_i32(catalog, "building_employee_offsets");
     const std::vector<int32_t> construction_offsets = packed_i32(catalog, "building_construction_offsets");
     const std::vector<int32_t> input_offsets = packed_i32(catalog, "building_input_offsets");
@@ -1207,7 +1442,10 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
 		_building_upgrade_tiers.size() != types ||
 		!offsets_valid(_building_technology_tag_offsets) ||
 		_building_technology_tag_offsets.back() != static_cast<int32_t>(
-			_building_technology_tags.size()) || !offsets_valid(employee_offsets) ||
+			_building_technology_tags.size()) ||
+        !offsets_valid(_building_required_technology_tag_offsets) ||
+        _building_required_technology_tag_offsets.back() != static_cast<int32_t>(
+            _building_required_technology_tags.size()) || !offsets_valid(employee_offsets) ||
         !offsets_valid(construction_offsets) || !offsets_valid(input_offsets) ||
         !offsets_valid(output_offsets) || !offsets_valid(resource_offsets) ||
         !offsets_valid(output_cost_share_offsets) ||
@@ -1568,4 +1806,3 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
 
 
 } // namespace pk
-

@@ -2262,6 +2262,20 @@ func map_wrap_period_x() -> float:
 func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	if _renderer == null or _current_map == null or _world_data == null:
 		return
+	# A headless session owns the same simulation authorities but has no valid
+	# texture-array backend. Rebinding a restored world used to instantiate all
+	# vegetation layers against DummyTexture, emit hundreds of null-image
+	# failures and eventually crash before the first post-restore economy day.
+	# Keep country/research event ingress alive without constructing visual state.
+	if DisplayServer.get_name() == "headless":
+		_fog_of_war_enabled = _resolve_fog_of_war_enabled()
+		_player_country_slot = _resolve_player_country_slot()
+		_player_country_handle = _resolve_player_country_handle()
+		_connect_country_committed()
+		# Keep monotonic exploration and discovery ingress identical to a visual
+		# session. Only texture/LUT/border publication is omitted.
+		_refresh_vision()
+		return
 	_renderer.hex_size = hex_size
 	var ext = _generator.get_data_core_world_ext() if _generator != null and _generator.has_method("get_data_core_world_ext") else null
 	if ext != null and _renderer.has_method("set_world_ext"):

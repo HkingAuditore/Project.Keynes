@@ -17,6 +17,7 @@ var day_night_enabled: bool = DEFAULT_DAY_NIGHT_ENABLED
 @onready var _camera: MapCamera = $MapCamera
 @onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
 @onready var _map_overlay: DataOverlayLayer = $WorldRoot/DataOverlayLayer
+@onready var _colonization_route: ColonizationRouteLayer = $WorldRoot/ColonizationRouteLayer
 @onready var _world_clock: WorldClock = $WorldClock
 @onready var _runtime_host: WorldRuntimeHost = $RuntimeHost
 @onready var _ui_manager: GameUIManager = $UI
@@ -64,6 +65,7 @@ func _configure_runtime() -> void:
 	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
 	_ui_manager.set_diagnostics_source(_runtime_host)
 	_player_controller.configure(_camera, _highlight, _runtime_host, _world_clock, _ui_manager)
+	_ui_manager.set_colonization_route_layer(_colonization_route)
 	var save: Node = _game_save()
 	if save != null:
 		save.bind_runtime(_runtime_host, _world_clock, _player_controller)

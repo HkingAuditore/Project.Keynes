@@ -4,129 +4,129 @@ extends RefCounted
 const MONEY_SCALE := 10000
 const GOODS_SCALE := 1000
 const STARTER_POPULATION := 20
-const SURVIVAL_DAYS := 60
-const SURVIVAL_PRODUCE_PER_PERSON_DAY := 240
+const SURVIVAL_DAYS := 15
+const SURVIVAL_FOOD_PER_PERSON_DAY := 240
+const LOCAL_INPUT_BUFFER_DAYS := 3
 
 
 static func build(map: MapData, facade: EconomyFacade, start_cell: int,
 		precious_resource: String) -> Dictionary:
-	return build_many(map, facade, [{
-		"cell": start_cell,
-		"precious_resource": precious_resource,
-	}])
+	return build_many(map, facade, [_fallback_start(start_cell, precious_resource)])
 
 
 static func build_many(map: MapData, facade: EconomyFacade,
 		starts: Array[Dictionary]) -> Dictionary:
 	if map == null or facade == null or starts.is_empty():
 		return _error("starter_context_invalid", "初始聚落上下文无效。")
-	var professions := [&"forager", &"merchant", &"miner", &"unemployed"]
-	var signature_by_profession := PackedInt32Array()
-	for profession in professions:
-		var signature := facade.signature_id(profession, &"default")
-		if signature < 0:
-			return _error("starter_signature_missing",
-				"经济目录缺少初始职业：%s" % String(profession))
-		signature_by_profession.append(signature)
-	var building_ids_by_precious := {
-		"gold_ore": PackedStringArray([
-			"gathering_ground", "timber_collector", "merchant_post",
-			"placer_gold_working"]),
-		"silver_ore": PackedStringArray([
-			"gathering_ground", "timber_collector", "merchant_post",
-			"surface_silver_working"]),
-	}
-	var building_owner_professions := [&"forager", &"forager", &"merchant", &"merchant"]
-	var building_types_by_precious := {}
-	var building_owners := PackedInt32Array()
-	for owner_profession in building_owner_professions:
-		var owner_signature := facade.signature_id(owner_profession, &"default")
-		if owner_signature < 0:
-			return _error("starter_signature_missing",
-				"经济目录缺少初始职业：%s" % String(owner_profession))
-		building_owners.append(owner_signature)
-	for precious_id in building_ids_by_precious:
-		var type_ids := PackedInt32Array()
-		for building_id in building_ids_by_precious[precious_id]:
-			var type_id := facade.building_type_id(building_id)
-			if type_id < 0:
-				return _error("starter_building_missing",
-					"经济目录缺少初始建筑：%s" % building_id)
-			type_ids.append(type_id)
-		building_types_by_precious[precious_id] = type_ids
-
+	var goods := facade.good_ids()
+	var stock := PackedInt64Array()
+	stock.resize(map.cell_count() * goods.size())
 	var signature_ids := PackedInt32Array()
 	var cell_indices := PackedInt32Array()
 	var populations := PackedInt64Array()
 	var funds := PackedInt64Array()
-	var total_population := 0
-	var goods := facade.good_ids()
-	var stock := PackedInt64Array()
-	stock.resize(map.cell_count() * goods.size())
-	var initial_stock := {
-		"gathered_plants": STARTER_POPULATION * SURVIVAL_DAYS * GOODS_SCALE,
-		"game_meat": 10 * SURVIVAL_DAYS * GOODS_SCALE,
-		"processed_food": STARTER_POPULATION * SURVIVAL_DAYS * \
-			SURVIVAL_PRODUCE_PER_PERSON_DAY,
-		"logs": 7000 * GOODS_SCALE,
-		"flint": 500 * GOODS_SCALE,
-		"chipped_stone_tools": 240 * GOODS_SCALE,
-	}
-	var initial_stock_indices := {}
-	for good_id in initial_stock:
-		var good_idx := goods.find(String(good_id))
-		if good_idx < 0:
-			return _error("starter_good_missing",
-				"经济目录缺少初始物资：%s" % String(good_id))
-		initial_stock_indices[good_id] = good_idx
 	var building_cells := PackedInt32Array()
 	var building_types := PackedInt32Array()
-	var all_building_owners := PackedInt32Array()
+	var building_owners := PackedInt32Array()
 	var building_counts := PackedInt64Array()
 	var founder_family_cells := PackedInt32Array()
 	var founder_family_building_types := PackedInt32Array()
 	var founder_family_owner_signatures := PackedInt32Array()
 	var settlement_cells := PackedInt32Array()
 	var precious_resources := PackedStringArray()
+	var regional_routes := PackedStringArray()
+	var starter_building_offsets := PackedInt32Array([0])
+	var starter_building_ids := PackedStringArray()
+	var total_population := 0
+
 	for start in starts:
 		var start_cell := int(start.get("cell", -1))
 		var precious_resource := String(start.get("precious_resource", ""))
 		if start_cell < 0 or start_cell >= map.cell_count() \
-				or not building_types_by_precious.has(precious_resource):
-			return _error("starter_context_invalid", "初始聚落上下文无效。")
-		settlement_cells.append(start_cell)
-		precious_resources.append(precious_resource)
-		var settlement_populations := PackedInt64Array([
-			3, 2, 1 if precious_resource == "gold_ore" else 2,
-			14 if precious_resource == "gold_ore" else 13])
-		var settlement_population := 0
-		for index in range(professions.size()):
-			var population := int(settlement_populations[index])
-			signature_ids.append(int(signature_by_profession[index]))
+				or precious_resource not in ["gold_ore", "silver_ore"]:
+			return _error("starter_context_invalid", "初始聚落地点或贵金属路线无效。")
+		var route_buildings: PackedStringArray = start.get(
+			"starter_building_ids", PackedStringArray())
+		if route_buildings.is_empty():
+			route_buildings = (_fallback_start(start_cell, precious_resource).get(
+				"starter_building_ids", PackedStringArray()) as PackedStringArray)
+		var profession_population := {}
+		var profession_order := PackedStringArray()
+		var first_building_type := -1
+		var first_owner_signature := -1
+		for building_id in route_buildings:
+			var building_type := facade.building_type_id(building_id)
+			if building_type < 0:
+				return _error("starter_building_missing",
+					"经济目录缺少初始建筑：%s" % building_id)
+			var job_spec: Dictionary = facade.building_job_spec(building_id)
+			if not bool(job_spec.get("ok", false)):
+				return _error("starter_building_job_invalid",
+					"初始建筑职业配置无效：%s" % building_id)
+			var owner_profession := String(job_spec.owner_profession)
+			var owner_signature := facade.signature_id(
+				StringName(owner_profession), &"default")
+			if owner_signature < 0:
+				return _error("starter_signature_missing",
+					"经济目录缺少初始职业：%s" % owner_profession)
+			if not profession_population.has(owner_profession):
+				profession_order.append(owner_profession)
+				profession_population[owner_profession] = 0
+			profession_population[owner_profession] = int(
+				profession_population[owner_profession]) + clampi(
+					int(job_spec.owner_slots), 1, 2)
+			building_cells.append(start_cell)
+			building_types.append(building_type)
+			building_owners.append(owner_signature)
+			building_counts.append(1)
+			starter_building_ids.append(String(building_id))
+			if first_building_type < 0:
+				first_building_type = building_type
+				first_owner_signature = owner_signature
+		starter_building_offsets.append(starter_building_ids.size())
+
+		var allocated_population := 0
+		for profession_id in profession_order:
+			allocated_population += int(profession_population[profession_id])
+		if allocated_population >= STARTER_POPULATION:
+			return _error("starter_population_overcommitted",
+				"初始弱建筑所需的业主人口超过 20 人。")
+		profession_order.append("unemployed")
+		profession_population["unemployed"] = STARTER_POPULATION - allocated_population
+		for profession_id in profession_order:
+			var population := int(profession_population[profession_id])
+			var signature := facade.signature_id(StringName(profession_id), &"default")
+			if signature < 0:
+				return _error("starter_signature_missing",
+					"经济目录缺少初始职业：%s" % profession_id)
+			signature_ids.append(signature)
 			cell_indices.append(start_cell)
 			populations.append(population)
 			funds.append(population * SURVIVAL_DAYS * 8 * MONEY_SCALE)
-			settlement_population += population
-		if settlement_population != STARTER_POPULATION:
-			return _error("starter_population_mismatch",
-				"每个初始聚落人口必须严格等于 20。")
-		total_population += settlement_population
-		var settlement_building_types: PackedInt32Array = \
-			building_types_by_precious[precious_resource]
-		for index in range(settlement_building_types.size()):
-			building_cells.append(start_cell)
-			building_types.append(int(settlement_building_types[index]))
-			all_building_owners.append(int(building_owners[index]))
-			building_counts.append(1)
-		# The opening capital has one explicit founder household. Its two
-		# foragers operate and own the gathering ground; the native bootstrap
-		# derives the conserved family claim and promotes one notable founder.
+		total_population += STARTER_POPULATION
+
+		var food_good := String(start.get("starter_food_good_id", "gathered_plants"))
+		var food_index := goods.find(food_good)
+		if food_index < 0:
+			return _error("starter_good_missing", "经济目录缺少当地食物：%s" % food_good)
+		stock[start_cell * goods.size() + food_index] += STARTER_POPULATION \
+			* SURVIVAL_DAYS * SURVIVAL_FOOD_PER_PERSON_DAY
+		var input_buffer_good := String(start.get("starter_input_buffer_good_id", ""))
+		if not input_buffer_good.is_empty():
+			var input_index := goods.find(input_buffer_good)
+			if input_index < 0:
+				return _error("starter_good_missing",
+					"经济目录缺少当地生产投入：%s" % input_buffer_good)
+			stock[start_cell * goods.size() + input_index] += \
+				LOCAL_INPUT_BUFFER_DAYS * GOODS_SCALE
+
+		settlement_cells.append(start_cell)
+		precious_resources.append(precious_resource)
+		regional_routes.append(String(start.get("regional_route", "fallback")))
 		founder_family_cells.append(start_cell)
-		founder_family_building_types.append(int(settlement_building_types[0]))
-		founder_family_owner_signatures.append(int(building_owners[0]))
-		for good_id in initial_stock:
-			var good_idx := int(initial_stock_indices[good_id])
-			stock[start_cell * goods.size() + good_idx] = int(initial_stock[good_id])
+		founder_family_building_types.append(first_building_type)
+		founder_family_owner_signatures.append(first_owner_signature)
+
 	return {
 		"ok": true,
 		"code": "ok",
@@ -136,16 +136,13 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			"signature_ids": signature_ids,
 			"population": populations,
 			"funds": funds,
-			# Formal opening settlements are country capitals. They keep the
-			# exact 20-person economy contract, but receive a deterministic
-			# settlement identity even before reaching the rural threshold.
 			"forced_named_cells": settlement_cells,
 		},
 		"market_packet": {"stock": stock},
 		"building_packet": {
 			"building_cells": building_cells,
 			"building_type_ids": building_types,
-			"building_owner_signature_ids": all_building_owners,
+			"building_owner_signature_ids": building_owners,
 			"building_counts": building_counts,
 			"founder_family_cells": founder_family_cells,
 			"founder_family_building_type_ids": founder_family_building_types,
@@ -156,7 +153,37 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		"settlement_cells": settlement_cells,
 		"precious_resources": precious_resources,
 		"precious_resource": String(precious_resources[0]),
-		"source": "starter_settlement_bootstrap_v3",
+		"regional_routes": regional_routes,
+		"starter_building_offsets": starter_building_offsets,
+		"starter_building_ids": starter_building_ids,
+		"survival_days": SURVIVAL_DAYS,
+		"source": "starter_settlement_bootstrap_v4",
+	}
+
+
+static func _fallback_start(start_cell: int, precious_resource: String) -> Dictionary:
+	var technologies := PackedStringArray([
+		"tech.gathering", "tech.wild_flax_collection", "tech.fiber_twisting",
+		"tech.deadwood_collection", "tech.oral_memory_practice",
+	])
+	var buildings := PackedStringArray([
+		"gathering_ground", "bast_fiber_camp", "bast_wrap_shelter",
+		"deadwood_gathering_camp", "oral_memory_circle", "merchant_post",
+	])
+	if precious_resource == "silver_ore":
+		technologies.append("tech.surface_silver_collection")
+		buildings.append("surface_silver_working")
+	else:
+		technologies.append("tech.gold_panning")
+		buildings.append("placer_gold_working")
+	return {
+		"cell": start_cell,
+		"precious_resource": precious_resource,
+		"regional_route": "fallback",
+		"starter_technology_ids": technologies,
+		"starter_building_ids": buildings,
+		"starter_food_good_id": "gathered_plants",
+		"starter_input_buffer_good_id": "bast_fiber",
 	}
 
 

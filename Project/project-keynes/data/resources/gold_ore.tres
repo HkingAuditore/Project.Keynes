@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"gold_ore"
+discovery_technology_tags = PackedStringArray("tech.gold_placer_identification")
 display_name = "金矿"
 reserve_component = &"cell.res_gold_ore_reserve"
 init_reserve_scale = 8.0

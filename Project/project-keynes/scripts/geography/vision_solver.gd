@@ -186,6 +186,7 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 	map.explored_arr = explored
 	map.fog_k_arr = _compute_fog_k(map, visible, explored, n)
 	map.fog_solved = true
+	map.vision_revision += 1
 
 	report.ok = true
 	report.visible = visible_count
@@ -210,6 +211,7 @@ static func mark_all_visible(map: MapData) -> Dictionary:
 		map.explored_arr[i] = 1
 		map.fog_k_arr[i] = 255
 	map.fog_solved = true
+	map.vision_revision += 1
 	return {
 		"ok": true, "reason": "fog_disabled", "visible": n, "explored": n,
 		"sources": 0, "cells": n, "elapsed_ms": 0.0,

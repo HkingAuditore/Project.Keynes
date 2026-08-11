@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"bast_fiber"
+display_name = "韧皮纤维"
+category_id = &"spinnable_fiber"
+substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "guild_textile_fiber", "rag_paper_fiber")
+technology_tags = PackedStringArray("industry.primary", "tech.wild_flax_collection")
+default_price = 7000
+min_price = 700
+max_price = 70000
+

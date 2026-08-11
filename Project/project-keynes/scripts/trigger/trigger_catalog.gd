@@ -3,6 +3,8 @@ extends Resource
 
 const DEFAULT_PATH := "res://data/triggers/default_trigger_catalog.tres"
 const TriggerDefinitionScript = preload("res://scripts/trigger/trigger_definition.gd")
+const TriggerEffectScript = preload("res://scripts/trigger/trigger_effect.gd")
+const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
 
 const PROTOCOL_VERSION := 2
 const AGG_COUNT := 1
@@ -21,6 +23,65 @@ const TARGET_EVENT_GROUP := 3
 const TARGET_SNAPSHOT := 4
 const MODE_REPEAT := 1
 const MODE_ONE_SHOT := 2
+
+const EVENT_TECHNOLOGY_PRACTICE := 14
+const EVENT_TECHNOLOGY_CONTACT := 16
+const PAYLOAD_TECHNOLOGY_PRACTICE_V1 := 7
+const SOURCE_NATIVE := 1
+const SCOPE_ENTITY := 2
+const VALUE_I64 := 1
+const PAYLOAD_I0 := 2
+const ACTION_COUNTRY_COMMAND := 10
+const COUNTRY_DOMAIN := 1
+const COMMAND_DISCOVER_COUNTRY_SIGNAL := 14
+const SOURCE_KIND_TRIGGER_OUTPUT := 4
+
+## Economy publishes only already-qualified practice facts. TriggerRuntime owns
+## their durable accumulation; EffectRuntime owns the Country command/ACK.
+const BREAKTHROUGH_RULES := [
+	[0, "maize_selection", "breakthrough.maize_selection", 365],
+	[1, "dryland_days", "breakthrough.dryland_adaptation", 730],
+	[2, "dryland_droughts", "breakthrough.dryland_adaptation", 3],
+	[3, "hydraulic_engineering", "breakthrough.hydraulic_engineering", 1],
+	[4, "metalworking", "breakthrough.metalworking", 5000 * 1000],
+	[5, "printing", "breakthrough.printing", 10000 * 1000],
+	[6, "steam_power", "breakthrough.steam_power", 3 * 1095],
+	[7, "electrification", "breakthrough.electrification", 3 * 730],
+	[8, "industrial_organization", "breakthrough.industrial_organization", 3 * 365],
+	[9, "automation", "breakthrough.automation", 2 * 365],
+	[10, "climate_modeling", "breakthrough.climate_modeling", 5],
+	[11, "seed_saving", "breakthrough.seed_saving", 120],
+	[12, "rainfed_adaptation", "breakthrough.rainfed_adaptation", 240],
+	[13, "paddy_control", "breakthrough.paddy_control", 240],
+	[14, "terrace_maintenance", "breakthrough.terrace_maintenance", 240],
+	[15, "mine_support", "breakthrough.mine_support", 360],
+	[16, "mine_drainage", "breakthrough.mine_drainage", 360],
+	[17, "kiln_temperature", "breakthrough.kiln_temperature", 360],
+	[18, "print_calibration", "breakthrough.print_calibration", 360],
+	[19, "steam_sealing", "breakthrough.steam_sealing", 360],
+	[20, "motor_winding", "breakthrough.motor_winding", 360],
+	[21, "assembly_line", "breakthrough.assembly_line", 360],
+	[22, "digital_control", "breakthrough.digital_control", 360],
+	[23, "maritime_operations", "breakthrough.maritime_operations", 360],
+	[24, "watershed_management", "breakthrough.watershed_management", 360],
+	[25, "forest_management", "breakthrough.forest_management", 360],
+	[26, "chemical_process_control", "breakthrough.chemical_process_control", 360],
+	[27, "energy_control", "breakthrough.energy_control", 360],
+]
+
+## These facts are emitted only after a cross-country delivery of the matching
+## crop sample or ore. Merely knowing a trade route never creates contact.
+const CONTACT_RULES := [
+	[0, "maize", "contact.maize"],
+	[1, "wheat", "contact.wheat"],
+	[2, "rice", "contact.rice"],
+	[3, "potato", "contact.potato"],
+	[4, "cotton", "contact.cotton"],
+	[5, "flax", "contact.flax"],
+	[6, "spice", "contact.spice"],
+	[7, "rubber", "contact.rubber"],
+	[8, "tin", "contact.tin"],
+]
 
 @export var definitions: Array[Resource] = []
 @export var max_state_instances: int = 4096
@@ -65,8 +126,11 @@ func compile_native_catalog() -> Dictionary:
 		"effect_payload_i0": PackedInt64Array(), "effect_payload_i1": PackedInt64Array(),
 		"effect_payload_i2": PackedInt64Array(), "effect_payload_i3": PackedInt64Array(),
 	}
+	var compiled_definitions: Array[Resource] = definitions.duplicate()
+	compiled_definitions.append_array(_breakthrough_definitions())
+	compiled_definitions.append_array(_contact_definitions())
 	var seen := {}
-	for definition in definitions:
+	for definition in compiled_definitions:
 		if definition == null or not definition is TriggerDefinitionScript:
 			return {"ok": false, "reason": "trigger_definition_resource_invalid"}
 		if definition.key == &"" or seen.has(definition.key) or definition.threshold <= 0 \
@@ -106,6 +170,116 @@ func compile_native_catalog() -> Dictionary:
 			out.effect_payload_i1.append(int(effect.payload_i1)); out.effect_payload_i2.append(int(effect.payload_i2)); out.effect_payload_i3.append(int(effect.payload_i3))
 		out.effect_offsets.append(out.effect_actions.size())
 	out.ok = true
+	return out
+
+
+static func breakthrough_effect_rows() -> Array[Dictionary]:
+	var signal_catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+	if not bool(signal_catalog.get("ok", false)):
+		return []
+	var signal_ids: PackedStringArray = signal_catalog.get(
+		"research_signal_ids", PackedStringArray())
+	var rows: Array[Dictionary] = []
+	var seen_signals := {}
+	for row in BREAKTHROUGH_RULES + CONTACT_RULES:
+		var signal_id := String(row[2])
+		if seen_signals.has(signal_id):
+			continue
+		var signal_index := signal_ids.find(signal_id)
+		if signal_index < 0:
+			return []
+		seen_signals[signal_id] = true
+		rows.append({
+			"signal_id": signal_id,
+			"signal_index": signal_index,
+			"command_key": "contact.discover" if signal_id.begins_with("contact.") \
+				else "breakthrough.discover",
+		})
+	return rows
+
+
+static func _contact_definitions() -> Array[Resource]:
+	var signal_catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+	var signal_ids: PackedStringArray = signal_catalog.get(
+		"research_signal_ids", PackedStringArray())
+	var out: Array[Resource] = []
+	if not bool(signal_catalog.get("ok", false)):
+		return out
+	for row in CONTACT_RULES:
+		var signal_id := String(row[2])
+		var signal_index := signal_ids.find(signal_id)
+		if signal_index < 0:
+			return []
+		var definition := TriggerDefinitionScript.new()
+		definition.key = StringName("technology.contact.%s" % String(row[1]))
+		definition.version = 1
+		definition.source_id = SOURCE_NATIVE
+		definition.event_type = EVENT_TECHNOLOGY_CONTACT
+		definition.payload_schema = PAYLOAD_TECHNOLOGY_PRACTICE_V1
+		definition.aggregator = AGG_COUNT
+		definition.value_field = VALUE_I64
+		definition.scope = SCOPE_ENTITY
+		definition.target_resolver = TARGET_EVENT_ENTITY
+		definition.threshold = 1
+		definition.mode = MODE_ONE_SHOT
+		definition.selector_field = PAYLOAD_I0
+		definition.selector_value = int(row[0])
+		definition.condition_ops = PackedInt32Array([2])
+		var effect := TriggerEffectScript.new()
+		effect.action = ACTION_COUNTRY_COMMAND
+		effect.domain = COUNTRY_DOMAIN
+		effect.opcode = COMMAND_DISCOVER_COUNTRY_SIGNAL
+		effect.target_resolver = TARGET_EVENT_ENTITY
+		effect.value_mode = 0
+		effect.value = SOURCE_KIND_TRIGGER_OUTPUT
+		effect.command_key = &"contact.discover"
+		effect.definition_key = StringName(signal_id)
+		effect.payload_i0 = signal_index
+		definition.effects = [effect]
+		out.append(definition)
+	return out
+
+
+static func _breakthrough_definitions() -> Array[Resource]:
+	var signal_catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+	var signal_ids: PackedStringArray = signal_catalog.get(
+		"research_signal_ids", PackedStringArray())
+	var out: Array[Resource] = []
+	if not bool(signal_catalog.get("ok", false)):
+		return out
+	for row in BREAKTHROUGH_RULES:
+		var signal_id := String(row[2])
+		var signal_index := signal_ids.find(signal_id)
+		if signal_index < 0:
+			return []
+		var definition := TriggerDefinitionScript.new()
+		definition.key = StringName("technology.practice.%s" % String(row[1]))
+		definition.version = 1
+		definition.source_id = SOURCE_NATIVE
+		definition.event_type = EVENT_TECHNOLOGY_PRACTICE
+		definition.payload_schema = PAYLOAD_TECHNOLOGY_PRACTICE_V1
+		definition.aggregator = AGG_SUM
+		definition.value_field = VALUE_I64
+		definition.scope = SCOPE_ENTITY
+		definition.target_resolver = TARGET_EVENT_ENTITY
+		definition.threshold = int(row[3])
+		definition.mode = MODE_ONE_SHOT
+		definition.selector_field = PAYLOAD_I0
+		definition.selector_value = int(row[0])
+		definition.condition_ops = PackedInt32Array([2]) # PUSH_ACC_GTE
+		var effect := TriggerEffectScript.new()
+		effect.action = ACTION_COUNTRY_COMMAND
+		effect.domain = COUNTRY_DOMAIN
+		effect.opcode = COMMAND_DISCOVER_COUNTRY_SIGNAL
+		effect.target_resolver = TARGET_EVENT_ENTITY
+		effect.value_mode = 0
+		effect.value = SOURCE_KIND_TRIGGER_OUTPUT
+		effect.command_key = &"breakthrough.discover"
+		effect.definition_key = StringName(signal_id)
+		# TriggerRuntime packs the event's first-practice cell into the low word.
+		effect.payload_i0 = signal_index
+		definition.effects = [effect]
+		out.append(definition)
 	return out
 
 

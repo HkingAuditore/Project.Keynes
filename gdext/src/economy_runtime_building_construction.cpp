@@ -107,7 +107,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     for (int32_t edge = 0; edge < type.construction_count; ++edge) {
         const GoodAmount &item = _building_construction_goods[
             type.construction_begin + edge];
-        if (!good_available(cell, item.good_id, true))
+        if (!good_market_available(cell, item.good_id, true))
             return reject("construction_technology_locked");
         const int64_t quantity = std::max<int64_t>(1, mul_div_sat(
             item.quantity, cost_factor, Q16_ONE, _saturation_count));
@@ -244,7 +244,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     int64_t total_cost = 0;
     for (int32_t i = 0; i < type.construction_count; ++i) {
         const GoodAmount &item = _building_construction_goods[type.construction_begin + i];
-        if (!good_available(cell, item.good_id, true)) {
+        if (!good_market_available(cell, item.good_id, true)) {
             _last_building_rejection_reason = "building_construction_good_locked";
             ++_rejected_commands;
             return true;

@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"silica_sand"
+discovery_technology_tags = PackedStringArray("tech.natural_observation")
 display_name = "硅砂"
 reserve_component = &"cell.res_silica_sand_reserve"
 habitat_mode = "land"

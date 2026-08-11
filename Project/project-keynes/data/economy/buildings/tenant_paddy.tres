@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"tenant_paddy"
+display_name = "佃作水田"
+building_kind = "collector"
+economic_sector_id = "agriculture"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.tenant_paddy_management")
+required_technology_tags = PackedStringArray("tech.rice_water_control", "tech.customary_tenancy", "tech.paddy_bunding")
+production_climate_profile_id = &"paddy_crop"
+construction_good_ids = PackedStringArray("adobe_brick", "reed_bundle")
+construction_quantities = PackedInt64Array(350, 240)
+owner_profession_id = &"landlord"
+employee_profession_ids = PackedStringArray("tenant_farmer")
+employee_slots_per_building = PackedInt64Array(7)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(8200)
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("rice_grain")
+output_quantities_per_day = PackedInt64Array(7200)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("paddy_land")
+resource_quantities_per_day = PackedInt64Array(900)
+resource_interaction_modes = PackedStringArray("capacity")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array(1, 1, 3)
+condition_signals = PackedInt32Array(9, 10, 0)
+condition_compares = PackedInt32Array(0, 4, 0)
+condition_reference_ids = PackedStringArray("", "paddy_land", "")
+condition_values = PackedInt64Array(1, 0, 0)

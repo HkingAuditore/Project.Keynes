@@ -2,6 +2,8 @@ extends Control
 class_name TechnologyWorkspace
 
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
+const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
+const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 
 # Full-bleed research screen: an icon-led status strip, a policy column driven by
 # direct manipulation, the self-drawn technology tree, and a detail card. Every
@@ -23,7 +25,11 @@ var _player_controller = null
 var _definitions: Array = []
 var _eras: Array = []
 var _domains: Array = []
+var _visual_edges: Array = []
 var _era_names: Dictionary = {}
+var _technology_indices: Dictionary = {}
+var _signal_indices: Dictionary = {}
+var _signal_names: Dictionary = {}
 var _research: Dictionary = {}
 var _queue_signature := ""
 var _detail_signature := ""
@@ -104,11 +110,22 @@ func set_model(model: Dictionary) -> void:
 		_definitions = model.get("technology_definitions", [])
 		_eras = model.get("technology_eras", [])
 		_domains = model.get("technology_domains", [])
+		_visual_edges = model.get("technology_visual_edges", [])
+		for index in range(_definitions.size()):
+			_technology_indices[String((_definitions[index] as Dictionary).get(
+				"id", ""))] = index
+		var signal_definitions: Array = model.get("research_signal_definitions", [])
+		for index in range(signal_definitions.size()):
+			var signal_definition: Dictionary = signal_definitions[index]
+			_signal_indices[String(signal_definition.get("id", ""))] = index
+			_signal_names[String(signal_definition.get("id", ""))] = String(
+				signal_definition.get("display_name",
+					signal_definition.get("id", "")))
 		for era in _eras:
 			_era_names[String((era as Dictionary).get("id", ""))] = \
 				String((era as Dictionary).get("display_name", ""))
 		if not _definitions.is_empty():
-			_tree.set_catalog(_definitions, _eras, _domains)
+			_tree.set_catalog(_definitions, _eras, _domains, _visual_edges)
 			_dial.configure(_domains)
 			_configure_queues()
 	_apply_research()
@@ -311,31 +328,168 @@ func _relation_signature(relations: Dictionary) -> String:
 		for entry in relations.get(group, []) as Array:
 			parts.append("%d" % int((entry as Dictionary).get("state", 0)))
 		parts.append("/")
+	for entry in relations.get("condition_items", []) as Array:
+		parts.append(String((entry as Dictionary).get("text", "")))
+		parts.append("|")
 	return "".join(parts)
 
 
 func _relations_for(index: int, states: PackedInt32Array) -> Dictionary:
 	var layout: Dictionary = _tree.layout_report()
-	var parents: Array = layout.get("parents", [])
-	var children: Array = layout.get("children", [])
 	var prerequisites: Array = []
 	var successors: Array = []
-	if index < parents.size():
-		for parent in parents[index]:
-			prerequisites.append(_relation_entry(int(parent), states))
-	if index < children.size():
-		for child in children[index]:
-			successors.append(_relation_entry(int(child), states))
-	return {"prerequisites": prerequisites, "successors": successors}
+	for edge_value in layout.get("edges", []):
+		var edge: Dictionary = edge_value
+		var from := int(edge.get("from", -1))
+		var to := int(edge.get("to", -1))
+		var kind := String(edge.get("kind", "hard"))
+		if kind == "hard" and to == index:
+			prerequisites.append(_relation_entry(from, states))
+		elif from == index:
+			successors.append(_relation_entry(to, states, _relation_prefix(kind, true)))
+		elif to == index and kind != "hard":
+			successors.append(_relation_entry(from, states, _relation_prefix(kind, false)))
+	return {
+		"prerequisites": prerequisites,
+		"successors": successors,
+		"condition_items": _condition_items(index, states),
+	}
 
 
-func _relation_entry(index: int, states: PackedInt32Array) -> Dictionary:
+func _relation_entry(index: int, states: PackedInt32Array, prefix: String = "") -> Dictionary:
 	var state := int(states[index]) if index < states.size() else 0
 	if state <= 0:
 		return {"name": "未知科技", "state": 0}
+	var name := String((_definitions[index] as Dictionary).get("display_name", ""))
 	return {
-		"name": String((_definitions[index] as Dictionary).get("display_name", "")),
+		"name": ("%s · %s" % [prefix, name]) if not prefix.is_empty() else name,
 		"state": state,
+	}
+
+
+func _relation_prefix(kind: String, outgoing: bool) -> String:
+	match kind:
+		"hard": return "硬后继" if outgoing else "硬前置"
+		"alternative": return "替代证据"
+		"application": return "应用交汇"
+		"milestone_candidate": return "里程碑候选"
+	return "网络关系"
+
+
+func _condition_items(index: int, states: PackedInt32Array) -> Array:
+	if index < 0 or index >= _definitions.size():
+		return []
+	var spec: Dictionary = (_definitions[index] as Dictionary).get(
+		"reveal_condition", {})
+	if spec.is_empty():
+		return []
+	var result := _evaluate_condition(spec, states, _signal_evidence())
+	var inspirations: Array = []
+	for item_value in result.get("items", []) as Array:
+		var item: Dictionary = item_value
+		if String(item.get("source_kind", "")) != "signal" \
+				or not bool(item.get("met", false)):
+			continue
+		var inspiration := item.duplicate()
+		inspiration["text"] = "启发线索 · %s" % String(item.get("text", ""))
+		inspirations.append(inspiration)
+	return inspirations
+
+
+func _signal_evidence() -> Dictionary:
+	var snapshot: Dictionary = _research.get("research_signal_snapshot", {})
+	var dense_ids: PackedInt32Array = snapshot.get("signal_ids", PackedInt32Array())
+	var counts: PackedInt32Array = snapshot.get("counts", PackedInt32Array())
+	var first_days: PackedInt64Array = snapshot.get("first_days", PackedInt64Array())
+	var first_cells: PackedInt32Array = snapshot.get("first_cells", PackedInt32Array())
+	var evidence := {}
+	for cursor in range(dense_ids.size()):
+		evidence[int(dense_ids[cursor])] = {
+			"count": int(counts[cursor]) if cursor < counts.size() else 0,
+			"first_day": int(first_days[cursor]) if cursor < first_days.size() else -1,
+			"first_cell": int(first_cells[cursor]) if cursor < first_cells.size() else -1,
+		}
+	return evidence
+
+
+func _evaluate_condition(spec: Dictionary, states: PackedInt32Array,
+		evidence: Dictionary) -> Dictionary:
+	if spec.has("kind"):
+		return _evaluate_condition_atom(spec, states, evidence)
+	var children: Array = spec.get("children", [])
+	var operator := int(spec.get("operator", ResearchConditionScript.Operator.ATOM))
+	if operator == ResearchConditionScript.Operator.ATOM:
+		return _evaluate_condition_atom(spec.get("atom", {}), states, evidence)
+	var child_results: Array = []
+	var met_count := 0
+	var items: Array = []
+	for child in children:
+		var result := _evaluate_condition(child as Dictionary, states, evidence)
+		child_results.append(result)
+		met_count += 1 if bool(result.get("met", false)) else 0
+		items.append_array(result.get("items", []))
+	var met := false
+	match operator:
+		ResearchConditionScript.Operator.ALL_OF:
+			met = met_count == children.size()
+		ResearchConditionScript.Operator.ANY_OF:
+			met = met_count > 0
+		ResearchConditionScript.Operator.AT_LEAST:
+			met = met_count >= int(spec.get("required_count", 1))
+		ResearchConditionScript.Operator.NOT:
+			met = child_results.size() == 1 and not bool(
+				(child_results[0] as Dictionary).get("met", false))
+	return {"met": met, "items": items}
+
+
+func _evaluate_condition_atom(atom: Dictionary, states: PackedInt32Array,
+		evidence: Dictionary) -> Dictionary:
+	var kind := int(atom.get("kind", -1))
+	var stable_id := String(atom.get("id", atom.get("reference_id", "")))
+	var required := maxi(1, int(atom.get("value", 1)))
+	if kind == ResearchPredicateScript.Kind.TECH_COMPLETED:
+		var technology_index := int(_technology_indices.get(stable_id, -1))
+		var technology_state := int(states[technology_index]) \
+			if technology_index >= 0 and technology_index < states.size() else 0
+		var met := technology_state >= 4
+		var technology_name := "未知科技"
+		if technology_state > 0 and technology_index < _definitions.size():
+			technology_name = String((_definitions[technology_index] as Dictionary).get(
+				"display_name", technology_name))
+		return {
+			"met": met,
+			"items": [{
+				"text": "前置科技：%s（%s）" % [
+					technology_name, "已完成" if met else "未完成"],
+				"icon": &"technology.state.completed" if met else &"technology.state.locked",
+				"accent": UITokens.GOOD if met else UITokens.WARN,
+				"source_kind": "technology",
+				"met": met,
+			}],
+		}
+	if kind not in [ResearchPredicateScript.Kind.SIGNAL_PRESENT,
+			ResearchPredicateScript.Kind.SIGNAL_COUNT]:
+		return {"met": false, "items": []}
+	var signal_index := int(_signal_indices.get(stable_id, -1))
+	var row: Dictionary = evidence.get(signal_index, {})
+	var count := int(row.get("count", 0))
+	var target := required if kind == ResearchPredicateScript.Kind.SIGNAL_COUNT else 1
+	var met := count >= target
+	var name := String(_signal_names.get(stable_id, stable_id))
+	var source := ""
+	if count > 0:
+		source = "，首次记录：第 %d 日 / 地块 %d" % [
+			int(row.get("first_day", -1)), int(row.get("first_cell", -1))]
+	return {
+		"met": met,
+		"items": [{
+			"text": "%s：%s %d/%d%s" % [
+				"证据" if met else "阻塞", name, count, target, source],
+			"icon": &"technology.state.completed" if met else &"technology.state.locked",
+			"accent": UITokens.GOOD if met else UITokens.WARN,
+			"source_kind": "signal",
+			"met": met,
+		}],
 	}
 
 

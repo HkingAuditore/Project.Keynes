@@ -6,4 +6,4 @@ id = &"ai_researcher"
 display_name = "AI 研究员"
 default_consumption_plan_id = &"technical_household"
 profession_class_id = &"technology"
-technology_tags = PackedStringArray("tech.machine_learning")
+technology_tags = PackedStringArray()

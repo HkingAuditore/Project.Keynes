@@ -826,7 +826,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 for (int32_t c = input.candidate_begin;
                      c < input.candidate_begin + input.candidate_count; ++c) {
                     const InputCandidate &candidate = _building_input_candidates[c];
-                    if (!good_available(cell, candidate.good_id, true)) continue;
+                    if (!good_market_available(cell, candidate.good_id, true)) continue;
                     int64_t physical_daily = mul_div_sat(
                         input.quantity, Q16_ONE, candidate.efficiency_q16,
                         _saturation_count);

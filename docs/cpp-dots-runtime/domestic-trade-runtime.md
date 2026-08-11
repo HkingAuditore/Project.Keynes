@@ -1,5 +1,8 @@
 # 国内跨地块市场与运输运行时（Trade V1）
 
+当前拓扑同时保存 `cell_count*6` 方向边成本；互反运河边将贸易和殖民成本减半，运河 mask
+进入 topology hash，提交/恢复才失效路线 cache。见 [运河运行时](./canal-runtime.md)。
+
 实现入口为 `gdext/src/economy_runtime.{h,cpp}`、`gdext/src/world_ext_economy.cpp`、
 `scripts/data/{economy,good,terrain}_profile.gd` 与 `scripts/economy/economy_facade.gd`。
 该机制扩展现有“一地块一市场”，但不创建第二套市场或 GDScript 经济状态；库存、商人资金、
@@ -130,7 +133,7 @@ pending/accepted target、拓扑哈希、规范化拓扑变化/计划重置计�
 
 PKEC v11 在 v10 国家桥格式上增加贸易订单和贸易流 EMA sections，并在 header 保存稳定
 `next_order_id` 与已解析贸易配置。路线缓存、拓扑、Dijkstra scratch、未完成扫描和候选不存档。
-加载后先恢复当前 PKCN v4，再恢复 PKEC v30；贸易拓扑由下一次地图捕获重建。
+加载后先恢复当前 PKCN v11，再恢复 PKEC v34；贸易拓扑由下一次地图捕获重建。
 
 PKEC v12 增加企业停产状态、连续计数、采购意图容量、实际利润率、实际出库 EMA 和对应策略参数。
 参数一致的 v11 ACTIVE 才可迁移并将新增字段初始化为确定性默认值；当前 12.5% / 30 日分档库存基线商人策略

@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"copper_ore"
+discovery_technology_tags = PackedStringArray("tech.natural_copper_identification")
 display_name = "铜矿"
 reserve_component = &"cell.res_copper_ore_reserve"
 init_reserve_scale = 8.0

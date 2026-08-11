@@ -1,18 +1,21 @@
-[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"early_oil_well"
 display_name = "蒸汽钻井场"
 building_kind = "collector"
-technology_tags = PackedStringArray("industry.primary", "tech.steam_power")
+economic_sector_id = "extractive"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.primary", "tech.petroleum_drilling")
+required_technology_tags = PackedStringArray("tech.petroleum_extraction")
 upgrade_family_id = &"oil_extraction"
 upgrade_tier = 1
-construction_days = 0
 construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components", "steel")
 construction_quantities = PackedInt64Array(8500, 12750, 12750, 8500)
 owner_profession_id = &"industrialist"
-owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray("petroleum_worker", "manager")
 employee_slots_per_building = PackedInt64Array(14, 2)
 employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive")
@@ -29,11 +32,16 @@ output_good_ids = PackedStringArray("crude_oil")
 output_quantities_per_day = PackedInt64Array(63056)
 target_operating_margin_q16 = 6554
 supply_price_elasticity_q16 = 32768
+output_cost_shares_q16 = PackedInt32Array()
 resource_ids = PackedStringArray("oil")
 resource_quantities_per_day = PackedInt64Array(3152)
 resource_interaction_modes = PackedStringArray("extract")
 resource_access_modes = PackedStringArray("local")
 resource_generation_ids = PackedStringArray()
 resource_generation_quantities_per_day = PackedInt64Array()
-resource_generation_floor_q16 = 0
 behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

@@ -150,6 +150,9 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.river_storage", cpp_name = "cell_river_storage", dtype = F32, track_prev = false, map_field = "river_storage_arr", prev_field = "", owner = "runtime.hydrology" },
 	{ name = &"cell.groundwater_storage", cpp_name = "cell_groundwater_storage", dtype = F32, track_prev = false, map_field = "groundwater_storage_arr", prev_field = "", owner = "runtime.hydrology" },
 	{ name = &"cell.surface_runoff", cpp_name = "cell_surface_runoff", dtype = F32, track_prev = false, map_field = "surface_runoff_arr", prev_field = "", owner = "runtime.hydrology" },
+	# 运河是格边基础设施，不改变 terrain/is_water，也不参与天然 hydro_parent DAG。
+	{ name = &"cell.canal_edge_mask", cpp_name = "cell_canal_edge_mask", dtype = U8, track_prev = false, map_field = "canal_edge_mask_arr", prev_field = "", owner = "gameplay.infrastructure" },
+	{ name = &"cell.canal_water", cpp_name = "cell_canal_water", dtype = F32, track_prev = false, map_field = "canal_water_arr", prev_field = "", owner = "runtime.hydrology" },
 	# ─── Natural resources：per-cell 资源储量（economy.resources）──────────
 	{ name = &"cell.res_timber_reserve", cpp_name = "cell_res_timber_reserve", dtype = F32, track_prev = false, map_field = "res_timber_reserve_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_stone_reserve", cpp_name = "cell_res_stone_reserve", dtype = F32, track_prev = false, map_field = "res_stone_reserve_arr", prev_field = "", owner = "economy.resources" },

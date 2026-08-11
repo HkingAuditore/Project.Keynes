@@ -6,6 +6,7 @@ const StatDefinitionScript = preload("res://scripts/modifier/modifier_stat_defin
 const DefinitionScript = preload("res://scripts/modifier/modifier_definition.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
 
 const TECHNOLOGY_STATS := [
 	["country.research.agriculture_efficiency", 0.0, 1.6],
@@ -23,6 +24,10 @@ const TECHNOLOGY_STATS := [
 	["country.construction.time_factor", 0.65, 4.0],
 	["country.trade.capacity_factor", 0.0, 2.0],
 	["country.trade.speed_factor", 0.0, 1.5],
+	["country.climate.drought_loss_factor", 0.35, 1.0],
+	["country.climate.flood_loss_factor", 0.35, 1.0],
+	["country.climate.cold_stress_factor", 0.35, 1.0],
+	["country.climate.heat_stress_factor", 0.35, 1.0],
 ]
 
 @export var stats: Array[Resource] = []
@@ -105,6 +110,33 @@ func compile_native_catalog() -> Dictionary:
 			out.stat_persistable.append(1)
 			stat_domains_by_id.append(2)
 			stat_allowed_operations_by_id.append(15)
+	var family_ids: PackedStringArray = economy.get(
+		"building_upgrade_family_ids", PackedStringArray())
+	for family_id in family_ids:
+		var family_key := StringName("country.output.family.%s_factor" % String(family_id))
+		if stat_ids.has(family_key):
+			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+		stat_ids[family_key] = out.stat_keys.size()
+		out.stat_keys.append(String(family_key))
+		out.stat_domains.append(1)
+		out.stat_min_values.append(0.0)
+		out.stat_max_values.append(3.0)
+		out.stat_persistable.append(1)
+		stat_domains_by_id.append(1)
+		stat_allowed_operations_by_id.append(15)
+	for building_id in economy.get("building_type_ids", PackedStringArray()):
+		var building_key := StringName(
+			"country.output.building.%s_factor" % String(building_id))
+		if stat_ids.has(building_key):
+			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+		stat_ids[building_key] = out.stat_keys.size()
+		out.stat_keys.append(String(building_key))
+		out.stat_domains.append(1)
+		out.stat_min_values.append(0.0)
+		out.stat_max_values.append(3.0)
+		out.stat_persistable.append(1)
+		stat_domains_by_id.append(1)
+		stat_allowed_operations_by_id.append(15)
 	var tax_stat_groups := [
 		["income", economy.profession_ids],
 		["consumption", economy.good_ids],
@@ -158,6 +190,14 @@ func compile_native_catalog() -> Dictionary:
 	var technologies: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	if not bool(technologies.get("ok", false)):
 		return technologies
+	var technology_term_offsets: PackedInt32Array = \
+		technologies.technology_modifier_term_offsets
+	var technology_term_keys: PackedStringArray = \
+		technologies.technology_modifier_term_stat_keys
+	var technology_term_operations: PackedInt32Array = \
+		technologies.technology_modifier_term_operations
+	var technology_term_values: PackedFloat64Array = \
+		technologies.technology_modifier_term_values
 	for i in range(technologies.technology_ids.size()):
 		if (int(technologies.technology_flags[i]) & TechnologyCatalogScript.FLAG_STARTING) != 0:
 			continue
@@ -171,17 +211,41 @@ func compile_native_catalog() -> Dictionary:
 		out.definition_policies.append(1)
 		out.definition_max_stacks.append(1)
 		out.definition_default_duration.append(-1)
-		var technology_terms := TechnologyCatalogScript.modifier_terms(
-			String(technologies.technology_ids[i]),
-			int(technologies.technology_domain_indices[i]),
-			int(technologies.technology_flags[i]))
-		for term in technology_terms:
-			var stat_key := StringName(term.stat)
+		for term_index in range(technology_term_offsets[i], technology_term_offsets[i + 1]):
+			var stat_key := StringName(technology_term_keys[term_index])
 			if not stat_ids.has(stat_key):
 				return {"ok": false, "reason": "modifier_term_invalid"}
 			out.term_stat_ids.append(int(stat_ids[stat_key]))
-			out.term_operations.append(int(term.operation))
-			out.term_values.append(float(term.value))
+			out.term_operations.append(int(technology_term_operations[term_index]))
+			out.term_values.append(float(technology_term_values[term_index]))
 		out.definition_term_offsets.append(out.term_values.size())
+	# Era rewards are ordinary permanent country modifiers with UNIQUE_SOURCE.
+	# This keeps percentage effects on the same frozen-factor consumers as
+	# technologies and prevents a reward path from mutating economic ledgers.
+	for era_index in EraRewardCatalogScript.ERA_SPECS.size():
+		for theme_index in EraRewardCatalogScript.THEMES.size():
+			var option_id := StringName("era_reward.%s.%s" % [
+				String(EraRewardCatalogScript.ERA_SPECS[era_index][0]),
+				String(EraRewardCatalogScript.THEMES[theme_index][0])])
+			var reward_definition_key := String(
+				EraRewardCatalogScript.modifier_definition_key(option_id))
+			if definition_keys.has(reward_definition_key):
+				return {"ok": false, "reason": "modifier_definition_invalid_or_duplicate"}
+			definition_keys[reward_definition_key] = true
+			out.definition_keys.append(reward_definition_key)
+			out.definition_versions.append(1)
+			out.definition_domains.append(1)
+			out.definition_policies.append(1)
+			out.definition_max_stacks.append(1)
+			out.definition_default_duration.append(-1)
+			for term in EraRewardCatalogScript.modifier_terms_for_option(
+					era_index, theme_index):
+				var reward_stat_key := StringName(term.stat)
+				if not stat_ids.has(reward_stat_key):
+					return {"ok": false, "reason": "modifier_term_invalid"}
+				out.term_stat_ids.append(int(stat_ids[reward_stat_key]))
+				out.term_operations.append(int(term.operation))
+				out.term_values.append(float(term.value))
+			out.definition_term_offsets.append(out.term_values.size())
 	out["ok"] = true
 	return out

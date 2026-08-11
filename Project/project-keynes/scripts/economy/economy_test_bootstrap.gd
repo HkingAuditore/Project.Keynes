@@ -1818,11 +1818,15 @@ static func _input_slot_ready(spec: Dictionary, input_idx: int,
 
 
 static func _technology_available(tags: PackedStringArray) -> bool:
+	var has_technology_gate := false
 	for tag in tags:
 		var stable_id := String(tag)
-		if stable_id.begins_with("tech.") and not MID_STONE_TECHNOLOGY_IDS.has(stable_id):
-			return false
-	return true
+		if not stable_id.begins_with("tech."):
+			continue
+		has_technology_gate = true
+		if MID_STONE_TECHNOLOGY_IDS.has(stable_id):
+			return true
+	return not has_technology_gate
 
 
 static func _default_input_cost_per_day(spec: Dictionary, finance: Dictionary) -> int:

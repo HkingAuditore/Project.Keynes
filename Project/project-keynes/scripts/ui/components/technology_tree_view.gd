@@ -52,14 +52,15 @@ func _ready() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 
-func set_catalog(definitions: Array, eras: Array, domains: Array) -> void:
+func set_catalog(definitions: Array, eras: Array, domains: Array,
+		visual_edges: Array = []) -> void:
 	if not _nodes.is_empty() or definitions.is_empty():
 		return
 	_definitions = definitions
 	_accents.clear()
 	for domain in domains:
 		_accents.append((domain as Dictionary).get("accent", UITokens.ACCENT))
-	_layout = LayoutScript.build(definitions, eras, domains)
+	_layout = LayoutScript.build(definitions, eras, domains, visual_edges)
 	_nodes = _layout.get("nodes", [])
 	_edges = _layout.get("edges", [])
 	_bands = _layout.get("bands", [])
@@ -77,6 +78,8 @@ func patch_states(states: PackedInt32Array, progress: PackedInt64Array) -> void:
 	_recompute_visibility()
 	if not _framed and _visible_bounds.size.x > 0.0:
 		frame_frontier()
+	elif _framed:
+		_clamp_offset()
 	if _selected >= 0 and not _is_visible(_selected):
 		_selected = -1
 		_chain_up.clear()
@@ -291,7 +294,8 @@ func _tooltip_for(index: int) -> String:
 	if index < 0:
 		return ""
 	if not _is_known(index):
-		return "未知科技\n完成一项直接前置后揭示"
+		return "%s\n取得当地证据、真实贸易样本或实践突破后揭示" % \
+			_unknown_label_for(index)
 	var definition: Dictionary = _definitions[index]
 	var state := _state_of(index)
 	var parts := PackedStringArray()
@@ -357,16 +361,18 @@ func _notification(what: int) -> void:
 func _draw() -> void:
 	if _nodes.is_empty():
 		return
+	var content_view := Rect2(-_offset, size).grow(VIEW_PADDING)
 	draw_set_transform(_offset, 0.0, Vector2.ONE)
-	_draw_bands()
-	_draw_edges()
+	_draw_bands(content_view)
+	_draw_edges(content_view)
 	for i in range(_nodes.size()):
-		if _visible_nodes[i] != 0:
+		if _visible_nodes[i] != 0 \
+				and content_view.intersects((_nodes[i] as Dictionary).rect):
 			_draw_node(i)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-func _draw_bands() -> void:
+func _draw_bands(content_view: Rect2) -> void:
 	var left := _visible_bounds.position.x
 	var right := _visible_bounds.position.x + _visible_bounds.size.x
 	var font := get_theme_default_font()
@@ -378,6 +384,8 @@ func _draw_bands() -> void:
 		var band: Dictionary = _bands[band_index]
 		var top := float(band.get("top", 0.0))
 		var bottom := float(band.get("bottom", 0.0))
+		if bottom < content_view.position.y or top > content_view.end.y:
+			continue
 		var reached := band_index <= _frontier_band
 		var tint := UITokens.BRASS_HIGHLIGHT if reached else UITokens.TEXT_FAINT
 		var band_fill := (0.42 if band_index % 2 == 0 else 0.24)
@@ -410,18 +418,31 @@ func _draw_bands() -> void:
 		Color(UITokens.TEXT_FAINT.r, UITokens.TEXT_FAINT.g, UITokens.TEXT_FAINT.b, 0.62))
 
 
-func _draw_edges() -> void:
+func _draw_edges(content_view: Rect2) -> void:
 	var focus := _selected if _selected >= 0 else _hovered
 	for edge in _edges:
 		var data: Dictionary = edge
 		var from := int(data.from)
 		var to := int(data.to)
+		if not content_view.intersects(data.get("bounds", Rect2())):
+			continue
 		if _visible_nodes[from] == 0 or _visible_nodes[to] == 0:
 			continue
 		if not _is_known(from) and not _is_known(to):
 			continue
+		var kind := String(data.get("kind", "hard"))
+		# A milestone has sixteen candidates. Drawing every candidate edge all the
+		# time recreates a dense visual fan; reveal only the pair being inspected.
+		if kind == "milestone_candidate" and focus != from and focus != to:
+			continue
 		var satisfied := _state_of(from) >= 4
 		var colour := UITokens.GOOD if satisfied else UITokens.WARN
+		if kind == "application":
+			colour = _accent_for(int((_nodes[to] as Dictionary).domain))
+		elif kind == "alternative":
+			colour = UITokens.WATER
+		elif kind == "milestone_candidate":
+			colour = UITokens.BRASS_HIGHLIGHT
 		var alpha := 0.42 if satisfied else 0.30
 		var width := 1.6
 		if focus >= 0:
@@ -433,7 +454,15 @@ func _draw_edges() -> void:
 				width = 2.4
 			else:
 				alpha = 0.10
-		draw_polyline(data.points, Color(colour.r, colour.g, colour.b, alpha), width, true)
+		var edge_colour := Color(colour.r, colour.g, colour.b, alpha)
+		if kind == "hard":
+			draw_polyline(data.points, edge_colour, width, true)
+		elif kind == "alternative":
+			_draw_dashed_polyline(data.points, edge_colour, width, 9.0, 4.0)
+		elif kind == "application":
+			_draw_dashed_polyline(data.points, edge_colour, width, 5.0, 6.0)
+		else:
+			_draw_dashed_polyline(data.points, edge_colour, width, 3.0, 5.0)
 		if focus >= 0 and alpha > 0.5:
 			var points: PackedVector2Array = data.points
 			var tip: Vector2 = points[points.size() - 1]
@@ -450,7 +479,7 @@ func _draw_node(index: int) -> void:
 	var emphasis := _emphasis_for(index)
 	draw_style_box(_card_style(domain, state, known, bool(node.is_milestone), emphasis), rect)
 	if not known:
-		_draw_unknown_body(rect, accent, emphasis)
+		_draw_unknown_body(index, rect, accent, emphasis)
 		return
 	var definition: Dictionary = _definitions[index]
 	var dim := emphasis == 0
@@ -484,11 +513,54 @@ func _draw_node(index: int) -> void:
 	_draw_progress(index, rect, accent, dim)
 
 
-func _draw_unknown_body(rect: Rect2, accent: Color, emphasis: int) -> void:
+func _draw_unknown_body(index: int, rect: Rect2, accent: Color, emphasis: int) -> void:
 	var tint := accent.lerp(UITokens.TEXT_FAINT, 0.72)
 	tint.a = 0.34 if emphasis == 0 else 0.62
 	_draw_glyph(&"technology.state.unknown",
-		rect.position + Vector2(rect.size.x * 0.5 - 5.0, rect.size.y * 0.5 + 6.0), 15, tint)
+		rect.position + Vector2(14.0, rect.size.y * 0.5 + 5.0), 15, tint)
+	var label := _unknown_label_for(index)
+	draw_string(_name_font, rect.position + Vector2(35.0, rect.size.y * 0.5 + 5.0),
+		label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 48.0, NAME_FONT_SIZE, tint)
+
+
+func _unknown_label_for(index: int) -> String:
+	if index < 0 or index >= _definitions.size():
+		return "未知知识可能性"
+	var definition: Dictionary = _definitions[index]
+	if String(definition.get("node_role", "")) != "identification":
+		return "未知知识可能性"
+	var route := String(definition.get("primary_route_tag", "")).to_lower()
+	for token in ["min", "metal", "coal", "oil", "salt", "material", "stone"]:
+		if route.contains(token):
+			return "未知矿物可能性"
+	return "未知生物可能性"
+
+
+func _draw_dashed_polyline(points: PackedVector2Array, colour: Color,
+		width: float, dash_length: float, gap_length: float) -> void:
+	if points.size() < 2:
+		return
+	var drawing := true
+	var remaining := dash_length
+	for index in range(points.size() - 1):
+		var cursor := points[index]
+		var target := points[index + 1]
+		var delta := target - cursor
+		var length := delta.length()
+		if length <= 0.001:
+			continue
+		var direction := delta / length
+		var consumed := 0.0
+		while consumed < length:
+			var step := minf(remaining, length - consumed)
+			var next := cursor + direction * (consumed + step)
+			if drawing:
+				draw_line(cursor + direction * consumed, next, colour, width, true)
+			consumed += step
+			remaining -= step
+			if remaining <= 0.001:
+				drawing = not drawing
+				remaining = dash_length if drawing else gap_length
 
 
 func _draw_progress(index: int, rect: Rect2, accent: Color, dim: bool) -> void:

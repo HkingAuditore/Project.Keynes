@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"coal_adit"
+display_name = "煤层平硐"
+building_kind = "collector"
+economic_sector_id = "extractive"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.coal_adit_mining")
+required_technology_tags = PackedStringArray("tech.surface_coal_collection", "tech.masonry")
+construction_days = 90
+construction_good_ids = PackedStringArray("lumber", "raw_stone")
+construction_quantities = PackedInt64Array(1600, 1200)
+owner_profession_id = &"miner"
+employee_profession_ids = PackedStringArray("miner")
+employee_slots_per_building = PackedInt64Array(8)
+employee_wage_policy_ids = PackedStringArray("adaptive")
+employee_reference_wages_per_day = PackedInt64Array(12500)
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("coal")
+output_quantities_per_day = PackedInt64Array(6500)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("coal")
+resource_quantities_per_day = PackedInt64Array(7000)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

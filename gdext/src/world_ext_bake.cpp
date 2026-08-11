@@ -2441,6 +2441,73 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         HW[i] = float(std::max(0.0, double(HW[i]) - 0.045 * notch));
     }
 
+    // Artificial canals share the height texture's A channel. Rasterization
+    // uses only the owner cell and its six directed edges, keeping the work
+    // bounded per pixel and adding no runtime sampler.
+    PackedFloat32Array canal_work;
+    canal_work.resize(WN);
+    canal_work.fill(0.0f);
+    PackedByteArray canal_mask = knobs.get("cell_canal_edge_mask", PackedByteArray());
+    PackedFloat32Array canal_pos_x = knobs.get("cell_pos_x", PackedFloat32Array());
+    PackedFloat32Array canal_pos_y = knobs.get("cell_pos_y", PackedFloat32Array());
+    PackedInt32Array canal_neighbors = knobs.get("neighbor_indices", PackedInt32Array());
+    const int canal_n_cells = int(knobs.get("n_cells", 0));
+    if (canal_mask.size() >= canal_n_cells && canal_pos_x.size() >= canal_n_cells &&
+        canal_pos_y.size() >= canal_n_cells && canal_neighbors.size() >= canal_n_cells * 6) {
+        float * const CW = canal_work.ptrw();
+        const uint8_t * const CM = canal_mask.ptr();
+        const float * const CPX = canal_pos_x.ptr();
+        const float * const CPY = canal_pos_y.ptr();
+        const int32_t * const CN = canal_neighbors.ptr();
+        const int32_t * const owner = p2c_work.ptr();
+        const double radius = std::max(step_x, step_y) +
+            hex_size * std::max(0.01, std::min(0.12,
+                double(knobs.get("canal_stroke_hex_factor", 0.045))));
+        for (int y = 0; y < WH; ++y) {
+            const double py = work_origin_y + (double(y) + 0.5) * step_y;
+            for (int x = 0; x < WW; ++x) {
+                const int pixel = y * WW + x;
+                const int32_t cell = owner[pixel];
+                if (cell < 0 || cell >= canal_n_cells || (CM[cell] & 0x3fU) == 0)
+                    continue;
+                double px = work_origin_x + (double(x) + 0.5) * step_x;
+                const double ax = double(CPX[cell]) * hex_size;
+                const double ay = double(CPY[cell]) * hex_size;
+                if (wrap_period_x > 0.0001) {
+                    while (px - ax > wrap_period_x * 0.5) px -= wrap_period_x;
+                    while (px - ax < -wrap_period_x * 0.5) px += wrap_period_x;
+                }
+                double best = radius;
+                for (int direction = 0; direction < 6; ++direction) {
+                    if ((CM[cell] & (1U << direction)) == 0) continue;
+                    const int32_t neighbor = CN[cell * 6 + direction];
+                    if (neighbor < 0 || neighbor >= canal_n_cells) continue;
+                    double bx = double(CPX[neighbor]) * hex_size;
+                    const double by = double(CPY[neighbor]) * hex_size;
+                    if (wrap_period_x > 0.0001) {
+                        while (bx - ax > wrap_period_x * 0.5) bx -= wrap_period_x;
+                        while (bx - ax < -wrap_period_x * 0.5) bx += wrap_period_x;
+                    }
+                    const double vx = bx - ax, vy = by - ay;
+                    const double denom2 = std::max(1e-12, vx * vx + vy * vy);
+                    const double t = std::max(0.0, std::min(1.0,
+                        ((px - ax) * vx + (py - ay) * vy) / denom2));
+                    const double dx = px - (ax + vx * t);
+                    const double dy = py - (ay + vy * t);
+                    best = std::min(best, std::sqrt(dx * dx + dy * dy));
+                }
+                double canal = std::max(0.0, std::min(1.0, 1.0 - best / radius));
+                canal = canal * canal * (3.0 - 2.0 * canal);
+                CW[pixel] = float(canal);
+                // Half one 8-bit horizon-height quantum: normals see the bank,
+                // while horizon/GI remain valid.
+                HW[pixel] = float(std::max(0.0, double(HW[pixel]) -
+                    canal * (0.5 / 255.0)));
+            }
+        }
+    }
+    const float * const CANAL_W = canal_work.ptr();
+
     work_knobs["biome_buffer"] = biome_work;
     Dictionary coast = run_bake_coast_sdf_pass(work_knobs);
     if (!bool(coast.get("fallback", true))) {
@@ -2459,7 +2526,8 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         }
     }
 
-    // [height-flow-pack 2026-08-06] height RGBA8：RG=16-bit elev，B=flow，A=0。
+    // height RGBA8: RG=16-bit carved visual elevation, B=natural river SDF,
+    // A=artificial canal SDF.
     // 与 Legacy encode_height_flow_tex 对齐；不再单独产出 flow 层。
     PackedByteArray height_data; height_data.resize(N * 4);
     PackedByteArray normal_data; normal_data.resize(N * 2);
@@ -2523,7 +2591,8 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 HD[di * 4] = uint8_t((h16 >> 8) & 0xFF);
                 HD[di * 4 + 1] = uint8_t(h16 & 0xFF);
                 HD[di * 4 + 2] = uint8_t(std::round(f * 255.0));
-                HD[di * 4 + 3] = 0;
+                HD[di * 4 + 3] = uint8_t(std::round(std::max(0.0,
+                    std::min(1.0, double(CANAL_W[si]))) * 255.0));
 
                 const double sx = (double(HW[wy_i * WW + wx_i + normal_radius_x]) -
                         double(HW[wy_i * WW + wx_i - normal_radius_x])) * normal_gain_x;
@@ -2573,11 +2642,14 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     Dictionary hashes;
     hashes["height"] = hash_bytes(height_data);
     hashes["terrain_normal"] = hash_bytes(normal_data);
-    hashes["map_index"] = hash_bytes(map_index_data);
-    hashes["water_depth"] = hash_bytes(water_data);
-    hashes["terrain_detail"] = hash_bytes(detail_data);
-    hashes["edge_neighbor"] = hash_bytes(edge_data);
-    hashes["edge_distance"] = hash_bytes(edge_distance_data);
+    const bool canal_refresh_only = bool(knobs.get("canal_refresh_only", false));
+    if (!canal_refresh_only) {
+        hashes["map_index"] = hash_bytes(map_index_data);
+        hashes["water_depth"] = hash_bytes(water_data);
+        hashes["terrain_detail"] = hash_bytes(detail_data);
+        hashes["edge_neighbor"] = hash_bytes(edge_data);
+        hashes["edge_distance"] = hash_bytes(edge_distance_data);
+    }
 
     const auto t1 = std::chrono::high_resolution_clock::now();
     out["fallback"] = false;
@@ -2588,11 +2660,13 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     out["layer_id"] = int(knobs.get("layer_id", 0));
     out["height"] = height_data;
     out["terrain_normal"] = normal_data;
-    out["map_index"] = map_index_data;
-    out["water_depth"] = water_data;
-    out["terrain_detail"] = detail_data;
-    out["edge_neighbor"] = edge_data;
-    out["edge_distance"] = edge_distance_data;
+    if (!canal_refresh_only) {
+        out["map_index"] = map_index_data;
+        out["water_depth"] = water_data;
+        out["terrain_detail"] = detail_data;
+        out["edge_neighbor"] = edge_data;
+        out["edge_distance"] = edge_distance_data;
+    }
     out["hashes"] = hashes;
     out["normal_reference_radius_px"] = normal_reference_radius;
     out["normal_radius_x_px"] = normal_radius_x;

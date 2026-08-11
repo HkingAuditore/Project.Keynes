@@ -1,5 +1,9 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
+PKEC v34 在 Economy 内加入公共工程 `InfrastructureProjectStore`、报价 token 与运河路线
+CSR；国库资产、市场采购、回执和守恒仍复用既有经济机制。领域 API 与跨域 ACK 契约见
+[运河运行时](./canal-runtime.md)。
+
 2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和三态
 closing audit 契约见
 [运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
@@ -147,7 +151,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v30 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v34 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数，并追加家族特性 roll、
   per-cell influence branch 与有序特性命令 sections。reader 只接受 v30，v29 及更早版本明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
@@ -411,6 +415,12 @@ stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每
 档位，旧档返回 `building_tier_obsolete_for_construction`；生产仍只检查该建筑原始科技，因此旧
 owner-lot 继续生产且不会自动转换。快照发布 family、tier、highest available tier 和当前可建状态。
 食物与家庭织布各只有 gathering、pottery、guild、steam 四档，蒸汽后不再扩展。
+
+科技 Country Modifier 的生产家族和精确建筑类型 stat 在 `configure()` 时解析为 dense ID；
+`capture_country_epoch()` 将国家×家族与国家×建筑类型因子冻结为连续 Q16 表。建筑组缓存把国家、
+部门、科研机构、家族、精确建筑和 Economy building identity 因子一次性合成，实际生产与投资/恢复
+预测共用同一组合顺序。热循环不查询字符串或 Country ModifierStore，这些表为 epoch 临时数据，
+不进入 PKEC、状态哈希或国家持久状态。
 
 周期开始先按冻结价格计算每栋建筑的投入替换成本、完整工资义务、预期 producer settlement
 收入与目标营业利润率，作为诊断和销售后利润分享依据。计划利用率按可售产出的真实售罄率调整，

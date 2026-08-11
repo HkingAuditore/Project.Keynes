@@ -112,19 +112,32 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 		chips.append({"text": "时代里程碑", "accent": UITokens.WARN})
 	elif bool(definition.get("is_era_key", false)):
 		chips.append({"text": "时代关键", "accent": UITokens.RESOURCE})
+	var route_tags: PackedStringArray = definition.get("route_tags", PackedStringArray())
+	var route_names: PackedStringArray = definition.get(
+		"route_display_names", PackedStringArray())
+	for route_index in range(route_tags.size()):
+		var route_name := String(route_names[route_index]) \
+			if route_index < route_names.size() else String(route_tags[route_index])
+		chips.append({
+			"text": "路线 · %s" % route_name,
+			"accent": UITokens.RESOURCE,
+		})
 	_chips.set_badges(chips)
 	_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
 		_progress_caption(definition, fraction, state), accent)
-	_effects.set_items(_effect_items(String(definition.get("effect_summary", ""))))
+	var insight_items: Array = relations.get("condition_items", [])
+	insight_items.append_array(_effect_items(definition))
+	_effects.set_items(insight_items)
 	var required := int(definition.get("milestone_required_count", 0))
 	var prerequisites: Array = relations.get("prerequisites", [])
 	if required > 0:
-		_prerequisite_title.text = "前置条件（任选 %d 项）" % required
+		_prerequisite_title.text = "里程碑候选（任选 %d 项）" % required
 	else:
-		_prerequisite_title.text = "前置条件"
+		_prerequisite_title.text = "硬前置"
 	_prerequisite_title.visible = not prerequisites.is_empty()
 	_fill_relation_rows(_prerequisites, prerequisites)
 	var successors: Array = relations.get("successors", [])
+	_successor_title.text = "网络关系"
 	_successor_title.visible = not successors.is_empty()
 	_fill_relation_rows(_successors, successors)
 	_apply_action(state)
@@ -153,8 +166,52 @@ func _progress_caption(definition: Dictionary, fraction: float, state: int) -> S
 	return "还需 %s" % UITokens.format_compact_number_cn(remaining, 1)
 
 
-func _effect_items(summary: String) -> Array:
+func _effect_items(definition: Dictionary) -> Array:
 	var items: Array = []
+	for effect_value in definition.get("content_effects", []):
+		var effect: Dictionary = effect_value
+		var kind := String(effect.get("kind", ""))
+		var id := String(effect.get("id", ""))
+		var display_name := String(effect.get("display_name", id))
+		var attribute := String(effect.get("attribute", ""))
+		var text := ""
+		match kind:
+			"building": text = "解锁建筑 · %s" % display_name
+			"good":
+				text = ("解锁物资 · %s" if attribute == "production_access" \
+					else "生产配方关联 · %s") % display_name
+			"resource": text = "可利用资源 · %s" % display_name
+			"class": text = "阶层岗位 · %s" % display_name
+			"terrain": text = "地形专长 · %s" % display_name
+			"landform": text = "地貌专长 · %s" % display_name
+			"climate": text = "气候专长 · %s" % display_name
+			"tile": text = "地块条件 · %s" % display_name
+		if not text.is_empty():
+			items.append({
+				"text": text,
+				"icon": &"economy.building" if kind == "building" else &"metric.technology",
+				"accent": UITokens.RESOURCE,
+			})
+	for term_value in definition.get("modifier_terms", []):
+		var term: Dictionary = term_value
+		var stat := String(term.get("stat", ""))
+		var value := int(round(float(term.get("value", 0.0)) * 100.0))
+		var text := ""
+		if stat.begins_with("country.output.building."):
+			text = "%s产出 +%d%%" % [String(term.get(
+				"subject_display_name", "指定建筑")), value]
+		elif stat.begins_with("country.output.family."):
+			text = "%s产出 +%d%%" % [String(term.get(
+				"subject_display_name", "相关建筑工艺")), value]
+		elif stat.begins_with("country.climate."):
+			text = "针对性气候损失调整 %d%%" % value
+		elif not stat.is_empty():
+			text = "定向国家能力 +%d%%" % value
+		if not text.is_empty():
+			items.append({"text": text, "icon": &"metric.technology", "accent": UITokens.CLIMATE})
+	if not items.is_empty():
+		return items
+	var summary := String(definition.get("effect_summary", ""))
 	for chunk in summary.replace("，", "、").split("、", false):
 		var text := String(chunk).strip_edges()
 		if text.is_empty():

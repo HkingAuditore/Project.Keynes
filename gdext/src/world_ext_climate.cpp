@@ -1019,6 +1019,239 @@ static inline float pk_limit_cold_water_positive_transport_source(
     return std::min(source, melt_room);
 }
 
+void DCWorldExt::_ensure_enso_basin_cache(
+        int n_cells, const uint8_t *is_water, const uint8_t *terrain,
+        const float *lat_norm, const float *pos_x, const int32_t *neighbors,
+        const PackedByteArray &ocean_terrain_ids, float tropical_lat_limit,
+        int max_basins, float wrap_period_x, int world_seed) {
+    const auto t0 = std::chrono::high_resolution_clock::now();
+    uint64_t fp = 1469598103934665603ull;
+    auto mix = [&fp](uint64_t v) { fp ^= v; fp *= 1099511628211ull; };
+    mix(uint64_t(n_cells));
+    mix(uint64_t(std::lround(tropical_lat_limit * 10000.0f)));
+    mix(uint64_t(max_basins));
+    mix(uint64_t(std::lround(wrap_period_x * 1000.0f)));
+    for (int i = 0; i < n_cells; ++i) {
+        mix(uint64_t(is_water[i]));
+        mix(uint64_t(std::lround(lat_norm[i] * 10000.0f)));
+    }
+    for (int i = 0; i < n_cells * 6; ++i) mix(uint64_t(uint32_t(neighbors[i])));
+    if (_enso_cache_valid && _enso_cache_fp == fp) {
+        _enso_cache_last_hit = true;
+        return;
+    }
+    _enso_cache_last_hit = false;
+
+    bool terrain_lut[256] = {};
+    for (int i = 0; i < ocean_terrain_ids.size(); ++i) {
+        terrain_lut[uint8_t(ocean_terrain_ids[i])] = true;
+    }
+    const bool filter_terrain = terrain != nullptr && !ocean_terrain_ids.is_empty();
+    auto eligible = [&](int i) {
+        const float signed_lat = std::abs((lat_norm[i] - 0.5f) * 2.0f);
+        return is_water[i] != 0 && signed_lat <= tropical_lat_limit &&
+               (!filter_terrain || terrain_lut[terrain[i]]);
+    };
+
+    struct Candidate { std::vector<int32_t> cells; uint64_t signature = 0; };
+    std::vector<Candidate> candidates;
+    std::vector<uint8_t> seen(static_cast<size_t>(n_cells), 0);
+    std::vector<int32_t> queue;
+    queue.reserve(static_cast<size_t>(n_cells));
+    const int min_cells = std::max(24, int(std::sqrt(double(n_cells)) * 0.45));
+    for (int seed = 0; seed < n_cells; ++seed) {
+        if (seen[seed] || !eligible(seed)) continue;
+        queue.clear();
+        queue.push_back(seed);
+        seen[seed] = 1;
+        for (size_t head = 0; head < queue.size(); ++head) {
+            const int cur = queue[head];
+            for (int d = 0; d < 6; ++d) {
+                const int ni = neighbors[cur * 6 + d];
+                if (ni < 0 || ni >= n_cells || seen[ni] || !eligible(ni)) continue;
+                seen[ni] = 1;
+                queue.push_back(ni);
+            }
+        }
+        if (int(queue.size()) < min_cells) continue;
+        Candidate c;
+        c.cells = queue;
+        std::sort(c.cells.begin(), c.cells.end());
+        uint64_t sig = 1469598103934665603ull;
+        for (int32_t idx : c.cells) { sig ^= uint64_t(uint32_t(idx)); sig *= 1099511628211ull; }
+        c.signature = sig;
+        candidates.push_back(std::move(c));
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
+        if (a.cells.size() != b.cells.size()) return a.cells.size() > b.cells.size();
+        return a.signature < b.signature;
+    });
+    if (int(candidates.size()) > max_basins) candidates.resize(static_cast<size_t>(max_basins));
+
+    const std::vector<EnsoBasinState> old_states = _enso_states;
+    _enso_basin_id.assign(static_cast<size_t>(n_cells), int8_t(-1));
+    _enso_eastness.assign(static_cast<size_t>(n_cells), 0.0f);
+    _enso_prev_forcing.assign(static_cast<size_t>(n_cells), 0.0f);
+    _enso_members.clear();
+    _enso_basins.clear();
+    _enso_states.clear();
+    for (int bi = 0; bi < int(candidates.size()); ++bi) {
+        const Candidate &c = candidates[bi];
+        EnsoBasinMeta meta;
+        meta.signature = c.signature;
+        meta.member_begin = int(_enso_members.size());
+        meta.member_count = int(c.cells.size());
+        double cx = 0.0;
+        if (wrap_period_x > 0.0f) {
+            double sx = 0.0, sy = 0.0;
+            for (int idx : c.cells) {
+                const double a = 2.0 * M_PI * double(pos_x[idx]) / double(wrap_period_x);
+                sx += std::cos(a); sy += std::sin(a);
+            }
+            cx = std::atan2(sy, sx) * double(wrap_period_x) / (2.0 * M_PI);
+        } else {
+            for (int idx : c.cells) cx += pos_x[idx];
+            cx /= std::max<size_t>(1, c.cells.size());
+        }
+        double max_abs_dx = 1e-6;
+        for (int idx : c.cells) {
+            const double dx = pk_wrap_min_image_dx(float(double(pos_x[idx]) - cx), wrap_period_x);
+            max_abs_dx = std::max(max_abs_dx, std::abs(dx));
+        }
+        meta.span_x = float(max_abs_dx * 2.0);
+        for (int idx : c.cells) {
+            _enso_members.push_back(idx);
+            _enso_basin_id[static_cast<size_t>(idx)] = int8_t(bi);
+            const float dx = pk_wrap_min_image_dx(float(double(pos_x[idx]) - cx), wrap_period_x);
+            _enso_eastness[static_cast<size_t>(idx)] = dc_clampf(dx / float(max_abs_dx), -1.0f, 1.0f);
+        }
+        _enso_basins.push_back(meta);
+        EnsoBasinState state;
+        state.signature = c.signature;
+        bool restored = false;
+        for (const EnsoBasinState &old : old_states) {
+            if (old.signature == c.signature) { state = old; restored = true; break; }
+        }
+        if (!restored) {
+            uint64_t h = c.signature ^ (uint64_t(uint32_t(world_seed)) * 0x9e3779b97f4a7c15ull);
+            state.temp_index = ((h >> 11) & 1ull) ? 0.018f : -0.018f;
+            state.recharge_index = ((h >> 17) & 1ull) ? -0.010f : 0.010f;
+        }
+        _enso_states.push_back(state);
+    }
+    _enso_wind_sum.assign(_enso_states.size(), 0.0);
+    _enso_wind_count.assign(_enso_states.size(), 0);
+
+    if (!_climate_modes_pending_restore.is_empty()) {
+        Array saved = _climate_modes_pending_restore.get("enso_basins", Array());
+        for (int si = 0; si < saved.size(); ++si) {
+            Dictionary d = saved[si];
+            const uint64_t sig = uint64_t(int64_t(d.get("signature", int64_t(0))));
+            for (EnsoBasinState &state : _enso_states) {
+                if (state.signature != sig) continue;
+                state.temp_index = dc_clampf(float(d.get("temp_index", state.temp_index)), -1.0f, 1.0f);
+                state.recharge_index = dc_clampf(float(d.get("recharge_index", state.recharge_index)), -1.0f, 1.0f);
+                state.wind_ema = float(d.get("wind_ema", 0.0));
+                state.wind_anomaly = float(d.get("wind_anomaly", 0.0));
+                state.last_update_tick = int64_t(d.get("last_update_tick", -1));
+            }
+        }
+        _climate_modes_pending_restore.erase("enso_basins");
+        const float restored_cap = dc_clampf(float(_native_runtime_config.get(
+            "enso_temp_anomaly_cap", 0.06)), 0.0f, 0.12f);
+        for (int i = 0; i < n_cells; ++i) {
+            const int bi = int(_enso_basin_id[static_cast<size_t>(i)]);
+            if (bi < 0 || bi >= int(_enso_states.size())) continue;
+            const float east = _enso_eastness[static_cast<size_t>(i)];
+            const float shape = east >= 0.0f ? east : 0.35f * east;
+            _enso_prev_forcing[static_cast<size_t>(i)] =
+                restored_cap * _enso_states[static_cast<size_t>(bi)].temp_index * shape;
+        }
+    }
+    _enso_cache_fp = fp;
+    _enso_cache_valid = true;
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    _enso_cache_build_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+void DCWorldExt::_apply_enso_ocean_slice(
+        Dictionary &knobs, int n_cells, int start_idx, int end_idx,
+        const uint8_t *is_water, const uint8_t *terrain, const float *lat_norm,
+        const float *pos_x, const int32_t *neighbors, const float *wind_x,
+        const float *wind_speed, float *ocean_anomaly, float *transport_anomaly) {
+    const bool enabled = bool(knobs.get("enso_basin_modes_enabled",
+        _native_runtime_config.get("enso_basin_modes_enabled", false)));
+    if (!enabled || lat_norm == nullptr || wind_x == nullptr || wind_speed == nullptr) return;
+    const int max_basins = std::clamp(int(knobs.get("enso_max_basins",
+        _native_runtime_config.get("enso_max_basins", 3))), 1, 3);
+    const float lat_limit = dc_clampf(float(knobs.get("enso_tropical_lat_limit",
+        _native_runtime_config.get("enso_tropical_lat_limit", 0.33))), 0.10f, 0.50f);
+    const float wrap_x = float(knobs.get("wrap_period_x", _native_wrap_period_x));
+    PackedByteArray ocean_ids = knobs.get("enso_ocean_terrain_ids", PackedByteArray());
+    const int world_seed = int(knobs.get("world_seed", _native_runtime_config.get("world_seed", 0)));
+    _ensure_enso_basin_cache(n_cells, is_water, terrain, lat_norm, pos_x, neighbors,
+                             ocean_ids, lat_limit, max_basins, wrap_x, world_seed);
+    if (_enso_states.empty()) return;
+
+    if (start_idx == 0) {
+        const float period = std::max(730.0f, float(knobs.get("enso_period_days",
+            _native_runtime_config.get("enso_period_days", 1460.0))));
+        const float dt_total = std::max(0.0f, float(knobs.get("dt_days", 1.0)));
+        const float substep = std::max(1.0f, float(knobs.get("enso_integration_substep_days",
+            _native_runtime_config.get("enso_integration_substep_days", 10.0))));
+        const float coupling = std::max(0.0f, float(knobs.get("enso_wind_coupling",
+            _native_runtime_config.get("enso_wind_coupling", 0.0008))));
+        const int steps = std::max(1, int(std::ceil(dt_total / substep)));
+        const float dt = dt_total / float(steps);
+        const float omega = float(2.0 * M_PI) / period;
+        for (EnsoBasinState &s : _enso_states) {
+            for (int k = 0; k < steps; ++k) {
+                const float t0 = s.temp_index, h0 = s.recharge_index;
+                const float d_t0 = omega * h0 + 0.0012f * (1.0f - t0 * t0) * t0
+                    + coupling * s.wind_anomaly;
+                const float d_h0 = -omega * t0 - 0.00025f * h0;
+                const float tp = t0 + dt * d_t0, hp = h0 + dt * d_h0;
+                const float d_t1 = omega * hp + 0.0012f * (1.0f - tp * tp) * tp
+                    + coupling * s.wind_anomaly;
+                const float d_h1 = -omega * tp - 0.00025f * hp;
+                s.temp_index = dc_clampf(t0 + 0.5f * dt * (d_t0 + d_t1), -1.0f, 1.0f);
+                s.recharge_index = dc_clampf(h0 + 0.5f * dt * (d_h0 + d_h1), -1.0f, 1.0f);
+            }
+            s.last_update_tick = int64_t(knobs.get("day_index", _native_daily_tick_count));
+        }
+        std::fill(_enso_wind_sum.begin(), _enso_wind_sum.end(), 0.0);
+        std::fill(_enso_wind_count.begin(), _enso_wind_count.end(), 0);
+    }
+    const float cap = dc_clampf(float(knobs.get("enso_temp_anomaly_cap",
+        _native_runtime_config.get("enso_temp_anomaly_cap", 0.06))), 0.0f, 0.12f);
+    for (int i = start_idx; i < end_idx; ++i) {
+        const int bi = (i < int(_enso_basin_id.size())) ? int(_enso_basin_id[static_cast<size_t>(i)]) : -1;
+        if (bi < 0 || bi >= int(_enso_states.size()) || is_water[i] == 0) continue;
+        const float previous = _enso_prev_forcing[static_cast<size_t>(i)];
+        const float east = _enso_eastness[static_cast<size_t>(i)];
+        const float shape = east >= 0.0f ? east : 0.35f * east;
+        const float forcing = cap * _enso_states[static_cast<size_t>(bi)].temp_index * shape;
+        ocean_anomaly[i] = dc_clampf(ocean_anomaly[i] - previous + forcing, -0.12f, 0.12f);
+        transport_anomaly[i] = dc_clampf(transport_anomaly[i] - previous + forcing, -0.5f, 0.5f);
+        _enso_prev_forcing[static_cast<size_t>(i)] = forcing;
+        _enso_wind_sum[static_cast<size_t>(bi)] += double(wind_x[i] * wind_speed[i]);
+        ++_enso_wind_count[static_cast<size_t>(bi)];
+    }
+    if (end_idx == n_cells) {
+        for (size_t bi = 0; bi < _enso_states.size(); ++bi) {
+            if (_enso_wind_count[bi] <= 0) continue;
+            const float mean = float(_enso_wind_sum[bi] / double(_enso_wind_count[bi]));
+            EnsoBasinState &s = _enso_states[bi];
+            const float old = s.wind_ema;
+            s.wind_ema += 0.05f * (mean - s.wind_ema);
+            s.wind_anomaly = s.wind_ema - old;
+        }
+    }
+    knobs["enso_basin_count"] = int(_enso_states.size());
+    knobs["enso_cache_hit"] = _enso_cache_last_hit;
+    knobs["enso_cache_build_ms"] = _enso_cache_build_ms;
+}
+
 double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     using godot::StringName;
     using godot::PackedFloat32Array;
@@ -1040,6 +1273,10 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     // A 修复（2026-06）：ocean_water 不再写 cell_temp，改写 cell_ocean_thermal_anomaly。
     const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
     const int sid_sea_ice  = component_id(StringName("cell_sea_ice_frac"));
+    const int sid_terrain  = component_id(StringName("cell_terrain"));
+    const int sid_lat      = component_id(StringName("cell_lat_norm"));
+    const int sid_wind_x   = component_id(StringName("cell_wind_x"));
+    const int sid_wind_spd = component_id(StringName("cell_wind_speed"));
     if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 ||
         sid_oanom < 0 || sid_sea_ice < 0) {
         diag("missing slot id (cell_temp/is_water/pos_x/pos_y/ocean_thermal_anomaly/sea_ice_frac)");
@@ -1185,6 +1422,18 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
         OANOM_SLOT[i] = oanom;
         AOUT[i] = dc_stabilize_tta(AOUT[i], source, tta_source_cap, tta_blend_rate);
     }
+
+    const uint8_t *enso_terrain = sid_terrain >= 0 && _slots.write[sid_terrain].arr_u8.size() == n_cells
+        ? _slots.write[sid_terrain].arr_u8.ptr() : nullptr;
+    const float *enso_lat = sid_lat >= 0 && _slots.write[sid_lat].arr_f32.size() == n_cells
+        ? _slots.write[sid_lat].arr_f32.ptr() : nullptr;
+    const float *enso_wx = sid_wind_x >= 0 && _slots.write[sid_wind_x].arr_f32.size() == n_cells
+        ? _slots.write[sid_wind_x].arr_f32.ptr() : nullptr;
+    const float *enso_wspd = sid_wind_spd >= 0 && _slots.write[sid_wind_spd].arr_f32.size() == n_cells
+        ? _slots.write[sid_wind_spd].arr_f32.ptr() : nullptr;
+    _apply_enso_ocean_slice(knobs, n_cells, start_idx, end_idx, IW, enso_terrain,
+                            enso_lat, POSX, NB, enso_wx, enso_wspd,
+                            OANOM_SLOT, AOUT);
 
     // §11 CoW fix: write the freshly-computed anomaly back into the
     // Dictionary so GDScript can read it after the call.
@@ -2445,6 +2694,10 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     // A 修复（2026-06）：ocean_water SIMD 改写 ocean thermal anomaly slot。
     const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
     const int sid_sea_ice  = component_id(StringName("cell_sea_ice_frac"));
+    const int sid_terrain  = component_id(StringName("cell_terrain"));
+    const int sid_lat      = component_id(StringName("cell_lat_norm"));
+    const int sid_wind_x   = component_id(StringName("cell_wind_x"));
+    const int sid_wind_spd = component_id(StringName("cell_wind_speed"));
     if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 ||
         sid_oanom < 0 || sid_sea_ice < 0) {
         diag("missing slot id");
@@ -2545,6 +2798,18 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
 
     ocean_water_run_water_range(ctx, water_idx.data(), 0, n_water);
 
+    const uint8_t *enso_terrain = sid_terrain >= 0 && _slots.write[sid_terrain].arr_u8.size() == n_cells
+        ? _slots.write[sid_terrain].arr_u8.ptr() : nullptr;
+    const float *enso_lat = sid_lat >= 0 && _slots.write[sid_lat].arr_f32.size() == n_cells
+        ? _slots.write[sid_lat].arr_f32.ptr() : nullptr;
+    const float *enso_wx = sid_wind_x >= 0 && _slots.write[sid_wind_x].arr_f32.size() == n_cells
+        ? _slots.write[sid_wind_x].arr_f32.ptr() : nullptr;
+    const float *enso_wspd = sid_wind_spd >= 0 && _slots.write[sid_wind_spd].arr_f32.size() == n_cells
+        ? _slots.write[sid_wind_spd].arr_f32.ptr() : nullptr;
+    _apply_enso_ocean_slice(knobs, n_cells, 0, n_cells, ctx.IW, enso_terrain,
+                            enso_lat, ctx.POSX, ctx.NB, enso_wx, enso_wspd,
+                            ctx.OANOM_SLOT, ctx.AOUT);
+
     knobs["anomaly_out"] = anomaly_out;
     // A 修复（2026-06）：不再 flush cell_temp，改 flush ocean anomaly slot。
     _flush_slot_to_map(sid_oanom);
@@ -2573,6 +2838,10 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     // A 修复（2026-06）：ocean_water thread 改写 ocean thermal anomaly slot。
     const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
     const int sid_sea_ice  = component_id(StringName("cell_sea_ice_frac"));
+    const int sid_terrain  = component_id(StringName("cell_terrain"));
+    const int sid_lat      = component_id(StringName("cell_lat_norm"));
+    const int sid_wind_x   = component_id(StringName("cell_wind_x"));
+    const int sid_wind_spd = component_id(StringName("cell_wind_speed"));
     if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 ||
         sid_oanom < 0 || sid_sea_ice < 0) {
         diag("missing slot id"); return -1.0;
@@ -2666,6 +2935,20 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     }
     const int n_water = static_cast<int>(water_idx.size());
 
+    auto apply_enso = [&]() {
+        const uint8_t *enso_terrain = sid_terrain >= 0 && _slots.write[sid_terrain].arr_u8.size() == n_cells
+            ? _slots.write[sid_terrain].arr_u8.ptr() : nullptr;
+        const float *enso_lat = sid_lat >= 0 && _slots.write[sid_lat].arr_f32.size() == n_cells
+            ? _slots.write[sid_lat].arr_f32.ptr() : nullptr;
+        const float *enso_wx = sid_wind_x >= 0 && _slots.write[sid_wind_x].arr_f32.size() == n_cells
+            ? _slots.write[sid_wind_x].arr_f32.ptr() : nullptr;
+        const float *enso_wspd = sid_wind_spd >= 0 && _slots.write[sid_wind_spd].arr_f32.size() == n_cells
+            ? _slots.write[sid_wind_spd].arr_f32.ptr() : nullptr;
+        _apply_enso_ocean_slice(knobs, n_cells, 0, n_cells, ctx.IW, enso_terrain,
+                                enso_lat, ctx.POSX, ctx.NB, enso_wx, enso_wspd,
+                                ctx.OANOM_SLOT, ctx.AOUT);
+    };
+
     if (n_tasks <= 0) {
         // 自适应：每 task ~1024 cells，但至少 1，至多 16（保守，charter §C 不动并行总基调）
         n_tasks = std::max(1, std::min(16, (n_water + 1023) / 1024));
@@ -2673,6 +2956,7 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     // 小规模降级：~256 阈值与 pass_b 对齐
     if (n_water < 256 || n_tasks == 1) {
         ocean_water_run_water_range(ctx, water_idx.data(), 0, n_water);
+        apply_enso();
         knobs["anomaly_out"] = anomaly_out;
         // A 修复（2026-06）：flush ocean anomaly slot 而非 cell_temp。
         _flush_slot_to_map(sid_oanom);
@@ -2688,6 +2972,8 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
         [&](int begin, int end) {
             ocean_water_run_water_range(ctx, water_idx.data(), begin, end);
         });
+
+    apply_enso();
 
     knobs["anomaly_out"] = anomaly_out;
     _flush_slot_to_map(sid_oanom);
@@ -3886,12 +4172,15 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     const int sid_storage = component_id(StringName("cell_river_storage"));
     const int sid_gw = component_id(StringName("cell_groundwater_storage"));
     const int sid_runoff = component_id(StringName("cell_surface_runoff"));
+    const int sid_canal_mask = component_id(StringName("cell_canal_edge_mask"));
+    const int sid_canal_water = component_id(StringName("cell_canal_water"));
 
     const int required[] = {
         sid_hparent, sid_has_riv, sid_terrain, sid_landform, sid_elev, sid_veg, sid_cover,
         sid_precip, sid_intensity, sid_wtype, sid_temp, sid_heat, sid_snowpack, sid_moist,
         sid_base_m, sid_soil, sid_wb30, sid_plant_water, sid_is_water, sid_vital,
-        sid_q, sid_q30, sid_storage, sid_gw, sid_runoff
+        sid_q, sid_q30, sid_storage, sid_gw, sid_runoff,
+        sid_canal_mask, sid_canal_water
     };
     for (int sid : required) {
         if (sid < 0 || sid >= int(_slots.size())) return fail("missing_required_slot");
@@ -3912,7 +4201,8 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
         !slot_ok_f32(sid_plant_water) || !slot_ok_u8(sid_is_water) ||
         !slot_ok_f32(sid_vital) ||
         !slot_ok_f32(sid_q) || !slot_ok_f32(sid_q30) || !slot_ok_f32(sid_storage) ||
-        !slot_ok_f32(sid_gw) || !slot_ok_f32(sid_runoff)) {
+        !slot_ok_f32(sid_gw) || !slot_ok_f32(sid_runoff) ||
+        !slot_ok_u8(sid_canal_mask) || !slot_ok_f32(sid_canal_water)) {
         return fail("slot_size_mismatch");
     }
 
@@ -3975,6 +4265,10 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     float * const __restrict STORAGE = _slots.write[sid_storage].arr_f32.ptrw();
     float * const __restrict GW = _slots.write[sid_gw].arr_f32.ptrw();
     float * const __restrict RUNOFF = _slots.write[sid_runoff].arr_f32.ptrw();
+    const uint8_t * const __restrict CANAL_MASK =
+        _slots.write[sid_canal_mask].arr_u8.ptr();
+    float * const __restrict CANAL_WATER =
+        _slots.write[sid_canal_water].arr_f32.ptrw();
 
     const auto tc0 = std::chrono::high_resolution_clock::now();
     std::vector<int32_t> child_count(size_t(n_cells), 0);
@@ -3992,6 +4286,10 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     float river_moisture_max_delta = 0.0f;
     float riparian_moisture_max_delta = 0.0f;
     int flood_candidate_count = 0;
+    int canal_cells_processed = 0;
+    int canal_edges_processed = 0;
+    int canal_freshwater_cells = 0;
+    int canal_saline_cells = 0;
 
     for (int i = 0; i < n_cells; ++i) {
         const int32_t p = HP[i];
@@ -4113,7 +4411,122 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
         }
     }
 
-    // Aggregate all river influences first, then approach the strongest target once per cell.
+    // Sparse artificial-water phase. It is deliberately downstream of the
+    // natural drainage DAG: HP/incoming/Q/STORAGE are read-only here, so canals
+    // neither divert natural rivers nor create/destroy discharge.
+    if (has_neighbor_indices) {
+        if (_canal_hydrology_compiled_generation != _canal_topology_generation ||
+            _canal_hydrology_compiled_cell_count != n_cells) {
+            // Clear water left by cells removed from the topology, then do the
+            // only full-map canal scan. Normal daily passes below touch only
+            // the compiled canal cells and their immediate neighbors.
+            for (const int32_t cell : _canal_hydrology_cells) {
+                if (cell >= 0 && cell < n_cells) CANAL_WATER[cell] = 0.0f;
+            }
+            _canal_hydrology_cells.clear();
+            _canal_hydrology_cells.reserve(256);
+            for (int32_t cell = 0; cell < n_cells; ++cell) {
+                if ((CANAL_MASK[cell] & 0x3fU) != 0)
+                    _canal_hydrology_cells.push_back(cell);
+            }
+            _canal_hydrology_source_kind.assign(size_t(n_cells), 0);
+            _canal_hydrology_strength.assign(size_t(n_cells), 0.0f);
+            _canal_hydrology_compiled_generation = _canal_topology_generation;
+            _canal_hydrology_compiled_cell_count = n_cells;
+        }
+        std::vector<uint8_t> &source_kind = _canal_hydrology_source_kind;
+        std::vector<float> &strength = _canal_hydrology_strength;
+        using CanalNode = std::pair<float, int32_t>;
+        std::priority_queue<CanalNode> propagation;
+        for (const int32_t cell : _canal_hydrology_cells) {
+            CANAL_WATER[cell] = 0.0f;
+            source_kind[size_t(cell)] = 0;
+            strength[size_t(cell)] = 0.0f;
+            uint8_t source = HAS_RIV[cell] != 0 || TERR[cell] == 18 ? 2 : 0;
+            for (int direction = 0; direction < 6; ++direction) {
+                const int32_t neighbor = NB[cell * 6 + direction];
+                if (neighbor < 0 || neighbor >= n_cells) continue;
+                if (HAS_RIV[neighbor] != 0 || TERR[neighbor] == 18) source = 2;
+                else if (source == 0 && (TERR[neighbor] == 0 || TERR[neighbor] == 1 ||
+                         TERR[neighbor] == 19 || TERR[neighbor] == 20 ||
+                         TERR[neighbor] == 21)) source = 1;
+            }
+            if (source != 0) {
+                source_kind[size_t(cell)] = source;
+                strength[size_t(cell)] = 1.0f;
+                propagation.push({1.0f, cell});
+            }
+        }
+        while (!propagation.empty()) {
+            const auto [current_strength, cell] = propagation.top();
+            propagation.pop();
+            if (current_strength + 0.000001f < strength[size_t(cell)]) continue;
+            for (int direction = 0; direction < 6; ++direction) {
+                if ((CANAL_MASK[cell] & (1U << direction)) == 0) continue;
+                const int32_t neighbor = NB[cell * 6 + direction];
+                if (neighbor < 0 || neighbor >= n_cells ||
+                    (CANAL_MASK[neighbor] & (1U << ((direction + 3) % 6))) == 0)
+                    continue;
+                ++canal_edges_processed;
+                const float next_strength = current_strength * 0.96f;
+                // Freshwater wins deterministic ties over saline.
+                if (next_strength > strength[size_t(neighbor)] + 0.000001f ||
+                    (std::abs(next_strength - strength[size_t(neighbor)]) <= 0.000001f &&
+                     source_kind[size_t(cell)] > source_kind[size_t(neighbor)])) {
+                    strength[size_t(neighbor)] = next_strength;
+                    source_kind[size_t(neighbor)] = source_kind[size_t(cell)];
+                    propagation.push({next_strength, neighbor});
+                }
+            }
+        }
+        canal_edges_processed /= 2;
+        for (const int32_t cell : _canal_hydrology_cells) {
+            const float available = dc_clampf(strength[size_t(cell)], 0.0f, 1.0f);
+            CANAL_WATER[cell] = available;
+            ++canal_cells_processed;
+            if (source_kind[size_t(cell)] == 2) {
+                ++canal_freshwater_cells;
+                const float own_target = dc_clampf(
+                    river_moisture_floor * 0.60f * available, 0.0f, 1.0f);
+                moisture_target[size_t(cell)] = std::max(
+                    moisture_target[size_t(cell)], own_target);
+                const float soil_target = dc_clampf(available * 0.30f, -0.5f, 0.5f);
+                SOIL[cell] += (soil_target - SOIL[cell]) * moisture_response_alpha * 0.60f;
+                WB30[cell] += (available * 0.35f - WB30[cell]) *
+                    water_balance_ema_eff * 0.60f;
+                for (int direction = 0; direction < 6; ++direction) {
+                    const int32_t neighbor = NB[cell * 6 + direction];
+                    if (neighbor < 0 || neighbor >= n_cells || IS_WATER[neighbor] != 0)
+                        continue;
+                    const float neighbor_target = dc_clampf(
+                        riparian_moisture_floor * 0.50f * available, 0.0f, 1.0f);
+                    moisture_target[size_t(neighbor)] = std::max(
+                        moisture_target[size_t(neighbor)], neighbor_target);
+                    SOIL[neighbor] += (available * 0.18f - SOIL[neighbor]) *
+                        moisture_response_alpha * 0.50f;
+                    WB30[neighbor] += (available * 0.20f - WB30[neighbor]) *
+                        water_balance_ema_eff * 0.50f;
+                }
+            } else if (source_kind[size_t(cell)] == 1) {
+                ++canal_saline_cells;
+                const float saline_target = dc_clampf(MOIST[cell] +
+                    river_evap_gain * 0.20f * available, 0.0f, 1.0f);
+                moisture_target[size_t(cell)] = std::max(
+                    moisture_target[size_t(cell)], saline_target);
+            }
+        }
+    } else {
+        for (const int32_t cell : _canal_hydrology_cells) {
+            if (cell >= 0 && cell < n_cells) CANAL_WATER[cell] = 0.0f;
+        }
+        _canal_hydrology_cells.clear();
+        _canal_hydrology_source_kind.clear();
+        _canal_hydrology_strength.clear();
+        _canal_hydrology_compiled_generation = std::numeric_limits<uint64_t>::max();
+        _canal_hydrology_compiled_cell_count = -1;
+    }
+
+    // Aggregate all river/canal influences first, then approach the strongest target once per cell.
     // This prevents multi-river neighbors from receiving several response steps in one pass.
     if (moisture_response_alpha > 0.0f) {
         for (int i = 0; i < n_cells; ++i) {
@@ -4155,6 +4568,7 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     _flush_slot_to_map(sid_soil);
     _flush_slot_to_map(sid_wb30);
     _flush_slot_to_map(sid_plant_water);
+    _flush_slot_to_map(sid_canal_water);
     const auto tf1 = std::chrono::high_resolution_clock::now();
     const auto t1 = std::chrono::high_resolution_clock::now();
 
@@ -4187,6 +4601,10 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     out["river_discharge_max"] = q_max;
     out["flood_candidate_count"] = flood_candidate_count;
     out["flood_count"] = flood_candidate_count;
+    out["canal_cells_processed"] = canal_cells_processed;
+    out["canal_edges_processed"] = canal_edges_processed;
+    out["canal_freshwater_cells"] = canal_freshwater_cells;
+    out["canal_saline_cells"] = canal_saline_cells;
     return out;
 }
 

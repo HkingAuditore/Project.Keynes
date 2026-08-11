@@ -182,7 +182,7 @@ func _test_native_publish_event_adapter(country_ir: Dictionary) -> void:
 	_expect("native gameplay ACK succeeds", int(ext.ack_effect_native_gameplay().get("acknowledged", 0)) == 3)
 	ext.run_ideology_daily(2)
 	var journal: Dictionary = ext.snapshot_gameplay_event_journal({})
-	_expect("journal persists Effect idempotency evidence", int(journal.get("version", 0)) == 3
+	_expect("journal persists Effect idempotency evidence", int(journal.get("version", 0)) == 4
 		and (journal.effect_idempotency_keys as PackedInt64Array).size() == 3)
 	var journal_restored: Object = ClassDB.instantiate("DCWorldExt")
 	_expect("journal restores Effect idempotency evidence", bool(journal_restored.restore_gameplay_event_journal(journal).get("ok", false))

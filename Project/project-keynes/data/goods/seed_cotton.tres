@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"seed_cotton"
+display_name = "籽棉"
+category_id = &"raw_fiber_crop"
+substitution_category_ids = PackedStringArray("raw_fiber_crop")
+technology_tags = PackedStringArray("industry.primary", "tech.cotton_gardening")
+default_price = 6500
+min_price = 650
+max_price = 65000

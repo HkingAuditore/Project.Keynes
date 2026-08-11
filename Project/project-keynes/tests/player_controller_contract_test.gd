@@ -20,6 +20,13 @@ func _init() -> void:
 	_expect("treasury-sponsored construction is a formal player command",
 		PlayerControllerScript.SUPPORTED_COMMANDS.has(&"construction.build") and
 		controller.has_signal(&"command_settled"))
+	_expect("family colonization start and cancel are formal player commands",
+		PlayerControllerScript.SUPPORTED_COMMANDS.has(&"family.colonization.start")
+		and PlayerControllerScript.SUPPORTED_COMMANDS.has(&"family.colonization.cancel")
+		and _code(controller.request_command(&"family.colonization.start", {
+			"family_handle": 1, "source_cell": 0, "target_cell": 1,
+			"population": 1, "quote_token": 1,
+		})) == "runtime_unavailable")
 	_expect("national and cell tax commands are formal player commands",
 		PlayerControllerScript.SUPPORTED_COMMANDS.has(&"country.tax.set_default") and
 		PlayerControllerScript.SUPPORTED_COMMANDS.has(&"country.tax.set_override") and
@@ -31,6 +38,16 @@ func _init() -> void:
 		PlayerControllerScript.SUPPORTED_COMMANDS.has(&"country.tax.cell.clear_all"))
 	controller.restore_view_state(null, {"next_command_sequence": 41})
 	_expect("player view round-trips the next unified command sequence",
+		int(controller.capture_view_state().get("next_command_sequence", 0)) == 41)
+	var canal_rejected: Dictionary = controller.request_command(
+		&"infrastructure.canal.build", {"quote_token": 7})
+	_expect("canal command remains API-only and unsupported by PlayerController",
+		_code(canal_rejected) == "unsupported_command"
+		and int(canal_rejected.get("effective_day", -2)) == -1
+		and int(canal_rejected.get("sequence", -2)) == -1
+		and not PlayerControllerScript.SUPPORTED_COMMANDS.has(
+			&"infrastructure.canal.build"))
+	_expect("rejected canal command does not consume unified sequence",
 		int(controller.capture_view_state().get("next_command_sequence", 0)) == 41)
 	_expect("player pause action is registered", InputMap.has_action(&"player_pause"))
 	_expect("player cancel action is registered", InputMap.has_action(&"player_cancel"))
@@ -44,6 +61,13 @@ func _init() -> void:
 		player != null and player.get_node_or_null("PlayerController") != null)
 	_expect("legacy controller nodes are absent",
 		player != null and player.get_node_or_null("Controllers") == null)
+	_expect("player scene mounts one shared colonization planner and Node2D route layer",
+		player != null
+		and player.get_node_or_null("UI/UIRoot/ModalLayer/ColonizationPlannerPanel") != null
+		and player.get_node_or_null("WorldRoot/ColonizationRouteLayer") is Node2D)
+	_expect("player scene mounts one full-screen era reward modal",
+		player != null
+		and player.get_node_or_null("UI/UIRoot/ModalLayer/EraRewardDialog") is EraRewardDialog)
 	if scene != null:
 		scene.free()
 	print("=== player controller contract: %d failures ===" % _failures)

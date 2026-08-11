@@ -7,4 +7,4 @@ satisfaction_dimension_weights_q16 = PackedInt32Array(52429, 45875, 45875, 26214
 display_name = "科学家"
 default_consumption_plan_id = &"technical_household"
 profession_class_id = &"technology"
-technology_tags = PackedStringArray("tech.experimental_science")
+technology_tags = PackedStringArray()

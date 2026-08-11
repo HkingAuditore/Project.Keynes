@@ -1,18 +1,18 @@
-[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"automobiles_plant"
 display_name = "汽车厂"
-building_kind = "industrial"
-technology_tags = PackedStringArray("industry.machinery", "tech.electrification")
-upgrade_family_id = &""
-upgrade_tier = 0
-construction_days = 0
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.machinery", "tech.internal_combustion")
+required_technology_tags = PackedStringArray()
 construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "glass")
 construction_quantities = PackedInt64Array(40000, 30000, 30000, 10000)
 owner_profession_id = &"industrialist"
-owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray("industrial_worker", "machinist", "technician", "manager")
 employee_slots_per_building = PackedInt64Array(24, 8, 4, 3)
 employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive")
@@ -22,18 +22,20 @@ input_quantities_per_day = PackedInt64Array(1000, 1000, 1000, 1000, 300, 600, 20
 input_required_q16 = PackedInt32Array(65536, 65536, 65536, 65536, 65536, 65536, 65536, 6554)
 input_category_ids = PackedStringArray("", "", "", "", "tools", "", "", "")
 input_min_quality_levels = PackedInt32Array(0, 0, 0, 0, 3, 0, 0, 0)
-input_candidate_offsets = PackedInt32Array(0, 0, 3, 3, 5, 5, 5, 5, 5)
-input_candidate_good_ids = PackedStringArray("steel", "stainless_steel", "aluminum", "latex", "synthetic_rubber")
-input_candidate_efficiency_q16 = PackedInt32Array(65536, 62259, 58982, 49152, 65536)
+input_candidate_offsets = PackedInt32Array(0, 0, 3, 3, 6, 6, 6, 6, 6)
+input_candidate_good_ids = PackedStringArray("steel", "stainless_steel", "aluminum", "latex", "natural_rubber", "synthetic_rubber")
+input_candidate_efficiency_q16 = PackedInt32Array(65536, 62259, 58982, 49152, 65536, 65536)
 output_good_ids = PackedStringArray("automobiles")
 output_quantities_per_day = PackedInt64Array(24202)
-target_operating_margin_q16 = 9830
-supply_price_elasticity_q16 = 65536
+output_cost_shares_q16 = PackedInt32Array()
 resource_ids = PackedStringArray()
 resource_quantities_per_day = PackedInt64Array()
 resource_interaction_modes = PackedStringArray()
 resource_access_modes = PackedStringArray()
 resource_generation_ids = PackedStringArray()
 resource_generation_quantities_per_day = PackedInt64Array()
-resource_generation_floor_q16 = 0
-behavior_id = "none"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

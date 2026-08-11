@@ -7,4 +7,4 @@ satisfaction_dimension_weights_q16 = PackedInt32Array(65536, 39322, 13107, 0, 13
 display_name = "猎人"
 default_consumption_plan_id = &"hunter_household"
 semantic_tags = PackedStringArray("activity.hunting")
-technology_tags = PackedStringArray("tech.hunting")
+technology_tags = PackedStringArray()

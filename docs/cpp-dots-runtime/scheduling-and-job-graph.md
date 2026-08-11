@@ -1,5 +1,9 @@
 # Scheduling and Job Graph
 
+运河不新增 scheduler/runtime：Economy 每日边界推进项目并提交 Effect，Effect gameplay
+adapter 原子发布边；现有 `runtime_hydrology` 尾部运行稀疏运河传播；视觉上传仍是 Godot
+retained boundary，且每帧最多一个 array layer。详见 [运河运行时](./canal-runtime.md)。
+
 本文整理当前 runtime scheduler 的链路、job 注册、切片预算和日志统计。目标是让开发者能从 `[SUS-cpp]` / `[fast tick WARN]` 反推出哪个 job 在跑、为什么被 skip、为什么 `largest` 指向某个 stage、以及哪些工作仍在 GDScript orchestration。
 
 ## 调度器层次

@@ -15,7 +15,7 @@ Effects are commands applied by domain adapters at their next safe boundary.
 
 ## Packed contract
 
-当前 packed protocol 与 PKTR save schema 均为 v2。Gameplay event 同时携带兼容
+当前 packed protocol 为 v2，PKTR save schema 为 v3。Gameplay event 同时携带兼容
 `entity_id` 和 64 位 generation-safe `entity_handle`。
 
 `TriggerCatalog.compile_native_catalog()` emits dense IDs and packed columns for
@@ -68,12 +68,33 @@ level-change 去重模式，所以每 epoch 的事件量以滚动 workset 为上
 
 ## Persistence and recovery
 
-`PKTR v2` stores catalog hash/version, source cursors, dynamic branch bindings, trigger SoA (accumulator,
+`PKTR v4` stores catalog hash/version, source cursors, dynamic branch bindings, trigger SoA (accumulator,
 remainder, last event, fire sequence, cooldown/reset, observed snapshot, target
 generation, resync flags), and pending effects. Restore rejects catalog mismatch,
-truncated payloads, stale definitions, or invalid handles. Old saves may omit PKTR
-and are treated as an empty trigger state. Family reward adapters queue native free-building or
+truncated payloads, stale definitions, invalid handles, or any older schema with
+`catalog_hash_mismatch`; there is no empty-trigger migration. Family reward adapters queue native free-building or
 population commands at the next Economy safe boundary; they never mutate economy authority directly.
+
+## Technology breakthroughs
+
+Economy publishes `EVENT_TECHNOLOGY_PRACTICE` only from committed, producing
+BuildingGroups. Eleven one-shot rules aggregate maize selection, dryland days/windows,
+hydraulic practice, metal-tool and print output, steam/electric/factory/automation
+group-days, and climate-research cycles. The fixed thresholds are 365 maize days
+with three observed maize cells; 730 dryland days or three drought windows; two
+hydraulic groups plus one flood window; 5,000 tools; 10,000 printed units with a
+research institution; 3×1,095 steam, 3×730 electric, 3×365 factory, 2×365
+automation group-days; and five climate-research cycles with three extreme-weather
+samples each.
+
+Automation practice is produced by digital-control or automated-logistics groups before
+`autonomous_systems` is researchable. Autonomous/robotic buildings also continue the same practice
+after the breakthrough, so the route has a prototype-to-breakthrough chain instead of a circular gate.
+
+Crossing a threshold hands a precompiled `trigger.country.breakthrough.*` command
+to EffectRuntime. Effect submits `DISCOVER_COUNTRY_SIGNAL` to the Country safe
+boundary, using the first producing cell and Trigger fire sequence as provenance
+and idempotency. Trigger never writes the signal bitset or technology completion.
 
 ## Diagnostics and validation
 

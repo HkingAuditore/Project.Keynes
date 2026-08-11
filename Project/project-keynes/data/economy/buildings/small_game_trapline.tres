@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"small_game_trapline"
+display_name = "小型陷阱线"
+building_kind = "collector"
+economic_sector_id = "extractive"
+semantic_tags = PackedStringArray("activity.hunting", "industry.food", "starter.food")
+technology_tags = PackedStringArray("tech.animal_tracking")
+required_technology_tags = PackedStringArray("tech.hunting")
+construction_good_ids = PackedStringArray("game_meat")
+construction_quantities = PackedInt64Array(50)
+owner_profession_id = &"hunter"
+owner_slots_per_building = 2
+employee_profession_ids = PackedStringArray()
+employee_slots_per_building = PackedInt64Array()
+employee_wage_policy_ids = PackedStringArray()
+employee_reference_wages_per_day = PackedInt64Array()
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("game_meat", "raw_hide", "fur")
+output_quantities_per_day = PackedInt64Array(1800, 100, 35)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("wild_game")
+resource_quantities_per_day = PackedInt64Array(300)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

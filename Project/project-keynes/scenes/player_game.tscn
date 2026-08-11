@@ -1,4 +1,4 @@
-[gd_scene load_steps=24 format=3 uid="uid://c6x8q3wvfm8sh"]
+[gd_scene load_steps=27 format=3 uid="uid://c6x8q3wvfm8sh"]
 
 [ext_resource type="Script" uid="uid://d2jlthr1nqltt" path="res://scripts/game/player_game.gd" id="1_player"]
 [ext_resource type="Script" uid="uid://cr8rfj8egdakv" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
@@ -21,6 +21,9 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/world_loading_overlay.tscn" id="21_loading"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="22_pause"]
 [ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="23_theme"]
+[ext_resource type="Script" path="res://scripts/rendering/colonization_route_layer.gd" id="24_colonization_route"]
+[ext_resource type="PackedScene" path="res://scenes/ui/colonization_planner_panel.tscn" id="25_colonization_panel"]
+[ext_resource type="PackedScene" path="res://scenes/ui/era_reward_dialog.tscn" id="26_era_reward"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -48,6 +51,11 @@ script = ExtResource("5_highlight")
 
 [node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=2064388670]
 script = ExtResource("11_overlay")
+
+[node name="ColonizationRouteLayer" type="Node2D" parent="WorldRoot"]
+top_level = true
+z_index = 12
+script = ExtResource("24_colonization_route")
 
 [node name="MapCamera" type="Camera2D" parent="." unique_id=372859515]
 script = ExtResource("3_camera")
@@ -124,6 +132,12 @@ mouse_filter = 2
 unique_name_in_owner = true
 
 [node name="ObjectDetailDialog" parent="UI/UIRoot/ModalLayer" instance=ExtResource("15_object_dialog")]
+unique_name_in_owner = true
+
+[node name="ColonizationPlannerPanel" parent="UI/UIRoot/ModalLayer" instance=ExtResource("25_colonization_panel")]
+unique_name_in_owner = true
+
+[node name="EraRewardDialog" parent="UI/UIRoot/ModalLayer" instance=ExtResource("26_era_reward")]
 unique_name_in_owner = true
 
 [node name="WorldLoadingOverlay" parent="UI/UIRoot/ModalLayer" instance=ExtResource("21_loading")]

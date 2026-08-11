@@ -139,6 +139,8 @@ func _apply_section() -> void:
 	if economy_open:
 		if _economy_workspace.has_method("set_player_controller"):
 			_economy_workspace.set_player_controller(_player_controller)
+		if _economy_workspace.has_method("set_compact"):
+			_economy_workspace.set_compact(_compact)
 		_economy_workspace.set_model(_model)
 		return
 	if ideology_open:
@@ -167,5 +169,7 @@ func _update_responsive_layout() -> void:
 	_dialog.custom_minimum_size = Vector2.ZERO
 	if _technology_workspace != null:
 		_technology_workspace.set_compact(_compact)
+	if _economy_workspace != null and _economy_workspace.has_method("set_compact"):
+		_economy_workspace.set_compact(_compact)
 	if _ideology_workspace != null:
 		_ideology_workspace.set_compact(_compact)

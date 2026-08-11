@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <vector>
 
@@ -203,6 +204,9 @@ public:
     godot::Dictionary get_country_tax_policy_snapshot(int64_t handle) const;
     godot::Dictionary get_country_cell_tax_policy_snapshot(int cell_idx) const;
     godot::Dictionary get_country_fiscal_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_trade_snapshot(
+        int64_t handle, const godot::String &view = "summary",
+        int offset = 0, int limit = 32) const;
     godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
     godot::Dictionary reset_country(const godot::String &reason);
     godot::Dictionary begin_country_save(int chunk_bytes = 4 * 1024 * 1024);
@@ -322,6 +326,16 @@ public:
     godot::PackedByteArray capture_effect_state() const;
     godot::Dictionary restore_effect_state(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_effect_state();
+    bool commit_canal_effect(uint64_t project_handle,
+                             uint32_t project_generation,
+                             uint64_t idempotency_key,
+                             std::string &error);
+    godot::PackedInt32Array consume_canal_visual_dirty_cells();
+    godot::Dictionary bind_era_reward_player_country(int64_t country_handle);
+    godot::Dictionary get_era_reward_offer();
+    godot::Dictionary choose_era_reward(int64_t offer_generation,
+                                        int choice_index,
+                                        int64_t effective_day);
 
     // Native ideology authority.  It owns only country-scoped ideology
     // collection/progression state and delegates domain effects elsewhere.
@@ -380,12 +394,42 @@ public:
         const godot::PackedInt32Array &type_ids) const;
     godot::Dictionary get_construction_command_receipts(
         int64_t after_receipt_id, int limit = 64) const;
+    godot::Dictionary get_canal_route_quote(
+        int64_t country_handle, int start_cell, int end_cell,
+        const godot::PackedInt32Array &waypoints);
+    godot::Dictionary get_canal_route_quote_detail(
+        int64_t country_handle, int64_t quote_token) const;
+    godot::Dictionary queue_canal_construction(
+        int64_t country_handle, int64_t quote_token,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary get_canal_construction_receipts(
+        int64_t country_handle, int64_t after_receipt_id,
+        int limit = 64) const;
     godot::Dictionary get_family_cell_snapshot(int cell_idx, int offset = 0,
                                                 int limit = 64) const;
     godot::Dictionary get_family_snapshot(int64_t family_handle) const;
     godot::Dictionary get_family_traits(int64_t family_handle) const;
     godot::Dictionary get_family_branches(int64_t family_handle, int offset = 0,
-                                          int limit = 64) const;
+                                           int limit = 64) const;
+    godot::Dictionary get_family_colonization_quotes(
+        int64_t country_handle, int target_cell, int64_t family_filter = 0,
+        int source_filter = -1, int offset = 0, int limit = 64);
+    godot::Dictionary get_family_colonization_quote_detail(
+        int64_t quote_token) const;
+    godot::Dictionary start_family_colonization(
+        int64_t country_handle, int64_t family_handle, int source_cell,
+        int target_cell, int64_t population, int64_t quote_token,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary cancel_family_colonization(
+        int64_t country_handle, int64_t expedition_handle,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary get_family_expeditions(
+        int64_t country_handle, int offset = 0, int limit = 64) const;
+    godot::Dictionary get_family_expedition_snapshot(
+        int64_t country_handle, int64_t expedition_handle) const;
+    godot::Dictionary get_family_colonization_receipts(
+        int64_t country_handle, int64_t after_receipt_id,
+        int limit = 64) const;
     godot::Dictionary get_family_branch_effects(int64_t family_handle,
                                                 int cell_idx) const;
     godot::Dictionary submit_family_trait_commands(
@@ -1700,6 +1744,10 @@ public:
     // 回灌 weather_system.ocean_current_perturbation，下游消费方（航运 AI、
     // shader overlay、soak dump）零感知 C++ 切换。
     godot::Dictionary get_cyclone_perturbations_dict() const;
+    godot::Dictionary get_active_cyclone_snapshot() const;
+    godot::Dictionary get_climate_modes_report() const;
+    godot::Dictionary capture_climate_modes_state() const;
+    godot::Dictionary restore_climate_modes_state(const godot::Dictionary &state);
 
     // ─── Block B: ocean_currents wind solver C++ pass ─────────────────────
     //
@@ -2256,11 +2304,52 @@ private:
     std::vector<int8_t>  _phys_wind_coast_dist;
     std::vector<float>   _phys_wind_coast_sea_x;
     std::vector<float>   _phys_wind_coast_sea_y;
+    std::vector<int32_t> _phys_wind_coast_sea_anchor;
     std::vector<int8_t>  _phys_wind_sea_dist;
     std::vector<float>   _phys_wind_sea_land_x;
     std::vector<float>   _phys_wind_sea_land_y;
+    std::vector<int32_t> _phys_wind_sea_land_anchor;
+    // Signed, normalized land-minus-sea contrast sampled by the physical wind
+    // pass.  Weather reads it as derived scratch for WT_MONSOON classification.
+    std::vector<float>   _phys_monsoon_thermal;
     uint64_t _phys_wind_coast_fp = 0;
     bool     _phys_wind_coast_valid = false;
+    double   _phys_wind_coast_build_ms = 0.0;
+    bool     _phys_wind_coast_last_hit = false;
+    int      _monsoon_eligible_cells = 0;
+    int      _monsoon_onshore_cells = 0;
+    int      _monsoon_offshore_cells = 0;
+    float    _monsoon_contrast_abs_max = 0.0f;
+
+    // Low-order ENSO modes. Basin topology and per-cell forcing are derived
+    // caches; only EnsoBasinState is authoritative and serialized.
+    struct EnsoBasinMeta {
+        uint64_t signature = 0;
+        int member_begin = 0;
+        int member_count = 0;
+        float span_x = 0.0f;
+    };
+    struct EnsoBasinState {
+        uint64_t signature = 0;
+        float temp_index = 0.0f;
+        float recharge_index = 0.0f;
+        float wind_ema = 0.0f;
+        float wind_anomaly = 0.0f;
+        int64_t last_update_tick = -1;
+    };
+    std::vector<int8_t> _enso_basin_id;
+    std::vector<float> _enso_eastness;
+    std::vector<float> _enso_prev_forcing;
+    std::vector<int32_t> _enso_members;
+    std::vector<EnsoBasinMeta> _enso_basins;
+    std::vector<EnsoBasinState> _enso_states;
+    std::vector<double> _enso_wind_sum;
+    std::vector<int32_t> _enso_wind_count;
+    uint64_t _enso_cache_fp = 0;
+    bool _enso_cache_valid = false;
+    bool _enso_cache_last_hit = false;
+    double _enso_cache_build_ms = 0.0;
+    godot::Dictionary _climate_modes_pending_restore;
 
     // ---- NS 化:风场回溯轨迹表缓存(Phase 0, plan/NS化气候动力学四方向深化) ----
     // 半拉格朗日几何缓存:每 cell 回溯终点所在三角形 (i0=self宿主, i1, i2) +
@@ -2388,6 +2477,15 @@ private:
     // economy_runtime.{h,cpp}; opaque here so the existing world header does
     // not expose the large chunk/market implementation to every pass TU.
     void                                     *_economy_runtime        = nullptr;
+    uint64_t                                  _canal_topology_generation = 0;
+    uint64_t                                  _canal_hydrology_compiled_generation =
+        std::numeric_limits<uint64_t>::max();
+    int32_t                                   _canal_hydrology_compiled_cell_count = -1;
+    std::vector<int32_t>                      _canal_hydrology_cells;
+    std::vector<uint8_t>                      _canal_hydrology_source_kind;
+    std::vector<float>                        _canal_hydrology_strength;
+    std::unordered_set<uint64_t>              _canal_commit_idempotency;
+    std::vector<int32_t>                      _canal_visual_dirty_cells;
     void                                     *_economy_csv_recorder   = nullptr;
     int64_t                                   _economy_last_notified_event_id = 0;
     void                                     *_country_runtime        = nullptr;
@@ -2424,14 +2522,30 @@ private:
     // 淘汰，尾部按 STORM front 中心 cell 注入。GDScript 端通过
     // get_cyclone_perturbations_dict() 拉镜像。
     struct CycloneWakeEntry {
-        int64_t      key;          // cell.q * 10000 + cell.r
-        int          cell_idx;     // 反查到的 cell index（注入时记录，便于 debug）
-        godot::Vector2 vec;        // 当前扰动向量（按 days_left/init_days 比例缩放）
-        godot::Vector2 vec_init;   // 初始注入向量（衰减基准）
-        int          days_left;
-        int          init_days;
+        uint64_t     stable_id = 0;
+        int64_t      key = 0;       // cell.q * 10000 + cell.r
+        int          cell_idx = -1;
+        godot::Vector2 vec;
+        godot::Vector2 vec_init;
+        godot::Vector2 steering;
+        float        intensity = 0.0f;
+        float        radius_cells = 2.0f;
+        float        age_days = 0.0f;
+        float        move_progress = 0.0f;
+        int          days_left = 0; // compatibility projection
+        int          init_days = 0;
     };
     std::vector<CycloneWakeEntry>  _cyclone_perturbations;
+    uint64_t                       _cyclone_next_stable_id = 1;
+    uint32_t                       _cyclone_force_generation = 0;
+    std::vector<uint32_t>          _cyclone_force_tag;
+    std::vector<uint32_t>          _cyclone_visit_tag;
+    std::vector<float>             _cyclone_force_x;
+    std::vector<float>             _cyclone_force_y;
+    std::vector<float>             _cyclone_force_lift;
+    int                            _cyclone_last_touched_cells = 0;
+    int                            _cyclone_total_genesis = 0;
+    int                            _cyclone_total_decay = 0;
 
     // Stage6c (2026-06-23): 对流抑制记忆，per-cell，跨 tick/slice 存活的 C++ 端权威状态。
     // 上一版走 knob in/out 数组经 const Dictionary CoW 回传失败(实测抑制 no-op)，改存为 ext 成员→
@@ -2522,6 +2636,28 @@ private:
     // 等价于 stage_b_pass 的处理模式（world_ext.cpp:7750）。
     double cyclone_wake_step(godot::Dictionary &knobs,
                              const godot::Array &fronts_from_summary);
+    void _advance_and_stamp_cyclones(const godot::Dictionary &knobs,
+                                     int n_cells, const int32_t *neighbors,
+                                     const godot::Vector2 *positions,
+                                     const uint8_t *terrain, const float *temp,
+                                     const float *wind_x, const float *wind_y,
+                                     const float *wind_speed, const float *vapor,
+                                     const float *instability,
+                                     const float *convergence,
+                                     const float *lat_norm);
+    void _ensure_enso_basin_cache(int n_cells, const uint8_t *is_water,
+                                  const uint8_t *terrain, const float *lat_norm,
+                                  const float *pos_x, const int32_t *neighbors,
+                                  const godot::PackedByteArray &ocean_terrain_ids,
+                                  float tropical_lat_limit, int max_basins,
+                                  float wrap_period_x, int world_seed);
+    void _apply_enso_ocean_slice(godot::Dictionary &knobs, int n_cells,
+                                 int start_idx, int end_idx,
+                                 const uint8_t *is_water,
+                                 const uint8_t *terrain, const float *lat_norm,
+                                 const float *pos_x, const int32_t *neighbors,
+                                 const float *wind_x, const float *wind_speed,
+                                 float *ocean_anomaly, float *transport_anomaly);
 
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);

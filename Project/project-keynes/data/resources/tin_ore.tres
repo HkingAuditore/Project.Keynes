@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"tin_ore"
+discovery_technology_tags = PackedStringArray("tech.tin_identification")
 display_name = "锡矿"
 reserve_component = &"cell.res_tin_ore_reserve"
 habitat_mode = "land"

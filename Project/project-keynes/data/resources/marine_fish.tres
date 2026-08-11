@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"marine_fish"
+discovery_technology_tags = PackedStringArray("tech.coastal_fishing")
 display_name = "海洋鱼类"
 reserve_component = &"cell.res_marine_fish_reserve"
 habitat_mode = "coastal_or_marine"

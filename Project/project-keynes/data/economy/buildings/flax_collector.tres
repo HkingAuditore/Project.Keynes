@@ -1,19 +1,20 @@
-[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
-production_climate_profile_id = &"dryland_crop"
 id = &"flax_collector"
 display_name = "亚麻农场"
 building_kind = "collector"
-technology_tags = PackedStringArray("industry.primary", "tech.pottery")
-upgrade_family_id = &""
-upgrade_tier = 0
-construction_days = 0
+economic_sector_id = "agriculture"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.primary", "tech.flax_retting")
+required_technology_tags = PackedStringArray("tech.wild_flax_collection", "tech.rainfed_field_system", "tech.crop_domestication")
+production_climate_profile_id = &"dryland_crop"
 construction_good_ids = PackedStringArray("logs", "raw_stone")
 construction_quantities = PackedInt64Array(750, 500)
 owner_profession_id = &"subsistence_farmer"
-owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray()
 employee_slots_per_building = PackedInt64Array()
 employee_wage_policy_ids = PackedStringArray()
@@ -30,11 +31,16 @@ output_good_ids = PackedStringArray("flax_fiber")
 output_quantities_per_day = PackedInt64Array(1571)
 target_operating_margin_q16 = 6554
 supply_price_elasticity_q16 = 32768
+output_cost_shares_q16 = PackedInt32Array()
 resource_ids = PackedStringArray("arable_land", "fertile_soil")
 resource_quantities_per_day = PackedInt64Array(1571, 1571)
 resource_interaction_modes = PackedStringArray("capacity", "capacity")
 resource_access_modes = PackedStringArray("local", "local")
 resource_generation_ids = PackedStringArray()
 resource_generation_quantities_per_day = PackedInt64Array()
-resource_generation_floor_q16 = 0
 behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

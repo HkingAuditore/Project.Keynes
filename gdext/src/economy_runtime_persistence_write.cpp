@@ -49,6 +49,13 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<uint64_t>(payload, _event_stream_hash);
         append_le<int32_t>(payload, _trade_orders.size());
         append_le<int32_t>(payload, static_cast<int32_t>(_trade_flows.cells.size()));
+        append_le<int32_t>(payload, static_cast<int32_t>(
+            _tariff_history.countries.size()));
+        append_le<int32_t>(payload, static_cast<int32_t>(
+            _country_good_trade.countries.size()));
+        append_le<int32_t>(payload, static_cast<int32_t>(
+            _country_partner_trade.countries.size()));
+        append_le<uint64_t>(payload, _country_trade_revision);
         append_le<int64_t>(payload, _trade_orders.next_id);
         append_le<int32_t>(payload, _trade_runtime_mode);
         append_le<int64_t>(payload, _trade_capacity_per_merchant_q16);
@@ -128,6 +135,17 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             static_cast<int32_t>(_family_influences.active.size()));
         append_le<int32_t>(payload,
             static_cast<int32_t>(_family_trait_commands.size()));
+        append_le<int32_t>(payload,
+            static_cast<int32_t>(_family_expeditions.active.size()));
+        append_le<int32_t>(payload,
+            static_cast<int32_t>(_family_expeditions.active_count));
+        append_le<int64_t>(payload, _next_family_expedition_stable_id);
+        append_le<int64_t>(payload, _next_colonization_receipt_id);
+        append_le<int32_t>(payload, static_cast<int32_t>(_canal_quotes.size()));
+        append_le<int32_t>(payload, static_cast<int32_t>(_canal_projects.size()));
+        append_le<uint64_t>(payload, _next_canal_quote_token);
+        append_le<uint64_t>(payload, _next_canal_project_id);
+        append_le<int64_t>(payload, _next_canal_receipt_id);
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);
@@ -466,6 +484,14 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int32_t>(payload, _trade_orders.sources[order]);
             append_le<int32_t>(payload, _trade_orders.destinations[order]);
             append_le<int32_t>(payload, _trade_orders.countries[order]);
+            append_le<uint64_t>(payload,
+                _trade_orders.source_country_handles[order]);
+            append_le<uint64_t>(payload,
+                _trade_orders.destination_country_handles[order]);
+            append_le<int32_t>(payload,
+                _trade_orders.source_country_slots[order]);
+            append_le<int32_t>(payload,
+                _trade_orders.destination_country_slots[order]);
             append_le<int64_t>(payload, _trade_orders.departure_days[order]);
             append_le<int64_t>(payload, _trade_orders.arrival_days[order]);
             append_le<int64_t>(payload, _trade_orders.cash_escrow[order]);
@@ -483,6 +509,17 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<int32_t>(payload, _trade_orders.line_goods[line]);
                 append_le<int64_t>(payload, _trade_orders.line_quantities[line]);
                 append_le<int32_t>(payload, _trade_orders.line_unit_prices[line]);
+                append_le<int32_t>(payload,
+                    _trade_orders.line_destination_prices[line]);
+                append_le<int64_t>(payload,
+                    _trade_orders.line_base_values[line]);
+                append_le<int64_t>(payload,
+                    _trade_orders.line_retail_values[line]);
+                append_le<int64_t>(payload,
+                    _trade_orders.line_import_transfers[line]);
+                append_le<int64_t>(payload,
+                    _trade_orders.line_export_transfers[line]);
+                append_le<uint8_t>(payload, _trade_orders.line_flags[line]);
             }
             for (int32_t seller = _trade_orders.seller_offsets[order];
                  seller < _trade_orders.seller_offsets[order + 1]; ++seller) {
@@ -530,7 +567,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_FISCAL) {
         constexpr int32_t record_bytes =
-            4 + NativeCountryRuntime::TAX_KIND_COUNT * 11 * 8;
+            4 + NativeCountryRuntime::TAX_KIND_COUNT * 12 * 8;
         const int32_t country_count = static_cast<int32_t>(
             _epoch_country_handles.size());
         const int32_t max_records = std::max(
@@ -558,6 +595,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_group(_fiscal_last_reserved, country);
             append_group(_fiscal_last_paid, country);
             append_group(_fiscal_last_unmet, country);
+            append_group(_fiscal_last_events, country);
             append_group(_fiscal_cumulative_bases, country);
             append_group(_fiscal_cumulative_collected, country);
             append_group(_fiscal_cumulative_requests, country);
@@ -801,6 +839,260 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 _family_trait_commands.size())) ++_save.section;
         return make_save_chunk(SAVE_SECTION_FAMILY_TRAIT_COMMANDS,
             static_cast<uint32_t>(_save.family_trait_command_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_FAMILY_EXPEDITIONS) {
+        const int32_t begin = _save.family_expedition_cursor;
+        while (_save.family_expedition_cursor < static_cast<int32_t>(
+                _family_expeditions.active.size())) {
+            const int32_t i = _save.family_expedition_cursor;
+            std::vector<uint8_t> record;
+            append_le<int32_t>(record, i);
+            append_le<uint8_t>(record, _family_expeditions.active[i]);
+            append_le<uint32_t>(record, _family_expeditions.generation[i]);
+            append_le<int64_t>(record, _family_expeditions.stable_id[i]);
+            append_le<uint64_t>(record, _family_expeditions.country_handle[i]);
+            append_le<uint64_t>(record, _family_expeditions.family_handle[i]);
+            append_le<int32_t>(record, _family_expeditions.source_cell[i]);
+            append_le<int32_t>(record, _family_expeditions.target_cell[i]);
+            append_le<int64_t>(record, _family_expeditions.departure_day[i]);
+            append_le<int64_t>(record, _family_expeditions.due_day[i]);
+            append_le<int32_t>(record, _family_expeditions.route_cost[i]);
+            append_le<int32_t>(record, _family_expeditions.speed[i]);
+            append_le<uint8_t>(record, _family_expeditions.state[i]);
+            append_le<int64_t>(record, _family_expeditions.population[i]);
+            append_le<int64_t>(record,
+                _family_expeditions.effect_transaction_id[i]);
+            append_le<uint64_t>(record, _family_expeditions.idempotency_key[i]);
+            const uint32_t route_count = _family_expeditions.active[i] != 0
+                ? _family_expeditions.route_count[i] : 0;
+            const uint32_t payload_count = _family_expeditions.active[i] != 0
+                ? _family_expeditions.payload_count[i] : 0;
+            append_le<uint32_t>(record, route_count);
+            append_le<uint32_t>(record, payload_count);
+            const uint32_t route_begin = _family_expeditions.route_begin[i];
+            for (uint32_t r = 0; r < route_count; ++r) {
+                append_le<int32_t>(record,
+                    _family_expedition_route_cells[route_begin + r]);
+                append_le<int32_t>(record,
+                    _family_expedition_route_costs[route_begin + r]);
+            }
+            const uint32_t payload_begin =
+                _family_expeditions.payload_begin[i];
+            for (uint32_t p = 0; p < payload_count; ++p) {
+                const FamilyExpeditionPayload &lane =
+                    _family_expedition_payloads[payload_begin + p];
+                append_le<uint64_t>(record, lane.source_cohort_handle);
+                append_le<int32_t>(record, lane.signature);
+                append_le<int64_t>(record, lane.people);
+                append_le<int64_t>(record, lane.funds);
+                append_le<int64_t>(record, lane.epoch_income);
+                append_le<int64_t>(record, lane.epoch_expense);
+                append_le<int64_t>(record, lane.epoch_in_kind_income);
+                append_le<int64_t>(record, lane.income_ema);
+                append_le<int64_t>(record, lane.epoch_tax_paid);
+                append_le<int64_t>(record, lane.epoch_subsidy_received);
+                append_le<int64_t>(record, lane.income_baseline_ema);
+                append_le<int64_t>(record, lane.demography_residual);
+                append_le<int64_t>(record, lane.cash_claim);
+                append_le<int64_t>(record, lane.owner_employed);
+                append_le<int64_t>(record, lane.employee_employed);
+                append_le<uint16_t>(record, lane.needs_satisfaction);
+                append_le<uint16_t>(record, lane.worst_need_id);
+                append_le<uint16_t>(record, lane.composite_satisfaction);
+                append_le<uint8_t>(record, lane.worst_dimension_id);
+                for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+                    append_le<uint16_t>(record, lane.satisfaction_dims[dim]);
+                append_le<uint32_t>(record, lane.person_count);
+                for (uint32_t person = 0; person < lane.person_count; ++person)
+                    append_le<uint64_t>(record,
+                        _family_expedition_person_handles[
+                            lane.person_begin + person]);
+            }
+            if (!payload.empty() && payload.size() + record.size() + 16U >
+                    static_cast<size_t>(budget)) break;
+            payload.insert(payload.end(), record.begin(), record.end());
+            ++_save.family_expedition_cursor;
+        }
+        if (_save.family_expedition_cursor >= static_cast<int32_t>(
+                _family_expeditions.active.size())) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_FAMILY_EXPEDITIONS,
+            static_cast<uint32_t>(_save.family_expedition_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_TARIFF_HISTORY) {
+        constexpr int32_t record_bytes = 104;
+        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        const int32_t begin = _save.tariff_history_cursor;
+        const int32_t end = std::min<int32_t>(
+            static_cast<int32_t>(_tariff_history.countries.size()),
+            begin + max_records);
+        for (; _save.tariff_history_cursor < end; ++_save.tariff_history_cursor) {
+            const int32_t i = _save.tariff_history_cursor;
+            append_le<int32_t>(payload, _tariff_history.countries[i]);
+            append_le<int32_t>(payload, _tariff_history.kinds[i]);
+            append_le<int64_t>(payload, _tariff_history.bases[i]);
+            append_le<int64_t>(payload, _tariff_history.assessed[i]);
+            append_le<int64_t>(payload, _tariff_history.collected[i]);
+            append_le<int64_t>(payload, _tariff_history.requests[i]);
+            append_le<int64_t>(payload, _tariff_history.reserved[i]);
+            append_le<int64_t>(payload, _tariff_history.paid[i]);
+            append_le<int64_t>(payload, _tariff_history.cumulative_bases[i]);
+            append_le<int64_t>(payload, _tariff_history.cumulative_collected[i]);
+            append_le<int64_t>(payload, _tariff_history.cumulative_requests[i]);
+            append_le<int64_t>(payload, _tariff_history.cumulative_paid[i]);
+        }
+        if (_save.tariff_history_cursor >= static_cast<int32_t>(
+                _tariff_history.countries.size())) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_TARIFF_HISTORY,
+            static_cast<uint32_t>(_save.tariff_history_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_COUNTRY_GOOD) {
+        constexpr int32_t record_bytes = 112;
+        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        const int32_t begin = _save.country_good_cursor;
+        const int32_t end = std::min<int32_t>(
+            static_cast<int32_t>(_country_good_trade.countries.size()),
+            begin + max_records);
+        for (; _save.country_good_cursor < end; ++_save.country_good_cursor) {
+            const int32_t i = _save.country_good_cursor;
+            append_le<int32_t>(payload, _country_good_trade.countries[i]);
+            append_le<int32_t>(payload, _country_good_trade.goods[i]);
+            append_le<int64_t>(payload, _country_good_trade.import_quantity[i]);
+            append_le<int64_t>(payload, _country_good_trade.export_quantity[i]);
+            append_le<int64_t>(payload, _country_good_trade.import_base[i]);
+            append_le<int64_t>(payload, _country_good_trade.export_base[i]);
+            append_le<int64_t>(payload, _country_good_trade.import_tariff[i]);
+            append_le<int64_t>(payload, _country_good_trade.export_tariff[i]);
+            append_le<int64_t>(payload, _country_good_trade.batch_epoch[i]);
+            append_le<int64_t>(payload,
+                _country_good_trade.batch_import_quantity[i]);
+            append_le<int64_t>(payload,
+                _country_good_trade.batch_export_quantity[i]);
+            append_le<int64_t>(payload,
+                _country_good_trade.batch_import_base[i]);
+            append_le<int64_t>(payload,
+                _country_good_trade.batch_export_base[i]);
+            append_le<int64_t>(payload,
+                _country_good_trade.batch_import_tariff[i]);
+            append_le<int64_t>(payload,
+                _country_good_trade.batch_export_tariff[i]);
+        }
+        if (_save.country_good_cursor >= static_cast<int32_t>(
+                _country_good_trade.countries.size())) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_COUNTRY_GOOD,
+            static_cast<uint32_t>(_save.country_good_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_COUNTRY_PARTNER) {
+        constexpr int32_t record_bytes = 96;
+        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        const int32_t begin = _save.country_partner_cursor;
+        const int32_t end = std::min<int32_t>(
+            static_cast<int32_t>(_country_partner_trade.countries.size()),
+            begin + max_records);
+        for (; _save.country_partner_cursor < end; ++_save.country_partner_cursor) {
+            const int32_t i = _save.country_partner_cursor;
+            append_le<int32_t>(payload, _country_partner_trade.countries[i]);
+            append_le<int32_t>(payload, _country_partner_trade.partners[i]);
+            append_le<int64_t>(payload,
+                _country_partner_trade.import_quantity[i]);
+            append_le<int64_t>(payload,
+                _country_partner_trade.export_quantity[i]);
+            append_le<int64_t>(payload, _country_partner_trade.import_base[i]);
+            append_le<int64_t>(payload, _country_partner_trade.export_base[i]);
+            append_le<int64_t>(payload, _country_partner_trade.order_count[i]);
+            append_le<int64_t>(payload, _country_partner_trade.batch_epoch[i]);
+            append_le<int64_t>(payload,
+                _country_partner_trade.batch_import_quantity[i]);
+            append_le<int64_t>(payload,
+                _country_partner_trade.batch_export_quantity[i]);
+            append_le<int64_t>(payload,
+                _country_partner_trade.batch_import_base[i]);
+            append_le<int64_t>(payload,
+                _country_partner_trade.batch_export_base[i]);
+            append_le<int64_t>(payload,
+                _country_partner_trade.batch_order_count[i]);
+        }
+        if (_save.country_partner_cursor >= static_cast<int32_t>(
+                _country_partner_trade.countries.size())) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_COUNTRY_PARTNER,
+            static_cast<uint32_t>(_save.country_partner_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_CANAL_QUOTES) {
+        const int32_t begin = _save.canal_quote_cursor;
+        while (_save.canal_quote_cursor < static_cast<int32_t>(_canal_quotes.size())) {
+            const CanalQuote &quote = _canal_quotes[static_cast<size_t>(
+                _save.canal_quote_cursor)];
+            const size_t record_bytes = 106U +
+                quote.route_cells.size() * sizeof(int32_t) +
+                quote.route_edge_dirs.size() * sizeof(int32_t);
+            if (_save.canal_quote_cursor > begin &&
+                payload.size() + record_bytes > static_cast<size_t>(budget - 16))
+                break;
+            append_le<uint64_t>(payload, quote.token);
+            append_le<uint64_t>(payload, quote.country_handle);
+            append_le<int64_t>(payload, quote.snapshot_day);
+            append_le<uint64_t>(payload, quote.topology_hash);
+            append_le<uint64_t>(payload, quote.country_generation);
+            append_le<uint64_t>(payload, quote.price_hash);
+            append_le<uint8_t>(payload, quote.source_kind);
+            append_le<int32_t>(payload, quote.new_edge_count);
+            append_le<int32_t>(payload, quote.reused_edge_count);
+            append_le<int32_t>(payload, quote.construction_days);
+            append_le<int64_t>(payload, quote.cash_required);
+            for (int32_t value : quote.material_good_ids)
+                append_le<int32_t>(payload, value);
+            for (int64_t value : quote.material_quantities)
+                append_le<int64_t>(payload, value);
+            append_le<uint8_t>(payload,
+                _canal_quote_index.find(quote.token) != _canal_quote_index.end() ? 1 : 0);
+            append_le<uint32_t>(payload,
+                static_cast<uint32_t>(quote.route_cells.size()));
+            append_le<uint32_t>(payload,
+                static_cast<uint32_t>(quote.route_edge_dirs.size()));
+            for (int32_t cell : quote.route_cells) append_le<int32_t>(payload, cell);
+            for (int32_t dir : quote.route_edge_dirs) append_le<int32_t>(payload, dir);
+            ++_save.canal_quote_cursor;
+        }
+        if (_save.canal_quote_cursor >= static_cast<int32_t>(_canal_quotes.size()))
+            ++_save.section;
+        return make_save_chunk(SAVE_SECTION_CANAL_QUOTES,
+            static_cast<uint32_t>(_save.canal_quote_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_CANAL_PROJECTS) {
+        const int32_t begin = _save.canal_project_cursor;
+        while (_save.canal_project_cursor < static_cast<int32_t>(_canal_projects.size())) {
+            const CanalProject &project = _canal_projects[static_cast<size_t>(
+                _save.canal_project_cursor)];
+            const size_t record_bytes = 103U +
+                project.route_cells.size() * sizeof(int32_t) +
+                project.route_edge_dirs.size() * sizeof(int32_t);
+            if (_save.canal_project_cursor > begin &&
+                payload.size() + record_bytes > static_cast<size_t>(budget - 16))
+                break;
+            append_le<uint64_t>(payload, project.handle);
+            append_le<uint32_t>(payload, project.generation);
+            append_le<uint64_t>(payload, project.country_handle);
+            append_le<int64_t>(payload, project.effective_day);
+            append_le<int64_t>(payload, project.sequence);
+            append_le<int64_t>(payload, project.ready_day);
+            append_le<int64_t>(payload, project.effect_transaction_id);
+            append_le<uint64_t>(payload, project.topology_hash);
+            append_le<int64_t>(payload, project.cash_paid);
+            append_le<int64_t>(payload, project.treasury_goods_used);
+            append_le<int64_t>(payload, project.market_goods_used);
+            append_le<uint8_t>(payload, project.source_kind);
+            append_le<uint8_t>(payload, project.state);
+            append_le<uint32_t>(payload,
+                static_cast<uint32_t>(project.route_cells.size()));
+            append_le<uint32_t>(payload,
+                static_cast<uint32_t>(project.route_edge_dirs.size()));
+            for (int32_t cell : project.route_cells) append_le<int32_t>(payload, cell);
+            for (int32_t dir : project.route_edge_dirs) append_le<int32_t>(payload, dir);
+            ++_save.canal_project_cursor;
+        }
+        if (_save.canal_project_cursor >= static_cast<int32_t>(_canal_projects.size()))
+            ++_save.section;
+        return make_save_chunk(SAVE_SECTION_CANAL_PROJECTS,
+            static_cast<uint32_t>(_save.canal_project_cursor - begin), payload);
     }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);

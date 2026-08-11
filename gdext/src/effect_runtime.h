@@ -26,7 +26,7 @@ class DCWorldExt;
 class EffectRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 5;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 9;
     static constexpr int64_t Q16_ONE = 65536;
 
     enum Instruction : int32_t {
@@ -215,9 +215,28 @@ public:
                                      const std::array<int64_t, 4> &payload,
                                      std::string &error,
                                      int64_t *out_transaction_id = nullptr);
+    // Built-in two-domain transaction used by the Economy-owned expedition
+    // state machine. Both commands share one transaction and therefore remain
+    // unpublished until Country and Economy have independently ACKed.
+    bool enqueue_family_colonization_pod(
+        int64_t effect_id, int64_t effective_day, int64_t source_id,
+        uint64_t country_handle, uint32_t country_generation,
+        uint64_t expedition_handle, uint32_t expedition_generation,
+        int32_t target_cell, uint64_t fire_sequence, std::string &error,
+        int64_t *out_transaction_id = nullptr);
+    // Built-in geography transaction used by Economy-owned canal projects.
+    // The command payload is deliberately only the project handle; the
+    // gameplay adapter resolves the bounded route from EconomyRuntime.
+    bool enqueue_canal_commit_pod(
+        int64_t effect_id, int64_t effective_day, int64_t source_id,
+        uint64_t project_handle, uint32_t project_generation,
+        uint64_t fire_sequence, std::string &error,
+        int64_t *out_transaction_id = nullptr);
     // Peer runtimes retain only transaction IDs. ACKED rows can be compacted,
     // while REJECTED rows remain queryable until their producer observes them.
     int32_t transaction_status_pod(int64_t transaction_id) const;
+    bool consume_rejected_transaction_pod(int64_t transaction_id,
+                                          int64_t source_id);
     godot::Dictionary submit_instances(const godot::Dictionary &batch);
     godot::Dictionary submit_snapshots(const godot::Dictionary &batch);
     godot::Dictionary run_daily(int64_t day_index);
@@ -243,6 +262,18 @@ public:
     godot::PackedByteArray capture() const;
     godot::Dictionary restore(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_state();
+    void attach_country_runtime(NativeCountryRuntime *runtime) {
+        _country_runtime = runtime;
+    }
+    bool bind_era_reward_player_country_pod(uint64_t country_handle,
+                                            std::string &error);
+    bool notify_era_reward_technology_activated_pod(
+        uint64_t country_handle, int32_t technology_id, int64_t day_index,
+        std::string &error);
+    godot::Dictionary era_reward_offer_snapshot();
+    godot::Dictionary choose_era_reward(int64_t offer_generation,
+                                        int32_t choice_index,
+                                        int64_t effective_day);
 
 private:
     struct Condition {
@@ -376,6 +407,59 @@ private:
         uint32_t request_count = 0;
         uint32_t domain_bit = 0;
     };
+    struct EraRewardRule {
+        int32_t code = 0;
+        int64_t threshold = 0;
+        int32_t multiplier_q16 = Q16_ONE;
+        int32_t signal_index = -1;
+        int32_t route_technology_begin = 0;
+        int32_t route_technology_count = 0;
+        std::string reason;
+    };
+    struct EraRewardOption {
+        std::string id;
+        std::string title;
+        std::string description;
+        std::string icon;
+        int32_t base_weight = 1;
+        uint8_t fallback = 0;
+        int32_t eligibility_code = 0;
+        int64_t eligibility_threshold = 0;
+        int32_t rule_begin = 0;
+        int32_t rule_count = 0;
+        int32_t program_id = -1;
+    };
+    struct EraRewardPool {
+        std::string id;
+        std::string title;
+        int32_t trigger_technology = -1;
+        uint8_t final_pool = 0;
+        int32_t option_begin = 0;
+        int32_t option_count = 0;
+    };
+    struct EraRewardAlternative {
+        int32_t option_index = -1;
+        int64_t weight = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        std::array<std::string, 2> reasons{};
+        int32_t reason_count = 0;
+        std::string target_summary;
+    };
+    struct EraRewardOffer {
+        int64_t plan_id = 0;
+        int64_t generation = 0;
+        int32_t pool_index = -1;
+        int32_t milestone_technology = -1;
+        uint64_t country_handle = 0;
+        uint32_t country_generation = 0;
+        int32_t status = 0;
+        int32_t selected_choice = -1;
+        int64_t transaction_id = 0;
+        uint64_t plan_hash = 0;
+        std::array<EraRewardAlternative, 3> alternatives{};
+        std::string error;
+    };
 
     bool evaluate_condition(const Definition &definition,
                             const Instance &instance) const;
@@ -430,6 +514,21 @@ private:
     std::string command_definition_key_for(const Transaction &transaction,
                                            const Command &command) const;
     void reset_runtime_state();
+    bool compile_era_reward_catalog(const godot::Dictionary &catalog,
+                                    std::string &error);
+    bool plan_era_reward_offer(int32_t pool_index, uint64_t country_handle,
+                               int64_t day_index, std::string &error);
+    void refresh_era_reward_offer_status();
+    bool era_reward_option_eligible(const EraRewardOption &option,
+                                    int64_t cash, int32_t territory,
+                                    int64_t completed, int64_t signals) const;
+    int64_t era_reward_option_weight(const EraRewardOption &option,
+                                     int64_t cash, int32_t territory,
+                                     int64_t completed, int64_t signals,
+                                     const godot::PackedInt32Array &signal_counts,
+                                     const godot::PackedInt32Array &technology_states,
+                                     std::array<std::string, 2> &reasons,
+                                     int32_t &reason_count) const;
 
     bool _configured = false;
     uint64_t _catalog_hash = 0;
@@ -473,6 +572,7 @@ private:
     std::string _last_parallel_path = "serial";
     std::string _last_parallel_fallback_reason;
     std::string _last_error;
+    NativeCountryRuntime *_country_runtime = nullptr;
 
     std::vector<std::string> _metric_keys;
     std::vector<std::string> _behavior_command_keys;
@@ -516,6 +616,18 @@ private:
     std::vector<NativeAckBinding> _native_gameplay_ack_bindings;
     std::unordered_set<int64_t> _native_gameplay_bound_transaction_ids;
     int32_t _max_native_modifier_commands = 4096;
+    std::vector<EraRewardPool> _era_reward_pools;
+    std::vector<EraRewardOption> _era_reward_options;
+    std::vector<EraRewardRule> _era_reward_rules;
+    std::vector<int32_t> _era_reward_route_technology_indices;
+    std::unordered_map<int32_t, int32_t> _era_reward_pool_by_technology;
+    uint64_t _era_reward_player_country = 0;
+    int64_t _era_reward_next_plan_id = 1;
+    int64_t _era_reward_next_generation = 1;
+    EraRewardOffer _era_reward_offer;
+    double _last_era_reward_plan_ms = 0.0;
+    uint64_t _era_reward_offers_planned = 0;
+    int32_t _last_era_reward_expanded_commands = 0;
 };
 
 } // namespace pk

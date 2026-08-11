@@ -1,5 +1,10 @@
 # PlayerController 玩家会话运行时
 
+运河状态为 **API 已准备、尚未注册**。保留未来指令 ID
+`infrastructure.canal.build`，参数仅 `quote_token`；当前 allowlist、分支、signal 连接、输入、
+场景和 player_view 均不得增加该能力，被拒绝请求不得消耗 sequence。详见
+[运河运行时](./canal-runtime.md)。
+
 ## 定位
 
 `PlayerController` 是正式玩家会话的 Godot/UI 边界。它把玩家意图转换为
@@ -42,7 +47,8 @@ MapCamera 不得重新加入硬编码玩家快捷键。
 
 ## 正式命令网关
 
-除研究写操作外，正式网关开放玩家主动建设 `construction.build`、全国税务
+除研究写操作外，正式网关开放玩家主动建设 `construction.build`、家族开拓
+`family.colonization.start/cancel`、全国税务
 `country.tax.set_default/set_override/clear_override`，以及地块税务
 `country.tax.cell.set_default/clear_default/set_override/clear_override/clear_all`。
 控制器在分配 sequence 前校验税种、stable item ID、`[-100,100]`、cell 和玩家领土
@@ -55,7 +61,8 @@ MapCamera 不得重新加入硬编码玩家快捷键。
 1. 静态白名单检查；
 2. 正式会话和玩家国家归属检查；
 3. 参数类型、范围和研究权重总和检查；
-4. 分配单调 sequence，计算下一日 `effective_day`；
+4. 分配单调 sequence；普通领域命令计算下一日 `effective_day`，需要即时抽离
+   人口的家族开拓使用当前安全边界日；
 5. 调用领域 facade；
 6. 归一化 `{ok, code, message, effective_day, sequence}` 并发射
    `command_completed`。
@@ -87,6 +94,7 @@ MapCamera 不得重新加入硬编码玩家快捷键。
 
 ```powershell
 godot --headless --path Project/project-keynes --script tests/player_controller_contract_test.gd --quit
+godot --headless --path Project/project-keynes --script tests/family_colonization_runtime_test.gd --quit
 godot --headless --path Project/project-keynes --script tests/treasury_construction_runtime_test.gd --quit
 godot --headless --path Project/project-keynes --script tests/technology_workspace_smoke_test.gd --quit
 godot --headless --path Project/project-keynes --script tests/player_country_ui_smoke_test.gd

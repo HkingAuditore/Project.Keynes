@@ -533,6 +533,9 @@ var _pending_wind_buf: PackedByteArray = PackedByteArray()
 # 当前用于 _PHYS_STAGE_WIND C++ 化（run_wind_field_pass）；后续可扩展给 ψ / upwelling。
 var _world_ext = null
 var _visual_tile_generation_id: int = 0
+var _visual_tile_base_knobs: Dictionary = {}
+var _visual_tile_refresh_layers: Dictionary = {}
+var _visual_tile_refresh_running: bool = false
 var _last_bake_map: MapData = null
 # DOTS-Final-Push 修复：sea_ice prepare / 其他需要 ClimateProfile 的路径不能再依赖
 # `world.get("config")`（WorldData 上根本没有 config 字段，永远返回 null，导致
@@ -1212,6 +1215,8 @@ func _yield_generation_frame() -> void:
 
 func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		seed_val: int, generation_id: int) -> bool:
+	_visual_tile_base_knobs.clear()
+	_visual_tile_refresh_layers.clear()
 	if map == null or world == null:
 		return false
 	# Web exports run the whole baker on the browser's single WASM thread. The
@@ -1253,6 +1258,9 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 	var vegetation := PackedByteArray(); vegetation.resize(n_cells)
 	var cover := PackedByteArray(); cover.resize(n_cells)
 	var water_surface := PackedFloat32Array(); water_surface.resize(n_cells)
+	var canal_mask: PackedByteArray = map.canal_edge_mask_arr
+	var cell_pos_x: PackedFloat32Array = map.cell_pos_x_arr
+	var cell_pos_y: PackedFloat32Array = map.cell_pos_y_arr
 	var offset_to_index := PackedInt32Array()
 	offset_to_index.resize(map.width * map.height)
 	offset_to_index.fill(-1)
@@ -1287,6 +1295,11 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"cell_vegetation": vegetation,
 		"cell_cover": cover,
 		"cell_water_depth": water_surface,
+		"cell_canal_edge_mask": canal_mask,
+		"cell_pos_x": cell_pos_x,
+		"cell_pos_y": cell_pos_y,
+		"neighbor_indices": map.neighbor_indices_packed(),
+		"canal_stroke_hex_factor": 0.045,
 		"cell_landform": _landform_bytes_for_map(map),
 		"offset_to_index": offset_to_index,
 		"baseline_width": world.hm_size.x,
@@ -1395,8 +1408,107 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"horizon_path": "neutral_pending",
 	}, true)
 	world.visual_tiles = tiles
+	_visual_tile_base_knobs = base_knobs
 	print("  visual tiles: %s" % JSON.stringify(tiles.bake_report))
 	return true
+
+
+func queue_canal_visual_refresh(map: MapData, world: WorldData,
+		dirty_cells: PackedInt32Array) -> Dictionary:
+	var out := {"ok": false, "queued_layers": 0, "reason": "visual_tiles_unavailable"}
+	if map == null or world == null or dirty_cells.is_empty() \
+			or world.visual_tiles == null or not world.visual_tiles.ready \
+			or _visual_tile_base_knobs.is_empty() or _world_ext == null:
+		return out
+	var layout = world.visual_tiles.layout
+	if layout == null or layout.generation_id != _visual_tile_generation_id:
+		out["reason"] = "visual_tile_generation_stale"
+		return out
+	var positions := PackedInt32Array()
+	positions.append_array(dirty_cells)
+	var neighbors: PackedInt32Array = map.neighbor_indices_packed()
+	for cell in dirty_cells:
+		if cell < 0 or cell >= map.cell_count():
+			continue
+		for direction in range(6):
+			var neighbor: int = neighbors[cell * 6 + direction]
+			if neighbor >= 0:
+				positions.append(neighbor)
+	for cell in positions:
+		if cell < 0 or cell >= map.cell_pos_x_arr.size() \
+				or cell >= map.cell_pos_y_arr.size():
+			continue
+		var address: Dictionary = layout.world_to_tile_address(Vector2(
+			map.cell_pos_x_arr[cell], map.cell_pos_y_arr[cell]))
+		if not bool(address.get("valid", false)):
+			continue
+		var tile: Vector2i = address.get("tile", Vector2i.ZERO)
+		# Include the one-layer ring so the SDF/normal halo remains seam-free.
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				var tx: int = tile.x + ox
+				var ty: int = tile.y + oy
+				if layout.wrap_x:
+					tx = posmod(tx, layout.grid_size.x)
+				if tx < 0 or tx >= layout.grid_size.x or ty < 0 or ty >= layout.grid_size.y:
+					continue
+				_visual_tile_refresh_layers[ty * layout.grid_size.x + tx] = true
+	out["ok"] = true
+	out["reason"] = "ok"
+	out["queued_layers"] = _visual_tile_refresh_layers.size()
+	if not _visual_tile_refresh_running:
+		_drain_canal_visual_refresh(map, world)
+	return out
+
+
+func _drain_canal_visual_refresh(map: MapData, world: WorldData) -> void:
+	_visual_tile_refresh_running = true
+	while not _visual_tile_refresh_layers.is_empty():
+		await _yield_generation_frame()
+		if map == null or world == null or world.visual_tiles == null \
+				or world.visual_tiles.layout == null \
+				or world.visual_tiles.layout.generation_id != _visual_tile_generation_id:
+			break
+		var layer_ids: Array = _visual_tile_refresh_layers.keys()
+		layer_ids.sort()
+		var layer_id: int = int(layer_ids[0])
+		if _rebake_canal_visual_layer(map, world, layer_id):
+			_visual_tile_refresh_layers.erase(layer_id)
+		else:
+			push_warning("[canal-visual] layer %d rebake failed; retained for retry" % layer_id)
+	_visual_tile_refresh_running = false
+
+
+func _rebake_canal_visual_layer(map: MapData, world: WorldData, layer_id: int) -> bool:
+	var tiles = world.visual_tiles
+	var layout = tiles.layout
+	if layer_id < 0 or layer_id >= layout.layer_count:
+		return true
+	var knobs: Dictionary = _visual_tile_base_knobs.duplicate(false)
+	knobs["cell_canal_edge_mask"] = map.canal_edge_mask_arr
+	knobs["canal_refresh_only"] = true
+	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
+	var tile_xy := Vector2i(layer_id % layout.grid_size.x,
+		layer_id / layout.grid_size.x)
+	var interior_origin: Vector2 = layout.visual_domain.position + Vector2(
+		tile_xy.x * layout.interior_size.x,
+		tile_xy.y * layout.interior_size.y) * texel_world
+	var physical_origin: Vector2 = interior_origin - \
+		Vector2.ONE * layout.gutter_px * texel_world
+	var physical_size: Vector2 = Vector2(layout.layer_size) * texel_world
+	knobs.merge({
+		"layer_id": layer_id,
+		"width": layout.layer_size.x,
+		"height": layout.layer_size.y,
+		"origin_x": physical_origin.x,
+		"origin_y": physical_origin.y,
+		"size_x": physical_size.x,
+		"size_y": physical_size.y,
+	}, true)
+	var bundle: Dictionary = _world_ext.run_bake_visual_tile_layer_pass(knobs)
+	return bundle != null and not bool(bundle.get("fallback", true)) \
+		and int(bundle.get("generation_id", -1)) == _visual_tile_generation_id \
+		and tiles.upload_layer_bundle(layer_id, bundle)
 
 
 func _visual_tile_quality_setting() -> String:
@@ -6134,6 +6246,12 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 			"wind_traj_dt_days": profile.wind_traj_dt_days,
 			"wind_traj_weather_share": profile.wind_traj_weather_share,
 			"wind_div_damp_alpha": profile.wind_div_damp_alpha,
+			"thermal_monsoon_enabled": profile.thermal_monsoon_enabled,
+			"thermal_monsoon_lat_limit": profile.thermal_monsoon_lat_limit,
+			"thermal_monsoon_deadband": profile.thermal_monsoon_deadband,
+			"thermal_monsoon_full_contrast": profile.thermal_monsoon_full_contrast,
+			"thermal_monsoon_gain": profile.thermal_monsoon_gain,
+			"thermal_monsoon_breeze_floor": profile.thermal_monsoon_breeze_floor,
 		}
 		var rc_wind_raw = _world_ext.run_wind_field_pass(knobs_wind)
 		var rc_wind: float = float(rc_wind_raw) if rc_wind_raw != null else -1.0
@@ -6335,6 +6453,12 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		_phys_knobs_base_wind["wind_traj_dt_days"] = profile.wind_traj_dt_days
 		_phys_knobs_base_wind["wind_traj_weather_share"] = profile.wind_traj_weather_share
 		_phys_knobs_base_wind["wind_div_damp_alpha"] = profile.wind_div_damp_alpha
+		_phys_knobs_base_wind["thermal_monsoon_enabled"] = profile.thermal_monsoon_enabled
+		_phys_knobs_base_wind["thermal_monsoon_lat_limit"] = profile.thermal_monsoon_lat_limit
+		_phys_knobs_base_wind["thermal_monsoon_deadband"] = profile.thermal_monsoon_deadband
+		_phys_knobs_base_wind["thermal_monsoon_full_contrast"] = profile.thermal_monsoon_full_contrast
+		_phys_knobs_base_wind["thermal_monsoon_gain"] = profile.thermal_monsoon_gain
+		_phys_knobs_base_wind["thermal_monsoon_breeze_floor"] = profile.thermal_monsoon_breeze_floor
 	# ── PSI base（变化：wind_x_arr / wind_y_arr / wind_speed_arr）
 	_phys_knobs_base_psi = {
 		"n_cells": n_cells,

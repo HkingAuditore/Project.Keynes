@@ -1,18 +1,20 @@
-[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"tailor_shop"
 display_name = "裁缝铺"
-building_kind = "industrial"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
 technology_tags = PackedStringArray("industry.textile", "tech.guild_organization")
+required_technology_tags = PackedStringArray()
 upgrade_family_id = &"garment_making"
 upgrade_tier = 1
-construction_days = 0
 construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components")
 construction_quantities = PackedInt64Array(9750, 9750, 6500)
 owner_profession_id = &"guild_master"
-owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray("apprentice", "journeyman")
 employee_slots_per_building = PackedInt64Array(6, 6)
 employee_wage_policy_ids = PackedStringArray("fixed", "fixed")
@@ -27,13 +29,15 @@ input_candidate_good_ids = PackedStringArray()
 input_candidate_efficiency_q16 = PackedInt32Array()
 output_good_ids = PackedStringArray("clothing")
 output_quantities_per_day = PackedInt64Array(12970)
-target_operating_margin_q16 = 9830
-supply_price_elasticity_q16 = 65536
+output_cost_shares_q16 = PackedInt32Array()
 resource_ids = PackedStringArray()
 resource_quantities_per_day = PackedInt64Array()
 resource_interaction_modes = PackedStringArray()
 resource_access_modes = PackedStringArray()
 resource_generation_ids = PackedStringArray()
 resource_generation_quantities_per_day = PackedInt64Array()
-resource_generation_floor_q16 = 0
-behavior_id = "none"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

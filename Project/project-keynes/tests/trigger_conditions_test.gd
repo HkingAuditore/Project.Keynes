@@ -45,18 +45,23 @@ func _run() -> void:
 	ext.submit_trigger_events(_batch(PackedInt64Array([7,8]), PackedInt64Array([2,2]),
 		PackedInt32Array([1,1]))); ext.run_trigger_daily(2)
 	_expect("cooldown and one-shot gate effects", int(ext.poll_trigger_effects(0, 16).get("count", 0)) == 3)
-	var strict = TriggerCatalogScript.new(); strict.source_count = 1; strict.event_type_span = 4
+	var strict = TriggerCatalogScript.new(); strict.source_count = 2; strict.event_type_span = 16
 	strict.strict_source_cursors = true
 	strict.definitions.append(_make_definition("gap", 1, 1, 1, 0, PackedInt32Array([3])))
-	var strict_compiled: Dictionary = strict.compile_native_catalog(); strict_compiled.erase("ok")
-	ext.configure_triggers(strict_compiled)
+	var strict_compiled: Dictionary = strict.compile_native_catalog()
+	_expect("strict cursor catalog compiles with built-in breakthrough sources",
+		bool(strict_compiled.get("ok", false)))
+	strict_compiled.erase("ok")
+	_expect("strict cursor catalog configures",
+		bool(ext.configure_triggers(strict_compiled).get("ok", false)))
 	ext.submit_trigger_events(_batch(PackedInt64Array([1]), PackedInt64Array([0]), PackedInt32Array([1])))
 	ext.submit_trigger_events(_batch(PackedInt64Array([3]), PackedInt64Array([0]), PackedInt32Array([1])))
 	var report: Dictionary = ext.get_trigger_report()
 	var gap_begin: PackedInt64Array = report.get("source_gap_begin", PackedInt64Array())
 	var gap_end: PackedInt64Array = report.get("source_gap_end", PackedInt64Array())
 	_expect("strict cursor records exact gap", int(report.get("gap_count", 0)) == 1 \
-		and gap_begin.size() == 1 and gap_begin[0] == 2 and gap_end[0] == 3)
+		and gap_begin.size() == 2 and gap_end.size() == 2 \
+		and gap_begin[0] == 2 and gap_end[0] == 3)
 	_expect("resync clears source pause", bool(ext.resync_trigger_source({"source_id": 0,
 		"cursor": 3, "trigger_ids": PackedInt32Array([0]), "target_handles": PackedInt64Array([0]),
 		"values": PackedInt64Array([0])}).get("ok", false)))

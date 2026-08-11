@@ -5,4 +5,4 @@ script = ExtResource("1")
 id = &"petroleum_worker"
 display_name = "石油工人"
 default_consumption_plan_id = &"extractive_household"
-technology_tags = PackedStringArray("tech.steam_power")
+technology_tags = PackedStringArray()

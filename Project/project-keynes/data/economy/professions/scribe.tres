@@ -6,4 +6,4 @@ id = &"scribe"
 display_name = "书记员"
 default_consumption_plan_id = &"scholarly_household"
 profession_class_id = &"technology"
-technology_tags = PackedStringArray("tech.record_keeping")
+technology_tags = PackedStringArray()

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/variant.hpp>
@@ -86,7 +87,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     int64_t bytes = 0;
     auto cap = [&](const auto &v) { bytes += static_cast<int64_t>(v.capacity() * sizeof(typename std::decay_t<decltype(v)>::value_type)); };
     cap(_population.cell_first_page); cap(_population.page_next); cap(_population.page_cell);
-    cap(_population.free_pages); cap(_population.active); cap(_population.signature_id);
+    cap(_population.free_pages); cap(_population.active); cap(_population.reserved);
+    cap(_population.reservation_owner); cap(_population.signature_id);
     cap(_population.generation); cap(_population.population); cap(_population.funds);
     cap(_population.epoch_income); cap(_population.epoch_expense);
     cap(_population.epoch_in_kind_income); cap(_population.income_ema);
@@ -109,6 +111,28 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_family_cohort_offsets); cap(_family_cohort_edge_indices);
     cap(_family_building_offsets); cap(_family_building_edge_indices);
     cap(_family_cell_offsets); cap(_family_cell_indices);
+    cap(_family_expeditions.active); cap(_family_expeditions.generation);
+    cap(_family_expeditions.stable_id); cap(_family_expeditions.country_handle);
+    cap(_family_expeditions.family_handle); cap(_family_expeditions.source_cell);
+    cap(_family_expeditions.target_cell); cap(_family_expeditions.departure_day);
+    cap(_family_expeditions.due_day); cap(_family_expeditions.route_cost);
+    cap(_family_expeditions.speed); cap(_family_expeditions.state);
+    cap(_family_expeditions.population); cap(_family_expeditions.route_begin);
+    cap(_family_expeditions.route_count); cap(_family_expeditions.payload_begin);
+    cap(_family_expeditions.payload_count);
+    cap(_family_expeditions.effect_transaction_id);
+    cap(_family_expeditions.idempotency_key); cap(_family_expeditions.free_indices);
+    cap(_family_expedition_route_cells); cap(_family_expedition_route_costs);
+    cap(_family_expedition_payloads); cap(_family_expedition_person_handles);
+    cap(_family_expedition_due_heap); cap(_colonization_receipts);
+    cap(_colonization_quote_cache); cap(_colonization_quote_route_cells);
+    cap(_colonization_quote_route_costs); cap(_colonization_distance);
+    cap(_colonization_distance_stamp); cap(_colonization_parent);
+    cap(_colonization_parent_stamp); cap(_colonization_route_heap);
+    bytes += static_cast<int64_t>(_family_expedition_target_index.size()) *
+        static_cast<int64_t>(sizeof(uint64_t) + sizeof(int32_t));
+    bytes += static_cast<int64_t>(_colonization_quote_index.size()) *
+        static_cast<int64_t>(sizeof(uint64_t) + sizeof(int32_t));
     cap(_persons.active); cap(_persons.generation); cap(_persons.stable_id);
     cap(_persons.family_handle); cap(_persons.cohort_handle);
     cap(_persons.given_name_id); cap(_persons.name_disambiguator);
@@ -193,6 +217,55 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_fiscal_last_unmet); cap(_fiscal_cumulative_bases);
     cap(_fiscal_cumulative_collected);
     cap(_fiscal_cumulative_requests); cap(_fiscal_cumulative_paid);
+    cap(_tariff_epoch_cells); cap(_tariff_epoch_kinds);
+    cap(_tariff_epoch_bases); cap(_tariff_epoch_assessed);
+    cap(_tariff_epoch_collected); cap(_tariff_epoch_requests);
+    cap(_tariff_epoch_reserved); cap(_tariff_epoch_paid);
+    cap(_tariff_epoch_events); cap(_tariff_lane_index);
+    cap(_tariff_lane_stamp);
+    cap(_tariff_history.countries); cap(_tariff_history.kinds);
+    cap(_tariff_history.bases); cap(_tariff_history.assessed);
+    cap(_tariff_history.collected); cap(_tariff_history.requests);
+    cap(_tariff_history.reserved); cap(_tariff_history.paid);
+    cap(_tariff_history.cumulative_bases);
+    cap(_tariff_history.cumulative_collected);
+    cap(_tariff_history.cumulative_requests);
+    cap(_tariff_history.cumulative_paid);
+    cap(_country_good_trade.countries); cap(_country_good_trade.goods);
+    cap(_country_good_trade.import_quantity);
+    cap(_country_good_trade.export_quantity);
+    cap(_country_good_trade.import_base); cap(_country_good_trade.export_base);
+    cap(_country_good_trade.import_tariff);
+    cap(_country_good_trade.export_tariff);
+    cap(_country_good_trade.batch_epoch);
+    cap(_country_good_trade.batch_import_quantity);
+    cap(_country_good_trade.batch_export_quantity);
+    cap(_country_good_trade.batch_import_base);
+    cap(_country_good_trade.batch_export_base);
+    cap(_country_good_trade.batch_import_tariff);
+    cap(_country_good_trade.batch_export_tariff);
+    cap(_country_partner_trade.countries); cap(_country_partner_trade.partners);
+    cap(_country_partner_trade.import_quantity);
+    cap(_country_partner_trade.export_quantity);
+    cap(_country_partner_trade.import_base);
+    cap(_country_partner_trade.export_base);
+    cap(_country_partner_trade.order_count);
+    cap(_country_partner_trade.batch_epoch);
+    cap(_country_partner_trade.batch_import_quantity);
+    cap(_country_partner_trade.batch_export_quantity);
+    cap(_country_partner_trade.batch_import_base);
+    cap(_country_partner_trade.batch_export_base);
+    cap(_country_partner_trade.batch_order_count);
+    cap(_country_good_display_rows); cap(_country_partner_display_rows);
+    cap(_country_good_display_dirty); cap(_country_partner_display_dirty);
+    for (const auto &rows : _country_good_display_rows) cap(rows);
+    for (const auto &rows : _country_partner_display_rows) cap(rows);
+    bytes += static_cast<int64_t>(_country_good_trade_index.size()) *
+        static_cast<int64_t>(sizeof(std::pair<const uint64_t, int32_t>));
+    bytes += static_cast<int64_t>(_country_partner_trade_index.size()) *
+        static_cast<int64_t>(sizeof(std::pair<const uint64_t, int32_t>));
+    bytes += static_cast<int64_t>(_tariff_history_index.size()) *
+        static_cast<int64_t>(sizeof(std::pair<const uint64_t, int32_t>));
     cap(_income_taxable_base_by_slot);
     cap(_income_subsidy_floor_by_slot);
     cap(_epoch_market_ids); cap(_epoch_market_work_weights);
@@ -248,6 +321,19 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_owner_retained_outputs);
     cap(_trade_topology.neighbors); cap(_trade_topology.passable);
     cap(_trade_topology.enter_cost); cap(_trade_topology.component);
+    cap(_trade_topology.edge_cost);
+    cap(_trade_topology.canal_edge_mask); cap(_trade_topology.canal_water);
+    cap(_canal_quotes); cap(_canal_projects); cap(_canal_receipts);
+    for (const CanalQuote &quote : _canal_quotes) {
+        cap(quote.route_cells); cap(quote.route_edge_dirs);
+    }
+    for (const CanalProject &project : _canal_projects) {
+        cap(project.route_cells); cap(project.route_edge_dirs);
+    }
+    bytes += static_cast<int64_t>(_canal_quote_index.size()) *
+        static_cast<int64_t>(sizeof(uint64_t) + sizeof(int32_t));
+    bytes += static_cast<int64_t>(_canal_project_index.size()) *
+        static_cast<int64_t>(sizeof(uint64_t) + sizeof(int32_t));
     cap(_trade_plan.sources); cap(_trade_plan.destinations);
     cap(_trade_plan.scan_cells); cap(_trade_plan.scan_goods); cap(_trade_plan.scan_inbound);
     cap(_trade_plan.working_candidates); cap(_trade_plan.ready_candidates);
@@ -636,6 +722,51 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _family_modifier_bindings.size());
     out["family_trigger_binding_count"] = static_cast<int64_t>(
         _family_trigger_bindings.size());
+    out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
+        _family_expeditions.active.begin(), _family_expeditions.active.end(),
+        uint8_t{1}));
+    out["family_expedition_due_heap_count"] = static_cast<int64_t>(
+        _family_expedition_due_heap.size());
+    out["family_expedition_transit_population"] = [&]() {
+        int64_t total = 0;
+        int64_t local_saturation_count = 0;
+        for (size_t index = 0; index < _family_expeditions.active.size(); ++index)
+            if (_family_expeditions.active[index] != 0)
+                total = saturating_add(total,
+                    _family_expeditions.population[index], local_saturation_count);
+        return total;
+    }();
+    out["colonization_route_query_ms"] = _colonization_route_query_ms;
+    out["colonization_payload_split_ms"] = _colonization_payload_split_ms;
+    out["colonization_cross_domain_ms"] = _colonization_cross_domain_ms;
+    out["canal_quote_count"] = static_cast<int64_t>(_canal_quotes.size());
+    out["canal_active_quote_count"] = static_cast<int64_t>(
+        _canal_quote_index.size());
+    out["canal_project_count"] = static_cast<int64_t>(_canal_projects.size());
+    out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id);
+    out["canal_receipt_count"] = static_cast<int64_t>(_canal_receipts.size());
+    int64_t canal_building = 0;
+    int64_t canal_awaiting_effect = 0;
+    int64_t canal_completed = 0;
+    int64_t canal_failed = 0;
+    for (const CanalProject &project : _canal_projects) {
+        if (project.state == CANAL_PROJECT_BUILDING) ++canal_building;
+        else if (project.state == CANAL_PROJECT_AWAITING_EFFECT)
+            ++canal_awaiting_effect;
+        else if (project.state == CANAL_PROJECT_COMPLETED) ++canal_completed;
+        else if (project.state == CANAL_PROJECT_FAILED) ++canal_failed;
+    }
+    out["canal_project_building_count"] = canal_building;
+    out["canal_project_awaiting_effect_count"] = canal_awaiting_effect;
+    out["canal_project_completed_count"] = canal_completed;
+    out["canal_project_failed_count"] = canal_failed;
+    out["canal_topology_hash"] = static_cast<int64_t>(
+        _trade_topology.topology_hash & 0x7fffffffffffffffULL);
+    int64_t canal_directed_edges = 0;
+    for (const uint8_t mask : _trade_topology.canal_edge_mask)
+        for (int direction = 0; direction < 6; ++direction)
+            canal_directed_edges += (mask >> direction) & 1U;
+    out["canal_edge_count"] = canal_directed_edges / 2;
     out["family_membership_edges_processed"] =
         _family_membership_edges_processed;
     out["family_ownership_edges_processed"] =
@@ -1330,6 +1461,50 @@ Dictionary NativeEconomyRuntime::report() const {
         _family_modifier_bindings.size());
     out["family_trigger_binding_count"] = static_cast<int64_t>(
         _family_trigger_bindings.size());
+    out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
+        _family_expeditions.active.begin(), _family_expeditions.active.end(),
+        uint8_t{1}));
+    out["family_expedition_due_heap_count"] = static_cast<int64_t>(
+        _family_expedition_due_heap.size());
+    out["family_expedition_transit_population"] = [&]() {
+        int64_t total = 0;
+        int64_t local_saturation_count = 0;
+        for (size_t index = 0; index < _family_expeditions.active.size(); ++index)
+            if (_family_expeditions.active[index] != 0)
+                total = saturating_add(total,
+                    _family_expeditions.population[index], local_saturation_count);
+        return total;
+    }();
+    out["colonization_route_query_ms"] = _colonization_route_query_ms;
+    out["colonization_payload_split_ms"] = _colonization_payload_split_ms;
+    out["colonization_cross_domain_ms"] = _colonization_cross_domain_ms;
+    out["canal_quote_count"] = static_cast<int64_t>(_canal_quotes.size());
+    out["canal_active_quote_count"] = static_cast<int64_t>(
+        _canal_quote_index.size());
+    out["canal_project_count"] = static_cast<int64_t>(_canal_projects.size());
+    out["canal_receipt_count"] = static_cast<int64_t>(_canal_receipts.size());
+    int64_t canal_building = 0;
+    int64_t canal_awaiting_effect = 0;
+    int64_t canal_completed = 0;
+    int64_t canal_failed = 0;
+    for (const CanalProject &project : _canal_projects) {
+        if (project.state == CANAL_PROJECT_BUILDING) ++canal_building;
+        else if (project.state == CANAL_PROJECT_AWAITING_EFFECT)
+            ++canal_awaiting_effect;
+        else if (project.state == CANAL_PROJECT_COMPLETED) ++canal_completed;
+        else if (project.state == CANAL_PROJECT_FAILED) ++canal_failed;
+    }
+    out["canal_project_building_count"] = canal_building;
+    out["canal_project_awaiting_effect_count"] = canal_awaiting_effect;
+    out["canal_project_completed_count"] = canal_completed;
+    out["canal_project_failed_count"] = canal_failed;
+    out["canal_topology_hash"] = static_cast<int64_t>(
+        _trade_topology.topology_hash & 0x7fffffffffffffffULL);
+    int64_t canal_directed_edges = 0;
+    for (const uint8_t mask : _trade_topology.canal_edge_mask)
+        for (int direction = 0; direction < 6; ++direction)
+            canal_directed_edges += (mask >> direction) & 1U;
+    out["canal_edge_count"] = canal_directed_edges / 2;
     out["family_membership_edges_processed"] =
         _family_membership_edges_processed;
     out["family_ownership_edges_processed"] =
@@ -1348,6 +1523,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["person_jobs_bound"] = _person_jobs_bound;
     out["person_need_edges_processed"] = _person_need_edges_processed;
     out["memory_bytes"] = memory_bytes();
+    out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id);
     out["cohort_count"] = _population.active_count;
     out["market_count"] = _market.market_count;
     out["good_count"] = _market.good_count;
@@ -1665,6 +1841,12 @@ Dictionary NativeEconomyRuntime::report() const {
     out["trade_capacity_utilization_q16"] = _trade_capacity_available <= 0 ? 0
         : std::min<int64_t>(Q16_ONE,
             (_trade_capacity_used * Q16_ONE) / _trade_capacity_available);
+    out["trade_tariff_lane_count"] = static_cast<int64_t>(
+        _tariff_epoch_cells.size());
+    out["trade_country_good_aggregate_count"] = static_cast<int64_t>(
+        _country_good_trade.countries.size());
+    out["trade_country_partner_aggregate_count"] = static_cast<int64_t>(
+        _country_partner_trade.countries.size());
     out["trade_transit_goods"] = trade_transit_goods();
     out["trade_escrow_cash"] = trade_escrow_cash();
     out["trade_settlement_lag_days"] = _trade_settlement_lag_days;

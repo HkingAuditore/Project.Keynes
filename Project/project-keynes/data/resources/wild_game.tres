@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"wild_game"
+discovery_technology_tags = PackedStringArray("tech.animal_tracking")
 display_name = "野生动物"
 semantic_tags = PackedStringArray("ecology.wildlife", "activity.hunting")
 reserve_component = &"cell.res_wild_game_reserve"

@@ -23,6 +23,7 @@ signal demand_details_requested(details: Dictionary)
 signal object_details_requested(request: Dictionary)
 signal construction_page_requested(search: String, offset: int)
 signal construction_requested(request: Dictionary)
+signal colonization_requested(request: Dictionary)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
@@ -51,6 +52,7 @@ var _summary_trends: Dictionary = {}
 var _last_score_band := -1
 var _player_controller = null
 var _cell_tax_workspace = null
+var _colonization_button: Button
 
 
 func _ready() -> void:
@@ -71,6 +73,14 @@ func _ready() -> void:
 		return
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭地块档案")
 	close_button.pressed.connect(func() -> void: close_requested.emit())
+	_colonization_button = Button.new()
+	_colonization_button.text = "开拓"
+	_colonization_button.visible = false
+	_colonization_button.pressed.connect(func() -> void:
+		colonization_requested.emit(_model.get("colonization_action", {})))
+	var header_row := close_button.get_parent()
+	header_row.add_child(_colonization_button)
+	header_row.move_child(_colonization_button, close_button.get_index())
 	_tabs.tab_selected.connect(_on_tab_selected)
 
 
@@ -91,6 +101,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 	if _model.is_empty():
 		return
 	_apply_header(_model.get("header", {}), false)
+	_apply_colonization_action(_model.get("colonization_action", {}))
 	_render_summary(_model.get("score", {}), _model.get("summary_cards", []))
 	var tabs: Array = _model.get("tabs", [])
 	if not _has_tab(tabs, _current_tab):
@@ -175,6 +186,16 @@ func visible_node_count() -> int:
 func _apply_header(header: Dictionary, _live_patch: bool) -> void:
 	_title_label.text = String(header.get("title", "地块档案"))
 	_subtitle_label.text = String(header.get("subtitle", ""))
+
+
+func _apply_colonization_action(action: Dictionary) -> void:
+	if _colonization_button == null:
+		return
+	var available := bool(action.get("available", false))
+	_colonization_button.visible = available
+	_colonization_button.disabled = not available
+	_colonization_button.tooltip_text = "派遣境内家族分支开拓这块无主地" \
+		if available else String(action.get("reason", ""))
 
 
 func _render_summary(score: Dictionary, cards: Array) -> void:

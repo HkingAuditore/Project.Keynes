@@ -1538,6 +1538,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     // 仅诊断只读）。改为本片单次深拷贝后共享同一 Variant，省掉每片第 2 次递归深拷贝。
     Dictionary runtime_config_report = _native_runtime_config.duplicate(true);
     breakdown["runtime_config_report"] = runtime_config_report;
+    breakdown["climate_modes"] = get_climate_modes_report();
     const bool active_default_ready =
         done &&
         String(breakdown["graph_coverage_state"]) == String("complete") &&
@@ -1607,6 +1608,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     out["boundary_contract"] = _native_daily_slice_bundle.get("native_daily_boundary_contract", Dictionary());
     out["bundle_key_count"] = breakdown["bundle_key_count"];
     out["tick_delta_key_count"] = breakdown["tick_delta_key_count"];
+    out["climate_modes"] = breakdown["climate_modes"];
     out["runtime_config_report"] = runtime_config_report;  // perf(Tier1): 共享上面的单次深拷贝
     out["native_daily_active_default_ready"] = active_default_ready;
     out["active_default_blockers"] = out["authority_blockers"];
@@ -2741,6 +2743,7 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     out["bundle_key_count"] = int(boundary_contract.get("bundle_key_count", bundle.size()));
     out["tick_delta_key_count"] = Array(boundary_contract.get("tick_delta_keys", Array())).size();
     out["runtime_config_report"] = _native_runtime_config.duplicate(true);
+    out["climate_modes"] = get_climate_modes_report();
     const bool active_default_ready =
         String(out["graph_coverage_state"]) == String("complete") &&
         Array(out["authority_blockers"]).is_empty();
@@ -2775,6 +2778,7 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
     breakdown["bundle_key_count"] = out["bundle_key_count"];
     breakdown["tick_delta_key_count"] = out["tick_delta_key_count"];
     breakdown["runtime_config_report"] = out["runtime_config_report"];
+    breakdown["climate_modes"] = out["climate_modes"];
     breakdown["native_daily_active_default_ready"] = out["native_daily_active_default_ready"];
     breakdown["active_default_blockers"] = out["active_default_blockers"];
     breakdown["fallback_mode"] = out["fallback_mode"];

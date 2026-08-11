@@ -779,7 +779,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;
     _epoch_begin_vector_init_ms = elapsed_ms(vector_init_started);
     const auto audit_started = Clock::now();
-    const bool full_audit_verify =
+    const bool full_audit_verify = _opening_audit_force_full ||
         day_index % _full_audit_verify_interval_days == 0;
     if (full_audit_verify) {
         _opening_totals = audit_totals();
@@ -797,15 +797,31 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             _opening_totals.country_cash = 0;
         }
         int64_t opening_escrow_saturation = 0;
+        int64_t expedition_escrow_cash = 0;
+        for (int32_t expedition = 0; expedition < static_cast<int32_t>(
+                _family_expeditions.active.size()); ++expedition) {
+            if (_family_expeditions.active[expedition] == 0) continue;
+            const uint32_t begin = _family_expeditions.payload_begin[expedition];
+            const uint32_t end = std::min<uint32_t>(
+                static_cast<uint32_t>(_family_expedition_payloads.size()),
+                begin + _family_expeditions.payload_count[expedition]);
+            for (uint32_t payload = begin; payload < end; ++payload)
+                expedition_escrow_cash = saturating_add(
+                    expedition_escrow_cash,
+                    _family_expedition_payloads[payload].funds,
+                    opening_escrow_saturation);
+        }
         _opening_totals.escrow_cash = saturating_add(
-            trade_escrow_cash(), fiscal_escrow_total(),
-            opening_escrow_saturation);
+            saturating_add(trade_escrow_cash(), fiscal_escrow_total(),
+                           opening_escrow_saturation),
+            expedition_escrow_cash, opening_escrow_saturation);
         _saturation_count += opening_escrow_saturation;
         _opening_totals.goods_stock +=
             current_country_goods - _opening_totals.country_goods;
         _opening_totals.country_goods = current_country_goods;
         ++_opening_audit_fast_paths;
     }
+    _opening_audit_force_full = false;
     _audit_ms += elapsed_ms(audit_started);
     _sample_day = day_index;
     _current_day = day_index;
@@ -853,6 +869,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
         const bool targets_cohort = !family_reward &&
                                     cmd.opcode != COMMAND_TREASURY_SPONSORED_BUILD &&
+                                    cmd.opcode != COMMAND_BUILD_CANAL &&
                                     cmd.opcode != COMMAND_ADD_STOCK &&
                                     cmd.opcode != COMMAND_REMOVE_STOCK &&
                                     cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
@@ -894,6 +911,12 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
              cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
              _country_runtime == nullptr || !_country_runtime->valid_handle(
                  static_cast<int64_t>(cmd.target_handle)))) {
+            ++_rejected_commands;
+            return true;
+        }
+        if (cmd.opcode == COMMAND_BUILD_CANAL &&
+            (_country_runtime == nullptr || !_country_runtime->valid_handle(
+                static_cast<int64_t>(cmd.target_handle)) || cmd.i64_0 <= 0)) {
             ++_rejected_commands;
             return true;
         }

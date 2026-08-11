@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"fertile_soil"
+discovery_technology_tags = PackedStringArray("tech.rainfed_field_system")
 display_name = "肥沃土壤"
 reserve_component = &"cell.res_fertile_soil_reserve"
 habitat_mode = "land"

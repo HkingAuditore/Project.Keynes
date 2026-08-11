@@ -242,6 +242,15 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 天气公式有双份镜像纪律：`field_solver.gd` 的 GDScript fallback 和 `world_ext.cpp` / `world_ext_weather.cpp` 的 C++ pass 必须同步修改，并用 verify/A-B 模式对账。
 
+## Climate modes (monsoon, ENSO, cyclones)
+
+Read the climate-mode section in `docs/cpp-dots-runtime/computation-pipelines.md`
+first, then inspect `gdext/src/world_ext_physical.cpp`,
+`gdext/src/world_ext_climate.cpp`, `gdext/src/world_ext_weather.cpp`, and
+`Project/project-keynes/scripts/data/climate_profile.gd`. `DCWorldExt` owns the
+mode state and transient caches; no new DataCore cell slot is required. Weather
+visuals continue through the existing WeatherFront/LUT boundary.
+
 ## 渲染与视觉
 
 `MapBaker` 把 per-hex `MapData` 烘成高分辨率 `WorldData`。它负责 bake_world 编排、物理环流初始场、water depth/normal、enum/dynamic/ecology/weather atlas 等；height/biome/moisture fallback、river SDF、erosion 请求和 terrain detail raster 由 `DCTerrainBaker` 承担，无状态几何 helper 集中在 `rendering/bakers/terrain_geometry_utils.gd`。当前文件仍然很大，`rendering/bakers/*.gd` 里有部分目的地骨架。
@@ -298,7 +307,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 - `player_game.gd`：玩家主场景装配层，负责 runtime/UI/controller wiring、基础玩家热键，以及 F1/反引号 GM 面板与 F4 性能 HUD 入口；Escape 先关闭 GM，再处理地图子菜单与暂停菜单。
 - `game_ui_manager.gd`：玩家 UI 装配与场景状态，连接 `PlayerTopBar`、`WorldLoadingOverlay`、`InspectorPanel`、`PLAYER_GM` 面板、FPS HUD、safe area 和控制信号；不直接承担逐字段渲染。左侧 GM 面板在宽屏目标宽度 560px，在 800px 视口按右侧 460px Inspector 剩余空间收缩，二者可同时使用。
 - `ui/components/country_action_bar.gd` / `country_panel.gd` / `ui/country_view_model.gd`：底部国家事务入口与全屏 section shell。玩家国家固定由 `gameplay_start_report().cell` 解析，模型经 `CountryFacade.cell_summary()`、`research_snapshot()` 与只读 `treasury_snapshot()` 读取已提交状态；`CountryPanel` 自身只有 section 标题条与内容区，不再叠加国家档案 header、摘要卡或 section tab，section 切换只由底栏驱动。经济 section 使用 `economy_workspace.gd` 展示国家现金与全部非零国库物资，每日只修补可见值；政治/军事/外交暂用 `section_placeholder_screen.gd`，不创建任何状态或命令。`IconBadge` 继续以 Font Awesome 为默认族，并为国家事务集中提供 Lucide 导航图标与 Tabler 摘要图标。
-- `ui/technology_tree_layout.gd` / `ui/components/technology_workspace.gd` / `technology_tree_view.gd` / `research_weight_dial.gd` / `procurement_budget_slider.gd` / `technology_detail_card.gd` / `technology_queue_row.gd`：全屏科技界面。布局是纯函数一次性烘焙的静态几何；树视图单 `Control` 自绘 81 个节点，按「已揭示 ∪ 直接未知后继」裁剪迷雾并把可平移范围限制在可见集包围盒内，永远 1:1 绘制、滚轮只平移不缩放；权重盘与采购滑块拖动即预览、松手即通过 `PlayerController.request_command()` 提交，界面无任何提交按钮，工作区不持有 CountryFacade/玩家句柄/命令序列；权重盘的抓取区是整条轴臂、圆心为无主死区、按下未移动不发命令；日 tick 只修补状态数组与可见文本。
+- `ui/technology_tree_layout.gd` / `ui/components/technology_workspace.gd` / `technology_tree_view.gd` / `research_weight_dial.gd` / `procurement_budget_slider.gd` / `technology_detail_card.gd` / `technology_queue_row.gd`：全屏科技界面。布局是纯函数一次性烘焙的静态几何；树视图单 `Control` 自绘 144 个节点，按「已揭示 ∪ 直接未知后继」裁剪迷雾并把可平移范围限制在可见集包围盒内，永远 1:1 绘制、滚轮只平移不缩放；已揭示详情显示路线标签、研究阻塞、证据数/首次日/来源格，未知节点不读取语义；权重盘与采购滑块拖动即预览、松手即通过 `PlayerController.request_command()` 提交，界面无任何提交按钮，工作区不持有 CountryFacade/玩家句柄/命令序列；日 tick 只修补状态数组与可见文本。
 - `ui/components/map_overlay_toolbar.gd` / `ui/overlay_legend.gd`：左侧纯图标双列信息菜单与非交互图例。资源按钮来自 `ResourceProfileRegistry`，按钮无可见文字，名称和说明通过 Tooltip/图例呈现。图例停靠右下角，Inspector 打开时自动左移避让；连续资源使用固定 profile 参考值与低值扩展的高色差色带，海拔使用同时改变色相和亮度的高对比科学色带。
 - `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
@@ -433,7 +442,7 @@ DataCore 或 MapData。
 - DataCore mirror: `cell.country_slot` / `MapData.country_slot_arr` only.
 - Economy consumer: narrow native bridge in `economy_runtime.{h,cpp}`; frozen country epoch,
   country/cohort cash transfer, country/market goods transfer, and combined conservation.
-- Persistence: PKCN v1 first, then PKEC v13 with matching schema/generation/hash；旧默认 v11 ACTIVE
+- Persistence: PKCN v11 first, then PKEF v9 and PKEC v34 with matching schema/generation/hash；PKTR v4 preserves Trigger accumulation；旧默认 v11 ACTIVE
   因商人策略从 25%/1 日改为 12.5%/30 日分档库存基线而明确拒绝，ACTIVE 同时拒绝 v11 PROBE 和 v10。生产者收购系数现为 good-specific 硬上限（默认 95%），短缺只影响采购量/优先级；国内贸易复用同一 12.5% 营运底线，并以目的地冻结余额统一完成预检与扣款。新增商人流动性指标只进入 report、选中格快照和 Economy CSV v19，不进入 PKEC v16 或 hash。
 - Player-facing read path: selected cell → `CountryFacade.cell_summary()` →
   `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.
@@ -536,7 +545,8 @@ debug recording is Economy CSV v22.
   production boundary.
 - Economy persistence: `gdext/src/economy_runtime_persistence.cpp` owns lifecycle
   and committed-boundary validation;
-  `gdext/src/economy_runtime_persistence_write.cpp` owns ordered PKEC v31 encoding;
+  `gdext/src/economy_runtime_persistence_write.cpp` owns ordered PKEC v34 encoding,
+  including family expeditions, frozen route/payload CSR and Effect bindings;
   `gdext/src/economy_runtime_persistence_read.cpp` owns validated decoding.
   `economy_runtime_persistence_codec.h` is the sole section-number contract, and
   `economy_runtime_binary_codec.h` is shared with root event archive encoding.

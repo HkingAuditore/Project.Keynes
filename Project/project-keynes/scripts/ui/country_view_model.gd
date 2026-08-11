@@ -2,6 +2,7 @@ class_name CountryViewModel
 extends RefCounted
 
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
 const GoodProfileRegistryScript = preload("res://scripts/data/good_profile_registry.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 
@@ -30,10 +31,18 @@ func build(include_treasury: bool = false) -> Dictionary:
 		return _unavailable_model("玩家国家档案暂不可用")
 	var country_handle := int(summary.get("country_handle", 0))
 	var research: Dictionary = facade.research_snapshot(country_handle)
+	research["research_signal_snapshot"] = facade.research_signal_snapshot(country_handle)
 	var tax_policy: Dictionary = facade.tax_policy_snapshot(country_handle) \
 		if facade.has_method("tax_policy_snapshot") else {}
 	var fiscal: Dictionary = facade.fiscal_snapshot(country_handle) \
 		if facade.has_method("fiscal_snapshot") else {}
+	var economy_facade = _generator.get_economy_facade() \
+		if _generator.has_method("get_economy_facade") else null
+	var trade_summary: Dictionary = economy_facade.country_trade_snapshot(
+		country_handle, "summary", 0, 1) \
+		if economy_facade != null and economy_facade.has_method(
+			"country_trade_snapshot") else {"ok": false,
+			"reason": "country trade API unavailable"}
 	var country_snapshot: Dictionary = facade.snapshot(country_handle) \
 		if facade.has_method("snapshot") else {}
 	var ideology := _ideology_model(country_handle)
@@ -59,11 +68,16 @@ func build(include_treasury: bool = false) -> Dictionary:
 		"tax_presentation": present_tax_policy(tax_policy,
 			country_snapshot.get("technology_ids", PackedStringArray())),
 		"fiscal": fiscal,
+		"trade_summary": trade_summary,
+		"economy_facade": economy_facade,
 		"current_day": int(facade.report().get("last_committed_day", -1)),
 		"research": research,
 		"technology_definitions": TechnologyCatalogScript.public_definitions(),
 		"technology_eras": TechnologyCatalogScript.public_era_metadata(),
 		"technology_domains": TechnologyCatalogScript.public_domain_metadata(),
+		"technology_visual_edges": TechnologyCatalogScript.public_visual_edges(),
+		"technology_lanes": TechnologyCatalogScript.public_lane_metadata(),
+		"research_signal_definitions": ResearchSignalCatalogScript.public_metadata(),
 		"ideology": ideology,
 	}
 
@@ -145,23 +159,27 @@ static func present_tax_policy(tax_policy: Dictionary, completed_technologies) -
 	for tech_id in completed_technologies:
 		completed[String(tech_id)] = true
 	var professions := _present_items(
-		tax_policy.get("profession_ids", PackedStringArray()), "profession", completed)
+			tax_policy.get("profession_ids", PackedStringArray()), "profession", completed, false)
 	var goods := _present_items(
-		tax_policy.get("good_ids", PackedStringArray()), "good", completed)
+		tax_policy.get("good_ids", PackedStringArray()), "good", completed, true)
+	var tariff_goods := _present_items(
+		tax_policy.get("good_ids", PackedStringArray()), "good", completed,
+		true, true)
 	var buildings := _present_items(
-		tax_policy.get("building_type_ids", PackedStringArray()), "building", completed)
+			tax_policy.get("building_type_ids", PackedStringArray()), "building", completed, false)
 	return {
 		"ok": true,
 		"income": professions,
 		"consumption": goods,
-		"import": goods,
-		"export": goods,
+		"import": tariff_goods,
+		"export": tariff_goods,
 		"business": buildings,
 	}
 
 
 static func _present_items(ids: PackedStringArray, kind: String,
-		completed: Dictionary) -> Dictionary:
+		completed: Dictionary, allow_tradeable: bool = false,
+		tradeable_only: bool = false) -> Dictionary:
 	var content := _tax_content(kind)
 	var unlocked: Array[Dictionary] = []
 	for raw_id in ids:
@@ -169,12 +187,14 @@ static func _present_items(ids: PackedStringArray, kind: String,
 		var item: Dictionary = content.get(stable_id, {})
 		if item.is_empty():
 			continue
+		if tradeable_only and not bool(item.get("tradeable", false)):
+			continue
 		var locked := false
 		for tech_id in item.get("tech_required", []):
 			if not completed.has(String(tech_id)):
 				locked = true
 				break
-		if locked:
+		if locked and not (allow_tradeable and bool(item.get("tradeable", false))):
 			continue
 		unlocked.append({
 			"id": stable_id,
@@ -194,7 +214,8 @@ static func _tax_content(kind: String) -> Dictionary:
 				content[String(profile.id)] = _content_entry(
 					profile.id, profile.display_name,
 					String(GoodProfileRegistryScript.icon_key(profile)),
-					profile.technology_tags)
+					profile.technology_tags,
+					bool(profile.trade_enabled) and String(profile.storage_mode) == "stock")
 		"profession":
 			for profile in _load_profiles(EconomyCatalogScript.PROFESSION_DIR):
 				content[String(profile.id)] = _content_entry(
@@ -217,7 +238,7 @@ static func _tax_content(kind: String) -> Dictionary:
 
 
 static func _content_entry(stable_id, display_name: String, icon_key: String,
-		technology_tags: PackedStringArray) -> Dictionary:
+		technology_tags: PackedStringArray, tradeable: bool = false) -> Dictionary:
 	var required: Array[String] = []
 	for tag in technology_tags:
 		var normalized := String(tag).strip_edges()
@@ -228,6 +249,7 @@ static func _content_entry(stable_id, display_name: String, icon_key: String,
 		"display_name": resolved_name if resolved_name != "" else String(stable_id),
 		"icon_key": icon_key,
 		"tech_required": required,
+		"tradeable": tradeable,
 	}
 
 

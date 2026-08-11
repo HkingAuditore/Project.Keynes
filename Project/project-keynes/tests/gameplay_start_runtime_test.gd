@@ -54,13 +54,48 @@ func _run() -> void:
 	_expect("start cell is in range", cell_idx >= 0 and cell_idx < map.cell_count())
 	if cell_idx >= 0 and cell_idx < map.cell_count():
 		_expect("start cell has freshwater", _has_freshwater(map, cell_idx))
-		for resource_id in StartProfile.MINIMUM_RESERVES:
-			if String(resource_id) in ["gold_ore", "silver_ore"] \
-					and String(resource_id) != String(start.get("precious_resource", "")):
-				continue
-			_expect("start resource %s reaches minimum" % resource_id,
-				_resource_reserve(map, String(resource_id), cell_idx) + 0.001 >=
-				float(StartProfile.MINIMUM_RESERVES[resource_id]))
+	var represented_routes := {}
+	for start_value in country_starts:
+		var country_start: Dictionary = start_value
+		var route := String(country_start.get("regional_route", ""))
+		represented_routes[route] = true
+		_expect("regional starter route is classified", route in ["coastal", "floodplain",
+			"cold_highland", "tropical_forest", "arid_highland", "temperate"])
+		var technologies: PackedStringArray = country_start.get(
+			"starter_technology_ids", PackedStringArray())
+		var route_buildings: PackedStringArray = country_start.get(
+			"starter_building_ids", PackedStringArray())
+		_expect("regional route grants only a small survival technology bundle",
+			technologies.size() >= 5 and technologies.size() <= 10)
+		_expect("regional route prebuilds a complete weak production bundle",
+			route_buildings.size() >= 5 and route_buildings.size() <= 9)
+		_expect("regional route declares all five capability goods",
+			not String(country_start.get("starter_food_good_id", "")).is_empty()
+			and not String(country_start.get("starter_clothing_good_id", "")).is_empty()
+			and not String(country_start.get("starter_construction_good_id", "")).is_empty()
+			and String(country_start.get("starter_knowledge_good_id", "")) ==
+				"technology_points"
+			and String(country_start.get("starter_precious_good_id", "")) in
+				["gold_ore", "silver_ore"])
+		_expect("regional weak buildings close the five output capabilities",
+			_starter_route_outputs(country_start))
+		var topups: PackedStringArray = country_start.get(
+			"resource_topups", PackedStringArray())
+		var non_precious_topups := 0
+		for resource_id in topups:
+			if String(resource_id) not in ["gold_ore", "silver_ore"]:
+				non_precious_topups += 1
+		_expect("natural-first start uses at most one non-precious top-up",
+			non_precious_topups <= 1 and topups.size() <= 2)
+		for resource_id in [String(country_start.get("starter_food_resource_id", "")),
+				String(country_start.get("starter_clothing_resource_id", "")),
+				String(country_start.get("starter_construction_resource_id", "")),
+				String(country_start.get("precious_resource", ""))]:
+			_expect("selected route resource %s exists locally" % resource_id,
+				not resource_id.is_empty() and _resource_reserve(
+					map, resource_id, int(country_start.get("cell", -1))) > 0.0)
+	_expect("one generated world demonstrates differentiated regional routes",
+		represented_routes.size() >= 2)
 
 	var country = generator.get_country_facade()
 	_expect("country facade is configured", country != null and country.is_configured())
@@ -86,6 +121,17 @@ func _run() -> void:
 			_expect("country has one-cell territory",
 				(snapshot.get("territory_cells", PackedInt32Array())
 					as PackedInt32Array).size() == 1)
+			var completed_ids: PackedStringArray = snapshot.get(
+				"technology_ids", PackedStringArray())
+			var starter_ids: PackedStringArray = country_start.get(
+				"starter_technology_ids", PackedStringArray())
+			var has_route_technologies := true
+			for technology_id in starter_ids:
+				if not completed_ids.has(technology_id):
+					has_route_technologies = false
+					break
+			_expect("country receives its regional starter technologies and closure",
+				has_route_technologies and completed_ids.size() >= starter_ids.size())
 		var start_summary: Dictionary = country.cell_summary(cell_idx)
 		var player: Dictionary = country.snapshot(int(start_summary.get("country_handle", -1)))
 		_expect("stable player country id is preserved",
@@ -113,22 +159,25 @@ func _run() -> void:
 			_expect("starter population is exactly 20",
 				int(population.get("population", 0)) == 20)
 			var market: Dictionary = economy.market_cell_snapshot(settlement_cell)
-			_expect("starter receives a sixty-day food inventory bridge",
-				_market_stock(market, "gathered_plants") >= 20 * 60 * 1000 and
-				_market_stock(market, "game_meat") >= 10 * 60 * 1000 and
-				_market_stock(market, "processed_food") >= 20 * 60 * 240)
+			var food_good := String(country_start.get("starter_food_good_id", ""))
+			_expect("starter receives only a fifteen-day local-food bridge",
+				_market_stock(market, food_good) >= 20 * 15 * 240
+				and _market_stock(market, "processed_food") == 0)
 			_expect("starter capital has a deterministic settlement name",
 				bool(population.get("settlement_name_active", false)) and
 				bool(population.get("settlement_name_forced", false)) and
 				not String(population.get("settlement_name", "")).is_empty())
 			var buildings: Dictionary = economy.building_cell_snapshot(settlement_cell)
-			_expect("starter has exactly four buildings", _sum_i64(
-				buildings.get("building_counts_by_type", PackedInt64Array())) == 4)
-			for building_id in ["gathering_ground", "timber_collector", "merchant_post",
-					"placer_gold_working" if precious == "gold_ore"
-					else "surface_silver_working"]:
+			var route_buildings: PackedStringArray = country_start.get(
+				"starter_building_ids", PackedStringArray())
+			_expect("starter contains exactly its regional weak buildings", _sum_i64(
+				buildings.get("building_counts_by_type", PackedInt64Array())) ==
+				route_buildings.size())
+			for building_id in route_buildings:
 				_expect("starter building %s exists" % building_id,
 					_building_count(buildings, building_id) == 1)
+			_expect("starter excludes estates, mature mines and factories",
+				_not_mature_start(route_buildings))
 			var families: Dictionary = economy.family_cell_snapshot(
 				settlement_cell, 0, 64)
 			var family_handles: PackedInt64Array = families.get(
@@ -140,12 +189,14 @@ func _run() -> void:
 				var family: Dictionary = economy.family_snapshot(family_handle)
 				var industries: Dictionary = economy.family_industries(
 					family_handle, 0, 64)
-				_expect("founder family conserves two gathering-ground owners",
-					int(family.get("population", 0)) == 2
+				var founder_building := String(route_buildings[0])
+				_expect("founder family is attached to the first regional producer",
+					int(family.get("population", 0)) >= 1
+					and int(family.get("population", 0)) <= 2
 					and int(family.get("owned_buildings", 0)) == 1
 					and (industries.get("building_type_stable_ids",
 						PackedStringArray()) as PackedStringArray).has(
-						"gathering_ground"))
+						founder_building))
 				var people: Dictionary = economy.family_notable_people(
 					family_handle, 0, 64)
 				var person_handles: PackedInt64Array = people.get(
@@ -155,12 +206,12 @@ func _run() -> void:
 				if person_handles.size() == 1:
 					var person: Dictionary = economy.notable_person_snapshot(
 						int(person_handles[0]))
-					_expect("notable founder traces to the gathering-ground owner job",
+					_expect("notable founder traces to the regional producer owner job",
 						bool(person.get("ok", false))
 						and not String(person.get("full_name", "")).is_empty()
-						and String(person.get("profession_stable_id", "")) == "forager"
+						and not String(person.get("profession_stable_id", "")).is_empty()
 						and String(person.get("building_type_stable_id", "")) ==
-							"gathering_ground"
+							founder_building
 						and int(person.get("job_kind", 0)) == 1
 						and int(person.get("building_handle", 0)) != 0)
 	_expect("all settlements contribute population",
@@ -169,7 +220,7 @@ func _run() -> void:
 		int(start.get("founder_family_count", 0)) == country_starts.size()
 		and int(start.get("founder_person_count", 0)) == country_starts.size())
 	_expect("production bootstrap source is used",
-		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v3")
+		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v4")
 	_finish()
 
 
@@ -242,6 +293,35 @@ func _sum_i64(values: PackedInt64Array) -> int:
 	for value in values:
 		total += int(value)
 	return total
+
+
+func _starter_route_outputs(country_start: Dictionary) -> bool:
+	var produced := {}
+	var buildings: PackedStringArray = country_start.get(
+		"starter_building_ids", PackedStringArray())
+	for building_id in buildings:
+		var profile: BuildingProfile = load(
+			"res://data/economy/buildings/%s.tres" % building_id)
+		if profile == null:
+			return false
+		for good_id in profile.output_good_ids:
+			produced[String(good_id)] = true
+	for key in ["starter_food_good_id", "starter_clothing_good_id",
+			"starter_construction_good_id", "starter_knowledge_good_id",
+			"starter_precious_good_id"]:
+		if not produced.has(String(country_start.get(key, ""))):
+			return false
+	return true
+
+
+func _not_mature_start(buildings: PackedStringArray) -> bool:
+	for building_id in buildings:
+		var stable_id := String(building_id)
+		for forbidden in ["estate", "manor", "factory", "industrial", "deep_mine",
+				"steam_mine", "plantation"]:
+			if stable_id.contains(forbidden):
+				return false
+	return true
 
 
 func _expect(label: String, condition: bool) -> void:

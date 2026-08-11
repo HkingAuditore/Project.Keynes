@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"reed_bundle"
+display_name = "芦苇束"
+category_id = &"primitive_construction"
+substitution_category_ids = PackedStringArray("primitive_construction", "plant_construction")
+technology_tags = PackedStringArray("industry.primary", "tech.reed_harvesting")
+default_price = 4500
+min_price = 450
+max_price = 45000
+

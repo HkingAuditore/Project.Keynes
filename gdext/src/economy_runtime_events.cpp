@@ -1,6 +1,7 @@
 #include "economy_runtime.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_variant_helpers.h"
+#include "country_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -96,6 +97,183 @@ void NativeEconomyRuntime::publish_social_pressure_facts() {
         fact.payload = {level, worst_dimension, worst_need, previous};
         fact.flags = level < previous ? 1 : 0;
         _staging_gameplay_facts.push_back(fact);
+    }
+}
+
+
+void NativeEconomyRuntime::publish_technology_practice_facts() {
+    if (_country_runtime == nullptr || _epoch_country_handles.empty() ||
+        _building_technology_practice_masks.size() != _building_types.size())
+        return;
+    struct Aggregate {
+        std::array<int64_t, PRACTICE_RULE_COUNT> values{};
+        std::array<int32_t, PRACTICE_RULE_COUNT> groups{};
+        std::array<int32_t, PRACTICE_RULE_COUNT> first_cells{};
+        int32_t research_groups = 0;
+        int32_t climate_samples = 0;
+        Aggregate() { first_cells.fill(-1); }
+    };
+    std::vector<Aggregate> countries(_epoch_country_handles.size());
+    auto add_first = [](Aggregate &aggregate, int32_t rule, int32_t cell) {
+        if (aggregate.first_cells[static_cast<size_t>(rule)] < 0)
+            aggregate.first_cells[static_cast<size_t>(rule)] = cell;
+    };
+    auto active_group = [](const BuildingGroup &group) {
+        return group.count > 0 && group.last_output > 0 &&
+            group.last_capacity_q16 > 0;
+    };
+    for (const BuildingGroup &group : _buildings) {
+        if (!active_group(group) || group.cell < 0 || group.cell >= _cell_count ||
+            group.type_id < 0 ||
+            group.type_id >= static_cast<int32_t>(_building_types.size()) ||
+            group.cell >= static_cast<int32_t>(_epoch_cell_country.size()))
+            continue;
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(group.cell)];
+        if (country < 0 || country >= static_cast<int32_t>(countries.size()) ||
+            _epoch_country_handles[static_cast<size_t>(country)] == 0)
+            continue;
+        Aggregate &aggregate = countries[static_cast<size_t>(country)];
+        const BuildingType &type = _building_types[static_cast<size_t>(group.type_id)];
+        const uint32_t mask = _building_technology_practice_masks[
+            static_cast<size_t>(group.type_id)];
+        for (int32_t rule = 0; rule < PRACTICE_RULE_COUNT; ++rule) {
+            if ((mask & (uint32_t{1} << rule)) == 0) continue;
+            ++aggregate.groups[static_cast<size_t>(rule)];
+            add_first(aggregate, rule, group.cell);
+        }
+        const int64_t period_days = std::max(1, _epoch_days);
+        const int64_t utilization_q16 = std::clamp<int64_t>(
+            group.last_capacity_q16, 0, Q16_ONE);
+        const int64_t effective_days = std::max<int64_t>(
+            1, (period_days * utilization_q16) / Q16_ONE);
+        if ((mask & (uint32_t{1} << PRACTICE_MAIZE_SELECTION)) != 0)
+            aggregate.values[PRACTICE_MAIZE_SELECTION] = effective_days;
+        if ((mask & (uint32_t{1} << PRACTICE_DRYLAND_DAYS)) != 0)
+            aggregate.values[PRACTICE_DRYLAND_DAYS] = effective_days;
+        if ((mask & (uint32_t{1} << PRACTICE_DRYLAND_DROUGHTS)) != 0) {
+            const EnvironmentSample sample = environment_sample_for_cell(group.cell);
+            if (sample.ready && sample.plant_available_water_q16 <= Q16_ONE / 4)
+                aggregate.values[PRACTICE_DRYLAND_DROUGHTS] = 1;
+        }
+        if ((mask & (uint32_t{1} << PRACTICE_HYDRAULIC_ENGINEERING)) != 0) {
+            const EnvironmentSample sample = environment_sample_for_cell(group.cell);
+            if (sample.ready && sample.moisture_q16 >= (Q16_ONE * 7) / 8 &&
+                sample.weather_q16 >= Q16_ONE / 2)
+                aggregate.values[PRACTICE_HYDRAULIC_ENGINEERING] = 1;
+        }
+        if ((mask & (uint32_t{1} << PRACTICE_METALWORKING)) != 0)
+            aggregate.values[PRACTICE_METALWORKING] = saturating_add(
+                aggregate.values[PRACTICE_METALWORKING], group.last_output,
+                _saturation_count);
+        if ((mask & (uint32_t{1} << PRACTICE_PRINTING)) != 0)
+            aggregate.values[PRACTICE_PRINTING] = saturating_add(
+                aggregate.values[PRACTICE_PRINTING], group.last_output,
+                _saturation_count);
+        for (const int32_t rule : {PRACTICE_STEAM_POWER,
+                                   PRACTICE_ELECTRIFICATION,
+                                   PRACTICE_INDUSTRIAL_ORGANIZATION,
+                                   PRACTICE_AUTOMATION}) {
+            if ((mask & (uint32_t{1} << rule)) != 0)
+                aggregate.values[static_cast<size_t>(rule)] = saturating_add(
+                    aggregate.values[static_cast<size_t>(rule)], effective_days,
+                    _saturation_count);
+        }
+        for (const int32_t rule : {PRACTICE_SEED_SAVING,
+                                   PRACTICE_RAINFED_ADAPTATION,
+                                   PRACTICE_PADDY_CONTROL,
+                                   PRACTICE_TERRACE_MAINTENANCE,
+                                   PRACTICE_MINE_SUPPORT,
+                                   PRACTICE_MINE_DRAINAGE,
+                                   PRACTICE_KILN_TEMPERATURE,
+                                   PRACTICE_PRINT_CALIBRATION,
+                                   PRACTICE_STEAM_SEALING,
+                                   PRACTICE_MOTOR_WINDING,
+                                   PRACTICE_ASSEMBLY_LINE,
+                                   PRACTICE_DIGITAL_CONTROL,
+                                   PRACTICE_MARITIME_OPERATIONS,
+                                   PRACTICE_WATERSHED_MANAGEMENT,
+                                   PRACTICE_FOREST_MANAGEMENT,
+                                   PRACTICE_CHEMICAL_PROCESS_CONTROL,
+                                   PRACTICE_ENERGY_CONTROL}) {
+            if ((mask & (uint32_t{1} << rule)) != 0)
+                aggregate.values[static_cast<size_t>(rule)] = std::max(
+                    aggregate.values[static_cast<size_t>(rule)], effective_days);
+        }
+        if (type.upgrade_family_id >= 0 &&
+            type.upgrade_family_id < static_cast<int32_t>(
+                _building_upgrade_family_ids.size()) &&
+            _building_upgrade_family_ids[static_cast<size_t>(
+                type.upgrade_family_id)] == "research_institution")
+            ++aggregate.research_groups;
+    }
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell < 0 || cell >= _cell_count ||
+            cell >= static_cast<int32_t>(_epoch_cell_country.size())) continue;
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+        if (country < 0 || country >= static_cast<int32_t>(countries.size())) continue;
+        const EnvironmentSample sample = environment_sample_for_cell(cell);
+        if (!sample.ready) continue;
+        const bool extreme = sample.weather_q16 >= (Q16_ONE * 3) / 4 ||
+            sample.plant_available_water_q16 <= Q16_ONE / 5 ||
+            sample.moisture_q16 >= (Q16_ONE * 7) / 8 ||
+            sample.temperature_30d_q16 <= Q16_ONE / 8 ||
+            sample.temperature_30d_q16 >= (Q16_ONE * 7) / 8;
+        if (extreme) ++countries[static_cast<size_t>(country)].climate_samples;
+    }
+    static constexpr std::array<int32_t, PRACTICE_RULE_COUNT> SIGNAL_BY_RULE{
+        0, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+        10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+        22, 23, 24, 25, 26};
+    for (int32_t country = 0; country < static_cast<int32_t>(countries.size()); ++country) {
+        Aggregate &aggregate = countries[static_cast<size_t>(country)];
+        const uint64_t country_handle = _epoch_country_handles[static_cast<size_t>(country)];
+        if (country_handle == 0) continue;
+        aggregate.values[PRACTICE_CLIMATE_MODELING] =
+            aggregate.groups[PRACTICE_CLIMATE_MODELING] > 0 &&
+            aggregate.climate_samples >= 3 ? 1 : 0;
+        if (aggregate.groups[PRACTICE_HYDRAULIC_ENGINEERING] < 2)
+            aggregate.values[PRACTICE_HYDRAULIC_ENGINEERING] = 0;
+        if (aggregate.groups[PRACTICE_STEAM_POWER] < 3)
+            aggregate.values[PRACTICE_STEAM_POWER] = 0;
+        if (aggregate.groups[PRACTICE_ELECTRIFICATION] < 3)
+            aggregate.values[PRACTICE_ELECTRIFICATION] = 0;
+        if (aggregate.groups[PRACTICE_INDUSTRIAL_ORGANIZATION] < 3)
+            aggregate.values[PRACTICE_INDUSTRIAL_ORGANIZATION] = 0;
+        if (aggregate.groups[PRACTICE_AUTOMATION] < 2)
+            aggregate.values[PRACTICE_AUTOMATION] = 0;
+        if (_bio_maize_signal_id < 0 ||
+            _country_runtime->research_signal_evidence_count(
+                country, _bio_maize_signal_id) < 3)
+            aggregate.values[PRACTICE_MAIZE_SELECTION] = 0;
+        bool metal_seen = false;
+        for (const int32_t signal : _metal_resource_signal_ids) {
+            if (signal >= 0 && _country_runtime->has_research_signal(country, signal)) {
+                metal_seen = true;
+                break;
+            }
+        }
+        if (!metal_seen) aggregate.values[PRACTICE_METALWORKING] = 0;
+        if (aggregate.research_groups <= 0)
+            aggregate.values[PRACTICE_PRINTING] = 0;
+        for (int32_t rule = 0; rule < PRACTICE_RULE_COUNT; ++rule) {
+            const int64_t value = aggregate.values[static_cast<size_t>(rule)];
+            const int32_t signal_slot = SIGNAL_BY_RULE[static_cast<size_t>(rule)];
+            const int32_t signal = _breakthrough_signal_ids[
+                static_cast<size_t>(signal_slot)];
+            const int32_t first_cell = aggregate.first_cells[static_cast<size_t>(rule)];
+            if (value <= 0 || signal < 0 || first_cell < 0 ||
+                _country_runtime->has_research_signal(country, signal))
+                continue;
+            CommittedGameplayFact fact;
+            fact.kind = GAMEPLAY_FACT_TECHNOLOGY_PRACTICE;
+            fact.cell = first_cell;
+            fact.entity_handle = country_handle;
+            fact.entity_id = country;
+            fact.value = value;
+            fact.payload = {rule, aggregate.groups[static_cast<size_t>(rule)],
+                            first_cell, 1};
+            _staging_gameplay_facts.push_back(fact);
+        }
     }
 }
 
@@ -249,12 +427,12 @@ void NativeEconomyRuntime::trace_append(int32_t kind, int32_t stage, int32_t cel
         const int64_t next_bytes = static_cast<int64_t>(
             (_staging_events.legs.size() + legs->size()) * sizeof(EventLeg));
         if (next_bytes <= _trace_detail_epoch_budget) {
-            event.flags |= 1; // exact detail present
+            event.flags |= EVENT_FLAG_DETAIL_PRESENT;
             event.leg_begin = static_cast<uint32_t>(_staging_events.legs.size());
             event.leg_count = static_cast<uint32_t>(legs->size());
             _staging_events.legs.insert(_staging_events.legs.end(), legs->begin(), legs->end());
         } else {
-            event.flags |= 2; // exact detail truncated
+            event.flags |= EVENT_FLAG_DETAIL_TRUNCATED;
             ++_trace_detail_truncated;
         }
     }
@@ -378,6 +556,7 @@ Dictionary NativeEconomyRuntime::event_schema() const {
     kinds["TRADE_DISPATCHED"] = EVENT_TRADE_DISPATCHED;
     kinds["TRADE_ARRIVED"] = EVENT_TRADE_ARRIVED;
     kinds["POPULATION_SOURCE"] = EVENT_POPULATION_SOURCE;
+    kinds["TARIFF_SUBSIDY_INTENT"] = EVENT_TARIFF_SUBSIDY_INTENT;
     out["kinds"] = kinds;
     Dictionary fields;
     fields["COHORT_POPULATION"] = FIELD_COHORT_POPULATION;
@@ -420,6 +599,11 @@ Dictionary NativeEconomyRuntime::event_schema() const {
     fields["BUILDING_WAGE_SUSPENDED"] = FIELD_BUILDING_WAGE_SUSPENDED;
     fields["RESOURCE_DELTA"] = FIELD_RESOURCE_DELTA;
     fields["COHORT_DEMOGRAPHY_RESIDUAL"] = FIELD_COHORT_DEMOGRAPHY_RESIDUAL;
+    fields["TRADE_QUANTITY"] = FIELD_TRADE_QUANTITY;
+    fields["TRADE_BASE_VALUE"] = FIELD_TRADE_BASE_VALUE;
+    fields["TRADE_RETAIL_VALUE"] = FIELD_TRADE_RETAIL_VALUE;
+    fields["TRADE_IMPORT_TRANSFER"] = FIELD_TRADE_IMPORT_TRANSFER;
+    fields["TRADE_EXPORT_TRANSFER"] = FIELD_TRADE_EXPORT_TRANSFER;
     out["fields"] = fields;
     Dictionary cashflow_sources;
     cashflow_sources["WAGES"] = CASHFLOW_WAGES;
@@ -441,6 +625,10 @@ Dictionary NativeEconomyRuntime::event_schema() const {
     cashflow_sources["CONSUMPTION_SUBSIDY"] = CASHFLOW_CONSUMPTION_SUBSIDY;
     cashflow_sources["BUSINESS_SUBSIDY"] = CASHFLOW_BUSINESS_SUBSIDY;
     cashflow_sources["FISCAL_ESCROW"] = CASHFLOW_FISCAL_ESCROW;
+    cashflow_sources["IMPORT_TAX"] = CASHFLOW_IMPORT_TAX;
+    cashflow_sources["EXPORT_TAX"] = CASHFLOW_EXPORT_TAX;
+    cashflow_sources["IMPORT_SUBSIDY"] = CASHFLOW_IMPORT_SUBSIDY;
+    cashflow_sources["EXPORT_SUBSIDY"] = CASHFLOW_EXPORT_SUBSIDY;
     out["cashflow_sources"] = cashflow_sources;
     out["money_scale"] = MONEY_SCALE;
     out["goods_scale"] = GOODS_SCALE;

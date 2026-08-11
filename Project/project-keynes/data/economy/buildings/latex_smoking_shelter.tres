@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"latex_smoking_shelter"
+display_name = "乳胶烟熏凝固棚"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.primary", "tech.latex_smoke_coagulation")
+required_technology_tags = PackedStringArray("tech.wild_latex_tapping", "tech.fire_control")
+construction_good_ids = PackedStringArray("logs", "bast_fiber")
+construction_quantities = PackedInt64Array(450, 120)
+owner_profession_id = &"artisan"
+employee_profession_ids = PackedStringArray()
+employee_slots_per_building = PackedInt64Array()
+employee_wage_policy_ids = PackedStringArray()
+employee_reference_wages_per_day = PackedInt64Array()
+input_good_ids = PackedStringArray("latex", "logs")
+input_quantities_per_day = PackedInt64Array(800, 120)
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("natural_rubber")
+output_quantities_per_day = PackedInt64Array(620)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

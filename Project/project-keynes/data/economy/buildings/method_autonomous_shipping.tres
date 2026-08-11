@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"method_autonomous_shipping"
+display_name = "自主航运调度港"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray("method.maritime", "method.autonomous")
+technology_tags = PackedStringArray("tech.autonomous_logistics")
+required_technology_tags = PackedStringArray("tech.autonomous_systems", "tech.smart_grid", "tech.distributed_intelligence")
+upgrade_family_id = &"maritime_operations"
+upgrade_tier = 3
+construction_days = 240
+construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "advanced_chips")
+construction_quantities = PackedInt64Array(70000, 50000, 50000, 18000)
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("industrial_worker", "machinist", "technician", "engineer", "data_scientist", "manager")
+employee_slots_per_building = PackedInt64Array(5, 3, 7, 4, 3, 2)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(15608, 17136, 17136, 19500, 22500, 17136)
+input_good_ids = PackedStringArray("steel", "engines", "electricity", "computers", "autonomous_systems", "technology_points")
+input_quantities_per_day = PackedInt64Array(1800, 450, 1800, 900, 800, 400)
+input_required_q16 = PackedInt32Array(65536, 49152, 32768, 32768, 32768, 16384)
+input_candidate_offsets = PackedInt32Array(0)
+output_good_ids = PackedStringArray("oceanic_vessels")
+output_quantities_per_day = PackedInt64Array(15500)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

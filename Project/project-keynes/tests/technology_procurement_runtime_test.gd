@@ -18,21 +18,29 @@ func _init() -> void:
 	var country = CountryFacadeScript.new()
 	_expect("country configures", bool(country.configure(ext, 1, 9042,
 		load("res://data/country/default_country.tres"), compiled).get("ok", false)))
+	var gathering := (compiled.technology_ids as PackedStringArray).find(
+		"tech.gathering")
 	var country_packet := {
 		"country_ids": PackedStringArray(["country.procurement"]),
 		"country_names": PackedStringArray(["Procurement"]),
 		"country_cash": PackedInt64Array([100000000]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
+		"technology_offsets": PackedInt32Array([0, 1]),
+		"technology_indices": PackedInt32Array([gathering]),
 	}
 	_expect("country bootstraps", bool(country.bootstrap(
 		PackedByteArray([0]), country_packet).get("ok", false)))
 	var handle := int(country.cell_summary(0).country_handle)
+	_expect("research evidence queues", bool(country.discover_research_signal(
+		handle, &"bio.maize", 0, 1, 0, 1).get("ok", false)))
+	_expect("research evidence commits", bool(ext.run_country_slice(
+		{"day_index": 0}).get("done", false)))
 	_expect("research demand and budget queue", bool(country.enqueue_research(
-		handle, &"tech.seasonal_foraging", 0, -1, 0, 1).get("ok", false))
-		and bool(country.set_research_budget(handle, true, 10000000, 0, 2).get("ok", false)))
+		handle, &"tech.wild_maize_collection", 0, -1, 1, 10).get("ok", false))
+		and bool(country.set_research_budget(handle, true, 10000000, 1, 11).get("ok", false)))
 	_expect("policy commits before market settlement",
-		bool(ext.run_country_slice({"day_index": 0}).get("done", false)))
+		bool(ext.run_country_slice({"day_index": 1}).get("done", false)))
 
 	var native_catalog := compiled.duplicate(false)
 	native_catalog.erase("ok")
@@ -56,6 +64,8 @@ func _init() -> void:
 	}, {"stock": stock}).get("ok", false)))
 	var before := country.research_snapshot(handle)
 	var before_cash := int(country.snapshot(handle).cash)
+	# A newly bootstrapped economy begins at its own sample day zero even when
+	# the country fixture used an earlier day to commit discovery evidence.
 	var report := _run_day(ext, 0)
 	var after_purchase := country.research_snapshot(handle)
 	var after_cash := int(country.snapshot(handle).cash)
@@ -75,7 +85,7 @@ func _init() -> void:
 		and int(report.get("money_error", 1)) == 0
 		and int(report.get("goods_error", 1)) == 0)
 	var purchased := int(after_purchase.technology_points_stock)
-	var research_day: Dictionary = ext.run_country_slice({"day_index": 1})
+	var research_day: Dictionary = ext.run_country_slice({"day_index": 2})
 	var after_research: Dictionary = country.research_snapshot(handle)
 	_expect("purchased stock enters research on the next country day",
 		bool(research_day.get("done", false))

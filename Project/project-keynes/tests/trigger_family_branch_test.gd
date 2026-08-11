@@ -122,7 +122,7 @@ func _run() -> void:
 	restored.configure_triggers(compiled)
 	restored.reconcile_trigger_branch_bindings(_bindings(
 		PackedInt64Array([branch_a]), PackedInt32Array([3]), PackedByteArray([1])))
-	_expect("PKTR v2 restores", bool(restored.restore_trigger_state(saved).get("ok", false)))
+	_expect("PKTR v4 restores", bool(restored.restore_trigger_state(saved).get("ok", false)))
 	_expect("derived binding sees restored progress",
 		int(restored.get_trigger_branch_progress(branch_a).trigger_progress[0]) == 2)
 	_finish()

@@ -13,6 +13,7 @@ enum Kind {
 	TECHNOLOGY,
 	COUNTRY_FLAG,
 	COUNTRY_STAT,
+	CONTACT,
 }
 
 enum Persistence {

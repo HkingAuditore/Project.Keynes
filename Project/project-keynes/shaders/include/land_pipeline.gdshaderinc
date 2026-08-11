@@ -75,6 +75,25 @@ SurfaceParams compute_land_base_surface(
 	col = mix(col, river_edge_col, outline_t * 0.50 * river_strength);
 	col = mix(col, river_body, river_t * river_strength);
 
+	// Engineered canal: height.A carries its SDF, while B remains the natural
+	// river channel. The narrow mineral bank separates canals visually without
+	// a new sampler or a daily texture rebake.
+	float canal_raw = clamp(scals.b, 0.0, 1.0);
+	float canal_t = smoothstep(0.16, 0.52, canal_raw);
+	float canal_bank = smoothstep(0.04, 0.18, canal_raw)
+			* (1.0 - smoothstep(0.30, 0.52, canal_raw));
+	vec3 canal_bank_col = mix(river_outline_color, vec3(0.40, 0.35, 0.28), 0.58);
+	vec3 canal_water_col = mix(river_surface, river_color, 0.45);
+#if !defined(PK_MOBILE_ANY)
+	if (canal_t > 0.001 && visual_quality >= 1) {
+		float engineered_flow = 0.96 + 0.04 * sin(dot(wp, vec2(0.52, -0.31))
+				- world_time * 0.38);
+		canal_t *= engineered_flow;
+	}
+#endif
+	col = mix(col, canal_bank_col, canal_bank * 0.72);
+	col = mix(col, canal_water_col, canal_t * 0.92);
+
 	// LAND 1.3：河流顺坡流动明暗（Water Visual Overhaul）
 #if !defined(PK_MOBILE_ANY)
 	if (river_t > 0.001

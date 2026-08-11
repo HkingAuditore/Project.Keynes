@@ -1,18 +1,19 @@
-[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"method_timber_collector_r4"
 display_name = "商营伐木场"
 building_kind = "collector"
-technology_tags = PackedStringArray("industry.primary", "tech.printing_press")
-upgrade_family_id = &""
-upgrade_tier = 0
-construction_days = 0
+economic_sector_id = "extractive"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.primary", "tech.forest_management")
+required_technology_tags = PackedStringArray()
 construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components")
 construction_quantities = PackedInt64Array(6750, 6750, 4500)
 owner_profession_id = &"forestry_worker"
-owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray("forestry_worker")
 employee_slots_per_building = PackedInt64Array(8)
 employee_wage_policy_ids = PackedStringArray("fixed")
@@ -29,6 +30,7 @@ output_good_ids = PackedStringArray("logs")
 output_quantities_per_day = PackedInt64Array(18140)
 target_operating_margin_q16 = 6554
 supply_price_elasticity_q16 = 32768
+output_cost_shares_q16 = PackedInt32Array()
 resource_ids = PackedStringArray("timber")
 resource_quantities_per_day = PackedInt64Array(907)
 resource_interaction_modes = PackedStringArray("extract")
@@ -37,3 +39,8 @@ resource_generation_ids = PackedStringArray("timber")
 resource_generation_quantities_per_day = PackedInt64Array(1050)
 resource_generation_floor_q16 = 6554
 behavior_id = "cultivate_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

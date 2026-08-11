@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"technology_points"
+technology_tags = PackedStringArray("tech.oral_memory_practice", "tech.phenology_observation", "tech.flood_calendar_practice", "tech.pastoral_route_memory", "tech.tide_observation")
 display_name = "科技值"
 category_id = &"knowledge"
 substitution_category_ids = PackedStringArray("knowledge")
