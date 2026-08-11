@@ -254,13 +254,15 @@ PKEC save，restore 后在下一次成功生产前显示为未知。
   不参与 PKEC、catalog hash 或模拟权威；动态资金、库存、价格、自留与托底结果仍只能由 native runtime
   或 Inspector/录制数据验证。
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
-  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 120 goods、260
-  production-method buildings、33 professions、17 needs 和 10 consumption plans。消费重平衡不改
+  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 132 goods、348
+  production-method buildings、45 professions、17 needs 和 10 consumption plans。消费重平衡不改
   stable-ID 表或 PKEC v14 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
-- `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；其他标签命名空间仍只作元数据。
-- `BuildingProfile` 必须是 collector 或 industrial，owner slots 固定为 1；30 个注册资源全部有
+- `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；所有 Good 和生产方式至少有一个已知科技绑定，31 个 Resource 至少有一个 `discovery_technology_tags`，Profession 禁止直接持有 `tech.*`。目录同时生成科技反向内容 CSR 与严格 binding hash；其他标签命名空间仍只作元数据。
+- `BuildingProfile.economic_sector_id` 必须显式取 agriculture、extractive、manufacturing、energy
+  或 knowledge；运行时继续编译为现有 dense sector 整数，不再按 collector 推断农场/矿场。建筑
+  可以是 collector、industrial 或既有 service 类型，owner slots 固定为 1；31 个注册资源全部有
   collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。
-- 30 种资源受 `land/marine_water/freshwater/coastal_land/coastal_or_marine` habitat 门控；
+- 31 种资源受 `land/marine_water/freshwater/coastal_land/coastal_or_marine` habitat 门控；
   海鱼储量可存在于沿海陆格和海洋水格，二者各自属于所在 cell；河口及近岸营养只影响初始化
   适生度，不改变资源所有权。淡水/淡水鱼不再是
   DataCore 经济资源。所有建筑资源边都必须为 `local`，native 只检查并扣减建筑本格储量，

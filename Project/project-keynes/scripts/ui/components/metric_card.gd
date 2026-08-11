@@ -8,6 +8,7 @@ var _trend_label: Label
 var _icon_badge: IconBadge
 var _accent: Color = UITokens.ACCENT
 var _data_signature := ""
+var _compact := false
 
 
 func _ready() -> void:
@@ -39,10 +40,11 @@ func set_data(title: String, value: String, subtitle: String = "", accent: Color
 	_accent = accent
 	if _icon_badge != null:
 		_icon_badge.set_semantic(StringName(icon), accent)
+		_icon_badge.visible = not _compact
 	_title_label.text = title
 	_value_label.text = value
 	_subtitle_label.text = subtitle
-	_subtitle_label.visible = subtitle != ""
+	_subtitle_label.visible = subtitle != "" and not _compact
 	var trend_key := IconCatalog.resolve_semantic(StringName(trend))
 	if trend_key == &"":
 		_trend_label.text = ""
@@ -50,3 +52,13 @@ func set_data(title: String, value: String, subtitle: String = "", accent: Color
 		IconButton.apply_to_label(_trend_label, StringName(trend_key), UITokens.FONT_SMALL)
 	_trend_label.visible = trend != ""
 	_trend_label.add_theme_color_override("font_color", accent)
+
+
+func set_compact(compact: bool) -> void:
+	if _title_label == null:
+		_ready()
+	_compact = compact
+	if _icon_badge != null:
+		_icon_badge.visible = not compact
+	if _subtitle_label != null:
+		_subtitle_label.visible = not compact and not _subtitle_label.text.is_empty()

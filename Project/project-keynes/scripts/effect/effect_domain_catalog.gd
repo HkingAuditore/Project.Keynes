@@ -10,6 +10,8 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
+const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
+const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 
 const Q16_ONE := 65536
 
@@ -31,20 +33,48 @@ static func build() -> Resource:
 		"technology_ids", PackedStringArray())
 	var technology_modifiers: PackedStringArray = technology_catalog.get(
 		"technology_modifier_definition_keys", PackedStringArray())
+	var technology_recipes: PackedStringArray = technology_catalog.get(
+		"technology_effect_recipe_ids", PackedStringArray())
+	var technology_recipe_versions: PackedInt32Array = technology_catalog.get(
+		"technology_effect_recipe_versions", PackedInt32Array())
 	var technology_flags: PackedInt32Array = technology_catalog.get(
 		"technology_flags", PackedInt32Array())
 	var definition_seen := {}
+	if technology_recipes.size() != technology_ids.size() \
+			or technology_recipe_versions.size() != technology_ids.size():
+		return null
 	for i in range(mini(technology_ids.size(), technology_modifiers.size())):
 		if i < technology_flags.size() and (int(technology_flags[i]) & TechnologyCatalogScript.FLAG_STARTING) != 0:
 			continue
 		var modifier_key := String(technology_modifiers[i])
 		if modifier_key.is_empty():
 			continue
-		var program_key := "technology.%s" % String(technology_ids[i])
+		var program_key := String(technology_recipes[i])
 		if definition_seen.has(program_key):
 			continue
 		definition_seen[program_key] = true
-		definitions.append(_technology_definition(String(technology_ids[i]), modifier_key))
+		definitions.append(_technology_definition(program_key,
+			int(technology_recipe_versions[i]), String(technology_ids[i]), modifier_key,
+			i, int(technology_catalog.technology_domain_indices[i])))
+	for row in TriggerCatalogScript.breakthrough_effect_rows():
+		var program_key := "trigger.country.%s" % String(row.signal_id)
+		if definition_seen.has(program_key):
+			return null
+		definition_seen[program_key] = true
+		definitions.append(_trigger_country_signal_definition(
+			String(row.signal_id), int(row.signal_index),
+			StringName(row.command_key)))
+	var era_reward_ir := EraRewardCatalogScript.compile_native_catalog(technology_catalog)
+	if not bool(era_reward_ir.get("ok", false)):
+		return null
+	for reward_definition in EraRewardCatalogScript.effect_definitions():
+		var reward_key := String(reward_definition.key)
+		if definition_seen.has(reward_key):
+			return null
+		definition_seen[reward_key] = true
+		definitions.append(reward_definition)
+	era_reward_ir.erase("ok")
+	catalog.native_extensions = era_reward_ir
 
 	var economy_catalog := EconomyCatalogScript.compile_native_catalog()
 	if bool(economy_catalog.get("ok", false)):
@@ -117,10 +147,12 @@ static func build() -> Resource:
 	return catalog
 
 
-static func _technology_definition(technology_id: String, modifier_key: String) -> Resource:
+static func _technology_definition(recipe_id: String, recipe_version: int,
+		technology_id: String, modifier_key: String, technology_index: int,
+		domain_index: int) -> Resource:
 	var definition := EffectDefinitionScript.new()
-	definition.key = StringName("technology.%s" % technology_id)
-	definition.version = 1
+	definition.key = StringName(recipe_id)
+	definition.version = recipe_version
 	definition.cadence_days = 3650
 	var constant := EffectInstructionScript.new()
 	constant.op = 1 # CONST
@@ -128,10 +160,25 @@ static func _technology_definition(technology_id: String, modifier_key: String) 
 	var emit := EffectInstructionScript.new()
 	emit.op = 11 # EMIT_COMMAND
 	emit.arg0 = 0
+	var adopted_value := EffectInstructionScript.new()
+	adopted_value.op = 1 # CONST
+	adopted_value.value_q16 = Q16_ONE
+	var emit_adopted := EffectInstructionScript.new()
+	emit_adopted.op = 11 # EMIT_COMMAND
+	emit_adopted.arg0 = 1
 	var end := EffectInstructionScript.new()
 	end.op = 12 # END
-	definition.instructions = [constant, emit, end]
-	definition.commands = [_command(1, 1, 1, &"technology.modifier", modifier_key)]
+	definition.instructions = [constant, emit, adopted_value, emit_adopted, end]
+	var adopted := _command(5, 4, 13, &"technology.adopted", technology_id)
+	adopted.value_mode = 0 # VALUE_CONSTANT
+	adopted.value_q16 = Q16_ONE
+	adopted.payload_i0 = technology_index
+	adopted.payload_i1 = domain_index
+	adopted.payload_i2 = 1 # technology adoption event recipe version
+	definition.commands = [
+		_command(1, 1, 1, &"technology.modifier", modifier_key),
+		adopted,
+	]
 	return definition
 
 
@@ -181,6 +228,23 @@ static func _trigger_modifier_definition(modifier_key: String, domain: int) -> R
 	end.op = 12 # END; Trigger handoff emits the typed command directly.
 	definition.instructions = [end]
 	definition.commands = [_command(1, domain, 1, &"trigger.modifier", modifier_key)]
+	return definition
+
+
+static func _trigger_country_signal_definition(signal_id: String,
+		signal_index: int, command_key: StringName = &"breakthrough.discover") -> Resource:
+	var definition := EffectDefinitionScript.new()
+	definition.key = StringName("trigger.country.%s" % signal_id)
+	definition.version = 1
+	definition.cadence_days = 3650
+	var end := EffectInstructionScript.new()
+	end.op = 12 # External Trigger ingress emits the typed command directly.
+	definition.instructions = [end]
+	var command := _command(2, 1, 14, command_key, signal_id)
+	command.value_mode = 0
+	command.value_q16 = 4 # ResearchSignalDefinition.ObservationMode.TRIGGER_OUTPUT
+	command.payload_i0 = signal_index << 32
+	definition.commands = [command]
 	return definition
 
 

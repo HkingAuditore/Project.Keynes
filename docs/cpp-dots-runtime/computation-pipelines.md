@@ -548,6 +548,48 @@ I/O：
 
 ## Climate daily round
 
+### Emergent climate modes (2026-08)
+
+The climate runtime now exposes three bounded, approximate modes without adding a
+per-cell DataCore component:
+
+```text
+physical wind refresh -> coast BFS + signed land/sea thermal contrast
+                      -> _phys_monsoon_thermal scratch field
+ocean water slice     -> up to three tropical basin caches
+                      -> bounded Jin-style recharge oscillator
+                      -> existing ocean anomaly buffers
+weather field solve   -> bounded native cyclone pool
+                      -> generation-stamped radial/tangential forcing
+                      -> precipitation/instability/front classification
+```
+
+Monsoon is a thermal contrast signal, not a scripted seasonal wind direction. Its
+sign can reverse between onshore and offshore flow as the previous temperature
+field changes. Physical circulation refreshes it at its existing cadence (normally
+every few simulation days); daily weather consumes the latest field. `wind_surface`
+remains the sole `cell_temp` writer.
+
+ENSO selects connected tropical water regions deterministically, reduces them to at
+most three basins, and integrates a low-order recharge oscillator with bounded Heun
+substeps. Basin scalars feed existing thermal/transport anomaly buffers. Topology is
+cached by signature and state restores by signature; maps without a valid basin
+produce zero ENSO forcing.
+
+Cyclones are resident native entities with profile capacity and per-commit birth
+budgets. Entities advance from local warm-water/moisture/instability and wind
+steering, then stamp generation-tagged forcing arrays. Weather consumes that
+forcing before condensation and precipitation. The legacy front wake path remains
+available when native mode is disabled; WeatherFront/LUT is still the visual
+boundary.
+
+Native reports expose `monsoon_eligible_cells`, `monsoon_onshore_cells`,
+`monsoon_offshore_cells`, `monsoon_contrast_abs_max`, `enso_basin_count`,
+`enso_cache_hit`, basin `temp_index`/`recharge_index`, `cyclone_active_count`,
+and `cyclone_touched_cells`; cyclone births/decay are in the daily breakdown as
+`cyclone_n_injected`/`cyclone_n_decayed`.
+These are transient diagnostics; only bounded mode state is persisted.
+
 主要入口：
 
 - `simulation/systems/climate_daily_system.gd`

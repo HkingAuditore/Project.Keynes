@@ -25,7 +25,7 @@ class ModifierRuntime;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 7;
+    static constexpr int32_t SCHEMA_VERSION = 11;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
@@ -62,6 +62,10 @@ public:
         COMMAND_SET_CELL_TAX_OVERRIDE = 17,
         COMMAND_CLEAR_CELL_TAX_OVERRIDE = 18,
         COMMAND_CLEAR_CELL_TAX_POLICY = 19,
+        // Effect-only territorial acquisition used by family expeditions.
+        // Unlike TRANSFER_TERRITORY this is compare-and-set: the command is
+        // rejected unless the committed/staged owner is still neutral.
+        COMMAND_CLAIM_UNOWNED_TERRITORY = 20,
     };
 
     enum RuntimeMode : int32_t { MODE_OFF = 0, MODE_PROBE = 1, MODE_ACTIVE = 2 };
@@ -131,6 +135,16 @@ public:
         uint64_t state_hash = 0;
     };
 
+    // Minimal cross-section authority for an era reward. The complete frozen
+    // alternatives remain in PKEF; PKCN stores only this reference/state so a
+    // restore can reject orphaned or contradictory offers.
+    struct EraRewardReference {
+        int64_t plan_id = 0;
+        int64_t offer_generation = 0;
+        int32_t milestone_technology = -1;
+        int32_t status = 0;
+    };
+
     godot::Dictionary configure(const godot::Dictionary &catalog,
                                 const godot::Dictionary &profile,
                                 int32_t cell_count, int64_t seed);
@@ -178,6 +192,8 @@ public:
     // Native peer runtimes may read this compact fact bitset at their own
     // scheduled boundary.  Research evidence remains Country authority.
     bool has_research_signal(int32_t country_slot, int32_t signal_id) const;
+    int32_t research_signal_evidence_count(int32_t country_slot,
+                                           int32_t signal_id) const;
     int32_t country_slot_for_cell(int32_t cell) const;
     int64_t country_handle_for_cell(int32_t cell) const;
     bool valid_handle(int64_t handle) const;
@@ -209,6 +225,14 @@ public:
     uint64_t generation() const { return _generation; }
     int32_t good_count() const { return static_cast<int32_t>(_good_ids.size()); }
     int32_t technology_count() const { return static_cast<int32_t>(_technology_ids.size()); }
+    int64_t world_seed() const { return _seed; }
+    void set_era_reward_reference_pod(int64_t plan_id,
+                                      int64_t offer_generation,
+                                      int32_t milestone_technology,
+                                      int32_t status);
+    EraRewardReference era_reward_reference_pod() const {
+        return _era_reward_reference;
+    }
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) {
         _effect_runtime = runtime;
@@ -395,6 +419,9 @@ private:
     bool research_condition_met(const std::vector<uint64_t> &completed,
                                 const std::vector<uint64_t> &signals,
                                 int32_t slot, int32_t technology) const;
+    bool reveal_condition_met(int32_t slot, int32_t technology) const;
+    void refresh_discovery_for_technology(int32_t slot, int32_t technology);
+    void refresh_discovery_for_signal(int32_t slot, int32_t signal);
     bool signal_present(const std::vector<uint64_t> &signals, int32_t slot,
                         int32_t signal) const;
     int32_t signal_count(int32_t slot, int32_t signal) const;
@@ -414,6 +441,9 @@ private:
     int32_t _technology_words = 0;
     int32_t _research_signal_words = 0;
     int32_t _technology_points_good_id = -1;
+    uint64_t _technology_catalog_identity_hash = 0;
+    uint64_t _technology_content_binding_hash = 0;
+    uint64_t _technology_trigger_definition_hash = 0;
     ModifierRuntime *_modifier_runtime = nullptr;
     EffectRuntime *_effect_runtime = nullptr;
     bool _effect_runtime_enabled = false;
@@ -428,6 +458,7 @@ private:
     std::vector<std::string> _profession_ids;
     std::vector<std::string> _building_type_ids;
     std::vector<std::string> _technology_ids;
+    std::vector<std::string> _technology_era_reward_pool_ids;
     std::vector<std::string> _research_signal_ids;
     std::unordered_map<std::string, int32_t> _good_index;
     std::unordered_map<std::string, int32_t> _technology_index;
@@ -446,6 +477,12 @@ private:
     std::vector<int32_t> _technology_research_condition_ops;
     std::vector<int32_t> _technology_research_condition_refs;
     std::vector<int64_t> _technology_research_condition_values;
+    std::vector<int32_t> _technology_reveal_condition_offsets;
+    std::vector<int32_t> _technology_reveal_condition_ops;
+    std::vector<int32_t> _technology_reveal_condition_refs;
+    std::vector<int64_t> _technology_reveal_condition_values;
+    std::vector<int32_t> _technology_reveal_signal_offsets;
+    std::vector<int32_t> _technology_reveal_signal_technologies;
     std::vector<uint8_t> _is_water;
 
     CountryStore _countries;
@@ -487,6 +524,7 @@ private:
     std::unordered_map<int64_t, EffectCommandResult> _effect_command_results;
     std::unordered_map<uint64_t, int64_t> _effect_command_idempotency;
     int64_t _next_effect_request_id = 1;
+    EraRewardReference _era_reward_reference;
     std::deque<Event> _events;
     CommandBatchState _command_batch;
     godot::Dictionary _report;

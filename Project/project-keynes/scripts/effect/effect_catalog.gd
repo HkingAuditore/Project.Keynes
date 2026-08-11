@@ -16,6 +16,10 @@ const PROTOCOL_VERSION := 1
 @export_range(1, 16000000, 1) var max_transactions: int = 8192
 @export_range(1, 1000000, 1) var max_work_per_slice: int = 1024
 @export_range(1, 4000000, 1) var max_native_modifier_commands: int = 4096
+# Cold packed extensions owned by EffectRuntime. Kept out of individual
+# EffectDefinition resources because alternative offers have three command
+# spans and are planned before one span becomes a transaction.
+var native_extensions: Dictionary = {}
 
 static func load_default() -> Resource:
 	var loaded := ResourceLoader.load(DEFAULT_PATH, "Resource")
@@ -123,6 +127,10 @@ func compile_native_catalog() -> Dictionary:
 			out.command_payload_i3.append(command.payload_i3)
 		out.command_offsets.append(out.command_actions.size())
 	out.ok = true
+	for extension_key in native_extensions:
+		if out.has(extension_key):
+			return {"ok": false, "reason": "effect_native_extension_key_collision"}
+		out[extension_key] = native_extensions[extension_key]
 	return out
 
 static func _native_command_error(command: Resource) -> String:

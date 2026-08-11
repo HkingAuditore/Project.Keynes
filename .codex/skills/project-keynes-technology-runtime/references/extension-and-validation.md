@@ -2,16 +2,20 @@
 
 ## Add or change a technology
 
-1. Edit the authoritative row/profile in
-   `Project/project-keynes/scripts/economy/technology_catalog.gd`.
-2. Preserve every existing stable ID unless the user explicitly authorizes a compatibility break.
-3. Define era, domain, cost, prerequisites, milestone flags/candidates, layout, public summary, and
-   Modifier terms together.
-4. Keep prerequisite edges acyclic and era-monotonic. Verify the milestone remains reachable through
-   every intended legal two-domain combination.
+1. Edit the sole authoring source at
+   `Project/project-keynes/data/technology/technology_network.json`, normally through the deterministic
+   `tools/build_technology_network_authoring.gd` workflow. `TechnologyCatalog` is the compiler, not a
+   second hand-maintained catalog.
+2. Preserve every existing stable ID unless the user explicitly authorizes a compatibility break; the
+   360-node rebuild is an intentional exact-hash break with no migration.
+3. Define era, domain, cost, prerequisites, milestone flags/candidates, public summary, route tags,
+   unique Effect recipe and explicit Modifier terms together.
+4. Keep prerequisite edges acyclic and era-monotonic. Verify each milestone has sixteen specialist-lane
+   candidates, requires five, and remains reachable through alternative practice/contact/geographic evidence.
 5. Add or update the generated permanent Modifier definition and a real domain consumer when adding a
    numerical effect. A definition with no consumer is incomplete.
-6. Update any building/profession/good `tech.*` unlock references and compile `EconomyCatalog`.
+6. Update Good/Building/Resource bindings and compile `EconomyCatalog`; professions must not carry a
+   direct `tech.*` unlock.
 7. Consider catalog-hash and old-save behavior deliberately.
 8. Update focused catalog, reachability, activation, UI, and save tests plus the repository technology
    document.
@@ -61,7 +65,10 @@ Run from `Project/project-keynes` with a Godot console executable:
 
 ```powershell
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_catalog_test.gd
+& "<godot_console.exe>" --headless --path . --script res://tests/technology_network_design_test.gd
+& "<godot_console.exe>" --headless --path . --script res://tests/technology_content_binding_audit_test.gd
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_research_runtime_test.gd
+& "<godot_console.exe>" --headless --path . --script res://tests/technology_breakthrough_trigger_test.gd
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_procurement_runtime_test.gd
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_modifier_activation_test.gd
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_workspace_smoke_test.gd

@@ -17,17 +17,31 @@ technology catalog and validates every `tech.*` reference. It must not invent ID
 
 Current baseline:
 
-- 81 definitions: four completed roots and 77 researchable technologies.
-- 11 eras and four domains: agriculture, engineering, science, society.
-- Normal nodes require all direct prerequisites.
-- A new era also requires the preceding era milestone.
-- Each era milestone requires any two of its four marked candidates.
-- Discovery reveals only immediate successors after prerequisite completion; reveal never completes.
+- 360 definitions: 22 regional-start processing nodes and 338 researchable technologies.
+- 11 eras, four domains, four backbones, and sixteen specialist lanes.
+- Each era has exactly sixteen lane anchors and requires any five for its milestone.
+- Completed hard prerequisites are the sole research-eligibility gate.
+- Nonstone specialist anchors require the previous milestone and previous same-lane anchor;
+  backbone anchors require the previous milestone.
+- Geography, resource, contact and practice evidence appears only in reveal-condition IR. It may
+  inspire and reveal a node but never bypass a prerequisite or complete research.
 
-Compilation produces stable-ID lookup, dense IDs in topological order, prerequisite and milestone CSR,
-reverse unlock indices, public definitions, Modifier definition keys, and a catalog hash. Validate
-duplicate/missing IDs, cycles, backward era edges, unreachable milestones, missing Modifier references,
-and invalid economy `tech.*` tags before native bootstrap.
+`Project/project-keynes/data/technology/technology_network.json` is the sole authoring source.
+`TechnologyCatalog` strictly parses it and remains the sole compiled/runtime authority. The authoring
+file includes explicit hard prerequisites, reveal conditions, Modifier terms, content bindings and
+the static visual edge kinds: hard, application, and milestone_candidate. `alternative` remains a
+recognized format value for compatibility but the current catalog emits none.
+
+Compilation produces stable-ID lookup, dense IDs in topological order, prerequisite/milestone and
+Modifier-term CSR, unique Effect recipe identity, route/condition IR, reverse unlock indices and public
+definitions. Economy adds reverse Good/Building/Resource bindings and Trigger definition identity.
+Validate duplicate/missing IDs, cycles, backward era edges, unreachable milestones, empty consumers,
+missing Modifier references, direct profession gates, and invalid economy `tech.*` tags before bootstrap.
+
+The native catalog keeps Chinese player-facing authoring text in the exact catalog identity.
+`public_definitions()` exposes those names and summaries plus Chinese `route_display_names` beside
+stable `route.*` tags. Internal IDs remain hidden from players; catalog text changes intentionally
+invalidate strict PKCN saves in this no-migration rebuild.
 
 Key files:
 
@@ -115,9 +129,10 @@ Each researchable technology maps to a permanent country Modifier definition:
 - stacking `UNIQUE_SOURCE`.
 
 Consumers include four domain research efficiencies, research cost, research-institution output, five
-economic-sector outputs, construction cost/time, and domestic-trade capacity/speed. Building catalogs
-compile one main sector dense ID; production queries a frozen country factor rather than creating one
-Modifier per building instance.
+economic-sector outputs, every production-family output, generated exact-building-type output stats,
+four climate-loss factors, construction cost/time, and domestic-trade capacity/speed. Economy freezes
+country×family, country×building-type, and climate factors at epoch capture rather than creating one
+Country Modifier per building instance.
 
 Modifiers may alter production results, consumed-points-to-progress conversion, construction
 parameters, or trade capacity. They must not directly mutate ledger quantities.
@@ -133,6 +148,10 @@ Fog clips drawing to the discovered set plus its immediate unknown frontier, and
 equals the visible bounding box, so neither the catalog size nor the remaining era count is
 observable. Unknown nodes must not leak semantic content through any visible or assistive channel.
 Domain color is only supplemental; pair states with icon, border, and text.
+
+All revealed technology names, effect summaries, route badges, prerequisite names, and research-signal
+evidence are Chinese presentation strings. UI code resolves those labels from public definitions and
+signal metadata; it never displays stable IDs or native authoring text as the normal player-facing label.
 
 Every policy control commits on release and there is no submit button: the weight dial renormalises
 the other three domains and uses largest-remainder rounding to keep `sum == 10000`; the budget slider
@@ -157,10 +176,13 @@ Key files:
 
 Current versions:
 
-- `NewGameConfig` v2: starting cash, procurement budget, four weights, automatic-purchase flag.
-- PKCN v3: catalog hash, all research state, queues, policy, deferred stock, pending items, counters.
-- PKEC v21: procurement stage/counters, technology-points market/in-transit state, audit baselines.
+- `NewGameConfig` v3: foreign-country count, starting cash, procurement budget, four weights,
+  automatic-purchase flag; v2 migrates with zero foreign countries.
+- PKCN v11: catalog/content/Trigger identity, all research/signal state, queues, policy, deferred stock,
+  pending items, evidence provenance and counters.
+- PKEF v9: unique technology recipes, transactions/ACK and era-reward plans.
+- PKTR v4: Trigger accumulation and pending effects.
+- PKEC v34: procurement/practice state, technology-points market/in-transit state and audit baselines.
 
-Restore PKCN before PKEC. Reject old technology-tree schemas with
-`legacy_technology_tree_save_unsupported`; reject catalog or Modifier hash mismatch. Do not silently
-migrate or populate defaults during restore.
+Restore PKCN before PKEC. Reject old PKCN/PKEF/PKTR schemas and any related catalog identity change
+with `catalog_hash_mismatch`. Do not silently migrate IDs or populate defaults during restore.

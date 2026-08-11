@@ -313,7 +313,7 @@ func _register_providers() -> void:
 		_make_provider(&"dynamic_world", 1,
 			PackedStringArray(["new_game_config", "dynamic_world"]),
 			"_can_world_provider", "_write_world_provider", "_restore_world_provider"),
-		_make_provider(&"environment", 1, PackedStringArray(["environment"]),
+		_make_provider(&"environment", 2, PackedStringArray(["environment"]),
 			"_can_environment_provider", "_write_environment_provider",
 			"_restore_environment_provider"),
 		_make_provider(&"pkcm", 1, PackedStringArray(["pkcm"]),
@@ -321,9 +321,14 @@ func _register_providers() -> void:
 			"_restore_climate_modifier_provider"),
 		_make_provider(&"world_clock", 1, PackedStringArray(["world_clock"]),
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
-		_make_provider(&"pkcn", 6, PackedStringArray(["pkcn"]),
+		_make_provider(&"pkcn", 10, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		_make_provider(&"pkec", 31, PackedStringArray(["pkec"]),
+		# Effect restores before Economy so PKEC v34 can cross-check every
+		# SETTLING expedition transaction against authoritative PKEF state.
+		_make_provider(&"pkef", 9, PackedStringArray(["pkef"]),
+			"_can_effect_provider", "_write_effect_provider",
+			"_restore_effect_provider"),
+		_make_provider(&"pkec", 34, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 1, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -331,16 +336,14 @@ func _register_providers() -> void:
 		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
 		_make_provider(&"pkfg", 1, PackedStringArray(["pkfg"]),
 			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
-		# v3 adds native Effect PUBLISH_EVENT idempotency evidence. The manifest
+		# v4 also persists custom gameplay commits (including canal geography)
+		# with event_id=-1 idempotency evidence. The manifest
 		# must match the payload schema, or list_slots() rejects newly written saves.
-		_make_provider(&"journal", 3, PackedStringArray(["journal"]),
+		_make_provider(&"journal", 4, PackedStringArray(["journal"]),
 			"_can_journal_provider", "_write_journal_provider", "_restore_journal_provider"),
-		_make_provider(&"pktr", 2, PackedStringArray(["pktr"]),
+		_make_provider(&"pktr", 3, PackedStringArray(["pktr"]),
 			"_can_trigger_provider", "_write_trigger_provider",
 			"_restore_trigger_provider"),
-		_make_provider(&"pkef", 5, PackedStringArray(["pkef"]),
-			"_can_effect_provider", "_write_effect_provider",
-			"_restore_effect_provider"),
 		_make_provider(&"pkid", 2, PackedStringArray(["pkid"]),
 			"_can_ideology_provider", "_write_ideology_provider",
 			"_restore_ideology_provider"),
@@ -387,22 +390,23 @@ func _manifest_compatible(raw_manifest) -> bool:
 		var entry: Dictionary = by_id[provider_id]
 		var saved_schema := int(entry.get("schema_version", -1))
 		var schema_compatible: bool = saved_schema == provider.schema_version()
-		if provider_id == "pkcn":
-			# PKCN v7 carries sparse cell tax policies and Country Effect ingress identities. Its native reader is
+		if provider_id == "environment":
+			schema_compatible = saved_schema in [1, 2]
+		elif provider_id == "pkcn":
+			# PKCN v11 also carries the authoritative era-reward plan reference.
+			# Its native reader is
 			# exact-version only, so advertising an older schema would defer failure
 			# until after partial session restore.
-			schema_compatible = saved_schema == 7
+			schema_compatible = saved_schema == 10
 		elif provider_id == "pkec":
-			schema_compatible = saved_schema in [30, 31]
+			# v33 is the documented empty-canal migration path.
+			schema_compatible = saved_schema in [33, 34]
 		elif provider_id == "pktr":
-			schema_compatible = saved_schema == 2
+			schema_compatible = saved_schema == 3
 		elif provider_id == "journal":
-			schema_compatible = saved_schema in [1, 2, 3]
+			schema_compatible = saved_schema in [1, 2, 3, 4]
 		elif provider_id == "pkef":
-			# PKEF is optional for saves predating EffectRuntime, but a present
-			# v4/v5 section must be accepted by the native reader. PKID v2 performs
-			# the strict durable-binding check after PKEF has restored.
-			schema_compatible = saved_schema in [4, 5]
+			schema_compatible = saved_schema in [8, 9]
 		elif provider_id == "pkid":
 			# Legacy saves predate the ideology provider; an absent PKID restores
 			# as an empty ideology state. PKID v1 is readable only for fully

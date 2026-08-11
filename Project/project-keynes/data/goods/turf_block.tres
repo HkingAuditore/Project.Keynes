@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"turf_block"
+display_name = "草皮块"
+category_id = &"primitive_construction"
+substitution_category_ids = PackedStringArray("primitive_construction", "masonry_material")
+technology_tags = PackedStringArray("industry.primary", "tech.turf_cutting")
+default_price = 5000
+min_price = 500
+max_price = 50000
+

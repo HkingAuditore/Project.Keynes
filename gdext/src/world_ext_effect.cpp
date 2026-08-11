@@ -29,9 +29,12 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
     if (_effect_runtime == nullptr) _effect_runtime = new EffectRuntime();
     Dictionary result = runtime_from(_effect_runtime)->configure(catalog);
     if (bool(result.get("ok", false))) {
-        if (_country_runtime != nullptr)
+        if (_country_runtime != nullptr) {
+            runtime_from(_effect_runtime)->attach_country_runtime(
+                static_cast<NativeCountryRuntime *>(_country_runtime));
             static_cast<NativeCountryRuntime *>(_country_runtime)->attach_effect_runtime(
                 runtime_from(_effect_runtime));
+        }
         if (_economy_runtime != nullptr)
             static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_effect_runtime(
                 runtime_from(_effect_runtime));
@@ -46,6 +49,31 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
                 runtime_from(_effect_runtime));
     }
     return result;
+}
+
+Dictionary DCWorldExt::bind_era_reward_player_country(int64_t country_handle) {
+    if (_effect_runtime == nullptr) return unavailable();
+    std::string error;
+    const bool ok = runtime_from(_effect_runtime)
+        ->bind_era_reward_player_country_pod(
+            static_cast<uint64_t>(country_handle), error);
+    Dictionary out;
+    out["ok"] = ok;
+    if (!ok) out["reason"] = String(error.c_str());
+    return out;
+}
+
+Dictionary DCWorldExt::get_era_reward_offer() {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->era_reward_offer_snapshot();
+}
+
+Dictionary DCWorldExt::choose_era_reward(int64_t offer_generation,
+                                         int choice_index,
+                                         int64_t effective_day) {
+    return _effect_runtime == nullptr ? unavailable()
+        : runtime_from(_effect_runtime)->choose_era_reward(
+            offer_generation, choice_index, effective_day);
 }
 
 Dictionary DCWorldExt::submit_effect_instances(const Dictionary &batch) {

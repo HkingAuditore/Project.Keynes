@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"silver_ore"
+display_name = "含银矿石"
+category_id = &"precious_metal_ore"
+substitution_category_ids = PackedStringArray("precious_metal_ore", "silver_feedstock")
+technology_tags = PackedStringArray("industry.primary", "tech.surface_silver_collection")
+default_price = 5000
+min_price = 500
+max_price = 50000

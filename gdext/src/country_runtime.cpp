@@ -209,6 +209,18 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _profession_ids = professions;
     _building_type_ids = building_types;
     _technology_ids = technologies;
+    _technology_catalog_identity_hash = static_cast<uint64_t>(
+        dict_num<int64_t>(catalog, "technology_catalog_identity_hash", 0));
+    _technology_content_binding_hash = static_cast<uint64_t>(
+        dict_num<int64_t>(catalog, "technology_content_binding_hash", 0));
+    _technology_trigger_definition_hash = static_cast<uint64_t>(
+        dict_num<int64_t>(catalog, "technology_trigger_definition_hash", 0));
+    if (_technology_catalog_identity_hash == 0 ||
+        _technology_content_binding_hash == 0 ||
+        _technology_trigger_definition_hash == 0)
+        return fail("country_technology_catalog_identity_missing");
+    _technology_era_reward_pool_ids = packed_strings(
+        catalog, "technology_era_reward_pool_ids");
     _research_signal_ids = research_signals;
     _good_index.clear();
     _technology_index.clear();
@@ -234,7 +246,27 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
         packed_i32(catalog, "technology_research_condition_refs");
     _technology_research_condition_values =
         packed_i64(catalog, "technology_research_condition_values");
+    _technology_reveal_condition_offsets =
+        packed_i32(catalog, "technology_reveal_condition_offsets");
+    _technology_reveal_condition_ops =
+        packed_i32(catalog, "technology_reveal_condition_ops");
+    _technology_reveal_condition_refs =
+        packed_i32(catalog, "technology_reveal_condition_refs");
+    _technology_reveal_condition_values =
+        packed_i64(catalog, "technology_reveal_condition_values");
+    _technology_reveal_signal_offsets =
+        packed_i32(catalog, "technology_reveal_signal_offsets");
+    _technology_reveal_signal_technologies =
+        packed_i32(catalog, "technology_reveal_signal_technologies");
     const size_t tech_count = _technology_ids.size();
+    if (catalog.has("technology_era_reward_pool_ids")) {
+        std::unordered_set<std::string> reward_pool_ids;
+        if (_technology_era_reward_pool_ids.size() != 11)
+            return fail("country_era_reward_pool_mapping_invalid");
+        for (const std::string &pool_id : _technology_era_reward_pool_ids)
+            if (pool_id.empty() || !reward_pool_ids.insert(pool_id).second)
+                return fail("country_era_reward_pool_mapping_invalid");
+    }
     if (_technology_domains.size() != tech_count || _technology_costs.size() != tech_count ||
         _technology_prerequisite_offsets.size() != tech_count + 1 ||
         _technology_milestone_offsets.size() != tech_count + 1 ||
@@ -256,6 +288,19 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
         _technology_research_condition_ops.size() != _technology_research_condition_refs.size() ||
         _technology_research_condition_ops.size() != _technology_research_condition_values.size())
         return fail("country_research_condition_metadata_invalid");
+    if (_technology_reveal_condition_offsets.size() != tech_count + 1 ||
+        _technology_reveal_condition_offsets.empty() ||
+        _technology_reveal_condition_offsets.front() != 0 ||
+        _technology_reveal_condition_offsets.back() !=
+            static_cast<int32_t>(_technology_reveal_condition_ops.size()) ||
+        _technology_reveal_condition_ops.size() != _technology_reveal_condition_refs.size() ||
+        _technology_reveal_condition_ops.size() != _technology_reveal_condition_values.size() ||
+        _technology_reveal_signal_offsets.size() != _research_signal_ids.size() + 1 ||
+        _technology_reveal_signal_offsets.empty() ||
+        _technology_reveal_signal_offsets.front() != 0 ||
+        _technology_reveal_signal_offsets.back() !=
+            static_cast<int32_t>(_technology_reveal_signal_technologies.size()))
+        return fail("country_reveal_condition_metadata_invalid");
     for (size_t tech = 0; tech < tech_count; ++tech) {
         if (_technology_domains[tech] < 0 || _technology_domains[tech] >= 4 ||
             _technology_costs[tech] < 0 ||
@@ -281,6 +326,22 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
             (kind < 1 || kind > 13))
             return fail("country_research_condition_opcode_invalid");
     }
+    for (size_t op = 0; op < _technology_reveal_condition_ops.size(); ++op) {
+        const int32_t kind = _technology_reveal_condition_ops[op];
+        const int32_t ref = _technology_reveal_condition_refs[op];
+        const int64_t value = _technology_reveal_condition_values[op];
+        if ((kind == 1 && (ref < 0 || ref >= static_cast<int32_t>(tech_count))) ||
+            ((kind == 2 || kind == 3) &&
+             (ref < 0 || ref >= static_cast<int32_t>(_research_signal_ids.size()))) ||
+            ((kind == 10 || kind == 11 || kind == 12) && ref <= 0) ||
+            (kind == 12 && value <= 0) ||
+            (kind == 13 && ref != 1) ||
+            (kind < 1 || kind > 13))
+            return fail("country_reveal_condition_opcode_invalid");
+    }
+    for (int32_t technology : _technology_reveal_signal_technologies)
+        if (technology < 0 || technology >= static_cast<int32_t>(tech_count))
+            return fail("country_reveal_signal_index_invalid");
     const auto points_it = _good_index.find("technology_points");
     if (points_it == _good_index.end()) return fail("country_technology_points_good_missing");
     _technology_points_good_id = points_it->second;
@@ -345,6 +406,7 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
+    _era_reward_reference = {};
     _events.clear();
     _command_batch = {};
     _is_water.clear();
@@ -632,6 +694,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
+    _era_reward_reference = {};
     _events.clear();
     _command_batch = {};
 
@@ -807,7 +870,7 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
     _pending_commands.reserve(_pending_commands.size() + count);
     for (size_t i = 0; i < count; ++i) {
         if (opcodes[i] < COMMAND_CREATE_COUNTRY ||
-            opcodes[i] > COMMAND_CLEAR_CELL_TAX_POLICY)
+            opcodes[i] > COMMAND_CLAIM_UNOWNED_TERRITORY)
             return fail("country_command_opcode_invalid");
         if (days[i] < 0 || sequences[i] < 0) return fail("country_command_order_invalid");
         Command command;
@@ -859,6 +922,10 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
                 return fail("country_cell_tax_command_invalid");
             }
         }
+        if (command.opcode == COMMAND_CLAIM_UNOWNED_TERRITORY &&
+            (command.cell < 0 || command.cell >= _cell_count ||
+             _is_water[static_cast<size_t>(command.cell)] != 0))
+            return fail("country_claim_target_invalid");
         command.value = values[i];
         command.stable_id = stable_ids[i];
         command.display_name = display_names[i];
@@ -891,7 +958,7 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
     };
     for (size_t i = 0; i < count; ++i) {
         const EffectCommand &source = commands[i];
-        if (source.opcode < COMMAND_CREATE_COUNTRY || source.opcode > COMMAND_DISCOVER_COUNTRY_SIGNAL ||
+        if (source.opcode < COMMAND_CREATE_COUNTRY || source.opcode > COMMAND_CLAIM_UNOWNED_TERRITORY ||
             source.effective_day < 0 || source.sequence < 0 || source.idempotency_key == 0) {
             error = "country_effect_command_invalid";
             return false;
@@ -1061,17 +1128,21 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                 _command_batch.stage_technologies = true;
             } else if (command.opcode == COMMAND_DISCOVER_COUNTRY_SIGNAL) {
                 _command_batch.stage_signals = true;
+                _command_batch.stage_research = true;
             } else if (command.opcode >= COMMAND_SET_TAX_DEFAULT &&
                        command.opcode <= COMMAND_CLEAR_TAX_OVERRIDE) {
                 _command_batch.stage_tax = true;
                 _command_batch.stage_cell_tax = true;
-            } else if (command.opcode == COMMAND_TRANSFER_TERRITORY) {
+            } else if (command.opcode == COMMAND_TRANSFER_TERRITORY ||
+                       command.opcode == COMMAND_CLAIM_UNOWNED_TERRITORY) {
                 _command_batch.stage_cell_tax = true;
             } else if (command.opcode >= COMMAND_SET_CELL_TAX_DEFAULT &&
                        command.opcode <= COMMAND_CLEAR_CELL_TAX_POLICY) {
                 _command_batch.stage_cell_tax = true;
             }
-            if (command.opcode != COMMAND_TRANSFER_TERRITORY || command.cell <= previous_cell) {
+            if ((command.opcode != COMMAND_TRANSFER_TERRITORY &&
+                 command.opcode != COMMAND_CLAIM_UNOWNED_TERRITORY) ||
+                command.cell <= previous_cell) {
                 _command_batch.direct_unique_territory = false;
             } else {
                 previous_cell = command.cell;
@@ -1253,7 +1324,8 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             mark_country(slot);
             event_country_handle = command.target_handle;
             event_new_country_slot = slot;
-        } else if (command.opcode == COMMAND_TRANSFER_TERRITORY) {
+        } else if (command.opcode == COMMAND_TRANSFER_TERRITORY ||
+                   command.opcode == COMMAND_CLAIM_UNOWNED_TERRITORY) {
             if (command.cell < 0 || command.cell >= _cell_count || _is_water[static_cast<size_t>(command.cell)] != 0) {
                 error = "country_transfer_cell_invalid"; break;
             }
@@ -1264,6 +1336,11 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             const int32_t old_owner = batch.direct_unique_territory
                 ? _cell_country_slot[static_cast<size_t>(command.cell)]
                 : owner_of(command.cell);
+            if (command.opcode == COMMAND_CLAIM_UNOWNED_TERRITORY &&
+                old_owner != NEUTRAL_SLOT) {
+                error = "country_claim_target_not_unowned";
+                break;
+            }
             if (old_owner == target) continue;
             if (old_owner >= 0) {
                 --batch.countries.territory_count[static_cast<size_t>(old_owner)];
@@ -1715,6 +1792,16 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     const bool stage_signals = batch.stage_signals;
     const bool stage_tax = batch.stage_tax;
     const bool stage_cell_tax = batch.stage_cell_tax;
+    std::vector<std::pair<int32_t, int32_t>> signal_refreshes;
+    if (stage_signals) {
+        signal_refreshes.reserve(batch.commands.size());
+        for (const Command &command : batch.commands) {
+            if (command.opcode != COMMAND_DISCOVER_COUNTRY_SIGNAL) continue;
+            int32_t signal_slot = -1;
+            if (!validate_handle(command.target_handle, signal_slot)) continue;
+            signal_refreshes.emplace_back(signal_slot, command.aux);
+        }
+    }
     for (const Command &command : batch.commands) {
         if (command.effect_request_id == 0) continue;
         EffectCommandResult &result = _effect_command_results[command.effect_request_id];
@@ -1746,6 +1833,8 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
         _country_research_signals = std::move(staged_signals);
         _country_research_signal_cells = std::move(staged_signal_cells);
         _country_research_signal_evidence = std::move(staged_signal_evidence);
+        for (const auto &entry : signal_refreshes)
+            refresh_discovery_for_signal(entry.first, entry.second);
     }
     if (stage_tax) {
         _country_tax_defaults = std::move(staged_tax_defaults);
@@ -1957,6 +2046,7 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
+    _era_reward_reference = {};
     _events.clear();
     _command_batch = {};
     ++_generation;
@@ -2527,34 +2617,99 @@ bool NativeCountryRuntime::research_condition_met(int32_t slot, int32_t technolo
                                   slot, technology);
 }
 
+bool NativeCountryRuntime::reveal_condition_met(int32_t slot, int32_t technology) const {
+    if (slot < 0 || technology < 0 ||
+        technology >= static_cast<int32_t>(_technology_ids.size()) ||
+        _technology_reveal_condition_offsets.empty()) return false;
+    const int32_t begin = _technology_reveal_condition_offsets[static_cast<size_t>(technology)];
+    const int32_t end = _technology_reveal_condition_offsets[static_cast<size_t>(technology + 1)];
+    if (begin == end) return true;
+    std::array<uint8_t, 128> stack{};
+    int32_t depth = 0;
+    const size_t tech_base = static_cast<size_t>(slot) * _technology_words;
+    for (int32_t cursor = begin; cursor < end; ++cursor) {
+        const int32_t op = _technology_reveal_condition_ops[static_cast<size_t>(cursor)];
+        const int32_t ref = _technology_reveal_condition_refs[static_cast<size_t>(cursor)];
+        const int64_t value = _technology_reveal_condition_values[static_cast<size_t>(cursor)];
+        if (op == 1) {
+            if (depth >= static_cast<int32_t>(stack.size()) || ref < 0 ||
+                ref >= static_cast<int32_t>(_technology_ids.size())) return false;
+            stack[depth++] = (_country_technologies[tech_base + ref / 64] &
+                              (uint64_t{1} << (ref % 64))) != 0;
+        } else if (op == 2) {
+            if (depth >= static_cast<int32_t>(stack.size())) return false;
+            stack[depth++] = signal_present(_country_research_signals, slot, ref);
+        } else if (op == 3) {
+            if (depth >= static_cast<int32_t>(stack.size())) return false;
+            stack[depth++] = signal_count(slot, ref) >= value;
+        } else if (op == 13) {
+            if (depth < 1) return false;
+            stack[static_cast<size_t>(depth - 1)] =
+                stack[static_cast<size_t>(depth - 1)] == 0 ? 1 : 0;
+        } else if (op == 10 || op == 11 || op == 12) {
+            if (ref <= 0 || ref > depth) return false;
+            int32_t truth_count = 0;
+            for (int32_t i = depth - ref; i < depth; ++i)
+                truth_count += stack[static_cast<size_t>(i)] != 0;
+            depth -= ref;
+            if (depth >= static_cast<int32_t>(stack.size())) return false;
+            stack[depth++] = op == 10 ? truth_count == ref :
+                (op == 11 ? truth_count > 0 : truth_count >= value);
+        } else {
+            return false;
+        }
+    }
+    return depth == 1 && stack[0] != 0;
+}
+
+void NativeCountryRuntime::refresh_discovery_for_technology(int32_t slot, int32_t tech) {
+    if (slot < 0 || slot >= static_cast<int32_t>(_countries.active.size()) ||
+        tech < 0 || tech >= static_cast<int32_t>(_technology_ids.size())) return;
+    const size_t base = static_cast<size_t>(slot) * _technology_words;
+    const uint64_t bit = uint64_t{1} << (tech % 64);
+    if ((_country_technologies[base + tech / 64] & bit) != 0) {
+        _country_discovered[base + tech / 64] |= bit;
+        return;
+    }
+    const int32_t reveal_begin = _technology_reveal_condition_offsets[static_cast<size_t>(tech)];
+    const int32_t reveal_end = _technology_reveal_condition_offsets[static_cast<size_t>(tech + 1)];
+    if (reveal_end > reveal_begin && !reveal_condition_met(slot, tech)) return;
+    const int32_t begin = _technology_prerequisite_offsets[static_cast<size_t>(tech)];
+    const int32_t end = _technology_prerequisite_offsets[static_cast<size_t>(tech + 1)];
+    const int32_t milestone_begin = _technology_milestone_offsets[static_cast<size_t>(tech)];
+    const int32_t milestone_end = _technology_milestone_offsets[static_cast<size_t>(tech + 1)];
+    bool reveal = false;
+    if (milestone_end > milestone_begin) {
+        for (int32_t edge = milestone_begin; edge < milestone_end && !reveal; ++edge) {
+            const int32_t candidate = _technology_milestone_candidates[static_cast<size_t>(edge)];
+            reveal = (_country_technologies[base + candidate / 64] &
+                      (uint64_t{1} << (candidate % 64))) != 0;
+        }
+    } else {
+        for (int32_t edge = begin; edge < end && !reveal; ++edge) {
+            const int32_t prerequisite = _technology_prerequisites[static_cast<size_t>(edge)];
+            reveal = (_country_technologies[base + prerequisite / 64] &
+                      (uint64_t{1} << (prerequisite % 64))) != 0;
+        }
+    }
+    if (reveal || (reveal_end > reveal_begin && reveal_condition_met(slot, tech)))
+        _country_discovered[base + tech / 64] |= bit;
+}
+
+void NativeCountryRuntime::refresh_discovery_for_signal(int32_t slot, int32_t signal) {
+    if (signal < 0 || signal + 1 >= static_cast<int32_t>(_technology_reveal_signal_offsets.size()))
+        return;
+    const int32_t begin = _technology_reveal_signal_offsets[static_cast<size_t>(signal)];
+    const int32_t end = _technology_reveal_signal_offsets[static_cast<size_t>(signal + 1)];
+    for (int32_t cursor = begin; cursor < end; ++cursor)
+        refresh_discovery_for_technology(slot,
+            _technology_reveal_signal_technologies[static_cast<size_t>(cursor)]);
+}
+
 void NativeCountryRuntime::refresh_discovery(int32_t slot) {
     if (slot < 0 || slot >= static_cast<int32_t>(_countries.active.size())) return;
-    const size_t base = static_cast<size_t>(slot) * _technology_words;
     for (int32_t tech = 0; tech < static_cast<int32_t>(_technology_ids.size()); ++tech) {
-        const uint64_t bit = 1ULL << (tech % 64);
-        if ((_country_technologies[base + tech / 64] & bit) != 0) {
-            _country_discovered[base + tech / 64] |= bit;
-            continue;
-        }
-        const int32_t begin = _technology_prerequisite_offsets[static_cast<size_t>(tech)];
-        const int32_t end = _technology_prerequisite_offsets[static_cast<size_t>(tech + 1)];
-        const int32_t milestone_begin = _technology_milestone_offsets[static_cast<size_t>(tech)];
-        const int32_t milestone_end = _technology_milestone_offsets[static_cast<size_t>(tech + 1)];
-        bool reveal = false;
-        if (milestone_end > milestone_begin) {
-            for (int32_t edge = milestone_begin; edge < milestone_end && !reveal; ++edge) {
-                const int32_t candidate = _technology_milestone_candidates[static_cast<size_t>(edge)];
-                reveal = (_country_technologies[base + candidate / 64] &
-                          (1ULL << (candidate % 64))) != 0;
-            }
-        } else {
-            for (int32_t edge = begin; edge < end && !reveal; ++edge) {
-                const int32_t prerequisite = _technology_prerequisites[static_cast<size_t>(edge)];
-                reveal = (_country_technologies[base + prerequisite / 64] &
-                          (1ULL << (prerequisite % 64))) != 0;
-            }
-        }
-        if (reveal) _country_discovered[base + tech / 64] |= bit;
+        refresh_discovery_for_technology(slot, tech);
     }
 }
 
@@ -2680,6 +2835,16 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
             if (!modifier_ready) continue;
             _country_technologies[word_index] |= bit;
             _country_pending_technologies[word_index] &= ~bit;
+            // Era rewards are emitted only after the technology's permanent
+            // Effect has ACKed and the completed bit becomes authoritative.
+            // Research progress reaching its cost never enters this hook.
+            if (_effect_runtime_enabled && _effect_runtime != nullptr) {
+                std::string reward_error;
+                _effect_runtime->notify_era_reward_technology_activated_pod(
+                    handle, technology, day_index, reward_error);
+                if (!reward_error.empty())
+                    _report["era_reward_error"] = String(reward_error.c_str());
+            }
             activated = true;
         }
         if (activated) {
@@ -2951,10 +3116,18 @@ bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
 
 uint64_t NativeCountryRuntime::catalog_hash() const {
     uint64_t hash = FNV_OFFSET;
+    hash_bytes(hash, &_technology_catalog_identity_hash,
+               sizeof(_technology_catalog_identity_hash));
+    hash_bytes(hash, &_technology_content_binding_hash,
+               sizeof(_technology_content_binding_hash));
+    hash_bytes(hash, &_technology_trigger_definition_hash,
+               sizeof(_technology_trigger_definition_hash));
     for (const std::string &id : _good_ids) hash_string(hash, id);
     for (const std::string &id : _profession_ids) hash_string(hash, id);
     for (const std::string &id : _building_type_ids) hash_string(hash, id);
     for (const std::string &id : _technology_ids) hash_string(hash, id);
+    for (const std::string &id : _technology_era_reward_pool_ids)
+        hash_string(hash, id);
     for (const std::string &id : _research_signal_ids) hash_string(hash, id);
     if (!_technology_domains.empty())
         hash_bytes(hash, _technology_domains.data(), _technology_domains.size() * sizeof(int32_t));
@@ -2981,6 +3154,24 @@ uint64_t NativeCountryRuntime::catalog_hash() const {
     if (!_technology_research_condition_values.empty())
         hash_bytes(hash, _technology_research_condition_values.data(),
                    _technology_research_condition_values.size() * sizeof(int64_t));
+    if (!_technology_reveal_condition_offsets.empty())
+        hash_bytes(hash, _technology_reveal_condition_offsets.data(),
+                   _technology_reveal_condition_offsets.size() * sizeof(int32_t));
+    if (!_technology_reveal_condition_ops.empty())
+        hash_bytes(hash, _technology_reveal_condition_ops.data(),
+                   _technology_reveal_condition_ops.size() * sizeof(int32_t));
+    if (!_technology_reveal_condition_refs.empty())
+        hash_bytes(hash, _technology_reveal_condition_refs.data(),
+                   _technology_reveal_condition_refs.size() * sizeof(int32_t));
+    if (!_technology_reveal_condition_values.empty())
+        hash_bytes(hash, _technology_reveal_condition_values.data(),
+                   _technology_reveal_condition_values.size() * sizeof(int64_t));
+    if (!_technology_reveal_signal_offsets.empty())
+        hash_bytes(hash, _technology_reveal_signal_offsets.data(),
+                   _technology_reveal_signal_offsets.size() * sizeof(int32_t));
+    if (!_technology_reveal_signal_technologies.empty())
+        hash_bytes(hash, _technology_reveal_signal_technologies.data(),
+                   _technology_reveal_signal_technologies.size() * sizeof(int32_t));
     return hash;
 }
 
@@ -3065,7 +3256,29 @@ uint64_t NativeCountryRuntime::compute_state_hash() const {
             hash_bytes(hash, &entry.second, sizeof(entry.second));
         }
     }
+    hash_bytes(hash, &_era_reward_reference.plan_id,
+               sizeof(_era_reward_reference.plan_id));
+    hash_bytes(hash, &_era_reward_reference.offer_generation,
+               sizeof(_era_reward_reference.offer_generation));
+    hash_bytes(hash, &_era_reward_reference.milestone_technology,
+               sizeof(_era_reward_reference.milestone_technology));
+    hash_bytes(hash, &_era_reward_reference.status,
+               sizeof(_era_reward_reference.status));
     return hash;
+}
+
+int32_t NativeCountryRuntime::research_signal_evidence_count(
+        int32_t country_slot, int32_t signal_id) const {
+    return signal_count(country_slot, signal_id);
+}
+
+void NativeCountryRuntime::set_era_reward_reference_pod(
+        int64_t plan_id, int64_t offer_generation,
+        int32_t milestone_technology, int32_t status) {
+    _era_reward_reference.plan_id = plan_id;
+    _era_reward_reference.offer_generation = offer_generation;
+    _era_reward_reference.milestone_technology = milestone_technology;
+    _era_reward_reference.status = status;
 }
 
 uint64_t NativeCountryRuntime::catalog_hash_v3() const {
@@ -3317,6 +3530,10 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
         append_le<int64_t>(out, command.effect_request_id);
         append_le<uint64_t>(out, command.effect_idempotency_key);
     }
+    append_le<int64_t>(out, _era_reward_reference.plan_id);
+    append_le<int64_t>(out, _era_reward_reference.offer_generation);
+    append_le<int32_t>(out, _era_reward_reference.milestone_technology);
+    append_le<int32_t>(out, _era_reward_reference.status);
     std::vector<uint8_t> modifier_bytes;
     if (_modifier_runtime != nullptr &&
         !_modifier_runtime->serialize_domain(ModifierRuntime::COUNTRY,
@@ -3340,7 +3557,7 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     if (!read_le(bytes, cursor, magic) || !read_le(bytes, cursor, version)) { error = "country_save_truncated"; return false; }
     if (magic != SAVE_MAGIC) { error = "country_save_magic_invalid"; return false; }
     if (version != SCHEMA_VERSION) {
-        error = "country_save_schema_unsupported_requires_pkcn_v7";
+        error = "catalog_hash_mismatch";
         return false;
     }
     if (!read_le(bytes, cursor, saved_catalog) || !read_le(bytes, cursor, generation_value) ||
@@ -3370,25 +3587,31 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
         building_count != static_cast<int32_t>(_building_type_ids.size()) ||
         tech_count != static_cast<int32_t>(_technology_ids.size()) || tech_words != _technology_words ||
         signal_count != static_cast<int32_t>(_research_signal_ids.size()) ||
-        signal_words != _research_signal_words ||
-        country_count <= 0 || country_count > 1000000) { error = "country_save_catalog_or_shape_mismatch"; return false; }
+        signal_words != _research_signal_words) {
+        error = "catalog_hash_mismatch";
+        return false;
+    }
+    if (country_count <= 0 || country_count > 1000000) {
+        error = "country_save_shape_invalid";
+        return false;
+    }
     std::string id;
     for (const std::string &expected : _good_ids)
-        if (!read_string(bytes, cursor, id) || id != expected) { error = "country_save_good_catalog_mismatch"; return false; }
+        if (!read_string(bytes, cursor, id) || id != expected) { error = "catalog_hash_mismatch"; return false; }
     for (const std::string &expected : _profession_ids)
         if (!read_string(bytes, cursor, id) || id != expected) {
-            error = "country_save_profession_catalog_mismatch";
+            error = "catalog_hash_mismatch";
             return false;
         }
     for (const std::string &expected : _building_type_ids)
         if (!read_string(bytes, cursor, id) || id != expected) {
-            error = "country_save_building_catalog_mismatch";
+            error = "catalog_hash_mismatch";
             return false;
         }
     for (const std::string &expected : _technology_ids)
-        if (!read_string(bytes, cursor, id) || id != expected) { error = "country_save_technology_catalog_mismatch"; return false; }
+        if (!read_string(bytes, cursor, id) || id != expected) { error = "catalog_hash_mismatch"; return false; }
     for (const std::string &expected : _research_signal_ids)
-        if (!read_string(bytes, cursor, id) || id != expected) { error = "country_save_signal_catalog_mismatch"; return false; }
+        if (!read_string(bytes, cursor, id) || id != expected) { error = "catalog_hash_mismatch"; return false; }
 
     CountryStore countries;
     countries.active.resize(country_count);
@@ -3767,7 +3990,7 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
             !read_le(bytes, cursor, command.effect_request_id) ||
             !read_le(bytes, cursor, command.effect_idempotency_key)) { error = "country_save_command_truncated"; return false; }
         if (command.opcode < COMMAND_CREATE_COUNTRY ||
-            command.opcode > COMMAND_CLEAR_CELL_TAX_POLICY ||
+            command.opcode > COMMAND_CLAIM_UNOWNED_TERRITORY ||
             command.effective_day < 0 ||
             command.sequence < 0 || command.submit_order == 0 ||
             !command_submit_orders.insert(command.submit_order).second) {
@@ -3784,7 +4007,8 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
             if (!saved_handle_valid(command.target_handle) || command.display_name.empty()) {
                 error = "country_save_rename_command_invalid"; return false;
             }
-        } else if (command.opcode == COMMAND_TRANSFER_TERRITORY) {
+        } else if (command.opcode == COMMAND_TRANSFER_TERRITORY ||
+                   command.opcode == COMMAND_CLAIM_UNOWNED_TERRITORY) {
             if (command.cell < 0 || command.cell >= _cell_count ||
                 _is_water[static_cast<size_t>(command.cell)] != 0 ||
                 (command.target_handle != 0 && !saved_handle_valid(command.target_handle))) {
@@ -3845,6 +4069,23 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
         }
         commands.push_back(std::move(command));
         max_submit_order = std::max(max_submit_order, commands.back().submit_order);
+    }
+    EraRewardReference era_reward_reference;
+    if (!read_le(bytes, cursor, era_reward_reference.plan_id) ||
+        !read_le(bytes, cursor, era_reward_reference.offer_generation) ||
+        !read_le(bytes, cursor, era_reward_reference.milestone_technology) ||
+        !read_le(bytes, cursor, era_reward_reference.status) ||
+        era_reward_reference.status < 0 || era_reward_reference.status > 4 ||
+        (era_reward_reference.status == 0 &&
+         (era_reward_reference.plan_id != 0 ||
+          era_reward_reference.offer_generation != 0)) ||
+        (era_reward_reference.status != 0 &&
+         (era_reward_reference.plan_id <= 0 ||
+          era_reward_reference.offer_generation <= 0 ||
+          era_reward_reference.milestone_technology < 0 ||
+          era_reward_reference.milestone_technology >= tech_count))) {
+        error = "country_save_era_reward_reference_invalid";
+        return false;
     }
     std::vector<uint8_t> modifier_bytes;
     {
@@ -3911,6 +4152,7 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
+    _era_reward_reference = era_reward_reference;
     for (const Command &command : _pending_commands) {
         if (command.effect_request_id <= 0) continue;
         if (command.effect_idempotency_key == 0 ||

@@ -8,6 +8,7 @@
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/variant.hpp>
 #include <godot_cpp/variant/string.hpp>
 
@@ -261,6 +262,13 @@ uint64_t make_hash(uint64_t instance_id, uint32_t generation,
     hash = fnv_value(hash, fire_sequence);
     hash = fnv_value(hash, command_index);
     return hash;
+}
+
+uint64_t splitmix64_next(uint64_t &state) {
+    uint64_t z = (state += 0x9e3779b97f4a7c15ULL);
+    z = (z ^ (z >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27U)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31U);
 }
 
 } // namespace
@@ -549,6 +557,10 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         }
     }
 
+    std::string era_reward_error;
+    if (!compile_era_reward_catalog(catalog, era_reward_error))
+        return failure(era_reward_error.c_str());
+
     uint64_t hash = 1469598103934665603ULL;
     hash = fnv_value(hash, PROTOCOL_VERSION);
     hash = fnv_value(hash, _max_instances);
@@ -599,6 +611,34 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         for (int64_t payload_value : command.payload)
             hash = fnv_value(hash, payload_value);
     }
+    for (const EraRewardPool &pool : _era_reward_pools) {
+        hash = fnv_string(hash, pool.id);
+        hash = fnv_string(hash, pool.title);
+        hash = fnv_value(hash, pool.trigger_technology);
+        hash = fnv_value(hash, pool.final_pool);
+    }
+    for (const EraRewardOption &option : _era_reward_options) {
+        hash = fnv_string(hash, option.id);
+        hash = fnv_string(hash, option.title);
+        hash = fnv_string(hash, option.description);
+        hash = fnv_string(hash, option.icon);
+        hash = fnv_value(hash, option.base_weight);
+        hash = fnv_value(hash, option.fallback);
+        hash = fnv_value(hash, option.eligibility_code);
+        hash = fnv_value(hash, option.eligibility_threshold);
+        hash = fnv_value(hash, option.program_id);
+    }
+    for (const EraRewardRule &rule : _era_reward_rules) {
+        hash = fnv_value(hash, rule.code);
+        hash = fnv_value(hash, rule.threshold);
+        hash = fnv_value(hash, rule.multiplier_q16);
+        hash = fnv_value(hash, rule.signal_index);
+        hash = fnv_value(hash, rule.route_technology_begin);
+        hash = fnv_value(hash, rule.route_technology_count);
+        hash = fnv_string(hash, rule.reason);
+    }
+    for (int32_t technology : _era_reward_route_technology_indices)
+        hash = fnv_value(hash, technology);
     _catalog_hash = hash;
     _configured = true;
     reset_runtime_state();
@@ -608,6 +648,710 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
     out["catalog_hash"] = static_cast<int64_t>(_catalog_hash);
     out["definitions"] = count;
     out["metrics"] = _metric_count;
+    return out;
+}
+
+bool EffectRuntime::compile_era_reward_catalog(const Dictionary &catalog,
+                                               std::string &error) {
+    _era_reward_pools.clear();
+    _era_reward_options.clear();
+    _era_reward_rules.clear();
+    _era_reward_route_technology_indices.clear();
+    _era_reward_pool_by_technology.clear();
+    const PackedStringArray pool_ids = get_strings(catalog, "era_reward_pool_ids");
+    // Focused Effect catalogs may intentionally omit the optional gameplay
+    // extension. The production EffectDomainCatalog always supplies it and
+    // the strict 11x9 validation below then applies.
+    if (!catalog.has("era_reward_pool_ids")) return true;
+    const auto reward_command_whitelisted = [](const CommandDefinition &command) {
+        if (command.action == MODIFIER_COMMAND)
+            return command.domain >= 0 && command.domain <= 3 &&
+                (command.opcode == ModifierRuntime::COMMAND_APPLY ||
+                 command.opcode == ModifierRuntime::COMMAND_REMOVE);
+        if (command.action == COUNTRY_COMMAND)
+            return command.domain == 1 &&
+                command.opcode == NativeCountryRuntime::COMMAND_GRANT_TECHNOLOGY;
+        if (command.action == ECONOMY_COMMAND)
+            return command.domain == 2 && command.opcode >= 1 && command.opcode <= 8;
+        if (command.action == GAMEPLAY_COMMAND || command.action == PUBLISH_EVENT)
+            return command.opcode > 0;
+        return false;
+    };
+    const PackedStringArray pool_titles = get_strings(catalog, "era_reward_pool_titles");
+    const PackedInt32Array trigger_tech = get_i32(
+        catalog, "era_reward_trigger_technology_indices");
+    const PackedByteArray pool_final = get_u8(catalog, "era_reward_pool_final");
+    const PackedInt32Array option_offsets = get_i32(
+        catalog, "era_reward_option_offsets");
+    const PackedStringArray option_ids = get_strings(catalog, "era_reward_option_ids");
+    const PackedStringArray option_titles = get_strings(
+        catalog, "era_reward_option_titles");
+    const PackedStringArray option_descriptions = get_strings(
+        catalog, "era_reward_option_descriptions");
+    const PackedStringArray option_icons = get_strings(
+        catalog, "era_reward_option_icons");
+    const PackedInt32Array option_weights = get_i32(
+        catalog, "era_reward_option_weights");
+    const PackedByteArray option_fallback = get_u8(
+        catalog, "era_reward_option_fallback");
+    const PackedInt32Array eligibility_codes = get_i32(
+        catalog, "era_reward_option_eligibility_codes");
+    const PackedInt64Array eligibility_thresholds = get_i64(
+        catalog, "era_reward_option_eligibility_thresholds");
+    const PackedInt32Array rule_offsets = get_i32(catalog, "era_reward_rule_offsets");
+    const PackedInt32Array rule_codes = get_i32(catalog, "era_reward_rule_codes");
+    const PackedInt64Array rule_thresholds = get_i64(
+        catalog, "era_reward_rule_thresholds");
+    const PackedInt32Array rule_multipliers = get_i32(
+        catalog, "era_reward_rule_multipliers_q16");
+    const PackedStringArray rule_reasons = get_strings(
+        catalog, "era_reward_rule_reasons");
+    const PackedInt32Array rule_signal_indices = get_i32(
+        catalog, "era_reward_rule_signal_indices");
+    const PackedInt32Array rule_route_offsets = get_i32(
+        catalog, "era_reward_rule_route_technology_offsets");
+    const PackedInt32Array rule_route_technologies = get_i32(
+        catalog, "era_reward_rule_route_technology_indices");
+    const PackedInt32Array command_offsets = get_i32(
+        catalog, "era_reward_command_offsets");
+    const PackedStringArray command_definition_keys = get_strings(
+        catalog, "era_reward_command_definition_keys");
+    const PackedStringArray command_effect_keys = get_strings(
+        catalog, "era_reward_command_effect_keys");
+    const PackedInt32Array selector_entity_types = get_i32(
+        catalog, "era_reward_selector_entity_types");
+    const PackedInt32Array selector_filter_codes = get_i32(
+        catalog, "era_reward_selector_filter_codes");
+    const PackedInt32Array selector_rankings = get_i32(
+        catalog, "era_reward_selector_rankings");
+    const PackedInt32Array selector_top_n = get_i32(
+        catalog, "era_reward_selector_top_n");
+    const PackedInt32Array selector_minimum = get_i32(
+        catalog, "era_reward_selector_minimum");
+    if (pool_ids.size() != 11 || pool_titles.size() != 11 ||
+        trigger_tech.size() != 11 || pool_final.size() != 11 ||
+        option_offsets.size() != 12 || option_offsets[0] != 0 ||
+        option_offsets[11] != 99 || option_ids.size() != 99 ||
+        option_titles.size() != 99 || option_descriptions.size() != 99 ||
+        option_icons.size() != 99 || option_weights.size() != 99 ||
+        option_fallback.size() != 99 || eligibility_codes.size() != 99 ||
+        eligibility_thresholds.size() != 99 || rule_offsets.size() != 100 ||
+        command_offsets.size() != 100 || rule_offsets[0] != 0 ||
+        command_offsets[0] != 0 ||
+        rule_codes.size() != rule_thresholds.size() ||
+        rule_codes.size() != rule_multipliers.size() ||
+        rule_codes.size() != rule_reasons.size() ||
+        rule_codes.size() != rule_signal_indices.size() ||
+        rule_route_offsets.size() != rule_codes.size() + 1 ||
+        rule_route_offsets[0] != 0 ||
+        rule_route_offsets[rule_route_offsets.size() - 1] !=
+            rule_route_technologies.size() ||
+        command_definition_keys.size() != command_effect_keys.size() ||
+        command_effect_keys.size() != selector_entity_types.size() ||
+        command_effect_keys.size() != selector_filter_codes.size() ||
+        command_effect_keys.size() != selector_rankings.size() ||
+        command_effect_keys.size() != selector_top_n.size() ||
+        command_effect_keys.size() != selector_minimum.size()) {
+        error = "era_reward_catalog_shape_invalid";
+        return false;
+    }
+    std::unordered_set<std::string> seen;
+    for (int32_t pool_index = 0; pool_index < 11; ++pool_index) {
+        const int32_t begin = option_offsets[pool_index];
+        const int32_t end = option_offsets[pool_index + 1];
+        if (end - begin != 9 || trigger_tech[pool_index] < 0 ||
+            !_era_reward_pool_by_technology.emplace(
+                trigger_tech[pool_index], pool_index).second) {
+            error = "era_reward_pool_shape_invalid";
+            return false;
+        }
+        EraRewardPool pool;
+        pool.id = string_at(pool_ids, pool_index);
+        pool.title = string_at(pool_titles, pool_index);
+        pool.trigger_technology = trigger_tech[pool_index];
+        pool.final_pool = pool_final[pool_index];
+        pool.option_begin = begin;
+        pool.option_count = end - begin;
+        if (pool.id.empty() || pool.title.empty() || !seen.emplace(pool.id).second) {
+            error = "era_reward_pool_identity_invalid";
+            return false;
+        }
+        _era_reward_pools.push_back(std::move(pool));
+    }
+    seen.clear();
+    for (int32_t option_index = 0; option_index < 99; ++option_index) {
+        if (rule_offsets[option_index] > rule_offsets[option_index + 1] ||
+            command_offsets[option_index] > command_offsets[option_index + 1] ||
+            command_offsets[option_index + 1] - command_offsets[option_index] < 1 ||
+            command_offsets[option_index + 1] - command_offsets[option_index] > 128) {
+            error = "era_reward_option_offsets_invalid";
+            return false;
+        }
+        const int32_t command_begin = command_offsets[option_index];
+        int32_t expanded_bound = 0;
+        int32_t program_id = -1;
+        for (int32_t row = command_begin; row < command_offsets[option_index + 1]; ++row) {
+            if (row < 0 || row >= command_effect_keys.size() ||
+                string_at(command_definition_keys, row).empty() ||
+                selector_entity_types[row] < 0 || selector_entity_types[row] > 6 ||
+                selector_filter_codes[row] < 0 ||
+                selector_rankings[row] < 0 || selector_rankings[row] > 4 ||
+                selector_top_n[row] < 1 || selector_top_n[row] > 32 ||
+                selector_minimum[row] < 1 ||
+                selector_minimum[row] > selector_top_n[row]) {
+                error = "era_reward_selector_invalid";
+                return false;
+            }
+            if (option_fallback[option_index] != 0 &&
+                (selector_entity_types[row] != 0 || selector_top_n[row] != 1)) {
+                error = "era_reward_fallback_target_invalid";
+                return false;
+            }
+            expanded_bound += selector_top_n[row];
+            const auto found = _definition_ids.find(string_at(command_effect_keys, row));
+            if (found == _definition_ids.end() ||
+                (program_id >= 0 && program_id != found->second)) {
+                error = "era_reward_effect_program_missing";
+                return false;
+            }
+            program_id = found->second;
+            const Definition &reward_definition = _definitions[
+                static_cast<size_t>(program_id)];
+            for (int32_t command_index = reward_definition.command_begin;
+                 command_index < reward_definition.command_begin +
+                     reward_definition.command_count; ++command_index) {
+                if (command_index < 0 ||
+                    command_index >= static_cast<int32_t>(_command_definitions.size()) ||
+                    !reward_command_whitelisted(_command_definitions[
+                        static_cast<size_t>(command_index)])) {
+                    error = "era_reward_command_not_whitelisted";
+                    return false;
+                }
+            }
+        }
+        if (expanded_bound > 128 || program_id < 0) {
+            error = "era_reward_expanded_command_limit_invalid";
+            return false;
+        }
+        EraRewardOption option;
+        option.id = string_at(option_ids, option_index);
+        option.title = string_at(option_titles, option_index);
+        option.description = string_at(option_descriptions, option_index);
+        option.icon = string_at(option_icons, option_index);
+        option.base_weight = option_weights[option_index];
+        option.fallback = option_fallback[option_index];
+        option.eligibility_code = eligibility_codes[option_index];
+        option.eligibility_threshold = eligibility_thresholds[option_index];
+        option.rule_begin = rule_offsets[option_index];
+        option.rule_count = rule_offsets[option_index + 1] - option.rule_begin;
+        option.program_id = program_id;
+        if (option.id.empty() || option.title.empty() || option.base_weight <= 0 ||
+            !seen.emplace(option.id).second ||
+            (option.fallback != 0 && option.eligibility_code != 0)) {
+            error = "era_reward_option_identity_invalid";
+            return false;
+        }
+        _era_reward_options.push_back(std::move(option));
+    }
+    if (rule_offsets[99] != rule_codes.size() ||
+        command_offsets[99] != command_effect_keys.size()) {
+        error = "era_reward_catalog_terminal_offset_invalid";
+        return false;
+    }
+    for (int32_t row = 0; row < rule_codes.size(); ++row) {
+        if (rule_codes[row] < 0 || rule_codes[row] > 6 ||
+            rule_route_offsets[row] > rule_route_offsets[row + 1] ||
+            rule_multipliers[row] <= 0 || rule_multipliers[row] > 262144) {
+            error = "era_reward_weight_rule_invalid";
+            return false;
+        }
+        if ((rule_codes[row] == 5 && rule_signal_indices[row] < 0) ||
+            (rule_codes[row] == 6 &&
+             rule_route_offsets[row] == rule_route_offsets[row + 1])) {
+            error = "era_reward_context_rule_invalid";
+            return false;
+        }
+        _era_reward_rules.push_back({rule_codes[row], rule_thresholds[row],
+            rule_multipliers[row], rule_signal_indices[row],
+            rule_route_offsets[row],
+            rule_route_offsets[row + 1] - rule_route_offsets[row],
+            string_at(rule_reasons, row)});
+    }
+    _era_reward_route_technology_indices.reserve(
+        static_cast<size_t>(rule_route_technologies.size()));
+    for (int32_t technology : rule_route_technologies) {
+        if (technology < 0) {
+            error = "era_reward_route_technology_invalid";
+            return false;
+        }
+        _era_reward_route_technology_indices.push_back(technology);
+    }
+    for (const EraRewardPool &pool : _era_reward_pools) {
+        int32_t fallbacks = 0;
+        for (int32_t i = pool.option_begin;
+             i < pool.option_begin + pool.option_count; ++i)
+            fallbacks += _era_reward_options[i].fallback != 0 ? 1 : 0;
+        if (fallbacks != 3) {
+            error = "era_reward_fallback_count_invalid";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool EffectRuntime::bind_era_reward_player_country_pod(uint64_t country_handle,
+                                                       std::string &error) {
+    if (!_configured || _country_runtime == nullptr) {
+        error = "era_reward_runtime_unavailable";
+        return false;
+    }
+    if (country_handle == 0 ||
+        !_country_runtime->valid_handle(static_cast<int64_t>(country_handle))) {
+        error = "era_reward_player_country_invalid";
+        return false;
+    }
+    if (_era_reward_player_country != 0 &&
+        _era_reward_player_country != country_handle &&
+        _era_reward_offer.status != 0 && _era_reward_offer.status != 3) {
+        error = "era_reward_player_rebind_while_offer_open";
+        return false;
+    }
+    _era_reward_player_country = country_handle;
+    return true;
+}
+
+bool EffectRuntime::notify_era_reward_technology_activated_pod(
+        uint64_t country_handle, int32_t technology_id, int64_t day_index,
+        std::string &error) {
+    if (!_configured || _country_runtime == nullptr) {
+        error = "era_reward_runtime_unavailable";
+        return false;
+    }
+    if (_era_reward_player_country == 0 ||
+        country_handle != _era_reward_player_country)
+        return true;
+    const auto found = _era_reward_pool_by_technology.find(technology_id);
+    if (found == _era_reward_pool_by_technology.end()) return true;
+    refresh_era_reward_offer_status();
+    if (_era_reward_offer.status == 1 || _era_reward_offer.status == 2 ||
+        _era_reward_offer.status == 4) {
+        error = "era_reward_previous_offer_unresolved";
+        return false;
+    }
+    return plan_era_reward_offer(found->second, country_handle, day_index, error);
+}
+
+bool EffectRuntime::era_reward_option_eligible(
+        const EraRewardOption &option, int64_t cash, int32_t territory,
+        int64_t completed, int64_t signals) const {
+    switch (option.eligibility_code) {
+        case 0: return true;
+        case 1: return territory >= option.eligibility_threshold;
+        case 2: return cash >= option.eligibility_threshold;
+        case 3: return completed < option.eligibility_threshold;
+        case 4: return signals >= option.eligibility_threshold;
+        case 5: return false; // Requires a registered frozen goods selector.
+        default: return false;
+    }
+}
+
+int64_t EffectRuntime::era_reward_option_weight(
+        const EraRewardOption &option, int64_t cash, int32_t territory,
+        int64_t completed, int64_t signals,
+        const PackedInt32Array &signal_counts,
+        const PackedInt32Array &technology_states,
+        std::array<std::string, 2> &reasons, int32_t &reason_count) const {
+    int64_t weight = option.base_weight;
+    reason_count = 0;
+    struct Hit { int64_t impact = 0; std::string reason; };
+    std::vector<Hit> hits;
+    for (int32_t i = option.rule_begin;
+         i < option.rule_begin + option.rule_count; ++i) {
+        const EraRewardRule &rule = _era_reward_rules[static_cast<size_t>(i)];
+        bool hit = false;
+        switch (rule.code) {
+            case 0: hit = true; break;
+            case 1: hit = cash < std::max<int64_t>(1, territory) * 500000; break;
+            case 2: hit = territory >= rule.threshold; break;
+            case 3: hit = completed < 64; break;
+            case 4: hit = signals >= rule.threshold; break;
+            case 5:
+                hit = rule.signal_index >= 0 &&
+                    rule.signal_index < signal_counts.size() &&
+                    signal_counts[rule.signal_index] > 0;
+                break;
+            case 6:
+                for (int32_t route = rule.route_technology_begin;
+                     route < rule.route_technology_begin +
+                         rule.route_technology_count; ++route) {
+                    if (route < 0 || route >= static_cast<int32_t>(
+                            _era_reward_route_technology_indices.size()))
+                        continue;
+                    const int32_t technology =
+                        _era_reward_route_technology_indices[
+                            static_cast<size_t>(route)];
+                    if (technology >= 0 && technology < technology_states.size() &&
+                        technology_states[technology] >= 4) {
+                        hit = true;
+                        break;
+                    }
+                }
+                break;
+            default: break;
+        }
+        if (!hit) continue;
+        const int64_t before = weight;
+        weight = std::max<int64_t>(1, mul_q16(weight, rule.multiplier_q16));
+        if (!rule.reason.empty())
+            hits.push_back({std::llabs(weight - before), rule.reason});
+    }
+    std::stable_sort(hits.begin(), hits.end(), [](const Hit &lhs, const Hit &rhs) {
+        if (lhs.impact != rhs.impact) return lhs.impact > rhs.impact;
+        return lhs.reason < rhs.reason;
+    });
+    reason_count = std::min<int32_t>(2, static_cast<int32_t>(hits.size()));
+    for (int32_t i = 0; i < reason_count; ++i) reasons[i] = hits[i].reason;
+    return weight;
+}
+
+bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
+                                          uint64_t country_handle,
+                                          int64_t day_index,
+                                          std::string &error) {
+    const auto plan_start = std::chrono::steady_clock::now();
+    if (pool_index < 0 || pool_index >= static_cast<int32_t>(_era_reward_pools.size()) ||
+        _country_runtime == nullptr ||
+        !_country_runtime->valid_handle(static_cast<int64_t>(country_handle))) {
+        error = "era_reward_plan_input_invalid";
+        return false;
+    }
+    const Dictionary country = _country_runtime->country_snapshot(
+        static_cast<int64_t>(country_handle));
+    const Dictionary treasury = _country_runtime->treasury_snapshot(
+        static_cast<int64_t>(country_handle));
+    const Dictionary research = _country_runtime->research_snapshot(
+        static_cast<int64_t>(country_handle));
+    const Dictionary signals_snapshot = _country_runtime->research_signal_snapshot(
+        static_cast<int64_t>(country_handle));
+    if (!static_cast<bool>(country.get("ok", false)) ||
+        !static_cast<bool>(treasury.get("ok", false)) ||
+        !static_cast<bool>(research.get("ok", false)) ||
+        !static_cast<bool>(signals_snapshot.get("ok", false))) {
+        error = "era_reward_frozen_snapshot_unavailable";
+        return false;
+    }
+    const PackedInt32Array territory_cells = country.get(
+        "territory_cells", PackedInt32Array());
+    const int32_t territory = territory_cells.size();
+    const int64_t cash = treasury.get("cash", 0);
+    const int64_t completed = research.get("completed_total", 0);
+    const PackedInt32Array evidence_signal_ids = signals_snapshot.get(
+        "signal_ids", PackedInt32Array());
+    const PackedInt32Array evidence_signal_counts = signals_snapshot.get(
+        "counts", PackedInt32Array());
+    PackedInt32Array signal_counts;
+    int32_t maximum_signal = -1;
+    for (int32_t i = 0; i < evidence_signal_ids.size(); ++i)
+        maximum_signal = std::max(maximum_signal, evidence_signal_ids[i]);
+    if (maximum_signal >= 0) signal_counts.resize(maximum_signal + 1);
+    const PackedInt32Array technology_states = research.get(
+        "technology_states", PackedInt32Array());
+    int64_t signals = 0;
+    for (int32_t i = 0; i < evidence_signal_ids.size(); ++i) {
+        const int32_t signal = evidence_signal_ids[i];
+        const int32_t count = i < evidence_signal_counts.size()
+            ? evidence_signal_counts[i] : 0;
+        if (signal >= 0 && signal < signal_counts.size())
+            signal_counts.set(signal, count);
+        signals += count;
+    }
+    const EraRewardPool &pool = _era_reward_pools[static_cast<size_t>(pool_index)];
+    struct WeightedCandidate {
+        int32_t option = -1;
+        int64_t weight = 0;
+        std::array<std::string, 2> reasons{};
+        int32_t reason_count = 0;
+    };
+    std::vector<WeightedCandidate> normal;
+    std::vector<WeightedCandidate> fallbacks;
+    for (int32_t option_index = pool.option_begin;
+         option_index < pool.option_begin + pool.option_count; ++option_index) {
+        const EraRewardOption &option = _era_reward_options[
+            static_cast<size_t>(option_index)];
+        if (!era_reward_option_eligible(option, cash, territory, completed, signals))
+            continue;
+        WeightedCandidate candidate;
+        candidate.option = option_index;
+        candidate.weight = era_reward_option_weight(option, cash, territory,
+            completed, signals, signal_counts, technology_states,
+            candidate.reasons, candidate.reason_count);
+        (option.fallback != 0 ? fallbacks : normal).push_back(std::move(candidate));
+    }
+    uint64_t seed = static_cast<uint64_t>(_country_runtime->world_seed());
+    seed = fnv_string(seed, String(country.get("country_id", "")).utf8().get_data());
+    seed = fnv_string(seed, pool.id);
+    seed = fnv_value(seed, _era_reward_next_generation);
+    std::array<WeightedCandidate, 3> selected{};
+    int32_t selected_count = 0;
+    while (selected_count < 3 && !normal.empty()) {
+        uint64_t total = 0;
+        for (const WeightedCandidate &candidate : normal)
+            total += static_cast<uint64_t>(std::max<int64_t>(1, candidate.weight));
+        const uint64_t pick = total > 0 ? splitmix64_next(seed) % total : 0;
+        uint64_t cursor = 0;
+        size_t chosen = 0;
+        for (; chosen < normal.size(); ++chosen) {
+            cursor += static_cast<uint64_t>(std::max<int64_t>(1, normal[chosen].weight));
+            if (pick < cursor) break;
+        }
+        if (chosen >= normal.size()) chosen = normal.size() - 1;
+        selected[selected_count++] = normal[chosen];
+        normal.erase(normal.begin() + static_cast<ptrdiff_t>(chosen));
+    }
+    while (selected_count < 3 && !fallbacks.empty()) {
+        const size_t chosen = static_cast<size_t>(
+            splitmix64_next(seed) % fallbacks.size());
+        selected[selected_count++] = fallbacks[chosen];
+        fallbacks.erase(fallbacks.begin() + static_cast<ptrdiff_t>(chosen));
+    }
+    if (selected_count != 3) {
+        error = "era_reward_offer_cannot_fill_three";
+        return false;
+    }
+    EraRewardOffer offer;
+    offer.plan_id = _era_reward_next_plan_id++;
+    offer.generation = _era_reward_next_generation++;
+    offer.pool_index = pool_index;
+    offer.milestone_technology = pool.trigger_technology;
+    offer.country_handle = country_handle;
+    offer.country_generation = static_cast<uint32_t>(country_handle >> 32U);
+    offer.status = 1;
+    offer.plan_hash = 1469598103934665603ULL;
+    offer.plan_hash = fnv_value(offer.plan_hash, offer.plan_id);
+    offer.plan_hash = fnv_value(offer.plan_hash, offer.generation);
+    offer.plan_hash = fnv_value(offer.plan_hash, day_index);
+    offer.plan_hash = fnv_string(offer.plan_hash, pool.id);
+    for (int32_t i = 0; i < 3; ++i) {
+        EraRewardAlternative &alternative = offer.alternatives[i];
+        alternative.option_index = selected[i].option;
+        alternative.weight = selected[i].weight;
+        alternative.target_handle = country_handle;
+        alternative.target_generation = offer.country_generation;
+        alternative.reasons = selected[i].reasons;
+        alternative.reason_count = selected[i].reason_count;
+        alternative.target_summary = String(country.get("country_name", "")).utf8().get_data();
+        const EraRewardOption &option = _era_reward_options[
+            static_cast<size_t>(alternative.option_index)];
+        offer.plan_hash = fnv_string(offer.plan_hash, option.id);
+        offer.plan_hash = fnv_value(offer.plan_hash, alternative.weight);
+        offer.plan_hash = fnv_value(offer.plan_hash, alternative.target_handle);
+        offer.plan_hash = fnv_value(offer.plan_hash, alternative.target_generation);
+        for (int32_t reason = 0; reason < alternative.reason_count; ++reason)
+            offer.plan_hash = fnv_string(offer.plan_hash, alternative.reasons[reason]);
+    }
+    _era_reward_offer = std::move(offer);
+    _last_era_reward_expanded_commands = 0;
+    for (const EraRewardAlternative &alternative : _era_reward_offer.alternatives) {
+        const int32_t option_index = alternative.option_index;
+        if (option_index < 0 ||
+            option_index >= static_cast<int32_t>(_era_reward_options.size()))
+            continue;
+        const int32_t program_id = _era_reward_options[
+            static_cast<size_t>(option_index)].program_id;
+        if (program_id >= 0 && program_id < static_cast<int32_t>(_definitions.size()))
+            _last_era_reward_expanded_commands += _definitions[
+                static_cast<size_t>(program_id)].command_count;
+    }
+    _last_era_reward_plan_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - plan_start).count();
+    ++_era_reward_offers_planned;
+    _country_runtime->set_era_reward_reference_pod(
+        _era_reward_offer.plan_id, _era_reward_offer.generation,
+        _era_reward_offer.milestone_technology, _era_reward_offer.status);
+    return true;
+}
+
+Dictionary EffectRuntime::choose_era_reward(int64_t offer_generation,
+                                             int32_t choice_index,
+                                             int64_t effective_day) {
+    refresh_era_reward_offer_status();
+    if (!_configured) return failure("effect_runtime_unconfigured");
+    if (_era_reward_offer.status != 1 ||
+        _era_reward_offer.generation != offer_generation)
+        return failure("era_reward_offer_generation_stale");
+    if (choice_index < 0 || choice_index >= 3 || effective_day < 0)
+        return failure("era_reward_choice_invalid");
+    const EraRewardAlternative &alternative =
+        _era_reward_offer.alternatives[static_cast<size_t>(choice_index)];
+    if (alternative.option_index < 0 ||
+        alternative.option_index >= static_cast<int32_t>(_era_reward_options.size()))
+        return failure("era_reward_frozen_alternative_invalid");
+    const EraRewardOption &option = _era_reward_options[
+        static_cast<size_t>(alternative.option_index)];
+    if (option.program_id < 0 ||
+        option.program_id >= static_cast<int32_t>(_definitions.size()))
+        return failure("era_reward_program_invalid");
+    const Definition &definition = _definitions[static_cast<size_t>(option.program_id)];
+    const int64_t instance_id = static_cast<int64_t>(
+        0x4552410000000000ULL | (static_cast<uint64_t>(_era_reward_offer.plan_id) &
+                                0x000000ffffffffffULL));
+    std::string error;
+    if (!upsert_instance_pod(instance_id, definition.key, 1, 0x45524152,
+            _era_reward_offer.generation, _era_reward_offer.country_handle,
+            alternative.target_handle, alternative.target_generation, 0,
+            effective_day, false, error))
+        return failure(error.c_str());
+    if (static_cast<int32_t>(_transactions.size()) >= _max_transactions) {
+        compact_terminal_transactions();
+        if (static_cast<int32_t>(_transactions.size()) >= _max_transactions)
+            return failure("effect_transaction_capacity_exceeded");
+    }
+    Transaction transaction;
+    transaction.id = _next_transaction_id++;
+    transaction.source_instance_id = instance_id;
+    transaction.source_generation = 1;
+    transaction.program_id = option.program_id;
+    transaction.effective_day = effective_day;
+    for (int32_t ordinal = 0; ordinal < definition.command_count; ++ordinal) {
+        const int32_t command_definition_id = definition.command_begin + ordinal;
+        const CommandDefinition &source = _command_definitions[
+            static_cast<size_t>(command_definition_id)];
+        Command command;
+        command.action = source.action;
+        command.domain = source.domain;
+        command.opcode = source.opcode;
+        command.target_handle = alternative.target_handle;
+        command.target_generation = alternative.target_generation;
+        command.value_q16 = source.value;
+        command.duration_days = source.duration_days;
+        command.stacks = source.stacks;
+        command.command_key_id = command_definition_id;
+        command.command_definition_id = command_definition_id;
+        command.payload = source.payload;
+        command.idempotency_key = make_hash(
+            static_cast<uint64_t>(instance_id), 1,
+            static_cast<uint64_t>(_era_reward_offer.generation), ordinal);
+        append_command(transaction, command);
+    }
+    if (transaction.command_count == 0 || transaction.command_count > 128)
+        return failure("era_reward_transaction_command_count_invalid");
+    transaction.plan_hash = 1469598103934665603ULL;
+    transaction.plan_hash = fnv_value(transaction.plan_hash,
+        transaction.source_instance_id);
+    transaction.plan_hash = fnv_value(transaction.plan_hash,
+        transaction.source_generation);
+    transaction.plan_hash = fnv_value(transaction.plan_hash,
+        transaction.program_id);
+    transaction.plan_hash = fnv_value(transaction.plan_hash,
+        transaction.effective_day);
+    for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+        const Command *stored = command_at(transaction, ordinal);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->action);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->domain);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->opcode);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->target_handle);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->target_generation);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->value_q16);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->duration_days);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->stacks);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->command_key_id);
+        transaction.plan_hash = fnv_value(transaction.plan_hash,
+            stored->command_definition_id);
+        for (int64_t value : stored->payload)
+            transaction.plan_hash = fnv_value(transaction.plan_hash, value);
+        transaction.plan_hash = fnv_value(transaction.plan_hash,
+            stored->idempotency_key);
+    }
+    _transactions.push_back(std::move(transaction));
+    _transaction_ids[_transactions.back().id] =
+        static_cast<int32_t>(_transactions.size() - 1);
+    track_pending_transaction(_transactions.back());
+    index_transaction_commands(_transactions.back());
+    _era_reward_offer.status = 2;
+    _era_reward_offer.selected_choice = choice_index;
+    _era_reward_offer.transaction_id = _transactions.back().id;
+    if (_country_runtime != nullptr)
+        _country_runtime->set_era_reward_reference_pod(
+            _era_reward_offer.plan_id, _era_reward_offer.generation,
+            _era_reward_offer.milestone_technology, _era_reward_offer.status);
+    Dictionary out;
+    out["ok"] = true;
+    out["offer_generation"] = offer_generation;
+    out["choice_index"] = choice_index;
+    out["transaction_id"] = _era_reward_offer.transaction_id;
+    return out;
+}
+
+void EffectRuntime::refresh_era_reward_offer_status() {
+    if (_era_reward_offer.status != 2 || _era_reward_offer.transaction_id <= 0)
+        return;
+    const int32_t status = transaction_status_pod(
+        _era_reward_offer.transaction_id);
+    if (status == ACKED) {
+        _era_reward_offer.status = 3;
+    } else if (status == REJECTED || status == RESYNC_REQUIRED || status == 0) {
+        _era_reward_offer.status = 4;
+        _era_reward_offer.error = status == RESYNC_REQUIRED
+            ? "era_reward_resync_required" : "era_reward_transaction_rejected";
+    }
+    if (_country_runtime != nullptr &&
+        (_era_reward_offer.status == 3 || _era_reward_offer.status == 4))
+        _country_runtime->set_era_reward_reference_pod(
+            _era_reward_offer.plan_id, _era_reward_offer.generation,
+            _era_reward_offer.milestone_technology, _era_reward_offer.status);
+}
+
+Dictionary EffectRuntime::era_reward_offer_snapshot() {
+    refresh_era_reward_offer_status();
+    Dictionary out;
+    out["ok"] = true;
+    const char *status = "NONE";
+    if (_era_reward_offer.status == 1) status = "OPEN";
+    else if (_era_reward_offer.status == 2) status = "SELECTED_PENDING";
+    else if (_era_reward_offer.status == 3) status = "RESOLVED";
+    else if (_era_reward_offer.status == 4) status = "ERROR";
+    out["status"] = status;
+    out["plan_id"] = _era_reward_offer.plan_id;
+    out["offer_generation"] = _era_reward_offer.generation;
+    out["country_handle"] = static_cast<int64_t>(_era_reward_offer.country_handle);
+    out["milestone_technology"] = _era_reward_offer.milestone_technology;
+    out["selected_choice"] = _era_reward_offer.selected_choice;
+    out["transaction_id"] = _era_reward_offer.transaction_id;
+    out["plan_hash"] = static_cast<int64_t>(_era_reward_offer.plan_hash);
+    out["error"] = String(_era_reward_offer.error.c_str());
+    if (_era_reward_offer.pool_index >= 0 &&
+        _era_reward_offer.pool_index < static_cast<int32_t>(_era_reward_pools.size())) {
+        const EraRewardPool &pool = _era_reward_pools[
+            static_cast<size_t>(_era_reward_offer.pool_index)];
+        out["pool_id"] = String(pool.id.c_str());
+        out["era_title"] = String::utf8(pool.title.c_str());
+        out["final_pool"] = pool.final_pool != 0;
+    }
+    Array alternatives;
+    if (_era_reward_offer.status != 0) {
+        for (const EraRewardAlternative &alternative : _era_reward_offer.alternatives) {
+            if (alternative.option_index < 0 || alternative.option_index >=
+                static_cast<int32_t>(_era_reward_options.size())) continue;
+            const EraRewardOption &option = _era_reward_options[
+                static_cast<size_t>(alternative.option_index)];
+            Dictionary row;
+            row["option_id"] = String(option.id.c_str());
+            row["title"] = String::utf8(option.title.c_str());
+            row["description"] = String::utf8(option.description.c_str());
+            row["icon_id"] = String(option.icon.c_str());
+            row["weight"] = alternative.weight;
+            row["target_handle"] = static_cast<int64_t>(alternative.target_handle);
+            row["target_generation"] = static_cast<int64_t>(
+                alternative.target_generation);
+            row["target_summary"] = String::utf8(alternative.target_summary.c_str());
+            PackedStringArray reasons;
+            for (int32_t i = 0; i < alternative.reason_count; ++i)
+                reasons.push_back(String::utf8(alternative.reasons[i].c_str()));
+            row["reasons"] = reasons;
+            alternatives.push_back(row);
+        }
+    }
+    out["alternatives"] = alternatives;
     return out;
 }
 
@@ -648,6 +1392,13 @@ void EffectRuntime::reset_runtime_state() {
     _native_gameplay_bound_transaction_ids.clear();
     _external_bindings.clear();
     _external_binding_ids.clear();
+    _era_reward_player_country = 0;
+    _era_reward_next_plan_id = 1;
+    _era_reward_next_generation = 1;
+    _era_reward_offer = EraRewardOffer{};
+    _last_era_reward_plan_ms = 0.0;
+    _era_reward_offers_planned = 0;
+    _last_era_reward_expanded_commands = 0;
     _instances_submitted = 0;
     _programs_evaluated = 0;
     _commands_emitted = 0;
@@ -1104,8 +1855,11 @@ bool EffectRuntime::enqueue_trigger_effect_pod(
         int64_t resolved_value, int32_t duration_days, int32_t stacks,
         const std::string &command_key, const std::string &definition_key,
         const std::array<int64_t, 4> &payload, std::string &error) {
+    const std::string program_key = action == COUNTRY_COMMAND
+        ? std::string("trigger.country.") + definition_key
+        : std::string("trigger.modifier.") + definition_key;
     return enqueue_external_effect_pod(effect_id, effective_day, 0x54524947,
-        trigger_id, std::string("trigger.modifier.") + definition_key, target_handle,
+        trigger_id, program_key, target_handle,
         target_handle, target_generation, fire_sequence, action, domain, opcode,
         resolved_value, duration_days, stacks, command_key, definition_key, payload, error);
 }
@@ -1147,6 +1901,15 @@ bool EffectRuntime::enqueue_external_effect_pod(
     int32_t command_definition_id = -1;
     for (int32_t i = 0; i < static_cast<int32_t>(_command_definitions.size()); ++i) {
         const CommandDefinition &candidate = _command_definitions[i];
+        const bool dynamic_country_signal_payload =
+            action == COUNTRY_COMMAND &&
+            opcode == NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
+            candidate.action == action && candidate.opcode == opcode &&
+            (static_cast<uint64_t>(candidate.payload[0]) >> 32U) ==
+                (static_cast<uint64_t>(payload[0]) >> 32U) &&
+            candidate.payload[1] == payload[1] &&
+            candidate.payload[2] == payload[2] &&
+            candidate.payload[3] == payload[3];
         if (candidate.command_key == command_key &&
             candidate.definition_key == definition_key &&
             candidate.action == action && candidate.domain == domain &&
@@ -1154,7 +1917,8 @@ bool EffectRuntime::enqueue_external_effect_pod(
                 candidate.opcode == ModifierRuntime::COMMAND_APPLY)) &&
             candidate.target_resolver == TARGET_INSTANCE &&
             candidate.duration_days == duration_days &&
-            candidate.stacks == stacks && candidate.payload == payload) {
+            candidate.stacks == stacks &&
+            (candidate.payload == payload || dynamic_country_signal_payload)) {
             command_definition_id = i;
             break;
         }
@@ -1239,11 +2003,183 @@ bool EffectRuntime::enqueue_external_effect_pod(
     return true;
 }
 
+bool EffectRuntime::enqueue_family_colonization_pod(
+        int64_t effect_id, int64_t effective_day, int64_t source_id,
+        uint64_t country_handle, uint32_t country_generation,
+        uint64_t expedition_handle, uint32_t expedition_generation,
+        int32_t target_cell, uint64_t fire_sequence, std::string &error,
+        int64_t *out_transaction_id) {
+    if (!_configured) { error = "effect_runtime_unconfigured"; return false; }
+    if (effect_id <= 0 || effective_day < 0 || country_handle == 0 ||
+        country_generation == 0 || expedition_handle == 0 ||
+        expedition_generation == 0 || target_cell < 0) {
+        error = "family_colonization_effect_shape_invalid";
+        return false;
+    }
+    const uint64_t base_key = make_hash(static_cast<uint64_t>(effect_id),
+        expedition_generation, fire_sequence, 0x434f4c4fU);
+    for (const Transaction &existing : _transactions) {
+        const Command *first = command_at(existing, 0);
+        if (first != nullptr && first->idempotency_key == base_key) {
+            if (out_transaction_id != nullptr) *out_transaction_id = existing.id;
+            return true;
+        }
+    }
+    if (static_cast<int32_t>(_transactions.size()) >= _max_transactions) {
+        compact_terminal_transactions();
+        if (static_cast<int32_t>(_transactions.size()) >= _max_transactions) {
+            error = "effect_transaction_capacity_exceeded";
+            return false;
+        }
+    }
+    Transaction transaction;
+    transaction.id = _next_transaction_id++;
+    transaction.source_instance_id = source_id;
+    transaction.source_generation = expedition_generation;
+    transaction.program_id = -1;
+    transaction.effective_day = effective_day;
+
+    Command claim;
+    claim.action = COUNTRY_COMMAND;
+    claim.domain = 7;
+    claim.opcode = NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY;
+    claim.target_handle = country_handle;
+    claim.target_generation = country_generation;
+    claim.command_key_id = -1;
+    claim.command_definition_id = -1;
+    claim.payload[0] = static_cast<int64_t>(static_cast<uint32_t>(target_cell));
+    claim.idempotency_key = base_key;
+    append_command(transaction, claim);
+
+    Command settle;
+    settle.action = ECONOMY_COMMAND;
+    settle.domain = 8;
+    settle.opcode = NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION;
+    settle.target_handle = expedition_handle;
+    settle.target_generation = expedition_generation;
+    settle.command_key_id = -1;
+    settle.command_definition_id = -1;
+    settle.payload[0] = static_cast<int64_t>(static_cast<uint32_t>(target_cell));
+    settle.payload[1] = static_cast<int64_t>(country_handle);
+    settle.idempotency_key = make_hash(static_cast<uint64_t>(effect_id),
+        expedition_generation, fire_sequence, 1);
+    append_command(transaction, settle);
+    if (transaction.command_count != 2) {
+        error = "family_colonization_transaction_capacity_exceeded";
+        return false;
+    }
+    transaction.plan_hash = 1469598103934665603ULL;
+    transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.id);
+    transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.effective_day);
+    for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+        const Command *stored = command_at(transaction, ordinal);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->action);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->domain);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->opcode);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->target_handle);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, stored->target_generation);
+        for (const int64_t value : stored->payload)
+            transaction.plan_hash = fnv_value(transaction.plan_hash, value);
+        transaction.plan_hash = fnv_value(transaction.plan_hash,
+                                           stored->idempotency_key);
+    }
+    _transactions.push_back(std::move(transaction));
+    _transaction_ids[_transactions.back().id] =
+        static_cast<int32_t>(_transactions.size() - 1);
+    track_pending_transaction(_transactions.back());
+    index_transaction_commands(_transactions.back());
+    if (out_transaction_id != nullptr) *out_transaction_id = _transactions.back().id;
+    return true;
+}
+
+bool EffectRuntime::enqueue_canal_commit_pod(
+        int64_t effect_id, int64_t effective_day, int64_t source_id,
+        uint64_t project_handle, uint32_t project_generation,
+        uint64_t fire_sequence, std::string &error,
+        int64_t *out_transaction_id) {
+    if (!_configured) { error = "effect_runtime_unconfigured"; return false; }
+    if (effect_id <= 0 || effective_day < 0 || source_id <= 0 ||
+        project_handle == 0 || project_generation == 0) {
+        error = "canal_effect_shape_invalid";
+        return false;
+    }
+    const uint64_t idempotency = make_hash(static_cast<uint64_t>(effect_id),
+        project_generation, fire_sequence, 0x43414e4cU);
+    for (const Transaction &existing : _transactions) {
+        const Command *first = command_at(existing, 0);
+        if (first != nullptr && first->idempotency_key == idempotency) {
+            if (out_transaction_id != nullptr) *out_transaction_id = existing.id;
+            return true;
+        }
+    }
+    if (static_cast<int32_t>(_transactions.size()) >= _max_transactions) {
+        compact_terminal_transactions();
+        if (static_cast<int32_t>(_transactions.size()) >= _max_transactions) {
+            error = "effect_transaction_capacity_exceeded";
+            return false;
+        }
+    }
+    Transaction transaction;
+    transaction.id = _next_transaction_id++;
+    transaction.source_instance_id = source_id;
+    transaction.source_generation = project_generation;
+    transaction.program_id = -2;
+    transaction.effective_day = effective_day;
+
+    Command commit;
+    commit.action = CUSTOM_DOMAIN_COMMAND;
+    commit.domain = 6;
+    commit.opcode = 2; // geography.canal.commit
+    commit.target_handle = project_handle;
+    commit.target_generation = project_generation;
+    commit.command_key_id = -1;
+    commit.command_definition_id = -1;
+    commit.idempotency_key = idempotency;
+    append_command(transaction, commit);
+    if (transaction.command_count != 1) {
+        error = "canal_effect_transaction_capacity_exceeded";
+        return false;
+    }
+    transaction.plan_hash = 1469598103934665603ULL;
+    transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.id);
+    transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.effective_day);
+    transaction.plan_hash = fnv_value(transaction.plan_hash, commit.action);
+    transaction.plan_hash = fnv_value(transaction.plan_hash, commit.domain);
+    transaction.plan_hash = fnv_value(transaction.plan_hash, commit.opcode);
+    transaction.plan_hash = fnv_value(transaction.plan_hash, commit.target_handle);
+    transaction.plan_hash = fnv_value(transaction.plan_hash, commit.target_generation);
+    transaction.plan_hash = fnv_value(transaction.plan_hash, commit.idempotency_key);
+    _transactions.push_back(std::move(transaction));
+    _transaction_ids[_transactions.back().id] =
+        static_cast<int32_t>(_transactions.size() - 1);
+    track_pending_transaction(_transactions.back());
+    index_transaction_commands(_transactions.back());
+    if (out_transaction_id != nullptr) *out_transaction_id = _transactions.back().id;
+    return true;
+}
+
 int32_t EffectRuntime::transaction_status_pod(int64_t transaction_id) const {
     const int32_t index = transaction_index_for_id(transaction_id);
     if (index >= 0 && index < static_cast<int32_t>(_transactions.size()))
         return _transactions[static_cast<size_t>(index)].status;
     return transaction_id > 0 && transaction_id <= _acked_transaction_id ? ACKED : 0;
+}
+
+bool EffectRuntime::consume_rejected_transaction_pod(
+        int64_t transaction_id, int64_t source_id) {
+    const int32_t index = transaction_index_for_id(transaction_id);
+    if (index < 0 || index >= static_cast<int32_t>(_transactions.size()))
+        return false;
+    Transaction &transaction = _transactions[static_cast<size_t>(index)];
+    if (transaction.source_instance_id != source_id ||
+        (transaction.status != REJECTED &&
+         transaction.status != RESYNC_REQUIRED)) return false;
+    // The producer has converted the failure into its own durable state. Mark
+    // the row terminal so the generic arena compactor can retire it without
+    // retaining rejected expedition transactions for the rest of the session.
+    transaction.status = ACKED;
+    compact_terminal_transactions();
+    return true;
 }
 
 Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
@@ -1624,9 +2560,15 @@ void EffectRuntime::compact_terminal_transactions() {
     compacted_commands.reserve(_command_arena.size());
     for (Transaction &transaction : _transactions) {
         if (transaction.status == ACKED) {
-            const int32_t instance_index =
-                instance_index_for_id(transaction.source_instance_id);
-            if (instance_index >= 0) retired_candidates.push_back(instance_index);
+            // Built-in transactions (negative program IDs) are owned by a
+            // peer runtime and do not have an Effect instance. Their numeric
+            // source IDs may legitimately overlap an unrelated instance ID.
+            if (transaction.program_id >= 0) {
+                const int32_t instance_index =
+                    instance_index_for_id(transaction.source_instance_id);
+                if (instance_index >= 0)
+                    retired_candidates.push_back(instance_index);
+            }
             continue;
         }
         const uint32_t new_begin = static_cast<uint32_t>(compacted_commands.size());
@@ -2527,7 +3469,8 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
             }
             ModifierRuntime::NativeCommand native;
             native.opcode = command->opcode;
-            native.sequence = static_cast<int64_t>(command->idempotency_key);
+            native.sequence = static_cast<int64_t>(command->idempotency_key &
+                0x7fffffffffffffffULL);
             native.effective_day = transaction.effective_day;
             native.definition_key = definition_key->c_str();
             native.duration_days = command->duration_days;
@@ -2762,19 +3705,19 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
             if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
                 continue;
             if (command->domain < 0 || command->domain >= 32 ||
-                command->command_definition_id < 0 ||
-                command->command_definition_id >= static_cast<int32_t>(_command_definitions.size()) ||
                 command->opcode < NativeCountryRuntime::COMMAND_CREATE_COUNTRY ||
-                command->opcode > NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL) {
+                command->opcode > NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
+                (command->command_definition_id < 0 &&
+                 command->opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY) ||
+                command->command_definition_id >= static_cast<int32_t>(_command_definitions.size())) {
                 supported = false;
                 break;
             }
-            const CommandDefinition &definition = _command_definitions[
-                static_cast<size_t>(command->command_definition_id)];
             NativeCountryRuntime::EffectCommand native;
             native.opcode = command->opcode;
             native.effective_day = transaction.effective_day;
-            native.sequence = static_cast<int64_t>(command->idempotency_key);
+            native.sequence = static_cast<int64_t>(command->idempotency_key &
+                0x7fffffffffffffffULL);
             native.target_handle = command->target_handle;
             native.target_generation = command->target_generation;
             native.value = command->value_q16;
@@ -2783,8 +3726,12 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
             // For structural country commands the catalog carries immutable
             // names in the existing cold string columns.  No Godot Variant is
             // built in this bridge.
-            native.stable_id = definition.definition_key.c_str();
-            native.display_name = definition.command_key.c_str();
+            if (command->command_definition_id >= 0) {
+                const CommandDefinition &definition = _command_definitions[
+                    static_cast<size_t>(command->command_definition_id)];
+                native.stable_id = definition.definition_key.c_str();
+                native.display_name = definition.command_key.c_str();
+            }
             commands.push_back(native);
             domain_mask |= adapter_ack_bit_for(*command);
         }
@@ -2899,6 +3846,21 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
                 _native_economy_bound_transaction_ids.end() ||
             transaction.command_count == 0)
             continue;
+        if (transaction.program_id == -1) {
+            // Colonization is intentionally ordered: Economy may consume the
+            // transit payload only after the Country claim has committed and
+            // ACKed. A rejected claim therefore never reaches Economy.
+            uint32_t prerequisite_mask = 0;
+            for (uint32_t ordinal = 0; ordinal < transaction.command_count;
+                    ++ordinal) {
+                const Command *command = command_at(transaction, ordinal);
+                if (command != nullptr && command->action == COUNTRY_COMMAND)
+                    prerequisite_mask |= adapter_ack_bit_for(*command);
+            }
+            if (prerequisite_mask != 0 &&
+                (transaction.received_ack_mask & prerequisite_mask) !=
+                    prerequisite_mask) continue;
+        }
         const uint32_t begin = static_cast<uint32_t>(commands.size());
         bool supported = true;
         uint32_t domain_mask = 0;
@@ -2913,7 +3875,7 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
                 continue;
             if (command->domain < 0 || command->domain >= 32 ||
                 command->opcode < NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT ||
-                command->opcode > NativeEconomyRuntime::COMMAND_FAMILY_POPULATION_REWARD) {
+                command->opcode > NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION) {
                 supported = false;
                 break;
             }
@@ -3091,7 +4053,7 @@ Dictionary EffectRuntime::dispatch_native_gameplay(DCWorldExt *world_ext) {
                 command->opcode > 0;
             const bool native_custom = command != nullptr &&
                 command->action == CUSTOM_DOMAIN_COMMAND && command->domain == 6 &&
-                command->opcode == 1;
+                (command->opcode == 1 || command->opcode == 2);
             if (!native_gameplay && !native_publish && !native_custom) {
                 continue;
             }
@@ -3573,6 +4535,23 @@ Dictionary EffectRuntime::report() const {
         _metric_present.capacity() * sizeof(uint8_t));
     out["instance_storage_bytes"] = static_cast<int64_t>(
         _instances.capacity() * sizeof(Instance));
+    out["era_reward_last_plan_ms"] = _last_era_reward_plan_ms;
+    out["era_reward_offers_planned"] = static_cast<int64_t>(
+        _era_reward_offers_planned);
+    out["era_reward_last_expanded_commands"] =
+        _last_era_reward_expanded_commands;
+    int64_t era_reward_storage_bytes = static_cast<int64_t>(
+        _era_reward_pools.capacity() * sizeof(EraRewardPool) +
+        _era_reward_options.capacity() * sizeof(EraRewardOption) +
+        _era_reward_rules.capacity() * sizeof(EraRewardRule) +
+        sizeof(EraRewardOffer));
+    for (const EraRewardAlternative &alternative : _era_reward_offer.alternatives) {
+        era_reward_storage_bytes += static_cast<int64_t>(
+            alternative.target_summary.capacity());
+        for (const std::string &reason : alternative.reasons)
+            era_reward_storage_bytes += static_cast<int64_t>(reason.capacity());
+    }
+    out["era_reward_storage_bytes"] = era_reward_storage_bytes;
     out["last_error"] = String(_last_error.c_str());
     out["run_cursor"] = _run_cursor;
     return out;
@@ -3679,6 +4658,30 @@ PackedByteArray EffectRuntime::capture() const {
         append_le<uint64_t>(bytes, binding.template_signature);
         append_le<uint64_t>(bytes, binding.program_hash);
     }
+    append_le<uint64_t>(bytes, _era_reward_player_country);
+    append_le<int64_t>(bytes, _era_reward_next_plan_id);
+    append_le<int64_t>(bytes, _era_reward_next_generation);
+    append_le<int64_t>(bytes, _era_reward_offer.plan_id);
+    append_le<int64_t>(bytes, _era_reward_offer.generation);
+    append_le<int32_t>(bytes, _era_reward_offer.pool_index);
+    append_le<int32_t>(bytes, _era_reward_offer.milestone_technology);
+    append_le<uint64_t>(bytes, _era_reward_offer.country_handle);
+    append_le<uint32_t>(bytes, _era_reward_offer.country_generation);
+    append_le<int32_t>(bytes, _era_reward_offer.status);
+    append_le<int32_t>(bytes, _era_reward_offer.selected_choice);
+    append_le<int64_t>(bytes, _era_reward_offer.transaction_id);
+    append_le<uint64_t>(bytes, _era_reward_offer.plan_hash);
+    append_string(bytes, _era_reward_offer.error);
+    for (const EraRewardAlternative &alternative : _era_reward_offer.alternatives) {
+        append_le<int32_t>(bytes, alternative.option_index);
+        append_le<int64_t>(bytes, alternative.weight);
+        append_le<uint64_t>(bytes, alternative.target_handle);
+        append_le<uint32_t>(bytes, alternative.target_generation);
+        append_le<int32_t>(bytes, alternative.reason_count);
+        append_string(bytes, alternative.reasons[0]);
+        append_string(bytes, alternative.reasons[1]);
+        append_string(bytes, alternative.target_summary);
+    }
     append_le<uint32_t>(bytes, SAVE_END);
     PackedByteArray out;
     out.resize(bytes.size());
@@ -3696,10 +4699,13 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
     int32_t schema = 0, protocol = 0;
     uint64_t hash = 0;
     if (!read_le(bytes, size, cursor, magic) || magic != SAVE_MAGIC ||
-        !read_le(bytes, size, cursor, schema) || (schema != 4 && schema != SAVE_SCHEMA_VERSION) ||
-        !read_le(bytes, size, cursor, protocol) || protocol != PROTOCOL_VERSION ||
-        !read_le(bytes, size, cursor, hash) || hash != _catalog_hash)
+        !read_le(bytes, size, cursor, schema))
         return failure("pkef_header_incompatible");
+    if (schema != SAVE_SCHEMA_VERSION)
+        return failure("catalog_hash_mismatch");
+    if (!read_le(bytes, size, cursor, protocol) || protocol != PROTOCOL_VERSION ||
+        !read_le(bytes, size, cursor, hash) || hash != _catalog_hash)
+        return failure("catalog_hash_mismatch");
     int64_t current_day = -1, last_day = -1, run_day = -1, next_tx = 1, acked_tx = 0;
     int32_t run_cursor = 0;
     uint32_t instance_count = 0, candidate_count = 0, transaction_count = 0;
@@ -3810,21 +4816,28 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, transaction.status) ||
             !read_le(bytes, size, cursor, command_count) || command_count > 4096)
             return failure("pkef_transaction_truncated");
+        const bool builtin_family_colonization = transaction.program_id == -1;
+        const bool builtin_canal_commit = transaction.program_id == -2;
+        const bool builtin_transaction = builtin_family_colonization ||
+            builtin_canal_commit;
         if (transaction.id <= 0 || transaction.source_instance_id <= 0 ||
             transaction.source_generation == 0 ||
-            transaction.program_id < 0 ||
-            transaction.program_id >= static_cast<int32_t>(_definitions.size()) ||
-            restored_instance_ids.find(transaction.source_instance_id) == restored_instance_ids.end() ||
+            (!builtin_transaction &&
+             (transaction.program_id < 0 ||
+              transaction.program_id >= static_cast<int32_t>(_definitions.size()) ||
+              restored_instance_ids.find(transaction.source_instance_id) == restored_instance_ids.end())) ||
             transaction.status < PLANNED || transaction.status > RESYNC_REQUIRED ||
             !restored_transaction_ids.emplace(transaction.id).second ||
             (transaction.received_ack_mask & ~transaction.required_ack_mask) != 0)
             return failure("pkef_transaction_identity_invalid");
-        const Instance &source_instance = restored_instances[
-            restored_instance_ids[transaction.source_instance_id]];
-        if ((transaction.status == PLANNED || transaction.status == PREFLIGHTED ||
-             transaction.status == COMMITTED) &&
-            source_instance.generation != transaction.source_generation)
-            return failure("pkef_transaction_source_generation_invalid");
+        if (!builtin_transaction) {
+            const Instance &source_instance = restored_instances[
+                restored_instance_ids[transaction.source_instance_id]];
+            if ((transaction.status == PLANNED || transaction.status == PREFLIGHTED ||
+                 transaction.status == COMMITTED) &&
+                source_instance.generation != transaction.source_generation)
+                return failure("pkef_transaction_source_generation_invalid");
+        }
         if ((transaction.status == PLANNED || transaction.status == PREFLIGHTED) &&
             transaction.received_ack_mask != 0)
             return failure("pkef_transaction_state_invalid");
@@ -3882,13 +4895,47 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             restored_command_arena.push_back(std::move(command));
             ++transaction.command_count;
         }
+        if (builtin_family_colonization) {
+            if (transaction.command_count != 2)
+                return failure("pkef_colonization_transaction_shape_invalid");
+            const Command &claim = restored_command_arena[transaction.command_begin];
+            const Command &settle = restored_command_arena[transaction.command_begin + 1];
+            if (claim.action != COUNTRY_COMMAND || claim.domain != 7 ||
+                claim.opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
+                claim.command_key_id != -1 || claim.command_definition_id != -1 ||
+                settle.action != ECONOMY_COMMAND || settle.domain != 8 ||
+                settle.opcode != NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION ||
+                settle.command_key_id != -1 || settle.command_definition_id != -1 ||
+                claim.target_handle != settle.payload[1] ||
+                claim.payload[0] != settle.payload[0])
+                return failure("pkef_colonization_transaction_shape_invalid");
+        } else if (builtin_canal_commit) {
+            if (transaction.command_count != 1)
+                return failure("pkef_canal_transaction_shape_invalid");
+            const Command &commit = restored_command_arena[transaction.command_begin];
+            if (commit.action != CUSTOM_DOMAIN_COMMAND || commit.domain != 6 ||
+                commit.opcode != 2 || commit.target_handle == 0 ||
+                commit.target_generation == 0 || commit.command_key_id != -1 ||
+                commit.command_definition_id != -1)
+                return failure("pkef_canal_transaction_shape_invalid");
+        }
         if (derived_ack_mask != transaction.required_ack_mask)
             return failure("pkef_transaction_ack_mask_invalid");
         uint64_t expected_plan_hash = 1469598103934665603ULL;
-        expected_plan_hash = fnv_value(expected_plan_hash, transaction.source_instance_id);
-        expected_plan_hash = fnv_value(expected_plan_hash, transaction.source_generation);
-        expected_plan_hash = fnv_value(expected_plan_hash, transaction.program_id);
-        expected_plan_hash = fnv_value(expected_plan_hash, transaction.effective_day);
+        if (builtin_transaction) {
+            expected_plan_hash = fnv_value(expected_plan_hash, transaction.id);
+            expected_plan_hash = fnv_value(expected_plan_hash,
+                                           transaction.effective_day);
+        } else {
+            expected_plan_hash = fnv_value(expected_plan_hash,
+                                           transaction.source_instance_id);
+            expected_plan_hash = fnv_value(expected_plan_hash,
+                                           transaction.source_generation);
+            expected_plan_hash = fnv_value(expected_plan_hash,
+                                           transaction.program_id);
+            expected_plan_hash = fnv_value(expected_plan_hash,
+                                           transaction.effective_day);
+        }
         for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
             const Command &command = restored_command_arena[
                 static_cast<size_t>(transaction.command_begin) + ordinal];
@@ -3897,13 +4944,21 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             expected_plan_hash = fnv_value(expected_plan_hash, command.opcode);
             expected_plan_hash = fnv_value(expected_plan_hash, command.target_handle);
             expected_plan_hash = fnv_value(expected_plan_hash, command.target_generation);
-            expected_plan_hash = fnv_value(expected_plan_hash, command.value_q16);
-            expected_plan_hash = fnv_value(expected_plan_hash, command.duration_days);
-            expected_plan_hash = fnv_value(expected_plan_hash, command.stacks);
-            expected_plan_hash = fnv_value(expected_plan_hash, command.command_key_id);
-            expected_plan_hash = fnv_value(expected_plan_hash, command.command_definition_id);
-            for (int64_t payload_value : command.payload)
-                expected_plan_hash = fnv_value(expected_plan_hash, payload_value);
+            if (!builtin_transaction) {
+                expected_plan_hash = fnv_value(expected_plan_hash, command.value_q16);
+                expected_plan_hash = fnv_value(expected_plan_hash,
+                                               command.duration_days);
+                expected_plan_hash = fnv_value(expected_plan_hash, command.stacks);
+                expected_plan_hash = fnv_value(expected_plan_hash,
+                                               command.command_key_id);
+                expected_plan_hash = fnv_value(expected_plan_hash,
+                                               command.command_definition_id);
+            }
+            if (!builtin_canal_commit) {
+                for (int64_t payload_value : command.payload)
+                    expected_plan_hash = fnv_value(expected_plan_hash,
+                                                   payload_value);
+            }
             expected_plan_hash = fnv_value(expected_plan_hash, command.idempotency_key);
         }
         if (expected_plan_hash != transaction.plan_hash)
@@ -3941,6 +4996,72 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                 return failure("pkef_external_binding_invalid");
             restored_bindings.push_back(binding);
         }
+    }
+    uint64_t restored_player_country = 0;
+    int64_t restored_next_plan_id = 1;
+    int64_t restored_next_generation = 1;
+    EraRewardOffer restored_offer;
+    if (!read_le(bytes, size, cursor, restored_player_country) ||
+        !read_le(bytes, size, cursor, restored_next_plan_id) ||
+        !read_le(bytes, size, cursor, restored_next_generation) ||
+        !read_le(bytes, size, cursor, restored_offer.plan_id) ||
+        !read_le(bytes, size, cursor, restored_offer.generation) ||
+        !read_le(bytes, size, cursor, restored_offer.pool_index) ||
+        !read_le(bytes, size, cursor, restored_offer.milestone_technology) ||
+        !read_le(bytes, size, cursor, restored_offer.country_handle) ||
+        !read_le(bytes, size, cursor, restored_offer.country_generation) ||
+        !read_le(bytes, size, cursor, restored_offer.status) ||
+        !read_le(bytes, size, cursor, restored_offer.selected_choice) ||
+        !read_le(bytes, size, cursor, restored_offer.transaction_id) ||
+        !read_le(bytes, size, cursor, restored_offer.plan_hash) ||
+        !read_string(bytes, size, cursor, restored_offer.error))
+        return failure("pkef_era_reward_truncated");
+    for (EraRewardAlternative &alternative : restored_offer.alternatives) {
+        if (!read_le(bytes, size, cursor, alternative.option_index) ||
+            !read_le(bytes, size, cursor, alternative.weight) ||
+            !read_le(bytes, size, cursor, alternative.target_handle) ||
+            !read_le(bytes, size, cursor, alternative.target_generation) ||
+            !read_le(bytes, size, cursor, alternative.reason_count) ||
+            !read_string(bytes, size, cursor, alternative.reasons[0]) ||
+            !read_string(bytes, size, cursor, alternative.reasons[1]) ||
+            !read_string(bytes, size, cursor, alternative.target_summary))
+            return failure("pkef_era_reward_alternative_truncated");
+    }
+    if (restored_next_plan_id <= 0 || restored_next_generation <= 0 ||
+        restored_offer.status < 0 || restored_offer.status > 4 ||
+        restored_offer.pool_index < -1 ||
+        restored_offer.pool_index >= static_cast<int32_t>(_era_reward_pools.size()) ||
+        restored_offer.selected_choice < -1 || restored_offer.selected_choice > 2 ||
+        (restored_offer.status == 0 &&
+         (restored_offer.plan_id != 0 || restored_offer.transaction_id != 0)) ||
+        (restored_offer.status != 0 &&
+         (restored_offer.plan_id <= 0 || restored_offer.generation <= 0 ||
+          restored_offer.country_handle == 0 || restored_offer.country_generation == 0)) ||
+        (restored_offer.status == 1 && restored_offer.transaction_id != 0) ||
+        (restored_offer.status == 2 &&
+         (restored_offer.transaction_id <= 0 ||
+          restored_transaction_ids.find(restored_offer.transaction_id) ==
+              restored_transaction_ids.end())))
+        return failure("pkef_era_reward_identity_invalid");
+    if (restored_offer.status != 0) {
+        for (const EraRewardAlternative &alternative : restored_offer.alternatives) {
+            if (alternative.option_index < 0 ||
+                alternative.option_index >= static_cast<int32_t>(_era_reward_options.size()) ||
+                alternative.weight <= 0 || alternative.target_handle == 0 ||
+                alternative.target_generation == 0 ||
+                alternative.reason_count < 0 || alternative.reason_count > 2)
+                return failure("pkef_era_reward_alternative_invalid");
+        }
+    }
+    if (_country_runtime != nullptr) {
+        const NativeCountryRuntime::EraRewardReference country_reference =
+            _country_runtime->era_reward_reference_pod();
+        if (country_reference.plan_id != restored_offer.plan_id ||
+            country_reference.offer_generation != restored_offer.generation ||
+            country_reference.milestone_technology !=
+                restored_offer.milestone_technology ||
+            country_reference.status != restored_offer.status)
+            return failure("era_reward_cross_section_mismatch");
     }
     if (!read_le(bytes, size, cursor, end_magic) || end_magic != SAVE_END)
         return failure("pkef_end_marker_missing");
@@ -3983,6 +5104,10 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
         _transaction_ids[_transactions[i].id] = static_cast<int32_t>(i);
     _external_bindings = std::move(restored_bindings);
     _external_binding_ids = std::move(restored_binding_ids);
+    _era_reward_player_country = restored_player_country;
+    _era_reward_next_plan_id = restored_next_plan_id;
+    _era_reward_next_generation = restored_next_generation;
+    _era_reward_offer = std::move(restored_offer);
     rebuild_command_idempotency_index();
     Dictionary out;
     out["ok"] = true;

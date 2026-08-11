@@ -31,9 +31,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != 30 && schema != SCHEMA_VERSION) {
-        error = schema <= 29 ? "economy_save_v29_or_earlier_unsupported" :
-            "economy_save_schema_unsupported";
+    if (schema != SCHEMA_VERSION && schema != 33) {
+        error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
+            (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
+            "economy_save_schema_unsupported");
         return false;
     }
     if (!_restore.header_seen && section != SAVE_SECTION_HEADER) {
@@ -74,12 +75,21 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         int64_t saved_trait_catalog_hash = 0;
         int32_t family_trait_count = 0, family_influence_count = 0,
             family_trait_command_count = 0;
+        int32_t family_expedition_slots = 0, family_expedition_count = 0;
+        int64_t next_family_expedition_stable_id = 1,
+            next_colonization_receipt_id = 1;
+        int32_t canal_quote_count = 0, canal_project_count = 0;
+        uint64_t next_canal_quote_token = 1, next_canal_project_id = 1;
+        int64_t next_canal_receipt_id = 1;
         int32_t country_schema = 0;
         uint64_t country_generation = 0, country_hash = 0;
         uint64_t next_submit = 0;
         int64_t next_event_id = 1;
         uint64_t event_stream_hash = 1469598103934665603ULL;
-        int32_t trade_order_count = 0, trade_flow_count = 0, saved_trade_mode = 0;
+        int32_t trade_order_count = 0, trade_flow_count = 0;
+        int32_t tariff_history_count = 0, country_good_count = 0,
+            country_partner_count = 0, saved_trade_mode = 0;
+        uint64_t country_trade_revision = 0;
         int64_t next_trade_order_id = 1, saved_trade_capacity = 0;
         int32_t saved_trade_speed = 0, saved_trade_margin = 0,
                 saved_trade_targets = 0, saved_trade_signal_budget = 0,
@@ -150,6 +160,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         }
         if (schema >= 11 && (!read_le(bytes, cursor, trade_order_count) ||
             !read_le(bytes, cursor, trade_flow_count) ||
+            (schema >= 33 && (!read_le(bytes, cursor, tariff_history_count) ||
+                !read_le(bytes, cursor, country_good_count) ||
+                !read_le(bytes, cursor, country_partner_count) ||
+                !read_le(bytes, cursor, country_trade_revision))) ||
             !read_le(bytes, cursor, next_trade_order_id) ||
             !read_le(bytes, cursor, saved_trade_mode) ||
             !read_le(bytes, cursor, saved_trade_capacity) ||
@@ -285,13 +299,35 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             !read_le(bytes, cursor, family_trait_count) ||
             !read_le(bytes, cursor, family_influence_count) ||
             !read_le(bytes, cursor, family_trait_command_count) ||
+            !read_le(bytes, cursor, family_expedition_slots) ||
+            !read_le(bytes, cursor, family_expedition_count) ||
+            !read_le(bytes, cursor, next_family_expedition_stable_id) ||
+            !read_le(bytes, cursor, next_colonization_receipt_id) ||
             saved_trait_catalog_version != _family_trait_catalog_version ||
             saved_trait_catalog_hash != _family_trait_catalog_hash ||
             family_trait_count < 0 || family_trait_count > 1000000 ||
             family_influence_count < 0 || family_influence_count > 10000000 ||
             family_trait_command_count < 0 ||
-            family_trait_command_count > 1000000) {
+            family_trait_command_count > 1000000 ||
+            family_expedition_slots < 0 || family_expedition_slots > 1000000 ||
+            family_expedition_count < 0 ||
+            family_expedition_count > family_expedition_slots ||
+            next_family_expedition_stable_id <= 0 ||
+            next_colonization_receipt_id <= 0) {
             error = "save_family_trait_header_invalid";
+            return false;
+        }
+        if (schema >= 34 &&
+            (!read_le(bytes, cursor, canal_quote_count) ||
+             !read_le(bytes, cursor, canal_project_count) ||
+             !read_le(bytes, cursor, next_canal_quote_token) ||
+             !read_le(bytes, cursor, next_canal_project_id) ||
+             !read_le(bytes, cursor, next_canal_receipt_id) ||
+             canal_quote_count < 0 || canal_quote_count > 1000000 ||
+             canal_project_count < 0 || canal_project_count > 1000000 ||
+             next_canal_quote_token == 0 || next_canal_project_id == 0 ||
+             next_canal_receipt_id <= 0)) {
+            error = "save_canal_header_invalid";
             return false;
         }
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
@@ -317,6 +353,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             labor_signal_count > 10000000 || next_event_id <= 0 ||
             trade_order_count < 0 || trade_order_count > _trade_max_orders ||
             trade_flow_count < 0 || trade_flow_count > _trade_max_signals ||
+            tariff_history_count < 0 || tariff_history_count > 1000000 ||
+            country_good_count < 0 || country_good_count > 10000000 ||
+            country_partner_count < 0 || country_partner_count > 10000000 ||
             next_trade_order_id <= 0 ||
             person_count < 0 || person_count > _person_max_total ||
             person_need_count < 0 || person_need_count >
@@ -431,12 +470,25 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _restore.expected_labor_signals = labor_signal_count;
         _restore.expected_trade_orders = trade_order_count;
         _restore.expected_trade_flows = trade_flow_count;
+        _restore.expected_tariff_history = tariff_history_count;
+        _restore.expected_country_good = country_good_count;
+        _restore.expected_country_partner = country_partner_count;
+        _restore.expected_canal_quotes = canal_quote_count;
+        _restore.expected_canal_projects = canal_project_count;
         _restore.expected_persons = person_count;
         _restore.expected_family_traits = family_trait_count;
         _restore.expected_family_influences = family_influence_count;
         _restore.expected_family_trait_commands = family_trait_command_count;
         _restore.expected_person_needs = person_need_count;
+        _restore.expected_family_expedition_slots = family_expedition_slots;
+        _restore.expected_family_expeditions = family_expedition_count;
+        _next_family_expedition_stable_id = next_family_expedition_stable_id;
+        _next_colonization_receipt_id = next_colonization_receipt_id;
+        _next_canal_quote_token = next_canal_quote_token;
+        _next_canal_project_id = next_canal_project_id;
+        _next_canal_receipt_id = next_canal_receipt_id;
         _next_event_id = next_event_id;
+        _country_trade_revision = country_trade_revision;
         _event_stream_hash = event_stream_hash;
         _government_research_procured_points = saved_research_points;
         _government_research_procurement_cash = saved_research_cash;
@@ -510,6 +562,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _trade_orders.ids.reserve(trade_order_count);
         _trade_flows.clear();
         _trade_flows.cells.reserve(trade_flow_count);
+        _tariff_history.clear();
+        _tariff_history.countries.reserve(tariff_history_count);
+        _country_good_trade.clear();
+        _country_good_trade.countries.reserve(country_good_count);
+        _country_partner_trade.clear();
+        _country_partner_trade.countries.reserve(country_partner_count);
         _environment_temperature_q16.assign(_cell_count, 0);
         _environment_temperature_30d_q16.assign(_cell_count, 0);
         _environment_moisture_q16.assign(_cell_count, 0);
@@ -555,6 +613,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _pending_construction.clear();
         _pending_construction.reserve(construction_count);
         _families.clear();
+        _family_expeditions.clear();
+        _family_expedition_route_cells.clear();
+        _family_expedition_route_costs.clear();
+        _family_expedition_payloads.clear();
+        _family_expedition_person_handles.clear();
+        _family_expedition_target_index.clear();
+        _family_expedition_due_heap.clear();
+        _colonization_receipts.clear();
         _family_influences.clear();
         _persons.clear();
         _family_memberships.clear();
@@ -1057,16 +1123,25 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         for (uint32_t record = 0; record < records; ++record) {
             int64_t id = 0, departure = 0, arrival = 0, cash = 0, capacity = 0;
             int32_t source = -1, destination = -1, country = -1;
+            uint64_t source_country_handle = 0;
+            uint64_t destination_country_handle = 0;
+            int32_t source_country_slot = -1, destination_country_slot = -1;
             uint8_t state = 0, delivered = 0;
             int32_t line_count = 0, seller_count = 0;
             if (!read_le(bytes, cursor, id) || !read_le(bytes, cursor, source) ||
                 !read_le(bytes, cursor, destination) || !read_le(bytes, cursor, country) ||
+                !read_le(bytes, cursor, source_country_handle) ||
+                !read_le(bytes, cursor, destination_country_handle) ||
+                !read_le(bytes, cursor, source_country_slot) ||
+                !read_le(bytes, cursor, destination_country_slot) ||
                 !read_le(bytes, cursor, departure) || !read_le(bytes, cursor, arrival) ||
                 !read_le(bytes, cursor, cash) || !read_le(bytes, cursor, capacity) ||
                 !read_le(bytes, cursor, state) || !read_le(bytes, cursor, delivered) ||
                 !read_le(bytes, cursor, line_count) ||
                 !read_le(bytes, cursor, seller_count) || id <= 0 ||
                 (!_trade_orders.ids.empty() && id <= _trade_orders.ids.back()) ||
+                source_country_handle == 0 || destination_country_handle == 0 ||
+                source_country_slot < 0 || destination_country_slot < 0 ||
                 source < 0 || source >= _cell_count || destination < 0 ||
                 destination >= _cell_count || source == destination || country < 0 ||
                 departure < 0 || arrival < departure || cash < 0 || capacity <= 0 ||
@@ -1082,6 +1157,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _trade_orders.sources.push_back(source);
             _trade_orders.destinations.push_back(destination);
             _trade_orders.countries.push_back(country);
+            _trade_orders.source_country_handles.push_back(source_country_handle);
+            _trade_orders.destination_country_handles.push_back(
+                destination_country_handle);
+            _trade_orders.source_country_slots.push_back(source_country_slot);
+            _trade_orders.destination_country_slots.push_back(
+                destination_country_slot);
             _trade_orders.departure_days.push_back(departure);
             _trade_orders.arrival_days.push_back(arrival);
             _trade_orders.cash_escrow.push_back(cash);
@@ -1089,20 +1170,35 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _trade_orders.states.push_back(state);
             _trade_orders.cargo_delivered.push_back(delivered);
             for (int32_t line = 0; line < line_count; ++line) {
-                int32_t good = -1, price = 0;
-                int64_t quantity = 0;
+                int32_t good = -1, price = 0, destination_price = 0;
+                int64_t quantity = 0, base_value = 0, retail_value = 0;
+                int64_t import_transfer = 0, export_transfer = 0;
+                uint8_t line_flags = 0;
                 if (!read_le(bytes, cursor, good) ||
                     !read_le(bytes, cursor, quantity) ||
-                    !read_le(bytes, cursor, price) || good < 0 ||
+                    !read_le(bytes, cursor, price) ||
+                    !read_le(bytes, cursor, destination_price) ||
+                    !read_le(bytes, cursor, base_value) ||
+                    !read_le(bytes, cursor, retail_value) ||
+                    !read_le(bytes, cursor, import_transfer) ||
+                    !read_le(bytes, cursor, export_transfer) ||
+                    !read_le(bytes, cursor, line_flags) || good < 0 ||
                     good >= _market.good_count || _good_trade_enabled[good] == 0 ||
                     quantity <= 0 || price < PRICE_NUMERIC_GUARD_MIN ||
-                    price > PRICE_NUMERIC_GUARD_MAX) {
+                    price > PRICE_NUMERIC_GUARD_MAX || destination_price < 0 ||
+                    base_value < 0 || retail_value < 0) {
                     error = "save_trade_order_line_invalid";
                     return false;
                 }
                 _trade_orders.line_goods.push_back(good);
                 _trade_orders.line_quantities.push_back(quantity);
                 _trade_orders.line_unit_prices.push_back(price);
+                _trade_orders.line_destination_prices.push_back(destination_price);
+                _trade_orders.line_base_values.push_back(base_value);
+                _trade_orders.line_retail_values.push_back(retail_value);
+                _trade_orders.line_import_transfers.push_back(import_transfer);
+                _trade_orders.line_export_transfers.push_back(export_transfer);
+                _trade_orders.line_flags.push_back(line_flags);
             }
             _trade_orders.line_offsets.push_back(
                 static_cast<int32_t>(_trade_orders.line_goods.size()));
@@ -1178,6 +1274,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _fiscal_last_reserved.resize(size, 0);
             _fiscal_last_paid.resize(size, 0);
             _fiscal_last_unmet.resize(size, 0);
+            _fiscal_last_events.resize(size, 0);
             _fiscal_cumulative_bases.resize(size, 0);
             _fiscal_cumulative_collected.resize(size, 0);
             _fiscal_cumulative_requests.resize(size, 0);
@@ -1210,6 +1307,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_group(_fiscal_last_reserved, country) ||
                 !read_group(_fiscal_last_paid, country) ||
                 !read_group(_fiscal_last_unmet, country) ||
+                !read_group(_fiscal_last_events, country) ||
                 !read_group(_fiscal_cumulative_bases, country) ||
                 !read_group(_fiscal_cumulative_collected, country) ||
                 !read_group(_fiscal_cumulative_requests, country) ||
@@ -1431,7 +1529,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 (active != 0 &&
                     (stable_id <= 0 ||
                      !_families.valid_handle(family_handle, family) ||
-                     !_population.valid_handle(cohort_handle, cohort) ||
+                     (cohort_handle != 0 &&
+                      !_population.valid_handle(cohort_handle, cohort)) ||
                      given_name < 0 || given_name >= static_cast<int32_t>(
                         _person_given_name_ids.size()) ||
                      notable_since_day < 0 || cash_claim < 0 ||
@@ -1613,7 +1712,448 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_family_trait_commands;
         }
         _restore.family_trait_commands_seen = true;
-    } else if (section == SAVE_SECTION_END) {
+    } else if (section == SAVE_SECTION_FAMILY_EXPEDITIONS) {
+        for (uint32_t record = 0; record < records; ++record) {
+            int32_t index = -1, source_cell = -1, target_cell = -1;
+            uint8_t active = 0, state = 0;
+            uint32_t generation = 0, route_count = 0, payload_count = 0;
+            int64_t stable_id = 0, departure_day = -1, due_day = -1,
+                population = 0, transaction_id = 0;
+            uint64_t country_handle = 0, family_handle = 0,
+                idempotency_key = 0;
+            int32_t route_cost = 0, speed = 0;
+            if (!read_le(bytes, cursor, index) ||
+                !read_le(bytes, cursor, active) ||
+                !read_le(bytes, cursor, generation) ||
+                !read_le(bytes, cursor, stable_id) ||
+                !read_le(bytes, cursor, country_handle) ||
+                !read_le(bytes, cursor, family_handle) ||
+                !read_le(bytes, cursor, source_cell) ||
+                !read_le(bytes, cursor, target_cell) ||
+                !read_le(bytes, cursor, departure_day) ||
+                !read_le(bytes, cursor, due_day) ||
+                !read_le(bytes, cursor, route_cost) ||
+                !read_le(bytes, cursor, speed) ||
+                !read_le(bytes, cursor, state) ||
+                !read_le(bytes, cursor, population) ||
+                !read_le(bytes, cursor, transaction_id) ||
+                !read_le(bytes, cursor, idempotency_key) ||
+                !read_le(bytes, cursor, route_count) ||
+                !read_le(bytes, cursor, payload_count) ||
+                index != static_cast<int32_t>(
+                    _family_expeditions.active.size()) ||
+                active > 1 || generation == 0 || route_count > 8193 ||
+                payload_count > 100000) {
+                error = "save_family_expedition_record_invalid";
+                return false;
+            }
+            int32_t family = -1;
+            if (active != 0) {
+                if (stable_id <= 0 || country_handle == 0 ||
+                    !_country_runtime->valid_handle(
+                        static_cast<int64_t>(country_handle))) {
+                    error = "save_family_expedition_country_identity_invalid";
+                    return false;
+                }
+                if (!_families.valid_handle(family_handle, family)) {
+                    error = "save_family_expedition_family_handle_invalid";
+                    return false;
+                }
+                if (source_cell < 0 || source_cell >= _cell_count ||
+                    target_cell < 0 || target_cell >= _cell_count) {
+                    error = "save_family_expedition_cell_invalid"; return false;
+                }
+                if (departure_day < 0 || due_day < departure_day) {
+                    error = "save_family_expedition_dates_invalid"; return false;
+                }
+                if (route_cost < 1 || speed < 1 || route_count < 2) {
+                    error = "save_family_expedition_route_invalid"; return false;
+                }
+                if (state < EXPEDITION_OUTBOUND || state > EXPEDITION_RETURNING) {
+                    error = "save_family_expedition_state_invalid"; return false;
+                }
+                if (population < 1 || payload_count < 1) {
+                    error = "save_family_expedition_payload_header_invalid"; return false;
+                }
+                if (idempotency_key == 0 ||
+                    (state == EXPEDITION_SETTLING && transaction_id <= 0)) {
+                    error = "save_family_expedition_transaction_invalid"; return false;
+                }
+            }
+            _family_expeditions.active.push_back(active);
+            _family_expeditions.generation.push_back(generation);
+            _family_expeditions.stable_id.push_back(stable_id);
+            _family_expeditions.country_handle.push_back(country_handle);
+            _family_expeditions.family_handle.push_back(family_handle);
+            _family_expeditions.source_cell.push_back(source_cell);
+            _family_expeditions.target_cell.push_back(target_cell);
+            _family_expeditions.departure_day.push_back(departure_day);
+            _family_expeditions.due_day.push_back(due_day);
+            _family_expeditions.route_cost.push_back(route_cost);
+            _family_expeditions.speed.push_back(speed);
+            _family_expeditions.state.push_back(state);
+            _family_expeditions.population.push_back(population);
+            _family_expeditions.effect_transaction_id.push_back(transaction_id);
+            _family_expeditions.idempotency_key.push_back(idempotency_key);
+            _family_expeditions.route_begin.push_back(static_cast<uint32_t>(
+                _family_expedition_route_cells.size()));
+            _family_expeditions.route_count.push_back(route_count);
+            int32_t last_cost = -1;
+            for (uint32_t route = 0; route < route_count; ++route) {
+                int32_t cell = -1, cumulative = -1;
+                if (!read_le(bytes, cursor, cell) ||
+                    !read_le(bytes, cursor, cumulative) || active == 0 ||
+                    cell < 0 || cell >= _cell_count || cumulative < last_cost ||
+                    (route == 0 && (cell != source_cell || cumulative != 0)) ||
+                    (route + 1 == route_count &&
+                     (cell != target_cell || cumulative != route_cost))) {
+                    error = "save_family_expedition_route_invalid";
+                    return false;
+                }
+                _family_expedition_route_cells.push_back(cell);
+                _family_expedition_route_costs.push_back(cumulative);
+                last_cost = cumulative;
+            }
+            _family_expeditions.payload_begin.push_back(static_cast<uint32_t>(
+                _family_expedition_payloads.size()));
+            _family_expeditions.payload_count.push_back(payload_count);
+            int64_t payload_population = 0;
+            for (uint32_t payload_index = 0; payload_index < payload_count;
+                 ++payload_index) {
+                FamilyExpeditionPayload lane;
+                if (!read_le(bytes, cursor, lane.source_cohort_handle) ||
+                    !read_le(bytes, cursor, lane.signature) ||
+                    !read_le(bytes, cursor, lane.people) ||
+                    !read_le(bytes, cursor, lane.funds) ||
+                    !read_le(bytes, cursor, lane.epoch_income) ||
+                    !read_le(bytes, cursor, lane.epoch_expense) ||
+                    !read_le(bytes, cursor, lane.epoch_in_kind_income) ||
+                    !read_le(bytes, cursor, lane.income_ema) ||
+                    !read_le(bytes, cursor, lane.epoch_tax_paid) ||
+                    !read_le(bytes, cursor, lane.epoch_subsidy_received) ||
+                    !read_le(bytes, cursor, lane.income_baseline_ema) ||
+                    !read_le(bytes, cursor, lane.demography_residual) ||
+                    !read_le(bytes, cursor, lane.cash_claim) ||
+                    !read_le(bytes, cursor, lane.owner_employed) ||
+                    !read_le(bytes, cursor, lane.employee_employed) ||
+                    !read_le(bytes, cursor, lane.needs_satisfaction) ||
+                    !read_le(bytes, cursor, lane.worst_need_id) ||
+                    !read_le(bytes, cursor, lane.composite_satisfaction) ||
+                    !read_le(bytes, cursor, lane.worst_dimension_id)) {
+                    error = "save_family_expedition_payload_truncated";
+                    return false;
+                }
+                for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+                    if (!read_le(bytes, cursor, lane.satisfaction_dims[dim])) {
+                        error = "save_family_expedition_payload_truncated";
+                        return false;
+                    }
+                if (!read_le(bytes, cursor, lane.person_count) || active == 0 ||
+                    lane.signature < 0 || lane.signature >= static_cast<int32_t>(
+                        _signatures.size()) || lane.people <= 0 || lane.funds < 0 ||
+                    lane.cash_claim < 0 || lane.owner_employed < 0 ||
+                    lane.employee_employed < 0 || lane.person_count > 100000) {
+                    error = "save_family_expedition_payload_invalid";
+                    return false;
+                }
+                lane.person_begin = static_cast<uint32_t>(
+                    _family_expedition_person_handles.size());
+                for (uint32_t person = 0; person < lane.person_count; ++person) {
+                    uint64_t person_handle = 0;
+                    int32_t person_slot = -1;
+                    if (!read_le(bytes, cursor, person_handle) ||
+                        !_persons.valid_handle(person_handle, person_slot) ||
+                        _persons.cohort_handle[person_slot] != 0 ||
+                        _persons.family_handle[person_slot] != family_handle) {
+                        error = "save_family_expedition_person_invalid";
+                        return false;
+                    }
+                    _family_expedition_person_handles.push_back(person_handle);
+                }
+                payload_population += lane.people;
+                _family_expedition_payloads.push_back(lane);
+            }
+            if (active != 0 && payload_population != population) {
+                error = "save_family_expedition_population_mismatch";
+                return false;
+            }
+            if (active != 0) {
+                ++_family_expeditions.active_count;
+                ++_restore.restored_family_expeditions;
+            } else {
+                _family_expeditions.free_indices.push_back(index);
+            }
+            ++_restore.restored_family_expedition_slots;
+        }
+        _restore.family_expeditions_seen = true;
+    } else if (schema >= 33 && section == SAVE_SECTION_TARIFF_HISTORY) {
+        for (uint32_t record = 0; record < records; ++record) {
+            int32_t country = -1, kind = -1;
+            int64_t base = 0, assessed = 0, collected = 0, requests = 0,
+                reserved = 0, paid = 0, cumulative_base = 0,
+                cumulative_collected = 0, cumulative_requests = 0,
+                cumulative_paid = 0;
+            if (!read_le(bytes, cursor, country) || !read_le(bytes, cursor, kind) ||
+                !read_le(bytes, cursor, base) || !read_le(bytes, cursor, assessed) ||
+                !read_le(bytes, cursor, collected) || !read_le(bytes, cursor, requests) ||
+                !read_le(bytes, cursor, reserved) || !read_le(bytes, cursor, paid) ||
+                !read_le(bytes, cursor, cumulative_base) ||
+                !read_le(bytes, cursor, cumulative_collected) ||
+                !read_le(bytes, cursor, cumulative_requests) ||
+                !read_le(bytes, cursor, cumulative_paid) || country < 0 ||
+                kind < NativeCountryRuntime::TAX_IMPORT ||
+                kind > NativeCountryRuntime::TAX_EXPORT || base < 0 || assessed < 0 ||
+                collected < 0 || requests < 0 || reserved < 0 || paid < 0 ||
+                cumulative_base < 0 || cumulative_collected < 0 ||
+                cumulative_requests < 0 || cumulative_paid < 0) {
+                error = "save_tariff_history_record_invalid";
+                return false;
+            }
+            _tariff_history.countries.push_back(country);
+            _tariff_history.kinds.push_back(kind);
+            _tariff_history.bases.push_back(base);
+            _tariff_history.assessed.push_back(assessed);
+            _tariff_history.collected.push_back(collected);
+            _tariff_history.requests.push_back(requests);
+            _tariff_history.reserved.push_back(reserved);
+            _tariff_history.paid.push_back(paid);
+            _tariff_history.cumulative_bases.push_back(cumulative_base);
+            _tariff_history.cumulative_collected.push_back(cumulative_collected);
+            _tariff_history.cumulative_requests.push_back(cumulative_requests);
+            _tariff_history.cumulative_paid.push_back(cumulative_paid);
+            ++_restore.restored_tariff_history;
+        }
+        _restore.tariff_history_seen = true;
+    } else if (schema >= 33 && section == SAVE_SECTION_COUNTRY_GOOD) {
+        for (uint32_t record = 0; record < records; ++record) {
+            int32_t country = -1, good = -1;
+            int64_t import_quantity = 0, export_quantity = 0,
+                import_base = 0, export_base = 0,
+                import_tariff = 0, export_tariff = 0,
+                batch_epoch = -1, batch_import_quantity = 0,
+                batch_export_quantity = 0, batch_import_base = 0,
+                batch_export_base = 0, batch_import_tariff = 0,
+                batch_export_tariff = 0;
+            if (!read_le(bytes, cursor, country) || !read_le(bytes, cursor, good) ||
+                !read_le(bytes, cursor, import_quantity) ||
+                !read_le(bytes, cursor, export_quantity) ||
+                !read_le(bytes, cursor, import_base) ||
+                !read_le(bytes, cursor, export_base) ||
+                !read_le(bytes, cursor, import_tariff) ||
+                !read_le(bytes, cursor, export_tariff) ||
+                !read_le(bytes, cursor, batch_epoch) ||
+                !read_le(bytes, cursor, batch_import_quantity) ||
+                !read_le(bytes, cursor, batch_export_quantity) ||
+                !read_le(bytes, cursor, batch_import_base) ||
+                !read_le(bytes, cursor, batch_export_base) ||
+                !read_le(bytes, cursor, batch_import_tariff) ||
+                !read_le(bytes, cursor, batch_export_tariff) ||
+                country < 0 || good < 0 ||
+                good >= _market.good_count || import_quantity < 0 ||
+                export_quantity < 0 || import_base < 0 || export_base < 0 ||
+                batch_epoch < -1 || batch_epoch > _epoch_id ||
+                batch_import_quantity < 0 || batch_export_quantity < 0 ||
+                batch_import_base < 0 || batch_export_base < 0) {
+                error = "save_country_good_record_invalid";
+                return false;
+            }
+            _country_good_trade.countries.push_back(country);
+            _country_good_trade.goods.push_back(good);
+            _country_good_trade.import_quantity.push_back(import_quantity);
+            _country_good_trade.export_quantity.push_back(export_quantity);
+            _country_good_trade.import_base.push_back(import_base);
+            _country_good_trade.export_base.push_back(export_base);
+            _country_good_trade.import_tariff.push_back(import_tariff);
+            _country_good_trade.export_tariff.push_back(export_tariff);
+            _country_good_trade.batch_epoch.push_back(batch_epoch);
+            _country_good_trade.batch_import_quantity.push_back(
+                batch_import_quantity);
+            _country_good_trade.batch_export_quantity.push_back(
+                batch_export_quantity);
+            _country_good_trade.batch_import_base.push_back(batch_import_base);
+            _country_good_trade.batch_export_base.push_back(batch_export_base);
+            _country_good_trade.batch_import_tariff.push_back(batch_import_tariff);
+            _country_good_trade.batch_export_tariff.push_back(batch_export_tariff);
+            ++_restore.restored_country_good;
+        }
+        _restore.country_good_seen = true;
+    } else if (schema >= 33 && section == SAVE_SECTION_COUNTRY_PARTNER) {
+        for (uint32_t record = 0; record < records; ++record) {
+            int32_t country = -1, partner = -1;
+            int64_t import_quantity = 0, export_quantity = 0,
+                import_base = 0, export_base = 0, order_count = 0,
+                batch_epoch = -1, batch_import_quantity = 0,
+                batch_export_quantity = 0, batch_import_base = 0,
+                batch_export_base = 0, batch_order_count = 0;
+            if (!read_le(bytes, cursor, country) || !read_le(bytes, cursor, partner) ||
+                !read_le(bytes, cursor, import_quantity) ||
+                !read_le(bytes, cursor, export_quantity) ||
+                !read_le(bytes, cursor, import_base) ||
+                !read_le(bytes, cursor, export_base) ||
+                !read_le(bytes, cursor, order_count) ||
+                !read_le(bytes, cursor, batch_epoch) ||
+                !read_le(bytes, cursor, batch_import_quantity) ||
+                !read_le(bytes, cursor, batch_export_quantity) ||
+                !read_le(bytes, cursor, batch_import_base) ||
+                !read_le(bytes, cursor, batch_export_base) ||
+                !read_le(bytes, cursor, batch_order_count) ||
+                country < 0 || partner < 0 || country == partner ||
+                import_quantity < 0 || export_quantity < 0 || import_base < 0 ||
+                export_base < 0 || order_count < 0 ||
+                batch_epoch < -1 || batch_epoch > _epoch_id ||
+                batch_import_quantity < 0 || batch_export_quantity < 0 ||
+                batch_import_base < 0 || batch_export_base < 0 ||
+                batch_order_count < 0) {
+                error = "save_country_partner_record_invalid";
+                return false;
+            }
+            _country_partner_trade.countries.push_back(country);
+            _country_partner_trade.partners.push_back(partner);
+            _country_partner_trade.import_quantity.push_back(import_quantity);
+            _country_partner_trade.export_quantity.push_back(export_quantity);
+            _country_partner_trade.import_base.push_back(import_base);
+            _country_partner_trade.export_base.push_back(export_base);
+            _country_partner_trade.order_count.push_back(order_count);
+            _country_partner_trade.batch_epoch.push_back(batch_epoch);
+            _country_partner_trade.batch_import_quantity.push_back(
+                batch_import_quantity);
+            _country_partner_trade.batch_export_quantity.push_back(
+                batch_export_quantity);
+            _country_partner_trade.batch_import_base.push_back(batch_import_base);
+            _country_partner_trade.batch_export_base.push_back(batch_export_base);
+            _country_partner_trade.batch_order_count.push_back(batch_order_count);
+            ++_restore.restored_country_partner;
+        }
+        _restore.country_partner_seen = true;
+    } else if (schema >= 34 && section == SAVE_SECTION_CANAL_QUOTES) {
+        for (uint32_t record = 0; record < records; ++record) {
+            CanalQuote quote;
+            uint8_t active = 0;
+            uint32_t cell_count = 0, edge_count = 0;
+            if (!read_le(bytes, cursor, quote.token) ||
+                !read_le(bytes, cursor, quote.country_handle) ||
+                !read_le(bytes, cursor, quote.snapshot_day) ||
+                !read_le(bytes, cursor, quote.topology_hash) ||
+                !read_le(bytes, cursor, quote.country_generation) ||
+                !read_le(bytes, cursor, quote.price_hash) ||
+                !read_le(bytes, cursor, quote.source_kind) ||
+                !read_le(bytes, cursor, quote.new_edge_count) ||
+                !read_le(bytes, cursor, quote.reused_edge_count) ||
+                !read_le(bytes, cursor, quote.construction_days) ||
+                !read_le(bytes, cursor, quote.cash_required)) {
+                error = "save_canal_quote_truncated";
+                return false;
+            }
+            for (int32_t &value : quote.material_good_ids)
+                if (!read_le(bytes, cursor, value)) {
+                    error = "save_canal_quote_truncated"; return false;
+                }
+            for (int64_t &value : quote.material_quantities)
+                if (!read_le(bytes, cursor, value)) {
+                    error = "save_canal_quote_truncated"; return false;
+                }
+            if (!read_le(bytes, cursor, active) ||
+                !read_le(bytes, cursor, cell_count) ||
+                !read_le(bytes, cursor, edge_count) || active > 1 ||
+                quote.token == 0 || quote.country_handle == 0 ||
+                quote.snapshot_day < -1 ||
+                quote.source_kind < CANAL_SOURCE_SALINE ||
+                quote.source_kind > CANAL_SOURCE_FRESHWATER ||
+                quote.new_edge_count < 0 || quote.reused_edge_count < 0 ||
+                quote.construction_days < 0 || quote.cash_required < 0 ||
+                cell_count < 2 || cell_count > 33 || edge_count + 1 != cell_count) {
+                error = "save_canal_quote_invalid";
+                return false;
+            }
+            quote.route_cells.resize(cell_count);
+            quote.route_edge_dirs.resize(edge_count);
+            std::unordered_set<int32_t> unique_cells;
+            for (int32_t &cell : quote.route_cells) {
+                if (!read_le(bytes, cursor, cell) || cell < 0 || cell >= _cell_count ||
+                    !unique_cells.emplace(cell).second) {
+                    error = "save_canal_quote_route_invalid"; return false;
+                }
+            }
+            for (int32_t &dir : quote.route_edge_dirs) {
+                if (!read_le(bytes, cursor, dir) || dir < 0 || dir >= 6) {
+                    error = "save_canal_quote_route_invalid"; return false;
+                }
+            }
+            if (active != 0 && _canal_quote_index.find(quote.token) !=
+                    _canal_quote_index.end()) {
+                error = "save_canal_quote_duplicate";
+                return false;
+            }
+            const int32_t index = static_cast<int32_t>(_canal_quotes.size());
+            _canal_quotes.push_back(std::move(quote));
+            if (active != 0) _canal_quote_index[_canal_quotes.back().token] = index;
+            ++_restore.restored_canal_quotes;
+        }
+        _restore.canal_quotes_seen = true;
+    } else if (schema >= 34 && section == SAVE_SECTION_CANAL_PROJECTS) {
+        for (uint32_t record = 0; record < records; ++record) {
+            CanalProject project;
+            uint32_t cell_count = 0, edge_count = 0;
+            if (!read_le(bytes, cursor, project.handle) ||
+                !read_le(bytes, cursor, project.generation) ||
+                !read_le(bytes, cursor, project.country_handle) ||
+                !read_le(bytes, cursor, project.effective_day) ||
+                !read_le(bytes, cursor, project.sequence) ||
+                !read_le(bytes, cursor, project.ready_day) ||
+                !read_le(bytes, cursor, project.effect_transaction_id) ||
+                !read_le(bytes, cursor, project.topology_hash) ||
+                !read_le(bytes, cursor, project.cash_paid) ||
+                !read_le(bytes, cursor, project.treasury_goods_used) ||
+                !read_le(bytes, cursor, project.market_goods_used) ||
+                !read_le(bytes, cursor, project.source_kind) ||
+                !read_le(bytes, cursor, project.state) ||
+                !read_le(bytes, cursor, cell_count) ||
+                !read_le(bytes, cursor, edge_count) ||
+                project.handle == 0 || project.generation == 0 ||
+                project.country_handle == 0 || project.effective_day < 0 ||
+                project.sequence < 0 || project.ready_day < project.effective_day ||
+                project.effect_transaction_id < 0 || project.cash_paid < 0 ||
+                project.treasury_goods_used < 0 || project.market_goods_used < 0 ||
+                project.source_kind < CANAL_SOURCE_SALINE ||
+                project.source_kind > CANAL_SOURCE_FRESHWATER ||
+                project.state < CANAL_PROJECT_BUILDING ||
+                project.state > CANAL_PROJECT_FAILED || cell_count > 33 ||
+                edge_count > 32 ||
+                ((project.state == CANAL_PROJECT_BUILDING ||
+                  project.state == CANAL_PROJECT_AWAITING_EFFECT) &&
+                 (cell_count < 2 || edge_count + 1 != cell_count)) ||
+                ((project.state == CANAL_PROJECT_COMPLETED ||
+                  project.state == CANAL_PROJECT_FAILED) &&
+                 !((cell_count == 0 && edge_count == 0) ||
+                   (cell_count >= 2 && edge_count + 1 == cell_count)))) {
+                error = "save_canal_project_invalid";
+                return false;
+            }
+            project.route_cells.resize(cell_count);
+            project.route_edge_dirs.resize(edge_count);
+            std::unordered_set<int32_t> unique_cells;
+            for (int32_t &cell : project.route_cells) {
+                if (!read_le(bytes, cursor, cell) || cell < 0 || cell >= _cell_count ||
+                    !unique_cells.emplace(cell).second) {
+                    error = "save_canal_project_route_invalid"; return false;
+                }
+            }
+            for (int32_t &dir : project.route_edge_dirs) {
+                if (!read_le(bytes, cursor, dir) || dir < 0 || dir >= 6) {
+                    error = "save_canal_project_route_invalid"; return false;
+                }
+            }
+            if (!_canal_project_index.emplace(project.handle,
+                    static_cast<int32_t>(_canal_projects.size())).second) {
+                error = "save_canal_project_duplicate";
+                return false;
+            }
+            _canal_projects.push_back(std::move(project));
+            ++_restore.restored_canal_projects;
+        }
+        _restore.canal_projects_seen = true;
+    } else if (section == SAVE_SECTION_END ||
+               (schema == 33 && section == SAVE_SECTION_END_V33)) {
         if (records != 0 || payload_bytes != 0) {
             error = "save_end_chunk_invalid";
             return false;

@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"bunded_rice_field"
+display_name = "畦埂水稻田"
+building_kind = "collector"
+economic_sector_id = "agriculture"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.rice_water_control")
+required_technology_tags = PackedStringArray("tech.rice_seed_saving", "tech.paddy_bunding", "tech.wetland_rice_gardening", "tech.household_landholding")
+production_climate_profile_id = &"paddy_crop"
+construction_good_ids = PackedStringArray("adobe_brick", "reed_bundle")
+construction_quantities = PackedInt64Array(300, 180)
+owner_profession_id = &"household_farmer"
+owner_slots_per_building = 2
+employee_profession_ids = PackedStringArray("agricultural_worker")
+employee_slots_per_building = PackedInt64Array(2)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(9000)
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("rice_grain")
+output_quantities_per_day = PackedInt64Array(4400)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("paddy_land")
+resource_quantities_per_day = PackedInt64Array(650)
+resource_interaction_modes = PackedStringArray("capacity")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array(1, 1, 3)
+condition_signals = PackedInt32Array(9, 10, 0)
+condition_compares = PackedInt32Array(0, 4, 0)
+condition_reference_ids = PackedStringArray("", "paddy_land", "")
+condition_values = PackedInt64Array(1, 0, 0)

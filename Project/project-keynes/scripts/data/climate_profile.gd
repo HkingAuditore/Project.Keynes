@@ -950,6 +950,14 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_range(0.0, 1.0, 0.01) var wind_response_rate: float = 0.75
 @export_range(0.0, 180.0, 1.0) var wind_max_turn_deg_per_day: float = 32.0
 @export_range(0.0, 0.25, 0.005) var wind_min_flux_for_dir_update: float = 0.035
+# 低阶热力季风：复用 physical wind 的海岸 BFS，用上一提交温度的陆海差
+# 给几何海风加季节符号。派生 contrast 驻留 C++，不新增 DataCore slot。
+@export var thermal_monsoon_enabled: bool = false
+@export_range(0.0, 1.0, 0.01) var thermal_monsoon_lat_limit: float = 0.45
+@export_range(0.0, 0.10, 0.001) var thermal_monsoon_deadband: float = 0.015
+@export_range(0.01, 0.25, 0.005) var thermal_monsoon_full_contrast: float = 0.08
+@export_range(0.0, 1.5, 0.05) var thermal_monsoon_gain: float = 0.85
+@export_range(0.0, 0.5, 0.01) var thermal_monsoon_breeze_floor: float = 0.20
 # 天气尺度修复(2026-06-19)：synoptic(天气尺度)风/压扰动原先时间项挂在 day_t=sim_day/days_per_year
 # 上 → 平移一个波长约需 1.3 年 → 在日/月尺度上风型实质冻结 → 水汽永远被送到同一批辐合带 →
 # 固定雨带/干区、整图天气高度静止。wind_synoptic_period_days 控制 synoptic 波平移/振荡的真实周期
@@ -1039,6 +1047,28 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export var enable_ocean_heat_transport: bool = true
 @export_range(0.0, 1.0, 0.01) var ocean_current_response_rate: float = 0.60
 @export_range(0.0, 1.0, 0.01) var ocean_thermal_current_weight: float = 0.12
+
+# 热带气旋实体池：生成条件完全来自已提交的热带 STORM，不做定时或随机保底。
+# 实体池和径向 forcing 都驻留 DCWorldExt；WeatherFront 仍是可视化派生对象。
+@export var native_tropical_cyclone_enabled: bool = false
+@export_range(1, 64, 1) var tropical_cyclone_capacity: int = 24
+@export_range(1, 4, 1) var tropical_cyclone_births_per_commit: int = 2
+@export_range(0.0, 1.0, 0.01) var tropical_cyclone_min_temp: float = 0.58
+@export_range(0.0, 1.0, 0.01) var tropical_cyclone_min_instability: float = 0.40
+@export_range(0.0, 1.0, 0.01) var tropical_cyclone_max_shear: float = 0.42
+@export_range(0.0, 1.0, 0.01) var tropical_cyclone_min_lat: float = 0.06
+@export_range(0.0, 1.0, 0.01) var tropical_cyclone_max_lat: float = 0.40
+@export_range(2, 6, 1) var tropical_cyclone_max_radius_cells: int = 5
+
+# ENSO：前三个合格热带洋盆各运行一个 Jin 型 recharge oscillator。
+# 洋盆拓扑/eastness 是指纹缓存；只有 3 组标量模式状态进入存档。
+@export var enso_basin_modes_enabled: bool = false
+@export_range(1, 3, 1) var enso_max_basins: int = 3
+@export_range(0.10, 0.50, 0.01) var enso_tropical_lat_limit: float = 0.33
+@export_range(730.0, 2920.0, 10.0) var enso_period_days: float = 1460.0
+@export_range(0.0, 0.12, 0.002) var enso_temp_anomaly_cap: float = 0.06
+@export_range(0.0, 0.01, 0.0001) var enso_wind_coupling: float = 0.0008
+@export_range(1.0, 30.0, 1.0) var enso_integration_substep_days: float = 10.0
 @export_range(0.0, 1.0, 0.01) var ocean_density_cold_weight: float = 0.22
 @export_range(0.0, 1.0, 0.01) var ocean_density_ice_weight: float = 0.12
 

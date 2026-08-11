@@ -378,6 +378,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 	# 距离限制为 _WIND_COAST_THERMAL_MAX_DIST，超出范围视为远内陆。
 	var coast_dist: Dictionary = {}     # HexCell → int（0 = 沿海陆地，>0 = 内陆距海岸格数）
 	var coast_sea: Dictionary = {}      # HexCell → Vector2（朝海单位向量，从最近海岸继承；镜像 C++ coast_sea_x/y）
+	var coast_sea_anchor: Dictionary = {} # HexCell → 最近海洋锚点（热力季风 fallback）
 	var bfs_queue: Array = []
 	for cell0: HexCell in cells:
 		if cell0 == null:
@@ -386,6 +387,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 			continue
 		# 沿海陆地（任一邻居是水）：距离 = 0，朝海方向 = 指向水邻居的合成单位向量
 		var sea_v0: Vector2 = Vector2.ZERO
+		var sea_anchor0: HexCell = null
 		for nb0: HexCell in map.get_neighbors(cell0):
 			if nb0 == null:
 				continue
@@ -394,9 +396,12 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 			var i0 := _neighbor_dir_index(map, cell0, nb0)
 			if i0 >= 0:
 				sea_v0 += NEIGHBOR_DIRS[i0]
+				if sea_anchor0 == null or _cell_idx(map, nb0) < _cell_idx(map, sea_anchor0):
+					sea_anchor0 = nb0
 		if sea_v0.length_squared() > 0.0001:
 			coast_dist[cell0] = 0
 			coast_sea[cell0] = sea_v0.normalized()
+			coast_sea_anchor[cell0] = sea_anchor0
 			bfs_queue.append(cell0)
 	# BFS 层扩展，最远到 _WIND_COAST_THERMAL_MAX_DIST。朝海方向沿途继承最近海岸的值。
 	var bfs_head: int = 0
@@ -407,6 +412,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 		if cur_d >= _WIND_COAST_THERMAL_MAX_DIST:
 			continue
 		var cur_sea: Vector2 = coast_sea[cur]
+		var cur_sea_anchor: HexCell = coast_sea_anchor.get(cur, null)
 		for nb_b: HexCell in map.get_neighbors(cur):
 			if nb_b == null:
 				continue
@@ -416,12 +422,14 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 				continue
 			coast_dist[nb_b] = cur_d + 1
 			coast_sea[nb_b] = cur_sea
+			coast_sea_anchor[nb_b] = cur_sea_anchor
 			bfs_queue.append(nb_b)
 
 	# Pass 0b：海洋侧 BFS — sea_dist(海洋 cell 距最近陆地格数) + sea_land(朝陆单位向量)。
 	# 用于海洋侧几何海风(朝陆)，与陆地侧拼成海陆连续 onshore，修复"海洋水汽补不进沿海"断链。
 	var sea_dist: Dictionary = {}       # HexCell → int（0 = 紧邻陆地的海洋）
 	var sea_land: Dictionary = {}       # HexCell → Vector2（朝陆单位向量，从沿岸继承；镜像 C++ sea_land_x/y）
+	var sea_land_anchor: Dictionary = {} # HexCell → 最近陆地锚点（热力季风 fallback）
 	var sea_queue: Array = []
 	for cellS: HexCell in cells:
 		if cellS == null:
@@ -430,6 +438,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 			continue
 		# 沿岸海洋（任一邻居是陆地）：sea_dist = 0，朝陆方向 = 指向陆地邻居的合成单位向量
 		var land_vS: Vector2 = Vector2.ZERO
+		var land_anchor_s: HexCell = null
 		for nbS: HexCell in map.get_neighbors(cellS):
 			if nbS == null:
 				continue
@@ -438,9 +447,12 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 			var iS := _neighbor_dir_index(map, cellS, nbS)
 			if iS >= 0:
 				land_vS += NEIGHBOR_DIRS[iS]
+				if land_anchor_s == null or _cell_idx(map, nbS) < _cell_idx(map, land_anchor_s):
+					land_anchor_s = nbS
 		if land_vS.length_squared() > 0.0001:
 			sea_dist[cellS] = 0
 			sea_land[cellS] = land_vS.normalized()
+			sea_land_anchor[cellS] = land_anchor_s
 			sea_queue.append(cellS)
 	var sea_head: int = 0
 	while sea_head < sea_queue.size():
@@ -450,6 +462,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 		if cur_dS >= _SEA_BREEZE_SEA_MAX_DIST:
 			continue
 		var cur_landS: Vector2 = sea_land[curS]
+		var cur_land_anchor: HexCell = sea_land_anchor.get(curS, null)
 		for nb_s: HexCell in map.get_neighbors(curS):
 			if nb_s == null:
 				continue
@@ -459,6 +472,7 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 				continue
 			sea_dist[nb_s] = cur_dS + 1
 			sea_land[nb_s] = cur_landS
+			sea_land_anchor[nb_s] = cur_land_anchor
 			sea_queue.append(nb_s)
 
 	# ─── NS 化 Phase 1 结构镜像(近似级 stale-DLL fallback,不要求逐位)───────
@@ -556,6 +570,12 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 				traj_rows[idx_t] = DCWeatherFieldSolver.hex_sextant_barycentric(
 					cur_t, target_t, cell_pos_m, nb_idx_m, wrap_m)
 
+	var thermal_monsoon_enabled: bool = profile != null and profile.thermal_monsoon_enabled
+	var monsoon_lat_limit: float = clampf(profile.thermal_monsoon_lat_limit if profile != null else 0.45, 0.0, 1.0)
+	var monsoon_deadband: float = clampf(profile.thermal_monsoon_deadband if profile != null else 0.015, 0.0, 0.10)
+	var monsoon_full: float = maxf(monsoon_deadband + 0.001, profile.thermal_monsoon_full_contrast if profile != null else 0.08)
+	var monsoon_gain: float = clampf(profile.thermal_monsoon_gain if profile != null else 0.85, 0.0, 1.5)
+	var monsoon_floor: float = clampf(profile.thermal_monsoon_breeze_floor if profile != null else 0.20, 0.0, 0.5)
 	for cell: HexCell in cells:
 		if cell == null:
 			continue
@@ -634,11 +654,20 @@ static func solve_wind_field(map: MapData, hex_size: float, world_bounds: Rect2,
 		# 陆地侧朝内陆(-coast_sea) + 海洋侧朝陆(sea_land)，拼成"深海→近岸→海岸→内陆"连续带。
 		# 只抽陆地侧会把沿海抽干、海洋补不进(hop0→hop1 vapor 断崖)；海洋侧朝陆把海洋水汽推上岸。
 		var vs_mag: float = v_sum.length()
+		var monsoon_thermal: float = 0.0
+		if thermal_monsoon_enabled and ls_abs <= monsoon_lat_limit:
+			var anchor: HexCell = sea_land_anchor.get(cell, null) if is_water else coast_sea_anchor.get(cell, null)
+			if anchor != null:
+				var land_minus_sea: float = anchor.temperature - cell.temperature if is_water else cell.temperature - anchor.temperature
+				if absf(land_minus_sea) > monsoon_deadband:
+					monsoon_thermal = signf(land_minus_sea) * smoothstep(monsoon_deadband, monsoon_full, absf(land_minus_sea))
+		var breeze_sign: float = clampf(monsoon_floor + monsoon_gain * monsoon_thermal, -0.65, 1.05) \
+				if thermal_monsoon_enabled else 1.0
 		if not is_water and coast_pressure_w > 0.0 and coast_sea.has(cell):
-			v_sum += (_WIND_SEA_BREEZE_W * coast_pressure_w * vs_mag) * (-(coast_sea[cell] as Vector2))
+			v_sum += (_WIND_SEA_BREEZE_W * coast_pressure_w * vs_mag * breeze_sign) * (-(coast_sea[cell] as Vector2))
 		elif is_water and sea_dist.has(cell):
 			var sea_pw: float = 1.0 - float(int(sea_dist[cell])) / float(_SEA_BREEZE_SEA_MAX_DIST)
-			v_sum += (_WIND_SEA_BREEZE_W * sea_pw * vs_mag) * (sea_land[cell] as Vector2)
+			v_sum += (_WIND_SEA_BREEZE_W * sea_pw * vs_mag * breeze_sign) * (sea_land[cell] as Vector2)
 		if v_sum.length_squared() < 0.0001:
 			# 退化保护：用纬度基线
 			v_sum = v_base

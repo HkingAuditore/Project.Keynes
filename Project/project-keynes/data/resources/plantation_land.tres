@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"plantation_land"
+discovery_technology_tags = PackedStringArray("tech.cotton_gardening", "tech.spice_shade_gardening", "tech.latex_smoke_coagulation", "tech.crop_acclimatization")
 display_name = "种植园承载力"
 reserve_component = &"cell.res_plantation_land_reserve"
 habitat_mode = "land"

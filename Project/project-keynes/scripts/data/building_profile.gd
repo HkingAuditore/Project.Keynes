@@ -6,10 +6,20 @@ extends Resource
 @export var display_name: String = ""
 @export var icon: Texture2D = null
 @export_enum("collector", "industrial", "service") var building_kind: String = "industrial"
+## Explicit technology-output sector. Authoring must not infer farms from the
+## generic collector kind because collectors also cover mines and fisheries.
+@export_enum("agriculture", "extractive", "manufacturing", "energy", "knowledge") \
+var economic_sector_id: String = ""
 ## Cold-path taxonomy used by data-driven selectors. Runtime compilation
 ## expands tags to dense building IDs; simulation loops never compare strings.
 @export var semantic_tags: PackedStringArray = PackedStringArray()
+## Direct unlock alternatives. At least one referenced tech.* tag must be
+## completed. Non-tech taxonomy tags are ignored by the runtime gate.
 @export var technology_tags: PackedStringArray = PackedStringArray()
+## Supporting technology axes. Every referenced tech.* tag must be completed
+## in addition to the ANY gate above. These tags deliberately do not count as
+## direct content bindings in TechnologyCatalog audits.
+@export var required_technology_tags: PackedStringArray = PackedStringArray()
 ## Optional construction-upgrade family. Existing lower-tier buildings keep
 ## operating, but only the highest technology-available tier may be built.
 @export var upgrade_family_id: StringName = &""

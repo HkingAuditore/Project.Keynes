@@ -53,6 +53,9 @@ func _init() -> void:
 	if not _test_edge_distance_resolution_invariance(ext):
 		quit(1)
 		return
+	if not _test_canal_height_alpha_and_partial_payload(ext):
+		quit(1)
+		return
 	if ext.has_method("run_resample_visual_horizon_layer_pass"):
 		if not _test_horizon_resample(ext):
 			quit(1)
@@ -167,6 +170,42 @@ func _test_edge_distance_resolution_invariance(ext: Object) -> bool:
 	return true
 
 
+func _test_canal_height_alpha_and_partial_payload(ext: Object) -> bool:
+	var plain_knobs := _make_knobs()
+	var canal_knobs: Dictionary = plain_knobs.duplicate(true)
+	var mask: PackedByteArray = canal_knobs["cell_canal_edge_mask"]
+	mask[4] = 1 << 0
+	mask[5] = 1 << 3
+	canal_knobs["cell_canal_edge_mask"] = mask
+	canal_knobs["canal_refresh_only"] = true
+	var plain: Dictionary = ext.run_bake_visual_tile_layer_pass(plain_knobs)
+	var canal: Dictionary = ext.run_bake_visual_tile_layer_pass(canal_knobs)
+	if bool(plain.get("fallback", true)) or bool(canal.get("fallback", true)):
+		push_error("visual_tile_native_bake_test: canal bake fallback")
+		return false
+	if canal.has("map_index") or canal.has("water_depth") \
+			or canal.has("terrain_detail") or canal.has("edge_neighbor"):
+		push_error("visual_tile_native_bake_test: canal refresh uploaded non-height fields")
+		return false
+	var plain_height: PackedByteArray = plain.get("height", PackedByteArray())
+	var canal_height: PackedByteArray = canal.get("height", PackedByteArray())
+	var canal_pixels := 0
+	var carved_pixels := 0
+	for pixel in range(int(mini(plain_height.size(), canal_height.size()) / 4)):
+		var offset := pixel * 4
+		if canal_height[offset + 3] > 0:
+			canal_pixels += 1
+		var before := (int(plain_height[offset]) << 8) | int(plain_height[offset + 1])
+		var after := (int(canal_height[offset]) << 8) | int(canal_height[offset + 1])
+		if after < before:
+			carved_pixels += 1
+	if canal_pixels <= 0 or carved_pixels <= 0:
+		push_error("visual_tile_native_bake_test: canal SDF/carve absent pixels=%d carved=%d" % [
+			canal_pixels, carved_pixels])
+		return false
+	return true
+
+
 func _test_horizon_resample(ext: Object) -> bool:
 	var source := PackedByteArray()
 	source.resize(4 * 2 * 4)
@@ -236,6 +275,10 @@ func _make_knobs() -> Dictionary:
 	var water_depth := PackedFloat32Array()
 	var landform := PackedByteArray()
 	var offset_to_index := PackedInt32Array()
+	var canal_mask := PackedByteArray()
+	var cell_pos_x := PackedFloat32Array()
+	var cell_pos_y := PackedFloat32Array()
+	var neighbors := PackedInt32Array()
 	elevation.resize(n_cells)
 	moisture.resize(n_cells)
 	terrain.resize(n_cells)
@@ -244,6 +287,11 @@ func _make_knobs() -> Dictionary:
 	water_depth.resize(n_cells)
 	landform.resize(n_cells)
 	offset_to_index.resize(n_cells)
+	canal_mask.resize(n_cells)
+	cell_pos_x.resize(n_cells)
+	cell_pos_y.resize(n_cells)
+	neighbors.resize(n_cells * 6)
+	neighbors.fill(-1)
 	for i in range(n_cells):
 		elevation[i] = 0.68 + float(i % map_width) * 0.025
 		moisture[i] = 0.45
@@ -253,6 +301,13 @@ func _make_knobs() -> Dictionary:
 		water_depth[i] = 0.0
 		landform[i] = 0
 		offset_to_index[i] = i
+		var row: int = floori(float(i) / float(map_width))
+		var col: int = i % map_width
+		var q: int = col - int((row - (row & 1)) / 2)
+		cell_pos_x[i] = 1.7320508 * (float(q) + float(row) * 0.5)
+		cell_pos_y[i] = 1.5 * float(row)
+	neighbors[4 * 6] = 5
+	neighbors[5 * 6 + 3] = 4
 	var baseline_width := 32
 	var baseline_height := 16
 	var baseline := PackedFloat32Array()
@@ -290,6 +345,10 @@ func _make_knobs() -> Dictionary:
 		"cell_cover": cover,
 		"cell_water_depth": water_depth,
 		"cell_landform": landform,
+		"cell_canal_edge_mask": canal_mask,
+		"cell_pos_x": cell_pos_x,
+		"cell_pos_y": cell_pos_y,
+		"neighbor_indices": neighbors,
 		"offset_to_index": offset_to_index,
 		"baseline_width": baseline_width,
 		"baseline_height": baseline_height,

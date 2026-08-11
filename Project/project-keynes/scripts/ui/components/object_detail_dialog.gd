@@ -11,6 +11,7 @@ const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 
 signal closed()
+signal colonization_requested(family_handle: int, source_cell: int)
 
 const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
@@ -230,6 +231,8 @@ func _build_family_details(row: Dictionary) -> void:
 		row.get("behavior_rows", []))
 	_add_rows_card("地块威望", "family.house", UITokens.ACCENT,
 		row.get("branch_rows", []))
+	_add_branch_colonization_buttons(int(row.get("family_handle", 0)),
+		row.get("branch_rows", []))
 	_add_rows_card("已激活加成", "growth", UITokens.CLIMATE,
 		row.get("modifier_rows", []))
 	_add_rows_card("累计触发", "resource", UITokens.RESOURCE,
@@ -239,6 +242,37 @@ func _build_family_details(row: Dictionary) -> void:
 		_add_muted_note("该家族目前没有重要人物。")
 	else:
 		_add_rows_card("主要人物", "family.house", UITokens.ACCENT, people)
+
+
+func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> void:
+	if family_handle == 0 or branches.is_empty():
+		return
+	var panel := RowsCardScene.instantiate() as PanelContainer
+	_content.add_child(panel)
+	(panel.get_node("Box/TitleRow/Icon") as IconBadge).set_semantic(
+		&"family.house", UITokens.BRASS_HIGHLIGHT)
+	var title := panel.get_node("Box/TitleRow/Title") as Label
+	title.text = "选择开拓源分支"
+	title.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	var rows := panel.get_node("Box/Rows") as VBoxContainer
+	for raw in branches:
+		var branch: Dictionary = raw
+		var source_cell := int(branch.get("cell", -1))
+		if source_cell < 0:
+			continue
+		var button := Button.new()
+		button.text = "%s · 进入地图选点" % String(branch.get(
+			"name", "地块 %d" % source_cell))
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var owned: bool = _player_controller != null and \
+			_player_controller.has_method("is_player_owned_cell") and \
+			bool(_player_controller.is_player_owned_cell(source_cell))
+		button.disabled = not owned
+		button.tooltip_text = "仅玩家领土内的家族分支可以派遣" if not owned \
+			else "选择一个可见无主陆地作为目标"
+		button.pressed.connect(func() -> void:
+			colonization_requested.emit(family_handle, source_cell))
+		rows.add_child(button)
 
 
 func _delta_accent(delta: String) -> Color:

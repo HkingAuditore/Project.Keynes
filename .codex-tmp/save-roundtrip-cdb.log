@@ -1,0 +1,150 @@
+Opened log file '.codex-tmp/save-roundtrip-cdb.log'
+
+Microsoft (R) Windows Debugger Version 10.0.22621.755 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+CommandLine: D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64.exe --headless --path Project/project-keynes
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+Symbol search path is: srv*
+Executable search path is: 
+ModLoad: 00007ff6`7ee10000 00007ff6`89433000   godot.windows.editor.x86_64.exe
+ModLoad: 00007ffc`f8c90000 00007ffc`f8ea8000   ntdll.dll
+ModLoad: 00007ffc`f6c80000 00007ffc`f6d44000   C:\Windows\System32\KERNEL32.DLL
+ModLoad: 00007ffc`f6390000 00007ffc`f6763000   C:\Windows\System32\KERNELBASE.dll
+ModLoad: 00007ffc`f7a80000 00007ffc`f7e11000   C:\Windows\System32\combase.dll
+ModLoad: 00007ffc`f5f10000 00007ffc`f6021000   C:\Windows\System32\ucrtbase.dll
+ModLoad: 00007ffc`f6930000 00007ffc`f6a48000   C:\Windows\System32\RPCRT4.dll
+ModLoad: 00007ffc`f8090000 00007ffc`f8168000   C:\Windows\System32\oleaut32.dll
+ModLoad: 00007ffc`f6240000 00007ffc`f62da000   C:\Windows\System32\msvcp_win.dll
+ModLoad: 00007ffc`f8170000 00007ffc`f8322000   C:\Windows\System32\user32.dll
+ModLoad: 00007ffc`f62e0000 00007ffc`f6306000   C:\Windows\System32\win32u.dll
+ModLoad: 00007ffc`b7950000 00007ffc`b7d9a000   C:\Windows\SYSTEM32\uiautomationcore.dll
+ModLoad: 00007ffc`f8060000 00007ffc`f8089000   C:\Windows\System32\GDI32.dll
+ModLoad: 00007ffc`f6120000 00007ffc`f623b000   C:\Windows\System32\gdi32full.dll
+ModLoad: 00007ffc`f7e20000 00007ffc`f7ed1000   C:\Windows\System32\ADVAPI32.dll
+ModLoad: 00007ffc`f6df0000 00007ffc`f6e97000   C:\Windows\System32\msvcrt.dll
+ModLoad: 00007ffc`f7040000 00007ffc`f70e8000   C:\Windows\System32\sechost.dll
+ModLoad: 00007ffc`f60f0000 00007ffc`f6118000   C:\Windows\System32\bcrypt.dll
+ModLoad: 00007ffc`ed830000 00007ffc`ed83b000   C:\Windows\SYSTEM32\AVRT.dll
+ModLoad: 00007ffc`f5da0000 00007ffc`f5f08000   C:\Windows\System32\CRYPT32.dll
+ModLoad: 00007ffc`f70f0000 00007ffc`f7121000   C:\Windows\System32\IMM32.dll
+ModLoad: 00007ffc`f2a30000 00007ffc`f2a5b000   C:\Windows\SYSTEM32\dwmapi.dll
+ModLoad: 00007ffc`f36f0000 00007ffc`f3923000   C:\Windows\SYSTEM32\dbghelp.dll
+ModLoad: 00007ffc`f0950000 00007ffc`f0bc8000   C:\Windows\SYSTEM32\DWrite.dll
+ModLoad: 00007ffc`f8aa0000 00007ffc`f8c41000   C:\Windows\System32\ole32.dll
+ModLoad: 00007ffc`f6ea0000 00007ffc`f6fa4000   C:\Windows\System32\SHCORE.dll
+ModLoad: 00007ffc`f4580000 00007ffc`f458e000   C:\Windows\SYSTEM32\HID.DLL
+ModLoad: 00007ffc`f2910000 00007ffc`f2a07000   C:\Windows\SYSTEM32\dxgi.dll
+ModLoad: 00007ffc`f4850000 00007ffc`f487d000   C:\Windows\SYSTEM32\IPHLPAPI.DLL
+ModLoad: 00007ffc`f71e0000 00007ffc`f7a7c000   C:\Windows\System32\SHELL32.dll
+ModLoad: 00007ffc`f6770000 00007ffc`f68af000   C:\Windows\System32\wintypes.dll
+ModLoad: 00007ffc`f7fa0000 00007ffc`f8009000   C:\Windows\System32\SHLWAPI.dll
+ModLoad: 00007ffc`f6fc0000 00007ffc`f7031000   C:\Windows\System32\WS2_32.dll
+ModLoad: 00007ffc`ebd70000 00007ffc`ebda4000   C:\Windows\SYSTEM32\WINMM.dll
+ModLoad: 00007ffc`d3890000 00007ffc`d3899000   C:\Windows\SYSTEM32\WSOCK32.dll
+ModLoad: 00007ffc`f68b0000 00007ffc`f692b000   C:\Windows\System32\bcryptPrimitives.dll
+ModLoad: 00007ffc`d2dd0000 00007ffc`d2ea0000   C:\Program Files (x86)\iOA\module\DataProtection\TxUmon64.dll
+ModLoad: 00007ffc`f6a50000 00007ffc`f6a58000   C:\Windows\System32\PSAPI.DLL
+ModLoad: 00007ffc`eedb0000 00007ffc`eedba000   C:\Windows\SYSTEM32\VERSION.dll
+ModLoad: 00007ffc`d0360000 00007ffc`d03a6000   C:\Windows\SYSTEM32\dinput8.dll
+ModLoad: 00007ffc`f6310000 00007ffc`f638c000   C:\Windows\System32\WINTRUST.DLL
+ModLoad: 00007ffc`f5690000 00007ffc`f56a2000   C:\Windows\SYSTEM32\MSASN1.dll
+ModLoad: 00007ffc`f4e30000 00007ffc`f4e48000   C:\Windows\SYSTEM32\kernel.appcore.dll
+ModLoad: 00007ffc`f00d0000 00007ffc`f00db000   C:\Windows\system32\FltLib.dll
+ModLoad: 00007ffc`f27e0000 00007ffc`f2893000   C:\Windows\system32\uxtheme.dll
+ModLoad: 00007ffc`286c0000 00007ffc`286da000   C:\Windows\system32\Avicap32.dll
+ModLoad: 00007ffc`28690000 00007ffc`286bb000   C:\Windows\SYSTEM32\MSVFW32.dll
+ModLoad: 00007ffc`e1460000 00007ffc`e16fc000   C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.22621.6060_none_2712eda17382d24b\COMCTL32.dll
+ModLoad: 00007ffc`f6dc0000 00007ffc`f6ddf000   C:\Windows\System32\imagehlp.dll
+ModLoad: 00007ffc`c1ce0000 00007ffc`c1ceb000   C:\Windows\system32\KtmW32.dll
+ModLoad: 00007ffc`f5640000 00007ffc`f565b000   C:\Windows\SYSTEM32\CRYPTSP.dll
+ModLoad: 00007ffc`e13b0000 00007ffc`e1458000   C:\Windows\system32\winspool.drv
+ModLoad: 00007ffc`f4d90000 00007ffc`f4dc7000   C:\Windows\system32\rsaenh.dll
+ModLoad: 00007ffc`f4c00000 00007ffc`f4c14000   C:\Windows\system32\wtsapi32.dll
+ModLoad: 00007ffc`f5620000 00007ffc`f562c000   C:\Windows\SYSTEM32\CRYPTBASE.dll
+ModLoad: 00007ffc`b9070000 00007ffc`b956e000   C:\Windows\system32\Wininet.dll
+ModLoad: 00007ffc`e2780000 00007ffc`e2995000   C:\Windows\SYSTEM32\inputhost.dll
+ModLoad: 00007ffc`f1500000 00007ffc`f1633000   C:\Windows\SYSTEM32\CoreMessaging.dll
+Invalid parameter passed to C runtime function.
+ModLoad: 00007ffb`d5240000 00007ffb`d57b2000   D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debug.x86_64.dll
+core/io/image.cpp:2756 - Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+core/io/image.cpp:2756 - Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+core/io/image.cpp:2756 - Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+core/io/image.cpp:2756 - Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+(aa84.b098): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+*** WARNING: Unable to verify checksum for D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debug.x86_64.dll
+dots_ext_windows_template_debug_x86_64!godot::helpers::append_all<godot::Array,godot::String,godot::String,godot::String,godot::String,godot::String,godot::String>+0x15d:
+00007ffb`d53ec68d 803c0a00        cmp     byte ptr [rdx+rcx],0 ds:00000000`00000000=??
+0:000> sxe av; g; .ecxr; kv; q
+(aa84.b098): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+Unable to get exception context, HRESULT 0x8000FFFF
+Child-SP          RetAddr               : Args to Child                                                           : Call Site
+00000033`e8bfbd60 00007ffb`d52d5980     : 00000000`00000000 00000001`00000000 00000001`00000000 00000000`000000f7 : dots_ext_windows_template_debug_x86_64!godot::helpers::append_all<godot::Array,godot::String,godot::String,godot::String,godot::String,godot::String,godot::String>+0x15d
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::_Allocate_manually_vector_aligned+0xc (Inline Function @ 00007ffb`d52d5980)
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::_Allocate+0x24 (Inline Function @ 00007ffb`d52d5980)
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::allocator<__int64>::allocate+0x2c (Inline Function @ 00007ffb`d52d5980)
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::_Allocate_at_least_helper+0x2c (Inline Function @ 00007ffb`d52d5980)
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::vector<__int64,std::allocator<__int64> >::_Buy_raw+0x2c (Inline Function @ 00007ffb`d52d5980)
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::vector<__int64,std::allocator<__int64> >::_Buy_nonzero+0x3f (Inline Function @ 00007ffb`d52d5980)
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::vector<__int64,std::allocator<__int64> >::_Construct_n+0x45 (Inline Function @ 00007ffb`d52d5980)
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::vector<__int64,std::allocator<__int64> >::{ctor}+0x45 (Inline Function @ 00007ffb`d52d5980)
+00000033`e8bfbd90 00007ffb`d5313abb     : 00000001`00000000 00000000`00000000 00000185`000000f7 00000000`0000002b : dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::compute_cohort_demand_preview+0x320
+(Inline Function) --------`--------     : --------`-------- --------`-------- --------`-------- --------`-------- : dots_ext_windows_template_debug_x86_64!std::vector<pk::NativeEconomyRuntime::Signature,std::allocator<pk::NativeEconomyRuntime::Signature> >::size+0x7 (Inline Function @ 00007ffb`d5313abb)
+00000033`e8bfbf80 00007ffb`d52edc5f     : 00000033`e8bfd270 00000185`48b68940 00000000`00000001 00000185`48b6bce8 : dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::reconcile_building_employment_cells_range+0x38b
+00000033`e8bfd170 00007ffb`d52ec0c1     : 00000033`e8bfe4c0 00000185`48b68940 00000185`22c05b90 00000033`e8bfe4b8 : dots_ext_windows_template_debug_x86_64!pk::`anonymous namespace'::make_save_chunk+0xf
+00000033`e8bfe390 00007ffb`d55eb9c8     : 00000033`e8bfe558 00000000`00000002 00000185`17ee0000 00000185`5000016b : dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::flush_market_signal_overflow+0x5c1
+00000033`e8bfe3c0 00007ffb`d55e8a01     : 00000000`00000080 00000000`00000000 00000000`00000008 00000185`1ab523f0 : dots_ext_windows_template_debug_x86_64!std::`dynamic atexit destructor for 'initlocks''+0x8d108
+00000033`e8bfe600 00007ffb`d55096e0     : 00000000`00000050 00000000`40000001 00000000`00000060 00000000`00000000 : dots_ext_windows_template_debug_x86_64!std::`dynamic atexit destructor for 'initlocks''+0x8a141
+00000033`e8bfe630 00007ffb`d5525134     : 00000185`20a46b08 00007ff6`835c630d 00000000`00000004 00007ff6`85384440 : dots_ext_windows_template_debug_x86_64!pk::DCWorldExt::run_wind_air_mass_pass+0x1630
+00000033`e8bfe740 00007ffb`d5699461     : 00000033`e8bfe850 00000033`e8bfec80 00000185`2422ea90 00007ff6`82ad7d29 : dots_ext_windows_template_debug_x86_64!godot::RandomNumberGenerator::set_seed+0x4
+00000033`e8bfe790 00007ff6`84ceb079     : 00000185`20a46b08 00000185`20a46b08 00000185`260b44a8 00007ff6`82add2c9 : dots_ext_windows_template_debug_x86_64!std::`dynamic atexit destructor for 'initlocks''+0x13aba1
+00000033`e8bfe7f0 00007ff6`82af7e90     : 00007ff6`869886c0 00000033`e8bfeca0 00000033`e8bfe970 00007ff6`869886c0 : godot_windows_editor_x86_64!NoHotPatch+0x5ed8399
+00000033`e8bfe8a0 00007ff6`8287e972     : 00000000`00000000 00000000`00000090 00000000`00000001 00000185`260b4730 : godot_windows_editor_x86_64!NoHotPatch+0x3ce51b0
+00000033`e8bfe950 00007ff6`7f44d7ae     : 00000185`260b4630 00000185`260b4678 00000000`00000000 00000185`00000000 : godot_windows_editor_x86_64!NoHotPatch+0x3a6bc92
+00000033`e8bfea00 00007ff6`7f3ecba5     : 00000033`e8bfee00 00000185`20a470a0 00000185`2b956d60 00000033`e8bff040 : godot_windows_editor_x86_64!NoHotPatch+0x63aace
+00000033`e8bfed80 00007ff6`7f3ed368     : 00000000`00000004 00007ff6`85384440 00000033`e8bfef88 00000000`00000017 : godot_windows_editor_x86_64!NoHotPatch+0x5d9ec5
+00000033`e8bfee90 00007ff6`84c6eed3     : 00000033`00000000 00007ff6`835c630d 00000033`e8bfef8c 00000185`262271c0 : godot_windows_editor_x86_64!NoHotPatch+0x5da688
+00000033`e8bfef50 00007ff6`82af7e90     : 00000185`1af99e20 00007ff6`82add2c9 00000033`00000000 00007ff6`835c630d : godot_windows_editor_x86_64!NoHotPatch+0x5e5c1f3
+00000033`e8bfefe0 00007ff6`8280f3ee     : 00000000`00000000 00000185`1af99e20 00000033`e8bff340 00000033`e8bff160 : godot_windows_editor_x86_64!NoHotPatch+0x3ce51b0
+00000033`e8bff090 00007ff6`828107b3     : 00000000`00000001 00007ff6`828106e0 00000033`e8bff340 00000185`1f7a7d50 : godot_windows_editor_x86_64!NoHotPatch+0x39fc70e
+00000033`e8bff130 00007ff6`82b06a13     : 00000185`1af99e20 00007ff6`89242ae8 00000185`1afd2770 00000033`e8bff350 : godot_windows_editor_x86_64!NoHotPatch+0x39fdad3
+00000033`e8bff1c0 00007ff6`8113d295     : 3f911111`11111111 00007ff6`89242ae8 00000185`19b61430 00000000`00000000 : godot_windows_editor_x86_64!NoHotPatch+0x3cf3d33
+00000033`e8bff3e0 00007ff6`7ee64787     : 00000185`1af9a6f0 00000006`3c888889 00000000`00000000 00000000`00000000 : godot_windows_editor_x86_64!NoHotPatch+0x232a5b5
+00000033`e8bff4d0 00007ff6`7ee12fa1     : 00000185`17db4cd0 00000185`16385d60 00007ff6`89247a68 00000033`e8bff6e0 : godot_windows_editor_x86_64!NoHotPatch+0x51aa7
+00000033`e8bff670 00007ff6`7ee61bc2     : 00000185`17dc8fc0 00000000`00000004 00000185`17ee0880 00000185`16385d60 : godot_windows_editor_x86_64!NoHotPatch+0x2c1
+00000033`e8bff6b0 00007ff6`7ee61bfe     : 00000185`1637628a 00000033`e8bffaac 00007ff6`89354400 00007ff6`89354408 : godot_windows_editor_x86_64!NoHotPatch+0x4eee2
+00000033`e8bffa80 00007ff6`7ee110c9     : 00007ff6`89354400 00000000`00000004 00000000`00000000 00000000`00000000 : godot_windows_editor_x86_64!NoHotPatch+0x4ef1e
+00000033`e8bffad0 00007ff6`7ee113f6     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : godot_windows_editor_x86_64+0x10c9
+00000033`e8bffb70 00007ffc`f6c9259d     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : godot_windows_editor_x86_64+0x13f6
+00000033`e8bffba0 00007ffc`f8ceaf78     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : KERNEL32!BaseThreadInitThunk+0x1d
+00000033`e8bffbd0 00000000`00000000     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : ntdll!RtlUserThreadStart+0x28
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

@@ -6,4 +6,4 @@ id = &"guild_master"
 satisfaction_dimension_weights_q16 = PackedInt32Array(45875, 39322, 32768, 39322, 45875, 32768, 45875, 26214)
 display_name = "行会师傅"
 default_consumption_plan_id = &"artisan_household"
-technology_tags = PackedStringArray("tech.guild_organization")
+technology_tags = PackedStringArray()

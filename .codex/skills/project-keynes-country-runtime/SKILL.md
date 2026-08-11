@@ -64,8 +64,9 @@ country×signal-value matrix or write these fields into `HexCell`/DataCore.
 
 Vision is not country authority. Its player-fog transition only submits the command at the next
 country boundary. `CountryFacade.research_signal_snapshot()` and country events are cold-path/UI
-facades. PKCN v5 persists the signal catalog identity, bitset, observed-cell dedupe keys, and sparse
-evidence; restore rejects older schemas and catalog mismatch explicitly.
+facades. PKCN v11 persists the signal/catalog/content/Trigger identity, bitset, observed-cell dedupe
+keys, and sparse evidence; restore rejects older schemas and catalog mismatch as
+`catalog_hash_mismatch`.
 
 ## Verify
 

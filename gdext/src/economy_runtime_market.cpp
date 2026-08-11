@@ -69,7 +69,7 @@ void NativeEconomyRuntime::build_demand_basis(
                     for (int32_t c = 0; c < variant.component_count; ++c) {
                         const NeedComponent &component =
                             _components[variant.component_begin + c];
-                        if (!good_available(
+                        if (!good_market_available(
                                 market, component.good_id, true)) return false;
                     }
                     return true;
@@ -211,7 +211,7 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
                     availability_index >=
                         _epoch_country_variant_available.size()) {
                     available &=
-                        good_available(market, component.good_id, true);
+                        good_market_available(market, component.good_id, true);
                 }
                 const int32_t price = price_override != nullptr &&
                         component.good_id < static_cast<int32_t>(price_override->size())

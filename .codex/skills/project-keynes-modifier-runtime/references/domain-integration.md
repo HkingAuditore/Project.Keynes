@@ -23,6 +23,11 @@ fixed-point goods settlement. Do not modify cash or goods directly.
 Refresh BuildingGroup cached handle/factor at epoch capture, after topology rebuild, and after
 restore. Retire identity when the group disappears.
 
+Technology-authored `country.output.building.<building_id>_factor` stats are resolved for every stable
+building ID during economy configuration and frozen as one country×building-type Q16 table at epoch
+capture. Include that factor in both cached group output and target-forecast output. Do not resolve the
+stable key or query the Country store inside a building loop.
+
 `value_conversion` is not currently passed into the native catalog. Convert economy values through
 the existing deterministic Q16 helper and never assume automatic catalog-driven conversion.
 

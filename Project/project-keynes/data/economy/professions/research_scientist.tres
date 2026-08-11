@@ -6,4 +6,4 @@ id = &"research_scientist"
 display_name = "研究科学家"
 default_consumption_plan_id = &"technical_household"
 profession_class_id = &"technology"
-technology_tags = PackedStringArray("tech.national_laboratories")
+technology_tags = PackedStringArray()

@@ -1,0 +1,233 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/era_reward_dialog.gd" id="1_script"]
+
+[node name="EraRewardDialog" type="Control"]
+process_mode = 3
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_script")
+
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.025, 0.035, 0.06, 0.965)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 40
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 40
+theme_override_constants/margin_bottom = 32
+
+[node name="Column" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Title" type="Label" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "时代提升：选择时代奖励"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Margin/Column"]
+layout_mode = 2
+text = "奖励目标已冻结。选择后将等待所有效果安全提交完成。"
+horizontal_alignment = 1
+modulate = Color(0.72, 0.78, 0.88, 1)
+
+[node name="CardsScroll" type="ScrollContainer" parent="Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="CardGrid" type="GridContainer" parent="Margin/Column/CardsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/h_separation = 18
+theme_override_constants/v_separation = 18
+columns = 3
+
+[node name="Card0" type="PanelContainer" parent="Margin/Column/CardsScroll/CardGrid"]
+custom_minimum_size = Vector2(300, 410)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Margin" type="MarginContainer" parent="Margin/Column/CardsScroll/CardGrid/Card0"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="Column" type="VBoxContainer" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Icon" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "REWARD"
+horizontal_alignment = 1
+modulate = Color(0.85, 0.7, 0.3, 1)
+
+[node name="Title" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "奖励一"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Description" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "奖励说明"
+autowrap_mode = 2
+
+[node name="Target" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
+layout_mode = 2
+text = "目标：玩家国家"
+autowrap_mode = 2
+modulate = Color(0.75, 0.85, 1, 1)
+
+[node name="Reason" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
+layout_mode = 2
+text = "适配理由"
+autowrap_mode = 2
+modulate = Color(0.72, 0.78, 0.88, 1)
+
+[node name="Choose" type="Button" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
+layout_mode = 2
+text = "选择此奖励"
+
+[node name="Card1" type="PanelContainer" parent="Margin/Column/CardsScroll/CardGrid"]
+custom_minimum_size = Vector2(300, 410)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Margin" type="MarginContainer" parent="Margin/Column/CardsScroll/CardGrid/Card1"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="Column" type="VBoxContainer" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Icon" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "REWARD"
+horizontal_alignment = 1
+modulate = Color(0.85, 0.7, 0.3, 1)
+
+[node name="Title" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "奖励二"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Description" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "奖励说明"
+autowrap_mode = 2
+
+[node name="Target" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
+layout_mode = 2
+text = "目标：玩家国家"
+autowrap_mode = 2
+modulate = Color(0.75, 0.85, 1, 1)
+
+[node name="Reason" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
+layout_mode = 2
+text = "适配理由"
+autowrap_mode = 2
+modulate = Color(0.72, 0.78, 0.88, 1)
+
+[node name="Choose" type="Button" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
+layout_mode = 2
+text = "选择此奖励"
+
+[node name="Card2" type="PanelContainer" parent="Margin/Column/CardsScroll/CardGrid"]
+custom_minimum_size = Vector2(300, 410)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Margin" type="MarginContainer" parent="Margin/Column/CardsScroll/CardGrid/Card2"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="Column" type="VBoxContainer" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Icon" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "REWARD"
+horizontal_alignment = 1
+modulate = Color(0.85, 0.7, 0.3, 1)
+
+[node name="Title" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "奖励三"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Description" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "奖励说明"
+autowrap_mode = 2
+
+[node name="Target" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
+layout_mode = 2
+text = "目标：玩家国家"
+autowrap_mode = 2
+modulate = Color(0.75, 0.85, 1, 1)
+
+[node name="Reason" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
+layout_mode = 2
+text = "适配理由"
+autowrap_mode = 2
+modulate = Color(0.72, 0.78, 0.88, 1)
+
+[node name="Choose" type="Button" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
+layout_mode = 2
+text = "选择此奖励"
+
+[node name="Status" type="Label" parent="Margin/Column"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2

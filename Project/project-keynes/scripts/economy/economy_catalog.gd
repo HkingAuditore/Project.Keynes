@@ -10,6 +10,7 @@ const BUILDING_DIR := "res://data/economy/buildings"
 const PRODUCTION_CLIMATE_DIR := "res://data/economy/production_climates"
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
 const DEFAULT_SETTLEMENT_PROFILE_PATH := "res://data/economy/default_settlement.tres"
 const DEFAULT_FAMILY_SURNAME_PACK_PATH := "res://data/economy/default_family_surnames.tres"
@@ -375,30 +376,169 @@ static func compile_native_catalog() -> Dictionary:
 		return technology_catalog
 	var technology_ids: PackedStringArray = technology_catalog.technology_ids
 	var technology_set := {}
-	for technology_id in technology_ids:
-		technology_set[String(technology_id)] = true
-	for tag in good_columns.good_technology_tags:
-		if String(tag).begins_with("tech."):
-			if not technology_set.has(String(tag)):
-				return {"ok": false, "reason": "unknown good technology tag: %s" % String(tag)}
-	for tag in profession_technology_tags:
-		if String(tag).begins_with("tech."):
-			if not technology_set.has(String(tag)):
-				return {"ok": false, "reason": "unknown profession technology tag: %s" % String(tag)}
-	for tag in building_columns.building_technology_tags:
-		if String(tag).begins_with("tech."):
-			if not technology_set.has(String(tag)):
-				return {"ok": false, "reason": "unknown building technology tag: %s" % String(tag)}
+	var technology_index := {}
+	var technology_binding_rows: Array = []
+	technology_binding_rows.resize(technology_ids.size())
+	for technology_index_value in range(technology_ids.size()):
+		var technology_id := String(technology_ids[technology_index_value])
+		technology_set[technology_id] = true
+		technology_index[technology_id] = technology_index_value
+		technology_binding_rows[technology_index_value] = []
+	var good_tag_offsets: PackedInt32Array = good_columns.good_technology_tag_offsets
+	for good_index_value in range(good_columns.good_ids.size()):
+		var good_binding_count := 0
+		for tag_index in range(good_tag_offsets[good_index_value],
+				good_tag_offsets[good_index_value + 1]):
+			var tag := String(good_columns.good_technology_tags[tag_index]).strip_edges()
+			if not tag.begins_with("tech."):
+				continue
+			if not technology_set.has(tag):
+				return {"ok": false, "reason": "unknown_good_technology_tag",
+					"id": String(good_columns.good_ids[good_index_value]), "tag": tag}
+			technology_binding_rows[int(technology_index[tag])].append(
+				[1, String(good_columns.good_ids[good_index_value])])
+			good_binding_count += 1
+		if good_binding_count == 0:
+			return {"ok": false, "reason": "good_technology_binding_missing",
+				"id": String(good_columns.good_ids[good_index_value])}
+	for profession_index_value in range(profession_ids.size()):
+		for tag_index in range(profession_technology_tag_offsets[profession_index_value],
+				profession_technology_tag_offsets[profession_index_value + 1]):
+			var tag := String(profession_technology_tags[tag_index]).strip_edges()
+			if tag.begins_with("tech."):
+				return {"ok": false, "reason": "profession_technology_binding_forbidden",
+					"id": String(profession_ids[profession_index_value]), "tag": tag}
+	var building_tag_offsets: PackedInt32Array = \
+		building_columns.building_technology_tag_offsets
+	var building_required_tag_offsets: PackedInt32Array = \
+		building_columns.building_required_technology_tag_offsets
+	for building_index_value in range(building_columns.building_type_ids.size()):
+		var building_binding_count := 0
+		for tag_index in range(building_tag_offsets[building_index_value],
+				building_tag_offsets[building_index_value + 1]):
+			var tag := String(
+				building_columns.building_technology_tags[tag_index]).strip_edges()
+			if not tag.begins_with("tech."):
+				continue
+			if not technology_set.has(tag):
+				return {"ok": false, "reason": "unknown_building_technology_tag",
+					"id": String(building_columns.building_type_ids[building_index_value]),
+					"tag": tag}
+			technology_binding_rows[int(technology_index[tag])].append(
+				[2, String(building_columns.building_type_ids[building_index_value])])
+			building_binding_count += 1
+		if building_binding_count == 0:
+			return {"ok": false, "reason": "building_technology_binding_missing",
+				"id": String(building_columns.building_type_ids[building_index_value])}
+		for tag_index in range(building_required_tag_offsets[building_index_value],
+				building_required_tag_offsets[building_index_value + 1]):
+			var required_tag := String(
+				building_columns.building_required_technology_tags[tag_index]).strip_edges()
+			if not technology_set.has(required_tag):
+				return {"ok": false, "reason": "unknown_building_required_technology_tag",
+					"id": String(building_columns.building_type_ids[building_index_value]),
+					"tag": required_tag}
+	var resource_ids := PackedStringArray()
+	var resource_tag_offsets := PackedInt32Array([0])
+	var resource_technology_tags := PackedStringArray()
 	for resource in ResourceRegistryScript.ordered():
+		resource_ids.append(String(resource.id))
+		var resource_binding_count := 0
 		for tag in resource.discovery_technology_tags:
 			var normalized := String(tag).strip_edges()
 			if normalized == "":
-				return {"ok": false, "reason": "empty resource discovery technology tag: %s" % String(resource.id)}
-			if normalized.begins_with("tech.") and not technology_set.has(normalized):
-				return {"ok": false, "reason": "unknown resource technology tag: %s" % normalized}
+				return {"ok": false, "reason": "resource_technology_binding_empty",
+					"id": String(resource.id)}
+			if not normalized.begins_with("tech."):
+				continue
+			if not technology_set.has(normalized):
+				return {"ok": false, "reason": "unknown_resource_technology_tag",
+					"id": String(resource.id), "tag": normalized}
+			resource_technology_tags.append(normalized)
+			technology_binding_rows[int(technology_index[normalized])].append(
+				[3, String(resource.id)])
+			resource_binding_count += 1
+		if resource_binding_count == 0:
+			return {"ok": false, "reason": "resource_technology_binding_missing",
+				"id": String(resource.id)}
+		resource_tag_offsets.append(resource_technology_tags.size())
+	for technology_index_value in range(technology_ids.size()):
+		var binding_count: int = technology_binding_rows[technology_index_value].size()
+		var building_binding_count: int = 0
+		for binding in technology_binding_rows[technology_index_value]:
+			if int(binding[0]) == 2:
+				building_binding_count += 1
+		var technology_id := String(technology_ids[technology_index_value])
+		var is_milestone := (int(technology_catalog.technology_flags[technology_index_value]) \
+				& TechnologyCatalogScript.FLAG_MILESTONE) != 0
+		if is_milestone and binding_count != 0:
+			return {"ok": false, "reason": "milestone_content_binding_forbidden",
+				"id": technology_id, "count": binding_count}
+		if not is_milestone and binding_count > 4:
+			return {"ok": false, "reason": "technology_content_binding_limit_exceeded",
+				"id": technology_id, "count": binding_count, "limit": 4}
+		if not is_milestone and building_binding_count > 2:
+			return {"ok": false, "reason": "technology_building_binding_limit_exceeded",
+				"id": technology_id, "count": building_binding_count, "limit": 2}
+	var technology_binding_offsets := PackedInt32Array([0])
+	var technology_binding_kinds := PackedByteArray()
+	var technology_binding_ids := PackedStringArray()
+	var technology_consumer_flags := PackedByteArray()
+	var modifier_offsets: PackedInt32Array = \
+		technology_catalog.technology_modifier_term_offsets
+	var recipe_ids: PackedStringArray = technology_catalog.technology_effect_recipe_ids
+	for technology_index_value in range(technology_ids.size()):
+		for binding in technology_binding_rows[technology_index_value]:
+			technology_binding_kinds.append(int(binding[0]))
+			technology_binding_ids.append(String(binding[1]))
+		technology_binding_offsets.append(technology_binding_ids.size())
+		var consumer_flags := 1 if not technology_binding_rows[technology_index_value].is_empty() else 0
+		if modifier_offsets[technology_index_value + 1] > modifier_offsets[technology_index_value]:
+			consumer_flags |= 2
+		if (int(technology_catalog.technology_flags[technology_index_value]) \
+				& TechnologyCatalogScript.FLAG_STARTING) == 0 \
+				and not String(recipe_ids[technology_index_value]).is_empty():
+			consumer_flags |= 4
+		if consumer_flags == 0:
+			return {"ok": false, "reason": "technology_consumer_missing",
+				"id": String(technology_ids[technology_index_value])}
+		technology_consumer_flags.append(consumer_flags)
+	var content_binding_summary := {
+		"good_ids": good_columns.good_ids,
+		"good_technology_tag_offsets": good_tag_offsets,
+		"good_technology_tags": good_columns.good_technology_tags,
+		"building_type_ids": building_columns.building_type_ids,
+		"building_technology_tag_offsets": building_tag_offsets,
+		"building_technology_tags": building_columns.building_technology_tags,
+		"building_required_technology_tag_offsets": building_required_tag_offsets,
+		"building_required_technology_tags": \
+			building_columns.building_required_technology_tags,
+		"profession_ids": profession_ids,
+		"profession_technology_tag_offsets": profession_technology_tag_offsets,
+		"profession_technology_tags": profession_technology_tags,
+		"resource_ids": resource_ids,
+		"resource_technology_tag_offsets": resource_tag_offsets,
+		"resource_technology_tags": resource_technology_tags,
+		"technology_content_binding_offsets": technology_binding_offsets,
+		"technology_content_binding_kinds": technology_binding_kinds,
+		"technology_content_binding_ids": technology_binding_ids,
+		"technology_consumer_flags": technology_consumer_flags,
+	}
 	for key in technology_catalog:
 		if key != "ok":
 			catalog[key] = technology_catalog[key]
+	for key in ["technology_content_binding_offsets", "technology_content_binding_kinds",
+			"technology_content_binding_ids", "technology_consumer_flags"]:
+		catalog[key] = content_binding_summary[key]
+	var trigger_catalog_resource: Resource = TriggerCatalogScript.load_default()
+	var trigger_catalog: Dictionary = trigger_catalog_resource.compile_native_catalog() \
+		if trigger_catalog_resource != null else {"ok": false,
+			"reason": "trigger_catalog_missing"}
+	if not bool(trigger_catalog.get("ok", false)):
+		return trigger_catalog
+	catalog["technology_catalog_identity_hash"] = _catalog_hash(technology_catalog)
+	catalog["technology_content_binding_hash"] = _catalog_hash(content_binding_summary)
+	catalog["technology_trigger_definition_hash"] = _catalog_hash(trigger_catalog)
 	var building_v7_columns := building_columns.duplicate(true)
 	for key in [
 		"building_upgrade_family_ids", "building_upgrade_family_indices",
@@ -638,6 +778,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var building_climate_profile_indices := PackedInt32Array()
 	var technology_tag_offsets := PackedInt32Array([0])
 	var technology_tags := PackedStringArray()
+	var required_technology_tag_offsets := PackedInt32Array([0])
+	var required_technology_tags := PackedStringArray()
 	var semantic_tag_offsets := PackedInt32Array([0])
 	var semantic_tags := PackedStringArray()
 	var upgrade_family_set := {}
@@ -700,21 +842,12 @@ static func _compile_building_columns(profession_index: Dictionary,
 			return {"ok": false, "reason": "invalid building kind: %s" % stable_id}
 		building_kinds.append(0 if building_kind == "collector" \
 			else (2 if building_kind == "service" else 1))
-		var tags_text := ""
-		for tag in profile.technology_tags:
-			tags_text += " " + String(tag)
-		var sector := 2
-		if String(profile.upgrade_family_id) == "research_institution" \
-				or tags_text.contains("knowledge"):
-			sector = 4
-		elif building_kind == "collector":
-			sector = 1
-		elif tags_text.contains("agriculture") or tags_text.contains("food") \
-				or stable_id.contains("farm"):
-			sector = 0
-		elif tags_text.contains("energy") or tags_text.contains("electric") \
-				or stable_id.contains("power") or stable_id.contains("fuel"):
-			sector = 3
+		var sector_ids := ["agriculture", "extractive", "manufacturing", "energy", "knowledge"]
+		var sector_id := String(profile.economic_sector_id).strip_edges()
+		var sector := sector_ids.find(sector_id)
+		if sector < 0:
+			return {"ok": false, "reason": "invalid building economic sector: %s" % stable_id,
+				"sector": sector_id}
 		building_economic_sectors.append(sector)
 		var climate_id := String(profile.production_climate_profile_id).strip_edges()
 		if climate_id != "" and not climate_profile_index.has(climate_id):
@@ -739,6 +872,16 @@ static func _compile_building_columns(profession_index: Dictionary,
 				return {"ok": false, "reason": "empty building technology tag: %s" % stable_id}
 			technology_tags.append(String(tag))
 		technology_tag_offsets.append(technology_tags.size())
+		var required_seen := {}
+		for tag in profile.required_technology_tags:
+			var required_tag := String(tag).strip_edges()
+			if not required_tag.begins_with("tech.") or required_seen.has(required_tag):
+				return {"ok": false,
+					"reason": "invalid required building technology tag: %s" % stable_id,
+					"tag": required_tag}
+			required_seen[required_tag] = true
+			required_technology_tags.append(required_tag)
+		required_technology_tag_offsets.append(required_technology_tags.size())
 		var normalized_building_tags := PackedStringArray()
 		for tag in profile.semantic_tags:
 			var normalized := String(tag).strip_edges()
@@ -1017,6 +1160,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"production_climate_floor_q16": climate_floor_q16,
 		"building_technology_tag_offsets": technology_tag_offsets,
 		"building_technology_tags": technology_tags,
+		"building_required_technology_tag_offsets": required_technology_tag_offsets,
+		"building_required_technology_tags": required_technology_tags,
 		"building_semantic_tag_offsets": semantic_tag_offsets,
 		"building_semantic_tags": semantic_tags,
 		"building_upgrade_family_ids": upgrade_family_ids,

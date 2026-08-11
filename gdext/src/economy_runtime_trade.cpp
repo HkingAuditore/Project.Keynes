@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "country_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -18,12 +19,108 @@ double elapsed_ms(const Clock::time_point &start) {
 }
 } // namespace
 
+void NativeEconomyRuntime::rebuild_country_trade_indices() {
+    _country_good_trade_index.clear();
+    _country_partner_trade_index.clear();
+    _tariff_history_index.clear();
+    _country_good_display_rows.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), {});
+    _country_partner_display_rows.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), {});
+    _country_good_display_dirty.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    _country_partner_display_dirty.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    _country_good_trade_index.reserve(_country_good_trade.countries.size());
+    _country_partner_trade_index.reserve(
+        _country_partner_trade.countries.size());
+    _tariff_history_index.reserve(_tariff_history.countries.size());
+    const auto key_for = [](int32_t first, int32_t second) {
+        return (static_cast<uint64_t>(static_cast<uint32_t>(first)) << 32) |
+            static_cast<uint32_t>(second);
+    };
+    for (int32_t i = 0; i < static_cast<int32_t>(
+            _country_good_trade.countries.size()); ++i) {
+        const int32_t country = _country_good_trade.countries[i];
+        _country_good_trade_index.emplace(
+            key_for(country, _country_good_trade.goods[i]), i);
+        if (country >= 0 && country < _epoch_country_count)
+            _country_good_display_rows[static_cast<size_t>(country)].push_back(i);
+    }
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        auto &rows = _country_good_display_rows[static_cast<size_t>(country)];
+        std::sort(rows.begin(), rows.end(), [&](int32_t a, int32_t b) {
+            if (_country_good_trade.goods[a] != _country_good_trade.goods[b])
+                return _country_good_trade.goods[a] < _country_good_trade.goods[b];
+            return a < b;
+        });
+    }
+    for (int32_t i = 0; i < static_cast<int32_t>(
+            _country_partner_trade.countries.size()); ++i) {
+        const int32_t country = _country_partner_trade.countries[i];
+        _country_partner_trade_index.emplace(
+            key_for(country, _country_partner_trade.partners[i]), i);
+        if (country >= 0 && country < _epoch_country_count)
+            _country_partner_display_rows[static_cast<size_t>(country)].push_back(i);
+    }
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        auto &rows = _country_partner_display_rows[static_cast<size_t>(country)];
+        std::sort(rows.begin(), rows.end(), [&](int32_t a, int32_t b) {
+            if (_country_partner_trade.partners[a] !=
+                    _country_partner_trade.partners[b])
+                return _country_partner_trade.partners[a] <
+                    _country_partner_trade.partners[b];
+            return a < b;
+        });
+    }
+    for (int32_t i = 0; i < static_cast<int32_t>(
+            _tariff_history.countries.size()); ++i) {
+        _tariff_history_index.emplace(key_for(_tariff_history.countries[i],
+            _tariff_history.kinds[i]), i);
+    }
+}
+
+void NativeEconomyRuntime::sort_dirty_country_trade_display_indices() {
+    const int32_t countries = std::min<int32_t>(_epoch_country_count,
+        static_cast<int32_t>(_country_good_display_rows.size()));
+    for (int32_t country = 0; country < countries; ++country) {
+        if (country >= static_cast<int32_t>(_country_good_display_dirty.size()) ||
+            _country_good_display_dirty[static_cast<size_t>(country)] == 0)
+            continue;
+        auto &rows = _country_good_display_rows[static_cast<size_t>(country)];
+        std::sort(rows.begin(), rows.end(), [&](int32_t a, int32_t b) {
+            if (_country_good_trade.goods[a] != _country_good_trade.goods[b])
+                return _country_good_trade.goods[a] < _country_good_trade.goods[b];
+            return a < b;
+        });
+        _country_good_display_dirty[static_cast<size_t>(country)] = 0;
+    }
+    const int32_t partner_countries = std::min<int32_t>(_epoch_country_count,
+        static_cast<int32_t>(_country_partner_display_rows.size()));
+    for (int32_t country = 0; country < partner_countries; ++country) {
+        if (country >= static_cast<int32_t>(_country_partner_display_dirty.size()) ||
+            _country_partner_display_dirty[static_cast<size_t>(country)] == 0)
+            continue;
+        auto &rows = _country_partner_display_rows[static_cast<size_t>(country)];
+        std::sort(rows.begin(), rows.end(), [&](int32_t a, int32_t b) {
+            if (_country_partner_trade.partners[a] !=
+                    _country_partner_trade.partners[b])
+                return _country_partner_trade.partners[a] <
+                    _country_partner_trade.partners[b];
+            return a < b;
+        });
+        _country_partner_display_dirty[static_cast<size_t>(country)] = 0;
+    }
+}
+
 bool NativeEconomyRuntime::capture_trade_topology(
         const int32_t *neighbor_indices, const uint8_t *terrain,
+        const uint8_t *canal_edge_mask, const float *canal_water,
         const uint8_t *trade_passable_lut, const int32_t *trade_move_cost_lut,
         int32_t count, uint64_t generation, std::string &error) {
     if (!_configured || count != _cell_count || neighbor_indices == nullptr ||
-        terrain == nullptr || trade_passable_lut == nullptr ||
+        terrain == nullptr || canal_edge_mask == nullptr || canal_water == nullptr ||
+        trade_passable_lut == nullptr ||
         trade_move_cost_lut == nullptr) {
         error = "trade_topology_snapshot_invalid";
         return false;
@@ -38,6 +135,9 @@ bool NativeEconomyRuntime::capture_trade_topology(
     std::vector<int32_t> neighbors(static_cast<size_t>(count) * 6, -1);
     std::vector<uint8_t> passable(static_cast<size_t>(count), 0);
     std::vector<int32_t> enter_cost(static_cast<size_t>(count), 0);
+    std::vector<int32_t> edge_cost(static_cast<size_t>(count) * 6, 0);
+    std::vector<uint8_t> canal_mask(static_cast<size_t>(count), 0);
+    std::vector<float> canal_water_snapshot(static_cast<size_t>(count), 0.0f);
     for (int32_t cell = 0; cell < count; ++cell) {
         const uint8_t terrain_id = terrain[cell];
         passable[cell] = trade_passable_lut[terrain_id] != 0 ? 1 : 0;
@@ -48,12 +148,26 @@ bool NativeEconomyRuntime::capture_trade_topology(
         }
         mix_u32(passable[cell]);
         mix_u32(static_cast<uint32_t>(enter_cost[cell]));
+        canal_mask[cell] = canal_edge_mask[cell] & 0x3fU;
+        canal_water_snapshot[cell] = std::max(0.0f, canal_water[cell]);
+        mix_u32(canal_mask[cell]);
         for (int32_t direction = 0; direction < 6; ++direction) {
             const int32_t neighbor = neighbor_indices[cell * 6 + direction];
             const int32_t valid = neighbor >= 0 && neighbor < count && neighbor != cell
                 ? neighbor : -1;
             neighbors[static_cast<size_t>(cell) * 6 + direction] = valid;
             mix_u32(static_cast<uint32_t>(valid));
+        }
+    }
+    for (int32_t cell = 0; cell < count; ++cell) {
+        for (int32_t direction = 0; direction < 6; ++direction) {
+            const int32_t neighbor = neighbors[static_cast<size_t>(cell) * 6 + direction];
+            if (neighbor < 0 || passable[cell] == 0 || passable[neighbor] == 0) continue;
+            const bool canal = (canal_mask[cell] & (1U << direction)) != 0 &&
+                (canal_mask[neighbor] & (1U << ((direction + 3) % 6))) != 0;
+            edge_cost[static_cast<size_t>(cell) * 6 + direction] = canal
+                ? std::max(1, enter_cost[neighbor] / 2) : enter_cost[neighbor];
+            mix_u32(static_cast<uint32_t>(edge_cost[static_cast<size_t>(cell) * 6 + direction]));
         }
     }
     const uint64_t normalized_hash = (hash & 0x7fffffffffffffffULL) | 1ULL;
@@ -74,6 +188,9 @@ bool NativeEconomyRuntime::capture_trade_topology(
     _trade_topology.neighbors.swap(neighbors);
     _trade_topology.passable.swap(passable);
     _trade_topology.enter_cost.swap(enter_cost);
+    _trade_topology.edge_cost.swap(edge_cost);
+    _trade_topology.canal_edge_mask.swap(canal_mask);
+    _trade_topology.canal_water.swap(canal_water_snapshot);
     _trade_topology.component.assign(static_cast<size_t>(count), -1);
     _trade_topology.topology_hash = normalized_hash;
     _trade_topology.topology_generation = resolved_generation;
@@ -81,6 +198,84 @@ bool NativeEconomyRuntime::capture_trade_topology(
     _trade_topology.ready = true;
     _trade_plan.clear_transient();
     return true;
+}
+
+bool NativeEconomyRuntime::refresh_canal_topology(
+        const uint8_t *canal_edge_mask, const float *canal_water,
+        int32_t count, std::string &error) {
+    if (!_trade_topology.ready || count != _cell_count ||
+        canal_edge_mask == nullptr || canal_water == nullptr ||
+        _trade_topology.neighbors.size() != static_cast<size_t>(count) * 6) {
+        error = "canal_topology_snapshot_invalid";
+        return false;
+    }
+    uint64_t hash = 1469598103934665603ULL;
+    auto mix_u32 = [&](uint32_t value) {
+        for (int b = 0; b < 4; ++b) {
+            hash ^= static_cast<uint8_t>((value >> (b * 8)) & 0xffU);
+            hash *= 1099511628211ULL;
+        }
+    };
+    std::vector<uint8_t> mask(static_cast<size_t>(count));
+    std::vector<float> water(static_cast<size_t>(count));
+    std::vector<int32_t> costs(static_cast<size_t>(count) * 6, 0);
+    for (int32_t cell = 0; cell < count; ++cell) {
+        mask[cell] = canal_edge_mask[cell] & 0x3fU;
+        water[cell] = std::max(0.0f, canal_water[cell]);
+        mix_u32(_trade_topology.passable[cell]);
+        mix_u32(static_cast<uint32_t>(_trade_topology.enter_cost[cell]));
+        mix_u32(mask[cell]);
+        for (int direction = 0; direction < 6; ++direction) {
+            const int32_t neighbor = _trade_topology.neighbors[cell * 6 + direction];
+            mix_u32(static_cast<uint32_t>(neighbor));
+        }
+    }
+    for (int32_t cell = 0; cell < count; ++cell) {
+        for (int direction = 0; direction < 6; ++direction) {
+            const int32_t neighbor = _trade_topology.neighbors[cell * 6 + direction];
+            if (neighbor < 0 || _trade_topology.passable[cell] == 0 ||
+                _trade_topology.passable[neighbor] == 0) continue;
+            const bool canal = (mask[cell] & (1U << direction)) != 0 &&
+                (mask[neighbor] & (1U << ((direction + 3) % 6))) != 0;
+            costs[cell * 6 + direction] = canal
+                ? std::max(1, _trade_topology.enter_cost[neighbor] / 2)
+                : _trade_topology.enter_cost[neighbor];
+            mix_u32(static_cast<uint32_t>(costs[cell * 6 + direction]));
+        }
+    }
+    const uint64_t normalized = (hash & 0x7fffffffffffffffULL) | 1ULL;
+    if (normalized == _trade_topology.topology_hash) {
+        _trade_topology.canal_water.swap(water);
+        return true;
+    }
+    _trade_topology.canal_edge_mask.swap(mask);
+    _trade_topology.canal_water.swap(water);
+    _trade_topology.edge_cost.swap(costs);
+    _trade_topology.topology_hash = normalized;
+    ++_trade_topology.topology_generation;
+    _trade_topology.component_country_hash = 0;
+    _trade_topology.component.assign(static_cast<size_t>(count), -1);
+    ++_trade_topology_content_change_count;
+    ++_trade_plan_reset_count;
+    _trade_last_plan_reset_reason = "canal_topology_changed";
+    _trade_plan.clear_transient();
+    return true;
+}
+
+int32_t NativeEconomyRuntime::trade_edge_cost(
+        int32_t from_cell, int32_t to_cell) const {
+    if (from_cell < 0 || from_cell >= _cell_count || to_cell < 0 ||
+        to_cell >= _cell_count) return 0;
+    for (int direction = 0; direction < 6; ++direction) {
+        if (_trade_topology.neighbors[from_cell * 6 + direction] == to_cell) {
+            if (_trade_topology.edge_cost.size() ==
+                    static_cast<size_t>(_cell_count) * 6)
+                return std::max(1, _trade_topology.edge_cost[
+                    from_cell * 6 + direction]);
+            return std::max(1, _trade_topology.enter_cost[to_cell]);
+        }
+    }
+    return 0;
 }
 
 
@@ -204,13 +399,18 @@ int64_t NativeEconomyRuntime::profitable_trade_quantity(
             source, good, source_stock - quantity, sat);
         quoted_destination = estimate_trade_price(
             destination, good, destination_stock + quantity, sat);
-        const int64_t spread = static_cast<int64_t>(quoted_destination) - quoted_source;
-        quoted_margin = spread <= 0 ? 0 : mul_div_sat(
-            spread, Q16_ONE, std::max<int64_t>(1, quoted_source), sat);
-        quoted_profit = spread <= 0 ? 0 : std::max<int64_t>(1, mul_div_sat(
-            quantity, spread, GOODS_SCALE, sat));
-        return relief_route ? spread >= 0
-            : (spread > 0 && quoted_margin >= _trade_min_margin_q16);
+        const TradeQuote trade_quote = make_trade_quote(
+            source, destination, good, quantity, quoted_source,
+            quoted_destination, relief_route, sat);
+        quoted_margin = trade_quote.margin_q16;
+        quoted_profit = trade_quote.combined_profit;
+        const bool cash_safe = trade_quote.importer_outlay >= 0 &&
+            trade_quote.importer_profit >= 0 &&
+            trade_quote.exporter_receipt > 0;
+        return cash_safe && (relief_route
+            ? trade_quote.combined_profit >= 0
+            : (trade_quote.combined_profit > 0 &&
+               trade_quote.margin_q16 >= _trade_min_margin_q16));
     };
     int64_t low = 1;
     int64_t high = max_quantity;
@@ -237,6 +437,56 @@ int64_t NativeEconomyRuntime::profitable_trade_quantity(
         quote(best, source_price, destination_price, profit, margin_q16);
     }
     return best;
+}
+
+NativeEconomyRuntime::TradeQuote NativeEconomyRuntime::make_trade_quote(
+        int32_t source, int32_t destination, int32_t good, int64_t quantity,
+        int32_t source_price, int32_t destination_price,
+        bool relief_route, int64_t &saturation_count) const {
+    TradeQuote quote;
+    quote.source_price = std::max(0, source_price);
+    quote.destination_price = std::max(0, destination_price);
+    quote.base = mul_div_sat(std::max<int64_t>(0, quantity),
+        quote.source_price, GOODS_SCALE, saturation_count);
+    quote.retail = mul_div_sat(std::max<int64_t>(0, quantity),
+        quote.destination_price, GOODS_SCALE, saturation_count);
+    const int32_t source_country = source >= 0 &&
+            source < static_cast<int32_t>(_epoch_cell_country.size())
+        ? _epoch_cell_country[static_cast<size_t>(source)] : -1;
+    const int32_t destination_country = destination >= 0 &&
+            destination < static_cast<int32_t>(_epoch_cell_country.size())
+        ? _epoch_cell_country[static_cast<size_t>(destination)] : -1;
+    quote.foreign = source_country >= 0 && destination_country >= 0 &&
+        source_country != destination_country;
+    if (quote.foreign) {
+        const int8_t import_rate = frozen_tax_rate(
+            destination, NativeCountryRuntime::TAX_IMPORT, good);
+        const int8_t export_rate = frozen_tax_rate(
+            source, NativeCountryRuntime::TAX_EXPORT, good);
+        const int64_t import_amount = mul_div_sat(
+            quote.base, std::abs(static_cast<int32_t>(import_rate)), 100,
+            saturation_count);
+        const int64_t export_amount = mul_div_sat(
+            quote.base, std::abs(static_cast<int32_t>(export_rate)), 100,
+            saturation_count);
+        quote.import_transfer = import_rate < 0 ? -import_amount : import_amount;
+        quote.export_transfer = export_rate < 0 ? -export_amount : export_amount;
+    }
+    quote.importer_outlay = saturating_add(
+        quote.base, quote.import_transfer, saturation_count);
+    quote.exporter_receipt = saturating_sub(
+        quote.base, quote.export_transfer, saturation_count);
+    quote.importer_profit = saturating_sub(
+        quote.retail, quote.importer_outlay, saturation_count);
+    quote.combined_profit = saturating_sub(
+        saturating_sub(saturating_sub(quote.retail, quote.base, saturation_count),
+                       quote.import_transfer, saturation_count),
+        quote.export_transfer, saturation_count);
+    quote.margin_q16 = mul_div_sat(
+        quote.combined_profit, Q16_ONE,
+        std::max<int64_t>(1, quote.base), saturation_count);
+    quote.relief = relief_route;
+    return quote;
 }
 
 int64_t NativeEconomyRuntime::merchant_inventory_target(
@@ -287,12 +537,12 @@ int64_t NativeEconomyRuntime::merchant_inventory_target(
 
 int32_t NativeEconomyRuntime::cached_trade_route_cost(
         int32_t source, int32_t destination, int32_t country, int32_t &expansions) {
+    (void)country;
     expansions = 0;
     if (source == destination) return 0;
     if (source < 0 || destination < 0 || source >= _cell_count || destination >= _cell_count ||
         _trade_plan.route_cache_keys.empty() || _trade_topology.component[source] < 0 ||
-        _trade_topology.component[source] != _trade_topology.component[destination] ||
-        _epoch_cell_country[source] != country || _epoch_cell_country[destination] != country)
+        _trade_topology.component[source] != _trade_topology.component[destination])
         return -1;
     const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(source)) << 32) |
                          static_cast<uint32_t>(destination);
@@ -336,9 +586,9 @@ int32_t NativeEconomyRuntime::cached_trade_route_cost(
         for (int32_t direction = 0; direction < 6; ++direction) {
             const int32_t neighbor = _trade_topology.neighbors[
                 static_cast<size_t>(cell) * 6 + direction];
-            if (neighbor < 0 || _trade_topology.passable[neighbor] == 0 ||
-                _epoch_cell_country[neighbor] != country) continue;
-            const int64_t next = current.first + _trade_topology.enter_cost[neighbor];
+            if (neighbor < 0 || _trade_topology.passable[neighbor] == 0) continue;
+            const int64_t next = current.first + std::max(1,
+                _trade_topology.edge_cost[static_cast<size_t>(cell) * 6 + direction]);
             if (_trade_plan.distance_stamp[neighbor] == stamp &&
                 _trade_plan.distance[neighbor] <= next) continue;
             _trade_plan.distance_stamp[neighbor] = stamp;
@@ -367,7 +617,7 @@ bool NativeEconomyRuntime::route_trade_source(
         error = "trade_source_cursor_invalid";
         return false;
     }
-    if (_trade_plan.route_search_active &&
+        if (_trade_plan.route_search_active &&
         _trade_plan.route_search_source != source_index) {
         error = "trade_route_search_source_mismatch";
         return false;
@@ -420,8 +670,12 @@ bool NativeEconomyRuntime::route_trade_source(
             return false;
         }
         if (relief_route) ++_trade_relief_candidates;
-        if (relief_route && profit <= 0) {
-            profit = std::max<int64_t>(1, mul_div_sat(
+        const TradeQuote line_quote = make_trade_quote(
+            source.cell, destination.cell, source.good, quantity,
+            source_price, destination_price, relief_route, sat);
+        int64_t density_profit = line_quote.combined_profit;
+        if (relief_route && density_profit <= 0) {
+            density_profit = std::max<int64_t>(1, mul_div_sat(
                 mul_div_sat(quantity, std::max<int64_t>(1, source_price),
                             GOODS_SCALE, sat),
                 std::max<int64_t>(1, relief_q16), Q16_ONE, sat));
@@ -431,13 +685,26 @@ bool NativeEconomyRuntime::route_trade_source(
         candidate.destination = destination.cell;
         candidate.good = source.good;
         candidate.country = source.country;
+        candidate.source_country = source.country;
+        candidate.destination_country = destination.country;
+        candidate.source_country_handle = source.country >= 0 &&
+                source.country < static_cast<int32_t>(_epoch_country_handles.size())
+            ? _epoch_country_handles[static_cast<size_t>(source.country)] : 0;
+        candidate.destination_country_handle = destination.country >= 0 &&
+                destination.country < static_cast<int32_t>(_epoch_country_handles.size())
+            ? _epoch_country_handles[static_cast<size_t>(destination.country)] : 0;
         candidate.route_cost = route_cost;
         candidate.source_price = source_price;
         candidate.destination_price = destination_price;
         candidate.quantity = quantity;
-        candidate.expected_profit = profit;
+        candidate.expected_profit = line_quote.combined_profit;
+        candidate.base_value = line_quote.base;
+        candidate.retail_value = line_quote.retail;
+        candidate.import_transfer = line_quote.import_transfer;
+        candidate.export_transfer = line_quote.export_transfer;
         candidate.capacity_work = capacity;
-        candidate.density_q16 = mul_div_sat(profit, Q16_ONE, capacity, sat);
+        candidate.density_q16 = mul_div_sat(
+            density_profit, Q16_ONE, capacity, sat);
         candidate.signal_age_days = destination.age_days;
         candidate.response_priority = destination.response_priority;
         candidate.source_price_stock_generation =
@@ -447,6 +714,16 @@ bool NativeEconomyRuntime::route_trade_source(
         candidate.planned_day = _sample_day;
         candidate.topology_generation = _trade_topology.topology_generation;
         candidate.country_topology_hash = _epoch_country_topology_hash;
+        if (line_quote.foreign) candidate.flags |= TRADE_LINE_FOREIGN;
+        if (relief_route) candidate.flags |= TRADE_LINE_RELIEF;
+        if (line_quote.import_transfer < 0)
+            candidate.flags |= TRADE_LINE_IMPORT_SUBSIDY;
+        else if (line_quote.import_transfer > 0)
+            candidate.flags |= TRADE_LINE_IMPORT_TAX;
+        if (line_quote.export_transfer < 0)
+            candidate.flags |= TRADE_LINE_EXPORT_SUBSIDY;
+        else if (line_quote.export_transfer > 0)
+            candidate.flags |= TRADE_LINE_EXPORT_TAX;
         if (static_cast<int32_t>(_trade_plan.working_candidates.size()) <
             _trade_max_candidates) {
             _trade_plan.working_candidates.push_back(candidate);
@@ -463,8 +740,6 @@ bool NativeEconomyRuntime::route_trade_source(
         return std::lower_bound(
             _trade_plan.destinations.begin(), _trade_plan.destinations.end(), source,
             [](const TradeSignal &candidate, const TradeSignal &wanted) {
-                if (candidate.country != wanted.country)
-                    return candidate.country < wanted.country;
                 return candidate.good < wanted.good;
             });
     };
@@ -494,7 +769,7 @@ bool NativeEconomyRuntime::route_trade_source(
         const size_t mask = _trade_plan.route_cache_keys.size() - 1;
         const auto group_begin = destination_group_begin();
         for (auto it = group_begin; it != _trade_plan.destinations.end() &&
-             it->country == source.country && it->good == source.good; ++it) {
+             it->good == source.good; ++it) {
             const TradeSignal &destination = *it;
             if (destination.cell == source.cell ||
                 _trade_topology.component[source.cell] !=
@@ -596,9 +871,9 @@ bool NativeEconomyRuntime::route_trade_source(
         for (int32_t direction = 0; direction < 6; ++direction) {
             const int32_t neighbor = _trade_topology.neighbors[
                 static_cast<size_t>(cell) * 6 + direction];
-            if (neighbor < 0 || _trade_topology.passable[neighbor] == 0 ||
-                _epoch_cell_country[neighbor] != source.country) continue;
-            const int64_t next = current.first + _trade_topology.enter_cost[neighbor];
+            if (neighbor < 0 || _trade_topology.passable[neighbor] == 0) continue;
+            const int64_t next = current.first + std::max(1,
+                _trade_topology.edge_cost[static_cast<size_t>(cell) * 6 + direction]);
             if (_trade_plan.distance_stamp[neighbor] == stamp &&
                 _trade_plan.distance[neighbor] <= next) continue;
             _trade_plan.distance_stamp[neighbor] = stamp;
@@ -624,7 +899,7 @@ bool NativeEconomyRuntime::route_trade_source(
         ++_trade_rejected_route;
         const auto group_begin = destination_group_begin();
         for (auto it = group_begin; it != _trade_plan.destinations.end() &&
-             it->country == source.country && it->good == source.good; ++it) {
+             it->good == source.good; ++it) {
             record_trade_signal_attempt(
                 it->cell, source.good, TRADE_SIGNAL_DIAG_ROUTE);
         }
@@ -650,7 +925,7 @@ bool NativeEconomyRuntime::run_trade_planner_slice(
             ++work_done;
             if (_good_trade_enabled[good] == 0 || _good_storage_modes[good] != 0 ||
                 market < 0 || market >= _cell_count ||
-                !good_available(market, good, true) ||
+                !good_market_available(market, good, true) ||
                 _trade_topology.passable[market] == 0 ||
                 _trade_topology.component[market] < 0) continue;
             const int32_t country = _epoch_cell_country[market];
@@ -714,16 +989,16 @@ bool NativeEconomyRuntime::run_trade_planner_slice(
             const auto finalize_started = Clock::now();
             std::stable_sort(_trade_plan.sources.begin(), _trade_plan.sources.end(),
                 [](const TradeSignal &a, const TradeSignal &b) {
-                    if (a.country != b.country) return a.country < b.country;
                     if (a.good != b.good) return a.good < b.good;
+                    if (a.country != b.country) return a.country < b.country;
                     if (a.price != b.price) return a.price < b.price;
                     if (a.quantity != b.quantity) return a.quantity > b.quantity;
                     return a.cell < b.cell;
                 });
             std::stable_sort(_trade_plan.destinations.begin(), _trade_plan.destinations.end(),
                 [](const TradeSignal &a, const TradeSignal &b) {
-                    if (a.country != b.country) return a.country < b.country;
                     if (a.good != b.good) return a.good < b.good;
+                    if (a.country != b.country) return a.country < b.country;
                     if (a.response_priority != b.response_priority)
                         return a.response_priority < b.response_priority;
                     if (a.age_days != b.age_days) return a.age_days > b.age_days;
@@ -735,12 +1010,9 @@ bool NativeEconomyRuntime::run_trade_planner_slice(
                 const auto source = std::lower_bound(
                     _trade_plan.sources.begin(), _trade_plan.sources.end(), destination,
                     [](const TradeSignal &candidate, const TradeSignal &wanted) {
-                        if (candidate.country != wanted.country)
-                            return candidate.country < wanted.country;
                         return candidate.good < wanted.good;
                     });
                 if (source == _trade_plan.sources.end() ||
-                    source->country != destination.country ||
                     source->good != destination.good) {
                     record_trade_signal_attempt(destination.cell, destination.good,
                                                 TRADE_SIGNAL_DIAG_STOCK);
@@ -1066,7 +1338,8 @@ void NativeEconomyRuntime::update_trade_flow_ema() {
     _saturation_count = saturating_add(_saturation_count, sat, _saturation_count);
 }
 
-int64_t NativeEconomyRuntime::credit_trade_sellers(int32_t order_index, int64_t amount) {
+int64_t NativeEconomyRuntime::credit_trade_sellers(
+        int32_t order_index, int64_t amount, int32_t cashflow_source) {
     if (order_index < 0 || order_index >= _trade_orders.size() || amount <= 0) return 0;
     const int32_t begin = _trade_orders.seller_offsets[order_index];
     const int32_t end = _trade_orders.seller_offsets[order_index + 1];
@@ -1086,7 +1359,7 @@ int64_t NativeEconomyRuntime::credit_trade_sellers(int32_t order_index, int64_t 
     if (valid.empty() || total_weight <= 0) {
         const int64_t credited = credit_local_merchants(
             _trade_orders.sources[order_index], amount,
-            CASHFLOW_MERCHANT_BUSINESS);
+            cashflow_source);
         if (credited > 0) {
             _merchant_trade_sale_cash = saturating_add(
                 _merchant_trade_sale_cash, credited, _saturation_count);
@@ -1114,7 +1387,7 @@ int64_t NativeEconomyRuntime::credit_trade_sellers(int32_t order_index, int64_t 
         _population.epoch_income[slot] = saturating_add(
             _population.epoch_income[slot], share, _saturation_count);
         trace_record_cashflow(_trade_orders.sources[order_index],
-            _population.handle_for_slot(slot), CASHFLOW_MERCHANT_BUSINESS, share, 0);
+            _population.handle_for_slot(slot), cashflow_source, share, 0);
     }
     if (distributed > 0) {
         _merchant_trade_sale_cash = saturating_add(
@@ -1123,6 +1396,62 @@ int64_t NativeEconomyRuntime::credit_trade_sellers(int32_t order_index, int64_t 
         if (cell >= 0 && cell < static_cast<int32_t>(
                 _merchant_trade_sale_by_cell.size())) {
             _merchant_trade_sale_by_cell[cell] = saturating_add(
+                _merchant_trade_sale_by_cell[cell], distributed,
+                _saturation_count);
+        }
+    }
+    return distributed;
+}
+
+int64_t NativeEconomyRuntime::debit_trade_sellers(
+        int32_t order_index, int64_t amount, int32_t cashflow_source) {
+    if (order_index < 0 || order_index >= _trade_orders.size() || amount <= 0)
+        return 0;
+    const int32_t begin = _trade_orders.seller_offsets[order_index];
+    const int32_t end = _trade_orders.seller_offsets[order_index + 1];
+    std::vector<std::pair<int32_t, int64_t>> valid;
+    valid.reserve(static_cast<size_t>(std::max(0, end - begin)));
+    int64_t total_funds = 0;
+    for (int32_t i = begin; i < end; ++i) {
+        int32_t slot = -1;
+        if (!_population.valid_handle(_trade_orders.seller_handles[i], slot) ||
+            !is_merchant_slot(slot) ||
+            _population.page_cell[slot / COHORT_PAGE_SIZE] !=
+                _trade_orders.sources[order_index]) continue;
+        const int64_t funds = std::max<int64_t>(0, _population.funds[slot]);
+        if (funds <= 0) continue;
+        valid.push_back({slot, funds});
+        total_funds = saturating_add(total_funds, funds, _saturation_count);
+    }
+    if (valid.empty() || total_funds <= 0)
+        return debit_local_merchants(_trade_orders.sources[order_index], amount,
+            cashflow_source);
+    const int64_t target = std::min(amount, total_funds);
+    int64_t prefix = 0;
+    int64_t distributed = 0;
+    for (const auto &entry : valid) {
+        const int32_t slot = entry.first;
+        touch_accounting_slot(slot);
+        prefix = saturating_add(prefix, entry.second, _saturation_count);
+        const int64_t next = mul_div_sat(target, prefix, total_funds,
+            _saturation_count);
+        const int64_t share = std::min(
+            std::max<int64_t>(0, next - distributed),
+            std::max<int64_t>(0, _population.funds[slot]));
+        distributed = saturating_add(distributed, share, _saturation_count);
+        _population.funds[slot] -= share;
+        _population.epoch_expense[slot] = saturating_add(
+            _population.epoch_expense[slot], share, _saturation_count);
+        trace_record_cashflow(_trade_orders.sources[order_index],
+            _population.handle_for_slot(slot), cashflow_source, 0, share);
+    }
+    if (distributed > 0 && cashflow_source == CASHFLOW_EXPORT_TAX) {
+        _merchant_trade_sale_cash = saturating_sub(
+            _merchant_trade_sale_cash, distributed, _saturation_count);
+        const int32_t cell = _trade_orders.sources[order_index];
+        if (cell >= 0 && cell < static_cast<int32_t>(
+                _merchant_trade_sale_by_cell.size())) {
+            _merchant_trade_sale_by_cell[cell] = saturating_sub(
                 _merchant_trade_sale_by_cell[cell], distributed,
                 _saturation_count);
         }
@@ -1170,6 +1499,14 @@ void NativeEconomyRuntime::compact_trade_orders(const std::vector<uint8_t> &remo
         next.sources.push_back(_trade_orders.sources[i]);
         next.destinations.push_back(_trade_orders.destinations[i]);
         next.countries.push_back(_trade_orders.countries[i]);
+        next.source_country_handles.push_back(
+            _trade_orders.source_country_handles[i]);
+        next.destination_country_handles.push_back(
+            _trade_orders.destination_country_handles[i]);
+        next.source_country_slots.push_back(
+            _trade_orders.source_country_slots[i]);
+        next.destination_country_slots.push_back(
+            _trade_orders.destination_country_slots[i]);
         next.departure_days.push_back(_trade_orders.departure_days[i]);
         next.arrival_days.push_back(_trade_orders.arrival_days[i]);
         next.cash_escrow.push_back(_trade_orders.cash_escrow[i]);
@@ -1181,6 +1518,17 @@ void NativeEconomyRuntime::compact_trade_orders(const std::vector<uint8_t> &remo
             next.line_goods.push_back(_trade_orders.line_goods[line]);
             next.line_quantities.push_back(_trade_orders.line_quantities[line]);
             next.line_unit_prices.push_back(_trade_orders.line_unit_prices[line]);
+            next.line_destination_prices.push_back(
+                _trade_orders.line_destination_prices[line]);
+            next.line_base_values.push_back(
+                _trade_orders.line_base_values[line]);
+            next.line_retail_values.push_back(
+                _trade_orders.line_retail_values[line]);
+            next.line_import_transfers.push_back(
+                _trade_orders.line_import_transfers[line]);
+            next.line_export_transfers.push_back(
+                _trade_orders.line_export_transfers[line]);
+            next.line_flags.push_back(_trade_orders.line_flags[line]);
         }
         next.line_offsets.push_back(static_cast<int32_t>(next.line_goods.size()));
         for (int32_t seller = _trade_orders.seller_offsets[i];
@@ -1215,6 +1563,11 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                 return false;
             }
             int64_t delivered = 0;
+            int32_t trade_event_flags = 0;
+            std::vector<EventLeg> trade_legs;
+            trade_legs.reserve(static_cast<size_t>(std::max(0,
+                _trade_orders.line_offsets[order + 1] -
+                _trade_orders.line_offsets[order])) * 5U);
             for (int32_t line = _trade_orders.line_offsets[order];
                  line < _trade_orders.line_offsets[order + 1]; ++line) {
                 const int32_t good = _trade_orders.line_goods[line];
@@ -1234,30 +1587,114 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                 CommittedGameplayFact fact;
                 fact.kind = GAMEPLAY_FACT_TRADE_ARRIVED;
                 fact.cell = destination;
+                fact.entity_handle = static_cast<uint64_t>(
+                    _trade_orders.ids[order]);
                 fact.entity_id = static_cast<int32_t>(std::clamp<int64_t>(
                     _trade_orders.ids[order], 0,
                     std::numeric_limits<int32_t>::max()));
                 fact.value = quantity;
                 const int32_t source = _trade_orders.sources[order];
-                const bool inter_country = source >= 0 && destination >= 0 &&
-                    source < static_cast<int32_t>(_epoch_cell_country.size()) &&
-                    destination < static_cast<int32_t>(_epoch_cell_country.size()) &&
-                    _epoch_cell_country[source] != _epoch_cell_country[destination];
-                fact.payload = {source, destination, good, inter_country ? 1 : 0};
+                const int32_t source_country =
+                    _trade_orders.source_country_slots[order];
+                const int32_t destination_country =
+                    _trade_orders.destination_country_slots[order];
+                fact.payload = {source, source_country,
+                                destination_country, good};
+                const uint8_t line_flags = line < static_cast<int32_t>(
+                        _trade_orders.line_flags.size())
+                    ? _trade_orders.line_flags[line] : 0;
+                fact.flags = line_flags;
                 _staging_gameplay_facts.push_back(fact);
+                int32_t contact_rule = -1;
+                const std::string &good_id = _good_ids[static_cast<size_t>(good)];
+                if (good_id == "corn_grain") contact_rule = 0;
+                else if (good_id == "wheat_grain") contact_rule = 1;
+                else if (good_id == "rice_grain") contact_rule = 2;
+                else if (good_id == "potatoes") contact_rule = 3;
+                else if (good_id == "seed_cotton" || good_id == "cotton_fiber")
+                    contact_rule = 4;
+                else if (good_id == "bast_fiber" || good_id == "flax_fiber")
+                    contact_rule = 5;
+                else if (good_id == "spices") contact_rule = 6;
+                else if (good_id == "latex") contact_rule = 7;
+                else if (good_id == "tin_ore" || good_id == "tin") contact_rule = 8;
+                if (contact_rule >= 0 && source_country >= 0 &&
+                    destination_country >= 0 && source_country != destination_country &&
+                    destination_country < static_cast<int32_t>(_epoch_country_handles.size())) {
+                    const uint64_t destination_handle = _epoch_country_handles[
+                        static_cast<size_t>(destination_country)];
+                    if (destination_handle != 0) {
+                        CommittedGameplayFact contact;
+                        contact.kind = GAMEPLAY_FACT_TECHNOLOGY_CONTACT;
+                        contact.cell = destination;
+                        contact.entity_handle = destination_handle;
+                        contact.entity_id = destination_country;
+                        contact.value = 1;
+                        contact.payload = {contact_rule, source_country,
+                                           destination_country, good};
+                        _staging_gameplay_facts.push_back(contact);
+                    }
+                }
+                trade_event_flags |= static_cast<int32_t>(line_flags) << 8;
+                const int64_t order_id = _trade_orders.ids[order];
+                trade_legs.push_back({FIELD_TRADE_QUANTITY,
+                    SUBJECT_TRADE_ORDER, order_id, good, 0, quantity});
+                trade_legs.push_back({FIELD_TRADE_BASE_VALUE,
+                    SUBJECT_TRADE_ORDER, order_id, good, 0,
+                    _trade_orders.line_base_values[line]});
+                trade_legs.push_back({FIELD_TRADE_RETAIL_VALUE,
+                    SUBJECT_TRADE_ORDER, order_id, good, 0,
+                    _trade_orders.line_retail_values[line]});
+                trade_legs.push_back({FIELD_TRADE_IMPORT_TRANSFER,
+                    SUBJECT_TRADE_ORDER, order_id, good, 0,
+                    _trade_orders.line_import_transfers[line]});
+                trade_legs.push_back({FIELD_TRADE_EXPORT_TRANSFER,
+                    SUBJECT_TRADE_ORDER, order_id, good, 0,
+                    _trade_orders.line_export_transfers[line]});
             }
             _trade_orders.cargo_delivered[order] = 1;
             _trade_settlement_lag_days = std::max<int64_t>(_trade_settlement_lag_days,
                 _sample_day - _trade_orders.arrival_days[order]);
+            const bool trace_trade_detail = trace_detail_for_cell(destination) ||
+                trace_detail_for_cell(_trade_orders.sources[order]);
             trace_append(EVENT_TRADE_ARRIVED, static_cast<int32_t>(Stage::TRADE_SETTLE),
                 destination, SUBJECT_TRADE_ORDER, _trade_orders.ids[order],
                 _trade_orders.sources[order], destination, delivered,
                 _trade_orders.cash_escrow[order], _trade_orders.departure_days[order],
-                _trade_orders.arrival_days[order], nullptr);
+                _trade_orders.arrival_days[order],
+                trace_trade_detail ? &trade_legs : nullptr,
+                trade_event_flags);
             ++_trade_orders_arrived;
         }
         const int64_t escrow = _trade_orders.cash_escrow[order];
-        const int64_t credited = escrow == 0 ? 0 : credit_trade_sellers(order, escrow);
+        int64_t base_receipt = 0;
+        int64_t export_tax = 0;
+        int64_t export_subsidy = 0;
+        for (int32_t line = _trade_orders.line_offsets[order];
+             line < _trade_orders.line_offsets[order + 1]; ++line) {
+            base_receipt = saturating_add(base_receipt,
+                std::max<int64_t>(0, _trade_orders.line_base_values[line]),
+                _saturation_count);
+            const int64_t transfer = _trade_orders.line_export_transfers[line];
+            if (transfer > 0)
+                export_tax = saturating_add(export_tax, transfer,
+                    _saturation_count);
+            else if (transfer < 0)
+                export_subsidy = saturating_add(export_subsidy, -transfer,
+                    _saturation_count);
+        }
+        int64_t credited = 0;
+        if (base_receipt > 0)
+            credited = saturating_add(credited,
+                credit_trade_sellers(order, base_receipt), _saturation_count);
+        if (export_tax > 0)
+            credited = saturating_sub(credited,
+                debit_trade_sellers(order, export_tax, CASHFLOW_EXPORT_TAX),
+                _saturation_count);
+        if (export_subsidy > 0)
+            credited = saturating_add(credited,
+                credit_trade_sellers(order, export_subsidy,
+                    CASHFLOW_EXPORT_SUBSIDY), _saturation_count);
         if (credited == escrow) {
             _trade_orders.cash_escrow[order] = 0;
             remove[order] = 1;
@@ -1281,9 +1718,26 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
     // the final source is visited. Dispatch revalidates price, stock, cash,
     // capacity and topology below, so partial publication remains conservative
     // while the stable route cursor provides eventual fairness.
+    bool candidates_changed = false;
     if (_trade_plan.ready_candidates.empty() &&
         !_trade_plan.working_candidates.empty()) {
         _trade_plan.ready_candidates.swap(_trade_plan.working_candidates);
+        candidates_changed = true;
+    }
+    if (!_trade_plan.deferred_subsidy_candidates.empty()) {
+        const size_t available = static_cast<size_t>(std::max(0,
+            _trade_max_candidates - static_cast<int32_t>(
+                _trade_plan.ready_candidates.size())));
+        const size_t append_count = std::min(
+            available, _trade_plan.deferred_subsidy_candidates.size());
+        _trade_plan.ready_candidates.insert(
+            _trade_plan.ready_candidates.end(),
+            _trade_plan.deferred_subsidy_candidates.begin(),
+            _trade_plan.deferred_subsidy_candidates.begin() + append_count);
+        _trade_plan.deferred_subsidy_candidates.clear();
+        candidates_changed = candidates_changed || append_count > 0;
+    }
+    if (candidates_changed) {
         std::stable_sort(_trade_plan.ready_candidates.begin(),
             _trade_plan.ready_candidates.end(), [&](const TradeCandidate &a,
                                                      const TradeCandidate &b) {
@@ -1309,44 +1763,181 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
     }
     std::vector<int64_t> country_capacity(static_cast<size_t>(
         std::max(0, _epoch_country_count)), 0);
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
-        const int32_t country = _epoch_cell_country[cell];
-        if (country < 0 || country >= _epoch_country_count) continue;
-        int64_t merchant_population = 0;
-        for (int32_t k = _merchant_offsets[cell]; k < _merchant_offsets[cell + 1]; ++k)
-            merchant_population = saturating_add(merchant_population,
-                _population.population[_merchant_slots[k]], _saturation_count);
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        const int64_t merchant_population = country < static_cast<int32_t>(
+                _epoch_country_merchant_population.size())
+            ? _epoch_country_merchant_population[static_cast<size_t>(country)] : 0;
         const int64_t base_capacity = saturating_mul(
             merchant_population, _trade_capacity_per_merchant_q16,
             _saturation_count);
         const int32_t capacity_factor = country <
                 static_cast<int32_t>(_epoch_country_trade_capacity_factor_q16.size())
             ? _epoch_country_trade_capacity_factor_q16[country] : Q16_ONE;
-        country_capacity[country] = saturating_add(
-            country_capacity[country],
+        country_capacity[static_cast<size_t>(country)] = saturating_add(
+            country_capacity[static_cast<size_t>(country)],
             mul_div_sat(base_capacity, capacity_factor, Q16_ONE,
                         _saturation_count),
             _saturation_count);
     }
     _trade_capacity_available = std::accumulate(
         country_capacity.begin(), country_capacity.end(), int64_t{0});
+    std::vector<int64_t> intent_country_capacity = country_capacity;
     std::vector<TradeCandidate> accepted;
     std::vector<int32_t> merchant_funds_touched;
     std::unordered_map<uint64_t, int64_t> source_remaining;
     std::unordered_map<uint64_t, int64_t> destination_remaining;
     std::unordered_map<int32_t, int64_t> destination_trade_cash_remaining;
+    // Subsidy intents use a private shadow of the same bounded resources. They
+    // never move authoritative stock/cash/capacity, but multiple intents in one
+    // batch still arbitrate deterministically against one another.
+    std::unordered_map<uint64_t, int64_t> intent_source_remaining;
+    std::unordered_map<uint64_t, int64_t> intent_destination_remaining;
+    std::unordered_map<int32_t, int64_t> intent_destination_cash_remaining;
+    if (_country_good_trade_index.size() !=
+            _country_good_trade.countries.size() ||
+        _country_partner_trade_index.size() !=
+            _country_partner_trade.countries.size() ||
+        _tariff_history_index.size() != _tariff_history.countries.size() ||
+        _country_good_display_rows.size() !=
+            static_cast<size_t>(std::max(0, _epoch_country_count)) ||
+        _country_partner_display_rows.size() !=
+            static_cast<size_t>(std::max(0, _epoch_country_count))) {
+        rebuild_country_trade_indices();
+    }
+    const auto ensure_country_good = [&](int32_t country, int32_t good) {
+        const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 32) |
+            static_cast<uint32_t>(good);
+        const auto found = _country_good_trade_index.find(key);
+        if (found != _country_good_trade_index.end()) return found->second;
+        const int32_t index = static_cast<int32_t>(_country_good_trade.countries.size());
+        _country_good_trade_index.emplace(key, index);
+        _country_good_trade.countries.push_back(country);
+        _country_good_trade.goods.push_back(good);
+        _country_good_trade.import_quantity.push_back(0);
+        _country_good_trade.export_quantity.push_back(0);
+        _country_good_trade.import_base.push_back(0);
+        _country_good_trade.export_base.push_back(0);
+        _country_good_trade.import_tariff.push_back(0);
+        _country_good_trade.export_tariff.push_back(0);
+        _country_good_trade.batch_epoch.push_back(-1);
+        _country_good_trade.batch_import_quantity.push_back(0);
+        _country_good_trade.batch_export_quantity.push_back(0);
+        _country_good_trade.batch_import_base.push_back(0);
+        _country_good_trade.batch_export_base.push_back(0);
+        _country_good_trade.batch_import_tariff.push_back(0);
+        _country_good_trade.batch_export_tariff.push_back(0);
+        if (country >= 0 && country < static_cast<int32_t>(
+                _country_good_display_rows.size())) {
+            _country_good_display_rows[static_cast<size_t>(country)].push_back(index);
+            _country_good_display_dirty[static_cast<size_t>(country)] = 1;
+        }
+        return index;
+    };
+    const auto ensure_country_partner = [&](int32_t country, int32_t partner) {
+        const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 32) |
+            static_cast<uint32_t>(partner);
+        const auto found = _country_partner_trade_index.find(key);
+        if (found != _country_partner_trade_index.end()) return found->second;
+        const int32_t index = static_cast<int32_t>(
+            _country_partner_trade.countries.size());
+        _country_partner_trade_index.emplace(key, index);
+        _country_partner_trade.countries.push_back(country);
+        _country_partner_trade.partners.push_back(partner);
+        _country_partner_trade.import_quantity.push_back(0);
+        _country_partner_trade.export_quantity.push_back(0);
+        _country_partner_trade.import_base.push_back(0);
+        _country_partner_trade.export_base.push_back(0);
+        _country_partner_trade.order_count.push_back(0);
+        _country_partner_trade.batch_epoch.push_back(-1);
+        _country_partner_trade.batch_import_quantity.push_back(0);
+        _country_partner_trade.batch_export_quantity.push_back(0);
+        _country_partner_trade.batch_import_base.push_back(0);
+        _country_partner_trade.batch_export_base.push_back(0);
+        _country_partner_trade.batch_order_count.push_back(0);
+        if (country >= 0 && country < static_cast<int32_t>(
+                _country_partner_display_rows.size())) {
+            _country_partner_display_rows[static_cast<size_t>(country)].push_back(index);
+            _country_partner_display_dirty[static_cast<size_t>(country)] = 1;
+        }
+        return index;
+    };
+    const auto begin_country_good_batch = [&](int32_t index) {
+        if (index < 0 || index >= static_cast<int32_t>(
+                _country_good_trade.batch_epoch.size()) ||
+            _country_good_trade.batch_epoch[index] == _epoch_id) return;
+        _country_good_trade.batch_epoch[index] = _epoch_id;
+        _country_good_trade.batch_import_quantity[index] = 0;
+        _country_good_trade.batch_export_quantity[index] = 0;
+        _country_good_trade.batch_import_base[index] = 0;
+        _country_good_trade.batch_export_base[index] = 0;
+        _country_good_trade.batch_import_tariff[index] = 0;
+        _country_good_trade.batch_export_tariff[index] = 0;
+    };
+    const auto begin_country_partner_batch = [&](int32_t index) {
+        if (index < 0 || index >= static_cast<int32_t>(
+                _country_partner_trade.batch_epoch.size()) ||
+            _country_partner_trade.batch_epoch[index] == _epoch_id) return;
+        _country_partner_trade.batch_epoch[index] = _epoch_id;
+        _country_partner_trade.batch_import_quantity[index] = 0;
+        _country_partner_trade.batch_export_quantity[index] = 0;
+        _country_partner_trade.batch_import_base[index] = 0;
+        _country_partner_trade.batch_export_base[index] = 0;
+        _country_partner_trade.batch_order_count[index] = 0;
+    };
+    const auto ensure_tariff_history = [&](int32_t country, int32_t kind) {
+        const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 32) |
+            static_cast<uint32_t>(kind);
+        const auto found = _tariff_history_index.find(key);
+        if (found != _tariff_history_index.end()) return found->second;
+        const int32_t index = static_cast<int32_t>(_tariff_history.countries.size());
+        _tariff_history_index.emplace(key, index);
+        _tariff_history.countries.push_back(country);
+        _tariff_history.kinds.push_back(kind);
+        _tariff_history.bases.push_back(0);
+        _tariff_history.assessed.push_back(0);
+        _tariff_history.collected.push_back(0);
+        _tariff_history.requests.push_back(0);
+        _tariff_history.reserved.push_back(0);
+        _tariff_history.paid.push_back(0);
+        _tariff_history.cumulative_bases.push_back(0);
+        _tariff_history.cumulative_collected.push_back(0);
+        _tariff_history.cumulative_requests.push_back(0);
+        _tariff_history.cumulative_paid.push_back(0);
+        return index;
+    };
+    const auto tariff_remaining = [&](int32_t country, int32_t tariff_kind) {
+        if (country < 0 || country >= _epoch_country_count ||
+            tariff_kind < 0 || tariff_kind >= 2) return int64_t{0};
+        const size_t index = static_cast<size_t>(country) * 2U +
+            static_cast<size_t>(tariff_kind);
+        return index < _tariff_country_remaining.size()
+            ? std::max<int64_t>(0, _tariff_country_remaining[index])
+            : int64_t{0};
+    };
     accepted.reserve(std::min<int32_t>(static_cast<int32_t>(
         _trade_plan.ready_candidates.size()),
         std::max(0, _trade_max_orders - _trade_orders.size())));
     merchant_funds_touched.reserve(accepted.capacity());
     for (const TradeCandidate &candidate : _trade_plan.ready_candidates) {
+        const int32_t source_country = candidate.source_country >= 0
+            ? candidate.source_country : candidate.country;
+        const int32_t destination_country = candidate.destination_country >= 0
+            ? candidate.destination_country : candidate.country;
         if (candidate.source < 0 || candidate.destination < 0 ||
             candidate.good < 0 || candidate.good >= _market.good_count ||
-            candidate.country < 0 || candidate.country >= _epoch_country_count ||
+            source_country < 0 || source_country >= _epoch_country_count ||
+            destination_country < 0 || destination_country >= _epoch_country_count ||
             candidate.topology_generation != _trade_topology.topology_generation ||
-            candidate.country_topology_hash != _epoch_country_topology_hash ||
-            _epoch_cell_country[candidate.source] != candidate.country ||
-            _epoch_cell_country[candidate.destination] != candidate.country) {
+            candidate.source >= static_cast<int32_t>(_epoch_cell_country.size()) ||
+            candidate.destination >= static_cast<int32_t>(_epoch_cell_country.size()) ||
+            _epoch_cell_country[candidate.source] != source_country ||
+            _epoch_cell_country[candidate.destination] != destination_country ||
+            (candidate.source_country_handle != 0 &&
+             _epoch_country_handles[static_cast<size_t>(source_country)] !=
+                candidate.source_country_handle) ||
+            (candidate.destination_country_handle != 0 &&
+             _epoch_country_handles[static_cast<size_t>(destination_country)] !=
+                candidate.destination_country_handle)) {
             ++_trade_rejected_route;
             if (candidate.destination >= 0 && candidate.good >= 0)
                 record_trade_signal_attempt(candidate.destination, candidate.good,
@@ -1359,7 +1950,9 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                 _cell_price_stock_gen[candidate.destination]) {
             ++_trade_candidates_stale_generation;
         }
-        if (candidate.expected_profit <= 0 || candidate.quantity <= 0) {
+        if ((candidate.expected_profit <= 0 &&
+             (candidate.flags & TRADE_LINE_RELIEF) == 0) ||
+            candidate.quantity <= 0) {
             ++_trade_rejected_profit;
             record_trade_signal_attempt(candidate.destination, candidate.good,
                 TRADE_SIGNAL_DIAG_MARGIN);
@@ -1414,10 +2007,6 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         const int64_t unit_work = saturating_mul(
             _good_transport_load_per_unit_q16[candidate.good],
             candidate.route_cost, sat);
-        const int64_t capacity_quantity = mul_div_sat(
-            country_capacity[candidate.country], GOODS_SCALE,
-            std::max<int64_t>(1, unit_work), sat);
-        clipped.quantity = std::min(clipped.quantity, capacity_quantity);
         if (clipped.quantity <= 0) {
             if (source_it->second <= 0 || destination_it->second <= 0) {
                 ++_trade_candidates_arbitrated_out;
@@ -1468,19 +2057,18 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         }
         const int64_t available_cash = std::max<int64_t>(
             0, destination_cash_it->second);
-        if (clipped.source_price > 0) {
-            clipped.quantity = std::min(clipped.quantity, mul_div_sat(
-                available_cash, GOODS_SCALE, clipped.source_price, sat));
-        }
-        if (clipped.quantity <= 0) {
-            ++_trade_rejected_cash;
-            record_trade_signal_attempt(candidate.destination, candidate.good,
-                TRADE_SIGNAL_DIAG_CASH);
-            continue;
-        }
         const int64_t relief_q16 = trade_relief_pressure_q16(
             candidate.destination, candidate.good, sat);
         const bool relief_route = relief_q16 >= Q16_ONE / 8;
+        const auto quote_is_viable = [&](const TradeQuote &quote) {
+            const bool merchant_cash_safe = quote.importer_outlay >= 0 &&
+                quote.importer_profit >= 0 && quote.exporter_receipt > 0;
+            const bool route_profit_safe = relief_route
+                ? quote.combined_profit >= 0
+                : quote.combined_profit > 0 &&
+                    quote.margin_q16 >= _trade_min_margin_q16;
+            return merchant_cash_safe && route_profit_safe;
+        };
         const int64_t before_profit_clip = clipped.quantity;
         int64_t margin_q16 = 0;
         clipped.quantity = profitable_trade_quantity(
@@ -1496,36 +2084,278 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             continue;
         }
         if (clipped.quantity < before_profit_clip) ++_trade_quantity_profit_clips;
-        clipped.capacity_work = mul_div_sat(
-            clipped.quantity, unit_work, GOODS_SCALE, sat);
-        if (relief_route && clipped.expected_profit <= 0) {
-            clipped.expected_profit = std::max<int64_t>(1, mul_div_sat(
-                mul_div_sat(clipped.quantity, std::max<int64_t>(1, clipped.source_price),
-                            GOODS_SCALE, sat),
-                std::max<int64_t>(1, relief_q16), Q16_ONE, sat));
+        auto quote_for_quantity = [&](int64_t quantity, TradeQuote &quote,
+                                      int64_t &total_work,
+                                      int64_t &source_work,
+                                      int64_t &destination_work) {
+            const int32_t quoted_source = estimate_trade_price(
+                candidate.source, candidate.good,
+                _market.stock[market_index] - quantity, sat);
+            const int32_t quoted_destination = estimate_trade_price(
+                candidate.destination, candidate.good,
+                _market.stock[destination_index] + quantity, sat);
+            quote = make_trade_quote(candidate.source, candidate.destination,
+                candidate.good, quantity, quoted_source, quoted_destination,
+                relief_route, sat);
+            total_work = mul_div_sat(quantity, unit_work, GOODS_SCALE, sat);
+            if (quote.foreign) {
+                source_work = total_work / 2;
+                destination_work = total_work - source_work;
+            } else {
+                source_work = total_work;
+                destination_work = 0;
+            }
+        };
+        int64_t low = 1;
+        int64_t high = clipped.quantity;
+        int64_t best_quantity = 0;
+        TradeQuote best_quote;
+        int64_t best_total_work = 0;
+        int64_t best_source_work = 0;
+        int64_t best_destination_work = 0;
+        while (low <= high) {
+            const int64_t mid = low + (high - low) / 2;
+            TradeQuote quote;
+            int64_t total_work = 0;
+            int64_t source_work = 0;
+            int64_t destination_work = 0;
+            quote_for_quantity(mid, quote, total_work, source_work,
+                               destination_work);
+            const bool capacity_ok = total_work > 0 &&
+                source_work <= country_capacity[static_cast<size_t>(source_country)] &&
+                destination_work <= country_capacity[
+                    static_cast<size_t>(destination_country)];
+            const bool cash_ok = quote.importer_outlay >= 0 &&
+                quote.importer_outlay <= available_cash;
+            const bool subsidy_ok =
+                -std::min<int64_t>(0, quote.export_transfer) <=
+                    tariff_remaining(source_country, 1) &&
+                -std::min<int64_t>(0, quote.import_transfer) <=
+                    tariff_remaining(destination_country, 0);
+            if (capacity_ok && cash_ok && subsidy_ok) {
+                best_quantity = mid;
+                best_quote = quote;
+                best_total_work = total_work;
+                best_source_work = source_work;
+                best_destination_work = destination_work;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
         }
-        clipped.density_q16 = clipped.capacity_work <= 0 ? 0 : mul_div_sat(
-            clipped.expected_profit, Q16_ONE, clipped.capacity_work, sat);
-        if (clipped.capacity_work <= 0) {
-            ++_trade_rejected_profit;
-            record_trade_signal_attempt(candidate.destination, candidate.good,
-                TRADE_SIGNAL_DIAG_MARGIN);
+        if (best_quantity > 0 && !quote_is_viable(best_quote)) {
+            best_quantity = 0;
+            best_total_work = 0;
+            best_source_work = 0;
+            best_destination_work = 0;
+        }
+        if (best_quantity <= 0) {
+            TradeQuote unit_quote;
+            int64_t unit_total_work = 0;
+            int64_t unit_source_work = 0;
+            int64_t unit_destination_work = 0;
+            quote_for_quantity(1, unit_quote, unit_total_work,
+                               unit_source_work, unit_destination_work);
+            TradeQuote nominal_quote;
+            int64_t nominal_total_work = 0;
+            int64_t nominal_source_work = 0;
+            int64_t nominal_destination_work = 0;
+            quote_for_quantity(clipped.quantity, nominal_quote,
+                               nominal_total_work, nominal_source_work,
+                               nominal_destination_work);
+            const bool subsidy_blocked =
+                -std::min<int64_t>(0, nominal_quote.export_transfer) >
+                    tariff_remaining(source_country, 1) ||
+                -std::min<int64_t>(0, nominal_quote.import_transfer) >
+                    tariff_remaining(destination_country, 0);
+            if (subsidy_blocked && _trade_runtime_mode == 2) {
+                // An intent is a bounded next-batch request only. It must not
+                // change stock, merchant cash, actual tariff events, or the
+                // current fiscal base. Its resource arbitration is shadow-only
+                // and follows the same stable candidate order as real dispatch.
+                const uint64_t source_key = (static_cast<uint64_t>(
+                    static_cast<uint32_t>(candidate.source)) << 32) |
+                    static_cast<uint32_t>(candidate.good);
+                const uint64_t destination_key = (static_cast<uint64_t>(
+                    static_cast<uint32_t>(candidate.destination)) << 32) |
+                    static_cast<uint32_t>(candidate.good);
+                auto intent_source_it = intent_source_remaining.find(source_key);
+                if (intent_source_it == intent_source_remaining.end())
+                    intent_source_it = intent_source_remaining.emplace(
+                        source_key, source_it->second).first;
+                auto intent_destination_it = intent_destination_remaining.find(
+                    destination_key);
+                if (intent_destination_it == intent_destination_remaining.end())
+                    intent_destination_it = intent_destination_remaining.emplace(
+                        destination_key, destination_it->second).first;
+                auto intent_cash_it = intent_destination_cash_remaining.find(
+                    candidate.destination);
+                if (intent_cash_it == intent_destination_cash_remaining.end())
+                    intent_cash_it = intent_destination_cash_remaining.emplace(
+                        candidate.destination, available_cash).first;
+                int64_t intent_quantity = 0;
+                TradeQuote intent_quote;
+                int64_t intent_source_work = 0;
+                int64_t intent_destination_work = 0;
+                int64_t intent_low = 1;
+                int64_t intent_high = std::min(clipped.quantity,
+                    std::min(intent_source_it->second,
+                        intent_destination_it->second));
+                while (intent_low <= intent_high) {
+                    const int64_t mid = intent_low +
+                        (intent_high - intent_low) / 2;
+                    TradeQuote quote;
+                    int64_t total_work = 0;
+                    int64_t source_work = 0;
+                    int64_t destination_work = 0;
+                    quote_for_quantity(mid, quote, total_work, source_work,
+                        destination_work);
+                    const bool capacity_ok = total_work > 0 &&
+                        source_work <= intent_country_capacity[
+                            static_cast<size_t>(source_country)] &&
+                        destination_work <= intent_country_capacity[
+                            static_cast<size_t>(destination_country)];
+                    const bool cash_ok = quote.importer_outlay >= 0 &&
+                        quote.importer_outlay <= intent_cash_it->second;
+                    if (capacity_ok && cash_ok) {
+                        intent_quantity = mid;
+                        intent_quote = quote;
+                        intent_source_work = source_work;
+                        intent_destination_work = destination_work;
+                        intent_low = mid + 1;
+                    } else {
+                        intent_high = mid - 1;
+                    }
+                }
+                if (intent_quantity > 0 && !quote_is_viable(intent_quote))
+                    intent_quantity = 0;
+                const int64_t import_request = intent_quantity > 0
+                    ? -std::min<int64_t>(0, intent_quote.import_transfer) : 0;
+                const int64_t export_request = intent_quantity > 0
+                    ? -std::min<int64_t>(0, intent_quote.export_transfer) : 0;
+                if (import_request > 0) {
+                    const int32_t lane = tariff_epoch_lane_index(
+                        candidate.destination, 0, true);
+                    if (lane < 0) {
+                        error = "tariff_intent_lane_allocate_failed";
+                        return false;
+                    }
+                    _tariff_epoch_requests[lane] = saturating_add(
+                        _tariff_epoch_requests[lane], import_request, sat);
+                    const int32_t row = ensure_tariff_history(
+                        destination_country, NativeCountryRuntime::TAX_IMPORT);
+                    _tariff_history.requests[row] = saturating_add(
+                        _tariff_history.requests[row], import_request, sat);
+                }
+                if (export_request > 0) {
+                    const int32_t lane = tariff_epoch_lane_index(
+                        candidate.source, 1, true);
+                    if (lane < 0) {
+                        error = "tariff_intent_lane_allocate_failed";
+                        return false;
+                    }
+                    _tariff_epoch_requests[lane] = saturating_add(
+                        _tariff_epoch_requests[lane], export_request, sat);
+                    const int32_t row = ensure_tariff_history(
+                        source_country, NativeCountryRuntime::TAX_EXPORT);
+                    _tariff_history.requests[row] = saturating_add(
+                        _tariff_history.requests[row], export_request, sat);
+                }
+                if (intent_quantity > 0 && (import_request > 0 || export_request > 0)) {
+                    intent_source_it->second = std::max<int64_t>(0,
+                        intent_source_it->second - intent_quantity);
+                    intent_destination_it->second = std::max<int64_t>(0,
+                        intent_destination_it->second - intent_quantity);
+                    intent_country_capacity[static_cast<size_t>(source_country)] =
+                        std::max<int64_t>(0,
+                            intent_country_capacity[static_cast<size_t>(source_country)] -
+                            intent_source_work);
+                    intent_country_capacity[static_cast<size_t>(destination_country)] =
+                        std::max<int64_t>(0,
+                            intent_country_capacity[static_cast<size_t>(destination_country)] -
+                            intent_destination_work);
+                    intent_cash_it->second = std::max<int64_t>(0,
+                        intent_cash_it->second - intent_quote.importer_outlay);
+                    CommittedGameplayFact fact;
+                    fact.kind = GAMEPLAY_FACT_TARIFF_SUBSIDY_INTENT;
+                    fact.cell = candidate.destination;
+                    fact.entity_id = -1;
+                    fact.value = saturating_add(import_request, export_request, sat);
+                    fact.payload = {candidate.source, source_country,
+                                    destination_country, candidate.good};
+                    fact.flags = TRADE_LINE_FOREIGN |
+                        (intent_quote.import_transfer < 0
+                            ? TRADE_LINE_IMPORT_SUBSIDY : 0) |
+                        (intent_quote.export_transfer < 0
+                            ? TRADE_LINE_EXPORT_SUBSIDY : 0);
+                    _staging_gameplay_facts.push_back(fact);
+                    if (static_cast<int32_t>(
+                            _trade_plan.deferred_subsidy_candidates.size()) <
+                            _trade_max_candidates) {
+                        _trade_plan.deferred_subsidy_candidates.push_back(candidate);
+                    }
+                    std::vector<EventLeg> intent_legs;
+                    if (trace_detail_for_cell(candidate.source) ||
+                        trace_detail_for_cell(candidate.destination)) {
+                        intent_legs.push_back({FIELD_TRADE_BASE_VALUE,
+                            SUBJECT_MARKET, candidate.destination, candidate.good,
+                            0, intent_quote.base});
+                        intent_legs.push_back({FIELD_TRADE_IMPORT_TRANSFER,
+                            SUBJECT_MARKET, candidate.destination, candidate.good,
+                            0, intent_quote.import_transfer});
+                        intent_legs.push_back({FIELD_TRADE_EXPORT_TRANSFER,
+                            SUBJECT_MARKET, candidate.source, candidate.good,
+                            0, intent_quote.export_transfer});
+                    }
+                    trace_append(EVENT_TARIFF_SUBSIDY_INTENT,
+                        static_cast<int32_t>(Stage::TRADE_DISPATCH),
+                        candidate.destination, SUBJECT_MARKET,
+                        candidate.destination, candidate.source,
+                        candidate.destination, intent_quantity, intent_quote.base,
+                        fact.value, 0,
+                        intent_legs.empty() ? nullptr : &intent_legs,
+                        static_cast<int32_t>(fact.flags) << 8);
+                }
+            }
+            if (available_cash < unit_quote.importer_outlay) {
+                ++_trade_rejected_cash;
+                record_trade_signal_attempt(candidate.destination, candidate.good,
+                    TRADE_SIGNAL_DIAG_CASH);
+            } else {
+                ++_trade_rejected_capacity;
+                record_trade_signal_attempt(candidate.destination, candidate.good,
+                    TRADE_SIGNAL_DIAG_CAPACITY);
+            }
             continue;
         }
-        const int64_t purchase_cash = mul_div_sat(
-            clipped.quantity, clipped.source_price, GOODS_SCALE, sat);
-        if (available_cash < purchase_cash) {
-            ++_trade_rejected_cash;
-            record_trade_signal_attempt(candidate.destination, candidate.good,
-                TRADE_SIGNAL_DIAG_CASH);
-            continue;
+        clipped.quantity = best_quantity;
+        clipped.source_price = best_quote.source_price;
+        clipped.destination_price = best_quote.destination_price;
+        clipped.expected_profit = best_quote.combined_profit;
+        clipped.base_value = best_quote.base;
+        clipped.retail_value = best_quote.retail;
+        clipped.import_transfer = best_quote.import_transfer;
+        clipped.export_transfer = best_quote.export_transfer;
+        clipped.capacity_work = best_total_work;
+        clipped.flags = best_quote.foreign ? TRADE_LINE_FOREIGN : 0;
+        if (relief_route) clipped.flags |= TRADE_LINE_RELIEF;
+        if (best_quote.import_transfer < 0)
+            clipped.flags |= TRADE_LINE_IMPORT_SUBSIDY;
+        else if (best_quote.import_transfer > 0)
+            clipped.flags |= TRADE_LINE_IMPORT_TAX;
+        if (best_quote.export_transfer < 0)
+            clipped.flags |= TRADE_LINE_EXPORT_SUBSIDY;
+        else if (best_quote.export_transfer > 0)
+            clipped.flags |= TRADE_LINE_EXPORT_TAX;
+        int64_t density_profit = best_quote.combined_profit;
+        if (relief_route && density_profit <= 0) {
+            density_profit = std::max<int64_t>(1, mul_div_sat(
+                best_quote.base, std::max<int64_t>(1, relief_q16),
+                Q16_ONE, sat));
         }
-        if (country_capacity[candidate.country] < clipped.capacity_work) {
-            ++_trade_rejected_capacity;
-            record_trade_signal_attempt(candidate.destination, candidate.good,
-                TRADE_SIGNAL_DIAG_CAPACITY);
-            continue;
-        }
+        clipped.density_q16 = mul_div_sat(
+            density_profit, Q16_ONE, clipped.capacity_work, sat);
+        const int64_t purchase_cash = best_quote.importer_outlay;
         if (_market.stock[market_index] - local_stock_target - reserved_stock <
                 clipped.quantity) {
             ++_trade_rejected_stock;
@@ -1542,23 +2372,100 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                 TRADE_SIGNAL_DIAG_ORDER_CAP);
             break;
         }
-        country_capacity[candidate.country] -= clipped.capacity_work;
+        const int64_t import_subsidy = -std::min<int64_t>(
+            0, clipped.import_transfer);
+        const int64_t export_subsidy = -std::min<int64_t>(
+            0, clipped.export_transfer);
+        if (_trade_runtime_mode == 2 && (import_subsidy > 0 || export_subsidy > 0)) {
+            // prepare_fiscal_budgets already reserved the combined country
+            // escrow. Dispatch only consumes its frozen epoch remainder.
+            const size_t import_budget = static_cast<size_t>(destination_country) * 2U;
+            const size_t export_budget = static_cast<size_t>(source_country) * 2U + 1U;
+            if (import_subsidy > 0 && import_budget < _tariff_country_remaining.size()) {
+                _tariff_country_remaining[import_budget] = std::max<int64_t>(0,
+                    _tariff_country_remaining[import_budget] - import_subsidy);
+            }
+            if (export_subsidy > 0 && export_budget < _tariff_country_remaining.size()) {
+                _tariff_country_remaining[export_budget] = std::max<int64_t>(0,
+                    _tariff_country_remaining[export_budget] - export_subsidy);
+            }
+        }
+        country_capacity[static_cast<size_t>(source_country)] -=
+            best_source_work;
+        country_capacity[static_cast<size_t>(destination_country)] -=
+            best_destination_work;
+        intent_country_capacity[static_cast<size_t>(source_country)] =
+            std::max<int64_t>(0,
+                intent_country_capacity[static_cast<size_t>(source_country)] -
+                best_source_work);
+        intent_country_capacity[static_cast<size_t>(destination_country)] =
+            std::max<int64_t>(0,
+                intent_country_capacity[static_cast<size_t>(destination_country)] -
+                best_destination_work);
         source_it->second = std::max<int64_t>(0,
             source_it->second - clipped.quantity);
         destination_it->second = std::max<int64_t>(0,
             destination_it->second - clipped.quantity);
+        if (auto intent_it = intent_source_remaining.find(source_key);
+            intent_it != intent_source_remaining.end()) {
+            intent_it->second = std::max<int64_t>(0,
+                intent_it->second - clipped.quantity);
+        }
+        if (auto intent_it = intent_destination_remaining.find(destination_key);
+            intent_it != intent_destination_remaining.end()) {
+            intent_it->second = std::max<int64_t>(0,
+                intent_it->second - clipped.quantity);
+        }
         _trade_capacity_used = saturating_add(_trade_capacity_used,
             clipped.capacity_work, _saturation_count);
         ++_trade_candidates_accepted;
         destination_cash_it->second = std::max<int64_t>(
             0, destination_cash_it->second - purchase_cash);
+        if (auto intent_it = intent_destination_cash_remaining.find(
+                candidate.destination);
+            intent_it != intent_destination_cash_remaining.end()) {
+            intent_it->second = std::max<int64_t>(0,
+                intent_it->second - purchase_cash);
+        }
         if (_trade_runtime_mode == 1) {
             accepted.push_back(clipped);
             continue;
         }
-        const int64_t debited = debit_local_merchants(
-            candidate.destination, purchase_cash, CASHFLOW_MERCHANT_PROCUREMENT);
-        if (debited != purchase_cash) {
+        const int64_t import_tax = std::max<int64_t>(
+            0, clipped.import_transfer);
+        // The merchant pays the base purchase. A positive import transfer is
+        // an additional tax expense; a negative transfer is credited from the
+        // escrow before the base debit so a subsidy can unlock a cash-poor
+        // importer without creating money outside the country treasury.
+        if (import_subsidy > 0) {
+            credit_local_merchants(candidate.destination, import_subsidy,
+                CASHFLOW_IMPORT_SUBSIDY);
+        }
+        const int64_t debited_base = debit_local_merchants(
+            candidate.destination, clipped.base_value,
+            CASHFLOW_MERCHANT_PROCUREMENT);
+        const int64_t debited_tax = import_tax > 0
+            ? debit_local_merchants(candidate.destination, import_tax,
+                CASHFLOW_IMPORT_TAX) : 0;
+        const int64_t debited = saturating_add(debited_base, debited_tax,
+            _saturation_count);
+        const int64_t expected_debit = saturating_add(
+            clipped.base_value, import_tax, _saturation_count);
+        if (debited != expected_debit) {
+            if (import_subsidy > 0) {
+                const size_t budget = static_cast<size_t>(destination_country) * 2U;
+                if (budget < _tariff_country_remaining.size())
+                    _tariff_country_remaining[budget] = saturating_add(
+                        _tariff_country_remaining[budget], import_subsidy,
+                        _saturation_count);
+            }
+            if (export_subsidy > 0) {
+                const size_t budget = static_cast<size_t>(source_country) * 2U + 1U;
+                if (budget < _tariff_country_remaining.size())
+                    _tariff_country_remaining[budget] = saturating_add(
+                        _tariff_country_remaining[budget], export_subsidy,
+                        _saturation_count);
+            }
             error = "trade_cash_reservation_failed";
             return false;
         }
@@ -1582,6 +2489,155 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             _publish_accum.goods_stock, clipped.quantity, _saturation_count);
         _publish_accum.cohort_funds = saturating_sub(
             _publish_accum.cohort_funds, purchase_cash, _saturation_count);
+        if ((clipped.flags & TRADE_LINE_FOREIGN) != 0) {
+            const int32_t import_lane = tariff_epoch_lane_index(
+                candidate.destination, 0, true);
+            const int32_t export_lane = tariff_epoch_lane_index(
+                candidate.source, 1, true);
+            if (import_lane < 0 || export_lane < 0) {
+                error = "tariff_epoch_lane_allocate_failed";
+                return false;
+            }
+            for (const int32_t lane : {import_lane, export_lane}) {
+                _tariff_epoch_bases[lane] = saturating_add(
+                    _tariff_epoch_bases[lane], clipped.base_value,
+                    _saturation_count);
+                _tariff_epoch_events[lane] = saturating_add(
+                    _tariff_epoch_events[lane], 1, _saturation_count);
+            }
+            const auto record_transfer = [&](int32_t lane, int64_t transfer) {
+                if (transfer > 0) {
+                    _tariff_epoch_assessed[lane] = saturating_add(
+                        _tariff_epoch_assessed[lane], transfer,
+                        _saturation_count);
+                    _tariff_epoch_collected[lane] = saturating_add(
+                        _tariff_epoch_collected[lane], transfer,
+                        _saturation_count);
+                } else if (transfer < 0) {
+                    const int64_t subsidy = -transfer;
+                    _tariff_epoch_requests[lane] = saturating_add(
+                        _tariff_epoch_requests[lane], subsidy,
+                        _saturation_count);
+                    _tariff_epoch_reserved[lane] = saturating_add(
+                        _tariff_epoch_reserved[lane], subsidy,
+                        _saturation_count);
+                    _tariff_epoch_paid[lane] = saturating_add(
+                        _tariff_epoch_paid[lane], subsidy,
+                        _saturation_count);
+                }
+            };
+            record_transfer(import_lane, clipped.import_transfer);
+            record_transfer(export_lane, clipped.export_transfer);
+            const int32_t import_good = ensure_country_good(
+                destination_country, candidate.good);
+            const int32_t export_good = ensure_country_good(
+                source_country, candidate.good);
+            begin_country_good_batch(import_good);
+            begin_country_good_batch(export_good);
+            _country_good_trade.import_quantity[import_good] = saturating_add(
+                _country_good_trade.import_quantity[import_good], clipped.quantity,
+                _saturation_count);
+            _country_good_trade.batch_import_quantity[import_good] = saturating_add(
+                _country_good_trade.batch_import_quantity[import_good],
+                clipped.quantity, _saturation_count);
+            _country_good_trade.import_base[import_good] = saturating_add(
+                _country_good_trade.import_base[import_good], clipped.base_value,
+                _saturation_count);
+            _country_good_trade.batch_import_base[import_good] = saturating_add(
+                _country_good_trade.batch_import_base[import_good],
+                clipped.base_value, _saturation_count);
+            _country_good_trade.import_tariff[import_good] = saturating_add(
+                _country_good_trade.import_tariff[import_good],
+                clipped.import_transfer, _saturation_count);
+            _country_good_trade.batch_import_tariff[import_good] = saturating_add(
+                _country_good_trade.batch_import_tariff[import_good],
+                clipped.import_transfer, _saturation_count);
+            _country_good_trade.export_quantity[export_good] = saturating_add(
+                _country_good_trade.export_quantity[export_good], clipped.quantity,
+                _saturation_count);
+            _country_good_trade.batch_export_quantity[export_good] = saturating_add(
+                _country_good_trade.batch_export_quantity[export_good],
+                clipped.quantity, _saturation_count);
+            _country_good_trade.export_base[export_good] = saturating_add(
+                _country_good_trade.export_base[export_good], clipped.base_value,
+                _saturation_count);
+            _country_good_trade.batch_export_base[export_good] = saturating_add(
+                _country_good_trade.batch_export_base[export_good],
+                clipped.base_value, _saturation_count);
+            _country_good_trade.export_tariff[export_good] = saturating_add(
+                _country_good_trade.export_tariff[export_good],
+                clipped.export_transfer, _saturation_count);
+            _country_good_trade.batch_export_tariff[export_good] = saturating_add(
+                _country_good_trade.batch_export_tariff[export_good],
+                clipped.export_transfer, _saturation_count);
+            const int32_t importer_partner = ensure_country_partner(
+                destination_country, source_country);
+            const int32_t exporter_partner = ensure_country_partner(
+                source_country, destination_country);
+            begin_country_partner_batch(importer_partner);
+            begin_country_partner_batch(exporter_partner);
+            _country_partner_trade.import_quantity[importer_partner] = saturating_add(
+                _country_partner_trade.import_quantity[importer_partner],
+                clipped.quantity, _saturation_count);
+            _country_partner_trade.batch_import_quantity[importer_partner] =
+                saturating_add(_country_partner_trade.batch_import_quantity[
+                    importer_partner], clipped.quantity, _saturation_count);
+            _country_partner_trade.import_base[importer_partner] = saturating_add(
+                _country_partner_trade.import_base[importer_partner],
+                clipped.base_value, _saturation_count);
+            _country_partner_trade.batch_import_base[importer_partner] =
+                saturating_add(_country_partner_trade.batch_import_base[
+                    importer_partner], clipped.base_value, _saturation_count);
+            _country_partner_trade.order_count[importer_partner] = saturating_add(
+                _country_partner_trade.order_count[importer_partner], 1,
+                _saturation_count);
+            _country_partner_trade.batch_order_count[importer_partner] =
+                saturating_add(_country_partner_trade.batch_order_count[
+                    importer_partner], 1, _saturation_count);
+            _country_partner_trade.export_quantity[exporter_partner] = saturating_add(
+                _country_partner_trade.export_quantity[exporter_partner],
+                clipped.quantity, _saturation_count);
+            _country_partner_trade.batch_export_quantity[exporter_partner] =
+                saturating_add(_country_partner_trade.batch_export_quantity[
+                    exporter_partner], clipped.quantity, _saturation_count);
+            _country_partner_trade.export_base[exporter_partner] = saturating_add(
+                _country_partner_trade.export_base[exporter_partner],
+                clipped.base_value, _saturation_count);
+            _country_partner_trade.batch_export_base[exporter_partner] =
+                saturating_add(_country_partner_trade.batch_export_base[
+                    exporter_partner], clipped.base_value, _saturation_count);
+            _country_partner_trade.order_count[exporter_partner] = saturating_add(
+                _country_partner_trade.order_count[exporter_partner], 1,
+                _saturation_count);
+            _country_partner_trade.batch_order_count[exporter_partner] =
+                saturating_add(_country_partner_trade.batch_order_count[
+                    exporter_partner], 1, _saturation_count);
+            const auto update_tariff_history = [&](int32_t country, int32_t kind,
+                                                    int64_t transfer) {
+                const int32_t row = ensure_tariff_history(country, kind);
+                _tariff_history.bases[row] = saturating_add(
+                    _tariff_history.bases[row], clipped.base_value,
+                    _saturation_count);
+                if (transfer > 0) {
+                    _tariff_history.assessed[row] = saturating_add(
+                        _tariff_history.assessed[row], transfer, _saturation_count);
+                    _tariff_history.collected[row] = saturating_add(
+                        _tariff_history.collected[row], transfer, _saturation_count);
+                } else if (transfer < 0) {
+                    const int64_t subsidy = -transfer;
+                    _tariff_history.requests[row] = saturating_add(
+                        _tariff_history.requests[row], subsidy, _saturation_count);
+                    _tariff_history.reserved[row] = saturating_add(
+                        _tariff_history.reserved[row], subsidy, _saturation_count);
+                    _tariff_history.paid[row] = saturating_add(
+                        _tariff_history.paid[row], subsidy, _saturation_count);
+                }
+            };
+            update_tariff_history(destination_country,
+                NativeCountryRuntime::TAX_IMPORT, clipped.import_transfer);
+            update_tariff_history(source_country,
+                NativeCountryRuntime::TAX_EXPORT, clipped.export_transfer);
+        }
         merchant_funds_touched.push_back(candidate.destination);
         accepted.push_back(clipped);
         record_trade_signal_attempt(candidate.destination, candidate.good,
@@ -1607,6 +2663,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         if (flow >= 0) _trade_flows.period_export[flow] = saturating_add(
             _trade_flows.period_export[flow], clipped.quantity, _saturation_count);
     }
+    sort_dirty_country_trade_display_indices();
     _trade_plan.ready_candidates.clear();
     std::sort(merchant_funds_touched.begin(), merchant_funds_touched.end());
     merchant_funds_touched.erase(std::unique(merchant_funds_touched.begin(),
@@ -1620,10 +2677,20 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         return true;
     }
     auto arrival_for = [&](const TradeCandidate &candidate) {
-        const int32_t speed_factor = candidate.country >= 0 &&
-                candidate.country < static_cast<int32_t>(
-                    _epoch_country_trade_speed_factor_q16.size())
-            ? _epoch_country_trade_speed_factor_q16[candidate.country] : Q16_ONE;
+        const int32_t source_country = candidate.source_country >= 0
+            ? candidate.source_country : candidate.country;
+        const int32_t destination_country = candidate.destination_country >= 0
+            ? candidate.destination_country : candidate.country;
+        int64_t speed_factor = Q16_ONE;
+        if (source_country >= 0 && destination_country >= 0 &&
+            source_country < static_cast<int32_t>(
+                _epoch_country_trade_speed_factor_q16.size()) &&
+            destination_country < static_cast<int32_t>(
+                _epoch_country_trade_speed_factor_q16.size())) {
+            speed_factor = (static_cast<int64_t>(
+                _epoch_country_trade_speed_factor_q16[source_country]) +
+                _epoch_country_trade_speed_factor_q16[destination_country]) / 2;
+        }
         const int64_t effective_speed = std::max<int64_t>(
             1, mul_div_sat(_trade_speed_cost_per_day, speed_factor,
                            Q16_ONE, _saturation_count));
@@ -1656,22 +2723,58 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         _trade_orders.sources.push_back(first.source);
         _trade_orders.destinations.push_back(first.destination);
         _trade_orders.countries.push_back(first.country);
+        _trade_orders.source_country_handles.push_back(
+            first.source_country_handle);
+        _trade_orders.destination_country_handles.push_back(
+            first.destination_country_handle);
+        _trade_orders.source_country_slots.push_back(first.source_country);
+        _trade_orders.destination_country_slots.push_back(
+            first.destination_country);
         _trade_orders.departure_days.push_back(_sample_day);
         _trade_orders.arrival_days.push_back(arrival);
         _trade_orders.states.push_back(TradeOrderStore::IN_TRANSIT);
         _trade_orders.cargo_delivered.push_back(0);
         int64_t cash = 0;
         int64_t capacity = 0;
+        int32_t trade_event_flags = 0;
+        std::vector<EventLeg> trade_legs;
+        trade_legs.reserve((cursor - begin) * 5U);
         for (size_t i = begin; i < cursor; ++i) {
             const TradeCandidate &candidate = accepted[i];
             int64_t sat = 0;
-            const int64_t line_cash = mul_div_sat(
-                candidate.quantity, candidate.source_price, GOODS_SCALE, sat);
+            const int64_t line_cash = saturating_sub(
+                candidate.base_value, candidate.export_transfer, sat);
             cash = saturating_add(cash, line_cash, _saturation_count);
             capacity = saturating_add(capacity, candidate.capacity_work, _saturation_count);
             _trade_orders.line_goods.push_back(candidate.good);
             _trade_orders.line_quantities.push_back(candidate.quantity);
             _trade_orders.line_unit_prices.push_back(candidate.source_price);
+            _trade_orders.line_destination_prices.push_back(
+                candidate.destination_price);
+            _trade_orders.line_base_values.push_back(candidate.base_value);
+            _trade_orders.line_retail_values.push_back(candidate.retail_value);
+            _trade_orders.line_import_transfers.push_back(
+                candidate.import_transfer);
+            _trade_orders.line_export_transfers.push_back(
+                candidate.export_transfer);
+            _trade_orders.line_flags.push_back(candidate.flags);
+            trade_event_flags |= static_cast<int32_t>(candidate.flags) << 8;
+            const int64_t order_id = _trade_orders.ids.back();
+            trade_legs.push_back({FIELD_TRADE_QUANTITY,
+                SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
+                candidate.quantity});
+            trade_legs.push_back({FIELD_TRADE_BASE_VALUE,
+                SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
+                candidate.base_value});
+            trade_legs.push_back({FIELD_TRADE_RETAIL_VALUE,
+                SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
+                candidate.retail_value});
+            trade_legs.push_back({FIELD_TRADE_IMPORT_TRANSFER,
+                SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
+                candidate.import_transfer});
+            trade_legs.push_back({FIELD_TRADE_EXPORT_TRANSFER,
+                SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
+                candidate.export_transfer});
         }
         _trade_orders.cash_escrow.push_back(cash);
         _trade_orders.capacity_work.push_back(capacity);
@@ -1686,11 +2789,14 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         }
         _trade_orders.seller_offsets.push_back(
             static_cast<int32_t>(_trade_orders.seller_handles.size()));
+        const bool trace_trade_detail = trace_detail_for_cell(first.source) ||
+            trace_detail_for_cell(first.destination);
         trace_append(EVENT_TRADE_DISPATCHED,
-            static_cast<int32_t>(Stage::TRADE_DISPATCH), first.source,
+            static_cast<int32_t>(Stage::TRADE_DISPATCH), first.destination,
             SUBJECT_TRADE_ORDER, _trade_orders.ids.back(), first.source,
             first.destination, static_cast<int64_t>(cursor - begin), cash,
-            capacity, arrival, nullptr);
+            capacity, arrival, trace_trade_detail ? &trade_legs : nullptr,
+            trade_event_flags);
         ++_trade_orders_dispatched;
         _trade_orders.arrival_buckets_dirty = true;
     }

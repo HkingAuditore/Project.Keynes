@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"timber"
+discovery_technology_tags = PackedStringArray("tech.deadwood_collection")
 display_name = "木材"
 reserve_component = &"cell.res_timber_reserve"
 habitat_mode = "land"

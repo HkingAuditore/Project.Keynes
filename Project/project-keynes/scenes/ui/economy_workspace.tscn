@@ -105,6 +105,45 @@ focus_mode = 0
 text = "仅看覆盖项"
 theme_type_variation = &"PKTabButton"
 
+[node name="TradeViews" type="HBoxContainer" parent="Column/Tools"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Goods" type="Button" parent="Column/Tools/TradeViews"]
+custom_minimum_size = Vector2(72, 28)
+layout_mode = 2
+toggle_mode = true
+text = "商品"
+theme_type_variation = &"PKTabButton"
+
+[node name="Partners" type="Button" parent="Column/Tools/TradeViews"]
+custom_minimum_size = Vector2(72, 28)
+layout_mode = 2
+toggle_mode = true
+text = "伙伴"
+theme_type_variation = &"PKTabButton"
+
+[node name="TradePrev" type="Button" parent="Column/Tools"]
+visible = false
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+focus_mode = 0
+
+[node name="TradePage" type="Label" parent="Column/Tools"]
+visible = false
+custom_minimum_size = Vector2(78, 28)
+layout_mode = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="TradeNext" type="Button" parent="Column/Tools"]
+visible = false
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+focus_mode = 0
+
 [node name="StatusLabel" type="Label" parent="Column"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -127,8 +166,8 @@ theme_override_constants/v_separation = 8
 
 [node name="EmptyLabel" type="Label" parent="Column/Scroll/Flow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(560, 0)
 layout_mode = 2
+size_flags_horizontal = 3
 text = "没有符合条件的项目"
 horizontal_alignment = 1
 theme_type_variation = &"PKMutedLabel"

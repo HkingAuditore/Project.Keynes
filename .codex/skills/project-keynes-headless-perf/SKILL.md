@@ -28,6 +28,14 @@ without `-UseSavedSetup`.
 
 Use `-ClosingAuditMode FULL|PROBE|INCREMENTAL` for an explicit audit A/B.
 Use `-WorkerMode ON|OFF` for deterministic worker/scalar A/B.
+The runner uses the formal `NewGameConfig` multi-country start by default. Use
+`-ForeignCount`, `-ImportTariffRate`, and `-ExportTariffRate` for a comparable
+cross-country tariff A/B. `-SyntheticTestEconomy` is an explicit legacy/synthetic
+benchmark mode and must not be reported as formal gameplay-start evidence.
+Use `-TradeScenario` when the benchmark must exercise actual foreign trade. It
+applies a deterministic cold-path supply/demand perturbation between two formally
+started countries, then requires route search, dispatched orders, and partner
+aggregates before accepting the sample.
 The runner restores the loaded resource after world generation and does not edit the `.tres`.
 
 The wrapper must fail unless:
@@ -36,6 +44,8 @@ The wrapper must fail unless:
 - The result contains a real `tmp/perf_record_*.csv`.
 - The CSV has exactly `Days` data rows.
 - Required fixed columns such as `tick_idx`, `speed_multiplier`, and `t_sus_ms` exist.
+- The economy reports `economy_configured=true` and a positive opening population.
+- Formal mode reports `formal_start=true` and at least `ForeignCount + 1` countries.
 - The headless result reports `ledger_failures=0` and `fatal=false`.
 
 Godot's dummy renderer may print RID/resource cleanup warnings after a successful headless run.
@@ -53,7 +63,9 @@ mapping or exported release build was selected explicitly.
 
 Use headless CSV for SUS, native C++ passes, economy jobs, continuation slices, fallback paths, and
 CPU breakdown comparisons. Report row count, map size, speed, seed, total run time, barrier pulses,
-ledger failures, fatal state, and CSV path.
+ledger failures, fatal state, formal/synthetic start mode, country count, opening population, trade
+orders, route expansions, tariff lanes, country-good/country-partner aggregate counts, economy
+memory, and CSV path.
 
 Do not compare headless `fps`, GPU behavior, `t_render_ms`, or UI timings directly with graphical
 player recordings. Run the graphical player scene when the question concerns GPU upload, rendering,

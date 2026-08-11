@@ -14,6 +14,8 @@ void NativeEconomyRuntime::PopulationStore::clear(int32_t cells) {
     page_cell.clear();
     free_pages.clear();
     active.clear();
+    reserved.clear();
+    reservation_owner.clear();
     signature_id.clear();
     generation.clear();
     population.clear();
@@ -62,12 +64,19 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_page(int32_t cell) {
         page_next[page] = -1;
         const int32_t base = page * COHORT_PAGE_SIZE;
         std::fill(active.begin() + base, active.begin() + base + COHORT_PAGE_SIZE, uint8_t{0});
+        std::fill(reserved.begin() + base,
+                  reserved.begin() + base + COHORT_PAGE_SIZE, uint8_t{0});
+        std::fill(reservation_owner.begin() + base,
+                  reservation_owner.begin() + base + COHORT_PAGE_SIZE,
+                  uint64_t{0});
     } else {
         page = static_cast<int32_t>(page_next.size());
         page_next.push_back(-1);
         page_cell.push_back(cell);
         const size_t next_size = static_cast<size_t>(page + 1) * COHORT_PAGE_SIZE;
         active.resize(next_size, 0);
+        reserved.resize(next_size, 0);
+        reservation_owner.resize(next_size, 0);
         signature_id.resize(next_size, 0);
         generation.resize(next_size, 1);
         population.resize(next_size, 0);
@@ -121,7 +130,7 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_slot(int32_t cell,
         const int32_t base = p * COHORT_PAGE_SIZE;
         for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
             const int32_t slot = base + lane;
-            if (active[slot] != 0) continue;
+            if (active[slot] != 0 || reserved[slot] != 0) continue;
             active[slot] = 1;
             signature_id[slot] = signature;
             population[slot] = 0;
@@ -156,6 +165,77 @@ int32_t NativeEconomyRuntime::PopulationStore::allocate_slot(int32_t cell,
     employee_employed[slot] = 0;
     ++active_count;
     return slot;
+}
+
+int32_t NativeEconomyRuntime::PopulationStore::reserve_slot(
+        int32_t cell, uint32_t signature, uint64_t owner) {
+    if (cell < 0 || cell >= static_cast<int32_t>(cell_first_page.size()) ||
+        owner == 0) return -1;
+    if (cell_first_page[cell] < 0) allocate_page(cell);
+    for (int32_t p = cell_first_page[cell]; p >= 0; p = page_next[p]) {
+        const int32_t base = p * COHORT_PAGE_SIZE;
+        for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
+            const int32_t slot = base + lane;
+            if (active[slot] == 0 && reserved[slot] != 0 &&
+                reservation_owner[slot] == owner &&
+                signature_id[slot] == signature) return slot;
+        }
+    }
+    for (int32_t p = cell_first_page[cell]; p >= 0; p = page_next[p]) {
+        const int32_t base = p * COHORT_PAGE_SIZE;
+        for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
+            const int32_t slot = base + lane;
+            if (active[slot] != 0 || reserved[slot] != 0) continue;
+            reserved[slot] = 1;
+            reservation_owner[slot] = owner;
+            signature_id[slot] = signature;
+            return slot;
+        }
+    }
+    const int32_t page = allocate_page(cell);
+    const int32_t slot = page * COHORT_PAGE_SIZE;
+    reserved[slot] = 1;
+    reservation_owner[slot] = owner;
+    signature_id[slot] = signature;
+    return slot;
+}
+
+int32_t NativeEconomyRuntime::PopulationStore::claim_reserved_slot(
+        int32_t slot, int32_t cell, uint32_t signature, uint64_t owner) {
+    const int32_t existing = find_signature(cell, signature);
+    if (existing >= 0) {
+        release_reserved_slot(slot, owner);
+        return existing;
+    }
+    if (slot < 0 || slot >= static_cast<int32_t>(active.size()) ||
+        active[slot] != 0 || reserved[slot] == 0 ||
+        reservation_owner[slot] != owner || signature_id[slot] != signature ||
+        page_cell[slot / COHORT_PAGE_SIZE] != cell) return -1;
+    reserved[slot] = 0;
+    reservation_owner[slot] = 0;
+    active[slot] = 1;
+    population[slot] = 0;
+    funds[slot] = 0;
+    epoch_income[slot] = 0;
+    epoch_expense[slot] = 0;
+    epoch_in_kind_income[slot] = 0;
+    income_ema[slot] = 0;
+    reset_satisfaction_slot(slot);
+    flags[slot] = 0;
+    demography_residual[slot] = 0;
+    owner_employed[slot] = 0;
+    employee_employed[slot] = 0;
+    ++active_count;
+    return slot;
+}
+
+void NativeEconomyRuntime::PopulationStore::release_reserved_slot(
+        int32_t slot, uint64_t owner) {
+    if (slot < 0 || slot >= static_cast<int32_t>(reserved.size()) ||
+        active[slot] != 0 || reserved[slot] == 0 ||
+        reservation_owner[slot] != owner) return;
+    reserved[slot] = 0;
+    reservation_owner[slot] = 0;
 }
 
 bool NativeEconomyRuntime::PopulationStore::valid_handle(uint64_t handle,
@@ -200,7 +280,7 @@ void NativeEconomyRuntime::PopulationStore::reclaim_empty_pages(int32_t cell) {
         const int32_t base = page * COHORT_PAGE_SIZE;
         bool any = false;
         for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane)
-            any |= active[base + lane] != 0;
+            any |= active[base + lane] != 0 || reserved[base + lane] != 0;
         if (!any) {
             if (previous < 0) cell_first_page[cell] = next;
             else page_next[previous] = next;

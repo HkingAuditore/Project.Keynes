@@ -22,6 +22,7 @@ $required = @(
     "gdext\src\economy_runtime.cpp",
     "gdext\src\modifier_runtime.cpp",
     "Project\project-keynes\scripts\economy\technology_catalog.gd",
+    "Project\project-keynes\data\technology\technology_network.json",
     "Project\project-keynes\scripts\ui\components\technology_workspace.gd",
     "Project\project-keynes\tests\technology_catalog_test.gd",
     "docs\cpp-dots-runtime\technology-tree-runtime.md"
@@ -58,7 +59,10 @@ if (-not [string]::IsNullOrWhiteSpace($GodotExe)) {
     $projectRoot = Join-Path $RepoRoot "Project\project-keynes"
     $tests = @(
         "technology_catalog_test.gd",
+        "technology_network_design_test.gd",
+        "technology_content_binding_audit_test.gd",
         "technology_research_runtime_test.gd",
+        "technology_breakthrough_trigger_test.gd",
         "technology_procurement_runtime_test.gd",
         "technology_modifier_activation_test.gd",
         "technology_workspace_smoke_test.gd"

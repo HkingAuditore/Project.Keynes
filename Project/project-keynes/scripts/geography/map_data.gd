@@ -92,6 +92,9 @@ var river_discharge_30d_arr:   PackedFloat32Array = PackedFloat32Array()
 var river_storage_arr:         PackedFloat32Array = PackedFloat32Array()
 var groundwater_storage_arr:   PackedFloat32Array = PackedFloat32Array()
 var surface_runoff_arr:        PackedFloat32Array = PackedFloat32Array()
+## 运河是持久格边设施；低六位方向与 neighbor_indices 的六方向一致。
+var canal_edge_mask_arr:       PackedByteArray    = PackedByteArray()
+var canal_water_arr:           PackedFloat32Array = PackedFloat32Array()
 
 # ─── Natural resources：per-cell 资源储量（纯运行期 SoA，无 HexCell 镜像）──
 # 初值由 MapGenerator._bootstrap_natural_resource_deposits 在 init_soa_from_bake
@@ -263,6 +266,9 @@ var country_slot_arr:       PackedInt32Array = PackedInt32Array()
 #            与迷雾层消费。纯派生量，不进 component schema、不存档。
 #            0 = 未探索，128 ≈ 已探索未可见，255 = 完全可见。
 var visible_arr:            PackedByteArray = PackedByteArray()
+## Monotonic transient revision for player-visible route quote invalidation.
+## It is intentionally excluded from world save authority and rebuilt by VisionSolver.
+var vision_revision: int = 0
 var explored_arr:           PackedByteArray = PackedByteArray()
 var fog_k_arr:              PackedByteArray = PackedByteArray()
 # 上面三个数组是否已被 VisionSolver 解算过。数组大小不能当这个判据用——
@@ -650,6 +656,8 @@ func _alloc_soa(n: int) -> void:
 	river_storage_arr.resize(n)
 	groundwater_storage_arr.resize(n)
 	surface_runoff_arr.resize(n)
+	canal_edge_mask_arr.resize(n)
+	canal_water_arr.resize(n)
 	# Natural resources：per-cell 资源储量字段
 	res_timber_reserve_arr.resize(n)
 	res_stone_reserve_arr.resize(n)
@@ -835,6 +843,8 @@ func rebuild_soa_from_cells() -> void:
 		river_storage_arr[i] = 0.0
 		groundwater_storage_arr[i] = 0.0
 		surface_runoff_arr[i] = 0.0
+		canal_edge_mask_arr[i] = 0
+		canal_water_arr[i] = 0.0
 		# Phase 3a Step 2.1.a：Pass-A SoA 化新增 2 个字段镜像
 		ema_initialized_arr[i] = (1 if c._ema_initialized else 0)
 		temp_season_offset_arr[i] = c.temp_season_offset

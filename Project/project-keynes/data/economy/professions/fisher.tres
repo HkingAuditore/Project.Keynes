@@ -5,4 +5,4 @@ script = ExtResource("1")
 id = &"fisher"
 display_name = "渔民"
 default_consumption_plan_id = &"agrarian_household"
-technology_tags = PackedStringArray("tech.hunting")
+technology_tags = PackedStringArray()

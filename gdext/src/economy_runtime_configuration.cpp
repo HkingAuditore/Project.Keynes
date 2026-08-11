@@ -103,6 +103,45 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         out["reason"] = "modifier_city_stat_missing";
         return out;
     }
+    _country_family_output_stat_ids.clear();
+    _country_family_output_stat_ids.reserve(_building_upgrade_family_ids.size());
+    for (const std::string &family_id : _building_upgrade_family_ids) {
+        const std::string key = "country.output.family." + family_id + "_factor";
+        _country_family_output_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(key) : -1);
+    }
+    _country_building_output_stat_ids.clear();
+    _country_building_output_stat_ids.reserve(_building_type_ids.size());
+    for (const std::string &building_id : _building_type_ids) {
+        const std::string key =
+            "country.output.building." + building_id + "_factor";
+        _country_building_output_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(key) : -1);
+    }
+    static const char *CLIMATE_LOSS_STATS[4] = {
+        "country.climate.drought_loss_factor",
+        "country.climate.flood_loss_factor",
+        "country.climate.cold_stress_factor",
+        "country.climate.heat_stress_factor",
+    };
+    for (size_t i = 0; i < _country_climate_loss_stat_ids.size(); ++i)
+        _country_climate_loss_stat_ids[i] = _modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(CLIMATE_LOSS_STATS[i]) : -1;
+    if (_modifier_runtime != nullptr && (std::any_of(
+            _country_family_output_stat_ids.begin(),
+            _country_family_output_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_building_output_stat_ids.begin(),
+            _country_building_output_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_climate_loss_stat_ids.begin(),
+            _country_climate_loss_stat_ids.end(),
+            [](int32_t id) { return id < 0; }))) {
+        reset("modifier_technology_route_stat_missing");
+        out["ok"] = false;
+        out["reason"] = "modifier_technology_route_stat_missing";
+        return out;
+    }
     _epoch_city_factor_valid = false;
     _epoch_city_factor_stat_version = 0;
     _city_factor_dirty_cells.clear();
@@ -119,6 +158,34 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_diagnostics.clear();
     _population.clear(cell_count);
     _families.clear();
+    _family_expeditions.clear();
+    _family_expedition_route_cells.clear();
+    _family_expedition_route_costs.clear();
+    _family_expedition_payloads.clear();
+    _family_expedition_person_handles.clear();
+    _family_expedition_target_index.clear();
+    _family_expedition_due_heap.clear();
+    _colonization_receipts.clear();
+    _next_colonization_receipt_id = 1;
+    _next_family_expedition_stable_id = 1;
+    _colonization_quote_cache.clear();
+    _colonization_quote_index.clear();
+    _colonization_quote_route_cells.clear();
+    _colonization_quote_route_costs.clear();
+    _canal_quotes.clear();
+    _canal_quote_index.clear();
+    _canal_projects.clear();
+    _canal_project_index.clear();
+    _canal_receipts.clear();
+    _next_canal_quote_token = 1;
+    _next_canal_project_id = 1;
+    _next_canal_receipt_id = 1;
+    _colonization_distance.clear();
+    _colonization_distance_stamp.clear();
+    _colonization_parent.clear();
+    _colonization_parent_stamp.clear();
+    _colonization_route_heap.clear();
+    _colonization_search_stamp = 0;
     _family_influences.clear();
     _persons.clear();
     _family_memberships.clear();
@@ -949,7 +1016,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
 bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
                                                 std::string &error) const {
     if (cmd.opcode < COMMAND_TRANSFER_TO_COHORT ||
-        cmd.opcode > COMMAND_FAMILY_POPULATION_REWARD ||
+        cmd.opcode > COMMAND_SETTLE_FAMILY_EXPEDITION ||
         cmd.effective_day < 0 || cmd.sequence < 0 ||
         (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION)) {
         error = "command_entry_invalid";
@@ -957,7 +1024,9 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
     }
     const bool family_reward = cmd.opcode == COMMAND_FAMILY_FREE_BUILDING ||
         cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
-    if (!family_reward && cmd.opcode != COMMAND_ADD_STOCK &&
+    const bool expedition_settle =
+        cmd.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION;
+    if (!family_reward && !expedition_settle && cmd.opcode != COMMAND_ADD_STOCK &&
         cmd.opcode != COMMAND_REMOVE_STOCK &&
         cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
         cmd.opcode != COMMAND_MARKET_GOOD_TO_COUNTRY) {
@@ -1006,6 +1075,16 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
             (free_building && (cmd.i32_1 < 0 || cmd.i32_1 >=
                 static_cast<int32_t>(_building_types.size())))) {
             error = "command_family_reward_target_invalid";
+            return false;
+        }
+    }
+    if (expedition_settle) {
+        int32_t expedition = -1;
+        if (!_family_expeditions.valid_handle(cmd.target_handle, expedition) ||
+            cmd.i32_0 != _family_expeditions.target_cell[expedition] ||
+            cmd.i64_1 != static_cast<int64_t>(
+                _family_expeditions.country_handle[expedition])) {
+            error = "colonization_settlement_target_invalid";
             return false;
         }
     }
@@ -1074,13 +1153,31 @@ bool NativeEconomyRuntime::submit_effect_commands_pod(
         error = "effect_economy_queue_capacity_exceeded";
         return false;
     }
+    const bool immediate_family_settlement = !_epoch_active &&
+        staged.size() == 1 &&
+        staged.front().opcode == COMMAND_SETTLE_FAMILY_EXPEDITION &&
+        staged.front().effective_day <= _current_day;
     for (Command &command : staged) {
         command.submit_order = _next_submit_order++;
         _effect_idempotency_requests.emplace(command.effect_idempotency_key,
             command.effect_request_id);
-        _effect_command_results.emplace(command.effect_request_id,
-            EffectCommandResult{});
-        _pending_commands.push_back(command);
+        EffectCommandResult &result = _effect_command_results[
+            command.effect_request_id];
+        if (immediate_family_settlement) {
+            std::string commit_error;
+            const bool applied = apply_settle_family_expedition(
+                command, commit_error);
+            const bool finalized = applied &&
+                finalize_immediate_family_expedition_settlement(
+                    command.i32_0, commit_error);
+            result.complete = 1;
+            result.ok = finalized ? 1 : 0;
+            result.reason = finalized ? std::string{} :
+                (commit_error.empty()
+                    ? "effect_economy_commit_failed" : commit_error);
+        } else {
+            _pending_commands.push_back(command);
+        }
     }
     _next_effect_request_id += static_cast<int64_t>(staged.size());
     return true;

@@ -60,9 +60,18 @@ func _run() -> void:
 	_expect("threshold emits one effect", int(effects.get("count", 0)) == 1)
 	var saved: PackedByteArray = ext.capture_trigger_state()
 	_expect("PKTR captures", not saved.is_empty())
+	_expect("PKTR v4 header", saved.size() >= 8 and saved.decode_s32(4) == 4)
 	var restored: Object = ClassDB.instantiate("DCWorldExt")
 	_expect("restore configures", bool(restored.configure_triggers(catalog).get("ok", false)))
 	_expect("PKTR restores", bool(restored.restore_trigger_state(saved).get("ok", false)))
+	var legacy := saved.duplicate()
+	legacy[4] = 2
+	legacy[5] = 0
+	legacy[6] = 0
+	legacy[7] = 0
+	_expect("legacy PKTR reports catalog mismatch",
+		String(restored.restore_trigger_state(legacy).get("reason", "")) ==
+			"catalog_hash_mismatch")
 	_finish()
 
 func _finish() -> void:

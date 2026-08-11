@@ -108,9 +108,83 @@ Dictionary DCWorldExt::run_native_world_generate_full_pass(int seed,
 
 Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &knobs) {
     using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
     using godot::PackedInt32Array;
     Dictionary out;
     out["ok"] = false;
+    const String mode = knobs.get("mode", String("static"));
+    if (mode == String("resources")) {
+        const int n = int(knobs.get("cell_count", 0));
+        const PackedInt32Array old_offsets = knobs.get(
+            "cell_signal_offsets", PackedInt32Array());
+        const PackedInt32Array old_ids = knobs.get(
+            "cell_signal_ids", PackedInt32Array());
+        const PackedInt32Array old_values = knobs.get(
+            "cell_signal_values", PackedInt32Array());
+        const PackedInt32Array resource_signal_ids = knobs.get(
+            "resource_signal_ids", PackedInt32Array());
+        const Array reserve_columns = knobs.get("resource_reserves", Array());
+        if (n <= 0 || old_offsets.size() != n + 1 || old_ids.size() != old_values.size() ||
+            old_offsets[0] != 0 || old_offsets[n] != old_ids.size() ||
+            resource_signal_ids.is_empty() ||
+            reserve_columns.size() != resource_signal_ids.size()) {
+            out["reason"] = String("research_resource_signal_input_shape_invalid");
+            return out;
+        }
+        std::vector<PackedFloat32Array> reserves;
+        reserves.reserve(size_t(reserve_columns.size()));
+        for (int resource = 0; resource < reserve_columns.size(); ++resource) {
+            const PackedFloat32Array column = reserve_columns[resource];
+            if (column.size() != n) {
+                out["reason"] = String("research_resource_signal_reserve_shape_invalid");
+                return out;
+            }
+            reserves.push_back(column);
+        }
+        PackedInt32Array offsets;
+        PackedInt32Array ids;
+        PackedInt32Array values;
+        offsets.resize(n + 1);
+        int32_t *offset = offsets.ptrw();
+        std::vector<std::pair<int32_t, int32_t>> scratch;
+        scratch.reserve(size_t(resource_signal_ids.size()) + 16U);
+        int32_t cursor = 0;
+        for (int cell = 0; cell < n; ++cell) {
+            offset[cell] = cursor;
+            scratch.clear();
+            const int32_t begin = old_offsets[cell];
+            const int32_t end = old_offsets[cell + 1];
+            if (begin < 0 || end < begin || end > old_ids.size()) {
+                out["reason"] = String("research_resource_signal_csr_invalid");
+                return out;
+            }
+            for (int32_t edge = begin; edge < end; ++edge)
+                scratch.emplace_back(old_ids[edge], old_values[edge]);
+            for (int resource = 0; resource < resource_signal_ids.size(); ++resource) {
+                if (reserves[size_t(resource)][cell] > 0.0001f)
+                    scratch.emplace_back(resource_signal_ids[resource], 1);
+            }
+            std::sort(scratch.begin(), scratch.end(),
+                      [](const auto &a, const auto &b) { return a.first < b.first; });
+            for (const auto &entry : scratch) {
+                if (entry.first < 0) continue;
+                if (!ids.is_empty() && cursor > offset[cell] && ids[cursor - 1] == entry.first) {
+                    values.set(cursor - 1, std::max(values[cursor - 1], entry.second));
+                    continue;
+                }
+                ids.push_back(entry.first);
+                values.push_back(entry.second);
+                ++cursor;
+            }
+        }
+        offset[n] = cursor;
+        out["ok"] = true;
+        out["path"] = String("gdext_resource_merge");
+        out["cell_signal_offsets"] = offsets;
+        out["cell_signal_ids"] = ids;
+        out["cell_signal_values"] = values;
+        return out;
+    }
     const int width = int(knobs.get("width", 0));
     const int height = int(knobs.get("height", 0));
     const int seed = int(knobs.get("seed", 0));
@@ -125,19 +199,25 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
     const PackedByteArray rivers = knobs.get("has_river", PackedByteArray());
     const PackedByteArray volcanoes = knobs.get("has_volcano", PackedByteArray());
     const PackedByteArray water = knobs.get("is_water", PackedByteArray());
+    const PackedFloat32Array temperature = knobs.get("temperature", PackedFloat32Array());
+    const PackedFloat32Array moisture = knobs.get("moisture", PackedFloat32Array());
+    const PackedFloat32Array elevation = knobs.get("elevation", PackedFloat32Array());
     const PackedInt32Array signal_ids = knobs.get("signal_ids", PackedInt32Array());
     if (vegetation.size() != n || landform.size() != n || rivers.size() != n ||
-        volcanoes.size() != n || water.size() != n || signal_ids.size() != 10) {
+        volcanoes.size() != n || water.size() != n || temperature.size() != n ||
+        moisture.size() != n || elevation.size() != n || signal_ids.size() != 40) {
         out["reason"] = String("research_signal_generation_input_shape_invalid");
         return out;
     }
-    // signal_ids follows the stable catalog order for the ten static signals:
-    // maize,wheat,potato,horse,freshwater,river_valley,volcanic,high_plateau,coastal_estuary,copper.
+    // Stable semantic order: nine biota, freshwater, then ten landforms.
     const uint8_t *veg = vegetation.ptr();
     const uint8_t *lf = landform.ptr();
     const uint8_t *riv = rivers.ptr();
     const uint8_t *volc = volcanoes.ptr();
     const uint8_t *is_water = water.ptr();
+    const float *temp = temperature.ptr();
+    const float *moist = moisture.ptr();
+    const float *elev = elevation.ptr();
     const int32_t *sid = signal_ids.ptr();
     PackedByteArray realms;
     realms.resize(n);
@@ -149,7 +229,7 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
     PackedInt32Array values;
     ids.resize(0); values.resize(0);
     std::vector<int32_t> scratch;
-    scratch.reserve(6);
+    scratch.reserve(40);
     auto realm_for = [&](int cell) -> uint8_t {
         if (is_water[cell] != 0) return 0;
         const int row = cell / width;
@@ -182,15 +262,68 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
         realm[cell] = r;
         scratch.clear();
         if (is_water[cell] == 0) {
-            const bool grass = veg[cell] == 9 || veg[cell] == 10 || veg[cell] == 13 || veg[cell] == 26;
+            const bool grass = veg[cell] == 4 || veg[cell] == 9 || veg[cell] == 10 ||
+                               veg[cell] == 13;
+            const bool forest = veg[cell] == 5 || veg[cell] == 7 || veg[cell] == 8 ||
+                                veg[cell] == 12 || veg[cell] == 14 || veg[cell] == 15 ||
+                                veg[cell] == 24 || veg[cell] == 25;
+            const bool tropical_forest = veg[cell] == 12 || veg[cell] == 14 ||
+                                         veg[cell] == 15 || veg[cell] == 24 ||
+                                         veg[cell] == 25;
+            const bool wetland = veg[cell] == 19 || veg[cell] == 20 ||
+                                 veg[cell] == 21 || veg[cell] == 27 || lf[cell] == 9;
+            const bool arid = veg[cell] == 16 || veg[cell] == 17 ||
+                              lf[cell] == 10 || lf[cell] == 11;
+            const bool coast = has_water_neighbor(cell);
             if (r == 1 && grass) scratch.push_back(sid[0]);
             if (r == 2 && (veg[cell] == 9 || veg[cell] == 10)) scratch.push_back(sid[1]);
-            if (r == 1 && lf[cell] == 13 && (veg[cell] == 9 || veg[cell] == 10 || veg[cell] == 3)) scratch.push_back(sid[2]);
-            if (r == 3 && (veg[cell] == 9 || veg[cell] == 10)) scratch.push_back(sid[3]);
-            if (riv[cell] != 0) { scratch.push_back(sid[4]); scratch.push_back(sid[5]); }
-            if (volc[cell] != 0 || lf[cell] == 12) scratch.push_back(sid[6]);
-            if (lf[cell] == 13) scratch.push_back(sid[7]);
-            if (riv[cell] != 0 && has_water_neighbor(cell)) scratch.push_back(sid[8]);
+            if (r == 5 && (wetland || riv[cell] != 0)) scratch.push_back(sid[2]);
+            if (r == 1 && lf[cell] == 13 && (grass || veg[cell] == 3)) scratch.push_back(sid[3]);
+            if (r == 3 && (veg[cell] == 9 || veg[cell] == 10)) scratch.push_back(sid[4]);
+            if ((r == 1 || r == 4 || r == 5) && (grass || tropical_forest)) scratch.push_back(sid[5]);
+            if (r == 2 && (grass || veg[cell] == 11)) scratch.push_back(sid[6]);
+            if ((r == 1 || r == 4 || r == 5) && tropical_forest) scratch.push_back(sid[7]);
+            if ((r == 1 || r == 4 || r == 5) && (veg[cell] == 14 || veg[cell] == 24))
+                scratch.push_back(sid[8]);
+            if (riv[cell] != 0 || wetland) scratch.push_back(sid[9]);
+            if (riv[cell] != 0) scratch.push_back(sid[10]);
+            if (volc[cell] != 0 || lf[cell] == 12) scratch.push_back(sid[11]);
+            if (lf[cell] == 13) scratch.push_back(sid[12]);
+            if (riv[cell] != 0 && coast) scratch.push_back(sid[13]);
+            if (coast) scratch.push_back(sid[14]);
+            if (arid) scratch.push_back(sid[15]);
+            if (wetland) scratch.push_back(sid[16]);
+            if (forest) scratch.push_back(sid[17]);
+            if (grass) scratch.push_back(sid[18]);
+            if (lf[cell] == 7 || lf[cell] == 8 || lf[cell] == 13)
+                scratch.push_back(sid[19]);
+            const bool cold = temp[cell] <= 0.34f;
+            const bool warm = temp[cell] >= 0.62f;
+            const bool moist_land = moist[cell] >= 0.58f;
+            const bool dry_land = moist[cell] <= 0.38f;
+            const bool highland = elev[cell] >= 0.62f ||
+                                  lf[cell] == 7 || lf[cell] == 8 || lf[cell] == 13;
+            if (grass && !warm) scratch.push_back(sid[20]);                 // sheep
+            if ((dry_land || highland) && !tropical_forest) scratch.push_back(sid[21]); // goat
+            if (grass && moist_land && !cold) scratch.push_back(sid[22]);  // cattle
+            if (forest && moist_land && !cold) scratch.push_back(sid[23]); // pig
+            if (arid && warm) scratch.push_back(sid[24]);                  // camel
+            if (cold && highland && grass) scratch.push_back(sid[25]);     // yak
+            if (warm && forest && moist_land) scratch.push_back(sid[26]);  // silkworm
+            if (wetland) scratch.push_back(sid[27]);                       // reed
+            if (forest && !arid) scratch.push_back(sid[28]);               // bast fiber
+            if (warm && (grass || forest)) scratch.push_back(sid[29]);     // dye plants
+            if (riv[cell] != 0 && coast) scratch.push_back(sid[30]);       // delta
+            if (riv[cell] != 0 && moist_land && elev[cell] <= 0.48f)
+                scratch.push_back(sid[31]);                                // floodplain
+            if (warm && moist_land) scratch.push_back(sid[32]);            // monsoon basin
+            if (grass && !arid && moist[cell] <= 0.56f) scratch.push_back(sid[33]);
+            if (grass && dry_land) scratch.push_back(sid[34]);             // steppe
+            if (cold && !forest) scratch.push_back(sid[35]);               // tundra
+            if (cold && forest) scratch.push_back(sid[36]);                 // conifer forest
+            if (arid && (riv[cell] != 0 || wetland)) scratch.push_back(sid[37]);
+            if (highland) scratch.push_back(sid[38]);                       // steep slope
+            if ((coast || highland) && !forest) scratch.push_back(sid[39]); // wind corridor
         }
         std::sort(scratch.begin(), scratch.end());
         scratch.erase(std::unique(scratch.begin(), scratch.end()), scratch.end());

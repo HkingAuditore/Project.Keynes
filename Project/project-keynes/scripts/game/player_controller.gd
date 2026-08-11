@@ -9,6 +9,7 @@ signal command_completed(id: StringName, result: Dictionary)
 signal command_settled(id: StringName, result: Dictionary)
 signal regeneration_requested()
 signal country_committed(report: Dictionary)
+signal era_reward_offer_changed(offer: Dictionary)
 
 const COMMAND_RESEARCH_SET_WEIGHTS := &"research.set_weights"
 const COMMAND_RESEARCH_SET_BUDGET := &"research.set_budget"
@@ -24,6 +25,9 @@ const COMMAND_CELL_TAX_SET_OVERRIDE := &"country.tax.cell.set_override"
 const COMMAND_CELL_TAX_CLEAR_OVERRIDE := &"country.tax.cell.clear_override"
 const COMMAND_CELL_TAX_CLEAR_ALL := &"country.tax.cell.clear_all"
 const COMMAND_CONSTRUCTION_BUILD := &"construction.build"
+const COMMAND_FAMILY_COLONIZATION_START := &"family.colonization.start"
+const COMMAND_FAMILY_COLONIZATION_CANCEL := &"family.colonization.cancel"
+const COMMAND_ERA_REWARD_CHOOSE := &"era_reward.choose"
 
 const SUPPORTED_COMMANDS := {
 	COMMAND_RESEARCH_SET_WEIGHTS: true,
@@ -40,6 +44,9 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_CELL_TAX_CLEAR_OVERRIDE: true,
 	COMMAND_CELL_TAX_CLEAR_ALL: true,
 	COMMAND_CONSTRUCTION_BUILD: true,
+	COMMAND_FAMILY_COLONIZATION_START: true,
+	COMMAND_FAMILY_COLONIZATION_CANCEL: true,
+	COMMAND_ERA_REWARD_CHOOSE: true,
 }
 
 var _camera = null
@@ -53,6 +60,12 @@ var _command_sequence := 1
 var _pause_before_menu := false
 var _country_facade = null
 var _economy_facade = null
+var _era_reward_locked := false
+var _era_reward_resume_running := false
+var _era_reward_previous_speed := 1.0
+var _era_reward_generation := 0
+var _era_reward_last_status := "NONE"
+var _era_reward_drain_active := false
 
 
 func configure(
@@ -122,6 +135,14 @@ func refresh_country_binding() -> void:
 				old_economy_callback):
 			_economy_facade.construction_command_settled.disconnect(
 				old_economy_callback)
+	if _economy_facade != null and _economy_facade.has_signal(
+			"family_colonization_settled"):
+		var old_colonization_callback := Callable(
+			self, "_on_family_colonization_settled")
+		if _economy_facade.family_colonization_settled.is_connected(
+				old_colonization_callback):
+			_economy_facade.family_colonization_settled.disconnect(
+				old_colonization_callback)
 	_country_facade = next
 	_economy_facade = generator.get_economy_facade() if generator != null \
 			and generator.has_method("get_economy_facade") else null
@@ -135,6 +156,17 @@ func refresh_country_binding() -> void:
 		if not _economy_facade.construction_command_settled.is_connected(
 				economy_callback):
 			_economy_facade.construction_command_settled.connect(economy_callback)
+	if _economy_facade != null and _economy_facade.has_signal(
+			"family_colonization_settled"):
+		var colonization_callback := Callable(
+			self, "_on_family_colonization_settled")
+		if not _economy_facade.family_colonization_settled.is_connected(
+				colonization_callback):
+			_economy_facade.family_colonization_settled.connect(
+				colonization_callback)
+	if _country_facade != null:
+		_resolve_player_country()
+		_sync_era_reward_offer()
 
 
 func capture_view_state() -> Dictionary:
@@ -143,11 +175,19 @@ func capture_view_state() -> Dictionary:
 		"camera_position": _camera.global_position if _camera != null else Vector2.ZERO,
 		"camera_zoom": _camera.zoom if _camera != null else Vector2.ONE,
 		"next_command_sequence": _command_sequence,
+		"era_reward_locked": _era_reward_locked,
+		"era_reward_resume_running": _era_reward_resume_running,
+		"era_reward_previous_speed": _era_reward_previous_speed,
+		"era_reward_generation": _era_reward_generation,
 	}
 
 
 func restore_view_state(map, state: Dictionary) -> void:
 	_command_sequence = maxi(1, int(state.get("next_command_sequence", 1)))
+	_era_reward_resume_running = bool(state.get("era_reward_resume_running", false))
+	_era_reward_previous_speed = float(state.get("era_reward_previous_speed", 1.0))
+	_era_reward_generation = int(state.get("era_reward_generation", 0))
+	_era_reward_locked = bool(state.get("era_reward_locked", false))
 	if _camera != null:
 		_camera.global_position = state.get("camera_position", _camera.global_position)
 		_camera.zoom = state.get("camera_zoom", _camera.zoom)
@@ -157,9 +197,13 @@ func restore_view_state(map, state: Dictionary) -> void:
 			select_cell(map.cell_at(selected))
 		else:
 			clear_selection()
+	_sync_era_reward_offer()
 
 
 func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
+	if _era_reward_locked and id != COMMAND_ERA_REWARD_CHOOSE:
+		return _complete_command(id, _result(false,
+			"era_reward_choice_required", "必须先完成时代奖励选择。"))
 	if not SUPPORTED_COMMANDS.has(id):
 		return _complete_command(id, _result(false, "unsupported_command", "该正式玩家命令尚未开放。"))
 	var ready := _resolve_player_country()
@@ -169,7 +213,10 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 	if not bool(validation.get("ok", false)):
 		return _complete_command(id, validation)
 	var facade = ready.facade
-	var effective_day := _next_effective_day()
+	var effective_day := maxi(0, _world_clock.day_index()) \
+		if id == COMMAND_FAMILY_COLONIZATION_START or \
+		id == COMMAND_FAMILY_COLONIZATION_CANCEL or \
+		id == COMMAND_ERA_REWARD_CHOOSE else _next_effective_day()
 	var sequence := _command_sequence
 	_command_sequence += 1
 	var result: Dictionary
@@ -225,6 +272,20 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 					_player_country_handle, int(args.get("cell_idx", -1)),
 					StringName(args.get("building_id", &"")), effective_day, sequence,
 					StringName(args.get("ownership_policy", &"")))
+		COMMAND_FAMILY_COLONIZATION_START:
+			result = _economy_facade.start_family_colonization(
+				_player_country_handle, int(args.get("family_handle", 0)),
+				int(args.get("source_cell", -1)), int(args.get("target_cell", -1)),
+				int(args.get("population", 0)), int(args.get("quote_token", 0)),
+				effective_day, sequence)
+		COMMAND_FAMILY_COLONIZATION_CANCEL:
+			result = _economy_facade.cancel_family_colonization(
+				_player_country_handle, int(args.get("expedition_handle", 0)),
+				effective_day, sequence)
+		COMMAND_ERA_REWARD_CHOOSE:
+			result = facade.choose_era_reward(
+				int(args.get("offer_generation", 0)),
+				int(args.get("choice_index", -1)), effective_day)
 		_:
 			result = _result(false, "unsupported_command", "该正式玩家命令尚未开放。")
 	if not result.has("ok"):
@@ -239,6 +300,51 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 	result["effective_day"] = effective_day
 	result["sequence"] = sequence
 	return _complete_command(id, result)
+
+
+func get_family_colonization_quotes(target_cell: int, family_filter: int = 0,
+		source_filter: int = -1, offset: int = 0, limit: int = 64) -> Dictionary:
+	var ready := _resolve_player_country()
+	if not bool(ready.get("ok", false)):
+		return ready
+	if _economy_facade == null:
+		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+	return _economy_facade.family_colonization_quotes(_player_country_handle,
+		target_cell, family_filter, source_filter, offset, limit)
+
+
+func get_family_colonization_quote_detail(quote_token: int) -> Dictionary:
+	var ready := _resolve_player_country()
+	if not bool(ready.get("ok", false)):
+		return ready
+	var detail: Dictionary = _economy_facade.family_colonization_quote_detail(
+		quote_token)
+	if bool(detail.get("ok", false)) and int(detail.get(
+			"country_handle", 0)) != _player_country_handle:
+		return _result(false, "colonization_quote_forbidden", "报价不属于玩家国家。")
+	return detail
+
+
+func get_family_expeditions(offset: int = 0, limit: int = 64) -> Dictionary:
+	var ready := _resolve_player_country()
+	if not bool(ready.get("ok", false)):
+		return ready
+	return _economy_facade.family_expeditions(_player_country_handle,
+		offset, limit)
+
+
+func get_family_expedition_snapshot(expedition_handle: int) -> Dictionary:
+	var ready := _resolve_player_country()
+	if not bool(ready.get("ok", false)):
+		return ready
+	return _economy_facade.family_expedition_snapshot(_player_country_handle,
+		expedition_handle)
+
+
+func is_player_owned_cell(cell: int) -> bool:
+	var ready := _resolve_player_country()
+	return bool(ready.get("ok", false)) and bool(
+		_validate_owned_cell(ready.facade, cell).get("ok", false))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -313,6 +419,11 @@ func _connect_ui() -> void:
 		_ui_manager.clear_selection_requested.connect(clear_selection)
 	if not _ui_manager.pause_menu_visibility_changed.is_connected(_on_pause_menu_visibility_changed):
 		_ui_manager.pause_menu_visibility_changed.connect(_on_pause_menu_visibility_changed)
+	if _ui_manager.has_signal("era_reward_choice_requested") and not \
+			_ui_manager.era_reward_choice_requested.is_connected(
+				_on_era_reward_choice_requested):
+		_ui_manager.era_reward_choice_requested.connect(
+			_on_era_reward_choice_requested)
 	_ui_manager.set_player_controller(self)
 	refresh_country_binding()
 
@@ -328,6 +439,7 @@ func _on_tile_tapped(world_pos: Vector2) -> void:
 
 func _on_country_committed(report: Dictionary) -> void:
 	country_committed.emit(report)
+	_sync_era_reward_offer()
 
 
 func _on_construction_command_settled(result: Dictionary) -> void:
@@ -336,11 +448,25 @@ func _on_construction_command_settled(result: Dictionary) -> void:
 	command_settled.emit(COMMAND_CONSTRUCTION_BUILD, result)
 
 
+func _on_family_colonization_settled(result: Dictionary) -> void:
+	if int(result.get("country_handle", 0)) != _player_country_handle:
+		return
+	var command_id := COMMAND_FAMILY_COLONIZATION_CANCEL \
+		if String(result.get("code", "")) == "CANCELLED_RETURNING" \
+		else COMMAND_FAMILY_COLONIZATION_START
+	command_settled.emit(command_id, result)
+
+
 func _on_day_changed(day_idx: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
 	var season_phase: float = _world_clock.season_phase_for_day(day_idx)
 	_runtime_host.run_daily_tick(day_idx, season_phase)
+	_sync_era_reward_offer()
+	if _economy_facade != null and _player_country_handle != 0 and \
+			_economy_facade.has_method("dispatch_family_colonization_receipts"):
+		_economy_facade.dispatch_family_colonization_receipts(
+			_player_country_handle)
 	var ui_started_usec := Time.get_ticks_usec()
 	var ui_breakdown: Dictionary = {}
 	if _ui_manager != null:
@@ -436,6 +562,13 @@ func _resolve_player_country() -> Dictionary:
 	_player_country_handle = int(summary.get("country_handle", 0))
 	if _player_country_handle == 0:
 		return _result(false, "player_country_unavailable", "玩家国家句柄无效。")
+	var reward_binding: Dictionary = facade.bind_era_reward_player_country(
+		_player_country_handle) if facade.has_method(
+			"bind_era_reward_player_country") else {"ok": false,
+				"reason": "era_reward_runtime_unavailable"}
+	if not bool(reward_binding.get("ok", false)):
+		return _result(false, String(reward_binding.get("reason",
+			"era_reward_player_bind_failed")), "玩家时代奖励身份绑定失败。")
 	return {"ok": true, "code": "ok", "message": "", "facade": facade}
 
 
@@ -541,7 +674,94 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 			if not bool(owned.ok):
 				return _result(false, "construction_cell_not_owned",
 					"只能在玩家领土内修建建筑。")
+		COMMAND_FAMILY_COLONIZATION_START:
+			if int(args.get("family_handle", 0)) == 0 or \
+					int(args.get("source_cell", -1)) < 0 or \
+					int(args.get("target_cell", -1)) < 0 or \
+					int(args.get("population", 0)) < 1 or \
+					int(args.get("quote_token", 0)) == 0:
+				return _result(false, "invalid_args", "开拓命令参数不完整。")
+		COMMAND_FAMILY_COLONIZATION_CANCEL:
+			if int(args.get("expedition_handle", 0)) == 0:
+				return _result(false, "invalid_args", "开拓队句柄无效。")
+		COMMAND_ERA_REWARD_CHOOSE:
+			var choice := int(args.get("choice_index", -1))
+			var generation := int(args.get("offer_generation", 0))
+			if choice < 0 or choice > 2 or generation <= 0 \
+					or generation != _era_reward_generation:
+				return _result(false, "era_reward_choice_invalid",
+					"时代奖励代际或选项无效。")
 	return _result(true, "ok", "")
+
+
+func _on_era_reward_choice_requested(generation: int, choice_index: int) -> void:
+	request_command(COMMAND_ERA_REWARD_CHOOSE, {
+		"offer_generation": generation,
+		"choice_index": choice_index,
+	})
+	_sync_era_reward_offer()
+	_drain_era_reward_until_settled()
+
+
+func _drain_era_reward_until_settled() -> void:
+	if _era_reward_drain_active:
+		return
+	_era_reward_drain_active = true
+	while _era_reward_locked and _era_reward_last_status == "SELECTED_PENDING":
+		var generator: Variant = _runtime_host.generator() \
+			if _runtime_host != null else null
+		if generator == null or not generator.has_method("advance_save_boundary"):
+			break
+		# 复用存档协调器的无日期推进安全边界排空链。
+		generator.advance_save_boundary()
+		await get_tree().process_frame
+		_sync_era_reward_offer()
+	_era_reward_drain_active = false
+
+
+func _sync_era_reward_offer() -> void:
+	if _country_facade == null or not _country_facade.has_method("era_reward_offer"):
+		return
+	var offer: Dictionary = _country_facade.era_reward_offer()
+	if not bool(offer.get("ok", false)):
+		return
+	var status := String(offer.get("status", "NONE"))
+	_era_reward_last_status = status
+	if status == "OPEN" or status == "SELECTED_PENDING" or status == "ERROR":
+		if not _era_reward_locked:
+			_era_reward_resume_running = _world_clock != null and not _world_clock.paused
+			_era_reward_previous_speed = _world_clock.speed_multiplier \
+				if _world_clock != null else 1.0
+			_era_reward_locked = true
+		if _world_clock != null:
+			_world_clock.pause(true)
+		_era_reward_generation = int(offer.get("offer_generation", 0))
+		if _ui_manager != null:
+			if not _ui_manager.is_era_reward_modal_open():
+				_ui_manager.show_era_reward_offer(offer)
+			if status == "SELECTED_PENDING":
+				_ui_manager.show_era_reward_pending()
+			elif status == "ERROR":
+				_ui_manager.show_era_reward_error(String(offer.get(
+					"error", "未知事务错误")))
+		era_reward_offer_changed.emit(offer)
+		if status == "SELECTED_PENDING":
+			_drain_era_reward_until_settled()
+		return
+	if status == "RESOLVED" and _era_reward_locked:
+		if _ui_manager != null:
+			_ui_manager.close_era_reward_offer()
+		if _world_clock != null:
+			_world_clock.set_speed(_era_reward_previous_speed)
+			_world_clock.pause(not _era_reward_resume_running)
+		_era_reward_locked = false
+		_era_reward_generation = 0
+		sync_ui()
+		era_reward_offer_changed.emit(offer)
+
+
+func era_reward_locked() -> bool:
+	return _era_reward_locked
 
 
 func _tax_item_exists(facade, kind: int, item_id: StringName) -> bool:

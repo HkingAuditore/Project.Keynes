@@ -48,6 +48,8 @@ Inspect current code before editing:
   Godot Object calls, or per-entity allocation.
 - Consumers never mutate stores. Commands produced during consumption wait for the next
   safe boundary.
+- Country building-family and exact-building-type factors are configuration-resolved and epoch-frozen;
+  actual production and target forecasts must multiply the same dense Q16 factors.
 - Removal changes future calculations only; never rewind simulation history.
 - Persist stable keys and normalized terms, never process-local dense IDs.
 - Persist Q16 instance magnitude. Add terms scale linearly; factor terms interpolate from one before

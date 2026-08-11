@@ -3,6 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"phosphate_rock"
+discovery_technology_tags = PackedStringArray("tech.soil_experimentation")
 display_name = "磷矿石"
 reserve_component = &"cell.res_phosphate_rock_reserve"
 habitat_mode = "land"

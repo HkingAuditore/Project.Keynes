@@ -4,7 +4,7 @@ extends RefCounted
 const VisualTileLayoutScript = preload("res://scripts/rendering/visual_tile_layout.gd")
 
 # [terrain-gi 2026-07-31 / height-flow-pack 2026-08-06]
-# height 现为 RGBA8（RG=16-bit elev，B=flow，A=0），独立 flow 层退役。
+# height 为 RGBA8（RG=16-bit visual elev，B=天然河流 SDF，A=运河 SDF）。
 # 合计 23 bytes/texel——visual_tile_layout.BYTES_PER_PHYSICAL_TEXEL 必须同步。
 const FIELD_FORMATS := {
 	"height": Image.FORMAT_RGBA8,

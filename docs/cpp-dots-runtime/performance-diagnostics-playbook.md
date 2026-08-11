@@ -857,6 +857,30 @@ fast tick #1095: 36ms (sus=34.97 render=0.73 ui=0.00 skipped_day=true)
 
 ## Climate stability diagnostics
 
+## Climate mode diagnostics
+
+Use the `climate_modes` object in native daily reports to validate the bounded
+emergent-weather path. ENSO basin topology should normally build once and then hit
+its cache. The monsoon coast cache fingerprints terrain as well as adjacency, so a
+seasonal water/ice/terrain flip may legitimately rebuild it; use its build time to
+distinguish a cheap expected refresh from pathological invalidation.
+`monsoon_*` counters may be zero on all-ocean/all-land test maps. `enso_basin_count`
+is capped by profile (desktop default three; mobile may use fewer).
+
+For cyclones, read `cyclone_active_count` and `cyclone_touched_cells` from the mode
+report, plus `cyclone_n_injected`/`cyclone_n_decayed` from the daily breakdown.
+Capacity and birth budgets are hard limits. Persistent zero births on an Earth-like profile usually
+means SST, instability, shear, or latitude gates are too strict, or that weather
+prerequisites are missing. Generation-stamped forcing arrays avoid a full-map clear;
+`cyclone_touched_cells` should remain close to the bounded cyclone footprint.
+
+These modes are cadence-bound approximations: monsoon follows the existing physical
+wind cadence, ENSO uses bounded Heun substeps, and cyclones use deterministic
+neighbor steering rather than a continuous fluid solver. Compare long-window
+distributions instead of expecting research-model bitwise parity. Save/restore
+probes should include `capture_climate_modes_state()` and verify basin signatures
+and cyclone stable IDs survive a round trip.
+
 For climate-realism CSV rechecks, run `tools/analyze_tile_climate_csv.py` on a
 30+ tick recording and compare these fixed metrics before changing formulas
 again:

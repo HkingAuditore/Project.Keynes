@@ -1,6 +1,6 @@
 ---
 name: project-keynes-technology-runtime
-description: Guide Project.Keynes technology-tree development and review across the authoritative TechnologyCatalog, country-owned research state and queues, technology-points economy and government procurement, technology Modifier effects, research buildings and professions, GraphEdit workspace, NewGameConfig, PKCN/PKEC saves, performance, and validation. Use when changing technology definitions or prerequisites, tech.* unlock tags, research allocation or milestones, technology_points production/consumption/trade, research institutions or technology professions, research procurement, technology Modifier stats, technology UI, technology save/restore, GM reveal/grant behavior, or related tests and documentation.
+description: Guide Project.Keynes technology-tree development and review across the authoritative TechnologyCatalog, country-owned research state and queues, research signals, technology-points economy and government procurement, technology Effect/Modifier activation, research buildings, static DAG UI, NewGameConfig, PKCN/PKEF/PKTR/PKEC saves, performance, and validation. Use when changing technology definitions or prerequisites, tech.* unlock tags, research allocation or milestones, technology_points production/consumption/trade, research institutions, research procurement, technology Modifier stats, technology UI, technology save/restore, GM reveal/grant behavior, or related tests and documentation.
 ---
 
 # Project.Keynes Technology Runtime
@@ -30,7 +30,7 @@ Also use `civ-grounded-development` for repository changes. Add
 1. Identify which authority owns every changed field or behavior.
 2. Inspect catalog data, C++ storage/consumer, bindings/facade, save schema, UI snapshot, focused tests,
    and current documentation before editing.
-3. Reuse the existing country, economy, Modifier, and GraphEdit paths. Notify the user before creating
+3. Reuse the existing country, economy, Modifier, and self-drawn technology-tree paths. Notify the user before creating
    any new runtime subsystem.
 4. Resolve stable string IDs during compilation or command packing; keep simulation hot loops dense,
    numeric, allocation-free in steady state, and deterministically ordered.
@@ -45,6 +45,9 @@ Also use `civ-grounded-development` for repository changes. Add
 
 - Do not introduce an independent `TechnologyRuntime`.
 - Do not let `EconomyCatalog` synthesize technology IDs; `TechnologyCatalog` is authoritative.
+- Keep `Project/project-keynes/data/technology/technology_network.json` as the sole authoring source.
+  `TechnologyCatalog` remains the sole compiled/runtime authority; do not restore parallel row constants
+  or route-based Modifier inference.
 - Do not store technology strings in runtime hot paths or dense progress for every
   `country × technology`.
 - Do not move research queues, progress, discovery, completion, policy, or technology treasury
@@ -57,19 +60,24 @@ Also use `civ-grounded-development` for repository changes. Add
 - Do not expose completion tags before permanent `UNIQUE_SOURCE` technology Modifiers apply
   successfully, and do not let `GRANT_TECHNOLOGY` bypass this path.
 - Do not use Modifiers to directly create/delete cash, inventory, or technology points.
+- Resolve exact-building technology stats at catalog/configuration time and freeze their country×type
+  Q16 factors at the economy epoch boundary; never look up `building_id` strings in production loops.
 - Do not reveal unknown technology names, effects, prerequisites, connection labels, tooltips, search
   text, or accessibility text.
-- Restore PKCN before PKEC. Reject unsupported legacy technology-tree saves explicitly rather than
-  silently defaulting state.
+- Keep player-facing Chinese names, effect summaries, and route labels in the
+  `public_definitions()` presentation layer. Translation-only edits must not change stable `tech.*`
+  IDs, compiled native catalog rows, or exact catalog identity.
+- Restore PKCN before PKEC. PKCN v11, PKEF v9 and PKTR v4 use exact schema/catalog identity and
+  return `catalog_hash_mismatch` for older trees rather than silently defaulting state.
 - Do not add taxes, cross-country technology trade, research diplomacy, or AI research policy as
   incidental scope.
 
-## Research-signal prerequisite contract
+## Research-signal discovery contract
 
-Technology prerequisites are no longer limited to `prerequisite_ids`. `TechnologyCatalog` compiles
-authoring-side `ResearchCondition` / `ResearchPredicate` data into postfix dense IR; legacy
-`prerequisite_ids` remain the structural compatibility gate. `NativeCountryRuntime` evaluates the
-IR from its frozen numeric state, never from Resources, strings, or Dictionaries.
+Completed technologies in `prerequisite_ids` are the sole research-eligibility gate. Authoring-side
+`research_condition` must remain empty unless a future design explicitly introduces a second hard
+gate. Geography, resources, contact and practice signals belong in `reveal_condition`: they inspire
+and reveal a technology but never substitute for required knowledge.
 
 The currently active v1 operators are `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`,
 `ALL_OF`, `ANY_OF`, `AT_LEAST`, and `NOT`. Treat `COUNTRY_FLAG`, `COUNTRY_STAT`,
@@ -79,8 +87,8 @@ compile them as an always-true condition.
 
 `ResearchSignalCatalog` owns stable IDs and catalog metadata for Bio, resource, landform, weather,
 and breakthrough signals. A technology may only use a dense signal ID resolved at catalog compile
-time. Permanent map discoveries are country-local: they block/unblock queue heads while preserving
-their existing progress, and must not be treated as goods inventory or as cross-country technology
+time. Permanent map discoveries are country-local discovery provenance; they do not block an
+already revealed queue head and must not be treated as goods inventory or cross-country technology
 transfer. `pending` technology activation remains unchanged and must not re-check a gate.
 
 ## Verify

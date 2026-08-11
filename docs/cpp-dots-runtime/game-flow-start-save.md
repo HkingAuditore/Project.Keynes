@@ -121,10 +121,10 @@ Every authority is registered through `RuntimeStateProvider`, whose contract is
 provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
-PKCM, clock, PKCN, PKEC, PKGP, PKFG, journal, PKTR, PKEF, PKID, then player
-session/view/preview. PKEF is restored after PKTR so Trigger-owned source state
-and any trigger-to-effect handoff are present before pending Effect transactions
-are resumed. `PKID v2` follows `PKEF v5`: every active ideology must match its
+PKCM, clock, PKCN, PKEF, PKEC, PKGP, PKFG, journal, PKTR, PKID, then player
+session/view/preview. PKEF precedes PKEC so Economy can cross-check every settling
+cross-domain transaction against authoritative Effect state. `PKID v2` follows
+`PKEF v9`: every active ideology must match its
 durable external binding by identity, generation, level, location, template
 signature, and Effect program hash. Missing/mismatched bindings or unknown
 pending transitions fail restore; PKID and PKEF must also agree on the exact
@@ -134,14 +134,15 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 `ideology_should_run(day)`, `effect_should_run(day)`, and every native
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
-PKCM v1 saves Climate modifiers. PKCN v7 embeds Country modifiers, research,
-tax policy, and native Effect ingress idempotency; PKEC v31 embeds Economy
+PKCM v1 saves Climate modifiers. PKCN v11 embeds Country modifiers, research,
+tax policy, territory claim and native Effect ingress idempotency; PKEC v34 embeds Economy
 modifiers, BuildingIdentityStore, family traits/cell influence,
 production-climate state, and Economy Effect ingress idempotency. PKGP v1 saves
-Gameplay identity/base SoA and modifiers; journal v3 saves native
-`PUBLISH_EVENT` Effect idempotency evidence; PKTR v2 saves static and dynamic
-branch Trigger accumulation. Legacy PKCN/PKEC technology-tree saves are
-rejected with `legacy_technology_tree_save_unsupported`.
+Gameplay identity/base SoA and modifiers; journal v4 saves native
+`PUBLISH_EVENT` Effect idempotency evidence; PKTR v4 saves static/dynamic branch
+and technology-practice Trigger accumulation. PKEF v9 saves Effect recipe/program
+identity and pending ACK state. Old PKCN/PKEF/PKTR schemas or related catalog
+identity changes are rejected with `catalog_hash_mismatch`.
 
 `pkfg` is `PKFogOfWar v1` and persists exactly one array: the monotonic
 `cell_explored` progress, plus the cell count it was captured at. Current
@@ -174,19 +175,19 @@ Restore order is strict:
 2. Regenerate static terrain from the complete saved `NewGameConfig`.
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
-5. Restore PKCN v7, including Country modifiers, research state, national/cell tax policy,
+5. Restore PKCN v11, including Country modifiers, research state, national/cell tax policy,
    and native Country Effect ingress idempotency.
-6. Restore PKEC v31 after trade topology has been configured, including Economy
-   modifiers, building identities, notable families, and production-climate state.
+6. Restore PKEF v9, then PKEC v34 after trade topology has been configured, including Economy
+   modifiers, building identities, notable families, active family expeditions, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
-8. Restore journal v3 and PKTR v2, then PKEF v5 pending Effect state and PKID v2
+8. Restore journal v4 and PKTR v4, then PKID v2
    ideology state. PKID verifies its active PKEF bindings before the session is
    allowed to resume.
 9. Rebuild derived views/render resources and scheduler topology.
 10. Restore selected cell, camera position/zoom, pause, and speed.
 
-PKCM must follow environment; PKCN must precede PKEC; PKGP follows Economy
+PKCM must follow environment; PKCN and PKEF must precede PKEC; PKGP follows Economy
 base/identity restore. PKFG must follow PKCN, because re-solving
 visibility reads the restored territory. Native restore rejects crossed
 generations or catalog hashes.
@@ -229,5 +230,23 @@ economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtens
 desktop/narrow UI checks.
 For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
 
-Save flow requires `PKTR v2` after journal/domain state. Missing PKTR, PKTR v1, PKEC v29 or older,
-and incompatible catalog hashes reject restore; no empty-trigger migration is provided.
+## Regional technology/economy bootstrap v4
+
+Formal new games no longer grant four universal technologies or a universal settlement bundle.
+`StartLocationPolicy` classifies each capital from the capital ring's Bio/resource/landform/climate
+evidence and returns one food, clothing, construction, precious-metal and knowledge route.
+`MapGenerator` grants only the selected zero-cost handling technologies plus recursive structural
+prerequisites; `StarterSettlementBootstrap` prebuilds the matching weak producers. The supported
+families are coastal, floodplain, cold highland, tropical forest, arid highland and temperate.
+
+The bootstrap validates the complete technology/input/job/output closure. It may add at most one
+geographically plausible gold or silver occurrence and, only when the closure otherwise fails, one
+non-precious route resource. It never tops up the former universal fertile-soil/timber/game/stone/flint
+set. Starting buildings cannot require steel, coal, industrial chemicals, industrialists, managers,
+landlords, serfs or indentured labor. The only food bridge is 15 days of the route's locally produced
+food good; `processed_food` receives no fixed grant. Every generated country starts with exactly one
+territory cell, one regional weak bundle, 20 population, one founder family and one notable founder.
+
+Save flow requires `PKTR v4` after journal/domain state. Missing/older PKTR, older PKCN/PKEF,
+PKEC v32 or older, and incompatible catalog hashes reject restore; no empty-trigger or technology
+ID migration is provided.

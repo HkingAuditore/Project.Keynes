@@ -13,6 +13,12 @@ param(
     [int]$Height = 40,
     [ValidateSet(0, 1, 10, 100, 1000)]
     [int]$PopulationScale = 0,
+    [ValidateRange(0, 12)]
+    [int]$ForeignCount = 3,
+    [ValidateRange(-100, 100)]
+    [int]$ImportTariffRate = 0,
+    [ValidateRange(-100, 100)]
+    [int]$ExportTariffRate = 0,
     [string]$Label = 'headless',
     [ValidateSet('', 'OFF', 'PROBE', 'ACTIVE')]
     [string]$AccuracyMode = '',
@@ -22,6 +28,8 @@ param(
     [string]$ClosingAuditMode = '',
     [ValidateSet('', 'ON', 'OFF')]
     [string]$WorkerMode = '',
+    [switch]$SyntheticTestEconomy,
+    [switch]$TradeScenario,
     [switch]$UseSavedSetup
 )
 
@@ -54,6 +62,11 @@ $godotArgs = @(
     "width=$Width",
     "height=$Height",
     "population_scale=$PopulationScale",
+    "foreign_count=$ForeignCount",
+    "import_tariff_rate=$ImportTariffRate",
+    "export_tariff_rate=$ExportTariffRate",
+    "synthetic_test_economy=$($SyntheticTestEconomy.IsPresent.ToString().ToLowerInvariant())",
+    "trade_scenario=$($TradeScenario.IsPresent.ToString().ToLowerInvariant())",
     "use_saved_setup=$($UseSavedSetup.IsPresent.ToString().ToLowerInvariant())",
     "label=$safeLabel"
 )
@@ -88,6 +101,38 @@ if ($null -eq $resultLine) {
 $resultText = $resultLine.Line
 if ($resultText -notmatch 'ledger_failures=0' -or $resultText -notmatch 'fatal=false') {
     throw "Headless run reported an economy validation failure: $resultText"
+}
+if ($resultText -notmatch 'economy_configured=true') {
+    throw "Headless run did not start an economy: $resultText"
+}
+if (-not $SyntheticTestEconomy.IsPresent) {
+    if ($resultText -notmatch 'formal_start=true') {
+        throw "Headless run did not use the formal new-game path: $resultText"
+    }
+    if ($resultText -notmatch 'country_count=(\d+)') {
+        throw "Headless result omitted country_count: $resultText"
+    }
+    $countryCount = [int]$Matches[1]
+    if ($countryCount -lt ($ForeignCount + 1)) {
+        throw "Formal headless run created $countryCount countries; expected at least $($ForeignCount + 1)."
+    }
+    if ($resultText -notmatch 'population=(\d+)' -or [int]$Matches[1] -le 0) {
+        throw "Formal headless run has no opening population: $resultText"
+    }
+}
+if ($TradeScenario.IsPresent) {
+    if ($resultText -notmatch 'trade_scenario=true') {
+        throw "Headless run did not enable the requested trade scenario: $resultText"
+    }
+    if ($resultText -notmatch 'trade_orders_cumulative=(\d+)' -or [int]$Matches[1] -le 0) {
+        throw "Trade scenario completed no foreign orders: $resultText"
+    }
+    if ($resultText -notmatch 'trade_route_expansions=(\d+)' -or [int]$Matches[1] -le 0) {
+        throw "Trade scenario performed no route search: $resultText"
+    }
+    if ($resultText -notmatch 'trade_country_partners=(\d+)' -or [int]$Matches[1] -le 0) {
+        throw "Trade scenario produced no country-partner aggregate: $resultText"
+    }
 }
 
 $csvPath = ''
@@ -133,4 +178,4 @@ $actualMap = "${Width}x${Height}"
 if ($resultText -match ' map=(\d+x\d+)') {
     $actualMap = $Matches[1]
 }
-Write-Output "[headless-perf/verified] rows=$rows days=$Days speed=$Speed seed=$actualSeed map=$actualMap saved_setup=$($UseSavedSetup.IsPresent.ToString().ToLowerInvariant()) csv=$csvPath log=$logPath"
+Write-Output "[headless-perf/verified] rows=$rows days=$Days speed=$Speed seed=$actualSeed map=$actualMap formal_start=$((-not $SyntheticTestEconomy.IsPresent).ToString().ToLowerInvariant()) trade_scenario=$($TradeScenario.IsPresent.ToString().ToLowerInvariant()) foreign_count=$ForeignCount import_tariff_rate=$ImportTariffRate export_tariff_rate=$ExportTariffRate saved_setup=$($UseSavedSetup.IsPresent.ToString().ToLowerInvariant()) csv=$csvPath log=$logPath"

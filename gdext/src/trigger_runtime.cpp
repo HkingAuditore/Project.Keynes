@@ -831,6 +831,12 @@ void TriggerRuntime::emit_effects(int32_t trigger_id, int32_t state_index,
         effect.command_key = source.command_key;
         effect.definition_key = source.definition_key;
         effect.payload = source.payload;
+        if (effect.action == COUNTRY_COMMAND &&
+            effect.opcode == 14) { // NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL
+            const uint64_t signal = static_cast<uint64_t>(effect.payload[0]) & 0xffffffffULL;
+            const uint64_t cell = event.group_handle & 0xffffffffULL;
+            effect.payload[0] = static_cast<int64_t>((signal << 32U) | cell);
+        }
         for (const BranchBinding &binding : _branch_bindings) {
             if (binding.trigger_id == trigger_id &&
                 binding.branch_handle == state_target) {
@@ -1051,18 +1057,22 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
             ++handed_off;
             continue;
         }
-        // Modifier actions are native here; other domains stay on the
-        // TriggerFacade compatibility path until their safe-boundary adapter
-        // is migrated.
-        if (effect.action < MODIFIER_APPLY || effect.action > MODIFIER_SET_STACKS) {
+        // Modifier and Country actions have native EffectRuntime adapters.
+        // Other domains stay on the TriggerFacade compatibility path until
+        // their own safe-boundary adapter is migrated.
+        const bool native_modifier = effect.action >= MODIFIER_APPLY &&
+            effect.action <= MODIFIER_SET_STACKS;
+        if (!native_modifier && effect.action != COUNTRY_COMMAND) {
             blocked_reason = "trigger_effect_domain_adapter_required";
             break;
         }
         std::string error;
+        const int32_t effect_action = effect.action == COUNTRY_COMMAND
+            ? EffectRuntime::COUNTRY_COMMAND : effect.action;
         if (!effect_runtime->enqueue_trigger_effect_pod(
                 effect.id, effect.effective_day, effect.trigger_id,
                 effect.target_handle, effect.target_generation,
-                effect.fire_sequence, effect.action, effect.domain, effect.opcode,
+                effect.fire_sequence, effect_action, effect.domain, effect.opcode,
                 effect.resolved_value, effect.duration_days, effect.stacks,
                 effect.command_key, effect.definition_key, effect.payload, error)) {
             blocked_reason = error.empty() ? "trigger_effect_handoff_failed" : error;
@@ -1369,10 +1379,13 @@ Dictionary TriggerRuntime::restore(const PackedByteArray &packed) {
         !read_le(bytes, size, cursor, current_day) ||
         !read_le(bytes, size, cursor, next_effect) ||
         !read_le(bytes, size, cursor, acked_effect) ||
-        !read_le(bytes, size, cursor, source_count) || magic != SAVE_MAGIC ||
-        version != SAVE_SCHEMA_VERSION || catalog_hash != _catalog_hash ||
+        !read_le(bytes, size, cursor, source_count))
+        return failure("trigger_restore_header_truncated");
+    if (magic != SAVE_MAGIC)
+        return failure("trigger_restore_magic_invalid");
+    if (version != SAVE_SCHEMA_VERSION || catalog_hash != _catalog_hash ||
         source_count != static_cast<uint32_t>(_source_count))
-        return failure("trigger_restore_header_invalid");
+        return failure("catalog_hash_mismatch");
 
     reset_runtime_state();
     _current_day = current_day;

@@ -149,10 +149,9 @@ func _run() -> void:
 			"tax_row_instance_id", "income", locked_profession)) == 0)
 	economy.call("select_page_for_test", "tariff")
 	var import_pres: Dictionary = presentation.get("import", {})
-	_expect("tariff page is editable but marked pending foreign trade",
+	_expect("tariff page exposes editable tradeable goods",
 		int(economy.call("tax_row_count", "tariff")) ==
-			(import_pres.get("unlocked", []) as Array).size() + 1 and
-		not String(economy.call("tax_status_text")).is_empty())
+			(import_pres.get("unlocked", []) as Array).size() + 1)
 	economy.call("select_page_for_test", "income")
 	economy.call("refresh_model", model)
 	_expect("daily tax refresh reuses cached row nodes",
@@ -439,8 +438,8 @@ func _run() -> void:
 					and detail_dialog.tax_lane_editable())
 			var import_data := ((detail_dialog.get("_lanes") as Dictionary) \
 				.get("import", {}) as Dictionary).get("data", {}) as Dictionary
-			_expect("tariff lanes are marked pending foreign trade",
-				String(import_data.get("placeholder_note", "")).contains("待跨国贸易接入"))
+			_expect("tariff lanes use live foreign-trade data without placeholders",
+				String(import_data.get("placeholder_note", "")).is_empty())
 			detail_dialog.close_dialog()
 
 		right_panel.select_tab("geography")

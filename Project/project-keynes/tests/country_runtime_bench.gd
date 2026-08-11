@@ -20,6 +20,7 @@ func _init() -> void:
 	var zero_offsets := PackedInt32Array()
 	zero_offsets.resize(TECHNOLOGY_COUNT + 1)
 	zero_offsets.fill(0)
+	var empty_signal_offsets := PackedInt32Array([0])
 	var technology_domains := PackedInt32Array()
 	technology_domains.resize(TECHNOLOGY_COUNT)
 	technology_domains.fill(0)
@@ -34,6 +35,8 @@ func _init() -> void:
 		modifier_keys.append("")
 	var catalog := {
 		"good_ids": goods,
+		"profession_ids": PackedStringArray(["profession.synthetic"]),
+		"building_type_ids": PackedStringArray(["building.synthetic"]),
 		"technology_ids": technology_ids,
 		"technology_domain_indices": technology_domains,
 		"technology_costs": technology_costs,
@@ -44,6 +47,21 @@ func _init() -> void:
 		"technology_milestone_required_counts": technology_metadata,
 		"technology_flags": technology_metadata,
 		"technology_modifier_definition_keys": modifier_keys,
+		"research_signal_ids": PackedStringArray(),
+		"research_signal_requires_provenance": PackedByteArray(),
+		"technology_research_condition_offsets": zero_offsets,
+		"technology_research_condition_ops": PackedByteArray(),
+		"technology_research_condition_refs": PackedInt32Array(),
+		"technology_research_condition_values": PackedInt32Array(),
+		"technology_reveal_condition_offsets": zero_offsets,
+		"technology_reveal_condition_ops": PackedByteArray(),
+		"technology_reveal_condition_refs": PackedInt32Array(),
+		"technology_reveal_condition_values": PackedInt32Array(),
+		"technology_reveal_signal_offsets": empty_signal_offsets,
+		"technology_reveal_signal_technologies": PackedInt32Array(),
+		"technology_catalog_identity_hash": 1,
+		"technology_content_binding_hash": 2,
+		"technology_trigger_definition_hash": 3,
 	}
 	var configured: Dictionary = ext.configure_country(catalog, {
 		"country_runtime_mode": "ACTIVE",
@@ -148,6 +166,9 @@ func _empty_batch() -> Dictionary:
 		"weight2_bp": PackedInt32Array(),
 		"weight3_bp": PackedInt32Array(),
 		"value_i64": PackedInt64Array(),
+		"tax_kinds": PackedInt32Array(),
+		"tax_item_indices": PackedInt32Array(),
+		"tax_rate_percent": PackedInt32Array(),
 		"stable_ids": PackedStringArray(),
 		"display_names": PackedStringArray(),
 	}
@@ -158,6 +179,9 @@ func _append_research_defaults(batch: Dictionary) -> void:
 	for domain in range(4):
 		batch["weight%d_bp" % domain].append(0)
 	batch.value_i64.append(0)
+	batch.tax_kinds.append(-1)
+	batch.tax_item_indices.append(-1)
+	batch.tax_rate_percent.append(0)
 
 func _fail(stage: String, report: Dictionary) -> void:
 	push_error("country bench %s failed: %s" % [stage, report])

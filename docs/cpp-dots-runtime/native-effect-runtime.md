@@ -39,6 +39,12 @@ typed command definitions. Conditions support metric/state comparisons and
 boolean composition. Value instructions include `CONST`, `READ_METRIC`,
 `READ_STATE`, arithmetic, clamp, and `EMIT_COMMAND`.
 
+Technology programs use the unique recipe IDs and versions compiled by
+`TechnologyCatalog`; `EffectDomainCatalog` does not regroup them by research
+domain or profile. Every non-starting technology recipe emits its own permanent
+Modifier definition and `technology.adopted` event. These recipe columns enter
+the technology identity hash as well as the PKEF program hash.
+
 All numeric values use Q16. `DIV_FLOOR` returns a Q16 integer quotient. New
 configuration operators must be bounded and validated at catalog compile time.
 Command rows are validated twice: the GDScript compiler rejects missing keys,
@@ -210,7 +216,7 @@ transactions not claimed by the native bridge.
 
 ## Persistence and diagnostics
 
-`PKEF v5` stores catalog hash, runtime cursors, an in-progress candidate list,
+`PKEF v9` stores catalog hash, runtime cursors, an in-progress candidate list,
 instances, input metrics, published and consumed input revisions, fire sequences, and pending
 transactions/commands. It additionally stores durable `ExternalSourceBinding`
 rows for peer-owned persistent sources: source identity, target handle/generation,
@@ -222,6 +228,13 @@ restore. Restore rejects
 wrong protocol, schema, catalog hash, truncation, invalid IDs, and invalid
 transaction status. Domain state is not duplicated in PKEF; its domain-side
 idempotency evidence remains in PKCN, PKEC, or the gameplay journal.
+
+PKEF v9 also owns the complete frozen era-reward Alternative Offer Plan:
+three alternatives, visible weighting reasons, generation-safe targets,
+plan hash, selected choice and its transaction. PKCN v11 stores only the matching
+plan reference and status. PKEF restore rejects any cross-section mismatch with
+`era_reward_cross_section_mismatch`; older PKEF/PKCN streams are rejected with
+`catalog_hash_mismatch` rather than redrawing an offer.
 
 Strict peer restore also audits pending external transactions. PKID supplies the
 exact transaction IDs and ideology source prefixes it owns; PKEF rejects a
@@ -240,7 +253,7 @@ successful grant.
 pending ACKs, explicit transaction-state counts, work, elapsed time, behavior
 failures, overflow, due/dirty/candidate counts, flat-slab bytes, native Modifier
 batch timings, worker planning/serial merge timings, worker/fallback path fields,
-the pending idempotency-key count, per-native-adapter pending ACK counts, and last error. `PKEF v5` restore parses into temporary
+the pending idempotency-key count, per-native-adapter pending ACK counts, and last error. `PKEF v9` restore parses into temporary
 vectors and swaps only after all bounds, command masks, plan hash and end marker
 checks pass, so a truncated save cannot clear the live state.
 `explain_effect(instance_id)` reports the resolved program, input revision,
@@ -281,7 +294,10 @@ Focused fixtures:
 
 Technology activation is ACK-gated. `NativeCountryRuntime` keeps a completed
 technology in its pending bitset until the stable technology Effect instance
-has fired and its Modifier transaction has reached the domain safe boundary.
+has fired and both its permanent Modifier plus `technology.adopted` publication
+have reached their owning safe boundaries. A recipe that adds Country/Economy
+commands extends the same required ACK mask; the completed bit is written only
+after every required adapter ACK.
 The country retry does not re-upsert an already existing instance, so the
 configured cadence is preserved and a second Modifier stack is not produced.
 If Effect registration itself fails, the existing direct Modifier path remains

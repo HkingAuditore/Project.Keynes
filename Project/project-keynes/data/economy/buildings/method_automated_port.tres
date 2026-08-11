@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"method_automated_port"
+display_name = "自动化港口船舶中心"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray("method.maritime", "method.automation")
+technology_tags = PackedStringArray("tech.automated_logistics")
+required_technology_tags = PackedStringArray("tech.global_logistics", "tech.digital_control", "tech.electric_grid")
+upgrade_family_id = &"maritime_operations"
+upgrade_tier = 2
+construction_days = 180
+construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "electrical_equipment")
+construction_quantities = PackedInt64Array(50000, 40000, 35000, 15000)
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("industrial_worker", "machinist", "technician", "engineer", "manager")
+employee_slots_per_building = PackedInt64Array(10, 5, 6, 3, 2)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(15608, 17136, 17136, 18500, 17136)
+input_good_ids = PackedStringArray("steel", "engines", "electricity", "industrial_machinery", "computers")
+input_quantities_per_day = PackedInt64Array(2500, 700, 1200, 700, 500)
+input_required_q16 = PackedInt32Array(65536, 49152, 32768, 32768, 32768)
+input_candidate_offsets = PackedInt32Array(0)
+output_good_ids = PackedStringArray("oceanic_vessels")
+output_quantities_per_day = PackedInt64Array(11500)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

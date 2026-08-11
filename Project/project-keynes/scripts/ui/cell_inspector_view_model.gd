@@ -148,6 +148,12 @@ func build(cell: HexCell) -> Dictionary:
 			"accent": _score_color(habitability),
 		},
 		"summary_cards": cards,
+		"colonization_action": {
+			"available": intel_visible and passable_land and not is_water \
+				and not bool(country_summary.get("owned", false)),
+			"target_cell": idx,
+			"reason": "目标必须是当前可见、可通行的无主陆地。",
+		},
 		"tabs": tabs,
 		"categories": {
 			"geography": geography_category,
@@ -555,8 +561,6 @@ func _tax_slice(cell_idx: int, kind: String, item_id: String, country: Dictionar
 				else int(rates[index]),
 			"has_override": index < flags.size() and flags[index] != 0,
 			"default_rate": inherited_rate,
-			"placeholder_note": "待跨国贸易接入：当前事件数与金额恒为零" \
-				if tax_kind == "import" or tax_kind == "export" else "",
 		})
 	if items.is_empty():
 		return {"available": false,
@@ -1111,6 +1115,7 @@ func _family_branch_rows(snapshot: Dictionary) -> Array:
 		var level := int(levels[index]) if index < levels.size() else 0
 		var target := int(targets[index]) if index < targets.size() else level
 		rows.append({
+			"cell": int(cells[index]),
 			"name": "地块 %d · 威望 %s" % [int(cells[index]), _prestige_text(level)],
 			"value": "总分 %s · 人口 %s / 现金 %s / 建筑 %s · 目标 %s（%d/2）" % [
 				_q16_percent_text(int(scores[index]) if index < scores.size() else 0),

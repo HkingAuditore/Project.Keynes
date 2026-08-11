@@ -1,5 +1,9 @@
 # Scheduling, save, and verification
 
+Current exact schemas are PKCN v11, PKEF v9, PKTR v4, and PKEC v33. PKCN restores before PKEC;
+older PKCN/PKEF/PKTR schemas or technology, signal, recipe, Trigger, or content-binding identity
+changes return `catalog_hash_mismatch`. The older version notes below are historical design context.
+
 ## Scheduler contract
 
 Register `country_daily` at priority 255 before `economy_daily` at 260. Use `must_run=false` and

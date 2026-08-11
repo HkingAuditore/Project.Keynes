@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"adobe_brick"
+display_name = "日晒土坯"
+category_id = &"primitive_construction"
+substitution_category_ids = PackedStringArray("primitive_construction", "masonry_material")
+technology_tags = PackedStringArray("industry.construction", "tech.adobe_making")
+default_price = 6000
+min_price = 600
+max_price = 60000
+

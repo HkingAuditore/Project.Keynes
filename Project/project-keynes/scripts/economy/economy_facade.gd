@@ -4,6 +4,8 @@ extends RefCounted
 signal economy_event_batch_available(meta: Dictionary)
 signal economy_event_batch(batch: Dictionary)
 signal construction_command_settled(result: Dictionary)
+signal family_colonization_settled(result: Dictionary)
+signal infrastructure_command_settled(result: Dictionary)
 
 const DEFAULT_PROFILE_PATH := "res://data/economy/default_economy.tres"
 const GOOD_PROFILE_DIR := "res://data/goods"
@@ -31,6 +33,9 @@ enum Opcode {
 	FAMILY_FREE_BUILDING = 14,
 	FAMILY_POPULATION_REWARD = 15,
 	TREASURY_SPONSORED_BUILD = 16,
+	FAMILY_COLONIZATION_START = 17,
+	FAMILY_COLONIZATION_CANCEL = 18,
+	FAMILY_COLONIZATION_SETTLE = 19,
 }
 
 const OWNERSHIP_TREASURY_SPONSORED_PRIVATE := 1
@@ -46,6 +51,8 @@ var _need_display_names: Dictionary = {}
 var _good_display_names: Dictionary = {}
 var _family_trait_sequence: int = 0
 var _construction_receipt_cursor: int = 0
+var _colonization_receipt_cursors: Dictionary = {}
+var _canal_receipt_cursors: Dictionary = {}
 
 func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
 	_world_ext = world_ext
@@ -70,6 +77,8 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 		native_catalog, _profile.to_native_profile(), cell_count, seed)
 	_configured = bool(result.get("ok", false))
 	_construction_receipt_cursor = 0
+	_colonization_receipt_cursors.clear()
+	_canal_receipt_cursors.clear()
 	return result
 
 func bootstrap(population_packet: Dictionary = {}, market_packet: Dictionary = {},
@@ -271,6 +280,25 @@ func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64) -> D
 	page["good_ids"] = _catalog.get("good_ids", PackedStringArray())
 	return page
 
+
+func country_trade_snapshot(country_handle: int, view: String = "summary",
+		offset: int = 0, limit: int = 32) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_country_trade_snapshot"):
+		return {"ok": false, "reason": "country trade API unavailable",
+			"view": view, "total": 0}
+	var page: Dictionary = _world_ext.get_country_trade_snapshot(
+		country_handle, view, offset, clampi(limit, 1, 64))
+	page["good_ids"] = _catalog.get("good_ids", PackedStringArray())
+	return page
+
+
+func good_display_name(good_index: int) -> String:
+	var ids: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
+	if good_index < 0 or good_index >= ids.size():
+		return "物资 %d" % good_index
+	var stable_id := String(ids[good_index])
+	return String(_good_display_names.get(stable_id, stable_id))
+
 func building_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:
 		return {}
@@ -392,6 +420,143 @@ func dispatch_construction_command_receipts() -> void:
 		construction_command_settled.emit(result)
 	_construction_receipt_cursor = maxi(_construction_receipt_cursor,
 		int(page.get("last_receipt_id", _construction_receipt_cursor)))
+
+
+func get_canal_route_quote(country_handle: int, start_cell: int, end_cell: int,
+		waypoints: PackedInt32Array = PackedInt32Array()) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_canal_route_quote"):
+		return {"ok": false, "code": "canal_runtime_unavailable",
+			"message": "canal_runtime_unavailable"}
+	return _world_ext.get_canal_route_quote(
+		country_handle, start_cell, end_cell, waypoints)
+
+
+func get_canal_route_quote_detail(country_handle: int,
+		quote_token: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method(
+			"get_canal_route_quote_detail"):
+		return {"ok": false, "code": "canal_runtime_unavailable",
+			"message": "canal_runtime_unavailable"}
+	return _world_ext.get_canal_route_quote_detail(country_handle, quote_token)
+
+
+func queue_canal_construction(country_handle: int, quote_token: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("queue_canal_construction"):
+		return {"ok": false, "code": "canal_runtime_unavailable",
+			"message": "canal_runtime_unavailable",
+			"effective_day": effective_day, "sequence": sequence}
+	return _world_ext.queue_canal_construction(
+		country_handle, quote_token, effective_day, sequence)
+
+
+func dispatch_canal_construction_receipts(country_handle: int) -> void:
+	if not _configured or not _world_ext.has_method(
+			"get_canal_construction_receipts"):
+		return
+	var cursor := int(_canal_receipt_cursors.get(country_handle, 0))
+	var page: Dictionary = _world_ext.get_canal_construction_receipts(
+		country_handle, cursor, 64)
+	if not bool(page.get("ok", false)):
+		return
+	for raw in page.get("receipts", []):
+		var result: Dictionary = raw
+		cursor = maxi(cursor, int(result.get("receipt_id", cursor)))
+		infrastructure_command_settled.emit(result)
+	_canal_receipt_cursors[country_handle] = cursor
+
+
+func family_colonization_quotes(country_handle: int, target_cell: int,
+		family_filter: int = 0, source_filter: int = -1,
+		offset: int = 0, limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_colonization_quotes"):
+		return {"ok": false, "code": "family_colonization_unavailable"}
+	return _world_ext.get_family_colonization_quotes(country_handle, target_cell,
+		family_filter, source_filter, offset, limit)
+
+
+func family_colonization_quote_detail(quote_token: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method(
+			"get_family_colonization_quote_detail"):
+		return {"ok": false, "code": "family_colonization_unavailable"}
+	var detail: Dictionary = _world_ext.get_family_colonization_quote_detail(quote_token)
+	if not bool(detail.get("ok", false)):
+		return detail
+	var stable_ids: PackedStringArray = _catalog.get(
+		"profession_ids", PackedStringArray())
+	var names := PackedStringArray()
+	var ids := PackedStringArray()
+	for profession_id in detail.get("profession_ids", PackedInt32Array()):
+		var stable_id := String(stable_ids[profession_id]) if profession_id >= 0 \
+			and profession_id < stable_ids.size() else ""
+		ids.append(stable_id)
+		names.append(String(_profession_display_names.get(stable_id, stable_id)))
+	detail["profession_stable_ids"] = ids
+	detail["profession_display_names"] = names
+	return detail
+
+
+func start_family_colonization(country_handle: int, family_handle: int,
+		source_cell: int, target_cell: int, population: int, quote_token: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("start_family_colonization"):
+		return {"ok": false, "code": "family_colonization_unavailable"}
+	return _world_ext.start_family_colonization(country_handle, family_handle,
+		source_cell, target_cell, population, quote_token, effective_day, sequence)
+
+
+func cancel_family_colonization(country_handle: int, expedition_handle: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("cancel_family_colonization"):
+		return {"ok": false, "code": "family_colonization_unavailable"}
+	return _world_ext.cancel_family_colonization(country_handle,
+		expedition_handle, effective_day, sequence)
+
+
+func family_expeditions(country_handle: int, offset: int = 0,
+		limit: int = 64) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_expeditions"):
+		return {"ok": false, "code": "family_colonization_unavailable"}
+	return _world_ext.get_family_expeditions(country_handle, offset, limit)
+
+
+func family_expedition_snapshot(country_handle: int,
+		expedition_handle: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method(
+			"get_family_expedition_snapshot"):
+		return {"ok": false, "code": "family_colonization_unavailable"}
+	return _world_ext.get_family_expedition_snapshot(country_handle,
+		expedition_handle)
+
+
+func dispatch_family_colonization_receipts(country_handle: int) -> void:
+	if not _configured or country_handle == 0 or not _world_ext.has_method(
+			"get_family_colonization_receipts"):
+		return
+	var cursor := int(_colonization_receipt_cursors.get(country_handle, 0))
+	var page: Dictionary = _world_ext.get_family_colonization_receipts(
+		country_handle, cursor, 64)
+	if not bool(page.get("ok", false)):
+		return
+	for raw in page.get("receipts", []):
+		var result: Dictionary = raw
+		result["country_handle"] = country_handle
+		result["ok"] = true
+		result["message"] = _colonization_result_message(
+			String(result.get("code", "")))
+		family_colonization_settled.emit(result)
+	_colonization_receipt_cursors[country_handle] = maxi(cursor,
+		int(page.get("last_receipt_id", cursor)))
+
+
+static func _colonization_result_message(code: String) -> String:
+	return {
+		"STARTED": "开拓队已经出发。",
+		"CANCELLED_RETURNING": "开拓已取消，队伍正在返程。",
+		"TARGET_LOST_RETURNING": "目标已被占领，队伍正在返程。",
+		"CLAIMED": "开拓成功，目标已纳入领土。",
+		"RETURNED": "开拓队已返回原出发地。",
+	}.get(code, "开拓队状态已更新。")
 
 
 static func _construction_result_message(code: String) -> String:

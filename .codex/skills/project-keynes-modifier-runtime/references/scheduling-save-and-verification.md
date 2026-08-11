@@ -19,12 +19,12 @@ Do not mutate a store from a worker or domain pass. SHADOW compares output only.
 ## Save Order
 
 - PKCM v1: Climate store.
-- PKCN v4: Country state plus Country store.
-- PKEC v29: Economy state, family-cell effects, BuildingIdentityStore, Economy store.
+- PKCN v11: Country state, technology/research-signal identity, and Country store.
+- PKEC v33: Economy state, family-cell effects, BuildingIdentityStore, Economy store.
 - PKGP v1: Gameplay identities/base plus Gameplay store.
 
 Restore dynamic world -> environment -> PKCM -> clock -> PKCN -> prepare economy -> PKEC ->
-PKGP -> vision/journal/player. PKEC v28 and earlier are rejected. Unknown keys, invalid numeric data,
+PKGP -> vision/journal/player. Older PKCN/PKEC schemas are rejected. Unknown keys, invalid numeric data,
 bad handles, invalid magnitude, and incompatible normalized terms fail. The current domain restore
 also requires an exact catalog hash; append-only compatibility needs an explicit migration path.
 `persistable=false` is not yet enforced by native serialization.

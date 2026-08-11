@@ -34,9 +34,12 @@ Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
     if (_modifier_runtime != nullptr)
         static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(
             country_runtime_from(_country_runtime));
-    if (_effect_runtime != nullptr)
+    if (_effect_runtime != nullptr) {
+        static_cast<EffectRuntime *>(_effect_runtime)->attach_country_runtime(
+            country_runtime_from(_country_runtime));
         country_runtime_from(_country_runtime)->attach_effect_runtime(
             static_cast<EffectRuntime *>(_effect_runtime));
+    }
     country_runtime_from(_country_runtime)->attach_modifier_runtime(
         static_cast<ModifierRuntime *>(_modifier_runtime));
     Dictionary out = country_runtime_from(_country_runtime)->configure(catalog, profile, cell_count, seed);

@@ -381,6 +381,26 @@ func snapshot(handle: int) -> Dictionary:
 func treasury_snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_treasury_snapshot(handle) if _configured else {}
 
+
+func bind_era_reward_player_country(handle: int) -> Dictionary:
+	return _world_ext.bind_era_reward_player_country(handle) if _configured \
+		and _world_ext.has_method("bind_era_reward_player_country") else {
+			"ok": false, "reason": "era_reward_runtime_unavailable"}
+
+
+func era_reward_offer() -> Dictionary:
+	return _world_ext.get_era_reward_offer() if _configured \
+		and _world_ext.has_method("get_era_reward_offer") else {
+			"ok": false, "reason": "era_reward_runtime_unavailable"}
+
+
+func choose_era_reward(offer_generation: int, choice_index: int,
+		effective_day: int) -> Dictionary:
+	return _world_ext.choose_era_reward(offer_generation, choice_index,
+		effective_day) if _configured and _world_ext.has_method(
+			"choose_era_reward") else {
+				"ok": false, "reason": "era_reward_runtime_unavailable"}
+
 func report() -> Dictionary:
 	return _world_ext.get_country_report() if _configured else {"configured": false}
 

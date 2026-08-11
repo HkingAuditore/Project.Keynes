@@ -1,18 +1,18 @@
-[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"method_batteries_plant_r10"
 display_name = "智能化电池厂"
-building_kind = "industrial"
-technology_tags = PackedStringArray("industry.machinery", "tech.autonomous_systems")
-upgrade_family_id = &""
-upgrade_tier = 0
-construction_days = 0
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.machinery", "tech.smart_grid")
+required_technology_tags = PackedStringArray("tech.smart_grid", "tech.robotic_manufacturing", "tech.digital_control")
 construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "glass")
 construction_quantities = PackedInt64Array(64000, 48000, 48000, 16000)
 owner_profession_id = &"industrialist"
-owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray("industrial_worker", "machinist", "technician", "engineer", "manager")
 employee_slots_per_building = PackedInt64Array(32, 12, 9, 6, 4)
 employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive", "adaptive")
@@ -27,13 +27,15 @@ input_candidate_good_ids = PackedStringArray("lead", "rare_earth_metals")
 input_candidate_efficiency_q16 = PackedInt32Array(65536, 98304)
 output_good_ids = PackedStringArray("batteries")
 output_quantities_per_day = PackedInt64Array(36398)
-target_operating_margin_q16 = 9830
-supply_price_elasticity_q16 = 65536
+output_cost_shares_q16 = PackedInt32Array()
 resource_ids = PackedStringArray()
 resource_quantities_per_day = PackedInt64Array()
 resource_interaction_modes = PackedStringArray()
 resource_access_modes = PackedStringArray()
 resource_generation_ids = PackedStringArray()
 resource_generation_quantities_per_day = PackedInt64Array()
-resource_generation_floor_q16 = 0
-behavior_id = "none"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

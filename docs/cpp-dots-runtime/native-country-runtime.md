@@ -1,4 +1,15 @@
-# Native Country Runtime（PKCN v7）
+# Native Country Runtime（PKCN v11）
+
+PKCN v11 保留玩家时代奖励的最小交叉引用：plan ID、Offer 代际、里程碑科技和
+`OPEN / SELECTED_PENDING / RESOLVED / ERROR` 状态。完整备选仍由 PKEF v9 持有；
+PKEF 恢复时必须与该引用逐字段一致。PKCN v11 额外把科技/研究信号/Effect recipe 与
+Modifier term identity、Trigger 定义摘要及完整内容绑定摘要混入国家 catalog hash。
+旧 schema 或任一 identity 不一致统一返回 `catalog_hash_mismatch`。
+
+PKCN v11 保留 Effect/POD `CLAIM_UNOWNED_TERRITORY` 与时代奖励引用。
+`CLAIM_UNOWNED_TERRITORY` 只允许目标
+当前为 neutral，供[家族远程开拓事务](./family-colonization-runtime.md)在
+Country priority 255 提交；侵略、吞并与通行权不复用该 opcode。
 
 > v7 adds the authoritative `CellTaxPolicyStore`: `cell_policy_id[cell]` uses
 > `0` for full national inheritance, while identical non-empty policies are
@@ -18,9 +29,12 @@ snapshots; it never queries map Resources, strings, or dictionaries in the daily
 research loop.
 
 The active command is `DISCOVER_COUNTRY_SIGNAL=14`; it is deduplicated by the sorted
-`(signal_dense_id, cell_idx)` key before evidence and facts are published. The cold snapshot exposes
+`(signal_dense_id, cell_idx)` key before evidence and facts are published. Static Bio/landform
+signals come from the first native map pass; all real resource reserves are appended by a second
+native pass after deposit bootstrap. The cold snapshot exposes
 signal IDs, distinct counts, first/last days, and first cells. A signal catalog mismatch, malformed
-dense ID, invalid cell, or legacy PKCN schema is rejected rather than defaulted.
+dense ID, invalid cell, or legacy PKCN schema is rejected rather than defaulted; schema/catalog
+identity failures use `catalog_hash_mismatch`, while malformed commands keep their precise reason.
 
 `NativeCountryRuntime` 是国家身份、领土、国家科技、税务政策与国家国库的唯一可变权威。它与
 `NativeEconomyRuntime` 同级，由 `DCWorldExt` 组合持有；GDScript 不维护第二份国家状态。
@@ -99,6 +113,6 @@ handle、重复 good、非负数量和全部余额，再一次性提交并只递
 注意 Inspector 的国家摘要受迷雾门控：`FOG_UNEXPLORED` 的格子不展示任何国家信息，
 即使 `get_country_cell_summary()` 能返回。详见
 [视野迷雾与国界线](./vision-fog-and-borders.md)。
-> 科技树扩展说明见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。PKCN v3
-> 新增 discovery/completed/pending bitset、稀疏研究进度、四领域队列与权重、采购政策、暂缓
-> 科技值和研究审计计数；旧版本明确拒绝恢复。
+> 科技树扩展说明见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。当前
+> PKCN v11 持久化 discovery/completed/pending bitset、稀疏研究进度、四领域队列与权重、
+> 采购政策、暂缓科技值、研究信号证据和审计计数；旧版本明确拒绝恢复。

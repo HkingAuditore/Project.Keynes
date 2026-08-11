@@ -264,8 +264,8 @@ paid/unmet subsidy, fulfillment, cumulative values, and inactive tariff state.
 
 Current schemas:
 
-- PKCN v4: tax policy, policy version, country Modifier persistence.
-- PKEC v23: previous subsidy requests, generation-safe country history, fiscal cumulative values,
+- PKCN v11: tax policy, policy version, country Modifier persistence.
+- PKEC v33: previous subsidy requests, generation-safe country history, fiscal cumulative values,
   and deterministic hash.
 
 PKCN v3/PKEC v22 migrate explicitly to zero rates and empty fiscal history. Modifier catalog

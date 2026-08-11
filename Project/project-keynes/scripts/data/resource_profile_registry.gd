@@ -104,11 +104,15 @@ static func discovery_visible(p: ResourceProfile,
 		unlocked_technology_ids: PackedStringArray) -> bool:
 	if p == null:
 		return false
+	var has_technology_gate := false
 	for tag in p.discovery_technology_tags:
 		var stable_id := String(tag)
-		if stable_id.begins_with("tech.") and not unlocked_technology_ids.has(stable_id):
-			return false
-	return true
+		if not stable_id.begins_with("tech."):
+			continue
+		has_technology_gate = true
+		if unlocked_technology_ids.has(stable_id):
+			return true
+	return not has_technology_gate
 
 static func habitat_code(p: ResourceProfile) -> int:
 	if p == null:

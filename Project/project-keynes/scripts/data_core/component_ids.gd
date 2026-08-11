@@ -156,6 +156,8 @@ const CELL_RIVER_DISCHARGE_30D: StringName = &"cell.river_discharge_30d"        
 const CELL_RIVER_STORAGE: StringName = &"cell.river_storage"                       # f32 channel/lake storage
 const CELL_GROUNDWATER_STORAGE: StringName = &"cell.groundwater_storage"           # f32 slow reservoir
 const CELL_SURFACE_RUNOFF: StringName = &"cell.surface_runoff"                     # f32 local runoff debug
+const CELL_CANAL_EDGE_MASK: StringName = &"cell.canal_edge_mask"                   # u8 low six bits, reciprocal canal edges
+const CELL_CANAL_WATER: StringName = &"cell.canal_water"                           # f32 [0,1] operational canal water
 
 # ─── Natural resources：per-cell 资源储量（economy.resources）─────────
 # 每种资源一个 f32 储量字段（非负、无硬上限）+ 一个 f32 extra_change 字段。

@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"freshwater_fish"
+discovery_technology_tags = PackedStringArray("tech.freshwater_fishing")
 display_name = "淡水鱼群"
 reserve_component = &"cell.res_freshwater_fish_reserve"
 habitat_mode = "freshwater"

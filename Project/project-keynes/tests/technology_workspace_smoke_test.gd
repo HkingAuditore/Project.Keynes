@@ -4,11 +4,14 @@ const WorkspaceScene := preload("res://scenes/ui/technology_workspace.tscn")
 const DialScene := preload("res://scenes/ui/research_weight_dial.tscn")
 const DialScript = preload("res://scripts/ui/components/research_weight_dial.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const TechnologyTreeLayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
+const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
 
 var _failures := 0
 
 
 func _init() -> void:
+	var initialization_started := Time.get_ticks_usec()
 	var compiled: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	_expect("technology catalog compiles", bool(compiled.get("ok", false)))
 	if not bool(compiled.get("ok", false)):
@@ -17,6 +20,13 @@ func _init() -> void:
 	var definitions: Array = TechnologyCatalogScript.public_definitions()
 	var eras: Array = TechnologyCatalogScript.public_era_metadata()
 	var domains: Array = TechnologyCatalogScript.public_domain_metadata()
+	var visual_edges: Array = TechnologyCatalogScript.public_visual_edges()
+	var baked_layout: Dictionary = TechnologyTreeLayoutScript.build(
+		definitions, eras, domains, visual_edges)
+	var initialization_ms := float(Time.get_ticks_usec() - initialization_started) / 1000.0
+	print("  [info] catalog compile + public metadata + layout %.3fms" % initialization_ms)
+	_expect("technology layout compiles", bool(baked_layout.get("ok", false)))
+	_expect("debug catalog compile and layout stay below 250ms", initialization_ms <= 250.0)
 	_expect("era metadata carries display names", eras.size() == 11 \
 		and String((eras[0] as Dictionary).get("display_name", "")) == "石器时代")
 	_expect("domain metadata carries four accents", domains.size() == 4)
@@ -30,6 +40,25 @@ func _init() -> void:
 	workspace.set_model(_model(definitions, eras, domains))
 	await process_frame
 	await process_frame
+	var maize := (compiled.technology_ids as PackedStringArray).find(
+		"tech.maize_identification")
+	_expect("technology presentation is fully Chinese",
+		String((definitions[maize] as Dictionary).get("display_name", "")) == "玉米辨识"
+		and String((definitions[maize] as Dictionary).get("effect_summary", ""))
+			== "大田作物农业产出 +10%"
+		and String(((definitions[maize] as Dictionary).get(
+			"route_display_names", PackedStringArray()) as PackedStringArray)[0])
+			== "作物 · 玉米")
+	var condition_states: PackedInt32Array = (
+		workspace.get("_research").technology_states as PackedInt32Array).duplicate()
+	condition_states[(compiled.technology_ids as PackedStringArray).find(
+		"tech.natural_observation")] = 5
+	condition_states[maize] = 2
+	var condition_items: Array = workspace._condition_items(
+		maize, condition_states)
+	_expect("revealed technology conditions expose discovered evidence",
+		_items_contain(condition_items, "玉米") and
+		_items_contain(condition_items, "地块 7"))
 	var tree: Control = workspace.tree_view()
 	_expect("tree view exists", tree != null)
 	if tree == null:
@@ -49,6 +78,13 @@ func _init() -> void:
 
 
 func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
+	var signal_definitions: Array = ResearchSignalCatalogScript.public_metadata()
+	var maize_signal_id := -1
+	for index in range(signal_definitions.size()):
+		if String((signal_definitions[index] as Dictionary).get("id", "")) == "bio.maize":
+			maize_signal_id = index
+			break
+	assert(maize_signal_id >= 0)
 	var states := PackedInt32Array()
 	var progress := PackedInt64Array()
 	states.resize(definitions.size())
@@ -64,6 +100,8 @@ func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
 		"technology_definitions": definitions,
 		"technology_eras": eras,
 		"technology_domains": domains,
+		"technology_visual_edges": TechnologyCatalogScript.public_visual_edges(),
+		"research_signal_definitions": signal_definitions,
 		"research": {
 			"technology_states": states,
 			"technology_progress": progress,
@@ -75,8 +113,23 @@ func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
 			"technology_points_stock": 10000,
 			"country_cash": 500000000,
 			"last_research_day": 12,
+			"research_signal_snapshot": {
+				"ok": true,
+				"signal_ids": PackedInt32Array([maize_signal_id]),
+				"counts": PackedInt32Array([1]),
+				"first_days": PackedInt64Array([4]),
+				"last_days": PackedInt64Array([12]),
+				"first_cells": PackedInt32Array([7]),
+			},
 		},
 	}
+
+
+func _items_contain(items: Array, fragment: String) -> bool:
+	for item in items:
+		if String((item as Dictionary).get("text", "")).contains(fragment):
+			return true
+	return false
 
 
 func _audit_layout(layout: Dictionary, definitions: Array) -> void:
@@ -87,12 +140,14 @@ func _audit_layout(layout: Dictionary, definitions: Array) -> void:
 	var descending := true
 	for edge in layout.get("edges", []) as Array:
 		var data: Dictionary = edge
+		if String(data.get("kind", "hard")) != "hard":
+			continue
 		var parent: Rect2 = (nodes[int(data.from)] as Dictionary).rect
 		var child: Rect2 = (nodes[int(data.to)] as Dictionary).rect
 		if child.position.y <= parent.position.y:
 			descending = false
 			break
-	_expect("every dependency edge points strictly downwards", descending)
+	_expect("every hard dependency edge points strictly downwards", descending)
 	var ordered := true
 	for index in range(bands.size() - 1):
 		var current: Dictionary = bands[index]
@@ -123,7 +178,8 @@ func _audit_fog(tree: Control, layout: Dictionary) -> void:
 	_expect("only eight technologies are known at the start",
 		int(report.known) == 8)
 	_expect("fog keeps the visible set far below the catalog size",
-		int(report.visible) < 24 and int(report.visible) > int(report.known))
+		int(report.visible) < int(report.total) / 3
+		and int(report.visible) > int(report.known))
 	_expect("fog hides later eras entirely",
 		int(report.visible_bands) < int(report.total_bands))
 	var states: PackedInt32Array = tree.get("_states")
@@ -266,7 +322,10 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 
 func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 		eras: Array, domains: Array) -> void:
-	var before: Rect2 = (tree.layout_report().get("content_rect", Rect2()) as Rect2)
+	var before_layout: Dictionary = tree.layout_report()
+	var before: Rect2 = (before_layout.get("content_rect", Rect2()) as Rect2)
+	var before_nodes := (before_layout.get("nodes", []) as Array).size()
+	var before_edges := (before_layout.get("edges", []) as Array).size()
 	var rows: Array = workspace.get("_queue_rows")
 	_expect("queued technology renders one row",
 		rows.size() == 4 and (rows[0] as Array).size() == 1)
@@ -280,6 +339,25 @@ func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 	_expect("daily refresh reuses queue rows instead of rebuilding them",
 		((refreshed[0] as Array)[0] as Node).get_instance_id() == row_id)
 	_expect("tree view still owns no child nodes", tree.get_child_count() == 0)
+	var refresh_samples := PackedFloat64Array()
+	var steady_model := _model(definitions, eras, domains)
+	for iteration in range(1000):
+		var started := Time.get_ticks_usec()
+		workspace.refresh_research(steady_model)
+		refresh_samples.append(float(Time.get_ticks_usec() - started) / 1000.0)
+	refresh_samples.sort()
+	var p95_index := mini(refresh_samples.size() - 1,
+		int(ceil(refresh_samples.size() * 0.95)) - 1)
+	var refresh_p95 := refresh_samples[p95_index]
+	var final_layout: Dictionary = tree.layout_report()
+	print("  [info] 1000 steady refreshes p95 %.3fms" % refresh_p95)
+	_expect("1000 refreshes keep node and edge cache sizes stable",
+		(final_layout.get("nodes", []) as Array).size() == before_nodes and
+		(final_layout.get("edges", []) as Array).size() == before_edges)
+	_expect("1000 refreshes preserve baked geometry",
+		(final_layout.get("content_rect", Rect2()) as Rect2) == before)
+	_expect("1000 refreshes allocate no tree child nodes", tree.get_child_count() == 0)
+	_expect("steady technology refresh p95 stays below 1ms", refresh_p95 <= 1.0)
 
 
 # The wheel scrolls the era stack; it must never scale the tree, and it must not
@@ -301,8 +379,9 @@ func _audit_navigation(tree: Control, definitions: Array) -> void:
 	_expect("wheel down walks towards later eras", scrolled.y < start.y \
 		and is_equal_approx(scrolled.x, start.x))
 	_scroll(tree, MOUSE_BUTTON_WHEEL_UP, 1)
-	_expect("wheel up returns to the previous row",
-		is_equal_approx((tree.get("_offset") as Vector2).y, start.y))
+	var returned: Vector2 = tree.get("_offset")
+	_expect("wheel up returns towards the previous row",
+		returned.y > scrolled.y and returned.y <= start.y + 0.5)
 	_scroll(tree, MOUSE_BUTTON_WHEEL_DOWN, 60)
 	var floor_offset: Vector2 = tree.get("_offset")
 	_expect("scrolling past the last era stops at the content edge",

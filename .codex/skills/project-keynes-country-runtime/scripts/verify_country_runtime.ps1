@@ -36,10 +36,10 @@ try {
     if ($schemaMatches.Count -eq 0) { throw 'PKEC SCHEMA_VERSION is missing from economy_runtime.h.' }
     $schemaVersion = [int]($schemaMatches[0] -replace '\D', '')
     if ($schemaVersion -lt 11) { throw "PKEC schema $schemaVersion predates country authority (expected >= 11)." }
-    # PKEC v29 and earlier are rejected by the persistence reader. Keep this
+    # PKEC v31 and earlier are rejected by the persistence reader. Keep this
     # assertion on the implementation's precise current reason so a stale
     # verifier cannot silently bless an incompatible migration contract.
-    $legacyReject = rg -n 'economy_save_v29_or_earlier_unsupported' gdext/src/economy_runtime_persistence_read.cpp
+    $legacyReject = rg -n 'economy_save_v31_or_earlier_unsupported' gdext/src/economy_runtime_persistence_read.cpp
     if (-not $legacyReject) { throw 'Precise legacy PKEC rejection is missing.' }
 
     if ($Build) {

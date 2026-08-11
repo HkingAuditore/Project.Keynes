@@ -78,7 +78,7 @@ Register `effect_runtime` after `trigger_runtime` and before `modifier_daily`.
 Use `effect_should_run(day)` and a cooperative `done=false` cursor. Persist
 instances, metric snapshots/revisions, program hash, fire sequence, and pending
 transactions plus the in-progress candidate list and last consumed input revision
-in `PKEF v4`; reject catalog mismatch or truncation. Store a native-bound
+in `PKEF v9`; reject catalog mismatch or truncation. Store a native-bound
 `PREFLIGHTED` transaction as `PLANNED`: native Modifier request IDs are not
 valid after restart, while the command idempotency key is. A strictly newer metric
 revision may re-evaluate once in the same day; unchanged input obeys cadence.

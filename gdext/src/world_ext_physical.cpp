@@ -397,6 +397,20 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         div_damp_alpha = 0.3;
     }
     if (div_damp_alpha < 0.0) div_damp_alpha = 0.0;
+    const bool thermal_monsoon_enabled = bool(knobs.has("thermal_monsoon_enabled")
+        ? bool(knobs["thermal_monsoon_enabled"]) : false);
+    const double monsoon_lat_limit = wind_clamp(double(knobs.get(
+        "thermal_monsoon_lat_limit", 0.45)), 0.0, 1.0);
+    const double monsoon_deadband = wind_clamp(double(knobs.get(
+        "thermal_monsoon_deadband", 0.015)), 0.0, 0.10);
+    const double monsoon_full_contrast = std::max(
+        monsoon_deadband + 0.001,
+        wind_clamp(double(knobs.get("thermal_monsoon_full_contrast", 0.08)),
+                   0.01, 0.25));
+    const double monsoon_gain = wind_clamp(double(knobs.get(
+        "thermal_monsoon_gain", 0.85)), 0.0, 1.5);
+    const double monsoon_breeze_floor = wind_clamp(double(knobs.get(
+        "thermal_monsoon_breeze_floor", 0.20)), 0.0, 0.5);
     if (n_cells <= 0)         { diag("n_cells <= 0"); return -1.0; }
     if (bounds_size_y <= 0.001) { diag("world_bounds_size_y <= 0.001"); return -1.0; }
 
@@ -416,9 +430,11 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const int sid_wind_x   = _phys_sid_wind_x;
     const int sid_wind_y   = _phys_sid_wind_y;
     const int sid_wind_spd = _phys_sid_wind_spd;
+    const int sid_temp      = _phys_sid_temp;
     if (sid_pos_x < 0 || sid_pos_y < 0 || sid_terrain < 0 || sid_landform < 0 ||
-        sid_wind_x < 0 || sid_wind_y < 0 || sid_wind_spd < 0) {
-        diag("missing slot id (cell_pos_x/cell_pos_y/terrain/landform/wind_x/wind_y/wind_speed)");
+        sid_wind_x < 0 || sid_wind_y < 0 || sid_wind_spd < 0 ||
+        (thermal_monsoon_enabled && sid_temp < 0)) {
+        diag("missing slot id (cell_pos_x/cell_pos_y/terrain/landform/wind_x/wind_y/wind_speed/temp)");
         return -1.0;
     }
 
@@ -441,13 +457,16 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     Slot &s_wind_x   = _slots.write[sid_wind_x];
     Slot &s_wind_y   = _slots.write[sid_wind_y];
     Slot &s_wind_spd = _slots.write[sid_wind_spd];
+    Slot *s_temp      = sid_temp >= 0 ? &_slots.write[sid_temp] : nullptr;
     if (s_pos_x.arr_f32.size()    != n_cells ||
         s_pos_y.arr_f32.size()    != n_cells ||
         s_terrain.arr_u8.size()   != n_cells ||
         s_landform.arr_u8.size()  != n_cells ||
         s_wind_x.arr_f32.size()   != n_cells ||
         s_wind_y.arr_f32.size()   != n_cells ||
-        s_wind_spd.arr_f32.size() != n_cells) {
+        s_wind_spd.arr_f32.size() != n_cells ||
+        (thermal_monsoon_enabled &&
+         (s_temp == nullptr || s_temp->arr_f32.size() != n_cells))) {
         diag("slot array size mismatch (re-bind needed?)");
         return -1.0;
     }
@@ -460,6 +479,8 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     float         * const __restrict WX   = s_wind_x.arr_f32.ptrw();
     float         * const __restrict WY   = s_wind_y.arr_f32.ptrw();
     float         * const __restrict WSP_SLOT = s_wind_spd.arr_f32.ptrw();
+    const float   * const __restrict TEMP = (s_temp != nullptr &&
+        s_temp->arr_f32.size() == n_cells) ? s_temp->arr_f32.ptr() : nullptr;
     const int32_t * const __restrict NB   = nb_arr.ptr();
     const float   * const __restrict SLP  = slp_arr.ptr();
 
@@ -474,6 +495,11 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     const int8_t  *sea_dist    = _phys_wind_sea_dist.data();
     const float   *sea_land_x  = _phys_wind_sea_land_x.data();
     const float   *sea_land_y  = _phys_wind_sea_land_y.data();
+    const int32_t *coast_sea_anchor = _phys_wind_coast_sea_anchor.data();
+    const int32_t *sea_land_anchor = _phys_wind_sea_land_anchor.data();
+    if (_phys_monsoon_thermal.size() != static_cast<size_t>(n_cells)) {
+        _phys_monsoon_thermal.assign(static_cast<size_t>(n_cells), 0.0f);
+    }
 
     // ─── 主循环 ────────────────────────────────────────────────────────
     // wind_speed_out 写入 knobs；caller 拿来同步到 cell.wind_speed
@@ -488,7 +514,19 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     // emit + 串行 reduce 并行；flip 为整数加法、task 顺序无关 → bit-equal。
     struct WindFlipEmit {
         int flip = 0;
-        void merge_into(WindFlipEmit &dst) const { dst.flip += flip; }
+        int monsoon_eligible = 0;
+        int monsoon_onshore = 0;
+        int monsoon_offshore = 0;
+        float monsoon_abs_max = 0.0f;
+        void merge_into(WindFlipEmit &dst) const {
+            dst.flip += flip;
+            dst.monsoon_eligible += monsoon_eligible;
+            dst.monsoon_onshore += monsoon_onshore;
+            dst.monsoon_offshore += monsoon_offshore;
+            if (monsoon_abs_max > dst.monsoon_abs_max) {
+                dst.monsoon_abs_max = monsoon_abs_max;
+            }
+        }
     };
     WindFlipEmit wind_flip_emit;
 
@@ -637,18 +675,50 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
                                 * (1.0 + WIND_W_COAST_THERMAL * coast_pressure_w);
         double v_sum_x = lat_w * v_base_x + pressure_w * v_grad_x;
         double v_sum_y = lat_w * v_base_y + pressure_w * v_grad_y;
-        // (c2) 几何海风 → 海陆连续 onshore 水汽输送（见 WIND_SEA_BREEZE_W 注释）。
+        // (c2) 几何海风 + 热力季风。warm land drives onshore flow; cold land
+        // reverses it offshore.  The 0.20 floor preserves the existing weak
+        // sea-breeze moisture conveyor inside the deadband.
         // 陆地侧朝内陆(-coast_sea) + 海洋侧朝陆(sea_land)，拼成"深海→近岸→海岸→内陆"连续带。
         // 只抽陆地侧会把沿海抽干、海洋补不进(实测 hop0→hop1 vapor 断崖)；海洋侧朝陆把海洋水汽
         // 真正推上岸。方向几何确定(弃用海陆温差弱→只 56% 可靠的 -∇slp)，强度正比本地风量级。
         const double vs_mag = std::sqrt(v_sum_x * v_sum_x + v_sum_y * v_sum_y);
+        double monsoon_thermal = 0.0;
+        if (thermal_monsoon_enabled && TEMP != nullptr && ls_abs <= monsoon_lat_limit) {
+            const int anchor = is_water ? sea_land_anchor[i] : coast_sea_anchor[i];
+            if (anchor >= 0 && anchor < n_cells) {
+                const double land_minus_sea = is_water
+                    ? double(TEMP[anchor]) - double(TEMP[i])
+                    : double(TEMP[i]) - double(TEMP[anchor]);
+                const double abs_contrast = std::abs(land_minus_sea);
+                if (abs_contrast > monsoon_deadband) {
+                    const double response = wind_smoothstep(
+                        monsoon_deadband, monsoon_full_contrast, abs_contrast);
+                    monsoon_thermal = (land_minus_sea >= 0.0 ? response : -response);
+                }
+                _phys_monsoon_thermal[static_cast<size_t>(i)] = float(monsoon_thermal);
+                ++__we.monsoon_eligible;
+                if (monsoon_thermal > 0.0) ++__we.monsoon_onshore;
+                else if (monsoon_thermal < 0.0) ++__we.monsoon_offshore;
+                const float abs_value = float(abs_contrast);
+                if (abs_value > __we.monsoon_abs_max) __we.monsoon_abs_max = abs_value;
+            } else {
+                _phys_monsoon_thermal[static_cast<size_t>(i)] = 0.0f;
+            }
+        } else {
+            _phys_monsoon_thermal[static_cast<size_t>(i)] = 0.0f;
+        }
+        double breeze_sign = 1.0;
+        if (thermal_monsoon_enabled) {
+            breeze_sign = wind_clamp(monsoon_breeze_floor + monsoon_gain * monsoon_thermal,
+                                     -0.65, 1.05);
+        }
         if (!is_water && coast_pressure_w > 0.0) {
-            const double breeze = WIND_SEA_BREEZE_W * coast_pressure_w * vs_mag;
+            const double breeze = WIND_SEA_BREEZE_W * coast_pressure_w * vs_mag * breeze_sign;
             v_sum_x += breeze * (-double(coast_sea_x[i]));   // 朝内陆
             v_sum_y += breeze * (-double(coast_sea_y[i]));
         } else if (is_water && sea_dist[i] != COAST_INF) {
             const double sea_pw = 1.0 - double(sea_dist[i]) / double(SEA_BREEZE_SEA_MAX_DIST);
-            const double breeze = WIND_SEA_BREEZE_W * sea_pw * vs_mag;
+            const double breeze = WIND_SEA_BREEZE_W * sea_pw * vs_mag * breeze_sign;
             v_sum_x += breeze * double(sea_land_x[i]);       // 朝陆
             v_sum_y += breeze * double(sea_land_y[i]);
         }
@@ -913,6 +983,18 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     }
         }); // pk_wind_field parallel_for_range_with_emit
     wind_flip_count = wind_flip_emit.flip;
+    if (start_idx == 0) {
+        _monsoon_eligible_cells = 0;
+        _monsoon_onshore_cells = 0;
+        _monsoon_offshore_cells = 0;
+        _monsoon_contrast_abs_max = 0.0f;
+    }
+    _monsoon_eligible_cells += wind_flip_emit.monsoon_eligible;
+    _monsoon_onshore_cells += wind_flip_emit.monsoon_onshore;
+    _monsoon_offshore_cells += wind_flip_emit.monsoon_offshore;
+    if (wind_flip_emit.monsoon_abs_max > _monsoon_contrast_abs_max) {
+        _monsoon_contrast_abs_max = wind_flip_emit.monsoon_abs_max;
+    }
 
     // ─── NS 化 Phase 3:散度阻尼 L1(仅末切片/全量,对完整新风场执行)─────────
     // div = ∇·V 与 grad(div) 用与 (b) 段相同的 (1/3)Σ_d Δ·NB_DIR 离散(内洽):
@@ -1019,6 +1101,12 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     knobs["momentum_diffuse_w_eff"] = diffuse_w;
     knobs["div_damp_alpha_eff"] = div_damp_applied;
     knobs["wind_traj_stale_count"] = _phys_wind_traj_stale_count;
+    knobs["monsoon_eligible_cells"] = _monsoon_eligible_cells;
+    knobs["monsoon_onshore_cells"] = _monsoon_onshore_cells;
+    knobs["monsoon_offshore_cells"] = _monsoon_offshore_cells;
+    knobs["monsoon_contrast_abs_max"] = _monsoon_contrast_abs_max;
+    knobs["monsoon_coast_cache_hit"] = _phys_wind_coast_last_hit;
+    knobs["monsoon_coast_cache_build_ms"] = _phys_wind_coast_build_ms;
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -1787,6 +1875,7 @@ void DCWorldExt::_phys_resolve_static(int n_cells, const godot::PackedByteArray 
 // 注：NB_DIR_X/Y、WIND_COAST_THERMAL_MAX_DIST、SEA_BREEZE_SEA_MAX_DIST 为本 TU 常量。
 void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const int32_t *NB,
                                          const bool *is_water_lut, const godot::PackedByteArray &water_ids) {
+    const auto build_t0 = std::chrono::high_resolution_clock::now();
     uint64_t fp = 1469598103934665603ull; // FNV-1a offset basis
     auto mix = [&fp](uint32_t bits) {
         fp ^= uint64_t(bits);
@@ -1797,15 +1886,21 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
     mix(uint32_t(water_ids.size()));
     for (int k = 0; k < water_ids.size(); ++k) mix(uint32_t(int(water_ids[k])));
     for (int i = 0; i < n_cells * 6; ++i) mix(uint32_t(NB[i]));
-    if (_phys_wind_coast_valid && _phys_wind_coast_fp == fp) return;
+    if (_phys_wind_coast_valid && _phys_wind_coast_fp == fp) {
+        _phys_wind_coast_last_hit = true;
+        return;
+    }
+    _phys_wind_coast_last_hit = false;
 
     constexpr int8_t COAST_INF = 127;
     _phys_wind_coast_dist.assign(static_cast<size_t>(n_cells), COAST_INF);
     _phys_wind_coast_sea_x.assign(static_cast<size_t>(n_cells), 0.0f);
     _phys_wind_coast_sea_y.assign(static_cast<size_t>(n_cells), 0.0f);
+    _phys_wind_coast_sea_anchor.assign(static_cast<size_t>(n_cells), -1);
     _phys_wind_sea_dist.assign(static_cast<size_t>(n_cells), COAST_INF);
     _phys_wind_sea_land_x.assign(static_cast<size_t>(n_cells), 0.0f);
     _phys_wind_sea_land_y.assign(static_cast<size_t>(n_cells), 0.0f);
+    _phys_wind_sea_land_anchor.assign(static_cast<size_t>(n_cells), -1);
     std::vector<int32_t> bfs_queue;
     bfs_queue.reserve(n_cells);
 
@@ -1814,6 +1909,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
         if (is_water_lut[TR[i]]) continue;
         double sea_dx = 0.0, sea_dy = 0.0;
         bool is_coast = false;
+        int32_t sea_anchor = -1;
         const int base = i * 6;
         for (int d = 0; d < 6; ++d) {
             const int32_t ni = NB[base + d];
@@ -1822,6 +1918,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
             sea_dx += NB_DIR_X[d];
             sea_dy += NB_DIR_Y[d];
             is_coast = true;
+            if (sea_anchor < 0 || ni < sea_anchor) sea_anchor = ni;
         }
         if (is_coast) {
             const double len2 = sea_dx * sea_dx + sea_dy * sea_dy;
@@ -1830,6 +1927,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
                 _phys_wind_coast_dist[i] = 0;
                 _phys_wind_coast_sea_x[i] = float(sea_dx * inv);
                 _phys_wind_coast_sea_y[i] = float(sea_dy * inv);
+                _phys_wind_coast_sea_anchor[i] = sea_anchor;
                 bfs_queue.push_back(i);
             }
         }
@@ -1841,6 +1939,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
         if (cur_d >= WIND_COAST_THERMAL_MAX_DIST) continue;
         const float cur_sx = _phys_wind_coast_sea_x[cur];
         const float cur_sy = _phys_wind_coast_sea_y[cur];
+        const int32_t cur_anchor = _phys_wind_coast_sea_anchor[cur];
         const int base = cur * 6;
         for (int d = 0; d < 6; ++d) {
             const int32_t ni = NB[base + d];
@@ -1850,6 +1949,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
             _phys_wind_coast_dist[ni] = static_cast<int8_t>(cur_d + 1);
             _phys_wind_coast_sea_x[ni] = cur_sx;
             _phys_wind_coast_sea_y[ni] = cur_sy;
+            _phys_wind_coast_sea_anchor[ni] = cur_anchor;
             bfs_queue.push_back(ni);
         }
     }
@@ -1861,6 +1961,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
         if (!is_water_lut[TR[i]]) continue;
         double land_dx = 0.0, land_dy = 0.0;
         bool is_shore = false;
+        int32_t land_anchor = -1;
         const int base = i * 6;
         for (int d = 0; d < 6; ++d) {
             const int32_t ni = NB[base + d];
@@ -1869,6 +1970,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
             land_dx += NB_DIR_X[d];
             land_dy += NB_DIR_Y[d];
             is_shore = true;
+            if (land_anchor < 0 || ni < land_anchor) land_anchor = ni;
         }
         if (is_shore) {
             const double len2 = land_dx * land_dx + land_dy * land_dy;
@@ -1877,6 +1979,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
                 _phys_wind_sea_dist[i] = 0;
                 _phys_wind_sea_land_x[i] = float(land_dx * inv);
                 _phys_wind_sea_land_y[i] = float(land_dy * inv);
+                _phys_wind_sea_land_anchor[i] = land_anchor;
                 sea_queue.push_back(i);
             }
         }
@@ -1888,6 +1991,7 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
         if (cur_d >= SEA_BREEZE_SEA_MAX_DIST) continue;
         const float cur_lx = _phys_wind_sea_land_x[cur];
         const float cur_ly = _phys_wind_sea_land_y[cur];
+        const int32_t cur_anchor = _phys_wind_sea_land_anchor[cur];
         const int base = cur * 6;
         for (int d = 0; d < 6; ++d) {
             const int32_t ni = NB[base + d];
@@ -1897,12 +2001,16 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
             _phys_wind_sea_dist[ni] = static_cast<int8_t>(cur_d + 1);
             _phys_wind_sea_land_x[ni] = cur_lx;
             _phys_wind_sea_land_y[ni] = cur_ly;
+            _phys_wind_sea_land_anchor[ni] = cur_anchor;
             sea_queue.push_back(ni);
         }
     }
 
     _phys_wind_coast_fp = fp;
     _phys_wind_coast_valid = true;
+    const auto build_t1 = std::chrono::high_resolution_clock::now();
+    _phys_wind_coast_build_ms =
+        std::chrono::duration<double, std::milli>(build_t1 - build_t0).count();
 }
 
 // ─── NS 化 Phase 0：风场回溯轨迹表构建 ─────────────────────────────────

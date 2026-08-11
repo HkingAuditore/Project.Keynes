@@ -530,6 +530,14 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
     _pending_visual_dirty_mask = PackedByteArray();
     _pending_visual_dirty_count = 0;
     _pending_visual_dirty_dense = false;
+    // A newly bound MapData may have a different restored canal mask even
+    // when the DCWorldExt object itself is reused. Force one sparse topology
+    // compilation before the next hydrology pass.
+    _canal_hydrology_compiled_generation = std::numeric_limits<uint64_t>::max();
+    _canal_hydrology_compiled_cell_count = -1;
+    _canal_hydrology_cells.clear();
+    _canal_hydrology_source_kind.clear();
+    _canal_hydrology_strength.clear();
     _map_data = map_data;
 
     int bound_count = 0;
@@ -639,6 +647,31 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
     _native_fronts_snapshot.clear();
     _native_dirty_report.clear();
     _native_runtime_config.clear();
+    _phys_wind_coast_valid = false;
+    _phys_wind_coast_last_hit = false;
+    _phys_monsoon_thermal.clear();
+    _enso_cache_valid = false;
+    _enso_cache_last_hit = false;
+    _enso_basin_id.clear();
+    _enso_eastness.clear();
+    _enso_prev_forcing.clear();
+    _enso_members.clear();
+    _enso_basins.clear();
+    _enso_states.clear();
+    _enso_wind_sum.clear();
+    _enso_wind_count.clear();
+    _cyclone_perturbations.clear();
+    _cyclone_force_tag.clear();
+    _cyclone_visit_tag.clear();
+    _cyclone_force_x.clear();
+    _cyclone_force_y.clear();
+    _cyclone_force_lift.clear();
+    _cyclone_force_generation = 0;
+    _cyclone_next_stable_id = 1;
+    _cyclone_last_touched_cells = 0;
+    _cyclone_total_genesis = 0;
+    _cyclone_total_decay = 0;
+    _climate_modes_pending_restore.clear();
 
     if (!_bound || _map_data == nullptr) {
         out["rc"] = -1;
@@ -738,6 +771,7 @@ static bool pk_slot_affects_visual_dirty(const godot::StringName &slot_name) {
            s.begins_with("cell_landform") ||
            s.begins_with("cell_vegetation") ||
            s.begins_with("cell_cover") ||
+           s == godot::String("cell_canal_edge_mask") ||
            s.begins_with("cell_weather") ||
            s.begins_with("cell_ocean_thermal") ||
            s.begins_with("cell_local_thermal") ||

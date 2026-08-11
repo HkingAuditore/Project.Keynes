@@ -15,6 +15,9 @@ const EVENT_RESEARCH_SIGNAL_DISCOVERED: int = 9
 const EVENT_MAP_FEATURE_DISCOVERED: int = 10
 const EVENT_WEATHER_OBSERVED: int = 11
 const EVENT_RESEARCH_EVIDENCE_CHANGED: int = 12
+const EVENT_TECHNOLOGY_ADOPTED: int = 13
+const EVENT_TECHNOLOGY_PRACTICE: int = 14
+const EVENT_TARIFF_SUBSIDY_INTENT: int = 15
 
 const SOURCE_NATIVE: int = 1
 const SOURCE_GDSCRIPT: int = 2
@@ -29,6 +32,11 @@ const PAYLOAD_ECONOMY_TRADE_V1: int = 4
 ## i3=上一等级；value=人口加权 composite Q16、entity_id=人口、flags=1 表示等级下降。
 const PAYLOAD_SOCIAL_PRESSURE_V1: int = 5
 const PAYLOAD_RESEARCH_SIGNAL_V1: int = 6
+## i0=实践规则，i1=同时运行的合格生产组数，i2=第一实践地块，i3=配方版本；
+## value=规则对应的组日、产量或周期数，entity_handle=国家句柄。
+const PAYLOAD_TECHNOLOGY_PRACTICE_V1: int = 7
+## cell=目的地，entity_id=订单，value=数量；i0=来源地块，i1/i2=出口/进口国 slot，i3=商品。
+const PAYLOAD_ECONOMY_TRADE_V2: int = 8
 
 var _world_ext = null
 var _schema: Dictionary = {}

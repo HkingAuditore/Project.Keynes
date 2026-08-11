@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"brine"
+display_name = "卤水"
+category_id = &"brine"
+substitution_category_ids = PackedStringArray("brine", "salt_feedstock")
+technology_tags = PackedStringArray("industry.primary", "tech.brine_collection")
+default_price = 4000
+min_price = 400
+max_price = 40000

@@ -1869,15 +1869,6 @@ func _build_gameplay_country_packet() -> Dictionary:
 	if country_starts.is_empty():
 		return {}
 	var catalog: Dictionary = _country_facade.native_catalog()
-	var technology_ids: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
-	var starting_ids := PackedStringArray([
-		"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control"])
-	var technology_indices := PackedInt32Array()
-	for technology_id in starting_ids:
-		var technology_index := technology_ids.find(technology_id)
-		if technology_index < 0:
-			return {}
-		technology_indices.append(technology_index)
 	var country_ids := PackedStringArray()
 	var country_names := PackedStringArray()
 	var country_cash := PackedInt64Array()
@@ -1904,6 +1895,11 @@ func _build_gameplay_country_packet() -> Dictionary:
 			"starting_country_cash", 2500000000000)))
 		territory_cells.append(cell)
 		territory_offsets.append(territory_cells.size())
+		var starter_ids: PackedStringArray = start.get(
+			"starter_technology_ids", PackedStringArray())
+		var technology_indices := _starter_technology_closure(catalog, starter_ids)
+		if technology_indices.is_empty():
+			return {}
 		for technology_index in technology_indices:
 			all_technology_indices.append(technology_index)
 		technology_offsets.append(all_technology_indices.size())
@@ -1929,6 +1925,40 @@ func _build_gameplay_country_packet() -> Dictionary:
 		"research_daily_budgets": research_budgets,
 		"research_auto_purchase": research_auto_purchase,
 	}
+
+
+func _starter_technology_closure(catalog: Dictionary,
+		starter_ids: PackedStringArray) -> PackedInt32Array:
+	var technology_ids: PackedStringArray = catalog.get(
+		"technology_ids", PackedStringArray())
+	var prerequisite_offsets: PackedInt32Array = catalog.get(
+		"technology_prerequisite_offsets", PackedInt32Array())
+	var prerequisites: PackedInt32Array = catalog.get(
+		"technology_prerequisites", PackedInt32Array())
+	if prerequisite_offsets.size() != technology_ids.size() + 1:
+		return PackedInt32Array()
+	var visited := {}
+	var result := PackedInt32Array()
+	for technology_id in starter_ids:
+		var technology_index := technology_ids.find(String(technology_id))
+		if technology_index < 0:
+			return PackedInt32Array()
+		_append_starter_prerequisites(
+			technology_index, prerequisite_offsets, prerequisites, visited, result)
+	return result
+
+
+func _append_starter_prerequisites(technology_index: int,
+		prerequisite_offsets: PackedInt32Array, prerequisites: PackedInt32Array,
+		visited: Dictionary, result: PackedInt32Array) -> void:
+	if visited.has(technology_index):
+		return
+	visited[technology_index] = true
+	for edge in range(prerequisite_offsets[technology_index],
+			prerequisite_offsets[technology_index + 1]):
+		_append_starter_prerequisites(int(prerequisites[edge]),
+			prerequisite_offsets, prerequisites, visited, result)
+	result.append(technology_index)
 
 
 func consume_continuation_perf_summary() -> Dictionary:
@@ -2288,6 +2318,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		# Re-publish the deterministic top-ups to the bound DCWorld/DCWorldExt
 		# resource slots before country and economy bootstrap read them.
 		_publish_bootstrapped_natural_resources_to_runtime(map)
+	_append_natural_resource_research_signals(map)
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
 	# 把 ext 句柄一次性下发给 WeatherSystem。ext 为 null（gdext 未编译 / 未 bind）
 	# 时 WeatherSystem 自动走 GDScript legacy path，对 caller 完全透明。
@@ -2553,7 +2584,10 @@ func export_environment_runtime_state() -> Dictionary:
 	var rt: RefCounted = get_environment_runtime()
 	if rt == null or not rt.has_method("export_runtime_state"):
 		return {}
-	return rt.call("export_runtime_state")
+	var state: Dictionary = rt.call("export_runtime_state")
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("capture_climate_modes_state"):
+		state["climate_modes"] = _data_core_world_ext.capture_climate_modes_state()
+	return state
 
 
 func restore_environment_runtime_state(state: Dictionary) -> Dictionary:
@@ -2562,9 +2596,19 @@ func restore_environment_runtime_state(state: Dictionary) -> Dictionary:
 		return {"ok": false, "code": "environment_provider_missing",
 			"message": "Environment runtime provider is unavailable."}
 	var result = rt.call("restore_runtime_state", state)
-	return result if result is Dictionary else {
+	if not result is Dictionary:
+		return {
 		"ok": false, "code": "environment_restore_contract_invalid",
 		"message": "Environment runtime restore returned an invalid result."}
+	if not bool(result.get("ok", false)):
+		return result
+	var climate_modes = state.get("climate_modes", null)
+	if climate_modes is Dictionary and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("restore_climate_modes_state"):
+		var climate_result: Dictionary = _data_core_world_ext.restore_climate_modes_state(climate_modes)
+		if not bool(climate_result.get("ok", false)):
+			return climate_result
+	return result
 
 
 func advance_save_boundary() -> void:
@@ -4758,6 +4802,29 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 		"native_weather_transaction_active_owner_enabled": bool(cp.native_weather_transaction_active_owner_enabled) if cp != null and cp.get("native_weather_transaction_active_owner_enabled") != null else false,
 		"native_ocean_physical_active_owner_enabled": bool(cp.native_ocean_physical_active_owner_enabled) if cp != null and cp.get("native_ocean_physical_active_owner_enabled") != null else false,
 		"native_season_refresh_active_owner_enabled": bool(cp.native_season_refresh_active_owner_enabled) if cp != null and cp.get("native_season_refresh_active_owner_enabled") != null else false,
+		"world_seed": int(cfg.seed) if cfg != null else 0,
+		"thermal_monsoon_enabled": bool(cp.thermal_monsoon_enabled) if cp != null else false,
+		"thermal_monsoon_lat_limit": float(cp.thermal_monsoon_lat_limit) if cp != null else 0.45,
+		"thermal_monsoon_deadband": float(cp.thermal_monsoon_deadband) if cp != null else 0.015,
+		"thermal_monsoon_full_contrast": float(cp.thermal_monsoon_full_contrast) if cp != null else 0.08,
+		"thermal_monsoon_gain": float(cp.thermal_monsoon_gain) if cp != null else 0.85,
+		"thermal_monsoon_breeze_floor": float(cp.thermal_monsoon_breeze_floor) if cp != null else 0.20,
+		"native_tropical_cyclone_enabled": bool(cp.native_tropical_cyclone_enabled) if cp != null else false,
+		"tropical_cyclone_capacity": int(cp.tropical_cyclone_capacity) if cp != null else 24,
+		"tropical_cyclone_births_per_commit": int(cp.tropical_cyclone_births_per_commit) if cp != null else 2,
+		"tropical_cyclone_min_temp": float(cp.tropical_cyclone_min_temp) if cp != null else 0.58,
+		"tropical_cyclone_min_instability": float(cp.tropical_cyclone_min_instability) if cp != null else 0.40,
+		"tropical_cyclone_max_shear": float(cp.tropical_cyclone_max_shear) if cp != null else 0.42,
+		"tropical_cyclone_min_lat": float(cp.tropical_cyclone_min_lat) if cp != null else 0.06,
+		"tropical_cyclone_max_lat": float(cp.tropical_cyclone_max_lat) if cp != null else 0.40,
+		"tropical_cyclone_max_radius_cells": int(cp.tropical_cyclone_max_radius_cells) if cp != null else 5,
+		"enso_basin_modes_enabled": bool(cp.enso_basin_modes_enabled) if cp != null else false,
+		"enso_max_basins": int(cp.enso_max_basins) if cp != null else 3,
+		"enso_tropical_lat_limit": float(cp.enso_tropical_lat_limit) if cp != null else 0.33,
+		"enso_period_days": float(cp.enso_period_days) if cp != null else 1460.0,
+		"enso_temp_anomaly_cap": float(cp.enso_temp_anomaly_cap) if cp != null else 0.06,
+		"enso_wind_coupling": float(cp.enso_wind_coupling) if cp != null else 0.0008,
+		"enso_integration_substep_days": float(cp.enso_integration_substep_days) if cp != null else 10.0,
 		"has_world_data": world != null,
 		"has_config": cfg != null,
 	}
@@ -5112,6 +5179,15 @@ func _apply_native_daily_visual_intents(res: Dictionary, breakdown: Dictionary,
 	res["succession_applied_count"] = succession_applied
 
 	if _baker != null:
+		if _data_core_world_ext != null \
+				and _data_core_world_ext.has_method("consume_canal_visual_dirty_cells") \
+				and world != null and world.visual_tiles != null \
+				and world.visual_tiles.ready:
+			var canal_dirty: PackedInt32Array = \
+				_data_core_world_ext.consume_canal_visual_dirty_cells()
+			if not canal_dirty.is_empty():
+				res["canal_visual_refresh"] = _baker.queue_canal_visual_refresh(
+					map, world, canal_dirty)
 		var cover_dirty: bool = _weather_system != null \
 				and _weather_system.has_method("has_cover_dirty") \
 				and bool(_weather_system.has_cover_dirty())
@@ -9957,9 +10033,18 @@ func _generate_static_research_signals(map: MapData) -> void:
 	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
 	var dense := PackedInt32Array()
 	for key in [
-		"bio.maize", "bio.wheat", "bio.potato", "bio.horse",
+		"bio.maize", "bio.wheat", "bio.rice", "bio.potato", "bio.horse",
+		"bio.cotton", "bio.flax", "bio.spice", "bio.rubber",
 		"resource.freshwater", "landform.river_valley", "landform.volcanic",
-		"landform.high_plateau", "landform.coastal_estuary", "resource.copper_ore",
+		"landform.high_plateau", "landform.coastal_estuary", "landform.coast",
+		"landform.arid_basin", "landform.marsh", "landform.forest",
+		"landform.grassland", "landform.mountain",
+		"bio.sheep", "bio.goat", "bio.cattle", "bio.pig", "bio.camel",
+		"bio.yak", "bio.silkworm", "bio.reed", "bio.bast_fiber", "bio.dye_plant",
+		"landform.delta", "landform.floodplain", "landform.monsoon_basin",
+		"landform.loess_plain", "landform.steppe_plain", "landform.tundra",
+		"landform.conifer_forest", "landform.oasis", "landform.steep_slope",
+		"landform.stable_wind_corridor",
 	]:
 		var index := ids.find(key)
 		if index < 0:
@@ -9975,6 +10060,9 @@ func _generate_static_research_signals(map: MapData) -> void:
 		"has_river": map.has_river_arr,
 		"has_volcano": map.has_volcano_arr,
 		"is_water": map.is_water_arr,
+		"temperature": map.temp_arr,
+		"moisture": map.moisture_arr,
+		"elevation": map.elevation_arr,
 		"signal_ids": dense,
 	})
 	if not bool(result.get("ok", false)):
@@ -9995,6 +10083,49 @@ func _generate_static_research_signals(map: MapData) -> void:
 	map.cell_research_signal_offsets = offsets
 	map.cell_research_signal_ids = signal_ids
 	map.cell_research_signal_values = values
+
+
+## Natural-resource deposits do not exist when the static geography signal pass
+## runs. This second native pass appends resource.* facts to the same sorted CSR.
+func _append_natural_resource_research_signals(map: MapData) -> void:
+	if map == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_research_signal_generation_pass"):
+		return
+	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
+	if not bool(catalog.get("ok", false)):
+		push_error("[research-signals] resource catalog compile failed")
+		return
+	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	var dense := PackedInt32Array()
+	var reserves: Array[PackedFloat32Array] = []
+	for profile in ResourceProfileRegistry.ordered():
+		var signal_index := ids.find("resource.%s" % String(profile.id))
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if signal_index < 0 or field.is_empty():
+			push_error("[research-signals] resource signal binding missing: %s" % String(profile.id))
+			return
+		var values: PackedFloat32Array = map.get(field)
+		if values.size() != map.cell_count():
+			push_error("[research-signals] resource reserve shape invalid: %s" % String(profile.id))
+			return
+		dense.append(signal_index)
+		reserves.append(values)
+	var result: Dictionary = _data_core_world_ext.run_research_signal_generation_pass({
+		"mode": "resources",
+		"cell_count": map.cell_count(),
+		"cell_signal_offsets": map.cell_research_signal_offsets,
+		"cell_signal_ids": map.cell_research_signal_ids,
+		"cell_signal_values": map.cell_research_signal_values,
+		"resource_signal_ids": dense,
+		"resource_reserves": reserves,
+	})
+	if not bool(result.get("ok", false)):
+		push_error("[research-signals] native resource merge failed: %s" % String(
+			result.get("reason", "unknown")))
+		return
+	map.cell_research_signal_offsets = result.get("cell_signal_offsets", PackedInt32Array())
+	map.cell_research_signal_ids = result.get("cell_signal_ids", PackedInt32Array())
+	map.cell_research_signal_values = result.get("cell_signal_values", PackedInt32Array())
 
 # Phase 14：永久性地标 — 一旦设定不被季节 / biome 重决策覆盖。
 # terrain-overhaul：CHAPARRAL/MOOR/FLOODPLAIN/MESA 为特征 pass 专属地形（分类器无法

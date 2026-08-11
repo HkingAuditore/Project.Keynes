@@ -1,18 +1,28 @@
 # C++/DOTS Runtime 开发文档索引
 
+- [运河运行时](./canal-runtime.md)：API-ready 的权威边状态、经济施工、Effect 原子提交、
+  贸易/殖民边成本、局地水文、Visual Tile 与 PKEC v34；PlayerController 尚未注册。
+
 ## Formal game flow and PKSV
 
 - [Module Boundaries](../architecture/module-boundaries.md): source-file
   ownership, dependency direction, extraction thresholds, and verification gate.
 
-- [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)：81 项权威目录、国家研究状态、
-  科技值市场与国家采购、科技 Modifier、GraphEdit 工作区以及 PKCN v4/PKEC v23 存档契约。
+- [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)：180 项权威目录、环境/资源
+  研究条件、实践突破、全内容绑定、科技值市场与国家采购、Effect/Modifier ACK，以及
+  PKCN v11/PKEF v9/PKTR v4/PKEC v34 存档契约。
+
+- [环境驱动的科技路线差异化](./technology-route-differentiation.md)：把地理、气候、植被、
+  资源、社会发展、Trigger、Effect 和经济内容组织成可分化、可重放、可审计的科技路线。
 
 - [Formal Game Flow, Player Start, and PKSV](./game-flow-start-save.md): 正式主菜单、
   `NewGameConfig v3`、确定性多国单格开局、每国 20 人聚落、PKSV 安全边界与恢复顺序。
 - 修改启动场景、玩家出生、完整存档或退出流程前先读该文档。
 
 - [PlayerController 玩家会话运行时](./player-controller-runtime.md)：正式玩家输入、
+
+- [配置化时代三选一奖励](./era-reward-runtime.md)：里程碑 ACK 后的确定性三选一、
+  冻结目标、Effect 事务、全屏暂停锁定与 PKCN/PKEF 交叉恢复审计。
   选中态、镜头/时间编排、研究命令白名单、UI intent 边界和 `player_view` 恢复顺序。
 - 修改 `player_controller.gd`、玩家场景输入、技术工作台命令或玩家视图存档前先读该文档
   及仓库内 `project-keynes-player-controller` Skill。
@@ -35,14 +45,14 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 
 - [Native Modifier Runtime](./native-modifier-runtime.md)：四域 ModifierStore、固定公式、
   generation handle、scope/bucket、daily freeze、气候/国家/经济/Gameplay 接入、
-  PKCN v4/PKEC v23/PKCM v1/PKGP v1 与验证状态。
+  PKCN v11/PKEC v34/PKCM v1/PKGP v1 与验证状态。
 - 修改 stat、definition、命令协议、调度依赖、领域公式或存档 schema 时，必须先读并同步
   这份主说明与 `project-keynes-modifier-runtime` Skill。
 
 ## Tax and fiscal runtime
 
 - [税收与财政结算运行时](./tax-fiscal-runtime.md)：五类国家税务政策、职业/物资/建筑覆盖、
-  国家级税率 Modifier、财政托管、应税事件、PKCN v4/PKEC v23 迁移和国家经济 UI。
+  国家级税率 Modifier、财政托管、应税事件、PKCN v11/PKEC v34 存档和国家经济 UI。
 
 ## 阅读顺序
 
@@ -91,7 +101,7 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
     - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
-   - `country_daily`、命令屏障、PKCN v4 + PKEC v30 顺序与兼容性拒绝。
+   - `country_daily`、命令屏障、PKCN v11 + PKEF v9 + PKTR v4 + PKEC v34 顺序与兼容性拒绝。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。
