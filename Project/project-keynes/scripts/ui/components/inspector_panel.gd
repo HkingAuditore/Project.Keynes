@@ -331,8 +331,8 @@ func _build_category_block(data: Dictionary) -> void:
 					construction_page_requested.emit(search, offset))
 			_construction_picker.build_requested.connect(
 				func(request: Dictionary) -> void: construction_requested.emit(request))
-			_construction_picker.set_model(data.get("construction", {}))
 			_content_box.add_child(_construction_picker)
+			_construction_picker.set_model(data.get("construction", {}))
 			_add_group_separator()
 		_building_list = BuildingListScene.instantiate() as BuildingList
 		_building_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
