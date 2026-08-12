@@ -73,7 +73,7 @@ func _init() -> void:
 	_audit_dial()
 	await _audit_fit(workspace, tree)
 	_audit_refresh(workspace, tree, definitions, eras, domains)
-	_audit_navigation(tree, definitions)
+	_audit_navigation(workspace, tree, definitions)
 	_finish()
 
 
@@ -101,6 +101,7 @@ func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
 		"technology_eras": eras,
 		"technology_domains": domains,
 		"technology_visual_edges": TechnologyCatalogScript.public_visual_edges(),
+		"technology_lanes": TechnologyCatalogScript.public_lane_metadata(),
 		"research_signal_definitions": signal_definitions,
 		"research": {
 			"technology_states": states,
@@ -299,7 +300,7 @@ func _move(control: Control, position: Vector2) -> void:
 func _audit_fit(workspace: Control, tree: Control) -> void:
 	var frame := Rect2(Vector2.ZERO, workspace.size)
 	var policy := workspace.get("_policy_panel") as Control
-	var detail := workspace.get("_detail") as Control
+	var detail := workspace.get("_detail_host") as Control
 	var columns := {"policy": policy, "tree": tree, "detail": detail}
 	var contained := true
 	for key in columns:
@@ -307,16 +308,26 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 		var rect := Rect2(column.global_position - workspace.global_position, column.size)
 		print("  [info] %s column %.0f x %.0f at %.0f" % [key, rect.size.x, rect.size.y,
 			rect.position.x])
-		if not frame.grow(1.0).encloses(rect) or rect.size.x <= 0.0:
+		if not frame.grow(1.0).encloses(rect) or column == tree and rect.size.x <= 0.0:
 			contained = false
 	_expect("every research column stays inside 1280x720", contained)
-	_expect("the tree keeps the dominant share of the screen",
-		tree.size.x >= policy.size.x + detail.size.x)
+	_expect("closed drawers leave only two narrow rails",
+		tree.offset_left == 40.0 and tree.offset_right == -40.0
+		and not policy.visible and not detail.visible)
+	workspace._set_policy_open(true)
+	await process_frame
+	_expect("narrow layout opens only one overlay drawer",
+		policy.visible and not detail.visible and tree.offset_left == 40.0)
+	workspace._set_detail_open(true)
+	await process_frame
+	_expect("opening detail closes policy below pin breakpoint",
+		detail.visible and not policy.visible and tree.offset_right == -40.0)
 	workspace.set_compact(true)
 	await process_frame
 	print("  [info] compact tree width %.0f" % tree.size.x)
 	_expect("compact mode still leaves the tree over 420px wide", tree.size.x >= 420.0)
 	workspace.set_compact(false)
+	workspace._set_detail_open(false)
 	await process_frame
 
 
@@ -360,45 +371,44 @@ func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 	_expect("steady technology refresh p95 stays below 1ms", refresh_p95 <= 1.0)
 
 
-# The wheel scrolls the era stack; it must never scale the tree, and it must not
-# be able to push the tree off screen.
-func _audit_navigation(tree: Control, definitions: Array) -> void:
+# Focus mode keeps a bounded route window; overview carries the full-network
+# orientation without exposing undiscovered routes or eras.
+func _audit_navigation(workspace: Control, tree: Control, definitions: Array) -> void:
 	_expect("the tree view exposes no zoom state at all", tree.get("_zoom") == null)
+	var initial_nav: Dictionary = workspace.navigation_report()
+	_expect("queued research determines the opening focus",
+		String(initial_nav.lane) == String((definitions[4] as Dictionary).get("main_lane", ""))
+		and int(initial_nav.era) == 0)
+	var lane_selector := workspace.get("_lane_selector") as OptionButton
+	_expect("lane selector omits undiscovered routes",
+		lane_selector.item_count > 0 and lane_selector.item_count < 20)
+	var initial_focus: Dictionary = tree.focus_report()
+	_expect("focus view contains at most three era bands",
+		(initial_focus.get("bands", []) as Array).size() <= 3)
 	var states := PackedInt32Array()
 	var progress := PackedInt64Array()
 	states.resize(definitions.size())
 	progress.resize(definitions.size())
 	states.fill(5)
 	tree.patch_states(states, progress)
-	var bounds: Rect2 = tree.visibility_report().get("bounds", Rect2())
-	_expect("revealing the catalog makes the tree taller than the viewport",
-		bounds.size.y > tree.size.y)
-	var start: Vector2 = tree.get("_offset")
-	_scroll(tree, MOUSE_BUTTON_WHEEL_DOWN, 1)
-	var scrolled: Vector2 = tree.get("_offset")
-	_expect("wheel down walks towards later eras", scrolled.y < start.y \
-		and is_equal_approx(scrolled.x, start.x))
-	_scroll(tree, MOUSE_BUTTON_WHEEL_UP, 1)
-	var returned: Vector2 = tree.get("_offset")
-	_expect("wheel up returns towards the previous row",
-		returned.y > scrolled.y and returned.y <= start.y + 0.5)
-	_scroll(tree, MOUSE_BUTTON_WHEEL_DOWN, 60)
-	var floor_offset: Vector2 = tree.get("_offset")
-	_expect("scrolling past the last era stops at the content edge",
-		floor_offset.y >= tree.size.y - bounds.position.y - bounds.size.y - 0.5)
-	_scroll(tree, MOUSE_BUTTON_WHEEL_UP, 120)
-	_expect("scrolling past the first era stops at the content edge",
-		(tree.get("_offset") as Vector2).y <= -bounds.position.y + 0.5)
-
-
-func _scroll(tree: Control, button: int, times: int) -> void:
-	for _i in range(times):
-		var event := InputEventMouseButton.new()
-		event.button_index = button
-		event.pressed = true
-		event.factor = 1.0
-		event.position = tree.size * 0.5
-		tree._gui_input(event)
+	var full_focus: Dictionary = tree.focus_report()
+	_expect("full reveal does not expand the focused route beyond 13 nodes",
+		(full_focus.get("nodes", []) as Array).size() <= 13)
+	_expect("focused geometry remains narrower than the old full catalog map",
+		(full_focus.get("content_rect", Rect2()) as Rect2).size.x < 1000.0)
+	workspace._set_mode(1)
+	var overview: Control = workspace.overview_view()
+	overview.patch_states(states)
+	var full_overview: Dictionary = overview.overview_report()
+	_expect("overview exposes all authored routes only after full reveal",
+		int(full_overview.visible_lanes) == 20 and int(full_overview.visible_eras) == 11)
+	var fog_states: PackedInt32Array = (workspace.get("_research").technology_states \
+		as PackedInt32Array).duplicate()
+	overview.patch_states(fog_states)
+	var fog_overview: Dictionary = overview.overview_report()
+	_expect("overview hides undiscovered routes and future eras",
+		int(fog_overview.visible_lanes) < 20 and int(fog_overview.visible_eras) < 11)
+	workspace._set_mode(0)
 
 
 func _expect(label: String, condition: bool) -> void:

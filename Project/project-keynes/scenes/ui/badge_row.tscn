@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/ui/components/badge_row.gd" id="1_script"]
 
-[node name="BadgeRow" type="HBoxContainer"]
+[node name="BadgeRow" type="HFlowContainer"]
 theme_override_constants/separation = 8
+theme_override_constants/v_separation = 6
 script = ExtResource("1_script")

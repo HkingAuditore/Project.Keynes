@@ -108,7 +108,8 @@ func _check_component_scenes() -> void:
 		"res://scenes/ui/inspector_panel.tscn": "Margin/InspectorRoot/ContentShell/ContentMargin/Scroll/ContentBox",
 		"res://scenes/ui/country_panel.tscn": "Center/Dialog/Content/SectionHost/EconomyWorkspace",
 		"res://scenes/ui/economy_workspace.tscn": "Column/Scroll/Flow",
-		"res://scenes/ui/technology_workspace.tscn": "Root/Main/Tree",
+		"res://scenes/ui/technology_workspace.tscn": "Root/Main/DetailHost/Body/Detail",
+		"res://scenes/ui/technology_overview_view.tscn": "",
 		"res://scenes/ui/demand_detail_dialog.tscn": "Center/Dialog/Body/Scroll/RowsGrid",
 		"res://scenes/ui/object_detail_dialog.tscn": "Center/Dialog/Body/Scroll/Content",
 		"res://scenes/ui/world_loading_overlay.tscn": "Center/Card/Content/Progress",
@@ -119,8 +120,9 @@ func _check_component_scenes() -> void:
 	for scene_path in expectations:
 		var packed := load(scene_path) as PackedScene
 		var scene := packed.instantiate()
+		var required_path := String(expectations[scene_path])
 		_expect("%s has complete fixed tree" % scene_path,
-			scene.has_node(String(expectations[scene_path])))
+			required_path.is_empty() or scene.has_node(required_path))
 		scene.free()
 
 

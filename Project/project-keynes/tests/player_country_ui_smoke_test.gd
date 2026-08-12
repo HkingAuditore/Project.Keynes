@@ -275,9 +275,13 @@ func _run() -> void:
 		goods_scroll != null \
 			and goods_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED \
 			and compact_rect.encloses(goods_scroll.get_global_rect()))
-	_expect("compact layout narrows the research policy column",
-		(panel.get("_technology_workspace") as Control).get("_policy_panel") \
-			.custom_minimum_size.x == TechnologyWorkspace.POLICY_WIDTH_COMPACT)
+	var compact_workspace := panel.get("_technology_workspace") as Control
+	var compact_tree := compact_workspace.tree_view() as Control
+	var compact_navigation: Dictionary = compact_workspace.navigation_report()
+	_expect("compact technology layout keeps overlay drawers closed",
+		not bool(compact_navigation.policy_open) and not bool(compact_navigation.detail_open)
+		and compact_tree.offset_left == TechnologyWorkspace.DRAWER_RAIL_WIDTH
+		and compact_tree.offset_right == -TechnologyWorkspace.DRAWER_RAIL_WIDTH)
 	root.size = Vector2i(1280, 720)
 	await process_frame
 	await process_frame

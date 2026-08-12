@@ -5,6 +5,7 @@ const DragPreviewScene := preload("res://scenes/ui/technology_drag_preview.tscn"
 
 signal move_requested(technology: int, domain: int, position: int)
 signal remove_requested(technology: int)
+signal selected_requested(technology: int)
 
 var technology_index := -1
 var domain_index := -1
@@ -44,6 +45,7 @@ func setup(technology: int, domain: int, position: int, title: String,
 	_progress.max_value = 100.0
 	IconButton.apply(_remove, &"action.close", 10, "移出研究队列")
 	_remove.pressed.connect(func() -> void: remove_requested.emit(technology_index))
+	gui_input.connect(_on_gui_input)
 
 
 func update_dynamic(state: int, fraction: float) -> void:
@@ -73,3 +75,10 @@ func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
 
 func _drop_data(_at_position: Vector2, data: Variant) -> void:
 	move_requested.emit(int(data.get("technology", -1)), domain_index, queue_position)
+
+
+func _on_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if button.button_index == MOUSE_BUTTON_LEFT and button.pressed:
+			selected_requested.emit(technology_index)
