@@ -11,6 +11,7 @@ var _prev: Button
 var _next: Button
 var _page_label: Label
 var _model: Dictionary = {}
+var _model_initialized := false
 
 
 func _ready() -> void:
@@ -28,14 +29,23 @@ func _ready() -> void:
 	_next.pressed.connect(func() -> void:
 		page_requested.emit(_search.text,
 			int(_model.get("offset", 0)) + int(_model.get("limit", 32))))
+	if _model_initialized:
+		_apply_model()
 
 
 func set_model(model: Dictionary) -> void:
 	_model = model
+	_model_initialized = true
+	if _rows == null:
+		return
+	_apply_model()
+
+
+func _apply_model() -> void:
 	for child in _rows.get_children():
 		child.queue_free()
-	if not bool(model.get("available", false)):
-		_status.text = String(model.get("message", "只能在玩家领土内修建建筑。"))
+	if not bool(_model.get("available", false)):
+		_status.text = String(_model.get("message", "只能在玩家领土内修建建筑。"))
 		_search.editable = false
 		_prev.disabled = true
 		_next.disabled = true
@@ -43,7 +53,7 @@ func set_model(model: Dictionary) -> void:
 		return
 	_search.editable = true
 	_status.text = "报价为当前快照预览；实际资源与价格在经济结算边界重新原子校验。"
-	var items: Array = model.get("items", [])
+	var items: Array = _model.get("items", [])
 	for raw in items:
 		var item: Dictionary = raw
 		var button := Button.new()
@@ -57,9 +67,9 @@ func set_model(model: Dictionary) -> void:
 		button.pressed.connect(func() -> void:
 			build_requested.emit({"building_id": StringName(item.get("building_id", ""))}))
 		_rows.add_child(button)
-	var total := int(model.get("total", 0))
-	var offset := int(model.get("offset", 0))
-	var limit := maxi(1, int(model.get("limit", 32)))
+	var total := int(_model.get("total", 0))
+	var offset := int(_model.get("offset", 0))
+	var limit := maxi(1, int(_model.get("limit", 32)))
 	_prev.disabled = offset <= 0
 	_next.disabled = offset + items.size() >= total
 	_page_label.text = "%d–%d / %d" % [0 if total == 0 else offset + 1,

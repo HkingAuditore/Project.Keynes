@@ -24,6 +24,20 @@ func _run() -> void:
 	panel.visible = true
 	await process_frame
 
+	# Components may receive their initial model before the caller adds them to the tree.
+	var deferred_picker := (load("res://scenes/ui/construction_picker.tscn") as PackedScene).instantiate() as ConstructionPicker
+	deferred_picker.set_model({
+		"available": false,
+		"message": "测试：尚未拥有该地块。",
+	})
+	root.add_child(deferred_picker)
+	await process_frame
+	if deferred_picker._rows == null \
+			or deferred_picker._status.text != "测试：尚未拥有该地块。" \
+			or not deferred_picker._prev.disabled \
+			or not deferred_picker._next.disabled:
+		failures.append("construction picker lost a model supplied before entering the scene tree")
+
 	var model := _make_model()
 	panel.set_model_for_selection(model)
 	await process_frame
@@ -179,6 +193,10 @@ func _run() -> void:
 
 	panel.select_tab("buildings")
 	await process_frame
+	var construction_picker := panel._construction_picker as ConstructionPicker
+	if construction_picker == null \
+			or construction_picker._status.text != "测试：尚未拥有该地块。":
+		failures.append("inspector did not initialize construction picker after adding it to the tree")
 	var building_list = panel._building_list
 	building_list.set_expanded("building_1", true)
 	var building_count := panel.visible_node_count()
@@ -436,6 +454,14 @@ func _demand_groups(step: float) -> Array:
 
 func _building_category(step: float) -> Dictionary:
 	return {
+		"construction": {
+			"available": false,
+			"message": "测试：尚未拥有该地块。",
+			"items": [],
+			"total": 0,
+			"offset": 0,
+			"limit": 32,
+		},
 		"building_rows": [{
 			"id": "building_1", "name": "纺织工坊", "count": "2 栋",
 			"owner": "业主 · 地主", "status": "亏损停产",
