@@ -96,6 +96,7 @@ var _session_request: Dictionary = {}
 var _new_game_config: Dictionary = {}
 var _load_slot_id: String = ""
 var _pending_load_bundle: Dictionary = {}
+var _runtime_ready_for_ticks: bool = false
 var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
 var _gm_click_claim_pending_days: Dictionary = {}
@@ -210,6 +211,10 @@ func last_tick_report() -> Dictionary:
 	return _last_tick_report.duplicate()
 
 
+func is_runtime_ready_for_ticks() -> bool:
+	return _runtime_ready_for_ticks
+
+
 func set_day_night_enabled(enabled: bool) -> void:
 	day_night_enabled = enabled
 	if _renderer != null:
@@ -227,6 +232,13 @@ func is_day_night_enabled() -> bool:
 
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
+	_runtime_ready_for_ticks = false
+	var restore_clock_from_save := not _pending_load_bundle.is_empty()
+	var clock_was_paused := true
+	if _world_clock != null:
+		clock_was_paused = _world_clock.paused
+		_world_clock.pause(true)
+		on_clock_running_changed(false)
 	_selected_cell = null
 	clear_map_overlay()
 	world_generation_started.emit()
@@ -296,6 +308,12 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			world_generation_failed.emit(String(restore_result.get("message", "存档恢复失败。")))
 			return
 		_pending_load_bundle.clear()
+	_runtime_ready_for_ticks = true
+	if _world_clock != null:
+		# 读档路径由 world_clock provider 恢复权威模式；新世界则恢复生成前模式。
+		if not restore_clock_from_save:
+			_world_clock.pause(clock_was_paused)
+		on_clock_running_changed(not _world_clock.paused)
 	world_ready.emit(_current_map, _world_data, _generator, _view_adapter)
 
 
@@ -304,7 +322,7 @@ func is_loading_session() -> bool:
 
 
 func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
-	if _generator == null or _world_clock == null:
+	if not _runtime_ready_for_ticks or _generator == null or _world_clock == null:
 		return {}
 	_pending_tick_start_usec = Time.get_ticks_usec()
 	if _renderer != null:

@@ -169,6 +169,52 @@ func _init() -> void:
 	_require((final_evidence.get("signal_ids", PackedInt32Array()) as PackedInt32Array).has(
 		maritime_signal), "maritime operations breakthrough is discoverable")
 
+	var next_event_id := 10
+	for weather_rule in range(7):
+		var observations := 3 if weather_rule == 6 else 1
+		for observation in range(observations):
+			var weather_day := 10 + weather_rule * 3 + observation
+			var weather_event := {
+				"event_ids": PackedInt64Array([next_event_id]),
+				"source_ids": PackedInt32Array([1 if weather_rule == 6 else 2]),
+				"days": PackedInt64Array([weather_day]),
+				"event_types": PackedInt32Array([11]),
+				"payload_schemas": PackedInt32Array([9]),
+				"entity_handles": PackedInt64Array([handle]),
+				"group_handles": PackedInt64Array([0]),
+				"values": PackedInt64Array([1 if weather_rule == 6 else 65536]),
+				"payload_i0": PackedInt64Array([weather_rule]),
+				"payload_i1": PackedInt64Array([1]),
+				"payload_i2": PackedInt64Array([0]),
+				"payload_i3": PackedInt64Array([1]),
+			}
+			next_event_id += 1
+			_require(int(ext.submit_trigger_events(weather_event).get("accepted", 0)) == 1,
+				"weather rule %d observation %d accepted" % [weather_rule, observation])
+			_require(bool(ext.run_trigger_daily(weather_day).get("ok", false)),
+				"weather rule %d observation %d evaluates" % [weather_rule, observation])
+			if observation + 1 < observations:
+				_require(int(ext.handoff_trigger_effects(32).get("handed_off", 0)) == 0,
+					"weather rule %d remains below threshold after observation %d" % [
+						weather_rule, observation])
+		_require(int(ext.handoff_trigger_effects(32).get("handed_off", 0)) == 1,
+			"weather rule %d hands off" % weather_rule)
+		_require(int(ext.dispatch_effect_native_country().get(
+			"submitted_transactions", 0)) == 1,
+			"weather rule %d submits Country command" % weather_rule)
+		_require(bool(ext.run_country_slice({"day_index": 40 + weather_rule}).get(
+			"ok", false)), "weather rule %d commits" % weather_rule)
+		_require(int(ext.ack_effect_native_country().get("acknowledged", 0)) == 1,
+			"weather rule %d ACK completes" % weather_rule)
+	var weather_evidence: Dictionary = facade.research_signal_snapshot(handle)
+	var weather_signal_ids: PackedInt32Array = weather_evidence.get(
+		"signal_ids", PackedInt32Array())
+	for weather_signal_id in ["weather.typhoon", "weather.major_flood", "weather.drought",
+			"weather.monsoon", "weather.frost", "weather.storm_surge",
+			"weather.repeated_crop_failure"]:
+		_require(weather_signal_ids.has(catalog_signal_ids.find(weather_signal_id)),
+			"permanent weather evidence discovered: %s" % weather_signal_id)
+
 	print("technology_breakthrough_trigger_test: %s" %
 		("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)

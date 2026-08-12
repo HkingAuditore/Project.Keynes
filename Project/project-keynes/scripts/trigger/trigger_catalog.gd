@@ -26,8 +26,11 @@ const MODE_ONE_SHOT := 2
 
 const EVENT_TECHNOLOGY_PRACTICE := 14
 const EVENT_TECHNOLOGY_CONTACT := 16
+const EVENT_WEATHER_OBSERVED := 11
 const PAYLOAD_TECHNOLOGY_PRACTICE_V1 := 7
+const PAYLOAD_WEATHER_OBSERVED_V1 := 9
 const SOURCE_NATIVE := 1
+const SOURCE_GDSCRIPT := 2
 const SCOPE_ENTITY := 2
 const VALUE_I64 := 1
 const PAYLOAD_I0 := 2
@@ -83,6 +86,16 @@ const CONTACT_RULES := [
 	[8, "tin", "contact.tin"],
 ]
 
+const WEATHER_RULES := [
+	[0, "typhoon", "weather.typhoon", SOURCE_GDSCRIPT, AGG_COUNT, 1],
+	[1, "major_flood", "weather.major_flood", SOURCE_GDSCRIPT, AGG_COUNT, 1],
+	[2, "drought", "weather.drought", SOURCE_GDSCRIPT, AGG_COUNT, 1],
+	[3, "monsoon", "weather.monsoon", SOURCE_GDSCRIPT, AGG_COUNT, 1],
+	[4, "frost", "weather.frost", SOURCE_GDSCRIPT, AGG_COUNT, 1],
+	[5, "storm_surge", "weather.storm_surge", SOURCE_GDSCRIPT, AGG_COUNT, 1],
+	[6, "repeated_crop_failure", "weather.repeated_crop_failure", SOURCE_NATIVE, AGG_SUM, 3],
+]
+
 @export var definitions: Array[Resource] = []
 @export var max_state_instances: int = 4096
 @export var max_pending_events: int = 8192
@@ -129,6 +142,7 @@ func compile_native_catalog() -> Dictionary:
 	var compiled_definitions: Array[Resource] = definitions.duplicate()
 	compiled_definitions.append_array(_breakthrough_definitions())
 	compiled_definitions.append_array(_contact_definitions())
+	compiled_definitions.append_array(_weather_definitions())
 	var seen := {}
 	for definition in compiled_definitions:
 		if definition == null or not definition is TriggerDefinitionScript:
@@ -181,7 +195,7 @@ static func breakthrough_effect_rows() -> Array[Dictionary]:
 		"research_signal_ids", PackedStringArray())
 	var rows: Array[Dictionary] = []
 	var seen_signals := {}
-	for row in BREAKTHROUGH_RULES + CONTACT_RULES:
+	for row in BREAKTHROUGH_RULES + CONTACT_RULES + WEATHER_RULES:
 		var signal_id := String(row[2])
 		if seen_signals.has(signal_id):
 			continue
@@ -193,9 +207,52 @@ static func breakthrough_effect_rows() -> Array[Dictionary]:
 			"signal_id": signal_id,
 			"signal_index": signal_index,
 			"command_key": "contact.discover" if signal_id.begins_with("contact.") \
-				else "breakthrough.discover",
+				else ("weather.discover" if signal_id.begins_with("weather.") \
+				else "breakthrough.discover"),
 		})
 	return rows
+
+
+static func _weather_definitions() -> Array[Resource]:
+	var signal_catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+	var signal_ids: PackedStringArray = signal_catalog.get(
+		"research_signal_ids", PackedStringArray())
+	var out: Array[Resource] = []
+	if not bool(signal_catalog.get("ok", false)):
+		return out
+	for row in WEATHER_RULES:
+		var signal_id := String(row[2])
+		var signal_index := signal_ids.find(signal_id)
+		if signal_index < 0:
+			return []
+		var definition := TriggerDefinitionScript.new()
+		definition.key = StringName("technology.weather.%s" % String(row[1]))
+		definition.version = 1
+		definition.source_id = int(row[3])
+		definition.event_type = EVENT_WEATHER_OBSERVED
+		definition.payload_schema = PAYLOAD_WEATHER_OBSERVED_V1
+		definition.aggregator = int(row[4])
+		definition.value_field = VALUE_I64
+		definition.scope = SCOPE_ENTITY
+		definition.target_resolver = TARGET_EVENT_ENTITY
+		definition.threshold = int(row[5])
+		definition.mode = MODE_ONE_SHOT
+		definition.selector_field = PAYLOAD_I0
+		definition.selector_value = int(row[0])
+		definition.condition_ops = PackedInt32Array([2])
+		var effect := TriggerEffectScript.new()
+		effect.action = ACTION_COUNTRY_COMMAND
+		effect.domain = COUNTRY_DOMAIN
+		effect.opcode = COMMAND_DISCOVER_COUNTRY_SIGNAL
+		effect.target_resolver = TARGET_EVENT_ENTITY
+		effect.value_mode = 0
+		effect.value = SOURCE_KIND_TRIGGER_OUTPUT
+		effect.command_key = &"weather.discover"
+		effect.definition_key = StringName(signal_id)
+		effect.payload_i0 = signal_index
+		definition.effects = [effect]
+		out.append(definition)
+	return out
 
 
 static func _contact_definitions() -> Array[Resource]:

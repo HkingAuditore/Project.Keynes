@@ -37,6 +37,9 @@ const PAYLOAD_RESEARCH_SIGNAL_V1: int = 6
 const PAYLOAD_TECHNOLOGY_PRACTICE_V1: int = 7
 ## cell=目的地，entity_id=订单，value=数量；i0=来源地块，i1/i2=出口/进口国 slot，i3=商品。
 const PAYLOAD_ECONOMY_TRADE_V2: int = 8
+## i0=天气规则，i1=合格领土地块数，i2=第一证据地块，i3=观测协议版本；
+## value=最大强度 Q16，entity_handle=国家句柄。
+const PAYLOAD_WEATHER_OBSERVED_V1: int = 9
 
 var _world_ext = null
 var _schema: Dictionary = {}

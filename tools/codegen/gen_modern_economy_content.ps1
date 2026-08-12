@@ -2287,6 +2287,44 @@ foreach ($buildingFile in Get-ChildItem -LiteralPath $buildingsDir -Filter '*.tr
     Add-Explicit-Construction-Cost $buildingFile.FullName
 }
 
+# Curated technology-contract calibrations that must survive a full content
+# rebuild. Identification is a hard technology prerequisite; buildings do not
+# repeat it as an invisible runtime-only requirement.
+$buildingTechnologyCalibrations = @{
+    wild_maize_stand = @{ direct='tech.wild_maize_collection'; required=@() }
+    wild_wheat_stand = @{ direct='tech.wild_wheat_collection'; required=@() }
+    wild_rice_marsh = @{ direct='tech.wild_rice_collection'; required=@() }
+    primitive_gold_sluice = @{ direct='tech.gold_panning'; required=@('tech.composite_tools') }
+}
+foreach ($buildingId in $buildingTechnologyCalibrations.Keys) {
+    $path = Join-Path $buildingsDir "$buildingId.tres"
+    $content = [System.IO.File]::ReadAllText($path)
+    $calibration = $buildingTechnologyCalibrations[$buildingId]
+    $content = [regex]::Replace($content,
+        '(?m)^technology_tags = PackedStringArray\([^\r\n]*\)\r?$',
+        'technology_tags = PackedStringArray("' + $calibration.direct + '")', 1)
+    $content = [regex]::Replace($content,
+        '(?m)^required_technology_tags = PackedStringArray\([^\r\n]*\)\r?$',
+        'required_technology_tags = ' + (PSArray @($calibration.required)), 1)
+    Write-Utf8 $path $content
+}
+
+# Refined bullion is not produced by the surface-collection technology. Keep
+# ore/resource access on the starter node and bind refined gold to its assay
+# and washing method so the per-technology content fanout remains bounded.
+$goodTechnologyCalibrations = @{
+    gold = 'tech.weights_and_measures'
+}
+foreach ($goodId in $goodTechnologyCalibrations.Keys) {
+    $path = Join-Path $goodsDir "$goodId.tres"
+    $content = [System.IO.File]::ReadAllText($path)
+    $technology = $goodTechnologyCalibrations[$goodId]
+    $content = [regex]::Replace($content,
+        '(?m)^technology_tags = PackedStringArray\("industry\.[^"]+", "tech\.[^"]+"\)\r?$',
+        'technology_tags = PackedStringArray("industry.primary", "' + $technology + '")', 1)
+    Write-Utf8 $path $content
+}
+
 foreach ($directory in @($goodsDir, $buildingsDir, $professionsDir, $needsDir, $plansDir, $resourcesDir)) {
     Assert-FullyManaged $directory
 }

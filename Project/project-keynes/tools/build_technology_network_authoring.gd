@@ -904,10 +904,17 @@ func _assign_hard_prerequisites(nodes: Array[Dictionary], era_ids: PackedStringA
 
 
 func _apply_authored_prerequisite_overrides(nodes: Array[Dictionary]) -> void:
+	var overrides := {
+		"tech.wild_maize_collection": PackedStringArray(["tech.maize_identification"]),
+		"tech.wild_wheat_collection": PackedStringArray(["tech.wheat_identification"]),
+		"tech.wild_rice_collection": PackedStringArray(["tech.rice_identification"]),
+	}
 	for node in nodes:
-		if String((node as Dictionary).id) == "tech.communal_specialization":
+		var id := String((node as Dictionary).id)
+		if overrides.has(id):
+			node.hard_prerequisite_ids = overrides[id]
+		elif id == "tech.communal_specialization":
 			node.hard_prerequisite_ids = PackedStringArray(["tech.early_trade"])
-			return
 
 
 func _cost_points(source: Dictionary, era_id: String, era_milestones: Dictionary,
