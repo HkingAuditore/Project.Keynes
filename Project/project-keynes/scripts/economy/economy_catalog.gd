@@ -462,6 +462,13 @@ static func compile_native_catalog() -> Dictionary:
 			return {"ok": false, "reason": "resource_technology_binding_missing",
 				"id": String(resource.id)}
 		resource_tag_offsets.append(resource_technology_tags.size())
+	var dependency_columns := _compile_building_dependency_columns(
+		building_columns, good_columns, building_columns.building_resource_ids,
+		building_columns.building_resource_technology_tag_offsets,
+		building_columns.building_resource_technology_tags,
+		technology_set, technology_index)
+	if not bool(dependency_columns.get("ok", false)):
+		return dependency_columns
 	for technology_index_value in range(technology_ids.size()):
 		var binding_count: int = technology_binding_rows[technology_index_value].size()
 		var building_binding_count: int = 0
@@ -523,12 +530,25 @@ static func compile_native_catalog() -> Dictionary:
 		"technology_content_binding_kinds": technology_binding_kinds,
 		"technology_content_binding_ids": technology_binding_ids,
 		"technology_consumer_flags": technology_consumer_flags,
+		"building_dependency_kinds": dependency_columns.building_dependency_kinds,
+		"building_dependency_ids": dependency_columns.building_dependency_ids,
+		"building_dependency_branch_offsets": dependency_columns.building_dependency_branch_offsets,
+		"building_dependency_branch_technologies": dependency_columns.building_dependency_branch_technologies,
+		"building_dependency_branch_technology_offsets": dependency_columns.building_dependency_branch_technology_offsets,
+		"building_dependency_branch_group_offsets": dependency_columns.building_dependency_branch_group_offsets,
+		"building_dependency_tag_offsets": dependency_columns.building_dependency_tag_offsets,
+		"building_dependency_tags": dependency_columns.building_dependency_tags,
 	}
 	for key in technology_catalog:
 		if key != "ok":
 			catalog[key] = technology_catalog[key]
 	for key in ["technology_content_binding_offsets", "technology_content_binding_kinds",
-			"technology_content_binding_ids", "technology_consumer_flags"]:
+			"technology_content_binding_ids", "technology_consumer_flags",
+			"building_dependency_branch_offsets", "building_dependency_branch_technologies",
+			"building_dependency_branch_technology_offsets",
+			"building_dependency_branch_group_offsets", "building_dependency_kinds",
+			"building_dependency_ids", "building_dependency_tag_offsets",
+			"building_dependency_tags"]:
 		catalog[key] = content_binding_summary[key]
 	var trigger_catalog_resource: Resource = TriggerCatalogScript.load_default()
 	var trigger_catalog: Dictionary = trigger_catalog_resource.compile_native_catalog() \
@@ -729,6 +749,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var resource_temp_hi_q16 := PackedInt32Array()
 	var resource_semantic_tag_offsets := PackedInt32Array([0])
 	var resource_semantic_tags := PackedStringArray()
+	var resource_technology_tag_offsets := PackedInt32Array([0])
+	var resource_technology_tags := PackedStringArray()
 	for resource in resources:
 		var stable_id := String(resource.id)
 		if not used_resource_ids.has(stable_id):
@@ -763,6 +785,13 @@ static func _compile_building_columns(profession_index: Dictionary,
 		normalized_resource_tags.sort()
 		resource_semantic_tags.append_array(normalized_resource_tags)
 		resource_semantic_tag_offsets.append(resource_semantic_tags.size())
+		for tag in resource.discovery_technology_tags:
+			var normalized_technology_tag := String(tag).strip_edges()
+			if normalized_technology_tag.is_empty():
+				return {"ok": false, "reason": "resource_technology_binding_empty",
+					"id": stable_id}
+			resource_technology_tags.append(normalized_technology_tag)
+		resource_technology_tag_offsets.append(resource_technology_tags.size())
 
 	var type_ids := PackedStringArray()
 	var owner_professions := PackedInt32Array()
@@ -948,11 +977,16 @@ static func _compile_building_columns(profession_index: Dictionary,
 			employee_reference_wages.append(role_reference)
 		employee_offsets.append(employee_professions.size())
 
-		if profile.construction_good_ids.is_empty():
+		var zero_cost_service: bool = building_kind == "service" \
+			and int(profile.construction_days) == 0 \
+			and profile.construction_good_ids.is_empty()
+		if profile.construction_good_ids.is_empty() and not zero_cost_service:
 			return {"ok": false, "reason": "building requires explicit construction goods: %s" % stable_id}
-		var error := _append_building_goods(profile.construction_good_ids,
-			profile.construction_quantities, good_index, construction_goods,
-			construction_quantities)
+		var error := ""
+		if not profile.construction_good_ids.is_empty():
+			error = _append_building_goods(profile.construction_good_ids,
+				profile.construction_quantities, good_index, construction_goods,
+				construction_quantities)
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
 		construction_offsets.append(construction_goods.size())
 		error = _append_building_goods(profile.input_good_ids,
@@ -1214,6 +1248,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_resource_temp_hi_q16": resource_temp_hi_q16,
 		"building_resource_semantic_tag_offsets": resource_semantic_tag_offsets,
 		"building_resource_semantic_tags": resource_semantic_tags,
+		"building_resource_technology_tag_offsets": resource_technology_tag_offsets,
+		"building_resource_technology_tags": resource_technology_tags,
 		"building_resource_offsets": production_resource_offsets,
 		"building_production_resource_ids": production_resources,
 		"building_production_resource_quantities": production_resource_quantities,
@@ -1270,6 +1306,150 @@ static func _validate_explicit_input_candidates(profile: Resource,
 		if not seen_candidates.has(preferred_id):
 			return "preferred building input missing from explicit candidates"
 	return ""
+
+
+## Compiles the material/resource prerequisites for every direct building
+## technology branch.  A branch is usable only when its own technology and
+## required tags are completed, and every dependency group has at least one
+## completed discovery/production tag.  Input candidate alternatives share one
+## group, so a building is not incorrectly forced to unlock every substitute.
+static func _compile_building_dependency_columns(buildings: Dictionary,
+		goods: Dictionary, resource_ids: PackedStringArray,
+		resource_tag_offsets: PackedInt32Array, resource_tags: PackedStringArray,
+		technology_set: Dictionary, technology_index: Dictionary) -> Dictionary:
+	var building_ids: PackedStringArray = buildings.building_type_ids
+	var direct_offsets: PackedInt32Array = buildings.building_technology_tag_offsets
+	var direct_tags: PackedStringArray = buildings.building_technology_tags
+	var required_offsets: PackedInt32Array = \
+		buildings.building_required_technology_tag_offsets
+	var required_tags: PackedStringArray = buildings.building_required_technology_tags
+	var dependency_branch_offsets := PackedInt32Array([0])
+	var dependency_branch_technology_offsets := PackedInt32Array([0])
+	var dependency_branch_technologies := PackedInt32Array()
+	var dependency_branch_group_offsets := PackedInt32Array([0])
+	var dependency_kinds := PackedByteArray()
+	var dependency_ids := PackedInt32Array()
+	var dependency_tag_offsets := PackedInt32Array([0])
+	var dependency_tags := PackedInt32Array()
+	var good_ids: PackedStringArray = goods.good_ids
+	var good_tag_offsets: PackedInt32Array = goods.good_technology_tag_offsets
+	var good_technology_tags: PackedStringArray = goods.good_technology_tags
+	var construction_offsets: PackedInt32Array = buildings.building_construction_offsets
+	var construction_goods: PackedInt32Array = buildings.building_construction_good_ids
+	var input_offsets: PackedInt32Array = buildings.building_input_offsets
+	var input_goods: PackedInt32Array = buildings.building_input_good_ids
+	var input_candidate_offsets: PackedInt32Array = buildings.building_input_candidate_offsets
+	var input_candidate_goods: PackedInt32Array = buildings.building_input_candidate_good_ids
+	var output_offsets: PackedInt32Array = buildings.building_output_offsets
+	var output_goods: PackedInt32Array = buildings.building_output_good_ids
+	var resource_offsets: PackedInt32Array = buildings.building_resource_offsets
+	var production_resources: PackedInt32Array = buildings.building_production_resource_ids
+	var generation_offsets: PackedInt32Array = buildings.building_resource_generation_offsets
+	var generation_resources: PackedInt32Array = buildings.building_resource_generation_ids
+	var resource_index := {}
+	for resource_index_value in range(resource_ids.size()):
+		resource_index[String(resource_ids[resource_index_value])] = resource_index_value
+	var append_tags := func(raw_tags: Array, building_id: String,
+			dependency_kind: int, dependency_id: int) -> Dictionary:
+		var seen := {}
+		for raw_tag in raw_tags:
+			var tag := String(raw_tag).strip_edges()
+			if not tag.begins_with("tech.") or seen.has(tag):
+				continue
+			seen[tag] = true
+			if not technology_set.has(tag):
+				return {"ok": false, "reason": "unknown_building_dependency_technology",
+					"building_id": building_id, "dependency_kind": dependency_kind,
+					"dependency_id": dependency_id, "tag": tag}
+			dependency_tags.append(int(technology_index[tag]))
+		if seen.is_empty():
+			return {"ok": false, "reason": "building_dependency_technology_missing",
+				"building_id": building_id, "dependency_kind": dependency_kind,
+				"dependency_id": dependency_id}
+		dependency_tag_offsets.append(dependency_tags.size())
+		return {"ok": true}
+	var append_good_group := func(building_id: String, dependency_kind: int,
+			good_id: int, candidate_ids: Array = []) -> Dictionary:
+		var acceptable := []
+		var ids_to_scan := candidate_ids if not candidate_ids.is_empty() else [good_id]
+		for candidate_id in ids_to_scan:
+			var candidate := int(candidate_id)
+			if candidate < 0 or candidate >= good_ids.size():
+				return {"ok": false, "reason": "building_dependency_good_invalid",
+					"building_id": building_id, "dependency_id": candidate}
+			for tag_index in range(good_tag_offsets[candidate], good_tag_offsets[candidate + 1]):
+				acceptable.append(String(good_technology_tags[tag_index]))
+		dependency_kinds.append(dependency_kind)
+		dependency_ids.append(good_id)
+		return append_tags.call(acceptable, building_id, dependency_kind, good_id)
+	var append_resource_group := func(building_id: String, dependency_kind: int,
+			resource_id: int) -> Dictionary:
+		if resource_id < 0 or resource_id >= resource_ids.size():
+			return {"ok": false, "reason": "building_dependency_resource_invalid",
+				"building_id": building_id, "dependency_id": resource_id}
+		var acceptable := []
+		for tag_index in range(resource_tag_offsets[resource_id], resource_tag_offsets[resource_id + 1]):
+			acceptable.append(String(resource_tags[tag_index]))
+		dependency_kinds.append(dependency_kind)
+		dependency_ids.append(resource_id)
+		return append_tags.call(acceptable, building_id, dependency_kind, resource_id)
+	for building_index in range(building_ids.size()):
+		var building_id := String(building_ids[building_index])
+		var building_branch_count := 0
+		for direct_index in range(direct_offsets[building_index], direct_offsets[building_index + 1]):
+			var direct_tag := String(direct_tags[direct_index]).strip_edges()
+			if not direct_tag.begins_with("tech."):
+				continue
+			dependency_branch_technologies.append(int(technology_index[direct_tag]))
+			for required_index in range(required_offsets[building_index], required_offsets[building_index + 1]):
+				var required_tag := String(required_tags[required_index]).strip_edges()
+				dependency_branch_technologies.append(int(technology_index[required_tag]))
+			dependency_branch_technology_offsets.append(dependency_branch_technologies.size())
+			building_branch_count += 1
+			for edge in range(construction_offsets[building_index], construction_offsets[building_index + 1]):
+				var result: Dictionary = append_good_group.call(building_id, 1,
+					int(construction_goods[edge]))
+				if not bool(result.get("ok", false)):
+					return result
+			for edge in range(input_offsets[building_index], input_offsets[building_index + 1]):
+				var candidates := []
+				if edge + 1 < input_candidate_offsets.size():
+					for candidate_edge in range(input_candidate_offsets[edge], input_candidate_offsets[edge + 1]):
+						candidates.append(int(input_candidate_goods[candidate_edge]))
+				var result: Dictionary = append_good_group.call(building_id, 2,
+					int(input_goods[edge]), candidates)
+				if not bool(result.get("ok", false)):
+					return result
+			for edge in range(output_offsets[building_index], output_offsets[building_index + 1]):
+				var result: Dictionary = append_good_group.call(building_id, 3,
+					int(output_goods[edge]))
+				if not bool(result.get("ok", false)):
+					return result
+			for edge in range(resource_offsets[building_index], resource_offsets[building_index + 1]):
+				var result: Dictionary = append_resource_group.call(building_id, 4,
+					int(production_resources[edge]))
+				if not bool(result.get("ok", false)):
+					return result
+			for edge in range(generation_offsets[building_index], generation_offsets[building_index + 1]):
+				var result: Dictionary = append_resource_group.call(building_id, 5,
+					int(generation_resources[edge]))
+				if not bool(result.get("ok", false)):
+					return result
+			dependency_branch_group_offsets.append(dependency_kinds.size())
+		dependency_branch_offsets.append(
+			dependency_branch_offsets[-1] + building_branch_count)
+		if building_branch_count == 0:
+			return {"ok": false, "reason": "building_technology_binding_missing",
+				"id": building_id}
+	return {"ok": true,
+		"building_dependency_branch_offsets": dependency_branch_offsets,
+		"building_dependency_branch_technologies": dependency_branch_technologies,
+		"building_dependency_branch_technology_offsets": dependency_branch_technology_offsets,
+		"building_dependency_branch_group_offsets": dependency_branch_group_offsets,
+		"building_dependency_kinds": dependency_kinds,
+		"building_dependency_ids": dependency_ids,
+		"building_dependency_tag_offsets": dependency_tag_offsets,
+		"building_dependency_tags": dependency_tags}
 
 static func _append_building_goods(ids: PackedStringArray, quantities: PackedInt64Array,
 		good_index: Dictionary, out_ids: PackedInt32Array,

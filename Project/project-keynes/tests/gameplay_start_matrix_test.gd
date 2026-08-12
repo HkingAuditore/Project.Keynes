@@ -77,18 +77,16 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 		and cell >= 0 and cell < map.cell_count())
 	if cell < 0 or cell >= map.cell_count():
 		return {}
-	_expect("%s start has freshwater" % label, _has_freshwater(map, cell))
+	_expect("%s start has river/lake or coastal access" % label,
+		_has_water_access(map, cell))
 	var player_start: Dictionary = (start.get("country_starts", []) as Array)[0]
 	_expect("%s has a classified regional route" % label,
 		String(player_start.get("regional_route", "")) in ["coastal", "floodplain",
 			"cold_highland", "tropical_forest", "arid_highland", "temperate"])
-	var topups: PackedStringArray = player_start.get("resource_topups", PackedStringArray())
-	var non_precious_topups := 0
-	for resource_id in topups:
-		if String(resource_id) not in ["gold_ore", "silver_ore"]:
-			non_precious_topups += 1
-	_expect("%s remains natural-first" % label,
-		topups.size() <= 2 and non_precious_topups <= 1)
+	_expect("%s never tops up generated resources" % label,
+		not player_start.has("resource_topups") and
+		(player_start.get("missing_resource_ids", PackedStringArray()) as
+			PackedStringArray).is_empty())
 	for resource_id in [String(player_start.get("starter_food_resource_id", "")),
 			String(player_start.get("starter_clothing_resource_id", "")),
 			String(player_start.get("starter_construction_resource_id", "")),
@@ -119,6 +117,11 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 	var buildings: Dictionary = economy.building_cell_snapshot(cell)
 	var route_buildings: PackedStringArray = player_start.get(
 		"starter_building_ids", PackedStringArray())
+	var route_technologies: PackedStringArray = player_start.get(
+		"starter_technology_ids", PackedStringArray())
+	_expect("%s grants early trade and prebuilds its merchant post" % label,
+		route_technologies.has("tech.early_trade") and
+		route_buildings.has("early_merchant_post"))
 	_expect("%s prebuilds exactly its route bundle" % label,
 		_sum_i64(buildings.get("building_counts_by_type", PackedInt64Array())) ==
 		route_buildings.size())
@@ -154,13 +157,14 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 	}
 
 
-func _has_freshwater(map: MapData, cell: int) -> bool:
+func _has_water_access(map: MapData, cell: int) -> bool:
 	if map.has_river_arr[cell] != 0 or map.is_lake_seed_arr[cell] != 0:
 		return true
 	var neighbors := map.neighbor_indices_packed()
 	for direction in range(6):
 		var neighbor := int(neighbors[cell * 6 + direction])
-		if neighbor >= 0 and (map.has_river_arr[neighbor] != 0 \
+		if neighbor >= 0 and (map.is_water_arr[neighbor] != 0 \
+				or map.has_river_arr[neighbor] != 0 \
 				or map.is_lake_seed_arr[neighbor] != 0 \
 				or int(map.terrain_arr[neighbor]) == int(TerrainType.TERRAIN.LAKE)):
 			return true

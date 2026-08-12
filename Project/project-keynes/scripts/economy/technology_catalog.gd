@@ -100,7 +100,7 @@ static func compile_native_catalog() -> Dictionary:
 		return int(left.get("layout_order", 0)) < int(right.get("layout_order", 0)))
 	var era_rows: Array = network.get("eras", [])
 	var domain_rows: Array = network.get("domains", [])
-	if technology_rows.size() != 360 or era_rows.size() != 11 or domain_rows.size() != 4:
+	if technology_rows.size() != 361 or era_rows.size() != 11 or domain_rows.size() != 4:
 		return {"ok": false, "reason": "technology_network_shape_invalid"}
 	var ids := PackedStringArray()
 	var names := PackedStringArray()

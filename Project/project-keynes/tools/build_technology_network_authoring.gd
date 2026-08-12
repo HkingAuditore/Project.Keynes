@@ -104,7 +104,7 @@ const DEFAULT_EVIDENCE := {
 	"branch.heavy_industry": "resource.iron_ore",
 	"branch.industrial_chemistry": "resource.sulfur",
 	"branch.petroleum_materials": "resource.oil",
-	"branch.water_wind": "resource.freshwater",
+	"branch.water_wind": "landform.freshwater_access",
 	"branch.electric_intelligent_energy": "breakthrough.electrification",
 	"backbone.food_storage": "breakthrough.seed_saving",
 	"backbone.tools_machinery": "breakthrough.kiln_temperature",
@@ -131,7 +131,7 @@ const EVIDENCE_BY_LANE := {
 	"branch.heavy_industry": ["resource.iron_ore", "resource.coal", "breakthrough.mine_support"],
 	"branch.industrial_chemistry": ["resource.salt", "resource.sulfur", "breakthrough.chemical_process_control"],
 	"branch.petroleum_materials": ["resource.oil", "resource.natural_gas", "breakthrough.chemical_process_control"],
-	"branch.water_wind": ["resource.freshwater", "landform.river_valley", "breakthrough.watershed_management"],
+	"branch.water_wind": ["landform.freshwater_access", "landform.river_valley", "breakthrough.watershed_management"],
 	"branch.electric_intelligent_energy": ["breakthrough.electrification", "breakthrough.energy_control", "resource.rare_earth"],
 }
 
@@ -294,16 +294,17 @@ const EXPLICIT_EVIDENCE_BY_TECH := {
 	"tech.gathering": ["resource.fertile_soil", "landform.forest", "landform.grassland"],
 	"tech.stone_knapping": ["resource.flint", "resource.stone", "landform.mountain"],
 	"tech.fire_control": ["resource.timber", "weather.drought", "landform.grassland"],
-	"tech.freshwater_fishing": ["resource.freshwater_fish", "resource.freshwater", "landform.river_valley"],
+	"tech.freshwater_fishing": ["resource.freshwater_fish", "landform.freshwater_access", "landform.river_valley"],
 	"tech.coastal_fishing": ["resource.marine_fish", "landform.coast", "landform.coastal_estuary"],
 	"tech.earth_building": ["resource.clay", "landform.arid_basin", "landform.loess_plain"],
 	"tech.wild_tuber_collection": ["bio.potato", "landform.high_plateau", "landform.mountain"],
 	"tech.wild_flax_collection": ["bio.flax", "landform.grassland", "landform.forest"],
-	"tech.gold_panning": ["resource.gold_ore", "resource.freshwater", "landform.river_valley"],
+	"tech.gold_panning": ["resource.gold_ore", "landform.freshwater_access", "landform.river_valley"],
 	"tech.surface_silver_collection": ["resource.silver_ore", "landform.mountain", "landform.high_plateau"],
+	"tech.early_trade": ["resource.gold_ore", "resource.silver_ore"],
 	"tech.deadwood_collection": ["resource.timber", "landform.forest", "landform.conifer_forest"],
-	"tech.reed_identification": ["bio.reed", "landform.marsh", "resource.freshwater"],
-	"tech.reed_harvesting": ["bio.reed", "landform.marsh", "resource.freshwater"],
+	"tech.reed_identification": ["bio.reed", "landform.marsh", "landform.freshwater_access"],
+	"tech.reed_harvesting": ["bio.reed", "landform.marsh", "landform.freshwater_access"],
 	"tech.turf_cutting": ["resource.pasture", "landform.tundra", "landform.high_plateau"],
 	"tech.hide_scraping": ["resource.wild_game", "landform.grassland", "landform.forest"],
 	"tech.fur_sewing": ["resource.wild_game", "landform.tundra", "landform.conifer_forest"],
@@ -328,7 +329,7 @@ const EXPLICIT_EVIDENCE_BY_TECH := {
 	"tech.paddy_bunding": ["resource.paddy_land", "landform.floodplain", "breakthrough.paddy_control"],
 	"tech.dryland_water_retention": ["resource.arable_land", "weather.drought", "breakthrough.rainfed_adaptation"],
 	"tech.highland_tuber_farming": ["bio.potato", "landform.high_plateau", "landform.mountain"],
-	"tech.river_transport": ["landform.river_valley", "resource.freshwater", "weather.major_flood"],
+	"tech.river_transport": ["landform.river_valley", "landform.freshwater_access", "weather.major_flood"],
 	"tech.tenant_paddy_management": ["resource.paddy_land", "landform.floodplain", "breakthrough.paddy_control"],
 	"tech.estate_paddy_management": ["resource.paddy_land", "landform.floodplain", "breakthrough.paddy_control"],
 	"tech.wind_power": ["landform.stable_wind_corridor", "weather.monsoon", "weather.typhoon"],
@@ -409,12 +410,12 @@ const SEMANTIC_EVIDENCE_RULES := [
 	{"tokens": ["tin"], "signals": ["resource.tin_ore", "contact.tin", "breakthrough.metalworking"]},
 	{"tokens": ["bronze", "alloy", "metallurgy", "metal"], "signals": ["resource.copper_ore", "resource.tin_ore", "breakthrough.metalworking"]},
 	{"tokens": ["iron", "steel", "coal", "mine", "mining", "shaft"], "signals": ["resource.iron_ore", "resource.coal", "breakthrough.mine_support"]},
-	{"tokens": ["gold", "silver"], "signals": ["resource.gold_ore", "resource.silver_ore", "resource.freshwater"]},
+	{"tokens": ["gold", "silver"], "signals": ["resource.gold_ore", "resource.silver_ore", "landform.freshwater_access"]},
 	{"tokens": ["salt"], "signals": ["resource.salt", "resource.saltpeter", "resource.sulfur"]},
 	{"tokens": ["sulfur", "phosphate", "fertilizer", "gunpowder", "explosive", "chemistry", "chemical"], "signals": ["resource.sulfur", "resource.phosphate_rock", "resource.saltpeter"]},
 	{"tokens": ["oil", "petroleum", "fuel", "combustion", "gas", "plastic", "synthetic"], "signals": ["resource.oil", "resource.natural_gas", "resource.coal"]},
-	{"tokens": ["irrigation", "hydraulic", "canal", "water", "hydro", "watershed"], "signals": ["resource.freshwater", "landform.river_valley", "breakthrough.hydraulic_engineering"]},
-	{"tokens": ["wind"], "signals": ["landform.stable_wind_corridor", "resource.freshwater", "breakthrough.hydraulic_engineering"]},
+	{"tokens": ["irrigation", "hydraulic", "canal", "water", "hydro", "watershed"], "signals": ["landform.freshwater_access", "landform.river_valley", "breakthrough.hydraulic_engineering"]},
+	{"tokens": ["wind"], "signals": ["landform.stable_wind_corridor", "landform.freshwater_access", "breakthrough.hydraulic_engineering"]},
 ]
 
 const SEMANTIC_FAMILY_RULES := [
@@ -592,6 +593,7 @@ func _build_payload(definitions: Array, eras: Array, domains: Array,
 			"terminal_reason": ("该路线的智能时代终局回报" if era_index == era_ids.size() - 1 else ""),
 		})
 	_assign_hard_prerequisites(nodes, era_ids, branch_anchors, backbone_anchors)
+	_apply_authored_prerequisite_overrides(nodes)
 
 	var visual_edges := _visual_edges(nodes, era_ids, branch_anchors, id_to_index)
 	return {
@@ -842,7 +844,7 @@ func _energy_evidence(era_index: int) -> Array:
 		return ["breakthrough.electrification", "breakthrough.motor_winding", "breakthrough.assembly_line"]
 	if era_index >= 6:
 		return ["breakthrough.steam_power", "breakthrough.steam_sealing", "breakthrough.assembly_line"]
-	return ["resource.freshwater", "landform.stable_wind_corridor", "breakthrough.hydraulic_engineering"]
+	return ["landform.freshwater_access", "landform.stable_wind_corridor", "breakthrough.hydraulic_engineering"]
 
 
 func _first_signal_atom(spec: Dictionary) -> Dictionary:
@@ -899,6 +901,13 @@ func _assign_hard_prerequisites(nodes: Array[Dictionary], era_ids: PackedStringA
 					if not bool(node.is_starting) and not previous.is_empty():
 						node.hard_prerequisite_ids = PackedStringArray([previous])
 					previous = String(node.id)
+
+
+func _apply_authored_prerequisite_overrides(nodes: Array[Dictionary]) -> void:
+	for node in nodes:
+		if String((node as Dictionary).id) == "tech.communal_specialization":
+			node.hard_prerequisite_ids = PackedStringArray(["tech.early_trade"])
+			return
 
 
 func _cost_points(source: Dictionary, era_id: String, era_milestones: Dictionary,
@@ -1575,7 +1584,7 @@ func _any_of(children: Array) -> Dictionary:
 func _validate_payload(payload: Dictionary) -> String:
 	var nodes: Array = payload.nodes
 	var edges: Array = payload.visual_edges
-	if nodes.size() != 360:
+	if nodes.size() != 361:
 		return "technology_network_node_count_invalid"
 	if edges.size() > 1500:
 		return "technology_network_visual_edge_limit_exceeded"

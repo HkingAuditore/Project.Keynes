@@ -1876,6 +1876,10 @@ func _build_gameplay_country_packet() -> Dictionary:
 	var territory_cells := PackedInt32Array()
 	var technology_offsets := PackedInt32Array([0])
 	var all_technology_indices := PackedInt32Array()
+	var research_signal_offsets := PackedInt32Array([0])
+	var research_signal_indices := PackedInt32Array()
+	var research_signal_cells := PackedInt32Array()
+	var research_signal_days := PackedInt64Array()
 	var treasury_offsets := PackedInt32Array([0])
 	var research_weights := PackedInt32Array()
 	var research_budgets := PackedInt64Array()
@@ -1897,12 +1901,34 @@ func _build_gameplay_country_packet() -> Dictionary:
 		territory_offsets.append(territory_cells.size())
 		var starter_ids: PackedStringArray = start.get(
 			"starter_technology_ids", PackedStringArray())
-		var technology_indices := _starter_technology_closure(catalog, starter_ids)
+		var starter_eligible: Dictionary = {}
+		for starter_id in catalog.get("starter_eligible_technology_ids", PackedStringArray()):
+			starter_eligible[String(starter_id)] = true
+		var technology_indices := PackedInt32Array()
+		var seen_technology := {}
+		for starter_id in starter_ids:
+			var starter_id_string := String(starter_id)
+			if not starter_eligible.has(starter_id_string):
+				return {}
+			var technology_index := (catalog.technology_ids as PackedStringArray).find(starter_id_string)
+			if technology_index < 0 or seen_technology.has(technology_index):
+				continue
+			seen_technology[technology_index] = true
+			technology_indices.append(technology_index)
 		if technology_indices.is_empty():
 			return {}
 		for technology_index in technology_indices:
 			all_technology_indices.append(technology_index)
 		technology_offsets.append(all_technology_indices.size())
+		var signal_ids: PackedInt32Array = start.get("visible_signal_ids", PackedInt32Array())
+		var signal_cells: PackedInt32Array = start.get("visible_signal_cells", PackedInt32Array())
+		if signal_ids.size() != signal_cells.size():
+			return {}
+		for signal_edge in range(signal_ids.size()):
+			research_signal_indices.append(int(signal_ids[signal_edge]))
+			research_signal_cells.append(int(signal_cells[signal_edge]))
+			research_signal_days.append(0)
+		research_signal_offsets.append(research_signal_indices.size())
 		treasury_offsets.append(0)
 		for weight in configured_weights:
 			research_weights.append(weight)
@@ -1918,6 +1944,10 @@ func _build_gameplay_country_packet() -> Dictionary:
 		"territory_cells": territory_cells,
 		"technology_offsets": technology_offsets,
 		"technology_indices": all_technology_indices,
+		"research_signal_offsets": research_signal_offsets,
+		"research_signal_indices": research_signal_indices,
+		"research_signal_cells": research_signal_cells,
+		"research_signal_days": research_signal_days,
 		"treasury_offsets": treasury_offsets,
 		"treasury_good_indices": PackedInt32Array(),
 		"treasury_quantities": PackedInt64Array(),
@@ -1925,40 +1955,6 @@ func _build_gameplay_country_packet() -> Dictionary:
 		"research_daily_budgets": research_budgets,
 		"research_auto_purchase": research_auto_purchase,
 	}
-
-
-func _starter_technology_closure(catalog: Dictionary,
-		starter_ids: PackedStringArray) -> PackedInt32Array:
-	var technology_ids: PackedStringArray = catalog.get(
-		"technology_ids", PackedStringArray())
-	var prerequisite_offsets: PackedInt32Array = catalog.get(
-		"technology_prerequisite_offsets", PackedInt32Array())
-	var prerequisites: PackedInt32Array = catalog.get(
-		"technology_prerequisites", PackedInt32Array())
-	if prerequisite_offsets.size() != technology_ids.size() + 1:
-		return PackedInt32Array()
-	var visited := {}
-	var result := PackedInt32Array()
-	for technology_id in starter_ids:
-		var technology_index := technology_ids.find(String(technology_id))
-		if technology_index < 0:
-			return PackedInt32Array()
-		_append_starter_prerequisites(
-			technology_index, prerequisite_offsets, prerequisites, visited, result)
-	return result
-
-
-func _append_starter_prerequisites(technology_index: int,
-		prerequisite_offsets: PackedInt32Array, prerequisites: PackedInt32Array,
-		visited: Dictionary, result: PackedInt32Array) -> void:
-	if visited.has(technology_index):
-		return
-	visited[technology_index] = true
-	for edge in range(prerequisite_offsets[technology_index],
-			prerequisite_offsets[technology_index + 1]):
-		_append_starter_prerequisites(int(prerequisites[edge]),
-			prerequisite_offsets, prerequisites, visited, result)
-	result.append(technology_index)
 
 
 func consume_continuation_perf_summary() -> Dictionary:
@@ -2304,21 +2300,19 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# snapshot slots identical to MapData after replacing PackedArrays.
 	_bootstrap_natural_resource_deposits(map, cfg)
 	_publish_bootstrapped_natural_resources_to_runtime(map)
+	_append_natural_resource_research_signals(map)
 	if not _gameplay_start_context.is_empty():
 		var gameplay_config: Dictionary = _gameplay_start_context.get("config", {})
 		var country_config: Dictionary = gameplay_config.get("country", {})
 		_gameplay_start_report = StartLocationPolicyScript.select_and_prepare(
 			map,
+			world,
 			int(cfg.seed),
 			int(country_config.get("foreign_count", NewGameConfig.DEFAULT_FOREIGN_COUNT)),
 			String(country_config.get("name", "新国家")))
 		if not bool(_gameplay_start_report.get("ok", false)):
 			return
 		_gameplay_start_context.merge(_gameplay_start_report, true)
-		# Re-publish the deterministic top-ups to the bound DCWorld/DCWorldExt
-		# resource slots before country and economy bootstrap read them.
-		_publish_bootstrapped_natural_resources_to_runtime(map)
-	_append_natural_resource_research_signals(map)
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
 	# 把 ext 句柄一次性下发给 WeatherSystem。ext 为 null（gdext 未编译 / 未 bind）
 	# 时 WeatherSystem 自动走 GDScript legacy path，对 caller 完全透明。
@@ -10035,7 +10029,7 @@ func _generate_static_research_signals(map: MapData) -> void:
 	for key in [
 		"bio.maize", "bio.wheat", "bio.rice", "bio.potato", "bio.horse",
 		"bio.cotton", "bio.flax", "bio.spice", "bio.rubber",
-		"resource.freshwater", "landform.river_valley", "landform.volcanic",
+		"landform.freshwater_access", "landform.river_valley", "landform.volcanic",
 		"landform.high_plateau", "landform.coastal_estuary", "landform.coast",
 		"landform.arid_basin", "landform.marsh", "landform.forest",
 		"landform.grassland", "landform.mountain",

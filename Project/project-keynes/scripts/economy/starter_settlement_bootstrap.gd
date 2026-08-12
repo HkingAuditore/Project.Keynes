@@ -48,8 +48,9 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		var route_buildings: PackedStringArray = start.get(
 			"starter_building_ids", PackedStringArray())
 		if route_buildings.is_empty():
-			route_buildings = (_fallback_start(start_cell, precious_resource).get(
-				"starter_building_ids", PackedStringArray()) as PackedStringArray)
+			return _error("starter_route_missing", "出生点没有经过验证的初始建筑路线。")
+		if not route_buildings.has("early_merchant_post"):
+			return _error("starter_trade_building_missing", "开局路线必须预建早期商栈。")
 		var profession_population := {}
 		var profession_order := PackedStringArray()
 		var first_building_type := -1
@@ -105,12 +106,22 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			funds.append(population * SURVIVAL_DAYS * 8 * MONEY_SCALE)
 		total_population += STARTER_POPULATION
 
-		var food_good := String(start.get("starter_food_good_id", "gathered_plants"))
+		var food_good := String(start.get("starter_food_good_id", ""))
 		var food_index := goods.find(food_good)
 		if food_index < 0:
 			return _error("starter_good_missing", "经济目录缺少当地食物：%s" % food_good)
 		stock[start_cell * goods.size() + food_index] += STARTER_POPULATION \
 			* SURVIVAL_DAYS * SURVIVAL_FOOD_PER_PERSON_DAY
+		var clothing_good := String(start.get("starter_clothing_good_id", ""))
+		if clothing_good.is_empty() or goods.find(clothing_good) < 0:
+			return _error("starter_good_missing", "经济目录缺少开局衣物：%s" % clothing_good)
+		stock[start_cell * goods.size() + goods.find(clothing_good)] += \
+			STARTER_POPULATION * LOCAL_INPUT_BUFFER_DAYS * GOODS_SCALE
+		var construction_good := String(start.get("starter_construction_good_id", ""))
+		if construction_good.is_empty() or goods.find(construction_good) < 0:
+			return _error("starter_good_missing", "经济目录缺少开局建材：%s" % construction_good)
+		stock[start_cell * goods.size() + goods.find(construction_good)] += \
+			STARTER_POPULATION * LOCAL_INPUT_BUFFER_DAYS * GOODS_SCALE
 		var input_buffer_good := String(start.get("starter_input_buffer_good_id", ""))
 		if not input_buffer_good.is_empty():
 			var input_index := goods.find(input_buffer_good)
@@ -157,18 +168,18 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		"starter_building_offsets": starter_building_offsets,
 		"starter_building_ids": starter_building_ids,
 		"survival_days": SURVIVAL_DAYS,
-		"source": "starter_settlement_bootstrap_v4",
+		"source": "starter_settlement_bootstrap_v5",
 	}
 
 
 static func _fallback_start(start_cell: int, precious_resource: String) -> Dictionary:
 	var technologies := PackedStringArray([
-		"tech.gathering", "tech.wild_flax_collection", "tech.fiber_twisting",
-		"tech.deadwood_collection", "tech.oral_memory_practice",
+		"tech.gathering", "tech.wild_flax_collection", "tech.deadwood_collection",
+		"tech.oral_memory_practice", "tech.early_trade",
 	])
 	var buildings := PackedStringArray([
 		"gathering_ground", "bast_fiber_camp", "bast_wrap_shelter",
-		"deadwood_gathering_camp", "oral_memory_circle", "merchant_post",
+		"deadwood_gathering_camp", "oral_memory_circle", "early_merchant_post",
 	])
 	if precious_resource == "silver_ore":
 		technologies.append("tech.surface_silver_collection")
@@ -183,7 +194,14 @@ static func _fallback_start(start_cell: int, precious_resource: String) -> Dicti
 		"starter_technology_ids": technologies,
 		"starter_building_ids": buildings,
 		"starter_food_good_id": "gathered_plants",
+		"starter_clothing_good_id": "clothing",
+		"starter_construction_good_id": "logs",
+		"starter_knowledge_good_id": "technology_points",
+		"starter_food_resource_id": "fertile_soil",
+		"starter_clothing_resource_id": "fertile_soil",
+		"starter_construction_resource_id": "timber",
 		"starter_input_buffer_good_id": "bast_fiber",
+		"starter_precious_good_id": precious_resource,
 	}
 
 

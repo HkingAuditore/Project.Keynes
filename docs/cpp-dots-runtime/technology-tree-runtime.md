@@ -44,6 +44,10 @@ second native pass appends every `resource.*` fact to the same sorted CSR. GDScr
 the returned arrays. `NativeCountryRuntime` owns whether a country has observed them. Goods stock
 never implies Bio discovery, and countries do not automatically share evidence.
 
+河流、湖泊和湿地发布 `landform.freshwater_access`（“河湖水系”）地貌证据，供淡水捕鱼、
+淘金、芦苇和水利路线的揭示条件使用。它不是 `ResourceProfile`，也没有储量、采集或商品
+配方；实际可采集的水生自然资源只有 `freshwater_fish` 等明确资源条目。
+
 Temporary weather is only a fact. Economy publishes sparse committed practice facts; PKTR v4
 persists their threshold accumulation, and Effect issues idempotent `DISCOVER_COUNTRY_SIGNAL`
 commands for permanent `breakthrough.*` evidence while retaining the first practice cell.
@@ -61,7 +65,7 @@ idempotency key，不会重复发现。
 
 ## 目录
 
-当前目录包含 360 个定义：22 个只允许区域开局求解器授予的零成本原始处理节点，以及 338 个
+当前目录包含 361 个定义：23 个只允许区域开局求解器授予的零成本原始处理节点，以及 338 个
 可研究节点，覆盖 11 个时代和农业、工程、科学、社会四领域。不存在全球统一开局科技。每时代
 里程碑严格使用 16 个本时代唯一候选中的任意 5 个；候选分组只用于 UI。里程碑不直接解锁
 Good、Resource、建筑或生产方式，只执行时代奖励 Effect 并开放下一时代。
@@ -69,12 +73,16 @@ Good、Resource、建筑或生产方式，只执行时代奖励 Effect 并开放
 拓扑固定为四条跨时代骨干和十六条跨时代专业泳道。每条泳道每时代恰有一个路线锚点；非石器
 专业锚点的硬前置是“上一时代里程碑 AND 上一时代同路线锚点”；骨干锚点以时代里程碑为硬
 前置。实践、接触、资源和地理证据仅写入揭示条件，用来启发并显示科技，不能替代知识链。
-当前目录有 461 条硬边、0 条替代研究边、505 条应用交汇边和 176 条里程碑候选边，总计
-1,142 条静态可视边；硬前置平均入度 1.28，节点硬入度上限 2。
+当前目录有 462 条硬边、0 条替代研究边、505 条应用交汇边和 176 条里程碑候选边，总计
+1,143 条静态可视边；节点硬入度上限 2。
 
 区域开局处理科技也保留发现条件，用于说明其地理/资源来源，但仍只由区域开局求解器授予；
 发现条件不改变其研究资格。芦苇、草皮、湿地、洪泛、旱作、水田、高地、河运与风力等节点
 使用科技级精确证据，避免从宽泛路线继承无关信号。
+
+`tech.early_trade`（“早期贸易”）是第 23 个零成本区域开局节点。它由出生地可见的天然金矿
+或银矿揭示，解锁零建造成本的 `early_merchant_post`（“早期商栈”），并作为石器时代制度/
+交换骨干的入口。每个正式新游戏国家都必须在本地路线闭包中获得该科技并预建一座早期商栈。
 
 目录编译器为每项科技生成唯一 Effect recipe、唯一永久 Modifier definition、显式 Modifier
 term CSR、路线标签、研究条件 postfix IR、prerequisite CSR、milestone-candidate CSR、反向
@@ -83,7 +91,7 @@ term CSR、路线标签、研究条件 postfix IR、prerequisite CSR、milestone
 `tech.*` 门槛。任一内容缺绑定、引用未知科技，或科技没有内容/Modifier/Effect 消费者都会
 导致冷启动编译失败。
 
-权威目录直接使用 360 项中文名称和中文效果摘要，`TechnologyCatalog.public_definitions()`
+权威目录直接使用 361 项中文名称和中文效果摘要，`TechnologyCatalog.public_definitions()`
 同时提供中文路线标签；玩家界面不显示内部 `tech.*`/`route.*` ID。稳定 ID、dense 顺序、
 Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档。
 
@@ -162,7 +170,7 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 
 工作区不持有 `CountryFacade`、玩家国家句柄或命令序列。权重、预算和队列操作只发出结构化玩家意图，由 `PlayerController` 解析正式会话、分配下一日生效日与单调 sequence，再委托 `NativeCountryRuntime`。
 
-科技树是单个自绘 `TechnologyTreeView`，不再使用 `GraphEdit`，也不为 360 个节点创建子节点。
+科技树是单个自绘 `TechnologyTreeView`，不再使用 `GraphEdit`，也不为 361 个节点创建子节点。
 几何由纯函数 `TechnologyTreeLayout` 一次性烘焙：以主要路线泳道组织全局 DAG、时代分带、
 同层重心排序、里程碑居中并终结所在时代、三次贝塞尔连线采样点和边包围盒缓存。硬前置、
 替代证据、应用交汇和里程碑候选四类关系使用不同线型；16 条候选边只在焦点相关时显示。节点和边执行视口裁剪，

@@ -209,7 +209,8 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
         out["reason"] = String("research_signal_generation_input_shape_invalid");
         return out;
     }
-    // Stable semantic order: nine biota, freshwater, then ten landforms.
+    // Stable semantic order: nine biota, freshwater-access landform, then ten
+    // other landforms. Freshwater is hydrology evidence, not an economy resource.
     const uint8_t *veg = vegetation.ptr();
     const uint8_t *lf = landform.ptr();
     const uint8_t *riv = rivers.ptr();

@@ -647,6 +647,14 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     const std::vector<int32_t> territory_cells = packed_i32(packet, "territory_cells");
     const std::vector<int32_t> tech_offsets = packed_i32(packet, "technology_offsets");
     const std::vector<int32_t> tech_indices = packed_i32(packet, "technology_indices");
+    const std::vector<int32_t> research_signal_offsets =
+        packed_i32(packet, "research_signal_offsets");
+    const std::vector<int32_t> research_signal_indices =
+        packed_i32(packet, "research_signal_indices");
+    const std::vector<int32_t> research_signal_cells =
+        packed_i32(packet, "research_signal_cells");
+    const std::vector<int64_t> research_signal_days =
+        packed_i64(packet, "research_signal_days");
     const std::vector<int32_t> treasury_offsets = packed_i32(packet, "treasury_offsets");
     const std::vector<int32_t> treasury_good_indices = packed_i32(packet, "treasury_good_indices");
     const std::vector<int64_t> treasury_quantities = packed_i64(packet, "treasury_quantities");
@@ -718,6 +726,11 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
             return fail("country_bootstrap_shape_invalid");
         if ((!tech_offsets.empty() && (tech_offsets.size() != ids.size() + 1 || tech_offsets.front() != 0 ||
              tech_offsets.back() != static_cast<int32_t>(tech_indices.size()))) ||
+            (!research_signal_offsets.empty() &&
+             (research_signal_offsets.size() != ids.size() + 1 || research_signal_offsets.front() != 0 ||
+              research_signal_offsets.back() != static_cast<int32_t>(research_signal_indices.size()) ||
+              research_signal_indices.size() != research_signal_cells.size() ||
+              research_signal_indices.size() != research_signal_days.size())) ||
             (!treasury_offsets.empty() && (treasury_offsets.size() != ids.size() + 1 || treasury_offsets.front() != 0 ||
              treasury_offsets.back() != static_cast<int32_t>(treasury_good_indices.size()) ||
              treasury_good_indices.size() != treasury_quantities.size())))
@@ -787,6 +800,53 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                     return fail("country_bootstrap_research_policy_invalid");
                 _country_research_auto_purchase[slot] =
                     research_auto_purchase[slot];
+            }
+            if (!research_signal_offsets.empty()) {
+                std::vector<uint64_t> &observed_cells =
+                    _country_research_signal_cells[slot];
+                std::vector<SignalEvidence> &evidence =
+                    _country_research_signal_evidence[slot];
+                for (int32_t edge = research_signal_offsets[slot];
+                     edge < research_signal_offsets[slot + 1]; ++edge) {
+                    const int32_t signal = research_signal_indices[static_cast<size_t>(edge)];
+                    const int32_t cell = research_signal_cells[static_cast<size_t>(edge)];
+                    const int64_t day = research_signal_days[static_cast<size_t>(edge)];
+                    if (signal < 0 || signal >= static_cast<int32_t>(_research_signal_ids.size()) ||
+                        cell < 0 || cell >= _cell_count || day < 0)
+                        return fail("country_bootstrap_research_signal_invalid");
+                    const uint64_t observation_key =
+                        (static_cast<uint64_t>(static_cast<uint32_t>(signal)) << 32U) |
+                        static_cast<uint32_t>(cell);
+                    auto observed_it = std::lower_bound(
+                        observed_cells.begin(), observed_cells.end(), observation_key);
+                    if (observed_it != observed_cells.end() && *observed_it == observation_key)
+                        continue;
+                    observed_cells.insert(observed_it, observation_key);
+                    if (_research_signal_words > 0) {
+                        _country_research_signals[slot * static_cast<size_t>(_research_signal_words) +
+                                                   static_cast<size_t>(signal / 64)] |=
+                            uint64_t{1} << (signal % 64);
+                    }
+                    auto evidence_it = std::lower_bound(
+                        evidence.begin(), evidence.end(), signal,
+                        [](const SignalEvidence &entry, int32_t needle) {
+                            return entry.signal < needle;
+                        });
+                    if (evidence_it == evidence.end() || evidence_it->signal != signal) {
+                        SignalEvidence entry;
+                        entry.signal = signal;
+                        entry.count = 0;
+                        entry.first_day = day;
+                        entry.last_day = day;
+                        entry.first_cell = cell;
+                        evidence_it = evidence.insert(evidence_it, entry);
+                    }
+                    ++evidence_it->count;
+                    evidence_it->first_day = std::min(evidence_it->first_day, day);
+                    evidence_it->last_day = std::max(evidence_it->last_day, day);
+                    if (evidence_it->first_cell < 0 || cell < evidence_it->first_cell)
+                        evidence_it->first_cell = cell;
+                }
             }
         }
         _starting_country_slot = 0;

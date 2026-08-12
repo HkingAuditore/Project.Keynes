@@ -27,7 +27,7 @@ The formal path has one fixed order:
 2. Generate natural-resource deposits and publish them to `MapData`, `DCWorld`,
    and `DCWorldExt`.
 3. Select the player start, then deterministically select the configured foreign
-   starts and publish all resource top-ups through the same three mirrors.
+   starts from cells whose natural deposits and visible geography already close the starter route.
 4. Bootstrap PKCN once with `country.player` in slot 0 followed by
    `country.foreign.001` etc.; every country owns exactly its start cell and all
    remaining land stays unowned.
@@ -45,16 +45,15 @@ Do not call `EconomyTestBootstrap` from this path. It remains test/demo data.
 
 `StartLocationProfile` is gameplay configuration, independent of inspector
 habitability presentation. A candidate must be passable land, satisfy the
-temperature/moisture/elevation/vitality ranges, and have river/lake freshwater
+temperature/moisture/elevation/vitality ranges, and have river/lake hydrology
 on itself or a neighbor. Candidates are sorted by survival score. Naturally
 gold/silver-bearing candidates are preferred, and a stable hash of
 `seed + player_start` selects within the top quartile.
 
-The chosen cell is topped up to the profile minimum for fertile soil, timber,
-wild game, stone, flint, and one precious resource. If neither precious metal
-exists locally, the globally rarer metal is chosen; a stable hash breaks ties.
-Generation fails with a player-facing error when no valid survival candidate
-exists.
+No resource deposit is added or topped up by start selection. A candidate must already have natural
+gold or silver and enough local resources and visible signals to close food, clothing, construction,
+knowledge and trade production. Generation fails with a player-facing error when no valid closed
+candidate exists.
 
 Foreign starts use the same survival predicate. Their minimum pairwise land
 distance is `clamp(round(min(width, height) * 0.15), 4, 12)` over the map's
@@ -67,11 +66,10 @@ country-name pack, excluding the player's display name.
 
 ## Twenty-Person Settlements
 
-Every opening country receives exactly 20 people. Each settlement contains three foragers, two merchants,
-one gold miner or two silver miners, and unemployed household members for the
-remainder. It starts with one gathering ground, one timber collector, one
-merchant post, and one matching gold/silver work site. Market stocks and cohort
-funds cover the configured 60-day survival bridge. All settlements are compiled
+Every opening country receives exactly 20 people. Occupations are derived from the selected regional
+producer bundle, including the matching gold/silver work site and the merchant owner of an
+`early_merchant_post`; the remaining people start unemployed. The weak regional bundle is prebuilt,
+and only 15 days of its locally produced food is bridged into market stock. All settlements are compiled
 into one PKEC bootstrap packet. PKCN/PKEC and the economy
 ledger remain the authorities; UI code does not own this state.
 Each capital also starts with exactly one founder family: the two foragers who
@@ -230,19 +228,20 @@ economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtens
 desktop/narrow UI checks.
 For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
 
-## Regional technology/economy bootstrap v4
+## Regional technology/economy bootstrap v5
 
 Formal new games no longer grant four universal technologies or a universal settlement bundle.
 `StartLocationPolicy` classifies each capital from the capital ring's Bio/resource/landform/climate
 evidence and returns one food, clothing, construction, precious-metal and knowledge route.
 `MapGenerator` grants only the selected zero-cost handling technologies plus recursive structural
-prerequisites; `StarterSettlementBootstrap` prebuilds the matching weak producers. The supported
+prerequisites, plus the zero-cost `tech.early_trade`; `StarterSettlementBootstrap` prebuilds the
+matching weak producers and `early_merchant_post`. The supported
 families are coastal, floodplain, cold highland, tropical forest, arid highland and temperate.
 
-The bootstrap validates the complete technology/input/job/output closure. It may add at most one
-geographically plausible gold or silver occurrence and, only when the closure otherwise fails, one
-non-precious route resource. It never tops up the former universal fertile-soil/timber/game/stone/flint
-set. Starting buildings cannot require steel, coal, industrial chemicals, industrialists, managers,
+The bootstrap validates the complete direct/required-technology, construction-good, input, output,
+local-resource and resource-generation closure. It never adds gold, silver or any non-precious route
+resource, and it never tops up the former universal fertile-soil/timber/game/stone/flint set. Starting
+buildings cannot require steel, coal, industrial chemicals, industrialists, managers,
 landlords, serfs or indentured labor. The only food bridge is 15 days of the route's locally produced
 food good; `processed_food` receives no fixed grant. Every generated country starts with exactly one
 territory cell, one regional weak bundle, 20 population, one founder family and one notable founder.

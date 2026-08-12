@@ -5,10 +5,12 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 func _init() -> void:
 	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	assert(bool(catalog.get("ok", false)), str(catalog))
-	const EXPECTED_TECHNOLOGY_COUNT := 360
+	const EXPECTED_TECHNOLOGY_COUNT := 361
+	const EXPECTED_STARTER_COUNT := 23
 	assert((catalog.technology_ids as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.starting_technology_ids as PackedStringArray).is_empty())
-	assert((catalog.starter_eligible_technology_ids as PackedStringArray).size() == 22)
+	assert((catalog.starter_eligible_technology_ids as PackedStringArray).size() == EXPECTED_STARTER_COUNT)
+	assert((catalog.starter_eligible_technology_ids as PackedStringArray).has("tech.early_trade"))
 	assert((catalog.technology_era_ids_ordered as PackedStringArray).size() == 11)
 	assert((catalog.technology_domain_ids as PackedStringArray).size() == 4)
 	assert((catalog.technology_effect_profile_ids as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
@@ -27,7 +29,7 @@ func _init() -> void:
 	assert(String(catalog.technology_display_names[0]) == "狩猎")
 	assert(String((definitions[0] as Dictionary).display_name) == "狩猎")
 	assert(String((definitions[0] as Dictionary).effect_summary) \
-		== "解锁物资：毛皮；解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地")
+		== "解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；开放通用职业阶层岗位")
 	for era in TechnologyCatalogScript.public_era_metadata():
 		assert(int((era as Dictionary).candidate_required) == 5)
 	var researchable := 0
@@ -79,9 +81,9 @@ func _init() -> void:
 			milestones += 1
 			assert(int(catalog.technology_milestone_required_counts[i]) == 5)
 			assert(int(catalog.technology_milestone_offsets[i + 1]) - int(catalog.technology_milestone_offsets[i]) == 16)
-	assert(researchable == EXPECTED_TECHNOLOGY_COUNT - 22)
+	assert(researchable == EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT)
 	assert(milestones == 11)
-	assert(recipe_ids.size() == EXPECTED_TECHNOLOGY_COUNT - 22)
+	assert(recipe_ids.size() == EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT)
 	for retired_crop_bundle in ["tech.maize_cultivation", "tech.wheat_cultivation",
 			"tech.rice_cultivation", "tech.potato_cultivation",
 			"tech.cotton_cultivation", "tech.flax_cultivation"]:
@@ -122,7 +124,7 @@ func _init() -> void:
 			"breakthrough.automation", "breakthrough.climate_modeling"]:
 		assert(signals.has(signal_id), signal_id)
 	print("[PASS] authoritative technology catalog: %d definitions / %d researchable" % [
-		EXPECTED_TECHNOLOGY_COUNT, EXPECTED_TECHNOLOGY_COUNT - 22])
+		EXPECTED_TECHNOLOGY_COUNT, EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT])
 	quit(0)
 
 

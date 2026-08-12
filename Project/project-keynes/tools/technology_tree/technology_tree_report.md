@@ -6,18 +6,18 @@
 
 | 项目 | 数量 |
 | --- | ---: |
-| 科技 | 360 |
+| 科技 | 361 |
 | 时代 | 11 |
 | 领域 | 4 |
 | 里程碑 | 11 |
-| 硬前置边 | 461 |
+| 硬前置边 | 462 |
 | 应用交汇边 | 505 |
 | 替代说明边 | 0 |
 | 里程碑候选边 | 176 |
 
 ## 时代目录
 
-- [石器时代](#era-1)（75 项，成本 0-5000）
+- [石器时代](#era-1)（76 项，成本 0-5000）
 - [农耕时代](#era-2)（59 项，成本 7200-12000）
 - [王国时代](#era-3)（30 项，成本 18000-30000）
 - [帝国时代](#era-4)（28 项，成本 42000-70000）
@@ -32,7 +32,7 @@
 <a id="era-1"></a>
 ## 石器时代
 
-共 75 项科技，研究成本范围 0-5000；时代里程碑：定居知识 (`tech.settled_knowledge`)。
+共 76 项科技，研究成本范围 0-5000；时代里程碑：定居知识 (`tech.settled_knowledge`)。
 
 ### 狩猎 (`tech.hunting`)
 
@@ -65,7 +65,7 @@
 
 #### 效果摘要
 
-解锁物资：毛皮；解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地
+解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；开放通用职业阶层岗位
 
 #### 机会成本
 
@@ -73,22 +73,20 @@
 
 #### 内容解锁
 
-- **物资：** 毛皮 (`fur`)；野味 (`game_meat`)；生皮 (`raw_hide`)
+- **物资：** 野味 (`game_meat`)；生皮 (`raw_hide`)
 - **建筑 / 生产方式：** 狩猎营地 (`stone_age_hunting_camp`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 小型陷阱线 (`small_game_trapline`)
+- **自然资源：** 野生动物 (`wild_game`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 生皮刮制棚 (`hide_scraping_shelter`)；小型陷阱线 (`small_game_trapline`)
 
 #### 结构化内容效果
 
-- **毛皮**（`good`）：`good.fur` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野味**（`good`）：`good.game_meat` → `production_access` `unlock` `1.0`；`existing_binding`
 - **生皮**（`good`）：`good.raw_hide` → `production_access` `unlock` `1.0`；`existing_binding`
 - **狩猎营地**（`building`）：`building.stone_age_hunting_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **野味**（`good`）：`good.game_meat` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **生皮**（`good`）：`good.raw_hide` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **毛皮**（`good`）：`good.fur` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **打制石器**（`good`）：`good.chipped_stone_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **野生动物**（`resource`）：`resource.wild_game` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -141,7 +139,7 @@
 
 #### 效果摘要
 
-解锁物资：采集植物食物；解锁建筑：采集营地；开放通用职业阶层岗位
+解锁物资：采集植物食物；解锁建筑：采集营地；开放通用职业阶层岗位；可利用资源：肥沃土壤
 
 #### 机会成本
 
@@ -151,8 +149,8 @@
 
 - **物资：** 采集植物食物 (`gathered_plants`)
 - **建筑 / 生产方式：** 采集营地 (`gathering_ground`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **自然资源：** 肥沃土壤 (`fertile_soil`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 商栈 (`merchant_post`)
 
 #### 结构化内容效果
 
@@ -160,6 +158,7 @@
 - **采集营地**（`building`）：`building.gathering_ground` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **采集植物食物**（`good`）：`good.gathered_plants` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **肥沃土壤**（`resource`）：`resource.fertile_soil` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -223,7 +222,7 @@
 - **物资：** 打制石器 (`chipped_stone_tools`)
 - **建筑 / 生产方式：** 燧石采掘场 (`flint_quarry`)；改良燧石矿坑 (`method_flint_quarry_r1`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 石器打制工坊 (`knapping_workshop`)；自然铜冷锤工坊 (`natural_copper_workshop`)；毛石整理场 (`rubble_stone_working`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 露天黏土坑 (`early_clay_pit`)；石器打制工坊 (`knapping_workshop`)；自然铜冷锤工坊 (`natural_copper_workshop`)；毛石整理场 (`rubble_stone_working`)
 
 #### 结构化内容效果
 
@@ -1274,7 +1273,7 @@
 
 #### 效果摘要
 
-解锁物资：布料；解锁建筑：韧皮裹衣棚；开放通用职业阶层岗位；解锁建筑：家庭织造棚；韧皮裹衣棚产出 +25%
+解锁物资：布料；解锁建筑：家庭织造棚；开放通用职业阶层岗位；家庭织造棚产出 +25%
 
 #### 机会成本
 
@@ -1283,24 +1282,21 @@
 #### 内容解锁
 
 - **物资：** 布料 (`cloth`)
-- **建筑 / 生产方式：** 韧皮裹衣棚 (`bast_wrap_shelter`)；家庭织造棚 (`household_weaving_shelter`)
+- **建筑 / 生产方式：** 家庭织造棚 (`household_weaving_shelter`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 家庭纺织坊 (`cottage_weaving`)；植物纤维抄纸坊 (`plant_fiber_paper_workshop`)
 
 #### 结构化内容效果
 
 - **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
-- **韧皮裹衣棚**（`building`）：`building.bast_wrap_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **韧皮纤维**（`good`）：`good.bast_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **家庭织造棚**（`building`）：`building.household_weaving_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **采集植物食物**（`good`）：`good.gathered_plants` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 韧皮裹衣棚：`country.output.building.bast_wrap_shelter_factor`：+25%
+- 家庭织造棚：`country.output.building.household_weaving_shelter_factor`：+25%
 
 #### 直接后继（硬前置关系）
 
@@ -1391,6 +1387,74 @@
 
 无
 
+### 早期贸易 (`tech.early_trade`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.early_trade` |
+| 时代 | 石器时代 (`stone`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 0 科技点（`technology_points`） |
+| 节点标记 | 开局科技、区域开局候选 |
+| 网络角色 | backbone |
+| 锚点类型 | support |
+| 节点角色 | institution |
+| 布局路线 | backbone.institutions\_exchange |
+| 主要路线 | 制度 · 社群 (\`route.institution.community\`) |
+| 全部路线 | 制度 · 社群 (\`route.institution.community\`) |
+| 开局能力标签 | \`starter.trade\` |
+| 效果配置 | starter |
+
+#### 前置科技（决定研发资格）
+
+无
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「金矿」（resource.gold\_ore）
+  - 已发现信号「银矿」（resource.silver\_ore）
+
+#### 效果摘要
+
+解锁建筑：早期商栈；开放通用职业阶层岗位
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 早期商栈 (`early_merchant_post`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **早期商栈**（`building`）：`building.early_merchant_post` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 直接后继（硬前置关系）
+
+- 共同体分工 (`tech.communal_specialization`)
+
+#### 同路线后继
+
+无
+
+#### 应用交汇目标
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 ### 共同体分工 (`tech.communal_specialization`)
 
 | 字段 | 内容 |
@@ -1411,7 +1475,7 @@
 
 #### 前置科技（决定研发资格）
 
-无
+- 早期贸易 (`tech.early_trade`)
 
 #### 发现启发（仅用于揭示）
 
@@ -1562,7 +1626,7 @@
 
 - 满足其一：
   - 已发现信号「淡水鱼群」（resource.freshwater\_fish）
-  - 已发现信号「淡水」（resource.freshwater）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
   - 已发现信号「河谷」（landform.river\_valley）
 
 #### 效果摘要
@@ -1785,7 +1849,7 @@
 
 #### 效果摘要
 
-解锁物资：砖块；解锁建筑：土料挖掘坑；开放通用职业阶层岗位；解锁建筑：原始黏土坑
+解锁物资：黏土；解锁建筑：土料挖掘坑；开放通用职业阶层岗位；解锁建筑：原始黏土坑
 
 #### 机会成本
 
@@ -1793,18 +1857,19 @@
 
 #### 内容解锁
 
-- **物资：** 砖块 (`bricks`)
+- **物资：** 黏土 (`clay`)
 - **建筑 / 生产方式：** 土料挖掘坑 (`earth_digging_pit`)；原始黏土坑 (`primitive_clay_pit`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 日晒土坯场 (`adobe_yard`)；制砖厂 (`bricks_plant`)；原始黏土坑 (`primitive_clay_pit`)
+- **自然资源：** 黏土 (`clay`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 日晒土坯场 (`adobe_yard`)；制砖厂 (`bricks_plant`)；露天黏土坑 (`early_clay_pit`)；原始黏土坑 (`primitive_clay_pit`)
 
 #### 结构化内容效果
 
-- **砖块**（`good`）：`good.bricks` → `production_access` `unlock` `1.0`；`existing_binding`
+- **黏土**（`good`）：`good.clay` → `production_access` `unlock` `1.0`；`existing_binding`
 - **土料挖掘坑**（`building`）：`building.earth_digging_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **黏土**（`good`）：`good.clay` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **原始黏土坑**（`building`）：`building.primitive_clay_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **黏土**（`resource`）：`resource.clay` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -2917,7 +2982,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 野生块茎采集地 (`wild_tuber_patch`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
@@ -3389,7 +3454,7 @@
 
 #### 效果摘要
 
-解锁物资：韧皮纤维；解锁建筑：野生韧皮纤维营地；开放通用职业阶层岗位
+解锁物资：韧皮纤维；解锁物资：衣物；解锁建筑：野生韧皮纤维营地；开放通用职业阶层岗位
 
 #### 机会成本
 
@@ -3397,17 +3462,21 @@
 
 #### 内容解锁
 
-- **物资：** 韧皮纤维 (`bast_fiber`)
-- **建筑 / 生产方式：** 野生韧皮纤维营地 (`bast_fiber_camp`)
+- **物资：** 韧皮纤维 (`bast_fiber`)；衣物 (`clothing`)
+- **建筑 / 生产方式：** 野生韧皮纤维营地 (`bast_fiber_camp`)；韧皮裹衣棚 (`bast_wrap_shelter`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 韧皮裹衣棚 (`bast_wrap_shelter`)；亚麻农场 (`flax_collector`)；沤麻池 (`flax_retting_pit`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 亚麻农场 (`flax_collector`)；沤麻池 (`flax_retting_pit`)
 
 #### 结构化内容效果
 
 - **韧皮纤维**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野生韧皮纤维营地**（`building`）：`building.bast_fiber_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **韧皮纤维**（`good`）：`good.bast_fiber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **韧皮裹衣棚**（`building`）：`building.bast_wrap_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **韧皮纤维**（`good`）：`good.bast_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -3738,11 +3807,11 @@
 - 满足其一：
   - 已发现信号「金矿」（resource.gold\_ore）
   - 已发现信号「银矿」（resource.silver\_ore）
-  - 已发现信号「淡水」（resource.freshwater）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
 
 #### 效果摘要
 
-可利用资源：金矿；黄金采掘产出 +10%
+解锁建筑：木槽溜洗场；开放通用职业阶层岗位；需要河流地块条件；木槽溜洗场产出 +20%
 
 #### 机会成本
 
@@ -3751,17 +3820,20 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 金矿 (`gold_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 木槽溜洗场 (`primitive_gold_sluice`)
+- **建筑 / 生产方式：** 木槽溜洗场 (`primitive_gold_sluice`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **金矿**（`resource`）：`resource.gold_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+- **木槽溜洗场**（`building`）：`building.primitive_gold_sluice` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
+- **含金砂矿**（`good`）：`good.gold_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 黄金采掘：`country.output.family.gold_extraction_factor`：+10%
+- 木槽溜洗场：`country.output.building.primitive_gold_sluice_factor`：+20%
 
 #### 直接后继（硬前置关系）
 
@@ -3805,7 +3877,7 @@
 
 - 满足其一：
   - 已发现信号「金矿」（resource.gold\_ore）
-  - 已发现信号「淡水」（resource.freshwater）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
   - 已发现信号「河谷」（landform.river\_valley）
 
 #### 效果摘要
@@ -3819,9 +3891,9 @@
 #### 内容解锁
 
 - **物资：** 黄金 (`gold`)；含金砂矿 (`gold_ore`)
-- **建筑 / 生产方式：** 河滩淘金场 (`placer_gold_working`)；木槽溜洗场 (`primitive_gold_sluice`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 砂金淘洗精炼棚 (`gold_washing_refinery`)
+- **建筑 / 生产方式：** 河滩淘金场 (`placer_gold_working`)
+- **自然资源：** 金矿 (`gold_ore`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 砂金淘洗精炼棚 (`gold_washing_refinery`)；木槽溜洗场 (`primitive_gold_sluice`)
 
 #### 结构化内容效果
 
@@ -3830,8 +3902,7 @@
 - **河滩淘金场**（`building`）：`building.placer_gold_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **含金砂矿**（`good`）：`good.gold_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **木槽溜洗场**（`building`）：`building.primitive_gold_sluice` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
+- **金矿**（`resource`）：`resource.gold_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -3880,11 +3951,11 @@
 - 满足其一：
   - 已发现信号「金矿」（resource.gold\_ore）
   - 已发现信号「银矿」（resource.silver\_ore）
-  - 已发现信号「淡水」（resource.freshwater）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
 
 #### 效果摘要
 
-可利用资源：银矿；珠宝业产出 +10%
+解锁建筑：浅坑银矿作业；开放通用职业阶层岗位；需要高海拔地块条件；浅坑银矿作业产出 +20%
 
 #### 机会成本
 
@@ -3893,17 +3964,20 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 银矿 (`silver_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)
+- **建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **银矿**（`resource`）：`resource.silver_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+- **浅坑银矿作业**（`building`）：`building.shallow_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
+- **含银矿石**（`good`）：`good.silver_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **高海拔**（`tile`）：`tile.elevation` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 珠宝业：`country.output.family.jewelry_making_factor`：+10%
+- 浅坑银矿作业：`country.output.building.shallow_silver_working_factor`：+20%
 
 #### 直接后继（硬前置关系）
 
@@ -3952,7 +4026,7 @@
 
 #### 效果摘要
 
-解锁物资：白银；解锁物资：含银矿石；解锁建筑：浅坑银矿作业；开放通用职业阶层岗位
+解锁物资：白银；解锁物资：含银矿石；解锁建筑：露天银矿；开放通用职业阶层岗位
 
 #### 机会成本
 
@@ -3961,19 +4035,18 @@
 #### 内容解锁
 
 - **物资：** 白银 (`silver`)；含银矿石 (`silver_ore`)
-- **建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)；露天银矿 (`surface_silver_working`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 银矿火试炉 (`silver_fire_assay_hearth`)
+- **建筑 / 生产方式：** 露天银矿 (`surface_silver_working`)
+- **自然资源：** 银矿 (`silver_ore`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)；银矿火试炉 (`silver_fire_assay_hearth`)
 
 #### 结构化内容效果
 
 - **白银**（`good`）：`good.silver` → `production_access` `unlock` `1.0`；`existing_binding`
 - **含银矿石**（`good`）：`good.silver_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **浅坑银矿作业**（`building`）：`building.shallow_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **露天银矿**（`building`）：`building.surface_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **含银矿石**（`good`）：`good.silver_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **高海拔**（`tile`）：`tile.elevation` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **露天银矿**（`building`）：`building.surface_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **银矿**（`resource`）：`resource.silver_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -4037,7 +4110,7 @@
 - **物资：** 原木 (`logs`)
 - **建筑 / 生产方式：** 枯枝采集营地 (`deadwood_gathering_camp`)；伐木场 (`timber_collector`)
 - **自然资源：** 木材 (`timber`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 树皮纸工坊 (`bark_paper_workshop`)；覆土木炭窑 (`charcoal_pit`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 树皮纸工坊 (`bark_paper_workshop`)；覆土木炭窑 (`charcoal_pit`)；露天黏土坑 (`early_clay_pit`)；商栈 (`merchant_post`)
 
 #### 结构化内容效果
 
@@ -4096,7 +4169,7 @@
 - 满足其一：
   - 已发现信号「芦苇」（bio.reed）
   - 已发现信号「沼泽」（landform.marsh）
-  - 已发现信号「淡水」（resource.freshwater）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
 
 #### 效果摘要
 
@@ -4166,7 +4239,7 @@
 - 满足其一：
   - 已发现信号「芦苇」（bio.reed）
   - 已发现信号「沼泽」（landform.marsh）
-  - 已发现信号「淡水」（resource.freshwater）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
 
 #### 效果摘要
 
@@ -4180,7 +4253,7 @@
 
 - **物资：** 芦苇束 (`reed_bundle`)
 - **建筑 / 生产方式：** 芦苇收割营地 (`reed_cutting_camp`)
-- **自然资源：** 无
+- **自然资源：** 水田承载力 (`paddy_land`)
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
@@ -4191,6 +4264,7 @@
 - **芦苇束**（`good`）：`good.reed_bundle` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **沼泽**（`terrain`）：`terrain.swamp` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **洪泛平原**（`terrain`）：`terrain.floodplain` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
+- **水田承载力**（`resource`）：`resource.paddy_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -4253,7 +4327,7 @@
 
 - **物资：** 草皮块 (`turf_block`)
 - **建筑 / 生产方式：** 草皮切割场 (`turf_cutting_ground`)
-- **自然资源：** 无
+- **自然资源：** 牧场承载力 (`pasture`)
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
@@ -4265,6 +4339,7 @@
 - **苔原**（`terrain`）：`terrain.tundra` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **泥炭湿原**（`terrain`）：`terrain.moor` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **高海拔**（`tile`）：`tile.elevation` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
+- **牧场承载力**（`resource`）：`resource.pasture` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -4389,7 +4464,7 @@
 
 #### 效果摘要
 
-解锁物资：衣物；解锁建筑：毛皮缝制棚；开放通用职业阶层岗位
+解锁物资：衣物；解锁物资：毛皮；解锁建筑：毛皮缝制棚；开放通用职业阶层岗位
 
 #### 机会成本
 
@@ -4397,7 +4472,7 @@
 
 #### 内容解锁
 
-- **物资：** 衣物 (`clothing`)
+- **物资：** 衣物 (`clothing`)；毛皮 (`fur`)
 - **建筑 / 生产方式：** 毛皮缝制棚 (`fur_sewing_shelter`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
@@ -4405,6 +4480,7 @@
 #### 结构化内容效果
 
 - **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
+- **毛皮**（`good`）：`good.fur` → `production_access` `unlock` `1.0`；`existing_binding`
 - **毛皮缝制棚**（`building`）：`building.fur_sewing_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
@@ -5177,7 +5253,7 @@
 
 #### 效果摘要
 
-解锁物资：黏土；解锁建筑：黏土坑；开放通用职业阶层岗位；开放通用职业阶层岗位；黏土坑产出 +20%
+解锁物资：砖块；解锁建筑：黏土坑；开放通用职业阶层岗位；开放通用职业阶层岗位；黏土坑产出 +20%
 
 #### 机会成本
 
@@ -5185,14 +5261,14 @@
 
 #### 内容解锁
 
-- **物资：** 黏土 (`clay`)
+- **物资：** 砖块 (`bricks`)
 - **建筑 / 生产方式：** 黏土坑 (`clay_collector`)；露天黏土坑 (`early_clay_pit`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 制砖厂 (`bricks_plant`)；烧砖窑 (`fired_brick_kiln`)；露天陶器烧造 (`open_pottery_hearth`)；升焰陶窑 (`pottery_kiln`)；原始黏土坑 (`primitive_clay_pit`)
 
 #### 结构化内容效果
 
-- **黏土**（`good`）：`good.clay` → `production_access` `unlock` `1.0`；`existing_binding`
+- **砖块**（`good`）：`good.bricks` → `production_access` `unlock` `1.0`；`existing_binding`
 - **黏土坑**（`building`）：`building.clay_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 - **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
@@ -5659,7 +5735,7 @@
 - 全部满足：
   - 已完成科技「定居知识」（tech.settled\_knowledge）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -6892,7 +6968,7 @@
 - 全部满足：
   - 已完成科技「定居知识」（tech.settled\_knowledge）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -10415,7 +10491,7 @@
 - 全部满足：
   - 已完成科技「农耕社会」（tech.agrarian\_society）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -10494,7 +10570,7 @@
   - 已完成科技「农耕社会」（tech.agrarian\_society）
   - 满足其一：
     - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「洪水经验」（weather.major\_flood）
 
 #### 效果摘要
@@ -12416,7 +12492,7 @@
 - 全部满足：
   - 已完成科技「王国体系」（tech.kingdom\_administration）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -13268,7 +13344,7 @@
 - 全部满足：
   - 已完成科技「王国体系」（tech.kingdom\_administration）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -16932,7 +17008,7 @@
 - 全部满足：
   - 已完成科技「洲际网络」（tech.global\_exchange）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -17176,7 +17252,7 @@
 - 全部满足：
   - 已完成科技「洲际网络」（tech.global\_exchange）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -17993,7 +18069,7 @@
 - 全部满足：
   - 已完成科技「洲际网络」（tech.global\_exchange）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -18724,7 +18800,7 @@
 - 全部满足：
   - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
 
@@ -22578,7 +22654,7 @@
 - 全部满足：
   - 已完成科技「电气社会」（tech.electrical\_society）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
 
@@ -25304,7 +25380,7 @@
 - 全部满足：
   - 已完成科技「原子现代化」（tech.atomic\_modernity）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -25537,7 +25613,7 @@
 - 全部满足：
   - 已完成科技「原子现代化」（tech.atomic\_modernity）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
@@ -27375,7 +27451,7 @@
 - 全部满足：
   - 已完成科技「信息社会」（tech.information\_society）
   - 满足其一：
-    - 已发现信号「淡水」（resource.freshwater）
+    - 已发现信号「河湖水系」（landform.freshwater\_access）
     - 已发现信号「河谷」（landform.river\_valley）
     - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 

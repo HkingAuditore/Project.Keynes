@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"pasture"
-discovery_technology_tags = PackedStringArray("tech.herd_management")
+discovery_technology_tags = PackedStringArray("tech.turf_cutting", "tech.herd_management")
 display_name = "牧场承载力"
 reserve_component = &"cell.res_pasture_reserve"
 habitat_mode = "land"

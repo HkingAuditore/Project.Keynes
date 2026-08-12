@@ -1419,6 +1419,20 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         catalog, "building_required_technology_tag_offsets");
     _building_required_technology_tags = packed_strings(
         catalog, "building_required_technology_tags");
+    _building_dependency_branch_offsets = packed_i32(
+        catalog, "building_dependency_branch_offsets");
+    _building_dependency_branch_technologies = packed_i32(
+        catalog, "building_dependency_branch_technologies");
+    _building_dependency_branch_technology_offsets = packed_i32(
+        catalog, "building_dependency_branch_technology_offsets");
+    _building_dependency_branch_group_offsets = packed_i32(
+        catalog, "building_dependency_branch_group_offsets");
+    _building_dependency_kinds = economy_packed_u8(
+        catalog, "building_dependency_kinds");
+    _building_dependency_ids = packed_i32(catalog, "building_dependency_ids");
+    _building_dependency_tag_offsets = packed_i32(
+        catalog, "building_dependency_tag_offsets");
+    _building_dependency_tags = packed_i32(catalog, "building_dependency_tags");
     const std::vector<int32_t> employee_offsets = packed_i32(catalog, "building_employee_offsets");
     const std::vector<int32_t> construction_offsets = packed_i32(catalog, "building_construction_offsets");
     const std::vector<int32_t> input_offsets = packed_i32(catalog, "building_input_offsets");
@@ -1446,6 +1460,31 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         !offsets_valid(_building_required_technology_tag_offsets) ||
         _building_required_technology_tag_offsets.back() != static_cast<int32_t>(
             _building_required_technology_tags.size()) || !offsets_valid(employee_offsets) ||
+        _building_dependency_branch_offsets.size() != types + 1 ||
+        _building_dependency_branch_offsets.empty() ||
+        _building_dependency_branch_offsets.front() != 0 ||
+        !std::is_sorted(_building_dependency_branch_offsets.begin(),
+                        _building_dependency_branch_offsets.end()) ||
+        _building_dependency_branch_technology_offsets.empty() ||
+        _building_dependency_branch_technology_offsets.front() != 0 ||
+        !std::is_sorted(_building_dependency_branch_technology_offsets.begin(),
+                        _building_dependency_branch_technology_offsets.end()) ||
+        _building_dependency_branch_technology_offsets.back() !=
+            static_cast<int32_t>(_building_dependency_branch_technologies.size()) ||
+        _building_dependency_branch_group_offsets.empty() ||
+        _building_dependency_branch_group_offsets.front() != 0 ||
+        !std::is_sorted(_building_dependency_branch_group_offsets.begin(),
+                        _building_dependency_branch_group_offsets.end()) ||
+        _building_dependency_branch_group_offsets.back() !=
+            static_cast<int32_t>(_building_dependency_kinds.size()) ||
+        _building_dependency_kinds.size() != _building_dependency_ids.size() ||
+        _building_dependency_tag_offsets.size() != _building_dependency_kinds.size() + 1 ||
+        _building_dependency_tag_offsets.empty() ||
+        _building_dependency_tag_offsets.front() != 0 ||
+        !std::is_sorted(_building_dependency_tag_offsets.begin(),
+                        _building_dependency_tag_offsets.end()) ||
+        _building_dependency_tag_offsets.back() !=
+            static_cast<int32_t>(_building_dependency_tags.size()) ||
         !offsets_valid(construction_offsets) || !offsets_valid(input_offsets) ||
         !offsets_valid(output_offsets) || !offsets_valid(resource_offsets) ||
         !offsets_valid(output_cost_share_offsets) ||
@@ -1520,6 +1559,46 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         condition_values.size() != condition_opcodes.size()) {
         error = "building_child_column_size_mismatch";
         return false;
+    }
+    const size_t dependency_branch_count =
+        _building_dependency_branch_technologies.size() > 0
+            ? static_cast<size_t>(_building_dependency_branch_technology_offsets.size() - 1)
+            : 0;
+    if (_building_dependency_branch_offsets.back() !=
+            static_cast<int32_t>(dependency_branch_count) ||
+        _building_dependency_branch_group_offsets.size() != dependency_branch_count + 1) {
+        error = "building_dependency_branch_shape_invalid";
+        return false;
+    }
+    for (size_t branch = 0; branch < dependency_branch_count; ++branch) {
+        if (_building_dependency_branch_technology_offsets[branch] >=
+                _building_dependency_branch_technology_offsets[branch + 1] ||
+            _building_dependency_branch_group_offsets[branch] >
+                _building_dependency_branch_group_offsets[branch + 1]) {
+            error = "building_dependency_branch_empty";
+            return false;
+        }
+    }
+    for (size_t group = 0; group < _building_dependency_kinds.size(); ++group) {
+        const int32_t kind = _building_dependency_kinds[group];
+        const int32_t id = _building_dependency_ids[group];
+        if (kind < 1 || kind > 5 ||
+            _building_dependency_tag_offsets[group] >=
+                _building_dependency_tag_offsets[group + 1] ||
+            (kind <= 3 && (id < 0 || id >= static_cast<int32_t>(_good_ids.size()))) ||
+            (kind >= 4 && (id < 0 || id >= static_cast<int32_t>(_resource_ids.size())))) {
+            error = "building_dependency_group_invalid";
+            return false;
+        }
+        for (int32_t tag = _building_dependency_tag_offsets[group];
+             tag < _building_dependency_tag_offsets[group + 1]; ++tag) {
+            if (_building_dependency_tags[static_cast<size_t>(tag)] < 0 ||
+                _building_dependency_tags[static_cast<size_t>(tag)] >=
+                    static_cast<int32_t>(_technology_ids.size())) {
+                error = "building_dependency_technology_invalid";
+                return false;
+            }
+        }
     }
     _building_employee_roles.resize(employee_prof.size());
     for (size_t i = 0; i < employee_prof.size(); ++i) {

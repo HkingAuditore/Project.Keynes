@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"silver_ore"
-discovery_technology_tags = PackedStringArray("tech.silver_vein_identification")
+discovery_technology_tags = PackedStringArray("tech.surface_silver_collection")
 display_name = "银矿"
 reserve_component = &"cell.res_silver_ore_reserve"
 init_reserve_scale = 8.0
