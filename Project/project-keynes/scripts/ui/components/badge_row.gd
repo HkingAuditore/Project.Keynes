@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends HFlowContainer
 class_name BadgeRow
 
 const BadgeLabelScene := preload("res://scenes/ui/badge_label.tscn")

@@ -135,6 +135,8 @@ func _apply_section() -> void:
 			_technology_workspace.set_player_controller(_player_controller)
 		_technology_workspace.set_model(_model)
 		_technology_workspace.set_compact(_compact)
+		if _technology_workspace.has_method("reset_navigation"):
+			_technology_workspace.reset_navigation()
 		return
 	if economy_open:
 		if _economy_workspace.has_method("set_player_controller"):

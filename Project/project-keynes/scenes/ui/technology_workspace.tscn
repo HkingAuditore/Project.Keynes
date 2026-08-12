@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/technology_workspace.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_queue_drop_zone.tscn" id="5_zone"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_tree_view.tscn" id="6_tree"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_detail_card.tscn" id="7_detail"]
+[ext_resource type="PackedScene" path="res://scenes/ui/technology_overview_view.tscn" id="8_overview"]
 
 [node name="TechnologyWorkspace" type="Control"]
 layout_mode = 3
@@ -106,15 +107,133 @@ text = "—"
 vertical_alignment = 1
 theme_type_variation = &"PKMutedLabel"
 
-[node name="Main" type="HBoxContainer" parent="Root"]
+[node name="Toolbar" type="PanelContainer" parent="Root"]
+layout_mode = 2
+theme_type_variation = &"PKInsetPanel"
+
+[node name="Row" type="HBoxContainer" parent="Root/Toolbar"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="FocusMode" type="Button" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(64, 28)
+layout_mode = 2
+text = "聚焦"
+toggle_mode = true
+button_pressed = true
+
+[node name="OverviewMode" type="Button" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(64, 28)
+layout_mode = 2
+text = "总览"
+toggle_mode = true
+
+[node name="ModeRule" type="VSeparator" parent="Root/Toolbar/Row"]
+layout_mode = 2
+
+[node name="PrevEra" type="Button" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(30, 28)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="EraLabel" type="Label" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(92, 28)
+layout_mode = 2
+text = "—"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+
+[node name="NextEra" type="Button" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(30, 28)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Lane" type="OptionButton" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(236, 28)
+layout_mode = 2
+
+[node name="Search" type="LineEdit" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(180, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "搜索已揭示科技…"
+clear_button_enabled = true
+
+[node name="Relocate" type="Button" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(30, 28)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="PolicyToggle" type="Button" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(86, 28)
+layout_mode = 2
+text = "研究管理"
+
+[node name="DetailToggle" type="Button" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(72, 28)
+layout_mode = 2
+text = "科技详情"
+
+[node name="Main" type="Control" parent="Root"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 8
+clip_contents = true
+
+[node name="Tree" parent="Root/Main" instance=ExtResource("6_tree")]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Overview" parent="Root/Main" instance=ExtResource("8_overview")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PolicyRail" type="Button" parent="Root/Main"]
+layout_mode = 1
+anchors_preset = 5
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_right = 40.0
+grow_vertical = 2
+text = ""
+focus_mode = 0
+
+[node name="DetailRail" type="Button" parent="Root/Main"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -40.0
+grow_horizontal = 0
+grow_vertical = 2
+text = ""
+focus_mode = 0
 
 [node name="PolicyPanel" type="PanelContainer" parent="Root/Main"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(234, 0)
-layout_mode = 2
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_right = 280.0
+grow_vertical = 2
 theme_type_variation = &"PKPanel"
 
 [node name="Scroll" type="ScrollContainer" parent="Root/Main/PolicyPanel"]
@@ -126,23 +245,34 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="ResearchTitle" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body"]
+[node name="Header" type="HBoxContainer" parent="Root/Main/PolicyPanel/Scroll/Body"]
 layout_mode = 2
-text = "研究方针"
+[node name="Title" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "研究管理"
 theme_type_variation = &"PKSectionTitle"
+[node name="Pin" type="Button" parent="Root/Main/PolicyPanel/Scroll/Body/Header"]
+custom_minimum_size = Vector2(28, 24)
+layout_mode = 2
+text = ""
+toggle_mode = true
+focus_mode = 0
+[node name="Close" type="Button" parent="Root/Main/PolicyPanel/Scroll/Body/Header"]
+custom_minimum_size = Vector2(28, 24)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
 
 [node name="Dial" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("3_dial")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-
 [node name="Budget" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("4_budget")]
 unique_name_in_owner = true
 layout_mode = 2
-
 [node name="Rule" type="HSeparator" parent="Root/Main/PolicyPanel/Scroll/Body"]
 layout_mode = 2
-
 [node name="QueueTitle" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body"]
 layout_mode = 2
 text = "研究队列"
@@ -212,12 +342,42 @@ theme_type_variation = &"PKMutedLabel"
 [node name="Zone3" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("5_zone")]
 layout_mode = 2
 
-[node name="Tree" parent="Root/Main" instance=ExtResource("6_tree")]
+[node name="DetailHost" type="PanelContainer" parent="Root/Main"]
 unique_name_in_owner = true
-layout_mode = 2
+visible = false
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -320.0
+grow_horizontal = 0
+grow_vertical = 2
+theme_type_variation = &"PKPanel"
 
-[node name="Detail" parent="Root/Main" instance=ExtResource("7_detail")]
+[node name="Body" type="VBoxContainer" parent="Root/Main/DetailHost"]
+layout_mode = 2
+theme_override_constants/separation = 6
+[node name="Header" type="HBoxContainer" parent="Root/Main/DetailHost/Body"]
+layout_mode = 2
+[node name="Title" type="Label" parent="Root/Main/DetailHost/Body/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "科技详情"
+theme_type_variation = &"PKSectionTitle"
+[node name="Pin" type="Button" parent="Root/Main/DetailHost/Body/Header"]
+custom_minimum_size = Vector2(28, 24)
+layout_mode = 2
+text = ""
+toggle_mode = true
+focus_mode = 0
+[node name="Close" type="Button" parent="Root/Main/DetailHost/Body/Header"]
+custom_minimum_size = Vector2(28, 24)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+[node name="Detail" parent="Root/Main/DetailHost/Body" instance=ExtResource("7_detail")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(292, 0)
 layout_mode = 2
 size_flags_vertical = 3

@@ -145,13 +145,20 @@ parameters, or trade capacity. They must not directly mutate ledger quantities.
 ## UI contract
 
 `TechnologyWorkspace` is a full-screen section mounted by the lightweight `CountryPanel` shell, which
-owns nothing but a section title bar and the content area. The tree is a single self-drawn
-`TechnologyTreeView`; `GraphEdit` is no longer used and no per-technology child node is created.
-Geometry is baked once by the pure-function `TechnologyTreeLayout` and never moves.
+owns nothing but a section title bar and the content area. `GraphEdit` is not used and no
+per-technology child node is created. `TechnologyTreeLayout.build()` bakes the immutable full DAG;
+`build_focus()` derives a bounded one-lane, three-era working set for the self-drawn
+`TechnologyTreeView`. Cross-lane hard relations become navigation portals, selected application
+relations use dashed lines, and milestone candidates collapse into a progress summary.
 
-Fog clips drawing to the discovered set plus its immediate unknown frontier, and the pan/zoom range
-equals the visible bounding box, so neither the catalog size nor the remaining era count is
-observable. Unknown nodes must not leak semantic content through any visible or assistive channel.
+The separate self-drawn `TechnologyOverviewView` is a lane-by-visible-era navigation map. It creates
+rows and columns only for discovered content and returns to focus mode on activation. Policy and detail
+are overlay drawers below 1600 px and may be pinned only on wider screens. Opening focus prefers the
+queue head of the highest-weight non-empty domain, otherwise the deepest available frontier.
+
+Fog clips focus drawing to the discovered set plus its immediate unknown frontier. Overview omits
+undiscovered lane rows and future era columns, so neither the catalog size nor the remaining era count
+is observable. Unknown nodes must not leak semantic content through any visible or assistive channel.
 Domain color is only supplemental; pair states with icon, border, and text.
 
 All revealed technology names, effect summaries, route badges, prerequisite names, and research-signal
@@ -162,6 +169,9 @@ Every policy control commits on release and there is no submit button: the weigh
 the other three domains and uses largest-remainder rounding to keep `sum == 10000`; the budget slider
 is expressed as a treasury share per day with "off" at the far-left stop. Queue drag/drop submits
 country commands and never mutates authoritative state locally.
+
+Daily refreshes do not rebuild focused geometry when only progress changes. Hidden overview geometry
+is not refreshed; relation rows rebuild only after selected or related technology states change.
 
 Key files:
 

@@ -15,6 +15,8 @@ const ERA_GAP := 18.0
 const EDGE_SEGMENTS := 14
 const BARYCENTRE_PASSES := 3
 const FALLBACK_DOMAIN_IDS := ["agriculture", "engineering", "science", "society"]
+const FOCUS_COLUMNS := 4
+const FOCUS_ROW_GAP := 30.0
 
 
 static func build(definitions: Array, eras: Array, domains: Array = [],
@@ -177,6 +179,191 @@ static func build(definitions: Array, eras: Array, domains: Array = [],
 		"children": children,
 		"content_rect": content_rect,
 	}
+
+
+# Produces a bounded working set for one route. The full graph remains the
+# authority for parent/child relations, while the visible geometry contains at
+# most one route across the previous, current and next visible eras.
+static func build_focus(definitions: Array, eras: Array, domains: Array,
+		visual_edges: Array, lane_id: String, focus_era: int,
+		visible_nodes: PackedByteArray = PackedByteArray(),
+		base_layout: Dictionary = {}) -> Dictionary:
+	var full := base_layout if not base_layout.is_empty() \
+		else build(definitions, eras, domains, visual_edges)
+	if not bool(full.get("ok", false)) or definitions.is_empty():
+		return {"ok": false, "nodes": [], "edges": [], "portals": [],
+			"bands": [], "content_rect": Rect2()}
+	var parents: Array = full.get("parents", [])
+	var children: Array = full.get("children", [])
+	var era_order := _era_order(definitions, eras)
+	var era_by_id := {}
+	for index in range(era_order.size()):
+		era_by_id[String((era_order[index] as Dictionary).get("id", ""))] = index
+	var clamped_era := clampi(focus_era, 0, maxi(0, era_order.size() - 1))
+	var first_era := maxi(0, clamped_era - 1)
+	var last_era := mini(era_order.size() - 1, clamped_era + 1)
+	var members_by_era: Array[PackedInt32Array] = []
+	for _era in range(era_order.size()):
+		members_by_era.append(PackedInt32Array())
+	var local_lookup := {}
+	for index in range(definitions.size()):
+		var definition: Dictionary = definitions[index]
+		if bool(definition.get("is_milestone", false)):
+			continue
+		if String(definition.get("main_lane", definition.get("layout_lane", ""))) != lane_id:
+			continue
+		var era_index := int(era_by_id.get(String(definition.get("era_id", "")), -1))
+		if era_index < first_era or era_index > last_era:
+			continue
+		if not visible_nodes.is_empty() \
+				and (index >= visible_nodes.size() or visible_nodes[index] == 0):
+			continue
+		members_by_era[era_index].append(index)
+		local_lookup[index] = true
+
+	var nodes: Array[Dictionary] = []
+	var rect_by_index := {}
+	var bands: Array[Dictionary] = []
+	var cursor_y := 0.0
+	var content_rect := Rect2()
+	var found := false
+	for era_index in range(first_era, last_era + 1):
+		var members := members_by_era[era_index]
+		if members.is_empty():
+			continue
+		var ordered := Array(members)
+		ordered.sort_custom(func(a: int, b: int) -> bool:
+			var depth_a := _local_depth(a, members, parents)
+			var depth_b := _local_depth(b, members, parents)
+			if depth_a != depth_b:
+				return depth_a < depth_b
+			return a < b
+		)
+		var row_count := int(ceil(float(ordered.size()) / float(FOCUS_COLUMNS)))
+		var band_top := cursor_y
+		var body_top := band_top + ERA_HEADER_HEIGHT + 8.0
+		for slot in range(ordered.size()):
+			var technology := int(ordered[slot])
+			var column := slot % FOCUS_COLUMNS
+			var row := slot / FOCUS_COLUMNS
+			var columns_in_row := mini(FOCUS_COLUMNS, ordered.size() - row * FOCUS_COLUMNS)
+			var row_width := columns_in_row * NODE_SIZE.x \
+				+ maxi(0, columns_in_row - 1) * COLUMN_GAP
+			var x := -row_width * 0.5 + column * (NODE_SIZE.x + COLUMN_GAP)
+			var rect := Rect2(Vector2(x, body_top + row * (NODE_SIZE.y + FOCUS_ROW_GAP)), NODE_SIZE)
+			rect_by_index[technology] = rect
+			nodes.append({
+				"index": technology,
+				"rect": rect,
+				"domain": _domain_index(definitions[technology], domains),
+				"era_index": era_index,
+				"is_focus_era": era_index == clamped_era,
+			})
+			content_rect = rect if not found else content_rect.merge(rect)
+			found = true
+		var band_bottom := body_top + row_count * NODE_SIZE.y \
+			+ maxi(0, row_count - 1) * FOCUS_ROW_GAP + ERA_PADDING
+		bands.append({
+			"era_index": era_index,
+			"id": String((era_order[era_index] as Dictionary).get("id", "")),
+			"display_name": String((era_order[era_index] as Dictionary).get("display_name", "")),
+			"top": band_top,
+			"bottom": band_bottom,
+			"is_focus": era_index == clamped_era,
+		})
+		cursor_y = band_bottom + ERA_GAP
+
+	var edges: Array[Dictionary] = []
+	var portals: Array[Dictionary] = []
+	for node_value in nodes:
+		var node: Dictionary = node_value
+		var technology := int(node.index)
+		for parent in parents[technology]:
+			if local_lookup.has(parent):
+				var points := _edge_points(rect_by_index[parent], rect_by_index[technology])
+				edges.append({"from": parent, "to": technology, "kind": "hard", "points": points})
+			elif visible_nodes.is_empty() or (parent < visible_nodes.size() and visible_nodes[parent] != 0):
+				portals.append({
+					"owner": technology,
+					"target": int(parent),
+					"direction": "incoming",
+				})
+		for child in children[technology]:
+			if local_lookup.has(child):
+				continue
+			if visible_nodes.is_empty() or (child < visible_nodes.size() and visible_nodes[child] != 0):
+				portals.append({
+					"owner": technology,
+					"target": int(child),
+					"direction": "outgoing",
+				})
+	var focus_index_by_id := {}
+	for index in local_lookup:
+		focus_index_by_id[String((definitions[index] as Dictionary).get("id", ""))] = int(index)
+	for edge_value in visual_edges:
+		var visual: Dictionary = edge_value
+		if String(visual.get("kind", "")) != "application":
+			continue
+		var from := int(focus_index_by_id.get(String(visual.get("from", "")), -1))
+		var to := int(focus_index_by_id.get(String(visual.get("to", "")), -1))
+		if from < 0 or to < 0:
+			continue
+		edges.append({
+			"from": from,
+			"to": to,
+			"kind": "application",
+			"points": _edge_points(rect_by_index[from], rect_by_index[to]),
+		})
+	for band in bands:
+		band["rect"] = Rect2(content_rect.position.x - VIEW_SIDE_PADDING,
+			float(band.top), content_rect.size.x + VIEW_SIDE_PADDING * 2.0,
+			float(band.bottom) - float(band.top))
+	if found:
+		content_rect = content_rect.grow(VIEW_SIDE_PADDING)
+		content_rect.size.y = maxf(content_rect.size.y, cursor_y - content_rect.position.y)
+	return {
+		"ok": true,
+		"nodes": nodes,
+		"edges": edges,
+		"portals": portals,
+		"bands": bands,
+		"parents": parents,
+		"children": children,
+		"content_rect": content_rect,
+		"lane_id": lane_id,
+		"focus_era": clamped_era,
+	}
+
+
+const VIEW_SIDE_PADDING := 44.0
+
+
+static func _local_depth(node: int, members: PackedInt32Array,
+		parents: Array) -> int:
+	var member_lookup := {}
+	for member in members:
+		member_lookup[member] = true
+	var depth := 0
+	var frontier := PackedInt32Array([node])
+	var visited := {}
+	while not frontier.is_empty():
+		var current := frontier[frontier.size() - 1]
+		frontier.resize(frontier.size() - 1)
+		for parent in parents[current]:
+			if not member_lookup.has(parent) or visited.has(parent):
+				continue
+			visited[parent] = true
+			depth += 1
+			frontier.append(parent)
+	return depth
+
+
+static func _domain_index(definition: Dictionary, domains: Array) -> int:
+	var domain_id := String(definition.get("domain_id", ""))
+	for index in range(domains.size()):
+		if String((domains[index] as Dictionary).get("id", "")) == domain_id:
+			return index
+	return maxi(0, FALLBACK_DOMAIN_IDS.find(domain_id))
 
 
 static func _domain_indices(definitions: Array, domains: Array) -> PackedInt32Array:
@@ -355,6 +542,29 @@ static func _place_row(ordered: Array, positions: PackedVector2Array,
 
 
 static func _edge_points(from_rect: Rect2, to_rect: Rect2) -> PackedVector2Array:
+	if absf((to_rect.position.y + to_rect.size.y * 0.5) \
+			- (from_rect.position.y + from_rect.size.y * 0.5)) < NODE_SIZE.y * 0.65:
+		var horizontal_start := Vector2(from_rect.end.x,
+			from_rect.position.y + from_rect.size.y * 0.5)
+		var horizontal_end := Vector2(to_rect.position.x,
+			to_rect.position.y + to_rect.size.y * 0.5)
+		if horizontal_end.x < horizontal_start.x:
+			horizontal_start = Vector2(from_rect.position.x,
+				from_rect.position.y + from_rect.size.y * 0.5)
+			horizontal_end = Vector2(to_rect.end.x,
+				to_rect.position.y + to_rect.size.y * 0.5)
+		var horizontal_reach := maxf(18.0,
+			absf(horizontal_end.x - horizontal_start.x) * 0.42)
+		var horizontal_a := horizontal_start + Vector2(
+			horizontal_reach if horizontal_end.x >= horizontal_start.x else -horizontal_reach, 0.0)
+		var horizontal_b := horizontal_end - Vector2(
+			horizontal_reach if horizontal_end.x >= horizontal_start.x else -horizontal_reach, 0.0)
+		var horizontal_points := PackedVector2Array()
+		for step in range(EDGE_SEGMENTS + 1):
+			var horizontal_t := float(step) / float(EDGE_SEGMENTS)
+			horizontal_points.append(horizontal_start.bezier_interpolate(
+				horizontal_a, horizontal_b, horizontal_end, horizontal_t))
+		return horizontal_points
 	var start := Vector2(from_rect.position.x + from_rect.size.x * 0.5,
 		from_rect.position.y + from_rect.size.y)
 	var end := Vector2(to_rect.position.x + to_rect.size.x * 0.5, to_rect.position.y)
