@@ -101,7 +101,62 @@ bool NativeEconomyRuntime::building_available(int32_t cell, int32_t type_id,
         type_id + 1 < static_cast<int32_t>(_building_all_technology_offsets.size()) &&
         cell_has_all_requirements(cell, _building_all_technology_offsets[type_id],
             _building_all_technology_offsets[type_id + 1],
-            _building_all_required_technologies, frozen);
+            _building_all_required_technologies, frozen) &&
+        building_dependency_requirements_met(cell, type_id, frozen);
+}
+
+bool NativeEconomyRuntime::building_dependency_requirements_met(
+        int32_t cell, int32_t type_id, bool frozen) const {
+    if (type_id < 0 || type_id + 1 >= static_cast<int32_t>(
+            _building_dependency_branch_offsets.size())) return false;
+    const int32_t branch_begin = _building_dependency_branch_offsets[type_id];
+    const int32_t branch_end = _building_dependency_branch_offsets[type_id + 1];
+    if (branch_begin < 0 || branch_end <= branch_begin ||
+        branch_end > static_cast<int32_t>(
+            _building_dependency_branch_technology_offsets.size() - 1) ||
+        branch_end > static_cast<int32_t>(
+            _building_dependency_branch_group_offsets.size() - 1)) return false;
+    for (int32_t branch = branch_begin; branch < branch_end; ++branch) {
+        const int32_t tech_begin = _building_dependency_branch_technology_offsets[
+            static_cast<size_t>(branch)];
+        const int32_t tech_end = _building_dependency_branch_technology_offsets[
+            static_cast<size_t>(branch + 1)];
+        bool branch_technology_available = true;
+        for (int32_t edge = tech_begin; edge < tech_end; ++edge) {
+            if (!cell_has_technology(cell,
+                    _building_dependency_branch_technologies[static_cast<size_t>(edge)],
+                    frozen)) {
+                branch_technology_available = false;
+                break;
+            }
+        }
+        if (!branch_technology_available) continue;
+        const int32_t group_begin = _building_dependency_branch_group_offsets[
+            static_cast<size_t>(branch)];
+        const int32_t group_end = _building_dependency_branch_group_offsets[
+            static_cast<size_t>(branch + 1)];
+        bool groups_available = true;
+        for (int32_t group = group_begin; group < group_end; ++group) {
+            const int32_t tag_begin = _building_dependency_tag_offsets[
+                static_cast<size_t>(group)];
+            const int32_t tag_end = _building_dependency_tag_offsets[
+                static_cast<size_t>(group + 1)];
+            bool group_available = false;
+            for (int32_t tag = tag_begin; tag < tag_end; ++tag) {
+                if (cell_has_technology(cell, _building_dependency_tags[
+                        static_cast<size_t>(tag)], frozen)) {
+                    group_available = true;
+                    break;
+                }
+            }
+            if (!group_available) {
+                groups_available = false;
+                break;
+            }
+        }
+        if (groups_available) return true;
+    }
+    return false;
 }
 
 bool NativeEconomyRuntime::building_constructible(int32_t cell, int32_t type_id,

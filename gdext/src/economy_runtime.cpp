@@ -1012,6 +1012,62 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         }
         return true;
     };
+    const auto dependency_requirements_available = [&](int32_t country,
+                                                        int32_t type_id) {
+        if (type_id < 0 || type_id + 1 >= static_cast<int32_t>(
+                _building_dependency_branch_offsets.size())) return false;
+        const int32_t branch_begin = _building_dependency_branch_offsets[
+            static_cast<size_t>(type_id)];
+        const int32_t branch_end = _building_dependency_branch_offsets[
+            static_cast<size_t>(type_id + 1)];
+        auto has_technology = [&](int32_t technology_id) {
+            if (technology_id < 0 || technology_id >= static_cast<int32_t>(
+                    _technology_ids.size())) return false;
+            const size_t word_index = static_cast<size_t>(country) *
+                _epoch_country_technology_words + technology_id / 64;
+            return word_index < _epoch_country_technologies.size() &&
+                (_epoch_country_technologies[word_index] &
+                 (uint64_t{1} << (technology_id % 64))) != 0;
+        };
+        for (int32_t branch = branch_begin; branch < branch_end; ++branch) {
+            const int32_t tech_begin = _building_dependency_branch_technology_offsets[
+                static_cast<size_t>(branch)];
+            const int32_t tech_end = _building_dependency_branch_technology_offsets[
+                static_cast<size_t>(branch + 1)];
+            bool branch_ready = true;
+            for (int32_t edge = tech_begin; edge < tech_end; ++edge) {
+                if (!has_technology(_building_dependency_branch_technologies[
+                        static_cast<size_t>(edge)])) {
+                    branch_ready = false;
+                    break;
+                }
+            }
+            if (!branch_ready) continue;
+            const int32_t group_begin = _building_dependency_branch_group_offsets[
+                static_cast<size_t>(branch)];
+            const int32_t group_end = _building_dependency_branch_group_offsets[
+                static_cast<size_t>(branch + 1)];
+            for (int32_t group = group_begin; group < group_end; ++group) {
+                bool group_ready = false;
+                for (int32_t tag = _building_dependency_tag_offsets[
+                        static_cast<size_t>(group)];
+                     tag < _building_dependency_tag_offsets[
+                        static_cast<size_t>(group + 1)]; ++tag) {
+                    if (has_technology(_building_dependency_tags[
+                            static_cast<size_t>(tag)])) {
+                        group_ready = true;
+                        break;
+                    }
+                }
+                if (!group_ready) {
+                    branch_ready = false;
+                    break;
+                }
+            }
+            if (branch_ready) return true;
+        }
+        return false;
+    };
     _epoch_country_good_available.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)) *
             _good_ids.size(), 0);
@@ -1106,7 +1162,8 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                 all_requirements_available(country,
                     _building_all_technology_offsets[type_id],
                     _building_all_technology_offsets[type_id + 1],
-                    _building_all_required_technologies);
+                    _building_all_required_technologies) &&
+                dependency_requirements_available(country, type_id);
             const size_t cache_index = static_cast<size_t>(country) *
                 _building_types.size() + static_cast<size_t>(type_id);
             _epoch_country_building_available[cache_index] = available ? 1 : 0;

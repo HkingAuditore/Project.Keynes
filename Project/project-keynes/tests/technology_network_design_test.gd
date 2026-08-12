@@ -6,7 +6,7 @@ const ResearchPredicateScript = preload("res://scripts/research/research_predica
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 
 const NETWORK_PATH := "res://data/technology/technology_network.json"
-const ERA_NON_MILESTONE_QUOTAS := [74, 58, 29, 27, 24, 25, 24, 23, 23, 22, 20]
+const ERA_NON_MILESTONE_QUOTAS := [75, 58, 29, 27, 24, 25, 24, 23, 23, 22, 20]
 const BROAD_PREFIXES := ["country.output.agriculture_factor",
 	"country.output.extractive_factor", "country.output.manufacturing_factor",
 	"country.output.energy_factor", "country.output.knowledge_factor",
@@ -33,16 +33,16 @@ const REGIONAL_DISCOVERY_REQUIREMENTS := {
 	"tech.gathering": ["resource.fertile_soil", "landform.forest", "landform.grassland"],
 	"tech.stone_knapping": ["resource.flint", "resource.stone", "landform.mountain"],
 	"tech.fire_control": ["resource.timber", "weather.drought", "landform.grassland"],
-	"tech.freshwater_fishing": ["resource.freshwater_fish", "resource.freshwater", "landform.river_valley"],
+	"tech.freshwater_fishing": ["resource.freshwater_fish", "landform.freshwater_access", "landform.river_valley"],
 	"tech.coastal_fishing": ["resource.marine_fish", "landform.coast", "landform.coastal_estuary"],
 	"tech.earth_building": ["resource.clay", "landform.arid_basin", "landform.loess_plain"],
 	"tech.wild_tuber_collection": ["bio.potato", "landform.high_plateau", "landform.mountain"],
 	"tech.wild_flax_collection": ["bio.flax", "landform.grassland", "landform.forest"],
-	"tech.gold_panning": ["resource.gold_ore", "resource.freshwater", "landform.river_valley"],
+	"tech.gold_panning": ["resource.gold_ore", "landform.freshwater_access", "landform.river_valley"],
 	"tech.surface_silver_collection": ["resource.silver_ore", "landform.mountain", "landform.high_plateau"],
 	"tech.deadwood_collection": ["resource.timber", "landform.forest", "landform.conifer_forest"],
-	"tech.reed_identification": ["bio.reed", "landform.marsh", "resource.freshwater"],
-	"tech.reed_harvesting": ["bio.reed", "landform.marsh", "resource.freshwater"],
+	"tech.reed_identification": ["bio.reed", "landform.marsh", "landform.freshwater_access"],
+	"tech.reed_harvesting": ["bio.reed", "landform.marsh", "landform.freshwater_access"],
 	"tech.turf_cutting": ["resource.pasture", "landform.tundra", "landform.high_plateau"],
 	"tech.hide_scraping": ["resource.wild_game", "landform.grassland", "landform.forest"],
 	"tech.fur_sewing": ["resource.wild_game", "landform.tundra", "landform.conifer_forest"],
@@ -67,7 +67,7 @@ const REGIONAL_DISCOVERY_REQUIREMENTS := {
 	"tech.paddy_bunding": ["resource.paddy_land", "landform.floodplain", "breakthrough.paddy_control"],
 	"tech.dryland_water_retention": ["resource.arable_land", "weather.drought", "breakthrough.rainfed_adaptation"],
 	"tech.highland_tuber_farming": ["bio.potato", "landform.high_plateau", "landform.mountain"],
-	"tech.river_transport": ["landform.river_valley", "resource.freshwater", "weather.major_flood"],
+	"tech.river_transport": ["landform.river_valley", "landform.freshwater_access", "weather.major_flood"],
 	"tech.tenant_paddy_management": ["resource.paddy_land", "landform.floodplain", "breakthrough.paddy_control"],
 	"tech.estate_paddy_management": ["resource.paddy_land", "landform.floodplain", "breakthrough.paddy_control"],
 	"tech.wind_power": ["landform.stable_wind_corridor", "weather.monsoon", "weather.typhoon"],
@@ -81,12 +81,14 @@ func _init() -> void:
 	file.close()
 	assert(payload is Dictionary)
 	var data: Dictionary = payload
+	assert(not JSON.stringify(data).contains("resource.freshwater\""),
+		"retired freshwater resource signal must not remain in the technology network")
 	var nodes: Array = data.nodes
 	var edges: Array = data.visual_edges
 	var eras: Array = data.eras
 	var branches: Array = data.specialist_lanes
 	var backbones: Array = data.backbones
-	assert(nodes.size() == 360)
+	assert(nodes.size() == 361)
 	assert(eras.size() == 11 and branches.size() == 16 and backbones.size() == 4)
 	assert(edges.size() <= 1500)
 
@@ -311,7 +313,7 @@ func _init() -> void:
 
 	var compiled := TechnologyCatalogScript.compile_native_catalog()
 	assert(bool(compiled.get("ok", false)))
-	assert((compiled.technology_ids as PackedStringArray).size() == 360)
+	assert((compiled.technology_ids as PackedStringArray).size() == 361)
 	assert((compiled.technology_prerequisites as PackedInt32Array).size() == hard_count)
 	var economy := EconomyCatalogScript.compile_native_catalog()
 	assert(bool(economy.get("ok", false)))

@@ -264,8 +264,9 @@ PKEC save，restore 后在下一次成功生产前显示为未知。
   collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。
 - 31 种资源受 `land/marine_water/freshwater/coastal_land/coastal_or_marine` habitat 门控；
   海鱼储量可存在于沿海陆格和海洋水格，二者各自属于所在 cell；河口及近岸营养只影响初始化
-  适生度，不改变资源所有权。淡水/淡水鱼不再是
-  DataCore 经济资源。所有建筑资源边都必须为 `local`，native 只检查并扣减建筑本格储量，
+  适生度，不改变资源所有权。淡水鱼仍是可采集自然资源；河湖水系只发布
+	`landform.freshwater_access` 科技揭示信号，不存在独立的“淡水”资源库存或商品配方。
+	所有建筑资源边都必须为 `local`，native 只检查并扣减建筑本格储量，
   不存在邻域采集。
   矿产初值叠加资源局部斑块、
   同族地质省与矿带。栽培作物只存在于 goods，不进入 DataCore resource slots。

@@ -167,15 +167,20 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 	_ensure_arrays(map, n)
 
 	var t0 := Time.get_ticks_usec()
-	var visible := _solve_visible(map, world, player_slot, n)
-	var explored := map.explored_arr
-	var visible_count: int = 0
-	var explored_count: int = 0
-	var source_count: int = 0
+	var source_cells := PackedInt32Array()
 	if player_slot >= 0:
 		for i in range(n):
 			if map.country_slot_arr[i] == player_slot:
-				source_count += 1
+				source_cells.append(i)
+	var visible_report := compute_visible_for_sources(map, world, source_cells)
+	if not bool(visible_report.get("ok", false)):
+		report.reason = String(visible_report.get("reason", "visible_probe_failed"))
+		return report
+	var visible: PackedByteArray = visible_report.visible
+	var explored := map.explored_arr
+	var visible_count: int = 0
+	var explored_count: int = 0
+	var source_count: int = source_cells.size()
 	for i in range(n):
 		var v: int = visible[i]
 		visible_count += v
@@ -195,6 +200,30 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 	report.cells = n
 	report.elapsed_ms = float(Time.get_ticks_usec() - t0) / 1000.0
 	return report
+
+
+## 纯只读视野探针。出生点求解与正式首帧共用同一传播算法，且不受“关闭迷雾”
+## 的全图直通开关影响。
+static func compute_visible_for_sources(map: MapData, world: WorldData,
+		source_cells: PackedInt32Array) -> Dictionary:
+	if map == null or world == null:
+		return {"ok": false, "reason": "missing_map_or_world"}
+	var n := map.cell_count()
+	if n <= 0 or not map.has_indices():
+		return {"ok": false, "reason": "empty_or_unindexed_map"}
+	if world.cell_view_block.size() < n or world.cell_view_height.size() < n:
+		var baked := bake_static_fields(map, world)
+		if not bool(baked.get("ok", false)):
+			return {"ok": false, "reason": "static_bake_failed:%s" % String(
+				baked.get("reason", ""))}
+	for cell in source_cells:
+		if cell < 0 or cell >= n:
+			return {"ok": false, "reason": "source_cell_invalid", "cell": cell}
+	return {
+		"ok": true,
+		"visible": _solve_visible_from_sources(map, world, source_cells, n),
+		"sources": source_cells.size(),
+	}
 
 
 ## 迷雾关闭时的直通路径：全图可见。让 UI 门控与 enum_lut.a 的消费点不需要
@@ -245,17 +274,16 @@ static func _ensure_arrays(map: MapData, n: int) -> void:
 		map.fog_k_arr.resize(n)
 
 
-static func _solve_visible(
-	map: MapData, world: WorldData, player_slot: int, n: int
+static func _solve_visible_from_sources(
+	map: MapData, world: WorldData, source_cells: PackedInt32Array, n: int
 ) -> PackedByteArray:
 	var visible := PackedByteArray()
 	visible.resize(n)
 	for i in range(n):
 		visible[i] = 0
-	if player_slot < 0:
+	if source_cells.is_empty():
 		return visible
 
-	var owners: PackedInt32Array = map.country_slot_arr
 	var neighbors: PackedInt32Array = map.neighbor_indices_packed()
 	var view_height: PackedByteArray = world.cell_view_height
 	var view_block: PackedByteArray = world.cell_view_block
@@ -274,17 +302,11 @@ static func _solve_visible(
 	for b in range(max_budget + 1):
 		buckets[b] = []
 
-	var sources: int = 0
-	for i in range(n):
-		if owners[i] != player_slot:
-			continue
-		sources += 1
-		var budget: int = clampi(BASE_BUDGET + int(view_height[i]), 0, max_budget)
-		if budget > best[i]:
-			best[i] = budget
-			buckets[budget].append(i)
-	if sources == 0:
-		return visible
+	for source in source_cells:
+		var budget: int = clampi(BASE_BUDGET + int(view_height[source]), 0, max_budget)
+		if budget > best[source]:
+			best[source] = budget
+			buckets[budget].append(source)
 
 	# 从高预算向低预算扫描。跨一格必然扣掉 ≥ _MIN_BLOCK 的预算，所以只会往
 	# 更低的桶里追加，当前桶在遍历期间不会被修改。

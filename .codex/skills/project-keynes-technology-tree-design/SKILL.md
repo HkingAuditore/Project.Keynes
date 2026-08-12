@@ -33,7 +33,7 @@ Do not turn a design request into implementation unless the user asks for change
 
 For the current Project.Keynes implementation, start from
 `Project/project-keynes/data/technology/technology_network.json`. It is the sole authoring source;
-`TechnologyCatalog` remains the compiled/runtime authority. The locked network contract is 360 stable
+`TechnologyCatalog` remains the compiled/runtime authority. The current network contract is 361 stable
 IDs, eleven eras, four backbones, sixteen specialist lanes, sixteen candidates per era, and a five-node
 milestone threshold. Do not reintroduce keyword-selected anchors or generated route-based effects.
 

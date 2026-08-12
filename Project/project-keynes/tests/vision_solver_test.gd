@@ -16,10 +16,23 @@ var _failures := 0
 func _init() -> void:
 	_test_flat_terrain_radius()
 	_test_terrain_awareness()
+	_test_source_probe_matches_solve()
 	_test_explored_is_monotonic()
 	_test_fog_state_and_disabled_path()
 	print("vision solver: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
+
+
+func _test_source_probe_matches_solve() -> void:
+	var map := _make_map(LF.HILL, VEG.TEMPERATE_GRASSLAND)
+	var world := WorldData.new()
+	var src := _center_index(map)
+	var probe := VisionSolver.compute_visible_for_sources(
+		map, world, PackedInt32Array([src]))
+	map.country_slot_arr[src] = 0
+	VisionSolver.solve(map, world, 0)
+	_expect("startup probe matches formal vision solve",
+		bool(probe.get("ok", false)) and probe.visible == map.visible_arr)
 
 
 ## 平原上：源格必可见，可见集连通且远小于全图，边界不可见。

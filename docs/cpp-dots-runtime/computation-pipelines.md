@@ -125,8 +125,9 @@ signal IDs. It emits `generation_vegetation`, `cell_biogeographic_realm`, and a 
 per-cell Godot object is created.
 
 The pass currently derives maize/wheat/potato/horse from deterministic realm + generation habitat,
-and derives freshwater, river valley, volcanic, high plateau, and coastal estuary from static map
-fields. `MapGenerator` validates only CSR shape and publishes it to `MapData`. On vision's first
+and derives `landform.freshwater_access` (river/lake hydrology), river valley, volcanic, high plateau,
+and coastal estuary from static map fields. `MapGenerator` validates only CSR shape and publishes it
+to `MapData`. On vision's first
 exploration of a cell, `WorldRuntimeHost` submits a country command; C++ country state—not MapData—
 records the discovery. Runtime vegetation evolution and cover do not revoke knowledge.
 

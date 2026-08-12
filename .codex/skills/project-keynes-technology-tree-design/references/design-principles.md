@@ -91,7 +91,7 @@ Useful shapes:
 ALL_OF(
   TECH_COMPLETED("composite tools"),
   ANY_OF(mountain, high plateau, steep slope),
-  ANY_OF(freshwater, flood experience, terrace-maintenance breakthrough)
+  ANY_OF(freshwater-access hydrology, flood experience, terrace-maintenance breakthrough)
 )
 ```
 

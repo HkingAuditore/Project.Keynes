@@ -34,7 +34,7 @@ const SIGNAL_ROWS := [
 		ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.industrial_crop"],
 		["habitat.tropical_forest"], ["realm.tropical"], true],
 
-	["resource.freshwater", "淡水", ResearchSignalDefinitionScript.Kind.RESOURCE,
+	["landform.freshwater_access", "河湖水系", ResearchSignalDefinitionScript.Kind.LANDFORM,
 		ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.water"], [], [], true],
 	["resource.timber", "木材", ResearchSignalDefinitionScript.Kind.RESOURCE,
 		ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.biological"], [], [], true],

@@ -4,6 +4,9 @@ extends RefCounted
 const Profile = preload("res://scripts/game/start_location_profile.gd")
 const ResearchSignalCatalogScript = preload(
 	"res://scripts/research/research_signal_catalog.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const VisionSolverScript = preload("res://scripts/geography/vision_solver.gd")
 const COUNTRY_NAME_PACK_PATH := "res://data/country/default_country_names.tres"
 const UNREACHABLE_DISTANCE := 0x3fffffff
 const COUNTRY_DISTANCE_MAP_RATIO := 0.15
@@ -11,17 +14,21 @@ const MIN_COUNTRY_DISTANCE := 4
 const MAX_COUNTRY_DISTANCE := 12
 
 static var _research_signal_index_by_id: Dictionary = {}
+static var _starter_catalog_cache: Dictionary = {}
 
 
-static func select_and_prepare(map: MapData, seed: int, foreign_count: int = 0,
+static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreign_count: int = 0,
 		player_country_name: String = "新国家") -> Dictionary:
-	if map == null or map.cell_count() <= 0:
+	if map == null or world == null or map.cell_count() <= 0:
 		return _error("start_world_missing", "生成的世界不包含可用地块。")
 	if foreign_count < NewGameConfig.MIN_FOREIGN_COUNT \
 			or foreign_count > NewGameConfig.MAX_FOREIGN_COUNT:
 		return _error("foreign_count_out_of_range", "外国数量超出允许范围。")
 	var candidates: Array[Dictionary] = []
 	var neighbors := map.neighbor_indices_packed()
+	var starter_catalog := _starter_catalog()
+	if not bool(starter_catalog.get("ok", false)):
+		return starter_catalog
 	for cell_idx in range(map.cell_count()):
 		if not _is_candidate(map, cell_idx, neighbors):
 			continue
@@ -29,37 +36,41 @@ static func select_and_prepare(map: MapData, seed: int, foreign_count: int = 0,
 		var silver := _reserve(map, "silver_ore", cell_idx)
 		var precious := maxf(gold, silver)
 		var survival_score := _survival_score(map, cell_idx)
-		var starter_route := _starter_route_for_cell(map, cell_idx, neighbors)
+		if precious <= 0.0:
+			continue
+		var visible_report := VisionSolverScript.compute_visible_for_sources(
+			map, world, PackedInt32Array([cell_idx]))
+		if not bool(visible_report.get("ok", false)):
+			continue
+		var visible: PackedByteArray = visible_report.visible
+		var signal_probe := _signals_for_visible_cells(map, visible, starter_catalog)
+		var starter_route := _starter_route_for_cell(
+			map, cell_idx, neighbors, signal_probe, starter_catalog)
+		if not bool(starter_route.get("ok", false)):
+			continue
 		candidates.append({
 			"cell": cell_idx,
-			"score": survival_score + (0.20 if precious > 0.0 else 0.0)
-				+ float(starter_route.get("geography_fit", 0.0)) * 0.20,
+			"score": survival_score,
 			"survival_score": survival_score,
-			"natural_precious": precious > 0.0,
+			"natural_precious": true,
 			"starter_route": starter_route,
-			"closure_missing_count": (starter_route.get(
-				"missing_resource_ids", PackedStringArray()) as PackedStringArray).size(),
+			"closure_missing_count": 0,
+			"starter_technology_count": (starter_route.starter_technology_ids as PackedStringArray).size(),
+			"starter_building_count": (starter_route.starter_building_ids as PackedStringArray).size(),
 		})
 	if candidates.is_empty():
-		return _error("no_survivable_start", "没有找到同时满足陆地、气候与淡水条件的出生地。")
-	var economically_closable: Array[Dictionary] = []
-	for candidate in candidates:
-		if int(candidate.closure_missing_count) <= 1:
-			economically_closable.append(candidate)
-	if economically_closable.is_empty():
-		return _error("no_closed_starter_route",
-			"没有找到只需至多一项自然资源补入即可闭合的初始产业路线。")
-	candidates = economically_closable
+		return _error("starter_capability_unsatisfied",
+			"没有找到能以真实本地资源和可见地理信号闭合六项开局能力的出生地。")
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if int(a.closure_missing_count) != int(b.closure_missing_count):
-			return int(a.closure_missing_count) < int(b.closure_missing_count)
-		if bool(a.natural_precious) != bool(b.natural_precious):
-			return bool(a.natural_precious)
-		if not is_equal_approx(float(a.score), float(b.score)):
-			return float(a.score) > float(b.score)
+		if int(a.starter_technology_count) != int(b.starter_technology_count):
+			return int(a.starter_technology_count) < int(b.starter_technology_count)
+		if int(a.starter_building_count) != int(b.starter_building_count):
+			return int(a.starter_building_count) < int(b.starter_building_count)
+		if not is_equal_approx(float(a.survival_score), float(b.survival_score)):
+			return float(a.survival_score) > float(b.survival_score)
 		return int(a.cell) < int(b.cell))
-	var top_count := maxi(1, int(ceil(candidates.size() * 0.25)))
-	var chosen_index := _stable_hash(seed, "player_start") % top_count
+	var top_count := 1
+	var chosen_index := 0
 	var cell_idx := int(candidates[chosen_index].cell)
 	var minimum_distance := minimum_country_distance(map.width, map.height)
 	var nearest_start := PackedInt32Array()
@@ -119,8 +130,7 @@ static func select_and_prepare(map: MapData, seed: int, foreign_count: int = 0,
 	var foreign_names: PackedStringArray = selected_names.get(
 		"display_names", PackedStringArray())
 	var country_starts: Array[Dictionary] = []
-	var player_precious := _precious_for_cell(
-		map, cell_idx, seed, "player_precious")
+	var player_precious := _precious_for_cell(map, cell_idx)
 	var player_start := {
 		"country_id": "country.player",
 		"country_name": player_country_name,
@@ -140,30 +150,13 @@ static func select_and_prepare(map: MapData, seed: int, foreign_count: int = 0,
 			"country_name": String(foreign_names[foreign_index]),
 			"name_id": String(foreign_name_ids[foreign_index]),
 			"cell": foreign_cell,
-			"precious_resource": _precious_for_cell(
-				map, foreign_cell, seed,
-				"foreign_precious_%03d" % (foreign_index + 1)),
+			"precious_resource": _precious_for_cell(map, foreign_cell),
 			"is_player": false,
 			"selection_distance": int(foreign_selection_distances[foreign_index]),
 		}
 		foreign_start.merge(foreign_routes[foreign_index], true)
 		_append_precious_route(foreign_start, String(foreign_start.precious_resource))
 		country_starts.append(foreign_start)
-	for start in country_starts:
-		var start_cell := int(start.cell)
-		var precious_id := String(start.precious_resource)
-		var applied_topups := PackedStringArray()
-		var missing_resources: PackedStringArray = start.get(
-			"missing_resource_ids", PackedStringArray())
-		for resource_id in missing_resources:
-			_top_up(map, resource_id, start_cell,
-				float(Profile.MINIMUM_RESERVES[resource_id]))
-			applied_topups.append(resource_id)
-		if _reserve(map, precious_id, start_cell) <= 0.0:
-			_top_up(map, precious_id, start_cell,
-				float(Profile.MINIMUM_RESERVES[precious_id]))
-			applied_topups.append(precious_id)
-		start["resource_topups"] = applied_topups
 	return {
 		"ok": true,
 		"code": "ok",
@@ -191,21 +184,30 @@ static func minimum_country_distance(map_width: int, map_height: int) -> int:
 
 ## Read-only route evaluation shared by the new-game solver, explain UI and
 ## deterministic geography fixtures. It does not add deposits or mutate MapData.
-static func evaluate_starter_route(map: MapData, cell_idx: int) -> Dictionary:
+static func evaluate_starter_route(map: MapData, cell_idx: int,
+		world: WorldData = null) -> Dictionary:
 	if map == null or cell_idx < 0 or cell_idx >= map.cell_count() \
 			or not map.has_indices():
 		return _error("starter_route_cell_invalid",
 			"Starter route evaluation requires an indexed map cell.")
-	return _starter_route_for_cell(map, cell_idx, map.neighbor_indices_packed())
+	var effective_world := world if world != null else WorldData.new()
+	var catalog := _starter_catalog()
+	var visible_report := VisionSolverScript.compute_visible_for_sources(
+		map, effective_world, PackedInt32Array([cell_idx]))
+	if not bool(catalog.get("ok", false)) or not bool(visible_report.get("ok", false)):
+		return _error("starter_route_probe_failed", "无法计算出生点可见科技信号。")
+	return _starter_route_for_cell(map, cell_idx, map.neighbor_indices_packed(),
+		_signals_for_visible_cells(map, visible_report.visible, catalog), catalog)
 
 
 static func _starter_route_for_cell(map: MapData, cell_idx: int,
-		neighbors: PackedInt32Array) -> Dictionary:
+		neighbors: PackedInt32Array, signal_probe: Dictionary,
+		starter_catalog: Dictionary) -> Dictionary:
 	var temperature := float(map.temp_arr[cell_idx])
 	var moisture := float(map.moisture_arr[cell_idx])
 	var elevation := float(map.elevation_arr[cell_idx])
 	var coastal := _has_coastal_water(map, cell_idx, neighbors)
-	var riverine := _has_freshwater(map, cell_idx, neighbors)
+	var riverine := _has_freshwater_access(map, cell_idx, neighbors)
 	var region := "temperate"
 	if coastal:
 		region = "coastal"
@@ -221,177 +223,165 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 	elif moisture <= 0.36 or elevation >= 0.56:
 		region = "arid_highland"
 
-	var technologies := PackedStringArray()
-	var buildings := PackedStringArray()
-	var missing := PackedStringArray()
-	var food_good := ""
-	var food_resource := ""
-	var use_fishing := false
+	var precious_resource := _precious_for_cell(map, cell_idx)
+	if precious_resource.is_empty():
+		return _error("starter_precious_metal_unavailable",
+			"首都格没有天然金矿或银矿。")
+	var food_options: Array[Dictionary] = []
 	if coastal and _reserve(map, "marine_fish", cell_idx) > 0.0:
-		_append_unique(technologies, "tech.coastal_fishing")
-		_append_unique(buildings, "marine_fish_collector")
-		food_good = "fish"
-		food_resource = "marine_fish"
-		use_fishing = true
-	elif riverine and _reserve(map, "freshwater_fish", cell_idx) > 0.0:
-		_append_unique(technologies, "tech.freshwater_fishing")
-		_append_unique(buildings, "freshwater_fishing_camp")
-		food_good = "fish"
-		food_resource = "freshwater_fish"
-		use_fishing = true
+		food_options.append(_route_option(["tech.coastal_fishing"],
+			["marine_fish_collector"], {"food_good": "fish", "food_resource": "marine_fish"}))
+	if riverine and _reserve(map, "freshwater_fish", cell_idx) > 0.0:
+		food_options.append(_route_option(["tech.freshwater_fishing"],
+			["freshwater_fishing_camp"], {"food_good": "fish", "food_resource": "freshwater_fish"}))
+	if region in ["cold_highland", "arid_highland"] \
+			and _reserve(map, "fertile_soil", cell_idx) > 0.0:
+		food_options.append(_route_option(["tech.wild_tuber_collection"],
+			["wild_tuber_patch"], {"food_good": "potatoes", "food_resource": "fertile_soil"}))
+	if _reserve(map, "fertile_soil", cell_idx) > 0.0:
+		food_options.append(_route_option(["tech.gathering", "tech.deadwood_collection"],
+			["gathering_ground"],
+			{"food_good": "gathered_plants", "food_resource": "fertile_soil"}))
+	if _reserve(map, "wild_game", cell_idx) > 0.0:
+		food_options.append(_route_option(
+			["tech.gathering", "tech.deadwood_collection", "tech.hunting"],
+			["stone_age_hunting_camp"],
+			{"food_good": "game_meat", "food_resource": "wild_game"}))
 
-	var game_available := _reserve(map, "wild_game", cell_idx) > 0.0
-	var plants_available := _reserve(map, "fertile_soil", cell_idx) > 0.0
-	var crop_food := false
-	if not use_fishing and region == "floodplain" \
-			and _reserve(map, "paddy_land", cell_idx) > 0.0 \
-			and _vicinity_has_signal(map, cell_idx, neighbors, "bio.rice"):
-		_append_unique(technologies, "tech.wild_rice_collection")
-		_append_unique(buildings, "wild_rice_marsh")
-		food_good = "rice_grain"
-		food_resource = "paddy_land"
-		crop_food = true
-	elif not use_fishing and plants_available \
-			and region in ["cold_highland", "arid_highland"] \
-			and _vicinity_has_signal(map, cell_idx, neighbors, "bio.potato"):
-		_append_unique(technologies, "tech.wild_tuber_collection")
-		_append_unique(buildings, "wild_tuber_patch")
-		food_good = "potatoes"
-		food_resource = "fertile_soil"
-		crop_food = true
-	elif not use_fishing and plants_available and temperature >= 0.58 \
-			and _vicinity_has_signal(map, cell_idx, neighbors, "bio.maize"):
-		_append_unique(technologies, "tech.wild_maize_collection")
-		_append_unique(buildings, "wild_maize_stand")
-		food_good = "corn_grain"
-		food_resource = "fertile_soil"
-		crop_food = true
-	elif not use_fishing and plants_available \
-			and _vicinity_has_signal(map, cell_idx, neighbors, "bio.wheat"):
-		_append_unique(technologies, "tech.wild_wheat_collection")
-		_append_unique(buildings, "wild_wheat_stand")
-		food_good = "wheat_grain"
-		food_resource = "fertile_soil"
-		crop_food = true
+	var clothing_options: Array[Dictionary] = []
+	if _reserve(map, "fertile_soil", cell_idx) > 0.0:
+		# Fertile soil is formally revealed by gathering; include that
+		# observation in the starter closure even when food comes from water.
+		clothing_options.append(_route_option(["tech.gathering", "tech.wild_flax_collection"],
+			["bast_fiber_camp", "bast_wrap_shelter"],
+			{"clothing_resource": "fertile_soil", "input_buffer": "bast_fiber"}))
+	if _reserve(map, "wild_game", cell_idx) > 0.0:
+		clothing_options.append(_route_option([
+			"tech.gathering", "tech.deadwood_collection", "tech.hunting", "tech.hide_scraping"],
+			["stone_age_hunting_camp", "hide_scraping_shelter"],
+			{"clothing_resource": "wild_game", "input_buffer": "raw_hide"}))
 
-	var prefer_game := region in ["cold_highland", "arid_highland"]
-	if not use_fishing and not crop_food:
-		if game_available and (prefer_game or not plants_available):
-			food_resource = "wild_game"
-			food_good = "game_meat"
-			_append_unique(technologies, "tech.animal_tracking")
-			_append_unique(buildings, "small_game_trapline")
-		elif plants_available:
-			food_resource = "fertile_soil"
-			food_good = "gathered_plants"
-			_append_unique(technologies, "tech.gathering")
-			_append_unique(buildings, "gathering_ground")
-		elif game_available:
-			food_resource = "wild_game"
-			food_good = "game_meat"
-			_append_unique(technologies, "tech.animal_tracking")
-			_append_unique(buildings, "small_game_trapline")
-		else:
-			food_resource = "wild_game" if prefer_game else "fertile_soil"
-			food_good = "game_meat" if prefer_game else "gathered_plants"
-			_append_unique(missing, food_resource)
-			if prefer_game:
-				_append_unique(technologies, "tech.animal_tracking")
-				_append_unique(buildings, "small_game_trapline")
-			else:
-				_append_unique(technologies, "tech.gathering")
-				_append_unique(buildings, "gathering_ground")
+	var construction_options: Array[Dictionary] = []
+	if _reserve(map, "paddy_land", cell_idx) > 0.0:
+		construction_options.append(_route_option(["tech.reed_harvesting"],
+			["reed_cutting_camp"], {"construction_good": "reed_bundle", "construction_resource": "paddy_land"}))
+	if _reserve(map, "pasture", cell_idx) > 0.0:
+		construction_options.append(_route_option(["tech.turf_cutting"],
+			["turf_cutting_ground"], {"construction_good": "turf_block", "construction_resource": "pasture"}))
+	if _reserve(map, "timber", cell_idx) > 0.0:
+		construction_options.append(_route_option(["tech.deadwood_collection"],
+			["deadwood_gathering_camp"], {"construction_good": "logs", "construction_resource": "timber"}))
+	if _reserve(map, "clay", cell_idx) > 0.0:
+		construction_options.append(_route_option(["tech.earth_building"],
+			["earth_digging_pit"], {"construction_good": "clay", "construction_resource": "clay"}))
 
-	var bast_available := plants_available and (
-		_vicinity_has_signal(map, cell_idx, neighbors, "bio.bast_fiber") \
-		or _vicinity_has_signal(map, cell_idx, neighbors, "bio.flax"))
-	var clothing_resource := ""
-	if game_available and (prefer_game or not bast_available):
-		clothing_resource = "wild_game"
-	elif bast_available:
-		clothing_resource = "fertile_soil"
-	elif game_available:
-		clothing_resource = "wild_game"
-	else:
-		# Never synthesize a species-discovery signal. A missing animal reserve is
-		# the one allowed closure top-up when no real fiber plant was observed.
-		clothing_resource = "wild_game"
-		_append_unique(missing, clothing_resource)
-	if clothing_resource == "wild_game":
-		_append_unique(technologies, "tech.animal_tracking")
-		_append_unique(technologies, "tech.hide_scraping")
-		_append_unique(buildings, "small_game_trapline")
-		_append_unique(buildings, "hide_scraping_shelter")
-	else:
-		_append_unique(technologies, "tech.wild_flax_collection")
-		_append_unique(technologies, "tech.fiber_twisting")
-		_append_unique(buildings, "bast_fiber_camp")
-		_append_unique(buildings, "bast_wrap_shelter")
+	var knowledge_options: Array[Dictionary] = [
+		# Knowledge buildings consume their local construction good. Keep the
+		# material technology in the same route so the building dependency is
+		# closed before bootstrap, rather than granting a hidden prerequisite.
+		_route_option(["tech.reed_harvesting", "tech.flood_calendar_practice"],
+			["reed_cutting_camp", "flood_calendar_shrine"], {}),
+		_route_option(["tech.turf_cutting", "tech.pastoral_route_memory"],
+			["turf_cutting_ground", "pastoral_council_tent"], {}),
+		_route_option(["tech.deadwood_collection", "tech.oral_memory_practice"],
+			["deadwood_gathering_camp", "oral_memory_circle"], {}),
+		_route_option(["tech.deadwood_collection", "tech.phenology_observation"],
+			["deadwood_gathering_camp", "seasonal_observation_shelter"], {}),
+		_route_option(["tech.reed_harvesting", "tech.tide_observation"],
+			["reed_cutting_camp", "tide_observation_hut"], {}),
+	]
+	var precious_option := _route_option(
+		["tech.gold_panning"] if precious_resource == "gold_ore" else ["tech.surface_silver_collection"],
+		["placer_gold_working"] if precious_resource == "gold_ore" else ["surface_silver_working"], {})
+	var trade_option := _route_option(["tech.early_trade"], ["early_merchant_post"], {})
+	var best: Dictionary = {}
+	for food in food_options:
+		for clothing in clothing_options:
+			for construction in construction_options:
+				for knowledge in knowledge_options:
+					var technologies := PackedStringArray()
+					var buildings := PackedStringArray()
+					for option in [food, clothing, construction, knowledge, precious_option, trade_option]:
+						_append_many_unique(technologies, option.technology_ids)
+						_append_many_unique(buildings, option.building_ids)
+					if not _starter_technologies_revealed(technologies, signal_probe, starter_catalog):
+						continue
+					var validation := _validate_starter_technologies(
+						technologies, buildings, signal_probe, starter_catalog)
+					if not bool(validation.get("ok", false)):
+						continue
+					var route := {
+						"regional_route": region,
+						"starter_technology_ids": technologies,
+						"starter_building_ids": buildings,
+						"starter_food_good_id": String(food.food_good),
+						"starter_clothing_good_id": "clothing",
+						"starter_construction_good_id": String(construction.construction_good),
+						"starter_knowledge_good_id": "technology_points",
+						"starter_food_resource_id": String(food.food_resource),
+						"starter_clothing_resource_id": String(clothing.clothing_resource),
+						"starter_construction_resource_id": String(construction.construction_resource),
+						"starter_input_buffer_good_id": String(clothing.input_buffer),
+						"starter_precious_good_id": precious_resource,
+						"precious_resource": precious_resource,
+						"missing_resource_ids": PackedStringArray(),
+						"visible_signal_ids": signal_probe.signal_ids,
+						"visible_signal_cells": signal_probe.signal_cells,
+						"geography_fit": 1.0,
+						"ok": true,
+					}
+					if best.is_empty() or _starter_route_better(route, best):
+						best = route
+	if best.is_empty():
+		return _error("starter_capability_unsatisfied",
+			"没有闭合食物、衣物、建材、知识、贵金属和贸易能力的出生点路线。")
+	return best
 
-	var construction_resource := ""
-	var construction_good := ""
-	if riverine and _reserve(map, "paddy_land", cell_idx) > 0.0 \
-			and _vicinity_has_signal(map, cell_idx, neighbors, "bio.reed"):
-		construction_resource = "paddy_land"
-		construction_good = "reed_bundle"
-		_append_unique(technologies, "tech.reed_harvesting")
-		_append_unique(buildings, "reed_cutting_camp")
-	elif region == "cold_highland" and _reserve(map, "pasture", cell_idx) > 0.0:
-		construction_resource = "pasture"
-		construction_good = "turf_block"
-		_append_unique(technologies, "tech.turf_cutting")
-		_append_unique(buildings, "turf_cutting_ground")
-	elif _reserve(map, "timber", cell_idx) > 0.0:
-		construction_resource = "timber"
-		construction_good = "logs"
-		_append_unique(technologies, "tech.deadwood_collection")
-		_append_unique(buildings, "deadwood_gathering_camp")
-	else:
-		construction_resource = "clay"
-		construction_good = "clay"
-		_append_unique(technologies, "tech.earth_building")
-		_append_unique(buildings, "earth_digging_pit")
-		if _reserve(map, "clay", cell_idx) <= 0.0:
-			_append_unique(missing, "clay")
 
-	var knowledge_technology := "tech.phenology_observation"
-	var knowledge_building := "seasonal_observation_shelter"
-	if coastal:
-		knowledge_technology = "tech.tide_observation"
-		knowledge_building = "tide_observation_hut"
-	elif region == "floodplain":
-		knowledge_technology = "tech.flood_calendar_practice"
-		knowledge_building = "flood_calendar_shrine"
-	elif region in ["cold_highland", "arid_highland"] \
-			and _reserve(map, "pasture", cell_idx) > 0.0:
-		knowledge_technology = "tech.pastoral_route_memory"
-		knowledge_building = "pastoral_council_tent"
-	elif region == "tropical_forest":
-		knowledge_technology = "tech.oral_memory_practice"
-		knowledge_building = "oral_memory_circle"
-	_append_unique(technologies, knowledge_technology)
-	_append_unique(buildings, knowledge_building)
-	# The market post is part of the opening economy rather than free scenery;
-	# its organization technology is included and expands through DAG closure.
-	_append_unique(technologies, "tech.communal_specialization")
-	_append_unique(buildings, "merchant_post")
-
-	return {
-		"regional_route": region,
-		"starter_technology_ids": technologies,
-		"starter_building_ids": buildings,
-		"starter_food_good_id": food_good,
-		"starter_clothing_good_id": "clothing",
-		"starter_construction_good_id": construction_good,
-		"starter_knowledge_good_id": "technology_points",
-		"starter_food_resource_id": food_resource,
-		"starter_clothing_resource_id": clothing_resource,
-		"starter_construction_resource_id": construction_resource,
-		"starter_input_buffer_good_id": \
-			"raw_hide" if clothing_resource == "wild_game" else "bast_fiber",
-		"missing_resource_ids": missing,
-		"geography_fit": 1.0 if missing.is_empty() else 0.5 / float(missing.size()),
+static func _route_option(technology_ids: Array, building_ids: Array,
+		values: Dictionary) -> Dictionary:
+	var technology_values := PackedStringArray()
+	var building_values := PackedStringArray()
+	for technology_id in technology_ids:
+		technology_values.append(String(technology_id))
+	for building_id in building_ids:
+		building_values.append(String(building_id))
+	var option := {
+		"technology_ids": technology_values,
+		"building_ids": building_values,
 	}
+	for key in values:
+		option[String(key)] = values[key]
+	return option
+
+
+static func _append_many_unique(values: PackedStringArray,
+		candidates: PackedStringArray) -> void:
+	for value in candidates:
+		_append_unique(values, String(value))
+
+
+static func _starter_technologies_revealed(technology_ids: PackedStringArray,
+		signal_probe: Dictionary, catalog: Dictionary) -> bool:
+	for technology_id in technology_ids:
+		var technology_index := (catalog.technology_ids as PackedStringArray).find(
+			String(technology_id))
+		if technology_index < 0 or not _reveal_condition_met(
+			technology_index, signal_probe.counts, catalog):
+			return false
+	return true
+
+
+static func _starter_route_better(candidate: Dictionary, current: Dictionary) -> bool:
+	var candidate_buildings: PackedStringArray = candidate.starter_building_ids
+	var current_buildings: PackedStringArray = current.starter_building_ids
+	var candidate_technologies: PackedStringArray = candidate.starter_technology_ids
+	var current_technologies: PackedStringArray = current.starter_technology_ids
+	if candidate_buildings.size() != current_buildings.size():
+		return candidate_buildings.size() < current_buildings.size()
+	if candidate_technologies.size() != current_technologies.size():
+		return candidate_technologies.size() < current_technologies.size()
+	return String(candidate.starter_food_good_id) < String(current.starter_food_good_id)
 
 
 static func _append_precious_route(start: Dictionary, precious_resource: String) -> void:
@@ -399,15 +389,179 @@ static func _append_precious_route(start: Dictionary, precious_resource: String)
 		"starter_technology_ids", PackedStringArray())
 	var buildings: PackedStringArray = start.get(
 		"starter_building_ids", PackedStringArray())
-	if precious_resource == "gold_ore":
-		_append_unique(technologies, "tech.gold_panning")
-		_append_unique(buildings, "placer_gold_working")
-	else:
-		_append_unique(technologies, "tech.surface_silver_collection")
-		_append_unique(buildings, "surface_silver_working")
+	_append_precious_route_values(technologies, buildings, precious_resource)
 	start["starter_technology_ids"] = technologies
 	start["starter_building_ids"] = buildings
 	start["starter_precious_good_id"] = precious_resource
+
+
+static func _append_precious_route_values(technologies: PackedStringArray,
+		buildings: PackedStringArray, precious_resource: String) -> void:
+	if precious_resource == "gold_ore":
+		_append_unique(technologies, "tech.gold_panning")
+		_append_unique(buildings, "placer_gold_working")
+	elif precious_resource == "silver_ore":
+		_append_unique(technologies, "tech.surface_silver_collection")
+		_append_unique(buildings, "surface_silver_working")
+
+
+static func _starter_catalog() -> Dictionary:
+	if not _starter_catalog_cache.is_empty():
+		return _starter_catalog_cache
+	# Building/material/resource closure validation needs the merged economy
+	# catalog. It contains the authoritative technology columns as well as the
+	# goods, buildings and local-resource dependency IR.
+	var compiled := EconomyCatalogScript.compile_native_catalog()
+	if not bool(compiled.get("ok", false)):
+		return compiled
+	var starter_set := {}
+	for technology_id in compiled.starter_eligible_technology_ids:
+		starter_set[String(technology_id)] = true
+	compiled["starter_eligible_set"] = starter_set
+	_starter_catalog_cache = compiled
+	return _starter_catalog_cache
+
+
+static func _signals_for_visible_cells(map: MapData, visible: PackedByteArray,
+		catalog: Dictionary) -> Dictionary:
+	var counts := {}
+	var signal_ids := PackedInt32Array()
+	var signal_cells := PackedInt32Array()
+	var offsets: PackedInt32Array = map.cell_research_signal_offsets
+	var ids: PackedInt32Array = map.cell_research_signal_ids
+	var values: PackedInt32Array = map.cell_research_signal_values
+	if offsets.size() != map.cell_count() + 1 or ids.size() != values.size():
+		return {"counts": counts, "signal_ids": signal_ids,
+			"signal_cells": signal_cells}
+	var signal_count := (catalog.research_signal_ids as PackedStringArray).size()
+	for cell in range(mini(map.cell_count(), visible.size())):
+		if visible[cell] == 0:
+			continue
+		for edge in range(offsets[cell], offsets[cell + 1]):
+			var signal_index := int(ids[edge])
+			if signal_index < 0 or signal_index >= signal_count or int(values[edge]) <= 0:
+				continue
+			counts[signal_index] = int(counts.get(signal_index, 0)) + 1
+			signal_ids.append(signal_index)
+			signal_cells.append(cell)
+	return {"counts": counts, "signal_ids": signal_ids,
+		"signal_cells": signal_cells}
+
+
+static func _validate_starter_technologies(technology_ids: PackedStringArray,
+		building_ids: PackedStringArray, signal_probe: Dictionary, catalog: Dictionary) -> Dictionary:
+	var stable_ids: PackedStringArray = catalog.technology_ids
+	var starter_set: Dictionary = catalog.starter_eligible_set
+	var capabilities := {}
+	for technology_id in technology_ids:
+		if not starter_set.has(String(technology_id)):
+			return _error("starter_technology_not_eligible",
+				"开局路线包含非 starter 科技：%s" % technology_id)
+		var technology_index := stable_ids.find(String(technology_id))
+		if technology_index < 0 or not _reveal_condition_met(
+				technology_index, signal_probe.counts, catalog):
+			return _error("starter_reveal_condition_unsatisfied",
+				"开局科技缺少当前可见地理证据：%s" % technology_id)
+		var offsets: PackedInt32Array = catalog.technology_starter_capability_offsets
+		var tags: PackedStringArray = catalog.technology_starter_capability_tags
+		for edge in range(offsets[technology_index], offsets[technology_index + 1]):
+			capabilities[String(tags[edge])] = true
+	for required in ["starter.food", "starter.clothing", "starter.construction",
+			"starter.knowledge", "starter.precious_metal", "starter.trade"]:
+		if not capabilities.has(required):
+			return _error("starter_capability_unsatisfied",
+				"开局路线缺少能力：%s" % required)
+	var building_type_ids: PackedStringArray = catalog.get("building_type_ids", PackedStringArray())
+	var completed := {}; for id in technology_ids: completed[String(id)] = true
+	var total_owner_slots := 0
+	for building_id in building_ids:
+		var building_index := building_type_ids.find(String(building_id))
+		if building_index < 0:
+			return _error("starter_building_missing", "开局建筑不在经济目录：%s" % building_id)
+		var direct_offsets: PackedInt32Array = catalog.get("building_technology_tag_offsets", PackedInt32Array())
+		var direct_tags: PackedStringArray = catalog.get("building_technology_tags", PackedStringArray())
+		for edge in range(direct_offsets[building_index], direct_offsets[building_index + 1]):
+			var tag := String(direct_tags[edge])
+			if tag.begins_with("tech.") and not completed.has(tag):
+				return _error("starter_building_technology_missing", "%s 缺少 direct technology %s" % [building_id, tag])
+		var required_offsets: PackedInt32Array = catalog.get("building_required_technology_tag_offsets", PackedInt32Array())
+		var required_tags: PackedStringArray = catalog.get("building_required_technology_tags", PackedStringArray())
+		for edge in range(required_offsets[building_index], required_offsets[building_index + 1]):
+			if not completed.has(String(required_tags[edge])):
+				return _error("starter_building_required_technology_missing", "%s 缺少 required technology %s" % [building_id, required_tags[edge]])
+		var branch_offsets: PackedInt32Array = catalog.get("building_dependency_branch_offsets", PackedInt32Array())
+		var branch_tech_offsets: PackedInt32Array = catalog.get("building_dependency_branch_technology_offsets", PackedInt32Array())
+		var branch_techs: PackedInt32Array = catalog.get("building_dependency_branch_technologies", PackedInt32Array())
+		var branch_group_offsets: PackedInt32Array = catalog.get("building_dependency_branch_group_offsets", PackedInt32Array())
+		var dependency_tag_offsets: PackedInt32Array = catalog.get("building_dependency_tag_offsets", PackedInt32Array())
+		var dependency_tags: PackedInt32Array = catalog.get("building_dependency_tags", PackedInt32Array())
+		var branch_begin := int(branch_offsets[building_index]); var branch_end := int(branch_offsets[building_index + 1]); var branch_ok := false
+		for branch in range(branch_begin, branch_end):
+			var tech_ok := true
+			for edge in range(branch_tech_offsets[branch], branch_tech_offsets[branch + 1]):
+				if not completed.has(String(stable_ids[branch_techs[edge]])): tech_ok = false; break
+			if not tech_ok:
+				continue
+			var groups_ok := true
+			for group in range(branch_group_offsets[branch], branch_group_offsets[branch + 1]):
+				var group_ok := false
+				for edge in range(dependency_tag_offsets[group], dependency_tag_offsets[group + 1]):
+					if completed.has(String(stable_ids[dependency_tags[edge]])):
+						group_ok = true; break
+				if not group_ok:
+					groups_ok = false; break
+			if groups_ok:
+				branch_ok = true; break
+		if not branch_ok:
+			return _error("starter_building_dependency_missing", "开局建筑依赖未闭合：%s" % building_id)
+		var owner_slots: PackedInt64Array = catalog.get("building_owner_slots", PackedInt64Array())
+		total_owner_slots += int(owner_slots[building_index])
+	if total_owner_slots >= 20:
+		return _error("starter_population_overcommitted", "开局建筑业主槽位占用超过初始人口。")
+	if not building_ids.has("early_merchant_post"):
+		return _error("starter_trade_building_missing", "开局必须预建早期商栈。")
+	return {"ok": true}
+
+
+static func _reveal_condition_met(technology_index: int, signal_counts: Dictionary,
+		catalog: Dictionary) -> bool:
+	var offsets: PackedInt32Array = catalog.technology_reveal_condition_offsets
+	var ops: PackedInt32Array = catalog.technology_reveal_condition_ops
+	var refs: PackedInt32Array = catalog.technology_reveal_condition_refs
+	var values: PackedInt64Array = catalog.technology_reveal_condition_values
+	if technology_index < 0 or technology_index + 1 >= offsets.size():
+		return false
+	var stack: Array[bool] = []
+	for edge in range(offsets[technology_index], offsets[technology_index + 1]):
+		match int(ops[edge]):
+			TechnologyCatalogScript.CONDITION_PUSH_TECH_COMPLETED:
+				stack.append(false)
+			TechnologyCatalogScript.CONDITION_PUSH_SIGNAL_PRESENT:
+				stack.append(int(signal_counts.get(int(refs[edge]), 0)) > 0)
+			TechnologyCatalogScript.CONDITION_PUSH_SIGNAL_COUNT:
+				stack.append(int(signal_counts.get(int(refs[edge]), 0)) >= int(values[edge]))
+			TechnologyCatalogScript.CONDITION_ALL_OF, TechnologyCatalogScript.CONDITION_ANY_OF, \
+					TechnologyCatalogScript.CONDITION_AT_LEAST:
+				var child_count := int(refs[edge])
+				if child_count <= 0 or stack.size() < child_count:
+					return false
+				var true_count := 0
+				for _child in range(child_count):
+					if stack.pop_back():
+						true_count += 1
+				var required := child_count
+				if int(ops[edge]) == TechnologyCatalogScript.CONDITION_ANY_OF:
+					required = 1
+				elif int(ops[edge]) == TechnologyCatalogScript.CONDITION_AT_LEAST:
+					required = int(values[edge])
+				stack.append(true_count >= required)
+			TechnologyCatalogScript.CONDITION_NOT:
+				if stack.is_empty():
+					return false
+				stack.append(not stack.pop_back())
+			_:
+				return false
+	return stack.size() == 1 and bool(stack[0])
 
 
 static func _append_unique(values: PackedStringArray, value: String) -> void:
@@ -450,7 +604,7 @@ static func _cell_has_signal(map: MapData, cell_idx: int, signal_id: String) -> 
 	return false
 
 
-static func _has_freshwater(map: MapData, cell_idx: int,
+static func _has_freshwater_access(map: MapData, cell_idx: int,
 		neighbors: PackedInt32Array) -> bool:
 	if map.has_river_arr[cell_idx] != 0 or map.is_lake_seed_arr[cell_idx] != 0:
 		return true
@@ -556,25 +710,12 @@ static func _survival_score(map: MapData, cell_idx: int) -> float:
 		+ float(map.vegetation_vitality_arr[cell_idx]) * 0.30
 
 
-static func _precious_for_cell(map: MapData, cell_idx: int, seed: int,
-		purpose: String) -> String:
+static func _precious_for_cell(map: MapData, cell_idx: int) -> String:
 	var natural_gold := _reserve(map, "gold_ore", cell_idx)
 	var natural_silver := _reserve(map, "silver_ore", cell_idx)
 	if natural_gold > 0.0 or natural_silver > 0.0:
 		return "gold_ore" if natural_gold >= natural_silver else "silver_ore"
-	return _choose_missing_precious(map, seed, purpose)
-
-
-static func _choose_missing_precious(map: MapData, seed: int,
-		purpose: String = "player_precious") -> String:
-	var gold_cells := 0
-	var silver_cells := 0
-	for cell_idx in range(map.cell_count()):
-		if _reserve(map, "gold_ore", cell_idx) > 0.0: gold_cells += 1
-		if _reserve(map, "silver_ore", cell_idx) > 0.0: silver_cells += 1
-	if gold_cells == silver_cells:
-		return "gold_ore" if (_stable_hash(seed, purpose) & 1) == 0 else "silver_ore"
-	return "gold_ore" if gold_cells < silver_cells else "silver_ore"
+	return ""
 
 
 static func _reserve(map: MapData, resource_id: String, cell_idx: int) -> float:
@@ -584,18 +725,6 @@ static func _reserve(map: MapData, resource_id: String, cell_idx: int) -> float:
 			var values = map.get(field)
 			return float(values[cell_idx]) if values != null and cell_idx < values.size() else 0.0
 	return 0.0
-
-
-static func _top_up(map: MapData, resource_id: String, cell_idx: int, minimum: float) -> void:
-	for profile in ResourceProfileRegistry.ordered():
-		if profile == null or String(profile.id) != resource_id:
-			continue
-		var field := ResourceProfileRegistry.reserve_map_field(profile)
-		var values: PackedFloat32Array = map.get(field)
-		if cell_idx >= 0 and cell_idx < values.size():
-			values[cell_idx] = maxf(values[cell_idx], minimum)
-			map.set(field, values)
-		return
 
 
 static func _stable_hash(seed: int, purpose: String) -> int:

@@ -47,7 +47,10 @@ Legacy `prerequisite_ids` remain an additional structural hard gate. An `ANY_OF`
 The research signal catalog includes:
 
 - crops and biological discoveries such as maize, wheat, rice, potato, cotton, flax, spice, rubber, and livestock;
-- resources such as freshwater, fertile soil, arable/paddy/plantation land, coal, oil, natural gas, copper, iron, precious metals, salt, rare earth, bauxite, limestone, silica sand, phosphate, tin, lead, zinc, manganese, sulfur, and flint;
+- resources such as fertile soil, arable/paddy/plantation land, coal, oil, natural gas, copper, iron,
+  precious metals, salt, rare earth, bauxite, limestone, silica sand, phosphate, tin, lead, zinc,
+  manganese, sulfur, flint, and freshwater fish; rivers, lakes and wetlands use the separate
+  `landform.freshwater_access` hydrology signal rather than a `resource.freshwater` deposit;
 - landforms such as river valley, floodplain, delta, coast, marsh, forest, grassland, arid basin, mountain, high plateau, steep slope, tundra, and stable wind corridor;
 - weather experience such as flood, drought, typhoon, monsoon, frost, freeze-thaw, heatwave, prolonged wet season, storm surge, and repeated crop failure;
 - contact signals created by actual cross-country delivery of crop or ore samples;

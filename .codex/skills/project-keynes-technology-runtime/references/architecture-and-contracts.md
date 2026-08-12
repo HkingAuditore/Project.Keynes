@@ -17,7 +17,7 @@ technology catalog and validates every `tech.*` reference. It must not invent ID
 
 Current baseline:
 
-- 360 definitions: 22 regional-start processing nodes and 338 researchable technologies.
+- 361 definitions: 23 regional-start processing nodes and 338 researchable technologies.
 - 11 eras, four domains, four backbones, and sixteen specialist lanes.
 - Each era has exactly sixteen lane anchors and requires any five for its milestone.
 - Completed hard prerequisites are the sole research-eligibility gate.
@@ -25,6 +25,11 @@ Current baseline:
   backbone anchors require the previous milestone.
 - Geography, resource, contact and practice evidence appears only in reveal-condition IR. It may
   inspire and reveal a node but never bypass a prerequisite or complete research.
+- Rivers, lakes and wetlands publish `landform.freshwater_access`; there is no
+  `resource.freshwater` deposit. Keep hydrology evidence separate from extractable
+  `freshwater_fish` and other `ResourceProfile` entries.
+- `tech.early_trade` is a zero-cost regional-start node revealed by visible natural gold or silver.
+  It unlocks `early_merchant_post`; every formal opening route grants it and prebuilds that service.
 
 `Project/project-keynes/data/technology/technology_network.json` is the sole authoring source.
 `TechnologyCatalog` strictly parses it and remains the sole compiled/runtime authority. The authoring

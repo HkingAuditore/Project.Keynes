@@ -3452,6 +3452,17 @@ private:
     std::vector<int32_t> _building_required_technologies;
     std::vector<int32_t> _building_all_technology_offsets;
     std::vector<int32_t> _building_all_required_technologies;
+    // Material/resource dependency gates compiled from Good/Resource technology
+    // tags. A building direct branch is usable only when every dependency group
+    // has at least one completed technology tag (candidate inputs are one group).
+    std::vector<int32_t> _building_dependency_branch_offsets;
+    std::vector<int32_t> _building_dependency_branch_technologies;
+    std::vector<int32_t> _building_dependency_branch_technology_offsets;
+    std::vector<int32_t> _building_dependency_branch_group_offsets;
+    std::vector<uint8_t> _building_dependency_kinds;
+    std::vector<int32_t> _building_dependency_ids;
+    std::vector<int32_t> _building_dependency_tag_offsets;
+    std::vector<int32_t> _building_dependency_tags;
     std::vector<std::string> _technology_ids;
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
@@ -3905,6 +3916,8 @@ private:
                               bool frozen = true) const;
     bool building_available(int32_t cell, int32_t type_id,
                             bool frozen = true) const;
+    bool building_dependency_requirements_met(int32_t cell, int32_t type_id,
+                                              bool frozen) const;
     bool building_constructible(int32_t cell, int32_t type_id,
                                 bool frozen = true) const;
     // O(1) signature lookup helpers backed by _signature_by_profession_ethnicity.

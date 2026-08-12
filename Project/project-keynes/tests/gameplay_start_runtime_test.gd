@@ -53,7 +53,7 @@ func _run() -> void:
 		int(start.get("foreign_count", -1)) == 5 and country_starts.size() == 6)
 	_expect("start cell is in range", cell_idx >= 0 and cell_idx < map.cell_count())
 	if cell_idx >= 0 and cell_idx < map.cell_count():
-		_expect("start cell has freshwater", _has_freshwater(map, cell_idx))
+		_expect("start cell has river/lake access", _has_freshwater_access(map, cell_idx))
 	var represented_routes := {}
 	for start_value in country_starts:
 		var country_start: Dictionary = start_value
@@ -69,24 +69,22 @@ func _run() -> void:
 			technologies.size() >= 5 and technologies.size() <= 10)
 		_expect("regional route prebuilds a complete weak production bundle",
 			route_buildings.size() >= 5 and route_buildings.size() <= 9)
-		_expect("regional route declares all five capability goods",
+		_expect("regional route declares all six starter capabilities",
 			not String(country_start.get("starter_food_good_id", "")).is_empty()
 			and not String(country_start.get("starter_clothing_good_id", "")).is_empty()
 			and not String(country_start.get("starter_construction_good_id", "")).is_empty()
 			and String(country_start.get("starter_knowledge_good_id", "")) ==
 				"technology_points"
 			and String(country_start.get("starter_precious_good_id", "")) in
-				["gold_ore", "silver_ore"])
-		_expect("regional weak buildings close the five output capabilities",
+				["gold_ore", "silver_ore"]
+			and technologies.has("tech.early_trade")
+			and route_buildings.has("early_merchant_post"))
+		_expect("regional weak buildings close the five produced goods",
 			_starter_route_outputs(country_start))
-		var topups: PackedStringArray = country_start.get(
-			"resource_topups", PackedStringArray())
-		var non_precious_topups := 0
-		for resource_id in topups:
-			if String(resource_id) not in ["gold_ore", "silver_ore"]:
-				non_precious_topups += 1
-		_expect("natural-first start uses at most one non-precious top-up",
-			non_precious_topups <= 1 and topups.size() <= 2)
+		_expect("natural-first start never tops up generated resources",
+			not country_start.has("resource_topups") and
+			(country_start.get("missing_resource_ids", PackedStringArray()) as
+				PackedStringArray).is_empty())
 		for resource_id in [String(country_start.get("starter_food_resource_id", "")),
 				String(country_start.get("starter_clothing_resource_id", "")),
 				String(country_start.get("starter_construction_resource_id", "")),
@@ -220,11 +218,11 @@ func _run() -> void:
 		int(start.get("founder_family_count", 0)) == country_starts.size()
 		and int(start.get("founder_person_count", 0)) == country_starts.size())
 	_expect("production bootstrap source is used",
-		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v4")
+		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v5")
 	_finish()
 
 
-func _has_freshwater(map: MapData, cell_idx: int) -> bool:
+func _has_freshwater_access(map: MapData, cell_idx: int) -> bool:
 	if map.has_river_arr[cell_idx] != 0 or map.is_lake_seed_arr[cell_idx] != 0:
 		return true
 	var neighbors := map.neighbor_indices_packed()
