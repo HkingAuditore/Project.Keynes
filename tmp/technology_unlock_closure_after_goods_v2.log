@@ -1,0 +1,6 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Assertion failed: { "ok": false, "reason": "technology_content_binding_limit_exceeded", "id": "tech.mine_ventilation", "count": 6, "limit": 4 }
+   at: _init (res://tests/technology_unlock_closure_audit_test.gd:16)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_unlock_closure_audit_test.gd:16)

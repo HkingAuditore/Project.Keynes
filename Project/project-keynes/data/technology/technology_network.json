@@ -737,15 +737,15 @@
 				},
 				{
 					"kind": "good",
-					"id": "processed_food",
+					"id": "prepared_staples",
 					"binding_kind": 0,
-					"subject": "good.processed_food",
+					"subject": "good.prepared_staples",
 					"attribute": "output_recipe_access",
 					"operation": "enable",
 					"value": 1,
 					"implementation": "BuildingProfile.recipe",
 					"status": "existing_binding",
-					"display_name": "加工食品"
+					"display_name": "熟制主食"
 				},
 				{
 					"kind": "good",
@@ -3798,7 +3798,9 @@
 			"secondary_route_tags": [
 				"route.crop.maize"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.maize_identification"
+			],
 			"research_condition": {
 
 			},
@@ -4123,7 +4125,9 @@
 			"secondary_route_tags": [
 				"route.crop.wheat"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.wheat_identification"
+			],
 			"research_condition": {
 
 			},
@@ -4448,7 +4452,9 @@
 			"secondary_route_tags": [
 				"route.crop.rice"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.rice_identification"
+			],
 			"research_condition": {
 
 			},
@@ -5766,71 +5772,17 @@
 			"is_milestone_candidate": false,
 			"modifier_terms": [
 				{
-					"stat": "country.output.building.primitive_gold_sluice_factor",
+					"stat": "country.output.family.gold_extraction_factor",
 					"operation": 0,
-					"value": 0.2,
-					"subject_kind": "building",
-					"subject_id": "primitive_gold_sluice",
-					"subject_display_name": "木槽溜洗场"
+					"value": 0.1,
+					"subject_kind": "building_family",
+					"subject_id": "gold_extraction",
+					"subject_display_name": "黄金采掘"
 				}
 			],
-			"expected_bindings": [
-				{
-					"kind": 2,
-					"id": "primitive_gold_sluice"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "building",
-					"id": "primitive_gold_sluice",
-					"binding_kind": 2,
-					"subject": "building.primitive_gold_sluice",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "木槽溜洗场"
-				},
-				{
-					"kind": "class",
-					"id": "general",
-					"binding_kind": 0,
-					"subject": "class.general",
-					"attribute": "ownership_access",
-					"operation": "enable",
-					"value": 1,
-					"implementation": "BuildingProfile.owner_and_employee_slots",
-					"status": "existing_binding",
-					"display_name": "通用职业阶层"
-				},
-				{
-					"kind": "good",
-					"id": "gold_ore",
-					"binding_kind": 0,
-					"subject": "good.gold_ore",
-					"attribute": "output_recipe_access",
-					"operation": "enable",
-					"value": 1,
-					"implementation": "BuildingProfile.recipe",
-					"status": "existing_binding",
-					"display_name": "含金砂矿"
-				},
-				{
-					"kind": "tile",
-					"id": "river",
-					"binding_kind": 0,
-					"subject": "tile.river",
-					"attribute": "specialized_building_placement",
-					"operation": "enable",
-					"value": 1,
-					"implementation": "BuildingProfile.condition_postfix",
-					"status": "existing_binding",
-					"display_name": "河流"
-				}
-			],
-			"effect_summary": "解锁建筑：木槽溜洗场；开放通用职业阶层岗位；需要河流地块条件；木槽溜洗场产出 +20%",
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "黄金采掘产出 +10%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"same_lane_successor_ids": [],
 			"application_target_ids": [
@@ -5901,6 +5853,10 @@
 					"id": "placer_gold_working"
 				},
 				{
+					"kind": 2,
+					"id": "primitive_gold_sluice"
+				},
+				{
 					"kind": 3,
 					"id": "gold_ore"
 				}
@@ -5965,6 +5921,30 @@
 					"implementation": "BuildingProfile.recipe",
 					"status": "existing_binding",
 					"display_name": "含金砂矿"
+				},
+				{
+					"kind": "building",
+					"id": "primitive_gold_sluice",
+					"binding_kind": 2,
+					"subject": "building.primitive_gold_sluice",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "木槽溜洗场"
+				},
+				{
+					"kind": "tile",
+					"id": "river",
+					"binding_kind": 0,
+					"subject": "tile.river",
+					"attribute": "specialized_building_placement",
+					"operation": "enable",
+					"value": 1,
+					"implementation": "BuildingProfile.condition_postfix",
+					"status": "existing_binding",
+					"display_name": "河流"
 				},
 				{
 					"kind": "resource",
@@ -54447,6 +54427,11 @@
 		},
 		{
 			"from": "tech.maize_identification",
+			"to": "tech.wild_maize_collection",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.maize_identification",
 			"to": "tech.brine_collection",
 			"kind": "application"
 		},
@@ -54497,6 +54482,11 @@
 		},
 		{
 			"from": "tech.wheat_identification",
+			"to": "tech.wild_wheat_collection",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.wheat_identification",
 			"to": "tech.brine_collection",
 			"kind": "application"
 		},
@@ -54544,6 +54534,11 @@
 			"from": "tech.wheat_propagation",
 			"to": "tech.brine_collection",
 			"kind": "application"
+		},
+		{
+			"from": "tech.rice_identification",
+			"to": "tech.wild_rice_collection",
+			"kind": "hard"
 		},
 		{
 			"from": "tech.rice_identification",

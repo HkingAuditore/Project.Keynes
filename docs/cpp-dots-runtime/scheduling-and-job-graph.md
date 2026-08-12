@@ -73,6 +73,13 @@ DCSystemScheduler
 
 入口是 `Project/project-keynes/scripts/geography/map_generator.gd::_setup_sus()`。
 
+`WorldRuntimeHost.generate_world()` 是 scheduler 生命周期的外层可见性边界：生成开始时先将
+runtime 标记为不可 tick 并暂停 `WorldClock`，只有地图生成、全部 system 注册、topology build
+以及可选存档恢复全部成功后，才开放 `run_daily_tick()` 并发布 `world_ready`。新游戏恢复生成前的
+暂停状态；读档保留 `world_clock` provider 恢复出的权威状态。生成失败保持暂停且不开放 tick。
+`DCSystemScheduler.tick()` 遇到未 build topology 仍须报错；不得在 scheduler 内自动 build 或吞错来
+掩盖 host 生命周期违规。
+
 当前 `_setup_sus()` 大致做以下事情：
 
 1. 创建 `DCSystemScheduler`，并由 scheduler 读取 `ClimateProfile` 配置 frame/strict budget。

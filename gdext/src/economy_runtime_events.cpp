@@ -114,6 +114,8 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
         Aggregate() { first_cells.fill(-1); }
     };
     std::vector<Aggregate> countries(_epoch_country_handles.size());
+    std::vector<int32_t> crop_failure_cells(_epoch_country_handles.size(), -1);
+    std::vector<int32_t> crop_failure_counts(_epoch_country_handles.size(), 0);
     auto add_first = [](Aggregate &aggregate, int32_t rule, int32_t cell) {
         if (aggregate.first_cells[static_cast<size_t>(rule)] < 0)
             aggregate.first_cells[static_cast<size_t>(rule)] = cell;
@@ -123,7 +125,7 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
             group.last_capacity_q16 > 0;
     };
     for (const BuildingGroup &group : _buildings) {
-        if (!active_group(group) || group.cell < 0 || group.cell >= _cell_count ||
+        if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()) ||
             group.cell >= static_cast<int32_t>(_epoch_cell_country.size()))
@@ -134,6 +136,16 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
             continue;
         Aggregate &aggregate = countries[static_cast<size_t>(country)];
         const BuildingType &type = _building_types[static_cast<size_t>(group.type_id)];
+        const bool climate_crop_failure = type.economic_sector == 0 &&
+            group.operating_state != 1 &&
+            group.last_climate_capacity_q16 <= Q16_ONE / 2 &&
+            group.last_climate_lost_output > 0;
+        if (climate_crop_failure) {
+            ++crop_failure_counts[static_cast<size_t>(country)];
+            if (crop_failure_cells[static_cast<size_t>(country)] < 0)
+                crop_failure_cells[static_cast<size_t>(country)] = group.cell;
+        }
+        if (!active_group(group)) continue;
         const uint32_t mask = _building_technology_practice_masks[
             static_cast<size_t>(group.type_id)];
         for (int32_t rule = 0; rule < PRACTICE_RULE_COUNT; ++rule) {
@@ -255,6 +267,21 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
         if (!metal_seen) aggregate.values[PRACTICE_METALWORKING] = 0;
         if (aggregate.research_groups <= 0)
             aggregate.values[PRACTICE_PRINTING] = 0;
+        if (crop_failure_counts[static_cast<size_t>(country)] > 0 &&
+            crop_failure_cells[static_cast<size_t>(country)] >= 0) {
+            CommittedGameplayFact weather_fact;
+            weather_fact.kind = GAMEPLAY_FACT_REPEATED_CROP_FAILURE;
+            weather_fact.cell = crop_failure_cells[static_cast<size_t>(country)];
+            weather_fact.entity_handle = country_handle;
+            weather_fact.entity_id = country;
+            // Accumulate qualifying economy cycles, not the number of farms in
+            // one cycle. The payload retains the affected-group count.
+            weather_fact.value = 1;
+            weather_fact.payload = {6,
+                crop_failure_counts[static_cast<size_t>(country)],
+                crop_failure_cells[static_cast<size_t>(country)], 1};
+            _staging_gameplay_facts.push_back(weather_fact);
+        }
         for (int32_t rule = 0; rule < PRACTICE_RULE_COUNT; ++rule) {
             const int64_t value = aggregate.values[static_cast<size_t>(rule)];
             const int32_t signal_slot = SIGNAL_BY_RULE[static_cast<size_t>(rule)];

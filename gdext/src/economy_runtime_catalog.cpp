@@ -892,7 +892,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             if (climate == "paddy_crop")
                 mask |= practice_bit(PRACTICE_PADDY_CONTROL);
         }
-        if (id.find("terrace") != std::string::npos ||
+        if (id == "wild_tuber_patch" || id.find("terrace") != std::string::npos ||
             type_has_technology(type, "tech.terrace_farming"))
             mask |= practice_bit(PRACTICE_TERRACE_MAINTENANCE);
         const bool mine_working = id.find("mine") != std::string::npos ||
@@ -960,11 +960,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             mask |= practice_bit(PRACTICE_ENERGY_CONTROL);
         _building_technology_practice_masks[type] = mask;
     }
-    for (const int32_t rule : {PRACTICE_MARITIME_OPERATIONS,
-                               PRACTICE_WATERSHED_MANAGEMENT,
-                               PRACTICE_FOREST_MANAGEMENT,
-                               PRACTICE_CHEMICAL_PROCESS_CONTROL,
-                               PRACTICE_ENERGY_CONTROL}) {
+    for (int32_t rule = 0; rule < PRACTICE_RULE_COUNT; ++rule) {
         bool has_publisher = false;
         for (const uint32_t mask : _building_technology_practice_masks) {
             if ((mask & (uint32_t{1} << rule)) != 0) {

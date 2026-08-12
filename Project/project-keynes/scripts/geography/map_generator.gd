@@ -171,6 +171,8 @@ const NativeDailySimJobScript = preload("res://scripts/simulation/sus/jobs/nativ
 # DCSystemScheduler 与运行期 DCSystem wrapper 的 preload。
 const DCSystemSchedulerScript = preload("res://scripts/data_core/dc_system_scheduler.gd")
 const GameplayEventBusScript = preload("res://scripts/data_core/gameplay_event_bus.gd")
+const WeatherResearchSignalPublisherScript = preload(
+	"res://scripts/research/weather_research_signal_publisher.gd")
 const ClimateDailySystemScript = preload("res://scripts/simulation/systems/climate_daily_system.gd")
 const SeaIceDailySystemScript = preload("res://scripts/simulation/systems/sea_ice_daily_system.gd")
 const NaturalResourceDailySystemScript = preload("res://scripts/simulation/systems/natural_resource_daily_system.gd")
@@ -5927,6 +5929,13 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 			if f is WeatherFront:
 				fronts.append(f)
 		fronts_diff = native_res.get("fronts_diff", {})
+	if weather_ran and _sus_map != null:
+		var cyclone_snapshot: Dictionary = {}
+		if _data_core_world_ext != null \
+				and _data_core_world_ext.has_method("get_active_cyclone_snapshot"):
+			cyclone_snapshot = _data_core_world_ext.get_active_cyclone_snapshot()
+		WeatherResearchSignalPublisherScript.publish(
+			_sus_map, _country_facade, _gameplay_event_bus, di, cyclone_snapshot)
 	# 天气类型交叉淡入的"跳过日 GDScript 兜底"已移除（2026-06-17）：该淡入纯属
 	# 视觉平滑，且没有任何 shader 采样 cell.weather_transition_alpha（地图只读离散
 	# weather_type），高倍速下逐 cell fan-out 反而是 ~35ms/次的空耗。淡入开关
