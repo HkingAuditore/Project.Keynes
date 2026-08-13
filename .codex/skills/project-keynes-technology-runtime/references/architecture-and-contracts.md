@@ -147,17 +147,20 @@ parameters, or trade capacity. They must not directly mutate ledger quantities.
 `TechnologyWorkspace` is a full-screen section mounted by the lightweight `CountryPanel` shell, which
 owns nothing but a section title bar and the content area. `GraphEdit` is not used and no
 per-technology child node is created. `TechnologyTreeLayout.build()` bakes the immutable full DAG;
-`build_focus()` derives a bounded one-lane, three-era working set for the self-drawn
-`TechnologyTreeView`. Cross-lane hard relations become navigation portals, selected application
-relations use dashed lines, and milestone candidates collapse into a progress summary.
+`build_focus()` derives a bounded one-domain, three-era working set for the self-drawn
+`TechnologyTreeView`. The four authoritative research domains own top-level navigation; `main_lane`
+only orders nodes inside dependency layers and remains visible route metadata. Cross-domain hard
+relations become selected-node navigation portals while same-domain out-of-window links use era navigation; selected application relations use dashed
+lines, and milestone candidates collapse into a progress summary.
 
-The separate self-drawn `TechnologyOverviewView` is a lane-by-visible-era navigation map. It creates
-rows and columns only for discovered content and returns to focus mode on activation. Policy and detail
-are overlay drawers below 1600 px and may be pinned only on wider screens. Opening focus prefers the
-queue head of the highest-weight non-empty domain, otherwise the deepest available frontier.
+The separate self-drawn `TechnologyOverviewView` is a domain-by-visible-era navigation map. Its four
+rows are stable while columns exist only for discovered eras, and activation returns to focus mode.
+Policy is a permanent 280px left column. Detail is a 384px right drawer below 1600 px and may be pinned
+only on wider screens; its content wraps within the drawer and scrolls vertically. Opening focus prefers
+the queue head of the highest-weight non-empty domain, otherwise the deepest available frontier.
 
 Fog clips focus drawing to the discovered set plus its immediate unknown frontier. Overview omits
-undiscovered lane rows and future era columns, so neither the catalog size nor the remaining era count
+undiscovered route names and future era columns, so neither the catalog size nor the remaining era count
 is observable. Unknown nodes must not leak semantic content through any visible or assistive channel.
 Domain color is only supplemental; pair states with icon, border, and text.
 

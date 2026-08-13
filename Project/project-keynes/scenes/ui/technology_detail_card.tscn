@@ -7,11 +7,13 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="5_insights"]
 
 [node name="TechnologyDetailCard" type="PanelContainer"]
+size_flags_horizontal = 3
 theme_type_variation = &"PKPanel"
 script = ExtResource("1_script")
 
 [node name="Scroll" type="ScrollContainer" parent="."]
 layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
@@ -23,6 +25,7 @@ theme_override_constants/separation = 8
 
 [node name="Header" type="HBoxContainer" parent="Scroll/Body"]
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
 [node name="HeaderIcon" parent="Scroll/Body/Header" instance=ExtResource("2_icon")]
@@ -45,6 +48,7 @@ theme_type_variation = &"PKTitle"
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKMutedLabel"
+autowrap_mode = 2
 
 [node name="Placeholder" type="Label" parent="Scroll/Body"]
 unique_name_in_owner = true
@@ -55,11 +59,13 @@ theme_type_variation = &"PKMutedLabel"
 [node name="DetailBlock" type="VBoxContainer" parent="Scroll/Body"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
 [node name="Chips" parent="Scroll/Body/DetailBlock" instance=ExtResource("3_badges")]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="Gauge" parent="Scroll/Body/DetailBlock" instance=ExtResource("4_gauge")]
 unique_name_in_owner = true

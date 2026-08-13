@@ -152,8 +152,9 @@ focus_mode = 0
 theme_type_variation = &"PKIconButton"
 
 [node name="Lane" type="OptionButton" parent="Root/Toolbar/Row"]
-custom_minimum_size = Vector2(236, 28)
+custom_minimum_size = Vector2(116, 28)
 layout_mode = 2
+tooltip_text = "科技领域"
 
 [node name="Search" type="LineEdit" parent="Root/Toolbar/Row"]
 custom_minimum_size = Vector2(180, 28)
@@ -169,6 +170,7 @@ focus_mode = 0
 theme_type_variation = &"PKIconButton"
 
 [node name="PolicyToggle" type="Button" parent="Root/Toolbar/Row"]
+visible = false
 custom_minimum_size = Vector2(86, 28)
 layout_mode = 2
 text = "研究管理"
@@ -191,6 +193,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+offset_left = 280.0
+offset_right = -40.0
 
 [node name="Overview" parent="Root/Main" instance=ExtResource("8_overview")]
 unique_name_in_owner = true
@@ -201,8 +205,11 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+offset_left = 280.0
+offset_right = -40.0
 
 [node name="PolicyRail" type="Button" parent="Root/Main"]
+visible = false
 layout_mode = 1
 anchors_preset = 5
 anchor_right = 0.0
@@ -227,7 +234,7 @@ focus_mode = 0
 
 [node name="PolicyPanel" type="PanelContainer" parent="Root/Main"]
 unique_name_in_owner = true
-visible = false
+visible = true
 layout_mode = 1
 anchors_preset = 5
 anchor_right = 0.0
@@ -253,12 +260,14 @@ size_flags_horizontal = 3
 text = "研究管理"
 theme_type_variation = &"PKSectionTitle"
 [node name="Pin" type="Button" parent="Root/Main/PolicyPanel/Scroll/Body/Header"]
+visible = false
 custom_minimum_size = Vector2(28, 24)
 layout_mode = 2
 text = ""
 toggle_mode = true
 focus_mode = 0
 [node name="Close" type="Button" parent="Root/Main/PolicyPanel/Scroll/Body/Header"]
+visible = false
 custom_minimum_size = Vector2(28, 24)
 layout_mode = 2
 focus_mode = 0
@@ -351,7 +360,7 @@ anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -320.0
+offset_left = -360.0
 grow_horizontal = 0
 grow_vertical = 2
 theme_type_variation = &"PKPanel"

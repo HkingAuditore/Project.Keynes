@@ -9,7 +9,7 @@ const LayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
 const VIEW_PADDING := 34.0
 const NAME_FONT_SIZE := 13
 const ERA_FONT_SIZE := 13
-const PORTAL_HEIGHT := 24.0
+const PORTAL_SIZE := Vector2(26.0, 24.0)
 const STATE_NAMES := ["未知", "已揭示", "可研究", "研究队列", "待生效", "已掌握"]
 
 var _accents: Array[Color] = []
@@ -30,7 +30,7 @@ var _hovered := -1
 var _hovered_portal := -1
 var _chain_up := {}
 var _chain_down := {}
-var _lane_id := ""
+var _domain_id := ""
 var _focus_era := 0
 var _offset := Vector2.ZERO
 var _panning := false
@@ -65,8 +65,7 @@ func set_catalog(definitions: Array, eras: Array, domains: Array,
 	_visible_nodes.resize(definitions.size())
 	_known_nodes.resize(definitions.size())
 	if not definitions.is_empty():
-		_lane_id = String((definitions[0] as Dictionary).get(
-			"main_lane", (definitions[0] as Dictionary).get("layout_lane", "")))
+		_domain_id = String((definitions[0] as Dictionary).get("domain_id", ""))
 	_rebuild_focus()
 
 
@@ -86,9 +85,9 @@ func patch_states(states: PackedInt32Array, progress: PackedInt64Array) -> void:
 	queue_redraw()
 
 
-func set_focus(lane_id: String, era_index: int, preferred_index: int = -1) -> void:
-	if not lane_id.is_empty():
-		_lane_id = lane_id
+func set_focus(domain_id: String, era_index: int, preferred_index: int = -1) -> void:
+	if not domain_id.is_empty():
+		_domain_id = domain_id
 	_focus_era = clampi(era_index, 0, maxi(0, _eras.size() - 1))
 	_rebuild_focus()
 	if preferred_index >= 0 and _focus_contains(preferred_index):
@@ -97,8 +96,12 @@ func set_focus(lane_id: String, era_index: int, preferred_index: int = -1) -> vo
 	queue_redraw()
 
 
+func focus_domain() -> String:
+	return _domain_id
+
+
 func focus_lane() -> String:
-	return _lane_id
+	return _domain_id
 
 
 func focus_era() -> int:
@@ -171,14 +174,17 @@ func _rebuild_focus() -> void:
 	if _definitions.is_empty() or _layout.is_empty():
 		return
 	_focus_layout = LayoutScript.build_focus(_definitions, _eras, _domains,
-		_visual_edges, _lane_id, _focus_era, _visible_nodes, _layout)
+		_visual_edges, _domain_id, _focus_era, _visible_nodes, _layout)
 	_portal_slots.clear()
-	var side_counts := {"incoming": 0, "outgoing": 0}
+	var side_counts := {}
 	for cursor in range((_focus_layout.get("portals", []) as Array).size()):
 		var portal: Dictionary = (_focus_layout.get("portals", []) as Array)[cursor]
-		var side := String(portal.direction)
-		_portal_slots[cursor] = int(side_counts.get(side, 0))
-		side_counts[side] = int(side_counts.get(side, 0)) + 1
+		var owner := int(portal.owner)
+		var owner_era := String((_definitions[owner] as Dictionary).get("era_id", "")) \
+			if owner >= 0 and owner < _definitions.size() else ""
+		var group := "%s:%s" % [String(portal.direction), owner_era]
+		_portal_slots[cursor] = int(side_counts.get(group, 0))
+		side_counts[group] = int(side_counts.get(group, 0)) + 1
 	_center_content()
 	queue_redraw()
 
@@ -322,21 +328,26 @@ func _portal_rect(portal: Dictionary, cursor: int = -1) -> Rect2:
 			break
 	var incoming := String(portal.direction) == "incoming"
 	var bounds: Rect2 = _focus_layout.get("content_rect", Rect2())
-	var x := bounds.position.x + 4.0 if incoming else bounds.end.x - 104.0
+	var x := bounds.position.x + 5.0 if incoming else bounds.end.x - PORTAL_SIZE.x - 5.0
 	var slot := int(_portal_slots.get(cursor, 0))
-	var y := owner_rect.position.y + owner_rect.size.y * 0.5 - PORTAL_HEIGHT * 0.5 \
-		+ float(slot % 3 - 1) * (PORTAL_HEIGHT + 3.0)
-	return Rect2(Vector2(x, y),
-		Vector2(100.0, PORTAL_HEIGHT))
+	var y := owner_rect.position.y + owner_rect.size.y * 0.5 - PORTAL_SIZE.y * 0.5 \
+		+ float(slot % 3 - 1) * (PORTAL_SIZE.y + 3.0)
+	return Rect2(Vector2(x, y), PORTAL_SIZE)
 
 
 func _portal_at(position: Vector2) -> int:
 	var content := position - _offset
 	var portals: Array = _focus_layout.get("portals", [])
 	for cursor in range(portals.size() - 1, -1, -1):
+		if not _portal_relevant(portals[cursor] as Dictionary):
+			continue
 		if _portal_rect(portals[cursor], cursor).has_point(content):
 			return cursor
 	return -1
+
+
+func _portal_relevant(portal: Dictionary) -> bool:
+	return _selected >= 0 and int(portal.get("owner", -1)) == _selected
 
 
 func _clamp_offset() -> void:
@@ -372,7 +383,9 @@ func _draw() -> void:
 	_draw_edges()
 	_draw_milestone_progress()
 	for cursor in range((_focus_layout.get("portals", []) as Array).size()):
-		_draw_portal(cursor)
+		var portal: Dictionary = (_focus_layout.get("portals", []) as Array)[cursor]
+		if _portal_relevant(portal):
+			_draw_portal(cursor)
 	for node_value in _focus_layout.get("nodes", []) as Array:
 		_draw_node(node_value as Dictionary)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -486,11 +499,9 @@ func _draw_portal(cursor: int) -> void:
 	draw_rect(rect, Color(0.066, 0.058, 0.047, 0.92), true)
 	draw_rect(rect, colour, false, 1.0)
 	var incoming := String(portal.direction) == "incoming"
-	var text := "前置分支" if incoming else "后续分支"
-	if _is_known(target):
-		text = String((_definitions[target] as Dictionary).get("display_name", text))
-	draw_string(get_theme_default_font(), rect.position + Vector2(8.0, 16.0), text,
-		HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 16.0, 11,
+	var owner := int(portal.owner)
+	_draw_glyph(&"action.back" if incoming else &"action.chevron_right",
+		rect.position + Vector2(8.0, 17.0), 11,
 		UITokens.TEXT_MAIN if hover else UITokens.TEXT_MUTED)
 
 

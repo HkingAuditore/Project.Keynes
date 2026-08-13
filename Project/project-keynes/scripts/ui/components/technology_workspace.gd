@@ -5,9 +5,9 @@ const PlayerControllerScript = preload("res://scripts/game/player_controller.gd"
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 
-# Full-bleed research screen with a bounded route workspace and a separate
-# network overview. Policy and detail are overlay drawers so the graph owns the
-# central width at every supported resolution.
+# Full-bleed research screen with a bounded domain workspace and a separate
+# network overview. Research policy is a permanent working column; technology
+# detail remains an on-demand drawer.
 
 signal policy_submitted()
 
@@ -16,7 +16,8 @@ const TechnologyQueueRowScene := preload("res://scenes/ui/technology_queue_row.t
 const CASH_SCALE := 10000.0
 const POINT_SCALE := 1000.0
 const POLICY_WIDTH := 280.0
-const DETAIL_WIDTH := 320.0
+const DETAIL_WIDTH := 384.0
+const DETAIL_ANCHOR_WIDTH := 360.0
 const DRAWER_RAIL_WIDTH := 40.0
 const PIN_BREAKPOINT := 1600.0
 const DOMAIN_COUNT := 4
@@ -39,11 +40,11 @@ var _detail_signature := ""
 var _last_states := PackedInt32Array()
 var _lane_visibility_signature := 0
 var _mode := MODE_FOCUS
-var _focus_lane := ""
+var _focus_domain := ""
 var _focus_era := 0
 var _manual_focus := false
 var _initial_focus_pending := true
-var _policy_open := false
+var _policy_open := true
 var _detail_open := false
 var _policy_pinned := false
 var _detail_pinned := false
@@ -163,7 +164,7 @@ func _ready() -> void:
 	_next_era.pressed.connect(func() -> void: _shift_era(1))
 	_lane_selector.item_selected.connect(_on_lane_selected)
 	_search.text_submitted.connect(_on_search_submitted)
-	_policy_toggle.pressed.connect(func() -> void: _set_policy_open(not _policy_open))
+	_policy_toggle.pressed.connect(func() -> void: _set_policy_open(true))
 	_detail_toggle.pressed.connect(func() -> void: _set_detail_open(not _detail_open))
 	_policy_rail.pressed.connect(func() -> void: _set_policy_open(true))
 	_detail_rail.pressed.connect(func() -> void: _set_detail_open(true))
@@ -182,7 +183,7 @@ func _ready() -> void:
 	var relocate := get_node("Root/Toolbar/Row/Relocate") as Button
 	IconButton.apply(relocate, &"system.target", IconButton.SMALL, "重新定位研究前沿")
 	relocate.pressed.connect(_apply_default_focus)
-	policy_close.pressed.connect(func() -> void: _set_policy_open(false))
+	policy_close.pressed.connect(func() -> void: _set_policy_open(true))
 	detail_close.pressed.connect(func() -> void: _set_detail_open(false))
 	_apply_drawer_layout()
 
@@ -212,7 +213,7 @@ func set_model(model: Dictionary) -> void:
 				String((era as Dictionary).get("display_name", ""))
 		if not _definitions.is_empty():
 			_tree.set_catalog(_definitions, _eras, _domains, _visual_edges)
-			_overview.set_catalog(_definitions, _eras, _lanes)
+			_overview.set_catalog(_definitions, _eras, _domains)
 			_configure_lane_selector(PackedInt32Array())
 			_dial.configure(_domains)
 			_configure_queues()
@@ -246,7 +247,7 @@ func reset_navigation() -> void:
 	_initial_focus_pending = true
 	_manual_focus = false
 	_set_mode(MODE_FOCUS)
-	_set_policy_open(false)
+	_set_policy_open(true)
 	_set_detail_open(false)
 	if not _definitions.is_empty():
 		_apply_default_focus()
@@ -256,8 +257,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		if _detail_open:
 			_set_detail_open(false)
-		elif _policy_open:
-			_set_policy_open(false)
 
 
 func tree_view() -> Control:
@@ -271,7 +270,8 @@ func overview_view() -> Control:
 func navigation_report() -> Dictionary:
 	return {
 		"mode": _mode,
-		"lane": _focus_lane,
+		"domain": _focus_domain,
+		"lane": _focus_domain,
 		"era": _focus_era,
 		"policy_open": _policy_open,
 		"detail_open": _detail_open,
@@ -281,21 +281,13 @@ func navigation_report() -> Dictionary:
 
 
 func _configure_lane_selector(states: PackedInt32Array) -> void:
-	var previous := _focus_lane
+	var previous := _focus_domain
 	_lane_selector.clear()
-	var visible := {}
-	for index in range(mini(states.size(), _definitions.size())):
-		if states[index] <= 0:
-			continue
-		var definition: Dictionary = _definitions[index]
-		visible[String(definition.get("main_lane", definition.get("layout_lane", "")))] = true
-	for lane in _lanes:
-		var data: Dictionary = lane
-		var lane_id := String(data.get("id", ""))
-		if not visible.has(lane_id):
-			continue
-		_lane_selector.add_item(String(lane.get("display_name", lane.get("id", ""))))
-		_lane_selector.set_item_metadata(_lane_selector.item_count - 1, lane_id)
+	for domain in _domains:
+		var data: Dictionary = domain
+		var domain_id := String(data.get("id", ""))
+		_lane_selector.add_item(String(data.get("display_name", domain_id)))
+		_lane_selector.set_item_metadata(_lane_selector.item_count - 1, domain_id)
 	if _lane_selector.item_count == 0:
 		return
 	var selected := 0
@@ -304,7 +296,7 @@ func _configure_lane_selector(states: PackedInt32Array) -> void:
 			selected = index
 			break
 	_lane_selector.select(selected)
-	_focus_lane = String(_lane_selector.get_item_metadata(selected))
+	_focus_domain = String(_lane_selector.get_item_metadata(selected))
 
 
 func _set_mode(mode: int) -> void:
@@ -317,7 +309,6 @@ func _set_mode(mode: int) -> void:
 	_next_era.disabled = _mode != MODE_FOCUS
 	_lane_selector.disabled = _mode != MODE_FOCUS
 	if _mode == MODE_OVERVIEW:
-		_set_policy_open(false)
 		_set_detail_open(false)
 		_overview.patch_states(_research.get("technology_states", PackedInt32Array()))
 	UIAnimation.crossfade(_tree if _mode == MODE_FOCUS else _overview, UITokens.ANIM_FAST)
@@ -336,13 +327,13 @@ func _on_lane_selected(index: int) -> void:
 	if index < 0 or index >= _lane_selector.item_count:
 		return
 	_manual_focus = true
-	_focus_lane = String(_lane_selector.get_item_metadata(index))
+	_focus_domain = String(_lane_selector.get_item_metadata(index))
 	_apply_focus(-1)
 
 
-func _on_overview_cell_activated(lane_id: String, era_index: int,
+func _on_overview_cell_activated(domain_id: String, era_index: int,
 		technology_index: int) -> void:
-	_focus_lane = lane_id
+	_focus_domain = domain_id
 	_focus_era = era_index
 	_manual_focus = true
 	_set_mode(MODE_FOCUS)
@@ -379,7 +370,7 @@ func _focus_technology(index: int) -> void:
 	if index >= states.size() or states[index] <= 0:
 		return
 	var definition: Dictionary = _definitions[index]
-	_focus_lane = String(definition.get("main_lane", definition.get("layout_lane", "")))
+	_focus_domain = String(definition.get("domain_id", ""))
 	_focus_era = _era_index(String(definition.get("era_id", "")))
 	_manual_focus = true
 	_set_mode(MODE_FOCUS)
@@ -388,12 +379,12 @@ func _focus_technology(index: int) -> void:
 
 
 func _apply_focus(preferred_index: int) -> void:
-	if _focus_lane.is_empty() or _eras.is_empty():
+	if _focus_domain.is_empty() or _eras.is_empty():
 		return
 	_focus_era = clampi(_focus_era, 0, maxi(0, _deepest_visible_era()))
-	_tree.set_focus(_focus_lane, _focus_era, preferred_index)
+	_tree.set_focus(_focus_domain, _focus_era, preferred_index)
 	for index in range(_lane_selector.item_count):
-		if String(_lane_selector.get_item_metadata(index)) == _focus_lane:
+		if String(_lane_selector.get_item_metadata(index)) == _focus_domain:
 			_lane_selector.select(index)
 			break
 	_era_label.text = String((_eras[_focus_era] as Dictionary).get("display_name", "—"))
@@ -411,7 +402,7 @@ func _apply_default_focus() -> void:
 	if target < 0:
 		return
 	var definition: Dictionary = _definitions[target]
-	_focus_lane = String(definition.get("main_lane", definition.get("layout_lane", "")))
+	_focus_domain = String(definition.get("domain_id", ""))
 	_focus_era = _era_index(String(definition.get("era_id", "")))
 	_initial_focus_pending = false
 	_manual_focus = false
@@ -483,20 +474,14 @@ func _deepest_visible_era() -> int:
 
 
 func _set_policy_open(open: bool) -> void:
-	if open and size.x < PIN_BREAKPOINT and _detail_open:
-		_set_detail_open(false)
-	_policy_open = open
-	_policy_panel.visible = open
-	_policy_toggle.button_pressed = open
-	_policy_rail.visible = not open
-	if open:
-		UIAnimation.fade_slide_in(_policy_panel, Vector2(-24.0, 0.0), UITokens.ANIM_MED)
+	_policy_open = true
+	_policy_panel.visible = true
+	_policy_toggle.button_pressed = true
+	_policy_rail.visible = false
 	_apply_drawer_layout()
 
 
 func _set_detail_open(open: bool) -> void:
-	if open and size.x < PIN_BREAKPOINT and _policy_open:
-		_set_policy_open(false)
 	_detail_open = open
 	_detail_host.visible = open
 	_detail_toggle.button_pressed = open
@@ -507,7 +492,7 @@ func _set_detail_open(open: bool) -> void:
 
 
 func _on_policy_pin_toggled(pressed: bool) -> void:
-	_policy_pinned = pressed and size.x >= PIN_BREAKPOINT
+	_policy_pinned = true
 	_policy_pin.set_pressed_no_signal(_policy_pinned)
 	_apply_drawer_layout()
 
@@ -522,21 +507,28 @@ func _apply_drawer_layout() -> void:
 	if _main == null:
 		return
 	var wide := size.x >= PIN_BREAKPOINT and not _compact
-	_policy_pin.visible = wide
+	_policy_pin.visible = false
 	_detail_pin.visible = wide
+	_policy_open = true
+	_policy_pinned = true
+	_policy_panel.visible = true
+	_policy_toggle.visible = false
+	_policy_rail.visible = false
+	var policy_close := get_node_or_null(
+		"Root/Main/PolicyPanel/Scroll/Body/Header/Close") as Control
+	if policy_close != null:
+		policy_close.visible = false
 	if not wide:
-		_policy_pinned = false
 		_detail_pinned = false
-		_policy_pin.set_pressed_no_signal(false)
 		_detail_pin.set_pressed_no_signal(false)
 	_policy_panel.offset_right = POLICY_WIDTH
-	_detail_host.offset_left = -DETAIL_WIDTH
-	var left_inset := POLICY_WIDTH if _policy_open and _policy_pinned else DRAWER_RAIL_WIDTH
+	_detail_host.offset_left = -DETAIL_ANCHOR_WIDTH
+	var left_inset := POLICY_WIDTH
 	var right_inset := DETAIL_WIDTH if _detail_open and _detail_pinned else DRAWER_RAIL_WIDTH
 	for canvas in [_tree, _overview]:
 		canvas.offset_left = left_inset
 		canvas.offset_right = -right_inset
-	_policy_rail.visible = not _policy_open
+	_policy_rail.visible = false
 	_detail_rail.visible = not _detail_open
 
 
@@ -562,7 +554,7 @@ func _apply_research() -> void:
 		if states[index] <= 0:
 			continue
 		lane_signature = int((lane_signature * 31 + String((_definitions[index] as Dictionary).get(
-			"main_lane", "")).hash()) & 0x7fffffff)
+			"domain_id", "")).hash()) & 0x7fffffff)
 	if lane_signature != _lane_visibility_signature:
 		_lane_visibility_signature = lane_signature
 		_configure_lane_selector(states)
