@@ -12,7 +12,7 @@
 | 里程碑 | 11 |
 | 硬前置边 | 544 |
 | 应用交汇边 | 19 |
-| 替代说明边 | 21 |
+| 替代说明边 | 153 |
 | 里程碑候选边 | 88 |
 
 ## 时代目录
@@ -334,7 +334,7 @@
 
 #### 效果摘要
 
-主粮加工产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -353,7 +353,7 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -399,7 +399,7 @@
 
 #### 效果摘要
 
-解锁建筑：石器打制工坊；解锁建筑：组织化伐木场；工程领域研究效率 +15%
+解锁建筑：石器打制工坊；解锁建筑：组织化伐木场；全社会经济产出 +3%
 
 #### 机会成本
 
@@ -419,7 +419,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+3%
+  - 效果机制：复合工具提高跨行业劳动效率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -467,7 +469,7 @@
 
 #### 效果摘要
 
-解锁物资：药材；可利用资源：硝石；可利用资源：硅砂；科研机构产出 +25%；知识部门产出 +15%
+解锁物资：药材；可利用资源：硝石；可利用资源：硅砂
 
 #### 机会成本
 
@@ -488,8 +490,7 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+25%
-- `country.output.knowledge_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -607,7 +608,7 @@
 
 #### 效果摘要
 
-金属工具业产出 +28%；能源部门产出 +12%
+timber -8%
 
 #### 机会成本
 
@@ -626,8 +627,9 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+28%
-- `country.output.energy_factor`：+12%
+- timber：`country.resource.timber.managed_generation_factor`：+8%
+  - 效果机制：控制燃烧短期损失木本存量。
+  - 运行时消费者：`NativeEconomyRuntime::effective_managed_resource_generation`
 
 #### 被以下科技作为硬前置
 
@@ -675,7 +677,7 @@
 
 #### 效果摘要
 
-解锁建筑：帆船渔场；贸易速度 +12%
+解锁建筑：帆船渔场
 
 #### 机会成本
 
@@ -694,7 +696,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -740,7 +742,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+全社会 +4%
 
 #### 机会成本
 
@@ -759,7 +761,9 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+- 全社会：`country.output.agriculture_factor`：+4%
+  - 效果机制：驯化知识提高全社会农业劳动的可预测性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -805,7 +809,7 @@
 
 #### 效果摘要
 
-可利用资源：黏土；黏土采掘产出 +18%
+可利用资源：黏土
 
 #### 机会成本
 
@@ -824,7 +828,7 @@
 
 #### 永久 Modifier 条款
 
-- 黏土采掘：`country.output.family.clay_extraction_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -870,7 +874,7 @@
 
 #### 效果摘要
 
-可利用资源：铜矿；铜业产出 +18%
+可利用资源：铜矿
 
 #### 机会成本
 
@@ -889,7 +893,7 @@
 
 #### 永久 Modifier 条款
 
-- 铜业：`country.output.family.copper_extraction_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -935,7 +939,7 @@
 
 #### 效果摘要
 
-解锁建筑：自然铜冷锤工坊；采掘部门产出 +12%
+解锁建筑：自然铜冷锤工坊
 
 #### 机会成本
 
@@ -954,7 +958,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -1072,7 +1076,7 @@
 
 #### 效果摘要
 
-解锁物资：锡矿石；可利用资源：锡矿；锡业产出 +18%
+解锁物资：锡矿石；可利用资源：锡矿
 
 #### 机会成本
 
@@ -1092,7 +1096,7 @@
 
 #### 永久 Modifier 条款
 
-- 锡业：`country.output.family.tin_extraction_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -1142,7 +1146,7 @@
 
 #### 效果摘要
 
-畜牧业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -1161,7 +1165,7 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -1212,7 +1216,7 @@
 
 #### 效果摘要
 
-解锁物资：布料；解锁建筑：家庭织造棚；制造部门产出 +12%
+解锁物资：布料；解锁建筑：家庭织造棚
 
 #### 机会成本
 
@@ -1232,7 +1236,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -1282,7 +1286,7 @@
 
 #### 效果摘要
 
-主粮加工产出 +25%；农业部门产出 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -1301,8 +1305,7 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
-- `country.output.agriculture_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -1415,7 +1418,7 @@
 
 #### 效果摘要
 
-解锁建筑：商栈；社会领域研究效率 +15%
+解锁建筑：商栈
 
 #### 机会成本
 
@@ -1434,7 +1437,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -1825,7 +1828,7 @@
 
 #### 效果摘要
 
-科研机构产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -1844,7 +1847,7 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -1962,7 +1965,7 @@
 
 #### 效果摘要
 
-家用织机产出 +35%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -1981,7 +1984,7 @@
 
 #### 永久 Modifier 条款
 
-- 家用织机：`country.output.building.household_loom_factor`：+35%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2030,7 +2033,7 @@
 
 #### 效果摘要
 
-解锁物资：畜牧产品；解锁建筑：游牧营地；可利用资源：牧场承载力；热害损失 -8%
+解锁物资：畜牧产品；解锁建筑：游牧营地；可利用资源：牧场承载力
 
 #### 机会成本
 
@@ -2051,7 +2054,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.heat_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2104,7 +2107,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -2123,7 +2126,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2171,7 +2174,7 @@
 
 #### 效果摘要
 
-解锁物资：玉米；解锁建筑：野生玉米采集地；旱灾损失 -8%
+解锁物资：玉米；解锁建筑：野生玉米采集地；terrain.jungle.agriculture产出 +8%
 
 #### 机会成本
 
@@ -2191,7 +2194,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.drought_loss_factor`：+8%
+- terrain.jungle.agriculture：`country.output.terrain.jungle.agriculture_factor`：+8%
+  - 效果机制：识别野生禾本科生境，提高雨林边缘的采集与试种效率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -2241,7 +2246,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+玉米产出 +12%
 
 #### 机会成本
 
@@ -2260,7 +2265,9 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+- 玉米：`country.output.good.corn_grain_factor`：+12%
+  - 效果机制：留种稳定玉米收成。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2308,7 +2315,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -2327,7 +2334,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2375,7 +2382,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -2394,7 +2401,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2442,7 +2449,7 @@
 
 #### 效果摘要
 
-解锁物资：小麦；解锁建筑：野生谷穗采集地；旱灾损失 -8%
+解锁物资：小麦；解锁建筑：野生谷穗采集地
 
 #### 机会成本
 
@@ -2462,7 +2469,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.drought_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2512,7 +2519,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+小麦产出 +12%
 
 #### 机会成本
 
@@ -2531,7 +2538,9 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+- 小麦：`country.output.good.wheat_grain_factor`：+12%
+  - 效果机制：留种稳定小麦收成。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2579,7 +2588,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -2598,7 +2607,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2646,7 +2655,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -2665,7 +2674,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2713,7 +2722,7 @@
 
 #### 效果摘要
 
-解锁物资：稻米；解锁建筑：野生稻沼泽；洪灾损失 -8%
+解锁物资：稻米；解锁建筑：野生稻沼泽
 
 #### 机会成本
 
@@ -2733,7 +2742,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.flood_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2783,7 +2792,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+稻米产出 +12%
 
 #### 机会成本
 
@@ -2802,7 +2811,9 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+- 稻米：`country.output.good.rice_grain_factor`：+12%
+  - 效果机制：留种稳定水稻收成。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2850,7 +2861,7 @@
 
 #### 效果摘要
 
-高地农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -2869,7 +2880,7 @@
 
 #### 永久 Modifier 条款
 
-- 高地农业：`country.output.family.highland_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -2985,7 +2996,7 @@
 
 #### 效果摘要
 
-高地农业产出 +28%；寒冷损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -3004,8 +3015,7 @@
 
 #### 永久 Modifier 条款
 
-- 高地农业：`country.output.family.highland_crop_farming_factor`：+28%
-- `country.climate.cold_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3056,7 +3066,7 @@
 
 #### 效果摘要
 
-解锁物资：马铃薯；高地农业产出 +18%
+解锁物资：马铃薯
 
 #### 机会成本
 
@@ -3075,7 +3085,7 @@
 
 #### 永久 Modifier 条款
 
-- 高地农业：`country.output.family.highland_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3123,7 +3133,7 @@
 
 #### 效果摘要
 
-织布业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -3142,7 +3152,7 @@
 
 #### 永久 Modifier 条款
 
-- 织布业：`country.output.family.cloth_weaving_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3190,7 +3200,7 @@
 
 #### 效果摘要
 
-织布业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -3209,7 +3219,7 @@
 
 #### 永久 Modifier 条款
 
-- 织布业：`country.output.family.cloth_weaving_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3259,7 +3269,7 @@
 
 #### 效果摘要
 
-织布业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -3278,7 +3288,7 @@
 
 #### 永久 Modifier 条款
 
-- 织布业：`country.output.family.cloth_weaving_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3397,7 +3407,7 @@
 
 #### 效果摘要
 
-专用商品作物农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -3416,7 +3426,7 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3464,7 +3474,7 @@
 
 #### 效果摘要
 
-解锁物资：香料；专用商品作物农业产出 +28%；热害损失 -8%
+解锁物资：香料
 
 #### 机会成本
 
@@ -3483,8 +3493,7 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+28%
-- `country.climate.heat_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3533,7 +3542,7 @@
 
 #### 效果摘要
 
-化学工业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -3552,7 +3561,7 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3600,7 +3609,7 @@
 
 #### 效果摘要
 
-解锁物资：天然乳胶；解锁建筑：野生割胶营地；采掘部门产出 +12%
+解锁物资：天然乳胶；解锁建筑：野生割胶营地
 
 #### 机会成本
 
@@ -3620,7 +3629,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -3668,7 +3677,7 @@
 
 #### 效果摘要
 
-黄金采掘产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -3687,7 +3696,7 @@
 
 #### 永久 Modifier 条款
 
-- 黄金采掘：`country.output.family.gold_extraction_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -4005,7 +4014,7 @@
 
 #### 效果摘要
 
-科研机构产出 +28%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -4024,7 +4033,7 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+28%
+无
 
 #### 被以下科技作为硬前置
 
@@ -4742,13 +4751,19 @@
 
 无
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「控制性用火」（tech.controlled\_burning）
+  - 已完成科技「火种控制」（tech.fire\_control）
+
 #### 发现启发（仅用于揭示）
 
 - 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-解锁物资：木炭；解锁建筑：覆土木炭窑；国家建设成本 -10%
+解锁物资：木炭；解锁建筑：覆土木炭窑
 
 #### 机会成本
 
@@ -4768,7 +4783,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.construction.cost_factor`：+10%
+无
 
 #### 被以下科技作为硬前置
 
@@ -4816,7 +4831,7 @@
 
 #### 效果摘要
 
-解锁物资：铜矿石；解锁建筑：铜矿；采掘部门产出 +12%
+解锁物资：铜矿石；解锁建筑：铜矿；铜矿石 -8%
 
 #### 机会成本
 
@@ -4836,7 +4851,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+- 铜矿石：`country.resource.copper_ore.use_factor`：+8%
+  - 效果机制：焙烧改善铜回收率。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -4884,7 +4901,7 @@
 
 #### 效果摘要
 
-解锁物资：卤水；解锁建筑：卤水采集池；可利用资源：盐；制造部门产出 +12%
+解锁物资：卤水；解锁建筑：卤水采集池；可利用资源：盐
 
 #### 机会成本
 
@@ -4905,7 +4922,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -4952,7 +4969,7 @@
 
 #### 效果摘要
 
-解锁物资：燧石原料；可利用资源：燧石；金属工具业产出 +18%
+解锁物资：燧石原料；可利用资源：燧石
 
 #### 机会成本
 
@@ -4972,7 +4989,7 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -5086,7 +5103,7 @@
 
 #### 效果摘要
 
-解锁物资：陶器；解锁建筑：露天陶器烧造；国家建设成本 -10%
+解锁物资：陶器；解锁建筑：露天陶器烧造
 
 #### 机会成本
 
@@ -5106,7 +5123,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.construction.cost_factor`：+10%
+无
 
 #### 被以下科技作为硬前置
 
@@ -5152,7 +5169,7 @@
 
 #### 效果摘要
 
-科研机构产出 +25%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -5183,8 +5200,7 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+25%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -5304,7 +5320,7 @@
 
 #### 效果摘要
 
-解锁建筑：定居采集营地；社会领域研究效率 +15%
+解锁建筑：定居采集营地；全社会经济产出 +2%
 
 #### 机会成本
 
@@ -5323,7 +5339,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.society_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+2%
+  - 效果机制：常住聚落降低跨行业设施与劳作协调成本。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5369,6 +5387,12 @@
 - 洪水历法实践 (`tech.flood_calendar_practice`)：洪水历法实践提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，灌溉直接使用这一能力完成其工艺或组织设计
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，灌溉直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「土建筑」（tech.earth\_building）
+  - 已完成科技「留种选育」（tech.seed\_selection）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -5378,7 +5402,7 @@
 
 #### 效果摘要
 
-公共营造产出 +28%；洪灾损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -5397,8 +5421,7 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+28%
-- `country.climate.flood_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -5439,6 +5462,12 @@
 
 - 畜群管理 (`tech.herd_management`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，游牧放牧直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「畜力牵引」（tech.animal\_traction）
+  - 已完成科技「皮革鞣制」（tech.hide\_tanning）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -5448,7 +5477,7 @@
 
 #### 效果摘要
 
-畜牧业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -5467,7 +5496,7 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -5513,7 +5542,7 @@
 
 #### 效果摘要
 
-解锁物资：马匹；解锁建筑：养马场；解锁建筑：马匹繁育营地；热害损失 -8%
+解锁物资：马匹；解锁建筑：养马场；解锁建筑：马匹繁育营地
 
 #### 机会成本
 
@@ -5534,7 +5563,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.heat_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -5580,7 +5609,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +25%；工程领域研究效率 +15%
+谷物产出 +18%；小麦产出 +18%；玉米产出 +12%
 
 #### 机会成本
 
@@ -5599,8 +5628,15 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+25%
-- `country.research.engineering_efficiency`：+15%
+- 谷物：`country.output.good.grain_factor`：+18%
+- 小麦：`country.output.good.wheat_grain_factor`：+18%
+- 玉米：`country.output.good.corn_grain_factor`：+12%
+  - 效果机制：犁耕扩大谷物有效耕作层。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：犁耕改善小麦整地。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：犁耕改善玉米田整地。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -5642,6 +5678,12 @@
 
 - 野生玉米采集 (`tech.wild_maize_collection`)：野生玉米采集提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米选育直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「物候观察实践」（tech.phenology\_observation）
+  - 已完成科技「留种选育」（tech.seed\_selection）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -5651,7 +5693,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+玉米产出 +18%
 
 #### 机会成本
 
@@ -5670,7 +5712,9 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+- 玉米：`country.output.good.corn_grain_factor`：+18%
+  - 效果机制：定向选择提高玉米品系产量。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -5719,7 +5763,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+terrain.desert.agriculture产出 +28%；terrain.cold\_desert.agriculture产出 +24%
 
 #### 机会成本
 
@@ -5738,7 +5782,12 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+- terrain.desert.agriculture：`country.output.terrain.desert.agriculture_factor`：+28%
+- terrain.cold\_desert.agriculture：`country.output.terrain.cold_desert.agriculture_factor`：+24%
+  - 效果机制：旱作改善沙漠边缘农业。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：保墒适应寒漠农业。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5779,6 +5828,12 @@
 - 块茎保存 (`tech.tuber_storage`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，梯田农业直接使用这一能力完成其工艺或组织设计
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，梯田农业直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「灌溉」（tech.irrigation）
+  - 已完成科技「土建筑」（tech.earth\_building）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -5788,7 +5843,7 @@
 
 #### 效果摘要
 
-高地农业产出 +18%
+landform.hill.agriculture产出 +28%
 
 #### 机会成本
 
@@ -5807,7 +5862,9 @@
 
 #### 永久 Modifier 条款
 
-- 高地农业：`country.output.family.highland_crop_farming_factor`：+18%
+- landform.hill.agriculture：`country.output.landform.hill.agriculture_factor`：+28%
+  - 效果机制：梯田把坡地转为耕作面。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5848,6 +5905,12 @@
 - 野生香料采集 (`tech.wild_spice_collection`)：野生香料采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，香料栽培直接使用这一能力完成其工艺或组织设计
 - 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，香料栽培直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「灌溉」（tech.irrigation）
+  - 已完成科技「记事制度」（tech.record\_keeping）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -5856,7 +5919,7 @@
 
 #### 效果摘要
 
-专用商品作物农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -5875,7 +5938,7 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -5915,6 +5978,12 @@
 
 - 野生割胶 (`tech.wild_latex_tapping`)：野生割胶提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，天然橡胶加工直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「窑烧控制」（tech.kiln\_firing）
+  - 已完成科技「铜退火」（tech.copper\_annealing）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -5923,7 +5992,7 @@
 
 #### 效果摘要
 
-化学工业产出 +28%；采掘部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -5942,8 +6011,7 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+28%
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -5983,6 +6051,12 @@
 #### 硬前置（决定研发资格）
 
 - 纤维捻制 (`tech.fiber_twisting`)：纤维捻制提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，织造直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「毛皮缝制」（tech.fur\_sewing）
+  - 已完成科技「羊毛毡制」（tech.felt\_making）
 
 #### 发现启发（仅用于揭示）
 
@@ -6121,6 +6195,12 @@
 
 - 自然铜冷锤 (`tech.natural_copper_working`)：自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，铜锡配比与铸造直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「窑烧控制」（tech.kiln\_firing）
+  - 已完成科技「记事制度」（tech.record\_keeping）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -6130,7 +6210,7 @@
 
 #### 效果摘要
 
-解锁物资：青铜工具；解锁物资：锡；解锁建筑：青铜工具工坊；解锁建筑：土法炼锡炉；采掘部门产出 +12%
+解锁物资：青铜工具；解锁物资：锡；解锁建筑：青铜工具工坊；解锁建筑：土法炼锡炉
 
 #### 机会成本
 
@@ -6152,7 +6232,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -6198,7 +6278,7 @@
 
 #### 效果摘要
 
-科研机构产出 +25%；知识部门产出 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -6217,8 +6297,7 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+25%
-- `country.output.knowledge_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -6336,7 +6415,7 @@
 
 #### 效果摘要
 
-可利用资源：肥沃土壤；可利用资源：旱地承载力；大田作物农业产出 +18%
+可利用资源：肥沃土壤；可利用资源：旱地承载力
 
 #### 机会成本
 
@@ -6356,7 +6435,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -6406,7 +6485,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+landform.lowland.agriculture产出 +22%
 
 #### 机会成本
 
@@ -6425,7 +6504,9 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+- landform.lowland.agriculture：`country.output.landform.lowland.agriculture_factor`：+22%
+  - 效果机制：田埂蓄水改善低地稻作。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6474,7 +6555,7 @@
 
 #### 效果摘要
 
-公共营造产出 +18%
+terrain.steppe.agriculture产出 +22%
 
 #### 机会成本
 
@@ -6493,7 +6574,9 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+18%
+- terrain.steppe.agriculture：`country.output.terrain.steppe.agriculture_factor`：+22%
+  - 效果机制：集水覆盖改善草原旱作。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6542,7 +6625,7 @@
 
 #### 效果摘要
 
-公共营造产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -6561,7 +6644,7 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -6602,6 +6685,12 @@
 - 火种控制 (`tech.fire_control`)：火种控制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，窑烧控制直接使用这一能力完成其工艺或组织设计
 - 黏土调制 (`tech.clay_preparation`)：黏土调制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，窑烧控制直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「控制性用火」（tech.controlled\_burning）
+  - 已完成科技「手制陶器」（tech.hand\_pottery）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -6611,7 +6700,7 @@
 
 #### 效果摘要
 
-解锁建筑：烧砖窑；解锁建筑：升焰陶窑；能源部门产出 +12%
+解锁建筑：烧砖窑；解锁建筑：升焰陶窑
 
 #### 机会成本
 
@@ -6631,7 +6720,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.energy_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -6684,7 +6773,7 @@
 
 #### 效果摘要
 
-解锁建筑：行会陶窑；贸易速度 +12%
+解锁建筑：行会陶窑
 
 #### 机会成本
 
@@ -6703,7 +6792,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -6752,7 +6841,7 @@
 
 #### 效果摘要
 
-解锁建筑：行会织造坊；解锁建筑：羊毛行会作坊；制造部门产出 +12%
+解锁建筑：行会织造坊；解锁建筑：羊毛行会作坊
 
 #### 机会成本
 
@@ -6772,7 +6861,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -6822,7 +6911,7 @@
 
 #### 效果摘要
 
-畜牧业产出 +28%；采掘部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -6841,8 +6930,7 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -6962,7 +7050,7 @@
 
 #### 效果摘要
 
-自给农庄产出 +35%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -6981,7 +7069,7 @@
 
 #### 永久 Modifier 条款
 
-- 自给农庄：`country.output.building.subsistence_farm_factor`：+35%
+无
 
 #### 被以下科技作为硬前置
 
@@ -7030,7 +7118,7 @@
 
 #### 效果摘要
 
-主食厨房产出 +35%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -7049,7 +7137,7 @@
 
 #### 永久 Modifier 条款
 
-- 主食厨房：`country.output.building.staple_kitchen_factor`：+35%
+无
 
 #### 被以下科技作为硬前置
 
@@ -7095,7 +7183,7 @@
 
 #### 效果摘要
 
-解锁物资：日晒土坯；解锁物资：建筑构件；解锁建筑：日晒土坯场；解锁建筑：制砖厂；国家建设成本 -10%
+解锁物资：日晒土坯；解锁物资：建筑构件；解锁建筑：日晒土坯场；解锁建筑：制砖厂
 
 #### 机会成本
 
@@ -7117,7 +7205,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.construction.cost_factor`：+10%
+无
 
 #### 被以下科技作为硬前置
 
@@ -7165,7 +7253,7 @@
 
 #### 效果摘要
 
-解锁物资：玉米；解锁建筑：家庭玉米园圃；旱灾损失 -8%
+解锁物资：玉米；解锁建筑：家庭玉米园圃
 
 #### 机会成本
 
@@ -7185,7 +7273,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.drought_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -7293,6 +7381,13 @@
 
 - 刀耕火种玉米 (`tech.swidden_maize_cultivation`)：刀耕火种玉米提供玉米栽培、选育与田间管理经验中的专门知识，雨养玉米田直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「旱作农业」（tech.dryland\_farming）
+  - 已完成科技「退水玉米地」（tech.flood\_recession\_maize）
+  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -7368,7 +7463,7 @@
 
 #### 效果摘要
 
-解锁建筑：退水玉米地
+解锁建筑：退水玉米地；terrain.floodplain.agriculture产出 +25%
 
 #### 机会成本
 
@@ -7387,7 +7482,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+25%
+  - 效果机制：退水玉米利用洪泛水肥。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7427,6 +7524,12 @@
 
 - 旱作保水 (`tech.dryland_water_retention`)：旱作保水提供谷物旱作、轮作与收获工艺中的成套生产流程，谷物脱粒直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「畜力牵引」（tech.animal\_traction）
+  - 已完成科技「手制陶器」（tech.hand\_pottery）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -7436,7 +7539,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+全部谷物产出 +18%
 
 #### 机会成本
 
@@ -7455,7 +7558,18 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+- 全部谷物：`country.output.good.grain_factor`：+18%
+- 全部谷物：`country.output.good.wheat_grain_factor`：+18%
+- 全部谷物：`country.output.good.rice_grain_factor`：+18%
+- 全部谷物：`country.output.good.corn_grain_factor`：+18%
+  - 效果机制：脱粒提高通用谷物可收获量。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：脱粒减少小麦落粒损失。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：脱粒减少稻谷损失。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：脱粒式处理减少玉米籽粒损失。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7503,7 +7617,7 @@
 
 #### 效果摘要
 
-解锁物资：小麦；解锁建筑：雨养小麦地；解锁建筑：小麦农场；旱灾损失 -8%
+解锁物资：小麦；解锁建筑：雨养小麦地；解锁建筑：小麦农场
 
 #### 机会成本
 
@@ -7524,7 +7638,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.drought_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -7572,7 +7686,7 @@
 
 #### 效果摘要
 
-解锁建筑：退水小麦地
+解锁建筑：退水小麦地；terrain.floodplain.agriculture产出 +25%
 
 #### 机会成本
 
@@ -7591,7 +7705,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+25%
+  - 效果机制：退水播种利用洪泛沉积。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7834,6 +7950,12 @@
 
 - 湿地稻园 (`tech.wetland_rice_gardening`)：湿地稻园提供水田整备、水位控制与稻作管理方法中的专门知识，稻田水位控制直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「灌溉」（tech.irrigation）
+  - 已完成科技「水田畦埂」（tech.paddy\_bunding）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -7843,7 +7965,7 @@
 
 #### 效果摘要
 
-解锁建筑：畦埂水稻田
+解锁建筑：畦埂水稻田；稻米产出 +22%
 
 #### 机会成本
 
@@ -7862,7 +7984,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+22%
+  - 效果机制：水位控制改善稻作产量。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7910,7 +8034,7 @@
 
 #### 效果摘要
 
-解锁物资：稻米；可利用资源：水田承载力；洪灾损失 -8%
+解锁物资：稻米；可利用资源：水田承载力；terrain.floodplain.agriculture产出 +25%
 
 #### 机会成本
 
@@ -7930,7 +8054,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.flood_loss_factor`：+8%
+- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+25%
+  - 效果机制：水田利用洪泛水文。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8045,7 +8171,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -8064,7 +8190,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -8104,6 +8230,12 @@
 
 - 块茎保存 (`tech.tuber_storage`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，高地块茎农业直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「梯田农业」（tech.terrace\_farming）
+  - 已完成科技「防霜窖藏」（tech.frost\_protected\_storage）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -8112,7 +8244,7 @@
 
 #### 效果摘要
 
-解锁建筑：冷凉高地块茎田；寒冷损失 -8%
+解锁建筑：冷凉高地块茎田；landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +24%
 
 #### 机会成本
 
@@ -8131,7 +8263,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.cold_stress_factor`：+8%
+- landform.plateau.agriculture：`country.output.landform.plateau.agriculture_factor`：+32%
+- landform.mountain.agriculture：`country.output.landform.mountain.agriculture_factor`：+24%
+  - 效果机制：块茎体系适应高原短季。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：畦作稳定山地农业。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8455,7 +8592,7 @@
 
 #### 效果摘要
 
-解锁物资：香料；解锁建筑：林下遮阴香料园；可利用资源：种植园承载力；热害损失 -8%
+解锁物资：香料；解锁建筑：林下遮阴香料园；可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%
 
 #### 机会成本
 
@@ -8476,7 +8613,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.heat_stress_factor`：+8%
+- terrain.jungle.agriculture：`country.output.terrain.jungle.agriculture_factor`：+24%
+  - 效果机制：遮阴园艺适应雨林微气候。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8591,7 +8730,7 @@
 
 #### 效果摘要
 
-解锁物资：木材；解锁建筑：锯木场；解锁建筑：改良锯木场；国家建设成本 -10%
+解锁物资：木材；解锁建筑：锯木场；解锁建筑：改良锯木场；timber -10%
 
 #### 机会成本
 
@@ -8612,7 +8751,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.construction.cost_factor`：+10%
+- timber：`country.resource.timber.use_factor`：+10%
+  - 效果机制：锯切提高原木得材率。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -8938,7 +9079,7 @@
 
 #### 效果摘要
 
-解锁物资：酒饮；解锁建筑：酿酒坊；解锁建筑：蒸馏酒坊；农业部门产出 +15%
+解锁物资：酒饮；解锁建筑：酿酒坊；解锁建筑：蒸馏酒坊
 
 #### 机会成本
 
@@ -8959,7 +9100,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.agriculture_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -9008,7 +9149,7 @@
 
 #### 效果摘要
 
-解锁物资：食盐；解锁建筑：盐场；解锁建筑：日晒盐田；制造部门产出 +12%
+解锁物资：食盐；解锁建筑：盐场；解锁建筑：日晒盐田
 
 #### 机会成本
 
@@ -9029,7 +9170,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -9217,7 +9358,7 @@
 
 #### 效果摘要
 
-商栈产出 +25%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -9248,8 +9389,7 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.family.merchant_post_factor`：+25%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -9301,7 +9441,7 @@
 
 #### 效果摘要
 
-解锁物资：手抄本；解锁建筑：城邦抄写室；知识部门产出 +15%
+解锁物资：手抄本；解锁建筑：城邦抄写室；全社会经济产出 +3%
 
 #### 机会成本
 
@@ -9321,7 +9461,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.knowledge_factor`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+3%
+  - 效果机制：书写减少组织的信息损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -9368,6 +9510,12 @@
 
 - 日晒土坯 (`tech.adobe_making`)：日晒土坯提供土石、陶瓷、玻璃和工程构件制造能力中的成套生产流程，砌体建筑直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「土建筑」（tech.earth\_building）
+  - 已完成科技「早期玻璃烧制」（tech.early\_glassmaking）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -9377,7 +9525,7 @@
 
 #### 效果摘要
 
-解锁物资：石灰；解锁物资：石灰岩；解锁建筑：石灰厂；可利用资源：石灰岩；国家建设成本 -10%
+解锁物资：石灰；解锁物资：石灰岩；解锁建筑：石灰厂；可利用资源：石灰岩
 
 #### 机会成本
 
@@ -9399,7 +9547,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.construction.cost_factor`：+10%
+无
 
 #### 被以下科技作为硬前置
 
@@ -9447,7 +9595,7 @@
 
 #### 效果摘要
 
-解锁物资：黄金；解锁建筑：砂金淘洗精炼棚；解锁建筑：银矿火试炉；工程领域研究效率 +15%
+解锁物资：黄金；解锁建筑：砂金淘洗精炼棚；解锁建筑：银矿火试炉；全社会经济产出 +3%
 
 #### 机会成本
 
@@ -9468,7 +9616,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+3%
+  - 效果机制：统一度量降低交换和核验成本。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -9518,7 +9668,7 @@
 
 #### 效果摘要
 
-商栈产出 +50%；热害损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -9537,8 +9687,7 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.building.merchant_post_factor`：+50%
-- `country.climate.heat_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -9580,6 +9729,12 @@
 
 - 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，货币直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「早期贸易」（tech.early\_trade）
+  - 已完成科技「记事制度」（tech.record\_keeping）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -9588,7 +9743,7 @@
 
 #### 效果摘要
 
-解锁物资：珠宝；解锁建筑：金银器工坊；采掘部门产出 +12%
+解锁物资：珠宝；解锁建筑：金银器工坊
 
 #### 机会成本
 
@@ -9608,7 +9763,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -9655,7 +9810,7 @@
 
 #### 效果摘要
 
-解锁建筑：石作工场；解锁建筑：规模化采石场
+解锁建筑：石作工场；解锁建筑：规模化采石场；全社会贸易运输速度 +4%
 
 #### 机会成本
 
@@ -9675,7 +9830,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会贸易运输速度：`country.trade.speed_factor`：+4%
+  - 效果机制：道路标准改善全社会陆路周转。
+  - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
 
 #### 被以下科技作为硬前置
 
@@ -9727,7 +9884,7 @@
 
 #### 效果摘要
 
-解锁建筑：石灰石采石场；解锁建筑：石料场；洪灾损失 -8%
+解锁建筑：石灰石采石场；解锁建筑：石料场
 
 #### 机会成本
 
@@ -9747,7 +9904,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.flood_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -9797,7 +9954,7 @@
 
 #### 效果摘要
 
-公共营造场产出 +50%；贸易速度 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -9816,8 +9973,7 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造场：`country.output.building.classical_public_works_factor`：+50%
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -9865,7 +10021,7 @@
 
 #### 效果摘要
 
-解锁物资：食用油；解锁建筑：堆肥场；解锁建筑：榨油坊；旱灾损失 -8%
+解锁物资：食用油；解锁建筑：堆肥场；解锁建筑：榨油坊；谷物产出 +18%
 
 #### 机会成本
 
@@ -9886,7 +10042,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.drought_loss_factor`：+8%
+- 谷物：`country.output.good.grain_factor`：+18%
+  - 效果机制：轮作维持谷物地力。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -9935,7 +10093,7 @@
 
 #### 效果摘要
 
-解锁物资：肥皂；解锁建筑：工业制皂厂；解锁建筑：制皂工坊；制造部门产出 +12%
+解锁物资：肥皂；解锁建筑：工业制皂厂；解锁建筑：制皂工坊
 
 #### 机会成本
 
@@ -9956,7 +10114,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -10076,7 +10234,7 @@
 
 #### 效果摘要
 
-古典学院产出 +50%；采掘部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -10095,8 +10253,7 @@
 
 #### 永久 Modifier 条款
 
-- 古典学院：`country.output.building.classical_academy_factor`：+50%
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -10144,7 +10301,7 @@
 
 #### 效果摘要
 
-解锁物资：煤炭；铁矿业产出 +28%；能源部门产出 +12%
+解锁物资：煤炭
 
 #### 机会成本
 
@@ -10163,8 +10320,7 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+28%
-- `country.output.energy_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -10213,7 +10369,7 @@
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：植物纤维抄纸坊；制造部门产出 +12%
+解锁物资：纸张；解锁建筑：植物纤维抄纸坊
 
 #### 机会成本
 
@@ -10233,7 +10389,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -10279,7 +10435,7 @@
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：树皮纸工坊；国家建设成本 -10%
+解锁物资：纸张；解锁建筑：树皮纸工坊
 
 #### 机会成本
 
@@ -10299,7 +10455,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.construction.cost_factor`：+10%
+无
 
 #### 被以下科技作为硬前置
 
@@ -10347,7 +10503,7 @@
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：皮纸工坊；热害损失 -8%
+解锁物资：纸张；解锁建筑：皮纸工坊
 
 #### 机会成本
 
@@ -10367,7 +10523,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.heat_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -10482,7 +10638,7 @@
 
 #### 效果摘要
 
-商栈产出 +25%；社会领域研究效率 +15%
+全社会经济产出 +2%
 
 #### 机会成本
 
@@ -10501,8 +10657,9 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.family.merchant_post_factor`：+25%
-- `country.research.society_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+2%
+  - 效果机制：稳定行政记录减少征调与组织摩擦。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10556,7 +10713,7 @@
 
 #### 效果摘要
 
-三圃制小农场产出 +50%；旱灾损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -10575,8 +10732,7 @@
 
 #### 永久 Modifier 条款
 
-- 三圃制小农场：`country.output.building.three_field_smallholding_factor`：+50%
-- `country.climate.drought_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -10616,6 +10772,12 @@
 
 - 高地块茎农业 (`tech.highland_tuber_farming`)：高地块茎农业提供块茎繁育、坡地耕作与低温保存经验中的成套生产流程，分成租佃直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「习惯佃作」（tech.customary\_tenancy）
+  - 已完成科技「家庭土地占有」（tech.household\_landholding）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -10625,7 +10787,7 @@
 
 #### 效果摘要
 
-改良小农场产出 +50%；寒冷损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -10644,8 +10806,7 @@
 
 #### 永久 Modifier 条款
 
-- 改良小农场：`country.output.building.improved_smallholding_factor`：+50%
-- `country.climate.cold_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11036,7 +11197,7 @@
 
 #### 效果摘要
 
-解锁物资：锻铁；解锁建筑：块炼炉；解锁建筑：铁制工具工坊；采掘部门产出 +12%
+解锁物资：锻铁；解锁建筑：块炼炉；解锁建筑：铁制工具工坊
 
 #### 机会成本
 
@@ -11057,7 +11218,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11104,7 +11265,7 @@
 
 #### 效果摘要
 
-可利用资源：煤炭；铁矿业产出 +18%
+可利用资源：煤炭
 
 #### 机会成本
 
@@ -11123,7 +11284,7 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11238,7 +11399,7 @@
 
 #### 效果摘要
 
-主食厨房产出 +50%；农业部门产出 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -11257,8 +11418,7 @@
 
 #### 永久 Modifier 条款
 
-- 主食厨房：`country.output.building.staple_kitchen_factor`：+50%
-- `country.output.agriculture_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11304,7 +11464,7 @@
 
 #### 效果摘要
 
-商栈产出 +25%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -11335,8 +11495,7 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.family.merchant_post_factor`：+25%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11381,6 +11540,12 @@
 
 - 树皮纸 (`tech.bark_paper_making`)：树皮纸提供林木管理、木材加工与生物质利用工艺中的稳定的组织与制度载体，森林管理直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「行业组织」（tech.guild\_organization）
+  - 已完成科技「区域粮仓」（tech.regional\_granaries）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -11389,7 +11554,7 @@
 
 #### 效果摘要
 
-解锁建筑：水力锯木场；解锁建筑：商营伐木场
+解锁建筑：水力锯木场；解锁建筑：商营伐木场；timber +28%；terrain.forest.extractive产出 +22%
 
 #### 机会成本
 
@@ -11409,7 +11574,12 @@
 
 #### 永久 Modifier 条款
 
-无
+- timber：`country.resource.timber.managed_generation_factor`：+28%
+- terrain.forest.extractive：`country.output.terrain.forest.extractive_factor`：+22%
+  - 效果机制：轮伐补植提高林木恢复。
+  - 运行时消费者：`NativeEconomyRuntime::effective_managed_resource_generation`
+  - 效果机制：轮伐调查提高森林采集。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11458,7 +11628,7 @@
 
 #### 效果摘要
 
-解锁建筑：庄园牧场；解锁建筑：机械化牧场；热害损失 -8%
+解锁建筑：庄园牧场；解锁建筑：机械化牧场
 
 #### 机会成本
 
@@ -11478,7 +11648,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.heat_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11524,7 +11694,7 @@
 
 #### 效果摘要
 
-解锁建筑：三圃制小农场；旱灾损失 -8%
+解锁建筑：三圃制小农场；谷物产出 +22%
 
 #### 机会成本
 
@@ -11543,7 +11713,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.drought_loss_factor`：+8%
+- 谷物：`country.output.good.grain_factor`：+22%
+  - 效果机制：密集轮作提高谷物年产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -11584,6 +11756,12 @@
 
 - 运河工程 (`tech.canal_engineering`)：运河工程提供水流、风力、输配水和流域工程能力中的成套生产流程，水力机械直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「灌溉测量」（tech.irrigation\_surveying）
+  - 已完成科技「手工锯木」（tech.timber\_sawing）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -11593,7 +11771,7 @@
 
 #### 效果摘要
 
-解锁建筑：河流水力发电站；洪灾损失 -8%
+解锁建筑：河流水力发电站；landform.rift\_valley.energy产出 +20%
 
 #### 机会成本
 
@@ -11612,7 +11790,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.flood_loss_factor`：+8%
+- landform.rift\_valley.energy：`country.output.landform.rift_valley.energy_factor`：+20%
+  - 效果机制：高差和集中水流改善水力利用。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11661,7 +11841,7 @@
 
 #### 效果摘要
 
-可再生能源业产出 +28%；能源部门产出 +12%
+terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 机会成本
 
@@ -11680,8 +11860,12 @@
 
 #### 永久 Modifier 条款
 
-- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+28%
-- `country.output.energy_factor`：+12%
+- terrain.steppe.energy：`country.output.terrain.steppe.energy_factor`：+24%
+- landform.plateau.energy：`country.output.landform.plateau.energy_factor`：+22%
+  - 效果机制：开阔风场提高风能产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：高原风场提高利用率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11728,7 +11912,7 @@
 
 #### 效果摘要
 
-解锁物资：衣物；解锁物资：家具；解锁建筑：家具行会工坊；解锁建筑：裁缝铺；社会领域研究效率 +15%
+解锁物资：衣物；解锁物资：家具；解锁建筑：家具行会工坊；解锁建筑：裁缝铺
 
 #### 机会成本
 
@@ -11750,7 +11934,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11796,6 +11980,12 @@
 
 - 块炼铁 (`tech.iron_smelting`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，高炉冶炼直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「木炭坩埚炼铜」（tech.copper\_metallurgy）
+  - 已完成科技「行业组织」（tech.guild\_organization）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -11805,7 +11995,7 @@
 
 #### 效果摘要
 
-解锁物资：钢材；解锁建筑：焦炭炼钢厂；采掘部门产出 +12%
+解锁物资：钢材；解锁建筑：焦炭炼钢厂
 
 #### 机会成本
 
@@ -11825,7 +12015,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11876,7 +12066,7 @@
 
 #### 效果摘要
 
-解锁物资：金属工具；钢铁业产出 +28%；采掘部门产出 +12%
+解锁物资：金属工具
 
 #### 机会成本
 
@@ -11895,8 +12085,7 @@
 
 #### 永久 Modifier 条款
 
-- 钢铁业：`country.output.family.steelmaking_factor`：+28%
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -11943,7 +12132,7 @@
 
 #### 效果摘要
 
-解锁物资：煤炭；解锁建筑：煤矿；采掘部门产出 +12%
+解锁物资：煤炭；解锁建筑：煤矿
 
 #### 机会成本
 
@@ -11963,7 +12152,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -12011,7 +12200,7 @@
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：碎布造纸工坊；制造部门产出 +12%
+解锁物资：纸张；解锁建筑：碎布造纸工坊
 
 #### 机会成本
 
@@ -12031,7 +12220,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -12146,7 +12335,7 @@
 
 #### 效果摘要
 
-解锁物资：印刷品；解锁建筑：活字印刷坊；工程领域研究效率 +15%
+解锁物资：印刷品；解锁建筑：活字印刷坊；全社会 +6%
 
 #### 机会成本
 
@@ -12166,7 +12355,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+- 全社会：`country.output.knowledge_factor`：+6%
+  - 效果机制：活字印刷扩大知识复制与传播。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12208,6 +12399,12 @@
 - 度量衡 (`tech.weights_and_measures`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，火药配制直接使用这一能力完成其工艺或组织设计
 - 卤水采集 (`tech.brine_collection`)：卤水采集提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「盐渍保存」（tech.salt\_preservation）
+  - 已完成科技「铜矿焙烧」（tech.copper\_ore\_roasting）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -12217,7 +12414,7 @@
 
 #### 效果摘要
 
-解锁物资：炸药；解锁物资：硝石；解锁建筑：硝石矿；解锁建筑：硫矿；制造部门产出 +12%
+解锁物资：炸药；解锁物资：硝石；解锁建筑：硝石矿；解锁建筑：硫矿
 
 #### 机会成本
 
@@ -12239,7 +12436,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -12290,7 +12487,7 @@
 
 #### 效果摘要
 
-海运作业产出 +28%；贸易速度 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -12309,8 +12506,7 @@
 
 #### 永久 Modifier 条款
 
-- 海运作业：`country.output.family.maritime_operations_factor`：+28%
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -12359,7 +12555,7 @@
 
 #### 效果摘要
 
-公共营造产出 +28%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -12378,7 +12574,7 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+28%
+无
 
 #### 被以下科技作为硬前置
 
@@ -12425,7 +12621,7 @@
 
 #### 效果摘要
 
-古典学院产出 +50%；知识部门产出 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -12444,8 +12640,7 @@
 
 #### 永久 Modifier 条款
 
-- 古典学院：`country.output.building.classical_academy_factor`：+50%
-- `country.output.knowledge_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -12701,7 +12896,7 @@
 
 #### 效果摘要
 
-佃作雨养玉米田产出 +18%；佃作雨养小麦田产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -12720,8 +12915,7 @@
 
 #### 永久 Modifier 条款
 
-- 佃作雨养玉米田：`country.output.building.tenant_rainfed_maize_field_factor`：+18%
-- 佃作雨养小麦田：`country.output.building.tenant_rainfed_wheat_field_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -12840,7 +13034,7 @@
 
 #### 效果摘要
 
-主食加工厂产出 +50%；农业部门产出 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -12859,8 +13053,7 @@
 
 #### 永久 Modifier 条款
 
-- 主食加工厂：`country.output.building.staple_food_plant_factor`：+50%
-- `country.output.agriculture_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -12906,7 +13099,7 @@
 
 #### 效果摘要
 
-解锁建筑：煤层平硐
+解锁建筑：煤层平硐；煤 -8%；landform.hill.extractive产出 +20%
 
 #### 机会成本
 
@@ -12925,7 +13118,12 @@
 
 #### 永久 Modifier 条款
 
-无
+- 煤：`country.resource.coal.use_factor`：+8%
+- landform.hill.extractive：`country.output.landform.hill.extractive_factor`：+20%
+  - 效果机制：平硐提高煤层回收率。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+  - 效果机制：平硐利用丘陵露头。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13102,6 +13300,13 @@
 
 - 分成租佃 (`tech.sharecropping`)：分成租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，庄园谷物核算直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「庄园核算」（tech.estate\_accounting）
+  - 已完成科技「庄园谷物经营」（tech.manorial\_cereal\_farming）
+  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -13171,6 +13376,12 @@
 #### 硬前置（决定研发资格）
 
 - 佃作水田 (`tech.tenant_paddy_management`)：佃作水田提供水田整备、水位控制与稻作管理方法中的成套生产流程，庄园水田核算直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「庄园司法」（tech.manorial\_jurisdiction）
+  - 已完成科技「灌溉测量」（tech.irrigation\_surveying）
 
 #### 发现启发（仅用于揭示）
 
@@ -13247,7 +13458,7 @@
 
 #### 效果摘要
 
-公共营造场产出 +50%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -13278,8 +13489,7 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造场：`country.output.building.classical_public_works_factor`：+50%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -13332,7 +13542,7 @@
 
 #### 效果摘要
 
-书记学校产出 +50%；知识部门产出 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -13351,8 +13561,7 @@
 
 #### 永久 Modifier 条款
 
-- 书记学校：`country.output.building.scribal_school_factor`：+50%
-- `country.output.knowledge_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -13404,7 +13613,7 @@
 
 #### 效果摘要
 
-海运作业产出 +28%；能源部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -13423,8 +13632,7 @@
 
 #### 永久 Modifier 条款
 
-- 海运作业：`country.output.family.maritime_operations_factor`：+28%
-- `country.output.energy_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -13481,7 +13689,7 @@
 
 #### 效果摘要
 
-解锁物资：远洋船舶；解锁建筑：远洋造船厂；贸易速度 +12%
+解锁物资：远洋船舶；解锁建筑：远洋造船厂
 
 #### 机会成本
 
@@ -13501,7 +13709,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -13555,7 +13763,7 @@
 
 #### 效果摘要
 
-海运作业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -13574,7 +13782,7 @@
 
 #### 永久 Modifier 条款
 
-- 海运作业：`country.output.family.maritime_operations_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -13626,7 +13834,7 @@
 
 #### 效果摘要
 
-海运作业产出 +28%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -13645,7 +13853,7 @@
 
 #### 永久 Modifier 条款
 
-- 海运作业：`country.output.family.maritime_operations_factor`：+28%
+无
 
 #### 被以下科技作为硬前置
 
@@ -13767,7 +13975,7 @@
 
 #### 效果摘要
 
-解锁物资：炸药；解锁物资：硫磺；解锁建筑：炸药厂；解锁建筑：自动化炸药厂；制造部门产出 +12%
+解锁物资：炸药；解锁物资：硫磺；解锁建筑：炸药厂；解锁建筑：自动化炸药厂
 
 #### 机会成本
 
@@ -13789,7 +13997,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -13836,7 +14044,7 @@
 
 #### 效果摘要
 
-商栈产出 +50%；社会领域研究效率 +15%
+全社会生产投入 -2%
 
 #### 机会成本
 
@@ -13855,8 +14063,9 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.building.merchant_post_factor`：+50%
-- `country.research.society_efficiency`：+15%
+- 全社会生产投入：`country.production.input_factor`：+2%
+  - 效果机制：复式记账揭示跨行业库存、损耗与成本浪费。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -13973,6 +14182,12 @@
 - 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
 - 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「特许大学」（tech.chartered\_universities）
+  - 已完成科技「商业农庄」（tech.commercial\_estates）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -13982,7 +14197,7 @@
 
 #### 效果摘要
 
-商栈产出 +35%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -14001,7 +14216,7 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.building.merchant_post_factor`：+35%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14049,7 +14264,7 @@
 
 #### 效果摘要
 
-金属工具业产出 +25%；工程领域研究效率 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -14068,8 +14283,7 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+25%
-- `country.research.engineering_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14118,7 +14332,7 @@
 
 #### 效果摘要
 
-解锁建筑：金矿；解锁建筑：银矿；采掘部门产出 +12%
+解锁建筑：金矿；解锁建筑：银矿
 
 #### 机会成本
 
@@ -14138,7 +14352,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14188,7 +14402,7 @@
 
 #### 效果摘要
 
-解锁物资：铅矿石；解锁物资：锌矿石；铁矿业产出 +28%；采掘部门产出 +12%
+解锁物资：铅矿石；解锁物资：锌矿石；铁矿石 -8%；landform.mountain.extractive产出 +24%
 
 #### 机会成本
 
@@ -14208,8 +14422,12 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+28%
-- `country.output.extractive_factor`：+12%
+- 铁矿石：`country.resource.iron_ore.use_factor`：+8%
+- landform.mountain.extractive：`country.output.landform.mountain.extractive_factor`：+24%
+  - 效果机制：深井开拓提高铁矿回采率。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+  - 效果机制：支护通风适应山地深矿。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14258,7 +14476,7 @@
 
 #### 效果摘要
 
-解锁建筑：深井盐矿；解锁建筑：锡矿；洪灾损失 -8%
+解锁建筑：深井盐矿；解锁建筑：锡矿
 
 #### 机会成本
 
@@ -14278,7 +14496,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.flood_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14320,6 +14538,12 @@
 
 - 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业租佃直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「货币」（tech.currency）
+  - 已完成科技「庄园核算」（tech.estate\_accounting）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -14328,7 +14552,7 @@
 
 #### 效果摘要
 
-生计农业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -14347,7 +14571,7 @@
 
 #### 永久 Modifier 条款
 
-- 生计农业：`country.output.family.subsistence_food_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14399,7 +14623,7 @@
 
 #### 效果摘要
 
-商栈产出 +50%；采掘部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -14418,8 +14642,7 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.building.merchant_post_factor`：+50%
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14470,7 +14693,7 @@
 
 #### 效果摘要
 
-解锁建筑：专用商品作物种植园；解锁建筑：橡胶种植园；制造部门产出 +12%
+解锁建筑：专用商品作物种植园；解锁建筑：橡胶种植园
 
 #### 机会成本
 
@@ -14490,7 +14713,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14532,6 +14755,13 @@
 - 商业租佃 (`tech.commercial_tenancy`)：商业租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
 - 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理提供热带作物栽培、采收与商品化处理能力中的成套生产流程，种植园庄园管理直接使用这一能力完成其工艺或组织设计
 - 庄园核算 (`tech.estate_accounting`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「特许商社」（tech.chartered\_companies）
+  - 已完成科技「作物驯化移植」（tech.crop\_acclimatization）
+  - 已发现信号「香料作物」（bio.spice）
 
 #### 发现启发（仅用于揭示）
 
@@ -14615,7 +14845,7 @@
 
 #### 效果摘要
 
-解锁建筑：远洋渔场；农业部门产出 +15%
+解锁建筑：远洋渔场
 
 #### 机会成本
 
@@ -14634,7 +14864,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.agriculture_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14681,7 +14911,7 @@
 
 #### 效果摘要
 
-电气化集约农场产出 +50%；旱灾损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -14700,8 +14930,7 @@
 
 #### 永久 Modifier 条款
 
-- 电气化集约农场：`country.output.building.intensive_farm_factor`：+50%
-- `country.climate.drought_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14754,7 +14983,7 @@
 
 #### 效果摘要
 
-电气化集约农场产出 +50%；洪灾损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -14773,8 +15002,7 @@
 
 #### 永久 Modifier 条款
 
-- 电气化集约农场：`country.output.building.intensive_farm_factor`：+50%
-- `country.climate.flood_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14824,7 +15052,7 @@
 
 #### 效果摘要
 
-大田作物农业产出 +28%；旱灾损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -14843,8 +15071,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+28%
-- `country.climate.drought_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14894,7 +15121,7 @@
 
 #### 效果摘要
 
-可利用资源：种植园承载力；大田作物农业产出 +28%；寒冷损失 -8%
+可利用资源：种植园承载力
 
 #### 机会成本
 
@@ -14913,8 +15140,7 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+28%
-- `country.climate.cold_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -14962,7 +15188,7 @@
 
 #### 效果摘要
 
-商栈产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -14981,7 +15207,7 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.family.merchant_post_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -15027,7 +15253,7 @@
 
 #### 效果摘要
 
-商栈产出 +50%；热害损失 -8%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -15058,9 +15284,7 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.building.merchant_post_factor`：+50%
-- `country.climate.heat_stress_factor`：+8%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -15120,7 +15344,7 @@
 
 #### 效果摘要
 
-博学学会产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -15139,7 +15363,7 @@
 
 #### 永久 Modifier 条款
 
-- 博学学会：`country.output.building.learned_society_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -15199,7 +15423,7 @@
 
 #### 效果摘要
 
-寒冷损失 -8%
+谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%
 
 #### 机会成本
 
@@ -15218,7 +15442,18 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.cold_stress_factor`：+8%
+- 谷物：`country.output.good.grain_factor`：+12%
+- 小麦：`country.output.good.wheat_grain_factor`：+12%
+- 稻米：`country.output.good.rice_grain_factor`：+12%
+- 玉米：`country.output.good.corn_grain_factor`：+12%
+  - 效果机制：育种提高通用谷物潜力。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：育种提高小麦潜力。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：育种提高水稻潜力。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：育种提高玉米潜力。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -15403,7 +15638,7 @@
 
 #### 效果摘要
 
-博学学会产出 +50%；知识部门产出 +15%
+全社会 +6%
 
 #### 机会成本
 
@@ -15422,8 +15657,9 @@
 
 #### 永久 Modifier 条款
 
-- 博学学会：`country.output.building.learned_society_factor`：+50%
-- `country.output.knowledge_factor`：+15%
+- 全社会：`country.output.knowledge_factor`：+6%
+  - 效果机制：可复现实验提高全社会知识生产效率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -15480,7 +15716,7 @@
 
 #### 效果摘要
 
-商栈产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -15499,7 +15735,7 @@
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.family.merchant_post_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -15539,6 +15775,12 @@
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，概率与统计直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「天文历法」（tech.celestial\_calendars）
+  - 已完成科技「复式记账」（tech.double\_entry\_bookkeeping）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -15547,7 +15789,7 @@
 
 #### 效果摘要
 
-博学学会产出 +35%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -15566,7 +15808,7 @@
 
 #### 永久 Modifier 条款
 
-- 博学学会：`country.output.building.learned_society_factor`：+35%
+无
 
 #### 被以下科技作为硬前置
 
@@ -15619,7 +15861,7 @@
 
 #### 效果摘要
 
-解锁建筑：电气化包装厂；解锁建筑：电气印刷厂；工程领域研究效率 +15%
+解锁建筑：电气化包装厂；解锁建筑：电气印刷厂；全社会生产投入 -4%
 
 #### 机会成本
 
@@ -15639,7 +15881,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+- 全社会生产投入：`country.production.input_factor`：+4%
+  - 效果机制：统一规格减少返工和材料浪费。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -15688,6 +15932,12 @@
 - 城市卫生 (`tech.urban_sanitation`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「科学分类」（tech.scientific\_classification）
+  - 已完成科技「官僚行政」（tech.state\_bureaucracy）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -15697,7 +15947,7 @@
 
 #### 效果摘要
 
-化学工业产出 +28%；制造部门产出 +12%
+全社会经济产出 +3%
 
 #### 机会成本
 
@@ -15716,8 +15966,9 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+28%
-- `country.output.manufacturing_factor`：+12%
+- 全社会经济产出：`country.economy_output_factor`：+3%
+  - 效果机制：疾病预防减少误工和照护损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -15760,6 +16011,13 @@
 - 灌溉测量 (`tech.irrigation_surveying`)：灌溉测量提供坡降、流量和高程测定方法
 - 标准化 (`tech.standardization`)：标准化统一管径、构件和测量基准，使跨区域水利设施能够协同建设
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「城市水务」（tech.urban\_waterworks）
+  - 已完成科技「地产测绘」（tech.property\_cadastre）
+  - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -15769,7 +16027,7 @@
 
 #### 效果摘要
 
-解锁物资：水泥；解锁建筑：水泥厂；解锁建筑：自动化水泥厂
+解锁物资：水泥；解锁建筑：水泥厂；解锁建筑：自动化水泥厂；landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%
 
 #### 机会成本
 
@@ -15790,7 +16048,12 @@
 
 #### 永久 Modifier 条款
 
-无
+- landform.delta.agriculture：`country.output.landform.delta.agriculture_factor`：+18%
+- landform.delta.manufacturing：`country.output.landform.delta.manufacturing_factor`：+5%
+  - 效果机制：堤渠分洪改善三角洲农业。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：大型水工维护占用制造能力。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -15905,6 +16168,12 @@
 - 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
 - 井筒开掘 (`tech.shaft_sinking`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「矿井排水」（tech.mine\_drainage）
+  - 已完成科技「科学分类」（tech.scientific\_classification）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -15914,7 +16183,7 @@
 
 #### 效果摘要
 
-解锁物资：锰矿石；解锁建筑：自动化铅矿；解锁建筑：硅砂矿；解锁建筑：工业石灰岩矿场；采掘部门产出 +12%
+解锁物资：锰矿石；解锁建筑：自动化铅矿；解锁建筑：硅砂矿；解锁建筑：工业石灰岩矿场；terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 机会成本
 
@@ -15936,7 +16205,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+- terrain.badlands.extractive：`country.output.terrain.badlands.extractive_factor`：+18%
+- landform.plateau.extractive：`country.output.landform.plateau.extractive_factor`：+18%
+  - 效果机制：踏勘提高裸岩地区找矿。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：构造测绘改善高原找矿。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -16129,7 +16403,7 @@
 
 #### 效果摘要
 
-可利用资源：磷矿石；堆肥场产出 +50%
+可利用资源：磷矿石
 
 #### 机会成本
 
@@ -16148,7 +16422,7 @@
 
 #### 永久 Modifier 条款
 
-- 堆肥场：`country.output.building.composting_yard_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -16197,7 +16471,7 @@
 
 #### 效果摘要
 
-畜牧业产出 +28%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -16216,7 +16490,7 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+无
 
 #### 被以下科技作为硬前置
 
@@ -16264,7 +16538,7 @@
 
 #### 效果摘要
 
-家具行会工坊产出 +50%；制造部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -16283,8 +16557,7 @@
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+50%
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -16398,7 +16671,7 @@
 
 #### 效果摘要
 
-家具行会工坊产出 +50%；社会领域研究效率 +15%
+全社会经济产出 +2%
 
 #### 机会成本
 
@@ -16417,8 +16690,9 @@
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+50%
-- `country.research.society_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+2%
+  - 效果机制：合作组织降低小生产者共享资本与风险的成本。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -16470,7 +16744,7 @@
 
 #### 效果摘要
 
-电气化集约农场产出 +50%；洪灾损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -16489,8 +16763,7 @@
 
 #### 永久 Modifier 条款
 
-- 电气化集约农场：`country.output.building.intensive_farm_factor`：+50%
-- `country.climate.flood_loss_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -16530,6 +16803,12 @@
 
 - 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，精密仪器直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「度量衡」（tech.weights\_and\_measures）
+  - 已完成科技「机械计时」（tech.mechanical\_timekeeping）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -16538,7 +16817,7 @@
 
 #### 效果摘要
 
-金属工具业产出 +28%；贸易速度 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -16557,8 +16836,7 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+28%
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -16605,6 +16883,13 @@
 - 庄园核算 (`tech.estate_accounting`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
 - 度量衡 (`tech.weights_and_measures`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「标准化」（tech.standardization）
+  - 已完成科技「官僚行政」（tech.state\_bureaucracy）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -16613,7 +16898,7 @@
 
 #### 效果摘要
 
-解锁建筑：地籍管理局；国家建设成本 -6%
+解锁建筑：地籍管理局
 
 #### 机会成本
 
@@ -16632,7 +16917,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.construction.cost_factor`：+6%
+无
 
 #### 被以下科技作为硬前置
 
@@ -16747,7 +17032,7 @@
 
 #### 效果摘要
 
-解锁建筑：蒸汽航运船坞；能源部门产出 +12%
+解锁建筑：蒸汽航运船坞；煤 -8%
 
 #### 机会成本
 
@@ -16766,7 +17051,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.energy_factor`：+12%
+- 煤：`country.input.good.coal_factor`：+8%
+  - 效果机制：密封减少蒸汽系统煤耗。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -16816,7 +17103,7 @@
 
 #### 效果摘要
 
-解锁物资：鱼罐头；解锁建筑：鱼类罐头厂；解锁建筑：罐头工坊；农业部门产出 +15%
+解锁物资：鱼罐头；解锁建筑：鱼类罐头厂；解锁建筑：罐头工坊；加工食品 -8%
 
 #### 机会成本
 
@@ -16837,7 +17124,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.agriculture_factor`：+15%
+- 加工食品：`country.consumption.good.processed_food_factor`：+8%
+  - 效果机制：罐藏延长加工食品保存期。
+  - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -16883,7 +17172,7 @@
 
 #### 效果摘要
 
-特许大学产出 +50%；知识部门产出 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -16914,8 +17203,7 @@
 
 #### 永久 Modifier 条款
 
-- 特许大学：`country.output.building.chartered_university_factor`：+50%
-- `country.output.knowledge_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -16968,7 +17256,7 @@
 
 #### 效果摘要
 
-解锁物资：煤炭；铁矿业产出 +28%；采掘部门产出 +12%
+解锁物资：煤炭；煤 -12%；工具 +5%
 
 #### 机会成本
 
@@ -16987,8 +17275,12 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+28%
-- `country.output.extractive_factor`：+12%
+- 煤：`country.resource.coal.use_factor`：+12%
+- 工具：`country.input.good.tools_factor`：+5%
+  - 效果机制：工业矿井降低煤层损失。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+  - 效果机制：工业矿井增加工具维护负担。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -17031,6 +17323,12 @@
 - 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，焦炭冶炼直接使用这一能力完成其工艺或组织设计
 - 工业采煤 (`tech.industrial_coal_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，焦炭冶炼直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「工业化学」（tech.industrial\_chemistry）
+  - 已完成科技「矿井通风」（tech.mine\_ventilation）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -17040,7 +17338,7 @@
 
 #### 效果摘要
 
-解锁物资：焦炭；解锁物资：钢材；解锁建筑：焦化厂；解锁建筑：电弧炉炼钢厂；采掘部门产出 +12%
+解锁物资：焦炭；解锁物资：钢材；解锁建筑：焦化厂；解锁建筑：电弧炉炼钢厂
 
 #### 机会成本
 
@@ -17062,7 +17360,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -17109,7 +17407,7 @@
 
 #### 效果摘要
 
-蒸汽机工厂产出 +50%；科学领域研究效率 +20%；能源部门产出 +15%
+煤 -8%
 
 #### 机会成本
 
@@ -17128,9 +17426,9 @@
 
 #### 永久 Modifier 条款
 
-- 蒸汽机工厂：`country.output.building.steam_engine_works_factor`：+50%
-- `country.research.science_efficiency`：+20%
-- `country.output.energy_factor`：+15%
+- 煤：`country.input.good.coal_factor`：+8%
+  - 效果机制：热力学减少动力煤耗。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -17181,7 +17479,7 @@
 
 #### 效果摘要
 
-解锁物资：农业机械；解锁建筑：农业机械厂；解锁建筑：机械化棉花农场；解锁建筑：机械化马铃薯农场
+解锁物资：农业机械；解锁建筑：农业机械厂；解锁建筑：机械化棉花农场；解锁建筑：机械化马铃薯农场；全社会 +6%
 
 #### 机会成本
 
@@ -17203,7 +17501,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.agriculture_factor`：+6%
+  - 效果机制：机械化提高全社会农业作业时效。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -17245,6 +17545,12 @@
 
 - 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
 - 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「工资契约」（tech.wage\_contracts）
+  - 已完成科技「商业农庄」（tech.commercial\_estates）
 
 #### 发现启发（仅用于揭示）
 
@@ -17325,7 +17631,7 @@
 
 #### 效果摘要
 
-解锁物资：金属工具；解锁建筑：机械零件厂；解锁建筑：钢制工具厂；工程领域研究效率 +15%
+解锁物资：金属工具；解锁建筑：机械零件厂；解锁建筑：钢制工具厂
 
 #### 机会成本
 
@@ -17346,7 +17652,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -17400,6 +17706,12 @@
 - 大气式蒸汽机 (`tech.atmospheric_engine`)：大气式蒸汽机证明蒸汽驱动活塞做功的可行结构，是通用蒸汽动力的工程原型
 - 蒸汽密封 (`tech.steam_sealing`)：蒸汽密封降低汽缸、阀门和管路泄漏，使压力和效率可稳定维持
 - 机床 (`tech.machine_tools`)：机床提供精密汽缸、活塞、阀门和传动件的批量制造能力
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「水力机械」（tech.water\_power）
+  - 已完成科技「风力机械」（tech.wind\_power）
 
 #### 发现启发（仅用于揭示）
 
@@ -17557,7 +17869,7 @@
 
 #### 效果摘要
 
-解锁物资：铁路设备；解锁建筑：铁路设备厂；解锁建筑：铁路设备工场；贸易速度 +12%
+解锁物资：铁路设备；解锁建筑：铁路设备厂；解锁建筑：铁路设备工场
 
 #### 机会成本
 
@@ -17578,7 +17890,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -17629,7 +17941,7 @@
 
 #### 效果摘要
 
-解锁物资：工业化学品；解锁建筑：玻璃厂；解锁建筑：化学工场；可利用资源：硫磺矿；制造部门产出 +12%
+解锁物资：工业化学品；解锁建筑：玻璃厂；解锁建筑：化学工场；可利用资源：硫磺矿
 
 #### 机会成本
 
@@ -17651,7 +17963,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -17715,7 +18027,7 @@
 
 #### 效果摘要
 
-解锁物资：肥料；解锁物资：磷矿石；解锁建筑：磷矿；寒冷损失 -8%
+解锁物资：肥料；解锁物资：磷矿石；解锁建筑：磷矿
 
 #### 机会成本
 
@@ -17736,7 +18048,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.cold_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -17787,7 +18099,7 @@
 
 #### 效果摘要
 
-解锁建筑：造纸厂
+解锁建筑：造纸厂；印刷品产出 +22%
 
 #### 机会成本
 
@@ -17806,7 +18118,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 印刷品：`country.output.good.printed_materials_factor`：+22%
+  - 效果机制：机械印刷提高印刷品吞吐。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -17847,6 +18161,12 @@
 - 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械收割直接使用这一能力完成其工艺或组织设计
 - 机械化农业 (`tech.mechanized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械收割直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「轮作」（tech.crop\_rotation）
+  - 已完成科技「佃作谷物」（tech.tenant\_cereal\_farming）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -17856,7 +18176,7 @@
 
 #### 效果摘要
 
-解锁建筑：机械化农场；解锁建筑：机械化玉米农场
+解锁建筑：机械化农场；解锁建筑：机械化玉米农场；小麦产出 +22%
 
 #### 机会成本
 
@@ -17876,7 +18196,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+22%
+  - 效果机制：机械收割降低小麦时效损失。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -17926,7 +18248,7 @@
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+小麦产出 +20%；煤 +4%
 
 #### 机会成本
 
@@ -17945,7 +18267,12 @@
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+20%
+- 煤：`country.input.good.coal_factor`：+4%
+  - 效果机制：机械脱粒提高小麦处理吞吐。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：早期动力脱粒增加煤耗。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -17992,7 +18319,7 @@
 
 #### 效果摘要
 
-解锁物资：工业机械；解锁建筑：工业机械厂；解锁建筑：数字化工业机械厂；解锁建筑：制鞋厂；解锁建筑：制革厂；社会领域研究效率 +15%
+解锁物资：工业机械；解锁建筑：工业机械厂；解锁建筑：数字化工业机械厂；解锁建筑：制鞋厂；解锁建筑：制革厂；全社会 +6%
 
 #### 机会成本
 
@@ -18015,7 +18342,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.society_efficiency`：+15%
+- 全社会：`country.output.manufacturing_factor`：+6%
+  - 效果机制：工厂制度提高制造流程的专业化与连续性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -18064,6 +18393,12 @@
 - 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，纺织机械直接使用这一能力完成其工艺或组织设计
 - 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，纺织机械直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「蒸汽动力」（tech.steam\_power）
+  - 已完成科技「标准化」（tech.standardization）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -18073,7 +18408,7 @@
 
 #### 效果摘要
 
-解锁建筑：制衣厂；解锁建筑：蒸汽纺织厂；制造部门产出 +12%
+解锁建筑：制衣厂；解锁建筑：蒸汽纺织厂；布匹产出 +20%；煤 +4%
 
 #### 机会成本
 
@@ -18093,7 +18428,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+- 布匹：`country.output.good.cloth_factor`：+20%
+- 煤：`country.input.good.coal_factor`：+4%
+  - 效果机制：机械纺织提高布匹产量。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：早期纺机增加煤动力需求。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -18144,7 +18484,7 @@
 
 #### 效果摘要
 
-家具行会工坊产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -18163,7 +18503,7 @@
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -18282,7 +18622,7 @@
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会生产投入 -3%
 
 #### 机会成本
 
@@ -18301,7 +18641,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会生产投入：`country.production.input_factor`：+3%
+  - 效果机制：工业统计减少跨厂物料计划偏差。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -18347,6 +18689,13 @@
 - 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
 - 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「精密工程」（tech.precision\_engineering）
+  - 已完成科技「机械工坊」（tech.mechanical\_workshops）
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -18356,7 +18705,7 @@
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会生产投入 -5%
 
 #### 机会成本
 
@@ -18375,7 +18724,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会生产投入：`country.production.input_factor`：+5%
+  - 效果机制：互换件降低修配和备件投入。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -18425,7 +18776,7 @@
 
 #### 效果摘要
 
-解锁物资：家用电器；解锁建筑：家用电器厂；能源部门产出 +12%
+解锁物资：家用电器；解锁建筑：家用电器厂
 
 #### 机会成本
 
@@ -18445,7 +18796,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.energy_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -18487,6 +18838,13 @@
 - 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供连续旋转机械功，直接驱动锯框、进料与传动机构
 - 机床 (`tech.machine_tools`)：机床提供耐用、可互换的轴承、锯架与传动零件，使高速锯切设备可制造和维护
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「工业采煤」（tech.industrial\_coal\_mining）
+  - 已完成科技「精密工程」（tech.precision\_engineering）
+  - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -18495,7 +18853,7 @@
 
 #### 效果摘要
 
-解锁建筑：蒸汽锯木厂
+解锁建筑：蒸汽锯木厂；timber -8%；煤 +5%
 
 #### 机会成本
 
@@ -18514,7 +18872,12 @@
 
 #### 永久 Modifier 条款
 
-无
+- timber：`country.resource.timber.use_factor`：+8%
+- 煤：`country.input.good.coal_factor`：+5%
+  - 效果机制：动力锯切减少锯路损耗。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+  - 效果机制：蒸汽锯木以煤耗换取吞吐。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -18560,7 +18923,7 @@
 
 #### 效果摘要
 
-铁矿业产出 +18%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -18579,7 +18942,7 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+18%
+无
 
 #### 被以下科技作为硬前置
 
@@ -18628,7 +18991,7 @@
 
 #### 效果摘要
 
-家具行会工坊产出 +35%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -18647,7 +19010,7 @@
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+35%
+无
 
 #### 被以下科技作为硬前置
 
@@ -18693,7 +19056,7 @@
 
 #### 效果摘要
 
-焦炭炼钢厂产出 +50%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -18724,8 +19087,7 @@
 
 #### 永久 Modifier 条款
 
-- 焦炭炼钢厂：`country.output.building.steam_steel_works_factor`：+50%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -18852,7 +19214,7 @@
 
 #### 效果摘要
 
-解锁物资：电气设备；解锁建筑：早期电气设备厂；解锁建筑：电气设备厂
+解锁物资：电气设备；解锁建筑：早期电气设备厂；解锁建筑：电气设备厂；全社会经济产出 +3%；铜 +5%
 
 #### 机会成本
 
@@ -18873,7 +19235,12 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会经济产出：`country.economy_output_factor`：+3%
+- 铜：`country.input.good.copper_factor`：+5%
+  - 效果机制：电气化向各行业提供可分配动力。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：电气化扩大铜线需求。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -18921,7 +19288,7 @@
 
 #### 效果摘要
 
-解锁建筑：工业研究实验室；解锁建筑：综合工学院；社会领域研究效率 +15%
+解锁建筑：工业研究实验室；解锁建筑：综合工学院；全社会经济产出 +4%
 
 #### 机会成本
 
@@ -18941,7 +19308,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.society_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+4%
+  - 效果机制：普及教育提高跨行业技能迁移。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -18992,7 +19361,7 @@
 
 #### 效果摘要
 
-解锁建筑：酿造厂；解锁建筑：主食加工厂；解锁建筑：珠宝厂；解锁建筑：电力纺织厂；解锁建筑：高级成衣厂；农业部门产出 +15%
+解锁建筑：酿造厂；解锁建筑：主食加工厂；解锁建筑：珠宝厂；解锁建筑：电力纺织厂；解锁建筑：高级成衣厂；全社会 +12%；全社会家庭消费 +3%
 
 #### 机会成本
 
@@ -19015,7 +19384,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.agriculture_factor`：+15%
+- 全社会：`country.output.manufacturing_factor`：+12%
+- 全社会家庭消费：`country.household.consumption_factor`：+3%
+  - 效果机制：大批量专用流程提高制造吞吐。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：廉价标准品诱发消费反弹。
+  - 运行时消费者：`NativeEconomyRuntime::family_consumption_factor_q16`
 
 #### 被以下科技作为硬前置
 
@@ -19128,6 +19502,12 @@
 
 - 石油开采 (`tech.petroleum_extraction`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油炼制直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「工业化学」（tech.industrial\_chemistry）
+  - 已完成科技「蒸汽动力」（tech.steam\_power）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -19211,7 +19591,7 @@
 
 #### 效果摘要
 
-解锁物资：汽车；解锁物资：发动机；解锁建筑：汽车厂；解锁建筑：发动机厂；采掘部门产出 +12%
+解锁物资：汽车；解锁物资：发动机；解锁建筑：汽车厂；解锁建筑：发动机厂
 
 #### 机会成本
 
@@ -19233,7 +19613,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -19275,6 +19655,12 @@
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「机械制冷」（tech.refrigeration）
+  - 已完成科技「科学分类」（tech.scientific\_classification）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -19284,7 +19670,7 @@
 
 #### 效果摘要
 
-解锁物资：药品；解锁建筑：受控环境药材农场；解锁建筑：制药厂；制造部门产出 +12%
+解锁物资：药品；解锁建筑：受控环境药材农场；解锁建筑：制药厂；全社会经济产出 +3%
 
 #### 机会成本
 
@@ -19305,7 +19691,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+- 全社会经济产出：`country.economy_output_factor`：+3%
+  - 效果机制：现代医学减少全社会疾病导致的劳动损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -19353,7 +19741,7 @@
 
 #### 效果摘要
 
-解锁物资：金属线材；解锁建筑：智能化线材厂；解锁建筑：线材厂；采掘部门产出 +12%
+解锁物资：金属线材；解锁建筑：智能化线材厂；解锁建筑：线材厂
 
 #### 机会成本
 
@@ -19374,7 +19762,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -19421,6 +19809,12 @@
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
 - 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「标准化」（tech.standardization）
+  - 已完成科技「肥料加工」（tech.fertilizer\_processing）
 
 #### 发现启发（仅用于揭示）
 
@@ -19564,6 +19958,12 @@
 - 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，发电机直接使用这一能力完成其工艺或组织设计
 - 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，发电机直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「水力机械」（tech.water\_power）
+  - 已完成科技「大气式蒸汽机」（tech.atmospheric\_engine）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -19644,7 +20044,7 @@
 
 #### 效果摘要
 
-解锁物资：绝缘电缆；解锁建筑：绝缘电缆厂；解锁建筑：智能化绝缘电缆厂；能源部门产出 +12%
+解锁物资：绝缘电缆；解锁建筑：绝缘电缆厂；解锁建筑：智能化绝缘电缆厂；电力产出 +18%
 
 #### 机会成本
 
@@ -19665,7 +20065,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.energy_factor`：+12%
+- 电力：`country.output.good.electricity_factor`：+18%
+  - 效果机制：联网调度提高电力输出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -19717,7 +20119,7 @@
 
 #### 效果摘要
 
-无线电设备厂产出 +50%；贸易速度 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -19736,8 +20138,7 @@
 
 #### 永久 Modifier 条款
 
-- 无线电设备厂：`country.output.building.radio_equipment_works_factor`：+50%
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -19790,7 +20191,7 @@
 
 #### 效果摘要
 
-解锁物资：电动机；解锁建筑：电动机厂；解锁建筑：智能化电动机厂；解锁建筑：电气化造船厂
+解锁物资：电动机；解锁建筑：电动机厂；解锁建筑：智能化电动机厂；解锁建筑：电气化造船厂；煤 -4%
 
 #### 机会成本
 
@@ -19812,7 +20213,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 煤：`country.input.good.coal_factor`：+4%
+  - 效果机制：电传动替代分散蒸汽煤耗。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -19995,6 +20398,12 @@
 - 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供资产、负债、成本和利润的统一核算，使公司能够跨业务配置资本
 - 工业统计 (`tech.industrial_statistics`)：工业统计提供跨工厂绩效比较和计划控制所需的量化资料
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「大规模生产」（tech.mass\_production）
+  - 已完成科技「工人合作工场」（tech.worker\_cooperatives）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -20004,7 +20413,7 @@
 
 #### 效果摘要
 
-制造部门产出 +12%
+全社会经济产出 +3%
 
 #### 机会成本
 
@@ -20023,7 +20432,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+- 全社会经济产出：`country.economy_output_factor`：+3%
+  - 效果机制：预算和责任中心改善跨厂协调。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -20072,7 +20483,7 @@
 
 #### 效果摘要
 
-解锁物资：科学仪器；解锁建筑：智能仪器厂；解锁建筑：科学仪器工坊；知识部门产出 +15%
+解锁物资：科学仪器；解锁建筑：智能仪器厂；解锁建筑：科学仪器工坊；全社会 +6%
 
 #### 机会成本
 
@@ -20093,7 +20504,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.knowledge_factor`：+15%
+- 全社会：`country.output.knowledge_factor`：+6%
+  - 效果机制：企业实验室把生产问题转化为系统知识。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -20148,7 +20561,7 @@
 
 #### 效果摘要
 
-解锁建筑：蒸汽钻井场；解锁建筑：燃油发电厂；采掘部门产出 +12%
+解锁建筑：蒸汽钻井场；解锁建筑：燃油发电厂；oil -10%
 
 #### 机会成本
 
@@ -20168,7 +20581,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+- oil：`country.resource.oil.use_factor`：+10%
+  - 效果机制：井控提高可采原油比例。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -20210,6 +20625,13 @@
 - 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
 - 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「公司管理」（tech.corporate\_management）
+  - 已完成科技「精密仪器」（tech.precision\_instruments）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -20218,7 +20640,7 @@
 
 #### 效果摘要
 
-解锁建筑：现代炸药厂；解锁建筑：精密仪器厂；工程领域研究效率 +15%
+解锁建筑：现代炸药厂；解锁建筑：精密仪器厂；全社会生产投入 -4%
 
 #### 机会成本
 
@@ -20238,7 +20660,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+- 全社会生产投入：`country.production.input_factor`：+4%
+  - 效果机制：过程检验减少废品。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -20287,7 +20711,7 @@
 
 #### 效果摘要
 
-可再生能源业产出 +28%
+肉类 -8%
 
 #### 机会成本
 
@@ -20306,7 +20730,9 @@
 
 #### 永久 Modifier 条款
 
-- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+28%
+- 肉类：`country.consumption.good.meat_factor`：+8%
+  - 效果机制：冷藏减少家庭肉类腐败。
+  - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -20356,7 +20782,7 @@
 
 #### 效果摘要
 
-解锁物资：加工食品；解锁建筑：乳制品厂；解锁建筑：综合食品厂；寒冷损失 -8%
+解锁物资：加工食品；解锁建筑：乳制品厂；解锁建筑：综合食品厂；鱼 -10%；肉类 -10%
 
 #### 机会成本
 
@@ -20377,7 +20803,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.cold_stress_factor`：+8%
+- 鱼：`country.consumption.good.fish_factor`：+10%
+- 肉类：`country.consumption.good.meat_factor`：+10%
+  - 效果机制：冷链减少鱼类运输和家庭损耗。
+  - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
+  - 效果机制：冷链减少肉类运输和家庭损耗。
+  - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -20423,7 +20854,7 @@
 
 #### 效果摘要
 
-可再生能源业产出 +25%；能源部门产出 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -20454,8 +20885,7 @@
 
 #### 永久 Modifier 条款
 
-- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+25%
-- `country.output.energy_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -20732,7 +21162,7 @@
 
 #### 效果摘要
 
-解锁建筑：国家实验室；知识部门产出 +15%
+解锁建筑：国家实验室；全社会 +7%
 
 #### 机会成本
 
@@ -20751,7 +21181,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.knowledge_factor`：+15%
+- 全社会：`country.output.knowledge_factor`：+7%
+  - 效果机制：国家实验机构汇集长期仪器与研究资本。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -20881,7 +21313,7 @@
 
 #### 效果摘要
 
-工业研究实验室产出 +50%；社会领域研究效率 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -20900,8 +21332,7 @@
 
 #### 永久 Modifier 条款
 
-- 工业研究实验室：`country.output.building.industrial_research_laboratory_factor`：+50%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -20946,6 +21377,12 @@
 - 石油炼制 (`tech.petroleum_refining`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
 - 电化学 (`tech.electrochemistry`)：电化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「肥料加工」（tech.fertilizer\_processing）
+  - 已完成科技「热力学」（tech.thermodynamics）
 
 #### 发现启发（仅用于揭示）
 
@@ -21106,7 +21543,7 @@
 
 #### 效果摘要
 
-解锁建筑：锰矿；解锁建筑：智能锰矿；解锁建筑：现代硝石矿；解锁建筑：现代硫矿；采掘部门产出 +12%
+解锁建筑：锰矿；解锁建筑：智能锰矿；解锁建筑：现代硝石矿；解锁建筑：现代硫矿；铁矿石 -10%；煤 -10%
 
 #### 机会成本
 
@@ -21128,7 +21565,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+- 铁矿石：`country.resource.iron_ore.use_factor`：+10%
+- 煤：`country.resource.coal.use_factor`：+10%
+  - 效果机制：机械采矿提高铁矿回采。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+  - 效果机制：机械采矿提高煤层回采。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -21171,6 +21613,13 @@
 - 城市卫生 (`tech.urban_sanitation`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「国营企业」（tech.state\_enterprises）
+  - 已完成科技「冷链」（tech.cold\_chain）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -21180,7 +21629,7 @@
 
 #### 效果摘要
 
-化学工业产出 +28%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -21199,7 +21648,7 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+28%
+无
 
 #### 被以下科技作为硬前置
 
@@ -21244,6 +21693,12 @@
 - 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「公司管理」（tech.corporate\_management）
+  - 已完成科技「国营企业」（tech.state\_enterprises）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -21252,7 +21707,7 @@
 
 #### 效果摘要
 
-解锁建筑：核电站；解锁建筑：核反应堆设备厂；能源部门产出 +12%
+解锁建筑：核电站；解锁建筑：核反应堆设备厂
 
 #### 机会成本
 
@@ -21272,7 +21727,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.energy_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -21319,7 +21774,7 @@
 
 #### 效果摘要
 
-解锁物资：电池；工程领域研究效率 +15%
+解锁物资：电池
 
 #### 机会成本
 
@@ -21338,7 +21793,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -21400,7 +21855,7 @@
 
 #### 效果摘要
 
-海运作业产出 +28%；贸易速度 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -21419,8 +21874,7 @@
 
 #### 永久 Modifier 条款
 
-- 海运作业：`country.output.family.maritime_operations_factor`：+28%
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -21463,6 +21917,13 @@
 - 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，特种合金直接使用这一能力完成其工艺或组织设计
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，特种合金直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「电化学」（tech.electrochemistry）
+  - 已完成科技「核燃料循环」（tech.nuclear\_fuel\_cycle）
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -21472,7 +21933,7 @@
 
 #### 效果摘要
 
-解锁物资：铝；解锁物资：不锈钢；解锁建筑：电解铝厂；解锁建筑：不锈钢厂；采掘部门产出 +12%
+解锁物资：铝；解锁物资：不锈钢；解锁建筑：电解铝厂；解锁建筑：不锈钢厂
 
 #### 机会成本
 
@@ -21494,7 +21955,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -21545,7 +22006,7 @@
 
 #### 效果摘要
 
-解锁物资：天然气；解锁建筑：智能天然气田；解锁建筑：天然气田；可利用资源：天然气；制造部门产出 +12%
+解锁物资：天然气；解锁建筑：智能天然气田；解锁建筑：天然气田；可利用资源：天然气；石化产品产出 +22%；原油 +6%
 
 #### 机会成本
 
@@ -21567,7 +22028,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+- 石化产品：`country.output.good.petrochemicals_factor`：+22%
+- 原油：`country.input.good.crude_oil_factor`：+6%
+  - 效果机制：裂解扩大石化品收率。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：高吞吐裂解扩大原油需求。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -21607,6 +22073,13 @@
 
 - 石油化工 (`tech.petrochemical_industry`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「合成材料」（tech.synthetic\_materials）
+  - 已完成科技「工业质量控制」（tech.industrial\_quality\_control）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 发现启发（仅用于揭示）
 
@@ -21680,6 +22153,13 @@
 - 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，公司农业直接使用这一能力完成其工艺或组织设计
 - 全球物流 (`tech.global_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「现代畜牧」（tech.modern\_husbandry）
+  - 已完成科技「冷链」（tech.cold\_chain）
+  - 已发现信号「牛」（bio.cattle）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -21689,7 +22169,7 @@
 
 #### 效果摘要
 
-精准农场产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -21708,7 +22188,7 @@
 
 #### 永久 Modifier 条款
 
-- 精准农场：`country.output.building.precision_farm_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -21756,7 +22236,7 @@
 
 #### 效果摘要
 
-燃煤发电厂产出 +50%；寒冷损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -21775,8 +22255,7 @@
 
 #### 永久 Modifier 条款
 
-- 燃煤发电厂：`country.output.building.electricity_plant_factor`：+50%
-- `country.climate.cold_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -21817,6 +22296,13 @@
 - 国营企业 (`tech.state_enterprises`)：国营企业提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，集体农业直接使用这一能力完成其工艺或组织设计
 - 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，集体农业直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「内燃机」（tech.internal\_combustion）
+  - 已完成科技「电动机」（tech.electric\_motors）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -21826,7 +22312,7 @@
 
 #### 效果摘要
 
-机械化农场产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -21845,7 +22331,7 @@
 
 #### 永久 Modifier 条款
 
-- 机械化农场：`country.output.building.mechanized_farm_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -21958,6 +22444,13 @@
 - 石油化工 (`tech.petrochemical_industry`)：石油化工稳定供应合成纤维所需单体与中间体
 - 纺织机械 (`tech.textile_machinery`)：纺织机械提供纺丝后的牵伸、卷绕和织造设备，使材料能够进入规模化纺织生产
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「塑料工程」（tech.plastics\_engineering）
+  - 已完成科技「天然橡胶加工」（tech.rubber\_working）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -22029,6 +22522,13 @@
 - 公共卫生体系 (`tech.public_health_systems`)：公共卫生体系提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
 - 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「公共卫生」（tech.public\_health）
+  - 已完成科技「系统工程」（tech.systems\_engineering）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -22037,7 +22537,7 @@
 
 #### 效果摘要
 
-解锁物资：润滑剂；解锁建筑：润滑油厂；解锁建筑：自动化润滑油厂；农业部门产出 +15%
+解锁物资：润滑剂；解锁建筑：润滑油厂；解锁建筑：自动化润滑油厂；全社会自然资源耗用 -8%；全社会 -3%
 
 #### 机会成本
 
@@ -22058,7 +22558,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.agriculture_factor`：+15%
+- 全社会自然资源耗用：`country.resource.use_factor`：+8%
+- 全社会：`country.output.manufacturing_factor`：+3%
+  - 效果机制：闭环利用降低原生资源耗用。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+  - 效果机制：闭环改造初期牺牲制造吞吐。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22108,7 +22613,7 @@
 
 #### 效果摘要
 
-解锁物资：战略矿物材料；解锁物资：战略矿石；解锁建筑：战略金属冶炼厂
+解锁物资：战略矿物材料；解锁物资：战略矿石；解锁建筑：战略金属冶炼厂；全社会生产投入 -3%
 
 #### 机会成本
 
@@ -22129,7 +22634,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会生产投入：`country.production.input_factor`：+3%
+  - 效果机制：接口管理减少复杂工程浪费。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -22175,7 +22682,7 @@
 
 #### 效果摘要
 
-国家实验室产出 +50%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -22206,8 +22713,7 @@
 
 #### 永久 Modifier 条款
 
-- 国家实验室：`country.output.building.national_laboratory_factor`：+50%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -22259,7 +22765,7 @@
 
 #### 效果摘要
 
-解锁建筑：数字化农业机械厂；解锁建筑：精准农场；解锁建筑：高地精准块茎农业
+解锁建筑：数字化农业机械厂；解锁建筑：精准农场；解锁建筑：高地精准块茎农业；全社会 +8%
 
 #### 机会成本
 
@@ -22280,7 +22786,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.agriculture_factor`：+8%
+  - 效果机制：田块级测量改善全社会农业投入配置。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22328,7 +22836,7 @@
 
 #### 效果摘要
 
-解锁物资：计算机；解锁建筑：计算机厂；解锁建筑：早期计算机工场；知识部门产出 +15%
+解锁物资：计算机；解锁建筑：计算机厂；解锁建筑：早期计算机工场；全社会 +6%
 
 #### 机会成本
 
@@ -22349,7 +22857,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.knowledge_factor`：+15%
+- 全社会：`country.output.knowledge_factor`：+6%
+  - 效果机制：数字计算提高全社会模型、记录与分析能力。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22401,6 +22911,12 @@
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，信息论直接使用这一能力完成其工艺或组织设计
 - 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，信息论直接使用这一能力完成其工艺或组织设计
 - 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，信息论直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「无线电」（tech.radio）
+  - 已完成科技「工业统计」（tech.industrial\_statistics）
 
 #### 发现启发（仅用于揭示）
 
@@ -22477,7 +22993,7 @@
 
 #### 效果摘要
 
-计算研究中心产出 +50%；社会领域研究效率 +15%
+全社会经济产出 +4%
 
 #### 机会成本
 
@@ -22496,8 +23012,9 @@
 
 #### 永久 Modifier 条款
 
-- 计算研究中心：`country.output.building.computing_research_center_factor`：+50%
-- `country.research.society_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+4%
+  - 效果机制：知识服务与无形资本提高跨行业配置效率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22547,7 +23064,7 @@
 
 #### 效果摘要
 
-解锁建筑：计算研究中心
+解锁建筑：计算研究中心；全社会经济产出 +3%
 
 #### 机会成本
 
@@ -22566,7 +23083,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会经济产出：`country.economy_output_factor`：+3%
+  - 效果机制：可靠软件降低数字流程故障成本。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22619,7 +23138,7 @@
 
 #### 效果摘要
 
-解锁物资：通信设备；解锁建筑：通信设备厂；制造部门产出 +12%
+解锁物资：通信设备；解锁建筑：通信设备厂；全社会经济产出 +4%
 
 #### 机会成本
 
@@ -22639,7 +23158,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+- 全社会经济产出：`country.economy_output_factor`：+4%
+  - 效果机制：联网扩大知识和服务复用。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22696,7 +23217,7 @@
 
 #### 效果摘要
 
-解锁物资：先进芯片；解锁物资：半导体；解锁建筑：早期半导体厂；解锁建筑：半导体厂；采掘部门产出 +12%
+解锁物资：先进芯片；解锁物资：半导体；解锁建筑：早期半导体厂；解锁建筑：半导体厂；全社会 +5%
 
 #### 机会成本
 
@@ -22718,7 +23239,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+- 全社会：`country.output.manufacturing_factor`：+5%
+  - 效果机制：洁净制造与过程控制向高级制造扩散。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22761,6 +23284,12 @@
 - 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，卫星观测直接使用这一能力完成其工艺或组织设计
 - 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
 - 深层地球物理 (`tech.deep_geophysics`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「无线电」（tech.radio）
+  - 已完成科技「地图学」（tech.cartography）
 
 #### 发现启发（仅用于揭示）
 
@@ -22841,7 +23370,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化港口船舶中心；贸易速度 +12%
+解锁建筑：自动化港口船舶中心
 
 #### 机会成本
 
@@ -22860,7 +23389,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -22910,7 +23439,7 @@
 
 #### 效果摘要
 
-寒冷损失 -8%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -22929,7 +23458,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.climate.cold_stress_factor`：+8%
+无
 
 #### 被以下科技作为硬前置
 
@@ -22981,7 +23510,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化铝土矿；解锁建筑：战略矿山；可利用资源：稀土；可利用资源：锰矿；解锁建筑：自动化锌矿；采掘部门产出 +12%
+解锁建筑：自动化铝土矿；解锁建筑：战略矿山；可利用资源：稀土；可利用资源：锰矿；解锁建筑：自动化锌矿；terrain.desert.extractive产出 +25%
 
 #### 机会成本
 
@@ -23004,7 +23533,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+- terrain.desert.extractive：`country.output.terrain.desert.extractive_factor`：+25%
+  - 效果机制：光谱遥感提高沙漠找矿。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -23054,7 +23585,7 @@
 
 #### 效果摘要
 
-国家实验室产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -23073,7 +23604,7 @@
 
 #### 永久 Modifier 条款
 
-- 国家实验室：`country.output.building.national_laboratory_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23119,7 +23650,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化焦化厂；解锁建筑：自动化机械零件厂；解锁建筑：自动化炼铅厂；解锁建筑：自动化炼锌厂；解锁建筑：自动化磷矿；解锁建筑：自动化混凝土厂；工程领域研究效率 +15%
+解锁建筑：自动化焦化厂；解锁建筑：自动化机械零件厂；解锁建筑：自动化炼铅厂；解锁建筑：自动化炼锌厂；解锁建筑：自动化磷矿；解锁建筑：自动化混凝土厂
 
 #### 机会成本
 
@@ -23143,7 +23674,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23197,7 +23728,7 @@
 
 #### 效果摘要
 
-精准农场产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -23216,7 +23747,7 @@
 
 #### 永久 Modifier 条款
 
-- 精准农场：`country.output.building.precision_farm_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23335,7 +23866,7 @@
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +6%
 
 #### 机会成本
 
@@ -23354,7 +23885,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.knowledge_factor`：+6%
+  - 效果机制：开放科研网络减少重复实验并扩大资料复用。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -23405,7 +23938,7 @@
 
 #### 效果摘要
 
-计算研究中心产出 +50%；农业部门产出 +15%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -23424,8 +23957,7 @@
 
 #### 永久 Modifier 条款
 
-- 计算研究中心：`country.output.building.computing_research_center_factor`：+50%
-- `country.output.agriculture_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23469,6 +24001,13 @@
 - 市场制度 (`tech.market_institutions`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
 - 全球物流 (`tech.global_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「公司管理」（tech.corporate\_management）
+  - 已完成科技「电信」（tech.telecommunications）
+  - 已发现信号「自动化突破」（breakthrough.automation）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -23477,7 +24016,7 @@
 
 #### 效果摘要
 
-计算机厂产出 +35%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -23496,7 +24035,7 @@
 
 #### 永久 Modifier 条款
 
-- 计算机厂：`country.output.building.computers_plant_factor`：+35%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23625,7 +24164,7 @@
 
 #### 效果摘要
 
-金属工具业产出 +28%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -23644,7 +24183,7 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+28%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23694,7 +24233,7 @@
 
 #### 效果摘要
 
-采掘部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -23713,7 +24252,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23758,6 +24297,13 @@
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，生物信息学直接使用这一能力完成其工艺或组织设计
 - 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「软件工程」（tech.software\_engineering）
+  - 已完成科技「开放科学网络」（tech.open\_science\_networks）
+  - 已发现信号「小麦」（bio.wheat）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -23766,7 +24312,7 @@
 
 #### 效果摘要
 
-计算研究中心产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -23785,7 +24331,7 @@
 
 #### 永久 Modifier 条款
 
-- 计算研究中心：`country.output.building.computing_research_center_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23832,7 +24378,7 @@
 
 #### 效果摘要
 
-计算研究中心产出 +50%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -23863,8 +24409,7 @@
 
 #### 永久 Modifier 条款
 
-- 计算研究中心：`country.output.building.computing_research_center_factor`：+50%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -23916,7 +24461,7 @@
 
 #### 效果摘要
 
-解锁建筑：高端芯片厂；解锁建筑：智能研究院；知识部门产出 +15%
+解锁建筑：高端芯片厂；解锁建筑：智能研究院；全社会经济产出 +5%
 
 #### 机会成本
 
@@ -23936,7 +24481,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.knowledge_factor`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+5%
+  - 效果机制：预测与分类改善跨行业配置。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -23987,7 +24534,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化农场；农业部门产出 +15%
+解锁建筑：自动化农场
 
 #### 机会成本
 
@@ -24006,7 +24553,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.agriculture_factor`：+15%
+无
 
 #### 被以下科技作为硬前置
 
@@ -24047,6 +24594,12 @@
 - 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，神经网络直接使用这一能力完成其工艺或组织设计
 - 软件工程 (`tech.software_engineering`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，神经网络直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「系统工程」（tech.systems\_engineering）
+  - 已完成科技「生物信息学」（tech.bioinformatics）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -24055,7 +24608,7 @@
 
 #### 效果摘要
 
-智能研究院产出 +50%；制造部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -24074,8 +24627,7 @@
 
 #### 永久 Modifier 条款
 
-- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+50%
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -24192,7 +24744,7 @@
 
 #### 效果摘要
 
-解锁物资：自主系统；解锁建筑：自主控制系统厂；解锁建筑：自主林业经营站；工程领域研究效率 +15%
+解锁物资：自主系统；解锁建筑：自主控制系统厂；解锁建筑：自主林业经营站；全社会经济产出 +6%
 
 #### 机会成本
 
@@ -24213,7 +24765,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.research.engineering_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+6%
+  - 效果机制：关键节点扩大连续生产能力。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -24268,7 +24822,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能化汽车厂；解锁建筑：智能化发动机厂；解锁建筑：智能化合成纤维厂；解锁建筑：智能化合成橡胶厂；解锁建筑：智能冶铝厂；解锁建筑：智能化不锈钢厂；解锁建筑：智能化核反应堆设备厂；解锁建筑：智能战略金属冶炼厂
+解锁建筑：智能化汽车厂；解锁建筑：智能化发动机厂；解锁建筑：智能化合成纤维厂；解锁建筑：智能化合成橡胶厂；解锁建筑：智能冶铝厂；解锁建筑：智能化不锈钢厂；解锁建筑：智能化核反应堆设备厂；解锁建筑：智能战略金属冶炼厂；全社会 +8%
 
 #### 机会成本
 
@@ -24294,7 +24848,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：机器人提高制造连续性与一致性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -24338,6 +24894,13 @@
 - 自主系统 (`tech.autonomous_systems`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
 - 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，自主采矿直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「机器人制造」（tech.robotic\_manufacturing）
+  - 已完成科技「机器学习」（tech.machine\_learning）
+  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -24346,7 +24909,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能硝石矿；解锁建筑：智能硫矿；解锁建筑：智能战略矿山；采掘部门产出 +12%
+解锁建筑：智能硝石矿；解锁建筑：智能硫矿；解锁建筑：智能战略矿山；铁矿石 -12%；全社会 +15%
 
 #### 机会成本
 
@@ -24367,7 +24930,12 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+- 铁矿石：`country.resource.iron_ore.use_factor`：+12%
+- 全社会：`country.output.extractive_factor`：+15%
+  - 效果机制：传感调度减少贫化遗漏。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+  - 效果机制：自主采矿提高连续作业。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -24419,7 +24987,7 @@
 
 #### 效果摘要
 
-国家实验室产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -24438,7 +25006,7 @@
 
 #### 永久 Modifier 条款
 
-- 国家实验室：`country.output.building.national_laboratory_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -24482,6 +25050,13 @@
 - 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
 - 作物遥感 (`tech.crop_remote_sensing`)：作物遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「矿物光谱遥感」（tech.mineral\_spectral\_survey）
+  - 已完成科技「水文遥感」（tech.hydrological\_remote\_sensing）
+  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -24490,7 +25065,7 @@
 
 #### 效果摘要
 
-国家实验室产出 +50%
+全社会 +4%
 
 #### 机会成本
 
@@ -24509,7 +25084,9 @@
 
 #### 永久 Modifier 条款
 
-- 国家实验室：`country.output.building.national_laboratory_factor`：+50%
+- 全社会：`country.output.agriculture_factor`：+4%
+  - 效果机制：气候预测减少农业时机与灾害暴露误差。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -24553,6 +25130,13 @@
 - 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
 - 平台协调 (`tech.platform_coordination`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，智能电网直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「系统工程」（tech.systems\_engineering）
+  - 已完成科技「分布式智能」（tech.distributed\_intelligence）
+  - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -24561,7 +25145,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能化电池厂；能源部门产出 +12%
+解锁建筑：智能化电池厂；电力产出 +22%
 
 #### 机会成本
 
@@ -24580,7 +25164,9 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.energy_factor`：+12%
+- 电力：`country.output.good.electricity_factor`：+22%
+  - 效果机制：智能调度降低电网拥塞。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -24630,7 +25216,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能水网控制中心
+解锁建筑：智能水网控制中心；全社会生产投入 -3%
 
 #### 机会成本
 
@@ -24649,7 +25235,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 全社会生产投入：`country.production.input_factor`：+3%
+  - 效果机制：算法治理减少跨部门配置与采购浪费。
+  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -24691,6 +25279,13 @@
 - 半导体制造 (`tech.semiconductor_manufacturing`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，分布式智能直接使用这一能力完成其工艺或组织设计
 - 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「神经网络」（tech.neural\_networks）
+  - 已完成科技「自主系统」（tech.autonomous\_systems）
+  - 已发现信号「自动化突破」（breakthrough.automation）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -24699,7 +25294,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能化电子元件厂；解锁建筑：智能化无线电设备厂；采掘部门产出 +12%
+解锁建筑：智能化电子元件厂；解锁建筑：智能化无线电设备厂
 
 #### 机会成本
 
@@ -24719,7 +25314,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -24770,7 +25365,7 @@
 
 #### 效果摘要
 
-精准农场产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -24789,7 +25384,7 @@
 
 #### 永久 Modifier 条款
 
-- 精准农场：`country.output.building.precision_farm_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -24829,6 +25424,13 @@
 
 - 自动化物流 (`tech.automated_logistics`)：自动化物流提供船舶、导航、港口与运输组织能力中的动力与规模化能力，自主物流直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「平台协调」（tech.platform\_coordination）
+  - 已完成科技「分布式智能」（tech.distributed\_intelligence）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -24837,7 +25439,7 @@
 
 #### 效果摘要
 
-解锁建筑：自主航运调度港；贸易速度 +12%
+解锁建筑：自主航运调度港
 
 #### 机会成本
 
@@ -24856,7 +25458,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.trade.speed_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -24972,7 +25574,7 @@
 
 #### 效果摘要
 
-智能研究院产出 +50%；社会领域研究效率 +15%
+全社会经济产出 +3%
 
 #### 机会成本
 
@@ -24991,8 +25593,9 @@
 
 #### 永久 Modifier 条款
 
-- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+50%
-- `country.research.society_efficiency`：+15%
+- 全社会经济产出：`country.economy_output_factor`：+3%
+  - 效果机制：人机协同提高复杂社会决策的响应速度。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -25035,6 +25638,13 @@
 - 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法管理直接使用这一能力完成其工艺或组织设计
 - 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「人机协作」（tech.human\_machine\_collaboration）
+  - 已完成科技「算法治理」（tech.algorithmic\_governance）
+  - 已发现信号「自动化突破」（breakthrough.automation）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -25043,7 +25653,7 @@
 
 #### 效果摘要
 
-制造部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -25062,7 +25672,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.manufacturing_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -25102,6 +25712,13 @@
 
 - 精准灌溉 (`tech.precision_irrigation`)：精准灌溉提供水田整备、水位控制与稻作管理方法中的成套生产流程，自适应灌溉直接使用这一能力完成其工艺或组织设计
 
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「传感器网络」（tech.sensor\_networks）
+  - 已完成科技「作物遥感」（tech.crop\_remote\_sensing）
+  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -25111,7 +25728,7 @@
 
 #### 效果摘要
 
-公共营造产出 +28%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -25130,7 +25747,7 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+28%
+无
 
 #### 被以下科技作为硬前置
 
@@ -25180,7 +25797,7 @@
 
 #### 效果摘要
 
-智能研究院产出 +50%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -25199,7 +25816,7 @@
 
 #### 永久 Modifier 条款
 
-- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+50%
+无
 
 #### 被以下科技作为硬前置
 
@@ -25249,7 +25866,7 @@
 
 #### 效果摘要
 
-采掘部门产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -25268,7 +25885,7 @@
 
 #### 永久 Modifier 条款
 
-- `country.output.extractive_factor`：+12%
+无
 
 #### 被以下科技作为硬前置
 
@@ -25314,7 +25931,7 @@
 
 #### 效果摘要
 
-智能研究院产出 +50%；社会领域研究效率 +15%
+完成时代里程碑并开放下一时代
 
 #### 机会成本
 
@@ -25345,8 +25962,7 @@
 
 #### 永久 Modifier 条款
 
-- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+50%
-- `country.research.society_efficiency`：+15%
+无
 
 #### 被以下科技作为硬前置
 

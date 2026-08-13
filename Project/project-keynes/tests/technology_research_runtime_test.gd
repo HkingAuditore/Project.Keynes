@@ -61,14 +61,14 @@ func _init() -> void:
 		handle, PackedInt32Array([7000, 3000, 0, 0]), 1, 10).get("ok", false))
 		and bool(facade.enqueue_research(handle, &"tech.maize_garden_horticulture",
 			0, -1, 1, 11).get("ok", false))
-		and bool(facade.enqueue_research(handle, &"tech.pottery",
+		and bool(facade.enqueue_research(handle, &"tech.ground_stone_tools",
 			1, -1, 1, 12).get("ok", false)))
 	var result: Dictionary = ext.run_country_slice({"day_index": 1})
 	_expect("research day commits", bool(result.get("ok", false))
 		and bool(result.get("done", false)))
 	var snapshot: Dictionary = facade.research_snapshot(handle)
 	var seasonal := ids.find("tech.maize_garden_horticulture")
-	var composite := ids.find("tech.pottery")
+	var composite := ids.find("tech.ground_stone_tools")
 	_expect("10 points at 70/30 are exactly 7/3",
 		int(snapshot.technology_progress[seasonal]) == 7000
 		and int(snapshot.technology_progress[composite]) == 3000

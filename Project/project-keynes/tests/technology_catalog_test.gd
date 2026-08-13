@@ -25,6 +25,12 @@ func _init() -> void:
 	assert((catalog.technology_layout_lanes as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_starter_capability_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
 	assert((catalog.technology_entry_milestone_indices as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT)
+	var writing_index := (catalog.technology_ids as PackedStringArray).find("tech.writing")
+	var agrarian_milestone_index := (catalog.technology_ids as PackedStringArray).find(
+		"tech.agrarian_society")
+	assert(writing_index >= 0 and agrarian_milestone_index >= 0)
+	assert(int((catalog.technology_entry_milestone_indices as PackedInt32Array)[writing_index])
+		== agrarian_milestone_index)
 	assert((catalog.technology_era_entry_milestone_indices as PackedInt32Array).size() == 11)
 	var definitions: Array = TechnologyCatalogScript.public_definitions()
 	assert(definitions.size() == EXPECTED_TECHNOLOGY_COUNT)

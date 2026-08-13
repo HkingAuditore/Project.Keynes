@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 NETWORK = ROOT / "data/technology/technology_network.json"
 
 BROAD_PREFIXES = (
+    "country.economy_output_factor",
+    "country.production.input_factor",
+    "country.household.consumption_factor",
+    "country.resource.use_factor",
     "country.output.agriculture_factor",
     "country.output.extractive_factor",
     "country.output.manufacturing_factor",
@@ -144,6 +148,12 @@ def building_from_stat(stat: str) -> str:
     return ""
 
 
+def good_from_stat(stat: str) -> str:
+    if stat.startswith("country.output.good.") and stat.endswith("_factor"):
+        return stat[len("country.output.good."):-len("_factor")]
+    return ""
+
+
 def honest_family(family: str, toks: set[str], lane: str, profile: str) -> bool:
     topics = FAMILY_TOPIC.get(family)
     if not topics:
@@ -177,6 +187,16 @@ def honest_family(family: str, toks: set[str], lane: str, profile: str) -> bool:
 
 
 def classify_term(stat: str) -> str:
+    if stat.startswith("country.output.good."):
+        return "good_output"
+    if stat.startswith("country.input.good."):
+        return "good_input"
+    if stat.startswith("country.consumption.good."):
+        return "good_consumption"
+    if stat.startswith("country.resource."):
+        return "resource"
+    if stat.startswith("country.output.terrain.") or stat.startswith("country.output.landform."):
+        return "geography"
     if family_from_stat(stat):
         return "family"
     if building_from_stat(stat):
@@ -207,6 +227,8 @@ def main() -> None:
     modifier_count = 0
     broad_nodes = 0
     researchable = 0
+    semantic_terms = Counter()
+    missing_semantics = []
 
     for node in nodes:
         if node.get("is_starting") or node.get("is_starter_eligible"):
@@ -225,6 +247,11 @@ def main() -> None:
             stat = term["stat"]
             value = float(term.get("value", 0))
             kind = classify_term(stat)
+            semantic_terms[kind] += 1
+            if (not term.get("effect_class") or not term.get("effect_rationale")
+                    or term.get("implementation_status") != "runtime_consumed"
+                    or not term.get("runtime_consumer")):
+                missing_semantics.append((node["id"], stat))
             kinds.add(kind)
             summaries.append(f"{stat}={value:g}")
             if kind == "family":
@@ -265,6 +292,8 @@ def main() -> None:
 
     print("=== inventory ===")
     print(f"researchable={researchable} modifiers={modifier_count} broad_nodes={broad_nodes}")
+    print(f"semantic_term_hist={dict(sorted(semantic_terms.items()))}")
+    print(f"missing_runtime_semantics={len(missing_semantics)}")
     print(f"term_count_hist={dict(sorted(term_hist.items()))}")
     print(f"mix_hist={dict(mix_hist)}")
     print(f"climate_or_construction_terms={climate_or_construction}")

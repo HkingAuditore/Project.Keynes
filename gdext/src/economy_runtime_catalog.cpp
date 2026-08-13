@@ -1343,6 +1343,9 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
 	_building_upgrade_family_indices = packed_i32(catalog, "building_upgrade_family_indices");
 	_building_upgrade_tiers = packed_i32(catalog, "building_upgrade_tiers");
     _resource_ids = packed_strings(catalog, "building_resource_ids");
+    _modifier_sector_ids = packed_strings(catalog, "modifier_sector_ids");
+    _modifier_terrain_ids = packed_strings(catalog, "modifier_terrain_ids");
+    _modifier_landform_ids = packed_strings(catalog, "modifier_landform_ids");
     _resource_reserve_slots = packed_strings(catalog, "building_resource_reserve_slots");
     _resource_extra_slots = packed_strings(catalog, "building_resource_extra_slots");
     _resource_gen_base = packed_i64(catalog, "building_resource_gen_base");
@@ -1373,7 +1376,9 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _resource_temp_lo_q16.size() != resource_count ||
         _resource_temp_hi_q16.size() != resource_count ||
         !std::is_sorted(_resource_ids.begin(), _resource_ids.end()) ||
-        std::adjacent_find(_resource_ids.begin(), _resource_ids.end()) != _resource_ids.end()) {
+        std::adjacent_find(_resource_ids.begin(), _resource_ids.end()) != _resource_ids.end() ||
+        _modifier_sector_ids.size() != 5 || _modifier_terrain_ids.empty() ||
+        _modifier_landform_ids.empty()) {
         error = "building_resource_catalog_invalid";
         return false;
     }

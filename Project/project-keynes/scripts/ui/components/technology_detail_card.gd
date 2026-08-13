@@ -224,6 +224,7 @@ func _effect_items(definition: Dictionary) -> Array:
 				"icon": &"economy.building" if kind == "building" else &"metric.technology",
 				"accent": UITokens.RESOURCE,
 			})
+	var modifier_texts := {}
 	for term_value in definition.get("modifier_terms", []):
 		var term: Dictionary = term_value
 		var stat := String(term.get("stat", ""))
@@ -236,8 +237,28 @@ func _effect_items(definition: Dictionary) -> Array:
 		elif stat.begins_with("country.output.family."):
 			text = "%s产出 %s" % [String(term.get(
 				"subject_display_name", "相关生产家族")), delta]
+		elif stat.begins_with("country.input.good."):
+			text = "%s生产投入 %s" % [String(term.get(
+				"subject_display_name", "指定商品")), delta]
+		elif stat.begins_with("country.consumption.good."):
+			text = "%s家庭消费 %s" % [String(term.get(
+				"subject_display_name", "指定商品")), delta]
+		elif stat.begins_with("country.resource."):
+			text = "%s %s" % [String(term.get(
+				"subject_display_name", "指定自然资源")), delta]
+		elif stat.begins_with("country.output.terrain.") \
+				or stat.begins_with("country.output.landform."):
+			text = "%s产出 %s" % [String(term.get(
+				"subject_display_name", "指定地理生产")), delta]
+		elif stat.begins_with("country.output.good."):
+			text = "%s产出 %s" % [String(term.get(
+				"subject_display_name", "指定商品")), delta]
 		else:
 			var subject_names := {
+				"country.economy_output_factor": "全社会经济产出",
+				"country.production.input_factor": "全社会生产投入",
+				"country.household.consumption_factor": "全社会家庭消费",
+				"country.resource.use_factor": "全社会自然资源耗用",
 				"country.climate.cold_stress_factor": "寒冷损失",
 				"country.climate.drought_loss_factor": "旱灾损失",
 				"country.climate.flood_loss_factor": "洪灾损失",
@@ -255,7 +276,8 @@ func _effect_items(definition: Dictionary) -> Array:
 			}
 			if subject_names.has(stat):
 				text = "%s %s" % [String(subject_names[stat]), delta]
-		if not text.is_empty():
+		if not text.is_empty() and not modifier_texts.has(text):
+			modifier_texts[text] = true
 			items.append({"text": text, "icon": &"metric.technology", "accent": UITokens.CLIMATE})
 	if not items.is_empty():
 		return items

@@ -1210,9 +1210,36 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_country_family_output_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)) *
             _building_upgrade_family_ids.size(), Q16_ONE);
+    _epoch_country_good_output_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _good_ids.size(), Q16_ONE);
+    _epoch_country_good_input_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _good_ids.size(), Q16_ONE);
+    _epoch_country_good_consumption_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _good_ids.size(), Q16_ONE);
+    _epoch_country_resource_use_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _resource_ids.size(), Q16_ONE);
+    _epoch_country_resource_generation_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _resource_ids.size(), Q16_ONE);
+    _epoch_country_terrain_sector_output_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _modifier_terrain_ids.size() * 5U, Q16_ONE);
+    _epoch_country_landform_sector_output_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _modifier_landform_ids.size() * 5U, Q16_ONE);
     _epoch_country_building_output_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)) *
             _building_type_ids.size(), Q16_ONE);
+    _epoch_country_production_input_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_household_consumption_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_resource_global_use_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_climate_loss_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)) * 4U, Q16_ONE);
     _epoch_country_trade_capacity_factor_q16.assign(
@@ -1273,6 +1300,70 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                         _country_family_output_stat_ids[family], country_handle,
                         0, 1.0));
             }
+            for (size_t good = 0;
+                 good < _country_good_output_stat_ids.size(); ++good) {
+                _epoch_country_good_output_factor_q16[
+                    static_cast<size_t>(country) *
+                        _country_good_output_stat_ids.size() + good] =
+                    modifier_factor_q16(_modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY,
+                        _country_good_output_stat_ids[good], country_handle,
+                        0, 1.0));
+                _epoch_country_good_input_factor_q16[
+                    static_cast<size_t>(country) * _good_ids.size() + good] =
+                    modifier_factor_q16(_modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY,
+                        _country_good_input_stat_ids[good], country_handle,
+                        0, 1.0));
+                _epoch_country_good_consumption_factor_q16[
+                    static_cast<size_t>(country) * _good_ids.size() + good] =
+                    modifier_factor_q16(_modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY,
+                        _country_good_consumption_stat_ids[good], country_handle,
+                        0, 1.0));
+            }
+            for (size_t resource = 0; resource < _resource_ids.size(); ++resource) {
+                const size_t index = static_cast<size_t>(country) *
+                    _resource_ids.size() + resource;
+                _epoch_country_resource_use_factor_q16[index] =
+                    modifier_factor_q16(_modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY,
+                        _country_resource_use_stat_ids[resource], country_handle,
+                        0, 1.0));
+                _epoch_country_resource_generation_factor_q16[index] =
+                    modifier_factor_q16(_modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY,
+                        _country_resource_generation_stat_ids[resource],
+                        country_handle, 0, 1.0));
+            }
+            const auto freeze_geography = [&](const std::vector<int32_t> &stat_ids,
+                    size_t geography_count, std::vector<int32_t> &target) {
+                const size_t row_width = geography_count * 5U;
+                for (size_t index = 0; index < row_width; ++index)
+                    target[static_cast<size_t>(country) * row_width + index] =
+                        modifier_factor_q16(_modifier_runtime->effective_value(
+                            ModifierRuntime::COUNTRY, stat_ids[index],
+                            country_handle, 0, 1.0));
+            };
+            freeze_geography(_country_terrain_sector_output_stat_ids,
+                _modifier_terrain_ids.size(),
+                _epoch_country_terrain_sector_output_factor_q16);
+            freeze_geography(_country_landform_sector_output_stat_ids,
+                _modifier_landform_ids.size(),
+                _epoch_country_landform_sector_output_factor_q16);
+            _epoch_country_production_input_factor_q16[country] =
+                modifier_factor_q16(_modifier_runtime->effective_value(
+                    ModifierRuntime::COUNTRY, _country_production_input_stat_id,
+                    country_handle, 0, 1.0));
+            _epoch_country_household_consumption_factor_q16[country] =
+                modifier_factor_q16(_modifier_runtime->effective_value(
+                    ModifierRuntime::COUNTRY,
+                    _country_household_consumption_stat_id,
+                    country_handle, 0, 1.0));
+            _epoch_country_resource_global_use_factor_q16[country] =
+                modifier_factor_q16(_modifier_runtime->effective_value(
+                    ModifierRuntime::COUNTRY, _country_resource_use_stat_id,
+                    country_handle, 0, 1.0));
             for (size_t building = 0;
                  building < _country_building_output_stat_ids.size(); ++building) {
                 _epoch_country_building_output_factor_q16[
@@ -2364,7 +2455,10 @@ void NativeEconomyRuntime::rebuild_production_input_reserves(
                 const int64_t physical_numerator = saturating_add(saturating_mul(
                     scaled_effective, Q16_ONE, _saturation_count),
                     candidate.efficiency_q16 - 1, _saturation_count);
-                const int64_t physical = physical_numerator / candidate.efficiency_q16;
+                const int64_t physical = effective_production_input_quantity(
+                    cell, candidate.good_id,
+                    physical_numerator / candidate.efficiency_q16,
+                    _saturation_count);
                 const int64_t available = std::max<int64_t>(0,
                     _market.stock[_market.index(market, candidate.good_id)] -
                     _production_input_reserve[signal]);
@@ -2372,9 +2466,16 @@ void NativeEconomyRuntime::rebuild_production_input_reserves(
                     ? std::min<int64_t>(Q16_ONE, mul_div_sat(
                         available, Q16_ONE, physical, _saturation_count))
                     : Q16_ONE;
+                const int64_t unit_numerator = saturating_add(saturating_mul(
+                    GOODS_SCALE, Q16_ONE, _saturation_count),
+                    candidate.efficiency_q16 - 1, _saturation_count);
+                const int64_t unit_physical = effective_production_input_quantity(
+                    cell, candidate.good_id,
+                    unit_numerator / candidate.efficiency_q16,
+                    _saturation_count);
                 const int64_t effective_price = mul_div_sat(
-                    _market.price[_market.index(market, candidate.good_id)], Q16_ONE,
-                    candidate.efficiency_q16, _saturation_count);
+                    _market.price[_market.index(market, candidate.good_id)],
+                    unit_physical, GOODS_SCALE, _saturation_count);
                 if (capacity_q16 > best_capacity_q16 ||
                     (capacity_q16 == best_capacity_q16 &&
                      (effective_price < best_effective_price ||
@@ -3023,7 +3124,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                         : _survival_food_good_mask[output.good_id] != 0;
                     const int64_t full_output =
                         effective_building_output_quantity(
-                            group, output.quantity, Q16_ONE,
+                            group, output.good_id, output.quantity, Q16_ONE,
                             saturating_mul(group.count,
                                 std::max(1, _epoch_days), _saturation_count),
                             _saturation_count);
@@ -3307,10 +3408,18 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                  c < item.candidate_begin + item.candidate_count; ++c) {
                 const InputCandidate &candidate = _building_input_candidates[c];
                 if (!good_market_available(group.cell, candidate.good_id, true)) continue;
-                const int64_t effective_price = mul_div_sat(
-                    _market.price[_market.index(market, candidate.good_id)], Q16_ONE,
-                    candidate.efficiency_q16, _saturation_count);
-                best_effective_price = std::min(best_effective_price, effective_price);
+                const int64_t physical_numerator = saturating_add(
+                    saturating_mul(item.quantity, Q16_ONE, _saturation_count),
+                    candidate.efficiency_q16 - 1, _saturation_count);
+                const int64_t physical = effective_production_input_quantity(
+                    group.cell, candidate.good_id,
+                    physical_numerator / candidate.efficiency_q16,
+                    _saturation_count);
+                const int64_t candidate_cost = mul_div_sat(
+                    physical,
+                    _market.price[_market.index(market, candidate.good_id)],
+                    GOODS_SCALE, _saturation_count);
+                best_effective_price = std::min(best_effective_price, candidate_cost);
             }
             if (best_effective_price == std::numeric_limits<int64_t>::max()) {
                 if (item.required_q16 >= Q16_ONE) {
@@ -3319,9 +3428,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 }
                 continue;
             }
-            input_cost = saturating_add(input_cost, mul_div_sat(
-                item.quantity, best_effective_price, GOODS_SCALE,
-                _saturation_count), _saturation_count);
+            input_cost = saturating_add(
+                input_cost, best_effective_price, _saturation_count);
         }
         if (!inputs_available) {
             group.sample_unit_input_cost = 0;
@@ -3489,6 +3597,9 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                                     _saturation_count) < effective) {
                         physical = saturating_add(physical, 1, _saturation_count);
                     }
+                    physical = effective_production_input_quantity(
+                        group.cell, candidate.good_id, physical,
+                        _saturation_count);
                     int64_t quantity = saturating_add(saturating_mul(
                         physical, purchase_scale_q16, _saturation_count),
                         Q16_ONE - 1, _saturation_count) / Q16_ONE;
@@ -3499,9 +3610,16 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                     }
                     const int64_t spare = std::max<int64_t>(0,
                         _market.stock[_market.index(market, candidate.good_id)] - reserved);
+                    const int64_t unit_numerator = saturating_add(saturating_mul(
+                        GOODS_SCALE, Q16_ONE, _saturation_count),
+                        candidate.efficiency_q16 - 1, _saturation_count);
+                    const int64_t unit_physical = effective_production_input_quantity(
+                        group.cell, candidate.good_id,
+                        unit_numerator / candidate.efficiency_q16,
+                        _saturation_count);
                     const int64_t effective_price = mul_div_sat(
                         _market.price[_market.index(market, candidate.good_id)],
-                        Q16_ONE, candidate.efficiency_q16, _saturation_count);
+                        unit_physical, GOODS_SCALE, _saturation_count);
                     const bool sufficient = spare >= quantity;
                     if (sufficient != best_sufficient ? sufficient :
                         (spare > best_spare ||
@@ -3534,9 +3652,11 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 for (int32_t i = 0; i < type.resource_count; ++i) {
                     const ResourceAmount &item =
                         _building_resources[type.resource_begin + i];
-                    const int64_t base = item.mode == 1
+                    const int64_t raw_base = item.mode == 1
                         ? saturating_mul(group.count, item.quantity, _saturation_count)
                         : saturating_mul(building_days, item.quantity, _saturation_count);
+                    const int64_t base = effective_resource_use_quantity(
+                        group.cell, item.resource_id, raw_base, _saturation_count);
                     const int64_t required = saturating_add(saturating_mul(
                         base, recovery_probe_floor_q16, _saturation_count),
                         Q16_ONE - 1, _saturation_count) / Q16_ONE;
@@ -3728,9 +3848,11 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             for (int32_t i = 0; i < type.resource_count; ++i) {
                 const ResourceAmount &item =
                     _building_resources[type.resource_begin + i];
-                const int64_t base = item.mode == 1
+                const int64_t raw_base = item.mode == 1
                     ? saturating_mul(group.count, item.quantity, _saturation_count)
                     : saturating_mul(building_days, item.quantity, _saturation_count);
+                const int64_t base = effective_resource_use_quantity(
+                    group.cell, item.resource_id, raw_base, _saturation_count);
                 if (base <= 0) continue;
                 resource_capacity_q16 = std::min<int64_t>(
                     resource_capacity_q16,
@@ -4198,11 +4320,29 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                     _epoch_country_building_output_factor_q16.size()
             ? _epoch_country_building_output_factor_q16[building_factor_index]
             : Q16_ONE;
+        const int32_t terrain = group.cell >= 0 && group.cell < static_cast<int32_t>(
+                _building_terrain.size()) ? _building_terrain[group.cell] : -1;
+        const int32_t landform = group.cell >= 0 && group.cell < static_cast<int32_t>(
+                _building_landform.size()) ? _building_landform[group.cell] : -1;
+        const size_t terrain_index = (static_cast<size_t>(std::max(0, country_slot)) *
+                _modifier_terrain_ids.size() + static_cast<size_t>(std::max(0, terrain))) *
+                5U + static_cast<size_t>(sector);
+        const size_t landform_index = (static_cast<size_t>(std::max(0, country_slot)) *
+                _modifier_landform_ids.size() + static_cast<size_t>(std::max(0, landform))) *
+                5U + static_cast<size_t>(sector);
+        const int64_t terrain_sector_factor_q16 = country_slot >= 0 && terrain >= 0 &&
+                terrain_index < _epoch_country_terrain_sector_output_factor_q16.size()
+            ? _epoch_country_terrain_sector_output_factor_q16[terrain_index] : Q16_ONE;
+        const int64_t landform_sector_factor_q16 = country_slot >= 0 && landform >= 0 &&
+                landform_index < _epoch_country_landform_sector_output_factor_q16.size()
+            ? _epoch_country_landform_sector_output_factor_q16[landform_index] : Q16_ONE;
         if (cache.country_factor_q16 == country_factor_q16 &&
             cache.sector_factor_q16 == sector_factor_q16 &&
             cache.research_factor_q16 == research_factor_q16 &&
             cache.family_factor_q16 == family_factor_q16 &&
             cache.building_type_factor_q16 == building_type_factor_q16 &&
+            cache.terrain_sector_factor_q16 == terrain_sector_factor_q16 &&
+            cache.landform_sector_factor_q16 == landform_sector_factor_q16 &&
             cache.country_handle == country_handle &&
             cache.mod_version == mod_version &&
             cache.cell == group.cell &&
@@ -4241,6 +4381,8 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 (static_cast<double>(research_factor_q16) / Q16_ONE) *
                 (static_cast<double>(family_factor_q16) / Q16_ONE) *
                 (static_cast<double>(building_type_factor_q16) / Q16_ONE) *
+                (static_cast<double>(terrain_sector_factor_q16) / Q16_ONE) *
+                (static_cast<double>(landform_sector_factor_q16) / Q16_ONE) *
                 building_factor);
         }
         cache.country_factor_q16 = country_factor_q16;
@@ -4248,6 +4390,8 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
         cache.research_factor_q16 = research_factor_q16;
         cache.family_factor_q16 = family_factor_q16;
         cache.building_type_factor_q16 = building_type_factor_q16;
+        cache.terrain_sector_factor_q16 = terrain_sector_factor_q16;
+        cache.landform_sector_factor_q16 = landform_sector_factor_q16;
         cache.country_handle = country_handle;
         cache.mod_version = mod_version;
         cache.cell = group.cell;
@@ -4258,7 +4402,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
 }
 
 int64_t NativeEconomyRuntime::effective_building_output_quantity(
-        const BuildingGroup &group, int64_t base_quantity,
+        const BuildingGroup &group, int32_t good_id, int64_t base_quantity,
         int64_t utilization_q16, int64_t building_days,
         int64_t &sat) const {
     const int64_t physical_base = saturating_mul(
@@ -4267,13 +4411,24 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity(
     const int64_t utilized = mul_div_sat(
         physical_base, std::clamp<int64_t>(utilization_q16, 0, Q16_ONE),
         Q16_ONE, sat);
-    return mul_div_sat(utilized,
+    const int64_t building_output = mul_div_sat(utilized,
         std::max<int32_t>(0, group.output_factor_q16), Q16_ONE, sat);
+    const int32_t country_slot = group.cell >= 0 &&
+            group.cell < static_cast<int32_t>(_epoch_cell_country.size())
+        ? _epoch_cell_country[static_cast<size_t>(group.cell)] : -1;
+    const size_t good_factor_index = static_cast<size_t>(
+        std::max(0, country_slot)) * _good_ids.size() +
+        static_cast<size_t>(std::max(0, good_id));
+    const int64_t good_factor_q16 = country_slot >= 0 && good_id >= 0 &&
+            good_factor_index < _epoch_country_good_output_factor_q16.size()
+        ? _epoch_country_good_output_factor_q16[good_factor_index] : Q16_ONE;
+    return mul_div_sat(building_output, std::max<int64_t>(0, good_factor_q16),
+        Q16_ONE, sat);
 }
 
 int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
         int32_t cell, int32_t type_id, int32_t owner_signature_id,
-        int64_t base_quantity, int64_t utilization_q16,
+        int32_t good_id, int64_t base_quantity, int64_t utilization_q16,
         int64_t building_days, int64_t &sat) {
     BuildingGroup target;
     target.cell = cell;
@@ -4338,14 +4493,94 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
             ? static_cast<double>(_epoch_country_building_output_factor_q16[
                 building_factor_index]) / Q16_ONE
             : 1.0;
+        const int32_t terrain = cell >= 0 && cell < static_cast<int32_t>(
+                _building_terrain.size()) ? _building_terrain[cell] : -1;
+        const int32_t landform = cell >= 0 && cell < static_cast<int32_t>(
+                _building_landform.size()) ? _building_landform[cell] : -1;
+        const size_t terrain_index = (static_cast<size_t>(std::max(0, country_slot)) *
+                _modifier_terrain_ids.size() + static_cast<size_t>(std::max(0, terrain))) *
+                5U + static_cast<size_t>(sector);
+        const size_t landform_index = (static_cast<size_t>(std::max(0, country_slot)) *
+                _modifier_landform_ids.size() + static_cast<size_t>(std::max(0, landform))) *
+                5U + static_cast<size_t>(sector);
+        const double terrain_factor = country_slot >= 0 && terrain >= 0 &&
+                terrain_index < _epoch_country_terrain_sector_output_factor_q16.size()
+            ? static_cast<double>(_epoch_country_terrain_sector_output_factor_q16[
+                terrain_index]) / Q16_ONE : 1.0;
+        const double landform_factor = country_slot >= 0 && landform >= 0 &&
+                landform_index < _epoch_country_landform_sector_output_factor_q16.size()
+            ? static_cast<double>(_epoch_country_landform_sector_output_factor_q16[
+                landform_index]) / Q16_ONE : 1.0;
         target.output_factor_q16 = modifier_factor_q16(
             country_factor * sector_factor * research_factor * family_factor *
-            building_type_factor *
+            building_type_factor * terrain_factor * landform_factor *
             _modifier_runtime->economy_building_output_factor(
                 target.modifier_handle, static_cast<uint64_t>(cell), sector));
     }
-    return effective_building_output_quantity(target, base_quantity,
+    return effective_building_output_quantity(target, good_id, base_quantity,
         utilization_q16, building_days, sat);
+}
+
+int64_t NativeEconomyRuntime::effective_production_input_quantity(
+        int32_t cell, int32_t good_id, int64_t base_quantity,
+        int64_t &sat) const {
+    const int32_t country = cell >= 0 && cell < static_cast<int32_t>(
+            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
+    if (country < 0 || good_id < 0 || good_id >= static_cast<int32_t>(
+            _good_ids.size()) || country >= static_cast<int32_t>(
+            _epoch_country_production_input_factor_q16.size()))
+        return std::max<int64_t>(0, base_quantity);
+    int64_t quantity = mul_div_sat(std::max<int64_t>(0, base_quantity),
+        _epoch_country_production_input_factor_q16[country], Q16_ONE, sat);
+    const size_t index = static_cast<size_t>(country) * _good_ids.size() + good_id;
+    if (index >= _epoch_country_good_input_factor_q16.size()) return quantity;
+    return mul_div_sat(quantity, _epoch_country_good_input_factor_q16[index],
+        Q16_ONE, sat);
+}
+
+int64_t NativeEconomyRuntime::effective_resource_use_quantity(
+        int32_t cell, int32_t resource_id, int64_t base_quantity,
+        int64_t &sat) const {
+    const int32_t country = cell >= 0 && cell < static_cast<int32_t>(
+            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
+    if (country < 0 || resource_id < 0 || resource_id >= static_cast<int32_t>(
+            _resource_ids.size()) || country >= static_cast<int32_t>(
+            _epoch_country_resource_global_use_factor_q16.size()))
+        return std::max<int64_t>(0, base_quantity);
+    int64_t quantity = mul_div_sat(std::max<int64_t>(0, base_quantity),
+        _epoch_country_resource_global_use_factor_q16[country], Q16_ONE, sat);
+    const size_t index = static_cast<size_t>(country) * _resource_ids.size() + resource_id;
+    if (index >= _epoch_country_resource_use_factor_q16.size()) return quantity;
+    return mul_div_sat(quantity, _epoch_country_resource_use_factor_q16[index],
+        Q16_ONE, sat);
+}
+
+int64_t NativeEconomyRuntime::effective_managed_resource_generation(
+        int32_t cell, int32_t resource_id, int64_t base_quantity,
+        int64_t &sat) const {
+    const int32_t country = cell >= 0 && cell < static_cast<int32_t>(
+            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
+    if (country < 0 || resource_id < 0 || resource_id >= static_cast<int32_t>(
+            _resource_ids.size())) return std::max<int64_t>(0, base_quantity);
+    const size_t index = static_cast<size_t>(country) * _resource_ids.size() + resource_id;
+    if (index >= _epoch_country_resource_generation_factor_q16.size())
+        return std::max<int64_t>(0, base_quantity);
+    return mul_div_sat(std::max<int64_t>(0, base_quantity),
+        _epoch_country_resource_generation_factor_q16[index], Q16_ONE, sat);
+}
+
+int64_t NativeEconomyRuntime::effective_household_good_quantity(
+        int32_t cell, int32_t good_id, int64_t base_quantity,
+        int64_t &sat) const {
+    const int32_t country = cell >= 0 && cell < static_cast<int32_t>(
+            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
+    if (country < 0 || good_id < 0 || good_id >= static_cast<int32_t>(
+            _good_ids.size())) return std::max<int64_t>(0, base_quantity);
+    const size_t index = static_cast<size_t>(country) * _good_ids.size() + good_id;
+    if (index >= _epoch_country_good_consumption_factor_q16.size())
+        return std::max<int64_t>(0, base_quantity);
+    return mul_div_sat(std::max<int64_t>(0, base_quantity),
+        _epoch_country_good_consumption_factor_q16[index], Q16_ONE, sat);
 }
 
 int64_t NativeEconomyRuntime::planned_owner_demand(
@@ -6304,7 +6539,7 @@ void NativeEconomyRuntime::review_recovery_building_group(int32_t g) {
         const GoodAmount &output = _building_outputs[type.output_begin + output_index];
         unit_period_output = saturating_add(
             unit_period_output, effective_building_output_quantity(
-                group, output.quantity, Q16_ONE,
+                group, output.good_id, output.quantity, Q16_ONE,
                 std::max<int64_t>(1, _epoch_days), _saturation_count),
             _saturation_count);
     }
@@ -8324,6 +8559,12 @@ int32_t NativeEconomyRuntime::family_consumption_factor_q16(
         factor = mul_div_sat(factor,
             _epoch_cell_need_consumption_factor_q16[city_index], Q16_ONE, sat);
     }
+    const int32_t country = cell >= 0 && cell < static_cast<int32_t>(
+            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
+    if (country >= 0 && country < static_cast<int32_t>(
+            _epoch_country_household_consumption_factor_q16.size()))
+        factor = mul_div_sat(factor,
+            _epoch_country_household_consumption_factor_q16[country], Q16_ONE, sat);
     return static_cast<int32_t>(std::clamp<int64_t>(
         factor, 0, 4 * Q16_ONE));
 }
@@ -11544,6 +11785,16 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_country_building_available.clear();
     _epoch_country_building_type_offsets.clear();
     _epoch_country_building_type_indices.clear();
+    _epoch_country_good_output_factor_q16.clear();
+    _epoch_country_good_input_factor_q16.clear();
+    _epoch_country_good_consumption_factor_q16.clear();
+    _epoch_country_resource_use_factor_q16.clear();
+    _epoch_country_resource_generation_factor_q16.clear();
+    _epoch_country_terrain_sector_output_factor_q16.clear();
+    _epoch_country_landform_sector_output_factor_q16.clear();
+    _epoch_country_production_input_factor_q16.clear();
+    _epoch_country_household_consumption_factor_q16.clear();
+    _epoch_country_resource_global_use_factor_q16.clear();
     _epoch_cell_birth_factor_q16.clear();
     _epoch_cell_need_consumption_factor_q16.clear();
     _epoch_cell_good_consumption_factor_q16.clear();

@@ -719,16 +719,22 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 _market.stock[_market.index(market, candidate.good_id)] <= 0) continue;
             int64_t capacity_q16 = Q16_ONE;
             if (require_stock && effective_required > 0) {
-                const int64_t physical_required = physical_input_quantity(
-                    effective_required, candidate);
+                const int64_t physical_required = effective_production_input_quantity(
+                    cell, candidate.good_id,
+                    physical_input_quantity(effective_required, candidate),
+                    _saturation_count);
                 capacity_q16 = physical_required > 0 ? std::min<int64_t>(
                     Q16_ONE, mul_div_sat(
                         _market.stock[_market.index(market, candidate.good_id)],
                         Q16_ONE, physical_required, _saturation_count)) : Q16_ONE;
             }
+            const int64_t unit_physical = effective_production_input_quantity(
+                cell, candidate.good_id,
+                physical_input_quantity(GOODS_SCALE, candidate),
+                _saturation_count);
             const int64_t effective_price = mul_div_sat(
-                _market.price[_market.index(market, candidate.good_id)], Q16_ONE,
-                candidate.efficiency_q16, _saturation_count);
+                _market.price[_market.index(market, candidate.good_id)],
+                unit_physical, GOODS_SCALE, _saturation_count);
             if (capacity_q16 > best_capacity_q16 ||
                 (capacity_q16 == best_capacity_q16 &&
                  (effective_price < best_effective_price ||
@@ -806,7 +812,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
             if (selected < 0) return std::numeric_limits<int64_t>::max();
             const InputCandidate &candidate = _building_input_candidates[selected];
             const int64_t qty = scaled_input_quantity(
-                physical_input_quantity(effective, candidate), purchase_scale_q16);
+                effective_production_input_quantity(cell, candidate.good_id,
+                    physical_input_quantity(effective, candidate),
+                    _saturation_count), purchase_scale_q16);
             if (selected_out != nullptr) (*selected_out)[input_index] = selected;
             if (quantities_out != nullptr) (*quantities_out)[input_index] = qty;
             if (require_stock && qty > 0) {
@@ -896,7 +904,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     const GoodAmount &output = _building_outputs[type.output_begin + i];
                     const int64_t offered =
                         effective_building_output_quantity(
-                            group, output.quantity, desired_scale,
+                            group, output.good_id, output.quantity, desired_scale,
                             saturating_mul(group.count,
                                 std::max(1, _epoch_days), _saturation_count),
                             _saturation_count);
@@ -1107,7 +1115,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     continue;
                 }
                 const InputCandidate &candidate = _building_input_candidates[selected];
-                const int64_t physical = physical_input_quantity(effective, candidate);
+                const int64_t physical = effective_production_input_quantity(
+                    cell, candidate.good_id,
+                    physical_input_quantity(effective, candidate),
+                    _saturation_count);
                 int64_t raw_capacity_q16 = Q16_ONE;
                 if (physical > 0) {
                     raw_capacity_q16 = std::min<int64_t>(Q16_ONE, mul_div_sat(
@@ -1125,9 +1136,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
             if (type.behavior_id == 1 || type.behavior_id == 2) {
                 for (int32_t i = 0; i < type.resource_count; ++i) {
                     const ResourceAmount &item = _building_resources[type.resource_begin + i];
-                    const int64_t base = item.mode == 1
+                    const int64_t raw_base = item.mode == 1
                         ? saturating_mul(group.count, item.quantity, _saturation_count)
                         : saturating_mul(building_days, item.quantity, _saturation_count);
+                    const int64_t base = effective_resource_use_quantity(
+                        cell, item.resource_id, raw_base, _saturation_count);
                     if (base <= 0) continue;
                     if (item.mode == 1) ++_building_resource_capacity_checks;
                     const int64_t resource_scale = mul_div_sat(
@@ -1160,10 +1173,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 for (int32_t i = 0; i < type.output_count; ++i) {
                     const GoodAmount &output = _building_outputs[type.output_begin + i];
                     const int64_t without_climate = effective_building_output_quantity(
-                        group, output.quantity, scale_without_climate_q16, building_days,
+                        group, output.good_id, output.quantity,
+                        scale_without_climate_q16, building_days,
                         _saturation_count);
                     const int64_t with_climate = effective_building_output_quantity(
-                        group, output.quantity, scale_q16, building_days,
+                        group, output.good_id, output.quantity, scale_q16, building_days,
                         _saturation_count);
                     group.last_climate_lost_output = saturating_add(
                         group.last_climate_lost_output,
@@ -1180,9 +1194,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 for (int32_t i = 0; i < type.generation_count; ++i) {
                     const ResourceAmount &item =
                         _building_resource_generation[type.generation_begin + i];
-                    const int64_t qty = mul_div_sat(saturating_mul(
+                    const int64_t raw_qty = mul_div_sat(saturating_mul(
                         building_days, item.quantity, _saturation_count),
                         generation_scale_q16, Q16_ONE, _saturation_count);
+                    const int64_t qty = effective_managed_resource_generation(
+                        cell, item.resource_id, raw_qty, _saturation_count);
                     const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cell;
                     ensure_resource_lane(idx);
                     _resource_deltas[idx] = saturating_add(
@@ -1288,9 +1304,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 for (int32_t i = 0; i < type.resource_count; ++i) {
                     const ResourceAmount &item = _building_resources[type.resource_begin + i];
                     if (item.mode == 1) continue;
-                    const int64_t qty = mul_div_sat(saturating_mul(
+                    const int64_t raw_qty = mul_div_sat(saturating_mul(
                         building_days, item.quantity, _saturation_count),
                         scale_q16, Q16_ONE, _saturation_count);
+                    const int64_t qty = effective_resource_use_quantity(
+                        cell, item.resource_id, raw_qty, _saturation_count);
                     consume_resource_amount(item, cell, qty);
                     group.last_resource = saturating_add(
                         group.last_resource, qty, _saturation_count);
@@ -1301,7 +1319,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             for (int32_t i = 0; i < type.output_count; ++i) {
                 const GoodAmount &item = _building_outputs[type.output_begin + i];
                 const int64_t qty = effective_building_output_quantity(
-                    group, item.quantity, scale_q16, building_days,
+                    group, item.good_id, item.quantity, scale_q16, building_days,
                     _saturation_count);
                 if (qty > 0) {
                     offers.push_back({item.good_id, owner_slot, g, qty, 0, qty});
@@ -2142,7 +2160,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     const InputCandidate &candidate =
                         _building_input_candidates[selected];
                     const int64_t planned = scaled_input_quantity(
-                        physical_input_quantity(effective, candidate),
+                        effective_production_input_quantity(
+                            cell, candidate.good_id,
+                            physical_input_quantity(effective, candidate),
+                            _saturation_count),
                         purchase_scale_q16);
                     const int32_t signal = market_signal_index(
                         cell, candidate.good_id);
@@ -2182,7 +2203,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t effective = mul_div_sat(saturating_mul(
                 building_days, item.quantity, _saturation_count),
                 group.purchase_intent_capacity_q16, Q16_ONE, _saturation_count);
-            const int64_t planned = physical_input_quantity(effective, candidate);
+            const int64_t planned = effective_production_input_quantity(
+                cell, candidate.good_id,
+                physical_input_quantity(effective, candidate),
+                _saturation_count);
             const int32_t signal = market_signal_index(cell, candidate.good_id);
             if (signal >= cell_signal_begin && signal < cell_signal_end) {
                 const size_t local_signal = static_cast<size_t>(signal - cell_signal_begin);
@@ -2192,7 +2216,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t funded_effective = mul_div_sat(saturating_mul(
                 building_days, item.quantity, _saturation_count),
                 group.last_capacity_q16, Q16_ONE, _saturation_count);
-            const int64_t funded = physical_input_quantity(funded_effective, candidate);
+            const int64_t funded = effective_production_input_quantity(
+                cell, candidate.good_id,
+                physical_input_quantity(funded_effective, candidate),
+                _saturation_count);
             if (signal >= 0) {
                 if (signal < static_cast<int32_t>(_epoch_desired_business_demand.size())) {
                     _epoch_desired_business_demand[signal] = saturating_add(

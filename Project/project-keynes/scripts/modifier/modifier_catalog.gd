@@ -20,6 +20,9 @@ const TECHNOLOGY_STATS := [
 	["country.output.manufacturing_factor", 0.0, 8.0],
 	["country.output.energy_factor", 0.0, 8.0],
 	["country.output.knowledge_factor", 0.0, 8.0],
+	["country.production.input_factor", 0.40, 4.0],
+	["country.household.consumption_factor", 0.40, 4.0],
+	["country.resource.use_factor", 0.40, 4.0],
 	["country.construction.cost_factor", 0.40, 4.0],
 	["country.construction.time_factor", 0.40, 4.0],
 	["country.trade.capacity_factor", 0.0, 8.0],
@@ -124,6 +127,66 @@ func compile_native_catalog() -> Dictionary:
 		out.stat_persistable.append(1)
 		stat_domains_by_id.append(1)
 		stat_allowed_operations_by_id.append(15)
+	# Good factors target the physical product/input/household good instead of
+	# whichever building family happens to handle it. All three sets are country
+	# stats frozen to dense Q16 tables at the economy epoch boundary.
+	for good_id in economy.good_ids:
+		for pattern in [
+			"country.output.good.%s_factor",
+			"country.input.good.%s_factor",
+			"country.consumption.good.%s_factor",
+		]:
+			var good_key := StringName(String(pattern) % String(good_id))
+			if stat_ids.has(good_key):
+				return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+			stat_ids[good_key] = out.stat_keys.size()
+			out.stat_keys.append(String(good_key))
+			out.stat_domains.append(1)
+			out.stat_min_values.append(0.0)
+			out.stat_max_values.append(8.0)
+			out.stat_persistable.append(1)
+			stat_domains_by_id.append(1)
+			stat_allowed_operations_by_id.append(15)
+	# Resource factors distinguish extraction/capacity efficiency from managed
+	# regeneration created by production methods such as forestry or aquaculture.
+	for resource_id in economy.get("building_resource_ids", PackedStringArray()):
+		for pattern in [
+			"country.resource.%s.use_factor",
+			"country.resource.%s.managed_generation_factor",
+		]:
+			var resource_key := StringName(String(pattern) % String(resource_id))
+			if stat_ids.has(resource_key):
+				return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+			stat_ids[resource_key] = out.stat_keys.size()
+			out.stat_keys.append(String(resource_key))
+			out.stat_domains.append(1)
+			out.stat_min_values.append(0.0)
+			out.stat_max_values.append(8.0)
+			out.stat_persistable.append(1)
+			stat_domains_by_id.append(1)
+			stat_allowed_operations_by_id.append(15)
+	# Geography x sector effects are deliberately finite catalog products. Their
+	# numeric order is shared with the native terrain/landform arrays.
+	var sector_ids: PackedStringArray = economy.get(
+		"modifier_sector_ids", PackedStringArray())
+	for geography_group in [
+		["landform", economy.get("modifier_landform_ids", PackedStringArray())],
+		["terrain", economy.get("modifier_terrain_ids", PackedStringArray())],
+	]:
+		for geography_id in geography_group[1]:
+			for sector_id in sector_ids:
+				var geography_key := StringName("country.output.%s.%s.%s_factor" % [
+					String(geography_group[0]), String(geography_id), String(sector_id)])
+				if stat_ids.has(geography_key):
+					return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+				stat_ids[geography_key] = out.stat_keys.size()
+				out.stat_keys.append(String(geography_key))
+				out.stat_domains.append(1)
+				out.stat_min_values.append(0.0)
+				out.stat_max_values.append(8.0)
+				out.stat_persistable.append(1)
+				stat_domains_by_id.append(1)
+				stat_allowed_operations_by_id.append(15)
 	for building_id in economy.get("building_type_ids", PackedStringArray()):
 		var building_key := StringName(
 			"country.output.building.%s_factor" % String(building_id))
