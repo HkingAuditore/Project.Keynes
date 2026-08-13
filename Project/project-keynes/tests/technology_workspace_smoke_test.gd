@@ -295,8 +295,8 @@ func _move(control: Control, position: Vector2) -> void:
 	control._gui_input(event)
 
 
-# 1280x720 is the supported floor: policy column, tree and detail card must all
-# stay inside the screen instead of pushing each other out of view.
+# 1280x720 is the supported floor: policy stays resident while the detail drawer
+# overlays the right edge without pushing either column out of view.
 func _audit_fit(workspace: Control, tree: Control) -> void:
 	var frame := Rect2(Vector2.ZERO, workspace.size)
 	var policy := workspace.get("_policy_panel") as Control
@@ -311,17 +311,32 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 		if not frame.grow(1.0).encloses(rect) or column == tree and rect.size.x <= 0.0:
 			contained = false
 	_expect("every research column stays inside 1280x720", contained)
-	_expect("closed drawers leave only two narrow rails",
-		tree.offset_left == 40.0 and tree.offset_right == -40.0
-		and not policy.visible and not detail.visible)
-	workspace._set_policy_open(true)
+	_expect("research policy is a permanent 280px working column",
+		tree.offset_left == 280.0 and tree.offset_right == -40.0
+		and policy.visible and not detail.visible and policy.size.x == 280.0)
+	workspace._set_policy_open(false)
 	await process_frame
-	_expect("narrow layout opens only one overlay drawer",
-		policy.visible and not detail.visible and tree.offset_left == 40.0)
+	_expect("policy close requests cannot hide the permanent left column",
+		policy.visible and tree.offset_left == 280.0)
 	workspace._set_detail_open(true)
 	await process_frame
-	_expect("opening detail closes policy below pin breakpoint",
-		detail.visible and not policy.visible and tree.offset_right == -40.0)
+	_expect("detail overlays the right edge without closing policy",
+		detail.visible and policy.visible and detail.size.x == 384.0
+		and tree.offset_left == 280.0)
+	var detail_card := workspace.get("_detail") as Control
+	var detail_scroll := detail_card.get_node("Scroll") as ScrollContainer
+	var detail_body := detail_card.get_node("Scroll/Body") as Control
+	var relation_label_scene := preload("res://scenes/ui/technology_relation_row.tscn")
+	var relation_row := relation_label_scene.instantiate() as HBoxContainer
+	detail_body.add_child(relation_row)
+	await process_frame
+	var relation_label := relation_row.get_node("Label") as Label
+	_expect("detail body and relation rows fit the drawer width",
+		detail_scroll.size.x <= detail_card.size.x + 1.0
+		and detail_body.size.x <= detail_scroll.size.x + 1.0
+		and relation_row.size.x <= detail_body.size.x + 1.0
+		and relation_label.autowrap_mode != TextServer.AUTOWRAP_OFF)
+	relation_row.queue_free()
 	workspace.set_compact(true)
 	await process_frame
 	print("  [info] compact tree width %.0f" % tree.size.x)
@@ -371,17 +386,17 @@ func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 	_expect("steady technology refresh p95 stays below 1ms", refresh_p95 <= 1.0)
 
 
-# Focus mode keeps a bounded route window; overview carries the full-network
-# orientation without exposing undiscovered routes or eras.
+# Focus mode keeps a bounded domain window; overview carries the full-network
+# orientation without exposing undiscovered eras.
 func _audit_navigation(workspace: Control, tree: Control, definitions: Array) -> void:
 	_expect("the tree view exposes no zoom state at all", tree.get("_zoom") == null)
 	var initial_nav: Dictionary = workspace.navigation_report()
 	_expect("queued research determines the opening focus",
-		String(initial_nav.lane) == String((definitions[4] as Dictionary).get("main_lane", ""))
+		String(initial_nav.domain) == String((definitions[4] as Dictionary).get("domain_id", ""))
 		and int(initial_nav.era) == 0)
 	var lane_selector := workspace.get("_lane_selector") as OptionButton
-	_expect("lane selector omits undiscovered routes",
-		lane_selector.item_count > 0 and lane_selector.item_count < 20)
+	_expect("focus selector uses the four authoritative research domains",
+		lane_selector.item_count == 4)
 	var initial_focus: Dictionary = tree.focus_report()
 	_expect("focus view contains at most three era bands",
 		(initial_focus.get("bands", []) as Array).size() <= 3)
@@ -392,22 +407,22 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 	states.fill(5)
 	tree.patch_states(states, progress)
 	var full_focus: Dictionary = tree.focus_report()
-	_expect("full reveal does not expand the focused route beyond 13 nodes",
-		(full_focus.get("nodes", []) as Array).size() <= 13)
+	_expect("full reveal keeps the focused domain to a three-era bounded set",
+		(full_focus.get("nodes", []) as Array).size() <= 50)
 	_expect("focused geometry remains narrower than the old full catalog map",
 		(full_focus.get("content_rect", Rect2()) as Rect2).size.x < 1000.0)
 	workspace._set_mode(1)
 	var overview: Control = workspace.overview_view()
 	overview.patch_states(states)
 	var full_overview: Dictionary = overview.overview_report()
-	_expect("overview exposes all authored routes only after full reveal",
-		int(full_overview.visible_lanes) == 20 and int(full_overview.visible_eras) == 11)
+	_expect("overview uses four domain rows after full reveal",
+		int(full_overview.visible_domains) == 4 and int(full_overview.visible_eras) == 11)
 	var fog_states: PackedInt32Array = (workspace.get("_research").technology_states \
 		as PackedInt32Array).duplicate()
 	overview.patch_states(fog_states)
 	var fog_overview: Dictionary = overview.overview_report()
-	_expect("overview hides undiscovered routes and future eras",
-		int(fog_overview.visible_lanes) < 20 and int(fog_overview.visible_eras) < 11)
+	_expect("overview keeps four domains but hides future eras",
+		int(fog_overview.visible_domains) == 4 and int(fog_overview.visible_eras) < 11)
 	workspace._set_mode(0)
 
 

@@ -1,7 +1,7 @@
 extends Control
 class_name TechnologyOverviewView
 
-signal cell_activated(lane_id: String, era_index: int, technology_index: int)
+signal cell_activated(domain_id: String, era_index: int, technology_index: int)
 
 const LABEL_WIDTH := 214.0
 const HEADER_HEIGHT := 34.0
@@ -11,7 +11,7 @@ const DOT_RADIUS := 3.0
 
 var _definitions: Array = []
 var _eras: Array = []
-var _lanes: Array = []
+var _domains: Array = []
 var _states := PackedInt32Array()
 var _cells: Array[Dictionary] = []
 var _visible_eras: Array[int] = []
@@ -28,12 +28,12 @@ func _ready() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 
-func set_catalog(definitions: Array, eras: Array, lanes: Array) -> void:
+func set_catalog(definitions: Array, eras: Array, domains: Array) -> void:
 	if not _definitions.is_empty():
 		return
 	_definitions = definitions
 	_eras = eras
-	_lanes = lanes
+	_domains = domains
 	queue_redraw()
 
 
@@ -49,14 +49,15 @@ func patch_states(states: PackedInt32Array) -> void:
 
 
 func overview_report() -> Dictionary:
-	var visible_lanes := {}
+	var visible_domains := {}
 	var visible_eras := {}
 	for cell in _cells:
-		visible_lanes[String(cell.lane_id)] = true
+		visible_domains[String(cell.domain_id)] = true
 		visible_eras[int(cell.era_index)] = true
 	return {
 		"cells": _cells.size(),
-		"visible_lanes": visible_lanes.size(),
+		"visible_domains": visible_domains.size(),
+		"visible_lanes": visible_domains.size(),
 		"visible_eras": visible_eras.size(),
 	}
 
@@ -67,22 +68,6 @@ func _rebuild_cells() -> void:
 	var era_lookup := {}
 	for index in range(_eras.size()):
 		era_lookup[String((_eras[index] as Dictionary).get("id", ""))] = index
-	var lane_lookup := {}
-	for index in range(_lanes.size()):
-		lane_lookup[String((_lanes[index] as Dictionary).get("id", ""))] = index
-	var visible_lane_lookup := {}
-	for technology in range(_definitions.size()):
-		if _state_of(technology) <= 0:
-			continue
-		var lane_id := String((_definitions[technology] as Dictionary).get(
-			"main_lane", (_definitions[technology] as Dictionary).get("layout_lane", "")))
-		if lane_lookup.has(lane_id):
-			visible_lane_lookup[lane_id] = true
-	var visible_lanes: Array[String] = []
-	for lane in _lanes:
-		var lane_id := String((lane as Dictionary).get("id", ""))
-		if visible_lane_lookup.has(lane_id):
-			visible_lanes.append(lane_id)
 	for technology in range(_definitions.size()):
 		if _state_of(technology) <= 0:
 			continue
@@ -92,14 +77,14 @@ func _rebuild_cells() -> void:
 			_visible_eras.append(era_index)
 	_visible_eras.sort()
 	var cell_width := _cell_width()
-	for row in range(visible_lanes.size()):
-		var lane_id := visible_lanes[row]
+	for row in range(_domains.size()):
+		var domain_id := String((_domains[row] as Dictionary).get("id", ""))
 		for era_column in range(_visible_eras.size()):
 			var era_index := _visible_eras[era_column]
 			var candidates: Array[int] = []
 			for technology in range(_definitions.size()):
 				var definition: Dictionary = _definitions[technology]
-				if String(definition.get("main_lane", definition.get("layout_lane", ""))) != lane_id:
+				if String(definition.get("domain_id", "")) != domain_id:
 					continue
 				if int(era_lookup.get(String(definition.get("era_id", "")), -1)) != era_index:
 					continue
@@ -109,8 +94,8 @@ func _rebuild_cells() -> void:
 				continue
 			var chosen := _preferred(candidates)
 			_cells.append({
-				"lane_id": lane_id,
-				"lane_row": row,
+				"domain_id": domain_id,
+				"domain_row": row,
 				"era_index": era_index,
 				"era_column": era_column,
 				"technologies": candidates,
@@ -165,7 +150,7 @@ func _gui_input(event: InputEvent) -> void:
 		if hit < 0:
 			return
 		var cell: Dictionary = _cells[hit]
-		cell_activated.emit(String(cell.lane_id), int(cell.era_index), int(cell.technology))
+		cell_activated.emit(String(cell.domain_id), int(cell.era_index), int(cell.technology))
 		accept_event()
 
 
@@ -181,7 +166,7 @@ func _tooltip_for(index: int) -> String:
 		return ""
 	var cell: Dictionary = _cells[index]
 	var technology := int(cell.technology)
-	return "%s · %d 项已揭示" % [String((_definitions[technology] as Dictionary).get(
+	return "%s · 本领域本时代 %d 项已揭示" % [String((_definitions[technology] as Dictionary).get(
 		"display_name", "")), (cell.technologies as Array).size()]
 
 
@@ -198,9 +183,6 @@ func _draw() -> void:
 	if _definitions.is_empty():
 		return
 	var cell_width := _cell_width()
-	var visible_rows := {}
-	for cell in _cells:
-		visible_rows[int(cell.lane_row)] = String(cell.lane_id)
 	for era_column in range(_visible_eras.size()):
 		var era_index := _visible_eras[era_column]
 		var x := LABEL_WIDTH + era_column * cell_width
@@ -209,13 +191,9 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, cell_width - 8.0, 12, UITokens.TEXT_MUTED)
 		draw_line(Vector2(x, HEADER_HEIGHT - 4.0),
 			Vector2(x, size.y), UITokens.PANEL_BORDER_SOFT, 1.0)
-	for row in visible_rows:
-		var lane_id := String(visible_rows[row])
-		var label := lane_id
-		for lane in _lanes:
-			if String((lane as Dictionary).get("id", "")) == lane_id:
-				label = String((lane as Dictionary).get("display_name", lane_id))
-				break
+	for row in range(_domains.size()):
+		var domain: Dictionary = _domains[row]
+		var label := String(domain.get("display_name", domain.get("id", "")))
 		var y := HEADER_HEIGHT + int(row) * ROW_HEIGHT
 		draw_string(_label_font, Vector2(8.0, y + 18.0), label,
 			HORIZONTAL_ALIGNMENT_LEFT, LABEL_WIDTH - 16.0, 12, UITokens.TEXT_MAIN)

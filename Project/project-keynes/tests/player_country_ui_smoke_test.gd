@@ -278,9 +278,9 @@ func _run() -> void:
 	var compact_workspace := panel.get("_technology_workspace") as Control
 	var compact_tree := compact_workspace.tree_view() as Control
 	var compact_navigation: Dictionary = compact_workspace.navigation_report()
-	_expect("compact technology layout keeps overlay drawers closed",
-		not bool(compact_navigation.policy_open) and not bool(compact_navigation.detail_open)
-		and compact_tree.offset_left == TechnologyWorkspace.DRAWER_RAIL_WIDTH
+	_expect("compact technology layout keeps policy resident and detail closed",
+		bool(compact_navigation.policy_open) and not bool(compact_navigation.detail_open)
+		and compact_tree.offset_left == TechnologyWorkspace.POLICY_WIDTH
 		and compact_tree.offset_right == -TechnologyWorkspace.DRAWER_RAIL_WIDTH)
 	root.size = Vector2i(1280, 720)
 	await process_frame
